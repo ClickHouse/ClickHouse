@@ -1,15 +1,16 @@
 #!/usr/bin/env python3
 
-import json
-import time
-import fnmatch
 from collections import namedtuple
-import jwt
+import fnmatch
+import json
+import os
+import time
 
+import jwt
 import requests  # type: ignore
 import boto3  # type: ignore
 
-API_URL = "https://api.github.com/repos/ClickHouse/ClickHouse"
+API_URL = os.getenv("API_URL", "https://api.github.com/repos/ClickHouse/ClickHouse")
 
 SUSPICIOUS_CHANGED_FILES_NUMBER = 200
 
@@ -89,9 +90,11 @@ TRUSTED_CONTRIBUTORS = {
         "bharatnc",  # Newbie, but already with many contributions.
         "bobrik",  # Seasoned contributor, CloudFlare
         "BohuTANG",
+        "codyrobert",  # Flickerbox engineer
         "cwurm",  # Employee
         "damozhaeva",  # DOCSUP
         "den-crane",
+        "flickerbox-tom",  # Flickerbox
         "gyuton",  # DOCSUP
         "hagen1778",  # Roman Khavronenko, seasoned contributor
         "hczhcz",
@@ -120,7 +123,11 @@ TRUSTED_CONTRIBUTORS = {
         "vzakaznikov",
         "YiuRULE",
         "zlobober",  # Developer of YT
+        "ilejn",  # Arenadata, responsible for Kerberized Kafka
+        "thomoco",  # ClickHouse
         "BoloniniD",  # Seasoned contributor, HSE
+        "tonickkozlov",  # Cloudflare
+        "tylerhannan",  # ClickHouse Employee
     ]
 }
 
@@ -133,7 +140,10 @@ def get_installation_id(jwt_token):
     response = requests.get("https://api.github.com/app/installations", headers=headers)
     response.raise_for_status()
     data = response.json()
-    return data[0]["id"]
+    for installation in data:
+        if installation["account"]["login"] == "ClickHouse":
+            installation_id = installation["id"]
+    return installation_id
 
 
 def get_access_token(jwt_token, installation_id):
@@ -388,7 +398,7 @@ def rerun_workflow(workflow_description, token):
 def main(event):
     token = get_token_from_aws()
     event_data = json.loads(event["body"])
-    print("The body received:", event_data)
+    print("The body received:", event["body"])
     workflow_description = get_workflow_description_from_event(event_data)
 
     print("Got workflow description", workflow_description)

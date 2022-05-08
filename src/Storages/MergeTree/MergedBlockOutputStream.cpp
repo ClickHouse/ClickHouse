@@ -1,5 +1,6 @@
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/MergeTreeTransaction.h>
 #include <Parsers/queryToString.h>
 
 
@@ -18,6 +19,7 @@ MergedBlockOutputStream::MergedBlockOutputStream(
     const NamesAndTypesList & columns_list_,
     const MergeTreeIndices & skip_indices,
     CompressionCodecPtr default_codec_,
+    const MergeTreeTransactionPtr & txn,
     bool reset_columns_,
     bool blocks_are_granules_size,
     const WriteSettings & write_settings)
@@ -35,6 +37,13 @@ MergedBlockOutputStream::MergedBlockOutputStream(
 
     if (!part_path.empty())
         volume->getDisk()->createDirectories(part_path);
+
+    /// We should write version metadata on part creation to distinguish it from parts that were created without transaction.
+    TransactionID tid = txn ? txn->tid : Tx::PrehistoricTID;
+    /// NOTE do not pass context for writing to system.transactions_info_log,
+    /// because part may have temporary name (with temporary block numbers). Will write it later.
+    data_part->version.setCreationTID(tid, nullptr);
+    data_part->storeVersionMetadata();
 
     writer = data_part->getWriter(columns_list, metadata_snapshot, skip_indices, default_codec, writer_settings);
 }
@@ -91,8 +100,6 @@ void MergedBlockOutputStream::Finalizer::Impl::finish()
         if (sync)
             file->sync();
     }
-
-    part->storage.lockSharedData(*part);
 }
 
 MergedBlockOutputStream::Finalizer::~Finalizer()
