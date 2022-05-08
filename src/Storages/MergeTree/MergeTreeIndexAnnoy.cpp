@@ -76,6 +76,7 @@ float AnnoyIndexSerialize<Dist>::getSpaceDim() const {
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int INCORRECT_QUERY;
 }
 
 MergeTreeIndexGranuleAnnoy::MergeTreeIndexGranuleAnnoy(const String & index_name_, const Block & index_sample_block_)
@@ -183,15 +184,20 @@ bool MergeTreeIndexConditionAnnoy::mayBeTrueOnGranule(MergeTreeIndexGranulePtr i
     auto granule = std::dynamic_pointer_cast<MergeTreeIndexGranuleAnnoy>(idx_granule);
     auto annoy = std::dynamic_pointer_cast<Annoy::AnnoyIndexSerialize<>>(granule->index_base);
 
-    assert(condition.getMetric() == "L2Distance");
-    assert(condition.getSpaceDim() == annoy->getSpaceDim());
+
+    if (condition.getMetric() != "L2Distance") {
+        throw Exception("The metric in the request (" + toString(condition.getSpaceDim()) + ")"
+            + "does not match with the metric in the index (" + toString(annoy->getSpaceDim()) + ")", ErrorCodes::INCORRECT_QUERY);
+    }
+    if (condition.getSpaceDim() == annoy->getSpaceDim()) {
+        throw Exception("The dimension of the space in the request (" + toString(condition.getSpaceDim()) + ")"
+            + "does not match with the dimension in the index (" + toString(annoy->getSpaceDim()) + ")", ErrorCodes::INCORRECT_QUERY);
+    }
     std::vector<float> target_vec = condition.getTargetVector();
     float max_distance = condition.getComparisonDistance();
 
     std::vector<int32_t> items;
     std::vector<float> dist;
-    items.reserve(1);
-    dist.reserve(1);
 
     // 1 - num of nearest neighbour (NN)
     // next number - upper limit on the size of the internal queue; -1 means, that it is equal to num of trees * num of NN
@@ -201,7 +207,7 @@ bool MergeTreeIndexConditionAnnoy::mayBeTrueOnGranule(MergeTreeIndexGranulePtr i
 
 bool MergeTreeIndexConditionAnnoy::alwaysUnknownOrTrue() const
 {
-    return condition.alwaysUnknownOrTrue();
+    return condition.alwaysUnknownOrTrue("L2Distance");
 }
 
 
