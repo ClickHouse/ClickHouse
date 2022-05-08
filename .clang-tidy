@@ -6,7 +6,6 @@ Checks: '*,
     -android-*,
 
     -bugprone-branch-clone,
-    -bugprone-dynamic-static-initializers,
     -bugprone-easily-swappable-parameters,
     -bugprone-exception-escape,
     -bugprone-forwarding-reference-overload,
