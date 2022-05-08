@@ -176,7 +176,6 @@ function clone_submodules
             contrib/NuRaft
             contrib/jemalloc
             contrib/replxx
-            contrib/faiss
         )
 
         git submodule sync
