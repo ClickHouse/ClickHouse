@@ -63,7 +63,7 @@ std::pair<Field, std::shared_ptr<const IDataType>> evaluateConstantExpression(co
     /// AST potentially could be transformed to literal during TreeRewriter analyze.
     /// For example if we have SQL user defined function that return literal AS subquery.
     if (ASTLiteral * literal = ast->as<ASTLiteral>())
-        return std::pair(literal->value, applyVisitor(FieldToDataType(), literal->value));
+        return std::make_pair(literal->value, applyVisitor(FieldToDataType(), literal->value));
 
     ExpressionActionsPtr expr_for_constant_folding = ExpressionAnalyzer(ast, syntax_result, context).getConstActions();
 
