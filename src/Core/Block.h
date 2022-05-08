@@ -60,21 +60,21 @@ public:
     ColumnWithTypeAndName & safeGetByPosition(size_t position);
     const ColumnWithTypeAndName & safeGetByPosition(size_t position) const;
 
-    ColumnWithTypeAndName* findByName(const std::string & name)
+    ColumnWithTypeAndName* findByName(const std::string & name, bool case_insensitive = false)
     {
         return const_cast<ColumnWithTypeAndName *>(
-            const_cast<const Block *>(this)->findByName(name));
+            const_cast<const Block *>(this)->findByName(name, case_insensitive));
     }
 
-    const ColumnWithTypeAndName * findByName(const std::string & name) const;
+    const ColumnWithTypeAndName * findByName(const std::string & name, bool case_insensitive = false) const;
 
-    ColumnWithTypeAndName & getByName(const std::string & name)
+    ColumnWithTypeAndName & getByName(const std::string & name, bool case_insensitive = false)
     {
         return const_cast<ColumnWithTypeAndName &>(
-            const_cast<const Block *>(this)->getByName(name));
+            const_cast<const Block *>(this)->getByName(name, case_insensitive));
     }
 
-    const ColumnWithTypeAndName & getByName(const std::string & name) const;
+    const ColumnWithTypeAndName & getByName(const std::string & name, bool case_insensitive = false) const;
 
     Container::iterator begin() { return data.begin(); }
     Container::iterator end() { return data.end(); }
@@ -83,7 +83,7 @@ public:
     Container::const_iterator cbegin() const { return data.cbegin(); }
     Container::const_iterator cend() const { return data.cend(); }
 
-    bool has(const std::string & name) const;
+    bool has(const std::string & name, bool case_insensitive = false) const;
 
     size_t getPositionByName(const std::string & name) const;
 
@@ -92,6 +92,7 @@ public:
     Names getNames() const;
     DataTypes getDataTypes() const;
     Names getDataTypeNames() const;
+    std::unordered_map<String, size_t> getNamesToIndexesMap() const;
 
     /// Returns number of rows from first column in block, not equal to nullptr. If no columns, returns 0.
     size_t rows() const;
@@ -195,10 +196,6 @@ void assertCompatibleHeader(const Block & actual, const Block & desired, std::st
 void getBlocksDifference(const Block & lhs, const Block & rhs, std::string & out_lhs_diff, std::string & out_rhs_diff);
 
 void convertToFullIfSparse(Block & block);
-
-/// Helps in-memory storages to extract columns from block.
-/// Properly handles cases, when column is a subcolumn and when it is compressed.
-ColumnPtr getColumnFromBlock(const Block & block, const NameAndTypePair & column);
 
 /// Converts columns-constants to full columns ("materializes" them).
 Block materializeBlock(const Block & block);

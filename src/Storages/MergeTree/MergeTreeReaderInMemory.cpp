@@ -1,5 +1,6 @@
 #include <Storages/MergeTree/MergeTreeReaderInMemory.h>
 #include <Storages/MergeTree/MergeTreeDataPartInMemory.h>
+#include <Interpreters/getColumnFromBlock.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/NestedUtils.h>
 #include <Columns/ColumnArray.h>

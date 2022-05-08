@@ -88,9 +88,9 @@ from numbers(100000); -- { serverError 241; }" > /dev/null 2>&1
 
 # fails
 echo "Should throw 1"
-execute_insert --testmode
+execute_insert
 echo "Should throw 2"
-execute_insert --testmode --min_insert_block_size_rows=1 --min_insert_block_size_rows_for_materialized_views=$((1<<20))
+execute_insert --min_insert_block_size_rows=1 --min_insert_block_size_rows_for_materialized_views=$((1<<20))
 
 # passes
 echo "Should pass 1"

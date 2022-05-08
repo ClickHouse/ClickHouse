@@ -256,20 +256,19 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     {
         String msg;
         if (is_extended_storage_def)
-            msg += "With extended storage definition syntax storage " + args.engine_name + " requires ";
+            msg += fmt::format("With extended storage definition syntax storage {} requires ", args.engine_name);
         else
-            msg += "Storage " + args.engine_name + " requires ";
+            msg += fmt::format("ORDER BY or PRIMARY KEY clause is missing. "
+                               "Consider using extended storage definition syntax with ORDER BY or PRIMARY KEY clause. "
+                               "With deprecated old syntax (highly not recommended) storage {} requires ", args.engine_name);
 
-        if (max_num_params)
-        {
-            if (min_num_params == max_num_params)
-                msg += toString(min_num_params) + " parameters: ";
-            else
-                msg += toString(min_num_params) + " to " + toString(max_num_params) + " parameters: ";
-            msg += needed_params;
-        }
-        else
+        if (max_num_params == 0)
             msg += "no parameters";
+        if (min_num_params == max_num_params)
+            msg += fmt::format("{} parameters: {}", min_num_params, needed_params);
+        else
+            msg += fmt::format("{} to {} parameters: {}", min_num_params, max_num_params, needed_params);
+
 
         msg += getMergeTreeVerboseHelp(is_extended_storage_def);
 
@@ -308,7 +307,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     /// For Replicated.
     String zookeeper_path;
     String replica_name;
-    bool allow_renaming = true;
+    StorageReplicatedMergeTree::RenamingRestrictions renaming_restrictions = StorageReplicatedMergeTree::RenamingRestrictions::ALLOW_ANY;
 
     if (replicated)
     {
@@ -377,7 +376,6 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         bool allow_uuid_macro = is_on_cluster || is_replicated_database || args.query.attach;
 
         /// Unfold {database} and {table} macro on table creation, so table can be renamed.
-        /// We also unfold {uuid} macro, so path will not be broken after moving table from Atomic to Ordinary database.
         if (!args.attach)
         {
             if (is_replicated_database && !is_extended_storage_def)
@@ -387,12 +385,13 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             /// NOTE: it's not recursive
             info.expand_special_macros_only = true;
             info.table_id = args.table_id;
-            if (!allow_uuid_macro)
-                info.table_id.uuid = UUIDHelpers::Nil;
+            /// Avoid unfolding {uuid} macro on this step.
+            /// We did unfold it in previous versions to make moving table from Atomic to Ordinary database work correctly,
+            /// but now it's not allowed (and it was the only reason to unfold {uuid} macro).
+            info.table_id.uuid = UUIDHelpers::Nil;
             zookeeper_path = args.getContext()->getMacros()->expand(zookeeper_path, info);
 
             info.level = 0;
-            info.table_id.uuid = UUIDHelpers::Nil;
             replica_name = args.getContext()->getMacros()->expand(replica_name, info);
         }
 
@@ -420,8 +419,11 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         /// We do not allow renaming table with these macros in metadata, because zookeeper_path will be broken after RENAME TABLE.
         /// NOTE: it may happen if table was created by older version of ClickHouse (< 20.10) and macros was not unfolded on table creation
         /// or if one of these macros is recursively expanded from some other macro.
+        /// Also do not allow to move table from Atomic to Ordinary database if there's {uuid} macro
         if (info.expanded_database || info.expanded_table)
-            allow_renaming = false;
+            renaming_restrictions = StorageReplicatedMergeTree::RenamingRestrictions::DO_NOT_ALLOW;
+        else if (info.expanded_uuid)
+            renaming_restrictions = StorageReplicatedMergeTree::RenamingRestrictions::ALLOW_PRESERVING_UUID;
     }
 
     /// This merging param maybe used as part of sorting key
@@ -670,7 +672,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         throw Exception("Wrong number of engine arguments.", ErrorCodes::BAD_ARGUMENTS);
 
     if (replicated)
-        return StorageReplicatedMergeTree::create(
+        return std::make_shared<StorageReplicatedMergeTree>(
             zookeeper_path,
             replica_name,
             args.attach,
@@ -682,9 +684,9 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             merging_params,
             std::move(storage_settings),
             args.has_force_restore_data_flag,
-            allow_renaming);
+            renaming_restrictions);
     else
-        return StorageMergeTree::create(
+        return std::make_shared<StorageMergeTree>(
             args.table_id,
             args.relative_data_path,
             metadata,
