@@ -71,7 +71,6 @@ Checks: '*,
 
     -openmp-*,
 
-    -misc-definitions-in-headers,
     -misc-new-delete-overloads,
     -misc-no-recursion,
     -misc-non-copyable-objects,
