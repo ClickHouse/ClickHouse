@@ -1,5 +1,5 @@
-#include <signal.h>
-#include <setjmp.h>
+#include <csignal>
+#include <csetjmp>
 #include <unistd.h>
 
 #ifdef __linux__

@@ -1,5 +1,5 @@
 #include <string>
-#include <string.h>
+#include <cstring>
 
 #include <Poco/UTF8Encoding.h>
 #include <Poco/NumberParser.h>
