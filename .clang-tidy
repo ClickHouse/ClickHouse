@@ -36,7 +36,6 @@ Checks: '*,
     -fuchsia-*,
 
     -google-build-using-namespace,
-    -google-global-names-in-headers,
     -google-readability-braces-around-statements,
     -google-readability-function-size,
     -google-readability-namespace-comments,
