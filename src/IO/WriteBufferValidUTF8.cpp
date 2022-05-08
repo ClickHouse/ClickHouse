@@ -16,17 +16,7 @@ namespace DB
 #ifdef __aarch64__
 bool only_ascii_in_vector(uint8x16_t input)
 {   
-    uint8x16_t and_result = vandq_s8(input, vdupq_n_u8(0x80));
-    uint64_t mask_lo = vgetq_lane_u64(and_result, 0);
-    uint64_t mask_hi = vgetq_lane_u64(and_result, 1);
-    uint32_t result = 0;
-    if (mask_lo) {
-      return false;
-    }
-    if (mask_hi) {
-      return false;
-    }
-    return true;
+    return !vmaxvq_u8(vandq_s8(input, vdupq_n_u8(0x80)));
 }
 #endif
 
