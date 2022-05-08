@@ -1,3 +1,4 @@
+#ifdef ENABLE_FAISS
 #include <Storages/MergeTree/MergeTreeIndexFaiss.h>
 
 #include <Core/Field.h>
@@ -377,3 +378,5 @@ void FaissIndexValidator(const IndexDescription & /* index */, bool /* attach */
 {}
 
 }
+
+#endif // ENABLE_FAISS

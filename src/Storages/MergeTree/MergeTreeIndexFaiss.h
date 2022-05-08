@@ -1,5 +1,7 @@
 #pragma once
 
+#ifdef ENABLE_FAISS
+
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/CommonANNIndexes.h>
 
@@ -105,3 +107,5 @@ private:
 };
 
 }
+
+#endif // ENABLE_FAISS

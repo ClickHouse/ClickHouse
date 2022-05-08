@@ -102,8 +102,10 @@ MergeTreeIndexFactory::MergeTreeIndexFactory()
     registerCreator("hypothesis", hypothesisIndexCreator);
     registerValidator("hypothesis", hypothesisIndexValidator);
 
+#ifdef ENABLE_FAISS
     registerCreator("faiss", FaissIndexCreator);
     registerValidator("faiss", FaissIndexValidator);
+#endif
 }
 
 MergeTreeIndexFactory & MergeTreeIndexFactory::instance()
