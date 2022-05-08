@@ -61,6 +61,10 @@ struct StorageSnapshot
     /// Get columns with types according to options only for requested names.
     NamesAndTypesList getColumnsByNames(const GetColumnsOptions & options, const Names & names) const;
 
+    /// Get column with type according to options for requested name.
+    std::optional<NameAndTypePair> tryGetColumn(const GetColumnsOptions & options, const String & column_name) const;
+    NameAndTypePair getColumn(const GetColumnsOptions & options, const String & column_name) const;
+
     /// Block with ordinary + materialized + aliases + virtuals + subcolumns.
     Block getSampleBlockForColumns(const Names & column_names) const;
 

@@ -7,14 +7,17 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 ${CLICKHOUSE_CLIENT} --multiquery --query "
 drop table if exists aliases_lazyness;
 create table aliases_lazyness (x UInt32, y ALIAS sleepEachRow(0.1)) Engine=MergeTree ORDER BY x;
-insert into aliases_lazyness(x) select * from numbers(40) settings max_block_size=1;
+insert into aliases_lazyness(x) select * from numbers(100) settings max_block_size=1;
 "
 
 # In very old ClickHouse versions alias column was calculated for every row.
-# If it works this way, the query will take at least 0.1 * 40 = 4 seconds.
-# If the issue does not exist, the query should take slightly more than 0.1 seconds.
-# The exact time is not guaranteed, so we check in a loop that at least once 
-# the query will process in less than one second, that proves that the behaviour is not like it was long time ago.
+# If it works this way, the query will take at least 0.1 * 100 = 10 seconds.
+# If the issue does not exist, the query should call sleepEachRow() "only" 4 times:
+# - from MergeTreeData::getQueryProcessingStageWithAggregateProjection() -> MergeTreeWhereOptimizer -> getBlockWithConstants()
+# - from MergeTreeWhereOptimizer -> getBlockWithConstants()
+# - ReadFromMergeTree::selectRangesToRead() -> getBlockWithConstants()
+# - Pipeline
+${CLICKHOUSE_CLIENT} --profile-events-delay-ms=-1 --print-profile-events --query "SELECT x, y FROM aliases_lazyness WHERE x = 1 FORMAT Null" |& grep -o -e "SleepFunctionMicroseconds.*" -e "SleepFunctionCalls.*"
 
 i=0 retries=300
 while [[ $i -lt $retries ]]; do
@@ -26,3 +29,5 @@ ${CLICKHOUSE_CLIENT} --multiquery --query "
 drop table aliases_lazyness;
 SELECT 'Ok';
 "
+
+${CLICKHOUSE_CLIENT} --query "drop table aliases_lazyness"

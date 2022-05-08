@@ -4,16 +4,19 @@
 #include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage.h>
 
-#include <base/shared_ptr_helper.h>
-
 
 namespace DB
 {
 
-class StorageView final : public shared_ptr_helper<StorageView>, public IStorage
+class StorageView final : public IStorage
 {
-    friend struct shared_ptr_helper<StorageView>;
 public:
+    StorageView(
+        const StorageID & table_id_,
+        const ASTCreateQuery & query,
+        const ColumnsDescription & columns_,
+        const String & comment);
+
     std::string getName() const override { return "View"; }
     bool isView() const override { return true; }
 
@@ -47,13 +50,6 @@ public:
 
     static void replaceWithSubquery(ASTSelectQuery & outer_query, ASTPtr view_query, ASTPtr & view_name);
     static ASTPtr restoreViewName(ASTSelectQuery & select_query, const ASTPtr & view_name);
-
-protected:
-    StorageView(
-        const StorageID & table_id_,
-        const ASTCreateQuery & query,
-        const ColumnsDescription & columns_,
-        const String & comment);
 };
 
 }
