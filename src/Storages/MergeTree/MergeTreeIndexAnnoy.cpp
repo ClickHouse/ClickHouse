@@ -170,7 +170,7 @@ void MergeTreeIndexAggregatorAnnoy::update(const Block & block, size_t * pos, si
 
 
 MergeTreeIndexConditionAnnoy::MergeTreeIndexConditionAnnoy(
-    const IndexDescription & index,
+    const IndexDescription & /*index*/,
     const SelectQueryInfo & query,
     ContextPtr context)
     : condition(query, context)
@@ -185,7 +185,7 @@ bool MergeTreeIndexConditionAnnoy::mayBeTrueOnGranule(MergeTreeIndexGranulePtr i
 
     assert(condition.getMetric() == "L2Distance");
     assert(condition.getSpaceDim() == annoy->getSpaceDim());
-    std::vector<float> target_vec = condition.getTargetVec();
+    std::vector<float> target_vec = condition.getTargetVector();
     float max_distance = condition.getComparisonDistance();
 
     std::vector<int32_t> items;
