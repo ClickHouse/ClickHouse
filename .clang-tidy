@@ -12,7 +12,6 @@ Checks: '*,
     -bugprone-lambda-function-name,
     -bugprone-narrowing-conversions,
     -bugprone-not-null-terminated-result,
-    -bugprone-unhandled-exception-at-new,
     -bugprone-unhandled-self-assignment,
 
     -cert-dcl16-c,
