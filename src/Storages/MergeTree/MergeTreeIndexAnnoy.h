@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Storates/MergeTree/CommonCondition.h>
+#include <Storages/MergeTree/CommonCondition.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/KeyCondition.h>
@@ -25,7 +25,7 @@ namespace Annoy
         AnnoyIndexSerialize(const int dim) : Base::AnnoyIndex(dim) {}
         void serialize(WriteBuffer& ostr) const;
         void deserialize(ReadBuffer& istr);
-        float gedSpaceDim() const;
+        float getSpaceDim() const;
     };
 }
 
@@ -86,7 +86,7 @@ public:
     ~MergeTreeIndexConditionAnnoy() override = default;
 
 private:
-    CommonCondition condition;
+    Condition::CommonCondition condition;
 };
 
 
