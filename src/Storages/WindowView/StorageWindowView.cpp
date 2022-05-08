@@ -1207,32 +1207,30 @@ private:
 
 BlockIO StorageWindowView::populate()
 {
-    if (is_time_column_func_now)
-        throw Exception(
-            ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_WINDOW_VIEW, "POPULATE is not supported when using function now() as the time column");
-
     QueryPipelineBuilder pipeline;
 
     InterpreterSelectQuery interpreter_fetch{select_query, getContext(), SelectQueryOptions(QueryProcessingStage::FetchColumns)};
     pipeline = interpreter_fetch.buildQueryPipeline();
 
-    SortDescription order_descr;
-    order_descr.emplace_back(timestamp_column_name);
-
-    pipeline.addSimpleTransform(
-        [&](const Block & header)
-        {
-            return std::make_shared<MergeSortingTransform>(
-                header,
-                order_descr,
-                getContext()->getSettingsRef().max_block_size,
-                0 /*LIMIT*/,
-                getContext()->getSettingsRef().max_bytes_before_remerge_sort,
-                getContext()->getSettingsRef().remerge_sort_lowered_memory_bytes_ratio,
-                getContext()->getSettingsRef().max_bytes_before_external_sort,
-                getContext()->getTemporaryVolume(),
-                getContext()->getSettingsRef().min_free_disk_space_for_temporary_data);
-        });
+    if (!is_time_column_func_now)
+    {
+        SortDescription order_descr;
+        order_descr.emplace_back(timestamp_column_name);
+        pipeline.addSimpleTransform(
+            [&](const Block & header)
+            {
+                return std::make_shared<MergeSortingTransform>(
+                    header,
+                    order_descr,
+                    getContext()->getSettingsRef().max_block_size,
+                    0 /*LIMIT*/,
+                    getContext()->getSettingsRef().max_bytes_before_remerge_sort,
+                    getContext()->getSettingsRef().remerge_sort_lowered_memory_bytes_ratio,
+                    getContext()->getSettingsRef().max_bytes_before_external_sort,
+                    getContext()->getTemporaryVolume(),
+                    getContext()->getSettingsRef().min_free_disk_space_for_temporary_data);
+            });
+    }
 
     auto sink = std::make_shared<PushingToWindowViewSink>(interpreter_fetch.getSampleBlock(), *this, nullptr, getContext());
 
