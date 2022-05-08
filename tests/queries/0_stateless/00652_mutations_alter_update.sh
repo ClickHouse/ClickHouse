@@ -10,6 +10,9 @@ ${CLICKHOUSE_CLIENT} --query="CREATE TABLE alter_update \
     (d Date, key UInt32, value1 String, value2 UInt64, materialized_value String MATERIALIZED concat('materialized_', toString(value2 + 7))) \
     ENGINE MergeTree ORDER BY key PARTITION BY toYYYYMM(d)"
 
+${CLICKHOUSE_CLIENT} --query="CREATE TABLE alter_update_repl \
+    (d Date, key UInt32, value1 String, value2 UInt64, materialized_value String MATERIALIZED concat('materialized_', toString(value2 + 7))) \
+    ENGINE ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/alter_update_repl', '1') ORDER BY key PARTITION BY toYYYYMM(d)"
 
 ${CLICKHOUSE_CLIENT} --query="SELECT '*** Test expected failures ***'"
 
@@ -123,5 +126,44 @@ ${CLICKHOUSE_CLIENT} --query="SELECT value2, materialized_value FROM alter_updat
 
 ${CLICKHOUSE_CLIENT} --query="ALTER TABLE alter_update DROP PARTITION 200001"
 
+${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS materialized_primary_key"
 
+${CLICKHOUSE_CLIENT} --query="SELECT '*** Test materialized primary key or partitioning key columns cannot be updated even with SETTINGS update_allow_materialized_columns=1 ***'"
+
+${CLICKHOUSE_CLIENT} --query="CREATE TABLE materialized_primary_key \
+    (d Date, key UInt32 MATERIALIZED toUInt32(d), pt UInt32 MATERIALIZED toYYYYMM(d), value2 UInt64) \
+    ENGINE MergeTree ORDER BY key PARTITION BY pt"
+
+${CLICKHOUSE_CLIENT} --query="ALTER TABLE materialized_primary_key UPDATE key = 1 WHERE 1 SETTINGS update_allow_materialized_columns=1" 2>/dev/null || echo "Updating primary key should fail"
+
+${CLICKHOUSE_CLIENT} --query="ALTER TABLE materialized_primary_key UPDATE pt = 1 WHERE 1 SETTINGS update_allow_materialized_columns=1" 2>/dev/null || echo "Updating partition key should fail"
+
+${CLICKHOUSE_CLIENT} --query="SELECT '*** Test materialized column can be updated with SETTINGS update_allow_materialized_columns=1 ***'"
+
+${CLICKHOUSE_CLIENT} --query="INSERT INTO alter_update VALUES \
+    ('2000-01-01', 123, 'abc', 10), \
+    ('2000-01-01', 234, 'cde', 20)"
+
+${CLICKHOUSE_CLIENT} --query="ALTER TABLE alter_update \
+    UPDATE materialized_value = concat('updated_', toString(value2)) WHERE 1 \
+    SETTINGS update_allow_materialized_columns=1" --mutations_sync=1 # per-query configuration
+
+${CLICKHOUSE_CLIENT} --query="SELECT '** alter_update rows[setting from query]:'"
+${CLICKHOUSE_CLIENT} --query="SELECT key, materialized_value FROM alter_update"
+${CLICKHOUSE_CLIENT} --query="ALTER TABLE alter_update UPDATE materialized_value = concat('updated_', toString(key)) WHERE 1" \
+    --update_allow_materialized_columns=1 --mutations_sync=1
+
+${CLICKHOUSE_CLIENT} --query="SELECT '** alter_update rows[setting from session]:'"
+${CLICKHOUSE_CLIENT} --query="SELECT key, materialized_value FROM alter_update"
+${CLICKHOUSE_CLIENT} --query="INSERT INTO alter_update_repl SELECT * FROM alter_update"
+${CLICKHOUSE_CLIENT} --query="SYSTEM SYNC REPLICA alter_update_repl"
+
+${CLICKHOUSE_CLIENT} --query="SELECT '** alter_update_repl rows:'"
+${CLICKHOUSE_CLIENT} --query="ALTER TABLE alter_update_repl UPDATE materialized_value = concat('repl_updated_', toString(key)) WHERE 1 SETTINGS update_allow_materialized_columns=1" \
+    --update_allow_materialized_columns=1 --mutations_sync=1
+${CLICKHOUSE_CLIENT} --query="SYSTEM SYNC REPLICA alter_update_repl"
+${CLICKHOUSE_CLIENT} --query="SELECT key, materialized_value FROM alter_update_repl"
+
+${CLICKHOUSE_CLIENT} --query="DROP TABLE materialized_primary_key"
 ${CLICKHOUSE_CLIENT} --query="DROP TABLE alter_update"
+${CLICKHOUSE_CLIENT} --query="DROP TABLE alter_update_repl"

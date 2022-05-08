@@ -1710,6 +1710,8 @@ MutationCommands ReplicatedMergeTreeQueue::getMutationCommands(
         ++end;
 
     MutationCommands commands;
+    if (begin != end)
+        commands.settings_changes = begin->second->entry->commands.settings_changes;
     for (auto it = begin; it != end; ++it)
         commands.insert(commands.end(), it->second->entry->commands.begin(), it->second->entry->commands.end());
 

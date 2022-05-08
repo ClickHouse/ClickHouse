@@ -22,9 +22,14 @@ One query can contain several commands separated by commas.
 
 The synchronicity of the query processing is defined by the [mutations_sync](../../../operations/settings/settings.md#mutations_sync) setting. By default, it is asynchronous.
 
+Columns that are part of a table's primary key or partition key may not be updated.
+[MATERIALIZED](../../statements/create/table.md#materialized) columns may be updated only if the
+[update_allow_materialized_columns](../../../operations/settings/settings.md#update_allow_materialized_columns) setting is 1.
+
 **See also**
 
 -   [Mutations](../../../sql-reference/statements/alter/index.md#mutations)
 -   [Synchronicity of ALTER Queries](../../../sql-reference/statements/alter/index.md#synchronicity-of-alter-queries)
 -   [mutations_sync](../../../operations/settings/settings.md#mutations_sync) setting
+-   [update_allow_materialized_columns](../../../operations/settings/settings.md#update_allow_materialized_columns) setting
 

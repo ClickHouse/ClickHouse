@@ -8,7 +8,9 @@
 #include <Parsers/ASTAlterQuery.h>
 #include <Storages/IStorage_fwd.h>
 #include <DataTypes/IDataType.h>
+#include <Common/SettingsChanges.h>
 #include <Core/Names.h>
+#include <Interpreters/Context_fwd.h>
 
 namespace DB
 {
@@ -72,10 +74,16 @@ struct MutationCommand
 class MutationCommands : public std::vector<MutationCommand>
 {
 public:
+    /// For ALTER TABLE ... UPDATE ... SETTINGS ...
+    SettingsChanges settings_changes;
+
     std::shared_ptr<ASTExpressionList> ast() const;
 
     void writeText(WriteBuffer & out) const;
     void readText(ReadBuffer & in);
+    void writeSettings(WriteBuffer & out) const;
+    void readSettings(ReadBuffer & in);
+    void readSettingsFromQuery(ContextPtr context, const ASTPtr & settings_ast);
 };
 
 using MutationCommandsConstPtr = std::shared_ptr<MutationCommands>;

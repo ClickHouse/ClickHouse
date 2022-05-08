@@ -1495,6 +1495,7 @@ bool MutateTask::prepare()
     context_for_reading->setSetting("force_index_by_date", false);
     context_for_reading->setSetting("force_primary_key", false);
 
+    ctx->commands_for_part.settings_changes = ctx->commands->settings_changes;
     for (const auto & command : *ctx->commands)
     {
         if (command.partition == nullptr || ctx->source_part->info.partition_id == ctx->data->getPartitionIDFromQuery(
@@ -1516,6 +1517,8 @@ bool MutateTask::prepare()
         LOG_TRACE(ctx->log, "Mutating part {} to mutation version {}", ctx->source_part->name, ctx->future_part->part_info.mutation);
     }
 
+    ctx->for_interpreter.settings_changes = ctx->commands->settings_changes;
+    ctx->for_file_renames.settings_changes = ctx->commands->settings_changes;
     MutationHelpers::splitMutationCommands(ctx->source_part, ctx->commands_for_part, ctx->for_interpreter, ctx->for_file_renames);
 
     ctx->stage_progress = std::make_unique<MergeStageProgress>(1.0);

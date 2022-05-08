@@ -334,7 +334,9 @@ static bool materializeTTLRecalculateOnly(const StoragePtr & storage)
 
 static void validateUpdateColumns(
     const StoragePtr & storage,
-    const StorageMetadataPtr & metadata_snapshot, const NameSet & updated_columns,
+    const StorageMetadataPtr & metadata_snapshot,
+    const Settings & settings,
+    const NameSet & updated_columns,
     const std::unordered_map<String, Names> & column_to_affected_materialized)
 {
     NameSet key_columns = getKeyColumns(storage, metadata_snapshot);
@@ -363,11 +365,17 @@ static void validateUpdateColumns(
         {
             for (const auto & col : metadata_snapshot->getColumns().getMaterialized())
             {
+                if (settings.update_allow_materialized_columns)
+                {
+                    found = true;
+                    break;
+                }
                 if (col.name == column_name)
                     throw Exception("Cannot UPDATE materialized column " + backQuote(column_name), ErrorCodes::CANNOT_UPDATE_COLUMN);
             }
 
-            throw Exception("There is no column " + backQuote(column_name) + " in table", ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
+            if (!found)
+                throw Exception("There is no column " + backQuote(column_name) + " in table", ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
         }
 
         if (key_columns.contains(column_name))
@@ -445,6 +453,9 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
         }
     }
 
+    Settings settings = context->getSettings();
+    settings.applyChanges(commands.settings_changes);
+
     /// We need to know which columns affect which MATERIALIZED columns, data skipping indices
     /// and projections to recalculate them if dependencies are updated.
     std::unordered_map<String, Names> column_to_affected_materialized;
@@ -464,7 +475,7 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
             }
         }
 
-        validateUpdateColumns(storage, metadata_snapshot, updated_columns, column_to_affected_materialized);
+        validateUpdateColumns(storage, metadata_snapshot, settings, updated_columns, column_to_affected_materialized);
     }
 
     dependencies = getAllColumnDependencies(metadata_snapshot, updated_columns);

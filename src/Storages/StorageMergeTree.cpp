@@ -1052,6 +1052,7 @@ std::shared_ptr<MergeMutateSelectedEntry> StorageMergeTree::selectPartsToMutate(
 
             size_t commands_size = 0;
             MutationCommands commands_for_size_validation;
+            commands_for_size_validation.settings_changes = it->second.commands.settings_changes;
             for (const auto & command : it->second.commands)
             {
                 if (command.type != MutationCommand::Type::DROP_COLUMN
@@ -1094,6 +1095,7 @@ std::shared_ptr<MergeMutateSelectedEntry> StorageMergeTree::selectPartsToMutate(
 
             current_ast_elements += commands_size;
             commands->insert(commands->end(), it->second.commands.begin(), it->second.commands.end());
+            commands->settings_changes = it->second.commands.settings_changes;
             last_mutation_to_apply = it;
         }
 

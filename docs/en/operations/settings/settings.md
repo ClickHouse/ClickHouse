@@ -2241,6 +2241,10 @@ Default value: `0`.
 -   [Synchronicity of ALTER Queries](../../sql-reference/statements/alter/index.md#synchronicity-of-alter-queries)
 -   [Mutations](../../sql-reference/statements/alter/index.md#mutations)
 
+## update_allow_materialized_columns {#update_allow_materialized_columns}
+
+Allows `ALTER TABLE ... UPDATE` queries to modify [MATERIALIZED](../../sql-reference/statements/create/table.md#materialized) columns.
+
 ## ttl_only_drop_parts {#ttl_only_drop_parts}
 
 Enables or disables complete dropping of data parts where all rows are expired in [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) tables.

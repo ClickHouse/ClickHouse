@@ -30,6 +30,11 @@ void ReplicatedMergeTreeMutationEntry::writeText(WriteBuffer & out) const
     out << "alter version: ";
     out << alter_version;
 
+    if (!commands.settings_changes.empty())
+    {
+        out << "\nsettings: ";
+        commands.writeSettings(out);
+    }
 }
 
 void ReplicatedMergeTreeMutationEntry::readText(ReadBuffer & in)
@@ -58,6 +63,8 @@ void ReplicatedMergeTreeMutationEntry::readText(ReadBuffer & in)
     commands.readText(in);
     if (checkString("\nalter version: ", in))
         in >> alter_version;
+    if (checkString("\nsettings: ", in))
+        commands.readSettings(in);
 }
 
 String ReplicatedMergeTreeMutationEntry::toString() const

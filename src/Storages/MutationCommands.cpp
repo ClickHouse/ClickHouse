@@ -1,15 +1,20 @@
 #include <Storages/MutationCommands.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
+#include <Interpreters/Context.h>
 #include <Parsers/formatAST.h>
+#include <Parsers/formatSettingName.h>
 #include <Parsers/ParserAlterQuery.h>
+#include <Parsers/ParserSetQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ASTAssignment.h>
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Common/typeid_cast.h>
 #include <Common/quoteString.h>
+#include <Common/FieldVisitorToString.h>
 #include <Core/Defines.h>
 #include <DataTypes/DataTypeFactory.h>
 
@@ -179,6 +184,48 @@ void MutationCommands::readText(ReadBuffer & in)
         if (!command)
             throw Exception("Unknown mutation command type: " + DB::toString<int>(command_ast->type), ErrorCodes::UNKNOWN_MUTATION_COMMAND);
         push_back(std::move(*command));
+    }
+}
+
+void MutationCommands::writeSettings(WriteBuffer & out) const
+{
+    for (auto it = settings_changes.begin(); it != settings_changes.end(); ++it)
+    {
+        if (it != settings_changes.begin())
+            out << ", ";
+        formatSettingName(it->name, out);
+        out << " = ";
+        writeEscapedString(applyVisitor(FieldVisitorToString(), it->value), out);
+    }
+}
+
+void MutationCommands::readSettings(ReadBuffer & in)
+{
+    String settings_str;
+    readEscapedString(settings_str, in);
+    ParserSetQuery p_settings(true);
+    ASTPtr ast = parseQuery(
+        p_settings, settings_str.data(), settings_str.data() + settings_str.length(), "mutation settings", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
+    settings_changes = std::move(ast->as<ASTSetQuery>()->changes);
+}
+
+void MutationCommands::readSettingsFromQuery(ContextPtr context, const ASTPtr & settings_ast)
+{
+    static std::list<String> settings_to_persist_in_mutation_entries({
+        "update_allow_materialized_columns",
+    });
+    const ASTSetQuery * query_settings_ast = settings_ast ? settings_ast->as<const ASTSetQuery>() : nullptr;
+    Settings settings_copy = context->getSettings();
+    for (const auto & setting_name : settings_to_persist_in_mutation_entries)
+    {
+        Field value;
+        /// Settings in the query takes precedence over settings in the session
+        if ((query_settings_ast && query_settings_ast->changes.tryGet(setting_name, value)) || context->getSettingsRef().tryGet(setting_name, value))
+        {
+            settings_copy.resetToDefault(setting_name);
+            if (context->getSettingsRef().get(setting_name) != settings_copy.get(setting_name))
+                settings_changes.push_back({setting_name, value});
+        }
     }
 }
 

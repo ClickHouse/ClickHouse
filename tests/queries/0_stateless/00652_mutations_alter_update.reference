@@ -22,3 +22,16 @@ Updating column that MATERIALIZED key column depends on should fail
 27	materialized_34
 30	materialized_37
 40	materialized_47
+*** Test materialized primary key or partitioning key columns cannot be updated even with SETTINGS update_allow_materialized_columns=1 ***
+Updating primary key should fail
+Updating partition key should fail
+*** Test materialized column can be updated with SETTINGS update_allow_materialized_columns=1 ***
+** alter_update rows[setting from query]:
+123	updated_10
+234	updated_20
+** alter_update rows[setting from session]:
+123	updated_123
+234	updated_234
+** alter_update_repl rows:
+123	repl_updated_123
+234	repl_updated_234

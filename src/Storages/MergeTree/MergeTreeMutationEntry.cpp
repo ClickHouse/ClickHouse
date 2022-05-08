@@ -73,6 +73,12 @@ MergeTreeMutationEntry::MergeTreeMutationEntry(MutationCommands commands_, DiskP
             TransactionID::write(tid, *out);
             *out << "\n";
         }
+        if (!commands.settings_changes.empty())
+        {
+            *out << "settings: ";
+            commands.writeSettings(*out);
+            *out << "\n";
+        }
         out->sync();
     }
     catch (...)
@@ -133,12 +139,8 @@ MergeTreeMutationEntry::MergeTreeMutationEntry(DiskPtr disk_, const String & pat
     commands.readText(*buf);
     *buf >> "\n";
 
-    if (buf->eof())
-    {
-        tid = Tx::PrehistoricTID;
-        csn = Tx::PrehistoricCSN;
-    }
-    else
+    char next_char;
+    if (buf->peek(next_char) && next_char == 't')
     {
         *buf >> "tid: ";
         tid = TransactionID::read(*buf);
@@ -148,6 +150,18 @@ MergeTreeMutationEntry::MergeTreeMutationEntry(DiskPtr disk_, const String & pat
         {
             *buf >> "csn: " >> csn >> "\n";
         }
+    }
+    else
+    {
+        tid = Tx::PrehistoricTID;
+        csn = Tx::PrehistoricCSN;
+    }
+
+    if (buf->peek(next_char) && next_char == 's')
+    {
+        *buf >> "settings: ";
+        commands.readSettings(*buf);
+        *buf >> "\n";
     }
 
     assertEOF(*buf);
