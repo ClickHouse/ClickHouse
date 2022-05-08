@@ -15,7 +15,6 @@ Checks: '*,
     -bugprone-unhandled-self-assignment,
 
     -cert-dcl16-c,
-    -cert-dcl51-cpp,
     -cert-dcl58-cpp,
     -cert-err58-cpp,
     -cert-msc32-c,
