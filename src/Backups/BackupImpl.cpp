@@ -141,23 +141,20 @@ BackupImpl::BackupImpl(
     const ContextPtr & context_,
     const std::optional<UUID> & backup_uuid_,
     bool is_internal_backup_,
-    const String & coordination_zk_path_)
+    const std::shared_ptr<IBackupCoordination> & coordination_)
     : backup_name(backup_name_)
     , archive_params(archive_params_)
     , use_archives(!archive_params.archive_name.empty())
     , open_mode(OpenMode::WRITE)
     , writer(std::move(writer_))
     , is_internal_backup(is_internal_backup_)
+    , coordination(coordination_ ? coordination_ : std::make_shared<BackupCoordinationLocal>())
     , context(context_)
     , uuid(backup_uuid_)
     , version(CURRENT_BACKUP_VERSION)
     , base_backup_info(base_backup_info_)
+    , log(&Poco::Logger::get("Backup"))
 {
-    if (coordination_zk_path_.empty())
-        coordination = std::make_shared<BackupCoordinationLocal>();
-    else
-        coordination = std::make_shared<BackupCoordinationDistributed>(coordination_zk_path_, [&] { return context->getZooKeeper(); });
-
     open();
 }
 
@@ -224,14 +221,21 @@ void BackupImpl::close()
     std::lock_guard lock{mutex};
 
     if (!is_internal_backup && writing_finalized)
+    {
+        LOG_TRACE(log, "Finalizing backup {}", backup_name);
         writeBackupMetadata();
+        LOG_INFO(log, "Finalized backup {}", backup_name);
+    }
 
     archive_readers.clear();
     for (auto & archive_writer : archive_writers)
         archive_writer = {"", nullptr};
 
     if (!is_internal_backup && writer && !writing_finalized)
+    {
+        LOG_INFO(log, "Removing all files of backup {} after failure", backup_name);
         removeAllFilesAfterFailure();
+    }
 
     if (!is_internal_backup)
         coordination->drop();

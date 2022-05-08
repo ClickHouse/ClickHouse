@@ -26,7 +26,7 @@ public:
 
     /// Waits until a BACKUP or RESTORE query started by start() is finished.
     /// The function returns immediately if the operation is already finished.
-    void wait(const UUID & backup_or_restore_uuid);
+    void wait(const UUID & backup_or_restore_uuid, bool rethrow_exception = true);
 
     /// Information about executing a BACKUP or RESTORE query started by calling start().
     struct Info
@@ -60,6 +60,7 @@ private:
     std::unordered_map<UUID, Info> infos;
     std::condition_variable status_changed;
     mutable std::mutex infos_mutex;
+    const Poco::Logger * log;
 };
 
 }

@@ -95,6 +95,32 @@ def test_replicated_table():
     )
 
 
+def test_empty_replicated_table():
+    node1.query(
+        "CREATE TABLE tbl ON CLUSTER 'cluster' ("
+        "x UInt8, y String"
+        ") ENGINE=ReplicatedMergeTree('/clickhouse/tables/tbl/', '{replica}')"
+        "ORDER BY x"
+    )
+
+    backup_name = new_backup_name()
+
+    # Make backup on node 1.
+    node1.query(
+        f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name} SETTINGS replica_num=1"
+    )
+
+    # Drop table on both nodes.
+    node1.query(f"DROP TABLE tbl ON CLUSTER 'cluster' NO DELAY")
+
+    # Restore from backup on node2.
+    node1.query(f"RESTORE TABLE tbl ON CLUSTER 'cluster' FROM {backup_name}")
+    node1.query("SYSTEM SYNC REPLICA ON CLUSTER 'cluster' tbl")
+
+    assert node1.query("SELECT * FROM tbl") == ""
+    assert node2.query("SELECT * FROM tbl") == ""
+
+
 def test_replicated_database():
     node1.query(
         "CREATE DATABASE mydb ON CLUSTER 'cluster' ENGINE=Replicated('/clickhouse/path/','{shard}','{replica}')"
@@ -226,3 +252,74 @@ def test_table_with_parts_in_queue_considered_non_empty():
     assert expected_error in node1.query_and_get_error(
         f"RESTORE DATABASE mydb FROM {backup_name}"
     )
+
+
+def test_replicated_table_with_not_synced_insert():
+    node1.query(
+        "CREATE TABLE tbl ON CLUSTER 'cluster' ("
+        "x UInt32"
+        ") ENGINE=ReplicatedMergeTree('/clickhouse/tables/tbl/', '{replica}')"
+        "ORDER BY x"
+    )
+
+    node1.query("INSERT INTO tbl VALUES (111)")
+    node2.query("INSERT INTO tbl VALUES (222)")
+
+    node1.query("SYSTEM SYNC REPLICA ON CLUSTER 'cluster' tbl")
+    node1.query("SYSTEM STOP REPLICATED SENDS ON CLUSTER 'cluster' tbl")
+
+    node1.query("INSERT INTO tbl VALUES (333)")
+    node2.query("INSERT INTO tbl VALUES (444)")
+
+    backup_name = new_backup_name()
+
+    # Make backup.
+    node1.query(
+        f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name} SETTINGS allow_storing_multiple_replicas=true"
+    )
+
+    # Drop table on both nodes.
+    node1.query(f"DROP TABLE tbl ON CLUSTER 'cluster' NO DELAY")
+
+    # Restore from backup.
+    node1.query(f"RESTORE TABLE tbl ON CLUSTER 'cluster' FROM {backup_name}")
+    node1.query("SYSTEM SYNC REPLICA ON CLUSTER 'cluster' tbl")
+
+    assert node1.query("SELECT * FROM tbl ORDER BY x") == TSV([111, 222, 333, 444])
+    assert node2.query("SELECT * FROM tbl ORDER BY x") == TSV([111, 222, 333, 444])
+
+
+def test_replicated_table_with_not_synced_merge():
+    node1.query(
+        "CREATE TABLE tbl ON CLUSTER 'cluster' ("
+        "x UInt32"
+        ") ENGINE=ReplicatedMergeTree('/clickhouse/tables/tbl/', '{replica}')"
+        "ORDER BY x"
+    )
+
+    node1.query("SYSTEM STOP MERGES ON CLUSTER 'cluster' tbl")
+
+    node1.query("INSERT INTO tbl VALUES (111)")
+    node1.query("INSERT INTO tbl VALUES (222)")
+
+    node2.query("SYSTEM SYNC REPLICA tbl")
+
+    node2.query("SYSTEM START MERGES tbl")
+    node2.query("OPTIMIZE TABLE tbl FINAL")
+
+    backup_name = new_backup_name()
+
+    # Make backup.
+    node1.query(
+        f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name} SETTINGS allow_storing_multiple_replicas=true"
+    )
+
+    # Drop table on both nodes.
+    node1.query(f"DROP TABLE tbl ON CLUSTER 'cluster' NO DELAY")
+
+    # Restore from backup.
+    node1.query(f"RESTORE TABLE tbl ON CLUSTER 'cluster' FROM {backup_name}")
+    node1.query("SYSTEM SYNC REPLICA ON CLUSTER 'cluster' tbl")
+
+    assert node1.query("SELECT * FROM tbl ORDER BY x") == TSV([111, 222])
+    assert node2.query("SELECT * FROM tbl ORDER BY x") == TSV([111, 222])
