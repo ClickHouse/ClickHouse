@@ -1,7 +1,8 @@
 #pragma once
 
-#include <Storages/MergeTree/CommonCondition.h>
+
 #include <Storages/MergeTree/MergeTreeIndices.h>
+#include <Storages/MergeTree/MergeTreeIndicesANNCondition.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/KeyCondition.h>
 
@@ -86,7 +87,7 @@ public:
     ~MergeTreeIndexConditionAnnoy() override = default;
 
 private:
-    Condition::CommonCondition condition;
+    ANNCondition::ANNCondition condition;
 };
 
 
