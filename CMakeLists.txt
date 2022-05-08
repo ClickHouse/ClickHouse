@@ -192,8 +192,7 @@ endif ()
 # If compiler has support for -Wreserved-identifier. It is difficult to detect by clang version,
 # because there are two different branches of clang: clang and AppleClang.
 # (AppleClang is not supported by ClickHouse, but some developers have misfortune to use it).
-# Disabled on aarch64 because of errors when expanding macros from arm_neon.h
-if (HAS_RESERVED_IDENTIFIER AND NOT ARCH_AARCH64)
+if (HAS_RESERVED_IDENTIFIER)
     add_compile_definitions (HAS_RESERVED_IDENTIFIER)
 endif ()
 
