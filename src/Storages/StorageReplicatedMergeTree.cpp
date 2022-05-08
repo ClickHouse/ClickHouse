@@ -6156,7 +6156,7 @@ void StorageReplicatedMergeTree::clearOldPartsAndRemoveFromZK()
             if (!rollback_parts.empty())
                 rollbackDeletingParts(rollback_parts);
         }
-        else
+        else  /// all parts was successfuly removed
         {
             finally_remove_parts = parts_to_delete_only_from_filesystem;
         }
@@ -6227,13 +6227,12 @@ void StorageReplicatedMergeTree::clearOldPartsAndRemoveFromZK()
             if (!rollback_parts.empty())
                 rollbackDeletingParts(rollback_parts);
         }
-        else
+        else /// all parts was successfuly removed
         {
-            finally_remove_parts = parts_to_delete_only_from_filesystem;
+            finally_remove_parts = parts_to_remove_from_filesystem;
         }
 
         removePartsFinally(finally_remove_parts);
-
 
         LOG_DEBUG(log, "Removed {} old parts", finally_remove_parts.size());
     }
