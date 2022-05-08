@@ -137,7 +137,7 @@ inline ReturnType convertDecimalsImpl(const typename FromDataType::FieldType & v
 
 template <typename FromDataType, typename ToDataType>
 requires (IsDataTypeDecimal<FromDataType> && IsDataTypeDecimal<ToDataType>)
-inline typename ToDataType::FieldType convertDecimals(const typename FromDataType::FieldType & value, UInt32 scale_from, UInt32 scale_to)
+inline ALWAYS_INLINE typename ToDataType::FieldType convertDecimals(const typename FromDataType::FieldType & value, UInt32 scale_from, UInt32 scale_to)
 {
     using ToFieldType = typename ToDataType::FieldType;
     ToFieldType result;
