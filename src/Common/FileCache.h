@@ -174,7 +174,7 @@ private:
             : file_segment(std::move(other.file_segment))
             , queue_iterator(other.queue_iterator) {}
 
-        std::pair<Key, size_t> getKeyAndOffset() const { return {file_segment->key(), file_segment->range().left}; }
+        std::pair<Key, size_t> getKeyAndOffset() const { return std::make_pair(file_segment->key(), file_segment->range().left); }
     };
 
     using FileSegmentsByOffset = std::map<size_t, FileSegmentCell>;

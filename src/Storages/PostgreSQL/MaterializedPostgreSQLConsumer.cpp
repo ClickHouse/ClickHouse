@@ -827,7 +827,7 @@ bool MaterializedPostgreSQLConsumer::consume(std::vector<std::pair<Int32, String
             /// reaload and reading from replication stream are done in the same thread, no lsn will be skipped
             /// between these two events.
             if (lsn.empty())
-                skipped_tables.emplace_back(std::pair(relation_id, relation_id_to_name[relation_id]));
+                skipped_tables.emplace_back(std::make_pair(relation_id, relation_id_to_name[relation_id]));
         }
     }
 

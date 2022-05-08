@@ -161,7 +161,7 @@ ComparisonGraph::CompareResult ComparisonGraph::pathToCompareResult(Path path, b
 
 std::optional<ComparisonGraph::Path> ComparisonGraph::findPath(size_t start, size_t finish) const
 {
-    const auto it = dists.find({start, finish});
+    const auto it = dists.find(std::make_pair(start, finish));
     if (it == std::end(dists))
         return {};
 
@@ -417,7 +417,7 @@ std::optional<ASTPtr> ComparisonGraph::getEqualConst(const ASTPtr & ast) const
 std::optional<std::pair<Field, bool>> ComparisonGraph::getConstUpperBound(const ASTPtr & ast) const
 {
     if (const auto * literal = ast->as<ASTLiteral>())
-        return std::pair(literal->value, false);
+        return std::make_pair(literal->value, false);
 
     const auto it = graph.ast_hash_to_component.find(ast->getTreeHash());
     if (it == std::end(graph.ast_hash_to_component))
@@ -428,13 +428,13 @@ std::optional<std::pair<Field, bool>> ComparisonGraph::getConstUpperBound(const 
     if (from == -1)
         return  std::nullopt;
 
-    return std::pair(graph.vertices[from].getConstant()->as<ASTLiteral>()->value, dists.at({from, to}) == Path::GREATER);
+    return std::make_pair(graph.vertices[from].getConstant()->as<ASTLiteral>()->value, dists.at({from, to}) == Path::GREATER);
 }
 
 std::optional<std::pair<Field, bool>> ComparisonGraph::getConstLowerBound(const ASTPtr & ast) const
 {
     if (const auto * literal = ast->as<ASTLiteral>())
-        return std::pair(literal->value, false);
+        return std::make_pair(literal->value, false);
 
     const auto it = graph.ast_hash_to_component.find(ast->getTreeHash());
     if (it == std::end(graph.ast_hash_to_component))
@@ -445,7 +445,7 @@ std::optional<std::pair<Field, bool>> ComparisonGraph::getConstLowerBound(const 
     if (to == -1)
         return std::nullopt;
 
-    return std::pair(graph.vertices[to].getConstant()->as<ASTLiteral>()->value, dists.at({from, to}) == Path::GREATER);
+    return std::make_pair(graph.vertices[to].getConstant()->as<ASTLiteral>()->value, dists.at({from, to}) == Path::GREATER);
 }
 
 void ComparisonGraph::dfsOrder(const Graph & asts_graph, size_t v, std::vector<bool> & visited, std::vector<size_t> & order)
@@ -597,7 +597,7 @@ std::map<std::pair<size_t, size_t>, ComparisonGraph::Path> ComparisonGraph::buil
     for (size_t v = 0; v < n; ++v)
         for (size_t u = 0; u < n; ++u)
             if (results[v][u] != inf)
-                path[std::pair(v, u)] = (results[v][u] == -1 ? Path::GREATER : Path::GREATER_OR_EQUAL);
+                path[std::make_pair(v, u)] = (results[v][u] == -1 ? Path::GREATER : Path::GREATER_OR_EQUAL);
 
     return path;
 }

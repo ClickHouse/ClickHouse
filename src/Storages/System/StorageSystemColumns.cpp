@@ -110,7 +110,7 @@ protected:
             IStorage::ColumnSizeByName column_sizes;
 
             {
-                StoragePtr storage = storages.at({database_name, table_name});
+                StoragePtr storage = storages.at(std::make_pair(database_name, table_name));
                 TableLockHolder table_lock;
 
                 try

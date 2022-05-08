@@ -10,7 +10,7 @@ void registerDataTypeDomainBool(DataTypeFactory & factory)
     factory.registerSimpleDataTypeCustom("Bool", []
     {
         auto type = DataTypeFactory::instance().get("UInt8");
-        return std::pair(type, std::make_unique<DataTypeCustomDesc>(
+        return std::make_pair(type, std::make_unique<DataTypeCustomDesc>(
                 std::make_unique<DataTypeCustomFixedName>("Bool"), std::make_unique<SerializationBool>(type->getDefaultSerialization())));
     });
 

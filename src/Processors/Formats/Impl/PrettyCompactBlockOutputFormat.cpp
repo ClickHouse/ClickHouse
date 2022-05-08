@@ -257,7 +257,7 @@ void PrettyCompactBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind po
 
 void registerOutputFormatPrettyCompact(FormatFactory & factory)
 {
-    for (const auto & [name, mono_block] : {std::pair("PrettyCompact", false), std::pair("PrettyCompactMonoBlock", true)})
+    for (const auto & [name, mono_block] : {std::make_pair("PrettyCompact", false), std::make_pair("PrettyCompactMonoBlock", true)})
     {
         factory.registerOutputFormat(name, [mono_block = mono_block](
             WriteBuffer & buf,

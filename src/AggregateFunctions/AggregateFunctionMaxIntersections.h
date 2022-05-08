@@ -97,10 +97,10 @@ public:
         PointType right = assert_cast<const ColumnVector<PointType> &>(*columns[1]).getData()[row_num];
 
         if (!isNaN(left))
-            this->data(place).value.push_back(std::pair(left, Int64(1)), arena);
+            this->data(place).value.push_back(std::make_pair(left, Int64(1)), arena);
 
         if (!isNaN(right))
-            this->data(place).value.push_back(std::pair(right, Int64(-1)), arena);
+            this->data(place).value.push_back(std::make_pair(right, Int64(-1)), arena);
     }
 
     void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override

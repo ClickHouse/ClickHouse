@@ -170,7 +170,7 @@ public:
             thread_id = thread_id,
             state = state,
             func = std::forward<Function>(func),
-            args = std::tuple(std::forward<Args>(args)...)]() mutable /// mutable is needed to destroy capture
+            args = std::make_tuple(std::forward<Args>(args)...)]() mutable /// mutable is needed to destroy capture
         {
             auto event = std::move(state);
             SCOPE_EXIT(event->set());

@@ -2230,7 +2230,7 @@ std::optional<std::pair<Int64, int>> ReplicatedMergeTreeMergePredicate::getDesir
     if (current_version >= max_version)
         return {};
 
-    return std::pair(max_version, alter_version);
+    return std::make_pair(max_version, alter_version);
 }
 
 

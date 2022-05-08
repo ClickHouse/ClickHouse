@@ -451,7 +451,7 @@ ColumnWithTypeAndDimensions createTypeFromNode(const Node * node)
         auto tuple_names = extractVector<0>(tuple_elements);
         auto tuple_columns = extractVector<1>(tuple_elements);
 
-        return std::tuple(std::move(tuple_names), std::move(tuple_columns));
+        return std::make_tuple(std::move(tuple_names), std::move(tuple_columns));
     };
 
     if (node->kind == Node::SCALAR)
@@ -612,7 +612,7 @@ std::pair<ColumnPtr, DataTypePtr> unflattenTuple(
     }
 
     auto [column, type, _] = createTypeFromNode(tree.getRoot());
-    return {std::move(column), std::move(type)};
+    return std::make_pair(std::move(column), std::move(type));
 }
 
 static void addConstantToWithClause(const ASTPtr & query, const String & column_name, const DataTypePtr & data_type)

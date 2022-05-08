@@ -156,8 +156,7 @@ static std::tuple<String, String> tryExtractTableNameFromDDL(const String & ddl)
 {
     String table_name;
     String database_name;
-    if (ddl.empty())
-        return {database_name, table_name};
+    if (ddl.empty()) return std::make_tuple(database_name, table_name);
 
     bool parse_failed = false;
     Tokens tokens(ddl.data(), ddl.data() + ddl.size());
@@ -205,7 +204,7 @@ static std::tuple<String, String> tryExtractTableNameFromDDL(const String & ddl)
             table_name = table_id.table_name;
         }
     }
-    return {database_name, table_name};
+    return std::make_tuple(database_name, table_name);
 }
 
 MaterializedMySQLSyncThread::MaterializedMySQLSyncThread(

@@ -144,7 +144,7 @@ protected:
     auto getPoolExtendedStates() const
     {
         std::lock_guard lock(pool_states_mutex);
-        return std::tuple(shared_pool_states, nested_pools, last_error_decrease_time);
+        return std::make_tuple(shared_pool_states, nested_pools, last_error_decrease_time);
     }
 
     NestedPools nested_pools;

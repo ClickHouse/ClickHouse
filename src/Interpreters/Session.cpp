@@ -110,7 +110,7 @@ public:
 
             /// Create a new session from current context.
             auto context = Context::createCopy(global_context);
-            it = sessions.insert({key, std::make_shared<NamedSessionData>(key, context, timeout, *this)}).first;
+            it = sessions.insert(std::make_pair(key, std::make_shared<NamedSessionData>(key, context, timeout, *this))).first;
             const auto & session = it->second;
 
             if (!thread.joinable())

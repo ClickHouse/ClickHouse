@@ -12,14 +12,14 @@ std::pair<Poco::Message::Priority, DB::LogsLevel> parseSyslogLevel(const int lev
     switch (level)
     {
         case LOG_EMERG: [[fallthrough]];
-        case LOG_ALERT:   return {Message::PRIO_FATAL, LogsLevel::error};
-        case LOG_CRIT:    return {Message::PRIO_CRITICAL, LogsLevel::error};
-        case LOG_ERR:     return {Message::PRIO_ERROR, LogsLevel::error};
-        case LOG_WARNING: return {Message::PRIO_WARNING, LogsLevel::warning};
-        case LOG_NOTICE:  return {Message::PRIO_NOTICE, LogsLevel::information};
-        case LOG_INFO:    return {Message::PRIO_INFORMATION, LogsLevel::information};
-        case LOG_DEBUG:   return {Message::PRIO_DEBUG, LogsLevel::debug};
+        case LOG_ALERT:   return std::make_pair(Message::PRIO_FATAL, LogsLevel::error);
+        case LOG_CRIT:    return std::make_pair(Message::PRIO_CRITICAL, LogsLevel::error);
+        case LOG_ERR:     return std::make_pair(Message::PRIO_ERROR, LogsLevel::error);
+        case LOG_WARNING: return std::make_pair(Message::PRIO_WARNING, LogsLevel::warning);
+        case LOG_NOTICE:  return std::make_pair(Message::PRIO_NOTICE, LogsLevel::information);
+        case LOG_INFO:    return std::make_pair(Message::PRIO_INFORMATION, LogsLevel::information);
+        case LOG_DEBUG:   return std::make_pair(Message::PRIO_DEBUG, LogsLevel::debug);
         default:
-            return {Message::PRIO_TRACE, LogsLevel::trace};
+            return std::make_pair(Message::PRIO_TRACE, LogsLevel::trace);
     }
 }

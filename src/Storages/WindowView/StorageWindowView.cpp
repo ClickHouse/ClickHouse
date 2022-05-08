@@ -543,7 +543,7 @@ std::pair<BlocksPtr, Block> StorageWindowView::getNewBlocks(UInt32 watermark)
             continue;
         new_blocks->push_back(std::move(block));
     }
-    return {new_blocks, header};
+    return std::make_pair(new_blocks, header);
 }
 
 inline void StorageWindowView::fire(UInt32 watermark)

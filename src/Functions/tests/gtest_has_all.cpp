@@ -10,7 +10,7 @@ auto uni_int_dist(int min, int max)
     std::random_device rd;
     std::mt19937 mt(rd());
     std::uniform_int_distribution<> dist(min, max);
-    return std::pair(dist, mt);
+    return std::make_pair(dist, mt);
 }
 
 template<class T>

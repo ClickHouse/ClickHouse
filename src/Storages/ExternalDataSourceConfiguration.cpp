@@ -148,7 +148,7 @@ std::optional<ExternalDataSourceInfo> getExternalDataSourceConfiguration(
                 auto arg_name = function_args[0]->as<ASTIdentifier>()->name();
                 if (function_args[1]->as<ASTFunction>())
                 {
-                    non_common_args.emplace_back(std::pair(arg_name, function_args[1]));
+                    non_common_args.emplace_back(std::make_pair(arg_name, function_args[1]));
                     continue;
                 }
 
@@ -177,11 +177,11 @@ std::optional<ExternalDataSourceInfo> getExternalDataSourceConfiguration(
                     else if (storage_settings.has(arg_name))
                         config_settings.emplace_back(arg_name, arg_value);
                     else
-                        non_common_args.emplace_back(std::pair(arg_name, arg_value_ast));
+                        non_common_args.emplace_back(std::make_pair(arg_name, arg_value_ast));
                 }
                 else
                 {
-                    non_common_args.emplace_back(std::pair(arg_name, arg_value_ast));
+                    non_common_args.emplace_back(std::make_pair(arg_name, arg_value_ast));
                 }
             }
             else
@@ -376,13 +376,13 @@ std::optional<URLBasedDataSourceConfig> getURLBasedDataSourceConfiguration(const
                 for (const auto & header : header_keys)
                 {
                     const auto header_prefix = config_prefix + ".headers." + header;
-                    configuration.headers.emplace_back(std::pair(config.getString(header_prefix + ".name"), config.getString(header_prefix + ".value")));
+                    configuration.headers.emplace_back(std::make_pair(config.getString(header_prefix + ".name"), config.getString(header_prefix + ".value")));
                 }
             }
             else
             {
                 auto value = config.getString(config_prefix + '.' + key);
-                non_common_args.emplace_back(std::pair(key, std::make_shared<ASTLiteral>(value)));
+                non_common_args.emplace_back(std::make_pair(key, std::make_shared<ASTLiteral>(value)));
             }
         }
 
@@ -411,7 +411,7 @@ std::optional<URLBasedDataSourceConfig> getURLBasedDataSourceConfiguration(const
                 else if (arg_name == "structure")
                     configuration.structure = arg_value.safeGet<String>();
                 else
-                    non_common_args.emplace_back(std::pair(arg_name, arg_value_ast));
+                    non_common_args.emplace_back(std::make_pair(arg_name, arg_value_ast));
             }
             else
             {

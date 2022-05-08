@@ -56,7 +56,7 @@ static std::pair<DataTypePtr, DataTypeCustomDescPtr> create(const ASTPtr & argum
     auto data_type = std::make_shared<DataTypeArray>(std::make_shared<DataTypeTuple>(nested_types, nested_names));
     auto custom_name = std::make_unique<DataTypeNestedCustomName>(nested_types, nested_names);
 
-    return {std::move(data_type), std::make_unique<DataTypeCustomDesc>(std::move(custom_name))};
+    return std::make_pair(std::move(data_type), std::make_unique<DataTypeCustomDesc>(std::move(custom_name)));
 }
 
 void registerDataTypeNested(DataTypeFactory & factory)

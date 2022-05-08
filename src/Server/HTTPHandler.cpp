@@ -1177,7 +1177,7 @@ HTTPRequestHandlerFactoryPtr createPredefinedHandlerFactory(IServer & server, co
         expression = expression.substr(6);
         auto regex = getCompiledRegex(expression);
         if (capturingNamedQueryParam(analyze_receive_params, regex))
-            headers_name_with_regex.emplace(std::pair(header_name, regex));
+            headers_name_with_regex.emplace(std::make_pair(header_name, regex));
     }
 
     std::shared_ptr<HandlingRuleHTTPHandlerFactory<PredefinedQueryHandler>> factory;

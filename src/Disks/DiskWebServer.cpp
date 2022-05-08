@@ -73,11 +73,11 @@ void DiskWebServer::initialize(const String & uri_path) const
             }
 
             file_path = file_path.substr(url.size());
-            files.emplace(std::pair(file_path, file_data));
+            files.emplace(std::make_pair(file_path, file_data));
             LOG_TRACE(&Poco::Logger::get("DiskWeb"), "Adding file: {}, size: {}", file_path, file_data.size);
         }
 
-        files.emplace(std::pair(dir_name, FileData({ .type = FileType::Directory })));
+        files.emplace(std::make_pair(dir_name, FileData({ .type = FileType::Directory })));
     }
     catch (Exception & e)
     {

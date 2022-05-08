@@ -290,7 +290,7 @@ static std::tuple<NamesAndTypesList, NamesAndTypesList, NamesAndTypesList, NameS
 
     const auto & primary_keys_names_and_types = getNames(*primary_keys, context, columns);
     const auto & non_nullable_primary_keys_names_and_types = modifyPrimaryKeysToNonNullable(primary_keys_names_and_types, columns);
-    return {non_nullable_primary_keys_names_and_types, getNames(*unique_keys, context, columns), getNames(*keys, context, columns), increment_columns};
+    return std::make_tuple(non_nullable_primary_keys_names_and_types, getNames(*unique_keys, context, columns), getNames(*keys, context, columns), increment_columns);
 }
 
 static String getUniqueColumnName(NamesAndTypesList columns_name_and_type, const String & prefix)

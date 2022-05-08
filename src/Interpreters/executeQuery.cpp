@@ -1052,7 +1052,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         throw;
     }
 
-    return {ast, std::move(res)};
+    return std::make_tuple(ast, std::move(res));
 }
 
 

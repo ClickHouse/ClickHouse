@@ -594,7 +594,7 @@ TEST_P(CodecTestPerformance, TranscodingWithDataType)
         double mean{};
 
         if (values.size() < 2)
-            return std::tuple(mean, double{});
+            return std::make_tuple(mean, double{});
 
         using ValueType = typename std::decay_t<decltype(values)>::value_type;
         std::vector<ValueType> tmp_v(std::begin(values), std::end(values));
@@ -618,7 +618,7 @@ TEST_P(CodecTestPerformance, TranscodingWithDataType)
         }
         std_dev = std::sqrt(std_dev / tmp_v.size());
 
-        return std::tuple(mean, std_dev);
+        return std::make_tuple(mean, std_dev);
     };
 
     std::cerr << codec_spec.codec_statement
