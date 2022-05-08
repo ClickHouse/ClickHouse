@@ -39,7 +39,7 @@ CI_CONFIG = {
             "with_coverage": False,
         },
         "binary_gcc": {
-            "compiler": "gcc-11",
+            "compiler": "gcc-12",
             "build_type": "",
             "sanitizer": "",
             "package_type": "binary",

@@ -300,6 +300,7 @@ if __name__ == "__main__":
             "clang-12-freebsd",
             "clang-13-freebsd",
             "gcc-11",
+            "gcc-12",
         ),
         default="clang-13",
         help="a compiler to use",

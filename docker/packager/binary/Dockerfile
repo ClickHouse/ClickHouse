@@ -1,6 +1,6 @@
 # rebuild in #33610
 # docker build -t clickhouse/binary-builder .
-FROM ubuntu:20.04
+FROM ubuntu:22.04
 
 # ARG for quick switch to a given ubuntu mirror
 ARG apt_archive="http://archive.ubuntu.com"
@@ -51,6 +51,8 @@ RUN apt-get update \
         rename \
         software-properties-common \
         tzdata \
+        gcc-12 \
+        g++-12 \
         --yes --no-install-recommends \
     && apt-get clean
 
@@ -88,12 +90,6 @@ RUN git clone --depth 1 https://github.com/tpoechtrager/cctools-port.git \
 
 # Download toolchain and SDK for Darwin
 RUN wget -nv https://github.com/phracker/MacOSX-SDKs/releases/download/11.3/MacOSX11.0.sdk.tar.xz
-
-# NOTE: Seems like gcc-11 is too new for ubuntu20 repository
-RUN add-apt-repository ppa:ubuntu-toolchain-r/test --yes \
-    && apt-get update \
-    && apt-get install gcc-11 g++-11 --yes \
-    && apt-get clean
 
 # Architecture of the image when BuildKit/buildx is used
 ARG TARGETARCH
