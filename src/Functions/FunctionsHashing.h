@@ -1383,6 +1383,7 @@ struct ImplMeowHash128
             UInt128 u128;
         };
         m128 = MeowHash(MeowDefaultSeed, len, s_dup);
+        delete[] s_dup;
         return u128;
     }
 
