@@ -1,5 +1,6 @@
 SELECT materialize(\'Привет, World\') AS s
 WHERE (s LIKE \'hell%\') OR (s ILIKE \'%привет%\') OR (s ILIKE \'world%\')
+SETTINGS optimize_or_like_chain = 0
 SELECT materialize(\'Привет, World\') AS s
 WHERE multiMatchAny(s, [\'^hell\', \'(?i)привет\', \'(?i)^world\']) OR false
 SETTINGS optimize_or_like_chain = 1
