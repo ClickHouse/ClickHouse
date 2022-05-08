@@ -2402,27 +2402,27 @@ MergeTreeDataPartType MergeTreeData::choosePartType(size_t bytes_uncompressed, s
 {
     const auto settings = getSettings();
     if (!canUsePolymorphicParts(*settings))
-        return MergeTreeDataPartType::WIDE;
+        return MergeTreeDataPartType::Wide;
 
     if (bytes_uncompressed < settings->min_bytes_for_compact_part || rows_count < settings->min_rows_for_compact_part)
-        return MergeTreeDataPartType::IN_MEMORY;
+        return MergeTreeDataPartType::InMemory;
 
     if (bytes_uncompressed < settings->min_bytes_for_wide_part || rows_count < settings->min_rows_for_wide_part)
-        return MergeTreeDataPartType::COMPACT;
+        return MergeTreeDataPartType::Compact;
 
-    return MergeTreeDataPartType::WIDE;
+    return MergeTreeDataPartType::Wide;
 }
 
 MergeTreeDataPartType MergeTreeData::choosePartTypeOnDisk(size_t bytes_uncompressed, size_t rows_count) const
 {
     const auto settings = getSettings();
     if (!canUsePolymorphicParts(*settings))
-        return MergeTreeDataPartType::WIDE;
+        return MergeTreeDataPartType::Wide;
 
     if (bytes_uncompressed < settings->min_bytes_for_wide_part || rows_count < settings->min_rows_for_wide_part)
-        return MergeTreeDataPartType::COMPACT;
+        return MergeTreeDataPartType::Compact;
 
-    return MergeTreeDataPartType::WIDE;
+    return MergeTreeDataPartType::Wide;
 }
 
 
@@ -2430,11 +2430,11 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::createPart(const String & name,
     MergeTreeDataPartType type, const MergeTreePartInfo & part_info,
     const VolumePtr & volume, const String & relative_path, const IMergeTreeDataPart * parent_part) const
 {
-    if (type == MergeTreeDataPartType::COMPACT)
+    if (type == MergeTreeDataPartType::Compact)
         return std::make_shared<MergeTreeDataPartCompact>(*this, name, part_info, volume, relative_path, parent_part);
-    else if (type == MergeTreeDataPartType::WIDE)
+    else if (type == MergeTreeDataPartType::Wide)
         return std::make_shared<MergeTreeDataPartWide>(*this, name, part_info, volume, relative_path, parent_part);
-    else if (type == MergeTreeDataPartType::IN_MEMORY)
+    else if (type == MergeTreeDataPartType::InMemory)
         return std::make_shared<MergeTreeDataPartInMemory>(*this, name, part_info, volume, relative_path, parent_part);
     else
         throw Exception("Unknown type of part " + relative_path, ErrorCodes::UNKNOWN_PART_TYPE);
@@ -2443,11 +2443,11 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::createPart(const String & name,
 static MergeTreeDataPartType getPartTypeFromMarkExtension(const String & mrk_ext)
 {
     if (mrk_ext == getNonAdaptiveMrkExtension())
-        return MergeTreeDataPartType::WIDE;
-    if (mrk_ext == getAdaptiveMrkExtension(MergeTreeDataPartType::WIDE))
-        return MergeTreeDataPartType::WIDE;
-    if (mrk_ext == getAdaptiveMrkExtension(MergeTreeDataPartType::COMPACT))
-        return MergeTreeDataPartType::COMPACT;
+        return MergeTreeDataPartType::Wide;
+    if (mrk_ext == getAdaptiveMrkExtension(MergeTreeDataPartType::Wide))
+        return MergeTreeDataPartType::Wide;
+    if (mrk_ext == getAdaptiveMrkExtension(MergeTreeDataPartType::Compact))
+        return MergeTreeDataPartType::Compact;
 
     throw Exception("Can't determine part type, because of unknown mark extension " + mrk_ext, ErrorCodes::UNKNOWN_PART_TYPE);
 }
@@ -2910,7 +2910,13 @@ void MergeTreeData::removePartsFromWorkingSet(
     removePartsFromWorkingSet(txn, remove, clear_without_timeout, lock);
 }
 
-MergeTreeData::DataPartsVector MergeTreeData::removePartsInRangeFromWorkingSet(
+
+void MergeTreeData::removePartsInRangeFromWorkingSet(MergeTreeTransaction * txn, const MergeTreePartInfo & drop_range, DataPartsLock & lock)
+{
+    removePartsInRangeFromWorkingSetAndGetPartsToRemoveFromZooKeeper(txn, drop_range, lock);
+}
+
+MergeTreeData::DataPartsVector MergeTreeData::removePartsInRangeFromWorkingSetAndGetPartsToRemoveFromZooKeeper(
         MergeTreeTransaction * txn, const MergeTreePartInfo & drop_range, DataPartsLock & lock)
 {
     DataPartsVector parts_to_remove;
@@ -2981,13 +2987,20 @@ MergeTreeData::DataPartsVector MergeTreeData::removePartsInRangeFromWorkingSet(
 
     bool clear_without_timeout = true;
     /// We a going to remove active parts covered by drop_range without timeout.
-    /// Let's also reset timeout for inactive parts.
+    /// Let's also reset timeout for inactive parts
+    /// and add these parts to list of parts to remove from ZooKeeper
     auto inactive_parts_to_remove_immediately = getDataPartsVectorInPartitionForInternalUsage(DataPartState::Outdated, drop_range.partition_id, &lock);
-    for (auto & part : inactive_parts_to_remove_immediately)
-        part->remove_time.store(0, std::memory_order_relaxed);
 
     /// FIXME refactor removePartsFromWorkingSet(...), do not remove parts twice
     removePartsFromWorkingSet(txn, parts_to_remove, clear_without_timeout, lock);
+
+    for (auto & part : inactive_parts_to_remove_immediately)
+    {
+        if (!drop_range.contains(part->info))
+            continue;
+        part->remove_time.store(0, std::memory_order_relaxed);
+        parts_to_remove.push_back(std::move(part));
+    }
 
     return parts_to_remove;
 }

@@ -161,7 +161,7 @@ std::unique_ptr<DiskS3Settings> getSettings(const Poco::Util::AbstractConfigurat
 
     return std::make_unique<DiskS3Settings>(
         getClient(config, config_prefix, context),
-        std::move(rw_settings),
+        rw_settings,
         config.getUInt64(config_prefix + ".min_bytes_for_seek", 1024 * 1024),
         config.getBool(config_prefix + ".send_metadata", false),
         config.getInt(config_prefix + ".thread_pool_size", 16),
