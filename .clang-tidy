@@ -72,7 +72,6 @@ Checks: '*,
     -openmp-*,
 
     -misc-no-recursion,
-    -misc-non-copyable-objects,
     -misc-non-private-member-variables-in-classes,
 
     -modernize-avoid-c-arrays,
