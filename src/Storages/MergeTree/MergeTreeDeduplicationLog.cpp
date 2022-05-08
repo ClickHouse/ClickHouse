@@ -216,13 +216,13 @@ std::pair<MergeTreePartInfo, bool> MergeTreeDeduplicationLog::addPart(const std:
     /// here then destroy whole object, check for null pointer from different
     /// threads and so on.
     if (deduplication_window == 0)
-        return {part_info, true};
+        return std::make_pair(part_info, true);
 
     /// If we already have this block let's deduplicate it
     if (deduplication_map.contains(block_id))
     {
         auto info = deduplication_map.get(block_id);
-        return {info, false};
+        return std::make_pair(info, false);
     }
 
     assert(current_writer != nullptr);
@@ -241,7 +241,7 @@ std::pair<MergeTreePartInfo, bool> MergeTreeDeduplicationLog::addPart(const std:
     /// Rotate and drop old logs if needed
     rotateAndDropIfNeeded();
 
-    return {part_info, true};
+    return std::make_pair(part_info, true);
 }
 
 void MergeTreeDeduplicationLog::dropPart(const MergeTreePartInfo & drop_part_info)

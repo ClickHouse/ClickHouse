@@ -177,14 +177,14 @@ static auto getNameRange(const ColumnsDescription::ColumnsContainer & columns, c
     for (; begin != columns.end(); ++begin)
     {
         if (begin->name == name_without_dot)
-            return std::pair(begin, std::next(begin));
+            return std::make_pair(begin, std::next(begin));
 
         if (startsWith(begin->name, name_with_dot))
             break;
     }
 
     if (begin == columns.end())
-        return std::pair(begin, begin);
+        return std::make_pair(begin, begin);
 
     auto end = std::next(begin);
     for (; end != columns.end(); ++end)
@@ -193,7 +193,7 @@ static auto getNameRange(const ColumnsDescription::ColumnsContainer & columns, c
             break;
     }
 
-    return std::pair(begin, end);
+    return std::make_pair(begin, end);
 }
 
 void ColumnsDescription::add(ColumnDescription column, const String & after_column, bool first)

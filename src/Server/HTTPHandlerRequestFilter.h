@@ -54,14 +54,14 @@ static inline auto methodsFilter(Poco::Util::AbstractConfiguration & config, con
 static inline auto getExpression(const std::string & expression)
 {
     if (!startsWith(expression, "regex:"))
-        return std::pair(expression, CompiledRegexPtr{});
+        return std::make_pair(expression, CompiledRegexPtr{});
 
     auto compiled_regex = std::make_shared<const re2::RE2>(expression.substr(6));
 
     if (!compiled_regex->ok())
         throw Exception("cannot compile re2: " + expression + " for http handling rule, error: " + compiled_regex->error() +
                         ". Look at https://github.com/google/re2/wiki/Syntax for reference.", ErrorCodes::CANNOT_COMPILE_REGEXP);
-    return std::pair(expression, compiled_regex);
+    return std::make_pair(expression, compiled_regex);
 }
 
 static inline auto urlFilter(Poco::Util::AbstractConfiguration & config, const std::string & config_path) /// NOLINT
@@ -85,7 +85,7 @@ static inline auto headersFilter(Poco::Util::AbstractConfiguration & config, con
     {
         const auto & expression = getExpression(config.getString(prefix + "." + header_name));
         checkExpression("", expression);    /// Check expression syntax is correct
-        headers_expression.emplace(std::pair(header_name, expression));
+        headers_expression.emplace(std::make_pair(header_name, expression));
     }
 
     return [headers_expression](const HTTPServerRequest & request)

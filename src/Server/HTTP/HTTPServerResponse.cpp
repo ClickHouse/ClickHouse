@@ -89,7 +89,7 @@ std::pair<std::shared_ptr<std::ostream>, std::shared_ptr<std::ostream>> HTTPServ
         beginWrite(*stream);
     }
 
-    return {header_stream, stream};
+    return std::make_pair(header_stream, stream);
 }
 
 void HTTPServerResponse::sendBuffer(const void * buffer, std::size_t length)

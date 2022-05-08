@@ -1536,7 +1536,7 @@ std::pair<bool, NameSet> IMergeTreeDataPart::canRemovePart() const
 {
     /// NOTE: It's needed for zero-copy replication
     if (force_keep_shared_data)
-        return {false, NameSet{}};
+        return std::make_pair(false, NameSet{});
 
     return storage.unlockSharedData(*this);
 }

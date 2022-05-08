@@ -163,7 +163,7 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
             auto [common_configuration, storage_specific_args, settings_changes] = named_collection.value();
 
             configuration.set(common_configuration);
-            configuration.addresses = {std::pair(configuration.host, configuration.port)};
+            configuration.addresses = {std::make_pair(configuration.host, configuration.port)};
             mysql_settings.applyChanges(settings_changes);
 
             if (!storage_specific_args.empty())
@@ -303,7 +303,7 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
             auto [common_configuration, storage_specific_args, _] = named_collection.value();
 
             configuration.set(common_configuration);
-            configuration.addresses = {std::pair(configuration.host, configuration.port)};
+            configuration.addresses = {std::make_pair(configuration.host, configuration.port)};
 
             for (const auto & [arg_name, arg_value] : storage_specific_args)
             {

@@ -225,7 +225,7 @@ int main(int argc, char ** argv)
         std::unordered_map<Key, Value, DefaultHash<Key>>::iterator it;
         for (size_t i = 0; i < n; ++i)
         {
-            it = map.insert({data[i], value}).first;
+            it = map.insert(std::make_pair(data[i], value)).first;
             INIT
         }
 
@@ -246,7 +246,7 @@ int main(int argc, char ** argv)
         map.set_empty_key(-1ULL);
         for (size_t i = 0; i < n; ++i)
         {
-            it = map.insert({data[i], value}).first;
+            it = map.insert(std::make_pair(data[i], value)).first;
             INIT
         }
 
@@ -266,7 +266,7 @@ int main(int argc, char ** argv)
         ::google::sparse_hash_map<Key, Value, DefaultHash<Key>>::iterator it;
         for (size_t i = 0; i < n; ++i)
         {
-            map.insert({data[i], value});
+            map.insert(std::make_pair(data[i], value));
             INIT
         }
 

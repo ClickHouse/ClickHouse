@@ -254,7 +254,7 @@ void registerDictionarySourceHTTP(DictionarySourceFactory & factory)
             {
                 const auto header_key = config.getString(headers_prefix + "." + key + ".name", "");
                 const auto header_value = config.getString(headers_prefix + "." + key + ".value", "");
-                header_entries.emplace_back(std::tuple(header_key, header_value));
+                header_entries.emplace_back(std::make_tuple(header_key, header_value));
             }
         }
 

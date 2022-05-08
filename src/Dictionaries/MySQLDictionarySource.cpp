@@ -73,7 +73,7 @@ void registerDictionarySourceMysql(DictionarySourceFactory & factory)
         {
             mysql_settings.applyChanges(named_collection->settings_changes);
             configuration.set(named_collection->configuration);
-            configuration.addresses = {std::pair(configuration.host, configuration.port)};
+            configuration.addresses = {std::make_pair(configuration.host, configuration.port)};
             const auto & settings = global_context->getSettingsRef();
             if (!mysql_settings.isChanged("connect_timeout"))
                 mysql_settings.connect_timeout = settings.external_storage_connect_timeout_sec;

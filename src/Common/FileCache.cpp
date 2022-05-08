@@ -509,7 +509,7 @@ bool LRUFileCache::tryReserve(
         return false;
 
     if (cell_for_reserve && !cell_for_reserve->queue_iterator)
-        cell_for_reserve->queue_iterator = queue.insert(queue.end(), {key_, offset_});
+        cell_for_reserve->queue_iterator = queue.insert(queue.end(), std::make_pair(key_, offset_));
 
     for (auto & cell : to_evict)
     {

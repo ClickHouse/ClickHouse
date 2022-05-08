@@ -122,9 +122,9 @@ public:
             throw Exception("No available data.", ErrorCodes::NO_AVAILABLE_DATA);
 
         if (fits_in_byte)
-            return {current_bucket_index - 1, locus.read(value_l)};
+            return std::make_pair(current_bucket_index - 1, locus.read(value_l));
         else
-            return {current_bucket_index - 1, locus.read(value_l, value_r)};
+            return std::make_pair(current_bucket_index - 1, locus.read(value_l, value_r));
     }
 
 private:

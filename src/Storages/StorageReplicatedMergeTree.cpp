@@ -7468,11 +7468,11 @@ void StorageReplicatedMergeTree::lockSharedData(const IMergeTreeDataPart & part,
 std::pair<bool, NameSet> StorageReplicatedMergeTree::unlockSharedData(const IMergeTreeDataPart & part) const
 {
     if (!part.volume || !part.isStoredOnDisk())
-        return {true, NameSet{}};
+        return std::make_pair(true, NameSet{});
 
     DiskPtr disk = part.volume->getDisk();
     if (!disk || !disk->supportZeroCopyReplication())
-        return {true, NameSet{}};
+        return std::make_pair(true, NameSet{});
 
     /// If part is temporary refcount file may be absent
     auto ref_count_path = fs::path(part.getFullRelativePath()) / IMergeTreeDataPart::FILE_FOR_REFERENCES_CHECK;
@@ -7480,12 +7480,12 @@ std::pair<bool, NameSet> StorageReplicatedMergeTree::unlockSharedData(const IMer
     {
         auto ref_count = disk->getRefCount(ref_count_path);
         if (ref_count > 0) /// Keep part shard info for frozen backups
-            return {false, NameSet{}};
+            return std::make_pair(false, NameSet{});
     }
     else
     {
         /// Temporary part with some absent file cannot be locked in shared mode
-        return {true, NameSet{}};
+        return std::make_pair(true, NameSet{});
     }
 
     return unlockSharedDataByID(part.getUniqueId(), getTableSharedID(), part.name, replica_name, disk, getZooKeeper(), *getSettings(), log,
@@ -7590,7 +7590,7 @@ std::pair<bool, NameSet> StorageReplicatedMergeTree::unlockSharedDataByID(
         }
     }
 
-    return {part_has_no_more_locks, files_not_to_remove};
+    return std::make_pair(part_has_no_more_locks, files_not_to_remove);
 }
 
 

@@ -136,7 +136,7 @@ StoragesInfoStream::StoragesInfoStream(const SelectQueryInfo & query_info, Conte
                     if (check_access_for_tables && !access->isGranted(AccessType::SHOW_TABLES, database_name, table_name))
                         continue;
 
-                    storages[{database_name, iterator->name()}] = storage;
+                    storages[std::make_pair(database_name, iterator->name())] = storage;
 
                     /// Add all combinations of flag 'active'.
                     for (UInt64 active : {0, 1})
@@ -201,7 +201,7 @@ StoragesInfo StoragesInfoStream::next()
                 info.need_inactive_parts = true;
         }
 
-        info.storage = storages.at({info.database, info.table});
+        info.storage = storages.at(std::make_pair(info.database, info.table));
 
         try
         {

@@ -229,7 +229,7 @@ static inline std::pair<llvm::Value *, llvm::Value *> nativeCastToCommon(llvm::I
     auto * cast_lhs_to_common = nativeCast(b, lhs_type, lhs, common);
     auto * cast_rhs_to_common = nativeCast(b, rhs_type, rhs, common);
 
-    return {cast_lhs_to_common, cast_rhs_to_common};
+    return std::make_pair(cast_lhs_to_common, cast_rhs_to_common);
 }
 
 static inline llvm::Constant * getColumnNativeValue(llvm::IRBuilderBase & builder, const DataTypePtr & column_type, const IColumn & column, size_t index)

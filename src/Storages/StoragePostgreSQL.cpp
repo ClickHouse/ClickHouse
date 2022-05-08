@@ -393,7 +393,7 @@ StoragePostgreSQLConfiguration StoragePostgreSQL::getConfiguration(ASTs engine_a
         auto [common_configuration, storage_specific_args, _] = named_collection.value();
 
         configuration.set(common_configuration);
-        configuration.addresses = {std::pair(configuration.host, configuration.port)};
+        configuration.addresses = {std::make_pair(configuration.host, configuration.port)};
 
         for (const auto & [arg_name, arg_value] : storage_specific_args)
         {

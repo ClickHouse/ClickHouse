@@ -87,7 +87,7 @@ size_t TLDListsHolder::parseAndAddTldList(const std::string & name, const std::s
 
     size_t tld_list_size = tld_list.size();
     std::lock_guard<std::mutex> lock(tld_lists_map_mutex);
-    tld_lists_map.insert({name, std::move(tld_list)});
+    tld_lists_map.insert(std::make_pair(name, std::move(tld_list)));
     return tld_list_size;
 }
 

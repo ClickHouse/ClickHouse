@@ -158,7 +158,7 @@ bool MergeTreeDataPartChecksums::readV2(ReadBuffer & in)
         }
         assertChar('\n', in);
 
-        files.insert(std::pair(name, sum));
+        files.insert(std::make_pair(name, sum));
     }
 
     return true;
