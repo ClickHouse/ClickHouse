@@ -189,7 +189,7 @@ auto instructionFailToString(InstructionFail fail)
 {
     switch (fail)
     {
-#define ret(x) return std::tuple(STDERR_FILENO, x, ARRAY_SIZE(x) - 1)
+#define ret(x) return std::make_tuple(STDERR_FILENO, x, ARRAY_SIZE(x) - 1)
         case InstructionFail::NONE:
             ret("NONE");
         case InstructionFail::SSE3:
