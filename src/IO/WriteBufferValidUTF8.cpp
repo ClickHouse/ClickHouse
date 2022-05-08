@@ -8,6 +8,9 @@
 
 #ifdef __aarch64__
     #include <arm_neon.h>
+    #ifdef HAS_RESERVED_IDENTIFIER
+        #pragma clang diagnostic ignored "-Wreserved-identifier"
+    #endif
 #endif
 
 namespace DB
@@ -16,7 +19,9 @@ namespace DB
 #ifdef __aarch64__
 bool only_ascii_in_vector(uint8x16_t input)
 {   
-    return !vmaxvq_u8(vandq_s8(input, vdupq_n_u8(0x80)));
+    uint8x16_t and_result = vandq_s8(input, vdupq_n_u8(0x80));
+    uint8x8_t or_result = vorr_u8(vget_low_u8(and_result), vget_high_u8(and_result));
+    return !vget_lane_u64(or_result, 0);
 }
 #endif
 
