@@ -5,7 +5,6 @@ Checks: '*,
 
     -android-*,
 
-    -bugprone-assert-side-effect,
     -bugprone-branch-clone,
     -bugprone-dynamic-static-initializers,
     -bugprone-easily-swappable-parameters,
