@@ -14,22 +14,19 @@ namespace DB
 {
 
 #ifdef __aarch64__
-uint32_t _mm_movemask_aarch64(uint8x16_t input)
+bool only_ascii_in_vector(uint8x16_t input)
 {   
-    //const int8_t __attribute__ ((aligned (16))) ucShift[] =
-    int8_t const ucShift[] =
-    {
-        -7, -6, -5, -4, -3, -2, -1, 0, -7, -6, -5, -4, -3, -2, -1, 0
-    };
-    int8x16_t vshift = vld1q_s8(ucShift);
-    uint8x16_t vmask = vandq_u8(input, vdupq_n_u8(0x80));    
-    vmask = vshlq_u8(vmask, vshift);
-
-    uint32_t result;
-    result = vaddv_u8(vget_low_u8(vmask));
-    result += (vaddv_u8(vget_high_u8(vmask)) << 8);
-    
-    return result;
+    uint8x16_t and_result = vandq_s8(input, vdupq_n_u8(0x80));
+    uint64_t mask_lo = vgetq_lane_u64(and_result, 0);
+    uint64_t mask_hi = vgetq_lane_u64(and_result, 1);
+    uint32_t result = 0;
+    if (mask_lo) {
+      return false;
+    }
+    if (mask_hi) {
+      return false;
+    }
+    return true;
 }
 #endif
 
@@ -106,7 +103,7 @@ void WriteBufferValidUTF8::nextImpl()
         static constexpr size_t SIMD_BYTES = 16;
         const char * simd_end = p + (pos - p) / SIMD_BYTES * SIMD_BYTES;
 
-        while (p < simd_end && !_mm_movemask_aarch64(vld1q_u8(reinterpret_cast<const unsigned char *>(p))))
+        while (p < simd_end && only_ascii_in_vector(vld1q_u8(reinterpret_cast<const unsigned char *>(p))))
             p += SIMD_BYTES;
         
         if (!(p < pos))
