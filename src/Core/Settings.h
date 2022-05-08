@@ -176,6 +176,8 @@ class IColumn;
     \
     M(Int64, network_zstd_compression_level, 1, "Allows you to select the level of ZSTD compression.", 0) \
     \
+    M(Int64, zstd_window_log_max, 0, "Allows you to select the max window log of ZSTD", 0) \
+    \
     M(UInt64, priority, 0, "Priority of the query. 1 - the highest, higher value - lower priority; 0 - do not use priorities.", 0) \
     M(Int64, os_thread_priority, 0, "If non zero - set corresponding 'nice' value for query processing threads. Can be used to adjust query priority for OS scheduler.", 0) \
     \

@@ -4,7 +4,7 @@
 #include <string>
 
 #include <Core/Defines.h>
-
+#include <Core/Settings.h>
 
 namespace DB
 {
@@ -46,6 +46,14 @@ std::string toContentEncodingName(CompressionMethod method);
   * path is arbitrary string that will be analyzed for file extension (gz, br...) that determines compression.
   */
 CompressionMethod chooseCompressionMethod(const std::string & path, const std::string & hint);
+
+std::unique_ptr<ReadBuffer> wrapReadBufferWithCompressionMethod(
+    std::unique_ptr<ReadBuffer> nested,
+    CompressionMethod method,
+    const Settings &settings,
+    size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
+    char * existing_memory = nullptr,
+    size_t alignment = 0);
 
 std::unique_ptr<ReadBuffer> wrapReadBufferWithCompressionMethod(
     std::unique_ptr<ReadBuffer> nested,

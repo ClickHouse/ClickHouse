@@ -349,7 +349,8 @@ namespace
                                         std::move(read_buffer_factory),
                                         threadPoolCallbackRunner(IOThreadPool::get()),
                                         download_threads),
-                                    chooseCompressionMethod(request_uri.getPath(), compression_method));
+                                    chooseCompressionMethod(request_uri.getPath(), compression_method),
+                                    settings);
                             }
                         }
                         catch (const Poco::Exception & e)
@@ -380,7 +381,8 @@ namespace
                             delay_initialization,
                             /* use_external_buffer */ false,
                             /* skip_url_not_found_error */ skip_url_not_found_error),
-                        chooseCompressionMethod(request_uri.getPath(), compression_method));
+                        chooseCompressionMethod(request_uri.getPath(), compression_method),
+                        settings);
                 }
                 catch (...)
                 {

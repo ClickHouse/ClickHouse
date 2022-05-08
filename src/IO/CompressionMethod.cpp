@@ -126,6 +126,16 @@ static std::unique_ptr<CompressedReadBufferWrapper> createCompressedWrapper(
 }
 
 std::unique_ptr<ReadBuffer> wrapReadBufferWithCompressionMethod(
+    std::unique_ptr<ReadBuffer> nested, CompressionMethod method, const Settings &settings, size_t buf_size, char * existing_memory, size_t alignment)
+{
+    if (method == CompressionMethod::None)
+        return nested;
+    else if (method == CompressionMethod::Zstd)
+        return std::make_unique<ZstdInflatingReadBuffer>(std::move(nested), buf_size, existing_memory, alignment, settings.zstd_window_log_max);
+    return createCompressedWrapper(std::move(nested), method, buf_size, existing_memory, alignment);
+}
+
+std::unique_ptr<ReadBuffer> wrapReadBufferWithCompressionMethod(
     std::unique_ptr<ReadBuffer> nested, CompressionMethod method, size_t buf_size, char * existing_memory, size_t alignment)
 {
     if (method == CompressionMethod::None)
