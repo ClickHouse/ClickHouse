@@ -93,7 +93,6 @@ Checks: '*,
 
     -portability-simd-intrinsics,
 
-    -readability-convert-member-functions-to-static,
     -readability-braces-around-statements,
     -readability-else-after-return,
     -readability-function-cognitive-complexity,
