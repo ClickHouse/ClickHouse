@@ -198,7 +198,7 @@ public:
         /// HashJoin always used for DictJoin
         return dictionary_reader || join_algorithm == JoinAlgorithm::HASH || join_algorithm == JoinAlgorithm::PARALLEL_HASH;
     }
-
+    bool isParallelHash() const { return join_algorithm == JoinAlgorithm::PARALLEL_HASH; }
     bool forceNullableRight() const { return join_use_nulls && isLeftOrFull(table_join.kind); }
     bool forceNullableLeft() const { return join_use_nulls && isRightOrFull(table_join.kind); }
     size_t defaultMaxBytes() const { return default_max_bytes; }

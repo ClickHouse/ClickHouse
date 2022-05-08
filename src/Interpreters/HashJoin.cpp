@@ -757,11 +757,15 @@ void HashJoin::setTotals(const Block & block)
     {
         auto merged_block = concatenateBlocks(data->prepare_merged_blocks);
         addJoinedBlock(merged_block, true);
+        data->prepare_merged_blocks.clear();
     }
 }
 
 bool HashJoin::tryMergeBlocks(Block & source_block, bool check_limits[[maybe_unused]])
 {
+    if (table_join->isParallelHash())
+        return false;
+
     if (data->exceed_memory)
         return false;
 
