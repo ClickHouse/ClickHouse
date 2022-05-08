@@ -1436,22 +1436,23 @@ BlockIO InterpreterCreateQuery::fillTableIfNeeded(const ASTCreateQuery & create)
 {
     /// If the query is a CREATE SELECT, insert the data into the table.
     if (create.select && !create.attach
-        && !create.is_ordinary_view && !create.is_live_view && !create.is_window_view
+        && !create.is_ordinary_view && !create.is_live_view
         && (!create.is_materialized_view || create.is_populate))
     {
+        if (create.is_window_view)
+        {
+            auto table = DatabaseCatalog::instance().getTable({create.getDatabase(), create.getTable(), create.uuid}, getContext());
+            if (auto * window_view = typeid_cast<StorageWindowView *>(table.get()))
+                return window_view->populate();
+            return {};
+        }
+
         auto insert = std::make_shared<ASTInsertQuery>();
         insert->table_id = {create.getDatabase(), create.getTable(), create.uuid};
         insert->select = create.select->clone();
 
         return InterpreterInsertQuery(insert, getContext(),
             getContext()->getSettingsRef().insert_allow_materialized_columns).execute();
-    }
-    else if (create.select && !create.attach && create.is_window_view && create.is_populate)
-    {
-        auto table = DatabaseCatalog::instance().getTable({create.getDatabase(), create.getTable(), create.uuid}, getContext());
-        if (auto * window_view = dynamic_cast<StorageWindowView *>(table.get()))
-            return window_view->populate();
-        return {};
     }
 
     return {};
