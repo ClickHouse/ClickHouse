@@ -1,11 +1,12 @@
 ---
-toc_priority: 61
-toc_title: For Beginners
+sidebar_position: 61
+sidebar_label: Getting Started
+description: Prerequisites and an overview of how to build ClickHouse
 ---
 
-# The Beginner ClickHouse Developer Instruction {#the-beginner-clickhouse-developer-instruction}
+# Getting Started Guide for Building ClickHouse
 
-Building of ClickHouse is supported on Linux, FreeBSD and Mac OS X.
+The building of ClickHouse is supported on Linux, FreeBSD and Mac OS X.
 
 If you use Windows, you need to create a virtual machine with Ubuntu. To start working with a virtual machine please install VirtualBox. You can download Ubuntu from the website: https://www.ubuntu.com/#download. Please create a virtual machine from the downloaded image (you should reserve at least 4GB of RAM for it). To run a command-line terminal in Ubuntu, please locate a program containing the word “terminal” in its name (gnome-terminal, konsole etc.) or just press Ctrl+Alt+T.
 

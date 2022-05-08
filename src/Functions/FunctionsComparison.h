@@ -1055,7 +1055,7 @@ private:
 
     ColumnPtr executeGeneric(const ColumnWithTypeAndName & c0, const ColumnWithTypeAndName & c1) const
     {
-        DataTypePtr common_type = getLeastSupertype({c0.type, c1.type});
+        DataTypePtr common_type = getLeastSupertype(DataTypes{c0.type, c1.type});
 
         ColumnPtr c0_converted = castColumn(c0, common_type);
         ColumnPtr c1_converted = castColumn(c1, common_type);
@@ -1228,7 +1228,7 @@ public:
             // Comparing Date/Date32 and DateTime64 requires implicit conversion,
             if (date_and_datetime && (isDateOrDate32(left_type) || isDateOrDate32(right_type)))
             {
-                DataTypePtr common_type = getLeastSupertype({left_type, right_type});
+                DataTypePtr common_type = getLeastSupertype(DataTypes{left_type, right_type});
                 ColumnPtr c0_converted = castColumn(col_with_type_and_name_left, common_type);
                 ColumnPtr c1_converted = castColumn(col_with_type_and_name_right, common_type);
                 return executeDecimal({c0_converted, common_type, "left"}, {c1_converted, common_type, "right"});
@@ -1258,7 +1258,7 @@ public:
         }
         else if (date_and_datetime)
         {
-            DataTypePtr common_type = getLeastSupertype({left_type, right_type});
+            DataTypePtr common_type = getLeastSupertype(DataTypes{left_type, right_type});
             ColumnPtr c0_converted = castColumn(col_with_type_and_name_left, common_type);
             ColumnPtr c1_converted = castColumn(col_with_type_and_name_right, common_type);
             if (!((res = executeNumLeftType<UInt32>(c0_converted.get(), c1_converted.get()))

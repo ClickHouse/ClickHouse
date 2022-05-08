@@ -974,4 +974,3 @@ bn_mul8x_mont_neon:
 #endif
 #endif
 #endif  // !OPENSSL_NO_ASM
-.section	.note.GNU-stack,"",%progbits

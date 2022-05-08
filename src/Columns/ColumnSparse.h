@@ -37,7 +37,8 @@ public:
         return Base::create(values_->assumeMutable(), offsets_->assumeMutable(), size_);
     }
 
-    template <typename TColumnPtr, typename = typename std::enable_if<IsMutableColumns<TColumnPtr>::value>::type>
+    template <typename TColumnPtr>
+    requires IsMutableColumns<TColumnPtr>::value
     static MutablePtr create(TColumnPtr && values_, TColumnPtr && offsets_, size_t size_)
     {
         return Base::create(std::forward<TColumnPtr>(values_), std::forward<TColumnPtr>(offsets_), size_);
@@ -48,7 +49,8 @@ public:
         return Base::create(values_->assumeMutable());
     }
 
-    template <typename TColumnPtr, typename = typename std::enable_if<IsMutableColumns<TColumnPtr>::value>::type>
+    template <typename TColumnPtr>
+    requires IsMutableColumns<TColumnPtr>::value
     static MutablePtr create(TColumnPtr && values_)
     {
         return Base::create(std::forward<TColumnPtr>(values_));
