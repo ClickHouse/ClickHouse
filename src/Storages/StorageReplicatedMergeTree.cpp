@@ -6164,7 +6164,7 @@ void StorageReplicatedMergeTree::clearOldPartsAndRemoveFromZK()
         }
         catch (...)
         {
-            tryLogCurrentException(log, "Failed to remove some parts from memory, or write info about the to part log");
+            tryLogCurrentException(log, "Failed to remove some parts from memory, or write info about them into part log");
         }
     };
 
