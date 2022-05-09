@@ -446,6 +446,14 @@ struct KeeperStorageRequestProcessor
     {
         return {};
     }
+
+    // process the request using locally committed data
+    virtual Coordination::ZooKeeperResponsePtr
+    processLocal(KeeperStorage & /*storage*/, int64_t /*zxid*/, int64_t /*session_id*/, int64_t /*time*/) const
+    {
+        throw Exception{DB::ErrorCodes::LOGICAL_ERROR, "Cannot process the request locally"};
+    }
+
     virtual KeeperStorage::ResponsesForSessions
     processWatches(KeeperStorage::Watches & /*watches*/, KeeperStorage::Watches & /*list_watches*/) const
     {
@@ -499,11 +507,11 @@ struct KeeperStorageCreateRequestProcessor final : public KeeperStorageRequestPr
         auto path = zk_request->getPath();
         auto parent_path = parentPath(path);
 
-        auto it = container.find(parent_path);
-        if (it == container.end())
+        auto node_it = container.find(parent_path);
+        if (node_it == container.end())
             return true;
 
-        const auto & node_acls = storage.acl_map.convertNumber(it->value.acl_id);
+        const auto & node_acls = storage.acl_map.convertNumber(node_it->value.acl_id);
         if (node_acls.empty())
             return true;
 
@@ -587,8 +595,7 @@ struct KeeperStorageCreateRequestProcessor final : public KeeperStorageRequestPr
         Coordination::ZooKeeperResponsePtr response_ptr = zk_request->makeResponse();
         Coordination::ZooKeeperCreateResponse & response = dynamic_cast<Coordination::ZooKeeperCreateResponse &>(*response_ptr);
 
-        auto result = storage.commit(zxid, session_id);
-        if (result != Coordination::Error::ZOK)
+        if (const auto result = storage.commit(zxid, session_id); result != Coordination::Error::ZOK)
         {
             response.error = result;
             return response_ptr;
@@ -615,11 +622,11 @@ struct KeeperStorageGetRequestProcessor final : public KeeperStorageRequestProce
     bool checkAuth(KeeperStorage & storage, int64_t session_id) const override
     {
         auto & container = storage.container;
-        auto it = container.find(zk_request->getPath());
-        if (it == container.end())
+        auto node_it = container.find(zk_request->getPath());
+        if (node_it == container.end())
             return true;
 
-        const auto & node_acls = storage.acl_map.convertNumber(it->value.acl_id);
+        const auto & node_acls = storage.acl_map.convertNumber(node_it->value.acl_id);
         if (node_acls.empty())
             return true;
 
@@ -640,27 +647,55 @@ struct KeeperStorageGetRequestProcessor final : public KeeperStorageRequestProce
         return {};
     }
 
-    Coordination::ZooKeeperResponsePtr
-    process(KeeperStorage & storage, int64_t /*zxid*/, int64_t /*session_id*/, int64_t /* time */) const override
+    template <bool local>
+    Coordination::ZooKeeperResponsePtr processImpl(KeeperStorage & storage, int64_t zxid, int64_t session_id, int64_t /* time */) const
     {
-        auto & container = storage.container;
         Coordination::ZooKeeperResponsePtr response_ptr = zk_request->makeResponse();
         Coordination::ZooKeeperGetResponse & response = dynamic_cast<Coordination::ZooKeeperGetResponse &>(*response_ptr);
         Coordination::ZooKeeperGetRequest & request = dynamic_cast<Coordination::ZooKeeperGetRequest &>(*zk_request);
 
-        auto it = container.find(request.path);
-        if (it == container.end())
+        if constexpr (local)
         {
-            response.error = Coordination::Error::ZNONODE;
+            if (const auto result = storage.commit(zxid, session_id); result != Coordination::Error::ZOK)
+            {
+                response.error = result;
+                return response_ptr;
+            }
+        }
+
+        const auto on_error = [&]([[maybe_unused]] const auto error_code)
+        {
+            if constexpr (local)
+                response.error = error_code;
+            else
+                fail();
+        };
+
+        auto & container = storage.container;
+        auto node_it = container.find(request.path);
+        if (node_it == container.end())
+        {
+            on_error(Coordination::Error::ZNONODE);
         }
         else
         {
-            response.stat = it->value.stat;
-            response.data = it->value.getData();
+            response.stat = node_it->value.stat;
+            response.data = node_it->value.getData();
             response.error = Coordination::Error::ZOK;
         }
 
         return response_ptr;
+    }
+
+
+    Coordination::ZooKeeperResponsePtr process(KeeperStorage & storage, int64_t zxid, int64_t session_id, int64_t time) const override
+    {
+        return processImpl<false>(storage, zxid, session_id, time);
+    }
+
+    Coordination::ZooKeeperResponsePtr processLocal(KeeperStorage & storage, int64_t zxid, int64_t session_id, int64_t time) const override
+    {
+        return processImpl<true>(storage, zxid, session_id, time);
     }
 };
 
@@ -669,11 +704,11 @@ struct KeeperStorageRemoveRequestProcessor final : public KeeperStorageRequestPr
     bool checkAuth(KeeperStorage & storage, int64_t session_id) const override
     {
         auto & container = storage.container;
-        auto it = container.find(parentPath(zk_request->getPath()));
-        if (it == container.end())
+        auto node_it = container.find(parentPath(zk_request->getPath()));
+        if (node_it == container.end())
             return true;
 
-        const auto & node_acls = storage.acl_map.convertNumber(it->value.acl_id);
+        const auto & node_acls = storage.acl_map.convertNumber(node_it->value.acl_id);
         if (node_acls.empty())
             return true;
 
@@ -740,13 +775,7 @@ struct KeeperStorageRemoveRequestProcessor final : public KeeperStorageRequestPr
         Coordination::ZooKeeperResponsePtr response_ptr = zk_request->makeResponse();
         Coordination::ZooKeeperRemoveResponse & response = dynamic_cast<Coordination::ZooKeeperRemoveResponse &>(*response_ptr);
 
-        auto result = storage.commit(zxid, session_id);
-        if (result != Coordination::Error::ZOK)
-        {
-            response.error = result;
-            return response_ptr;
-        }
-
+        response.error = storage.commit(zxid, session_id);
         return response_ptr;
     }
 
@@ -772,27 +801,53 @@ struct KeeperStorageExistsRequestProcessor final : public KeeperStorageRequestPr
         return {};
     }
 
-    Coordination::ZooKeeperResponsePtr
-    process(KeeperStorage & storage, int64_t /*zxid*/, int64_t /* session_id */, int64_t /* time */) const override
+    template <bool local>
+    Coordination::ZooKeeperResponsePtr processImpl(KeeperStorage & storage, int64_t zxid, int64_t session_id, int64_t /* time */) const
     {
-        auto & container = storage.container;
-
         Coordination::ZooKeeperResponsePtr response_ptr = zk_request->makeResponse();
         Coordination::ZooKeeperExistsResponse & response = dynamic_cast<Coordination::ZooKeeperExistsResponse &>(*response_ptr);
         Coordination::ZooKeeperExistsRequest & request = dynamic_cast<Coordination::ZooKeeperExistsRequest &>(*zk_request);
 
-        auto it = container.find(request.path);
-        if (it != container.end())
+        if constexpr (local)
         {
-            response.stat = it->value.stat;
-            response.error = Coordination::Error::ZOK;
+            if (const auto result = storage.commit(zxid, session_id); result != Coordination::Error::ZOK)
+            {
+                response.error = result;
+                return response_ptr;
+            }
+        }
+
+        const auto on_error = [&]([[maybe_unused]] const auto error_code)
+        {
+            if constexpr (local)
+                response.error = error_code;
+            else
+                fail();
+        };
+
+        auto & container = storage.container;
+        auto node_it = container.find(request.path);
+        if (node_it == container.end())
+        {
+            on_error(Coordination::Error::ZNONODE);
         }
         else
         {
-            response.error = Coordination::Error::ZNONODE;
+            response.stat = node_it->value.stat;
+            response.error = Coordination::Error::ZOK;
         }
 
         return response_ptr;
+    }
+
+    Coordination::ZooKeeperResponsePtr process(KeeperStorage & storage, int64_t zxid, int64_t session_id, int64_t time) const override
+    {
+        return processImpl<false>(storage, zxid, session_id, time);
+    }
+
+    Coordination::ZooKeeperResponsePtr processLocal(KeeperStorage & storage, int64_t zxid, int64_t session_id, int64_t time) const override
+    {
+        return processImpl<true>(storage, zxid, session_id, time);
     }
 };
 
@@ -801,11 +856,11 @@ struct KeeperStorageSetRequestProcessor final : public KeeperStorageRequestProce
     bool checkAuth(KeeperStorage & storage, int64_t session_id) const override
     {
         auto & container = storage.container;
-        auto it = container.find(zk_request->getPath());
-        if (it == container.end())
+        auto node_it = container.find(zk_request->getPath());
+        if (node_it == container.end())
             return true;
 
-        const auto & node_acls = storage.acl_map.convertNumber(it->value.acl_id);
+        const auto & node_acls = storage.acl_map.convertNumber(node_it->value.acl_id);
         if (node_acls.empty())
             return true;
 
@@ -857,18 +912,17 @@ struct KeeperStorageSetRequestProcessor final : public KeeperStorageRequestProce
         Coordination::ZooKeeperSetResponse & response = dynamic_cast<Coordination::ZooKeeperSetResponse &>(*response_ptr);
         Coordination::ZooKeeperSetRequest & request = dynamic_cast<Coordination::ZooKeeperSetRequest &>(*zk_request);
 
-        auto result = storage.commit(zxid, session_id);
-        if (result != Coordination::Error::ZOK)
+        if (const auto result = storage.commit(zxid, session_id); result != Coordination::Error::ZOK)
         {
             response.error = result;
             return response_ptr;
         }
 
-        auto it = container.find(request.path);
-        if (it == container.end())
+        auto node_it = container.find(request.path);
+        if (node_it == container.end())
             fail();
 
-        response.stat = it->value.stat;
+        response.stat = node_it->value.stat;
         response.error = Coordination::Error::ZOK;
 
         return response_ptr;
@@ -886,11 +940,11 @@ struct KeeperStorageListRequestProcessor final : public KeeperStorageRequestProc
     bool checkAuth(KeeperStorage & storage, int64_t session_id) const override
     {
         auto & container = storage.container;
-        auto it = container.find(zk_request->getPath());
-        if (it == container.end())
+        auto node_it = container.find(zk_request->getPath());
+        if (node_it == container.end())
             return true;
 
-        const auto & node_acls = storage.acl_map.convertNumber(it->value.acl_id);
+        const auto & node_acls = storage.acl_map.convertNumber(node_it->value.acl_id);
         if (node_acls.empty())
             return true;
 
@@ -910,18 +964,36 @@ struct KeeperStorageListRequestProcessor final : public KeeperStorageRequestProc
         return {};
     }
 
-    Coordination::ZooKeeperResponsePtr
-    process(KeeperStorage & storage, int64_t /*zxid*/, int64_t /*session_id*/, int64_t /* time */) const override
+
+    template <bool local>
+    Coordination::ZooKeeperResponsePtr processImpl(KeeperStorage & storage, int64_t zxid, int64_t session_id, int64_t /* time */) const
     {
-        auto & container = storage.container;
         Coordination::ZooKeeperResponsePtr response_ptr = zk_request->makeResponse();
         Coordination::ZooKeeperListResponse & response = dynamic_cast<Coordination::ZooKeeperListResponse &>(*response_ptr);
         Coordination::ZooKeeperListRequest & request = dynamic_cast<Coordination::ZooKeeperListRequest &>(*zk_request);
 
-        auto it = container.find(request.path);
-        if (it == container.end())
+        if constexpr (local)
         {
-            response.error = Coordination::Error::ZNONODE;
+            if (const auto result = storage.commit(zxid, session_id); result != Coordination::Error::ZOK)
+            {
+                response.error = result;
+                return response_ptr;
+            }
+        }
+
+        const auto on_error = [&]([[maybe_unused]] const auto error_code)
+        {
+            if constexpr (local)
+                response.error = error_code;
+            else
+                fail();
+        };
+
+        auto & container = storage.container;
+        auto node_it = container.find(request.path);
+        if (node_it == container.end())
+        {
+            on_error(Coordination::Error::ZNONODE);
         }
         else
         {
@@ -929,17 +1001,27 @@ struct KeeperStorageListRequestProcessor final : public KeeperStorageRequestProc
             if (path_prefix.empty())
                 throw DB::Exception("Logical error: path cannot be empty", ErrorCodes::LOGICAL_ERROR);
 
-            const auto & children = it->value.getChildren();
+            const auto & children = node_it->value.getChildren();
             response.names.reserve(children.size());
 
             for (const auto child : children)
                 response.names.push_back(child.toString());
 
-            response.stat = it->value.stat;
+            response.stat = node_it->value.stat;
             response.error = Coordination::Error::ZOK;
         }
 
         return response_ptr;
+    }
+
+    Coordination::ZooKeeperResponsePtr process(KeeperStorage & storage, int64_t zxid, int64_t session_id, int64_t time) const override
+    {
+        return processImpl<false>(storage, zxid, session_id, time);
+    }
+
+    Coordination::ZooKeeperResponsePtr processLocal(KeeperStorage & storage, int64_t zxid, int64_t session_id, int64_t time) const override
+    {
+        return processImpl<true>(storage, zxid, session_id, time);
     }
 };
 
@@ -948,11 +1030,11 @@ struct KeeperStorageCheckRequestProcessor final : public KeeperStorageRequestPro
     bool checkAuth(KeeperStorage & storage, int64_t session_id) const override
     {
         auto & container = storage.container;
-        auto it = container.find(zk_request->getPath());
-        if (it == container.end())
+        auto node_it = container.find(zk_request->getPath());
+        if (node_it == container.end())
             return true;
 
-        const auto & node_acls = storage.acl_map.convertNumber(it->value.acl_id);
+        const auto & node_acls = storage.acl_map.convertNumber(node_it->value.acl_id);
         if (node_acls.empty())
             return true;
 
@@ -976,22 +1058,39 @@ struct KeeperStorageCheckRequestProcessor final : public KeeperStorageRequestPro
         return {};
     }
 
-    Coordination::ZooKeeperResponsePtr
-    process(KeeperStorage & storage, int64_t /*zxid*/, int64_t /*session_id*/, int64_t /* time */) const override
+    template <bool local>
+    Coordination::ZooKeeperResponsePtr processImpl(KeeperStorage & storage, int64_t zxid, int64_t session_id, int64_t /* time */) const
     {
-        auto & container = storage.container;
-
         Coordination::ZooKeeperResponsePtr response_ptr = zk_request->makeResponse();
         Coordination::ZooKeeperCheckResponse & response = dynamic_cast<Coordination::ZooKeeperCheckResponse &>(*response_ptr);
         Coordination::ZooKeeperCheckRequest & request = dynamic_cast<Coordination::ZooKeeperCheckRequest &>(*zk_request);
-        auto it = container.find(request.path);
-        if (it == container.end())
+
+        if constexpr (local)
         {
-            response.error = Coordination::Error::ZNONODE;
+            if (const auto result = storage.commit(zxid, session_id); result != Coordination::Error::ZOK)
+            {
+                response.error = result;
+                return response_ptr;
+            }
         }
-        else if (request.version != -1 && request.version != it->value.stat.version)
+
+        const auto on_error = [&]([[maybe_unused]] const auto error_code)
         {
-            response.error = Coordination::Error::ZBADVERSION;
+            if constexpr (local)
+                response.error = error_code;
+            else
+                fail();
+        };
+
+        auto & container = storage.container;
+        auto node_it = container.find(request.path);
+        if (node_it == container.end())
+        {
+            on_error(Coordination::Error::ZNONODE);
+        }
+        else if (request.version != -1 && request.version != node_it->value.stat.version)
+        {
+            on_error(Coordination::Error::ZBADVERSION);
         }
         else
         {
@@ -999,6 +1098,16 @@ struct KeeperStorageCheckRequestProcessor final : public KeeperStorageRequestPro
         }
 
         return response_ptr;
+    }
+
+    Coordination::ZooKeeperResponsePtr process(KeeperStorage & storage, int64_t zxid, int64_t session_id, int64_t time) const override
+    {
+        return processImpl<false>(storage, zxid, session_id, time);
+    }
+
+    Coordination::ZooKeeperResponsePtr processLocal(KeeperStorage & storage, int64_t zxid, int64_t session_id, int64_t time) const override
+    {
+        return processImpl<true>(storage, zxid, session_id, time);
     }
 };
 
@@ -1008,11 +1117,11 @@ struct KeeperStorageSetACLRequestProcessor final : public KeeperStorageRequestPr
     bool checkAuth(KeeperStorage & storage, int64_t session_id) const override
     {
         auto & container = storage.container;
-        auto it = container.find(zk_request->getPath());
-        if (it == container.end())
+        auto node_it = container.find(zk_request->getPath());
+        if (node_it == container.end())
             return true;
 
-        const auto & node_acls = storage.acl_map.convertNumber(it->value.acl_id);
+        const auto & node_acls = storage.acl_map.convertNumber(node_it->value.acl_id);
         if (node_acls.empty())
             return true;
 
@@ -1053,17 +1162,16 @@ struct KeeperStorageSetACLRequestProcessor final : public KeeperStorageRequestPr
         Coordination::ZooKeeperSetACLResponse & response = dynamic_cast<Coordination::ZooKeeperSetACLResponse &>(*response_ptr);
         Coordination::ZooKeeperSetACLRequest & request = dynamic_cast<Coordination::ZooKeeperSetACLRequest &>(*zk_request);
 
-        auto result = storage.commit(zxid, session_id);
-        if (result != Coordination::Error::ZOK)
+        if (const auto result = storage.commit(zxid, session_id); result != Coordination::Error::ZOK)
         {
             response.error = result;
             return response_ptr;
         }
 
-        auto it = storage.container.find(request.path);
-        if (it == storage.container.end())
+        auto node_it = storage.container.find(request.path);
+        if (node_it == storage.container.end())
             fail();
-        response.stat = it->value.stat;
+        response.stat = node_it->value.stat;
         response.error = Coordination::Error::ZOK;
 
         return response_ptr;
@@ -1075,11 +1183,11 @@ struct KeeperStorageGetACLRequestProcessor final : public KeeperStorageRequestPr
     bool checkAuth(KeeperStorage & storage, int64_t session_id) const override
     {
         auto & container = storage.container;
-        auto it = container.find(zk_request->getPath());
-        if (it == container.end())
+        auto node_it = container.find(zk_request->getPath());
+        if (node_it == container.end())
             return true;
 
-        const auto & node_acls = storage.acl_map.convertNumber(it->value.acl_id);
+        const auto & node_acls = storage.acl_map.convertNumber(node_it->value.acl_id);
         if (node_acls.empty())
             return true;
 
@@ -1100,25 +1208,53 @@ struct KeeperStorageGetACLRequestProcessor final : public KeeperStorageRequestPr
         return {};
     }
 
-    Coordination::ZooKeeperResponsePtr
-    process(KeeperStorage & storage, int64_t /*zxid*/, int64_t /*session_id*/, int64_t /* time */) const override
+    template <bool local>
+    Coordination::ZooKeeperResponsePtr processImpl(KeeperStorage & storage, int64_t zxid, int64_t session_id, int64_t /* time */) const
     {
         Coordination::ZooKeeperResponsePtr response_ptr = zk_request->makeResponse();
         Coordination::ZooKeeperGetACLResponse & response = dynamic_cast<Coordination::ZooKeeperGetACLResponse &>(*response_ptr);
         Coordination::ZooKeeperGetACLRequest & request = dynamic_cast<Coordination::ZooKeeperGetACLRequest &>(*zk_request);
-        auto & container = storage.container;
-        auto it = container.find(request.path);
-        if (it == container.end())
+
+        if constexpr (local)
         {
-            response.error = Coordination::Error::ZNONODE;
+            if (const auto result = storage.commit(zxid, session_id); result != Coordination::Error::ZOK)
+            {
+                response.error = result;
+                return response_ptr;
+            }
+        }
+
+        const auto on_error = [&]([[maybe_unused]] const auto error_code)
+        {
+            if constexpr (local)
+                response.error = error_code;
+            else
+                fail();
+        };
+
+        auto & container = storage.container;
+        auto node_it = container.find(request.path);
+        if (node_it == container.end())
+        {
+            on_error(Coordination::Error::ZNONODE);
         }
         else
         {
-            response.stat = it->value.stat;
-            response.acl = storage.acl_map.convertNumber(it->value.acl_id);
+            response.stat = node_it->value.stat;
+            response.acl = storage.acl_map.convertNumber(node_it->value.acl_id);
         }
 
         return response_ptr;
+    }
+
+    Coordination::ZooKeeperResponsePtr process(KeeperStorage & storage, int64_t zxid, int64_t session_id, int64_t time) const override
+    {
+        return processImpl<false>(storage, zxid, session_id, time);
+    }
+
+    Coordination::ZooKeeperResponsePtr processLocal(KeeperStorage & storage, int64_t zxid, int64_t session_id, int64_t time) const override
+    {
+        return processImpl<true>(storage, zxid, session_id, time);
     }
 };
 
@@ -1165,6 +1301,7 @@ struct KeeperStorageMultiRequestProcessor final : public KeeperStorageRequestPro
 
     std::vector<KeeperStorage::Delta> preprocess(KeeperStorage & storage, int64_t zxid, int64_t session_id, int64_t time) const override
     {
+        // manually add deltas so that the result of previous request in the transaction is used in the next request
         auto & saved_deltas = storage.current_nodes.deltas;
 
         std::vector<Coordination::Error> response_errors;
@@ -1211,10 +1348,9 @@ struct KeeperStorageMultiRequestProcessor final : public KeeperStorageRequestPro
             return response_ptr;
         }
 
-        size_t i = 0;
-        for (const auto & concrete_request : concrete_requests)
+        for (size_t i = 0; i < concrete_requests.size(); ++i)
         {
-            auto cur_response = concrete_request->process(storage, zxid, session_id, time);
+            auto cur_response = concrete_requests[i]->process(storage, zxid, session_id, time);
 
             while (!deltas.empty())
             {
@@ -1228,8 +1364,39 @@ struct KeeperStorageMultiRequestProcessor final : public KeeperStorageRequestPro
             }
 
             response.responses[i] = cur_response;
+        }
 
-            ++i;
+        response.error = Coordination::Error::ZOK;
+        return response_ptr;
+    }
+
+    Coordination::ZooKeeperResponsePtr processLocal(KeeperStorage & storage, int64_t zxid, int64_t session_id, int64_t time) const override
+    {
+        Coordination::ZooKeeperResponsePtr response_ptr = zk_request->makeResponse();
+        Coordination::ZooKeeperMultiResponse & response = dynamic_cast<Coordination::ZooKeeperMultiResponse &>(*response_ptr);
+
+        for (size_t i = 0; i < concrete_requests.size(); ++i)
+        {
+            auto cur_response = concrete_requests[i]->process(storage, zxid, session_id, time);
+
+            response.responses[i] = cur_response;
+            if (cur_response->error != Coordination::Error::ZOK)
+            {
+                for (size_t j = 0; j <= i; ++j)
+                {
+                    auto response_error = response.responses[j]->error;
+                    response.responses[j] = std::make_shared<Coordination::ZooKeeperErrorResponse>();
+                    response.responses[j]->error = response_error;
+                }
+
+                for (size_t j = i + 1; j < response.responses.size(); ++j)
+                {
+                    response.responses[j] = std::make_shared<Coordination::ZooKeeperErrorResponse>();
+                    response.responses[j]->error = Coordination::Error::ZRUNTIMEINCONSISTENCY;
+                }
+
+                return response_ptr;
+            }
         }
 
         response.error = Coordination::Error::ZOK;
@@ -1389,7 +1556,8 @@ KeeperStorage::ResponsesForSessions KeeperStorage::processRequest(
     int64_t session_id,
     int64_t time,
     std::optional<int64_t> new_last_zxid,
-    bool check_acl)
+    bool check_acl,
+    bool is_local)
 {
     KeeperStorage::ResponsesForSessions results;
     if (new_last_zxid)
@@ -1462,7 +1630,11 @@ KeeperStorage::ResponsesForSessions KeeperStorage::processRequest(
         }
         else
         {
-            response = request_processor->process(*this, zxid, session_id, time);
+            if (is_local)
+                response = request_processor->processLocal(*this, zxid, session_id, time);
+            else
+                response = request_processor->process(*this, zxid, session_id, time);
+
             std::erase_if(current_nodes.deltas, [this](const auto & delta) { return delta.zxid == zxid; });
         }
 
