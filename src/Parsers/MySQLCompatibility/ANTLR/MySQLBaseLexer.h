@@ -50,7 +50,11 @@ public:
 	int checkCharset(const std::string & text);
 
 	void emitDot();
-    bool isSqlModeActive(int mode)
+	virtual void setMode(uint32_t mode)
+	{
+		sqlMode = mode;
+	}
+    virtual bool isSqlModeActive(SqlMode mode)
     {
 		if (!sqlMode)
 			return false;
@@ -80,5 +84,5 @@ public:
 private:
 	std::deque<std::unique_ptr<antlr4::Token> > pendingTokens;
 	std::vector<std::string> charsets;
-	SqlMode sqlMode;
+	uint32_t sqlMode = 0;
 };
