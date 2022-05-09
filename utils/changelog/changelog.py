@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# In our CI this script runs in style-test containers
 
 import argparse
 import logging
