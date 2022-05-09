@@ -23,6 +23,6 @@ ${CLICKHOUSE_CLIENT} -q "system flush logs"
 
 # Here for mutation all values are 0, cause mutation is executed async.
 # It's pretty hard to write a test with total counter.
-${CLICKHOUSE_CLIENT} -q "select ProfileEvents['SelectedRows'], ProfileEvents['SelecteBytes'], ProfileEvents['MergedRows'], ProfileEvents['MergedUncompressedBytes'] from system.query_log where query_id = '$query_id' and type = 'QueryFinish' and query like 'alter%' and current_database = currentDatabase()"
+${CLICKHOUSE_CLIENT} -q "select ProfileEvents['SelectedRows'] > 10, ProfileEvents['SelecteBytes'], ProfileEvents['MergedRows'], ProfileEvents['MergedUncompressedBytes'] from system.query_log where query_id = '$query_id' and type = 'QueryFinish' and query like 'alter%' and current_database = currentDatabase()"
 
 
