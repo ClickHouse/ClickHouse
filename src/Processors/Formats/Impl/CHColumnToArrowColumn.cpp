@@ -25,8 +25,6 @@
 #include <arrow/type.h>
 #include <arrow/util/decimal.h>
 
-#include <Common/logger_useful.h>
-
 #define FOR_INTERNAL_NUMERIC_TYPES(M) \
         M(UInt8, arrow::UInt8Builder) \
         M(Int8, arrow::Int8Builder) \
