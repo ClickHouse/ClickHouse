@@ -174,6 +174,7 @@ public:
 
         std::shared_ptr<Node> getNode(StringRef path);
         bool hasNode(StringRef path) const;
+        Coordination::ACLs getACLs(StringRef path) const;
 
         std::unordered_map<std::string, std::deque<Delta>> node_to_deltas;
         std::deque<Delta> deltas;
@@ -250,7 +251,8 @@ public:
         std::optional<int64_t> new_last_zxid,
         bool check_acl = true,
         bool is_local = false);
-    void preprocessRequest(const Coordination::ZooKeeperRequestPtr & request, int64_t session_id, int64_t time, int64_t new_last_zxid);
+    void preprocessRequest(
+        const Coordination::ZooKeeperRequestPtr & request, int64_t session_id, int64_t time, int64_t new_last_zxid, bool check_acl = true);
 
     void finalize();
 
