@@ -304,6 +304,17 @@ public:
     uint64_t getInputWaitElapsedUs() const { return input_wait_elapsed_us; }
     uint64_t getOutputWaitElapsedUs() const { return output_wait_elapsed_us; }
 
+    struct ReadProgress
+    {
+        uint64_t read_rows = 0;
+        uint64_t read_bytes = 0;
+    };
+
+    /// This method is called for every processor without input ports.
+    /// Processor can return a new progress for the last read operation.
+    /// You should zero internal counters in the call, in order to make in idempotent.
+    virtual std::optional<ReadProgress> getReadProgress() { return std::nullopt; }
+
 protected:
     virtual void onCancel() {}
 

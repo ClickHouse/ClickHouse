@@ -1,5 +1,7 @@
 #pragma once
 #include <QueryPipeline/PipelineResourcesHolder.h>
+#include <QueryPipeline/SizeLimits.h>
+#include <QueryPipeline/StreamLocalLimits.h>
 #include <functional>
 
 namespace DB
@@ -96,6 +98,10 @@ public:
     void setLimitsAndQuota(const StreamLocalLimits & limits, std::shared_ptr<const EnabledQuota> quota);
     bool tryGetResultRowsAndBytes(UInt64 & result_rows, UInt64 & result_bytes) const;
 
+    void setLimits(const StreamLocalLimits & limits) { local_limits = limits; }
+    void setLeafLimits(const SizeLimits & limits) { leaf_limits = limits; }
+    void setQuota(std::shared_ptr<const EnabledQuota> quota_);
+
     void addStorageHolder(StoragePtr storage);
 
     const Processors & getProcessors() const { return processors; }
@@ -104,6 +110,12 @@ public:
 
 private:
     PipelineResourcesHolder resources;
+
+    ProgressCallback progress_callback;
+    StreamLocalLimits local_limits;
+    SizeLimits leaf_limits;
+    std::shared_ptr<const EnabledQuota> quota;
+
     Processors processors;
 
     InputPort * input = nullptr;

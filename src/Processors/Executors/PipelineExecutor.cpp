@@ -155,6 +155,11 @@ bool PipelineExecutor::checkTimeLimit()
     return continuing;
 }
 
+void PipelineExecutor::setReadProgressCallback(ReadProgressCallbackPtr callback)
+{
+    read_progress_callback = std::move(callback);
+}
+
 void PipelineExecutor::finalizeExecution()
 {
     checkTimeLimit();
@@ -263,7 +268,7 @@ void PipelineExecutor::initializeExecution(size_t num_threads)
     Queue queue;
     graph->initializeExecution(queue);
 
-    tasks.init(num_threads, profile_processors);
+    tasks.init(num_threads, profile_processors, read_progress_callback.get());
     tasks.fill(queue);
 }
 

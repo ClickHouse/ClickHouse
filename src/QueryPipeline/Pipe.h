@@ -14,6 +14,8 @@ struct StreamLocalLimits;
 class Pipe;
 using Pipes = std::vector<Pipe>;
 
+class ReadProgressCallback;
+
 using OutputPortRawPtrs = std::vector<OutputPort *>;
 
 /// Pipe is a set of processors which represents the part of pipeline.
@@ -118,6 +120,8 @@ public:
 private:
     /// Destruction order: processors, header, locks, temporary storages, local contexts
     PipelineResourcesHolder holder;
+
+    std::unique_ptr<ReadProgressCallback> read_progress_callback;
 
     /// Header is common for all output below.
     Block header;
