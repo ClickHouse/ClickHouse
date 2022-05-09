@@ -225,6 +225,8 @@ std::shared_ptr<KeeperStorage::Node> KeeperStorage::CurrentNodes::getNode(String
         const auto & committed_node = maybe_node_it->value;
         node = std::make_shared<KeeperStorage::Node>();
         node->stat = committed_node.stat;
+        node->seq_num = committed_node.seq_num;
+        node->setData(committed_node.getData());
     }
 
     applyDeltas(
@@ -241,6 +243,11 @@ std::shared_ptr<KeeperStorage::Node> KeeperStorage::CurrentNodes::getNode(String
             {
                 assert(node);
                 node = nullptr;
+            },
+            [&](const UpdateNodeDelta & update_delta)
+            {
+                assert(node);
+                update_delta.update_fn(*node);
             },
             [&](auto && /*delta*/) {},
         });
@@ -504,7 +511,7 @@ struct KeeperStorageHeartbeatRequestProcessor final : public KeeperStorageReques
     Coordination::ZooKeeperResponsePtr
     process(KeeperStorage & /* storage */, int64_t /* zxid */, int64_t /* session_id */, int64_t /* time */) const override
     {
-        return {zk_request->makeResponse(), {}};
+        return zk_request->makeResponse();
     }
 };
 
@@ -570,7 +577,7 @@ struct KeeperStorageCreateRequestProcessor final : public KeeperStorageRequestPr
         std::vector<KeeperStorage::Delta> new_deltas;
 
         auto parent_path = parentPath(request.path);
-        auto parent_node = storage.current_nodes.getNode(std::string{parent_path});
+        auto parent_node = storage.current_nodes.getNode(parent_path);
         if (parent_node == nullptr)
             return {{zxid, Coordination::Error::ZNONODE}};
 
@@ -606,6 +613,8 @@ struct KeeperStorageCreateRequestProcessor final : public KeeperStorageRequestPr
         stat.ctime = time;
         stat.mtime = time;
         stat.numChildren = 0;
+        stat.version = 0;
+        stat.aversion = 0;
         stat.dataLength = request.data.length();
         stat.ephemeralOwner = request.is_ephemeral ? session_id : 0;
 
@@ -1318,18 +1327,22 @@ struct KeeperStorageMultiRequestProcessor final : public KeeperStorageRequestPro
         for (size_t i = 0; i < concrete_requests.size(); ++i)
         {
             auto new_deltas = concrete_requests[i]->preprocess(storage, zxid, session_id, time);
-            if (auto * error = std::get_if<KeeperStorage::ErrorDelta>(&new_deltas.back().operation))
+
+            if (!new_deltas.empty())
             {
-                std::erase_if(saved_deltas, [zxid](const auto & delta) { return delta.zxid == zxid; });
-
-                response_errors.push_back(error->error);
-
-                for (size_t j = i + 1; j < concrete_requests.size(); ++j)
+                if (auto * error = std::get_if<KeeperStorage::ErrorDelta>(&new_deltas.back().operation))
                 {
-                    response_errors.push_back(Coordination::Error::ZRUNTIMEINCONSISTENCY);
-                }
+                    std::erase_if(saved_deltas, [zxid](const auto & delta) { return delta.zxid == zxid; });
 
-                return {{zxid, KeeperStorage::FailedMultiDelta{std::move(response_errors)}}};
+                    response_errors.push_back(error->error);
+
+                    for (size_t j = i + 1; j < concrete_requests.size(); ++j)
+                    {
+                        response_errors.push_back(Coordination::Error::ZRUNTIMEINCONSISTENCY);
+                    }
+
+                    return {{zxid, KeeperStorage::FailedMultiDelta{std::move(response_errors)}}};
+                }
             }
             new_deltas.emplace_back(zxid, KeeperStorage::SubDeltaEnd{});
             response_errors.push_back(Coordination::Error::ZOK);
@@ -1616,8 +1629,6 @@ KeeperStorage::ResponsesForSessions KeeperStorage::processRequest(
 
     if (zk_request->getOpNum() == Coordination::OpNum::Close) /// Close request is special
     {
-        ephemerals.erase(session_id);
-
         commit(zxid, session_id);
 
         for (const auto & delta : current_nodes.deltas)
