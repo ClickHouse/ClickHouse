@@ -1,4 +1,4 @@
-SELECT roundBankers(result.1, 16), roundBankers(result.2, 16) FROM (
+SELECT roundBankers(result.1, 8), roundBankers(result.2, 8) FROM (
 SELECT
      studentTTest(sample, variant) as result
 FROM (
@@ -15,7 +15,7 @@ SELECT
 FROM system.numbers limit 500000));
 
 
-SELECT roundBankers(result.1, 16), roundBankers(result.2, 16) FROM (
+SELECT roundBankers(result.1, 8), roundBankers(result.2, 8) FROM (
 SELECT
      studentTTest(sample, variant) as result
 FROM (
