@@ -367,7 +367,7 @@
 
     <!-- Path to temporary data for processing hard queries. -->
     <tmp_path>/var/lib/clickhouse/tmp/</tmp_path>
-    
+
     <!-- Disable AuthType plaintext_password and no_password for ACL. -->
     <!-- <allow_plaintext_password>0</allow_plaintext_password> -->
     <!-- <allow_no_password>0</allow_no_password> -->`
@@ -544,6 +544,14 @@
                 </ldap>
         -->
     </user_directories>
+
+    <access_control_improvements>
+        <!-- Enables logic that users without permissive row policies can still read rows using a SELECT query.
+             For example, if there two users A, B and a row policy is defined only for A, then
+             if this setting is true the user B will see all rows, and if this setting is false the user B will see no rows.
+             By default this setting is false for compatibility with earlier access configurations. -->
+        <users_without_row_policies_can_read_rows>false</users_without_row_policies_can_read_rows>
+    </access_control_improvements>
 
     <!-- Default profile of settings. -->
     <default_profile>default</default_profile>
@@ -1297,8 +1305,8 @@
     -->
 
     <!-- Uncomment if enable merge tree metadata cache -->
-    <merge_tree_metadata_cache>
+    <!--merge_tree_metadata_cache>
         <lru_cache_size>268435456</lru_cache_size>
         <continue_if_corrupted>true</continue_if_corrupted>
-    </merge_tree_metadata_cache>
+    </merge_tree_metadata_cache-->
 </clickhouse>

@@ -6,6 +6,11 @@
 #include <IO/Operators.h>
 #include <filesystem>
 
+namespace CurrentMetrics
+{
+extern const Metric CacheDetachedFileSegments;
+}
+
 namespace DB
 {
 
@@ -89,11 +94,6 @@ size_t FileSegment::getDownloadedSize(std::lock_guard<std::mutex> & /* segment_l
 }
 
 String FileSegment::getCallerId()
-{
-    return getCallerIdImpl();
-}
-
-String FileSegment::getCallerIdImpl()
 {
     if (!CurrentThread::isInitialized()
         || !CurrentThread::get().getQueryContext()
@@ -395,7 +395,10 @@ bool FileSegment::reserve(size_t size)
     bool reserved = cache->tryReserve(key(), offset(), size_to_reserve, cache_lock);
 
     if (reserved)
+    {
+        std::lock_guard segment_lock(mutex);
         reserved_size += size;
+    }
 
     return reserved;
 }
@@ -570,7 +573,7 @@ void FileSegment::completeImpl(std::lock_guard<std::mutex> & cache_lock, std::lo
             cache->reduceSizeToDownloaded(key(), offset(), cache_lock, segment_lock);
         }
 
-        detached = true;
+        markAsDetached(segment_lock);
 
         if (cache_writer)
         {
@@ -601,6 +604,7 @@ String FileSegment::getInfoForLogImpl(std::lock_guard<std::mutex> & segment_lock
     info << "File segment: " << range().toString() << ", ";
     info << "state: " << download_state << ", ";
     info << "downloaded size: " << getDownloadedSize(segment_lock) << ", ";
+    info << "reserved size: " << reserved_size << ", ";
     info << "downloader id: " << downloader_id << ", ";
     info << "caller id: " << getCallerId();
 
@@ -685,12 +689,25 @@ void FileSegment::detach(std::lock_guard<std::mutex> & cache_lock, std::lock_gua
     if (detached)
         return;
 
-    detached = true;
+    markAsDetached(segment_lock);
 
     if (!hasFinalizedState())
     {
         completeUnlocked(cache_lock, segment_lock);
     }
+}
+
+void FileSegment::markAsDetached(std::lock_guard<std::mutex> & /* segment_lock */)
+{
+    detached = true;
+    CurrentMetrics::add(CurrentMetrics::CacheDetachedFileSegments);
+}
+
+FileSegment::~FileSegment()
+{
+    std::lock_guard segment_lock(mutex);
+    if (detached)
+        CurrentMetrics::sub(CurrentMetrics::CacheDetachedFileSegments);
 }
 
 FileSegmentsHolder::~FileSegmentsHolder()
