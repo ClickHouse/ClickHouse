@@ -1,0 +1,40 @@
+# package sources should be placed in ${PWD}/root
+# nfpm should run from the same directory with a config
+name: "clickhouse-keeper"
+arch: "${DEB_ARCH}" # amd64, arm64
+platform: "linux"
+version: "${CLICKHOUSE_VERSION_STRING}"
+vendor: "ClickHouse Inc."
+homepage: "https://clickhouse.com"
+license: "Apache"
+section: "database"
+priority: "optional"
+
+conflicts:
+- clickhouse-server
+depends:
+- adduser
+suggests:
+- clickhouse-keeper-dbg
+
+maintainer: "ClickHouse Dev Team <packages+linux@clickhouse.com>"
+description: |
+  Static clickhouse-keeper binary
+    A stand-alone clickhouse-keeper package
+
+
+contents:
+- src: root/etc/clickhouse-keeper
+  dst: /etc/clickhouse-keeper
+  type: config
+- src: root/usr/bin/clickhouse-keeper
+  dst: /usr/bin/clickhouse-keeper
+# docs
+- src: ../AUTHORS
+  dst: /usr/share/doc/clickhouse-keeper/AUTHORS
+- src: ../CHANGELOG.md
+  dst: /usr/share/doc/clickhouse-keeper/CHANGELOG.md
+- src: ../LICENSE
+  dst: /usr/share/doc/clickhouse-keeper/LICENSE
+- src: ../README.md
+  dst: /usr/share/doc/clickhouse-keeper/README.md
