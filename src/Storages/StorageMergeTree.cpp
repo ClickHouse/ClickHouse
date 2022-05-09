@@ -1164,7 +1164,7 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
         task->setCurrentTransaction(std::move(transaction_for_merge), std::move(txn));
         bool scheduled = assignee.scheduleMergeMutateTask(task);
         /// The problem that we already booked a slot for TTL merge, but a merge list entry will be created only in a prepare method
-        /// in MergePlainMergeTreeTask. So, this slot will never be freed. 
+        /// in MergePlainMergeTreeTask. So, this slot will never be freed.
         if (!scheduled && isTTLMergeType(merge_entry->future_part->merge_type))
             getContext()->getMergeList().cancelMergeWithTTL();
         return scheduled;
