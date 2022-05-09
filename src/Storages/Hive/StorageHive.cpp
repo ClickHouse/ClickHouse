@@ -735,6 +735,7 @@ Pipe StorageHive::read(
 
     Pipes pipes;
     const size_t max_download_threads = context_->getSettingsRef().max_download_threads;
+    // num_streams = 1;
     for (size_t i = 0; i < num_streams; ++i)
     {
         pipes.emplace_back(std::make_shared<StorageHiveSource>(
