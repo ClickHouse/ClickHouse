@@ -112,11 +112,6 @@ std::pair<std::vector<Value>, std::vector<RangesInDataParts>> split(RangesInData
         // new layer should include last granules of still open ranges from the previous layer, because they may already contain values greater than the last border
         size_t rows_in_current_layer = 0;
         size_t marks_in_current_layer = 0;
-        for (const auto & [part_idx, last_mark] : current_part_range_end)
-        {
-            rows_in_current_layer += index_access->getMarkRows(part_idx, last_mark);
-            ++marks_in_current_layer;
-        }
 
         // intersection between the current and next layers is just the last observed marks of each still open part range. ratio is empirical
         auto layers_intersection_is_too_big = [&]()

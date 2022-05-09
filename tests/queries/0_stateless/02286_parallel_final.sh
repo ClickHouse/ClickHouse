@@ -6,7 +6,6 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 test_random_values() {
   layers=$1
-  echo "Input should be divided into $layers layers"
   $CLICKHOUSE_CLIENT -n -q "
     create table tbl_8parts_${layers}granules_rnd (key1 UInt32, sign Int8) engine = CollapsingMergeTree(sign) order by (key1) partition by (key1 % 8);
     insert into tbl_8parts_${layers}granules_rnd select number, 1 from numbers_mt($((layers * 8 * 8192)));
@@ -20,7 +19,6 @@ done;
 
 test_sequential_values() {
   layers=$1
-  echo "Input should be divided into 8 layers"
   $CLICKHOUSE_CLIENT -n -q "
     create table tbl_8parts_${layers}granules_seq (key1 UInt32, sign Int8) engine = CollapsingMergeTree(sign) order by (key1) partition by (key1 / $((layers * 8192)))::UInt64;
     insert into tbl_8parts_${layers}granules_seq select number, 1 from numbers_mt($((layers * 8 * 8192)));
