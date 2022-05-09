@@ -114,5 +114,3 @@ set_source_files_properties("pointInPolygon.cpp" PROPERTIES COMPILE_FLAGS -fno-s
 if (ENABLE_FUZZING)
     add_compile_definitions(FUZZING_MODE=1)
 endif ()
-
-set_target_properties(ch_contrib::wyhash PROPERTIES LINKER_LANGUAGE CXX)
