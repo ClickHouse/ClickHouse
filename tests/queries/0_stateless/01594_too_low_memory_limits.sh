@@ -19,7 +19,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-mkdir $CURDIR/01594_clickhouse
+mkdir "$CURDIR"/01594_clickhouse
 
 server_opts=(
     "--config-file=$CURDIR/$(basename "${BASH_SOURCE[0]}" .sh).config.xml"
@@ -44,7 +44,7 @@ function cleanup()
     cat clickhouse-server.stderr
     rm -f clickhouse-server.log
     rm -f clickhouse-server.stderr
-    rm -fr $CURDIR/01594_clickhouse
+    rm -fr "$CURDIR"/01594_clickhouse
 
     exit 1
 }
@@ -108,6 +108,6 @@ if [ $return_code != 0 ]; then
 fi
 rm -f clickhouse-server.log
 rm -f clickhouse-server.stderr
-rm -fr $CURDIR/01594_clickhouse
+rm -fr "$CURDIR"/01594_clickhouse
 
 exit $return_code

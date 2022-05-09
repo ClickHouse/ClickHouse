@@ -5,7 +5,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-mkdir $CUR_DIR/01737_clickhouse
+mkdir "$CUR_DIR"/01737_clickhouse
 
 server_opts=(
     "--config-file=$CUR_DIR/$(basename "${BASH_SOURCE[0]}" .sh).config.xml"
@@ -29,7 +29,7 @@ function cleanup()
     echo "Test failed. Server log:"
     cat clickhouse-server.log
     rm -f clickhouse-server.log
-    rm -fr $CUR_DIR/01737_clickhouse
+    rm -fr "$CUR_DIR"/01737_clickhouse
     
     exit 1
 }
@@ -84,6 +84,6 @@ if [ $return_code != 0 ]; then
     cat clickhouse-server.log
 fi
 rm -f clickhouse-server.log
-rm -fr $CUR_DIR/01737_clickhouse
+rm -fr "$CUR_DIR"/01737_clickhouse
 
 exit $return_code
