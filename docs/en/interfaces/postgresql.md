@@ -17,7 +17,7 @@ To enable the PostgreSQL wire protocol, add the [postgresql_port](../operations/
 
 Startup your ClickHouse server and look for a log message similar to the following that mentions **Listening for PostgreSQL compatibility protocol**:
 
-```
+```response
 {} <Information> Application: Listening for PostgreSQL compatibility protocol: 127.0.0.1:9005
 ```
 
@@ -41,7 +41,7 @@ The `psql` client requires a login with a password, so you will not be able conn
 
 The `psql` client prompts for the password:
 
-```bash
+```response
 Password for user alice:
 psql (14.2, server 22.3.1.1)
 WARNING: psql major version 14, server major version 22.
