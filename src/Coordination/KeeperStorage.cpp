@@ -316,69 +316,72 @@ Coordination::Error KeeperStorage::commit(int64_t commit_zxid, int64_t session_i
 
         bool finish_subdelta = false;
         auto result = std::visit(
-            Overloaded{
-                [&, &path = delta.path](KeeperStorage::CreateNodeDelta & create_delta)
+            [&, &path = delta.path]<typename DeltaType>(const DeltaType & operation) -> Coordination::Error
+            {
+                if constexpr (std::same_as<DeltaType, KeeperStorage::CreateNodeDelta>)
                 {
                     if (!createNode(
                             path,
-                            std::move(create_delta.data),
-                            create_delta.stat,
-                            create_delta.is_sequental,
-                            create_delta.is_ephemeral,
-                            std::move(create_delta.acls),
+                            std::move(operation.data),
+                            operation.stat,
+                            operation.is_sequental,
+                            operation.is_ephemeral,
+                            std::move(operation.acls),
                             session_id))
                         fail();
 
                     return Coordination::Error::ZOK;
-                },
-                [&, &path = delta.path](KeeperStorage::UpdateNodeDelta & update_delta)
+                }
+                else if constexpr (std::same_as<DeltaType, KeeperStorage::UpdateNodeDelta>)
                 {
                     auto node_it = container.find(path);
                     if (node_it == container.end())
                         fail();
 
-                    if (update_delta.version != -1 && update_delta.version != node_it->value.stat.version)
+                    if (operation.version != -1 && operation.version != node_it->value.stat.version)
                         fail();
 
-                    container.updateValue(path, update_delta.update_fn);
+                    container.updateValue(path, operation.update_fn);
                     return Coordination::Error::ZOK;
-                },
-                [&, &path = delta.path](KeeperStorage::RemoveNodeDelta & remove_delta)
+                }
+                else if constexpr (std::same_as<DeltaType, KeeperStorage::RemoveNodeDelta>)
                 {
-                    if (!removeNode(path, remove_delta.version))
+                    if (!removeNode(path, operation.version))
                         fail();
 
                     return Coordination::Error::ZOK;
-                },
-                [&, &path = delta.path](KeeperStorage::SetACLDelta & acl_delta)
+                }
+                else if constexpr (std::same_as<DeltaType, KeeperStorage::SetACLDelta>)
                 {
                     auto node_it = container.find(path);
                     if (node_it != container.end())
                         fail();
 
-                    if (acl_delta.version != -1 && acl_delta.version != node_it->value.stat.aversion)
+                    if (operation.version != -1 && operation.version != node_it->value.stat.aversion)
                         fail();
 
                     acl_map.removeUsage(node_it->value.acl_id);
 
-                    uint64_t acl_id = acl_map.convertACLs(acl_delta.acls);
+                    uint64_t acl_id = acl_map.convertACLs(operation.acls);
                     acl_map.addUsage(acl_id);
 
                     container.updateValue(path, [acl_id](KeeperStorage::Node & node) { node.acl_id = acl_id; });
 
                     return Coordination::Error::ZOK;
-                },
-                [&](KeeperStorage::ErrorDelta & error_delta) { return error_delta.error; },
-                [&](KeeperStorage::SubDeltaEnd &)
+                }
+                else if constexpr (std::same_as<DeltaType, KeeperStorage::SetACLDelta>)
+                    return operation.error;
+                else if constexpr (std::same_as<DeltaType, KeeperStorage::SubDeltaEnd>)
                 {
                     finish_subdelta = true;
                     return Coordination::Error::ZOK;
-                },
-                [&](KeeperStorage::FailedMultiDelta &) -> Coordination::Error
+                }
+                else
                 {
-                    // this shouldn't be called in any process functions
+                    // shouldn't be called in any process functions
                     fail();
-                }},
+                }
+            },
             delta.operation);
 
         if (result != Coordination::Error::ZOK)
@@ -1562,11 +1565,14 @@ void KeeperStorage::preprocessRequest(
             {
                 if (current_nodes.hasNode(ephemeral_path))
                 {
-                    deltas.emplace_back(parentPath(ephemeral_path).toString(), new_last_zxid, UpdateNodeDelta{[ephemeral_path](Node & parent)
-                    {
-                        --parent.stat.numChildren;
-                        ++parent.stat.cversion;
-                    }});
+                    deltas.emplace_back(
+                        parentPath(ephemeral_path).toString(),
+                        new_last_zxid,
+                        UpdateNodeDelta{[ephemeral_path](Node & parent)
+                                        {
+                                            --parent.stat.numChildren;
+                                            ++parent.stat.cversion;
+                                        }});
 
                     deltas.emplace_back(ephemeral_path, new_last_zxid, RemoveNodeDelta());
                 }
