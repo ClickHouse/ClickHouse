@@ -216,6 +216,24 @@ INSTANTIATE_TEST_SUITE_P(Basic,
                 187618332,
                 123
             }
+        },
+        {
+            "Negative timestamp 1969-12-31 23:59:59.123 UTC",
+            DateTime64(-877),
+            3,
+            {
+                0,
+                -877
+            }
+        },
+        {
+            "Positive timestamp 1970-01-01 00:00:00.123 UTC",
+            DateTime64(123),
+            3,
+            {
+                0,
+                123
+            }
         }
     })
 );
