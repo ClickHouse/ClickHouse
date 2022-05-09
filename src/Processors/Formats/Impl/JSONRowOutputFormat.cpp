@@ -47,7 +47,7 @@ void JSONRowOutputFormat::writeField(const IColumn & column, const ISerializatio
 
 void JSONRowOutputFormat::writeFieldDelimiter()
 {
-    writeJSONFieldDelimiter(out);
+    writeJSONFieldDelimiter(*ostr);
 }
 
 
@@ -67,7 +67,7 @@ void JSONRowOutputFormat::writeRowEndDelimiter()
 
 void JSONRowOutputFormat::writeRowBetweenDelimiter()
 {
-    writeJSONFieldDelimiter(out);
+    writeJSONFieldDelimiter(*ostr);
 }
 
 
