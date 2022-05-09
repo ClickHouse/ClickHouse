@@ -65,6 +65,7 @@ public:
         size_t size() const;
         size_t byteSize() const;
         size_t allocatedBytes() const;
+        void get(size_t n, Field & res) const;
 
         bool isFinalized() const;
         const DataTypePtr & getLeastCommonType() const { return least_common_type.get(); }
@@ -100,6 +101,9 @@ public:
         IColumn & getFinalizedColumn();
         const IColumn & getFinalizedColumn() const;
         const ColumnPtr & getFinalizedColumnPtr() const;
+
+        const std::vector<WrappedPtr> & getData() const { return data; }
+        size_t getNumberOfDefaultsInPrefix() const { return num_of_defaults_in_prefix; }
 
         friend class ColumnObject;
 
@@ -179,8 +183,6 @@ public:
     Subcolumns & getSubcolumns() { return subcolumns; }
     PathsInData getKeys() const;
 
-    bool isFinalized() const;
-
     /// Part of interface
 
     const char * getFamilyName() const override { return "Object"; }
@@ -206,6 +208,7 @@ public:
 
     /// Finalizes all subcolumns.
     void finalize() override;
+    bool isFinalized() const override;
 
     /// All other methods throw exception.
 

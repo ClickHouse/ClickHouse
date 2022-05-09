@@ -24,6 +24,7 @@ namespace ErrorCodes
     extern const int NUMBER_OF_DIMENSIONS_MISMATHED;
     extern const int NOT_IMPLEMENTED;
     extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
+    extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
 namespace
@@ -179,7 +180,7 @@ ColumnObject::Subcolumn::Subcolumn(
 {
 }
 
-size_t ColumnObject::Subcolumn::Subcolumn::size() const
+size_t ColumnObject::Subcolumn::size() const
 {
     size_t res = num_of_defaults_in_prefix;
     for (const auto & part : data)
@@ -187,7 +188,7 @@ size_t ColumnObject::Subcolumn::Subcolumn::size() const
     return res;
 }
 
-size_t ColumnObject::Subcolumn::Subcolumn::byteSize() const
+size_t ColumnObject::Subcolumn::byteSize() const
 {
     size_t res = 0;
     for (const auto & part : data)
@@ -195,12 +196,43 @@ size_t ColumnObject::Subcolumn::Subcolumn::byteSize() const
     return res;
 }
 
-size_t ColumnObject::Subcolumn::Subcolumn::allocatedBytes() const
+size_t ColumnObject::Subcolumn::allocatedBytes() const
 {
     size_t res = 0;
     for (const auto & part : data)
         res += part->allocatedBytes();
     return res;
+}
+
+void ColumnObject::Subcolumn::get(size_t n, Field & res) const
+{
+    if (isFinalized())
+    {
+        getFinalizedColumn().get(n, res);
+        return;
+    }
+
+    size_t ind = n;
+    if (ind < num_of_defaults_in_prefix)
+    {
+        res = least_common_type.get()->getDefault();
+        return;
+    }
+
+    ind -= num_of_defaults_in_prefix;
+    for (const auto & part : data)
+    {
+        if (ind < part->size())
+        {
+            part->get(ind, res);
+            res = convertFieldToTypeOrThrow(res, *least_common_type.get());
+            return;
+        }
+
+        ind -= part->size();
+    }
+
+    throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Index ({}) for getting field is out of range", n);
 }
 
 void ColumnObject::Subcolumn::checkTypes() const
@@ -593,39 +625,16 @@ void ColumnObject::get(size_t n, Field & res) const
     res = Object();
     auto & object = res.get<Object &>();
 
-    if (isFinalized())
+    for (const auto & entry : subcolumns)
     {
-        for (const auto & entry : subcolumns)
-        {
-            auto it = object.try_emplace(entry->path.getPath()).first;
-            entry->data.data.back()->get(n, it->second);
-        }
-    }
-    else
-    {
-        for (const auto & entry : subcolumns)
-        {
-            size_t ind = n;
-            for (const auto & part : entry->data.data)
-            {
-                if (ind < part->size())
-                {
-                    auto it = object.try_emplace(entry->path.getPath()).first;
-                    part->get(ind, it->second);
-                    it->second = convertFieldToTypeOrThrow(it->second, *entry->data.getLeastCommonType());
-                    break;
-                }
-
-                ind -= part->size();
-            }
-        }
+        auto it = object.try_emplace(entry->path.getPath()).first;
+        entry->data.get(n, it->second);
     }
 }
 
 void ColumnObject::insertFrom(const IColumn & src, size_t n)
 {
     insert(src[n]);
-    finalize();
 }
 
 void ColumnObject::insertRangeFrom(const IColumn & src, size_t start, size_t length)
@@ -635,8 +644,7 @@ void ColumnObject::insertRangeFrom(const IColumn & src, size_t start, size_t len
 
     if (!src_object->isFinalized())
     {
-        column_holder = IColumn::mutate(src_object->getPtr());
-        column_holder->finalize();
+        column_holder = src.cloneFinalized();
         src_object = &assert_cast<const ColumnObject &>(*column_holder);
     }
 
@@ -692,10 +700,9 @@ MutableColumnPtr ColumnObject::applyForSubcolumns(Func && func) const
 {
     if (!isFinalized())
     {
-        auto finalized = IColumn::mutate(getPtr());
+        auto finalized = cloneFinalized();
         auto & finalized_object = assert_cast<ColumnObject &>(*finalized);
-        finalized_object.finalize();
-        return finalized_object.applyForSubcolumns(std::move(func));
+        return finalized_object.applyForSubcolumns(std::forward<Func>(func));
     }
 
     auto res = ColumnObject::create(is_nullable);
@@ -704,6 +711,7 @@ MutableColumnPtr ColumnObject::applyForSubcolumns(Func && func) const
         auto new_subcolumn = func(subcolumn->data.getFinalizedColumn());
         res->addSubcolumn(subcolumn->path, new_subcolumn->assumeMutable());
     }
+
     return res;
 }
 
@@ -843,13 +851,16 @@ bool ColumnObject::isFinalized() const
 
 void ColumnObject::finalize()
 {
+    if (isFinalized())
+        return;
+
     size_t old_size = size();
     Subcolumns new_subcolumns;
     for (auto && entry : subcolumns)
     {
         const auto & least_common_type = entry->data.getLeastCommonType();
 
-        /// Do not add subcolumns, which consists only from NULLs.
+        /// Do not add subcolumns, which consist only from NULLs.
         if (isNothing(getBaseTypeOfArray(least_common_type)))
             continue;
 

@@ -10,8 +10,6 @@
 #include <Common/HashTable/HashSet.h>
 #include <Columns/ColumnObject.h>
 
-#include <Common/FieldVisitorToString.h>
-
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/VarInt.h>
@@ -242,11 +240,8 @@ void SerializationObject<Parser>::serializeBinaryBulkWithMultipleStreams(
 
     if (!column_object.isFinalized())
     {
-        auto finalized = IColumn::mutate(column_object.getPtr());
-        auto & finalized_object = assert_cast<ColumnObject &>(*finalized);
-        finalized_object.finalize();
-        serializeBinaryBulkWithMultipleStreams(
-            finalized_object, offset, limit, settings, state);
+        auto finalized = column_object.cloneFinalized();
+        serializeBinaryBulkWithMultipleStreams(*finalized, offset, limit, settings, state);
         return;
     }
 
@@ -374,19 +369,66 @@ void SerializationObject<Parser>::serializeTextImpl(const IColumn & column, size
     const auto & column_object = assert_cast<const ColumnObject &>(column);
     const auto & subcolumns = column_object.getSubcolumns();
 
+    bool first = true;
     writeChar('{', ostr);
-    for (auto it = subcolumns.begin(); it != subcolumns.end(); ++it)
-    {
-        if (it != subcolumns.begin())
-            writeCString(",", ostr);
 
-        writeDoubleQuoted((*it)->path.getPath(), ostr);
+    for (const auto & entry : subcolumns)
+    {
+        WriteBufferFromOwnString value_buf;
+        bool have_value = serializeTextFromSubcolumn(entry->data, row_num, value_buf, settings);
+        if (!have_value)
+            continue;
+
+        if (!first)
+            writeCString(",", ostr);
+        else
+            first = false;
+
+        writeDoubleQuoted(entry->path.getPath(), ostr);
         writeChar(':', ostr);
 
-        auto serialization = (*it)->data.getLeastCommonType()->getDefaultSerialization();
-        serialization->serializeTextJSON((*it)->data.getFinalizedColumn(), row_num, ostr, settings);
+        auto value = value_buf.stringRef();
+        ostr.write(value.data, value.size);
     }
     writeChar('}', ostr);
+}
+
+template <typename Parser>
+bool SerializationObject<Parser>::serializeTextFromSubcolumn(
+    const ColumnObject::Subcolumn & subcolumn, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
+{
+    if (subcolumn.isFinalized())
+    {
+        const auto & finalized_column = subcolumn.getFinalizedColumn();
+        if (finalized_column.isDefaultAt(row_num))
+            return false;
+
+        auto serialization = subcolumn.getLeastCommonType()->getSerialization(*finalized_column.getSerializationInfo());
+        serialization->serializeTextJSON(finalized_column, row_num, ostr, settings);
+        return true;
+    }
+
+    size_t ind = row_num;
+    if (ind < subcolumn.getNumberOfDefaultsInPrefix())
+        return false;
+
+    ind -= subcolumn.getNumberOfDefaultsInPrefix();
+    for (const auto & part : subcolumn.getData())
+    {
+        if (ind < part->size())
+        {
+            if (part->isDefaultAt(ind))
+                return false;
+
+            auto serialization = getDataTypeByColumn(*part)->getSerialization(*part->getSerializationInfo());
+            serialization->serializeTextJSON(*part, ind, ostr, settings);
+            return true;
+        }
+
+        ind -= part->size();
+    }
+
+    return false;
 }
 
 template <typename Parser>

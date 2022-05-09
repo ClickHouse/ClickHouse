@@ -444,6 +444,14 @@ public:
 
     /// Some columns may require finalization before using of other operations.
     virtual void finalize() {}
+    virtual bool isFinalized() const { return true; }
+
+    MutablePtr cloneFinalized() const
+    {
+        auto finalized = IColumn::mutate(getPtr());
+        finalized->finalize();
+        return finalized;
+    }
 
     [[nodiscard]] static MutablePtr mutate(Ptr ptr)
     {
