@@ -28,7 +28,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int DISKANN_INDEX_EXCEPTION;
+    extern const int UNKNOWN_EXCEPTION;
 }
 
 namespace detail
@@ -87,7 +87,7 @@ DiskANNIndexPtr constructIndexFromDatapoints(uint32_t dimensions, std::vector<Di
             e.message() + " dims: " + std::to_string(dimensions)
             + " datapoints: " + std::to_string(datapoints.size())
             + " expected: " + std::to_string(datapoints.size() * sizeof(DiskANNValue) + 8),
-            ErrorCodes::DISKANN_INDEX_EXCEPTION
+            ErrorCodes::UNKNOWN_EXCEPTION
         );
     }
 }
@@ -122,7 +122,7 @@ DiskANNSearchResult getDistancesToVector(
     }
     catch (diskann::ANNException& e)
     {
-        throw Exception(e.message(), ErrorCodes::DISKANN_INDEX_EXCEPTION);
+        throw Exception(e.message(), ErrorCodes::UNKNOWN_EXCEPTION);
     }
 
     DiskANNSearchResult result;
