@@ -188,7 +188,7 @@ bool ANNCondition::traverseAtomAST(const ASTPtr & node, RPNElement & out)
 
         return true;
     }
-    // Match identifier 
+    // Match identifier
     else if (const auto * identifier = node->as<ASTIdentifier>())
     {
         out.function = RPNElement::FUNCTION_IDENTIFIER;
@@ -209,7 +209,7 @@ bool ANNCondition::tryCastToConstType(const ASTPtr & node, RPNElement & out)
 
     if (KeyCondition::getConstant(node, block_with_constants, const_value, const_type))
     {
-        /// Check for constant types 
+        /// Check for constant types
         if (const_value.getType() == Field::Types::Float64)
         {
             out.function = RPNElement::FUNCTION_FLOAT_LITERAL;
@@ -415,9 +415,9 @@ bool ANNCondition::matchMainParts(RPN::iterator & iter, RPN::iterator & end,
 
 bool ANNCondition::matchRPNWhere(RPN & rpn, ANNExpression & expr)
 {
-    // WHERE section must have at least 6 expressions
-    // Operator->Distance(float)->DistanceFunc->Column->TupleFunc(Literal)->Coordinates(floats)
-    if (rpn.size() < 6)
+    // WHERE section must have at least 5 expressions
+    // Operator->Distance(float)->DistanceFunc->Column->TupleFunc(TargetVector(floats))
+    if (rpn.size() < 5)
     {
         return false;
     }
