@@ -4,9 +4,19 @@ from helpers.cluster import ClickHouseCluster
 import time
 
 cluster = ClickHouseCluster(__file__, name="test_keeper_4lw_allow_list")
-node1 = cluster.add_instance('node1', main_configs=['configs/keeper_config_with_allow_list.xml'], stay_alive=True)
-node2 = cluster.add_instance('node2', main_configs=['configs/keeper_config_without_allow_list.xml'], stay_alive=True)
-node3 = cluster.add_instance('node3', main_configs=['configs/keeper_config_with_allow_list_all.xml'], stay_alive=True)
+node1 = cluster.add_instance(
+    "node1", main_configs=["configs/keeper_config_with_allow_list.xml"], stay_alive=True
+)
+node2 = cluster.add_instance(
+    "node2",
+    main_configs=["configs/keeper_config_without_allow_list.xml"],
+    stay_alive=True,
+)
+node3 = cluster.add_instance(
+    "node3",
+    main_configs=["configs/keeper_config_with_allow_list_all.xml"],
+    stay_alive=True,
+)
 
 from kazoo.client import KazooClient, KazooState
 
@@ -62,7 +72,9 @@ def get_keeper_socket(nodename):
 
 
 def get_fake_zk(nodename, timeout=30.0):
-    _fake_zk_instance = KazooClient(hosts=cluster.get_instance_ip(nodename) + ":9181", timeout=timeout)
+    _fake_zk_instance = KazooClient(
+        hosts=cluster.get_instance_ip(nodename) + ":9181", timeout=timeout
+    )
     _fake_zk_instance.start()
     return _fake_zk_instance
 
@@ -73,7 +85,7 @@ def close_keeper_socket(cli):
         cli.close()
 
 
-def send_cmd(node_name, command = "ruok"):
+def send_cmd(node_name, command="ruok"):
     client = None
     try:
         wait_nodes()
@@ -89,9 +101,9 @@ def test_allow_list(started_cluster):
     client = None
     try:
         wait_nodes()
-        assert send_cmd(node1.name) == 'imok'
-        assert send_cmd(node1.name, command = 'mntr') == ''
-        assert send_cmd(node2.name) == 'imok'
-        assert send_cmd(node3.name) == 'imok'
+        assert send_cmd(node1.name) == "imok"
+        assert send_cmd(node1.name, command="mntr") == ""
+        assert send_cmd(node2.name) == "imok"
+        assert send_cmd(node3.name) == "imok"
     finally:
         close_keeper_socket(client)

@@ -19,8 +19,8 @@
 #include <Common/ThreadProfileEvents.h>
 #include <Common/ThreadStatus.h>
 #include <Common/checkStackSize.h>
+#include <Common/logger_useful.h>
 #include <base/scope_guard.h>
-#include <base/logger_useful.h>
 
 #include <atomic>
 #include <chrono>
@@ -420,25 +420,13 @@ static QueryPipeline process(Block block, ViewRuntimeData & view, const ViewsDat
     ///  but it will contain single block (that is INSERT-ed into main table).
     /// InterpreterSelectQuery will do processing of alias columns.
     auto local_context = Context::createCopy(context);
-    local_context->addViewSource(StorageValues::create(
+    local_context->addViewSource(std::make_shared<StorageValues>(
         views_data.source_storage_id,
         views_data.source_metadata_snapshot->getColumns(),
         std::move(block),
         views_data.source_storage->getVirtuals()));
 
-    /// We need keep InterpreterSelectQuery, until the processing will be finished, since:
-    ///
-    /// - We copy Context inside InterpreterSelectQuery to support
-    ///   modification of context (Settings) for subqueries
-    /// - InterpreterSelectQuery lives shorter than query pipeline.
-    ///   It's used just to build the query pipeline and no longer needed
-    /// - ExpressionAnalyzer and then, Functions, that created in InterpreterSelectQuery,
-    ///   **can** take a reference to Context from InterpreterSelectQuery
-    ///   (the problem raises only when function uses context from the
-    ///    execute*() method, like FunctionDictGet do)
-    /// - These objects live inside query pipeline (DataStreams) and the reference become dangling.
     InterpreterSelectQuery select(view.query, local_context, SelectQueryOptions());
-
     auto pipeline = select.buildQueryPipeline();
     pipeline.resize(1);
 

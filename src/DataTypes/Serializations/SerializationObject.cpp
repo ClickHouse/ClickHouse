@@ -30,45 +30,12 @@ namespace ErrorCodes
 namespace
 {
 
-/// Visitor that keeps @num_dimensions_to_keep dimensions in arrays
-/// and replaces all scalars or nested arrays to @replacement at that level.
-class FieldVisitorReplaceScalars : public StaticVisitor<Field>
-{
-public:
-    FieldVisitorReplaceScalars(const Field & replacement_, size_t num_dimensions_to_keep_)
-        : replacement(replacement_), num_dimensions_to_keep(num_dimensions_to_keep_)
-    {
-    }
-
-    template <typename T>
-    Field operator()(const T & x) const
-    {
-        if constexpr (std::is_same_v<T, Array>)
-        {
-            if (num_dimensions_to_keep == 0)
-                return replacement;
-
-            const size_t size = x.size();
-            Array res(size);
-            for (size_t i = 0; i < size; ++i)
-                res[i] = applyVisitor(FieldVisitorReplaceScalars(replacement, num_dimensions_to_keep - 1), x[i]);
-            return res;
-        }
-        else
-            return replacement;
-    }
-
-private:
-    const Field & replacement;
-    size_t num_dimensions_to_keep;
-};
-
-using Node = typename ColumnObject::SubcolumnsTree::Node;
+using Node = typename ColumnObject::Subcolumns::Node;
 
 /// Finds a subcolumn from the same Nested type as @entry and inserts
 /// an array with default values with consistent sizes as in Nested type.
 bool tryInsertDefaultFromNested(
-    const std::shared_ptr<Node> & entry, const ColumnObject::SubcolumnsTree & subcolumns)
+    const std::shared_ptr<Node> & entry, const ColumnObject::Subcolumns & subcolumns)
 {
     if (!entry->path.hasNested())
         return false;
@@ -120,7 +87,6 @@ bool tryInsertDefaultFromNested(
 
     auto default_field = applyVisitor(FieldVisitorReplaceScalars(default_scalar, num_dimensions_to_keep), last_field);
     entry->data.insert(std::move(default_field));
-
     return true;
 }
 
@@ -136,9 +102,16 @@ void SerializationObject<Parser>::deserializeTextImpl(IColumn & column, Reader &
     reader(buf);
     std::optional<ParseResult> result;
 
+    /// Treat empty string as an empty object
+    /// for better CAST from String to Object.
+    if (!buf.empty())
     {
         auto parser = parsers_pool.get([] { return new Parser; });
         result = parser->parse(buf.data(), buf.size());
+    }
+    else
+    {
+        result = ParseResult{};
     }
 
     if (!result)
@@ -198,7 +171,7 @@ void SerializationObject<Parser>::deserializeWholeText(IColumn & column, ReadBuf
 template <typename Parser>
 void SerializationObject<Parser>::deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
 {
-    deserializeTextImpl(column, [&](String & s) { readEscapedStringInto(s, istr); });
+    deserializeTextImpl(column, [&](String & s) { readEscapedString(s, istr); });
 }
 
 template <typename Parser>

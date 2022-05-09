@@ -5,7 +5,8 @@ from helpers.test_tools import assert_eq_with_retry
 
 cluster = ClickHouseCluster(__file__)
 
-node = cluster.add_instance('node')
+node = cluster.add_instance("node")
+
 
 @pytest.fixture(scope="module")
 def start_cluster():
@@ -16,8 +17,13 @@ def start_cluster():
     finally:
         cluster.shutdown()
 
+
 def make_storage_with_key(id):
-        node.exec_in_container(["bash", "-c" , """cat > /etc/clickhouse-server/config.d/storage_keys_config.xml << EOF
+    node.exec_in_container(
+        [
+            "bash",
+            "-c",
+            """cat > /etc/clickhouse-server/config.d/storage_keys_config.xml << EOF
 <?xml version="1.0"?>
 <clickhouse>
     <encryption_codecs>
@@ -33,27 +39,36 @@ def make_storage_with_key(id):
         </aes_256_gcm_siv>
     </encryption_codecs>
 </clickhouse>
-EOF""".format(cur_id=id)])
-        node.query("SYSTEM RELOAD CONFIG")
+EOF""".format(
+                cur_id=id
+            ),
+        ]
+    )
+    node.query("SYSTEM RELOAD CONFIG")
+
 
 def test_different_keys(start_cluster):
     make_storage_with_key(0)
-    node.query("""
+    node.query(
+        """
         CREATE TABLE encrypted_test_128 (
             id Int64,
             data String Codec(AES_128_GCM_SIV)
         ) ENGINE=MergeTree()
         ORDER BY id
-        """)
+        """
+    )
 
-    node.query("""
+    node.query(
+        """
         CREATE TABLE encrypted_test_256 (
             id Int64,
             data String Codec(AES_256_GCM_SIV)
         ) ENGINE=MergeTree()
         ORDER BY id
-        """)
-    
+        """
+    )
+
     node.query("INSERT INTO encrypted_test_128 VALUES (0,'data'),(1,'data')")
     select_query = "SELECT * FROM encrypted_test_128 ORDER BY id FORMAT Values"
     assert node.query(select_query) == "(0,'data'),(1,'data')"
