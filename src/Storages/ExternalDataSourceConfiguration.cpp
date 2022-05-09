@@ -486,8 +486,10 @@ template
 bool getExternalDataSourceConfiguration(const ASTs & args, BaseSettings<KafkaSettingsTraits> & settings, ContextPtr context);
 #endif
 
+#if USE_HIREDIS
 template
 bool getExternalDataSourceConfiguration(const ASTs & args, BaseSettings<RedisStreamsSettingsTraits> & settings, ContextPtr context);
+#endif
 
 template
 std::optional<ExternalDataSourceInfo> getExternalDataSourceConfiguration(
