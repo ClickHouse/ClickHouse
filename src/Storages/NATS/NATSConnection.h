@@ -2,14 +2,13 @@
 
 #include <Storages/NATS/UVLoop.h>
 #include <Storages/NATS/NATSHandler.h>
-
+#include <Storages/NATS/Buffer_fwd.h>
 
 namespace DB
 {
 
 struct NATSConfiguration
 {
-    String url;
     String host;
     UInt16 port;
     String username;
@@ -20,13 +19,12 @@ struct NATSConfiguration
     String connection_string;
 };
 
-using SubscriptionPtr = std::unique_ptr<natsSubscription, decltype(&natsSubscription_Destroy)>;
-
-class NATSConnection
+class NATSConnectionManager
 {
 
 public:
-    NATSConnection(const NATSConfiguration & configuration_, Poco::Logger * log_);
+    NATSConnectionManager(const NATSConfiguration & configuration_, Poco::Logger * log_);
+    ~NATSConnectionManager() { natsConnection_Destroy(connection); }
 
     bool isConnected();
 
@@ -38,7 +36,7 @@ public:
 
     bool closed();
 
-    SubscriptionPtr createSubscription(const std::string& subject);
+    SubscriptionPtr createSubscription(const std::string& subject, natsMsgHandler handler, ReadBufferFromNATSConsumer * consumer);
 
     /// NATSHandler is thread safe. Any public methods can be called concurrently.
     NATSHandler & getHandler() { return event_handler; }
@@ -63,6 +61,6 @@ private:
     std::mutex mutex;
 };
 
-using NATSConnectionPtr = std::unique_ptr<NATSConnection>;
+using NATSConnectionManagerPtr = std::shared_ptr<NATSConnectionManager>;
 
 }

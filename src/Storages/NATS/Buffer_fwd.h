@@ -6,9 +6,9 @@ namespace DB
 {
 
 class ReadBufferFromNATSConsumer;
-using ConsumerBufferPtr = std::shared_ptr<ReadBufferFromRabbitMQConsumer>;
+using ConsumerBufferPtr = std::shared_ptr<ReadBufferFromNATSConsumer>;
 
 class WriteBufferToNATSProducer;
-using ProducerBufferPtr = std::shared_ptr<WriteBufferToRabbitMQProducer>;
+using ProducerBufferPtr = std::shared_ptr<WriteBufferToNATSProducer>;
 
 }

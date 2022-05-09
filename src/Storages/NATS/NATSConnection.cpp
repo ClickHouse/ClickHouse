@@ -7,36 +7,36 @@
 namespace DB
 {
 
-static const auto CONNECT_SLEEP = 200;
+//static const auto CONNECT_SLEEP = 200;
 static const auto RETRIES_MAX = 20;
 
 
-NATSConnection::NATSConnection(const NATSConfiguration & configuration_, Poco::Logger * log_)
+NATSConnectionManager::NATSConnectionManager(const NATSConfiguration & configuration_, Poco::Logger * log_)
     : configuration(configuration_)
     , log(log_)
     , event_handler(loop.getLoop(), log)
 {
 }
 
-String NATSConnection::connectionInfoForLog() const
+String NATSConnectionManager::connectionInfoForLog() const
 {
     return configuration.host + ':' + toString(configuration.port);
 }
 
-bool NATSConnection::isConnected()
+bool NATSConnectionManager::isConnected()
 {
     std::lock_guard lock(mutex);
     return isConnectedImpl();
 }
 
-bool NATSConnection::connect()
+bool NATSConnectionManager::connect()
 {
     std::lock_guard lock(mutex);
     connectImpl();
     return isConnectedImpl();
 }
 
-bool NATSConnection::reconnect()
+bool NATSConnectionManager::reconnect()
 {
     std::lock_guard lock(mutex);
     if (isConnectedImpl())
@@ -44,69 +44,70 @@ bool NATSConnection::reconnect()
 
     disconnectImpl();
 
-    /// This will force immediate closure if not yet closed
-    if (!connection->closed())
-        connection->close(true);
-
     LOG_DEBUG(log, "Trying to restore connection to {}", connectionInfoForLog());
     connectImpl();
 
     return isConnectedImpl();
 }
 
-SubscriptionPtr NATSConnection::createSubscription(const std::string& subject)
+SubscriptionPtr NATSConnectionManager::createSubscription(const std::string& subject, natsMsgHandler handler, ReadBufferFromNATSConsumer * consumer)
 {
     std::lock_guard lock(mutex);
     natsSubscription * ns;
-    natsConnection_SubscribeSync(&ns, connection, subject.c_str());
+    status = natsConnection_Subscribe(&ns, connection, subject.c_str(), handler, static_cast<void *>(consumer));
+    if (status == NATS_OK)
+        status = natsSubscription_SetPendingLimits(ns, -1, -1);
+    if (status == NATS_OK)
+        LOG_DEBUG(log, "Subscribed to subject {}", subject);
     return SubscriptionPtr(ns, &natsSubscription_Destroy);
 }
 
-void NATSConnection::disconnect()
+void NATSConnectionManager::disconnect()
 {
     std::lock_guard lock(mutex);
     disconnectImpl();
 }
 
-bool NATSConnection::closed()
+bool NATSConnectionManager::closed()
 {
     std::lock_guard lock(mutex);
     return natsConnection_IsClosed(connection);
 }
 
-bool NATSConnection::isConnectedImpl() const
+bool NATSConnectionManager::isConnectedImpl() const
 {
-    return event_handler.connectionRunning() && !natsConnection_IsClosed(connection);
+    return event_handler.connectionRunning() && !natsConnection_IsClosed(connection) && status == natsStatus::NATS_OK;
 }
 
-void NATSConnection::connectImpl()
+void NATSConnectionManager::connectImpl()
 {
+    natsOptions * options = event_handler.getOptions();
+    natsOptions_SetUserInfo(options, configuration.username.c_str(), configuration.password.c_str());
+    if (configuration.secure) {
+        natsOptions_SetSecure(options, true);
+        natsOptions_SkipServerVerification(options, true);
+    }
+    std::string address;
     if (configuration.connection_string.empty())
     {
-        LOG_DEBUG(log, "Connecting to: {}:{} (user: {})", configuration.host, configuration.port, configuration.username);
-        AMQP::Login login(configuration.username, configuration.password);
-        AMQP::Address address(configuration.host, configuration.port, login, configuration.vhost, configuration.secure);
-        connection = std::make_unique<AMQP::TcpConnection>(&event_handler, address);
+        address = configuration.host + ":" + std::to_string(configuration.port);
     }
     else
     {
-        AMQP::Address address(configuration.connection_string);
-        connection = std::make_unique<AMQP::TcpConnection>(&event_handler, address);
+        address = configuration.connection_string;
     }
-
-    auto cnt_retries = 0;
-    while (true)
+    natsOptions_SetURL(options, address.c_str());
+    status = natsConnection_Connect(&connection, options);
+    if (status != NATS_OK)
     {
-        event_handler.iterateLoop();
-
-        if (connection->ready() || cnt_retries++ == RETRIES_MAX)
-            break;
-
-        std::this_thread::sleep_for(std::chrono::milliseconds(CONNECT_SLEEP));
+        LOG_DEBUG(log, "Failed to connect to NATS on address: {}", address);
+        return;
     }
+
+    event_handler.changeConnectionStatus(true);
 }
 
-void NATSConnection::disconnectImpl()
+void NATSConnectionManager::disconnectImpl()
 {
     natsConnection_Close(connection);
 
@@ -114,8 +115,10 @@ void NATSConnection::disconnectImpl()
      *  an AMQP closing-handshake is  performed). But cannot open a new connection until previous one is properly closed
      */
     size_t cnt_retries = 0;
-    while (!closed() && cnt_retries++ != RETRIES_MAX)
+    while (!natsConnection_IsClosed(connection) && cnt_retries++ != RETRIES_MAX)
         event_handler.iterateLoop();
+
+    event_handler.changeConnectionStatus(false);
 }
 
 }
