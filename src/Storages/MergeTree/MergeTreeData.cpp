@@ -1759,7 +1759,7 @@ void MergeTreeData::clearPartsFromFilesystem(const DataPartsVector & parts, bool
 {
     NameSet part_names_successeded;
 
-    auto get_failed_parts = [&part_names_successeded, &parts_failed_to_delete, &parts, this] ()
+    auto get_failed_parts = [&part_names_successeded, &parts_failed_to_delete, &parts] ()
     {
         if (part_names_successeded.size() == parts.size())
             return;
@@ -3030,7 +3030,7 @@ MergeTreeData::DataPartsVector MergeTreeData::removePartsInRangeFromWorkingSetAn
     /// We a going to remove active parts covered by drop_range without timeout.
     /// Let's also reset timeout for inactive parts
     /// and add these parts to list of parts to remove from ZooKeeper
-    auto inactive_parts_to_remove_immediately = getDataPartsVectorInPartitionForInternalUsage(DataPartState::Outdated, drop_range.partition_id, &lock);
+    auto inactive_parts_to_remove_immediately = getDataPartsVectorInPartitionForInternalUsage({DataPartState::Outdated, DataPartState::Deleting}, drop_range.partition_id, &lock);
 
     /// FIXME refactor removePartsFromWorkingSet(...), do not remove parts twice
     removePartsFromWorkingSet(txn, parts_to_remove, clear_without_timeout, lock);
@@ -3500,6 +3500,19 @@ MergeTreeData::DataPartsVector MergeTreeData::getVisibleDataPartsVectorInPartiti
     }
 
     return getDataPartsVectorInPartitionForInternalUsage(MergeTreeDataPartState::Active, partition_id, acquired_lock);
+}
+
+
+MergeTreeData::DataPartsVector MergeTreeData::getDataPartsVectorInPartitionForInternalUsage(const DataPartStates & affordable_states, const String & partition_id, DataPartsLock * acquired_lock) const
+{
+    auto lock = (acquired_lock) ? DataPartsLock() : lockParts();
+    DataPartsVector res;
+    for (const auto & state : affordable_states)
+    {
+        DataPartStateAndPartitionID state_with_partition{state, partition_id};
+        res.insert(res.end(), data_parts_by_state_and_info.lower_bound(state_with_partition), data_parts_by_state_and_info.upper_bound(state_with_partition));
+    }
+    return res;
 }
 
 MergeTreeData::DataPartsVector MergeTreeData::getDataPartsVectorInPartitionForInternalUsage(
