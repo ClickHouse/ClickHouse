@@ -34,23 +34,19 @@ namespace ErrorCodes
 namespace detail
 {
 
-size_t saveDataPoints(uint32_t dimensions, std::vector<DiskANNValue> datapoints, WriteBuffer & out)
+void saveDataPoints(uint32_t dimensions, std::vector<DiskANNValue> datapoints, WriteBuffer & out)
 {
-    assert(datapoints.size() % dimensions == 0);
     uint32_t num_of_points = static_cast<uint32_t>(datapoints.size()) / dimensions;
 
     out.write(reinterpret_cast<const char*>(&num_of_points), sizeof(num_of_points));
     out.write(reinterpret_cast<const char*>(&dimensions), sizeof(dimensions));
 
-    size_t steps = 0;
     for (float datapoint : datapoints)
     {
-        steps += 1;
         out.write(reinterpret_cast<const char*>(&datapoint), sizeof(DiskANNValue));
     }
 
     LOG_DEBUG(&Poco::Logger::get("DiskANN"), "Saved {} points", num_of_points);
-    return steps;
 }
 
 DiskANNIndexPtr constructIndexFromDatapoints(uint32_t dimensions, std::vector<DiskANNValue> datapoints)
@@ -83,12 +79,7 @@ DiskANNIndexPtr constructIndexFromDatapoints(uint32_t dimensions, std::vector<Di
     }
     catch (diskann::ANNException& e)
     {
-        throw Exception(
-            e.message() + " dims: " + std::to_string(dimensions)
-            + " datapoints: " + std::to_string(datapoints.size())
-            + " expected: " + std::to_string(datapoints.size() * sizeof(DiskANNValue) + 8),
-            ErrorCodes::UNKNOWN_EXCEPTION
-        );
+        throw Exception(e.message(), ErrorCodes::UNKNOWN_EXCEPTION);
     }
 }
 
@@ -118,7 +109,8 @@ DiskANNSearchResult getDistancesToVector(
 
     try
     {
-        disk_ann_index->search(target_vector.data(), k, neighbours_to_search, init_ids, indicies.data(), distances.data());
+        disk_ann_index->search(target_vector.data(), k, neighbours_to_search, init_ids,
+            indicies.data(), distances.data());
     }
     catch (diskann::ANNException& e)
     {
@@ -132,24 +124,10 @@ DiskANNSearchResult getDistancesToVector(
     return result;
 }
 
-bool isDistanceLower(float first, float second)
-{
-    /*
-    When using L2, DiskANN returns not the exact distance, but distance squared, that's why
-    we have to rise given distance to the power of 2.
-
-    Also, I don't know why, but DiskANN is not able to give precise answer to ANN task,
-    maybe it depends on hyperparameters and fine-tuning is needed. Nevertheless, temporary
-    ERROR_COEF is added to minimise the likelihood of false negative result
-    */
-
-    const static float ERROR_COEF = 10.f;
-    return first < second * second * ERROR_COEF;
 }
 
-}
-
-MergeTreeIndexGranuleDiskANN::MergeTreeIndexGranuleDiskANN(const String & index_name_, const Block & index_sample_block_)
+MergeTreeIndexGranuleDiskANN::MergeTreeIndexGranuleDiskANN(const String & index_name_,
+    const Block & index_sample_block_)
     : index_name(index_name_)
     , index_sample_block(index_sample_block_)
 {}
@@ -290,7 +268,8 @@ void MergeTreeIndexGranuleDiskANN::deserializeBinary(ReadBuffer & in, MergeTreeI
     LOG_DEBUG(&Poco::Logger::get("DiskANN"), "..done. Index has {} nodes and {} out-edges", nodes, cc);
 }
 
-MergeTreeIndexAggregatorDiskANN::MergeTreeIndexAggregatorDiskANN(const String & index_name_, const Block & index_sample_block_)
+MergeTreeIndexAggregatorDiskANN::MergeTreeIndexAggregatorDiskANN(const String & index_name_,
+    const Block & index_sample_block_)
     : index_name(index_name_)
     , index_sample_block(index_sample_block_)
 {}
@@ -327,11 +306,12 @@ MergeTreeIndexGranulePtr MergeTreeIndexAggregatorDiskANN::getGranuleAndReset()
     }
     catch (diskann::ANNException& e)
     {
-        throw Exception(e.message(), ErrorCodes::DISKANN_INDEX_EXCEPTION);
+        throw Exception(e.message(), ErrorCodes::UNKNOWN_EXCEPTION);
     }
     LOG_DEBUG(&Poco::Logger::get("DiskANN"), "DiskANN index has been successfully built!");
 
-    return std::make_shared<MergeTreeIndexGranuleDiskANN>(index_name, index_sample_block, base_index, dimensions.value(), std::move(accumulated_data));
+    return std::make_shared<MergeTreeIndexGranuleDiskANN>(index_name, index_sample_block, base_index,
+                                                          dimensions.value(), std::move(accumulated_data));
 }
 
 void MergeTreeIndexAggregatorDiskANN::flattenAccumulatedData(std::vector<std::vector<DiskANNValue>> data)
@@ -412,7 +392,7 @@ bool MergeTreeIndexConditionDiskANN::mayBeTrueOnGranule(MergeTreeIndexGranulePtr
     float distance = *std::min_element(search_result.distances.begin(), search_result.distances.end());
     LOG_DEBUG(&Poco::Logger::get("DiskANN"), "Maybe true on granule distances: {} <? {}", distance, min_distance);
 
-    return detail::isDistanceLower(distance, min_distance);
+    return distance < min_distance * min_distance;
 }
 
 std::vector<size_t> MergeTreeIndexConditionDiskANN::getUsefulRanges(MergeTreeIndexGranulePtr idx_granule) const
@@ -451,7 +431,8 @@ std::vector<size_t> MergeTreeIndexConditionDiskANN::getUsefulRanges(MergeTreeInd
     {
         LOG_DEBUG(&Poco::Logger::get("DiskANN"), "Distance: {}", search_result.distances[i]);
 
-        if (comp_dist_maybe.has_value() && !detail::isDistanceLower(search_result.distances[i], comp_dist_maybe.value()))
+        if (comp_dist_maybe.has_value() &&
+            search_result.distances[i] < comp_dist_maybe.value() * comp_dist_maybe.value())
         {
             break;
         }
