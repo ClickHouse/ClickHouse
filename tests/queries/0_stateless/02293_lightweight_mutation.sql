@@ -14,18 +14,18 @@ alter table t_light delete in partition 2 where a < 10;
 set enable_lightweight_mutation = 0;
 alter table t_light update b=-2 where a < 5;
 
-SELECT mutation_type, command, is_done FROM system.mutations WHERE table = 't_light';
+SELECT mutation_type, command, is_done FROM system.mutations WHERE database = currentDatabase() AND table = 't_light';
 
 SELECT '-----Check that select and merge with lightweight mutation.-----';
 select count(*) from t_light;
 select * from t_light order by a;
 
-select table, partition, name, rows from system.parts where active and table ='t_light' order by name;
+select table, partition, name, rows from system.parts where database = currentDatabase() AND active and table ='t_light' order by name;
 
 optimize table t_light final;
 select count(*) from t_light;
 
-select table, partition, name, rows from system.parts where active and table ='t_light' order by name;
+select table, partition, name, rows from system.parts where database = currentDatabase() AND active and table ='t_light' order by name;
 
 drop table t_light;
 
