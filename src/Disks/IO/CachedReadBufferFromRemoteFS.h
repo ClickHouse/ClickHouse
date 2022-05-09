@@ -28,6 +28,8 @@ public:
         const ReadSettings & settings_,
         size_t read_until_position_);
 
+    ~CachedReadBufferFromRemoteFS() override;
+
     bool nextImpl() override;
 
     off_t seek(off_t off, int whence) override;
@@ -116,8 +118,10 @@ private:
 
     String query_id;
     bool enable_logging = false;
+    String current_buffer_id;
 
     CurrentMetrics::Increment metric_increment{CurrentMetrics::FilesystemCacheReadBuffers};
+    ProfileEvents::Counters current_file_segment_counters;
 };
 
 }

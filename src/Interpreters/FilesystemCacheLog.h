@@ -37,8 +37,11 @@ struct FilesystemCacheLogElement
     String source_file_path;
 
     std::pair<size_t, size_t> file_segment_range{};
+    std::pair<size_t, size_t> requested_range{};
     ReadType read_type{};
     size_t file_segment_size;
+    String read_buffer_id;
+    std::shared_ptr<ProfileEvents::Counters::Snapshot> profile_counters;
 
     static std::string name() { return "FilesystemCacheLog"; }
 
