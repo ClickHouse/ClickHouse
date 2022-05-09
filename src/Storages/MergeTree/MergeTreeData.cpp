@@ -1754,37 +1754,49 @@ size_t MergeTreeData::clearOldPartsFromFilesystem(bool force)
     return parts_to_remove.size();
 }
 
-void MergeTreeData::clearPartsFromFilesystem(const DataPartsVector & parts)
-{
-    clearPartsFromFilesystemImpl(parts, true, nullptr);
-}
 
-void MergeTreeData::tryClearPartsFromFilesystem(const DataPartsVector & parts, NameSet & parts_failed_to_delete)
+void MergeTreeData::clearPartsFromFilesystem(const DataPartsVector & parts, bool throw_on_error, NameSet * parts_failed_to_delete)
 {
     NameSet part_names_successeded;
-    clearPartsFromFilesystemImpl(parts, false, &part_names_successeded);
 
-    if (part_names_successeded.size() == parts.size())
-        return;
-
-    for (const auto & part : parts)
+    auto get_failed_parts = [&part_names_successeded, &parts_failed_to_delete, &parts, this] ()
     {
-        if (!part_names_successeded.contains(part->name))
-            parts_failed_to_delete.insert(part->name);
+        if (part_names_successeded.size() == parts.size())
+            return;
+
+        if (parts_failed_to_delete)
+        {
+            for (const auto & part : parts)
+            {
+                if (!part_names_successeded.contains(part->name))
+                    parts_failed_to_delete->insert(part->name);
+            }
+        }
+    };
+
+    try
+    {
+        clearPartsFromFilesystemImpl(parts, &part_names_successeded);
+        get_failed_parts();
+    }
+    catch (...)
+    {
+        get_failed_parts();
+
+        if (throw_on_error)
+            throw;
     }
 }
 
-
-void MergeTreeData::clearPartsFromFilesystemImpl(const DataPartsVector & parts_to_remove, bool throw_on_error, NameSet * part_names_successed)
+void MergeTreeData::clearPartsFromFilesystemImpl(const DataPartsVector & parts_to_remove, NameSet * part_names_successed)
 {
     const auto settings = getSettings();
     if (parts_to_remove.size() > 1 && settings->max_part_removal_threads > 1 && parts_to_remove.size() > settings->concurrent_part_removal_threshold)
     {
         /// Parallel parts removal.
-
         size_t num_threads = std::min<size_t>(settings->max_part_removal_threads, parts_to_remove.size());
-        ThreadPool pool(num_threads);
         std::mutex part_names_mutex;
+        ThreadPool pool(num_threads);
 
         /// NOTE: Under heavy system load you may get "Cannot schedule a task" from ThreadPool.
         for (const DataPartPtr & part : parts_to_remove)
@@ -1804,42 +1816,16 @@ void MergeTreeData::clearPartsFromFilesystemImpl(const DataPartsVector & parts_t
             });
         }
 
-        if (throw_on_error)
-        {
-            pool.wait();
-        }
-        else
-        {
-            try
-            {
-                pool.wait();
-            }
-            catch (...)
-            {
-                tryLogCurrentException(log);
-            }
-        }
+        pool.wait();
     }
     else
     {
         for (const DataPartPtr & part : parts_to_remove)
         {
             LOG_DEBUG(log, "Removing part from filesystem {}", part->name);
-            try
-            {
-                part->remove();
-                if (part_names_successed)
-                    part_names_successed->insert(part->name);
-            }
-            catch (...)
-            {
-                if (throw_on_error)
-                    throw;
-
-                tryLogCurrentException(log);
-                break;
-            }
-
+            part->remove();
+            if (part_names_successed)
+                part_names_successed->insert(part->name);
         }
     }
 }
