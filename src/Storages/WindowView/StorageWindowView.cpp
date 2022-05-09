@@ -3,6 +3,7 @@
 
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsTimeWindow.h>
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
@@ -35,7 +36,6 @@
 #include <Processors/Transforms/FilterTransform.h>
 #include <Processors/Transforms/WatermarkTransform.h>
 #include <Processors/Transforms/SquashingChunksTransform.h>
-#include <Processors/Transforms/ReplacingWindowColumnTransform.h>
 #include <Processors/Transforms/MaterializingTransform.h>
 #include <Processors/Executors/PipelineExecutor.h>
 #include <Processors/Sinks/EmptySink.h>
@@ -334,6 +334,16 @@ namespace
         }
         __builtin_unreachable();
     }
+
+    class AddingAggregatedChunkInfoTransform : public ISimpleTransform
+    {
+    public:
+        explicit AddingAggregatedChunkInfoTransform(Block header) : ISimpleTransform(header, header, false) { }
+
+        void transform(Chunk & chunk) override { chunk.setChunkInfo(std::make_shared<AggregatedChunkInfo>()); }
+
+        String getName() const override { return "AddingAggregatedChunkInfoTransform"; }
+    };
 }
 
 static void extractDependentTable(ContextPtr context, ASTPtr & query, String & select_database_name, String & select_table_name)
@@ -373,22 +383,6 @@ static void extractDependentTable(ContextPtr context, ASTPtr & query, String & s
             "Logical error while creating StorageWindowView."
             " Could not retrieve table name from select query.",
             DB::ErrorCodes::LOGICAL_ERROR);
-}
-
-static size_t getWindowIDColumnPosition(const Block & header)
-{
-    auto position = -1;
-    for (const auto & column : header.getColumnsWithTypeAndName())
-    {
-        if (startsWith(column.name, "windowID"))
-        {
-            position = header.getPositionByName(column.name);
-            break;
-        }
-    }
-    if (position < 0)
-        throw Exception("Not found column windowID", ErrorCodes::LOGICAL_ERROR);
-    return position;
 }
 
 UInt32 StorageWindowView::getCleanupBound()
@@ -472,27 +466,37 @@ std::pair<BlocksPtr, Block> StorageWindowView::getNewBlocks(UInt32 watermark)
 
     auto builder = fetch.buildQueryPipeline();
 
-    DataTypes types{std::make_shared<DataTypeDateTime>(), std::make_shared<DataTypeDateTime>()};
-    auto window_column_type = std::make_shared<DataTypeTuple>(types);
-
+    /// Adding window column
+    DataTypes window_column_type{std::make_shared<DataTypeDateTime>(), std::make_shared<DataTypeDateTime>()};
+    ColumnWithTypeAndName column;
+    column.name = window_column_name;
+    column.type = std::make_shared<DataTypeTuple>(std::move(window_column_type));
+    column.column = column.type->createColumnConst(0, Tuple{w_start, watermark});
+    auto adding_column_dag = ActionsDAG::makeAddingColumnActions(std::move(column));
+    auto adding_column_actions
+        = std::make_shared<ExpressionActions>(std::move(adding_column_dag), ExpressionActionsSettings::fromContext(getContext()));
+    builder.addSimpleTransform([&](const Block & header)
     {
-        ColumnWithTypeAndName window_column{window_column_type->createColumn(), window_column_type, window_column_name};
-        auto adding_column_dag = ActionsDAG::makeAddingColumnActions(std::move(window_column));
-        auto adding_column_actions = std::make_shared<ExpressionActions>(
-            std::move(adding_column_dag),
-            ExpressionActionsSettings::fromContext(getContext()));
-        builder.addSimpleTransform([&](const Block & stream_header)
-        {
-            return std::make_shared<ExpressionTransform>(stream_header, adding_column_actions);
-        });
-    }
+        return std::make_shared<ExpressionTransform>(header, adding_column_actions);
+    });
 
-    builder.addSimpleTransform([&](const Block & current_header)
+    /// Removing window id column
+    auto new_header = builder.getHeader();
+    new_header.erase(window_id_name);
+    auto convert_actions_dag = ActionsDAG::makeConvertingActions(
+        builder.getHeader().getColumnsWithTypeAndName(),
+        new_header.getColumnsWithTypeAndName(),
+        ActionsDAG::MatchColumnsMode::Name);
+    auto actions = std::make_shared<ExpressionActions>(
+        convert_actions_dag, ExpressionActionsSettings::fromContext(getContext(), CompileExpressions::yes));
+    builder.addSimpleTransform([&](const Block & stream_header)
     {
-        Tuple window_value{w_start, watermark};
-        auto window_column_name_and_type = NameAndTypePair(window_column_name, window_column_type);
-        return std::make_shared<ReplacingWindowColumnTransform>(
-            current_header, getWindowIDColumnPosition(current_header), window_column_name_and_type, window_value);
+        return std::make_shared<ExpressionTransform>(stream_header, actions);
+    });
+
+    builder.addSimpleTransform([&](const Block & header)
+    {
+        return std::make_shared<AddingAggregatedChunkInfoTransform>(header);
     });
 
     Pipes pipes;
@@ -614,8 +618,7 @@ std::shared_ptr<ASTCreateQuery> StorageWindowView::getInnerTableCreateQuery(
     auto inner_select_query = std::static_pointer_cast<ASTSelectQuery>(inner_query_normalized);
 
     auto t_sample_block
-        = InterpreterSelectQuery(
-              inner_select_query, getContext(), getParentStorage(), nullptr, SelectQueryOptions(QueryProcessingStage::WithMergeableState))
+        = InterpreterSelectQuery(inner_select_query, getContext(), SelectQueryOptions(QueryProcessingStage::WithMergeableState))
               .getSampleBlock();
 
     auto columns_list = std::make_shared<ASTExpressionList>();
@@ -1085,8 +1088,7 @@ StorageWindowView::StorageWindowView(
         InterpreterCreateQuery create_interpreter(inner_create_query, create_context);
         create_interpreter.setInternal(true);
         create_interpreter.execute();
-        inner_storage = DatabaseCatalog::instance().getTable(StorageID(inner_create_query->getDatabase(), inner_create_query->getTable()), getContext());
-        inner_table_id = inner_storage->getStorageID();
+        inner_table_id = StorageID(inner_create_query->getDatabase(), inner_create_query->getTable());
     }
 
     clean_interval_ms = getContext()->getSettingsRef().window_view_clean_interval.totalMilliseconds();
@@ -1385,7 +1387,6 @@ void StorageWindowView::shutdown()
 
     auto table_id = getStorageID();
     DatabaseCatalog::instance().removeDependency(select_table_id, table_id);
-    inner_storage.reset();
 }
 
 void StorageWindowView::checkTableCanBeDropped() const
@@ -1427,10 +1428,8 @@ Block & StorageWindowView::getHeader() const
     std::lock_guard lock(sample_block_lock);
     if (!sample_block)
     {
-        sample_block
-            = InterpreterSelectQuery(
-                  select_query->clone(), getContext(), getParentStorage(), nullptr, SelectQueryOptions(QueryProcessingStage::Complete))
-                  .getSampleBlock();
+        sample_block = InterpreterSelectQuery(select_query->clone(), getContext(), SelectQueryOptions(QueryProcessingStage::Complete))
+                           .getSampleBlock();
         /// convert all columns to full columns
         /// in case some of them are constant
         for (size_t i = 0; i < sample_block.columns(); ++i)
@@ -1443,16 +1442,12 @@ Block & StorageWindowView::getHeader() const
 
 StoragePtr StorageWindowView::getParentStorage() const
 {
-    if (!parent_storage)
-        parent_storage = DatabaseCatalog::instance().getTable(select_table_id, getContext());
-    return parent_storage;
+    return DatabaseCatalog::instance().getTable(select_table_id, getContext());
 }
 
 StoragePtr StorageWindowView::getInnerStorage() const
 {
-    if (!inner_storage)
-        inner_storage = DatabaseCatalog::instance().getTable(inner_table_id, getContext());
-    return inner_storage;
+    return DatabaseCatalog::instance().getTable(inner_table_id, getContext());
 }
 
 ASTPtr StorageWindowView::getFetchColumnQuery(UInt32 w_start, UInt32 w_end) const
@@ -1502,9 +1497,7 @@ ASTPtr StorageWindowView::getFetchColumnQuery(UInt32 w_start, UInt32 w_end) cons
 
 StoragePtr StorageWindowView::getTargetStorage() const
 {
-    if (!target_storage && !target_table_id.empty())
-        target_storage = DatabaseCatalog::instance().getTable(target_table_id, getContext());
-    return target_storage;
+    return DatabaseCatalog::instance().getTable(target_table_id, getContext());
 }
 
 void registerStorageWindowView(StorageFactory & factory)
