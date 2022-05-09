@@ -32,8 +32,6 @@ namespace HnswWrapper
 
 
 using namespace similarity;
-using namespace DB;
-
 
 template <typename Dist>
 struct IndexWrap
@@ -43,10 +41,10 @@ struct IndexWrap
 
     void createIndex(const AnyParams & params = AnyParams());
 
-    void loadIndex(ReadBuffer & istr, bool load_data = true);
+    void loadIndex(DB::ReadBuffer & istr, bool load_data = true);
 
 
-    void saveIndex(WriteBuffer & ostr, bool save_data = true);
+    void saveIndex(DB::WriteBuffer & ostr, bool save_data = true);
 
     KNNQueue<Dist> * knnQuery(const Object & obj, size_t k);
 

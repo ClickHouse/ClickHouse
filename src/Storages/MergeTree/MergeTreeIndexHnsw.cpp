@@ -26,7 +26,6 @@ namespace HnswWrapper
 {
 
 using namespace similarity;
-using namespace DB;
 
 template <typename Dist>
 IndexWrap<Dist>::IndexWrap(const std::string & space_type_, const AnyParams & space_params)
@@ -43,7 +42,7 @@ void IndexWrap<Dist>::createIndex(const AnyParams & params)
 
 
 template <typename Dist>
-void IndexWrap<Dist>::loadIndex(ReadBuffer & istr, bool load_data)
+void IndexWrap<Dist>::loadIndex(DB::ReadBuffer & istr, bool load_data)
 {
     if (load_data)
     {
@@ -107,7 +106,7 @@ void IndexWrap<Dist>::loadIndex(ReadBuffer & istr, bool load_data)
 
 
 template <typename Dist>
-void IndexWrap<Dist>::saveIndex(WriteBuffer & ostr, bool save_data)
+void IndexWrap<Dist>::saveIndex(DB::WriteBuffer & ostr, bool save_data)
 {
     if (save_data)
     {
