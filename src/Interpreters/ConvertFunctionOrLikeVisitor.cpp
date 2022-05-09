@@ -56,7 +56,7 @@ void ConvertFunctionOrLikeData::visit(ASTFunction & function, ASTPtr &)
                     {
                         it = identifier_to_literals.insert({identifier, std::make_shared<ASTLiteral>(Field{Array{}})}).first;
                         auto match = makeASTFunction("multiMatchAny");
-                        match->arguments->children.push_back(std::move(arguments[0]));
+                        match->arguments->children.push_back(arguments[0]);
                         match->arguments->children.push_back(it->second);
                         unique_elems.push_back(std::move(match));
                     }
