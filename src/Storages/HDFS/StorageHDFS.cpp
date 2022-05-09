@@ -415,6 +415,11 @@ public:
         writer->write(getHeader().cloneWithColumns(chunk.detachColumns()));
     }
 
+    void onException() override
+    {
+        write_buf->finalize();
+    }
+
     void onFinish() override
     {
         try
@@ -675,7 +680,7 @@ void registerStorageHDFS(StorageFactory & factory)
         if (args.storage_def->partition_by)
             partition_by = args.storage_def->partition_by->clone();
 
-        return StorageHDFS::create(
+        return std::make_shared<StorageHDFS>(
             url, args.table_id, format_name, args.columns, args.constraints, args.comment, args.getContext(), compression_method, false, partition_by);
     },
     {

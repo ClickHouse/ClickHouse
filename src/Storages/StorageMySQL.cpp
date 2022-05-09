@@ -311,7 +311,7 @@ void registerStorageMySQL(StorageFactory & factory)
 
         mysqlxx::PoolWithFailover pool = createMySQLPoolWithFailover(configuration, mysql_settings);
 
-        return StorageMySQL::create(
+        return std::make_shared<StorageMySQL>(
             args.table_id,
             std::move(pool),
             configuration.database,
