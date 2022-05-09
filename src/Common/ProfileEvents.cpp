@@ -275,6 +275,12 @@
     M(RemoteFSSeeksWithReset, "Number of seeks which lead to a new connection") \
     M(RemoteFSBuffers, "Number of buffers created for asynchronous reading from remote filesystem") \
     \
+    M(FileSegmentWaitReadBufferMicroseconds, "") \
+    M(FileSegmentReadMicroseconds, "") \
+    M(FileSegmentCacheWriteMicroseconds, "") \
+    M(FileSegmentPredownloadMicroseconds, "") \
+    M(FileSegmentResultBytes, "") \
+    \
     M(ReadBufferSeekCancelConnection, "Number of seeks which lead to new connection (s3, http)") \
     \
     M(SleepFunctionCalls, "Number of times a sleep function (sleep, sleepEachRow) has been called.") \
