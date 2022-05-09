@@ -104,6 +104,7 @@ public:
     void getIndicesOfNonDefaultRows(Offsets & indices, size_t from, size_t limit) const override;
     SerializationInfoPtr getSerializationInfo() const override;
     void finalize() override;
+    bool isFinalized() const override;
 
     size_t tupleSize() const { return columns.size(); }
 

@@ -105,10 +105,11 @@ Array createEmptyArrayField(size_t num_dimensions)
 DataTypePtr getDataTypeByColumn(const IColumn & column)
 {
     auto idx = column.getDataType();
-    if (WhichDataType(idx).isSimple())
+    WhichDataType which(idx);
+    if (which.isSimple())
         return DataTypeFactory::instance().get(String(magic_enum::enum_name(idx)));
 
-    if (WhichDataType(idx).isNothing())
+    if (which.isNothing())
         return std::make_shared<DataTypeNothing>();
 
     if (const auto * column_array = checkAndGetColumn<ColumnArray>(&column))

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Columns/ColumnObject.h"
 #include <DataTypes/Serializations/SimpleTextSerialization.h>
 #include <Common/ObjectPool.h>
 
@@ -65,6 +66,7 @@ private:
     void deserializeTextImpl(IColumn & column, Reader && reader) const;
 
     void serializeTextImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const;
+    bool serializeTextFromSubcolumn(const ColumnObject::Subcolumn & subcolumn, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const;
 
     /// Pool of parser objects to make SerializationObject thread safe.
     mutable SimpleObjectPool<Parser> parsers_pool;
