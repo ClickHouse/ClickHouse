@@ -101,7 +101,7 @@ public:
 
     std::string dumpStructure() const;
 
-    void append(const Chunk & chunk, size_t length);
+    void append(const Chunk & chunk);
 
 private:
     Columns columns;

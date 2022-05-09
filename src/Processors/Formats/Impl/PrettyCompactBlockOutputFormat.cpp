@@ -205,7 +205,7 @@ void PrettyCompactBlockOutputFormat::write(Chunk chunk, PortKind port_kind)
                 return;
             }
 
-            mono_chunk.append(chunk, chunk.getNumRows());
+            mono_chunk.append(chunk);
             return;
         }
         else

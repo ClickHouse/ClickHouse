@@ -36,6 +36,8 @@
 #include <boost/algorithm/string.hpp>
 #include <boost/algorithm/string/case_conv.hpp>
 
+#include <Common/logger_useful.h>
+
 /// UINT16 and UINT32 are processed separately, see comments in readColumnFromArrowColumn.
 #define FOR_ARROW_NUMERIC_TYPES(M) \
         M(arrow::Type::UINT8, DB::UInt8) \
@@ -473,6 +475,7 @@ static ColumnWithTypeAndName readColumnFromArrowColumn(
 
             auto arrow_indexes_column = std::make_shared<arrow::ChunkedArray>(indexes_array);
             auto indexes_column = readColumnWithIndexesData(arrow_indexes_column);
+            LOG_DEBUG(&Poco::Logger::get("Arrow"), "Indexes types: {} {}", arrow_indexes_column->type()->name(), indexes_column->getName());
             auto lc_column = ColumnLowCardinality::create(dict_values->column, indexes_column);
             auto lc_type = std::make_shared<DataTypeLowCardinality>(dict_values->type);
             return {std::move(lc_column), std::move(lc_type), column_name};

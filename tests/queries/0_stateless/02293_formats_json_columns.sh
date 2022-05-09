@@ -18,40 +18,14 @@ $CLICKHOUSE_CLIENT -q "select * from test_02293 order by a format JSONColumns" >
 $CLICKHOUSE_CLIENT -q "desc file(data_02293, JSONColumns)"
 $CLICKHOUSE_CLIENT -q "select * from file(data_02293, JSONColumns)"
 
-echo "JSONColumnsMonoBlock"
-$CLICKHOUSE_CLIENT -q "select * from test_02293 order by a format JSONColumnsMonoBlock"
-$CLICKHOUSE_CLIENT -q "select * from test_02293 order by a format JSONColumnsMonoBlock" > $DATA_FILE
-$CLICKHOUSE_CLIENT -q "desc file(data_02293, JSONColumns)"
-$CLICKHOUSE_CLIENT -q "select * from file(data_02293, JSONColumns)"
-
-echo "JSONColumnsMonoBlock 3 rows"
-$CLICKHOUSE_CLIENT -q "select * from test_02293 order by a format JSONColumnsMonoBlock settings output_format_json_columns_max_rows_to_buffer=3"
-$CLICKHOUSE_CLIENT -q "select * from test_02293 order by a format JSONColumnsMonoBlock settings output_format_json_columns_max_rows_to_buffer=3" > $DATA_FILE
-$CLICKHOUSE_CLIENT -q "desc file(data_02293, JSONColumns)"
-$CLICKHOUSE_CLIENT -q "select * from file(data_02293, JSONColumns)"
-
 echo "JSONCompactColumns"
 $CLICKHOUSE_CLIENT -q "select * from test_02293 order by a format JSONCompactColumns"
 $CLICKHOUSE_CLIENT -q "select * from test_02293 order by a format JSONCompactColumns" > $DATA_FILE
 $CLICKHOUSE_CLIENT -q "desc file(data_02293, JSONCompactColumns)"
 $CLICKHOUSE_CLIENT -q "select * from file(data_02293, JSONCompactColumns)"
 
-echo "JSONCompactColumnsMonoBlock"
-$CLICKHOUSE_CLIENT -q "select * from test_02293 order by a format JSONCompactColumnsMonoBlock"
-$CLICKHOUSE_CLIENT -q "select * from test_02293 order by a format JSONCompactColumnsMonoBlock" > $DATA_FILE
-$CLICKHOUSE_CLIENT -q "desc file(data_02293, JSONCompactColumns)"
-$CLICKHOUSE_CLIENT -q "select * from file(data_02293, JSONCompactColumns)"
-
-echo "JSONCompactColumnsMonoBlock 3 rows"
-$CLICKHOUSE_CLIENT -q "select * from test_02293 order by a format JSONCompactColumnsMonoBlock settings output_format_json_columns_max_rows_to_buffer=3"
-$CLICKHOUSE_CLIENT -q "select * from test_02293 order by a format JSONCompactColumnsMonoBlock settings output_format_json_columns_max_rows_to_buffer=3" > $DATA_FILE
-$CLICKHOUSE_CLIENT -q "desc file(data_02293, JSONCompactColumns)"
-$CLICKHOUSE_CLIENT -q "select * from file(data_02293, JSONCompactColumns)"
-
 echo "JSONColumnsWithMetadata"
 $CLICKHOUSE_CLIENT -q "select sum(a) as sum, avg(a) as avg from test_02293 group by a % 4 with totals order by tuple(sum, avg) format JSONColumnsWithMetadata" --extremes=1 | grep -v "elapsed"
-echo "JSONColumnsWithMetadata 3 rows"
-$CLICKHOUSE_CLIENT -q "select sum(a) as sum, avg(a) as avg from test_02293 group by a % 4 with totals order by tuple(sum, avg) format JSONColumnsWithMetadata settings output_format_json_columns_max_rows_to_buffer=3" --extremes=1 | grep -v "elapsed"
 
 
 echo '
