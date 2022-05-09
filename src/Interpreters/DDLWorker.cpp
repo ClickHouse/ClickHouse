@@ -715,6 +715,8 @@ bool DDLWorker::tryExecuteQueryOnLeaderReplica(
     if (zookeeper->exists(is_executed_path, nullptr, event))
     {
         LOG_DEBUG(log, "Task {} has already been executed by replica ({}) of the same shard.", task.entry_name, zookeeper->get(is_executed_path));
+        if (auto op = task.getOpToUpdateLogPointer())
+            task.ops.push_back(op);
         return true;
     }
 
@@ -759,6 +761,8 @@ bool DDLWorker::tryExecuteQueryOnLeaderReplica(
             {
                 LOG_DEBUG(log, "Task {} has already been executed by replica ({}) of the same shard.", task.entry_name, executed_by);
                 executed_by_other_leader = true;
+                if (auto op = task.getOpToUpdateLogPointer())
+                    task.ops.push_back(op);
                 break;
             }
 
@@ -786,6 +790,8 @@ bool DDLWorker::tryExecuteQueryOnLeaderReplica(
         {
             LOG_DEBUG(log, "Task {} has already been executed by replica ({}) of the same shard.", task.entry_name, zookeeper->get(is_executed_path));
             executed_by_other_leader = true;
+            if (auto op = task.getOpToUpdateLogPointer())
+                task.ops.push_back(op);
             break;
         }
         else
