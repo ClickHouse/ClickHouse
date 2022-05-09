@@ -20,7 +20,7 @@ namespace ErrorCodes
  *       <disks>
  *           <web>
  *               <type>web</type>
- *               <endpoint>https://clickhouse-datasets.s3.yandex.net/disk-with-static-files-tests/test-hits/</endpoint>
+ *               <endpoint>https://clickhouse-datasets.s3.amazonaws.com/disk-with-static-files-tests/test-hits/</endpoint>
  *           </web>
  *       </disks>
  *       <policies>
@@ -77,7 +77,6 @@ public:
     UInt64 getTotalSpace() const final override { return std::numeric_limits<UInt64>::max(); }
 
     UInt64 getAvailableSpace() const final override { return std::numeric_limits<UInt64>::max(); }
-
     UInt64 getUnreservedSpace() const final override { return std::numeric_limits<UInt64>::max(); }
 
     /// Read-only part
@@ -100,7 +99,7 @@ public:
 
     /// Write and modification part
 
-    std::unique_ptr<WriteBufferFromFileBase> writeFile(const String &, size_t, WriteMode) override
+    std::unique_ptr<WriteBufferFromFileBase> writeFile(const String &, size_t, WriteMode, const WriteSettings &) override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Disk {} is read-only", getName());
     }
@@ -140,7 +139,7 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Disk {} is read-only", getName());
     }
 
-    void removeSharedRecursive(const String &, bool) override
+    void removeSharedRecursive(const String &, bool, const NameSet &) override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Disk {} is read-only", getName());
     }
@@ -164,6 +163,10 @@ public:
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Disk {} is read-only", getName());
     }
+
+    std::vector<String> getRemotePaths(const String &) const override { return {}; }
+
+    void getRemotePathsRecursive(const String &, std::vector<LocalPathWithRemotePaths> &) override {}
 
     /// Create part
 

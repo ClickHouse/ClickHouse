@@ -59,3 +59,17 @@ def post_commit_status_to_file(file_path, description, state, report_url):
     with open(file_path, "w", encoding="utf-8") as f:
         out = csv.writer(f, delimiter="\t")
         out.writerow([state, report_url, description])
+
+
+def remove_labels(gh, pr_info, labels_names):
+    repo = gh.get_repo(GITHUB_REPOSITORY)
+    pull_request = repo.get_pull(pr_info.number)
+    for label in labels_names:
+        pull_request.remove_from_labels(label)
+
+
+def post_labels(gh, pr_info, labels_names):
+    repo = gh.get_repo(GITHUB_REPOSITORY)
+    pull_request = repo.get_pull(pr_info.number)
+    for label in labels_names:
+        pull_request.add_to_labels(label)

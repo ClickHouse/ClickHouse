@@ -1,1 +1,0 @@
-../../../en/operations/utilities/clickhouse-compressor.md

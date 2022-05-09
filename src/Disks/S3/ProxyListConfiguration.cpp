@@ -3,7 +3,7 @@
 #if USE_AWS_S3
 
 #include <utility>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 
 namespace DB::S3
 {

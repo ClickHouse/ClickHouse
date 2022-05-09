@@ -1,5 +1,5 @@
 ---
-toc_priority: 114
+sidebar_position: 114
 ---
 
 # groupArraySample {#grouparraysample}

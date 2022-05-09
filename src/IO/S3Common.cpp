@@ -24,13 +24,14 @@
 #    include <aws/core/utils/UUID.h>
 #    include <aws/core/http/HttpClientFactory.h>
 #    include <aws/s3/S3Client.h>
+#    include <aws/s3/model/HeadObjectRequest.h>  // Y_IGNORE
 
 #    include <IO/S3/PocoHTTPClientFactory.h>
 #    include <IO/S3/PocoHTTPClient.h>
 #    include <Poco/URI.h>
 #    include <re2/re2.h>
 #    include <boost/algorithm/string/case_conv.hpp>
-#    include <base/logger_useful.h>
+#    include <Common/logger_useful.h>
 
 #    include <fstream>
 
@@ -85,7 +86,7 @@ public:
     void callLogImpl(Aws::Utils::Logging::LogLevel log_level, const char * tag, const char * message)
     {
         const auto & [level, prio] = convertLogLevel(log_level);
-        if (tag_loggers.count(tag) > 0)
+        if (tag_loggers.contains(tag))
         {
             LOG_IMPL(tag_loggers[tag], level, prio, "{}", message);
         }
@@ -284,7 +285,7 @@ protected:
 
         auto credentials_view = credentials_doc.View();
         access_key = credentials_view.GetString("AccessKeyId");
-        LOG_TRACE(logger, "Successfully pulled credentials from EC2MetadataService with access key {}.", access_key);
+        LOG_TRACE(logger, "Successfully pulled credentials from EC2MetadataService with access key.");
 
         secret_key = credentials_view.GetString("SecretAccessKey");
         token = credentials_view.GetString("Token");
@@ -482,7 +483,7 @@ protected:
         Aws::Internal::STSCredentialsClient::STSAssumeRoleWithWebIdentityRequest request{session_name, role_arn, token};
 
         auto result = client->GetAssumeRoleWithWebIdentityCredentials(request);
-        LOG_TRACE(logger, "Successfully retrieved credentials with AWS_ACCESS_KEY: {}", result.creds.GetAWSAccessKeyId());
+        LOG_TRACE(logger, "Successfully retrieved credentials.");
         credentials = result.creds;
     }
 
@@ -682,6 +683,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int S3_ERROR;
 }
 
 namespace S3
@@ -777,12 +779,26 @@ namespace S3
         static constexpr auto OBS = "OBS";
         static constexpr auto OSS = "OSS";
 
-
         uri = uri_;
         storage_name = S3;
 
         if (uri.getHost().empty())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Host is empty in S3 URI.");
+
+        /// Extract object version ID from query string.
+        {
+            version_id = "";
+            const String version_key = "versionId=";
+            const auto query_string = uri.getQuery();
+
+            auto start = query_string.rfind(version_key);
+            if (start != std::string::npos)
+            {
+                start += version_key.length();
+                auto end = query_string.find_first_of('&', start);
+                version_id = query_string.substr(start, end == std::string::npos ? std::string::npos : end - start);
+            }
+        }
 
         String name;
         String endpoint_authority_from_uri;
@@ -838,6 +854,29 @@ namespace S3
         if (bucket.length() < 3 || bucket.length() > 63)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Bucket name length is out of bounds in virtual hosted style S3 URI:     {}{}",
                             quoteString(bucket), !uri.empty() ? " (" + uri.toString() + ")" : "");
+    }
+
+    size_t getObjectSize(std::shared_ptr<Aws::S3::S3Client> client_ptr, const String & bucket, const String & key, const String & version_id, bool throw_on_error)
+    {
+        Aws::S3::Model::HeadObjectRequest req;
+        req.SetBucket(bucket);
+        req.SetKey(key);
+
+        if (!version_id.empty())
+            req.SetVersionId(version_id);
+
+        Aws::S3::Model::HeadObjectOutcome outcome = client_ptr->HeadObject(req);
+
+        if (outcome.IsSuccess())
+        {
+            auto read_result = outcome.GetResultWithOwnership();
+            return static_cast<size_t>(read_result.GetContentLength());
+        }
+        else if (throw_on_error)
+        {
+            throw DB::Exception(outcome.GetError().GetMessage(), ErrorCodes::S3_ERROR);
+        }
+        return 0;
     }
 }
 

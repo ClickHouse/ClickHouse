@@ -12,7 +12,7 @@ import pika
 import pytest
 from google.protobuf.internal.encoder import _VarintBytes
 from helpers.client import QueryRuntimeException
-from helpers.cluster import ClickHouseCluster
+from helpers.cluster import ClickHouseCluster, check_rabbitmq_is_available
 from helpers.test_tools import TSV
 
 from . import rabbitmq_pb2
@@ -46,7 +46,7 @@ def wait_rabbitmq_to_start(rabbitmq_docker_id, timeout=180):
     start = time.time()
     while time.time() - start < timeout:
         try:
-            if instance.cluster.check_rabbitmq_is_available(rabbitmq_docker_id):
+            if check_rabbitmq_is_available(rabbitmq_docker_id):
                 logging.debug("RabbitMQ is available")
                 return
             time.sleep(0.5)
