@@ -275,6 +275,11 @@ ColumnPtr IExecutableFunction::executeWithoutSparseColumns(const ColumnsWithType
 
 ColumnPtr IExecutableFunction::execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const
 {
+    /// Result type Nothing means that we don't need to execute function at all.
+    /// Example: select arrayMap(x -> 2 * x, []);
+    if (isNothing(result_type))
+        return result_type->createColumn();
+
     if (useDefaultImplementationForSparseColumns())
     {
         size_t num_sparse_columns = 0;
@@ -428,6 +433,15 @@ DataTypePtr IFunctionOverloadResolver::getReturnTypeWithoutLowCardinality(const 
             auto return_type = getReturnTypeImpl(ColumnsWithTypeAndName(nested_columns.begin(), nested_columns.end()));
             return makeNullable(return_type);
         }
+    }
+
+    /// If one of the arguments is Nothing, then we won't really execute
+    /// the function and the result type should be also Nothing.
+    /// Example: select arrayMap(x -> 2 * x, []);
+    for (const auto & arg : arguments)
+    {
+        if (isNothing(arg.type))
+            return std::make_shared<DataTypeNothing>();
     }
 
     return getReturnTypeImpl(arguments);
