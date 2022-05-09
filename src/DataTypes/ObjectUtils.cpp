@@ -143,11 +143,14 @@ static DataTypePtr recreateTupleWithElements(const DataTypeTuple & type_tuple, c
 static std::pair<ColumnPtr, DataTypePtr> convertObjectColumnToTuple(
     const ColumnObject & column_object, const DataTypeObject & type_object)
 {
-    const auto & subcolumns = column_object.getSubcolumns();
-
     if (!column_object.isFinalized())
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "Cannot convert to tuple column of type {}. Column should be finalized first", type_object.getName());
+    {
+        auto finalized = column_object.cloneFinalized();
+        const auto & finalized_object = assert_cast<const ColumnObject &>(*finalized);
+        return convertObjectColumnToTuple(finalized_object, type_object);
+    }
+
+    const auto & subcolumns = column_object.getSubcolumns();
 
     PathsInData tuple_paths;
     DataTypes tuple_types;

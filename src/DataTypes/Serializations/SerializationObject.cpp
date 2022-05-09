@@ -23,6 +23,7 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
     extern const int CANNOT_READ_ALL_DATA;
     extern const int LOGICAL_ERROR;
+    extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
 namespace
@@ -369,66 +370,57 @@ void SerializationObject<Parser>::serializeTextImpl(const IColumn & column, size
     const auto & column_object = assert_cast<const ColumnObject &>(column);
     const auto & subcolumns = column_object.getSubcolumns();
 
-    bool first = true;
     writeChar('{', ostr);
-
-    for (const auto & entry : subcolumns)
+    for (auto it = subcolumns.begin(); it != subcolumns.end(); ++it)
     {
-        WriteBufferFromOwnString value_buf;
-        bool have_value = serializeTextFromSubcolumn(entry->data, row_num, value_buf, settings);
-        if (!have_value)
-            continue;
-
-        if (!first)
+        const auto & entry = *it;
+        if (it != subcolumns.begin())
             writeCString(",", ostr);
-        else
-            first = false;
 
         writeDoubleQuoted(entry->path.getPath(), ostr);
         writeChar(':', ostr);
-
-        auto value = value_buf.stringRef();
-        ostr.write(value.data, value.size);
+        serializeTextFromSubcolumn(entry->data, row_num, ostr, settings);
     }
     writeChar('}', ostr);
 }
 
 template <typename Parser>
-bool SerializationObject<Parser>::serializeTextFromSubcolumn(
+void SerializationObject<Parser>::serializeTextFromSubcolumn(
     const ColumnObject::Subcolumn & subcolumn, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     if (subcolumn.isFinalized())
     {
         const auto & finalized_column = subcolumn.getFinalizedColumn();
-        if (finalized_column.isDefaultAt(row_num))
-            return false;
-
         auto serialization = subcolumn.getLeastCommonType()->getSerialization(*finalized_column.getSerializationInfo());
         serialization->serializeTextJSON(finalized_column, row_num, ostr, settings);
-        return true;
+        return;
     }
 
     size_t ind = row_num;
     if (ind < subcolumn.getNumberOfDefaultsInPrefix())
-        return false;
+    {
+        /// Suboptimal, but it should happen rarely.
+        auto tmp_column = subcolumn.getLeastCommonType()->createColumn();
+        tmp_column->insertDefault();
+        auto serialization = subcolumn.getLeastCommonType()->getSerialization(*tmp_column->getSerializationInfo());
+        serialization->serializeTextJSON(*tmp_column, 0, ostr, settings);
+        return;
+    }
 
     ind -= subcolumn.getNumberOfDefaultsInPrefix();
     for (const auto & part : subcolumn.getData())
     {
         if (ind < part->size())
         {
-            if (part->isDefaultAt(ind))
-                return false;
-
             auto serialization = getDataTypeByColumn(*part)->getSerialization(*part->getSerializationInfo());
             serialization->serializeTextJSON(*part, ind, ostr, settings);
-            return true;
+            return;
         }
 
         ind -= part->size();
     }
 
-    return false;
+    throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Index ({}) for text serialization is out of range", row_num);
 }
 
 template <typename Parser>

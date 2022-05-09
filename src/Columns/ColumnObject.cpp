@@ -364,8 +364,8 @@ void ColumnObject::Subcolumn::insertRangeFrom(const Subcolumn & src, size_t star
 
 bool ColumnObject::Subcolumn::isFinalized() const
 {
-    return data.empty() ||
-        (data.size() == 1 && !data[0]->isSparse() && num_of_defaults_in_prefix == 0);
+    return num_of_defaults_in_prefix == 0 &&
+        (data.empty() || (data.size() == 1 && !data[0]->isSparse()));
 }
 
 void ColumnObject::Subcolumn::finalize()
