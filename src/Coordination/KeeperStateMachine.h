@@ -27,7 +27,7 @@ public:
     /// Read state from the latest snapshot
     void init();
 
-    std::optional<int64_t> preprocess(uint64_t log_idx, nuraft::buffer & data);
+    void preprocess(uint64_t log_idx, nuraft::buffer & data);
 
     /// Currently not supported
     nuraft::ptr<nuraft::buffer> pre_commit(uint64_t log_idx, nuraft::buffer & data) override;

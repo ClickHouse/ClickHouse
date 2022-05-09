@@ -143,7 +143,16 @@ public:
         Coordination::Error error;
     };
 
-    using Operation = std::variant<CreateNodeDelta, RemoveNodeDelta, UpdateNodeDelta, SetACLDelta, ErrorDelta>;
+    struct FailedMultiDelta
+    {
+        std::vector<Coordination::Error> error_codes;
+    };
+
+    struct SubDeltaEnd
+    {
+    };
+
+    using Operation = std::variant<CreateNodeDelta, RemoveNodeDelta, UpdateNodeDelta, SetACLDelta, ErrorDelta, SubDeltaEnd, FailedMultiDelta>;
 
     struct Delta
     {
@@ -153,8 +162,16 @@ public:
             , operation(std::move(operation_))
         {}
 
-        Delta(int64_t zxid_, ErrorDelta error)
-            : Delta("", zxid_, error)
+        Delta(int64_t zxid_, Coordination::Error error)
+            : Delta("", zxid_, ErrorDelta{error})
+        {}
+
+        Delta(int64_t zxid_, SubDeltaEnd subdelta)
+            : Delta("", zxid_, subdelta)
+        {}
+
+        Delta(int64_t zxid_, FailedMultiDelta failed_multi)
+            : Delta("", zxid_, failed_multi)
         {}
 
         String path;
@@ -244,7 +261,7 @@ public:
     /// Process user request and return response.
     /// check_acl = false only when converting data from ZooKeeper.
     ResponsesForSessions processRequest(const Coordination::ZooKeeperRequestPtr & request, int64_t session_id, int64_t time, std::optional<int64_t> new_last_zxid, bool check_acl = true);
-    std::optional<int64_t> preprocessRequest(const Coordination::ZooKeeperRequestPtr & request, int64_t session_id, int64_t time, int64_t new_last_zxid);
+    void preprocessRequest(const Coordination::ZooKeeperRequestPtr & request, int64_t session_id, int64_t time, int64_t new_last_zxid);
 
     void finalize();
 
