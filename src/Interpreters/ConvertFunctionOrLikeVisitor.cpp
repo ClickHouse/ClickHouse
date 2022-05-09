@@ -21,7 +21,7 @@ void ConvertFunctionOrLikeData::visit(ASTFunction & function, ASTPtr &)
         if (auto expr_list_fn = child->as<ASTExpressionList>())
         {
             ASTs unique_elems;
-            for (auto child_expr_fn : expr_list_fn->children)
+            for (const auto & child_expr_fn : expr_list_fn->children)
             {
                 unique_elems.push_back(child_expr_fn);
                 if (const auto * child_fn = child_expr_fn->as<ASTFunction>())
