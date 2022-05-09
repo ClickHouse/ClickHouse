@@ -370,7 +370,7 @@ Coordination::Error KeeperStorage::commit(int64_t commit_zxid, int64_t session_i
 
                     return Coordination::Error::ZOK;
                 }
-                else if constexpr (std::same_as<DeltaType, KeeperStorage::SetACLDelta>)
+                else if constexpr (std::same_as<DeltaType, KeeperStorage::ErrorDelta>)
                     return operation.error;
                 else if constexpr (std::same_as<DeltaType, KeeperStorage::SubDeltaEnd>)
                 {
