@@ -1,10 +1,9 @@
 ---
-toc_folder_title: Functions
-toc_priority: 32
-toc_title: Introduction
+sidebar_position: 32
+sidebar_label: Functions
 ---
 
-# Functions {#functions}
+# Functions
 
 There are at least\* two types of functions - regular functions (they are just called “functions”) and aggregate functions. These are completely different concepts. Regular functions work as if they are applied to each row separately (for each row, the result of the function does not depend on the other rows). Aggregate functions accumulate a set of values from various rows (i.e. they depend on the entire set of rows).
 
@@ -64,11 +63,9 @@ For some functions the first argument (the lambda function) can be omitted. In t
 Custom functions from lambda expressions can be created using the [CREATE FUNCTION](../statements/create/function.md) statement. To delete these functions use the [DROP FUNCTION](../statements/drop.md#drop-function) statement.
 
 ## Executable User Defined Functions {#executable-user-defined-functions}
-ClickHouse can call any external executable program or script to process data. Describe such functions in a [configuration file](../../operations/configuration-files.md) and add the path of that file to the main configuration in `user_defined_executable_functions_config` setting. If a wildcard symbol `*` is used in the path, then all files matching the pattern are loaded. Example:
-``` xml
-<user_defined_executable_functions_config>*_function.xml</user_defined_executable_functions_config>
-```
-User defined function configurations are searched relative to the path specified in the `user_files_path` setting.
+ClickHouse can call any external executable program or script to process data.
+
+The configuration of executable user defined functions can be located in one or more xml-files. The path to the configuration is specified in the [user_defined_executable_functions_config](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-user_defined_executable_functions_config) parameter.
 
 A function configuration contains the following settings:
 
@@ -77,7 +74,7 @@ A function configuration contains the following settings:
 -   `argument` - argument description with the `type`, and optional `name` of an argument. Each argument is described in a separate setting. Specifying name is necessary if argument names are part of serialization for user defined function format like [Native](../../interfaces/formats.md#native) or [JSONEachRow](../../interfaces/formats.md#jsoneachrow). Default argument name value is `c` + argument_number.
 -   `format` - a [format](../../interfaces/formats.md) in which arguments are passed to the command.
 -   `return_type` - the type of a returned value.
--   `return_name` - name of returned value. Specifying return name is necessary if return name is part of serialization for user defined function format like [Native](../../interfaces/formats.md#native) or [JSONEachRow](../../interfaces/formats.md#jsoneachrow). Optional. Default value is `result`.
+-   `return_name` - name of retuned value. Specifying return name is necessary if return name is part of serialization for user defined function format like [Native](../../interfaces/formats.md#native) or [JSONEachRow](../../interfaces/formats.md#jsoneachrow). Optional. Default value is `result`.
 -   `type` - an executable type. If `type` is set to `executable` then single command is started. If it is set to `executable_pool` then a pool of commands is created.
 -   `max_command_execution_time` - maximum execution time in seconds for processing block of data. This setting is valid for `executable_pool` commands only. Optional. Default value is `10`.
 -   `command_termination_timeout` - time in seconds during which a command should finish after its pipe is closed. After that time `SIGTERM` is sent to the process executing the command. Optional. Default value is `10`.
@@ -85,12 +82,13 @@ A function configuration contains the following settings:
 -   `command_write_timeout` - timeout for writing data to command stdin in milliseconds. Default value 10000. Optional parameter.
 -   `pool_size` - the size of a command pool. Optional. Default value is `16`.
 -   `send_chunk_header` - controls whether to send row count before sending a chunk of data to process. Optional. Default value is `false`.
--   `execute_direct` - If `execute_direct` = `1`, then `command` will be searched inside user_scripts folder. Additional script arguments can be specified using whitespace separator. Example: `script_name arg1 arg2`. If `execute_direct` = `0`, `command` is passed as argument for `bin/sh -c`. Default value is `1`. Optional parameter.
+-   `execute_direct` - If `execute_direct` = `1`, then `command` will be searched inside user_scripts folder specified by [user_scripts_path](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-user_scripts_path). Additional script arguments can be specified using whitespace separator. Example: `script_name arg1 arg2`. If `execute_direct` = `0`, `command` is passed as argument for `bin/sh -c`. Default value is `1`. Optional parameter.
 -   `lifetime` - the reload interval of a function in seconds. If it is set to `0` then the function is not reloaded. Default value is `0`. Optional parameter.
 
 The command must read arguments from `STDIN` and must output the result to `STDOUT`. The command must process arguments iteratively. That is after processing a chunk of arguments it must wait for the next chunk.
 
 **Example**
+
 Creating `test_function` using XML configuration.
 File test_function.xml.
 ```xml
