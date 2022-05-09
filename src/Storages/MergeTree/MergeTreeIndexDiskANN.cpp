@@ -1,3 +1,4 @@
+#include <chrono>
 #include <filesystem>
 #include <memory>
 #include <parameters.h>
@@ -21,28 +22,32 @@
 
 #include <Storages/MergeTree/MergeTreeIndexDiskANN.h>
 
-
 namespace DB
 {
 
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int DISKANN_INDEX_EXCEPTION;
 }
 
 namespace detail {
 
-void saveDataPoints(uint32_t dimensions, std::vector<DiskANNValue> datapoints, WriteBuffer & out) {
+size_t saveDataPoints(uint32_t dimensions, std::vector<DiskANNValue> datapoints, WriteBuffer & out) {
+    assert(datapoints.size() % dimensions == 0);
     uint32_t num_of_points = static_cast<uint32_t>(datapoints.size()) / dimensions;
 
     out.write(reinterpret_cast<const char*>(&num_of_points), sizeof(num_of_points));
     out.write(reinterpret_cast<const char*>(&dimensions), sizeof(dimensions));
 
-    for (float data_point : datapoints) {
-        out.write(reinterpret_cast<const char*>(&data_point), sizeof(Float32));
+    size_t steps = 0;
+    for (size_t i = 0; i < datapoints.size(); ++i) {
+        steps += 1;
+        out.write(reinterpret_cast<const char*>(&datapoints[i]), sizeof(DiskANNValue));
     }
 
     LOG_DEBUG(&Poco::Logger::get("DiskANN"), "Saved {} points", num_of_points);
+    return steps;
 }
 
 DiskANNIndexPtr constructIndexFromDatapoints(uint32_t dimensions, std::vector<DiskANNValue> datapoints) {
@@ -50,15 +55,31 @@ DiskANNIndexPtr constructIndexFromDatapoints(uint32_t dimensions, std::vector<Di
         throw Exception("Trying to construct index with no datapoints", ErrorCodes::LOGICAL_ERROR);
     }
 
-    String datapoints_filename = "diskann_datapoints.bin";
-    WriteBufferFromFile write_buffer(datapoints_filename);
-    detail::saveDataPoints(dimensions, datapoints, write_buffer);
-    write_buffer.close();
+    if (dimensions == 0) {
+        throw Exception("Trying to construct index with 0 dimenstions", ErrorCodes::LOGICAL_ERROR);
+    }
 
-    return std::make_shared<DiskANNIndex>(
-        diskann::Metric::L2,
-        datapoints_filename.c_str()
-    );
+    if (datapoints.size() % dimensions != 0) {
+        throw Exception("Datapoints data broken", ErrorCodes::LOGICAL_ERROR);
+    }
+
+    uint32_t num_of_points = datapoints.size() / dimensions;
+
+    try {
+        return std::make_shared<DiskANNIndex>(
+            diskann::Metric::L2,
+            datapoints.data(),
+            num_of_points,
+            dimensions
+        );
+    } catch (diskann::ANNException& e) {
+        throw Exception(
+            e.message() + " dims: " + std::to_string(dimensions)
+            + " datapoints: " + std::to_string(datapoints.size())
+            + " expected: " + std::to_string(datapoints.size() * sizeof(DiskANNValue) + 8),
+            ErrorCodes::DISKANN_INDEX_EXCEPTION
+        );
+    }
 }
 
 struct DiskANNSearchResult {
@@ -84,7 +105,11 @@ DiskANNSearchResult getDistancesToVector(
     std::vector<uint64_t> indicies(neighbours_to_search); 
     std::vector<unsigned> init_ids{};
 
-    disk_ann_index->search(target_vector.data(), k, neighbours_to_search, init_ids, indicies.data(), distances.data());
+    try {
+        disk_ann_index->search(target_vector.data(), k, neighbours_to_search, init_ids, indicies.data(), distances.data());
+    } catch (diskann::ANNException& e) {
+        throw Exception(e.message(), ErrorCodes::DISKANN_INDEX_EXCEPTION);
+    }
 
     DiskANNSearchResult result;
     result.distances = std::move(distances);
@@ -268,7 +293,12 @@ MergeTreeIndexGranulePtr MergeTreeIndexAggregatorDiskANN::getGranuleAndReset()
     LOG_DEBUG(&Poco::Logger::get("DiskANN"), "Index parameters set");
     
     LOG_DEBUG(&Poco::Logger::get("DiskANN"), "Starting to build DiskANN index");
-    base_index->build(paras);
+
+    try {
+        base_index->build(paras);
+    } catch (diskann::ANNException& e) {
+        throw Exception(e.message(), ErrorCodes::DISKANN_INDEX_EXCEPTION);
+    }
     LOG_DEBUG(&Poco::Logger::get("DiskANN"), "DiskANN index has been successfully built!");
 
     return std::make_shared<MergeTreeIndexGranuleDiskANN>(index_name, index_sample_block, base_index, dimensions.value(), std::move(accumulated_data));
