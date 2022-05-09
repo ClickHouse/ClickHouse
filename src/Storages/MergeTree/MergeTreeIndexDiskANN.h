@@ -26,7 +26,7 @@ struct MergeTreeIndexGranuleDiskANN final : public IMergeTreeIndexGranule
 {
     MergeTreeIndexGranuleDiskANN(const String & index_name_, const Block & index_sample_block_);
     MergeTreeIndexGranuleDiskANN(
-        const String & index_name_, const Block & index_sample_block_, 
+        const String & index_name_, const Block & index_sample_block_,
         DiskANNIndexPtr base_index_, uint32_t dimensions, std::vector<DiskANNValue> datapoints
     );
 
