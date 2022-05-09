@@ -16,13 +16,13 @@ ${CLICKHOUSE_CLIENT} --optimize_throw_if_noop 1 -q "optimize table tt final" "--
 
 # Here SelectRows and SelectBytes should be zero, MergedRows is 2m and MergedUncompressedBytes is 16m
 ${CLICKHOUSE_CLIENT} -q "system flush logs"
-${CLICKHOUSE_CLIENT} -q "select ProfileEvents['SelectedRows'], ProfileEvents['SelecteBytes'], ProfileEvents['MergedRows'], ProfileEvents['MergedUncompressedBytes'] from system.query_log where query_id = '$query_id' and type = 'QueryFinish' and query like 'optimize%'"
+${CLICKHOUSE_CLIENT} -q "select ProfileEvents['SelectedRows'], ProfileEvents['SelecteBytes'], ProfileEvents['MergedRows'], ProfileEvents['MergedUncompressedBytes'] from system.query_log where query_id = '$query_id' and type = 'QueryFinish' and query like 'optimize%' and current_database = currentDatabase()"
 
 ${CLICKHOUSE_CLIENT} --mutations_sync 1 -q "alter table tt update y = y + 1 where 1" "--query_id=$query_id"
 ${CLICKHOUSE_CLIENT} -q "system flush logs"
 
 # Here for mutation all values are 0, cause mutation is executed async.
 # It's pretty hard to write a test with total counter.
-${CLICKHOUSE_CLIENT} -q "select ProfileEvents['SelectedRows'], ProfileEvents['SelecteBytes'], ProfileEvents['MergedRows'], ProfileEvents['MergedUncompressedBytes'] from system.query_log where query_id = '$query_id' and type = 'QueryFinish' and query like 'alter%'"
+${CLICKHOUSE_CLIENT} -q "select ProfileEvents['SelectedRows'], ProfileEvents['SelecteBytes'], ProfileEvents['MergedRows'], ProfileEvents['MergedUncompressedBytes'] from system.query_log where query_id = '$query_id' and type = 'QueryFinish' and query like 'alter%' and current_database = currentDatabase()"
 
 
