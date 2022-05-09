@@ -2149,7 +2149,8 @@ if __name__ == "__main__":
         args.client += f" --port={tcp_port}"
     else:
         args.tcp_port = 9440 if args.secure else 9000
-        os.environ["CLICKHOUSE_PORT_TCP"] = str(args.tcp_port)
+        if args.secure:
+            os.environ["CLICKHOUSE_PORT_TCP"] = str(args.tcp_port)
 
     http_port = os.getenv("CLICKHOUSE_PORT_HTTP")
     if http_port is not None:
