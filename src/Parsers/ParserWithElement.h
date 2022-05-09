@@ -6,7 +6,7 @@
 namespace DB
 {
 /** WITH (scalar query) AS identifier
-  *  or WITH identifier AS (subquery)
+  *  or WITH identifier [(col_name [, col_name] ...)] AS (subquery)
   */
 class ParserWithElement : public IParserBase
 {
