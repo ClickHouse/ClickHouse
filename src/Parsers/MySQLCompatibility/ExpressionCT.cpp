@@ -111,135 +111,13 @@ static void spawnCHFunction(MySQLTree::TOKEN_TYPE operation, const ConvPtr & x, 
     ch_tree = DB::makeASTFunction(op_name, first_node, second_node);
 }
 
-bool ExprLiteralNullCT::setup(String &)
-{
-    return true;
-}
-
-void ExprLiteralNullCT::convert(CHPtr & ch_tree) const
-{
-    auto literal_node = std::make_shared<DB::ASTLiteral>(DB::Field());
-    ch_tree = literal_node;
-}
-
-bool ExprLiteralBoolCT::setup(String &)
-{
-    const MySQLPtr & literal_node = getSourceNode();
-    value = (literal_node->terminal_types[0] == MySQLTree::TOKEN_TYPE::TRUE_SYMBOL);
-    return true;
-}
-
-void ExprLiteralBoolCT::convert(CHPtr & ch_tree) const
-{
-    auto literal_node = std::make_shared<DB::ASTLiteral>(value);
-    ch_tree = literal_node;
-}
-
-bool ExprLiteralInt64CT::setup(String &)
-{
-    const MySQLPtr & literal_node = getSourceNode();
-    value = std::stoi(literal_node->terminals[0]);
-    return true;
-}
-
-void ExprLiteralInt64CT::convert(CHPtr & ch_tree) const
-{
-    auto literal_node = std::make_shared<DB::ASTLiteral>(value);
-    ch_tree = literal_node;
-}
-
-bool ExprLiteralFloat64CT::setup(String &)
-{
-    const MySQLPtr & literal_node = getSourceNode();
-    value = std::stod(literal_node->terminals[0]);
-    return true;
-}
-
-void ExprLiteralFloat64CT::convert(CHPtr & ch_tree) const
-{
-    auto literal_node = std::make_shared<DB::ASTLiteral>(value);
-    ch_tree = literal_node;
-}
-
-bool ExprLiteralNumericCT::setup(String & error)
-{
-    const MySQLPtr & numeric_node = getSourceNode();
-    switch (numeric_node->terminal_types[0])
-    {
-        // FIXME: all int types ok?
-        case MySQLTree::TOKEN_TYPE::INT_NUMBER:
-            numeric_ct = std::make_shared<ExprLiteralInt64CT>(numeric_node);
-            break;
-        case MySQLTree::TOKEN_TYPE::FLOAT_NUMBER:
-        case MySQLTree::TOKEN_TYPE::DECIMAL_NUMBER:
-            numeric_ct = std::make_shared<ExprLiteralFloat64CT>(numeric_node);
-            break;
-        default:
-            return false;
-    }
-
-    if (!numeric_ct->setup(error))
-    {
-        numeric_ct = nullptr;
-        return false;
-    }
-
-    return true;
-}
-
-void ExprLiteralNumericCT::convert(CHPtr & ch_tree) const
-{
-    assert(numeric_ct);
-    numeric_ct->convert(ch_tree);
-}
-
-bool ExprLiteralText::setup(String &)
-{
-    const MySQLPtr & text_literal = getSourceNode();
-    auto string_path = TreePath({"textStringLiteral"});
-
-    value = "";
-    for (const auto & child : text_literal->children)
-    {
-        MySQLPtr text_string_node = nullptr;
-        if ((text_string_node = string_path.find(child)) != nullptr)
-        {
-            value += removeQuotes(text_string_node->terminals[0]);
-        }
-    }
-    return true;
-}
-
-void ExprLiteralText::convert(CHPtr & ch_tree) const
-{
-    auto literal_node = std::make_shared<DB::ASTLiteral>(value);
-    ch_tree = literal_node;
-}
-
 bool ExprGenericLiteralCT::setup(String & error)
 {
     const MySQLPtr & literal_node = getSourceNode();
 
-    auto numeric_path = TreePath({"numLiteral"});
-    auto text_path = TreePath({"textLiteral"});
-    auto bool_path = TreePath({"boolLiteral"});
-    auto null_path = TreePath({"nullLiteral"});
-
-    MySQLPtr result = nullptr;
-    if ((result = numeric_path.descend(literal_node)) != nullptr)
-        literal_ct = std::make_shared<ExprLiteralNumericCT>(result);
-    else if ((result = text_path.descend(literal_node)) != nullptr)
-        literal_ct = std::make_shared<ExprLiteralText>(result);
-    else if ((result = bool_path.descend(literal_node)) != nullptr)
-        literal_ct = std::make_shared<ExprLiteralBoolCT>(result);
-    else if ((result = null_path.descend(literal_node)) != nullptr)
-        literal_ct = std::make_shared<ExprLiteralNullCT>(result);
-    else
-        return false;
-
-    if (!literal_ct->setup(error))
+    if (!tryExtractLiteral(literal_node, value))
     {
-        literal_ct = nullptr;
+        error = "invalid literal";
         return false;
     }
 
@@ -248,8 +126,8 @@ bool ExprGenericLiteralCT::setup(String & error)
 
 void ExprGenericLiteralCT::convert(CHPtr & ch_tree) const
 {
-    assert(literal_ct);
-    literal_ct->convert(ch_tree);
+    auto literal = std::make_shared<DB::ASTLiteral>(value);
+    ch_tree = literal;
 }
 
 bool ExprIdentifierCT::setup(String & error)

@@ -5,69 +5,6 @@
 namespace MySQLCompatibility
 {
 
-class ExprLiteralInt64CT : public IConversionTree
-{
-public:
-    ExprLiteralInt64CT(MySQLPtr source) : IConversionTree(source, "numLiteral") { }
-    virtual bool setup(String & error) override;
-    virtual void convert(CHPtr & ch_tree) const override;
-
-private:
-    int64_t value;
-};
-
-class ExprLiteralFloat64CT : public IConversionTree
-{
-public:
-    ExprLiteralFloat64CT(MySQLPtr source) : IConversionTree(source, "numLiteral") { }
-    virtual bool setup(String & error) override;
-    virtual void convert(CHPtr & ch_tree) const override;
-
-private:
-    double value;
-};
-
-class ExprLiteralNumericCT : public IConversionTree
-{
-public:
-    ExprLiteralNumericCT(MySQLPtr source) : IConversionTree(source, "numLiteral") { }
-    virtual bool setup(String & error) override;
-    virtual void convert(CHPtr & ch_tree) const override;
-
-private:
-    ConvPtr numeric_ct = nullptr;
-};
-
-class ExprLiteralText : public IConversionTree
-{
-public:
-    ExprLiteralText(MySQLPtr source) : IConversionTree(source, "textLiteral") { }
-    virtual bool setup(String & error) override;
-    virtual void convert(CHPtr & ch_tree) const override;
-
-private:
-    String value;
-};
-
-class ExprLiteralBoolCT : public IConversionTree
-{
-public:
-    ExprLiteralBoolCT(MySQLPtr source) : IConversionTree(source, "boolLiteral") { }
-    virtual bool setup(String & error) override;
-    virtual void convert(CHPtr & ch_tree) const override;
-
-private:
-    bool value;
-};
-
-class ExprLiteralNullCT : public IConversionTree
-{
-public:
-    ExprLiteralNullCT(MySQLPtr source) : IConversionTree(source, "nullLiteral") { }
-    virtual bool setup(String & error) override;
-    virtual void convert(CHPtr & ch_tree) const override;
-};
-
 class ExprGenericLiteralCT : public IConversionTree
 {
 public:
@@ -76,7 +13,7 @@ public:
     virtual void convert(CHPtr & ch_tree) const override;
 
 private:
-    ConvPtr literal_ct = nullptr;
+    DB::Field value;
 };
 
 class ExprIdentifierCT : public IConversionTree

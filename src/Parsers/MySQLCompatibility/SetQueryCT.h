@@ -12,6 +12,6 @@ public:
     virtual void convert(CHPtr & ch_tree) const override;
 
 private:
-    std::vector<std::pair<String, String>> _key_value_list;
+    std::vector<std::pair<String, DB::Field>> _key_value_list;
 };
 }
