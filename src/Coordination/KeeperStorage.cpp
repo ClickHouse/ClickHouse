@@ -29,158 +29,159 @@ namespace ErrorCodes
 namespace
 {
 
-    String base64Encode(const String & decoded)
-    {
-        std::ostringstream ostr; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-        ostr.exceptions(std::ios::failbit);
-        Poco::Base64Encoder encoder(ostr);
-        encoder.rdbuf()->setLineLength(0);
-        encoder << decoded;
-        encoder.close();
-        return ostr.str();
-    }
+String base64Encode(const String & decoded)
+{
+    std::ostringstream ostr; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+    ostr.exceptions(std::ios::failbit);
+    Poco::Base64Encoder encoder(ostr);
+    encoder.rdbuf()->setLineLength(0);
+    encoder << decoded;
+    encoder.close();
+    return ostr.str();
+}
 
-    String getSHA1(const String & userdata)
-    {
-        Poco::SHA1Engine engine;
-        engine.update(userdata);
-        const auto & digest_id = engine.digest();
-        return String{digest_id.begin(), digest_id.end()};
-    }
+String getSHA1(const String & userdata)
+{
+    Poco::SHA1Engine engine;
+    engine.update(userdata);
+    const auto & digest_id = engine.digest();
+    return String{digest_id.begin(), digest_id.end()};
+}
 
-    String generateDigest(const String & userdata)
-    {
-        std::vector<String> user_password;
-        boost::split(user_password, userdata, [](char character) { return character == ':'; });
-        return user_password[0] + ":" + base64Encode(getSHA1(userdata));
-    }
+String generateDigest(const String & userdata)
+{
+    std::vector<String> user_password;
+    boost::split(user_password, userdata, [](char character) { return character == ':'; });
+    return user_password[0] + ":" + base64Encode(getSHA1(userdata));
+}
 
-    bool checkACL(int32_t permission, const Coordination::ACLs & node_acls, const std::vector<KeeperStorage::AuthID> & session_auths)
-    {
-        if (node_acls.empty())
+bool checkACL(int32_t permission, const Coordination::ACLs & node_acls, const std::vector<KeeperStorage::AuthID> & session_auths)
+{
+    if (node_acls.empty())
+        return true;
+
+    for (const auto & session_auth : session_auths)
+        if (session_auth.scheme == "super")
             return true;
 
-        for (const auto & session_auth : session_auths)
-            if (session_auth.scheme == "super")
+    for (const auto & node_acl : node_acls)
+    {
+        if (node_acl.permissions & permission)
+        {
+            if (node_acl.scheme == "world" && node_acl.id == "anyone")
                 return true;
 
-        for (const auto & node_acl : node_acls)
-        {
-            if (node_acl.permissions & permission)
+            for (const auto & session_auth : session_auths)
             {
-                if (node_acl.scheme == "world" && node_acl.id == "anyone")
+                if (node_acl.scheme == session_auth.scheme && node_acl.id == session_auth.id)
                     return true;
-
-                for (const auto & session_auth : session_auths)
-                {
-                    if (node_acl.scheme == session_auth.scheme && node_acl.id == session_auth.id)
-                        return true;
-                }
             }
         }
-
-        return false;
     }
 
-    bool fixupACL(
-        const std::vector<Coordination::ACL> & request_acls,
-        const std::vector<KeeperStorage::AuthID> & current_ids,
-        std::vector<Coordination::ACL> & result_acls)
+    return false;
+}
+
+bool fixupACL(
+    const std::vector<Coordination::ACL> & request_acls,
+    const std::vector<KeeperStorage::AuthID> & current_ids,
+    std::vector<Coordination::ACL> & result_acls)
+{
+    if (request_acls.empty())
+        return true;
+
+    bool valid_found = false;
+    for (const auto & request_acl : request_acls)
     {
-        if (request_acls.empty())
-            return true;
-
-        bool valid_found = false;
-        for (const auto & request_acl : request_acls)
+        if (request_acl.scheme == "auth")
         {
-            if (request_acl.scheme == "auth")
+            for (const auto & current_id : current_ids)
             {
-                for (const auto & current_id : current_ids)
-                {
-                    valid_found = true;
-                    Coordination::ACL new_acl = request_acl;
-                    new_acl.scheme = current_id.scheme;
-                    new_acl.id = current_id.id;
-                    result_acls.push_back(new_acl);
-                }
-            }
-            else if (request_acl.scheme == "world" && request_acl.id == "anyone")
-            {
-                /// We don't need to save default ACLs
                 valid_found = true;
-            }
-            else if (request_acl.scheme == "digest")
-            {
                 Coordination::ACL new_acl = request_acl;
-
-                /// Bad auth
-                if (std::count(new_acl.id.begin(), new_acl.id.end(), ':') != 1)
-                    return false;
-
-                valid_found = true;
+                new_acl.scheme = current_id.scheme;
+                new_acl.id = current_id.id;
                 result_acls.push_back(new_acl);
             }
         }
-        return valid_found;
-    }
+        else if (request_acl.scheme == "world" && request_acl.id == "anyone")
+        {
+            /// We don't need to save default ACLs
+            valid_found = true;
+        }
+        else if (request_acl.scheme == "digest")
+        {
+            Coordination::ACL new_acl = request_acl;
 
-    KeeperStorage::ResponsesForSessions processWatchesImpl(
-        const String & path, KeeperStorage::Watches & watches, KeeperStorage::Watches & list_watches, Coordination::Event event_type)
+            /// Bad auth
+            if (std::count(new_acl.id.begin(), new_acl.id.end(), ':') != 1)
+                return false;
+
+            valid_found = true;
+            result_acls.push_back(new_acl);
+        }
+    }
+    return valid_found;
+}
+
+KeeperStorage::ResponsesForSessions processWatchesImpl(
+    const String & path, KeeperStorage::Watches & watches, KeeperStorage::Watches & list_watches, Coordination::Event event_type)
+{
+    KeeperStorage::ResponsesForSessions result;
+    auto watch_it = watches.find(path);
+    if (watch_it != watches.end())
     {
-        KeeperStorage::ResponsesForSessions result;
-        auto watch_it = watches.find(path);
-        if (watch_it != watches.end())
-        {
-            std::shared_ptr<Coordination::ZooKeeperWatchResponse> watch_response = std::make_shared<Coordination::ZooKeeperWatchResponse>();
-            watch_response->path = path;
-            watch_response->xid = Coordination::WATCH_XID;
-            watch_response->zxid = -1;
-            watch_response->type = event_type;
-            watch_response->state = Coordination::State::CONNECTED;
-            for (auto watcher_session : watch_it->second)
-                result.push_back(KeeperStorage::ResponseForSession{watcher_session, watch_response});
+        std::shared_ptr<Coordination::ZooKeeperWatchResponse> watch_response = std::make_shared<Coordination::ZooKeeperWatchResponse>();
+        watch_response->path = path;
+        watch_response->xid = Coordination::WATCH_XID;
+        watch_response->zxid = -1;
+        watch_response->type = event_type;
+        watch_response->state = Coordination::State::CONNECTED;
+        for (auto watcher_session : watch_it->second)
+            result.push_back(KeeperStorage::ResponseForSession{watcher_session, watch_response});
 
-            watches.erase(watch_it);
-        }
-
-        auto parent_path = parentPath(path);
-
-        Strings paths_to_check_for_list_watches;
-        if (event_type == Coordination::Event::CREATED)
-        {
-            paths_to_check_for_list_watches.push_back(parent_path.toString()); /// Trigger list watches for parent
-        }
-        else if (event_type == Coordination::Event::DELETED)
-        {
-            paths_to_check_for_list_watches.push_back(path); /// Trigger both list watches for this path
-            paths_to_check_for_list_watches.push_back(parent_path.toString()); /// And for parent path
-        }
-        /// CHANGED event never trigger list wathes
-
-        for (const auto & path_to_check : paths_to_check_for_list_watches)
-        {
-            watch_it = list_watches.find(path_to_check);
-            if (watch_it != list_watches.end())
-            {
-                std::shared_ptr<Coordination::ZooKeeperWatchResponse> watch_list_response
-                    = std::make_shared<Coordination::ZooKeeperWatchResponse>();
-                watch_list_response->path = path_to_check;
-                watch_list_response->xid = Coordination::WATCH_XID;
-                watch_list_response->zxid = -1;
-                if (path_to_check == parent_path)
-                    watch_list_response->type = Coordination::Event::CHILD;
-                else
-                    watch_list_response->type = Coordination::Event::DELETED;
-
-                watch_list_response->state = Coordination::State::CONNECTED;
-                for (auto watcher_session : watch_it->second)
-                    result.push_back(KeeperStorage::ResponseForSession{watcher_session, watch_list_response});
-
-                list_watches.erase(watch_it);
-            }
-        }
-        return result;
+        watches.erase(watch_it);
     }
+
+    auto parent_path = parentPath(path);
+
+    Strings paths_to_check_for_list_watches;
+    if (event_type == Coordination::Event::CREATED)
+    {
+        paths_to_check_for_list_watches.push_back(parent_path.toString()); /// Trigger list watches for parent
+    }
+    else if (event_type == Coordination::Event::DELETED)
+    {
+        paths_to_check_for_list_watches.push_back(path); /// Trigger both list watches for this path
+        paths_to_check_for_list_watches.push_back(parent_path.toString()); /// And for parent path
+    }
+    /// CHANGED event never trigger list wathes
+
+    for (const auto & path_to_check : paths_to_check_for_list_watches)
+    {
+        watch_it = list_watches.find(path_to_check);
+        if (watch_it != list_watches.end())
+        {
+            std::shared_ptr<Coordination::ZooKeeperWatchResponse> watch_list_response
+                = std::make_shared<Coordination::ZooKeeperWatchResponse>();
+            watch_list_response->path = path_to_check;
+            watch_list_response->xid = Coordination::WATCH_XID;
+            watch_list_response->zxid = -1;
+            if (path_to_check == parent_path)
+                watch_list_response->type = Coordination::Event::CHILD;
+            else
+                watch_list_response->type = Coordination::Event::DELETED;
+
+            watch_list_response->state = Coordination::State::CONNECTED;
+            for (auto watcher_session : watch_it->second)
+                result.push_back(KeeperStorage::ResponseForSession{watcher_session, watch_list_response});
+
+            list_watches.erase(watch_it);
+        }
+    }
+    return result;
+}
+
 }
 
 void KeeperStorage::Node::setData(String new_data)
