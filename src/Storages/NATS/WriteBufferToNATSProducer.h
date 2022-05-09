@@ -49,7 +49,7 @@ private:
     void removeRecord(UInt64 received_delivery_tag, bool multiple, bool republish);
     void publish(ConcurrentBoundedQueue<std::pair<UInt64, String>> & message, bool republishing);
 
-    NATSConnection connection;
+    NATSConnectionManager connection;
 
     const Names routing_keys;
     const String exchange_name;
@@ -69,7 +69,7 @@ private:
     bool producer_ready = false;
 
     /// Channel errors lead to channel closure, need to count number of recreated channels to update channel id
-    UInt64 channel_id_counter = 0;
+//    UInt64 channel_id_counter = 0;
 
     /// channel id which contains id of current producer buffer and serial number of recreated channel in this buffer
     String channel_id;

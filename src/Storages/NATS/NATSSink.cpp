@@ -18,13 +18,13 @@ NATSSink::NATSSink(
     , metadata_snapshot(metadata_snapshot_)
     , context(context_)
 {
-    storage.unbindExchange();
+//    storage.unbindExchange();
 }
 
 
 void NATSSink::onStart()
 {
-    buffer = storage.createWriteBuffer();
+//    buffer = storage.createWriteBuffer();
     buffer->activateWriting();
 
     auto format_settings = getFormatSettings(context);
