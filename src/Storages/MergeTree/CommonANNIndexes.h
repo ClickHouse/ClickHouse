@@ -29,7 +29,7 @@ namespace ANNCondition
         tuple(0.1, 0.1, ...., 0.1) or (0.1, 0.1, ...., 0.1)
         [the word tuple is not needed]
 
-    If the query mathces one of these two types, than tha class extracts useful information
+    If the query matches one of these two types, than the class extracts useful information
     from the query. If the query has both 1 and 2 types, than we can't speed and alwaysUnknownOrTrue
     returns true.
 
@@ -43,7 +43,7 @@ namespace ANNCondition
     * objects count from LIMIT section(for both queries)
     * settings str, if query has settings section with new 'ann_index_params' value,
         than you can get the new value(empty by default) calling method getSettingsStr
-    * queryHasOrderByClause and queryHasWhereClause return true if query mathces the type
+    * queryHasOrderByClause and queryHasWhereClause return true if query matches the type
 
     Search query type is also recognized for PREWHERE section
 */
@@ -69,7 +69,7 @@ public:
     // data Column Name in DB
     String getColumnName() const;
 
-    // Distance fucntion name
+    // Distance function name
     String getMetric() const;
 
     // the P- value if the metric is 'LpDistance'
@@ -98,7 +98,7 @@ private:
         float distance = -1.0;
         String metric_name;
         String column_name;
-        float p_for_lp_dist = -1.0; // The P parametr for LpDistance
+        float p_for_lp_dist = -1.0; // The P parameter for LpDistance
     };
 
     struct LimitExpression
@@ -183,7 +183,7 @@ private:
     void parseSettings(const ASTPtr & node);
 
 
-    /* Matches dist function, target vector, coloumn name */
+    /* Matches dist function, target vector, column name */
     static bool matchMainParts(RPN::iterator & iter, RPN::iterator & end, ANNExpression & expr, bool & identifier_found);
 
     // Util methods
