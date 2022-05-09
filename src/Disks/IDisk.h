@@ -308,10 +308,10 @@ public:
     /// other alive harlinks will not be removed.
     virtual UInt32 getRefCount(const String &) const { return 0; }
 
-    /// Revision is an incremental counter of disk operaion.
+    /// Revision is an incremental counter of disk operation.
     /// Revision currently exisis only in DiskS3.
     /// It is used to save current state during backup and restore that state from backup.
-    /// This methos sets current disk revision if it lower than required.
+    /// This method sets current disk revision if it lower than required.
     virtual void syncRevision(UInt64) {}
     /// Return current disk revision.
     virtual UInt64 getRevision() const { return 0; }
