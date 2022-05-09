@@ -108,7 +108,7 @@ public:
         {
             std::string salt;
             UInt8 minLength = 0;
-            std::string alphabet(DEFAULT_ALPHABET);
+            std::string alphabet;
 
             if (arguments.size() >= 4)
             {
@@ -116,6 +116,8 @@ public:
                 if (auto alpha_col = checkAndGetColumnConst<ColumnString>(alphabetcolumn.get()))
                     alphabet = alpha_col->getValue<String>();
             }
+            else
+                alphabet.assign(DEFAULT_ALPHABET);
 
             if (arguments.size() >= 3)
             {
@@ -135,9 +137,11 @@ public:
 
             auto col_res = ColumnString::create();
 
+            std::string hashid;
+
             for (size_t i = 0; i < input_rows_count; ++i)
             {
-                std::string hashid = hash.encode({ numcolumn->getUInt(i) });
+                hashid.assign(hash.encode({ numcolumn->getUInt(i) }));
                 col_res->insertDataWithTerminatingZero(hashid.data(), hashid.size() + 1);
             }
 
