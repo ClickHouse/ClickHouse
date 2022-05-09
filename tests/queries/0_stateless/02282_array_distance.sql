@@ -22,9 +22,6 @@ SELECT arrayCosineDistance(v, materialize([1., 1., 1.])) FROM vec1;
 INSERT INTO vec2 VALUES (1, [100, 200, 0]), (2, [888, 777, 666]);
 SELECT v1.id, v2.id, arrayL2Distance(v1.v, v2.v) as dist FROM vec1 v1, vec2 v2;
 
-INSERT INTO vec2 VALUES (3, [123]);
-SELECT v1.id, v2.id, arrayL2Distance(v1.v, v2.v) as dist FROM vec1 v1, vec2 v2; -- { serverError 190 }
-
 SELECT arrayL1Distance([0, 0], [1]); -- { serverError 190 }
 SELECT arrayL2Distance((1, 2), (3,4)); -- { serverError 43 }
 
