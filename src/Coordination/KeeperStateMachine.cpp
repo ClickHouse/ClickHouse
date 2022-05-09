@@ -44,10 +44,6 @@ namespace
         else /// backward compatibility
             request_for_session.time = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
 
-        int64_t digest;
-        readIntBinary(digest, buffer);
-        LOG_INFO(&Poco::Logger::get("STORAGEEE"), "Read digest {}", digest);
-
         return request_for_session;
     }
 }
@@ -123,14 +119,13 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine::pre_commit(uint64_t log_idx, nur
     return nullptr;
 }
 
-std::optional<int64_t> KeeperStateMachine::preprocess(const uint64_t log_idx, nuraft::buffer & data)
+void KeeperStateMachine::preprocess(const uint64_t log_idx, nuraft::buffer & data)
 {
-    LOG_INFO(&Poco::Logger::get("Storageeee"), "Preprocess called");
     auto request_for_session = parseRequest(data);
     if (request_for_session.request->getOpNum() == Coordination::OpNum::SessionID)
-        return std::nullopt;
+        return;
     std::lock_guard lock(storage_and_responses_lock);
-    return storage->preprocessRequest(request_for_session.request, request_for_session.session_id, request_for_session.time, log_idx);
+    storage->preprocessRequest(request_for_session.request, request_for_session.session_id, request_for_session.time, log_idx);
 }
 
 nuraft::ptr<nuraft::buffer> KeeperStateMachine::commit(const uint64_t log_idx, nuraft::buffer & data)

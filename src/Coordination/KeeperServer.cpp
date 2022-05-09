@@ -505,28 +505,7 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
     }
 
     if (initialized_flag)
-    {
-        switch (type)
-        {
-            case nuraft::cb_func::PreAppendLog:
-            {
-                auto & entry = *static_cast<LogEntryPtr *>(param->ctx);
-                auto log_store = state_manager->load_log_store();
-                auto next_idx = log_store->next_slot();
-                auto maybe_digest = state_machine->preprocess(next_idx, entry->get_buf());
-                if (maybe_digest)
-                {
-                    auto & buff = entry->get_buf();
-                    DB::WriteBuffer buf(reinterpret_cast<BufferBase::Position>(buff.data_begin() + buff.size() - sizeof(int64_t)), buff.size());
-                    DB::writeIntBinary(*maybe_digest, buf);
-                }
-
-                return nuraft::cb_func::ReturnCode::Ok;
-            }
-            default:
-                return nuraft::cb_func::ReturnCode::Ok;
-        }
-    }
+        return nuraft::cb_func::ReturnCode::Ok;
 
     size_t last_commited = state_machine->last_commit_index();
     size_t next_index = state_manager->getLogStore()->next_slot();
