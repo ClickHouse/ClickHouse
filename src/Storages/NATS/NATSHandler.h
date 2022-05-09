@@ -4,7 +4,6 @@
 #include <memory>
 #include <mutex>
 #include <nats.h>
-#include <adapters/libuv.h>
 #include <amqpcpp.h>
 #include <amqpcpp/linux_tcp.h>
 #include <base/types.h>
@@ -19,6 +18,8 @@ namespace Loop
     static const UInt8 RUN = 1;
     static const UInt8 STOP = 2;
 }
+
+using SubscriptionPtr = std::unique_ptr<natsSubscription, decltype(&natsSubscription_Destroy)>;
 
 class NATSHandler
 {
@@ -41,6 +42,7 @@ public:
 
     void stopLoop();
 
+    void changeConnectionStatus(bool is_running);
     bool connectionRunning() const { return connection_running.load(); }
     bool loopRunning() const { return loop_running.load(); }
 

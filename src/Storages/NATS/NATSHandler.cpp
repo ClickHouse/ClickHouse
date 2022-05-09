@@ -1,6 +1,7 @@
 #include <base/logger_useful.h>
 #include <Common/Exception.h>
 #include <Storages/NATS/NATSHandler.h>
+#include <adapters/libuv.h>
 
 namespace DB
 {
@@ -18,7 +19,7 @@ NATSHandler::NATSHandler(uv_loop_t * loop_, Poco::Logger * log_) :
     natsLibuv_Init();
     natsLibuv_SetThreadLocalLoop(loop);
     natsOptions_Create(&opts);
-    status = natsOptions_SetEventLoop(opts, static_cast<void*>(loop),
+    status = natsOptions_SetEventLoop(opts, static_cast<void *>(loop),
                                  natsLibuv_Attach,
                                  natsLibuv_Read,
                                  natsLibuv_Write,
@@ -28,22 +29,32 @@ NATSHandler::NATSHandler(uv_loop_t * loop_, Poco::Logger * log_) :
 void NATSHandler::startLoop()
 {
     std::lock_guard lock(startup_mutex);
+    natsLibuv_SetThreadLocalLoop(loop);
 
     LOG_DEBUG(log, "Background loop started");
     loop_running.store(true);
 
     while (loop_state.load() == Loop::RUN)
+    {
         uv_run(loop, UV_RUN_NOWAIT);
+    }
 
     LOG_DEBUG(log, "Background loop ended");
     loop_running.store(false);
+}
+
+void NATSHandler::changeConnectionStatus(bool is_running) {
+    connection_running.store(is_running);
 }
 
 void NATSHandler::iterateLoop()
 {
     std::unique_lock lock(startup_mutex, std::defer_lock);
     if (lock.try_lock())
+    {
+        natsLibuv_SetThreadLocalLoop(loop);
         uv_run(loop, UV_RUN_NOWAIT);
+    }
 }
 
 /// Do not need synchronization as in iterateLoop(), because this method is used only for

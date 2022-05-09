@@ -51,6 +51,8 @@ void registerStorageMySQL(StorageFactory & factory);
 
 void registerStorageMongoDB(StorageFactory & factory);
 
+void registerStorageNATS(StorageFactory & factory);
+
 #if USE_RDKAFKA
 void registerStorageKafka(StorageFactory & factory);
 #endif
@@ -127,6 +129,8 @@ void registerStorages()
     #endif
 
     registerStorageMongoDB(factory);
+
+    registerStorageNATS(factory);
 
     #if USE_RDKAFKA
     registerStorageKafka(factory);

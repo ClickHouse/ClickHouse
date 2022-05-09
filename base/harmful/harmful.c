@@ -206,7 +206,7 @@ TRAP(lgammal)
 TRAP(nftw)
 TRAP(nl_langinfo)
 TRAP(putc_unlocked)
-TRAP(rand)
+//TRAP(rand) Used by nats-io at startup
 /** In  the current POSIX.1 specification (POSIX.1-2008), readdir() is not required to be thread-safe.  However, in modern
   * implementations (including the glibc implementation), concurrent calls to readdir() that specify different directory streams
   * are thread-safe.  In cases where multiple threads must read from the same directory stream, using readdir() with external
