@@ -51,7 +51,7 @@ namespace
     String generateDigest(const String & userdata)
     {
         std::vector<String> user_password;
-        boost::split(user_password, userdata, [](char c) { return c == ':'; });
+        boost::split(user_password, userdata, [](char character) { return character == ':'; });
         return user_password[0] + ":" + base64Encode(getSHA1(userdata));
     }
 
@@ -128,8 +128,8 @@ namespace
         const String & path, KeeperStorage::Watches & watches, KeeperStorage::Watches & list_watches, Coordination::Event event_type)
     {
         KeeperStorage::ResponsesForSessions result;
-        auto it = watches.find(path);
-        if (it != watches.end())
+        auto watch_it = watches.find(path);
+        if (watch_it != watches.end())
         {
             std::shared_ptr<Coordination::ZooKeeperWatchResponse> watch_response = std::make_shared<Coordination::ZooKeeperWatchResponse>();
             watch_response->path = path;
@@ -137,10 +137,10 @@ namespace
             watch_response->zxid = -1;
             watch_response->type = event_type;
             watch_response->state = Coordination::State::CONNECTED;
-            for (auto watcher_session : it->second)
+            for (auto watcher_session : watch_it->second)
                 result.push_back(KeeperStorage::ResponseForSession{watcher_session, watch_response});
 
-            watches.erase(it);
+            watches.erase(watch_it);
         }
 
         auto parent_path = parentPath(path);
@@ -159,8 +159,8 @@ namespace
 
         for (const auto & path_to_check : paths_to_check_for_list_watches)
         {
-            it = list_watches.find(path_to_check);
-            if (it != list_watches.end())
+            watch_it = list_watches.find(path_to_check);
+            if (watch_it != list_watches.end())
             {
                 std::shared_ptr<Coordination::ZooKeeperWatchResponse> watch_list_response
                     = std::make_shared<Coordination::ZooKeeperWatchResponse>();
@@ -173,10 +173,10 @@ namespace
                     watch_list_response->type = Coordination::Event::DELETED;
 
                 watch_list_response->state = Coordination::State::CONNECTED;
-                for (auto watcher_session : it->second)
+                for (auto watcher_session : watch_it->second)
                     result.push_back(KeeperStorage::ResponseForSession{watcher_session, watch_list_response});
 
-                list_watches.erase(it);
+                list_watches.erase(watch_it);
             }
         }
         return result;
@@ -1503,11 +1503,11 @@ public:
 
     KeeperStorageRequestProcessorPtr get(const Coordination::ZooKeeperRequestPtr & zk_request) const
     {
-        auto it = op_num_to_request.find(zk_request->getOpNum());
-        if (it == op_num_to_request.end())
+        auto request_it = op_num_to_request.find(zk_request->getOpNum());
+        if (request_it == op_num_to_request.end())
             throw DB::Exception("Unknown operation type " + toString(zk_request->getOpNum()), ErrorCodes::LOGICAL_ERROR);
 
-        return it->second(zk_request);
+        return request_it->second(zk_request);
     }
 
     void registerRequest(Coordination::OpNum op_num, Creator creator)
