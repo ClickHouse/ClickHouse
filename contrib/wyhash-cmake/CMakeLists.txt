@@ -5,3 +5,5 @@ add_library (wyhash "${LIBRARY_DIR}/wyhash.h")
 target_include_directories(wyhash SYSTEM PUBLIC ${LIBRARY_DIR})
 
 add_library (ch_contrib::wyhash ALIAS wyhash)
+
+set_target_properties(wyhash PROPERTIES LINKER_LANGUAGE CXX)
