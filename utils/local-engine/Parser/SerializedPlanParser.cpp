@@ -580,6 +580,44 @@ const DB::ActionsDAG::Node * local_engine::SerializedPlanParser::
             const auto * field = action_dag->getInputs()[rel.selection().direct_reference().struct_field().field()];
             return action_dag->tryFindInIndex(field->result_name);
         }
+        case substrait::Expression::RexTypeCase::kCast:
+        {
+            if (!rel.cast().has_type() || !rel.cast().has_input())
+            {
+                throw std::runtime_error("There is no type and input in cast node.");
+            }
+            std::string ch_function_name;
+            if (rel.cast().type().has_fp64())
+            {
+                ch_function_name = "toFloat64";
+            }
+            else if (rel.cast().type().has_string())
+            {
+                ch_function_name = "toString";
+            }
+            else
+            {
+                LOG_ERROR(&Poco::Logger::get("SerializedPlanParser"), "doesn't support cast type {}", rel.cast().type().DebugString());
+                throw std::runtime_error("doesn't support cast type " + rel.cast().type().DebugString());
+            }
+            DB::ActionsDAG::NodeRawConstPtrs args;
+            if (rel.cast().input().has_selection())
+            {
+                args.emplace_back(parseArgument(action_dag, rel.cast().input()));
+            }
+            else
+            {
+                LOG_ERROR(&Poco::Logger::get("SerializedPlanParser"), "there is no selection for cast input {}", rel.cast().input().DebugString());
+                throw std::runtime_error("there is no selection for cast input " + rel.cast().input().DebugString());
+            }
+            auto function_builder = DB::FunctionFactory::instance().get(ch_function_name, this->context);
+            std::string args_name;
+            join(args, ',', args_name);
+            auto result_name = ch_function_name + "(" + args_name + ")";
+            const auto * function_node = &action_dag->addFunction(function_builder, args, result_name);
+            action_dag->addOrReplaceInIndex(*function_node);
+            return function_node;
+        }
         default:
             throw std::runtime_error("unsupported arg type " + std::to_string(rel.rex_type_case()));
     }
