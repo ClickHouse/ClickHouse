@@ -34,9 +34,6 @@ bool PredicateExpressionsOptimizer::optimize(ASTSelectQuery & select_query)
     if (!enable_optimize_predicate_expression)
         return false;
 
-    if (select_query.having() && (!select_query.group_by_with_cube && !select_query.group_by_with_rollup && !select_query.group_by_with_totals))
-        tryMovePredicatesFromHavingToWhere(select_query);
-
     if (!select_query.tables() || select_query.tables()->children.empty())
         return false;
 
@@ -170,60 +167,6 @@ bool PredicateExpressionsOptimizer::tryRewritePredicatesToTable(ASTPtr & table_e
     }
 
     return false;
-}
-
-bool PredicateExpressionsOptimizer::tryMovePredicatesFromHavingToWhere(ASTSelectQuery & select_query)
-{
-    ASTs where_predicates;
-    ASTs having_predicates;
-
-    const auto & reduce_predicates = [&](const ASTs & predicates)
-    {
-        ASTPtr res = predicates[0];
-        for (size_t index = 1; index < predicates.size(); ++index)
-            res = makeASTFunction("and", res, predicates[index]);
-
-        return res;
-    };
-
-    for (const auto & moving_predicate: splitConjunctionPredicate({select_query.having()}))
-    {
-        TablesWithColumns tables;
-        ExpressionInfoVisitor::Data expression_info{WithContext{getContext()}, tables};
-        ExpressionInfoVisitor(expression_info).visit(moving_predicate);
-
-        /// TODO: If there is no group by, where, and prewhere expression, we can push down the stateful function
-        if (expression_info.is_stateful_function)
-            return false;
-
-        if (expression_info.is_window_function)
-        {
-            // Window functions are not allowed in either HAVING or WHERE.
-            return false;
-        }
-
-        if (expression_info.is_aggregate_function)
-            having_predicates.emplace_back(moving_predicate);
-        else
-            where_predicates.emplace_back(moving_predicate);
-    }
-
-    if (having_predicates.empty())
-        select_query.setExpression(ASTSelectQuery::Expression::HAVING, {});
-    else
-    {
-        auto having_predicate = reduce_predicates(having_predicates);
-        select_query.setExpression(ASTSelectQuery::Expression::HAVING, std::move(having_predicate));
-    }
-
-    if (!where_predicates.empty())
-    {
-        auto moved_predicate = reduce_predicates(where_predicates);
-        moved_predicate = select_query.where() ? makeASTFunction("and", select_query.where(), moved_predicate) : moved_predicate;
-        select_query.setExpression(ASTSelectQuery::Expression::WHERE, std::move(moved_predicate));
-    }
-
-    return true;
 }
 
 }
