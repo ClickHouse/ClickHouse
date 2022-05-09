@@ -3,6 +3,7 @@
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/IProcessor.h>
 #include <Processors/LimitTransform.h>
+#include <QueryPipeline/ReadProgressCallback.h>
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <Processors/Sinks/EmptySink.h>
@@ -469,26 +470,22 @@ Block QueryPipeline::getHeader() const
 
 void QueryPipeline::setProgressCallback(const ProgressCallback & callback)
 {
-    for (auto & processor : processors)
-    {
-        if (auto * source = dynamic_cast<ISourceWithProgress *>(processor.get()))
-            source->setProgressCallback(callback);
-    }
+    if (read_progress_callback)
+        read_progress_callback = std::make_unique<ReadProgressCallback>();
+
+    read_progress_callback->setProgressCallback(callback);
 }
 
 void QueryPipeline::setProcessListElement(QueryStatus * elem)
 {
     process_list_element = elem;
 
-    if (pulling() || completed())
-    {
-        for (auto & processor : processors)
-        {
-            if (auto * source = dynamic_cast<ISourceWithProgress *>(processor.get()))
-                source->setProcessListElement(elem);
-        }
-    }
-    else if (pushing())
+    if (read_progress_callback)
+        read_progress_callback = std::make_unique<ReadProgressCallback>();
+
+    read_progress_callback->setProcessListElement(elem);
+
+    if (pushing())
     {
         if (auto * counting = dynamic_cast<CountingTransform *>(&input->getProcessor()))
         {
@@ -521,6 +518,11 @@ bool QueryPipeline::tryGetResultRowsAndBytes(UInt64 & result_rows, UInt64 & resu
     result_rows = output_format->getResultRows();
     result_bytes = output_format->getResultBytes();
     return true;
+}
+
+void QueryPipeline::setQuota(std::shared_ptr<const EnabledQuota> quota_)
+{
+    quota = std::move(quota_);
 }
 
 void QueryPipeline::addStorageHolder(StoragePtr storage)

@@ -10,6 +10,7 @@
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Sources/SourceWithProgress.h>
 #include <Processors/QueryPlan/QueryPlan.h>
+#include <QueryPipeline/ReadProgressCallback.h>
 #include <Columns/ColumnConst.h>
 
 namespace DB
@@ -875,29 +876,26 @@ void Pipe::transform(const Transformer & transformer)
 
 void Pipe::setLimits(const StreamLocalLimits & limits)
 {
-    for (auto & processor : processors)
-    {
-        if (auto * source_with_progress = dynamic_cast<ISourceWithProgress *>(processor.get()))
-            source_with_progress->setLimits(limits);
-    }
+    if (!read_progress_callback)
+        read_progress_callback = std::make_unique<ReadProgressCallback>();
+
+    read_progress_callback->setLimits(limits);
 }
 
 void Pipe::setLeafLimits(const SizeLimits & leaf_limits)
 {
-    for (auto & processor : processors)
-    {
-        if (auto * source_with_progress = dynamic_cast<ISourceWithProgress *>(processor.get()))
-            source_with_progress->setLeafLimits(leaf_limits);
-    }
+    if (!read_progress_callback)
+        read_progress_callback = std::make_unique<ReadProgressCallback>();
+
+    read_progress_callback->setLeafLimits(leaf_limits);
 }
 
 void Pipe::setQuota(const std::shared_ptr<const EnabledQuota> & quota)
 {
-    for (auto & processor : processors)
-    {
-        if (auto * source_with_progress = dynamic_cast<ISourceWithProgress *>(processor.get()))
-            source_with_progress->setQuota(quota);
-    }
+    if (!read_progress_callback)
+        read_progress_callback = std::make_unique<ReadProgressCallback>();
+
+    read_progress_callback->setQuota(quota);
 }
 
 }

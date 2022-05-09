@@ -1,4 +1,5 @@
 #include <Processors/Executors/ExecutionThreadContext.h>
+#include <Processors/Executors/IReadProgressCallback.h>
 #include <Common/Stopwatch.h>
 
 namespace DB
@@ -66,6 +67,15 @@ bool ExecutionThreadContext::executeTask()
     try
     {
         executeJob(node->processor);
+
+        if (read_progress_callback)
+        {
+            if (auto read_progress = node->processor->getReadProgress())
+            {
+                if (!read_progress_callback->onProgress(read_progress->read_rows, read_progress->read_bytes))
+                    node->processor->cancel();
+            }
+        }
 
         ++node->num_executed_jobs;
     }

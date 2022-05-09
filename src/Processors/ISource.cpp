@@ -46,15 +46,35 @@ ISource::Status ISource::prepare()
     return Status::PortFull;
 }
 
+void ISource::progress(size_t read_rows, size_t read_bytes)
+{
+    read_progress_was_set = true;
+    read_progress.read_rows += read_rows;
+    read_progress.read_bytes += read_bytes;
+}
+
+std::optional<ISource::ReadProgress> ISource::getReadProgress()
+{
+    ReadProgress res_progress;
+    std::swap(read_progress, res_progress);
+    return res_progress;
+}
+
 void ISource::work()
 {
     try
     {
+        read_progress_was_set = false;
+
         if (auto chunk = tryGenerate())
         {
             current_chunk.chunk = std::move(*chunk);
             if (current_chunk.chunk)
+            {
                 has_input = true;
+                if (!read_progress_was_set)
+                    progress(current_chunk.chunk.getNumRows(), current_chunk.chunk.bytes());
+            }
         }
         else
             finished = true;
