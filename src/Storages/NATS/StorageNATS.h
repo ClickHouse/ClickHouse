@@ -10,7 +10,6 @@
 #include <Storages/NATS/NATSSettings.h>
 #include <Storages/NATS/NATSConnection.h>
 #include <Common/thread_local_rng.h>
-#include <amqpcpp/libuv.h>
 #include <uv.h>
 #include <random>
 
@@ -61,12 +60,12 @@ public:
     const String & getFormatName() const { return format_name; }
     NamesAndTypesList getVirtuals() const override;
 
-    String getExchange() const { return exchange_name; }
-    void unbindExchange();
-
-    bool updateChannel(ChannelPtr & channel);
-    void updateQueues(std::vector<String> & queues_) { queues_ = queues; }
-    void prepareChannelForBuffer(ConsumerBufferPtr buffer);
+//    String getExchange() const { return exchange_name; }
+//    void unbindExchange();
+//
+//    bool updateChannel(ChannelPtr & channel);
+    void updateSubjects(std::vector<String> & subjects_) { subjects_ = subjects; }
+//    void prepareChannelForBuffer(ConsumerBufferPtr buffer);
 
     void incrementReader();
     void decrementReader();
@@ -82,30 +81,25 @@ protected:
 private:
     ContextMutablePtr nats_context;
     std::unique_ptr<NATSSettings> nats_settings;
+    std::vector<String> subjects;
 
-    const String exchange_name;
     const String format_name;
-    AMQP::ExchangeType exchange_type;
-    Names routing_keys;
     char row_delimiter;
     const String schema_name;
     size_t num_consumers;
-    size_t num_queues;
-    String queue_base;
-    Names queue_settings_list;
 
     /// For insert query. Mark messages as durable.
     const bool persistent;
 
-    /// A table setting. It is possible not to perform any NATS setup, which is supposed to be consumer-side setup:
-    /// declaring exchanges, queues, bindings. Instead everything needed from NATS table is to connect to a specific queue.
-    /// This solution disables all optimizations and is not really optimal, but allows user to fully control all NATS setup.
-    bool use_user_setup;
+//    /// A table setting. It is possible not to perform any NATS setup, which is supposed to be consumer-side setup:
+//    /// declaring exchanges, queues, bindings. Instead everything needed from NATS table is to connect to a specific queue.
+//    /// This solution disables all optimizations and is not really optimal, but allows user to fully control all NATS setup.
+//    bool use_user_setup;
 
-    bool hash_exchange;
+//    bool hash_exchange;
     Poco::Logger * log;
 
-    NATSConnectionPtr connection; /// Connection for all consumers
+    NATSConnectionManagerPtr connection; /// Connection for all consumers
     NATSConfiguration configuration;
 
     size_t num_created_consumers = 0;
@@ -119,10 +113,7 @@ private:
     /// to setup size of inner buffer for received messages
     uint32_t queue_size;
 
-    String sharding_exchange, bridge_exchange, consumer_exchange;
     size_t consumer_id = 0; /// counter for consumer buffer, needed for channel id
-
-    std::vector<String> queues;
 
     std::once_flag flag; /// remove exchange only once
     std::mutex task_mutex;
@@ -143,7 +134,7 @@ private:
     std::atomic<size_t> producer_id = 1;
     /// Has connection background task completed successfully?
     /// It is started only once -- in constructor.
-    std::atomic<bool> rabbit_is_ready = false;
+    std::atomic<bool> nats_is_ready = false;
     /// Allow to remove exchange only once.
     std::atomic<bool> exchange_removed = false;
     /// For select query we must be aware of the end of streaming
@@ -176,7 +167,7 @@ private:
     void stopLoop();
     void stopLoopIfNoReaders();
 
-    static Names parseSettings(String settings_list);
+    static Names parseSubjects(String subjects_list);
     static AMQP::ExchangeType defineExchangeType(String exchange_type_);
     static String getTableBasedName(String name, const StorageID & table_id);
 
@@ -184,12 +175,12 @@ private:
     size_t getMaxBlockSize() const;
     void deactivateTask(BackgroundSchedulePool::TaskHolder & task, bool wait, bool stop_loop);
 
-    void initNATS();
-    void cleanupNATS() const;
+//    void initNATS();
+//    void cleanupNATS() const;
 
-    void initExchange(AMQP::TcpChannel & rabbit_channel);
-    void bindExchange(AMQP::TcpChannel & rabbit_channel);
-    void bindQueue(size_t queue_id, AMQP::TcpChannel & rabbit_channel);
+//    void initExchange(AMQP::TcpChannel & nats_channel);
+//    void bindExchange(AMQP::TcpChannel & nats_channel);
+//    void bindQueue(size_t queue_id, AMQP::TcpChannel & nats_channel);
 
     bool streamToViews();
     bool checkDependencies(const StorageID & table_id);

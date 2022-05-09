@@ -12,7 +12,7 @@ static std::pair<Block, Block> getHeaders(const StorageSnapshotPtr & storage_sna
 {
     auto non_virtual_header = storage_snapshot->metadata->getSampleBlockNonMaterialized();
     auto virtual_header = storage_snapshot->getSampleBlockForColumns(
-                {"_exchange_name", "_channel_id", "_delivery_tag", "_redelivered", "_message_id", "_timestamp"});
+                {"_subject", "_timestamp"});
 
     return {non_virtual_header, virtual_header};
 }
@@ -51,14 +51,14 @@ NATSSource::NATSSource(
     ContextPtr context_,
     const Names & columns,
     size_t max_block_size_,
-    bool ack_in_suffix_)
+    bool /*ack_in_suffix_*/)
     : SourceWithProgress(getSampleBlock(headers.first, headers.second))
     , storage(storage_)
     , storage_snapshot(storage_snapshot_)
     , context(context_)
     , column_names(columns)
     , max_block_size(max_block_size_)
-    , ack_in_suffix(ack_in_suffix_)
+//    , ack_in_suffix(ack_in_suffix_)
     , non_virtual_header(std::move(headers.first))
     , virtual_header(std::move(headers.second))
 {
@@ -77,31 +77,31 @@ NATSSource::~NATSSource()
 }
 
 
-bool NATSSource::needChannelUpdate()
-{
-    if (!buffer)
-        return false;
-
-    return buffer->needChannelUpdate();
-}
-
-
-void NATSSource::updateChannel()
-{
-    if (!buffer)
-        return;
-
-    buffer->updateAckTracker();
-
-    if (storage.updateChannel(buffer->getChannel()))
-        buffer->setupChannel();
-}
+//bool NATSSource::needChannelUpdate()
+//{
+//    if (!buffer)
+//        return false;
+//
+//    return buffer->needChannelUpdate();
+//}
+//
+//
+//void NATSSource::updateChannel()
+//{
+//    if (!buffer)
+//        return;
+//
+//    buffer->updateAckTracker();
+//
+//    if (storage.updateChannel(buffer->getChannel()))
+//        buffer->setupChannel();
+//}
 
 Chunk NATSSource::generate()
 {
     auto chunk = generateImpl();
-    if (!chunk && ack_in_suffix)
-        sendAck();
+//    if (!chunk && ack_in_suffix)
+//        sendAck();
 
     return chunk;
 }
@@ -136,23 +136,13 @@ Chunk NATSSource::generateImpl()
 
         if (new_rows)
         {
-            auto exchange_name = storage.getExchange();
-            auto channel_id = buffer->getChannelID();
-            auto delivery_tag = buffer->getDeliveryTag();
-            auto redelivered = buffer->getRedelivered();
-            auto message_id = buffer->getMessageID();
+            auto subject = buffer->getSubject();
             auto timestamp = buffer->getTimestamp();
-
-            buffer->updateAckTracker({delivery_tag, channel_id});
 
             for (size_t i = 0; i < new_rows; ++i)
             {
-                virtual_columns[0]->insert(exchange_name);
-                virtual_columns[1]->insert(channel_id);
-                virtual_columns[2]->insert(delivery_tag);
-                virtual_columns[3]->insert(redelivered);
-                virtual_columns[4]->insert(message_id);
-                virtual_columns[5]->insert(timestamp);
+                virtual_columns[0]->insert(subject);
+                virtual_columns[1]->insert(timestamp);
             }
 
             total_rows = total_rows + new_rows;
@@ -175,15 +165,15 @@ Chunk NATSSource::generateImpl()
 }
 
 
-bool NATSSource::sendAck()
-{
-    if (!buffer)
-        return false;
-
-    if (!buffer->ackMessages())
-        return false;
-
-    return true;
-}
+//bool NATSSource::sendAck()
+//{
+//    if (!buffer)
+//        return false;
+//
+//    if (!buffer->ackMessages())
+//        return false;
+//
+//    return true;
+//}
 
 }

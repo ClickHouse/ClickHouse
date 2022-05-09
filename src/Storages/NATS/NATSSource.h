@@ -28,9 +28,9 @@ public:
     Chunk generate() override;
 
     bool queueEmpty() const { return !buffer || buffer->queueEmpty(); }
-    bool needChannelUpdate();
-    void updateChannel();
-    bool sendAck();
+//    bool needChannelUpdate();
+//    void updateChannel();
+//    bool sendAck();
 
 private:
     StorageNATS & storage;
@@ -38,7 +38,7 @@ private:
     ContextPtr context;
     Names column_names;
     const size_t max_block_size;
-    bool ack_in_suffix;
+//    bool ack_in_suffix;
 
     bool is_finished = false;
     const Block non_virtual_header;

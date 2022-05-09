@@ -112,53 +112,53 @@ void WriteBufferToNATSProducer::countRow()
 
 void WriteBufferToNATSProducer::setupChannel()
 {
-    producer_channel = connection.createChannel();
-
-    producer_channel->onError([&](const char * message)
-    {
-        LOG_ERROR(log, "Producer's channel {} error: {}", channel_id, message);
-
-        /// Channel is not usable anymore. (https://github.com/CopernicaMarketingSoftware/AMQP-CPP/issues/36#issuecomment-125112236)
-        producer_channel->close();
-
-        /* Save records that have not received ack/nack from server before channel closure. They are removed and pushed back again once
-         * they are republished because after channel recovery they will acquire new delivery tags, so all previous records become invalid
-         */
-        for (const auto & record : delivery_record)
-            if (!returned.push(record.second))
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Could not push to returned queue");
-
-        LOG_DEBUG(log, "Producer on channel {} hasn't confirmed {} messages, {} waiting to be published",
-                channel_id, delivery_record.size(), payloads.size());
-
-        /// Delivery tags are scoped per channel.
-        delivery_record.clear();
-        delivery_tag = 0;
-        producer_ready = false;
-    });
-
-    producer_channel->onReady([&]()
-    {
-        channel_id = channel_id_base + "_" + std::to_string(channel_id_counter++);
-        LOG_DEBUG(log, "Producer's channel {} is ready", channel_id);
-
-        /* if persistent == true, onAck is received when message is persisted to disk or when it is consumed on every queue. If fails,
-         * onNack() is received. If persistent == false, message is confirmed the moment it is enqueued. First option is two times
-         * slower than the second, so default is second and the first is turned on in table setting.
-         *
-         * "Publisher confirms" are implemented similar to strategy#3 here https://www.rabbitmq.com/tutorials/tutorial-seven-java.html
-         */
-        producer_channel->confirmSelect()
-        .onAck([&](uint64_t acked_delivery_tag, bool multiple)
-        {
-            removeRecord(acked_delivery_tag, multiple, false);
-        })
-        .onNack([&](uint64_t nacked_delivery_tag, bool multiple, bool /* requeue */)
-        {
-            removeRecord(nacked_delivery_tag, multiple, true);
-        });
-        producer_ready = true;
-    });
+//    producer_channel = connection.createChannel();
+//
+//    producer_channel->onError([&](const char * message)
+//    {
+//        LOG_ERROR(log, "Producer's channel {} error: {}", channel_id, message);
+//
+//        /// Channel is not usable anymore. (https://github.com/CopernicaMarketingSoftware/AMQP-CPP/issues/36#issuecomment-125112236)
+//        producer_channel->close();
+//
+//        /* Save records that have not received ack/nack from server before channel closure. They are removed and pushed back again once
+//         * they are republished because after channel recovery they will acquire new delivery tags, so all previous records become invalid
+//         */
+//        for (const auto & record : delivery_record)
+//            if (!returned.push(record.second))
+//                throw Exception(ErrorCodes::LOGICAL_ERROR, "Could not push to returned queue");
+//
+//        LOG_DEBUG(log, "Producer on channel {} hasn't confirmed {} messages, {} waiting to be published",
+//                channel_id, delivery_record.size(), payloads.size());
+//
+//        /// Delivery tags are scoped per channel.
+//        delivery_record.clear();
+//        delivery_tag = 0;
+//        producer_ready = false;
+//    });
+//
+//    producer_channel->onReady([&]()
+//    {
+//        channel_id = channel_id_base + "_" + std::to_string(channel_id_counter++);
+//        LOG_DEBUG(log, "Producer's channel {} is ready", channel_id);
+//
+//        /* if persistent == true, onAck is received when message is persisted to disk or when it is consumed on every queue. If fails,
+//         * onNack() is received. If persistent == false, message is confirmed the moment it is enqueued. First option is two times
+//         * slower than the second, so default is second and the first is turned on in table setting.
+//         *
+//         * "Publisher confirms" are implemented similar to strategy#3 here https://www.rabbitmq.com/tutorials/tutorial-seven-java.html
+//         */
+//        producer_channel->confirmSelect()
+//        .onAck([&](uint64_t acked_delivery_tag, bool multiple)
+//        {
+//            removeRecord(acked_delivery_tag, multiple, false);
+//        })
+//        .onNack([&](uint64_t nacked_delivery_tag, bool multiple, bool /* requeue */)
+//        {
+//            removeRecord(nacked_delivery_tag, multiple, true);
+//        });
+//        producer_ready = true;
+//    });
 }
 
 
