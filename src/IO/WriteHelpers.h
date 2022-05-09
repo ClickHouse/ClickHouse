@@ -806,7 +806,7 @@ inline void writeDateTimeText(DateTime64 datetime64, UInt32 scale, WriteBuffer &
 
     auto components = DecimalUtils::split(datetime64, scale);
     /// Case1:
-    /// -127914467.877 
+    /// -127914467.877
     /// => whole = -127914467, fraction = 877(After DecimalUtils::split)
     /// => new whole = -127914468(1965-12-12 12:12:12), new fraction = 123(.123)
     /// => 1965-12-12 12:12:12.123
@@ -814,7 +814,7 @@ inline void writeDateTimeText(DateTime64 datetime64, UInt32 scale, WriteBuffer &
     /// Case2:
     /// -0.877
     /// => whole = 0, fractional = 877(After DecimalUtils::split)
-    /// => whole = -1, fractional = 1000 - 877 = 123 
+    /// => whole = -1, fractional = 1000 - 877 = 123
     if (datetime64.value < 0 && components.fractional != 0)
     {
         --components.whole;
