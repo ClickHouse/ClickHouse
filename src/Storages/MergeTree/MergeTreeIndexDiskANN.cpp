@@ -61,6 +61,52 @@ DiskANNIndexPtr constructIndexFromDatapoints(uint32_t dimensions, std::vector<Di
     );
 }
 
+struct DiskANNSearchResult {
+    std::vector<float> distances;
+    std::vector<uint64_t> indicies;
+};
+
+DiskANNSearchResult getDistancesToVector(
+    std::vector<float> target_vector,
+    size_t neighbours_to_search,
+    std::shared_ptr<MergeTreeIndexGranuleDiskANN> granule
+) 
+{
+    size_t k = neighbours_to_search;
+
+    auto disk_ann_index = std::dynamic_pointer_cast<DiskANNIndex>(granule->base_index);
+
+    target_vector.resize(ROUND_UP(target_vector.size(), 8));
+    LOG_DEBUG(&Poco::Logger::get("DiskANN"), "Searching for vector of dim {}", target_vector.size());
+
+    // Will be populated by diskann
+    std::vector<float> distances(neighbours_to_search);
+    std::vector<uint64_t> indicies(neighbours_to_search); 
+    std::vector<unsigned> init_ids{};
+
+    disk_ann_index->search(target_vector.data(), k, neighbours_to_search, init_ids, indicies.data(), distances.data());
+
+    DiskANNSearchResult result;
+    result.distances = std::move(distances);
+    result.indicies = std::move(indicies);
+
+    return result;
+}
+
+bool isDistanceLower(float first, float second) {
+    /*
+    When using L2, DiskANN returns not the exact distance, but distance squared, that's why
+    we have to rise given distance to the power of 2. 
+    
+    Also, I don't know why, but DiskANN is not able to give precise answer to ANN task,
+    maybe it depends on hyperparameters and fine-tuning is needed. Nevertheless, temporary
+    ERROR_COEF is added to minimise the likelihood of false negative result
+    */
+
+    const static float ERROR_COEF = 10.f;
+    return first < second * second * ERROR_COEF;  
+}
+
 }
 
 MergeTreeIndexGranuleDiskANN::MergeTreeIndexGranuleDiskANN(const String & index_name_, const Block & index_sample_block_)
@@ -294,43 +340,63 @@ bool MergeTreeIndexConditionDiskANN::mayBeTrueOnGranule(MergeTreeIndexGranulePtr
     std::vector<float> target_vec = common_condition.getTargetVector();
     float min_distance = common_condition.getComparisonDistance();
 
-    // Number of target vectors
-    size_t n = 5;
-
-    // Number of NN to search
-    size_t k = n;
-
-    // Will be populated by diskann
-    std::vector<float> distances(n);
-    std::vector<uint64_t> indicies(n); 
-    std::vector<unsigned> init_ids{};
-
     auto granule = std::dynamic_pointer_cast<MergeTreeIndexGranuleDiskANN>(idx_granule);
-    auto disk_ann_index = std::dynamic_pointer_cast<DiskANNIndex>(granule->base_index);
+    auto search_result = detail::getDistancesToVector(target_vec, 1, granule);
 
-    target_vec.resize(ROUND_UP(target_vec.size(), 8));
-    LOG_DEBUG(&Poco::Logger::get("DiskANN"), "Searching for vector of dim {}", target_vec.size());
-
-    if (target_vec.empty()) {
-        return true;
-    }
-
-    disk_ann_index->search(target_vec.data(), k, n, init_ids, indicies.data(), distances.data());
-
-    float distance = *std::min_element(distances.begin(), distances.end());
+    float distance = *std::min_element(search_result.distances.begin(), search_result.distances.end());
     LOG_DEBUG(&Poco::Logger::get("DiskANN"), "Maybe true on granule distances: {} <? {}", distance, min_distance);
 
-    /*
-    When using L2, DiskANN returns not the exact distance, but distance squared, that's why
-    we have to rise given distance to the power of 2. 
-    
-    Also, I don't know why, but DiskANN is not able to give precise answer to ANN task,
-    maybe it depends on hyperparameters and fine-tuning is needed. Nevertheless, temporary
-    ERROR_COEF is added to minimise the likelihood of false negative result
-    */
+    return detail::isDistanceLower(distance, min_distance);
+}
 
-    const static float ERROR_COEF = 10.f;
-    return distance < min_distance * min_distance * ERROR_COEF;
+std::vector<size_t> MergeTreeIndexConditionDiskANN::getUsefulRanges(MergeTreeIndexGranulePtr idx_granule) const {
+    uint64_t limit = 1;
+    auto limit_length_maybe = common_condition.getLimitCount();
+    if (limit_length_maybe.has_value()) {
+        limit = limit_length_maybe.value();
+    }
+    
+    std::optional<float> comp_dist_maybe = std::nullopt;
+    if (common_condition.queryHasWhereClause()) {
+        comp_dist_maybe = common_condition.getComparisonDistance();
+    }
+    
+    std::vector<float> target_vec = common_condition.getTargetVector();
+
+    auto granule = std::dynamic_pointer_cast<MergeTreeIndexGranuleDiskANN>(idx_granule);
+    if (!granule) {
+        throw Exception(
+            "DiskANN index condition got a granule with the wrong type.", 
+            ErrorCodes::LOGICAL_ERROR
+        );
+    }
+
+    auto search_result = detail::getDistancesToVector(target_vec, limit, granule);
+
+    // Temporary hard-coded constant
+    const size_t granule_size = 8192;
+
+    std::unordered_set<size_t> useful_granules;
+    for (size_t i = 0; i < limit; ++i) {
+        LOG_DEBUG(&Poco::Logger::get("DiskANN"), "Distance: {}", search_result.distances[i]);
+
+        if (comp_dist_maybe.has_value() && 
+            !detail::isDistanceLower(search_result.distances[i], comp_dist_maybe.value())) 
+        {
+            break;
+        }
+
+        useful_granules.insert(search_result.indicies[i] / granule_size);
+    }
+    
+    std::vector<size_t> useful_granules_vec;
+    useful_granules_vec.reserve(useful_granules.size());
+    for (auto idx : useful_granules)
+    {
+        useful_granules_vec.push_back(idx);
+    }
+
+    return useful_granules_vec;
 }
 
 MergeTreeIndexGranulePtr MergeTreeIndexDiskANN::createIndexGranule() const

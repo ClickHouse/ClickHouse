@@ -68,7 +68,7 @@ private:
 };
 
 
-class MergeTreeIndexConditionDiskANN final : public IMergeTreeIndexCondition
+class MergeTreeIndexConditionDiskANN final : public IMergeTreeIndexConditionAnn
 {
 public:
     MergeTreeIndexConditionDiskANN(
@@ -80,6 +80,7 @@ public:
     bool alwaysUnknownOrTrue() const override;
 
     bool mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule) const override;
+    std::vector<size_t> getUsefulRanges(MergeTreeIndexGranulePtr idx_granule) const override;
 
     ~MergeTreeIndexConditionDiskANN() override = default;
 private:
