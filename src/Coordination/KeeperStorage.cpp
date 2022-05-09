@@ -269,6 +269,35 @@ bool KeeperStorage::CurrentNodes::hasNode(StringRef path) const
     return exists;
 }
 
+Coordination::ACLs KeeperStorage::CurrentNodes::getACLs(StringRef path) const
+{
+    std::optional<uint64_t> acl_id;
+    if (auto maybe_node_it = storage.container.find(path); maybe_node_it != storage.container.end())
+        acl_id.emplace(maybe_node_it->value.acl_id);
+
+    const Coordination::ACLs * acls{nullptr};
+    applyDeltas(
+        path,
+        Overloaded{
+            [&](const CreateNodeDelta & create_delta)
+            {
+                assert(!acl_id);
+                acls = &create_delta.acls;
+            },
+            [&](const SetACLDelta & set_acl_delta)
+            {
+                assert(acl_id || acls);
+                acls = &set_acl_delta.acls;
+            },
+            [&](auto && /*delta*/) {},
+        });
+
+    if (acls)
+        return *acls;
+
+    return acl_id ? storage.acl_map.convertNumber(*acl_id) : Coordination::ACLs{};
+}
+
 namespace
 {
     [[noreturn]] void fail()
@@ -304,11 +333,11 @@ Coordination::Error KeeperStorage::commit(int64_t commit_zxid, int64_t session_i
                 },
                 [&, &path = delta.path](KeeperStorage::UpdateNodeDelta & update_delta)
                 {
-                    auto it = container.find(path);
-                    if (it == container.end())
+                    auto node_it = container.find(path);
+                    if (node_it == container.end())
                         fail();
 
-                    if (update_delta.version != -1 && update_delta.version != it->value.stat.version)
+                    if (update_delta.version != -1 && update_delta.version != node_it->value.stat.version)
                         fail();
 
                     container.updateValue(path, update_delta.update_fn);
@@ -323,14 +352,14 @@ Coordination::Error KeeperStorage::commit(int64_t commit_zxid, int64_t session_i
                 },
                 [&, &path = delta.path](KeeperStorage::SetACLDelta & acl_delta)
                 {
-                    auto it = container.find(path);
-                    if (it != container.end())
+                    auto node_it = container.find(path);
+                    if (node_it != container.end())
                         fail();
 
-                    if (acl_delta.version != -1 && acl_delta.version != it->value.stat.aversion)
+                    if (acl_delta.version != -1 && acl_delta.version != node_it->value.stat.aversion)
                         fail();
 
-                    acl_map.removeUsage(it->value.acl_id);
+                    acl_map.removeUsage(node_it->value.acl_id);
 
                     uint64_t acl_id = acl_map.convertACLs(acl_delta.acls);
                     acl_map.addUsage(acl_id);
@@ -372,12 +401,12 @@ bool KeeperStorage::createNode(
     int64_t session_id)
 {
     auto parent_path = parentPath(path);
-    auto it = container.find(parent_path);
+    auto node_it = container.find(parent_path);
 
-    if (it == container.end())
+    if (node_it == container.end())
         return false;
 
-    if (it->value.stat.ephemeralOwner != 0)
+    if (node_it->value.stat.ephemeralOwner != 0)
         return false;
 
     if (container.contains(path))
@@ -406,17 +435,17 @@ bool KeeperStorage::createNode(
 
 bool KeeperStorage::removeNode(const std::string & path, int32_t version)
 {
-    auto it = container.find(path);
-    if (it == container.end())
+    auto node_it = container.find(path);
+    if (node_it == container.end())
         return false;
 
-    if (version != -1 && version != it->value.stat.version)
+    if (version != -1 && version != node_it->value.stat.version)
         return false;
 
-    if (it->value.stat.numChildren)
+    if (node_it->value.stat.numChildren)
         return false;
 
-    auto prev_node = it->value;
+    auto prev_node = node_it->value;
     if (prev_node.stat.ephemeralOwner != 0)
     {
         auto ephemerals_it = ephemerals.find(prev_node.stat.ephemeralOwner);
@@ -428,7 +457,8 @@ bool KeeperStorage::removeNode(const std::string & path, int32_t version)
     acl_map.removeUsage(prev_node.acl_id);
 
     container.updateValue(
-        parentPath(path), [child_basename = getBaseName(it->key)](KeeperStorage::Node & parent) { parent.removeChild(child_basename); });
+        parentPath(path),
+        [child_basename = getBaseName(node_it->key)](KeeperStorage::Node & parent) { parent.removeChild(child_basename); });
 
     container.erase(path);
     return true;
@@ -459,7 +489,7 @@ struct KeeperStorageRequestProcessor
     {
         return {};
     }
-    virtual bool checkAuth(KeeperStorage & /*storage*/, int64_t /*session_id*/) const { return true; }
+    virtual bool checkAuth(KeeperStorage & /*storage*/, int64_t /*session_id*/, bool /*is_local*/) const { return true; }
 
     virtual ~KeeperStorageRequestProcessor() = default;
 };
@@ -489,6 +519,21 @@ struct KeeperStorageSyncRequestProcessor final : public KeeperStorageRequestProc
 
 namespace
 {
+
+    Coordination::ACLs getACLs(KeeperStorage & storage, StringRef path, bool is_local)
+    {
+        if (is_local)
+        {
+            auto node_it = storage.container.find(path);
+            if (node_it == storage.container.end())
+                return {};
+
+            return storage.acl_map.convertNumber(node_it->value.acl_id);
+        }
+
+        return storage.current_nodes.getACLs(path);
+    }
+
 }
 
 struct KeeperStorageCreateRequestProcessor final : public KeeperStorageRequestProcessor
@@ -501,17 +546,12 @@ struct KeeperStorageCreateRequestProcessor final : public KeeperStorageRequestPr
         return processWatchesImpl(zk_request->getPath(), watches, list_watches, Coordination::Event::CREATED);
     }
 
-    bool checkAuth(KeeperStorage & storage, int64_t session_id) const override
+    bool checkAuth(KeeperStorage & storage, int64_t session_id, bool is_local) const override
     {
-        auto & container = storage.container;
         auto path = zk_request->getPath();
         auto parent_path = parentPath(path);
 
-        auto node_it = container.find(parent_path);
-        if (node_it == container.end())
-            return true;
-
-        const auto & node_acls = storage.acl_map.convertNumber(node_it->value.acl_id);
+        const auto node_acls = getACLs(storage, parent_path, is_local);
         if (node_acls.empty())
             return true;
 
@@ -619,14 +659,9 @@ struct KeeperStorageCreateRequestProcessor final : public KeeperStorageRequestPr
 
 struct KeeperStorageGetRequestProcessor final : public KeeperStorageRequestProcessor
 {
-    bool checkAuth(KeeperStorage & storage, int64_t session_id) const override
+    bool checkAuth(KeeperStorage & storage, int64_t session_id, bool is_local) const override
     {
-        auto & container = storage.container;
-        auto node_it = container.find(zk_request->getPath());
-        if (node_it == container.end())
-            return true;
-
-        const auto & node_acls = storage.acl_map.convertNumber(node_it->value.acl_id);
+        const auto node_acls = getACLs(storage, zk_request->getPath(), is_local);
         if (node_acls.empty())
             return true;
 
@@ -701,14 +736,9 @@ struct KeeperStorageGetRequestProcessor final : public KeeperStorageRequestProce
 
 struct KeeperStorageRemoveRequestProcessor final : public KeeperStorageRequestProcessor
 {
-    bool checkAuth(KeeperStorage & storage, int64_t session_id) const override
+    bool checkAuth(KeeperStorage & storage, int64_t session_id, bool is_local) const override
     {
-        auto & container = storage.container;
-        auto node_it = container.find(parentPath(zk_request->getPath()));
-        if (node_it == container.end())
-            return true;
-
-        const auto & node_acls = storage.acl_map.convertNumber(node_it->value.acl_id);
+        const auto node_acls = getACLs(storage, parentPath(zk_request->getPath()), is_local);
         if (node_acls.empty())
             return true;
 
@@ -853,14 +883,9 @@ struct KeeperStorageExistsRequestProcessor final : public KeeperStorageRequestPr
 
 struct KeeperStorageSetRequestProcessor final : public KeeperStorageRequestProcessor
 {
-    bool checkAuth(KeeperStorage & storage, int64_t session_id) const override
+    bool checkAuth(KeeperStorage & storage, int64_t session_id, bool is_local) const override
     {
-        auto & container = storage.container;
-        auto node_it = container.find(zk_request->getPath());
-        if (node_it == container.end())
-            return true;
-
-        const auto & node_acls = storage.acl_map.convertNumber(node_it->value.acl_id);
+        const auto node_acls = getACLs(storage, parentPath(zk_request->getPath()), is_local);
         if (node_acls.empty())
             return true;
 
@@ -937,14 +962,9 @@ struct KeeperStorageSetRequestProcessor final : public KeeperStorageRequestProce
 
 struct KeeperStorageListRequestProcessor final : public KeeperStorageRequestProcessor
 {
-    bool checkAuth(KeeperStorage & storage, int64_t session_id) const override
+    bool checkAuth(KeeperStorage & storage, int64_t session_id, bool is_local) const override
     {
-        auto & container = storage.container;
-        auto node_it = container.find(zk_request->getPath());
-        if (node_it == container.end())
-            return true;
-
-        const auto & node_acls = storage.acl_map.convertNumber(node_it->value.acl_id);
+        const auto node_acls = getACLs(storage, parentPath(zk_request->getPath()), is_local);
         if (node_acls.empty())
             return true;
 
@@ -1027,14 +1047,9 @@ struct KeeperStorageListRequestProcessor final : public KeeperStorageRequestProc
 
 struct KeeperStorageCheckRequestProcessor final : public KeeperStorageRequestProcessor
 {
-    bool checkAuth(KeeperStorage & storage, int64_t session_id) const override
+    bool checkAuth(KeeperStorage & storage, int64_t session_id, bool is_local) const override
     {
-        auto & container = storage.container;
-        auto node_it = container.find(zk_request->getPath());
-        if (node_it == container.end())
-            return true;
-
-        const auto & node_acls = storage.acl_map.convertNumber(node_it->value.acl_id);
+        const auto node_acls = getACLs(storage, parentPath(zk_request->getPath()), is_local);
         if (node_acls.empty())
             return true;
 
@@ -1114,14 +1129,9 @@ struct KeeperStorageCheckRequestProcessor final : public KeeperStorageRequestPro
 
 struct KeeperStorageSetACLRequestProcessor final : public KeeperStorageRequestProcessor
 {
-    bool checkAuth(KeeperStorage & storage, int64_t session_id) const override
+    bool checkAuth(KeeperStorage & storage, int64_t session_id, bool is_local) const override
     {
-        auto & container = storage.container;
-        auto node_it = container.find(zk_request->getPath());
-        if (node_it == container.end())
-            return true;
-
-        const auto & node_acls = storage.acl_map.convertNumber(node_it->value.acl_id);
+        const auto node_acls = getACLs(storage, parentPath(zk_request->getPath()), is_local);
         if (node_acls.empty())
             return true;
 
@@ -1180,14 +1190,9 @@ struct KeeperStorageSetACLRequestProcessor final : public KeeperStorageRequestPr
 
 struct KeeperStorageGetACLRequestProcessor final : public KeeperStorageRequestProcessor
 {
-    bool checkAuth(KeeperStorage & storage, int64_t session_id) const override
+    bool checkAuth(KeeperStorage & storage, int64_t session_id, bool is_local) const override
     {
-        auto & container = storage.container;
-        auto node_it = container.find(zk_request->getPath());
-        if (node_it == container.end())
-            return true;
-
-        const auto & node_acls = storage.acl_map.convertNumber(node_it->value.acl_id);
+        const auto node_acls = getACLs(storage, parentPath(zk_request->getPath()), is_local);
         if (node_acls.empty())
             return true;
 
@@ -1260,10 +1265,10 @@ struct KeeperStorageGetACLRequestProcessor final : public KeeperStorageRequestPr
 
 struct KeeperStorageMultiRequestProcessor final : public KeeperStorageRequestProcessor
 {
-    bool checkAuth(KeeperStorage & storage, int64_t session_id) const override
+    bool checkAuth(KeeperStorage & storage, int64_t session_id, bool is_local) const override
     {
         for (const auto & concrete_request : concrete_requests)
-            if (!concrete_request->checkAuth(storage, session_id))
+            if (!concrete_request->checkAuth(storage, session_id, is_local))
                 return false;
         return true;
     }
@@ -1542,11 +1547,19 @@ KeeperStorageRequestProcessorsFactory::KeeperStorageRequestProcessorsFactory()
 
 
 void KeeperStorage::preprocessRequest(
-    const Coordination::ZooKeeperRequestPtr & request, int64_t session_id, int64_t time, int64_t new_last_zxid)
+    const Coordination::ZooKeeperRequestPtr & zk_request, int64_t session_id, int64_t time, int64_t new_last_zxid, bool check_acl)
 {
     current_nodes.current_zxid = new_last_zxid;
-    KeeperStorageRequestProcessorPtr request_processor = KeeperStorageRequestProcessorsFactory::instance().get(request);
+    KeeperStorageRequestProcessorPtr request_processor = KeeperStorageRequestProcessorsFactory::instance().get(zk_request);
+
+    if (check_acl && !request_processor->checkAuth(*this, session_id, false))
+    {
+        current_nodes.deltas.push_back(Delta{new_last_zxid, Coordination::Error::ZNOAUTH});
+        return;
+    }
+
     auto new_deltas = request_processor->preprocess(*this, new_last_zxid, session_id, time);
+
     current_nodes.deltas.insert(
         current_nodes.deltas.end(), std::make_move_iterator(new_deltas.begin()), std::make_move_iterator(new_deltas.end()));
 }
@@ -1573,10 +1586,10 @@ KeeperStorage::ResponsesForSessions KeeperStorage::processRequest(
 
     if (zk_request->getOpNum() == Coordination::OpNum::Close) /// Close request is special
     {
-        auto it = ephemerals.find(session_id);
-        if (it != ephemerals.end())
+        auto session_ephemerals = ephemerals.find(session_id);
+        if (session_ephemerals != ephemerals.end())
         {
-            for (const auto & ephemeral_path : it->second)
+            for (const auto & ephemeral_path : session_ephemerals->second)
             {
                 container.updateValue(
                     parentPath(ephemeral_path),
@@ -1593,7 +1606,7 @@ KeeperStorage::ResponsesForSessions KeeperStorage::processRequest(
                 auto responses = processWatchesImpl(ephemeral_path, watches, list_watches, Coordination::Event::DELETED);
                 results.insert(results.end(), responses.begin(), responses.end());
             }
-            ephemerals.erase(it);
+            ephemerals.erase(session_ephemerals);
         }
         clearDeadWatches(session_id);
         auto auth_it = session_and_auth.find(session_id);
@@ -1622,19 +1635,19 @@ KeeperStorage::ResponsesForSessions KeeperStorage::processRequest(
         KeeperStorageRequestProcessorPtr request_processor = KeeperStorageRequestProcessorsFactory::instance().get(zk_request);
         Coordination::ZooKeeperResponsePtr response;
 
-        if (check_acl && !request_processor->checkAuth(*this, session_id))
+        if (is_local)
         {
-            response = zk_request->makeResponse();
-            /// Original ZooKeeper always throws no auth, even when user provided some credentials
-            response->error = Coordination::Error::ZNOAUTH;
+            if (check_acl && !request_processor->checkAuth(*this, session_id, true))
+            {
+                response = zk_request->makeResponse();
+                /// Original ZooKeeper always throws no auth, even when user provided some credentials
+                response->error = Coordination::Error::ZNOAUTH;
+            }
+            response = request_processor->processLocal(*this, zxid, session_id, time);
         }
         else
         {
-            if (is_local)
-                response = request_processor->processLocal(*this, zxid, session_id, time);
-            else
-                response = request_processor->process(*this, zxid, session_id, time);
-
+            response = request_processor->process(*this, zxid, session_id, time);
             std::erase_if(current_nodes.deltas, [this](const auto & delta) { return delta.zxid == zxid; });
         }
 
