@@ -91,7 +91,6 @@ void registerFunctions()
     registerFunctionsExternalDictionaries(factory);
     registerFunctionsExternalModels(factory);
     registerFunctionsFormatting(factory);
-    registerFunctionHashID(factory);
     registerFunctionsHashing(factory);
     registerFunctionsHigherOrder(factory);
     registerFunctionsLogical(factory);
@@ -133,6 +132,10 @@ void registerFunctions()
 #endif
     registerFunctionTid(factory);
     registerFunctionLogTrace(factory);
+
+#if USE_HASHIDSXX
+    registerFunctionHashID(factory);
+#endif
 }
 
 }
