@@ -153,8 +153,8 @@ Chunk JSONColumnsBaseBlockInputFormat::generate()
     if (rows <= 0)
         return Chunk(std::move(columns), 0);
 
-    /// Insert defaults in columns that were not presented in current block and fill
-    ///block_missing_values accordingly if setting input_format_defaults_for_omitted_fields is enabled
+    /// Insert defaults in columns that were not presented in block and fill
+    /// block_missing_values accordingly if setting input_format_defaults_for_omitted_fields is enabled
     for (size_t i = 0; i != seen_columns.size(); ++i)
     {
         if (!seen_columns[i])

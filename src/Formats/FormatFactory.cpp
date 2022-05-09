@@ -152,7 +152,6 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.column_names_for_schema_inference = settings.column_names_for_schema_inference;
     format_settings.mysql_dump.table_name = settings.input_format_mysql_dump_table_name;
     format_settings.mysql_dump.map_column_names = settings.input_format_mysql_dump_map_column_names;
-    format_settings.json_columns.max_rows_to_buffer = settings.output_format_json_columns_max_rows_to_buffer;
 
     /// Validate avro_schema_registry_url with RemoteHostFilter when non-empty and in Server context
     if (format_settings.schema.is_server)

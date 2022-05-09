@@ -169,13 +169,13 @@ std::string Chunk::dumpStructure() const
     return out.str();
 }
 
-void Chunk::append(const Chunk & chunk, size_t length)
+void Chunk::append(const Chunk & chunk)
 {
     MutableColumns mutation = mutateColumns();
     for (size_t position = 0; position < mutation.size(); ++position)
     {
         auto column = chunk.getColumns()[position];
-        mutation[position]->insertRangeFrom(*column, 0, std::min(length, column->size()));
+        mutation[position]->insertRangeFrom(*column, 0, column->size());
     }
     size_t rows = mutation[0]->size();
     setColumns(std::move(mutation), rows);

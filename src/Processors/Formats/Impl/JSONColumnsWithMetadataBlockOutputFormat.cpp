@@ -13,7 +13,7 @@ namespace ErrorCodes
 }
 
 JSONColumnsWithMetadataBlockOutputFormat::JSONColumnsWithMetadataBlockOutputFormat(WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_)
-    : JSONColumnsBlockOutputFormat(out_, header_, format_settings_, true, 1)
+    : JSONColumnsBlockOutputFormat(out_, header_, format_settings_, 1)
 {
     bool need_validate_utf8 = false;
     makeNamesAndTypesWithValidUTF8(fields, format_settings, need_validate_utf8);
@@ -29,6 +29,12 @@ void JSONColumnsWithMetadataBlockOutputFormat::writePrefix()
 {
     writeJSONObjectStart(*ostr);
     writeJSONMetadata(fields, format_settings, *ostr);
+}
+
+void JSONColumnsWithMetadataBlockOutputFormat::writeSuffix()
+{
+    rows = mono_chunk.getNumRows();
+    JSONColumnsBaseBlockOutputFormat::writeSuffix();
 }
 
 void JSONColumnsWithMetadataBlockOutputFormat::writeChunkStart()
@@ -84,7 +90,7 @@ void JSONColumnsWithMetadataBlockOutputFormat::finalizeImpl()
         statistics = std::move(*outside_statistics);
 
     writeJSONAdditionalInfo(
-        total_rows_in_mono_block,
+        rows,
         statistics.rows_before_limit,
         statistics.applied_limit,
         statistics.watch,

@@ -308,6 +308,7 @@ namespace DB
         }
 
         status = builder->AppendIndices(indexes.data(), indexes.size(), arrow_null_bytemap_raw_ptr);
+        std::cerr << assert_cast<arrow::DictionaryType *>(builder->type().get())->index_type()->name() << "\n";
         checkStatus(status, column->getName(), format_name);
     }
 

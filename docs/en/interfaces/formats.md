@@ -31,12 +31,10 @@ The supported formats are:
 | [JSONAsString](#jsonasstring)                                                             | ✔     | ✗      |
 | [JSONStrings](#jsonstrings)                                                               | ✗     | ✔      |
 | [JSONColumns](#jsoncolumns)                                                               | ✔     | ✔      |
-| [JSONColumnsMonoBlock](#jsoncolumnsmonoblock)                                             | ✗     | ✔      |
 | [JSONColumnsWithMetadata](#jsoncolumnswithmetadata)                                       | ✗     | ✔      |
 | [JSONCompact](#jsoncompact)                                                               | ✗     | ✔      |
 | [JSONCompactStrings](#jsoncompactstrings)                                                 | ✗     | ✔      |
 | [JSONCompactColumns](#jsoncompactcolumns)                                                 | ✔     | ✔      |
-| [JSONCompactColumnsMonoBlock](#jsoncompactcolumnsmonoblock)                               | ✗     | ✔      |
 | [JSONEachRow](#jsoneachrow)                                                               | ✔     | ✔      |
 | [JSONEachRowWithProgress](#jsoneachrowwithprogress)                                       | ✗     | ✔      |
 | [JSONStringsEachRow](#jsonstringseachrow)                                                 | ✔     | ✔      |
@@ -572,8 +570,10 @@ Example:
 
 ## JSONColumns {#jsoncolumns}
 
-In this format, each block of data is represented as a JSON Object:
+In this format, all data is represented as a single JSON Object.
+Note that JSONColumns output format buffers all data in memory to output it as a single block.
 
+Example:
 ```json
 {
     "name1": [1, 2, 3, 4],
@@ -585,16 +585,13 @@ In this format, each block of data is represented as a JSON Object:
 Columns with unknown names will be skipped if setting [input_format_skip_unknown_fields](../operations/settings/settings.md#settings-input-format-skip-unknown-fields) is set to 1.
 Columns that are not presente in the block will be filled with default values (you can use  [input_format_defaults_for_omitted_fields](../operations/settings/settings.md#session_settings-input_format_defaults_for_omitted_fields) setting here)
 
-## JSONColumnsMonoBlock {#jsoncolumnsmonoblock}
-
-Differs from JSONColumns in that it buffers up to [output_format_json_columns_max_rows_to_buffer](../operations/settings/settings.md#output-format-json-columns-max-rows-to-buffer)
-rows and then outputs them as a single block.
 
 ## JSONColumnsWithMetadata {#jsoncolumnsmonoblock}
 
-Differs from JSON output format in that it outputs columns as in JSONColumns format. This format buffers up to [output_format_json_columns_max_rows_to_buffer](../operations/settings/settings.md#session_settings-output-format-json-columns-max-rows-to-buffer)
-rows and then outputs them as a single block.
+Differs from JSON output format in that it outputs columns as in JSONColumns format.
+This format buffers all data in memory and then outputs them as a single block.
 
+Example:
 ```json
 {
 	"meta":
@@ -766,8 +763,10 @@ Example:
 
 ## JSONCompactColumns {#jsoncompactcolumns}
 
-In this format, each block of data is represented as a JSON array of arrays:
+In this format, all data is represented as a single JSON Array.
+Note that JSONCompactColumns output format buffers all data in memory to output it as a single block.
 
+Example:
 ```json
 [
     [1, 2, 3, 4],
@@ -777,11 +776,6 @@ In this format, each block of data is represented as a JSON array of arrays:
 ```
 
 Columns that are not presente in the block will be filled with default values (you can use  [input_format_defaults_for_omitted_fields](../operations/settings/settings.md#session_settings-input_format_defaults_for_omitted_fields) setting here)
-
-## JSONCompactColumnsMonoBlock {#jsoncompactcolumnsmonoblock}
-
-Differs from JSONCompactColumns in that it buffers up to [output_format_json_columns_max_rows_to_buffer](../operations/settings/settings.md#session_settings-output-format-json-columns-max-rows-to-buffer)
-rows and then outputs them as a single block.
 
 ## JSONEachRow {#jsoneachrow}
 ## JSONStringsEachRow {#jsonstringseachrow}

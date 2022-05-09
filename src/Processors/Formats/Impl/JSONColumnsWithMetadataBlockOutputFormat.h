@@ -4,8 +4,7 @@
 namespace DB
 {
 
-/* Format JSONColumnsWithMetadata buffers up to output_format_json_columns_max_rows_to_buffer rows
- * and outputs them in the next format:
+/* Format JSONColumnsWithMetadata outputs all data as a single block in the next format:
  * {
  *     "meta":
  *     [
@@ -52,6 +51,7 @@ protected:
     void consumeExtremes(Chunk chunk) override;
 
     void writePrefix() override;
+    void writeSuffix() override;
     void finalizeImpl() override;
 
     void writeChunkStart() override;
@@ -61,6 +61,7 @@ protected:
 
     Statistics statistics;
     std::unique_ptr<WriteBuffer> validating_ostr;    /// Validates UTF-8 sequences, replaces bad sequences with replacement character.
+    size_t rows;
 };
 
 }
