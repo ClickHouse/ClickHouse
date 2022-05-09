@@ -184,8 +184,6 @@ private:
         std::lock_guard<std::mutex> & cache_lock,
         std::lock_guard<std::mutex> & segment_lock);
 
-    static String getCallerIdImpl();
-
     void resetDownloaderImpl(std::lock_guard<std::mutex> & segment_lock);
 
     const Range segment_range;
@@ -229,7 +227,7 @@ private:
 struct FileSegmentsHolder : private boost::noncopyable
 {
     explicit FileSegmentsHolder(FileSegments && file_segments_) : file_segments(std::move(file_segments_)) {}
-    FileSegmentsHolder(FileSegmentsHolder && other) : file_segments(std::move(other.file_segments)) {}
+    FileSegmentsHolder(FileSegmentsHolder && other) noexcept : file_segments(std::move(other.file_segments)) {}
 
     ~FileSegmentsHolder();
 
