@@ -38,8 +38,8 @@ DiskHDFS::DiskHDFS(
     const Poco::Util::AbstractConfiguration & config_)
     : IDiskRemote(disk_name_, hdfs_root_path_, metadata_disk_, nullptr, "DiskHDFS", settings_->thread_pool_size)
     , config(config_)
-    , hdfs_builder(createHDFSBuilder(hdfs_root_path_, config))
-    , hdfs_fs(createHDFSFS(hdfs_builder.get()))
+    , hdfs_builder(HDFSBuilderFSFactory::instance().getBuilder(hdfs_root_path_, config))
+    , hdfs_fs(createHDFSFS(hdfs_builder->get()))
     , settings(std::move(settings_))
 {
 }

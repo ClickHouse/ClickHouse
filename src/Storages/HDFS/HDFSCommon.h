@@ -51,23 +51,28 @@ struct HDFSFileInfo
 
 class HDFSBuilderWrapper
 {
-
-friend HDFSBuilderWrapper createHDFSBuilder(const String & uri_str, const Poco::Util::AbstractConfiguration &);
-
-static const String CONFIG_PREFIX;
-
 public:
-    HDFSBuilderWrapper() : hdfs_builder(hdfsNewBuilder()) {}
+    HDFSBuilderWrapper(const String & hdfs_uri_, const Poco::Util::AbstractConfiguration & config_)
+        : hdfs_builder(hdfsNewBuilder()), hdfs_uri(hdfs_uri_), config(config_)
+    {
+        initialize();
+    }
 
     ~HDFSBuilderWrapper() { hdfsFreeBuilder(hdfs_builder); }
 
     HDFSBuilderWrapper(const HDFSBuilderWrapper &) = delete;
     HDFSBuilderWrapper(HDFSBuilderWrapper &&) = default;
 
+    HDFSBuilderWrapper & operator=(const HDFSBuilderWrapper &) = delete;
+
     hdfsBuilder * get() { return hdfs_builder; }
 
+    String getHDFSUri() const { return hdfs_uri; }
+
 private:
-    void loadFromConfig(const Poco::Util::AbstractConfiguration & config, const String & prefix, bool isUser = false);
+    void initialize();
+
+    void loadFromConfig(const String & prefix, bool isUser = false);
 
     String getKinitCmd();
 
@@ -79,26 +84,79 @@ private:
         return config_stor.emplace_back(std::make_pair(k, v));
     }
 
+    inline static const String CONFIG_PREFIX = "hdfs";
+    inline static std::mutex kinit_mtx;
+
     hdfsBuilder * hdfs_builder;
+    const String hdfs_uri;
+    const Poco::Util::AbstractConfiguration & config;
     String hadoop_kerberos_keytab;
     String hadoop_kerberos_principal;
     String hadoop_kerberos_kinit_command = "kinit";
     String hadoop_security_kerberos_ticket_cache_path;
 
-    static std::mutex kinit_mtx;
     std::vector<std::pair<String, String>> config_stor;
     bool need_kinit{false};
 };
 
+using HDFSBuilderWrapperPtr = std::shared_ptr<HDFSBuilderWrapper>;
 using HDFSFSPtr = std::unique_ptr<std::remove_pointer_t<hdfsFS>, detail::HDFSFsDeleter>;
+using HDFSFSSharedPtr = std::shared_ptr<std::remove_pointer_t<hdfsFS>>;
 
 
-// set read/connect timeout, default value in libhdfs3 is about 1 hour, and too large
-/// TODO Allow to tune from query Settings.
-HDFSBuilderWrapper createHDFSBuilder(const String & uri_str, const Poco::Util::AbstractConfiguration &);
+class HDFSFSPool : public boost::noncopyable
+{
+public:
+    explicit HDFSFSPool(uint32_t max_items_, uint32_t min_items_, HDFSBuilderWrapperPtr builder_);
+
+    ~HDFSFSPool() = default;
+
+    HDFSFSSharedPtr getFS();
+
+    bool tryCallFS(HDFSFSSharedPtr & fs, std::function<bool(HDFSFSSharedPtr &)> callback);
+
+private:
+    HDFSFSSharedPtr unsafeGetFS();
+
+    const uint32_t max_items;
+    const uint32_t min_items;
+    const HDFSBuilderWrapperPtr builder;
+
+    uint32_t current_index;
+    std::vector<HDFSFSSharedPtr> pool;
+    std::mutex mutex;
+};
+
+using HDFSFSPoolPtr = std::shared_ptr<HDFSFSPool>;
+
+class HDFSBuilderFSFactory final: public boost::noncopyable
+{
+public:
+    static HDFSBuilderFSFactory & instance();
+
+    static void setEnv(const Poco::Util::AbstractConfiguration & config);
+
+    HDFSBuilderWrapperPtr getBuilder(const String & hdfs_uri, const Poco::Util::AbstractConfiguration & config) const;
+
+    HDFSFSSharedPtr getFS(const String & hdfs_uri, const Poco::Util::AbstractConfiguration & config) const;
+
+    HDFSFSSharedPtr getFS(HDFSBuilderWrapperPtr builder) const;
+
+    bool tryCallFS(HDFSBuilderWrapperPtr builder, HDFSFSSharedPtr & fs, std::function<bool(HDFSFSSharedPtr &)> callback) const;
+
+private:
+    HDFSFSPoolPtr getFSPool(HDFSBuilderWrapperPtr builder) const;
+
+    inline static const uint32_t max_pool_size = 256;
+    inline static const uint32_t min_pool_size = 32;
+
+    mutable std::map<String, HDFSBuilderWrapperPtr> hdfs_builder_wrappers;
+    mutable std::map<String, HDFSFSPoolPtr> hdfs_fs_pools;
+    mutable std::mutex mutex;
+};
+
 HDFSFSPtr createHDFSFS(hdfsBuilder * builder);
-
-
+HDFSFSSharedPtr createSharedHDFSFS(hdfsBuilder * builder);
 String getNameNodeUrl(const String & hdfs_url);
 String getNameNodeCluster(const String & hdfs_url);
 

@@ -1,10 +1,12 @@
 #include <Storages/HDFS/HDFSCommon.h>
+
+#if USE_HDFS
+#include <filesystem>
+
 #include <Poco/URI.h>
 #include <boost/algorithm/string/replace.hpp>
 #include <re2/re2.h>
-#include <filesystem>
 
-#if USE_HDFS
 #include <Common/ShellCommand.h>
 #include <Common/Exception.h>
 #include <IO/WriteBufferFromString.h>
@@ -22,13 +24,10 @@ namespace ErrorCodes
     extern const int NO_ELEMENTS_IN_CONFIG;
 }
 
-const String HDFSBuilderWrapper::CONFIG_PREFIX = "hdfs";
-const String HDFS_URL_REGEXP = "^hdfs://[^/]*/.*";
+static const String HDFS_URL_REGEXP = "^hdfs://[^/]*/.*";
 
-std::once_flag init_libhdfs3_conf_flag;
 
-void HDFSBuilderWrapper::loadFromConfig(const Poco::Util::AbstractConfiguration & config,
-    const String & prefix, bool isUser)
+void HDFSBuilderWrapper::loadFromConfig(const String & prefix, bool isUser)
 {
     Poco::Util::AbstractConfiguration::Keys keys;
 
@@ -115,41 +114,23 @@ void HDFSBuilderWrapper::runKinit()
     }
 }
 
-HDFSBuilderWrapper createHDFSBuilder(const String & uri_str, const Poco::Util::AbstractConfiguration & config)
+void HDFSBuilderWrapper::initialize()
 {
-    const Poco::URI uri(uri_str);
+    const Poco::URI uri(hdfs_uri);
     const auto & host = uri.getHost();
     auto port = uri.getPort();
     const String path = "//";
     if (host.empty())
         throw Exception("Illegal HDFS URI: " + uri.toString(), ErrorCodes::BAD_ARGUMENTS);
 
-    // Shall set env LIBHDFS3_CONF *before* HDFSBuilderWrapper construction.
-    std::call_once(init_libhdfs3_conf_flag, [&config]()
-    {
-        String libhdfs3_conf = config.getString(HDFSBuilderWrapper::CONFIG_PREFIX + ".libhdfs3_conf", "");
-        if (!libhdfs3_conf.empty())
-        {
-            if (std::filesystem::path{libhdfs3_conf}.is_relative() && !std::filesystem::exists(libhdfs3_conf))
-            {
-                const String config_path = config.getString("config-file", "config.xml");
-                const auto config_dir = std::filesystem::path{config_path}.remove_filename();
-                if (std::filesystem::exists(config_dir / libhdfs3_conf))
-                    libhdfs3_conf = std::filesystem::absolute(config_dir / libhdfs3_conf);
-            }
-            setenv("LIBHDFS3_CONF", libhdfs3_conf.c_str(), 1);
-        }
-    });
-
-    HDFSBuilderWrapper builder;
-    if (builder.get() == nullptr)
+    if (get() == nullptr)
         throw Exception("Unable to create builder to connect to HDFS: " +
             uri.toString() + " " + String(hdfsGetLastError()),
             ErrorCodes::NETWORK_ERROR);
 
-    hdfsBuilderConfSetStr(builder.get(), "input.read.timeout", "60000"); // 1 min
-    hdfsBuilderConfSetStr(builder.get(), "input.write.timeout", "60000"); // 1 min
-    hdfsBuilderConfSetStr(builder.get(), "input.connect.timeout", "60000"); // 1 min
+    hdfsBuilderConfSetStr(get(), "input.read.timeout", "60000"); // 1 min
+    hdfsBuilderConfSetStr(get(), "input.write.timeout", "60000"); // 1 min
+    hdfsBuilderConfSetStr(get(), "input.connect.timeout", "60000"); // 1 min
 
     String user_info = uri.getUserInfo();
     String user;
@@ -161,18 +142,18 @@ HDFSBuilderWrapper createHDFSBuilder(const String & uri_str, const Poco::Util::A
         else
             user = user_info;
 
-        hdfsBuilderSetUserName(builder.get(), user.c_str());
+        hdfsBuilderSetUserName(get(), user.c_str());
     }
 
-    hdfsBuilderSetNameNode(builder.get(), host.c_str());
+    hdfsBuilderSetNameNode(get(), host.c_str());
     if (port != 0)
     {
-        hdfsBuilderSetNameNodePort(builder.get(), port);
+        hdfsBuilderSetNameNodePort(get(), port);
     }
 
     if (config.has(HDFSBuilderWrapper::CONFIG_PREFIX))
     {
-        builder.loadFromConfig(config, HDFSBuilderWrapper::CONFIG_PREFIX);
+        loadFromConfig(HDFSBuilderWrapper::CONFIG_PREFIX);
     }
 
     if (!user.empty())
@@ -180,23 +161,174 @@ HDFSBuilderWrapper createHDFSBuilder(const String & uri_str, const Poco::Util::A
         String user_config_prefix = HDFSBuilderWrapper::CONFIG_PREFIX + "_" + user;
         if (config.has(user_config_prefix))
         {
-            builder.loadFromConfig(config, user_config_prefix, true);
+            loadFromConfig(user_config_prefix, true);
         }
     }
 
-    if (builder.need_kinit)
+    if (need_kinit)
     {
-        builder.runKinit();
+        runKinit();
     }
-
-    return builder;
 }
 
-std::mutex HDFSBuilderWrapper::kinit_mtx;
+HDFSFSPool::HDFSFSPool(uint32_t max_items_, uint32_t min_items_, HDFSBuilderWrapperPtr builder_)
+    : max_items(max_items_), min_items(std::min(max_items_, min_items_)), builder(std::move(builder_)), current_index(0)
+{
+    pool.reserve(max_items);
+
+    if (min_items)
+    {
+        pool.resize(min_items);
+        ThreadPool thread_pool(std::min(static_cast<uint32_t>(32), min_items));
+        for (size_t i = 0; i < min_items; ++i)
+        {
+            thread_pool.scheduleOrThrowOnError([this, i]()
+            {
+                pool[i] = createSharedHDFSFS(builder->get());
+            });
+        }
+        thread_pool.wait();
+    }
+}
+
+HDFSFSSharedPtr HDFSFSPool::getFS()
+{
+    std::lock_guard lock{mutex};
+    return unsafeGetFS();
+}
+
+HDFSFSSharedPtr HDFSFSPool::unsafeGetFS()
+{
+    if (current_index == pool.size())
+    {
+        if (pool.size() == max_items)
+        {
+            current_index = 0;
+        }
+        else
+        {
+            pool.emplace_back(createSharedHDFSFS(builder->get()));
+        }
+    }
+    return pool[current_index++];
+}
+
+bool HDFSFSPool::tryCallFS(HDFSFSSharedPtr & fs, std::function<bool(HDFSFSSharedPtr &)> callback)
+{
+    int retry = 0;
+    while (retry++ < 3)
+    {
+        if (callback(fs))
+            return true;
+
+        {
+            std::lock_guard lock{mutex};
+
+            bool still_in_pool = false;
+            for (auto & i : pool)
+            {
+                if (i == fs)
+                {
+                    still_in_pool = true;
+                    fs = i = createSharedHDFSFS(builder->get());
+                }
+            }
+
+            if (!still_in_pool)
+            {
+                fs = unsafeGetFS();
+            }
+        }
+    }
+    return false;
+}
+
+HDFSBuilderFSFactory & HDFSBuilderFSFactory::instance()
+{
+    static HDFSBuilderFSFactory factory;
+    return factory;
+}
+
+void HDFSBuilderFSFactory::setEnv(const Poco::Util::AbstractConfiguration & config)
+{
+    String libhdfs3_conf = config.getString("hdfs.libhdfs3_conf", "");
+    if (!libhdfs3_conf.empty())
+    {
+        if (std::filesystem::path{libhdfs3_conf}.is_relative() && !std::filesystem::exists(libhdfs3_conf))
+        {
+            const String config_path = config.getString("config-file", "config.xml");
+            const auto config_dir = std::filesystem::path{config_path}.remove_filename();
+            if (std::filesystem::exists(config_dir / libhdfs3_conf))
+                libhdfs3_conf = std::filesystem::absolute(config_dir / libhdfs3_conf);
+        }
+        setenv("LIBHDFS3_CONF", libhdfs3_conf.c_str(), 1);
+    }
+}
+
+HDFSBuilderWrapperPtr HDFSBuilderFSFactory::getBuilder(const String & hdfs_uri, const Poco::Util::AbstractConfiguration & config) const
+{
+    std::lock_guard lock(mutex);
+    auto it = hdfs_builder_wrappers.find(hdfs_uri);
+    if (it == hdfs_builder_wrappers.end())
+    {
+        auto result = std::make_shared<HDFSBuilderWrapper>(hdfs_uri, config);
+        hdfs_builder_wrappers.emplace(hdfs_uri, result);
+        return result;
+    }
+    return it->second;
+}
+
+HDFSFSSharedPtr HDFSBuilderFSFactory::getFS(const String & hdfs_uri, const Poco::Util::AbstractConfiguration & config) const
+{
+    auto builder = getBuilder(hdfs_uri, config);
+    return getFS(std::move(builder));
+}
+
+HDFSFSSharedPtr HDFSBuilderFSFactory::getFS(HDFSBuilderWrapperPtr builder) const
+{
+    auto pool = getFSPool(std::move(builder));
+    return pool->getFS();
+}
+
+HDFSFSPoolPtr HDFSBuilderFSFactory::getFSPool(HDFSBuilderWrapperPtr builder) const
+{
+    HDFSFSPoolPtr pool;
+    const auto hdfs_uri = builder->getHDFSUri();
+
+    std::lock_guard lock(mutex);
+    auto it = hdfs_fs_pools.find(hdfs_uri);
+    if (it == hdfs_fs_pools.end())
+    {
+        pool = std::make_shared<HDFSFSPool>(max_pool_size, min_pool_size, std::move(builder));
+        hdfs_fs_pools.emplace(hdfs_uri, pool);
+    }
+    else
+    {
+        pool = it->second;
+    }
+    return pool;
+}
+
+bool HDFSBuilderFSFactory::tryCallFS(HDFSBuilderWrapperPtr builder, HDFSFSSharedPtr & fs, std::function<bool(HDFSFSSharedPtr &)> callback) const
+{
+    auto pool = getFSPool(std::move(builder));
+    return pool->tryCallFS(fs, callback);
+}
+
 
 HDFSFSPtr createHDFSFS(hdfsBuilder * builder)
 {
     HDFSFSPtr fs(hdfsBuilderConnect(builder));
+    if (fs == nullptr)
+        throw Exception("Unable to connect to HDFS: " + String(hdfsGetLastError()),
+            ErrorCodes::NETWORK_ERROR);
+
+    return fs;
+}
+
+HDFSFSSharedPtr createSharedHDFSFS(hdfsBuilder * builder)
+{
+    HDFSFSSharedPtr fs(hdfsBuilderConnect(builder), detail::HDFSFsDeleter());
     if (fs == nullptr)
         throw Exception("Unable to connect to HDFS: " + String(hdfsGetLastError()),
             ErrorCodes::NETWORK_ERROR);

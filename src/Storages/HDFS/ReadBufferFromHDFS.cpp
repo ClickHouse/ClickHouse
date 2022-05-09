@@ -6,6 +6,19 @@
 #include <mutex>
 
 
+namespace ProfileEvents
+{
+    extern const Event HDFSReadInitializeMicroseconds;
+    extern const Event HDFSReadInitialize;
+    extern const Event HDFSReadExecuteMicroseconds;
+    extern const Event HDFSReadExecute;
+    extern const Event HDFSReadSeekMicroseconds;
+    extern const Event HDFSReadSeek;
+    extern const Event HDFSReadCloseMicroseconds;
+    extern const Event HDFSReadClose;
+}
+
+
 namespace DB
 {
 
@@ -26,9 +39,10 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<S
     String hdfs_uri;
     String hdfs_file_path;
 
+    const HDFSBuilderFSFactory & factory;
+    HDFSBuilderWrapperPtr builder;
+    HDFSFSSharedPtr fs;
     hdfsFile fin;
-    HDFSBuilderWrapper builder;
-    HDFSFSPtr fs;
 
     off_t file_offset = 0;
     off_t read_until_position = 0;
@@ -41,21 +55,39 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<S
         : BufferWithOwnMemory<SeekableReadBuffer>(buf_size_)
         , hdfs_uri(hdfs_uri_)
         , hdfs_file_path(hdfs_file_path_)
-        , builder(createHDFSBuilder(hdfs_uri_, config_))
+        , factory(HDFSBuilderFSFactory::instance())
+        , builder(factory.getBuilder(hdfs_uri_, config_))
         , read_until_position(read_until_position_)
     {
-        fs = createHDFSFS(builder.get());
-        fin = hdfsOpenFile(fs.get(), hdfs_file_path.c_str(), O_RDONLY, 0, 0, 0);
+        Stopwatch watch;
+        assert(builder && builder->get());
 
-        if (fin == nullptr)
-            throw Exception(ErrorCodes::CANNOT_OPEN_FILE,
+        fs = factory.getFS(builder);
+        if (!factory.tryCallFS(
+                builder,
+                fs,
+                [&](HDFSFSSharedPtr & fs_) -> bool
+                {
+                    fin = hdfsOpenFile(fs_.get(), hdfs_file_path.c_str(), O_RDONLY, 0, 0, 0);
+                    return fin != nullptr;
+                }))
+            throw Exception(
+                ErrorCodes::CANNOT_OPEN_FILE,
                 "Unable to open HDFS file: {}. Error: {}",
-                hdfs_uri + hdfs_file_path, std::string(hdfsGetLastError()));
+                hdfs_uri + hdfs_file_path,
+                std::string(hdfsGetLastError()));
+
+        ProfileEvents::increment(ProfileEvents::HDFSReadInitializeMicroseconds, watch.elapsedMicroseconds());
+        ProfileEvents::increment(ProfileEvents::HDFSReadInitialize, 1);
     }
 
     ~ReadBufferFromHDFSImpl() override
     {
+        Stopwatch watch;
         hdfsCloseFile(fs.get(), fin);
+
+        ProfileEvents::increment(ProfileEvents::HDFSReadCloseMicroseconds, watch.elapsedMicroseconds());
+        ProfileEvents::increment(ProfileEvents::HDFSReadClose, 1);
     }
 
     std::optional<size_t> getFileSize() const
@@ -84,11 +116,15 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<S
             num_bytes_to_read = internal_buffer.size();
         }
 
+        Stopwatch watch;
         int bytes_read = hdfsRead(fs.get(), fin, internal_buffer.begin(), num_bytes_to_read);
         if (bytes_read < 0)
             throw Exception(ErrorCodes::NETWORK_ERROR,
                 "Fail to read from HDFS: {}, file path: {}. Error: {}",
                 hdfs_uri, hdfs_file_path, std::string(hdfsGetLastError()));
+
+        ProfileEvents::increment(ProfileEvents::HDFSReadExecuteMicroseconds, watch.elapsedMicroseconds());
+        ProfileEvents::increment(ProfileEvents::HDFSReadExecute, 1);
 
         if (bytes_read)
         {
@@ -106,9 +142,14 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<S
         if (whence != SEEK_SET)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Only SEEK_SET is supported");
 
+        Stopwatch watch;
         int seek_status = hdfsSeek(fs.get(), fin, file_offset_);
         if (seek_status != 0)
             throw Exception(ErrorCodes::CANNOT_SEEK_THROUGH_FILE, "Fail to seek HDFS file: {}, error: {}", hdfs_uri, std::string(hdfsGetLastError()));
+
+        ProfileEvents::increment(ProfileEvents::HDFSReadSeekMicroseconds, watch.elapsedMicroseconds());
+        ProfileEvents::increment(ProfileEvents::HDFSReadSeek, 1);
+
         file_offset = file_offset_;
         resetWorkingBuffer();
         return file_offset;

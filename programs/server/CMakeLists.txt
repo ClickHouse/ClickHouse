@@ -28,6 +28,10 @@ if (TARGET ch_contrib::jemalloc)
     list(APPEND CLICKHOUSE_SERVER_LINK PRIVATE ch_contrib::jemalloc)
 endif()
 
+if (TARGET ch_contrib::hdfs)
+    list(APPEND CLICKHOUSE_SERVER_LINK PRIVATE ch_contrib::hdfs)
+endif()
+
 clickhouse_program_add(server)
 
 install(FILES config.xml users.xml DESTINATION "${CLICKHOUSE_ETC_DIR}/clickhouse-server" COMPONENT clickhouse)

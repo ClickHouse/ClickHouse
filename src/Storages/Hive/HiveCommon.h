@@ -24,9 +24,10 @@ using ThriftHiveMetastoreClientBuilder = std::function<std::shared_ptr<Apache::H
 class ThriftHiveMetastoreClientPool : public PoolBase<Apache::Hadoop::Hive::ThriftHiveMetastoreClient>
 {
 public:
-    using Object = Apache::Hadoop::Hive::ThriftHiveMetastoreClient;
-    using ObjectPtr = std::shared_ptr<Object>;
-    using Entry = PoolBase<Apache::Hadoop::Hive::ThriftHiveMetastoreClient>::Entry;
+    using Base = PoolBase<Apache::Hadoop::Hive::ThriftHiveMetastoreClient>;
+    using ObjectPtr = Base::ObjectPtr;
+    using Entry = Base::Entry;
+
     explicit ThriftHiveMetastoreClientPool(ThriftHiveMetastoreClientBuilder builder_);
 
 protected:
@@ -38,6 +39,7 @@ protected:
 private:
     ThriftHiveMetastoreClientBuilder builder;
 };
+
 class HiveMetastoreClient
 {
 public:
@@ -95,7 +97,7 @@ public:
 
         std::vector<Apache::Hadoop::Hive::Partition> getPartitions() const;
 
-        std::vector<FileInfo> getFilesByLocation(const HDFSFSPtr & fs, const String & location);
+        std::vector<FileInfo> getFilesByLocation(const HDFSBuilderWrapperPtr & builder, const String & location);
 
         HiveFilesCachePtr getHiveFilesCache() const;
 

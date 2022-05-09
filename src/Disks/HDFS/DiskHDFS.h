@@ -74,7 +74,7 @@ private:
 
     const Poco::Util::AbstractConfiguration & config;
 
-    HDFSBuilderWrapper hdfs_builder;
+    HDFSBuilderWrapperPtr hdfs_builder;
     HDFSFSPtr hdfs_fs;
 
     SettingsPtr settings;
