@@ -43,7 +43,7 @@ public:
 
     virtual void remove(const Key & key) = 0;
 
-    virtual void remove(bool force_remove_unreleasable) = 0;
+    virtual void remove() = 0;
 
     static bool isReadOnly();
 
@@ -83,6 +83,8 @@ public:
      * it's state (and become DOWNLOADED).
      */
     virtual FileSegmentsHolder get(const Key & key, size_t offset, size_t size) = 0;
+
+    virtual FileSegmentsHolder setDownloading(const Key & key, size_t offset, size_t size) = 0;
 
     virtual FileSegments getSnapshot() const = 0;
 
@@ -124,8 +126,6 @@ protected:
         std::lock_guard<std::mutex> & cache_lock,
         std::lock_guard<std::mutex> & segment_lock) = 0;
 
-    virtual FileSegmentPtr setDownloading(const Key & key, size_t offset, size_t size, std::lock_guard<std::mutex> & cache_lock) = 0;
-
     void assertInitialized() const;
 };
 
@@ -148,7 +148,7 @@ public:
 
     void remove(const Key & key) override;
 
-    void remove(bool force_remove_unreleasable) override;
+    void remove() override;
 
     std::vector<String> tryGetCachePaths(const Key & key) override;
 
@@ -271,7 +271,7 @@ private:
     void fillHolesWithEmptyFileSegments(
         FileSegments & file_segments, const Key & key, const FileSegment::Range & range, bool fill_with_detached_file_segments, std::lock_guard<std::mutex> & cache_lock);
 
-    FileSegmentPtr setDownloading(const Key & key, size_t offset, size_t size, std::lock_guard<std::mutex> & cache_lock) override;
+    FileSegmentsHolder setDownloading(const Key & key, size_t offset, size_t size) override;
 
     size_t getUsedCacheSizeUnlocked(std::lock_guard<std::mutex> & cache_lock) const;
 

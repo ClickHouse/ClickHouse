@@ -54,7 +54,7 @@ private:
 
     SeekableReadBufferPtr getReadBufferForFileSegment(FileSegmentPtr & file_segment);
 
-    SeekableReadBufferPtr getCacheReadBuffer(size_t offset, const FileSegmentPtr & file_segment) const;
+    SeekableReadBufferPtr getCacheReadBuffer(size_t offset) const;
 
     std::optional<size_t> getLastNonDownloadedOffset() const;
 

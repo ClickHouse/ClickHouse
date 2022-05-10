@@ -113,6 +113,8 @@ public:
      */
     void writeInMemory(const char * from, size_t size);
 
+    size_t finalizeWrite();
+
     RemoteFileReaderPtr getRemoteFileReader();
 
     void setRemoteFileReader(RemoteFileReaderPtr remote_file_reader_);
@@ -154,12 +156,8 @@ public:
     static FileSegmentPtr getSnapshot(const FileSegmentPtr & file_segment, std::lock_guard<std::mutex> & cache_lock);
 
         void detach(
-            bool forced_detach,
             std::lock_guard<std::mutex> & cache_lock,
-            std::lock_guard<std::mutex> & /* detach_lock */,
             std::lock_guard<std::mutex> & segment_lock);
-
-    bool isForcefullyDetached() const;
 
     [[noreturn]] void throwDetached() const;
 
@@ -212,14 +210,10 @@ private:
 
     /// global locking order rule:
     /// 1. cache lock
-    /// 2. detach lock (if needed)
-    /// 3. segment lock
+    /// 2. segment lock
 
     mutable std::mutex mutex;
     std::condition_variable cv;
-
-    bool is_write_through_cache = false;
-    mutable std::mutex detach_mutex;
 
     /// Protects downloaded_size access with actual write into fs.
     /// downloaded_size is not protected by download_mutex in methods which
@@ -248,56 +242,15 @@ private:
 
 struct FileSegmentsHolder : private boost::noncopyable
 {
-    FileSegmentsHolder() = default;
-
     explicit FileSegmentsHolder(FileSegments && file_segments_) : file_segments(std::move(file_segments_)) {}
 
     FileSegmentsHolder(FileSegmentsHolder && other) noexcept : file_segments(std::move(other.file_segments)) {}
 
     ~FileSegmentsHolder();
 
-    void add(FileSegmentPtr && file_segment)
-    {
-        file_segments.push_back(file_segment);
-    }
-
     FileSegments file_segments{};
 
     String toString();
-};
-
-class FileSegmentRangeWriter
-{
-public:
-    FileSegmentRangeWriter(
-        IFileCache * cache_,
-        const FileSegment::Key & key_,
-        size_t max_file_segment_size_);
-
-    ~FileSegmentRangeWriter();
-
-    bool write(char * data, size_t size, size_t offset);
-
-    void finalize();
-
-    /// If exception happened on remote fs write, we consider current cache invalid.
-    void clearDownloaded();
-
-private:
-    void allocateFileSegment(size_t offset);
-
-    IFileCache * cache;
-    FileSegment::Key key;
-    size_t max_file_segment_size;
-
-    FileSegmentsHolder file_segments_holder;
-
-    std::weak_ptr<FileSegment> current_file_segment;
-    size_t current_file_segment_start_offset = 0;
-
-    bool finalized = false;
-
-    std::mutex mutex;
 };
 
 }
