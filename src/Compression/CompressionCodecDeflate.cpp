@@ -156,7 +156,6 @@ uint32_t CompressionCodecDeflate::doCompressDataSW(const char * source, uint32_t
     qpl_job * jobPtr = DeflateJobSWPool::instance().acquireJob(&jobID);
     if (jobPtr == nullptr)
     {
-        DeflateJobSWPool::instance().releaseJob(jobID);
         LOG_WARNING(log, "doCompressDataSW acquireJob fail! switch to SW native compress...");
         return doCompressDataSWNative(source, source_size, dest);
     }
@@ -187,7 +186,6 @@ uint32_t CompressionCodecDeflate::doCompressData(const char * source, uint32_t s
     qpl_job * jobPtr = DeflateJobHWPool::instance().acquireJob(&jobID);
     if (jobPtr == nullptr)
     {
-        DeflateJobHWPool::instance().releaseJob(jobID);
         LOG_WARNING(log, "doCompressData HW acquireJob fail! switch to SW compress...");
         return doCompressDataSW(source, source_size, dest);
     }
@@ -223,7 +221,6 @@ UInt32 CompressionCodecDeflate::doCompressDataReq(const char * source, UInt32 so
     qpl_job * jobPtr = DeflateJobHWPool::instance().acquireJob(&jobID);
     if (jobPtr == nullptr)
     {
-        DeflateJobHWPool::instance().releaseJob(jobID);
         LOG_WARNING(log, "doCompressDataReq HW acquireJob fail! switch to SW compress...");
         return doCompressDataSW(source, source_size, dest);
     }
@@ -269,7 +266,6 @@ void CompressionCodecDeflate::doDecompressData(const char * source, uint32_t sou
     qpl_job * jobPtr = DeflateJobHWPool::instance().acquireJob(&jobID);
     if (jobPtr == nullptr)
     {
-        DeflateJobHWPool::instance().releaseJob(jobID);
         LOG_WARNING(log, "doDecompressData HW acquireJob fail! switch to SW decompress");
         return doDecompressDataSW(source, source_size, dest, uncompressed_size);
     }
@@ -347,7 +343,6 @@ void CompressionCodecDeflate::doDecompressDataSW(const char * source, uint32_t s
     qpl_job * jobPtr = DeflateJobSWPool::instance().acquireJob(&jobID);
     if (jobPtr == nullptr)
     {
-        DeflateJobSWPool::instance().releaseJob(jobID);
         LOG_WARNING(log, "doDecompressDataSW acquireJob fail! switch to SW native decompress...");
         return doDecompressDataSWNative(source, source_size, dest, uncompressed_size);
     }
@@ -377,7 +372,6 @@ void CompressionCodecDeflate::doDecompressDataReq(const char * source, uint32_t 
     qpl_job * jobPtr = DeflateJobHWPool::instance().acquireJob(&jobID);
     if (jobPtr == nullptr)
     {
-        DeflateJobHWPool::instance().releaseJob(jobID);
         LOG_WARNING(log, "doDecompressDataReq acquireJob fail! switch to SW decompress");
         doDecompressDataSW(source, source_size, dest, uncompressed_size);
         return;
