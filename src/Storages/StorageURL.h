@@ -114,6 +114,7 @@ public:
 
     std::string getName() const override { return "StorageURLSink"; }
     void consume(Chunk chunk) override;
+    void onException() override;
     void onFinish() override;
 
 private:
