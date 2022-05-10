@@ -31,7 +31,7 @@ struct WriteBufferFromHDFS::WriteBufferFromHDFSImpl
             int replication_,
             int flags)
         : hdfs_uri(hdfs_uri_)
-        , builder(HDFSBuilderWrapperFactory::instance().getOrCreate(hdfs_uri, config_))
+        , builder(HDFSBuilderFSFactory::instance().getBuilder(hdfs_uri, config_))
         , fs(createHDFSFS(builder->get()))
     {
         const size_t begin_of_path = hdfs_uri.find('/', hdfs_uri.find("//") + 2);

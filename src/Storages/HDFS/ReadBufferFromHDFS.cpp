@@ -56,7 +56,7 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<S
         : BufferWithOwnMemory<SeekableReadBuffer>(buf_size_)
         , hdfs_uri(hdfs_uri_)
         , hdfs_file_path(hdfs_file_path_)
-        , builder(HDFSBuilderWrapperFactory::instance().getOrCreate(hdfs_uri_, config_))
+        , builder(HDFSBuilderFSFactory::instance().getBuilder(hdfs_uri_, config_))
         , file_offset(file_offset_)
         , read_until_position(read_until_position_)
     {

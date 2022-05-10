@@ -84,7 +84,6 @@ private:
 
     inline static const String CONFIG_PREFIX = "hdfs";
     inline static std::mutex kinit_mtx;
-    // inline static std::once_flag init_libhdfs3_conf_flag;
 
     hdfsBuilder * hdfs_builder;
     const String hdfs_uri;
@@ -99,26 +98,59 @@ private:
 };
 
 using HDFSBuilderWrapperPtr = std::shared_ptr<HDFSBuilderWrapper>;
+using HDFSFSPtr = std::unique_ptr<std::remove_pointer_t<hdfsFS>, detail::HDFSFsDeleter>;
+using HDFSFSSharedPtr = std::shared_ptr<std::remove_pointer_t<hdfsFS>>;
 
-class HDFSBuilderWrapperFactory final: public boost::noncopyable
+
+class HDFSFSPool : public boost::noncopyable
 {
 public:
-    static HDFSBuilderWrapperFactory & instance();
+    explicit HDFSFSPool(uint32_t max_items_, HDFSBuilderWrapperPtr builder_)
+        : max_items(max_items_), current_index(0), builder(std::move(builder_))
+    {
+        pool.reserve(max_items);
+    }
+
+    ~HDFSFSPool() = default;
+
+    HDFSFSSharedPtr get();
+
+private:
+    const uint32_t max_items;
+    uint32_t current_index;
+    HDFSBuilderWrapperPtr builder;
+    std::vector<HDFSFSSharedPtr> pool;
+
+    std::mutex mutex;
+};
+
+using HDFSFSPoolPtr = std::shared_ptr<HDFSFSPool>;
+
+class HDFSBuilderFSFactory final: public boost::noncopyable
+{
+public:
+    static HDFSBuilderFSFactory & instance();
 
     static void setEnv(const Poco::Util::AbstractConfiguration & config);
 
-    HDFSBuilderWrapperPtr getOrCreate(const String & hdfs_uri, const Poco::Util::AbstractConfiguration & config);
+    HDFSBuilderWrapperPtr getBuilder(const String & hdfs_uri, const Poco::Util::AbstractConfiguration & config);
 
+    HDFSFSSharedPtr getFS(const String & hdfs_uri, const Poco::Util::AbstractConfiguration & config);
+
+    HDFSFSSharedPtr getFS(const String & hdfs_uri, HDFSBuilderWrapperPtr builder);
+    
 private:
-    std::mutex mutex;
-    std::map<String, HDFSBuilderWrapperPtr> hdfs_builder_wrappers;
+    inline static const uint32_t pool_size = 256;
 
+    /// Key: hdfs_uri, value: HDFSBuilderWrapperPtr
+    std::map<String, HDFSBuilderWrapperPtr> hdfs_builder_wrappers;
+    /// Key: hdfs_uri, value: HDFSFSPool
+    std::map<String, HDFSFSPoolPtr> hdfs_fs_pools;
+    std::mutex mutex;
 };
 
-using HDFSFSPtr = std::unique_ptr<std::remove_pointer_t<hdfsFS>, detail::HDFSFsDeleter>;
-
-
 HDFSFSPtr createHDFSFS(hdfsBuilder * builder);
+HDFSFSSharedPtr createSharedHDFSFS(hdfsBuilder * builder);
 String getNameNodeUrl(const String & hdfs_url);
 String getNameNodeCluster(const String & hdfs_url);
 

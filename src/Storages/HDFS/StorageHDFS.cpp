@@ -120,7 +120,7 @@ namespace
 
     std::vector<String> getPathsList(const String & path_from_uri, const String & uri_without_path, ContextPtr context)
     {
-        auto builder = HDFSBuilderWrapperFactory::instance().getOrCreate(uri_without_path + "/", context->getGlobalContext()->getConfigRef());
+        auto builder = HDFSBuilderFSFactory::instance().getBuilder(uri_without_path + "/", context->getGlobalContext()->getConfigRef());
         HDFSFSPtr fs = createHDFSFS(builder->get());
 
         return LSWithRegexpMatching("/", fs, path_from_uri);
@@ -235,7 +235,7 @@ public:
     explicit Impl(const std::vector<const String> & uris_, ContextPtr context)
     {
         auto path_and_uri = getPathFromUriAndUriWithoutPath(uris_[0]);
-        auto builder = HDFSBuilderWrapperFactory::instance().getOrCreate(path_and_uri.second + "/", context->getGlobalContext()->getConfigRef());
+        auto builder = HDFSBuilderFSFactory::instance().getBuilder(path_and_uri.second + "/", context->getGlobalContext()->getConfigRef());
         HDFSFSPtr fs = createHDFSFS(builder->get());
         for (const auto & uri : uris_)
         {
@@ -586,7 +586,7 @@ SinkToStoragePtr StorageHDFS::write(const ASTPtr & query, const StorageMetadataP
 
         const auto [path_from_uri, uri_without_path] = getPathFromUriAndUriWithoutPath(current_uri);
 
-        auto builder = HDFSBuilderWrapperFactory::instance().getOrCreate(uri_without_path + "/", context_->getGlobalContext()->getConfigRef());
+        auto builder = HDFSBuilderFSFactory::instance().getBuilder(uri_without_path + "/", context_->getGlobalContext()->getConfigRef());
         HDFSFSPtr fs = createHDFSFS(builder->get());
 
         bool truncate_on_insert = context_->getSettingsRef().hdfs_truncate_on_insert;
@@ -627,7 +627,7 @@ void StorageHDFS::truncate(const ASTPtr & /* query */, const StorageMetadataPtr 
     const size_t begin_of_path = uris[0].find('/', uris[0].find("//") + 2);
     const String url = uris[0].substr(0, begin_of_path);
 
-    auto builder = HDFSBuilderWrapperFactory::instance().getOrCreate(url + "/", local_context->getGlobalContext()->getConfigRef());
+    auto builder = HDFSBuilderFSFactory::instance().getBuilder(url + "/", local_context->getGlobalContext()->getConfigRef());
     HDFSFSPtr fs = createHDFSFS(builder->get());
 
     for (const auto & uri : uris)
