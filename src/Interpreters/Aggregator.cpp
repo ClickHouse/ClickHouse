@@ -1,6 +1,5 @@
 #include <algorithm>
 #include <future>
-#include <memory>
 #include <numeric>
 #include <Poco/Util/Application.h>
 
@@ -8,7 +7,6 @@
 #include <Common/Stopwatch.h>
 #include <Common/setThreadName.h>
 #include <Common/formatReadable.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeLowCardinality.h>

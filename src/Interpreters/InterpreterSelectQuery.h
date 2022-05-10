@@ -29,6 +29,9 @@ class InterpreterSelectWithUnionQuery;
 class Context;
 class QueryPlan;
 
+struct GroupingSetsParams;
+using GroupingSetsParamsList = std::vector<GroupingSetsParams>;
+
 struct TreeRewriterResult;
 using TreeRewriterResultPtr = std::shared_ptr<const TreeRewriterResult>;
 using AggregatorParamsPtr = std::unique_ptr<Aggregator::Params>;
