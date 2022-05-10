@@ -116,7 +116,6 @@ void DependenciesGraph::removeTask(String query_name)
                 tasks_dependencies.dependencies_info.erase(dependent_query);
         }
     }
-
 }
 
 
