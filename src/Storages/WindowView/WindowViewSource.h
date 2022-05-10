@@ -20,7 +20,7 @@ public:
         : SourceWithProgress(
             is_events_ ? Block(
                 {ColumnWithTypeAndName(ColumnUInt32::create(), std::make_shared<DataTypeDateTime>(window_view_timezone_), "watermark")})
-                       : storage_->getHeader())
+                       : storage_->getTargetHeader())
         , storage(storage_)
         , is_events(is_events_)
         , window_view_timezone(window_view_timezone_)
@@ -32,7 +32,7 @@ public:
             header.insert(
                 ColumnWithTypeAndName(ColumnUInt32::create(), std::make_shared<DataTypeDateTime>(window_view_timezone_), "watermark"));
         else
-            header = storage->getHeader();
+            header = storage->getTargetHeader();
     }
 
     String getName() const override { return "WindowViewSource"; }

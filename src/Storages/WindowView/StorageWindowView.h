@@ -108,7 +108,6 @@ public:
         const StorageID & table_id_,
         ContextPtr context_,
         const ASTCreateQuery & query,
-        const ColumnsDescription & columns,
         bool attach_);
 
     String getName() const override { return "WindowView"; }
@@ -153,6 +152,10 @@ public:
 
     ASTPtr getMergeableQuery() const { return mergeable_query->clone(); }
 
+    ASTPtr getSourceTableSelectQuery();
+
+    Block getHeader() const;
+
 private:
     Poco::Logger * log;
 
@@ -168,7 +171,8 @@ private:
     bool is_tumble; // false if is hop
     std::atomic<bool> shutdown_called{false};
     bool has_inner_table{true};
-    mutable Block sample_block;
+    mutable Block source_header;
+    mutable Block target_header;
     UInt64 clean_interval_ms;
     const DateLUTImpl * time_zone = nullptr;
     UInt32 max_timestamp = 0;
@@ -240,6 +244,6 @@ private:
     StoragePtr getInnerTable() const;
     StoragePtr getTargetTable() const;
 
-    Block & getHeader() const;
+    Block getTargetHeader() const;
 };
 }
