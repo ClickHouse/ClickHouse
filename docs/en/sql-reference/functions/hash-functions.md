@@ -215,44 +215,6 @@ Result:
 └──────────────────────────────────────────┘
 ```
 
-## BLAKE3 {#blake3}
-
-Calculates BLAKE3 hash string and returns the resulting set of bytes as [FixedString](../data-types/fixedstring.md).
-
-**Syntax**
-
-``` sql
-BLAKE3('s')
-```
-
-This cryptographic hash-function is integrated into ClickHouse with BLAKE3 Rust library. The function is rather fast and shows approximately two times faster performance compared to SHA-2, while generating hashes of the same length as SHA-256.
-
-**Arguments**
-
-- s - input string for BLAKE3 hash calculation. [String](../data-types/string.md).
-
-**Return value**
-
-- BLAKE3 hash as a byte array with type FixedString(32).
-
-Type: [FixedString](../data-types/fixedstring.md).
-
-**Example**
-
-Use function [hex](../functions/encoding-functions.md#hex) to represent the result as a hex-encoded string.
-
-Query:
-``` sql
-SELECT hex(BLAKE3('ABC'))
-```
-
-Result:
-``` sql
-┌─hex(BLAKE3('ABC'))───────────────────────────────────────────────┐
-│ D1717274597CF0289694F75D96D444B992A096F1AFD8E7BBFA6EBB1D360FEDFC │
-└──────────────────────────────────────────────────────────────────┘
-```
-
 ## URLHash(url\[, N\]) {#urlhashurl-n}
 
 A fast, decent-quality non-cryptographic hash function for a string obtained from a URL using some type of normalization.
