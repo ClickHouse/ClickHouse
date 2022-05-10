@@ -3,7 +3,6 @@
 #include <Core/BackgroundSchedulePool.h>
 #include <Storages/IStorage.h>
 #include <Poco/Semaphore.h>
-#include <base/shared_ptr_helper.h>
 #include <mutex>
 #include <atomic>
 #include <Storages/NATS/Buffer_fwd.h>
@@ -17,11 +16,17 @@
 namespace DB
 {
 
-class StorageNATS final: public shared_ptr_helper<StorageNATS>, public IStorage, WithContext
+class StorageNATS final: public IStorage, WithContext
 {
-    friend struct shared_ptr_helper<StorageNATS>;
 
 public:
+    StorageNATS(
+        const StorageID & table_id_,
+        ContextPtr context_,
+        const ColumnsDescription & columns_,
+        std::unique_ptr<NATSSettings> nats_settings_,
+        bool is_attach_);
+
     std::string getName() const override { return "NATS"; }
 
     bool noPushingToViews() const override { return true; }
@@ -69,14 +74,6 @@ public:
 
     void incrementReader();
     void decrementReader();
-
-protected:
-    StorageNATS(
-            const StorageID & table_id_,
-            ContextPtr context_,
-            const ColumnsDescription & columns_,
-            std::unique_ptr<NATSSettings> nats_settings_,
-            bool is_attach_);
 
 private:
     ContextMutablePtr nats_context;
