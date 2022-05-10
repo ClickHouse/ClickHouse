@@ -18,7 +18,6 @@
 #include <Common/Exception.h>
 #include <Common/WeakHash.h>
 #include <Common/typeid_cast.h>
-#include <base/scope_guard.h>
 
 namespace DB
 {
@@ -52,7 +51,7 @@ bool ConcurrentHashJoin::addJoinedBlock(const Block & right_block, bool check_li
 {
     Blocks dispatched_blocks = dispatchBlock(table_join->getOnlyClause().key_names_right, right_block);
 
-    std::atomic<size_t> blocks_left = 0;
+    size_t blocks_left = 0;
     for (const auto & block : dispatched_blocks)
     {
         if (block)
@@ -68,13 +67,12 @@ bool ConcurrentHashJoin::addJoinedBlock(const Block & right_block, bool check_li
         {
             auto & hash_join = hash_joins[i];
             auto & dispatched_block = dispatched_blocks[i];
+
+            if (dispatched_block)
             {
                 /// if current hash_join is already processed by another thread, skip it and try later
                 std::unique_lock<std::mutex> lock(hash_join->mutex, std::try_to_lock);
                 if (!lock.owns_lock())
-                    continue;
-
-                if (!dispatched_block)
                     continue;
 
                 bool limit_exceeded = !hash_join->data->addJoinedBlock(dispatched_block, check_limits);
