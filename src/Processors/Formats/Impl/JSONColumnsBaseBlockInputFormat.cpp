@@ -181,7 +181,7 @@ JSONColumnsBaseSchemaReader::JSONColumnsBaseSchemaReader(
 {
 }
 
-void JSONColumnsBaseSchemaReader::chooseResulType(DataTypePtr & type, const DataTypePtr & new_type, const String & column_name, size_t row)
+void JSONColumnsBaseSchemaReader::chooseResulType(DataTypePtr & type, const DataTypePtr & new_type, const String & column_name, size_t row) const
 {
     auto common_type_checker = [&](const DataTypePtr & first, const DataTypePtr & second)
     {
