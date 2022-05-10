@@ -29,7 +29,8 @@ void DependenciesGraph::addTask(DDLTaskPtr task)
     name_to_ddl_task[name] = task;
     database_objects_for_added_task = getDependenciesSetFromQuery(global_context, task->query);
     tasks_dependencies.database_objects_in_query[name] = database_objects_for_added_task;
-    for (auto & [query_name, query_objects] : tasks_dependencies.database_objects_in_query) {
+    for (auto & [query_name, query_objects] : tasks_dependencies.database_objects_in_query)
+    {
         if (name == query_name)
         {
             continue;
@@ -44,13 +45,14 @@ void DependenciesGraph::addTask(DDLTaskPtr task)
                 break;
             }
         }
-        if (!independent) {
+        if (!independent)
+        {
             tasks_dependencies.dependencies_info[query_name].dependent_queries.insert(name);
             tasks_dependencies.dependencies_info[name].dependencies.insert(query_name);
         }
     }
 
-    if (tasks_dependencies.dependencies_info[name].dependencies.emoty())
+    if (tasks_dependencies.dependencies_info[name].dependencies.empty())
     {
         tasks_dependencies.independent_queries.insert(tasks_dependencies.name_to_ddl_task[name]);
     }

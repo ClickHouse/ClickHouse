@@ -107,11 +107,13 @@ namespace DB
     {
         QualifiedTableName qualified_name;
 
-        for (const auto element : rename_query.elements) {
+        for (const auto element : rename_query.elements)
+        {
             String from = element.from.database.empty() ? element.from.table : element.from.database + '.' + element.from.table;
             String to = element.to.database.empty() ? element.to.table : element.to.database + '.' + element.to.table;
 
-            if (auto maybe_qualified_name_from = QualifiedTableName::tryParseFromString(from)) {
+            if (auto maybe_qualified_name_from = QualifiedTableName::tryParseFromString(from))
+            {
                 qualified_name = std::move(*maybe_qualified_name_from);
 
                 if (qualified_name.database.empty())
@@ -121,7 +123,8 @@ namespace DB
                 data.dependencies.emplace(std::move(qualified_name));
             }
 
-            if (auto maybe_qualified_name_to = QualifiedTableName::tryParseFromString(to)) {
+            if (auto maybe_qualified_name_to = QualifiedTableName::tryParseFromString(to))
+            {
                 qualified_name = std::move(*maybe_qualified_name_from);
 
                 if (qualified_name.database.empty())
@@ -142,7 +145,8 @@ namespace DB
 
         String name = database.empty() ? table : database + '.' + table;
 
-        if (auto maybe_qualified_name_from = QualifiedTableName::tryParseFromString(name)) {
+        if (auto maybe_qualified_name_from = QualifiedTableName::tryParseFromString(name))
+        {
             qualified_name = std::move(*maybe_qualified_name_from);
 
             if (qualified_name.database.empty())
@@ -177,7 +181,8 @@ namespace DB
 
         String name = database.empty() ? table : database + '.' + table;
 
-        if (auto maybe_qualified_name_from = QualifiedTableName::tryParseFromString(name)) {
+        if (auto maybe_qualified_name_from = QualifiedTableName::tryParseFromString(name))
+        {
             qualified_name = std::move(*maybe_qualified_name_from);
 
             if (qualified_name.database.empty())

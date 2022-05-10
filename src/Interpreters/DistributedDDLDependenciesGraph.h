@@ -26,12 +26,12 @@ void logAboutProgress(Poco::Logger * log, size_t processed, size_t total, Atomic
 
 using DDLTaskPtr = std::unique_ptr<DDLTaskBase>;
 using TableNames = std::vector<QualifiedTableName>;
-using Queries = std::list<DDLTaskBase&>;
+using Queries = std::list<DDLTaskPtr>;
 using TableNamesSet = std::unordered_set<QualifiedTableName>;
 using EntryNamesSet = std::unordered_set<String>;
-using EntryNameToDDLTaskPtrDict = std::unordered_map<String, DDLTaskBase&>;
+using EntryNameToDDLTaskPtrMap = std::unordered_map<String, DDLTaskBase&>;
 
-struct DependenciesInfo
+struct QueriesDependenciesInfo
 {
     /// Set of dependencies
     EntryNamesSet dependencies;
@@ -39,8 +39,8 @@ struct DependenciesInfo
     EntryNamesSet dependent_queries;
 };
 
-using DependenciesInfos = std::unordered_map<String, DependenciesInfo>; /// entry_name -> Dependencies_queries
-using DependenciesInfosIter = std::unordered_map<String, DependenciesInfo>::iterator;
+using QueriesDependenciesInfos = std::unordered_map<String, DependenciesInfo>; /// entry_name -> Dependencies_queries
+using QueriesDependenciesInfosIter = std::unordered_map<String, DependenciesInfo>::iterator;
 using DatabaseObjectsInAST = std::unordered_map<String, TableNamesSet>;
 
 struct TasksDependencies
@@ -54,14 +54,14 @@ struct TasksDependencies
 
     /// List of tables/dictionaries that do not have any dependencies and can be loaded
     Queries independent_queries;
-    EntryNameToDDLTaskPtrDict name_to_ddl_task;
+    EntryNameToDDLTaskPtrMap name_to_ddl_task;
     /// Adjacent list of dependency graph, contains two maps
     /// 2. query name -> dependent queries list (adjacency list of dependencies graph).
     /// 1. query name -> dependencies of queries (adjacency list of inverted dependencies graph)
     /// If query A depends on query B, then there is an edge B --> A, i.e. dependencies_info[B].dependent_database_objects contains A
     /// and dependencies_info[A].dependencies contain B.
     /// We need inverted graph to effectively maintain it on DDL queries that can modify the graph.
-    DependenciesInfos dependencies_info;
+    QueriesDependenciesInfos dependencies_info;
     DatabaseObjectsInAST database_objects_in_query;
 };
 

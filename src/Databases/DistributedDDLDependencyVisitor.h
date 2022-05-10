@@ -18,7 +18,6 @@ using TableNamesSet = std::unordered_set<QualifiedTableName>;
 
 TableNamesSet getDependenciesSetFromQuery(ContextPtr global_context, const ASTPtr & ast);
 
-
 class DistributedDDLDependencyVisitor
 {
 public:
@@ -43,8 +42,6 @@ private:
     static void visit(const ASTQueryWithTableAndOutput & table_and_output_query, Data & data); // table_and_output_query->getTable() contains full_name from ASTIdentifier, tryParseFromString QualifiedTableName
     static void visit(const ASTTableIdentifier & table_identifier, Data & data); // table_identifier->getTable() returns ASTIdentifier, ->name() returns full_name, tryParseFromString QualifiedTableName
     static void visit(const ASTSystemQuery & system_query, Data & data); // system_query->getTable() contains full_name from ASTIdentifier, tryParseFromString QualifiedTableName
-
-
 
     static void extractTableNameFromArgument(const ASTFunction & function, Data & data, size_t arg_idx);
 };
