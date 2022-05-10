@@ -236,7 +236,7 @@ private:
     ASTPtr getFinalQuery() const { return final_query->clone(); }
     ASTPtr getFetchColumnQuery(UInt32 w_start, UInt32 w_end) const;
 
-    StoragePtr getParentTable() const;
+    StoragePtr getSourceTable() const;
     StoragePtr getInnerTable() const;
     StoragePtr getTargetTable() const;
 
