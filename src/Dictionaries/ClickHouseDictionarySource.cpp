@@ -217,7 +217,7 @@ std::string ClickHouseDictionarySource::doInvalidateQuery(const std::string & re
     }
     else
     {
-        /// We pass empty block to RemoteBlockInputStream, because we don't know the structure of the result.
+        /// We pass empty block to RemoteQueryExecutor, because we don't know the structure of the result.
         Block invalidate_sample_block;
         QueryPipeline pipeline(std::make_shared<RemoteSource>(
             std::make_shared<RemoteQueryExecutor>(pool, request, invalidate_sample_block, context_copy), false, false));

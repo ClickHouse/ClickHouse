@@ -181,6 +181,10 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState &, 
         else if (!disk.empty())
             print_identifier(disk);
     }
+    else if (type == Type::SYNC_DATABASE_REPLICA)
+    {
+        print_identifier(database->as<ASTIdentifier>()->name());
+    }
     else if (type == Type::DROP_REPLICA)
     {
         print_drop_replica();
