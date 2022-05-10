@@ -28,9 +28,6 @@ NamesAndTypesList StorageSystemSettings::getNamesAndTypes()
 
 void StorageSystemSettings::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
 {
-    if (context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
-        context = context->getGlobalContext();
-
     const Settings & settings = context->getSettingsRef();
     auto constraints_and_current_profiles = context->getSettingsConstraintsAndCurrentProfiles();
     const auto & constraints = constraints_and_current_profiles->constraints;
