@@ -23,19 +23,7 @@
 #include <Common/parseAddress.h>
 #include <Common/quoteString.h>
 #include <Common/setThreadName.h>
-#include <base/logger_useful.h>
-
-//static void
-//onMsg(natsConnection *, natsSubscription *, natsMsg *msg, void *)
-//{
-//        printf("\n\n\nReceived msg: %s - %.*s\n\n\n",
-//               natsMsg_GetSubject(msg),
-//               natsMsg_GetDataLength(msg),
-//               natsMsg_GetData(msg));
-//        fflush(stdout);
-//
-//    natsMsg_Destroy(msg);
-//}
+#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -52,10 +40,6 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int CANNOT_CONNECT_RABBITMQ;
-    extern const int CANNOT_BIND_RABBITMQ_EXCHANGE;
-    extern const int CANNOT_DECLARE_RABBITMQ_EXCHANGE;
-    extern const int CANNOT_REMOVE_RABBITMQ_EXCHANGE;
-    extern const int CANNOT_CREATE_RABBITMQ_QUEUE_BINDING;
     extern const int QUERY_NOT_ALLOWED;
 }
 
@@ -86,6 +70,7 @@ StorageNATS::StorageNATS(
     auto parsed_address = parseAddress(getContext()->getMacros()->expand(nats_settings->nats_host_port), 5672);
     context_->getRemoteHostFilter().checkHostAndPort(parsed_address.first, toString(parsed_address.second));
 
+    LOG_DEBUG(log, "Creds: u-{} p-{}", nats_settings->nats_username.value, nats_settings->nats_password.value);
     auto nats_username = nats_settings->nats_username.value;
     auto nats_password = nats_settings->nats_password.value;
     configuration =
@@ -94,7 +79,8 @@ StorageNATS::StorageNATS(
         .port = parsed_address.second,
         .username = nats_username.empty() ? getContext()->getConfigRef().getString("nats.username") : nats_username,
         .password = nats_password.empty() ? getContext()->getConfigRef().getString("nats.password") : nats_password,
-        .vhost = getContext()->getConfigRef().getString("nats.vhost", getContext()->getMacros()->expand(nats_settings->nats_vhost)),
+        .max_reconnect = static_cast<int>(nats_settings->nats_max_reconnect.value),
+        .reconnect_wait = static_cast<int>(nats_settings->nats_reconnect_wait.value),
         .secure = nats_settings->nats_secure.value,
         .connection_string = getContext()->getMacros()->expand(nats_settings->nats_address)
     };
@@ -312,334 +298,6 @@ size_t StorageNATS::getMaxBlockSize() const
 }
 
 
-//void StorageNATS::initNATS()
-//{
-//    if (shutdown_called || nats_is_ready)
-//        return;
-//
-//    if (use_user_setup)
-//    {
-//        queues.emplace_back(queue_base);
-//        nats_is_ready = true;
-//        return;
-//    }
-//
-//    try
-//    {
-//        auto nats_channel = connection->createChannel();
-//
-//        /// Main exchange -> Bridge exchange -> ( Sharding exchange ) -> Queues -> Consumers
-//
-//        initExchange(*nats_channel);
-//        bindExchange(*nats_channel);
-//
-//        for (const auto i : collections::range(0, num_queues))
-//            bindQueue(i + 1, *nats_channel);
-//
-//        LOG_TRACE(log, "NATS setup completed");
-//        nats_is_ready = true;
-//        nats_channel->close();
-//    }
-//    catch (...)
-//    {
-//        tryLogCurrentException(log);
-//        if (!is_attach)
-//            throw;
-//    }
-//}
-//
-//
-//void StorageNATS::initExchange(AMQP::TcpChannel & nats_channel)
-//{
-//    /// Exchange hierarchy:
-//    /// 1. Main exchange (defined with table settings - nats_exchange_name, nats_exchange_type).
-//    /// 2. Bridge exchange (fanout). Used to easily disconnect main exchange and to simplify queue bindings.
-//    /// 3. Sharding (or hash) exchange. Used in case of multiple queues.
-//    /// 4. Consumer exchange. Just an alias for bridge_exchange or sharding exchange to know to what exchange
-//    ///    queues will be bound.
-//
-//    /// All exchanges are declared with options:
-//    /// 1. `durable` (survive NATS server restart)
-//    /// 2. `autodelete` (auto delete in case of queue bindings are dropped).
-//
-//    nats_channel.declareExchange(exchange_name, exchange_type, AMQP::durable)
-//    .onError([&](const char * message)
-//    {
-//        /// This error can be a result of attempt to declare exchange if it was already declared but
-//        /// 1) with different exchange type.
-//        /// 2) with different exchange settings.
-//        throw Exception("Unable to declare exchange. Make sure specified exchange is not already declared. Error: "
-//                + std::string(message), ErrorCodes::CANNOT_DECLARE_RABBITMQ_EXCHANGE);
-//    });
-//
-//    nats_channel.declareExchange(bridge_exchange, AMQP::fanout, AMQP::durable | AMQP::autodelete)
-//    .onError([&](const char * message)
-//    {
-//        /// This error is not supposed to happen as this exchange name is always unique to type and its settings.
-//        throw Exception(
-//            ErrorCodes::CANNOT_DECLARE_RABBITMQ_EXCHANGE, "Unable to declare bridge exchange ({}). Reason: {}", bridge_exchange, std::string(message));
-//    });
-//
-//    if (!hash_exchange)
-//    {
-//        consumer_exchange = bridge_exchange;
-//        return;
-//    }
-//
-//    AMQP::Table binding_arguments;
-//
-//    /// Default routing key property in case of hash exchange is a routing key, which is required to be an integer.
-//    /// Support for arbitrary exchange type (i.e. arbitrary pattern of routing keys) requires to eliminate this dependency.
-//    /// This settings changes hash property to message_id.
-//    binding_arguments["hash-property"] = "message_id";
-//
-//    /// Declare hash exchange for sharding.
-//    nats_channel.declareExchange(sharding_exchange, AMQP::consistent_hash, AMQP::durable | AMQP::autodelete, binding_arguments)
-//    .onError([&](const char * message)
-//    {
-//        /// This error can be a result of same reasons as above for exchange_name, i.e. it will mean that sharding exchange name appeared
-//        /// to be the same as some other exchange (which purpose is not for sharding). So probably actual error reason: queue_base parameter
-//        /// is bad.
-//        throw Exception(
-//           ErrorCodes::CANNOT_DECLARE_RABBITMQ_EXCHANGE,
-//           "Unable to declare sharding exchange ({}). Reason: {}", sharding_exchange, std::string(message));
-//    });
-//
-//    nats_channel.bindExchange(bridge_exchange, sharding_exchange, routing_keys[0])
-//    .onError([&](const char * message)
-//    {
-//        throw Exception(
-//            ErrorCodes::CANNOT_BIND_RABBITMQ_EXCHANGE,
-//            "Unable to bind bridge exchange ({}) to sharding exchange ({}). Reason: {}",
-//            bridge_exchange,
-//            sharding_exchange,
-//            std::string(message));
-//    });
-//
-//    consumer_exchange = sharding_exchange;
-//}
-//
-//
-//void StorageNATS::bindExchange(AMQP::TcpChannel & nats_channel)
-//{
-//    size_t bound_keys = 0;
-//
-//    if (exchange_type == AMQP::ExchangeType::headers)
-//    {
-//        AMQP::Table bind_headers;
-//        for (const auto & header : routing_keys)
-//        {
-//            std::vector<String> matching;
-//            boost::split(matching, header, [](char c){ return c == '='; });
-//            bind_headers[matching[0]] = matching[1];
-//        }
-//
-//        nats_channel.bindExchange(exchange_name, bridge_exchange, routing_keys[0], bind_headers)
-//        .onSuccess([&]() { connection->getHandler().stopLoop(); })
-//        .onError([&](const char * message)
-//        {
-//            throw Exception(
-//                ErrorCodes::CANNOT_BIND_RABBITMQ_EXCHANGE,
-//                "Unable to bind exchange {} to bridge exchange ({}). Reason: {}",
-//                exchange_name, bridge_exchange, std::string(message));
-//        });
-//    }
-//    else if (exchange_type == AMQP::ExchangeType::fanout || exchange_type == AMQP::ExchangeType::consistent_hash)
-//    {
-//        nats_channel.bindExchange(exchange_name, bridge_exchange, routing_keys[0])
-//        .onSuccess([&]() { connection->getHandler().stopLoop(); })
-//        .onError([&](const char * message)
-//        {
-//            throw Exception(
-//                ErrorCodes::CANNOT_BIND_RABBITMQ_EXCHANGE,
-//                "Unable to bind exchange {} to bridge exchange ({}). Reason: {}",
-//                exchange_name, bridge_exchange, std::string(message));
-//        });
-//    }
-//    else
-//    {
-//        for (const auto & routing_key : routing_keys)
-//        {
-//            nats_channel.bindExchange(exchange_name, bridge_exchange, routing_key)
-//            .onSuccess([&]()
-//            {
-//                ++bound_keys;
-//                if (bound_keys == routing_keys.size())
-//                    connection->getHandler().stopLoop();
-//            })
-//            .onError([&](const char * message)
-//            {
-//                throw Exception(
-//                    ErrorCodes::CANNOT_BIND_RABBITMQ_EXCHANGE,
-//                    "Unable to bind exchange {} to bridge exchange ({}). Reason: {}",
-//                    exchange_name, bridge_exchange, std::string(message));
-//            });
-//        }
-//    }
-//
-//    connection->getHandler().startBlockingLoop();
-//}
-//
-//
-//void StorageNATS::bindQueue(size_t queue_id, AMQP::TcpChannel & nats_channel)
-//{
-//    auto success_callback = [&](const std::string &  queue_name, int msgcount, int /* consumercount */)
-//    {
-//        queues.emplace_back(queue_name);
-//        LOG_DEBUG(log, "Queue {} is declared", queue_name);
-//
-//        if (msgcount)
-//            LOG_INFO(log, "Queue {} is non-empty. Non-consumed messaged will also be delivered", queue_name);
-//
-//       /* Here we bind either to sharding exchange (consistent-hash) or to bridge exchange (fanout). All bindings to routing keys are
-//        * done between client's exchange and local bridge exchange. Binding key must be a string integer in case of hash exchange, for
-//        * fanout exchange it can be arbitrary
-//        */
-//        nats_channel.bindQueue(consumer_exchange, queue_name, std::to_string(queue_id))
-//        .onSuccess([&] { connection->getHandler().stopLoop(); })
-//        .onError([&](const char * message)
-//        {
-//            throw Exception(
-//                ErrorCodes::CANNOT_CREATE_RABBITMQ_QUEUE_BINDING,
-//                "Failed to create queue binding for exchange {}. Reason: {}", exchange_name, std::string(message));
-//        });
-//    };
-//
-//    auto error_callback([&](const char * message)
-//    {
-//        /* This error is most likely a result of an attempt to declare queue with different settings if it was declared before. So for a
-//         * given queue name either deadletter_exchange parameter changed or queue_size changed, i.e. table was declared with different
-//         * max_block_size parameter. Solution: client should specify a different queue_base parameter or manually delete previously
-//         * declared queues via any of the various cli tools.
-//         */
-//        throw Exception("Failed to declare queue. Probably queue settings are conflicting: max_block_size, deadletter_exchange. Attempt \
-//                specifying differently those settings or use a different queue_base or manually delete previously declared queues, \
-//                which  were declared with the same names. ERROR reason: "
-//                + std::string(message), ErrorCodes::BAD_ARGUMENTS);
-//    });
-//
-//    AMQP::Table queue_settings;
-//
-//    std::unordered_set<String> integer_settings = {"x-max-length", "x-max-length-bytes", "x-message-ttl", "x-expires", "x-priority", "x-max-priority"};
-//    std::unordered_set<String> string_settings = {"x-overflow", "x-dead-letter-exchange", "x-queue-type"};
-//
-//    /// Check user-defined settings.
-//    if (!queue_settings_list.empty())
-//    {
-//        for (const auto & setting : queue_settings_list)
-//        {
-//            Strings setting_values;
-//            splitInto<'='>(setting_values, setting);
-//            if (setting_values.size() != 2)
-//                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid settings string: {}", setting);
-//
-//            String key = setting_values[0], value = setting_values[1];
-//
-//            if (integer_settings.contains(key))
-//                queue_settings[key] = parse<uint64_t>(value);
-//            else if (string_settings.find(key) != string_settings.end())
-//                queue_settings[key] = value;
-//            else
-//                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported queue setting: {}", value);
-//        }
-//    }
-//
-//    /// Impose default settings if there are no user-defined settings.
-//    if (!queue_settings.contains("x-max-length"))
-//    {
-//        queue_settings["x-max-length"] = queue_size;
-//    }
-//    if (!queue_settings.contains("x-overflow"))
-//    {
-//        queue_settings["x-overflow"] = "reject-publish";
-//    }
-//
-//    /// If queue_base - a single name, then it can be used as one specific queue, from which to read.
-//    /// Otherwise it is used as a generator (unique for current table) of queue names, because it allows to
-//    /// maximize performance - via setting `nats_num_queues`.
-//    const String queue_name = !hash_exchange ? queue_base : std::to_string(queue_id) + "_" + queue_base;
-//
-//    /// AMQP::autodelete setting is not allowed, because in case of server restart there will be no consumers
-//    /// and deleting queues should not take place.
-//    nats_channel.declareQueue(queue_name, AMQP::durable, queue_settings).onSuccess(success_callback).onError(error_callback);
-//    connection->getHandler().startBlockingLoop();
-//}
-//
-//
-//bool StorageNATS::updateChannel(ChannelPtr & channel)
-//{
-//    try
-//    {
-//        channel = connection->createChannel();
-//        return true;
-//    }
-//    catch (...)
-//    {
-//        tryLogCurrentException(log);
-//        return false;
-//    }
-//}
-//
-//
-//void StorageNATS::prepareChannelForBuffer(ConsumerBufferPtr buffer)
-//{
-//    if (!buffer)
-//        return;
-//
-//    if (buffer->queuesCount() != queues.size())
-//        buffer->updateQueues(queues);
-//
-//    buffer->updateAckTracker();
-//
-//    if (updateChannel(buffer->getChannel()))
-//        buffer->setupChannel();
-//}
-//
-//
-//void StorageNATS::unbindExchange()
-//{
-//    /* This is needed because with NATS (without special adjustments) can't, for example, properly make mv if there was insert query
-//     * on the same table before, and in another direction it will make redundant copies, but most likely nobody will do that.
-//     * As publishing is done to exchange, publisher never knows to which queues the message will go, every application interested in
-//     * consuming from certain exchange - declares its owns exchange-bound queues, messages go to all such exchange-bound queues, and as
-//     * input streams are always created at startup, then they will also declare its own exchange bound queues, but they will not be visible
-//     * externally - client declares its own exchange-bound queues, from which to consume, so this means that if not disconnecting this local
-//     * queues, then messages will go both ways and in one of them they will remain not consumed. So need to disconnect local exchange
-//     * bindings to remove redunadant message copies, but after that mv cannot work unless those bindings are recreated. Recreating them is
-//     * not difficult but very ugly and as probably nobody will do such thing - bindings will not be recreated.
-//     */
-//    if (!exchange_removed.exchange(true))
-//    {
-//        try
-//        {
-//            streaming_task->deactivate();
-//
-//            stopLoop();
-//            looping_task->deactivate();
-//
-//            auto nats_channel = connection->createChannel();
-//            nats_channel->removeExchange(bridge_exchange)
-//            .onSuccess([&]()
-//            {
-//                connection->getHandler().stopLoop();
-//            })
-//            .onError([&](const char * message)
-//            {
-//                throw Exception("Unable to remove exchange. Reason: " + std::string(message), ErrorCodes::CANNOT_REMOVE_RABBITMQ_EXCHANGE);
-//            });
-//
-//            connection->getHandler().startBlockingLoop();
-//            nats_channel->close();
-//        }
-//        catch (...)
-//        {
-//            exchange_removed = false;
-//            throw;
-//        }
-//    }
-//}
-
-
 Pipe StorageNATS::read(
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,
@@ -649,9 +307,6 @@ Pipe StorageNATS::read(
         size_t /* max_block_size */,
         unsigned /* num_streams */)
 {
-//    if (!nats_is_ready)
-//        throw Exception("NATS setup not finished. Connection might be lost", ErrorCodes::CANNOT_CONNECT_RABBITMQ);
-
     if (num_created_consumers == 0)
         return {};
 
@@ -673,8 +328,6 @@ Pipe StorageNATS::read(
         if (!connection->reconnect())
             throw Exception(ErrorCodes::CANNOT_CONNECT_RABBITMQ, "No connection to {}", connection->connectionInfoForLog());
     }
-
-//    initializeBuffers();
 
     Pipes pipes;
     pipes.reserve(num_created_consumers);
@@ -714,26 +367,9 @@ SinkToStoragePtr StorageNATS::write(const ASTPtr &, const StorageMetadataPtr & m
 
 void StorageNATS::startup()
 {
-    if (!nats_is_ready)
+    if (!connection->isConnected())
     {
-        if (connection->isConnected())
-        {
-            try
-            {
-//                initNATS();
-                LOG_DEBUG(log, "Fake init lul");
-            }
-            catch (...)
-            {
-                if (!is_attach)
-                    throw;
-                tryLogCurrentException(log);
-            }
-        }
-        else
-        {
-            connection_task->activateAndSchedule();
-        }
+        connection_task->activateAndSchedule();
     }
 
     for (size_t i = 0; i < num_consumers; ++i)
@@ -794,58 +430,6 @@ void StorageNATS::shutdown()
     }
 }
 
-
-/// The only thing publishers are supposed to be aware of is _exchanges_ and queues are a responsibility of a consumer.
-/// Therefore, if a table is dropped, a clean up is needed.
-//void StorageNATS::cleanupNATS() const
-//{
-//    if (use_user_setup)
-//        return;
-//
-//    connection->heartbeat();
-//    if (!connection->isConnected())
-//    {
-//        String queue_names;
-//        for (const auto & queue : queues)
-//        {
-//            if (!queue_names.empty())
-//                queue_names += ", ";
-//            queue_names += queue;
-//        }
-//        LOG_WARNING(log,
-//                    "NATS clean up not done, because there is no connection in table's shutdown."
-//                    "There are {} queues ({}), which might need to be deleted manually. Exchanges will be auto-deleted",
-//                    queues.size(), queue_names);
-//        return;
-//    }
-//
-//    auto nats_channel = connection->createChannel();
-//    for (const auto & queue : queues)
-//    {
-//        /// AMQP::ifunused is needed, because it is possible to share queues between multiple tables and dropping
-//        /// on of them should not affect others.
-//        /// AMQP::ifempty is not used on purpose.
-//
-//        nats_channel->removeQueue(queue, AMQP::ifunused)
-//        .onSuccess([&](uint32_t num_messages)
-//        {
-//            LOG_TRACE(log, "Successfully deleted queue {}, messages contained {}", queue, num_messages);
-//            connection->getHandler().stopLoop();
-//        })
-//        .onError([&](const char * message)
-//        {
-//            LOG_ERROR(log, "Failed to delete queue {}. Error message: {}", queue, message);
-//            connection->getHandler().stopLoop();
-//        });
-//    }
-//    connection->getHandler().startBlockingLoop();
-//    nats_channel->close();
-//
-//    /// Also there is no need to cleanup exchanges as they were created with AMQP::autodelete option. Once queues
-//    /// are removed, exchanges will also be cleaned.
-//}
-
-
 void StorageNATS::pushReadBuffer(ConsumerBufferPtr buffer)
 {
     std::lock_guard lock(buffers_mutex);
@@ -888,13 +472,12 @@ ConsumerBufferPtr StorageNATS::createReadBuffer()
 }
 
 
-//ProducerBufferPtr StorageNATS::createWriteBuffer()
-//{
-//    return std::make_shared<WriteBufferToNATSProducer>(
-//        configuration, getContext(), routing_keys, exchange_name, exchange_type,
-//        producer_id.fetch_add(1), persistent, shutdown_called, log,
-//        row_delimiter ? std::optional<char>{row_delimiter} : std::nullopt, 1, 1024);
-//}
+ProducerBufferPtr StorageNATS::createWriteBuffer()
+{
+    return std::make_shared<WriteBufferToNATSProducer>(
+        configuration, getContext(), subjects[0], shutdown_called, log,
+        row_delimiter ? std::optional<char>{row_delimiter} : std::nullopt, 1, 1024);
+}
 
 
 bool StorageNATS::checkDependencies(const StorageID & table_id)
@@ -923,18 +506,6 @@ bool StorageNATS::checkDependencies(const StorageID & table_id)
 
     return true;
 }
-
-
-//void StorageNATS::initializeBuffers()
-//{
-//    assert(nats_is_ready);
-//    if (!initialized)
-//    {
-//        for (const auto & buffer : buffers)
-//            prepareChannelForBuffer(buffer);
-//        initialized = true;
-//    }
-//}
 
 
 void StorageNATS::streamingToViewsFunc()
@@ -1081,7 +652,6 @@ bool StorageNATS::streamToViews()
     }
     else
     {
-        /// Commit
         for (auto & source : sources)
         {
             if (source->queueEmpty())
@@ -1093,7 +663,6 @@ bool StorageNATS::streamToViews()
 
     if ((queue_empty == num_created_consumers) && (++read_attempts == MAX_FAILED_READ_ATTEMPTS))
     {
-//        connection->heartbeat();
         read_attempts = 0;
         LOG_TRACE(log, "Reschedule streaming. Queues are empty.");
         return true;
@@ -1127,7 +696,7 @@ void registerStorageNATS(StorageFactory & factory)
         if (!nats_settings->nats_format.changed)
             throw Exception("You must specify `nats_format` setting", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        return StorageNATS::create(args.table_id, args.getContext(), args.columns, std::move(nats_settings), args.attach);
+        return std::make_shared<StorageNATS>(args.table_id, args.getContext(), args.columns, std::move(nats_settings), args.attach);
     };
 
     factory.registerStorage("NATS", creator_fn, StorageFactory::StorageFeatures{ .supports_settings = true, });

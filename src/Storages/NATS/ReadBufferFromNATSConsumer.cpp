@@ -7,7 +7,7 @@
 #include <Storages/NATS/ReadBufferFromNATSConsumer.h>
 #include <boost/algorithm/string/split.hpp>
 #include <boost/bind.hpp>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include "Poco/Timer.h"
 #include <amqpcpp.h>
 
@@ -56,7 +56,9 @@ ReadBufferFromNATSConsumer::~ReadBufferFromNATSConsumer()
 void ReadBufferFromNATSConsumer::subscribe()
 {
     for (const auto & subject : subjects) {
-        subscriptions.emplace_back(connection->createSubscription(subject, onMsg, this));
+        SubscriptionPtr subscription = connection->createSubscription(subject, onMsg, this);
+        if (subscription.get())
+            subscriptions.emplace_back(std::move(subscription));
     }
 //    for (const auto & queue_name : subjects)
 //    {
