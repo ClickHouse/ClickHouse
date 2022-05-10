@@ -100,7 +100,6 @@ using ASTPtr = std::shared_ptr<IAST>;
 
 class StorageWindowView final : public IStorage, WithContext
 {
-    friend class TimestampTransformation;
     friend class WindowViewSource;
     friend class WatermarkTransform;
 
@@ -168,7 +167,6 @@ private:
     std::atomic<bool> shutdown_called{false};
     bool has_inner_table{true};
     mutable Block sample_block;
-    mutable Block mergeable_header;
     UInt64 clean_interval_ms;
     const DateLUTImpl * time_zone = nullptr;
     UInt32 max_timestamp = 0;
@@ -187,17 +185,19 @@ private:
     /// Mutex for the blocks and ready condition
     std::mutex mutex;
     std::shared_mutex fire_signal_mutex;
-    mutable std::mutex sample_block_lock; /// Mutex to protect access to sample block and inner_blocks_query
+    mutable std::mutex sample_block_lock; /// Mutex to protect access to sample block
 
     IntervalKind::Kind window_kind;
     IntervalKind::Kind hop_kind;
     IntervalKind::Kind watermark_kind;
     IntervalKind::Kind lateness_kind;
+    IntervalKind::Kind slide_kind;
     Int64 window_num_units;
     Int64 hop_num_units;
     Int64 slice_num_units;
     Int64 watermark_num_units = 0;
     Int64 lateness_num_units = 0;
+    Int64 slide_num_units;
     String window_id_name;
     String window_id_alias;
     String window_column_name;
@@ -206,9 +206,6 @@ private:
     StorageID select_table_id = StorageID::createEmpty();
     StorageID target_table_id = StorageID::createEmpty();
     StorageID inner_table_id = StorageID::createEmpty();
-    mutable StoragePtr parent_storage;
-    mutable StoragePtr inner_storage;
-    mutable StoragePtr target_storage;
 
     BackgroundSchedulePool::TaskHolder clean_cache_task;
     BackgroundSchedulePool::TaskHolder fire_task;
