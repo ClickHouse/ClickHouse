@@ -44,6 +44,8 @@ private:
 
     int compression_level;
     std::string filename;
+
+    std::string uncompressed_buffer;
 };
 
 }

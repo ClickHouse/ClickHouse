@@ -27,31 +27,53 @@ PigzDeflatingWriteBuffer::PigzDeflatingWriteBuffer(
 }
 
 const size_t MAXP2 = UINT_MAX - (UINT_MAX >> 1);
-const size_t BLOCK = 131072;
+const size_t BLOCK_SIZE = 8 * 1024 * 1024;
 
 void PigzDeflatingWriteBuffer::nextImpl()
 {
     if (!offset())
         return;
 
+    const char * in_data = reinterpret_cast<const char *>(working_buffer.begin());
+    size_t in_available = offset();
+    // TODO (kavladst): можно избежать возможную реалокацию в nextImpl, перенеся конкатенацию в finalize
+    uncompressed_buffer.append(in_data, in_available);
+}
+
+PigzDeflatingWriteBuffer::~PigzDeflatingWriteBuffer()
+{
+    try
+    {
+        finalize();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
+}
+
+void PigzDeflatingWriteBuffer::finalizeBefore()
+{
     writeHeader();
 
-    auto *in_buf = reinterpret_cast<unsigned char *>(working_buffer.begin());
-    size_t in_len = offset();
+    auto *in_buf = reinterpret_cast<unsigned char *>(&uncompressed_buffer.front());
+    size_t in_len = uncompressed_buffer.size();
     uint64_t check = crc32_z(0L, Z_NULL, 0);
 
-    size_t cnt_blocks = in_len / BLOCK + bool(in_len % BLOCK);
+    size_t def_block = BLOCK_SIZE;
+
+    size_t cnt_blocks = in_len / def_block + bool(in_len % def_block);
     std::vector<CompressedBuf> results(cnt_blocks);
     std::vector<size_t> checks(cnt_blocks);
     std::vector<size_t> blocks(cnt_blocks);
 
-    ThreadPool pool(15);
+    ThreadPool pool;
     try
     {
         for (size_t i = 0; i < cnt_blocks; ++i)
         {
-            size_t in_remaining_len = in_len - i * BLOCK;
-            size_t block = std::min(BLOCK, in_remaining_len);
+            size_t in_remaining_len = in_len - i * def_block;
+            size_t block = std::min(def_block, in_remaining_len);
 
             blocks[i] = block;
 
@@ -86,23 +108,6 @@ void PigzDeflatingWriteBuffer::nextImpl()
         out->position() = out->buffer().begin();
         throw;
     }
-}
-
-PigzDeflatingWriteBuffer::~PigzDeflatingWriteBuffer()
-{
-    try
-    {
-        finalize();
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-    }
-}
-
-void PigzDeflatingWriteBuffer::finalizeBefore()
-{
-    next();
 }
 
 void PigzDeflatingWriteBuffer::finalizeAfter()
