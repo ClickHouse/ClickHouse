@@ -410,7 +410,6 @@ bool KeeperStorage::createNode(
     created_node.stat = stat;
     created_node.setData(std::move(data));
     created_node.is_sequental = is_sequental;
-    container.insert(path, created_node);
     auto [map_key, _] = container.insert(path, created_node);
     /// Take child path from key owned by map.
     auto child_path = getBaseName(map_key->getKey());
@@ -613,11 +612,12 @@ struct KeeperStorageCreateRequestProcessor final : public KeeperStorageRequestPr
         stat.numChildren = 0;
         stat.version = 0;
         stat.aversion = 0;
+        stat.cversion = 0;
         stat.dataLength = request.data.length();
         stat.ephemeralOwner = request.is_ephemeral ? session_id : 0;
 
         new_deltas.emplace_back(
-            path_created,
+            std::move(path_created),
             zxid,
             KeeperStorage::CreateNodeDelta{stat, request.is_ephemeral, request.is_sequential, std::move(node_acls), request.data});
 
