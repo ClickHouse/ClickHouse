@@ -72,13 +72,13 @@ public:
     DependenciesGraph(ContextMutablePtr global_context_);
     DependenciesGraph() = delete;
 
-    void addTask(DDLTaskPtr task);
+    void addTask(DDLTaskPtr & task);
 
     void removeTask(String entry_name);
 
     void removeProcessedTasks();
 
-    TasksDependencies& getTasksDependencies();
+    TasksDependencies& getTasksDependencies() const;
 
     Queries getTasksToParallelProcess();
 

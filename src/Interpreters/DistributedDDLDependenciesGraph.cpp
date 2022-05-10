@@ -22,8 +22,8 @@ DependenciesGraph::DependenciesGraph(ContextMutablePtr global_context_)
     log = &Poco::Logger::get("DistributedDDLDependenciesGraph");
 }
 
-TasksDependencies& DependenciesGraph::getTasksDependencies() {
-    return &tasks_dependencies;
+TasksDependencies& DependenciesGraph::getTasksDependencies() const {
+    return this->tasks_dependencies;
 }
 
 void DependenciesGraph::addTask(DDLTaskPtr & task)
@@ -115,7 +115,7 @@ void DependenciesGraph::removeTask(String query_name)
                             query_name, dependent_query, fmt::join(dependencies_set, ", "));
         if (dependencies_set.empty())
         {
-            independent_queries.insert(tasks_dependencies.name_to_ddl_task[dependent_query]);
+            tasks_dependencies.independent_queries.insert(tasks_dependencies.name_to_ddl_task[dependent_query]);
             if (dependent_info.dependent_queries.empty())
                 tasks_dependencies.dependencies_info.erase(dependent_query);
         }

@@ -125,7 +125,7 @@ namespace DB
 
             if (auto maybe_qualified_name_to = QualifiedTableName::tryParseFromString(to))
             {
-                qualified_name = std::move(*maybe_qualified_name_from);
+                qualified_name = std::move(*maybe_qualified_name_to);
 
                 if (qualified_name.database.empty())
                 {
