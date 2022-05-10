@@ -170,8 +170,6 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
     }
     else
     {
-        pipeline.resize(1);
-
         pipeline.addSimpleTransform([&](const Block & header)
         {
             return std::make_shared<AggregatingTransform>(header, transform_params);
