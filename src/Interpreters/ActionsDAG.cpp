@@ -234,13 +234,6 @@ const ActionsDAG::Node & ActionsDAG::addFunction(
     return addNode(std::move(node));
 }
 
-const ActionsDAG::Node & ActionsDAG::addGroupingSetColumn()
-{
-    const auto & res = addInput("__grouping_set", std::make_shared<DataTypeUInt64>());
-    index.emplace_back(&res);
-    return res;
-}
-
 const ActionsDAG::Node & ActionsDAG::findInIndex(const std::string & name) const
 {
     if (const auto * node = tryFindInIndex(name))

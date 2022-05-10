@@ -132,7 +132,6 @@ public:
             const FunctionOverloadResolverPtr & function,
             NodeRawConstPtrs children,
             std::string result_name);
-    const Node & addGroupingSetColumn();
 
     /// Index can contain any column returned from DAG.
     /// You may manually change it if needed.

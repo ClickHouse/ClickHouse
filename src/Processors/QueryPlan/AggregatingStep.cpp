@@ -12,6 +12,7 @@
 #include <Interpreters/Aggregator.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/Transforms/GroupingSetsTransform.h>
+#include <DataTypes/DataTypesNumber.h>
 
 namespace DB
 {
@@ -32,6 +33,14 @@ static ITransformingStep::Traits getTraits()
     };
 }
 
+static Block appendGroupingColumn(Block block, const GroupingSetsParamsList & params)
+{
+    if (params.empty())
+        return block;
+
+    return GroupingSetsTransform::appendGroupingColumn(std::move(block));
+}
+
 AggregatingStep::AggregatingStep(
     const DataStream & input_stream_,
     Aggregator::Params params_,
@@ -44,7 +53,7 @@ AggregatingStep::AggregatingStep(
     bool storage_has_evenly_distributed_read_,
     InputOrderInfoPtr group_by_info_,
     SortDescription group_by_sort_description_)
-    : ITransformingStep(input_stream_, params_.getHeader(final_), getTraits(), false)
+    : ITransformingStep(input_stream_, appendGroupingColumn(params_.getHeader(final_), grouping_sets_params_), getTraits(), false)
     , params(std::move(params_))
     , grouping_sets_params(std::move(grouping_sets_params_))
     , final(std::move(final_))

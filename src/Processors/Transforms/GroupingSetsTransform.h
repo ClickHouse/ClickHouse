@@ -24,6 +24,8 @@ public:
         size_t set_id);
     String getName() const override { return "GroupingSetsTransform"; }
 
+    static Block appendGroupingColumn(Block block);
+
 protected:
     void transform(Chunk & chunk) override;
 
@@ -31,7 +33,6 @@ private:
     AggregatingTransformParamsPtr params;
     const ColumnNumbers missing_columns;
     const size_t set_id;
-    const size_t output_size;
 };
 
 }

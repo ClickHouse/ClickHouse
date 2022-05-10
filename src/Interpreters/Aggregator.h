@@ -966,8 +966,6 @@ public:
         };
         StatsCollectingParams stats_collecting_params;
 
-        bool has_grouping_sets;
-
         Params(
             const Block & src_header_,
             const ColumnNumbers & keys_,
@@ -985,8 +983,7 @@ public:
             bool compile_aggregate_expressions_,
             size_t min_count_to_compile_aggregate_expression_,
             const Block & intermediate_header_ = {},
-            const StatsCollectingParams & stats_collecting_params_ = {},
-            bool has_grouping_sets_ = false)
+            const StatsCollectingParams & stats_collecting_params_ = {})
             : src_header(src_header_)
             , intermediate_header(intermediate_header_)
             , keys(keys_)
@@ -1006,7 +1003,6 @@ public:
             , compile_aggregate_expressions(compile_aggregate_expressions_)
             , min_count_to_compile_aggregate_expression(min_count_to_compile_aggregate_expression_)
             , stats_collecting_params(stats_collecting_params_)
-            , has_grouping_sets(has_grouping_sets_)
         {
         }
 
@@ -1016,9 +1012,8 @@ public:
             const ColumnNumbers & keys_,
             const AggregateDescriptions & aggregates_,
             bool overflow_row_,
-            bool has_grouping_sets_,
             size_t max_threads_)
-            : Params(Block(), keys_, aggregates_, overflow_row_, 0, OverflowMode::THROW, 0, 0, 0, false, nullptr, max_threads_, 0, false, 0, {}, {}, has_grouping_sets_)
+            : Params(Block(), keys_, aggregates_, overflow_row_, 0, OverflowMode::THROW, 0, 0, 0, false, nullptr, max_threads_, 0, false, 0, {}, {})
         {
             intermediate_header = intermediate_header_;
         }
@@ -1028,12 +1023,11 @@ public:
             const Block & intermediate_header,
             const ColumnNumbers & keys,
             const AggregateDescriptions & aggregates,
-            bool has_grouping_sets,
             bool final);
 
         Block getHeader(bool final) const
         {
-            return getHeader(src_header, intermediate_header, keys, aggregates, has_grouping_sets, final);
+            return getHeader(src_header, intermediate_header, keys, aggregates, final);
         }
 
         /// Returns keys and aggregated for EXPLAIN query

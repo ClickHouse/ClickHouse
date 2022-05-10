@@ -149,8 +149,7 @@ private:
         const ColumnNumbers & keys,
         const AggregateDescriptions & aggregates,
         bool overflow_row, const Settings & settings,
-        size_t group_by_two_level_threshold, size_t group_by_two_level_threshold_bytes,
-        bool use_grouping_set_key);
+        size_t group_by_two_level_threshold, size_t group_by_two_level_threshold_bytes);
     GroupingSetsParamsList getAggregatorGroupingSetsParams(
         const Block & header_before_aggregation,
         const ColumnNumbers & all_keys);
