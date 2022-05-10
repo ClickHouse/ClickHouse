@@ -324,7 +324,7 @@ Coordination::Error KeeperStorage::commit(int64_t commit_zxid, int64_t session_i
 
         bool finish_subdelta = false;
         auto result = std::visit(
-            [&, &path = delta.path]<typename DeltaType>(const DeltaType & operation) -> Coordination::Error
+            [&, &path = delta.path]<typename DeltaType>(DeltaType & operation) -> Coordination::Error
             {
                 if constexpr (std::same_as<DeltaType, KeeperStorage::CreateNodeDelta>)
                 {
@@ -925,13 +925,13 @@ struct KeeperStorageSetRequestProcessor final : public KeeperStorageRequestProce
             request.path,
             zxid,
             KeeperStorage::UpdateNodeDelta{
-                [zxid, data = request.data, time](KeeperStorage::Node & value) mutable
+                [zxid, data = request.data, time](KeeperStorage::Node & value)
                 {
                     value.stat.version++;
                     value.stat.mzxid = zxid;
                     value.stat.mtime = time;
                     value.stat.dataLength = data.length();
-                    value.setData(std::move(data));
+                    value.setData(data);
                 },
                 request.version});
 
