@@ -48,6 +48,8 @@ public:
 
     String getName() const override { return "JSONColumnsBaseBlockInputFormat"; }
 
+    void setReadBuffer(ReadBuffer & in_) override;
+
     const BlockMissingValues & getMissingValues() const override { return block_missing_values; }
 
 protected:

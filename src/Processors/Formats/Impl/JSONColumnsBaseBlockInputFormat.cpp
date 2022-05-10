@@ -103,11 +103,18 @@ size_t JSONColumnsBaseBlockInputFormat::readColumn(
     return column.size();
 }
 
+void JSONColumnsBaseBlockInputFormat::setReadBuffer(ReadBuffer & in_)
+{
+    reader->setReadBuffer(in_);
+    IInputFormat::setReadBuffer(in_);
+}
+
 Chunk JSONColumnsBaseBlockInputFormat::generate()
 {
     MutableColumns columns = getPort().getHeader().cloneEmptyColumns();
     block_missing_values.clear();
 
+    skipWhitespaceIfAny(*in);
     if (in->eof())
         return {};
 
