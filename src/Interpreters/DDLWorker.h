@@ -7,7 +7,7 @@
 #include <Storages/IStorage_fwd.h>
 #include <Parsers/IAST_fwd.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/DistributedDDLdependenciesGraph.h>
+#include <Interpreters/DistributedDDLDependenciesGraph.h>
 
 #include <atomic>
 #include <chrono>
