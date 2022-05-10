@@ -646,12 +646,6 @@ void optimizeSumIfFunctions(ASTPtr & query)
     RewriteSumIfFunctionVisitor(data).visit(query);
 }
 
-void optimizeCountConstantAndSumOne(ASTPtr & query)
-{
-    RewriteCountVariantsVisitor::visit(query);
-}
-
-
 void optimizeInjectiveFunctionsInsideUniq(ASTPtr & query, ContextPtr context)
 {
     RemoveInjectiveFunctionsVisitor::Data data(context);
@@ -738,6 +732,11 @@ void TreeOptimizer::optimizeIf(ASTPtr & query, Aliases & aliases, bool if_chain_
 
     if (if_chain_to_multiif)
         OptimizeIfChainsVisitor().visit(query);
+}
+
+void TreeOptimizer::optimizeCountConstantAndSumOne(ASTPtr & query)
+{
+    RewriteCountVariantsVisitor::visit(query);
 }
 
 void TreeOptimizer::apply(ASTPtr & query, TreeRewriterResult & result,
