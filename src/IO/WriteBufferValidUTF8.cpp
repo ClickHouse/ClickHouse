@@ -17,10 +17,15 @@ namespace DB
 {
 
 #ifdef __aarch64__
-bool only_ascii_in_vector(uint64x2_t input)
+bool only_ascii_in_vector(uint8x16_t input)
 {   
-    uint64x2_t and_result = vandq_u64(input, vdupq_n_u64(0x8080808080808080));
-    uint64x1_t or_result = vorr_u64(vget_low_u64(and_result), vget_high_u64(and_result));
+    // AND of each element of input vector and 0x80
+    uint8x16_t and_result = vandq_s8(input, vdupq_n_u8(0x80));
+
+    // OR between elements of vector of low 8 bytes and vector of high 8 bytes
+    uint8x8_t or_result = vorr_u8(vget_low_u8(and_result), vget_high_u8(and_result));
+
+    // get uint64_t from vector uint64x1_t and return true if equal to zero, false otherwise
     return !vget_lane_u64(or_result, 0);
 }
 #endif
@@ -98,7 +103,7 @@ void WriteBufferValidUTF8::nextImpl()
         static constexpr size_t SIMD_BYTES = 16;
         const char * simd_end = p + (pos - p) / SIMD_BYTES * SIMD_BYTES;
 
-        while (p < simd_end && only_ascii_in_vector(vld1q_u64(reinterpret_cast<const UInt64 *>(p))))
+        while (p < simd_end && only_ascii_in_vector(vld1q_u8(reinterpret_cast<const unsigned char *>(p))))
             p += SIMD_BYTES;
         
         if (!(p < pos))
@@ -120,7 +125,7 @@ void WriteBufferValidUTF8::nextImpl()
             /// Sequence was not fully written to this buffer.
             break;
         }
-        else if (Poco::UTF8Encoding::isLegal(reinterpret_cast<unsigned char *>(p), len))
+        else if (Poco::UTF8Encoding::isLegal(reinterpret_cast<UInt64>(p), len))
         {
             /// Valid sequence.
             p += len;
