@@ -7,11 +7,11 @@
 #include <Processors/Transforms/AggregatingTransform.h>
 #include <Processors/Transforms/AggregatingInOrderTransform.h>
 #include <Processors/Transforms/MergingAggregatedMemoryEfficientTransform.h>
+#include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Merges/AggregatingSortedTransform.h>
 #include <Processors/Merges/FinishAggregatingInOrderTransform.h>
 #include <Interpreters/Aggregator.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
-#include <Processors/Transforms/GroupingSetsTransform.h>
 #include <DataTypes/DataTypesNumber.h>
 
 namespace DB
@@ -38,7 +38,17 @@ static Block appendGroupingColumn(Block block, const GroupingSetsParamsList & pa
     if (params.empty())
         return block;
 
-    return GroupingSetsTransform::appendGroupingColumn(std::move(block));
+    Block res;
+
+    size_t rows = block.rows();
+    auto column = ColumnUInt64::create(rows);
+
+    res.insert({ColumnPtr(std::move(column)), std::make_shared<DataTypeUInt64>(), "__grouping_set"});
+
+    for (auto & col : block)
+        res.insert(std::move(col));
+
+    return res;
 }
 
 AggregatingStep::AggregatingStep(
@@ -67,7 +77,7 @@ AggregatingStep::AggregatingStep(
 {
 }
 
-void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
+void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings)
 {
     QueryPipelineProcessorsCollector collector(pipeline, this);
 
@@ -120,7 +130,6 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
             return copiers;
         });
 
-        std::vector<AggregatingTransformParamsPtr> transform_params_per_set;
         pipeline.transform([&](OutputPortRawPtrs ports)
         {
             assert(streams * grouping_sets_size == ports.size());
@@ -148,7 +157,6 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                     transform_params->params.stats_collecting_params
                 };
                 auto transform_params_for_set = std::make_shared<AggregatingTransformParams>(std::move(params_for_set), final);
-                transform_params_per_set.push_back(transform_params_for_set);
 
                 if (streams > 1)
                 {
@@ -179,9 +187,10 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                 Processors resizes;
                 for (size_t i = 0; i < grouping_sets_size; ++i)
                 {
-                    auto resize = std::make_shared<ResizeProcessor>(transform_params_per_set[i]->getHeader(), streams, 1);
-                    auto & inputs = resize->getInputs();
                     auto output_it = ports.begin() + i * streams;
+                    auto resize = std::make_shared<ResizeProcessor>((*output_it)->getHeader(), streams, 1);
+                    auto & inputs = resize->getInputs();
+
                     for (auto input_it = inputs.begin(); input_it != inputs.end(); ++output_it, ++input_it)
                         connect(**output_it, *input_it);
                     resizes.push_back(resize);
@@ -195,7 +204,40 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
         auto output_header = transform_params->getHeader();
         pipeline.addSimpleTransform([&](const Block & header)
         {
-            auto transform = std::make_shared<GroupingSetsTransform>(header, output_header, transform_params_per_set[set_counter], grouping_sets_params[set_counter].missing_keys, set_counter);
+            /// Here we create a DAG which fills missing keys and adds `__grouping_set` column
+            auto dag = std::make_shared<ActionsDAG>(header.getColumnsWithTypeAndName());
+            ActionsDAG::NodeRawConstPtrs index;
+            index.reserve(output_header.columns() + 1);
+
+            auto grouping_col = ColumnConst::create(ColumnUInt64::create(1, set_counter), 0);
+            const auto * grouping_node = &dag->addColumn(
+                {ColumnPtr(std::move(grouping_col)), std::make_shared<DataTypeUInt64>(), "__grouping_set"});
+
+            grouping_node = &dag->materializeNode(*grouping_node);
+            index.push_back(grouping_node);
+
+            size_t real_column_index = 0;
+            size_t missign_column_index = 0;
+            const auto & missing_columns = grouping_sets_params[set_counter].missing_keys;
+
+            for (size_t i = 0; i < output_header.columns(); ++i)
+            {
+                if (missign_column_index < missing_columns.size() && missing_columns[missign_column_index] == i)
+                {
+                    auto missing = output_header.getByPosition(missing_columns[missign_column_index++]);
+                    auto column = ColumnConst::create(missing.column->cloneResized(1), 0);
+                    const auto * node = &dag->addColumn({ColumnPtr(std::move(column)), missing.type, missing.name});
+                    node = &dag->materializeNode(*node);
+                    index.push_back(node);
+                }
+                else
+                    index.push_back(dag->getIndex()[real_column_index++]);
+            }
+
+            dag->getIndex().swap(index);
+            auto expression = std::make_shared<ExpressionActions>(dag, settings.getActionsSettings());
+            auto transform = std::make_shared<ExpressionTransform>(header, expression);
+
             ++set_counter;
             return transform;
         });
