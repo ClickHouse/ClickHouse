@@ -441,7 +441,7 @@ public:
     {
         auto header = metadata_snapshot->getSampleBlock();
 
-        /// Note: AddingDefaultsBlockInputStream doesn't change header.
+        /// Note: AddingDefaultsTransform doesn't change header.
 
         if (need_path_column)
             header.insert(
@@ -620,8 +620,10 @@ Pipe StorageFile::read(
     size_t max_block_size,
     unsigned num_streams)
 {
-    if (use_table_fd)   /// need to call ctr BlockInputStream
+    if (use_table_fd)
+    {
         paths = {""};   /// when use fd, paths are empty
+    }
     else
     {
         if (paths.size() == 1 && !fs::exists(paths[0]))
@@ -782,11 +784,25 @@ public:
         writer->write(getHeader().cloneWithColumns(chunk.detachColumns()));
     }
 
+    void onException() override
+    {
+        write_buf->finalize();
+    }
+
     void onFinish() override
     {
-        writer->finalize();
-        writer->flush();
-        write_buf->finalize();
+        try
+        {
+            writer->finalize();
+            writer->flush();
+            write_buf->finalize();
+        }
+        catch (...)
+        {
+            /// Stop ParallelFormattingOutputFormat correctly.
+            writer.reset();
+            throw;
+        }
     }
 
 private:

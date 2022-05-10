@@ -383,13 +383,18 @@ ContextMutablePtr DatabaseReplicatedTask::makeQueryContext(ContextPtr from_conte
         txn->addOp(zkutil::makeSetRequest(database->zookeeper_path + "/max_log_ptr", toString(getLogEntryNumber(entry_name)), -1));
     }
 
-    txn->addOp(zkutil::makeSetRequest(database->replica_path + "/log_ptr", toString(getLogEntryNumber(entry_name)), -1));
+    txn->addOp(getOpToUpdateLogPointer());
 
     for (auto & op : ops)
         txn->addOp(std::move(op));
     ops.clear();
 
     return query_context;
+}
+
+Coordination::RequestPtr DatabaseReplicatedTask::getOpToUpdateLogPointer()
+{
+    return zkutil::makeSetRequest(database->replica_path + "/log_ptr", toString(getLogEntryNumber(entry_name)), -1);
 }
 
 String DDLTaskBase::getLogEntryName(UInt32 log_entry_number)
