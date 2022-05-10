@@ -33,3 +33,8 @@ SETTINGS optimize_or_like_chain = 1
 Привет, World
 Привет, optimized World
 Привет, World
+SELECT
+    (materialize(\'Привет, World\') AS s) LIKE \'hell%\' AS test,
+    s
+WHERE multiMatchAny(s, [\'^hell\', \'(?i)привет\', \'(?i)^world\']) OR false
+SETTINGS optimize_or_like_chain = 1
