@@ -510,8 +510,8 @@ std::pair<BlocksPtr, Block> StorageWindowView::getNewBlocks(UInt32 watermark)
 
     auto creator = [&](const StorageID & blocks_id_global)
     {
-        auto parent_table_metadata = getParentTable()->getInMemoryMetadataPtr();
-        auto required_columns = parent_table_metadata->getColumns();
+        auto source_table_metadata = getSourceTable()->getInMemoryMetadataPtr();
+        auto required_columns = source_table_metadata->getColumns();
         required_columns.add(ColumnDescription("____timestamp", std::make_shared<DataTypeDateTime>()));
         return StorageBlocks::createStorage(blocks_id_global, required_columns, std::move(pipes), QueryProcessingStage::WithMergeableState);
     };
@@ -1361,8 +1361,8 @@ void StorageWindowView::writeIntoWindowView(
 
     auto creator = [&](const StorageID & blocks_id_global)
     {
-        auto parent_metadata = window_view.getParentTable()->getInMemoryMetadataPtr();
-        auto required_columns = parent_metadata->getColumns();
+        auto source_metadata = window_view.getSourceTable()->getInMemoryMetadataPtr();
+        auto required_columns = source_metadata->getColumns();
         required_columns.add(ColumnDescription("____timestamp", std::make_shared<DataTypeDateTime>()));
         return StorageBlocks::createStorage(blocks_id_global, required_columns, std::move(pipes), QueryProcessingStage::FetchColumns);
     };
@@ -1509,7 +1509,7 @@ Block & StorageWindowView::getHeader() const
     return sample_block;
 }
 
-StoragePtr StorageWindowView::getParentTable() const
+StoragePtr StorageWindowView::getSourceTable() const
 {
     return DatabaseCatalog::instance().getTable(select_table_id, getContext());
 }
