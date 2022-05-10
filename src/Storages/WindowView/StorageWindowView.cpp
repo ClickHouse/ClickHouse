@@ -608,8 +608,8 @@ inline void StorageWindowView::fire(UInt32 watermark)
 
 ASTPtr StorageWindowView::getSourceTableSelectQuery()
 {
-    auto select_query_ = select_query->clone();
-    auto & modified_select = select_query_->as<ASTSelectQuery &>();
+    auto query = select_query->clone();
+    auto & modified_select = query->as<ASTSelectQuery &>();
 
     if (hasJoin(modified_select))
     {
@@ -629,13 +629,13 @@ ASTPtr StorageWindowView::getSourceTableSelectQuery()
 
     if (!is_time_column_func_now)
     {
-        auto select_query_ = select_query->clone();
+        auto query = select_query->clone();
         DropTableIdentifierMatcher::Data drop_table_identifier_data;
         DropTableIdentifierMatcher::Visitor drop_table_identifier_visitor(drop_table_identifier_data);
-        drop_table_identifier_visitor.visit(select_query_);
+        drop_table_identifier_visitor.visit(query);
 
         FetchQueryInfoMatcher::Data query_info_data;
-        FetchQueryInfoMatcher::Visitor(query_info_data).visit(select_query_);
+        FetchQueryInfoMatcher::Visitor(query_info_data).visit(query);
 
         auto order_by = std::make_shared<ASTExpressionList>();
         auto order_by_elem = std::make_shared<ASTOrderByElement>();
@@ -649,7 +649,7 @@ ASTPtr StorageWindowView::getSourceTableSelectQuery()
 
     const auto select_with_union_query = std::make_shared<ASTSelectWithUnionQuery>();
     select_with_union_query->list_of_selects = std::make_shared<ASTExpressionList>();
-    select_with_union_query->list_of_selects->children.push_back(select_query_);
+    select_with_union_query->list_of_selects->children.push_back(query);
 
     return select_with_union_query;
 }
