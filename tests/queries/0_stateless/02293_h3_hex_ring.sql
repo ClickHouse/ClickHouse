@@ -1,3 +1,10 @@
+-- Tags: no-fasttest
+
+SELECT h3HexRing(581276613233082367, toUInt16(0));
+SELECT h3HexRing(579205132326352334, toUInt16(1)) as hexRing; -- { serverError 117 }
+SELECT h3HexRing(581276613233082367, -1); -- { serverError 43 }
+SELECT h3HexRing(581276613233082367, toUInt16(-1)); -- { serverError 12 }
+
 DROP TABLE IF EXISTS h3_indexes;
 
 -- Test h3 indices and k selected from original test fixture: https://github.com/uber/h3/blob/master/src/apps/testapps
@@ -5,7 +12,7 @@ DROP TABLE IF EXISTS h3_indexes;
 CREATE TABLE h3_indexes (h3_index UInt64, k UInt16) ENGINE = Memory;
 
 
-INSERT INTO h3_indexes VALUES (579205133326352383,1);
+INSERT INTO h3_indexes VALUES (581276613233082367,1);
 INSERT INTO h3_indexes VALUES (581263419093549055,2);
 INSERT INTO h3_indexes VALUES (589753847883235327,3);
 INSERT INTO h3_indexes VALUES (594082350283882495,4);
