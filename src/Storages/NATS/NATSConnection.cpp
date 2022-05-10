@@ -1,6 +1,6 @@
 #include "NATSConnection.h"
 
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <IO/WriteHelpers.h>
 
 
@@ -58,8 +58,14 @@ SubscriptionPtr NATSConnectionManager::createSubscription(const std::string& sub
     if (status == NATS_OK)
         status = natsSubscription_SetPendingLimits(ns, -1, -1);
     if (status == NATS_OK)
+    {
         LOG_DEBUG(log, "Subscribed to subject {}", subject);
-    return SubscriptionPtr(ns, &natsSubscription_Destroy);
+        return SubscriptionPtr(ns, &natsSubscription_Destroy);
+    }
+    else
+    {
+        return SubscriptionPtr(nullptr, &natsSubscription_Destroy);
+    }
 }
 
 void NATSConnectionManager::disconnect()
@@ -96,6 +102,10 @@ void NATSConnectionManager::connectImpl()
     {
         address = configuration.connection_string;
     }
+    natsOptions_SetMaxReconnect(options, configuration.max_reconnect);
+    natsOptions_SetReconnectWait(options, configuration.reconnect_wait);
+//    natsOptions_SetDisconnectedCB(options, disconnectedCallback, this);
+//    natsOptions_SetReconnectedCB(options, reconnectedCallback, this);
     natsOptions_SetURL(options, address.c_str());
     status = natsConnection_Connect(&connection, options);
     if (status != NATS_OK)
@@ -119,6 +129,20 @@ void NATSConnectionManager::disconnectImpl()
         event_handler.iterateLoop();
 
     event_handler.changeConnectionStatus(false);
+}
+
+void NATSConnectionManager::reconnectedCallback(natsConnection * nc, void * manager)
+{
+    char buffer[64];
+
+    buffer[0] = '\0';
+    natsConnection_GetConnectedUrl(nc, buffer, sizeof(buffer));
+    LOG_DEBUG(static_cast<NATSConnectionManager *>(manager)->log, "Got reconnected to NATS server: {}.", buffer);
+}
+
+void NATSConnectionManager::disconnectedCallback(natsConnection *, void * manager)
+{
+    LOG_DEBUG(static_cast<NATSConnectionManager *>(manager)->log, "Got disconnected from NATS server.");
 }
 
 }

@@ -13,7 +13,9 @@ struct NATSConfiguration
     UInt16 port;
     String username;
     String password;
-    String vhost;
+
+    int max_reconnect;
+    int reconnect_wait;
 
     bool secure;
     String connection_string;
@@ -25,6 +27,8 @@ class NATSConnectionManager
 public:
     NATSConnectionManager(const NATSConfiguration & configuration_, Poco::Logger * log_);
     ~NATSConnectionManager() { natsConnection_Destroy(connection); }
+
+    natsConnection * getConnection() { return connection; }
 
     bool isConnected();
 
@@ -49,6 +53,9 @@ private:
     void connectImpl();
 
     void disconnectImpl();
+
+    static void disconnectedCallback(natsConnection * nc, void * storage);
+    static void reconnectedCallback(natsConnection * nc, void * storage);
 
     NATSConfiguration configuration;
     Poco::Logger * log;
