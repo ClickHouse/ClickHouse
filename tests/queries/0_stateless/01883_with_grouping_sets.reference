@@ -8,7 +8,7 @@ ExpressionTransform
           (Expression)
           ExpressionTransform × 2
             (Aggregating)
-            GroupingSetsTransform × 2
+            ExpressionTransform × 2
               AggregatingTransform × 2
                 Copy 1 → 2
                   (Expression)
@@ -87,7 +87,7 @@ ExpressionTransform
           (Expression)
           ExpressionTransform × 2
             (Aggregating)
-            GroupingSetsTransform × 2
+            ExpressionTransform × 2
               Resize × 2 3 → 1
                 AggregatingTransform × 6
                   Copy × 3 1 → 2
