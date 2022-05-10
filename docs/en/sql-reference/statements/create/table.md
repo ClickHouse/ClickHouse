@@ -16,8 +16,8 @@ By default, tables are created only on the current server. Distributed DDL queri
 ``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
-    name1 [type1] [NULL|NOT NULL] [DEFAULT|MATERIALIZED|EPHEMERAL|ALIAS expr1] [compression_codec] [TTL expr1],
-    name2 [type2] [NULL|NOT NULL] [DEFAULT|MATERIALIZED|EPHEMERAL|ALIAS expr2] [compression_codec] [TTL expr2],
+    name1 [type1] [DEFAULT|MATERIALIZED|EPHEMERAL|ALIAS expr1] [NULL|NOT NULL] [compression_codec] [TTL expr1],
+    name2 [type2] [DEFAULT|MATERIALIZED|EPHEMERAL|ALIAS expr2] [NULL|NOT NULL] [compression_codec] [TTL expr2],
     ...
 ) ENGINE = engine
 ```
