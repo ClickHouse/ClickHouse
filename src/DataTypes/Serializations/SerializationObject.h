@@ -1,6 +1,6 @@
 #pragma once
 
-#include "Columns/ColumnObject.h"
+#include <Columns/ColumnObject.h>
 #include <DataTypes/Serializations/SimpleTextSerialization.h>
 #include <Common/ObjectPool.h>
 
@@ -8,7 +8,7 @@ namespace DB
 {
 
 /// Serialization for data type Object.
-/// Supported only test serialization/deserialization.
+/// Supported only text serialization/deserialization.
 /// and binary bulk serialization/deserialization without position independent
 /// encoding, i.e. serialization/deserialization into Native format.
 template <typename Parser>

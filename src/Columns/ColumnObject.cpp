@@ -276,8 +276,8 @@ static bool isConversionRequiredBetweenIntegers(const IDataType & lhs, const IDa
     bool is_native_int = which_lhs.isNativeInt() && which_rhs.isNativeInt();
     bool is_native_uint = which_lhs.isNativeUInt() && which_rhs.isNativeUInt();
 
-    return (is_native_int || is_native_uint)
-        && lhs.getSizeOfValueInMemory() <= rhs.getSizeOfValueInMemory();
+    return (!is_native_int && !is_native_uint)
+        || lhs.getSizeOfValueInMemory() > rhs.getSizeOfValueInMemory();
 }
 
 void ColumnObject::Subcolumn::insert(Field field, FieldInfo info)
@@ -320,7 +320,7 @@ void ColumnObject::Subcolumn::insert(Field field, FieldInfo info)
     }
     else if (!least_common_base_type->equals(*base_type) && !isNothing(base_type))
     {
-        if (!isConversionRequiredBetweenIntegers(*base_type, *least_common_base_type))
+        if (isConversionRequiredBetweenIntegers(*base_type, *least_common_base_type))
         {
             base_type = getLeastSupertype(DataTypes{std::move(base_type), least_common_base_type}, true);
             type_changed = true;
@@ -832,6 +832,10 @@ void ColumnObject::addNestedSubcolumn(const PathInData & key, const FieldInfo & 
 
     if (num_rows == 0)
         num_rows = new_size;
+    else if (new_size != num_rows)
+        throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH,
+            "Required size of subcolumn {} ({}) is inconsistent with column size ({})",
+            key.getPath(), new_size, num_rows);
 }
 
 PathsInData ColumnObject::getKeys() const
@@ -851,9 +855,6 @@ bool ColumnObject::isFinalized() const
 
 void ColumnObject::finalize()
 {
-    if (isFinalized())
-        return;
-
     size_t old_size = size();
     Subcolumns new_subcolumns;
     for (auto && entry : subcolumns)

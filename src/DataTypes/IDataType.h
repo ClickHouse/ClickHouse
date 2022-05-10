@@ -287,6 +287,7 @@ public:
     /// Strings, Numbers, Date, DateTime, Nullable
     virtual bool canBeInsideLowCardinality() const { return false; }
 
+    /// Object, Array(Object), Tuple(..., Object, ...)
     virtual bool hasDynamicSubcolumns() const { return false; }
 
     /// Updates avg_value_size_hint for newly read column. Uses to optimize deserialization. Zero expected for first column.
