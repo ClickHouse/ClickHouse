@@ -11,7 +11,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Processors/QueryPlan/PartsSplitter.h>
-#include <Processors/Transforms/FilterTransform.h>
+#include <Processors/Transforms/FilterSortedStreamByRange.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
 
 using namespace DB;
@@ -271,10 +271,13 @@ Pipes buildPipesForReading(
         ExpressionActionsPtr expression_actions = std::make_shared<ExpressionActions>(std::move(actions));
         auto description = fmt::format(
             "filter values in [{}, {})", i ? ::toString(borders[i - 1]) : "-inf", i < borders.size() ? ::toString(borders[i]) : "+inf");
+        auto pk_expression = std::make_shared<ExpressionActions>(primary_key.expression->getActionsDAG().clone());
+        pipes[i].addSimpleTransform([pk_expression](const Block & header)
+                                    { return std::make_shared<ExpressionTransform>(header, pk_expression); });
         pipes[i].addSimpleTransform(
             [&](const Block & header)
             {
-                auto step = std::make_shared<FilterTransform>(header, expression_actions, filter_function->getColumnName(), true);
+                auto step = std::make_shared<FilterSortedStreamByRange>(header, expression_actions, filter_function->getColumnName(), true);
                 step->setDescription(description);
                 return step;
             });
