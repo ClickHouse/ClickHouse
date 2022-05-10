@@ -788,7 +788,7 @@ void ExpressionAnalyzer::makeWindowDescriptionFromAST(const Context & context_,
 
             auto actions_dag = std::make_shared<ActionsDAG>(columns_after_join);
             getRootActions(column_ast, false, actions_dag);
-            desc.partition_by_actions.push_back(std::move(actions_dag));
+            desc.order_by_actions.push_back(std::move(actions_dag));
         }
     }
 
