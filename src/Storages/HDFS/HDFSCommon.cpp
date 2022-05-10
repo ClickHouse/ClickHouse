@@ -22,13 +22,10 @@ namespace ErrorCodes
     extern const int NO_ELEMENTS_IN_CONFIG;
 }
 
-const String HDFSBuilderWrapper::CONFIG_PREFIX = "hdfs";
 const String HDFS_URL_REGEXP = "^hdfs://[^/]*/.*";
 
-std::once_flag init_libhdfs3_conf_flag;
 
-void HDFSBuilderWrapper::loadFromConfig(const Poco::Util::AbstractConfiguration & config,
-    const String & prefix, bool isUser)
+void HDFSBuilderWrapper::loadFromConfig(const String & prefix, bool isUser)
 {
     Poco::Util::AbstractConfiguration::Keys keys;
 
@@ -115,9 +112,9 @@ void HDFSBuilderWrapper::runKinit()
     }
 }
 
-HDFSBuilderWrapper createHDFSBuilder(const String & uri_str, const Poco::Util::AbstractConfiguration & config)
+void HDFSBuilderWrapper::initialize()
 {
-    const Poco::URI uri(uri_str);
+    const Poco::URI uri(hdfs_uri);
     const auto & host = uri.getHost();
     auto port = uri.getPort();
     const String path = "//";
@@ -125,7 +122,7 @@ HDFSBuilderWrapper createHDFSBuilder(const String & uri_str, const Poco::Util::A
         throw Exception("Illegal HDFS URI: " + uri.toString(), ErrorCodes::BAD_ARGUMENTS);
 
     // Shall set env LIBHDFS3_CONF *before* HDFSBuilderWrapper construction.
-    std::call_once(init_libhdfs3_conf_flag, [&config]()
+    std::call_once(HDFSBuilderWrapper::init_libhdfs3_conf_flag, [this]()
     {
         String libhdfs3_conf = config.getString(HDFSBuilderWrapper::CONFIG_PREFIX + ".libhdfs3_conf", "");
         if (!libhdfs3_conf.empty())
@@ -141,15 +138,14 @@ HDFSBuilderWrapper createHDFSBuilder(const String & uri_str, const Poco::Util::A
         }
     });
 
-    HDFSBuilderWrapper builder;
-    if (builder.get() == nullptr)
+    if (get() == nullptr)
         throw Exception("Unable to create builder to connect to HDFS: " +
             uri.toString() + " " + String(hdfsGetLastError()),
             ErrorCodes::NETWORK_ERROR);
 
-    hdfsBuilderConfSetStr(builder.get(), "input.read.timeout", "60000"); // 1 min
-    hdfsBuilderConfSetStr(builder.get(), "input.write.timeout", "60000"); // 1 min
-    hdfsBuilderConfSetStr(builder.get(), "input.connect.timeout", "60000"); // 1 min
+    hdfsBuilderConfSetStr(get(), "input.read.timeout", "60000"); // 1 min
+    hdfsBuilderConfSetStr(get(), "input.write.timeout", "60000"); // 1 min
+    hdfsBuilderConfSetStr(get(), "input.connect.timeout", "60000"); // 1 min
 
     String user_info = uri.getUserInfo();
     String user;
@@ -161,18 +157,18 @@ HDFSBuilderWrapper createHDFSBuilder(const String & uri_str, const Poco::Util::A
         else
             user = user_info;
 
-        hdfsBuilderSetUserName(builder.get(), user.c_str());
+        hdfsBuilderSetUserName(get(), user.c_str());
     }
 
-    hdfsBuilderSetNameNode(builder.get(), host.c_str());
+    hdfsBuilderSetNameNode(get(), host.c_str());
     if (port != 0)
     {
-        hdfsBuilderSetNameNodePort(builder.get(), port);
+        hdfsBuilderSetNameNodePort(get(), port);
     }
 
     if (config.has(HDFSBuilderWrapper::CONFIG_PREFIX))
     {
-        builder.loadFromConfig(config, HDFSBuilderWrapper::CONFIG_PREFIX);
+        loadFromConfig(HDFSBuilderWrapper::CONFIG_PREFIX);
     }
 
     if (!user.empty())
@@ -180,19 +176,36 @@ HDFSBuilderWrapper createHDFSBuilder(const String & uri_str, const Poco::Util::A
         String user_config_prefix = HDFSBuilderWrapper::CONFIG_PREFIX + "_" + user;
         if (config.has(user_config_prefix))
         {
-            builder.loadFromConfig(config, user_config_prefix, true);
+            loadFromConfig(user_config_prefix, true);
         }
     }
 
-    if (builder.need_kinit)
+    if (need_kinit)
     {
-        builder.runKinit();
+        runKinit();
     }
-
-    return builder;
 }
 
-std::mutex HDFSBuilderWrapper::kinit_mtx;
+HDFSBuilderWrapperFactory & HDFSBuilderWrapperFactory::instance()
+{
+    static HDFSBuilderWrapperFactory factory;
+    return factory;
+}
+
+HDFSBuilderWrapperPtr HDFSBuilderWrapperFactory::getOrCreate(const String & hdfs_uri, const Poco::Util::AbstractConfiguration & config)
+{
+    std::lock_guard lock(mutex);
+    auto it = hdfs_builder_wrappers.find(hdfs_uri);
+    if (it == hdfs_builder_wrappers.end())
+    {
+        auto result = std::make_shared<HDFSBuilderWrapper>(hdfs_uri, config);
+        hdfs_builder_wrappers.emplace(hdfs_uri, result);
+        return result;
+    }
+    return it->second;
+}
+
+// std::mutex HDFSBuilderWrapper::kinit_mtx;
 
 HDFSFSPtr createHDFSFS(hdfsBuilder * builder)
 {

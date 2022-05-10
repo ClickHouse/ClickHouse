@@ -322,6 +322,15 @@
     M(KafkaMessagesProduced, "Number of messages produced to Kafka") \
     M(KafkaProducerErrors, "Number of errors during producing the messages to Kafka") \
     \
+    M(HDFSReadInitializeMicroseconds, "Total time of initialization before HDFS reading") \
+    M(HDFSReadInitialize, "Number of times of initialization before HDFS reading") \
+    M(HDFSReadExecuteMicroseconds, "Total time of HDFS reading") \
+    M(HDFSReadExecute, "Number of times of HDFS reading") \
+    M(HDFSReadSeekMicroseconds, "Total time of seeking during HDFS reading") \
+    M(HDFSReadSeek, "Number of times of seeking during HDFS reading") \
+    M(HDFSReadCloseMicroseconds, "Total time of close after HDFS reading") \
+    M(HDFSReadClose, "Number of times of close after HDFS reading") \
+    \
     M(ScalarSubqueriesGlobalCacheHit, "Number of times a read from a scalar subquery was done using the global cache") \
     M(ScalarSubqueriesLocalCacheHit, "Number of times a read from a scalar subquery was done using the local cache") \
     M(ScalarSubqueriesCacheMiss, "Number of times a read from a scalar subquery was not cached and had to be calculated completely")

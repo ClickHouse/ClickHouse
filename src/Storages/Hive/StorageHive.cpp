@@ -31,6 +31,7 @@
 #include <Processors/Transforms/AddingDefaultsTransform.h>
 #include <Storages/Cache/ExternalDataSourceCache.h>
 #include <Storages/HDFS/ReadBufferFromHDFS.h>
+#include <Storages/HDFS/HDFSCommon.h>
 #include <Storages/Hive/HiveSettings.h>
 #include <Storages/Hive/StorageHiveMetadata.h>
 #include <Storages/MergeTree/KeyCondition.h>
@@ -700,8 +701,8 @@ Pipe StorageHive::read(
 {
     lazyInitialize();
 
-    HDFSBuilderWrapper builder = createHDFSBuilder(hdfs_namenode_url, context_->getGlobalContext()->getConfigRef());
-    HDFSFSPtr fs = createHDFSFS(builder.get());
+    auto builder = HDFSBuilderWrapperFactory::instance().getOrCreate(hdfs_namenode_url, context_->getGlobalContext()->getConfigRef());
+    HDFSFSPtr fs = createHDFSFS(builder->get());
     auto hive_metastore_client = HiveMetastoreClientFactory::instance().getOrCreate(hive_metastore_url);
     auto hive_table_metadata = hive_metastore_client->getTableMetadata(hive_database, hive_table);
 
@@ -841,8 +842,8 @@ StorageHive::totalRowsImpl(const Settings & settings, const SelectQueryInfo & qu
 
     auto hive_metastore_client = HiveMetastoreClientFactory::instance().getOrCreate(hive_metastore_url);
     auto hive_table_metadata = hive_metastore_client->getTableMetadata(hive_database, hive_table);
-    HDFSBuilderWrapper builder = createHDFSBuilder(hdfs_namenode_url, getContext()->getGlobalContext()->getConfigRef());
-    HDFSFSPtr fs = createHDFSFS(builder.get());
+    auto builder = HDFSBuilderWrapperFactory::instance().getOrCreate(hdfs_namenode_url, getContext()->getGlobalContext()->getConfigRef());
+    HDFSFSPtr fs = createHDFSFS(builder->get());
     HiveFiles hive_files = collectHiveFiles(settings.max_threads, query_info, hive_table_metadata, fs, context_, prune_level);
 
     UInt64 total_rows = 0;
