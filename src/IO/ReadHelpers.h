@@ -944,7 +944,7 @@ inline ReturnType readDateTimeTextImpl(DateTime64 & datetime64, UInt32 scale, Re
         {
             const auto scale_multiplier = DecimalUtils::scaleMultiplier<DateTime64::NativeType>(scale);
             ++components.whole;
-            if (components.whole < 0)
+            if (components.whole)
             {
                 /// whole keep the sign, fractional should be non-negative
                 components.fractional = scale_multiplier - components.fractional;

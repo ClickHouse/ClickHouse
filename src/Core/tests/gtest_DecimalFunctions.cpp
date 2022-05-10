@@ -176,7 +176,7 @@ INSTANTIATE_TEST_SUITE_P(Basic,
             }
         },
         {
-            "When scale is not 0 and whole part is 0.",
+            "For positive Decimal value, with scale not 0, and whole part is 0.",
             123,
             3,
             {
@@ -184,6 +184,16 @@ INSTANTIATE_TEST_SUITE_P(Basic,
                 123
             }
         },
+        {
+            "For negative Decimal value, with scale not 0, and whole part is 0.",
+            -123,
+            3,
+            {
+                0,
+                -123
+            }
+        },
+
         {
             "For negative Decimal value whole part is negative, fractional is non-negative.",
             -1234567'89,
