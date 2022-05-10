@@ -19,7 +19,7 @@ namespace DB
         assert(global_context == global_context->getGlobalContext());
         DistributedDDLDependenciesVisitor::Data data;
         data.default_database = global_context->getCurrentDatabase();
-        data.create_query = ast;
+        data.query = ast;
         data.global_context = global_context;
         DistributedDDLDependenciesVisitor visitor{data};
         visitor.visit(ast);
@@ -40,7 +40,7 @@ namespace DB
         else if (const auto * table_and_output_query = ast->as<ASTQueryWithTableAndOutput>())
             visit(*table_and_output_query, data);
         else if (const auto * table_identifier = ast->as<ASTTableIdentifier>())
-            visit(*table_and_output_query, data);
+            visit(*table_identifier, data);
         else if (const auto * system_query = ast->as<ASTSystemQuery>())
             visit(*system_query, data);
     }

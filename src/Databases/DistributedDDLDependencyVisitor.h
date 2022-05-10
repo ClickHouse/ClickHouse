@@ -12,6 +12,7 @@ class ASTStorage;
 class ASTRenameQuery;
 class ASTQueryWithTableAndOutput;
 class ASTTableIdentifier;
+class ASTSystemQuery;
 
 /// Contains also databases with no table name and dictionaries
 using TableNamesSet = std::unordered_set<QualifiedTableName>;

@@ -409,8 +409,6 @@ void DDLWorker::scheduleTasks(bool reinitialized)
     dependencies_graph.removeProcessedTasks(&dependencies_graph.tasks_dependencies.independent_queries);
 }
 
-
-
 DDLTaskBase & DDLWorker::saveTask(DDLTaskPtr && task)
 {
     current_tasks.remove_if([](const DDLTaskPtr & t) { return t->completely_processed.load(); });
