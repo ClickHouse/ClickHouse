@@ -260,10 +260,12 @@
     \
     M(QueryMemoryLimitExceeded, "Number of times when memory limit exceeded for query.") \
     \
-    M(RemoteFSReadMicroseconds, "Time of reading from remote filesystem.") \
-    M(RemoteFSReadBytes, "Read bytes from remote filesystem.") \
-    M(RemoteFSCacheReadBytes, "Read bytes from cache of remote filesystem.") \
-    M(RemoteFSCacheDownloadBytes, "Bytes downloaded to cache from remote filesystem.") \
+    M(CachedReadBufferReadFromSourceMicroseconds, "") \
+    M(CachedReadBufferReadFromCacheMicroseconds, "") \
+    M(CachedReadBufferReadFromSourceBytes, "") \
+    M(CachedReadBufferReadFromCacheBytes, "") \
+    M(CachedReadBufferCacheWriteBytes, "") \
+    M(CachedReadBufferCacheWriteMicroseconds, "") \
     \
     M(RemoteFSSeeks, "Total number of seeks for async buffer") \
     M(RemoteFSPrefetches, "Number of prefetches made with asynchronous reading from remote filesystem") \
@@ -275,11 +277,14 @@
     M(RemoteFSSeeksWithReset, "Number of seeks which lead to a new connection") \
     M(RemoteFSBuffers, "Number of buffers created for asynchronous reading from remote filesystem") \
     \
+    M(ThreadpoolReaderTaskMicroseconds, "") \
+    M(ThreadpoolReaderReadBytes, "") \
+    \
     M(FileSegmentWaitReadBufferMicroseconds, "") \
     M(FileSegmentReadMicroseconds, "") \
     M(FileSegmentCacheWriteMicroseconds, "") \
     M(FileSegmentPredownloadMicroseconds, "") \
-    M(FileSegmentResultBytes, "") \
+    M(FileSegmentUsedBytes, "") \
     \
     M(ReadBufferSeekCancelConnection, "Number of seeks which lead to new connection (s3, http)") \
     \

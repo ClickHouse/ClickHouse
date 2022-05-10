@@ -10,14 +10,18 @@
 
 namespace ProfileEvents
 {
-extern const Event RemoteFSReadBytes;
-extern const Event RemoteFSCacheReadBytes;
-extern const Event RemoteFSCacheDownloadBytes;
 extern const Event FileSegmentWaitReadBufferMicroseconds;
 extern const Event FileSegmentReadMicroseconds;
 extern const Event FileSegmentCacheWriteMicroseconds;
 extern const Event FileSegmentPredownloadMicroseconds;
-extern const Event FileSegmentResultBytes;
+extern const Event FileSegmentUsedBytes;
+
+extern const Event CachedReadBufferReadFromSourceMicroseconds;
+extern const Event CachedReadBufferReadFromCacheMicroseconds;
+extern const Event CachedReadBufferCacheWriteMicroseconds;
+extern const Event CachedReadBufferReadFromSourceBytes;
+extern const Event CachedReadBufferReadFromCacheBytes;
+extern const Event CachedReadBufferCacheWriteBytes;
 }
 
 namespace DB
@@ -532,7 +536,9 @@ void CachedReadBufferFromRemoteFS::predownload(FileSegmentPtr & file_segment)
                 has_more_data = !implementation_buffer->eof();
 
                 watch.stop();
-                current_file_segment_counters.increment(ProfileEvents::FileSegmentReadMicroseconds, watch.elapsedMicroseconds());
+                auto elapsed = watch.elapsedMicroseconds();
+                current_file_segment_counters.increment(ProfileEvents::FileSegmentReadMicroseconds, elapsed);
+                ProfileEvents::increment(ProfileEvents::CachedReadBufferReadFromSourceMicroseconds, elapsed);
             }
 
             if (!bytes_to_predownload || !has_more_data)
@@ -574,7 +580,7 @@ void CachedReadBufferFromRemoteFS::predownload(FileSegmentPtr & file_segment)
             size_t current_impl_buffer_size = implementation_buffer->buffer().size();
             size_t current_predownload_size = std::min(current_impl_buffer_size, bytes_to_predownload);
 
-            ProfileEvents::increment(ProfileEvents::RemoteFSReadBytes, current_impl_buffer_size);
+            ProfileEvents::increment(ProfileEvents::CachedReadBufferReadFromSourceBytes, current_impl_buffer_size);
 
             if (file_segment->reserve(current_predownload_size))
             {
@@ -587,9 +593,10 @@ void CachedReadBufferFromRemoteFS::predownload(FileSegmentPtr & file_segment)
                 file_segment->write(implementation_buffer->buffer().begin(), current_predownload_size, current_offset);
 
                 watch.stop();
-                current_file_segment_counters.increment(ProfileEvents::FileSegmentCacheWriteMicroseconds, watch.elapsedMicroseconds());
-
-                ProfileEvents::increment(ProfileEvents::RemoteFSCacheDownloadBytes, current_predownload_size);
+                auto elapsed = watch.elapsedMicroseconds();
+                current_file_segment_counters.increment(ProfileEvents::FileSegmentCacheWriteMicroseconds, elapsed);
+                ProfileEvents::increment(ProfileEvents::CachedReadBufferCacheWriteMicroseconds, elapsed);
+                ProfileEvents::increment(ProfileEvents::CachedReadBufferCacheWriteBytes, current_predownload_size);
 
                 current_offset += current_predownload_size;
 
@@ -826,14 +833,21 @@ bool CachedReadBufferFromRemoteFS::nextImplStep()
         result = implementation_buffer->next();
 
         watch.stop();
-        current_file_segment_counters.increment(ProfileEvents::FileSegmentReadMicroseconds, watch.elapsedMicroseconds());
+        auto elapsed = watch.elapsedMicroseconds();
+        current_file_segment_counters.increment(ProfileEvents::FileSegmentReadMicroseconds, elapsed);
 
         size = implementation_buffer->buffer().size();
 
         if (read_type == ReadType::CACHED)
-            ProfileEvents::increment(ProfileEvents::RemoteFSCacheReadBytes, size);
+        {
+            ProfileEvents::increment(ProfileEvents::CachedReadBufferReadFromCacheBytes, size);
+            ProfileEvents::increment(ProfileEvents::CachedReadBufferReadFromCacheMicroseconds, elapsed);
+        }
         else
-            ProfileEvents::increment(ProfileEvents::RemoteFSReadBytes, size);
+        {
+            ProfileEvents::increment(ProfileEvents::CachedReadBufferReadFromSourceBytes, size);
+            ProfileEvents::increment(ProfileEvents::CachedReadBufferReadFromSourceMicroseconds, elapsed);
+        }
     }
 
     if (result)
@@ -854,9 +868,10 @@ bool CachedReadBufferFromRemoteFS::nextImplStep()
                     file_offset_of_buffer_end);
 
                 watch.stop();
-                current_file_segment_counters.increment(ProfileEvents::FileSegmentCacheWriteMicroseconds, watch.elapsedMicroseconds());
-
-                ProfileEvents::increment(ProfileEvents::RemoteFSCacheDownloadBytes, size);
+                auto elapsed = watch.elapsedMicroseconds();
+                current_file_segment_counters.increment(ProfileEvents::FileSegmentCacheWriteMicroseconds, elapsed);
+                ProfileEvents::increment(ProfileEvents::CachedReadBufferCacheWriteMicroseconds, elapsed);
+                ProfileEvents::increment(ProfileEvents::CachedReadBufferCacheWriteBytes, size);
 
                 assert(file_segment->getDownloadOffset() <= file_segment->range().right + 1);
                 assert(
@@ -889,7 +904,7 @@ bool CachedReadBufferFromRemoteFS::nextImplStep()
 
     swap(*implementation_buffer);
 
-    current_file_segment_counters.increment(ProfileEvents::FileSegmentResultBytes, available());
+    current_file_segment_counters.increment(ProfileEvents::FileSegmentUsedBytes, available());
 
     if (download_current_segment)
         file_segment->completeBatchAndResetDownloader();
