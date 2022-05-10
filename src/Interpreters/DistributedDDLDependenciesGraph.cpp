@@ -29,8 +29,8 @@ TasksDependencies& DependenciesGraph::getTasksDependencies() const {
 void DependenciesGraph::addTask(DDLTaskPtr & task)
 {
     auto name = task->entry_name;
-    name_to_ddl_task[name] = task;
-    database_objects_for_added_task = getDependenciesSetFromQuery(global_context, task->query);
+    tasks_dependencies.name_to_ddl_task[name] = task;
+    auto database_objects_for_added_task = getDependenciesSetFromQuery(global_context, task->query);
     tasks_dependencies.database_objects_in_query[name] = database_objects_for_added_task;
     for (auto & [query_name, query_objects] : tasks_dependencies.database_objects_in_query)
     {
@@ -57,7 +57,7 @@ void DependenciesGraph::addTask(DDLTaskPtr & task)
 
     if (tasks_dependencies.dependencies_info[name].dependencies.empty())
     {
-        tasks_dependencies.independent_queries.insert(tasks_dependencies.name_to_ddl_task[name]);
+        tasks_dependencies.independent_queries.emplace(tasks_dependencies.name_to_ddl_task[name]);
     }
 }
 
@@ -89,7 +89,7 @@ void DependenciesGraph::removeProcessedTasks()
         }
         else
         {
-            new_independent_queries.insert(task);
+            new_independent_queries.emplace(task);
         }
     }
 
@@ -98,7 +98,7 @@ void DependenciesGraph::removeProcessedTasks()
 
 void DependenciesGraph::removeTask(String query_name)
 {
-    const DependenciesInfo & info = tasks_dependencies.dependencies_info[query_name];
+    const QueriesDependenciesInfo & info = tasks_dependencies.dependencies_info[query_name];
     if (!info.dependencies.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Query {} is in list of independent queries, but dependencies count is {}."
                                                    "It's a bug", query_name, info.dependencies.size());
