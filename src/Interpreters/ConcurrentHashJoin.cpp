@@ -34,7 +34,7 @@ ConcurrentHashJoin::ConcurrentHashJoin(ContextPtr context_, std::shared_ptr<Tabl
     , table_join(table_join_)
     , slots(slots_)
 {
-    if (slots < 1 || 256 < slots)
+    if (slots < 1 || 255 < slots)
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Number of slots should be [1, 255], got {}", slots);
     }
