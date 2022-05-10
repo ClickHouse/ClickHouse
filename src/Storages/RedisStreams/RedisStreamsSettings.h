@@ -17,10 +17,12 @@ class ASTStorage;
     M(UInt64, redis_num_consumers, 1, "The number of consumers per table for Redis engine.", 0) \
     M(Bool, redis_manage_consumer_groups, false, "Create consumer groups on engine startup and delete them at the end.", 0) \
     M(String, redis_consumer_groups_start_id, "$", "The id from which the consumer groups are reading.", 0) \
-    M(Bool, redis_commit_every_batch, false, "Commit every consumed and handled batch instead of a single commit after writing a whole block", 0) \
+    M(Bool, redis_ack_every_batch, false, "Ack every consumed and handled batch instead of a single commit after writing a whole block", 0) \
+    M(Bool, redis_ack_on_select, true, "Ack messages after select query", 0) \
     M(Milliseconds, redis_poll_timeout_ms, 0, "Timeout for single poll from Redis.", 0) \
     M(UInt64, redis_poll_max_batch_size, 0, "Maximum amount of messages to be polled in a single Redis poll.", 0) \
     M(UInt64, redis_claim_max_batch_size, 0, "Maximum amount of messages to be claimed in a single Redis poll.", 0) \
+    M(Milliseconds, redis_min_time_for_claim, 10000, "Minimum time in milliseconds after which consumers will start to claim messages.", 0) \
     M(UInt64, redis_max_block_size, 0, "Number of row collected by poll(s) for flushing data from Redis.", 0) \
     M(Milliseconds, redis_flush_interval_ms, 0, "Timeout for flushing data from Redis.", 0) \
     M(Bool, redis_thread_per_consumer, false, "Provide independent thread for each consumer.", 0) \

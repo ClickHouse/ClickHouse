@@ -18,6 +18,7 @@ ReadBufferFromRedisStreams::ReadBufferFromRedisStreams(
     size_t max_batch_size,
     size_t max_claim_size,
     size_t poll_timeout_,
+    size_t min_time_for_claim,
     bool intermediate_ack_,
     const Names & _streams)
     : ReadBuffer(nullptr, 0)
@@ -28,6 +29,7 @@ ReadBufferFromRedisStreams::ReadBufferFromRedisStreams(
     , batch_size(max_batch_size)
     , claim_batch_size(max_claim_size)
     , poll_timeout(poll_timeout_)
+    , min_pending_time_for_claim(min_time_for_claim)
     , intermediate_ack(intermediate_ack_)
     , current(messages.begin())
 {

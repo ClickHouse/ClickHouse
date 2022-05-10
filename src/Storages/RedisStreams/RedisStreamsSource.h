@@ -20,7 +20,8 @@ public:
         const ContextPtr & context_,
         const Names & columns,
         Poco::Logger * log_,
-        size_t max_block_size_);
+        size_t max_block_size_,
+        bool ack_on_select_);
     ~RedisStreamsSource() override;
 
     String getName() const override { return storage.getName(); }
@@ -37,6 +38,9 @@ private:
     Names column_names;
     Poco::Logger * log;
     UInt64 max_block_size;
+
+    /// Determines if we should acknowledge messages during select
+    const bool ack_on_select;
 
     ConsumerBufferPtr buffer;
     bool read_nothing = true;

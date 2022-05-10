@@ -72,7 +72,8 @@ StorageRedisStreams::StorageRedisStreams(
     , num_consumers(redis_settings->redis_num_consumers.value)
     , log(&Poco::Logger::get("StorageRedisStreams (" + table_id_.table_name + ")"))
     , semaphore(0, num_consumers)
-    , intermediate_commit(redis_settings->redis_commit_every_batch.value)
+    , intermediate_ack(redis_settings->redis_ack_every_batch.value)
+    , ack_on_select(redis_settings->redis_ack_on_select.value)
     , settings_adjustments(createSettingsAdjustments())
     , thread_per_consumer(redis_settings->redis_thread_per_consumer.value)
     , collection_name(collection_name_)
@@ -203,7 +204,7 @@ Pipe StorageRedisStreams::read(
     // Claim as many consumers as requested, but don't block
     for (size_t i = 0; i < num_created_consumers; ++i)
     {
-        const auto source = std::make_shared<RedisStreamsSource>(*this, storage_snapshot, modified_context, column_names, log, 1);
+        const auto source = std::make_shared<RedisStreamsSource>(*this, storage_snapshot, modified_context, column_names, log, 1, ack_on_select);
         pipes.emplace_back(source);
         sources.emplace_back(source);
     }
@@ -312,7 +313,8 @@ ProducerBufferPtr StorageRedisStreams::createWriteBuffer()
 ConsumerBufferPtr StorageRedisStreams::createReadBuffer(const std::string & id)
 {
     return std::make_shared<ReadBufferFromRedisStreams>(
-        redis, group, id, log, getPollMaxBatchSize(), getClaimMaxBatchSize(), getPollTimeoutMillisecond(), intermediate_commit, streams);
+        redis, group, id, log, getPollMaxBatchSize(), getClaimMaxBatchSize(),
+        getPollTimeoutMillisecond(), redis_settings->redis_min_time_for_claim.totalMilliseconds(), intermediate_ack, streams);
 }
 
 size_t StorageRedisStreams::getMaxBlockSize() const
@@ -468,7 +470,7 @@ bool StorageRedisStreams::streamToViews()
     for (size_t i = 0; i < stream_count; ++i)
     {
         auto source = std::make_shared<RedisStreamsSource>(
-            *this, storage_snapshot, redis_context, block_io.pipeline.getHeader().getNames(), log, block_size);
+            *this, storage_snapshot, redis_context, block_io.pipeline.getHeader().getNames(), log, block_size, ack_on_select);
         sources.emplace_back(source);
         pipes.emplace_back(source);
 
@@ -570,11 +572,16 @@ void registerStorageRedisStreams(StorageFactory & factory)
           * - Redis broker list
           * - List of streams
           * - Group ID
-          * - Consumer Id (string)
+          * - Common part of consumer Id (string)
           * - Number of consumers
-          * - Do intermediate commits when the batch consumed and handled
+          * - Create consumer groups on engine startup and delete them at the end. (bool)
+          * - The id of message in stream from which the consumer groups start to read
+          * - Do intermediate acks when the batch consumed and handled
+          * - Ack messages after select query
           * - Timeout for single poll from Redis
           * - Maximum amount of messages to be polled in a single Redis poll
+          * - Maximum amount of messages to be claimed from other consumers in a single Redis poll
+          * - Minimum time in milliseconds after which consumers will start to claim messages
           * - Max block size for background consumption
           * - Timeout for flushing data from Redis
           * - Provide independent thread for each consumer
@@ -592,9 +599,20 @@ void registerStorageRedisStreams(StorageFactory & factory)
             CHECK_REDIS_STORAGE_ARGUMENT(1, redis_broker, 0)
             CHECK_REDIS_STORAGE_ARGUMENT(2, redis_stream_list, 1)
             CHECK_REDIS_STORAGE_ARGUMENT(3, redis_group_name, 2)
+            CHECK_REDIS_STORAGE_ARGUMENT(4, redis_common_consumer_id, 2)
             CHECK_REDIS_STORAGE_ARGUMENT(5, redis_num_consumers, 0)
-            CHECK_REDIS_STORAGE_ARGUMENT(9, redis_max_block_size, 0)
-            CHECK_REDIS_STORAGE_ARGUMENT(10, redis_commit_every_batch, 0)
+            CHECK_REDIS_STORAGE_ARGUMENT(6, redis_manage_consumer_groups, 0)
+            CHECK_REDIS_STORAGE_ARGUMENT(7, redis_consumer_groups_start_id, 2)
+            CHECK_REDIS_STORAGE_ARGUMENT(8, redis_ack_every_batch, 0)
+            CHECK_REDIS_STORAGE_ARGUMENT(9, redis_ack_on_select, 0)
+            CHECK_REDIS_STORAGE_ARGUMENT(10, redis_poll_timeout_ms, 0)
+            CHECK_REDIS_STORAGE_ARGUMENT(11, redis_poll_max_batch_size, 0)
+            CHECK_REDIS_STORAGE_ARGUMENT(12, redis_claim_max_batch_size, 0)
+            CHECK_REDIS_STORAGE_ARGUMENT(13, redis_min_time_for_claim, 0)
+            CHECK_REDIS_STORAGE_ARGUMENT(14, redis_max_block_size, 0)
+            CHECK_REDIS_STORAGE_ARGUMENT(15, redis_flush_interval_ms, 0)
+            CHECK_REDIS_STORAGE_ARGUMENT(16, redis_thread_per_consumer, 0)
+            CHECK_REDIS_STORAGE_ARGUMENT(17, redis_password, 2)
         }
 
         #undef CHECK_REDIS_STORAGE_ARGUMENT

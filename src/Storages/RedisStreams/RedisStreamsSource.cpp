@@ -23,7 +23,8 @@ RedisStreamsSource::RedisStreamsSource(
     const ContextPtr & context_,
     const Names & columns,
     Poco::Logger * log_,
-    size_t max_block_size_)
+    size_t max_block_size_,
+    bool ack_on_select_)
     : SourceWithProgress(storage_snapshot_->getSampleBlockForColumns(columns))
     , storage(storage_)
     , storage_snapshot(storage_snapshot_)
@@ -31,6 +32,7 @@ RedisStreamsSource::RedisStreamsSource(
     , column_names(columns)
     , log(log_)
     , max_block_size(max_block_size_)
+    , ack_on_select(ack_on_select_)
     , non_virtual_header(storage_snapshot->metadata->getSampleBlockNonMaterialized())
     , virtual_header(storage_snapshot->getSampleBlockForColumns(storage.getVirtualColumnNames()))
 {
@@ -143,6 +145,8 @@ Chunk RedisStreamsSource::generateImpl()
 Chunk RedisStreamsSource::generate()
 {
     auto chunk = generateImpl();
+    if (ack_on_select)
+        ack();
 
     return chunk;
 }

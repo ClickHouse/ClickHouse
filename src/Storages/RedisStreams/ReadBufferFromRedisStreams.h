@@ -29,6 +29,7 @@ public:
         size_t max_batch_size,
         size_t max_claim_size,
         size_t poll_timeout_,
+        size_t min_time_for_claim,
         bool intermediate_ack_,
         const Names & _streams
     );
@@ -85,7 +86,7 @@ private:
     std::string consumer_name;
     Poco::Logger * log;
     const size_t batch_size = 1;
-    const size_t claim_batch_size = 100;
+    const size_t claim_batch_size;
     const size_t poll_timeout = 0;
     const size_t min_pending_time_for_claim = 10000;
 

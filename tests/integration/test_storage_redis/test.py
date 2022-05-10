@@ -500,8 +500,12 @@ def test_redis_mv_combo(redis_cluster):
             )
     instance.query(query)
 
+    time.sleep(2)
+    for mv_id in range(NUM_MV):
+        instance.query("SELECT count() FROM test.combo_{0}".format(mv_id))
+
     i = [0]
-    messages_num = 1000
+    messages_num = 10000
 
     def produce(stream_name):
         messages = []
@@ -523,17 +527,14 @@ def test_redis_mv_combo(redis_cluster):
         time.sleep(random.uniform(0, 1))
         thread.start()
 
-    last_result = -1
-    result = 0
     for _ in range(20):
-        last_result = result
         result = 0
         for mv_id in range(NUM_MV):
             num = int(
                 instance.query("SELECT count() FROM test.combo_{0}".format(mv_id))
             )
+            logging.warning(str(num) + '\n')
             result += num
-            logging.debug(num)
         if int(result) == messages_num * threads_num * NUM_MV:
             break
         time.sleep(1)
@@ -1498,6 +1499,45 @@ def test_redis_predefined_configuration(redis_cluster):
     )
 
     connection.xadd('named', {"key": 1, "value": 2})
+    while True:
+        result = instance.query(
+            "SELECT * FROM test.redis ORDER BY key", ignore_error=True
+        )
+        if result == "1\t2\n":
+            break
+
+
+def test_redis_not_ack_on_select(redis_cluster):
+    stream_name = 'not_ack_on_select'
+    group_name = 'test_not_ack_on_select'
+    connection = redis.Redis(redis_cluster.redis_ip, port=redis_cluster.redis_port, password="clickhouse")
+    connection.xgroup_create(stream_name, group_name, '$', mkstream=True)
+
+    instance.query(
+        """
+        CREATE TABLE test.redis (key UInt64, value UInt64)
+            ENGINE = RedisStreams
+            SETTINGS redis_broker = '{}:6379',
+                     redis_stream_list = '{}',
+                     redis_group_name = '{}',
+                     redis_ack_on_select = false;
+        """.format(
+                redis_cluster.redis_host,
+                stream_name,
+                group_name
+            )
+    )
+
+    connection.xadd(stream_name, {"key": 1, "value": 2})
+    while True:
+        result = instance.query(
+            "SELECT * FROM test.redis ORDER BY key", ignore_error=True
+        )
+        if result == "1\t2\n":
+            break
+
+    time.sleep(5)
+
     while True:
         result = instance.query(
             "SELECT * FROM test.redis ORDER BY key", ignore_error=True

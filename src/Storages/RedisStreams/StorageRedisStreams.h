@@ -74,7 +74,8 @@ private:
     const size_t num_consumers; /// total number of consumers
     Poco::Logger * log;
     Poco::Semaphore semaphore;
-    const bool intermediate_commit;
+    const bool intermediate_ack;
+    const bool ack_on_select;
     const SettingsChanges settings_adjustments;
 
     std::atomic<bool> mv_attached = false;
