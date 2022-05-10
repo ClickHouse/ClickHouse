@@ -38,7 +38,7 @@ public:
     void commit_config(const uint64_t log_idx, nuraft::ptr<nuraft::cluster_config> & new_conf) override; /// NOLINT
 
     /// Currently not supported
-    void rollback(const uint64_t /*log_idx*/, nuraft::buffer & /*data*/) override {}
+    void rollback(uint64_t log_idx, nuraft::buffer & data) override;
 
     uint64_t last_commit_index() override { return last_committed_idx; }
 

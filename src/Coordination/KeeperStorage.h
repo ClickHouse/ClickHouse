@@ -280,6 +280,7 @@ public:
         bool is_local = false);
     void preprocessRequest(
         const Coordination::ZooKeeperRequestPtr & request, int64_t session_id, int64_t time, int64_t new_last_zxid, bool check_acl = true);
+    void rollbackRequest(int64_t rollback_zxid);
 
     void finalize();
 

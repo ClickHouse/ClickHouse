@@ -1690,6 +1690,13 @@ KeeperStorage::ResponsesForSessions KeeperStorage::processRequest(
     return results;
 }
 
+void KeeperStorage::rollbackRequest(int64_t rollback_zxid)
+{
+    // we can only rollback the last zxid (if there is any)
+    // if there is a delta with a larger zxid, we have invalid state
+    assert(current_nodes.deltas.empty() || current_nodes.deltas.back().zxid <= rollback_zxid);
+    std::erase_if(current_nodes.deltas, [rollback_zxid](const auto & delta) { return delta.zxid == rollback_zxid; });
+}
 
 void KeeperStorage::clearDeadWatches(int64_t session_id)
 {

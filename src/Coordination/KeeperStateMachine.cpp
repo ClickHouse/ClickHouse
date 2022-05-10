@@ -196,6 +196,12 @@ void KeeperStateMachine::commit_config(const uint64_t /* log_idx */, nuraft::ptr
     cluster_config = ClusterConfig::deserialize(*tmp);
 }
 
+void KeeperStateMachine::rollback(uint64_t log_idx, nuraft::buffer & /*data*/)
+{
+    std::lock_guard lock(storage_and_responses_lock);
+    storage->rollbackRequest(log_idx);
+}
+
 nuraft::ptr<nuraft::snapshot> KeeperStateMachine::last_snapshot()
 {
     /// Just return the latest snapshot.
