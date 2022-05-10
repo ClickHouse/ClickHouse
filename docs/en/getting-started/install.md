@@ -132,17 +132,17 @@ curl -O "https://packages.clickhouse.com/tgz/stable/clickhouse-common-static-dbg
 curl -O "https://packages.clickhouse.com/tgz/stable/clickhouse-server-$LATEST_VERSION-amd64.tgz"
 curl -O "https://packages.clickhouse.com/tgz/stable/clickhouse-client-$LATEST_VERSION-amd64.tgz"
 
-tar -xzvf "clickhouse-common-static-$LATEST_VERSION.tgz"
+tar -xzvf "clickhouse-common-static-$LATEST_VERSION-amd64.tgz"
 sudo "clickhouse-common-static-$LATEST_VERSION/install/doinst.sh"
 
-tar -xzvf "clickhouse-common-static-dbg-$LATEST_VERSION.tgz"
+tar -xzvf "clickhouse-common-static-dbg-$LATEST_VERSION-amd64.tgz"
 sudo "clickhouse-common-static-dbg-$LATEST_VERSION/install/doinst.sh"
 
-tar -xzvf "clickhouse-server-$LATEST_VERSION.tgz"
+tar -xzvf "clickhouse-server-$LATEST_VERSION-amd64.tgz"
 sudo "clickhouse-server-$LATEST_VERSION/install/doinst.sh"
 sudo /etc/init.d/clickhouse-server start
 
-tar -xzvf "clickhouse-client-$LATEST_VERSION.tgz"
+tar -xzvf "clickhouse-client-$LATEST_VERSION-amd64.tgz"
 sudo "clickhouse-client-$LATEST_VERSION/install/doinst.sh"
 ```
 
