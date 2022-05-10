@@ -122,14 +122,14 @@ void DependenciesGraph::removeTask(String query_name)
 void DependenciesGraph::logDependencyGraph() const
 {
     LOG_TEST(log, "Have {} independent queries.",
-             tasks_dependencies.independent_queries.size(), ", "))
+             tasks_dependencies.independent_queries.size(), ", "));
     for (const auto & dependencies : tasks_dependencies.dependencies_info)
     {
         LOG_TEST(log,
                  "Query {} have {} dependencies and {} dependent queries.",
                  dependencies.first,
                  dependencies.second.dependencies.size(),
-                 dependencies.second.dependent_queries.size(), ", "))
+                 dependencies.second.dependent_queries.size(), ", "));
     }
 }
 
