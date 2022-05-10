@@ -31,9 +31,6 @@
 #include <Storages/MergeTree/MergeTreeReverseSelectProcessor.h>
 #include <Storages/MergeTree/MergeTreeThreadSelectProcessor.h>
 #include <Storages/VirtualColumnUtils.h>
-#include <IO/Operators.h>
-#include <Interpreters/ExpressionAnalyzer.h>
-#include <Interpreters/TreeRewriter.h>
 #include <Common/logger_useful.h>
 #include <base/sort.h>
 #include <Poco/Logger.h>
