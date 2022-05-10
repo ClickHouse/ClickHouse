@@ -426,6 +426,25 @@ LRUFileCache::FileSegmentCell * LRUFileCache::addCell(
     return &(it->second);
 }
 
+FileSegmentsHolder LRUFileCache::setDownloading(const Key & key, size_t offset, size_t size)
+{
+    std::lock_guard cache_lock(mutex);
+
+#ifndef NDEBUG
+    assertCacheCorrectness(key, cache_lock);
+#endif
+
+    auto * cell = getCell(key, offset, cache_lock);
+    if (cell)
+        throw Exception(
+            ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR,
+            "Cache cell already exists for key `{}` and offset {}",
+            keyToStr(key), offset);
+
+    auto file_segments = splitRangeIntoCells(key, offset, size, FileSegment::State::DOWNLOADING, cache_lock);
+    return FileSegmentsHolder(std::move(file_segments));
+}
+
 bool LRUFileCache::tryReserve(
     const Key & key, size_t offset, size_t size, std::lock_guard<std::mutex> & cache_lock)
 {
@@ -590,7 +609,7 @@ void LRUFileCache::remove(const Key & key)
 #endif
 }
 
-void LRUFileCache::remove(bool force_remove_unreleasable)
+void LRUFileCache::remove()
 {
     /// Try remove all cached files by cache_base_path.
     /// Only releasable file segments are evicted.
@@ -607,15 +626,13 @@ void LRUFileCache::remove(bool force_remove_unreleasable)
                 ErrorCodes::LOGICAL_ERROR,
                 "Cache is in inconsistent state: LRU queue contains entries with no cache cell");
 
-        if (cell->releasable() || force_remove_unreleasable)
+        if (cell->releasable())
         {
             auto file_segment = cell->file_segment;
             if (file_segment)
             {
-                std::lock_guard detach_lock(file_segment->detach_mutex);
                 std::lock_guard segment_lock(file_segment->mutex);
-
-                file_segment->detach(force_remove_unreleasable, cache_lock, detach_lock, segment_lock);
+                file_segment->detach(cache_lock, segment_lock);
                 remove(file_segment->key(), file_segment->offset(), cache_lock, segment_lock);
             }
         }
@@ -811,23 +828,6 @@ std::vector<String> LRUFileCache::tryGetCachePaths(const Key & key)
     }
 
     return cache_paths;
-}
-
-FileSegmentPtr LRUFileCache::setDownloading(const Key & key, size_t offset, size_t size, std::lock_guard<std::mutex> & cache_lock)
-{
-    auto * cell = getCell(key, offset, cache_lock);
-    if (cell)
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "Cache cell already exists for key `{}` and offset {}",
-            keyToStr(key), offset);
-
-    cell = addCell(key, offset, size, FileSegment::State::DOWNLOADING, cache_lock);
-
-    if (!cell)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to add a new cell for download");
-
-    return cell->file_segment;
 }
 
 size_t LRUFileCache::getUsedCacheSize() const

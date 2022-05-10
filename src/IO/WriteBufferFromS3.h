@@ -119,10 +119,9 @@ private:
     Poco::Logger * log = &Poco::Logger::get("WriteBufferFromS3");
 
     FileCachePtr cache;
-    FileSegmentRangeWriter cache_writer;
-    void clearCache();
-
-    size_t current_cache_write_offset = 0;
+    size_t current_download_offset = 0;
+    std::optional<FileSegmentsHolder> file_segments_holder;
+    static void finalizeCacheIfNeeded(std::optional<FileSegmentsHolder> &);
 };
 
 }
