@@ -22,14 +22,10 @@ DependenciesGraph::DependenciesGraph(ContextMutablePtr global_context_)
     log = &Poco::Logger::get("DistributedDDLDependenciesGraph");
 }
 
-TasksDependencies& DependenciesGraph::getTasksDependencies() const {
-    return this->tasks_dependencies;
-}
-
 void DependenciesGraph::addTask(DDLTaskPtr & task)
 {
     auto name = task->entry_name;
-    tasks_dependencies.name_to_ddl_task[name] = task;
+    tasks_dependencies.name_to_ddl_task.insert({name, task});
     auto database_objects_for_added_task = getDependenciesSetFromQuery(global_context, task->query);
     tasks_dependencies.database_objects_in_query[name] = database_objects_for_added_task;
     for (auto & [query_name, query_objects] : tasks_dependencies.database_objects_in_query)
@@ -57,7 +53,7 @@ void DependenciesGraph::addTask(DDLTaskPtr & task)
 
     if (tasks_dependencies.dependencies_info[name].dependencies.empty())
     {
-        tasks_dependencies.independent_queries.emplace(tasks_dependencies.name_to_ddl_task[name]);
+        tasks_dependencies.independent_queries.emplace_back(std::move(tasks_dependencies.name_to_ddl_task[name]));
     }
 }
 
@@ -89,7 +85,7 @@ void DependenciesGraph::removeProcessedTasks()
         }
         else
         {
-            new_independent_queries.emplace(task);
+            new_independent_queries.emplace_back(std::move(task));
         }
     }
 

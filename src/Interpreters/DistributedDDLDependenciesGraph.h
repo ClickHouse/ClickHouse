@@ -69,6 +69,8 @@ class DependenciesGraph
 {
 public:
 
+    TasksDependencies tasks_dependencies;
+
     DependenciesGraph(ContextMutablePtr global_context_);
     DependenciesGraph() = delete;
 
@@ -78,15 +80,11 @@ public:
 
     void removeProcessedTasks();
 
-    TasksDependencies& getTasksDependencies() const;
-
     Queries getTasksToParallelProcess();
-
 
 private:
     ContextMutablePtr global_context;
 
-    TasksDependencies tasks_dependencies;
     Poco::Logger * log;
     size_t tasks_processed{0};
     AtomicStopwatch stopwatch;
