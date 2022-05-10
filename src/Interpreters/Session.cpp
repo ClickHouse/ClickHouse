@@ -439,12 +439,14 @@ ContextMutablePtr Session::makeQueryContextImpl(const ClientInfo * client_info_t
     ContextMutablePtr query_context = Context::createCopy(from_session_context ? session_context : global_context);
     query_context->makeQueryContext();
 
-    auto query_context_user = query_context->getUser();
-    LOG_DEBUG(log, "{} Creating query context from {} context, user_id: {}, parent context user: {}",
-              toString(auth_id),
-              from_session_context ? "session" : "global",
-              user_id ? toString(*user_id) : "<EMPTY>",
-              query_context_user ? query_context_user->getName() : "<NOT SET>");
+    if (auto query_context_user = query_context->getUser())
+    {
+        LOG_DEBUG(log, "{} Creating query context from {} context, user_id: {}, parent context user: {}",
+                  toString(auth_id),
+                  from_session_context ? "session" : "global",
+                  user_id ? toString(*user_id) : "<EMPTY>",
+                  query_context_user->getName());
+    }
 
     /// Copy the specified client info to the new query context.
     auto & res_client_info = query_context->getClientInfo();
