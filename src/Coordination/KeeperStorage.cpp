@@ -702,7 +702,7 @@ struct KeeperStorageGetRequestProcessor final : public KeeperStorageRequestProce
         Coordination::ZooKeeperGetResponse & response = dynamic_cast<Coordination::ZooKeeperGetResponse &>(*response_ptr);
         Coordination::ZooKeeperGetRequest & request = dynamic_cast<Coordination::ZooKeeperGetRequest &>(*zk_request);
 
-        if constexpr (local)
+        if constexpr (!local)
         {
             if (const auto result = storage.commit(zxid, session_id); result != Coordination::Error::ZOK)
             {
@@ -851,7 +851,7 @@ struct KeeperStorageExistsRequestProcessor final : public KeeperStorageRequestPr
         Coordination::ZooKeeperExistsResponse & response = dynamic_cast<Coordination::ZooKeeperExistsResponse &>(*response_ptr);
         Coordination::ZooKeeperExistsRequest & request = dynamic_cast<Coordination::ZooKeeperExistsRequest &>(*zk_request);
 
-        if constexpr (local)
+        if constexpr (!local)
         {
             if (const auto result = storage.commit(zxid, session_id); result != Coordination::Error::ZOK)
             {
@@ -1005,7 +1005,7 @@ struct KeeperStorageListRequestProcessor final : public KeeperStorageRequestProc
         Coordination::ZooKeeperListResponse & response = dynamic_cast<Coordination::ZooKeeperListResponse &>(*response_ptr);
         Coordination::ZooKeeperListRequest & request = dynamic_cast<Coordination::ZooKeeperListRequest &>(*zk_request);
 
-        if constexpr (local)
+        if constexpr (!local)
         {
             if (const auto result = storage.commit(zxid, session_id); result != Coordination::Error::ZOK)
             {
@@ -1093,7 +1093,7 @@ struct KeeperStorageCheckRequestProcessor final : public KeeperStorageRequestPro
         Coordination::ZooKeeperCheckResponse & response = dynamic_cast<Coordination::ZooKeeperCheckResponse &>(*response_ptr);
         Coordination::ZooKeeperCheckRequest & request = dynamic_cast<Coordination::ZooKeeperCheckRequest &>(*zk_request);
 
-        if constexpr (local)
+        if constexpr (!local)
         {
             if (const auto result = storage.commit(zxid, session_id); result != Coordination::Error::ZOK)
             {
@@ -1233,7 +1233,7 @@ struct KeeperStorageGetACLRequestProcessor final : public KeeperStorageRequestPr
         Coordination::ZooKeeperGetACLResponse & response = dynamic_cast<Coordination::ZooKeeperGetACLResponse &>(*response_ptr);
         Coordination::ZooKeeperGetACLRequest & request = dynamic_cast<Coordination::ZooKeeperGetACLRequest &>(*zk_request);
 
-        if constexpr (local)
+        if constexpr (!local)
         {
             if (const auto result = storage.commit(zxid, session_id); result != Coordination::Error::ZOK)
             {
