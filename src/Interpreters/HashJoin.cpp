@@ -4,6 +4,7 @@
 #include <vector>
 
 #include <Common/logger_useful.h>
+
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnVector.h>
@@ -763,9 +764,6 @@ void HashJoin::setTotals(const Block & block)
 
 bool HashJoin::tryMergeBlocks(Block & source_block, bool check_limits)
 {
-    if (table_join->isParallelHash())
-        return false;
-
     if (data->exceed_memory)
         return false;
 
@@ -811,7 +809,7 @@ bool HashJoin::addJoinedBlock(const Block & source_block, bool check_limits)
     Block block = materializeBlock(source_block);
     size_t rows = block.rows();
 
-    if (!finish_filling_right_side && tryMergeBlocks(block, check_limits))
+    if (!table_join->isParallelHash() && !finish_filling_right_side && tryMergeBlocks(block, check_limits))
         return true;
 
     ColumnRawPtrMap all_key_columns = JoinCommon::materializeColumnsInplaceMap(block, table_join->getAllNames(JoinTableSide::Right));

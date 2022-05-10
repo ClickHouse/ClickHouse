@@ -1,5 +1,5 @@
 SET join_algorithm='parallel_hash';
-SET max_merged_block_size=1024000;
+SET max_merged_block_bytes_in_join=10240000;
 
 SELECT
     EventDate,

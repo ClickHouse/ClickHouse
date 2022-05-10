@@ -1,4 +1,4 @@
-SET max_merged_block_size=102400;
+SET max_merged_block_bytes_in_join=1024000;
 DROP TABLE IF EXISTS join_opt_t1;
 DROP TABLE IF EXISTS join_opt_t2;
 DROP TABLE IF EXISTS join_opt_t3;

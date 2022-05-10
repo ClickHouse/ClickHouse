@@ -345,7 +345,7 @@ static constexpr UInt64 operator""_GiB(unsigned long long value)
     \
     M(UInt64, max_rows_in_join, 0, "Maximum size of the hash table for JOIN (in number of rows).", 0) \
     M(UInt64, max_bytes_in_join, 0, "Maximum size of the hash table for JOIN (in number of bytes in memory).", 0) \
-    M(UInt64, max_merged_block_size, 0, "Maximum size of the merged block for JOIN (in number of bytes in memory).", 0) \
+    M(UInt64, max_merged_block_bytes_in_join, 0, "Maximum size of the merged block for JOIN (in number of bytes in memory).", 0) \
     M(OverflowMode, join_overflow_mode, OverflowMode::THROW, "What to do when the limit is exceeded.", 0) \
     M(Bool, join_any_take_last_row, false, "When disabled (default) ANY JOIN will take the first found row for a key. When enabled, it will take the last row seen if there are multiple rows for the same key.", IMPORTANT) \
     M(JoinAlgorithm, join_algorithm, JoinAlgorithm::HASH, "Specify join algorithm: 'auto', 'hash', 'partial_merge', 'prefer_partial_merge', 'parallel_hash'. 'auto' tries to change HashJoin to MergeJoin on the fly to avoid out of memory.", 0) \
