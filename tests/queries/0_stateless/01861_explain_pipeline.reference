@@ -20,11 +20,13 @@ ExpressionTransform × 2
     ExpressionTransform × 2
       ReplacingSorted
         ExpressionTransform
-          FilterTransform
+          FilterSortedStreamByRange
           Description: filter values in [(5), +inf)
-            MergeTreeInOrder 0 → 1
-              ReplacingSorted 2 → 1
-                ExpressionTransform × 2
-                  FilterTransform × 2
-                  Description: filter values in [-inf, (5))
-                    MergeTreeInOrder × 2 0 → 1
+            ExpressionTransform
+              MergeTreeInOrder 0 → 1
+                ReplacingSorted 2 → 1
+                  ExpressionTransform × 2
+                    FilterSortedStreamByRange × 2
+                    Description: filter values in [-inf, (5))
+                      ExpressionTransform × 2
+                        MergeTreeInOrder × 2 0 → 1
