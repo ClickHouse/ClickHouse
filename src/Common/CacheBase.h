@@ -94,7 +94,6 @@ public:
     template <typename LoadFunc>
     std::pair<MappedPtr, bool> getOrSet(const Key & key, LoadFunc && load_func)
     {
-        LOG_DEBUG(&Poco::Logger::get("CacheBase"), "Cache getOrSet. Cache policy name \"{}\"", policy_name);
         InsertTokenHolder token_holder;
         {
             std::lock_guard cache_lock(mutex);
@@ -198,7 +197,7 @@ private:
     std::unique_ptr<CachePolicy> cache_policy;
     String policy_name; // DELETE THIS FIELD (only for debug)
 
-    inline static const String default_cache_policy_name = "SLRU";
+    inline static const String default_cache_policy_name = "LRU";
 
     std::atomic<size_t> hits{0};
     std::atomic<size_t> misses{0};
