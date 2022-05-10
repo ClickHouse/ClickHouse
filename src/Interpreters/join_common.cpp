@@ -733,6 +733,38 @@ Block NotJoinedBlocks::read()
     copySameKeys(result_block);
     correctLowcardAndNullability(result_block);
 
+    /// This is a very dirty hack.
+    /// Sometimes, columns from right joined table may be duplicating, and we can't properly process it.
+    /// So, in case if column is empty in result, try to find non-empty column with the same name.
+    /// Repro:
+    /// select * from (select 2 as x) as t1 right join (select count('x'), count('y'), 0 as x) as t2 on t1.x = t2.x
+    ///
+    /// Please, somebody, fix it in a proper way.
+    {
+        std::unordered_map<std::string, std::list<size_t>> result_block_positions;
+        for (size_t i = 0; i < result_block.columns(); ++i)
+        {
+            const auto & col = result_block.getByPosition(i);
+            result_block_positions[col.name].push_back(i);
+        }
+
+        for (auto & col : result_block)
+        {
+            if (col.column->empty())
+            {
+                for (auto pos : result_block_positions[col.name])
+                {
+                    const auto & same_col = result_block.getByPosition(pos);
+                    if (!same_col.column->empty())
+                    {
+                        col.column = same_col.column;
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
 #ifndef NDEBUG
     assertBlocksHaveEqualStructure(result_block, result_sample_block, "NotJoinedBlocks");
 #endif
