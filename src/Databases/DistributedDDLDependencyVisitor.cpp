@@ -238,5 +238,4 @@ namespace DB
         }
         data.dependencies.emplace(std::move(qualified_name));
     }
-
 }
