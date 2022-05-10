@@ -1,4 +1,4 @@
-#include <Storages/Kafka/KafkaBlockOutputStream.h>
+#include <Storages/Kafka/KafkaSink.h>
 
 #include <Formats/FormatFactory.h>
 #include <Processors/Formats/IOutputFormat.h>
