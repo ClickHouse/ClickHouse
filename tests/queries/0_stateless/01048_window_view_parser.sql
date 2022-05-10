@@ -54,6 +54,11 @@ DROP TABLE IF EXISTS test_01048.wv;
 CREATE WINDOW VIEW test_01048.wv AS SELECT count(test_01048.mt.a), count(test_01048.mt_2.b), wid FROM test_01048.mt JOIN test_01048.mt_2 ON test_01048.mt.timestamp = test_01048.mt_2.timestamp GROUP BY tumble(test_01048.mt.timestamp, INTERVAL '1' SECOND) AS wid;
 SHOW CREATE TABLE test_01048.`.inner.wv`;
 
+SELECT '||---POPULATE JOIN---';
+DROP TABLE IF EXISTS test_01048.wv;
+CREATE WINDOW VIEW test_01048.wv POPULATE AS SELECT count(test_01048.mt.a), count(test_01048.mt_2.b), wid FROM test_01048.mt JOIN test_01048.mt_2 ON test_01048.mt.timestamp = test_01048.mt_2.timestamp GROUP BY tumble(test_01048.mt.timestamp, INTERVAL '1' SECOND) AS wid;
+SHOW CREATE TABLE test_01048.`.inner.wv`;
+
 
 SELECT '---HOP---';
 SELECT '||---WINDOW COLUMN NAME---';
@@ -97,6 +102,11 @@ SHOW CREATE TABLE test_01048.`.inner.wv`;
 SELECT '||---JOIN---';
 DROP TABLE IF EXISTS test_01048.wv;
 CREATE WINDOW VIEW test_01048.wv AS SELECT count(test_01048.mt.a), count(test_01048.mt_2.b), wid FROM test_01048.mt JOIN test_01048.mt_2 ON test_01048.mt.timestamp = test_01048.mt_2.timestamp GROUP BY hop(test_01048.mt.timestamp, INTERVAL '1' SECOND, INTERVAL '3' SECOND) AS wid;
+SHOW CREATE TABLE test_01048.`.inner.wv`;
+
+SELECT '||---POPULATE JOIN---';
+DROP TABLE IF EXISTS test_01048.wv;
+CREATE WINDOW VIEW test_01048.wv POPULATE AS SELECT count(test_01048.mt.a), count(test_01048.mt_2.b), wid FROM test_01048.mt JOIN test_01048.mt_2 ON test_01048.mt.timestamp = test_01048.mt_2.timestamp GROUP BY hop(test_01048.mt.timestamp, INTERVAL '1' SECOND, INTERVAL '3' SECOND) AS wid;
 SHOW CREATE TABLE test_01048.`.inner.wv`;
 
 DROP TABLE test_01048.wv;
