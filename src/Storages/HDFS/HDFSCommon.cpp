@@ -135,6 +135,7 @@ void HDFSBuilderWrapper::initialize()
                     libhdfs3_conf = std::filesystem::absolute(config_dir / libhdfs3_conf);
             }
             setenv("LIBHDFS3_CONF", libhdfs3_conf.c_str(), 1);
+            std::cout << "libhdfs conf:" << libhdfs3_conf << std::endl;
         }
     });
 
@@ -194,6 +195,7 @@ HDFSBuilderWrapperFactory & HDFSBuilderWrapperFactory::instance()
 
 HDFSBuilderWrapperPtr HDFSBuilderWrapperFactory::getOrCreate(const String & hdfs_uri, const Poco::Util::AbstractConfiguration & config)
 {
+    std::cout << "uri:" << hdfs_uri << std::endl;
     std::lock_guard lock(mutex);
     auto it = hdfs_builder_wrappers.find(hdfs_uri);
     if (it == hdfs_builder_wrappers.end())
