@@ -466,7 +466,7 @@ set (CMAKE_POSTFIX_VARIABLE "CMAKE_${CMAKE_BUILD_TYPE_UC}_POSTFIX")
 
 if (USE_STATIC_LIBRARIES)
     set (CMAKE_POSITION_INDEPENDENT_CODE OFF)
-    if (OS_LINUX AND NOT ARCH_ARM)
+    if (OS_LINUX AND NOT ARCH_AARCH64)
         # Slightly more efficient code can be generated
         # It's disabled for ARM because otherwise ClickHouse cannot run on Android.
         set (CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} -fno-pie")
