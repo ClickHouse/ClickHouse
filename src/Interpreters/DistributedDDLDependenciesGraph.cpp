@@ -5,7 +5,6 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Poco/Util/AbstractConfiguration.h>
-#include <base/logger_useful.h>
 #include <numeric>
 
 namespace DB
@@ -23,7 +22,11 @@ DependenciesGraph::DependenciesGraph(ContextMutablePtr global_context_)
     log = &Poco::Logger::get("DistributedDDLDependenciesGraph");
 }
 
-void DependenciesGraph::addTask(DDLTaskPtr task)
+TasksDependencies& DependenciesGraph::getTasksDependencies() {
+    return &tasks_dependencies;
+}
+
+void DependenciesGraph::addTask(DDLTaskPtr & task)
 {
     auto name = task->entry_name;
     name_to_ddl_task[name] = task;
@@ -74,11 +77,11 @@ Queries DependenciesGraph::getTasksToParallelProcess()
     return tasks_dependencies.independent_queries;
 }
 
-void DependenciesGraph::removeProcessedTasks(Queries & old_independent_queries)
+void DependenciesGraph::removeProcessedTasks()
 {
 
     Queries new_independent_queries;
-    for (const auto& task : old_independent_queries)
+    for (const auto& task : tasks_dependencies.independent_queries)
     {
         if (task->completely_processed.load())
         {

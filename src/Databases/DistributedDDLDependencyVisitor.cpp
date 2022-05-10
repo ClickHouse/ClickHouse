@@ -82,7 +82,7 @@ namespace DB
         if (!dict_source.elements)
             return;
 
-        auto config = getDictionaryConfigurationFromAST(data.create_query->as<ASTCreateQuery &>(), data.global_context);
+        auto config = getDictionaryConfigurationFromAST(data.query->as<ASTCreateQuery &>(), data.global_context);
         auto info = getInfoIfClickHouseDictionarySource(config, data.global_context);
 
         if (!info || !info->is_local)
@@ -107,7 +107,7 @@ namespace DB
     {
         QualifiedTableName qualified_name;
 
-        for (const auto element : rename_query.elements)
+        for (const auto & element : rename_query.elements)
         {
             String from = element.from.database.empty() ? element.from.table : element.from.database + '.' + element.from.table;
             String to = element.to.database.empty() ? element.to.table : element.to.database + '.' + element.to.table;
@@ -161,8 +161,8 @@ namespace DB
     {
         QualifiedTableName qualified_name;
 
-        qualified_name.database = table_identifier->getDatabaseName();
-        qualified_name.table = table_identifier->shortName();
+        qualified_name.database = table_identifier.getDatabaseName();
+        qualified_name.table = table_identifier.shortName();
 
         if (qualified_name.database.empty())
         {
@@ -176,8 +176,8 @@ namespace DB
     {
         QualifiedTableName qualified_name;
 
-        String database = table_and_output_query.getDatabase();
-        String table = table_and_output_query.getTable();
+        String database = system_query.getDatabase();
+        String table = system_query.getTable();
 
         String name = database.empty() ? table : database + '.' + table;
 

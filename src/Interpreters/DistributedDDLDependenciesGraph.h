@@ -39,8 +39,8 @@ struct QueriesDependenciesInfo
     EntryNamesSet dependent_queries;
 };
 
-using QueriesDependenciesInfos = std::unordered_map<String, DependenciesInfo>; /// entry_name -> Dependencies_queries
-using QueriesDependenciesInfosIter = std::unordered_map<String, DependenciesInfo>::iterator;
+using QueriesDependenciesInfos = std::unordered_map<String, QueriesDependenciesInfo>; /// entry_name -> Dependencies_queries
+using QueriesDependenciesInfosIter = std::unordered_map<String, QueriesDependenciesInfo>::iterator;
 using DatabaseObjectsInAST = std::unordered_map<String, TableNamesSet>;
 
 struct TasksDependencies
@@ -76,7 +76,9 @@ public:
 
     void removeTask(String entry_name);
 
-    void removeProcessedTasks(Queries & old_independent_queries);
+    void removeProcessedTasks();
+
+    TasksDependencies& getTasksDependencies();
 
     Queries getTasksToParallelProcess();
 

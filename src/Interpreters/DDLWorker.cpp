@@ -70,6 +70,7 @@ DDLWorker::DDLWorker(
     , pool_size(pool_size_)
     , max_entry_metric(max_entry_metric_)
     , max_pushed_entry_metric(max_pushed_entry_metric_)
+    , dependencies_graph(context_)
 {
     if (max_entry_metric)
         CurrentMetrics::set(*max_entry_metric, 0);
@@ -388,7 +389,7 @@ void DDLWorker::scheduleTasks(bool reinitialized)
 
     auto tasks_to_process = dependencies_graph.getTasksToParallelProcess();
 
-    for (auto task : tasks_to_process)
+    for (auto & task : tasks_to_process)
     {
         auto & saved_task = saveTask(std::move(task));
 
@@ -406,7 +407,7 @@ void DDLWorker::scheduleTasks(bool reinitialized)
         }
     }
 
-    dependencies_graph.removeProcessedTasks(&dependencies_graph.tasks_dependencies.independent_queries);
+    dependencies_graph.removeProcessedTasks();
 }
 
 DDLTaskBase & DDLWorker::saveTask(DDLTaskPtr && task)
