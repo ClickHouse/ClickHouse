@@ -177,7 +177,7 @@ public:
         }
 
         template <typename Predicate>
-        bool hasAcl(int64_t session_id, bool is_local, Predicate predicate)
+        bool hasACL(int64_t session_id, bool is_local, Predicate predicate)
         {
             for (const auto & session_auth : storage.session_and_auth[session_id])
             {
