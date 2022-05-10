@@ -529,7 +529,7 @@ bool KeeperStorage::checkACL(StringRef path, int32_t permission, int64_t session
     if (node_acls.empty())
         return true;
 
-    if (current_nodes.hasAcl(session_id, is_local, [](const auto & auth_id) { return auth_id.scheme == "super"; }))
+    if (current_nodes.hasACL(session_id, is_local, [](const auto & auth_id) { return auth_id.scheme == "super"; }))
         return true;
 
     for (const auto & node_acl : node_acls)
@@ -539,7 +539,7 @@ bool KeeperStorage::checkACL(StringRef path, int32_t permission, int64_t session
             if (node_acl.scheme == "world" && node_acl.id == "anyone")
                 return true;
 
-            if (current_nodes.hasAcl(
+            if (current_nodes.hasACL(
                     session_id,
                     is_local,
                     [&](const auto & auth_id) { return auth_id.scheme == node_acl.scheme && auth_id.id == node_acl.id; }))
@@ -918,9 +918,17 @@ struct KeeperStorageSetRequestProcessor final : public KeeperStorageRequestProce
                 },
                 request.version});
 
-        new_deltas.emplace_back(parentPath(request.path).toString(), zxid, KeeperStorage::UpdateNodeDelta{[](KeeperStorage::Node & parent) {
-                                    parent.stat.cversion++;
-                                }});
+        new_deltas.emplace_back(
+                parentPath(request.path).toString(),
+                zxid,
+                KeeperStorage::UpdateNodeDelta
+                {
+                    [](KeeperStorage::Node & parent)
+                    {
+                        parent.stat.cversion++;
+                    }
+                }
+        );
 
         return new_deltas;
     }
@@ -1431,7 +1439,7 @@ struct KeeperStorageAuthRequestProcessor final : public KeeperStorageRequestProc
         else
         {
             KeeperStorage::AuthID new_auth{auth_request.scheme, digest};
-            if (storage.current_nodes.hasAcl(session_id, false, [&](const auto & auth_id) { return new_auth == auth_id; }))
+            if (storage.current_nodes.hasACL(session_id, false, [&](const auto & auth_id) { return new_auth == auth_id; }))
                 new_deltas.emplace_back(zxid, KeeperStorage::AddAuthDelta{session_id, std::move(new_auth)});
         }
 
