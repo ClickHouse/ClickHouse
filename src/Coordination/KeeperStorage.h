@@ -140,8 +140,14 @@ public:
     {
     };
 
+    struct AddAuthDelta
+    {
+        int64_t session_id;
+        AuthID auth_id;
+    };
+
     using Operation
-        = std::variant<CreateNodeDelta, RemoveNodeDelta, UpdateNodeDelta, SetACLDelta, ErrorDelta, SubDeltaEnd, FailedMultiDelta>;
+        = std::variant<CreateNodeDelta, RemoveNodeDelta, UpdateNodeDelta, SetACLDelta, AddAuthDelta, ErrorDelta, SubDeltaEnd, FailedMultiDelta>;
 
     struct Delta
     {
@@ -149,9 +155,7 @@ public:
 
         Delta(int64_t zxid_, Coordination::Error error) : Delta("", zxid_, ErrorDelta{error}) { }
 
-        Delta(int64_t zxid_, SubDeltaEnd subdelta) : Delta("", zxid_, subdelta) { }
-
-        Delta(int64_t zxid_, FailedMultiDelta failed_multi) : Delta("", zxid_, failed_multi) { }
+        Delta(int64_t zxid_, Operation subdelta) : Delta("", zxid_, subdelta) { }
 
         String path;
         int64_t zxid;
@@ -167,19 +171,40 @@ public:
         {
             for (const auto & delta : deltas)
             {
-                if (delta.path == path)
+                if (path.empty() || delta.path == path)
                     std::visit(visitor, delta.operation);
             }
+        }
+
+        template <typename Predicate>
+        bool hasAcl(int64_t session_id, bool is_local, Predicate predicate)
+        {
+            for (const auto & session_auth : storage.session_and_auth[session_id])
+            {
+                if (predicate(session_auth))
+                    return true;
+            }
+
+            if (is_local)
+                return false;
+
+
+            for (const auto & delta : deltas)
+            {
+                if (auto * auth_delta = std::get_if<KeeperStorage::AddAuthDelta>(&delta.operation);
+                    auth_delta && auth_delta->session_id == session_id && predicate(auth_delta->auth_id))
+                    return true;
+            }
+
+            return false;
         }
 
         std::shared_ptr<Node> getNode(StringRef path);
         bool hasNode(StringRef path) const;
         Coordination::ACLs getACLs(StringRef path) const;
 
-        std::unordered_map<std::string, std::deque<Delta>> node_to_deltas;
         std::deque<Delta> deltas;
         KeeperStorage & storage;
-        int64_t current_zxid{0};
     };
 
     CurrentNodes current_nodes{*this};
@@ -195,6 +220,8 @@ public:
         Coordination::ACLs node_acls,
         int64_t session_id);
     bool removeNode(const std::string & path, int32_t version);
+
+    bool checkACL(StringRef path, int32_t permissions, int64_t session_id, bool is_local);
 
     /// Mapping session_id -> set of ephemeral nodes paths
     Ephemerals ephemerals;
