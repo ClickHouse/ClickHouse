@@ -421,7 +421,7 @@ private:
 
     bool empty() const;
     bool overDictionary() const;
-    bool tryMergeBlocks(Block & block, bool size_limits);
+    bool tryMergeBlocks(Block & block, bool check_limits);
 };
 
 }

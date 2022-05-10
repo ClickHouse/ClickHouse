@@ -761,7 +761,7 @@ void HashJoin::setTotals(const Block & block)
     }
 }
 
-bool HashJoin::tryMergeBlocks(Block & source_block, bool check_limits[[maybe_unused]])
+bool HashJoin::tryMergeBlocks(Block & source_block, bool check_limits)
 {
     if (table_join->isParallelHash())
         return false;
