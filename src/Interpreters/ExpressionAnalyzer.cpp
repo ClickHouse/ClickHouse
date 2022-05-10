@@ -1,3 +1,4 @@
+#include <memory>
 #include <Core/Block.h>
 
 #include <Parsers/ASTExpressionList.h>
@@ -16,6 +17,7 @@
 
 #include <Interpreters/ArrayJoinAction.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/ConcurrentHashJoin.h>
 #include <Interpreters/DictionaryReader.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/ExpressionActions.h>
@@ -934,7 +936,13 @@ static std::shared_ptr<IJoin> chooseJoinAlgorithm(std::shared_ptr<TableJoin> ana
 
     bool allow_merge_join = analyzed_join->allowMergeJoin();
     if (analyzed_join->forceHashJoin() || (analyzed_join->preferMergeJoin() && !allow_merge_join))
+    {
+        if (analyzed_join->allowParallelHashJoin())
+        {
+            return std::make_shared<JoinStuff::ConcurrentHashJoin>(context, analyzed_join, context->getSettings().max_threads, sample_block);
+        }
         return std::make_shared<HashJoin>(analyzed_join, sample_block);
+    }
     else if (analyzed_join->forceMergeJoin() || (analyzed_join->preferMergeJoin() && allow_merge_join))
         return std::make_shared<MergeJoin>(analyzed_join, sample_block);
     return std::make_shared<JoinSwitcher>(analyzed_join, sample_block);
