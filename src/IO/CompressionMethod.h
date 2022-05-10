@@ -4,12 +4,12 @@
 #include <string>
 
 #include <Core/Defines.h>
-#include <Core/Settings.h>
 
 namespace DB
 {
 class ReadBuffer;
 class WriteBuffer;
+struct Settings;
 
 /** These are "generally recognizable" compression methods for data import/export.
   * Do not mess with more efficient compression methods used by ClickHouse internally
