@@ -17,14 +17,15 @@ namespace DB
     M(UInt64, nats_num_consumers, 1, "The number of consumer channels per table.", 0) \
     M(Bool, nats_persistent, false, "For insert query messages will be made 'persistent', durable.", 0) \
     M(Bool, nats_secure, false, "Use SSL connection", 0) \
+    M(UInt64, nats_max_reconnect, 5, "Maximum amount of reconnection attempts.", 0) \
+    M(UInt64, nats_reconnect_wait, 2000, "Amount to sleep between each reconnect attempt.", 0) \
+    M(String, nats_password, "", "NATS password", 0) \
     M(String, nats_address, "", "Address for connection", 0) \
     M(UInt64, nats_skip_broken_messages, 0, "Skip at least this number of broken messages from NATS per block", 0) \
     M(UInt64, nats_max_block_size, 0, "Number of row collected before flushing data from NATS.", 0) \
     M(Milliseconds, nats_flush_interval_ms, 0, "Timeout for flushing data from NATS.", 0) \
-    M(String, nats_vhost, "/", "NATS vhost.", 0) \
     M(Bool, nats_queue_consume, false, "Use user-defined queues and do not make any NATS setup: declaring exchanges, queues, bindings", 0) \
     M(String, nats_username, "", "NATS username", 0) \
-    M(String, nats_password, "", "NATS password", 0) \
     M(Bool, nats_commit_on_select, false, "Commit messages when select query is made", 0) \
 
 #define LIST_OF_NATS_SETTINGS(M) \

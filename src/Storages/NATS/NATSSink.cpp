@@ -3,7 +3,7 @@
 #include <Storages/NATS/StorageNATS.h>
 #include <Formats/FormatFactory.h>
 #include <Processors/Formats/IOutputFormat.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 
 
 namespace DB
@@ -18,13 +18,12 @@ NATSSink::NATSSink(
     , metadata_snapshot(metadata_snapshot_)
     , context(context_)
 {
-//    storage.unbindExchange();
 }
 
 
 void NATSSink::onStart()
 {
-//    buffer = storage.createWriteBuffer();
+    buffer = storage.createWriteBuffer();
     buffer->activateWriting();
 
     auto format_settings = getFormatSettings(context);
