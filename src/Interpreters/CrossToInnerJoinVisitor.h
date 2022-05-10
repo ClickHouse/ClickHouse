@@ -19,7 +19,7 @@ public:
         const Aliases & aliases;
         const String current_database;
         bool done = false;
-        bool cross_to_inner_join_rewrite = true;
+        UInt8 cross_to_inner_join_rewrite = 1;
     };
 
     static bool needChildVisit(ASTPtr &, const ASTPtr &);
