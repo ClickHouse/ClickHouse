@@ -987,7 +987,8 @@ private:
             const size_t nested_size = nested_column->size();
 
             typename ColumnVector<ToType>::Container vec_temp(nested_size);
-            executeAny<true>(nested_type, nested_column, vec_temp);
+            bool nested_is_first = true;
+            executeForArgument(nested_type, nested_column, vec_temp, nested_is_first);
 
             const size_t size = offsets.size();
 
@@ -1058,8 +1059,7 @@ private:
         else if (which.isString()) executeString<first>(icolumn, vec_to);
         else if (which.isFixedString()) executeString<first>(icolumn, vec_to);
         else if (which.isArray()) executeArray<first>(from_type, icolumn, vec_to);
-        else
-            executeGeneric<first>(icolumn, vec_to);
+        else executeGeneric<first>(icolumn, vec_to);
     }
 
     void executeForArgument(const IDataType * type, const IColumn * column, typename ColumnVector<ToType>::Container & vec_to, bool & is_first) const

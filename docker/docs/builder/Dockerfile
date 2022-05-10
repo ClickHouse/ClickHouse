@@ -1,3 +1,4 @@
+# rebuild in #36968
 # docker build -t clickhouse/docs-builder .
 # nodejs 17 prefers ipv6 and is broken in our environment
 FROM node:16.14.2-alpine3.15
