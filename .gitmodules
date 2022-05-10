@@ -267,4 +267,4 @@
 	url = https://github.com/wangyi-fudan/wyhash.git
 [submodule "contrib/nats-io"]
 	path = contrib/nats-io
-	url = https://github.com/nats-io/nats.c.git
+	url = https://github.com/tchepavel/nats.c.git
