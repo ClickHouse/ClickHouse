@@ -31,8 +31,8 @@ class ASTCreateLambdaFunctionQuery : public ASTCreateFunctionQuery
 public:
     ASTPtr function_core;
 
-    void formatImpl(const FormatSettings & s, FormatState & state, FormatStateStacked frame) const override;
     ASTPtr clone() const override;
+    void formatImpl(const FormatSettings & s, FormatState & state, FormatStateStacked frame) const override;
 };
 
 class ASTCreateInterpFunctionQuery : public ASTCreateFunctionQuery
@@ -42,8 +42,10 @@ public:
     ASTPtr function_body;
     ASTPtr interpreter_name;
 
-    void formatImpl(const FormatSettings & s, FormatState & state, FormatStateStacked frame) const override;
     ASTPtr clone() const override;
+    void formatImpl(const FormatSettings & s, FormatState & state, FormatStateStacked frame) const override;
+
+    String getInterpreterName() const;
 };
 
 }

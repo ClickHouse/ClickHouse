@@ -111,6 +111,8 @@ bool ParserCreateFunctionQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Exp
 
         query->function_args = function_args;
         query->children.push_back(function_args);
+        query->function_body = function_body;
+        query->children.push_back(function_body);
         query->interpreter_name = interpreter_name;
         query->children.push_back(interpreter_name);
 

@@ -72,10 +72,22 @@ ASTPtr ASTCreateInterpFunctionQuery::clone() const {
     return res;
 }
 
+String ASTCreateInterpFunctionQuery::getInterpreterName() const
+{
+    String name;
+    tryGetIdentifierNameInto(interpreter_name, name);
+    return name;
+}
+
+
 void ASTCreateInterpFunctionQuery::formatImpl(const IAST::FormatSettings & settings, IAST::FormatState & state, IAST::FormatStateStacked frame) const {
     ASTCreateFunctionQuery::formatImpl(settings, state, frame);
-    // !! use real values
-    settings.ostr << "foo(bar) 'do_foo(bar)' USING python";
+    settings.ostr << "(";
+    function_args->formatImpl(settings, state, frame);
+    settings.ostr << ") ";
+    function_body->formatImpl(settings, state, frame);
+    settings.ostr << (settings.hilite ? hilite_keyword : "") << " USING " << (settings.hilite ? hilite_none : "");
+    settings.ostr << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(getInterpreterName()) << (settings.hilite ? hilite_none : "");
 }
 
 }
