@@ -17,11 +17,12 @@ namespace DB
 {
 
 #ifdef __aarch64__
-bool only_ascii_in_vector(uint8x16_t input)
+bool only_ascii_in_vector(uint64x2_t input)
 {   
-    uint8x16_t and_result = vandq_s8(input, vdupq_n_u8(0x80));
-    uint8x8_t or_result = vorr_u8(vget_low_u8(and_result), vget_high_u8(and_result));
-    return !vget_lane_u64(or_result, 0);
+    uint64x2_t and_result = vandq_u64(input, vdupq_n_u64(0x8080808080808080));
+    uint64x1_t lo = vget_low_u64(and_result);
+    uint64x1_t hi = vget_high_u64(and_result);
+    return vget_lane_u64(lo, 0) != 0 ? false : vget_lane_u64(hi, 0) != 0;
 }
 #endif
 
@@ -98,7 +99,7 @@ void WriteBufferValidUTF8::nextImpl()
         static constexpr size_t SIMD_BYTES = 16;
         const char * simd_end = p + (pos - p) / SIMD_BYTES * SIMD_BYTES;
 
-        while (p < simd_end && only_ascii_in_vector(vld1q_u8(reinterpret_cast<const unsigned char *>(p))))
+        while (p < simd_end && only_ascii_in_vector(vld1q_u64(reinterpret_cast<const UInt64 *>(p))))
             p += SIMD_BYTES;
         
         if (!(p < pos))
