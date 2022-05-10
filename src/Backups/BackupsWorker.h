@@ -3,49 +3,63 @@
 #include <Backups/BackupStatus.h>
 #include <Common/ThreadPool.h>
 #include <Core/UUID.h>
+#include <Parsers/IAST_fwd.h>
 #include <unordered_map>
 
 
+namespace Poco::Util { class AbstractConfiguration; }
+
 namespace DB
 {
-
 /// Manager of backups and restores: executes backups and restores' threads in the background.
 /// Keeps information about backups and restores started in this session.
 class BackupsWorker
 {
 public:
-    static BackupsWorker & instance();
-
-    size_t add(const String & backup_name, BackupStatus status, const String & error = {});
-    void update(size_t task_id, BackupStatus status, const String & error = {});
-
-    struct Entry
-    {
-        String backup_name;
-        size_t task_id;
-        BackupStatus status;
-        String error;
-        time_t timestamp;
-    };
-
-    Entry getEntry(size_t task_id) const;
-    std::vector<Entry> getEntries() const;
-
-    /// Schedules a new task and performs it in the background thread.
-    void run(std::function<void()> && task);
+    BackupsWorker(size_t num_backup_threads, size_t num_restore_threads);
 
     /// Waits until all tasks have been completed.
     void shutdown();
 
-private:
-    BackupsWorker();
+    /// Starts executing a BACKUP or RESTORE query. Returns UUID of the operation.
+    UUID start(const ASTPtr & backup_or_restore_query, ContextMutablePtr context);
 
-    mutable std::mutex mutex;
-    std::vector<Entry> entries;
-    std::unordered_map<String, size_t /* position in entries */> entries_by_name;
-    std::unordered_map<size_t /* task_id */, size_t /* position in entries */ > entries_by_task_id;
-    size_t current_task_id = 0;
-    ThreadPool thread_pool;
+    /// Waits until a BACKUP or RESTORE query started by start() is finished.
+    /// The function returns immediately if the operation is already finished.
+    void wait(const UUID & backup_or_restore_uuid);
+
+    /// Information about executing a BACKUP or RESTORE query started by calling start().
+    struct Info
+    {
+        UUID uuid;
+
+        /// Backup's name, a string like "Disk('backups', 'my_backup')"
+        String backup_name;
+
+        BackupStatus status;
+        time_t status_changed_time;
+
+        String error_message;
+        std::exception_ptr exception;
+
+        /// Whether this operation is internal, i.e. caused by another BACKUP or RESTORE operation.
+        /// For example BACKUP ON CLUSTER executes an internal BACKUP commands per each node.
+        bool internal = false;
+    };
+
+    Info getInfo(const UUID & backup_or_restore_uuid) const;
+    std::vector<Info> getAllInfos() const;
+
+private:
+    UUID startMakingBackup(const ASTPtr & query, const ContextPtr & context);
+    UUID startRestoring(const ASTPtr & query, ContextMutablePtr context);
+
+    ThreadPool backups_thread_pool;
+    ThreadPool restores_thread_pool;
+
+    std::unordered_map<UUID, Info> infos;
+    std::condition_variable status_changed;
+    mutable std::mutex infos_mutex;
 };
 
 }
