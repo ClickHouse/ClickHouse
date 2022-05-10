@@ -327,6 +327,12 @@ void ExpressionAnalyzer::analyzeAggregation(ActionsDAGPtr & temp_actions)
         {
             NameSet unique_keys;
             ASTs & group_asts = group_by_ast->children;
+
+            /// For GROUPING SETS with multiple groups we always add virtual __grouping_set column
+            /// With set number, which is used as an additional key at the stage of merging aggregating data.
+            if (select_query->group_by_with_grouping_sets && group_asts.size() > 1)
+                aggregated_columns.emplace_back("__grouping_set", std::make_shared<DataTypeUInt64>());
+
             for (ssize_t i = 0; i < static_cast<ssize_t>(group_asts.size()); ++i)
             {
                 ssize_t size = group_asts.size();
@@ -449,9 +455,6 @@ void ExpressionAnalyzer::analyzeAggregation(ActionsDAGPtr & temp_actions)
     }
     else
         aggregated_columns = temp_actions->getNamesAndTypesList();
-
-    if (aggregation_keys_list.size() > 1)
-        aggregated_columns.emplace_back("__grouping_set", std::make_shared<DataTypeUInt64>());
 
     for (const auto & desc : aggregate_descriptions)
         aggregated_columns.emplace_back(desc.column_name, desc.function->getReturnType());
@@ -1242,11 +1245,6 @@ bool SelectQueryExpressionAnalyzer::appendGroupBy(ExpressionActionsChain & chain
                 step.addRequiredOutput(ast_element->getColumnName());
                 getRootActions(ast_element, only_types, step.actions());
             }
-        }
-        if (useGroupingSetKey())
-        {
-            step.addRequiredOutput("__grouping_set");
-            step.actions()->addGroupingSetColumn();
         }
     }
     else
