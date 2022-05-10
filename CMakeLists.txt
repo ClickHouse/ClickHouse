@@ -161,10 +161,16 @@ add_library(global-libs INTERFACE)
 include (cmake/fuzzer.cmake)
 include (cmake/sanitize.cmake)
 
-if (CMAKE_GENERATOR STREQUAL "Ninja" AND NOT DISABLE_COLORED_BUILD)
+option(ENABLE_COLORED_BUILD "Enable colors in compiler output" ON)
+
+set (CMAKE_COLOR_MAKEFILE ${ENABLE_COLORED_BUILD}) # works only for the makefile generator
+
+if (ENABLE_COLORED_BUILD AND CMAKE_GENERATOR STREQUAL "Ninja")
     # Turn on colored output. https://github.com/ninja-build/ninja/wiki/FAQ
     set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fdiagnostics-color=always")
     set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fdiagnostics-color=always")
+    # ... such manually setting of flags can be removed once CMake supports a variable to
+    # activate colors in *all* build systems: https://gitlab.kitware.com/cmake/cmake/-/issues/15502
 endif ()
 
 include (cmake/check_flags.cmake)
@@ -371,7 +377,6 @@ set (COMPILER_FLAGS "${COMPILER_FLAGS}")
 # Our built-in unwinder only supports DWARF version up to 4.
 set (DEBUG_INFO_FLAGS "-g -gdwarf-4")
 
-set (CMAKE_BUILD_COLOR_MAKEFILE          ON)
 set (CMAKE_CXX_FLAGS                     "${CMAKE_CXX_FLAGS} ${COMPILER_FLAGS} ${PLATFORM_EXTRA_CXX_FLAG} ${COMMON_WARNING_FLAGS} ${CXX_WARNING_FLAGS}")
 set (CMAKE_CXX_FLAGS_RELWITHDEBINFO      "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} -O3 ${DEBUG_INFO_FLAGS} ${CMAKE_CXX_FLAGS_ADD}")
 set (CMAKE_CXX_FLAGS_DEBUG               "${CMAKE_CXX_FLAGS_DEBUG} -O0 ${DEBUG_INFO_FLAGS} -fno-inline ${CMAKE_CXX_FLAGS_ADD}")
