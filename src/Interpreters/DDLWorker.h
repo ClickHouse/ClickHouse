@@ -7,6 +7,7 @@
 #include <Storages/IStorage_fwd.h>
 #include <Parsers/IAST_fwd.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DistributedDDLdependenciesGraph.h>
 
 #include <atomic>
 #include <chrono>
@@ -130,6 +131,8 @@ protected:
     std::optional<String> last_skipped_entry_name;
     std::optional<String> first_failed_task_name;
     std::list<DDLTaskPtr> current_tasks;
+
+    DependenciesGraph dependencies_graph;
 
     /// This flag is needed for debug assertions only
     bool queue_fully_loaded_after_initialization_debug_helper = false;

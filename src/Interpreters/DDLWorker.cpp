@@ -383,6 +383,12 @@ void DDLWorker::scheduleTasks(bool reinitialized)
             continue;
         }
 
+        dependencies_graph.addTask(task);
+    }
+
+    auto tasks_to_process = dependencies_graph.getTasksToParallelProcess();
+
+    for (auto task : tasks_to_process) {
         auto & saved_task = saveTask(std::move(task));
 
         if (worker_pool)
@@ -398,7 +404,11 @@ void DDLWorker::scheduleTasks(bool reinitialized)
             processTask(saved_task, zookeeper);
         }
     }
+
+    dependencies_graph.removeProcessedTasks(&dependencies_graph.tasks_dependencies.independent_queries);
 }
+
+
 
 DDLTaskBase & DDLWorker::saveTask(DDLTaskPtr && task)
 {
