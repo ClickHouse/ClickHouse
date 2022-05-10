@@ -872,21 +872,6 @@ using ManyAggregatedDataVariantsPtr = std::shared_ptr<ManyAggregatedDataVariants
 class CompiledAggregateFunctionsHolder;
 class NativeWriter;
 
-struct GroupingSetsParams
-{
-    GroupingSetsParams() = default;
-
-    GroupingSetsParams(ColumnNumbers used_keys_, ColumnNumbers missing_keys_)
-        : used_keys(std::move(used_keys_))
-        , missing_keys(std::move(missing_keys_))
-    {}
-
-    ColumnNumbers used_keys;
-    ColumnNumbers missing_keys;
-};
-
-using GroupingSetsParamsList = std::vector<GroupingSetsParams>;
-
 /** How are "total" values calculated with WITH TOTALS?
   * (For more details, see TotalsHavingTransform.)
   *
@@ -913,7 +898,7 @@ public:
         Block intermediate_header;
 
         /// What to count.
-        ColumnNumbers keys;
+        const ColumnNumbers keys;
         const AggregateDescriptions aggregates;
         const size_t keys_size;
         const size_t aggregates_size;

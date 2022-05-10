@@ -10,6 +10,21 @@ namespace DB
 struct AggregatingTransformParams;
 using AggregatingTransformParamsPtr = std::shared_ptr<AggregatingTransformParams>;
 
+struct GroupingSetsParams
+{
+    GroupingSetsParams() = default;
+
+    GroupingSetsParams(ColumnNumbers used_keys_, ColumnNumbers missing_keys_)
+        : used_keys(std::move(used_keys_))
+        , missing_keys(std::move(missing_keys_))
+    {}
+
+    ColumnNumbers used_keys;
+    ColumnNumbers missing_keys;
+};
+
+using GroupingSetsParamsList = std::vector<GroupingSetsParams>;
+
 /// Aggregation. See AggregatingTransform.
 class AggregatingStep : public ITransformingStep
 {
