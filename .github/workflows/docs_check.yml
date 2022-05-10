@@ -156,3 +156,19 @@ jobs:
           docker kill "$(docker ps -q)" ||:
           docker rm -f "$(docker ps -a -q)" ||:
           sudo rm -fr "$TEMP_PATH"
+  FinishCheck:
+    needs:
+      - StyleCheck
+      - DockerHubPush
+      - DocsCheck
+    runs-on: [self-hosted, style-checker]
+    steps:
+      - name: Clear repository
+        run: |
+          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
+      - name: Check out repository code
+        uses: actions/checkout@v2
+      - name: Finish label
+        run: |
+          cd "$GITHUB_WORKSPACE/tests/ci"
+          python3 finish_check.py
