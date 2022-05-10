@@ -20,9 +20,8 @@ namespace DB
 bool only_ascii_in_vector(uint64x2_t input)
 {   
     uint64x2_t and_result = vandq_u64(input, vdupq_n_u64(0x8080808080808080));
-    uint64x1_t lo = vget_low_u64(and_result);
-    uint64x1_t hi = vget_high_u64(and_result);
-    return vget_lane_u64(lo, 0) != 0 ? false : vget_lane_u64(hi, 0) != 0;
+    uint64x1_t or_result = vorr_u64(vget_low_u64(and_result), vget_high_u64(and_result));
+    return !vget_lane_u64(or_result, 0);
 }
 #endif
 
