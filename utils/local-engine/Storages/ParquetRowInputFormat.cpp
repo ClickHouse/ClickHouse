@@ -3,15 +3,34 @@
 
 #include <Columns/ColumnString.h>
 #include <Common/DateLUTImpl.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/ReadBufferFromString.h>
+#include <IO/copyData.h>
+#include <IO/ReadBufferFromAzureBlobStorage.h>
+#include <Common/DebugUtils.h>
 
-local_engine::ParquetRowInputFormat::ParquetRowInputFormat(ReadBuffer & in_, Block header_) : IInputFormat(std::move(header_), in_)
+local_engine::ParquetRowInputFormat::ParquetRowInputFormat(ReadBuffer & in_, Block header_, size_t block_size) : IInputFormat(std::move(header_), in_), prefer_block_size(block_size)
 {
 }
 std::unique_ptr<local_engine::InputStreamFileSystem> local_engine::ParquetRowInputFormat::inputStreamFileSystem = std::make_unique<local_engine::InputStreamFileSystem>();
 void local_engine::ParquetRowInputFormat::prepareReader()
 {
     if (!reader)
-        reader = std::make_unique<duckdb::ParquetReader>(this->allocator, inputStreamFileSystem->openStream(*in));
+    {
+        if (dynamic_cast<ReadBufferFromAzureBlobStorage *>(in))
+        {
+            {
+                WriteBufferFromString file_buffer(cache_data);
+                copyData(*in, file_buffer, std::atomic_int(0));
+            }
+            cached_reader = std::make_unique<ReadBufferFromString>(cache_data);
+            reader = std::make_unique<duckdb::ParquetReader>(this->allocator, inputStreamFileSystem->openStream(*cached_reader));
+        }
+        else
+        {
+            reader = std::make_unique<duckdb::ParquetReader>(this->allocator, inputStreamFileSystem->openStream(*in));
+        }
+    }
     int index = 0;
     int cols = this->getPort().getHeader().columns();
     column_indices.reserve(cols);
@@ -34,23 +53,32 @@ void local_engine::ParquetRowInputFormat::prepareReader()
     }
     state = std::make_unique<duckdb::ParquetReaderScanState>();
     reader->InitializeScan(*state, column_indices, row_group_ids, nullptr);
-    output = std::make_unique<duckdb::DataChunk>();
-    output->Initialize(row_type);
+    duckdb_output = std::make_unique<duckdb::DataChunk>();
+    duckdb_output->Initialize(row_type);
 }
 
 Chunk local_engine::ParquetRowInputFormat::generate()
 {
-    Chunk res;
-
     if (!reader)
         prepareReader();
-    output->Reset();
-    reader->Scan(*state, *output);
-    if (output->size() > 0)
+
+    // don't use buffer
+    if (prefer_block_size == 0)
     {
-        duckDbChunkToCHChunk(*output, res);
+        auto chunk = getNextChunk();
+        return chunk;
     }
-    return res;
+    else
+    {
+        while(buffer.size() < prefer_block_size)
+        {
+            auto res = getNextChunk();
+            if (!res.hasRows())
+                break ;
+            buffer.add(res, 0, buffer.size());
+        }
+        return buffer.releaseColumns();
+    }
 }
 duckdb::LogicalType local_engine::ParquetRowInputFormat::convertCHTypeToDuckDbType(DataTypePtr type)
 {
@@ -196,4 +224,15 @@ void local_engine::ParquetRowInputFormat::resetParser()
     IInputFormat::resetParser();
     state.reset();
     state = std::make_unique<duckdb::ParquetReaderScanState>();
+}
+Chunk local_engine::ParquetRowInputFormat::getNextChunk()
+{
+    Chunk res;
+    duckdb_output->Reset();
+    reader->Scan(*state, *duckdb_output);
+    if (duckdb_output->size() > 0)
+    {
+        duckDbChunkToCHChunk(*duckdb_output, res);
+    }
+    return res;
 }

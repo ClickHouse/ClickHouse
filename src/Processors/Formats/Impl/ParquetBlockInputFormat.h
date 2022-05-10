@@ -29,6 +29,7 @@ public:
 private:
     Chunk generate() override;
 
+protected:
     void prepareReader();
 
     void onCancel() override

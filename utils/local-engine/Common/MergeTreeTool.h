@@ -34,5 +34,5 @@ namespace local_engine
         std::string toString() const;
     };
 
-    MergeTreeTable parseMergeTreeTable(std::string & info);
+    MergeTreeTable parseMergeTreeTableString(std::string & info);
 }

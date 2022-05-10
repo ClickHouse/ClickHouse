@@ -4,6 +4,7 @@
 #include <IO/ReadBuffer.h>
 #include <IO/SeekableReadBuffer.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
+#include <IO/ReadBufferFromString.h>
 
 using namespace DB;
 
@@ -145,6 +146,11 @@ public:
         if (auto * file_stream = dynamic_cast<ReadBufferFromFileDescriptor*>(it->second.second))
         {
             return file_stream->size();
+        }
+        if (auto * file_stream = dynamic_cast<ReadBufferFromString*>(it->second.second))
+        {
+            std::cerr << "file size:" << file_stream->internalBuffer().size() <<std::endl;
+            return file_stream->internalBuffer().size();
         }
         throw std::runtime_error("Unexpected call to InputStreamFileSystem::GetFileSize");
     }

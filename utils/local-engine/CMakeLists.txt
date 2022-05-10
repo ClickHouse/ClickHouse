@@ -22,6 +22,7 @@ include_directories(
         ${JNI_INCLUDE_DIRS}
         ${CMAKE_CURRENT_BINARY_DIR}/proto
         ${ARROW_INCLUDE_DIR}
+        ${ClickHouse_SOURCE_DIR}/contrib/arrow-cmake/cpp/src
         ${ClickHouse_SOURCE_DIR}/utils/local-engine
         ${ClickHouse_SOURCE_DIR}/src
         ${ClickHouse_SOURCE_DIR}/base
@@ -186,6 +187,11 @@ target_compile_options(_mariadbclient PRIVATE -fPIC)
 target_compile_options(_hdfs3 PRIVATE -fPIC)
 target_compile_options(_libxml2 PRIVATE -fPIC)
 target_compile_options(_gsasl PRIVATE -fPIC)
+target_compile_options(_parquet PRIVATE -fPIC)
+target_compile_options(_arrow PRIVATE -fPIC)
+target_compile_options(_thrift PRIVATE -fPIC)
+target_compile_options(_aws_s3_checksums PRIVATE -fPIC)
+
 target_compile_options(absl_str_format_internal PRIVATE -fPIC)
 target_compile_options(absl_strings PRIVATE -fPIC)
 target_compile_options(absl_raw_logging_internal PRIVATE -fPIC)

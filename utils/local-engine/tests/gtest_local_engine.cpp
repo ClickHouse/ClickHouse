@@ -22,6 +22,7 @@
 #include <Storages/CustomStorageMergeTree.h>
 #include <Storages/CustomMergeTreeSink.h>
 #include <Processors/Executors/PipelineExecutor.h>
+#include <Storages/BatchParquetFileSource.h>
 //#include <Poco/URI.h>
 
 using namespace dbms;
@@ -234,7 +235,7 @@ TEST(TestSelect, MergeTreeWriteTest)
 
     auto files_info = std::make_shared<FilesInfo>();
     files_info->files.push_back("/home/kyligence/Documents/test-dataset/intel-gazelle-test-150.snappy.parquet");
-    auto source = std::make_shared<BatchParquetFileSource>(files_info, sink->getHeader());
+    auto source = std::make_shared<BatchParquetFileSource>(files_info, metadata->getSampleBlock(), SerializedPlanParser::global_context);
 
     QueryPlanOptimizationSettings optimization_settings{.optimize_plan = false};
     QueryPipelineBuilder query_pipeline;
@@ -349,6 +350,9 @@ int main(int argc, char **argv)
     SharedContextHolder shared_context = Context::createShared();
     local_engine::SerializedPlanParser::global_context = Context::createGlobal(shared_context.get());
     local_engine::SerializedPlanParser::global_context->makeGlobalContext();
+    local_engine::SerializedPlanParser::global_context->setConfig(local_engine::SerializedPlanParser::config);
+    local_engine::SerializedPlanParser::global_context->setPath("/tmp");
+    local_engine::SerializedPlanParser::global_context->getDisksMap().emplace();
     local_engine::SerializedPlanParser::initFunctionEnv();
     ::testing::InitGoogleTest(&argc,argv);
     return RUN_ALL_TESTS();

@@ -20,46 +20,6 @@
 namespace local_engine
 {
 
-struct FilesInfo
-{
-    std::vector<std::string> files;
-    std::atomic<size_t> next_file_to_read = 0;
-};
-using FilesInfoPtr = std::shared_ptr<FilesInfo>;
-
-class BatchParquetFileSource : public DB::SourceWithProgress
-{
-public:
-    BatchParquetFileSource(FilesInfoPtr files, const Block & header);
-
-private:
-    String getName() const override
-    {
-        return "BatchParquetFileSource";
-    }
-
-protected:
-    Chunk generate() override;
-
-private:
-    FilesInfoPtr files_info;
-    std::unique_ptr<ReadBuffer> read_buf;
-    QueryPipeline pipeline;
-    std::unique_ptr<PullingPipelineExecutor> reader;
-    bool finished_generate = false;
-    std::string current_path;
-    Block header;
-};
-
-using BatchParquetFileSourcePtr = std::shared_ptr<BatchParquetFileSource>;
-}
-
-
-namespace local_engine
-{
-using namespace DB;
-
-
 static const std::map<std::string, std::string> SCALAR_FUNCTIONS = {
     {"is_not_null","isNotNull"},
     {"gte","greaterOrEquals"},
@@ -85,7 +45,7 @@ static const std::set<std::string> FUNCTION_NEED_KEEP_ARGUMENTS = {"alias"};
 struct QueryContext {
     StorageSnapshotPtr storage_snapshot;
     std::shared_ptr<DB::StorageInMemoryMetadata> metadata;
-    std::shared_ptr<local_engine::CustomStorageMergeTree> custom_storage_merge_tree;
+    std::shared_ptr<CustomStorageMergeTree> custom_storage_merge_tree;
 };
 
 class SerializedPlanParser
@@ -181,7 +141,7 @@ public:
     LocalExecutor() = default;
     explicit LocalExecutor(QueryContext& _query_context);
     void execute(QueryPlanPtr query_plan);
-    local_engine::SparkRowInfoPtr next();
+    SparkRowInfoPtr next();
     Block* nextColumnar();
     bool hasNext();
     ~LocalExecutor()
@@ -197,14 +157,12 @@ public:
 
 private:
     QueryContext query_context;
-    std::unique_ptr<local_engine::SparkRowInfo> writeBlockToSparkRow(DB::Block & block);
+    std::unique_ptr<SparkRowInfo> writeBlockToSparkRow(DB::Block & block);
     QueryPipeline query_pipeline;
     std::unique_ptr<PullingPipelineExecutor> executor;
     Block header;
-    std::unique_ptr<local_engine::CHColumnToSparkRow> ch_column_to_spark_row;
+    std::unique_ptr<CHColumnToSparkRow> ch_column_to_spark_row;
     std::unique_ptr<Block> current_chunk;
     std::unique_ptr<SparkBuffer> spark_buffer;
 };
 }
-
-
