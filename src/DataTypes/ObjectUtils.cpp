@@ -2,6 +2,7 @@
 #include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNested.h>
@@ -12,6 +13,7 @@
 #include <Columns/ColumnObject.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnMap.h>
 #include <Columns/ColumnNullable.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTExpressionList.h>
@@ -191,6 +193,19 @@ static std::pair<ColumnPtr, DataTypePtr> recursivlyConvertDynamicColumnToTuple(
         };
     }
 
+    if (const auto * type_map = typeid_cast<const DataTypeMap *>(type.get()))
+    {
+        const auto & column_map = assert_cast<const ColumnMap &>(*column);
+        auto [new_column, new_type] = recursivlyConvertDynamicColumnToTuple(
+            column_map.getNestedColumnPtr(), type_map->getNestedType());
+
+        return
+        {
+            ColumnMap::create(std::move(new_column)),
+            std::make_shared<DataTypeMap>(std::move(new_type)),
+        };
+    }
+
     if (const auto * type_tuple = typeid_cast<const DataTypeTuple *>(type.get()))
     {
         const auto & column_tuple = assert_cast<const ColumnTuple &>(*column);
@@ -343,7 +358,58 @@ static DataTypePtr getLeastCommonTypeForObject(const DataTypes & types, bool che
     return unflattenTuple(tuple_paths, tuple_types);
 }
 
-DataTypePtr getLeastCommonTypeForDynamicColumnsImpl(
+static DataTypePtr getLeastCommonTypeForDynamicColumnsImpl(
+    const DataTypePtr & type_in_storage, const DataTypes & concrete_types, bool check_ambiguos_paths);
+
+template<typename Type>
+static DataTypePtr getLeastCommonTypeForColumnWithNestedType(
+    const Type & type, const DataTypes & concrete_types, bool check_ambiguos_paths)
+{
+    DataTypes nested_types;
+    nested_types.reserve(concrete_types.size());
+
+    for (const auto & concrete_type : concrete_types)
+    {
+        const auto * type_with_nested_conctete = typeid_cast<const Type *>(concrete_type.get());
+        if (!type_with_nested_conctete)
+            throw Exception(ErrorCodes::TYPE_MISMATCH, "Expected {} type, got {}", demangle(typeid(Type).name()), concrete_type->getName());
+
+        nested_types.push_back(type_with_nested_conctete->getNestedType());
+    }
+
+    return std::make_shared<Type>(
+        getLeastCommonTypeForDynamicColumnsImpl(
+            type.getNestedType(), nested_types, check_ambiguos_paths));
+}
+
+static DataTypePtr getLeastCommonTypeForTuple(
+    const DataTypeTuple & type, const DataTypes & concrete_types, bool check_ambiguos_paths)
+{
+    const auto & element_types = type.getElements();
+    DataTypes new_element_types(element_types.size());
+
+    for (size_t i = 0; i < element_types.size(); ++i)
+    {
+        DataTypes concrete_element_types;
+        concrete_element_types.reserve(concrete_types.size());
+
+        for (const auto & type_concrete : concrete_types)
+        {
+            const auto * type_tuple_conctete = typeid_cast<const DataTypeTuple *>(type_concrete.get());
+            if (!type_tuple_conctete)
+                throw Exception(ErrorCodes::TYPE_MISMATCH, "Expected Tuple type, got {}", type_concrete->getName());
+
+            concrete_element_types.push_back(type_tuple_conctete->getElement(i));
+        }
+
+        new_element_types[i] = getLeastCommonTypeForDynamicColumnsImpl(
+            element_types[i], concrete_element_types, check_ambiguos_paths);
+    }
+
+    return recreateTupleWithElements(type, new_element_types);
+}
+
+static DataTypePtr getLeastCommonTypeForDynamicColumnsImpl(
     const DataTypePtr & type_in_storage, const DataTypes & concrete_types, bool check_ambiguos_paths)
 {
     if (!type_in_storage->hasDynamicSubcolumns())
@@ -353,49 +419,13 @@ DataTypePtr getLeastCommonTypeForDynamicColumnsImpl(
         return getLeastCommonTypeForObject(concrete_types, check_ambiguos_paths);
 
     if (const auto * type_array = typeid_cast<const DataTypeArray *>(type_in_storage.get()))
-    {
-        DataTypes nested_types;
-        nested_types.reserve(concrete_types.size());
+        return getLeastCommonTypeForColumnWithNestedType(*type_array, concrete_types, check_ambiguos_paths);
 
-        for (const auto & type : concrete_types)
-        {
-            const auto * type_array_conctete = typeid_cast<const DataTypeArray *>(type.get());
-            if (!type_array_conctete)
-                throw Exception(ErrorCodes::TYPE_MISMATCH, "Expected Array type, got {}", type->getName());
-
-            nested_types.push_back(type_array_conctete->getNestedType());
-        }
-
-        return std::make_shared<DataTypeArray>(
-            getLeastCommonTypeForDynamicColumnsImpl(
-                type_array->getNestedType(), nested_types, check_ambiguos_paths));
-    }
+    if (const auto * type_map = typeid_cast<const DataTypeMap *>(type_in_storage.get()))
+        return getLeastCommonTypeForColumnWithNestedType(*type_map, concrete_types, check_ambiguos_paths);
 
     if (const auto * type_tuple = typeid_cast<const DataTypeTuple *>(type_in_storage.get()))
-    {
-        const auto & element_types = type_tuple->getElements();
-        DataTypes new_element_types(element_types.size());
-
-        for (size_t i = 0; i < element_types.size(); ++i)
-        {
-            DataTypes concrete_element_types;
-            concrete_element_types.reserve(concrete_types.size());
-
-            for (const auto & type : concrete_types)
-            {
-                const auto * type_tuple_conctete = typeid_cast<const DataTypeTuple *>(type.get());
-                if (!type_tuple_conctete)
-                    throw Exception(ErrorCodes::TYPE_MISMATCH, "Expected Tuple type, got {}", type->getName());
-
-                concrete_element_types.push_back(type_tuple_conctete->getElement(i));
-            }
-
-            new_element_types[i] = getLeastCommonTypeForDynamicColumnsImpl(
-                element_types[i], concrete_element_types, check_ambiguos_paths);
-        }
-
-        return recreateTupleWithElements(*type_tuple, new_element_types);
-    }
+        return getLeastCommonTypeForTuple(*type_tuple, concrete_types, check_ambiguos_paths);
 
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Type {} unexpectedly has dynamic columns", type_in_storage->getName());
 }
@@ -428,15 +458,16 @@ DataTypePtr createConcreteEmptyDynamicColumn(const DataTypePtr & type_in_storage
         return type_in_storage;
 
     if (isObject(type_in_storage))
-    {
         return std::make_shared<DataTypeTuple>(
-            DataTypes{std::make_shared<DataTypeUInt8>()},
-            Names{ColumnObject::COLUMN_NAME_DUMMY});
-    }
+            DataTypes{std::make_shared<DataTypeUInt8>()}, Names{ColumnObject::COLUMN_NAME_DUMMY});
 
     if (const auto * type_array = typeid_cast<const DataTypeArray *>(type_in_storage.get()))
         return std::make_shared<DataTypeArray>(
             createConcreteEmptyDynamicColumn(type_array->getNestedType()));
+
+    if (const auto * type_map = typeid_cast<const DataTypeMap *>(type_in_storage.get()))
+        return std::make_shared<DataTypeMap>(
+            createConcreteEmptyDynamicColumn(type_map->getNestedType()));
 
     if (const auto * type_tuple = typeid_cast<const DataTypeTuple *>(type_in_storage.get()))
     {
