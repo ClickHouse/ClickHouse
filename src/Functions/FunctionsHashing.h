@@ -1377,13 +1377,11 @@ struct ImplMeowHash128
 
     static UInt128 apply(const char *s, const size_t len)
     {
-        char* s_dup = strdup(s);
         union {
             __m128i m128;
             UInt128 u128;
         };
-        m128 = MeowHash(MeowDefaultSeed, len, s_dup);
-        delete[] s_dup;
+        m128 = MeowHash(MeowDefaultSeed, len, const_cast<char *>(s));
         return u128;
     }
 
