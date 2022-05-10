@@ -25,7 +25,7 @@ DependenciesGraph::DependenciesGraph(ContextMutablePtr global_context_)
 void DependenciesGraph::addTask(DDLTaskPtr & task)
 {
     auto name = task->entry_name;
-    tasks_dependencies.name_to_ddl_task.insert({name, task});
+    tasks_dependencies.name_to_ddl_task.insert(std::make_pair(name, std::move(task)));
     auto database_objects_for_added_task = getDependenciesSetFromQuery(global_context, task->query);
     tasks_dependencies.database_objects_in_query[name] = database_objects_for_added_task;
     for (auto & [query_name, query_objects] : tasks_dependencies.database_objects_in_query)
@@ -111,7 +111,7 @@ void DependenciesGraph::removeTask(String query_name)
                             query_name, dependent_query, fmt::join(dependencies_set, ", "));
         if (dependencies_set.empty())
         {
-            tasks_dependencies.independent_queries.insert(tasks_dependencies.name_to_ddl_task[dependent_query]);
+            tasks_dependencies.independent_queries.emplace_back(std::move(tasks_dependencies.name_to_ddl_task[dependent_query]));
             if (dependent_info.dependent_queries.empty())
                 tasks_dependencies.dependencies_info.erase(dependent_query);
         }
@@ -127,11 +127,10 @@ void DependenciesGraph::logDependencyGraph() const
     for (const auto & dependencies : tasks_dependencies.dependencies_info)
     {
         LOG_TEST(log,
-                 "Query {} have {} dependencies and {} dependent queries. List of dependent queries: {}",
+                 "Query {} have {} dependencies and {} dependent queries.",
                  dependencies.first,
                  dependencies.second.dependencies.size(),
-                 dependencies.second.dependent_queries.size(),
-                 fmt::join(dependencies.second.dependent_queries, ", "));
+                 dependencies.second.dependent_queries.size(), ", "));
     }
 }
 
