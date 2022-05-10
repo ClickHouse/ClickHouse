@@ -121,6 +121,10 @@
 #    include <jemalloc/jemalloc.h>
 #endif
 
+#if USE_HDFS
+#   include <Storages/HDFS/HDFSCommon.h>
+#endif
+
 namespace CurrentMetrics
 {
     extern const Metric Revision;
@@ -997,6 +1001,10 @@ int Server::main(const std::vector<std::string> & /*args*/)
             }
         }
     }
+#endif
+
+#if USE_HDFS
+    HDFSBuilderWrapperFactory::setEnv(config());
 #endif
 
     if (config().has("interserver_http_port") && config().has("interserver_https_port"))

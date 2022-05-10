@@ -121,24 +121,6 @@ void HDFSBuilderWrapper::initialize()
     if (host.empty())
         throw Exception("Illegal HDFS URI: " + uri.toString(), ErrorCodes::BAD_ARGUMENTS);
 
-    // Shall set env LIBHDFS3_CONF *before* HDFSBuilderWrapper construction.
-    std::call_once(HDFSBuilderWrapper::init_libhdfs3_conf_flag, [this]()
-    {
-        String libhdfs3_conf = config.getString(HDFSBuilderWrapper::CONFIG_PREFIX + ".libhdfs3_conf", "");
-        if (!libhdfs3_conf.empty())
-        {
-            if (std::filesystem::path{libhdfs3_conf}.is_relative() && !std::filesystem::exists(libhdfs3_conf))
-            {
-                const String config_path = config.getString("config-file", "config.xml");
-                const auto config_dir = std::filesystem::path{config_path}.remove_filename();
-                if (std::filesystem::exists(config_dir / libhdfs3_conf))
-                    libhdfs3_conf = std::filesystem::absolute(config_dir / libhdfs3_conf);
-            }
-            setenv("LIBHDFS3_CONF", libhdfs3_conf.c_str(), 1);
-            std::cout << "libhdfs conf:" << libhdfs3_conf << std::endl;
-        }
-    });
-
     if (get() == nullptr)
         throw Exception("Unable to create builder to connect to HDFS: " +
             uri.toString() + " " + String(hdfsGetLastError()),
@@ -191,6 +173,23 @@ HDFSBuilderWrapperFactory & HDFSBuilderWrapperFactory::instance()
 {
     static HDFSBuilderWrapperFactory factory;
     return factory;
+}
+
+void HDFSBuilderWrapperFactory::setEnv(const Poco::Util::AbstractConfiguration & config)
+{
+    String libhdfs3_conf = config.getString("hdfs.libhdfs3_conf", "");
+    if (!libhdfs3_conf.empty())
+    {
+        if (std::filesystem::path{libhdfs3_conf}.is_relative() && !std::filesystem::exists(libhdfs3_conf))
+        {
+            const String config_path = config.getString("config-file", "config.xml");
+            const auto config_dir = std::filesystem::path{config_path}.remove_filename();
+            if (std::filesystem::exists(config_dir / libhdfs3_conf))
+                libhdfs3_conf = std::filesystem::absolute(config_dir / libhdfs3_conf);
+        }
+        setenv("LIBHDFS3_CONF", libhdfs3_conf.c_str(), 1);
+        std::cout << "libhdfs conf:" << libhdfs3_conf << std::endl;
+    }
 }
 
 HDFSBuilderWrapperPtr HDFSBuilderWrapperFactory::getOrCreate(const String & hdfs_uri, const Poco::Util::AbstractConfiguration & config)

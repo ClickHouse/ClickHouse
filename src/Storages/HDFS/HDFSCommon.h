@@ -84,7 +84,7 @@ private:
 
     inline static const String CONFIG_PREFIX = "hdfs";
     inline static std::mutex kinit_mtx;
-    inline static std::once_flag init_libhdfs3_conf_flag;
+    // inline static std::once_flag init_libhdfs3_conf_flag;
 
     hdfsBuilder * hdfs_builder;
     const String hdfs_uri;
@@ -104,6 +104,8 @@ class HDFSBuilderWrapperFactory final: public boost::noncopyable
 {
 public:
     static HDFSBuilderWrapperFactory & instance();
+
+    static void setEnv(const Poco::Util::AbstractConfiguration & config);
 
     HDFSBuilderWrapperPtr getOrCreate(const String & hdfs_uri, const Poco::Util::AbstractConfiguration & config);
 
