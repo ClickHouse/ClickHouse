@@ -101,7 +101,12 @@ EOL
 
 function stop()
 {
-    clickhouse stop
+    clickhouse stop --do-not-kill && return
+    # We failed to stop the server with SIGTERM. Maybe it hang, let's collect stacktraces.
+    kill -TERM "$(pidof gdb)" ||:
+    sleep 5
+    gdb -batch -ex 'thread apply all backtrace' -p "$(cat /var/run/clickhouse-server/clickhouse-server.pid)" ||:
+    clickhouse stop --force
 }
 
 function start()
