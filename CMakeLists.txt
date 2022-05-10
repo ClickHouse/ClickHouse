@@ -26,7 +26,7 @@ foreach(default_policy_var_name
     set(${default_policy_var_name} NEW)
 endforeach()
 
-project(ClickHouse)
+project(ClickHouse LANGUAGES C CXX ASM)
 
 # If turned off: e.g. when ENABLE_FOO is ON, but FOO tool was not found, the CMake will continue.
 option(FAIL_ON_UNSUPPORTED_OPTIONS_COMBINATION
@@ -38,8 +38,6 @@ if(FAIL_ON_UNSUPPORTED_OPTIONS_COMBINATION)
 else()
     set(RECONFIGURE_MESSAGE_LEVEL WARNING)
 endif()
-
-enable_language(C CXX ASM)
 
 include (cmake/arch.cmake)
 include (cmake/target.cmake)
