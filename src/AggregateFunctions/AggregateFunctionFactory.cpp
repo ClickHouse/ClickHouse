@@ -192,8 +192,8 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
 #pragma GCC diagnostic pop
 #endif
 
-        DataTypes nested_types = combinator->transformArguments(argument_types);
         Array nested_parameters = combinator->transformParameters(parameters);
+        DataTypes nested_types = combinator->transformArguments(argument_types);
 
         AggregateFunctionPtr nested_function = get(nested_name, nested_types, nested_parameters, out_properties);
         return combinator->transformAggregateFunction(nested_function, out_properties, argument_types, parameters);

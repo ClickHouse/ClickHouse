@@ -3,6 +3,7 @@
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/IColumn.h>
 #include <Core/Field.h>
+#include <Core/TypeId.h>
 #include <Columns/ColumnArray.h>
 #include <Common/assert_cast.h>
 #include <DataTypes/DataTypeArray.h>
@@ -12,6 +13,9 @@
 
 #include <cctype>
 #include <memory>
+#include <optional>
+#include <type_traits>
+#include <optional>
 
 namespace DB 
 {
@@ -28,7 +32,7 @@ struct OrderByData {
     size_t num_arguments;
     size_t num_arguments_for_sorting;
 
-    void parseString(String& s)
+    void parseString(const String& s)
     {
         bool flag = false;
         for (auto symb : s) {
@@ -53,7 +57,7 @@ struct OrderByData {
         num_arguments_for_sorting = bitmap.size();
     }
 
-    OrderByData(String& param_str, const DataTypes& types)   
+    OrderByData(const String& param_str, const DataTypes& types)   
     {
         num_arguments = types.size();
         parseString(param_str);
@@ -63,13 +67,13 @@ struct OrderByData {
         }
     }
 
-    std::unique_ptr<IColumn*> sort() {
-        Permutation p;
+    std::unique_ptr<IColumn*[]> sort() {
+        IColumn::Permutation p;
         for (size_t i = 0; i != data[0]->size(); ++i) {
             p.push_back(i);
         }
 
-        auto ptr = std::make_unique(new IColumn*[num_arguments - num_arguments_for_sorting]); 
+        std::unique_ptr<IColumn*[]> ptr{new IColumn*[num_arguments - num_arguments_for_sorting]}; 
         EqualRanges er(1, std::pair<size_t, size_t>(0, data[0]->size()));
 
         for (size_t i = num_arguments - num_arguments_for_sorting; i != num_arguments; ++i) {
@@ -80,8 +84,8 @@ struct OrderByData {
         }
 
         for (size_t i = 0; i != num_arguments - num_arguments_for_sorting; ++i) {
-            Ptr permuted_column = data[i]->permute(p, 0);
-            *ptr[i] = permuted_column.get();
+            MutableColumnPtr permuted_column = IColumn::mutate(data[i]->permute(p, 0));
+            ptr[i] = permuted_column.get();
         }
 
         return ptr;
@@ -89,7 +93,7 @@ struct OrderByData {
 };
 
 
-class AggregateFunctionOrderBy final : IAggregateFunctionHelper<AggregateFunctionOrderBy> {
+class AggregateFunctionOrderBy final : public IAggregateFunctionHelper<AggregateFunctionOrderBy> {
 private:
 	AggregateFunctionPtr nested_func;
     DataTypes types_;
@@ -97,7 +101,7 @@ private:
     String param_str;
 
 public:
-	AggregateFunctionOrderBy(AggregateFunctionPtr nested, const DataTypes & types, const Array & params_)
+    AggregateFunctionOrderBy(AggregateFunctionPtr nested, const DataTypes & types, const Array & params_)
         : IAggregateFunctionHelper<AggregateFunctionOrderBy>(types, params_)
         , nested_func(nested), num_arguments(types.size())
     {
@@ -105,14 +109,14 @@ public:
             throw Exception("Aggregate function " + getName() + " require at least one parameter", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
         if (params_[0].getType() != Field::Types::Which::String)
             throw Exception("First parameter for aggregate function " + getName() + " must be String", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-        param_str = params_[0].get();
+        param_str = params_[0].get<String>();
         types_.reserve(types.size());
         for (size_t i = 0; i != types.size(); ++i) {
             types_.push_back(types[i]->getPtr());
         }
     }
 
-	String getName() const override
+    String getName() const override
     {
         return nested_func->getName() + "OrderBy";
     }
@@ -133,16 +137,21 @@ public:
         nested_func->destroy(place + sizeof(OrderByData));
     }
 
+    size_t sizeOfData() const override
+    {
+        return sizeof(OrderByData) + nested_func->sizeOfData();
+    }
+
     size_t alignOfData() const override
     {
-        return nested_func->alignOfData();
+        return alignof(OrderByData);
     }
 
     bool hasTrivialDestructor() const override {
-        return nested_func->hasTrivialDestructor();
+        return ((std::is_trivially_destructible_v<OrderByData>) && (nested_func->hasTrivialDestructor()));
     }
 
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override 
+    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override 
     {
         for (size_t i = 0; i != reinterpret_cast<const OrderByData *>(rhs)->data[0]->size(); ++i) { 
             for (size_t j = 0; j != reinterpret_cast<const OrderByData *>(rhs)->data.size(); ++j) {
@@ -151,26 +160,27 @@ public:
         }
     }
 
-    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> version = std::nullopt) const override 
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t>) const override 
     {
         size_t column_size = reinterpret_cast<const OrderByData *>(place)->data[0]->size();
         writeBinary(column_size, buf);
         auto size = reinterpret_cast<const OrderByData *>(place)->data.size();
         for (size_t i = 0; i != size; ++i) {
             for (size_t j = 0; j != column_size; ++j) {
-                writeBinary((*reinterpret_cast<const OrderByData *>(place)->data[i])[j].get(), buf);
+                auto ob_data = reinterpret_cast<const OrderByData *>(place);
+                writeBinary((*ob_data->data[i])[j].get<TypeIndexToType<TypeIndex::UInt8>>(), buf);
             }
         }
     }
 
-    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> version = std::nullopt, Arena * arena = nullptr) const override
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t>, Arena *) const override
     {
         size_t column_size;
         readBinary(column_size, buf);
         auto size = reinterpret_cast<OrderByData *>(place)->data.size();
         for (size_t i = 0; i != size; ++i) {
             for (size_t j = 0; j != column_size; ++j) {
-                TypeIndexToType<reinterpret_cast<OrderByData *>(place)->data[i]->getDataType()> val; 
+                TypeIndexToType<TypeIndex::UInt8> val; 
                 readBinary(val, buf);
                 Field f = val;
                 reinterpret_cast<OrderByData *>(place)->data[i]->insert(f);
@@ -187,13 +197,18 @@ public:
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const override 
     {
-        std::unique_ptr<IColumn **> columns = reinterpret_cast<OrderByData *>(place)->sort();
+        std::unique_ptr<IColumn*[]> columns = reinterpret_cast<OrderByData *>(place)->sort();
 
-        for (size_t i = 0; i != (*columns)[0]->size(); ++i) {
-            nested_func->add(place + sizeof(OrderByData), columns.get(), i, arena);
+        for (size_t i = 0; i != columns[0]->size(); ++i) {
+            IColumn** columns_ptr = columns.get(); 
+            nested_func->add(place + sizeof(OrderByData), const_cast<const IColumn**>(columns_ptr), i, arena);
         }
 
         nested_func->insertResultInto(place + sizeof(OrderByData), to, arena);
+    }
+
+    bool allocatesMemoryInArena() const override {
+        return nested_func->allocatesMemoryInArena();
     }
 };
 }
