@@ -2,6 +2,8 @@
 
 #include <Processors/ISimpleTransform.h>
 #include <Common/Arena.h>
+#include <Core/ColumnNumbers.h>
+#include <Interpreters/AggregateDescription.h>
 
 namespace DB
 {
@@ -25,6 +27,7 @@ class TotalsHavingTransform : public ISimpleTransform
 public:
     TotalsHavingTransform(
         const Block & header,
+        const ColumnNumbers & aggregates_keys_,
         bool overflow_row_,
         const ExpressionActionsPtr & expression_,
         const std::string & filter_column_,
@@ -40,7 +43,7 @@ public:
     Status prepare() override;
     void work() override;
 
-    static Block transformHeader(Block block, const ActionsDAG * expression, const std::string & filter_column_name, bool remove_filter, bool final);
+    static Block transformHeader(Block block, const ActionsDAG * expression, const std::string & filter_column_name, bool remove_filter, bool final, const ColumnNumbers & aggregates_keys);
 
 protected:
     void transform(Chunk & chunk) override;
@@ -54,6 +57,7 @@ private:
     void prepareTotals();
 
     /// Params
+    const ColumnNumbers aggregates_keys;
     bool overflow_row;
     ExpressionActionsPtr expression;
     String filter_column_name;
@@ -77,6 +81,11 @@ private:
     MutableColumns current_totals;
 };
 
-void finalizeChunk(Chunk & chunk);
+ColumnNumbers getAggregatesPositions(const Block & header, const AggregateDescriptions & aggregates);
+
+/// Convert ColumnAggregateFunction to real values.
+///
+/// @param aggregates_keys columns to convert (see getAggregatesPositions())
+void finalizeChunk(Chunk & chunk, const ColumnNumbers & aggregates_keys);
 
 }

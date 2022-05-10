@@ -27,6 +27,7 @@ static ITransformingStep::Traits getTraits(bool has_filter)
 
 TotalsHavingStep::TotalsHavingStep(
     const DataStream & input_stream_,
+    const ColumnNumbers & aggregates_keys_,
     bool overflow_row_,
     const ActionsDAGPtr & actions_dag_,
     const std::string & filter_column_,
@@ -41,8 +42,10 @@ TotalsHavingStep::TotalsHavingStep(
                     actions_dag_.get(),
                     filter_column_,
                     remove_filter_,
-                    final_),
+                    final_,
+                    aggregates_keys_),
             getTraits(!filter_column_.empty()))
+    , aggregates_keys(aggregates_keys_)
     , overflow_row(overflow_row_)
     , actions_dag(actions_dag_)
     , filter_column_name(filter_column_)
@@ -59,6 +62,7 @@ void TotalsHavingStep::transformPipeline(QueryPipelineBuilder & pipeline, const 
 
     auto totals_having = std::make_shared<TotalsHavingTransform>(
         pipeline.getHeader(),
+        aggregates_keys,
         overflow_row,
         expression_actions,
         filter_column_name,

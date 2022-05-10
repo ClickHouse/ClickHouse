@@ -17,33 +17,47 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
 }
 
-void finalizeChunk(Chunk & chunk)
+ColumnNumbers getAggregatesPositions(const Block & header, const AggregateDescriptions & aggregates)
+{
+    ColumnNumbers keys;
+    keys.reserve(aggregates.size());
+    for (const auto & aggregate : aggregates)
+        keys.emplace_back(header.getPositionByName(aggregate.column_name));
+    return keys;
+}
+
+void finalizeChunk(Chunk & chunk, const ColumnNumbers & aggregates_keys)
 {
     auto num_rows = chunk.getNumRows();
     auto columns = chunk.detachColumns();
 
-    for (auto & column : columns)
-        if (typeid_cast<const ColumnAggregateFunction *>(column.get()))
-            column = ColumnAggregateFunction::convertToValues(IColumn::mutate(std::move(column)));
+    for (size_t i = 0; i < columns.size(); ++i)
+    {
+        if (std::find(aggregates_keys.begin(), aggregates_keys.end(), i) == aggregates_keys.end())
+            continue;
+
+        auto & column = columns[i];
+        column = ColumnAggregateFunction::convertToValues(IColumn::mutate(std::move(column)));
+    }
 
     chunk.setColumns(std::move(columns), num_rows);
 }
 
-void finalizeBlock(Block & block)
+static void finalizeBlock(Block & block, const ColumnNumbers & aggregates_keys)
 {
     for (size_t i = 0; i < block.columns(); ++i)
     {
-        ColumnWithTypeAndName & current = block.getByPosition(i);
-        const DataTypeAggregateFunction * unfinalized_type = typeid_cast<const DataTypeAggregateFunction *>(current.type.get());
+        if (std::find(aggregates_keys.begin(), aggregates_keys.end(), i) == aggregates_keys.end())
+            continue;
 
-        if (unfinalized_type)
+        ColumnWithTypeAndName & current = block.getByPosition(i);
+        const DataTypeAggregateFunction & unfinalized_type = typeid_cast<const DataTypeAggregateFunction &>(*current.type);
+
+        current.type = unfinalized_type.getReturnType();
+        if (current.column)
         {
-            current.type = unfinalized_type->getReturnType();
-            if (current.column)
-            {
-                auto mut_column = IColumn::mutate(std::move(current.column));
-                current.column = ColumnAggregateFunction::convertToValues(std::move(mut_column));
-            }
+            auto mut_column = IColumn::mutate(std::move(current.column));
+            current.column = ColumnAggregateFunction::convertToValues(std::move(mut_column));
         }
     }
 }
@@ -53,10 +67,11 @@ Block TotalsHavingTransform::transformHeader(
     const ActionsDAG * expression,
     const std::string & filter_column_name,
     bool remove_filter,
-    bool final)
+    bool final,
+    const ColumnNumbers & aggregates_keys)
 {
     if (final)
-        finalizeBlock(block);
+        finalizeBlock(block, aggregates_keys);
 
     if (expression)
     {
@@ -70,6 +85,7 @@ Block TotalsHavingTransform::transformHeader(
 
 TotalsHavingTransform::TotalsHavingTransform(
     const Block & header,
+    const ColumnNumbers & aggregates_keys_,
     bool overflow_row_,
     const ExpressionActionsPtr & expression_,
     const std::string & filter_column_,
@@ -77,7 +93,8 @@ TotalsHavingTransform::TotalsHavingTransform(
     TotalsMode totals_mode_,
     double auto_include_threshold_,
     bool final_)
-    : ISimpleTransform(header, transformHeader(header, expression_  ? &expression_->getActionsDAG() : nullptr, filter_column_, remove_filter_, final_), true)
+    : ISimpleTransform(header, transformHeader(header, expression_  ? &expression_->getActionsDAG() : nullptr, filter_column_, remove_filter_, final_, aggregates_keys_), true)
+    , aggregates_keys(aggregates_keys_)
     , overflow_row(overflow_row_)
     , expression(expression_)
     , filter_column_name(filter_column_)
@@ -87,7 +104,7 @@ TotalsHavingTransform::TotalsHavingTransform(
     , final(final_)
 {
     finalized_header = getInputPort().getHeader();
-    finalizeBlock(finalized_header);
+    finalizeBlock(finalized_header, aggregates_keys);
 
     /// Port for Totals.
     if (expression)
@@ -179,7 +196,7 @@ void TotalsHavingTransform::transform(Chunk & chunk)
 
     auto finalized = chunk.clone();
     if (final)
-        finalizeChunk(finalized);
+        finalizeChunk(finalized, aggregates_keys);
 
     total_keys += finalized.getNumRows();
 
@@ -300,7 +317,7 @@ void TotalsHavingTransform::prepareTotals()
     }
 
     totals = Chunk(std::move(current_totals), 1);
-    finalizeChunk(totals);
+    finalizeChunk(totals, aggregates_keys);
 
     if (expression)
     {

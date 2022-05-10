@@ -19,7 +19,9 @@ protected:
 
 private:
     AggregatingTransformParamsPtr params;
-    ColumnNumbers keys;
+    const ColumnNumbers keys;
+    const ColumnNumbers aggregates_keys;
+
     Chunks consumed_chunks;
     Chunk rollup_chunk;
     size_t last_removed_key = 0;
