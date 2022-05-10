@@ -104,7 +104,12 @@ EOL
 
 function stop()
 {
-    clickhouse stop
+    clickhouse stop --do-not-kill && return
+    # We failed to stop the server with SIGTERM. Maybe it hang, let's collect stacktraces.
+    kill -TERM "$(pidof gdb)" ||:
+    sleep 5
+    gdb -batch -ex 'thread apply all backtrace' -p "$(cat /var/run/clickhouse-server/clickhouse-server.pid)" ||:
+    clickhouse stop --force
 }
 
 function start()
@@ -204,7 +209,7 @@ mv /var/log/clickhouse-server/clickhouse-server.log /var/log/clickhouse-server/c
 start
 
 clickhouse-client --query "SELECT 'Server successfully started', 'OK'" >> /test_output/test_results.tsv \
-                       || (echo -e 'Server failed to start (see application_errors.txt)\tFAIL' >> /test_output/test_results.tsv \
+                       || (echo -e 'Server failed to start (see application_errors.txt and clickhouse-server.clean.log)\tFAIL' >> /test_output/test_results.tsv \
                        && grep -Fa "<Error>.*Application" /var/log/clickhouse-server/clickhouse-server.log > /test_output/application_errors.txt)
 
 [ -f /var/log/clickhouse-server/clickhouse-server.log ] || echo -e "Server log does not exist\tFAIL"
@@ -390,7 +395,7 @@ for table in query_log trace_log; do
 done
 
 # Write check result into check_status.tsv
-clickhouse-local --structure "test String, res String" -q "SELECT 'failure', test FROM table WHERE res != 'OK' order by (lower(test) like '%hung%') LIMIT 1" < /test_output/test_results.tsv > /test_output/check_status.tsv
+clickhouse-local --structure "test String, res String" -q "SELECT 'failure', test FROM table WHERE res != 'OK' order by (lower(test) like '%hung%'), rowNumberInAllBlocks() LIMIT 1" < /test_output/test_results.tsv > /test_output/check_status.tsv
 [ -s /test_output/check_status.tsv ] || echo -e "success\tNo errors found" > /test_output/check_status.tsv
 
 # Core dumps (see gcore)

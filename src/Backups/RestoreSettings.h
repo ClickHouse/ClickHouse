@@ -10,6 +10,9 @@ class ASTBackupQuery;
 
 struct StorageRestoreSettings
 {
+    /// Internal, should not be specified by user.
+    /// The current host's ID in the format 'escaped_host_name:port'.
+    String host_id;
 };
 
 /// How the RESTORE command will handle table/database existence.
@@ -79,15 +82,24 @@ struct RestoreSettings : public StorageRestoreSettings
     ///                    else it means the same as `replica`.
     size_t replica_num_in_backup = 0;
 
+    /// Allows RESTORE TABLE to insert data into non-empty tables.
+    /// This will mix earlier data in the table with the data extracted from the backup.
+    /// Setting "allow_non_empty_tables=true" thus can cause data duplication in the table, use with caution.
+    bool allow_non_empty_tables = false;
+
     /// Internal, should not be specified by user.
     bool internal = false;
+
+    /// Internal, should not be specified by user.
+    /// Cluster's hosts' IDs in the format 'escaped_host_name:port' for all shards and replicas in a cluster specified in BACKUP ON CLUSTER.
+    std::vector<Strings> cluster_host_ids;
 
     /// Internal, should not be specified by user.
     /// Path in Zookeeper used to coordinate restoring process while executing by RESTORE ON CLUSTER.
     String coordination_zk_path;
 
     static RestoreSettings fromRestoreQuery(const ASTBackupQuery & query);
-    void copySettingsToRestoreQuery(ASTBackupQuery & query) const;
+    void copySettingsToQuery(ASTBackupQuery & query) const;
 };
 
 }

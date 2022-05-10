@@ -540,7 +540,7 @@ static void sanityChecks(Server & server)
     try
     {
         if (readString("/sys/devices/system/clocksource/clocksource0/current_clocksource").find("tsc") == std::string::npos)
-            server.context()->addWarningMessage("Linux is not using fast TSC clock source. Performance can be degraded.");
+            server.context()->addWarningMessage("Linux is not using a fast TSC clock source. Performance can be degraded.");
     }
     catch (...)
     {
@@ -558,7 +558,7 @@ static void sanityChecks(Server & server)
     try
     {
         if (readString("/sys/kernel/mm/transparent_hugepage/enabled").find("[always]") != std::string::npos)
-            server.context()->addWarningMessage("Linux transparent hugepage are set to \"always\".");
+            server.context()->addWarningMessage("Linux transparent hugepages are set to \"always\".");
     }
     catch (...)
     {
@@ -1088,11 +1088,8 @@ int Server::main(const std::vector<std::string> & /*args*/)
             total_memory_tracker.setMetric(CurrentMetrics::MemoryTracking);
 
             auto * global_overcommit_tracker = global_context->getGlobalOvercommitTracker();
-            if (config->has("global_memory_usage_overcommit_max_wait_microseconds"))
-            {
-                UInt64 max_overcommit_wait_time = config->getUInt64("global_memory_usage_overcommit_max_wait_microseconds", 0);
-                global_overcommit_tracker->setMaxWaitTime(max_overcommit_wait_time);
-            }
+            UInt64 max_overcommit_wait_time = config->getUInt64("global_memory_usage_overcommit_max_wait_microseconds", 200);
+            global_overcommit_tracker->setMaxWaitTime(max_overcommit_wait_time);
             total_memory_tracker.setOvercommitTracker(global_overcommit_tracker);
 
             // FIXME logging-related things need synchronization -- see the 'Logger * log' saved
@@ -1294,17 +1291,11 @@ int Server::main(const std::vector<std::string> & /*args*/)
         LOG_INFO(log, "Listening for {}", server.getDescription());
     }
 
-    auto & access_control = global_context->getAccessControl();
-    if (config().has("custom_settings_prefixes"))
-        access_control.setCustomSettingsPrefixes(config().getString("custom_settings_prefixes"));
-
-    access_control.setNoPasswordAllowed(config().getBool("allow_no_password", true));
-    access_control.setPlaintextPasswordAllowed(config().getBool("allow_plaintext_password", true));
-
     /// Initialize access storages.
+    auto & access_control = global_context->getAccessControl();
     try
     {
-        access_control.addStoragesFromMainConfig(config(), config_path, [&] { return global_context->getZooKeeper(); });
+        access_control.setUpFromMainConfig(config(), config_path, [&] { return global_context->getZooKeeper(); });
     }
     catch (...)
     {
