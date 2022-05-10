@@ -1288,6 +1288,17 @@ private:
         ctx->new_data_part->version.setCreationTID(tid, nullptr);
         ctx->new_data_part->storeVersionMetadata();
 
+        String save_mask_file_name;
+        /// skip all mask files if empty in source part
+        if (ctx->source_part->hasLightWeight() && !ctx->source_part->is_empty_bitmap)
+        {
+            save_mask_file_name = ctx->source_part->getDeletedMaskFileName(ctx->source_part->info.lightweight_mutation, false);
+
+            /// Update lightweight_mutation of new part for some part columns cases (e.g. DROP COLUMN)
+            ctx->new_data_part->info.lightweight_mutation = ctx->source_part->info.lightweight_mutation;
+            ctx->new_data_part->is_empty_bitmap = false;
+        }
+
         NameSet hardlinked_files;
         /// Create hardlinks for unchanged files
         for (auto it = ctx->disk->iterateDirectory(ctx->source_part->getFullRelativePath()); it->isValid(); it->next())
@@ -1302,16 +1313,8 @@ private:
                 if (startsWith(it->name(), tmp_mask_file_name))
                     continue;
 
-                if (startsWith(it->name(), IMergeTreeDataPart::DELETED_ROW_MARK_PREFIX_NAME))
-                {
-                    /// skip all mask files if empty in source part
-                    if (ctx->source_part->is_empty_bitmap)
-                        continue;
-
-                    String save_mask_file_name = ctx->source_part->getDeletedMaskFileName(ctx->source_part->info.lightweight_mutation, false);
-                    if (it->name() != save_mask_file_name)
-                        continue;
-                }
+                if (startsWith(it->name(), IMergeTreeDataPart::DELETED_ROW_MARK_PREFIX_NAME) && it->name() != save_mask_file_name)
+                    continue;
             }
 
             String destination = ctx->new_part_tmp_path;
