@@ -1,17 +1,8 @@
 #pragma once
 
-#include <Common/config.h>
-
-#include <atomic>
-#include <Common/FileCache_fwd.h>
-#include <Disks/DiskFactory.h>
-#include <Disks/Executor.h>
-#include <utility>
-#include <mutex>
-#include <shared_mutex>
-#include <Common/MultiVersion.h>
-#include <Common/ThreadPool.h>
-#include <filesystem>
+#include <Disks/IDisk.h>
+#include <Disks/IObjectStorage.h>
+#include <re2/re2.h>
 
 namespace CurrentMetrics
 {
@@ -21,24 +12,38 @@ namespace CurrentMetrics
 namespace DB
 {
 
-class IAsynchronousReader;
-using AsynchronousReaderPtr = std::shared_ptr<IAsynchronousReader>;
+class DiskObjectStorageMetadataHelper;
 
-
-/// Base Disk class for remote FS's, which are not posix-compatible (e.g. DiskS3, DiskHDFS, DiskBlobStorage)
-class IDiskRemote : public IDisk
+class DiskObjectStorage : public IDisk
 {
 
-friend class DiskRemoteReservation;
+friend class DiskObjectStorageReservation;
+friend class DiskObjectStorageMetadataHelper;
 
 public:
-    IDiskRemote(
+    DiskObjectStorage(
         const String & name_,
         const String & remote_fs_root_path_,
+        const String & log_name,
         DiskPtr metadata_disk_,
-        FileCachePtr cache_,
-        const String & log_name_,
-        size_t thread_pool_size);
+        ObjectStoragePtr && object_storage_,
+        DiskType disk_type_,
+        bool send_metadata_)
+        : name(name_)
+        , remote_fs_root_path(remote_fs_root_path_)
+        , log (&Poco::Logger::get(log_name))
+        , metadata_disk(metadata_disk_)
+        , disk_type(disk_type_)
+        , object_storage(std::move(object_storage_))
+        , send_metadata(send_metadata_)
+        , metadata_helper(std::make_unique<DiskObjectStorageMetadataHelper>(this, ReadSettings{}))
+    {}
+
+    DiskType getType() const override { return disk_type; }
+
+    bool supportZeroCopyReplication() const override { return true; }
+
+    bool supportParallelWrite() const override { return true; }
 
     struct Metadata;
     using MetadataUpdater = std::function<bool(Metadata & metadata)>;
@@ -46,8 +51,6 @@ public:
     const String & getName() const final override { return name; }
 
     const String & getPath() const final override { return metadata_disk->getPath(); }
-
-    String getCacheBasePath() const final override;
 
     std::vector<String> getRemotePaths(const String & local_path) const final override;
 
@@ -93,14 +96,29 @@ public:
 
     void removeRecursive(const String & path) override { removeSharedRecursive(path, false, {}); }
 
-
     void removeSharedFile(const String & path, bool delete_metadata_only) override;
 
     void removeSharedFileIfExists(const String & path, bool delete_metadata_only) override;
 
-    void removeSharedFiles(const RemoveBatchRequest & files, bool keep_all_batch_data, const NameSet & file_names_remove_metadata_only) override;
-
     void removeSharedRecursive(const String & path, bool keep_all_batch_data, const NameSet & file_names_remove_metadata_only) override;
+
+    void removeFromRemoteFS(const std::vector<String> & paths);
+
+    DiskPtr getMetadataDiskIfExistsOrSelf() override { return metadata_disk; }
+
+    UInt32 getRefCount(const String & path) const override;
+
+    /// Return metadata for each file path. Also, before serialization reset
+    /// ref_count for each metadata to zero. This function used only for remote
+    /// fetches/sends in replicated engines. That's why we reset ref_count to zero.
+    std::unordered_map<String, String> getSerializedMetadata(const std::vector<String> & file_paths) const override;
+
+    String getUniqueId(const String & path) const override;
+
+    bool checkObjectExists(const String & path) const;
+    bool checkUniqueId(const String & id) const override;
+
+    void createHardLink(const String & src_path, const String & dst_path) override;
 
     void listFiles(const String & path, std::vector<String> & file_names) override;
 
@@ -124,59 +142,56 @@ public:
 
     Poco::Timestamp getLastModified(const String & path) override;
 
-    void createHardLink(const String & src_path, const String & dst_path) override;
+    bool isRemote() const override { return true; }
+
+    void shutdown() override;
+
+    void startup() override;
 
     ReservationPtr reserve(UInt64 bytes) override;
 
-    String getUniqueId(const String & path) const override;
+    std::unique_ptr<ReadBufferFromFileBase> readFile(
+        const String & path,
+        const ReadSettings & settings,
+        std::optional<size_t> read_hint,
+        std::optional<size_t> file_size) const override;
 
-    bool checkUniqueId(const String & id) const override = 0;
+    std::unique_ptr<WriteBufferFromFileBase> writeFile(
+        const String & path,
+        size_t buf_size,
+        WriteMode mode,
+        const WriteSettings & settings) override;
 
-    virtual void removeFromRemoteFS(const std::vector<String> & paths) = 0;
-
-    static AsynchronousReaderPtr getThreadPoolReader();
-
-    static ThreadPool & getThreadPoolWriter();
-
-    DiskPtr getMetadataDiskIfExistsOrSelf() override { return metadata_disk; }
-
-    UInt32 getRefCount(const String & path) const override;
-
-    /// Return metadata for each file path. Also, before serialization reset
-    /// ref_count for each metadata to zero. This function used only for remote
-    /// fetches/sends in replicated engines. That's why we reset ref_count to zero.
-    std::unordered_map<String, String> getSerializedMetadata(const std::vector<String> & file_paths) const override;
-protected:
-    Poco::Logger * log;
-    const String name;
-    const String remote_fs_root_path;
-
-    DiskPtr metadata_disk;
-
-    FileCachePtr cache;
+    void applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr context_, const String &, const DisksMap &) override;
 
 private:
+    const String name;
+    const String remote_fs_root_path;
+    Poco::Logger * log;
+    DiskPtr metadata_disk;
+
+    const DiskType disk_type;
+    ObjectStoragePtr object_storage;
+
+    UInt64 reserved_bytes = 0;
+    UInt64 reservation_count = 0;
+    std::mutex reservation_mutex;
+
+    mutable std::shared_mutex metadata_mutex;
     void removeMetadata(const String & path, std::vector<String> & paths_to_remove);
 
     void removeMetadataRecursive(const String & path, std::unordered_map<String, std::vector<String>> & paths_to_remove);
 
     bool tryReserve(UInt64 bytes);
 
-    UInt64 reserved_bytes = 0;
-    UInt64 reservation_count = 0;
-    std::mutex reservation_mutex;
-    mutable std::shared_mutex metadata_mutex;
+    bool send_metadata;
+
+    std::unique_ptr<DiskObjectStorageMetadataHelper> metadata_helper;
 };
 
-using RemoteDiskPtr = std::shared_ptr<IDiskRemote>;
-
-/// Remote FS (S3, HDFS) metadata file layout:
-/// FS objects, their number and total size of all FS objects.
-/// Each FS object represents a file path in remote FS and its size.
-
-struct IDiskRemote::Metadata
+struct DiskObjectStorage::Metadata
 {
-    using Updater = std::function<bool(IDiskRemote::Metadata & metadata)>;
+    using Updater = std::function<bool(DiskObjectStorage::Metadata & metadata)>;
     /// Metadata file version.
     static constexpr UInt32 VERSION_ABSOLUTE_PATHS = 1;
     static constexpr UInt32 VERSION_RELATIVE_PATHS = 2;
@@ -230,10 +245,10 @@ private:
     void load();
 };
 
-class DiskRemoteReservation final : public IReservation
+class DiskObjectStorageReservation final : public IReservation
 {
 public:
-    DiskRemoteReservation(const RemoteDiskPtr & disk_, UInt64 size_)
+    DiskObjectStorageReservation(const std::shared_ptr<DiskObjectStorage> & disk_, UInt64 size_)
         : disk(disk_), size(size_), metric_increment(CurrentMetrics::DiskSpaceReservedForMerge, size_)
     {
     }
@@ -246,57 +261,64 @@ public:
 
     void update(UInt64 new_size) override;
 
-    ~DiskRemoteReservation() override;
+    ~DiskObjectStorageReservation() override;
 
 private:
-    RemoteDiskPtr disk;
+    std::shared_ptr<DiskObjectStorage> disk;
     UInt64 size;
     CurrentMetrics::Increment metric_increment;
 };
 
-
-/// Runs tasks asynchronously using thread pool.
-class AsyncExecutor : public Executor
+class DiskObjectStorageMetadataHelper
 {
 public:
-    explicit AsyncExecutor(const String & name_, int thread_pool_size)
-        : name(name_)
-        , pool(ThreadPool(thread_pool_size)) {}
+    static constexpr UInt64 LATEST_REVISION = std::numeric_limits<UInt64>::max();
+    static constexpr UInt64 UNKNOWN_REVISION = 0;
 
-    std::future<void> execute(std::function<void()> task) override
+    DiskObjectStorageMetadataHelper(DiskObjectStorage * disk_, ReadSettings read_settings_)
+        : disk(disk_)
+        , read_settings(std::move(read_settings_))
     {
-        auto promise = std::make_shared<std::promise<void>>();
-        pool.scheduleOrThrowOnError(
-            [promise, task]()
-            {
-                try
-                {
-                    task();
-                    promise->set_value();
-                }
-                catch (...)
-                {
-                    tryLogCurrentException("Failed to run async task");
-
-                    try
-                    {
-                        promise->set_exception(std::current_exception());
-                    }
-                    catch (...) {}
-                }
-            });
-
-        return promise->get_future();
     }
 
-    void setMaxThreads(size_t threads)
+    struct RestoreInformation
     {
-        pool.setMaxThreads(threads);
-    }
+        UInt64 revision = LATEST_REVISION;
+        String source_path;
+        bool detached = false;
+    };
 
-private:
-    String name;
-    ThreadPool pool;
+    using Futures = std::vector<std::future<void>>;
+
+    void createFileOperationObject(const String & operation_name, UInt64 revision, const ObjectAttributes & metadata) const;
+    void findLastRevision();
+
+    int readSchemaVersion(const String & source_path) const;
+    void saveSchemaVersion(const int & version) const;
+    void updateObjectMetadata(const String & key, const ObjectAttributes & metadata) const;
+    void migrateFileToRestorableSchema(const String & path) const;
+    void migrateToRestorableSchemaRecursive(const String & path, Futures & results);
+    void migrateToRestorableSchema();
+
+    void restore();
+    void readRestoreInformation(RestoreInformation & restore_information);
+    void restoreFiles(const RestoreInformation & restore_information);
+    void processRestoreFiles(const String & source_path, std::vector<String> keys);
+    void restoreFileOperations(const RestoreInformation & restore_information);
+
+    std::atomic<UInt64> revision_counter = 0;
+    inline static const String RESTORE_FILE_NAME = "restore";
+
+    /// Object contains information about schema version.
+    inline static const String SCHEMA_VERSION_OBJECT = ".SCHEMA_VERSION";
+    /// Version with possibility to backup-restore metadata.
+    static constexpr int RESTORABLE_SCHEMA_VERSION = 1;
+    /// Directories with data.
+    const std::vector<String> data_roots {"data", "store"};
+
+    DiskObjectStorage * disk;
+
+    ReadSettings read_settings;
 };
 
 }
