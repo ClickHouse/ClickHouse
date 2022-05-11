@@ -95,8 +95,8 @@ if [ -n "$(ls /docker-entrypoint-initdb.d/)" ] || [ -n "$CLICKHOUSE_DB" ]; then
     HTTP_PORT="$(clickhouse extract-from-config --config-file "$CLICKHOUSE_CONFIG" --key=http_port)"
 
     # Drop privileges
-    CLICKHOUSE_SETUID="${USER}"
-    CLICKHOUSE_SETGID="${GROUP}"
+    export CLICKHOUSE_SETUID="${USER}"
+    export CLICKHOUSE_SETGID="${GROUP}"
 
     # Listen only on localhost until the initialization is done
     /usr/bin/clickhouse-server --config-file="$CLICKHOUSE_CONFIG" -- --listen_host=127.0.0.1 &
