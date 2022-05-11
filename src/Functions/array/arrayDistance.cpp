@@ -23,6 +23,7 @@ struct LpDistance
     static void compute(const Eigen::MatrixX<T> & left, const Eigen::MatrixX<T> & right, PaddedPODArray<T> & array)
     {
         auto & norms = (left - right).colwise().template lpNorm<N>();
+        array.reserve(norms.size());
         // array.insert() failed to work with Eigen iterators
         for (auto n : norms)
             array.push_back(n);
@@ -45,6 +46,7 @@ struct CosineDistance
         auto & ny = right.colwise().norm();
         auto & nm = nx.cwiseProduct(ny).cwiseInverse();
         auto & dist = 1.0 - prod.cwiseProduct(nm).array();
+        array.reserve(dist.size());
         for (auto d : dist)
             array.push_back(d);
     }

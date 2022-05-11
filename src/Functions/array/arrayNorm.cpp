@@ -21,6 +21,7 @@ struct LpNorm
     template <typename T>
     static void compute(const std::vector<Eigen::VectorX<T>> & vec, PaddedPODArray<T> & array)
     {
+        array.reserve(vec.size());
         for (const auto & v : vec)
         {
             array.push_back(v.template lpNorm<N>());
