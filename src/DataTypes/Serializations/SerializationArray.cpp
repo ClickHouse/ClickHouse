@@ -132,29 +132,29 @@ namespace
 
         offset_values.resize(i);
     }
+}
 
-    ColumnPtr arraySizesToOffsets(const IColumn & column)
-    {
-        const auto & column_sizes = assert_cast<const ColumnArray::ColumnOffsets &>(column);
-        MutableColumnPtr column_offsets = column_sizes.cloneEmpty();
+ColumnPtr arraySizesToOffsets(const IColumn & column)
+{
+    const auto & column_sizes = assert_cast<const ColumnArray::ColumnOffsets &>(column);
+    MutableColumnPtr column_offsets = column_sizes.cloneEmpty();
 
-        if (column_sizes.empty())
-            return column_offsets;
-
-        const auto & sizes_data = column_sizes.getData();
-        auto & offsets_data = assert_cast<ColumnArray::ColumnOffsets &>(*column_offsets).getData();
-
-        offsets_data.resize(sizes_data.size());
-
-        IColumn::Offset prev_offset = 0;
-        for (size_t i = 0, size = sizes_data.size(); i < size; ++i)
-        {
-            prev_offset += sizes_data[i];
-            offsets_data[i] = prev_offset;
-        }
-
+    if (column_sizes.empty())
         return column_offsets;
+
+    const auto & sizes_data = column_sizes.getData();
+    auto & offsets_data = assert_cast<ColumnArray::ColumnOffsets &>(*column_offsets).getData();
+
+    offsets_data.resize(sizes_data.size());
+
+    IColumn::Offset prev_offset = 0;
+    for (size_t i = 0, size = sizes_data.size(); i < size; ++i)
+    {
+        prev_offset += sizes_data[i];
+        offsets_data[i] = prev_offset;
     }
+
+    return column_offsets;
 }
 
 ColumnPtr arrayOffsetsToSizes(const IColumn & column)

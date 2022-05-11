@@ -80,5 +80,6 @@ private:
 };
 
 ColumnPtr arrayOffsetsToSizes(const IColumn & column);
+ColumnPtr arraySizesToOffsets(const IColumn & column);
 
 }
