@@ -34,7 +34,7 @@
 #include <Storages/Hive/StorageHiveMetadata.h>
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/StorageFactory.h>
-#include <Storages/Hive/LocalHiveQueryTaskBuilder.h>
+#include <Storages/Hive/LocalHiveSourceTask.h>
 
 namespace DB
 {
@@ -179,7 +179,7 @@ public:
                     remote_read_buf = RemoteReadBuffer::create(
                         getContext(),
                         std::make_shared<StorageHiveMetadata>(
-                            "Hive", getNameNodeCluster(hdfs_namenode_url), uri_with_path, current_file->getSize(), current_file->getLastModTs()),
+                            "Hive", getNameNodeCluster(hdfs_namenode_url), uri_with_path, current_file->getSize(), current_file->getLastModifiedTimestamp()),
                         std::move(raw_read_buf),
                         buff_size,
                         format == "Parquet" || format == "ORC");
@@ -342,28 +342,7 @@ void StorageHive::lazyInitialize()
 
     table_schema = hive_table_metadata->sd.cols;
 
-    FileFormat hdfs_file_format = IHiveFile::toFileFormat(hive_table_metadata->sd.inputFormat);
-    switch (hdfs_file_format)
-    {
-        case FileFormat::TEXT:
-        case FileFormat::LZO_TEXT:
-            format_name = "HiveText";
-            break;
-        case FileFormat::RC_FILE:
-            throw Exception("Unsopported hive format rc_file", ErrorCodes::NOT_IMPLEMENTED);
-        case FileFormat::SEQUENCE_FILE:
-            throw Exception("Unsopported hive format sequence_file", ErrorCodes::NOT_IMPLEMENTED);
-        case FileFormat::AVRO:
-            format_name = "Avro";
-            break;
-        case FileFormat::PARQUET:
-            format_name = "Parquet";
-            break;
-        case FileFormat::ORC:
-            format_name = "ORC";
-            break;
-    }
-
+    format_name = IHiveFile::toCHFormat(hive_table_metadata->sd.inputFormat);
     /// Need to specify text_input_fields_names from table_schema for TextInputFormated Hive table
     if (format_name == "HiveText")
     {
@@ -524,10 +503,10 @@ StorageHive::totalRowsImpl(const SelectQueryInfo & query_info, PruneLevel prune_
     return total_rows;
 }
 
-std::shared_ptr<IHiveQueryTaskFilesCollector> StorageHive::getHiveFilesCollector(const SelectQueryInfo & query_info) const
+std::shared_ptr<IHiveSourceFilesCollector> StorageHive::getHiveFilesCollector(const SelectQueryInfo & query_info) const
 {
-    std::shared_ptr<IHiveQueryTaskFilesCollector> hive_task_files_collector;
-    IHiveQueryTaskFilesCollector::Arguments args
+    std::shared_ptr<IHiveSourceFilesCollector> hive_task_files_collector;
+    IHiveSourceFilesCollector::Arguments args
         = {.context = getContext(),
            .query_info = &query_info,
            .hive_metastore_url = hive_metastore_url,
@@ -538,18 +517,18 @@ std::shared_ptr<IHiveQueryTaskFilesCollector> StorageHive::getHiveFilesCollector
            .num_streams = getContext()->getSettingsRef().max_threads,
            .partition_by_ast = partition_by_ast};
     /**
-     * Hdfs files collection action is wrapped into IHiveQueryTaskFilesCollector.
+     * Hdfs files collection action is wrapped into IHiveSourceFilesCollector.
      * On Hive() engine, hive_task_files_collector_builder is nullptr.
-     * LocalHiveQueryTaskFilesCollector will collect all files.
+     * LocalHiveSourceFilesCollector will collect all files.
      *
      */
     if (!hive_task_files_collector_builder)
     {
-        hive_task_files_collector = std::make_shared<LocalHiveQueryTaskFilesCollector>();
+        hive_task_files_collector = std::make_shared<LocalHiveSourceFilesCollector>();
     }
     else
         hive_task_files_collector = (*hive_task_files_collector_builder)();
-    hive_task_files_collector->setupArgs(args);
+    hive_task_files_collector->initialize(args);
     return hive_task_files_collector;
 }
 

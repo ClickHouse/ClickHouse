@@ -4,7 +4,7 @@
 #include <Storages/Hive/HiveFile.h>
 #include <Storages/Hive/HiveCommon.h>
 #include <Poco/Logger.h>
-#include <Storages/Hive/HiveQueryTask.h>
+#include <Storages/Hive/HiveSourceTask.h>
 namespace DB
 {
 /**
@@ -14,15 +14,7 @@ namespace DB
 class HiveFilesCollector
 {
 public:
-    using PruneLevel = IHiveQueryTaskFilesCollector::PruneLevel;
-    struct FileInfo
-    {
-        String hdfs_namenode_url;
-        HiveMetastoreClient::FileInfo file_info;
-        Strings partition_values;
-        HiveFilePtr file_ptr;
-        String file_format;
-    };
+    using PruneLevel = IHiveSourceFilesCollector::PruneLevel;
 
     explicit HiveFilesCollector(
         ContextPtr context_,
@@ -46,7 +38,7 @@ public:
         prepare();
     }
 
-    std::vector<FileInfo> collect(PruneLevel prune_level = PruneLevel::Max);
+    HiveFiles collect(PruneLevel prune_level = PruneLevel::Max);
 private:
     using HiveTableMetadataPtr = HiveMetastoreClient::HiveTableMetadataPtr;
     ContextPtr context;
@@ -71,7 +63,7 @@ private:
 
     static ASTPtr extractKeyExpressionList(const ASTPtr & node);
     void prepare();
-    std::vector<FileInfo> collectHiveFilesFromPartition(
+    HiveFiles collectHiveFilesFromPartition(
         const Apache::Hadoop::Hive::Partition & partition_,
         HiveMetastoreClient::HiveTableMetadataPtr hive_table_metadata_,
         const HDFSFSPtr & fs_,

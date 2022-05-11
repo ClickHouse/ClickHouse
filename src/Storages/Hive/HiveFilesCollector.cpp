@@ -10,7 +10,7 @@
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <Common/StringUtils/StringUtils.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <IO/ReadBufferFromString.h>
 namespace DB
 {
@@ -52,7 +52,8 @@ void HiveFilesCollector::prepare()
     hive_file_minmax_idx_expr = std::make_shared<ExpressionActions>(
         std::make_shared<ActionsDAG>(hive_file_name_and_types), ExpressionActionsSettings::fromContext(context));
 }
-std::vector<HiveFilesCollector::FileInfo> HiveFilesCollector::collect(PruneLevel prune_level)
+
+HiveFiles HiveFilesCollector::collect(PruneLevel prune_level)
 {
     auto hive_metastore_client = HiveMetastoreClientFactory::instance().getOrCreate(hive_metastore_url);
     auto hive_table_metadata = hive_metastore_client->getTableMetadata(hive_database, hive_table);
@@ -60,12 +61,12 @@ std::vector<HiveFilesCollector::FileInfo> HiveFilesCollector::collect(PruneLevel
     hdfs_namenode_url = getNameNodeUrl(hive_table_metadata->getTable()->sd.location);
     auto hdfs_builder = createHDFSBuilder(hdfs_namenode_url, context->getGlobalContext()->getConfigRef());
     auto hdfs_fs = createHDFSFS(hdfs_builder.get());
-    format_name = IHiveFile::hiveInputFormatToCHFormat(hive_table_metadata->getTable()->sd.inputFormat);
+    format_name = IHiveFile::toCHFormat(hive_table_metadata->getTable()->sd.inputFormat);
 
     if (!partition_name_and_types.empty() && partitions.empty())
         return {};
 
-    std::vector<FileInfo> hive_files;
+    HiveFiles hive_files;
     std::mutex hive_files_mutex;
     ThreadPool thread_pool{num_streams};
     if (!partitions.empty())
@@ -94,7 +95,7 @@ std::vector<HiveFilesCollector::FileInfo> HiveFilesCollector::collect(PruneLevel
                 if (hive_file)
                 {
                     std::lock_guard<std::mutex> lock(hive_files_mutex);
-                    hive_files.emplace_back(FileInfo{.hdfs_namenode_url = hdfs_namenode_url, .file_info = file_info, .partition_values = {}, .file_ptr = hive_file, .file_format = format_name});
+                    hive_files.emplace_back(hive_file);
                 }
             });
         }
@@ -108,7 +109,7 @@ static std::string getBaseName(const String & path)
     return path.substr(basename_start + 1);
 }
 
-std::vector<HiveFilesCollector::FileInfo> HiveFilesCollector::collectHiveFilesFromPartition(
+HiveFiles HiveFilesCollector::collectHiveFilesFromPartition(
     const Apache::Hadoop::Hive::Partition & partition_,
     HiveMetastoreClient::HiveTableMetadataPtr hive_table_metadata_,
     const HDFSFSPtr & fs_,
@@ -171,13 +172,13 @@ std::vector<HiveFilesCollector::FileInfo> HiveFilesCollector::collectHiveFilesFr
 
     auto file_infos = hive_table_metadata_->getFilesByLocation(fs_, partition_.sd.location);
 
-    std::vector<FileInfo> hive_files;
+    HiveFiles hive_files;
     hive_files.reserve(file_infos.size());
     for (const auto & file_info : file_infos)
     {
         auto hive_file = getHiveFileIfNeeded(file_info, fields, hive_table_metadata_, prune_level);
         if (hive_file)
-            hive_files.emplace_back(FileInfo{.hdfs_namenode_url = hdfs_namenode_url, .file_info = file_info, .partition_values = partition_values, .file_ptr = hive_file, .file_format = format_name});
+            hive_files.emplace_back(hive_file);
     }
     return hive_files;
 
@@ -196,10 +197,10 @@ HiveFilePtr HiveFilesCollector::getHiveFileIfNeeded(
 
     auto cache = hive_table_metadata->getHiveFilesCache();
     auto hive_file = cache->get(file_info.path);
-    if (!hive_file || hive_file->getLastModTs() < file_info.last_modify_time)
+    if (!hive_file || hive_file->getLastModifiedTimestamp() < file_info.last_modify_time)
     {
-        LOG_TRACE(logger, "Create hive file {}, prune_level {}", file_info.path, IHiveQueryTaskFilesCollector::pruneLevelToString(prune_level));
-        hive_file = createHiveFile(
+        LOG_TRACE(logger, "Create hive file {}, prune_level {}", file_info.path, IHiveSourceFilesCollector::pruneLevelToString(prune_level));
+        hive_file = HiveFileFactory::instance().createFile(
             format_name,
             fields,
             hdfs_namenode_url,
@@ -213,7 +214,7 @@ HiveFilePtr HiveFilesCollector::getHiveFileIfNeeded(
     }
     else
     {
-        LOG_TRACE(logger, "Get hive file {} from cache, prune_level {}", file_info.path, IHiveQueryTaskFilesCollector::pruneLevelToString(prune_level));
+        LOG_TRACE(logger, "Get hive file {} from cache, prune_level {}", file_info.path, IHiveSourceFilesCollector::pruneLevelToString(prune_level));
     }
 
     if (prune_level >= PruneLevel::File)

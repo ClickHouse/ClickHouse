@@ -13,7 +13,7 @@
 #include <Storages/HDFS/HDFSCommon.h>
 #include <Storages/Hive/HiveCommon.h>
 #include <Storages/Hive/HiveFile.h>
-#include <Storages/Hive/HiveQueryTask.h>
+#include <Storages/Hive/HiveSourceTask.h>
 
 namespace DB
 {
@@ -75,7 +75,7 @@ private:
     using FileFormat = IHiveFile::FileFormat;
     using FileInfo = HiveMetastoreClient::FileInfo;
     using HiveTableMetadataPtr = HiveMetastoreClient::HiveTableMetadataPtr;
-    using PruneLevel = IHiveQueryTaskFilesCollector::PruneLevel;
+    using PruneLevel = IHiveSourceFilesCollector::PruneLevel;
 
     void getActualColumnsToRead(Block & sample_block, const Block & header_block, const NameSet & partition_columns) const;
 
@@ -85,7 +85,7 @@ private:
     std::optional<UInt64>
     totalRowsImpl(const SelectQueryInfo & query_info, PruneLevel prune_level) const;
 
-    std::shared_ptr<IHiveQueryTaskFilesCollector> getHiveFilesCollector(const SelectQueryInfo & query_info) const;
+    std::shared_ptr<IHiveSourceFilesCollector> getHiveFilesCollector(const SelectQueryInfo & query_info) const;
 
     String hive_metastore_url;
 

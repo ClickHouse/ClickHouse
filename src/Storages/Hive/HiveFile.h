@@ -65,6 +65,14 @@ public:
         {ORC_INPUT_FORMAT, FileFormat::ORC},
     };
 
+    inline static const std::map<String, String> VALID_CH_FORMATS = {
+        {TEXT_INPUT_FORMAT, "HiveText"},
+        {LZO_TEXT_INPUT_FORMAT, "HiveText"},
+        {AVRO_INPUT_FORMAT, "Avro"},
+        {MR_PARQUET_INPUT_FORMAT, "Parquet"},
+        {ORC_INPUT_FORMAT, "ORC"},
+    };
+
     static inline bool isFormatClass(const String & format_class) { return VALID_HDFS_FORMATS.count(format_class) > 0; }
     static inline FileFormat toFileFormat(const String & format_class)
     {
@@ -74,10 +82,14 @@ public:
         }
         throw Exception("Unsupported hdfs file format " + format_class, ErrorCodes::NOT_IMPLEMENTED);
     }
-    /**
-     * @brief transform file format representation from hive metastore to inner representation
-     */
-    static String hiveInputFormatToCHFormat(const String & format_class);
+
+    static String toCHFormat(const String & hive_format_class)
+    {
+        const auto iter = VALID_CH_FORMATS.find(hive_format_class);
+        if (iter == VALID_CH_FORMATS.end())
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported hdfs file format: {}", hive_format_class);
+        return iter->second;
+    }
 
     IHiveFile(
         const FieldVector & partition_values_,
@@ -102,7 +114,7 @@ public:
 
     String getFormatName() const { return String(magic_enum::enum_name(getFormat())); }
     const String & getPath() const { return path; }
-    UInt64 getLastModTs() const { return last_modify_time; }
+    UInt64 getLastModifiedTimestamp() const { return last_modify_time; }
     size_t getSize() const { return size; }
     std::optional<size_t> getRows();
     const FieldVector & getPartitionValues() const { return partition_values; }
@@ -260,20 +272,38 @@ private:
     std::map<String, size_t> parquet_column_positions;
 };
 
-/**
- * @brief Create a Hive File object
- * Different HiveFile Object is created base on format_name
- */
-HiveFilePtr createHiveFile(
-    const String & format_name,
-    const FieldVector & fields,
-    const String & namenode_url,
-    const String & path,
-    UInt64 ts,
-    size_t size,
-    const NamesAndTypesList & index_names_and_types,
-    const std::shared_ptr<HiveSettings> & hive_settings,
-    ContextPtr context);
+class HiveFileFactory : public boost::noncopyable
+{
+public:
+    using HiveFileCreator = std::function<DB::HiveFilePtr(
+        const FieldVector & /*fields*/,
+        const String & /*namenode_url*/,
+        const String & /*path*/,
+        UInt64 /*ts*/,
+        size_t /*size*/,
+        const NamesAndTypesList & /*index_names_and_types*/,
+        const std::shared_ptr<HiveSettings> & /*hive_settings*/,
+        ContextPtr context)>;
+    static HiveFileFactory & instance();
+
+    HiveFilePtr createFile(
+        const String & format_name,
+        const FieldVector & fields,
+        const String & namenode_url,
+        const String & path,
+        UInt64 ts,
+        size_t size,
+        const NamesAndTypesList & index_names_and_types,
+        const std::shared_ptr<HiveSettings> & hive_settings,
+        ContextPtr context);
+
+protected :
+    HiveFileFactory() = default;
+
+    static void registerHiveCreators(HiveFileFactory & instance);
+
+    std::map<String, HiveFileCreator> creators;
+};
 
 }
 
