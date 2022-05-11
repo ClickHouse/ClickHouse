@@ -159,9 +159,7 @@ void Progress::read(ReadBuffer & in, UInt64 server_revision)
 
     read_rows.store(values.read_rows, std::memory_order_relaxed);
     read_bytes.store(values.read_bytes, std::memory_order_relaxed);
-
     total_rows_to_read.store(values.total_rows_to_read, std::memory_order_relaxed);
-    total_bytes_to_read.store(values.total_bytes_to_read, std::memory_order_relaxed);
 
     written_rows.store(values.written_rows, std::memory_order_relaxed);
     written_bytes.store(values.written_bytes, std::memory_order_relaxed);
