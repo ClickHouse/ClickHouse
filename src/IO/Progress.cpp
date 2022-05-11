@@ -69,11 +69,8 @@ bool Progress::incrementPiecewiseAtomically(const Progress & rhs)
     read_rows += rhs.read_rows;
     read_bytes += rhs.read_bytes;
 
-    if (rhs.total_rows_to_read)
-        total_rows_to_read.store(rhs.total_rows_to_read);
-
-    if (rhs.total_bytes_to_read)
-        total_bytes_to_read.store(rhs.total_bytes_to_read);
+    total_rows_to_read += rhs.total_rows_to_read;
+    total_bytes_to_read += rhs.total_bytes_to_read;
 
     written_rows += rhs.written_rows;
     written_bytes += rhs.written_bytes;
