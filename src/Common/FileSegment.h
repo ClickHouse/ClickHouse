@@ -184,8 +184,6 @@ private:
         std::lock_guard<std::mutex> & cache_lock,
         std::lock_guard<std::mutex> & segment_lock);
 
-    static String getCallerIdImpl();
-
     void resetDownloaderImpl(std::lock_guard<std::mutex> & segment_lock);
 
     const Range segment_range;
