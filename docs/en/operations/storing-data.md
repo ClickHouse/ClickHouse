@@ -1,6 +1,6 @@
 ---
-toc_priority: 68
-toc_title: External Disks for Storing Data
+sidebar_position: 68
+sidebar_label: External Disks for Storing Data
 ---
 
 # External Disks for Storing Data {#external-disks}
