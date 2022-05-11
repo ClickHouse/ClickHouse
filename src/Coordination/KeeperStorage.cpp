@@ -335,7 +335,7 @@ Coordination::Error KeeperStorage::commit(int64_t commit_zxid, int64_t session_i
                 else if constexpr (std::same_as<DeltaType, KeeperStorage::SetACLDelta>)
                 {
                     auto node_it = container.find(path);
-                    if (node_it != container.end())
+                    if (node_it == container.end())
                         fail();
 
                     if (operation.version != -1 && operation.version != node_it->value.stat.aversion)
@@ -531,6 +531,7 @@ bool KeeperStorage::checkACL(StringRef path, int32_t permission, int64_t session
 
     if (current_nodes.hasACL(session_id, is_local, [](const auto & auth_id) { return auth_id.scheme == "super"; }))
         return true;
+
 
     for (const auto & node_acl : node_acls)
     {
@@ -1439,7 +1440,7 @@ struct KeeperStorageAuthRequestProcessor final : public KeeperStorageRequestProc
         else
         {
             KeeperStorage::AuthID new_auth{auth_request.scheme, digest};
-            if (storage.current_nodes.hasACL(session_id, false, [&](const auto & auth_id) { return new_auth == auth_id; }))
+            if (!storage.current_nodes.hasACL(session_id, false, [&](const auto & auth_id) { return new_auth == auth_id; }))
                 new_deltas.emplace_back(zxid, KeeperStorage::AddAuthDelta{session_id, std::move(new_auth)});
         }
 
@@ -1654,7 +1655,10 @@ KeeperStorage::ResponsesForSessions KeeperStorage::processRequest(
                 /// Original ZooKeeper always throws no auth, even when user provided some credentials
                 response->error = Coordination::Error::ZNOAUTH;
             }
-            response = request_processor->processLocal(*this, zxid, session_id, time);
+            else
+            {
+                response = request_processor->processLocal(*this, zxid, session_id, time);
+            }
         }
         else
         {
