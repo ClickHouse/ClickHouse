@@ -22,14 +22,11 @@ class AtomicStopwatch;
 namespace DB
 {
 
-void logAboutProgress(Poco::Logger * log, size_t processed, size_t total, AtomicStopwatch & watch);
-
 using DDLTaskPtr = std::unique_ptr<DDLTaskBase>;
 using TableNames = std::vector<QualifiedTableName>;
 using TableNamesSet = std::unordered_set<QualifiedTableName>;
 using QueryNames = std::vector<String>;
 using QueryNamesSet = std::unordered_set<String>;
-using QueryNameToDDLTaskPtrMap = std::unordered_map<String, DDLTaskPtr&>;
 
 struct QueriesDependenciesInfo
 {
@@ -40,17 +37,14 @@ struct QueriesDependenciesInfo
 };
 
 using QueriesDependenciesInfos = std::unordered_map<String, QueriesDependenciesInfo>; /// entry_name -> Dependencies_queries
-using QueriesDependenciesInfosIter = std::unordered_map<String, QueriesDependenciesInfo>::iterator;
 using DatabaseObjectsInAST = std::unordered_map<String, TableNamesSet>;
 
 struct TasksDependencies
 {
     String default_database;
 
-    std::mutex mutex;
-
     /// For logging
-    size_t total_dictionaries = 0;
+    size_t total_queries = 0;
 
     /// List of tables/dictionaries that do not have any dependencies and can be loaded
     QueryNames independent_queries;
@@ -68,8 +62,6 @@ class DependenciesGraph
 {
 public:
 
-    QueryNameToDDLTaskPtrMap name_to_ddl_task;
-
     DependenciesGraph(ContextPtr global_context_);
     DependenciesGraph() = delete;
 
@@ -82,7 +74,7 @@ public:
     QueryNames getTasksToParallelProcess();
 
 private:
-    ContextMutablePtr global_context;
+    ContextPtr global_context;
 
     TasksDependencies tasks_dependencies;
     Poco::Logger * log;

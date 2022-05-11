@@ -24,8 +24,8 @@ DependenciesGraph::DependenciesGraph(ContextPtr global_context_)
 
 void DependenciesGraph::addTask(DDLTaskPtr & task)
 {
+    total_queries++;
     auto name = task->entry_name;
-    name_to_ddl_task.emplace(std::make_pair(name, std::move(task)));
     auto database_objects_for_added_task = getDependenciesSetFromQuery(global_context, task->query);
     tasks_dependencies.database_objects_in_query[name] = database_objects_for_added_task;
     for (const auto & [query_name, query_objects] : tasks_dependencies.database_objects_in_query)
@@ -59,36 +59,20 @@ void DependenciesGraph::addTask(DDLTaskPtr & task)
 
 QueryNames DependenciesGraph::getTasksToParallelProcess()
 {
-    for (const auto & task_name : tasks_dependencies.independent_queries)
-    {
-        tasks_processed++;
-        if (name_to_ddl_task[task_name]->completely_processed.load())
-        {
-            removeTask(task_name);
-        }
-    }
-
+    tasks_processed += tasks_dependencies.independent_queries.size();
     return tasks_dependencies.independent_queries;
 }
 
 void DependenciesGraph::removeProcessedTasks()
 {
-    QueryNames new_independent_queries;
     auto & already_processed = tasks_dependencies.independent_queries;
 
     for (const auto& task_name : already_processed)
     {
-        if (name_to_ddl_task[task_name]->completely_processed.load())
-        {
-            removeTask(task_name);
-        }
-        else
-        {
-            new_independent_queries.push_back(task_name);
-        }
+        removeTask(task_name);
     }
 
-    tasks_dependencies.independent_queries = std::move(new_independent_queries);
+    already_processed.clear();
 }
 
 void DependenciesGraph::removeTask(String query_name)
@@ -116,7 +100,6 @@ void DependenciesGraph::removeTask(String query_name)
         }
     }
     tasks_dependencies.dependencies_info.erase(query_name);
-    name_to_ddl_task.erase(query_name);
 }
 
 void DependenciesGraph::logDependencyGraph() const
