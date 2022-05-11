@@ -72,6 +72,8 @@ protected:
 
     bool with_cache;
 
+    String query_id;
+
 private:
     SeekableReadBufferPtr createImplementationBuffer(const String & path, size_t file_size);
 
@@ -99,8 +101,6 @@ private:
     size_t bytes_to_ignore = 0;
 
     Poco::Logger * log;
-
-    String query_id;
 
     size_t total_bytes_read_from_current_file = 0;
 
