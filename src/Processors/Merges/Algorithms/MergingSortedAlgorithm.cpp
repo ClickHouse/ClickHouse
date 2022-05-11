@@ -1,6 +1,8 @@
 #include <Processors/Merges/Algorithms/MergingSortedAlgorithm.h>
 #include <Processors/Transforms/ColumnGathererTransform.h>
 #include <IO/WriteBuffer.h>
+#include <IO/WriteHelpers.h>
+#include <IO/WriteBufferFromString.h>
 
 namespace DB
 {
@@ -36,7 +38,7 @@ MergingSortedAlgorithm::MergingSortedAlgorithm(
         sort_description_types.emplace_back(header.getByName(column_description.column_name).type);
     }
 
-    compileSortDescriptionIfNeeded(description, sort_description_types);
+    compileSortDescriptionIfNeeded(description, sort_description_types, true /*increase_unique_count*/);
 }
 
 void MergingSortedAlgorithm::addInput()

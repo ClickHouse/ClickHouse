@@ -131,7 +131,8 @@ SortingTransform::SortingTransform(
     const Block & header,
     const SortDescription & description_,
     size_t max_merged_block_size_,
-    UInt64 limit_)
+    UInt64 limit_,
+    bool increase_sort_description_compile_attempts)
     : IProcessor({header}, {header})
     , description(description_)
     , max_merged_block_size(max_merged_block_size_)
@@ -175,7 +176,9 @@ SortingTransform::SortingTransform(
 
     description.swap(description_without_constants);
 
-    compileSortDescriptionIfNeeded(description, sort_description_types);
+    std::cout << "SortingTransform::SortingTransform increase compile attemps " << increase_sort_description_compile_attempts << std::endl;
+    compileSortDescriptionIfNeeded(description, sort_description_types, increase_sort_description_compile_attempts /*increase_compile_attemps*/);
+    std::cout << "SortingTransform::SortingTransform compiled sort description " << description.compiled_sort_description << std::endl;
 }
 
 SortingTransform::~SortingTransform() = default;

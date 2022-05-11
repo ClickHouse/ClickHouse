@@ -65,12 +65,12 @@ public:
 
 static std::unordered_map<std::string, CompiledSortDescriptionFunction> sort_description_to_compiled_function;
 
-static std::string getSortDescriptionDump(const SortDescription & description, const DataTypes & description_types)
+static std::string getSortDescriptionDump(const SortDescription & description, const DataTypes & header_types)
 {
     WriteBufferFromOwnString buffer;
 
     for (size_t i = 0; i < description.size(); ++i)
-        buffer << description_types[i]->getName() << ' ' << description[i].direction << ' ' << description[i].nulls_direction;
+        buffer << header_types[i]->getName() << ' ' << description[i].direction << ' ' << description[i].nulls_direction;
 
     return buffer.str();
 }
@@ -81,24 +81,37 @@ static Poco::Logger * getLogger()
     return &logger;
 }
 
-void compileSortDescriptionIfNeeded(SortDescription & description, const DataTypes & description_types)
+void compileSortDescriptionIfNeeded(SortDescription & description, const DataTypes & sort_description_types, bool increase_compile_attemps)
 {
-    if (!description.compile_sort_description || description_types.empty())
+    static std::unordered_map<UInt128, UInt64, UInt128Hash> counter;
+    static std::mutex mutex;
+
+    if (!description.compile_sort_description || sort_description_types.empty())
         return;
 
-    for (const auto & type : description_types)
+    for (const auto & type : sort_description_types)
     {
         if (!type->createColumn()->isComparatorCompilable())
             return;
     }
 
-    auto description_dump = getSortDescriptionDump(description, description_types);
+    auto description_dump = getSortDescriptionDump(description, sort_description_types);
 
     SipHash sort_description_dump_hash;
     sort_description_dump_hash.update(description_dump);
 
     UInt128 sort_description_hash_key;
     sort_description_dump_hash.get128(sort_description_hash_key);
+
+    {
+        std::lock_guard lock(mutex);
+        UInt64 & current_counter = counter[sort_description_hash_key];
+        if (current_counter < description.min_count_to_compile_sort_description)
+        {
+            current_counter += static_cast<UInt64>(increase_compile_attemps);
+            return;
+        }
+    }
 
     std::shared_ptr<CompiledSortDescriptionFunctionHolder> compiled_sort_description_holder;
 
@@ -108,7 +121,7 @@ void compileSortDescriptionIfNeeded(SortDescription & description, const DataTyp
         {
             LOG_TRACE(getLogger(), "Compile sort description {}", description_dump);
 
-            auto compiled_sort_description = compileSortDescription(getJITInstance(), description, description_types, description_dump);
+            auto compiled_sort_description = compileSortDescription(getJITInstance(), description, sort_description_types, description_dump);
             return std::make_shared<CompiledSortDescriptionFunctionHolder>(std::move(compiled_sort_description));
         });
 
@@ -117,7 +130,7 @@ void compileSortDescriptionIfNeeded(SortDescription & description, const DataTyp
     else
     {
         LOG_TRACE(getLogger(), "Compile sort description {}", description_dump);
-        auto compiled_sort_description = compileSortDescription(getJITInstance(), description, description_types, description_dump);
+        auto compiled_sort_description = compileSortDescription(getJITInstance(), description, sort_description_types, description_dump);
         compiled_sort_description_holder = std::make_shared<CompiledSortDescriptionFunctionHolder>(std::move(compiled_sort_description));
     }
 
