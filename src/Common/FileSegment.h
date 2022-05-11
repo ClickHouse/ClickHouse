@@ -137,8 +137,6 @@ public:
 
     size_t getDownloadedSize() const;
 
-    size_t getAvailableSize() const;
-
     void completeBatchAndResetDownloader();
 
     void complete(State state);
@@ -153,13 +151,15 @@ public:
 
     void assertCorrectness() const;
 
-    static FileSegmentPtr getSnapshot(const FileSegmentPtr & file_segment, std::lock_guard<std::mutex> & cache_lock);
+    static FileSegmentPtr getSnapshot(
+        const FileSegmentPtr & file_segment,
+        std::lock_guard<std::mutex> & cache_lock);
 
-        void detach(
-            std::lock_guard<std::mutex> & cache_lock,
-            std::lock_guard<std::mutex> & segment_lock);
+    void detach(
+        std::lock_guard<std::mutex> & cache_lock,
+        std::lock_guard<std::mutex> & segment_lock);
 
-    [[noreturn]] void throwDetached() const;
+    [[noreturn]] void throwIfDetached() const;
 
 private:
     size_t availableSize() const { return reserved_size - downloaded_size; }
@@ -171,7 +171,7 @@ private:
 
     bool isDetached(std::lock_guard<std::mutex> & /* segment_lock */) const { return is_detached; }
     void markAsDetached(std::lock_guard<std::mutex> & segment_lock);
-    [[noreturn]] void throwDetachedUnlocked(std::lock_guard<std::mutex> & segment_lock) const;
+    [[noreturn]] void throwIfDetachedUnlocked(std::lock_guard<std::mutex> & segment_lock) const;
 
     void assertDetachedStatus(std::lock_guard<std::mutex> & segment_lock) const;
     void assertNotDetached(std::lock_guard<std::mutex> & segment_lock) const;
