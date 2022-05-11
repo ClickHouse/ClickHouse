@@ -58,6 +58,7 @@ ConnectionParameters::ConnectionParameters(const Poco::Util::AbstractConfigurati
         if (auto * result = readpassphrase(prompt.c_str(), buf, sizeof(buf), 0))
             password = result;
     }
+    quota_key = config.getString("quota_key", "");
 
     /// By default compression is disabled if address looks like localhost.
     compression = config.getBool("compression", !isLocalAddress(DNSResolver::instance().resolveHost(host)))

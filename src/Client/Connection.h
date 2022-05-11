@@ -56,6 +56,7 @@ public:
         const String & client_name_,
         Protocol::Compression compression_,
         Protocol::Secure secure_,
+        const String & quota_key = "",
         Poco::Timespan sync_request_timeout_ = Poco::Timespan(DBMS_DEFAULT_SYNC_REQUEST_TIMEOUT_SEC, 0));
 
     ~Connection() override;
@@ -195,6 +196,7 @@ private:
     String query_id;
     Protocol::Compression compression;        /// Enable data compression for communication.
     Protocol::Secure secure;             /// Enable data encryption for communication.
+    String quota_key;
 
     /// What compression settings to use while sending data for INSERT queries and external tables.
     CompressionCodecPtr compression_codec;
