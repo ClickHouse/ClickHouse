@@ -29,6 +29,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int UNKNOWN_EXCEPTION;
+    extern const int INCORRECT_QUERY;
 }
 
 namespace detail
@@ -269,9 +270,14 @@ void MergeTreeIndexGranuleDiskANN::deserializeBinary(ReadBuffer & in, MergeTreeI
 }
 
 MergeTreeIndexAggregatorDiskANN::MergeTreeIndexAggregatorDiskANN(const String & index_name_,
-    const Block & index_sample_block_)
+    const Block & index_sample_block_, uint16_t num_threads_, float alpha_, uint16_t R_, uint16_t L_, uint16_t C_)
     : index_name(index_name_)
     , index_sample_block(index_sample_block_)
+    , num_threads(num_threads_)
+    , alpha(alpha_)
+    , R(R_)
+    , L(L_)
+    , C(C_)
 {}
 
 MergeTreeIndexGranulePtr MergeTreeIndexAggregatorDiskANN::getGranuleAndReset()
@@ -289,12 +295,15 @@ MergeTreeIndexGranulePtr MergeTreeIndexAggregatorDiskANN::getGranuleAndReset()
     auto base_index = detail::constructIndexFromDatapoints(dimensions.value(), accumulated_data);
 
     diskann::Parameters paras;
-    paras.Set<unsigned>("R", 90);
-    paras.Set<unsigned>("L", 150);
-    paras.Set<unsigned>("C", 1500);
-    paras.Set<float>("alpha", 1.2);
+
+    LOG_DEBUG(&Poco::Logger::get("DiskANN"), "Setting params: R={} L={} C={} alpha={} num_threads={}", R, L, C, alpha, num_threads);
+
+    paras.Set<unsigned>("R", R);
+    paras.Set<unsigned>("L", L);
+    paras.Set<unsigned>("C", C);
+    paras.Set<float>("alpha", alpha);
     paras.Set<bool>("saturate_graph", true);
-    paras.Set<unsigned>("num_threads", 32);
+    paras.Set<unsigned>("num_threads", num_threads);
 
     LOG_DEBUG(&Poco::Logger::get("DiskANN"), "Index parameters set");
 
@@ -432,7 +441,7 @@ std::vector<size_t> MergeTreeIndexConditionDiskANN::getUsefulRanges(MergeTreeInd
         LOG_DEBUG(&Poco::Logger::get("DiskANN"), "Distance: {}", search_result.distances[i]);
 
         if (comp_dist_maybe.has_value() &&
-            search_result.distances[i] < comp_dist_maybe.value() * comp_dist_maybe.value())
+            search_result.distances[i] >= comp_dist_maybe.value() * comp_dist_maybe.value())
         {
             break;
         }
@@ -458,7 +467,7 @@ MergeTreeIndexGranulePtr MergeTreeIndexDiskANN::createIndexGranule() const
 
 MergeTreeIndexAggregatorPtr MergeTreeIndexDiskANN::createIndexAggregator() const
 {
-    return std::make_shared<MergeTreeIndexAggregatorDiskANN>(index.name, index.sample_block);
+    return std::make_shared<MergeTreeIndexAggregatorDiskANN>(index.name, index.sample_block, num_threads, alpha, R, L, C);
 }
 
 MergeTreeIndexConditionPtr MergeTreeIndexDiskANN::createIndexCondition(
@@ -479,10 +488,75 @@ MergeTreeIndexFormat MergeTreeIndexDiskANN::getDeserializedFormat(const DiskPtr 
 MergeTreeIndexPtr diskANNIndexCreator(
     const IndexDescription & index)
 {
-    return std::make_shared<MergeTreeIndexDiskANN>(index);
+    std::vector<std::string> param_values;
+
+    uint16_t num_threads = 1;
+    float alpha = 1.2f;
+    uint16_t R = 90;
+    uint16_t L = 150;
+    uint16_t C = 1500;
+
+    for (size_t argument_id = 0; argument_id < index.arguments.size(); ++argument_id)
+    {
+        switch(argument_id)
+        {
+            case DiskANNArguments::NUM_THREADS:
+                num_threads = index.arguments[argument_id].get<uint16_t>();
+                break;
+            case DiskANNArguments::ALPHA:
+                alpha = index.arguments[argument_id].get<float>();
+                break;
+            case DiskANNArguments::R:
+                R = index.arguments[argument_id].get<uint16_t>();
+                break;
+            case DiskANNArguments::L:
+                L = index.arguments[argument_id].get<uint16_t>();
+                break;
+            case DiskANNArguments::C:
+                C = index.arguments[argument_id].get<uint16_t>();
+                break;
+        }
+    }
+
+    return std::make_shared<MergeTreeIndexDiskANN>(index, num_threads, alpha, R, L, C);
 }
 
-void diskANNIndexValidator(const IndexDescription & /* index */, bool /* attach */)
-{}
+void diskANNIndexValidator(const IndexDescription & index, bool /* attach */)
+{
+    if (index.arguments.size() > 5)
+    {
+        throw Exception("DiskANN index cannot have more than 5 arguments", ErrorCodes::INCORRECT_QUERY);
+    }
+
+    if (index.arguments.size() > DiskANNArguments::NUM_THREADS &&
+        index.arguments[DiskANNArguments::NUM_THREADS].getType() != Field::Types::UInt64)
+    {
+        throw Exception("DiskANN threads argument must be a positive integer", ErrorCodes::INCORRECT_QUERY);
+    }
+
+    if (index.arguments.size() > DiskANNArguments::L &&
+        index.arguments[DiskANNArguments::L].getType() != Field::Types::UInt64)
+    {
+        throw Exception("DiskANN L argument must be a positive integer", ErrorCodes::INCORRECT_QUERY);
+    }
+
+    if (index.arguments.size() > DiskANNArguments::R &&
+        index.arguments[DiskANNArguments::R].getType() != Field::Types::UInt64)
+    {
+        throw Exception("DiskANN R argument must be a positive integer", ErrorCodes::INCORRECT_QUERY);
+    }
+
+    if (index.arguments.size() > DiskANNArguments::C &&
+        index.arguments[DiskANNArguments::C].getType() != Field::Types::UInt64)
+    {
+        throw Exception("DiskANN C argument must be a positive integer", ErrorCodes::INCORRECT_QUERY);
+    }
+
+    if (index.arguments.size() > DiskANNArguments::ALPHA &&
+        index.arguments[DiskANNArguments::ALPHA].getType() != Field::Types::Float64)
+    {
+        throw Exception("DiskANN alpha argument must be a positive float", ErrorCodes::INCORRECT_QUERY);
+    }
+}
 
 }

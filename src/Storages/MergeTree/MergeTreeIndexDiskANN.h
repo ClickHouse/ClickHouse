@@ -22,6 +22,14 @@ using DiskANNIndexPtr = std::shared_ptr<DiskANNIndex>;
 // !TODO: Working only with Float32 type
 using DiskANNValue = Float32;
 
+enum DiskANNArguments {
+    NUM_THREADS = 0,
+    ALPHA = 1,
+    R = 2,
+    L = 3,
+    C = 4,
+};
+
 struct MergeTreeIndexGranuleDiskANN final : public IMergeTreeIndexGranule
 {
     MergeTreeIndexGranuleDiskANN(const String & index_name_, const Block & index_sample_block_);
@@ -49,7 +57,7 @@ struct MergeTreeIndexGranuleDiskANN final : public IMergeTreeIndexGranule
 
 struct MergeTreeIndexAggregatorDiskANN final : IMergeTreeIndexAggregator
 {
-    MergeTreeIndexAggregatorDiskANN(const String & index_name_, const Block & index_sample_block);
+    MergeTreeIndexAggregatorDiskANN(const String & index_name_, const Block & index_sample_block, uint16_t num_threads_, float alpha_, uint16_t R_, uint16_t L_, uint16_t C_);
     ~MergeTreeIndexAggregatorDiskANN() override = default;
 
     bool empty() const override { return accumulated_data.empty(); }
@@ -62,6 +70,12 @@ private:
 private:
     String index_name;
     Block index_sample_block;
+
+    uint16_t num_threads;
+    float alpha;
+    uint16_t R;
+    uint16_t L;
+    uint16_t C;
 
     std::optional<uint32_t> dimensions;
     std::vector<DiskANNValue> accumulated_data;
@@ -91,8 +105,13 @@ private:
 class MergeTreeIndexDiskANN : public IMergeTreeIndex
 {
 public:
-    explicit MergeTreeIndexDiskANN(const IndexDescription & index_)
+    explicit MergeTreeIndexDiskANN(const IndexDescription & index_, uint16_t num_threads_, float alpha_, uint16_t R_, uint16_t L_, uint16_t C_)
         : IMergeTreeIndex(index_)
+        , num_threads(num_threads_)
+        , alpha(alpha_)
+        , R(R_)
+        , L(L_)
+        , C(C_)
     {}
 
     ~MergeTreeIndexDiskANN() override = default;
@@ -107,6 +126,13 @@ public:
 
     const char* getSerializedFileExtension() const override { return ".idx2"; }
     MergeTreeIndexFormat getDeserializedFormat(const DiskPtr disk, const std::string & path_prefix) const override;
+
+private:
+    uint16_t num_threads;
+    float alpha;
+    uint16_t R;
+    uint16_t L;
+    uint16_t C;
 };
 
 }
