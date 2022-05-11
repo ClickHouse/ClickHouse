@@ -70,7 +70,7 @@ public:
         {
             const auto * array_type = checkAndGetDataType<DataTypeArray>(argument.type.get());
             if (!array_type)
-                throw Exception("Argument of function " + getName() + " must be array. ", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument of function {} must be array.", getName());
 
             types.push_back(array_type->getNestedType());
         }
@@ -90,10 +90,10 @@ public:
             case TypeIndex::Float64:
                 return std::make_shared<DataTypeFloat64>();
             default:
-                throw Exception(
-                    "Arguments of function " + getName() + " has nested type " + common_type->getName()
-                        + ". Support: UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, Float32, Float64.",
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Arguments of function {} has nested type {}. "
+                    "Support: UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, Float32, Float64.",
+                    getName(), common_type->getName());
         }
     }
 
@@ -139,8 +139,9 @@ private:
 
         if (mx.rows() && my.rows() && mx.rows() != my.rows())
         {
-            throw Exception(
-                "Arguments of function " + getName() + " have different array sizes.", ErrorCodes::SIZES_OF_ARRAYS_DOESNT_MATCH);
+            throw Exception(ErrorCodes::SIZES_OF_ARRAYS_DOESNT_MATCH,
+                "Arguments of function {} have different array sizes: {} and {}",
+                getName(), mx.rows(), my.rows());
         }
         auto & data = assert_cast<ColumnVector<MatrixType> &>(*column).getData();
         Kernel::compute(mx, my, data);
@@ -182,10 +183,10 @@ private:
                 fillMatrix<MatrixType, Float64>(mat, array);
                 break;
             default:
-                throw Exception(
-                    "Arguments of function " + getName() + " has nested type " + nested_type->getName()
-                        + ". Support: UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, Float32, Float64.",
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Arguments of function {} has nested type {}. "
+                    "Support: UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, Float32, Float64.",
+                    getName(), nested_type->getName());
         }
     }
 
@@ -210,8 +211,9 @@ private:
         for (ColumnArray::Offset off : offsets)
         {
             if (off - prev != rows)
-                throw Exception(
-                    "Arguments of function " + getName() + " have different array sizes.", ErrorCodes::SIZES_OF_ARRAYS_DOESNT_MATCH);
+                throw Exception(ErrorCodes::SIZES_OF_ARRAYS_DOESNT_MATCH,
+                    "Arrays in a column passed to function {} have different sizes: {} and {}",
+                    getName(), rows, off - prev);
 
             for (ColumnArray::Offset row = 0; row < off - prev; ++row)
             {
