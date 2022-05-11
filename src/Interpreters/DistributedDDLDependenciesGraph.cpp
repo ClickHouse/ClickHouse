@@ -28,7 +28,7 @@ void DependenciesGraph::addTask(DDLTaskPtr & task)
     name_to_ddl_task.emplace(std::make_pair(name, std::move(task)));
     auto database_objects_for_added_task = getDependenciesSetFromQuery(global_context, task->query);
     tasks_dependencies.database_objects_in_query[name] = database_objects_for_added_task;
-    for (auto & [query_name, query_objects] : tasks_dependencies.database_objects_in_query)
+    for (const auto & [query_name, query_objects] : tasks_dependencies.database_objects_in_query)
     {
         if (name == query_name)
         {
@@ -53,7 +53,7 @@ void DependenciesGraph::addTask(DDLTaskPtr & task)
 
     if (tasks_dependencies.dependencies_info[name].dependencies.empty())
     {
-        tasks_dependencies.independent_queries.emplace_back(name);
+        tasks_dependencies.independent_queries.push_back(name);
     }
 }
 
@@ -68,16 +68,15 @@ QueryNames DependenciesGraph::getTasksToParallelProcess()
         }
     }
 
-    logDependencyGraph();
-
     return tasks_dependencies.independent_queries;
 }
 
 void DependenciesGraph::removeProcessedTasks()
 {
     QueryNames new_independent_queries;
+    auto & already_processed = tasks_dependencies.independent_queries;
 
-    for (const auto& task_name : tasks_dependencies.independent_queries)
+    for (const auto& task_name : already_processed)
     {
         if (name_to_ddl_task[task_name]->completely_processed.load())
         {
@@ -85,11 +84,11 @@ void DependenciesGraph::removeProcessedTasks()
         }
         else
         {
-            new_independent_queries.emplace_back(task_name);
+            new_independent_queries.push_back(task_name);
         }
     }
 
-    tasks_dependencies.independent_queries = new_independent_queries;
+    tasks_dependencies.independent_queries = std::move(new_independent_queries);
 }
 
 void DependenciesGraph::removeTask(String query_name)
@@ -116,6 +115,8 @@ void DependenciesGraph::removeTask(String query_name)
                 tasks_dependencies.dependencies_info.erase(dependent_query);
         }
     }
+    tasks_dependencies.dependencies_info.erase(query_name);
+    name_to_ddl_task.erase(query_name);
 }
 
 void DependenciesGraph::logDependencyGraph() const
