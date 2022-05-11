@@ -401,9 +401,9 @@ void DDLWorker::scheduleTasks(bool reinitialized)
             continue;
         }
 
-        auto & saved_task = saveTask(std::move(task));
+        auto & saved_task = saveTask(std::move(*task));
 
-        if (worker_pool)
+        if (worker_pool && pool_size > current_tasks.size())
         {
             worker_pool->scheduleOrThrowOnError([this, &saved_task, zookeeper]()
             {
