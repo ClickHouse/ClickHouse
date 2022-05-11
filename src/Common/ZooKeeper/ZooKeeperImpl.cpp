@@ -508,7 +508,7 @@ void ZooKeeper::receiveHandshake()
     read(timeout);
     if (timeout != args.session_timeout_ms)
         /// Use timeout from server.
-        args.session_timeout_ms = timeout * 1000;
+        args.session_timeout_ms = timeout;
 
     read(session_id);
     read(passwd);
