@@ -5,6 +5,8 @@
 #include <Eigen/Core>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
+#include "Columns/IColumn.h"
+#include "DataTypes/Serializations/ISerialization.h"
 
 namespace DB
 {
@@ -82,8 +84,8 @@ public:
     ColumnPtr
     executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t /*input_rows_count*/) const override
     {
-        const auto & type = typeid_cast<const DataTypeArray *>(arguments[0].type.get())->getNestedType();
-        const auto column = arguments[0].column->convertToFullColumnIfConst();
+        DataTypePtr type = typeid_cast<const DataTypeArray *>(arguments[0].type.get())->getNestedType();
+        ColumnPtr column = arguments[0].column->convertToFullColumnIfConst();
         const auto * arr = assert_cast<const ColumnArray *>(column.get());
 
         auto result = result_type->createColumn();

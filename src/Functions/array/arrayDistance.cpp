@@ -5,6 +5,8 @@
 #include <Eigen/Core>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
+#include "Columns/IColumn.h"
+#include "DataTypes/Serializations/ISerialization.h"
 
 namespace DB
 {
@@ -22,7 +24,7 @@ struct LpDistance
     template <typename T>
     static void compute(const Eigen::MatrixX<T> & left, const Eigen::MatrixX<T> & right, PaddedPODArray<T> & array)
     {
-        auto & norms = (left - right).colwise().template lpNorm<N>();
+        auto norms = (left - right).colwise().template lpNorm<N>();
         array.reserve(norms.size());
         // array.insert() failed to work with Eigen iterators
         for (auto n : norms)
@@ -41,11 +43,11 @@ struct CosineDistance
     template <typename T>
     static void compute(const Eigen::MatrixX<T> & left, const Eigen::MatrixX<T> & right, PaddedPODArray<T> & array)
     {
-        auto & prod = left.cwiseProduct(right).colwise().sum();
-        auto & nx = left.colwise().norm();
-        auto & ny = right.colwise().norm();
-        auto & nm = nx.cwiseProduct(ny).cwiseInverse();
-        auto & dist = 1.0 - prod.cwiseProduct(nm).array();
+        auto prod = left.cwiseProduct(right).colwise().sum();
+        auto nx = left.colwise().norm();
+        auto ny = right.colwise().norm();
+        auto nm = nx.cwiseProduct(ny).cwiseInverse();
+        auto dist = 1.0 - prod.cwiseProduct(nm).array();
         array.reserve(dist.size());
         for (auto d : dist)
             array.push_back(d);
@@ -100,11 +102,11 @@ public:
     ColumnPtr
     executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t /*input_rows_count*/) const override
     {
-        const auto & type_x = typeid_cast<const DataTypeArray *>(arguments[0].type.get())->getNestedType();
-        const auto & type_y = typeid_cast<const DataTypeArray *>(arguments[1].type.get())->getNestedType();
+        DataTypePtr type_x = typeid_cast<const DataTypeArray *>(arguments[0].type.get())->getNestedType();
+        DataTypePtr type_y = typeid_cast<const DataTypeArray *>(arguments[1].type.get())->getNestedType();
 
-        const auto & col_x = arguments[0].column->convertToFullColumnIfConst();
-        const auto & col_y = arguments[1].column->convertToFullColumnIfConst();
+        ColumnPtr col_x = arguments[0].column->convertToFullColumnIfConst();
+        ColumnPtr col_y = arguments[1].column->convertToFullColumnIfConst();
 
         const auto * arr_x = assert_cast<const ColumnArray *>(col_x.get());
         const auto * arr_y = assert_cast<const ColumnArray *>(col_y.get());
@@ -196,7 +198,10 @@ private:
     {
         const auto & data = typeid_cast<const ColumnVector<DataType> &>(array.getData()).getData();
         const auto & offsets = array.getOffsets();
-        mat = Eigen::Map<const Eigen::MatrixX<MatrixType>>(data.data(), offsets.front(), offsets.size());
+        size_t cols = offsets.size();
+        size_t rows = cols > 0 ? offsets.front() : 0;
+
+        mat = Eigen::Map<const Eigen::MatrixX<MatrixType>>(data.data(), rows, cols);
     }
 
     template <typename MatrixType, typename DataType>
@@ -204,7 +209,9 @@ private:
     {
         const auto & data = typeid_cast<const ColumnVector<DataType> &>(array.getData()).getData();
         const auto & offsets = array.getOffsets();
-        size_t rows = offsets.front(), cols = offsets.size();
+        size_t cols = offsets.size();
+        size_t rows = cols > 0 ? offsets.front() : 0;
+
         mat.resize(rows, cols);
 
         ColumnArray::Offset prev = 0, col = 0;
