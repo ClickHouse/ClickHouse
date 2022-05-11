@@ -171,6 +171,29 @@ void HDFSBuilderWrapper::initialize()
     }
 }
 
+HDFSFSPool::HDFSFSPool(uint32_t max_items_, uint32_t min_items_, HDFSBuilderWrapperPtr builder_)
+    : max_items(max_items_), min_items(min_items_), current_index(0), builder(std::move(builder_))
+{
+    pool.reserve(max_items);
+
+    if (min_items > max_items)
+        min_items = max_items;
+
+    if (min_items)
+    {
+        pool.resize(min_items);
+        ThreadPool thread_pool(std::min(static_cast<uint32_t>(32), min_items));
+        for (size_t i = 0; i < min_items; ++i)
+        {
+            thread_pool.scheduleOrThrowOnError([this, i]()
+            {
+                pool[i] = createSharedHDFSFS(builder->get());
+            });
+        }
+        thread_pool.wait();
+    }
+}
+
 HDFSFSSharedPtr HDFSFSPool::get()
 {
     std::lock_guard lock{mutex};
@@ -227,19 +250,20 @@ HDFSBuilderWrapperPtr HDFSBuilderFSFactory::getBuilder(const String & hdfs_uri, 
 HDFSFSSharedPtr HDFSBuilderFSFactory::getFS(const String & hdfs_uri, const Poco::Util::AbstractConfiguration & config)
 {
     auto builder = getBuilder(hdfs_uri, config);
-    return getFS(hdfs_uri, std::move(builder));
+    return getFS(std::move(builder));
 }
 
-HDFSFSSharedPtr HDFSBuilderFSFactory::getFS(const String & hdfs_uri, HDFSBuilderWrapperPtr builder)
+HDFSFSSharedPtr HDFSBuilderFSFactory::getFS(HDFSBuilderWrapperPtr builder)
 {
     HDFSFSPoolPtr pool;
+    const auto hdfs_uri = builder->getHDFSUri();
 
     {
         std::lock_guard lock(mutex);
         auto it = hdfs_fs_pools.find(hdfs_uri);
         if (it == hdfs_fs_pools.end())
         {
-            pool = std::make_shared<HDFSFSPool>(pool_size, std::move(builder));
+            pool = std::make_shared<HDFSFSPool>(max_pool_size, min_pool_size, std::move(builder));
             hdfs_fs_pools.emplace(hdfs_uri, pool);
         }
         else

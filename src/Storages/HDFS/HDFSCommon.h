@@ -67,6 +67,8 @@ public:
 
     hdfsBuilder * get() { return hdfs_builder; }
 
+    String getHDFSUri() const { return hdfs_uri; }
+
 private:
     void initialize();
 
@@ -105,11 +107,7 @@ using HDFSFSSharedPtr = std::shared_ptr<std::remove_pointer_t<hdfsFS>>;
 class HDFSFSPool : public boost::noncopyable
 {
 public:
-    explicit HDFSFSPool(uint32_t max_items_, HDFSBuilderWrapperPtr builder_)
-        : max_items(max_items_), current_index(0), builder(std::move(builder_))
-    {
-        pool.reserve(max_items);
-    }
+    explicit HDFSFSPool(uint32_t max_items_, uint32_t min_items_, HDFSBuilderWrapperPtr builder_);
 
     ~HDFSFSPool() = default;
 
@@ -117,6 +115,7 @@ public:
 
 private:
     const uint32_t max_items;
+    uint32_t min_items;
     uint32_t current_index;
     HDFSBuilderWrapperPtr builder;
     std::vector<HDFSFSSharedPtr> pool;
@@ -137,10 +136,11 @@ public:
 
     HDFSFSSharedPtr getFS(const String & hdfs_uri, const Poco::Util::AbstractConfiguration & config);
 
-    HDFSFSSharedPtr getFS(const String & hdfs_uri, HDFSBuilderWrapperPtr builder);
+    HDFSFSSharedPtr getFS(HDFSBuilderWrapperPtr builder);
     
 private:
-    inline static const uint32_t pool_size = 256;
+    inline static const uint32_t max_pool_size = 256;
+    inline static const uint32_t min_pool_size = 32;
 
     /// Key: hdfs_uri, value: HDFSBuilderWrapperPtr
     std::map<String, HDFSBuilderWrapperPtr> hdfs_builder_wrappers;

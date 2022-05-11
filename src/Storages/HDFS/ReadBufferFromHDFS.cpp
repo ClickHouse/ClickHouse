@@ -41,7 +41,7 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<S
 
     hdfsFile fin;
     HDFSBuilderWrapperPtr builder;
-    HDFSFSPtr fs;
+    HDFSFSSharedPtr fs;
 
     off_t file_offset = 0;
     off_t read_until_position = 0;
@@ -63,7 +63,7 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<S
         Stopwatch watch;
 
         assert(builder);
-        fs = createHDFSFS(builder->get());
+        fs = HDFSBuilderFSFactory::instance().getFS(builder);
         fin = hdfsOpenFile(fs.get(), hdfs_file_path.c_str(), O_RDONLY, 0, 0, 0);
 
         if (fin == nullptr)
