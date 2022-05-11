@@ -29,7 +29,7 @@ using TableNames = std::vector<QualifiedTableName>;
 using TableNamesSet = std::unordered_set<QualifiedTableName>;
 using QueryNames = std::vector<String>;
 using QueryNamesSet = std::unordered_set<String>;
-using QueryNameToDDLTaskPtrMap = std::unordered_map<String, DDLTaskPtr>;
+using QueryNameToDDLTaskPtrMap = std::unordered_map<String, DDLTaskPtr&>;
 
 struct QueriesDependenciesInfo
 {
