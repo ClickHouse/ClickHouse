@@ -1560,12 +1560,6 @@ ActionsDAGPtr SelectQueryExpressionAnalyzer::appendProjectResult(ExpressionActio
         }
     }
 
-    if (getContext()->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY && useGroupingSetKey())
-    {
-        result_columns.emplace_back("__grouping_set", "__grouping_set");
-        step.addRequiredOutput("__grouping_set");
-    }
-
     auto actions = chain.getLastActions();
     actions->project(result_columns);
     return actions;

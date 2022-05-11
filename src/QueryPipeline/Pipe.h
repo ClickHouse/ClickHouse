@@ -89,7 +89,7 @@ public:
     using Transformer = std::function<Processors(OutputPortRawPtrs ports)>;
 
     /// Transform Pipe in general way.
-    void transform(const Transformer & transformer, bool check_block_structure = true);
+    void transform(const Transformer & transformer);
 
     /// Unite several pipes together. They should have same header.
     static Pipe unitePipes(Pipes pipes);

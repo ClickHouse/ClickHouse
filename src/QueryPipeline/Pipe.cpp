@@ -786,7 +786,7 @@ void Pipe::setSinks(const Pipe::ProcessorGetterWithStreamKind & getter)
     header.clear();
 }
 
-void Pipe::transform(const Transformer & transformer, bool check_block_structure)
+void Pipe::transform(const Transformer & transformer)
 {
     if (output_ports.empty())
         throw Exception("Cannot transform empty Pipe", ErrorCodes::LOGICAL_ERROR);
@@ -852,18 +852,15 @@ void Pipe::transform(const Transformer & transformer, bool check_block_structure
         throw Exception(
             "Transformation of Pipe is not valid because processors don't have any disconnected output ports", ErrorCodes::LOGICAL_ERROR);
 
-    if (check_block_structure)
-    {
-        header = output_ports.front()->getHeader();
-        for (size_t i = 1; i < output_ports.size(); ++i)
-            assertBlocksHaveEqualStructure(header, output_ports[i]->getHeader(), "Pipe");
+    header = output_ports.front()->getHeader();
+    for (size_t i = 1; i < output_ports.size(); ++i)
+        assertBlocksHaveEqualStructure(header, output_ports[i]->getHeader(), "Pipe");
 
-        if (totals_port)
-            assertBlocksHaveEqualStructure(header, totals_port->getHeader(), "Pipes");
+    if (totals_port)
+        assertBlocksHaveEqualStructure(header, totals_port->getHeader(), "Pipes");
 
-        if (extremes_port)
-            assertBlocksHaveEqualStructure(header, extremes_port->getHeader(), "Pipes");
-    }
+    if (extremes_port)
+        assertBlocksHaveEqualStructure(header, extremes_port->getHeader(), "Pipes");
 
     if (collected_processors)
     {

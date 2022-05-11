@@ -2187,7 +2187,10 @@ void InterpreterSelectQuery::executeWhere(QueryPlan & query_plan, const ActionsD
     query_plan.addStep(std::move(where_step));
 }
 
-Aggregator::Params InterpreterSelectQuery::getAggregatorParams(
+static Aggregator::Params getAggregatorParams(
+    const ASTPtr & query_ptr,
+    const SelectQueryExpressionAnalyzer & query_analyzer,
+    const Context & context,
     const Block & current_data_stream_header,
     const ColumnNumbers & keys,
     const AggregateDescriptions & aggregates,
@@ -2212,8 +2215,8 @@ Aggregator::Params InterpreterSelectQuery::getAggregatorParams(
         settings.max_bytes_before_external_group_by,
         settings.empty_result_for_aggregation_by_empty_set
             || (settings.empty_result_for_aggregation_by_constant_keys_on_empty_set && keys.empty()
-                && query_analyzer->hasConstAggregationKeys()),
-        context->getTemporaryVolume(),
+                && query_analyzer.hasConstAggregationKeys()),
+        context.getTemporaryVolume(),
         settings.max_threads,
         settings.min_free_disk_space_for_temporary_data,
         settings.compile_aggregate_expressions,
@@ -2223,15 +2226,16 @@ Aggregator::Params InterpreterSelectQuery::getAggregatorParams(
     };
 }
 
-GroupingSetsParamsList InterpreterSelectQuery::getAggregatorGroupingSetsParams(
+static GroupingSetsParamsList getAggregatorGroupingSetsParams(
+    const SelectQueryExpressionAnalyzer & query_analyzer,
     const Block & header_before_aggregation,
     const ColumnNumbers & all_keys
 )
 {
     GroupingSetsParamsList result;
-    if (query_analyzer->useGroupingSetKey())
+    if (query_analyzer.useGroupingSetKey())
     {
-        auto const & aggregation_keys_list = query_analyzer->aggregationKeysList();
+        auto const & aggregation_keys_list = query_analyzer.aggregationKeysList();
 
         ColumnNumbersList grouping_sets_with_keys;
         ColumnNumbersList missing_columns_per_set;
@@ -2281,10 +2285,10 @@ void InterpreterSelectQuery::executeAggregation(QueryPlan & query_plan, const Ac
     for (const auto & key : query_analyzer->aggregationKeys())
         keys.push_back(header_before_aggregation.getPositionByName(key.name));
 
-    auto aggregator_params = getAggregatorParams(header_before_aggregation, keys, aggregates, overflow_row, settings,
+    auto aggregator_params = getAggregatorParams(query_ptr, *query_analyzer, *context, header_before_aggregation, keys, aggregates, overflow_row, settings,
                  settings.group_by_two_level_threshold, settings.group_by_two_level_threshold_bytes);
 
-    auto grouping_sets_params = getAggregatorGroupingSetsParams(header_before_aggregation, keys);
+    auto grouping_sets_params = getAggregatorGroupingSetsParams(*query_analyzer, header_before_aggregation, keys);
 
     SortDescription group_by_sort_description;
 
@@ -2374,7 +2378,7 @@ void InterpreterSelectQuery::executeRollupOrCube(QueryPlan & query_plan, Modific
     for (const auto & key : query_analyzer->aggregationKeys())
         keys.push_back(header_before_transform.getPositionByName(key.name));
 
-    auto params = getAggregatorParams(header_before_transform, keys, query_analyzer->aggregates(), false, settings, 0, 0);
+    auto params = getAggregatorParams(query_ptr, *query_analyzer, *context, header_before_transform, keys, query_analyzer->aggregates(), false, settings, 0, 0);
     auto transform_params = std::make_shared<AggregatingTransformParams>(std::move(params), true);
 
     QueryPlanStepPtr step;
