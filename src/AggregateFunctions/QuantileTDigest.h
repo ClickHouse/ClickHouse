@@ -103,7 +103,7 @@ class QuantileTDigest
       */
     static Value interpolate(Value x, Value x1, Value y1, Value x2, Value y2)
     {
-        if (y1 != y2)
+        if (y1 != y2) /// Handling infinities of the same sign well.
         {
             double k = (x - x1) / (x2 - x1);
             return y1 + k * (y2 - y1);
@@ -162,7 +162,7 @@ class QuantileTDigest
             {
                 /// The left column "eats" the right. Middle of the batch
                 l_count += r->count;
-                if (r->mean != l_mean)
+                if (r->mean != l_mean) /// Handling infinities of the same sign well.
                 {
                     l_mean += r->count * (r->mean - l_mean) / l_count; // Symmetric algo (M1*C1 + M2*C2)/(C1+C2) is numerically better, but slower
                 }
@@ -240,7 +240,7 @@ public:
                     // it is possible to merge left and right
                     /// The left column "eats" the right.
                     l_count += r->count;
-                    if (r->mean != l_mean)
+                    if (r->mean != l_mean) /// Handling infinities of the same sign well.
                     {
                         l_mean += r->count * (r->mean - l_mean) / l_count; // Symmetric algo (M1*C1 + M2*C2)/(C1+C2) is numerically better, but slower
                     }
