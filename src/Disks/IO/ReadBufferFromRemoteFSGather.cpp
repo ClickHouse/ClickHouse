@@ -112,7 +112,7 @@ ReadBufferFromRemoteFSGather::ReadBufferFromRemoteFSGather(
         && (!IFileCache::isReadOnly() || settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache);
 
     assert(query_id.empty()
-           || CurrentThread::isInitialized() && CurrentThread::get().getQueryContext() != nullptr);
+           || CurrentThread::isInitialized() && CurrentThread::get().getQueryContext().get() != nullptr);
 }
 
 
