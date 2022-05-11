@@ -265,6 +265,12 @@ Coordination::ACLs KeeperStorage::UncommittedState::getACLs(StringRef path) cons
                 assert(!acl_id);
                 acls = &create_delta.acls;
             },
+            [&](const RemoveNodeDelta & /*remove_delta*/)
+            {
+                assert(acl_id || acls);
+                acl_id.reset();
+                acls = nullptr;
+            },
             [&](const SetACLDelta & set_acl_delta)
             {
                 assert(acl_id || acls);
@@ -281,11 +287,13 @@ Coordination::ACLs KeeperStorage::UncommittedState::getACLs(StringRef path) cons
 
 namespace
 {
-    [[noreturn]] void fail()
-    {
-        LOG_INFO(&Poco::Logger::get("KeeperStorage"), "Inconsistency found, terminating");
-        std::terminate();
-    }
+
+[[noreturn]] void onStorageInconsistency()
+{
+    LOG_INFO(&Poco::Logger::get("KeeperStorage"), "Inconsistency found between uncommitted and committed data. Keeper will terminate to avoid undefined behaviour.");
+    std::terminate();
+}
+
 }
 
 Coordination::Error KeeperStorage::commit(int64_t commit_zxid, int64_t session_id)
@@ -309,7 +317,7 @@ Coordination::Error KeeperStorage::commit(int64_t commit_zxid, int64_t session_i
                             operation.is_ephemeral,
                             std::move(operation.acls),
                             session_id))
-                        fail();
+                        onStorageInconsistency();
 
                     return Coordination::Error::ZOK;
                 }
@@ -317,10 +325,10 @@ Coordination::Error KeeperStorage::commit(int64_t commit_zxid, int64_t session_i
                 {
                     auto node_it = container.find(path);
                     if (node_it == container.end())
-                        fail();
+                        onStorageInconsistency();
 
                     if (operation.version != -1 && operation.version != node_it->value.stat.version)
-                        fail();
+                        onStorageInconsistency();
 
                     container.updateValue(path, operation.update_fn);
                     return Coordination::Error::ZOK;
@@ -328,7 +336,7 @@ Coordination::Error KeeperStorage::commit(int64_t commit_zxid, int64_t session_i
                 else if constexpr (std::same_as<DeltaType, KeeperStorage::RemoveNodeDelta>)
                 {
                     if (!removeNode(path, operation.version))
-                        fail();
+                        onStorageInconsistency();
 
                     return Coordination::Error::ZOK;
                 }
@@ -336,10 +344,10 @@ Coordination::Error KeeperStorage::commit(int64_t commit_zxid, int64_t session_i
                 {
                     auto node_it = container.find(path);
                     if (node_it == container.end())
-                        fail();
+                        onStorageInconsistency();
 
                     if (operation.version != -1 && operation.version != node_it->value.stat.aversion)
-                        fail();
+                        onStorageInconsistency();
 
                     acl_map.removeUsage(node_it->value.acl_id);
 
@@ -365,7 +373,7 @@ Coordination::Error KeeperStorage::commit(int64_t commit_zxid, int64_t session_i
                 else
                 {
                     // shouldn't be called in any process functions
-                    fail();
+                    onStorageInconsistency();
                 }
             },
             delta.operation);
@@ -660,8 +668,7 @@ struct KeeperStorageCreateRequestProcessor final : public KeeperStorageRequestPr
             [zxid](const auto & delta)
             { return delta.zxid == zxid && std::holds_alternative<KeeperStorage::CreateNodeDelta>(delta.operation); });
 
-        if (create_delta_it == deltas.end())
-            std::terminate();
+        assert(create_delta_it != deltas.end());
 
         response.path_created = create_delta_it->path;
         response.error = Coordination::Error::ZOK;
@@ -710,7 +717,7 @@ struct KeeperStorageGetRequestProcessor final : public KeeperStorageRequestProce
             if constexpr (local)
                 response.error = error_code;
             else
-                fail();
+                onStorageInconsistency();
         };
 
         auto & container = storage.container;
@@ -854,7 +861,7 @@ struct KeeperStorageExistsRequestProcessor final : public KeeperStorageRequestPr
             if constexpr (local)
                 response.error = error_code;
             else
-                fail();
+                onStorageInconsistency();
         };
 
         auto & container = storage.container;
@@ -950,7 +957,7 @@ struct KeeperStorageSetRequestProcessor final : public KeeperStorageRequestProce
 
         auto node_it = container.find(request.path);
         if (node_it == container.end())
-            fail();
+            onStorageInconsistency();
 
         response.stat = node_it->value.stat;
         response.error = Coordination::Error::ZOK;
@@ -1006,7 +1013,7 @@ struct KeeperStorageListRequestProcessor final : public KeeperStorageRequestProc
             if constexpr (local)
                 response.error = error_code;
             else
-                fail();
+                onStorageInconsistency();
         };
 
         auto & container = storage.container;
@@ -1089,7 +1096,7 @@ struct KeeperStorageCheckRequestProcessor final : public KeeperStorageRequestPro
             if constexpr (local)
                 response.error = error_code;
             else
-                fail();
+                onStorageInconsistency();
         };
 
         auto & container = storage.container;
@@ -1170,7 +1177,7 @@ struct KeeperStorageSetACLRequestProcessor final : public KeeperStorageRequestPr
 
         auto node_it = storage.container.find(request.path);
         if (node_it == storage.container.end())
-            fail();
+            onStorageInconsistency();
         response.stat = node_it->value.stat;
         response.error = Coordination::Error::ZOK;
 
@@ -1219,7 +1226,7 @@ struct KeeperStorageGetACLRequestProcessor final : public KeeperStorageRequestPr
             if constexpr (local)
                 response.error = error_code;
             else
-                fail();
+                onStorageInconsistency();
         };
 
         auto & container = storage.container;

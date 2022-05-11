@@ -1262,6 +1262,7 @@ void testLogAndStateMachine(Coordination::CoordinationSettingsPtr settings, uint
         changelog.append(entry);
         changelog.end_of_append_batch(0, 0);
 
+        state_machine->pre_commit(i, changelog.entry_at(i)->get_buf());
         state_machine->commit(i, changelog.entry_at(i)->get_buf());
         bool snapshot_created = false;
         if (i % settings->snapshot_distance == 0)
@@ -1306,6 +1307,7 @@ void testLogAndStateMachine(Coordination::CoordinationSettingsPtr settings, uint
 
     for (size_t i = restore_machine->last_commit_index() + 1; i < restore_changelog.next_slot(); ++i)
     {
+        restore_machine->pre_commit(i, changelog.entry_at(i)->get_buf());
         restore_machine->commit(i, changelog.entry_at(i)->get_buf());
     }
 
@@ -1408,6 +1410,7 @@ TEST_P(CoordinationTest, TestEphemeralNodeRemove)
     request_c->path = "/hello";
     request_c->is_ephemeral = true;
     auto entry_c = getLogEntryFromZKRequest(0, 1, request_c);
+    state_machine->pre_commit(1, entry_c->get_buf());
     state_machine->commit(1, entry_c->get_buf());
     const auto & storage = state_machine->getStorage();
 
@@ -1416,6 +1419,7 @@ TEST_P(CoordinationTest, TestEphemeralNodeRemove)
     request_d->path = "/hello";
     /// Delete from other session
     auto entry_d = getLogEntryFromZKRequest(0, 2, request_d);
+    state_machine->pre_commit(2, entry_d->get_buf());
     state_machine->commit(2, entry_d->get_buf());
 
     EXPECT_EQ(storage.ephemerals.size(), 0);
