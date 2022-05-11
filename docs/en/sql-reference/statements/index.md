@@ -1,9 +1,10 @@
 ---
-sidebar_position: 1
-sidebar_label: Statements
+toc_folder_title: Statements
+toc_hidden: true
+toc_priority: 31
 ---
 
-# ClickHouse SQL Statements 
+# ClickHouse SQL Statements {#clickhouse-sql-statements}
 
 Statements represent various kinds of action you can perform using SQL queries. Each kind of statement has it’s own syntax and usage details that are described separately:
 

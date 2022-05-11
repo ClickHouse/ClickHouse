@@ -1,5 +1,5 @@
 ---
-sidebar_label: WHERE
+toc_title: WHERE
 ---
 
 # WHERE Clause {#select-where}
@@ -10,9 +10,8 @@ If there is a `WHERE` clause, it must contain an expression with the `UInt8` typ
 
 `WHERE` expression is evaluated on the ability to use indexes and partition pruning, if the underlying table engine supports that.
 
-:::note    
-There is a filtering optimization called [PREWHERE](../../../sql-reference/statements/select/prewhere.md).
-:::
+!!! note "Note"
+    There is a filtering optimization called [PREWHERE](../../../sql-reference/statements/select/prewhere.md).
 
 If you need to test a value for [NULL](../../../sql-reference/syntax.md#null-literal), use [IS NULL](../../operators/index.md#operator-is-null) and [IS NOT NULL](../../operators/index.md#is-not-null) operators or [isNull](../../../sql-reference/functions/functions-for-nulls.md#isnull) and [isNotNull](../../../sql-reference/functions/functions-for-nulls.md#isnotnull) functions.
 Otherwise an expression with `NULL` never passes.

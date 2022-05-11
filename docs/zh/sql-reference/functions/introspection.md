@@ -1,8 +1,8 @@
 ---
 machine_translated: true
 machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
-sidebar_position: 65
-sidebar_label: "\u81EA\u7701"
+toc_priority: 65
+toc_title: "\u81EA\u7701"
 ---
 
 # 内省功能 {#introspection-functions}

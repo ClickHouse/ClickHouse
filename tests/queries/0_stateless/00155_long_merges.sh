@@ -32,7 +32,7 @@ function test {
     SUM=$(( $1 + $2 ))
     MAX=$(( $1 > $2 ? $1 : $2 ))
 
-    SETTINGS="--min_insert_block_size_rows=0 --min_insert_block_size_bytes=0 --max_block_size=65505"
+    SETTINGS="--min_insert_block_size_rows=0 --min_insert_block_size_bytes=0"
 
     $CLICKHOUSE_CLIENT $SETTINGS --query="INSERT INTO summing_00155 (x) SELECT number AS x FROM system.numbers LIMIT $1"
     $CLICKHOUSE_CLIENT $SETTINGS --query="INSERT INTO summing_00155 (x) SELECT number AS x FROM system.numbers LIMIT $2"

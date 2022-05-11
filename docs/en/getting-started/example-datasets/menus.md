@@ -1,8 +1,9 @@
 ---
-sidebar_label: New York Public Library "What's on the Menu?" Dataset
+toc_priority: 21
+toc_title: Menus
 ---
 
-# New York Public Library "What's on the Menu?" Dataset
+# New York Public Library "What's on the Menu?" Dataset {#menus-dataset}
 
 The dataset is created by the New York Public Library. It contains historical data on the menus of hotels, restaurants and cafes with the dishes along with their prices.
 

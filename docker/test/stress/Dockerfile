@@ -25,11 +25,9 @@ RUN apt-get update -y \
             brotli
 
 COPY ./stress /stress
-COPY ./download_previous_release /download_previous_release
 COPY run.sh /
 
 ENV DATASETS="hits visits"
-ENV S3_URL="https://clickhouse-datasets.s3.amazonaws.com"
-ENV EXPORT_S3_STORAGE_POLICIES=1
+ENV S3_URL="https://clickhouse-datasets.s3.yandex.net"
 
 CMD ["/bin/bash", "/run.sh"]

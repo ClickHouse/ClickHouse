@@ -38,9 +38,8 @@ struct AggregateFunctionWithProperties
     AggregateFunctionWithProperties(const AggregateFunctionWithProperties &) = default;
     AggregateFunctionWithProperties & operator = (const AggregateFunctionWithProperties &) = default;
 
-    template <typename Creator>
-    requires (!std::is_same_v<Creator, AggregateFunctionWithProperties>)
-    AggregateFunctionWithProperties(Creator creator_, AggregateFunctionProperties properties_ = {}) /// NOLINT
+    template <typename Creator, std::enable_if_t<!std::is_same_v<Creator, AggregateFunctionWithProperties>> * = nullptr>
+    AggregateFunctionWithProperties(Creator creator_, AggregateFunctionProperties properties_ = {})
         : creator(std::forward<Creator>(creator_)), properties(std::move(properties_))
     {
     }

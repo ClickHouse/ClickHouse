@@ -267,7 +267,7 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & /*ast_function*/, Con
 
     assert(cluster);
     StoragePtr res = remote_table_function_ptr
-        ? std::make_shared<StorageDistributed>(
+        ? StorageDistributed::create(
             StorageID(getDatabaseName(), table_name),
             cached_columns,
             ConstraintsDescription{},
@@ -280,7 +280,7 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & /*ast_function*/, Con
             DistributedSettings{},
             false,
             cluster)
-        : std::make_shared<StorageDistributed>(
+        : StorageDistributed::create(
             StorageID(getDatabaseName(), table_name),
             cached_columns,
             ConstraintsDescription{},

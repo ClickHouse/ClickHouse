@@ -246,9 +246,6 @@ IProcessor::Status GroupingAggregatedTransform::prepare()
 
 void GroupingAggregatedTransform::addChunk(Chunk chunk, size_t input)
 {
-    if (!chunk.hasRows())
-        return;
-
     const auto & info = chunk.getChunkInfo();
     if (!info)
         throw Exception("Chunk info was not set for chunk in GroupingAggregatedTransform.", ErrorCodes::LOGICAL_ERROR);
@@ -269,7 +266,7 @@ void GroupingAggregatedTransform::addChunk(Chunk chunk, size_t input)
             last_bucket_number[input] = bucket;
         }
     }
-    else if (typeid_cast<const ChunkInfoWithAllocatedBytes *>(info.get()))
+    else if (const auto * in_order_info = typeid_cast<const ChunkInfoWithAllocatedBytes *>(info.get()))
     {
         single_level_chunks.emplace_back(std::move(chunk));
     }
@@ -337,7 +334,7 @@ void MergingAggregatedBucketTransform::transform(Chunk & chunk)
 
             blocks_list.emplace_back(std::move(block));
         }
-        else if (typeid_cast<const ChunkInfoWithAllocatedBytes *>(cur_info.get()))
+        else if (const auto * in_order_info = typeid_cast<const ChunkInfoWithAllocatedBytes *>(cur_info.get()))
         {
             Block block = header.cloneWithColumns(cur_chunk.detachColumns());
             block.info.is_overflows = false;

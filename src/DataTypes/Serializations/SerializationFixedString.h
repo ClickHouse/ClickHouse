@@ -12,7 +12,7 @@ private:
     size_t n;
 
 public:
-    explicit SerializationFixedString(size_t n_) : n(n_) {}
+    SerializationFixedString(size_t n_) : n(n_) {}
     size_t getN() const { return n; }
 
     void serializeBinary(const Field & field, WriteBuffer & ostr) const override;

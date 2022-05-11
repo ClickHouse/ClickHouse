@@ -61,7 +61,7 @@ else ()
     endif ()
 
     if (ARCH_PPC64LE)
-        set (COMPILER_FLAGS "${COMPILER_FLAGS} -maltivec -mcpu=power8 -D__SSE2__=1 -DNO_WARN_X86_INTRINSICS")
+        set (COMPILER_FLAGS "${COMPILER_FLAGS} -maltivec -D__SSE2__=1 -DNO_WARN_X86_INTRINSICS")
     endif ()
 
     set (TEST_FLAG "-msse4.2")

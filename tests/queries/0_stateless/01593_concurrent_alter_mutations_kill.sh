@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-parallel, no-fasttest
+# Tags: no-parallel
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -13,32 +13,36 @@ $CLICKHOUSE_CLIENT --query "INSERT INTO concurrent_mutate_kill SELECT number, to
 
 function alter_thread
 {
-    TYPE=$($CLICKHOUSE_CLIENT --query "SELECT type FROM system.columns WHERE table='concurrent_mutate_kill' and database='${CLICKHOUSE_DATABASE}' and name='value'")
-    if [ "$TYPE" == "String" ]; then
-        $CLICKHOUSE_CLIENT --query "ALTER TABLE concurrent_mutate_kill MODIFY COLUMN value UInt64 SETTINGS replication_alter_partitions_sync=2"
-    else
-        $CLICKHOUSE_CLIENT --query "ALTER TABLE concurrent_mutate_kill MODIFY COLUMN value String SETTINGS replication_alter_partitions_sync=2"
-    fi
+    while true; do
+        TYPE=$($CLICKHOUSE_CLIENT --query "SELECT type FROM system.columns WHERE table='concurrent_mutate_kill' and database='${CLICKHOUSE_DATABASE}' and name='value'")
+        if [ "$TYPE" == "String" ]; then
+            $CLICKHOUSE_CLIENT --query "ALTER TABLE concurrent_mutate_kill MODIFY COLUMN value UInt64 SETTINGS replication_alter_partitions_sync=2"
+        else
+            $CLICKHOUSE_CLIENT --query "ALTER TABLE concurrent_mutate_kill MODIFY COLUMN value String SETTINGS replication_alter_partitions_sync=2"
+        fi
+    done
 }
 
 function kill_mutation_thread
 {
-    # find any mutation and kill it
-    mutation_id=$($CLICKHOUSE_CLIENT --query "SELECT mutation_id FROM system.mutations WHERE is_done=0 and database='${CLICKHOUSE_DATABASE}' and table='concurrent_mutate_kill' LIMIT 1")
-    if [ ! -z "$mutation_id" ]; then
-        $CLICKHOUSE_CLIENT --query "KILL MUTATION WHERE mutation_id='$mutation_id' and table='concurrent_mutate_kill' and database='${CLICKHOUSE_DATABASE}'" 1> /dev/null
-        sleep 1
-    fi
+    while true; do
+        # find any mutation and kill it
+        mutation_id=$($CLICKHOUSE_CLIENT --query "SELECT mutation_id FROM system.mutations WHERE is_done=0 and database='${CLICKHOUSE_DATABASE}' and table='concurrent_mutate_kill' LIMIT 1")
+        if [ ! -z "$mutation_id" ]; then
+            $CLICKHOUSE_CLIENT --query "KILL MUTATION WHERE mutation_id='$mutation_id' and table='concurrent_mutate_kill' and database='${CLICKHOUSE_DATABASE}'" 1> /dev/null
+            sleep 1
+        fi
+    done
 }
 
 
-export -f alter_thread
-export -f kill_mutation_thread
+export -f alter_thread;
+export -f kill_mutation_thread;
 
 TIMEOUT=30
 
-clickhouse_client_loop_timeout $TIMEOUT alter_thread 2> /dev/null &
-clickhouse_client_loop_timeout $TIMEOUT kill_mutation_thread 2> /dev/null &
+timeout $TIMEOUT bash -c alter_thread 2> /dev/null &
+timeout $TIMEOUT bash -c kill_mutation_thread 2> /dev/null &
 
 wait
 

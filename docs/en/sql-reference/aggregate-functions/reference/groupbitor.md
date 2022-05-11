@@ -1,5 +1,5 @@
 ---
-sidebar_position: 126
+toc_priority: 126
 ---
 
 # groupBitOr {#groupbitor}

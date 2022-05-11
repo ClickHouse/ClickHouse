@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Poco/Event.h>
-#include <Common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <base/types.h>
 #include <thread>
@@ -22,7 +22,7 @@ class StorageReplicatedMergeTree;
 class ReplicatedMergeTreeRestartingThread
 {
 public:
-    explicit ReplicatedMergeTreeRestartingThread(StorageReplicatedMergeTree & storage_);
+    ReplicatedMergeTreeRestartingThread(StorageReplicatedMergeTree & storage_);
 
     void start() { task->activateAndSchedule(); }
 

@@ -28,7 +28,6 @@ public:
 #if USE_EMBEDDED_COMPILER
         DROP_COMPILED_EXPRESSION_CACHE,
 #endif
-        DROP_FILESYSTEM_CACHE,
         STOP_LISTEN_QUERIES,
         START_LISTEN_QUERIES,
         RESTART_REPLICAS,
@@ -36,7 +35,6 @@ public:
         RESTORE_REPLICA,
         DROP_REPLICA,
         SYNC_REPLICA,
-        SYNC_DATABASE_REPLICA,
         RELOAD_DICTIONARY,
         RELOAD_DICTIONARIES,
         RELOAD_MODEL,
@@ -91,10 +89,6 @@ public:
     String disk;
     UInt64 seconds{};
 
-    /// Values for `drop filesystem cache` system query.
-    String filesystem_cache_path;
-    bool force_removal = false;
-
     String getID(char) const override { return "SYSTEM query"; }
 
     ASTPtr clone() const override
@@ -108,9 +102,9 @@ public:
         return res;
     }
 
-    ASTPtr getRewrittenASTWithoutOnCluster(const WithoutOnClusterASTRewriteParams & params) const override
+    ASTPtr getRewrittenASTWithoutOnCluster(const std::string & new_database) const override
     {
-        return removeOnCluster<ASTSystemQuery>(clone(), params.default_database);
+        return removeOnCluster<ASTSystemQuery>(clone(), new_database);
     }
 
     virtual QueryKind getQueryKind() const override { return QueryKind::System; }

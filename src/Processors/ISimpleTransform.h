@@ -46,7 +46,7 @@ public:
 
     virtual void transform(Chunk &)
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method transform is not implemented for {}", getName());
+        throw Exception("Method transform is not implemented for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
     Status prepare() override;

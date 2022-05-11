@@ -133,7 +133,7 @@ void registerOutputFormatNative(FormatFactory & factory)
 
 void registerNativeSchemaReader(FormatFactory & factory)
 {
-    factory.registerSchemaReader("Native", [](ReadBuffer & buf, const FormatSettings &)
+    factory.registerSchemaReader("Native", [](ReadBuffer & buf, const FormatSettings &, ContextPtr)
     {
         return std::make_shared<NativeSchemaReader>(buf);
     });

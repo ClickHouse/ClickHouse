@@ -1,9 +1,9 @@
 ---
-sidebar_position: 50
-sidebar_label: MySQL
+toc_priority: 30
+toc_title: MySQL
 ---
 
-# MySQL 
+# MySQL {#mysql}
 
 Allows to connect to databases on a remote MySQL server and perform `INSERT` and `SELECT` queries to exchange data between ClickHouse and MySQL.
 
@@ -59,9 +59,8 @@ These variables are supported:
 - `version`
 - `max_allowed_packet`
 
-:::warning
-By now these variables are stubs and don't correspond to anything.
-:::
+!!! warning "Warning"
+    By now these variables are stubs and don't correspond to anything.
 
 Example:
 

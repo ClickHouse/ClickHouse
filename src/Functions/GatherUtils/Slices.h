@@ -26,7 +26,7 @@ struct NullableSlice : public Slice
     const UInt8 * null_map = nullptr;
 
     NullableSlice() = default;
-    NullableSlice(const Slice & base) : Slice(base) {} /// NOLINT
+    NullableSlice(const Slice & base) : Slice(base) {}
 };
 
 template <typename T>

@@ -59,7 +59,6 @@ private:
 };
 
 
-bool isNullable(const DataTypePtr & type);
 bool canBecomeNullable(const DataTypePtr & type);
 DataTypePtr convertTypeToNullable(const DataTypePtr & type);
 void convertColumnToNullable(ColumnWithTypeAndName & column);

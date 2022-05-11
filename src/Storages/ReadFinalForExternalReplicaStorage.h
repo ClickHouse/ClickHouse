@@ -16,6 +16,7 @@ bool needRewriteQueryWithFinalForStorage(const Names & column_names, const Stora
 Pipe readFinalFromNestedStorage(
     StoragePtr nested_storage,
     const Names & column_names,
+    const StorageMetadataPtr & /*metadata_snapshot*/,
     SelectQueryInfo & query_info,
     ContextPtr context,
     QueryProcessingStage::Enum processed_stage,

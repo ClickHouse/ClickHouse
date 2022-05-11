@@ -1,5 +1,6 @@
 #pragma once
 
+#include <base/shared_ptr_helper.h>
 #include <Storages/IStorage.h>
 
 
@@ -14,16 +15,15 @@ class Context;
   * Used when the table is not specified in the query.
   * Analog of the DUAL table in Oracle and MySQL.
   */
-class StorageSystemOne final : public IStorage
+class StorageSystemOne final : public shared_ptr_helper<StorageSystemOne>, public IStorage
 {
+    friend struct shared_ptr_helper<StorageSystemOne>;
 public:
-    explicit StorageSystemOne(const StorageID & table_id_);
-
     std::string getName() const override { return "SystemOne"; }
 
     Pipe read(
         const Names & column_names,
-        const StorageSnapshotPtr & storage_snapshot,
+        const StorageMetadataPtr & /*metadata_snapshot*/,
         SelectQueryInfo & query_info,
         ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
@@ -32,7 +32,8 @@ public:
 
     bool isSystemStorage() const override { return true; }
 
-    bool supportsTransactions() const override { return true; }
+protected:
+    explicit StorageSystemOne(const StorageID & table_id_);
 };
 
 }

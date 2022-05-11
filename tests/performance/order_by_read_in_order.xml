@@ -1,4 +1,7 @@
 <test>
+    <preconditions>
+        <table_exists>hits_100m_single</table_exists>
+    </preconditions>
 
 <!-- Some queries are almost instantaneous index lookups, so we mark them as short. -->
 <query short="1">SELECT * FROM hits_100m_single ORDER BY CounterID, EventDate LIMIT 100</query>

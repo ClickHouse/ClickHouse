@@ -216,11 +216,6 @@ public:
         return query_context.lock();
     }
 
-    auto getGlobalContext() const
-    {
-        return global_context.lock();
-    }
-
     void disableProfiling()
     {
         assert(!query_profiler_real && !query_profiler_cpu);

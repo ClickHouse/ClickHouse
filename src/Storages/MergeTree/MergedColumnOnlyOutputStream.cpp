@@ -1,7 +1,6 @@
 #include <Storages/MergeTree/MergedColumnOnlyOutputStream.h>
 #include <Storages/MergeTree/MergeTreeDataPartWriterOnDisk.h>
 #include <Interpreters/Context.h>
-#include <IO/WriteSettings.h>
 
 namespace DB
 {
@@ -27,7 +26,6 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
 
     MergeTreeWriterSettings writer_settings(
         global_settings,
-        data_part->storage.getContext()->getWriteSettings(),
         storage_settings,
         index_granularity_info ? index_granularity_info->is_adaptive : data_part->storage.canUseAdaptiveGranularity(),
         /* rewrite_primary_key = */false);
@@ -85,7 +83,7 @@ MergedColumnOnlyOutputStream::fillChecksums(
         if (disk->exists(file_path))
             disk->removeFile(file_path);
 
-        if (all_checksums.files.contains(removed_file))
+        if (all_checksums.files.count(removed_file))
             all_checksums.files.erase(removed_file);
     }
 

@@ -1,6 +1,6 @@
 ---
-sidebar_position: 41
-sidebar_label: url
+toc_priority: 41
+toc_title: url
 ---
 
 # url {#url}

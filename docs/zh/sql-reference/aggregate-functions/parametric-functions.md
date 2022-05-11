@@ -1,6 +1,6 @@
 ---
-sidebar_position: 38
-sidebar_label: 参数聚合函数
+toc_priority: 38
+toc_title: 参数聚合函数
 ---
 
 # 参数聚合函数 {#aggregate_functions_parametric}

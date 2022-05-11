@@ -59,7 +59,7 @@ static void addRootPath(String & path, const String & root_path)
         throw Exception("Path cannot be empty", Error::ZBADARGUMENTS);
 
     if (path[0] != '/')
-        throw Exception("Path must begin with /, got path '" + path + "'", Error::ZBADARGUMENTS);
+        throw Exception("Path must begin with /, got " + path, Error::ZBADARGUMENTS);
 
     if (root_path.empty())
         return;

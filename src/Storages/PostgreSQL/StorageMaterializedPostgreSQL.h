@@ -12,6 +12,7 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/ExpressionAnalyzer.h>
+#include <base/shared_ptr_helper.h>
 #include <memory>
 
 
@@ -60,24 +61,16 @@ namespace DB
  *
 **/
 
-class StorageMaterializedPostgreSQL final : public IStorage, WithContext
+class StorageMaterializedPostgreSQL final : public shared_ptr_helper<StorageMaterializedPostgreSQL>, public IStorage, WithContext
 {
+    friend struct shared_ptr_helper<StorageMaterializedPostgreSQL>;
+
 public:
     StorageMaterializedPostgreSQL(const StorageID & table_id_, ContextPtr context_,
                                 const String & postgres_database_name, const String & postgres_table_name);
 
     StorageMaterializedPostgreSQL(StoragePtr nested_storage_, ContextPtr context_,
                                 const String & postgres_database_name, const String & postgres_table_name);
-
-    StorageMaterializedPostgreSQL(
-        const StorageID & table_id_,
-        bool is_attach_,
-        const String & remote_database_name,
-        const String & remote_table_name,
-        const postgres::ConnectionInfo & connection_info,
-        const StorageInMemoryMetadata & storage_metadata,
-        ContextPtr context_,
-        std::unique_ptr<MaterializedPostgreSQLSettings> replication_settings);
 
     String getName() const override { return "MaterializedPostgreSQL"; }
 
@@ -92,7 +85,7 @@ public:
 
     Pipe read(
         const Names & column_names,
-        const StorageSnapshotPtr & storage_snapshot,
+        const StorageMetadataPtr & metadata_snapshot,
         SelectQueryInfo & query_info,
         ContextPtr context_,
         QueryProcessingStage::Enum processed_stage,
@@ -129,9 +122,20 @@ public:
 
     bool supportsFinal() const override { return true; }
 
+protected:
+    StorageMaterializedPostgreSQL(
+        const StorageID & table_id_,
+        bool is_attach_,
+        const String & remote_database_name,
+        const String & remote_table_name,
+        const postgres::ConnectionInfo & connection_info,
+        const StorageInMemoryMetadata & storage_metadata,
+        ContextPtr context_,
+        std::unique_ptr<MaterializedPostgreSQLSettings> replication_settings);
+
 private:
     static std::shared_ptr<ASTColumnDeclaration> getMaterializedColumnsDeclaration(
-            String name, String type, UInt64 default_value);
+            const String name, const String type, UInt64 default_value);
 
     ASTPtr getColumnDeclaration(const DataTypePtr & data_type) const;
 

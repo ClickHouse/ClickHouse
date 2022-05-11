@@ -1,5 +1,5 @@
 ---
-sidebar_label: SAMPLE
+toc_title: SAMPLE
 ---
 
 # SAMPLE Clause {#select-sample-clause}
@@ -14,9 +14,8 @@ Approximated query processing can be useful in the following cases:
 -   When your raw data is not accurate, so approximation does not noticeably degrade the quality.
 -   Business requirements target approximate results (for cost-effectiveness, or to market exact results to premium users).
 
-:::note    
-You can only use sampling with the tables in the [MergeTree](../../../engines/table-engines/mergetree-family/mergetree.md) family, and only if the sampling expression was specified during table creation (see [MergeTree engine](../../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-creating-a-table)).
-:::
+!!! note "Note"
+    You can only use sampling with the tables in the [MergeTree](../../../engines/table-engines/mergetree-family/mergetree.md) family, and only if the sampling expression was specified during table creation (see [MergeTree engine](../../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-creating-a-table)).
 
 The features of data sampling are listed below:
 
@@ -26,12 +25,11 @@ The features of data sampling are listed below:
 
 For the `SAMPLE` clause the following syntax is supported:
 
-| SAMPLE Clause Syntax | Description                  |
-|----------------------|------------------------------|
-| `SAMPLE k`   |  Here `k` is the number from 0 to 1. The query is executed on `k` fraction of data. For example, `SAMPLE 0.1` runs the query on 10% of data. [Read more](#select-sample-k)      |
-| `SAMPLE n`    |  Here `n` is a sufficiently large integer. The query is executed on a sample of at least `n` rows (but not significantly more than this). For example, `SAMPLE 10000000` runs the query on a minimum of 10,000,000 rows. [Read more](#select-sample-n)  |
-| `SAMPLE k OFFSET m`  |  Here `k` and `m` are the numbers from 0 to 1. The query is executed on a sample of `k` fraction of the data. The data used for the sample is offset by `m` fraction. [Read more](#select-sample-offset)  |
-
+| SAMPLE Clause Syntax | Description                                                                                                                                                                                                                                               |
+|----------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `SAMPLE k`           | Here `k` is the number from 0 to 1.</br>The query is executed on `k` fraction of data. For example, `SAMPLE 0.1` runs the query on 10% of data. [Read more](#select-sample-k)                                                                             |
+| `SAMPLE n`           | Here `n` is a sufficiently large integer.</br>The query is executed on a sample of at least `n` rows (but not significantly more than this). For example, `SAMPLE 10000000` runs the query on a minimum of 10,000,000 rows. [Read more](#select-sample-n) |
+| `SAMPLE k OFFSET m`  | Here `k` and `m` are the numbers from 0 to 1.</br>The query is executed on a sample of `k` fraction of the data. The data used for the sample is offset by `m` fraction. [Read more](#select-sample-offset)                                               |
 
 ## SAMPLE K {#select-sample-k}
 

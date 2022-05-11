@@ -7,7 +7,6 @@
 #include <Core/Field.h>
 #include <Core/SettingsEnums.h>
 #include <Common/IntervalKind.h>
-#include <DataTypes/IDataType.h>
 
 class Collator;
 
@@ -40,6 +39,7 @@ struct FillColumnDescription
 struct SortColumnDescription
 {
     std::string column_name; /// The name of the column.
+    size_t column_number;    /// Column number (used if no name is given).
     int direction;           /// 1 - ascending, -1 - descending.
     int nulls_direction;     /// 1 - NULLs and NaNs are greater, -1 - less.
                              /// To achieve NULLS LAST, set it equal to direction, to achieve NULLS FIRST, set it opposite.
@@ -48,24 +48,23 @@ struct SortColumnDescription
     FillColumnDescription fill_description;
 
     explicit SortColumnDescription(
-        const std::string & column_name_,
-        int direction_ = 1,
-        int nulls_direction_ = 1,
-        const std::shared_ptr<Collator> & collator_ = nullptr,
-        bool with_fill_ = false,
-        const FillColumnDescription & fill_description_ = {})
-        : column_name(column_name_)
-        , direction(direction_)
-        , nulls_direction(nulls_direction_)
-        , collator(collator_)
-        , with_fill(with_fill_)
-        , fill_description(fill_description_)
-    {
-    }
+            size_t column_number_, int direction_ = 1, int nulls_direction_ = 1,
+            const std::shared_ptr<Collator> & collator_ = nullptr,
+            bool with_fill_ = false, const FillColumnDescription & fill_description_ = {})
+            : column_number(column_number_), direction(direction_), nulls_direction(nulls_direction_), collator(collator_)
+            , with_fill(with_fill_), fill_description(fill_description_) {}
+
+    explicit SortColumnDescription(
+            const std::string & column_name_, int direction_ = 1, int nulls_direction_ = 1,
+            const std::shared_ptr<Collator> & collator_ = nullptr,
+            bool with_fill_ = false, const FillColumnDescription & fill_description_ = {})
+            : column_name(column_name_), column_number(0), direction(direction_), nulls_direction(nulls_direction_)
+            , collator(collator_), with_fill(with_fill_), fill_description(fill_description_) {}
 
     bool operator == (const SortColumnDescription & other) const
     {
-        return column_name == other.column_name && direction == other.direction && nulls_direction == other.nulls_direction;
+        return column_name == other.column_name && column_number == other.column_number
+            && direction == other.direction && nulls_direction == other.nulls_direction;
     }
 
     bool operator != (const SortColumnDescription & other) const
@@ -73,30 +72,22 @@ struct SortColumnDescription
         return !(*this == other);
     }
 
-    std::string dump() const { return fmt::format("{}:dir {}nulls {}", column_name, direction, nulls_direction); }
-
-    void explain(JSONBuilder::JSONMap & map) const;
-};
-
-struct SortColumnDescriptionWithColumnIndex
-{
-    SortColumnDescription base;
-    size_t column_number;
-
-    SortColumnDescriptionWithColumnIndex(SortColumnDescription description_, size_t column_number_)
-        : base(std::move(description_)), column_number(column_number_)
+    std::string dump() const
     {
+        return fmt::format("{}:{}:dir {}nulls ", column_name, column_number, direction, nulls_direction);
     }
+
+    void explain(JSONBuilder::JSONMap & map, const Block & header) const;
 };
 
 /// Description of the sorting rule for several columns.
 using SortDescription = std::vector<SortColumnDescription>;
-using SortDescriptionWithPositions = std::vector<SortColumnDescriptionWithColumnIndex>;
 
 /// Outputs user-readable description into `out`.
-void dumpSortDescription(const SortDescription & description, WriteBuffer & out);
+void dumpSortDescription(const SortDescription & description, const Block & header, WriteBuffer & out);
 
 std::string dumpSortDescription(const SortDescription & description);
 
-JSONBuilder::ItemPtr explainSortDescription(const SortDescription & description);
+JSONBuilder::ItemPtr explainSortDescription(const SortDescription & description, const Block & header);
+
 }

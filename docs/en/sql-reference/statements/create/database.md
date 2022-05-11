@@ -1,6 +1,6 @@
 ---
-sidebar_position: 35
-sidebar_label: DATABASE
+toc_priority: 35
+toc_title: DATABASE
 ---
 
 # CREATE DATABASE {#query-language-create-database}

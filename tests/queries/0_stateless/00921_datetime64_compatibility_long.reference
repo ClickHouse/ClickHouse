@@ -98,7 +98,7 @@ Code: 43
 "DateTime('Europe/Moscow')","2019-09-16 19:20:00"
 "DateTime('Europe/Moscow')","2019-09-16 19:20:00"
 ------------------------------------------
-SELECT toStartOfFiveMinutes(N, \'Europe/Moscow\')
+SELECT toStartOfFiveMinute(N, \'Europe/Moscow\')
 Code: 43
 "DateTime('Europe/Moscow')","2019-09-16 19:20:00"
 "DateTime('Europe/Moscow')","2019-09-16 19:20:00"

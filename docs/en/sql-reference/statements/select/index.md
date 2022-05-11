@@ -1,9 +1,11 @@
 ---
-sidebar_position: 32
-sidebar_label: SELECT
+title: SELECT Query
+toc_folder_title: SELECT
+toc_priority: 32
+toc_title: Overview
 ---
 
-# SELECT Query 
+# SELECT Query {#select-queries-syntax}
 
 `SELECT` queries perform data retrieval. By default, the requested data is returned to the client, while in conjunction with [INSERT INTO](../../../sql-reference/statements/insert-into.md) it can be forwarded to a different table.
 
@@ -20,7 +22,7 @@ SELECT [DISTINCT [ON (column1, column2, ...)]] expr_list
 [WHERE expr]
 [GROUP BY expr_list] [WITH ROLLUP|WITH CUBE] [WITH TOTALS]
 [HAVING expr]
-[ORDER BY expr_list] [WITH FILL] [FROM expr] [TO expr] [STEP expr] [INTERPOLATE [(expr_list)]]
+[ORDER BY expr_list] [WITH FILL] [FROM expr] [TO expr] [STEP expr]
 [LIMIT [offset_value, ]n BY columns]
 [LIMIT [n, ]m] [WITH TIES]
 [SETTINGS ...]
@@ -43,7 +45,7 @@ Specifics of each optional clause are covered in separate sections, which are li
 -   [WHERE clause](../../../sql-reference/statements/select/where.md)
 -   [GROUP BY clause](../../../sql-reference/statements/select/group-by.md)
 -   [LIMIT BY clause](../../../sql-reference/statements/select/limit-by.md)
--   [HAVING clause](../../../sql-reference/statements/select/having)
+-   [HAVING clause](../../../sql-reference/statements/select/having.md)
 -   [LIMIT clause](../../../sql-reference/statements/select/limit.md)
 -   [OFFSET clause](../../../sql-reference/statements/select/offset.md)
 -   [UNION clause](../../../sql-reference/statements/select/union.md)

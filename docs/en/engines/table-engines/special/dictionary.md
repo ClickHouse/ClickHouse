@@ -1,6 +1,6 @@
 ---
-sidebar_position: 20
-sidebar_label: Dictionary
+toc_priority: 35
+toc_title: Dictionary
 ---
 
 # Dictionary Table Engine {#dictionary}
@@ -97,5 +97,3 @@ select * from products limit 1;
 **See Also**
 
 -   [Dictionary function](../../../sql-reference/table-functions/dictionary.md#dictionary-function)
-
-[Original article](https://clickhouse.com/docs/en/engines/table-engines/special/dictionary/) <!--hide-->

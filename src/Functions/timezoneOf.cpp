@@ -21,7 +21,7 @@ namespace
 
 
 /** timezoneOf(x) - get the name of the timezone of DateTime data type.
-  * Example: Pacific/Pitcairn.
+  * Example: Europe/Moscow.
   */
 class FunctionTimezoneOf : public IFunction
 {
@@ -74,3 +74,4 @@ void registerFunctionTimezoneOf(FunctionFactory & factory)
 }
 
 }
+

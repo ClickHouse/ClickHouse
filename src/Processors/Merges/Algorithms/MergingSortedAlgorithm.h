@@ -14,7 +14,7 @@ class MergingSortedAlgorithm final : public IMergingAlgorithm
 {
 public:
     MergingSortedAlgorithm(
-        Block header_,
+        const Block & header,
         size_t num_inputs,
         SortDescription description_,
         size_t max_block_size,
@@ -31,8 +31,6 @@ public:
     const MergedData & getMergedData() const { return merged_data; }
 
 private:
-    Block header;
-
     MergedData merged_data;
 
     /// Settings

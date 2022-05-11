@@ -1,4 +1,4 @@
-timezone: Etc/UTC
+timezone: Europe/Moscow
 listen_host: 0.0.0.0
 custom_settings_prefixes: custom_
 path: /var/lib/clickhouse/

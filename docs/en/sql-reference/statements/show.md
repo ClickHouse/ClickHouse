@@ -1,6 +1,6 @@
 ---
-sidebar_position: 37
-sidebar_label: SHOW
+toc_priority: 37
+toc_title: SHOW
 ---
 
 # SHOW Statements {#show-queries}
@@ -361,9 +361,8 @@ SHOW ACCESS
 
 Returns a list of clusters. All available clusters are listed in the [system.clusters](../../operations/system-tables/clusters.md) table.
 
-:::note    
-`SHOW CLUSTER name` query displays the contents of system.clusters table for this cluster.
-:::
+!!! info "Note"
+    `SHOW CLUSTER name` query displays the contents of system.clusters table for this cluster.
 
 ### Syntax {#show-cluster-syntax}
 

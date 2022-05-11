@@ -56,8 +56,7 @@ public:
     std::unique_ptr<WriteBufferFromFileBase> writeFile(
         const String & path,
         size_t buf_size,
-        WriteMode mode,
-        const WriteSettings & settings) override;
+        WriteMode mode) override;
 
     DiskType getType() const override;
 
@@ -67,7 +66,9 @@ public:
 
     bool checkUniqueId(const String & id) const override;
 
-    void removeFromRemoteFS(const std::vector<String> & paths) override;
+    void removeFromRemoteFS(RemoteFSPathKeeperPtr fs_paths_keeper) override;
+
+    RemoteFSPathKeeperPtr createFSPathKeeper() const override;
 
     void applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr context, const String &, const DisksMap &) override;
 

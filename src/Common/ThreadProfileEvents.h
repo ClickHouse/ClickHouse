@@ -5,7 +5,7 @@
 #include <sys/time.h>
 #include <sys/resource.h>
 #include <pthread.h>
-#include <Common/logger_useful.h>
+#include <base/logger_useful.h>
 
 
 #if defined(__linux__)
@@ -176,18 +176,8 @@ extern PerfEventsCounters current_thread_counters;
 class TasksStatsCounters
 {
 public:
-    enum class MetricsProvider
-    {
-        None,
-        Procfs,
-        Netlink,
-    };
-
-    static const char * metricsProviderString(MetricsProvider provider);
     static bool checkIfAvailable();
-    static MetricsProvider findBestAvailableProvider();
-
-    static std::unique_ptr<TasksStatsCounters> create(UInt64 tid);
+    static std::unique_ptr<TasksStatsCounters> create(const UInt64 tid);
 
     void reset();
     void updateCounters(ProfileEvents::Counters & profile_events);
@@ -196,8 +186,17 @@ private:
     ::taskstats stats;  //-V730_NOINIT
     std::function<::taskstats()> stats_getter;
 
-    explicit TasksStatsCounters(UInt64 tid, MetricsProvider provider);
+    enum class MetricsProvider
+    {
+        None,
+        Procfs,
+        Netlink
+    };
 
+private:
+    explicit TasksStatsCounters(const UInt64 tid, const MetricsProvider provider);
+
+    static MetricsProvider findBestAvailableProvider();
     static void incrementProfileEvents(const ::taskstats & prev, const ::taskstats & curr, ProfileEvents::Counters & profile_events);
 };
 

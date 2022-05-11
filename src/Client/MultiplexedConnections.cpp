@@ -133,12 +133,7 @@ void MultiplexedConnections::sendQuery(
             modified_settings.group_by_two_level_threshold_bytes = 0;
         }
 
-        bool parallel_reading_from_replicas = settings.max_parallel_replicas > 1
-            && settings.allow_experimental_parallel_reading_from_replicas
-            /// To avoid trying to coordinate with clickhouse-benchmark,
-            /// since it uses the same code.
-            && client_info.query_kind != ClientInfo::QueryKind::INITIAL_QUERY;
-        if (parallel_reading_from_replicas)
+        if (settings.max_parallel_replicas > 1 && settings.allow_experimental_parallel_reading_from_replicas)
         {
             client_info.collaborate_with_initiator = true;
             client_info.count_participating_replicas = replica_info.all_replicas_count;

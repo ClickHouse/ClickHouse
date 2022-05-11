@@ -25,7 +25,6 @@ public:
     bool operator() (Array &) const;
     bool operator() (Tuple &) const;
     bool operator() (Map &) const;
-    bool operator() (Object &) const;
     bool operator() (UUID &) const;
     bool operator() (AggregateFunctionStateData &) const;
     bool operator() (bool &) const;
@@ -37,8 +36,7 @@ public:
         return x.getValue() != T(0);
     }
 
-    template <typename T>
-    requires is_big_int_v<T>
+    template <typename T, typename = std::enable_if_t<is_big_int_v<T>> >
     bool operator() (T & x) const
     {
         x += rhs.reinterpret<T>();

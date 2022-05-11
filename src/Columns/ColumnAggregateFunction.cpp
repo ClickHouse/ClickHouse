@@ -204,8 +204,6 @@ MutableColumnPtr ColumnAggregateFunction::predictValues(const ColumnsWithTypeAnd
 
 void ColumnAggregateFunction::ensureOwnership()
 {
-    force_data_ownership = true;
-
     if (src)
     {
         /// We must copy all data from src and take ownership.
@@ -271,7 +269,7 @@ void ColumnAggregateFunction::insertRangeFrom(const IColumn & from, size_t start
                 + ").",
             ErrorCodes::PARAMETER_OUT_OF_BOUND);
 
-    if (force_data_ownership || (!empty() && src.get() != &from_concrete))
+    if (!empty() && src.get() != &from_concrete)
     {
         /// Must create new states of aggregate function and take ownership of it,
         ///  because ownership of states of aggregate function cannot be shared for individual rows,
@@ -297,7 +295,7 @@ ColumnPtr ColumnAggregateFunction::filter(const Filter & filter, ssize_t result_
 {
     size_t size = data.size();
     if (size != filter.size())
-        throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of filter ({}) doesn't match size of column ({})", filter.size(), size);
+        throw Exception("Size of filter doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 
     if (size == 0)
         return cloneEmpty();
@@ -607,7 +605,7 @@ MutableColumns ColumnAggregateFunction::scatter(IColumn::ColumnIndex num_columns
     size_t num_rows = size();
 
     {
-        size_t reserve_size = static_cast<double>(num_rows) / num_columns * 1.1; /// 1.1 is just a guess. Better to use n-sigma rule.
+        size_t reserve_size = double(num_rows) / num_columns * 1.1; /// 1.1 is just a guess. Better to use n-sigma rule.
 
         if (reserve_size > 1)
             for (auto & column : columns)
@@ -620,8 +618,7 @@ MutableColumns ColumnAggregateFunction::scatter(IColumn::ColumnIndex num_columns
     return columns;
 }
 
-void ColumnAggregateFunction::getPermutation(PermutationSortDirection /*direction*/, PermutationSortStability /*stability*/,
-                                            size_t /*limit*/, int /*nan_direction_hint*/, IColumn::Permutation & res) const
+void ColumnAggregateFunction::getPermutation(bool /*reverse*/, size_t /*limit*/, int /*nan_direction_hint*/, IColumn::Permutation & res) const
 {
     size_t s = data.size();
     res.resize(s);
@@ -629,8 +626,7 @@ void ColumnAggregateFunction::getPermutation(PermutationSortDirection /*directio
         res[i] = i;
 }
 
-void ColumnAggregateFunction::updatePermutation(PermutationSortDirection, PermutationSortStability,
-                                            size_t, int, Permutation &, EqualRanges&) const {}
+void ColumnAggregateFunction::updatePermutation(bool, size_t, int, Permutation &, EqualRanges&) const {}
 
 void ColumnAggregateFunction::gather(ColumnGathererStream & gatherer)
 {

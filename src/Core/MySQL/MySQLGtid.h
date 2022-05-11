@@ -35,7 +35,7 @@ class GTIDSets
 public:
     std::vector<GTIDSet> sets;
 
-    void parse(String gtid_format_);
+    void parse(const String gtid_format_);
     void update(const GTID & other);
 
     String toString() const;

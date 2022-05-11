@@ -1,8 +1,8 @@
 ---
-sidebar_label: Geo
-sidebar_position: 62
+toc_title: hidden
+toc_priority: 62
+toc_folder_title: Geo
 ---
 
-# Geo Functions
 
 [Original article](https://clickhouse.com/docs/en/sql-reference/functions/geo/) <!--hide-->

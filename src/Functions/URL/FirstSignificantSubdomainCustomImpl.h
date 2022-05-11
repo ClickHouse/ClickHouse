@@ -20,7 +20,7 @@ namespace ErrorCodes
 struct FirstSignificantSubdomainCustomLookup
 {
     const TLDList & tld_list;
-    explicit FirstSignificantSubdomainCustomLookup(const std::string & tld_list_name)
+    FirstSignificantSubdomainCustomLookup(const std::string & tld_list_name)
         : tld_list(TLDListsHolder::getInstance().getTldList(tld_list_name))
     {
     }

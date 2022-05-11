@@ -41,7 +41,7 @@ std::vector<UUID> MemoryAccessStorage::findAllImpl(AccessEntityType type) const
 bool MemoryAccessStorage::exists(const UUID & id) const
 {
     std::lock_guard lock{mutex};
-    return entries_by_id.contains(id);
+    return entries_by_id.count(id);
 }
 
 

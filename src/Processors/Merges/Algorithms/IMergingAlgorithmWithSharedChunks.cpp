@@ -4,9 +4,11 @@ namespace DB
 {
 
 IMergingAlgorithmWithSharedChunks::IMergingAlgorithmWithSharedChunks(
-    Block header_, size_t num_inputs, SortDescription description_, WriteBuffer * out_row_sources_buf_, size_t max_row_refs)
-    : header(std::move(header_))
-    , description(std::move(description_))
+    size_t num_inputs,
+    SortDescription description_,
+    WriteBuffer * out_row_sources_buf_,
+    size_t max_row_refs)
+    : description(std::move(description_))
     , chunk_allocator(num_inputs + max_row_refs)
     , cursors(num_inputs)
     , sources(num_inputs)
@@ -37,7 +39,7 @@ void IMergingAlgorithmWithSharedChunks::initialize(Inputs inputs)
 
         source.skip_last_row = inputs[source_num].skip_last_row;
         source.chunk = chunk_allocator.alloc(inputs[source_num].chunk);
-        cursors[source_num] = SortCursorImpl(header, source.chunk->getColumns(), description, source_num, inputs[source_num].permutation);
+        cursors[source_num] = SortCursorImpl(source.chunk->getColumns(), description, source_num, inputs[source_num].permutation);
 
         source.chunk->all_columns = cursors[source_num].all_columns;
         source.chunk->sort_columns = cursors[source_num].sort_columns;
@@ -53,7 +55,7 @@ void IMergingAlgorithmWithSharedChunks::consume(Input & input, size_t source_num
     auto & source = sources[source_num];
     source.skip_last_row = input.skip_last_row;
     source.chunk = chunk_allocator.alloc(input.chunk);
-    cursors[source_num].reset(source.chunk->getColumns(), header, input.permutation);
+    cursors[source_num].reset(source.chunk->getColumns(), {}, input.permutation);
 
     source.chunk->all_columns = cursors[source_num].all_columns;
     source.chunk->sort_columns = cursors[source_num].sort_columns;

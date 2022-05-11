@@ -67,7 +67,7 @@ private:
     void finalizeImpl() override final
     {
         vector.resize(
-            ((position() - reinterpret_cast<Position>(vector.data())) /// NOLINT
+            ((position() - reinterpret_cast<Position>(vector.data()))
                 + sizeof(typename VectorType::value_type) - 1)  /// Align up.
             / sizeof(typename VectorType::value_type));
 

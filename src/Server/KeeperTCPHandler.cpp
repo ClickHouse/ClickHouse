@@ -11,7 +11,7 @@
 #include <Common/Stopwatch.h>
 #include <Common/NetException.h>
 #include <Common/setThreadName.h>
-#include <Common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <chrono>
 #include <Common/PipeFDs.h>
 #include <Poco/Util/AbstractConfiguration.h>
@@ -171,7 +171,7 @@ struct SocketInterruptablePollWrapper
 
             if (rc >= 1 && poll_buf[0].revents & POLLIN)
                 socket_ready = true;
-            if (rc >= 2 && poll_buf[1].revents & POLLIN)
+            if (rc >= 1 && poll_buf[1].revents & POLLIN)
                 fd_ready = true;
 #endif
         }
@@ -202,30 +202,25 @@ struct SocketInterruptablePollWrapper
 #endif
 };
 
-KeeperTCPHandler::KeeperTCPHandler(
-    const Poco::Util::AbstractConfiguration & config_ref,
-    std::shared_ptr<KeeperDispatcher> keeper_dispatcher_,
-    Poco::Timespan receive_timeout_,
-    Poco::Timespan send_timeout_,
-    const Poco::Net::StreamSocket & socket_)
+KeeperTCPHandler::KeeperTCPHandler(IServer & server_, const Poco::Net::StreamSocket & socket_)
     : Poco::Net::TCPServerConnection(socket_)
+    , server(server_)
     , log(&Poco::Logger::get("KeeperTCPHandler"))
-    , keeper_dispatcher(keeper_dispatcher_)
+    , global_context(Context::createCopy(server.context()))
+    , keeper_dispatcher(global_context->getKeeperDispatcher())
     , operation_timeout(
           0,
-          config_ref.getUInt(
+          global_context->getConfigRef().getUInt(
               "keeper_server.coordination_settings.operation_timeout_ms", Coordination::DEFAULT_OPERATION_TIMEOUT_MS) * 1000)
     , min_session_timeout(
           0,
-          config_ref.getUInt(
+          global_context->getConfigRef().getUInt(
               "keeper_server.coordination_settings.min_session_timeout_ms", Coordination::DEFAULT_MIN_SESSION_TIMEOUT_MS) * 1000)
     , max_session_timeout(
           0,
-          config_ref.getUInt(
+          global_context->getConfigRef().getUInt(
               "keeper_server.coordination_settings.session_timeout_ms", Coordination::DEFAULT_MAX_SESSION_TIMEOUT_MS) * 1000)
     , poll_wrapper(std::make_unique<SocketInterruptablePollWrapper>(socket_))
-    , send_timeout(send_timeout_)
-    , receive_timeout(receive_timeout_)
     , responses(std::make_unique<ThreadSafeResponseQueue>(std::numeric_limits<size_t>::max()))
     , last_op(std::make_unique<LastOp>(EMPTY_LAST_OP))
 {
@@ -294,9 +289,11 @@ void KeeperTCPHandler::runImpl()
 {
     setThreadName("KeeperHandler");
     ThreadStatus thread_status;
+    auto global_receive_timeout = global_context->getSettingsRef().receive_timeout;
+    auto global_send_timeout = global_context->getSettingsRef().send_timeout;
 
-    socket().setReceiveTimeout(receive_timeout);
-    socket().setSendTimeout(send_timeout);
+    socket().setReceiveTimeout(global_receive_timeout);
+    socket().setSendTimeout(global_send_timeout);
     socket().setNoDelay(true);
 
     in = std::make_shared<ReadBufferFromPocoSocket>(socket());
@@ -345,7 +342,7 @@ void KeeperTCPHandler::runImpl()
         return;
     }
 
-    if (keeper_dispatcher->isServerActive())
+    if (keeper_dispatcher->checkInit() && keeper_dispatcher->hasLeader())
     {
         try
         {
@@ -365,7 +362,15 @@ void KeeperTCPHandler::runImpl()
     }
     else
     {
-        LOG_WARNING(log, "Ignoring user request, because the server is not active yet");
+        String reason;
+        if (!keeper_dispatcher->checkInit() && !keeper_dispatcher->hasLeader())
+            reason = "server is not initialized yet and no alive leader exists";
+        else if (!keeper_dispatcher->checkInit())
+            reason = "server is not initialized yet";
+        else
+            reason = "no alive leader exists";
+
+        LOG_WARNING(log, "Ignoring user request, because {}", reason);
         sendHandshake(false);
         return;
     }
@@ -407,13 +412,6 @@ void KeeperTCPHandler::runImpl()
             log_long_operation("Polling socket");
             if (result.has_requests && !close_received)
             {
-                if (in->eof())
-                {
-                    LOG_DEBUG(log, "Client closed connection, session id #{}", session_id);
-                    keeper_dispatcher->finishSession(session_id);
-                    break;
-                }
-
                 auto [received_op, received_xid] = receiveRequest();
                 packageReceived();
                 log_long_operation("Receiving request");
@@ -546,13 +544,19 @@ std::pair<Coordination::OpNum, Coordination::XID> KeeperTCPHandler::receiveReque
 
 void KeeperTCPHandler::packageSent()
 {
-    conn_stats.incrementPacketsSent();
+    {
+        std::lock_guard lock(conn_stats_mutex);
+        conn_stats.incrementPacketsSent();
+    }
     keeper_dispatcher->incrementPacketsSent();
 }
 
 void KeeperTCPHandler::packageReceived()
 {
-    conn_stats.incrementPacketsReceived();
+    {
+        std::lock_guard lock(conn_stats_mutex);
+        conn_stats.incrementPacketsReceived();
+    }
     keeper_dispatcher->incrementPacketsReceived();
 }
 
@@ -562,7 +566,10 @@ void KeeperTCPHandler::updateStats(Coordination::ZooKeeperResponsePtr & response
     if (response->xid != Coordination::WATCH_XID && response->getOpNum() != Coordination::OpNum::Heartbeat)
     {
         Int64 elapsed = (Poco::Timestamp() - operations[response->xid]) / 1000;
-        conn_stats.updateLatency(elapsed);
+        {
+            std::lock_guard lock(conn_stats_mutex);
+            conn_stats.updateLatency(elapsed);
+        }
 
         operations.erase(response->xid);
         keeper_dispatcher->updateKeeperStatLatency(elapsed);
@@ -577,14 +584,15 @@ void KeeperTCPHandler::updateStats(Coordination::ZooKeeperResponsePtr & response
 
 }
 
-KeeperConnectionStats & KeeperTCPHandler::getConnectionStats()
+KeeperConnectionStats KeeperTCPHandler::getConnectionStats() const
 {
+    std::lock_guard lock(conn_stats_mutex);
     return conn_stats;
 }
 
 void KeeperTCPHandler::dumpStats(WriteBufferFromOwnString & buf, bool brief)
 {
-    auto & stats = getConnectionStats();
+    KeeperConnectionStats stats = getConnectionStats();
 
     writeText(' ', buf);
     writeText(socket().peerAddress().toString(), buf);
@@ -633,7 +641,10 @@ void KeeperTCPHandler::dumpStats(WriteBufferFromOwnString & buf, bool brief)
 
 void KeeperTCPHandler::resetStats()
 {
-    conn_stats.reset();
+    {
+        std::lock_guard lock(conn_stats_mutex);
+        conn_stats.reset();
+    }
     last_op.set(std::make_unique<LastOp>(EMPTY_LAST_OP));
 }
 

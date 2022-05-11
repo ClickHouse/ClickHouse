@@ -235,7 +235,7 @@ TabSeparatedSchemaReader::TabSeparatedSchemaReader(
     ReadBuffer & in_, bool with_names_, bool with_types_, bool is_raw_, const FormatSettings & format_settings_)
     : FormatWithNamesAndTypesSchemaReader(
         in_,
-        format_settings_,
+        format_settings_.max_rows_to_read_for_schema_inference,
         with_names_,
         with_types_,
         &reader,
@@ -280,7 +280,7 @@ void registerTSVSchemaReader(FormatFactory & factory)
     {
         auto register_func = [&](const String & format_name, bool with_names, bool with_types)
         {
-            factory.registerSchemaReader(format_name, [with_names, with_types, is_raw](ReadBuffer & buf, const FormatSettings & settings)
+            factory.registerSchemaReader(format_name, [with_names, with_types, is_raw](ReadBuffer & buf, const FormatSettings & settings, ContextPtr)
             {
                 return std::make_shared<TabSeparatedSchemaReader>(buf, with_names, with_types, is_raw, settings);
             });
@@ -338,7 +338,7 @@ void registerFileSegmentationEngineTabSeparated(FormatFactory & factory)
     {
         auto register_func = [&](const String & format_name, bool with_names, bool with_types)
         {
-            size_t min_rows = 1 + static_cast<int>(with_names) + static_cast<int>(with_types);
+            size_t min_rows = 1 + int(with_names) + int(with_types);
             factory.registerFileSegmentationEngine(format_name, [is_raw, min_rows](ReadBuffer & in, DB::Memory<> & memory, size_t min_chunk_size)
             {
                 return fileSegmentationEngineTabSeparatedImpl(in, memory, min_chunk_size, is_raw, min_rows);

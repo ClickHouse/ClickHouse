@@ -1,6 +1,7 @@
 ---
-sidebar_position: 56
-sidebar_label: Domains
+toc_folder_title: Domains
+toc_priority: 56
+toc_title: Overview
 ---
 
 # Domains {#domains}

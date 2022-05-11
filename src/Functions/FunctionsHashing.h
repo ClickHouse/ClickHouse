@@ -38,8 +38,8 @@
 #include <Columns/ColumnTuple.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
+#include <Functions/TargetSpecific.h>
 #include <Functions/PerformanceAdaptors.h>
-#include <Common/TargetSpecific.h>
 #include <base/range.h>
 #include <base/bit_cast.h>
 
@@ -987,8 +987,7 @@ private:
             const size_t nested_size = nested_column->size();
 
             typename ColumnVector<ToType>::Container vec_temp(nested_size);
-            bool nested_is_first = true;
-            executeForArgument(nested_type, nested_column, vec_temp, nested_is_first);
+            executeAny<true>(nested_type, nested_column, vec_temp);
 
             const size_t size = offsets.size();
 
@@ -1059,7 +1058,8 @@ private:
         else if (which.isString()) executeString<first>(icolumn, vec_to);
         else if (which.isFixedString()) executeString<first>(icolumn, vec_to);
         else if (which.isArray()) executeArray<first>(from_type, icolumn, vec_to);
-        else executeGeneric<first>(icolumn, vec_to);
+        else
+            executeGeneric<first>(icolumn, vec_to);
     }
 
     void executeForArgument(const IDataType * type, const IColumn * column, typename ColumnVector<ToType>::Container & vec_to, bool & is_first) const

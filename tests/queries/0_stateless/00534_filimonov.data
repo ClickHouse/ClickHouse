@@ -199,7 +199,7 @@ SELECT toMinute(NULL);
 SELECT toStartOfDay(NULL);
 SELECT toMonday(NULL);
 SELECT toUInt16OrZero(NULL);
-SELECT toStartOfFiveMinutes(NULL);
+SELECT toStartOfFiveMinute(NULL);
 SELECT halfMD5(NULL);
 SELECT toStartOfHour(NULL);
 SELECT toRelativeYearNum(NULL);

@@ -34,8 +34,7 @@ IMPLEMENT_SETTING_ENUM(JoinAlgorithm, ErrorCodes::UNKNOWN_JOIN,
     {{"auto",                 JoinAlgorithm::AUTO},
      {"hash",                 JoinAlgorithm::HASH},
      {"partial_merge",        JoinAlgorithm::PARTIAL_MERGE},
-     {"prefer_partial_merge", JoinAlgorithm::PREFER_PARTIAL_MERGE},
-     {"parallel_hash",        JoinAlgorithm::PARALLEL_HASH}})
+     {"prefer_partial_merge", JoinAlgorithm::PREFER_PARTIAL_MERGE}})
 
 
 IMPLEMENT_SETTING_ENUM(TotalsMode, ErrorCodes::UNKNOWN_TOTALS_MODE,
@@ -65,8 +64,7 @@ IMPLEMENT_SETTING_ENUM(DistributedProductMode, ErrorCodes::UNKNOWN_DISTRIBUTED_P
 
 IMPLEMENT_SETTING_ENUM_WITH_RENAME(DateTimeInputFormat, ErrorCodes::BAD_ARGUMENTS,
     {{"basic",       FormatSettings::DateTimeInputFormat::Basic},
-     {"best_effort", FormatSettings::DateTimeInputFormat::BestEffort},
-     {"best_effort_us", FormatSettings::DateTimeInputFormat::BestEffortUS}})
+     {"best_effort", FormatSettings::DateTimeInputFormat::BestEffort}})
 
 
 IMPLEMENT_SETTING_ENUM_WITH_RENAME(DateTimeOutputFormat, ErrorCodes::BAD_ARGUMENTS,
@@ -107,9 +105,7 @@ IMPLEMENT_SETTING_ENUM_WITH_RENAME(DefaultTableEngine, ErrorCodes::BAD_ARGUMENTS
 
 IMPLEMENT_SETTING_MULTI_ENUM(MySQLDataTypesSupport, ErrorCodes::UNKNOWN_MYSQL_DATATYPES_SUPPORT_LEVEL,
     {{"decimal",    MySQLDataTypesSupport::DECIMAL},
-     {"datetime64", MySQLDataTypesSupport::DATETIME64},
-     {"date2Date32", MySQLDataTypesSupport::DATE2DATE32},
-     {"date2String", MySQLDataTypesSupport::DATE2STRING}})
+     {"datetime64", MySQLDataTypesSupport::DATETIME64}})
 
 IMPLEMENT_SETTING_ENUM(UnionMode, ErrorCodes::UNKNOWN_UNION,
     {{"",         UnionMode::Unspecified},
@@ -149,6 +145,5 @@ IMPLEMENT_SETTING_ENUM(MsgPackUUIDRepresentation , ErrorCodes::BAD_ARGUMENTS,
                        {{"bin", FormatSettings::MsgPackUUIDRepresentation::BIN},
                         {"str", FormatSettings::MsgPackUUIDRepresentation::STR},
                         {"ext", FormatSettings::MsgPackUUIDRepresentation::EXT}})
-
 
 }

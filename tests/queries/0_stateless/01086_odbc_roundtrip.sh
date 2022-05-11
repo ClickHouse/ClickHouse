@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-asan, no-msan, no-fasttest, no-cpu-aarch64
+# Tags: no-asan, no-msan, no-fasttest
 # Tag no-msan: can't pass because odbc libraries are not instrumented
-# Tag no-cpu-aarch64: clickhouse-odbc is not setup for arm
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

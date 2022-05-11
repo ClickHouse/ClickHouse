@@ -55,12 +55,12 @@ AIOContext::~AIOContext()
         io_destroy(ctx);
 }
 
-AIOContext::AIOContext(AIOContext && rhs) noexcept
+AIOContext::AIOContext(AIOContext && rhs)
 {
     *this = std::move(rhs);
 }
 
-AIOContext & AIOContext::operator=(AIOContext && rhs) noexcept
+AIOContext & AIOContext::operator=(AIOContext && rhs)
 {
     std::swap(ctx, rhs.ctx);
     return *this;

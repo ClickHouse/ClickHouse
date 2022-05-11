@@ -13,8 +13,6 @@
 #include <tuple>
 #include <utility> /// pair
 
-#include <fmt/format.h>
-
 #include "config_tools.h"
 
 #include <Common/StringUtils/StringUtils.h>
@@ -59,7 +57,7 @@ int mainEntryClickHouseGitImport(int argc, char ** argv);
 #if ENABLE_CLICKHOUSE_KEEPER
 int mainEntryClickHouseKeeper(int argc, char ** argv);
 #endif
-#if ENABLE_CLICKHOUSE_KEEPER_CONVERTER
+#if ENABLE_CLICKHOUSE_KEEPER
 int mainEntryClickHouseKeeperConverter(int argc, char ** argv);
 #endif
 #if ENABLE_CLICKHOUSE_STATIC_FILES_DISK_UPLOADER
@@ -334,33 +332,6 @@ struct Checker
 #endif
 ;
 
-/// NOTE: We will migrate to full static linking or our own dynamic loader to make this code obsolete.
-void checkHarmfulEnvironmentVariables()
-{
-    std::initializer_list<const char *> harmful_env_variables = {
-        /// The list is a selection from "man ld-linux".
-        "LD_PRELOAD",
-        "LD_LIBRARY_PATH",
-        "LD_ORIGIN_PATH",
-        "LD_AUDIT",
-        "LD_DYNAMIC_WEAK",
-        /// The list is a selection from "man dyld" (osx).
-        "DYLD_LIBRARY_PATH",
-        "DYLD_FALLBACK_LIBRARY_PATH",
-        "DYLD_VERSIONED_LIBRARY_PATH",
-        "DYLD_INSERT_LIBRARIES",
-    };
-
-    for (const auto * var : harmful_env_variables)
-    {
-        if (const char * value = getenv(var); value && value[0])
-        {
-            std::cerr << fmt::format("Environment variable {} is set to {}. It can compromise security.\n", var, value);
-            _exit(1);
-        }
-    }
-}
-
 }
 
 
@@ -380,8 +351,6 @@ int main(int argc_, char ** argv_)
 {
     inside_main = true;
     SCOPE_EXIT({ inside_main = false; });
-
-    checkHarmfulEnvironmentVariables();
 
     /// Reset new handler to default (that throws std::bad_alloc)
     /// It is needed because LLVM library clobbers it.

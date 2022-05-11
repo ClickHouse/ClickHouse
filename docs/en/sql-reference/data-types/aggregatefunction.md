@@ -1,6 +1,6 @@
 ---
-sidebar_position: 53
-sidebar_label: AggregateFunction
+toc_priority: 53
+toc_title: AggregateFunction
 ---
 
 # AggregateFunction {#data-type-aggregatefunction}

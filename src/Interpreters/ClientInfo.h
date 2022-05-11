@@ -69,7 +69,6 @@ public:
     /// All below are parameters related to initial query.
 
     Interface interface = Interface::TCP;
-    bool is_secure = false;
 
     /// For tcp
     String os_user;
@@ -93,7 +92,7 @@ public:
     String http_user_agent;
     String http_referer;
 
-    /// For mysql and postgresql
+    /// For mysql
     UInt64 connection_id = 0;
 
     /// Comma separated list of forwarded IP addresses (from X-Forwarded-For for HTTP interface).
@@ -120,8 +119,8 @@ public:
       * Only values that are not calculated automatically or passed separately are serialized.
       * Revisions are passed to use format that server will understand or client was used.
       */
-    void write(WriteBuffer & out, UInt64 server_protocol_revision) const;
-    void read(ReadBuffer & in, UInt64 client_protocol_revision);
+    void write(WriteBuffer & out, const UInt64 server_protocol_revision) const;
+    void read(ReadBuffer & in, const UInt64 client_protocol_revision);
 
     /// Initialize parameters on client initiating query.
     void setInitialQuery();

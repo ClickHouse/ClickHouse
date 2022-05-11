@@ -1,5 +1,4 @@
 #include <Common/ThreadPool.h>
-#include <Common/setThreadName.h>
 #include <Common/Exception.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
 
@@ -154,7 +153,7 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, int priority, std::opti
         new_job_or_shutdown.notify_one();
     }
 
-    return static_cast<ReturnType>(true);
+    return ReturnType(true);
 }
 
 template <typename Thread>
@@ -244,9 +243,6 @@ void ThreadPoolImpl<Thread>::worker(typename std::list<Thread>::iterator thread_
 
     while (true)
     {
-        /// This is inside the loop to also reset previous thread names set inside the jobs.
-        setThreadName("ThreadPool");
-
         Job job;
         bool need_shutdown = false;
 

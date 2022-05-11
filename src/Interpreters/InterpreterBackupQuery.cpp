@@ -1,49 +1,63 @@
 #include <Interpreters/InterpreterBackupQuery.h>
-
-#include <Backups/BackupsWorker.h>
-#include <Columns/ColumnString.h>
-#include <Columns/ColumnsNumber.h>
-#include <DataTypes/DataTypeEnum.h>
-#include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypeUUID.h>
-#include <DataTypes/DataTypesNumber.h>
+#include <Backups/BackupFactory.h>
+#include <Backups/BackupSettings.h>
+#include <Backups/BackupUtils.h>
+#include <Backups/IBackup.h>
+#include <Backups/IBackupEntry.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Interpreters/Context.h>
-#include <Processors/Sources/SourceFromSingleChunk.h>
-#include <Common/logger_useful.h>
 
 
 namespace DB
 {
-
 namespace
 {
-    Block getResultRow(const BackupsWorker::Info & info)
+    BackupMutablePtr createBackup(const ASTBackupQuery & query, const ContextPtr & context)
     {
-        Block res_columns;
+        BackupFactory::CreateParams params;
+        params.open_mode = (query.kind == ASTBackupQuery::BACKUP) ? IBackup::OpenMode::WRITE : IBackup::OpenMode::READ;
+        params.context = context;
 
-        auto column_uuid = ColumnUUID::create();
-        column_uuid->insert(info.uuid);
-        res_columns.insert(0, {std::move(column_uuid), std::make_shared<DataTypeUUID>(), "uuid"});
+        params.backup_info = BackupInfo::fromAST(*query.backup_name);
+        if (query.base_backup_name)
+            params.base_backup_info = BackupInfo::fromAST(*query.base_backup_name);
 
-        auto column_backup_name = ColumnString::create();
-        column_backup_name->insert(info.backup_name);
-        res_columns.insert(1, {std::move(column_backup_name), std::make_shared<DataTypeString>(), "backup_name"});
+        return BackupFactory::instance().createBackup(params);
+    }
 
-        auto column_status = ColumnInt8::create();
-        column_status->insert(static_cast<Int8>(info.status));
-        res_columns.insert(2, {std::move(column_status), std::make_shared<DataTypeEnum8>(getBackupStatusEnumValues()), "status"});
+#if 0
+    void getBackupSettings(const ASTBackupQuery & query, BackupSettings & settings, std::optional<BaseBackupInfo> & base_backup)
+    {
+        settings = {};
+        if (query.settings)
+            settings.applyChanges(query.settings->as<const ASTSetQuery &>().changes);
+        return settings;
+    }
+#endif
 
-        return res_columns;
+    void executeBackup(const ASTBackupQuery & query, const ContextPtr & context)
+    {
+        BackupMutablePtr backup = createBackup(query, context);
+        auto backup_entries = makeBackupEntries(query.elements, context);
+        writeBackupEntries(backup, std::move(backup_entries), context->getSettingsRef().max_backup_threads);
+    }
+
+    void executeRestore(const ASTBackupQuery & query, ContextMutablePtr context)
+    {
+        BackupPtr backup = createBackup(query, context);
+        auto restore_tasks = makeRestoreTasks(query.elements, context, backup);
+        executeRestoreTasks(std::move(restore_tasks), context->getSettingsRef().max_backup_threads);
     }
 }
 
 BlockIO InterpreterBackupQuery::execute()
 {
-    auto & backups_worker = context->getBackupsWorker();
-    UUID uuid = backups_worker.start(query_ptr, context);
-    BlockIO res_io;
-    res_io.pipeline = QueryPipeline(std::make_shared<SourceFromSingleChunk>(getResultRow(backups_worker.getInfo(uuid))));
-    return res_io;
+    const auto & query = query_ptr->as<const ASTBackupQuery &>();
+    if (query.kind == ASTBackupQuery::BACKUP)
+        executeBackup(query, context);
+    else if (query.kind == ASTBackupQuery::RESTORE)
+        executeRestore(query, context);
+    return {};
 }
 
 }

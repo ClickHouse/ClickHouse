@@ -1,8 +1,9 @@
 ---
-sidebar_label: Terabyte Click Logs from Criteo
+toc_priority: 18
+toc_title: Terabyte Click Logs from Criteo
 ---
 
-# Terabyte of Click Logs from Criteo 
+# Terabyte of Click Logs from Criteo {#terabyte-of-click-logs-from-criteo}
 
 Download the data from http://labs.criteo.com/downloads/download-terabyte-click-logs/
 

@@ -1,5 +1,5 @@
 #include <base/scope_guard.h>
-#include <Common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <Databases/DatabaseMemory.h>
 #include <Databases/DatabasesCommon.h>
 #include <Databases/DDLDependencyVisitor.h>
@@ -44,7 +44,7 @@ void DatabaseMemory::dropTable(
     auto table = detachTableUnlocked(table_name, lock);
     try
     {
-        /// Remove table without lock since:
+        /// Remove table w/o lock since:
         /// - it does not require it
         /// - it may cause lock-order-inversion if underlying storage need to
         ///   resolve tables (like StorageLiveView)

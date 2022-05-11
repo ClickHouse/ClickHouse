@@ -1,6 +1,6 @@
 ---
-sidebar_position: 60
-sidebar_label: clickhouse-local
+toc_priority: 60
+toc_title: clickhouse-local
 ---
 
 # clickhouse-local {#clickhouse-local}

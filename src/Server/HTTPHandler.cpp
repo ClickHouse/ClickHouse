@@ -21,7 +21,7 @@
 #include <Server/HTTPHandlerFactory.h>
 #include <Server/HTTPHandlerRequestFilter.h>
 #include <Server/IServer.h>
-#include <Common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <Common/SettingsChanges.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/setThreadName.h>
@@ -43,10 +43,6 @@
 
 #include <chrono>
 #include <sstream>
-
-#if USE_SSL
-#include <Poco/Net/X509Certificate.h>
-#endif
 
 
 namespace DB
@@ -102,7 +98,6 @@ namespace ErrorCodes
 
     extern const int INVALID_SESSION_TIMEOUT;
     extern const int HTTP_LENGTH_REQUIRED;
-    extern const int SUPPORT_IS_DISABLED;
 }
 
 namespace
@@ -293,11 +288,10 @@ void HTTPHandler::pushDelayedResults(Output & used_output)
 }
 
 
-HTTPHandler::HTTPHandler(IServer & server_, const std::string & name, const std::optional<String> & content_type_override_)
+HTTPHandler::HTTPHandler(IServer & server_, const std::string & name)
     : server(server_)
     , log(&Poco::Logger::get(name))
     , default_settings(server.context()->getSettingsRef())
-    , content_type_override(content_type_override_)
 {
     server_display_name = server.config().getString("display_name", getFQDNOrHostName());
 }
@@ -321,93 +315,68 @@ bool HTTPHandler::authenticateUser(
     std::string password = request.get("X-ClickHouse-Key", "");
     std::string quota_key = request.get("X-ClickHouse-Quota", "");
 
-    /// The header 'X-ClickHouse-SSL-Certificate-Auth: on' enables checking the common name
-    /// extracted from the SSL certificate used for this connection instead of checking password.
-    bool has_ssl_certificate_auth = (request.get("X-ClickHouse-SSL-Certificate-Auth", "") == "on");
-    bool has_auth_headers = !user.empty() || !password.empty() || !quota_key.empty() || has_ssl_certificate_auth;
-
-    /// User name and password can be passed using HTTP Basic auth or query parameters
-    /// (both methods are insecure).
-    bool has_http_credentials = request.hasCredentials();
-    bool has_credentials_in_query_params = params.has("user") || params.has("password") || params.has("quota_key");
-
     std::string spnego_challenge;
-    std::string certificate_common_name;
 
-    if (has_auth_headers)
+    if (user.empty() && password.empty() && quota_key.empty())
     {
-        /// It is prohibited to mix different authorization schemes.
-        if (has_http_credentials)
-            throw Exception("Invalid authentication: it is not allowed to use SSL certificate authentication and Authorization HTTP header simultaneously", ErrorCodes::AUTHENTICATION_FAILED);
-        if (has_credentials_in_query_params)
-            throw Exception("Invalid authentication: it is not allowed to use SSL certificate authentication and authentication via parameters simultaneously simultaneously", ErrorCodes::AUTHENTICATION_FAILED);
-
-        if (has_ssl_certificate_auth)
+        /// User name and password can be passed using query parameters
+        /// or using HTTP Basic auth (both methods are insecure).
+        if (request.hasCredentials())
         {
-#if USE_SSL
-            if (!password.empty())
-                throw Exception("Invalid authentication: it is not allowed to use SSL certificate authentication and authentication via password simultaneously", ErrorCodes::AUTHENTICATION_FAILED);
+            /// It is prohibited to mix different authorization schemes.
+            if (params.has("user") || params.has("password"))
+                throw Exception("Invalid authentication: it is not allowed to use Authorization HTTP header and authentication via parameters simultaneously", ErrorCodes::AUTHENTICATION_FAILED);
 
-            if (request.havePeerCertificate())
-                certificate_common_name = request.peerCertificate().commonName();
+            std::string scheme;
+            std::string auth_info;
+            request.getCredentials(scheme, auth_info);
 
-            if (certificate_common_name.empty())
-                throw Exception("Invalid authentication: SSL certificate authentication requires nonempty certificate's Common Name", ErrorCodes::AUTHENTICATION_FAILED);
-#else
-            throw Exception(
-                "SSL certificate authentication disabled because ClickHouse was built without SSL library",
-                ErrorCodes::SUPPORT_IS_DISABLED);
-#endif
-        }
-    }
-    else if (has_http_credentials)
-    {
-        /// It is prohibited to mix different authorization schemes.
-        if (has_credentials_in_query_params)
-            throw Exception("Invalid authentication: it is not allowed to use Authorization HTTP header and authentication via parameters simultaneously", ErrorCodes::AUTHENTICATION_FAILED);
+            if (Poco::icompare(scheme, "Basic") == 0)
+            {
+                HTTPBasicCredentials credentials(auth_info);
+                user = credentials.getUsername();
+                password = credentials.getPassword();
+            }
+            else if (Poco::icompare(scheme, "Negotiate") == 0)
+            {
+                spnego_challenge = auth_info;
 
-        std::string scheme;
-        std::string auth_info;
-        request.getCredentials(scheme, auth_info);
-
-        if (Poco::icompare(scheme, "Basic") == 0)
-        {
-            HTTPBasicCredentials credentials(auth_info);
-            user = credentials.getUsername();
-            password = credentials.getPassword();
-        }
-        else if (Poco::icompare(scheme, "Negotiate") == 0)
-        {
-            spnego_challenge = auth_info;
-
-            if (spnego_challenge.empty())
-                throw Exception("Invalid authentication: SPNEGO challenge is empty", ErrorCodes::AUTHENTICATION_FAILED);
+                if (spnego_challenge.empty())
+                    throw Exception("Invalid authentication: SPNEGO challenge is empty", ErrorCodes::AUTHENTICATION_FAILED);
+            }
+            else
+            {
+                throw Exception("Invalid authentication: '" + scheme + "' HTTP Authorization scheme is not supported", ErrorCodes::AUTHENTICATION_FAILED);
+            }
         }
         else
         {
-            throw Exception("Invalid authentication: '" + scheme + "' HTTP Authorization scheme is not supported", ErrorCodes::AUTHENTICATION_FAILED);
+            user = params.get("user", "default");
+            password = params.get("password", "");
         }
 
         quota_key = params.get("quota_key", "");
     }
     else
     {
-        /// If the user name is not set we assume it's the 'default' user.
-        user = params.get("user", "default");
-        password = params.get("password", "");
-        quota_key = params.get("quota_key", "");
+        /// It is prohibited to mix different authorization schemes.
+        if (request.hasCredentials() || params.has("user") || params.has("password") || params.has("quota_key"))
+            throw Exception("Invalid authentication: it is not allowed to use X-ClickHouse HTTP headers and other authentication methods simultaneously", ErrorCodes::AUTHENTICATION_FAILED);
     }
 
-    if (!certificate_common_name.empty())
+    if (spnego_challenge.empty()) // I.e., now using user name and password strings ("Basic").
     {
         if (!request_credentials)
-            request_credentials = std::make_unique<SSLCertificateCredentials>(user, certificate_common_name);
+            request_credentials = std::make_unique<BasicCredentials>();
 
-        auto * certificate_credentials = dynamic_cast<SSLCertificateCredentials *>(request_credentials.get());
-        if (!certificate_credentials)
-            throw Exception("Invalid authentication: expected SSL certificate authorization scheme", ErrorCodes::AUTHENTICATION_FAILED);
+        auto * basic_credentials = dynamic_cast<BasicCredentials *>(request_credentials.get());
+        if (!basic_credentials)
+            throw Exception("Invalid authentication: unexpected 'Basic' HTTP Authorization scheme", ErrorCodes::AUTHENTICATION_FAILED);
+
+        basic_credentials->setUserName(user);
+        basic_credentials->setPassword(password);
     }
-    else if (!spnego_challenge.empty())
+    else
     {
         if (!request_credentials)
             request_credentials = server.context()->makeGSSAcceptorContext();
@@ -433,18 +402,6 @@ bool HTTPHandler::authenticateUser(
             response.send();
             return false;
         }
-    }
-    else // I.e., now using user name and password strings ("Basic").
-    {
-        if (!request_credentials)
-            request_credentials = std::make_unique<BasicCredentials>();
-
-        auto * basic_credentials = dynamic_cast<BasicCredentials *>(request_credentials.get());
-        if (!basic_credentials)
-            throw Exception("Invalid authentication: expected 'Basic' HTTP Authorization scheme", ErrorCodes::AUTHENTICATION_FAILED);
-
-        basic_credentials->setUserName(user);
-        basic_credentials->setPassword(password);
     }
 
     /// Set client info. It will be used for quota accounting parameters in 'setUser' method.
@@ -670,7 +627,7 @@ void HTTPHandler::processQuery(
         if (name.empty())
             return true;
 
-        if (reserved_param_names.contains(name))
+        if (reserved_param_names.count(name))
             return true;
 
         for (const String & suffix : reserved_param_suffixes)
@@ -820,9 +777,9 @@ void HTTPHandler::processQuery(
     customizeContext(request, context);
 
     executeQuery(*in, *used_output.out_maybe_delayed_and_compressed, /* allow_into_outfile = */ false, context,
-        [&response, this] (const String & current_query_id, const String & content_type, const String & format, const String & timezone)
+        [&response] (const String & current_query_id, const String & content_type, const String & format, const String & timezone)
         {
-            response.setContentType(content_type_override.value_or(content_type));
+            response.setContentType(content_type);
             response.add("X-ClickHouse-Query-Id", current_query_id);
             response.add("X-ClickHouse-Format", format);
             response.add("X-ClickHouse-Timezone", timezone);
@@ -923,7 +880,7 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
     setThreadName("HTTPHandler");
     ThreadStatus thread_status;
 
-    session = std::make_unique<Session>(server.context(), ClientInfo::Interface::HTTP, request.isSecure());
+    session = std::make_unique<Session>(server.context(), ClientInfo::Interface::HTTP);
     SCOPE_EXIT({ session.reset(); });
     std::optional<CurrentThread::QueryScope> query_scope;
 
@@ -992,8 +949,8 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
     used_output.finalize();
 }
 
-DynamicQueryHandler::DynamicQueryHandler(IServer & server_, const std::string & param_name_, const std::optional<String>& content_type_override_)
-    : HTTPHandler(server_, "DynamicQueryHandler", content_type_override_), param_name(param_name_)
+DynamicQueryHandler::DynamicQueryHandler(IServer & server_, const std::string & param_name_)
+    : HTTPHandler(server_, "DynamicQueryHandler"), param_name(param_name_)
 {
 }
 
@@ -1053,9 +1010,8 @@ PredefinedQueryHandler::PredefinedQueryHandler(
     const NameSet & receive_params_,
     const std::string & predefined_query_,
     const CompiledRegexPtr & url_regex_,
-    const std::unordered_map<String, CompiledRegexPtr> & header_name_with_regex_,
-    const std::optional<String> & content_type_override_)
-    : HTTPHandler(server_, "PredefinedQueryHandler", content_type_override_)
+    const std::unordered_map<String, CompiledRegexPtr> & header_name_with_regex_)
+    : HTTPHandler(server_, "PredefinedQueryHandler")
     , receive_params(receive_params_)
     , predefined_query(predefined_query_)
     , url_regex(url_regex_)
@@ -1065,7 +1021,7 @@ PredefinedQueryHandler::PredefinedQueryHandler(
 
 bool PredefinedQueryHandler::customizeQueryParam(ContextMutablePtr context, const std::string & key, const std::string & value)
 {
-    if (receive_params.contains(key))
+    if (receive_params.count(key))
     {
         context->setQueryParameter(key, value);
         return true;
@@ -1124,14 +1080,8 @@ std::string PredefinedQueryHandler::getQuery(HTTPServerRequest & request, HTMLFo
 
 HTTPRequestHandlerFactoryPtr createDynamicHandlerFactory(IServer & server, const std::string & config_prefix)
 {
-    auto query_param_name = server.config().getString(config_prefix + ".handler.query_param_name", "query");
-
-    std::optional<String> content_type_override;
-    if (server.config().has(config_prefix + ".handler.content_type"))
-        content_type_override = server.config().getString(config_prefix + ".handler.content_type");
-
-    auto factory = std::make_shared<HandlingRuleHTTPHandlerFactory<DynamicQueryHandler>>(
-        server, std::move(query_param_name), std::move(content_type_override));
+    const auto & query_param_name = server.config().getString(config_prefix + ".handler.query_param_name", "query");
+    auto factory = std::make_shared<HandlingRuleHTTPHandlerFactory<DynamicQueryHandler>>(server, std::move(query_param_name));
 
     factory->addFiltersFromConfig(server.config(), config_prefix);
 
@@ -1188,10 +1138,6 @@ HTTPRequestHandlerFactoryPtr createPredefinedHandlerFactory(IServer & server, co
             headers_name_with_regex.emplace(std::make_pair(header_name, regex));
     }
 
-    std::optional<String> content_type_override;
-    if (configuration.has(config_prefix + ".handler.content_type"))
-        content_type_override = configuration.getString(config_prefix + ".handler.content_type");
-
     std::shared_ptr<HandlingRuleHTTPHandlerFactory<PredefinedQueryHandler>> factory;
 
     if (configuration.has(config_prefix + ".url"))
@@ -1209,20 +1155,14 @@ HTTPRequestHandlerFactoryPtr createPredefinedHandlerFactory(IServer & server, co
                 std::move(analyze_receive_params),
                 std::move(predefined_query),
                 std::move(regex),
-                std::move(headers_name_with_regex),
-                std::move(content_type_override));
+                std::move(headers_name_with_regex));
             factory->addFiltersFromConfig(configuration, config_prefix);
             return factory;
         }
     }
 
     factory = std::make_shared<HandlingRuleHTTPHandlerFactory<PredefinedQueryHandler>>(
-        server,
-        std::move(analyze_receive_params),
-        std::move(predefined_query),
-        CompiledRegexPtr{},
-        std::move(headers_name_with_regex),
-        std::move(content_type_override));
+        server, std::move(analyze_receive_params), std::move(predefined_query), CompiledRegexPtr{}, std::move(headers_name_with_regex));
     factory->addFiltersFromConfig(configuration, config_prefix);
 
     return factory;

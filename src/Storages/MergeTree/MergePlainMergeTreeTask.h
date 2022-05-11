@@ -39,12 +39,6 @@ public:
     StorageID getStorageID() override;
     UInt64 getPriority() override { return priority; }
 
-    void setCurrentTransaction(MergeTreeTransactionHolder && txn_holder_, MergeTreeTransactionPtr && txn_)
-    {
-        txn_holder = std::move(txn_holder_);
-        txn = std::move(txn_);
-    }
-
 private:
 
     void prepare();
@@ -79,9 +73,6 @@ private:
     std::function<void(const ExecutionStatus &)> write_part_log;
     IExecutableTask::TaskResultCallback task_result_callback;
     MergeTaskPtr merge_task{nullptr};
-
-    MergeTreeTransactionHolder txn_holder;
-    MergeTreeTransactionPtr txn;
 };
 
 

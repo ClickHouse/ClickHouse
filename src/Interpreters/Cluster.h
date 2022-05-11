@@ -55,9 +55,7 @@ public:
         bool treat_local_as_remote,
         bool treat_local_port_as_remote,
         bool secure = false,
-        Int64 priority = 1,
-        String cluster_name = "",
-        String cluster_secret = "");
+        Int64 priority = 1);
 
     Cluster(const Cluster &)= delete;
     Cluster & operator=(const Cluster &) = delete;
@@ -65,6 +63,7 @@ public:
     /// is used to set a limit on the size of the timeout
     static Poco::Timespan saturate(Poco::Timespan v, Poco::Timespan limit);
 
+public:
     using SlotToShard = std::vector<UInt64>;
 
     struct Address
@@ -129,9 +128,7 @@ public:
             bool secure_ = false,
             Int64 priority_ = 1,
             UInt32 shard_index_ = 0,
-            UInt32 replica_index_ = 0,
-            String cluster_name = "",
-            String cluster_secret_ = "");
+            UInt32 replica_index_ = 0);
 
         /// Returns 'escaped_host_name:port'
         String toString() const;
@@ -195,6 +192,7 @@ public:
         /// Name of directory for asynchronous write to StorageDistributed if has_internal_replication
         const std::string & insertPathForInternalReplication(bool prefer_localhost_replica, bool use_compact_format) const;
 
+    public:
         ShardInfoInsertPathForInternalReplication insert_path_for_internal_replication;
         /// Number of the shard, the indexation begins with 1
         UInt32 shard_num = 0;
@@ -209,6 +207,7 @@ public:
 
     using ShardsInfo = std::vector<ShardInfo>;
 
+    String getHashOfAddresses() const { return hash_of_addresses; }
     const ShardsInfo & getShardsInfo() const { return shards_info; }
     const AddressesWithFailover & getShardsAddresses() const { return addresses_with_failover; }
 
@@ -228,9 +227,6 @@ public:
 
     /// The number of all shards.
     size_t getShardCount() const { return shards_info.size(); }
-
-    /// Returns an array of arrays of strings in the format 'escaped_host_name:port' for all replicas of all shards in the cluster.
-    std::vector<Strings> getHostIDs() const;
 
     const String & getSecret() const { return secret; }
 
@@ -267,6 +263,7 @@ private:
     /// Inter-server secret
     String secret;
 
+    String hash_of_addresses;
     /// Description of the cluster shards.
     ShardsInfo shards_info;
     /// Any remote shard.

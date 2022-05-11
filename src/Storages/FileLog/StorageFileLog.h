@@ -8,6 +8,8 @@
 #include <Storages/IStorage.h>
 #include <Common/SettingsChanges.h>
 
+#include <base/shared_ptr_helper.h>
+
 #include <atomic>
 #include <condition_variable>
 #include <filesystem>
@@ -24,19 +26,11 @@ namespace ErrorCodes
 
 class FileLogDirectoryWatcher;
 
-class StorageFileLog final : public IStorage, WithContext
+class StorageFileLog final : public shared_ptr_helper<StorageFileLog>, public IStorage, WithContext
 {
+    friend struct shared_ptr_helper<StorageFileLog>;
+
 public:
-    StorageFileLog(
-        const StorageID & table_id_,
-        ContextPtr context_,
-        const ColumnsDescription & columns_,
-        const String & path_,
-        const String & metadata_base_path_,
-        const String & format_name_,
-        std::unique_ptr<FileLogSettings> settings,
-        const String & comment,
-        bool attach);
 
     using Files = std::vector<String>;
 
@@ -49,7 +43,7 @@ public:
 
     Pipe read(
         const Names & column_names,
-        const StorageSnapshotPtr & storage_snapshot,
+        const StorageMetadataPtr & /*metadata_snapshot*/,
         SelectQueryInfo & query_info,
         ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
@@ -58,11 +52,17 @@ public:
 
     void drop() override;
 
+    /// We need to call drop() immediately to remove meta data directory,
+    /// otherwise, if another filelog table with same name created before
+    /// the table be dropped finally, then its meta data directory will
+    /// be deleted by this table drop finally
+    bool dropTableImmediately() override { return true; }
+
     const auto & getFormatName() const { return format_name; }
 
     enum class FileStatus
     {
-        OPEN, /// First time open file after table start up.
+        OPEN, /// first time open file after table start up
         NO_CHANGE,
         UPDATED,
         REMOVED,
@@ -89,13 +89,13 @@ public:
     {
         InodeToFileMeta meta_by_inode;
         FileNameToContext context_by_name;
-        /// File names without path.
+        /// file names without path
         Names file_names;
     };
 
     auto & getFileInfos() { return file_infos; }
 
-    String getFullMetaPath(const String & file_name) const { return std::filesystem::path(metadata_base_path) / file_name; }
+    String getFullMetaPath(const String & file_name) const { return std::filesystem::path(root_meta_path) / file_name; }
     String getFullDataPath(const String & file_name) const { return std::filesystem::path(root_data_path) / file_name; }
 
     NamesAndTypesList getVirtuals() const override;
@@ -131,6 +131,17 @@ public:
 
     const auto & getFileLogSettings() const { return filelog_settings; }
 
+protected:
+    StorageFileLog(
+        const StorageID & table_id_,
+        ContextPtr context_,
+        const ColumnsDescription & columns_,
+        const String & path_,
+        const String & format_name_,
+        std::unique_ptr<FileLogSettings> settings,
+        const String & comment,
+        bool attach);
+
 private:
     std::unique_ptr<FileLogSettings> filelog_settings;
 
@@ -140,7 +151,7 @@ private:
     /// If path argument of the table is a regular file, it equals to user_files_path
     /// otherwise, it equals to user_files_path/ + path_argument/, e.g. path
     String root_data_path;
-    String metadata_base_path;
+    String root_meta_path;
 
     FileInfos file_infos;
 
@@ -194,7 +205,7 @@ private:
 
     /// Used in shutdown()
     void serialize() const;
-    /// Used in FileSource closeFileAndStoreMeta(file_name).
+    /// Used in FileSource closeFileAndStoreMeta(file_name);
     void serialize(UInt64 inode, const FileMeta & file_meta) const;
 
     void deserialize();

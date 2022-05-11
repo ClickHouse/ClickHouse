@@ -114,7 +114,7 @@ class AggregateFunctionVariance final
     : public IAggregateFunctionDataHelper<AggregateFunctionVarianceData<T, Op>, AggregateFunctionVariance<T, Op>>
 {
 public:
-    explicit AggregateFunctionVariance(const DataTypePtr & arg)
+    AggregateFunctionVariance(const DataTypePtr & arg)
         : IAggregateFunctionDataHelper<AggregateFunctionVarianceData<T, Op>, AggregateFunctionVariance<T, Op>>({arg}, {}) {}
 
     String getName() const override { return Op::name; }
@@ -249,6 +249,7 @@ protected:
         readBinary(right_m2, buf);
     }
 
+protected:
     Float64 left_m2 = 0.0;
     Float64 right_m2 = 0.0;
 };
@@ -366,7 +367,7 @@ class AggregateFunctionCovariance final
         AggregateFunctionCovariance<T, U, Op, compute_marginal_moments>>
 {
 public:
-    explicit AggregateFunctionCovariance(const DataTypes & args) : IAggregateFunctionDataHelper<
+    AggregateFunctionCovariance(const DataTypes & args) : IAggregateFunctionDataHelper<
         CovarianceData<T, U, Op, compute_marginal_moments>,
         AggregateFunctionCovariance<T, U, Op, compute_marginal_moments>>(args, {}) {}
 

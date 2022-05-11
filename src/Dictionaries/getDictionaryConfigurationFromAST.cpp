@@ -4,7 +4,6 @@
 #include <Poco/DOM/Document.h>
 #include <Poco/DOM/Element.h>
 #include <Poco/DOM/Text.h>
-#include <Poco/Net/NetException.h>
 #include <Poco/Util/XMLConfiguration.h>
 #include <IO/WriteHelpers.h>
 #include <Parsers/queryToString.h>
@@ -630,18 +629,11 @@ getInfoIfClickHouseDictionarySource(DictionaryConfigurationPtr & config, Context
 
     info.table_name = {database, table};
 
-    try
-    {
-        UInt16 default_port = secure ? global_context->getTCPPortSecure().value_or(0) : global_context->getTCPPort();
-        if (isLocalAddress({host, port}, default_port))
-            info.is_local = true;
-    }
-    catch (const Poco::Net::DNSException &)
-    {
-        /// Server may fail to start if we cannot resolve some hostname. It's ok to ignore exception and leave is_local false.
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-    }
+    UInt16 default_port = secure ? global_context->getTCPPortSecure().value_or(0) : global_context->getTCPPort();
+    if (!isLocalAddress({host, port}, default_port))
+        return info;
 
+    info.is_local = true;
     return info;
 }
 

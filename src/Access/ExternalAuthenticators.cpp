@@ -279,7 +279,7 @@ void ExternalAuthenticators::setConfiguration(const Poco::Util::AbstractConfigur
             if (bracket_pos != std::string::npos)
                 ldap_server_name.resize(bracket_pos);
 
-            if (ldap_client_params_blueprint.contains(ldap_server_name))
+            if (ldap_client_params_blueprint.count(ldap_server_name) > 0)
                 throw Exception("Multiple LDAP servers with the same name are not allowed", ErrorCodes::BAD_ARGUMENTS);
 
             LDAPClient::Params ldap_client_params_tmp;

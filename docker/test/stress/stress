@@ -10,7 +10,7 @@ import logging
 import time
 
 
-def get_options(i, backward_compatibility_check):
+def get_options(i):
     options = []
     client_options = []
     if 0 < i:
@@ -19,7 +19,7 @@ def get_options(i, backward_compatibility_check):
     if i % 3 == 1:
         options.append("--db-engine=Ordinary")
 
-    if i % 3 == 2 and not backward_compatibility_check:
+    if i % 3 == 2:
         options.append('''--db-engine="Replicated('/test/db/test_{}', 's1', 'r1')"'''.format(i))
         client_options.append('allow_experimental_database_replicated=1')
 
@@ -47,8 +47,7 @@ def get_options(i, backward_compatibility_check):
     return ' '.join(options)
 
 
-def run_func_test(cmd, output_prefix, num_processes, skip_tests_option, global_time_limit, backward_compatibility_check):
-    backward_compatibility_check_option = '--backward-compatibility-check' if backward_compatibility_check else ''
+def run_func_test(cmd, output_prefix, num_processes, skip_tests_option, global_time_limit):
     global_time_limit_option = ''
     if global_time_limit:
         global_time_limit_option = "--global_time_limit={}".format(global_time_limit)
@@ -57,7 +56,7 @@ def run_func_test(cmd, output_prefix, num_processes, skip_tests_option, global_t
     pipes = []
     for i in range(0, len(output_paths)):
         f = open(output_paths[i], 'w')
-        full_command = "{} {} {} {} {}".format(cmd, get_options(i, backward_compatibility_check), global_time_limit_option, skip_tests_option, backward_compatibility_check_option)
+        full_command = "{} {} {} {}".format(cmd, get_options(i), global_time_limit_option, skip_tests_option)
         logging.info("Run func tests '%s'", full_command)
         p = Popen(full_command, shell=True, stdout=f, stderr=f)
         pipes.append(p)
@@ -83,14 +82,14 @@ def make_query_command(query):
 def prepare_for_hung_check(drop_databases):
     # FIXME this function should not exist, but...
 
+    # ThreadFuzzer significantly slows down server and causes false-positive hung check failures
+    call_with_retry("clickhouse client -q 'SYSTEM STOP THREAD FUZZER'")
+
     # We attach gdb to clickhouse-server before running tests
     # to print stacktraces of all crashes even if clickhouse cannot print it for some reason.
     # However, it obstruct checking for hung queries.
     logging.info("Will terminate gdb (if any)")
     call_with_retry("kill -TERM $(pidof gdb)")
-
-    # ThreadFuzzer significantly slows down server and causes false-positive hung check failures
-    call_with_retry("clickhouse client -q 'SYSTEM STOP THREAD FUZZER'")
 
     call_with_retry(make_query_command('SELECT 1 FORMAT Null'))
 
@@ -131,7 +130,7 @@ def prepare_for_hung_check(drop_databases):
                     Popen(command, shell=True)
                 break
             except Exception as ex:
-                logging.error("Failed to SHOW or DROP databasese, will retry %s", str(ex))
+                print("Failed to SHOW or DROP databasese, will retry", ex)
                 time.sleep(i)
         else:
             raise Exception("Cannot drop databases after stress tests. Probably server consumed too much memory and cannot execute simple queries")
@@ -169,7 +168,6 @@ if __name__ == "__main__":
     parser.add_argument("--output-folder")
     parser.add_argument("--global-time-limit", type=int, default=1800)
     parser.add_argument("--num-parallel", type=int, default=cpu_count())
-    parser.add_argument('--backward-compatibility-check', action='store_true')
     parser.add_argument('--hung-check', action='store_true', default=False)
     # make sense only for hung check
     parser.add_argument('--drop-databases', action='store_true', default=False)
@@ -178,7 +176,7 @@ if __name__ == "__main__":
     if args.drop_databases and not args.hung_check:
         raise Exception("--drop-databases only used in hung check (--hung-check)")
     func_pipes = []
-    func_pipes = run_func_test(args.test_cmd, args.output_folder, args.num_parallel, args.skip_func_tests, args.global_time_limit, args.backward_compatibility_check)
+    func_pipes = run_func_test(args.test_cmd, args.output_folder, args.num_parallel, args.skip_func_tests, args.global_time_limit)
 
     logging.info("Will wait functests to finish")
     while True:
@@ -198,11 +196,7 @@ if __name__ == "__main__":
     logging.info("Logs compressed")
 
     if args.hung_check:
-        try:
-            have_long_running_queries = prepare_for_hung_check(args.drop_databases)
-        except Exception as ex:
-            have_long_running_queries = True
-            logging.error("Failed to prepare for hung check %s", str(ex))
+        have_long_running_queries = prepare_for_hung_check(args.drop_databases)
         logging.info("Checking if some queries hung")
         cmd = ' '.join([args.test_cmd,
             # Do not track memory allocations up to 1Gi,
@@ -219,8 +213,6 @@ if __name__ == "__main__":
             "--client-option", "max_untracked_memory=1Gi",
             "--client-option", "max_memory_usage_for_user=0",
             "--client-option", "memory_profiler_step=1Gi",
-            # Use system database to avoid CREATE/DROP DATABASE queries
-            "--database=system",
             "--hung-check",
             "00001_select_1"
         ])

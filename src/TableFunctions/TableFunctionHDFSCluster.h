@@ -39,8 +39,6 @@ protected:
 
     const char * getStorageTypeName() const override { return "HDFSCluster"; }
 
-    AccessType getSourceAccessType() const override { return AccessType::HDFS; }
-
     ColumnsDescription getActualTableStructure(ContextPtr) const override;
     void parseArguments(const ASTPtr &, ContextPtr) override;
 

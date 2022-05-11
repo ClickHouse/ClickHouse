@@ -1,4 +1,4 @@
-# replicas {#system_tables-replicas}
+# system.replicas {#system_tables-replicas}
 
 Contains information and status for replicated tables residing on the local server.
 This table can be used for monitoring. The table contains a row for every Replicated\* table.

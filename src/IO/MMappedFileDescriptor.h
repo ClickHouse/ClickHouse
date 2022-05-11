@@ -22,7 +22,7 @@ public:
     MMappedFileDescriptor(int fd_, size_t offset_);
 
     /// Makes empty object that can be initialized with `set`.
-    MMappedFileDescriptor() = default;
+    MMappedFileDescriptor() {}
 
     virtual ~MMappedFileDescriptor();
 
@@ -40,10 +40,9 @@ public:
     void set(int fd_, size_t offset_, size_t length_);
     void set(int fd_, size_t offset_);
 
+protected:
     MMappedFileDescriptor(const MMappedFileDescriptor &) = delete;
     MMappedFileDescriptor(MMappedFileDescriptor &&) = delete;
-
-protected:
 
     void init();
 

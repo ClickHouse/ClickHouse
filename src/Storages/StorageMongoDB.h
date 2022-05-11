@@ -2,8 +2,11 @@
 
 #include <Poco/MongoDB/Connection.h>
 
+#include <base/shared_ptr_helper.h>
+
 #include <Storages/IStorage.h>
 #include <Storages/ExternalDataSourceConfiguration.h>
+
 
 namespace DB
 {
@@ -12,13 +15,14 @@ namespace DB
  * Read only.
  */
 
-class StorageMongoDB final : public IStorage
+class StorageMongoDB final : public shared_ptr_helper<StorageMongoDB>, public IStorage
 {
+    friend struct shared_ptr_helper<StorageMongoDB>;
 public:
     StorageMongoDB(
         const StorageID & table_id_,
         const std::string & host_,
-        uint16_t port_,
+        short unsigned int port_,
         const std::string & database_name_,
         const std::string & collection_name_,
         const std::string & username_,
@@ -32,7 +36,7 @@ public:
 
     Pipe read(
         const Names & column_names,
-        const StorageSnapshotPtr & storage_snapshot,
+        const StorageMetadataPtr & metadata_snapshot,
         SelectQueryInfo & query_info,
         ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
@@ -44,10 +48,13 @@ public:
 private:
     void connectIfNotConnected();
 
+    const std::string host;
+    const short unsigned int port;
     const std::string database_name;
     const std::string collection_name;
     const std::string username;
     const std::string password;
+    const std::string options;
     const std::string uri;
 
     std::shared_ptr<Poco::MongoDB::Connection> connection;

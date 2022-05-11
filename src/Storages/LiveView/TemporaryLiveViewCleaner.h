@@ -31,7 +31,7 @@ public:
 private:
     friend std::unique_ptr<TemporaryLiveViewCleaner>::deleter_type;
 
-    explicit TemporaryLiveViewCleaner(ContextMutablePtr global_context_);
+    TemporaryLiveViewCleaner(ContextMutablePtr global_context_);
     ~TemporaryLiveViewCleaner();
 
     void backgroundThreadFunc();

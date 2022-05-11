@@ -1,5 +1,3 @@
-SET cast_ipv4_ipv6_default_on_conversion_error = 1;
-
 select IPv4StringToNum('') == 0;
 select IPv4StringToNum(materialize('')) == 0;
 select IPv4StringToNum('not an ip string') == 0;

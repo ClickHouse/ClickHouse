@@ -1,6 +1,6 @@
 ---
-sidebar_position: 49
-sidebar_label: Data Backup
+toc_priority: 49
+toc_title: Data Backup
 ---
 
 # Data Backup {#data-backup}
@@ -11,9 +11,8 @@ In order to effectively mitigate possible human errors, you should carefully pre
 
 Each company has different resources available and business requirements, so there’s no universal solution for ClickHouse backups and restores that will fit every situation. What works for one gigabyte of data likely won’t work for tens of petabytes. There are a variety of possible approaches with their own pros and cons, which will be discussed below. It is a good idea to use several approaches instead of just one in order to compensate for their various shortcomings.
 
-:::note    
-Keep in mind that if you backed something up and never tried to restore it, chances are that restore will not work properly when you actually need it (or at least it will take longer than business can tolerate). So whatever backup approach you choose, make sure to automate the restore process as well, and practice it on a spare ClickHouse cluster regularly.
-:::
+!!! note "Note"
+    Keep in mind that if you backed something up and never tried to restore it, chances are that restore will not work properly when you actually need it (or at least it will take longer than business can tolerate). So whatever backup approach you choose, make sure to automate the restore process as well, and practice it on a spare ClickHouse cluster regularly.
 
 ## Duplicating Source Data Somewhere Else {#duplicating-source-data-somewhere-else}
 

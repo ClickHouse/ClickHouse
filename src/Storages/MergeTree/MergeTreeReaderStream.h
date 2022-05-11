@@ -24,8 +24,7 @@ public:
         const MergeTreeReaderSettings & settings_,
         MarkCache * mark_cache, UncompressedCache * uncompressed_cache,
         size_t file_size_, const MergeTreeIndexGranularityInfo * index_granularity_info_,
-        const ReadBufferFromFileBase::ProfileCallback & profile_callback, clockid_t clock_type,
-        bool is_low_cardinality_dictionary_);
+        const ReadBufferFromFileBase::ProfileCallback & profile_callback, clockid_t clock_type);
 
     void seekToMark(size_t index);
 
@@ -35,19 +34,16 @@ public:
      * Does buffer need to know something about mark ranges bounds it is going to read?
      * (In case of MergeTree* tables). Mostly needed for reading from remote fs.
      */
-    void adjustRightMark(size_t right_mark);
+    void adjustForRange(MarkRange range);
 
     ReadBuffer * data_buffer;
-    CompressedReadBufferBase * compressed_data_buffer;
 
 private:
-    size_t getRightOffset(size_t right_mark_non_included);
+    std::pair<size_t, size_t> getRightOffsetAndBytesRange(size_t left_mark, size_t right_mark_non_included);
 
     DiskPtr disk;
     std::string path_prefix;
     std::string data_file_extension;
-
-    bool is_low_cardinality_dictionary = false;
 
     size_t marks_count;
     size_t file_size;

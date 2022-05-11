@@ -33,7 +33,6 @@ public:
     void moveFile(const String & from_path, const String & to_path) override;
     void replaceFile(const String & from_path, const String & to_path) override;
     void copy(const String & from_path, const std::shared_ptr<IDisk> & to_disk, const String & to_path) override;
-    void copyDirectoryContent(const String & from_dir, const std::shared_ptr<IDisk> & to_disk, const String & to_dir) override;
     void listFiles(const String & path, std::vector<String> & file_names) override;
 
     std::unique_ptr<ReadBufferFromFileBase> readFile(
@@ -45,16 +44,15 @@ public:
     std::unique_ptr<WriteBufferFromFileBase> writeFile(
         const String & path,
         size_t buf_size,
-        WriteMode mode,
-        const WriteSettings & settings) override;
+        WriteMode mode) override;
 
     void removeFile(const String & path) override;
     void removeFileIfExists(const String & path) override;
     void removeDirectory(const String & path) override;
     void removeRecursive(const String & path) override;
     void removeSharedFile(const String & path, bool keep_s3) override;
-    void removeSharedRecursive(const String & path, bool keep_all_batch_data, const NameSet & file_names_remove_metadata_only) override;
-    void removeSharedFiles(const RemoveBatchRequest & files, bool keep_all_batch_data, const NameSet & file_names_remove_metadata_only) override;
+    void removeSharedRecursive(const String & path, bool keep_s3) override;
+    void removeSharedFiles(const RemoveBatchRequest & files, bool keep_in_remote_fs) override;
     void setLastModified(const String & path, const Poco::Timestamp & timestamp) override;
     Poco::Timestamp getLastModified(const String & path) override;
     void setReadOnly(const String & path) override;
@@ -73,9 +71,6 @@ public:
     void shutdown() override;
     void startup() override;
     void applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr context, const String & config_prefix, const DisksMap & map) override;
-    String getCacheBasePath() const override { return delegate->getCacheBasePath(); }
-    std::vector<String> getRemotePaths(const String & path) const override { return delegate->getRemotePaths(path); }
-    void getRemotePathsRecursive(const String & path, std::vector<LocalPathWithRemotePaths> & paths_map) override { return delegate->getRemotePathsRecursive(path, paths_map); }
 
     DiskPtr getMetadataDiskIfExistsOrSelf() override { return delegate->getMetadataDiskIfExistsOrSelf(); }
 

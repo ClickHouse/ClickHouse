@@ -90,7 +90,7 @@ TableExclusiveLockHolder IStorage::lockExclusively(const String & query_id, cons
 
 Pipe IStorage::read(
     const Names & /*column_names*/,
-    const StorageSnapshotPtr & /*storage_snapshot*/,
+    const StorageMetadataPtr & /*metadata_snapshot*/,
     SelectQueryInfo & /*query_info*/,
     ContextPtr /*context*/,
     QueryProcessingStage::Enum /*processed_stage*/,
@@ -103,17 +103,18 @@ Pipe IStorage::read(
 void IStorage::read(
     QueryPlan & query_plan,
     const Names & column_names,
-    const StorageSnapshotPtr & storage_snapshot,
+    const StorageMetadataPtr & metadata_snapshot,
     SelectQueryInfo & query_info,
     ContextPtr context,
     QueryProcessingStage::Enum processed_stage,
     size_t max_block_size,
     unsigned num_streams)
 {
-    auto pipe = read(column_names, storage_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
+    auto pipe = read(column_names, metadata_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
     if (pipe.empty())
     {
-        auto header = storage_snapshot->getSampleBlockForColumns(column_names);
+        auto header = (query_info.projection ? query_info.projection->desc->metadata : metadata_snapshot)
+                          ->getSampleBlockForColumns(column_names, getVirtuals(), getStorageID());
         InterpreterSelectQuery::addEmptySourceToQueryPlan(query_plan, header, query_info, context);
     }
     else
@@ -216,14 +217,14 @@ bool IStorage::isStaticStorage() const
     return false;
 }
 
-BackupEntries IStorage::backupData(ContextPtr, const ASTs &)
+BackupEntries IStorage::backup(const ASTs &, ContextPtr)
 {
     throw Exception("Table engine " + getName() + " doesn't support backups", ErrorCodes::NOT_IMPLEMENTED);
 }
 
-RestoreTaskPtr IStorage::restoreData(ContextMutablePtr, const ASTs &, const BackupPtr &, const String &, const StorageRestoreSettings &, const std::shared_ptr<IRestoreCoordination> &)
+RestoreDataTasks IStorage::restoreFromBackup(const BackupPtr &, const String &, const ASTs &, ContextMutablePtr)
 {
-    throw Exception("Table engine " + getName() + " doesn't support backups", ErrorCodes::NOT_IMPLEMENTED);
+    throw Exception("Table engine " + getName() + " doesn't support restoring", ErrorCodes::NOT_IMPLEMENTED);
 }
 
 std::string PrewhereInfo::dump() const

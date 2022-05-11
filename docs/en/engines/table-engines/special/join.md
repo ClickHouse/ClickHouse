@@ -1,15 +1,14 @@
 ---
-sidebar_position: 70
-sidebar_label: Join
+toc_priority: 40
+toc_title: Join
 ---
 
 # Join Table Engine {#join}
 
 Optional prepared data structure for usage in [JOIN](../../../sql-reference/statements/select/join.md#select-join) operations.
 
-:::note
-This is not an article about the [JOIN clause](../../../sql-reference/statements/select/join.md#select-join) itself.
-:::
+!!! note "Note"
+    This is not an article about the [JOIN clause](../../../sql-reference/statements/select/join.md#select-join) itself.
 
 ## Creating a Table {#creating-a-table}
 
@@ -126,5 +125,3 @@ ALTER TABLE id_val_join DELETE WHERE id = 3;
 │  1 │  21 │
 └────┴─────┘
 ```
-
-[Original article](https://clickhouse.com/docs/en/operations/table_engines/special/join/) <!--hide-->

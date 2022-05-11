@@ -1,6 +1,6 @@
 ---
-sidebar_position: 63
-sidebar_label: Nullable
+toc_priority: 63
+toc_title: Nullable
 ---
 
 # Functions for Working with Nullable Values {#functions-for-working-with-nullable-aggregates}

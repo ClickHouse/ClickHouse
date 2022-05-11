@@ -15,7 +15,7 @@
 #include <Storages/StoragePostgreSQL.h>
 #include <Storages/StorageURL.h>
 #include <Storages/ExternalDataSourceConfiguration.h>
-#include <Common/logger_useful.h>
+#include <base/logger_useful.h>
 
 
 namespace DB
@@ -68,7 +68,7 @@ StorageExternalDistributed::StorageExternalDistributed(
                     configuration.username,
                     configuration.password);
 
-                shard = std::make_shared<StorageMySQL>(
+                shard = StorageMySQL::create(
                     table_id_,
                     std::move(pool),
                     configuration.database,
@@ -97,7 +97,7 @@ StorageExternalDistributed::StorageExternalDistributed(
                     context->getSettingsRef().postgresql_connection_pool_size,
                     context->getSettingsRef().postgresql_connection_pool_wait_timeout);
 
-                shard = std::make_shared<StoragePostgreSQL>(table_id_, std::move(pool), configuration.table, columns_, constraints_, String{});
+                shard = StoragePostgreSQL::create(table_id_, std::move(pool), configuration.table, columns_, constraints_, String{});
                 break;
             }
 #endif
@@ -172,7 +172,7 @@ StorageExternalDistributed::StorageExternalDistributed(
 
 Pipe StorageExternalDistributed::read(
     const Names & column_names,
-    const StorageSnapshotPtr & storage_snapshot,
+    const StorageMetadataPtr & metadata_snapshot,
     SelectQueryInfo & query_info,
     ContextPtr context,
     QueryProcessingStage::Enum processed_stage,
@@ -184,7 +184,7 @@ Pipe StorageExternalDistributed::read(
     {
         pipes.emplace_back(shard->read(
             column_names,
-            storage_snapshot,
+            metadata_snapshot,
             query_info,
             context,
             processed_stage,
@@ -257,7 +257,7 @@ void registerStorageExternalDistributed(StorageFactory & factory)
 
             auto format_settings = StorageURL::getFormatSettingsFromArgs(args);
 
-            return std::make_shared<StorageExternalDistributed>(
+            return StorageExternalDistributed::create(
                 cluster_description,
                 args.table_id,
                 configuration.format,
@@ -304,7 +304,7 @@ void registerStorageExternalDistributed(StorageFactory & factory)
             }
 
 
-            return std::make_shared<StorageExternalDistributed>(
+            return StorageExternalDistributed::create(
                 args.table_id,
                 table_engine,
                 cluster_description,

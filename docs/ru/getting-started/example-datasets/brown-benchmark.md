@@ -1,6 +1,6 @@
 ---
-sidebar_position: 20
-sidebar_label: Brown University Benchmark
+toc_priority: 20
+toc_title: Brown University Benchmark
 ---
 
 # Brown University Benchmark

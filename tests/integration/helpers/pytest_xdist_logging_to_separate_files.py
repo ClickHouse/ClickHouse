@@ -5,17 +5,17 @@ import os.path
 # Without this function all workers will log to the same log file
 # and mix everything together making it much more difficult for troubleshooting.
 def setup():
-    worker_name = os.environ.get("PYTEST_XDIST_WORKER", "master")
-    if worker_name == "master":
+    worker_name = os.environ.get('PYTEST_XDIST_WORKER', 'master')
+    if worker_name == 'master':
         return
-    logger = logging.getLogger("")
+    logger = logging.getLogger('')
     new_handlers = []
     handlers_to_remove = []
     for handler in logger.handlers:
         if isinstance(handler, logging.FileHandler):
             filename, ext = os.path.splitext(handler.baseFilename)
-            if not filename.endswith("-" + worker_name):
-                new_filename = filename + "-" + worker_name
+            if not filename.endswith('-' + worker_name):
+                new_filename = filename + '-' + worker_name
                 new_handler = logging.FileHandler(new_filename + ext)
                 new_handler.setFormatter(handler.formatter)
                 new_handler.setLevel(handler.level)

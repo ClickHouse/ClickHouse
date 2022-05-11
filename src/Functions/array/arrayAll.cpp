@@ -1,8 +1,8 @@
-#include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Columns/ColumnsNumber.h>
+#include "FunctionArrayMapped.h"
 #include <Functions/FunctionFactory.h>
 
-#include "FunctionArrayMapped.h"
 
 namespace DB
 {
@@ -16,9 +16,6 @@ namespace ErrorCodes
   */
 struct ArrayAllImpl
 {
-    using column_type = ColumnArray;
-    using data_type = DataTypeArray;
-
     static bool needBoolean() { return true; }
     static bool needExpression() { return false; }
     static bool needOneArray() { return false; }

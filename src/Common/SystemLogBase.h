@@ -23,11 +23,8 @@
     M(QueryViewsLogElement) \
     M(SessionLogElement) \
     M(TraceLogElement) \
-    M(TransactionsInfoLogElement) \
     M(ZooKeeperLogElement) \
-    M(ProcessorProfileLogElement) \
-    M(TextLogElement) \
-    M(FilesystemCacheLogElement)
+    M(TextLogElement)
 
 namespace Poco
 {
@@ -46,10 +43,9 @@ struct StorageID;
 class ISystemLog
 {
 public:
-    virtual String getName() const = 0;
-
+    virtual String getName() = 0;
     //// force -- force table creation (used for SYSTEM FLUSH LOGS)
-    virtual void flush(bool force = false) = 0; /// NOLINT
+    virtual void flush(bool force = false) = 0;
     virtual void prepareTable() = 0;
 
     /// Start the background thread.
@@ -88,9 +84,7 @@ public:
     /// Flush data in the buffer to disk
     void flush(bool force) override;
 
-    String getName() const override { return LogElement::name(); }
-
-    static const char * getDefaultOrderBy() { return "(event_date, event_time)"; }
+    String getName() override { return LogElement::name(); }
 
 protected:
     Poco::Logger * log;

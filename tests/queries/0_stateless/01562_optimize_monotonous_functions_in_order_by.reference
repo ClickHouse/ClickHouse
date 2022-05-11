@@ -9,7 +9,7 @@ Expression (Projection)
     Sorting (Sorting for ORDER BY)
       Expression (Before ORDER BY)
         SettingQuotaAndLimits (Set limits and quota after reading from storage)
-          ReadFromMergeTree (default.test_order_by)
+          ReadFromMergeTree
 SELECT
     timestamp,
     key
@@ -21,7 +21,7 @@ Expression (Projection)
     Sorting
       Expression (Before ORDER BY)
         SettingQuotaAndLimits (Set limits and quota after reading from storage)
-          ReadFromMergeTree (default.test_order_by)
+          ReadFromMergeTree
 SELECT
     timestamp,
     key
@@ -35,7 +35,7 @@ Expression (Projection)
     Sorting
       Expression (Before ORDER BY)
         SettingQuotaAndLimits (Set limits and quota after reading from storage)
-          ReadFromMergeTree (default.test_order_by)
+          ReadFromMergeTree
 SELECT
     timestamp,
     key

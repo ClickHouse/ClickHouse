@@ -1,7 +1,7 @@
 #include <QueryPipeline/RemoteInserter.h>
 
 #include <Client/Connection.h>
-#include <Common/logger_useful.h>
+#include <base/logger_useful.h>
 
 #include <Common/NetException.h>
 #include <Common/CurrentThread.h>
@@ -32,19 +32,8 @@ RemoteInserter::RemoteInserter(
     modified_client_info.query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
     if (CurrentThread::isInitialized())
     {
-        auto& thread_trace_context = CurrentThread::get().thread_trace_context;
-
-        if (thread_trace_context.trace_id != UUID())
-        {
-            // overwrite the trace context only if current thread trace context is available
-            modified_client_info.client_trace_context = thread_trace_context;
-        }
-        else
-        {
-            // if the trace on the thread local is not enabled(for example running in a background thread)
-            // we should not clear the trace context on the client info because the client info may hold trace context
-            // and this trace context should be propagated to the remote server so that the tracing of distributed table insert is complete.
-        }
+        modified_client_info.client_trace_context
+            = CurrentThread::get().thread_trace_context;
     }
 
     /** Send query and receive "header", that describes table structure.
@@ -78,10 +67,8 @@ RemoteInserter::RemoteInserter(
             /// client's already got this information for remote table. Ignore.
         }
         else
-            throw NetException(
-                ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER,
-                "Unexpected packet from server (expected Data or Exception, got {})",
-                Protocol::Server::toString(packet.type));
+            throw NetException("Unexpected packet from server (expected Data or Exception, got "
+                + String(Protocol::Server::toString(packet.type)) + ")", ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER);
     }
 }
 
@@ -133,10 +120,8 @@ void RemoteInserter::onFinish()
             // Do nothing
         }
         else
-            throw NetException(
-                ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER,
-                "Unexpected packet from server (expected EndOfStream or Exception, got {})",
-                Protocol::Server::toString(packet.type));
+            throw NetException("Unexpected packet from server (expected EndOfStream or Exception, got "
+            + String(Protocol::Server::toString(packet.type)) + ")", ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER);
     }
 
     finished = true;

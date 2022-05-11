@@ -138,10 +138,10 @@ private:
     static void finishWithException(const ASTPtr & query, const std::list<InsertData::EntryPtr> & entries, const E & exception);
 
 public:
-    auto getQueueLocked() const
+    Queue getQueue() const
     {
         std::shared_lock lock(rwlock);
-        return std::make_pair(std::ref(queue), std::move(lock));
+        return queue;
     }
 };
 

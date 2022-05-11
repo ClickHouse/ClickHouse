@@ -133,6 +133,7 @@ off_t WriteBufferFromFileDescriptor::seek(off_t offset, int whence) // NOLINT
     return res;
 }
 
+
 void WriteBufferFromFileDescriptor::truncate(off_t length) // NOLINT
 {
     int res = ftruncate(fd, length);

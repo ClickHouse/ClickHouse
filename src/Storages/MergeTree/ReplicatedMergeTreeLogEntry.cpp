@@ -79,7 +79,7 @@ void ReplicatedMergeTreeLogEntryData::writeText(WriteBuffer & out) const
             out << "into\n" << new_part_name;
             out << "\ndeduplicate: " << deduplicate;
 
-            if (merge_type != MergeType::Regular)
+            if (merge_type != MergeType::REGULAR)
                 out <<"\nmerge_type: " << static_cast<UInt64>(merge_type);
 
             if (new_part_uuid != UUIDHelpers::Nil)
@@ -165,7 +165,7 @@ void ReplicatedMergeTreeLogEntryData::writeText(WriteBuffer & out) const
 
     out << '\n';
 
-    if (new_part_type != MergeTreeDataPartType::Wide && new_part_type != MergeTreeDataPartType::Unknown)
+    if (new_part_type != MergeTreeDataPartType::WIDE && new_part_type != MergeTreeDataPartType::UNKNOWN)
         out << "part_type: " << new_part_type.toString() << "\n";
 
     if (quorum)
@@ -348,7 +348,7 @@ void ReplicatedMergeTreeLogEntryData::readText(ReadBuffer & in)
         in >> "\n";
     }
     else
-        new_part_type = MergeTreeDataPartType::Wide;
+        new_part_type = MergeTreeDataPartType::WIDE;
 
     /// Optional field.
     if (!in.eof())
@@ -502,17 +502,6 @@ Strings ReplicatedMergeTreeLogEntryData::getVirtualPartNames(MergeTreeDataFormat
         return {};
 
     return {new_part_name};
-}
-
-String ReplicatedMergeTreeLogEntryData::getDescriptionForLogs(MergeTreeDataFormatVersion format_version) const
-{
-    String description = fmt::format("{} with virtual parts [{}]", typeToString(), fmt::join(getVirtualPartNames(format_version), ", "));
-    if (auto drop_range = getDropRange(format_version))
-    {
-        description += " and drop range ";
-        description += *drop_range;
-    }
-    return description;
 }
 
 }

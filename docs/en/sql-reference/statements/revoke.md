@@ -1,6 +1,6 @@
 ---
-sidebar_position: 39
-sidebar_label: REVOKE
+toc_priority: 39
+toc_title: REVOKE
 ---
 
 # REVOKE Statement {#revoke}
@@ -45,4 +45,4 @@ GRANT SELECT ON accounts.staff TO mira;
 REVOKE SELECT(wage) ON accounts.staff FROM mira;
 ```
 
-[Original article](https://clickhouse.com/docs/en/operations/settings/settings/)
+{## [Original article](https://clickhouse.com/docs/en/operations/settings/settings/) ##}

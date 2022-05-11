@@ -1,6 +1,6 @@
 ---
-sidebar_position: 49
-sidebar_label: EXCHANGE
+toc_priority: 49
+toc_title: EXCHANGE
 ---
 
 # EXCHANGE {#exchange}
@@ -8,9 +8,9 @@ sidebar_label: EXCHANGE
 Атомарно обменивает имена двух таблиц или словарей.
 Это действие также можно выполнить с помощью запроса [RENAME](./rename.md), используя третье временное имя, но в таком случае действие неатомарно.
 
-    :::note "Примечание"
+!!! note "Примечание"
     Запрос `EXCHANGE` поддерживается только движком баз данных [Atomic](../../engines/database-engines/atomic.md).
-    :::
+
 **Синтаксис**
 
 ```sql

@@ -32,17 +32,16 @@ class QueryPipeline
 {
 public:
     QueryPipeline();
-    QueryPipeline(QueryPipeline &&) noexcept;
+    QueryPipeline(QueryPipeline &&);
     QueryPipeline(const QueryPipeline &) = delete;
 
-    QueryPipeline & operator=(QueryPipeline &&) noexcept;
+    QueryPipeline & operator=(QueryPipeline &&);
     QueryPipeline & operator=(const QueryPipeline &) = delete;
 
     ~QueryPipeline();
 
-    /// pulling or completed
-    explicit QueryPipeline(Pipe pipe);
     /// pulling
+    explicit QueryPipeline(Pipe pipe);
     explicit QueryPipeline(std::shared_ptr<ISource> source);
     /// pushing
     explicit QueryPipeline(Chain chain);

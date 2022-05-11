@@ -17,7 +17,7 @@ class WriteBuffer;
 class ORCOutputStream : public orc::OutputStream
 {
 public:
-    explicit ORCOutputStream(WriteBuffer & out_);
+    ORCOutputStream(WriteBuffer & out_);
 
     uint64_t getLength() const override;
     uint64_t getNaturalWriteSize() const override;

@@ -22,14 +22,14 @@ StorageSystemOne::StorageSystemOne(const StorageID & table_id_)
 
 Pipe StorageSystemOne::read(
     const Names & column_names,
-    const StorageSnapshotPtr & storage_snapshot,
+    const StorageMetadataPtr & metadata_snapshot,
     SelectQueryInfo &,
     ContextPtr /*context*/,
     QueryProcessingStage::Enum /*processed_stage*/,
     const size_t /*max_block_size*/,
     const unsigned /*num_streams*/)
 {
-    storage_snapshot->check(column_names);
+    metadata_snapshot->check(column_names, getVirtuals(), getStorageID());
 
     Block header{ColumnWithTypeAndName(
             DataTypeUInt8().createColumn(),

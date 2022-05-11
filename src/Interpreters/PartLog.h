@@ -32,7 +32,6 @@ struct PartLogElement
     String table_name;
     String part_name;
     String partition_id;
-    String disk_name;
     String path_on_disk;
 
     /// Size of the part
@@ -57,7 +56,6 @@ struct PartLogElement
     static NamesAndTypesList getNamesAndTypes();
     static NamesAndAliases getNamesAndAliases() { return {}; }
     void appendToBlock(MutableColumns & columns) const;
-    static const char * getCustomColumnList() { return nullptr; }
 };
 
 class IMergeTreeDataPart;

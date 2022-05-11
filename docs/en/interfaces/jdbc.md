@@ -1,12 +1,11 @@
 ---
-sidebar_position: 22
-sidebar_label: JDBC Driver
+toc_priority: 22
+toc_title: JDBC Driver
 ---
 
 # JDBC Driver {#jdbc-driver}
 
-Use the [official JDBC driver](https://github.com/ClickHouse/clickhouse-jdbc) (and Java client) to access ClickHouse from your Java applications.
-
+-   **[Official driver](https://github.com/ClickHouse/clickhouse-jdbc)**
 -   Third-party drivers:
     -   [ClickHouse-Native-JDBC](https://github.com/housepower/ClickHouse-Native-JDBC)
     -   [clickhouse4j](https://github.com/blynkkk/clickhouse4j)

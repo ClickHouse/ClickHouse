@@ -1,6 +1,6 @@
 ---
-sidebar_position: 60
-sidebar_label: clickhouse-local
+toc_priority: 60
+toc_title: clickhouse-local
 ---
 
 # clickhouse-local {#clickhouse-local}
@@ -11,7 +11,7 @@ sidebar_label: clickhouse-local
 
 `clickhouse-local` при настройке по умолчанию не имеет доступа к данным, которыми управляет сервер ClickHouse, установленный на этом же хосте, однако можно подключить конфигурацию сервера с помощью ключа `--config-file`.
 
-:::danger "Warning"
+!!! warning "Warning"
     Мы не рекомендуем подключать серверную конфигурацию к `clickhouse-local`, поскольку данные можно легко повредить неосторожными действиями.
 
 Для временных данных по умолчанию создается специальный каталог.

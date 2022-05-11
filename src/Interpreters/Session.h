@@ -32,7 +32,7 @@ public:
     /// Stops using named sessions. The method must be called at the server shutdown.
     static void shutdownNamedSessions();
 
-    Session(const ContextPtr & global_context_, ClientInfo::Interface interface_, bool is_secure = false);
+    Session(const ContextPtr & global_context_, ClientInfo::Interface interface_);
     ~Session();
 
     Session(const Session &&) = delete;

@@ -19,10 +19,10 @@ struct FixedHashTableCell
     using mapped_type = VoidMapped;
     bool full;
 
-    FixedHashTableCell() {} //-V730 /// NOLINT
+    FixedHashTableCell() {} //-V730
     FixedHashTableCell(const Key &, const State &) : full(true) {}
 
-    const VoidKey getKey() const { return {}; } /// NOLINT
+    const VoidKey getKey() const { return {}; }
     VoidMapped getMapped() const { return {}; }
 
     bool isZero(const State &) const { return !full; }
@@ -39,7 +39,7 @@ struct FixedHashTableCell
     {
         Key key;
 
-        const VoidKey getKey() const { return {}; } /// NOLINT
+        const VoidKey getKey() const { return {}; }
         VoidMapped getMapped() const { return {}; }
         const value_type & getValue() const { return key; }
         void update(Key && key_, FixedHashTableCell *) { key = key_; }
@@ -67,9 +67,6 @@ struct FixedHashTableCalculatedSize
 {
     size_t getSize(const Cell * buf, const typename Cell::State & state, size_t num_cells) const
     {
-        if (!buf)
-            return 0;
-
         size_t res = 0;
         for (const Cell * end = buf + num_cells; buf != end; ++buf)
             if (!buf->isZero(state))
@@ -79,9 +76,6 @@ struct FixedHashTableCalculatedSize
 
     bool isEmpty(const Cell * buf, const typename Cell::State & state, size_t num_cells) const
     {
-        if (!buf)
-            return true;
-
         for (const Cell * end = buf + num_cells; buf != end; ++buf)
             if (!buf->isZero(state))
                 return false;
@@ -144,7 +138,7 @@ protected:
 
 
     template <typename Derived, bool is_const>
-    class iterator_base /// NOLINT
+    class iterator_base
     {
         using Container = std::conditional_t<is_const, const Self, Self>;
         using cell_type = std::conditional_t<is_const, const Cell, Cell>;
@@ -155,7 +149,7 @@ protected:
         friend class FixedHashTable;
 
     public:
-        iterator_base() {} /// NOLINT
+        iterator_base() {}
         iterator_base(Container * container_, cell_type * ptr_) : container(container_), ptr(ptr_)
         {
             cell.update(ptr - container->buf, ptr);
@@ -169,7 +163,7 @@ protected:
             ++ptr;
 
             /// Skip empty cells in the main buffer.
-            const auto * buf_end = container->buf + container->NUM_CELLS;
+            auto buf_end = container->buf + container->NUM_CELLS;
             while (ptr < buf_end && ptr->isZero(*container))
                 ++ptr;
 
@@ -210,7 +204,7 @@ public:
 
     FixedHashTable() { alloc(); }
 
-    FixedHashTable(FixedHashTable && rhs) noexcept : buf(nullptr) { *this = std::move(rhs); } /// NOLINT
+    FixedHashTable(FixedHashTable && rhs) : buf(nullptr) { *this = std::move(rhs); }
 
     ~FixedHashTable()
     {
@@ -218,7 +212,7 @@ public:
         free();
     }
 
-    FixedHashTable & operator=(FixedHashTable && rhs) noexcept
+    FixedHashTable & operator=(FixedHashTable && rhs)
     {
         destroyElements();
         free();
@@ -235,7 +229,7 @@ public:
     class Reader final : private Cell::State
     {
     public:
-        explicit Reader(DB::ReadBuffer & in_) : in(in_) {}
+        Reader(DB::ReadBuffer & in_) : in(in_) {}
 
         Reader(const Reader &) = delete;
         Reader & operator=(const Reader &) = delete;
@@ -279,13 +273,13 @@ public:
     };
 
 
-    class iterator : public iterator_base<iterator, false> /// NOLINT
+    class iterator : public iterator_base<iterator, false>
     {
     public:
         using iterator_base<iterator, false>::iterator_base;
     };
 
-    class const_iterator : public iterator_base<const_iterator, true> /// NOLINT
+    class const_iterator : public iterator_base<const_iterator, true>
     {
     public:
         using iterator_base<const_iterator, true>::iterator_base;
@@ -337,6 +331,7 @@ public:
     }
 
 
+public:
     /// The last parameter is unused but exists for compatibility with HashTable interface.
     void ALWAYS_INLINE emplace(const Key & x, LookupResult & it, bool & inserted, size_t /* hash */ = 0)
     {

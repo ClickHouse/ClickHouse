@@ -59,7 +59,7 @@ void ReplicatedMergeTreePartCheckThread::enqueuePart(const String & name, time_t
 {
     std::lock_guard lock(parts_mutex);
 
-    if (parts_set.contains(name))
+    if (parts_set.count(name))
         return;
 
     parts_queue.emplace_back(name, time(nullptr) + delay_to_check_seconds);
@@ -399,7 +399,6 @@ CheckResult ReplicatedMergeTreePartCheckThread::checkPart(const String & part_na
         LOG_WARNING(log, "We have part {} covering part {}", part->name, part_name);
     }
 
-    part->checkMetadata();
     return {part_name, true, ""};
 }
 

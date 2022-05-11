@@ -108,11 +108,6 @@ void DiskDecorator::copy(const String & from_path, const std::shared_ptr<IDisk> 
     delegate->copy(from_path, to_disk, to_path);
 }
 
-void DiskDecorator::copyDirectoryContent(const String & from_dir, const std::shared_ptr<IDisk> & to_disk, const String & to_dir)
-{
-    delegate->copyDirectoryContent(from_dir, to_disk, to_dir);
-}
-
 void DiskDecorator::listFiles(const String & path, std::vector<String> & file_names)
 {
     delegate->listFiles(path, file_names);
@@ -126,9 +121,9 @@ DiskDecorator::readFile(
 }
 
 std::unique_ptr<WriteBufferFromFileBase>
-DiskDecorator::writeFile(const String & path, size_t buf_size, WriteMode mode, const WriteSettings & settings)
+DiskDecorator::writeFile(const String & path, size_t buf_size, WriteMode mode)
 {
-    return delegate->writeFile(path, buf_size, mode, settings);
+    return delegate->writeFile(path, buf_size, mode);
 }
 
 void DiskDecorator::removeFile(const String & path)
@@ -156,14 +151,14 @@ void DiskDecorator::removeSharedFile(const String & path, bool keep_s3)
     delegate->removeSharedFile(path, keep_s3);
 }
 
-void DiskDecorator::removeSharedFiles(const RemoveBatchRequest & files, bool keep_all_batch_data, const NameSet & file_names_remove_metadata_only)
+void DiskDecorator::removeSharedFiles(const RemoveBatchRequest & files, bool keep_in_remote_fs)
 {
-    delegate->removeSharedFiles(files, keep_all_batch_data, file_names_remove_metadata_only);
+    delegate->removeSharedFiles(files, keep_in_remote_fs);
 }
 
-void DiskDecorator::removeSharedRecursive(const String & path, bool keep_all_batch_data, const NameSet & file_names_remove_metadata_only)
+void DiskDecorator::removeSharedRecursive(const String & path, bool keep_s3)
 {
-    delegate->removeSharedRecursive(path, keep_all_batch_data, file_names_remove_metadata_only);
+    delegate->removeSharedRecursive(path, keep_s3);
 }
 
 void DiskDecorator::setLastModified(const String & path, const Poco::Timestamp & timestamp)

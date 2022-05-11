@@ -46,6 +46,10 @@ const EVP_CIPHER * getCipherByName(const StringRef & cipher_name)
         // For some reasons following ciphers can't be found by name.
         if (cipher_name == "aes-128-cfb128")
             evp_cipher = EVP_aes_128_cfb128();
+        else if (cipher_name == "aes-192-cfb128")
+            evp_cipher = EVP_aes_192_cfb128();
+        else if (cipher_name == "aes-256-cfb128")
+            evp_cipher = EVP_aes_256_cfb128();
     }
 
     // NOTE: cipher obtained not via EVP_CIPHER_fetch() would cause extra work on each context reset

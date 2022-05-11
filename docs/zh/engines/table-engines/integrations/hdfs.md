@@ -1,6 +1,6 @@
 ---
-sidebar_position: 36
-sidebar_label: HDFS
+toc_priority: 36
+toc_title: HDFS
 ---
 
 # HDFS {#table_engines-hdfs}

@@ -1,6 +1,6 @@
 ---
-sidebar_position: 42
-sidebar_label: postgresql
+toc_priority: 42
+toc_title: postgresql
 ---
 
 # postgresql {#postgresql}
@@ -26,7 +26,7 @@ postgresql('host:port', 'database', 'table', 'user', 'password'[, `schema`])
 
 Таблица с теми же столбцами, что и в исходной таблице PostgreSQL.
 
-:::info "Примечание"
+!!! info "Примечание"
     В запросах `INSERT` для того чтобы отличить табличную функцию `postgresql(...)` от таблицы со списком имен столбцов вы должны указывать ключевые слова `FUNCTION` или `TABLE FUNCTION`. См. примеры ниже.
 
 ## Особенности реализации {#implementation-details}
@@ -41,7 +41,7 @@ postgresql('host:port', 'database', 'table', 'user', 'password'[, `schema`])
 
 PostgreSQL массивы конвертируются в массивы ClickHouse.
 
-:::info "Примечание"
+!!! info "Примечание"
     Будьте внимательны, в PostgreSQL массивы, созданные как `type_name[]`, являются многомерными и могут содержать в себе разное количество измерений в разных строках одной таблицы. Внутри ClickHouse допустипы только многомерные массивы с одинаковым кол-вом измерений во всех строках таблицы.
 
 Поддерживает несколько реплик, которые должны быть перечислены через `|`. Например:
@@ -126,7 +126,7 @@ CREATE TABLE pg_table_schema_with_dots (a UInt32)
 
 **См. также**
 
--   [Движок таблиц PostgreSQL](../../engines/table-engines/integrations/postgresql.md)
+-   [Движок таблиц PostgreSQL](../../sql-reference/table-functions/postgresql.md)
 -   [Использование PostgreSQL как источника данных для внешнего словаря](../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-sources.md#dicts-external_dicts_dict_sources-postgresql)
 
 [Оригинальная статья](https://clickhouse.com/docs/ru/sql-reference/table-functions/postgresql/) <!--hide-->

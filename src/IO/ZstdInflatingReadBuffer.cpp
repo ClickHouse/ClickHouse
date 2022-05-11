@@ -9,7 +9,7 @@ namespace ErrorCodes
 }
 
 ZstdInflatingReadBuffer::ZstdInflatingReadBuffer(std::unique_ptr<ReadBuffer> in_, size_t buf_size, char * existing_memory, size_t alignment)
-    : CompressedReadBufferWrapper(std::move(in_), buf_size, existing_memory, alignment)
+    : BufferWithOwnMemory<ReadBuffer>(buf_size, existing_memory, alignment), in(std::move(in_))
 {
     dctx = ZSTD_createDCtx();
     input = {nullptr, 0, 0};

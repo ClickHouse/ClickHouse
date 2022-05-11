@@ -1,6 +1,7 @@
 ---
-sidebar_label: CREATE
-sidebar_position: 34
+toc_folder_title: CREATE
+toc_priority: 34
+toc_title: "Обзор"
 ---
 
 # Запросы CREATE {#create-queries}

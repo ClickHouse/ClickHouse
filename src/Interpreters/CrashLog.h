@@ -29,7 +29,6 @@ struct CrashLogElement
     static NamesAndTypesList getNamesAndTypes();
     static NamesAndAliases getNamesAndAliases() { return {}; }
     void appendToBlock(MutableColumns & columns) const;
-    static const char * getCustomColumnList() { return nullptr; }
 };
 
 class CrashLog : public SystemLog<CrashLogElement>
@@ -42,7 +41,7 @@ class CrashLog : public SystemLog<CrashLogElement>
 public:
     static void initialize(std::shared_ptr<CrashLog> crash_log_)
     {
-        crash_log = crash_log_;
+        crash_log = std::move(crash_log_);
     }
 };
 

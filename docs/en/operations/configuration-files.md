@@ -1,6 +1,6 @@
 ---
-sidebar_position: 50
-sidebar_label: Configuration Files
+toc_priority: 50
+toc_title: Configuration Files
 ---
 
 # Configuration Files {#configuration_files}

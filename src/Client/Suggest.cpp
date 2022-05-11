@@ -103,7 +103,6 @@ void Suggest::load(ContextPtr context, const ConnectionParameters & connection_p
 {
     loading_thread = std::thread([context=Context::createCopy(context), connection_parameters, suggestion_limit, this]
     {
-        ThreadStatus thread_status;
         for (size_t retry = 0; retry < 10; ++retry)
         {
             try
@@ -144,10 +143,15 @@ void Suggest::fetch(IServerConnection & connection, const ConnectionTimeouts & t
                 continue;
 
             case Protocol::Server::Progress:
+                continue;
             case Protocol::Server::ProfileInfo:
+                continue;
             case Protocol::Server::Totals:
+                continue;
             case Protocol::Server::Extremes:
+                continue;
             case Protocol::Server::Log:
+                continue;
             case Protocol::Server::ProfileEvents:
                 continue;
 

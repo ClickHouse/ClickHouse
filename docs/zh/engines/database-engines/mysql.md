@@ -1,6 +1,6 @@
 ---
-sidebar_position: 30
-sidebar_label: MySQL
+toc_priority: 30
+toc_title: MySQL
 ---
 
 # MySQL {#mysql}

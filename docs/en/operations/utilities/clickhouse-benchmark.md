@@ -1,9 +1,9 @@
 ---
-sidebar_position: 61
-sidebar_label: clickhouse-benchmark
+toc_priority: 61
+toc_title: clickhouse-benchmark
 ---
 
-# clickhouse-benchmark 
+# clickhouse-benchmark {#clickhouse-benchmark}
 
 Connects to a ClickHouse server and repeatedly sends specified queries.
 

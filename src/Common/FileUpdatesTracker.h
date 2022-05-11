@@ -5,6 +5,7 @@
 #include <filesystem>
 #include <Common/filesystemHelpers.h>
 
+namespace fs = std::filesystem;
 
 class FileUpdatesTracker
 {
@@ -13,7 +14,7 @@ private:
     Poco::Timestamp known_time;
 
 public:
-    explicit FileUpdatesTracker(const std::string & path_)
+    FileUpdatesTracker(const std::string & path_)
         : path(path_)
         , known_time(0)
     {}

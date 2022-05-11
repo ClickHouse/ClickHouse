@@ -7,7 +7,7 @@ namespace DB
 {
 
 /** A stream of blocks from which you can read the next block from an explicitly provided list.
-  * Also see SourceFromSingleChunk.
+  * Also see OneBlockInputStream.
   */
 class BlocksListSource : public SourceWithProgress
 {

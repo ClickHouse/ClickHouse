@@ -1,6 +1,6 @@
 ---
-sidebar_position: 66
-sidebar_label: Tuples
+toc_priority: 66
+toc_title: Tuples
 ---
 
 # Functions for Working with Tuples {#tuple-functions}
