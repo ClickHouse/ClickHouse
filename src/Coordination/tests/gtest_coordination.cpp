@@ -1,6 +1,8 @@
 #include <chrono>
 #include <gtest/gtest.h>
+#include "Common/ZooKeeper/IKeeper.h"
 
+#include "Coordination/KeeperStorage.h"
 #include "config_core.h"
 
 #if USE_NURAFT
@@ -1734,6 +1736,130 @@ TEST_P(CoordinationTest, TestLogGap)
     EXPECT_FALSE(fs::exists("./logs/changelog_1_100.bin" + test_params.extension));
     EXPECT_EQ(changelog1.start_index(), 61);
     EXPECT_EQ(changelog1.next_slot(), 61);
+}
+
+template <typename ResponseType>
+ResponseType getSingleResponse(const auto & responses)
+{
+    EXPECT_FALSE(responses.empty());
+    return dynamic_cast<ResponseType &>(*responses[0].response);
+}
+
+TEST_P(CoordinationTest, TestUncommittedStateBasicCRUD)
+{
+    using namespace DB;
+    using namespace Coordination;
+
+    DB::KeeperStorage storage{500, ""};
+
+    constexpr std::string_view path = "/test";
+
+    const auto get_committed_data = [&]() -> std::optional<String>
+    {
+        auto request = std::make_shared<ZooKeeperGetRequest>();
+        request->path = path;
+        auto responses = storage.processRequest(request, 0, 0, std::nullopt, true, true);
+        const auto & get_response = getSingleResponse<ZooKeeperGetResponse>(responses);
+
+        if (get_response.error != Error::ZOK)
+            return std::nullopt;
+
+        return get_response.data;
+    };
+
+    const auto preprocess_get = [&](int64_t zxid)
+    {
+        auto get_request = std::make_shared<ZooKeeperGetRequest>();
+        get_request->path = path;
+        storage.preprocessRequest(get_request, 0, 0, zxid);
+        return get_request;
+    };
+
+    const auto create_request = std::make_shared<ZooKeeperCreateRequest>();
+    create_request->path = path;
+    create_request->data = "initial_data";
+    storage.preprocessRequest(create_request, 0, 0, 1);
+    storage.preprocessRequest(create_request, 0, 0, 2);
+
+    ASSERT_FALSE(get_committed_data());
+
+    const auto after_create_get = preprocess_get(3);
+
+    ASSERT_FALSE(get_committed_data());
+
+    const auto set_request = std::make_shared<ZooKeeperSetRequest>();
+    set_request->path = path;
+    set_request->data = "new_data";
+    storage.preprocessRequest(set_request, 0, 0, 4);
+
+    const auto after_set_get = preprocess_get(5);
+
+    ASSERT_FALSE(get_committed_data());
+
+    const auto remove_request = std::make_shared<ZooKeeperRemoveRequest>();
+    remove_request->path = path;
+    storage.preprocessRequest(remove_request, 0, 0, 6);
+    storage.preprocessRequest(remove_request, 0, 0, 7);
+
+    const auto after_remove_get = preprocess_get(8);
+
+    ASSERT_FALSE(get_committed_data());
+
+    {
+        const auto responses = storage.processRequest(create_request, 0, 0, 1);
+        const auto & create_response = getSingleResponse<ZooKeeperCreateResponse>(responses);
+        ASSERT_EQ(create_response.error, Error::ZOK);
+    }
+
+    {
+        const auto responses = storage.processRequest(create_request, 0, 0, 2);
+        const auto & create_response = getSingleResponse<ZooKeeperCreateResponse>(responses);
+        ASSERT_EQ(create_response.error, Error::ZNODEEXISTS);
+    }
+
+    {
+        const auto responses = storage.processRequest(after_create_get, 0, 0, 3);
+        const auto & get_response = getSingleResponse<ZooKeeperGetResponse>(responses);
+        ASSERT_EQ(get_response.error, Error::ZOK);
+        ASSERT_EQ(get_response.data, "initial_data");
+    }
+
+    ASSERT_EQ(get_committed_data(), "initial_data");
+
+    {
+        const auto responses = storage.processRequest(set_request, 0, 0, 4);
+        const auto & create_response = getSingleResponse<ZooKeeperSetResponse>(responses);
+        ASSERT_EQ(create_response.error, Error::ZOK);
+    }
+
+    {
+        const auto responses = storage.processRequest(after_set_get, 0, 0, 5);
+        const auto & get_response = getSingleResponse<ZooKeeperGetResponse>(responses);
+        ASSERT_EQ(get_response.error, Error::ZOK);
+        ASSERT_EQ(get_response.data, "new_data");
+    }
+
+    ASSERT_EQ(get_committed_data(), "new_data");
+
+    {
+        const auto responses = storage.processRequest(remove_request, 0, 0, 6);
+        const auto & create_response = getSingleResponse<ZooKeeperRemoveResponse>(responses);
+        ASSERT_EQ(create_response.error, Error::ZOK);
+    }
+
+    {
+        const auto responses = storage.processRequest(remove_request, 0, 0, 7);
+        const auto & create_response = getSingleResponse<ZooKeeperRemoveResponse>(responses);
+        ASSERT_EQ(create_response.error, Error::ZNONODE);
+    }
+
+    {
+        const auto responses = storage.processRequest(after_remove_get, 0, 0, 8);
+        const auto & get_response = getSingleResponse<ZooKeeperGetResponse>(responses);
+        ASSERT_EQ(get_response.error, Error::ZNONODE);
+    }
+
+    ASSERT_FALSE(get_committed_data());
 }
 
 
