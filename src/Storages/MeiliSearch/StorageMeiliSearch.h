@@ -3,15 +3,11 @@
 #include <Storages/ExternalDataSourceConfiguration.h>
 #include <Storages/IStorage.h>
 #include <Storages/MeiliSearch/MeiliSearchConnection.h>
-#include <base/shared_ptr_helper.h>
-
 
 namespace DB
 {
-class StorageMeiliSearch final : public shared_ptr_helper<StorageMeiliSearch>, public IStorage
+class StorageMeiliSearch final : public IStorage
 {
-    friend struct shared_ptr_helper<StorageMeiliSearch>;
-
 public:
     StorageMeiliSearch(
         const StorageID & table_id,

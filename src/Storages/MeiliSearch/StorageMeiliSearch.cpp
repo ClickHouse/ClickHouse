@@ -1,3 +1,4 @@
+#include <memory>
 #include <Core/Types.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSelectQuery.h>
@@ -22,6 +23,7 @@ namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int BAD_QUERY_PARAMETER;
+    extern const int BAD_ARGUMENTS;
 }
 
 StorageMeiliSearch::StorageMeiliSearch(
@@ -161,9 +163,15 @@ void registerStorageMeiliSearch(StorageFactory & factory)
 {
     factory.registerStorage(
         "MeiliSearch",
-        [](const StorageFactory::Arguments & args) {
+        [](const StorageFactory::Arguments & args)
+        {
             auto config = StorageMeiliSearch::getConfiguration(args.engine_args, args.getLocalContext());
-            return StorageMeiliSearch::create(args.table_id, config, args.columns, args.constraints, args.comment);
+            return std::make_shared<StorageMeiliSearch>(
+                args.table_id, 
+                config, 
+                args.columns, 
+                args.constraints, 
+                args.comment);
         },
         {
             .source_access_type = AccessType::MEILISEARCH,
