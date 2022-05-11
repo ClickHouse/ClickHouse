@@ -28,6 +28,7 @@ CachedReadBufferFromRemoteFS::CachedReadBufferFromRemoteFS(
     FileCachePtr cache_,
     RemoteFSFileReaderCreator remote_file_reader_creator_,
     const ReadSettings & settings_,
+    const String & query_id_,
     size_t read_until_position_)
     : SeekableReadBuffer(nullptr, 0)
 #ifndef NDEBUG
@@ -41,11 +42,9 @@ CachedReadBufferFromRemoteFS::CachedReadBufferFromRemoteFS(
     , settings(settings_)
     , read_until_position(read_until_position_)
     , remote_file_reader_creator(remote_file_reader_creator_)
-    , query_id(CurrentThread::getQueryId())
+    , query_id(query_id_)
     , enable_logging(!query_id.empty() && settings_.enable_filesystem_cache_log)
 {
-    assert(query_id.empty()
-           || CurrentThread::isInitialized() && CurrentThread::get().getQueryContext() != nullptr);
 }
 
 void CachedReadBufferFromRemoteFS::appendFilesystemCacheLog(

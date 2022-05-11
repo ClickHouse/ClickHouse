@@ -62,7 +62,7 @@ SeekableReadBufferPtr ReadBufferFromS3Gather::createImplementationBufferImpl(con
     if (with_cache)
     {
         return std::make_shared<CachedReadBufferFromRemoteFS>(
-            remote_path, settings.remote_fs_cache, remote_file_reader_creator, settings, read_until_position ? read_until_position : file_size);
+            remote_path, settings.remote_fs_cache, remote_file_reader_creator, settings, query_id, read_until_position ? read_until_position : file_size);
     }
 
     return remote_file_reader_creator();
@@ -103,13 +103,16 @@ ReadBufferFromRemoteFSGather::ReadBufferFromRemoteFSGather(
     , common_path_prefix(common_path_prefix_)
     , blobs_to_read(blobs_to_read_)
     , settings(settings_)
-    , log(&Poco::Logger::get("ReadBufferFromRemoteFSGather"))
     , query_id(CurrentThread::getQueryId())
+    , log(&Poco::Logger::get("ReadBufferFromRemoteFSGather"))
     , enable_cache_log(!query_id.empty() && settings.enable_filesystem_cache_log)
 {
     with_cache = settings.remote_fs_cache
         && settings.enable_filesystem_cache
         && (!IFileCache::isReadOnly() || settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache);
+
+    assert(query_id.empty()
+           || CurrentThread::isInitialized() && CurrentThread::get().getQueryContext() != nullptr);
 }
 
 
