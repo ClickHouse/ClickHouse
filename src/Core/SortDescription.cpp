@@ -3,7 +3,7 @@
 #include <IO/Operators.h>
 #include <Common/JSONBuilder.h>
 #include <Common/SipHash.h>
-
+#include <DataTypes/Native.h>
 #include <Interpreters/JIT/compileFunction.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
 
@@ -91,7 +91,7 @@ void compileSortDescriptionIfNeeded(SortDescription & description, const DataTyp
 
     for (const auto & type : sort_description_types)
     {
-        if (!type->createColumn()->isComparatorCompilable())
+        if (!type->createColumn()->isComparatorCompilable() || !canBeNativeType(*type))
             return;
     }
 
