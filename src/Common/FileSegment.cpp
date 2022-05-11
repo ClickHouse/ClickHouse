@@ -18,7 +18,6 @@ namespace ErrorCodes
 {
     extern const int REMOTE_FS_OBJECT_CACHE_ERROR;
     extern const int LOGICAL_ERROR;
-    extern const int CACHE_FILE_SEGMENT_IS_DETACHED;
 }
 
 FileSegment::FileSegment(
@@ -83,12 +82,6 @@ size_t FileSegment::getDownloadedSize() const
 {
     std::lock_guard segment_lock(mutex);
     return getDownloadedSize(segment_lock);
-}
-
-size_t FileSegment::getAvailableSize() const
-{
-    std::lock_guard segment_lock(mutex);
-    return range().size() - downloaded_size;
 }
 
 size_t FileSegment::getDownloadedSize(std::lock_guard<std::mutex> & /* segment_lock */) const
@@ -389,7 +382,12 @@ bool FileSegment::reserve(size_t size)
         auto caller_id = getCallerId();
         bool is_downloader = caller_id == downloader_id;
         if (!is_downloader)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Space can be reserved only by downloader (current: {}, expected: {})", caller_id, downloader_id);
+        {
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Space can be reserved only by downloader (current: {}, expected: {})",
+                caller_id, downloader_id);
+        }
 
         if (downloaded_size + size > range().size())
             throw Exception(ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR,
@@ -672,13 +670,13 @@ void FileSegment::assertCorrectnessImpl(std::lock_guard<std::mutex> & /* segment
     assert(download_state != FileSegment::State::DOWNLOADED || std::filesystem::file_size(cache->getPathInLocalCache(key(), offset())) > 0);
 }
 
-void FileSegment::throwDetached() const
+void FileSegment::throwIfDetached() const
 {
     std::lock_guard segment_lock(mutex);
-    throwDetachedUnlocked(segment_lock);
+    throwIfDetachedUnlocked(segment_lock);
 }
 
-void FileSegment::throwDetachedUnlocked(std::lock_guard<std::mutex> & segment_lock) const
+void FileSegment::throwIfDetachedUnlocked(std::lock_guard<std::mutex> & segment_lock) const
 {
     throw Exception(
         ErrorCodes::LOGICAL_ERROR,
@@ -691,11 +689,14 @@ void FileSegment::throwDetachedUnlocked(std::lock_guard<std::mutex> & segment_lo
 void FileSegment::assertNotDetached(std::lock_guard<std::mutex> & segment_lock) const
 {
     if (is_detached)
-        throwDetachedUnlocked(segment_lock);
+        throwIfDetachedUnlocked(segment_lock);
 }
 
 void FileSegment::assertDetachedStatus(std::lock_guard<std::mutex> & segment_lock) const
 {
+    /// Detached file segment is allowed to have only a certain subset of states.
+    /// It should be either EMPTY or one of the finalized states.
+
     if (download_state != State::EMPTY && !hasFinalizedState())
     {
         throw Exception(
