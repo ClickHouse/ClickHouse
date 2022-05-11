@@ -26,17 +26,17 @@ void logAboutProgress(Poco::Logger * log, size_t processed, size_t total, Atomic
 
 using DDLTaskPtr = std::unique_ptr<DDLTaskBase>;
 using TableNames = std::vector<QualifiedTableName>;
-using Queries = std::list<DDLTaskPtr>;
 using TableNamesSet = std::unordered_set<QualifiedTableName>;
-using EntryNamesSet = std::unordered_set<String>;
-using EntryNameToDDLTaskPtrMap = std::unordered_map<String, DDLTaskBase&>;
+using QueryNames = std::vector<String>;
+using QueryNamesSet = std::unordered_set<String>;
+using QueryNameToDDLTaskPtrMap = std::unordered_map<String, DDLTaskBase&>;
 
 struct QueriesDependenciesInfo
 {
     /// Set of dependencies
-    EntryNamesSet dependencies;
+    QueryNamesSet dependencies;
     /// Set of tables/dictionaries which depend on this table/dictionary
-    EntryNamesSet dependent_queries;
+    QueryNamesSet dependent_queries;
 };
 
 using QueriesDependenciesInfos = std::unordered_map<String, QueriesDependenciesInfo>; /// entry_name -> Dependencies_queries
@@ -54,7 +54,6 @@ struct TasksDependencies
 
     /// List of tables/dictionaries that do not have any dependencies and can be loaded
     Queries independent_queries;
-    EntryNameToDDLTaskPtrMap name_to_ddl_task;
     /// Adjacent list of dependency graph, contains two maps
     /// 2. query name -> dependent queries list (adjacency list of dependencies graph).
     /// 1. query name -> dependencies of queries (adjacency list of inverted dependencies graph)
@@ -69,7 +68,7 @@ class DependenciesGraph
 {
 public:
 
-    TasksDependencies tasks_dependencies;
+    QueryNameToDDLTaskPtrMap name_to_ddl_task;
 
     DependenciesGraph(ContextMutablePtr global_context_);
     DependenciesGraph() = delete;
@@ -80,11 +79,12 @@ public:
 
     void removeProcessedTasks();
 
-    Queries getTasksToParallelProcess();
+    QueryNames getTasksToParallelProcess();
 
 private:
     ContextMutablePtr global_context;
 
+    TasksDependencies tasks_dependencies;
     Poco::Logger * log;
     size_t tasks_processed{0};
     AtomicStopwatch stopwatch;

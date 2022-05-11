@@ -389,8 +389,9 @@ void DDLWorker::scheduleTasks(bool reinitialized)
 
     auto tasks_to_process = dependencies_graph.getTasksToParallelProcess();
 
-    for (auto & task : tasks_to_process)
+    for (auto & task_name : tasks_to_process)
     {
+        const auto & task = dependencies_graph.name_to_ddl_task[task_name];
         auto & saved_task = saveTask(std::move(task));
 
         if (worker_pool)
