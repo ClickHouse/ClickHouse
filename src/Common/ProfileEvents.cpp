@@ -277,14 +277,14 @@
     M(RemoteFSSeeksWithReset, "Number of seeks which lead to a new connection") \
     M(RemoteFSBuffers, "Number of buffers created for asynchronous reading from remote filesystem") \
     \
-    M(ThreadpoolReaderTaskMicroseconds, "") \
-    M(ThreadpoolReaderReadBytes, "") \
+    M(ThreadpoolReaderTaskMicroseconds, "Time spent getting the data in asynchronous reading") \
+    M(ThreadpoolReaderReadBytes, "Bytes read from a threadpool task in asynchronous reading") \
     \
-    M(FileSegmentWaitReadBufferMicroseconds, "") \
-    M(FileSegmentReadMicroseconds, "") \
-    M(FileSegmentCacheWriteMicroseconds, "") \
-    M(FileSegmentPredownloadMicroseconds, "") \
-    M(FileSegmentUsedBytes, "") \
+    M(FileSegmentWaitReadBufferMicroseconds, "Metric per file segment. Time spend waiting for internal read buffer (includes cache waiting)") \
+    M(FileSegmentReadMicroseconds, "Metric per file segment. Time spend reading from file") \
+    M(FileSegmentCacheWriteMicroseconds, "Metric per file segment. Time spend writing data to cache") \
+    M(FileSegmentPredownloadMicroseconds, "Metric per file segment. Time spent predownloading data to cache (predownloading - finishing file segment download (after someone who failed to do that) up to the point current thread was requested to do)") \
+    M(FileSegmentUsedBytes, "Metric per file segment. How many bytes were actually used from current file segment") \
     \
     M(ReadBufferSeekCancelConnection, "Number of seeks which lead to new connection (s3, http)") \
     \
