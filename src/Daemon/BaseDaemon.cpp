@@ -1021,7 +1021,8 @@ void BaseDaemon::setupWatchdog()
         /// Forward signals to the child process.
         addSignalHandler(
             {SIGHUP, SIGINT, SIGQUIT, SIGTERM},
-            [](int sig, siginfo_t *, void *) {
+            [](int sig, siginfo_t *, void *) 
+            {
                 /// Forward all signals except INT as it can be send by terminal to the process group when user press Ctrl+C,
                 /// and we process double delivery of this signal as immediate termination.
                 if (sig == SIGINT)
