@@ -53,7 +53,7 @@ struct TasksDependencies
     size_t total_dictionaries = 0;
 
     /// List of tables/dictionaries that do not have any dependencies and can be loaded
-    Queries independent_queries;
+    QueryNames independent_queries;
     /// Adjacent list of dependency graph, contains two maps
     /// 2. query name -> dependent queries list (adjacency list of dependencies graph).
     /// 1. query name -> dependencies of queries (adjacency list of inverted dependencies graph)
