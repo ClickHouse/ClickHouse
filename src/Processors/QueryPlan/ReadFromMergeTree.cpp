@@ -704,7 +704,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
                         0 /* min_marks_for_concurrent_read */,
                         info.use_uncompressed_cache);
                 };
-                pipes = buildPipesForReading(
+                pipes = buildPipesForReadingByPKRanges(
                     metadata_for_reading->getPrimaryKey(), std::move(new_parts), num_streams, context, std::move(reading_step_getter));
             }
             else

@@ -117,7 +117,7 @@ std::pair<std::vector<Value>, std::vector<RangesInDataParts>> split(RangesInData
         size_t rows_in_current_layer = 0;
         size_t marks_in_current_layer = 0;
 
-        // Intersection between the current and next layers is just the last observed marks of each still open part range. ratio is empirical.
+        // Intersection between the current and next layers is just the last observed marks of each still open part range. Ratio is empirical.
         auto layers_intersection_is_too_big = [&]()
         {
             const auto intersected_parts = current_part_range_end.size();
@@ -233,7 +233,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-Pipes buildPipesForReading(
+Pipes buildPipesForReadingByPKRanges(
     const KeyDescription & primary_key,
     RangesInDataParts parts,
     size_t max_layers,
