@@ -239,21 +239,22 @@ void CrossToInnerJoinMatcher::visit(ASTSelectQuery & select, ASTPtr &, Data & da
             if (joined.tableJoin()->kind != ASTTableJoin::Kind::Cross)
                 continue;
 
+            String query_before = queryToString(*joined.tableJoin());
+            bool rewritten = false;
             const auto & expr_it = asts_to_join_on.find(i);
             if (expr_it != asts_to_join_on.end())
             {
-                String query_before = queryToString(*joined.tableJoin());
                 ASTPtr on_expr = makeOnExpression(expr_it->second);
-                if (joined.rewriteCrossToInner(on_expr))
+                if (rewritten = joined.rewriteCrossToInner(on_expr); rewritten)
                 {
-                    data.done = true;
                     LOG_DEBUG(&Poco::Logger::get("CrossToInnerJoin"), "Rewritten '{}' to '{}'", query_before, queryToString(*joined.tableJoin()));
                 }
-                else if (data.cross_to_inner_join_rewrite > 1)
-                {
-                    throw Exception(ErrorCodes::INCORRECT_QUERY, "Failed to rewrite '{} WHERE {}' to INNER JOIN",
-                                    query_before, queryToString(select.where()));
-                }
+            }
+
+            if (data.cross_to_inner_join_rewrite > 1 && !rewritten)
+            {
+                throw Exception(ErrorCodes::INCORRECT_QUERY, "Failed to rewrite '{} WHERE {}' to INNER JOIN",
+                                query_before, queryToString(select.where()));
             }
         }
     }
