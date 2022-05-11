@@ -1,0 +1,7 @@
+disable AUTO_INCREMENT compatibility mode
+create table with AUTO_INCREMENT, compatibility disabled
+enable AUTO_INCREMENT compatibility mode
+create table with AUTO_INCREMENT
+create table with AUTO_INCREMENT, without column type
+create table with several AUTO_INCREMENT
+disable AUTO_INCREMENT compatibility mode
