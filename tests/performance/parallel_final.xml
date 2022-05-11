@@ -45,8 +45,8 @@
     <fill_query>insert into collapsing_final_1024p_ord select number, 1, number from numbers_mt(16777216) </fill_query>
     <fill_query>insert into collapsing_final_1024p_rnd select number, 1, number from numbers_mt(16777216) </fill_query>
 
-      <!-- 1 big part of 10^7 rows -->
-    <fill_query>insert into collapsing_final_1p_ord select number, number + 1, 1, number from numbers_mt(1e7)</fill_query>
+    <!-- 1 big part of 5e7 rows -->
+    <fill_query>insert into collapsing_final_1p_ord select number, number + 1, 1, number from numbers_mt(5e7)</fill_query>
 
     <fill_query>optimize table {collapsing} final</fill_query>
 
