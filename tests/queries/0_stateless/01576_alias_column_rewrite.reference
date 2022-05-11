@@ -33,7 +33,7 @@ Expression (Projection)
       Expression (Before ORDER BY)
         SettingQuotaAndLimits (Set limits and quota after reading from storage)
           ReadFromMergeTree (default.test_table)
-Expression (Projection)
+Expression ((Projection + Before ORDER BY [lifted up part]))
   Limit (preliminary LIMIT (without OFFSET))
     Sorting
       Expression (Before ORDER BY)
