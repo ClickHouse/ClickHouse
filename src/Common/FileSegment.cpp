@@ -348,8 +348,7 @@ FileSegment::State FileSegment::wait()
     if (is_detached)
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
-            "Cache file segment is in detached state, operation not allowed. "
-            "It can happen when cache was concurrently dropped with SYSTEM DROP FILESYSTEM CACHE FORCE");
+            "Cache file segment is in detached state, operation not allowed");
 
     if (downloader_id.empty())
         return download_state;
@@ -734,6 +733,11 @@ void FileSegment::detach(
     std::lock_guard<std::mutex> & /* cache_lock */,
     std::lock_guard<std::mutex> & segment_lock)
 {
+    /// Now detached status can be in 2 cases, which do not do any complex logic:
+    /// 1. there is only 1 remaining file segment holder
+    ///    && it does not need this segment anymore 
+    ///    && this file segment was in cache and needs to be removed
+    /// 2. in read_from_cache_if_exists_otherwise_bypass_cache case
     if (is_detached)
         return;
 
