@@ -305,9 +305,10 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
                     settings.min_free_disk_space_for_temporary_data,
                     settings.compile_expressions,
                     settings.min_count_to_compile_aggregate_expression,
+                    false,
                     header_before_aggregation); // The source header is also an intermediate header
 
-                transform_params = std::make_shared<AggregatingTransformParams>(
+                auto transform_params_mut = std::make_shared<AggregatingTransformParams>(
                     std::move(params), aggregator_list_ptr, query_info.projection->aggregate_final);
 
                 /// This part is hacky.
@@ -317,7 +318,8 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
                 /// It is needed because data in projection:
                 /// * is not merged completely (we may have states with the same key in different parts)
                 /// * is not split into buckets (so if we just use MergingAggregated, it will use single thread)
-                transform_params->only_merge = true;
+                transform_params_mut->only_merge = true;
+                transform_params = std::move(transform_params_mut);
             }
             else
             {
@@ -336,7 +338,8 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
                     settings.max_threads,
                     settings.min_free_disk_space_for_temporary_data,
                     settings.compile_aggregate_expressions,
-                    settings.min_count_to_compile_aggregate_expression);
+                    settings.min_count_to_compile_aggregate_expression,
+                    false);
 
                 transform_params = std::make_shared<AggregatingTransformParams>(
                     std::move(params), aggregator_list_ptr, query_info.projection->aggregate_final);

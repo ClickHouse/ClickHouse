@@ -13,7 +13,7 @@ namespace DB
 class QueryPipelineProcessorsCollector;
 
 struct AggregatingTransformParams;
-using AggregatingTransformParamsPtr = std::shared_ptr<AggregatingTransformParams>;
+using AggregatingTransformParamsPtr = std::shared_ptr<const AggregatingTransformParams>;
 
 class QueryPlan;
 

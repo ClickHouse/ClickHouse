@@ -87,6 +87,9 @@ private:
 
     std::optional<size_t> version;
 
+    /// Do not call destroy in destructor if disabled.
+    bool destroy_states = true;
+
     ColumnAggregateFunction() = default;
 
     /// Create a new column that has another column as a source.
@@ -248,5 +251,7 @@ public:
     bool structureEquals(const IColumn &) const override;
 
     MutableColumnPtr cloneResized(size_t size) const override;
+
+    void disableStateDestruction();
 };
 }

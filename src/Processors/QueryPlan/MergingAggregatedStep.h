@@ -6,7 +6,7 @@ namespace DB
 {
 
 struct AggregatingTransformParams;
-using AggregatingTransformParamsPtr = std::shared_ptr<AggregatingTransformParams>;
+using AggregatingTransformParamsPtr = std::shared_ptr<const AggregatingTransformParams>;
 
 /// This step finishes aggregation. See AggregatingSortedTransform.
 class MergingAggregatedStep : public ITransformingStep

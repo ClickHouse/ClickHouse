@@ -10,7 +10,7 @@ namespace DB
 {
 
 struct AggregatingTransformParams;
-using AggregatingTransformParamsPtr = std::shared_ptr<AggregatingTransformParams>;
+using AggregatingTransformParamsPtr = std::shared_ptr<const AggregatingTransformParams>;
 
 /**
  * The second step of aggregation in order of sorting key.

@@ -931,6 +931,9 @@ public:
         bool compile_aggregate_expressions;
         size_t min_count_to_compile_aggregate_expression;
 
+        /// Do not drop aggregator state after read, allowing more than one read of aggregation result.
+        const bool keep_state_after_read;
+
         struct StatsCollectingParams
         {
             StatsCollectingParams();
@@ -948,6 +951,7 @@ public:
             const size_t max_entries_for_hash_table_stats = 0;
             const size_t max_size_to_preallocate_for_aggregation = 0;
         };
+
         StatsCollectingParams stats_collecting_params;
 
         Params(
@@ -966,6 +970,7 @@ public:
             size_t min_free_disk_space_,
             bool compile_aggregate_expressions_,
             size_t min_count_to_compile_aggregate_expression_,
+            bool keep_state_after_read_,
             const Block & intermediate_header_ = {},
             const StatsCollectingParams & stats_collecting_params_ = {})
             : src_header(src_header_)
@@ -986,6 +991,7 @@ public:
             , min_free_disk_space(min_free_disk_space_)
             , compile_aggregate_expressions(compile_aggregate_expressions_)
             , min_count_to_compile_aggregate_expression(min_count_to_compile_aggregate_expression_)
+            , keep_state_after_read(keep_state_after_read_)
             , stats_collecting_params(stats_collecting_params_)
         {
         }
@@ -993,7 +999,7 @@ public:
         /// Only parameters that matter during merge.
         Params(const Block & intermediate_header_,
             const ColumnNumbers & keys_, const AggregateDescriptions & aggregates_, bool overflow_row_, size_t max_threads_)
-            : Params(Block(), keys_, aggregates_, overflow_row_, 0, OverflowMode::THROW, 0, 0, 0, false, nullptr, max_threads_, 0, false, 0)
+            : Params(Block(), keys_, aggregates_, overflow_row_, 0, OverflowMode::THROW, 0, 0, 0, false, nullptr, max_threads_, 0, false, 0, false)
         {
             intermediate_header = intermediate_header_;
         }
@@ -1096,6 +1102,7 @@ private:
     friend class ConvertingAggregatedToChunksTransform;
     friend class ConvertingAggregatedToChunksSource;
     friend class AggregatingInOrderTransform;
+    friend class StorageAggregatingMemory;
 
     Params params;
 
@@ -1330,6 +1337,27 @@ private:
         Method & method,
         bool final,
         ThreadPool * thread_pool) const;
+
+    template <typename Method, typename Table>
+    void convertToBlockImplByFilterKeys(
+        Method &,
+        Table & data,
+        MutableColumns & mutable_keys,
+        MutableColumns & final_aggregate_columns,
+        Arena * arena,
+        const ColumnRawPtrs & filter_keys) const;
+
+    template <typename Method>
+    Block convertOneBucketToBlockByFilterKeys(
+        AggregatedDataVariants & data_variants,
+        Method & method,
+        Arena * arena,
+        size_t bucket,
+        const ColumnRawPtrs & filter_keys) const;
+
+    Block readBlockByFilterKeys(
+        ManyAggregatedDataVariantsPtr data,
+        const ColumnRawPtrs & filter_keys) const;
 
     template <bool no_more_keys, typename Method, typename Table>
     void mergeStreamsImplCase(
