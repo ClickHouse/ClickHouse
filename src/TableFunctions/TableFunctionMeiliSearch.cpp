@@ -1,24 +1,23 @@
 #include <memory>
-#include <TableFunctions/TableFunctionMeiliSearch.h>
-#include <TableFunctions/TableFunctionFactory.h>
-#include <Storages/MeiliSearch/StorageMeiliSearch.h>
-#include <Storages/MeiliSearch/MeiliSearchColumnDescriptionFetcher.h>
-#include <Common/Exception.h>
 #include <Parsers/ASTFunction.h>
+#include <Storages/MeiliSearch/MeiliSearchColumnDescriptionFetcher.h>
+#include <Storages/MeiliSearch/StorageMeiliSearch.h>
+#include <TableFunctions/TableFunctionFactory.h>
+#include <TableFunctions/TableFunctionMeiliSearch.h>
+#include <Common/Exception.h>
 
 namespace DB
 {
-
-StoragePtr TableFunctionMeiliSearch::executeImpl(const ASTPtr & /* ast_function */,
-        ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/) const
+StoragePtr TableFunctionMeiliSearch::executeImpl(
+    const ASTPtr & /* ast_function */, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/) const
 {
     auto columns = getActualTableStructure(context);
 
-    return StorageMeiliSearch::create(
+    return std::make_shared<StorageMeiliSearch>(
         StorageID(getDatabaseName(), table_name), 
         configuration.value(), 
         columns, 
-        ConstraintsDescription{},
+        ConstraintsDescription{}, 
         String{});
 }
 

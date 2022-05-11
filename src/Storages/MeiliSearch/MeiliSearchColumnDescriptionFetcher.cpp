@@ -14,7 +14,6 @@ namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int UNSUPPORTED_MEILISEARCH_TYPE;
     extern const int CANNOT_READ_ALL_DATA;
     extern const int MEILISEARCH_EXCEPTION;
 }

@@ -1,3 +1,5 @@
+#pragma once
+
 #include <unordered_map>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/MeiliSearch/MeiliSearchConnection.h>

@@ -42,7 +42,7 @@ void MeiliSearchConnection::execQuery(const String & url, std::string_view post_
     Poco::Net::HTTPResponse res;
     std::istream & is = session.receiveResponse(res);
 
-    // need to separate MeiliSearch response from other situations 
+    // need to separate MeiliSearch response from other situations
     // in order to handle it properly
     if (res.getStatus() / 100 == 2 || res.getStatus() / 100 == 4)
         response_buffer = String(std::istreambuf_iterator<char>(is), {});
