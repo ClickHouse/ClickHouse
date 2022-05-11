@@ -8,11 +8,10 @@
 namespace DB
 {
 
-/** Could be used when the predicate given by expression_ is true only on one continuous range of values and input is monotonous by that value.
- *  The following optimization applies: when a new chunk of data comes in we firstly execute the expression_ only on the first and the last row.
- *  If it evaluates to true on both rows then the whole chunk is immediately passed to further steps.
- *  Otherwise, we apply the expression_ to all rows.
- */
+/// Could be used when the predicate given by expression_ is true only on one continuous range of values and input is monotonous by that value.
+/// The following optimization applies: when a new chunk of data comes in we firstly execute the expression_ only on the first and the last row.
+/// If it evaluates to true on both rows then the whole chunk is immediately passed to further steps.
+/// Otherwise, we apply the expression_ to all rows.
 class FilterSortedStreamByRange : public ISimpleTransform
 {
 public:

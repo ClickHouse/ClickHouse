@@ -691,13 +691,6 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
             if (new_parts.empty())
                 continue;
 
-            for (const auto & part : new_parts)
-            {
-                LOG_DEBUG(&Poco::Logger::get("PartsSplitter"), "Original part, part_idx={}, ranges:", part.part_index_in_query);
-                for (const auto & range : part.ranges)
-                    LOG_DEBUG(&Poco::Logger::get("PartsSplitter"), "begin={}, end={}", range.begin, range.end);
-            }
-
             if (num_streams > 1 && metadata_for_reading->hasPrimaryKey())
             {
                 // Let's split parts into layers to ensure data parallelism of final.

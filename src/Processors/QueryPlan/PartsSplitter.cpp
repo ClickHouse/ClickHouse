@@ -26,6 +26,7 @@ std::string toString(const Value & value)
     return fmt::format("({})", fmt::join(value, ", "));
 }
 
+/// Adaptor to access PK values from index.
 class IndexAccess
 {
 public:
@@ -54,32 +55,34 @@ private:
     const RangesInDataParts & parts;
 };
 
-struct RangeInDataPart : MarkRange
-{
-    size_t part_idx;
-};
 
-struct PartsRangesIterator
-{
-    enum class EventType
-    {
-        RangeBeginning,
-        RangeEnding,
-    };
-
-    bool operator<(const PartsRangesIterator & other) const { return std::tie(value, event) > std::tie(other.value, other.event); }
-
-    Value value;
-    RangeInDataPart range;
-    EventType event;
-};
-
-
+/// Splits parts into layers, each layer will contain parts subranges with PK values from its own range.
+/// Will try to produce exactly max_layer layers but may return less if data is distributed in not a very parallelizable way.
 std::pair<std::vector<Value>, std::vector<RangesInDataParts>> split(RangesInDataParts parts, size_t max_layers)
 {
-    // We will advance the iterator pointing to the mark with the smallest value until there will be not less than rows_per_layer rows in the current layer (roughly speaking).
+    // We will advance the iterator pointing to the mark with the smallest PK value until there will be not less than rows_per_layer rows in the current layer (roughly speaking).
     // Then we choose the last observed value as the new border, so the current layer will consists of granules with values greater than the previous mark and less or equal
     // than the new border.
+
+    struct PartsRangesIterator
+    {
+        struct RangeInDataPart : MarkRange
+        {
+            size_t part_idx;
+        };
+
+        enum class EventType
+        {
+            RangeBeginning,
+            RangeEnding,
+        };
+
+        bool operator<(const PartsRangesIterator & other) const { return std::tie(value, event) > std::tie(other.value, other.event); }
+
+        Value value;
+        RangeInDataPart range;
+        EventType event;
+    };
 
     const auto index_access = std::make_unique<IndexAccess>(parts);
     std::priority_queue<PartsRangesIterator> parts_ranges_queue;
@@ -96,12 +99,12 @@ std::pair<std::vector<Value>, std::vector<RangesInDataParts>> split(RangesInData
         }
     }
 
-    /// the beginning of currently started (but not yet finished) range of marks of a part in the current layer
+    /// The beginning of currently started (but not yet finished) range of marks of a part in the current layer.
     std::unordered_map<size_t, size_t> current_part_range_begin;
-    /// the current ending of a range of marks of a part in the current layer
+    /// The current ending of a range of marks of a part in the current layer.
     std::unordered_map<size_t, size_t> current_part_range_end;
 
-    /// determine borders between layers
+    /// Determine borders between layers.
     std::vector<Value> borders;
     std::vector<RangesInDataParts> result_layers;
 
@@ -109,11 +112,12 @@ std::pair<std::vector<Value>, std::vector<RangesInDataParts>> split(RangesInData
 
     while (!parts_ranges_queue.empty())
     {
-        // new layer should include last granules of still open ranges from the previous layer, because they may already contain values greater than the last border
+        // New layer should include last granules of still open ranges from the previous layer,
+        // because they may already contain values greater than the last border.
         size_t rows_in_current_layer = 0;
         size_t marks_in_current_layer = 0;
 
-        // intersection between the current and next layers is just the last observed marks of each still open part range. ratio is empirical
+        // Intersection between the current and next layers is just the last observed marks of each still open part range. ratio is empirical.
         auto layers_intersection_is_too_big = [&]()
         {
             const auto intersected_parts = current_part_range_end.size();
@@ -124,7 +128,7 @@ std::pair<std::vector<Value>, std::vector<RangesInDataParts>> split(RangesInData
 
         while (rows_in_current_layer < rows_per_layer || layers_intersection_is_too_big() || result_layers.size() == max_layers)
         {
-            // we're advancing iterators until a new value showed up
+            // We're advancing iterators until a new value showed up.
             Value last_value;
             while (!parts_ranges_queue.empty() && (last_value.empty() || last_value == parts_ranges_queue.top().value))
             {
@@ -177,53 +181,35 @@ std::pair<std::vector<Value>, std::vector<RangesInDataParts>> split(RangesInData
             [](const auto & lhs, const auto & rhs) { return lhs.part_index_in_query < rhs.part_index_in_query; });
     }
 
-    LOG_DEBUG(&Poco::Logger::get("PartsSplitter"), "Collected {} borders:", borders.size());
-    for (const auto & border : borders)
-        LOG_DEBUG(&Poco::Logger::get("PartsSplitter"), "{}", ::toString(border));
-
-    for (size_t layer = 0; layer < result_layers.size(); ++layer)
-    {
-        LOG_DEBUG(&Poco::Logger::get("PartsSplitter"), "Layer {}, ranges:", layer);
-        for (const auto & range : result_layers[layer])
-        {
-            LOG_DEBUG(&Poco::Logger::get("PartsSplitter"), "part_idx={}", range.part_index_in_query);
-            for (const auto & mark_range : range.ranges)
-                LOG_DEBUG(&Poco::Logger::get("PartsSplitter"), "begin={}, end={}", mark_range.begin, mark_range.end);
-        }
-    }
     return std::make_pair(std::move(borders), std::move(result_layers));
 }
 
 
-/// Will return borders.size()+1 filters in total, i-th filter will accept values from the range [borders[i-1], borders[i]).
+/// Will return borders.size()+1 filters in total, i-th filter will accept rows with PK values within the range [borders[i-1], borders[i]).
 std::vector<ASTPtr> buildFilters(const KeyDescription & primary_key, const std::vector<Value> & borders)
 {
     auto add_and_condition = [&](ASTPtr & result, const ASTPtr & foo) { result = !result ? foo : makeASTFunction("and", result, foo); };
-    auto add_or_condition = [&](ASTPtr & result, const ASTPtr & foo) { result = !result ? foo : makeASTFunction("or", result, foo); };
 
-    const auto & types = primary_key.data_types;
+    /// Produces ASTPtr to predicate (pk_col0, pk_col1, ... , pk_colN) > (value[0], value[1], ... , value[N])
     auto lexicographically_greater = [&](const Value & value)
     {
-        ASTPtr result;
-        ASTPtr prefix_of_equal;
+        // PK may contain functions of the table columns, so we need the actual PK AST with all expressions it contains.
+        ASTPtr pk_columns_as_tuple = makeASTFunction("tuple", primary_key.expression_list_ast->children);
+
+        ASTPtr value_ast = std::make_shared<ASTExpressionList>();
         for (size_t i = 0; i < value.size(); ++i)
         {
-            auto primary_key_column_ast = primary_key.expression_list_ast->children.at(i);
-            ASTPtr value_ast = std::make_shared<ASTLiteral>(value[i]);
+            const auto & types = primary_key.data_types;
+            ASTPtr component_ast = std::make_shared<ASTLiteral>(value[i]);
+            // Values of some types (e.g. Date, DateTime) are stored in columns as numbers and we get them as just numbers from the index.
+            // So we need an explicit Cast for them.
             if (isColumnedAsNumber(types.at(i)->getTypeId()) && !isNumber(types.at(i)->getTypeId()))
-                value_ast = makeASTFunction("cast", std::move(value_ast), std::make_shared<ASTLiteral>(types.at(i)->getName()));
-
-            ASTPtr current = makeASTFunction("greater", primary_key_column_ast, value_ast); // pk_col[i] < value[i]
-            if (prefix_of_equal)
-                add_and_condition(
-                    current, prefix_of_equal); // pk_col[i] < value[i] && pk_col[i-1] == value[i-1] && ... && pk_col[0] == value[0]
-            add_or_condition(
-                result,
-                current); // (pk_col[i] < value[i] && pk_col[i-1] == value[i-1] && ... ) || same for pk_col[i-1] || ... || same for pk_col[0]
-
-            add_and_condition(prefix_of_equal, makeASTFunction("equals", primary_key_column_ast, value_ast));
+                component_ast = makeASTFunction("cast", std::move(component_ast), std::make_shared<ASTLiteral>(types.at(i)->getName()));
+            value_ast->children.push_back(std::move(component_ast));
         }
-        return result;
+        ASTPtr value_as_tuple = makeASTFunction("tuple", value_ast->children);
+
+        return makeASTFunction("greater", pk_columns_as_tuple, value_as_tuple);
     };
 
     std::vector<ASTPtr> filters(borders.size() + 1);
@@ -247,6 +233,9 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+/// Splits parts into layers, each layer will contain parts subranges with PK values from its own range.
+/// A separate pipe will be constructed for each layer with a reading step (provided by the reading_step_getter) and a filter for this layer's range of PK values.
+/// Will try to produce exactly max_layer pipes but may return less if data is distributed in not a very parallelizable way.
 Pipes buildPipesForReading(
     const KeyDescription & primary_key,
     RangesInDataParts parts,
