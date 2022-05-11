@@ -701,7 +701,7 @@ void FileSegment::assertDetachedStatus(std::lock_guard<std::mutex> & segment_loc
     {
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
-            "Detached file segment has incorrent state: {}",
+            "Detached file segment has incorrect state: {}",
             getInfoForLogImpl(segment_lock));
     }
 }
