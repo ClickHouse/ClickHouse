@@ -299,7 +299,7 @@ namespace
         }
 
         /// This is old format, that does not have header for the block in the file header,
-        /// applying ConvertingBlockInputStream in this case is not a big overhead.
+        /// applying ConvertingTransform in this case is not a big overhead.
         ///
         /// Anyway we can get header only from the first block, which contain all rows anyway.
         if (!distributed_header.block_header)
