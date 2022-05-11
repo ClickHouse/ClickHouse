@@ -9,6 +9,8 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/typeid_cast.h>
 #include <Common/filesystemHelpers.h>
+#include <Common/FileCacheFactory.h>
+#include <Common/FileCache.h>
 #include <Server/ProtocolServerAdapter.h>
 #include <Storages/MarkCache.h>
 #include <Storages/StorageMergeTree.h>
@@ -606,6 +608,15 @@ void AsynchronousMetrics::update(std::chrono::system_clock::time_point update_ti
         if (auto mmap_cache = getContext()->getMMappedFileCache())
         {
             new_values["MMapCacheCells"] = mmap_cache->count();
+        }
+    }
+
+    {
+        auto caches = FileCacheFactory::instance().getAll();
+        for (const auto & [_, cache_data] : caches)
+        {
+            new_values["FilesystemCacheBytes"] = cache_data.cache->getUsedCacheSize();
+            new_values["FilesystemCacheFiles"] = cache_data.cache->getFileSegmentsNum();
         }
     }
 
