@@ -1790,7 +1790,7 @@ ResponseType getSingleResponse(const auto & responses)
     return dynamic_cast<ResponseType &>(*responses[0].response);
 }
 
-TEST_P(CoordinationTest, TestUncommittedStateBasicCRUD)
+TEST_P(CoordinationTest, TestUncommittedStateBasicCrud)
 {
     using namespace DB;
     using namespace Coordination;
