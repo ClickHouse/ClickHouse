@@ -13,6 +13,7 @@
 #include <Storages/MergeTree/MergeTreeDataPartTTLInfo.h>
 #include <Storages/MergeTree/MergeTreeIOSettings.h>
 #include <Storages/MergeTree/KeyCondition.h>
+#include <Interpreters/TransactionVersionMetadata.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
 #include <Storages/MergeTree/IPartMetadataManager.h>
 
@@ -40,6 +41,7 @@ class IMergeTreeReader;
 class IMergeTreeDataPartWriter;
 class MarkCache;
 class UncompressedCache;
+class MergeTreeTransaction;
 
 /// Description of the data part.
 class IMergeTreeDataPart : public std::enable_shared_from_this<IMergeTreeDataPart>
@@ -102,6 +104,8 @@ public:
     virtual bool isStoredOnDisk() const = 0;
 
     virtual bool isStoredOnRemoteDisk() const = 0;
+
+    virtual bool isStoredOnRemoteDiskWithZeroCopySupport() const = 0;
 
     virtual bool supportsVerticalMerge() const { return false; }
 
@@ -168,7 +172,8 @@ public:
 
     /// Returns the name of a column with minimum compressed size (as returned by getColumnSize()).
     /// If no checksums are present returns the name of the first physically existing column.
-    String getColumnNameWithMinimumCompressedSize(const StorageSnapshotPtr & storage_snapshot) const;
+    String getColumnNameWithMinimumCompressedSize(
+        const StorageSnapshotPtr & storage_snapshot, bool with_subcolumns) const;
 
     bool contains(const IMergeTreeDataPart & other) const { return info.contains(other.info); }
 
@@ -327,6 +332,8 @@ public:
 
     CompressionCodecPtr default_codec;
 
+    mutable VersionMetadata version;
+
     /// For data in RAM ('index')
     UInt64 getIndexSizeInBytes() const;
     UInt64 getIndexSizeInAllocatedBytes() const;
@@ -349,9 +356,6 @@ public:
     /// Makes checks and move part to new directory
     /// Changes only relative_dir_name, you need to update other metadata (name, is_temp) explicitly
     virtual void renameTo(const String & new_relative_path, bool remove_new_dir_if_exists) const;
-
-    /// Cleanup shared locks made with old name after part renaming
-    virtual void cleanupOldName(const String & old_part_name) const;
 
     /// Makes clone of a part in detached/ directory via hard links
     virtual void makeCloneInDetached(const String & prefix, const StorageMetadataPtr & metadata_snapshot) const;
@@ -414,6 +418,8 @@ public:
     /// (number of rows, number of rows with default values, etc).
     static inline constexpr auto SERIALIZATION_FILE_NAME = "serialization.json";
 
+    static inline constexpr auto TXN_VERSION_METADATA_FILE_NAME = "txn_version.txt";
+
     /// One of part files which is used to check how many references (I'd like
     /// to say hardlinks, but it will confuse even more) we have for the part
     /// for zero copy replication. Sadly it's very complex.
@@ -435,11 +441,37 @@ public:
     /// Required for distinguish different copies of the same part on remote FS.
     String getUniqueId() const;
 
+    /// Ensures that creation_tid was correctly set after part creation.
+    void assertHasVersionMetadata(MergeTreeTransaction * txn) const;
+
+    /// [Re]writes file with transactional metadata on disk
+    void storeVersionMetadata() const;
+
+    /// Appends the corresponding CSN to file on disk (without fsync)
+    void appendCSNToVersionMetadata(VersionMetadata::WhichCSN which_csn) const;
+
+    /// Appends removal TID to file on disk (with fsync)
+    void appendRemovalTIDToVersionMetadata(bool clear = false) const;
+
+    /// Loads transactional metadata from disk
+    void loadVersionMetadata() const;
+
+    /// Returns true if part was created or removed by a transaction
+    bool wasInvolvedInTransaction() const;
+
+    /// Moar hardening: this method is supposed to be used for debug assertions
+    bool assertHasValidVersionMetadata() const;
+
+    /// Return hardlink count for part.
+    /// Required for keep data on remote FS when part has shadow copies.
+    UInt32 getNumberOfRefereneces() const;
+
     /// Get checksums of metadata file in part directory
     IMergeTreeDataPart::uint128 getActualChecksumByFile(const String & file_path) const;
 
     /// Check metadata in cache is consistent with actual metadata on disk(if use_metadata_cache is true)
     std::unordered_map<String, uint128> checkMetadata() const;
+
 
 protected:
 
@@ -483,7 +515,17 @@ protected:
 
     String getRelativePathForDetachedPart(const String & prefix) const;
 
-    std::optional<bool> keepSharedDataInDecoupledStorage() const;
+    /// Checks that part can be actually removed from disk.
+    /// In ordinary scenario always returns true, but in case of
+    /// zero-copy replication part can be hold by some other replicas.
+    ///
+    /// If method return false than only metadata of part from
+    /// local storage can be removed, leaving data in remove FS untouched.
+    ///
+    /// If method return true, than files can be actually removed from remote
+    /// storage storage, excluding files in the second returned argument.
+    /// They can be hardlinks to some newer parts.
+    std::pair<bool, NameSet> canRemovePart() const;
 
     void initializePartMetadataManager();
 
@@ -551,6 +593,9 @@ private:
     CompressionCodecPtr detectDefaultCompressionCodec() const;
 
     mutable State state{State::Temporary};
+
+    /// This ugly flag is needed for debug assertions only
+    mutable bool part_is_probably_removed_from_disk = false;
 };
 
 using MergeTreeDataPartState = IMergeTreeDataPart::State;

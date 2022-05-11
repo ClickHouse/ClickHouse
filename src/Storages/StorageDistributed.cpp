@@ -314,6 +314,7 @@ NamesAndTypesList StorageDistributed::getVirtuals() const
         NameAndTypePair("_part_uuid", std::make_shared<DataTypeUUID>()),
         NameAndTypePair("_partition_id", std::make_shared<DataTypeString>()),
         NameAndTypePair("_sample_factor", std::make_shared<DataTypeFloat64>()),
+        NameAndTypePair("_part_offset", std::make_shared<DataTypeUInt64>()),
         NameAndTypePair("_shard_num", std::make_shared<DataTypeUInt32>()), /// deprecated
     };
 }
@@ -617,13 +618,13 @@ static bool requiresObjectColumns(const ColumnsDescription & all_columns, ASTPtr
     return false;
 }
 
-StorageSnapshotPtr StorageDistributed::getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot) const
+StorageSnapshotPtr StorageDistributed::getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const
 {
-    return getStorageSnapshotForQuery(metadata_snapshot, nullptr);
+    return getStorageSnapshotForQuery(metadata_snapshot, nullptr, query_context);
 }
 
 StorageSnapshotPtr StorageDistributed::getStorageSnapshotForQuery(
-    const StorageMetadataPtr & metadata_snapshot, const ASTPtr & query) const
+    const StorageMetadataPtr & metadata_snapshot, const ASTPtr & query, ContextPtr /*query_context*/) const
 {
     /// If query doesn't use columns of type Object, don't deduce
     /// concrete types for them, because it required extra round trip.
@@ -757,7 +758,7 @@ SinkToStoragePtr StorageDistributed::write(const ASTPtr &, const StorageMetadata
     else
         columns_to_send = metadata_snapshot->getSampleBlockNonMaterialized().getNames();
 
-    /// DistributedBlockOutputStream will not own cluster, but will own ConnectionPools of the cluster
+    /// DistributedSink will not own cluster, but will own ConnectionPools of the cluster
     return std::make_shared<DistributedSink>(
         local_context, *this, metadata_snapshot, cluster, insert_sync, timeout,
         StorageID{remote_database, remote_table}, columns_to_send);
@@ -989,7 +990,7 @@ void StorageDistributed::drop()
     // (in shutdown()).
     shutdown();
 
-    // Distributed table w/o sharding_key does not allows INSERTs
+    // Distributed table without sharding_key does not allows INSERTs
     if (relative_data_path.empty())
         return;
 
@@ -1049,14 +1050,14 @@ void StorageDistributed::createDirectoryMonitors(const DiskPtr & disk)
         {
             const auto & tmp_path = dir_path / "tmp";
 
-            /// "tmp" created by DistributedBlockOutputStream
+            /// "tmp" created by DistributedSink
             if (std::filesystem::is_directory(tmp_path) && std::filesystem::is_empty(tmp_path))
                 std::filesystem::remove(tmp_path);
 
             if (std::filesystem::is_empty(dir_path))
             {
                 LOG_DEBUG(log, "Removing {} (used for async INSERT into Distributed)", dir_path.string());
-                /// Will be created by DistributedBlockOutputStream on demand.
+                /// Will be created by DistributedSink on demand.
                 std::filesystem::remove(dir_path);
             }
             else
@@ -1376,7 +1377,7 @@ void StorageDistributed::delayInsertOrThrowIfNeeded() const
     {
         /// Step is 5% of the delay and minimal one second.
         /// NOTE: max_delay_to_insert is in seconds, and step is in ms.
-        const size_t step_ms = std::min<double>(1., double(distributed_settings.max_delay_to_insert) * 1'000 * 0.05);
+        const size_t step_ms = std::min<double>(1., static_cast<double>(distributed_settings.max_delay_to_insert) * 1'000 * 0.05);
         UInt64 delayed_ms = 0;
 
         do {
@@ -1498,7 +1499,7 @@ void registerStorageDistributed(StorageFactory & factory)
         if (!distributed_settings.monitor_max_sleep_time_ms.changed)
             distributed_settings.monitor_max_sleep_time_ms = Poco::Timespan(context->getSettingsRef().distributed_directory_monitor_max_sleep_time_ms);
 
-        return StorageDistributed::create(
+        return std::make_shared<StorageDistributed>(
             args.table_id,
             args.columns,
             args.constraints,

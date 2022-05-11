@@ -107,14 +107,12 @@ yaml.add_representer(collections.OrderedDict, represent_ordereddict)
 
 
 def init_jinja2_filters(env):
-    import amp
     import website
 
     chunk_size = 10240
     env.filters["chunks"] = lambda line: [
         line[i : i + chunk_size] for i in range(0, len(line), chunk_size)
     ]
-    env.filters["html_to_amp"] = amp.html_to_amp
     env.filters["adjust_markdown_html"] = website.adjust_markdown_html
     env.filters["to_rfc882"] = lambda d: datetime.datetime.strptime(
         d, "%Y-%m-%d"

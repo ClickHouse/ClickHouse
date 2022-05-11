@@ -179,7 +179,7 @@ std::pair<ResponsePtr, Undo> TestKeeperCreateRequest::process(TestKeeper::Contai
     CreateResponse response;
     Undo undo;
 
-    if (container.count(path))
+    if (container.contains(path))
     {
         response.error = Error::ZNODEEXISTS;
     }
@@ -514,7 +514,7 @@ void TestKeeper::processingThread()
         {
             RequestInfo info;
 
-            UInt64 max_wait = UInt64(args.operation_timeout_ms);
+            UInt64 max_wait = static_cast<UInt64>(args.operation_timeout_ms);
             if (requests_queue.tryPop(info, max_wait))
             {
                 if (expired)

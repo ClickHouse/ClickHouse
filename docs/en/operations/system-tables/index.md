@@ -1,6 +1,6 @@
 ---
-toc_priority: 52
-toc_title: System Tables
+sidebar_position: 52
+sidebar_label: System Tables
 ---
 
 # System Tables {#system-tables}

@@ -144,7 +144,7 @@ let test_names_query = `
 
 async function loadDataByQuery(query) {
     const response = await fetch(
-        "https://play-ci.clickhouse.com?user=play&add_http_cors_header=1",
+        "https://play.clickhouse.com?user=play&add_http_cors_header=1",
         { method: "POST", body: query }
     )
     if (!response.ok) throw new Error(`Data download failed\nHTTP status ${response.status}`);

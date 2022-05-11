@@ -14,12 +14,13 @@
 #include <Poco/Net/NetException.h>
 #include <Poco/Util/HelpFormatter.h>
 #include <Poco/Environment.h>
-#include <base/scope_guard_safe.h>
+#include <Common/scope_guard_safe.h>
 #include <base/defines.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <base/phdr_cache.h>
-#include <base/ErrorHandlers.h>
+#include <Common/ErrorHandlers.h>
 #include <base/getMemoryAmount.h>
+#include <base/getAvailableMemoryAmount.h>
 #include <base/errnoToString.h>
 #include <base/coverage.h>
 #include <base/getFQDNOrHostName.h>
@@ -45,6 +46,7 @@
 #include <Core/ServerUUID.h>
 #include <IO/HTTPCommon.h>
 #include <IO/ReadHelpers.h>
+#include <IO/ReadBufferFromFile.h>
 #include <IO/IOThreadPool.h>
 #include <IO/UseSSL.h>
 #include <Interpreters/AsynchronousMetrics.h>
@@ -80,6 +82,7 @@
 #include <Common/SensitiveDataMasker.h>
 #include <Common/ThreadFuzzer.h>
 #include <Common/getHashOfLoadedBinary.h>
+#include <Common/filesystemHelpers.h>
 #include <Common/Elf.h>
 #include <Server/MySQLHandlerFactory.h>
 #include <Server/PostgreSQLHandlerFactory.h>
@@ -505,6 +508,105 @@ void checkForUsersNotInMainConfig(
     }
 }
 
+/// Unused in other builds
+#if defined(OS_LINUX)
+static String readString(const String & path)
+{
+    ReadBufferFromFile in(path);
+    String contents;
+    readStringUntilEOF(contents, in);
+    return contents;
+}
+
+static int readNumber(const String & path)
+{
+    ReadBufferFromFile in(path);
+    int result;
+    readText(result, in);
+    return result;
+}
+
+#endif
+
+static void sanityChecks(Server & server)
+{
+    std::string data_path = getCanonicalPath(server.config().getString("path", DBMS_DEFAULT_PATH));
+    std::string logs_path = server.config().getString("logger.log", "");
+
+    if (server.logger().is(Poco::Message::PRIO_TEST))
+        server.context()->addWarningMessage("Server logging level is set to 'test' and performance is degraded. This cannot be used in production.");
+
+#if defined(OS_LINUX)
+    try
+    {
+        if (readString("/sys/devices/system/clocksource/clocksource0/current_clocksource").find("tsc") == std::string::npos)
+            server.context()->addWarningMessage("Linux is not using a fast TSC clock source. Performance can be degraded.");
+    }
+    catch (...)
+    {
+    }
+
+    try
+    {
+        if (readNumber("/proc/sys/vm/overcommit_memory") == 2)
+            server.context()->addWarningMessage("Linux memory overcommit is disabled.");
+    }
+    catch (...)
+    {
+    }
+
+    try
+    {
+        if (readString("/sys/kernel/mm/transparent_hugepage/enabled").find("[always]") != std::string::npos)
+            server.context()->addWarningMessage("Linux transparent hugepages are set to \"always\".");
+    }
+    catch (...)
+    {
+    }
+
+    try
+    {
+        if (readNumber("/proc/sys/kernel/pid_max") < 30000)
+            server.context()->addWarningMessage("Linux max PID is too low.");
+    }
+    catch (...)
+    {
+    }
+
+    try
+    {
+        if (readNumber("/proc/sys/kernel/threads-max") < 30000)
+            server.context()->addWarningMessage("Linux threads max count is too low.");
+    }
+    catch (...)
+    {
+    }
+
+    std::string dev_id = getBlockDeviceId(data_path);
+    if (getBlockDeviceType(dev_id) == BlockDeviceType::ROT && getBlockDeviceReadAheadBytes(dev_id) == 0)
+        server.context()->addWarningMessage("Rotational disk with disabled readahead is in use. Performance can be degraded.");
+#endif
+
+    try
+    {
+        if (getAvailableMemoryAmount() < (2l << 30))
+            server.context()->addWarningMessage("Available memory at server startup is too low (2GiB).");
+
+        if (!enoughSpaceInDirectory(data_path, 1ull << 30))
+            server.context()->addWarningMessage("Available disk space for data at server startup is too low (1GiB): " + String(data_path));
+
+        if (!logs_path.empty())
+        {
+            auto logs_parent = fs::path(logs_path).parent_path();
+            if (!enoughSpaceInDirectory(logs_parent, 1ull << 30))
+                server.context()->addWarningMessage("Available disk space for logs at server startup is too low (1GiB): " + String(logs_parent));
+        }
+    }
+    catch (...)
+    {
+    }
+}
+
 int Server::main(const std::vector<std::string> & /*args*/)
 {
     Poco::Logger * log = &logger();
@@ -538,13 +640,14 @@ int Server::main(const std::vector<std::string> & /*args*/)
     global_context->addWarningMessage("Server was built in debug mode. It will work slowly.");
 #endif
 
-if (ThreadFuzzer::instance().isEffective())
-    global_context->addWarningMessage("ThreadFuzzer is enabled. Application will run slowly and unstable.");
+    if (ThreadFuzzer::instance().isEffective())
+        global_context->addWarningMessage("ThreadFuzzer is enabled. Application will run slowly and unstable.");
 
 #if defined(SANITIZER)
     global_context->addWarningMessage("Server was built with sanitizer. It will work slowly.");
 #endif
 
+    sanityChecks(*this);
 
     // Initialize global thread pool. Do it before we fetch configs from zookeeper
     // nodes (`from_zk`), because ZooKeeper interface uses the pool. We will
@@ -766,6 +869,38 @@ if (ThreadFuzzer::instance().isEffective())
         }
     }
 
+    /// Try to increase limit on number of threads.
+    {
+        rlimit rlim;
+        if (getrlimit(RLIMIT_NPROC, &rlim))
+            throw Poco::Exception("Cannot getrlimit");
+
+        if (rlim.rlim_cur == rlim.rlim_max)
+        {
+            LOG_DEBUG(log, "rlimit on number of threads is {}", rlim.rlim_cur);
+        }
+        else
+        {
+            rlim_t old = rlim.rlim_cur;
+            rlim.rlim_cur = rlim.rlim_max;
+            int rc = setrlimit(RLIMIT_NPROC, &rlim);
+            if (rc != 0)
+            {
+                LOG_WARNING(log, "Cannot set max number of threads to {}. error: {}", rlim.rlim_cur, strerror(errno));
+                rlim.rlim_cur = old;
+            }
+            else
+            {
+                LOG_DEBUG(log, "Set max number of threads to {} (was {}).", rlim.rlim_cur, old);
+            }
+        }
+
+        if (rlim.rlim_cur < 30000)
+        {
+            global_context->addWarningMessage("Maximum number of threads is lower than 30000. There could be problems with handling a lot of simultaneous queries.");
+        }
+    }
+
     static ServerErrorHandler error_handler;
     Poco::ErrorHandler::set(&error_handler);
 
@@ -814,6 +949,12 @@ if (ThreadFuzzer::instance().isEffective())
         fs::create_directories(user_scripts_path);
     }
 
+    {
+        std::string user_defined_path = config().getString("user_defined_path", path / "user_defined/");
+        global_context->setUserDefinedPath(user_defined_path);
+        fs::create_directories(user_defined_path);
+    }
+
     /// top_level_domains_lists
     {
         const std::string & top_level_domains_path = config().getString("top_level_domains_path", path / "top_level_domains/");
@@ -823,7 +964,6 @@ if (ThreadFuzzer::instance().isEffective())
     {
         fs::create_directories(path / "data/");
         fs::create_directories(path / "metadata/");
-        fs::create_directories(path / "user_defined/");
 
         /// Directory with metadata of tables, which was marked as dropped by Atomic database
         fs::create_directories(path / "metadata_dropped/");
@@ -948,11 +1088,8 @@ if (ThreadFuzzer::instance().isEffective())
             total_memory_tracker.setMetric(CurrentMetrics::MemoryTracking);
 
             auto * global_overcommit_tracker = global_context->getGlobalOvercommitTracker();
-            if (config->has("global_memory_usage_overcommit_max_wait_microseconds"))
-            {
-                UInt64 max_overcommit_wait_time = config->getUInt64("global_memory_usage_overcommit_max_wait_microseconds", 0);
-                global_overcommit_tracker->setMaxWaitTime(max_overcommit_wait_time);
-            }
+            UInt64 max_overcommit_wait_time = config->getUInt64("global_memory_usage_overcommit_max_wait_microseconds", 200);
+            global_overcommit_tracker->setMaxWaitTime(max_overcommit_wait_time);
             total_memory_tracker.setOvercommitTracker(global_overcommit_tracker);
 
             // FIXME logging-related things need synchronization -- see the 'Logger * log' saved
@@ -987,6 +1124,59 @@ if (ThreadFuzzer::instance().isEffective())
 
             if (config->has("keeper_server"))
                 global_context->updateKeeperConfiguration(*config);
+
+            /// Reload the number of threads for global pools.
+            /// Note: If you specified it in the top level config (not it config of default profile)
+            /// then ClickHouse will use it exactly.
+            /// This is done for backward compatibility.
+            if (global_context->areBackgroundExecutorsInitialized() && (config->has("background_pool_size") || config->has("background_merges_mutations_concurrency_ratio")))
+            {
+                auto new_pool_size = config->getUInt64("background_pool_size", 16);
+                auto new_ratio = config->getUInt64("background_merges_mutations_concurrency_ratio", 2);
+                global_context->getMergeMutateExecutor()->increaseThreadsAndMaxTasksCount(new_pool_size, new_pool_size * new_ratio);
+            }
+
+            if (global_context->areBackgroundExecutorsInitialized() && config->has("background_move_pool_size"))
+            {
+                auto new_pool_size = config->getUInt64("background_move_pool_size");
+                global_context->getMovesExecutor()->increaseThreadsAndMaxTasksCount(new_pool_size, new_pool_size);
+            }
+
+            if (global_context->areBackgroundExecutorsInitialized() && config->has("background_fetches_pool_size"))
+            {
+                auto new_pool_size = config->getUInt64("background_fetches_pool_size");
+                global_context->getFetchesExecutor()->increaseThreadsAndMaxTasksCount(new_pool_size, new_pool_size);
+            }
+
+            if (global_context->areBackgroundExecutorsInitialized() && config->has("background_common_pool_size"))
+            {
+                auto new_pool_size = config->getUInt64("background_common_pool_size");
+                global_context->getCommonExecutor()->increaseThreadsAndMaxTasksCount(new_pool_size, new_pool_size);
+            }
+
+            if (config->has("background_buffer_flush_schedule_pool_size"))
+            {
+                auto new_pool_size = config->getUInt64("background_buffer_flush_schedule_pool_size");
+                global_context->getBufferFlushSchedulePool().increaseThreadsCount(new_pool_size);
+            }
+
+            if (config->has("background_schedule_pool_size"))
+            {
+                auto new_pool_size = config->getUInt64("background_schedule_pool_size");
+                global_context->getSchedulePool().increaseThreadsCount(new_pool_size);
+            }
+
+            if (config->has("background_message_broker_schedule_pool_size"))
+            {
+                auto new_pool_size = config->getUInt64("background_message_broker_schedule_pool_size");
+                global_context->getMessageBrokerSchedulePool().increaseThreadsCount(new_pool_size);
+            }
+
+            if (config->has("background_distributed_schedule_pool_size"))
+            {
+                auto new_pool_size = config->getUInt64("background_distributed_schedule_pool_size");
+                global_context->getDistributedSchedulePool().increaseThreadsCount(new_pool_size);
+            }
 
             if (!initial_loading)
             {
@@ -1101,17 +1291,11 @@ if (ThreadFuzzer::instance().isEffective())
         LOG_INFO(log, "Listening for {}", server.getDescription());
     }
 
-    auto & access_control = global_context->getAccessControl();
-    if (config().has("custom_settings_prefixes"))
-        access_control.setCustomSettingsPrefixes(config().getString("custom_settings_prefixes"));
-
-    access_control.setNoPasswordAllowed(config().getBool("allow_no_password", true));
-    access_control.setPlaintextPasswordAllowed(config().getBool("allow_plaintext_password", true));
-
     /// Initialize access storages.
+    auto & access_control = global_context->getAccessControl();
     try
     {
-        access_control.addStoragesFromMainConfig(config(), config_path, [&] { return global_context->getZooKeeper(); });
+        access_control.setUpFromMainConfig(config(), config_path, [&] { return global_context->getZooKeeper(); });
     }
     catch (...)
     {
@@ -1207,7 +1391,6 @@ if (ThreadFuzzer::instance().isEffective())
     /// Check sanity of MergeTreeSettings on server startup
     global_context->getMergeTreeSettings().sanityCheck(settings);
     global_context->getReplicatedMergeTreeSettings().sanityCheck(settings);
-
 
     /// try set up encryption. There are some errors in config, error will be printed and server wouldn't start.
     CompressionCodecEncrypted::Configuration::instance().load(config(), "encryption_codecs");
@@ -1372,11 +1555,13 @@ if (ThreadFuzzer::instance().isEffective())
     else
     {
         /// Initialize a watcher periodically updating DNS cache
-        dns_cache_updater = std::make_unique<DNSCacheUpdater>(global_context, config().getInt("dns_cache_update_period", 15));
+        dns_cache_updater = std::make_unique<DNSCacheUpdater>(
+            global_context, config().getInt("dns_cache_update_period", 15), config().getUInt("dns_max_consecutive_failures", 5));
     }
 
 #if defined(OS_LINUX)
-    if (!TasksStatsCounters::checkIfAvailable())
+    auto tasks_stats_provider = TasksStatsCounters::findBestAvailableProvider();
+    if (tasks_stats_provider == TasksStatsCounters::MetricsProvider::None)
     {
         LOG_INFO(log, "It looks like this system does not have procfs mounted at /proc location,"
             " neither clickhouse-server process has CAP_NET_ADMIN capability."
@@ -1386,6 +1571,10 @@ if (ThreadFuzzer::instance().isEffective())
             " Note that it will not work on 'nosuid' mounted filesystems."
             " It also doesn't work if you run clickhouse-server inside network namespace as it happens in some containers.",
             executable_path);
+    }
+    else
+    {
+        LOG_INFO(log, "Tasks stats provider: {}", TasksStatsCounters::metricsProviderString(tasks_stats_provider));
     }
 
     if (!hasLinuxCapability(CAP_SYS_NICE))
@@ -1507,6 +1696,8 @@ if (ThreadFuzzer::instance().isEffective())
                 server.start();
                 LOG_INFO(log, "Listening for {}", server.getDescription());
             }
+
+            global_context->setServerCompletelyStarted();
             LOG_INFO(log, "Ready for connections.");
         }
 
@@ -1581,6 +1772,7 @@ if (ThreadFuzzer::instance().isEffective())
 
     return Application::EXIT_OK;
 }
+
 
 void Server::createServers(
     Poco::Util::AbstractConfiguration & config,
