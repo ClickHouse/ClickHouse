@@ -38,16 +38,17 @@ CI_CONFIG = {
             "tidy": "disable",
             "with_coverage": False,
         },
-        "binary_gcc": {
-            "compiler": "gcc-11",
-            "build_type": "",
-            "sanitizer": "",
-            "package_type": "binary",
-            "bundled": "bundled",
-            "splitted": "unsplitted",
-            "tidy": "disable",
-            "with_coverage": False,
-        },
+        # FIXME update to gcc-12 and turn on
+        # "binary_gcc": {
+        #     "compiler": "gcc-11",
+        #     "build_type": "",
+        #     "sanitizer": "",
+        #     "package_type": "binary",
+        #     "bundled": "bundled",
+        #     "splitted": "unsplitted",
+        #     "tidy": "disable",
+        #     "with_coverage": False,
+        # },
         "package_aarch64": {
             "compiler": "clang-13-aarch64",
             "build_type": "",
@@ -217,7 +218,7 @@ CI_CONFIG = {
             "binary_freebsd",
             "binary_darwin_aarch64",
             "binary_ppc64le",
-            "binary_gcc",
+            # "binary_gcc",
         ],
     },
     "tests_config": {
@@ -282,6 +283,7 @@ CI_CONFIG = {
         },
         "Stateless tests (release, s3 storage, actions)": {
             "required_build": "package_release",
+            "force_tests": True,
         },
         "Stress test (address, actions)": {
             "required_build": "package_asan",
@@ -322,9 +324,9 @@ CI_CONFIG = {
         "Testflows check (actions)": {
             "required_build": "package_release",
         },
-        "Unit tests (release-gcc, actions)": {
-            "required_build": "binary_gcc",
-        },
+        # "Unit tests (release-gcc, actions)": {
+        #     "required_build": "binary_gcc",
+        # },
         "Unit tests (release-clang, actions)": {
             "required_build": "binary_release",
         },

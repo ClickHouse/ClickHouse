@@ -12,8 +12,6 @@
 #if defined(BORINGSSL_PREFIX)
 #include <boringssl_prefix_symbols_asm.h>
 #endif
-#include <openssl/arm_arch.h>
-
 .text
 
 .globl	_bn_mul_mont
@@ -21,7 +19,6 @@
 
 .align	5
 _bn_mul_mont:
-	AARCH64_SIGN_LINK_REGISTER
 	tst	x5,#7
 	b.eq	__bn_sqr8x_mont
 	tst	x5,#3
@@ -219,14 +216,11 @@ Lcond_copy:
 	mov	x0,#1
 	ldp	x23,x24,[x29,#48]
 	ldr	x29,[sp],#64
-	AARCH64_VALIDATE_LINK_REGISTER
 	ret
 
 
 .align	5
 __bn_sqr8x_mont:
-	// Not adding AARCH64_SIGN_LINK_REGISTER here because __bn_sqr8x_mont is jumped to
-	// only from bn_mul_mont which has already signed the return address.
 	cmp	x1,x2
 	b.ne	__bn_mul4x_mont
 Lsqr8x_mont:
@@ -980,16 +974,11 @@ Lsqr8x_done:
 	ldp	x25,x26,[x29,#64]
 	ldp	x27,x28,[x29,#80]
 	ldr	x29,[sp],#128
-	// x30 is popped earlier
-	AARCH64_VALIDATE_LINK_REGISTER
 	ret
 
 
 .align	5
 __bn_mul4x_mont:
-	// Not adding AARCH64_SIGN_LINK_REGISTER here because __bn_mul4x_mont is jumped to
-	// only from bn_mul_mont or __bn_mul8x_mont which have already signed the
-	// return address.
 	stp	x29,x30,[sp,#-128]!
 	add	x29,sp,#0
 	stp	x19,x20,[sp,#16]
@@ -1423,8 +1412,6 @@ Lmul4x_done:
 	ldp	x25,x26,[x29,#64]
 	ldp	x27,x28,[x29,#80]
 	ldr	x29,[sp],#128
-	// x30 is popped earlier
-	AARCH64_VALIDATE_LINK_REGISTER
 	ret
 
 .byte	77,111,110,116,103,111,109,101,114,121,32,77,117,108,116,105,112,108,105,99,97,116,105,111,110,32,102,111,114,32,65,82,77,118,56,44,32,67,82,89,80,84,79,71,65,77,83,32,98,121,32,60,97,112,112,114,111,64,111,112,101,110,115,115,108,46,111,114,103,62,0

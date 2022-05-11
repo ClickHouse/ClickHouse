@@ -181,7 +181,7 @@ ThreadStatus::~ThreadStatus()
         deleter();
 
     /// Only change current_thread if it's currently being used by this ThreadStatus
-    /// For example, PushingToViewsBlockOutputStream creates and deletes ThreadStatus instances while running in the main query thread
+    /// For example, PushingToViews chain creates and deletes ThreadStatus instances while running in the main query thread
     if (current_thread == this)
         current_thread = nullptr;
 }
