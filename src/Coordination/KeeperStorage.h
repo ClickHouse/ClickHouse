@@ -239,7 +239,6 @@ public:
     /// Global id of all requests applied to storage
     int64_t zxid{0};
     bool finalized{false};
-    int64_t last_committed_zxid{0};
 
     /// Currently active watches (node_path -> subscribed sessions)
     Watches watches;
