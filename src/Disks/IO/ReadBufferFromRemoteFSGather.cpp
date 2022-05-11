@@ -103,16 +103,13 @@ ReadBufferFromRemoteFSGather::ReadBufferFromRemoteFSGather(
     , common_path_prefix(common_path_prefix_)
     , blobs_to_read(blobs_to_read_)
     , settings(settings_)
-    , query_id(CurrentThread::getQueryId())
+    , query_id(CurrentThread::isInitialized() && CurrentThread::get().getQueryContext() != nullptr ? CurrentThread::getQueryId() : "")
     , log(&Poco::Logger::get("ReadBufferFromRemoteFSGather"))
     , enable_cache_log(!query_id.empty() && settings.enable_filesystem_cache_log)
 {
     with_cache = settings.remote_fs_cache
         && settings.enable_filesystem_cache
         && (!IFileCache::isReadOnly() || settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache);
-
-    assert(query_id.empty()
-           || CurrentThread::isInitialized() && CurrentThread::get().getQueryContext().get() != nullptr);
 }
 
 
