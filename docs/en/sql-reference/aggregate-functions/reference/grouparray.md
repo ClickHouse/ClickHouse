@@ -12,3 +12,37 @@ Values can be added to the array in any (indeterminate) order.
 The second version (with the `max_size` parameter) limits the size of the resulting array to `max_size` elements. For example, `groupArray(1)(x)` is equivalent to `[any (x)]`.
 
 In some cases, you can still rely on the order of execution. This applies to cases when `SELECT` comes from a subquery that uses `ORDER BY`.
+**Returned value**
+
+-   Array with non-null values.
+
+Type: [Array](../../../sql-reference/data-types/array.md#data-type-array).
+
+**Example**
+
+``` text
+┌─id─┬─name─────┐
+│  1 │ zhangsan │
+│  1 │ ᴺᵁᴸᴸ     │
+│  1 │ lisi     │
+│  2 │ wangwu   │
+└────┴──────────┘
+
+```
+
+Query:
+
+``` sql
+select id, groupArray(10)(name) from(select id,name from  default.ck group by id,name order by id) group by id;
+```
+
+Result:
+
+``` text
+┌─id─┬─groupArray(10)(name)─┐
+│  1 │ ['zhangsan','lisi']  │
+│  2 │ ['wangwu']           │
+└────┴──────────────────────┘
+```
+
+The groupArray function will remove Null value based on the above results .So,no matter that type is Nullable or non-null  
