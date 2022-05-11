@@ -995,6 +995,9 @@ void StorageWindowView::read(
     const size_t max_block_size,
     const unsigned num_streams)
 {
+    if (target_table_id.empty())
+        return;
+
     auto storage = getTargetStorage();
     auto lock = storage->lockForShare(local_context->getCurrentQueryId(), local_context->getSettingsRef().lock_acquire_timeout);
     auto target_metadata_snapshot = storage->getInMemoryMetadataPtr();
