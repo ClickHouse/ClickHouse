@@ -57,7 +57,7 @@ struct ReadSettings
     /// Method to use reading from local filesystem.
     LocalFSReadMethod local_fs_method = LocalFSReadMethod::pread;
     /// Method to use reading from remote filesystem.
-    RemoteFSReadMethod remote_fs_method = RemoteFSReadMethod::read;
+    RemoteFSReadMethod remote_fs_method = RemoteFSReadMethod::threadpool;
 
     size_t local_fs_buffer_size = DBMS_DEFAULT_BUFFER_SIZE;
     size_t remote_fs_buffer_size = DBMS_DEFAULT_BUFFER_SIZE;
