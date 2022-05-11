@@ -216,22 +216,22 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
             grouping_node = &dag->materializeNode(*grouping_node);
             index.push_back(grouping_node);
 
-            size_t real_column_index = 0;
             size_t missign_column_index = 0;
             const auto & missing_columns = grouping_sets_params[set_counter].missing_keys;
 
             for (size_t i = 0; i < output_header.columns(); ++i)
             {
+                auto & col = output_header.getByPosition(i);
                 if (missign_column_index < missing_columns.size() && missing_columns[missign_column_index] == i)
                 {
-                    auto missing = output_header.getByPosition(missing_columns[missign_column_index++]);
-                    auto column = ColumnConst::create(missing.column->cloneResized(1), 0);
-                    const auto * node = &dag->addColumn({ColumnPtr(std::move(column)), missing.type, missing.name});
+                    ++missign_column_index;
+                    auto column = ColumnConst::create(col.column->cloneResized(1), 0);
+                    const auto * node = &dag->addColumn({ColumnPtr(std::move(column)), col.type, col.name});
                     node = &dag->materializeNode(*node);
                     index.push_back(node);
                 }
                 else
-                    index.push_back(dag->getIndex()[real_column_index++]);
+                    index.push_back(dag->getIndex()[header.getPositionByName(col.name)]);
             }
 
             dag->getIndex().swap(index);
