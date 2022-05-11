@@ -1050,6 +1050,7 @@ StorageWindowView::StorageWindowView(
     const StorageID & table_id_,
     ContextPtr context_,
     const ASTCreateQuery & query,
+    const ColumnsDescription & columns_,
     bool attach_)
     : IStorage(table_id_)
     , WithContext(context_->getGlobalContext())
@@ -1057,6 +1058,10 @@ StorageWindowView::StorageWindowView(
 {
     if (!query.select)
         throw Exception(ErrorCodes::INCORRECT_QUERY, "SELECT query is not specified for {}", getName());
+
+    StorageInMemoryMetadata storage_metadata;
+    storage_metadata.setColumns(columns_);
+    setInMemoryMetadata(storage_metadata);
 
     if (query.select->list_of_selects->children.size() != 1)
         throw Exception(
@@ -1067,9 +1072,6 @@ StorageWindowView::StorageWindowView(
 
     source_header = InterpreterSelectQuery(select_query->clone(), getContext(), SelectQueryOptions(QueryProcessingStage::FetchColumns))
                         .getSampleBlock();
-    StorageInMemoryMetadata storage_metadata;
-    storage_metadata.setColumns(ColumnsDescription(source_header.getNamesAndTypesList()));
-    setInMemoryMetadata(storage_metadata);
 
     String select_database_name = getContext()->getCurrentDatabase();
     String select_table_name;
@@ -1587,7 +1589,7 @@ void registerStorageWindowView(StorageFactory & factory)
                 "Experimental WINDOW VIEW feature is not enabled (the setting 'allow_experimental_window_view')",
                 ErrorCodes::SUPPORT_IS_DISABLED);
 
-        return std::make_shared<StorageWindowView>(args.table_id, args.getLocalContext(), args.query, args.attach);
+        return std::make_shared<StorageWindowView>(args.table_id, args.getLocalContext(), args.query, args.columns, args.attach);
     });
 }
 
