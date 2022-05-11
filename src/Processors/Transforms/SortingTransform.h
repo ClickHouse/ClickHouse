@@ -69,7 +69,8 @@ public:
     SortingTransform(const Block & header,
         const SortDescription & description_,
         size_t max_merged_block_size_,
-        UInt64 limit_);
+        UInt64 limit_,
+        bool increase_sort_description_compile_attempts);
 
     ~SortingTransform() override;
 
