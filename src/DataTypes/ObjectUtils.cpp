@@ -188,7 +188,7 @@ static std::pair<ColumnPtr, DataTypePtr> recursivlyConvertDynamicColumnToTuple(
 
         return
         {
-            ColumnArray::create(std::move(new_column), column_array.getOffsetsPtr()),
+            ColumnArray::create(new_column, column_array.getOffsetsPtr()),
             std::make_shared<DataTypeArray>(std::move(new_type)),
         };
     }
@@ -201,7 +201,7 @@ static std::pair<ColumnPtr, DataTypePtr> recursivlyConvertDynamicColumnToTuple(
 
         return
         {
-            ColumnMap::create(std::move(new_column)),
+            ColumnMap::create(new_column),
             std::make_shared<DataTypeMap>(std::move(new_type)),
         };
     }
