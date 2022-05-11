@@ -118,7 +118,6 @@ void DependenciesGraph::removeTask(String query_name)
     }
 }
 
-
 void DependenciesGraph::logDependencyGraph() const
 {
     LOG_TEST(log, "Have {} independent queries.",
