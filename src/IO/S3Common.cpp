@@ -708,7 +708,7 @@ namespace S3
         return ret;
     }
 
-    std::shared_ptr<Aws::S3::S3Client> ClientFactory::create( // NOLINT
+    std::unique_ptr<Aws::S3::S3Client> ClientFactory::create( // NOLINT
         const PocoHTTPClientConfiguration & cfg_,
         bool is_virtual_hosted_style,
         const String & access_key_id,
@@ -746,7 +746,7 @@ namespace S3
             use_environment_credentials,
             use_insecure_imds_request);
 
-        return std::make_shared<Aws::S3::S3Client>(
+        return std::make_unique<Aws::S3::S3Client>(
             std::move(auth_signer),
             std::move(client_configuration), // Client configuration.
             is_virtual_hosted_style || client_configuration.endpointOverride.empty() // Use virtual addressing only if endpoint is not specified.
@@ -856,7 +856,7 @@ namespace S3
                             quoteString(bucket), !uri.empty() ? " (" + uri.toString() + ")" : "");
     }
 
-    size_t getObjectSize(std::shared_ptr<Aws::S3::S3Client> client_ptr, const String & bucket, const String & key, const String & version_id, bool throw_on_error)
+    size_t getObjectSize(std::shared_ptr<const Aws::S3::S3Client> client_ptr, const String & bucket, const String & key, const String & version_id, bool throw_on_error)
     {
         Aws::S3::Model::HeadObjectRequest req;
         req.SetBucket(bucket);

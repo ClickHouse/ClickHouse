@@ -19,6 +19,9 @@ namespace ErrorCodes
     extern const int PATH_ACCESS_DENIED;
 }
 
+namespace
+{
+
 constexpr char test_file[] = "test.txt";
 constexpr char test_str[] = "test";
 constexpr size_t test_str_size = 4;
@@ -71,6 +74,7 @@ std::unique_ptr<DiskAzureBlobStorageSettings> getSettings(const Poco::Util::Abst
     );
 }
 
+}
 
 void registerDiskAzureBlobStorage(DiskFactory & factory)
 {

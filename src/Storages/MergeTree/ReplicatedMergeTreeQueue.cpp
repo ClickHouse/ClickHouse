@@ -1219,7 +1219,7 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
             auto disks = storage.getDisks();
             bool only_s3_storage = true;
             for (const auto & disk : disks)
-                if (disk->getType() != DB::DiskType::S3)
+                if (!disk->supportZeroCopyReplication())
                     only_s3_storage = false;
 
             if (!disks.empty() && only_s3_storage && storage.checkZeroCopyLockExists(entry.new_part_name, disks[0]))

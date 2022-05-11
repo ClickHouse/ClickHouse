@@ -10,6 +10,7 @@
 #include <Disks/DiskType.h>
 #include <IO/ReadSettings.h>
 #include <IO/WriteSettings.h>
+#include <Disks/IObjectStorage.h>
 
 #include <memory>
 #include <mutex>
@@ -289,7 +290,7 @@ public:
 
     virtual bool isReadOnly() const { return false; }
 
-    /// Check if disk is broken. Broken disks will have 0 space and not be used.
+    /// Check if disk is broken. Broken disks will have 0 space and connot be used.
     virtual bool isBroken() const { return false; }
 
     /// Invoked when Global Context is shutdown.

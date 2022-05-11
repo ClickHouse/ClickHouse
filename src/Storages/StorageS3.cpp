@@ -84,7 +84,7 @@ class StorageS3Source::DisclosedGlobIterator::Impl
 {
 
 public:
-    Impl(Aws::S3::S3Client & client_, const S3::URI & globbed_uri_)
+    Impl(const Aws::S3::S3Client & client_, const S3::URI & globbed_uri_)
         : client(client_), globbed_uri(globbed_uri_)
     {
         if (globbed_uri.bucket.find_first_of("*?{") != globbed_uri.bucket.npos)
@@ -171,7 +171,7 @@ private:
     bool is_finished{false};
 };
 
-StorageS3Source::DisclosedGlobIterator::DisclosedGlobIterator(Aws::S3::S3Client & client_, const S3::URI & globbed_uri_)
+StorageS3Source::DisclosedGlobIterator::DisclosedGlobIterator(const Aws::S3::S3Client & client_, const S3::URI & globbed_uri_)
     : pimpl(std::make_shared<StorageS3Source::DisclosedGlobIterator::Impl>(client_, globbed_uri_)) {}
 
 String StorageS3Source::DisclosedGlobIterator::next()
@@ -260,7 +260,7 @@ StorageS3Source::StorageS3Source(
     UInt64 max_block_size_,
     UInt64 max_single_read_retries_,
     String compression_hint_,
-    const std::shared_ptr<Aws::S3::S3Client> & client_,
+    const std::shared_ptr<const Aws::S3::S3Client> & client_,
     const String & bucket_,
     const String & version_id_,
     std::shared_ptr<IteratorWrapper> file_iterator_,
@@ -397,7 +397,7 @@ Chunk StorageS3Source::generate()
     return {};
 }
 
-static bool checkIfObjectExists(const std::shared_ptr<Aws::S3::S3Client> & client, const String & bucket, const String & key)
+static bool checkIfObjectExists(const std::shared_ptr<const Aws::S3::S3Client> & client, const String & bucket, const String & key)
 {
     bool is_finished = false;
     Aws::S3::Model::ListObjectsV2Request request;
@@ -548,7 +548,6 @@ private:
     const Block sample_block;
     ContextPtr context;
     const CompressionMethod compression_method;
-
     const StorageS3::S3Configuration & s3_configuration;
     const String bucket;
     const String key;
