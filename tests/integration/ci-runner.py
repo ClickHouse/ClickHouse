@@ -241,8 +241,7 @@ class ClickhouseIntegrationTestsRunner:
             return name + ":latest"
         return name
 
-    def get_single_image_version(self):
-        name = self.get_images_names()[0]
+    def get_image_version(self, name: str):
         if name in self.image_versions:
             return self.image_versions[name]
         logging.warn(
@@ -464,7 +463,7 @@ class ClickhouseIntegrationTestsRunner:
         ):
             for img in self.get_images_names():
                 if img == "clickhouse/integration-tests-runner":
-                    runner_version = self.get_single_image_version()
+                    runner_version = self.get_image_version(img)
                     logging.info(
                         "Can run with custom docker image version %s", runner_version
                     )

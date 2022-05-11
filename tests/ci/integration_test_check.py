@@ -171,22 +171,29 @@ if __name__ == "__main__":
 
     json_path = os.path.join(work_path, "params.json")
     with open(json_path, "w", encoding="utf-8") as json_params:
-        json_params.write(
-            json.dumps(
-                get_json_params_dict(
-                    check_name,
-                    pr_info,
-                    images_with_versions,
-                    run_by_hash_total,
-                    run_by_hash_num,
-                )
+        params_text = json.dumps(
+            get_json_params_dict(
+                check_name,
+                pr_info,
+                images_with_versions,
+                run_by_hash_total,
+                run_by_hash_num,
             )
         )
+        json_params.write(params_text)
+        logging.info("Parameters file %s is written: %s", json_path, params_text)
 
     output_path_log = os.path.join(result_path, "main_script_log.txt")
 
     runner_path = os.path.join(repo_path, "tests/integration", "ci-runner.py")
     run_command = f"sudo -E {runner_path} | tee {output_path_log}"
+    logging.info("Going to run command: `%s`", run_command)
+    logging.info(
+        "ENV parameters for runner:\n%s",
+        "\n".join(
+            [f"{k}={v}" for k, v in my_env.items() if k.startswith("CLICKHOUSE_")]
+        ),
+    )
 
     with TeePopen(run_command, output_path_log, my_env) as process:
         retcode = process.wait()
