@@ -52,11 +52,11 @@ class Runner:
     def __init__(self, cwd: str = CWD):
         self._cwd = cwd
 
-    def run(self, cmd: str, cwd: Optional[str] = None) -> str:
+    def run(self, cmd: str, cwd: Optional[str] = None, **kwargs) -> str:
         if cwd is None:
             cwd = self.cwd
         return subprocess.check_output(
-            cmd, shell=True, cwd=cwd, encoding="utf-8"
+            cmd, shell=True, cwd=cwd, encoding="utf-8", **kwargs
         ).strip()
 
     @property
@@ -78,8 +78,12 @@ git_runner.cwd = p.relpath(
 )
 
 
+def is_shallow() -> bool:
+    return git_runner.run("git rev-parse --is-shallow-repository") == "true"
+
+
 def get_tags() -> List[str]:
-    if git_runner.run("git rev-parse --is-shallow-repository") == "true":
+    if is_shallow():
         raise RuntimeError("attempt to run on a shallow repository")
     return git_runner.run("git tag").split()
 
@@ -110,10 +114,7 @@ class Git:
         self.sha_short = self.sha[:11]
         # The following command shows the most recent tag in a graph
         # Format should match TAG_REGEXP
-        if (
-            self._ignore_no_tags
-            and self.run("git rev-parse --is-shallow-repository") == "true"
-        ):
+        if self._ignore_no_tags and is_shallow():
             try:
                 self._update_tags()
             except subprocess.CalledProcessError:
