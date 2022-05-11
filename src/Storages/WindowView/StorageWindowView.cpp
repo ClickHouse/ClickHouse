@@ -1244,19 +1244,6 @@ void StorageWindowView::eventTimeParser(const ASTCreateQuery & query)
     }
 }
 
-class PushingToWindowViewSink final : public SinkToStorage
-{
-public:
-    PushingToWindowViewSink(const Block & header, StorageWindowView & window_view_, StoragePtr storage_holder_, ContextPtr context_);
-    String getName() const override { return "PushingToWindowViewSink"; }
-    void consume(Chunk chunk) override;
-
-private:
-    StorageWindowView & window_view;
-    StoragePtr storage_holder;
-    ContextPtr context;
-};
-
 void StorageWindowView::writeIntoWindowView(
     StorageWindowView & window_view, const Block & block, ContextPtr local_context)
 {
