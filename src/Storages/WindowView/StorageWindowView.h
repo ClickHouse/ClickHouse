@@ -108,6 +108,7 @@ public:
         const StorageID & table_id_,
         ContextPtr context_,
         const ASTCreateQuery & query,
+        const ColumnsDescription & columns_,
         bool attach_);
 
     String getName() const override { return "WindowView"; }
