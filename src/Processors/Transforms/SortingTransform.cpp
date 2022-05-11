@@ -168,8 +168,7 @@ SortingTransform::SortingTransform(
 
         if (new_pos < num_columns)
         {
-            auto type = sample.safeGetByPosition(old_pos).type;
-            sort_description_types.emplace_back(type);
+            sort_description_types.emplace_back(sample.safeGetByPosition(old_pos).type);
             description_without_constants.push_back(column_description);
         }
     }

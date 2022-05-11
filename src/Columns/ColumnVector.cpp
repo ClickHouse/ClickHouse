@@ -27,7 +27,6 @@
 
 #if USE_EMBEDDED_COMPILER
 #include <DataTypes/Native.h>
-
 #include <llvm/IR/IRBuilder.h>
 #endif
 
@@ -204,7 +203,7 @@ llvm::Value * ColumnVector<T>::compileComparator(llvm::IRBuilderBase & builder, 
 {
     llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
 
-    if constexpr (std::is_arithmetic_v<T>)
+    if constexpr (std::is_integral_v<T>)
     {
         // a > b ? 1 : (a < b ? -1 : 0);
 
@@ -223,7 +222,6 @@ llvm::Value * ColumnVector<T>::compileComparator(llvm::IRBuilderBase & builder, 
     else
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Method compileComparator is not supported for type {}", TypeName<T>);
-        return nullptr;
     }
 }
 

@@ -38,7 +38,7 @@ MergingSortedAlgorithm::MergingSortedAlgorithm(
         sort_description_types.emplace_back(header.getByName(column_description.column_name).type);
     }
 
-    compileSortDescriptionIfNeeded(description, sort_description_types, true /*increase_unique_count*/);
+    compileSortDescriptionIfNeeded(description, sort_description_types, true /*increase_compile_attemps*/);
 }
 
 void MergingSortedAlgorithm::addInput()
