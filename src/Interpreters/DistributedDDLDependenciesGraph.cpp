@@ -16,7 +16,7 @@ namespace ErrorCodes
 }
 
 DependenciesGraph::DependenciesGraph(ContextPtr global_context_)
-        : global_context(global_context_)
+        : global_context(Context::createCopy(global_context_))
 {
     tasks_dependencies.default_database = global_context->getCurrentDatabase();
     log = &Poco::Logger::get("DistributedDDLDependenciesGraph");
@@ -59,12 +59,12 @@ void DependenciesGraph::addTask(DDLTaskPtr & task)
 
 QueryNames DependenciesGraph::getTasksToParallelProcess()
 {
-    for (const auto & task : tasks_dependencies.independent_queries)
+    for (const auto & task_name : tasks_dependencies.independent_queries)
     {
         tasks_processed++;
-        if (task->completely_processed.load())
+        if (name_to_ddl_task[task_name]->completely_processed.load())
         {
-            removeTask(task->entry_name);
+            removeTask(task_name);
         }
     }
 
