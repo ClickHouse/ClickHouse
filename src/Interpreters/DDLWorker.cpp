@@ -394,6 +394,7 @@ void DDLWorker::scheduleTasks(bool reinitialized)
         {
             return t->entry_name == task_name;
         });
+
         auto & saved_task = saveTask(std::move(task));
 
         if (worker_pool)
