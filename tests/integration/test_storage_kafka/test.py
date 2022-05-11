@@ -570,13 +570,12 @@ def test_kafka_formats(kafka_cluster):
                 b"\x05\x01\x02\x69\x64\x05\x49\x6e\x74\x36\x34\x00\x00\x00\x00\x00\x00\x00\x00\x07\x62\x6c\x6f\x63\x6b\x4e\x6f\x06\x55\x49\x6e\x74\x31\x36\x00\x00\x04\x76\x61\x6c\x31\x06\x53\x74\x72\x69\x6e\x67\x02\x41\x4d\x04\x76\x61\x6c\x32\x07\x46\x6c\x6f\x61\x74\x33\x32\x00\x00\x00\x3f\x04\x76\x61\x6c\x33\x05\x55\x49\x6e\x74\x38\x01",
                 # ''
                 # On empty message exception happens: DB::Exception: Attempt to read after eof
-                # /src/IO/VarInt.h:122: DB::throwReadAfterEOF() @ 0x15c34487 in /usr/bin/clickhouse
-                # /src/IO/VarInt.h:135: void DB::readVarUIntImpl<false>(unsigned long&, DB::ReadBuffer&) @ 0x15c68bb7 in /usr/bin/clickhouse
-                # /src/IO/VarInt.h:149: DB::readVarUInt(unsigned long&, DB::ReadBuffer&) @ 0x15c68844 in /usr/bin/clickhouse
-                # /src/DataStreams/NativeBlockInputStream.cpp:124: DB::NativeBlockInputStream::readImpl() @ 0x1d3e2778 in /usr/bin/clickhouse
-                # /src/DataStreams/IBlockInputStream.cpp:60: DB::IBlockInputStream::read() @ 0x1c9c92fd in /usr/bin/clickhouse
-                # /src/Processors/Formats/Impl/NativeFormat.h:42: DB::NativeInputFormatFromNativeBlockInputStream::generate() @ 0x1df1ea79 in /usr/bin/clickhouse
-                # /src/Processors/ISource.cpp:48: DB::ISource::work() @ 0x1dd79737 in /usr/bin/clickhouse
+                # 1. DB::throwReadAfterEOF() @ 0xb76449b in /usr/bin/clickhouse
+                # 2. ? @ 0xb79cb0b in /usr/bin/clickhouse
+                # 3. DB::NativeReader::read() @ 0x16e7a084 in /usr/bin/clickhouse
+                # 4. DB::NativeInputFormat::generate() @ 0x16f76922 in /usr/bin/clickhouse
+                # 5. DB::ISource::tryGenerate() @ 0x16e90bd5 in /usr/bin/clickhouse
+                # 6. DB::ISource::work() @ 0x16e9087a in /usr/bin/clickhouse
             ],
         },
         "MsgPack": {
@@ -4051,7 +4050,7 @@ def test_issue26643(kafka_cluster):
             kafka_num_consumers = 4,
             kafka_skip_broken_messages = 10000;
 
-        SET allow_suspicious_low_cardinality_types=1; 
+        SET allow_suspicious_low_cardinality_types=1;
 
         CREATE TABLE test.log
         (
@@ -4095,7 +4094,7 @@ def test_issue26643(kafka_cluster):
 
     expected = """\
 2021-08-15 07:00:00	server1		443	50000	['1','2']	[0,0]	[444,0]	[123123,0]	['adsfasd','']	GET
-2021-08-15 07:00:02			0	0	[]	[]	[]	[]	[]	
+2021-08-15 07:00:02			0	0	[]	[]	[]	[]	[]
 2021-08-15 07:00:02			0	0	[]	[]	[]	[]	[]
 """
     assert TSV(result) == TSV(expected)
