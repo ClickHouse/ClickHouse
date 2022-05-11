@@ -142,10 +142,11 @@ void compileSortDescriptionIfNeeded(SortDescription & description, const DataTyp
 
 #else
 
-void compileSortDescriptionIfNeeded(SortDescription & description, const DataTypes & description_types)
+void compileSortDescriptionIfNeeded(SortDescription & description, const DataTypes & sort_description_types, bool increase_compile_attemps)
 {
     (void)(description);
-    (void)(description_types);
+    (void)(sort_description_types);
+    (void)(increase_compile_attemps);
 }
 
 #endif
