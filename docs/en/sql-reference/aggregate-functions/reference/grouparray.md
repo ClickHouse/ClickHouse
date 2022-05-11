@@ -14,11 +14,9 @@ The second version (with the `max_size` parameter) limits the size of the result
 In some cases, you can still rely on the order of execution. This applies to cases when `SELECT` comes from a subquery that uses `ORDER BY`.
 **Returned value**
 
--   Array with non-null values.
-
-Type: [Array](../../../sql-reference/data-types/array.md#data-type-array).
 
 **Example**
+show default.ck table result.
 
 ``` text
 ┌─id─┬─name─────┐
