@@ -233,15 +233,12 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-/// Splits parts into layers, each layer will contain parts subranges with PK values from its own range.
-/// A separate pipe will be constructed for each layer with a reading step (provided by the reading_step_getter) and a filter for this layer's range of PK values.
-/// Will try to produce exactly max_layer pipes but may return less if data is distributed in not a very parallelizable way.
 Pipes buildPipesForReading(
     const KeyDescription & primary_key,
     RangesInDataParts parts,
     size_t max_layers,
     ContextPtr context,
-    ReadingStepGetter && reading_step_getter)
+    ReadingInOrderStepGetter && reading_step_getter)
 {
     if (max_layers <= 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "max_layer should be greater than 1.");
