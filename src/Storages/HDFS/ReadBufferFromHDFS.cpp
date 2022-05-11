@@ -61,8 +61,7 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<S
         , read_until_position(read_until_position_)
     {
         Stopwatch watch;
-
-        assert(builder);
+        assert(builder && builder->get());
         fs = HDFSBuilderFSFactory::instance().getFS(builder);
         fin = hdfsOpenFile(fs.get(), hdfs_file_path.c_str(), O_RDONLY, 0, 0, 0);
 
