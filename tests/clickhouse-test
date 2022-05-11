@@ -86,9 +86,14 @@ class HTTPError(Exception):
 def clickhouse_execute_http(
     base_args, query, timeout=30, settings=None, default_format=None
 ):
-    client = http.client.HTTPConnection(
-        host=base_args.tcp_host, port=base_args.http_port, timeout=timeout
-    )
+    if args.secure:
+        client = http.client.HTTPSConnection(
+            host=base_args.tcp_host, port=base_args.http_port, timeout=timeout
+        )
+    else:
+        client = http.client.HTTPConnection(
+            host=base_args.tcp_host, port=base_args.http_port, timeout=timeout
+        )
 
     timeout = int(timeout)
     params = {
@@ -921,6 +926,7 @@ class TestCase:
             "test": self.case_file,
             "stdout": self.stdout_file,
             "stderr": self.stderr_file,
+            "secure": "--secure" if args.secure else ""
         }
 
         # >> append to stderr (but not stdout since it is not used there),
@@ -932,7 +938,7 @@ class TestCase:
 
         if self.ext == ".sql":
             pattern = (
-                "{client} --send_logs_level={logs_level} --multiquery {options} < "
+                "{client} --send_logs_level={logs_level} {secure} --multiquery {options} < "
                 + pattern
             )
 
@@ -1252,7 +1258,11 @@ class TestSuite:
     @staticmethod
     def read_test_suite(args, suite_dir_name: str):
         def is_data_present():
-            return int(clickhouse_execute(args, "EXISTS TABLE test.hits"))
+            try:
+                return int(clickhouse_execute(args, "EXISTS TABLE test.hits"))
+            except Exception as e:
+                print("Cannot check if dataset is available, assuming it's not: ", str(e))
+                return False
 
         base_dir = os.path.abspath(args.queries)
         tmp_dir = os.path.abspath(args.tmp)
@@ -1417,7 +1427,7 @@ def run_tests_array(all_tests_with_params: Tuple[List[str], int, TestSuite]):
             stop_tests()
             raise e
 
-        if failures_chain >= 20:
+        if failures_chain >= args.max_failures_chain:
             stop_tests()
             break
 
@@ -2049,6 +2059,18 @@ if __name__ == "__main__":
         help="Run tests for further backwoard compatibility testing by ignoring all"
         "drop queries in tests for collecting data from new version of server",
     )
+    parser.add_argument(
+        "--secure",
+        action="store_true",
+        default=False,
+        help="Use secure connection to connect to clickhouse-server",
+    )
+    parser.add_argument(
+        "--max-failures-chain",
+        default=20,
+        type=int,
+        help="Max number of failed tests in a row (stop tests if higher)",
+    )
     args = parser.parse_args()
 
     if args.queries and not os.path.isdir(args.queries):
@@ -2126,13 +2148,18 @@ if __name__ == "__main__":
         args.tcp_port = int(tcp_port)
         args.client += f" --port={tcp_port}"
     else:
-        args.tcp_port = 9000
+        args.tcp_port = 9440 if args.secure else 9000
+        if args.secure:
+            os.environ["CLICKHOUSE_PORT_TCP"] = str(args.tcp_port)
 
     http_port = os.getenv("CLICKHOUSE_PORT_HTTP")
     if http_port is not None:
         args.http_port = int(http_port)
     else:
-        args.http_port = 8123
+        args.http_port = 8443 if args.secure else 8123
+        os.environ["CLICKHOUSE_PORT_HTTP"] = str(args.http_port)
+        if args.secure and os.getenv("CLICKHOUSE_PORT_HTTP_PROTO") is None:
+            os.environ["CLICKHOUSE_PORT_HTTP_PROTO"] = "https"
 
     client_database = os.getenv("CLICKHOUSE_DATABASE")
     if client_database is not None:
@@ -2144,7 +2171,7 @@ if __name__ == "__main__":
     if args.backward_compatibility_check:
         args.client += " --fake-drop"
 
-    if args.client_option:
+    if args.client_option or args.secure:
         # Set options for client
         if "CLICKHOUSE_CLIENT_OPT" in os.environ:
             os.environ["CLICKHOUSE_CLIENT_OPT"] += " "
@@ -2152,6 +2179,8 @@ if __name__ == "__main__":
             os.environ["CLICKHOUSE_CLIENT_OPT"] = ""
 
         os.environ["CLICKHOUSE_CLIENT_OPT"] += get_additional_client_options(args)
+        if args.secure:
+            os.environ["CLICKHOUSE_CLIENT_OPT"] += " --secure "
 
         # Set options for curl
         if "CLICKHOUSE_URL_PARAMS" in os.environ:
