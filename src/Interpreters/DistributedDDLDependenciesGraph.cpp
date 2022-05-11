@@ -24,7 +24,7 @@ DependenciesGraph::DependenciesGraph(ContextPtr global_context_)
 
 void DependenciesGraph::addTask(DDLTaskPtr & task)
 {
-    total_queries++;
+    tasks_dependencies.total_queries++;
     auto name = task->entry_name;
     auto database_objects_for_added_task = getDependenciesSetFromQuery(global_context, task->query);
     tasks_dependencies.database_objects_in_query[name] = database_objects_for_added_task;

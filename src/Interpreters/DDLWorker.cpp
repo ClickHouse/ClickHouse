@@ -383,7 +383,6 @@ void DDLWorker::scheduleTasks(bool reinitialized)
             last_skipped_entry_name.emplace(entry_name);
             continue;
         }
-        name_to_ddl_task.emplace(std::make_pair(name, std::move(task)));
         dependencies_graph.addTask(task);
     }
 
@@ -391,10 +390,10 @@ void DDLWorker::scheduleTasks(bool reinitialized)
 
     for (auto & task_name : tasks_to_process)
     {
-        auto & task = *(*std::find_if(current_tasks.begin(), current_tasks.end(), [&](const auto & t)
+        auto & task = *std::find_if(current_tasks.begin(), current_tasks.end(), [&](const auto & t)
         {
             return t->entry_name == task_name;
-        }));
+        });
         auto & saved_task = saveTask(std::move(task));
 
         if (worker_pool)
