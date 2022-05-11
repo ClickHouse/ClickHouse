@@ -76,6 +76,7 @@ Connection::Connection(const String & host_, UInt16 port_,
     , cluster(cluster_)
     , cluster_secret(cluster_secret_)
     , client_name(client_name_)
+    , quota_key(quota_key_)
     , compression(compression_)
     , secure(secure_)
     , quota_key(quota_key_)
@@ -163,16 +164,17 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
     }
     catch (Poco::TimeoutException & e)
     {
-        /// disconnect() will reset the socket, get timeouts before.
-        const std::string & message = fmt::format("{} ({}, receive timeout {} ms, send timeout {} ms)",
-            e.displayText(), getDescription(),
-            socket->getReceiveTimeout().totalMilliseconds(),
-            socket->getSendTimeout().totalMilliseconds());
-
         disconnect();
 
         /// Add server address to exception. Also Exception will remember stack trace. It's a pity that more precise exception type is lost.
-        throw NetException(message, ErrorCodes::SOCKET_TIMEOUT);
+        /// This exception can only be thrown from socket->connect(), so add information about connection timeout.
+        const auto & connection_timeout = static_cast<bool>(secure) ? timeouts.secure_connection_timeout : timeouts.connection_timeout;
+        throw NetException(
+            ErrorCodes::SOCKET_TIMEOUT,
+            "{} ({}, connection timeout {} ms)",
+            e.displayText(),
+            getDescription(),
+            connection_timeout.totalMilliseconds());
     }
 }
 
@@ -852,8 +854,8 @@ Packet Connection::receivePacket()
 
         switch (res.type)
         {
-            case Protocol::Server::Data: [[fallthrough]];
-            case Protocol::Server::Totals: [[fallthrough]];
+            case Protocol::Server::Data:
+            case Protocol::Server::Totals:
             case Protocol::Server::Extremes:
                 res.block = receiveData();
                 return res;

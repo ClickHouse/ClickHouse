@@ -170,8 +170,7 @@ Pipe::Pipe(ProcessorPtr source, OutputPort * output, OutputPort * totals, Output
 
 Pipe::Pipe(ProcessorPtr source)
 {
-    if (source->getOutputs().size() != 1)
-        checkSource(*source);
+    checkSource(*source);
 
     if (collected_processors)
         collected_processors->emplace_back(source);

@@ -112,6 +112,7 @@ private:
     void receiveLogs(ASTPtr parsed_query);
     bool receiveSampleBlock(Block & out, ColumnsDescription & columns_description, ASTPtr parsed_query);
     bool receiveEndOfQuery();
+    void cancelQuery();
 
     void onProgress(const Progress & value);
     void onData(Block & block, ASTPtr parsed_query);
@@ -145,7 +146,7 @@ private:
         std::vector<Arguments> & hosts_and_ports_arguments);
     void parseAndCheckOptions(OptionsDescription & options_description, po::variables_map & options, Arguments & arguments);
 
-    void updateSuggest(const ASTCreateQuery & ast_create);
+    void updateSuggest(const ASTPtr & ast);
 
     void initQueryIdFormats();
 

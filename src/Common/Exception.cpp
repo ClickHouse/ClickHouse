@@ -4,7 +4,7 @@
 #include <cxxabi.h>
 #include <cstdlib>
 #include <Poco/String.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 #include <IO/Operators.h>
@@ -276,7 +276,7 @@ static void getNotEnoughMemoryMessage(std::string & msg)
 #endif
 }
 
-static std::string getExtraExceptionInfo(const std::exception & e)
+std::string getExtraExceptionInfo(const std::exception & e)
 {
     String msg;
     try

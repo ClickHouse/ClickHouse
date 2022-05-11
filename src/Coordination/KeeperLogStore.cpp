@@ -118,4 +118,18 @@ nuraft::ptr<nuraft::log_entry> KeeperLogStore::getLatestConfigChange() const
     return changelog.getLatestConfigChange();
 }
 
+void KeeperLogStore::shutdownChangelog()
+{
+    std::lock_guard lock(changelog_lock);
+    changelog.shutdown();
+}
+
+bool KeeperLogStore::flushChangelogAndShutdown()
+{
+    std::lock_guard lock(changelog_lock);
+    changelog.flush();
+    changelog.shutdown();
+    return true;
+}
+
 }

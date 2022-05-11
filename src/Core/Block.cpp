@@ -612,6 +612,7 @@ DataTypes Block::getDataTypes() const
     return res;
 }
 
+
 Names Block::getDataTypeNames() const
 {
     Names res;
@@ -621,6 +622,12 @@ Names Block::getDataTypeNames() const
         res.push_back(elem.type->getName());
 
     return res;
+}
+
+
+std::unordered_map<String, size_t> Block::getNamesToIndexesMap() const
+{
+    return index_by_name;
 }
 
 
