@@ -103,8 +103,15 @@ class QuantileTDigest
       */
     static Value interpolate(Value x, Value x1, Value y1, Value x2, Value y2)
     {
-        double k = (x - x1) / (x2 - x1);
-        return y1 + k * (y2 - y1);
+        if (y1 != y2)
+        {
+            double k = (x - x1) / (x2 - x1);
+            return y1 + k * (y2 - y1);
+        }
+        else
+        {
+            return y1;
+        }
     }
 
     struct RadixSortTraits
@@ -155,7 +162,10 @@ class QuantileTDigest
             {
                 /// The left column "eats" the right. Middle of the batch
                 l_count += r->count;
-                l_mean += r->count * (r->mean - l_mean) / l_count; // Symmetric algo (M1*C1 + M2*C2)/(C1+C2) is numerically better, but slower
+                if (r->mean != l_mean)
+                {
+                    l_mean += r->count * (r->mean - l_mean) / l_count; // Symmetric algo (M1*C1 + M2*C2)/(C1+C2) is numerically better, but slower
+                }
                 l->mean = l_mean;
                 l->count = l_count;
                 batch_pos += 1;
@@ -230,7 +240,10 @@ public:
                     // it is possible to merge left and right
                     /// The left column "eats" the right.
                     l_count += r->count;
-                    l_mean += r->count * (r->mean - l_mean) / l_count; // Symmetric algo (M1*C1 + M2*C2)/(C1+C2) is numerically better, but slower
+                    if (r->mean != l_mean)
+                    {
+                        l_mean += r->count * (r->mean - l_mean) / l_count; // Symmetric algo (M1*C1 + M2*C2)/(C1+C2) is numerically better, but slower
+                    }
                     l->mean = l_mean;
                     l->count = l_count;
                 }
@@ -263,7 +276,7 @@ public:
     void add(T x, UInt64 cnt = 1)
     {
         auto vx = static_cast<Value>(x);
-        if (cnt == 0 || std::isnan(vx) || std::isinf(vx))
+        if (cnt == 0 || std::isnan(vx))
             return; // Count 0 breaks compress() assumptions, Nan breaks sort(). We treat them as no sample.
         addCentroid(Centroid{vx, static_cast<Count>(cnt)});
     }
@@ -271,8 +284,7 @@ public:
     void merge(const QuantileTDigest & other)
     {
         for (const auto & c : other.centroids)
-            if (!std::isnan(c.mean) && !std::isinf(c.mean))
-                addCentroid(c);
+            addCentroid(c);
     }
 
     void serialize(WriteBuffer & buf)
@@ -299,7 +311,7 @@ public:
 
         for (const auto & c : centroids)
         {
-            if (c.count <= 0 || std::isnan(c.count) || std::isnan(c.mean) || std::isinf(c.mean)) // invalid count breaks compress(), invalid mean breaks sort()
+            if (c.count <= 0 || std::isnan(c.count) || std::isnan(c.mean)) // invalid count breaks compress(), invalid mean breaks sort()
                 throw Exception("Invalid centroid " + std::to_string(c.count) + ":" + std::to_string(c.mean), ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED);
             count += c.count;
         }
