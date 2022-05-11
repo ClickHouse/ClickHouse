@@ -136,6 +136,7 @@ public:
         std::vector<Coordination::Error> error_codes;
     };
 
+    // Denotes end of a subrequest in multi request
     struct SubDeltaEnd
     {
     };
@@ -162,9 +163,9 @@ public:
         Operation operation;
     };
 
-    struct CurrentNodes
+    struct UncommittedState
     {
-        explicit CurrentNodes(KeeperStorage & storage_) : storage(storage_) { }
+        explicit UncommittedState(KeeperStorage & storage_) : storage(storage_) { }
 
         template <typename Visitor>
         void applyDeltas(StringRef path, const Visitor & visitor) const
@@ -207,7 +208,7 @@ public:
         KeeperStorage & storage;
     };
 
-    CurrentNodes current_nodes{*this};
+    UncommittedState uncommitted_state{*this};
 
     Coordination::Error commit(int64_t zxid, int64_t session_id);
 
