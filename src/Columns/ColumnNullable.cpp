@@ -12,7 +12,6 @@
 
 #if USE_EMBEDDED_COMPILER
 #include <DataTypes/Native.h>
-
 #include <llvm/IR/IRBuilder.h>
 #endif
 
@@ -254,7 +253,8 @@ bool ColumnNullable::isComparatorCompilable() const
     return nested_column->isComparatorCompilable();
 }
 
-llvm::Value * ColumnNullable::compileComparator(llvm::IRBuilderBase & builder, llvm::Value * lhs, llvm::Value * rhs, llvm::Value * nan_direction_hint) const
+llvm::Value * ColumnNullable::compileComparator(llvm::IRBuilderBase & builder, llvm::Value * lhs, llvm::Value * rhs,
+                                            llvm::Value * nan_direction_hint) const
 {
     llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
     auto * head = b.GetInsertBlock();
@@ -280,6 +280,7 @@ llvm::Value * ColumnNullable::compileComparator(llvm::IRBuilderBase & builder, l
     //     else
     //         return lval_is_null ? null_direction_hint : -null_direction_hint;
     // }
+
     b.SetInsertPoint(lhs_or_rhs_are_null_block);
     auto * lhs_equals_rhs_result = llvm::ConstantInt::getSigned(b.getInt8Ty(), 0);
     llvm::Value * lhs_and_rhs_are_null = b.CreateAnd(lhs_is_null_value, rhs_is_null_value);
@@ -288,8 +289,10 @@ llvm::Value * ColumnNullable::compileComparator(llvm::IRBuilderBase & builder, l
     b.CreateBr(join_block);
 
     // getNestedColumn().compareAt(n, m, nested_rhs, null_direction_hint);
+
     b.SetInsertPoint(lhs_rhs_are_not_null_block);
-    llvm::Value *lhs_rhs_are_not_null_block_result = nested_column->compileComparator(builder, lhs_unwrapped_value, rhs_unwrapped_value, nan_direction_hint);
+    llvm::Value * lhs_rhs_are_not_null_block_result
+        = nested_column->compileComparator(builder, lhs_unwrapped_value, rhs_unwrapped_value, nan_direction_hint);
     b.CreateBr(join_block);
 
     b.SetInsertPoint(join_block);

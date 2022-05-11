@@ -197,12 +197,12 @@ void SortingStep::transformPipeline(QueryPipelineBuilder & pipeline, const Build
                 increase_sort_description_compile_attempts = false;
 
             return std::make_shared<MergeSortingTransform>(
-                        header, result_description, max_block_size, limit, increase_sort_description_compile_attempts_current,
-                        max_bytes_before_remerge / pipeline.getNumStreams(),
-                        remerge_lowered_memory_bytes_ratio,
-                        max_bytes_before_external_sort,
-                        tmp_volume,
-                        min_free_disk_space);
+                    header, result_description, max_block_size, limit, increase_sort_description_compile_attempts_current,
+                    max_bytes_before_remerge / pipeline.getNumStreams(),
+                    remerge_lowered_memory_bytes_ratio,
+                    max_bytes_before_external_sort,
+                    tmp_volume,
+                    min_free_disk_space);
         });
 
         /// If there are several streams, then we merge them into one

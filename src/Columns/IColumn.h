@@ -292,9 +292,9 @@ public:
 
 #if USE_EMBEDDED_COMPILER
 
-    virtual bool isComparatorCompilable() const { return false; }
+    [[nodiscard]] virtual bool isComparatorCompilable() const { return false; }
 
-    virtual llvm::Value * compileComparator(llvm::IRBuilderBase & /*builder*/, llvm::Value * /*lhs*/, llvm::Value * /*rhs*/, llvm::Value * /*nan_direction_hint*/) const
+    [[nodiscard]] virtual llvm::Value * compileComparator(llvm::IRBuilderBase & /*builder*/, llvm::Value * /*lhs*/, llvm::Value * /*rhs*/, llvm::Value * /*nan_direction_hint*/) const
     {
         throw Exception("Method compileComparator is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }

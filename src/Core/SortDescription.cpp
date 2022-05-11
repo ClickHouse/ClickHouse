@@ -3,9 +3,12 @@
 #include <IO/Operators.h>
 #include <Common/JSONBuilder.h>
 #include <Common/SipHash.h>
+
+#if USE_EMBEDDED_COMPILER
 #include <DataTypes/Native.h>
 #include <Interpreters/JIT/compileFunction.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
+#endif
 
 namespace DB
 {
@@ -62,8 +65,6 @@ public:
 
     CompiledSortDescriptionFunction compiled_sort_description_function;
 };
-
-static std::unordered_map<std::string, CompiledSortDescriptionFunction> sort_description_to_compiled_function;
 
 static std::string getSortDescriptionDump(const SortDescription & description, const DataTypes & header_types)
 {
