@@ -231,7 +231,6 @@ private:
     /// "detached" file segment means that it is not owned by cache ("detached" from cache).
     /// In general case, all file segments are owned by cache.
     bool is_detached = false;
-    bool is_forcefully_detached = false;
 
     std::atomic<bool> is_downloaded{false};
     std::atomic<size_t> hits_count = 0; /// cache hits.
