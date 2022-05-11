@@ -908,7 +908,8 @@ void ExpressionAnalyzer::makeWindowDescriptions(ActionsDAGPtr actions)
     bool compile_sort_description = current_context->getSettingsRef().compile_sort_description;
     size_t min_count_to_compile_sort_description = current_context->getSettingsRef().min_count_to_compile_sort_description;
 
-    for (auto & [_, window_description] : window_descriptions) {
+    for (auto & [_, window_description] : window_descriptions)
+    {
         window_description.full_sort_description.compile_sort_description = compile_sort_description;
         window_description.full_sort_description.min_count_to_compile_sort_description = min_count_to_compile_sort_description;
 
