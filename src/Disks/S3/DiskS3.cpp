@@ -9,7 +9,7 @@
 
 #include <boost/algorithm/string.hpp>
 
-#include <base/scope_guard_safe.h>
+#include <Common/scope_guard_safe.h>
 #include <base/unit.h>
 #include <base/FnTraits.h>
 
@@ -109,6 +109,7 @@ DiskS3::DiskS3(
     String name_,
     String bucket_,
     String s3_root_path_,
+    String version_id_,
     DiskPtr metadata_disk_,
     FileCachePtr cache_,
     ContextPtr context_,
@@ -116,6 +117,7 @@ DiskS3::DiskS3(
     GetDiskSettings settings_getter_)
     : IDiskRemote(name_, s3_root_path_, metadata_disk_, std::move(cache_), "DiskS3", settings_->thread_pool_size)
     , bucket(std::move(bucket_))
+    , version_id(std::move(version_id_))
     , current_settings(std::move(settings_))
     , settings_getter(settings_getter_)
     , context(context_)
@@ -196,8 +198,8 @@ std::unique_ptr<ReadBufferFromFileBase> DiskS3::readFile(const String & path, co
     }
 
     auto s3_impl = std::make_unique<ReadBufferFromS3Gather>(
-        settings->client, bucket, metadata.remote_fs_root_path, metadata.remote_fs_objects,
-        settings->s3_max_single_read_retries, disk_read_settings);
+        settings->client, bucket, version_id, metadata.remote_fs_root_path, metadata.remote_fs_objects,
+        settings->s3_settings.max_single_read_retries, disk_read_settings);
 
     if (read_settings.remote_fs_method == RemoteFSReadMethod::threadpool)
     {
@@ -240,12 +242,9 @@ std::unique_ptr<WriteBufferFromFileBase> DiskS3::writeFile(const String & path, 
         settings->client,
         bucket,
         fs::path(remote_fs_root_path) / blob_name,
-        settings->s3_min_upload_part_size,
-        settings->s3_upload_part_size_multiply_factor,
-        settings->s3_upload_part_size_multiply_parts_count_threshold,
-        settings->s3_max_single_part_upload_size,
+        settings->s3_settings,
         std::move(object_metadata),
-        buf_size, threadPoolCallbackRunner(getThreadPoolWriter()), blob_name, cache_on_write ? cache : nullptr);
+        buf_size, threadPoolCallbackRunner(getThreadPoolWriter()), cache_on_write ? cache : nullptr);
 
     auto create_metadata_callback = [this, path, blob_name, mode] (size_t count)
     {
@@ -295,10 +294,7 @@ void DiskS3::createFileOperationObject(const String & operation_name, UInt64 rev
         settings->client,
         bucket,
         remote_fs_root_path + key,
-        settings->s3_min_upload_part_size,
-        settings->s3_upload_part_size_multiply_factor,
-        settings->s3_upload_part_size_multiply_parts_count_threshold,
-        settings->s3_max_single_part_upload_size,
+        settings->s3_settings,
         metadata);
 
     buffer.write('0');
@@ -360,7 +356,8 @@ int DiskS3::readSchemaVersion(const String & source_bucket, const String & sourc
         settings->client,
         source_bucket,
         source_path + SCHEMA_VERSION_OBJECT,
-        settings->s3_max_single_read_retries,
+        version_id,
+        settings->s3_settings.max_single_read_retries,
         context->getReadSettings());
 
     readIntText(version, buffer);
@@ -376,10 +373,7 @@ void DiskS3::saveSchemaVersion(const int & version)
         settings->client,
         bucket,
         remote_fs_root_path + SCHEMA_VERSION_OBJECT,
-        settings->s3_min_upload_part_size,
-        settings->s3_upload_part_size_multiply_factor,
-        settings->s3_upload_part_size_multiply_parts_count_threshold,
-        settings->s3_max_single_part_upload_size);
+        settings->s3_settings);
 
     writeIntText(version, buffer);
     buffer.finalize();
@@ -612,7 +606,7 @@ void DiskS3::copyObjectMultipartImpl(const String & src_bucket, const String & s
 
     std::vector<String> part_tags;
 
-    size_t upload_part_size = settings->s3_min_upload_part_size;
+    size_t upload_part_size = settings->s3_settings.min_upload_part_size;
     for (size_t position = 0, part_number = 1; position < size; ++part_number, position += upload_part_size)
     {
         Aws::S3::Model::UploadPartCopyRequest part_request;
@@ -764,7 +758,7 @@ void DiskS3::restore()
         bool cleanup_s3 = information.source_bucket != bucket || information.source_path != remote_fs_root_path;
         for (const auto & root : data_roots)
             if (exists(root))
-                removeSharedRecursive(root + '/', !cleanup_s3);
+                removeSharedRecursive(root + '/', !cleanup_s3, {});
 
         restoreFiles(information);
         restoreFileOperations(information);
@@ -1040,22 +1034,14 @@ void DiskS3::applyNewSettings(const Poco::Util::AbstractConfiguration & config, 
 
 DiskS3Settings::DiskS3Settings(
     const std::shared_ptr<Aws::S3::S3Client> & client_,
-    size_t s3_max_single_read_retries_,
-    size_t s3_min_upload_part_size_,
-    size_t s3_upload_part_size_multiply_factor_,
-    size_t s3_upload_part_size_multiply_parts_count_threshold_,
-    size_t s3_max_single_part_upload_size_,
+    const S3Settings::ReadWriteSettings & s3_settings_,
     size_t min_bytes_for_seek_,
     bool send_metadata_,
     int thread_pool_size_,
     int list_object_keys_size_,
     int objects_chunk_size_to_delete_)
     : client(client_)
-    , s3_max_single_read_retries(s3_max_single_read_retries_)
-    , s3_min_upload_part_size(s3_min_upload_part_size_)
-    , s3_upload_part_size_multiply_factor(s3_upload_part_size_multiply_factor_)
-    , s3_upload_part_size_multiply_parts_count_threshold(s3_upload_part_size_multiply_parts_count_threshold_)
-    , s3_max_single_part_upload_size(s3_max_single_part_upload_size_)
+    , s3_settings(s3_settings_)
     , min_bytes_for_seek(min_bytes_for_seek_)
     , send_metadata(send_metadata_)
     , thread_pool_size(thread_pool_size_)

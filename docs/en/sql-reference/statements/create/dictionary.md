@@ -1,6 +1,6 @@
 ---
-toc_priority: 38
-toc_title: DICTIONARY
+sidebar_position: 38
+sidebar_label: DICTIONARY
 ---
 
 # CREATE DICTIONARY {#create-dictionary-query}

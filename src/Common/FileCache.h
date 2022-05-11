@@ -11,7 +11,7 @@
 #include <map>
 
 #include "FileCache_fwd.h"
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <Common/FileSegment.h>
 #include <Core/Types.h>
 
@@ -42,7 +42,7 @@ public:
 
     virtual void remove(const Key & key) = 0;
 
-    virtual void tryRemoveAll() = 0;
+    virtual void remove(bool force_remove_unreleasable) = 0;
 
     static bool isReadOnly();
 
@@ -89,6 +89,10 @@ public:
 
     /// For debug.
     virtual String dumpStructure(const Key & key) = 0;
+
+    virtual size_t getUsedCacheSize() const = 0;
+
+    virtual size_t getCacheFilesNum() const = 0;
 
 protected:
     String cache_base_path;
@@ -145,9 +149,13 @@ public:
 
     void remove(const Key & key) override;
 
-    void tryRemoveAll() override;
+    void remove(bool force_remove_unreleasable) override;
 
     std::vector<String> tryGetCachePaths(const Key & key) override;
+
+    size_t getUsedCacheSize() const override;
+
+    size_t getCacheFilesNum() const override;
 
 private:
     using FileKeyAndOffset = std::pair<Key, size_t>;
@@ -170,9 +178,9 @@ private:
 
         FileSegmentCell(FileSegmentPtr file_segment_, LRUQueue & queue_);
 
-        FileSegmentCell(FileSegmentCell && other)
+        FileSegmentCell(FileSegmentCell && other) noexcept
             : file_segment(std::move(other.file_segment))
-            , queue_iterator(std::move(other.queue_iterator)) {}
+            , queue_iterator(other.queue_iterator) {}
 
         std::pair<Key, size_t> getKeyAndOffset() const { return std::make_pair(file_segment->key(), file_segment->range().left); }
     };
@@ -219,7 +227,7 @@ private:
 
     size_t availableSize() const { return max_size - current_size; }
 
-    void loadCacheInfoIntoMemory();
+    void loadCacheInfoIntoMemory(std::lock_guard<std::mutex> & cache_lock);
 
     FileSegments splitRangeIntoCells(
         const Key & key, size_t offset, size_t size, FileSegment::State state, std::lock_guard<std::mutex> & cache_lock);
