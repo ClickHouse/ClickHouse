@@ -390,10 +390,16 @@ void DDLWorker::scheduleTasks(bool reinitialized)
 
     for (auto & task_name : tasks_to_process)
     {
-        auto & task = *std::find_if(current_tasks.begin(), current_tasks.end(), [&](const auto & t)
+        auto & task = std::find_if(current_tasks.begin(), current_tasks.end(), [&](const auto & t)
         {
             return t->entry_name == task_name;
         });
+
+        if (task == current_tasks.end())
+        {
+            /// Seems already processed
+            continue;
+        }
 
         auto & saved_task = saveTask(std::move(task));
 
