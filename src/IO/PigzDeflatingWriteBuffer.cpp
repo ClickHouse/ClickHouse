@@ -54,6 +54,8 @@ PigzDeflatingWriteBuffer::~PigzDeflatingWriteBuffer()
 
 void PigzDeflatingWriteBuffer::finalizeBefore()
 {
+    next();
+
     writeHeader();
 
     auto *in_buf = reinterpret_cast<unsigned char *>(&uncompressed_buffer.front());
