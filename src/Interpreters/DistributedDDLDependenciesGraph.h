@@ -29,7 +29,7 @@ using TableNames = std::vector<QualifiedTableName>;
 using TableNamesSet = std::unordered_set<QualifiedTableName>;
 using QueryNames = std::vector<String>;
 using QueryNamesSet = std::unordered_set<String>;
-using QueryNameToDDLTaskPtrMap = std::unordered_map<String, DDLTaskBase&>;
+using QueryNameToDDLTaskPtrMap = std::unordered_map<String, DDLTaskPtr>;
 
 struct QueriesDependenciesInfo
 {
@@ -70,7 +70,7 @@ public:
 
     QueryNameToDDLTaskPtrMap name_to_ddl_task;
 
-    DependenciesGraph(ContextMutablePtr global_context_);
+    DependenciesGraph(ContextPtr global_context_);
     DependenciesGraph() = delete;
 
     void addTask(DDLTaskPtr & task);
