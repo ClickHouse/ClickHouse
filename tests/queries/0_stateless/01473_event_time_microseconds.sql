@@ -6,6 +6,7 @@
 -- Refer: tests/integration/test_asynchronous_metric_log_table.
 
 SET log_queries = 1;
+SET log_query_threads = 1;
 SET query_profiler_real_time_period_ns = 100000000;
 -- a long enough query to trigger the query profiler and to record trace log
 SELECT sleep(2) FORMAT Null;
@@ -41,7 +42,6 @@ WITH (
     ) AS time
 SELECT if(dateDiff('second', toDateTime(time.1), toDateTime(time.2)) = 0, 'ok', toString(time));
 
-SET log_query_threads = 1;
 SELECT '01473_query_thread_log_table_event_start_time_microseconds_test';
 WITH (
         SELECT event_time_microseconds, event_time
