@@ -176,9 +176,7 @@ SortingTransform::SortingTransform(
 
     description.swap(description_without_constants);
 
-    std::cout << "SortingTransform::SortingTransform increase compile attemps " << increase_sort_description_compile_attempts << std::endl;
     compileSortDescriptionIfNeeded(description, sort_description_types, increase_sort_description_compile_attempts /*increase_compile_attemps*/);
-    std::cout << "SortingTransform::SortingTransform compiled sort description " << description.compiled_sort_description << std::endl;
 }
 
 SortingTransform::~SortingTransform() = default;
