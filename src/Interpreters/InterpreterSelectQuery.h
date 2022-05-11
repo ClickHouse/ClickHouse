@@ -14,6 +14,7 @@
 #include <Storages/ReadInOrderOptimizer.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/TableLockHolder.h>
+#include <Storages/QueryCache.h>
 #include <Processors/Chunk.h>
 #include <Parsers/IAST.h>
 #include <Columns/FilterDescription.h>
@@ -32,57 +33,6 @@ class QueryPlan;
 
 struct TreeRewriterResult;
 using TreeRewriterResultPtr = std::shared_ptr<const TreeRewriterResult>;
-using Data = std::pair<Block, Chunks>;
-
-struct CacheKey
-{
-    bool operator==(const CacheKey & other) const
-    {
-        return ast->getTreeHash() == other.ast->getTreeHash()
-               && header == other.header
-//               && settingsSet(settings) == settingsSet(other.settings)
-//               && username == other.username
-            ;
-    }
-
-    ASTPtr ast;
-    Block header;
-    const Settings & settings;
-    const std::optional<String> & username;
-
-//    static std::set<String> settingsSet(const Settings & settings) {
-//        std::set<String> res;
-//        for (const auto & s : settings.all()) {
-//            res.insert(s.getValueString());
-//        }
-//        return res;
-//    }
-};
-struct CacheKeyHasher
-{
-    size_t operator()(const CacheKey & k) const
-    {
-        auto ast_info = k.ast->getTreeHash();
-        auto header_info = k.header.getNamesAndTypesList().toString();
-//        auto settings_info = settingsHash(k.settings);
-//        auto username_info = std::hash<std::optional<String>>{}(k.username);
-
-        return ast_info.first + ast_info.second * 9273 + std::hash<String>{}(header_info) * 9273 * 9273
-//            + settings_info * 9273 * 9273 * 9273
-//              + username_info * 9273 * 9273 * 9273 * 9273
-            ;
-    }
-//private:
-//    static size_t settingsHash(const Settings & settings) {
-//        size_t hash = 0;
-//        size_t coefficient = 1;
-//        for (const auto & s : settings) {
-//            hash += std::hash<String>{}(s.getValueString()) * coefficient;
-//            coefficient *= 53;
-//        }
-//        return hash;
-//    }
-};
 
 
 /** Interprets the SELECT query. Returns the stream of blocks with the results of the query before `to_stage` stage.
@@ -171,7 +121,6 @@ public:
 
     /// It will set shard_num and shard_count to the client_info
     void setProperClientInfo();
-    static void dropQueryCache();
 
 private:
     InterpreterSelectQuery(
@@ -281,7 +230,6 @@ private:
     SubqueriesForSets subquery_for_sets;
     PreparedSets prepared_sets;
 
-    static LRUCache<CacheKey, Data, CacheKeyHasher> cache;
     static std::unordered_map<CacheKey, size_t, CacheKeyHasher> times_executed;
     static std::mutex times_executed_mutex;
 };

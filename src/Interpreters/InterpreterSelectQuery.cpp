@@ -107,7 +107,6 @@ namespace ErrorCodes
     extern const int UNKNOWN_IDENTIFIER;
 }
 
-LRUCache<CacheKey, Data, CacheKeyHasher> InterpreterSelectQuery::cache{100};
 std::unordered_map<CacheKey, size_t, CacheKeyHasher> InterpreterSelectQuery::times_executed;
 std::mutex InterpreterSelectQuery::times_executed_mutex;
 
@@ -630,7 +629,7 @@ void InterpreterSelectQuery::executePutInCache(QueryPlan & query_plan, CacheKey 
     if (put_query_result_in_cache)
     {
         auto caching_step = std::make_unique<CachingStep>(query_plan.getCurrentDataStream(),
-                                                          cache, query_cache_key);
+                                                          context->getQueryCache(), query_cache_key);
         caching_step->setStepDescription("Cache query result");
         query_plan.addStep(std::move(caching_step));
     }
@@ -644,7 +643,7 @@ void InterpreterSelectQuery::buildQueryPlan(QueryPlan & query_plan)
                                         : std::optional<String>()
                                     };
 
-    if (auto query_result = cache.get(query_cache_key);
+    if (auto query_result = context->getQueryCache()->get(query_cache_key);
         query_result && context->getSettingsRef().query_cache_passive_usage)
     {
         const auto &header= query_result->first;
@@ -2787,8 +2786,4 @@ Chunk InterpreterSelectQuery::to_single_chunk(const Chunks& chunks)
     return Chunk(std::move(result_columns), num_rows);
 }
 
-void InterpreterSelectQuery::dropQueryCache()
-{
-    cache.reset();
-}
 }

@@ -3,6 +3,7 @@
 #include <Processors/ISimpleTransform.h>
 #include <Parsers/IAST.h>
 #include <Interpreters/InterpreterSelectQuery.h>
+#include <Storages/QueryCache.h>
 
 namespace DB
 {
@@ -10,9 +11,9 @@ namespace DB
 class CachingTransform : public ISimpleTransform
 {
 public:
-    CachingTransform(const Block & header, LRUCache<CacheKey, Data, CacheKeyHasher> & cache, ASTPtr query_ptr_, Settings settings, std::optional<String> username)
+    CachingTransform(const Block & header, QueryCachePtr cache, ASTPtr query_ptr_, Settings settings, std::optional<String> username)
         : ISimpleTransform(header, header, false)
-        , data(std::move(cache.getOrSet(CacheKey{query_ptr_, header, settings, username}, [&]
+        , data(std::move(cache->getOrSet(CacheKey{query_ptr_, header, settings, username}, [&]
                             {
                                 return std::make_shared<Data>(header, Chunks{});
                             }).first))

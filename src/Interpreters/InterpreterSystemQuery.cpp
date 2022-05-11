@@ -302,7 +302,7 @@ BlockIO InterpreterSystemQuery::execute()
 #endif
         case Type::DROP_QUERY_CACHE:
             getContext()->checkAccess(AccessType::SYSTEM_DROP_QUERY_CACHE);
-            InterpreterSelectQuery::dropQueryCache();
+            getContext()->dropQueryCache();
             break;
         case Type::DROP_FILESYSTEM_CACHE:
         {
