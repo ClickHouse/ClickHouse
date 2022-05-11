@@ -165,7 +165,6 @@ private:
     // Traverses the AST of ORDERBY section
     void traverseOrderByAST(const ASTPtr & node, RPN & rpn);
 
-
     // Checks that at least one rpn is matching for index
     // New RPNs for other query types can be added here
     bool matchAllRPNS();
@@ -178,10 +177,6 @@ private:
 
     // Returns true and stores Length if we have valid LIMIT clause in query
     static bool matchRPNLimit(RPN & rpn, LimitExpression & expr);
-
-    // Parses SETTINGS section, stores the new value for 'ann_index_params'
-    void parseSettings(const ASTPtr & node);
-
 
     /* Matches dist function, target vector, column name */
     static bool matchMainParts(RPN::iterator & iter, RPN::iterator & end, ANNExpression & expr, bool & identifier_found);

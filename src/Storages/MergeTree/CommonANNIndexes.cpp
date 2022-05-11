@@ -5,6 +5,8 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSetQuery.h>
 
+#include <Interpreters/Context.h>
+
 #include <Storages/MergeTree/CommonANNIndexes.h>
 
 namespace DB
@@ -29,6 +31,8 @@ ANNCondition::ANNCondition(const SelectQueryInfo & query_info,
     buildRPN(query_info);
     // Match rpns with supported types
     index_is_useful = matchAllRPNS();
+    // Get from settings ANNIndex parameters
+    ann_index_params = context->getSettings().get("ann_index_params").get<String>();
 }
 
 bool ANNCondition::alwaysUnknownOrTrue(String metric_name) const
@@ -114,11 +118,6 @@ void ANNCondition::buildRPN(const SelectQueryInfo & query)
         traverseAST(select.limitLength(), rpn_limit_clause);
     }
 
-    if (select.settings()) // If query has SETTINGS section
-    {
-        parseSettings(select.settings());
-    }
-
     if (select.orderBy()) // If query has ORDERBY section
     {
         traverseOrderByAST(select.orderBy(), rpn_order_by_clause);
@@ -200,7 +199,7 @@ bool ANNCondition::traverseAtomAST(const ASTPtr & node, RPNElement & out)
 
      // Check if we have constants behind the node
     return tryCastToConstType(node, out);
- }
+}
 
 bool ANNCondition::tryCastToConstType(const ASTPtr & node, RPNElement & out)
 {
@@ -308,21 +307,6 @@ bool ANNCondition::matchRPNLimit(RPN & rpn, LimitExpression & expr)
         return true;
     }
     return false;
-}
-
-void ANNCondition::parseSettings(const ASTPtr & node)
-{
-    if (const auto * set = node->as<ASTSetQuery>())
-    {
-        for (const auto & change : set->changes)
-        {
-            if (change.name == "ann_index_params")
-            {
-                ann_index_params = change.value.get<String>();
-                return;
-            }
-        }
-    }
 }
 
 bool ANNCondition::matchRPNOrderBy(RPN & rpn, ANNExpression & expr)
