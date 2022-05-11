@@ -159,10 +159,10 @@ void QueryPipelineBuilder::addChain(Chain chain)
     pipe.addChains(std::move(chains));
 }
 
-void QueryPipelineBuilder::transform(const Transformer & transformer, bool check_block_structure)
+void QueryPipelineBuilder::transform(const Transformer & transformer)
 {
     checkInitializedAndNotCompleted();
-    pipe.transform(transformer, check_block_structure);
+    pipe.transform(transformer);
 }
 
 void QueryPipelineBuilder::setSinks(const Pipe::ProcessorGetterWithStreamKind & getter)

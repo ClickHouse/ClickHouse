@@ -133,7 +133,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
         pipeline.transform([&](OutputPortRawPtrs ports)
         {
             assert(streams * grouping_sets_size == ports.size());
-            Processors aggregators;
+            Processors processors;
             for (size_t i = 0; i < grouping_sets_size; ++i)
             {
                 Aggregator::Params params_for_set
@@ -167,79 +167,85 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                         // For each input stream we have `grouping_sets_size` copies, so port index
                         // for transform #j should skip ports of first (j-1) streams.
                         connect(*ports[i + grouping_sets_size * j], aggregation_for_set->getInputs().front());
-                        aggregators.push_back(aggregation_for_set);
+                        ports[i + grouping_sets_size * j] = &aggregation_for_set->getOutputs().front();
+                        processors.push_back(aggregation_for_set);
                     }
                 }
                 else
                 {
                     auto aggregation_for_set = std::make_shared<AggregatingTransform>(input_header, transform_params_for_set);
                     connect(*ports[i], aggregation_for_set->getInputs().front());
-                    aggregators.push_back(aggregation_for_set);
+                    ports[i] = &aggregation_for_set->getOutputs().front();
+                    processors.push_back(aggregation_for_set);
                 }
             }
-            return aggregators;
-        }, false);
 
-        if (streams > 1)
-        {
-            pipeline.transform([&](OutputPortRawPtrs ports)
+            if (streams > 1)
             {
-                Processors resizes;
+                OutputPortRawPtrs new_ports;
+                new_ports.reserve(grouping_sets_size);
+
                 for (size_t i = 0; i < grouping_sets_size; ++i)
                 {
-                    auto output_it = ports.begin() + i * streams;
-                    auto resize = std::make_shared<ResizeProcessor>((*output_it)->getHeader(), streams, 1);
+                    size_t output_it = i;
+                    auto resize = std::make_shared<ResizeProcessor>(ports[output_it]->getHeader(), streams, 1);
                     auto & inputs = resize->getInputs();
 
-                    for (auto input_it = inputs.begin(); input_it != inputs.end(); ++output_it, ++input_it)
-                        connect(**output_it, *input_it);
-                    resizes.push_back(resize);
+                    for (auto input_it = inputs.begin(); input_it != inputs.end(); output_it += grouping_sets_size, ++input_it)
+                        connect(*ports[output_it], *input_it);
+                    new_ports.push_back(&resize->getOutputs().front());
+                    processors.push_back(resize);
                 }
-                return resizes;
-            }, false);
-        }
 
-        assert(pipeline.getNumStreams() == grouping_sets_size);
-        size_t set_counter = 0;
-        auto output_header = transform_params->getHeader();
-        pipeline.addSimpleTransform([&](const Block & header)
-        {
-            /// Here we create a DAG which fills missing keys and adds `__grouping_set` column
-            auto dag = std::make_shared<ActionsDAG>(header.getColumnsWithTypeAndName());
-            ActionsDAG::NodeRawConstPtrs index;
-            index.reserve(output_header.columns() + 1);
-
-            auto grouping_col = ColumnConst::create(ColumnUInt64::create(1, set_counter), 0);
-            const auto * grouping_node = &dag->addColumn(
-                {ColumnPtr(std::move(grouping_col)), std::make_shared<DataTypeUInt64>(), "__grouping_set"});
-
-            grouping_node = &dag->materializeNode(*grouping_node);
-            index.push_back(grouping_node);
-
-            size_t missign_column_index = 0;
-            const auto & missing_columns = grouping_sets_params[set_counter].missing_keys;
-
-            for (size_t i = 0; i < output_header.columns(); ++i)
-            {
-                auto & col = output_header.getByPosition(i);
-                if (missign_column_index < missing_columns.size() && missing_columns[missign_column_index] == i)
-                {
-                    ++missign_column_index;
-                    auto column = ColumnConst::create(col.column->cloneResized(1), 0);
-                    const auto * node = &dag->addColumn({ColumnPtr(std::move(column)), col.type, col.name});
-                    node = &dag->materializeNode(*node);
-                    index.push_back(node);
-                }
-                else
-                    index.push_back(dag->getIndex()[header.getPositionByName(col.name)]);
+                ports.swap(new_ports);
             }
 
-            dag->getIndex().swap(index);
-            auto expression = std::make_shared<ExpressionActions>(dag, settings.getActionsSettings());
-            auto transform = std::make_shared<ExpressionTransform>(header, expression);
+            assert(ports.size() == grouping_sets_size);
+            auto output_header = transform_params->getHeader();
 
-            ++set_counter;
-            return transform;
+            for (size_t set_counter = 0; set_counter < grouping_sets_size; ++set_counter)
+            {
+                auto & header = ports[set_counter]->getHeader();
+
+                /// Here we create a DAG which fills missing keys and adds `__grouping_set` column
+                auto dag = std::make_shared<ActionsDAG>(header.getColumnsWithTypeAndName());
+                ActionsDAG::NodeRawConstPtrs index;
+                index.reserve(output_header.columns() + 1);
+
+                auto grouping_col = ColumnConst::create(ColumnUInt64::create(1, set_counter), 0);
+                const auto * grouping_node = &dag->addColumn(
+                    {ColumnPtr(std::move(grouping_col)), std::make_shared<DataTypeUInt64>(), "__grouping_set"});
+
+                grouping_node = &dag->materializeNode(*grouping_node);
+                index.push_back(grouping_node);
+
+                size_t missign_column_index = 0;
+                const auto & missing_columns = grouping_sets_params[set_counter].missing_keys;
+
+                for (size_t i = 0; i < output_header.columns(); ++i)
+                {
+                    auto & col = output_header.getByPosition(i);
+                    if (missign_column_index < missing_columns.size() && missing_columns[missign_column_index] == i)
+                    {
+                        ++missign_column_index;
+                        auto column = ColumnConst::create(col.column->cloneResized(1), 0);
+                        const auto * node = &dag->addColumn({ColumnPtr(std::move(column)), col.type, col.name});
+                        node = &dag->materializeNode(*node);
+                        index.push_back(node);
+                    }
+                    else
+                        index.push_back(dag->getIndex()[header.getPositionByName(col.name)]);
+                }
+
+                dag->getIndex().swap(index);
+                auto expression = std::make_shared<ExpressionActions>(dag, settings.getActionsSettings());
+                auto transform = std::make_shared<ExpressionTransform>(header, expression);
+
+                connect(*ports[set_counter], transform->getInputPort());
+                processors.emplace_back(std::move(transform));
+            }
+
+            return processors;
         });
 
         aggregating = collector.detachProcessors(0);

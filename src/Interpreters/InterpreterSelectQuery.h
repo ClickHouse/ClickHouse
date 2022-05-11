@@ -3,7 +3,6 @@
 #include <memory>
 
 #include <Core/QueryProcessingStage.h>
-#include <Interpreters/Aggregator.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/IInterpreterUnionOrSelectQuery.h>
@@ -15,7 +14,6 @@
 #include <Storages/TableLockHolder.h>
 
 #include <Columns/FilterDescription.h>
-#include <Interpreters/ActionsDAG.h>
 
 namespace Poco
 {
@@ -34,7 +32,6 @@ using GroupingSetsParamsList = std::vector<GroupingSetsParams>;
 
 struct TreeRewriterResult;
 using TreeRewriterResultPtr = std::shared_ptr<const TreeRewriterResult>;
-using AggregatorParamsPtr = std::unique_ptr<Aggregator::Params>;
 
 
 /** Interprets the SELECT query. Returns the stream of blocks with the results of the query before `to_stage` stage.
@@ -146,16 +143,6 @@ private:
     void executeImpl(QueryPlan & query_plan, std::optional<Pipe> prepared_pipe);
 
     /// Different stages of query execution.
-
-    Aggregator::Params getAggregatorParams(
-        const Block & current_data_stream_header,
-        const ColumnNumbers & keys,
-        const AggregateDescriptions & aggregates,
-        bool overflow_row, const Settings & settings,
-        size_t group_by_two_level_threshold, size_t group_by_two_level_threshold_bytes);
-    GroupingSetsParamsList getAggregatorGroupingSetsParams(
-        const Block & header_before_aggregation,
-        const ColumnNumbers & all_keys);
     void executeFetchColumns(QueryProcessingStage::Enum processing_stage, QueryPlan & query_plan);
     void executeWhere(QueryPlan & query_plan, const ActionsDAGPtr & expression, bool remove_filter);
     void executeAggregation(
