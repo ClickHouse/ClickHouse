@@ -13,7 +13,7 @@ namespace DB
 class ExtendedLogMessage
 {
 public:
-    explicit ExtendedLogMessage(const Poco::Message & base_) : base(base_) {}
+    explicit ExtendedLogMessage(const Poco::Message & base_) : base(base_) { }
 
     /// Attach additional data to the message
     static ExtendedLogMessage getFrom(const Poco::Message & base);
@@ -27,7 +27,6 @@ public:
 
     uint64_t thread_id = 0;
     std::string query_id;
-    static bool log_format_json;
 };
 
 

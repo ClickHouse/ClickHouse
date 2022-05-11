@@ -5,7 +5,7 @@
 #include "ExtendedLogChannel.h"
 
 
-/** Format log messages own way.
+/** Format log messages own way in JSON.
   * We can't obtain some details using Poco::PatternFormatter.
   *
   * Firstly, the thread number here is peaked not from Poco::Thread
@@ -21,14 +21,11 @@
 
 class Loggers;
 
-class OwnPatternFormatter : public Poco::PatternFormatter
+class OwnJSONPatternFormatter : public Poco::PatternFormatter
 {
 public:
-    OwnPatternFormatter(bool color_ = false);
+    OwnJSONPatternFormatter();
 
     void format(const Poco::Message & msg, std::string & text) override;
-    void formatExtended(const DB::ExtendedLogMessage & msg_ext, std::string & text) const;
-
-private:
-    bool color;
+    void formatExtendedJSON(const DB::ExtendedLogMessage & msg_ext, std::string & text);
 };
