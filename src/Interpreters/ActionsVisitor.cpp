@@ -1,5 +1,8 @@
 #include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
+#include <Columns/ColumnArray.h>
+#include <Columns/ColumnFixedString.h>
+#include <Core/ColumnWithTypeAndName.h>
 
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsMiscellaneous.h>
@@ -12,6 +15,7 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/FieldToDataType.h>
 
 #include <Columns/ColumnSet.h>
@@ -459,14 +463,23 @@ public:
 };
 
 ActionsMatcher::Data::Data(
-    ContextPtr context_, SizeLimits set_size_limit_, size_t subquery_depth_,
-    const NamesAndTypesList & source_columns_, ActionsDAGPtr actions_dag,
-    PreparedSets & prepared_sets_, SubqueriesForSets & subqueries_for_sets_,
-    bool no_subqueries_, bool no_makeset_, bool only_consts_, bool create_source_for_in_)
+    ContextPtr context_,
+    SizeLimits set_size_limit_,
+    size_t subquery_depth_,
+    const NamesAndTypesList & source_columns_,
+    const NamesAndTypesList & aggregation_keys_,
+    ActionsDAGPtr actions_dag,
+    PreparedSets & prepared_sets_,
+    SubqueriesForSets & subqueries_for_sets_,
+    bool no_subqueries_,
+    bool no_makeset_,
+    bool only_consts_,
+    bool create_source_for_in_)
     : WithContext(context_)
     , set_size_limit(set_size_limit_)
     , subquery_depth(subquery_depth_)
     , source_columns(source_columns_)
+    , aggregation_keys(aggregation_keys_)
     , prepared_sets(prepared_sets_)
     , subqueries_for_sets(subqueries_for_sets_)
     , no_subqueries(no_subqueries_)
@@ -814,6 +827,35 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
         if (!data.only_consts)
             data.addArrayJoin(arg->getColumnName(), column_name);
 
+        return;
+    }
+
+    if (node.name == "grouping")
+    {
+        auto arguments_column_name = data.getUniqueName("__grouping_args");
+        {
+            ColumnWithTypeAndName column;
+            column.name = arguments_column_name;
+            column.type = std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>());
+            Array arguments_to_keys_map;
+            for (auto const & arg : node.arguments->children)
+            {
+                size_t pos = data.aggregation_keys.getPosByName(arg->getColumnName());
+                arguments_to_keys_map.push_back(pos);
+            }
+            auto arguments_column = ColumnArray::create(ColumnUInt64::create());
+            arguments_column->insert(Field{arguments_to_keys_map});
+
+            column.column = ColumnConst::create(ColumnPtr(std::move(arguments_column)), 1);
+
+            data.addColumn(column);
+        }
+
+        data.addFunction(
+            FunctionFactory::instance().get("grouping", data.getContext()),
+            { "__grouping_set_map", arguments_column_name },
+            column_name
+        );
         return;
     }
 
