@@ -1009,7 +1009,7 @@ void StorageWindowView::read(
     if (target_table_id.empty())
         return;
 
-    auto storage = getTargetStorage();
+    auto storage = getTargetTable();
     auto lock = storage->lockForShare(local_context->getCurrentQueryId(), local_context->getSettingsRef().lock_acquire_timeout);
     auto target_metadata_snapshot = storage->getInMemoryMetadataPtr();
     auto target_storage_snapshot = storage->getStorageSnapshot(target_metadata_snapshot, local_context);
