@@ -27,7 +27,8 @@ public:
     /// Read state from the latest snapshot
     void init();
 
-    void preprocess(uint64_t log_idx, nuraft::buffer & data);
+    KeeperStorage::RequestForSession parseRequest(nuraft::buffer & data);
+    void preprocess(const KeeperStorage::RequestForSession & request_for_session);
 
     nuraft::ptr<nuraft::buffer> pre_commit(uint64_t log_idx, nuraft::buffer & data) override;
 
@@ -81,6 +82,8 @@ public:
     void processReadRequest(const KeeperStorage::RequestForSession & request_for_session);
 
     std::vector<int64_t> getDeadSessions();
+
+    int64_t getNextZxid() const;
 
     /// Introspection functions for 4lw commands
     uint64_t getLastProcessedZxid() const;

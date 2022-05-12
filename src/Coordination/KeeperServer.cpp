@@ -1,9 +1,12 @@
 #include <Coordination/Defines.h>
 #include <Coordination/KeeperServer.h>
 
+#include "Coordination/Changelog.h"
+#include "IO/WriteBuffer.h"
 #include "config_core.h"
 
 #include <chrono>
+#include <condition_variable>
 #include <filesystem>
 #include <string>
 #include <Coordination/KeeperStateMachine.h>
@@ -16,6 +19,7 @@
 #include <boost/algorithm/string.hpp>
 #include <libnuraft/cluster_config.hxx>
 #include <libnuraft/log_val_type.hxx>
+#include <libnuraft/ptr.hxx>
 #include <libnuraft/raft_server.hxx>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/Util/Application.h>
@@ -326,7 +330,7 @@ void KeeperServer::startup(const Poco::Util::AbstractConfiguration & config, boo
         for (const auto & entry : *log_entries)
         {
             if (entry && entry->get_val_type() == nuraft::log_val_type::app_log)
-                state_machine->preprocess(idx, entry->get_buf());
+                state_machine->pre_commit(idx, entry->get_buf());
 
             ++idx;
         }
@@ -384,17 +388,17 @@ void KeeperServer::shutdown()
 namespace
 {
 
-nuraft::ptr<nuraft::buffer> getZooKeeperLogEntry(int64_t session_id, int64_t time, const Coordination::ZooKeeperRequestPtr & request)
+nuraft::ptr<nuraft::buffer> getZooKeeperLogEntry(const KeeperStorage::RequestForSession & request_for_session)
 {
-    DB::WriteBufferFromNuraftBuffer buf;
-    DB::writeIntBinary(session_id, buf);
-    request->write(buf);
-    DB::writeIntBinary(time, buf);
-    return buf.getBuffer();
+    DB::WriteBufferFromNuraftBuffer write_buf;
+    DB::writeIntBinary(request_for_session.session_id, write_buf);
+    request_for_session.request->write(write_buf);
+    DB::writeIntBinary(request_for_session.time, write_buf);
+    DB::writeIntBinary(request_for_session.zxid, write_buf);
+    return write_buf.getBuffer();
 }
 
 }
-
 
 void KeeperServer::putLocalReadRequest(const KeeperStorage::RequestForSession & request_for_session)
 {
@@ -407,8 +411,10 @@ void KeeperServer::putLocalReadRequest(const KeeperStorage::RequestForSession & 
 RaftAppendResult KeeperServer::putRequestBatch(const KeeperStorage::RequestsForSessions & requests_for_sessions)
 {
     std::vector<nuraft::ptr<nuraft::buffer>> entries;
-    for (const auto & [session_id, time, request] : requests_for_sessions)
-        entries.push_back(getZooKeeperLogEntry(session_id, time, request));
+    for (const auto & request_for_session : requests_for_sessions)
+    {
+        entries.push_back(getZooKeeperLogEntry(request_for_session));
+    }
 
     std::lock_guard lock{server_write_mutex};
     if (is_recovering)
@@ -504,7 +510,33 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
     }
 
     if (initialized_flag)
+    {
+        switch (type)
+        {
+            case nuraft::cb_func::PreAppendLogs:
+            {
+                nuraft::req_msg & req = *static_cast<nuraft::req_msg *>(param->ctx);
+
+                for (auto & entry : req.log_entries())
+                {
+                    assert(entry->get_val_type() == nuraft::app_log);
+                    auto next_zxid = state_machine->getNextZxid();
+                    
+                    auto & entry_buf = entry->get_buf();
+                    auto request_for_session = state_machine->parseRequest(entry_buf);
+                    request_for_session.zxid = next_zxid;
+                    state_machine->preprocess(request_for_session);
+
+                    entry = nuraft::cs_new<nuraft::log_entry>(entry->get_term(), getZooKeeperLogEntry(request_for_session), entry->get_val_type());
+                }
+                break;
+            }
+            default:
+                break;
+        }
+
         return nuraft::cb_func::ReturnCode::Ok;
+    }
 
     size_t last_commited = state_machine->last_commit_index();
     size_t next_index = state_manager->getLogStore()->next_slot();

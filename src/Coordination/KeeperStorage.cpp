@@ -1549,6 +1549,21 @@ KeeperStorageRequestProcessorsFactory::KeeperStorageRequestProcessorsFactory()
 void KeeperStorage::preprocessRequest(
     const Coordination::ZooKeeperRequestPtr & zk_request, int64_t session_id, int64_t time, int64_t new_last_zxid, bool check_acl)
 {
+    int64_t last_zxid = uncommitted_zxids.empty() ? zxid : uncommitted_zxids.back();
+
+    if (new_last_zxid < last_zxid || (uncommitted_zxids.empty() && new_last_zxid == last_zxid))
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR, "Got new ZXID {} smaller or equal to current ZXID ({}). It's a bug", new_last_zxid, zxid);
+
+    if (new_last_zxid == last_zxid)
+        // last uncommitted zxids is same as the current one so we are probably pre_committing on the leader
+        // but the leader already preprocessed the request while he appended the ZXID
+        // same ZXIDs in other cases should not happen but we can be more sure of that once we add the digest
+        // i.e. we will comapare both ZXID and the digest
+        return;
+
+    uncommitted_zxids.push_back(new_last_zxid);
+
     KeeperStorageRequestProcessorPtr request_processor = KeeperStorageRequestProcessorsFactory::instance().get(zk_request);
 
     if (zk_request->getOpNum() == Coordination::OpNum::Close) /// Close request is special
@@ -1597,14 +1612,21 @@ KeeperStorage::ResponsesForSessions KeeperStorage::processRequest(
     bool check_acl,
     bool is_local)
 {
-    KeeperStorage::ResponsesForSessions results;
     if (new_last_zxid)
     {
-        if (zxid >= *new_last_zxid)
+        if (uncommitted_zxids.empty())
             throw Exception(
-                ErrorCodes::LOGICAL_ERROR, "Got new ZXID {} smaller or equal than current {}. It's a bug", *new_last_zxid, zxid);
+                ErrorCodes::LOGICAL_ERROR, "Trying to commit a ZXID ({}) which was not preprocessed", *new_last_zxid);
+
+        if (uncommitted_zxids.front() != *new_last_zxid)
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR, "Trying to commit a ZXID {} while the next ZXID to commit is {}", *new_last_zxid, uncommitted_zxids.front());
+
         zxid = *new_last_zxid;
+        uncommitted_zxids.pop_front();
     }
+
+    KeeperStorage::ResponsesForSessions results;
 
     /// ZooKeeper update sessions expirity for each request, not only for heartbeats
     session_expiry_queue.addNewSessionOrUpdate(session_id, session_and_timeout[session_id]);
@@ -1711,6 +1733,10 @@ KeeperStorage::ResponsesForSessions KeeperStorage::processRequest(
 
 void KeeperStorage::rollbackRequest(int64_t rollback_zxid)
 {
+    if (uncommitted_zxids.empty() || uncommitted_zxids.back() != rollback_zxid)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR, "Trying to rollback invalid ZXID ({}). It should be the last preprocessed.", rollback_zxid);
+
     // we can only rollback the last zxid (if there is any)
     // if there is a delta with a larger zxid, we have invalid state
     assert(uncommitted_state.deltas.empty() || uncommitted_state.deltas.back().zxid <= rollback_zxid);
