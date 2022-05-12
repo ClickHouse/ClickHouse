@@ -5,7 +5,7 @@
 #include "Poco/Util/Application.h"
 #include "Poco/File.h"
 #ifdef USE_SSL
-    #include <openssl/x509.h>
+    #include <openssl/x509v3.h>
     #include "Poco/Crypto/X509Certificate.h"
 #endif
 
