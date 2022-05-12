@@ -4,10 +4,10 @@
 #include <filesystem>
 #include "Poco/Util/Application.h"
 #include "Poco/File.h"
-#ifdef USE_SSL
+//#ifdef USE_SSL
     #include <openssl/x509v3.h>
     #include "Poco/Crypto/X509Certificate.h"
-#endif
+//#endif
 
 namespace DB
 {
@@ -177,30 +177,30 @@ void StorageSystemCertificates::fillData(MutableColumns & res_columns, ContextPt
 #ifdef USE_SSL
     Poco::Util::AbstractConfiguration &conf = Poco::Util::Application::instance().config();
 
-    std::string caLocation = conf.getString("openSSL.server.caConfig", "");
-    bool loadDefaultCAs = conf.getBool("openSSL.server.loadDefaultCAFile", true);
+    std::string ca_location = conf.getString("openSSL.server.caConfig", "");
+    bool load_default_cas = conf.getBool("openSSL.server.loadDefaultCAFile", true);
 
-    if (!caLocation.empty())
+    if (!ca_location.empty())
     {
-        Poco::File aFile(caLocation);
-        if (aFile.exists())
+        Poco::File afile(ca_location);
+        if (afile.exists())
         {
-            if (aFile.isDirectory())
+            if (afile.isDirectory())
             {
-                auto dir_set = parse_dir(caLocation);
+                auto dir_set = parse_dir(ca_location);
                 for (const auto & entry : dir_set)
                     enumCertificates(entry, res_columns);
             }
             else
             {
-                auto certs = Poco::Crypto::X509Certificate::readPEM(aFile.path());
+                auto certs = Poco::Crypto::X509Certificate::readPEM(afile.path());
                 for (const auto & cert : certs)
                     populateTable(cert.certificate(), res_columns);
             }
         }
     }
 
-    if (loadDefaultCAs)
+    if (load_default_cas)
     {
         const char * dir = getenv(X509_get_default_cert_dir_env());
         if (!dir)
@@ -217,8 +217,8 @@ void StorageSystemCertificates::fillData(MutableColumns & res_columns, ContextPt
             file = X509_get_default_cert_file();
         if (file)
         {
-            Poco::File aFile(file);
-            if (aFile.exists())
+            Poco::File afile(file);
+            if (afile.exists())
             {
                 auto certs = Poco::Crypto::X509Certificate::readPEM(file);
                 for (const auto & cert : certs)
