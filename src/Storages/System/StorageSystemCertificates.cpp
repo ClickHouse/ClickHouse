@@ -174,7 +174,7 @@ static void enumCertificates(const std::string & dir, MutableColumns & res_colum
 
 void StorageSystemCertificates::fillData(MutableColumns & res_columns, ContextPtr/* context*/, const SelectQueryInfo &) const
 {
-#ifdef USE_SSL    
+#ifdef USE_SSL
     Poco::Util::AbstractConfiguration &conf = Poco::Util::Application::instance().config();
 
     std::string caLocation = conf.getString("openSSL.server.caConfig", "");
