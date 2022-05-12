@@ -363,3 +363,53 @@ def test_replicated_table_restored_into_smaller_cluster():
 
     node1.query(f"RESTORE TABLE tbl ON CLUSTER 'cluster1' FROM {backup_name}")
     assert node1.query("SELECT * FROM tbl ORDER BY x") == TSV([111, 222])
+
+
+def test_replicated_database_async():
+    node1.query(
+        "CREATE DATABASE mydb ON CLUSTER 'cluster' ENGINE=Replicated('/clickhouse/path/','{shard}','{replica}')"
+    )
+
+    node1.query("CREATE TABLE mydb.tbl(x UInt8) ENGINE=ReplicatedMergeTree ORDER BY x")
+    
+    node1.query(
+        "CREATE TABLE mydb.tbl2(y String) ENGINE=ReplicatedMergeTree ORDER BY y"
+    )
+
+    node2.query("SYSTEM SYNC DATABASE REPLICA mydb")
+
+    node1.query("INSERT INTO mydb.tbl VALUES (1)")
+    node1.query("INSERT INTO mydb.tbl VALUES (22)")
+    node2.query("INSERT INTO mydb.tbl2 VALUES ('a')")
+    node2.query("INSERT INTO mydb.tbl2 VALUES ('bb')")
+    node1.query("SYSTEM SYNC REPLICA ON CLUSTER 'cluster' mydb.tbl")
+
+    backup_name = new_backup_name()
+    [id, _, status] = node1.query(
+        f"BACKUP DATABASE mydb ON CLUSTER 'cluster' TO {backup_name} ASYNC"
+    ).split("\t")
+    
+    assert status == "MAKING_BACKUP\n"
+    
+    assert_eq_with_retry(
+        node1,
+        f"SELECT status FROM system.backups WHERE uuid='{id}'",
+        "BACKUP_COMPLETE\n",
+    )
+
+    node1.query("DROP DATABASE mydb ON CLUSTER 'cluster' NO DELAY")
+
+    [id, _, status] = node1.query(
+        f"RESTORE DATABASE mydb ON CLUSTER 'cluster' FROM {backup_name} ASYNC"
+    ).split("\t")
+    
+    assert status == "RESTORING\n"
+    
+    assert_eq_with_retry(
+        node1, f"SELECT status FROM system.backups WHERE uuid='{id}'", "RESTORED\n"
+    )
+
+    node1.query("SYSTEM SYNC REPLICA ON CLUSTER 'cluster' mydb.tbl")
+
+    assert node1.query("SELECT * FROM mydb.tbl ORDER BY x") == TSV([1, 22])
+    assert node2.query("SELECT * FROM mydb.tbl2 ORDER BY y") == TSV(["a", "bb"])
