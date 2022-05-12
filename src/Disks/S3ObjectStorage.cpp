@@ -1,4 +1,8 @@
 #include <Disks/S3ObjectStorage.h>
+
+
+#if USE_AWS_S3
+
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
 #include <Disks/RemoteDisksCommon.h>
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
@@ -434,3 +438,5 @@ void S3ObjectStorage::applyNewSettings(const Poco::Util::AbstractConfiguration &
 }
 
 }
+
+#endif
