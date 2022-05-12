@@ -31,20 +31,6 @@ namespace ErrorCodes
 
 namespace
 {
-    void checkNoMultipleReplicas(const std::vector<Strings> & cluster_host_ids, size_t only_shard_num)
-    {
-        if (only_shard_num)
-        {
-            if ((only_shard_num <= cluster_host_ids.size()) && (cluster_host_ids[only_shard_num - 1].size() > 1))
-                throw Exception(ErrorCodes::QUERY_IS_PROHIBITED, "Backup of multiple replicas is disabled. Choose one replica with the replica_num setting or specify allow_storing_multiple_replicas=true");
-        }
-        for (const auto & shard : cluster_host_ids)
-        {
-            if (shard.size() > 1)
-                throw Exception(ErrorCodes::QUERY_IS_PROHIBITED, "Backup of multiple replicas is disabled. Choose one replica with the replica_num setting or specify allow_storing_multiple_replicas=true");
-        }
-    }
-
     void executeBackupImpl(const ASTBackupQuery & query, const UUID & backup_uuid, const ContextPtr & context, ThreadPool & thread_pool)
     {
         const auto backup_info = BackupInfo::fromAST(*query.backup_name);
@@ -69,8 +55,6 @@ namespace
             new_query->cluster = context->getMacros()->expand(query.cluster);
             cluster = context->getCluster(new_query->cluster);
             backup_settings.cluster_host_ids = cluster->getHostIDs();
-            if (!backup_settings.allow_storing_multiple_replicas && !backup_settings.replica_num)
-                checkNoMultipleReplicas(backup_settings.cluster_host_ids, backup_settings.shard_num);
             if (backup_settings.coordination_zk_path.empty())
             {
                 String root_zk_path = context->getConfigRef().getString("backups.zookeeper_path", "/clickhouse/backups");

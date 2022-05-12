@@ -652,13 +652,11 @@ namespace
             {
                 if (replicas_in_backup.size() == 1)
                     restore_settings.replica_num_in_backup = replicas_in_backup[0];
-                else
+                else if (std::find(replicas_in_backup.begin(), replicas_in_backup.end(), replica_num) != replicas_in_backup.end())
                     restore_settings.replica_num_in_backup = replica_num;
+                else
+                    restore_settings.replica_num_in_backup = replicas_in_backup[0];
             }
-
-            if (std::find(replicas_in_backup.begin(), replicas_in_backup.end(), restore_settings.replica_num_in_backup)
-                == replicas_in_backup.end())
-                throw Exception(ErrorCodes::BACKUP_ENTRY_NOT_FOUND, "No replica #{} in backup", restore_settings.replica_num_in_backup);
         }
 
         /// Prepares to restore a single table and probably its database's definition.
