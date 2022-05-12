@@ -587,7 +587,6 @@ class IColumn;
     M(Bool, throw_if_no_data_to_insert, true, "Enables or disables empty INSERTs, enabled by default", 0) \
     M(Bool, query_cache_active_usage, false, "Put query result in cache after execution", 0) \
     M(Bool, query_cache_passive_usage, false, "If query result is in cache, use it", 0) \
-    M(UInt64, max_items_count_query_cache, 100, "Max number of records to be stores in query cache", 0) \
     M(Bool, share_query_cache, true, "Enable sharing query cache with other users", 0) \
     M(UInt64, min_query_runs_before_caching, 3, "Minimum number of query runs before the result is put in cache", 0) \
     // End of COMMON_SETTINGS
