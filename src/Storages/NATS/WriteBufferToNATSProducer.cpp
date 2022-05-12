@@ -84,7 +84,6 @@ void WriteBufferToNATSProducer::countRow()
         ++payload_counter;
         if (!payloads.push(payload))
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Could not push to payloads queue");
-        LOG_DEBUG(log, "Pushed payload to queue {} {}", payload, payloads.size());
     }
 }
 
@@ -99,23 +98,23 @@ natsStatus WriteBufferToNATSProducer::publish()
 
         if (!pop_result)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Could not pop payload");
+        status = natsConnection_PublishString(connection.getConnection(), subject.c_str(), payload.c_str());
 
-        if (status == NATS_OK)
+        if (status != NATS_OK)
         {
-            status = natsConnection_PublishString(connection.getConnection(), subject.c_str(), payload.c_str());
-        }
-        else
-        {
-            LOG_DEBUG(log, "Something went wrong during publishing to NATS subject {}.", subject);
+            LOG_DEBUG(log, "Something went wrong during publishing to NATS subject. Nats status text: {}. Last error message: {}",
+                      natsStatus_GetText(status), nats_GetLastError(nullptr));
             break;
         }
     }
 
     if (status == NATS_OK)
+    {
         status = natsConnection_Flush(connection.getConnection());
-
-    if (status != NATS_OK)
-        LOG_DEBUG(log, "Something went wrong during publishing to NATS subject {}.", subject);
+        if (status != NATS_OK)
+            LOG_DEBUG(log, "Something went wrong during flushing NATS connection. Nats status text: {}. Last error message: {}",
+                      natsStatus_GetText(status), nats_GetLastError(nullptr));
+    }
 
     iterateEventLoop();
     return status;

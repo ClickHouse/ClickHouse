@@ -38,11 +38,8 @@ public:
     };
 
     std::vector<SubscriptionPtr> & getChannel() { return subscriptions; }
-    void closeChannel()
-    {
-        for (const auto & subscription : subscriptions)
-            natsSubscription_Unsubscribe(subscription.get());
-    }
+    void subscribe();
+    void unsubscribe();
 
     void updateSubjects(std::vector<String> & subjects_) { subjects = subjects_; }
     size_t subjectsCount() { return subjects.size(); }
@@ -57,7 +54,6 @@ public:
 private:
     bool nextImpl() override;
 
-    void subscribe();
     static void onMsg(natsConnection *nc, natsSubscription *sub, natsMsg * msg, void * closure);
 
     std::shared_ptr<NATSConnectionManager> connection;

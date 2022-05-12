@@ -40,6 +40,8 @@ public:
     /// No synchronization is done with the main loop thread.
     void startBlockingLoop();
 
+    void setThreadLocalLoop();
+
     void stopLoop();
 
     void changeConnectionStatus(bool is_running);

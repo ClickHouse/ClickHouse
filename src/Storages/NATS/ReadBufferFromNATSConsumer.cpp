@@ -39,7 +39,6 @@ ReadBufferFromNATSConsumer::ReadBufferFromNATSConsumer(
 {
 }
 
-
 ReadBufferFromNATSConsumer::~ReadBufferFromNATSConsumer()
 {
     for (const auto& subscription : subscriptions) {
@@ -49,8 +48,7 @@ ReadBufferFromNATSConsumer::~ReadBufferFromNATSConsumer()
     BufferBase::set(nullptr, 0, 0);
 }
 
-
-void ReadBufferFromNATSConsumer::subscribe(const String & subscribe_queue_name)
+void ReadBufferFromNATSConsumer::subscribe()
 {
     if (subscribed)
         return;
@@ -58,7 +56,7 @@ void ReadBufferFromNATSConsumer::subscribe(const String & subscribe_queue_name)
     for (const auto & subject : subjects) {
         natsSubscription * ns;
         auto status = natsConnection_QueueSubscribe(
-            &ns, connection->getConnection(), subject.c_str(), subscribe_queue_name.c_str(), onMsg, static_cast<void *>(this));
+            &ns, connection->getConnection(), subject.c_str(), queue_name.c_str(), onMsg, static_cast<void *>(this));
         if (status == NATS_OK)
         {
             LOG_DEBUG(log, "Subscribed to subject {}", subject);
@@ -72,6 +70,11 @@ void ReadBufferFromNATSConsumer::subscribe(const String & subscribe_queue_name)
     subscribed = true;
 }
 
+void ReadBufferFromNATSConsumer::unsubscribe()
+{
+    for (const auto & subscription : subscriptions)
+        natsSubscription_Unsubscribe(subscription.get());
+}
 
 bool ReadBufferFromNATSConsumer::nextImpl()
 {

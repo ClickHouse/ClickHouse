@@ -353,7 +353,7 @@ void StorageNATS::shutdown()
         if (drop_table)
         {
             for (auto & buffer : buffers)
-                buffer->closeChannel();
+                buffer->unsubscribe();
         }
 
         /// It is important to close connection here - before removing consumer buffers, because
@@ -408,7 +408,9 @@ ConsumerBufferPtr StorageNATS::popReadBuffer(std::chrono::milliseconds timeout)
 ConsumerBufferPtr StorageNATS::createReadBuffer()
 {
     return std::make_shared<ReadBufferFromNATSConsumer>(
-        connection, subjects, getStorageID().getFullTableName(), log, row_delimiter, queue_size, shutdown_called);
+        connection, subjects,
+        nats_settings->nats_queue_group.changed ? nats_settings->nats_queue_group.value : getStorageID().getFullTableName(),
+        log, row_delimiter, queue_size, shutdown_called);
 }
 
 
