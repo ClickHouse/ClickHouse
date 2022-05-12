@@ -191,11 +191,13 @@ private:
     IntervalKind::Kind hop_kind;
     IntervalKind::Kind watermark_kind;
     IntervalKind::Kind lateness_kind;
+    IntervalKind::Kind slide_kind;
     Int64 window_num_units;
     Int64 hop_num_units;
     Int64 slice_num_units;
     Int64 watermark_num_units = 0;
     Int64 lateness_num_units = 0;
+    Int64 slide_num_units;
     String window_id_name;
     String window_id_alias;
     String window_column_name;
