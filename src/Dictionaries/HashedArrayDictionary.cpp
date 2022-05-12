@@ -761,11 +761,8 @@ void HashedArrayDictionary<dictionary_key_type>::calculateBytesAllocated()
     if (update_field_loaded_block)
         bytes_allocated += update_field_loaded_block->allocatedBytes();
 
-     if (hierarchy_parent_to_child_index)
-     {
+    if (hierarchy_parent_to_child_index)
         bytes_allocated += hierarchy_parent_to_child_index->getSizeInBytes();
-        std::cout << "Hierarchy index size " << hierarchy_parent_to_child_index->getSizeInBytes() << std::endl;
-     }
 
     bytes_allocated += string_arena.size();
 }
