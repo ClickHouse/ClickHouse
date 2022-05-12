@@ -17,7 +17,6 @@ namespace DB
 
 struct S3ObjectStorageSettings
 {
-
     S3ObjectStorageSettings() = default;
 
     S3ObjectStorageSettings(
@@ -95,9 +94,7 @@ public:
 
     void copyObject(const std::string & object_from, const std::string & object_to, std::optional<ObjectAttributes> object_to_attributes = {}) override;
 
-    void setNewSettings(std::unique_ptr<S3ObjectStorageSettings> && s3_settings_);
-
-    void setNewClient(std::unique_ptr<Aws::S3::S3Client> && client_);
+    void copyObjectToAnotherObjectStorage(const std::string & object_from, const std::string & object_to, IObjectStorage & object_storage_to, std::optional<ObjectAttributes> object_to_attributes = {}) override;
 
     void shutdown() override;
 
@@ -105,7 +102,13 @@ public:
 
     void applyNewSettings(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, ContextPtr context) override;
 
+    String getObjectsNamespace() const override { return bucket; }
+
+    std::unique_ptr<IObjectStorage> cloneObjectStorage(const std::string & new_namespace, const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, ContextPtr context) override;
 private:
+    void setNewSettings(std::unique_ptr<S3ObjectStorageSettings> && s3_settings_);
+
+    void setNewClient(std::unique_ptr<Aws::S3::S3Client> && client_);
 
     void copyObjectImpl(const String & src_bucket, const String & src_key, const String & dst_bucket, const String & dst_key,
         std::optional<Aws::S3::Model::HeadObjectResult> head = std::nullopt,

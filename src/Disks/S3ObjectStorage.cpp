@@ -81,11 +81,15 @@ bool S3ObjectStorage::exists(const std::string & path) const
     auto object_head = requestObjectHeadData(bucket, path);
     if (!object_head.IsSuccess())
     {
-        if (object_head.GetError().GetErrorType() == Aws::S3::S3Errors::NO_SUCH_KEY)
+        if (object_head.GetError().GetErrorType() == Aws::S3::S3Errors::RESOURCE_NOT_FOUND)
+        {
+            LOG_DEBUG(&Poco::Logger::get("DEBUG"), "OBJECT DOESNT {} EXISTS", path);
             return false;
+        }
 
         throwIfError(object_head);
     }
+    LOG_DEBUG(&Poco::Logger::get("DEBUG"), "OBJECT {} EXISTS", path);
     return true;
 }
 
@@ -291,6 +295,15 @@ ObjectMetadata S3ObjectStorage::getObjectMetadata(const std::string & path) cons
     return result;
 }
 
+void S3ObjectStorage::copyObjectToAnotherObjectStorage(const std::string & object_from, const std::string & object_to, IObjectStorage & object_storage_to, std::optional<ObjectAttributes> object_to_attributes)
+{
+    /// Shortcut for S3
+    if (auto * dest_s3 = dynamic_cast<S3ObjectStorage * >(&object_storage_to); dest_s3 != nullptr)
+        copyObjectImpl(bucket, object_from, dest_s3->bucket, object_to, {}, object_to_attributes);
+    else
+        IObjectStorage::copyObjectToAnotherObjectStorage(object_from, object_to, object_storage_to, object_to_attributes);
+}
+
 void S3ObjectStorage::copyObjectImpl(const String & src_bucket, const String & src_key, const String & dst_bucket, const String & dst_key,
     std::optional<Aws::S3::Model::HeadObjectResult> head,
     std::optional<ObjectAttributes> metadata) const
@@ -428,7 +441,7 @@ void S3ObjectStorage::startup()
     auto client_ptr = client.get();
 
     /// Need to be enabled if it was disabled during shutdown() call.
-    const_cast<Aws::S3::S3Client &>(*client_ptr.get()).EnableRequestProcessing();
+    const_cast<Aws::S3::S3Client &>(*client_ptr).EnableRequestProcessing();
 }
 
 void S3ObjectStorage::applyNewSettings(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, ContextPtr context)
@@ -437,6 +450,15 @@ void S3ObjectStorage::applyNewSettings(const Poco::Util::AbstractConfiguration &
     client.set(getClient(config, config_prefix, context));
 }
 
+std::unique_ptr<IObjectStorage> S3ObjectStorage::cloneObjectStorage(const std::string & new_namespace, const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, ContextPtr context)
+{
+    return std::make_unique<S3ObjectStorage>(
+        nullptr, getClient(config, config_prefix, context),
+        getSettings(config, config_prefix, context),
+        version_id, new_namespace);
 }
+
+}
+
 
 #endif

@@ -1,5 +1,6 @@
 #include <Disks/IObjectStorage.h>
 #include <Disks/IO/ThreadPoolRemoteFSReader.h>
+#include <IO/copyData.h>
 
 namespace DB
 {
@@ -32,6 +33,17 @@ void IObjectStorage::removeFromCache(const std::string & path)
         auto key = cache->hash(path);
         cache->remove(key);
     }
+}
+
+void IObjectStorage::copyObjectToAnotherObjectStorage(const std::string & object_from, const std::string & object_to, IObjectStorage & object_storage_to, std::optional<ObjectAttributes> object_to_attributes)
+{
+    if (&object_storage_to == this)
+        copyObject(object_from, object_to, object_to_attributes);
+
+    auto in = readObject(object_from);
+    auto out = object_storage_to.writeObject(object_to);
+    copyData(*in, *out);
+    out->finalize();
 }
 
 }

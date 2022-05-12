@@ -79,7 +79,7 @@ void registerDiskS3(DiskFactory & factory)
             getSettings(config, config_prefix, context),
             uri.version_id, uri.bucket);
 
-        std::shared_ptr<IDisk> s3disk = std::make_shared<DiskObjectStorage>(
+        std::shared_ptr<DiskObjectStorage> s3disk = std::make_shared<DiskObjectStorage>(
             name,
             uri.key,
             "DiskS3",
@@ -98,6 +98,9 @@ void registerDiskS3(DiskFactory & factory)
 
         s3disk->startup();
 
+        s3disk->restoreMetadataIfNeeded(config, config_prefix, context);
+
+        std::shared_ptr<IDisk> disk_result = s3disk;
 
 #ifdef NDEBUG
         bool use_cache = true;
@@ -110,10 +113,11 @@ void registerDiskS3(DiskFactory & factory)
         if (config.getBool(config_prefix + ".cache_enabled", use_cache))
         {
             String cache_path = config.getString(config_prefix + ".cache_path", context->getPath() + "disks/" + name + "/cache/");
-            s3disk = wrapWithCache(s3disk, "s3-cache", cache_path, metadata_path);
+            disk_result = wrapWithCache(disk_result, "s3-cache", cache_path, metadata_path);
         }
 
-        return std::make_shared<DiskRestartProxy>(s3disk);
+        LOG_DEBUG(&Poco::Logger::get("DEBUG"), "DONE DISK");
+        return std::make_shared<DiskRestartProxy>(disk_result);
     };
     factory.registerDiskType("s3", creator);
 }
