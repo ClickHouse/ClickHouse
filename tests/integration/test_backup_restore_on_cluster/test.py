@@ -26,6 +26,16 @@ node2 = cluster.add_instance(
 )
 
 
+node3 = cluster.add_instance(
+    "node3",
+    main_configs=["configs/remote_servers.xml", "configs/backups_disk.xml"],
+    user_configs=["configs/allow_experimental_database_replicated.xml"],
+    external_dirs=["/backups/"],
+    macros={"replica": "node3", "shard": "shard1"},
+    with_zookeeper=True,
+)
+
+
 @pytest.fixture(scope="module", autouse=True)
 def start_cluster():
     try:
@@ -40,8 +50,8 @@ def drop_after_test():
     try:
         yield
     finally:
-        node1.query("DROP TABLE IF EXISTS tbl ON CLUSTER 'cluster' NO DELAY")
-        node1.query("DROP DATABASE IF EXISTS mydb ON CLUSTER 'cluster' NO DELAY")
+        node1.query("DROP TABLE IF EXISTS tbl ON CLUSTER 'cluster3' NO DELAY")
+        node1.query("DROP DATABASE IF EXISTS mydb ON CLUSTER 'cluster3' NO DELAY")
 
 
 backup_id_counter = 0
@@ -172,9 +182,7 @@ def test_different_tables_on_nodes():
     node2.query("INSERT INTO tbl VALUES (-333), (-222), (-111), (0), (111)")
 
     backup_name = new_backup_name()
-    node1.query(
-        f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name} SETTINGS allow_storing_multiple_replicas = true"
-    )
+    node1.query(f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name}")
 
     node1.query("DROP TABLE tbl ON CLUSTER 'cluster' NO DELAY")
 
@@ -272,16 +280,10 @@ def test_replicated_table_with_not_synced_insert():
     node2.query("INSERT INTO tbl VALUES (444)")
 
     backup_name = new_backup_name()
+    node1.query(f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name}")
 
-    # Make backup.
-    node1.query(
-        f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name} SETTINGS allow_storing_multiple_replicas=true"
-    )
-
-    # Drop table on both nodes.
     node1.query(f"DROP TABLE tbl ON CLUSTER 'cluster' NO DELAY")
 
-    # Restore from backup.
     node1.query(f"RESTORE TABLE tbl ON CLUSTER 'cluster' FROM {backup_name}")
     node1.query("SYSTEM SYNC REPLICA ON CLUSTER 'cluster' tbl")
 
@@ -308,18 +310,56 @@ def test_replicated_table_with_not_synced_merge():
     node2.query("OPTIMIZE TABLE tbl FINAL")
 
     backup_name = new_backup_name()
+    node1.query(f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name}")
 
-    # Make backup.
-    node1.query(
-        f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name} SETTINGS allow_storing_multiple_replicas=true"
-    )
-
-    # Drop table on both nodes.
     node1.query(f"DROP TABLE tbl ON CLUSTER 'cluster' NO DELAY")
 
-    # Restore from backup.
     node1.query(f"RESTORE TABLE tbl ON CLUSTER 'cluster' FROM {backup_name}")
     node1.query("SYSTEM SYNC REPLICA ON CLUSTER 'cluster' tbl")
 
     assert node1.query("SELECT * FROM tbl ORDER BY x") == TSV([111, 222])
     assert node2.query("SELECT * FROM tbl ORDER BY x") == TSV([111, 222])
+
+
+def test_replicated_table_restored_into_bigger_cluster():
+    node1.query(
+        "CREATE TABLE tbl ON CLUSTER 'cluster' ("
+        "x UInt32"
+        ") ENGINE=ReplicatedMergeTree('/clickhouse/tables/tbl/', '{replica}')"
+        "ORDER BY x"
+    )
+
+    node1.query("INSERT INTO tbl VALUES (111)")
+    node2.query("INSERT INTO tbl VALUES (222)")
+
+    backup_name = new_backup_name()
+    node1.query(f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name}")
+
+    node1.query("DROP TABLE tbl ON CLUSTER 'cluster' NO DELAY")
+
+    node1.query(f"RESTORE TABLE tbl ON CLUSTER 'cluster3' FROM {backup_name}")
+    node1.query("SYSTEM SYNC REPLICA ON CLUSTER 'cluster3' tbl")
+
+    assert node1.query("SELECT * FROM tbl ORDER BY x") == TSV([111, 222])
+    assert node2.query("SELECT * FROM tbl ORDER BY x") == TSV([111, 222])
+    assert node3.query("SELECT * FROM tbl ORDER BY x") == TSV([111, 222])
+
+
+def test_replicated_table_restored_into_smaller_cluster():
+    node1.query(
+        "CREATE TABLE tbl ON CLUSTER 'cluster' ("
+        "x UInt32"
+        ") ENGINE=ReplicatedMergeTree('/clickhouse/tables/tbl/', '{replica}')"
+        "ORDER BY x"
+    )
+
+    node1.query("INSERT INTO tbl VALUES (111)")
+    node2.query("INSERT INTO tbl VALUES (222)")
+
+    backup_name = new_backup_name()
+    node1.query(f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name}")
+
+    node1.query("DROP TABLE tbl ON CLUSTER 'cluster' NO DELAY")
+
+    node1.query(f"RESTORE TABLE tbl ON CLUSTER 'cluster1' FROM {backup_name}")
+    assert node1.query("SELECT * FROM tbl ORDER BY x") == TSV([111, 222])
