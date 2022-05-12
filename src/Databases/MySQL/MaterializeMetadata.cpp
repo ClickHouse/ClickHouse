@@ -311,7 +311,19 @@ void MaterializeMetadata::startReplication(
         }
         else
         {
-            connection->query("FLUSH TABLES " + boost::algorithm::join(materialized_tables_list, ",") + " WITH READ LOCK;").execute();
+            mysqlxx::UseQueryResult result_list = connection->query("SHOW FULL TABLES IN " + database + " WHERE Table_type = 'BASE TABLE'").use();
+
+            std::unordered_set<String> materialized_tables_list_exists;
+
+            // only flush tables that do exist to avoid Error Code: 1146. Table 'x' doesn't exist
+            // https://github.com/ClickHouse/ClickHouse/pull/36698#issuecomment-1122222041
+            while (mysqlxx::Row row = result_list.fetch())
+            {
+                if (materialized_tables_list.contains(row[0].getString()))
+                    materialized_tables_list_exists.insert(row[0].getString());
+            }
+
+            connection->query("FLUSH TABLES " + boost::algorithm::join(materialized_tables_list_exists, ",") + " WITH READ LOCK;").execute();
         }
         locked_tables = true;
 
