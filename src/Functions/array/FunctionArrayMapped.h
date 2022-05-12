@@ -331,7 +331,6 @@ public:
 
             if (Impl::needBoolean())
             {
-                toColumnTypeName
                 /// If result column is Nothing or Nullable(Nothing), just create const UInt8 column with 0 value.
                 if (isNothing(removeNullable(lambda_result.type)))
                 {
