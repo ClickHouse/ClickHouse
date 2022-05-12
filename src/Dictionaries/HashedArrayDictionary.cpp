@@ -282,18 +282,11 @@ ColumnUInt8::Ptr HashedArrayDictionary<dictionary_key_type>::isInHierarchy(
 }
 
 template <DictionaryKeyType dictionary_key_type>
-ColumnPtr HashedArrayDictionary<dictionary_key_type>::getDescendants(
-    ColumnPtr key_column [[maybe_unused]],
-    const DataTypePtr &,
-    size_t level [[maybe_unused]]) const
+DictionaryHierarchyParentToChildIndexPtr HashedArrayDictionary<dictionary_key_type>::getHierarchyParentToChildIndex() const
 {
     if constexpr (dictionary_key_type == DictionaryKeyType::Simple)
     {
-        PaddedPODArray<UInt64> keys_backup;
-        const auto & keys = getColumnVectorData(this, key_column, keys_backup);
-
         size_t hierarchical_attribute_index = *dict_struct.hierarchical_attribute_index;
-
         const auto & hierarchical_attribute = attributes[hierarchical_attribute_index];
         const AttributeContainerType<UInt64> & parent_keys_container = std::get<AttributeContainerType<UInt64>>(hierarchical_attribute.container);
 
@@ -306,6 +299,7 @@ ColumnPtr HashedArrayDictionary<dictionary_key_type>::getDescendants(
             index_to_key[value] = key;
 
         HashMap<UInt64, PaddedPODArray<UInt64>> parent_to_child;
+        parent_to_child.reserve(index_to_key.size());
 
         for (size_t i = 0; i < parent_keys_container.size(); ++i)
         {
@@ -318,8 +312,28 @@ ColumnPtr HashedArrayDictionary<dictionary_key_type>::getDescendants(
             parent_to_child[parent_key].emplace_back(child_key);
         }
 
+        return std::make_shared<DictionaryHierarchyParentToChildIndex>(std::move(parent_to_child));
+    }
+    else
+    {
+        return nullptr;
+    }
+}
+
+template <DictionaryKeyType dictionary_key_type>
+ColumnPtr HashedArrayDictionary<dictionary_key_type>::getDescendants(
+    ColumnPtr key_column [[maybe_unused]],
+    const DataTypePtr &,
+    size_t level [[maybe_unused]],
+    DictionaryHierarchyParentToChildIndexPtr parent_to_child_index [[maybe_unused]]) const
+{
+    if constexpr (dictionary_key_type == DictionaryKeyType::Simple)
+    {
+        PaddedPODArray<UInt64> keys_backup;
+        const auto & keys = getColumnVectorData(this, key_column, keys_backup);
+
         size_t keys_found = 0;
-        auto result = getKeysDescendantsArray(keys, parent_to_child, level, keys_found);
+        auto result = getKeysDescendantsArray(keys, *parent_to_child_index, level, keys_found);
 
         query_count.fetch_add(keys.size(), std::memory_order_relaxed);
         found_count.fetch_add(keys_found, std::memory_order_relaxed);
