@@ -4,3 +4,32 @@ Array(Nothing)
 Array(Nothing)
 []
 Array(Nothing)
+Array(Nothing)
+Array(Nothing)
+[]
+Array(Nothing)
+Array(Nothing)
+Array(Nothing)
+
+Nothing
+Const(Nothing)
+Nothing
+Const(Nothing)
+Nothing
+Nothing
+Array(Nothing)
+Const(Array(Nothing))
+Array(Nothing)
+Array(Nothing)
+Map(UInt8, Nothing)
+Const(Map(UInt8, Nothing))
+Map(UInt8, Nothing)
+Map(UInt8, Nothing)
+Tuple(UInt8, Nothing)
+Const(Tuple(UInt8, Nothing))
+Tuple(UInt8, Nothing)
+Tuple(UInt8, Nothing)
+Nothing
+Const(Nothing)
+Nothing
+Nothing
