@@ -232,7 +232,7 @@ void fillMissingColumns(
     auto available_column = available_columns.begin();
     for (size_t i = 0; i < num_columns; ++i, ++available_column)
     {
-        if (res_columns[i] == nullptr)
+        if (res_columns[i] == nullptr || isColumnConst(*res_columns[i]))
             continue;
 
         auto serialization = IDataType::getSerialization(*available_column);
