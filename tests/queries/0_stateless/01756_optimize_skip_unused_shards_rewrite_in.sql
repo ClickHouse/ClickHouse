@@ -11,6 +11,15 @@ drop table if exists dist_01756_column;
 drop table if exists data_01756_str;
 drop table if exists data_01756_signed;
 
+-- separate log entry for localhost queries
+set prefer_localhost_replica=0;
+set force_optimize_skip_unused_shards=2;
+set optimize_skip_unused_shards=1;
+set optimize_skip_unused_shards_rewrite_in=0;
+set log_queries=1;
+
+-- { echoOn }
+
 -- SELECT
 --     intHash64(0) % 2,
 --     intHash64(2) % 2
@@ -18,13 +27,6 @@ drop table if exists data_01756_signed;
 -- │                       0 │                       1 │
 -- └─────────────────────────┴─────────────────────────┘
 create table dist_01756 as system.one engine=Distributed(test_cluster_two_shards, system, one, intHash64(dummy));
-
--- separate log entry for localhost queries
-set prefer_localhost_replica=0;
-set force_optimize_skip_unused_shards=2;
-set optimize_skip_unused_shards=1;
-set optimize_skip_unused_shards_rewrite_in=0;
-set log_queries=1;
 
 --
 -- w/o optimize_skip_unused_shards_rewrite_in=1
@@ -150,6 +152,8 @@ select * from dist_01756 where dummy in ('0', '2');
 select 'optimize_skip_unused_shards_limit';
 select * from dist_01756 where dummy in (0, 2) settings optimize_skip_unused_shards_limit=1; -- { serverError 507 }
 select * from dist_01756 where dummy in (0, 2) settings optimize_skip_unused_shards_limit=1, force_optimize_skip_unused_shards=0;
+
+-- { echoOff }
 
 drop table dist_01756;
 drop table dist_01756_str;
