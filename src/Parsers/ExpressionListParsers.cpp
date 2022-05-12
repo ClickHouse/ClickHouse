@@ -1638,6 +1638,7 @@ bool ParserExpression2::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserLiteral literal_parser;
     ParserTupleOfLiterals tuple_literal_parser;
     ParserArrayOfLiterals array_literal_parser;
+    ParserSubstitution substitution_parser;
 
     // Recursion
     ParserQualifiedAsterisk qualified_asterisk_parser;
@@ -1710,7 +1711,8 @@ bool ParserExpression2::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                      literal_parser.parse(pos, tmp, expected) ||
                      asterisk_parser.parse(pos, tmp, expected) ||
                      qualified_asterisk_parser.parse(pos, tmp, expected) ||
-                     columns_matcher_parser.parse(pos, tmp, expected))
+                     columns_matcher_parser.parse(pos, tmp, expected) ||
+                     substitution_parser.parse(pos, tmp, expected))
             {
                 storage.back()->pushOperand(std::move(tmp));
             }
