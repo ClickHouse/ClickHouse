@@ -569,16 +569,6 @@ void DiskObjectStorage::startup()
     LOG_INFO(log, "Starting up disk {}", name);
     object_storage->startup();
 
-    if (send_metadata)
-    {
-        metadata_helper->restore();
-
-        if (metadata_helper->readSchemaVersion(remote_fs_root_path) < DiskObjectStorageMetadataHelper::RESTORABLE_SCHEMA_VERSION)
-            metadata_helper->migrateToRestorableSchema();
-
-        metadata_helper->findLastRevision();
-    }
-
     LOG_INFO(log, "Disk {} started up", name);
 }
 
@@ -674,6 +664,26 @@ void DiskObjectStorage::applyNewSettings(const Poco::Util::AbstractConfiguration
     object_storage->applyNewSettings(config, "storage_configuration.disks." + name, context_);
 }
 
+void DiskObjectStorage::restoreMetadataIfNeeded(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, ContextPtr context)
+{
+    if (send_metadata)
+    {
+        LOG_DEBUG(log, "START RESTORING METADATA");
+        metadata_helper->restore(config, config_prefix, context);
+
+        if (metadata_helper->readSchemaVersion(object_storage.get(), remote_fs_root_path) < DiskObjectStorageMetadataHelper::RESTORABLE_SCHEMA_VERSION)
+        {
+            LOG_DEBUG(log, "DONE READING");
+            metadata_helper->migrateToRestorableSchema();
+            LOG_DEBUG(log, "MIGRATION FINISHED");
+        }
+
+        LOG_DEBUG(log, "SEARCHING LAST REVISION");
+        metadata_helper->findLastRevision();
+        LOG_DEBUG(log, "DONE RESTORING METADATA");
+    }
+}
+
 DiskPtr DiskObjectStorageReservation::getDisk(size_t i) const
 {
     if (i != 0)
@@ -750,14 +760,14 @@ void DiskObjectStorageMetadataHelper::findLastRevision()
     LOG_INFO(disk->log, "Found last revision number {} for disk {}", revision_counter, disk->name);
 }
 
-int DiskObjectStorageMetadataHelper::readSchemaVersion(const String & source_path) const
+int DiskObjectStorageMetadataHelper::readSchemaVersion(IObjectStorage * object_storage, const String & source_path) const
 {
     const std::string path = source_path + SCHEMA_VERSION_OBJECT;
     int version = 0;
-    if (!disk->object_storage->exists(path))
+    if (!object_storage->exists(path))
         return version;
 
-    auto buf = disk->object_storage->readObject(path);
+    auto buf = object_storage->readObject(path);
     readIntText(version, *buf);
 
     return version;
@@ -800,20 +810,22 @@ void DiskObjectStorageMetadataHelper::migrateToRestorableSchemaRecursive(const S
 
     bool dir_contains_only_files = true;
     for (auto it = disk->iterateDirectory(path); it->isValid(); it->next())
+    {
         if (disk->isDirectory(it->path()))
         {
             dir_contains_only_files = false;
             break;
         }
+    }
 
     /// The whole directory can be migrated asynchronously.
     if (dir_contains_only_files)
     {
         auto result = disk->getExecutor().execute([this, path]
-             {
-                 for (auto it = disk->iterateDirectory(path); it->isValid(); it->next())
-                     migrateFileToRestorableSchema(it->path());
-             });
+        {
+            for (auto it = disk->iterateDirectory(path); it->isValid(); it->next())
+                migrateFileToRestorableSchema(it->path());
+        });
 
         results.push_back(std::move(result));
     }
@@ -863,15 +875,18 @@ void DiskObjectStorageMetadataHelper::migrateToRestorableSchema()
     }
 }
 
-void DiskObjectStorageMetadataHelper::restore()
+void DiskObjectStorageMetadataHelper::restore(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, ContextPtr context)
 {
     if (!disk->exists(RESTORE_FILE_NAME))
+    {
         return;
+    }
 
     try
     {
         RestoreInformation information;
         information.source_path = disk->remote_fs_root_path;
+        information.source_namespace = disk->object_storage->getObjectsNamespace();
 
         readRestoreInformation(information);
         if (information.revision == 0)
@@ -879,19 +894,28 @@ void DiskObjectStorageMetadataHelper::restore()
         if (!information.source_path.ends_with('/'))
             information.source_path += '/';
 
-        /// In this case we need to additionally cleanup S3 from objects with later revision.
-        /// Will be simply just restore to different path.
-        if (information.source_path == disk->remote_fs_root_path && information.revision != LATEST_REVISION)
-            throw Exception("Restoring to the same bucket and path is allowed if revision is latest (0)", ErrorCodes::BAD_ARGUMENTS);
+        IObjectStorage * source_object_storage = disk->object_storage.get();
+        if (information.source_namespace == disk->object_storage->getObjectsNamespace())
+        {
+            /// In this case we need to additionally cleanup S3 from objects with later revision.
+            /// Will be simply just restore to different path.
+            if (information.source_path == disk->remote_fs_root_path && information.revision != LATEST_REVISION)
+                throw Exception("Restoring to the same bucket and path is allowed if revision is latest (0)", ErrorCodes::BAD_ARGUMENTS);
 
-        /// This case complicates S3 cleanup in case of unsuccessful restore.
-        if (information.source_path != disk->remote_fs_root_path && disk->remote_fs_root_path.starts_with(information.source_path))
-            throw Exception("Restoring to the same bucket is allowed only if source path is not a sub-path of configured path in S3 disk", ErrorCodes::BAD_ARGUMENTS);
+            /// This case complicates S3 cleanup in case of unsuccessful restore.
+            if (information.source_path != disk->remote_fs_root_path && disk->remote_fs_root_path.starts_with(information.source_path))
+                throw Exception("Restoring to the same bucket is allowed only if source path is not a sub-path of configured path in S3 disk", ErrorCodes::BAD_ARGUMENTS);
+        }
+        else
+        {
+            object_storage_from_another_namespace = disk->object_storage->cloneObjectStorage(information.source_namespace, config, config_prefix, context);
+            source_object_storage = object_storage_from_another_namespace.get();
+        }
 
         LOG_INFO(disk->log, "Starting to restore disk {}. Revision: {}, Source path: {}",
                  disk->name, information.revision, information.source_path);
 
-        if (readSchemaVersion(information.source_path) < RESTORABLE_SCHEMA_VERSION)
+        if (readSchemaVersion(source_object_storage, information.source_path) < RESTORABLE_SCHEMA_VERSION)
             throw Exception("Source bucket doesn't have restorable schema.", ErrorCodes::BAD_ARGUMENTS);
 
         LOG_INFO(disk->log, "Removing old metadata...");
@@ -901,8 +925,8 @@ void DiskObjectStorageMetadataHelper::restore()
             if (disk->exists(root))
                 disk->removeSharedRecursive(root + '/', !cleanup_s3, {});
 
-        restoreFiles(information);
-        restoreFileOperations(information);
+        restoreFiles(source_object_storage, information);
+        restoreFileOperations(source_object_storage, information);
 
         disk->metadata_disk->removeFile(RESTORE_FILE_NAME);
 
@@ -949,10 +973,12 @@ void DiskObjectStorageMetadataHelper::readRestoreInformation(RestoreInformation 
 
         for (const auto & [key, value] : properties)
         {
-            ReadBufferFromString value_buffer (value);
+            ReadBufferFromString value_buffer(value);
 
             if (key == "revision")
                 readIntText(restore_information.revision, value_buffer);
+            else if (key == "source_bucket" || key == "source_namespace")
+                readText(restore_information.source_namespace, value_buffer);
             else if (key == "source_path")
                 readText(restore_information.source_path, value_buffer);
             else if (key == "detached")
@@ -988,12 +1014,12 @@ static std::tuple<UInt64, String> extractRevisionAndOperationFromKey(const Strin
     return {(revision_str.empty() ? 0 : static_cast<UInt64>(std::bitset<64>(revision_str).to_ullong())), operation};
 }
 
-void DiskObjectStorageMetadataHelper::restoreFiles(const RestoreInformation & restore_information)
+void DiskObjectStorageMetadataHelper::restoreFiles(IObjectStorage * source_object_storage, const RestoreInformation & restore_information)
 {
     LOG_INFO(disk->log, "Starting restore files for disk {}", disk->name);
 
     std::vector<std::future<void>> results;
-    auto restore_files = [this, &restore_information, &results](const BlobsPathToSize & keys)
+    auto restore_files = [this, &source_object_storage, &restore_information, &results](const BlobsPathToSize & keys)
     {
         std::vector<String> keys_names;
         for (const auto & [key, size] : keys)
@@ -1012,9 +1038,9 @@ void DiskObjectStorageMetadataHelper::restoreFiles(const RestoreInformation & re
 
         if (!keys_names.empty())
         {
-            auto result = disk->getExecutor().execute([this, &restore_information, keys_names]()
+            auto result = disk->getExecutor().execute([this, &source_object_storage, &restore_information, keys_names]()
             {
-                processRestoreFiles(restore_information.source_path, keys_names);
+                processRestoreFiles(source_object_storage, restore_information.source_path, keys_names);
             });
 
             results.push_back(std::move(result));
@@ -1024,7 +1050,7 @@ void DiskObjectStorageMetadataHelper::restoreFiles(const RestoreInformation & re
     };
 
     BlobsPathToSize children;
-    disk->object_storage->listPrefix(restore_information.source_path, children);
+    source_object_storage->listPrefix(restore_information.source_path, children);
     restore_files(children);
 
     for (auto & result : results)
@@ -1036,11 +1062,11 @@ void DiskObjectStorageMetadataHelper::restoreFiles(const RestoreInformation & re
 
 }
 
-void DiskObjectStorageMetadataHelper::processRestoreFiles(const String & source_path, std::vector<String> keys)
+void DiskObjectStorageMetadataHelper::processRestoreFiles(IObjectStorage * source_object_storage, const String & source_path, const std::vector<String> & keys)
 {
     for (const auto & key : keys)
     {
-        auto meta = disk->object_storage->getObjectMetadata(key);
+        auto meta = source_object_storage->getObjectMetadata(key);
         auto object_attributes = meta.attributes;
 
         String path;
@@ -1066,7 +1092,7 @@ void DiskObjectStorageMetadataHelper::processRestoreFiles(const String & source_
 
         /// Copy object if we restore to different bucket / path.
         if (disk->remote_fs_root_path != source_path)
-            disk->object_storage->copyObject(key, disk->remote_fs_root_path + relative_key);
+            source_object_storage->copyObjectToAnotherObjectStorage(key, disk->remote_fs_root_path + relative_key, *disk->object_storage);
 
         auto updater = [relative_key, meta] (DiskObjectStorage::Metadata & metadata)
         {
@@ -1088,13 +1114,13 @@ static String pathToDetached(const String & source_path)
     return fs::path(source_path).parent_path() / "detached/";
 }
 
-void DiskObjectStorageMetadataHelper::restoreFileOperations(const RestoreInformation & restore_information)
+void DiskObjectStorageMetadataHelper::restoreFileOperations(IObjectStorage * source_object_storage, const RestoreInformation & restore_information)
 {
     /// Enable recording file operations if we restore to different bucket / path.
-    bool send_metadata = disk->remote_fs_root_path != restore_information.source_path;
+    bool send_metadata = source_object_storage->getObjectsNamespace() != disk->object_storage->getObjectsNamespace() || disk->remote_fs_root_path != restore_information.source_path;
 
     std::set<String> renames;
-    auto restore_file_operations = [this, &restore_information, &renames, &send_metadata](const BlobsPathToSize & keys)
+    auto restore_file_operations = [this, &source_object_storage, &restore_information, &renames, &send_metadata](const BlobsPathToSize & keys)
     {
         const String rename = "rename";
         const String hardlink = "hardlink";
@@ -1117,7 +1143,7 @@ void DiskObjectStorageMetadataHelper::restoreFileOperations(const RestoreInforma
             if (send_metadata)
                 revision_counter = revision - 1;
 
-            auto object_attributes = *(disk->object_storage->getObjectMetadata(key).attributes);
+            auto object_attributes = *(source_object_storage->getObjectMetadata(key).attributes);
             if (operation == rename)
             {
                 auto from_path = object_attributes["from_path"];
@@ -1180,7 +1206,7 @@ void DiskObjectStorageMetadataHelper::restoreFileOperations(const RestoreInforma
     };
 
     BlobsPathToSize children;
-    disk->object_storage->listPrefix(restore_information.source_path + "operations/", children);
+    source_object_storage->listPrefix(restore_information.source_path + "operations/", children);
     restore_file_operations(children);
 
     if (restore_information.detached)
@@ -1223,6 +1249,5 @@ void DiskObjectStorageMetadataHelper::restoreFileOperations(const RestoreInforma
 
     LOG_INFO(disk->log, "File operations restored for disk {}", disk->name);
 }
-
 
 }

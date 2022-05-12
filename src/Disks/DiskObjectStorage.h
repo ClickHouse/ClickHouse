@@ -164,6 +164,7 @@ public:
 
     void applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr context_, const String &, const DisksMap &) override;
 
+    void restoreMetadataIfNeeded(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, ContextPtr context);
 private:
     const String name;
     const String remote_fs_root_path;
@@ -284,6 +285,7 @@ public:
     struct RestoreInformation
     {
         UInt64 revision = LATEST_REVISION;
+        String source_namespace;
         String source_path;
         bool detached = false;
     };
@@ -293,18 +295,18 @@ public:
     void createFileOperationObject(const String & operation_name, UInt64 revision, const ObjectAttributes & metadata) const;
     void findLastRevision();
 
-    int readSchemaVersion(const String & source_path) const;
+    int readSchemaVersion(IObjectStorage * object_storage, const String & source_path) const;
     void saveSchemaVersion(const int & version) const;
     void updateObjectMetadata(const String & key, const ObjectAttributes & metadata) const;
     void migrateFileToRestorableSchema(const String & path) const;
     void migrateToRestorableSchemaRecursive(const String & path, Futures & results);
     void migrateToRestorableSchema();
 
-    void restore();
+    void restore(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, ContextPtr context);
     void readRestoreInformation(RestoreInformation & restore_information);
-    void restoreFiles(const RestoreInformation & restore_information);
-    void processRestoreFiles(const String & source_path, std::vector<String> keys);
-    void restoreFileOperations(const RestoreInformation & restore_information);
+    void restoreFiles(IObjectStorage * source_object_storage, const RestoreInformation & restore_information);
+    void processRestoreFiles(IObjectStorage * source_object_storage, const String & source_path, const std::vector<String> & keys);
+    void restoreFileOperations(IObjectStorage * source_object_storage, const RestoreInformation & restore_information);
 
     std::atomic<UInt64> revision_counter = 0;
     inline static const String RESTORE_FILE_NAME = "restore";
@@ -317,6 +319,8 @@ public:
     const std::vector<String> data_roots {"data", "store"};
 
     DiskObjectStorage * disk;
+
+    ObjectStoragePtr object_storage_from_another_namespace;
 
     ReadSettings read_settings;
 };
