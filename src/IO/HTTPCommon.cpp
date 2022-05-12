@@ -74,8 +74,6 @@ namespace
         if (https)
         {
 #if USE_SSL
-            /// Cannot resolve host in advance, otherwise SNI won't work in Poco.
-
             String resolved_host = resolve_host ? DNSResolver::instance().resolveHost(host).toString() : host;
             auto https_session = std::make_shared<Poco::Net::HTTPSClientSession>(host, port);
             if (resolve_host)
