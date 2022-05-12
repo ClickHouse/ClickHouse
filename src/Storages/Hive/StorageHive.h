@@ -75,7 +75,7 @@ private:
     using FileFormat = IHiveFile::FileFormat;
     using FileInfo = HiveMetastoreClient::FileInfo;
     using HiveTableMetadataPtr = HiveMetastoreClient::HiveTableMetadataPtr;
-    using PruneLevel = IHiveSourceFilesCollector::PruneLevel;
+    using PruneLevel = HivePruneLevel;
 
     void getActualColumnsToRead(Block & sample_block, const Block & header_block, const NameSet & partition_columns) const;
 

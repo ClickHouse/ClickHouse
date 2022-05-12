@@ -20,7 +20,7 @@ void LocalHiveSourceFilesCollector::initialize(const Arguments & args_)
         args.storage_settings);
 }
 
-HiveFiles LocalHiveSourceFilesCollector::collect(PruneLevel prune_level)
+HiveFiles LocalHiveSourceFilesCollector::collect(HivePruneLevel prune_level)
 {
     return files_collector->collect(prune_level);
 }

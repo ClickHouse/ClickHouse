@@ -14,7 +14,7 @@ namespace DB
 class HiveFilesCollector
 {
 public:
-    using PruneLevel = IHiveSourceFilesCollector::PruneLevel;
+    using PruneLevel = HivePruneLevel;
 
     explicit HiveFilesCollector(
         ContextPtr context_,

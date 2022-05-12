@@ -53,7 +53,7 @@ void HiveFilesCollector::prepare()
         std::make_shared<ActionsDAG>(hive_file_name_and_types), ExpressionActionsSettings::fromContext(context));
 }
 
-HiveFiles HiveFilesCollector::collect(PruneLevel prune_level)
+HiveFiles HiveFilesCollector::collect(HivePruneLevel prune_level)
 {
     auto hive_metastore_client = HiveMetastoreClientFactory::instance().getOrCreate(hive_metastore_url);
     auto hive_table_metadata = hive_metastore_client->getTableMetadata(hive_database, hive_table);
@@ -113,7 +113,7 @@ HiveFiles HiveFilesCollector::collectHiveFilesFromPartition(
     const Apache::Hadoop::Hive::Partition & partition_,
     HiveMetastoreClient::HiveTableMetadataPtr hive_table_metadata_,
     const HDFSFSPtr & fs_,
-    PruneLevel prune_level)
+    HivePruneLevel prune_level)
 {
     bool has_default_partition = false;
     for (const auto & value : partition_.values)
@@ -188,7 +188,7 @@ HiveFilePtr HiveFilesCollector::getHiveFileIfNeeded(
     const HiveMetastoreClient::FileInfo & file_info,
     const FieldVector & fields,
     const HiveTableMetadataPtr & hive_table_metadata,
-    PruneLevel prune_level) const
+    HivePruneLevel prune_level) const
 {
     String filename = getBaseName(file_info.path);
     /// Skip temporary files starts with '.'
@@ -199,7 +199,7 @@ HiveFilePtr HiveFilesCollector::getHiveFileIfNeeded(
     auto hive_file = cache->get(file_info.path);
     if (!hive_file || hive_file->getLastModifiedTimestamp() < file_info.last_modify_time)
     {
-        LOG_TRACE(logger, "Create hive file {}, prune_level {}", file_info.path, IHiveSourceFilesCollector::pruneLevelToString(prune_level));
+        LOG_TRACE(logger, "Create hive file {}, prune_level {}", file_info.path, pruneLevelToString(prune_level));
         hive_file = HiveFileFactory::instance().createFile(
             format_name,
             fields,
@@ -214,7 +214,7 @@ HiveFilePtr HiveFilesCollector::getHiveFileIfNeeded(
     }
     else
     {
-        LOG_TRACE(logger, "Get hive file {} from cache, prune_level {}", file_info.path, IHiveSourceFilesCollector::pruneLevelToString(prune_level));
+        LOG_TRACE(logger, "Get hive file {} from cache, prune_level {}", file_info.path, pruneLevelToString(prune_level));
     }
 
     if (prune_level >= PruneLevel::File)
@@ -236,7 +236,7 @@ HiveFilePtr HiveFilesCollector::getHiveFileIfNeeded(
             }
         }
 
-        if (prune_level >= PruneLevel::Split)
+        if (prune_level >= HivePruneLevel::Split)
         {
             if (hive_file->useSplitMinMaxIndex())
             {

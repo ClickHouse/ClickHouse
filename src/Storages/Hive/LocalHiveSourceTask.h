@@ -15,7 +15,7 @@ class LocalHiveSourceFilesCollector : public IHiveSourceFilesCollector
 {
 public:
     using Arguments = IHiveSourceFilesCollector::Arguments;
-    using PruneLevel = IHiveSourceFilesCollector::PruneLevel;
+    using PruneLevel = HivePruneLevel;
     void initialize(const Arguments & args_) override;
     HiveFiles collect(PruneLevel prune_level) override;
     String getName() override { return "LocalHiveSource"; }

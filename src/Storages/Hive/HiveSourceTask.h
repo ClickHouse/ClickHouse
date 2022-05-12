@@ -15,22 +15,23 @@
 #include <Poco/JSON/Parser.h>
 namespace DB
 {
+enum class HivePruneLevel
+{
+    None, /// Do not prune
+    Partition,
+    File,
+    Split,
+    Max = Split,
+};
+    
+String pruneLevelToString(HivePruneLevel level);
 
 /// An interface class for implementing different collect strategies
-class IHiveSourceFilesCollector : public WithContext
+class IHiveSourceFilesCollector
 {
 public:
 
-    enum class PruneLevel
-    {
-        None, /// Do not prune
-        Partition,
-        File,
-        Split,
-        Max = Split,
-    };
 
-    static String pruneLevelToString(PruneLevel level) { return String(magic_enum::enum_name(level)); }
 
     virtual ~IHiveSourceFilesCollector() = default;
     struct Arguments
@@ -47,7 +48,7 @@ public:
         Arguments & operator=(const Arguments & args) = default;
     };
     virtual void initialize(const Arguments &) = 0;
-    virtual HiveFiles collect(PruneLevel prune_level) = 0;
+    virtual HiveFiles collect(HivePruneLevel prune_level) = 0;
     virtual String getName() = 0;
 };
 using HiveQueryTaskFilesCollectorPtr = std::shared_ptr<IHiveSourceFilesCollector>;
