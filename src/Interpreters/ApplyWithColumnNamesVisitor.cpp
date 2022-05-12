@@ -26,30 +26,15 @@ void ApplyWithColumnNamesVisitor::visit(ASTSelectQuery & ast)
         {
             if (auto * with_element = child->as<ASTWithElement>())
             {
-                if (auto * column_names = with_element->column_names->as<ASTExpressionList>())
-                {
-                    if (auto * subquery = with_element->subquery->as<ASTSubquery>())
-                    {
-                        if (auto * select_union = subquery->children.at(0)->as<ASTSelectWithUnionQuery>())
-                        {
-                            for (auto & child_select : select_union->list_of_selects->children)
-                            {
-                                if (auto * select = child_select->as<ASTSelectQuery>())
-                                {
-                                    if (auto columns = select->select())
-                                    {
-                                        if (column_names->children.size() != columns->children.size())
-                                            throw Exception("The number of identifiers is not equal to the number of expressions", ErrorCodes::LOGICAL_ERROR);
+                auto * subquery = with_element->subquery->as<ASTSubquery>();
+                auto column_names = with_element->column_names;
+                auto ast_query = subquery->children.at(0);
 
-                                        for (size_t i = 0; i != columns->children.size(); ++i)
-                                            if (auto * column_name = column_names->children[i]->as<ASTIdentifier>())
-                                                columns->children[i]->setAlias(column_name->name());
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
+                if (auto * select = ast_query->as<ASTSelectQuery>())
+                    select->setExpression(ASTSelectQuery::Expression::SELECT_ALIASES, column_names->clone());
+                else if (auto * select_union = ast_query->as<ASTSelectWithUnionQuery>())
+                    select_union->list_of_selects->children.at(0)->as<ASTSelectQuery>()->setExpression(
+                        ASTSelectQuery::Expression::SELECT_ALIASES, column_names->clone());
             }
         }
     }
