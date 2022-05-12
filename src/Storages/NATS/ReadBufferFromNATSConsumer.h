@@ -37,11 +37,9 @@ public:
         String subject;
     };
 
-    std::vector<SubscriptionPtr> & getChannel() { return subscriptions; }
     void subscribe();
     void unsubscribe();
 
-    void updateSubjects(std::vector<String> & subjects_) { subjects = subjects_; }
     size_t subjectsCount() { return subjects.size(); }
 
     bool isConsumerStopped() { return stopped; }

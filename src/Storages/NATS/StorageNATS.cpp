@@ -186,7 +186,6 @@ void StorageNATS::stopLoopIfNoReaders()
 
 void StorageNATS::startLoop()
 {
-//    assert(nats_is_ready);
     connection->getHandler().updateLoopState(Loop::RUN);
     looping_task->activateAndSchedule();
 }
