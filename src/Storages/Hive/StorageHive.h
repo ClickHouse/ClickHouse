@@ -89,7 +89,8 @@ private:
 
     static ASTPtr extractKeyExpressionList(const ASTPtr & node);
 
-    static std::vector<FileInfo> listDirectory(const String & path, const HiveTableMetadataPtr & hive_table_metadata, const HDFSFSPtr & fs);
+    static std::vector<FileInfo>
+    listDirectory(const String & path, const HiveTableMetadataPtr & hive_table_metadata, const HDFSBuilderWrapperPtr & builder);
 
     void initMinMaxIndexExpression();
 
@@ -97,7 +98,6 @@ private:
         unsigned max_threads,
         const SelectQueryInfo & query_info,
         const HiveTableMetadataPtr & hive_table_metadata,
-        const HDFSFSPtr & fs,
         const ContextPtr & context_,
         PruneLevel prune_level = PruneLevel::Max) const;
 
@@ -105,7 +105,6 @@ private:
         const Apache::Hadoop::Hive::Partition & partition,
         const SelectQueryInfo & query_info,
         const HiveTableMetadataPtr & hive_table_metadata,
-        const HDFSFSPtr & fs,
         const ContextPtr & context_,
         PruneLevel prune_level = PruneLevel::Max) const;
 
@@ -153,6 +152,7 @@ private:
     ExpressionActionsPtr hivefile_minmax_idx_expr;
 
     std::shared_ptr<HiveSettings> storage_settings;
+    HDFSBuilderWrapperPtr builder;
 
     Poco::Logger * log = &Poco::Logger::get("StorageHive");
 };

@@ -126,7 +126,8 @@ std::vector<Apache::Hadoop::Hive::Partition> HiveMetastoreClient::HiveTableMetad
     return result;
 }
 
-std::vector<HiveMetastoreClient::FileInfo> HiveMetastoreClient::HiveTableMetadata::getFilesByLocation(const HDFSFSPtr & fs, const String & location)
+std::vector<HiveMetastoreClient::FileInfo>
+HiveMetastoreClient::HiveTableMetadata::getFilesByLocation(const HDFSBuilderWrapperPtr & builder, const String & location)
 {
     LOG_TRACE(log, "List directory {}", location);
     std::map<String, PartitionInfo>::iterator it;
@@ -145,8 +146,18 @@ std::vector<HiveMetastoreClient::FileInfo> HiveMetastoreClient::HiveTableMetadat
     }
 
     Poco::URI location_uri(location);
+
     HDFSFileInfo ls;
-    ls.file_info = hdfsListDirectory(fs.get(), location_uri.getPath().c_str(), &ls.length);
+    HDFSFSSharedPtr fs = HDFSBuilderFSFactory::instance().getFS(builder);
+    HDFSBuilderFSFactory::instance().tryCallFS(
+        builder,
+        fs,
+        [&](HDFSFSSharedPtr & fs_) -> bool
+        {
+            ls.file_info = hdfsListDirectory(fs_.get(), location_uri.getPath().c_str(), &ls.length);
+            return ls.file_info != nullptr;
+        });
+
     std::vector<FileInfo> result;
     for (int i = 0; i < ls.length; ++i)
     {

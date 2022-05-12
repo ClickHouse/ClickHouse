@@ -39,9 +39,10 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<S
     String hdfs_uri;
     String hdfs_file_path;
 
-    hdfsFile fin;
+    const HDFSBuilderFSFactory & factory;
     HDFSBuilderWrapperPtr builder;
     HDFSFSSharedPtr fs;
+    hdfsFile fin;
 
     off_t file_offset = 0;
     off_t read_until_position = 0;
@@ -56,19 +57,28 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<S
         : BufferWithOwnMemory<SeekableReadBuffer>(buf_size_)
         , hdfs_uri(hdfs_uri_)
         , hdfs_file_path(hdfs_file_path_)
-        , builder(HDFSBuilderFSFactory::instance().getBuilder(hdfs_uri_, config_))
+        , factory(HDFSBuilderFSFactory::instance())
+        , builder(factory.getBuilder(hdfs_uri_, config_))
         , file_offset(file_offset_)
         , read_until_position(read_until_position_)
     {
         Stopwatch watch;
         assert(builder && builder->get());
-        fs = HDFSBuilderFSFactory::instance().getFS(builder);
-        fin = hdfsOpenFile(fs.get(), hdfs_file_path.c_str(), O_RDONLY, 0, 0, 0);
 
-        if (fin == nullptr)
-            throw Exception(ErrorCodes::CANNOT_OPEN_FILE,
+        fs = factory.getFS(builder);
+        if (!factory.tryCallFS(
+                builder,
+                fs,
+                [&](HDFSFSSharedPtr & fs_) -> bool
+                {
+                    fin = hdfsOpenFile(fs_.get(), hdfs_file_path.c_str(), O_RDONLY, 0, 0, 0);
+                    return fin != nullptr;
+                }))
+            throw Exception(
+                ErrorCodes::CANNOT_OPEN_FILE,
                 "Unable to open HDFS file: {}. Error: {}",
-                hdfs_uri + hdfs_file_path, std::string(hdfsGetLastError()));
+                hdfs_uri + hdfs_file_path,
+                std::string(hdfsGetLastError()));
 
         if (file_offset)
         {

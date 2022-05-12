@@ -361,10 +361,11 @@ void StorageHive::lazyInitialize()
     auto hive_metastore_client = HiveMetastoreClientFactory::instance().getOrCreate(hive_metastore_url);
     auto hive_table_metadata = hive_metastore_client->getHiveTable(hive_database, hive_table);
 
-    hdfs_namenode_url = getNameNodeUrl(hive_table_metadata->sd.location);
     /// Check HDFS namenode url.
+    hdfs_namenode_url = getNameNodeUrl(hive_table_metadata->sd.location);
     getContext()->getRemoteHostFilter().checkURL(Poco::URI(hdfs_namenode_url));
 
+    builder = HDFSBuilderFSFactory::instance().getBuilder(hdfs_namenode_url, getContext()->getConfigRef());
     table_schema = hive_table_metadata->sd.cols;
 
     FileFormat hdfs_file_format = IHiveFile::toFileFormat(hive_table_metadata->sd.inputFormat);
@@ -489,7 +490,6 @@ HiveFiles StorageHive::collectHiveFilesFromPartition(
     const Apache::Hadoop::Hive::Partition & partition,
     const SelectQueryInfo & query_info,
     const HiveTableMetadataPtr & hive_table_metadata,
-    const HDFSFSPtr & fs,
     const ContextPtr & context_,
     PruneLevel prune_level) const
 {
@@ -552,7 +552,7 @@ HiveFiles StorageHive::collectHiveFilesFromPartition(
     }
 
     HiveFiles hive_files;
-    auto file_infos = listDirectory(partition.sd.location, hive_table_metadata, fs);
+    auto file_infos = listDirectory(partition.sd.location, hive_table_metadata, builder);
     hive_files.reserve(file_infos.size());
     for (const auto & file_info : file_infos)
     {
@@ -572,9 +572,9 @@ HiveFiles StorageHive::collectHiveFilesFromPartition(
 }
 
 std::vector<StorageHive::FileInfo>
-StorageHive::listDirectory(const String & path, const HiveTableMetadataPtr & hive_table_metadata, const HDFSFSPtr & fs)
+StorageHive::listDirectory(const String & path, const HiveTableMetadataPtr & hive_table_metadata, const HDFSBuilderWrapperPtr & builder)
 {
-    return hive_table_metadata->getFilesByLocation(fs, path);
+    return hive_table_metadata->getFilesByLocation(builder, path);
 }
 
 HiveFilePtr StorageHive::getHiveFileIfNeeded(
@@ -701,13 +701,11 @@ Pipe StorageHive::read(
 {
     lazyInitialize();
 
-    auto builder = HDFSBuilderFSFactory::instance().getBuilder(hdfs_namenode_url, context_->getGlobalContext()->getConfigRef());
-    HDFSFSPtr fs = createHDFSFS(builder->get());
     auto hive_metastore_client = HiveMetastoreClientFactory::instance().getOrCreate(hive_metastore_url);
     auto hive_table_metadata = hive_metastore_client->getTableMetadata(hive_database, hive_table);
 
     /// Collect Hive files to read
-    HiveFiles hive_files = collectHiveFiles(num_streams, query_info, hive_table_metadata, fs, context_);
+    HiveFiles hive_files = collectHiveFiles(num_streams, query_info, hive_table_metadata, context_);
     if (hive_files.empty())
         return {};
 
@@ -757,7 +755,6 @@ HiveFiles StorageHive::collectHiveFiles(
     unsigned max_threads,
     const SelectQueryInfo & query_info,
     const HiveTableMetadataPtr & hive_table_metadata,
-    const HDFSFSPtr & fs,
     const ContextPtr & context_,
     PruneLevel prune_level) const
 {
@@ -779,7 +776,7 @@ HiveFiles StorageHive::collectHiveFiles(
                 [&]()
                 {
                     auto hive_files_in_partition
-                        = collectHiveFilesFromPartition(partition, query_info, hive_table_metadata, fs, context_, prune_level);
+                        = collectHiveFilesFromPartition(partition, query_info, hive_table_metadata, context_, prune_level);
                     if (!hive_files_in_partition.empty())
                     {
                         std::lock_guard<std::mutex> lock(hive_files_mutex);
@@ -790,7 +787,7 @@ HiveFiles StorageHive::collectHiveFiles(
     }
     else /// Partition keys is empty but still have files
     {
-        auto file_infos = listDirectory(hive_table_metadata->getTable()->sd.location, hive_table_metadata, fs);
+        auto file_infos = listDirectory(hive_table_metadata->getTable()->sd.location, hive_table_metadata, builder);
         for (const auto & file_info : file_infos)
         {
             pool.scheduleOrThrowOnError(
@@ -842,9 +839,7 @@ StorageHive::totalRowsImpl(const Settings & settings, const SelectQueryInfo & qu
 
     auto hive_metastore_client = HiveMetastoreClientFactory::instance().getOrCreate(hive_metastore_url);
     auto hive_table_metadata = hive_metastore_client->getTableMetadata(hive_database, hive_table);
-    auto builder = HDFSBuilderFSFactory::instance().getBuilder(hdfs_namenode_url, getContext()->getGlobalContext()->getConfigRef());
-    HDFSFSPtr fs = createHDFSFS(builder->get());
-    HiveFiles hive_files = collectHiveFiles(settings.max_threads, query_info, hive_table_metadata, fs, context_, prune_level);
+    HiveFiles hive_files = collectHiveFiles(settings.max_threads, query_info, hive_table_metadata, context_, prune_level);
 
     UInt64 total_rows = 0;
     for (const auto & hive_file : hive_files)

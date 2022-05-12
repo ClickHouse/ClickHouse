@@ -111,15 +111,19 @@ public:
 
     ~HDFSFSPool() = default;
 
-    HDFSFSSharedPtr get();
+    HDFSFSSharedPtr getFS();
+    
+    bool tryCallFS(HDFSFSSharedPtr & fs, std::function<bool(HDFSFSSharedPtr &)> callback);
 
 private:
-    const uint32_t max_items;
-    uint32_t min_items;
-    uint32_t current_index;
-    HDFSBuilderWrapperPtr builder;
-    std::vector<HDFSFSSharedPtr> pool;
+    HDFSFSSharedPtr unsafeGetFS();
 
+    const uint32_t max_items;
+    const uint32_t min_items;
+    const HDFSBuilderWrapperPtr builder;
+
+    uint32_t current_index;
+    std::vector<HDFSFSSharedPtr> pool;
     std::mutex mutex;
 };
 
@@ -132,21 +136,25 @@ public:
 
     static void setEnv(const Poco::Util::AbstractConfiguration & config);
 
-    HDFSBuilderWrapperPtr getBuilder(const String & hdfs_uri, const Poco::Util::AbstractConfiguration & config);
+    HDFSBuilderWrapperPtr getBuilder(const String & hdfs_uri, const Poco::Util::AbstractConfiguration & config) const;
 
-    HDFSFSSharedPtr getFS(const String & hdfs_uri, const Poco::Util::AbstractConfiguration & config);
+    HDFSFSSharedPtr getFS(const String & hdfs_uri, const Poco::Util::AbstractConfiguration & config) const;
 
-    HDFSFSSharedPtr getFS(HDFSBuilderWrapperPtr builder);
-    
+    HDFSFSSharedPtr getFS(HDFSBuilderWrapperPtr builder) const;
+
+    bool tryCallFS(HDFSBuilderWrapperPtr builder, HDFSFSSharedPtr & fs, std::function<bool(HDFSFSSharedPtr &)> callback) const;
+
 private:
+    HDFSFSPoolPtr getFSPool(HDFSBuilderWrapperPtr builder) const;
+
     inline static const uint32_t max_pool_size = 256;
     inline static const uint32_t min_pool_size = 32;
 
     /// Key: hdfs_uri, value: HDFSBuilderWrapperPtr
-    std::map<String, HDFSBuilderWrapperPtr> hdfs_builder_wrappers;
+    mutable std::map<String, HDFSBuilderWrapperPtr> hdfs_builder_wrappers;
     /// Key: hdfs_uri, value: HDFSFSPool
-    std::map<String, HDFSFSPoolPtr> hdfs_fs_pools;
-    std::mutex mutex;
+    mutable std::map<String, HDFSFSPoolPtr> hdfs_fs_pools;
+    mutable std::mutex mutex;
 };
 
 HDFSFSPtr createHDFSFS(hdfsBuilder * builder);

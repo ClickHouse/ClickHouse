@@ -97,7 +97,7 @@ public:
 
         std::vector<Apache::Hadoop::Hive::Partition> getPartitions() const;
 
-        std::vector<FileInfo> getFilesByLocation(const HDFSFSPtr & fs, const String & location);
+        std::vector<FileInfo> getFilesByLocation(const HDFSBuilderWrapperPtr & builder, const String & location);
 
         HiveFilesCachePtr getHiveFilesCache() const;
 
