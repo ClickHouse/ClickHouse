@@ -25,9 +25,6 @@ namespace DB
 namespace Annoy
 {
 
-const int NUM_OF_TREES = 20;
-const int DIMENSION = 512;
-
 template<typename Dist>
 void AnnoyIndexSerialize<Dist>::serialize(WriteBuffer& ostr) const
 {
@@ -114,15 +111,16 @@ void MergeTreeIndexGranuleAnnoy::deserializeBinary(ReadBuffer & istr, MergeTreeI
 
 
 MergeTreeIndexAggregatorAnnoy::MergeTreeIndexAggregatorAnnoy(const String & index_name_,
-                                                                const Block & index_sample_block_)
+                                                                const Block & index_sample_block_,
+                                                                int index_param_)
     : index_name(index_name_)
     , index_sample_block(index_sample_block_)
-    , index_base(std::make_shared<AnnoyIndex>(Annoy::DIMENSION))
+    , index_param(index_param_)
 {}
 
 bool MergeTreeIndexAggregatorAnnoy::empty() const
 {
-    return index_base->get_n_items() == 0;
+    return !index_base || index_base->get_n_items() == 0;
 }
 
 MergeTreeIndexGranulePtr MergeTreeIndexAggregatorAnnoy::getGranuleAndReset()
@@ -130,10 +128,9 @@ MergeTreeIndexGranulePtr MergeTreeIndexAggregatorAnnoy::getGranuleAndReset()
     if (empty()) {
         return std::make_shared<MergeTreeIndexGranuleAnnoy>(index_name, index_sample_block);
     }
-
-    index_base->build(Annoy::NUM_OF_TREES);
+    index_base->build(index_param);
     auto granule = std::make_shared<MergeTreeIndexGranuleAnnoy>(index_name, index_sample_block, index_base);
-    index_base = std::make_shared<AnnoyIndex>(Annoy::DIMENSION);
+    index_base = nullptr;
     return granule;
 }
 
@@ -162,6 +159,10 @@ void MergeTreeIndexAggregatorAnnoy::update(const Block & block, size_t * pos, si
             data[i].push_back(pod_array[i]);
         }
     }
+    assert(!data.empty());
+    if (!index_base) {
+        index_base = std::make_shared<AnnoyIndex>(data[0].size());
+    }
     for (const auto& item : data) {
         index_base->add_item(index_base->get_n_items(), &item[0]);
     }
@@ -182,12 +183,14 @@ MergeTreeIndexConditionAnnoy::MergeTreeIndexConditionAnnoy(
 bool MergeTreeIndexConditionAnnoy::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule) const
 {
     auto granule = std::dynamic_pointer_cast<MergeTreeIndexGranuleAnnoy>(idx_granule);
-    auto annoy = std::dynamic_pointer_cast<Annoy::AnnoyIndexSerialize<>>(granule->index_base);
-
+    if (granule == nullptr) {
+        throw Exception("Granule has the wrong type", ErrorCodes::LOGICAL_ERROR);
+    }
+    auto annoy = granule->index_base;
 
     if (condition.getMetric() != "L2Distance") {
-        throw Exception("The metric in the request (" + toString(condition.getSpaceDim()) + ")"
-            + "does not match with the metric in the index (" + toString(annoy->getSpaceDim()) + ")", ErrorCodes::INCORRECT_QUERY);
+        throw Exception("The metric in the request (" + condition.getMetric() + ")"
+            + "does not match with the metric in the index (L2Distance)", ErrorCodes::INCORRECT_QUERY);
     }
     if (condition.getSpaceDim() == annoy->getSpaceDim()) {
         throw Exception("The dimension of the space in the request (" + toString(condition.getSpaceDim()) + ")"
@@ -218,7 +221,7 @@ MergeTreeIndexGranulePtr MergeTreeIndexAnnoy::createIndexGranule() const
 
 MergeTreeIndexAggregatorPtr MergeTreeIndexAnnoy::createIndexAggregator() const
 {
-    return std::make_shared<MergeTreeIndexAggregatorAnnoy>(index.name, index.sample_block);
+    return std::make_shared<MergeTreeIndexAggregatorAnnoy>(index.name, index.sample_block, index_param);
 }
 
 MergeTreeIndexConditionPtr MergeTreeIndexAnnoy::createIndexCondition(
@@ -239,10 +242,18 @@ MergeTreeIndexFormat MergeTreeIndexAnnoy::getDeserializedFormat(const DiskPtr di
 MergeTreeIndexPtr AnnoyIndexCreator(
     const IndexDescription & index)
 {
-    return std::make_shared<MergeTreeIndexAnnoy>(index);
+    int param = index.arguments[0].get<int>();
+    return std::make_shared<MergeTreeIndexAnnoy>(index, param);
 }
 
-void AnnoyIndexValidator(const IndexDescription & /* index */, bool /* attach */)
-{}
+void AnnoyIndexValidator(const IndexDescription & index, bool /* attach */)
+{
+    if (index.arguments.size() != 1) {
+        throw Exception("Annoy index must have exactly one argument.", ErrorCodes::INCORRECT_QUERY);
+    }
+    if (index.arguments[0].getType() != Field::Types::UInt64) {
+        throw Exception("Annoy index argument must be UInt64.", ErrorCodes::INCORRECT_QUERY);
+    }
+}
 
 }

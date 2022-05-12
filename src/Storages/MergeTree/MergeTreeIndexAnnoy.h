@@ -1,8 +1,8 @@
 #pragma once
 
 
+#include <Storages/MergeTree/CommonANNIndexes.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
-#include <Storages/MergeTree/MergeTreeIndicesANNCondition.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/KeyCondition.h>
 
@@ -59,7 +59,7 @@ struct MergeTreeIndexAggregatorAnnoy final : IMergeTreeIndexAggregator
     using AnnoyIndex = Annoy::AnnoyIndexSerialize<>;
     using AnnoyIndexPtr = std::shared_ptr<AnnoyIndex>;
 
-    MergeTreeIndexAggregatorAnnoy(const String & index_name_, const Block & index_sample_block);
+    MergeTreeIndexAggregatorAnnoy(const String & index_name_, const Block & index_sample_block, int index_param);
     ~MergeTreeIndexAggregatorAnnoy() override = default;
 
     bool empty() const override;
@@ -68,6 +68,7 @@ struct MergeTreeIndexAggregatorAnnoy final : IMergeTreeIndexAggregator
 
     String index_name;
     Block index_sample_block;
+    int index_param;
     AnnoyIndexPtr index_base;
 };
 
@@ -94,8 +95,9 @@ private:
 class MergeTreeIndexAnnoy : public IMergeTreeIndex
 {
 public:
-    explicit MergeTreeIndexAnnoy(const IndexDescription & index_)
+    explicit MergeTreeIndexAnnoy(const IndexDescription & index_, int index_param_)
         : IMergeTreeIndex(index_)
+        , index_param(index_param_)
     {}
 
     ~MergeTreeIndexAnnoy() override = default;
@@ -110,6 +112,9 @@ public:
 
     const char* getSerializedFileExtension() const override { return ".idx2"; }
     MergeTreeIndexFormat getDeserializedFormat(const DiskPtr disk, const std::string & path_prefix) const override;
+
+private:
+    int index_param;
 };
 
 
