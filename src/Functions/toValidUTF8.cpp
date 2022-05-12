@@ -25,7 +25,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
 }
 
-extern bool only_ascii_in_vector(uint8x16_t input) {}
+extern bool only_ascii_in_vector(uint8x16_t input);
 extern const UInt8 length_of_utf8_sequence[256];
 
 namespace
