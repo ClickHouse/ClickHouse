@@ -1,0 +1,14 @@
+<test>
+    <settings>
+        <output_format_parallel_formatting>0</output_format_parallel_formatting>
+    </settings>
+
+    <preconditions>
+        <table_exists>test.hits</table_exists>
+    </preconditions>
+
+    <query>SELECT lower(RefererDomain), lower(URL), lower(Referer), lower(URLDomain) FROM test.hits LIMIT 100000</query>
+
+    <query>SELECT upper(RefererDomain), upper(URL), upper(Referer), upper(URLDomain) FROM test.hits LIMIT 100000</query>
+
+</test>
