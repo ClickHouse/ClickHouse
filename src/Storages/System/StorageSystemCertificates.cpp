@@ -1,15 +1,13 @@
 #include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypesNumber.h>
-#include <Interpreters/Cluster.h>
-#include <Interpreters/Context.h>
 #include <Storages/System/StorageSystemCertificates.h>
-#include <Databases/DatabaseReplicated.h>
-#include "Poco/Util/Application.h"
-#include "Poco/File.h"
-#include "Poco/Crypto/X509Certificate.h"
 #include <openssl/x509.h>
 #include <regex>
 #include <filesystem>
+#include "Poco/Util/Application.h"
+#include "Poco/File.h"
+#ifdef USE_SSL
+    #include "Poco/Crypto/X509Certificate.h"
+#endif
 
 namespace DB
 {
@@ -29,6 +27,8 @@ NamesAndTypesList StorageSystemCertificates::getNamesAndTypes()
         {"pkey_algo", std::make_shared<DataTypeString>()}
     };
 }
+
+#ifdef USE_SSL
 
 static std::unordered_set<std::string> parse_dir(const std::string & dir)
 {
@@ -170,8 +170,11 @@ static void enumCertificates(const std::string & dir, MutableColumns & res_colum
     }
 }
 
+#endif
+
 void StorageSystemCertificates::fillData(MutableColumns & res_columns, ContextPtr/* context*/, const SelectQueryInfo &) const
 {
+#ifdef USE_SSL    
     Poco::Util::AbstractConfiguration &conf = Poco::Util::Application::instance().config();
 
     std::string caLocation = conf.getString("openSSL.server.caConfig", "");
@@ -223,6 +226,7 @@ void StorageSystemCertificates::fillData(MutableColumns & res_columns, ContextPt
             }
         }
     }
+#endif
 }
 
 }
