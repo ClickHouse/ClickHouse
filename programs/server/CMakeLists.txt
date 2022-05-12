@@ -25,7 +25,11 @@ set (CLICKHOUSE_SERVER_LINK
         daemon
 )
 if (TARGET ch_contrib::jemalloc)
+    message("Server cmake jemalloc")
     list(APPEND CLICKHOUSE_SERVER_LINK PRIVATE ch_contrib::jemalloc)
+elseif (TARGET ch_contrib::mimalloc)
+    message("Server cmake mimallo")
+    list(APPEND CLICKHOUSE_SERVER_LINK PRIVATE ch_contrib::hualloc)
 endif()
 
 clickhouse_program_add(server)

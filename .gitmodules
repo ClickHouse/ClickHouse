@@ -268,3 +268,6 @@
 [submodule "contrib/eigen"]
 	path = contrib/eigen
 	url = https://github.com/eigen-mirror/eigen
+[submodule "contrib/mimalloc"]
+	path = contrib/mimalloc
+	url = https://github.com/microsoft/mimalloc.git

@@ -13,7 +13,11 @@
 #    include <jemalloc/jemalloc.h>
 #endif
 
-#if !USE_JEMALLOC
+#if USE_MIMALLOC
+#    include <mimalloc/mimalloc.h>
+#endif
+
+#if !USE_JEMALLOC && !USE_MIMALLOC
 #    include <cstdlib>
 #endif
 
