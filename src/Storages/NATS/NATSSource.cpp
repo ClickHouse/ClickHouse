@@ -11,8 +11,7 @@ namespace DB
 static std::pair<Block, Block> getHeaders(const StorageSnapshotPtr & storage_snapshot)
 {
     auto non_virtual_header = storage_snapshot->metadata->getSampleBlockNonMaterialized();
-    auto virtual_header = storage_snapshot->getSampleBlockForColumns(
-                {"_subject", "_timestamp"});
+    auto virtual_header = storage_snapshot->getSampleBlockForColumns({"_subject"});
 
     return {non_virtual_header, virtual_header};
 }
@@ -31,16 +30,14 @@ NATSSource::NATSSource(
     const StorageSnapshotPtr & storage_snapshot_,
     ContextPtr context_,
     const Names & columns,
-    size_t max_block_size_,
-    bool ack_in_suffix_)
+    size_t max_block_size_)
     : NATSSource(
         storage_,
         storage_snapshot_,
         getHeaders(storage_snapshot_),
         context_,
         columns,
-        max_block_size_,
-        ack_in_suffix_)
+        max_block_size_)
 {
 }
 
@@ -50,8 +47,7 @@ NATSSource::NATSSource(
     std::pair<Block, Block> headers,
     ContextPtr context_,
     const Names & columns,
-    size_t max_block_size_,
-    bool /*ack_in_suffix_*/)
+    size_t max_block_size_)
     : SourceWithProgress(getSampleBlock(headers.first, headers.second))
     , storage(storage_)
     , storage_snapshot(storage_snapshot_)
@@ -76,32 +72,9 @@ NATSSource::~NATSSource()
     storage.pushReadBuffer(buffer);
 }
 
-
-//bool NATSSource::needChannelUpdate()
-//{
-//    if (!buffer)
-//        return false;
-//
-//    return buffer->needChannelUpdate();
-//}
-//
-//
-//void NATSSource::updateChannel()
-//{
-//    if (!buffer)
-//        return;
-//
-//    buffer->updateAckTracker();
-//
-//    if (storage.updateChannel(buffer->getChannel()))
-//        buffer->setupChannel();
-//}
-
 Chunk NATSSource::generate()
 {
     auto chunk = generateImpl();
-//    if (!chunk && ack_in_suffix)
-//        sendAck();
 
     return chunk;
 }
@@ -137,12 +110,10 @@ Chunk NATSSource::generateImpl()
         if (new_rows)
         {
             auto subject = buffer->getSubject();
-            auto timestamp = buffer->getTimestamp();
 
             for (size_t i = 0; i < new_rows; ++i)
             {
                 virtual_columns[0]->insert(subject);
-                virtual_columns[1]->insert(timestamp);
             }
 
             total_rows = total_rows + new_rows;
@@ -163,17 +134,5 @@ Chunk NATSSource::generateImpl()
 
     return Chunk(std::move(result_columns), total_rows);
 }
-
-
-//bool NATSSource::sendAck()
-//{
-//    if (!buffer)
-//        return false;
-//
-//    if (!buffer->ackMessages())
-//        return false;
-//
-//    return true;
-//}
 
 }

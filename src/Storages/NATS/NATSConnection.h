@@ -9,16 +9,17 @@ namespace DB
 
 struct NATSConfiguration
 {
-    String host;
-    UInt16 port;
+    String url;
+    std::vector<String> servers;
+
     String username;
     String password;
+    String token;
 
     int max_reconnect;
     int reconnect_wait;
 
     bool secure;
-    String connection_string;
 };
 
 class NATSConnectionManager
@@ -26,9 +27,7 @@ class NATSConnectionManager
 
 public:
     NATSConnectionManager(const NATSConfiguration & configuration_, Poco::Logger * log_);
-    ~NATSConnectionManager() { natsConnection_Destroy(connection); }
-
-    natsConnection * getConnection() { return connection; }
+    ~NATSConnectionManager();
 
     bool isConnected();
 
@@ -40,10 +39,9 @@ public:
 
     bool closed();
 
-    SubscriptionPtr createSubscription(const std::string& subject, natsMsgHandler handler, ReadBufferFromNATSConsumer * consumer);
-
     /// NATSHandler is thread safe. Any public methods can be called concurrently.
     NATSHandler & getHandler() { return event_handler; }
+    natsConnection * getConnection() { return connection; }
 
     String connectionInfoForLog() const;
 
@@ -54,8 +52,8 @@ private:
 
     void disconnectImpl();
 
-    static void disconnectedCallback(natsConnection * nc, void * storage);
-    static void reconnectedCallback(natsConnection * nc, void * storage);
+    static void disconnectedCallback(natsConnection * nc, void * log);
+    static void reconnectedCallback(natsConnection * nc, void * log);
 
     NATSConfiguration configuration;
     Poco::Logger * log;
@@ -63,8 +61,11 @@ private:
     UVLoop loop;
     NATSHandler event_handler;
 
+
     natsConnection * connection;
-    natsStatus status;
+    // true if at any point was a successful connection
+    bool has_connection = false;
+
     std::mutex mutex;
 };
 
