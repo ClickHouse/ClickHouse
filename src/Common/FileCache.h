@@ -26,6 +26,7 @@ class IFileCache : private boost::noncopyable
 {
 friend class FileSegment;
 friend struct FileSegmentsHolder;
+friend class FileSegmentRangeWriter;
 
 public:
     using Key = UInt128;
@@ -42,7 +43,7 @@ public:
 
     virtual void remove(const Key & key) = 0;
 
-    virtual void remove(bool force_remove_unreleasable) = 0;
+    virtual void remove() = 0;
 
     static bool isReadOnly();
 
@@ -143,13 +144,11 @@ public:
 
     FileSegments getSnapshot() const override;
 
-    FileSegmentsHolder setDownloading(const Key & key, size_t offset, size_t size) override;
-
     void initialize() override;
 
     void remove(const Key & key) override;
 
-    void remove(bool force_remove_unreleasable) override;
+    void remove() override;
 
     std::vector<String> tryGetCachePaths(const Key & key) override;
 
@@ -271,6 +270,8 @@ private:
 
     void fillHolesWithEmptyFileSegments(
         FileSegments & file_segments, const Key & key, const FileSegment::Range & range, bool fill_with_detached_file_segments, std::lock_guard<std::mutex> & cache_lock);
+
+    FileSegmentsHolder setDownloading(const Key & key, size_t offset, size_t size) override;
 
     size_t getUsedCacheSizeUnlocked(std::lock_guard<std::mutex> & cache_lock) const;
 
