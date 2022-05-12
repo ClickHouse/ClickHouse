@@ -63,7 +63,7 @@ private:
 
 
     natsConnection * connection;
-    // true if at any point was a successful connection
+    // true if at any point successfully connected to NATS
     bool has_connection = false;
 
     std::mutex mutex;
