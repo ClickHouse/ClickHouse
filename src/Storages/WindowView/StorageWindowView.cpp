@@ -936,7 +936,9 @@ void StorageWindowView::updateMaxWatermark(UInt32 watermark)
 
 inline void StorageWindowView::cleanup()
 {
-    InterpreterAlterQuery alter_query(getCleanupQuery(), getContext());
+    auto cleanup_context = Context::createCopy(getContext());
+    cleanup_context->getClientInfo().query_kind = ClientInfo::QueryKind::INITIAL_QUERY;
+    InterpreterAlterQuery alter_query(getCleanupQuery(), cleanup_context);
     alter_query.execute();
 
     std::lock_guard lock(fire_signal_mutex);
