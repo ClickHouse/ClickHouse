@@ -51,7 +51,7 @@ public:
     virtual HiveFiles collect(HivePruneLevel prune_level) = 0;
     virtual String getName() = 0;
 };
-using HiveQueryTaskFilesCollectorPtr = std::shared_ptr<IHiveSourceFilesCollector>;
-using HiveQueryTaskFilesCollectorBuilder = std::function<HiveQueryTaskFilesCollectorPtr()>;
+using HiveSourceFilesCollectorPtr = std::shared_ptr<IHiveSourceFilesCollector>;
+using HiveSourceFilesCollectorBuilder = std::function<HiveSourceFilesCollectorPtr()>;
 }
 #endif

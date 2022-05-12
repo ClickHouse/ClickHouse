@@ -286,7 +286,7 @@ StorageHive::StorageHive(
     const ASTPtr & partition_by_ast_,
     std::unique_ptr<HiveSettings> storage_settings_,
     ContextPtr context_,
-    std::shared_ptr<HiveQueryTaskFilesCollectorBuilder> hive_task_files_collector_builder_,
+    std::shared_ptr<HiveSourceFilesCollectorBuilder> hive_task_files_collector_builder_,
     bool is_distributed_mode_)
     : IStorage(table_id_)
     , WithContext(context_)

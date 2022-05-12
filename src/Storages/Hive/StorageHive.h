@@ -39,7 +39,7 @@ public:
         const ASTPtr & partition_by_ast_,
         std::unique_ptr<HiveSettings> storage_settings_,
         ContextPtr context_,
-        std::shared_ptr<HiveQueryTaskFilesCollectorBuilder> hive_task_files_collector_builder_ = nullptr,
+        std::shared_ptr<HiveSourceFilesCollectorBuilder> hive_task_files_collector_builder_ = nullptr,
         bool is_distributed_mode_ = false);
 
     String getName() const override { return "Hive"; }
@@ -112,7 +112,7 @@ private:
 
     Poco::Logger * log = &Poco::Logger::get("StorageHive");
 
-    std::shared_ptr<HiveQueryTaskFilesCollectorBuilder> hive_task_files_collector_builder;
+    std::shared_ptr<HiveSourceFilesCollectorBuilder> hive_task_files_collector_builder;
     bool is_distributed_mode;
 };
 
