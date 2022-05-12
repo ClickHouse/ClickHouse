@@ -1733,7 +1733,7 @@ void Context::setQueryCache(size_t cache_size_in_bytes, size_t cache_size_in_num
     shared->query_cache = std::make_shared<QueryCache>(cache_size_in_bytes, cache_size_in_num_entries);
 }
 
-MarkCachePtr Context::getQueryCache() const
+QueryCachePtr Context::getQueryCache() const
 {
     auto lock = getLock();
     return shared->query_cache;

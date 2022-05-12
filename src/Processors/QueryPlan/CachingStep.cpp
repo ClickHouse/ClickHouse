@@ -25,7 +25,7 @@ void CachingStep::transformPipeline(QueryPipelineBuilder & pipeline, const Build
 {
     pipeline.addSimpleTransform([&](const Block & header, QueryPipelineBuilder::StreamType) -> ProcessorPtr
     {
-        return std::make_shared<CachingTransform>(header, QueryCachePtr, cache_key.ast, cache_key.settings, cache_key.username);
+        return std::make_shared<CachingTransform>(header, cache, cache_key.ast, cache_key.settings, cache_key.username);
     });
 }
 
