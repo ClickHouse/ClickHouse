@@ -54,7 +54,6 @@ NATSSource::NATSSource(
     , context(context_)
     , column_names(columns)
     , max_block_size(max_block_size_)
-//    , ack_in_suffix(ack_in_suffix_)
     , non_virtual_header(std::move(headers.first))
     , virtual_header(std::move(headers.second))
 {
@@ -85,6 +84,7 @@ Chunk NATSSource::generateImpl()
     {
         auto timeout = std::chrono::milliseconds(context->getSettingsRef().rabbitmq_max_wait_ms.totalMilliseconds());
         buffer = storage.popReadBuffer(timeout);
+        buffer->subscribe();
     }
 
     if (!buffer || is_finished)
