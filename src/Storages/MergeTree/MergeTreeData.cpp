@@ -314,6 +314,7 @@ MergeTreeData::MergeTreeData(
     else
     {
         auto buf = version_file.second->readFile(version_file.first);
+        buf->setReadUntilEnd(); /// For asynchronous reading.
         UInt32 read_format_version;
         readIntText(read_format_version, *buf);
         format_version = read_format_version;
