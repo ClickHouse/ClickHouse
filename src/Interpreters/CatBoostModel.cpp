@@ -169,6 +169,7 @@ public:
         if (columns.size() != float_features_count + cat_features_count)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Number of columns is different with number of features: columns size {} float features size {} + cat features size {}",
+                columns.size(),
                 float_features_count,
                 cat_features_count);
 

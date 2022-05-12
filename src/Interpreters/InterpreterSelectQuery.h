@@ -67,11 +67,13 @@ public:
         const StorageMetadataPtr & metadata_snapshot_ = nullptr,
         const SelectQueryOptions & = {});
 
-    /// Read data not from the table specified in the query, but from the specified `storage_`.
+    /// Reuse existing subqueries_for_sets and prepared_sets for another pass of analysis. It's used for projection.
+    /// TODO: Find a general way of sharing sets among different interpreters, such as subqueries.
     InterpreterSelectQuery(
         const ASTPtr & query_ptr_,
         ContextPtr context_,
         const SelectQueryOptions &,
+        SubqueriesForSets subquery_for_sets_,
         PreparedSets prepared_sets_);
 
     ~InterpreterSelectQuery() override;
@@ -104,6 +106,18 @@ public:
 
     Names getRequiredColumns() { return required_columns; }
 
+    bool supportsTransactions() const override { return true; }
+
+    /// This is tiny crutch to support reading from localhost replica during distributed query
+    /// Replica need to talk to the initiator through a connection to ask for a next task
+    /// but there will be no connection if we create Interpreter explicitly.
+    /// The other problem is that context is copied inside Interpreter's constructor
+    /// And with this method we can change the internals of cloned one
+    void setMergeTreeReadTaskCallbackAndClientInfo(MergeTreeReadTaskCallback && callback);
+
+    /// It will set shard_num and shard_count to the client_info
+    void setProperClientInfo();
+
 private:
     InterpreterSelectQuery(
         const ASTPtr & query_ptr_,
@@ -113,6 +127,7 @@ private:
         const SelectQueryOptions &,
         const Names & required_result_column_names = {},
         const StorageMetadataPtr & metadata_snapshot_ = nullptr,
+        SubqueriesForSets subquery_for_sets_ = {},
         PreparedSets prepared_sets_ = {});
 
     ASTSelectQuery & getSelectQuery() { return query_ptr->as<ASTSelectQuery &>(); }
@@ -205,6 +220,7 @@ private:
     StorageSnapshotPtr storage_snapshot;
 
     /// Reuse already built sets for multiple passes of analysis, possibly across interpreters.
+    SubqueriesForSets subquery_for_sets;
     PreparedSets prepared_sets;
 };
 

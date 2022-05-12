@@ -1,6 +1,7 @@
 #include <Interpreters/InterpreterInsertQuery.h>
 
 #include <Access/Common/AccessFlags.h>
+#include <Access/EnabledQuota.h>
 #include <Columns/ColumnNullable.h>
 #include <Processors/Transforms/buildPushingToViewsChain.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -51,6 +52,8 @@ InterpreterInsertQuery::InterpreterInsertQuery(
     , async_insert(async_insert_)
 {
     checkStackSize();
+    if (auto quota = getContext()->getQuota())
+        quota->checkExceeded(QuotaType::WRITTEN_BYTES);
 }
 
 
@@ -269,7 +272,7 @@ Chain InterpreterInsertQuery::buildChainImpl(
             table_prefers_large_blocks ? settings.min_insert_block_size_bytes : 0));
     }
 
-    auto counting = std::make_shared<CountingTransform>(out.getInputHeader(), thread_status);
+    auto counting = std::make_shared<CountingTransform>(out.getInputHeader(), thread_status, getContext()->getQuota());
     counting->setProcessListElement(context_ptr->getProcessListElement());
     out.addSource(std::move(counting));
 
@@ -284,6 +287,8 @@ BlockIO InterpreterInsertQuery::execute()
     QueryPipelineBuilder pipeline;
 
     StoragePtr table = getTable(query);
+    checkStorageSupportsTransactionsIfNeeded(table, getContext());
+
     StoragePtr inner_table;
     if (const auto * mv = dynamic_cast<const StorageMaterializedView *>(table.get()))
         inner_table = mv->getTargetTable();
@@ -375,7 +380,7 @@ BlockIO InterpreterInsertQuery::execute()
             pipeline.dropTotalsAndExtremes();
 
             if (table->supportsParallelInsert() && settings.max_insert_threads > 1)
-                out_streams_size = std::min(size_t(settings.max_insert_threads), pipeline.getNumStreams());
+                out_streams_size = std::min(static_cast<size_t>(settings.max_insert_threads), pipeline.getNumStreams());
 
             pipeline.resize(out_streams_size);
 
@@ -433,7 +438,7 @@ BlockIO InterpreterInsertQuery::execute()
         });
 
         /// We need to convert Sparse columns to full, because it's destination storage
-        /// may not support it may have different settings for applying Sparse serialization.
+        /// may not support it or may have different settings for applying Sparse serialization.
         pipeline.addSimpleTransform([&](const Block & in_header) -> ProcessorPtr
         {
             return std::make_shared<MaterializingTransform>(in_header);

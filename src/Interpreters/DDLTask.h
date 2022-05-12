@@ -107,6 +107,7 @@ struct DDLTaskBase
     virtual String getShardID() const = 0;
 
     virtual ContextMutablePtr makeQueryContext(ContextPtr from_context, const ZooKeeperPtr & zookeeper);
+    virtual Coordination::RequestPtr getOpToUpdateLogPointer() { return nullptr; }
 
     inline String getActiveNodePath() const { return fs::path(entry_path) / "active" / host_id_str; }
     inline String getFinishedNodePath() const { return fs::path(entry_path) / "finished" / host_id_str; }
@@ -145,6 +146,7 @@ struct DatabaseReplicatedTask : public DDLTaskBase
     String getShardID() const override;
     void parseQueryFromEntry(ContextPtr context) override;
     ContextMutablePtr makeQueryContext(ContextPtr from_context, const ZooKeeperPtr & zookeeper) override;
+    Coordination::RequestPtr getOpToUpdateLogPointer() override;
 
     DatabaseReplicated * database;
 };
