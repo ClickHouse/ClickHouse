@@ -26,8 +26,8 @@ void DependenciesGraph::addTask(DDLTaskPtr & task)
 {
     tasks_dependencies.total_queries++;
     auto name = task->entry_name;
-//    auto database_objects_for_added_task = getDependenciesSetFromQuery(global_context, task->query);
-    auto database_objects_for_added_task = std::unordered_set<QualifiedTableName>{};
+    auto database_objects_for_added_task = getDependenciesSetFromQuery(global_context, task->query);
+//    auto database_objects_for_added_task = std::unordered_set<QualifiedTableName>{};
     tasks_dependencies.database_objects_in_query[name] = database_objects_for_added_task;
     for (const auto & [query_name, query_objects] : tasks_dependencies.database_objects_in_query)
     {

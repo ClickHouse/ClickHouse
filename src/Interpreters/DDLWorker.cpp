@@ -403,8 +403,9 @@ void DDLWorker::scheduleTasks(bool reinitialized)
 
         auto & saved_task = saveTask(std::move(*task));
 
-        if (worker_pool && pool_size > current_tasks.size())
+        if (worker_pool && pool_size >= current_tasks.size())
         {
+            dependencies_graph.removeTask(task_name);
             worker_pool->scheduleOrThrowOnError([this, &saved_task, zookeeper]()
             {
                 setThreadName("DDLWorkerExec");
@@ -417,7 +418,6 @@ void DDLWorker::scheduleTasks(bool reinitialized)
         }
     }
 
-    dependencies_graph.removeProcessedTasks();
 }
 
 DDLTaskBase & DDLWorker::saveTask(DDLTaskPtr && task)
