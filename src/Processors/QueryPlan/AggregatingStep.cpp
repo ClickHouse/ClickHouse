@@ -12,7 +12,9 @@
 #include <Processors/Merges/FinishAggregatingInOrderTransform.h>
 #include <Interpreters/Aggregator.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
+#include <Columns/ColumnFixedString.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeFixedString.h>
 
 namespace DB
 {
@@ -33,7 +35,7 @@ static ITransformingStep::Traits getTraits()
     };
 }
 
-static Block appendGroupingColumn(Block block, const GroupingSetsParamsList & params)
+static Block appendGroupingColumn(Block block, const GroupingSetsParamsList & params, size_t keys_size)
 {
     if (params.empty())
         return block;
@@ -47,6 +49,10 @@ static Block appendGroupingColumn(Block block, const GroupingSetsParamsList & pa
 
     for (auto & col : block)
         res.insert(std::move(col));
+
+    auto map_column = ColumnFixedString::create(keys_size + 1);
+    map_column->resize(rows);
+    res.insert({ColumnPtr(std::move(map_column)), std::make_shared<DataTypeFixedString>(keys_size + 1), "__grouping_set_map"});
 
     return res;
 }
@@ -63,7 +69,7 @@ AggregatingStep::AggregatingStep(
     bool storage_has_evenly_distributed_read_,
     InputOrderInfoPtr group_by_info_,
     SortDescription group_by_sort_description_)
-    : ITransformingStep(input_stream_, appendGroupingColumn(params_.getHeader(final_), grouping_sets_params_), getTraits(), false)
+    : ITransformingStep(input_stream_, appendGroupingColumn(params_.getHeader(final_), grouping_sets_params_, params_.keys_size), getTraits(), false)
     , params(std::move(params_))
     , grouping_sets_params(std::move(grouping_sets_params_))
     , final(std::move(final_))
@@ -210,7 +216,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                 /// Here we create a DAG which fills missing keys and adds `__grouping_set` column
                 auto dag = std::make_shared<ActionsDAG>(header.getColumnsWithTypeAndName());
                 ActionsDAG::NodeRawConstPtrs index;
-                index.reserve(output_header.columns() + 1);
+                index.reserve(output_header.columns() + 2);
 
                 auto grouping_col = ColumnConst::create(ColumnUInt64::create(1, set_counter), 0);
                 const auto * grouping_node = &dag->addColumn(
@@ -235,6 +241,22 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                     }
                     else
                         index.push_back(dag->getIndex()[header.getPositionByName(col.name)]);
+                }
+
+                {
+                    std::string grouping_map;
+                    grouping_map.reserve(params.keys_size + 1);
+                    std::unordered_set key_set(grouping_sets_params[set_counter].used_keys.begin(), grouping_sets_params[set_counter].used_keys.end());
+                    for (auto key : params.keys)
+                        grouping_map += key_set.contains(key) ? '1' : '0';
+                    grouping_map += '0';
+                    auto nested_column = ColumnFixedString::create(params.keys_size + 1);
+                    nested_column->insertString(grouping_map);
+                    auto grouping_map_col = ColumnConst::create(ColumnPtr(std::move(nested_column)), 0);
+                    const auto * grouping_map_node = &dag->addColumn(
+                        {ColumnPtr(std::move(grouping_map_col)), std::make_shared<DataTypeFixedString>(grouping_map.length()), "__grouping_set_map"});
+                    grouping_map_node = &dag->materializeNode(*grouping_map_node);
+                    index.push_back(grouping_map_node);
                 }
 
                 dag->getIndex().swap(index);

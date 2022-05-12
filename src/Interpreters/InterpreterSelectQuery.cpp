@@ -1,5 +1,6 @@
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeInterval.h>
+#include <DataTypes/DataTypeFixedString.h>
 
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -755,6 +756,9 @@ Block InterpreterSelectQuery::getSampleBlockImpl()
 
             res.insert({nullptr, type, aggregate.column_name});
         }
+
+        if (analysis_result.use_grouping_set_key)
+            res.insert({ nullptr, std::make_shared<DataTypeFixedString>(query_analyzer->aggregationKeys().size() + 1), "__grouping_set_map" });
 
         return res;
     }

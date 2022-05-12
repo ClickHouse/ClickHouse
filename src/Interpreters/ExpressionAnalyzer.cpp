@@ -47,6 +47,7 @@
 
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypeFixedString.h>
 
 #include <Interpreters/ActionsVisitor.h>
 #include <Interpreters/GetAggregatesVisitor.h>
@@ -442,6 +443,9 @@ void ExpressionAnalyzer::analyzeAggregation(ActionsDAGPtr & temp_actions)
                 }
             }
 
+            if (select_query->group_by_with_grouping_sets && group_asts.size() > 1)
+                aggregated_columns.emplace_back("__grouping_set_map", std::make_shared<DataTypeFixedString>(aggregation_keys.size() + 1));
+
             if (group_asts.empty())
             {
                 select_query->setExpression(ASTSelectQuery::Expression::GROUP_BY, {});
@@ -577,6 +581,7 @@ void ExpressionAnalyzer::getRootActions(const ASTPtr & ast, bool no_makeset_for_
         settings.size_limits_for_set,
         subquery_depth,
         sourceColumns(),
+        aggregation_keys,
         std::move(actions),
         prepared_sets,
         subqueries_for_sets,
@@ -597,6 +602,7 @@ void ExpressionAnalyzer::getRootActionsNoMakeSet(const ASTPtr & ast, ActionsDAGP
         settings.size_limits_for_set,
         subquery_depth,
         sourceColumns(),
+        aggregation_keys,
         std::move(actions),
         prepared_sets,
         subqueries_for_sets,
@@ -618,6 +624,7 @@ void ExpressionAnalyzer::getRootActionsForHaving(
         settings.size_limits_for_set,
         subquery_depth,
         sourceColumns(),
+        aggregation_keys,
         std::move(actions),
         prepared_sets,
         subqueries_for_sets,

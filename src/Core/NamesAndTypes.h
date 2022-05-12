@@ -107,6 +107,8 @@ public:
 
     /// Try to get column by name, return empty optional if column not found
     std::optional<NameAndTypePair> tryGetByName(const std::string & name) const;
+
+    size_t getPosByName(const std::string & name) const noexcept;
 };
 
 using NamesAndTypesLists = std::vector<NamesAndTypesList>;

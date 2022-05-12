@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/NamesAndTypes.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Interpreters/PreparedSets.h>
@@ -87,6 +88,7 @@ public:
         SizeLimits set_size_limit;
         size_t subquery_depth;
         const NamesAndTypesList & source_columns;
+        const NamesAndTypesList & aggregation_keys;
         PreparedSets & prepared_sets;
         SubqueriesForSets & subqueries_for_sets;
         bool no_subqueries;
@@ -108,6 +110,7 @@ public:
             SizeLimits set_size_limit_,
             size_t subquery_depth_,
             const NamesAndTypesList & source_columns_,
+            const NamesAndTypesList & aggregation_keys_,
             ActionsDAGPtr actions_dag,
             PreparedSets & prepared_sets_,
             SubqueriesForSets & subqueries_for_sets_,
