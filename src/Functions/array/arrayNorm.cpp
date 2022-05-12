@@ -155,7 +155,8 @@ private:
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         }
     }
-    template <typename MatrixType, typename DataType, typename std::enable_if<std::is_same<MatrixType, DataType>::value>::type>
+    template <typename MatrixType, typename DataType>
+    requires (std::is_same_v<MatrixType, DataType>)
     void fillVectors(std::vector<Eigen::VectorX<MatrixType>> & vec, const ColumnArray & array) const
     {
         const auto & data = typeid_cast<const ColumnVector<DataType> &>(array.getData()).getData();
