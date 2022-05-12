@@ -498,6 +498,15 @@ Block Block::cloneWithColumns(MutableColumns && columns) const
     Block res;
 
     size_t num_columns = data.size();
+
+    if (num_columns != columns.size())
+    {
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Cannot clone block with columns because block has {} columns, but {} columns given",
+            num_columns, columns.size());
+    }
+
     res.reserve(num_columns);
 
     for (size_t i = 0; i < num_columns; ++i)
@@ -514,8 +523,12 @@ Block Block::cloneWithColumns(const Columns & columns) const
     size_t num_columns = data.size();
 
     if (num_columns != columns.size())
-        throw Exception("Cannot clone block with columns because block has " + toString(num_columns) + " columns, "
-                        "but " + toString(columns.size()) + " columns given.", ErrorCodes::LOGICAL_ERROR);
+    {
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Cannot clone block with columns because block has {} columns, but {} columns given",
+            num_columns, columns.size());
+    }
 
     res.reserve(num_columns);
 
