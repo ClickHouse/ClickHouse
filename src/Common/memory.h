@@ -9,7 +9,7 @@
 #include <Common/CurrentMemoryTracker.h>
 #include <Common/config.h>
 
-#if (USE_JEMALLOC) && USE_JEMALLOC
+#if defined(USE_JEMALLOC) && USE_JEMALLOC
 # pragma message "Use jemalloc"
 #    include <jemalloc/jemalloc.h>
 #endif

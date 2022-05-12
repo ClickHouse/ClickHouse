@@ -8,7 +8,7 @@ if (SANITIZE OR NOT (
     endif ()
     set (ENABLE_JEMALLOC OFF)
 else ()
-    option (ENABLE_JEMALLOC "Enable jemalloc allocator" ${ENABLE_LIBRARIES})
+    option (ENABLE_JEMALLOC "Enable jemalloc allocator" Off)
 endif ()
 
 if (NOT ENABLE_JEMALLOC)

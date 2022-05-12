@@ -13,6 +13,6 @@ if (ENABLE_MIMALLOC)
     message (STATUS "Using mimalloc: ${MIMALLOC_INCLUDE_DIR} : ${MIMALLOC_LIBRARY}")
 
     add_library(_mimalloc INTERFACE)
-    target_include_directories(_msgpack SYSTEM BEFORE INTERFACE ${MIMALLOC_INCLUDE_DIR})
+    target_include_directories(_mimalloc SYSTEM BEFORE INTERFACE ${MIMALLOC_INCLUDE_DIR})
     add_library(ch_contrib::mimalloc ALIAS _mimalloc)
 endif ()

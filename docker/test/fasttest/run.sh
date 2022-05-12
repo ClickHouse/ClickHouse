@@ -178,6 +178,7 @@ function clone_submodules
             contrib/replxx
             contrib/wyhash
             contrib/eigen
+            contrib/mimalloc
         )
 
         git submodule sync
