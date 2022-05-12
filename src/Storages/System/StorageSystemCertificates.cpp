@@ -208,7 +208,7 @@ void StorageSystemCertificates::fillData(MutableColumns & res_columns, ContextPt
             for (const auto & entry : dir_set)
                 enumCertificates(entry, res_columns);
         }
-/*
+
         const char * file = getenv(X509_get_default_cert_file_env());
         if (!file)
             file = X509_get_default_cert_file();
@@ -222,7 +222,6 @@ void StorageSystemCertificates::fillData(MutableColumns & res_columns, ContextPt
                     populateTable(cert.certificate(), res_columns);
             }
         }
-        */
     }
 }
 
