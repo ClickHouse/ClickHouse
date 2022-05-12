@@ -3,12 +3,15 @@
 #include <Common/logger_useful.h>
 #include <IO/WriteHelpers.h>
 
+#include <boost/algorithm/string/join.hpp>
+
 
 namespace DB
 {
 
 //static const auto CONNECT_SLEEP = 200;
 static const auto RETRIES_MAX = 20;
+static const auto CONNECTED_TO_BUFFER_SIZE = 256;
 
 
 NATSConnectionManager::NATSConnectionManager(const NATSConfiguration & configuration_, Poco::Logger * log_)
@@ -18,9 +21,19 @@ NATSConnectionManager::NATSConnectionManager(const NATSConfiguration & configura
 {
 }
 
+
+NATSConnectionManager::~NATSConnectionManager()
+{
+    if (has_connection)
+        natsConnection_Destroy(connection);
+}
+
 String NATSConnectionManager::connectionInfoForLog() const
 {
-    return configuration.host + ':' + toString(configuration.port);
+    if (!configuration.url.empty()) {
+        return "url : " + configuration.url;
+    }
+    return "cluster: " + boost::algorithm::join(configuration.servers, ", ");
 }
 
 bool NATSConnectionManager::isConnected()
@@ -50,24 +63,6 @@ bool NATSConnectionManager::reconnect()
     return isConnectedImpl();
 }
 
-SubscriptionPtr NATSConnectionManager::createSubscription(const std::string& subject, natsMsgHandler handler, ReadBufferFromNATSConsumer * consumer)
-{
-    std::lock_guard lock(mutex);
-    natsSubscription * ns;
-    status = natsConnection_Subscribe(&ns, connection, subject.c_str(), handler, static_cast<void *>(consumer));
-    if (status == NATS_OK)
-        status = natsSubscription_SetPendingLimits(ns, -1, -1);
-    if (status == NATS_OK)
-    {
-        LOG_DEBUG(log, "Subscribed to subject {}", subject);
-        return SubscriptionPtr(ns, &natsSubscription_Destroy);
-    }
-    else
-    {
-        return SubscriptionPtr(nullptr, &natsSubscription_Destroy);
-    }
-}
-
 void NATSConnectionManager::disconnect()
 {
     std::lock_guard lock(mutex);
@@ -82,7 +77,7 @@ bool NATSConnectionManager::closed()
 
 bool NATSConnectionManager::isConnectedImpl() const
 {
-    return event_handler.connectionRunning() && !natsConnection_IsClosed(connection) && status == natsStatus::NATS_OK;
+    return event_handler.connectionRunning() && connection && !natsConnection_IsClosed(connection);
 }
 
 void NATSConnectionManager::connectImpl()
@@ -93,27 +88,31 @@ void NATSConnectionManager::connectImpl()
         natsOptions_SetSecure(options, true);
         natsOptions_SkipServerVerification(options, true);
     }
-    std::string address;
-    if (configuration.connection_string.empty())
+    if (!configuration.url.empty())
     {
-        address = configuration.host + ":" + std::to_string(configuration.port);
-    }
-    else
-    {
-        address = configuration.connection_string;
+        natsOptions_SetURL(options, configuration.url.c_str());
+    } else {
+        const char * servers[configuration.servers.size()];
+        for (size_t i = 0; i < configuration.servers.size(); ++i) {
+            servers[i] = configuration.servers[i].c_str();
+        }
+        natsOptions_SetServers(options, servers, configuration.servers.size());
     }
     natsOptions_SetMaxReconnect(options, configuration.max_reconnect);
     natsOptions_SetReconnectWait(options, configuration.reconnect_wait);
-//    natsOptions_SetDisconnectedCB(options, disconnectedCallback, this);
-//    natsOptions_SetReconnectedCB(options, reconnectedCallback, this);
-    natsOptions_SetURL(options, address.c_str());
-    status = natsConnection_Connect(&connection, options);
+    natsOptions_SetDisconnectedCB(options, disconnectedCallback, log);
+    natsOptions_SetReconnectedCB(options, reconnectedCallback, log);
+    auto status = natsConnection_Connect(&connection, options);
     if (status != NATS_OK)
     {
-        LOG_DEBUG(log, "Failed to connect to NATS on address: {}", address);
+        if (!configuration.url.empty())
+            LOG_DEBUG(log, "Failed to connect to NATS on address: {}", configuration.url);
+        else
+            LOG_DEBUG(log, "Failed to connect to NATS cluster");
         return;
     }
 
+    has_connection = true;
     event_handler.changeConnectionStatus(true);
 }
 
@@ -131,18 +130,17 @@ void NATSConnectionManager::disconnectImpl()
     event_handler.changeConnectionStatus(false);
 }
 
-void NATSConnectionManager::reconnectedCallback(natsConnection * nc, void * manager)
+void NATSConnectionManager::reconnectedCallback(natsConnection * nc, void * log)
 {
-    char buffer[64];
-
+    char buffer[CONNECTED_TO_BUFFER_SIZE];
     buffer[0] = '\0';
     natsConnection_GetConnectedUrl(nc, buffer, sizeof(buffer));
-    LOG_DEBUG(static_cast<NATSConnectionManager *>(manager)->log, "Got reconnected to NATS server: {}.", buffer);
+    LOG_DEBUG(static_cast<Poco::Logger *>(log), "Got reconnected to NATS server: {}.", buffer);
 }
 
-void NATSConnectionManager::disconnectedCallback(natsConnection *, void * manager)
+void NATSConnectionManager::disconnectedCallback(natsConnection *, void * log)
 {
-    LOG_DEBUG(static_cast<NATSConnectionManager *>(manager)->log, "Got disconnected from NATS server.");
+    LOG_DEBUG(static_cast<Poco::Logger *>(log), "Got disconnected from NATS server.");
 }
 
 }

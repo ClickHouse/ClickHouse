@@ -32,7 +32,7 @@ public:
 
     void countRow();
     void activateWriting() { writing_task->activateAndSchedule(); }
-    void updateMaxWait() { wait_num.store(payload_counter); }
+    void updateMaxWait() { wait_payloads.store(true); }
 
 private:
     void nextImpl() override;
@@ -41,7 +41,7 @@ private:
 
     void iterateEventLoop();
     void writingFunc();
-    void publish();
+    natsStatus publish();
 
     NATSConnectionManager connection;
     const String subject;
@@ -68,7 +68,7 @@ private:
     /* false: until writeSuffix is called
      * true: means payloads.queue will not grow anymore
      */
-    std::atomic<UInt64> wait_num = 0;
+    std::atomic<bool> wait_payloads = false;
     UInt64 payload_counter = 0;
 
     Poco::Logger * log;

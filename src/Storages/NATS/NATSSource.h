@@ -17,8 +17,7 @@ public:
             const StorageSnapshotPtr & storage_snapshot_,
             ContextPtr context_,
             const Names & columns,
-            size_t max_block_size_,
-            bool ack_in_suffix = false);
+            size_t max_block_size_);
 
     ~NATSSource() override;
 
@@ -28,9 +27,6 @@ public:
     Chunk generate() override;
 
     bool queueEmpty() const { return !buffer || buffer->queueEmpty(); }
-//    bool needChannelUpdate();
-//    void updateChannel();
-//    bool sendAck();
 
 private:
     StorageNATS & storage;
@@ -38,7 +34,6 @@ private:
     ContextPtr context;
     Names column_names;
     const size_t max_block_size;
-//    bool ack_in_suffix;
 
     bool is_finished = false;
     const Block non_virtual_header;
@@ -52,8 +47,7 @@ private:
         std::pair<Block, Block> headers,
         ContextPtr context_,
         const Names & columns,
-        size_t max_block_size_,
-        bool ack_in_suffix);
+        size_t max_block_size_);
 
     Chunk generateImpl();
 };

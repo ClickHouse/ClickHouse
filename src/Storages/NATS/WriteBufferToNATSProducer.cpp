@@ -88,7 +88,7 @@ void WriteBufferToNATSProducer::countRow()
     }
 }
 
-void WriteBufferToNATSProducer::publish()
+natsStatus WriteBufferToNATSProducer::publish()
 {
     String payload;
 
@@ -107,18 +107,18 @@ void WriteBufferToNATSProducer::publish()
         else
         {
             LOG_DEBUG(log, "Something went wrong during publishing to NATS subject {}.", subject);
+            break;
         }
     }
 
     if (status == NATS_OK)
-    {
         status = natsConnection_Flush(connection.getConnection());
-    }
-    else
-    {
+
+    if (status != NATS_OK)
         LOG_DEBUG(log, "Something went wrong during publishing to NATS subject {}.", subject);
-    }
+
     iterateEventLoop();
+    return status;
 }
 
 
@@ -126,10 +126,13 @@ void WriteBufferToNATSProducer::writingFunc()
 {
     while ((!payloads.empty() || wait_all) && !shutdown_called.load())
     {
-        publish();
+        auto status = publish();
 
-        if (wait_num.load() && payloads.empty())
+        if (wait_payloads.load() && payloads.empty())
             wait_all = false;
+
+        if (status != NATS_OK && wait_all)
+            connection.reconnect();
 
         iterateEventLoop();
     }
