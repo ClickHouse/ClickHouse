@@ -5,8 +5,6 @@
 #include <Columns/ColumnsNumber.h>
 #include <Interpreters/Context.h>
 #include <Common/logger_useful.h>
-#include <amqpcpp.h>
-#include <uv.h>
 #include <boost/algorithm/string/split.hpp>
 #include <chrono>
 #include <thread>
@@ -87,37 +85,38 @@ void WriteBufferToNATSProducer::countRow()
     }
 }
 
-natsStatus WriteBufferToNATSProducer::publish()
+void WriteBufferToNATSProducer::publish()
 {
-    String payload;
+    uv_thread_t flush_thread;
 
-    natsStatus status{NATS_OK};
-    while (!payloads.empty())
+    uv_thread_create(&flush_thread, publishThreadFunc, static_cast<void *>(this));
+
+    connection.getHandler().startLoop();
+    uv_thread_join(&flush_thread);
+}
+
+void WriteBufferToNATSProducer::publishThreadFunc(void * arg) {
+    String payload;
+    WriteBufferToNATSProducer * buffer = static_cast<WriteBufferToNATSProducer *>(arg);
+
+    natsStatus status;
+    while (!buffer->payloads.empty())
     {
-        bool pop_result = payloads.pop(payload);
+        bool pop_result = buffer->payloads.pop(payload);
 
         if (!pop_result)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Could not pop payload");
-        status = natsConnection_PublishString(connection.getConnection(), subject.c_str(), payload.c_str());
+        status = natsConnection_PublishString(buffer->connection.getConnection(), buffer->subject.c_str(), payload.c_str());
 
         if (status != NATS_OK)
         {
-            LOG_DEBUG(log, "Something went wrong during publishing to NATS subject. Nats status text: {}. Last error message: {}",
+            LOG_DEBUG(buffer->log, "Something went wrong during publishing to NATS subject. Nats status text: {}. Last error message: {}",
                       natsStatus_GetText(status), nats_GetLastError(nullptr));
             break;
         }
     }
 
-    if (status == NATS_OK)
-    {
-        status = natsConnection_Flush(connection.getConnection());
-        if (status != NATS_OK)
-            LOG_DEBUG(log, "Something went wrong during flushing NATS connection. Nats status text: {}. Last error message: {}",
-                      natsStatus_GetText(status), nats_GetLastError(nullptr));
-    }
-
-    iterateEventLoop();
-    return status;
+    nats_ReleaseThreadMemory();
 }
 
 
@@ -125,12 +124,13 @@ void WriteBufferToNATSProducer::writingFunc()
 {
     while ((!payloads.empty() || wait_all) && !shutdown_called.load())
     {
-        auto status = publish();
+        publish();
 
-        if (wait_payloads.load() && payloads.empty())
+        LOG_DEBUG(log, "Writing func {} {} {}", wait_payloads.load(), payloads.empty(), natsConnection_Buffered(connection.getConnection()));
+        if (wait_payloads.load() && payloads.empty() && natsConnection_Buffered(connection.getConnection()) == 0)
             wait_all = false;
 
-        if (status != NATS_OK && wait_all)
+        if (!connection.isConnected() && wait_all)
             connection.reconnect();
 
         iterateEventLoop();

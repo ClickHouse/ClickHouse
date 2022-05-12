@@ -102,13 +102,10 @@ void NATSConnectionManager::connectImpl()
     natsOptions_SetReconnectWait(options, configuration.reconnect_wait);
     natsOptions_SetDisconnectedCB(options, disconnectedCallback, log);
     natsOptions_SetReconnectedCB(options, reconnectedCallback, log);
-    natsConnection * tmp = nullptr;
     event_handler.setThreadLocalLoop();
-    auto status = natsConnection_Connect(&tmp, options);
-    LOG_DEBUG(log, "New connection status {}", static_cast<int>(status));
+    auto status = natsConnection_Connect(&connection, options);
     if (status == NATS_OK)
     {
-        connection = tmp;
         has_connection = true;
         event_handler.changeConnectionStatus(true);
     }
