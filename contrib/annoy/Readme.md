@@ -1,1 +1,0 @@
-Algorithm was inspired by the https://github.com/spotify/annoy.
