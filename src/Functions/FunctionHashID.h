@@ -4,17 +4,17 @@
 
 #if USE_HASHIDSXX
 
-#include <hashids.h>
+#    include <hashids.h>
 
-#include <Columns/ColumnString.h>
-#include <Columns/ColumnsNumber.h>
-#include <DataTypes/DataTypeString.h>
-#include <Functions/FunctionFactory.h>
-#include <Functions/FunctionHelpers.h>
-#include <Functions/IFunction.h>
+#    include <Columns/ColumnString.h>
+#    include <Columns/ColumnsNumber.h>
+#    include <DataTypes/DataTypeString.h>
+#    include <Functions/FunctionFactory.h>
+#    include <Functions/FunctionHelpers.h>
+#    include <Functions/IFunction.h>
 
-#include <functional>
-#include <initializer_list>
+#    include <functional>
+#    include <initializer_list>
 
 namespace DB
 {
@@ -23,6 +23,7 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int INVALID_ALPHABET;
     extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
     extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
 }
@@ -114,7 +115,11 @@ public:
             {
                 const auto & alphabetcolumn = arguments[3].column;
                 if (auto alpha_col = checkAndGetColumnConst<ColumnString>(alphabetcolumn.get()))
+                {
                     alphabet = alpha_col->getValue<String>();
+                    if (alphabet.find("\0") != std::string::npos)
+                        throw Exception(ErrorCodes::INVALID_ALPHABET, "Custom alphabet must not contain null character");
+                }
             }
             else
                 alphabet.assign(DEFAULT_ALPHABET);
