@@ -21,4 +21,7 @@
     </cluster_simple>
 
     </remote_servers>
+    <macros>
+        <default_cluster_macro>cluster_simple</default_cluster_macro>
+    </macros>
 </clickhouse>
