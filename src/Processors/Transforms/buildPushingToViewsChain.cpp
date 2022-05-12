@@ -188,8 +188,8 @@ Chain buildPushingToViewsChain(
     auto storage_header = no_destination ? metadata_snapshot->getSampleBlockWithVirtuals(storage->getVirtuals())
                                          : metadata_snapshot->getSampleBlock();
 
-    /** TODO This is a very important line. At any insertion into the table one of streams should own lock.
-      * Although now any insertion into the table is done via PushingToViewsBlockOutputStream,
+    /** TODO This is a very important line. At any insertion into the table one of chains should own lock.
+      * Although now any insertion into the table is done via PushingToViews chain,
       *  but it's clear that here is not the best place for this functionality.
       */
     result_chain.addTableLock(storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef().lock_acquire_timeout));

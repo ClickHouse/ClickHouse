@@ -26,6 +26,7 @@ public:
         FileCachePtr cache_,
         RemoteFSFileReaderCreator remote_file_reader_creator_,
         const ReadSettings & settings_,
+        const String & query_id_,
         size_t read_until_position_);
 
     bool nextImpl() override;
