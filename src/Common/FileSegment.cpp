@@ -735,7 +735,7 @@ void FileSegment::detach(
 {
     /// Now detached status can be in 2 cases, which do not do any complex logic:
     /// 1. there is only 1 remaining file segment holder
-    ///    && it does not need this segment anymore 
+    ///    && it does not need this segment anymore
     ///    && this file segment was in cache and needs to be removed
     /// 2. in read_from_cache_if_exists_otherwise_bypass_cache case
     if (is_detached)
