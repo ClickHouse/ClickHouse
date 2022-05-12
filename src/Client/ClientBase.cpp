@@ -391,7 +391,7 @@ void ClientBase::onData(Block & block, ASTPtr parsed_query)
     processed_rows += block.rows();
 
     /// Even if all blocks are empty, we still need to initialize the output stream to write empty resultset.
-    initBlockOutputStream(block, parsed_query);
+    initOutputFormat(block, parsed_query);
 
     /// The header block containing zero rows was used to initialize
     /// output_format, do not output it.
@@ -438,14 +438,14 @@ void ClientBase::onLogData(Block & block)
 
 void ClientBase::onTotals(Block & block, ASTPtr parsed_query)
 {
-    initBlockOutputStream(block, parsed_query);
+    initOutputFormat(block, parsed_query);
     output_format->setTotals(block);
 }
 
 
 void ClientBase::onExtremes(Block & block, ASTPtr parsed_query)
 {
-    initBlockOutputStream(block, parsed_query);
+    initOutputFormat(block, parsed_query);
     output_format->setExtremes(block);
 }
 
@@ -465,7 +465,7 @@ void ClientBase::onProfileInfo(const ProfileInfo & profile_info)
 }
 
 
-void ClientBase::initBlockOutputStream(const Block & block, ASTPtr parsed_query)
+void ClientBase::initOutputFormat(const Block & block, ASTPtr parsed_query)
 try
 {
     if (!output_format)
@@ -718,7 +718,8 @@ void ClientBase::processOrdinaryQuery(const String & query_to_execute, ASTPtr pa
                 query_processing_stage,
                 &global_context->getSettingsRef(),
                 &global_context->getClientInfo(),
-                true);
+                true,
+                [&](const Progress & progress) { onProgress(progress); });
 
             if (send_external_tables)
                 sendExternalTables(parsed_query);
@@ -1071,7 +1072,8 @@ void ClientBase::processInsertQuery(const String & query_to_execute, ASTPtr pars
         query_processing_stage,
         &global_context->getSettingsRef(),
         &global_context->getClientInfo(),
-        true);
+        true,
+        [&](const Progress & progress) { onProgress(progress); });
 
     if (send_external_tables)
         sendExternalTables(parsed_query);
@@ -1103,7 +1105,9 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
     if (!parsed_insert_query)
         return;
 
-    if (need_render_progress)
+    bool have_data_in_stdin = !is_interactive && !stdin_is_a_tty && !std_in.eof();
+
+    if (need_render_progress && have_data_in_stdin)
     {
         /// Set total_bytes_to_read for current fd.
         FileProgress file_progress(0, std_in.size());
@@ -1112,8 +1116,6 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
         /// Set callback to be called on file progress.
         progress_indication.setFileProgressCallback(global_context, true);
     }
-
-    bool have_data_in_stdin = !is_interactive && !stdin_is_a_tty && !std_in.eof();
 
     /// If data fetched from file (maybe compressed file)
     if (parsed_insert_query->infile)
@@ -1486,7 +1488,9 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
 
     if (is_interactive)
     {
-        std::cout << std::endl << processed_rows << " rows in set. Elapsed: " << progress_indication.elapsedSeconds() << " sec. ";
+        std::cout << std::endl
+            << processed_rows << " row" << (processed_rows == 1 ? "" : "s")
+            << " in set. Elapsed: " << progress_indication.elapsedSeconds() << " sec. ";
         progress_indication.writeFinalProgress();
         std::cout << std::endl << std::endl;
     }
