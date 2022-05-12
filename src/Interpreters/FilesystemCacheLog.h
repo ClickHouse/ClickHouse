@@ -39,6 +39,7 @@ struct FilesystemCacheLogElement
     std::pair<size_t, size_t> file_segment_range{};
     ReadType read_type{};
     size_t file_segment_size;
+    bool cache_attempted;
 
     static std::string name() { return "FilesystemCacheLog"; }
 
