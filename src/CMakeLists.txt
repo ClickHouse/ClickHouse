@@ -490,6 +490,14 @@ if (TARGET ch_contrib::libpqxx)
     dbms_target_link_libraries(PUBLIC ch_contrib::libpqxx)
 endif()
 
+if (TARGET ch_contrib::gperftools)
+    dbms_target_link_libraries(PUBLIC ch_contrib::gperftools)
+endif ()
+
+if (TARGET ch_contrib::diskann)
+    dbms_target_link_libraries(PUBLIC ch_contrib::diskann)
+endif ()
+
 if (TARGET ch_contrib::datasketches)
     target_link_libraries (clickhouse_aggregate_functions PRIVATE ch_contrib::datasketches)
 endif ()
