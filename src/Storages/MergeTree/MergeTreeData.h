@@ -110,7 +110,7 @@ namespace ErrorCodes
 /// Several modes are implemented. Modes determine additional actions during merge:
 /// - Ordinary - don't do anything special
 /// - Collapsing - collapse pairs of rows with the opposite values of sign_columns for the same values
-///   of primary key (cf. CollapsingSortedBlockInputStream.h)
+///   of primary key (cf. CollapsingSortedTransform.h)
 /// - Replacing - for all rows with the same primary key keep only the latest one. Or, if the version
 ///   column is set, keep the latest row with the maximal version.
 /// - Summing - sum all numeric columns not contained in the primary key for all rows with the same primary key.
@@ -497,6 +497,7 @@ public:
     DataPartsVector getVisibleDataPartsVectorInPartitions(ContextPtr local_context, const std::unordered_set<String> & partition_ids) const;
 
     DataPartsVector getDataPartsVectorInPartitionForInternalUsage(const DataPartState & state, const String & partition_id, DataPartsLock * acquired_lock = nullptr) const;
+    DataPartsVector getDataPartsVectorInPartitionForInternalUsage(const DataPartStates & affordable_states, const String & partition_id, DataPartsLock * acquired_lock = nullptr) const;
 
     /// Returns the part with the given name and state or nullptr if no such part.
     DataPartPtr getPartIfExists(const String & part_name, const DataPartStates & valid_states);
@@ -615,7 +616,8 @@ public:
     /// Delete irrelevant parts from memory and disk.
     /// If 'force' - don't wait for old_parts_lifetime.
     size_t clearOldPartsFromFilesystem(bool force = false);
-    void clearPartsFromFilesystem(const DataPartsVector & parts);
+    /// Try to clear parts from filesystem. Throw exception in case of errors.
+    void clearPartsFromFilesystem(const DataPartsVector & parts, bool throw_on_error = true, NameSet * parts_failed_to_delete = nullptr);
 
     /// Delete WAL files containing parts, that all already stored on disk.
     size_t clearOldWriteAheadLogs();
@@ -1297,6 +1299,11 @@ private:
     /// Create zero-copy exclusive lock for part and disk. Useful for coordination of
     /// distributed operations which can lead to data duplication. Implemented only in ReplicatedMergeTree.
     virtual std::optional<ZeroCopyLock> tryCreateZeroCopyExclusiveLock(const String &, const DiskPtr &) { return std::nullopt; }
+
+    /// Remove parts from disk calling part->remove(). Can do it in parallel in case of big set of parts and enabled settings.
+    /// If we fail to remove some part and throw_on_error equal to `true` will throw an exception on the first failed part.
+    /// Otherwise, in non-parallel case will break and return.
+    void clearPartsFromFilesystemImpl(const DataPartsVector & parts, NameSet * part_names_successed);
 
     TemporaryParts temporary_parts;
 };

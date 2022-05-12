@@ -101,7 +101,12 @@ EOL
 
 function stop()
 {
-    clickhouse stop
+    clickhouse stop --do-not-kill && return
+    # We failed to stop the server with SIGTERM. Maybe it hang, let's collect stacktraces.
+    kill -TERM "$(pidof gdb)" ||:
+    sleep 5
+    gdb -batch -ex 'thread apply all backtrace' -p "$(cat /var/run/clickhouse-server/clickhouse-server.pid)" ||:
+    clickhouse stop --force
 }
 
 function start()
@@ -197,6 +202,10 @@ clickhouse-client --query "SHOW TABLES FROM test"
 
 stop
 mv /var/log/clickhouse-server/clickhouse-server.log /var/log/clickhouse-server/clickhouse-server.stress.log
+
+# NOTE Disable thread fuzzer before server start with data after stress test.
+# In debug build it can take a lot of time.
+unset "${!THREAD_@}"
 
 start
 
