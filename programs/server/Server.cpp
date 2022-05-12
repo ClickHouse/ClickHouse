@@ -540,7 +540,7 @@ static void sanityChecks(Server & server)
     try
     {
         if (readString("/sys/devices/system/clocksource/clocksource0/current_clocksource").find("tsc") == std::string::npos)
-            server.context()->addWarningMessage("Linux is not using fast TSC clock source. Performance can be degraded.");
+            server.context()->addWarningMessage("Linux is not using a fast TSC clock source. Performance can be degraded.");
     }
     catch (...)
     {
@@ -558,7 +558,7 @@ static void sanityChecks(Server & server)
     try
     {
         if (readString("/sys/kernel/mm/transparent_hugepage/enabled").find("[always]") != std::string::npos)
-            server.context()->addWarningMessage("Linux transparent hugepage are set to \"always\".");
+            server.context()->addWarningMessage("Linux transparent hugepages are set to \"always\".");
     }
     catch (...)
     {

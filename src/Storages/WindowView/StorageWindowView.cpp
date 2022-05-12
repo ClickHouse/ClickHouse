@@ -405,8 +405,7 @@ UInt32 StorageWindowView::getCleanupBound()
                 return 0;
             if (allowed_lateness)
             {
-                UInt32 lateness_bound = addTime(
-                    max_timestamp, lateness_kind, -1 * lateness_num_units, *time_zone);
+                UInt32 lateness_bound = addTime(max_timestamp, lateness_kind, -lateness_num_units, *time_zone);
                 lateness_bound = getWindowLowerBound(lateness_bound);
                 if (lateness_bound < w_bound)
                     w_bound = lateness_bound;
@@ -460,7 +459,7 @@ bool StorageWindowView::optimize(
 
 std::pair<BlocksPtr, Block> StorageWindowView::getNewBlocks(UInt32 watermark)
 {
-    UInt32 w_start = addTime(watermark, window_kind, -1 * window_num_units, *time_zone);
+    UInt32 w_start = addTime(watermark, window_kind, -window_num_units, *time_zone);
 
     InterpreterSelectQuery fetch(
         getFetchColumnQuery(w_start, watermark),
@@ -749,13 +748,7 @@ std::shared_ptr<ASTCreateQuery> StorageWindowView::getInnerTableCreateQuery(
 
 UInt32 StorageWindowView::getWindowLowerBound(UInt32 time_sec)
 {
-    IntervalKind window_interval_kind;
-    if (is_tumble)
-        window_interval_kind = window_kind;
-    else
-        window_interval_kind = hop_kind;
-
-    switch (window_interval_kind)
+    switch (slide_kind)
     {
         case IntervalKind::Nanosecond:
         case IntervalKind::Microsecond:
@@ -770,7 +763,7 @@ UInt32 StorageWindowView::getWindowLowerBound(UInt32 time_sec)
         {\
             UInt32 w_start = ToStartOfTransform<IntervalKind::KIND>::execute(time_sec, hop_num_units, *time_zone); \
             UInt32 w_end = AddTime<IntervalKind::KIND>::execute(w_start, hop_num_units, *time_zone);\
-            return AddTime<IntervalKind::KIND>::execute(w_end, -1 * window_num_units, *time_zone);\
+            return AddTime<IntervalKind::KIND>::execute(w_end, -window_num_units, *time_zone);\
         }\
     }
         CASE_WINDOW_KIND(Second)
@@ -788,13 +781,7 @@ UInt32 StorageWindowView::getWindowLowerBound(UInt32 time_sec)
 
 UInt32 StorageWindowView::getWindowUpperBound(UInt32 time_sec)
 {
-    IntervalKind window_interval_kind;
-    if (is_tumble)
-        window_interval_kind = window_kind;
-    else
-        window_interval_kind = hop_kind;
-
-    switch (window_interval_kind)
+    switch (slide_kind)
     {
         case IntervalKind::Nanosecond:
         case IntervalKind::Microsecond:
@@ -804,16 +791,8 @@ UInt32 StorageWindowView::getWindowUpperBound(UInt32 time_sec)
 #define CASE_WINDOW_KIND(KIND) \
     case IntervalKind::KIND: \
     { \
-        if (is_tumble) \
-        {\
-            UInt32 w_start = ToStartOfTransform<IntervalKind::KIND>::execute(time_sec, window_num_units, *time_zone); \
-            return AddTime<IntervalKind::KIND>::execute(w_start, window_num_units, *time_zone); \
-        }\
-        else \
-        {\
-            UInt32 w_start = ToStartOfTransform<IntervalKind::KIND>::execute(time_sec, hop_num_units, *time_zone); \
-            return AddTime<IntervalKind::KIND>::execute(w_start, hop_num_units, *time_zone); \
-        }\
+        UInt32 w_start = ToStartOfTransform<IntervalKind::KIND>::execute(time_sec, slide_num_units, *time_zone); \
+        return AddTime<IntervalKind::KIND>::execute(w_start, slide_num_units, *time_zone); \
     }
         CASE_WINDOW_KIND(Second)
         CASE_WINDOW_KIND(Minute)
@@ -860,10 +839,7 @@ void StorageWindowView::updateMaxWatermark(UInt32 watermark)
         {
             fire_signal.push_back(max_watermark);
             max_fired_watermark = max_watermark;
-            max_watermark
-                = is_tumble
-                ? addTime(max_watermark, window_kind, window_num_units, *time_zone)
-                : addTime(max_watermark, hop_kind, hop_num_units, *time_zone);
+            max_watermark = addTime(max_watermark, slide_kind, slide_num_units, *time_zone);
         }
     }
     else // strictly || bounded
@@ -874,16 +850,8 @@ void StorageWindowView::updateMaxWatermark(UInt32 watermark)
         {
             fire_signal.push_back(max_watermark);
             max_fired_watermark = max_watermark;
-            if (is_tumble)
-            {
-                max_watermark = addTime(max_watermark, window_kind, window_num_units, *time_zone);
-                max_watermark_bias = addTime(max_watermark, window_kind, window_num_units, *time_zone);
-            }
-            else
-            {
-                max_watermark = addTime(max_watermark, hop_kind, hop_num_units, *time_zone);
-                max_watermark_bias = addTime(max_watermark, hop_kind, hop_num_units, *time_zone);
-            }
+            max_watermark = addTime(max_watermark, slide_kind, slide_num_units, *time_zone);
+            max_watermark_bias = addTime(max_watermark, slide_kind, slide_num_units, *time_zone);
         }
     }
 
@@ -917,38 +885,32 @@ void StorageWindowView::threadFuncCleanup()
 
 void StorageWindowView::threadFuncFireProc()
 {
-    static bool window_kind_larger_than_day = window_kind == IntervalKind::Week || window_kind == IntervalKind::Month
-        || window_kind == IntervalKind::Quarter || window_kind == IntervalKind::Year;
-
     std::unique_lock lock(fire_signal_mutex);
     UInt32 timestamp_now = std::time(nullptr);
 
-    /// When window kind is larger than day, getWindowUpperBound() will get a day num instead of timestamp,
-    /// and addTime will also add day num to the next_fire_signal, so we need to convert it into timestamp.
-    /// Otherwise, we will get wrong result and after create window view with window kind larger than day,
-    /// since day num is too smaller than current timestamp, it will fire a lot.
-    auto exact_fire_signal = window_kind_larger_than_day ? next_fire_signal * 86400 : next_fire_signal;
-
-    while (exact_fire_signal <= timestamp_now)
+    while (next_fire_signal <= timestamp_now)
     {
         try
         {
-            fire(exact_fire_signal);
+            fire(next_fire_signal);
         }
         catch (...)
         {
             tryLogCurrentException(__PRETTY_FUNCTION__);
         }
-        max_fired_watermark = exact_fire_signal;
-        next_fire_signal = addTime(next_fire_signal, window_kind, window_num_units, *time_zone);
-        exact_fire_signal = window_kind_larger_than_day ? next_fire_signal * 86400 : next_fire_signal;
+        max_fired_watermark = next_fire_signal;
+        auto slide_interval = addTime(0, slide_kind, slide_num_units, *time_zone);
+        /// Convert DayNum into seconds when the slide interval is larger than Day
+        if (slide_kind > IntervalKind::Day)
+            slide_interval *= 86400;
+        next_fire_signal += slide_interval;
     }
 
     UInt64 timestamp_ms = static_cast<UInt64>(Poco::Timestamp().epochMicroseconds()) / 1000;
     if (!shutdown_called)
         fire_task->scheduleAfter(std::max(
             UInt64(0),
-            static_cast<UInt64>(window_kind_larger_than_day ? next_fire_signal * 86400 : next_fire_signal) * 1000 - timestamp_ms));
+            static_cast<UInt64>(next_fire_signal) * 1000 - timestamp_ms));
 }
 
 void StorageWindowView::threadFuncFireEvent()
@@ -1205,6 +1167,9 @@ ASTPtr StorageWindowView::innerQueryParser(const ASTSelectQuery & query)
         arguments.at(1), window_kind, window_num_units,
         "Illegal type of second argument of function " + window_function.name + " should be Interval");
 
+    slide_kind = window_kind;
+    slide_num_units = window_num_units;
+
     if (!is_tumble)
     {
         hop_kind = window_kind;
@@ -1286,17 +1251,12 @@ void StorageWindowView::writeIntoWindowView(
     // Filter outdated data
     if (window_view.allowed_lateness && t_max_timestamp != 0)
     {
-        lateness_bound = addTime(
-            t_max_timestamp, window_view.lateness_kind,
-            -1 * window_view.lateness_num_units, *window_view.time_zone);
+        lateness_bound = addTime(t_max_timestamp, window_view.lateness_kind, -window_view.lateness_num_units, *window_view.time_zone);
 
         if (window_view.is_watermark_bounded)
         {
-            UInt32 watermark_lower_bound = window_view.is_tumble
-                ? addTime(t_max_watermark, window_view.window_kind,
-                          -1 * window_view.window_num_units, *window_view.time_zone)
-                : addTime(t_max_watermark, window_view.hop_kind,
-                          -1 * window_view.hop_num_units, *window_view.time_zone);
+            UInt32 watermark_lower_bound
+                = addTime(t_max_watermark, window_view.slide_kind, -window_view.slide_num_units, *window_view.time_zone);
 
             if (watermark_lower_bound < lateness_bound)
                 lateness_bound = watermark_lower_bound;
@@ -1561,7 +1521,7 @@ ASTPtr StorageWindowView::getFetchColumnQuery(UInt32 w_start, UInt32 w_end) cons
             /// windows will split into [1], [2], [3]... We compute each split window into
             /// mergeable state and merge them when the window is triggering.
             func_array ->arguments->children.push_back(std::make_shared<ASTLiteral>(w_end));
-            w_end = addTime(w_end, window_kind, -1 * slice_num_units, *time_zone);
+            w_end = addTime(w_end, window_kind, -slice_num_units, *time_zone);
         }
         auto func_has = makeASTFunction("has", func_array, std::make_shared<ASTIdentifier>(window_id_name));
         res_query->setExpression(ASTSelectQuery::Expression::PREWHERE, func_has);
