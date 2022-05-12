@@ -10,7 +10,9 @@ namespace DB
 static std::unique_ptr<ReadBufferFromFileBase> openForReading(const DiskPtr & disk, const String & path)
 {
     size_t file_size = disk->getFileSize(path);
-    return disk->readFile(path, ReadSettings().adjustBufferSize(file_size), file_size);
+    auto buf = disk->readFile(path, MergeTreeReaderSettings::createReadSettings().adjustBufferSize(file_size), file_size);
+    buf->setReadUntilEnd();
+    return buf;
 }
 
 PartMetadataManagerOrdinary::PartMetadataManagerOrdinary(const IMergeTreeDataPart * part_) : IPartMetadataManager(part_)
