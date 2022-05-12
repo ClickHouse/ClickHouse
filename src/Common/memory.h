@@ -9,15 +9,18 @@
 #include <Common/CurrentMemoryTracker.h>
 #include <Common/config.h>
 
-#if USE_JEMALLOC
+#if (USE_JEMALLOC) && USE_JEMALLOC
+# pragma message "Use jemalloc"
 #    include <jemalloc/jemalloc.h>
 #endif
 
-#if USE_MIMALLOC
-#    include <mimalloc/mimalloc.h>
+#if defined(USE_MIMALLOC)
+# pragma message "Use mimalloc"
+#    include <mimalloc.h>
 #endif
 
-#if !USE_JEMALLOC && !USE_MIMALLOC
+#if !defined(USE_JEMALLOC) && !defined(USE_MIMALLOC)
+# pragma message "Use default allocator"
 #    include <cstdlib>
 #endif
 
@@ -35,9 +38,9 @@ inline ALWAYS_INLINE void * newImpl(std::size_t size, TAlign... align)
 {
     void * ptr = nullptr;
     if constexpr (sizeof...(TAlign) == 1)
-        ptr = aligned_alloc(alignToSizeT(align...), size);
+        ptr = mi_aligned_alloc(alignToSizeT(align...), size);
     else
-        ptr = malloc(size);
+        ptr = mi_malloc(size);
 
     if (likely(ptr != nullptr))
         return ptr;
@@ -48,17 +51,17 @@ inline ALWAYS_INLINE void * newImpl(std::size_t size, TAlign... align)
 
 inline ALWAYS_INLINE void * newNoExept(std::size_t size) noexcept
 {
-    return malloc(size);
+    return mi_malloc(size);
 }
 
 inline ALWAYS_INLINE void * newNoExept(std::size_t size, std::align_val_t align) noexcept
 {
-    return aligned_alloc(static_cast<size_t>(align), size);
+    return mi_aligned_alloc(static_cast<size_t>(align), size);
 }
 
 inline ALWAYS_INLINE void deleteImpl(void * ptr) noexcept
 {
-    free(ptr);
+    mi_free(ptr);
 }
 
 #if USE_JEMALLOC
@@ -82,7 +85,7 @@ template <std::same_as<std::align_val_t>... TAlign>
 requires DB::OptionalArgument<TAlign...>
 inline ALWAYS_INLINE void deleteSized(void * ptr, std::size_t size [[maybe_unused]], TAlign... /* align */) noexcept
 {
-    free(ptr);
+    mi_free(ptr);
 }
 
 #endif
