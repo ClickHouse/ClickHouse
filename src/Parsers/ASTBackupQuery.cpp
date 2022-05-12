@@ -120,38 +120,35 @@ namespace
         }
     }
 
-    void formatSettings(const ASTPtr & settings, const ASTPtr & base_backup_name, const IAST::FormatSettings & format)
+    void formatSettings(const ASTPtr & settings, const ASTPtr & base_backup_name, const ASTPtr & cluster_host_ids, const IAST::FormatSettings & format)
     {
-        if (!settings && !base_backup_name)
+        if (!settings && !base_backup_name && !cluster_host_ids)
             return;
+
         format.ostr << (format.hilite ? IAST::hilite_keyword : "") << " SETTINGS " << (format.hilite ? IAST::hilite_none : "");
         bool empty = true;
+
         if (base_backup_name)
         {
             format.ostr << "base_backup = ";
             base_backup_name->format(format);
             empty = false;
         }
+
         if (settings)
         {
             if (!empty)
                 format.ostr << ", ";
             settings->format(format);
+            empty = false;
         }
-    }
 
-
-    void setDatabaseInElements(ASTBackupQuery::Elements & elements, const String & new_database)
-    {
-        for (auto & element : elements)
+        if (cluster_host_ids)
         {
-            if (element.type == ASTBackupQuery::TABLE)
-            {
-                if (element.name.first.empty() && !element.name.second.empty() && !element.name_is_in_temp_db)
-                    element.name.first = new_database;
-                if (element.new_name.first.empty() && !element.name.second.empty() && !element.name_is_in_temp_db)
-                    element.new_name.first = new_database;
-            }
+            if (!empty)
+                format.ostr << ", ";
+            format.ostr << "cluster_host_ids = ";
+            cluster_host_ids->format(format);
         }
     }
 
@@ -166,19 +163,37 @@ namespace
             [](const SettingChange & change)
             {
                 const String & name = change.name;
-                return (name == "internal") || (name == "async") || (name == "shard_num") || (name == "replica_num");
+                return (name == "internal") || (name == "async") || (name == "host_id");
             });
 
         changes.emplace_back("internal", true);
         changes.emplace_back("async", false);
-        changes.emplace_back("shard_num", params.shard_index);
-        changes.emplace_back("replica_num", params.replica_index);
+        changes.emplace_back("host_id", params.host_id);
 
         auto out_settings = std::make_shared<ASTSetQuery>();
         out_settings->changes = std::move(changes);
         out_settings->is_standalone = false;
         return out_settings;
     }
+}
+
+
+void ASTBackupQuery::Element::setDatabase(const String & new_database)
+{
+    if (type == ASTBackupQuery::TABLE)
+    {
+        if (name.first.empty() && !name.second.empty() && !name_is_in_temp_db)
+            name.first = new_database;
+        if (new_name.first.empty() && !name.second.empty() && !name_is_in_temp_db)
+            new_name.first = new_database;
+    }
+}
+
+
+void ASTBackupQuery::setDatabase(ASTBackupQuery::Elements & elements, const String & new_database)
+{
+    for (auto & element : elements)
+        element.setDatabase(new_database);
 }
 
 
@@ -206,7 +221,7 @@ void ASTBackupQuery::formatImpl(const FormatSettings & format, FormatState &, Fo
     backup_name->format(format);
 
     if (settings || base_backup_name)
-        formatSettings(settings, base_backup_name, format);
+        formatSettings(settings, base_backup_name, cluster_host_ids, format);
 }
 
 ASTPtr ASTBackupQuery::getRewrittenASTWithoutOnCluster(const WithoutOnClusterASTRewriteParams & params) const
@@ -214,9 +229,8 @@ ASTPtr ASTBackupQuery::getRewrittenASTWithoutOnCluster(const WithoutOnClusterAST
     auto new_query = std::static_pointer_cast<ASTBackupQuery>(clone());
     new_query->cluster.clear();
     new_query->settings = rewriteSettingsWithoutOnCluster(new_query->settings, params);
-    setDatabaseInElements(new_query->elements, params.default_database);
+    new_query->setDatabase(new_query->elements, params.default_database);
     return new_query;
 }
-
 
 }

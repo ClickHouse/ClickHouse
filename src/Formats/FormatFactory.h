@@ -62,7 +62,7 @@ public:
 
     /** Fast reading data from buffer and save result to memory.
       * Reads at least min_chunk_bytes and some more until the end of the chunk, depends on the format.
-      * Used in ParallelParsingBlockInputStream.
+      * Used in ParallelParsingInputFormat.
       */
     using FileSegmentationEngine = std::function<std::pair<bool, size_t>(
         ReadBuffer & buf,
