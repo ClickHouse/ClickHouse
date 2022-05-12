@@ -10,65 +10,67 @@ results of a `SELECT`, and to perform `INSERT`s into a file-backed table.
 
 The supported formats are:
 
-| Format                                                                                  | Input | Output |
-|-----------------------------------------------------------------------------------------|-------|--------|
-| [TabSeparated](#tabseparated)                                                           | ✔     | ✔      |
-| [TabSeparatedRaw](#tabseparatedraw)                                                     | ✔     | ✔      |
-| [TabSeparatedWithNames](#tabseparatedwithnames)                                         | ✔     | ✔      |
-| [TabSeparatedWithNamesAndTypes](#tabseparatedwithnamesandtypes)                         | ✔     | ✔      |
-| [TabSeparatedRawWithNames](#tabseparatedrawwithnames)                                                     | ✔     | ✔      |
-| [TabSeparatedRawWithNamesAndTypes](#tabseparatedrawwithnamesandtypes)                                                     | ✔     | ✔      |
-| [Template](#format-template)                                                            | ✔     | ✔      |
-| [TemplateIgnoreSpaces](#templateignorespaces)                                           | ✔     | ✗      |
-| [CSV](#csv)                                                                             | ✔     | ✔      |
-| [CSVWithNames](#csvwithnames)                                                           | ✔     | ✔      |
-| [CSVWithNamesAndTypes](#csvwithnamesandtypes)                                                           | ✔     | ✔      |
-| [CustomSeparated](#format-customseparated)                                              | ✔     | ✔      |
-| [CustomSeparatedWithNames](#customseparatedwithnames)                                   | ✔     | ✔      |
-| [CustomSeparatedWithNamesAndTypes](#customseparatedwithnamesandtypes)                   | ✔     | ✔      |
-| [Values](#data-format-values)                                                           | ✔     | ✔      |
-| [Vertical](#vertical)                                                                   | ✗     | ✔      |
-| [JSON](#json)                                                                           | ✗     | ✔      |
-| [JSONAsString](#jsonasstring)                                                           | ✔     | ✗      |
+| Format                                                                                    | Input | Output |
+|-------------------------------------------------------------------------------------------|-------|--------|
+| [TabSeparated](#tabseparated)                                                             | ✔     | ✔      |
+| [TabSeparatedRaw](#tabseparatedraw)                                                       | ✔     | ✔      |
+| [TabSeparatedWithNames](#tabseparatedwithnames)                                           | ✔     | ✔      |
+| [TabSeparatedWithNamesAndTypes](#tabseparatedwithnamesandtypes)                           | ✔     | ✔      |
+| [TabSeparatedRawWithNames](#tabseparatedrawwithnames)                                     | ✔     | ✔      |
+| [TabSeparatedRawWithNamesAndTypes](#tabseparatedrawwithnamesandtypes)                     | ✔     | ✔      |
+| [Template](#format-template)                                                              | ✔     | ✔      |
+| [TemplateIgnoreSpaces](#templateignorespaces)                                             | ✔     | ✗      |
+| [CSV](#csv)                                                                               | ✔     | ✔      |
+| [CSVWithNames](#csvwithnames)                                                             | ✔     | ✔      |
+| [CSVWithNamesAndTypes](#csvwithnamesandtypes)                                             | ✔     | ✔      |
+| [CustomSeparated](#format-customseparated)                                                | ✔     | ✔      |
+| [CustomSeparatedWithNames](#customseparatedwithnames)                                     | ✔     | ✔      |
+| [CustomSeparatedWithNamesAndTypes](#customseparatedwithnamesandtypes)                     | ✔     | ✔      |
+| [Values](#data-format-values)                                                             | ✔     | ✔      |
+| [Vertical](#vertical)                                                                     | ✗     | ✔      |
+| [JSON](#json)                                                                             | ✗     | ✔      |
+| [JSONAsString](#jsonasstring)                                                             | ✔     | ✗      |
 | [JSONStrings](#jsonstrings)                                                               | ✗     | ✔      |
-| [JSONCompact](#jsoncompact)                                                             | ✗     | ✔      |
+| [JSONCompact](#jsoncompact)                                                               | ✗     | ✔      |
 | [JSONCompactStrings](#jsoncompactstrings)                                                 | ✗     | ✔      |
-| [JSONEachRow](#jsoneachrow)                                                             | ✔     | ✔      |
-| [JSONEachRowWithProgress](#jsoneachrowwithprogress)                                     | ✗     | ✔      |
-| [JSONStringsEachRow](#jsonstringseachrow)                                               | ✔     | ✔      |
-| [JSONStringsEachRowWithProgress](#jsonstringseachrowwithprogress)                       | ✗     | ✔      |
-| [JSONCompactEachRow](#jsoncompacteachrow)                                               | ✔     | ✔      |
-| [JSONCompactEachRowWithNames](#jsoncompacteachrowwithnames)             | ✔     | ✔      |
-| [JSONCompactEachRowWithNamesAndTypes](#jsoncompacteachrowwithnamesandtypes)             | ✔     | ✔      |
+| [JSONEachRow](#jsoneachrow)                                                               | ✔     | ✔      |
+| [JSONEachRowWithProgress](#jsoneachrowwithprogress)                                       | ✗     | ✔      |
+| [JSONStringsEachRow](#jsonstringseachrow)                                                 | ✔     | ✔      |
+| [JSONStringsEachRowWithProgress](#jsonstringseachrowwithprogress)                         | ✗     | ✔      |
+| [JSONCompactEachRow](#jsoncompacteachrow)                                                 | ✔     | ✔      |
+| [JSONCompactEachRowWithNames](#jsoncompacteachrowwithnames)                               | ✔     | ✔      |
+| [JSONCompactEachRowWithNamesAndTypes](#jsoncompacteachrowwithnamesandtypes)               | ✔     | ✔      |
 | [JSONCompactStringsEachRow](#jsoncompactstringseachrow)                                   | ✔     | ✔      |
-| [JSONCompactStringsEachRowWithNames](#jsoncompactstringseachrowwithnames) | ✔     | ✔      |
+| [JSONCompactStringsEachRowWithNames](#jsoncompactstringseachrowwithnames)                 | ✔     | ✔      |
 | [JSONCompactStringsEachRowWithNamesAndTypes](#jsoncompactstringseachrowwithnamesandtypes) | ✔     | ✔      |
-| [TSKV](#tskv)                                                                           | ✔     | ✔      |
-| [Pretty](#pretty)                                                                       | ✗     | ✔      |
-| [PrettyCompact](#prettycompact)                                                         | ✗     | ✔      |
-| [PrettyCompactMonoBlock](#prettycompactmonoblock)                                       | ✗     | ✔      |
-| [PrettyNoEscapes](#prettynoescapes)                                                     | ✗     | ✔      |
-| [PrettySpace](#prettyspace)                                                             | ✗     | ✔      |
-| [Prometheus](#prometheus)                                                               | ✗     | ✔      |
-| [Protobuf](#protobuf)                                                                   | ✔     | ✔      |
-| [ProtobufSingle](#protobufsingle)                                                       | ✔     | ✔      |
-| [Avro](#data-format-avro)                                                               | ✔     | ✔      |
-| [AvroConfluent](#data-format-avro-confluent)                                            | ✔     | ✗      |
-| [Parquet](#data-format-parquet)                                                         | ✔     | ✔      |
-| [Arrow](#data-format-arrow)                                                             | ✔     | ✔      |
-| [ArrowStream](#data-format-arrow-stream)                                                | ✔     | ✔      |
-| [ORC](#data-format-orc)                                                                 | ✔     | ✔      |
-| [RowBinary](#rowbinary)                                                                 | ✔     | ✔      |
-| [RowBinaryWithNames](#rowbinarywithnamesandtypes)                               | ✔     | ✔      |
-| [RowBinaryWithNamesAndTypes](#rowbinarywithnamesandtypes)                               | ✔     | ✔      |
-| [Native](#native)                                                                       | ✔     | ✔      |
-| [Null](#null)                                                                           | ✗     | ✔      |
-| [XML](#xml)                                                                             | ✗     | ✔      |
-| [CapnProto](#capnproto)                                                                 | ✔     | ✔      |
-| [LineAsString](#lineasstring)                                                           | ✔     | ✗      |
-| [Regexp](#data-format-regexp)                                                           | ✔     | ✗      |
-| [RawBLOB](#rawblob)                                                                     | ✔     | ✔      |
-| [MsgPack](#msgpack)                                                                     | ✔     | ✔      |
+| [TSKV](#tskv)                                                                             | ✔     | ✔      |
+| [Pretty](#pretty)                                                                         | ✗     | ✔      |
+| [PrettyCompact](#prettycompact)                                                           | ✗     | ✔      |
+| [PrettyCompactMonoBlock](#prettycompactmonoblock)                                         | ✗     | ✔      |
+| [PrettyNoEscapes](#prettynoescapes)                                                       | ✗     | ✔      |
+| [PrettySpace](#prettyspace)                                                               | ✗     | ✔      |
+| [Prometheus](#prometheus)                                                                 | ✗     | ✔      |
+| [Protobuf](#protobuf)                                                                     | ✔     | ✔      |
+| [ProtobufSingle](#protobufsingle)                                                         | ✔     | ✔      |
+| [Avro](#data-format-avro)                                                                 | ✔     | ✔      |
+| [AvroConfluent](#data-format-avro-confluent)                                              | ✔     | ✗      |
+| [Parquet](#data-format-parquet)                                                           | ✔     | ✔      |
+| [Arrow](#data-format-arrow)                                                               | ✔     | ✔      |
+| [ArrowStream](#data-format-arrow-stream)                                                  | ✔     | ✔      |
+| [ORC](#data-format-orc)                                                                   | ✔     | ✔      |
+| [RowBinary](#rowbinary)                                                                   | ✔     | ✔      |
+| [RowBinaryWithNames](#rowbinarywithnamesandtypes)                                         | ✔     | ✔      |
+| [RowBinaryWithNamesAndTypes](#rowbinarywithnamesandtypes)                                 | ✔     | ✔      |
+| [Native](#native)                                                                         | ✔     | ✔      |
+| [Null](#null)                                                                             | ✗     | ✔      |
+| [XML](#xml)                                                                               | ✗     | ✔      |
+| [CapnProto](#capnproto)                                                                   | ✔     | ✔      |
+| [LineAsString](#lineasstring)                                                             | ✔     | ✗      |
+| [Regexp](#data-format-regexp)                                                             | ✔     | ✗      |
+| [RawBLOB](#rawblob)                                                                       | ✔     | ✔      |
+| [MsgPack](#msgpack)                                                                       | ✔     | ✔      |
+| [MySQLDump](#mysqldump)                                                                   | ✔     | ✗      |
+
 
 You can control some format processing parameters with the ClickHouse settings. For more information read the [Settings](../operations/settings/settings.md) section.
 
@@ -184,7 +186,7 @@ Differs from the `TabSeparated` format in that the column names are written in t
 During parsing, the first row is expected to contain the column names. You can use column names to determine their position and to check their correctness.
 
 If setting [input_format_with_names_use_header](../operations/settings/settings.md#settings-input_format_with_names_use_header) is set to 1,
-the columns from input data will be mapped to the columns from the table by their names, columns with unknown names will be skipped if setting [input_format_skip_unknown_fields](../operations/settings/settings.md#settings-input_format_skip_unknown_fields) is set to 1.
+the columns from input data will be mapped to the columns from the table by their names, columns with unknown names will be skipped if setting [input_format_skip_unknown_fields](../operations/settings/settings.md#settings-input-format-skip-unknown-fields) is set to 1.
 Otherwise, the first row will be skipped.
 
 This format is also available under the name `TSVWithNames`.
@@ -194,7 +196,7 @@ This format is also available under the name `TSVWithNames`.
 Differs from the `TabSeparated` format in that the column names are written to the first row, while the column types are in the second row.
 The first row with names is processed the same way as in `TabSeparatedWithNames` format.
 If setting [input_format_with_types_use_header](../operations/settings/settings.md#settings-input_format_with_types_use_header) is set to 1,
-the types from input data will be compared with the types of the corresponding columns from the table. Otherwise, the second row will be skipped. 
+the types from input data will be compared with the types of the corresponding columns from the table. Otherwise, the second row will be skipped.
 
 This format is also available under the name `TSVWithNamesAndTypes`.
 
@@ -789,7 +791,7 @@ The query `SELECT * FROM UserActivity FORMAT JSONEachRow` returns:
 
 Unlike the [JSON](#json) format, there is no substitution of invalid UTF-8 sequences. Values are escaped in the same way as for `JSON`.
 
-:::info    
+:::info
 Any set of bytes can be output in the strings. Use the `JSONEachRow` format if you are sure that the data in the table can be formatted as JSON without losing any information.
 :::
 
@@ -1413,7 +1415,7 @@ SET format_avro_schema_registry_url = 'http://schema-registry';
 SELECT * FROM topic1_stream;
 ```
 
-:::warning    
+:::warning
 Setting `format_avro_schema_registry_url` needs to be configured in `users.xml` to maintain it’s value after a restart. Also you can use the `format_avro_schema_registry_url` setting of the `Kafka` table engine.
 :::
 
@@ -1630,7 +1632,7 @@ When working with the `Regexp` format, you can use the following settings:
     -   Escaped (similarly to [TSV](#tabseparated))
     -   Quoted (similarly to [Values](#data-format-values))
     -   Raw (extracts subpatterns as a whole, no escaping rules, similarly to [TSVRaw](#tabseparatedraw))
-	
+
 -   `format_regexp_skip_unmatched` — [UInt8](../sql-reference/data-types/int-uint.md). Defines the need to throw an exeption in case the `format_regexp` expression does not match the imported data. Can be set to `0` or `1`.
 
 **Usage**
@@ -1775,4 +1777,71 @@ Writing to a file ".msgpk":
 $ clickhouse-client --query="CREATE TABLE msgpack (array Array(UInt8)) ENGINE = Memory;"
 $ clickhouse-client --query="INSERT INTO msgpack VALUES ([0, 1, 2, 3, 42, 253, 254, 255]), ([255, 254, 253, 42, 3, 2, 1, 0])";
 $ clickhouse-client --query="SELECT * FROM msgpack FORMAT MsgPack" > tmp_msgpack.msgpk;
+```
+
+## MySQLDump {#msgpack}
+
+ClickHouse supports reading MySQL [dumps](https://dev.mysql.com/doc/refman/8.0/en/mysqldump.html).
+It reads all data from INSERT queries belonging to one table in dump. If there are more than one table, by default it reads data from the first one.
+You can specify the name of the table from which to read data from using [input_format_mysql_dump_table_name](../operations/settings/settings.md#settings-input-format-mysql-dump-table-name) settings.
+If setting [input_format_mysql_dump_map_columns](../operations/settings/settings.md#settings-input-format-mysql-dump-map-columns) is set to 1 and
+dump contains CREATE query for specified table or column names in INSERT query the columns from input data will be mapped to the columns from the table by their names,
+columns with unknown names will be skipped if setting [input_format_skip_unknown_fields](../operations/settings/settings.md#settings-input-format-skip-unknown-fields) is set to 1.
+This format supports schema inference: if the dump contains CREATE query for the specified table, the structure is extracted from it, otherwise schema is inferred from the data of INSERT queries.
+
+Examples:
+
+File dump.sql:
+```sql
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `test` (
+  `x` int DEFAULT NULL,
+  `y` int DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+INSERT INTO `test` VALUES (1,NULL),(2,NULL),(3,NULL),(3,NULL),(4,NULL),(5,NULL),(6,7);
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `test 3` (
+  `y` int DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+INSERT INTO `test 3` VALUES (1);
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `test2` (
+  `x` int DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+INSERT INTO `test2` VALUES (1),(2),(3);
+```
+
+Queries:
+
+```sql
+:) desc file(dump.sql, MySQLDump) settings input_format_mysql_dump_table_name='test2'
+
+DESCRIBE TABLE file(dump.sql, MySQLDump)
+SETTINGS input_format_mysql_dump_table_name = 'test2'
+
+Query id: 25e66c89-e10a-42a8-9b42-1ee8bbbde5ef
+
+┌─name─┬─type────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ x    │ Nullable(Int32) │              │                    │         │                  │                │
+└──────┴─────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+
+:) select * from file(dump.sql, MySQLDump) settings input_format_mysql_dump_table_name='test2'
+
+SELECT *
+FROM file(dump.sql, MySQLDump)
+         SETTINGS input_format_mysql_dump_table_name = 'test2'
+
+Query id: 17d59664-ebce-4053-bb79-d46a516fb590
+
+┌─x─┐
+│ 1 │
+│ 2 │
+│ 3 │
+└───┘
 ```

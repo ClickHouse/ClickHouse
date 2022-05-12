@@ -5,6 +5,7 @@ from typing import Any, Dict, List
 from threading import Thread
 from queue import Queue
 import json
+import os
 import time
 
 import jwt
@@ -20,7 +21,7 @@ NEED_RERUN_OR_CANCELL_WORKFLOWS = {
 
 # https://docs.github.com/en/rest/reference/actions#cancel-a-workflow-run
 #
-API_URL = "https://api.github.com/repos/ClickHouse/ClickHouse"
+API_URL = os.getenv("API_URL", "https://api.github.com/repos/ClickHouse/ClickHouse")
 
 MAX_RETRY = 5
 
@@ -53,7 +54,10 @@ def get_installation_id(jwt_token):
     response = requests.get("https://api.github.com/app/installations", headers=headers)
     response.raise_for_status()
     data = response.json()
-    return data[0]["id"]
+    for installation in data:
+        if installation["account"]["login"] == "ClickHouse":
+            installation_id = installation["id"]
+    return installation_id
 
 
 def get_access_token(jwt_token, installation_id):
