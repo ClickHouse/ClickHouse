@@ -5438,7 +5438,7 @@ std::optional<ProjectionCandidate> MergeTreeData::getQueryProcessingStageWithAgg
         if (analysis_result.before_where)
         {
             candidate.where_column_name = analysis_result.where_column_name;
-            candidate.remove_where_filter = analysis_result.remove_where_filter;
+            candidate.remove_where_filter = !required_columns.contains(analysis_result.where_column_name);
             candidate.before_where = analysis_result.before_where->clone();
 
             auto new_required_columns = candidate.before_where->foldActionsByProjection(
@@ -5571,20 +5571,9 @@ std::optional<ProjectionCandidate> MergeTreeData::getQueryProcessingStageWithAgg
             candidate.before_aggregation->reorderAggregationKeysForProjection(key_name_pos_map);
             candidate.before_aggregation->addAggregatesViaProjection(aggregates);
 
-            // minmax_count_projections only have aggregation actions
-            if (minmax_count_projection)
-                candidate.required_columns = {required_columns.begin(), required_columns.end()};
-
             if (rewrite_before_where(candidate, projection, required_columns, sample_block_for_keys, aggregates))
             {
-                if (minmax_count_projection)
-                {
-                    candidate.before_where = nullptr;
-                    candidate.prewhere_info = nullptr;
-                }
-                else
-                    candidate.required_columns = {required_columns.begin(), required_columns.end()};
-
+                candidate.required_columns = {required_columns.begin(), required_columns.end()};
                 for (const auto & aggregate : aggregates)
                     candidate.required_columns.push_back(aggregate.name);
                 candidates.push_back(std::move(candidate));
