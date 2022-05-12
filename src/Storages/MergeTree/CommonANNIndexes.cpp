@@ -29,6 +29,7 @@ ANNCondition::ANNCondition(const SelectQueryInfo & query_info,
     getBlockWithConstants(query_info.query, query_info.syntax_analyzer_result, context);
     // Build rpns for query sections
     buildRPN(query_info);
+
     // Match rpns with supported types
     index_is_useful = matchAllRPNS();
     // Get from settings ANNIndex parameters
@@ -86,12 +87,16 @@ bool ANNCondition::queryHasWhereClause() const
 
 bool ANNCondition::queryHasOrderByClause() const
 {
-    return order_by_query_type && has_limit;
+    return order_by_query_type;
 }
 
-std::optional<UInt64> ANNCondition::getLimitCount() const
+UInt64 ANNCondition::getLimitCount() const
 {
-    return has_limit ? std::optional<UInt64>(limit_expr->length) : std::nullopt;
+    if (index_is_useful)
+    {
+        return limit_count;
+    }
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "No LIMIT section in query, not supported");
 }
 
 String ANNCondition::getSettingsStr() const
@@ -187,7 +192,7 @@ bool ANNCondition::traverseAtomAST(const ASTPtr & node, RPNElement & out)
 
         return true;
     }
-    // Match identifier
+    // Match identifier 
     else if (const auto * identifier = node->as<ASTIdentifier>())
     {
         out.function = RPNElement::FUNCTION_IDENTIFIER;
@@ -208,7 +213,7 @@ bool ANNCondition::tryCastToConstType(const ASTPtr & node, RPNElement & out)
 
     if (KeyCondition::getConstant(node, block_with_constants, const_value, const_type))
     {
-        /// Check for constant types
+        /// Check for constant types 
         if (const_value.getType() == Field::Types::Float64)
         {
             out.function = RPNElement::FUNCTION_FLOAT_LITERAL;
@@ -264,12 +269,19 @@ bool ANNCondition::matchAllRPNS()
     bool limit_is_valid = matchRPNLimit(rpn_limit_clause, expr_limit);
     bool order_by_is_valid = matchRPNOrderBy(rpn_order_by_clause, expr_order_by);
 
+    // Query without LIMIT section is not supported
+    if (!limit_is_valid)
+    {
+        return false;
+    }
+    // Set LIMIT count
+    limit_count = expr_limit.length;
     // Search type query in both sections isn't supported
     if (prewhere_is_valid && where_is_valid)
     {
         return false;
     }
-
+    // Search type should be in WHERE or PREWHERE section
     if (prewhere_is_valid || where_is_valid)
     {
         ann_expr = std::move(where_is_valid ? expr_where : expr_prewhere);
@@ -280,18 +292,13 @@ bool ANNCondition::matchAllRPNS()
         ann_expr = std::move(expr_order_by);
         order_by_query_type = true;
     }
-    if (limit_is_valid)
-    {
-        limit_expr = std::move(expr_limit);
-        has_limit = true;
-    }
-
-    if (where_query_type && (has_limit && order_by_query_type))
+    // Query with valid search and orderby type is not supported
+    if (where_query_type && order_by_query_type)
     {
         return false;
     }
 
-    return where_query_type || (has_limit && order_by_query_type);
+    return where_query_type || order_by_query_type;
 }
 
 bool ANNCondition::matchRPNLimit(RPN & rpn, LimitExpression & expr)
