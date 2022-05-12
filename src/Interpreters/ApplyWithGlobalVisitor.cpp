@@ -95,6 +95,9 @@ void ApplyWithGlobalVisitor::visit(ASTPtr & ast)
                 }
             }
         }
+
+        for (auto & child : node_union->list_of_selects->children)
+            visit(child);
     }
     else
     {
