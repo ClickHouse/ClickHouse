@@ -69,6 +69,7 @@ public:
         int64_t session_id;
         int64_t time;
         Coordination::ZooKeeperRequestPtr request;
+        int64_t zxid{0};
     };
 
     struct AuthID
@@ -238,6 +239,8 @@ public:
 
     /// Global id of all requests applied to storage
     int64_t zxid{0};
+    std::deque<int64_t> uncommitted_zxids;
+    int64_t uncommitted_zxid{0};
     bool finalized{false};
 
     /// Currently active watches (node_path -> subscribed sessions)
@@ -246,8 +249,17 @@ public:
 
     void clearDeadWatches(int64_t session_id);
 
-    /// Get current zxid
+    /// Get current committed zxid
     int64_t getZXID() const { return zxid; }
+
+    int64_t getNextZXID() const
+    {
+        if (uncommitted_zxids.empty())
+            return zxid + 1;
+
+        return uncommitted_zxids.back() + 1;
+    }
+
 
     const String superdigest;
 

@@ -19,33 +19,6 @@ namespace ErrorCodes
 
 namespace
 {
-    KeeperStorage::RequestForSession parseRequest(nuraft::buffer & data)
-    {
-        ReadBufferFromNuraftBuffer buffer(data);
-        KeeperStorage::RequestForSession request_for_session;
-        readIntBinary(request_for_session.session_id, buffer);
-
-        int32_t length;
-        Coordination::read(length, buffer);
-
-        int32_t xid;
-        Coordination::read(xid, buffer);
-
-        Coordination::OpNum opnum;
-
-        Coordination::read(opnum, buffer);
-
-        request_for_session.request = Coordination::ZooKeeperRequestFactory::instance().get(opnum);
-        request_for_session.request->xid = xid;
-        request_for_session.request->readImpl(buffer);
-
-        if (!buffer.eof())
-            readIntBinary(request_for_session.time, buffer);
-        else /// backward compatibility
-            request_for_session.time = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
-
-        return request_for_session;
-    }
 }
 
 KeeperStateMachine::KeeperStateMachine(
@@ -115,22 +88,59 @@ void KeeperStateMachine::init()
 
 nuraft::ptr<nuraft::buffer> KeeperStateMachine::pre_commit(uint64_t log_idx, nuraft::buffer & data)
 {
-    preprocess(log_idx, data);
+    auto request_for_session = parseRequest(data);
+    if (!request_for_session.zxid)
+        request_for_session.zxid = log_idx;
+
+    preprocess(request_for_session);
     return nullptr;
 }
 
-void KeeperStateMachine::preprocess(const uint64_t log_idx, nuraft::buffer & data)
+KeeperStorage::RequestForSession KeeperStateMachine::parseRequest(nuraft::buffer & data)
 {
-    auto request_for_session = parseRequest(data);
+    ReadBufferFromNuraftBuffer buffer(data);
+    KeeperStorage::RequestForSession request_for_session;
+    readIntBinary(request_for_session.session_id, buffer);
+
+    int32_t length;
+    Coordination::read(length, buffer);
+
+    int32_t xid;
+    Coordination::read(xid, buffer);
+
+    Coordination::OpNum opnum;
+
+    Coordination::read(opnum, buffer);
+
+    request_for_session.request = Coordination::ZooKeeperRequestFactory::instance().get(opnum);
+    request_for_session.request->xid = xid;
+    request_for_session.request->readImpl(buffer);
+
+    if (!buffer.eof())
+        readIntBinary(request_for_session.time, buffer);
+    else /// backward compatibility
+        request_for_session.time = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+
+    if (!buffer.eof())
+        readIntBinary(request_for_session.zxid, buffer);
+
+    return request_for_session;
+}
+
+void KeeperStateMachine::preprocess(const KeeperStorage::RequestForSession & request_for_session)
+{
     if (request_for_session.request->getOpNum() == Coordination::OpNum::SessionID)
         return;
     std::lock_guard lock(storage_and_responses_lock);
-    storage->preprocessRequest(request_for_session.request, request_for_session.session_id, request_for_session.time, log_idx);
+    storage->preprocessRequest(request_for_session.request, request_for_session.session_id, request_for_session.time, request_for_session.zxid);
 }
 
 nuraft::ptr<nuraft::buffer> KeeperStateMachine::commit(const uint64_t log_idx, nuraft::buffer & data)
 {
     auto request_for_session = parseRequest(data);
+    if (!request_for_session.zxid)
+        request_for_session.zxid = log_idx;
+
     /// Special processing of session_id request
     if (request_for_session.request->getOpNum() == Coordination::OpNum::SessionID)
     {
@@ -154,7 +164,7 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine::commit(const uint64_t log_idx, n
     else
     {
         std::lock_guard lock(storage_and_responses_lock);
-        KeeperStorage::ResponsesForSessions responses_for_sessions = storage->processRequest(request_for_session.request, request_for_session.session_id, request_for_session.time, log_idx);
+        KeeperStorage::ResponsesForSessions responses_for_sessions = storage->processRequest(request_for_session.request, request_for_session.session_id, request_for_session.time, request_for_session.zxid);
         for (auto & response_for_session : responses_for_sessions)
             if (!responses_queue.push(response_for_session))
                 throw Exception(ErrorCodes::SYSTEM_ERROR, "Could not push response with session id {} into responses queue", response_for_session.session_id);
@@ -379,6 +389,12 @@ std::vector<int64_t> KeeperStateMachine::getDeadSessions()
 {
     std::lock_guard lock(storage_and_responses_lock);
     return storage->getDeadSessions();
+}
+
+int64_t KeeperStateMachine::getNextZxid() const
+{
+    std::lock_guard lock(storage_and_responses_lock);
+    return storage->getNextZXID();
 }
 
 uint64_t KeeperStateMachine::getLastProcessedZxid() const
