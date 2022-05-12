@@ -193,7 +193,8 @@ private:
     }
 
     // optimize for float/ double
-    template <typename MatrixType, typename DataType, typename std::enable_if<std::is_same<MatrixType, DataType>::value>::type>
+    template <typename MatrixType, typename DataType>
+    requires (std::is_same_v<MatrixType, DataType>)
     void fillMatrix(Eigen::MatrixX<MatrixType> & mat, const ColumnArray & array) const
     {
         const auto & data = typeid_cast<const ColumnVector<DataType> &>(array.getData()).getData();
