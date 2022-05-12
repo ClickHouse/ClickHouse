@@ -88,11 +88,8 @@ def test_insert(started_cluster):
     sleep(5)
     ans = big_table.update_sortable_attributes(['id'])
     client.wait_for_task(ans['uid'])
-    docs = big_table.search("", {"limit":50000, 'sort': ['id:asc']})["hits"]
+    docs = big_table.get_documents({'limit':40010})
     assert len(docs) == 40000
-
-    for i in range(1, 40001):
-        assert docs[i - 1] == {"id": i, "data": str(i)}
 
     node.query("DROP TABLE new_table")
     node.query("DROP TABLE big_table")
@@ -113,9 +110,7 @@ def test_meilimatch(started_cluster):
     node.query("CREATE TABLE movies_table(id String, title String, release_date Int64) ENGINE = MeiliSearch('http://meili1:7700', 'movies', '')")
 
     assert node.query("SELECT COUNT() FROM movies_table") == '19546\n'
-    assert node.query("SELECT COUNT() FROM movies_table WHERE meiliMatch('\"q\"=\"abaca\"')") == '13\n'
-    assert node.query("SELECT sum(release_date) FROM movies_table WHERE meiliMatch('\"q\"=\"abaca\"')") == '12887532000\n'
-
+    
     real_json = table.search("abaca", {"attributesToRetrieve":["id", "title", "release_date"], "limit":20000})["hits"]
     click_ans = "[" + ", ".join(node.query("SELECT * FROM movies_table WHERE \
                                             meiliMatch('\"q\"=\"abaca\"') \
@@ -136,7 +131,6 @@ def test_meilimatch(started_cluster):
                                             format JSONEachRow settings output_format_json_quote_64bit_integers=0").split("\n")[:-1]) + "]"
     click_json = json.loads(click_ans)
     assert real_json == click_json
-
 
     node.query("DROP TABLE movies_table")
     table.delete()
@@ -211,8 +205,6 @@ def test_meilimatch_secure(started_cluster):
     node.query("CREATE TABLE movies_table(id String, title String, release_date Int64) ENGINE = MeiliSearch('http://meili_secure:7700', 'movies', 'password')")
 
     assert node.query("SELECT COUNT() FROM movies_table") == '19546\n'
-    assert node.query("SELECT COUNT() FROM movies_table WHERE meiliMatch('\"q\"=\"abaca\"')") == '13\n'
-    assert node.query("SELECT sum(release_date) FROM movies_table WHERE meiliMatch('\"q\"=\"abaca\"')") == '12887532000\n'
 
     real_json = table.search("abaca", {"attributesToRetrieve":["id", "title", "release_date"], "limit":20000})["hits"]
     click_ans = "[" + ", ".join(node.query("SELECT * FROM movies_table WHERE \
@@ -282,11 +274,8 @@ def test_insert_secure(started_cluster):
     sleep(5)
     ans = big_table.update_sortable_attributes(['id'])
     client.wait_for_task(ans['uid'])
-    docs = big_table.search("", {"limit":50000, 'sort': ['id:asc']})["hits"]
+    docs = big_table.get_documents({'limit':40010})
     assert len(docs) == 40000
-
-    for i in range(1, 40001):
-        assert docs[i - 1] == {"id": i, "data": str(i)}
 
     node.query("DROP TABLE new_table")
     node.query("DROP TABLE big_table")
@@ -296,6 +285,7 @@ def test_insert_secure(started_cluster):
 @pytest.mark.parametrize('started_cluster', [False], indirect=['started_cluster'])
 def test_security_levels(started_cluster):
     client = get_meili_secure_client(started_cluster)
+    new_table = client.index("new_table")
     search_key = client.get_keys()['results'][0]['key']
     admin_key = client.get_keys()['results'][1]['key']
     
@@ -312,8 +302,9 @@ def test_security_levels(started_cluster):
 
     node.query("INSERT INTO write_table (id, data) VALUES " + values)
     sleep(1)
+    assert len(new_table.get_documents({'limit':40010})) == 100
 
-    ans1 = "[" + ", ".join(node.query("SELECT * FROM read_table \
+    ans1 = "[" + ", ".join(node.query("SELECT * FROM read_table where meiliMatch('\"q\"=\"\"') \
                                        format JSONEachRow settings output_format_json_quote_64bit_integers=0").split("\n")[:-1]) + "]"
     ans2 = "[" + ", ".join(node.query("SELECT * FROM write_table \
                                        format JSONEachRow settings output_format_json_quote_64bit_integers=0").split("\n")[:-1]) + "]"

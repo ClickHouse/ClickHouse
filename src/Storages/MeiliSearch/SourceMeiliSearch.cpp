@@ -21,6 +21,7 @@
 #include <magic_enum.hpp>
 #include <Common/Exception.h>
 #include <Common/quoteString.h>
+#include "Interpreters/ProcessList.h"
 
 namespace DB
 {
@@ -31,36 +32,54 @@ namespace ErrorCodes
     extern const int MEILISEARCH_MISSING_SOME_COLUMNS;
 }
 
-MeiliSearchSource::MeiliSearchSource(
-    const MeiliSearchConfiguration & config,
-    const Block & sample_block,
-    UInt64 max_block_size_,
-    std::unordered_map<String, String> query_params_)
-    : SourceWithProgress(sample_block.cloneEmpty())
-    , connection(config)
-    , max_block_size{max_block_size_}
-    , query_params{query_params_}
-    , offset{0}
+String MeiliSearchSource::doubleQuoteIfNeed(const String & param) const
 {
-    description.init(sample_block);
+    if (route == QueryRoute::search)
+        return doubleQuoteString(param);
+    return param;
+}
 
+String MeiliSearchSource::constructAttributesToRetrieve() const
+{
     WriteBufferFromOwnString columns_to_get;
 
-    columns_to_get << "[";
-    auto it = description.sample_block.begin();
+    if (route == QueryRoute::search)
+        columns_to_get << "[";
 
+    auto it = description.sample_block.begin();
     while (it != description.sample_block.end())
     {
-        columns_to_get << doubleQuoteString(it->name);
+        columns_to_get << doubleQuoteIfNeed(it->name);
         ++it;
         if (it != description.sample_block.end())
             columns_to_get << ",";
     }
 
-    columns_to_get << "]";
+    if (route == QueryRoute::search)
+        columns_to_get << "]";
 
-    query_params[doubleQuoteString("attributesToRetrieve")] = columns_to_get.str();
-    query_params[doubleQuoteString("limit")] = std::to_string(max_block_size);
+    return columns_to_get.str();
+}
+
+MeiliSearchSource::MeiliSearchSource(
+    const MeiliSearchConfiguration & config,
+    const Block & sample_block,
+    UInt64 max_block_size_,
+    QueryRoute route_,
+    std::unordered_map<String, String> query_params_)
+    : SourceWithProgress(sample_block.cloneEmpty())
+    , connection(config)
+    , max_block_size{max_block_size_}
+    , route{route_}
+    , query_params{query_params_}
+    , offset{0}
+{
+    description.init(sample_block);
+
+    auto attributes_to_retrieve = constructAttributesToRetrieve();
+
+    query_params[doubleQuoteIfNeed("attributesToRetrieve")] = attributes_to_retrieve;
+    query_params[doubleQuoteIfNeed("limit")] = std::to_string(max_block_size);
 }
 
 
@@ -143,25 +162,11 @@ void insertWithTypeId(MutableColumnPtr & column, JSON value, DataTypePtr type_pt
     column->insert(getField(value, type_ptr));
 }
 
-Chunk MeiliSearchSource::generate()
+size_t MeiliSearchSource::parseJSON(MutableColumns & columns, const JSON & jres) const
 {
-    if (all_read)
-        return {};
-
-    MutableColumns columns = description.sample_block.cloneEmptyColumns();
-
-    query_params[doubleQuoteString("offset")] = std::to_string(offset);
-    auto response = connection.searchQuery(query_params);
-
-    JSON jres = JSON(response).begin();
-
-    if (jres.getName() == "message")
-        throw Exception(ErrorCodes::MEILISEARCH_EXCEPTION, jres.getValue().toString());
-
     size_t cnt_match = 0;
-    String def;
 
-    for (const auto json : jres.getValue())
+    for (const auto json : jres)
     {
         ++cnt_match;
         size_t cnt_fields = 0;
@@ -178,7 +183,39 @@ Chunk MeiliSearchSource::generate()
             throw Exception(
                 ErrorCodes::MEILISEARCH_MISSING_SOME_COLUMNS, "Some columns were not found in the table, json = " + json.toString());
     }
+    return cnt_match;
+}
 
+Chunk MeiliSearchSource::generate()
+{
+    if (all_read)
+        return {};
+
+    MutableColumns columns = description.sample_block.cloneEmptyColumns();
+    query_params[doubleQuoteIfNeed("offset")] = std::to_string(offset);
+
+    size_t cnt_match = 0;
+
+    if (route == QueryRoute::search)
+    {
+        auto response = connection.searchQuery(query_params);
+        JSON jres = JSON(response).begin();
+        if (jres.getName() == "message")
+            throw Exception(ErrorCodes::MEILISEARCH_EXCEPTION, jres.toString());
+
+        cnt_match = parseJSON(columns, jres.getValue());
+    }
+    else
+    {
+        auto response = connection.getDocumentsQuery(query_params);
+        JSON jres(response);
+        if (!jres.isArray())
+        {
+            auto error = jres.getWithDefault<String>("message");
+            throw Exception(ErrorCodes::MEILISEARCH_EXCEPTION, error);
+        }
+        cnt_match = parseJSON(columns, jres);
+    }
 
     offset += cnt_match;
 

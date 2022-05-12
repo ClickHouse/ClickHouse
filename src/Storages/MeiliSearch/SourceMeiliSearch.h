@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <unordered_map>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/ExternalResultDescription.h>
@@ -13,10 +14,17 @@ namespace DB
 class MeiliSearchSource final : public SourceWithProgress
 {
 public:
+    enum QueryRoute
+    {
+        search,
+        documents
+    };
+
     MeiliSearchSource(
         const MeiliSearchConfiguration & config,
         const Block & sample_block,
         UInt64 max_block_size_,
+        QueryRoute route,
         std::unordered_map<String, String> query_params_);
 
     ~MeiliSearchSource() override;
@@ -24,10 +32,17 @@ public:
     String getName() const override { return "MeiliSearchSource"; }
 
 private:
+    String doubleQuoteIfNeed(const String & param) const;
+
+    String constructAttributesToRetrieve() const;
+
+    size_t parseJSON(MutableColumns & columns, const JSON & jres) const;
+
     Chunk generate() override;
 
     MeiliSearchConnection connection;
     const UInt64 max_block_size;
+    const QueryRoute route;
     ExternalResultDescription description;
     std::unordered_map<String, String> query_params;
 
