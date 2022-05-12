@@ -1,8 +1,8 @@
 #pragma once
 
 #include <Processors/Sources/SourceWithProgress.h>
-#include <Storages/NATS/StorageNATS.h>
 #include <Storages/NATS/ReadBufferFromNATSConsumer.h>
+#include <Storages/NATS/StorageNATS.h>
 
 
 namespace DB
@@ -10,14 +10,13 @@ namespace DB
 
 class NATSSource : public SourceWithProgress
 {
-
 public:
     NATSSource(
-            StorageNATS & storage_,
-            const StorageSnapshotPtr & storage_snapshot_,
-            ContextPtr context_,
-            const Names & columns,
-            size_t max_block_size_);
+        StorageNATS & storage_,
+        const StorageSnapshotPtr & storage_snapshot_,
+        ContextPtr context_,
+        const Names & columns,
+        size_t max_block_size_);
 
     ~NATSSource() override;
 

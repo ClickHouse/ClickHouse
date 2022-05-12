@@ -1,24 +1,23 @@
 #pragma once
 
+#include <atomic>
+#include <mutex>
+#include <random>
+#include <uv.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Storages/IStorage.h>
-#include <Poco/Semaphore.h>
-#include <mutex>
-#include <atomic>
 #include <Storages/NATS/Buffer_fwd.h>
-#include <Storages/NATS/NATSSettings.h>
 #include <Storages/NATS/NATSConnection.h>
+#include <Storages/NATS/NATSSettings.h>
+#include <Poco/Semaphore.h>
 #include <Common/thread_local_rng.h>
-#include <uv.h>
-#include <random>
 
 
 namespace DB
 {
 
-class StorageNATS final: public IStorage, WithContext
+class StorageNATS final : public IStorage, WithContext
 {
-
 public:
     StorageNATS(
         const StorageID & table_id_,
@@ -51,10 +50,7 @@ public:
         size_t max_block_size,
         unsigned num_streams) override;
 
-    SinkToStoragePtr write(
-        const ASTPtr & query,
-        const StorageMetadataPtr & metadata_snapshot,
-        ContextPtr context) override;
+    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context) override;
 
     void pushReadBuffer(ConsumerBufferPtr buf);
     ConsumerBufferPtr popReadBuffer();
@@ -130,7 +126,7 @@ private:
     void stopLoop();
     void stopLoopIfNoReaders();
 
-    static Names parseList(const String& list);
+    static Names parseList(const String & list);
     static String getTableBasedName(String name, const StorageID & table_id);
 
     ContextMutablePtr addSettings(ContextPtr context) const;

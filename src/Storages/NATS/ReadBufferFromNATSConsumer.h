@@ -1,16 +1,15 @@
 #pragma once
 
-#include <Core/Names.h>
-#include <base/types.h>
-#include <IO/ReadBuffer.h>
-#include <amqpcpp.h>
 #include <nats.h>
+#include <Core/Names.h>
+#include <IO/ReadBuffer.h>
 #include <Storages/NATS/NATSConnection.h>
+#include <base/types.h>
 #include <Common/ConcurrentBoundedQueue.h>
 
 namespace Poco
 {
-    class Logger;
+class Logger;
 }
 
 namespace DB
@@ -18,16 +17,15 @@ namespace DB
 
 class ReadBufferFromNATSConsumer : public ReadBuffer
 {
-
 public:
     ReadBufferFromNATSConsumer(
-            std::shared_ptr<NATSConnectionManager> connection_,
-            std::vector<String> & subjects_,
-            const String & subscribe_queue_name,
-            Poco::Logger * log_,
-            char row_delimiter_,
-            uint32_t queue_size_,
-            const std::atomic<bool> & stopped_);
+        std::shared_ptr<NATSConnectionManager> connection_,
+        std::vector<String> & subjects_,
+        const String & subscribe_queue_name,
+        Poco::Logger * log_,
+        char row_delimiter_,
+        uint32_t queue_size_,
+        const std::atomic<bool> & stopped_);
 
     ~ReadBufferFromNATSConsumer() override;
 
@@ -52,7 +50,7 @@ public:
 private:
     bool nextImpl() override;
 
-    static void onMsg(natsConnection *nc, natsSubscription *sub, natsMsg * msg, void * closure);
+    static void onMsg(natsConnection * nc, natsSubscription * sub, natsMsg * msg, void * closure);
 
     std::shared_ptr<NATSConnectionManager> connection;
     std::vector<SubscriptionPtr> subscriptions;

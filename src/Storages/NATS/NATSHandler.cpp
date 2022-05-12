@@ -1,7 +1,7 @@
-#include <Common/logger_useful.h>
-#include <Common/Exception.h>
 #include <Storages/NATS/NATSHandler.h>
 #include <adapters/libuv.h>
+#include <Common/Exception.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -43,7 +43,8 @@ void NATSHandler::startLoop()
     loop_running.store(false);
 }
 
-void NATSHandler::changeConnectionStatus(bool is_running) {
+void NATSHandler::changeConnectionStatus(bool is_running)
+{
     connection_running.store(is_running);
 }
 
@@ -57,7 +58,8 @@ void NATSHandler::iterateLoop()
     }
 }
 
-LockPtr NATSHandler::setThreadLocalLoop() {
+LockPtr NATSHandler::setThreadLocalLoop()
+{
     auto lock = std::make_unique<std::lock_guard<std::mutex>>(startup_mutex);
     natsLibuv_SetThreadLocalLoop(loop);
     return lock;
@@ -69,7 +71,8 @@ void NATSHandler::stopLoop()
     uv_stop(loop);
 }
 
-NATSHandler::~NATSHandler() {
+NATSHandler::~NATSHandler()
+{
     natsOptions_Destroy(opts);
 }
 
