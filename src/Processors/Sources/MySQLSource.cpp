@@ -17,7 +17,7 @@
 #include <IO/Operators.h>
 #include <Common/assert_cast.h>
 #include <base/range.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <Processors/Sources/MySQLSource.h>
 #include <boost/algorithm/string.hpp>
 
@@ -56,7 +56,7 @@ MySQLSource::MySQLSource(
     const Block & sample_block,
     const StreamSettings & settings_)
     : SourceWithProgress(sample_block.cloneEmpty())
-    , log(&Poco::Logger::get("MySQLBlockInputStream"))
+    , log(&Poco::Logger::get("MySQLSource"))
     , connection{std::make_unique<Connection>(entry, query_str)}
     , settings{std::make_unique<StreamSettings>(settings_)}
 {
@@ -64,10 +64,10 @@ MySQLSource::MySQLSource(
     initPositionMappingFromQueryResultStructure();
 }
 
-/// For descendant MySQLWithFailoverBlockInputStream
+/// For descendant MySQLWithFailoverSource
 MySQLSource::MySQLSource(const Block &sample_block_, const StreamSettings & settings_)
     : SourceWithProgress(sample_block_.cloneEmpty())
-    , log(&Poco::Logger::get("MySQLBlockInputStream"))
+    , log(&Poco::Logger::get("MySQLSource"))
     , settings(std::make_unique<StreamSettings>(settings_))
 {
     description.init(sample_block_);

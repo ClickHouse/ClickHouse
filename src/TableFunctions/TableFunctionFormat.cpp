@@ -85,7 +85,7 @@ StoragePtr TableFunctionFormat::executeImpl(const ASTPtr & /*ast_function*/, Con
 {
     auto columns = getActualTableStructure(context);
     Block res_block = parseData(columns, context);
-    auto res = StorageValues::create(StorageID(getDatabaseName(), table_name), columns, res_block);
+    auto res = std::make_shared<StorageValues>(StorageID(getDatabaseName(), table_name), columns, res_block);
     res->startup();
     return res;
 }

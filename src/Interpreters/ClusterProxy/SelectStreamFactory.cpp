@@ -10,7 +10,7 @@
 #include <Interpreters/RequiredSourceColumnsVisitor.h>
 #include <DataTypes/ObjectUtils.h>
 
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>

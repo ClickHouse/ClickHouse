@@ -6,6 +6,11 @@
 #include <IO/Operators.h>
 #include <filesystem>
 
+namespace CurrentMetrics
+{
+extern const Metric CacheDetachedFileSegments;
+}
+
 namespace DB
 {
 
@@ -89,11 +94,6 @@ size_t FileSegment::getDownloadedSize(std::lock_guard<std::mutex> & /* segment_l
 }
 
 String FileSegment::getCallerId()
-{
-    return getCallerIdImpl();
-}
-
-String FileSegment::getCallerIdImpl()
 {
     if (!CurrentThread::isInitialized()
         || !CurrentThread::get().getQueryContext()
@@ -395,7 +395,10 @@ bool FileSegment::reserve(size_t size)
     bool reserved = cache->tryReserve(key(), offset(), size_to_reserve, cache_lock);
 
     if (reserved)
+    {
+        std::lock_guard segment_lock(mutex);
         reserved_size += size;
+    }
 
     return reserved;
 }
@@ -498,7 +501,11 @@ void FileSegment::complete(State state)
 void FileSegment::complete(std::lock_guard<std::mutex> & cache_lock)
 {
     std::lock_guard segment_lock(mutex);
+    completeUnlocked(cache_lock, segment_lock);
+}
 
+void FileSegment::completeUnlocked(std::lock_guard<std::mutex> & cache_lock, std::lock_guard<std::mutex> & segment_lock)
+{
     if (download_state == State::SKIP_CACHE || detached)
         return;
 
@@ -566,7 +573,7 @@ void FileSegment::completeImpl(std::lock_guard<std::mutex> & cache_lock, std::lo
             cache->reduceSizeToDownloaded(key(), offset(), cache_lock, segment_lock);
         }
 
-        detached = true;
+        markAsDetached(segment_lock);
 
         if (cache_writer)
         {
@@ -597,6 +604,7 @@ String FileSegment::getInfoForLogImpl(std::lock_guard<std::mutex> & segment_lock
     info << "File segment: " << range().toString() << ", ";
     info << "state: " << download_state << ", ";
     info << "downloaded size: " << getDownloadedSize(segment_lock) << ", ";
+    info << "reserved size: " << reserved_size << ", ";
     info << "downloader id: " << downloader_id << ", ";
     info << "caller id: " << getCallerId();
 
@@ -647,11 +655,9 @@ void FileSegment::assertNotDetached() const
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Operation not allowed, file segment is detached");
 }
 
-void FileSegment::assertDetachedStatus() const
+void FileSegment::assertDetachedStatus(std::lock_guard<std::mutex>  & /* segment_lock */) const
 {
-    assert(
-        (download_state == State::EMPTY) || (download_state == State::PARTIALLY_DOWNLOADED_NO_CONTINUATION)
-        || (download_state == State::SKIP_CACHE));
+    assert(download_state == State::EMPTY || hasFinalizedState());
 }
 
 FileSegmentPtr FileSegment::getSnapshot(const FileSegmentPtr & file_segment, std::lock_guard<std::mutex> & /* cache_lock */)
@@ -671,6 +677,39 @@ FileSegmentPtr FileSegment::getSnapshot(const FileSegmentPtr & file_segment, std
     return snapshot;
 }
 
+bool FileSegment::hasFinalizedState() const
+{
+    return download_state == State::DOWNLOADED
+        || download_state == State::PARTIALLY_DOWNLOADED_NO_CONTINUATION
+        || download_state == State::SKIP_CACHE;
+}
+
+void FileSegment::detach(std::lock_guard<std::mutex> & cache_lock, std::lock_guard<std::mutex> & segment_lock)
+{
+    if (detached)
+        return;
+
+    markAsDetached(segment_lock);
+
+    if (!hasFinalizedState())
+    {
+        completeUnlocked(cache_lock, segment_lock);
+    }
+}
+
+void FileSegment::markAsDetached(std::lock_guard<std::mutex> & /* segment_lock */)
+{
+    detached = true;
+    CurrentMetrics::add(CurrentMetrics::CacheDetachedFileSegments);
+}
+
+FileSegment::~FileSegment()
+{
+    std::lock_guard segment_lock(mutex);
+    if (detached)
+        CurrentMetrics::sub(CurrentMetrics::CacheDetachedFileSegments);
+}
+
 FileSegmentsHolder::~FileSegmentsHolder()
 {
     /// In CacheableReadBufferFromRemoteFS file segment's downloader removes file segments from
@@ -687,13 +726,22 @@ FileSegmentsHolder::~FileSegmentsHolder()
         if (!cache)
             cache = file_segment->cache;
 
-        if (file_segment->detached)
         {
-            /// This file segment is not owned by cache, so it will be destructed
-            /// at this point, therefore no completion required.
-            file_segment->assertDetachedStatus();
-            file_segment_it = file_segments.erase(current_file_segment_it);
-            continue;
+            bool detached = false;
+            {
+                std::lock_guard segment_lock(file_segment->mutex);
+                detached = file_segment->isDetached(segment_lock);
+                if (detached)
+                    file_segment->assertDetachedStatus(segment_lock);
+            }
+            if (detached)
+            {
+                /// This file segment is not owned by cache, so it will be destructed
+                /// at this point, therefore no completion required.
+                file_segment_it = file_segments.erase(current_file_segment_it);
+                continue;
+            }
+
         }
 
         try

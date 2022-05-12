@@ -1,6 +1,6 @@
 #include <Storages/MergeTree/MutateTask.h>
 
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <Common/escapeForFileName.h>
 #include <Parsers/queryToString.h>
 #include <Interpreters/SquashingTransform.h>
@@ -80,20 +80,28 @@ static void splitMutationCommands(
             {
                 for_file_renames.push_back(command);
             }
-            else if (part_columns.has(command.column_name))
+            else if (bool has_column = part_columns.has(command.column_name), has_nested_column = part_columns.hasNested(command.column_name); has_column || has_nested_column)
             {
-                if (command.type == MutationCommand::Type::DROP_COLUMN)
+                if (command.type == MutationCommand::Type::DROP_COLUMN || command.type == MutationCommand::Type::RENAME_COLUMN)
                 {
-                    mutated_columns.emplace(command.column_name);
+                    if (has_nested_column)
+                    {
+                        const auto & nested = part_columns.getNested(command.column_name);
+                        assert(!nested.empty());
+                        for (const auto & nested_column : nested)
+                            mutated_columns.emplace(nested_column.name);
+                    }
+                    else
+                        mutated_columns.emplace(command.column_name);
                 }
-                else if (command.type == MutationCommand::Type::RENAME_COLUMN)
+
+                if (command.type == MutationCommand::Type::RENAME_COLUMN)
                 {
                     for_interpreter.push_back(
                     {
                         .type = MutationCommand::Type::READ_COLUMN,
                         .column_name = command.rename_to,
                     });
-                    mutated_columns.emplace(command.column_name);
                     part_columns.rename(command.column_name, command.rename_to);
                 }
             }
@@ -909,7 +917,7 @@ void PartMergerWriter::prepare()
         // build in-memory projection because we don't support merging into a new in-memory part.
         // Otherwise we split the materialization into multiple stages similar to the process of
         // INSERT SELECT query.
-        if (ctx->new_data_part->getType() == MergeTreeDataPartType::IN_MEMORY)
+        if (ctx->new_data_part->getType() == MergeTreeDataPartType::InMemory)
             projection_squashes.emplace_back(0, 0);
         else
             projection_squashes.emplace_back(settings.min_insert_block_size_rows, settings.min_insert_block_size_bytes);
@@ -1398,7 +1406,7 @@ bool MutateTask::prepare()
 
     ctx->num_mutations = std::make_unique<CurrentMetrics::Increment>(CurrentMetrics::PartMutation);
     ctx->source_part = ctx->future_part->parts[0];
-    auto storage_from_source_part = StorageFromMergeTreeDataPart::create(ctx->source_part);
+    auto storage_from_source_part = std::make_shared<StorageFromMergeTreeDataPart>(ctx->source_part);
 
     auto context_for_reading = Context::createCopy(ctx->context);
     context_for_reading->setSetting("max_streams_to_max_threads_ratio", 1);

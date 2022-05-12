@@ -8,7 +8,7 @@
 #include <Common/Exception.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Core/ServerUUID.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 
 
 /// It's used in critical places to exit on unexpected exceptions.

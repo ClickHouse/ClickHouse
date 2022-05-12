@@ -6,7 +6,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Columns/ColumnString.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <IO/ReadBufferFromString.h>
 #include <Common/HashTable/HashMap.h>
 
