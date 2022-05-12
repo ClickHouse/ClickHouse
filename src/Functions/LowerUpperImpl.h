@@ -74,7 +74,7 @@ private:
         for (; src < src_end_sse; src += bytes_sse, dst += bytes_sse)
         {
             /// load 16 sequential 8-bit characters
-            const uint8x16_t chars = vld1q_u8(src);
+            const uint8x16_t chars = vld1q_u8(reinterpret_cast<const unsigned char *>(src));
 
             /// find which 8-bit sequences belong to range [case_lower_bound, case_upper_bound]
             const uint8x16_t is_not_case
@@ -87,7 +87,7 @@ private:
             const uint8x16_t cased_chars = veorq_u8(chars, xor_mask);
 
             /// store result back to destination
-            vst1q_s8(dst, cased_chars);
+            vst1q_u8(dst, cased_chars);
         }
 
 #endif
