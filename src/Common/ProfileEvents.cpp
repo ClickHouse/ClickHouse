@@ -260,12 +260,12 @@
     \
     M(QueryMemoryLimitExceeded, "Number of times when memory limit exceeded for query.") \
     \
-    M(CachedReadBufferReadFromSourceMicroseconds, "Time reading from source (remote fs, etc)") \
-    M(CachedReadBufferReadFromCacheMicroseconds, "Time reading from cache") \
-    M(CachedReadBufferReadFromSourceBytes, "Bytes read from source (remote fs, etc)") \
-    M(CachedReadBufferReadFromCacheBytes, "Bytes read from cache") \
-    M(CachedReadBufferCacheWriteBytes, "Bytes written from source to cache") \
-    M(CachedReadBufferCacheWriteMicroseconds, "Time spent writing data into cache") \
+    M(CachedReadBufferReadFromSourceMicroseconds, "Time reading from filesystem cache source (from remote filesystem, etc)") \
+    M(CachedReadBufferReadFromCacheMicroseconds, "Time reading from filesystem cache") \
+    M(CachedReadBufferReadFromSourceBytes, "Bytes read from filesystem cache source (from remote fs, etc)") \
+    M(CachedReadBufferReadFromCacheBytes, "Bytes read from filesystem cache") \
+    M(CachedReadBufferCacheWriteBytes, "Bytes written from source (remote fs, etc) to filesystem cache") \
+    M(CachedReadBufferCacheWriteMicroseconds, "Time spent writing data into filesystem cache") \
     \
     M(RemoteFSSeeks, "Total number of seeks for async buffer") \
     M(RemoteFSPrefetches, "Number of prefetches made with asynchronous reading from remote filesystem") \
