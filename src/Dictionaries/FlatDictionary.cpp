@@ -43,6 +43,7 @@ FlatDictionary::FlatDictionary(
 {
     createAttributes();
     loadData();
+    buildHierarchyParentToChildIndexIfNeeded();
     calculateBytesAllocated();
 }
 
@@ -246,6 +247,9 @@ ColumnUInt8::Ptr FlatDictionary::isInHierarchy(
 
 DictionaryHierarchyParentToChildIndexPtr FlatDictionary::getHierarchyParentToChildIndex() const
 {
+    if (hierarchy_parent_to_child_index)
+        return hierarchy_parent_to_child_index;
+
     size_t hierarchical_attribute_index = *dict_struct.hierarchical_attribute_index;
     const auto & hierarchical_attribute = attributes[hierarchical_attribute_index];
     const ContainerType<UInt64> & parent_keys = std::get<ContainerType<UInt64>>(hierarchical_attribute.container);
@@ -406,6 +410,15 @@ void FlatDictionary::loadData()
         throw Exception(ErrorCodes::DICTIONARY_IS_EMPTY, "{}: dictionary source is empty and 'require_nonempty' property is set.", getFullName());
 }
 
+void FlatDictionary::buildHierarchyParentToChildIndexIfNeeded()
+{
+    if (!dict_struct.hierarchical_attribute_index)
+        return;
+
+    if (dict_struct.attributes[*dict_struct.hierarchical_attribute_index].bidirectional)
+        hierarchy_parent_to_child_index = getHierarchyParentToChildIndex();
+}
+
 void FlatDictionary::calculateBytesAllocated()
 {
     bytes_allocated += attributes.size() * sizeof(attributes.front());
@@ -444,6 +457,9 @@ void FlatDictionary::calculateBytesAllocated()
 
     if (update_field_loaded_block)
         bytes_allocated += update_field_loaded_block->allocatedBytes();
+
+    if (hierarchy_parent_to_child_index)
+        bytes_allocated += hierarchy_parent_to_child_index->getSizeInBytes();
 
     bytes_allocated += string_arena.size();
 }

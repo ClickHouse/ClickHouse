@@ -140,9 +140,14 @@ private:
     };
 
     void createAttributes();
+
     void blockToAttributes(const Block & block);
+
     void updateData();
+
     void loadData();
+
+    void buildHierarchyParentToChildIndexIfNeeded();
 
     void calculateBytesAllocated();
 
@@ -175,6 +180,7 @@ private:
 
     BlockPtr update_field_loaded_block;
     Arena string_arena;
+    DictionaryHierarchyParentToChildIndexPtr hierarchy_parent_to_child_index;
 };
 
 }

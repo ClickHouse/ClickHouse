@@ -176,6 +176,8 @@ private:
 
     void loadData();
 
+    void buildHierarchyParentToChildIndexIfNeeded();
+
     void calculateBytesAllocated();
 
     template <typename KeysProvider>
@@ -224,6 +226,7 @@ private:
 
     BlockPtr update_field_loaded_block;
     Arena string_arena;
+    DictionaryHierarchyParentToChildIndexPtr hierarchy_parent_to_child_index;
 };
 
 extern template class HashedArrayDictionary<DictionaryKeyType::Simple>;

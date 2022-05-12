@@ -197,6 +197,8 @@ private:
 
     void loadData();
 
+    void buildHierarchyParentToChildIndexIfNeeded();
+
     void calculateBytesAllocated();
 
     template <typename AttributeType, bool is_nullable, typename ValueSetter, typename DefaultValueExtractor>
@@ -229,6 +231,7 @@ private:
     BlockPtr update_field_loaded_block;
     Arena string_arena;
     NoAttributesCollectionType no_attributes_container;
+    DictionaryHierarchyParentToChildIndexPtr hierarchy_parent_to_child_index;
 };
 
 extern template class HashedDictionary<DictionaryKeyType::Simple, false>;

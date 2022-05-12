@@ -54,6 +54,7 @@ HashedDictionary<dictionary_key_type, sparse>::HashedDictionary(
 {
     createAttributes();
     loadData();
+    buildHierarchyParentToChildIndexIfNeeded();
     calculateBytesAllocated();
 }
 
@@ -322,6 +323,9 @@ DictionaryHierarchyParentToChildIndexPtr HashedDictionary<dictionary_key_type, s
 {
     if constexpr (dictionary_key_type == DictionaryKeyType::Simple)
     {
+        if (hierarchy_parent_to_child_index)
+            return hierarchy_parent_to_child_index;
+
         size_t hierarchical_attribute_index = *dict_struct.hierarchical_attribute_index;
         const auto & hierarchical_attribute = attributes[hierarchical_attribute_index];
         const CollectionType<UInt64> & parent_keys = std::get<CollectionType<UInt64>>(hierarchical_attribute.container);
@@ -647,6 +651,16 @@ void HashedDictionary<dictionary_key_type, sparse>::loadData()
 }
 
 template <DictionaryKeyType dictionary_key_type, bool sparse>
+void HashedDictionary<dictionary_key_type, sparse>::buildHierarchyParentToChildIndexIfNeeded()
+{
+    if (!dict_struct.hierarchical_attribute_index)
+        return;
+
+    if (dict_struct.attributes[*dict_struct.hierarchical_attribute_index].bidirectional)
+        hierarchy_parent_to_child_index = getHierarchyParentToChildIndex();
+}
+
+template <DictionaryKeyType dictionary_key_type, bool sparse>
 void HashedDictionary<dictionary_key_type, sparse>::calculateBytesAllocated()
 {
     size_t attributes_size = attributes.size();
@@ -699,10 +713,13 @@ void HashedDictionary<dictionary_key_type, sparse>::calculateBytesAllocated()
         }
     }
 
-    bytes_allocated += string_arena.size();
-
     if (update_field_loaded_block)
         bytes_allocated += update_field_loaded_block->allocatedBytes();
+
+    if (hierarchy_parent_to_child_index)
+        bytes_allocated += hierarchy_parent_to_child_index->getSizeInBytes();
+
+    bytes_allocated += string_arena.size();
 }
 
 template <DictionaryKeyType dictionary_key_type, bool sparse>
