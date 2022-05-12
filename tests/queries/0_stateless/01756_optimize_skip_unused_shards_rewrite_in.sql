@@ -133,6 +133,14 @@ select (dummy IN (toUInt8(2),)), * from dist_01756 where dummy in (0, 2) format 
 -- different type
 select 'different types -- prohibited';
 create table data_01756_str (key String) engine=Memory();
+insert into data_01756_str values (0)(1);
+-- SELECT
+--     cityHash64(0) % 2,
+--     cityHash64(2) % 2
+--
+-- ┌─modulo(cityHash64(0), 2)─┬─modulo(cityHash64(2), 2)─┐
+-- │                        0 │                        1 │
+-- └──────────────────────────┴──────────────────────────┘
 create table dist_01756_str as data_01756_str engine=Distributed(test_cluster_two_shards, currentDatabase(), data_01756_str, cityHash64(key));
 select * from dist_01756_str where key in ('0', '2');
 select * from dist_01756_str where key in (0, 2);
