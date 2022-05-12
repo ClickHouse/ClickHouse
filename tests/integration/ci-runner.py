@@ -145,7 +145,7 @@ def get_test_times(output):
 def clear_ip_tables_and_restart_daemons():
     logging.info(
         "Dump iptables after run %s",
-        subprocess.check_output("sudo iptables -L", shell=True),
+        subprocess.check_output("sudo iptables -nvL", shell=True),
     )
     try:
         logging.info("Killing all alive docker containers")
@@ -792,7 +792,7 @@ class ClickhouseIntegrationTestsRunner:
         self._install_clickhouse(build_path)
         logging.info(
             "Dump iptables before run %s",
-            subprocess.check_output("sudo iptables -L", shell=True),
+            subprocess.check_output("sudo iptables -nvL", shell=True),
         )
         all_tests = self._get_all_tests(repo_path)
 
