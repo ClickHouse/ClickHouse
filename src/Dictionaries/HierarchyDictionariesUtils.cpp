@@ -100,6 +100,26 @@ namespace
     }
 }
 
+ColumnPtr getKeysDescendantsArray(
+    const PaddedPODArray<UInt64> & requested_keys,
+    const DictionaryHierarchyParentToChildIndex & parent_to_child_index,
+    size_t level,
+    size_t & valid_keys)
+{
+    if (level == 0)
+    {
+        detail::GetAllDescendantsStrategy strategy { .level = level };
+        auto elements_and_offsets = detail::getDescendants(requested_keys, parent_to_child_index, strategy, valid_keys);
+        return detail::convertElementsAndOffsetsIntoArray(std::move(elements_and_offsets));
+    }
+    else
+    {
+        detail::GetDescendantsAtSpecificLevelStrategy strategy { .level = level };
+        auto elements_and_offsets = detail::getDescendants(requested_keys, parent_to_child_index, strategy, valid_keys);
+        return detail::convertElementsAndOffsetsIntoArray(std::move(elements_and_offsets));
+    }
+}
+
 ColumnPtr getKeysHierarchyDefaultImplementation(
     const IDictionary * dictionary,
     ColumnPtr key_column,

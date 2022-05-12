@@ -389,8 +389,7 @@ namespace detail
                 {
                     /// Put special signaling value on stack and update cache with range start
                     size_t range_start_index = descendants.size();
-                    Range range {range_start_index, range_start_index};
-                    already_processed_keys_to_range.insert(makePairNoInit(key, range));
+                    already_processed_keys_to_range[key].start_index = range_start_index;
                     next_keys_to_process_stack.emplace_back(KeyAndDepth{key, key_range_requires_update});
                 }
 
@@ -477,26 +476,11 @@ ColumnUInt8::Ptr getKeysIsInHierarchyColumn(
 /// Returns descendants array column for keys
 ///
 /// @param valid_keys - number of keys that are valid in parent_to_child map
-template <typename KeyType>
 ColumnPtr getKeysDescendantsArray(
-    const PaddedPODArray<KeyType> & requested_keys,
+    const PaddedPODArray<UInt64> & requested_keys,
     const DictionaryHierarchyParentToChildIndex & parent_to_child_index,
     size_t level,
-    size_t & valid_keys)
-{
-    if (level == 0)
-    {
-        detail::GetAllDescendantsStrategy strategy { .level = level };
-        auto elements_and_offsets = detail::getDescendants(requested_keys, parent_to_child_index, strategy, valid_keys);
-        return detail::convertElementsAndOffsetsIntoArray(std::move(elements_and_offsets));
-    }
-    else
-    {
-        detail::GetDescendantsAtSpecificLevelStrategy strategy { .level = level };
-        auto elements_and_offsets = detail::getDescendants(requested_keys, parent_to_child_index, strategy, valid_keys);
-        return detail::convertElementsAndOffsetsIntoArray(std::move(elements_and_offsets));
-    }
-}
+    size_t & valid_keys);
 
 /** Default getHierarchy implementation for dictionaries that does not have structure with child to parent representation.
   * Implementation will build such structure with getColumn calls, and then getHierarchy for such structure.
