@@ -57,6 +57,11 @@ void NATSHandler::iterateLoop()
     }
 }
 
+void NATSHandler::setThreadLocalLoop() {
+    std::lock_guard lock(startup_mutex);
+    natsLibuv_SetThreadLocalLoop(loop);
+}
+
 /// Do not need synchronization as in iterateLoop(), because this method is used only for
 /// initial NATS setup - at this point there is no background loop thread.
 void NATSHandler::startBlockingLoop()

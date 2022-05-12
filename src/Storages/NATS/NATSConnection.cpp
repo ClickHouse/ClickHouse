@@ -102,22 +102,27 @@ void NATSConnectionManager::connectImpl()
     natsOptions_SetReconnectWait(options, configuration.reconnect_wait);
     natsOptions_SetDisconnectedCB(options, disconnectedCallback, log);
     natsOptions_SetReconnectedCB(options, reconnectedCallback, log);
-    auto status = natsConnection_Connect(&connection, options);
-    if (status != NATS_OK)
+    natsConnection * tmp = nullptr;
+    event_handler.setThreadLocalLoop();
+    auto status = natsConnection_Connect(&tmp, options);
+    LOG_DEBUG(log, "New connection status {}", static_cast<int>(status));
+    if (status == NATS_OK)
     {
-        if (!configuration.url.empty())
-            LOG_DEBUG(log, "Failed to connect to NATS on address: {}", configuration.url);
-        else
-            LOG_DEBUG(log, "Failed to connect to NATS cluster");
-        return;
+        connection = tmp;
+        has_connection = true;
+        event_handler.changeConnectionStatus(true);
     }
-
-    has_connection = true;
-    event_handler.changeConnectionStatus(true);
+    else
+    {
+        LOG_DEBUG(log, "New connection failed. Nats status text: {}. Last error message: {}", natsStatus_GetText(status), nats_GetLastError(nullptr));
+    }
 }
 
 void NATSConnectionManager::disconnectImpl()
 {
+    if (!has_connection)
+        return;
+
     natsConnection_Close(connection);
 
     /** Connection is not closed immediately (firstly, all pending operations are completed, and then
