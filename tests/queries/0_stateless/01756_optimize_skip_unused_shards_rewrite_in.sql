@@ -133,6 +133,7 @@ select 'different types -- prohibited';
 create table data_01756_str (key String) engine=Memory();
 create table dist_01756_str as data_01756_str engine=Distributed(test_cluster_two_shards, currentDatabase(), data_01756_str, cityHash64(key));
 select * from dist_01756_str where key in ('0', '2');
+select * from dist_01756_str where key in (0, 2);
 select * from dist_01756_str where key in ('0', Null); -- { serverError 507 }
 -- select * from dist_01756_str where key in (0, 2); -- { serverError 53 }
 -- select * from dist_01756_str where key in (0, Null); -- { serverError 53 }
