@@ -1,11 +1,12 @@
 #pragma once
 #include <Columns/ColumnString.h>
 
-
-
-
-
-
+#ifdef __aarch64__
+    #include <arm_neon.h>
+    #ifdef HAS_RESERVED_IDENTIFIER
+        #pragma clang diagnostic ignored "-Wreserved-identifier"
+    #endif
+#endif
 
 namespace DB
 {
