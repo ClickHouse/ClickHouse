@@ -78,9 +78,10 @@ MergeTreeReaderCompact::MergeTreeReaderCompact(
         /// Do not use max_read_buffer_size, but try to lower buffer size with maximal size of granule to avoid reading much data.
         auto buffer_size = getReadBufferSize(data_part, marks_loader, column_positions, all_mark_ranges);
         if (buffer_size)
-            settings.read_settings = settings.read_settings.adjustBufferSize(buffer_size);
+            settings.setReadSettings(settings.getReadSettings().adjustBufferSize(buffer_size));
 
-        if (!settings.read_settings.local_fs_buffer_size || !settings.read_settings.remote_fs_buffer_size)
+        const auto & read_settings = settings.getReadSettings();
+        if (!read_settings.local_fs_buffer_size || !read_settings.remote_fs_buffer_size)
             throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read to empty buffer.");
 
         const String full_data_path = data_part->getFullRelativePath() + MergeTreeDataPartCompact::DATA_FILE_NAME_WITH_EXTENSION;
@@ -92,7 +93,7 @@ MergeTreeReaderCompact::MergeTreeReaderCompact(
                 {
                     return data_part->volume->getDisk()->readFile(
                         full_data_path,
-                        settings.read_settings);
+                        settings.getReadSettings());
                 },
                 uncompressed_cache,
                 /* allow_different_codecs = */ true);
@@ -113,7 +114,7 @@ MergeTreeReaderCompact::MergeTreeReaderCompact(
                 std::make_unique<CompressedReadBufferFromFile>(
                     data_part->volume->getDisk()->readFile(
                         full_data_path,
-                        settings.read_settings),
+                        settings.getReadSettings()),
                     /* allow_different_codecs = */ true);
 
             if (profile_callback_)

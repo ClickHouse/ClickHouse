@@ -74,7 +74,7 @@ size_t MergeTreeReaderWide::readRows(
         std::unordered_map<String, ISerialization::SubstreamsCache> caches;
 
         std::unordered_set<std::string> prefetched_streams;
-        if (disk->isRemote() ? settings.read_settings.remote_fs_prefetch : settings.read_settings.local_fs_prefetch)
+        if (disk->isRemote() ? settings.getReadSettings().remote_fs_prefetch : settings.getReadSettings().local_fs_prefetch)
         {
             /// Request reading of data in advance,
             /// so if reading can be asynchronous, it will also be performed in parallel for all columns.

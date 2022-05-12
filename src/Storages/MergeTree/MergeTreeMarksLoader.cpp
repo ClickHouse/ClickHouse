@@ -60,11 +60,13 @@ MarkCache::MappedPtr MergeTreeMarksLoader::loadMarksImpl()
             ErrorCodes::CORRUPTED_DATA);
 
     auto res = std::make_shared<MarksInCompressedFile>(marks_count * columns_in_mark);
+    auto read_settings = MergeTreeReaderSettings::createReadSettings().adjustBufferSize(file_size);
 
     if (!index_granularity_info.is_adaptive)
     {
         /// Read directly to marks.
-        auto buffer = disk->readFile(mrk_path, ReadSettings().adjustBufferSize(file_size), file_size);
+        auto buffer = disk->readFile(mrk_path, read_settings, file_size);
+        buffer->setReadUntilEnd(); /// For asynchronous reading from remote fs.
         buffer->readStrict(reinterpret_cast<char *>(res->data()), file_size);
 
         if (!buffer->eof())
@@ -73,7 +75,8 @@ MarkCache::MappedPtr MergeTreeMarksLoader::loadMarksImpl()
     }
     else
     {
-        auto buffer = disk->readFile(mrk_path, ReadSettings().adjustBufferSize(file_size), file_size);
+        auto buffer = disk->readFile(mrk_path, read_settings, file_size);
+        buffer->setReadUntilEnd(); /// For asynchronous reading from remote fs.
         size_t i = 0;
         while (!buffer->eof())
         {
