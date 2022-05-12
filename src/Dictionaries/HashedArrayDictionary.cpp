@@ -37,6 +37,7 @@ HashedArrayDictionary<dictionary_key_type>::HashedArrayDictionary(
 {
     createAttributes();
     loadData();
+    buildHierarchyParentToChildIndexIfNeeded();
     calculateBytesAllocated();
 }
 
@@ -286,6 +287,9 @@ DictionaryHierarchyParentToChildIndexPtr HashedArrayDictionary<dictionary_key_ty
 {
     if constexpr (dictionary_key_type == DictionaryKeyType::Simple)
     {
+        if (hierarchy_parent_to_child_index)
+            return hierarchy_parent_to_child_index;
+
         size_t hierarchical_attribute_index = *dict_struct.hierarchical_attribute_index;
         const auto & hierarchical_attribute = attributes[hierarchical_attribute_index];
         const AttributeContainerType<UInt64> & parent_keys_container = std::get<AttributeContainerType<UInt64>>(hierarchical_attribute.container);
@@ -708,6 +712,16 @@ void HashedArrayDictionary<dictionary_key_type>::loadData()
 }
 
 template <DictionaryKeyType dictionary_key_type>
+void HashedArrayDictionary<dictionary_key_type>::buildHierarchyParentToChildIndexIfNeeded()
+{
+    if (!dict_struct.hierarchical_attribute_index)
+        return;
+
+    if (dict_struct.attributes[*dict_struct.hierarchical_attribute_index].bidirectional)
+        hierarchy_parent_to_child_index = getHierarchyParentToChildIndex();
+}
+
+template <DictionaryKeyType dictionary_key_type>
 void HashedArrayDictionary<dictionary_key_type>::calculateBytesAllocated()
 {
     bytes_allocated += attributes.size() * sizeof(attributes.front());
@@ -744,10 +758,16 @@ void HashedArrayDictionary<dictionary_key_type>::calculateBytesAllocated()
             bytes_allocated += (*attribute.is_index_null).size();
     }
 
-    bytes_allocated += string_arena.size();
-
     if (update_field_loaded_block)
         bytes_allocated += update_field_loaded_block->allocatedBytes();
+
+     if (hierarchy_parent_to_child_index)
+     {
+        bytes_allocated += hierarchy_parent_to_child_index->getSizeInBytes();
+        std::cout << "Hierarchy index size " << hierarchy_parent_to_child_index->getSizeInBytes() << std::endl;
+     }
+
+    bytes_allocated += string_arena.size();
 }
 
 template <DictionaryKeyType dictionary_key_type>
