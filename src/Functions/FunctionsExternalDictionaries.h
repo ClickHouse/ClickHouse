@@ -1176,8 +1176,6 @@ public:
 
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const override
     {
-        std::cout << "FunctionDictGetDescendantsOverloadResolver::buildImpl" << std::endl;
-
         auto dictionary = dictionary_helper->getDictionary(arguments[0].column);
         auto hierarchy_parent_to_child_index = dictionary->getHierarchyParentToChildIndex();
 
