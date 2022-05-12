@@ -110,10 +110,13 @@ public:
         ColumnPtr in_key_column,
         const DataTypePtr & key_type) const override;
 
+    DictionaryHierarchyParentToChildIndexPtr getHierarchyParentToChildIndex() const override;
+
     ColumnPtr getDescendants(
         ColumnPtr key_column,
         const DataTypePtr & key_type,
-        size_t level) const override;
+        size_t level,
+        DictionaryHierarchyParentToChildIndexPtr parent_to_child_index) const override;
 
     Pipe read(const Names & column_names, size_t max_block_size, size_t num_streams) const override;
 

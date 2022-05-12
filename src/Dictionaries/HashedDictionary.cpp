@@ -318,18 +318,11 @@ ColumnUInt8::Ptr HashedDictionary<dictionary_key_type, sparse>::isInHierarchy(
 }
 
 template <DictionaryKeyType dictionary_key_type, bool sparse>
-ColumnPtr HashedDictionary<dictionary_key_type, sparse>::getDescendants(
-    ColumnPtr key_column [[maybe_unused]],
-    const DataTypePtr &,
-    size_t level [[maybe_unused]]) const
+DictionaryHierarchyParentToChildIndexPtr HashedDictionary<dictionary_key_type, sparse>::getHierarchyParentToChildIndex() const
 {
     if constexpr (dictionary_key_type == DictionaryKeyType::Simple)
     {
-        PaddedPODArray<UInt64> keys_backup;
-        const auto & keys = getColumnVectorData(this, key_column, keys_backup);
-
         size_t hierarchical_attribute_index = *dict_struct.hierarchical_attribute_index;
-
         const auto & hierarchical_attribute = attributes[hierarchical_attribute_index];
         const CollectionType<UInt64> & parent_keys = std::get<CollectionType<UInt64>>(hierarchical_attribute.container);
 
@@ -338,8 +331,28 @@ ColumnPtr HashedDictionary<dictionary_key_type, sparse>::getDescendants(
         for (const auto & [key, value] : parent_keys)
             parent_to_child[value].emplace_back(key);
 
+        return std::make_shared<DictionaryHierarchyParentToChildIndex>(std::move(parent_to_child));
+    }
+    else
+    {
+        return nullptr;
+    }
+}
+
+template <DictionaryKeyType dictionary_key_type, bool sparse>
+ColumnPtr HashedDictionary<dictionary_key_type, sparse>::getDescendants(
+    ColumnPtr key_column [[maybe_unused]],
+    const DataTypePtr &,
+    size_t level [[maybe_unused]],
+    DictionaryHierarchyParentToChildIndexPtr parent_to_child_index [[maybe_unused]]) const
+{
+    if constexpr (dictionary_key_type == DictionaryKeyType::Simple)
+    {
+        PaddedPODArray<UInt64> keys_backup;
+        const auto & keys = getColumnVectorData(this, key_column, keys_backup);
+
         size_t keys_found;
-        auto result = getKeysDescendantsArray(keys, parent_to_child, level, keys_found);
+        auto result = getKeysDescendantsArray(keys, *parent_to_child_index, level, keys_found);
 
         query_count.fetch_add(keys.size(), std::memory_order_relaxed);
         found_count.fetch_add(keys_found, std::memory_order_relaxed);
@@ -347,7 +360,9 @@ ColumnPtr HashedDictionary<dictionary_key_type, sparse>::getDescendants(
         return result;
     }
     else
+    {
         return nullptr;
+    }
 }
 
 template <DictionaryKeyType dictionary_key_type, bool sparse>

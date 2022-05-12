@@ -244,14 +244,8 @@ ColumnUInt8::Ptr FlatDictionary::isInHierarchy(
     return result;
 }
 
-ColumnPtr FlatDictionary::getDescendants(
-    ColumnPtr key_column,
-    const DataTypePtr &,
-    size_t level) const
+DictionaryHierarchyParentToChildIndexPtr FlatDictionary::getHierarchyParentToChildIndex() const
 {
-    PaddedPODArray<UInt64> keys_backup;
-    const auto & keys = getColumnVectorData(this, key_column, keys_backup);
-
     size_t hierarchical_attribute_index = *dict_struct.hierarchical_attribute_index;
     const auto & hierarchical_attribute = attributes[hierarchical_attribute_index];
     const ContainerType<UInt64> & parent_keys = std::get<ContainerType<UInt64>>(hierarchical_attribute.container);
@@ -266,8 +260,20 @@ ColumnPtr FlatDictionary::getDescendants(
             parent_to_child[parent_key].emplace_back(static_cast<UInt64>(i));
     }
 
+    return std::make_shared<DictionaryHierarchyParentToChildIndex>(std::move(parent_to_child));
+}
+
+ColumnPtr FlatDictionary::getDescendants(
+    ColumnPtr key_column,
+    const DataTypePtr &,
+    size_t level,
+    DictionaryHierarchyParentToChildIndexPtr parent_to_child_index) const
+{
+    PaddedPODArray<UInt64> keys_backup;
+    const auto & keys = getColumnVectorData(this, key_column, keys_backup);
+
     size_t keys_found;
-    auto result = getKeysDescendantsArray(keys, parent_to_child, level, keys_found);
+    auto result = getKeysDescendantsArray(keys, *parent_to_child_index, level, keys_found);
 
     query_count.fetch_add(keys.size(), std::memory_order_relaxed);
     found_count.fetch_add(keys_found, std::memory_order_relaxed);
