@@ -67,9 +67,9 @@ private:
         const auto bytes_sse = 128;
         const auto * src_end_sse = src_end - (src_end - src) % bytes_sse;
 
-        const uint8x16_t v_not_case_lower_bound = vdup_n_u8(not_case_lower_bound);
-        const uint8x16_t v_not_case_upper_bound = vdup_n_u8(not_case_upper_bound);
-        const uint8x16_t v_flip_case_mask = vdup_n_u8(flip_case_mask);
+        const uint8x16_t v_not_case_lower_bound = vdupq_n_u8(not_case_lower_bound);
+        const uint8x16_t v_not_case_upper_bound = vdupq_n_u8(not_case_upper_bound);
+        const uint8x16_t v_flip_case_mask = vdupq_n_u8(flip_case_mask);
 
         for (; src < src_end_sse; src += bytes_sse, dst += bytes_sse)
         {
