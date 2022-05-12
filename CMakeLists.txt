@@ -1,31 +1,5 @@
 cmake_minimum_required(VERSION 3.14)
 
-foreach(policy
-        CMP0023
-        CMP0048 # CMake 3.0
-        CMP0074 # CMake 3.12
-        CMP0077
-        CMP0079
-    )
-    if(POLICY ${policy})
-        cmake_policy(SET ${policy} NEW)
-    endif()
-endforeach()
-
-# set default policy
-foreach(default_policy_var_name
-        # make option() honor normal variables for BUILD_SHARED_LIBS:
-        # - re2
-        # - snappy
-        CMAKE_POLICY_DEFAULT_CMP0077
-        # Google Test from sources uses too old cmake, 2.6.x, and CMP0022 should
-        # set, to avoid using deprecated LINK_INTERFACE_LIBRARIES(_<CONFIG>)? over
-        # INTERFACE_LINK_LIBRARIES.
-        CMAKE_POLICY_DEFAULT_CMP0022
-    )
-    set(${default_policy_var_name} NEW)
-endforeach()
-
 project(ClickHouse LANGUAGES C CXX ASM)
 
 # If turned off: e.g. when ENABLE_FOO is ON, but FOO tool was not found, the CMake will continue.
@@ -370,7 +344,7 @@ set (COMPILER_FLAGS "${COMPILER_FLAGS}")
 # Our built-in unwinder only supports DWARF version up to 4.
 set (DEBUG_INFO_FLAGS "-g -gdwarf-4")
 
-set (CMAKE_CXX_FLAGS                     "${CMAKE_CXX_FLAGS} ${COMPILER_FLAGS} ${CXX_WARNING_FLAGS}")
+set (CMAKE_CXX_FLAGS                     "${CMAKE_CXX_FLAGS} ${COMPILER_FLAGS}")
 set (CMAKE_CXX_FLAGS_RELWITHDEBINFO      "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} -O3 ${DEBUG_INFO_FLAGS} ${CMAKE_CXX_FLAGS_ADD}")
 set (CMAKE_CXX_FLAGS_DEBUG               "${CMAKE_CXX_FLAGS_DEBUG} -O0 ${DEBUG_INFO_FLAGS} -fno-inline ${CMAKE_CXX_FLAGS_ADD}")
 
