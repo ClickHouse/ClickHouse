@@ -12,6 +12,11 @@
 #include <Columns/IColumn.h>
 #include <Columns/ColumnString.h>
 
+#include "config_core.h"
+
+#if USE_EMBEDDED_COMPILER
+#include <Interpreters/JIT/compileFunction.h>
+#endif
 
 namespace DB
 {
@@ -49,6 +54,10 @@ struct SortCursorImpl
       */
     IColumn::Permutation * permutation = nullptr;
 
+#if USE_EMBEDDED_COMPILER
+    std::vector<ColumnData> raw_sort_columns_data;
+#endif
+
     SortCursorImpl() = default;
 
     SortCursorImpl(const Block & block, const SortDescription & desc_, size_t order_ = 0, IColumn::Permutation * perm = nullptr)
@@ -78,6 +87,9 @@ struct SortCursorImpl
     {
         all_columns.clear();
         sort_columns.clear();
+#if USE_EMBEDDED_COMPILER
+        raw_sort_columns_data.clear();
+#endif
 
         size_t num_columns = columns.size();
 
@@ -90,6 +102,10 @@ struct SortCursorImpl
             size_t column_number = block.getPositionByName(column_desc.column_name);
             sort_columns.push_back(columns[column_number].get());
 
+#if USE_EMBEDDED_COMPILER
+            if (desc.compiled_sort_description)
+                raw_sort_columns_data.emplace_back(getColumnData(sort_columns.back()));
+#endif
             need_collation[j] = desc[j].collator != nullptr && sort_columns.back()->isCollationSupported();
             has_collation |= need_collation[j];
         }
@@ -164,17 +180,36 @@ struct SortCursor : SortCursorHelper<SortCursor>
     /// The specified row of this cursor is greater than the specified row of another cursor.
     bool ALWAYS_INLINE greaterAt(const SortCursor & rhs, size_t lhs_pos, size_t rhs_pos) const
     {
+#if USE_EMBEDDED_COMPILER
+        if (impl->desc.compiled_sort_description && rhs.impl->desc.compiled_sort_description)
+        {
+            assert(impl->raw_sort_columns_data.size() == rhs.impl->raw_sort_columns_data.size());
+
+            auto sort_description_func_typed = reinterpret_cast<JITSortDescriptionFunc>(impl->desc.compiled_sort_description);
+            int res = sort_description_func_typed(lhs_pos, rhs_pos, impl->raw_sort_columns_data.data(), rhs.impl->raw_sort_columns_data.data()); /// NOLINT
+
+            if (res > 0)
+                return true;
+            if (res < 0)
+                return false;
+
+            return impl->order > rhs.impl->order;
+        }
+#endif
+
         for (size_t i = 0; i < impl->sort_columns_size; ++i)
         {
             const auto & desc = impl->desc[i];
             int direction = desc.direction;
             int nulls_direction = desc.nulls_direction;
             int res = direction * impl->sort_columns[i]->compareAt(lhs_pos, rhs_pos, *(rhs.impl->sort_columns[i]), nulls_direction);
+
             if (res > 0)
                 return true;
             if (res < 0)
                 return false;
         }
+
         return impl->order > rhs.impl->order;
     }
 };
@@ -190,8 +225,26 @@ struct SimpleSortCursor : SortCursorHelper<SimpleSortCursor>
         const auto & desc = impl->desc[0];
         int direction = desc.direction;
         int nulls_direction = desc.nulls_direction;
-        int res = impl->sort_columns[0]->compareAt(lhs_pos, rhs_pos, *(rhs.impl->sort_columns[0]), nulls_direction);
-        return res != 0 && ((res > 0) == (direction > 0));
+
+        bool result = false;
+
+#if USE_EMBEDDED_COMPILER
+        if (impl->desc.compiled_sort_description && rhs.impl->desc.compiled_sort_description)
+        {
+            assert(impl->raw_sort_columns_data.size() == rhs.impl->raw_sort_columns_data.size());
+
+            auto sort_description_func_typed = reinterpret_cast<JITSortDescriptionFunc>(impl->desc.compiled_sort_description);
+            int jit_result = sort_description_func_typed(lhs_pos, rhs_pos, impl->raw_sort_columns_data.data(), rhs.impl->raw_sort_columns_data.data()); /// NOLINT
+            result = jit_result > 0;
+        }
+        else
+#endif
+        {
+            int non_jit_result = impl->sort_columns[0]->compareAt(lhs_pos, rhs_pos, *(rhs.impl->sort_columns[0]), nulls_direction);
+            result = (non_jit_result != 0 && ((non_jit_result > 0) == (direction > 0)));
+        }
+
+        return result;
     }
 };
 
