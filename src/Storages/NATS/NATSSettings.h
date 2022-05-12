@@ -5,8 +5,7 @@
 
 namespace DB
 {
-    class ASTStorage;
-
+class ASTStorage;
 
 #define NATS_RELATED_SETTINGS(M) \
     M(String, nats_url, "", "A host-port to connect to NATS server.", 0) \
@@ -25,7 +24,7 @@ namespace DB
     M(Milliseconds, nats_flush_interval_ms, 0, "Timeout for flushing data from NATS.", 0) \
     M(String, nats_username, "", "NATS username", 0) \
     M(String, nats_password, "", "NATS password", 0) \
-    M(String, nats_token, "", "NATS token", 0) \
+    M(String, nats_token, "", "NATS token", 0)
 
 #define LIST_OF_NATS_SETTINGS(M) \
     NATS_RELATED_SETTINGS(M) \

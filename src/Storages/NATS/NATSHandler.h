@@ -1,13 +1,10 @@
 #pragma once
 
-#include <thread>
 #include <memory>
 #include <mutex>
+#include <thread>
 #include <nats.h>
-#include <amqpcpp.h>
-#include <amqpcpp/linux_tcp.h>
 #include <base/types.h>
-#include <amqpcpp/libuv.h>
 #include <Poco/Logger.h>
 
 namespace DB
@@ -24,7 +21,6 @@ using LockPtr = std::unique_ptr<std::lock_guard<std::mutex>>;
 
 class NATSHandler
 {
-
 public:
     NATSHandler(uv_loop_t * loop_, Poco::Logger * log_);
 

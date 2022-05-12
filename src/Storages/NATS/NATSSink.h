@@ -12,7 +12,6 @@ using IOutputFormatPtr = std::shared_ptr<IOutputFormat>;
 
 class NATSSink : public SinkToStorage
 {
-
 public:
     explicit NATSSink(StorageNATS & storage_, const StorageMetadataPtr & metadata_snapshot_, ContextPtr context_);
 

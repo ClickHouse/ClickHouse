@@ -1,8 +1,8 @@
-#include <Storages/NATS/NATSSink.h>
-#include <Storages/NATS/WriteBufferToNATSProducer.h>
-#include <Storages/NATS/StorageNATS.h>
 #include <Formats/FormatFactory.h>
 #include <Processors/Formats/IOutputFormat.h>
+#include <Storages/NATS/NATSSink.h>
+#include <Storages/NATS/StorageNATS.h>
+#include <Storages/NATS/WriteBufferToNATSProducer.h>
 #include <Common/logger_useful.h>
 
 

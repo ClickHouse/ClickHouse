@@ -1,15 +1,14 @@
 #pragma once
 
-#include <IO/WriteBuffer.h>
-#include <Columns/IColumn.h>
+#include <atomic>
 #include <list>
 #include <mutex>
-#include <atomic>
-#include <amqpcpp.h>
-#include <Storages/NATS/NATSConnection.h>
-#include <Common/ConcurrentBoundedQueue.h>
+#include <Columns/IColumn.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/Names.h>
+#include <IO/WriteBuffer.h>
+#include <Storages/NATS/NATSConnection.h>
+#include <Common/ConcurrentBoundedQueue.h>
 
 namespace DB
 {
@@ -18,15 +17,14 @@ class WriteBufferToNATSProducer : public WriteBuffer
 {
 public:
     WriteBufferToNATSProducer(
-            const NATSConfiguration & configuration_,
-            ContextPtr global_context,
-            const String & subject_,
-            std::atomic<bool> & shutdown_called_,
-            Poco::Logger * log_,
-            std::optional<char> delimiter,
-            size_t rows_per_message,
-            size_t chunk_size_
-    );
+        const NATSConfiguration & configuration_,
+        ContextPtr global_context,
+        const String & subject_,
+        std::atomic<bool> & shutdown_called_,
+        Poco::Logger * log_,
+        std::optional<char> delimiter,
+        size_t rows_per_message,
+        size_t chunk_size_);
 
     ~WriteBufferToNATSProducer() override;
 

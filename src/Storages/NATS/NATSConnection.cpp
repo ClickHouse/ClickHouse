@@ -1,7 +1,7 @@
 #include "NATSConnection.h"
 
-#include <Common/logger_useful.h>
 #include <IO/WriteHelpers.h>
+#include <Common/logger_useful.h>
 
 #include <boost/algorithm/string/join.hpp>
 
@@ -30,7 +30,8 @@ NATSConnectionManager::~NATSConnectionManager()
 
 String NATSConnectionManager::connectionInfoForLog() const
 {
-    if (!configuration.url.empty()) {
+    if (!configuration.url.empty())
+    {
         return "url : " + configuration.url;
     }
     return "cluster: " + boost::algorithm::join(configuration.servers, ", ");
@@ -96,7 +97,8 @@ void NATSConnectionManager::connectImpl()
     if (!configuration.url.empty())
     {
         natsOptions_SetURL(options, configuration.url.c_str());
-    } else
+    }
+    else
     {
         const char * servers[configuration.servers.size()];
         for (size_t i = 0; i < configuration.servers.size(); ++i)

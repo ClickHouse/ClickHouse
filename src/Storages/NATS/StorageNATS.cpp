@@ -1,4 +1,3 @@
-#include <amqpcpp.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Context.h>
@@ -9,21 +8,21 @@
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Processors/Transforms/ExpressionTransform.h>
+#include <Storages/ExternalDataSourceConfiguration.h>
 #include <Storages/NATS/NATSSink.h>
 #include <Storages/NATS/NATSSource.h>
 #include <Storages/NATS/StorageNATS.h>
 #include <Storages/NATS/WriteBufferToNATSProducer.h>
-#include <Storages/ExternalDataSourceConfiguration.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMaterializedView.h>
 #include <boost/algorithm/string/split.hpp>
 #include <boost/algorithm/string/trim.hpp>
 #include <Common/Exception.h>
 #include <Common/Macros.h>
+#include <Common/logger_useful.h>
 #include <Common/parseAddress.h>
 #include <Common/quoteString.h>
 #include <Common/setThreadName.h>
-#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -44,24 +43,24 @@ namespace ErrorCodes
 
 
 StorageNATS::StorageNATS(
-        const StorageID & table_id_,
-        ContextPtr context_,
-        const ColumnsDescription & columns_,
-        std::unique_ptr<NATSSettings> nats_settings_,
-        bool is_attach_)
-        : IStorage(table_id_)
-        , WithContext(context_->getGlobalContext())
-        , nats_settings(std::move(nats_settings_))
-        , subjects(parseList(getContext()->getMacros()->expand(nats_settings->nats_subjects)))
-        , format_name(getContext()->getMacros()->expand(nats_settings->nats_format))
-        , row_delimiter(nats_settings->nats_row_delimiter.value)
-        , schema_name(getContext()->getMacros()->expand(nats_settings->nats_schema))
-        , num_consumers(nats_settings->nats_num_consumers.value)
-        , log(&Poco::Logger::get("StorageNATS (" + table_id_.table_name + ")"))
-        , semaphore(0, num_consumers)
-        , queue_size(std::max(QUEUE_SIZE, static_cast<uint32_t>(getMaxBlockSize())))
-        , milliseconds_to_wait(RESCHEDULE_MS)
-        , is_attach(is_attach_)
+    const StorageID & table_id_,
+    ContextPtr context_,
+    const ColumnsDescription & columns_,
+    std::unique_ptr<NATSSettings> nats_settings_,
+    bool is_attach_)
+    : IStorage(table_id_)
+    , WithContext(context_->getGlobalContext())
+    , nats_settings(std::move(nats_settings_))
+    , subjects(parseList(getContext()->getMacros()->expand(nats_settings->nats_subjects)))
+    , format_name(getContext()->getMacros()->expand(nats_settings->nats_format))
+    , row_delimiter(nats_settings->nats_row_delimiter.value)
+    , schema_name(getContext()->getMacros()->expand(nats_settings->nats_schema))
+    , num_consumers(nats_settings->nats_num_consumers.value)
+    , log(&Poco::Logger::get("StorageNATS (" + table_id_.table_name + ")"))
+    , semaphore(0, num_consumers)
+    , queue_size(std::max(QUEUE_SIZE, static_cast<uint32_t>(getMaxBlockSize())))
+    , milliseconds_to_wait(RESCHEDULE_MS)
+    , is_attach(is_attach_)
 {
     auto nats_username = getContext()->getMacros()->expand(nats_settings->nats_username);
     auto nats_password = getContext()->getMacros()->expand(nats_settings->nats_password);
@@ -103,23 +102,23 @@ StorageNATS::StorageNATS(
     }
 
     /// One looping task for all consumers as they share the same connection == the same handler == the same event loop
-    looping_task = getContext()->getMessageBrokerSchedulePool().createTask("NATSLoopingTask", [this]{ loopingFunc(); });
+    looping_task = getContext()->getMessageBrokerSchedulePool().createTask("NATSLoopingTask", [this] { loopingFunc(); });
     looping_task->deactivate();
 
-    streaming_task = getContext()->getMessageBrokerSchedulePool().createTask("NATSStreamingTask", [this]{ streamingToViewsFunc(); });
+    streaming_task = getContext()->getMessageBrokerSchedulePool().createTask("NATSStreamingTask", [this] { streamingToViewsFunc(); });
     streaming_task->deactivate();
 
-    connection_task = getContext()->getMessageBrokerSchedulePool().createTask("NATSConnectionManagerTask", [this]{ connectionFunc(); });
+    connection_task = getContext()->getMessageBrokerSchedulePool().createTask("NATSConnectionManagerTask", [this] { connectionFunc(); });
     connection_task->deactivate();
 }
 
 
-Names StorageNATS::parseList(const String& list)
+Names StorageNATS::parseList(const String & list)
 {
     Names result;
     if (list.empty())
         return result;
-    boost::split(result, list, [](char c){ return c == ','; });
+    boost::split(result, list, [](char c) { return c == ','; });
     for (String & key : result)
         boost::trim(key);
 
@@ -234,26 +233,26 @@ void StorageNATS::deactivateTask(BackgroundSchedulePool::TaskHolder & task, bool
 
 size_t StorageNATS::getMaxBlockSize() const
 {
-     return nats_settings->nats_max_block_size.changed
-         ? nats_settings->nats_max_block_size.value
-         : (getContext()->getSettingsRef().max_insert_block_size.value / num_consumers);
+    return nats_settings->nats_max_block_size.changed ? nats_settings->nats_max_block_size.value
+                                                      : (getContext()->getSettingsRef().max_insert_block_size.value / num_consumers);
 }
 
 
 Pipe StorageNATS::read(
-        const Names & column_names,
-        const StorageSnapshotPtr & storage_snapshot,
-        SelectQueryInfo & /* query_info */,
-        ContextPtr local_context,
-        QueryProcessingStage::Enum /* processed_stage */,
-        size_t /* max_block_size */,
-        unsigned /* num_streams */)
+    const Names & column_names,
+    const StorageSnapshotPtr & storage_snapshot,
+    SelectQueryInfo & /* query_info */,
+    ContextPtr local_context,
+    QueryProcessingStage::Enum /* processed_stage */,
+    size_t /* max_block_size */,
+    unsigned /* num_streams */)
 {
     if (num_created_consumers == 0)
         return {};
 
     if (!local_context->getSettingsRef().stream_like_engine_allow_direct_select)
-        throw Exception(ErrorCodes::QUERY_NOT_ALLOWED, "Direct select is not allowed. To enable use setting `stream_like_engine_allow_direct_select`");
+        throw Exception(
+            ErrorCodes::QUERY_NOT_ALLOWED, "Direct select is not allowed. To enable use setting `stream_like_engine_allow_direct_select`");
 
     if (mv_attached)
         throw Exception(ErrorCodes::QUERY_NOT_ALLOWED, "Cannot read from StorageNATS with attached materialized views");
@@ -276,8 +275,7 @@ Pipe StorageNATS::read(
 
     for (size_t i = 0; i < num_created_consumers; ++i)
     {
-        auto nats_source = std::make_shared<NATSSource>(
-            *this, storage_snapshot, modified_context, column_names, 1);
+        auto nats_source = std::make_shared<NATSSource>(*this, storage_snapshot, modified_context, column_names, 1);
 
         auto converting_dag = ActionsDAG::makeConvertingActions(
             nats_source->getPort().getHeader().getColumnsWithTypeAndName(),
@@ -543,8 +541,7 @@ bool StorageNATS::streamToViews()
 
     for (size_t i = 0; i < num_created_consumers; ++i)
     {
-        auto source = std::make_shared<NATSSource>(
-            *this, storage_snapshot, nats_context, column_names, block_size);
+        auto source = std::make_shared<NATSSource>(*this, storage_snapshot, nats_context, column_names, block_size);
         sources.emplace_back(source);
         pipes.emplace_back(source);
 
@@ -552,8 +549,8 @@ bool StorageNATS::streamToViews()
         StreamLocalLimits limits;
 
         limits.speed_limits.max_execution_time = nats_settings->nats_flush_interval_ms.changed
-                                                  ? nats_settings->nats_flush_interval_ms
-                                                  : getContext()->getSettingsRef().stream_flush_interval_ms;
+            ? nats_settings->nats_flush_interval_ms
+            : getContext()->getSettingsRef().stream_flush_interval_ms;
 
         limits.timeout_overflow_mode = OverflowMode::BREAK;
 
@@ -628,10 +625,9 @@ void registerStorageNATS(StorageFactory & factory)
 
         nats_settings->loadFromQuery(*args.storage_def);
 
-        if (!nats_settings->nats_url.changed
-           && !nats_settings->nats_server_list.changed)
-                throw Exception("You must specify either `nats_url` or `nats_server_list` settings",
-                    ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+        if (!nats_settings->nats_url.changed && !nats_settings->nats_server_list.changed)
+            throw Exception(
+                "You must specify either `nats_url` or `nats_server_list` settings", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         if (!nats_settings->nats_format.changed)
             throw Exception("You must specify `nats_format` setting", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);

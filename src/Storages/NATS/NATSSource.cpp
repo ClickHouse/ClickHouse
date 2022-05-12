@@ -31,13 +31,7 @@ NATSSource::NATSSource(
     ContextPtr context_,
     const Names & columns,
     size_t max_block_size_)
-    : NATSSource(
-        storage_,
-        storage_snapshot_,
-        getHeaders(storage_snapshot_),
-        context_,
-        columns,
-        max_block_size_)
+    : NATSSource(storage_, storage_snapshot_, getHeaders(storage_snapshot_), context_, columns, max_block_size_)
 {
 }
 
@@ -93,8 +87,8 @@ Chunk NATSSource::generateImpl()
     is_finished = true;
 
     MutableColumns virtual_columns = virtual_header.cloneEmptyColumns();
-    auto input_format = FormatFactory::instance().getInputFormat(
-            storage.getFormatName(), *buffer, non_virtual_header, context, max_block_size);
+    auto input_format
+        = FormatFactory::instance().getInputFormat(storage.getFormatName(), *buffer, non_virtual_header, context, max_block_size);
 
     StreamingFormatExecutor executor(non_virtual_header, input_format);
 
@@ -128,7 +122,7 @@ Chunk NATSSource::generateImpl()
     if (total_rows == 0)
         return {};
 
-    auto result_columns  = executor.getResultColumns();
+    auto result_columns = executor.getResultColumns();
     for (auto & column : virtual_columns)
         result_columns.push_back(std::move(column));
 

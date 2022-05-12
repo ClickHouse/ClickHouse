@@ -1,14 +1,14 @@
 #include <Storages/NATS/WriteBufferToNATSProducer.h>
 
-#include <Core/Block.h>
-#include <Columns/ColumnString.h>
-#include <Columns/ColumnsNumber.h>
-#include <Interpreters/Context.h>
-#include <Common/logger_useful.h>
-#include <boost/algorithm/string/split.hpp>
+#include <atomic>
 #include <chrono>
 #include <thread>
-#include <atomic>
+#include <Columns/ColumnString.h>
+#include <Columns/ColumnsNumber.h>
+#include <Core/Block.h>
+#include <Interpreters/Context.h>
+#include <boost/algorithm/string/split.hpp>
+#include <Common/logger_useful.h>
 
 
 namespace DB
@@ -23,28 +23,28 @@ namespace ErrorCodes
 }
 
 WriteBufferToNATSProducer::WriteBufferToNATSProducer(
-        const NATSConfiguration & configuration_,
-        ContextPtr global_context,
-        const String & subject_,
-        std::atomic<bool> & shutdown_called_,
-        Poco::Logger * log_,
-        std::optional<char> delimiter,
-        size_t rows_per_message,
-        size_t chunk_size_)
-        : WriteBuffer(nullptr, 0)
-        , connection(configuration_, log_)
-        , subject(subject_)
-        , shutdown_called(shutdown_called_)
-        , payloads(BATCH)
-        , log(log_)
-        , delim(delimiter)
-        , max_rows(rows_per_message)
-        , chunk_size(chunk_size_)
+    const NATSConfiguration & configuration_,
+    ContextPtr global_context,
+    const String & subject_,
+    std::atomic<bool> & shutdown_called_,
+    Poco::Logger * log_,
+    std::optional<char> delimiter,
+    size_t rows_per_message,
+    size_t chunk_size_)
+    : WriteBuffer(nullptr, 0)
+    , connection(configuration_, log_)
+    , subject(subject_)
+    , shutdown_called(shutdown_called_)
+    , payloads(BATCH)
+    , log(log_)
+    , delim(delimiter)
+    , max_rows(rows_per_message)
+    , chunk_size(chunk_size_)
 {
     if (!connection.connect())
         throw Exception(ErrorCodes::CANNOT_CONNECT_NATS, "Cannot connect to NATS {}", connection.connectionInfoForLog());
 
-    writing_task = global_context->getSchedulePool().createTask("NATSWritingTask", [this]{ writingFunc(); });
+    writing_task = global_context->getSchedulePool().createTask("NATSWritingTask", [this] { writingFunc(); });
     writing_task->deactivate();
 
     reinitializeChunks();
@@ -95,7 +95,8 @@ void WriteBufferToNATSProducer::publish()
     uv_thread_join(&flush_thread);
 }
 
-void WriteBufferToNATSProducer::publishThreadFunc(void * arg) {
+void WriteBufferToNATSProducer::publishThreadFunc(void * arg)
+{
     String payload;
     WriteBufferToNATSProducer * buffer = static_cast<WriteBufferToNATSProducer *>(arg);
 
