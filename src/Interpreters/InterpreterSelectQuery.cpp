@@ -863,6 +863,9 @@ static SortDescription getSortDescription(const ASTSelectQuery & query, ContextP
             order_descr.emplace_back(name, order_by_elem.direction, order_by_elem.nulls_direction, collator);
     }
 
+    order_descr.compile_sort_description = context->getSettingsRef().compile_sort_description;
+    order_descr.min_count_to_compile_sort_description = context->getSettingsRef().min_count_to_compile_sort_description;
+
     return order_descr;
 }
 
@@ -2452,26 +2455,25 @@ void InterpreterSelectQuery::executeWindow(QueryPlan & query_plan)
     // Try to sort windows in such an order that the window with the longest
     // sort description goes first, and all window that use its prefixes follow.
     std::vector<const WindowDescription *> windows_sorted;
-    for (const auto & [_, w] : query_analyzer->windowDescriptions())
-        windows_sorted.push_back(&w);
+    for (const auto & [_, window] : query_analyzer->windowDescriptions())
+        windows_sorted.push_back(&window);
 
     ::sort(windows_sorted.begin(), windows_sorted.end(), windowDescriptionComparator);
 
     const Settings & settings = context->getSettingsRef();
     for (size_t i = 0; i < windows_sorted.size(); ++i)
     {
-        const auto & w = *windows_sorted[i];
+        const auto & window = *windows_sorted[i];
 
         // We don't need to sort again if the input from previous window already
         // has suitable sorting. Also don't create sort steps when there are no
         // columns to sort by, because the sort nodes are confused by this. It
         // happens in case of `over ()`.
-        if (!w.full_sort_description.empty() && (i == 0 || !sortIsPrefix(w, *windows_sorted[i - 1])))
+        if (!window.full_sort_description.empty() && (i == 0 || !sortIsPrefix(window, *windows_sorted[i - 1])))
         {
-
             auto sorting_step = std::make_unique<SortingStep>(
                 query_plan.getCurrentDataStream(),
-                w.full_sort_description,
+                window.full_sort_description,
                 settings.max_block_size,
                 0 /* LIMIT */,
                 SizeLimits(settings.max_rows_to_sort, settings.max_bytes_to_sort, settings.sort_overflow_mode),
@@ -2480,12 +2482,12 @@ void InterpreterSelectQuery::executeWindow(QueryPlan & query_plan)
                 settings.max_bytes_before_external_sort,
                 context->getTemporaryVolume(),
                 settings.min_free_disk_space_for_temporary_data);
-            sorting_step->setStepDescription("Sorting for window '" + w.window_name + "'");
+            sorting_step->setStepDescription("Sorting for window '" + window.window_name + "'");
             query_plan.addStep(std::move(sorting_step));
         }
 
-        auto window_step = std::make_unique<WindowStep>(query_plan.getCurrentDataStream(), w, w.window_functions);
-        window_step->setStepDescription("Window step for window '" + w.window_name + "'");
+        auto window_step = std::make_unique<WindowStep>(query_plan.getCurrentDataStream(), window, window.window_functions);
+        window_step->setStepDescription("Window step for window '" + window.window_name + "'");
 
         query_plan.addStep(std::move(window_step));
     }
@@ -2557,8 +2559,7 @@ void InterpreterSelectQuery::executeMergeSorted(QueryPlan & query_plan, const So
 {
     const Settings & settings = context->getSettingsRef();
 
-    auto merging_sorted
-        = std::make_unique<SortingStep>(query_plan.getCurrentDataStream(), sort_description, settings.max_block_size, limit);
+    auto merging_sorted = std::make_unique<SortingStep>(query_plan.getCurrentDataStream(), sort_description, settings.max_block_size, limit);
 
     merging_sorted->setStepDescription("Merge sorted streams " + description);
     query_plan.addStep(std::move(merging_sorted));
