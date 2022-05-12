@@ -59,11 +59,9 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
     if (read_with_direct_io)
         read_settings.direct_io_threshold = 1;
 
-    MergeTreeReaderSettings reader_settings =
-    {
-        .read_settings = read_settings,
-        .save_marks_in_cache = false
-    };
+    MergeTreeReaderSettings reader_settings;
+    reader_settings.save_marks_in_cache = false;
+    reader_settings.setReadSettings(read_settings);
 
     reader = data_part->getReader(columns_for_reader, storage_snapshot->metadata,
         MarkRanges{MarkRange(0, data_part->getMarksCount())},
