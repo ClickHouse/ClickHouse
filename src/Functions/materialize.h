@@ -23,6 +23,11 @@ public:
         return false;
     }
 
+    bool useDefaultImplementationForNothing() const override
+    {
+        return false;
+    }
+
     /// Get the function name.
     String getName() const override
     {
