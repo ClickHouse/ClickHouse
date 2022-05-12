@@ -335,7 +335,7 @@ DictionaryHierarchyParentToChildIndexPtr HashedDictionary<dictionary_key_type, s
         for (const auto & [key, value] : parent_keys)
             parent_to_child[value].emplace_back(key);
 
-        return std::make_shared<DictionaryHierarchyParentToChildIndex>(std::move(parent_to_child));
+        return std::make_shared<DictionaryHierarchyParentToChildIndex>(parent_to_child);
     }
     else
     {

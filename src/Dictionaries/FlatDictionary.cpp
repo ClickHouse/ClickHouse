@@ -264,7 +264,7 @@ DictionaryHierarchyParentToChildIndexPtr FlatDictionary::getHierarchyParentToChi
             parent_to_child[parent_key].emplace_back(static_cast<UInt64>(i));
     }
 
-    return std::make_shared<DictionaryHierarchyParentToChildIndex>(std::move(parent_to_child));
+    return std::make_shared<DictionaryHierarchyParentToChildIndex>(parent_to_child);
 }
 
 ColumnPtr FlatDictionary::getDescendants(
