@@ -87,10 +87,12 @@ Pipe StorageMeiliSearch::read(
     ASTPtr original_where = query_info.query->clone()->as<ASTSelectQuery &>().where();
     ASTPtr query_params = getFunctionParams(original_where, "meiliMatch");
 
+    MeiliSearchSource::QueryRoute route = MeiliSearchSource::QueryRoute::documents;
 
     std::unordered_map<String, String> kv_pairs_params;
     if (query_params)
     {
+        route = MeiliSearchSource::QueryRoute::search;
         LOG_TRACE(log, "Query params: {}", convertASTtoStr(query_params));
         for (const auto & el : query_params->children)
         {
@@ -114,7 +116,7 @@ Pipe StorageMeiliSearch::read(
 
     auto sample_block = storage_snapshot->getSampleBlockForColumns(column_names);
 
-    return Pipe(std::make_shared<MeiliSearchSource>(config, sample_block, max_block_size, kv_pairs_params));
+    return Pipe(std::make_shared<MeiliSearchSource>(config, sample_block, max_block_size, route, kv_pairs_params));
 }
 
 SinkToStoragePtr StorageMeiliSearch::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context)
@@ -166,12 +168,7 @@ void registerStorageMeiliSearch(StorageFactory & factory)
         [](const StorageFactory::Arguments & args)
         {
             auto config = StorageMeiliSearch::getConfiguration(args.engine_args, args.getLocalContext());
-            return std::make_shared<StorageMeiliSearch>(
-                args.table_id, 
-                config, 
-                args.columns, 
-                args.constraints, 
-                args.comment);
+            return std::make_shared<StorageMeiliSearch>(args.table_id, config, args.columns, args.constraints, args.comment);
         },
         {
             .source_access_type = AccessType::MEILISEARCH,

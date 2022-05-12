@@ -35,10 +35,14 @@ public:
 
     String searchQuery(const std::unordered_map<String, String> & query_params) const;
 
+    String getDocumentsQuery(const std::unordered_map<String, String> & query_params) const;
+
     String updateQuery(std::string_view data) const;
 
 private:
-    void execQuery(const String & url, std::string_view post_fields, std::string & response_buffer) const;
+    void execPostQuery(const String & url, std::string_view post_fields, std::string & response_buffer) const;
+
+    void execGetQuery(const String & url, const std::unordered_map<String, String> & query_params, std::string & response_buffer) const;
 
     MeiliConfig config;
     mutable Poco::Net::HTTPClientSession session;

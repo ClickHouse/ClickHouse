@@ -5,6 +5,7 @@
 #include <Storages/MeiliSearch/MeiliSearchConnection.h>
 #include <Common/Exception.h>
 
+#include <Poco/StreamCopier.h>
 
 namespace DB
 {
@@ -20,7 +21,7 @@ MeiliSearchConnection::MeiliSearchConnection(const MeiliConfig & conf) : config{
     session.setPort(uri.getPort());
 }
 
-void MeiliSearchConnection::execQuery(const String & url, std::string_view post_fields, std::string & response_buffer) const
+void MeiliSearchConnection::execPostQuery(const String & url, std::string_view post_fields, std::string & response_buffer) const
 {
     Poco::URI uri(url);
 
@@ -45,10 +46,42 @@ void MeiliSearchConnection::execQuery(const String & url, std::string_view post_
     // need to separate MeiliSearch response from other situations
     // in order to handle it properly
     if (res.getStatus() / 100 == 2 || res.getStatus() / 100 == 4)
-        response_buffer = String(std::istreambuf_iterator<char>(is), {});
+        Poco::StreamCopier::copyToString(is, response_buffer);
     else
         throw Exception(ErrorCodes::NETWORK_ERROR, res.getReason());
 }
+
+void MeiliSearchConnection::execGetQuery(
+    const String & url, const std::unordered_map<String, String> & query_params, std::string & response_buffer) const
+{
+    Poco::URI uri(url);
+    for (const auto & kv : query_params)
+    {
+        uri.addQueryParameter(kv.first, kv.second);
+    }
+
+    String path(uri.getPathAndQuery());
+    if (path.empty())
+        path = "/";
+
+    Poco::Net::HTTPRequest req(Poco::Net::HTTPRequest::HTTP_GET, path, Poco::Net::HTTPMessage::HTTP_1_1);
+
+    if (!config.key.empty())
+        req.add("Authorization", "Bearer " + config.key);
+
+    session.sendRequest(req);
+
+    Poco::Net::HTTPResponse res;
+    std::istream & is = session.receiveResponse(res);
+
+    // need to separate MeiliSearch response from other situations
+    // in order to handle it properly
+    if (res.getStatus() / 100 == 2 || res.getStatus() / 100 == 4)
+        Poco::StreamCopier::copyToString(is, response_buffer);
+    else
+        throw Exception(ErrorCodes::NETWORK_ERROR, res.getReason());
+}
+
 
 String MeiliSearchConnection::searchQuery(const std::unordered_map<String, String> & query_params) const
 {
@@ -71,7 +104,7 @@ String MeiliSearchConnection::searchQuery(const std::unordered_map<String, Strin
 
     String url = config.connection_string + "search";
 
-    execQuery(url, post_fields.str(), response_buffer);
+    execPostQuery(url, post_fields.str(), response_buffer);
 
     return response_buffer;
 }
@@ -82,7 +115,18 @@ String MeiliSearchConnection::updateQuery(std::string_view data) const
 
     String url = config.connection_string + "documents";
 
-    execQuery(url, data, response_buffer);
+    execPostQuery(url, data, response_buffer);
+
+    return response_buffer;
+}
+
+String MeiliSearchConnection::getDocumentsQuery(const std::unordered_map<String, String> & query_params) const
+{
+    String response_buffer;
+
+    String url = config.connection_string + "documents";
+
+    execGetQuery(url, query_params, response_buffer);
 
     return response_buffer;
 }

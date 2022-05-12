@@ -14,11 +14,7 @@ StoragePtr TableFunctionMeiliSearch::executeImpl(
     auto columns = getActualTableStructure(context);
 
     return std::make_shared<StorageMeiliSearch>(
-        StorageID(getDatabaseName(), table_name), 
-        configuration.value(), 
-        columns, 
-        ConstraintsDescription{}, 
-        String{});
+        StorageID(getDatabaseName(), table_name), configuration.value(), columns, ConstraintsDescription{}, String{});
 }
 
 ColumnsDescription TableFunctionMeiliSearch::getActualTableStructure(ContextPtr /* context */) const
