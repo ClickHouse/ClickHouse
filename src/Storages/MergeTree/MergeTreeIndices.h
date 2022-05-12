@@ -208,6 +208,9 @@ private:
     Validators validators;
 };
 
+MergeTreeIndexPtr diskANNIndexCreator(const IndexDescription & index);
+void diskANNIndexValidator(const IndexDescription & index, bool attach);
+
 MergeTreeIndexPtr minmaxIndexCreator(const IndexDescription & index);
 void minmaxIndexValidator(const IndexDescription & index, bool attach);
 

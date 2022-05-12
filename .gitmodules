@@ -262,6 +262,9 @@
 [submodule "contrib/minizip-ng"]
 	path = contrib/minizip-ng
 	url = https://github.com/zlib-ng/minizip-ng
+[submodule "contrib/gperftools"]
+	path = contrib/gperftools
+	url = https://github.com/gperftools/gperftools.git
 [submodule "contrib/spotify-annoy"]
 	path = contrib/spotify-annoy
 	url = https://github.com/spotify/annoy.git
