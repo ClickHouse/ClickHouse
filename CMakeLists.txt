@@ -427,7 +427,7 @@ endif ()
 
 # Make this extra-checks for correct library dependencies.
 if (OS_LINUX AND NOT SANITIZE)
-    target_link_options(global-group INTERFACE "-Wl,--no-undefined")
+    target_link_options(global-group INTERFACE "LINKER:--no-undefined")
 endif ()
 
 ######################################
