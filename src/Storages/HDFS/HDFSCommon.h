@@ -112,7 +112,7 @@ public:
     ~HDFSFSPool() = default;
 
     HDFSFSSharedPtr getFS();
-    
+
     bool tryCallFS(HDFSFSSharedPtr & fs, std::function<bool(HDFSFSSharedPtr &)> callback);
 
 private:
@@ -150,9 +150,7 @@ private:
     inline static const uint32_t max_pool_size = 256;
     inline static const uint32_t min_pool_size = 32;
 
-    /// Key: hdfs_uri, value: HDFSBuilderWrapperPtr
     mutable std::map<String, HDFSBuilderWrapperPtr> hdfs_builder_wrappers;
-    /// Key: hdfs_uri, value: HDFSFSPool
     mutable std::map<String, HDFSFSPoolPtr> hdfs_fs_pools;
     mutable std::mutex mutex;
 };

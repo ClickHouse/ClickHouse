@@ -82,6 +82,7 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<S
 
         if (file_offset)
         {
+            Stopwatch seek_watch;
             int seek_status = hdfsSeek(fs.get(), fin, file_offset);
             if (seek_status != 0)
                 throw Exception(
@@ -89,6 +90,9 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<S
                     "Fail to seek HDFS file: {}, error: {}",
                     hdfs_uri,
                     std::string(hdfsGetLastError()));
+
+            ProfileEvents::increment(ProfileEvents::HDFSReadSeekMicroseconds, watch.elapsedMicroseconds());
+            ProfileEvents::increment(ProfileEvents::HDFSReadSeek, 1);
         }
 
         ProfileEvents::increment(ProfileEvents::HDFSReadInitializeMicroseconds, watch.elapsedMicroseconds());
@@ -163,7 +167,7 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<S
 
         ProfileEvents::increment(ProfileEvents::HDFSReadSeekMicroseconds, watch.elapsedMicroseconds());
         ProfileEvents::increment(ProfileEvents::HDFSReadSeek, 1);
-        
+
         file_offset = file_offset_;
         resetWorkingBuffer();
         return file_offset;
