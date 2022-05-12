@@ -939,8 +939,14 @@ inline ReturnType readDateTimeTextImpl(DateTime64 & datetime64, UInt32 scale, Re
             components.fractional = scale_multiplier - components.fractional;
         }
     }
+    /// time_t is interpreted as 32-int value by wasm in both 32 and 64-bit modes,
+    /// so using this redefinition as a temporary solution to silence the warnings
+#ifdef __EMSCRIPTEN__
+    else if (static_cast<int64_t>(whole) >= 9908870400LL)
+#else
     /// 9908870400 is time_t value for 2184-01-01 UTC (a bit over the last year supported by DateTime64)
     else if (whole >= 9908870400LL)
+#endif
     {
         /// Unix timestamp with subsecond precision, already scaled to integer.
         /// For disambiguation we support only time since 2001-09-09 01:46:40 UTC and less than 30 000 years in future.

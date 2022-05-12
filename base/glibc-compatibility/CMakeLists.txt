@@ -53,4 +53,6 @@ if (GLIBC_COMPATIBILITY)
 
 elseif (CLICKHOUSE_OFFICIAL_BUILD)
     message (WARNING "Option GLIBC_COMPATIBILITY must be turned on for production builds.")
+else()
+    message (STATUS "COMPATIBILITY MODE OFF")
 endif ()

@@ -200,7 +200,7 @@ endif ()
 option(ENABLE_TESTS "Provide unit_test_dbms target with Google.Test unit tests" ON)
 option(ENABLE_EXAMPLES "Build all example programs in 'examples' subdirectories" OFF)
 
-if (OS_LINUX AND (ARCH_AMD64 OR ARCH_AARCH64) AND USE_STATIC_LIBRARIES AND NOT SPLIT_SHARED_LIBRARIES AND NOT USE_MUSL)
+if (OS_LINUX AND (ARCH_AMD64 OR ARCH_AARCH64) AND USE_STATIC_LIBRARIES AND NOT SPLIT_SHARED_LIBRARIES AND NOT USE_MUSL AND NOT EMSCRIPTEN)
     # Only for Linux, x86_64 or aarch64.
     option(GLIBC_COMPATIBILITY "Enable compatibility with older glibc libraries." ON)
 elseif(GLIBC_COMPATIBILITY)
@@ -390,7 +390,8 @@ if (COMPILER_CLANG)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fdiagnostics-absolute-paths")
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fdiagnostics-absolute-paths")
 
-    if (NOT ENABLE_TESTS AND NOT SANITIZE)
+    # FIXME: Although Emscripten has support for ThinLto, it just fails...
+    if (NOT ENABLE_TESTS AND NOT SANITIZE AND NOT EMSCRIPTEN)
         # https://clang.llvm.org/docs/ThinLTO.html
         # Applies to clang only.
         # Disabled when building with tests or sanitizers.
@@ -438,7 +439,7 @@ endif ()
 include(cmake/dbms_glob_sources.cmake)
 
 add_library(global-group INTERFACE)
-if (OS_LINUX OR OS_ANDROID)
+if (OS_LINUX OR OS_ANDROID OR EMSCRIPTEN)
     include(cmake/linux/default_libs.cmake)
 elseif (OS_DARWIN)
     include(cmake/darwin/default_libs.cmake)

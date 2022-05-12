@@ -1,5 +1,9 @@
 option (ENABLE_CURL "Enable curl" ${ENABLE_LIBRARIES})
 
+if (EMSCRIPTEN)
+    set (ENABLE_CURL OFF)
+endif()
+
 if (NOT ENABLE_CURL)
     message(STATUS "Not using curl")
     return()

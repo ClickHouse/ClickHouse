@@ -1,20 +1,20 @@
 option(ENABLE_PROTOBUF "Enable protobuf" ${ENABLE_LIBRARIES})
 
 if(NOT ENABLE_PROTOBUF)
-  message(STATUS "Not using protobuf")
-  return()
+    message(STATUS "Not using protobuf")
+    return()
 endif()
 
 set(Protobuf_INCLUDE_DIR "${ClickHouse_SOURCE_DIR}/contrib/protobuf/src")
 if(OS_FREEBSD AND SANITIZE STREQUAL "address")
-  # ../contrib/protobuf/src/google/protobuf/arena_impl.h:45:10: fatal error: 'sanitizer/asan_interface.h' file not found
-  # #include <sanitizer/asan_interface.h>
-  if(LLVM_INCLUDE_DIRS)
-    set(Protobuf_INCLUDE_DIR "${Protobuf_INCLUDE_DIR}" ${LLVM_INCLUDE_DIRS})
-  else()
-    message(${RECONFIGURE_MESSAGE_LEVEL} "Can't use protobuf on FreeBSD with address sanitizer without LLVM")
-    return()
-  endif()
+    # ../contrib/protobuf/src/google/protobuf/arena_impl.h:45:10: fatal error: 'sanitizer/asan_interface.h' file not found
+    # #include <sanitizer/asan_interface.h>
+    if(LLVM_INCLUDE_DIRS)
+        set(Protobuf_INCLUDE_DIR "${Protobuf_INCLUDE_DIR}" ${LLVM_INCLUDE_DIRS})
+    else()
+        message(${RECONFIGURE_MESSAGE_LEVEL} "Can't use protobuf on FreeBSD with address sanitizer without LLVM")
+        return()
+    endif()
 endif()
 
 set(protobuf_source_dir "${ClickHouse_SOURCE_DIR}/contrib/protobuf")
@@ -141,89 +141,89 @@ add_library(protobuf::libprotobuf ALIAS _libprotobuf)
 
 
 set(libprotoc_files
-  ${protobuf_source_dir}/src/google/protobuf/compiler/code_generator.cc
-  ${protobuf_source_dir}/src/google/protobuf/compiler/command_line_interface.cc
-  ${protobuf_source_dir}/src/google/protobuf/compiler/cpp/cpp_enum.cc
-  ${protobuf_source_dir}/src/google/protobuf/compiler/cpp/cpp_enum_field.cc
-  ${protobuf_source_dir}/src/google/protobuf/compiler/cpp/cpp_extension.cc
-  ${protobuf_source_dir}/src/google/protobuf/compiler/cpp/cpp_field.cc
-  ${protobuf_source_dir}/src/google/protobuf/compiler/cpp/cpp_file.cc
-  ${protobuf_source_dir}/src/google/protobuf/compiler/cpp/cpp_generator.cc
-  ${protobuf_source_dir}/src/google/protobuf/compiler/cpp/cpp_helpers.cc
-  ${protobuf_source_dir}/src/google/protobuf/compiler/cpp/cpp_map_field.cc
-  ${protobuf_source_dir}/src/google/protobuf/compiler/cpp/cpp_message.cc
-  ${protobuf_source_dir}/src/google/protobuf/compiler/cpp/cpp_message_field.cc
-  ${protobuf_source_dir}/src/google/protobuf/compiler/cpp/cpp_padding_optimizer.cc
-  ${protobuf_source_dir}/src/google/protobuf/compiler/cpp/cpp_parse_function_generator.cc
-  ${protobuf_source_dir}/src/google/protobuf/compiler/cpp/cpp_primitive_field.cc
-  ${protobuf_source_dir}/src/google/protobuf/compiler/cpp/cpp_service.cc
-  ${protobuf_source_dir}/src/google/protobuf/compiler/cpp/cpp_string_field.cc
-  ${protobuf_source_dir}/src/google/protobuf/compiler/csharp/csharp_doc_comment.cc
-  ${protobuf_source_dir}/src/google/protobuf/compiler/csharp/csharp_enum.cc
-  ${protobuf_source_dir}/src/google/protobuf/compiler/csharp/csharp_enum_field.cc
-  ${protobuf_source_dir}/src/google/protobuf/compiler/csharp/csharp_field_base.cc
-  ${protobuf_source_dir}/src/google/protobuf/compiler/csharp/csharp_generator.cc
-  ${protobuf_source_dir}/src/google/protobuf/compiler/csharp/csharp_helpers.cc
-  ${protobuf_source_dir}/src/google/protobuf/compiler/csharp/csharp_map_field.cc
-  ${protobuf_source_dir}/src/google/protobuf/compiler/csharp/csharp_message.cc
-  ${protobuf_source_dir}/src/google/protobuf/compiler/csharp/csharp_message_field.cc
-  ${protobuf_source_dir}/src/google/protobuf/compiler/csharp/csharp_primitive_field.cc
-  ${protobuf_source_dir}/src/google/protobuf/compiler/csharp/csharp_reflection_class.cc
-  ${protobuf_source_dir}/src/google/protobuf/compiler/csharp/csharp_repeated_enum_field.cc
-  ${protobuf_source_dir}/src/google/protobuf/compiler/csharp/csharp_repeated_message_field.cc
-  ${protobuf_source_dir}/src/google/protobuf/compiler/csharp/csharp_repeated_primitive_field.cc
-  ${protobuf_source_dir}/src/google/protobuf/compiler/csharp/csharp_source_generator_base.cc
-  ${protobuf_source_dir}/src/google/protobuf/compiler/csharp/csharp_wrapper_field.cc
-  ${protobuf_source_dir}/src/google/protobuf/compiler/java/java_context.cc
-  ${protobuf_source_dir}/src/google/protobuf/compiler/java/java_doc_comment.cc
-  ${protobuf_source_dir}/src/google/protobuf/compiler/java/java_enum.cc
-  ${protobuf_source_dir}/src/google/protobuf/compiler/java/java_enum_field.cc
-  ${protobuf_source_dir}/src/google/protobuf/compiler/java/java_enum_field_lite.cc
-  ${protobuf_source_dir}/src/google/protobuf/compiler/java/java_enum_lite.cc
-  ${protobuf_source_dir}/src/google/protobuf/compiler/java/java_extension.cc
-  ${protobuf_source_dir}/src/google/protobuf/compiler/java/java_extension_lite.cc
-  ${protobuf_source_dir}/src/google/protobuf/compiler/java/java_field.cc
-  ${protobuf_source_dir}/src/google/protobuf/compiler/java/java_file.cc
-  ${protobuf_source_dir}/src/google/protobuf/compiler/java/java_generator.cc
-  ${protobuf_source_dir}/src/google/protobuf/compiler/java/java_generator_factory.cc
-  ${protobuf_source_dir}/src/google/protobuf/compiler/java/java_helpers.cc
-  ${protobuf_source_dir}/src/google/protobuf/compiler/java/java_kotlin_generator.cc
-  ${protobuf_source_dir}/src/google/protobuf/compiler/java/java_map_field.cc
-  ${protobuf_source_dir}/src/google/protobuf/compiler/java/java_map_field_lite.cc
-  ${protobuf_source_dir}/src/google/protobuf/compiler/java/java_message.cc
-  ${protobuf_source_dir}/src/google/protobuf/compiler/java/java_message_builder.cc
-  ${protobuf_source_dir}/src/google/protobuf/compiler/java/java_message_builder_lite.cc
-  ${protobuf_source_dir}/src/google/protobuf/compiler/java/java_message_field.cc
-  ${protobuf_source_dir}/src/google/protobuf/compiler/java/java_message_field_lite.cc
-  ${protobuf_source_dir}/src/google/protobuf/compiler/java/java_message_lite.cc
-  ${protobuf_source_dir}/src/google/protobuf/compiler/java/java_name_resolver.cc
-  ${protobuf_source_dir}/src/google/protobuf/compiler/java/java_primitive_field.cc
-  ${protobuf_source_dir}/src/google/protobuf/compiler/java/java_primitive_field_lite.cc
-  ${protobuf_source_dir}/src/google/protobuf/compiler/java/java_service.cc
-  ${protobuf_source_dir}/src/google/protobuf/compiler/java/java_shared_code_generator.cc
-  ${protobuf_source_dir}/src/google/protobuf/compiler/java/java_string_field.cc
-  ${protobuf_source_dir}/src/google/protobuf/compiler/java/java_string_field_lite.cc
-  ${protobuf_source_dir}/src/google/protobuf/compiler/js/js_generator.cc
-  ${protobuf_source_dir}/src/google/protobuf/compiler/js/well_known_types_embed.cc
-  ${protobuf_source_dir}/src/google/protobuf/compiler/objectivec/objectivec_enum.cc
-  ${protobuf_source_dir}/src/google/protobuf/compiler/objectivec/objectivec_enum_field.cc
-  ${protobuf_source_dir}/src/google/protobuf/compiler/objectivec/objectivec_extension.cc
-  ${protobuf_source_dir}/src/google/protobuf/compiler/objectivec/objectivec_field.cc
-  ${protobuf_source_dir}/src/google/protobuf/compiler/objectivec/objectivec_file.cc
-  ${protobuf_source_dir}/src/google/protobuf/compiler/objectivec/objectivec_generator.cc
-  ${protobuf_source_dir}/src/google/protobuf/compiler/objectivec/objectivec_helpers.cc
-  ${protobuf_source_dir}/src/google/protobuf/compiler/objectivec/objectivec_map_field.cc
-  ${protobuf_source_dir}/src/google/protobuf/compiler/objectivec/objectivec_message.cc
-  ${protobuf_source_dir}/src/google/protobuf/compiler/objectivec/objectivec_message_field.cc
-  ${protobuf_source_dir}/src/google/protobuf/compiler/objectivec/objectivec_oneof.cc
-  ${protobuf_source_dir}/src/google/protobuf/compiler/objectivec/objectivec_primitive_field.cc
-  ${protobuf_source_dir}/src/google/protobuf/compiler/php/php_generator.cc
-  ${protobuf_source_dir}/src/google/protobuf/compiler/plugin.cc
-  ${protobuf_source_dir}/src/google/protobuf/compiler/plugin.pb.cc
-  ${protobuf_source_dir}/src/google/protobuf/compiler/python/python_generator.cc
-  ${protobuf_source_dir}/src/google/protobuf/compiler/ruby/ruby_generator.cc
-  ${protobuf_source_dir}/src/google/protobuf/compiler/subprocess.cc
-  ${protobuf_source_dir}/src/google/protobuf/compiler/zip_writer.cc
+    ${protobuf_source_dir}/src/google/protobuf/compiler/code_generator.cc
+    ${protobuf_source_dir}/src/google/protobuf/compiler/command_line_interface.cc
+    ${protobuf_source_dir}/src/google/protobuf/compiler/cpp/cpp_enum.cc
+    ${protobuf_source_dir}/src/google/protobuf/compiler/cpp/cpp_enum_field.cc
+    ${protobuf_source_dir}/src/google/protobuf/compiler/cpp/cpp_extension.cc
+    ${protobuf_source_dir}/src/google/protobuf/compiler/cpp/cpp_field.cc
+    ${protobuf_source_dir}/src/google/protobuf/compiler/cpp/cpp_file.cc
+    ${protobuf_source_dir}/src/google/protobuf/compiler/cpp/cpp_generator.cc
+    ${protobuf_source_dir}/src/google/protobuf/compiler/cpp/cpp_helpers.cc
+    ${protobuf_source_dir}/src/google/protobuf/compiler/cpp/cpp_map_field.cc
+    ${protobuf_source_dir}/src/google/protobuf/compiler/cpp/cpp_message.cc
+    ${protobuf_source_dir}/src/google/protobuf/compiler/cpp/cpp_message_field.cc
+    ${protobuf_source_dir}/src/google/protobuf/compiler/cpp/cpp_padding_optimizer.cc
+    ${protobuf_source_dir}/src/google/protobuf/compiler/cpp/cpp_parse_function_generator.cc
+    ${protobuf_source_dir}/src/google/protobuf/compiler/cpp/cpp_primitive_field.cc
+    ${protobuf_source_dir}/src/google/protobuf/compiler/cpp/cpp_service.cc
+    ${protobuf_source_dir}/src/google/protobuf/compiler/cpp/cpp_string_field.cc
+    ${protobuf_source_dir}/src/google/protobuf/compiler/csharp/csharp_doc_comment.cc
+    ${protobuf_source_dir}/src/google/protobuf/compiler/csharp/csharp_enum.cc
+    ${protobuf_source_dir}/src/google/protobuf/compiler/csharp/csharp_enum_field.cc
+    ${protobuf_source_dir}/src/google/protobuf/compiler/csharp/csharp_field_base.cc
+    ${protobuf_source_dir}/src/google/protobuf/compiler/csharp/csharp_generator.cc
+    ${protobuf_source_dir}/src/google/protobuf/compiler/csharp/csharp_helpers.cc
+    ${protobuf_source_dir}/src/google/protobuf/compiler/csharp/csharp_map_field.cc
+    ${protobuf_source_dir}/src/google/protobuf/compiler/csharp/csharp_message.cc
+    ${protobuf_source_dir}/src/google/protobuf/compiler/csharp/csharp_message_field.cc
+    ${protobuf_source_dir}/src/google/protobuf/compiler/csharp/csharp_primitive_field.cc
+    ${protobuf_source_dir}/src/google/protobuf/compiler/csharp/csharp_reflection_class.cc
+    ${protobuf_source_dir}/src/google/protobuf/compiler/csharp/csharp_repeated_enum_field.cc
+    ${protobuf_source_dir}/src/google/protobuf/compiler/csharp/csharp_repeated_message_field.cc
+    ${protobuf_source_dir}/src/google/protobuf/compiler/csharp/csharp_repeated_primitive_field.cc
+    ${protobuf_source_dir}/src/google/protobuf/compiler/csharp/csharp_source_generator_base.cc
+    ${protobuf_source_dir}/src/google/protobuf/compiler/csharp/csharp_wrapper_field.cc
+    ${protobuf_source_dir}/src/google/protobuf/compiler/java/java_context.cc
+    ${protobuf_source_dir}/src/google/protobuf/compiler/java/java_doc_comment.cc
+    ${protobuf_source_dir}/src/google/protobuf/compiler/java/java_enum.cc
+    ${protobuf_source_dir}/src/google/protobuf/compiler/java/java_enum_field.cc
+    ${protobuf_source_dir}/src/google/protobuf/compiler/java/java_enum_field_lite.cc
+    ${protobuf_source_dir}/src/google/protobuf/compiler/java/java_enum_lite.cc
+    ${protobuf_source_dir}/src/google/protobuf/compiler/java/java_extension.cc
+    ${protobuf_source_dir}/src/google/protobuf/compiler/java/java_extension_lite.cc
+    ${protobuf_source_dir}/src/google/protobuf/compiler/java/java_field.cc
+    ${protobuf_source_dir}/src/google/protobuf/compiler/java/java_file.cc
+    ${protobuf_source_dir}/src/google/protobuf/compiler/java/java_generator.cc
+    ${protobuf_source_dir}/src/google/protobuf/compiler/java/java_generator_factory.cc
+    ${protobuf_source_dir}/src/google/protobuf/compiler/java/java_helpers.cc
+    ${protobuf_source_dir}/src/google/protobuf/compiler/java/java_kotlin_generator.cc
+    ${protobuf_source_dir}/src/google/protobuf/compiler/java/java_map_field.cc
+    ${protobuf_source_dir}/src/google/protobuf/compiler/java/java_map_field_lite.cc
+    ${protobuf_source_dir}/src/google/protobuf/compiler/java/java_message.cc
+    ${protobuf_source_dir}/src/google/protobuf/compiler/java/java_message_builder.cc
+    ${protobuf_source_dir}/src/google/protobuf/compiler/java/java_message_builder_lite.cc
+    ${protobuf_source_dir}/src/google/protobuf/compiler/java/java_message_field.cc
+    ${protobuf_source_dir}/src/google/protobuf/compiler/java/java_message_field_lite.cc
+    ${protobuf_source_dir}/src/google/protobuf/compiler/java/java_message_lite.cc
+    ${protobuf_source_dir}/src/google/protobuf/compiler/java/java_name_resolver.cc
+    ${protobuf_source_dir}/src/google/protobuf/compiler/java/java_primitive_field.cc
+    ${protobuf_source_dir}/src/google/protobuf/compiler/java/java_primitive_field_lite.cc
+    ${protobuf_source_dir}/src/google/protobuf/compiler/java/java_service.cc
+    ${protobuf_source_dir}/src/google/protobuf/compiler/java/java_shared_code_generator.cc
+    ${protobuf_source_dir}/src/google/protobuf/compiler/java/java_string_field.cc
+    ${protobuf_source_dir}/src/google/protobuf/compiler/java/java_string_field_lite.cc
+    ${protobuf_source_dir}/src/google/protobuf/compiler/js/js_generator.cc
+    ${protobuf_source_dir}/src/google/protobuf/compiler/js/well_known_types_embed.cc
+    ${protobuf_source_dir}/src/google/protobuf/compiler/objectivec/objectivec_enum.cc
+    ${protobuf_source_dir}/src/google/protobuf/compiler/objectivec/objectivec_enum_field.cc
+    ${protobuf_source_dir}/src/google/protobuf/compiler/objectivec/objectivec_extension.cc
+    ${protobuf_source_dir}/src/google/protobuf/compiler/objectivec/objectivec_field.cc
+    ${protobuf_source_dir}/src/google/protobuf/compiler/objectivec/objectivec_file.cc
+    ${protobuf_source_dir}/src/google/protobuf/compiler/objectivec/objectivec_generator.cc
+    ${protobuf_source_dir}/src/google/protobuf/compiler/objectivec/objectivec_helpers.cc
+    ${protobuf_source_dir}/src/google/protobuf/compiler/objectivec/objectivec_map_field.cc
+    ${protobuf_source_dir}/src/google/protobuf/compiler/objectivec/objectivec_message.cc
+    ${protobuf_source_dir}/src/google/protobuf/compiler/objectivec/objectivec_message_field.cc
+    ${protobuf_source_dir}/src/google/protobuf/compiler/objectivec/objectivec_oneof.cc
+    ${protobuf_source_dir}/src/google/protobuf/compiler/objectivec/objectivec_primitive_field.cc
+    ${protobuf_source_dir}/src/google/protobuf/compiler/php/php_generator.cc
+    ${protobuf_source_dir}/src/google/protobuf/compiler/plugin.cc
+    ${protobuf_source_dir}/src/google/protobuf/compiler/plugin.pb.cc
+    ${protobuf_source_dir}/src/google/protobuf/compiler/python/python_generator.cc
+    ${protobuf_source_dir}/src/google/protobuf/compiler/ruby/ruby_generator.cc
+    ${protobuf_source_dir}/src/google/protobuf/compiler/subprocess.cc
+    ${protobuf_source_dir}/src/google/protobuf/compiler/zip_writer.cc
 )
 
 add_library(_libprotoc ${libprotoc_files})
@@ -254,62 +254,81 @@ else ()
 
     if (NOT EXISTS "${PROTOC_BUILD_DIR}/protoc")
 
-        # This is quite ugly but I cannot make dependencies work propery.
+        # This is quite ugly but I cannot make dependencies work properly.
 
         execute_process(
-            COMMAND mkdir -p ${PROTOC_BUILD_DIR}
-            COMMAND_ECHO STDOUT)
+                COMMAND mkdir -p ${PROTOC_BUILD_DIR}
+                COMMAND_ECHO STDOUT)
+
+        # for Emscripten build we have to mount local filesystem
+        # in the the emsc's virtual fs
+        if (EMSCRIPTEN)
+            execute_process(
+                    COMMAND ${CMAKE_COMMAND}
+                    "-G${CMAKE_GENERATOR}"
+                    "-DCMAKE_MAKE_PROGRAM=${CMAKE_MAKE_PROGRAM}"
+                    "-DCMAKE_C_COMPILER=${CMAKE_C_COMPILER}"
+                    "-DCMAKE_CXX_COMPILER=${CMAKE_CXX_COMPILER}"
+                    "-DCMAKE_CXX_STANDARD_LIBRARIES=-lnodefs.js -sNODERAWFS"
+                    "-Dprotobuf_BUILD_TESTS=0"
+                    "-Dprotobuf_BUILD_CONFORMANCE=0"
+                    "-Dprotobuf_BUILD_EXAMPLES=0"
+                    "-Dprotobuf_BUILD_PROTOC_BINARIES=1"
+                    "${protobuf_source_dir}/cmake"
+                    WORKING_DIRECTORY "${PROTOC_BUILD_DIR}"
+                    COMMAND_ECHO STDOUT)
+        else()
+            execute_process(
+                    COMMAND ${CMAKE_COMMAND}
+                    "-G${CMAKE_GENERATOR}"
+                    "-DCMAKE_MAKE_PROGRAM=${CMAKE_MAKE_PROGRAM}"
+                    "-DCMAKE_C_COMPILER=${CMAKE_C_COMPILER}"
+                    "-DCMAKE_CXX_COMPILER=${CMAKE_CXX_COMPILER}"
+                    "-Dprotobuf_BUILD_TESTS=0"
+                    "-Dprotobuf_BUILD_CONFORMANCE=0"
+                    "-Dprotobuf_BUILD_EXAMPLES=0"
+                    "-Dprotobuf_BUILD_PROTOC_BINARIES=1"
+                    "${protobuf_source_dir}/cmake"
+                    WORKING_DIRECTORY "${PROTOC_BUILD_DIR}"
+                    COMMAND_ECHO STDOUT)
+        endif()
 
         execute_process(
-            COMMAND ${CMAKE_COMMAND}
-                "-G${CMAKE_GENERATOR}"
-                "-DCMAKE_MAKE_PROGRAM=${CMAKE_MAKE_PROGRAM}"
-                "-DCMAKE_C_COMPILER=${CMAKE_C_COMPILER}"
-                "-DCMAKE_CXX_COMPILER=${CMAKE_CXX_COMPILER}"
-                "-Dprotobuf_BUILD_TESTS=0"
-                "-Dprotobuf_BUILD_CONFORMANCE=0"
-                "-Dprotobuf_BUILD_EXAMPLES=0"
-                "-Dprotobuf_BUILD_PROTOC_BINARIES=1"
-                "${protobuf_source_dir}/cmake"
-            WORKING_DIRECTORY "${PROTOC_BUILD_DIR}"
-            COMMAND_ECHO STDOUT)
-
-        execute_process(
-            COMMAND ${CMAKE_COMMAND} --build "${PROTOC_BUILD_DIR}"
-            COMMAND_ECHO STDOUT)
+                COMMAND ${CMAKE_COMMAND} --build "${PROTOC_BUILD_DIR}"
+                COMMAND_ECHO STDOUT)
     endif ()
 
-#    add_custom_command (
-#        OUTPUT ${PROTOC_BUILD_DIR}
-#        COMMAND mkdir -p ${PROTOC_BUILD_DIR})
-#
-#    add_custom_command (
-#        OUTPUT "${PROTOC_BUILD_DIR}/CMakeCache.txt"
-#
-#        COMMAND ${CMAKE_COMMAND}
-#             -G"${CMAKE_GENERATOR}"
-#             -DCMAKE_MAKE_PROGRAM="${CMAKE_MAKE_PROGRAM}"
-#             -DCMAKE_C_COMPILER="${CMAKE_C_COMPILER}"
-#             -DCMAKE_CXX_COMPILER="${CMAKE_CXX_COMPILER}"
-#             -Dprotobuf_BUILD_TESTS=0
-#             -Dprotobuf_BUILD_CONFORMANCE=0
-#             -Dprotobuf_BUILD_EXAMPLES=0
-#             -Dprotobuf_BUILD_PROTOC_BINARIES=1
-#             "${protobuf_source_dir}/cmake"
-#
-#         DEPENDS "${PROTOC_BUILD_DIR}"
-#         WORKING_DIRECTORY "${PROTOC_BUILD_DIR}"
-#         COMMENT "Configuring 'protoc' for host architecture."
-#         USES_TERMINAL)
-#
-#     add_custom_command (
-#         OUTPUT "${PROTOC_BUILD_DIR}/protoc"
-#         COMMAND ${CMAKE_COMMAND} --build "${PROTOC_BUILD_DIR}"
-#         DEPENDS "${PROTOC_BUILD_DIR}/CMakeCache.txt"
-#         COMMENT "Building 'protoc' for host architecture."
-#         USES_TERMINAL)
-#
-#     add_custom_target (protoc-host DEPENDS "${PROTOC_BUILD_DIR}/protoc")
+    #    add_custom_command (
+    #        OUTPUT ${PROTOC_BUILD_DIR}
+    #        COMMAND mkdir -p ${PROTOC_BUILD_DIR})
+    #
+    #    add_custom_command (
+    #        OUTPUT "${PROTOC_BUILD_DIR}/CMakeCache.txt"
+    #
+    #        COMMAND ${CMAKE_COMMAND}
+    #             -G"${CMAKE_GENERATOR}"
+    #             -DCMAKE_MAKE_PROGRAM="${CMAKE_MAKE_PROGRAM}"
+    #             -DCMAKE_C_COMPILER="${CMAKE_C_COMPILER}"
+    #             -DCMAKE_CXX_COMPILER="${CMAKE_CXX_COMPILER}"
+    #             -Dprotobuf_BUILD_TESTS=0
+    #             -Dprotobuf_BUILD_CONFORMANCE=0
+    #             -Dprotobuf_BUILD_EXAMPLES=0
+    #             -Dprotobuf_BUILD_PROTOC_BINARIES=1
+    #             "${protobuf_source_dir}/cmake"
+    #
+    #         DEPENDS "${PROTOC_BUILD_DIR}"
+    #         WORKING_DIRECTORY "${PROTOC_BUILD_DIR}"
+    #         COMMENT "Configuring 'protoc' for host architecture."
+    #         USES_TERMINAL)
+    #
+    #     add_custom_command (
+    #         OUTPUT "${PROTOC_BUILD_DIR}/protoc"
+    #         COMMAND ${CMAKE_COMMAND} --build "${PROTOC_BUILD_DIR}"
+    #         DEPENDS "${PROTOC_BUILD_DIR}/CMakeCache.txt"
+    #         COMMENT "Building 'protoc' for host architecture."
+    #         USES_TERMINAL)
+    #
+    #     add_custom_target (protoc-host DEPENDS "${PROTOC_BUILD_DIR}/protoc")
 
     add_executable(protoc IMPORTED GLOBAL)
     set_target_properties (protoc PROPERTIES IMPORTED_LOCATION "${PROTOC_BUILD_DIR}/protoc")

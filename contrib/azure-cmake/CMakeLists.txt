@@ -1,5 +1,9 @@
 option (ENABLE_AZURE_BLOB_STORAGE "Enable Azure blob storage" ${ENABLE_LIBRARIES})
 
+if (EMSCRIPTEN)
+    set (ENABLE_AZURE_BLOB_STORAGE OFF)
+endif()
+
 if (NOT ENABLE_AZURE_BLOB_STORAGE)
     message(STATUS "Not using Azure blob storage")
     return()

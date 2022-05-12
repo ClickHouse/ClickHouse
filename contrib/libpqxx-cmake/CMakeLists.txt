@@ -1,4 +1,8 @@
-option(ENABLE_LIBPQXX "Enalbe libpqxx" ${ENABLE_LIBRARIES})
+if (EMSCRIPTEN)
+    option(ENABLE_LIBPQXX "Enable libpqxx" OFF)
+else()
+    option(ENABLE_LIBPQXX "Enable libpqxx" ${ENABLE_LIBRARIES})
+endif()
 
 if (NOT ENABLE_LIBPQXX)
     message(STATUS "Not using libpqxx")

@@ -1,5 +1,7 @@
 # disable grpc due to conflicts of abseil (required by grpc) dynamic annotations with libtsan.a
-if (SANITIZE STREQUAL "thread" AND COMPILER_GCC)
+# disable grpc for Emscripten due to sockets conflicts
+# TODO: some useful materials on compiling grpc here: https://github.com/grpc/grpc/issues/24166
+if ((SANITIZE STREQUAL "thread" AND COMPILER_GCC) OR EMSCRIPTEN)
   set(ENABLE_GRPC_DEFAULT OFF)
 else()
   set(ENABLE_GRPC_DEFAULT ${ENABLE_LIBRARIES})

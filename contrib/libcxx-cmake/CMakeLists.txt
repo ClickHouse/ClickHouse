@@ -1,5 +1,12 @@
 include(CheckCXXCompilerFlag)
 
+if (EMSCRIPTEN)
+    add_library(cxx STATIC IMPORTED GLOBAL)
+    set_target_properties(cxx PROPERTIES
+            IMPORTED_LOCATION ${CMAKE_SYSROOT}/lib/wasm64-emscripten/libc++-noexcept.a)
+    return()
+endif ()
+
 set(LIBCXX_SOURCE_DIR "${ClickHouse_SOURCE_DIR}/contrib/libcxx")
 
 set(SRCS
@@ -51,6 +58,7 @@ set(SRCS
 "${LIBCXX_SOURCE_DIR}/src/vector.cpp"
 )
 
+
 add_library(cxx ${SRCS})
 set_target_properties(cxx PROPERTIES FOLDER "contrib/libcxx-cmake")
 
@@ -77,6 +85,7 @@ target_compile_options(cxx PUBLIC $<$<COMPILE_LANGUAGE:CXX>:-nostdinc++>)
 
 # Third party library may have substandard code.
 target_compile_options(cxx PRIVATE -w)
+target_compile_options(cxx PRIVATE -fvisibility=hidden)
 
 target_link_libraries(cxx PUBLIC cxxabi)
 

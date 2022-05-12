@@ -1,7 +1,7 @@
 [submodule "contrib/poco"]
 	path = contrib/poco
-	url = https://github.com/ClickHouse/poco.git
-	branch = clickhouse
+	url = https://github.com/Alucardik/poco.git
+	branch = clickhouse_local_emcc_support
 [submodule "contrib/zstd"]
 	path = contrib/zstd
 	url = https://github.com/facebook/zstd.git
@@ -26,7 +26,8 @@
 	url = https://github.com/capnproto/capnproto.git
 [submodule "contrib/double-conversion"]
 	path = contrib/double-conversion
-	url = https://github.com/google/double-conversion.git
+	url = https://github.com/Alucardik/double-conversion.git
+	branch = emsc_refactor
 [submodule "contrib/re2"]
 	path = contrib/re2
 	url = https://github.com/google/re2.git
@@ -70,7 +71,8 @@
 	url = https://github.com/ClickHouse/libgsasl.git
 [submodule "contrib/libcxx"]
 	path = contrib/libcxx
-	url = https://github.com/ClickHouse/libcxx.git
+	url = https://github.com/Alucardik/libcxx.git
+	branch = bump_emscripten_support
 [submodule "contrib/libcxxabi"]
 	path = contrib/libcxxabi
 	url = https://github.com/ClickHouse/libcxxabi.git
@@ -137,7 +139,8 @@
 	url = https://github.com/ClickHouse/flatbuffers.git
 [submodule "contrib/replxx"]
 	path = contrib/replxx
-	url = https://github.com/ClickHouse/replxx.git
+	url = https://github.com/Alucardik/replxx.git
+	branch = adapt_replxx_to_emscripten
 [submodule "contrib/avro"]
 	path = contrib/avro
 	url = https://github.com/ClickHouse/avro.git
@@ -190,8 +193,8 @@
 	url = https://github.com/xz-mirror/xz
 [submodule "contrib/abseil-cpp"]
 	path = contrib/abseil-cpp
-	url = https://github.com/abseil/abseil-cpp.git
-	branch = lts_2021_11_02
+	url = https://github.com/Alucardik/abseil-cpp.git
+	branch = bump_emscripten_support
 [submodule "contrib/dragonbox"]
 	path = contrib/dragonbox
 	url = https://github.com/ClickHouse/dragonbox.git

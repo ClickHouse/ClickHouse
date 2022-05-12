@@ -1,4 +1,12 @@
-set(LIBCXXABI_SOURCE_DIR "${ClickHouse_SOURCE_DIR}/contrib/libcxxabi")
+if (EMSCRIPTEN)
+    add_library(cxxabi STATIC IMPORTED GLOBAL)
+    set_target_properties(cxxabi PROPERTIES
+            IMPORTED_LOCATION ${CMAKE_SYSROOT}/lib/wasm64-emscripten/libc++abi-noexcept.a)
+    return()
+#    set(LIBCXXABI_SOURCE_DIR "${EMSCRIPTEN_ROOT_PATH}/system/lib/libcxxabi")
+else ()
+    set(LIBCXXABI_SOURCE_DIR "${ClickHouse_SOURCE_DIR}/contrib/libcxxabi")
+endif ()
 
 set(SRCS
 "${LIBCXXABI_SOURCE_DIR}/src/abort_message.cpp"
@@ -20,6 +28,10 @@ set(SRCS
 "${LIBCXXABI_SOURCE_DIR}/src/stdlib_stdexcept.cpp"
 "${LIBCXXABI_SOURCE_DIR}/src/stdlib_typeinfo.cpp"
 )
+
+if (EMSCRIPTEN)
+    list(APPEND SRCS "${LIBCXXABI_SOURCE_DIR}/src/cxa_exception_emscripten.cpp")
+endif ()
 
 add_library(cxxabi ${SRCS})
 set_target_properties(cxxabi PROPERTIES FOLDER "contrib/libcxxabi-cmake")

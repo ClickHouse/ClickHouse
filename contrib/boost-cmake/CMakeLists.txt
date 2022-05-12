@@ -124,7 +124,6 @@ elseif (ARCH_PPC64LE)
     set (SRCS_CONTEXT ${SRCS_CONTEXT}
         "${LIBRARY_DIR}/libs/context/src/asm/jump_ppc64_sysv_elf_gas.S"
         "${LIBRARY_DIR}/libs/context/src/asm/make_ppc64_sysv_elf_gas.S"
-        "${LIBRARY_DIR}/libs/context/src/asm/ontop_ppc64_sysv_elf_gas.S"
     )
 elseif (ARCH_RISCV64)
     set (SRCS_CONTEXT ${SRCS_CONTEXT}
@@ -146,9 +145,13 @@ else()
     )
 endif()
 
-add_library (_boost_context ${SRCS_CONTEXT})
-add_library (boost::context ALIAS _boost_context)
-target_include_directories (_boost_context PRIVATE ${LIBRARY_DIR})
+# Only clickhouse-local should support emcc and it only needs program-options
+# while emcc doesn't compile standard assembly
+if(NOT EMSCRIPTEN)
+    add_library (_boost_context ${SRCS_CONTEXT})
+    add_library (boost::context ALIAS _boost_context)
+    target_include_directories (_boost_context PRIVATE ${LIBRARY_DIR})
+endif()
 
 # coroutine
 

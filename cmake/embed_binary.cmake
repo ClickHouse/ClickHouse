@@ -36,10 +36,19 @@ macro(clickhouse_embed_binaries)
     add_library("${EMBED_TARGET}" STATIC)
     set_target_properties("${EMBED_TARGET}" PROPERTIES LINKER_LANGUAGE C)
 
-    set(EMBED_TEMPLATE_FILE "${PROJECT_SOURCE_DIR}/programs/embed_binary.S.in")
+    if (EMSCRIPTEN)
+        # using llvm assembly files for emcc
+        set(EMBED_TEMPLATE_FILE "${PROJECT_SOURCE_DIR}/programs/embed_llvm_binary.ll.in")
+    else()
+        set(EMBED_TEMPLATE_FILE "${PROJECT_SOURCE_DIR}/programs/embed_binary.S.in")
+    endif()
 
     foreach(RESOURCE_FILE ${EMBED_RESOURCES})
-        set(ASSEMBLY_FILE_NAME "${RESOURCE_FILE}.S")
+        if (EMSCRIPTEN)
+            set(ASSEMBLY_FILE_NAME "${RESOURCE_FILE}.ll")
+        else()
+            set(ASSEMBLY_FILE_NAME "${RESOURCE_FILE}.S")
+        endif()
         set(BINARY_FILE_NAME "${RESOURCE_FILE}")
 
         # Normalize the name of the resource.

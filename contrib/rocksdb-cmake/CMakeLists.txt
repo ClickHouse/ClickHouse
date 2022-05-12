@@ -1,5 +1,9 @@
 option (ENABLE_ROCKSDB "Enable rocksdb library" ${ENABLE_LIBRARIES})
 
+if (EMSCRIPTEN)
+  set(ENABLE_ROCKSDB OFF)
+endif()
+
 if (NOT ENABLE_ROCKSDB)
   message (STATUS "Not using rocksdb")
   return()

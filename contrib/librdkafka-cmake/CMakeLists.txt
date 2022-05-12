@@ -1,4 +1,8 @@
-option (ENABLE_KAFKA "Enable kafka" ${ENABLE_LIBRARIES})
+if (EMSCRIPTEN)
+    option (ENABLE_KAFKA "Enable kafka" OFF)
+else()
+    option (ENABLE_KAFKA "Enable kafka" ${ENABLE_LIBRARIES})
+endif()
 
 if (NOT ENABLE_KAFKA)
     message(STATUS "Not using librdkafka")

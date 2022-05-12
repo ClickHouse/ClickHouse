@@ -1,5 +1,9 @@
 option(ENABLE_CASSANDRA "Enable Cassandra" ${ENABLE_LIBRARIES})
 
+if (EMSCRIPTEN)
+    set(ENABLE_CASSANDRA OFF)
+endif()
+
 if (NOT ENABLE_CASSANDRA)
     message(STATUS "Not using cassandra")
     return()

@@ -47,7 +47,7 @@ elseif(ARCH_PPC64LE)
     set(POWER8_SRCS ${ARCHDIR}/adler32_power8.c ${ARCHDIR}/slide_hash_power8.c)
     list(APPEND ZLIB_ARCH_SRCS ${POWER8_SRCS})
 
-elseif(ARCH_AMD64)
+elseif(ARCH_AMD64 AND NOT EMSCRIPTEN)
     set(ARCHDIR "${SOURCE_DIR}/arch/x86")
 
     add_definitions(-DX86_FEATURES)

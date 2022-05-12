@@ -52,7 +52,12 @@ endif ()
 # ClickHouse developers may use platform-dependent code under some macro (e.g. `#ifdef ENABLE_MULTITARGET`).
 # If turned ON, this option defines such macro.
 # See `src/Common/TargetSpecific.h`
-option(ENABLE_MULTITARGET_CODE "Enable platform-dependent code" ON)
+if(EMSCRIPTEN)
+    # The less platform-dependent code, the better for the browser usage
+    option(ENABLE_MULTITARGET_CODE "Enable platform-dependent code" OFF)
+else()
+    option(ENABLE_MULTITARGET_CODE "Enable platform-dependent code" ON)
+endif()
 
 if (ENABLE_MULTITARGET_CODE)
     add_definitions(-DENABLE_MULTITARGET_CODE=1)
@@ -260,9 +265,13 @@ add_object_library(clickhouse_storages_distributed Storages/Distributed)
 add_object_library(clickhouse_storages_mergetree Storages/MergeTree)
 add_object_library(clickhouse_storages_liveview Storages/LiveView)
 add_object_library(clickhouse_storages_windowview Storages/WindowView)
-add_object_library(clickhouse_client Client)
+if (NOT ENABLE_ONLY_EMSCRIPTEN_COMPATIBLE)
+    add_object_library(clickhouse_client Client)
+endif()
 add_object_library(clickhouse_bridge BridgeHelper)
-add_object_library(clickhouse_server Server)
+if (NOT ENABLE_ONLY_EMSCRIPTEN_COMPATIBLE)
+    add_object_library(clickhouse_server Server)
+endif()
 add_object_library(clickhouse_server_http Server/HTTP)
 add_object_library(clickhouse_formats Formats)
 add_object_library(clickhouse_processors Processors)
@@ -304,6 +313,7 @@ else()
         set (CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -Wl,--no-as-needed")
     endif()
 endif ()
+
 
 macro (dbms_target_include_directories)
     foreach (module ${all_modules})

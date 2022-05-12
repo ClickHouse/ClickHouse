@@ -1,5 +1,9 @@
 option (ENABLE_LDAP "Enable LDAP" ${ENABLE_LIBRARIES})
 
+if (ENABLE_ONLY_EMSCRIPTEN_COMPATIBLE)
+    set (ENABLE_LDAP OFF)
+endif()
+
 if (NOT ENABLE_LDAP)
     message(STATUS "Not using ldap")
     return()

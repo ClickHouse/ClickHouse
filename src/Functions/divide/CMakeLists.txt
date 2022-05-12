@@ -1,6 +1,7 @@
 # A library for integer division by constant with CPU dispatching.
 
-if (ARCH_AMD64)
+# SIMD support in 64-bit wasm is unstable
+if (ARCH_AMD64 AND NOT EMSCRIPTEN)
     add_library(divide_impl_sse2 divideImpl.cpp)
     target_compile_options(divide_impl_sse2 PRIVATE -msse2 -DNAMESPACE=SSE2)
     target_link_libraries(divide_impl_sse2 ch_contrib::libdivide)

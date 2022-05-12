@@ -65,11 +65,21 @@ set(PROTOBUF_EXECUTABLE $<TARGET_FILE:protoc>)
 set(PROTO_DIR "${ORC_SOURCE_DIR}/../proto")
 
 
-add_custom_command(OUTPUT orc_proto.pb.h orc_proto.pb.cc
-        COMMAND ${PROTOBUF_EXECUTABLE}
-        -I ${PROTO_DIR}
-        --cpp_out="${CMAKE_CURRENT_BINARY_DIR}"
-        "${PROTO_DIR}/orc_proto.proto")
+# when cross-compiling to Emscripten protoc is being built as a js-module,
+# so we need to invoke node (which is used as emulator env for emcc) to use it
+if(EMSCRIPTEN)
+    add_custom_command(OUTPUT orc_proto.pb.h orc_proto.pb.cc
+            COMMAND ${CMAKE_CROSSCOMPILING_EMULATOR} ${PROTOBUF_EXECUTABLE}
+            -I ${PROTO_DIR}
+            --cpp_out="${CMAKE_CURRENT_BINARY_DIR}"
+            "orc_proto.proto")
+else()
+    add_custom_command(OUTPUT orc_proto.pb.h orc_proto.pb.cc
+            COMMAND ${PROTOBUF_EXECUTABLE}
+            -I ${PROTO_DIR}
+            --cpp_out="${CMAKE_CURRENT_BINARY_DIR}"
+            "${PROTO_DIR}/orc_proto.proto")
+endif()
 
 
 # === flatbuffers

@@ -1,4 +1,4 @@
-if(ARCH_AMD64 AND NOT OS_FREEBSD AND NOT OS_DARWIN)
+if(ARCH_AMD64 AND NOT OS_FREEBSD AND NOT OS_DARWIN AND NOT EMSCRIPTEN)
     option(ENABLE_FASTOPS "Enable fast vectorized mathematical functions library by Mikhail Parakhin" ${ENABLE_LIBRARIES})
 elseif(ENABLE_FASTOPS)
     message (${RECONFIGURE_MESSAGE_LEVEL} "Fastops library is supported on x86_64 only, and not FreeBSD or Darwin")

@@ -112,7 +112,8 @@ else ()
     find_program (LLVM_AR_PATH NAMES "llvm-ar-${COMPILER_VERSION_MAJOR}" "llvm-ar")
 endif ()
 
-if (LLVM_AR_PATH)
+# Emscripten uses its own archiver 'emar', which is set in its toolchain-file
+if (LLVM_AR_PATH AND NOT EMSCRIPTEN)
     set (CMAKE_AR "${LLVM_AR_PATH}")
 endif ()
 
@@ -124,7 +125,8 @@ else ()
     find_program (LLVM_RANLIB_PATH NAMES "llvm-ranlib-${COMPILER_VERSION_MAJOR}" "llvm-ranlib")
 endif ()
 
-if (LLVM_RANLIB_PATH)
+# Emscripten uses its own ranlib, which is set in its toolchain-file
+if (LLVM_RANLIB_PATH AND NOT EMSCRIPTEN)
     set (CMAKE_RANLIB "${LLVM_RANLIB_PATH}")
 endif ()
 

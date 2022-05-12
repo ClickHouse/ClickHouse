@@ -1,7 +1,9 @@
 # Set standard, system and compiler libraries explicitly.
 # This is intended for more control of what we are linking.
 
-set (DEFAULT_LIBS "-nodefaultlibs")
+if (NOT EMSCRIPTEN)
+    set (DEFAULT_LIBS "-nodefaultlibs")
+endif ()
 
 # We need builtins from Clang's RT even without libcxx - for ubsan+int128.
 # See https://bugs.llvm.org/show_bug.cgi?id=16404
@@ -9,7 +11,18 @@ if (COMPILER_CLANG)
     execute_process (COMMAND ${CMAKE_CXX_COMPILER} --target=${CMAKE_CXX_COMPILER_TARGET} --print-libgcc-file-name --rtlib=compiler-rt OUTPUT_VARIABLE BUILTINS_LIBRARY OUTPUT_STRIP_TRAILING_WHITESPACE)
 
     if (NOT EXISTS "${BUILTINS_LIBRARY}")
-        set (BUILTINS_LIBRARY "-lgcc")
+        if (EMSCRIPTEN)
+            # FIXME: explicitly setting builtins archives to link against for now
+#            set (BUILTINS_LIBRARY
+#                    "${CMAKE_SYSROOT}/lib/wasm64-emscripten/libc-debug.a
+#                     ${CMAKE_SYSROOT}/lib/wasm64-emscripten/libcompiler_rt.a
+#                     ${CMAKE_SYSROOT}/lib/wasm64-emscripten/libdlmalloc.a
+#                     ${CMAKE_SYSROOT}/lib/wasm64-emscripten/libstubs-debug.a
+#                     ${CMAKE_SYSROOT}/lib/wasm64-emscripten/libal.a")
+
+        else ()
+            set (BUILTINS_LIBRARY "-lgcc")
+        endif ()
     endif ()
 else ()
     set (BUILTINS_LIBRARY "-lgcc")
@@ -20,6 +33,10 @@ if (OS_ANDROID)
     set (DEFAULT_LIBS "${DEFAULT_LIBS} ${BUILTINS_LIBRARY} ${COVERAGE_OPTION} -lc -lm -ldl")
 elseif (USE_MUSL)
     set (DEFAULT_LIBS "${DEFAULT_LIBS} ${BUILTINS_LIBRARY} ${COVERAGE_OPTION} -static -lc")
+elseif (EMSCRIPTEN)
+    # enabling native js support for int64 and allowing heap growth at runtime
+    # TODO: may increase overall available memory to 4 gb via -sMAXIMUM_MEMORY=4294967296
+    set (DEFAULT_LIBS "${DEFAULT_LIBS} ${BUILTINS_LIBRARY} ${COVERAGE_OPTION} -sWASM_BIGINT -sALLOW_MEMORY_GROWTH -lm -lrt -lpthread -ldl")
 else ()
     set (DEFAULT_LIBS "${DEFAULT_LIBS} ${BUILTINS_LIBRARY} ${COVERAGE_OPTION} -lc -lm -lrt -lpthread -ldl")
 endif ()

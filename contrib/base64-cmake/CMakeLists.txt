@@ -4,6 +4,12 @@ elseif(ENABLE_BASE64)
     message (${RECONFIGURE_MESSAGE_LEVEL} "base64 library is only supported on x86_64 and aarch64")
 endif()
 
+# Currently compiling without sse support at all, while this lib supposes
+# at least SSE1 and SSE2
+if (EMSCRIPTEN)
+    set (ENABLE_BASE64 OFF)
+endif()
+
 if (NOT ENABLE_BASE64)
     message(STATUS "Not using base64")
     return()
@@ -14,7 +20,9 @@ SET(LIBRARY_DIR "${ClickHouse_SOURCE_DIR}/contrib/base64")
 add_library(_base64_scalar OBJECT "${LIBRARY_DIR}/turbob64c.c" "${LIBRARY_DIR}/turbob64d.c")
 add_library(_base64_ssse3 OBJECT "${LIBRARY_DIR}/turbob64sse.c") # This file also contains code for ARM NEON
 
-if (ARCH_AMD64)
+if (EMSCRIPTEN)
+    add_library(_base64_avx OBJECT "${LIBRARY_DIR}/turbob64sse.c")
+elseif (ARCH_AMD64)
     add_library(_base64_avx OBJECT "${LIBRARY_DIR}/turbob64sse.c") # This is not a mistake. One file is compiled twice.
     add_library(_base64_avx2 OBJECT "${LIBRARY_DIR}/turbob64avx2.c")
 endif ()
@@ -22,14 +30,28 @@ endif ()
 target_compile_options(_base64_scalar PRIVATE -falign-loops)
 
 if (ARCH_AMD64)
+    # in Emscripten -msimd128 must be passed with any other SIMD compile options
+    if (EMSCRIPTEN)
+        target_compile_options(_base64_ssse3 PRIVATE -msimd128)
+        target_compile_options(_base64_avx PRIVATE -msimd128)
+    endif()
+
     target_compile_options(_base64_ssse3 PRIVATE -mno-avx -mno-avx2 -mssse3 -falign-loops)
     target_compile_options(_base64_avx PRIVATE -falign-loops -mavx)
-    target_compile_options(_base64_avx2 PRIVATE -falign-loops -mavx2)
+    # currently there is no support for avx2 instructions in Emscripten
+    if (NOT EMSCRIPTEN)
+        target_compile_options(_base64_avx2 PRIVATE -falign-loops -mavx2)
+    endif()
 else ()
     target_compile_options(_base64_ssse3 PRIVATE -falign-loops)
 endif ()
 
-if (ARCH_AMD64)
+if (EMSCRIPTEN)
+    add_library(_base64
+            $<TARGET_OBJECTS:_base64_scalar>
+            $<TARGET_OBJECTS:_base64_ssse3>
+            $<TARGET_OBJECTS:_base64_avx>)
+elseif (ARCH_AMD64)
     add_library(_base64
         $<TARGET_OBJECTS:_base64_scalar>
         $<TARGET_OBJECTS:_base64_ssse3>

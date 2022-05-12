@@ -25,6 +25,16 @@ option (ENABLE_AVX512_FOR_SPEC_OP "Use avx512 instructions for specific operatio
 
 option (ARCH_NATIVE "Add -march=native compiler flag. This makes your binaries non-portable but more performant code may be generated. This option overrides ENABLE_* options for specific instruction set. Highly not recommended to use." 0)
 
+# TODO: maybe add optional emsc simd flag for enabling these options in the future
+if (EMSCRIPTEN)
+    # Emscripten doesn't fully support required sets of SIMD operations,
+    # so disabling them
+    set (ENABLE_SSSE3 0)
+    set (ENABLE_SSE41 0)
+    set (ENABLE_SSE42 0)
+    set (ENABLE_PCLMULQDQ 0)
+endif ()
+
 if (ARCH_NATIVE)
     set (COMPILER_FLAGS "${COMPILER_FLAGS} -march=native")
 

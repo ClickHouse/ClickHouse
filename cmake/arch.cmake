@@ -1,4 +1,4 @@
-if (CMAKE_SYSTEM_PROCESSOR MATCHES "amd64|x86_64")
+if (EMSCRIPTEN OR CMAKE_SYSTEM_PROCESSOR MATCHES "amd64|x86_64")
     if (CMAKE_LIBRARY_ARCHITECTURE MATCHES "i386")
         message (FATAL_ERROR "32bit platforms are not supported")
     endif ()

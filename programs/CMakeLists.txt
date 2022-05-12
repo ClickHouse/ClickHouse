@@ -7,8 +7,9 @@ include(${ClickHouse_SOURCE_DIR}/cmake/strip_binary.cmake)
 # The `clickhouse` binary is a multi purpose tool that contains multiple execution modes (client, server, etc.),
 # each of them may be built and linked as a separate library.
 # If you do not know what modes you need, turn this option OFF and enable SERVER and CLIENT only.
-if (USE_MUSL)
+if (USE_MUSL OR ENABLE_ONLY_EMSCRIPTEN_COMPATIBLE)
     # Only clickhouse-keeper can be built with musl currently
+    # Only clickhouse-local is being ported right now
     option (ENABLE_CLICKHOUSE_ALL "Enable all ClickHouse modes by default" OFF)
 else ()
     option (ENABLE_CLICKHOUSE_ALL "Enable all ClickHouse modes by default" ON)
@@ -38,6 +39,10 @@ option (ENABLE_CLICKHOUSE_FORMAT "Queries pretty-printer and formatter with synt
 # https://clickhouse.com/docs/en/operations/utilities/clickhouse-obfuscator/
 option (ENABLE_CLICKHOUSE_OBFUSCATOR "Table data obfuscator (convert real data to benchmark-ready one)"
     ${ENABLE_CLICKHOUSE_ALL})
+
+if (ENABLE_ONLY_EMSCRIPTEN_COMPATIBLE)
+    set (ENABLE_CLICKHOUSE_LOCAL ON)
+endif ()
 
 # https://clickhouse.com/docs/en/operations/utilities/odbc-bridge/
 # TODO Also needs NANODBC.
@@ -169,7 +174,9 @@ else()
     message(STATUS "ClickHouse keeper-converter mode: OFF")
 endif()
 
-if(NOT (USE_STATIC_LIBRARIES OR SPLIT_SHARED_LIBRARIES))
+if (EMSCRIPTEN)
+    set(CLICKHOUSE_ONE_SHARED OFF)
+elseif (NOT (USE_STATIC_LIBRARIES OR SPLIT_SHARED_LIBRARIES))
     set(CLICKHOUSE_ONE_SHARED ON)
 endif()
 
