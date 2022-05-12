@@ -33,18 +33,12 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-static String getQueryId()
-{
-    if (!CurrentThread::isInitialized() || !CurrentThread::get().getQueryContext() || CurrentThread::getQueryId().size == 0)
-        return "";
-    return CurrentThread::getQueryId().toString();
-}
-
 CachedReadBufferFromRemoteFS::CachedReadBufferFromRemoteFS(
     const String & remote_fs_object_path_,
     FileCachePtr cache_,
     RemoteFSFileReaderCreator remote_file_reader_creator_,
     const ReadSettings & settings_,
+    const String & query_id_,
     size_t read_until_position_)
     : SeekableReadBuffer(nullptr, 0)
 #ifndef NDEBUG
@@ -58,8 +52,8 @@ CachedReadBufferFromRemoteFS::CachedReadBufferFromRemoteFS(
     , settings(settings_)
     , read_until_position(read_until_position_)
     , remote_file_reader_creator(remote_file_reader_creator_)
-    , query_id(getQueryId())
-    , enable_logging(!query_id.empty() && CurrentThread::get().getQueryContext()->getSettingsRef().enable_filesystem_cache_log)
+    , query_id(query_id_)
+    , enable_logging(!query_id.empty() && settings_.enable_filesystem_cache_log)
     , current_buffer_id(getRandomASCIIString(8))
 {
 }
@@ -75,6 +69,7 @@ void CachedReadBufferFromRemoteFS::appendFilesystemCacheLog(
         .file_segment_range = { file_segment_range.left, file_segment_range.right },
         .requested_range = { first_offset, read_until_position },
         .file_segment_size = file_segment_range.size(),
+        .cache_attempted = true,
         .read_buffer_id = current_buffer_id,
         .profile_counters = std::make_shared<ProfileEvents::Counters::Snapshot>(current_file_segment_counters.getPartiallyAtomicSnapshot()),
     };
