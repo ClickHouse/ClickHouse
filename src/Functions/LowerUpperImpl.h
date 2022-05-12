@@ -2,6 +2,11 @@
 #include <Columns/ColumnString.h>
 
 
+
+
+
+
+
 namespace DB
 {
 
@@ -55,6 +60,35 @@ private:
             /// store result back to destination
             _mm_storeu_si128(reinterpret_cast<__m128i *>(dst), cased_chars);
         }
+
+#elif defined(__aarch64__)
+
+        const auto bytes_sse = 128;
+        const auto * src_end_sse = src_end - (src_end - src) % bytes_sse;
+
+        const uint8x16_t v_not_case_lower_bound = vdup_n_u8(not_case_lower_bound);
+        const uint8x16_t v_not_case_upper_bound = vdup_n_u8(not_case_upper_bound);
+        const uint8x16_t v_flip_case_mask = vdup_n_u8(flip_case_mask);
+
+        for (; src < src_end_sse; src += bytes_sse, dst += bytes_sse)
+        {
+            /// load 16 sequential 8-bit characters
+            const uint8x16_t chars = vld1q_u8(src);
+
+            /// find which 8-bit sequences belong to range [case_lower_bound, case_upper_bound]
+            const uint8x16_t is_not_case
+                = vandq_u8(vcgeq_u8(chars, v_not_case_lower_bound), vcleq_u8(chars, v_not_case_upper_bound));
+
+            /// keep `flip_case_mask` only where necessary, zero out elsewhere
+            const uint8x16_t xor_mask = vandq_u8(v_flip_case_mask, is_not_case);
+
+            /// flip case by applying calculated mask
+            const uint8x16_t cased_chars = veorq_u8(chars, xor_mask);
+
+            /// store result back to destination
+            vst1q_s8(dst, cased_chars);
+        }
+
 #endif
 
         for (; src < src_end; ++src, ++dst)

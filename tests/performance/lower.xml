@@ -1,0 +1,18 @@
+<test>
+    <settings>
+        <output_format_parallel_formatting>0</output_format_parallel_formatting>
+    </settings>
+
+    <preconditions>
+        <table_exists>test.hits</table_exists>
+    </preconditions>
+
+    <query>SELECT lower(SearchPhrase), lower(ClientIP6), lower(URL), lower(Referer), lower(URLDomain) FROM test.hits LIMIT 1000000</query>
+
+    <query>SELECT upper(SearchPhrase), upper(ClientIP6), upper(URL), upper(Referer), upper(URLDomain) FROM test.hits LIMIT 1000000</query>
+
+</test>
+
+
+
+// string: Title URL Referer URLDomain RefererDomain FlashMinor2 SearchPhrase
