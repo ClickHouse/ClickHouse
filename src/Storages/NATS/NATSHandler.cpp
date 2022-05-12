@@ -67,6 +67,7 @@ void NATSHandler::setThreadLocalLoop() {
 void NATSHandler::startBlockingLoop()
 {
     LOG_DEBUG(log, "Started blocking loop.");
+    natsLibuv_SetThreadLocalLoop(loop);
     uv_run(loop, UV_RUN_DEFAULT);
 }
 

@@ -41,7 +41,9 @@ private:
 
     void iterateEventLoop();
     void writingFunc();
-    natsStatus publish();
+    void publish();
+
+    static void publishThreadFunc(void * arg);
 
     NATSConnectionManager connection;
     const String subject;

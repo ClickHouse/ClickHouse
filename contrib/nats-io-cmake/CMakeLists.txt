@@ -41,14 +41,14 @@ set(SRCS
     "${NATS_IO_SOURCE_DIR}/util.c"
 )
 
-add_library(_nats-io ${SRCS} ${PS_SOURCES})
-add_library(ch_contrib::nats-io ALIAS _nats-io)
+add_library(_nats_io ${SRCS} ${PS_SOURCES})
+add_library(ch_contrib::nats_io ALIAS _nats_io)
 
-target_include_directories(_nats-io SYSTEM PUBLIC ${NATS_IO_SOURCE_DIR})
-target_include_directories(_nats-io SYSTEM PUBLIC ${NATS_IO_SOURCE_DIR}/adapters)
-target_include_directories(_nats-io SYSTEM PUBLIC ${NATS_IO_SOURCE_DIR}/include)
-target_include_directories(_nats-io SYSTEM PUBLIC ${NATS_IO_SOURCE_DIR}/${NATS_PLATFORM_INCLUDE})
+target_include_directories(_nats_io SYSTEM PUBLIC ${NATS_IO_SOURCE_DIR})
+target_include_directories(_nats_io SYSTEM PUBLIC ${NATS_IO_SOURCE_DIR}/adapters)
+target_include_directories(_nats_io SYSTEM PUBLIC ${NATS_IO_SOURCE_DIR}/include)
+target_include_directories(_nats_io SYSTEM PUBLIC ${NATS_IO_SOURCE_DIR}/${NATS_PLATFORM_INCLUDE})
 
-target_link_libraries(_nats-io
+target_link_libraries(_nats_io
         PRIVATE OpenSSL::Crypto OpenSSL::SSL ch_contrib::uv
 )
