@@ -25,20 +25,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
 }
 
-#ifdef __aarch64__
-bool only_ascii_in_vector(uint8x16_t input)
-{   
-    // AND of each element of input vector and 0x80
-    uint8x16_t and_result = vandq_s8(input, vdupq_n_u8(0x80));
-
-    // OR between elements of vector of low 8 bytes and vector of high 8 bytes
-    uint8x8_t or_result = vorr_u8(vget_low_u8(and_result), vget_high_u8(and_result));
-
-    // get uint64_t from vector uint64x1_t and return true if equal to zero, false otherwise
-    return !vget_lane_u64(or_result, 0);
-}
-#endif
-
+extern bool only_ascii_in_vector(uint8x16_t input) {}
 extern const UInt8 length_of_utf8_sequence[256];
 
 namespace
