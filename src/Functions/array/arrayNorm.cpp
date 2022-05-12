@@ -161,6 +161,7 @@ private:
     {
         const auto & data = typeid_cast<const ColumnVector<DataType> &>(array.getData()).getData();
         const auto & offsets = array.getOffsets();
+        vec.reserve(offsets.size());
         ColumnArray::Offset prev = 0;
         for (auto off : offsets)
         {
@@ -174,6 +175,7 @@ private:
     {
         const auto & data = typeid_cast<const ColumnVector<DataType> &>(array.getData()).getData();
         const auto & offsets = array.getOffsets();
+        vec.reserve(offsets.size());
 
         ColumnArray::Offset prev = 0;
         for (auto off : offsets)
