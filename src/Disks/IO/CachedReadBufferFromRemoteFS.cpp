@@ -23,18 +23,12 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-static String getQueryId()
-{
-    if (!CurrentThread::isInitialized() || !CurrentThread::get().getQueryContext() || CurrentThread::getQueryId().size == 0)
-        return "";
-    return CurrentThread::getQueryId().toString();
-}
-
 CachedReadBufferFromRemoteFS::CachedReadBufferFromRemoteFS(
     const String & remote_fs_object_path_,
     FileCachePtr cache_,
     RemoteFSFileReaderCreator remote_file_reader_creator_,
     const ReadSettings & settings_,
+    const String & query_id_,
     size_t read_until_position_)
     : SeekableReadBuffer(nullptr, 0)
 #ifndef NDEBUG
@@ -48,8 +42,8 @@ CachedReadBufferFromRemoteFS::CachedReadBufferFromRemoteFS(
     , settings(settings_)
     , read_until_position(read_until_position_)
     , remote_file_reader_creator(remote_file_reader_creator_)
-    , query_id(getQueryId())
-    , enable_logging(!query_id.empty() && CurrentThread::get().getQueryContext()->getSettingsRef().enable_filesystem_cache_log)
+    , query_id(query_id_)
+    , enable_logging(!query_id.empty() && settings_.enable_filesystem_cache_log)
 {
 }
 
@@ -60,8 +54,10 @@ void CachedReadBufferFromRemoteFS::appendFilesystemCacheLog(
     {
         .event_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()),
         .query_id = query_id,
-        .remote_file_path = remote_fs_object_path,
+        .source_file_path = remote_fs_object_path,
         .file_segment_range = { file_segment_range.left, file_segment_range.right },
+        .file_segment_size = file_segment_range.size(),
+        .cache_attempted = true,
     };
 
     switch (type)
@@ -519,15 +515,19 @@ void CachedReadBufferFromRemoteFS::predownload(FileSegmentPtr & file_segment)
                 break;
             }
 
-            size_t current_predownload_size = std::min(implementation_buffer->buffer().size(), bytes_to_predownload);
+            size_t current_impl_buffer_size = implementation_buffer->buffer().size();
+            size_t current_predownload_size = std::min(current_impl_buffer_size, bytes_to_predownload);
+
+            ProfileEvents::increment(ProfileEvents::RemoteFSReadBytes, current_impl_buffer_size);
 
             if (file_segment->reserve(current_predownload_size))
             {
-                LOG_TEST(log, "Left to predownload: {}, buffer size: {}", bytes_to_predownload, implementation_buffer->buffer().size());
+                LOG_TEST(log, "Left to predownload: {}, buffer size: {}", bytes_to_predownload, current_impl_buffer_size);
 
                 assert(file_segment->getDownloadOffset() == static_cast<size_t>(implementation_buffer->getPosition()));
 
                 file_segment->write(implementation_buffer->buffer().begin(), current_predownload_size, current_offset);
+                ProfileEvents::increment(ProfileEvents::RemoteFSCacheDownloadBytes, current_predownload_size);
 
                 current_offset += current_predownload_size;
 
@@ -764,6 +764,11 @@ bool CachedReadBufferFromRemoteFS::nextImplStep()
 
         result = implementation_buffer->next();
         size = implementation_buffer->buffer().size();
+
+        if (read_type == ReadType::CACHED)
+            ProfileEvents::increment(ProfileEvents::RemoteFSCacheReadBytes, size);
+        else
+            ProfileEvents::increment(ProfileEvents::RemoteFSReadBytes, size);
     }
 
     if (result)
@@ -781,6 +786,8 @@ bool CachedReadBufferFromRemoteFS::nextImplStep()
                     size,
                     file_offset_of_buffer_end);
 
+                ProfileEvents::increment(ProfileEvents::RemoteFSCacheDownloadBytes, size);
+
                 assert(file_segment->getDownloadOffset() <= file_segment->range().right + 1);
                 assert(
                     std::next(current_file_segment_it) == file_segments_holder->file_segments.end()
@@ -791,26 +798,6 @@ bool CachedReadBufferFromRemoteFS::nextImplStep()
                 download_current_segment = false;
                 file_segment->complete(FileSegment::State::PARTIALLY_DOWNLOADED_NO_CONTINUATION);
                 LOG_DEBUG(log, "No space left in cache, will continue without cache download");
-            }
-        }
-
-        switch (read_type)
-        {
-            case ReadType::CACHED:
-            {
-                ProfileEvents::increment(ProfileEvents::RemoteFSCacheReadBytes, size);
-                break;
-            }
-            case ReadType::REMOTE_FS_READ_BYPASS_CACHE:
-            {
-                ProfileEvents::increment(ProfileEvents::RemoteFSReadBytes, size);
-                break;
-            }
-            case ReadType::REMOTE_FS_READ_AND_PUT_IN_CACHE:
-            {
-                ProfileEvents::increment(ProfileEvents::RemoteFSReadBytes, size);
-                ProfileEvents::increment(ProfileEvents::RemoteFSCacheDownloadBytes, size);
-                break;
             }
         }
 
