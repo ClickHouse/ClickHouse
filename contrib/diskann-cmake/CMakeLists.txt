@@ -3,6 +3,8 @@ list(APPEND CMAKE_MODULE_PATH "${ClickHouse_SOURCE_DIR}/contrib/diskann-cmake/mo
 set(DISKANN_PROJECT_DIR "${ClickHouse_SOURCE_DIR}/contrib/diskann")
 set(DISKANN_SOURCE_DIR "${DISKANN_PROJECT_DIR}/src")
 
+message("${CMAKE_MODULE_PATH}")
+
 set(DISKANN_SOURCES 
     ${DISKANN_SOURCE_DIR}/ann_exception.cpp 
     ${DISKANN_SOURCE_DIR}/aux_utils.cpp 
@@ -28,25 +30,9 @@ target_compile_options(_diskann PRIVATE $<$<COMPILE_LANGUAGE:CXX>:-mavx2 -mfma -
 # MKL dependency
 find_package(MKL)
 if(MKL_FOUND)
-  message("Found MKL! ${MKL_ROOT}/include ${mkl_core_file}")
+  message("Found MKL! ${MKL_ROOT}")
   target_include_directories(_diskann PUBLIC "${MKL_ROOT}/include")
-
-  set(LIBMKL_THREAD_PATH
-      "${ClickHouse_SOURCE_DIR}/contrib/diskann-cmake/mkl/libmkl_intel_thread.a"
-  )
-
-  set(LIBMKL_ILP64_PATH
-    "${ClickHouse_SOURCE_DIR}/contrib/diskann-cmake/mkl/libmkl_intel_ilp64.a"
-  )
-
-  set(LIBMKL_CORE_PATH
-    "${ClickHouse_SOURCE_DIR}/contrib/diskann-cmake/mkl/libmkl_core.a"
-  )
-
-  set (CMAKE_STATIC_LINKER_FLAGS "${CMAKE_STATIC_LINKER_FLAGS} ${LIBMKL_THREAD_PATH}" )
-  set (CMAKE_STATIC_LINKER_FLAGS "${CMAKE_STATIC_LINKER_FLAGS} ${LIBMKL_ILP64_PATH}" )
-  set (CMAKE_STATIC_LINKER_FLAGS "${CMAKE_STATIC_LINKER_FLAGS} ${LIBMKL_CORE_PATH}" )
-
+  target_link_libraries(_diskann PUBLIC ${MKL_LIBRARIES})
 else()
   message(FATAL_ERROR "MKL not found!")
 endif()
