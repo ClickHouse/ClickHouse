@@ -96,7 +96,7 @@ DiskANNSearchResult getDistancesToVector(
     std::shared_ptr<MergeTreeIndexGranuleDiskANN> granule
 )
 {
-    size_t k = neighbours_to_search;
+    size_t search_list_size = neighbours_to_search * 3;
 
     auto disk_ann_index = std::dynamic_pointer_cast<DiskANNIndex>(granule->base_index);
 
@@ -110,7 +110,7 @@ DiskANNSearchResult getDistancesToVector(
 
     try
     {
-        disk_ann_index->search(target_vector.data(), k, neighbours_to_search, init_ids,
+        disk_ann_index->search(target_vector.data(), neighbours_to_search, search_list_size, init_ids,
             indicies.data(), distances.data());
     }
     catch (diskann::ANNException& e)
