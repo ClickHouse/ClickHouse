@@ -1,11 +1,11 @@
 #include <DataTypes/DataTypeString.h>
 #include <Storages/System/StorageSystemCertificates.h>
-#include <openssl/x509.h>
 #include <regex>
 #include <filesystem>
 #include "Poco/Util/Application.h"
 #include "Poco/File.h"
 #ifdef USE_SSL
+    #include <openssl/x509.h>
     #include "Poco/Crypto/X509Certificate.h"
 #endif
 
