@@ -12,14 +12,10 @@
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteHelpers.h>
 
-#include "KeyCondition.h"
-#include "Parsers/ASTIdentifier.h"
-#include "Parsers/ASTSelectQuery.h"
-#include "Parsers/IAST_fwd.h"
-
 #include <Parsers/ASTFunction.h>
 #include <Poco/Logger.h>
 
+#include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/MergeTree/MergeTreeIndexDiskANN.h>
 
 namespace DB
@@ -27,28 +23,13 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int INCORRECT_QUERY;
     extern const int LOGICAL_ERROR;
     extern const int UNKNOWN_EXCEPTION;
-    extern const int INCORRECT_QUERY;
 }
 
 namespace detail
 {
-
-void saveDataPoints(uint32_t dimensions, std::vector<DiskANNValue> datapoints, WriteBuffer & out)
-{
-    uint32_t num_of_points = static_cast<uint32_t>(datapoints.size()) / dimensions;
-
-    out.write(reinterpret_cast<const char*>(&num_of_points), sizeof(num_of_points));
-    out.write(reinterpret_cast<const char*>(&dimensions), sizeof(dimensions));
-
-    for (float datapoint : datapoints)
-    {
-        out.write(reinterpret_cast<const char*>(&datapoint), sizeof(DiskANNValue));
-    }
-
-    LOG_DEBUG(&Poco::Logger::get("DiskANN"), "Saved {} points", num_of_points);
-}
 
 DiskANNIndexPtr constructIndexFromDatapoints(uint32_t dimensions, std::vector<DiskANNValue> datapoints)
 {
@@ -82,47 +63,6 @@ DiskANNIndexPtr constructIndexFromDatapoints(uint32_t dimensions, std::vector<Di
     {
         throw Exception(e.message(), ErrorCodes::UNKNOWN_EXCEPTION);
     }
-}
-
-struct DiskANNSearchResult
-{
-    std::vector<float> distances;
-    std::vector<uint64_t> indicies;
-};
-
-DiskANNSearchResult getDistancesToVector(
-    std::vector<float> target_vector,
-    size_t neighbours_to_search,
-    std::shared_ptr<MergeTreeIndexGranuleDiskANN> granule
-)
-{
-    size_t search_list_size = neighbours_to_search * 3;
-
-    auto disk_ann_index = std::dynamic_pointer_cast<DiskANNIndex>(granule->base_index);
-
-    target_vector.resize(ROUND_UP(target_vector.size(), 8));
-    LOG_DEBUG(&Poco::Logger::get("DiskANN"), "Searching for vector of dim {}", target_vector.size());
-
-    // Will be populated by diskann
-    std::vector<float> distances(neighbours_to_search);
-    std::vector<uint64_t> indicies(neighbours_to_search);
-    std::vector<unsigned> init_ids{};
-
-    try
-    {
-        disk_ann_index->search(target_vector.data(), neighbours_to_search, search_list_size, init_ids,
-            indicies.data(), distances.data());
-    }
-    catch (diskann::ANNException& e)
-    {
-        throw Exception(e.message(), ErrorCodes::UNKNOWN_EXCEPTION);
-    }
-
-    DiskANNSearchResult result;
-    result.distances = std::move(distances);
-    result.indicies = std::move(indicies);
-
-    return result;
 }
 
 }
@@ -165,24 +105,34 @@ uint64_t MergeTreeIndexGranuleDiskANN::calculateIndexSize() const
 
 void MergeTreeIndexGranuleDiskANN::serializeBinary(WriteBuffer & out) const
 {
-    LOG_DEBUG(&Poco::Logger::get("DiskANN"), "Saving Vamana index: saving datapoints...");
+    LOG_DEBUG(&Poco::Logger::get("DiskANN"), "Serializing DiskANN: saving datapoints...");
 
     if (!dimensions.has_value())
     {
         throw Exception("Dimensions parameter was not got, despite having data", ErrorCodes::LOGICAL_ERROR);
     }
-    detail::saveDataPoints(dimensions.value(), datapoints, out);
-    LOG_DEBUG(&Poco::Logger::get("DiskANN"), "Datapoints saved.");
 
-    LOG_DEBUG(&Poco::Logger::get("DiskANN"), "Saving Vamana index itself...");
-    uint64_t total_gr_edges = 0;
+    uint32_t num_of_points = static_cast<uint32_t>(datapoints.size()) / dimensions.value();
+
+    out.write(reinterpret_cast<const char*>(&num_of_points), sizeof(num_of_points));
+    out.write(reinterpret_cast<const char*>(&(dimensions.value())), sizeof(dimensions.value()));
+
+    for (float datapoint : datapoints)
+    {
+        out.write(reinterpret_cast<const char*>(&datapoint), sizeof(DiskANNValue));
+    }
+
+    LOG_DEBUG(&Poco::Logger::get("DiskANN"), "Saved {} points", num_of_points);
+    LOG_DEBUG(&Poco::Logger::get("DiskANN"), "Serializing DiskANN: saving index metadata and graph...");
 
     uint64_t index_size = calculateIndexSize();
     LOG_DEBUG(&Poco::Logger::get("DiskANN"), "Index size: {}", index_size);
+
     out.write(reinterpret_cast<char*>(&index_size), sizeof(uint64_t));
     out.write(reinterpret_cast<char*>(&base_index->_width), sizeof(unsigned));
     out.write(reinterpret_cast<char*>(&base_index->_ep), sizeof(unsigned));
 
+    uint64_t total_gr_edges = 0;
     for (size_t i = 0; i < base_index->_nd + base_index->_num_frozen_pts; i++)
     {
       unsigned gk = static_cast<unsigned>(base_index->_final_graph[i].size());
@@ -203,8 +153,9 @@ void MergeTreeIndexGranuleDiskANN::deserializeBinary(ReadBuffer & in, MergeTreeI
     LOG_DEBUG(&Poco::Logger::get("DiskANN"), "Loading datapoints in deserialize...");
 
     uint32_t num_of_points = 0;
-    uint32_t dims = 0;
     in.read(reinterpret_cast<char*>(&num_of_points), sizeof(num_of_points));
+
+    uint32_t dims = 0;
     in.read(reinterpret_cast<char*>(&dims), sizeof(dims));
 
     LOG_DEBUG(&Poco::Logger::get("DiskANN"), "num_of_points={}, dims={}", num_of_points, dims);
@@ -226,7 +177,7 @@ void MergeTreeIndexGranuleDiskANN::deserializeBinary(ReadBuffer & in, MergeTreeI
     LOG_DEBUG(&Poco::Logger::get("DiskANN"), "Got datapoints: {}. Constructed the index object", datapoints.size());
     LOG_DEBUG(&Poco::Logger::get("DiskANN"), "Loading Vamana index...");
 
-    uint64_t expected_file_size;
+    uint64_t expected_file_size = 0;
     in.read(reinterpret_cast<char*>(&expected_file_size), sizeof(uint64_t));
     LOG_DEBUG(&Poco::Logger::get("DiskANN"), "Expected index size: {}", expected_file_size);
 
@@ -235,18 +186,18 @@ void MergeTreeIndexGranuleDiskANN::deserializeBinary(ReadBuffer & in, MergeTreeI
 
     assert(base_index->_final_graph.empty());
 
-    size_t cc = 0;
+    size_t out_edges_count = 0;
     unsigned nodes = 0;
     while (!in.eof())
     {
-        unsigned k;
-        in.read(reinterpret_cast<char*>(&k), sizeof(unsigned));
+        unsigned current_out_edges;
+        in.read(reinterpret_cast<char*>(&current_out_edges), sizeof(unsigned));
         if (in.eof())
             break;
-        cc += k;
+        out_edges_count += current_out_edges;
         ++nodes;
-        std::vector<unsigned> tmp(k);
-        in.read(reinterpret_cast<char*>(tmp.data()), k * sizeof(unsigned));
+        std::vector<unsigned> tmp(current_out_edges);
+        in.read(reinterpret_cast<char*>(tmp.data()), current_out_edges * sizeof(unsigned));
         base_index->_final_graph.emplace_back(tmp);
         if (nodes >= datapoints.size() / dims)
         {
@@ -266,18 +217,52 @@ void MergeTreeIndexGranuleDiskANN::deserializeBinary(ReadBuffer & in, MergeTreeI
         throw Exception("Number of points mismatch", ErrorCodes::LOGICAL_ERROR);
     }
 
-    LOG_DEBUG(&Poco::Logger::get("DiskANN"), "..done. Index has {} nodes and {} out-edges", nodes, cc);
+    LOG_DEBUG(&Poco::Logger::get("DiskANN"), "..done. Index has {} nodes and {} out-edges", nodes, out_edges_count);
+}
+
+MergeTreeIndexGranuleDiskANN::DiskANNSearchResult MergeTreeIndexGranuleDiskANN::searchVector(
+    std::vector<float> target_vector, size_t neighbours_to_search) const
+{
+    size_t search_list_size = neighbours_to_search;
+
+    auto disk_ann_index = std::dynamic_pointer_cast<DiskANNIndex>(this->base_index);
+
+    const size_t alignment = 8;
+    target_vector.resize(ROUND_UP(target_vector.size(), alignment));
+    LOG_DEBUG(&Poco::Logger::get("DiskANN"), "Searching for vector of dim {}", target_vector.size());
+
+    // Will be populated by diskann
+    std::vector<float> distances(neighbours_to_search);
+    std::vector<uint64_t> indicies(neighbours_to_search);
+    std::vector<unsigned> init_ids{};
+
+    try
+    {
+        disk_ann_index->search(target_vector.data(), neighbours_to_search, search_list_size, init_ids,
+            indicies.data(), distances.data());
+    }
+    catch (diskann::ANNException& e)
+    {
+        throw Exception(e.message(), ErrorCodes::UNKNOWN_EXCEPTION);
+    }
+
+    DiskANNSearchResult result;
+    result.distances = std::move(distances);
+    result.indicies = std::move(indicies);
+
+    return result;
 }
 
 MergeTreeIndexAggregatorDiskANN::MergeTreeIndexAggregatorDiskANN(const String & index_name_,
-    const Block & index_sample_block_, uint16_t num_threads_, float alpha_, uint16_t R_, uint16_t L_, uint16_t C_)
+    const Block & index_sample_block_, unsigned num_threads_, float alpha_, unsigned graph_degree_,
+    unsigned search_list_size_, unsigned pruning_set_size_)
     : index_name(index_name_)
     , index_sample_block(index_sample_block_)
     , num_threads(num_threads_)
     , alpha(alpha_)
-    , R(R_)
-    , L(L_)
-    , C(C_)
+    , graph_degree(graph_degree_)
+    , search_list_size(search_list_size_)
+    , pruning_set_size(pruning_set_size_)
 {}
 
 MergeTreeIndexGranulePtr MergeTreeIndexAggregatorDiskANN::getGranuleAndReset()
@@ -292,20 +277,20 @@ MergeTreeIndexGranulePtr MergeTreeIndexAggregatorDiskANN::getGranuleAndReset()
         throw Exception("Dimensions parameter was not got, despite having data", ErrorCodes::LOGICAL_ERROR);
     }
 
+    LOG_DEBUG(
+        &Poco::Logger::get("DiskANN"), "Building index with params: R={} L={} C={} alpha={} num_threads={}",
+        graph_degree, search_list_size, pruning_set_size, alpha, num_threads
+    );
+
     auto base_index = detail::constructIndexFromDatapoints(dimensions.value(), accumulated_data);
 
     diskann::Parameters paras;
-
-    LOG_DEBUG(&Poco::Logger::get("DiskANN"), "Setting params: R={} L={} C={} alpha={} num_threads={}", R, L, C, alpha, num_threads);
-
-    paras.Set<unsigned>("R", R);
-    paras.Set<unsigned>("L", L);
-    paras.Set<unsigned>("C", C);
+    paras.Set<unsigned>("R", graph_degree);
+    paras.Set<unsigned>("L", search_list_size);
+    paras.Set<unsigned>("C", pruning_set_size);
     paras.Set<float>("alpha", alpha);
     paras.Set<bool>("saturate_graph", true);
     paras.Set<unsigned>("num_threads", num_threads);
-
-    LOG_DEBUG(&Poco::Logger::get("DiskANN"), "Index parameters set");
 
     LOG_DEBUG(&Poco::Logger::get("DiskANN"), "Starting to build DiskANN index");
 
@@ -390,18 +375,9 @@ bool MergeTreeIndexConditionDiskANN::alwaysUnknownOrTrue() const
     return common_condition.alwaysUnknownOrTrue("L2Distance");
 }
 
-bool MergeTreeIndexConditionDiskANN::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule) const
+bool MergeTreeIndexConditionDiskANN::mayBeTrueOnGranule(MergeTreeIndexGranulePtr /*idx_granule*/) const
 {
-    std::vector<float> target_vec = common_condition.getTargetVector();
-    float min_distance = common_condition.getComparisonDistance();
-
-    auto granule = std::dynamic_pointer_cast<MergeTreeIndexGranuleDiskANN>(idx_granule);
-    auto search_result = detail::getDistancesToVector(target_vec, 1, granule);
-
-    float distance = *std::min_element(search_result.distances.begin(), search_result.distances.end());
-    LOG_DEBUG(&Poco::Logger::get("DiskANN"), "Maybe true on granule distances: {} <? {}", distance, min_distance);
-
-    return distance < min_distance * min_distance;
+    throw Exception("mayBeTrueOnGranule should not be used. Use getUsefulRanges instead", ErrorCodes::LOGICAL_ERROR);
 }
 
 std::vector<size_t> MergeTreeIndexConditionDiskANN::getUsefulRanges(MergeTreeIndexGranulePtr idx_granule) const
@@ -430,7 +406,7 @@ std::vector<size_t> MergeTreeIndexConditionDiskANN::getUsefulRanges(MergeTreeInd
         );
     }
 
-    auto search_result = detail::getDistancesToVector(target_vec, limit, granule);
+    auto search_result = granule->searchVector(target_vec, limit);
 
     // Temporary hard-coded constant
     const size_t granule_size = 8192;
@@ -467,7 +443,8 @@ MergeTreeIndexGranulePtr MergeTreeIndexDiskANN::createIndexGranule() const
 
 MergeTreeIndexAggregatorPtr MergeTreeIndexDiskANN::createIndexAggregator() const
 {
-    return std::make_shared<MergeTreeIndexAggregatorDiskANN>(index.name, index.sample_block, num_threads, alpha, R, L, C);
+    return std::make_shared<MergeTreeIndexAggregatorDiskANN>(index.name, index.sample_block, num_threads,
+                                                             alpha, graph_degree, search_list_size, pruning_set_size);
 }
 
 MergeTreeIndexConditionPtr MergeTreeIndexDiskANN::createIndexCondition(
@@ -490,35 +467,36 @@ MergeTreeIndexPtr diskANNIndexCreator(
 {
     std::vector<std::string> param_values;
 
-    uint16_t num_threads = 1;
+    // Default values
+    unsigned num_threads = 1;
     float alpha = 1.2f;
-    uint16_t R = 90;
-    uint16_t L = 150;
-    uint16_t C = 1500;
+    unsigned graph_degree = 90;
+    unsigned search_list_size = 150;
+    unsigned pruning_set_size = 1500;
 
     for (size_t argument_id = 0; argument_id < index.arguments.size(); ++argument_id)
     {
-        switch(argument_id)
+        switch (argument_id)
         {
             case DiskANNArguments::NUM_THREADS:
-                num_threads = index.arguments[argument_id].get<uint16_t>();
+                num_threads = index.arguments[argument_id].get<unsigned>();
                 break;
             case DiskANNArguments::ALPHA:
                 alpha = index.arguments[argument_id].get<float>();
                 break;
-            case DiskANNArguments::R:
-                R = index.arguments[argument_id].get<uint16_t>();
+            case DiskANNArguments::GRAPH_DEGREE:
+                graph_degree = index.arguments[argument_id].get<unsigned>();
                 break;
-            case DiskANNArguments::L:
-                L = index.arguments[argument_id].get<uint16_t>();
+            case DiskANNArguments::SEARCH_LIST_SIZE:
+                search_list_size = index.arguments[argument_id].get<unsigned>();
                 break;
-            case DiskANNArguments::C:
-                C = index.arguments[argument_id].get<uint16_t>();
+            case DiskANNArguments::PRUNING_SET_SIZE:
+                pruning_set_size = index.arguments[argument_id].get<unsigned>();
                 break;
         }
     }
 
-    return std::make_shared<MergeTreeIndexDiskANN>(index, num_threads, alpha, R, L, C);
+    return std::make_shared<MergeTreeIndexDiskANN>(index, num_threads, alpha, graph_degree, search_list_size, pruning_set_size);
 }
 
 void diskANNIndexValidator(const IndexDescription & index, bool /* attach */)
@@ -534,29 +512,30 @@ void diskANNIndexValidator(const IndexDescription & index, bool /* attach */)
         throw Exception("DiskANN threads argument must be a positive integer", ErrorCodes::INCORRECT_QUERY);
     }
 
-    if (index.arguments.size() > DiskANNArguments::L &&
-        index.arguments[DiskANNArguments::L].getType() != Field::Types::UInt64)
-    {
-        throw Exception("DiskANN L argument must be a positive integer", ErrorCodes::INCORRECT_QUERY);
-    }
-
-    if (index.arguments.size() > DiskANNArguments::R &&
-        index.arguments[DiskANNArguments::R].getType() != Field::Types::UInt64)
-    {
-        throw Exception("DiskANN R argument must be a positive integer", ErrorCodes::INCORRECT_QUERY);
-    }
-
-    if (index.arguments.size() > DiskANNArguments::C &&
-        index.arguments[DiskANNArguments::C].getType() != Field::Types::UInt64)
-    {
-        throw Exception("DiskANN C argument must be a positive integer", ErrorCodes::INCORRECT_QUERY);
-    }
-
     if (index.arguments.size() > DiskANNArguments::ALPHA &&
         index.arguments[DiskANNArguments::ALPHA].getType() != Field::Types::Float64)
     {
         throw Exception("DiskANN alpha argument must be a positive float", ErrorCodes::INCORRECT_QUERY);
     }
+
+    if (index.arguments.size() > DiskANNArguments::GRAPH_DEGREE &&
+        index.arguments[DiskANNArguments::GRAPH_DEGREE].getType() != Field::Types::UInt64)
+    {
+        throw Exception("DiskANN graph_degree argument must be a positive integer", ErrorCodes::INCORRECT_QUERY);
+    }
+
+    if (index.arguments.size() > DiskANNArguments::SEARCH_LIST_SIZE &&
+        index.arguments[DiskANNArguments::SEARCH_LIST_SIZE].getType() != Field::Types::UInt64)
+    {
+        throw Exception("DiskANN search_list_size argument must be a positive integer", ErrorCodes::INCORRECT_QUERY);
+    }
+
+    if (index.arguments.size() > DiskANNArguments::PRUNING_SET_SIZE &&
+        index.arguments[DiskANNArguments::PRUNING_SET_SIZE].getType() != Field::Types::UInt64)
+    {
+        throw Exception("DiskANN pruning_set_size argument must be a positive integer", ErrorCodes::INCORRECT_QUERY);
+    }
+
 }
 
 }
