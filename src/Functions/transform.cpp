@@ -17,6 +17,8 @@
 #include <Functions/FunctionFactory.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <Interpreters/convertFieldToType.h>
+#include <Interpreters/TableJoin.h>
+#include <Interpreters/HashJoin.h>
 
 
 namespace DB
@@ -109,6 +111,13 @@ public:
 
         const DataTypePtr & type_arr_to_nested = type_arr_to->getNestedType();
 
+        Names key_names = {"key"};
+        table_join = std::make_shared<TableJoin>(SizeLimits{}, false, ASTTableJoin::Kind::Left, ASTTableJoin::Strictness::Any, key_names);
+        Block right_sample_block;
+        right_sample_block.insert(ColumnWithTypeAndName(nullptr, type_x, "key"));
+        right_sample_block.insert(ColumnWithTypeAndName(nullptr, type_arr_to_nested, "value"));
+        hash_join = std::make_shared<HashJoin>(table_join, right_sample_block);
+
         if (args_size == 3)
         {
             if ((type_x->isValueRepresentedByNumber() != type_arr_to_nested->isValueRepresentedByNumber())
@@ -148,6 +157,9 @@ public:
         }
     }
 
+    mutable std::shared_ptr<TableJoin> table_join;
+    mutable std::shared_ptr<HashJoin> hash_join;
+
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         const ColumnConst * array_from = checkAndGetColumnConst<ColumnArray>(arguments[1].column.get());
@@ -166,6 +178,14 @@ public:
         const IColumn * default_column = nullptr;
         if (arguments.size() == 4)
             default_column = arguments[3].column.get();
+
+        Block left_block;
+        left_block.insert(ColumnWithTypeAndName(arguments.front().column, arguments.front().type, arguments.front().name));
+        ExtraBlockPtr extra_block_unused;
+        hash_join->joinBlock(left_block, extra_block_unused);
+        const ColumnWithTypeAndName & value_column = left_block.getByName("value");
+        /// value_column should contain result of transformation
+        UNUSED(value_column);
 
         auto column_result = result_type->createColumn();
         auto * out = column_result.get();
@@ -1086,6 +1106,17 @@ private:
     {
         if (cache.initialized)
             return;
+
+        {
+
+            DataTypePtr from_type = assert_cast<const DataTypeArray *>(arguments[1].type.get())->getNestedType();
+            DataTypePtr to_type = assert_cast<const DataTypeArray *>(arguments[2].type.get())->getNestedType();
+
+            Block right_block;
+            right_block.insert(ColumnWithTypeAndName(from_type->createColumn(), from_type, "key"));
+            right_block.insert(ColumnWithTypeAndName(to_type->createColumn(), to_type, "value"));
+            hash_join->addJoinedBlock(right_block, false);
+        }
 
         const size_t size = from.size();
         if (0 == size)
