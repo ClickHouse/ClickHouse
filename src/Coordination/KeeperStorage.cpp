@@ -656,6 +656,55 @@ struct KeeperStorageSetRequestProcessor final : public KeeperStorageRequestProce
     }
 };
 
+struct KeeperStorageSimpleListRequestProcessor final : public KeeperStorageRequestProcessor
+{
+    bool checkAuth(KeeperStorage & storage, int64_t session_id) const override
+    {
+        auto & container = storage.container;
+        auto it = container.find(zk_request->getPath());
+        if (it == container.end())
+            return true;
+
+        const auto & node_acls = storage.acl_map.convertNumber(it->value.acl_id);
+        if (node_acls.empty())
+            return true;
+
+        const auto & session_auths = storage.session_and_auth[session_id];
+        return checkACL(Coordination::ACL::Read, node_acls, session_auths);
+    }
+
+    using KeeperStorageRequestProcessor::KeeperStorageRequestProcessor;
+    std::pair<Coordination::ZooKeeperResponsePtr, Undo> process(KeeperStorage & storage, int64_t /*zxid*/, int64_t /*session_id*/, int64_t /* time */) const override
+    {
+        auto & container = storage.container;
+        Coordination::ZooKeeperResponsePtr response_ptr = zk_request->makeResponse();
+        Coordination::ZooKeeperSimpleListResponse & response = dynamic_cast<Coordination::ZooKeeperSimpleListResponse &>(*response_ptr);
+        Coordination::ZooKeeperSimpleListRequest & request = dynamic_cast<Coordination::ZooKeeperSimpleListRequest &>(*zk_request);
+
+        auto it = container.find(request.path);
+        if (it == container.end())
+        {
+            response.error = Coordination::Error::ZNONODE;
+        }
+        else
+        {
+            auto path_prefix = request.path;
+            if (path_prefix.empty())
+                throw DB::Exception("Logical error: path cannot be empty", ErrorCodes::LOGICAL_ERROR);
+
+            const auto & children = it->value.getChildren();
+            response.names.reserve(children.size());
+
+            for (const auto child : children)
+                response.names.push_back(child.toString());
+
+            response.error = Coordination::Error::ZOK;
+        }
+
+        return { response_ptr, {} };
+    }
+};
+
 struct KeeperStorageListRequestProcessor final : public KeeperStorageRequestProcessor
 {
     bool checkAuth(KeeperStorage & storage, int64_t session_id) const override
@@ -887,6 +936,12 @@ struct KeeperStorageMultiRequestProcessor final : public KeeperStorageRequestPro
                     break;
                 case Coordination::OpNum::Check:
                     concrete_requests.push_back(std::make_shared<KeeperStorageCheckRequestProcessor>(sub_zk_request));
+                    break;
+                case Coordination::OpNum::Get:
+                    concrete_requests.push_back(std::make_shared<KeeperStorageGetRequestProcessor>(sub_zk_request));
+                    break;
+                case Coordination::OpNum::SimpleList:
+                    concrete_requests.push_back(std::make_shared<KeeperStorageSimpleListRequestProcessor>(sub_zk_request));
                     break;
                 default:
                     throw DB::Exception(ErrorCodes::BAD_ARGUMENTS, "Illegal command as part of multi ZooKeeper request {}", sub_zk_request->getOpNum());

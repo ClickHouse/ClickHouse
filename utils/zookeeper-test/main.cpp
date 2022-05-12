@@ -62,6 +62,7 @@ void testCreateList(zkutil::ZooKeeper & zk)
     auto children = zk.getChildren("/data/lst");
     if (children.size() != 3)
         throw std::runtime_error("Children of /data/lst doesn't equal to three");
+    std::sort(children.begin(), children.end());
     for (size_t i = 0; i < children.size(); ++i)
     {
         std::cerr << "children:" << children[i] << std::endl;
