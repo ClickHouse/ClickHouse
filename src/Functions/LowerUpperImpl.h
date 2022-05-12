@@ -87,7 +87,7 @@ private:
             const uint8x16_t cased_chars = veorq_u8(chars, xor_mask);
 
             /// store result back to destination
-            vst1q_u8(reinterpret_cast<const unsigned char *>(dst), cased_chars);
+            vst1q_u8(reinterpret_cast<unsigned char *>(dst), cased_chars);
         }
 
 #endif
