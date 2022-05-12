@@ -28,21 +28,34 @@ public:
 
     explicit DictionaryHierarchyParentToChildIndex(const HashMap<UInt64, PaddedPODArray<UInt64>> & parent_to_children_map_)
     {
-        parent_to_children_map.reserve(parent_to_children_map_.size());
-        for (const auto & [parent, children] : parent_to_children_map_)
+        size_t parent_to_children_map_size = parent_to_children_map_.size();
+
+        keys.reserve(parent_to_children_map_size);
+        parent_to_children_keys_range.reserve(parent_to_children_map_size);
+
+        for (auto & [parent, children] : parent_to_children_map_)
         {
-            auto & parent_to_children_array = parent_to_children_map[parent];
-            parent_to_children_array.assign(children);
+            UInt32 start_index = static_cast<UInt32>(keys.size());
+            for (auto child : children)
+            {
+                keys.push_back(child);
+            }
+
+            UInt32 end_index = static_cast<UInt32>(keys.size());
+            parent_to_children_keys_range[parent] = DictionaryHierarchyParentToChildIndex::KeysRange{start_index, end_index};
         }
     }
 
-    explicit DictionaryHierarchyParentToChildIndex(HashMap<UInt64, PaddedPODArray<UInt64>> && parent_to_children_map_)
-        : parent_to_children_map(std::move(parent_to_children_map_))
+    size_t getSizeInBytes() const
     {
+        return parent_to_children_keys_range.getBufferSizeInBytes() + (keys.size() * sizeof(UInt64));
     }
 
-    /// Parent to children map
-    HashMap<UInt64, PaddedPODArray<UInt64>> parent_to_children_map;
+    /// Map parent key to range of children from keys array
+    HashMap<UInt64, KeysRange> parent_to_children_keys_range;
+
+    /// Array of keys in hierarchy
+    PaddedPODArray<UInt64> keys;
 };
 
 namespace detail
@@ -252,7 +265,8 @@ namespace detail
         Strategy strategy,
         size_t & valid_keys)
     {
-        auto & parent_to_child = parent_to_child_index.parent_to_children_map;
+        auto & parent_to_children_keys_range = parent_to_child_index.parent_to_children_keys_range;
+        auto & children_keys = parent_to_child_index.keys;
 
         /// If strategy is GetAllDescendantsStrategy we try to cache and later reuse previously calculated descendants.
         /// If strategy is GetDescendantsAtSpecificLevelStrategy we does not use cache strategy.
@@ -295,7 +309,7 @@ namespace detail
         {
             const UInt64 & requested_key = keys[i];
 
-            if (parent_to_child.find(requested_key) == nullptr)
+            if (parent_to_children_keys_range.find(requested_key) == nullptr)
             {
                 descendants_offsets.emplace_back(descendants.size());
                 continue;
@@ -360,7 +374,7 @@ namespace detail
                     }
                 }
 
-                const auto * it = parent_to_child.find(key);
+                const auto * it = parent_to_children_keys_range.find(key);
 
                 if (!it || depth >= DBMS_HIERARCHICAL_DICTIONARY_MAX_DEPTH)
                     continue;
@@ -375,7 +389,8 @@ namespace detail
                 {
                     /// Put special signaling value on stack and update cache with range start
                     size_t range_start_index = descendants.size();
-                    already_processed_keys_to_range[key].start_index = range_start_index;
+                    Range range {range_start_index, range_start_index};
+                    already_processed_keys_to_range.insert(makePairNoInit(key, range));
                     next_keys_to_process_stack.emplace_back(KeyAndDepth{key, key_range_requires_update});
                 }
 
@@ -383,14 +398,25 @@ namespace detail
 
                 ++depth;
 
-                const auto & children = it->getMapped();
+                DictionaryHierarchyParentToChildIndex::KeysRange children_range = it->getMapped();
 
-                for (auto child_key : children)
+                for (; children_range.start_index < children_range.end_index; ++children_range.start_index)
                 {
+                    auto child_key = children_keys[children_range.start_index];
+
                     /// In case of GetAllDescendantsStrategy we add any descendant to result array
                     /// If strategy is GetDescendantsAtSpecificLevelStrategy we require depth == level
-                    if (std::is_same_v<Strategy, GetAllDescendantsStrategy> || depth == level)
+                    if constexpr (std::is_same_v<Strategy, GetAllDescendantsStrategy>)
                         descendants.emplace_back(child_key);
+
+                    if constexpr (std::is_same_v<Strategy, GetDescendantsAtSpecificLevelStrategy>)
+                    {
+                        if (depth == level)
+                        {
+                            descendants.emplace_back(child_key);
+                            continue;
+                        }
+                    }
 
                     next_keys_to_process_stack.emplace_back(KeyAndDepth{child_key, depth});
                 }
