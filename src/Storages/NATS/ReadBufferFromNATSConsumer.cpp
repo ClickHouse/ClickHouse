@@ -34,10 +34,9 @@ ReadBufferFromNATSConsumer::ReadBufferFromNATSConsumer(
         , log(log_)
         , row_delimiter(row_delimiter_)
         , stopped(stopped_)
+        , queue_name(subscribe_queue_name)
         , received(queue_size_)
 {
-    subscribe(subscribe_queue_name);
-    LOG_DEBUG(log, "Started NATS consumer");
 }
 
 
@@ -53,6 +52,9 @@ ReadBufferFromNATSConsumer::~ReadBufferFromNATSConsumer()
 
 void ReadBufferFromNATSConsumer::subscribe(const String & subscribe_queue_name)
 {
+    if (subscribed)
+        return;
+
     for (const auto & subject : subjects) {
         natsSubscription * ns;
         auto status = natsConnection_QueueSubscribe(
@@ -67,6 +69,7 @@ void ReadBufferFromNATSConsumer::subscribe(const String & subscribe_queue_name)
             throw Exception(ErrorCodes::CANNOT_CONNECT_NATS, "Failed to subscribe to subject {}", subject);
         }
     }
+    subscribed = true;
 }
 
 

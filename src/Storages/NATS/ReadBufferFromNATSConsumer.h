@@ -57,7 +57,7 @@ public:
 private:
     bool nextImpl() override;
 
-    void subscribe(const String & subscribe_queue_name);
+    void subscribe();
     static void onMsg(natsConnection *nc, natsSubscription *sub, natsMsg * msg, void * closure);
 
     std::shared_ptr<NATSConnectionManager> connection;
@@ -67,6 +67,9 @@ private:
     char row_delimiter;
     bool allowed = true;
     const std::atomic<bool> & stopped;
+
+    bool subscribed = false;
+    String queue_name;
 
     String channel_id;
     ConcurrentBoundedQueue<MessageData> received;
