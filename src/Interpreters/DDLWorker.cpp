@@ -405,7 +405,6 @@ void DDLWorker::scheduleTasks(bool reinitialized)
 
         if (worker_pool)
         {
-            dependencies_graph.removeTask(task_name);
             worker_pool->scheduleOrThrowOnError([this, &task_to_process, zookeeper]()
             {
                 setThreadName("DDLWorkerExec");
@@ -417,6 +416,9 @@ void DDLWorker::scheduleTasks(bool reinitialized)
             processTask(task_to_process, zookeeper);
         }
     }
+
+    dependencies_graph.removeProcessedTasks();
+    current_tasks.remove_if([](const DDLTaskPtr & t) { return t->completely_processed.load(); });
 
 }
 
