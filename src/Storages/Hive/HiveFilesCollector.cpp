@@ -9,6 +9,9 @@
 #include <Processors/Formats/IInputFormat.h>
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipeline.h>
+#include <Common/StringUtils/StringUtils.h>
+#include <Common/logger_useful.h>
+#include <IO/ReadBufferFromString.h>
 namespace DB
 {
 namespace ErrorCodes
@@ -49,19 +52,21 @@ void HiveFilesCollector::prepare()
     hive_file_minmax_idx_expr = std::make_shared<ExpressionActions>(
         std::make_shared<ActionsDAG>(hive_file_name_and_types), ExpressionActionsSettings::fromContext(context));
 }
-std::vector<HiveFilesCollector::FileInfo> HiveFilesCollector::collect()
-{
-    prepare();
 
-    auto hive_metastore_client = HiveMetastoreClientFactory::instance().getOrCreate(hive_metastore_url, context);
+HiveFiles HiveFilesCollector::collect(HivePruneLevel prune_level)
+{
+    auto hive_metastore_client = HiveMetastoreClientFactory::instance().getOrCreate(hive_metastore_url);
     auto hive_table_metadata = hive_metastore_client->getTableMetadata(hive_database, hive_table);
     auto partitions = hive_table_metadata->getPartitions();
     hdfs_namenode_url = getNameNodeUrl(hive_table_metadata->getTable()->sd.location);
     auto hdfs_builder = createHDFSBuilder(hdfs_namenode_url, context->getGlobalContext()->getConfigRef());
     auto hdfs_fs = createHDFSFS(hdfs_builder.get());
-    format_name = IHiveFile::hiveMetaStoreFileFormattoHiveFileFormat(hive_table_metadata->getTable()->sd.inputFormat);
+    format_name = IHiveFile::toCHFormat(hive_table_metadata->getTable()->sd.inputFormat);
 
-    std::vector<FileInfo> hive_files;
+    if (!partition_name_and_types.empty() && partitions.empty())
+        return {};
+
+    HiveFiles hive_files;
     std::mutex hive_files_mutex;
     ThreadPool thread_pool{num_streams};
     if (!partitions.empty())
@@ -70,7 +75,7 @@ std::vector<HiveFilesCollector::FileInfo> HiveFilesCollector::collect()
         {
             thread_pool.scheduleOrThrowOnError([&]()
             {
-                auto hive_files_in_partition = collectHiveFilesFromPartition(partition, hive_table_metadata, hdfs_fs);
+                auto hive_files_in_partition = collectHiveFilesFromPartition(partition, hive_table_metadata, hdfs_fs, prune_level);
                 if (!hive_files_in_partition.empty())
                 {
                     std::lock_guard<std::mutex> lock(hive_files_mutex);
@@ -78,34 +83,24 @@ std::vector<HiveFilesCollector::FileInfo> HiveFilesCollector::collect()
                 }
             });
         }
-        thread_pool.wait();
     }
-    else if (partition_name_and_types.empty())
+    else
     {
         auto file_infos = hive_table_metadata->getFilesByLocation(hdfs_fs, hive_table_metadata->getTable()->sd.location);
         for (const auto & file_info : file_infos)
         {
             thread_pool.scheduleOrThrow([&]()
             {
-                auto hive_file = createHiveFileIfNeeded(file_info, {});
+                auto hive_file = getHiveFileIfNeeded(file_info, {}, hive_table_metadata, prune_level);
                 if (hive_file)
                 {
                     std::lock_guard<std::mutex> lock(hive_files_mutex);
-                    hive_files.emplace_back(FileInfo{.hdfs_namenode_url = hdfs_namenode_url, .file_info = file_info, .partition_values = {}, .file_ptr = hive_file, .file_format = format_name});
+                    hive_files.emplace_back(hive_file);
                 }
             });
         }
-        thread_pool.wait();
     }
-    else
-    {
-        throw Exception(
-            ErrorCodes::INVALID_PARTITION_VALUE,
-            "Invalid hive partition settings. partitions size:{}, partition_name_and_types size:{}",
-            partitions.size(),
-            partition_name_and_types.size());
-
-    }
+    thread_pool.wait();
     return hive_files;
 }
 static std::string getBaseName(const String & path)
@@ -114,10 +109,11 @@ static std::string getBaseName(const String & path)
     return path.substr(basename_start + 1);
 }
 
-std::vector<HiveFilesCollector::FileInfo> HiveFilesCollector::collectHiveFilesFromPartition(
+HiveFiles HiveFilesCollector::collectHiveFilesFromPartition(
     const Apache::Hadoop::Hive::Partition & partition_,
     HiveMetastoreClient::HiveTableMetadataPtr hive_table_metadata_,
-    const HDFSFSPtr & fs_)
+    const HDFSFSPtr & fs_,
+    HivePruneLevel prune_level)
 {
     bool has_default_partition = false;
     for (const auto & value : partition_.values)
@@ -176,60 +172,98 @@ std::vector<HiveFilesCollector::FileInfo> HiveFilesCollector::collectHiveFilesFr
 
     auto file_infos = hive_table_metadata_->getFilesByLocation(fs_, partition_.sd.location);
 
-    std::vector<FileInfo> hive_files;
+    HiveFiles hive_files;
     hive_files.reserve(file_infos.size());
     for (const auto & file_info : file_infos)
     {
-        auto hive_file = createHiveFileIfNeeded(file_info, fields);
+        auto hive_file = getHiveFileIfNeeded(file_info, fields, hive_table_metadata_, prune_level);
         if (hive_file)
-            hive_files.emplace_back(FileInfo{.hdfs_namenode_url = hdfs_namenode_url, .file_info = file_info, .partition_values = partition_values, .file_ptr = hive_file, .file_format = format_name});
+            hive_files.emplace_back(hive_file);
     }
     return hive_files;
 
 }
-HiveFilePtr HiveFilesCollector::createHiveFileIfNeeded(const HiveMetastoreClient::FileInfo & file_info_, const FieldVector & fields_)
+
+HiveFilePtr HiveFilesCollector::getHiveFileIfNeeded(
+    const HiveMetastoreClient::FileInfo & file_info,
+    const FieldVector & fields,
+    const HiveTableMetadataPtr & hive_table_metadata,
+    HivePruneLevel prune_level) const
 {
-    String filename = getBaseName(file_info_.path);
-    if (filename.find('.') == 0)
+    String filename = getBaseName(file_info.path);
+    /// Skip temporary files starts with '.'
+    if (startsWith(filename, "."))
         return {};
-    auto hive_file = createHiveFile(
-        format_name,
-        fields_,
-        hdfs_namenode_url,
-        file_info_.path,
-        file_info_.last_modify_time,
-        file_info_.size,
-        hive_file_name_and_types,
-        storage_settings,
-        context);
-    const KeyCondition hive_file_key_condition(*query_info, context, hive_file_name_and_types.getNames(), hive_file_minmax_idx_expr);
-    if (hive_file->hasMinMaxIndex())
+
+    auto cache = hive_table_metadata->getHiveFilesCache();
+    auto hive_file = cache->get(file_info.path);
+    if (!hive_file || hive_file->getLastModifiedTimestamp() < file_info.last_modify_time)
     {
-        hive_file->loadMinMaxIndex();
-        if (!hive_file_key_condition.checkInHyperrectangle(hive_file->getMinMaxIndex()->hyperrectangle, hive_file_name_and_types.getTypes())
-                 .can_be_true)
-        {
-            return {};
-        }
+        LOG_TRACE(logger, "Create hive file {}, prune_level {}", file_info.path, pruneLevelToString(prune_level));
+        hive_file = HiveFileFactory::instance().createFile(
+            format_name,
+            fields,
+            hdfs_namenode_url,
+            file_info.path,
+            file_info.last_modify_time,
+            file_info.size,
+            hive_file_name_and_types,
+            storage_settings,
+            context->getGlobalContext());
+        cache->set(file_info.path, hive_file);
+    }
+    else
+    {
+        LOG_TRACE(logger, "Get hive file {} from cache, prune_level {}", file_info.path, pruneLevelToString(prune_level));
     }
 
-    if (hive_file->hasSubMinMaxIndex())
+    if (prune_level >= PruneLevel::File)
     {
-        std::set<int> skip_splits;
-        hive_file->loadSubMinMaxIndex();
-        const auto & sub_minmax_idxes = hive_file->getSubMinMaxIndexes();
-        for (size_t i = 0; i < sub_minmax_idxes.size(); ++i)
+        const KeyCondition hivefile_key_condition(*query_info, context, hive_file_name_and_types.getNames(), hive_file_minmax_idx_expr);
+        if (hive_file->useFileMinMaxIndex())
         {
-            if (!hive_file_key_condition.checkInHyperrectangle(sub_minmax_idxes[i]->hyperrectangle, hive_file_name_and_types.getTypes())
+            /// Load file level minmax index and apply
+            hive_file->loadFileMinMaxIndex();
+            if (!hivefile_key_condition.checkInHyperrectangle(hive_file->getMinMaxIndex()->hyperrectangle, hive_file_name_and_types.getTypes())
                      .can_be_true)
             {
-                skip_splits.insert(i);
+                LOG_TRACE(
+                    logger,
+                    "Skip hive file {} by index {}",
+                    hive_file->getPath(),
+                    hive_file->describeMinMaxIndex(hive_file->getMinMaxIndex()));
+                return {};
             }
         }
-        hive_file->setSkipSplits(skip_splits);
+
+        if (prune_level >= HivePruneLevel::Split)
+        {
+            if (hive_file->useSplitMinMaxIndex())
+            {
+                /// Load sub-file level minmax index and apply
+                std::unordered_set<int> skip_splits;
+                hive_file->loadSplitMinMaxIndexes();
+                const auto & sub_minmax_idxes = hive_file->getSubMinMaxIndexes();
+                for (size_t i = 0; i < sub_minmax_idxes.size(); ++i)
+                {
+                    if (!hivefile_key_condition.checkInHyperrectangle(sub_minmax_idxes[i]->hyperrectangle, hive_file_name_and_types.getTypes())
+                             .can_be_true)
+                    {
+                        LOG_TRACE(
+                            logger,
+                            "Skip split {} of hive file {} by index {}",
+                            i,
+                            hive_file->getPath(),
+                            hive_file->describeMinMaxIndex(sub_minmax_idxes[i]));
+
+                        skip_splits.insert(i);
+                    }
+                }
+                hive_file->setSkipSplits(skip_splits);
+            }
+        }
     }
     return hive_file;
-
 }
 }
 #endif

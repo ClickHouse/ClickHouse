@@ -3,6 +3,8 @@
 #if USE_HIVE
 #include <Storages/Hive/HiveFile.h>
 #include <Storages/Hive/HiveCommon.h>
+#include <Poco/Logger.h>
+#include <Storages/Hive/HiveSourceTask.h>
 namespace DB
 {
 /**
@@ -12,18 +14,11 @@ namespace DB
 class HiveFilesCollector
 {
 public:
-    struct FileInfo
-    {
-        String hdfs_namenode_url;
-        HiveMetastoreClient::FileInfo file_info;
-        Strings partition_values;
-        HiveFilePtr file_ptr;
-        String file_format;
-    };
+    using PruneLevel = HivePruneLevel;
 
     explicit HiveFilesCollector(
         ContextPtr context_,
-        SelectQueryInfo * query_info_,
+        const SelectQueryInfo * query_info_,
         ASTPtr partition_by_ast_,
         const ColumnsDescription & columns_, const String & hive_metastore_url_,
         const String & hive_database_,
@@ -40,13 +35,14 @@ public:
         , num_streams(num_streams_)
         , storage_settings(storage_settings_)
     {
-
+        prepare();
     }
 
-    std::vector<FileInfo> collect();
+    HiveFiles collect(PruneLevel prune_level = PruneLevel::Max);
 private:
+    using HiveTableMetadataPtr = HiveMetastoreClient::HiveTableMetadataPtr;
     ContextPtr context;
-    SelectQueryInfo * query_info;
+    const SelectQueryInfo * query_info;
     ASTPtr partition_by_ast; // for partition filter
     ColumnsDescription columns;
     String hive_metastore_url;
@@ -63,14 +59,21 @@ private:
     ExpressionActionsPtr hive_file_minmax_idx_expr;
     NamesAndTypesList hive_file_name_and_types;
 
+    Poco::Logger * logger = &Poco::Logger::get("HiveFilesCollector");
+
     static ASTPtr extractKeyExpressionList(const ASTPtr & node);
     void prepare();
-    std::vector<FileInfo> collectHiveFilesFromPartition(
+    HiveFiles collectHiveFilesFromPartition(
         const Apache::Hadoop::Hive::Partition & partition_,
         HiveMetastoreClient::HiveTableMetadataPtr hive_table_metadata_,
-        const HDFSFSPtr & fs_);
-    HiveFilePtr createHiveFileIfNeeded(
-        const HiveMetastoreClient::FileInfo & file_info_, const FieldVector & fields_);
+        const HDFSFSPtr & fs_,
+        PruneLevel prune_level = PruneLevel::Max);
+
+    HiveFilePtr getHiveFileIfNeeded(
+        const HiveMetastoreClient::FileInfo & file_info,
+        const FieldVector & fields,
+        const HiveTableMetadataPtr & hive_table_metadata,
+        PruneLevel prune_level = PruneLevel::Max) const;
 };
 }
 #endif

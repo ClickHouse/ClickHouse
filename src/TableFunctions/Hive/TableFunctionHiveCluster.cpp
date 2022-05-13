@@ -12,7 +12,7 @@
 #include <Storages/Hive/StorageHiveCluster.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <TableFunctions/parseColumnsListForTableFunction.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <Common/ErrorCodes.h>
 #include <Common/Exception.h>
 
@@ -69,7 +69,7 @@ StoragePtr TableFunctionHiveCluster::executeImpl(
         settings.max_query_size,
         settings.max_parser_depth);
     StoragePtr storage;
-    storage = StorageHiveCluster::create(
+    storage = std::make_shared<StorageHiveCluster>(
         cluster_name,
         hive_metastore_url,
         hive_database,

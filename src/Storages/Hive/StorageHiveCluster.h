@@ -1,7 +1,6 @@
 #pragma once
 #include <Common/config.h>
 #if USE_HIVE
-#include <base/shared_ptr_helper.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Poco/Logger.h>
@@ -21,11 +20,22 @@ namespace DB
  *
  */
 class HiveSettings;
-class StorageHiveCluster : public shared_ptr_helper<StorageHiveCluster>, public IStorage, WithContext
+class StorageHiveCluster : public IStorage, WithContext
 {
-    friend struct shared_ptr_helper<StorageHiveCluster>;
-
 public:
+    StorageHiveCluster(
+        const String & cluster_name_,
+        const String & hive_metastore_url_,
+        const String & hive_database_,
+        const String & hive_table_,
+        const StorageID & table_id_,
+        const ColumnsDescription & columns_,
+        const ConstraintsDescription & constraints_,
+        const String & comment_,
+        const ASTPtr & partition_by_ast_,
+        std::unique_ptr<HiveSettings> storage_settings_,
+        ContextPtr context_);
+
     String getName() const override { return "HiveCluster"; }
     bool supportsIndexForIn() const override { return true; }
     bool mayBenefitFromIndexForIn(
@@ -49,20 +59,6 @@ public:
 
     QueryProcessingStage::Enum getQueryProcessingStage(
         ContextPtr context_, QueryProcessingStage::Enum to_stage_, const StorageSnapshotPtr &, SelectQueryInfo &) const override;
-
-protected:
-    StorageHiveCluster(
-        const String & cluster_name_,
-        const String & hive_metastore_url_,
-        const String & hive_database_,
-        const String & hive_table_,
-        const StorageID & table_id_,
-        const ColumnsDescription & columns_,
-        const ConstraintsDescription & constraints_,
-        const String & comment_,
-        const ASTPtr & partition_by_ast_,
-        std::unique_ptr<HiveSettings> storage_settings_,
-        ContextPtr context_);
 
 private:
     String cluster_name;

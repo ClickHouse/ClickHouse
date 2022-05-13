@@ -731,7 +731,7 @@ static constexpr UInt64 operator""_Gb(unsigned long long value)
     M(Bool, output_format_arrow_low_cardinality_as_dictionary, false, "Enable output LowCardinality type as Dictionary Arrow type", 0) \
     \
     M(EnumComparingMode, format_capn_proto_enum_comparising_mode, FormatSettings::EnumComparingMode::BY_VALUES, "How to map ClickHouse Enum and CapnProto Enum", 0) \
-    M(String, hive_cluster_task_iterate_policy, "hive_task_node_hash_policy", "Define the task iterator policy for StorageHiveCluster query", 0)\
+    M(String, hive_cluster_task_iterate_policy, "hive_cluster_source_node_hash", "Define the task iterator policy for StorageHiveCluster query", 0)\
     \
     M(String, input_format_mysql_dump_table_name, "", "Name of the table in MySQL dump from which to read data", 0) \
     M(Bool, input_format_mysql_dump_map_column_names, true, "Match columns from table in MySQL dump and columns from ClickHouse table by names", 0) \
