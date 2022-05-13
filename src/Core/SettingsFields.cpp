@@ -256,7 +256,7 @@ template <SettingFieldTimespanUnit unit_>
 void SettingFieldTimespan<unit_>::writeBinary(WriteBuffer & out) const
 {
     /// Note that this is unchanged and returns UInt64 for both seconds and milliseconds for
-    /// compatibility reasons as it's only used the clients or servers older than
+    /// compatibility reasons as it's only used by the clients or servers older than
     /// DBMS_MIN_REVISION_WITH_SETTINGS_SERIALIZED_AS_STRINGS
     auto num_units = operator UInt64();
     writeVarUInt(num_units, out);
