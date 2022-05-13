@@ -23,16 +23,13 @@ enum class HivePruneLevel
     Split,
     Max = Split,
 };
-    
+
 String pruneLevelToString(HivePruneLevel level);
 
 /// An interface class for implementing different collect strategies
 class IHiveSourceFilesCollector
 {
 public:
-
-
-
     virtual ~IHiveSourceFilesCollector() = default;
     struct Arguments
     {

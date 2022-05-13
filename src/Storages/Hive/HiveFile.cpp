@@ -360,7 +360,7 @@ HiveFileFactory & HiveFileFactory::instance()
 {
     static HiveFileFactory instance;
     static std::once_flag init_flag;
-    std::call_once(init_flag, []() { registerHiveCreators(instance); });
+    std::call_once(init_flag, []() { registerHiveFileCreators(instance); });
 
     return instance;
 }
@@ -382,7 +382,7 @@ HiveFilePtr HiveFileFactory::createFile(
     return it->second(fields, namenode_url, path, ts, size, index_names_and_types, hive_settings, context);
 }
 
-void HiveFileFactory::registerHiveCreators(HiveFileFactory & instance)
+void HiveFileFactory::registerHiveFileCreators(HiveFileFactory & instance)
 {
     instance.creators["HiveText"] = [](const FieldVector & fields,
                                        const String & namenode_url,

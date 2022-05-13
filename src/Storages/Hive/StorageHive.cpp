@@ -506,16 +506,6 @@ StorageHive::totalRowsImpl(const SelectQueryInfo & query_info, PruneLevel prune_
 std::shared_ptr<IHiveSourceFilesCollector> StorageHive::getHiveFilesCollector(const SelectQueryInfo & query_info) const
 {
     std::shared_ptr<IHiveSourceFilesCollector> hive_task_files_collector;
-    IHiveSourceFilesCollector::Arguments args
-        = {.context = getContext(),
-           .query_info = &query_info,
-           .hive_metastore_url = hive_metastore_url,
-           .hive_database = hive_database,
-           .hive_table = hive_table,
-           .storage_settings = storage_settings,
-           .columns = getInMemoryMetadata().getColumns(),
-           .num_streams = getContext()->getSettingsRef().max_threads,
-           .partition_by_ast = partition_by_ast};
     /**
      * Hdfs files collection action is wrapped into IHiveSourceFilesCollector.
      * On Hive() engine, hive_task_files_collector_builder is nullptr.
@@ -525,10 +515,20 @@ std::shared_ptr<IHiveSourceFilesCollector> StorageHive::getHiveFilesCollector(co
     if (!hive_task_files_collector_builder)
     {
         hive_task_files_collector = std::make_shared<LocalHiveSourceFilesCollector>();
+        IHiveSourceFilesCollector::Arguments args
+            = {.context = getContext(),
+               .query_info = &query_info,
+               .hive_metastore_url = hive_metastore_url,
+               .hive_database = hive_database,
+               .hive_table = hive_table,
+               .storage_settings = storage_settings,
+               .columns = getInMemoryMetadata().getColumns(),
+               .num_streams = getContext()->getSettingsRef().max_threads,
+               .partition_by_ast = partition_by_ast};
+        hive_task_files_collector->initialize(args);
     }
     else
         hive_task_files_collector = (*hive_task_files_collector_builder)();
-    hive_task_files_collector->initialize(args);
     return hive_task_files_collector;
 }
 

@@ -283,7 +283,7 @@ public:
         size_t /*size*/,
         const NamesAndTypesList & /*index_names_and_types*/,
         const std::shared_ptr<HiveSettings> & /*hive_settings*/,
-        ContextPtr context)>;
+        ContextPtr /*context*/)>;
     static HiveFileFactory & instance();
 
     HiveFilePtr createFile(
@@ -300,7 +300,7 @@ public:
 protected :
     HiveFileFactory() = default;
 
-    static void registerHiveCreators(HiveFileFactory & instance);
+    static void registerHiveFileCreators(HiveFileFactory & instance);
 
     std::map<String, HiveFileCreator> creators;
 };
