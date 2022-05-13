@@ -209,7 +209,8 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     {
         default_specifier = s_auto_increment.getName();
         /// if type is not provided for a column with AUTO_INCREMENT then using INT by default
-        if (!type) {
+        if (!type)
+        {
             const String type_int("INT");
             Tokens tokens(type_int.data(), type_int.data() + type_int.size());
             Pos tmp_pos(tokens, 0);

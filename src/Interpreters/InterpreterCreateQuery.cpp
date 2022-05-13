@@ -98,6 +98,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int ENGINE_REQUIRED;
     extern const int UNKNOWN_STORAGE;
+    extern const int SYNTAX_ERROR;
 }
 
 namespace fs = std::filesystem;
