@@ -1,3 +1,5 @@
+#ifdef ENABLE_ANNOY
+
 #include <Storages/MergeTree/MergeTreeIndexAnnoy.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
@@ -257,3 +259,4 @@ void AnnoyIndexValidator(const IndexDescription & index, bool /* attach */)
 }
 
 }
+#endif // ENABLE_ANNOY

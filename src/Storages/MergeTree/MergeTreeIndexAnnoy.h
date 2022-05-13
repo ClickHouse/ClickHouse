@@ -1,5 +1,6 @@
 #pragma once
 
+#ifdef ENABLE_ANNOY
 
 #include <Storages/MergeTree/CommonANNIndexes.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
@@ -119,3 +120,5 @@ private:
 
 
 }
+
+#endif // ENABLE_ANNOY

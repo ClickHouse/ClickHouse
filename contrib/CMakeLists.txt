@@ -91,7 +91,6 @@ add_contrib (protobuf-cmake protobuf)
 add_contrib (openldap-cmake openldap)
 add_contrib (grpc-cmake grpc)
 add_contrib (msgpack-c-cmake msgpack-c)
-add_contrib (spotify-annoy-cmake spotify-annoy)
 
 if (ENABLE_FUZZING)
     add_contrib (libprotobuf-mutator-cmake libprotobuf-mutator)
@@ -150,6 +149,19 @@ endif()
 
 add_contrib (sqlite-cmake sqlite-amalgamation)
 add_contrib (s2geometry-cmake s2geometry)
+
+set (ENABLE_ANNOY_DEFAULT ${ENABLE_LIBRARIES})
+option(ENABLE_ANNOY "Enable Annoy index support" ${ENABLE_ANNOY_DEFAULT})
+if (NOT CMAKE_SYSTEM_NAME MATCHES "Linux" OR NOT COMPILER_CLANG OR NOT CMAKE_CXX_COMPILER_VERSION VERSION_EQUAL 13.0.1)
+    message (WARNING "Annoy disabled. Supports only in Linux environment and Clang-13.0.1.")
+    set (ENABLE_ANNOY OFF PARENT_SCOPE)
+    set (ENABLE_ANNOY OFF)
+endif ()
+if (ENABLE_ANNOY)
+    message("Use Annoy library")
+    add_compile_definitions(ENABLE_ANNOY)
+    add_contrib (spotify-annoy-cmake spotify-annoy)
+endif()
 
 # Put all targets defined here and in subdirectories under "contrib/<immediate-subdir>" folders in GUI-based IDEs.
 # Some of third-party projects may override CMAKE_FOLDER or FOLDER property of their targets, so they would not appear
