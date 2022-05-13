@@ -13,9 +13,9 @@ SELECT 1, * FROM test LIMIT 10 FORMAT Null;
 
 SYSTEM FLUSH LOGS;
 SELECT query,
-       ProfileEvents['RemoteFSReadBytes'] > 0 as remote_fs_read,
-       ProfileEvents['RemoteFSCacheReadBytes'] > 0 as remote_fs_cache_read,
-       ProfileEvents['RemoteFSCacheDownloadBytes'] > 0 as remote_fs_read_and_download
+       ProfileEvents['CachedReadBufferReadFromSourceBytes'] > 0 as remote_fs_read,
+       ProfileEvents['CachedReadBufferReadFromCacheBytes'] > 0 as remote_fs_cache_read,
+       ProfileEvents['CachedReadBufferCacheWriteBytes'] > 0 as remote_fs_read_and_download
 FROM system.query_log
 WHERE query LIKE 'SELECT 1, * FROM test LIMIT%'
 AND type = 'QueryFinish'
@@ -29,9 +29,9 @@ SELECT 2, * FROM test LIMIT 10 FORMAT Null;
 
 SYSTEM FLUSH LOGS;
 SELECT query,
-       ProfileEvents['RemoteFSReadBytes'] > 0 as remote_fs_read,
-       ProfileEvents['RemoteFSCacheReadBytes'] > 0 as remote_fs_cache_read,
-       ProfileEvents['RemoteFSCacheDownloadBytes'] > 0 as remote_fs_read_and_download
+       ProfileEvents['CachedReadBufferReadFromSourceBytes'] > 0 as remote_fs_read,
+       ProfileEvents['CachedReadBufferReadFromCacheBytes'] > 0 as remote_fs_cache_read,
+       ProfileEvents['CachedReadBufferCacheWriteBytes'] > 0 as remote_fs_read_and_download
 FROM system.query_log
 WHERE query LIKE 'SELECT 2, * FROM test LIMIT%'
 AND type = 'QueryFinish'
@@ -56,9 +56,9 @@ SELECT 3, * FROM test LIMIT 10 FORMAT Null;
 
 SYSTEM FLUSH LOGS;
 SELECT query,
-       ProfileEvents['RemoteFSReadBytes'] > 0 as remote_fs_read,
-       ProfileEvents['RemoteFSCacheReadBytes'] > 0 as remote_fs_cache_read,
-       ProfileEvents['RemoteFSCacheDownloadBytes'] > 0 as remote_fs_read_and_download
+       ProfileEvents['CachedReadBufferReadFromSourceBytes'] > 0 as remote_fs_read,
+       ProfileEvents['CachedReadBufferReadFromCacheBytes'] > 0 as remote_fs_cache_read,
+       ProfileEvents['CachedReadBufferCacheWriteBytes'] > 0 as remote_fs_read_and_download
 FROM system.query_log
 WHERE query LIKE 'SELECT 3, * FROM test LIMIT%'
 AND type = 'QueryFinish'
