@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/ColumnNumbers.h>
 #include <Columns/FilterDescription.h>
 #include <Interpreters/AggregateDescription.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -65,6 +66,7 @@ struct ExpressionAnalyzerData
     bool has_aggregation = false;
     NamesAndTypesList aggregation_keys;
     NamesAndTypesLists aggregation_keys_list;
+    ColumnNumbersList aggregation_keys_indexes_list;
     bool has_const_aggregation_keys = false;
     AggregateDescriptions aggregate_descriptions;
 
