@@ -89,6 +89,8 @@ public:
     bool group_by_with_grouping_sets = false;
     bool limit_with_ties = false;
 
+    bool needGroupingSetColumn() const noexcept { return group_by_with_cube || group_by_with_rollup || group_by_with_grouping_sets; }
+
     ASTPtr & refSelect()    { return getExpression(Expression::SELECT); }
     ASTPtr & refTables()    { return getExpression(Expression::TABLES); }
     ASTPtr & refPrewhere()  { return getExpression(Expression::PREWHERE); }

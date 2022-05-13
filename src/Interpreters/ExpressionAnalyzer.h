@@ -77,6 +77,8 @@ struct ExpressionAnalyzerData
 
     /// All new temporary tables obtained by performing the GLOBAL IN/JOIN subqueries.
     TemporaryTablesMapping external_tables;
+
+    bool need_grouping_set_column = false;
 };
 
 
