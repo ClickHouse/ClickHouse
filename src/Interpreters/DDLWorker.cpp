@@ -384,37 +384,37 @@ void DDLWorker::scheduleTasks(bool reinitialized)
             continue;
         }
         dependencies_graph.addTask(task);
+        saveTask(std::move(task));
     }
 
     auto tasks_to_process = dependencies_graph.getTasksToParallelProcess();
 
     for (auto & task_name : tasks_to_process)
     {
-        auto task = std::find_if(current_tasks.begin(), current_tasks.end(), [&](const auto & t)
+        auto task_iter = std::find_if(current_tasks.begin(), current_tasks.end(), [&](const auto & t)
         {
             return t->entry_name == task_name;
         });
 
-        if (task == current_tasks.end())
+        if (task_iter == current_tasks.end())
         {
             /// Seems already processed
             continue;
         }
-
-        auto & saved_task = saveTask(std::move(*task));
+        auto & task_to_process = *task_iter;
 
         if (worker_pool && pool_size >= current_tasks.size())
         {
             dependencies_graph.removeTask(task_name);
-            worker_pool->scheduleOrThrowOnError([this, &saved_task, zookeeper]()
+            worker_pool->scheduleOrThrowOnError([this, &task_to_process, zookeeper]()
             {
                 setThreadName("DDLWorkerExec");
-                processTask(saved_task, zookeeper);
+                processTask(task_to_process, zookeeper);
             });
         }
         else
         {
-            processTask(saved_task, zookeeper);
+            processTask(task_to_process, zookeeper);
         }
     }
 
