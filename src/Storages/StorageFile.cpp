@@ -206,7 +206,7 @@ std::unique_ptr<ReadBuffer> createReadBuffer(
         auto & in = static_cast<ReadBufferFromFileDescriptor &>(*nested_buffer);
         in.setProgressCallback(context);
     }
-    
+
     auto zstd_window_log_max = context->getSettingsRef().zstd_window_log_max;
     return wrapReadBufferWithCompressionMethod(std::move(nested_buffer), method, zstd_window_log_max);
 }
