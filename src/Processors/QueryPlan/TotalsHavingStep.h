@@ -1,6 +1,6 @@
 #pragma once
 #include <Processors/QueryPlan/ITransformingStep.h>
-#include <Core/ColumnNumbers.h>
+#include <Processors/Transforms/finalizeChunk.h>
 
 namespace DB
 {
@@ -16,7 +16,7 @@ class TotalsHavingStep : public ITransformingStep
 public:
     TotalsHavingStep(
             const DataStream & input_stream_,
-            const ColumnNumbers & aggregates_keys_,
+            const ColumnsMask & aggregates_mask_,
             bool overflow_row_,
             const ActionsDAGPtr & actions_dag_,
             const std::string & filter_column_,
@@ -35,7 +35,7 @@ public:
     const ActionsDAGPtr & getActions() const { return actions_dag; }
 
 private:
-    const ColumnNumbers aggregates_keys;
+    const ColumnsMask aggregates_mask;
     bool overflow_row;
     ActionsDAGPtr actions_dag;
     String filter_column_name;

@@ -1,9 +1,8 @@
 #pragma once
 
 #include <Processors/ISimpleTransform.h>
+#include <Processors/Transforms/finalizeChunk.h>
 #include <Common/Arena.h>
-#include <Core/ColumnNumbers.h>
-#include <Interpreters/AggregateDescription.h>
 
 namespace DB
 {
@@ -27,7 +26,7 @@ class TotalsHavingTransform : public ISimpleTransform
 public:
     TotalsHavingTransform(
         const Block & header,
-        const ColumnNumbers & aggregates_keys_,
+        const ColumnsMask & aggregates_mask_,
         bool overflow_row_,
         const ExpressionActionsPtr & expression_,
         const std::string & filter_column_,
@@ -43,7 +42,7 @@ public:
     Status prepare() override;
     void work() override;
 
-    static Block transformHeader(Block block, const ActionsDAG * expression, const std::string & filter_column_name, bool remove_filter, bool final, const ColumnNumbers & aggregates_keys);
+    static Block transformHeader(Block block, const ActionsDAG * expression, const std::string & filter_column_name, bool remove_filter, bool final, const ColumnsMask & aggregates_mask);
 
 protected:
     void transform(Chunk & chunk) override;
@@ -57,7 +56,7 @@ private:
     void prepareTotals();
 
     /// Params
-    const ColumnNumbers aggregates_keys;
+    const ColumnsMask aggregates_mask;
     bool overflow_row;
     ExpressionActionsPtr expression;
     String filter_column_name;
@@ -80,12 +79,5 @@ private:
     /// Here, total values are accumulated. After the work is finished, they will be placed in totals.
     MutableColumns current_totals;
 };
-
-ColumnNumbers getAggregatesPositions(const Block & header, const AggregateDescriptions & aggregates);
-
-/// Convert ColumnAggregateFunction to real values.
-///
-/// @param aggregates_keys columns to convert (see getAggregatesPositions())
-void finalizeChunk(Chunk & chunk, const ColumnNumbers & aggregates_keys);
 
 }

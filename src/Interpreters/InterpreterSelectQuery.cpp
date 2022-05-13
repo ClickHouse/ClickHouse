@@ -2360,13 +2360,9 @@ void InterpreterSelectQuery::executeTotalsAndHaving(
 
     const auto & header_before = query_plan.getCurrentDataStream().header;
 
-    ColumnNumbers aggregates_keys;
-    for (const auto & aggregate : query_analyzer->aggregates())
-        aggregates_keys.push_back(header_before.getPositionByName(aggregate.column_name));
-
     auto totals_having_step = std::make_unique<TotalsHavingStep>(
         query_plan.getCurrentDataStream(),
-        aggregates_keys,
+        getAggregatesMask(header_before, query_analyzer->aggregates()),
         overflow_row,
         expression,
         has_having ? getSelectQuery().having()->getColumnName() : "",

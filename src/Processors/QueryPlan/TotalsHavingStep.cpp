@@ -1,7 +1,7 @@
 #include <Processors/QueryPlan/TotalsHavingStep.h>
 #include <Processors/Transforms/DistinctTransform.h>
-#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/Transforms/TotalsHavingTransform.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Interpreters/ExpressionActions.h>
 #include <IO/Operators.h>
 #include <Common/JSONBuilder.h>
@@ -27,7 +27,7 @@ static ITransformingStep::Traits getTraits(bool has_filter)
 
 TotalsHavingStep::TotalsHavingStep(
     const DataStream & input_stream_,
-    const ColumnNumbers & aggregates_keys_,
+    const ColumnsMask & aggregates_mask_,
     bool overflow_row_,
     const ActionsDAGPtr & actions_dag_,
     const std::string & filter_column_,
@@ -43,9 +43,9 @@ TotalsHavingStep::TotalsHavingStep(
                     filter_column_,
                     remove_filter_,
                     final_,
-                    aggregates_keys_),
+                    aggregates_mask_),
             getTraits(!filter_column_.empty()))
-    , aggregates_keys(aggregates_keys_)
+    , aggregates_mask(aggregates_mask_)
     , overflow_row(overflow_row_)
     , actions_dag(actions_dag_)
     , filter_column_name(filter_column_)
@@ -62,7 +62,7 @@ void TotalsHavingStep::transformPipeline(QueryPipelineBuilder & pipeline, const 
 
     auto totals_having = std::make_shared<TotalsHavingTransform>(
         pipeline.getHeader(),
-        aggregates_keys,
+        aggregates_mask,
         overflow_row,
         expression_actions,
         filter_column_name,

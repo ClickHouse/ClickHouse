@@ -17,37 +17,11 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
 }
 
-ColumnNumbers getAggregatesPositions(const Block & header, const AggregateDescriptions & aggregates)
-{
-    ColumnNumbers keys;
-    keys.reserve(aggregates.size());
-    for (const auto & aggregate : aggregates)
-        keys.emplace_back(header.getPositionByName(aggregate.column_name));
-    return keys;
-}
-
-void finalizeChunk(Chunk & chunk, const ColumnNumbers & aggregates_keys)
-{
-    auto num_rows = chunk.getNumRows();
-    auto columns = chunk.detachColumns();
-
-    for (size_t i = 0; i < columns.size(); ++i)
-    {
-        if (std::find(aggregates_keys.begin(), aggregates_keys.end(), i) == aggregates_keys.end())
-            continue;
-
-        auto & column = columns[i];
-        column = ColumnAggregateFunction::convertToValues(IColumn::mutate(std::move(column)));
-    }
-
-    chunk.setColumns(std::move(columns), num_rows);
-}
-
-static void finalizeBlock(Block & block, const ColumnNumbers & aggregates_keys)
+static void finalizeBlock(Block & block, const ColumnsMask & aggregates_mask)
 {
     for (size_t i = 0; i < block.columns(); ++i)
     {
-        if (std::find(aggregates_keys.begin(), aggregates_keys.end(), i) == aggregates_keys.end())
+        if (!aggregates_mask[i])
             continue;
 
         ColumnWithTypeAndName & current = block.getByPosition(i);
@@ -68,10 +42,10 @@ Block TotalsHavingTransform::transformHeader(
     const std::string & filter_column_name,
     bool remove_filter,
     bool final,
-    const ColumnNumbers & aggregates_keys)
+    const ColumnsMask & aggregates_mask)
 {
     if (final)
-        finalizeBlock(block, aggregates_keys);
+        finalizeBlock(block, aggregates_mask);
 
     if (expression)
     {
@@ -85,7 +59,7 @@ Block TotalsHavingTransform::transformHeader(
 
 TotalsHavingTransform::TotalsHavingTransform(
     const Block & header,
-    const ColumnNumbers & aggregates_keys_,
+    const ColumnsMask & aggregates_mask_,
     bool overflow_row_,
     const ExpressionActionsPtr & expression_,
     const std::string & filter_column_,
@@ -93,8 +67,8 @@ TotalsHavingTransform::TotalsHavingTransform(
     TotalsMode totals_mode_,
     double auto_include_threshold_,
     bool final_)
-    : ISimpleTransform(header, transformHeader(header, expression_  ? &expression_->getActionsDAG() : nullptr, filter_column_, remove_filter_, final_, aggregates_keys_), true)
-    , aggregates_keys(aggregates_keys_)
+    : ISimpleTransform(header, transformHeader(header, expression_  ? &expression_->getActionsDAG() : nullptr, filter_column_, remove_filter_, final_, aggregates_mask_), true)
+    , aggregates_mask(aggregates_mask_)
     , overflow_row(overflow_row_)
     , expression(expression_)
     , filter_column_name(filter_column_)
@@ -104,7 +78,7 @@ TotalsHavingTransform::TotalsHavingTransform(
     , final(final_)
 {
     finalized_header = getInputPort().getHeader();
-    finalizeBlock(finalized_header, aggregates_keys);
+    finalizeBlock(finalized_header, aggregates_mask);
 
     /// Port for Totals.
     if (expression)
@@ -196,7 +170,7 @@ void TotalsHavingTransform::transform(Chunk & chunk)
 
     auto finalized = chunk.clone();
     if (final)
-        finalizeChunk(finalized, aggregates_keys);
+        finalizeChunk(finalized, aggregates_mask);
 
     total_keys += finalized.getNumRows();
 
@@ -317,7 +291,7 @@ void TotalsHavingTransform::prepareTotals()
     }
 
     totals = Chunk(std::move(current_totals), 1);
-    finalizeChunk(totals, aggregates_keys);
+    finalizeChunk(totals, aggregates_mask);
 
     if (expression)
     {

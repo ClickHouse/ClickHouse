@@ -4,6 +4,7 @@
 #include <Interpreters/Aggregator.h>
 #include <Processors/ISimpleTransform.h>
 #include <Processors/Transforms/AggregatingTransform.h>
+#include <Processors/Transforms/finalizeChunk.h>
 
 namespace DB
 {
@@ -96,7 +97,7 @@ public:
 
 private:
     AggregatingTransformParamsPtr params;
-    ColumnNumbers aggregates_keys;
+    ColumnsMask aggregates_mask;
 };
 
 

@@ -1,5 +1,4 @@
 #include <Processors/Transforms/AggregatingInOrderTransform.h>
-#include <Processors/Transforms/TotalsHavingTransform.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Core/SortCursor.h>
@@ -314,14 +313,14 @@ void AggregatingInOrderTransform::generate()
 FinalizeAggregatedTransform::FinalizeAggregatedTransform(Block header, AggregatingTransformParamsPtr params_)
     : ISimpleTransform({std::move(header)}, {params_->getHeader()}, true)
     , params(params_)
-    , aggregates_keys(getAggregatesPositions(params->getHeader(), params->params.aggregates))
+    , aggregates_mask(getAggregatesMask(params->getHeader(), params->params.aggregates))
 {
 }
 
 void FinalizeAggregatedTransform::transform(Chunk & chunk)
 {
     if (params->final)
-        finalizeChunk(chunk, aggregates_keys);
+        finalizeChunk(chunk, aggregates_mask);
     else if (!chunk.getChunkInfo())
     {
         auto info = std::make_shared<AggregatedChunkInfo>();
