@@ -3,6 +3,7 @@
 #include <Core/Names.h>
 #include <Interpreters/Context_fwd.h>
 #include <Columns/IColumn.h>
+#include <QueryPipeline/PipelineResourcesHolder.h>
 
 #include <list>
 #include <memory>
@@ -88,12 +89,15 @@ public:
     void explainPipeline(WriteBuffer & buffer, const ExplainPipelineOptions & options);
     void explainEstimate(MutableColumns & columns);
 
+    /// Do not allow to change the table while the processors of pipe are alive.
+    void addTableLock(TableLockHolder lock) { resources.table_locks.emplace_back(std::move(lock)); }
+    void addInterpreterContext(std::shared_ptr<const Context> context) { resources.interpreter_context.emplace_back(std::move(context)); }
+    void addStorageHolder(StoragePtr storage) { resources.storage_holders.emplace_back(std::move(storage)); }
+
     /// Set upper limit for the recommend number of threads. Will be applied to the newly-created pipelines.
     /// TODO: make it in a better way.
     void setMaxThreads(size_t max_threads_) { max_threads = max_threads_; }
     size_t getMaxThreads() const { return max_threads; }
-
-    void addInterpreterContext(ContextPtr context);
 
     /// Tree node. Step and it's children.
     struct Node
@@ -113,7 +117,8 @@ private:
 
     /// Those fields are passed to QueryPipeline.
     size_t max_threads = 0;
-    std::vector<ContextPtr> interpreter_context;
+
+    QueryPlanResourceHolder resources;
 };
 
 std::string debugExplainStep(const IQueryPlanStep & step);

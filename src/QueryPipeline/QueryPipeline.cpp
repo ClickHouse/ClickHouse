@@ -204,7 +204,7 @@ static void initRowsBeforeLimit(IOutputFormat * output_format)
 
 
 QueryPipeline::QueryPipeline(
-    PipelineResourcesHolder resources_,
+    QueryPlanResourceHolder resources_,
     Processors processors_)
     : resources(std::move(resources_))
     , processors(std::move(processors_))
@@ -213,7 +213,7 @@ QueryPipeline::QueryPipeline(
 }
 
 QueryPipeline::QueryPipeline(
-    PipelineResourcesHolder resources_,
+    QueryPlanResourceHolder resources_,
     Processors processors_,
     InputPort * input_)
     : resources(std::move(resources_))
@@ -249,7 +249,7 @@ QueryPipeline::QueryPipeline(
 QueryPipeline::QueryPipeline(std::shared_ptr<ISource> source) : QueryPipeline(Pipe(std::move(source))) {}
 
 QueryPipeline::QueryPipeline(
-    PipelineResourcesHolder resources_,
+    QueryPlanResourceHolder resources_,
     Processors processors_,
     OutputPort * output_,
     OutputPort * totals_,
@@ -265,8 +265,6 @@ QueryPipeline::QueryPipeline(
 
 QueryPipeline::QueryPipeline(Pipe pipe)
 {
-    resources = std::move(pipe.holder);
-
     if (pipe.numOutputPorts() > 0)
     {
         pipe.resize(1);
