@@ -256,6 +256,7 @@ void readString(String & s, ReadBuffer & buf)
 
 template void readStringInto<PaddedPODArray<UInt8>>(PaddedPODArray<UInt8> & s, ReadBuffer & buf);
 template void readStringInto<String>(String & s, ReadBuffer & buf);
+template void readStringInto<NullOutput>(NullOutput & s, ReadBuffer & buf);
 
 template <typename Vector>
 void readStringUntilEOFInto(Vector & s, ReadBuffer & buf)
@@ -1428,6 +1429,8 @@ void readQuotedFieldInto(Vector & s, ReadBuffer & buf)
         readParsedValueInto(s, buf, parse_func);
     }
 }
+
+template void readQuotedFieldInto<NullOutput>(NullOutput & s, ReadBuffer & buf);
 
 void readQuotedField(String & s, ReadBuffer & buf)
 {
