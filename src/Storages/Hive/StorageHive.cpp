@@ -622,14 +622,14 @@ HiveFilePtr StorageHive::getHiveFileIfNeeded(
     return hive_file;
 }
 
-bool StorageHive::supportsSamplingColumns() const
+bool StorageHive::supportsSubsetOfColumns() const
 {
     return format_name == "Parquet" || format_name == "ORC";
 }
 
 void StorageHive::getActualColumnsToRead(Block & sample_block, const Block & header_block, const NameSet & partition_columns) const
 {
-    if (!supportsSamplingColumns())
+    if (!supportsSubsetOfColumns())
         sample_block = header_block;
     UInt32 erased_columns = 0;
     for (const auto & column : partition_columns)
@@ -795,7 +795,7 @@ std::optional<UInt64>
 StorageHive::totalRowsImpl(const Settings & settings, const SelectQueryInfo & query_info, ContextPtr context_, PruneLevel prune_level) const
 {
     /// Row-based format like Text doesn't support totalRowsByPartitionPredicate
-    if (!supportsSamplingColumns())
+    if (!supportsSubsetOfColumns())
         return {};
 
     auto hive_metastore_client = HiveMetastoreClientFactory::instance().getOrCreate(hive_metastore_url);

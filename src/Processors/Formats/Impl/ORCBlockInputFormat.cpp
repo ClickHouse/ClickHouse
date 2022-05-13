@@ -200,7 +200,7 @@ void registerInputFormatORC(FormatFactory & factory)
             {
                 return std::make_shared<ORCBlockInputFormat>(buf, sample, settings);
             });
-    factory.markFormatSupportsSamplingColumns("ORC");
+    factory.markFormatSupportsSubsetOfColumns("ORC");
 }
 
 void registerORCSchemaReader(FormatFactory & factory)

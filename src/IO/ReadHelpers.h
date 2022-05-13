@@ -619,6 +619,7 @@ struct NullOutput
 {
     void append(const char *, size_t) {}
     void append(const char *) {}
+    void append(const char *, const char *) {}
     void push_back(char) {} /// NOLINT
 };
 

@@ -582,9 +582,9 @@ ColumnsDescription IStorageURLBase::getTableStructureFromData(
     return readSchemaFromFormat(format, format_settings, read_buffer_iterator, urls_to_check.size() > 1, context);
 }
 
-bool IStorageURLBase::supportsSamplingColumns() const
+bool IStorageURLBase::supportsSubsetOfColumns() const
 {
-    return FormatFactory::instance().checkIfFormatSupportsSamplingColumns(format_name);
+    return FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(format_name);
 }
 
 Pipe IStorageURLBase::read(
@@ -600,7 +600,7 @@ Pipe IStorageURLBase::read(
 
     ColumnsDescription columns_description;
     Block block_for_format;
-    if (supportsSamplingColumns())
+    if (supportsSubsetOfColumns())
     {
         columns_description = ColumnsDescription{
             storage_snapshot->getSampleBlockForColumns(column_names).getNamesAndTypesList()};
@@ -688,7 +688,7 @@ Pipe StorageURLWithFailover::read(
 {
     ColumnsDescription columns_description;
     Block block_for_format;
-    if (supportsSamplingColumns())
+    if (supportsSubsetOfColumns())
     {
         columns_description = ColumnsDescription{
             storage_snapshot->getSampleBlockForColumns(column_names).getNamesAndTypesList()};
