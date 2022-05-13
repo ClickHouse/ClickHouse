@@ -200,8 +200,6 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState &, 
     {
         if (!filesystem_cache_path.empty())
             settings.ostr << (settings.hilite ? hilite_none : "") << " " << filesystem_cache_path;
-        if (force_removal)
-            settings.ostr << (settings.hilite ? hilite_keyword : "") << " FORCE";
     }
 }
 
