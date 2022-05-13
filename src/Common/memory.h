@@ -38,9 +38,16 @@ inline ALWAYS_INLINE void * newImpl(std::size_t size, TAlign... align)
 {
     void * ptr = nullptr;
     if constexpr (sizeof...(TAlign) == 1)
+#if USE_MIMALLOC
         ptr = mi_aligned_alloc(alignToSizeT(align...), size);
     else
         ptr = mi_malloc(size);
+#else
+    if constexpr (sizeof...(TAlign) == 1)
+        ptr = aligned_alloc(alignToSizeT(align...), size);
+    else
+        ptr = malloc(size);
+#endif
 
     if (likely(ptr != nullptr))
         return ptr;
@@ -51,17 +58,29 @@ inline ALWAYS_INLINE void * newImpl(std::size_t size, TAlign... align)
 
 inline ALWAYS_INLINE void * newNoExept(std::size_t size) noexcept
 {
+#if USE_MIMALLOC
     return mi_malloc(size);
+#else
+    return malloc(size);
+#endif
 }
 
 inline ALWAYS_INLINE void * newNoExept(std::size_t size, std::align_val_t align) noexcept
 {
+#if USE_MIMALLOC
     return mi_aligned_alloc(static_cast<size_t>(align), size);
+#else
+    return aligned_alloc(static_cast<size_t>(align), size);
+#endif
 }
 
 inline ALWAYS_INLINE void deleteImpl(void * ptr) noexcept
 {
+#if USE_MIMALLOC
     mi_free(ptr);
+#else
+    free(ptr);
+#endif
 }
 
 #if USE_JEMALLOC
@@ -85,7 +104,11 @@ template <std::same_as<std::align_val_t>... TAlign>
 requires DB::OptionalArgument<TAlign...>
 inline ALWAYS_INLINE void deleteSized(void * ptr, std::size_t size [[maybe_unused]], TAlign... /* align */) noexcept
 {
+#if USE_MIMALLOC
     mi_free(ptr);
+#else
+    free(ptr);
+#endif
 }
 
 #endif
