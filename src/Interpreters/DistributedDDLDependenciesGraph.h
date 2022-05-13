@@ -38,6 +38,7 @@ struct QueriesDependenciesInfo
 
 using QueriesDependenciesInfos = std::unordered_map<String, QueriesDependenciesInfo>; /// entry_name -> Dependencies_queries
 using DatabaseObjectsInAST = std::unordered_map<String, TableNamesSet>;
+using ProcessedInfo = std::unordered_map<String, bool>;
 
 struct TasksDependencies
 {
@@ -61,6 +62,8 @@ struct TasksDependencies
 class DependenciesGraph
 {
 public:
+
+    ProcessedInfo completely_processed_tasks;
 
     DependenciesGraph(ContextPtr global_context_);
     DependenciesGraph() = delete;

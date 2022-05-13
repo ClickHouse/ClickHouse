@@ -398,7 +398,8 @@ void DDLWorker::scheduleTasks(bool reinitialized)
 
         if (task_iter == current_tasks.end())
         {
-            /// Seems already processed
+            /// Already processed, we should delete dependencies
+            dependencies_graph.removeTask(task_name);
             continue;
         }
         auto & task_to_process = *(*task_iter);
@@ -417,8 +418,11 @@ void DDLWorker::scheduleTasks(bool reinitialized)
         }
     }
 
+    current_tasks.remove_if([](const DDLTaskPtr & t)
+    {
+        return dependencies_graph.completely_processed_tasks[t->entry_name] = t->completely_processed.load();
+    });
     dependencies_graph.removeProcessedTasks();
-    current_tasks.remove_if([](const DDLTaskPtr & t) { return t->completely_processed.load(); });
 
 }
 

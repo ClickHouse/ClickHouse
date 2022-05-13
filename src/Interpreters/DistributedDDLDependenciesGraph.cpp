@@ -27,7 +27,6 @@ void DependenciesGraph::addTask(DDLTaskPtr & task)
     tasks_dependencies.total_queries++;
     auto name = task->entry_name;
     auto database_objects_for_added_task = getDependenciesSetFromQuery(global_context, task->query);
-//    auto database_objects_for_added_task = std::unordered_set<QualifiedTableName>{};
     tasks_dependencies.database_objects_in_query[name] = database_objects_for_added_task;
     for (const auto & [query_name, query_objects] : tasks_dependencies.database_objects_in_query)
     {
@@ -54,6 +53,7 @@ void DependenciesGraph::addTask(DDLTaskPtr & task)
 
     if (tasks_dependencies.dependencies_info[name].dependencies.empty())
     {
+        completely_processed_tasks[name] = false;
         tasks_dependencies.independent_queries.push_back(name);
     }
 }
@@ -73,7 +73,8 @@ void DependenciesGraph::removeProcessedTasks()
 
     for (const auto& task_name : already_processed)
     {
-        removeTask(task_name);
+        if (completely_processed_tasks[task_name])
+            removeTask(task_name);
     }
 
     already_processed.clear();
