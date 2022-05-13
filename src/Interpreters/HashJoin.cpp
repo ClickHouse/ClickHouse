@@ -941,6 +941,12 @@ struct JoinOnKeyColumns
     bool isRowFiltered(size_t i) const { return join_mask_column.isRowFiltered(i); }
 };
 
+struct MatchInfo
+{
+    std::vector<const Block*> blocks;
+    std::vector<size_t> row_nums;
+};
+
 class AddedColumns
 {
 public:
@@ -1034,9 +1040,9 @@ public:
     }
 
     template<bool just_one_right_block>
-    void appendManyFromBlock(std::vector<std::pair<const Block*, size_t>> result_pairs)
+    void appendManyFromBlock(MatchInfo & match_result)
     {
-        size_t nums = result_pairs.size();
+        size_t nums = match_result.row_nums.size();
         if (nums == 0)
             return;
         if constexpr (just_one_right_block)
@@ -1046,15 +1052,13 @@ public:
                 std::vector<const IColumn *> prepared_columns;
                 std::vector<size_t> row_nums;
                 row_nums.resize(nums);
-                auto column_from_block = result_pairs[0].first->getByPosition(right_indexes[j]);
+                auto column_from_block = match_result.blocks[0]->getByPosition(right_indexes[j]);
                 if (type_name[j].type->lowCardinality() != column_from_block.type->lowCardinality())
                 {
                     JoinCommon::changeLowCardinalityInplace(column_from_block);
                 }
                 prepared_columns.emplace_back(column_from_block.column.get());
-                for (size_t i = 0; i < nums; i++)
-                    row_nums[i] = result_pairs[i].second;
-                columns[j]->insertIndicesFrom(prepared_columns, row_nums);
+                columns[j]->insertIndicesFrom(prepared_columns, match_result.row_nums);
             }
         }
         else
@@ -1063,21 +1067,18 @@ public:
             {
                 std::vector<const IColumn *> prepared_columns;
                 prepared_columns.resize(nums);
-                std::vector<size_t> row_nums;
-                row_nums.resize(nums);
                 int i = 0;
-                for (const auto & result_pair : result_pairs)
+                for (const auto & cur_block : match_result.blocks)
                 {
-                    auto column_from_block = result_pair.first->getByPosition(right_indexes[j]);
+                    auto column_from_block = cur_block->getByPosition(right_indexes[j]);
                     if (type_name[j].type->lowCardinality() != column_from_block.type->lowCardinality())
                     {
                         JoinCommon::changeLowCardinalityInplace(column_from_block);
                     }
                     prepared_columns[i] = column_from_block.column.get();
-                    row_nums[i] = result_pair.second;
                     ++i;
                 }
-                columns[j]->insertIndicesFrom(prepared_columns, row_nums);
+                columns[j]->insertIndicesFrom(prepared_columns, match_result.row_nums);
             }
         }
     }
@@ -1276,7 +1277,7 @@ void addFoundRowAll(
     IColumn::Offset & current_offset,
     KnownRowsHolder<multiple_disjuncts> & known_rows [[maybe_unused]],
     JoinStuff::JoinUsedFlags * used_flags [[maybe_unused]],
-    std::vector<std::pair<const Block*, size_t>> & result_pairs [[maybe_unused]])
+    MatchInfo & match_result [[maybe_unused]])
 {
     if constexpr (add_missing)
         added.applyLazyDefaults();
@@ -1287,11 +1288,13 @@ void addFoundRowAll(
 
         for (auto it = mapped.begin(); it.ok(); ++it)
         {
-            const auto result_pair = std::make_pair(it->block, it->row_num);
-            if (!known_rows.isKnown(result_pair))
+            if (!known_rows.isKnown(std::make_pair(it->block, it->row_num)))
             {
                 if constexpr (fast_inner_join)
-                    result_pairs.emplace_back(result_pair);
+                {
+                    match_result.blocks.emplace_back(it->block);
+                    match_result.row_nums.emplace_back(it->row_num);
+                }
                 else
                     added.appendFromBlock<false>(*it->block, it->row_num);
                 ++current_offset;
@@ -1318,7 +1321,10 @@ void addFoundRowAll(
         for (auto it = mapped.begin(); it.ok(); ++it)
         {
             if constexpr (fast_inner_join)
-                result_pairs.emplace_back(std::make_pair(it->block, it->row_num));
+            {
+                match_result.blocks.emplace_back(it->block);
+                match_result.row_nums.emplace_back(it->row_num);
+            }
             else
                 added.appendFromBlock<false>(*it->block, it->row_num);
             ++current_offset;
@@ -1361,8 +1367,10 @@ NO_INLINE IColumn::Filter joinRightColumns(
         jf.is_all_join;
 
     size_t rows = added_columns.rows_to_add;
-    std::vector<std::pair<const Block*, size_t>> result_pairs;
-    result_pairs.reserve(rows);
+
+    struct MatchInfo match_result;
+    match_result.blocks.reserve(rows);
+    match_result.row_nums.reserve(rows);
 
     IColumn::Filter filter;
     if constexpr (need_filter)
@@ -1424,7 +1432,7 @@ NO_INLINE IColumn::Filter joinRightColumns(
                     setUsed<need_filter>(filter, i);
                     used_flags.template setUsed<jf.need_flags, multiple_disjuncts>(find_result);
                     auto used_flags_opt = jf.need_flags ? &used_flags : nullptr;
-                    addFoundRowAll<Map, jf.add_missing, multiple_disjuncts, fast_inner_join>(mapped, added_columns, current_offset, known_rows, used_flags_opt, result_pairs);
+                    addFoundRowAll<Map, jf.add_missing, multiple_disjuncts, fast_inner_join>(mapped, added_columns, current_offset, known_rows, used_flags_opt, match_result);
                 }
                 else if constexpr ((jf.is_any_join || jf.is_semi_join) && jf.right)
                 {
@@ -1434,7 +1442,7 @@ NO_INLINE IColumn::Filter joinRightColumns(
                     {
                         auto used_flags_opt = jf.need_flags ? &used_flags : nullptr;
                         setUsed<need_filter>(filter, i);
-                        addFoundRowAll<Map, jf.add_missing, multiple_disjuncts, false>(mapped, added_columns, current_offset, known_rows, used_flags_opt, result_pairs);
+                        addFoundRowAll<Map, jf.add_missing, multiple_disjuncts, false>(mapped, added_columns, current_offset, known_rows, used_flags_opt, match_result);
                     }
                 }
                 else if constexpr (jf.is_any_join && KIND == ASTTableJoin::Kind::Inner)
@@ -1502,7 +1510,7 @@ NO_INLINE IColumn::Filter joinRightColumns(
 
     if constexpr (fast_inner_join)
     {
-        added_columns.appendManyFromBlock<just_one_right_block>(result_pairs);
+        added_columns.appendManyFromBlock<just_one_right_block>(match_result);
     }
 
     added_columns.applyLazyDefaults();
