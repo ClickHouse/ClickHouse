@@ -775,6 +775,133 @@ CompiledAggregateFunctions compileAggregateFunctions(CHJIT & jit, const std::vec
     return compiled_aggregate_functions;
 }
 
+CompiledSortDescriptionFunction compileSortDescription(
+    CHJIT & jit,
+    SortDescription & description,
+    const DataTypes & sort_description_types,
+    const std::string & sort_description_dump)
+{
+    Stopwatch watch;
+
+    auto compiled_module = jit.compileModule([&](llvm::Module & module)
+    {
+        auto & context = module.getContext();
+        llvm::IRBuilder<> b(context);
+
+        auto * size_type = b.getIntNTy(sizeof(size_t) * 8);
+
+        auto * column_data_type = llvm::StructType::get(b.getInt8PtrTy(), b.getInt8PtrTy());
+
+        std::vector<llvm::Type *> types = { size_type, size_type, column_data_type->getPointerTo(), column_data_type->getPointerTo() };
+        auto * comparator_func_declaration = llvm::FunctionType::get(b.getInt8Ty(), types, false);
+        auto * comparator_func = llvm::Function::Create(comparator_func_declaration, llvm::Function::ExternalLinkage, sort_description_dump, module);
+
+        auto * arguments = comparator_func->args().begin();
+        llvm::Value * lhs_index_arg = &*arguments++;
+        llvm::Value * rhs_index_arg = &*arguments++;
+        llvm::Value * columns_lhs_arg = &*arguments++;
+        llvm::Value * columns_rhs_arg = &*arguments++;
+
+        size_t columns_size = description.size();
+
+        std::vector<std::pair<llvm::BasicBlock *, llvm::Value *>> comparator_steps_and_results;
+        for (size_t i = 0; i < columns_size; ++i)
+        {
+            auto * step = llvm::BasicBlock::Create(b.getContext(), "step_" + std::to_string(i), comparator_func);
+            llvm::Value * result_value = nullptr;
+            comparator_steps_and_results.emplace_back(step, result_value);
+        }
+
+        auto * lhs_equals_rhs_result = llvm::ConstantInt::getSigned(b.getInt8Ty(), 0);
+
+        auto * comparator_join = llvm::BasicBlock::Create(b.getContext(), "comparator_join", comparator_func);
+
+        for (size_t i = 0; i < columns_size; ++i)
+        {
+            b.SetInsertPoint(comparator_steps_and_results[i].first);
+
+            const auto & sort_description = description[i];
+            const auto & column_type = sort_description_types[i];
+
+            auto dummy_column = column_type->createColumn();
+
+            auto * column_native_type_nullable = toNativeType(b, column_type);
+            auto * column_native_type = toNativeType(b, removeNullable(column_type));
+            if (!column_native_type)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "No native type for column type {}", column_type->getName());
+
+            auto * column_native_type_pointer = column_native_type->getPointerTo();
+            bool column_type_is_nullable = column_type->isNullable();
+
+            auto * nullable_unitilized = llvm::Constant::getNullValue(column_native_type_nullable);
+
+            auto * lhs_column = b.CreateLoad(column_data_type, b.CreateConstInBoundsGEP1_64(column_data_type, columns_lhs_arg, i));
+            auto * lhs_column_data = b.CreatePointerCast(b.CreateExtractValue(lhs_column, {0}), column_native_type_pointer);
+            auto * lhs_column_null_data = column_type_is_nullable ? b.CreateExtractValue(lhs_column, {1}) : nullptr;
+
+            llvm::Value * lhs_value = b.CreateLoad(b.CreateInBoundsGEP(nullptr, lhs_column_data, lhs_index_arg));
+
+            if (lhs_column_null_data)
+            {
+                auto * is_null_value_pointer = b.CreateInBoundsGEP(nullptr, lhs_column_null_data, lhs_index_arg);
+                auto * is_null = b.CreateICmpNE(b.CreateLoad(b.getInt8Ty(), is_null_value_pointer), b.getInt8(0));
+                auto * lhs_nullable_value = b.CreateInsertValue(b.CreateInsertValue(nullable_unitilized, lhs_value, {0}), is_null, {1});
+                lhs_value = lhs_nullable_value;
+            }
+
+            auto * rhs_column = b.CreateLoad(column_data_type, b.CreateConstInBoundsGEP1_64(column_data_type, columns_rhs_arg, i));
+            auto * rhs_column_data = b.CreatePointerCast(b.CreateExtractValue(rhs_column, {0}), column_native_type_pointer);
+            auto * rhs_column_null_data = column_type_is_nullable ? b.CreateExtractValue(rhs_column, {1}) : nullptr;
+
+            llvm::Value * rhs_value = b.CreateLoad(b.CreateInBoundsGEP(nullptr, rhs_column_data, rhs_index_arg));
+            if (rhs_column_null_data)
+            {
+                auto * is_null_value_pointer = b.CreateInBoundsGEP(nullptr, rhs_column_null_data, rhs_index_arg);
+                auto * is_null = b.CreateICmpNE(b.CreateLoad(b.getInt8Ty(), is_null_value_pointer), b.getInt8(0));
+                auto * rhs_nullable_value = b.CreateInsertValue(b.CreateInsertValue(nullable_unitilized, rhs_value, {0}), is_null, {1});
+                rhs_value = rhs_nullable_value;
+            }
+
+            llvm::Value * direction = llvm::ConstantInt::getSigned(b.getInt8Ty(), sort_description.direction);
+            llvm::Value * nan_direction_hint = llvm::ConstantInt::getSigned(b.getInt8Ty(), sort_description.nulls_direction);
+            llvm::Value * compare_result = dummy_column->compileComparator(b, lhs_value, rhs_value, nan_direction_hint);
+            llvm::Value * result = b.CreateMul(direction, compare_result);
+
+            comparator_steps_and_results[i].first = b.GetInsertBlock();
+            comparator_steps_and_results[i].second = result;
+
+            if (i == columns_size - 1)
+                b.CreateBr(comparator_join);
+            else
+                b.CreateCondBr(b.CreateICmpEQ(result, lhs_equals_rhs_result), comparator_steps_and_results[i + 1].first, comparator_join);
+        }
+
+        b.SetInsertPoint(comparator_join);
+        auto * phi = b.CreatePHI(b.getInt8Ty(), comparator_steps_and_results.size());
+
+        for (const auto & [block, result_value] : comparator_steps_and_results)
+            phi->addIncoming(result_value, block);
+
+        b.CreateRet(phi);
+    });
+
+    ProfileEvents::increment(ProfileEvents::CompileExpressionsMicroseconds, watch.elapsedMicroseconds());
+    ProfileEvents::increment(ProfileEvents::CompileExpressionsBytes, compiled_module.size);
+    ProfileEvents::increment(ProfileEvents::CompileFunction);
+
+    auto comparator_function = reinterpret_cast<JITSortDescriptionFunc>(compiled_module.function_name_to_symbol[sort_description_dump]);
+    assert(comparator_function);
+
+    CompiledSortDescriptionFunction compiled_sort_descriptor_function
+    {
+        .comparator_function = comparator_function,
+
+        .compiled_module = std::move(compiled_module)
+    };
+
+    return compiled_sort_descriptor_function;
+}
+
 }
 
 #endif

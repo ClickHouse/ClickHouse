@@ -120,7 +120,7 @@ private:
 
     Poco::Logger * log = &Poco::Logger::get("StorageS3Source");
 
-    /// Recreate ReadBuffer and BlockInputStream for each file.
+    /// Recreate ReadBuffer and Pipeline for each file.
     bool initialize();
 
     std::unique_ptr<ReadBuffer> createS3ReadBuffer(const String & key);
