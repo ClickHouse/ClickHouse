@@ -39,11 +39,6 @@ private:
     Arguments args;
 
     Poco::JSON::Array::Ptr files_in_json;
-    ExpressionActionsPtr partition_key_expr;
-    ExpressionActionsPtr partition_minmax_idx_expr;
-    NamesAndTypesList partition_name_and_types;
-    ExpressionActionsPtr hive_file_minmax_idx_expr;
-    NamesAndTypesList hive_file_name_and_types;
 };
 }
 #endif

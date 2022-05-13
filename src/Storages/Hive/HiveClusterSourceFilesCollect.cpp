@@ -110,39 +110,9 @@ void registerNodeHashHiveSourceFilesCollectCallback(HiveSourceCollectCallbackFac
         HiveClusterSourceFilesCollectCallback::NAME, []() { return std::make_shared<HiveClusterSourceFilesCollectCallback>(); });
 }
 
-static ASTPtr extractKeyExpressionList(const ASTPtr & node)
-{
-    if (!node)
-        return std::make_shared<ASTExpressionList>();
-    const auto * expr_func = node->as<ASTFunction>();
-    if (expr_func && expr_func->name == "tuple")
-        return expr_func->arguments->clone();
-
-    auto res = std::make_shared<ASTExpressionList>();
-    res->children.push_back(node);
-    return res;
-}
-
 void HiveClusterSourceFilesCollector::initialize(const Arguments & arguments)
 {
     args = arguments;
-    ASTPtr partition_key_expr_list = extractKeyExpressionList(args.partition_by_ast);
-    NamesAndTypesList all_name_and_types = args.columns.getAllPhysical();
-    if (!partition_key_expr_list->children.empty())
-    {
-        auto syntax_result = TreeRewriter(args.context).analyze(partition_key_expr_list, all_name_and_types);
-        partition_key_expr = ExpressionAnalyzer(partition_key_expr_list, syntax_result, args.context).getActions(false);
-        partition_name_and_types = partition_key_expr->getRequiredColumnsWithTypes();
-        partition_minmax_idx_expr = std::make_shared<ExpressionActions>(
-            std::make_shared<ActionsDAG>(partition_name_and_types), ExpressionActionsSettings::fromContext(args.context));
-    }
-
-    for (const auto & column : all_name_and_types)
-    {
-        if (partition_name_and_types.contains(column.name))
-            hive_file_name_and_types.push_back(column);
-    }
-
     Poco::JSON::Parser files_json_parser;
     files_in_json = files_json_parser.parse(args.callback_data).extract<Poco::JSON::Array::Ptr>();
 }
@@ -168,14 +138,6 @@ HiveFiles HiveClusterSourceFilesCollector::collect(HivePruneLevel /*prune_level*
                 continue;
             partition_fields.emplace_back(Field::restoreFromDump(value));
         }
-
-        if (partition_fields.size() != partition_name_and_types.size())
-            throw Exception(
-                ErrorCodes::INVALID_PARTITION_VALUE,
-                "Partition value size not match. expected {}, but get {}",
-                partition_name_and_types.size(),
-                partition_fields.size());
-
 
         auto hive_file = HiveFileFactory::instance().createFile(
             file_format,
