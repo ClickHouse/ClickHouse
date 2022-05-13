@@ -202,12 +202,19 @@ UUID BackupsWorker::startMakingBackup(const ASTPtr & query, const ContextPtr & c
         infos.emplace(uuid, std::move(info));
     }
 
-    auto job = [this, query, context, uuid]
+    /// If we will make a backup in a separate thread we need to copy the current query context and use a query scope.
+    ContextPtr job_context = backup_settings.async ? Context::createCopy(context) : context;
+    bool use_query_scope = backup_settings.async;
+
+    auto job = [this, query, job_context, use_query_scope, uuid]
     {
         try
         {
+            std::optional<CurrentThread::QueryScope> query_scope;
+            if (use_query_scope)
+                query_scope.emplace(job_context);
             const ASTBackupQuery & backup_query = typeid_cast<const ASTBackupQuery &>(*query);
-            executeBackupImpl(backup_query, uuid, context, backups_thread_pool);
+            executeBackupImpl(backup_query, uuid, job_context, backups_thread_pool);
             std::lock_guard lock{infos_mutex};
             auto & info = infos.at(uuid);
             info.status = BackupStatus::BACKUP_COMPLETE;
@@ -272,12 +279,19 @@ UUID BackupsWorker::startRestoring(const ASTPtr & query, ContextMutablePtr conte
         infos.emplace(uuid, std::move(info));
     }
 
-    auto job = [this, query, context, uuid]
+    /// If we will make a backup in a separate thread we need to copy the current query context and use a query scope.
+    ContextMutablePtr job_context = restore_settings.async ? Context::createCopy(context) : context;
+    bool use_query_scope = restore_settings.async;
+
+    auto job = [this, query, job_context, use_query_scope, uuid]
     {
         try
         {
+            std::optional<CurrentThread::QueryScope> query_scope;
+            if (use_query_scope)
+                query_scope.emplace(job_context);
             const ASTBackupQuery & restore_query = typeid_cast<const ASTBackupQuery &>(*query);
-            executeRestoreImpl(restore_query, uuid, context, restores_thread_pool);
+            executeRestoreImpl(restore_query, uuid, job_context, restores_thread_pool);
             std::lock_guard lock{infos_mutex};
             auto & info = infos.at(uuid);
             info.status = BackupStatus::RESTORED;
