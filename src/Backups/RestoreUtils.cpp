@@ -945,4 +945,64 @@ void restoreData(RestoreTasks & restore_tasks, ThreadPool & thread_pool)
         std::rethrow_exception(exception);
 }
 
+
+/// Returns access required to execute RESTORE query.
+AccessRightsElements getRequiredAccessToRestore(const ASTBackupQuery::Elements & elements, const RestoreSettings & restore_settings)
+{
+    AccessRightsElements required_access;
+    for (const auto & element : elements)
+    {
+        switch (element.type)
+        {
+            case ASTBackupQuery::TABLE:
+            {
+                if (element.is_temp_db)
+                {
+                    if (restore_settings.create_table != RestoreTableCreationMode::kMustExist)
+                        required_access.emplace_back(AccessType::CREATE_TEMPORARY_TABLE);
+                    break;
+                }
+                AccessFlags flags = AccessType::SHOW_TABLES;
+                if (restore_settings.create_table != RestoreTableCreationMode::kMustExist)
+                    flags |= AccessType::CREATE_TABLE;
+                if (!restore_settings.structure_only)
+                    flags |= AccessType::INSERT;
+                required_access.emplace_back(flags, element.new_name.first, element.new_name.second);
+                break;
+            }
+            case ASTBackupQuery::DATABASE:
+            {
+                if (element.is_temp_db)
+                {
+                    if (restore_settings.create_table != RestoreTableCreationMode::kMustExist)
+                        required_access.emplace_back(AccessType::CREATE_TEMPORARY_TABLE);
+                    break;
+                }
+                AccessFlags flags = AccessType::SHOW_TABLES | AccessType::SHOW_DATABASES;
+                if (restore_settings.create_table != RestoreTableCreationMode::kMustExist)
+                    flags |= AccessType::CREATE_TABLE;
+                if (restore_settings.create_database != RestoreDatabaseCreationMode::kMustExist)
+                    flags |= AccessType::CREATE_DATABASE;
+                if (!restore_settings.structure_only)
+                    flags |= AccessType::INSERT;
+                required_access.emplace_back(flags, element.new_name.first);
+                break;
+            }
+            case ASTBackupQuery::ALL_DATABASES:
+            {
+                AccessFlags flags = AccessType::SHOW_TABLES | AccessType::SHOW_DATABASES;
+                if (restore_settings.create_table != RestoreTableCreationMode::kMustExist)
+                    flags |= AccessType::CREATE_TABLE;
+                if (restore_settings.create_database != RestoreDatabaseCreationMode::kMustExist)
+                    flags |= AccessType::CREATE_DATABASE;
+                if (!restore_settings.structure_only)
+                    flags |= AccessType::INSERT;
+                required_access.emplace_back(flags);
+                break;
+            }
+        }
+    }
+    return required_access;
+}
+
 }

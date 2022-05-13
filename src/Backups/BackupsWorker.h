@@ -54,6 +54,9 @@ private:
     UUID startMakingBackup(const ASTPtr & query, const ContextPtr & context);
     UUID startRestoring(const ASTPtr & query, ContextMutablePtr context);
 
+    void addInfo(const UUID & uuid, const String & backup_name, BackupStatus status, bool internal);
+    void setStatus(const UUID & uuid, BackupStatus status);
+
     ThreadPool backups_thread_pool;
     ThreadPool restores_thread_pool;
 
