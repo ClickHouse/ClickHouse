@@ -5,7 +5,7 @@
 #include <Storages/PostgreSQL/StorageMaterializedPostgreSQL.h>
 #include <Databases/PostgreSQL/fetchPostgreSQLTableStructure.h>
 
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <Common/Macros.h>
 #include <Core/UUID.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -94,12 +94,12 @@ void DatabaseMaterializedPostgreSQL::startSynchronization()
         if (storage)
         {
             /// Nested table was already created and synchronized.
-            storage = StorageMaterializedPostgreSQL::create(storage, getContext(), remote_database_name, table_name);
+            storage = std::make_shared<StorageMaterializedPostgreSQL>(storage, getContext(), remote_database_name, table_name);
         }
         else
         {
             /// Nested table does not exist and will be created by replication thread.
-            storage = StorageMaterializedPostgreSQL::create(StorageID(database_name, table_name), getContext(), remote_database_name, table_name);
+            storage = std::make_shared<StorageMaterializedPostgreSQL>(StorageID(database_name, table_name), getContext(), remote_database_name, table_name);
         }
 
         /// Cache MaterializedPostgreSQL wrapper over nested table.
@@ -210,7 +210,7 @@ ASTPtr DatabaseMaterializedPostgreSQL::getCreateTableQueryImpl(const String & ta
 
     std::lock_guard lock(handler_mutex);
 
-    auto storage = StorageMaterializedPostgreSQL::create(StorageID(database_name, table_name), getContext(), remote_database_name, table_name);
+    auto storage = std::make_shared<StorageMaterializedPostgreSQL>(StorageID(database_name, table_name), getContext(), remote_database_name, table_name);
     auto ast_storage = replication_handler->getCreateNestedTableQuery(storage.get(), table_name);
     assert_cast<ASTCreateQuery *>(ast_storage.get())->uuid = UUIDHelpers::generateV4();
     return ast_storage;
@@ -291,7 +291,7 @@ void DatabaseMaterializedPostgreSQL::attachTable(ContextPtr context_, const Stri
 
             InterpreterAlterQuery(alter_query, current_context).execute();
 
-            auto storage = StorageMaterializedPostgreSQL::create(table, getContext(), remote_database_name, table_name);
+            auto storage = std::make_shared<StorageMaterializedPostgreSQL>(table, getContext(), remote_database_name, table_name);
             materialized_tables[table_name] = storage;
 
             std::lock_guard lock(handler_mutex);

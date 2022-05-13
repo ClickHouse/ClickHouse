@@ -168,17 +168,10 @@ def substitute_parameters(query_templates, other_templates=[]):
 
 
 # Build a list of test queries, substituting parameters to query templates,
-# and reporting the queries marked as short.
 test_queries = []
-is_short = []
 for e in root.findall("query"):
-    new_queries, [new_is_short] = substitute_parameters(
-        [e.text], [[e.attrib.get("short", "0")]]
-    )
+    new_queries = substitute_parameters([e.text])
     test_queries += new_queries
-    is_short += [eval(s) for s in new_is_short]
-
-assert len(test_queries) == len(is_short)
 
 # If we're given a list of queries to run, check that it makes sense.
 for i in args.queries_to_run or []:
@@ -193,11 +186,6 @@ if args.print_queries:
     for i in args.queries_to_run or range(0, len(test_queries)):
         print(test_queries[i])
     exit(0)
-
-# Print short queries
-for i, s in enumerate(is_short):
-    if s:
-        print(f"short\t{i}")
 
 # If we're only asked to print the settings, do that and exit. These are settings
 # for clickhouse-benchmark, so we print them as command line arguments, e.g.
@@ -267,20 +255,6 @@ for conn_index, c in enumerate(all_connections):
     c.execute("select 1")
 
 reportStageEnd("settings")
-
-# Check tables that should exist. If they don't exist, just skip this test.
-tables = [e.text for e in root.findall("preconditions/table_exists")]
-for t in tables:
-    for c in all_connections:
-        try:
-            res = c.execute("select 1 from {} limit 1".format(t))
-        except:
-            exception_message = traceback.format_exception_only(*sys.exc_info()[:2])[-1]
-            skipped_message = " ".join(exception_message.split("\n")[:2])
-            print(f"skipped\t{tsv_escape(skipped_message)}")
-            sys.exit(0)
-
-reportStageEnd("preconditions")
 
 if not args.use_existing_tables:
     # Run create and fill queries. We will run them simultaneously for both
@@ -458,27 +432,14 @@ for query_index in queries_to_run:
         # already.
         run += 1
 
-        # Try to run any query for at least the specified number of times,
-        # before considering other stop conditions.
-        if run < args.runs:
-            continue
+        avg_time_per_server = server_seconds / len(this_query_connections)
 
-        # For very short queries we have a special mode where we run them for at
-        # least some time. The recommended lower bound of run time for "normal"
-        # queries is about 0.1 s, and we run them about 10 times, giving the
-        # time per query per server of about one second. Run "short" queries
-        # for longer time, because they have a high percentage of overhead and
-        # might give less stable results.
-        if is_short[query_index]:
-            if server_seconds >= 8 * len(this_query_connections):
-                break
-            # Also limit the number of runs, so that we don't go crazy processing
-            # the results -- 'eqmed.sql' is really suboptimal.
-            if run >= 500:
-                break
-        else:
-            if run >= args.runs:
-                break
+        # We break if all the min stop conditions are met (1 second arg.runs iterations)
+        # or at lest one of the max stop conditions is met (8 seconds or 500 iterations)
+        if (avg_time_per_server >= 1 and run >= args.runs) or (
+            avg_time_per_server >= 8 or run >= 500
+        ):
+            break
 
     client_seconds = time.perf_counter() - start_seconds
     print(f"client-time\t{query_index}\t{client_seconds}\t{server_seconds}")
