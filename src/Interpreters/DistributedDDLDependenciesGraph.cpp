@@ -69,15 +69,18 @@ QueryNames DependenciesGraph::getTasksToParallelProcess()
 
 void DependenciesGraph::removeProcessedTasks()
 {
-    auto & already_processed = tasks_dependencies.independent_queries;
+    auto & old_independent_queries = tasks_dependencies.independent_queries;
+    QueryNames new_independent_queries;
 
-    for (const auto& task_name : already_processed)
+    for (const auto& task_name : old_independent_queries)
     {
         if (completely_processed_tasks[task_name])
             removeTask(task_name);
+        else
+            new_independent_queries.push_back(task_name);
     }
 
-    already_processed.clear();
+    old_independent_queries = new_independent_queries;
 }
 
 void DependenciesGraph::removeTask(String query_name)
@@ -112,6 +115,15 @@ void DependenciesGraph::logDependencyGraph() const
 {
     LOG_TEST(log, "Have {} independent queries.",
              tasks_dependencies.independent_queries.size());
+    for (const auto & independent_query : tasks_dependencies.independent_queries)
+    {
+        LOG_TEST(log,
+                 "Independent query {} have {} dependencies and {} dependent queries, completely_processed={}.",
+                 independent_query,
+                 tasks_dependencies.dependencies_info[independent_query].dependencies.size(),
+                 tasks_dependencies.dependencies_info[independent_query].dependent_queries.size(),
+                 completely_processed_tasks[independent_query]);
+    }
     for (const auto & dependencies : tasks_dependencies.dependencies_info)
     {
         LOG_TEST(log,
