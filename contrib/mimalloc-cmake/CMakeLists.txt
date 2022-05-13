@@ -35,7 +35,7 @@ if (ENABLE_MIMALLOC)
     target_compile_options(_mimalloc
         PRIVATE
             -Wno-reserved-identifier
-# Note: turn of this warning:
+        # Note: turn of this warning:
         #   error: identifier '_mi_option_last' is reserved because it starts with '_' at global scope
     )
     target_include_directories(_mimalloc SYSTEM BEFORE PUBLIC "${ClickHouse_SOURCE_DIR}/contrib/mimalloc/include")
