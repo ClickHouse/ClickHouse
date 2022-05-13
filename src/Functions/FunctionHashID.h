@@ -21,9 +21,9 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int INVALID_ALPHABET;
     extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
     extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
 }
@@ -118,7 +118,7 @@ public:
                 {
                     alphabet = alpha_col->getValue<String>();
                     if (alphabet.find("\0") != std::string::npos)
-                        throw Exception(ErrorCodes::INVALID_ALPHABET, "Custom alphabet must not contain null character");
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Custom alphabet must not contain null character");
                 }
             }
             else
