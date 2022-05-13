@@ -49,9 +49,8 @@ void checkReadAccess(const String & disk_name, IDisk & disk)
 void checkRemoveAccess(IDisk & disk) { disk.removeFile("test_acl"); }
 
 std::shared_ptr<S3::ProxyResolverConfiguration> getProxyResolverConfiguration(
-    const String & prefix, const Poco::Util::AbstractConfiguration & proxy_resolver_config)
+    const String & prefix, const Poco::Util::AbstractConfiguration & proxy_resolver_config, const Poco::URI & endpoint)
 {
-    auto endpoint = Poco::URI(proxy_resolver_config.getString(prefix + ".endpoint"));
     auto proxy_scheme = proxy_resolver_config.getString(prefix + ".proxy_scheme");
     if (proxy_scheme != "http" && proxy_scheme != "https")
         throw Exception("Only HTTP/HTTPS schemas allowed in proxy resolver config: " + proxy_scheme, ErrorCodes::BAD_ARGUMENTS);
@@ -105,7 +104,8 @@ std::shared_ptr<S3::ProxyConfiguration> getProxyConfiguration(const String & pre
         if (resolver_configs > 1)
             throw Exception("Multiple proxy resolver configurations aren't allowed", ErrorCodes::BAD_ARGUMENTS);
 
-        return getProxyResolverConfiguration(prefix + ".proxy.resolver", config);
+        auto endpoint = Poco::URI(config.getString(prefix + ".endpoint"));
+        return getProxyResolverConfiguration(prefix + ".proxy.resolver", config, endpoint);
     }
 
     return getProxyListConfiguration(prefix + ".proxy", config);
