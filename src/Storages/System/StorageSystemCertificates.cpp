@@ -1,3 +1,4 @@
+#include <Common/config.h>
 #include <DataTypes/DataTypeString.h>
 #include <Storages/System/StorageSystemCertificates.h>
 #include <regex>
