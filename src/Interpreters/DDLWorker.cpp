@@ -401,7 +401,7 @@ void DDLWorker::scheduleTasks(bool reinitialized)
             /// Seems already processed
             continue;
         }
-        auto & task_to_process = *task_iter;
+        auto & task_to_process = saveTask(std::move(*task_iter));
 
         if (worker_pool)
         {
@@ -409,12 +409,12 @@ void DDLWorker::scheduleTasks(bool reinitialized)
             worker_pool->scheduleOrThrowOnError([this, &task_to_process, zookeeper]()
             {
                 setThreadName("DDLWorkerExec");
-                processTask(&task_to_process, zookeeper);
+                processTask(task_to_process, zookeeper);
             });
         }
         else
         {
-            processTask(&task_to_process, zookeeper);
+            processTask(task_to_process, zookeeper);
         }
     }
 
