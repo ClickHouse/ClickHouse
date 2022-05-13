@@ -1,10 +1,10 @@
 #include "AsynchronousReadIndirectBufferFromRemoteFS.h"
 
 #include <Common/Stopwatch.h>
+#include <Common/logger_useful.h>
 #include <Disks/IO/ThreadPoolRemoteFSReader.h>
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
 #include <IO/ReadSettings.h>
-#include <Common/logger_useful.h>
 
 
 namespace CurrentMetrics
@@ -56,7 +56,6 @@ AsynchronousReadIndirectBufferFromRemoteFS::AsynchronousReadIndirectBufferFromRe
 {
     ProfileEvents::increment(ProfileEvents::RemoteFSBuffers);
 }
-
 
 String AsynchronousReadIndirectBufferFromRemoteFS::getFileName() const
 {
@@ -184,7 +183,7 @@ bool AsynchronousReadIndirectBufferFromRemoteFS::nextImpl()
             LOG_TEST(log, "Current size: {}, offset: {}", size, offset);
 
             /// If prefetch_future is valid, size should always be greater than zero.
-            assert(offset < size);
+            assert(offset <= size);
             ProfileEvents::increment(ProfileEvents::AsynchronousReadWaitMicroseconds, watch.elapsedMicroseconds());
         }
 
@@ -201,7 +200,7 @@ bool AsynchronousReadIndirectBufferFromRemoteFS::nextImpl()
         auto offset = result.offset;
 
         LOG_TEST(log, "Current size: {}, offset: {}", size, offset);
-        assert(offset < size);
+        assert(offset <= size);
 
         if (size)
         {
