@@ -373,6 +373,7 @@ endif()
 dbms_target_link_libraries(PUBLIC ch_contrib::abseil_swiss_tables)
 
 if (ENABLE_NMSLIB)
+    add_compile_definitions(ENABLE_NMSLIB)
     dbms_target_link_libraries(PUBLIC ch_contrib::nmslib)
 endif()
 

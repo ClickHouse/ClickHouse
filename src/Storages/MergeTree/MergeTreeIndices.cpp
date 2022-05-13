@@ -108,10 +108,15 @@ MergeTreeIndexFactory::MergeTreeIndexFactory()
     registerCreator("hypothesis", hypothesisIndexCreator);
     registerValidator("hypothesis", hypothesisIndexValidator);
 
+    #ifdef ENABLE_NMSLIB
+
     similarity::initLibrary(0, LIB_LOGSTDERR, nullptr);
 
-    registerCreator("simple_hnsw", simpleHnswIndexCreator);
-    registerValidator("simple_hnsw", simpleHnswIndexValidator);
+    registerCreator("simple_hnsw", hnswIndexCreator);
+    registerValidator("simple_hnsw", hnswIndexValidator);
+
+    #endif
+
 }
 
 MergeTreeIndexFactory & MergeTreeIndexFactory::instance()

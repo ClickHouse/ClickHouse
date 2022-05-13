@@ -1,3 +1,5 @@
+#ifdef ENABLE_NMSLIB
+
 #include <cstddef>
 #include <cstdlib>
 #include <cstring>
@@ -215,25 +217,25 @@ namespace ErrorCodes
 }
 
 
-MergeTreeIndexGranuleSimpleHnsw::MergeTreeIndexGranuleSimpleHnsw(const String & index_name_, const Block & index_sample_block_)
+MergeTreeIndexGranuleHnsw::MergeTreeIndexGranuleHnsw(const String & index_name_, const Block & index_sample_block_)
     : index_name(index_name_), index_sample_block(index_sample_block_)
 {
 }
 
 
-MergeTreeIndexGranuleSimpleHnsw::MergeTreeIndexGranuleSimpleHnsw(
+MergeTreeIndexGranuleHnsw::MergeTreeIndexGranuleHnsw(
     const String & index_name_, const Block & index_sample_block_, std::unique_ptr<HnswWrapper::IndexWrap<float>> index_impl_)
     : index_name(index_name_), index_sample_block(index_sample_block_), index_impl(std::move(index_impl_))
 {
 }
 
 
-void MergeTreeIndexGranuleSimpleHnsw::serializeBinary(WriteBuffer & ostr) const
+void MergeTreeIndexGranuleHnsw::serializeBinary(WriteBuffer & ostr) const
 {
     index_impl->saveIndex(ostr, true);
 }
 
-void MergeTreeIndexGranuleSimpleHnsw::deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion /*version*/)
+void MergeTreeIndexGranuleHnsw::deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion /*version*/)
 {
     if (!index_impl)
     {
@@ -242,21 +244,21 @@ void MergeTreeIndexGranuleSimpleHnsw::deserializeBinary(ReadBuffer & istr, Merge
     index_impl->loadIndex(istr, true); // true for loading data
 }
 
-MergeTreeIndexAggregatorSimpleHnsw::MergeTreeIndexAggregatorSimpleHnsw(
+MergeTreeIndexAggregatorHnsw::MergeTreeIndexAggregatorHnsw(
     const String & index_name_, const Block & index_sample_block_, const similarity::AnyParams & index_params_)
     : index_name(index_name_), index_sample_block(index_sample_block_), index_params(index_params_)
 {
 }
 
-MergeTreeIndexGranulePtr MergeTreeIndexAggregatorSimpleHnsw::getGranuleAndReset()
+MergeTreeIndexGranulePtr MergeTreeIndexAggregatorHnsw::getGranuleAndReset()
 {
     auto impl = std::make_unique<HnswWrapper::IndexWrap<float>>("l2");
     impl->addBatchUnsafe(std::move(data));
     impl->createIndex(index_params);
-    return std::make_shared<MergeTreeIndexGranuleSimpleHnsw>(index_name, index_sample_block, std::move(impl));
+    return std::make_shared<MergeTreeIndexGranuleHnsw>(index_name, index_sample_block, std::move(impl));
 }
 
-void MergeTreeIndexAggregatorSimpleHnsw::update(const Block & block, size_t * pos, size_t limit)
+void MergeTreeIndexAggregatorHnsw::update(const Block & block, size_t * pos, size_t limit)
 {
     if (*pos >= block.rows())
         throw Exception(
@@ -293,18 +295,18 @@ void MergeTreeIndexAggregatorSimpleHnsw::update(const Block & block, size_t * po
     *pos += rows_read;
 }
 
-MergeTreeIndexConditionSimpleHnsw::MergeTreeIndexConditionSimpleHnsw(
+MergeTreeIndexConditionHnsw::MergeTreeIndexConditionHnsw(
     const IndexDescription &, const SelectQueryInfo & query, ContextPtr context)
     : condition(query, context)
 {
 }
 
-bool MergeTreeIndexConditionSimpleHnsw::alwaysUnknownOrTrue() const
+bool MergeTreeIndexConditionHnsw::alwaysUnknownOrTrue() const
 {
     return condition.alwaysUnknownOrTrue("L2Distance");
 }
 
-std::vector<size_t> MergeTreeIndexConditionSimpleHnsw::getUsefulRanges(MergeTreeIndexGranulePtr idx_granule) const
+std::vector<size_t> MergeTreeIndexConditionHnsw::getUsefulRanges(MergeTreeIndexGranulePtr idx_granule) const
 {
     UInt64 limit = condition.getLimitCount() ? condition.getLimitCount().value() : 1ull;
     std::optional<float> comp_dist
@@ -312,7 +314,7 @@ std::vector<size_t> MergeTreeIndexConditionSimpleHnsw::getUsefulRanges(MergeTree
     std::vector<float> target_vec = condition.getTargetVector();
     similarity::Object target(-1, -1, target_vec.size() * sizeof(float), target_vec.data());
 
-    std::shared_ptr<MergeTreeIndexGranuleSimpleHnsw> granule = std::dynamic_pointer_cast<MergeTreeIndexGranuleSimpleHnsw>(idx_granule);
+    std::shared_ptr<MergeTreeIndexGranuleHnsw> granule = std::dynamic_pointer_cast<MergeTreeIndexGranuleHnsw>(idx_granule);
     if (!granule)
         throw Exception("SimpleHnsw index condition got a granule with the wrong type.", ErrorCodes::LOGICAL_ERROR);
 
@@ -340,40 +342,40 @@ std::vector<size_t> MergeTreeIndexConditionSimpleHnsw::getUsefulRanges(MergeTree
 }
 
 
-bool MergeTreeIndexConditionSimpleHnsw::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule) const
+bool MergeTreeIndexConditionHnsw::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule) const
 {
     float comp_dist = condition.getComparisonDistance();
     std::vector<float> target_vec = condition.getTargetVector();
     similarity::Object target(-1, -1, target_vec.size() * sizeof(float), target_vec.data());
-    std::shared_ptr<MergeTreeIndexGranuleSimpleHnsw> granule = std::dynamic_pointer_cast<MergeTreeIndexGranuleSimpleHnsw>(idx_granule);
+    std::shared_ptr<MergeTreeIndexGranuleHnsw> granule = std::dynamic_pointer_cast<MergeTreeIndexGranuleHnsw>(idx_granule);
     if (!granule)
         throw Exception("SimpleHnsw index condition got a granule with the wrong type.", ErrorCodes::LOGICAL_ERROR);
     auto result = std::unique_ptr<similarity::KNNQueue<float>>(granule->index_impl->knnQuery(target, 1));
     return result->TopDistance() < comp_dist;
 }
 
-MergeTreeIndexGranulePtr MergeTreeIndexSimpleHnsw::createIndexGranule() const
+MergeTreeIndexGranulePtr MergeTreeIndexHnsw::createIndexGranule() const
 {
-    return std::make_shared<MergeTreeIndexGranuleSimpleHnsw>(index.name, index.sample_block);
+    return std::make_shared<MergeTreeIndexGranuleHnsw>(index.name, index.sample_block);
 }
 
 
-MergeTreeIndexAggregatorPtr MergeTreeIndexSimpleHnsw::createIndexAggregator() const
+MergeTreeIndexAggregatorPtr MergeTreeIndexHnsw::createIndexAggregator() const
 {
-    return std::make_shared<MergeTreeIndexAggregatorSimpleHnsw>(index.name, index.sample_block, index_params);
+    return std::make_shared<MergeTreeIndexAggregatorHnsw>(index.name, index.sample_block, index_params);
 }
 
-MergeTreeIndexConditionPtr MergeTreeIndexSimpleHnsw::createIndexCondition(const SelectQueryInfo & query, ContextPtr context) const
+MergeTreeIndexConditionPtr MergeTreeIndexHnsw::createIndexCondition(const SelectQueryInfo & query, ContextPtr context) const
 {
-    return std::make_shared<MergeTreeIndexConditionSimpleHnsw>(index, query, context);
+    return std::make_shared<MergeTreeIndexConditionHnsw>(index, query, context);
 };
 
-bool MergeTreeIndexSimpleHnsw::mayBenefitFromIndexForIn(const ASTPtr & /*node*/) const
+bool MergeTreeIndexHnsw::mayBenefitFromIndexForIn(const ASTPtr & /*node*/) const
 {
     return false;
 }
 
-MergeTreeIndexFormat MergeTreeIndexSimpleHnsw::getDeserializedFormat(const DiskPtr disk, const std::string & relative_path_prefix) const
+MergeTreeIndexFormat MergeTreeIndexHnsw::getDeserializedFormat(const DiskPtr disk, const std::string & relative_path_prefix) const
 {
     if (disk->exists(relative_path_prefix + ".idx2"))
         return {2, ".idx2"};
@@ -383,7 +385,7 @@ MergeTreeIndexFormat MergeTreeIndexSimpleHnsw::getDeserializedFormat(const DiskP
 }
 
 
-MergeTreeIndexPtr simpleHnswIndexCreator(const IndexDescription & index)
+MergeTreeIndexPtr hnswIndexCreator(const IndexDescription & index)
 {
     static std::vector<std::string> param_places_to_names({"M", "efConstruction", "maxM", "maxM0"});
 
@@ -396,10 +398,10 @@ MergeTreeIndexPtr simpleHnswIndexCreator(const IndexDescription & index)
         param_values.push_back(std::to_string(param_val));
     }
     similarity::AnyParams params(param_names, param_values);
-    return std::make_shared<MergeTreeIndexSimpleHnsw>(index, params);
+    return std::make_shared<MergeTreeIndexHnsw>(index, params);
 }
 
-void simpleHnswIndexValidator(const IndexDescription & index, bool /* attach */)
+void hnswIndexValidator(const IndexDescription & index, bool /* attach */)
 {
     if (index.arguments.size() > 4)
     {
@@ -416,3 +418,5 @@ void simpleHnswIndexValidator(const IndexDescription & index, bool /* attach */)
 }
 
 }
+
+#endif

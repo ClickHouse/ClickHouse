@@ -1,5 +1,7 @@
 #pragma once
 
+#ifdef ENABLE_NMSLIB
+
 #include <Storages/MergeTree/CommonANNIndexes.h>
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/MergeTree/MergeTreeData.h>
@@ -74,13 +76,13 @@ private:
 namespace DB
 {
 
-struct MergeTreeIndexGranuleSimpleHnsw final : public IMergeTreeIndexGranule
+struct MergeTreeIndexGranuleHnsw final : public IMergeTreeIndexGranule
 {
-    MergeTreeIndexGranuleSimpleHnsw(const String & index_name_, const Block & index_sample_block_);
-    MergeTreeIndexGranuleSimpleHnsw(
+    MergeTreeIndexGranuleHnsw(const String & index_name_, const Block & index_sample_block_);
+    MergeTreeIndexGranuleHnsw(
         const String & index_name_, const Block & index_sample_block_, std::unique_ptr<HnswWrapper::IndexWrap<float>> index_impl_);
 
-    ~MergeTreeIndexGranuleSimpleHnsw() override = default;
+    ~MergeTreeIndexGranuleHnsw() override = default;
 
     void serializeBinary(WriteBuffer & ostr) const override;
     void deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version) override;
@@ -92,11 +94,11 @@ struct MergeTreeIndexGranuleSimpleHnsw final : public IMergeTreeIndexGranule
     std::unique_ptr<HnswWrapper::IndexWrap<float>> index_impl;
 };
 
-struct MergeTreeIndexAggregatorSimpleHnsw final : IMergeTreeIndexAggregator
+struct MergeTreeIndexAggregatorHnsw final : IMergeTreeIndexAggregator
 {
-    MergeTreeIndexAggregatorSimpleHnsw(
+    MergeTreeIndexAggregatorHnsw(
         const String & index_name_, const Block & index_sample_block, const similarity::AnyParams & index_params_);
-    ~MergeTreeIndexAggregatorSimpleHnsw() override = default;
+    ~MergeTreeIndexAggregatorHnsw() override = default;
 
     bool empty() const override { return data.empty(); }
     MergeTreeIndexGranulePtr getGranuleAndReset() override;
@@ -108,10 +110,10 @@ struct MergeTreeIndexAggregatorSimpleHnsw final : IMergeTreeIndexAggregator
     similarity::ObjectVector data;
 };
 
-class MergeTreeIndexConditionSimpleHnsw final : public IMergeTreeIndexConditionAnn
+class MergeTreeIndexConditionHnsw final : public IMergeTreeIndexConditionAnn
 {
 public:
-    MergeTreeIndexConditionSimpleHnsw(const IndexDescription & index, const SelectQueryInfo & query, ContextPtr context);
+    MergeTreeIndexConditionHnsw(const IndexDescription & index, const SelectQueryInfo & query, ContextPtr context);
 
     bool alwaysUnknownOrTrue() const override;
 
@@ -119,21 +121,21 @@ public:
 
     std::vector<size_t> getUsefulRanges(MergeTreeIndexGranulePtr idx_granule) const override;
 
-    ~MergeTreeIndexConditionSimpleHnsw() override = default;
+    ~MergeTreeIndexConditionHnsw() override = default;
 
 private:
     ANNCondition::ANNCondition condition;
 };
 
-class MergeTreeIndexSimpleHnsw : public IMergeTreeIndex
+class MergeTreeIndexHnsw : public IMergeTreeIndex
 {
 public:
-    MergeTreeIndexSimpleHnsw(const IndexDescription & index_, const similarity::AnyParams & index_params_)
+    MergeTreeIndexHnsw(const IndexDescription & index_, const similarity::AnyParams & index_params_)
         : IMergeTreeIndex(index_), index_params(index_params_)
     {
     }
 
-    ~MergeTreeIndexSimpleHnsw() override = default;
+    ~MergeTreeIndexHnsw() override = default;
 
     MergeTreeIndexGranulePtr createIndexGranule() const override;
     MergeTreeIndexAggregatorPtr createIndexAggregator() const override;
@@ -150,3 +152,5 @@ private:
 };
 
 }
+
+#endif
