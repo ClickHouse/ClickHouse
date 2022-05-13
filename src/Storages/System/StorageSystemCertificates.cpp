@@ -173,7 +173,7 @@ static void enumCertificates(const std::string & dir, MutableColumns & res_colum
 
 #endif
 
-void StorageSystemCertificates::fillData(MutableColumns & res_columns, ContextPtr/* context*/, const SelectQueryInfo &) const
+void StorageSystemCertificates::fillData([[maybe_unused]] MutableColumns & res_columns, ContextPtr/* context*/, const SelectQueryInfo &) const
 {
 #if USE_SSL
     Poco::Util::AbstractConfiguration &conf = Poco::Util::Application::instance().config();
