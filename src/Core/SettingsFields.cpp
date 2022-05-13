@@ -182,9 +182,9 @@ namespace
 {
     Poco::Timespan::TimeDiff float64AsSecondsToTimespan(Float64 d)
     {
-        if (!std::isnormal(d) || std::signbit(d))
+        if (std::signbit(d) || (d != 0.0 && !std::isnormal(d)))
             throw Exception(
-                ErrorCodes::CANNOT_PARSE_NUMBER, "A setting's value in seconds must be a positive normal floating point number");
+                ErrorCodes::CANNOT_PARSE_NUMBER, "A setting's value in seconds must be a positive normal floating point number. Got {}", d);
         return static_cast<Poco::Timespan::TimeDiff>(d *= 1000000);
     }
 
