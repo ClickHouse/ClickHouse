@@ -1,18 +1,18 @@
 #!/usr/bin/env bash
+set -x -e
 
 exec &> >(ts)
-set -x -e
 
 cache_status () {
     ccache --show-config ||:
     ccache --show-stats ||:
 }
 
-git config --global --add safe.directory /build
+[ -O /build ] || git config --global --add safe.directory /build
 
-mkdir -p build/cmake/toolchain/darwin-x86_64
-tar xJf MacOSX11.0.sdk.tar.xz -C build/cmake/toolchain/darwin-x86_64 --strip-components=1
-ln -sf darwin-x86_64 build/cmake/toolchain/darwin-aarch64
+mkdir -p /build/cmake/toolchain/darwin-x86_64
+tar xJf /MacOSX11.0.sdk.tar.xz -C /build/cmake/toolchain/darwin-x86_64 --strip-components=1
+ln -sf darwin-x86_64 /build/cmake/toolchain/darwin-aarch64
 
 # Uncomment to debug ccache. Don't put ccache log in /output right away, or it
 # will be confusingly packed into the "performance" package.
@@ -20,8 +20,8 @@ ln -sf darwin-x86_64 build/cmake/toolchain/darwin-aarch64
 # export CCACHE_DEBUG=1
 
 
-mkdir -p build/build_docker
-cd build/build_docker
+mkdir -p /build/build_docker
+cd /build/build_docker
 rm -f CMakeCache.txt
 # Read cmake arguments into array (possibly empty)
 read -ra CMAKE_FLAGS <<< "${CMAKE_FLAGS:-}"
@@ -61,10 +61,10 @@ fi
 
 if [ "coverity" == "$COMBINED_OUTPUT" ]
 then
-    mkdir -p /opt/cov-analysis
+    mkdir -p /workdir/cov-analysis
 
-    wget --post-data "token=$COVERITY_TOKEN&project=ClickHouse%2FClickHouse" -qO- https://scan.coverity.com/download/linux64 | tar xz -C /opt/cov-analysis --strip-components 1
-    export PATH=$PATH:/opt/cov-analysis/bin
+    wget --post-data "token=$COVERITY_TOKEN&project=ClickHouse%2FClickHouse" -qO- https://scan.coverity.com/download/linux64 | tar xz -C /workdir/cov-analysis --strip-components 1
+    export PATH=$PATH:/workdir/cov-analysis/bin
     cov-configure --config ./coverity.config --template --comptype clangcc --compiler "$CC"
     SCAN_WRAPPER="cov-build --config ./coverity.config --dir cov-int"
 fi
