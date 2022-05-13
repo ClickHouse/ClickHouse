@@ -1,6 +1,9 @@
-if (OS_LINUX AND NOT SANITIZE AND NOT ARCH_ARM AND NOT ARCH_32 AND NOT ARCH_PPC64LE)
+if (NOT SANITIZE)
+    message("Not sanitize, so will use mimalloc")
     option (ENABLE_MIMALLOC "Enable mimalloc allocator" ON)
-endif ()
+else()
+    message("Not using mimalloc")
+endif()
 
 if (NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/mimalloc/include/mimalloc.h")
    message (WARNING "submodule contrib/mimalloc is missing. to fix try run: \n git submodule update --init --recursive")
@@ -28,8 +31,6 @@ set (SRCS
 if (ENABLE_MIMALLOC)
     set (MIMALLOC_INCLUDE_DIR ${ClickHouse_SOURCE_DIR}/contrib/mimalloc/include)
     set (USE_MIMALLOC 1)
-    set (MIMALLOC_LIBRARY mimalloc-static)
-    message (STATUS "Using mimalloc: ${MIMALLOC_INCLUDE_DIR} : ${MIMALLOC_LIBRARY}")
 
     add_library(_mimalloc ${SRCS})
     target_compile_options(_mimalloc
@@ -40,4 +41,5 @@ if (ENABLE_MIMALLOC)
     )
     target_include_directories(_mimalloc SYSTEM BEFORE PUBLIC "${ClickHouse_SOURCE_DIR}/contrib/mimalloc/include")
     add_library(ch_contrib::mimalloc ALIAS _mimalloc)
+    message("Added mimalloc library")
 endif ()
