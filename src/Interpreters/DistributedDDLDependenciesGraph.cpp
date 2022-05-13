@@ -80,7 +80,7 @@ void DependenciesGraph::removeProcessedTasks()
             new_independent_queries.push_back(task_name);
     }
 
-    old_independent_queries = new_independent_queries;
+    tasks_dependencies.independent_queries = new_independent_queries;
 }
 
 void DependenciesGraph::removeTask(String query_name)
@@ -107,6 +107,7 @@ void DependenciesGraph::removeTask(String query_name)
                 tasks_dependencies.dependencies_info.erase(dependent_query);
         }
     }
+    tasks_dependencies.dependencies_info.erase(query_name);
 }
 
 void DependenciesGraph::logDependencyGraph() const
@@ -119,7 +120,7 @@ void DependenciesGraph::logDependencyGraph() const
         bool completely_processed = completely_processed_tasks.at(independent_query);
 
         LOG_TEST(log,
-                 "Independent query {} have {} dependencies and {} dependent queries, completely_processed={}.",
+                 "Independent query: {} have {} dependencies and {} dependent queries, completely_processed={}.",
                  independent_query,
                  query_dependencies.dependencies.size(),
                  query_dependencies.dependent_queries.size(),
