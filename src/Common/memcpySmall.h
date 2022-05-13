@@ -64,7 +64,8 @@ namespace detail
     {
         while (n > 0)
         {
-            vst1q_s8(dst, vld1q_s8(src));
+            vst1q_s8(reinterpret_cast<signed char *>dst,
+                vld1q_s8(reinterpret_cast<const signed char *>src));
 
             dst += 16;
             src += 16;
