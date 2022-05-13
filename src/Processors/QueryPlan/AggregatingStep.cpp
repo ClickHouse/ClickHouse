@@ -50,10 +50,6 @@ static Block appendGroupingColumn(Block block, const GroupingSetsParamsList & pa
     for (auto & col : block)
         res.insert(std::move(col));
 
-    // auto map_column = ColumnFixedString::create(keys_size + 1);
-    // map_column->resize(rows);
-    // res.insert({ColumnPtr(std::move(map_column)), std::make_shared<DataTypeFixedString>(keys_size + 1), "__grouping_set_map"});
-
     return res;
 }
 
@@ -242,22 +238,6 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                     else
                         index.push_back(dag->getIndex()[header.getPositionByName(col.name)]);
                 }
-
-                // {
-                //     std::string grouping_map;
-                //     grouping_map.reserve(params.keys_size + 1);
-                //     std::unordered_set key_set(grouping_sets_params[set_counter].used_keys.begin(), grouping_sets_params[set_counter].used_keys.end());
-                //     for (auto key : params.keys)
-                //         grouping_map += key_set.contains(key) ? '1' : '0';
-                //     grouping_map += '0';
-                //     auto nested_column = ColumnFixedString::create(params.keys_size + 1);
-                //     nested_column->insertString(grouping_map);
-                //     auto grouping_map_col = ColumnConst::create(ColumnPtr(std::move(nested_column)), 0);
-                //     const auto * grouping_map_node = &dag->addColumn(
-                //         {ColumnPtr(std::move(grouping_map_col)), std::make_shared<DataTypeFixedString>(grouping_map.length()), "__grouping_set_map"});
-                //     grouping_map_node = &dag->materializeNode(*grouping_map_node);
-                //     index.push_back(grouping_map_node);
-                // }
 
                 dag->getIndex().swap(index);
                 auto expression = std::make_shared<ExpressionActions>(dag, settings.getActionsSettings());

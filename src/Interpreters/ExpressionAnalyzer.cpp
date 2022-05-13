@@ -333,8 +333,10 @@ void ExpressionAnalyzer::analyzeAggregation(ActionsDAGPtr & temp_actions)
 
             /// For GROUPING SETS with multiple groups we always add virtual __grouping_set column
             /// With set number, which is used as an additional key at the stage of merging aggregating data.
-            if (select_query->group_by_with_grouping_sets && group_asts.size() > 1)
+            bool process_grouping_sets = select_query->group_by_with_grouping_sets && group_asts.size() > 1;
+            if (process_grouping_sets)
                 aggregated_columns.emplace_back("__grouping_set", std::make_shared<DataTypeUInt64>());
+            need_grouping_set_column = select_query->group_by_with_rollup || select_query->group_by_with_cube || process_grouping_sets;
 
             for (ssize_t i = 0; i < static_cast<ssize_t>(group_asts.size()); ++i)
             {
@@ -452,8 +454,12 @@ void ExpressionAnalyzer::analyzeAggregation(ActionsDAGPtr & temp_actions)
                 }
             }
 
-            // if (select_query->group_by_with_grouping_sets && group_asts.size() > 1)
-            //     aggregated_columns.emplace_back("__grouping_set_map", std::make_shared<DataTypeFixedString>(aggregation_keys.size() + 1));
+            if (!select_query->group_by_with_grouping_sets)
+            {
+                auto & list = aggregation_keys_indexes_list.emplace_back();
+                for (size_t i = 0; i < aggregation_keys.size(); ++i)
+                    list.push_back(i);
+            }
 
             if (group_asts.empty())
             {
@@ -598,7 +604,8 @@ void ExpressionAnalyzer::getRootActions(const ASTPtr & ast, bool no_makeset_for_
         no_makeset_for_subqueries,
         false /* no_makeset */,
         only_consts,
-        !isRemoteStorage() /* create_source_for_in */);
+        !isRemoteStorage() /* create_source_for_in */,
+        need_grouping_set_column);
     ActionsVisitor(visitor_data, log.stream()).visit(ast);
     actions = visitor_data.getActions();
 }
@@ -620,7 +627,8 @@ void ExpressionAnalyzer::getRootActionsNoMakeSet(const ASTPtr & ast, ActionsDAGP
         true /* no_makeset_for_subqueries, no_makeset implies no_makeset_for_subqueries */,
         true /* no_makeset */,
         only_consts,
-        !isRemoteStorage() /* create_source_for_in */);
+        !isRemoteStorage() /* create_source_for_in */,
+        need_grouping_set_column);
     ActionsVisitor(visitor_data, log.stream()).visit(ast);
     actions = visitor_data.getActions();
 }
@@ -643,7 +651,8 @@ void ExpressionAnalyzer::getRootActionsForHaving(
         no_makeset_for_subqueries,
         false /* no_makeset */,
         only_consts,
-        true /* create_source_for_in */);
+        true /* create_source_for_in */,
+        need_grouping_set_column);
     ActionsVisitor(visitor_data, log.stream()).visit(ast);
     actions = visitor_data.getActions();
 }

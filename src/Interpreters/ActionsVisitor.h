@@ -97,6 +97,7 @@ public:
         bool no_makeset;
         bool only_consts;
         bool create_source_for_in;
+        bool has_grouping_set_column;
         size_t visit_depth;
         ScopeStack actions_stack;
 
@@ -120,7 +121,8 @@ public:
             bool no_subqueries_,
             bool no_makeset_,
             bool only_consts_,
-            bool create_source_for_in_);
+            bool create_source_for_in_,
+            bool has_grouping_set_column_);
 
         /// Does result of the calculation already exists in the block.
         bool hasColumn(const String & column_name) const;
