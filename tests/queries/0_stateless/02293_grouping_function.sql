@@ -77,3 +77,13 @@ GROUP BY
 HAVING grouping(number, number % 2, number % 3) = 2
 ORDER BY number
 SETTINGS enable_optimize_predicate_expression = 0;
+
+SELECT
+    number,
+    GROUPING(number, number % 2, number % 3) = 2 as gr
+FROM remote('127.0.0.{2,3}', numbers(10))
+GROUP BY
+    GROUPING SETS (
+    (number),
+    (number % 2))
+ORDER BY number, gr;

@@ -850,8 +850,6 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
                     std::string key_map(map_size, '0');
                     for (auto index : grouping_set)
                         key_map[index] = '1';
-                    auto map_column = ColumnFixedString::create(map_size);
-                    map_column->insertString(key_map);
                     maps_per_set.push_back(key_map);
                 }
                 auto grouping_set_map_column = ColumnArray::create(ColumnFixedString::create(map_size));
