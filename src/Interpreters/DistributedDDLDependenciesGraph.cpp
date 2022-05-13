@@ -115,10 +115,10 @@ void DependenciesGraph::logDependencyGraph() const
 {
     LOG_TEST(log, "Have {} independent queries.",
              tasks_dependencies.independent_queries.size());
-    for (auto & independent_query : tasks_dependencies.independent_queries)
+    for (const auto & independent_query : tasks_dependencies.independent_queries)
     {
-        auto & query_dependencies = tasks_dependencies.dependencies_info[independent_query];
-        bool completely_processed = completely_processed_tasks[independent_query];
+        auto & query_dependencies = tasks_dependencies.dependencies_info.at(independent_query);
+        bool completely_processed = completely_processed_tasks.at(independent_query);
 
         LOG_TEST(log,
                  "Independent query {} have {} dependencies and {} dependent queries, completely_processed={}.",
