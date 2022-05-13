@@ -26,32 +26,32 @@ with client(name="client1>", log=log) as client1, client(
     client2.expect(prompt)
 
     client1.send("DROP TABLE IF EXISTS test.mt")
-    client1.expect(prompt)
+    client1.expect("Ok.")
     client1.send("DROP TABLE IF EXISTS test.wv")
-    client1.expect(prompt)
+    client1.expect("Ok.")
     client1.send("DROP TABLE IF EXISTS `.inner.wv`")
-    client1.expect(prompt)
+    client1.expect("Ok.")
 
     client1.send(
         "CREATE TABLE test.mt(a Int32, timestamp DateTime) ENGINE=MergeTree ORDER BY tuple()"
     )
-    client1.expect(prompt)
+    client1.expect("Ok.")
     client1.send(
         "CREATE WINDOW VIEW test.wv WATERMARK=INTERVAL '2' SECOND AS SELECT count(a) AS count, hopEnd(wid) AS w_end FROM test.mt GROUP BY hop(timestamp, INTERVAL '2' SECOND, INTERVAL '3' SECOND, 'US/Samoa') AS wid"
     )
-    client1.expect(prompt)
+    client1.expect("Ok.")
 
     client1.send("WATCH test.wv")
     client2.send("INSERT INTO test.mt VALUES (1, '1990/01/01 12:00:00');")
-    client2.expect(prompt)
+    client2.expect("Ok.")
     client2.send("INSERT INTO test.mt VALUES (1, '1990/01/01 12:00:05');")
-    client2.expect(prompt)
-    client1.expect("1*" + end_of_block)
+    client2.expect("Ok.")
+    client1.expect("1" + end_of_block)
     client2.send("INSERT INTO test.mt VALUES (1, '1990/01/01 12:00:06');")
+    client2.expect("Ok.")
     client2.send("INSERT INTO test.mt VALUES (1, '1990/01/01 12:00:10');")
-    client2.expect(prompt)
-    client1.expect("1*" + end_of_block)
-    client1.expect("2*" + end_of_block)
+    client2.expect("Ok.")
+    client1.expect("2" + end_of_block)
 
     # send Ctrl-C
     client1.send("\x03", eol="")
