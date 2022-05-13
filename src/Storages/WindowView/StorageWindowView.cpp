@@ -66,6 +66,7 @@ namespace ErrorCodes
     extern const int QUERY_IS_NOT_SUPPORTED_IN_WINDOW_VIEW;
     extern const int SUPPORT_IS_DISABLED;
     extern const int TABLE_WAS_NOT_DROPPED;
+    extern const int NOT_IMPLEMENTED;
 }
 
 namespace

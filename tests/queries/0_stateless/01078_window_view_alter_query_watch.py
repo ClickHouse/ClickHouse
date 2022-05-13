@@ -44,9 +44,13 @@ with client(name="client1>", log=log) as client1, client(
 
     client1.send("WATCH 01078_window_view_alter_query_watch.wv")
     client1.expect("Query id" + end_of_block)
-    client2.send("INSERT INTO 01078_window_view_alter_query_watch.mt VALUES (1, '1990/01/01 12:00:00');")
+    client2.send(
+        "INSERT INTO 01078_window_view_alter_query_watch.mt VALUES (1, '1990/01/01 12:00:00');"
+    )
     client2.expect("Ok.")
-    client2.send("INSERT INTO 01078_window_view_alter_query_watch.mt VALUES (1, '1990/01/01 12:00:06');")
+    client2.send(
+        "INSERT INTO 01078_window_view_alter_query_watch.mt VALUES (1, '1990/01/01 12:00:06');"
+    )
     client2.expect("Ok.")
     client1.expect("1*" + end_of_block)
     client1.expect("Progress: 1.00 rows.*\)")
@@ -57,9 +61,13 @@ with client(name="client1>", log=log) as client1, client(
     client1.expect(prompt)
     client1.send("WATCH 01078_window_view_alter_query_watch.wv")
     client1.expect("Query id" + end_of_block)
-    client2.send("INSERT INTO 01078_window_view_alter_query_watch.mt VALUES (1, '1990/01/01 12:00:11');")
+    client2.send(
+        "INSERT INTO 01078_window_view_alter_query_watch.mt VALUES (1, '1990/01/01 12:00:11');"
+    )
     client2.expect("Ok.")
-    client2.send("INSERT INTO 01078_window_view_alter_query_watch.mt VALUES (1, '1990/01/01 12:00:18');")
+    client2.send(
+        "INSERT INTO 01078_window_view_alter_query_watch.mt VALUES (1, '1990/01/01 12:00:18');"
+    )
     client2.expect("Ok.")
     client1.expect("2*" + end_of_block)
     client1.expect("Progress: 1.00 rows.*\)")
