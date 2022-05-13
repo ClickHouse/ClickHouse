@@ -241,7 +241,7 @@ struct SimpleSortCursor : SortCursorHelper<SimpleSortCursor>
 #endif
         {
             int non_jit_result = impl->sort_columns[0]->compareAt(lhs_pos, rhs_pos, *(rhs.impl->sort_columns[0]), nulls_direction);
-            result = (non_jit_result != 0 && ((non_jit_result > 0) == (direction > 0)));
+            result = non_jit_result * direction > 0;
         }
 
         return result;
