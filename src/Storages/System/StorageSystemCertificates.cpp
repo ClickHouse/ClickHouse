@@ -1,10 +1,11 @@
+#include <Common/config.h>
 #include <DataTypes/DataTypeString.h>
 #include <Storages/System/StorageSystemCertificates.h>
 #include <regex>
 #include <filesystem>
 #include "Poco/Util/Application.h"
 #include "Poco/File.h"
-#ifdef USE_SSL
+#if USE_SSL
     #include <openssl/x509v3.h>
     #include "Poco/Crypto/X509Certificate.h"
 #endif
@@ -28,7 +29,7 @@ NamesAndTypesList StorageSystemCertificates::getNamesAndTypes()
     };
 }
 
-#ifdef USE_SSL
+#if USE_SSL
 
 static std::unordered_set<std::string> parse_dir(const std::string & dir)
 {
@@ -174,7 +175,7 @@ static void enumCertificates(const std::string & dir, MutableColumns & res_colum
 
 void StorageSystemCertificates::fillData(MutableColumns & res_columns, ContextPtr/* context*/, const SelectQueryInfo &) const
 {
-#ifdef USE_SSL
+#if USE_SSL
     Poco::Util::AbstractConfiguration &conf = Poco::Util::Application::instance().config();
 
     std::string ca_location = conf.getString("openSSL.server.caConfig", "");
