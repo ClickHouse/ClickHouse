@@ -1728,12 +1728,11 @@ void InterpreterSelectQuery::setMergeTreeReadTaskCallbackAndClientInfo(MergeTree
     context->setMergeTreeReadTaskCallback(std::move(callback));
 }
 
-void InterpreterSelectQuery::setProperClientInfo()
+void InterpreterSelectQuery::setProperClientInfo(size_t replica_num, size_t replica_count)
 {
     context->getClientInfo().query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
-    assert(options.shard_count.has_value() && options.shard_num.has_value());
-    context->getClientInfo().count_participating_replicas = *options.shard_count;
-    context->getClientInfo().number_of_current_replica = *options.shard_num;
+    context->getClientInfo().count_participating_replicas = replica_count;
+    context->getClientInfo().number_of_current_replica = replica_num;
 }
 
 bool InterpreterSelectQuery::shouldMoveToPrewhere()
