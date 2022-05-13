@@ -52,9 +52,15 @@ public:
 
         const auto & getChildren() const noexcept { return children; }
 
+        void invalidateDigestCache() const;
+        UInt64 getDigest(std::string_view path) const;
+        void setDigest(UInt64 digest);
+
     private:
         String data;
         ChildrenSet children{};
+
+        mutable std::optional<UInt64> cached_digest;
     };
 
     struct ResponseForSession
@@ -70,6 +76,7 @@ public:
         int64_t time;
         Coordination::ZooKeeperRequestPtr request;
         int64_t zxid{0};
+        std::optional<UInt64> nodes_hash = std::nullopt;
     };
 
     struct AuthID
@@ -148,8 +155,8 @@ public:
         AuthID auth_id;
     };
 
-    using Operation
-        = std::variant<CreateNodeDelta, RemoveNodeDelta, UpdateNodeDelta, SetACLDelta, AddAuthDelta, ErrorDelta, SubDeltaEnd, FailedMultiDelta>;
+    using Operation = std::
+        variant<CreateNodeDelta, RemoveNodeDelta, UpdateNodeDelta, SetACLDelta, AddAuthDelta, ErrorDelta, SubDeltaEnd, FailedMultiDelta>;
 
     struct Delta
     {
@@ -169,10 +176,13 @@ public:
         explicit UncommittedState(KeeperStorage & storage_) : storage(storage_) { }
 
         template <typename Visitor>
-        void applyDeltas(StringRef path, const Visitor & visitor) const
+        void applyDeltas(StringRef path, const Visitor & visitor, std::optional<int64_t> last_zxid = std::nullopt) const
         {
             for (const auto & delta : deltas)
             {
+                if (last_zxid && delta.zxid >= last_zxid)
+                    break;
+
                 if (path.empty() || delta.path == path)
                     std::visit(visitor, delta.operation);
             }
@@ -201,7 +211,7 @@ public:
             return false;
         }
 
-        std::shared_ptr<Node> getNode(StringRef path);
+        std::shared_ptr<Node> getNode(StringRef path, std::optional<int64_t> last_zxid = std::nullopt) const;
         bool hasNode(StringRef path) const;
         Coordination::ACLs getACLs(StringRef path) const;
 
@@ -239,8 +249,17 @@ public:
 
     /// Global id of all requests applied to storage
     int64_t zxid{0};
-    std::deque<int64_t> uncommitted_zxids;
-    int64_t uncommitted_zxid{0};
+
+    struct TransactionInfo
+    {
+        int64_t zxid;
+        uint64_t nodes_hash;
+    };
+
+    std::deque<TransactionInfo> uncommitted_transactions;
+
+    uint64_t nodes_hash{0};
+
     bool finalized{false};
 
     /// Currently active watches (node_path -> subscribed sessions)
@@ -254,12 +273,13 @@ public:
 
     int64_t getNextZXID() const
     {
-        if (uncommitted_zxids.empty())
+        if (uncommitted_transactions.empty())
             return zxid + 1;
 
-        return uncommitted_zxids.back() + 1;
+        return uncommitted_transactions.back().zxid + 1;
     }
 
+    uint64_t getNodesHash(bool committed) const;
 
     const String superdigest;
 
@@ -281,6 +301,8 @@ public:
         session_expiry_queue.addNewSessionOrUpdate(session_id, session_timeout_ms);
     }
 
+    UInt64 calculateNodesHash(UInt64 current_hash, int64_t current_zxid) const;
+
     /// Process user request and return response.
     /// check_acl = false only when converting data from ZooKeeper.
     ResponsesForSessions processRequest(
@@ -291,7 +313,12 @@ public:
         bool check_acl = true,
         bool is_local = false);
     void preprocessRequest(
-        const Coordination::ZooKeeperRequestPtr & request, int64_t session_id, int64_t time, int64_t new_last_zxid, bool check_acl = true);
+        const Coordination::ZooKeeperRequestPtr & request,
+        int64_t session_id,
+        int64_t time,
+        int64_t new_last_zxid,
+        std::optional<UInt64> expected_hash = std::nullopt,
+        bool check_acl = true);
     void rollbackRequest(int64_t rollback_zxid);
 
     void finalize();
@@ -321,7 +348,6 @@ public:
     uint64_t getApproximateDataSize() const { return container.getApproximateDataSize(); }
 
     uint64_t getArenaDataSize() const { return container.keyArenaSize(); }
-
 
     uint64_t getTotalWatchesCount() const;
 

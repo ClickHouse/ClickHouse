@@ -124,6 +124,13 @@ KeeperStorage::RequestForSession KeeperStateMachine::parseRequest(nuraft::buffer
     if (!buffer.eof())
         readIntBinary(request_for_session.zxid, buffer);
 
+    if (!buffer.eof())
+    {
+        UInt64 nodes_hash;
+        readIntBinary(nodes_hash, buffer);
+        request_for_session.nodes_hash.emplace(nodes_hash);
+    }
+
     return request_for_session;
 }
 
@@ -132,7 +139,7 @@ void KeeperStateMachine::preprocess(const KeeperStorage::RequestForSession & req
     if (request_for_session.request->getOpNum() == Coordination::OpNum::SessionID)
         return;
     std::lock_guard lock(storage_and_responses_lock);
-    storage->preprocessRequest(request_for_session.request, request_for_session.session_id, request_for_session.time, request_for_session.zxid);
+    storage->preprocessRequest(request_for_session.request, request_for_session.session_id, request_for_session.time, request_for_session.zxid, request_for_session.nodes_hash);
 }
 
 nuraft::ptr<nuraft::buffer> KeeperStateMachine::commit(const uint64_t log_idx, nuraft::buffer & data)
@@ -169,6 +176,9 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine::commit(const uint64_t log_idx, n
             if (!responses_queue.push(response_for_session))
                 throw Exception(ErrorCodes::SYSTEM_ERROR, "Could not push response with session id {} into responses queue", response_for_session.session_id);
     }
+
+    if (request_for_session.nodes_hash)
+        assert(*request_for_session.nodes_hash == storage->getNodesHash(true));
 
     last_committed_idx = log_idx;
     return nullptr;
@@ -395,6 +405,12 @@ int64_t KeeperStateMachine::getNextZxid() const
 {
     std::lock_guard lock(storage_and_responses_lock);
     return storage->getNextZXID();
+}
+
+UInt64 KeeperStateMachine::getNodesHash() const
+{
+    std::lock_guard lock(storage_and_responses_lock);
+    return storage->getNodesHash(false);
 }
 
 uint64_t KeeperStateMachine::getLastProcessedZxid() const
