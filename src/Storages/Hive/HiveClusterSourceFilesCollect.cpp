@@ -147,7 +147,7 @@ HiveFiles HiveClusterSourceFilesCollector::collect(HivePruneLevel /*prune_level*
                 continue;
             partition_fields.emplace_back(Field::restoreFromDump(value));
         }
-        
+
         NamesAndTypesList hive_file_name_and_types;
         auto partition_names_obj = *file_data.get("partition_names").extract<Poco::JSON::Array::Ptr>();
         for (auto & name_obj : partition_names_obj)
@@ -155,7 +155,7 @@ HiveFiles HiveClusterSourceFilesCollector::collect(HivePruneLevel /*prune_level*
             auto name = name_obj.convert<String>();
             auto col = all_name_and_types.tryGetByName(name);
             if (!col)
-                throw Exception(ErrorCodes::INVALID_PARTITION_VALUE, "Unknow partition column : {}", name);
+                throw Exception(ErrorCodes::INVALID_PARTITION_VALUE, "Unknown partition column : {}", name);
             else
                 hive_file_name_and_types.push_back(*col);
         }
