@@ -202,14 +202,14 @@ SettingFieldMilliseconds::SettingFieldTimespan(const Field & f) : SettingFieldTi
 }
 
 template <>
-SettingFieldSeconds & SettingFieldSeconds::operator=(const Field & f)
+SettingFieldTimespan<SettingFieldTimespanUnit::Second> & SettingFieldSeconds::operator=(const Field & f)
 {
     *this = Poco::Timespan{float64AsSecondsToTimespan(fieldToNumber<Float64>(f))};
     return *this;
 }
 
 template <>
-SettingFieldMilliseconds & SettingFieldMilliseconds::operator=(const Field & f)
+SettingFieldTimespan<SettingFieldTimespanUnit::Millisecond> & SettingFieldMilliseconds::operator=(const Field & f)
 {
     *this = fieldToNumber<UInt64>(f);
     return *this;
