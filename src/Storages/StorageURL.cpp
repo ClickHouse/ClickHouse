@@ -350,7 +350,7 @@ namespace
                                         threadPoolCallbackRunner(IOThreadPool::get()),
                                         download_threads),
                                     chooseCompressionMethod(request_uri.getPath(), compression_method),
-                                    settings);
+                                    settings.zstd_window_log_max);
                             }
                         }
                         catch (const Poco::Exception & e)
@@ -382,7 +382,7 @@ namespace
                             /* use_external_buffer */ false,
                             /* skip_url_not_found_error */ skip_url_not_found_error),
                         chooseCompressionMethod(request_uri.getPath(), compression_method),
-                        settings);
+                        settings.zstd_window_log_max);
                 }
                 catch (...)
                 {
