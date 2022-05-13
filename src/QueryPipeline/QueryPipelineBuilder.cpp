@@ -532,7 +532,10 @@ QueryPipelineProcessorsCollector::~QueryPipelineProcessorsCollector()
 Processors QueryPipelineProcessorsCollector::detachProcessors(size_t group)
 {
     for (auto & processor : processors)
+    {
+        processor->initOpenTelemetrySpan();
         processor->setQueryPlanStep(step, group);
+    }
 
     Processors res;
     res.swap(processors);

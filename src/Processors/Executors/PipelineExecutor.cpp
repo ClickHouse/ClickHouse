@@ -9,7 +9,6 @@
 #include <Processors/ISource.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Common/scope_guard_safe.h>
 
 #ifndef NDEBUG
@@ -269,8 +268,6 @@ void PipelineExecutor::initializeExecution(size_t num_threads)
 
 void PipelineExecutor::executeImpl(size_t num_threads)
 {
-    OpenTelemetrySpanHolder span("PipelineExecutor::executeImpl()");
-
     initializeExecution(num_threads);
 
     using ThreadsData = std::vector<ThreadFromGlobalPool>;

@@ -3,6 +3,7 @@
 #include <memory>
 #include <Processors/Port.h>
 #include <Common/Stopwatch.h>
+#include <Interpreters/OpenTelemetrySpanLog.h>
 
 
 class EventCounter;
@@ -304,8 +305,13 @@ public:
     uint64_t getInputWaitElapsedUs() const { return input_wait_elapsed_us; }
     uint64_t getOutputWaitElapsedUs() const { return output_wait_elapsed_us; }
 
+    void initOpenTelemetrySpan()
+    {
+        span = std::make_unique<OpenTelemetrySpanHolder>(getName());
+    }
+
 protected:
-    virtual void onCancel() {}
+    virtual void onCancel() { span = nullptr; }
 
 private:
     /// For:
@@ -331,6 +337,8 @@ private:
 
     IQueryPlanStep * query_plan_step = nullptr;
     size_t query_plan_step_group = 0;
+
+    std::unique_ptr<OpenTelemetrySpanHolder> span = nullptr;
 };
 
 
