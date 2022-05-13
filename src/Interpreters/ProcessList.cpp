@@ -212,7 +212,7 @@ ProcessList::EntryPtr ProcessList::insert(const String & query_, const IAST * as
 
             /// Set query-level memory trackers
             thread_group->memory_tracker.setOrRaiseHardLimit(settings.max_memory_usage);
-            thread_group->memory_tracker.setSoftLimit(settings.max_guaranteed_memory_usage);
+            thread_group->memory_tracker.setSoftLimit(settings.memory_overcommit_ratio_denominator);
 
             if (query_context->hasTraceCollector())
             {
@@ -242,7 +242,7 @@ ProcessList::EntryPtr ProcessList::insert(const String & query_, const IAST * as
 
         /// Track memory usage for all simultaneously running queries from single user.
         user_process_list.user_memory_tracker.setOrRaiseHardLimit(settings.max_memory_usage_for_user);
-        user_process_list.user_memory_tracker.setSoftLimit(settings.max_guaranteed_memory_usage_for_user);
+        user_process_list.user_memory_tracker.setSoftLimit(settings.memory_overcommit_ratio_denominator_for_user);
         user_process_list.user_memory_tracker.setDescription("(for user)");
         user_process_list.user_overcommit_tracker.setMaxWaitTime(settings.memory_usage_overcommit_max_wait_microseconds);
 

@@ -758,7 +758,7 @@ SinkToStoragePtr StorageDistributed::write(const ASTPtr &, const StorageMetadata
     else
         columns_to_send = metadata_snapshot->getSampleBlockNonMaterialized().getNames();
 
-    /// DistributedBlockOutputStream will not own cluster, but will own ConnectionPools of the cluster
+    /// DistributedSink will not own cluster, but will own ConnectionPools of the cluster
     return std::make_shared<DistributedSink>(
         local_context, *this, metadata_snapshot, cluster, insert_sync, timeout,
         StorageID{remote_database, remote_table}, columns_to_send);
@@ -1050,14 +1050,14 @@ void StorageDistributed::createDirectoryMonitors(const DiskPtr & disk)
         {
             const auto & tmp_path = dir_path / "tmp";
 
-            /// "tmp" created by DistributedBlockOutputStream
+            /// "tmp" created by DistributedSink
             if (std::filesystem::is_directory(tmp_path) && std::filesystem::is_empty(tmp_path))
                 std::filesystem::remove(tmp_path);
 
             if (std::filesystem::is_empty(dir_path))
             {
                 LOG_DEBUG(log, "Removing {} (used for async INSERT into Distributed)", dir_path.string());
-                /// Will be created by DistributedBlockOutputStream on demand.
+                /// Will be created by DistributedSink on demand.
                 std::filesystem::remove(dir_path);
             }
             else

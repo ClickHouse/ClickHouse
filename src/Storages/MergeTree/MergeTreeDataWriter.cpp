@@ -228,7 +228,7 @@ Block MergeTreeDataWriter::mergeBlock(
             case MergeTreeData::MergingParams::Collapsing:
                 return std::make_shared<CollapsingSortedAlgorithm>(
                     block, 1, sort_description, merging_params.sign_column,
-                    false, block_size + 1, &Poco::Logger::get("MergeTreeBlockOutputStream"));
+                    false, block_size + 1, &Poco::Logger::get("MergeTreeDataWriter"));
             case MergeTreeData::MergingParams::Summing:
                 return std::make_shared<SummingSortedAlgorithm>(
                     block, 1, sort_description, merging_params.columns_to_sum,
