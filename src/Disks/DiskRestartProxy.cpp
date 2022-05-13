@@ -6,8 +6,7 @@
 namespace DB
 {
 namespace ErrorCodes
-{
-    extern const int DEADLOCK_AVOIDED;
+{extern const int DEADLOCK_AVOIDED;
 }
 
 using Millis = std::chrono::milliseconds;
@@ -329,7 +328,7 @@ void DiskRestartProxy::getRemotePathsRecursive(const String & path, std::vector<
     return DiskDecorator::getRemotePathsRecursive(path, paths_map);
 }
 
-void DiskRestartProxy::restart()
+void DiskRestartProxy::restart(ContextPtr context)
 {
     /// Speed up processing unhealthy requests.
     DiskDecorator::shutdown();
@@ -352,7 +351,7 @@ void DiskRestartProxy::restart()
 
     LOG_INFO(log, "Restart lock acquired. Restarting disk {}", DiskDecorator::getName());
 
-    DiskDecorator::startup();
+    DiskDecorator::startup(context);
 
     LOG_INFO(log, "Disk restarted {}", DiskDecorator::getName());
 }
