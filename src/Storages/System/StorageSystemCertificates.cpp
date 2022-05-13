@@ -1,5 +1,6 @@
 #include <Common/config.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Storages/System/StorageSystemCertificates.h>
 #include <regex>
 #include <filesystem>
@@ -7,6 +8,7 @@
 #include "Poco/File.h"
 #if USE_SSL
     #include <openssl/x509v3.h>
+    #include "Poco/Net/SSLManager.h"
     #include "Poco/Crypto/X509Certificate.h"
 #endif
 
@@ -25,7 +27,9 @@ NamesAndTypesList StorageSystemCertificates::getNamesAndTypes()
         {"not_before", std::make_shared<DataTypeString>()},
         {"not_after", std::make_shared<DataTypeString>()},
         {"subject", std::make_shared<DataTypeString>()},
-        {"pkey_algo", std::make_shared<DataTypeString>()}
+        {"pkey_algo", std::make_shared<DataTypeString>()},
+        {"path", std::make_shared<DataTypeString>()},
+        {"default", std::make_shared<DataTypeNumber<UInt8>>()}
     };
 }
 
@@ -72,7 +76,7 @@ static std::string hex_dump(const unsigned char *buf, size_t len)
 }
 */
 
-static void populateTable(const X509 * cert, MutableColumns & res_columns)
+static void populateTable(const X509 * cert, MutableColumns & res_columns, const std::string & path, bool def)
 {
     BIO * b = BIO_new(BIO_s_mem());
     size_t col = 0;
@@ -152,10 +156,13 @@ static void populateTable(const X509 * cert, MutableColumns & res_columns)
         }
     }
 
+    res_columns[col++]->insert(path);
+    res_columns[col++]->insert(def);
+
     BIO_free(b);
 }
 
-static void enumCertificates(const std::string & dir, MutableColumns & res_columns)
+static void enumCertificates(const std::string & dir, bool def, MutableColumns & res_columns)
 {
     static const std::regex cert_name("^[a-fA-F0-9]{8}\\.\\d$");
 
@@ -167,7 +174,7 @@ static void enumCertificates(const std::string & dir, MutableColumns & res_colum
             continue;
 
         Poco::Crypto::X509Certificate cert(dir_entry.path());
-        populateTable(cert.certificate(), res_columns);
+        populateTable(cert.certificate(), res_columns, dir_entry.path(), def);
     }
 }
 
@@ -176,55 +183,43 @@ static void enumCertificates(const std::string & dir, MutableColumns & res_colum
 void StorageSystemCertificates::fillData([[maybe_unused]] MutableColumns & res_columns, ContextPtr/* context*/, const SelectQueryInfo &) const
 {
 #if USE_SSL
-    Poco::Util::AbstractConfiguration &conf = Poco::Util::Application::instance().config();
+    auto & ca_paths = Poco::Net::SSLManager::instance().defaultServerContext()->getCAPaths();
 
-    std::string ca_location = conf.getString("openSSL.server.caConfig", "");
-    bool load_default_cas = conf.getBool("openSSL.server.loadDefaultCAFile", true);
-
-    if (!ca_location.empty())
+    if (!ca_paths.caLocation.empty())
     {
-        Poco::File afile(ca_location);
+        Poco::File afile(ca_paths.caLocation);
         if (afile.exists())
         {
             if (afile.isDirectory())
             {
-                auto dir_set = parse_dir(ca_location);
+                auto dir_set = parse_dir(ca_paths.caLocation);
                 for (const auto & entry : dir_set)
-                    enumCertificates(entry, res_columns);
+                    enumCertificates(entry, false, res_columns);
             }
             else
             {
                 auto certs = Poco::Crypto::X509Certificate::readPEM(afile.path());
                 for (const auto & cert : certs)
-                    populateTable(cert.certificate(), res_columns);
+                    populateTable(cert.certificate(), res_columns, afile.path(), false);
             }
         }
     }
 
-    if (load_default_cas)
+    if (!ca_paths.caDefaultDir.empty())
     {
-        const char * dir = getenv(X509_get_default_cert_dir_env());
-        if (!dir)
-            dir = X509_get_default_cert_dir();
-        if (dir)
-        {
-            auto dir_set = parse_dir(dir);
-            for (const auto & entry : dir_set)
-                enumCertificates(entry, res_columns);
-        }
+        auto dir_set = parse_dir(ca_paths.caDefaultDir);
+        for (const auto & entry : dir_set)
+            enumCertificates(entry, true, res_columns);
+    }
 
-        const char * file = getenv(X509_get_default_cert_file_env());
-        if (!file)
-            file = X509_get_default_cert_file();
-        if (file)
+    if (!ca_paths.caDefaultFile.empty())
+    {
+        Poco::File afile(ca_paths.caDefaultFile);
+        if (afile.exists())
         {
-            Poco::File afile(file);
-            if (afile.exists())
-            {
-                auto certs = Poco::Crypto::X509Certificate::readPEM(file);
-                for (const auto & cert : certs)
-                    populateTable(cert.certificate(), res_columns);
-            }
+            auto certs = Poco::Crypto::X509Certificate::readPEM(ca_paths.caDefaultFile);
+            for (const auto & cert : certs)
+                populateTable(cert.certificate(), res_columns, ca_paths.caDefaultFile, true);
         }
     }
 #endif
