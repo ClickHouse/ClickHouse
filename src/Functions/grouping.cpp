@@ -1,14 +1,11 @@
 #include <base/types.h>
-#include <Common/logger_useful.h>
 #include "Columns/ColumnsNumber.h"
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnFixedString.h>
-#include <Core/iostream_debug_helpers.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
-#include <Poco/Logger.h>
 
 namespace DB
 {
@@ -54,18 +51,19 @@ public:
         auto grouping_set_map_column = checkAndGetColumnConst<ColumnArray>(arguments[1].column.get());
         auto argument_keys_column = checkAndGetColumnConst<ColumnArray>(arguments[2].column.get());
 
-        LOG_DEBUG(&Poco::Logger::get("Grouping"), "Args: {}, rows: {}", arguments.size(), arguments[1].column->getFamilyName());
+        auto masks = (*grouping_set_map_column)[0].get<Array>();
+
         auto result = std::make_shared<DataTypeUInt64>()->createColumn();
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             UInt64 set_index = grouping_set_column->get64(i);
-            auto mask = grouping_set_map_column->getDataAt(set_index).toView();
-            LOG_DEBUG(&Poco::Logger::get("Grouping"), "Mask: {}", mask);
+            auto mask = masks[set_index].get<const String &>();
+
             auto indexes = (*argument_keys_column)[i].get<Array>();
             UInt64 value = 0;
             for (auto index : indexes)
                 value = (value << 1) + (mask[index.get<UInt64>()] == '1' ? 1 : 0);
-            LOG_DEBUG(&Poco::Logger::get("Grouping"), "Mask: {}, Arg: {}, value: {}", mask, toString(indexes), value);
+
             result->insert(Field(value));
         }
         return result;
