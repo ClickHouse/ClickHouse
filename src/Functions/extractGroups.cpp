@@ -63,7 +63,7 @@ public:
         if (needle.empty())
             throw Exception(getName() + " length of 'needle' argument must be greater than 0.", ErrorCodes::BAD_ARGUMENTS);
 
-        auto regexp = Regexps::get<false, false>(needle);
+        auto regexp = Regexps::get<false, false, false>(needle);
         const auto & re2 = regexp->getRE2();
 
         if (!re2)
