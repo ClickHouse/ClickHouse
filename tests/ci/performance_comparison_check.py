@@ -12,6 +12,7 @@ import re
 from github import Github
 
 from env_helper import GITHUB_RUN_URL
+from ci_config import CI_CONFIG
 from pr_info import PRInfo
 from s3_helper import S3Helper
 from get_robot_token import get_best_robot_token
@@ -69,6 +70,7 @@ if __name__ == "__main__":
     reports_path = os.getenv("REPORTS_PATH", "./reports")
 
     check_name = sys.argv[1]
+    required_build = CI_CONFIG["tests_config"][check_name]["required_build"]
 
     if not os.path.exists(temp_path):
         os.makedirs(temp_path)
@@ -83,6 +85,7 @@ if __name__ == "__main__":
     docker_env = ""
 
     docker_env += " -e S3_URL=https://s3.amazonaws.com/clickhouse-builds"
+    docker_env += f" -e BUILD_NAME={required_build}"
 
     if pr_info.number == 0:
         pr_link = commit.html_url

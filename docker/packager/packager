@@ -165,6 +165,7 @@ def parse_env_variables(
         cmake_flags.append("-DCMAKE_INSTALL_LOCALSTATEDIR=/var")
         if is_release_build(build_type, package_type, sanitizer, split_binary):
             cmake_flags.append("-DINSTALL_STRIPPED_BINARIES=ON")
+            result.append("WITH_PERFORMANCE=1")
             if is_cross_arm:
                 cmake_flags.append("-DBUILD_STANDALONE_KEEPER=1")
             else:
@@ -176,10 +177,7 @@ def parse_env_variables(
     cmake_flags.append(f"-DCMAKE_CXX_COMPILER={cxx}")
 
     # Create combined output archive for split build and for performance tests.
-    if package_type == "performance":
-        result.append("COMBINED_OUTPUT=performance")
-        cmake_flags.append("-DENABLE_TESTS=0")
-    elif package_type == "coverity":
+    if package_type == "coverity":
         result.append("COMBINED_OUTPUT=coverity")
         result.append('COVERITY_TOKEN="$COVERITY_TOKEN"')
     elif split_binary:
@@ -270,11 +268,9 @@ if __name__ == "__main__":
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
         description="ClickHouse building script using prebuilt Docker image",
     )
-    # 'performance' creates a combined .tgz with server
-    # and configs to be used for performance test.
     parser.add_argument(
         "--package-type",
-        choices=["deb", "binary", "performance", "coverity"],
+        choices=["deb", "binary", "coverity"],
         required=True,
     )
     parser.add_argument(

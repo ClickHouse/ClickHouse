@@ -18,16 +18,6 @@ CI_CONFIG = {
             "tidy": "disable",
             "with_coverage": False,
         },
-        "performance": {
-            "compiler": "clang-13",
-            "build_type": "",
-            "sanitizer": "",
-            "package_type": "performance",
-            "bundled": "bundled",
-            "splitted": "unsplitted",
-            "tidy": "disable",
-            "with_coverage": False,
-        },
         "coverity": {
             "compiler": "clang-13",
             "build_type": "",
@@ -202,7 +192,6 @@ CI_CONFIG = {
     "builds_report_config": {
         "ClickHouse build check (actions)": [
             "package_release",
-            "performance",
             "coverity",
             "package_aarch64",
             "package_asan",
@@ -372,7 +361,7 @@ CI_CONFIG = {
             "required_build": "binary_release",
         },
         "Performance Comparison (actions)": {
-            "required_build": "performance",
+            "required_build": "package_release",
         },
     },
 }  # type: dict
