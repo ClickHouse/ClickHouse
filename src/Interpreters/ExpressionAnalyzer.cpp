@@ -43,6 +43,8 @@
 
 #include <Common/typeid_cast.h>
 #include <Common/StringUtils/StringUtils.h>
+#include <Core/ColumnNumbers.h>
+#include <Core/Names.h>
 #include <Core/NamesAndTypes.h>
 
 #include <DataTypes/DataTypesNumber.h>
@@ -326,7 +328,7 @@ void ExpressionAnalyzer::analyzeAggregation(ActionsDAGPtr & temp_actions)
     {
         if (ASTPtr group_by_ast = select_query->groupBy())
         {
-            NameSet unique_keys;
+            NameToIndexMap unique_keys;
             ASTs & group_asts = group_by_ast->children;
 
             /// For GROUPING SETS with multiple groups we always add virtual __grouping_set column
@@ -348,6 +350,7 @@ void ExpressionAnalyzer::analyzeAggregation(ActionsDAGPtr & temp_actions)
                     group_elements_ast = group_ast_element->children;
 
                     NamesAndTypesList grouping_set_list;
+                    ColumnNumbers grouping_set_indexes_list;
 
                     for (ssize_t j = 0; j < ssize_t(group_elements_ast.size()); ++j)
                     {
@@ -388,15 +391,21 @@ void ExpressionAnalyzer::analyzeAggregation(ActionsDAGPtr & temp_actions)
                         /// Aggregation keys are unique.
                         if (!unique_keys.contains(key.name))
                         {
-                            unique_keys.insert(key.name);
+                            unique_keys[key.name] = aggregation_keys.size();
+                            grouping_set_indexes_list.push_back(aggregation_keys.size());
                             aggregation_keys.push_back(key);
 
                             /// Key is no longer needed, therefore we can save a little by moving it.
                             aggregated_columns.push_back(std::move(key));
                         }
+                        else
+                        {
+                            grouping_set_indexes_list.push_back(unique_keys[key.name]);
+                        }
                     }
 
                     aggregation_keys_list.push_back(std::move(grouping_set_list));
+                    aggregation_keys_indexes_list.push_back(std::move(grouping_set_indexes_list));
                 }
                 else
                 {
@@ -434,7 +443,7 @@ void ExpressionAnalyzer::analyzeAggregation(ActionsDAGPtr & temp_actions)
                     /// Aggregation keys are uniqued.
                     if (!unique_keys.contains(key.name))
                     {
-                        unique_keys.insert(key.name);
+                        unique_keys[key.name] = aggregation_keys.size();
                         aggregation_keys.push_back(key);
 
                         /// Key is no longer needed, therefore we can save a little by moving it.
@@ -443,8 +452,8 @@ void ExpressionAnalyzer::analyzeAggregation(ActionsDAGPtr & temp_actions)
                 }
             }
 
-            if (select_query->group_by_with_grouping_sets && group_asts.size() > 1)
-                aggregated_columns.emplace_back("__grouping_set_map", std::make_shared<DataTypeFixedString>(aggregation_keys.size() + 1));
+            // if (select_query->group_by_with_grouping_sets && group_asts.size() > 1)
+            //     aggregated_columns.emplace_back("__grouping_set_map", std::make_shared<DataTypeFixedString>(aggregation_keys.size() + 1));
 
             if (group_asts.empty())
             {
@@ -582,6 +591,7 @@ void ExpressionAnalyzer::getRootActions(const ASTPtr & ast, bool no_makeset_for_
         subquery_depth,
         sourceColumns(),
         aggregation_keys,
+        aggregation_keys_indexes_list,
         std::move(actions),
         prepared_sets,
         subqueries_for_sets,
@@ -603,6 +613,7 @@ void ExpressionAnalyzer::getRootActionsNoMakeSet(const ASTPtr & ast, ActionsDAGP
         subquery_depth,
         sourceColumns(),
         aggregation_keys,
+        aggregation_keys_indexes_list,
         std::move(actions),
         prepared_sets,
         subqueries_for_sets,
@@ -625,6 +636,7 @@ void ExpressionAnalyzer::getRootActionsForHaving(
         subquery_depth,
         sourceColumns(),
         aggregation_keys,
+        aggregation_keys_indexes_list,
         std::move(actions),
         prepared_sets,
         subqueries_for_sets,

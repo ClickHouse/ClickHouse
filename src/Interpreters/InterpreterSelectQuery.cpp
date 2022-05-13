@@ -757,8 +757,8 @@ Block InterpreterSelectQuery::getSampleBlockImpl()
             res.insert({nullptr, type, aggregate.column_name});
         }
 
-        if (analysis_result.use_grouping_set_key)
-            res.insert({ nullptr, std::make_shared<DataTypeFixedString>(query_analyzer->aggregationKeys().size() + 1), "__grouping_set_map" });
+        // if (analysis_result.use_grouping_set_key)
+        //     res.insert({ nullptr, std::make_shared<DataTypeFixedString>(query_analyzer->aggregationKeys().size() + 1), "__grouping_set_map" });
 
         return res;
     }

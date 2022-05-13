@@ -2,6 +2,7 @@
 #include <Common/typeid_cast.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnFixedString.h>
+#include <Core/ColumnNumbers.h>
 #include <Core/ColumnWithTypeAndName.h>
 
 #include <Functions/FunctionFactory.h>
@@ -11,6 +12,7 @@
 
 #include <DataTypes/DataTypeSet.h>
 #include <DataTypes/DataTypeFunction.h>
+#include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeArray.h>
@@ -468,6 +470,7 @@ ActionsMatcher::Data::Data(
     size_t subquery_depth_,
     const NamesAndTypesList & source_columns_,
     const NamesAndTypesList & aggregation_keys_,
+    const ColumnNumbersList & grouping_set_keys_,
     ActionsDAGPtr actions_dag,
     PreparedSets & prepared_sets_,
     SubqueriesForSets & subqueries_for_sets_,
@@ -480,6 +483,7 @@ ActionsMatcher::Data::Data(
     , subquery_depth(subquery_depth_)
     , source_columns(source_columns_)
     , aggregation_keys(aggregation_keys_)
+    , grouping_set_keys(grouping_set_keys_)
     , prepared_sets(prepared_sets_)
     , subqueries_for_sets(subqueries_for_sets_)
     , no_subqueries(no_subqueries_)
@@ -834,6 +838,28 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
     {
         auto arguments_column_name = data.getUniqueName("__grouping_args");
         {
+            if (!data.hasColumn("__grouping_set_map"))
+            {
+                ColumnWithTypeAndName column;
+                column.name = "__grouping_set_map";
+                size_t map_size = data.aggregation_keys.size() + 1;
+                column.type = std::make_shared<DataTypeArray>(std::make_shared<DataTypeFixedString>(map_size));
+                Array maps_per_set;
+                for (auto & grouping_set : data.grouping_set_keys)
+                {
+                    std::string key_map(map_size, '0');
+                    for (auto index : grouping_set)
+                        key_map[index] = '1';
+                    auto map_column = ColumnFixedString::create(map_size);
+                    map_column->insertString(key_map);
+                    maps_per_set.push_back(key_map);
+                }
+                auto grouping_set_map_column = ColumnArray::create(ColumnFixedString::create(map_size));
+                grouping_set_map_column->insert(maps_per_set);
+                column.column = ColumnConst::create(std::move(grouping_set_map_column), 1);
+
+                data.addColumn(column);
+            }
             ColumnWithTypeAndName column;
             column.name = arguments_column_name;
             column.type = std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>());
@@ -853,7 +879,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
 
         data.addFunction(
             FunctionFactory::instance().get("grouping", data.getContext()),
-            { "__grouping_set_map", arguments_column_name },
+            { "__grouping_set", "__grouping_set_map", arguments_column_name },
             column_name
         );
         return;
