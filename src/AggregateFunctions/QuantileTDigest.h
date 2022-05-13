@@ -103,15 +103,9 @@ class QuantileTDigest
       */
     static Value interpolate(Value x, Value x1, Value y1, Value x2, Value y2)
     {
-        if (y1 != y2) /// Handling infinities of the same sign well.
-        {
-            double k = (x - x1) / (x2 - x1);
-            return y1 + k * (y2 - y1);
-        }
-        else
-        {
-            return y1;
-        }
+        /// Symmetric interpolation for better results with infinities.
+        double k = (x - x1) / (x2 - x1);
+        return (1 - k) * y1 + k * y2;
     }
 
     struct RadixSortTraits
@@ -327,10 +321,17 @@ public:
 
         for (const auto & c : centroids)
         {
-            if (c.count <= 0 || std::isnan(c.count) || std::isnan(c.mean)) // invalid count breaks compress(), invalid mean breaks sort()
+            if (c.count <= 0 || std::isnan(c.count)) // invalid count breaks compress()
                 throw Exception("Invalid centroid " + std::to_string(c.count) + ":" + std::to_string(c.mean), ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED);
-            count += c.count;
+            if (!std::isnan(c.mean))
+            {
+                count += c.count;
+            }
         }
+
+        auto it = std::remove_if(centroids.begin(), centroids.end(), [](Centroid & c) { return std::isnan(c.mean); });
+        centroids.erase(it, centroids.end());
+
         compress(); // Allows reading/writing TDigests with different epsilon/max_centroids params
     }
 
