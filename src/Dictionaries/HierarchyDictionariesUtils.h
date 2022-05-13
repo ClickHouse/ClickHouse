@@ -14,10 +14,10 @@
 namespace DB
 {
 
-class DictionaryHierarchyParentToChildIndex;
-using DictionaryHierarchyParentToChildIndexPtr = std::shared_ptr<DictionaryHierarchyParentToChildIndex>;
+class DictionaryHierarchicalParentToChildIndex;
+using DictionaryHierarchyParentToChildIndexPtr = std::shared_ptr<DictionaryHierarchicalParentToChildIndex>;
 
-class DictionaryHierarchyParentToChildIndex
+class DictionaryHierarchicalParentToChildIndex
 {
 public:
     struct KeysRange
@@ -26,7 +26,7 @@ public:
         UInt32 end_index;
     };
 
-    explicit DictionaryHierarchyParentToChildIndex(const HashMap<UInt64, PaddedPODArray<UInt64>> & parent_to_children_map_)
+    explicit DictionaryHierarchicalParentToChildIndex(const HashMap<UInt64, PaddedPODArray<UInt64>> & parent_to_children_map_)
     {
         size_t parent_to_children_map_size = parent_to_children_map_.size();
 
@@ -35,14 +35,13 @@ public:
 
         for (auto & [parent, children] : parent_to_children_map_)
         {
-            UInt32 start_index = static_cast<UInt32>(keys.size());
-            for (auto child : children)
-            {
-                keys.push_back(child);
-            }
+            size_t keys_size = keys.size();
+            UInt32 start_index = static_cast<UInt32>(keys_size);
+            UInt32 end_index = start_index + static_cast<UInt32>(children.size());
 
-            UInt32 end_index = static_cast<UInt32>(keys.size());
-            parent_to_children_keys_range[parent] = DictionaryHierarchyParentToChildIndex::KeysRange{start_index, end_index};
+            keys.insert(children.begin(), children.end());
+
+            parent_to_children_keys_range[parent] = KeysRange{start_index, end_index};
         }
     }
 
@@ -71,7 +70,6 @@ namespace detail
         bool operator()(UInt64 key [[maybe_unused]]) { return false; }
     };
 
-    template <typename T>
     struct GetParentKeyFuncInterface
     {
         std::optional<UInt64> operator()(UInt64 key [[maybe_unused]]) { return {}; }
@@ -261,7 +259,7 @@ namespace detail
     template <typename Strategy>
     ElementsAndOffsets getDescendants(
         const PaddedPODArray<UInt64> & keys,
-        const DictionaryHierarchyParentToChildIndex & parent_to_child_index,
+        const DictionaryHierarchicalParentToChildIndex & parent_to_child_index,
         Strategy strategy,
         size_t & valid_keys)
     {
@@ -397,7 +395,7 @@ namespace detail
 
                 ++depth;
 
-                DictionaryHierarchyParentToChildIndex::KeysRange children_range = it->getMapped();
+                DictionaryHierarchicalParentToChildIndex::KeysRange children_range = it->getMapped();
 
                 for (; children_range.start_index < children_range.end_index; ++children_range.start_index)
                 {
@@ -478,7 +476,7 @@ ColumnUInt8::Ptr getKeysIsInHierarchyColumn(
 /// @param valid_keys - number of keys that are valid in parent_to_child map
 ColumnPtr getKeysDescendantsArray(
     const PaddedPODArray<UInt64> & requested_keys,
-    const DictionaryHierarchyParentToChildIndex & parent_to_child_index,
+    const DictionaryHierarchicalParentToChildIndex & parent_to_child_index,
     size_t level,
     size_t & valid_keys);
 

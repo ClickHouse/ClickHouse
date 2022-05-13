@@ -283,12 +283,12 @@ ColumnUInt8::Ptr HashedArrayDictionary<dictionary_key_type>::isInHierarchy(
 }
 
 template <DictionaryKeyType dictionary_key_type>
-DictionaryHierarchyParentToChildIndexPtr HashedArrayDictionary<dictionary_key_type>::getHierarchyParentToChildIndex() const
+DictionaryHierarchicalParentToChildIndexPtr HashedArrayDictionary<dictionary_key_type>::getHierarchicalIndex() const
 {
     if constexpr (dictionary_key_type == DictionaryKeyType::Simple)
     {
-        if (hierarchy_parent_to_child_index)
-            return hierarchy_parent_to_child_index;
+        if (hierarchical_index)
+            return hierarchical_index;
 
         size_t hierarchical_attribute_index = *dict_struct.hierarchical_attribute_index;
         const auto & hierarchical_attribute = attributes[hierarchical_attribute_index];
@@ -316,7 +316,7 @@ DictionaryHierarchyParentToChildIndexPtr HashedArrayDictionary<dictionary_key_ty
             parent_to_child[parent_key].emplace_back(child_key);
         }
 
-        return std::make_shared<DictionaryHierarchyParentToChildIndex>(parent_to_child);
+        return std::make_shared<DictionaryHierarchicalParentToChildIndex>(parent_to_child);
     }
     else
     {
@@ -329,7 +329,7 @@ ColumnPtr HashedArrayDictionary<dictionary_key_type>::getDescendants(
     ColumnPtr key_column [[maybe_unused]],
     const DataTypePtr &,
     size_t level [[maybe_unused]],
-    DictionaryHierarchyParentToChildIndexPtr parent_to_child_index [[maybe_unused]]) const
+    DictionaryHierarchicalParentToChildIndexPtr parent_to_child_index [[maybe_unused]]) const
 {
     if constexpr (dictionary_key_type == DictionaryKeyType::Simple)
     {
@@ -718,7 +718,7 @@ void HashedArrayDictionary<dictionary_key_type>::buildHierarchyParentToChildInde
         return;
 
     if (dict_struct.attributes[*dict_struct.hierarchical_attribute_index].bidirectional)
-        hierarchy_parent_to_child_index = getHierarchyParentToChildIndex();
+        hierarchical_index = getHierarchicalIndex();
 }
 
 template <DictionaryKeyType dictionary_key_type>
@@ -761,8 +761,11 @@ void HashedArrayDictionary<dictionary_key_type>::calculateBytesAllocated()
     if (update_field_loaded_block)
         bytes_allocated += update_field_loaded_block->allocatedBytes();
 
-    if (hierarchy_parent_to_child_index)
-        bytes_allocated += hierarchy_parent_to_child_index->getSizeInBytes();
+    if (hierarchical_index)
+    {
+        hierarchical_index_bytes_allocated = hierarchical_index->getSizeInBytes();
+        bytes_allocated += hierarchical_index_bytes_allocated;
+    }
 
     bytes_allocated += string_arena.size();
 }
