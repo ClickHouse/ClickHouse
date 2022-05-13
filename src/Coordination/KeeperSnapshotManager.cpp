@@ -147,6 +147,10 @@ void KeeperStorageSnapshot::serialize(const KeeperStorageSnapshot & snapshot, Wr
 {
     writeBinary(static_cast<uint8_t>(snapshot.version), out);
     serializeSnapshotMetadata(snapshot.snapshot_meta, out);
+
+    if (snapshot.version >= SnapshotVersion::V5)
+        writeBinary(snapshot.zxid, out);
+
     writeBinary(snapshot.session_id, out);
 
     /// Better to sort before serialization, otherwise snapshots can be different on different replicas
@@ -236,10 +240,14 @@ void KeeperStorageSnapshot::deserialize(SnapshotDeserializationResult & deserial
     deserialization_result.snapshot_meta = deserializeSnapshotMetadata(in);
     KeeperStorage & storage = *deserialization_result.storage;
 
+    if (version >= SnapshotVersion::V5)
+        readBinary(storage.zxid, in);
+    else
+        storage.zxid = deserialization_result.snapshot_meta->get_last_log_idx();
+
     int64_t session_id;
     readBinary(session_id, in);
 
-    storage.zxid = deserialization_result.snapshot_meta->get_last_log_idx();
     storage.session_id_counter = session_id;
 
     /// Before V1 we serialized ACL without acl_map
@@ -347,6 +355,7 @@ KeeperStorageSnapshot::KeeperStorageSnapshot(KeeperStorage * storage_, uint64_t 
     , snapshot_meta(std::make_shared<SnapshotMetadata>(up_to_log_idx_, 0, std::make_shared<nuraft::cluster_config>()))
     , session_id(storage->session_id_counter)
     , cluster_config(cluster_config_)
+    , zxid(storage->zxid)
 {
     auto [size, ver] = storage->container.snapshotSizeWithVersion();
     snapshot_container_size = size;
@@ -362,6 +371,7 @@ KeeperStorageSnapshot::KeeperStorageSnapshot(KeeperStorage * storage_, const Sna
     , snapshot_meta(snapshot_meta_)
     , session_id(storage->session_id_counter)
     , cluster_config(cluster_config_)
+    , zxid(storage->zxid)
 {
     auto [size, ver] = storage->container.snapshotSizeWithVersion();
     snapshot_container_size = size;
