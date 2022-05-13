@@ -91,7 +91,7 @@ protected:
     /// Executes query only on leader replica in case of replicated table.
     /// Queries like TRUNCATE/ALTER .../OPTIMIZE have to be executed only on one node of shard.
     /// Most of these queries can be executed on non-leader replica, but actually they still send
-    /// query via RemoteBlockOutputStream to leader, so to avoid such "2-phase" query execution we
+    /// query via RemoteQueryExecutor to leader, so to avoid such "2-phase" query execution we
     /// execute query directly on leader.
     bool tryExecuteQueryOnLeaderReplica(
         DDLTaskBase & task,

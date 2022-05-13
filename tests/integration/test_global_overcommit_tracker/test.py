@@ -18,8 +18,8 @@ def start_cluster():
         cluster.shutdown()
 
 
-TEST_QUERY_A = "SELECT number FROM numbers(1000) GROUP BY number SETTINGS max_guaranteed_memory_usage_for_user=1"
-TEST_QUERY_B = "SELECT number FROM numbers(1000) GROUP BY number SETTINGS max_guaranteed_memory_usage_for_user=2"
+TEST_QUERY_A = "SELECT number FROM numbers(1000) GROUP BY number SETTINGS memory_overcommit_ratio_denominator_for_user=1"
+TEST_QUERY_B = "SELECT number FROM numbers(1000) GROUP BY number SETTINGS memory_overcommit_ratio_denominator_for_user=2"
 
 
 def test_overcommited_is_killed():
@@ -30,7 +30,7 @@ def test_overcommited_is_killed():
 
     responses_A = list()
     responses_B = list()
-    for _ in range(100):
+    for _ in range(500):
         responses_A.append(node.get_query_request(TEST_QUERY_A, user="A"))
         responses_B.append(node.get_query_request(TEST_QUERY_B, user="B"))
 

@@ -15,7 +15,7 @@
 #include <Storages/StoragePostgreSQL.h>
 #include <Storages/StorageURL.h>
 #include <Storages/ExternalDataSourceConfiguration.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 
 
 namespace DB
@@ -68,7 +68,7 @@ StorageExternalDistributed::StorageExternalDistributed(
                     configuration.username,
                     configuration.password);
 
-                shard = StorageMySQL::create(
+                shard = std::make_shared<StorageMySQL>(
                     table_id_,
                     std::move(pool),
                     configuration.database,
@@ -97,7 +97,7 @@ StorageExternalDistributed::StorageExternalDistributed(
                     context->getSettingsRef().postgresql_connection_pool_size,
                     context->getSettingsRef().postgresql_connection_pool_wait_timeout);
 
-                shard = StoragePostgreSQL::create(table_id_, std::move(pool), configuration.table, columns_, constraints_, String{});
+                shard = std::make_shared<StoragePostgreSQL>(table_id_, std::move(pool), configuration.table, columns_, constraints_, String{});
                 break;
             }
 #endif
@@ -257,7 +257,7 @@ void registerStorageExternalDistributed(StorageFactory & factory)
 
             auto format_settings = StorageURL::getFormatSettingsFromArgs(args);
 
-            return StorageExternalDistributed::create(
+            return std::make_shared<StorageExternalDistributed>(
                 cluster_description,
                 args.table_id,
                 configuration.format,
@@ -304,7 +304,7 @@ void registerStorageExternalDistributed(StorageFactory & factory)
             }
 
 
-            return StorageExternalDistributed::create(
+            return std::make_shared<StorageExternalDistributed>(
                 args.table_id,
                 table_engine,
                 cluster_description,
