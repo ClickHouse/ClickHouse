@@ -73,7 +73,7 @@ private:
     using FileInfo = IBackupCoordination::FileInfo;
     class BackupEntryFromBackupImpl;
 
-    void open();
+    void open(const ContextPtr & context);
     void close();
     void writeBackupMetadata();
     void readBackupMetadata();
@@ -90,7 +90,6 @@ private:
     std::shared_ptr<IBackupReader> reader;
     const bool is_internal_backup;
     std::shared_ptr<IBackupCoordination> coordination;
-    ContextPtr context;
 
     mutable std::mutex mutex;
     std::optional<UUID> uuid;

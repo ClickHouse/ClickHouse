@@ -125,11 +125,10 @@ BackupImpl::BackupImpl(
     , reader(std::move(reader_))
     , is_internal_backup(false)
     , coordination(std::make_shared<BackupCoordinationLocal>())
-    , context(context_)
     , version(INITIAL_BACKUP_VERSION)
     , base_backup_info(base_backup_info_)
 {
-    open();
+    open(context_);
 }
 
 
@@ -149,13 +148,12 @@ BackupImpl::BackupImpl(
     , writer(std::move(writer_))
     , is_internal_backup(is_internal_backup_)
     , coordination(coordination_ ? coordination_ : std::make_shared<BackupCoordinationLocal>())
-    , context(context_)
     , uuid(backup_uuid_)
     , version(CURRENT_BACKUP_VERSION)
     , base_backup_info(base_backup_info_)
     , log(&Poco::Logger::get("Backup"))
 {
-    open();
+    open(context_);
 }
 
 
@@ -165,7 +163,7 @@ BackupImpl::~BackupImpl()
 }
 
 
-void BackupImpl::open()
+void BackupImpl::open(const ContextPtr & context)
 {
     std::lock_guard lock{mutex};
 
@@ -236,9 +234,6 @@ void BackupImpl::close()
         LOG_INFO(log, "Removing all files of backup {} after failure", backup_name);
         removeAllFilesAfterFailure();
     }
-
-    if (!is_internal_backup)
-        coordination->drop();
 }
 
 time_t BackupImpl::getTimestamp() const

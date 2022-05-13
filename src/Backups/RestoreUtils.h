@@ -14,6 +14,7 @@ using RestoreTaskPtr = std::unique_ptr<IRestoreTask>;
 using RestoreTasks = std::vector<RestoreTaskPtr>;
 struct RestoreSettings;
 class IRestoreCoordination;
+class AccessRightsElements;
 class Context;
 using ContextPtr = std::shared_ptr<const Context>;
 using ContextMutablePtr = std::shared_ptr<Context>;
@@ -29,5 +30,9 @@ void restoreMetadata(
     std::chrono::seconds timeout_for_restoring_metadata);
 
 void restoreData(RestoreTasks & restore_tasks, ThreadPool & thread_pool);
+
+
+/// Returns access required to execute RESTORE query.
+AccessRightsElements getRequiredAccessToRestore(const ASTBackupQuery::Elements & elements, const RestoreSettings & restore_settings);
 
 }

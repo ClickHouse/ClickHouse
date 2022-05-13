@@ -8,7 +8,7 @@
 #include <Backups/formatTableNameOrTemporaryTableName.h>
 #include <Backups/replaceTableUUIDWithMacroInReplicatedTableDef.h>
 #include <Common/escapeForFileName.h>
-#include <Access/Common/AccessFlags.h>
+#include <Access/Common/AccessRightsElement.h>
 #include <Databases/IDatabase.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -203,8 +203,6 @@ namespace
 
         void prepareToBackupTable(const DatabaseAndTableName & table_name_, const DatabaseAndTable & table_, const ASTs & partitions_)
         {
-            context->checkAccess(AccessType::SHOW_TABLES, table_name_.first, table_name_.second);
-
             const auto & database = table_.first;
             const auto & storage = table_.second;
 
@@ -245,9 +243,6 @@ namespace
             bool has_data = (storage_->hasDataToBackup() || replicated_table) && !backup_settings.structure_only;
             if (!has_data)
                 return {};
-
-            /// We check for SELECT privilege only if we're going to read data from the table.
-            context->checkAccess(AccessType::SELECT, table_name_.first, table_name_.second);
 
             BackupEntries data = storage_->backupData(context, partitions_);
             if (!replicated_table)
@@ -300,8 +295,6 @@ namespace
 
         void prepareToBackupDatabase(const String & database_name_, const DatabasePtr & database_, const std::set<String> & except_list_)
         {
-            context->checkAccess(AccessType::SHOW_DATABASES, database_name_);
-
             /// Check that we are not trying to restore the same database again.
             String name_in_backup = renaming_settings.getNewDatabaseName(database_name_);
             if (databases.contains(name_in_backup))
@@ -508,6 +501,50 @@ void writeBackupEntries(BackupMutablePtr backup, BackupEntries && backup_entries
     }
 
     backup->finalizeWriting();
+}
+
+
+/// Returns access required to execute BACKUP query.
+AccessRightsElements getRequiredAccessToBackup(const ASTBackupQuery::Elements & elements, const BackupSettings & backup_settings)
+{
+    AccessRightsElements required_access;
+    for (const auto & element : elements)
+    {
+        switch (element.type)
+        {
+            case ASTBackupQuery::TABLE:
+            {
+                if (element.is_temp_db)
+                    break;
+                AccessFlags flags = AccessType::SHOW_TABLES;
+                if (!backup_settings.structure_only)
+                    flags |= AccessType::SELECT;
+                required_access.emplace_back(flags, element.name.first, element.name.second);
+                break;
+            }
+            case ASTBackupQuery::DATABASE:
+            {
+                if (element.is_temp_db)
+                    break;
+                AccessFlags flags = AccessType::SHOW_TABLES | AccessType::SHOW_DATABASES;
+                if (!backup_settings.structure_only)
+                    flags |= AccessType::SELECT;
+                required_access.emplace_back(flags, element.name.first);
+                /// TODO: It's better to process `element.except_list` somehow.
+                break;
+            }
+            case ASTBackupQuery::ALL_DATABASES:
+            {
+                AccessFlags flags = AccessType::SHOW_TABLES | AccessType::SHOW_DATABASES;
+                if (!backup_settings.structure_only)
+                    flags |= AccessType::SELECT;
+                required_access.emplace_back(flags);
+                /// TODO: It's better to process `element.except_list` somehow.
+                break;
+            }
+        }
+    }
+    return required_access;
 }
 
 }

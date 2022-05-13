@@ -14,6 +14,7 @@ using BackupEntryPtr = std::shared_ptr<const IBackupEntry>;
 using BackupEntries = std::vector<std::pair<String, BackupEntryPtr>>;
 struct BackupSettings;
 class IBackupCoordination;
+class AccessRightsElements;
 class Context;
 using ContextPtr = std::shared_ptr<const Context>;
 
@@ -27,5 +28,8 @@ BackupEntries makeBackupEntries(
 
 /// Write backup entries to an opened backup.
 void writeBackupEntries(BackupMutablePtr backup, BackupEntries && backup_entries, ThreadPool & thread_pool);
+
+/// Returns access required to execute BACKUP query.
+AccessRightsElements getRequiredAccessToBackup(const ASTBackupQuery::Elements & elements, const BackupSettings & backup_settings);
 
 }
