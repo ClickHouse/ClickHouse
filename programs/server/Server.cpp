@@ -1314,8 +1314,8 @@ int Server::main(const std::vector<std::string> & /*args*/)
     if (index_mark_cache_size)
         global_context->setIndexMarkCache(index_mark_cache_size);
 
-    size_t query_cache_size_in_bytes = config().getUInt64("cache_size_in_bytes", 1024 * 1024 * 1024);
-    size_t query_cache_size_in_num_entries = config().getUInt64("cache_size_in_num_entries", 10000);
+    size_t query_cache_size_in_bytes = config().getUInt64("cache_size_in_bytes", 1ULL << 30);
+    size_t query_cache_size_in_num_entries = config().getUInt64("cache_size_in_num_entries", 100);
     if (query_cache_size_in_bytes && query_cache_size_in_num_entries)
         global_context->setQueryCache(query_cache_size_in_bytes, query_cache_size_in_num_entries);
 

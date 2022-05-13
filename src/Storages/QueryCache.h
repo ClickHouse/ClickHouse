@@ -11,6 +11,12 @@ using Data = std::pair<Block, Chunks>;
 
 struct CacheKey
 {
+    CacheKey(ASTPtr ast_, const Block & header_, const Settings & settings_, const std::optional<String> & username_)
+        : ast(ast_)
+        , header(header_)
+        , settings(settings_)
+        , username(username_) {}
+
     bool operator==(const CacheKey & other) const
     {
         return ast->getTreeHash() == other.ast->getTreeHash() && header == other.header
@@ -69,9 +75,10 @@ struct QueryWeightFunction
         size_t res = 0;
         for (const auto & chunk : chunks)
         {
-            res += chunk.bytes();
+            res += chunk.allocatedBytes();
         }
-        res += block.bytes();
+        res += block.allocatedBytes();
+
         return res;
     }
 };
@@ -84,6 +91,24 @@ private:
 
 public:
     QueryCache(size_t cache_size_in_bytes, size_t cache_size_in_num_entries) : Base(cache_size_in_bytes, cache_size_in_num_entries) { }
+    void updateCacheSize(CacheKey cache_key)
+    {
+        std::lock_guard lock(mutex);
+        auto it = cells.find(cache_key);
+        if (it == cells.end())
+        {
+            return;
+        }
+
+        // ideally, the critical section should end here.
+        // this can be achieved by making Cell::size and LRUCache::current_size atomic + setting the right memory orders.
+        // might make sense to create a separate pr.
+
+        Cell & cell = it->second;
+        cell.size = cell.value ? weight_function(*cell.value) : 0;
+        current_size += cell.size;
+        removeOverflow();
+    }
 };
 
 using QueryCachePtr = std::shared_ptr<QueryCache>;
