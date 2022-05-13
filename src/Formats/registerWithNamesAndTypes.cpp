@@ -10,4 +10,10 @@ void registerWithNamesAndTypes(const std::string & base_format_name, RegisterWit
     register_func(base_format_name + "WithNamesAndTypes", true, true);
 }
 
+void markFormatWithNamesAndTypesSupportsSamplingColumns(const std::string & base_format_name, FormatFactory & factory)
+{
+    factory.markFormatSupportsSamplingColumns(base_format_name + "WithNames");
+    factory.markFormatSupportsSamplingColumns(base_format_name + "WithNamesAndTypes");
+}
+
 }

@@ -280,6 +280,8 @@ void registerInputFormatTSKV(FormatFactory & factory)
     {
         return std::make_shared<TSKVRowInputFormat>(buf, sample, std::move(params), settings);
     });
+
+    factory.markFormatSupportsSamplingColumns("TSKV");
 }
 void registerTSKVSchemaReader(FormatFactory & factory)
 {

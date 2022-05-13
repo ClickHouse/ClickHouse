@@ -676,9 +676,9 @@ std::shared_ptr<StorageS3Source::IteratorWrapper> StorageS3::createFileIterator(
     }
 }
 
-bool StorageS3::isColumnOriented() const
+bool StorageS3::supportsSamplingColumns() const
 {
-    return FormatFactory::instance().checkIfFormatIsColumnOriented(format_name);
+    return FormatFactory::instance().checkIfFormatSupportsSamplingColumns(format_name);
 }
 
 Pipe StorageS3::read(
@@ -707,7 +707,7 @@ Pipe StorageS3::read(
 
     ColumnsDescription columns_description;
     Block block_for_format;
-    if (isColumnOriented())
+    if (supportsSamplingColumns())
     {
         auto fetch_columns = column_names;
         const auto & virtuals = getVirtuals();

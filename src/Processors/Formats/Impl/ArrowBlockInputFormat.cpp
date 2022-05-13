@@ -188,7 +188,7 @@ void registerInputFormatArrow(FormatFactory & factory)
         {
             return std::make_shared<ArrowBlockInputFormat>(buf, sample, false, format_settings);
         });
-    factory.markFormatAsColumnOriented("Arrow");
+    factory.markFormatSupportsSamplingColumns("Arrow");
     factory.registerInputFormat(
         "ArrowStream",
         [](ReadBuffer & buf,
