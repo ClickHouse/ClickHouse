@@ -204,9 +204,19 @@ bool MergeTreeIndexConditionAnnoy::mayBeTrueOnGranule(MergeTreeIndexGranulePtr i
     std::vector<int32_t> items;
     std::vector<float> dist;
 
-    // 1 - num of nearest neighbour (NN)
-    // next number - upper limit on the size of the internal queue; -1 means, that it is equal to num of trees * num of NN
-    annoy->get_nns_by_vector(&target_vec[0], 1, -1, &items, &dist);
+    int k_search = -1;
+    auto settings_str = condition.getSettingsStr();
+    if (!settings_str.empty()) {
+        try
+        {
+            k_search = std::stoi(settings_str);
+        }
+        catch (...)
+        {
+            throw Exception("Setting of the annoy index should be int");
+        }
+    }
+    annoy->get_nns_by_vector(&target_vec[0], 1, k_search, &items, &dist);
     return dist[0] < max_distance;
 }
 
