@@ -3,7 +3,15 @@
 #include <string.h>
 
 #ifdef __SSE2__
-#include <emmintrin.h>
+    #include <emmintrin.h>
+#endif
+
+#ifdef __aarch64__
+    #include <arm_neon.h>
+    #ifdef HAS_RESERVED_IDENTIFIER
+        #pragma clang diagnostic ignored "-Wreserved-identifier"
+    #endif
+#endif
 
 
 /** memcpy function could work suboptimal if all the following conditions are met:
@@ -27,6 +35,7 @@
   * Use with caution.
   */
 
+#ifdef __SSE2__     /// Implementation for x86 platform
 namespace detail
 {
     inline void memcpySmallAllowReadWriteOverflow15Impl(char * __restrict dst, const char * __restrict src, ssize_t n)
@@ -56,7 +65,6 @@ inline void memcpySmallAllowReadWriteOverflow15(void * __restrict dst, const voi
   */
 
 #elif defined(__aarch64__)   /// Implementation for arm platform, similar to x86
-#include <arm_neon.h>
 
 namespace detail
 {
