@@ -88,6 +88,8 @@ public:
 
     void moveFile(const String & from_path, const String & to_path) override;
 
+    void moveFile(const String & from_path, const String & to_path, bool should_send_metadata);
+
     void replaceFile(const String & from_path, const String & to_path) override;
 
     void removeFile(const String & path) override { removeSharedFile(path, false); }
@@ -119,6 +121,7 @@ public:
     bool checkUniqueId(const String & id) const override;
 
     void createHardLink(const String & src_path, const String & dst_path) override;
+    void createHardLink(const String & src_path, const String & dst_path, bool should_send_metadata);
 
     void listFiles(const String & path, std::vector<String> & file_names) override;
 
@@ -146,7 +149,7 @@ public:
 
     void shutdown() override;
 
-    void startup() override;
+    void startup(ContextPtr context) override;
 
     ReservationPtr reserve(UInt64 bytes) override;
 
@@ -165,6 +168,8 @@ public:
     void applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr context_, const String &, const DisksMap &) override;
 
     void restoreMetadataIfNeeded(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, ContextPtr context);
+
+    void onFreeze(const String & path) override;
 private:
     const String name;
     const String remote_fs_root_path;
