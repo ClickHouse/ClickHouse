@@ -951,19 +951,27 @@ Examples of working configurations can be found in integration tests directory (
 
 `ANNIndexes` are designed to speed up two types of queries
 
-###### Type 1: Search 
-> - ```SELECT * FROM * WHERE DistanceFunction(Column, TargetVector) < FloatLiteral LIMIT IntLiteral```
-###### Type 2: OrderBy
->- ```SELECT * FROM * [WHERE *] OrderBy DistanceFunction(Column, TargetVector) LIMIT IntLiteral```
+- ######  Type 1: Search 
+   ``` sql 
+   SELECT * FROM * WHERE 
+   DistanceFunction(Column, TargetVector) < FloatLiteral 
+   LIMIT IntLiteral
+   ```
+- ###### Type 2: OrderBy
+  ``` sql
+  SELECT * FROM * [WHERE *] OrderBy
+  DistanceFunction(Column, TargetVector) 
+  LIMIT IntLiteral
+  ```
 
 !!! note "Note"
     ANNIndex can't speed up query which satisfies to both types.
 
 The speed-up happens due to special algorithms which solve nearest neighbours problem. You can create your table with index which uses certain algorithm. Now only indices based on these algorithms are supported.
 ##### Index list
->- IndexName[Link to detailed documentation]
->- 
->- 
+-   IndexName[Link to detailed documentation]
+- 
+- 
 
 Tables in DataBase created with these indices will process queries of mentioned types much faster than ordinary tables. For `Search` type queries, ANNindex filters out useless granules of data while preprocessing them with NN algorithm. The index preprocesses the data and gets granules where the interested data can be.
 `OrderBy` type queries process is easier. The index which finds nearest neighbours directly sorts them during search. 
