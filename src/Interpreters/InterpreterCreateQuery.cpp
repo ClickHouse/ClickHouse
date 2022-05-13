@@ -581,7 +581,7 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
         else if (col_decl.type)
             column.type = name_type_it->type;
         else
-            throw Exception{"Neither default experssion nor type is provided for a column", ErrorCodes::LOGICAL_ERROR};
+            throw Exception{"Neither default value expression nor type is provided for a column", ErrorCodes::LOGICAL_ERROR};
 
         if (col_decl.comment)
             column.comment = col_decl.comment->as<ASTLiteral &>().value.get<String>();

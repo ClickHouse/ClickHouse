@@ -39,26 +39,18 @@ DESCRIBE TABLE ignore_auto_increment;
 
 select 'create table failed, column +type +DEFAULT +AUTO_INCREMENT';
 DROP TABLE IF EXISTS ignore_auto_increment SYNC;
-CREATE TABLE ignore_auto_increment (
-    id int DEFAULT 1 AUTO_INCREMENT 
-) ENGINE=MergeTree() ORDER BY tuple(); -- {serverError SYNTAX_ERROR}
+CREATE TABLE ignore_auto_increment (id int DEFAULT 1 AUTO_INCREMENT) ENGINE=MergeTree() ORDER BY tuple(); -- {clientError SYNTAX_ERROR}
 
 select 'create table failed, column -type +DEFAULT +AUTO_INCREMENT';
 DROP TABLE IF EXISTS ignore_auto_increment SYNC;
-CREATE TABLE ignore_auto_increment (
-    id int DEFAULT 1 AUTO_INCREMENT 
-) ENGINE=MergeTree() ORDER BY tuple(); -- {serverError SYNTAX_ERROR}
+CREATE TABLE ignore_auto_increment (id int DEFAULT 1 AUTO_INCREMENT) ENGINE=MergeTree() ORDER BY tuple(); -- {clientError SYNTAX_ERROR}
 
 select 'create table failed, column +type +AUTO_INCREMENT +DEFAULT';
 DROP TABLE IF EXISTS ignore_auto_increment SYNC;
-CREATE TABLE ignore_auto_increment (
-    id int AUTO_INCREMENT DEFAULT 1
-) ENGINE=MergeTree() ORDER BY tuple(); -- {serverError SYNTAX_ERROR}
+CREATE TABLE ignore_auto_increment (id int AUTO_INCREMENT DEFAULT 1) ENGINE=MergeTree() ORDER BY tuple(); -- {clientError SYNTAX_ERROR}
 
 select 'create table failed, column -type +AUTO_INCREMENT +DEFAULT';
 DROP TABLE IF EXISTS ignore_auto_increment SYNC;
-CREATE TABLE ignore_auto_increment (
-    id int AUTO_INCREMENT DEFAULT 1
-) ENGINE=MergeTree() ORDER BY tuple(); -- {serverError SYNTAX_ERROR}
+CREATE TABLE ignore_auto_increment (id int AUTO_INCREMENT DEFAULT 1) ENGINE=MergeTree() ORDER BY tuple(); -- {clientError SYNTAX_ERROR}
 
 DROP TABLE IF EXISTS ignore_auto_increment SYNC;
