@@ -16,16 +16,11 @@ function query()
 
 export -f query
 
-function user_test()
-{
-    for _ in {1..10};
-    do
-        clickhouse_client_loop_timeout 10 query &
-    done
+for _ in {1..10};
+do
+    clickhouse_client_loop_timeout 10 query &
+done
 
-    wait
-}
-
-output=$(user_test)
+wait
 
 $CLICKHOUSE_CLIENT -q 'DROP USER IF EXISTS u02294'
