@@ -1,5 +1,5 @@
 if (OS_LINUX AND NOT SANITIZE AND NOT ARCH_ARM AND NOT ARCH_32 AND NOT ARCH_PPC64LE)
-    option (ENABLE_MIMALLOC "Enable mimalloc allocator" On)
+    option (ENABLE_MIMALLOC "Enable mimalloc allocator" ON)
 endif ()
 
 if (NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/mimalloc/include/mimalloc.h")
