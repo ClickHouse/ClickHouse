@@ -38,7 +38,7 @@ namespace ErrorCodes
 
 namespace Regexps
 {
-    using Regexp = OptimizedRegularExpressionImpl<false>;
+    using Regexp = OptimizedRegularExpressionSingleThreaded;
     using Pool = ObjectPoolMap<Regexp, String>;
 
     template <bool like>
@@ -68,7 +68,7 @@ namespace Regexps
                 flags |= OptimizedRegularExpression::RE_NO_CAPTURE;
 
             if (case_insensitive)
-                flags |= Regexps::Regexp::RE_CASELESS;
+                flags |= OptimizedRegularExpression::RE_CASELESS;
 
             ProfileEvents::increment(ProfileEvents::RegexpCreated);
             return new Regexp{createRegexp<like>(pattern, flags)};
