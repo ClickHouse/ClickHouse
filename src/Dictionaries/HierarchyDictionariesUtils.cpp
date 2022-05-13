@@ -102,7 +102,7 @@ namespace
 
 ColumnPtr getKeysDescendantsArray(
     const PaddedPODArray<UInt64> & requested_keys,
-    const DictionaryHierarchyParentToChildIndex & parent_to_child_index,
+    const DictionaryHierarchicalParentToChildIndex & parent_to_child_index,
     size_t level,
     size_t & valid_keys)
 {

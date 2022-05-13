@@ -245,10 +245,10 @@ ColumnUInt8::Ptr FlatDictionary::isInHierarchy(
     return result;
 }
 
-DictionaryHierarchyParentToChildIndexPtr FlatDictionary::getHierarchyParentToChildIndex() const
+DictionaryHierarchyParentToChildIndexPtr FlatDictionary::getHierarchicalIndex() const
 {
-    if (hierarchy_parent_to_child_index)
-        return hierarchy_parent_to_child_index;
+    if (hierarhical_index)
+        return hierarhical_index;
 
     size_t hierarchical_attribute_index = *dict_struct.hierarchical_attribute_index;
     const auto & hierarchical_attribute = attributes[hierarchical_attribute_index];
@@ -264,14 +264,14 @@ DictionaryHierarchyParentToChildIndexPtr FlatDictionary::getHierarchyParentToChi
             parent_to_child[parent_key].emplace_back(static_cast<UInt64>(i));
     }
 
-    return std::make_shared<DictionaryHierarchyParentToChildIndex>(parent_to_child);
+    return std::make_shared<DictionaryHierarchicalParentToChildIndex>(parent_to_child);
 }
 
 ColumnPtr FlatDictionary::getDescendants(
     ColumnPtr key_column,
     const DataTypePtr &,
     size_t level,
-    DictionaryHierarchyParentToChildIndexPtr parent_to_child_index) const
+    DictionaryHierarchicalParentToChildIndexPtr parent_to_child_index) const
 {
     PaddedPODArray<UInt64> keys_backup;
     const auto & keys = getColumnVectorData(this, key_column, keys_backup);
@@ -416,7 +416,7 @@ void FlatDictionary::buildHierarchyParentToChildIndexIfNeeded()
         return;
 
     if (dict_struct.attributes[*dict_struct.hierarchical_attribute_index].bidirectional)
-        hierarchy_parent_to_child_index = getHierarchyParentToChildIndex();
+        hierarhical_index = getHierarchicalIndex();
 }
 
 void FlatDictionary::calculateBytesAllocated()
@@ -458,8 +458,11 @@ void FlatDictionary::calculateBytesAllocated()
     if (update_field_loaded_block)
         bytes_allocated += update_field_loaded_block->allocatedBytes();
 
-    if (hierarchy_parent_to_child_index)
-        bytes_allocated += hierarchy_parent_to_child_index->getSizeInBytes();
+    if (hierarhical_index)
+    {
+        hierarchical_index_bytes_allocated = hierarhical_index->getSizeInBytes();
+        bytes_allocated += hierarchical_index_bytes_allocated;
+    }
 
     bytes_allocated += string_arena.size();
 }

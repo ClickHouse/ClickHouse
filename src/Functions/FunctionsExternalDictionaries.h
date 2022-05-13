@@ -1059,11 +1059,11 @@ public:
     FunctionDictGetDescendantsExecutable(
         String name_,
         size_t level_,
-        DictionaryHierarchyParentToChildIndexPtr parent_to_child_index_,
+        DictionaryHierarchicalParentToChildIndexPtr hierarchical_parent_to_child_index,
         std::shared_ptr<FunctionDictHelper> dictionary_helper_)
         : name(name_)
         , level(level_)
-        , parent_to_child_index(std::move(parent_to_child_index_))
+        , hierarchical_parent_to_child_index(std::move(hierarchical_parent_to_child_index))
         , dictionary_helper(std::move(dictionary_helper_))
     {}
 
@@ -1084,13 +1084,13 @@ public:
         auto key_column = ColumnWithTypeAndName{arguments[1].column->convertToFullColumnIfConst(), arguments[1].type, arguments[1].name};
         auto key_column_casted = castColumnAccurate(key_column, hierarchical_attribute.type);
 
-        ColumnPtr result = dictionary->getDescendants(key_column_casted, hierarchical_attribute.type, level, parent_to_child_index);
+        ColumnPtr result = dictionary->getDescendants(key_column_casted, hierarchical_attribute.type, level, hierarchical_parent_to_child_index);
         return result;
     }
 
     String name;
     size_t level;
-    DictionaryHierarchyParentToChildIndexPtr parent_to_child_index;
+    DictionaryHierarchicalParentToChildIndexPtr hierarchical_parent_to_child_index;
     std::shared_ptr<FunctionDictHelper> dictionary_helper;
 };
 
@@ -1102,13 +1102,13 @@ public:
         const DataTypes & argument_types_,
         const DataTypePtr & result_type_,
         size_t level_,
-        DictionaryHierarchyParentToChildIndexPtr parent_to_child_index,
+        DictionaryHierarchicalParentToChildIndexPtr hierarchical_parent_to_child_index,
         std::shared_ptr<FunctionDictHelper> helper_)
         : name(name_)
         , argument_types(argument_types_)
         , result_type(result_type_)
         , level(level_)
-        , parent_to_child_index(std::move(parent_to_child_index))
+        , hierarchical_parent_to_child_index(std::move(hierarchical_parent_to_child_index))
         , helper(std::move(helper_))
     {}
 
@@ -1122,14 +1122,14 @@ public:
 
     ExecutableFunctionPtr prepare(const ColumnsWithTypeAndName &) const override
     {
-        return std::make_shared<FunctionDictGetDescendantsExecutable>(name, level, parent_to_child_index, helper);
+        return std::make_shared<FunctionDictGetDescendantsExecutable>(name, level, hierarchical_parent_to_child_index, helper);
     }
 
     String name;
     DataTypes argument_types;
     DataTypePtr result_type;
     size_t level;
-    DictionaryHierarchyParentToChildIndexPtr parent_to_child_index;
+    DictionaryHierarchicalParentToChildIndexPtr hierarchical_parent_to_child_index;
     std::shared_ptr<FunctionDictHelper> helper;
 };
 
@@ -1177,7 +1177,7 @@ public:
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const override
     {
         auto dictionary = dictionary_helper->getDictionary(arguments[0].column);
-        auto hierarchy_parent_to_child_index = dictionary->getHierarchyParentToChildIndex();
+        auto hierarchical_parent_to_child_index = dictionary->getHierarchicalIndex();
 
         size_t level = Strategy::default_level;
 
@@ -1203,7 +1203,7 @@ public:
         for (auto & argument : arguments)
             argument_types.emplace_back(argument.type);
 
-        return std::make_shared<FunctionDictGetDescendantsBase>(name, argument_types, result_type, level, hierarchy_parent_to_child_index, dictionary_helper);
+        return std::make_shared<FunctionDictGetDescendantsBase>(name, argument_types, result_type, level, hierarchical_parent_to_child_index, dictionary_helper);
     }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override

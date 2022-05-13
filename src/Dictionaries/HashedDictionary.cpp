@@ -319,12 +319,12 @@ ColumnUInt8::Ptr HashedDictionary<dictionary_key_type, sparse>::isInHierarchy(
 }
 
 template <DictionaryKeyType dictionary_key_type, bool sparse>
-DictionaryHierarchyParentToChildIndexPtr HashedDictionary<dictionary_key_type, sparse>::getHierarchyParentToChildIndex() const
+DictionaryHierarchyParentToChildIndexPtr HashedDictionary<dictionary_key_type, sparse>::getHierarchicalIndex() const
 {
     if constexpr (dictionary_key_type == DictionaryKeyType::Simple)
     {
-        if (hierarchy_parent_to_child_index)
-            return hierarchy_parent_to_child_index;
+        if (hierarchical_index)
+            return hierarchical_index;
 
         size_t hierarchical_attribute_index = *dict_struct.hierarchical_attribute_index;
         const auto & hierarchical_attribute = attributes[hierarchical_attribute_index];
@@ -335,7 +335,7 @@ DictionaryHierarchyParentToChildIndexPtr HashedDictionary<dictionary_key_type, s
         for (const auto & [key, value] : parent_keys)
             parent_to_child[value].emplace_back(key);
 
-        return std::make_shared<DictionaryHierarchyParentToChildIndex>(parent_to_child);
+        return std::make_shared<DictionaryHierarchicalParentToChildIndex>(parent_to_child);
     }
     else
     {
@@ -348,7 +348,7 @@ ColumnPtr HashedDictionary<dictionary_key_type, sparse>::getDescendants(
     ColumnPtr key_column [[maybe_unused]],
     const DataTypePtr &,
     size_t level [[maybe_unused]],
-    DictionaryHierarchyParentToChildIndexPtr parent_to_child_index [[maybe_unused]]) const
+    DictionaryHierarchicalParentToChildIndexPtr parent_to_child_index [[maybe_unused]]) const
 {
     if constexpr (dictionary_key_type == DictionaryKeyType::Simple)
     {
@@ -657,7 +657,7 @@ void HashedDictionary<dictionary_key_type, sparse>::buildHierarchyParentToChildI
         return;
 
     if (dict_struct.attributes[*dict_struct.hierarchical_attribute_index].bidirectional)
-        hierarchy_parent_to_child_index = getHierarchyParentToChildIndex();
+        hierarchical_index = getHierarchicalIndex();
 }
 
 template <DictionaryKeyType dictionary_key_type, bool sparse>
@@ -716,8 +716,11 @@ void HashedDictionary<dictionary_key_type, sparse>::calculateBytesAllocated()
     if (update_field_loaded_block)
         bytes_allocated += update_field_loaded_block->allocatedBytes();
 
-    if (hierarchy_parent_to_child_index)
-        bytes_allocated += hierarchy_parent_to_child_index->getSizeInBytes();
+    if (hierarchical_index)
+    {
+        hierarchical_index_bytes_allocated = hierarchical_index->getSizeInBytes();
+        bytes_allocated += hierarchical_index_bytes_allocated;
+    }
 
     bytes_allocated += string_arena.size();
 }
