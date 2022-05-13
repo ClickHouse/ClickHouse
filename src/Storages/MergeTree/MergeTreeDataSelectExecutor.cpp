@@ -41,7 +41,7 @@
 #include <Storages/MergeTree/StorageFromMergeTreeDataPart.h>
 #include <IO/WriteBufferFromOStream.h>
 
-#include <Storages/MergeTree/MergeTreeIndicesANNCondition.h>
+#include <Storages/MergeTree/CommomANNIndexes.h>
 
 namespace DB
 {
