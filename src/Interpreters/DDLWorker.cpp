@@ -401,7 +401,7 @@ void DDLWorker::scheduleTasks(bool reinitialized)
             /// Seems already processed
             continue;
         }
-        auto & task_to_process = saveTask(std::move(*task_iter));
+        auto & task_to_process = std::move(*task_iter);
 
         if (worker_pool)
         {
