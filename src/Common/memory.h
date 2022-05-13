@@ -172,8 +172,8 @@ inline ALWAYS_INLINE void untrackMemory(void * ptr [[maybe_unused]], std::size_t
         else
             CurrentMemoryTracker::free(malloc_usable_size(ptr));
 #    elif USE_MIMALLOC
-        else
-            CurrentMemoryTracker::free(mi_malloc_usable_size(ptr));
+        // else
+        //     CurrentMemoryTracker::free(mi_malloc_usable_size(ptr));
 #    endif
 #endif
     }
