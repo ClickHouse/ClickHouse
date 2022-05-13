@@ -64,3 +64,4 @@ SELECT * FROM hierarchy_hashed_array_dictionary_index;
 SELECT hierarchical_index_bytes_allocated > 0 FROM system.dictionaries WHERE name = 'hierarchy_hashed_array_dictionary_index' AND database = currentDatabase();
 
 DROP DICTIONARY hierarchy_hashed_array_dictionary_index;
+DROP TABLE test_hierarchy_source_table;
