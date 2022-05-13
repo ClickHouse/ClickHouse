@@ -582,9 +582,9 @@ ColumnsDescription IStorageURLBase::getTableStructureFromData(
     return readSchemaFromFormat(format, format_settings, read_buffer_iterator, urls_to_check.size() > 1, context);
 }
 
-bool IStorageURLBase::isColumnOriented() const
+bool IStorageURLBase::supportsSamplingColumns() const
 {
-    return FormatFactory::instance().checkIfFormatIsColumnOriented(format_name);
+    return FormatFactory::instance().checkIfFormatSupportsSamplingColumns(format_name);
 }
 
 Pipe IStorageURLBase::read(
@@ -600,7 +600,7 @@ Pipe IStorageURLBase::read(
 
     ColumnsDescription columns_description;
     Block block_for_format;
-    if (isColumnOriented())
+    if (supportsSamplingColumns())
     {
         columns_description = ColumnsDescription{
             storage_snapshot->getSampleBlockForColumns(column_names).getNamesAndTypesList()};
@@ -688,7 +688,7 @@ Pipe StorageURLWithFailover::read(
 {
     ColumnsDescription columns_description;
     Block block_for_format;
-    if (isColumnOriented())
+    if (supportsSamplingColumns())
     {
         columns_description = ColumnsDescription{
             storage_snapshot->getSampleBlockForColumns(column_names).getNamesAndTypesList()};

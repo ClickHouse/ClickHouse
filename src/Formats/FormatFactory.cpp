@@ -538,19 +538,19 @@ void FormatFactory::markOutputFormatSupportsParallelFormatting(const String & na
 }
 
 
-void FormatFactory::markFormatAsColumnOriented(const String & name)
+void FormatFactory::markFormatSupportsSamplingColumns(const String & name)
 {
-    auto & target = dict[name].is_column_oriented;
+    auto & target = dict[name].supports_sampling_columns;
     if (target)
         throw Exception("FormatFactory: Format " + name + " is already marked as column oriented", ErrorCodes::LOGICAL_ERROR);
     target = true;
 }
 
 
-bool FormatFactory::checkIfFormatIsColumnOriented(const String & name)
+bool FormatFactory::checkIfFormatSupportsSamplingColumns(const String & name)
 {
     const auto & target = getCreators(name);
-    return target.is_column_oriented;
+    return target.supports_sampling_columns;
 }
 
 bool FormatFactory::isInputFormat(const String & name) const

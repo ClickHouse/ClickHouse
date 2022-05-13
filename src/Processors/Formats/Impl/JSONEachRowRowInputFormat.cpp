@@ -393,6 +393,11 @@ void registerInputFormatJSONEachRow(FormatFactory & factory)
     {
         return std::make_shared<JSONEachRowRowInputFormat>(buf, sample, std::move(params), settings, true);
     });
+
+    factory.markFormatSupportsSamplingColumns("JSONEachRow");
+    factory.markFormatSupportsSamplingColumns("JSONLines");
+    factory.markFormatSupportsSamplingColumns("NDJSON");
+    factory.markFormatSupportsSamplingColumns("JSONStringsEachRow");
 }
 
 void registerFileSegmentationEngineJSONEachRow(FormatFactory & factory)

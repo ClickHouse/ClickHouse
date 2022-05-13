@@ -112,7 +112,9 @@ String CSVFormatReader::readCSVFieldIntoString()
 
 void CSVFormatReader::skipField()
 {
-    readCSVFieldIntoString<true>();
+    skipWhitespacesAndTabs(*in);
+    NullOutput out;
+    readCSVStringInto(out, *in, format_settings.csv);
 }
 
 void CSVFormatReader::skipRowEndDelimiter()
@@ -374,6 +376,7 @@ void registerFileSegmentationEngineCSV(FormatFactory & factory)
     };
 
     registerWithNamesAndTypes("CSV", register_func);
+    markFormatWithNamesAndTypesSupportsSamplingColumns("CSV", factory);
 }
 
 void registerCSVSchemaReader(FormatFactory & factory)
