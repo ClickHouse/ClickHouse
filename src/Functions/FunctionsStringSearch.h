@@ -15,7 +15,6 @@
 namespace DB
 {
 /** Search and replace functions in strings:
-  *
   * position(haystack, needle)     - the normal search for a substring in a string, returns the position (in bytes) of the found substring starting with 1, or 0 if no substring is found.
   * positionUTF8(haystack, needle) - the same, but the position is calculated at code points, provided that the string is encoded in UTF-8.
   * positionCaseInsensitive(haystack, needle)
@@ -24,13 +23,29 @@ namespace DB
   * like(haystack, pattern)        - search by the regular expression LIKE; Returns 0 or 1. Case-insensitive, but only for Latin.
   * notLike(haystack, pattern)
   *
+  * ilike(haystack, pattern) - like 'like' but case-insensitive
+  * notIlike(haystack, pattern)
+  *
   * match(haystack, pattern)       - search by regular expression re2; Returns 0 or 1.
-  * multiMatchAny(haystack, [pattern_1, pattern_2, ..., pattern_n]) -- search by re2 regular expressions pattern_i; Returns 0 or 1 if any pattern_i matches.
-  * multiMatchAnyIndex(haystack, [pattern_1, pattern_2, ..., pattern_n]) -- search by re2 regular expressions pattern_i; Returns index of any match or zero if none;
-  * multiMatchAllIndices(haystack, [pattern_1, pattern_2, ..., pattern_n]) -- search by re2 regular expressions pattern_i; Returns an array of matched indices in any order;
   *
   * countSubstrings(haystack, needle) -- count number of occurrences of needle in haystack.
   * countSubstringsCaseInsensitive(haystack, needle)
+  * countSubstringsCaseInsensitiveUTF8(haystack, needle)
+  *
+  * hasToken()
+  * hasTokenCaseInsensitive()
+  *
+  * JSON stuff:
+  * visitParamExtractBool()
+  * simpleJSONExtractBool()
+  * visitParamExtractFloat()
+  * simpleJSONExtractFloat()
+  * visitParamExtractInt()
+  * simpleJSONExtractInt()
+  * visitParamExtractUInt()
+  * simpleJSONExtractUInt()
+  * visitParamHas()
+  * simpleJSONHas()
   *
   * Applies regexp re2 and pulls:
   * - the first subpattern, if the regexp has a subpattern;

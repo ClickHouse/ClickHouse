@@ -186,15 +186,15 @@ struct PositionImpl
 
     /// Find one substring in many strings.
     static void vectorConstant(
-        const ColumnString::Chars & data,
-        const ColumnString::Offsets & offsets,
+        const ColumnString::Chars & haystack_data,
+        const ColumnString::Offsets & haystack_offsets,
         const std::string & needle,
         const ColumnPtr & start_pos,
         PaddedPODArray<UInt64> & res)
     {
-        const UInt8 * begin = data.data();
+        const UInt8 * const begin = haystack_data.data();
+        const UInt8 * const end = haystack_data.data() + haystack_data.size();
         const UInt8 * pos = begin;
-        const UInt8 * end = pos + data.size();
 
         /// Current index in the array of strings.
         size_t i = 0;
@@ -205,7 +205,7 @@ struct PositionImpl
         while (pos < end && end != (pos = searcher.search(pos, end - pos)))
         {
             /// Determine which index it refers to.
-            while (begin + offsets[i] <= pos)
+            while (begin + haystack_offsets[i] <= pos)
             {
                 res[i] = 0;
                 ++i;
@@ -213,14 +213,14 @@ struct PositionImpl
             auto start = start_pos != nullptr ? start_pos->getUInt(i) : 0;
 
             /// We check that the entry does not pass through the boundaries of strings.
-            if (pos + needle.size() < begin + offsets[i])
+            if (pos + needle.size() < begin + haystack_offsets[i])
             {
-                auto res_pos = 1 + Impl::countChars(reinterpret_cast<const char *>(begin + offsets[i - 1]), reinterpret_cast<const char *>(pos));
+                auto res_pos = 1 + Impl::countChars(reinterpret_cast<const char *>(begin + haystack_offsets[i - 1]), reinterpret_cast<const char *>(pos));
                 if (res_pos < start)
                 {
                     pos = reinterpret_cast<const UInt8 *>(Impl::advancePos(
                         reinterpret_cast<const char *>(pos),
-                        reinterpret_cast<const char *>(begin + offsets[i]),
+                        reinterpret_cast<const char *>(begin + haystack_offsets[i]),
                         start - res_pos));
                     continue;
                 }
@@ -230,7 +230,7 @@ struct PositionImpl
             {
                 res[i] = 0;
             }
-            pos = begin + offsets[i];
+            pos = begin + haystack_offsets[i];
             ++i;
         }
 
