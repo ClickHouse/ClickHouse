@@ -227,7 +227,7 @@ void DatabaseReplicated::fillClusterAuthInfo(String collection_name, const Poco:
     cluster_auth_info.cluster_secure_connection = config_ref.getBool(config_prefix + ".cluster_secure_connection", false);
 }
 
-void DatabaseReplicated::tryConnectToZooKeeperAndInitDatabase(bool force_attach)
+void DatabaseReplicated::tryConnectToZooKeeperAndInitDatabase(bool force_attach, bool is_create_query)
 {
     try
     {
@@ -249,16 +249,36 @@ void DatabaseReplicated::tryConnectToZooKeeperAndInitDatabase(bool force_attach)
         String replica_host_id;
         if (current_zookeeper->tryGet(replica_path, replica_host_id))
         {
+            if (replica_host_id == DROPPED_MARK && !is_create_query)
+            {
+                LOG_WARNING(log, "Database {} exists locally, but marked dropped in ZooKeeper {}. "
+                                 "Will not try to start it up", getDatabaseName(), replica_path);
+                is_probably_dropped = true;
+                return;
+            }
+
             String host_id = getHostID(getContext(), db_uuid);
-            if (replica_host_id != host_id)
-                throw Exception(ErrorCodes::REPLICA_IS_ALREADY_EXIST,
-                                "Replica {} of shard {} of replicated database at {} already exists. Replica host ID: '{}', current host ID: '{}'",
-                                replica_name, shard_name, zookeeper_path, replica_host_id, host_id);
+            if (is_create_query || replica_host_id != host_id)
+            {
+                throw Exception(
+                    ErrorCodes::REPLICA_IS_ALREADY_EXIST,
+                    "Replica {} of shard {} of replicated database at {} already exists. Replica host ID: '{}', current host ID: '{}'",
+                    replica_name, shard_name, zookeeper_path, replica_host_id, host_id);
+            }
+        }
+        else if (is_create_query)
+        {
+            /// Create new replica. Throws if replica with the same name already exists
+            createReplicaNodesInZooKeeper(current_zookeeper);
         }
         else
         {
-            /// Throws if replica with the same name already exists
-            createReplicaNodesInZooKeeper(current_zookeeper);
+            /// It's not CREATE query, but replica does not exist. Probably it was dropped.
+            /// Do not create anything, continue as readonly.
+            LOG_WARNING(log, "Database {} exists locally, but its replica does not exist in ZooKeeper {}. "
+                             "Assuming it was dropped, will not try to start it up", getDatabaseName(), replica_path);
+            is_probably_dropped = true;
+            return;
         }
 
         is_readonly = false;
@@ -351,7 +371,7 @@ void DatabaseReplicated::createReplicaNodesInZooKeeper(const zkutil::ZooKeeperPt
 
 void DatabaseReplicated::beforeLoadingMetadata(ContextMutablePtr /*context*/, bool /*force_restore*/, bool force_attach)
 {
-    tryConnectToZooKeeperAndInitDatabase(force_attach);
+    tryConnectToZooKeeperAndInitDatabase(force_attach, /* is_create_query */ !force_attach);
 }
 
 void DatabaseReplicated::loadStoredObjects(
@@ -365,6 +385,8 @@ void DatabaseReplicated::startupTables(ThreadPool & thread_pool, bool force_rest
 {
     DatabaseAtomic::startupTables(thread_pool, force_restore, force_attach);
     ddl_worker = std::make_unique<DatabaseReplicatedDDLWorker>(this, getContext());
+    if (is_probably_dropped)
+        return;
     ddl_worker->startup();
 }
 
@@ -526,9 +548,6 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
         LOG_INFO(log, "Will create new replica from log pointer {}", max_log_ptr);
     else
         LOG_WARNING(log, "Will recover replica with staled log pointer {} from log pointer {}", our_log_ptr, max_log_ptr);
-
-    if (new_replica && !empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "It's new replica, but database is not empty");
 
     auto table_name_to_metadata = tryGetConsistentMetadataSnapshot(current_zookeeper, max_log_ptr);
 

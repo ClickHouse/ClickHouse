@@ -32,9 +32,10 @@ bool DatabaseReplicatedDDLWorker::initializeMainThread()
     {
         try
         {
+            assert(!database->is_probably_dropped);
             auto zookeeper = getAndSetZooKeeper();
             if (database->is_readonly)
-                database->tryConnectToZooKeeperAndInitDatabase(false);
+                database->tryConnectToZooKeeperAndInitDatabase(/* force_attach */ false, /* is_create_query */ false);
             initializeReplication();
             initialized = true;
             return true;
@@ -108,7 +109,6 @@ bool DatabaseReplicatedDDLWorker::waitForReplicaToProcessAllEntries(UInt64 timeo
         std::unique_lock lock{mutex};
         bool processed = wait_current_task_change.wait_for(lock, std::chrono::milliseconds(timeout_ms), [&]()
         {
-            assert(zookeeper->expired() || current_task <= max_log);
             return zookeeper->expired() || current_task == max_log || stop_flag;
         });
 
