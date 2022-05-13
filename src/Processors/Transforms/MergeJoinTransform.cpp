@@ -523,7 +523,6 @@ MergeJoinAlgorithm::Status MergeJoinAlgorithm::allJoin(JoinKind kind)
     {
         /// If we have remapped columns, then we need to get values from right columns insead of defaults
         const auto & indices = idx_map[0];
-        const auto & right_indices = idx_map[1];
 
         const auto & left_src = cursors[0]->getCurrent().getColumns();
         for (size_t col_idx = 0; col_idx < left_src.size(); ++col_idx)
@@ -540,7 +539,7 @@ MergeJoinAlgorithm::Status MergeJoinAlgorithm::allJoin(JoinKind kind)
                 else
                 {
                     if (auto it = left_to_right_key_remap.find(col_idx); it != left_to_right_key_remap.end())
-                        new_col->insertFrom(*rcols[it->second], right_indices[i]);
+                        new_col->insertFrom(*rcols[it->second], i);
                     else
                         new_col->insertDefault();
                 }
