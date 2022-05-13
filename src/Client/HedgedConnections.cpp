@@ -100,7 +100,7 @@ void HedgedConnections::sendExternalTablesData(std::vector<ExternalTablesData> &
     if (data.size() != size())
         throw Exception("Mismatch between replicas and data sources", ErrorCodes::MISMATCH_REPLICAS_DATA_SOURCES);
 
-    auto send_external_tables_data = [&, data](ReplicaState & replica) mutable
+    auto send_external_tables_data = [&](ReplicaState & replica)
     {
         size_t offset = fd_to_replica_location[replica.packet_receiver->getFileDescriptor()].offset;
         replica.connection->sendExternalTablesData(data[offset]);
