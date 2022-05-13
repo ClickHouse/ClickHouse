@@ -116,7 +116,7 @@ void registerInputFormatNative(FormatFactory & factory)
     {
         return std::make_shared<NativeInputFormat>(buf, sample, settings);
     });
-    factory.markFormatSupportsSamplingColumns("Native");
+    factory.markFormatSupportsSubsetOfColumns("Native");
 }
 
 void registerOutputFormatNative(FormatFactory & factory)

@@ -69,7 +69,7 @@ void registerInputFormatProtobuf(FormatFactory & factory)
                 with_length_delimiter,
                 settings.protobuf.input_flatten_google_wrappers);
         });
-        factory.markFormatSupportsSamplingColumns(with_length_delimiter ? "Protobuf" : "ProtobufSingle");
+        factory.markFormatSupportsSubsetOfColumns(with_length_delimiter ? "Protobuf" : "ProtobufSingle");
     }
 }
 
