@@ -96,9 +96,7 @@ void registerDiskS3(DiskFactory & factory)
             checkRemoveAccess(*s3disk);
         }
 
-        s3disk->startup();
-
-        s3disk->restoreMetadataIfNeeded(config, config_prefix, context);
+        s3disk->startup(context);
 
         std::shared_ptr<IDisk> disk_result = s3disk;
 

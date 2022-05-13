@@ -297,7 +297,7 @@ public:
     virtual void shutdown() {}
 
     /// Performs action on disk startup.
-    virtual void startup() {}
+    virtual void startup(ContextPtr) {}
 
     /// Return some uniq string for file, overrode for IDiskRemote
     /// Required for distinguish different copies of the same part on remote disk

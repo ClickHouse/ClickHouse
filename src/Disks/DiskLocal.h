@@ -110,7 +110,7 @@ public:
 
     bool isBroken() const override { return broken; }
 
-    void startup() override;
+    void startup(ContextPtr) override;
 
     void shutdown() override;
 

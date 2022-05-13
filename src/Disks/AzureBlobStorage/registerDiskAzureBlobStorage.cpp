@@ -103,7 +103,7 @@ void registerDiskAzureBlobStorage(DiskFactory & factory)
             checkRemoveAccess(*azure_blob_storage_disk);
         }
 
-        azure_blob_storage_disk->startup();
+        azure_blob_storage_disk->startup(context);
 
         if (config.getBool(config_prefix + ".cache_enabled", true))
         {
