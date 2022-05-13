@@ -256,10 +256,9 @@ Session::Session(const ContextPtr & global_context_, ClientInfo::Interface inter
 
 Session::~Session()
 {
-    LOG_DEBUG(log, "{} Destroying {} of user {}",
+    LOG_DEBUG(log, "{} Destroying {}",
         toString(auth_id),
-        (named_session ? "named session '" + named_session->key.second + "'" : "unnamed session"),
-        (user_id ? toString(*user_id) : "<USER AUTHENTICATION FAILED>")
+        (named_session ? "named session '" + named_session->key.second + "'" : "unnamed session")
     );
 
     /// Early release a NamedSessionData.
