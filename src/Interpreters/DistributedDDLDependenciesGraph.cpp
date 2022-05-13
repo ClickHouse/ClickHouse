@@ -34,7 +34,7 @@ void DependenciesGraph::addTask(DDLTaskPtr & task)
         {
             continue;
         }
-        /// Check intersection of sets of database_objects(e.g. tables, databases, dictionaries)
+        /// Check intersection of sets of database_objects (e.g. tables, databases, dictionaries)
         bool independent = true;
         for (const auto& database_object : database_objects_for_added_task)
         {
