@@ -242,53 +242,6 @@ namespace
     };
 
 
-    class RestoreTableDataTask : public IRestoreTask
-    {
-    public:
-        RestoreTableDataTask(
-            ContextMutablePtr context_,
-            StoragePtr storage_,
-            const ASTs & partitions_,
-            const BackupPtr & backup_,
-            const String & data_path_in_backup_,
-            const RestoreSettingsPtr & restore_settings_,
-            const std::shared_ptr<IRestoreCoordination> & restore_coordination_)
-            : context(context_)
-            , storage(storage_)
-            , partitions(partitions_)
-            , backup(backup_)
-            , data_path_in_backup(data_path_in_backup_)
-            , restore_settings(restore_settings_)
-            , restore_coordination(restore_coordination_)
-        {
-        }
-
-        RestoreTasks run() override
-        {
-            const auto * replicated_table = typeid_cast<const StorageReplicatedMergeTree *>(storage.get());
-            if (replicated_table)
-            {
-                data_path_in_backup = restore_coordination->getReplicatedTableDataPath(
-                    replicated_table->getZooKeeperName() + replicated_table->getZooKeeperPath());
-            }
-
-            RestoreTasks tasks;
-            tasks.emplace_back(
-                storage->restoreData(context, partitions, backup, data_path_in_backup, *restore_settings, restore_coordination));
-            return tasks;
-        }
-
-    private:
-        ContextMutablePtr context;
-        StoragePtr storage;
-        ASTs partitions;
-        BackupPtr backup;
-        String data_path_in_backup;
-        RestoreSettingsPtr restore_settings;
-        std::shared_ptr<IRestoreCoordination> restore_coordination;
-    };
-
-
     /// Restores a table.
     class RestoreTableTask : public IRestoreTask
     {
@@ -530,8 +483,8 @@ namespace
                 return {};
 
             RestoreTasks tasks;
-            tasks.emplace_back(std::make_unique<RestoreTableDataTask>(
-                context, storage, partitions, backup, data_path_in_backup, restore_settings, restore_coordination));
+            tasks.emplace_back(
+                storage->restoreData(context, partitions, backup, data_path_in_backup, *restore_settings, restore_coordination));
             return tasks;
         }
 
