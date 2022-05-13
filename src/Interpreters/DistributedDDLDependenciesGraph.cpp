@@ -108,6 +108,7 @@ void DependenciesGraph::removeTask(String query_name)
         }
     }
     tasks_dependencies.dependencies_info.erase(query_name);
+    tasks_dependencies.database_objects_in_query.erase(query_name);
 }
 
 void DependenciesGraph::logDependencyGraph() const
