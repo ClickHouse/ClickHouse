@@ -428,7 +428,10 @@ void DDLWorker::scheduleTasks(bool reinitialized)
 
 DDLTaskBase & DDLWorker::saveTask(DDLTaskPtr && task)
 {
-    current_tasks.remove_if([](const DDLTaskPtr & t) { return t->completely_processed.load(); });
+    current_tasks.remove_if([](const DDLTaskPtr & t)
+    {
+        return dependencies_graph.completely_processed_tasks[t->entry_name] = t->completely_processed.load();
+    });
     /// Tasks are scheduled and executed in main thread <==> Parallel execution is disabled
     assert((worker_pool != nullptr) == (1 < pool_size));
     /// Parallel execution is disabled ==> All previous tasks are failed to start or finished,
