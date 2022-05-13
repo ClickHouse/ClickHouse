@@ -1,5 +1,6 @@
 #include <memory>
 #include <Storages/Hive/HiveClusterSourceFilesCollect.h>
+#if USE_HIVE
 #include <Storages/Hive/HiveFilesCollector.h>
 #include <Common/SipHash.h>
 #include <Poco/JSON/JSON.h>
@@ -196,3 +197,5 @@ void registerNodeHashHiveSourceFilesCollector(HiveSourceCollectorFactory & facto
     factory.registerBuilder(HiveClusterSourceFilesCollector::NAME, []() { return std::make_shared<HiveClusterSourceFilesCollector>(); });
 }
 }
+#endif
+

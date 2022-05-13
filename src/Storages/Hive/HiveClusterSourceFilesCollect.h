@@ -1,5 +1,7 @@
 #pragma once
 #include <memory>
+#include <Common/config.h>
+#if USE_HIVE
 #include <unordered_map>
 #include <Storages/Hive/HiveSourceTask.h>
 namespace DB
@@ -44,3 +46,5 @@ private:
     NamesAndTypesList hive_file_name_and_types;
 };
 }
+#endif
+
