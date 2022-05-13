@@ -37,6 +37,7 @@ CI_CONFIG = {
             "splitted": "unsplitted",
             "tidy": "disable",
             "with_coverage": False,
+            "official": False,
         },
         # FIXME update to gcc-12 and turn on
         # "binary_gcc": {
