@@ -384,7 +384,7 @@ HiveFilePtr HiveFileFactory::createFile(
 
 void HiveFileFactory::registerHiveFileCreators(HiveFileFactory & instance)
 {
-    instance.creators["HiveText"] = [](const FieldVector & fields,
+    instance.creators[IHiveFile::CH_HIVE_TEXT_FORAMT] = [](const FieldVector & fields,
                                        const String & namenode_url,
                                        const String & path,
                                        UInt64 ts,
@@ -394,7 +394,7 @@ void HiveFileFactory::registerHiveFileCreators(HiveFileFactory & instance)
                                        ContextPtr context)
     { return std::make_shared<HiveTextFile>(fields, namenode_url, path, ts, size, index_names_and_types, hive_settings, context); };
 
-    instance.creators["ORC"] = [](const FieldVector & fields,
+    instance.creators[IHiveFile::CH_ORC_FORAMT] = [](const FieldVector & fields,
                                        const String & namenode_url,
                                        const String & path,
                                        UInt64 ts,
@@ -404,7 +404,7 @@ void HiveFileFactory::registerHiveFileCreators(HiveFileFactory & instance)
                                        ContextPtr context)
     { return std::make_shared<HiveORCFile>(fields, namenode_url, path, ts, size, index_names_and_types, hive_settings, context); };
 
-    instance.creators["Parquet"] = [](const FieldVector & fields,
+    instance.creators[IHiveFile::CH_PARQUET_FORMAT] = [](const FieldVector & fields,
                                        const String & namenode_url,
                                        const String & path,
                                        UInt64 ts,

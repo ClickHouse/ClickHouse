@@ -37,7 +37,7 @@ public:
 
 private:
     Arguments args;
-
+    NamesAndTypesList all_name_and_types;
     Poco::JSON::Array::Ptr files_in_json;
 };
 }

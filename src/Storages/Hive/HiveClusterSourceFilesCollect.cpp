@@ -57,6 +57,11 @@ void HiveClusterSourceFilesCollectCallback::dispatchHiveFiles(const HiveFiles & 
         {
             partition_values.add(partition_value.dump());
         }
+        Poco::JSON::Array partition_names;
+        for (const auto & name_and_type : hive_file->getIndexNamesAndTypes())
+        {
+            partition_names.add(name_and_type.name);
+        }
 
         auto node_index = ConsistentHashing(path_hash, nodes_num);
         if (!nodes_json_obj[node_index])
@@ -71,6 +76,7 @@ void HiveClusterSourceFilesCollectCallback::dispatchHiveFiles(const HiveFiles & 
         file_data.set("last_modified_timestamp", hive_file->getLastModifiedTimestamp());
         file_data.set("size", hive_file->getSize());
         file_data.set("partition_values", partition_values);
+        file_data.set("partition_names", partition_names);
         nodes_json_obj[node_index]->add(file_data);
     }
 
@@ -113,8 +119,11 @@ void registerNodeHashHiveSourceFilesCollectCallback(HiveSourceCollectCallbackFac
 void HiveClusterSourceFilesCollector::initialize(const Arguments & arguments)
 {
     args = arguments;
+
     Poco::JSON::Parser files_json_parser;
     files_in_json = files_json_parser.parse(args.callback_data).extract<Poco::JSON::Array::Ptr>();
+
+    all_name_and_types = args.columns.getAllPhysical();
 }
 
 HiveFiles HiveClusterSourceFilesCollector::collect(HivePruneLevel /*prune_level*/)
@@ -137,6 +146,18 @@ HiveFiles HiveClusterSourceFilesCollector::collect(HivePruneLevel /*prune_level*
             if (value == "__HIVE_DEFAULT_PARTTION_")
                 continue;
             partition_fields.emplace_back(Field::restoreFromDump(value));
+        }
+        
+        NamesAndTypesList hive_file_name_and_types;
+        auto partition_names_obj = *file_data.get("partition_names").extract<Poco::JSON::Array::Ptr>();
+        for (auto & name_obj : partition_names_obj)
+        {
+            auto name = name_obj.convert<String>();
+            auto col = all_name_and_types.tryGetByName(name);
+            if (!col)
+                throw Exception(ErrorCodes::INVALID_PARTITION_VALUE, "Unknow partition column : {}", name);
+            else
+                hive_file_name_and_types.push_back(*col);
         }
 
         auto hive_file = HiveFileFactory::instance().createFile(

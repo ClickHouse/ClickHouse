@@ -54,6 +54,10 @@ public:
     inline static const String MR_PARQUET_INPUT_FORMAT = "org.apache.hadoop.hive.ql.io.parquet.MapredParquetInputFormat";
     inline static const String AVRO_INPUT_FORMAT = "org.apache.hadoop.hive.ql.io.avro.AvroContainerInputFormat";
     inline static const String ORC_INPUT_FORMAT = "org.apache.hadoop.hive.ql.io.orc.OrcInputFormat";
+    inline static const String CH_HIVE_TEXT_FORAMT = "HiveText";
+    inline static const String CH_ORC_FORAMT = "ORC";
+    inline static const String CH_PARQUET_FORMAT = "Parquet";
+    inline static const String CH_AVRO_FORMAT = "Avro";
     inline static const std::map<String, FileFormat> VALID_HDFS_FORMATS = {
         {RCFILE_INPUT_FORMAT, FileFormat::RC_FILE},
         {TEXT_INPUT_FORMAT, FileFormat::TEXT},
@@ -66,11 +70,11 @@ public:
     };
 
     inline static const std::map<String, String> VALID_CH_FORMATS = {
-        {TEXT_INPUT_FORMAT, "HiveText"},
-        {LZO_TEXT_INPUT_FORMAT, "HiveText"},
-        {AVRO_INPUT_FORMAT, "Avro"},
-        {MR_PARQUET_INPUT_FORMAT, "Parquet"},
-        {ORC_INPUT_FORMAT, "ORC"},
+        {TEXT_INPUT_FORMAT, CH_HIVE_TEXT_FORAMT},
+        {LZO_TEXT_INPUT_FORMAT, CH_HIVE_TEXT_FORAMT},
+        {AVRO_INPUT_FORMAT, CH_AVRO_FORMAT},
+        {MR_PARQUET_INPUT_FORMAT, CH_PARQUET_FORMAT},
+        {ORC_INPUT_FORMAT, CH_ORC_FORAMT},
     };
 
     static inline bool isFormatClass(const String & format_class) { return VALID_HDFS_FORMATS.count(format_class) > 0; }
@@ -87,19 +91,19 @@ public:
     {
         if (format == FileFormat::TEXT || format == FileFormat::LZO_TEXT)
         {
-            return "HiveText";
+            return CH_HIVE_TEXT_FORAMT;
         }
         else if (FileFormat::AVRO == format)
         {
-            return "Avro";
+            return CH_AVRO_FORMAT;
         }
         else if (FileFormat::PARQUET == format)
         {
-            return "Parquet";
+            return CH_PARQUET_FORMAT;
         }
         else if (FileFormat::ORC == format)
         {
-            return "ORC";
+            return CH_ORC_FORAMT;
         }
         else
         {
@@ -142,6 +146,7 @@ public:
     size_t getSize() const { return size; }
     std::optional<size_t> getRows();
     const FieldVector & getPartitionValues() const { return partition_values; }
+    const NamesAndTypesList & getIndexNamesAndTypes() const { return index_names_and_types; }
     const String & getNamenodeUrl() { return namenode_url; }
     MinMaxIndexPtr getMinMaxIndex() const { return file_minmax_idx; }
     const std::vector<MinMaxIndexPtr> & getSubMinMaxIndexes() const { return split_minmax_idxes; }
