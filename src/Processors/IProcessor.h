@@ -2,6 +2,7 @@
 
 #include <memory>
 #include <Processors/Port.h>
+#include <Common/Stopwatch.h>
 
 
 class EventCounter;
@@ -177,7 +178,7 @@ public:
       */
     virtual Status prepare()
     {
-        throw Exception("Method 'prepare' is not implemented for " + getName() + " processor", ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'prepare' is not implemented for {} processor", getName());
     }
 
     using PortNumbers = std::vector<UInt64>;
@@ -192,7 +193,7 @@ public:
       */
     virtual void work()
     {
-        throw Exception("Method 'work' is not implemented for " + getName() + " processor", ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'work' is not implemented for {} processor", getName());
     }
 
     /** Executor must call this method when 'prepare' returned Async.
@@ -211,7 +212,7 @@ public:
       */
     virtual int schedule()
     {
-        throw Exception("Method 'schedule' is not implemented for " + getName() + " processor", ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'schedule' is not implemented for {} processor", getName());
     }
 
     /** You must call this method if 'prepare' returned ExpandPipeline.
@@ -225,7 +226,7 @@ public:
       */
     virtual Processors expandPipeline()
     {
-        throw Exception("Method 'expandPipeline' is not implemented for " + getName() + " processor", ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'expandPipeline' is not implemented for {} processor", getName());
     }
 
     /// In case if query was cancelled executor will wait till all processors finish their jobs.
@@ -257,7 +258,7 @@ public:
             ++number;
         }
 
-        throw Exception("Can't find input port for " + getName() + " processor", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't find input port for {} processor", getName());
     }
 
     UInt64 getOutputPortNumber(const OutputPort * output_port) const
@@ -271,7 +272,7 @@ public:
             ++number;
         }
 
-        throw Exception("Can't find output port for " + getName() + " processor", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't find output port for {} processor", getName());
     }
 
     const auto & getInputs() const { return inputs; }
@@ -299,13 +300,32 @@ public:
     IQueryPlanStep * getQueryPlanStep() const { return query_plan_step; }
     size_t getQueryPlanStepGroup() const { return query_plan_step_group; }
 
+    uint64_t getElapsedUs() const { return elapsed_us; }
+    uint64_t getInputWaitElapsedUs() const { return input_wait_elapsed_us; }
+    uint64_t getOutputWaitElapsedUs() const { return output_wait_elapsed_us; }
+
 protected:
     virtual void onCancel() {}
 
 private:
+    /// For:
+    /// - elapsed_us
+    friend class ExecutionThreadContext;
+    /// For
+    /// - input_wait_elapsed_us
+    /// - output_wait_elapsed_us
+    friend class ExecutingGraph;
+
     std::atomic<bool> is_cancelled{false};
 
     std::string processor_description;
+
+    /// For processors_profile_log
+    uint64_t elapsed_us = 0;
+    Stopwatch input_wait_watch;
+    uint64_t input_wait_elapsed_us = 0;
+    Stopwatch output_wait_watch;
+    uint64_t output_wait_elapsed_us = 0;
 
     size_t stream_number = NO_STREAM;
 

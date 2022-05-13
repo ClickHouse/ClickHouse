@@ -46,7 +46,8 @@ static ReturnType checkColumnStructure(const ColumnWithTypeAndName & actual, con
         return onError<ReturnType>("Block structure mismatch in " + std::string(context_description) + " stream: different names of columns:\n"
             + actual.dumpStructure() + "\n" + expected.dumpStructure(), code);
 
-    if (!actual.type->equals(*expected.type))
+    if ((actual.type && !expected.type) || (!actual.type && expected.type)
+        || (actual.type && expected.type && !actual.type->equals(*expected.type)))
         return onError<ReturnType>("Block structure mismatch in " + std::string(context_description) + " stream: different types:\n"
             + actual.dumpStructure() + "\n" + expected.dumpStructure(), code);
 
@@ -497,6 +498,15 @@ Block Block::cloneWithColumns(MutableColumns && columns) const
     Block res;
 
     size_t num_columns = data.size();
+
+    if (num_columns != columns.size())
+    {
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Cannot clone block with columns because block has {} columns, but {} columns given",
+            num_columns, columns.size());
+    }
+
     res.reserve(num_columns);
 
     for (size_t i = 0; i < num_columns; ++i)
@@ -513,8 +523,12 @@ Block Block::cloneWithColumns(const Columns & columns) const
     size_t num_columns = data.size();
 
     if (num_columns != columns.size())
-        throw Exception("Cannot clone block with columns because block has " + toString(num_columns) + " columns, "
-                        "but " + toString(columns.size()) + " columns given.", ErrorCodes::LOGICAL_ERROR);
+    {
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Cannot clone block with columns because block has {} columns, but {} columns given",
+            num_columns, columns.size());
+    }
 
     res.reserve(num_columns);
 
@@ -611,6 +625,7 @@ DataTypes Block::getDataTypes() const
     return res;
 }
 
+
 Names Block::getDataTypeNames() const
 {
     Names res;
@@ -620,6 +635,12 @@ Names Block::getDataTypeNames() const
         res.push_back(elem.type->getName());
 
     return res;
+}
+
+
+std::unordered_map<String, size_t> Block::getNamesToIndexesMap() const
+{
+    return index_by_name;
 }
 
 
