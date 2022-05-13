@@ -117,7 +117,7 @@ public:
                 if (auto alpha_col = checkAndGetColumnConst<ColumnString>(alphabetcolumn.get()))
                 {
                     alphabet = alpha_col->getValue<String>();
-                    if (alphabet.find("\0") != std::string::npos)
+                    if (alphabet.find('\0') != std::string::npos)
                         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Custom alphabet must not contain null character");
                 }
             }
