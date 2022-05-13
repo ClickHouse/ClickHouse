@@ -428,7 +428,7 @@ void DDLWorker::scheduleTasks(bool reinitialized)
 
 DDLTaskBase & DDLWorker::saveTask(DDLTaskPtr && task)
 {
-    current_tasks.remove_if([](const DDLTaskPtr & t)
+    current_tasks.remove_if([&](const DDLTaskPtr & t)
     {
         return dependencies_graph.completely_processed_tasks[t->entry_name] = t->completely_processed.load();
     });
