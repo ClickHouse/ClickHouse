@@ -138,13 +138,6 @@ then
     mv "coverity-scan.tgz" /output
 fi
 
-# Also build fuzzers if any sanitizer specified
-# if [ -n "$SANITIZER" ]
-# then
-#   # Currently we are in build/build_docker directory
-#   ../docker/packager/other/fuzzer.sh
-# fi
-
 cache_status
 
 if [ "${CCACHE_DEBUG:-}" == "1" ]
