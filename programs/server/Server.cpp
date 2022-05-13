@@ -1112,8 +1112,8 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 auto global_max_threads = config->getInt("global_max_threads", 0);
                 LOG_DEBUG(adqm_log,"From config.xml global_max_threads: {}", global_max_threads);
                 if (global_max_threads == -1) {
-                    LOG_DEBUG(adqm_log,"PhysicalCPUCores: {}", getNumberOfPhysicalCPUCores());
-                    global_max_threads = getNumberOfPhysicalCPUCores()*2;
+                    LOG_DEBUG(adqm_log,"number of logical cores: {}", std::thread::hardware_concurrency());
+                    global_max_threads = std::thread::hardware_concurrency()*2;
                 }
                 LOG_DEBUG(adqm_log,"Finally global_max_threads: {}", global_max_threads);
                 global_context->getProcessList().setGlobalMaxThreads(global_max_threads);
