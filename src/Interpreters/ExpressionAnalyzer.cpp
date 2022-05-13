@@ -793,6 +793,8 @@ void makeWindowDescriptionFromAST(const Context & context,
 
 void ExpressionAnalyzer::makeWindowDescriptions(ActionsDAGPtr actions)
 {
+    auto current_context = getContext();
+
     // Window definitions from the WINDOW clause
     const auto * select_query = query->as<ASTSelectQuery>();
     if (select_query && select_query->window())
@@ -802,7 +804,7 @@ void ExpressionAnalyzer::makeWindowDescriptions(ActionsDAGPtr actions)
             const auto & elem = ptr->as<const ASTWindowListElement &>();
             WindowDescription desc;
             desc.window_name = elem.name;
-            makeWindowDescriptionFromAST(*getContext(), window_descriptions,
+            makeWindowDescriptionFromAST(*current_context, window_descriptions,
                 desc, elem.definition.get());
 
             auto [it, inserted] = window_descriptions.insert(
@@ -887,7 +889,7 @@ void ExpressionAnalyzer::makeWindowDescriptions(ActionsDAGPtr actions)
                 const ASTWindowDefinition &>();
             WindowDescription desc;
             desc.window_name = definition.getDefaultWindowName();
-            makeWindowDescriptionFromAST(*getContext(), window_descriptions,
+            makeWindowDescriptionFromAST(*current_context, window_descriptions,
                 desc, &definition);
 
             auto [it, inserted] = window_descriptions.insert(
@@ -901,6 +903,18 @@ void ExpressionAnalyzer::makeWindowDescriptions(ActionsDAGPtr actions)
 
             it->second.window_functions.push_back(window_function);
         }
+    }
+
+    bool compile_sort_description = current_context->getSettingsRef().compile_sort_description;
+    size_t min_count_to_compile_sort_description = current_context->getSettingsRef().min_count_to_compile_sort_description;
+
+    for (auto & [_, window_description] : window_descriptions)
+    {
+        window_description.full_sort_description.compile_sort_description = compile_sort_description;
+        window_description.full_sort_description.min_count_to_compile_sort_description = min_count_to_compile_sort_description;
+
+        window_description.partition_by.compile_sort_description = compile_sort_description;
+        window_description.partition_by.min_count_to_compile_sort_description = min_count_to_compile_sort_description;
     }
 }
 
@@ -1006,7 +1020,7 @@ static std::shared_ptr<IJoin> chooseJoinAlgorithm(std::shared_ptr<TableJoin> ana
     {
         if (analyzed_join->allowParallelHashJoin())
         {
-            return std::make_shared<JoinStuff::ConcurrentHashJoin>(context, analyzed_join, context->getSettings().max_threads, sample_block);
+            return std::make_shared<ConcurrentHashJoin>(context, analyzed_join, context->getSettings().max_threads, sample_block);
         }
         return std::make_shared<HashJoin>(analyzed_join, sample_block);
     }
