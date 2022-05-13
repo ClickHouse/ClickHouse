@@ -1485,8 +1485,7 @@ ActionsDAGPtr SelectQueryExpressionAnalyzer::appendOrderBy(ExpressionActionsChai
     if (with_fill)
     {
         for (const auto & column : step.getResultColumns())
-            if (!order_by_keys.contains(column.name))
-                non_constant_inputs.insert(column.name);
+            non_constant_inputs.insert(column.name);
     }
 
     auto actions = chain.getLastActions();
