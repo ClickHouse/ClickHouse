@@ -403,18 +403,18 @@ void DDLWorker::scheduleTasks(bool reinitialized)
         }
         auto & task_to_process = *task_iter;
 
-        if (worker_pool && pool_size >= current_tasks.size())
+        if (worker_pool)
         {
             dependencies_graph.removeTask(task_name);
             worker_pool->scheduleOrThrowOnError([this, &task_to_process, zookeeper]()
             {
                 setThreadName("DDLWorkerExec");
-                processTask(task_to_process, zookeeper);
+                processTask(&task_to_process, zookeeper);
             });
         }
         else
         {
-            processTask(task_to_process, zookeeper);
+            processTask(&task_to_process, zookeeper);
         }
     }
 
