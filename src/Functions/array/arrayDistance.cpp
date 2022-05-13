@@ -1,12 +1,13 @@
 #include <Columns/ColumnArray.h>
+#include <Columns/IColumn.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/IDataType.h>
 #include <DataTypes/getLeastSupertype.h>
-#include <Eigen/Core>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
-#include "Columns/IColumn.h"
-#include "DataTypes/Serializations/ISerialization.h"
+
+#include <Eigen/Core>
 
 namespace DB
 {
@@ -92,7 +93,8 @@ public:
             case TypeIndex::Float64:
                 return std::make_shared<DataTypeFloat64>();
             default:
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                     "Arguments of function {} has nested type {}. "
                     "Support: UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, Float32, Float64.",
                     getName(), common_type->getName());
@@ -121,7 +123,7 @@ public:
                 executeWithType<Float64>(*arr_x, *arr_y, type_x, type_y, result);
                 break;
             default:
-                throw Exception("Unexpected result type.", ErrorCodes::LOGICAL_ERROR);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected result type.");
         }
         return result;
     }
@@ -141,7 +143,8 @@ private:
 
         if (mx.rows() && my.rows() && mx.rows() != my.rows())
         {
-            throw Exception(ErrorCodes::SIZES_OF_ARRAYS_DOESNT_MATCH,
+            throw Exception(
+                ErrorCodes::SIZES_OF_ARRAYS_DOESNT_MATCH,
                 "Arguments of function {} have different array sizes: {} and {}",
                 getName(), mx.rows(), my.rows());
         }
@@ -152,40 +155,56 @@ private:
     template <typename MatrixType>
     void columnToMatrix(const ColumnArray & array, const DataTypePtr & nested_type, Eigen::MatrixX<MatrixType> & mat) const
     {
+        const auto & offsets = array.getOffsets();
+        size_t cols = offsets.size();
+        size_t rows = cols > 0 ? offsets.front() : 0;
+
+        ColumnArray::Offset prev = 0;
+        for (ColumnArray::Offset off : offsets)
+        {
+            if (off - prev != rows)
+                throw Exception(
+                    ErrorCodes::SIZES_OF_ARRAYS_DOESNT_MATCH,
+                    "Arrays in a column passed to function {} have different sizes: {} and {}",
+                    getName(), rows, off - prev);
+            prev = off;
+        }
+
         switch (nested_type->getTypeId())
         {
             case TypeIndex::UInt8:
-                fillMatrix<MatrixType, UInt8>(mat, array);
+                fillMatrix<MatrixType, UInt8>(mat, array, rows, cols);
                 break;
             case TypeIndex::UInt16:
-                fillMatrix<MatrixType, UInt16>(mat, array);
+                fillMatrix<MatrixType, UInt16>(mat, array, rows, cols);
                 break;
             case TypeIndex::UInt32:
-                fillMatrix<MatrixType, UInt32>(mat, array);
+                fillMatrix<MatrixType, UInt32>(mat, array, rows, cols);
                 break;
             case TypeIndex::UInt64:
-                fillMatrix<MatrixType, UInt64>(mat, array);
+                fillMatrix<MatrixType, UInt64>(mat, array, rows, cols);
                 break;
             case TypeIndex::Int8:
-                fillMatrix<MatrixType, Int8>(mat, array);
+                fillMatrix<MatrixType, Int8>(mat, array, rows, cols);
                 break;
             case TypeIndex::Int16:
-                fillMatrix<MatrixType, Int16>(mat, array);
+                fillMatrix<MatrixType, Int16>(mat, array, rows, cols);
                 break;
             case TypeIndex::Int32:
-                fillMatrix<MatrixType, Int32>(mat, array);
+                fillMatrix<MatrixType, Int32>(mat, array, rows, cols);
                 break;
             case TypeIndex::Int64:
-                fillMatrix<MatrixType, Int64>(mat, array);
+                fillMatrix<MatrixType, Int64>(mat, array, rows, cols);
                 break;
             case TypeIndex::Float32:
-                fillMatrix<MatrixType, Float32>(mat, array);
+                fillMatrix<MatrixType, Float32>(mat, array, rows, cols);
                 break;
             case TypeIndex::Float64:
-                fillMatrix<MatrixType, Float64>(mat, array);
+                fillMatrix<MatrixType, Float64>(mat, array, rows, cols);
                 break;
             default:
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                     "Arguments of function {} has nested type {}. "
                     "Support: UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, Float32, Float64.",
                     getName(), nested_type->getName());
@@ -194,41 +213,25 @@ private:
 
     // optimize for float/ double
     template <typename MatrixType, typename DataType>
-    requires (std::is_same_v<MatrixType, DataType>)
-    void fillMatrix(Eigen::MatrixX<MatrixType> & mat, const ColumnArray & array) const
+    requires std::is_same_v<MatrixType, DataType>
+    void fillMatrix(Eigen::MatrixX<MatrixType> & mat, const ColumnArray & array, size_t rows, size_t cols) const
     {
         const auto & data = typeid_cast<const ColumnVector<DataType> &>(array.getData()).getData();
-        const auto & offsets = array.getOffsets();
-        size_t cols = offsets.size();
-        size_t rows = cols > 0 ? offsets.front() : 0;
-
         mat = Eigen::Map<const Eigen::MatrixX<MatrixType>>(data.data(), rows, cols);
     }
 
     template <typename MatrixType, typename DataType>
-    void fillMatrix(Eigen::MatrixX<MatrixType> & mat, const ColumnArray & array) const
+    void fillMatrix(Eigen::MatrixX<MatrixType> & mat, const ColumnArray & array, size_t rows, size_t cols) const
     {
         const auto & data = typeid_cast<const ColumnVector<DataType> &>(array.getData()).getData();
-        const auto & offsets = array.getOffsets();
-        size_t cols = offsets.size();
-        size_t rows = cols > 0 ? offsets.front() : 0;
-
         mat.resize(rows, cols);
-
-        ColumnArray::Offset prev = 0, col = 0;
-        for (ColumnArray::Offset off : offsets)
+        for (size_t col = 0; col < cols; ++col)
         {
-            if (off - prev != rows)
-                throw Exception(ErrorCodes::SIZES_OF_ARRAYS_DOESNT_MATCH,
-                    "Arrays in a column passed to function {} have different sizes: {} and {}",
-                    getName(), rows, off - prev);
-
-            for (ColumnArray::Offset row = 0; row < off - prev; ++row)
+            for (size_t row = 0; row < rows; ++row)
             {
-                mat(row, col) = static_cast<MatrixType>(data[prev + row]);
+                size_t off = col * rows;
+                mat(row, col) = static_cast<MatrixType>(data[off + row]);
             }
-            ++col;
-            prev = off;
         }
     }
 };

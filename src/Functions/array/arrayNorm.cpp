@@ -1,12 +1,13 @@
 #include <Columns/ColumnArray.h>
+#include <Columns/IColumn.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/IDataType.h>
 #include <DataTypes/getLeastSupertype.h>
-#include <Eigen/Core>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
-#include "Columns/IColumn.h"
-#include "DataTypes/Serializations/ISerialization.h"
+
+#include <Eigen/Core>
 
 namespace DB
 {
@@ -54,7 +55,7 @@ public:
         {
             const auto * array_type = checkAndGetDataType<DataTypeArray>(argument.type.get());
             if (!array_type)
-                throw Exception("Argument of function " + getName() + " must be array. ", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument of function {} must be array.", getName());
 
             types.push_back(array_type->getNestedType());
         }
@@ -75,9 +76,10 @@ public:
                 return std::make_shared<DataTypeFloat64>();
             default:
                 throw Exception(
-                    "Arguments of function " + getName() + " has nested type " + common_type->getName()
-                        + ". Support: UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, Float32, Float64.",
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Arguments of function {} has nested type {}. "
+                    "Support: UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, Float32, Float64.",
+                    getName(), common_type->getName());
         }
     }
 
@@ -98,7 +100,7 @@ public:
                 executeWithType<Float64>(*arr, type, result);
                 break;
             default:
-                throw Exception("Unexpected result type.", ErrorCodes::LOGICAL_ERROR);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected result type.");
         }
         return result;
     }
@@ -107,10 +109,10 @@ private:
     template <typename MatrixType>
     void executeWithType(const ColumnArray & array, const DataTypePtr & type, MutableColumnPtr & column) const
     {
-        std::vector<Eigen::VectorX<MatrixType>> v;
-        columnToVectors(array, type, v);
+        std::vector<Eigen::VectorX<MatrixType>> vec;
+        columnToVectors(array, type, vec);
         auto & data = assert_cast<ColumnVector<MatrixType> &>(*column).getData();
-        Kernel::compute(v, data);
+        Kernel::compute(vec, data);
     }
 
     template <typename MatrixType>
@@ -150,13 +152,15 @@ private:
                 break;
             default:
                 throw Exception(
-                    "Arguments of function " + getName() + " has nested type " + nested_type->getName()
-                        + ". Support: UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, Float32, Float64.",
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Arguments of function {} has nested type {}. "
+                    "Support: UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, Float32, Float64.",
+                    getName(), nested_type->getName());
         }
     }
+
     template <typename MatrixType, typename DataType>
-    requires (std::is_same_v<MatrixType, DataType>)
+    requires std::is_same_v<MatrixType, DataType>
     void fillVectors(std::vector<Eigen::VectorX<MatrixType>> & vec, const ColumnArray & array) const
     {
         const auto & data = typeid_cast<const ColumnVector<DataType> &>(array.getData()).getData();
