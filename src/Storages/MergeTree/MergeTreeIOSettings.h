@@ -24,7 +24,7 @@ struct MergeTreeReaderSettings
 
     MergeTreeReaderSettings()
     {
-        /// Turn merge tree related assetions for asynchronous reading from remore filesystem.
+        /// Turn on merge tree related assetions for asynchronous reading from remote filesystem.
         read_settings.must_read_until_position = true;
     }
 
