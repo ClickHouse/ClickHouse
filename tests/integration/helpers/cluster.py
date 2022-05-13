@@ -1060,20 +1060,29 @@ class ClickHouseCluster:
             p.join(docker_compose_yml_dir, "docker_compose_mongo.yml"),
         ]
         return self.base_mongo_cmd
-    
+
     def setup_meili_cmd(self, instance, env_variables, docker_compose_yml_dir):
         self.with_meili = True
-        env_variables['MEILI_HOST'] = self.meili_host
-        env_variables['MEILI_EXTERNAL_PORT'] = str(self.meili_port)
-        env_variables['MEILI_INTERNAL_PORT'] = "7700"
+        env_variables["MEILI_HOST"] = self.meili_host
+        env_variables["MEILI_EXTERNAL_PORT"] = str(self.meili_port)
+        env_variables["MEILI_INTERNAL_PORT"] = "7700"
 
-        env_variables['MEILI_SECURE_HOST'] = self.meili_secure_host
-        env_variables['MEILI_SECURE_EXTERNAL_PORT'] = str(self.meili_secure_port)
-        env_variables['MEILI_SECURE_INTERNAL_PORT'] = "7700"
+        env_variables["MEILI_SECURE_HOST"] = self.meili_secure_host
+        env_variables["MEILI_SECURE_EXTERNAL_PORT"] = str(self.meili_secure_port)
+        env_variables["MEILI_SECURE_INTERNAL_PORT"] = "7700"
 
-        self.base_cmd.extend(['--file', p.join(docker_compose_yml_dir, 'docker_compose_meili.yml')])
-        self.base_meili_cmd = ['docker-compose', '--env-file', instance.env_file, '--project-name', self.project_name,
-                                '--file', p.join(docker_compose_yml_dir, 'docker_compose_meili.yml')]
+        self.base_cmd.extend(
+            ["--file", p.join(docker_compose_yml_dir, "docker_compose_meili.yml")]
+        )
+        self.base_meili_cmd = [
+            "docker-compose",
+            "--env-file",
+            instance.env_file,
+            "--project-name",
+            self.project_name,
+            "--file",
+            p.join(docker_compose_yml_dir, "docker_compose_meili.yml"),
+        ]
         return self.base_meili_cmd
 
     def setup_minio_cmd(self, instance, env_variables, docker_compose_yml_dir):
@@ -1457,8 +1466,9 @@ class ClickHouseCluster:
                 )
 
         if with_meili and not self.with_meili:
-            cmds.append(self.setup_meili_cmd(instance, env_variables, docker_compose_yml_dir))
-
+            cmds.append(
+                self.setup_meili_cmd(instance, env_variables, docker_compose_yml_dir)
+            )
 
         if self.with_net_trics:
             for cmd in cmds:
@@ -2004,14 +2014,16 @@ class ClickHouseCluster:
             except Exception as ex:
                 logging.debug("Can't connect to Mongo " + str(ex))
                 time.sleep(1)
-    
+
     def wait_meili_to_start(self, timeout=30):
-        connection_str = 'http://{host}:{port}'.format(
-            host='localhost', port=self.meili_port)
+        connection_str = "http://{host}:{port}".format(
+            host="localhost", port=self.meili_port
+        )
         client = meilisearch.Client(connection_str)
 
-        connection_str_secure = 'http://{host}:{port}'.format(
-            host='localhost', port=self.meili_secure_port)
+        connection_str_secure = "http://{host}:{port}".format(
+            host="localhost", port=self.meili_secure_port
+        )
         client_secure = meilisearch.Client(connection_str_secure, "password")
 
         start = time.time()
@@ -2019,7 +2031,9 @@ class ClickHouseCluster:
             try:
                 client.get_all_stats()
                 client_secure.get_all_stats()
-                logging.debug(f"Connected to MeiliSearch dbs: {client.get_all_stats()}\n{client_secure.get_all_stats()}")
+                logging.debug(
+                    f"Connected to MeiliSearch dbs: {client.get_all_stats()}\n{client_secure.get_all_stats()}"
+                )
                 return
             except Exception as ex:
                 logging.debug("Can't connect to MeiliSearch " + str(ex))
@@ -2372,11 +2386,10 @@ class ClickHouseCluster:
                 self.wait_mongo_to_start(30, secure=self.with_mongo_secure)
 
             if self.with_meili and self.base_meili_cmd:
-                logging.debug('Setup MeiliSearch')
+                logging.debug("Setup MeiliSearch")
                 run_and_check(self.base_meili_cmd + common_opts)
                 self.up_called = True
                 self.wait_meili_to_start()
-
 
             if self.with_redis and self.base_redis_cmd:
                 logging.debug("Setup Redis")
