@@ -1107,18 +1107,18 @@ int Server::main(const std::vector<std::string> & /*args*/)
             if (config->has("max_partition_size_to_drop"))
                 global_context->setMaxPartitionSizeToDrop(config->getUInt64("max_partition_size_to_drop"));
 
-            if (config->has("global_max_threads")) {
+            if (config->has("total_max_threads")) {
                 auto adqm_log = &Poco::Logger::get("ADQM");
-                auto global_max_threads = config->getInt("global_max_threads", 0);
-                LOG_DEBUG(adqm_log,"From config.xml global_max_threads: {}", global_max_threads);
-                if (global_max_threads == -1) {
-                    // Based on tests global_max_threads has an optimal value when it's about two times of logical CPU cores
+                auto total_max_threads = config->getInt("total_max_threads", 0);
+                LOG_DEBUG(adqm_log,"From config.xml total_max_threads: {}", total_max_threads);
+                if (total_max_threads == -1) {
+                    // Based on tests total_max_threads has an optimal value when it's about two times of logical CPU cores
                     constexpr size_t thread_factor = 2;
                     LOG_DEBUG(adqm_log,"number of logical cores: {}", std::thread::hardware_concurrency());
-                    global_max_threads = std::thread::hardware_concurrency()*thread_factor;
+                    total_max_threads = std::thread::hardware_concurrency()*thread_factor;
                 }
-                LOG_DEBUG(adqm_log,"Finally global_max_threads: {}", global_max_threads);
-                global_context->getProcessList().setGlobalMaxThreads(global_max_threads);
+                LOG_DEBUG(adqm_log,"Finally total_max_threads: {}", total_max_threads);
+                global_context->getProcessList().setGlobalMaxThreads(total_max_threads);
             }
 
             if (config->has("max_concurrent_queries"))

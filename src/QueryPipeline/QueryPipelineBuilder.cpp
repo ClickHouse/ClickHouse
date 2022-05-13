@@ -473,22 +473,22 @@ size_t QueryPipelineBuilder::getNumThreads() const
 
     LOG_DEBUG(adqm_log,"Recommended num threads: {}", num_threads);
     auto context = process_list_element->getContext();
-    auto global_max_threads = context->getProcessList().getGlobalMaxThreads();
-    if (process_list_element && global_max_threads) {
-        LOG_DEBUG(adqm_log,"Global number of threads from config: {}", global_max_threads);
-        LOG_DEBUG(adqm_log,"Current global num threads: {}",
-                  context->getProcessList().getGlobalNumThreads());
-        size_t current_global_num_threads = context->getProcessList().getGlobalNumThreads();
-        size_t globally_available_threads = 0;
-        if (global_max_threads > current_global_num_threads)
-            globally_available_threads = global_max_threads - current_global_num_threads;
-        LOG_DEBUG(adqm_log,"Globally available threads: {}", globally_available_threads);
-        num_threads = std::min(num_threads, globally_available_threads);
+    auto total_max_threads = context->getProcessList().getTotalMaxThreads();
+    if (process_list_element && total_max_threads) {
+        LOG_DEBUG(adqm_log,"Total number of threads from config: {}", total_max_threads);
+        LOG_DEBUG(adqm_log,"Current total num threads: {}",
+                  context->getProcessList().getTotalNumThreads());
+        size_t current_total_num_threads = context->getProcessList().getTotalNumThreads();
+        size_t total_available_threads = 0;
+        if (total_max_threads > current_total_num_threads)
+            total_available_threads = total_max_threads - current_total_num_threads;
+        LOG_DEBUG(adqm_log,"Total available threads: {}", total_available_threads);
+        num_threads = std::min(num_threads, total_available_threads);
         LOG_DEBUG(adqm_log,"Recommended num threads: {}", num_threads);
     }
 
     num_threads = std::max<size_t>(1, num_threads);
-    LOG_DEBUG(adqm_log,"Final num threads: {}", num_threads);
+    LOG_DEBUG(adqm_log,"Finally num threads: {}", num_threads);
     return num_threads;
 }
 

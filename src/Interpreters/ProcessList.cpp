@@ -75,7 +75,7 @@ ProcessList::EntryPtr ProcessList::insert(const String & query_, const IAST * as
     auto adqm_log = &Poco::Logger::get("ADQM");
     LOG_DEBUG(adqm_log,"Inserting query into process list: {}", query_);
     LOG_DEBUG(adqm_log,"Num of concurrent queries: {}", processes.size());
-    LOG_DEBUG(adqm_log,"Global Num Threads: {}", getGlobalNumThreads());
+    LOG_DEBUG(adqm_log,"Global Num Threads: {}", getTotalNumThreads());
 
     const ClientInfo & client_info = query_context->getClientInfo();
     const Settings & settings = query_context->getSettingsRef();
@@ -505,18 +505,18 @@ ProcessList::Info ProcessList::getInfo(bool get_thread_list, bool get_profile_ev
     return per_query_infos;
 }
 
-size_t ProcessList::getGlobalNumThreads() const
+size_t ProcessList::getTotalNumThreads() const
 {
-    size_t global_num_threads = 0;
+    size_t total_num_threads = 0;
     std::lock_guard lock(mutex);
 
     for (const auto & process : processes)
     {
         auto qsi = process.getInfo(true);
-        global_num_threads += qsi.thread_ids.size();
+        total_num_threads += qsi.thread_ids.size();
     }
 
-    return global_num_threads;
+    return total_num_threads;
 }
 
 ProcessListForUser::ProcessListForUser(ProcessList * global_process_list)
