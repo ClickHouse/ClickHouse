@@ -9,7 +9,6 @@ namespace DB
 {
 class ReadBuffer;
 class WriteBuffer;
-struct Settings;
 
 /** These are "generally recognizable" compression methods for data import/export.
   * Do not mess with more efficient compression methods used by ClickHouse internally
@@ -50,17 +49,11 @@ CompressionMethod chooseCompressionMethod(const std::string & path, const std::s
 std::unique_ptr<ReadBuffer> wrapReadBufferWithCompressionMethod(
     std::unique_ptr<ReadBuffer> nested,
     CompressionMethod method,
-    const Settings &settings,
+    int zstd_window_log_max = 0,
     size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
     char * existing_memory = nullptr,
     size_t alignment = 0);
 
-std::unique_ptr<ReadBuffer> wrapReadBufferWithCompressionMethod(
-    std::unique_ptr<ReadBuffer> nested,
-    CompressionMethod method,
-    size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
-    char * existing_memory = nullptr,
-    size_t alignment = 0);
 
 std::unique_ptr<WriteBuffer> wrapWriteBufferWithCompressionMethod(
     std::unique_ptr<WriteBuffer> nested,
