@@ -1054,7 +1054,7 @@ StorageWindowView::StorageWindowView(
 
     auto inner_query = initInnerQuery(query.select->list_of_selects->children.at(0)->as<ASTSelectQuery &>(), context_);
 
-    if(is_proctime)
+    if (is_proctime)
         next_fire_signal = getWindowUpperBound(std::time(nullptr));
 
     std::exchange(has_inner_table, true);
