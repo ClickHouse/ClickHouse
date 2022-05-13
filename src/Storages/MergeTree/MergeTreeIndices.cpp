@@ -102,8 +102,10 @@ MergeTreeIndexFactory::MergeTreeIndexFactory()
     registerCreator("hypothesis", hypothesisIndexCreator);
     registerValidator("hypothesis", hypothesisIndexValidator);
 
-    registerCreator("annoy", AnnoyIndexCreator);
-    registerValidator("annoy", AnnoyIndexValidator);
+    #ifdef ENABLE_ANNOY
+        registerCreator("annoy", AnnoyIndexCreator);
+        registerValidator("annoy", AnnoyIndexValidator);
+    #endif
 }
 
 MergeTreeIndexFactory & MergeTreeIndexFactory::instance()
