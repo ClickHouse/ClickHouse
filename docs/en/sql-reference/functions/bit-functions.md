@@ -130,13 +130,9 @@ bitSlice(s, offset[, length])
 
 **Arguments**
 
-- `s` — s is [String](../../sql-reference/data-types/string.md)
-  or [FixedString](../../sql-reference/data-types/fixedstring.md).
-- `offset` — The start index with bit, A positive value indicates an offset on the left, and a negative value is an
-  indent on the right. Numbering of the bits begins with 1.
-- `length` — The length of substring with bit. If you specify a negative value, the function returns an open substring [
-  offset, array_length - length). If you omit the value, the function returns the substring [offset, the_end_string]. 
-  If length exceeds s, it will be truncate.If length isn't multiple of 8, will fill 0 on the right.
+- `s` — s is [String](../../sql-reference/data-types/string.md) or [FixedString](../../sql-reference/data-types/fixedstring.md).
+- `offset` — The start index with bit, A positive value indicates an offset on the left, and a negative value is an indent on the right. Numbering of the bits begins with 1.
+- `length` — The length of substring with bit. If you specify a negative value, the function returns an open substring \[offset, array_length - length\]. If you omit the value, the function returns the substring \[offset, the_end_string\]. If length exceeds s, it will be truncate.If length isn't multiple of 8, will fill 0 on the right.
 
 **Returned value**
 
