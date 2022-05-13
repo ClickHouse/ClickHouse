@@ -703,9 +703,9 @@ void readCSVStringInto(Vector & s, ReadBuffer & buf, const FormatSettings::CSV &
             if constexpr (!std::is_same_v<Vector, NullOutput>)
             {
                 /** CSV format can contain insignificant spaces and tabs.
-              * Usually the task of skipping them is for the calling code.
-              * But in this case, it will be difficult to do this, so remove the trailing whitespace by ourself.
-              */
+                * Usually the task of skipping them is for the calling code.
+                * But in this case, it will be difficult to do this, so remove the trailing whitespace by ourself.
+                */
                 size_t size = s.size();
                 while (size > 0 && (s[size - 1] == ' ' || s[size - 1] == '\t'))
                     --size;

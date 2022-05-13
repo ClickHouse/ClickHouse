@@ -19,6 +19,7 @@
                 <value>ORC</value>
                 <value>Parquet</value>
                 <value>Arrow</value>
+                <value>Native</value>
             </values>
         </substitution>
     </substitutions>
