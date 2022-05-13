@@ -588,7 +588,10 @@ void readQuotedStringWithSQLStyle(String & s, ReadBuffer & buf)
 
 template void readQuotedStringInto<true>(PaddedPODArray<UInt8> & s, ReadBuffer & buf);
 template void readQuotedStringInto<true>(String & s, ReadBuffer & buf);
+template void readQuotedStringInto<false>(String & s, ReadBuffer & buf);
 template void readDoubleQuotedStringInto<false>(NullOutput & s, ReadBuffer & buf);
+template void readDoubleQuotedStringInto<false>(String & s, ReadBuffer & buf);
+template void readBackQuotedStringInto<false>(String & s, ReadBuffer & buf);
 
 void readDoubleQuotedString(String & s, ReadBuffer & buf)
 {

@@ -525,8 +525,8 @@ DataTypePtr getDefaultDataTypeForEscapingRule(FormatSettings::EscapingRule escap
 {
     switch (escaping_rule)
     {
-        case FormatSettings::EscapingRule::CSV: [[fallthrough]];
-        case FormatSettings::EscapingRule::Escaped: [[fallthrough]];
+        case FormatSettings::EscapingRule::CSV:
+        case FormatSettings::EscapingRule::Escaped:
         case FormatSettings::EscapingRule::Raw:
             return makeNullable(std::make_shared<DataTypeString>());
         default:

@@ -1,6 +1,6 @@
 #include <Storages/MergeTree/MutateFromLogEntryTask.h>
 
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <Common/ProfileEvents.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 
@@ -88,7 +88,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
     }
 
     new_part_info = MergeTreePartInfo::fromPartName(entry.new_part_name, storage.format_version);
-    commands = MutationCommands::create(storage.queue.getMutationCommands(source_part, new_part_info.mutation));
+    commands = std::make_shared<MutationCommands>(storage.queue.getMutationCommands(source_part, new_part_info.mutation));
 
     /// Once we mutate part, we must reserve space on the same disk, because mutations can possibly create hardlinks.
     /// Can throw an exception.

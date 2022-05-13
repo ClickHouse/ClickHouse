@@ -1,7 +1,7 @@
 #include <QueryPipeline/RemoteInserter.h>
 
 #include <Client/Connection.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 
 #include <Common/NetException.h>
 #include <Common/CurrentThread.h>
@@ -50,7 +50,7 @@ RemoteInserter::RemoteInserter(
     /** Send query and receive "header", that describes table structure.
       * Header is needed to know, what structure is required for blocks to be passed to 'write' method.
       */
-    connection.sendQuery(timeouts, query, "", QueryProcessingStage::Complete, &settings_, &modified_client_info, false);
+    connection.sendQuery(timeouts, query, "", QueryProcessingStage::Complete, &settings_, &modified_client_info, false, {});
 
     while (true)
     {
