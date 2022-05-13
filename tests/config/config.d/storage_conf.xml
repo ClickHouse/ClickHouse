@@ -26,7 +26,7 @@
             <s3_cache_2>
                 <type>cache</type>
                 <disk>s3_disk_2</disk>
-                <path>./s3_cache/</path>
+                <path>s3_cache/</path>
                 <max_size>22548578304</max_size>
             </s3_cache_2>
             <local_disk>
@@ -36,6 +36,7 @@
             <local_cache>
                 <type>cache</type>
                 <disk>local_disk</disk>
+                <path>local_cache/</path>
                 <max_size>22548578304</max_size>
                 <cache_on_write_operations>1</cache_on_write_operations>
             </local_cache>

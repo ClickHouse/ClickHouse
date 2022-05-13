@@ -605,7 +605,7 @@ void FileSegment::assertCorrectnessImpl(std::lock_guard<std::mutex> & /* segment
 {
     assert(downloader_id.empty() == (download_state != FileSegment::State::DOWNLOADING));
     assert(!downloader_id.empty() == (download_state == FileSegment::State::DOWNLOADING));
-    assert(download_state != FileSegment::State::DOWNLOADED || std::filesystem::file_size(cache->getPathInLocalCache(key(), offset())) > 0);
+    assert(download_state != FileSegment::State::DOWNLOADED || std::filesystem::file_size(cache->getPathInLocalCache(key(), offset(), is_persistent)) > 0);
 }
 
 void FileSegment::throwIfDetached() const

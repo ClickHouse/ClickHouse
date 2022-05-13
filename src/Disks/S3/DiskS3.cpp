@@ -186,8 +186,8 @@ std::unique_ptr<ReadBufferFromFileBase> DiskS3::readFile(const String & path, co
         backQuote(metadata_disk->getPath() + path), metadata.remote_fs_objects.size());
 
     auto s3_impl = std::make_unique<ReadBufferFromS3Gather>(
-        settings->client, bucket, metadata.remote_fs_root_path, metadata.remote_fs_objects,
-        settings->s3_settings.max_single_read_retries, disk_read_settings);
+        settings->client, bucket, version_id, metadata.remote_fs_root_path, metadata.remote_fs_objects,
+        settings->s3_settings.max_single_read_retries, read_settings);
 
     if (read_settings.remote_fs_method == RemoteFSReadMethod::threadpool)
     {

@@ -1,7 +1,7 @@
 #pragma once
 
 #include <unordered_map>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include "DiskDecorator.h"
 #include <Common/FileCache_fwd.h>
 
@@ -14,7 +14,7 @@ class DiskCache : public DiskDecorator
 public:
     DiskCache(const String & disk_name_, const String & path_, std::shared_ptr<IDisk> delegate_, FileCachePtr cache_);
 
-    // const String & getName() const final override { return cache_disk_name; }
+    const String & getName() const final override { return cache_disk_name; }
 
     DiskType getType() const override { return DiskType::Cache; }
 
