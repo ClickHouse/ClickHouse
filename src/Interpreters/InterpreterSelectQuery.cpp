@@ -637,6 +637,13 @@ void InterpreterSelectQuery::buildQueryPlan(QueryPlan & query_plan)
         auto converting = std::make_unique<ExpressionStep>(query_plan.getCurrentDataStream(), convert_actions_dag);
         query_plan.addStep(std::move(converting));
     }
+
+    /// Extend lifetime of context, table lock, storage.
+    query_plan.addInterpreterContext(context);
+    if (table_lock)
+        query_plan.addTableLock(std::move(table_lock));
+    if (storage)
+        query_plan.addStorageHolder(storage);
 }
 
 static StreamLocalLimits getLimitsForStorage(const Settings & settings, const SelectQueryOptions & options)
@@ -698,12 +705,6 @@ BlockIO InterpreterSelectQuery::execute()
     res.pipeline.setLimits(limits);
     res.pipeline.setLeafLimits(leaf_limits);
     res.pipeline.setQuota(quota);
-
-    /// Extend lifetime of context, table lock, storage. Set limits and quota.
-    auto adding_limits_and_quota = std::make_unique<SettingQuotaAndLimitsStep>(
-        query_plan.getCurrentDataStream(), storage, std::move(table_lock), limits, leaf_limits, std::move(quota), context);
-    adding_limits_and_quota->setStepDescription("Set limits and quota after reading from storage");
-    query_plan.addStep(std::move(adding_limits_and_quota));
 
     return res;
 }
@@ -1972,7 +1973,7 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
                 {std::move(column), std::make_shared<DataTypeAggregateFunction>(func, argument_types, desc.parameters), desc.column_name}};
 
             auto source = std::make_shared<SourceFromSingleChunk>(block_with_count);
-            auto prepared_count = std::make_unique<ReadFromPreparedSource>(Pipe(std::move(source)), context);
+            auto prepared_count = std::make_unique<ReadFromPreparedSource>(Pipe(std::move(source)));
             prepared_count->setStepDescription("Optimized trivial count");
             query_plan.addStep(std::move(prepared_count));
             from_stage = QueryProcessingStage::WithMergeableState;

@@ -29,11 +29,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-void QueryPipelineBuilder::addQueryPlan(std::unique_ptr<QueryPlan> plan)
-{
-    pipe.addQueryPlan(std::move(plan));
-}
-
 void QueryPipelineBuilder::checkInitialized()
 {
     if (!initialized())

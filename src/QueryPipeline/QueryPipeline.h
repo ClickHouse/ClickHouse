@@ -53,18 +53,18 @@ public:
 
     /// completed
     QueryPipeline(
-        PipelineResourcesHolder resources_,
+        QueryPlanResourceHolder resources_,
         Processors processors_);
 
     /// pushing
     QueryPipeline(
-        PipelineResourcesHolder resources_,
+        QueryPlanResourceHolder resources_,
         Processors processors_,
         InputPort * input_);
 
     /// pulling
     QueryPipeline(
-        PipelineResourcesHolder resources_,
+        QueryPlanResourceHolder resources_,
         Processors processors_,
         OutputPort * output_,
         OutputPort * totals_ = nullptr,
@@ -109,7 +109,7 @@ public:
     void reset();
 
 private:
-    PipelineResourcesHolder resources;
+    QueryPlanResourceHolder resources;
 
     ProgressCallback progress_callback;
     StreamLocalLimits local_limits;

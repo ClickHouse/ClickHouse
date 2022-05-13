@@ -102,11 +102,6 @@ static OutputPort * uniteTotals(const OutputPortRawPtrs & ports, const Block & h
     return totals_port;
 }
 
-void Pipe::addQueryPlan(std::unique_ptr<QueryPlan> plan)
-{
-    holder.query_plans.emplace_back(std::move(plan));
-}
-
 PipelineResourcesHolder Pipe::detachResources()
 {
     return std::move(holder);
