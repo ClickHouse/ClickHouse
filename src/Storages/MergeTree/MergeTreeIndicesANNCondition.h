@@ -1,3 +1,5 @@
+#pragma once
+
 #include <vector>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 namespace DB

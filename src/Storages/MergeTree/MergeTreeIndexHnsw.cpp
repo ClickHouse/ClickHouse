@@ -405,14 +405,14 @@ void hnswIndexValidator(const IndexDescription & index, bool /* attach */)
 {
     if (index.arguments.size() > 4)
     {
-        throw Exception("Hnsw index must have exactly one argument.", ErrorCodes::INCORRECT_DATA);
+        throw Exception("Hnsw index must have exactly one argument.", ErrorCodes::LOGICAL_ERROR);
     }
 
     for (const auto & arg : index.arguments)
     {
         if (arg.getType() != Field::Types::UInt64)
         {
-            throw Exception("Hnsw index must have exactly one argument.", ErrorCodes::INCORRECT_DATA);
+            throw Exception("Hnsw index must have exactly one argument.", ErrorCodes::LOGICAL_ERROR);
         }
     }
 }
