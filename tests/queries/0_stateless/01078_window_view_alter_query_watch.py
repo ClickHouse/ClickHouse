@@ -13,7 +13,9 @@ log = None
 # uncomment the line below for debugging
 # log=sys.stdout
 
-with client(name="client1>", log=log) as client1, client(name="client2>", log=log) as client2, client(name="client3>", log=log) as client3:
+with client(name="client1>", log=log) as client1, client(
+    name="client2>", log=log
+) as client2, client(name="client3>", log=log) as client3:
     client1.expect(prompt)
     client2.expect(prompt)
     client3.expect(prompt)
@@ -59,6 +61,9 @@ with client(name="client1>", log=log) as client1, client(name="client2>", log=lo
         "ALTER TABLE 01078_window_view_alter_query_watch.wv MODIFY QUERY SELECT count(a) * 2 AS count, tumbleEnd(wid) AS w_end FROM 01078_window_view_alter_query_watch.mt GROUP BY tumble(timestamp, INTERVAL '5' SECOND, 'US/Samoa') AS wid"
     )
     client2.expect("Ok.")
+    client2.expect(prompt)
+    client1.expect("1 row" + end_of_block)
+    client1.expect(prompt)
     client3.send("WATCH 01078_window_view_alter_query_watch.wv")
     client3.expect("Query id" + end_of_block)
     client2.send(
