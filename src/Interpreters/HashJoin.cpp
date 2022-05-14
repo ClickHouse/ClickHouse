@@ -941,7 +941,7 @@ struct JoinOnKeyColumns
     bool isRowFiltered(size_t i) const { return join_mask_column.isRowFiltered(i); }
 };
 
-struct MatchInfo
+struct RowRefMatchInfo
 {
     std::vector<const Block*> blocks;
     std::vector<size_t> row_nums;
@@ -1007,6 +1007,8 @@ public:
 
     size_t size() const { return columns.size(); }
 
+    size_t rightIndexesSize() const { return right_indexes.size(); }
+
     ColumnWithTypeAndName moveColumn(size_t i)
     {
         return ColumnWithTypeAndName(std::move(columns[i]), type_name[i].type, type_name[i].qualified_name);
@@ -1040,18 +1042,17 @@ public:
     }
 
     template<bool just_one_right_block>
-    void appendManyFromBlock(MatchInfo & match_result)
+    void appendManyFromBlock(RowRefMatchInfo & match_result)
     {
         size_t nums = match_result.row_nums.size();
         if (nums == 0)
             return;
+
         if constexpr (just_one_right_block)
         {
             for (size_t j = 0, size = right_indexes.size(); j < size; ++j)
             {
                 std::vector<const IColumn *> prepared_columns;
-                std::vector<size_t> row_nums;
-                row_nums.resize(nums);
                 auto column_from_block = match_result.blocks[0]->getByPosition(right_indexes[j]);
                 if (type_name[j].type->lowCardinality() != column_from_block.type->lowCardinality())
                 {
@@ -1277,7 +1278,7 @@ void addFoundRowAll(
     IColumn::Offset & current_offset,
     KnownRowsHolder<multiple_disjuncts> & known_rows [[maybe_unused]],
     JoinStuff::JoinUsedFlags * used_flags [[maybe_unused]],
-    MatchInfo & match_result [[maybe_unused]])
+    RowRefMatchInfo & match_result [[maybe_unused]])
 {
     if constexpr (add_missing)
         added.applyLazyDefaults();
@@ -1292,8 +1293,11 @@ void addFoundRowAll(
             {
                 if constexpr (fast_inner_join)
                 {
-                    match_result.blocks.emplace_back(it->block);
-                    match_result.row_nums.emplace_back(it->row_num);
+                    if (added.rightIndexesSize() > 0)
+                    {
+                        match_result.blocks.emplace_back(it->block);
+                        match_result.row_nums.emplace_back(it->row_num);
+                    }
                 }
                 else
                     added.appendFromBlock<false>(*it->block, it->row_num);
@@ -1322,8 +1326,11 @@ void addFoundRowAll(
         {
             if constexpr (fast_inner_join)
             {
-                match_result.blocks.emplace_back(it->block);
-                match_result.row_nums.emplace_back(it->row_num);
+                if (added.rightIndexesSize() > 0)
+                {
+                    match_result.blocks.emplace_back(it->block);
+                    match_result.row_nums.emplace_back(it->row_num);
+                }
             }
             else
                 added.appendFromBlock<false>(*it->block, it->row_num);
@@ -1368,7 +1375,7 @@ NO_INLINE IColumn::Filter joinRightColumns(
 
     size_t rows = added_columns.rows_to_add;
 
-    struct MatchInfo match_result;
+    RowRefMatchInfo match_result;
     match_result.blocks.reserve(rows);
     match_result.row_nums.reserve(rows);
 
