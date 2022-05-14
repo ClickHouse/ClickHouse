@@ -14,7 +14,6 @@
 #include <Common/filesystemHelpers.h>
 #include <Disks/IO/ThreadPoolRemoteFSReader.h>
 #include <Common/FileCache.h>
-#include <Common/logger_useful.h>
 
 
 namespace DB
@@ -1114,7 +1113,7 @@ void DiskObjectStorageMetadataHelper::restoreFiles(IObjectStorage * source_objec
 
 }
 
-void DiskObjectStorageMetadataHelper::processRestoreFiles(IObjectStorage * source_object_storage, const String & source_path, const std::vector<String> & keys)
+void DiskObjectStorageMetadataHelper::processRestoreFiles(IObjectStorage * source_object_storage, const String & source_path, const std::vector<String> & keys) const
 {
     for (const auto & key : keys)
     {

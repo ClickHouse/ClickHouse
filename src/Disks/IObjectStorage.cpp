@@ -35,7 +35,7 @@ void IObjectStorage::removeFromCache(const std::string & path)
     }
 }
 
-void IObjectStorage::copyObjectToAnotherObjectStorage(const std::string & object_from, const std::string & object_to, IObjectStorage & object_storage_to, std::optional<ObjectAttributes> object_to_attributes)
+void IObjectStorage::copyObjectToAnotherObjectStorage(const std::string & object_from, const std::string & object_to, IObjectStorage & object_storage_to, std::optional<ObjectAttributes> object_to_attributes) // NOLINT
 {
     if (&object_storage_to == this)
         copyObject(object_from, object_to, object_to_attributes);
