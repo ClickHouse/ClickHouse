@@ -993,8 +993,9 @@ As the indexes are built only during insertions into table, `INSERT` and `OPTIMI
 You can create your table with index which uses certain algorithm. Now only indices based on the following algorithms are supported:
 
 ##### Index list
--   
-###### Annoy
+- Annoy
+
+# Annoy {#annoy}
 Implementation of the algorithm was taken from [this repository](https://github.com/spotify/annoy).
 
 Short description of the algorithm:
