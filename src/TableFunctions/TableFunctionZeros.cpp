@@ -39,7 +39,7 @@ StoragePtr TableFunctionZeros<multithreaded>::executeImpl(const ASTPtr & ast_fun
 
         UInt64 length = evaluateArgument(context, arguments[0]);
 
-        auto res = StorageSystemZeros::create(StorageID(getDatabaseName(), table_name), multithreaded, length);
+        auto res = std::make_shared<StorageSystemZeros>(StorageID(getDatabaseName(), table_name), multithreaded, length);
         res->startup();
         return res;
     }

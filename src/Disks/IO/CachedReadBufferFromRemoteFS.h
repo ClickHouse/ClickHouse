@@ -7,6 +7,12 @@
 #include <Common/logger_useful.h>
 #include <Interpreters/FilesystemCacheLog.h>
 
+
+namespace CurrentMetrics
+{
+extern const Metric FilesystemCacheReadBuffers;
+}
+
 namespace DB
 {
 
@@ -20,7 +26,10 @@ public:
         FileCachePtr cache_,
         RemoteFSFileReaderCreator remote_file_reader_creator_,
         const ReadSettings & settings_,
+        const String & query_id_,
         size_t read_until_position_);
+
+    ~CachedReadBufferFromRemoteFS() override;
 
     bool nextImpl() override;
 
@@ -33,6 +42,13 @@ public:
     String getInfoForLog() override;
 
     void setReadUntilPosition(size_t position) override;
+
+    enum class ReadType
+    {
+        CACHED,
+        REMOTE_FS_READ_BYPASS_CACHE,
+        REMOTE_FS_READ_AND_PUT_IN_CACHE,
+    };
 
 private:
     void initialize(size_t offset, size_t size);
@@ -52,13 +68,6 @@ private:
     bool nextImplStep();
 
     void assertCorrectness() const;
-
-    enum class ReadType
-    {
-        CACHED,
-        REMOTE_FS_READ_BYPASS_CACHE,
-        REMOTE_FS_READ_AND_PUT_IN_CACHE,
-    };
 
     SeekableReadBufferPtr getRemoteFSReadBuffer(FileSegmentPtr & file_segment, ReadType read_type_);
 
@@ -110,6 +119,10 @@ private:
 
     String query_id;
     bool enable_logging = false;
+    String current_buffer_id;
+
+    CurrentMetrics::Increment metric_increment{CurrentMetrics::FilesystemCacheReadBuffers};
+    ProfileEvents::Counters current_file_segment_counters;
 };
 
 }
