@@ -92,9 +92,16 @@ public:
 
     ObjectMetadata getObjectMetadata(const std::string & path) const override;
 
-    void copyObject(const std::string & object_from, const std::string & object_to, std::optional<ObjectAttributes> object_to_attributes = {}) override;
+    void copyObject( /// NOLINT
+        const std::string & object_from,
+        const std::string & object_to,
+        std::optional<ObjectAttributes> object_to_attributes = {}) override;
 
-    void copyObjectToAnotherObjectStorage(const std::string & object_from, const std::string & object_to, IObjectStorage & object_storage_to, std::optional<ObjectAttributes> object_to_attributes = {}) override;
+    void copyObjectToAnotherObjectStorage( /// NOLINT
+        const std::string & object_from,
+        const std::string & object_to,
+        IObjectStorage & object_storage_to,
+        std::optional<ObjectAttributes> object_to_attributes = {}) override;
 
     void shutdown() override;
 

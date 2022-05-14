@@ -1003,7 +1003,7 @@ void DiskObjectStorageMetadataHelper::restore(const Poco::Util::AbstractConfigur
     }
 }
 
-void DiskObjectStorageMetadataHelper::readRestoreInformation(RestoreInformation & restore_information)
+void DiskObjectStorageMetadataHelper::readRestoreInformation(RestoreInformation & restore_information) /// NOLINT
 {
     auto buffer = disk->metadata_disk->readFile(RESTORE_FILE_NAME, ReadSettings{}, 512);
     buffer->next();
