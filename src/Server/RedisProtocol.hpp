@@ -112,6 +112,13 @@ namespace RedisProtocol
             writeCRLF();
         }
 
+        void writeArray(const Int64 size)
+        {
+            writeDataType(DataType::ARRAY);
+            writeString(std::to_string(size), *buf);
+            writeCRLF();
+        }
+
     private:
         void writeDataType(DataType type) { buf->write(static_cast<char>(type)); }
 
@@ -218,28 +225,33 @@ namespace RedisProtocol
         BeginRequest & req;
     };
 
-    class GetRequest : public Request
+    class MGetRequest : public Request
     {
     public:
-        explicit GetRequest(BeginRequest & req_) : req(req_) { }
+        explicit MGetRequest(BeginRequest & req_) : req(req_) { }
 
         void deserialize(ReadBuffer & in) final
         {
-            key.clear();
+            keys.clear();
             Reader reader(&in);
 
-            if (auto array_size = req.getArraySize(); array_size != 1)
+            auto array_size = req.getArraySize();
+            if (!array_size)
             {
                 throw Exception(Poco::format("Invalid array size. Array size was %?d.", array_size), ErrorCodes::BAD_REQUEST_PARAMETER);
             }
+            keys.resize(array_size);
 
-            key = reader.readBulkString();
+            for (Int64 i = 0; i < array_size; ++i)
+            {
+                keys[i] = reader.readBulkString();
+            }
         }
 
-        const String & getKey() const { return key; }
+        const std::vector<String> & getKeys() const { return keys; }
 
     private:
-        String key;
+        std::vector<String> keys;
         BeginRequest & req;
     };
 
@@ -281,6 +293,24 @@ namespace RedisProtocol
         const String & value;
     };
 
+    class BulkStringArrayResponse : public Response
+    {
+    public:
+        explicit BulkStringArrayResponse(const std::vector<String> & values_) : values(values_) { }
+
+        void serialize(WriteBuffer & out) final
+        {
+            Writer writer(&out);
+            writer.writeArray(values.size());
+            for (const auto & value : values)
+            {
+                writer.writeBulkString(value);
+            }
+        }
+
+    private:
+        const std::vector<String> & values;
+    };
 
     class ErrorResponse : public Response
     {

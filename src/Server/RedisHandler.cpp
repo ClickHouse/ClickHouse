@@ -59,9 +59,9 @@ void RedisHandler::run()
             req.deserialize(*in);
             if (req.getMethod() == "get")
             {
-                RedisProtocol::GetRequest get_req(req);
+                RedisProtocol::MGetRequest get_req(req);
                 get_req.deserialize(*in);
-                LOG_DEBUG(log, "GET request for {} key", get_req.getKey());
+                LOG_DEBUG(log, "GET request for {} key", get_req.getKeys()[0]);
 
                 if (!authenticated)
                 {
@@ -71,6 +71,27 @@ void RedisHandler::run()
                 }
 
                 RedisProtocol::BulkStringResponse resp("Hello world");
+                resp.serialize(*out);
+            }
+            else if (req.getMethod() == "mget")
+            {
+                RedisProtocol::MGetRequest get_req(req);
+                get_req.deserialize(*in);
+                LOG_DEBUG(log, "MGET request for {} keys", std::to_string(get_req.getKeys().size()));
+
+                if (!authenticated)
+                {
+                    RedisProtocol::ErrorResponse resp(RedisProtocol::Message::NOAUTH);
+                    resp.serialize(*out);
+                    continue;
+                }
+
+                std::vector<String> hello_worlds(get_req.getKeys().size());
+                for (size_t i = 0; i < get_req.getKeys().size(); ++i)
+                {   
+                    hello_worlds[i] = "Hello world";
+                }
+                RedisProtocol::BulkStringArrayResponse resp(hello_worlds);
                 resp.serialize(*out);
             }
             else if (req.getMethod() == "auth")
