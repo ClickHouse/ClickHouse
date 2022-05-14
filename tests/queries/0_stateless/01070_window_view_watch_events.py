@@ -39,7 +39,7 @@ with client(name="client1>", log=log) as client1, client(
     )
     client1.expect(prompt)
     client1.send(
-        "CREATE WINDOW VIEW 01070_window_view_watch_events.wv WATERMARK=ASCENDING AS SELECT count(a) AS count, tumbleEnd(wid) AS w_end FROM 01070_window_view_watch_events.mt GROUP BY tumble(timestamp, INTERVAL '5' SECOND, 'US/Samoa') AS wid"
+        "CREATE WINDOW VIEW 01070_window_view_watch_events.wv ENGINE Memory WATERMARK=ASCENDING AS SELECT count(a) AS count, tumbleEnd(wid) AS w_end FROM 01070_window_view_watch_events.mt GROUP BY tumble(timestamp, INTERVAL '5' SECOND, 'US/Samoa') AS wid"
     )
     client1.expect(prompt)
 

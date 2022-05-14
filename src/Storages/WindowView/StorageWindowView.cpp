@@ -349,6 +349,37 @@ namespace
 
         String getName() const override { return "AddingAggregatedChunkInfoTransform"; }
     };
+
+    static inline String generateInnerTableName(const StorageID & storage_id)
+    {
+        if (storage_id.hasUUID())
+            return ".inner." + toString(storage_id.uuid);
+        return ".inner." + storage_id.getTableName();
+    }
+
+    static inline String generateTargetTableName(const StorageID & storage_id)
+    {
+        if (storage_id.hasUUID())
+            return ".inner.target." + toString(storage_id.uuid);
+        return ".inner.target." + storage_id.table_name;
+    }
+
+    static ASTPtr generateInnerFetchQuery(StorageID inner_table_id)
+    {
+        auto fetch_query = std::make_shared<ASTSelectQuery>();
+        auto select = std::make_shared<ASTExpressionList>();
+        select->children.push_back(std::make_shared<ASTAsterisk>());
+        fetch_query->setExpression(ASTSelectQuery::Expression::SELECT, select);
+        fetch_query->setExpression(ASTSelectQuery::Expression::TABLES, std::make_shared<ASTTablesInSelectQuery>());
+        auto tables_elem = std::make_shared<ASTTablesInSelectQueryElement>();
+        auto table_expr = std::make_shared<ASTTableExpression>();
+        fetch_query->tables()->children.push_back(tables_elem);
+        tables_elem->table_expression = table_expr;
+        tables_elem->children.push_back(table_expr);
+        table_expr->database_and_table_name = std::make_shared<ASTTableIdentifier>(inner_table_id);
+        table_expr->children.push_back(table_expr->database_and_table_name);
+        return fetch_query;
+    }
 }
 
 static void extractDependentTable(ContextPtr context, ASTPtr & query, String & select_database_name, String & select_table_name)
@@ -461,14 +492,51 @@ std::pair<BlocksPtr, Block> StorageWindowView::getNewBlocks(UInt32 watermark)
 {
     UInt32 w_start = addTime(watermark, window_kind, -window_num_units, *time_zone);
 
+    auto inner_storage = getInnerStorage();
     InterpreterSelectQuery fetch(
-        getFetchColumnQuery(w_start, watermark),
+        inner_fetch_query,
         getContext(),
-        getInnerStorage(),
-        nullptr,
+        inner_storage,
+        inner_storage->getInMemoryMetadataPtr(),
         SelectQueryOptions(QueryProcessingStage::FetchColumns));
 
     auto builder = fetch.buildQueryPipeline();
+
+    ASTPtr filter_function;
+    if (is_tumble)
+    {
+        /// SELECT * FROM inner_table WHERE window_id_name == w_end
+        /// (because we fire at the end of windows)
+        filter_function = makeASTFunction("equals", std::make_shared<ASTIdentifier>(window_id_name), std::make_shared<ASTLiteral>(watermark));
+    }
+    else
+    {
+        auto func_array = makeASTFunction("array");
+        auto w_end = watermark;
+        while (w_start < w_end)
+        {
+            /// slice_num_units = std::gcd(hop_num_units, window_num_units);
+            /// We use std::gcd(hop_num_units, window_num_units) as the new window size
+            /// to split the overlapped windows into non-overlapped.
+            /// For a hopping window with window_size=3 slice=1, the windows might be
+            /// [1,3],[2,4],[3,5], which will cause recomputation.
+            /// In this case, the slice_num_units will be `gcd(1,3)=1' and the non-overlapped
+            /// windows will split into [1], [2], [3]... We compute each split window into
+            /// mergeable state and merge them when the window is triggering.
+            func_array ->arguments->children.push_back(std::make_shared<ASTLiteral>(w_end));
+            w_end = addTime(w_end, window_kind, -slice_num_units, *time_zone);
+        }
+        filter_function = makeASTFunction("has", func_array, std::make_shared<ASTIdentifier>(window_id_name));
+    }
+
+    auto syntax_result = TreeRewriter(getContext()).analyze(filter_function, builder.getHeader().getNamesAndTypesList());
+    auto filter_expression = ExpressionAnalyzer(filter_function, syntax_result, getContext()).getActionsDAG(false);
+
+    builder.addSimpleTransform([&](const Block & header)
+    {
+        return std::make_shared<FilterTransform>(
+            header, std::make_shared<ExpressionActions>(filter_expression), filter_function->getColumnName(), true);
+    });
 
     /// Adding window column
     DataTypes window_column_type{std::make_shared<DataTypeDateTime>(), std::make_shared<DataTypeDateTime>()};
@@ -565,9 +633,14 @@ inline void StorageWindowView::fire(UInt32 watermark)
 
     BlocksPtr blocks;
     Block header;
+    try
     {
         std::lock_guard lock(mutex);
         std::tie(blocks, header) = getNewBlocks(watermark);
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
     }
 
     for (const auto & block : *blocks)
@@ -689,33 +762,30 @@ std::shared_ptr<ASTCreateQuery> StorageWindowView::getInnerTableCreateQuery(
     };
 
     auto new_storage = std::make_shared<ASTStorage>();
-    /// storage != nullptr in case create window view with ENGINE syntax
+    /// storage != nullptr in case create window view with INNER ENGINE syntax
     if (storage)
     {
-        new_storage->set(new_storage->engine, storage->engine->clone());
-
         if (storage->ttl_table)
             throw Exception(
                 ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_WINDOW_VIEW,
                 "TTL is not supported for inner table in Window View");
 
-        if (!endsWith(storage->engine->name, "MergeTree"))
-            throw Exception(
-                ErrorCodes::INCORRECT_QUERY,
-                "The ENGINE of WindowView must be MergeTree family of table engines "
-                "including the engines with replication support");
+        new_storage->set(new_storage->engine, storage->engine->clone());
 
-        if (storage->partition_by)
-            new_storage->set(new_storage->partition_by, visit(storage->partition_by));
-        if (storage->primary_key)
-            new_storage->set(new_storage->primary_key, visit(storage->primary_key));
-        if (storage->order_by)
-            new_storage->set(new_storage->order_by, visit(storage->order_by));
-        if (storage->sample_by)
-            new_storage->set(new_storage->sample_by, visit(storage->sample_by));
+        if (endsWith(storage->engine->name, "MergeTree"))
+        {
+            if (storage->partition_by)
+                new_storage->set(new_storage->partition_by, visit(storage->partition_by));
+            if (storage->primary_key)
+                new_storage->set(new_storage->primary_key, visit(storage->primary_key));
+            if (storage->order_by)
+                new_storage->set(new_storage->order_by, visit(storage->order_by));
+            if (storage->sample_by)
+                new_storage->set(new_storage->sample_by, visit(storage->sample_by));
 
-        if (storage->settings)
-            new_storage->set(new_storage->settings, storage->settings->clone());
+            if (storage->settings)
+                new_storage->set(new_storage->settings, storage->settings->clone());
+        }
     }
     else
     {
@@ -1052,6 +1122,13 @@ StorageWindowView::StorageWindowView(
     if (!query.select)
         throw Exception(ErrorCodes::INCORRECT_QUERY, "SELECT query is not specified for {}", getName());
 
+    /// If the target table is not set, use inner target table
+    inner_target_table = query.to_table_id.empty();
+    if (inner_target_table && !query.storage)
+        throw Exception(
+            "You must specify where to save results of a WindowView query: either ENGINE or an existing table in a TO clause",
+            ErrorCodes::INCORRECT_QUERY);
+
     if (query.select->list_of_selects->children.size() != 1)
         throw Exception(
             ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_WINDOW_VIEW,
@@ -1095,7 +1172,6 @@ StorageWindowView::StorageWindowView(
     is_watermark_strictly_ascending = query.is_watermark_strictly_ascending;
     is_watermark_ascending = query.is_watermark_ascending;
     is_watermark_bounded = query.is_watermark_bounded;
-    target_table_id = query.to_table_id;
 
     /// Extract information about watermark, lateness.
     eventTimeParser(query);
@@ -1105,28 +1181,51 @@ StorageWindowView::StorageWindowView(
     else
         window_column_name = std::regex_replace(window_id_name, std::regex("windowID"), "hop");
 
-    auto generate_inner_table_name = [](const StorageID & storage_id)
-    {
-        if (storage_id.hasUUID())
-            return ".inner." + toString(storage_id.uuid);
-        return ".inner." + storage_id.table_name;
-    };
-
     if (attach_)
     {
-        inner_table_id = StorageID(table_id_.database_name, generate_inner_table_name(table_id_));
+        inner_table_id = StorageID(table_id_.database_name, generateInnerTableName(table_id_));
+        if (inner_target_table)
+            target_table_id = StorageID(table_id_.database_name, generateTargetTableName(table_id_));
+        else
+            target_table_id = query.to_table_id;
     }
     else
     {
+        /// create inner table
         auto inner_create_query
-            = getInnerTableCreateQuery(inner_query, query.storage, table_id_.database_name, generate_inner_table_name(table_id_));
+            = getInnerTableCreateQuery(inner_query, query.inner_storage, table_id_.database_name, generateInnerTableName(table_id_));
 
         auto create_context = Context::createCopy(context_);
         InterpreterCreateQuery create_interpreter(inner_create_query, create_context);
         create_interpreter.setInternal(true);
         create_interpreter.execute();
         inner_table_id = StorageID(inner_create_query->getDatabase(), inner_create_query->getTable());
+
+        if (inner_target_table)
+        {
+            /// create inner target table
+            auto create_context = Context::createCopy(context_);
+            auto target_create_query = std::make_shared<ASTCreateQuery>();
+            target_create_query->setDatabase(table_id_.database_name);
+            target_create_query->setTable(generateTargetTableName(table_id_));
+
+            auto new_columns_list = std::make_shared<ASTColumns>();
+            new_columns_list->set(new_columns_list->columns, query.columns_list->columns->ptr());
+
+            target_create_query->set(target_create_query->columns_list, new_columns_list);
+            target_create_query->set(target_create_query->storage, query.storage->ptr());
+
+            InterpreterCreateQuery create_interpreter(target_create_query, create_context);
+            create_interpreter.setInternal(true);
+            create_interpreter.execute();
+
+            target_table_id = StorageID(target_create_query->getDatabase(), target_create_query->getTable());
+        }
+        else
+            target_table_id = query.to_table_id;
     }
+
+    inner_fetch_query = generateInnerFetchQuery(inner_table_id);
 
     clean_interval_ms = getContext()->getSettingsRef().window_view_clean_interval.totalMilliseconds();
     next_fire_signal = getWindowUpperBound(std::time(nullptr));
@@ -1463,6 +1562,9 @@ void StorageWindowView::dropInnerTableIfAny(bool no_delay, ContextPtr local_cont
     {
         InterpreterDropQuery::executeDropQuery(
             ASTDropQuery::Kind::Drop, getContext(), local_context, inner_table_id, no_delay);
+
+        if (inner_target_table)
+            InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind::Drop, getContext(), local_context, target_table_id, no_delay);
     }
     catch (...)
     {
@@ -1495,51 +1597,6 @@ StoragePtr StorageWindowView::getParentStorage() const
 StoragePtr StorageWindowView::getInnerStorage() const
 {
     return DatabaseCatalog::instance().getTable(inner_table_id, getContext());
-}
-
-ASTPtr StorageWindowView::getFetchColumnQuery(UInt32 w_start, UInt32 w_end) const
-{
-    auto res_query = std::make_shared<ASTSelectQuery>();
-    auto select = std::make_shared<ASTExpressionList>();
-    select->children.push_back(std::make_shared<ASTAsterisk>());
-    res_query->setExpression(ASTSelectQuery::Expression::SELECT, select);
-    res_query->setExpression(ASTSelectQuery::Expression::TABLES, std::make_shared<ASTTablesInSelectQuery>());
-    auto tables_elem = std::make_shared<ASTTablesInSelectQueryElement>();
-    auto table_expr = std::make_shared<ASTTableExpression>();
-    res_query->tables()->children.push_back(tables_elem);
-    tables_elem->table_expression = table_expr;
-    tables_elem->children.push_back(table_expr);
-    table_expr->database_and_table_name = std::make_shared<ASTTableIdentifier>(inner_table_id);
-    table_expr->children.push_back(table_expr->database_and_table_name);
-
-    if (is_tumble)
-    {
-        /// SELECT * FROM inner_table PREWHERE window_id_name == w_end
-        /// (because we fire at the end of windows)
-        auto func_equals = makeASTFunction("equals", std::make_shared<ASTIdentifier>(window_id_name), std::make_shared<ASTLiteral>(w_end));
-        res_query->setExpression(ASTSelectQuery::Expression::PREWHERE, func_equals);
-    }
-    else
-    {
-        auto func_array = makeASTFunction("array");
-        while (w_start < w_end)
-        {
-            /// slice_num_units = std::gcd(hop_num_units, window_num_units);
-            /// We use std::gcd(hop_num_units, window_num_units) as the new window size
-            /// to split the overlapped windows into non-overlapped.
-            /// For a hopping window with window_size=3 slice=1, the windows might be
-            /// [1,3],[2,4],[3,5], which will cause recomputation.
-            /// In this case, the slice_num_units will be `gcd(1,3)=1' and the non-overlapped
-            /// windows will split into [1], [2], [3]... We compute each split window into
-            /// mergeable state and merge them when the window is triggering.
-            func_array ->arguments->children.push_back(std::make_shared<ASTLiteral>(w_end));
-            w_end = addTime(w_end, window_kind, -slice_num_units, *time_zone);
-        }
-        auto func_has = makeASTFunction("has", func_array, std::make_shared<ASTIdentifier>(window_id_name));
-        res_query->setExpression(ASTSelectQuery::Expression::PREWHERE, func_has);
-    }
-
-    return res_query;
 }
 
 StoragePtr StorageWindowView::getTargetStorage() const
