@@ -34,6 +34,7 @@
 #include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Interpreters/QueryAliasesVisitor.h>
 #include <Interpreters/replaceAliasColumnsInQuery.h>
+#include <Interpreters/RewriteCountDistinctVisitor.h>
 
 #include <QueryPipeline/Pipe.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
@@ -84,7 +85,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/checkStackSize.h>
 #include <base/map.h>
-#include <base/scope_guard_safe.h>
+#include <Common/scope_guard_safe.h>
 #include <memory>
 
 
@@ -223,7 +224,7 @@ static void rewriteMultipleJoins(ASTPtr & query, const TablesWithColumns & table
     QueryAliasesNoSubqueriesVisitor(aliases).visit(select.select());
 
     CrossToInnerJoinVisitor::Data cross_to_inner{tables, aliases, database};
-    cross_to_inner.cross_to_inner_join_rewrite = settings.cross_to_inner_join_rewrite;
+    cross_to_inner.cross_to_inner_join_rewrite = static_cast<UInt8>(std::min<UInt64>(settings.cross_to_inner_join_rewrite, 2));
     CrossToInnerJoinVisitor(cross_to_inner).visit(query);
 
     JoinToSubqueryTransformVisitor::Data join_to_subs_data{tables, aliases};
@@ -320,6 +321,12 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     }
 
     query_info.original_query = query_ptr->clone();
+
+    if (settings.count_distinct_optimization)
+    {
+        RewriteCountDistinctFunctionMatcher::Data data_rewrite_countdistinct;
+        RewriteCountDistinctFunctionVisitor(data_rewrite_countdistinct).visit(query_ptr);
+    }
 
     JoinedTables joined_tables(getSubqueryContext(context), getSelectQuery(), options.with_all_cols);
 
@@ -619,24 +626,24 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
 void InterpreterSelectQuery::executePutInCache(QueryPlan & query_plan, CacheKey query_cache_key)
 {
-    LOG_DEBUG(&Poco::Logger::get("InterpreterSelectQuery::executePutInCache"), "putting query result in cache ...");
-
     auto settings = context->getSettingsRef();
     bool put_query_result_in_cache = false;
-    if (settings.query_cache_active_usage)
+    QueryCachePtr query_cache = context->getQueryCache();
+
+    if (!settings.query_cache_active_usage)
     {
-        std::lock_guard l(times_executed_mutex);
-        put_query_result_in_cache = ++times_executed[query_cache_key] > settings.min_query_runs_before_caching;
+        return;
     }
-    if (put_query_result_in_cache)
+
+    size_t num_query_runs = query_cache.recordQueryRun(query_cache_key);
+    if (std::lock_guard lock(query_cache.getPutInCacheMutex(), std::try_to_lock);
+        lock.owns_lock() && num_query_runs >= settings.min_query_runs_before_caching)
     {
         auto caching_step = std::make_unique<CachingStep>(query_plan.getCurrentDataStream(),
                                                           context->getQueryCache(), query_cache_key);
-        caching_step->setStepDescription("Cache query result");
+        caching_step->setStepDescription("Put query result in cache");
         query_plan.addStep(std::move(caching_step));
     }
-
-    LOG_DEBUG(&Poco::Logger::get("InterpreterSelectQuery::executePutInCache"), "put query result in cache");
 }
 
 void InterpreterSelectQuery::buildQueryPlan(QueryPlan & query_plan)
@@ -1321,7 +1328,9 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                         query_plan.getCurrentDataStream(),
                         joined_plan->getCurrentDataStream(),
                         expressions.join,
-                        settings.max_block_size);
+                        settings.max_block_size,
+                        max_streams,
+                        analysis_result.optimize_read_in_order);
 
                     join_step->setStepDescription("JOIN");
                     std::vector<QueryPlanPtr> plans;

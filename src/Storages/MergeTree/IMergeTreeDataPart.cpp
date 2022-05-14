@@ -21,7 +21,7 @@
 #include <Common/FieldVisitorsAccurateComparison.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <base/JSON.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <Compression/getCompressionCodecForFile.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/queryToString.h>
@@ -269,16 +269,16 @@ static void incrementTypeMetric(MergeTreeDataPartType type)
 {
     switch (type.getValue())
     {
-        case MergeTreeDataPartType::WIDE:
+        case MergeTreeDataPartType::Wide:
             CurrentMetrics::add(CurrentMetrics::PartsWide);
             return;
-        case MergeTreeDataPartType::COMPACT:
+        case MergeTreeDataPartType::Compact:
             CurrentMetrics::add(CurrentMetrics::PartsCompact);
             return;
-        case MergeTreeDataPartType::IN_MEMORY:
+        case MergeTreeDataPartType::InMemory:
             CurrentMetrics::add(CurrentMetrics::PartsInMemory);
             return;
-        case MergeTreeDataPartType::UNKNOWN:
+        case MergeTreeDataPartType::Unknown:
             return;
     }
 }
@@ -287,16 +287,16 @@ static void decrementTypeMetric(MergeTreeDataPartType type)
 {
     switch (type.getValue())
     {
-        case MergeTreeDataPartType::WIDE:
+        case MergeTreeDataPartType::Wide:
             CurrentMetrics::sub(CurrentMetrics::PartsWide);
             return;
-        case MergeTreeDataPartType::COMPACT:
+        case MergeTreeDataPartType::Compact:
             CurrentMetrics::sub(CurrentMetrics::PartsCompact);
             return;
-        case MergeTreeDataPartType::IN_MEMORY:
+        case MergeTreeDataPartType::InMemory:
             CurrentMetrics::sub(CurrentMetrics::PartsInMemory);
             return;
-        case MergeTreeDataPartType::UNKNOWN:
+        case MergeTreeDataPartType::Unknown:
             return;
     }
 }
@@ -581,9 +581,13 @@ size_t IMergeTreeDataPart::getFileSizeOrZero(const String & file_name) const
     return checksum->second.file_size;
 }
 
-String IMergeTreeDataPart::getColumnNameWithMinimumCompressedSize(const StorageSnapshotPtr & storage_snapshot) const
+String IMergeTreeDataPart::getColumnNameWithMinimumCompressedSize(
+    const StorageSnapshotPtr & storage_snapshot, bool with_subcolumns) const
 {
-    auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical).withExtendedObjects().withSubcolumns();
+    auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical).withExtendedObjects();
+    if (with_subcolumns)
+        options.withSubcolumns();
+
     auto storage_columns = storage_snapshot->getColumns(options);
     MergeTreeData::AlterConversions alter_conversions;
     if (!parent_part)
@@ -954,9 +958,8 @@ void IMergeTreeDataPart::appendFilesOfPartitionAndMinMaxIndex(Strings & files) c
     if (!parent_part)
         partition.appendFiles(storage, files);
 
-    if (!isEmpty())
-        if (!parent_part)
-            minmax_idx->appendFiles(storage, files);
+    if (!parent_part)
+        minmax_idx->appendFiles(storage, files);
 }
 
 void IMergeTreeDataPart::loadChecksums(bool require)
@@ -1016,7 +1019,7 @@ void IMergeTreeDataPart::loadRowsCount()
     {
         rows_count = 0;
     }
-    else if (storage.format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING || part_type == Type::COMPACT || parent_part)
+    else if (storage.format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING || part_type == Type::Compact || parent_part)
     {
         bool exists = metadata_manager->exists("count.txt");
         if (!exists)
@@ -1184,7 +1187,7 @@ void IMergeTreeDataPart::loadColumns(bool require)
     if (!exists)
     {
         /// We can get list of columns only from columns.txt in compact parts.
-        if (require || part_type == Type::COMPACT)
+        if (require || part_type == Type::Compact)
             throw Exception("No columns.txt in part " + name + ", expected path " + path + " on drive " + volume->getDisk()->getName(),
                 ErrorCodes::NO_FILE_IN_DATA_PART);
 
@@ -1412,6 +1415,9 @@ bool IMergeTreeDataPart::assertHasValidVersionMetadata() const
         return false;
 
     if (part_is_probably_removed_from_disk)
+        return true;
+
+    if (state == State::Temporary)
         return true;
 
     DiskPtr disk = volume->getDisk();
@@ -1772,6 +1778,7 @@ String IMergeTreeDataPart::getRelativePathForDetachedPart(const String & prefix)
 void IMergeTreeDataPart::renameToDetached(const String & prefix) const
 {
     renameTo(getRelativePathForDetachedPart(prefix), true);
+    part_is_probably_removed_from_disk = true;
 }
 
 void IMergeTreeDataPart::makeCloneInDetached(const String & prefix, const StorageMetadataPtr & /*metadata_snapshot*/) const
@@ -2058,17 +2065,17 @@ std::unordered_map<String, IMergeTreeDataPart::uint128> IMergeTreeDataPart::chec
 
 bool isCompactPart(const MergeTreeDataPartPtr & data_part)
 {
-    return (data_part && data_part->getType() == MergeTreeDataPartType::COMPACT);
+    return (data_part && data_part->getType() == MergeTreeDataPartType::Compact);
 }
 
 bool isWidePart(const MergeTreeDataPartPtr & data_part)
 {
-    return (data_part && data_part->getType() == MergeTreeDataPartType::WIDE);
+    return (data_part && data_part->getType() == MergeTreeDataPartType::Wide);
 }
 
 bool isInMemoryPart(const MergeTreeDataPartPtr & data_part)
 {
-    return (data_part && data_part->getType() == MergeTreeDataPartType::IN_MEMORY);
+    return (data_part && data_part->getType() == MergeTreeDataPartType::InMemory);
 }
 
 }

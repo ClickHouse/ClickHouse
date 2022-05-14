@@ -229,9 +229,6 @@ private:
     /// Reuse already built sets for multiple passes of analysis, possibly across interpreters.
     SubqueriesForSets subquery_for_sets;
     PreparedSets prepared_sets;
-
-    static std::unordered_map<CacheKey, size_t, CacheKeyHasher> times_executed;
-    static std::mutex times_executed_mutex;
 };
 
 }

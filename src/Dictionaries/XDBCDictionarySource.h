@@ -3,7 +3,7 @@
 #include <IO/ConnectionTimeouts.h>
 #include <Poco/Data/SessionPool.h>
 #include <Poco/URI.h>
-#include <Bridge/XDBCBridgeHelper.h>
+#include <BridgeHelper/XDBCBridgeHelper.h>
 #include "DictionaryStructure.h"
 #include "ExternalQueryBuilder.h"
 #include "IDictionarySource.h"

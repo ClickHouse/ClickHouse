@@ -109,6 +109,21 @@ public:
         current_size += cell.size;
         removeOverflow();
     }
+
+    size_t recordQueryRun(CacheKey cache_key)
+    {
+        std::lock_guard lock(times_executed_mutex);
+        return ++times_executed[cache_key];
+    }
+
+    std::mutex& getPutInCacheMutex() {
+        return put_in_cache_mutex;
+    }
+
+private:
+    std::unordered_map<CacheKey, size_t, CacheKeyHasher> times_executed;
+    std::mutex times_executed_mutex;
+    std::mutex put_in_cache_mutex;
 };
 
 using QueryCachePtr = std::shared_ptr<QueryCache>;
