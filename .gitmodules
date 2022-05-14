@@ -265,3 +265,9 @@
 [submodule "contrib/nmslib"]
 	path = contrib/nmslib
 	url = https://github.com/Vector-Similarity-Search-for-ClickHouse/nmslib.git
+[submodule "contrib/wyhash"]
+	path = contrib/wyhash
+	url = https://github.com/wangyi-fudan/wyhash.git
+[submodule "contrib/eigen"]
+	path = contrib/eigen
+	url = https://github.com/eigen-mirror/eigen
