@@ -10,8 +10,6 @@
 namespace DB
 {
 
-class IOutputFormat;
-
 class QueryPipelineProcessorsCollector;
 
 struct AggregatingTransformParams;
@@ -71,10 +69,6 @@ public:
     void addTotalsHavingTransform(ProcessorPtr transform);
     /// Add transform which calculates extremes. This transform adds extremes port and doesn't change inputs number.
     void addExtremesTransform();
-    /// Resize pipeline to single output and add IOutputFormat. Pipeline will be completed after this transformation.
-    void setOutputFormat(ProcessorPtr output);
-    /// Get current OutputFormat.
-    IOutputFormat * getOutputFormat() const { return output_format; }
     /// Sink is a processor with single input port and no output ports. Creates sink for each output port.
     /// Pipeline will be completed after this transformation.
     void setSinks(const Pipe::ProcessorGetterWithStreamKind & getter);
@@ -163,7 +157,6 @@ public:
 private:
 
     Pipe pipe;
-    IOutputFormat * output_format = nullptr;
 
     /// Limit on the number of threads. Zero means no limit.
     /// Sometimes, more streams are created then the number of threads for more optimal execution.
@@ -173,8 +166,6 @@ private:
 
     void checkInitialized();
     void checkInitializedAndNotCompleted();
-
-    void initRowsBeforeLimit();
 
     void setCollectedProcessors(Processors * processors);
 

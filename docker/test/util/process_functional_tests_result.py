@@ -16,6 +16,7 @@ NO_TASK_TIMEOUT_SIGNS = ["All tests have finished", "No tests were run"]
 
 RETRIES_SIGN = "Some tests were restarted"
 
+
 def process_test_log(log_path):
     total = 0
     skipped = 0
@@ -26,7 +27,7 @@ def process_test_log(log_path):
     retries = False
     task_timeout = True
     test_results = []
-    with open(log_path, 'r') as test_file:
+    with open(log_path, "r") as test_file:
         for line in test_file:
             original_line = line
             line = line.strip()
@@ -36,12 +37,15 @@ def process_test_log(log_path):
                 hung = True
             if RETRIES_SIGN in line:
                 retries = True
-            if any(sign in line for sign in (OK_SIGN, FAIL_SIGN, UNKNOWN_SIGN, SKIPPED_SIGN)):
-                test_name = line.split(' ')[2].split(':')[0]
+            if any(
+                sign in line
+                for sign in (OK_SIGN, FAIL_SIGN, UNKNOWN_SIGN, SKIPPED_SIGN)
+            ):
+                test_name = line.split(" ")[2].split(":")[0]
 
-                test_time = ''
+                test_time = ""
                 try:
-                    time_token = line.split(']')[1].strip().split()[0]
+                    time_token = line.split("]")[1].strip().split()[0]
                     float(time_token)
                     test_time = time_token
                 except:
@@ -66,9 +70,22 @@ def process_test_log(log_path):
             elif len(test_results) > 0 and test_results[-1][1] == "FAIL":
                 test_results[-1][3].append(original_line)
 
-    test_results = [(test[0], test[1], test[2], ''.join(test[3])) for test in test_results]
+    test_results = [
+        (test[0], test[1], test[2], "".join(test[3])) for test in test_results
+    ]
 
-    return total, skipped, unknown, failed, success, hung, task_timeout, retries, test_results
+    return (
+        total,
+        skipped,
+        unknown,
+        failed,
+        success,
+        hung,
+        task_timeout,
+        retries,
+        test_results,
+    )
+
 
 def process_result(result_path):
     test_results = []
@@ -76,16 +93,26 @@ def process_result(result_path):
     description = ""
     files = os.listdir(result_path)
     if files:
-        logging.info("Find files in result folder %s", ','.join(files))
-        result_path = os.path.join(result_path, 'test_result.txt')
+        logging.info("Find files in result folder %s", ",".join(files))
+        result_path = os.path.join(result_path, "test_result.txt")
     else:
         result_path = None
         description = "No output log"
         state = "error"
 
     if result_path and os.path.exists(result_path):
-        total, skipped, unknown, failed, success, hung, task_timeout, retries, test_results = process_test_log(result_path)
-        is_flacky_check = 1 < int(os.environ.get('NUM_TRIES', 1))
+        (
+            total,
+            skipped,
+            unknown,
+            failed,
+            success,
+            hung,
+            task_timeout,
+            retries,
+            test_results,
+        ) = process_test_log(result_path)
+        is_flacky_check = 1 < int(os.environ.get("NUM_TRIES", 1))
         logging.info("Is flacky check: %s", is_flacky_check)
         # If no tests were run (success == 0) it indicates an error (e.g. server did not start or crashed immediately)
         # But it's Ok for "flaky checks" - they can contain just one test for check which is marked as skipped.
@@ -120,20 +147,22 @@ def process_result(result_path):
 
 
 def write_results(results_file, status_file, results, status):
-    with open(results_file, 'w') as f:
-        out = csv.writer(f, delimiter='\t')
+    with open(results_file, "w") as f:
+        out = csv.writer(f, delimiter="\t")
         out.writerows(results)
-    with open(status_file, 'w') as f:
-        out = csv.writer(f, delimiter='\t')
+    with open(status_file, "w") as f:
+        out = csv.writer(f, delimiter="\t")
         out.writerow(status)
 
 
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO, format='%(asctime)s %(message)s')
-    parser = argparse.ArgumentParser(description="ClickHouse script for parsing results of functional tests")
-    parser.add_argument("--in-results-dir", default='/test_output/')
-    parser.add_argument("--out-results-file", default='/test_output/test_results.tsv')
-    parser.add_argument("--out-status-file", default='/test_output/check_status.tsv')
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
+    parser = argparse.ArgumentParser(
+        description="ClickHouse script for parsing results of functional tests"
+    )
+    parser.add_argument("--in-results-dir", default="/test_output/")
+    parser.add_argument("--out-results-file", default="/test_output/test_results.tsv")
+    parser.add_argument("--out-status-file", default="/test_output/check_status.tsv")
     args = parser.parse_args()
 
     state, description, test_results = process_result(args.in_results_dir)

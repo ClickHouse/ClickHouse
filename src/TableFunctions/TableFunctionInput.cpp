@@ -18,6 +18,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int CANNOT_EXTRACT_TABLE_STRUCTURE;
 }
 
 void TableFunctionInput::parseArguments(const ASTPtr & ast_function, ContextPtr context)
@@ -29,6 +30,12 @@ void TableFunctionInput::parseArguments(const ASTPtr & ast_function, ContextPtr 
 
     auto args = function->arguments->children;
 
+    if (args.empty())
+    {
+        structure = "auto";
+        return;
+    }
+
     if (args.size() != 1)
         throw Exception("Table function '" + getName() + "' requires exactly 1 argument: structure",
             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
@@ -38,12 +45,22 @@ void TableFunctionInput::parseArguments(const ASTPtr & ast_function, ContextPtr 
 
 ColumnsDescription TableFunctionInput::getActualTableStructure(ContextPtr context) const
 {
+    if (structure == "auto")
+    {
+        if (structure_hint.empty())
+            throw Exception(
+                ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE,
+                "Table function '{}' was used without structure argument but structure could not be determined automatically. Please, "
+                "provide structure manually",
+                getName());
+        return structure_hint;
+    }
     return parseColumnsListFromString(structure, context);
 }
 
 StoragePtr TableFunctionInput::executeImpl(const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/) const
 {
-    auto storage = StorageInput::create(StorageID(getDatabaseName(), table_name), getActualTableStructure(context));
+    auto storage = std::make_shared<StorageInput>(StorageID(getDatabaseName(), table_name), getActualTableStructure(context));
     storage->startup();
     return storage;
 }

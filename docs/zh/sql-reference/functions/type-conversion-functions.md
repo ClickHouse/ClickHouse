@@ -1,6 +1,6 @@
 ---
-toc_priority: 38
-toc_title: 类型转换函数
+sidebar_position: 38
+sidebar_label: 类型转换函数
 ---
 
 # 类型转换函数 {#lei-xing-zhuan-huan-han-shu}
@@ -439,7 +439,7 @@ AS parseDateTimeBestEffort;
 查询:
 
 ``` sql
-SELECT parseDateTimeBestEffort('Sat, 18 Aug 2018 07:22:16 GMT', 'Europe/Moscow')
+SELECT parseDateTimeBestEffort('Sat, 18 Aug 2018 07:22:16 GMT', 'Asia/Istanbul')
 AS parseDateTimeBestEffort
 ```
 
