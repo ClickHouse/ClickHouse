@@ -52,12 +52,13 @@ with client(name="client1>", log=log) as client1, client(
         "INSERT INTO 01078_window_view_alter_query_watch.mt VALUES (1, '1990/01/01 12:00:06');"
     )
     client2.expect("Ok.")
-    client1.expect("1*" + end_of_block)
+    client1.expect("1" + end_of_block)
     client1.expect("Progress: 1.00 rows.*\)")
     client2.send(
         "ALTER TABLE 01078_window_view_alter_query_watch.wv MODIFY QUERY SELECT count(a) * 2 AS count, tumbleEnd(wid) AS w_end FROM 01078_window_view_alter_query_watch.mt GROUP BY tumble(timestamp, INTERVAL '5' SECOND, 'US/Samoa') AS wid"
     )
     client2.expect("Ok.")
+    client2.expect(prompt)
     client1.expect(prompt)
     client1.send("WATCH 01078_window_view_alter_query_watch.wv")
     client1.expect("Query id" + end_of_block)
@@ -69,7 +70,7 @@ with client(name="client1>", log=log) as client1, client(
         "INSERT INTO 01078_window_view_alter_query_watch.mt VALUES (1, '1990/01/01 12:00:18');"
     )
     client2.expect("Ok.")
-    client1.expect("2*" + end_of_block)
+    client1.expect("2" + end_of_block)
     client1.expect("Progress: 1.00 rows.*\)")
 
     # send Ctrl-C
