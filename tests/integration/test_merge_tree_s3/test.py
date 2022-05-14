@@ -229,7 +229,9 @@ def test_insert_same_partition_and_merge(cluster, merge_vertical, node_name):
     assert (
         node.query("SELECT count(distinct(id)) FROM s3_test FORMAT Values") == "(8192)"
     )
-    wait_for_delete_s3_objects(cluster, FILES_OVERHEAD_PER_PART_WIDE + FILES_OVERHEAD, timeout=45)
+    wait_for_delete_s3_objects(
+        cluster, FILES_OVERHEAD_PER_PART_WIDE + FILES_OVERHEAD, timeout=45
+    )
 
 
 @pytest.mark.parametrize("node_name", ["node"])

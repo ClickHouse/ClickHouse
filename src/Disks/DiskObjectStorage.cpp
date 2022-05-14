@@ -29,7 +29,8 @@ namespace ErrorCodes
     extern const int FILE_DOESNT_EXIST;
     extern const int BAD_FILE_TYPE;
     extern const int MEMORY_LIMIT_EXCEEDED;
-    extern const int SUPPORT_IS_DISABLED;
+    extern const int BAD_ARGUMENTS;
+    extern const int LOGICAL_ERROR;
 }
 
 static String revisionToString(UInt64 revision)

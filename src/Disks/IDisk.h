@@ -290,7 +290,7 @@ public:
 
     virtual bool isReadOnly() const { return false; }
 
-    /// Check if disk is broken. Broken disks will have 0 space and connot be used.
+    /// Check if disk is broken. Broken disks will have 0 space and cannot be used.
     virtual bool isBroken() const { return false; }
 
     /// Invoked when Global Context is shutdown.
