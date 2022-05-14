@@ -1,5 +1,5 @@
 ---
-toc_priority: 220
+sidebar_position: 220
 ---
 
 # simpleLinearRegression {#simplelinearregression}

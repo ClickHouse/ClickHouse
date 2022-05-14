@@ -12,17 +12,17 @@ namespace Poco::Util
 
 namespace DB
 {
+class AccessControl;
 class ConfigReloader;
 
 /// Implementation of IAccessStorage which loads all from users.xml periodically.
 class UsersConfigAccessStorage : public IAccessStorage
 {
 public:
-    static constexpr char STORAGE_TYPE[] = "users.xml";
-    using CheckSettingNameFunction = std::function<void(const std::string_view &)>;
 
-    UsersConfigAccessStorage(const String & storage_name_ = STORAGE_TYPE, const CheckSettingNameFunction & check_setting_name_function_ = {});
-    UsersConfigAccessStorage(const CheckSettingNameFunction & check_setting_name_function_);
+    static constexpr char STORAGE_TYPE[] = "users.xml";
+
+    UsersConfigAccessStorage(const String & storage_name_, const AccessControl & access_control_);
     ~UsersConfigAccessStorage() override;
 
     const char * getStorageType() const override { return STORAGE_TYPE; }
@@ -33,7 +33,6 @@ public:
     bool isPathEqual(const String & path_) const;
 
     void setConfig(const Poco::Util::AbstractConfiguration & config);
-
     void load(const String & users_config_path,
               const String & include_from_path = {},
               const String & preprocessed_dir = {},
@@ -48,7 +47,6 @@ public:
 
 private:
     void parseFromConfig(const Poco::Util::AbstractConfiguration & config);
-
     std::optional<UUID> findImpl(AccessEntityType type, const String & name) const override;
     std::vector<UUID> findAllImpl(AccessEntityType type) const override;
     AccessEntityPtr readImpl(const UUID & id, bool throw_if_not_exists) const override;
@@ -56,9 +54,8 @@ private:
     scope_guard subscribeForChangesImpl(const UUID & id, const OnChangedHandler & handler) const override;
     scope_guard subscribeForChangesImpl(AccessEntityType type, const OnChangedHandler & handler) const override;
 
+    const AccessControl & access_control;
     MemoryAccessStorage memory_storage;
-    CheckSettingNameFunction check_setting_name_function;
-
     String path;
     std::unique_ptr<ConfigReloader> config_reloader;
     mutable std::mutex load_mutex;

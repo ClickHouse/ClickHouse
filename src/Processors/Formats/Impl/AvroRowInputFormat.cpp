@@ -386,8 +386,8 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(avro::Node
         }
         case avro::AVRO_SYMBOLIC:
             return createDeserializeFn(avro::resolveSymbol(root_node), target_type);
-        case avro::AVRO_MAP: [[fallthrough]];
-        case avro::AVRO_RECORD: [[fallthrough]];
+        case avro::AVRO_MAP:
+        case avro::AVRO_RECORD:
         default:
             break;
     }
@@ -924,12 +924,12 @@ void registerInputFormatAvro(FormatFactory & factory)
 
 void registerAvroSchemaReader(FormatFactory & factory)
 {
-    factory.registerSchemaReader("Avro", [](ReadBuffer & buf, const FormatSettings & settings, ContextPtr)
+    factory.registerSchemaReader("Avro", [](ReadBuffer & buf, const FormatSettings & settings)
     {
            return std::make_shared<AvroSchemaReader>(buf, false, settings);
     });
 
-    factory.registerSchemaReader("AvroConfluent", [](ReadBuffer & buf, const FormatSettings & settings, ContextPtr)
+    factory.registerSchemaReader("AvroConfluent", [](ReadBuffer & buf, const FormatSettings & settings)
     {
         return std::make_shared<AvroSchemaReader>(buf, true, settings);
     });

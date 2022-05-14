@@ -25,7 +25,7 @@ int main(int argc, char *argv[])
             ("delay,d",       value<double>()->default_value(1),                "delay between intermediate reports in seconds (set 0 to disable reports)")
             ("iterations,i",  value<size_t>()->default_value(0),                "amount of queries to be executed")
             ("timelimit,t",   value<double>()->default_value(0.),               "stop launch of queries after specified time limit")
-            ("hosts,h",        value<Strings>()->multitoken(),                   "")
+            ("hosts,h",       value<Strings>()->multitoken(),                   "")
             ("continue_on_errors", "continue testing even if a query fails")
             ("reconnect", "establish new connection for every query")
         ;

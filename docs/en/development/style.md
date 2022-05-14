@@ -1,9 +1,10 @@
 ---
-toc_priority: 69
-toc_title: C++ Guide
+sidebar_position: 69
+sidebar_label: C++ Guide
+description: A list of recommendations regarding coding style, naming convention, formatting and more
 ---
 
-# How to Write C++ Code {#how-to-write-c-code}
+# How to Write C++ Code 
 
 ## General Recommendations {#general-recommendations}
 
@@ -404,9 +405,9 @@ enum class CompressionMethod
 };
 ```
 
-**15.** All names must be in English. Transliteration of Russian words is not allowed.
+**15.** All names must be in English. Transliteration of Hebrew words is not allowed.
 
-    not Stroka
+    not T_PAAMAYIM_NEKUDOTAYIM
 
 **16.** Abbreviations are acceptable if they are well known (when you can easily find the meaning of the abbreviation in Wikipedia or in a search engine).
 
@@ -692,6 +693,49 @@ auto s = std::string{"Hello"};
 **1.** Virtual inheritance is not used.
 
 **2.** Exception specifiers from C++03 are not used.
+
+**3.** Constructs which have convenient syntactic sugar in modern C++, e.g.
+
+```
+// Traditional way without syntactic sugar
+template <typename G, typename = std::enable_if_t<std::is_same<G, F>::value, void>> // SFINAE via std::enable_if, usage of ::value
+std::pair<int, int> func(const E<G> & e) // explicitly specified return type
+{
+    if (elements.count(e)) // .count() membership test
+    {
+        // ...
+    }
+
+    elements.erase(
+        std::remove_if(
+            elements.begin(), elements.end(),
+            [&](const auto x){
+                return x == 1;
+            }),
+        elements.end()); // remove-erase idiom
+
+    return std::make_pair(1, 2); // create pair via make_pair()
+}
+
+// With syntactic sugar (C++14/17/20)
+template <typename G>
+requires std::same_v<G, F> // SFINAE via C++20 concept, usage of C++14 template alias
+auto func(const E<G> & e) // auto return type (C++14)
+{
+    if (elements.contains(e)) // C++20 .contains membership test
+    {
+        // ...
+    }
+
+    elements.erase_if(
+        elements,
+        [&](const auto x){
+            return x == 1;
+        }); // C++20 std::erase_if
+
+    return {1, 2}; // or: return std::pair(1, 2); // create pair via initialization list or value initialization (C++17)
+}
+```
 
 ## Platform {#platform}
 

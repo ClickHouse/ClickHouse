@@ -18,7 +18,7 @@ class MemoryWriteBuffer : public WriteBuffer, public IReadableWriteBuffer, boost
 public:
 
     /// Use max_total_size_ = 0 for unlimited storage
-    MemoryWriteBuffer(
+    explicit MemoryWriteBuffer(
         size_t max_total_size_ = 0,
         size_t initial_chunk_size_ = DBMS_DEFAULT_BUFFER_SIZE,
         double growth_rate_ = 2.0,

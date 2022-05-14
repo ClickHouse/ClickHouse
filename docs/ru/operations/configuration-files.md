@@ -1,6 +1,6 @@
 ---
-toc_priority: 50
-toc_title: "Конфигурационные файлы"
+sidebar_position: 50
+sidebar_label: "Конфигурационные файлы"
 ---
 
 
