@@ -558,6 +558,7 @@ def test_migrate_to_restorable_schema(cluster):
         "SELECT sum(id) FROM s3.test FORMAT Values"
     ) == "({})".format(0)
 
+
 @pytest.mark.parametrize("replicated", [False, True])
 @pytest.mark.parametrize("db_atomic", [False, True])
 def test_restore_to_detached(cluster, replicated, db_atomic):
