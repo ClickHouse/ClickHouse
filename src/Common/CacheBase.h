@@ -30,7 +30,7 @@ public:
     using Mapped = TMapped;
     using MappedPtr = std::shared_ptr<Mapped>;
 
-    CacheBase(size_t max_size, size_t max_elements_size = 0) : CacheBase("LRU", max_size, max_elements_size) {}
+    CacheBase(size_t max_size, size_t max_elements_size = 0) : CacheBase("SLRU", max_size, max_elements_size) {}
 
     /// TODO: Rewrite "Args... args" to custom struct with fields for all cache policies.
     template <class... Args>
@@ -194,7 +194,7 @@ private:
 
     std::unique_ptr<CachePolicy> cache_policy;
 
-    inline static const String default_cache_policy_name = "LRU";
+    inline static const String default_cache_policy_name = "SLRU";
 
     std::atomic<size_t> hits{0};
     std::atomic<size_t> misses{0};
