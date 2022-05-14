@@ -74,7 +74,7 @@ struct MergeTreeIndexAggregatorAnnoy final : IMergeTreeIndexAggregator
 };
 
 
-class MergeTreeIndexConditionAnnoy final : public IMergeTreeIndexCondition
+class MergeTreeIndexConditionAnnoy final : public ANNCondition::IMergeTreeIndexConditionAnn
 {
 public:
     MergeTreeIndexConditionAnnoy(
@@ -85,6 +85,8 @@ public:
     bool alwaysUnknownOrTrue() const override;
 
     bool mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule) const override;
+
+    std::vector<size_t> getUsefulRanges(MergeTreeIndexGranulePtr idx_granule) const override;
 
     ~MergeTreeIndexConditionAnnoy() override = default;
 
