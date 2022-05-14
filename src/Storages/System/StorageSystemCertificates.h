@@ -9,9 +9,9 @@ namespace DB
 class Context;
 class Cluster;
 
-/** Implements system table 'clusters'
-  *  that allows to obtain information about available clusters
-  *  (which may be specified in Distributed tables).
+/** Implements system table 'certificates'
+  *  that allows to obtain information about available certificates
+  *  and their sources.
   */
 class StorageSystemCertificates final : public IStorageSystemOneBlock<StorageSystemCertificates>
 {
