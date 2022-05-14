@@ -392,7 +392,7 @@ Chain buildPushingToViewsChain(
     }
     else if (auto * window_view = dynamic_cast<StorageWindowView *>(storage.get()))
     {
-        auto sink = std::make_shared<PushingToWindowViewSink>(window_view->getHeader(), *window_view, storage, context);
+        auto sink = std::make_shared<PushingToWindowViewSink>(window_view->getInputHeader(), *window_view, storage, context);
         sink->setRuntimeData(thread_status, elapsed_counter_ms);
         result_chain.addSource(std::move(sink));
     }

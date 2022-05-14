@@ -104,7 +104,7 @@ Block InterpreterInsertQuery::getSampleBlock(
     if (!query.columns)
     {
         if (auto * window_view = dynamic_cast<StorageWindowView *>(table.get()))
-            return window_view->getHeader();
+            return window_view->getInputHeader();
         else if (no_destination)
             return metadata_snapshot->getSampleBlockWithVirtuals(table->getVirtuals());
         else

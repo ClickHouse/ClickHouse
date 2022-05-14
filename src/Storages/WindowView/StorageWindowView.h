@@ -174,7 +174,9 @@ public:
 
     ASTPtr getSourceTableSelectQuery();
 
-    Block getHeader() const;
+    const Block & getInputHeader() const;
+
+    const Block & getOutputHeader() const;
 
 private:
     Poco::Logger * log;
@@ -191,8 +193,8 @@ private:
     bool is_tumble; // false if is hop
     std::atomic<bool> shutdown_called{false};
     bool has_inner_table{true};
-    mutable Block source_header;
-    mutable Block target_header;
+    mutable Block input_header;
+    mutable Block output_header;
     UInt64 clean_interval_ms;
     const DateLUTImpl * time_zone = nullptr;
     UInt32 max_timestamp = 0;
@@ -265,7 +267,5 @@ private:
     StoragePtr getSourceTable() const;
     StoragePtr getInnerTable() const;
     StoragePtr getTargetTable() const;
-
-    Block getTargetHeader() const;
 };
 }

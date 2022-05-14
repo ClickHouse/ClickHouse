@@ -626,7 +626,7 @@ ASTPtr StorageWindowView::getSourceTableSelectQuery()
     }
 
     auto select_list = std::make_shared<ASTExpressionList>();
-    for (const auto & column_name : source_header.getNames())
+    for (const auto & column_name : getInputHeader().getNames())
         select_list->children.emplace_back(std::make_shared<ASTIdentifier>(column_name));
     modified_select.setExpression(ASTSelectQuery::Expression::SELECT, select_list);
 
@@ -1108,9 +1108,6 @@ StorageWindowView::StorageWindowView(
 
     select_query = query.select->list_of_selects->children.at(0)->clone();
 
-    source_header = InterpreterSelectQuery(select_query->clone(), getContext(), SelectQueryOptions(QueryProcessingStage::FetchColumns))
-                        .getSampleBlock();
-
     String select_database_name = getContext()->getCurrentDatabase();
     String select_table_name;
     auto select_query_tmp = select_query->clone();
@@ -1521,26 +1518,26 @@ void StorageWindowView::dropInnerTableIfAny(bool no_delay, ContextPtr local_cont
     }
 }
 
-Block StorageWindowView::getHeader() const
-{
-    return source_header;
-}
-
-Block StorageWindowView::getTargetHeader() const
+const Block & StorageWindowView::getInputHeader() const
 {
     std::lock_guard lock(sample_block_lock);
-    if (!target_header)
+    if (!input_header)
     {
-        target_header = InterpreterSelectQuery(select_query->clone(), getContext(), SelectQueryOptions(QueryProcessingStage::Complete))
+        input_header = InterpreterSelectQuery(select_query->clone(), getContext(), SelectQueryOptions(QueryProcessingStage::FetchColumns))
                            .getSampleBlock();
-        /// convert all columns to full columns
-        /// in case some of them are constant
-        for (size_t i = 0; i < target_header.columns(); ++i)
-        {
-            target_header.safeGetByPosition(i).column = target_header.safeGetByPosition(i).column->convertToFullColumnIfConst();
-        }
     }
-    return target_header;
+    return input_header;
+}
+
+const Block & StorageWindowView::getOutputHeader() const
+{
+    std::lock_guard lock(sample_block_lock);
+    if (!output_header)
+    {
+        output_header = InterpreterSelectQuery(select_query->clone(), getContext(), SelectQueryOptions(QueryProcessingStage::Complete))
+                           .getSampleBlock();
+    }
+    return output_header;
 }
 
 StoragePtr StorageWindowView::getSourceTable() const
