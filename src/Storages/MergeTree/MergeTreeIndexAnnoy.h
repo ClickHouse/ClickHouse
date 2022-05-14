@@ -3,7 +3,6 @@
 #ifdef ENABLE_ANNOY
 
 #include <Storages/MergeTree/CommonANNIndexes.h>
-#include <Storages/MergeTree/MergeTreeIndices.h>
 
 #include <annoylib.h>
 #include <kissrandom.h>
