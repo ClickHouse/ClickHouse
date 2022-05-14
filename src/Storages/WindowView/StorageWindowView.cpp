@@ -479,7 +479,7 @@ void StorageWindowView::alter(
 
     auto inner_query = initInnerQuery(new_select_query->as<ASTSelectQuery &>(), local_context);
 
-    dropInnerTableIfAny(true, getContext());
+    dropInnerTableIfAny(true, local_context);
 
     /// create inner table
     std::exchange(has_inner_table, true);
