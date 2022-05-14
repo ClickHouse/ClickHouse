@@ -63,9 +63,9 @@ UUID BackupsWorker::startMakingBackup(const ASTPtr & query, const ContextPtr & c
     });
 
     BackupMutablePtr backup;
-    std::shared_ptr<BlockIO> executing_on_cluster;
-    ContextPtr job_context;
+    ContextPtr cloned_context;
     bool on_cluster = !backup_query->cluster.empty();
+    std::shared_ptr<BlockIO> on_cluster_io;
 
     try
     {
@@ -107,6 +107,12 @@ UUID BackupsWorker::startMakingBackup(const ASTPtr & query, const ContextPtr & c
         backup_create_params.backup_coordination = backup_coordination;
         backup = BackupFactory::instance().createBackup(backup_create_params);
 
+        ContextMutablePtr mutable_context;
+        if (on_cluster || backup_settings.async)
+            cloned_context = mutable_context = Context::createCopy(context);
+        else
+            cloned_context = context; /// No need to clone context
+
         if (on_cluster)
         {
             DDLQueryOnClusterParams params;
@@ -114,13 +120,11 @@ UUID BackupsWorker::startMakingBackup(const ASTPtr & query, const ContextPtr & c
             params.only_shard_num = backup_settings.shard_num;
             params.only_replica_num = backup_settings.replica_num;
             params.access_to_check = access_to_check;
-            auto res = executeDDLQueryOnCluster(backup_query, context, params);
-            executing_on_cluster = std::make_shared<BlockIO>(std::move(res));
+            mutable_context->setSetting("distributed_ddl_task_timeout", -1); // No timeout
+            mutable_context->setSetting("distributed_ddl_output_mode", Field{"throw"});
+            auto res = executeDDLQueryOnCluster(backup_query, mutable_context, params);
+            on_cluster_io = std::make_shared<BlockIO>(std::move(res));
         }
-
-        /// If we will make a backup in a separate thread we need to copy the current query context.
-        if (!on_cluster)
-            job_context = backup_settings.async ? Context::createCopy(context) : context;
     }
     catch (...)
     {
@@ -134,14 +138,14 @@ UUID BackupsWorker::startMakingBackup(const ASTPtr & query, const ContextPtr & c
                 backup_query,
                 backup_settings,
                 backup_coordination,
-                executing_on_cluster,
-                job_context](bool in_separate_thread)
+                on_cluster_io,
+                cloned_context](bool in_separate_thread)
     {
         try
         {
-            if (executing_on_cluster)
+            if (on_cluster_io)
             {
-                PullingPipelineExecutor executor(executing_on_cluster->pipeline);
+                PullingPipelineExecutor executor(on_cluster_io->pipeline);
                 Block block;
                 while (executor.pull(block))
                     ;
@@ -151,13 +155,13 @@ UUID BackupsWorker::startMakingBackup(const ASTPtr & query, const ContextPtr & c
             {
                 std::optional<CurrentThread::QueryScope> query_scope;
                 if (in_separate_thread)
-                    query_scope.emplace(job_context);
+                    query_scope.emplace(cloned_context);
 
-                backup_query->setDatabase(job_context->getCurrentDatabase());
+                backup_query->setDatabase(cloned_context->getCurrentDatabase());
 
-                auto timeout_for_preparing = std::chrono::seconds{job_context->getConfigRef().getUInt("backups.backup_prepare_timeout", 0)};
+                auto timeout_for_preparing = std::chrono::seconds{cloned_context->getConfigRef().getInt("backups.backup_prepare_timeout", -1)};
                 auto backup_entries
-                    = makeBackupEntries(job_context, backup_query->elements, backup_settings, backup_coordination, timeout_for_preparing);
+                    = makeBackupEntries(cloned_context, backup_query->elements, backup_settings, backup_coordination, timeout_for_preparing);
                 writeBackupEntries(backup, std::move(backup_entries), backups_thread_pool);
             }
             setStatus(backup_uuid, BackupStatus::BACKUP_COMPLETE);
@@ -194,8 +198,8 @@ UUID BackupsWorker::startRestoring(const ASTPtr & query, ContextMutablePtr conte
             restore_coordination->drop();
     });
 
-    std::shared_ptr<BlockIO> executing_on_cluster;
-    ContextMutablePtr job_context;
+    ContextMutablePtr cloned_context;
+    std::shared_ptr<BlockIO> on_cluster_io;
     bool on_cluster = !restore_query->cluster.empty();
 
     try
@@ -225,6 +229,11 @@ UUID BackupsWorker::startRestoring(const ASTPtr & query, ContextMutablePtr conte
         else
             restore_coordination = std::make_shared<RestoreCoordinationLocal>();
 
+        if (on_cluster || restore_settings.async)
+            cloned_context = Context::createCopy(context);
+        else
+            cloned_context = context; /// No need to clone context
+
         if (on_cluster)
         {
             DDLQueryOnClusterParams params;
@@ -232,13 +241,11 @@ UUID BackupsWorker::startRestoring(const ASTPtr & query, ContextMutablePtr conte
             params.only_shard_num = restore_settings.shard_num;
             params.only_replica_num = restore_settings.replica_num;
             params.access_to_check = access_to_check;
-            auto res = executeDDLQueryOnCluster(restore_query, context, params);
-            executing_on_cluster = std::make_shared<BlockIO>(std::move(res));
+            cloned_context->setSetting("distributed_ddl_task_timeout", -1); // No timeout
+            cloned_context->setSetting("distributed_ddl_output_mode", Field{"throw"});
+            auto res = executeDDLQueryOnCluster(restore_query, cloned_context, params);
+            on_cluster_io = std::make_shared<BlockIO>(std::move(res));
         }
-
-        /// If we will make a backup in a separate thread we need to copy the current query context.
-        if (!on_cluster)
-            job_context = restore_settings.async ? Context::createCopy(context) : context;
     }
     catch (...)
     {
@@ -252,14 +259,14 @@ UUID BackupsWorker::startRestoring(const ASTPtr & query, ContextMutablePtr conte
                 restore_query,
                 restore_settings,
                 restore_coordination,
-                executing_on_cluster,
-                job_context](bool in_separate_thread)
+                on_cluster_io,
+                cloned_context](bool in_separate_thread)
     {
         try
         {
-            if (executing_on_cluster)
+            if (on_cluster_io)
             {
-                PullingPipelineExecutor executor(executing_on_cluster->pipeline);
+                PullingPipelineExecutor executor(on_cluster_io->pipeline);
                 Block block;
                 while (executor.pull(block))
                     ;
@@ -268,22 +275,22 @@ UUID BackupsWorker::startRestoring(const ASTPtr & query, ContextMutablePtr conte
             {
                 std::optional<CurrentThread::QueryScope> query_scope;
                 if (in_separate_thread)
-                    query_scope.emplace(job_context);
+                    query_scope.emplace(cloned_context);
 
-                restore_query->setDatabase(job_context->getCurrentDatabase());
+                restore_query->setDatabase(cloned_context->getCurrentDatabase());
 
                 BackupFactory::CreateParams backup_open_params;
                 backup_open_params.open_mode = IBackup::OpenMode::READ;
-                backup_open_params.context = job_context;
+                backup_open_params.context = cloned_context;
                 backup_open_params.backup_info = backup_info;
                 backup_open_params.base_backup_info = restore_settings.base_backup_info;
                 backup_open_params.password = restore_settings.password;
                 BackupPtr backup = BackupFactory::instance().createBackup(backup_open_params);
 
                 auto timeout_for_restoring_metadata
-                    = std::chrono::seconds{job_context->getConfigRef().getUInt("backups.restore_metadata_timeout", 0)};
+                    = std::chrono::seconds{cloned_context->getConfigRef().getInt("backups.restore_metadata_timeout", -1)};
                 auto restore_tasks = makeRestoreTasks(
-                    job_context, backup, restore_query->elements, restore_settings, restore_coordination, timeout_for_restoring_metadata);
+                    cloned_context, backup, restore_query->elements, restore_settings, restore_coordination, timeout_for_restoring_metadata);
                 restoreMetadata(restore_tasks, restore_settings, restore_coordination, timeout_for_restoring_metadata);
                 restoreData(restore_tasks, restores_thread_pool);
             }
