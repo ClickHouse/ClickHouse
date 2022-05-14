@@ -1,6 +1,8 @@
 #pragma once
 
 #include <Storages/MergeTree/KeyCondition.h>
+#include <Storages/MergeTree/MergeTreeIndices.h>
+#include "base/types.h"
 
 #include <optional>
 #include <vector>
@@ -18,21 +20,17 @@ namespace ANNCondition
     returns false if we can speed up the query, and true otherwise.
     It has only one argument, name of the metric with which index was built.
     There are two main patterns of queries being supported
-
     1) Search query type
-    SELECT * FROM * WHERE DistanceFunc(column, target_vector) < floatLiteral [LIMIT count]
-
+    SELECT * FROM * WHERE DistanceFunc(column, target_vector) < floatLiteral LIMIT count
     2) OrderBy query type
-    SELECT * FROM * WHERE * ORDERBY DistanceFunc(column, target_vector) LIMIT some_length
-
+    SELECT * FROM * WHERE * ORDERBY DistanceFunc(column, target_vector) LIMIT count
+    *Query without LIMIT count is not supported*
     target_vector(should have float coordinates) examples:
         tuple(0.1, 0.1, ...., 0.1) or (0.1, 0.1, ...., 0.1)
         [the word tuple is not needed]
-
     If the query matches one of these two types, than the class extracts useful information
     from the query. If the query has both 1 and 2 types, than we can't speed and alwaysUnknownOrTrue
     returns true.
-
     From matching query it extracts
     * targetVector
     * metricName(DistanceFunction)
@@ -44,7 +42,6 @@ namespace ANNCondition
     * settings str, if query has settings section with new 'ann_index_params' value,
         than you can get the new value(empty by default) calling method getSettingsStr
     * queryHasOrderByClause and queryHasWhereClause return true if query matches the type
-
     Search query type is also recognized for PREWHERE section
 */
 
@@ -82,7 +79,7 @@ public:
     bool queryHasWhereClause() const;
 
     // length's value from LIMIT section, nullopt if not any
-    std::optional<UInt64> getLimitCount() const;
+    UInt64 getLimitCount() const;
 
     // value of 'ann_index_params' if have in SETTINGS section, empty string otherwise
     String getSettingsStr() const;
@@ -165,7 +162,6 @@ private:
     // Traverses the AST of ORDERBY section
     void traverseOrderByAST(const ASTPtr & node, RPN & rpn);
 
-
     // Checks that at least one rpn is matching for index
     // New RPNs for other query types can be added here
     bool matchAllRPNS();
@@ -178,10 +174,6 @@ private:
 
     // Returns true and stores Length if we have valid LIMIT clause in query
     static bool matchRPNLimit(RPN & rpn, LimitExpression & expr);
-
-    // Parses SETTINGS section, stores the new value for 'ann_index_params'
-    void parseSettings(const ASTPtr & node);
-
 
     /* Matches dist function, target vector, column name */
     static bool matchMainParts(RPN::iterator & iter, RPN::iterator & end, ANNExpression & expr, bool & identifier_found);
@@ -203,15 +195,21 @@ private:
 
     // Data extracted from query, in case query has supported type
     ANNExprOpt ann_expr{std::nullopt};
-    LimitExprOpt limit_expr{std::nullopt};
+    UInt64 limit_count{0};
     String ann_index_params; // Empty string if no params
 
     bool order_by_query_type{false};
     bool where_query_type{false};
-    bool has_limit{false};
 
     // true if we have one of two supported query types
     bool index_is_useful{false};
+};
+
+// condition interface for Ann indexes. Returns vector of indexes of ranges in granule which are useful for query.
+class IMergeTreeIndexConditionAnn : public IMergeTreeIndexCondition
+{
+public:
+    virtual std::vector<size_t> getUsefulRanges(MergeTreeIndexGranulePtr idx_granule) const = 0;
 };
 
 }

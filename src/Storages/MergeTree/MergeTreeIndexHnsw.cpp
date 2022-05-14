@@ -308,7 +308,7 @@ bool MergeTreeIndexConditionHnsw::alwaysUnknownOrTrue() const
 
 std::vector<size_t> MergeTreeIndexConditionHnsw::getUsefulRanges(MergeTreeIndexGranulePtr idx_granule) const
 {
-    UInt64 limit = condition.getLimitCount() ? condition.getLimitCount().value() : 1ull;
+    UInt64 limit = condition.getLimitCount();
     std::optional<float> comp_dist
         = condition.queryHasWhereClause() ? std::optional<float>(condition.getComparisonDistance()) : std::nullopt;
     std::vector<float> target_vec = condition.getTargetVector();
@@ -344,7 +344,7 @@ std::vector<size_t> MergeTreeIndexConditionHnsw::getUsefulRanges(MergeTreeIndexG
 
 bool MergeTreeIndexConditionHnsw::mayBeTrueOnGranule(MergeTreeIndexGranulePtr /*idx_granule*/) const
 {
-   throw Exception("Hnsw index is Ann index, so this method is not implemented", ErrorCodes::LOGICAL_ERROR);
+    throw Exception("Hnsw index is Ann index, so this method is not implemented", ErrorCodes::LOGICAL_ERROR);
 }
 
 MergeTreeIndexGranulePtr MergeTreeIndexHnsw::createIndexGranule() const

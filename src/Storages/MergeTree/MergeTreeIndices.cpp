@@ -8,12 +8,15 @@
 
 #include <boost/algorithm/string.hpp>
 
+#ifdef ENABLE_NMSLIB // to extend stack frame size for nmslib library functions
+
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wframe-larger-than="
 #include <init.h>
 #include <logging.h>
 #pragma clang diagnostic pop
 
+#endif
 
 namespace DB
 {

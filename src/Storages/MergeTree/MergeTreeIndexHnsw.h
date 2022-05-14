@@ -6,7 +6,6 @@
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
-#include <Storages/MergeTree/MergeTreeIndicesANNCondition.h>
 #include <method/hnsw.h>
 
 #include <algorithm>
@@ -110,7 +109,7 @@ struct MergeTreeIndexAggregatorHnsw final : IMergeTreeIndexAggregator
     similarity::ObjectVector data;
 };
 
-class MergeTreeIndexConditionHnsw final : public IMergeTreeIndexConditionAnn
+class MergeTreeIndexConditionHnsw final : public ANNCondition::IMergeTreeIndexConditionAnn
 {
 public:
     MergeTreeIndexConditionHnsw(const IndexDescription & index, const SelectQueryInfo & query, ContextPtr context);
