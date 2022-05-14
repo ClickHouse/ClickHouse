@@ -19,13 +19,15 @@ namespace DB
 namespace Annoy
 {
     using AnnoyIndexThreadedBuildPolicy = ::Annoy::AnnoyIndexSingleThreadedBuildPolicy;
+    // TODO: Support different metrics. List of available metrics can be taken from here:
+    // https://github.com/spotify/annoy/blob/master/src/annoymodule.cc#L151-L171
     template <typename Dist = ::Annoy::Euclidean>
     class AnnoyIndexSerialize : public ::Annoy::AnnoyIndex<Int32, Float32, Dist, ::Annoy::Kiss64Random, AnnoyIndexThreadedBuildPolicy>
     {
         using Base = ::Annoy::AnnoyIndex<Int32, Float32, Dist, ::Annoy::Kiss64Random, AnnoyIndexThreadedBuildPolicy>;
     public:
         AnnoyIndexSerialize() = delete;
-        AnnoyIndexSerialize(const int dim) : Base::AnnoyIndex(dim) {}
+        explicit AnnoyIndexSerialize(const int dim) : Base::AnnoyIndex(dim) {}
         void serialize(WriteBuffer& ostr) const;
         void deserialize(ReadBuffer& istr);
         float getSpaceDim() const;
