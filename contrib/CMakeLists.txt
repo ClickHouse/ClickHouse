@@ -151,7 +151,6 @@ add_contrib (s2geometry-cmake s2geometry)
 set (ENABLE_ANNOY_DEFAULT ${ENABLE_LIBRARIES})
 
 if (ENABLE_ANNOY)
-    add_compile_definitions(ENABLE_ANNOY)
     add_contrib (spotify-annoy-cmake spotify-annoy)
 endif()
 

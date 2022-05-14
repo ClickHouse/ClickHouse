@@ -523,6 +523,7 @@ endif()
 
 dbms_target_link_libraries(PUBLIC ch_contrib::consistent_hashing)
 if (ENABLE_ANNOY)
+    add_compile_definitions(ENABLE_ANNOY)
     dbms_target_link_libraries(PUBLIC ch_contrib::spotify-annoy)
 endif()
 
