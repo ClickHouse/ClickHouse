@@ -947,34 +947,29 @@ Examples of working configurations can be found in integration tests directory (
 -   `_partition_value` — Values (a tuple) of a `partition by` expression.
 -   `_sample_factor` — Sample factor (from the query).
 
-# ANN Skip Index {#table_engines-ANNIndex}
+# ANN Skip Index [experimental] {#table_engines-ANNIndex}
 
-`ANNIndexes` are designed to speed up two types of queries
+`ANNIndexes` are designed to speed up two types of queries:
 
-- ######  Type 1: Search 
+- ######  Type 1: Where 
    ``` sql 
-   SELECT * FROM * WHERE 
-   DistanceFunction(Column, TargetVector) < FloatLiteral 
-   LIMIT IntLiteral
+   SELECT * FROM table_name WHERE 
+   DistanceFunction(Column, TargetVector) < Value 
+   LIMIT N
    ```
 - ###### Type 2: OrderBy
   ``` sql
-  SELECT * FROM * [WHERE *] OrderBy
+  SELECT * FROM table_name [WHERE ...] OrderBy
   DistanceFunction(Column, TargetVector) 
-  LIMIT IntLiteral
+  LIMIT N
   ```
 
+In these queries, `DistanceFunction` is selected from tuples of distance functions. `TargetVector` is a known embedding (something like `(0.1, 0.1, ... )`). `Value` - a float value that will bound the neighbourhood.
+
 !!! note "Note"
-    ANNIndex can't speed up query which satisfies to both types.
+    ANNIndex can't speed up query that satisfies both types and they work only for Tuples. All queries must have the limit, as algorithms are used to find nearest neighbors and need a specific number of them.
 
-The speed-up happens due to special algorithms which solve nearest neighbours problem. You can create your table with index which uses certain algorithm. Now only indices based on these algorithms are supported.
-##### Index list
--   IndexName[Link to detailed documentation]
-- 
-- 
-
-Tables in DataBase created with these indices will process queries of mentioned types much faster than ordinary tables. For `Search` type queries, ANNindex filters out useless granules of data while preprocessing them with NN algorithm. The index preprocesses the data and gets granules where the interested data can be.
-`OrderBy` type queries process is easier. The index which finds nearest neighbours directly sorts them during search. 
+Both types of queries are handled the same way. The indexes get `n` neighbors (where `n` is taken from the `LIMIT` section) and work with them. In `ORDER BY` query they remember the numbers of all parts of the granule that have at least one of neighbor. In `WHERE` query they remember only those parts that satisfy the requirements.
 
 ###### Create table with ANNIndex
 ```
@@ -982,16 +977,20 @@ CREATE TABLE t
 (
   `id` Int64,
   `number` Tuple(Float32, Float32, Float32),
-  INDEX x number TYPE annoy GRANULARITY 8192
+  INDEX x number TYPE annoy GRANULARITY N
 )
 ENGINE = MergeTree
 ORDER BY id;
 ```
 
 !!! note "Note"
-    ANNIndexes work only with granularity `8192`.
-
-You build table with ANNindex. The index uses NN solving algorithm, it builds on each granule of data NN solving index which can search the K nearest neighbours for the given vector. Due to these fast look-ups, we can preprocess the data and find useful for the query.
+    ANNIndexes work only when setting `index_granularity=8192`.
     
-!!! note "Note"
-    The inner index based on certain algorithm is built only during updates and insertions into table. That's why `UPDATE` and `INSERT` queries work slower than for ordinary table. We pay high cost for insertion to decrease query process time. So ANNIndex should be used if you have an immutable data and a lot of read-only queries.
+Number of granules in granularity should be large. With greater `GRANULARITY` indexes remember the data structure better. But some indexes can't be built if they don't have enough data, so this granule will always participate in the query. For more information, see the description of indexes.
+
+As the indexes are built only during insertions into table, `INSERT` and `OPTIMIZE` queries are slower than for ordinary table. OAt this stage indexes remember all the information about the given data. ANNIndexes should be used if you have immutable or rarely changed data and many read requests.
+    
+You can create your table with index which uses certain algorithm. Now only indices based on the following algorithms are supported:
+
+##### Index list
+-   
