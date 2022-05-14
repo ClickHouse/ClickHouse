@@ -334,7 +334,12 @@ Poco::Net::SocketAddress makeSocketAddress(const std::string & host, UInt16 port
     return socket_address;
 }
 
-Poco::Net::SocketAddress Server::socketBindListen(Poco::Net::ServerSocket & socket, const std::string & host, UInt16 port, [[maybe_unused]] bool secure) const
+Poco::Net::SocketAddress Server::socketBindListen(
+    const Poco::Util::AbstractConfiguration & config,
+    Poco::Net::ServerSocket & socket,
+    const std::string & host,
+    UInt16 port,
+    [[maybe_unused]] bool secure) const
 {
     auto address = makeSocketAddress(host, port, &logger());
 #if !defined(POCO_CLICKHOUSE_PATCH) || POCO_VERSION < 0x01090100
@@ -347,7 +352,7 @@ Poco::Net::SocketAddress Server::socketBindListen(Poco::Net::ServerSocket & sock
 #if POCO_VERSION < 0x01080000
     socket.bind(address, /* reuseAddress = */ true);
 #else
-    socket.bind(address, /* reuseAddress = */ true, /* reusePort = */ config().getBool("listen_reuse_port", false));
+    socket.bind(address, /* reuseAddress = */ true, /* reusePort = */ config.getBool("listen_reuse_port", false));
 #endif
 
     /// If caller requests any available port from the OS, discover it after binding.
@@ -357,7 +362,7 @@ Poco::Net::SocketAddress Server::socketBindListen(Poco::Net::ServerSocket & sock
         LOG_DEBUG(&logger(), "Requested any available port (port == 0), actual port is {:d}", address.port());
     }
 
-    socket.listen(/* backlog = */ config().getUInt("listen_backlog", 4096));
+    socket.listen(/* backlog = */ config.getUInt("listen_backlog", 4096));
 
     return address;
 }
@@ -1237,7 +1242,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 [&](UInt16 port) -> ProtocolServerAdapter
                 {
                     Poco::Net::ServerSocket socket;
-                    auto address = socketBindListen(socket, listen_host, port);
+                    auto address = socketBindListen(config(), socket, listen_host, port);
                     socket.setReceiveTimeout(config().getUInt64("keeper_server.socket_receive_timeout_sec", DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC));
                     socket.setSendTimeout(config().getUInt64("keeper_server.socket_send_timeout_sec", DBMS_DEFAULT_SEND_TIMEOUT_SEC));
                     return ProtocolServerAdapter(
@@ -1260,7 +1265,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 {
 #if USE_SSL
                     Poco::Net::SecureServerSocket socket;
-                    auto address = socketBindListen(socket, listen_host, port, /* secure = */ true);
+                    auto address = socketBindListen(config(), socket, listen_host, port, /* secure = */ true);
                     socket.setReceiveTimeout(config().getUInt64("keeper_server.socket_receive_timeout_sec", DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC));
                     socket.setSendTimeout(config().getUInt64("keeper_server.socket_send_timeout_sec", DBMS_DEFAULT_SEND_TIMEOUT_SEC));
                     return ProtocolServerAdapter(
@@ -1797,7 +1802,7 @@ void Server::createServers(
         createServer(config, listen_host, port_name, listen_try, start_servers, servers, [&](UInt16 port) -> ProtocolServerAdapter
         {
             Poco::Net::ServerSocket socket;
-            auto address = socketBindListen(socket, listen_host, port);
+            auto address = socketBindListen(config, socket, listen_host, port);
             socket.setReceiveTimeout(settings.http_receive_timeout);
             socket.setSendTimeout(settings.http_send_timeout);
 
@@ -1815,7 +1820,7 @@ void Server::createServers(
         {
 #if USE_SSL
             Poco::Net::SecureServerSocket socket;
-            auto address = socketBindListen(socket, listen_host, port, /* secure = */ true);
+            auto address = socketBindListen(config, socket, listen_host, port, /* secure = */ true);
             socket.setReceiveTimeout(settings.http_receive_timeout);
             socket.setSendTimeout(settings.http_send_timeout);
             return ProtocolServerAdapter(
@@ -1836,7 +1841,7 @@ void Server::createServers(
         createServer(config, listen_host, port_name, listen_try, start_servers, servers, [&](UInt16 port) -> ProtocolServerAdapter
         {
             Poco::Net::ServerSocket socket;
-            auto address = socketBindListen(socket, listen_host, port);
+            auto address = socketBindListen(config, socket, listen_host, port);
             socket.setReceiveTimeout(settings.receive_timeout);
             socket.setSendTimeout(settings.send_timeout);
             return ProtocolServerAdapter(
@@ -1855,7 +1860,7 @@ void Server::createServers(
         createServer(config, listen_host, port_name, listen_try, start_servers, servers, [&](UInt16 port) -> ProtocolServerAdapter
         {
             Poco::Net::ServerSocket socket;
-            auto address = socketBindListen(socket, listen_host, port);
+            auto address = socketBindListen(config, socket, listen_host, port);
             socket.setReceiveTimeout(settings.receive_timeout);
             socket.setSendTimeout(settings.send_timeout);
             return ProtocolServerAdapter(
@@ -1875,7 +1880,7 @@ void Server::createServers(
         {
 #if USE_SSL
             Poco::Net::SecureServerSocket socket;
-            auto address = socketBindListen(socket, listen_host, port, /* secure = */ true);
+            auto address = socketBindListen(config, socket, listen_host, port, /* secure = */ true);
             socket.setReceiveTimeout(settings.receive_timeout);
             socket.setSendTimeout(settings.send_timeout);
             return ProtocolServerAdapter(
@@ -1899,7 +1904,7 @@ void Server::createServers(
         createServer(config, listen_host, port_name, listen_try, start_servers, servers, [&](UInt16 port) -> ProtocolServerAdapter
         {
             Poco::Net::ServerSocket socket;
-            auto address = socketBindListen(socket, listen_host, port);
+            auto address = socketBindListen(config, socket, listen_host, port);
             socket.setReceiveTimeout(settings.http_receive_timeout);
             socket.setSendTimeout(settings.http_send_timeout);
             return ProtocolServerAdapter(
@@ -1919,7 +1924,7 @@ void Server::createServers(
         {
 #if USE_SSL
             Poco::Net::SecureServerSocket socket;
-            auto address = socketBindListen(socket, listen_host, port, /* secure = */ true);
+            auto address = socketBindListen(config, socket, listen_host, port, /* secure = */ true);
             socket.setReceiveTimeout(settings.http_receive_timeout);
             socket.setSendTimeout(settings.http_send_timeout);
             return ProtocolServerAdapter(
@@ -1943,7 +1948,7 @@ void Server::createServers(
         createServer(config, listen_host, port_name, listen_try, start_servers, servers, [&](UInt16 port) -> ProtocolServerAdapter
         {
             Poco::Net::ServerSocket socket;
-            auto address = socketBindListen(socket, listen_host, port, /* secure = */ true);
+            auto address = socketBindListen(config, socket, listen_host, port, /* secure = */ true);
             socket.setReceiveTimeout(Poco::Timespan());
             socket.setSendTimeout(settings.send_timeout);
             return ProtocolServerAdapter(
@@ -1957,7 +1962,7 @@ void Server::createServers(
         createServer(config, listen_host, port_name, listen_try, start_servers, servers, [&](UInt16 port) -> ProtocolServerAdapter
         {
             Poco::Net::ServerSocket socket;
-            auto address = socketBindListen(socket, listen_host, port, /* secure = */ true);
+            auto address = socketBindListen(config, socket, listen_host, port, /* secure = */ true);
             socket.setReceiveTimeout(Poco::Timespan());
             socket.setSendTimeout(settings.send_timeout);
             return ProtocolServerAdapter(
@@ -1985,7 +1990,7 @@ void Server::createServers(
         createServer(config, listen_host, port_name, listen_try, start_servers, servers, [&](UInt16 port) -> ProtocolServerAdapter
         {
             Poco::Net::ServerSocket socket;
-            auto address = socketBindListen(socket, listen_host, port);
+            auto address = socketBindListen(config, socket, listen_host, port);
             socket.setReceiveTimeout(settings.http_receive_timeout);
             socket.setSendTimeout(settings.http_send_timeout);
             return ProtocolServerAdapter(

@@ -24,12 +24,11 @@ namespace ErrorCodes
 /// Is the [I]LIKE expression reduced to finding a substring in a string?
 static inline bool likePatternIsStrstr(const String & pattern, String & res)
 {
-    res = "";
-
     if (pattern.size() < 2 || pattern.front() != '%' || pattern.back() != '%')
         return false;
 
-    res.reserve(pattern.size() * 2);
+    res = "";
+    res.reserve(pattern.size() - 2);
 
     const char * pos = pattern.data();
     const char * end = pos + pattern.size();
@@ -81,7 +80,7 @@ struct MatchImpl
     static void vectorConstant(
         const ColumnString::Chars & data,
         const ColumnString::Offsets & offsets,
-        const std::string & pattern,
+        const String & pattern,
         const ColumnPtr & start_pos,
         PaddedPODArray<UInt8> & res)
     {
@@ -92,14 +91,13 @@ struct MatchImpl
         if (offsets.empty())
             return;
 
-        String strstr_pattern;
-
         /// A simple case where the [I]LIKE expression reduces to finding a substring in a string
+        String strstr_pattern;
         if (like && likePatternIsStrstr(pattern, strstr_pattern))
         {
-            const UInt8 * begin = data.data();
+            const UInt8 * const begin = data.data();
+            const UInt8 * const end = data.data() + data.size();
             const UInt8 * pos = begin;
-            const UInt8 * end = pos + data.size();
 
             /// The current index in the array of strings.
             size_t i = 0;
@@ -137,7 +135,7 @@ struct MatchImpl
 
             auto regexp = Regexps::get<like, true, case_insensitive>(pattern);
 
-            std::string required_substring;
+            String required_substring;
             bool is_trivial;
             bool required_substring_is_prefix; /// for `anchored` execution of the regexp.
 
@@ -172,9 +170,9 @@ struct MatchImpl
             {
                 /// NOTE This almost matches with the case of LikePatternIsStrstr.
 
-                const UInt8 * begin = data.data();
+                const UInt8 * const begin = data.data();
+                const UInt8 * const end = data.begin() + data.size();
                 const UInt8 * pos = begin;
-                const UInt8 * end = pos + data.size();
 
                 /// The current index in the array of strings.
                 size_t i = 0;
@@ -230,6 +228,7 @@ struct MatchImpl
                     ++i;
                 }
 
+                /// Tail, in which there can be no substring.
                 if (i < res.size())
                     memset(&res[i], revert, (res.size() - i) * sizeof(res[0]));
             }
@@ -238,14 +237,14 @@ struct MatchImpl
 
     /// Very carefully crafted copy-paste.
     static void vectorFixedConstant(
-        const ColumnString::Chars & data, size_t n, const std::string & pattern,
+        const ColumnString::Chars & data, size_t n, const String & pattern,
         PaddedPODArray<UInt8> & res)
     {
         if (data.empty())
             return;
 
-        String strstr_pattern;
         /// A simple case where the LIKE expression reduces to finding a substring in a string
+        String strstr_pattern;
         if (like && likePatternIsStrstr(pattern, strstr_pattern))
         {
             const UInt8 * begin = data.data();
@@ -291,9 +290,9 @@ struct MatchImpl
         {
             size_t size = data.size() / n;
 
-            auto regexp = Regexps::get<like, true>(pattern);
+            auto regexp = Regexps::get<like, true, case_insensitive>(pattern);
 
-            std::string required_substring;
+            String required_substring;
             bool is_trivial;
             bool required_substring_is_prefix; /// for `anchored` execution of the regexp.
 
