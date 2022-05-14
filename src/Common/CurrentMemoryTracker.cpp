@@ -77,10 +77,10 @@ void allocNoThrow(Int64 size)
 void realloc(Int64 old_size, Int64 new_size)
 {
     Int64 addition = new_size - old_size;
-    addition > 0 ? alloc(addition) : free(-addition);
+    addition > 0 ? alloc(addition) : free_memory(-addition);
 }
 
-void free(Int64 size)
+void free_memory(Int64 size)
 {
     if (auto * memory_tracker = getMemoryTracker())
     {

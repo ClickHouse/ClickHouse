@@ -44,7 +44,7 @@ struct AllocatorWithMemoryTracking
         free(p);
 
         size_t bytes = n * sizeof(T);
-        CurrentMemoryTracker::free(bytes);
+        CurrentMemoryTracker::free_memory(bytes);
     }
 };
 

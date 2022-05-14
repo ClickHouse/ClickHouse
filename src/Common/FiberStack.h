@@ -77,6 +77,6 @@ public:
         ::munmap(vp, sctx.size);
 
         /// Do not count guard page in memory usage.
-        CurrentMemoryTracker::free(sctx.size - page_size);
+        CurrentMemoryTracker::free_memory(sctx.size - page_size);
     }
 };

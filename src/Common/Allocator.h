@@ -103,7 +103,7 @@ public:
         {
             checkSize(size);
             freeNoTrack(buf, size);
-            CurrentMemoryTracker::free(size);
+            CurrentMemoryTracker::free_memory(size);
         }
         catch (...)
         {

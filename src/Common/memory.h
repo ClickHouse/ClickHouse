@@ -14,9 +14,9 @@
 #    include <jemalloc/jemalloc.h>
 #endif
 
-#if defined(USE_MIMALLOC)
+#if defined(USE_MIMALLOC) && USE_MIMALLOC
 # pragma message "Use mimalloc"
-#    include <mimalloc.h>
+#    include <mimalloc-override.h>
 #endif
 
 #if !defined(USE_JEMALLOC) && !defined(USE_MIMALLOC)
@@ -37,17 +37,17 @@ requires DB::OptionalArgument<TAlign...>
 inline ALWAYS_INLINE void * newImpl(std::size_t size, TAlign... align)
 {
     void * ptr = nullptr;
-    if constexpr (sizeof...(TAlign) == 1)
-#if USE_MIMALLOC
-        ptr = mi_aligned_alloc(alignToSizeT(align...), size);
-    else
-        ptr = mi_malloc(size);
-#else
+// #if USE_MIMALLOC
+//     if constexpr (sizeof...(TAlign) == 1)
+//         ptr = mi_aligned_alloc(alignToSizeT(align...), size);
+//     else
+//         ptr = mi_malloc(size);
+// #else
     if constexpr (sizeof...(TAlign) == 1)
         ptr = aligned_alloc(alignToSizeT(align...), size);
     else
         ptr = malloc(size);
-#endif
+// #endif
 
     if (likely(ptr != nullptr))
         return ptr;
@@ -58,29 +58,29 @@ inline ALWAYS_INLINE void * newImpl(std::size_t size, TAlign... align)
 
 inline ALWAYS_INLINE void * newNoExept(std::size_t size) noexcept
 {
-#if USE_MIMALLOC
-    return mi_malloc(size);
-#else
+// #if USE_MIMALLOC
+//     return mi_malloc(size);
+// #else
     return malloc(size);
-#endif
+// #endif
 }
 
 inline ALWAYS_INLINE void * newNoExept(std::size_t size, std::align_val_t align) noexcept
 {
-#if USE_MIMALLOC
-    return mi_aligned_alloc(static_cast<size_t>(align), size);
-#else
+// #if USE_MIMALLOC
+//     return mi_aligned_alloc(static_cast<size_t>(align), size);
+// #else
     return aligned_alloc(static_cast<size_t>(align), size);
-#endif
+// #endif
 }
 
 inline ALWAYS_INLINE void deleteImpl(void * ptr) noexcept
 {
-#if USE_MIMALLOC
-    mi_free(ptr);
-#else
+// #if USE_MIMALLOC
+//     mi_free(ptr);
+// #else
     free(ptr);
-#endif
+// #endif
 }
 
 #if USE_JEMALLOC
@@ -104,11 +104,11 @@ template <std::same_as<std::align_val_t>... TAlign>
 requires DB::OptionalArgument<TAlign...>
 inline ALWAYS_INLINE void deleteSized(void * ptr, std::size_t size [[maybe_unused]], TAlign... /* align */) noexcept
 {
-#if USE_MIMALLOC
-    mi_free(ptr);
-#else
+// #if USE_MIMALLOC
+//     mi_free(ptr);
+// #else
     free(ptr);
-#endif
+// #endif
 }
 
 #endif
@@ -160,20 +160,23 @@ inline ALWAYS_INLINE void untrackMemory(void * ptr [[maybe_unused]], std::size_t
         if (likely(ptr != nullptr))
         {
             if constexpr (sizeof...(TAlign) == 1)
-                CurrentMemoryTracker::free(sallocx(ptr, MALLOCX_ALIGN(alignToSizeT(align...))));
+                CurrentMemoryTracker::free_memory(sallocx(ptr, MALLOCX_ALIGN(alignToSizeT(align...))));
             else
-                CurrentMemoryTracker::free(sallocx(ptr, 0));
+                CurrentMemoryTracker::free_memory(sallocx(ptr, 0));
         }
 #else
         if (size)
-            CurrentMemoryTracker::free(size);
-#    if defined(_GNU_SOURCE) && !USE_MIMALLOC
+            CurrentMemoryTracker::free_memory(size);
+#    if defined(_GNU_SOURCE) || USE_MIMALLOC
+#    pragma message "defined(_GNU_SOURCE) || USE_MIMALLOC == true"
         /// It's innaccurate resource free for sanitizers. malloc_usable_size() result is greater or equal to allocated size.
         else
-            CurrentMemoryTracker::free(malloc_usable_size(ptr));
+            CurrentMemoryTracker::free_memory(malloc_usable_size(ptr));
 // #    elif USE_MIMALLOC
 //         else
-//             CurrentMemoryTracker::free(mi_malloc_usable_size(ptr));
+//             CurrentMemoryTracker::free_memory(mi_malloc_usable_size(ptr));
+#    else
+#    pragma message "defined(_GNU_SOURCE) || USE_MIMALLOC == false"
 #    endif
 #endif
     }
