@@ -5,7 +5,6 @@
 
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
 #include <Disks/RemoteDisksCommon.h>
-#include <Disks/IO/ReadBufferFromRemoteFSGather.h>
 #include <Disks/IO/AsynchronousReadIndirectBufferFromRemoteFS.h>
 #include <Disks/IO/ReadIndirectBufferFromRemoteFS.h>
 #include <Disks/IO/WriteIndirectBufferFromRemoteFS.h>
@@ -287,7 +286,7 @@ ObjectMetadata S3ObjectStorage::getObjectMetadata(const std::string & path) cons
     return result;
 }
 
-void S3ObjectStorage::copyObjectToAnotherObjectStorage(const std::string & object_from, const std::string & object_to, IObjectStorage & object_storage_to, std::optional<ObjectAttributes> object_to_attributes)
+void S3ObjectStorage::copyObjectToAnotherObjectStorage(const std::string & object_from, const std::string & object_to, IObjectStorage & object_storage_to, std::optional<ObjectAttributes> object_to_attributes) // NOLINT
 {
     /// Shortcut for S3
     if (auto * dest_s3 = dynamic_cast<S3ObjectStorage * >(&object_storage_to); dest_s3 != nullptr)
@@ -399,7 +398,7 @@ void S3ObjectStorage::copyObjectMultipartImpl(const String & src_bucket, const S
     }
 }
 
-void S3ObjectStorage::copyObject(const std::string & object_from, const std::string & object_to, std::optional<ObjectAttributes> object_to_attributes)
+void S3ObjectStorage::copyObject(const std::string & object_from, const std::string & object_to, std::optional<ObjectAttributes> object_to_attributes) // NOLINT
 {
     auto head = requestObjectHeadData(bucket, object_from).GetResult();
     if (head.GetContentLength() >= static_cast<int64_t>(5UL * 1024 * 1024 * 1024))

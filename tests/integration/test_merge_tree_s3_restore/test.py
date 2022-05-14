@@ -88,6 +88,8 @@ def generate_values(date_str, count, sign=1):
 def create_table(
     node, table_name, attach=False, replicated=False, db_atomic=False, uuid=""
 ):
+    node.query("DROP DATABASE IF EXISTS s3")
+
     node.query(
         "CREATE DATABASE IF NOT EXISTS s3 ENGINE = {engine}".format(
             engine="Atomic" if db_atomic else "Ordinary"
@@ -501,8 +503,8 @@ def test_restore_mutations(cluster, db_atomic):
     ) == "({})".format(4096)
 
 
-@pytest.mark.parametrize("db_atomic", [False, True])
-def test_migrate_to_restorable_schema(cluster, db_atomic):
+def test_migrate_to_restorable_schema(cluster):
+    db_atomic = True
     node = cluster.instances["node_not_restorable"]
 
     create_table(node, "test", db_atomic=db_atomic)
@@ -555,7 +557,6 @@ def test_migrate_to_restorable_schema(cluster, db_atomic):
     assert node_another_bucket.query(
         "SELECT sum(id) FROM s3.test FORMAT Values"
     ) == "({})".format(0)
-
 
 @pytest.mark.parametrize("replicated", [False, True])
 @pytest.mark.parametrize("db_atomic", [False, True])

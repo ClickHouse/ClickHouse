@@ -315,7 +315,7 @@ public:
     void restore(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, ContextPtr context);
     void readRestoreInformation(RestoreInformation & restore_information);
     void restoreFiles(IObjectStorage * source_object_storage, const RestoreInformation & restore_information);
-    void processRestoreFiles(IObjectStorage * source_object_storage, const String & source_path, const std::vector<String> & keys);
+    void processRestoreFiles(IObjectStorage * source_object_storage, const String & source_path, const std::vector<String> & keys) const;
     void restoreFileOperations(IObjectStorage * source_object_storage, const RestoreInformation & restore_information);
 
     std::atomic<UInt64> revision_counter = 0;
