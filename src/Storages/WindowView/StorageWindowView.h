@@ -180,11 +180,15 @@ private:
     /// Used to fetch the mergeable state and generate the final result. e.g. SELECT * FROM * GROUP BY tumble(____timestamp, *)
     ASTPtr final_query;
 
+    /// Used to fetch the data from inner storage.
+    ASTPtr inner_fetch_query;
+
     bool is_proctime{true};
     bool is_time_column_func_now;
     bool is_tumble; // false if is hop
     std::atomic<bool> shutdown_called{false};
     bool has_inner_table{true};
+    bool inner_target_table{false};
     mutable Block sample_block;
     UInt64 clean_interval_ms;
     const DateLUTImpl * time_zone = nullptr;
@@ -253,7 +257,6 @@ private:
     void updateMaxTimestamp(UInt32 timestamp);
 
     ASTPtr getFinalQuery() const { return final_query->clone(); }
-    ASTPtr getFetchColumnQuery(UInt32 w_start, UInt32 w_end) const;
 
     StoragePtr getParentStorage() const;
 

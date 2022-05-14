@@ -39,7 +39,7 @@ with client(name="client1>", log=log) as client1, client(
     )
     client1.expect(prompt)
     client1.send(
-        "CREATE WINDOW VIEW 01056_window_view_proc_hop_watch.wv AS SELECT count(a) AS count FROM 01056_window_view_proc_hop_watch.mt GROUP BY hop(timestamp, INTERVAL '1' SECOND, INTERVAL '1' SECOND, 'US/Samoa') AS wid;"
+        "CREATE WINDOW VIEW 01056_window_view_proc_hop_watch.wv ENGINE Memory AS SELECT count(a) AS count FROM 01056_window_view_proc_hop_watch.mt GROUP BY hop(timestamp, INTERVAL '1' SECOND, INTERVAL '1' SECOND, 'US/Samoa') AS wid;"
     )
     client1.expect(prompt)
 
