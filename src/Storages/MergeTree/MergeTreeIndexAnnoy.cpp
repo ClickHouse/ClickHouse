@@ -1,23 +1,11 @@
 #ifdef ENABLE_ANNOY
 
 #include <Storages/MergeTree/MergeTreeIndexAnnoy.h>
+
+#include <Common/typeid_cast.h>
+#include <Core/Field.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include <Common/FieldVisitorsAccurateComparison.h>
-#include <Common/typeid_cast.h>
-#include <Parsers/ASTFunction.h>
-
-#include <Poco/Logger.h>
-#include <base/logger_useful.h>
-
-#include "Core/Field.h"
-#include "Interpreters/Context_fwd.h"
-#include "MergeTreeIndices.h"
-#include "KeyCondition.h"
-#include "Parsers/ASTIdentifier.h"
-#include "Parsers/ASTSelectQuery.h"
-#include "Parsers/IAST_fwd.h"
-#include "Storages/SelectQueryInfo.h"
 #include "base/types.h"
 
 
@@ -186,41 +174,9 @@ MergeTreeIndexConditionAnnoy::MergeTreeIndexConditionAnnoy(
 {}
 
 
-bool MergeTreeIndexConditionAnnoy::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule) const
+bool MergeTreeIndexConditionAnnoy::mayBeTrueOnGranule(MergeTreeIndexGranulePtr /* idx_granule */) const
 {
-    auto granule = std::dynamic_pointer_cast<MergeTreeIndexGranuleAnnoy>(idx_granule);
-    if (granule == nullptr)
-    {
-        throw Exception("Granule has the wrong type", ErrorCodes::LOGICAL_ERROR);
-    }
-    auto annoy = granule->index_base;
-
-    if (condition.getSpaceDim() != annoy->getSpaceDim())
-    {
-        throw Exception("The dimension of the space in the request (" + toString(condition.getSpaceDim()) + ") "
-            + "does not match with the dimension in the index (" + toString(annoy->getSpaceDim()) + ")", ErrorCodes::INCORRECT_QUERY);
-    }
-    std::vector<float> target_vec = condition.getTargetVector();
-    float max_distance = condition.getComparisonDistance();
-
-    std::vector<int32_t> items;
-    std::vector<float> dist;
-
-    int k_search = -1;
-    auto settings_str = condition.getSettingsStr();
-    if (!settings_str.empty())
-    {
-        try
-        {
-            k_search = std::stoi(settings_str);
-        }
-        catch (...)
-        {
-            throw Exception("Setting of the annoy index should be int", ErrorCodes::INCORRECT_QUERY);
-        }
-    }
-    annoy->get_nns_by_vector(&target_vec[0], 1, k_search, &items, &dist);
-    return dist[0] < max_distance;
+    throw Exception("mayBeTrueOnGranule is not supported for ANN skip indexes", ErrorCodes::LOGICAL_ERROR);
 }
 
 bool MergeTreeIndexConditionAnnoy::alwaysUnknownOrTrue() const
