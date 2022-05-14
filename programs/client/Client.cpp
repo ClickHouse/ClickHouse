@@ -1126,7 +1126,12 @@ void Client::processOptions(const OptionsDescription & options_description,
     {
         const auto & name = setting.getName();
         if (options.count(name))
-            config().setString(name, options[name].as<String>());
+        {
+            if (allow_repeated_settings)
+                config().setString(name, options[name].as<Strings>().back());
+            else
+                config().setString(name, options[name].as<String>());
+        }
     }
 
     if (options.count("config-file") && options.count("config"))
