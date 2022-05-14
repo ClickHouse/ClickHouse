@@ -1,4 +1,5 @@
 #include <Common/config.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Storages/System/StorageSystemCertificates.h>
@@ -19,17 +20,16 @@ NamesAndTypesList StorageSystemCertificates::getNamesAndTypes()
 {
     return
     {
-        {"version", std::make_shared<DataTypeString>()},
-        {"serial_number", std::make_shared<DataTypeString>()},
-        {"signature_algo", std::make_shared<DataTypeString>()},
-//        {"signature", std::make_shared<DataTypeString>()},
-        {"issuer", std::make_shared<DataTypeString>()},
-        {"not_before", std::make_shared<DataTypeString>()},
-        {"not_after", std::make_shared<DataTypeString>()},
-        {"subject", std::make_shared<DataTypeString>()},
-        {"pkey_algo", std::make_shared<DataTypeString>()},
-        {"path", std::make_shared<DataTypeString>()},
-        {"default", std::make_shared<DataTypeNumber<UInt8>>()}
+        {"version",         std::make_shared<DataTypeNumber<Int32>>()},
+        {"serial_number",   std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())},
+        {"signature_algo",  std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())},
+        {"issuer",          std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())},
+        {"not_before",      std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())},
+        {"not_after",       std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())},
+        {"subject",         std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())},
+        {"pkey_algo",       std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())},
+        {"path",            std::make_shared<DataTypeString>()},
+        {"default",         std::make_shared<DataTypeNumber<UInt8>>()}
     };
 }
 
@@ -62,99 +62,94 @@ static std::unordered_set<std::string> parse_dir(const std::string & dir)
     return ret;
 }
 
-/*
-static std::string hex_dump(const unsigned char *buf, size_t len)
-{
-    if (!buf)
-        return "";
-    WriteBufferFromOwnString ss;
-    ss << std::hex << std::setfill('0') << std::uppercase;
-    for (size_t i = 0; i < len; ++i)
-        ss << std::setw(2) << static_cast<unsigned>(buf[i]);
-
-    return ss.str();
-}
-*/
-
 static void populateTable(const X509 * cert, MutableColumns & res_columns, const std::string & path, bool def)
 {
     BIO * b = BIO_new(BIO_s_mem());
     size_t col = 0;
 
-    res_columns[col++]->insert(std::to_string(X509_get_version(cert) + 1));
+    res_columns[col++]->insert(X509_get_version(cert) + 1);
 
     {
+        char buf[1024] = {0};
         const ASN1_INTEGER * sn = cert->cert_info->serialNumber;
         BIGNUM * bnsn = ASN1_INTEGER_to_BN(sn, nullptr);
-        char buf[1024] = {0};
-        if (BN_print(b, bnsn) > 0)
-            res_columns[col++]->insert(buf);
+        if (BN_print(b, bnsn) > 0 && BIO_read(b, buf, sizeof(buf)) > 0)
+            res_columns[col]->insert(buf);
+        else
+            res_columns[col]->insert(Field());
         BN_free(bnsn);
     }
-
+    ++col;
 
     {
         const ASN1_BIT_STRING *sig = nullptr;
         const X509_ALGOR *al = nullptr;
         char buf[1024] = {0};
         X509_get0_signature(&sig, &al, cert);
-        OBJ_obj2txt(buf, sizeof(buf), al->algorithm, 0);
-        res_columns[col++]->insert(buf);
-        // res_columns[col++]->insert(hex_dump(sig->data, sig->length));
+        if (al)
+        {
+            OBJ_obj2txt(buf, sizeof(buf), al->algorithm, 0);
+            res_columns[col]->insert(buf);
+        }
+        else
+            res_columns[col]->insert(Field());
     }
-
+    ++col;
 
     char * issuer = X509_NAME_oneline(cert->cert_info->issuer, nullptr, 0);
     if (issuer)
     {
-        res_columns[col++]->insert(issuer);
+        res_columns[col]->insert(issuer);
         OPENSSL_free(issuer);
     }
+    else
+        res_columns[col]->insert(Field());
+    ++col;
 
-    // strange artefact - we need to make this read or else next read will contane garbage
-    if (ASN1_TIME_print(b, X509_get_notBefore(cert)))
     {
         char buf[1024] = {0};
-        BIO_read(b, buf, sizeof(buf));
+        if (ASN1_TIME_print(b, X509_get_notBefore(cert)) && BIO_read(b, buf, sizeof(buf)) > 0)
+            res_columns[col]->insert(buf);
+        else
+            res_columns[col]->insert(Field());
     }
+    ++col;
 
-    if (ASN1_TIME_print(b, X509_get_notBefore(cert)))
     {
         char buf[1024] = {0};
-        BIO_read(b, buf, sizeof(buf));
-        res_columns[col++]->insert(buf);
+        if (ASN1_TIME_print(b, X509_get_notAfter(cert)) && BIO_read(b, buf, sizeof(buf)) > 0)
+            res_columns[col]->insert(buf);
+        else
+            res_columns[col]->insert(Field());
     }
-
-    if (ASN1_TIME_print(b, X509_get_notAfter(cert)))
-    {
-        char buf[1024] = {0};
-        BIO_read(b, buf, sizeof(buf));
-        res_columns[col++]->insert(buf);
-    }
+    ++col;
 
     char * subject = X509_NAME_oneline(cert->cert_info->subject, nullptr, 0);
     if (subject)
     {
-        res_columns[col++]->insert(subject);
+        res_columns[col]->insert(subject);
         OPENSSL_free(subject);
     }
+    else
+        res_columns[col]->insert(Field());
+    ++col;
 
     if (X509_PUBKEY * pkey = X509_get_X509_PUBKEY(cert))
     {
+        char buf[1024] = {0};
         ASN1_OBJECT *ppkalg = nullptr;
         const unsigned char *pk = nullptr;
         int ppklen = 0;
         X509_ALGOR *pa = nullptr;
-        if (X509_PUBKEY_get0_param(&ppkalg, &pk, &ppklen, &pa, pkey))
-        {
-            if (i2a_ASN1_OBJECT(b, ppkalg) > 0)
-            {
-                char buf[1024] = {0};
-                BIO_read(b, buf, sizeof(buf));
-                res_columns[col++]->insert(buf);
-            }
-        }
+        if (X509_PUBKEY_get0_param(&ppkalg, &pk, &ppklen, &pa, pkey) &&
+            i2a_ASN1_OBJECT(b, ppkalg) > 0 && BIO_read(b, buf, sizeof(buf)) > 0)
+                res_columns[col]->insert(buf);
+        else
+            res_columns[col]->insert(Field());
     }
+    else
+        res_columns[col]->insert(Field());
+    ++col;
 
     res_columns[col++]->insert(path);
     res_columns[col++]->insert(def);
