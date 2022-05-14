@@ -1,10 +1,11 @@
 #pragma once
 
-#include <Common/FileCache.h>
+#include <Common/IFileCache.h>
+#include <Common/FileSegment.h>
+#include <Common/logger_useful.h>
 #include <IO/SeekableReadBuffer.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/ReadSettings.h>
-#include <Common/logger_useful.h>
 #include <Interpreters/FilesystemCacheLog.h>
 
 

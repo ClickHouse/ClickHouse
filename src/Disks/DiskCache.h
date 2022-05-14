@@ -5,9 +5,13 @@
 #include "DiskDecorator.h"
 #include <Common/FileCache_fwd.h>
 
+namespace Poco
+{
+class Logger;
+}
+
 namespace DB
 {
-struct FileDownloadMetadata;
 
 class DiskCache : public DiskDecorator
 {
@@ -48,6 +52,8 @@ private:
     String cache_base_path;
 
     FileCachePtr cache;
+
+    Poco::Logger * log;
 };
 
 }

@@ -3,7 +3,6 @@
 #if USE_AWS_S3
 
 #include <Common/logger_useful.h>
-#include <Common/FileCache.h>
 
 #include <IO/WriteBufferFromS3.h>
 #include <IO/WriteHelpers.h>
@@ -42,7 +41,6 @@ struct WriteBufferFromS3::UploadPartTask
     bool is_finised = false;
     std::string tag;
     std::exception_ptr exception;
-    std::optional<FileSegmentsHolder> cache_files;
 };
 
 struct WriteBufferFromS3::PutObjectTask
@@ -50,7 +48,6 @@ struct WriteBufferFromS3::PutObjectTask
     Aws::S3::Model::PutObjectRequest req;
     bool is_finised = false;
     std::exception_ptr exception;
-    std::optional<FileSegmentsHolder> cache_files;
 };
 
 WriteBufferFromS3::WriteBufferFromS3(
@@ -102,7 +99,6 @@ void WriteBufferFromS3::nextImpl()
         writePart();
 
         allocateBuffer();
-        file_segments_holder.reset();
     }
 
     waitForReadyBackGroundTasks();

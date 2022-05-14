@@ -1,7 +1,8 @@
 #include <iomanip>
 #include <iostream>
 #include <gtest/gtest.h>
-#include <Common/FileCache.h>
+#include <Common/LRUFileCache.h>
+#include <Common/FileSegment.h>
 #include <Common/CurrentThread.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/FileCacheSettings.h>
@@ -46,14 +47,9 @@ std::vector<DB::FileSegmentPtr> fromHolder(const DB::FileSegmentsHolder & holder
     return std::vector<DB::FileSegmentPtr>(holder.file_segments.begin(), holder.file_segments.end());
 }
 
-String keyToStr(const DB::IFileCache::Key & key)
-{
-    return getHexUIntLowercase(key);
-}
-
 String getFileSegmentPath(const String & base_path, const DB::IFileCache::Key & key, size_t offset)
 {
-    auto key_str = keyToStr(key);
+    auto key_str = key.toString();
     return fs::path(base_path) / key_str.substr(0, 3) / key_str / DB::toString(offset);
 }
 
@@ -62,7 +58,7 @@ void download(DB::FileSegmentPtr file_segment)
     const auto & key = file_segment->key();
     size_t size = file_segment->range().size();
 
-    auto key_str = keyToStr(key);
+    auto key_str = key.toString();
     auto subdir = fs::path(cache_base_path) / key_str.substr(0, 3) / key_str;
     if (!fs::exists(subdir))
         fs::create_directories(subdir);
