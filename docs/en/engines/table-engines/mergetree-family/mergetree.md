@@ -993,4 +993,10 @@ As the indexes are built only during insertions into table, `INSERT` and `OPTIMI
 You can create your table with index which uses certain algorithm. Now only indices based on the following algorithms are supported:
 
 ##### Index list
--   
+## Hnsw
+- `hnsw([M, efConstruction, graph_degree, maxM, maxM0])` -- Stores and operates with Hierarchical ANN search graph built by [Hnsw algortihm](https://arxiv.org/pdf/1603.09320.pdf). Can be used for optimizations of operations working with vector distances.
+    - M — number of established connections for every vertex on any level except zero level. A reasonable range for this parameter is from 5 to 48. Bigger M is better for high recall and/or high dimensional data. The parameter also defines the memory consumption of the algorithm (which is proportional to M). Default value: 16
+    - efConstruction — size of the dynamic candidate list. Construction speed/index quality tradeoff is controlled via this parameter. Default value: 200.
+    - maxM  — maximum number of connections for each element per layer. Controls the density of graph on each level except the last one. Default value: M.
+    - maxM0 — maximum number of connections for each element on last layer.  Default value: 2 * M.
+
