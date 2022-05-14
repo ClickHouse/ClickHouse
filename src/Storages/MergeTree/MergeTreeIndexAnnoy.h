@@ -11,7 +11,7 @@
 namespace DB
 {
 
-// auxillary namespace for working with spotify-annoy library
+// auxiliary namespace for working with spotify-annoy library
 // mainly for serialization and deserialization of the index
 namespace Annoy
 {
