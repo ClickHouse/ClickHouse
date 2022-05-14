@@ -994,3 +994,26 @@ You can create your table with index which uses certain algorithm. Now only indi
 
 ##### Index list
 -   
+###### Annoy
+Implementation of the algorithm was taken from [this repository](https://github.com/spotify/annoy).
+
+Short description of the algorithm:
+Algorithm recursively divide in half all space by random linear surfaces (lines in 2D, planes in 3D e.t.c.). Thus it makes tree of polyhedrons and points that they contains. Repeating the operation several times for greater accuracy it creates forest.
+To find K Nearest Neighbours it goes down through the trees and fills the buffer of closest points using the priority queue of polyhedrons. Next, it sorts buffer and return the nearest K.
+
+Example of 'CREATE' request:
+```
+CREATE TABLE t
+(
+  id Int64,
+  number Tuple(Float32, Float32, Float32),
+  INDEX x number TYPE annoy(T) GRANULARITY N
+)
+ENGINE = MergeTree
+ORDER BY id;
+```
+Parameter 'T' is number of trees which algorithm will create.
+The bigger it is, the slower (approximately linear) it works (in both 'CREATE' and 'SELECT' requests), but the better accuracy you get (adjusted for randomness).
+
+In the 'SELECT' with the specified types of requests you can specify the size of the internal buffer (more details in the description above) in the settings ('ann_index_params').
+The bigger it is, the slower it works, but the better accuracy you get (adjusted for randomness of trees too).

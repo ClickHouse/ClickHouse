@@ -4,8 +4,6 @@
 
 #include <Storages/MergeTree/CommonANNIndexes.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
-#include <Storages/MergeTree/MergeTreeData.h>
-#include <Storages/MergeTree/KeyCondition.h>
 
 #include <annoylib.h>
 #include <kissrandom.h>
