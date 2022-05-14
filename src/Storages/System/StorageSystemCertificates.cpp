@@ -5,7 +5,6 @@
 #include <Storages/System/StorageSystemCertificates.h>
 #include <regex>
 #include <filesystem>
-#include "Poco/Util/Application.h"
 #include "Poco/File.h"
 #if USE_SSL
     #include <openssl/x509v3.h>
