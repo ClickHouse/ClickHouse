@@ -149,6 +149,7 @@ add_contrib (sqlite-cmake sqlite-amalgamation)
 add_contrib (s2geometry-cmake s2geometry)
 
 set (ENABLE_ANNOY_DEFAULT ${ENABLE_LIBRARIES})
+option(ENABLE_ANNOY "Enable Annoy index support" ${ENABLE_ANNOY_DEFAULT})
 
 if (ENABLE_ANNOY)
     add_contrib (spotify-annoy-cmake spotify-annoy)
