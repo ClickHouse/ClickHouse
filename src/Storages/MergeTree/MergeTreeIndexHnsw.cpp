@@ -342,16 +342,9 @@ std::vector<size_t> MergeTreeIndexConditionHnsw::getUsefulRanges(MergeTreeIndexG
 }
 
 
-bool MergeTreeIndexConditionHnsw::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule) const
+bool MergeTreeIndexConditionHnsw::mayBeTrueOnGranule(MergeTreeIndexGranulePtr /*idx_granule*/) const
 {
-    float comp_dist = condition.getComparisonDistance();
-    std::vector<float> target_vec = condition.getTargetVector();
-    similarity::Object target(-1, -1, target_vec.size() * sizeof(float), target_vec.data());
-    std::shared_ptr<MergeTreeIndexGranuleHnsw> granule = std::dynamic_pointer_cast<MergeTreeIndexGranuleHnsw>(idx_granule);
-    if (!granule)
-        throw Exception("SimpleHnsw index condition got a granule with the wrong type.", ErrorCodes::LOGICAL_ERROR);
-    auto result = std::unique_ptr<similarity::KNNQueue<float>>(granule->index_impl->knnQuery(target, 1));
-    return result->TopDistance() < comp_dist;
+   throw Exception("Hnsw index is Ann index, so this method is not implemented", ErrorCodes::LOGICAL_ERROR);
 }
 
 MergeTreeIndexGranulePtr MergeTreeIndexHnsw::createIndexGranule() const
