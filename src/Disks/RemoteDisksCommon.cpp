@@ -1,8 +1,5 @@
 #include <Disks/RemoteDisksCommon.h>
 #include <Common/getRandomASCIIString.h>
-#include <Common/FileCacheFactory.h>
-#include <Common/FileCache.h>
-#include <Common/FileCacheSettings.h>
 #include <Disks/DiskLocal.h>
 #include <Poco/Util/AbstractConfiguration.h>
 

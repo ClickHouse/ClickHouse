@@ -1,10 +1,9 @@
 #pragma once
 
-#include <boost/noncopyable.hpp>
-#include <IO/WriteBufferFromFile.h>
 #include <Core/Types.h>
+#include <Common/IFileCache.h>
 #include <IO/SeekableReadBuffer.h>
-#include <list>
+#include <IO/WriteBufferFromFile.h>
 
 namespace Poco { class Logger; }
 
@@ -31,7 +30,7 @@ friend struct FileSegmentsHolder;
 friend class FileSegmentRangeWriter;
 
 public:
-    using Key = UInt128;
+    using Key = IFileCache::Key;
     using RemoteFileReaderPtr = std::shared_ptr<SeekableReadBuffer>;
     using LocalCacheWriterPtr = std::unique_ptr<WriteBufferFromFile>;
 
@@ -129,6 +128,8 @@ public:
     size_t getDownloadOffset() const;
 
     size_t getDownloadedSize() const;
+
+    size_t getAvailableSize() const;
 
     void completeBatchAndResetDownloader();
 
@@ -236,15 +237,58 @@ private:
 
 struct FileSegmentsHolder : private boost::noncopyable
 {
+    FileSegmentsHolder() = default;
+
     explicit FileSegmentsHolder(FileSegments && file_segments_) : file_segments(std::move(file_segments_)) {}
 
     FileSegmentsHolder(FileSegmentsHolder && other) noexcept : file_segments(std::move(other.file_segments)) {}
 
     ~FileSegmentsHolder();
 
-    FileSegments file_segments{};
-
     String toString();
+
+    FileSegments::iterator add(FileSegmentPtr && file_segment)
+    {
+        return file_segments.insert(file_segments.end(), file_segment);
+    }
+
+    FileSegments file_segments{};
+};
+
+/**
+  * We want to write eventually some size, which is not known until the very end.
+  * Therefore we allocate file segments lazily. Each file segment is assigned capacity
+  * of max_file_segment_size, but reserved_size remains 0, until call to tryReserve().
+  * Once current file segment is full (reached max_file_segment_size), we allocate a
+  * new file segment. All allocated file segments resize in file segments holder.
+  * If at the end of all writes, the last file segment is not full, then it is resized.
+  */
+class FileSegmentRangeWriter
+{
+public:
+    FileSegmentRangeWriter(IFileCache * cache_, const FileSegment::Key & key_);
+
+    ~FileSegmentRangeWriter();
+
+    bool write(char * data, size_t size, size_t offset, bool is_persistent);
+
+    void finalize();
+
+    /// If exception happened on remote fs write, we consider current cache invalid.
+    void clearDownloaded();
+
+private:
+    FileSegments::iterator allocateFileSegment(size_t offset, bool is_persistent);
+
+    IFileCache * cache;
+    FileSegment::Key key;
+
+    FileSegmentsHolder file_segments_holder;
+    FileSegments::iterator current_file_segment_it;
+
+    size_t current_file_segment_write_offset = 0;
+
+    bool finalized = false;
 };
 
 }

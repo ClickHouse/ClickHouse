@@ -1,10 +1,13 @@
 #include "FileSegment.h"
+
 #include <base/getThreadId.h>
-#include <Common/FileCache.h>
+#include <Common/IFileCache.h>
+#include <Common/logger_useful.h>
 #include <Common/hex.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <filesystem>
+
 
 namespace CurrentMetrics
 {
@@ -84,6 +87,12 @@ size_t FileSegment::getDownloadedSize() const
 {
     std::lock_guard segment_lock(mutex);
     return getDownloadedSize(segment_lock);
+}
+
+size_t FileSegment::getAvailableSize() const
+{
+    std::lock_guard segment_lock(mutex);
+    return range().size() - downloaded_size;
 }
 
 size_t FileSegment::getDownloadedSize(std::lock_guard<std::mutex> & /* segment_lock */) const
@@ -762,4 +771,125 @@ String FileSegmentsHolder::toString()
     return ranges;
 }
 
+FileSegmentRangeWriter::FileSegmentRangeWriter(
+    IFileCache * cache_,
+    const FileSegment::Key & key_)
+    : cache(cache_)
+    , key(key_)
+    , current_file_segment_it(file_segments_holder.file_segments.end())
+{
+}
+
+FileSegments::iterator FileSegmentRangeWriter::allocateFileSegment(size_t offset, bool is_persistent)
+{
+    std::lock_guard cache_lock(cache->mutex);
+    /// We set max_file_segment_size to be downloaded,
+    /// if we have less size to write, then file segment will be resized.
+    auto file_segment = cache->setDownloading(key, offset, cache->max_file_segment_size, is_persistent, cache_lock);
+    return file_segments_holder.add(std::move(file_segment));
+}
+
+bool FileSegmentRangeWriter::write(char * data, size_t size, size_t offset, bool is_persistent)
+{
+    if (finalized)
+        return false;
+
+    auto & file_segments = file_segments_holder.file_segments;
+
+    if (current_file_segment_it == file_segments.end())
+    {
+        current_file_segment_it = allocateFileSegment(current_file_segment_write_offset, is_persistent);
+    }
+    else
+    {
+        if (current_file_segment_write_offset != offset)
+        {
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Cannot write file segment at offset {}, because current write offset is: {}",
+                offset, current_file_segment_write_offset);
+        }
+
+        if ((*current_file_segment_it)->getAvailableSize() == 0)
+        {
+            (*current_file_segment_it)->complete(FileSegment::State::DOWNLOADED);
+            current_file_segment_it = allocateFileSegment(current_file_segment_write_offset, is_persistent);
+        }
+    }
+
+    bool reserved = (*current_file_segment_it)->reserve(size);
+    if (!reserved)
+    {
+        (*current_file_segment_it)->complete(FileSegment::State::PARTIALLY_DOWNLOADED_NO_CONTINUATION);
+        return false;
+    }
+
+    (*current_file_segment_it)->write(data, size, offset);
+    current_file_segment_write_offset += size;
+
+    return true;
+}
+
+void FileSegmentRangeWriter::finalize()
+{
+    if (finalized)
+        return;
+
+    auto & file_segments = file_segments_holder.file_segments;
+    if (file_segments.empty() || current_file_segment_it == file_segments.end())
+        return;
+
+    std::lock_guard cache_lock(cache->mutex);
+
+    auto & file_segment = *current_file_segment_it;
+    file_segment->complete(cache_lock);
+
+    finalized = true;
+}
+
+FileSegmentRangeWriter::~FileSegmentRangeWriter()
+{
+    try
+    {
+        if (!finalized)
+            finalize();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
+}
+
+void FileSegmentRangeWriter::clearDownloaded()
+{
+    auto & file_segments = file_segments_holder.file_segments;
+
+    if (file_segments.empty())
+        return;
+
+    try
+    {
+        std::lock_guard cache_lock(cache->mutex);
+
+        for (auto file_segment_it = file_segments.begin(); file_segment_it != file_segments.end();)
+        {
+            auto file_segment = *file_segment_it;
+
+            std::lock_guard segment_lock(file_segment->mutex);
+            cache->remove(key, file_segment->offset(), cache_lock, segment_lock);
+        }
+
+        file_segments.clear();
+    }
+    catch (...)
+    {
+#ifdef NDEBUG
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+#else
+        throw;
+#endif
+    }
+
+    current_file_segment_it = file_segments.end();
+}
 }

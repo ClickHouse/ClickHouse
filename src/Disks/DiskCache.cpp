@@ -1,12 +1,14 @@
 #include "DiskCache.h"
 
-#include <Disks/DiskFactory.h>
-#include <Common/FileCache.h>
 #include <Common/FileCacheFactory.h>
+#include <Common/IFileCache.h>
+#include <Common/FileSegment.h>
+#include <Common/logger_useful.h>
+#include <Disks/DiskFactory.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/WriteBufferFromFileDecorator.h>
+#include <Interpreters/FilesystemCacheLog.h>
 #include <Poco/Util/AbstractConfiguration.h>
-#include <Common/FileCache.h>
 #include <filesystem>
 
 namespace fs = std::filesystem;
@@ -14,7 +16,8 @@ namespace fs = std::filesystem;
 
 namespace ProfileEvents
 {
-    extern const Event RemoteFSCacheDownloadBytes;
+    extern const Event CachedWriteBufferCacheWriteBytes;
+    extern const Event CachedWriteBufferCacheWriteMicroseconds;
 }
 
 namespace DB
@@ -31,11 +34,40 @@ public:
     CachedWriteBuffer(
         std::unique_ptr<WriteBuffer> impl_,
         FileCachePtr cache_,
-        const String & path_)
+        const String & path_,
+        bool is_persistent_cache_file_,
+        const String & query_id_,
+        const WriteSettings & settings_)
         : WriteBufferFromFileDecorator(std::move(impl_))
         , cache(cache_)
+        , source_path(path_)
         , key(cache_->hash(path_))
+        , is_persistent_cache_file(is_persistent_cache_file_)
+        , query_id(query_id_)
+        , enable_cache_log(!query_id_.empty() && settings_.enable_filesystem_cache_log)
+        , writer(cache_.get(), key)
     {
+    }
+
+    void appendFilesystemCacheLog(const FileSegment::Range & file_segment_range)
+    {
+        FilesystemCacheLogElement elem
+        {
+            .event_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()),
+            .query_id = query_id,
+            .source_file_path = source_path,
+            .file_segment_range = { file_segment_range.left, file_segment_range.right },
+            .requested_range = {},
+            .file_segment_size = file_segment_range.size(),
+            .cache_attempted = true,
+            .read_buffer_id = {},
+            .profile_counters = std::make_shared<ProfileEvents::Counters::Snapshot>(current_file_segment_counters.getPartiallyAtomicSnapshot()),
+        };
+
+        current_file_segment_counters.reset();
+
+        if (auto cache_log = Context::getGlobalContextInstance()->getFilesystemCacheLog())
+            cache_log->add(elem);
     }
 
     void nextImpl() override
@@ -48,37 +80,41 @@ public:
 
         swap(*impl);
 
-        size_t remaining_size = size;
+        if (caching_stopped)
+            return;
 
-        auto file_segments_holder = cache->setDownloading(key, current_download_offset, size, false);
-        auto & file_segments = file_segments_holder.file_segments;
+        Stopwatch watch(CLOCK_MONOTONIC);
 
-        for (auto file_segment_it = file_segments.begin(); file_segment_it != file_segments.end(); ++file_segment_it)
+        auto enough_space_in_cache = writer.write(working_buffer.begin(), size, current_download_offset, is_persistent_cache_file);
+        if (!enough_space_in_cache)
         {
-            auto & file_segment = *file_segment_it;
-            size_t current_size = std::min(file_segment->range().size(), remaining_size);
-            remaining_size -= current_size;
-
-            if (file_segment->reserve(current_size))
-            {
-                file_segment->write(working_buffer.begin(), current_size, current_download_offset, true);
-                ProfileEvents::increment(ProfileEvents::RemoteFSCacheDownloadBytes, current_size);
-            }
-            else
-            {
-                file_segments.erase(file_segment_it, file_segments.end());
-                break;
-            }
+            caching_stopped = true;
+            return;
         }
 
         current_download_offset += size;
+        ProfileEvents::increment(ProfileEvents::CachedWriteBufferCacheWriteBytes, size);
+        ProfileEvents::increment(ProfileEvents::CachedWriteBufferCacheWriteMicroseconds, watch.elapsedMicroseconds());
+    }
+
+    void preFinalize() override
+    {
+        writer.finalize();
     }
 
 private:
     FileCachePtr cache;
+    String source_path;
     IFileCache::Key key;
 
+    bool is_persistent_cache_file;
     size_t current_download_offset = 0;
+    const String query_id;
+    bool enable_cache_log;
+
+    FileSegmentRangeWriter writer;
+    bool caching_stopped = false;
+    ProfileEvents::Counters current_file_segment_counters;
 };
 
 DiskCache::DiskCache(
@@ -90,6 +126,7 @@ DiskCache::DiskCache(
     , cache_disk_name(disk_name_)
     , cache_base_path(path_)
     , cache(cache_)
+    , log(&Poco::Logger::get("DiskCache(" + disk_name_ + ")"))
 {
 }
 
@@ -124,8 +161,16 @@ std::unique_ptr<WriteBufferFromFileBase> DiskCache::writeFile(
         && settings.enable_filesystem_cache_on_write_operations
         && FileCacheFactory::instance().getSettings(cache_base_path).cache_on_write_operations;
 
+    String query_id = CurrentThread::isInitialized() && CurrentThread::get().getQueryContext() != nullptr
+        ? CurrentThread::getQueryId().toString() : "";
+
+    LOG_TEST(log, "Caching file `{}` to `{}`", impl->getFileName(), cache->hash(impl->getFileName()).toString());
+
     if (cache_on_write)
-        return std::make_unique<CachedWriteBuffer>(std::move(impl), cache, impl->getFileName());
+    {
+        return std::make_unique<CachedWriteBuffer>(
+            std::move(impl), cache, impl->getFileName(), isFilePersistent(path), query_id, settings);
+    }
 
     return impl;
 }

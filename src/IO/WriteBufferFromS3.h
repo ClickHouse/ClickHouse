@@ -7,18 +7,16 @@
 #include <memory>
 #include <vector>
 #include <list>
-#include <Common/logger_useful.h>
+
 #include <base/types.h>
-
+#include <Common/logger_useful.h>
 #include <Common/ThreadPool.h>
-#include <Common/FileCache_fwd.h>
-#include <Common/FileSegment.h>
-
 #include <IO/BufferWithOwnMemory.h>
 #include <IO/WriteBuffer.h>
 #include <Storages/StorageS3Settings.h>
 
 #include <aws/core/utils/memory/stl/AWSStringStream.h>
+
 
 namespace Aws::S3
 {
