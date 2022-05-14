@@ -56,7 +56,7 @@ public:
         , s3_settings(std::move(s3_settings_))
         , version_id(std::move(version_id_))
     {}
-        
+
     bool exists(const std::string & path) const override;
 
     std::unique_ptr<SeekableReadBuffer> readObject( /// NOLINT
