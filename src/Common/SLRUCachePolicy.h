@@ -46,22 +46,22 @@ public:
         Base::on_weight_loss_function = on_weight_loss_function_;
     }
 
-    size_t weight() const override
+    size_t weight([[maybe_unused]] std::lock_guard<std::mutex> & cache_lock) const override
     {
         return current_size;
     }
 
-    size_t count() const override
+    size_t count([[maybe_unused]] std::lock_guard<std::mutex> & cache_lock) const override
     {
         return cells.size();
     }
 
-    size_t maxSize() const override
+    size_t maxSize([[maybe_unused]] std::lock_guard<std::mutex> & cache_lock) const override
     {
         return max_size;
     }
 
-    void reset() override
+    void reset([[maybe_unused]] std::lock_guard<std::mutex> & cache_lock) override
     {
         cells.clear();
         probationary_queue.clear();
@@ -70,7 +70,7 @@ public:
         current_protected_size = 0;
     }
 
-    void remove(const Key & key) override
+    void remove(const Key & key, [[maybe_unused]] std::lock_guard<std::mutex> & cache_lock) override
     {
         auto it = cells.find(key);
         if (it == cells.end())
@@ -82,7 +82,7 @@ public:
         cells.erase(it);
     }
 
-    MappedPtr get(const Key & key) override
+    MappedPtr get(const Key & key, [[maybe_unused]] std::lock_guard<std::mutex> & cache_lock) override
     {
         auto it = cells.find(key);
         if (it == cells.end())
@@ -108,7 +108,7 @@ public:
         return cell.value;
     }
 
-    void set(const Key & key, const MappedPtr & mapped) override
+    void set(const Key & key, const MappedPtr & mapped, [[maybe_unused]] std::lock_guard<std::mutex> & cache_lock) override
     {
         auto [it, inserted] = cells.emplace(std::piecewise_construct,
             std::forward_as_tuple(key),
@@ -188,10 +188,10 @@ protected:
         {
             if (is_protected)
             {
-                return current_weight_size > max_weight_size && queue_size > 1;
+                return current_weight_size > max_weight_size && queue_size > 0;
             }
             return ((max_elements_size != 0 && queue_size > max_elements_size)
-                || (current_weight_size > max_weight_size)) && (queue_size > 1);
+                || (current_weight_size > max_weight_size)) && (queue_size > 0);
         };
 
         while (need_remove())

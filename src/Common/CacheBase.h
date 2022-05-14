@@ -43,8 +43,6 @@ public:
             cache_policy_name = default_cache_policy_name;
         }
 
-        policy_name = cache_policy_name;
-
         LOG_DEBUG(&Poco::Logger::get("CacheBase"), "Cache policy name \"{}\"", cache_policy_name);
         if (cache_policy_name == "LRU")
         {
@@ -67,7 +65,7 @@ public:
     {
         std::lock_guard lock(mutex);
 
-        auto res = cache_policy->get(key);
+        auto res = cache_policy->get(key, lock);
         if (res)
             ++hits;
         else
@@ -80,7 +78,7 @@ public:
     {
         std::lock_guard lock(mutex);
 
-        cache_policy->set(key, mapped);
+        cache_policy->set(key, mapped, lock);
     }
 
     /// If the value for the key is in the cache, returns it. If it is not, calls load_func() to
@@ -98,7 +96,7 @@ public:
         {
             std::lock_guard cache_lock(mutex);
 
-            auto val = cache_policy->get(key);
+            auto val = cache_policy->get(key, cache_lock);
             if (val)
             {
                 ++hits;
@@ -136,7 +134,7 @@ public:
         auto token_it = insert_tokens.find(key);
         if (token_it != insert_tokens.end() && token_it->second.get() == token)
         {
-            cache_policy->set(key, token->value);
+            cache_policy->set(key, token->value, cache_lock);
             result = true;
         }
 
@@ -159,31 +157,31 @@ public:
         insert_tokens.clear();
         hits = 0;
         misses = 0;
-        cache_policy->reset();
+        cache_policy->reset(lock);
     }
 
     void remove(const Key & key)
     {
         std::lock_guard lock(mutex);
-        cache_policy->remove(key);
+        cache_policy->remove(key, lock);
     }
 
     size_t weight() const
     {
         std::lock_guard lock(mutex);
-        return cache_policy->weight();
+        return cache_policy->weight(lock);
     }
 
     size_t count() const
     {
         std::lock_guard lock(mutex);
-        return cache_policy->count();
+        return cache_policy->count(lock);
     }
 
     size_t maxSize() const
     {
         std::lock_guard lock(mutex);
-        return cache_policy->maxSize();
+        return cache_policy->maxSize(lock);
     }
 
     virtual ~CacheBase() = default;
@@ -195,7 +193,6 @@ private:
     using CachePolicy = ICachePolicy<TKey, TMapped, HashFunction, WeightFunction>;
 
     std::unique_ptr<CachePolicy> cache_policy;
-    String policy_name; // DELETE THIS FIELD (only for debug)
 
     inline static const String default_cache_policy_name = "LRU";
 
