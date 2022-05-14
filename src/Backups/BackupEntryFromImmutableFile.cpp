@@ -1,6 +1,6 @@
 #include <Backups/BackupEntryFromImmutableFile.h>
 #include <Disks/IDisk.h>
-#include <IO/createReadBufferFromFileBase.h>
+#include <Disks/IO/createReadBufferFromFileBase.h>
 #include <Poco/File.h>
 
 
@@ -36,7 +36,7 @@ UInt64 BackupEntryFromImmutableFile::getSize() const
     return *file_size;
 }
 
-std::unique_ptr<ReadBuffer> BackupEntryFromImmutableFile::getReadBuffer() const
+std::unique_ptr<SeekableReadBuffer> BackupEntryFromImmutableFile::getReadBuffer() const
 {
     if (disk)
         return disk->readFile(file_path);

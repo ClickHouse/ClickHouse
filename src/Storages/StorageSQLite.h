@@ -3,7 +3,6 @@
 #include "config_core.h"
 
 #if USE_SQLITE
-#include <base/shared_ptr_helper.h>
 #include <Storages/IStorage.h>
 
 #include <sqlite3.h>
@@ -16,10 +15,8 @@ class Logger;
 namespace DB
 {
 
-class StorageSQLite final : public shared_ptr_helper<StorageSQLite>, public IStorage, public WithContext
+class StorageSQLite final : public IStorage, public WithContext
 {
-friend struct shared_ptr_helper<StorageSQLite>;
-
 public:
     using SQLitePtr = std::shared_ptr<sqlite3>;
 
@@ -36,7 +33,7 @@ public:
 
     Pipe read(
         const Names & column_names,
-        const StorageMetadataPtr & /*metadata_snapshot*/,
+        const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,
         ContextPtr context,
         QueryProcessingStage::Enum processed_stage,

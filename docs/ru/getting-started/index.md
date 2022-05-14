@@ -1,8 +1,6 @@
 ---
-toc_folder_title: "Начало работы"
-toc_hidden: true
-toc_priority: 8
-toc_title: hidden
+sidebar_label: "Начало работы"
+sidebar_position: 8
 ---
 
 # Начало работы {#nachalo-raboty}

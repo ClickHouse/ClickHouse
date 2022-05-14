@@ -154,7 +154,14 @@ public:
         throw Exception("Method replicate is not supported for ColumnUnique.", ErrorCodes::NOT_IMPLEMENTED);
     }
 
-    void getPermutation(bool, size_t, int, IColumn::Permutation &) const override
+    void getPermutation(IColumn::PermutationSortDirection, IColumn::PermutationSortStability,
+                    size_t, int, IColumn::Permutation &) const override
+    {
+        throw Exception("Method getPermutation is not supported for ColumnUnique.", ErrorCodes::NOT_IMPLEMENTED);
+    }
+
+    void updatePermutation(PermutationSortDirection, PermutationSortStability,
+                    size_t, int, Permutation &, EqualRanges &) const override
     {
         throw Exception("Method getPermutation is not supported for ColumnUnique.", ErrorCodes::NOT_IMPLEMENTED);
     }

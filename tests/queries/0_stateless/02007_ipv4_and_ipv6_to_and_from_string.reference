@@ -4,3 +4,4 @@
 2001:db8:0:85a3::ac1f:8001	String
 0.0.0.0	IPv4
 ::	IPv6
+::ffff:1.1.1.1	IPv6

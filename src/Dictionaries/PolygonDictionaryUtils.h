@@ -38,7 +38,7 @@ public:
     SlabsPolygonIndex() = default;
 
     /** Builds an index by splitting all edges with all points x coordinates. */
-    SlabsPolygonIndex(const std::vector<Polygon> & polygons);
+    explicit SlabsPolygonIndex(const std::vector<Polygon> & polygons);
 
     /** Finds polygon id the same way as IPolygonIndex. */
     bool find(const Point & point, size_t & id) const;
@@ -179,7 +179,7 @@ class GridRoot : public ICell<ReturnCell>
 {
 public:
     GridRoot(size_t min_intersections_, size_t max_depth_, const std::vector<Polygon> & polygons_):
-            kMinIntersections(min_intersections_), kMaxDepth(max_depth_), polygons(polygons_)
+            k_min_intersections(min_intersections_), k_max_depth(max_depth_), polygons(polygons_)
     {
         setBoundingBox();
         std::vector<size_t> order(polygons.size());
@@ -209,8 +209,8 @@ private:
     std::unique_ptr<ICell<ReturnCell>> root = nullptr;
     Coord min_x = 0, min_y = 0;
     Coord max_x = 0, max_y = 0;
-    const size_t kMinIntersections;
-    const size_t kMaxDepth;
+    const size_t k_min_intersections;
+    const size_t k_max_depth;
 
     const std::vector<Polygon> & polygons;
 
@@ -219,10 +219,10 @@ private:
         auto current_box = Box(Point(current_min_x, current_min_y), Point(current_max_x, current_max_y));
         Polygon tmp_poly;
         bg::convert(current_box, tmp_poly);
-        possible_ids.erase(std::remove_if(possible_ids.begin(), possible_ids.end(), [&](const auto id)
+        std::erase_if(possible_ids, [&](const auto id)
         {
             return !bg::intersects(current_box, polygons[id]);
-        }), possible_ids.end());
+        });
         int covered = 0;
 #ifndef __clang_analyzer__ /// Triggers a warning in boost geometry.
         auto it = std::find_if(possible_ids.begin(), possible_ids.end(), [&](const auto id)
@@ -236,7 +236,7 @@ private:
         }
 #endif
         size_t intersections = possible_ids.size() - covered;
-        if (intersections <= kMinIntersections || depth++ == kMaxDepth)
+        if (intersections <= k_min_intersections || depth++ == k_max_depth)
             return std::make_unique<ReturnCell>(possible_ids, polygons, current_box, covered);
         auto x_shift = (current_max_x - current_min_x) / DividedCell<ReturnCell>::kSplit;
         auto y_shift = (current_max_y - current_min_y) / DividedCell<ReturnCell>::kSplit;

@@ -16,7 +16,7 @@
 #include <IO/ReadBufferFromString.h>
 #include <Common/assert_cast.h>
 #include <base/range.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 
 
 namespace DB
@@ -28,7 +28,7 @@ PostgreSQLSource<T>::PostgreSQLSource(
     postgres::ConnectionHolderPtr connection_holder_,
     const std::string & query_str_,
     const Block & sample_block,
-    const UInt64 max_block_size_)
+    UInt64 max_block_size_)
     : SourceWithProgress(sample_block.cloneEmpty())
     , query_str(query_str_)
     , max_block_size(max_block_size_)
@@ -43,7 +43,7 @@ PostgreSQLSource<T>::PostgreSQLSource(
     std::shared_ptr<T> tx_,
     const std::string & query_str_,
     const Block & sample_block,
-    const UInt64 max_block_size_,
+    UInt64 max_block_size_,
     bool auto_commit_)
     : SourceWithProgress(sample_block.cloneEmpty())
     , query_str(query_str_)
@@ -86,7 +86,7 @@ void PostgreSQLSource<T>::onStart()
         }
     }
 
-    stream = std::make_unique<pqxx::stream_from>(*tx, pqxx::from_query, std::string_view(query_str));
+    stream = std::make_unique<pqxx::stream_from>(*tx, pqxx::from_query, std::string_view{query_str});
 }
 
 template<typename T>
