@@ -664,6 +664,10 @@ void ConfigProcessor::savePreprocessedConfig(const LoadedConfig & loaded_config,
                 new_path.erase(0, main_config_path.size());
             std::replace(new_path.begin(), new_path.end(), '/', '_');
 
+            /// If we have config file in YAML format, the preprocessed config will inherit .yaml extension
+            /// but will contain config in XML format, so some tools like clickhouse extract-from-config won't work
+            new_path = fs::path(new_path).replace_extension(".xml").string();
+
             if (preprocessed_dir.empty())
             {
                 if (!loaded_config.configuration->has("path"))
