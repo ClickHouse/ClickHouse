@@ -87,7 +87,7 @@ MergeTreeIndexGranuleAnnoy::MergeTreeIndexGranuleAnnoy(const String & index_name
 {}
 
 MergeTreeIndexGranuleAnnoy::MergeTreeIndexGranuleAnnoy(
-    const String & index_name_, 
+    const String & index_name_,
     const Block & index_sample_block_,
     AnnoyIndexPtr index_base_)
     : index_name(index_name_)
