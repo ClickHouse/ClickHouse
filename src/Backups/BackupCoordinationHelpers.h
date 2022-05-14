@@ -76,7 +76,7 @@ public:
     void finish(const String & host_id, const String & error_message = {});
 
     /// Waits for a specified list of hosts to finish the specific task.
-    void waitForAllHostsToFinish(const Strings & host_ids, const std::chrono::seconds timeout = std::chrono::seconds::zero()) const;
+    void waitForAllHostsToFinish(const Strings & host_ids, const std::chrono::seconds timeout = std::chrono::seconds(-1) /* no timeout */) const;
 
 private:
     void createRootNodes();

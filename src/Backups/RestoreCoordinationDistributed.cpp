@@ -126,12 +126,18 @@ public:
 
         auto watch_triggered = [&] { return !watch_set; };
 
-        bool use_timeout = (timeout_.count() > 0);
+        bool use_timeout = (timeout_.count() >= 0);
         std::chrono::steady_clock::duration time_left = timeout_;
         std::mutex dummy_mutex;
 
-        while (!use_timeout || (time_left.count() > 0))
+        while (true)
         {
+            if (use_timeout && (time_left.count() <= 0))
+            {
+                status = TableStatus::deserialize(zookeeper->get(path));
+                break;
+            }
+
             watch_set = true;
             status = TableStatus::deserialize(zookeeper->getWatch(path, nullptr, watch_callback));
 
@@ -140,33 +146,18 @@ public:
 
             LOG_TRACE(log, "Waiting for host {} to create table {}.{}", status.host_id, status.table_name.first, status.table_name.second);
 
-            std::chrono::steady_clock::time_point start_time;
-            if (use_timeout)
-                start_time = std::chrono::steady_clock::now();
-
-            bool waited;
             {
                 std::unique_lock dummy_lock{dummy_mutex};
                 if (use_timeout)
                 {
-                    waited = watch_triggered_event.wait_for(dummy_lock, time_left, watch_triggered);
+                    std::chrono::steady_clock::time_point start_time = std::chrono::steady_clock::now();
+                    if (!watch_triggered_event.wait_for(dummy_lock, time_left, watch_triggered))
+                        break;
+                    time_left -= (std::chrono::steady_clock::now() - start_time);
                 }
                 else
-                {
                     watch_triggered_event.wait(dummy_lock, watch_triggered);
-                    waited = true;
-                }
             }
-
-            if (use_timeout)
-            {
-                time_left -= (std::chrono::steady_clock::now() - start_time);
-                if (time_left.count() < 0)
-                    time_left = std::chrono::steady_clock::duration::zero();
-            }
-
-            if (!waited)
-                break;
         }
 
         if (watch_set)

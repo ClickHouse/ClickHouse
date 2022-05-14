@@ -34,7 +34,7 @@ public:
         const String & database_name,
         const String & database_zk_path,
         const String & table_name,
-        std::chrono::seconds timeout = std::chrono::seconds::zero())
+        std::chrono::seconds timeout = std::chrono::seconds(-1) /* no timeout */)
         = 0;
 
     /// Adds a path in backup used by a replicated table.
@@ -49,7 +49,8 @@ public:
     virtual void finishRestoringMetadata(const String & host_id, const String & error_message = {}) = 0;
 
     /// Waits for a specified list of hosts to finish restoring their metadata.
-    virtual void waitForAllHostsRestoredMetadata(const Strings & host_ids, std::chrono::seconds timeout = std::chrono::seconds::zero()) const = 0;
+    virtual void waitForAllHostsRestoredMetadata(
+        const Strings & host_ids, std::chrono::seconds timeout = std::chrono::seconds(-1) /* no timeout */) const = 0;
 
     /// Gets path in backup used by a replicated table.
     virtual String getReplicatedTableDataPath(const String & table_zk_path) const = 0;

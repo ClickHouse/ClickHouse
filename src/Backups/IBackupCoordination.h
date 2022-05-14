@@ -41,7 +41,8 @@ public:
     virtual void finishPreparing(const String & host_id, const String & error_message = {}) = 0;
 
     /// Waits for a specified time for specified hosts to finish preparation for copying the backup's files.
-    virtual void waitForAllHostsPrepared(const Strings & host_ids, std::chrono::seconds timeout = std::chrono::seconds::zero()) const = 0;
+    virtual void
+    waitForAllHostsPrepared(const Strings & host_ids, std::chrono::seconds timeout = std::chrono::seconds(-1) /* no timeout */) const = 0;
 
     /// Returns all the data paths in backup added for a replicated table (see also addReplicatedTableDataPath()).
     virtual Strings getReplicatedTableDataPaths(const String & table_zk_path) const = 0;
