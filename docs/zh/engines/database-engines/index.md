@@ -1,7 +1,6 @@
 ---
-toc_folder_title: 数据库引擎
-toc_priority: 27
-toc_title: Introduction
+sidebar_label: 数据库引擎
+sidebar_position: 27
 ---
 
 # 数据库引擎 {#database-engines}
@@ -16,7 +15,7 @@ toc_title: Introduction
 
 -   [MaterializeMySQL](../../engines/database-engines/materialized-mysql.md)
 
--   [Lazy](../../engines/database-engines/lazy.md)
+-   [Lazy](../../engines/database-engines/lazy)
 
 -   [Atomic](../../engines/database-engines/atomic.md)
 
