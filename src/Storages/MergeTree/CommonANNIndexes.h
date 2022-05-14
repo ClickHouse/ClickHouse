@@ -20,23 +20,17 @@ namespace ANNCondition
     returns false if we can speed up the query, and true otherwise.
     It has only one argument, name of the metric with which index was built.
     There are two main patterns of queries being supported
-
     1) Search query type
     SELECT * FROM * WHERE DistanceFunc(column, target_vector) < floatLiteral LIMIT count
-
     2) OrderBy query type
     SELECT * FROM * WHERE * ORDERBY DistanceFunc(column, target_vector) LIMIT count
-
     *Query without LIMIT count is not supported*
-
     target_vector(should have float coordinates) examples:
         tuple(0.1, 0.1, ...., 0.1) or (0.1, 0.1, ...., 0.1)
         [the word tuple is not needed]
-
     If the query matches one of these two types, than the class extracts useful information
     from the query. If the query has both 1 and 2 types, than we can't speed and alwaysUnknownOrTrue
     returns true.
-
     From matching query it extracts
     * targetVector
     * metricName(DistanceFunction)
@@ -48,7 +42,6 @@ namespace ANNCondition
     * settings str, if query has settings section with new 'ann_index_params' value,
         than you can get the new value(empty by default) calling method getSettingsStr
     * queryHasOrderByClause and queryHasWhereClause return true if query matches the type
-
     Search query type is also recognized for PREWHERE section
 */
 

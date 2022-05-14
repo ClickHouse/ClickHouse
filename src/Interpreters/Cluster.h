@@ -207,7 +207,6 @@ public:
 
     using ShardsInfo = std::vector<ShardInfo>;
 
-    String getHashOfAddresses() const { return hash_of_addresses; }
     const ShardsInfo & getShardsInfo() const { return shards_info; }
     const AddressesWithFailover & getShardsAddresses() const { return addresses_with_failover; }
 
@@ -263,7 +262,6 @@ private:
     /// Inter-server secret
     String secret;
 
-    String hash_of_addresses;
     /// Description of the cluster shards.
     ShardsInfo shards_info;
     /// Any remote shard.
