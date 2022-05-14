@@ -5,4 +5,4 @@ maximum: 1.1
 HTTP CLIENT
 maximum: 1.1
 TABLE: system.settings
-max_execution_time	0.1	1
+max_execution_time	30.5	1
