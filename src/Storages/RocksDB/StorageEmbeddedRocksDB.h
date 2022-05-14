@@ -2,7 +2,7 @@
 
 #include <memory>
 #include <shared_mutex>
-#include <Storages/IStorage.h>
+#include <Storages/IKVStorage.h>
 #include <rocksdb/status.h>
 
 
@@ -18,7 +18,7 @@ namespace DB
 
 class Context;
 
-class StorageEmbeddedRocksDB final : public IStorage, WithContext
+class StorageEmbeddedRocksDB final : public IKeyValueStorage, WithContext
 {
     friend class EmbeddedRocksDBSink;
 public:
@@ -56,7 +56,17 @@ public:
 
     std::shared_ptr<rocksdb::Statistics> getRocksDBStatistics() const;
     std::vector<rocksdb::Status> multiGet(const std::vector<rocksdb::Slice> & slices_keys, std::vector<String> & values) const;
-    const String & getPrimaryKey() const { return primary_key; }
+    const String & getPrimaryKey() const override { return primary_key; }
+
+    Chunk getByKeys(
+        const ColumnWithTypeAndName & col,
+        const Block & sample_block,
+        PaddedPODArray<UInt8> * null_map) const override;
+
+    Chunk getByKeysImpl(
+        const std::vector<rocksdb::Slice> & slices_keys,
+        const Block & sample_block,
+        PaddedPODArray<UInt8> * null_map) const;
 
 private:
     const String primary_key;
