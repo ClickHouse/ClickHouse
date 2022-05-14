@@ -47,7 +47,7 @@ SELECT 'K=18';
 SELECT 'UInt32';
 SET max_memory_usage = 8000000;
 SELECT sum(u) FROM (SELECT intDiv(number, 16384) AS k, uniqCombined(18)(number % 16384) u FROM numbers(16384 * 100) GROUP BY k); -- { serverError 241 }
-SET max_memory_usage = 25660800;
+SET max_memory_usage = 28660800;
 SELECT sum(u) FROM (SELECT intDiv(number, 16384) AS k, uniqCombined(18)(number % 16384) u FROM numbers(16384 * 100) GROUP BY k);
 
 -- HashTable for UInt64 (used until (1<<13) elements), hence 8192 elements
