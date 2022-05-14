@@ -1,5 +1,6 @@
 #include <memory>
 #include <Core/Types.h>
+#include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/IAST_fwd.h>
@@ -151,6 +152,9 @@ MeiliSearchConfiguration StorageMeiliSearch::getConfiguration(ASTs engine_args, 
                 "Storage MeiliSearch requires 3 parameters: MeiliSearch('url', 'index', 'key'= \"\")",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
         }
+
+        for (auto & engine_arg : engine_args)
+            engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, context);
 
         String url = engine_args[0]->as<ASTLiteral &>().value.safeGet<String>();
         String index = engine_args[1]->as<ASTLiteral &>().value.safeGet<String>();
