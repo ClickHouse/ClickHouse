@@ -152,6 +152,7 @@ set (ENABLE_ANNOY_DEFAULT ${ENABLE_LIBRARIES})
 
 if (ENABLE_ANNOY)
     add_contrib (spotify-annoy-cmake spotify-annoy)
+    target_compile_definitions(_spotify_annoy PUBLIC ENABLE_ANNOY)
 endif()
 
 # Put all targets defined here and in subdirectories under "contrib/<immediate-subdir>" folders in GUI-based IDEs.

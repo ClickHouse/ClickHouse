@@ -130,10 +130,6 @@ bool MergeTreeIndexAggregatorAnnoy::empty() const
 
 MergeTreeIndexGranulePtr MergeTreeIndexAggregatorAnnoy::getGranuleAndReset()
 {
-    if (empty())
-    {
-        return std::make_shared<MergeTreeIndexGranuleAnnoy>(index_name, index_sample_block);
-    }
     index_base->build(index_param);
     auto granule = std::make_shared<MergeTreeIndexGranuleAnnoy>(index_name, index_sample_block, index_base);
     index_base = nullptr;
@@ -317,8 +313,7 @@ MergeTreeIndexFormat MergeTreeIndexAnnoy::getDeserializedFormat(const DiskPtr di
     return {0 /* unknown */, ""};
 }
 
-MergeTreeIndexPtr AnnoyIndexCreator(
-    const IndexDescription & index)
+MergeTreeIndexPtr AnnoyIndexCreator(const IndexDescription & index)
 {
     int param = index.arguments[0].get<int>();
     return std::make_shared<MergeTreeIndexAnnoy>(index, param);
