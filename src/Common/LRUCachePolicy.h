@@ -41,29 +41,29 @@ public:
         Base::on_weight_loss_function = on_weight_loss_function_;
     }
 
-    size_t weight() const override
+    size_t weight([[maybe_unused]] std::lock_guard<std::mutex> & cache_lock) const override
     {
         return current_size;
     }
 
-    size_t count() const override
+    size_t count([[maybe_unused]] std::lock_guard<std::mutex> & cache_lock) const override
     {
         return cells.size();
     }
 
-    size_t maxSize() const override
+    size_t maxSize([[maybe_unused]] std::lock_guard<std::mutex> & cache_lock) const override
     {
         return max_size;
     }
 
-    void reset() override
+    void reset([[maybe_unused]] std::lock_guard<std::mutex> & cache_lock) override
     {
         queue.clear();
         cells.clear();
         current_size = 0;
     }
 
-    void remove(const Key & key) override
+    void remove(const Key & key, [[maybe_unused]] std::lock_guard<std::mutex> & cache_lock) override
     {
         auto it = cells.find(key);
         if (it == cells.end())
@@ -74,7 +74,7 @@ public:
         cells.erase(it);
     }
 
-    MappedPtr get(const Key & key) override
+    MappedPtr get(const Key & key, [[maybe_unused]] std::lock_guard<std::mutex> & cache_lock) override
     {
         auto it = cells.find(key);
         if (it == cells.end())
@@ -90,7 +90,7 @@ public:
         return cell.value;
     }
 
-    void set(const Key & key, const MappedPtr & mapped) override
+    void set(const Key & key, const MappedPtr & mapped, [[maybe_unused]] std::lock_guard<std::mutex> & cache_lock) override
     {
         auto [it, inserted] = cells.emplace(std::piecewise_construct,
             std::forward_as_tuple(key),
@@ -152,7 +152,7 @@ protected:
         size_t current_weight_lost = 0;
         size_t queue_size = cells.size();
 
-        while ((current_size > max_size || (max_elements_size != 0 && queue_size > max_elements_size)) && (queue_size > 1))
+        while ((current_size > max_size || (max_elements_size != 0 && queue_size > max_elements_size)) && (queue_size > 0))
         {
             const Key & key = queue.front();
 
