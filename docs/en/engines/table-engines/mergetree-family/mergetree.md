@@ -1001,8 +1001,8 @@ Short description of the algorithm:
 The algorithm recursively divides in half all space by random linear surfaces (lines in 2D, planes in 3D e.t.c.). Thus it makes tree of polyhedrons and points that they contains. Repeating the operation several times for greater accuracy it creates a forest.
 To find K Nearest Neighbours it goes down through the trees and fills the buffer of closest points using the priority queue of polyhedrons. Next, it sorts buffer and return the nearest K points.
 
-Example of 'CREATE' request:
-```
+__Example__:
+```sql
 CREATE TABLE t
 (
   id Int64,
@@ -1012,8 +1012,7 @@ CREATE TABLE t
 ENGINE = MergeTree
 ORDER BY id;
 ```
-Parameter 'T' is the number of trees which algorithm will create.
-The bigger it is, the slower (approximately linear) it works (in both 'CREATE' and 'SELECT' requests), but the better accuracy you get (adjusted for randomness).
+Parameter `T` is the number of trees which algorithm will create. The bigger it is, the slower (approximately linear) it works (in both `CREATE` and `SELECT` requests), but the better accuracy you get (adjusted for randomness).
 
-In the 'SELECT' in the settings ('ann_index_params') you can specify the size of the internal buffer (more details in the description above or in the [original repository](https://github.com/spotify/annoy)).
+In the `SELECT` in the settings (`ann_index_params`) you can specify the size of the internal buffer (more details in the description above or in the [original repository](https://github.com/spotify/annoy)).
 This parameter may help you to adjust the trade-off between query speed and accuracy.
