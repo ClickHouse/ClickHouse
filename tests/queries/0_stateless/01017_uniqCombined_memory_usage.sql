@@ -54,5 +54,5 @@ SELECT sum(u) FROM (SELECT intDiv(number, 16384) AS k, uniqCombined(18)(number %
 SELECT 'UInt64';
 SET max_memory_usage = 8000000;
 SELECT sum(u) FROM (SELECT intDiv(number, 8192) AS k, uniqCombined(18)(reinterpretAsString(number % 8192)) u FROM numbers(8192 * 100) GROUP BY k); -- { serverError 241 }
-SET max_memory_usage = 25660800;
+SET max_memory_usage = 28660800;
 SELECT sum(u) FROM (SELECT intDiv(number, 8192) AS k, uniqCombined(18)(reinterpretAsString(number % 8192)) u FROM numbers(8192 * 100) GROUP BY k);
