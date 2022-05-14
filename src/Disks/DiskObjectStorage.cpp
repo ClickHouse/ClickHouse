@@ -349,7 +349,6 @@ size_t DiskObjectStorage::getFileSize(const String & path) const
 
 void DiskObjectStorage::moveFile(const String & from_path, const String & to_path, bool should_send_metadata)
 {
-    LOG_DEBUG(&Poco::Logger::get("DEBUG"), "MOVE FILE");
     if (exists(to_path))
         throw Exception("File already exists: " + to_path, ErrorCodes::FILE_ALREADY_EXISTS);
 
@@ -375,7 +374,6 @@ void DiskObjectStorage::moveFile(const String & from_path, const String & to_pat
 
 void DiskObjectStorage::replaceFile(const String & from_path, const String & to_path)
 {
-    LOG_DEBUG(&Poco::Logger::get("DEBUG"), "REPLACE FILE");
     if (exists(to_path))
     {
         const String tmp_path = to_path + ".old";
@@ -389,7 +387,6 @@ void DiskObjectStorage::replaceFile(const String & from_path, const String & to_
 
 void DiskObjectStorage::removeSharedFile(const String & path, bool delete_metadata_only)
 {
-    LOG_DEBUG(&Poco::Logger::get("DEBUG"), "Remove shared file");
     std::vector<String> paths_to_remove;
     removeMetadata(path, paths_to_remove);
 
@@ -399,7 +396,6 @@ void DiskObjectStorage::removeSharedFile(const String & path, bool delete_metada
 
 void DiskObjectStorage::removeFromRemoteFS(const std::vector<String> & paths)
 {
-    LOG_DEBUG(&Poco::Logger::get("DEBUG"), "Read from remote FS");
     object_storage->removeObjects(paths);
 }
 
@@ -446,7 +442,6 @@ bool DiskObjectStorage::checkUniqueId(const String & id) const
 
 void DiskObjectStorage::createHardLink(const String & src_path, const String & dst_path, bool should_send_metadata)
 {
-    LOG_DEBUG(&Poco::Logger::get("DEBUG"), "HARDLINK FILE");
     readUpdateAndStoreMetadata(src_path, false, [](Metadata & metadata) { metadata.ref_count++; return true; });
 
     if (should_send_metadata && !dst_path.starts_with("shadow/"))
@@ -472,7 +467,6 @@ void DiskObjectStorage::createHardLink(const String & src_path, const String & d
 
 void DiskObjectStorage::setReadOnly(const String & path)
 {
-    LOG_DEBUG(&Poco::Logger::get("DEBUG"), "set readonly");
     /// We should store read only flag inside metadata file (instead of using FS flag),
     /// because we modify metadata file when create hard-links from it.
     readUpdateAndStoreMetadata(path, false, [](Metadata & metadata) { metadata.read_only = true; return true; });
@@ -729,19 +723,12 @@ void DiskObjectStorage::restoreMetadataIfNeeded(const Poco::Util::AbstractConfig
 {
     if (send_metadata)
     {
-        LOG_DEBUG(log, "START RESTORING METADATA");
         metadata_helper->restore(config, config_prefix, context);
 
         if (metadata_helper->readSchemaVersion(object_storage.get(), remote_fs_root_path) < DiskObjectStorageMetadataHelper::RESTORABLE_SCHEMA_VERSION)
-        {
-            LOG_DEBUG(log, "DONE READING");
             metadata_helper->migrateToRestorableSchema();
-            LOG_DEBUG(log, "MIGRATION FINISHED");
-        }
 
-        LOG_DEBUG(log, "SEARCHING LAST REVISION");
         metadata_helper->findLastRevision();
-        LOG_DEBUG(log, "DONE RESTORING METADATA");
     }
 }
 

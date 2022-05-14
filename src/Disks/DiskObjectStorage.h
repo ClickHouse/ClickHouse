@@ -56,6 +56,11 @@ public:
 
     void getRemotePathsRecursive(const String & local_path, std::vector<LocalPathWithRemotePaths> & paths_map) override;
 
+    std::string getCacheBasePath() const override
+    {
+        return object_storage->getCacheBasePath();
+    }
+
     /// Methods for working with metadata. For some operations (like hardlink
     /// creation) metadata can be updated concurrently from multiple threads
     /// (file actually rewritten on disk). So additional RW lock is required for
