@@ -43,14 +43,22 @@ with client(name="client1>", log=log) as client1, client(
     client1.expect("Ok.")
 
     client1.send("WATCH 01065_window_view_event_hop_watch_bounded.wv")
-    client2.send("INSERT INTO 01065_window_view_event_hop_watch_bounded.mt VALUES (1, '1990/01/01 12:00:00');")
+    client2.send(
+        "INSERT INTO 01065_window_view_event_hop_watch_bounded.mt VALUES (1, '1990/01/01 12:00:00');"
+    )
     client2.expect("Ok.")
-    client2.send("INSERT INTO 01065_window_view_event_hop_watch_bounded.mt VALUES (1, '1990/01/01 12:00:05');")
+    client2.send(
+        "INSERT INTO 01065_window_view_event_hop_watch_bounded.mt VALUES (1, '1990/01/01 12:00:05');"
+    )
     client2.expect("Ok.")
     client1.expect("1" + end_of_block)
-    client2.send("INSERT INTO 01065_window_view_event_hop_watch_bounded.mt VALUES (1, '1990/01/01 12:00:06');")
+    client2.send(
+        "INSERT INTO 01065_window_view_event_hop_watch_bounded.mt VALUES (1, '1990/01/01 12:00:06');"
+    )
     client2.expect("Ok.")
-    client2.send("INSERT INTO 01065_window_view_event_hop_watch_bounded.mt VALUES (1, '1990/01/01 12:00:10');")
+    client2.send(
+        "INSERT INTO 01065_window_view_event_hop_watch_bounded.mt VALUES (1, '1990/01/01 12:00:10');"
+    )
     client2.expect("Ok.")
     client1.expect("2" + end_of_block)
 
