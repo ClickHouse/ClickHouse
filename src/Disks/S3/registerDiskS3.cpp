@@ -37,7 +37,15 @@ namespace
 void checkWriteAccess(IDisk & disk)
 {
     auto file = disk.writeFile("test_acl", DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite);
-    file->write("test", 4);
+    try
+    {
+        file->write("test", 4);
+    }
+    catch (...)
+    {
+        file->finalize();
+        throw;
+    }
 }
 
 void checkReadAccess(const String & disk_name, IDisk & disk)
