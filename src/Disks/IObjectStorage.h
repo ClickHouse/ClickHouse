@@ -95,9 +95,16 @@ public:
 
     virtual void removeObjectsIfExist(const std::vector<std::string> & paths) = 0;
 
-    virtual void copyObject(const std::string & object_from, const std::string & object_to, std::optional<ObjectAttributes> object_to_attributes = {}) = 0;
+    virtual void copyObject( /// NOLINT
+        const std::string & object_from,
+        const std::string & object_to,
+        std::optional<ObjectAttributes> object_to_attributes = {}) = 0;
 
-    virtual void copyObjectToAnotherObjectStorage(const std::string & object_from, const std::string & object_to, IObjectStorage & object_storage_to, std::optional<ObjectAttributes> object_to_attributes = {});
+    virtual void copyObjectToAnotherObjectStorage( /// NOLINT
+        const std::string & object_from,
+        const std::string & object_to,
+        IObjectStorage & object_storage_to,
+        std::optional<ObjectAttributes> object_to_attributes = {});
 
     virtual ~IObjectStorage() = default;
 

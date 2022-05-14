@@ -132,7 +132,7 @@ std::unique_ptr<SeekableReadBuffer> S3ObjectStorage::readObject( /// NOLINT
 }
 
 
-std::unique_ptr<WriteBufferFromFileBase> S3ObjectStorage::writeObject(
+std::unique_ptr<WriteBufferFromFileBase> S3ObjectStorage::writeObject( /// NOLINT
     const std::string & path,
     std::optional<ObjectAttributes> attributes,
     FinalizeCallback && finalize_callback,
