@@ -418,7 +418,6 @@ ProducerBufferPtr StorageKafka::createWriteBuffer(const Block & header)
 {
     cppkafka::Configuration conf;
     conf.set("metadata.broker.list", brokers);
-    conf.set("group.id", group);
     conf.set("client.id", client_id);
     conf.set("client.software.name", VERSION_NAME);
     conf.set("client.software.version", VERSION_DESCRIBE);
