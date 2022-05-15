@@ -113,11 +113,11 @@ inline ALWAYS_INLINE void deleteSized(void * ptr, std::size_t size [[maybe_unuse
 
 #endif
 
-#if defined(OS_LINUX)
-#    include <malloc.h>
-#elif defined(OS_DARWIN)
-#    include <malloc/malloc.h>
-#endif
+// #if defined(OS_LINUX)
+// #    include <malloc.h>
+// #elif defined(OS_DARWIN)
+// #    include <malloc/malloc.h>
+// #endif
 
 template <std::same_as<std::align_val_t>... TAlign>
 requires DB::OptionalArgument<TAlign...>
@@ -170,6 +170,7 @@ inline ALWAYS_INLINE void untrackMemory(void * ptr [[maybe_unused]], std::size_t
 #    if defined(_GNU_SOURCE) || USE_MIMALLOC
 #    pragma message "defined(_GNU_SOURCE) || USE_MIMALLOC == true"
         /// It's innaccurate resource free for sanitizers. malloc_usable_size() result is greater or equal to allocated size.
+        /// If we use mimalloc, malloc_usable_size will be expanded to mi_malloc_usable_size
         else
             CurrentMemoryTracker::free_memory(malloc_usable_size(ptr));
 // #    elif USE_MIMALLOC
