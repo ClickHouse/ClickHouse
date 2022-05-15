@@ -4,6 +4,7 @@
 #include <IO/CompressionMethod.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteBufferDecorator.h>
+#include <Common/ThreadPool.h>
 
 #include <zlib.h>
 
@@ -18,10 +19,7 @@ public:
     PigzDeflatingWriteBuffer(
         std::unique_ptr<WriteBuffer> out_,
         int compression_level_,
-        std::string filename_ = "",
-        size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
-        char * existing_memory = nullptr,
-        size_t alignment = 0);
+        std::string filename_ = "");
 
     ~PigzDeflatingWriteBuffer() override;
 
@@ -36,16 +34,18 @@ private:
         size_t len;
     };
 
+    void compressAndWrite(unsigned char * in_buf, size_t in_len, bool final_compression_flag);
     void writeHeader();
-    void writeTrailer(uintmax_t ulen, uint64_t check);
-    static void deflateEngine(z_stream & strm, WriteBuffer & out_buf, int flush);
+    void writeTrailer();
+    void deflateEngine(z_stream & strm, WriteBuffer & out_buf, int flush);
     CompressedBuf compressSlice(unsigned char * in_buf, size_t in_len, bool last_block_flag);
-    static size_t calcCheck(unsigned char * buf, size_t len);
+    size_t calcCheck(unsigned char * buf, size_t len);
 
     int compression_level;
     std::string filename;
-
-    std::string uncompressed_buffer;
+    uint64_t check = crc32_z(0L, Z_NULL, 0);
+    uintmax_t ulen = 0;
+    ThreadPool pool;
 };
 
 }

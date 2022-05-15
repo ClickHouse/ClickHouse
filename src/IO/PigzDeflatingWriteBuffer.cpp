@@ -2,7 +2,6 @@
 
 #include <IO/PigzDeflatingWriteBuffer.h>
 #include <Common/Exception.h>
-#include <Common/ThreadPool.h>
 
 
 namespace DB
@@ -13,103 +12,40 @@ namespace ErrorCodes
     extern const int ZLIB_DEFLATE_FAILED;
 }
 
+const size_t BUFFER_SIZE = 1024 * 1024 * 1024;
+const size_t BLOCK_SIZE = 256 * 1024;
+const size_t MAXP2 = UINT_MAX - (UINT_MAX >> 1);
+
 PigzDeflatingWriteBuffer::PigzDeflatingWriteBuffer(
     std::unique_ptr<WriteBuffer> out_,
     int compression_level_,
-    std::string filename_,
-    size_t buf_size,
-    char * existing_memory,
-    size_t alignment)
-    : WriteBufferWithOwnMemoryDecorator(std::move(out_), buf_size, existing_memory, alignment)
+    std::string filename_)
+    : WriteBufferWithOwnMemoryDecorator(std::move(out_), BUFFER_SIZE)
     , compression_level(compression_level_)
     , filename(filename_)
+    , pool()
 {
+    writeHeader();
 }
-
-const size_t MAXP2 = UINT_MAX - (UINT_MAX >> 1);
-const size_t BLOCK_SIZE = 8 * 1024 * 1024;
 
 void PigzDeflatingWriteBuffer::nextImpl()
 {
     if (!offset())
         return;
 
-    const char * in_data = reinterpret_cast<const char *>(working_buffer.begin());
-    size_t in_available = offset();
-    // TODO (kavladst): можно избежать возможную реалокацию в nextImpl, перенеся конкатенацию в finalize
-    uncompressed_buffer.append(in_data, in_available);
-}
-
-PigzDeflatingWriteBuffer::~PigzDeflatingWriteBuffer()
-{
-    try
-    {
-        finalize();
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-    }
+    auto *in_buf = reinterpret_cast<unsigned char *>(working_buffer.begin());
+    size_t in_len = offset();
+    compressAndWrite(in_buf, in_len, false);
 }
 
 void PigzDeflatingWriteBuffer::finalizeBefore()
 {
     next();
 
-    writeHeader();
-
-    auto *in_buf = reinterpret_cast<unsigned char *>(&uncompressed_buffer.front());
-    size_t in_len = uncompressed_buffer.size();
-    uint64_t check = crc32_z(0L, Z_NULL, 0);
-
-    size_t def_block = BLOCK_SIZE;
-
-    size_t cnt_blocks = in_len / def_block + bool(in_len % def_block);
-    std::vector<CompressedBuf> results(cnt_blocks);
-    std::vector<size_t> checks(cnt_blocks);
-    std::vector<size_t> blocks(cnt_blocks);
-
-    ThreadPool pool;
-    try
-    {
-        for (size_t i = 0; i < cnt_blocks; ++i)
-        {
-            size_t in_remaining_len = in_len - i * def_block;
-            size_t block = std::min(def_block, in_remaining_len);
-
-            blocks[i] = block;
-
-            unsigned char *in_slice_buf = in_buf + (in_len - in_remaining_len);
-
-            pool.scheduleOrThrowOnError(
-                [&, i = i, in_remaining_len = in_remaining_len, block = block, in_slice_buf = in_slice_buf]
-                {
-                    results[i] = compressSlice(in_slice_buf, block, block == in_remaining_len);
-                });
-
-            pool.scheduleOrThrowOnError(
-                [&, i = i, block = block, in_slice_buf = in_slice_buf]
-                {
-                    checks[i] = calcCheck(in_slice_buf, block);
-                });
-
-        }
-        pool.wait();
-
-        for (size_t i = 0; i < cnt_blocks; ++i)
-            check = crc32_combine(check, checks[i], blocks[i]);
-
-        for (const auto & result : results)
-            out->write(result.mem->data(), result.len);
-
-        writeTrailer(in_len, check);
-    }
-    catch (...)
-    {
-        /// Do not try to write next time after exception.
-        out->position() = out->buffer().begin();
-        throw;
-    }
+    auto *in_buf = reinterpret_cast<unsigned char *>(working_buffer.begin());
+    size_t in_len = offset();
+    compressAndWrite(in_buf, in_len, true);
+    writeTrailer();
 }
 
 void PigzDeflatingWriteBuffer::finalizeAfter()
@@ -127,7 +63,6 @@ void PigzDeflatingWriteBuffer::writeHeader()
         with_name_byte = 8;
     out->write(with_name_byte);
 
-    // TODO: time
     out->write(0);
     out->write(0);
     out->write(0);
@@ -144,7 +79,19 @@ void PigzDeflatingWriteBuffer::writeHeader()
     }
 }
 
-void PigzDeflatingWriteBuffer::writeTrailer(uintmax_t ulen, uint64_t check)
+PigzDeflatingWriteBuffer::~PigzDeflatingWriteBuffer()
+{
+    try
+    {
+        finalize();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
+}
+
+void PigzDeflatingWriteBuffer::writeTrailer()
 {
     for (size_t i = 0; i < 4; ++i)
     {
@@ -194,9 +141,6 @@ PigzDeflatingWriteBuffer::CompressedBuf PigzDeflatingWriteBuffer::compressSlice(
     if (!last_block_flag)
     {
         deflateEngine(strm, out_buf, Z_BLOCK);
-        // TODO: добавить обработку bits
-        int bits;
-        deflatePending(&strm, Z_NULL, &bits);
         deflateEngine(strm, out_buf, Z_SYNC_FLUSH);
         deflateEngine(strm, out_buf, Z_FULL_FLUSH);
     }
@@ -208,6 +152,61 @@ PigzDeflatingWriteBuffer::CompressedBuf PigzDeflatingWriteBuffer::compressSlice(
     deflateEnd(&strm);
 
     return {mem, out_buf.count()};
+}
+
+void PigzDeflatingWriteBuffer::compressAndWrite(unsigned char * in_buf, size_t in_len, bool final_compression_flag) {
+    ulen += in_len;
+
+    size_t def_block = BLOCK_SIZE;
+
+    size_t cnt_blocks = in_len / def_block + bool(in_len % def_block);
+    try
+    {
+        if (cnt_blocks == 0) {
+            auto result = compressSlice(in_buf, in_len, true);
+            out->write(result.mem->data(), result.len);
+            check = crc32_combine(check, calcCheck(in_buf, in_len), in_len);
+            return;
+        }
+
+        std::vector<CompressedBuf> results(cnt_blocks);
+        std::vector<size_t> checks(cnt_blocks);
+        std::vector<size_t> blocks(cnt_blocks);
+        for (size_t i = 0; i < cnt_blocks; ++i)
+        {
+            size_t in_remaining_len = in_len - i * def_block;
+            size_t block = std::min(def_block, in_remaining_len);
+            blocks[i] = block;
+
+            unsigned char *in_slice_buf = in_buf + (in_len - in_remaining_len);
+
+            pool.scheduleOrThrowOnError(
+                [&, i = i, final_compression_flag= final_compression_flag, in_remaining_len = in_remaining_len, block = block, in_slice_buf = in_slice_buf]
+                {
+                    results[i] = compressSlice(in_slice_buf, block, final_compression_flag && (block == in_remaining_len));
+                });
+
+            pool.scheduleOrThrowOnError(
+                [&, i = i, block = block, in_slice_buf = in_slice_buf]
+                {
+                    checks[i] = calcCheck(in_slice_buf, block);
+                });
+
+        }
+        pool.wait();
+
+        for (size_t i = 0; i < cnt_blocks; ++i)
+            check = crc32_combine(check, checks[i], blocks[i]);
+
+        for (const auto & result : results)
+            out->write(result.mem->data(), result.len);
+    }
+    catch (...)
+    {
+        /// Do not try to write next time after exception.
+        out->position() = out->buffer().begin();
+        throw;
+    }
 }
 
 size_t PigzDeflatingWriteBuffer::calcCheck(unsigned char * buf_, size_t len_)
