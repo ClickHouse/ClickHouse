@@ -1368,8 +1368,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
         global_context->setIndexMarkCache(index_mark_cache_size);
 
     size_t query_cache_size_in_bytes = config().getUInt64("cache_size_in_bytes", /*1ULL << 30*/ 16000);
-    size_t max_query_cache_entry_size = config().getUInt64("cache_size_in_num_entries", 16000);
-    if (query_cache_size_in_bytes && query_cache_size_in_num_entries)
+    if (query_cache_size_in_bytes)
         global_context->setQueryCache(query_cache_size_in_bytes, max_query_cache_entry_size);
 
     /// A cache for mmapped files.
