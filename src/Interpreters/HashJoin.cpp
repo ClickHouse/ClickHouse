@@ -1359,12 +1359,12 @@ void setUsed(IColumn::Filter & filter [[maybe_unused]], size_t pos [[maybe_unuse
 
 /// Joins right table columns which indexes are present in right_indexes using specified map.
 /// Makes filter (1 if row presented in right table) and returns offsets to replicate (for ALL JOINS).
-template <ASTTableJoin::Kind KIND, ASTTableJoin::Strictness STRICTNESS, typename KeyGetter, typename Map, bool need_filter, bool has_null_map, bool multiple_disjuncts, bool just_one_right_block>
+template <ASTTableJoin::Kind KIND, ASTTableJoin::Strictness STRICTNESS, typename KeyGetter, typename Map, bool need_filter, bool has_null_map, bool multiple_disjuncts>
 NO_INLINE IColumn::Filter joinRightColumns(
     std::vector<KeyGetter> && key_getter_vector,
     const std::vector<const Map *> & mapv,
     AddedColumns & added_columns,
-    BlocksList right_blocks [[maybe_unused]],
+    bool just_one_right_block,
     JoinStuff::JoinUsedFlags & used_flags [[maybe_unused]])
 {
     constexpr JoinFeatures<KIND, STRICTNESS> jf;
@@ -1517,7 +1517,10 @@ NO_INLINE IColumn::Filter joinRightColumns(
 
     if constexpr (fast_inner_join)
     {
-        added_columns.appendManyFromBlock<just_one_right_block>(match_result);
+        if (just_one_right_block)
+            added_columns.appendManyFromBlock<true>(match_result);
+        else
+            added_columns.appendManyFromBlock<false>(match_result);
     }
 
     added_columns.applyLazyDefaults();
@@ -1529,21 +1532,12 @@ IColumn::Filter joinRightColumnsSwitchMultipleDisjuncts(
     std::vector<KeyGetter> && key_getter_vector,
     const std::vector<const Map *> & mapv,
     AddedColumns & added_columns,
-    BlocksList right_blocks,
+    bool just_one_right_block,
     JoinStuff::JoinUsedFlags & used_flags [[maybe_unused]])
 {
-    if (right_blocks.size() == 1)
-    {
         return mapv.size() > 1
-            ? joinRightColumns<KIND, STRICTNESS, KeyGetter, Map, need_filter, has_null_map, true, true>(std::forward<std::vector<KeyGetter>>(key_getter_vector), mapv, added_columns, right_blocks, used_flags)
-            : joinRightColumns<KIND, STRICTNESS, KeyGetter, Map, need_filter, has_null_map, false, true>(std::forward<std::vector<KeyGetter>>(key_getter_vector), mapv, added_columns, right_blocks, used_flags);
-    }
-    else
-    {
-        return mapv.size() > 1
-            ? joinRightColumns<KIND, STRICTNESS, KeyGetter, Map, need_filter, has_null_map, true, false>(std::forward<std::vector<KeyGetter>>(key_getter_vector), mapv, added_columns, right_blocks, used_flags)
-            : joinRightColumns<KIND, STRICTNESS, KeyGetter, Map, need_filter, has_null_map, false, false>(std::forward<std::vector<KeyGetter>>(key_getter_vector), mapv, added_columns, right_blocks, used_flags);
-    }
+            ? joinRightColumns<KIND, STRICTNESS, KeyGetter, Map, need_filter, has_null_map, true>(std::forward<std::vector<KeyGetter>>(key_getter_vector), mapv, added_columns, just_one_right_block, used_flags)
+            : joinRightColumns<KIND, STRICTNESS, KeyGetter, Map, need_filter, has_null_map, false>(std::forward<std::vector<KeyGetter>>(key_getter_vector), mapv, added_columns, just_one_right_block, used_flags);
 }
 
 template <ASTTableJoin::Kind KIND, ASTTableJoin::Strictness STRICTNESS, typename KeyGetter, typename Map>
@@ -1551,7 +1545,7 @@ IColumn::Filter joinRightColumnsSwitchNullability(
     std::vector<KeyGetter> && key_getter_vector,
     const std::vector<const Map *> & mapv,
     AddedColumns & added_columns,
-    BlocksList right_blocks,
+    bool just_one_right_block,
     JoinStuff::JoinUsedFlags & used_flags)
 
 {
@@ -1560,16 +1554,16 @@ IColumn::Filter joinRightColumnsSwitchNullability(
     if (added_columns.need_filter)
     {
         if (has_null_map)
-            return joinRightColumnsSwitchMultipleDisjuncts<KIND, STRICTNESS, KeyGetter, Map, true, true>(std::forward<std::vector<KeyGetter>>(key_getter_vector), mapv, added_columns, right_blocks, used_flags);
+            return joinRightColumnsSwitchMultipleDisjuncts<KIND, STRICTNESS, KeyGetter, Map, true, true>(std::forward<std::vector<KeyGetter>>(key_getter_vector), mapv, added_columns, just_one_right_block, used_flags);
         else
-            return joinRightColumnsSwitchMultipleDisjuncts<KIND, STRICTNESS, KeyGetter, Map, true, false>(std::forward<std::vector<KeyGetter>>(key_getter_vector), mapv, added_columns, right_blocks, used_flags);
+            return joinRightColumnsSwitchMultipleDisjuncts<KIND, STRICTNESS, KeyGetter, Map, true, false>(std::forward<std::vector<KeyGetter>>(key_getter_vector), mapv, added_columns, just_one_right_block, used_flags);
     }
     else
     {
         if (has_null_map)
-            return joinRightColumnsSwitchMultipleDisjuncts<KIND, STRICTNESS, KeyGetter, Map, false, true>(std::forward<std::vector<KeyGetter>>(key_getter_vector), mapv, added_columns, right_blocks, used_flags);
+            return joinRightColumnsSwitchMultipleDisjuncts<KIND, STRICTNESS, KeyGetter, Map, false, true>(std::forward<std::vector<KeyGetter>>(key_getter_vector), mapv, added_columns, just_one_right_block, used_flags);
         else
-            return joinRightColumnsSwitchMultipleDisjuncts<KIND, STRICTNESS, KeyGetter, Map, false, false>(std::forward<std::vector<KeyGetter>>(key_getter_vector), mapv, added_columns, right_blocks, used_flags);
+            return joinRightColumnsSwitchMultipleDisjuncts<KIND, STRICTNESS, KeyGetter, Map, false, false>(std::forward<std::vector<KeyGetter>>(key_getter_vector), mapv, added_columns, just_one_right_block, used_flags);
     }
 }
 
@@ -1578,7 +1572,7 @@ IColumn::Filter switchJoinRightColumns(
     const std::vector<const Maps *> & mapv,
     AddedColumns & added_columns,
     HashJoin::Type type,
-    BlocksList right_blocks,
+    bool just_one_right_block,
     JoinStuff::JoinUsedFlags & used_flags)
 {
     constexpr bool is_asof_join = STRICTNESS == ASTTableJoin::Strictness::Asof;
@@ -1596,7 +1590,7 @@ IColumn::Filter switchJoinRightColumns(
                 std::vector<const MapTypeVal *> a_map_type_vector;
                 a_map_type_vector.emplace_back();
                 return joinRightColumnsSwitchNullability<KIND, STRICTNESS, KeyGetter>(
-                        std::move(key_getter_vector), a_map_type_vector, added_columns, right_blocks, used_flags);
+                        std::move(key_getter_vector), a_map_type_vector, added_columns, just_one_right_block, used_flags);
             }
             throw Exception(ErrorCodes::UNSUPPORTED_JOIN_KEYS, "Unsupported JOIN keys. Type: {}", type);
         }
@@ -1614,7 +1608,7 @@ IColumn::Filter switchJoinRightColumns(
                 key_getter_vector.push_back(std::move(createKeyGetter<KeyGetter, is_asof_join>(join_on_key.key_columns, join_on_key.key_sizes))); \
             }                                                           \
             return joinRightColumnsSwitchNullability<KIND, STRICTNESS, KeyGetter>( \
-                              std::move(key_getter_vector), a_map_type_vector, added_columns, right_blocks, used_flags); \
+                              std::move(key_getter_vector), a_map_type_vector, added_columns, just_one_right_block, used_flags); \
     }
         APPLY_FOR_JOIN_VARIANTS(M)
     #undef M
@@ -1637,11 +1631,10 @@ IColumn::Filter dictionaryJoinRightColumns(const TableJoin & table_join, AddedCo
         std::vector<const TableJoin *> maps_vector;
         maps_vector.push_back(&table_join);
 
-        BlocksList blocks;
         JoinStuff::JoinUsedFlags flags;
         std::vector<KeyGetterForDict> key_getter_vector;
         key_getter_vector.push_back(KeyGetterForDict(table_join, added_columns.join_on_keys[0].key_columns));
-        return joinRightColumnsSwitchNullability<KIND, STRICTNESS, KeyGetterForDict>(std::move(key_getter_vector), maps_vector, added_columns, blocks, flags);
+        return joinRightColumnsSwitchNullability<KIND, STRICTNESS, KeyGetterForDict>(std::move(key_getter_vector), maps_vector, added_columns, false, flags);
     }
 
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong JOIN combination: {} {}", STRICTNESS, KIND);
@@ -1692,10 +1685,11 @@ void HashJoin::joinBlockImpl(
 
     bool has_required_right_keys = (required_right_keys.columns() != 0);
     added_columns.need_filter = jf.need_filter || has_required_right_keys;
+    bool just_one_right_block = (data->blocks.size() == 1);
 
     IColumn::Filter row_filter = overDictionary() ?
         dictionaryJoinRightColumns<KIND, STRICTNESS>(*table_join, added_columns) :
-        switchJoinRightColumns<KIND, STRICTNESS>(maps_, added_columns, data->type, data->blocks, used_flags);
+        switchJoinRightColumns<KIND, STRICTNESS>(maps_, added_columns, data->type, just_one_right_block, used_flags);
 
     for (size_t i = 0; i < added_columns.size(); ++i)
         block.insert(added_columns.moveColumn(i));
