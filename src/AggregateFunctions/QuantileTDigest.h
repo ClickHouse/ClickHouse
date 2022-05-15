@@ -425,7 +425,6 @@ public:
 
                 while (current_x >= x)
                 {
-
                     if (x <= left)
                         result[levels_permutation[result_num]] = prev_mean;
                     else if (x >= right)
