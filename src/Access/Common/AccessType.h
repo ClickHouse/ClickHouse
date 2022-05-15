@@ -183,6 +183,7 @@ enum class AccessType
     M(ODBC, "", GLOBAL, SOURCES) \
     M(JDBC, "", GLOBAL, SOURCES) \
     M(HDFS, "", GLOBAL, SOURCES) \
+    M(MLPACK, "", GLOBAL, SOURCES) \
     M(S3, "", GLOBAL, SOURCES) \
     M(HIVE, "", GLOBAL, SOURCES) \
     M(SOURCES, "", GROUP, ALL) \

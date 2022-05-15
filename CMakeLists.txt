@@ -447,6 +447,8 @@ elseif (OS_FREEBSD)
 endif ()
 link_libraries(global-group)
 
+set (WERROR OFF)
+
 if (WERROR)
     # Don't pollute CMAKE_CXX_FLAGS with -Werror as it will break some CMake checks.
     # Instead, adopt modern cmake usage requirement.
@@ -567,5 +569,3 @@ add_subdirectory (tests)
 add_subdirectory (utils)
 
 include (cmake/sanitize_target_link_libraries.cmake)
-
-link_libraries(mlpack)
