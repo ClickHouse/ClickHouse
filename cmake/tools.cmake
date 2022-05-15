@@ -6,8 +6,11 @@ elseif (CMAKE_CXX_COMPILER_ID MATCHES "AppleClang")
     set (COMPILER_CLANG 1) # Safe to treat AppleClang as a regular Clang, in general.
 elseif (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
     set (COMPILER_CLANG 1)
+else ()
+    message (FATAL_ERROR "Compiler ${CMAKE_CXX_COMPILER_ID} is not supported")
 endif ()
 
+# Print details to output
 execute_process(COMMAND ${CMAKE_CXX_COMPILER} --version)
 
 if (COMPILER_GCC)
@@ -45,8 +48,6 @@ elseif (COMPILER_CLANG)
             message (FATAL_ERROR "Clang version must be at least ${CLANG_MINIMUM_VERSION}.")
         endif ()
     endif ()
-else ()
-    message (WARNING "You are using an unsupported compiler. Compilation has only been tested with Clang and GCC.")
 endif ()
 
 string (REGEX MATCHALL "[0-9]+" COMPILER_VERSION_LIST ${CMAKE_CXX_COMPILER_VERSION})
