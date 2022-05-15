@@ -118,7 +118,8 @@ public:
 
     void scheduleRemoval(CacheKey cache_key, std::chrono::seconds milis=std::chrono::seconds{15})
     {
-        std::async(&QueryCache::removeOnTimeout, this, cache_key, milis);
+        auto future = std::async(&QueryCache::removeOnTimeout, this, cache_key, milis);
+        assert(future.valid());
     }
 
 private:
