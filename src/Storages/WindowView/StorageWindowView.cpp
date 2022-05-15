@@ -421,8 +421,8 @@ UInt32 StorageWindowView::getCleanupBound()
 
 ASTPtr StorageWindowView::getCleanupQuery()
 {
-    ASTPtr function_equal;
-    function_equal = makeASTFunction(
+    ASTPtr function_less;
+    function_less= makeASTFunction(
         "less",
         std::make_shared<ASTIdentifier>(window_id_name),
         std::make_shared<ASTLiteral>(getCleanupBound()));
@@ -436,7 +436,7 @@ ASTPtr StorageWindowView::getCleanupQuery()
 
     auto alter_command = std::make_shared<ASTAlterCommand>();
     alter_command->type = ASTAlterCommand::DELETE;
-    alter_command->predicate = function_equal;
+    alter_command->predicate = function_less;
     alter_command->children.push_back(alter_command->predicate);
     alter_query->command_list->children.push_back(alter_command);
     return alter_query;
