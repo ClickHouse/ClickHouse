@@ -85,7 +85,7 @@ if (OS_LINUX AND NOT LINKER_NAME)
 endif ()
 
 if (LINKER_NAME)
-    if (COMPILER_CLANG AND (CMAKE_CXX_COMPILER_VERSION VERSION_GREATER 12.0.0 OR CMAKE_CXX_COMPILER_VERSION VERSION_EQUAL 12.0.0))
+    if (COMPILER_CLANG)
         find_program (LLD_PATH NAMES ${LINKER_NAME})
         if (NOT LLD_PATH)
             message (FATAL_ERROR "Using linker ${LINKER_NAME} but can't find its path.")
