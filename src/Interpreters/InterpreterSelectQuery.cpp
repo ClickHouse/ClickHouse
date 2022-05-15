@@ -625,21 +625,21 @@ void InterpreterSelectQuery::executePutInCache(QueryPlan & query_plan, CacheKey 
 {
     auto settings = context->getSettingsRef();
     QueryCachePtr query_cache = context->getQueryCache();
+    size_t num_query_runs = query_cache->recordQueryRun(query_cache_key);
 
-    if (!settings.query_cache_active_usage)
+    std::mutex & mutex = query_cache->getPutInCacheMutex(query_cache_key);
+
+    if (!mutex.try_lock() || !settings.query_cache_active_usage || query_cache->get(query_cache_key)
+        || num_query_runs < settings.min_query_runs_before_caching)
     {
+        mutex.unlock();
         return;
     }
 
-    size_t num_query_runs = query_cache->recordQueryRun(query_cache_key);
-    if (std::unique_lock lock(query_cache->getPutInCacheMutex(), std::try_to_lock);
-        lock.owns_lock() && num_query_runs >= settings.min_query_runs_before_caching)
-    {
-        auto caching_step = std::make_unique<CachingStep>(query_plan.getCurrentDataStream(),
-                                                          context->getQueryCache(), query_cache_key);
-        caching_step->setStepDescription("Put query result in cache");
-        query_plan.addStep(std::move(caching_step));
-    }
+    auto caching_step = std::make_unique<CachingStep>(query_plan.getCurrentDataStream(),
+                                                      context->getQueryCache(), query_cache_key);
+    caching_step->setStepDescription("Put query result in cache");
+    query_plan.addStep(std::move(caching_step));
 }
 
 void InterpreterSelectQuery::buildQueryPlan(QueryPlan & query_plan)

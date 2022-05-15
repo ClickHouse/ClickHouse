@@ -90,13 +90,19 @@ private:
     using Base = LRUCache<CacheKey, Data, CacheKeyHasher, QueryWeightFunction>;
 
 public:
-    QueryCache(size_t cache_size_in_bytes, size_t cache_size_in_num_entries)
-        : Base(cache_size_in_bytes, cache_size_in_num_entries) { }
+    QueryCache(size_t cache_size_in_bytes)
+        : Base(cache_size_in_bytes)
+    {
+
+    }
 
     void addChunk(CacheKey cache_key, Chunk && chunk)
     {
         auto data = get(cache_key);
         data->second.push_back(std::move(chunk));
+//        if (weight(*data) > max_query_cache_entry_size) {
+//             remove the entry from cache + make sure the subsequent chunks will not create it again
+//        }
         set(cache_key, data); // evicts cache if necessary
     }
 
@@ -106,14 +112,17 @@ public:
         return ++times_executed[cache_key];
     }
 
-    std::mutex& getPutInCacheMutex() {
-        return put_in_cache_mutex;
+    std::mutex& getPutInCacheMutex(CacheKey cache_key) {
+        return put_in_cache_mutexes[cache_key];
     }
 
 private:
+    size_t max_query_cache_entry_size;
     std::unordered_map<CacheKey, size_t, CacheKeyHasher> times_executed;
     std::mutex times_executed_mutex;
+    std::unordered_map<CacheKey, std::mutex, CacheKeyHasher> put_in_cache_mutexes;
     std::mutex put_in_cache_mutex;
+//    QueryWeightFunction weight;
 };
 
 using QueryCachePtr = std::shared_ptr<QueryCache>;
