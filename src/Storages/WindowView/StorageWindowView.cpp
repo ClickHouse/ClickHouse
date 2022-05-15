@@ -911,7 +911,10 @@ inline void StorageWindowView::cleanup()
     auto cleanup_context = Context::createCopy(getContext());
     cleanup_context->getClientInfo().query_kind = ClientInfo::QueryKind::INITIAL_QUERY;
     InterpreterAlterQuery alter_query(getCleanupQuery(), cleanup_context);
-    alter_query.execute();
+    {
+        std::lock_guard lock(mutex);
+        alter_query.execute();
+    }
 
     std::lock_guard lock(fire_signal_mutex);
     watch_streams.remove_if([](std::weak_ptr<WindowViewSource> & ptr) { return ptr.expired(); });
