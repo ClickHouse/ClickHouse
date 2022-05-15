@@ -14,8 +14,8 @@ endif ()
 execute_process(COMMAND ${CMAKE_CXX_COMPILER} --version)
 
 set (CLANG_MINIMUM_VERSION 12)
-set (XCODE_MINIMUM_VERSION 10.2)
-set (APPLE_CLANG_MINIMUM_VERSION 10.0.1)
+set (XCODE_MINIMUM_VERSION 12.0)
+set (APPLE_CLANG_MINIMUM_VERSION 12.0.0)
 set (GCC_MINIMUM_VERSION 11)
 
 if (COMPILER_GCC)
@@ -34,15 +34,9 @@ elseif (COMPILER_CLANG)
             message (FATAL_ERROR "AppleClang is not supported, you should install clang from brew. See the instruction: https://clickhouse.com/docs/en/development/build-osx/")
         endif ()
 
-        # AppleClang 10.0.1 (Xcode 10.2) corresponds to LLVM/Clang upstream version 7.0.0
-        # AppleClang 11.0.0 (Xcode 11.0) corresponds to LLVM/Clang upstream version 8.0.0
+        # For a mapping between versions of XCode - AppleClang - vanilla Clang, see https://en.wikipedia.org/wiki/Xcode
         if (CMAKE_CXX_COMPILER_VERSION VERSION_LESS ${APPLE_CLANG_MINIMUM_VERSION})
             message (FATAL_ERROR "AppleClang compiler version must be at least ${APPLE_CLANG_MINIMUM_VERSION} (Xcode ${XCODE_MINIMUM_VERSION}).")
-        elseif (CMAKE_CXX_COMPILER_VERSION VERSION_LESS 11.0.0)
-            # char8_t is available starting (upstream vanilla) Clang 7, but prior to Clang 8,
-            # it is not enabled by -std=c++20 and can be enabled with an explicit -fchar8_t.
-            set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fchar8_t")
-            set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fchar8_t")
         endif ()
     else ()
         if (CMAKE_CXX_COMPILER_VERSION VERSION_LESS ${CLANG_MINIMUM_VERSION})
