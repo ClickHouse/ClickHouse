@@ -108,9 +108,6 @@ namespace ErrorCodes
     extern const int UNKNOWN_IDENTIFIER;
 }
 
-std::unordered_map<CacheKey, size_t, CacheKeyHasher> InterpreterSelectQuery::times_executed;
-std::mutex InterpreterSelectQuery::times_executed_mutex;
-
 /// Assumes `storage` is set and the table filter (row-level security) is not empty.
 String InterpreterSelectQuery::generateFilterActions(ActionsDAGPtr & actions, const Names & prerequisite_columns) const
 {
@@ -627,7 +624,6 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 void InterpreterSelectQuery::executePutInCache(QueryPlan & query_plan, CacheKey query_cache_key)
 {
     auto settings = context->getSettingsRef();
-    bool put_query_result_in_cache = false;
     QueryCachePtr query_cache = context->getQueryCache();
 
     if (!settings.query_cache_active_usage)
@@ -635,8 +631,8 @@ void InterpreterSelectQuery::executePutInCache(QueryPlan & query_plan, CacheKey 
         return;
     }
 
-    size_t num_query_runs = query_cache.recordQueryRun(query_cache_key);
-    if (std::lock_guard lock(query_cache.getPutInCacheMutex(), std::try_to_lock);
+    size_t num_query_runs = query_cache->recordQueryRun(query_cache_key);
+    if (std::unique_lock lock(query_cache->getPutInCacheMutex(), std::try_to_lock);
         lock.owns_lock() && num_query_runs >= settings.min_query_runs_before_caching)
     {
         auto caching_step = std::make_unique<CachingStep>(query_plan.getCurrentDataStream(),
