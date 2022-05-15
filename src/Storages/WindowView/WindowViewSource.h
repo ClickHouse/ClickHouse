@@ -83,7 +83,7 @@ protected:
                 return {getHeader(), 0};
             }
 
-            while((Poco::Timestamp().epochMicroseconds() - last_heartbeat_timestamp_usec) < heartbeat_interval_usec)
+            while ((Poco::Timestamp().epochMicroseconds() - last_heartbeat_timestamp_usec) < heartbeat_interval_usec)
             {
                 bool signaled = std::cv_status::no_timeout == storage->fire_condition.wait_for(lock, std::chrono::microseconds(1000));
                 if (signaled)
