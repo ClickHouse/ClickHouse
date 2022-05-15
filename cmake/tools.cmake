@@ -53,16 +53,18 @@ list (GET COMPILER_VERSION_LIST 0 COMPILER_VERSION_MAJOR)
 # Example values: `lld-10`, `gold`.
 option (LINKER_NAME "Linker name or full path")
 
-if (COMPILER_GCC AND NOT LINKER_NAME)
-    find_program (LLD_PATH NAMES "ld.lld")
-    find_program (GOLD_PATH NAMES "ld.gold")
-elseif (NOT LINKER_NAME)
-    find_program (LLD_PATH NAMES "ld.lld-${COMPILER_VERSION_MAJOR}" "lld-${COMPILER_VERSION_MAJOR}" "ld.lld" "lld")
-    find_program (GOLD_PATH NAMES "ld.gold" "gold")
-endif ()
+if (NOT LINKER_NAME)
+    if (COMPILER_GCC)
+        find_program (LLD_PATH NAMES "ld.lld")
+        find_program (GOLD_PATH NAMES "ld.gold")
+    elseif (COMPILER_CLANG)
+        find_program (LLD_PATH NAMES "ld.lld-${COMPILER_VERSION_MAJOR}" "lld-${COMPILER_VERSION_MAJOR}" "ld.lld" "lld")
+        find_program (GOLD_PATH NAMES "ld.gold" "gold")
+    endif ()
+endif()
 
 if (OS_LINUX AND NOT LINKER_NAME)
-    # We prefer LLD linker over Gold or BFD on Linux.
+    # prefer lld linker over gold or ld on linux
     if (LLD_PATH)
         if (COMPILER_GCC)
             # GCC driver requires one of supported linker names like "lld".
@@ -83,6 +85,7 @@ if (OS_LINUX AND NOT LINKER_NAME)
         endif ()
     endif ()
 endif ()
+# TODO: allow different linker on != OS_LINUX
 
 if (LINKER_NAME)
     if (COMPILER_CLANG)
@@ -97,8 +100,13 @@ if (LINKER_NAME)
         set (CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -fuse-ld=${LINKER_NAME}")
     endif ()
 
-    message(STATUS "Using custom linker by name: ${LINKER_NAME}")
 endif ()
+
+if (LINKER_NAME)
+    message(STATUS "Using linker: ${LINKER_NAME}")
+else()
+    message(STATUS "Using linker: <default>")
+endif()
 
 # Archiver
 
