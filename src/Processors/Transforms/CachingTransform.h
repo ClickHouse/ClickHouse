@@ -26,6 +26,7 @@ public:
         LOG_DEBUG(&Poco::Logger::get("CachingTransform::~CachingTransform"), "in destructor");
         cache->getPutInCacheMutex(cache_key).unlock();
         LOG_DEBUG(&Poco::Logger::get("CachingTransform::~CachingTransform"), "unlocked mutex");
+        cache->scheduleRemoval(cache_key);
     }
 
 protected:

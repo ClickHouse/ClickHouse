@@ -116,6 +116,18 @@ public:
         return put_in_cache_mutexes[cache_key];
     }
 
+    void scheduleRemoval(CacheKey cache_key, std::chrono::seconds milis=std::chrono::seconds{15})
+    {
+        std::async(&QueryCache::removeOnTimeout, this, cache_key, milis);
+    }
+
+private:
+    void removeOnTimeout(CacheKey cache_key, std::chrono::seconds milis=std::chrono::seconds{15})
+    {
+        std::this_thread::sleep_for(milis);
+        remove(cache_key);
+    }
+
 private:
 //    size_t max_query_cache_entry_size;
     std::unordered_map<CacheKey, size_t, CacheKeyHasher> times_executed;
