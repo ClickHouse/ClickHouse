@@ -38,26 +38,24 @@ with client(name="client1>", log=log) as client1, client(
     )
     client1.expect(prompt)
     client1.send(
-        "CREATE WINDOW VIEW 01082_window_view_watch_limit.wv AS SELECT count(a) AS count FROM 01082_window_view_watch_limit.mt GROUP BY tumble(timestamp, INTERVAL '1' SECOND, 'US/Samoa') AS wid;"
+        "CREATE WINDOW VIEW 01082_window_view_watch_limit.wv WATERMARK=ASCENDING AS SELECT count(a) AS count, hopEnd(wid) AS w_end FROM 01082_window_view_watch_limit.mt GROUP BY hop(timestamp, INTERVAL '2' SECOND, INTERVAL '3' SECOND, 'US/Samoa') AS wid"
     )
     client1.expect("Ok.")
     client1.expect(prompt)
 
-    client1.send("WATCH 01082_window_view_watch_limit.wv LIMIT 2")
+    client1.send("WATCH 01082_window_view_watch_limit.wv LIMIT 1")
     client1.expect("Query id" + end_of_block)
     client2.send(
-        "INSERT INTO 01082_window_view_watch_limit.mt VALUES (1, now('US/Samoa') + 3)"
+        "INSERT INTO 01082_window_view_watch_limit.mt VALUES (1, '1990/01/01 12:00:00');"
     )
     client2.expect("Ok.")
-    client1.expect("1" + end_of_block)
-    client1.expect("Progress: 1.00 rows.*\)")
     client2.send(
-        "INSERT INTO 01082_window_view_watch_limit.mt VALUES (1, now('US/Samoa') + 3)"
+        "INSERT INTO 01082_window_view_watch_limit.mt VALUES (1, '1990/01/01 12:00:05');"
     )
     client2.expect("Ok.")
     client1.expect("1" + end_of_block)
     client1.expect("Progress: 1.00 rows.*\)")
-    client1.expect("2 row" + end_of_block)
+    client1.expect("1 row" + end_of_block)
     client1.expect(prompt)
 
     client1.send("DROP TABLE 01082_window_view_watch_limit.wv NO DELAY")
