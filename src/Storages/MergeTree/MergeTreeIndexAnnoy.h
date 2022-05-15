@@ -25,6 +25,7 @@ namespace Annoy
     public:
         AnnoyIndexSerialize() = delete;
         explicit AnnoyIndexSerialize(const int dim) : Base::AnnoyIndex(dim) {}
+        void build(int num_of_trees);
         void serialize(WriteBuffer& ostr) const;
         void deserialize(ReadBuffer& istr);
         float getSpaceDim() const;
