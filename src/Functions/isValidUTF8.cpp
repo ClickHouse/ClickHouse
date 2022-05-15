@@ -208,6 +208,7 @@ SOFTWARE.
 
         /// 0 <= len <= 15 for now. Reading data from data - 1 because of right padding of 15 and left padding
         /// Then zero some bytes from the unknown memory and check again.
+        // todo: adapt for avx
         alignas(16) char buf[32];
         _mm_store_si128(reinterpret_cast<__m128i *>(buf), _mm_loadu_si128(reinterpret_cast<const __m128i *>(data - 1)));
         memset(buf + len + 1, 0, 16);

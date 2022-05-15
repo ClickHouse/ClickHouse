@@ -1,4 +1,3 @@
-// clang-format off
 #pragma once
 
 #include <string.h>
@@ -54,7 +53,7 @@ inline void memcpySmallAllowReadWriteOverflow15Impl(char * __restrict dst, const
 DECLARE_AVX2_SPECIFIC_CODE (
 
 inline void memcpySmallAllowReadWriteOverflow15Impl(char * __restrict dst, const char * __restrict src, ssize_t n) {
-	while (n > 16)
+	while (n > 0)
 	{
 		_mm256_storeu_si256(reinterpret_cast<__m256i *>(dst),
 			_mm256_loadu_si256(reinterpret_cast<const __m256i *>(src)));
@@ -63,15 +62,6 @@ inline void memcpySmallAllowReadWriteOverflow15Impl(char * __restrict dst, const
 		src += 32;
 		n -= 32;
 	}
-
-    while (n > 0)
-    {
-        _mm_storeu_si128(reinterpret_cast<__m128i *>(dst), _mm_loadu_si128(reinterpret_cast<const __m128i *>(src)));
-
-        dst += 16;
-        src += 16;
-        n -= 16;
-    }
 }
 
 )

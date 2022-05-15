@@ -358,6 +358,7 @@ private:
         ///    ^^^^^^^^^^^^^^^^
 
         /// PaddedPODArray allows overflow for 15 bytes.
+        // todo: adapt for avx
         for (size_t i = 0; i < size; i += 16)
         {
             /// This loop is formed in a way to be vectorized into two SIMD mov.

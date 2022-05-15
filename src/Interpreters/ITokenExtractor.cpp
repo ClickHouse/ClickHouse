@@ -114,6 +114,7 @@ bool SplitTokenExtractor::nextInStringPadded(const char * data, size_t length, s
     {
 #if defined(__SSE2__) && !defined(MEMORY_SANITIZER) /// We read uninitialized bytes and decide on the calculated mask
         // NOTE: we assume that `data` string is padded from the right with 15 bytes.
+        // todo: adapt for avx
         const __m128i haystack = _mm_loadu_si128(reinterpret_cast<const __m128i *>(data + *pos));
         const size_t haystack_length = 16;
 

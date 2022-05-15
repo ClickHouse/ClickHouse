@@ -90,6 +90,7 @@ void RandImpl::execute(char * output, size_t size)
         unalignedStore<UInt32>(output + 12, generator3.next());
     }
     /// It is guaranteed (by PaddedPODArray) that we can overwrite up to 15 bytes after end.
+    // todo: adapt for avx
 }
 
 ) // DECLARE_DEFAULT_CODE

@@ -28,7 +28,7 @@ template <typename Allocator = Allocator<false>>
 struct Memory : boost::noncopyable, Allocator
 {
     /// Padding is needed to allow usage of 'memcpySmallAllowReadWriteOverflow15' function with this buffer.
-    static constexpr size_t pad_right = 15;
+    static constexpr size_t pad_right = 31;
 
     size_t m_capacity = 0;  /// With padding.
     size_t m_size = 0;
