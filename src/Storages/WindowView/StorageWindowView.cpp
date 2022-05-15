@@ -350,21 +350,21 @@ namespace
         String getName() const override { return "AddingAggregatedChunkInfoTransform"; }
     };
 
-    static inline String generateInnerTableName(const StorageID & storage_id)
+    String generateInnerTableName(const StorageID & storage_id)
     {
         if (storage_id.hasUUID())
             return ".inner." + toString(storage_id.uuid);
         return ".inner." + storage_id.getTableName();
     }
 
-    static inline String generateTargetTableName(const StorageID & storage_id)
+    String generateTargetTableName(const StorageID & storage_id)
     {
         if (storage_id.hasUUID())
             return ".inner.target." + toString(storage_id.uuid);
         return ".inner.target." + storage_id.table_name;
     }
 
-    static ASTPtr generateInnerFetchQuery(StorageID inner_table_id)
+    ASTPtr generateInnerFetchQuery(StorageID inner_table_id)
     {
         auto fetch_query = std::make_shared<ASTSelectQuery>();
         auto select = std::make_shared<ASTExpressionList>();
