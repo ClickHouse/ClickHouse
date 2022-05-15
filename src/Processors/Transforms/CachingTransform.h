@@ -21,10 +21,10 @@ public:
                                          }).first))
     {}
     String getName() const override { return "CachingTransform"; }
-    ~CachingTransform()
+    ~CachingTransform() override
     {
         LOG_DEBUG(&Poco::Logger::get("CachingTransform::~CachingTransform"), "in destructor");
-        getPutInCacheMutex(cache_key).unlock();
+        cache->getPutInCacheMutex(cache_key).unlock();
         LOG_DEBUG(&Poco::Logger::get("CachingTransform::~CachingTransform"), "unlocked mutex");
     }
 

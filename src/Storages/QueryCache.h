@@ -117,7 +117,7 @@ public:
     }
 
 private:
-    size_t max_query_cache_entry_size;
+//    size_t max_query_cache_entry_size;
     std::unordered_map<CacheKey, size_t, CacheKeyHasher> times_executed;
     std::mutex times_executed_mutex;
     std::unordered_map<CacheKey, std::mutex, CacheKeyHasher> put_in_cache_mutexes;
