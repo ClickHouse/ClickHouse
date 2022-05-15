@@ -90,24 +90,14 @@ private:
     using Base = LRUCache<CacheKey, Data, CacheKeyHasher, QueryWeightFunction>;
 
 public:
-    QueryCache(size_t cache_size_in_bytes, size_t cache_size_in_num_entries) : Base(cache_size_in_bytes, cache_size_in_num_entries) { }
-    void updateCacheSize(CacheKey cache_key)
+    QueryCache(size_t cache_size_in_bytes, size_t cache_size_in_num_entries)
+        : Base(cache_size_in_bytes, cache_size_in_num_entries) { }
+
+    void addChunk(CacheKey cache_key, Chunk && chunk)
     {
-        std::lock_guard lock(mutex);
-        auto it = cells.find(cache_key);
-        if (it == cells.end())
-        {
-            return;
-        }
-
-        // ideally, the critical section should end here.
-        // this can be achieved by making Cell::size and LRUCache::current_size atomic + setting the right memory orders.
-        // might make sense to create a separate pr.
-
-        Cell & cell = it->second;
-        cell.size = cell.value ? weight_function(*cell.value) : 0;
-        current_size += cell.size;
-        removeOverflow();
+        auto data = get(cache_key);
+        data->second.push_back(std::move(chunk));
+        set(cache_key, data); // evicts cache if necessary
     }
 
     size_t recordQueryRun(CacheKey cache_key)

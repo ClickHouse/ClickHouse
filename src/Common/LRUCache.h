@@ -256,8 +256,6 @@ private:
     };
 
     friend struct InsertTokenHolder;
-    friend class QueryCache;
-
 
     InsertTokenById insert_tokens;
 
