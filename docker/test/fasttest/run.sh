@@ -179,6 +179,7 @@ function clone_submodules
             contrib/qpl
             contrib/nasm
             contrib/wyhash
+            contrib/eigen
         )
 
         git submodule sync

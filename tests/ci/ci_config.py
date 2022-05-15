@@ -37,6 +37,7 @@ CI_CONFIG = {
             "splitted": "unsplitted",
             "tidy": "disable",
             "with_coverage": False,
+            "official": False,
         },
         # FIXME update to gcc-12 and turn on
         # "binary_gcc": {
@@ -191,6 +192,7 @@ CI_CONFIG = {
             "build_type": "",
             "sanitizer": "",
             "package_type": "binary",
+            "static_binary_name": "powerpc64le",
             "bundled": "bundled",
             "splitted": "unsplitted",
             "tidy": "disable",
