@@ -6490,6 +6490,7 @@ ReservationPtr MergeTreeData::balancedReservation(
     ReservationPtr reserved_space;
     auto min_bytes_to_rebalance_partition_over_jbod = getSettings()->min_bytes_to_rebalance_partition_over_jbod;
     if (tagger_ptr && min_bytes_to_rebalance_partition_over_jbod > 0 && part_size >= min_bytes_to_rebalance_partition_over_jbod)
+    {
         try
         {
             const auto & disks = getStoragePolicy()->getVolume(max_volume_index)->getDisks();
@@ -6637,6 +6638,7 @@ ReservationPtr MergeTreeData::balancedReservation(
             LOG_DEBUG(log, "JBOD balancer encounters an error. Fallback to random disk selection");
             tryLogCurrentException(log);
         }
+    }
     return reserved_space;
 }
 
