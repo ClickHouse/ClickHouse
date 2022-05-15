@@ -13,42 +13,41 @@ endif ()
 # Print details to output
 execute_process(COMMAND ${CMAKE_CXX_COMPILER} --version)
 
+# Require minimum compiler versions
 set (CLANG_MINIMUM_VERSION 12)
 set (XCODE_MINIMUM_VERSION 12.0)
 set (APPLE_CLANG_MINIMUM_VERSION 12.0.0)
 set (GCC_MINIMUM_VERSION 11)
 
 if (COMPILER_GCC)
-    # Require minimum version of gcc
     if (CMAKE_CXX_COMPILER_VERSION VERSION_LESS ${GCC_MINIMUM_VERSION})
-        message (FATAL_ERROR "GCC version must be at least ${GCC_MINIMUM_VERSION}. For example, if GCC ${GCC_MINIMUM_VERSION} is available under gcc-${GCC_MINIMUM_VERSION}, g++-${GCC_MINIMUM_VERSION} names, do the following: export CC=gcc-${GCC_MINIMUM_VERSION} CXX=g++-${GCC_MINIMUM_VERSION}; rm -rf CMakeCache.txt CMakeFiles; and re run cmake or ./release.")
+        message (FATAL_ERROR "Compilation with GCC version ${CMAKE_CXX_COMPILER_VERSION} is unsupported, the minimum required version is ${GCC_MINIMUM_VERSION}.")
     endif ()
 
-    message (WARNING "GCC compiler is not officially supported for ClickHouse. You should migrate to clang.")
+    message (WARNING "Compilation with GCC is unsupported. Please use Clang instead.")
 
 elseif (COMPILER_CLANG)
-    # Require minimum version of clang/apple-clang
     if (CMAKE_CXX_COMPILER_ID MATCHES "AppleClang")
         # (Experimental!) Specify "-DALLOW_APPLECLANG=ON" when running CMake configuration step, if you want to experiment with using it.
         if (NOT ALLOW_APPLECLANG AND NOT DEFINED ENV{ALLOW_APPLECLANG})
-            message (FATAL_ERROR "AppleClang is not supported, you should install clang from brew. See the instruction: https://clickhouse.com/docs/en/development/build-osx/")
+            message (FATAL_ERROR "Compilation with AppleClang is unsupported. Please use vanilla Clang, e.g. from Homebrew.")
         endif ()
 
-        # For a mapping between versions of XCode - AppleClang - vanilla Clang, see https://en.wikipedia.org/wiki/Xcode
+        # For a mapping between XCode / AppleClang / vanilla Clang versions, see https://en.wikipedia.org/wiki/Xcode
         if (CMAKE_CXX_COMPILER_VERSION VERSION_LESS ${APPLE_CLANG_MINIMUM_VERSION})
-            message (FATAL_ERROR "AppleClang compiler version must be at least ${APPLE_CLANG_MINIMUM_VERSION} (Xcode ${XCODE_MINIMUM_VERSION}).")
+            message (FATAL_ERROR "Compilation with AppleClang version ${CMAKE_CXX_COMPILER_VERSION} is unsupported, the minimum required version is ${APPLE_CLANG_MINIMUM_VERSION} (Xcode ${XCODE_MINIMUM_VERSION}).")
         endif ()
     else ()
         if (CMAKE_CXX_COMPILER_VERSION VERSION_LESS ${CLANG_MINIMUM_VERSION})
-            message (FATAL_ERROR "Clang version must be at least ${CLANG_MINIMUM_VERSION}.")
+            message (FATAL_ERROR "Compilation with Clang version ${CMAKE_CXX_COMPILER_VERSION} is unsupported, the minimum required version is ${CLANG_MINIMUM_VERSION}.")
         endif ()
     endif ()
 endif ()
 
+# Linker
+
 string (REGEX MATCHALL "[0-9]+" COMPILER_VERSION_LIST ${CMAKE_CXX_COMPILER_VERSION})
 list (GET COMPILER_VERSION_LIST 0 COMPILER_VERSION_MAJOR)
-
-# Linker
 
 # Example values: `lld-10`, `gold`.
 option (LINKER_NAME "Linker name or full path")
