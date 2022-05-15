@@ -50,8 +50,8 @@ void IndexWrap<Dist>::loadIndex(DB::ReadBuffer & istr, bool load_data)
     {
         std::vector<std::string> dummy;
         freeAndClearObjectVector();
-        size_t qty;
-        size_t obj_size;
+        size_t qty = 0;
+        size_t obj_size = 0;
         istr.read(reinterpret_cast<char *>(&qty), sizeof(qty));
         for (size_t i = 0; i < qty; ++i)
         {
@@ -88,7 +88,7 @@ void IndexWrap<Dist>::loadIndex(DB::ReadBuffer & istr, bool load_data)
 
     for (size_t i = 0; i < index->totalElementsStored_; i++)
     {
-        size_t link_list_size;
+        size_t link_list_size = 0;
         istr.read(reinterpret_cast<char *>(&link_list_size), sizeof(link_list_size));
 
         if (link_list_size == 0)
