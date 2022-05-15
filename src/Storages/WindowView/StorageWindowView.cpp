@@ -638,7 +638,9 @@ inline void StorageWindowView::fire(UInt32 watermark)
             if (auto watch_stream_ptr = watch_stream.lock())
                 watch_stream_ptr->addBlock(block, watermark);
         }
+        fire_condition.notify_all();
     }
+
     if (!target_table_id.empty())
     {
         StoragePtr target_table = getTargetStorage();
@@ -1495,11 +1497,8 @@ void StorageWindowView::shutdown()
 {
     shutdown_called = true;
 
-    {
-        std::lock_guard lock(mutex);
-        fire_condition.notify_all();
-        fire_signal_condition.notify_all();
-    }
+    fire_condition.notify_all();
+    fire_signal_condition.notify_all();
 
     clean_cache_task->deactivate();
     fire_task->deactivate();
