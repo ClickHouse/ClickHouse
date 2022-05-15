@@ -7,12 +7,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int CANNOT_BACKUP_TABLE;
-    extern const int LOGICAL_ERROR;
-}
-
 using SizeAndChecksum = IBackupCoordination::SizeAndChecksum;
 using FileInfo = IBackupCoordination::FileInfo;
 
