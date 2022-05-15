@@ -24,22 +24,22 @@ public:
     ~PigzDeflatingWriteBuffer() override;
 
 private:
-    void nextImpl() override;
-
-    virtual void finalizeBefore() override;
-    virtual void finalizeAfter() override;
-
     struct CompressedBuf {
         std::shared_ptr<Memory<>> mem;
         size_t len;
     };
 
-    void compressAndWrite(unsigned char * in_buf, size_t in_len, bool final_compression_flag);
+    void nextImpl() override;
+
+    virtual void finalizeBefore() override;
+    virtual void finalizeAfter() override;
+
     void writeHeader();
     void writeTrailer();
     void deflateEngine(z_stream & strm, WriteBuffer & out_buf, int flush);
-    CompressedBuf compressSlice(unsigned char * in_buf, size_t in_len, bool last_block_flag);
+    CompressedBuf compressBlock(unsigned char * in_buf, size_t in_len, bool last_block_flag);
     size_t calcCheck(unsigned char * buf, size_t len);
+    void compressAndWrite(unsigned char * in_buf, size_t in_len, bool final_compression_flag);
 
     int compression_level;
     std::string filename;

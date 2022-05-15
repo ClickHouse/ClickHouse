@@ -115,9 +115,8 @@ void PigzDeflatingWriteBuffer::deflateEngine(z_stream & strm, WriteBuffer & out_
     } while (strm.avail_in > 0 || strm.avail_out == 0);
 }
 
-PigzDeflatingWriteBuffer::CompressedBuf PigzDeflatingWriteBuffer::compressSlice(unsigned char * in_buf, size_t in_len, bool last_block_flag)
+PigzDeflatingWriteBuffer::CompressedBuf PigzDeflatingWriteBuffer::compressBlock(unsigned char * in_buf, size_t in_len, bool last_block_flag)
 {
-    // TODO: понять сколько нужно памяти и вынести в константу (должны сократится аллокации)
     auto mem = std::make_shared<Memory<>>(10);
     BufferWithOutsideMemory<WriteBuffer> out_buf(*mem);
 
@@ -162,8 +161,8 @@ void PigzDeflatingWriteBuffer::compressAndWrite(unsigned char * in_buf, size_t i
     size_t cnt_blocks = in_len / def_block + bool(in_len % def_block);
     try
     {
-        if (cnt_blocks == 0) {
-            auto result = compressSlice(in_buf, in_len, true);
+        if (final_compression_flag && cnt_blocks == 0) {
+            auto result = compressBlock(in_buf, in_len, true);
             out->write(result.mem->data(), result.len);
             check = crc32_combine(check, calcCheck(in_buf, in_len), in_len);
             return;
@@ -178,18 +177,18 @@ void PigzDeflatingWriteBuffer::compressAndWrite(unsigned char * in_buf, size_t i
             size_t block = std::min(def_block, in_remaining_len);
             blocks[i] = block;
 
-            unsigned char *in_slice_buf = in_buf + (in_len - in_remaining_len);
+            unsigned char *block_buf = in_buf + (in_len - in_remaining_len);
 
             pool.scheduleOrThrowOnError(
-                [&, i = i, final_compression_flag= final_compression_flag, in_remaining_len = in_remaining_len, block = block, in_slice_buf = in_slice_buf]
+                [&, i = i, final_compression_flag= final_compression_flag, in_remaining_len = in_remaining_len, block = block, block_buf = block_buf]
                 {
-                    results[i] = compressSlice(in_slice_buf, block, final_compression_flag && (block == in_remaining_len));
+                    results[i] = compressBlock(block_buf, block, final_compression_flag && (block == in_remaining_len));
                 });
 
             pool.scheduleOrThrowOnError(
-                [&, i = i, block = block, in_slice_buf = in_slice_buf]
+                [&, i = i, block = block, block_buf = block_buf]
                 {
-                    checks[i] = calcCheck(in_slice_buf, block);
+                    checks[i] = calcCheck(block_buf, block);
                 });
 
         }
