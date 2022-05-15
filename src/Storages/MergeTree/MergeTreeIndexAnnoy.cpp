@@ -58,6 +58,11 @@ float AnnoyIndexSerialize<Dist>::getSpaceDim() const
     return Base::get_f();
 }
 
+template<typename Dist>
+void AnnoyIndexSerialize<Dist>::build(int num_of_trees)
+{
+    Base::_verbose = false;
+    Base::build(num_of_trees);
 }
 
 
@@ -143,9 +148,9 @@ void MergeTreeIndexAggregatorAnnoy::update(const Block & block, size_t * pos, si
     const auto & columns = column_tuple->getColumns();
 
     std::vector<std::vector<Float32>> data{column_tuple->size(), std::vector<Float32>()};
-    for (size_t j = 0; j < columns.size(); ++j)
+    for (const auto& column : columns)
     {
-        const auto& pod_array = typeid_cast<const ColumnFloat32*>(columns[j].get())->getData();
+        const auto& pod_array = typeid_cast<const ColumnFloat32*>(column.get())->getData();
         for (size_t i = 0; i < pod_array.size(); ++i)
         {
             data[i].push_back(pod_array[i]);
