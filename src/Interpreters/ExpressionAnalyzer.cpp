@@ -1020,7 +1020,7 @@ static std::shared_ptr<IJoin> chooseJoinAlgorithm(std::shared_ptr<TableJoin> ana
     {
         if (analyzed_join->allowParallelHashJoin())
         {
-            return std::make_shared<JoinStuff::ConcurrentHashJoin>(context, analyzed_join, context->getSettings().max_threads, sample_block);
+            return std::make_shared<ConcurrentHashJoin>(context, analyzed_join, context->getSettings().max_threads, sample_block);
         }
         return std::make_shared<HashJoin>(analyzed_join, sample_block);
     }
