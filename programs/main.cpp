@@ -335,7 +335,7 @@ struct Checker
 ;
 
 /// NOTE: We will migrate to full static linking or our own dynamic loader to make this code obsolete.
-void checkHarmfulEnvironmentVariables()
+void checkHarmfulEnvironmentVariables(char ** argv)
 {
     std::initializer_list<const char *> harmful_env_variables = {
         /// The list is a selection from "man ld-linux".
@@ -351,13 +351,38 @@ void checkHarmfulEnvironmentVariables()
         "DYLD_INSERT_LIBRARIES",
     };
 
+    bool require_reexec = false;
     for (const auto * var : harmful_env_variables)
     {
         if (const char * value = getenv(var); value && value[0])
         {
-            std::cerr << fmt::format("Environment variable {} is set to {}. It can compromise security.\n", var, value);
-            _exit(1);
+            /// NOTE: setenv() is used over unsetenv() since unsetenv() marked as harmful
+            if (setenv(var, "", true))
+            {
+                fmt::print(stderr, "Cannot override {} environment variable", var);
+                _exit(1);
+            }
+            require_reexec = true;
         }
+    }
+
+    if (require_reexec)
+    {
+        /// Use execvp() over execv() to search in PATH.
+        ///
+        /// This should be safe, since:
+        /// - if argv[0] is relative path - it is OK
+        /// - if argv[0] has only basename, the it will search in PATH, like shell will do.
+        ///
+        /// Also note, that this (search in PATH) because there is no easy and
+        /// portable way to get absolute path of argv[0].
+        /// - on linux there is /proc/self/exec and AT_EXECFN
+        /// - but on other OSes there is no such thing (especially on OSX).
+        ///
+        /// And since static linking will be done someday anyway,
+        /// let's not pollute the code base with special cases.
+        int error = execvp(argv[0], argv);
+        _exit(error);
     }
 }
 
@@ -381,7 +406,7 @@ int main(int argc_, char ** argv_)
     inside_main = true;
     SCOPE_EXIT({ inside_main = false; });
 
-    checkHarmfulEnvironmentVariables();
+    checkHarmfulEnvironmentVariables(argv_);
 
     /// Reset new handler to default (that throws std::bad_alloc)
     /// It is needed because LLVM library clobbers it.
