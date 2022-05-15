@@ -5,6 +5,7 @@
 #include <Common/SLRUCachePolicy.h>
 
 #include <atomic>
+#include <cassert>
 #include <chrono>
 #include <memory>
 #include <mutex>
@@ -30,7 +31,7 @@ public:
     using Mapped = TMapped;
     using MappedPtr = std::shared_ptr<Mapped>;
 
-    CacheBase(size_t max_size, size_t max_elements_size = 0) : CacheBase("LRU", max_size, max_elements_size) {}
+    CacheBase(size_t max_size, size_t max_elements_size = 0) : CacheBase("SLRU", max_size, max_elements_size) {}
 
     /// TODO: Rewrite "Args... args" to custom struct with fields for all cache policies.
     template <class... Args>
@@ -65,6 +66,11 @@ public:
     {
         std::lock_guard lock(mutex);
 
+        auto weight = cache_policy->weight(lock);
+        auto max_weight = cache_policy->maxSize();
+        LOG_DEBUG(&Poco::Logger::get("CacheBase"), "Info before get. Weight: {}. Max weight: {}", weight, max_weight);
+        assert(weight <= max_weight);
+
         auto res = cache_policy->get(key, lock);
         if (res)
             ++hits;
@@ -77,6 +83,11 @@ public:
     void set(const Key & key, const MappedPtr & mapped)
     {
         std::lock_guard lock(mutex);
+
+        auto weight = cache_policy->weight(lock);
+        auto max_weight = cache_policy->maxSize();
+        LOG_DEBUG(&Poco::Logger::get("CacheBase"), "Info before set. Weight: {}. Max weight: {}", weight, max_weight);
+        assert(weight <= max_weight);
 
         cache_policy->set(key, mapped, lock);
     }
@@ -95,6 +106,11 @@ public:
         InsertTokenHolder token_holder;
         {
             std::lock_guard cache_lock(mutex);
+
+            auto weight = cache_policy->weight(cache_lock);
+            auto max_weight = cache_policy->maxSize();
+            LOG_DEBUG(&Poco::Logger::get("CacheBase"), "Info before getOrSet. Weight: {}. Max weight: {}", weight, max_weight);
+            assert(weight <= max_weight);
 
             auto val = cache_policy->get(key, cache_lock);
             if (val)
@@ -154,6 +170,12 @@ public:
     void reset()
     {
         std::lock_guard lock(mutex);
+
+        auto weight = cache_policy->weight(lock);
+        auto max_weight = cache_policy->maxSize();
+        LOG_DEBUG(&Poco::Logger::get("CacheBase"), "Info before reset. Weight: {}. Max weight: {}", weight, max_weight);
+        assert(weight <= max_weight);
+
         insert_tokens.clear();
         hits = 0;
         misses = 0;
@@ -163,6 +185,12 @@ public:
     void remove(const Key & key)
     {
         std::lock_guard lock(mutex);
+
+        auto weight = cache_policy->weight(lock);
+        auto max_weight = cache_policy->maxSize();
+        LOG_DEBUG(&Poco::Logger::get("CacheBase"), "Info before remove. Weight: {}. Max weight: {}", weight, max_weight);
+        assert(weight <= max_weight);
+
         cache_policy->remove(key, lock);
     }
 
@@ -193,7 +221,7 @@ private:
 
     std::unique_ptr<CachePolicy> cache_policy;
 
-    inline static const String default_cache_policy_name = "LRU";
+    inline static const String default_cache_policy_name = "SLRU";
 
     std::atomic<size_t> hits{0};
     std::atomic<size_t> misses{0};
