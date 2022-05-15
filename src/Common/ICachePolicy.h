@@ -26,7 +26,7 @@ public:
 
     virtual size_t weight([[maybe_unused]] std::lock_guard<std::mutex> & cache_lock) const = 0;
     virtual size_t count([[maybe_unused]] std::lock_guard<std::mutex> & cache_lock) const = 0;
-    virtual size_t maxSize([[maybe_unused]] std::lock_guard<std::mutex> & cache_lock) const = 0;
+    virtual size_t maxSize() const = 0;
 
     virtual void reset([[maybe_unused]] std::lock_guard<std::mutex> & cache_lock) = 0;
     virtual void remove(const Key & key, [[maybe_unused]] std::lock_guard<std::mutex> & cache_lock) = 0;

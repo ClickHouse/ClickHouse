@@ -180,8 +180,7 @@ public:
 
     size_t maxSize() const
     {
-        std::lock_guard lock(mutex);
-        return cache_policy->maxSize(lock);
+        return cache_policy->maxSize();
     }
 
     virtual ~CacheBase() = default;

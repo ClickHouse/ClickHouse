@@ -51,7 +51,7 @@ public:
         return cells.size();
     }
 
-    size_t maxSize([[maybe_unused]] std::lock_guard<std::mutex> & cache_lock) const override
+    size_t maxSize() const override
     {
         return max_size;
     }
