@@ -77,6 +77,7 @@ void registerOutputFormatMySQLWire(FormatFactory & factory);
 void registerOutputFormatMarkdown(FormatFactory & factory);
 void registerOutputFormatPostgreSQLWire(FormatFactory & factory);
 void registerOutputFormatPrometheus(FormatFactory & factory);
+void registerOutputFormatPng(FormatFactory & factory);
 
 /// Input only formats.
 
@@ -192,6 +193,7 @@ void registerFormats()
     registerOutputFormatPostgreSQLWire(factory);
     registerOutputFormatCapnProto(factory);
     registerOutputFormatPrometheus(factory);
+    registerOutputFormatPng(factory);
 
     registerInputFormatRegexp(factory);
     registerInputFormatJSONAsString(factory);
