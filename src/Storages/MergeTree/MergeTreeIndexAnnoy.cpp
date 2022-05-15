@@ -59,10 +59,10 @@ float AnnoyIndexSerialize<Dist>::getSpaceDim() const
 }
 
 template<typename Dist>
-void AnnoyIndexSerialize<Dist>::build(int num_of_trees)
+bool AnnoyIndexSerialize<Dist>::build(int num_of_trees)
 {
     Base::_verbose = false;
-    Base::build(num_of_trees);
+    return Base::build(num_of_trees);
 }
 
 
