@@ -11,7 +11,8 @@ else ()
 endif ()
 
 # Print details to output
-execute_process(COMMAND ${CMAKE_CXX_COMPILER} --version)
+execute_process(COMMAND ${CMAKE_CXX_COMPILER} --version OUTPUT_VARIABLE COMPILER_SELF_IDENTIFICATION OUTPUT_STRIP_TRAILING_WHITESPACE)
+message (STATUS "Using compiler:\n${COMPILER_SELF_IDENTIFICATION}")
 
 # Require minimum compiler versions
 set (CLANG_MINIMUM_VERSION 12)
@@ -111,6 +112,8 @@ if (LLVM_AR_PATH)
     set (CMAKE_AR "${LLVM_AR_PATH}")
 endif ()
 
+message(STATUS "Using archiver: ${CMAKE_AR}")
+
 # Ranlib
 
 if (COMPILER_GCC)
@@ -123,6 +126,8 @@ if (LLVM_RANLIB_PATH)
     set (CMAKE_RANLIB "${LLVM_RANLIB_PATH}")
 endif ()
 
+message(STATUS "Using ranlib: ${CMAKE_RANLIB}")
+
 # Install Name Tool
 
 if (COMPILER_GCC)
@@ -134,6 +139,8 @@ endif ()
 if (LLVM_INSTALL_NAME_TOOL_PATH)
     set (CMAKE_INSTALL_NAME_TOOL "${LLVM_INSTALL_NAME_TOOL_PATH}")
 endif ()
+
+message(STATUS "Using install-name-tool: ${CMAKE_INSTALL_NAME_TOOL}")
 
 # Objcopy
 
