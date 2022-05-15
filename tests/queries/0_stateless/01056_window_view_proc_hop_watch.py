@@ -25,13 +25,11 @@ with client(name="client1>", log=log) as client1, client(
     client2.send("SET allow_experimental_window_view = 1")
     client2.expect(prompt)
 
-    client1.send("CREATE DATABASE 01056_window_view_proc_hop_watch")
+    client1.send("CREATE DATABASE IF NOT EXISTS 01056_window_view_proc_hop_watch")
     client1.expect(prompt)
     client1.send("DROP TABLE IF EXISTS 01056_window_view_proc_hop_watch.mt")
     client1.expect(prompt)
     client1.send("DROP TABLE IF EXISTS 01056_window_view_proc_hop_watch.wv")
-    client1.expect(prompt)
-    client1.send("DROP TABLE IF EXISTS `.inner.wv`")
     client1.expect(prompt)
 
     client1.send(
