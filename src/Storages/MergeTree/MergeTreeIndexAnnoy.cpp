@@ -59,10 +59,12 @@ float AnnoyIndexSerialize<Dist>::getSpaceDim() const
 }
 
 template<typename Dist>
-bool AnnoyIndexSerialize<Dist>::build(int num_of_trees)
+bool AnnoyIndexSerialize<Dist>::build(int num_of_trees, int n_threads, char** error)
 {
     Base::_verbose = false;
-    return Base::build(num_of_trees);
+    return Base::build(num_of_trees, n_threads, error);
+}
+
 }
 
 
@@ -94,7 +96,7 @@ bool MergeTreeIndexGranuleAnnoy::empty() const
 
 void MergeTreeIndexGranuleAnnoy::serializeBinary(WriteBuffer & ostr) const
 {
-    writeIntBinary(index_base->get_f(), ostr); // write dimension
+    writeIntBinary(index_base->getSpaceDim(), ostr); // write dimension
     index_base->serialize(ostr);
 }
 
