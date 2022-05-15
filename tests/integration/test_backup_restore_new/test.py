@@ -273,16 +273,26 @@ def test_zip_archive_with_settings():
 def test_async():
     create_and_fill_table()
     assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
-    
+
     backup_name = new_backup_name()
-    [id, _, status] = instance.query(f"BACKUP TABLE test.table TO {backup_name} ASYNC").split('\t')
-    assert status == 'MAKING_BACKUP\n'
-    assert_eq_with_retry(instance, f"SELECT status FROM system.backups WHERE uuid='{id}'", 'BACKUP_COMPLETE\n')
+    [id, _, status] = instance.query(
+        f"BACKUP TABLE test.table TO {backup_name} ASYNC"
+    ).split("\t")
+    assert status == "MAKING_BACKUP\n"
+    assert_eq_with_retry(
+        instance,
+        f"SELECT status FROM system.backups WHERE uuid='{id}'",
+        "BACKUP_COMPLETE\n",
+    )
 
     instance.query("DROP TABLE test.table")
 
-    [id, _, status] = instance.query(f"RESTORE TABLE test.table FROM {backup_name} ASYNC").split('\t')
-    assert status == 'RESTORING\n'
-    assert_eq_with_retry(instance, f"SELECT status FROM system.backups WHERE uuid='{id}'", 'RESTORED\n')
+    [id, _, status] = instance.query(
+        f"RESTORE TABLE test.table FROM {backup_name} ASYNC"
+    ).split("\t")
+    assert status == "RESTORING\n"
+    assert_eq_with_retry(
+        instance, f"SELECT status FROM system.backups WHERE uuid='{id}'", "RESTORED\n"
+    )
 
     assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"

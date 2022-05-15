@@ -371,7 +371,7 @@ def test_replicated_database_async():
     )
 
     node1.query("CREATE TABLE mydb.tbl(x UInt8) ENGINE=ReplicatedMergeTree ORDER BY x")
-    
+
     node1.query(
         "CREATE TABLE mydb.tbl2(y String) ENGINE=ReplicatedMergeTree ORDER BY y"
     )
@@ -388,9 +388,9 @@ def test_replicated_database_async():
     [id, _, status] = node1.query(
         f"BACKUP DATABASE mydb ON CLUSTER 'cluster' TO {backup_name} ASYNC"
     ).split("\t")
-    
+
     assert status == "MAKING_BACKUP\n"
-    
+
     assert_eq_with_retry(
         node1,
         f"SELECT status FROM system.backups WHERE uuid='{id}'",
@@ -402,9 +402,9 @@ def test_replicated_database_async():
     [id, _, status] = node1.query(
         f"RESTORE DATABASE mydb ON CLUSTER 'cluster' FROM {backup_name} ASYNC"
     ).split("\t")
-    
+
     assert status == "RESTORING\n"
-    
+
     assert_eq_with_retry(
         node1, f"SELECT status FROM system.backups WHERE uuid='{id}'", "RESTORED\n"
     )

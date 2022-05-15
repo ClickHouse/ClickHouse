@@ -278,7 +278,7 @@ namespace
                 UInt128 checksum;
                 hash.get128(checksum);
                 auto & part_name_and_checksum = part_names_and_checksums.emplace_back();
-                part_name_and_checksum.part_name = std::move(part_name);
+                part_name_and_checksum.part_name = part_name;
                 part_name_and_checksum.checksum = checksum;
             }
             backup_coordination->addReplicatedTablePartNames(backup_settings.host_id, table_name_, zk_path, part_names_and_checksums);

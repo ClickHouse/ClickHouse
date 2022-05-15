@@ -23,9 +23,9 @@
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
-    extern const int QUERY_IS_PROHIBITED;
     extern const int LOGICAL_ERROR;
 }
 
