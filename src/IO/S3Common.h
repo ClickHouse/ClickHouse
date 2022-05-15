@@ -44,12 +44,14 @@ public:
     PocoHTTPClientConfiguration createClientConfiguration(
         const String & force_region,
         const RemoteHostFilter & remote_host_filter,
-        unsigned int s3_max_redirects);
+        unsigned int s3_max_redirects,
+        bool enable_s3_requestrs_logging);
 
 private:
     ClientFactory();
 
     Aws::SDKOptions aws_options;
+    std::atomic<bool> s3_requests_logging_enabled;
 };
 
 /**
