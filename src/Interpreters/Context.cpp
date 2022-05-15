@@ -1756,7 +1756,7 @@ void Context::dropIndexMarkCache() const
         shared->index_mark_cache->reset();
 }
 
-void Context::setQueryCache(size_t cache_size_in_bytes, size_t max_query_cache_entry_size)
+void Context::setQueryCache(size_t cache_size_in_bytes)
 {
     auto lock = getLock();
 
