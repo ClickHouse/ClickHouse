@@ -1,5 +1,6 @@
 #pragma once
 
+#include <adapters/libuv.h>
 #include <memory>
 #include <mutex>
 #include <thread>
