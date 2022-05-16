@@ -19,7 +19,7 @@
 /** This file was edited for ClickHouse.
   */
 
-#include <string.h>
+#include <cstring>
 
 #include <Common/Elf.h>
 #include <Common/Dwarf.h>

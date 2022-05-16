@@ -90,7 +90,8 @@ public:
         UInt64 stage,
         const Settings * settings,
         const ClientInfo * client_info,
-        bool with_pending_data) = 0;
+        bool with_pending_data,
+        std::function<void(const Progress &)> process_progress_callback) = 0;
 
     virtual void sendCancel() = 0;
 
