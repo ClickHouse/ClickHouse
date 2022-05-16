@@ -28,6 +28,9 @@ void registerStorageGenerateRandom(StorageFactory & factory);
 void registerStorageExecutable(StorageFactory & factory);
 void registerStorageWindowView(StorageFactory & factory);
 void registerStorageLinReg(StorageFactory & factory);
+void registerStorageLinRegg(StorageFactory & factory);
+void registerStorageLogReg(StorageFactory & factory);
+void registerStorageLinearSVM(StorageFactory & factory);
 
 #if USE_AWS_S3
 void registerStorageS3(StorageFactory & factory);
@@ -106,6 +109,9 @@ void registerStorages()
     registerStorageExecutable(factory);
     registerStorageWindowView(factory);
     registerStorageLinReg(factory);
+    registerStorageLinRegg(factory);
+    registerStorageLogReg(factory);
+    registerStorageLinearSVM(factory);
 
     #if USE_AWS_S3
     registerStorageS3(factory);
