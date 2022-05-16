@@ -216,6 +216,11 @@ public:
 
     virtual bool isCached() const { return false; }
 
+    virtual DiskPtr getWrappedDisk() const
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method `getWrappedDisk()` is not implemeneted for disk: {}", getType());
+    }
+
     /// Returns a list of paths because for Log family engines there might be
     /// multiple files in remote fs for single clickhouse file.
     virtual std::vector<String> getRemotePaths(const String &) const
