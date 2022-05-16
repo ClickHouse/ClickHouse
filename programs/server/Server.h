@@ -97,8 +97,7 @@ private:
         Poco::Util::AbstractConfiguration & config,
         Poco::ThreadPool & server_pool,
         AsynchronousMetrics & async_metrics,
-        std::vector<ProtocolServerAdapter> & servers,
-        std::vector<ProtocolServerAdapter> & updated_servers);
+        std::vector<ProtocolServerAdapter> & servers);
 };
 
 }
