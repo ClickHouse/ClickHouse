@@ -3,7 +3,8 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Storages/System/StorageSystemCertificates.h>
-#include <regex>
+#include <re2/re2.h>
+#include <boost/algorithm/string.hpp>
 #include <filesystem>
 #include "Poco/File.h"
 #if USE_SSL
@@ -36,27 +37,12 @@ NamesAndTypesList StorageSystemCertificates::getNamesAndTypes()
 
 static std::unordered_set<std::string> parse_dir(const std::string & dir)
 {
+    std::vector<std::string> dirs;
+    boost::split(dirs, dir, boost::is_any_of(":"), boost::token_compress_on);
+
     std::unordered_set<std::string> ret;
-
-    if (dir.empty())
-        return ret;
-
-    size_t len;
-    const char * ss;
-    const char * s = dir.c_str();
-    const char * p = s;
-    do
-    {
-        if ((*p == ':') || (*p == '\0'))
-        {
-            ss = s;
-            s = p + 1;
-            len = p - ss;
-            if (len == 0)
-                continue;
-            ret.emplace(ss, len);
-        }
-    } while (*p++ != '\0');
+    for (auto & d : dirs)
+        ret.emplace(std::move(d));
 
     return ret;
 }
@@ -75,7 +61,7 @@ static void populateTable(const X509 * cert, MutableColumns & res_columns, const
         if (BN_print(b, bnsn) > 0 && BIO_read(b, buf, sizeof(buf)) > 0)
             res_columns[col]->insert(buf);
         else
-            res_columns[col]->insert(Field());
+            res_columns[col]->insertDefault();
         BN_free(bnsn);
     }
     ++col;
@@ -91,7 +77,7 @@ static void populateTable(const X509 * cert, MutableColumns & res_columns, const
             res_columns[col]->insert(buf);
         }
         else
-            res_columns[col]->insert(Field());
+            res_columns[col]->insertDefault();
     }
     ++col;
 
@@ -102,7 +88,7 @@ static void populateTable(const X509 * cert, MutableColumns & res_columns, const
         OPENSSL_free(issuer);
     }
     else
-        res_columns[col]->insert(Field());
+        res_columns[col]->insertDefault();
     ++col;
 
     {
@@ -110,7 +96,7 @@ static void populateTable(const X509 * cert, MutableColumns & res_columns, const
         if (ASN1_TIME_print(b, X509_get_notBefore(cert)) && BIO_read(b, buf, sizeof(buf)) > 0)
             res_columns[col]->insert(buf);
         else
-            res_columns[col]->insert(Field());
+            res_columns[col]->insertDefault();
     }
     ++col;
 
@@ -119,7 +105,7 @@ static void populateTable(const X509 * cert, MutableColumns & res_columns, const
         if (ASN1_TIME_print(b, X509_get_notAfter(cert)) && BIO_read(b, buf, sizeof(buf)) > 0)
             res_columns[col]->insert(buf);
         else
-            res_columns[col]->insert(Field());
+            res_columns[col]->insertDefault();
     }
     ++col;
 
@@ -130,7 +116,7 @@ static void populateTable(const X509 * cert, MutableColumns & res_columns, const
         OPENSSL_free(subject);
     }
     else
-        res_columns[col]->insert(Field());
+        res_columns[col]->insertDefault();
     ++col;
 
     if (X509_PUBKEY * pkey = X509_get_X509_PUBKEY(cert))
@@ -144,10 +130,10 @@ static void populateTable(const X509 * cert, MutableColumns & res_columns, const
             i2a_ASN1_OBJECT(b, ppkalg) > 0 && BIO_read(b, buf, sizeof(buf)) > 0)
                 res_columns[col]->insert(buf);
         else
-            res_columns[col]->insert(Field());
+            res_columns[col]->insertDefault();
     }
     else
-        res_columns[col]->insert(Field());
+        res_columns[col]->insertDefault();
     ++col;
 
     res_columns[col++]->insert(path);
@@ -158,13 +144,14 @@ static void populateTable(const X509 * cert, MutableColumns & res_columns, const
 
 static void enumCertificates(const std::string & dir, bool def, MutableColumns & res_columns)
 {
-    static const std::regex cert_name("^[a-fA-F0-9]{8}\\.\\d$");
+    static const RE2 cert_name("^[a-fA-F0-9]{8}\\.\\d$");
+    assert(cert_name.ok());
 
     const std::filesystem::path p(dir);
 
     for (auto const& dir_entry : std::filesystem::directory_iterator(p))
     {
-        if (!dir_entry.is_regular_file() || !std::regex_match(dir_entry.path().filename().string(), cert_name))
+        if (!dir_entry.is_regular_file() || !RE2::FullMatch(dir_entry.path().filename().string(), cert_name))
             continue;
 
         Poco::Crypto::X509Certificate cert(dir_entry.path());
