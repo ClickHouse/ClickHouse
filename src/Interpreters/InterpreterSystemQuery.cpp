@@ -312,12 +312,12 @@ BlockIO InterpreterSystemQuery::execute()
             {
                 auto caches = FileCacheFactory::instance().getAll();
                 for (const auto & [_, cache_data] : caches)
-                    cache_data.cache->remove(query.force_removal);
+                    cache_data.cache->remove();
             }
             else
             {
                 auto cache = FileCacheFactory::instance().get(query.filesystem_cache_path);
-                cache->remove(query.force_removal);
+                cache->remove();
             }
             break;
         }
