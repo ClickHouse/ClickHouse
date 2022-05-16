@@ -1,8 +1,8 @@
 ---
-toc_title: INTO OUTFILE
+sidebar_label: INTO OUTFILE
 ---
 
-# INTO OUTFILE Clause {#into-outfile-clause}
+# INTO OUTFILE Clause
 
 `INTO OUTFILE` clause redirects the result of a `SELECT` query to a file on the **client** side.
 

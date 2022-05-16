@@ -1,6 +1,6 @@
 ---
-toc_priority: 19
-toc_title: HTTP Interface
+sidebar_position: 19
+sidebar_label: HTTP Interface
 ---
 
 # HTTP Interface {#http-interface}
@@ -178,8 +178,9 @@ You can also choose to use [HTTP compression](https://en.wikipedia.org/wiki/HTTP
 To send a compressed `POST` request, append the request header `Content-Encoding: compression_method`.
 In order for ClickHouse to compress the response, enable compression with [enable_http_compression](../operations/settings/settings.md#settings-enable_http_compression) setting and append `Accept-Encoding: compression_method` header to the request. You can configure the data compression level in the [http_zlib_compression_level](../operations/settings/settings.md#settings-http_zlib_compression_level) setting for all compression methods.
 
-!!! note "Note"
-    Some HTTP clients might decompress data from the server by default (with `gzip` and `deflate`) and you might get decompressed data even if you use the compression settings correctly.
+:::info    
+Some HTTP clients might decompress data from the server by default (with `gzip` and `deflate`) and you might get decompressed data even if you use the compression settings correctly.
+:::
 
 **Examples**
 
@@ -425,7 +426,7 @@ Now `rule` can configure `method`, `headers`, `url`, `handler`:
 
     -   `status` — use with `static` type, response status code.
 
-    -   `content_type` — use with `static` type, response [content-type](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Type).
+    -   `content_type` — use with any type, response [content-type](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Type).
 
     -   `response_content` — use with `static` type, response content sent to client, when using the prefix ‘file://’ or ‘config://’, find the content from the file or configuration sends to client.
 
@@ -439,8 +440,9 @@ Next are the configuration methods for different `type`.
 
 The following example defines the values of [max_threads](../operations/settings/settings.md#settings-max_threads) and `max_final_threads` settings, then queries the system table to check whether these settings were set successfully.
 
-!!! note "Warning"
-    To keep the default `handlers` such as` query`, `play`,` ping`, use the `<defaults/>` rule.
+:::warning
+To keep the default `handlers` such as` query`, `play`,` ping`, add the `<defaults/>` rule.
+:::
 
 Example:
 
@@ -469,8 +471,9 @@ $ curl -H 'XXX:TEST_HEADER_VALUE' -H 'PARAMS_XXX:max_threads' 'http://localhost:
 max_final_threads   2
 ```
 
-!!! note "caution"
-    In one `predefined_query_handler` only supports one `query` of an insert type.
+:::warning
+In one `predefined_query_handler` only supports one `query` of an insert type.
+:::
 
 ### dynamic_query_handler {#dynamic_query_handler}
 

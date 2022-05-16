@@ -1,4 +1,4 @@
-#include <QueryPipeline/narrowBlockInputStreams.h>
+#include <QueryPipeline/narrowPipe.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Storages/StorageMerge.h>
 #include <Storages/StorageFactory.h>
@@ -175,7 +175,7 @@ QueryProcessingStage::Enum StorageMerge::getQueryProcessingStage(
     /// In case of JOIN the first stage (which includes JOIN)
     /// should be done on the initiator always.
     ///
-    /// Since in case of JOIN query on shards will receive query w/o JOIN (and their columns).
+    /// Since in case of JOIN query on shards will receive query without JOIN (and their columns).
     /// (see removeJoin())
     ///
     /// And for this we need to return FetchColumns.
@@ -296,7 +296,7 @@ Pipe StorageMerge::read(
 
     size_t tables_count = selected_tables.size();
     Float64 num_streams_multiplier
-        = std::min(unsigned(tables_count), std::max(1U, unsigned(local_context->getSettingsRef().max_streams_multiplier_for_merge_tables)));
+        = std::min(static_cast<unsigned>(tables_count), std::max(1U, static_cast<unsigned>(local_context->getSettingsRef().max_streams_multiplier_for_merge_tables)));
     num_streams *= num_streams_multiplier;
     size_t remaining_streams = num_streams;
 
@@ -327,7 +327,7 @@ Pipe StorageMerge::read(
         size_t current_need_streams = tables_count >= num_streams ? 1 : (num_streams / tables_count);
         size_t current_streams = std::min(current_need_streams, remaining_streams);
         remaining_streams -= current_streams;
-        current_streams = std::max(size_t(1), current_streams);
+        current_streams = std::max(static_cast<size_t>(1), current_streams);
 
         const auto & storage = std::get<1>(table);
 
@@ -636,7 +636,7 @@ DatabaseTablesIteratorPtr StorageMerge::getDatabaseIterator(const String & datab
         if (source_databases_and_tables)
         {
             if (auto it = source_databases_and_tables->find(database_name); it != source_databases_and_tables->end())
-                return it->second.count(table_name_);
+                return it->second.contains(table_name_);
             else
                 return false;
         }
@@ -774,7 +774,7 @@ void StorageMerge::convertingSourceStream(
             ColumnWithTypeAndName header_column = header.getByPosition(column_index);
             ColumnWithTypeAndName before_column = before_block_header.getByName(header_column.name);
             /// If the processed_stage greater than FetchColumns and the block structure between streams is different.
-            /// the where expression maybe invalid because of convertingBlockInputStream.
+            /// the where expression maybe invalid because of ConvertingTransform.
             /// So we need to throw exception.
             if (!header_column.type->equals(*before_column.type.get()))
             {
@@ -854,7 +854,7 @@ void registerStorageMerge(StorageFactory & factory)
         engine_args[1] = evaluateConstantExpressionAsLiteral(engine_args[1], args.getLocalContext());
         String table_name_regexp = engine_args[1]->as<ASTLiteral &>().value.safeGet<String>();
 
-        return StorageMerge::create(
+        return std::make_shared<StorageMerge>(
             args.table_id, args.columns, args.comment, source_database_name_or_regexp, is_regexp, table_name_regexp, args.getContext());
     },
     {

@@ -151,13 +151,13 @@ bool ReplicatedMergeTreeRestartingThread::runImpl()
     setNotReadonly();
 
     /// Start queue processing
+    storage.part_check_thread.start();
     storage.background_operations_assignee.start();
     storage.queue_updating_task->activateAndSchedule();
     storage.mutations_updating_task->activateAndSchedule();
     storage.mutations_finalizing_task->activateAndSchedule();
     storage.merge_selecting_task->activateAndSchedule();
     storage.cleanup_thread.start();
-    storage.part_check_thread.start();
 
     return true;
 }
@@ -266,7 +266,7 @@ void ReplicatedMergeTreeRestartingThread::updateQuorumIfWeHavePart()
     {
         ReplicatedMergeTreeQuorumEntry quorum_entry(quorum_str);
 
-        if (!quorum_entry.replicas.count(storage.replica_name)
+        if (!quorum_entry.replicas.contains(storage.replica_name)
             && storage.getActiveContainingPart(quorum_entry.part_name))
         {
             LOG_WARNING(log, "We have part {} but we is not in quorum. Updating quorum. This shouldn't happen often.", quorum_entry.part_name);
@@ -283,7 +283,7 @@ void ReplicatedMergeTreeRestartingThread::updateQuorumIfWeHavePart()
             if (zookeeper->tryGet(fs::path(parallel_quorum_parts_path) / part_name, quorum_str))
             {
                 ReplicatedMergeTreeQuorumEntry quorum_entry(quorum_str);
-                if (!quorum_entry.replicas.count(storage.replica_name)
+                if (!quorum_entry.replicas.contains(storage.replica_name)
                     && storage.getActiveContainingPart(part_name))
                 {
                     LOG_WARNING(log, "We have part {} but we is not in quorum. Updating quorum. This shouldn't happen often.", part_name);
@@ -374,7 +374,6 @@ void ReplicatedMergeTreeRestartingThread::partialShutdown(bool part_of_full_shut
     storage.mutations_finalizing_task->deactivate();
 
     storage.cleanup_thread.stop();
-    storage.part_check_thread.stop();
 
     /// Stop queue processing
     {
@@ -383,6 +382,9 @@ void ReplicatedMergeTreeRestartingThread::partialShutdown(bool part_of_full_shut
         auto move_lock = storage.parts_mover.moves_blocker.cancel();
         storage.background_operations_assignee.finish();
     }
+
+    /// Stop part_check_thread after queue processing, because some queue tasks may restart part_check_thread
+    storage.part_check_thread.stop();
 
     LOG_TRACE(log, "Threads finished");
 }
