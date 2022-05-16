@@ -4,7 +4,7 @@
 #include <Compression/CompressionFactory.h>
 #include <Compression/CompressionInfo.h>
 #include <Parsers/ASTIdentifier.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <Poco/Logger.h>
 
 namespace DB
