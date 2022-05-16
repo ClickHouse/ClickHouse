@@ -17,18 +17,9 @@ namespace DB
 {
 
 #ifdef __aarch64__
-bool only_ascii_in_vector(uint8x16_t input)
-{   
-    uint16x8_t high_bits = vreinterpretq_u16_u8(vshrq_n_u8(cmp_res, 7));
-    uint32x4_t paired16 =
-        vreinterpretq_u32_u16(vsraq_n_u16(high_bits, high_bits, 7));
-    uint64x2_t paired32 =
-        vreinterpretq_u64_u32(vsraq_n_u32(paired16, paired16, 14));
-    uint8x16_t paired64 =
-        vreinterpretq_u8_u64(vsraq_n_u64(paired32, paired32, 28));
-    uint32_t mask =
-        vgetq_lane_u8(paired64, 0) | (static_cast<uint64_t>(vgetq_lane_u8(paired64, 8)) << 8);
-    return !mask;
+bool only_ascii_in_vector(uint32x4_t input)
+{
+    return !vmaxvq_u32(vandq_u32(input, vdupq_n_u32(0x80808080)));
 }
 #endif
 
@@ -105,7 +96,7 @@ void WriteBufferValidUTF8::nextImpl()
         static constexpr size_t SIMD_BYTES = 16;
         const char * simd_end = p + (pos - p) / SIMD_BYTES * SIMD_BYTES;
 
-        while (p < simd_end && only_ascii_in_vector(vld1q_u8(reinterpret_cast<const unsigned char *>(p))))
+        while (p < simd_end && only_ascii_in_vector(vld1q_u32(reinterpret_cast<const uint32_t *>(p))))
             p += SIMD_BYTES;
         
         if (!(p < pos))
