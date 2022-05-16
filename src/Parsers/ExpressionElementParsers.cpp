@@ -672,6 +672,7 @@ bool ParserFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     bool has_all = false;
     bool has_distinct = false;
+    bool has_totals = false;
 
     ASTPtr identifier;
     ASTPtr query;
@@ -757,12 +758,22 @@ bool ParserFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     ParserKeyword all("ALL");
     ParserKeyword distinct("DISTINCT");
+    ParserKeyword totals("TOT");
 
     if (all.ignore(pos, expected))
         has_all = true;
 
     if (distinct.ignore(pos, expected))
+    {
         has_distinct = true;
+        printf("we are in has distinct=true\n");
+    }
+
+    if (totals.ignore(pos, expected))
+    {
+        has_totals = true;
+        printf("processed totals: %s\n", node.get()->getID().c_str());
+    }
 
     if (!has_all && all.ignore(pos, expected))
         has_all = true;
@@ -770,7 +781,7 @@ bool ParserFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     if (has_all && has_distinct)
         return false;
 
-    if (has_all || has_distinct)
+    if (has_all || has_distinct || has_totals)
     {
         /// case f(ALL), f(ALL, x), f(DISTINCT), f(DISTINCT, x), ALL and DISTINCT should be treat as identifier
         if (pos->type == TokenType::Comma || pos->type == TokenType::ClosingRoundBracket)
@@ -779,6 +790,7 @@ bool ParserFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             expected = old_expected;
             has_all = false;
             has_distinct = false;
+            has_totals = false;
         }
     }
 
@@ -1741,6 +1753,7 @@ const char * ParserAlias::restricted_keywords[] =
     "WITH",
     "INTERSECT",
     "EXCEPT",
+        "TOTAL",
     nullptr
 };
 

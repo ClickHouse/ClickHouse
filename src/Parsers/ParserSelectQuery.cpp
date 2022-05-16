@@ -109,6 +109,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     /// SELECT [ALL/DISTINCT [ON (expr_list)]] [TOP N [WITH TIES]] expr_list
     {
         bool has_all = false;
+//        bool has_total = false;
         if (!s_select.ignore(pos, expected))
             return false;
 

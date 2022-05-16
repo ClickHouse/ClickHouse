@@ -103,6 +103,8 @@ bool ParserList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         if (!elem_parser->parse(pos, element, expected))
             return false;
 
+        // todo parse total here
+
         elements.push_back(element);
         return true;
     };

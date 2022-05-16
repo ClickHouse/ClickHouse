@@ -866,8 +866,9 @@ void NO_INLINE Aggregator::executeImpl(
     bool no_more_keys,
     AggregateDataPtr overflow_row) const
 {
+    printf("number of rows: %zu\n", rows);
     typename Method::State state(key_columns, key_sizes, aggregation_state_cache);
-
+    // todo maybe here
     if (!no_more_keys)
     {
 #if USE_EMBEDDED_COMPILER
@@ -1551,6 +1552,7 @@ bool Aggregator::checkLimits(size_t result_size, bool & no_more_keys) const
 }
 
 
+// todo
 template <typename Method, typename Table>
 void Aggregator::convertToBlockImpl(
     Method & method,
@@ -1561,8 +1563,12 @@ void Aggregator::convertToBlockImpl(
     Arena * arena,
     bool final) const
 {
+    // aggregated data variant
+//    insert result into
     if (data.empty())
         return;
+
+    printf("aggregate_columns size:  %zu", aggregate_columns.size());
 
     if (key_columns.size() != params.keys_size)
         throw Exception{"Aggregate. Unexpected key columns size.", ErrorCodes::LOGICAL_ERROR};

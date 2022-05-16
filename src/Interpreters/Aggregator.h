@@ -1238,6 +1238,7 @@ private:
     void mergeSingleLevelDataImpl(
         ManyAggregatedDataVariants & non_empty_data) const;
 
+    // todo
     template <typename Method, typename Table>
     void convertToBlockImpl(
         Method & method,
