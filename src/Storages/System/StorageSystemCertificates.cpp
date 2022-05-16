@@ -37,13 +37,8 @@ NamesAndTypesList StorageSystemCertificates::getNamesAndTypes()
 
 static std::unordered_set<std::string> parse_dir(const std::string & dir)
 {
-    std::vector<std::string> dirs;
-    boost::split(dirs, dir, boost::is_any_of(":"), boost::token_compress_on);
-
     std::unordered_set<std::string> ret;
-    for (auto & d : dirs)
-        ret.emplace(std::move(d));
-
+    boost::split(ret, dir, boost::is_any_of(":"), boost::token_compress_on);
     return ret;
 }
 
