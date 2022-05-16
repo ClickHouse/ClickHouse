@@ -311,6 +311,11 @@ void PocoHTTPClient::makeRequestInternal(
                 }
                 LOG_TEST(log, "Received headers: {}", headers_ss.str());
             }
+            else
+            {
+                for (const auto & [header_name, header_value] : poco_response)
+                    response->AddHeader(header_name, header_value);
+            }
 
             if (status_code == 429 || status_code == 503)
             { // API throttling
