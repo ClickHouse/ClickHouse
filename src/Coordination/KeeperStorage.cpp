@@ -290,7 +290,7 @@ namespace
 
 [[noreturn]] void onStorageInconsistency()
 {
-    LOG_INFO(&Poco::Logger::get("KeeperStorage"), "Inconsistency found between uncommitted and committed data. Keeper will terminate to avoid undefined behaviour.");
+    LOG_ERROR(&Poco::Logger::get("KeeperStorage"), "Inconsistency found between uncommitted and committed data. Keeper will terminate to avoid undefined behaviour.");
     std::terminate();
 }
 
