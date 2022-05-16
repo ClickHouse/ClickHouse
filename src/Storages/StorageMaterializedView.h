@@ -69,6 +69,7 @@ public:
 
     void renameInMemory(const StorageID & new_table_id) override;
 
+    void startup() override;
     void shutdown() override;
 
     QueryProcessingStage::Enum
