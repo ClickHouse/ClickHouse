@@ -126,7 +126,7 @@ SeekableReadBufferPtr CachedReadBufferFromRemoteFS::getCacheReadBuffer(size_t of
     local_read_settings.local_fs_method = LocalFSReadMethod::pread;
 
     auto buf = createReadBufferFromFileBase(path, local_read_settings);
-    auto from_fd = dynamic_cast<ReadBufferFromFileDescriptor*>(buf.get());
+    auto * from_fd = dynamic_cast<ReadBufferFromFileDescriptor*>(buf.get());
     if (from_fd && from_fd->size() == 0)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to read from an empty cache file: {}", path);
 
