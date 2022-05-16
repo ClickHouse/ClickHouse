@@ -182,6 +182,8 @@ struct PositionImpl
     static constexpr bool supports_start_pos = true;
     static constexpr auto name = Name::name;
 
+    static ColumnNumbers getArgumentsThatAreAlwaysConstant() { return {};}
+
     using ResultType = UInt64;
 
     /// Find one substring in many strings.

@@ -4,6 +4,7 @@
 #include <base/types.h>
 #include <Common/Volnitsky.h>
 #include <Columns/ColumnString.h>
+#include <Core/ColumnNumbers.h>
 #include "Regexps.h"
 
 #include "config_functions.h"
@@ -73,6 +74,8 @@ struct MatchImpl
     static constexpr bool use_default_implementation_for_constants = true;
     static constexpr bool supports_start_pos = false;
     static constexpr auto name = Name::name;
+
+    static ColumnNumbers getArgumentsThatAreAlwaysConstant() { return {1, 2};}
 
     using ResultType = UInt8;
 

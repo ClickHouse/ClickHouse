@@ -85,11 +85,7 @@ public:
 
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override
     {
-        if (!Impl::use_default_implementation_for_constants)
-            return ColumnNumbers{};
-        if (!Impl::supports_start_pos)
-            return ColumnNumbers{1, 2};
-        return ColumnNumbers{1, 2, 3};
+        return Impl::getArgumentsThatAreAlwaysConstant();
     }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
