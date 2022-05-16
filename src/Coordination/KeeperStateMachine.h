@@ -85,7 +85,7 @@ public:
 
     int64_t getNextZxid() const;
 
-    UInt64 getNodesHash() const;
+    KeeperStorage::Digest getNodesDigest() const;
 
     /// Introspection functions for 4lw commands
     uint64_t getLastProcessedZxid() const;

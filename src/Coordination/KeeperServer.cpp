@@ -404,8 +404,10 @@ nuraft::ptr<nuraft::buffer> getZooKeeperLogEntry(const KeeperStorage::RequestFor
     request_for_session.request->write(write_buf);
     DB::writeIntBinary(request_for_session.time, write_buf);
     DB::writeIntBinary(request_for_session.zxid, write_buf);
-    assert(request_for_session.nodes_hash);
-    DB::writeIntBinary(*request_for_session.nodes_hash, write_buf);
+    DB::writeIntBinary(request_for_session.digest.version, write_buf);
+    if (request_for_session.digest.version != KeeperStorage::DigestVersion::NO_DIGEST)
+        DB::writeIntBinary(request_for_session.digest.value, write_buf);
+
     return write_buf.getBuffer();
 }
 
@@ -537,7 +539,7 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
                     auto request_for_session = state_machine->parseRequest(entry_buf);
                     request_for_session.zxid = next_zxid;
                     state_machine->preprocess(request_for_session);
-                    request_for_session.nodes_hash = state_machine->getNodesHash();
+                    request_for_session.digest = state_machine->getNodesDigest();
 
                     entry = nuraft::cs_new<nuraft::log_entry>(entry->get_term(), getZooKeeperLogEntry(request_for_session), entry->get_val_type());
                 }

@@ -63,6 +63,14 @@ public:
         mutable std::optional<UInt64> cached_digest;
     };
 
+    enum DigestVersion : uint8_t
+    {
+        NO_DIGEST = 0,
+        V0 = 1
+    };
+
+    static constexpr auto CURRENT_DIGEST_VERSION = DigestVersion::V0;
+
     struct ResponseForSession
     {
         int64_t session_id;
@@ -70,13 +78,30 @@ public:
     };
     using ResponsesForSessions = std::vector<ResponseForSession>;
 
+    struct Digest
+    {
+        DigestVersion version{DigestVersion::NO_DIGEST};
+        uint64_t value{0};
+    };
+
+    static bool checkDigest(const Digest & first, const Digest & second)
+    {
+        if (first.version != second.version)
+            return true;
+
+        if (first.version == DigestVersion::NO_DIGEST)
+            return true;
+
+        return first.value == second.value;
+    }
+
     struct RequestForSession
     {
         int64_t session_id;
         int64_t time;
         Coordination::ZooKeeperRequestPtr request;
         int64_t zxid{0};
-        std::optional<UInt64> nodes_hash = std::nullopt;
+        Digest digest;
     };
 
     struct AuthID
@@ -253,12 +278,12 @@ public:
     struct TransactionInfo
     {
         int64_t zxid;
-        uint64_t nodes_hash;
+        Digest nodes_digest;
     };
 
     std::deque<TransactionInfo> uncommitted_transactions;
 
-    uint64_t nodes_hash{0};
+    uint64_t nodes_digest{0};
 
     bool finalized{false};
 
@@ -279,7 +304,7 @@ public:
         return uncommitted_transactions.back().zxid + 1;
     }
 
-    uint64_t getNodesHash(bool committed) const;
+    Digest getNodesDigest(bool committed) const;
 
     const String superdigest;
 
@@ -301,7 +326,7 @@ public:
         session_expiry_queue.addNewSessionOrUpdate(session_id, session_timeout_ms);
     }
 
-    UInt64 calculateNodesHash(UInt64 current_hash, int64_t current_zxid) const;
+    UInt64 calculateNodesDigest(UInt64 current_digest, int64_t current_zxid) const;
 
     /// Process user request and return response.
     /// check_acl = false only when converting data from ZooKeeper.
@@ -317,7 +342,7 @@ public:
         int64_t session_id,
         int64_t time,
         int64_t new_last_zxid,
-        std::optional<UInt64> expected_hash = std::nullopt,
+        Digest digest,
         bool check_acl = true);
     void rollbackRequest(int64_t rollback_zxid);
 
