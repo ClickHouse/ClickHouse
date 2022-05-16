@@ -37,6 +37,9 @@ public:
     // maybe check on null?
     const TrainResult& getModel() const { model->GetModel(); }
 
+    // check on null?
+    String getModelName() const { model->GetName(); }
+
     SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
 
     static MLmodelConfiguration getConfiguration(ASTs engine_args, ContextPtr context);
