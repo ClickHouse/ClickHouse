@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Columns/ColumnString.h>
+#include <Core/ColumnNumbers.h>
 
 
 namespace DB
@@ -22,6 +23,8 @@ struct HasTokenImpl
     static constexpr bool use_default_implementation_for_constants = true;
     static constexpr bool supports_start_pos = false;
     static constexpr auto name = Name::name;
+
+    static ColumnNumbers getArgumentsThatAreAlwaysConstant() { return {1, 2};}
 
     static void vectorConstant(
         const ColumnString::Chars & haystack_data,
