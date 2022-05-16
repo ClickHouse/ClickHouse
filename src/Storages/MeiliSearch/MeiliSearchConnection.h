@@ -40,9 +40,9 @@ public:
     String updateQuery(std::string_view data) const;
 
 private:
-    void execPostQuery(const String & url, std::string_view post_fields, std::string & response_buffer) const;
+    String execPostQuery(const String & url, std::string_view post_fields) const;
 
-    void execGetQuery(const String & url, const std::unordered_map<String, String> & query_params, std::string & response_buffer) const;
+    String execGetQuery(const String & url, const std::unordered_map<String, String> & query_params) const;
 
     MeiliConfig config;
     mutable Poco::Net::HTTPClientSession session;

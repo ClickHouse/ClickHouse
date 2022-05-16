@@ -16,7 +16,7 @@ public:
         const ConstraintsDescription & constraints_,
         const String & comment);
 
-    std::string getName() const override { return "MeiliSearch"; }
+    String getName() const override { return "MeiliSearch"; }
 
     Pipe read(
         const Names & column_names,
