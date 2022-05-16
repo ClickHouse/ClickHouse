@@ -112,14 +112,16 @@ void ASTSelectQuery::formatImpl(const FormatSettings & s, FormatState & state, F
 
     if (group_by_with_grouping_sets)
     {
-        frame.surround_each_list_element_with_parens = true;
+        auto nested_frame = frame;
+        nested_frame.surround_each_list_element_with_parens = true;
+        nested_frame.expression_list_prepend_whitespace = false;
+        nested_frame.indent++;
         s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << (s.one_line ? "" : "    ") << "GROUPING SETS" << (s.hilite ? hilite_none : "");
         s.ostr << " (";
         s.one_line
-        ? groupBy()->formatImpl(s, state, frame)
-        : groupBy()->as<ASTExpressionList &>().formatImplMultiline(s, state, frame);
+        ? groupBy()->formatImpl(s, state, nested_frame)
+        : groupBy()->as<ASTExpressionList &>().formatImplMultiline(s, state, nested_frame);
         s.ostr << ")";
-        frame.surround_each_list_element_with_parens = false;
     }
 
     if (group_by_with_totals)

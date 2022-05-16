@@ -17,6 +17,7 @@
 #include <Interpreters/RewriteCountVariantsVisitor.h>
 #include <Interpreters/MonotonicityCheckVisitor.h>
 #include <Interpreters/ConvertStringsToEnumVisitor.h>
+#include <Interpreters/ConvertFunctionOrLikeVisitor.h>
 #include <Interpreters/RewriteFunctionToSubcolumnVisitor.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
@@ -658,12 +659,6 @@ void optimizeSumIfFunctions(ASTPtr & query)
     RewriteSumIfFunctionVisitor(data).visit(query);
 }
 
-void optimizeCountConstantAndSumOne(ASTPtr & query)
-{
-    RewriteCountVariantsVisitor::visit(query);
-}
-
-
 void optimizeInjectiveFunctionsInsideUniq(ASTPtr & query, ContextPtr context)
 {
     RemoveInjectiveFunctionsVisitor::Data data(context);
@@ -741,6 +736,12 @@ void optimizeFuseQuantileFunctions(ASTPtr & query)
     }
 }
 
+void optimizeOrLikeChain(ASTPtr & query)
+{
+    ConvertFunctionOrLikeVisitor::Data data = {};
+    ConvertFunctionOrLikeVisitor(data).visit(query);
+}
+
 }
 
 void TreeOptimizer::optimizeIf(ASTPtr & query, Aliases & aliases, bool if_chain_to_multiif)
@@ -750,6 +751,11 @@ void TreeOptimizer::optimizeIf(ASTPtr & query, Aliases & aliases, bool if_chain_
 
     if (if_chain_to_multiif)
         OptimizeIfChainsVisitor().visit(query);
+}
+
+void TreeOptimizer::optimizeCountConstantAndSumOne(ASTPtr & query)
+{
+    RewriteCountVariantsVisitor::visit(query);
 }
 
 void TreeOptimizer::apply(ASTPtr & query, TreeRewriterResult & result,
@@ -848,6 +854,14 @@ void TreeOptimizer::apply(ASTPtr & query, TreeRewriterResult & result,
 
     if (settings.optimize_syntax_fuse_functions)
         optimizeFuseQuantileFunctions(query);
+
+    if (settings.optimize_or_like_chain
+        && settings.allow_hyperscan
+        && settings.max_hyperscan_regexp_length == 0
+        && settings.max_hyperscan_regexp_total_length == 0)
+    {
+        optimizeOrLikeChain(query);
+    }
 }
 
 }
