@@ -691,8 +691,7 @@ Pipe StorageFile::read(
         const auto get_columns_for_format = [&]() -> ColumnsDescription
         {
             if (isColumnOriented())
-                return ColumnsDescription{
-                    storage_snapshot->getSampleBlockForColumns(column_names).getNamesAndTypesList()};
+                return storage_snapshot->getDescriptionForColumns(column_names);
             else
                 return storage_snapshot->metadata->getColumns();
         };
