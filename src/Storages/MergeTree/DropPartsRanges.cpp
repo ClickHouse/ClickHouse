@@ -51,12 +51,16 @@ void DropPartsRanges::removeDropRange(const ReplicatedMergeTreeLogEntryPtr & ent
     drop_ranges.erase(it);
 }
 
-bool DropPartsRanges::hasDropRange(const MergeTreePartInfo & new_drop_range_info) const
+bool DropPartsRanges::hasDropRange(const MergeTreePartInfo & new_drop_range_info, MergeTreePartInfo * out_drop_range_info) const
 {
     for (const auto & [_, drop_range] : drop_ranges)
     {
         if (drop_range.contains(new_drop_range_info))
+        {
+            if (out_drop_range_info)
+                *out_drop_range_info = drop_range;
             return true;
+        }
     }
 
     return false;

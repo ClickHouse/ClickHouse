@@ -30,11 +30,15 @@ namespace ErrorCodes
 
 static std::unordered_map<String, String> fetchTablesCreateQuery(
     const mysqlxx::PoolWithFailover::Entry & connection, const String & database_name,
-    const std::vector<String> & fetch_tables, const Settings & global_settings)
+    const std::vector<String> & fetch_tables, std::unordered_set<String> & materialized_tables_list,
+    const Settings & global_settings)
 {
     std::unordered_map<String, String> tables_create_query;
     for (const auto & fetch_table_name : fetch_tables)
     {
+        if (!materialized_tables_list.empty() && !materialized_tables_list.contains(fetch_table_name))
+            continue;
+
         Block show_create_table_header{
             {std::make_shared<DataTypeString>(), "Table"},
             {std::make_shared<DataTypeString>(), "Create Table"},
@@ -253,7 +257,7 @@ void MaterializeMetadata::transaction(const MySQLReplication::Position & positio
         out.close();
     }
 
-    commitMetadata(std::move(fun), persistent_tmp_path, persistent_path);
+    commitMetadata(fun, persistent_tmp_path, persistent_path);
 }
 
 MaterializeMetadata::MaterializeMetadata(const String & path_, const Settings & settings_) : persistent_path(path_), settings(settings_)
@@ -276,7 +280,8 @@ MaterializeMetadata::MaterializeMetadata(const String & path_, const Settings & 
 
 void MaterializeMetadata::startReplication(
     mysqlxx::PoolWithFailover::Entry & connection, const String & database,
-    bool & opened_transaction, std::unordered_map<String, String> & need_dumping_tables)
+    bool & opened_transaction, std::unordered_map<String, String> & need_dumping_tables,
+    std::unordered_set<String> & materialized_tables_list)
 {
     checkSyncUserPriv(connection, settings);
 
@@ -297,7 +302,7 @@ void MaterializeMetadata::startReplication(
         connection->query("START TRANSACTION /*!40100 WITH CONSISTENT SNAPSHOT */;").execute();
 
         opened_transaction = true;
-        need_dumping_tables = fetchTablesCreateQuery(connection, database, fetchTablesInDB(connection, database, settings), settings);
+        need_dumping_tables = fetchTablesCreateQuery(connection, database, fetchTablesInDB(connection, database, settings), materialized_tables_list, settings);
         connection->query("UNLOCK TABLES;").execute();
     }
     catch (...)

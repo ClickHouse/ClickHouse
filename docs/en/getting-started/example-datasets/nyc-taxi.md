@@ -1,9 +1,10 @@
 ---
-toc_priority: 20
-toc_title: New York Taxi Data
+sidebar_label: New York Taxi Data
+sidebar_position: 2
+description: Data for billions of taxi and for-hire vehicle (Uber, Lyft, etc.) trips originating in New York City since 2009
 ---
 
-# New York Taxi Data {#new-york-taxi-data}
+# New York Taxi Data 
 
 This dataset can be obtained in two ways:
 
@@ -290,8 +291,9 @@ $ sudo service clickhouse-server restart
 $ clickhouse-client --query "select count(*) from datasets.trips_mergetree"
 ```
 
-!!! info "Info"
-    If you will run the queries described below, you have to use the full table name, `datasets.trips_mergetree`.
+:::info    
+If you will run the queries described below, you have to use the full table name, `datasets.trips_mergetree`.
+:::
 
 ## Results on Single Server {#results-on-single-server}
 
@@ -375,7 +377,7 @@ Q3: 0.051 sec.
 Q4: 0.072 sec.
 
 In this case, the query processing time is determined above all by network latency.
-We ran queries using a client located in a Yandex datacenter in Finland on a cluster in Russia, which added about 20 ms of latency.
+We ran queries using a client located in a different datacenter than where the cluster was located, which added about 20 ms of latency.
 
 ## Summary {#summary}
 
