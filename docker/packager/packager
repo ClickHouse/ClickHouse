@@ -5,6 +5,7 @@ import os
 import argparse
 import logging
 import sys
+from typing import List
 
 SCRIPT_PATH = os.path.realpath(__file__)
 IMAGE_TYPE = "binary"
@@ -37,6 +38,32 @@ def build_image(image_name, filepath):
         build_cmd,
         shell=True,
     )
+
+
+def pre_build(repo_path: str, env_variables: List[str]):
+    if "WITH_PERFORMANCE=1" in env_variables:
+        current_branch = subprocess.check_output(
+            "git branch --show-current", shell=True, encoding="utf-8"
+        ).strip()
+        is_shallow = (
+            subprocess.check_output(
+                "git rev-parse --is-shallow-repository", shell=True, encoding="utf-8"
+            )
+            == "true\n"
+        )
+        if is_shallow:
+            # I've spent quite some time on looking around the problem, and my
+            # conclusion is: in the current state the easiest way to go is to force
+            # unshallow repository for performance artifacts.
+            # To change it we need to rework our performance tests docker image
+            raise Exception("shallow repository is not suitable for performance builds")
+        if current_branch != "master":
+            cmd = (
+                f"git -C {repo_path} fetch --no-recurse-submodules "
+                "--no-tags origin master:master"
+            )
+            logging.info("Getting master branch for performance artifact: ''%s'", cmd)
+            subprocess.check_call(cmd, shell=True)
 
 
 def run_docker_image_with_env(
@@ -370,6 +397,7 @@ if __name__ == "__main__":
         args.with_binaries,
     )
 
+    pre_build(args.clickhouse_repo_path, env_prepared)
     run_docker_image_with_env(
         image_name,
         args.output_dir,

@@ -212,7 +212,7 @@ jobs:
       - name: Check out repository code
         uses: actions/checkout@v2
         with:
-          fetch-depth: 0 # otherwise we will have no info about contributors
+          fetch-depth: 0 # For a proper version and performance artifacts
       - name: Build
         run: |
           git -C "$GITHUB_WORKSPACE" submodule sync --recursive
@@ -256,7 +256,7 @@ jobs:
       - name: Check out repository code
         uses: actions/checkout@v2
         with:
-          fetch-depth: 0 # otherwise we will have no info about contributors
+          fetch-depth: 0 # For a proper version and performance artifacts
       - name: Build
         run: |
           git -C "$GITHUB_WORKSPACE" submodule sync --recursive
@@ -938,7 +938,7 @@ jobs:
       - name: Check out repository code
         uses: actions/checkout@v2
         with:
-          fetch-depth: 0  # otherwise we will have no version info
+          fetch-depth: 0  # It MUST BE THE SAME for all dependencies and the job itself
       - name: Check docker clickhouse/clickhouse-server building
         run: |
           cd "$GITHUB_WORKSPACE/tests/ci"

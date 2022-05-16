@@ -272,6 +272,8 @@ jobs:
           sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
         uses: actions/checkout@v2
+        with:
+          fetch-depth: 0  # for performance artifact
       - name: Build
         run: |
           git -C "$GITHUB_WORKSPACE" submodule sync --recursive
@@ -407,6 +409,8 @@ jobs:
           sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
         uses: actions/checkout@v2
+        with:
+          fetch-depth: 0  # for performance artifact
       - name: Build
         run: |
           git -C "$GITHUB_WORKSPACE" submodule sync --recursive
@@ -987,7 +991,7 @@ jobs:
       - name: Check out repository code
         uses: actions/checkout@v2
         with:
-          fetch-depth: 1  # It MUST BE THE SAME for all dependencies and the job itself
+          fetch-depth: 0  # It MUST BE THE SAME for all dependencies and the job itself
       - name: Check docker clickhouse/clickhouse-server building
         run: |
           cd "$GITHUB_WORKSPACE/tests/ci"
