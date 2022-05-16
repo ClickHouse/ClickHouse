@@ -78,6 +78,15 @@ class ASTIdentifier;
 class ASTFunction;
 class ASTLiteral;
 
+enum class GroupByKind
+{
+    NONE,
+    ORDINARY,
+    ROLLUP,
+    CUBE,
+    GROUPING_SETS,
+};
+
 /// Collect ExpressionAction from AST. Returns PreparedSets and SubqueriesForSets too.
 class ActionsMatcher
 {
@@ -97,7 +106,7 @@ public:
         bool no_makeset;
         bool only_consts;
         bool create_source_for_in;
-        bool has_grouping_set_column;
+        GroupByKind group_by_kind;
         size_t visit_depth;
         ScopeStack actions_stack;
 
@@ -122,7 +131,7 @@ public:
             bool no_makeset_,
             bool only_consts_,
             bool create_source_for_in_,
-            bool has_grouping_set_column_);
+            GroupByKind group_by_kind_);
 
         /// Does result of the calculation already exists in the block.
         bool hasColumn(const String & column_name) const;

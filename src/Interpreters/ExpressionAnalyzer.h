@@ -2,6 +2,7 @@
 
 #include <Core/ColumnNumbers.h>
 #include <Columns/FilterDescription.h>
+#include <Interpreters/ActionsVisitor.h>
 #include <Interpreters/AggregateDescription.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/SubqueryForSet.h>
@@ -78,7 +79,7 @@ struct ExpressionAnalyzerData
     /// All new temporary tables obtained by performing the GLOBAL IN/JOIN subqueries.
     TemporaryTablesMapping external_tables;
 
-    bool need_grouping_set_column = false;
+    GroupByKind group_by_kind = GroupByKind::NONE;
 };
 
 

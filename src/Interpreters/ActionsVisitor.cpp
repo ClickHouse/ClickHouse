@@ -62,6 +62,7 @@ namespace ErrorCodes
     extern const int INCORRECT_ELEMENT_OF_SET;
     extern const int BAD_ARGUMENTS;
     extern const int DUPLICATE_COLUMN;
+    extern const int LOGICAL_ERROR;
 }
 
 static NamesAndTypesList::iterator findColumn(const String & name, NamesAndTypesList & cols)
@@ -478,7 +479,7 @@ ActionsMatcher::Data::Data(
     bool no_makeset_,
     bool only_consts_,
     bool create_source_for_in_,
-    bool has_grouping_set_column_)
+    GroupByKind group_by_kind_)
     : WithContext(context_)
     , set_size_limit(set_size_limit_)
     , subquery_depth(subquery_depth_)
@@ -491,7 +492,7 @@ ActionsMatcher::Data::Data(
     , no_makeset(no_makeset_)
     , only_consts(only_consts_)
     , create_source_for_in(create_source_for_in_)
-    , has_grouping_set_column(has_grouping_set_column_)
+    , group_by_kind(group_by_kind_)
     , visit_depth(0)
     , actions_stack(std::move(actions_dag), context_)
     , next_unique_suffix(actions_stack.getLastActions().getIndex().size() + 1)
@@ -844,27 +845,47 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
             {
                 ColumnWithTypeAndName column;
                 column.name = "__grouping_set_map";
-                if (data.has_grouping_set_column)
+                switch (data.group_by_kind)
                 {
-                    size_t map_size = data.aggregation_keys.size() + 1;
-                    column.type = std::make_shared<DataTypeArray>(std::make_shared<DataTypeFixedString>(map_size));
-                    Array maps_per_set;
-                    for (auto & grouping_set : data.grouping_set_keys)
+                    case GroupByKind::GROUPING_SETS:
                     {
-                        std::string key_map(map_size, '0');
-                        for (auto index : grouping_set)
-                            key_map[index] = '1';
-                        maps_per_set.push_back(key_map);
+                        size_t map_size = data.aggregation_keys.size() + 1;
+                        column.type = std::make_shared<DataTypeArray>(std::make_shared<DataTypeFixedString>(map_size));
+                        Array maps_per_set;
+                        for (auto & grouping_set : data.grouping_set_keys)
+                        {
+                            std::string key_map(map_size, '0');
+                            for (auto index : grouping_set)
+                                key_map[index] = '1';
+                            maps_per_set.push_back(key_map);
+                        }
+                        auto grouping_set_map_column = ColumnArray::create(ColumnFixedString::create(map_size));
+                        grouping_set_map_column->insert(maps_per_set);
+                        column.column = ColumnConst::create(std::move(grouping_set_map_column), 1);
+                        break;
                     }
-                    auto grouping_set_map_column = ColumnArray::create(ColumnFixedString::create(map_size));
-                    grouping_set_map_column->insert(maps_per_set);
-                    column.column = ColumnConst::create(std::move(grouping_set_map_column), 1);
-                }
-                else
-                {
-                    column.type = std::make_shared<DataTypeUInt64>();
-                    auto grouping_set_map_column = ColumnUInt64::create(1, data.aggregation_keys.size());
-                    column.column = ColumnConst::create(std::move(grouping_set_map_column), 1);
+                    case GroupByKind::ROLLUP:
+                    case GroupByKind::CUBE:
+                    {
+                        column.type = std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>());
+                        auto grouping_set_map_column = ColumnArray::create(ColumnUInt64::create());
+                        Array kind_and_keys_size;
+                        kind_and_keys_size.push_back(data.group_by_kind == GroupByKind::ROLLUP ? 0 : 1);
+                        kind_and_keys_size.push_back(data.aggregation_keys.size());
+                        grouping_set_map_column->insert(kind_and_keys_size);
+                        column.column = ColumnConst::create(std::move(grouping_set_map_column), 1);
+                        break;
+                    }
+                    case GroupByKind::ORDINARY:
+                    {
+                        column.type = std::make_shared<DataTypeUInt64>();
+                        auto grouping_set_map_column = ColumnUInt64::create(1, data.aggregation_keys.size());
+                        column.column = ColumnConst::create(std::move(grouping_set_map_column), 1);
+                        break;
+                    }
+                    default:
+                        throw Exception(ErrorCodes::LOGICAL_ERROR,
+                            "Unexpected kind of GROUP BY clause for GROUPING function: {}", data.group_by_kind);
                 }
 
                 data.addColumn(column);
@@ -886,7 +907,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
             data.addColumn(column);
         }
 
-        if (data.has_grouping_set_column)
+        if (data.group_by_kind != GroupByKind::ORDINARY)
         {
             data.addFunction(
                 FunctionFactory::instance().get("grouping", data.getContext()),
