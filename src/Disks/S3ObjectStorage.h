@@ -1,10 +1,10 @@
 #pragma once
-#include <Disks/IObjectStorage.h>
 
 #include <Common/config.h>
 
 #if USE_AWS_S3
 
+#include <Disks/IObjectStorage.h>
 #include <memory>
 #include <aws/s3/S3Client.h>
 #include <aws/s3/model/HeadObjectResult.h>
@@ -22,12 +22,10 @@ struct S3ObjectStorageSettings
     S3ObjectStorageSettings(
         const S3Settings::ReadWriteSettings & s3_settings_,
         uint64_t min_bytes_for_seek_,
-        uint64_t thread_pool_size_,
         int32_t list_object_keys_size_,
         int32_t objects_chunk_size_to_delete_)
         : s3_settings(s3_settings_)
         , min_bytes_for_seek(min_bytes_for_seek_)
-        , thread_pool_size(thread_pool_size_)
         , list_object_keys_size(list_object_keys_size_)
         , objects_chunk_size_to_delete(objects_chunk_size_to_delete_)
     {}
@@ -35,7 +33,6 @@ struct S3ObjectStorageSettings
     S3Settings::ReadWriteSettings s3_settings;
 
     uint64_t min_bytes_for_seek;
-    uint64_t thread_pool_size;
     int32_t list_object_keys_size;
     int32_t objects_chunk_size_to_delete;
 };
@@ -75,6 +72,7 @@ public:
     /// Open the file for write and return WriteBufferFromFileBase object.
     std::unique_ptr<WriteBufferFromFileBase> writeObject( /// NOLINT
         const std::string & path,
+        WriteMode mode,
         std::optional<ObjectAttributes> attributes = {},
         FinalizeCallback && finalize_callback = {},
         size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,

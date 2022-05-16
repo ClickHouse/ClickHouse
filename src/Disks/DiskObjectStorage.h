@@ -14,6 +14,7 @@ namespace DB
 
 class DiskObjectStorageMetadataHelper;
 
+
 class DiskObjectStorage : public IDisk
 {
 
@@ -28,16 +29,8 @@ public:
         DiskPtr metadata_disk_,
         ObjectStoragePtr && object_storage_,
         DiskType disk_type_,
-        bool send_metadata_)
-        : name(name_)
-        , remote_fs_root_path(remote_fs_root_path_)
-        , log (&Poco::Logger::get(log_name))
-        , metadata_disk(metadata_disk_)
-        , disk_type(disk_type_)
-        , object_storage(std::move(object_storage_))
-        , send_metadata(send_metadata_)
-        , metadata_helper(std::make_unique<DiskObjectStorageMetadataHelper>(this, ReadSettings{}))
-    {}
+        bool send_metadata_,
+        uint64_t thread_pool_size);
 
     DiskType getType() const override { return disk_type; }
 

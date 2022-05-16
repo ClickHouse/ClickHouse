@@ -14,6 +14,7 @@
 #include <Disks/IO/AsynchronousReadIndirectBufferFromRemoteFS.h>
 #include <Common/ThreadPool.h>
 #include <Common/FileCache.h>
+#include <Disks/WriteMode.h>
 
 
 namespace DB
@@ -80,6 +81,7 @@ public:
     /// Open the file for write and return WriteBufferFromFileBase object.
     virtual std::unique_ptr<WriteBufferFromFileBase> writeObject( /// NOLINT
         const std::string & path,
+        WriteMode mode,
         std::optional<ObjectAttributes> attributes = {},
         FinalizeCallback && finalize_callback = {},
         size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,

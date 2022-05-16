@@ -133,6 +133,7 @@ std::unique_ptr<SeekableReadBuffer> S3ObjectStorage::readObject( /// NOLINT
 
 std::unique_ptr<WriteBufferFromFileBase> S3ObjectStorage::writeObject( /// NOLINT
     const std::string & path,
+    WriteMode /* mode */, // S3 doesn't support append, only rewrite
     std::optional<ObjectAttributes> attributes,
     FinalizeCallback && finalize_callback,
     size_t buf_size,
