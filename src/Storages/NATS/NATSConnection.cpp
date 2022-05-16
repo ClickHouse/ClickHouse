@@ -1,7 +1,7 @@
 #include "NATSConnection.h"
 
-#include <Common/logger_useful.h>
 #include <IO/WriteHelpers.h>
+#include <Common/logger_useful.h>
 
 #include <boost/algorithm/string/join.hpp>
 
@@ -30,7 +30,8 @@ NATSConnectionManager::~NATSConnectionManager()
 
 String NATSConnectionManager::connectionInfoForLog() const
 {
-    if (!configuration.url.empty()) {
+    if (!configuration.url.empty())
+    {
         return "url : " + configuration.url;
     }
     return "cluster: " + boost::algorithm::join(configuration.servers, ", ");
@@ -57,7 +58,7 @@ bool NATSConnectionManager::reconnect()
 
     disconnectImpl();
 
-    LOG_DEBUG(log, "Trying to restore connection to {}", connectionInfoForLog());
+    LOG_DEBUG(log, "Trying to restore connection to NATS {}", connectionInfoForLog());
     connectImpl();
 
     return isConnectedImpl();
@@ -83,17 +84,25 @@ bool NATSConnectionManager::isConnectedImpl() const
 void NATSConnectionManager::connectImpl()
 {
     natsOptions * options = event_handler.getOptions();
-    natsOptions_SetUserInfo(options, configuration.username.c_str(), configuration.password.c_str());
-    if (configuration.secure) {
+    if (!configuration.username.empty() && !configuration.password.empty())
+        natsOptions_SetUserInfo(options, configuration.username.c_str(), configuration.password.c_str());
+    if (!configuration.token.empty())
+        natsOptions_SetToken(options, configuration.token.c_str());
+
+    if (configuration.secure)
+    {
         natsOptions_SetSecure(options, true);
         natsOptions_SkipServerVerification(options, true);
     }
     if (!configuration.url.empty())
     {
         natsOptions_SetURL(options, configuration.url.c_str());
-    } else {
+    }
+    else
+    {
         const char * servers[configuration.servers.size()];
-        for (size_t i = 0; i < configuration.servers.size(); ++i) {
+        for (size_t i = 0; i < configuration.servers.size(); ++i)
+        {
             servers[i] = configuration.servers[i].c_str();
         }
         natsOptions_SetServers(options, servers, configuration.servers.size());
@@ -102,27 +111,30 @@ void NATSConnectionManager::connectImpl()
     natsOptions_SetReconnectWait(options, configuration.reconnect_wait);
     natsOptions_SetDisconnectedCB(options, disconnectedCallback, log);
     natsOptions_SetReconnectedCB(options, reconnectedCallback, log);
-    auto status = natsConnection_Connect(&connection, options);
-    if (status != NATS_OK)
+    natsStatus status;
     {
-        if (!configuration.url.empty())
-            LOG_DEBUG(log, "Failed to connect to NATS on address: {}", configuration.url);
-        else
-            LOG_DEBUG(log, "Failed to connect to NATS cluster");
-        return;
+        auto lock = event_handler.setThreadLocalLoop();
+        status = natsConnection_Connect(&connection, options);
     }
-
-    has_connection = true;
-    event_handler.changeConnectionStatus(true);
+    if (status == NATS_OK)
+    {
+        has_connection = true;
+        event_handler.changeConnectionStatus(true);
+    }
+    else
+    {
+        LOG_DEBUG(log, "New connection to {} failed. Nats status text: {}. Last error message: {}",
+                  connectionInfoForLog(), natsStatus_GetText(status), nats_GetLastError(nullptr));
+    }
 }
 
 void NATSConnectionManager::disconnectImpl()
 {
+    if (!has_connection)
+        return;
+
     natsConnection_Close(connection);
 
-    /** Connection is not closed immediately (firstly, all pending operations are completed, and then
-     *  an AMQP closing-handshake is  performed). But cannot open a new connection until previous one is properly closed
-     */
     size_t cnt_retries = 0;
     while (!natsConnection_IsClosed(connection) && cnt_retries++ != RETRIES_MAX)
         event_handler.iterateLoop();

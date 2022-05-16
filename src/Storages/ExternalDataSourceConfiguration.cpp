@@ -18,8 +18,9 @@
 #if USE_MYSQL
 #include <Storages/MySQL/MySQLSettings.h>
 #endif
-
+#if USE_NATSIO
 #include <Storages/NATS/NATSSettings.h>
+#endif
 
 #include <re2/re2.h>
 
@@ -485,8 +486,10 @@ template
 bool getExternalDataSourceConfiguration(const ASTs & args, BaseSettings<KafkaSettingsTraits> & settings, ContextPtr context);
 #endif
 
+#if USE_NATSIO
 template
 bool getExternalDataSourceConfiguration(const ASTs & args, BaseSettings<NATSSettingsTraits> & settings, ContextPtr context);
+#endif
 
 template
 std::optional<ExternalDataSourceInfo> getExternalDataSourceConfiguration(

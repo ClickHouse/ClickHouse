@@ -1,15 +1,14 @@
-#include <utility>
-#include <chrono>
-#include <thread>
-#include <mutex>
 #include <atomic>
+#include <chrono>
 #include <memory>
+#include <mutex>
+#include <thread>
+#include <utility>
 #include <Storages/NATS/ReadBufferFromNATSConsumer.h>
 #include <boost/algorithm/string/split.hpp>
 #include <boost/bind.hpp>
-#include <Common/logger_useful.h>
 #include "Poco/Timer.h"
-#include <amqpcpp.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -21,44 +20,44 @@ namespace ErrorCodes
 }
 
 ReadBufferFromNATSConsumer::ReadBufferFromNATSConsumer(
-        std::shared_ptr<NATSConnectionManager> connection_,
-        std::vector<String> & subjects_,
-        const String & subscribe_queue_name,
-        Poco::Logger * log_,
-        char row_delimiter_,
-        uint32_t queue_size_,
-        const std::atomic<bool> & stopped_)
-        : ReadBuffer(nullptr, 0)
-        , connection(connection_)
-        , subjects(subjects_)
-        , log(log_)
-        , row_delimiter(row_delimiter_)
-        , stopped(stopped_)
-        , queue_name(subscribe_queue_name)
-        , received(queue_size_)
+    std::shared_ptr<NATSConnectionManager> connection_,
+    std::vector<String> & subjects_,
+    const String & subscribe_queue_name,
+    Poco::Logger * log_,
+    char row_delimiter_,
+    uint32_t queue_size_,
+    const std::atomic<bool> & stopped_)
+    : ReadBuffer(nullptr, 0)
+    , connection(connection_)
+    , subjects(subjects_)
+    , log(log_)
+    , row_delimiter(row_delimiter_)
+    , stopped(stopped_)
+    , queue_name(subscribe_queue_name)
+    , received(queue_size_)
 {
 }
 
-
 ReadBufferFromNATSConsumer::~ReadBufferFromNATSConsumer()
 {
-    for (const auto& subscription : subscriptions) {
+    for (const auto & subscription : subscriptions)
+    {
         natsSubscription_Unsubscribe(subscription.get());
     }
 
     BufferBase::set(nullptr, 0, 0);
 }
 
-
-void ReadBufferFromNATSConsumer::subscribe(const String & subscribe_queue_name)
+void ReadBufferFromNATSConsumer::subscribe()
 {
     if (subscribed)
         return;
 
-    for (const auto & subject : subjects) {
+    for (const auto & subject : subjects)
+    {
         natsSubscription * ns;
         auto status = natsConnection_QueueSubscribe(
-            &ns, connection->getConnection(), subject.c_str(), subscribe_queue_name.c_str(), onMsg, static_cast<void *>(this));
+            &ns, connection->getConnection(), subject.c_str(), queue_name.c_str(), onMsg, static_cast<void *>(this));
         if (status == NATS_OK)
         {
             LOG_DEBUG(log, "Subscribed to subject {}", subject);
@@ -72,6 +71,11 @@ void ReadBufferFromNATSConsumer::subscribe(const String & subscribe_queue_name)
     subscribed = true;
 }
 
+void ReadBufferFromNATSConsumer::unsubscribe()
+{
+    for (const auto & subscription : subscriptions)
+        natsSubscription_Unsubscribe(subscription.get());
+}
 
 bool ReadBufferFromNATSConsumer::nextImpl()
 {

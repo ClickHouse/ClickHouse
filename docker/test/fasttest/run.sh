@@ -177,6 +177,8 @@ function clone_submodules
             contrib/jemalloc
             contrib/replxx
             contrib/wyhash
+            contrib/eigen
+            contrib/nats-io
         )
 
         git submodule sync
