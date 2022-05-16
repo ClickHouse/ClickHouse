@@ -37,6 +37,74 @@ static String revisionToString(UInt64 revision)
     return std::bitset<64>(revision).to_string();
 }
 
+namespace
+{
+
+/// Runs tasks asynchronously using thread pool.
+class AsyncThreadPoolExecutor : public Executor
+{
+public:
+    AsyncThreadPoolExecutor(const String & name_, int thread_pool_size)
+        : name(name_)
+        , pool(ThreadPool(thread_pool_size)) {}
+
+    std::future<void> execute(std::function<void()> task) override
+    {
+        auto promise = std::make_shared<std::promise<void>>();
+        pool.scheduleOrThrowOnError(
+            [promise, task]()
+            {
+                try
+                {
+                    task();
+                    promise->set_value();
+                }
+                catch (...)
+                {
+                    tryLogCurrentException("Failed to run async task");
+
+                    try
+                    {
+                        promise->set_exception(std::current_exception());
+                    }
+                    catch (...) {}
+                }
+            });
+
+        return promise->get_future();
+    }
+
+    void setMaxThreads(size_t threads)
+    {
+        pool.setMaxThreads(threads);
+    }
+
+private:
+    String name;
+    ThreadPool pool;
+};
+
+}
+
+DiskObjectStorage::DiskObjectStorage(
+    const String & name_,
+    const String & remote_fs_root_path_,
+    const String & log_name,
+    DiskPtr metadata_disk_,
+    ObjectStoragePtr && object_storage_,
+    DiskType disk_type_,
+    bool send_metadata_,
+    uint64_t thread_pool_size)
+    : IDisk(std::make_unique<AsyncThreadPoolExecutor>(log_name, thread_pool_size))
+    , name(name_)
+    , remote_fs_root_path(remote_fs_root_path_)
+    , log (&Poco::Logger::get(log_name))
+    , metadata_disk(metadata_disk_)
+    , disk_type(disk_type_)
+    , object_storage(std::move(object_storage_))
+    , send_metadata(send_metadata_)
+    , metadata_helper(std::make_unique<DiskObjectStorageMetadataHelper>(this, ReadSettings{}))
+{}
 
 DiskObjectStorage::Metadata DiskObjectStorage::Metadata::readMetadata(const String & remote_fs_root_path_, DiskPtr metadata_disk_, const String & metadata_file_path_)
 {
@@ -715,7 +783,11 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorage::writeFile(
 
 void DiskObjectStorage::applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr context_, const String &, const DisksMap &)
 {
-    object_storage->applyNewSettings(config, "storage_configuration.disks." + name, context_);
+    const auto config_prefix = "storage_configuration.disks." + name;
+    object_storage->applyNewSettings(config, config_prefix, context_);
+
+    if (AsyncThreadPoolExecutor * exec = dynamic_cast<AsyncThreadPoolExecutor *>(&getExecutor()))
+        exec->setMaxThreads(config.getInt(config_prefix + ".thread_pool_size", 16));
 }
 
 void DiskObjectStorage::restoreMetadataIfNeeded(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, ContextPtr context)

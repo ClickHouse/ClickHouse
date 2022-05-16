@@ -80,12 +80,14 @@ void registerDiskS3(DiskFactory & factory)
 
         FileCachePtr cache = getCachePtrForDisk(name, config, config_prefix, context);
 
-        bool send_metadata = config.getBool(config_prefix + ".send_metadata", false);
 
         ObjectStoragePtr s3_storage = std::make_unique<S3ObjectStorage>(
             std::move(cache), getClient(config, config_prefix, context),
             getSettings(config, config_prefix, context),
             uri.version_id, uri.bucket);
+
+        bool send_metadata = config.getBool(config_prefix + ".send_metadata", false);
+        uint64_t copy_thread_pool_size = config.getUInt(config_prefix + ".thread_pool_size", 16);
 
         std::shared_ptr<DiskObjectStorage> s3disk = std::make_shared<DiskObjectStorage>(
             name,
@@ -94,7 +96,8 @@ void registerDiskS3(DiskFactory & factory)
             metadata_disk,
             std::move(s3_storage),
             DiskType::S3,
-            send_metadata);
+            send_metadata,
+            copy_thread_pool_size);
 
         /// This code is used only to check access to the corresponding disk.
         if (!config.getBool(config_prefix + ".skip_access_check", false))
@@ -122,7 +125,6 @@ void registerDiskS3(DiskFactory & factory)
             disk_result = wrapWithCache(disk_result, "s3-cache", cache_path, metadata_path);
         }
 
-        LOG_DEBUG(&Poco::Logger::get("DEBUG"), "DONE DISK");
         return std::make_shared<DiskRestartProxy>(disk_result);
     };
     factory.registerDiskType("s3", creator);

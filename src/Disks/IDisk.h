@@ -11,6 +11,7 @@
 #include <IO/ReadSettings.h>
 #include <IO/WriteSettings.h>
 #include <Disks/IObjectStorage.h>
+#include <Disks/WriteMode.h>
 
 #include <memory>
 #include <mutex>
@@ -49,14 +50,6 @@ class ReadBufferFromFileBase;
 class WriteBufferFromFileBase;
 class MMappedFileCache;
 
-/**
- * Mode of opening a file for write.
- */
-enum class WriteMode
-{
-    Rewrite,
-    Append
-};
 
 /**
  * Provide interface for reservation.
