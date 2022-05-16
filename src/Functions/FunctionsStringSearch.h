@@ -115,8 +115,6 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t /*input_rows_count*/) const override
     {
-        using ResultType = typename Impl::ResultType;
-
         const ColumnPtr & column_haystack = arguments[0].column;
         const ColumnPtr & column_needle = arguments[1].column;
 
@@ -126,6 +124,8 @@ public:
 
         const ColumnConst * col_haystack_const = typeid_cast<const ColumnConst *>(&*column_haystack);
         const ColumnConst * col_needle_const = typeid_cast<const ColumnConst *>(&*column_needle);
+
+        using ResultType = typename Impl::ResultType;
 
         if constexpr (!Impl::use_default_implementation_for_constants)
         {
@@ -171,6 +171,14 @@ public:
                 col_haystack_vector->getChars(),
                 col_haystack_vector->getOffsets(),
                 col_needle_const->getValue<String>(),
+                column_start_pos,
+                vec_res);
+        else if (col_haystack_vector_fixed && col_needle_vector)
+            Impl::vectorFixedVector(
+                col_haystack_vector_fixed->getChars(),
+                col_haystack_vector_fixed->getN(),
+                col_needle_vector->getChars(),
+                col_needle_vector->getOffsets(),
                 column_start_pos,
                 vec_res);
         else if (col_haystack_vector_fixed && col_needle_const)

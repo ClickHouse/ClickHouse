@@ -21,10 +21,11 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
-namespace impl {
+namespace impl
+{
 
 /// Is the [I]LIKE expression reduced to finding a substring in a string?
-inline bool likePatternIsSubstring(const String & pattern, String & res)
+inline bool likePatternIsSubstring(std::string_view pattern, String & res)
 {
     if (pattern.size() < 2 || pattern.front() != '%' || pattern.back() != '%')
         return false;
@@ -75,7 +76,7 @@ struct MatchImpl
     static constexpr bool supports_start_pos = false;
     static constexpr auto name = Name::name;
 
-    static ColumnNumbers getArgumentsThatAreAlwaysConstant() { return {1, 2};}
+    static ColumnNumbers getArgumentsThatAreAlwaysConstant() { return {2};}
 
     using ResultType = UInt8;
 
@@ -87,10 +88,10 @@ struct MatchImpl
         const ColumnString::Chars & haystack_data,
         const ColumnString::Offsets & haystack_offsets,
         const String & needle,
-        const ColumnPtr & start_pos,
+        const ColumnPtr & start_pos_,
         PaddedPODArray<UInt8> & res)
     {
-        if (start_pos != nullptr)
+        if (start_pos_ != nullptr)
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                     "Function '{}' doesn't support start_pos argument", name);
 
@@ -211,20 +212,17 @@ struct MatchImpl
                               *  so that it can match when `required_substring` occurs into the string several times,
                               *  and at the first occurrence, the regexp is not a match.
                               */
+                            const size_t start_pos = (required_substring_is_prefix) ? (reinterpret_cast<const char *>(pos) - str_data) : 0;
+                            const size_t end_pos = str_size;
 
-                            if (required_substring_is_prefix)
-                                res[i] = negate
-                                    ^ regexp->getRE2()->Match(
-                                          {str_data, str_size},
-                                          reinterpret_cast<const char *>(pos) - str_data,
-                                          str_size,
-                                          re2_st::RE2::UNANCHORED,
-                                          nullptr,
-                                          0);
-                            else
-                                res[i] = negate
-                                    ^ regexp->getRE2()->Match(
-                                          {str_data, str_size}, 0, str_size, re2_st::RE2::UNANCHORED, nullptr, 0);
+                            res[i] = negate
+                                ^ regexp->getRE2()->Match(
+                                      {str_data, str_size},
+                                      start_pos,
+                                      end_pos,
+                                      re2_st::RE2::UNANCHORED,
+                                      nullptr,
+                                      0);
                         }
                     }
                     else
@@ -373,20 +371,17 @@ struct MatchImpl
                                 *  so that it can match when `required_substring` occurs into the string several times,
                                 *  and at the first occurrence, the regexp is not a match.
                                 */
+                                const size_t start_pos = (required_substring_is_prefix) ? (reinterpret_cast<const char *>(pos) - str_data) : 0;
+                                const size_t end_pos = N;
 
-                                if (required_substring_is_prefix)
-                                    res[i] = negate
-                                        ^ regexp->getRE2()->Match(
-                                            {str_data, N},
-                                            reinterpret_cast<const char *>(pos) - str_data,
-                                            N,
-                                            re2_st::RE2::UNANCHORED,
-                                            nullptr,
-                                            0);
-                                else
-                                    res[i] = negate
-                                        ^ regexp->getRE2()->Match(
-                                            {str_data, N}, 0, N, re2_st::RE2::UNANCHORED, nullptr, 0);
+                                res[i] = negate
+                                    ^ regexp->getRE2()->Match(
+                                        {str_data, N},
+                                        start_pos,
+                                        end_pos,
+                                        re2_st::RE2::UNANCHORED,
+                                        nullptr,
+                                        0);
                             }
                         }
                         else
@@ -404,17 +399,243 @@ struct MatchImpl
         }
     }
 
-    template <typename... Args>
-    static void vectorVector(Args &&...)
+    static void vectorVector(
+        const ColumnString::Chars & haystack_data,
+        const ColumnString::Offsets & haystack_offsets,
+        const ColumnString::Chars & needle_data,
+        const ColumnString::Offsets & needle_offset,
+        const ColumnPtr & start_pos_,
+        PaddedPODArray<UInt8> & res)
     {
-        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Function '{}' doesn't support non-constant needle argument", name);
+        const size_t haystack_size = haystack_offsets.size();
+
+        if (haystack_size != needle_offset.size())
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Function '{}' unexpectedly received a different number of haystacks and needles", name);
+
+        if (start_pos_ != nullptr)
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Function '{}' doesn't support start_pos argument", name);
+
+        if (haystack_offsets.empty())
+            return;
+
+        String required_substr;
+        bool is_trivial;
+        bool required_substring_is_prefix; /// for `anchored` execution of the regexp.
+
+        size_t prev_haystack_offset = 0;
+        size_t prev_needle_offset = 0;
+
+        for (size_t i = 0; i < haystack_size; ++i)
+        {
+            const auto * const cur_haystack_data = &haystack_data[prev_haystack_offset];
+            const size_t cur_haystack_length = haystack_offsets[i] - prev_haystack_offset - 1;
+
+            const auto * const cur_needle_data = &needle_data[prev_needle_offset];
+            const size_t cur_needle_length = needle_offset[i] - prev_needle_offset - 1;
+
+            const auto & needle = String(
+                    reinterpret_cast<const char *>(cur_needle_data),
+                    cur_needle_length);
+
+            if (like && impl::likePatternIsSubstring(needle, required_substr))
+            {
+                if (required_substr.size() > cur_haystack_length)
+                    res[i] = negate;
+                else
+                {
+                    Searcher searcher(required_substr.data(), required_substr.size(), cur_haystack_length);
+                    const auto * match = searcher.search(cur_haystack_data, cur_haystack_length);
+                    res[i] = negate
+                        ^ (match != cur_haystack_data + cur_haystack_length);
+                }
+            }
+            else
+            {
+                // each row is expected to contain a different like/re2 pattern
+                // --> bypass the regexp cache, instead construct the pattern on-the-fly
+                const int flags = Regexps::buildRe2Flags<true, case_insensitive>();
+                const auto & regexp = Regexps::Regexp(Regexps::createRegexp<like>(needle, flags));
+
+                regexp.getAnalyzeResult(required_substr, is_trivial, required_substring_is_prefix);
+
+                if (required_substr.empty())
+                {
+                    if (!regexp.getRE2()) /// An empty regexp. Always matches.
+                    {
+                        res[i] = 1;
+                    }
+                    else
+                    {
+                        res[i] = negate
+                            ^ regexp.getRE2()->Match(
+                                          {reinterpret_cast<const char *>(cur_haystack_data), cur_haystack_length},
+                                          0,
+                                          cur_haystack_length,
+                                          re2_st::RE2::UNANCHORED,
+                                          nullptr,
+                                          0);
+                    }
+                }
+                else
+                {
+                    Searcher searcher(required_substr.data(), required_substr.size(), cur_haystack_length);
+                    const auto * match = searcher.search(cur_haystack_data, cur_haystack_length);
+
+                    if (match == cur_haystack_data + cur_haystack_length)
+                    {
+                        res[i] = negate; // no match
+                    }
+                    else
+                    {
+                        if (is_trivial)
+                        {
+                            res[i] = !negate; // no wildcards in pattern
+                        }
+                        else
+                        {
+                            const size_t start_pos = (required_substring_is_prefix) ? (match - cur_haystack_data) : 0;
+                            const size_t end_pos = cur_haystack_length;
+
+                            res[i] = negate
+                                ^ regexp.getRE2()->Match(
+                                              {reinterpret_cast<const char *>(cur_haystack_data), cur_haystack_length},
+                                              start_pos,
+                                              end_pos,
+                                              re2_st::RE2::UNANCHORED,
+                                              nullptr,
+                                              0);
+                        }
+                    }
+                }
+            }
+
+            prev_haystack_offset = haystack_offsets[i];
+            prev_needle_offset = needle_offset[i];
+        }
     }
 
-    /// Search different needles in single haystack.
+    static void vectorFixedVector(
+        const ColumnString::Chars & haystack,
+        size_t N,
+        const ColumnString::Chars & needle_data,
+        const ColumnString::Offsets & needle_offset,
+        const ColumnPtr & start_pos_,
+        PaddedPODArray<UInt8> & res)
+    {
+        const size_t haystack_size = haystack.size()/N;
+
+        if (haystack_size != needle_offset.size())
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Function '{}' unexpectedly received a different number of haystacks and needles", name);
+
+        if (start_pos_ != nullptr)
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Function '{}' doesn't support start_pos argument", name);
+
+        if (haystack.empty())
+            return;
+
+        String required_substr;
+        bool is_trivial;
+        bool required_substring_is_prefix; // for `anchored` execution of the regexp.
+
+        size_t prev_haystack_offset = 0;
+        size_t prev_needle_offset = 0;
+
+        for (size_t i = 0; i < haystack_size; ++i)
+        {
+            const auto * const cur_haystack_data = &haystack[prev_haystack_offset];
+            const size_t cur_haystack_length = N;
+
+            const auto * const cur_needle_data = &needle_data[prev_needle_offset];
+            const size_t cur_needle_length = needle_offset[i] - prev_needle_offset - 1;
+
+            const auto & needle = String(
+                    reinterpret_cast<const char *>(cur_needle_data),
+                    cur_needle_length);
+
+            if (like && impl::likePatternIsSubstring(needle, required_substr))
+            {
+                if (required_substr.size() > cur_haystack_length)
+                    res[i] = negate;
+                else
+                {
+                    Searcher searcher(required_substr.data(), required_substr.size(), cur_haystack_length);
+                    const auto * match = searcher.search(cur_haystack_data, cur_haystack_length);
+                    res[i] = negate
+                        ^ (match != cur_haystack_data + cur_haystack_length);
+                }
+            }
+            else
+            {
+                // each row is expected to contain a different like/re2 pattern
+                // --> bypass the regexp cache, instead construct the pattern on-the-fly
+                const int flags = Regexps::buildRe2Flags<true, case_insensitive>();
+                const auto & regexp = Regexps::Regexp(Regexps::createRegexp<like>(needle, flags));
+
+                regexp.getAnalyzeResult(required_substr, is_trivial, required_substring_is_prefix);
+
+                if (required_substr.empty())
+                {
+                    if (!regexp.getRE2()) /// An empty regexp. Always matches.
+                    {
+                        res[i] = 1;
+                    }
+                    else
+                    {
+                        res[i] = negate
+                            ^ regexp.getRE2()->Match(
+                                            {reinterpret_cast<const char *>(cur_haystack_data), cur_haystack_length},
+                                            0,
+                                            cur_haystack_length,
+                                            re2_st::RE2::UNANCHORED,
+                                            nullptr,
+                                            0);
+                    }
+                }
+                else
+                {
+                    Searcher searcher(required_substr.data(), required_substr.size(), cur_haystack_length);
+                    const auto * match = searcher.search(cur_haystack_data, cur_haystack_length);
+
+                    if (match == cur_haystack_data + cur_haystack_length)
+                    {
+                        res[i] = negate; // no match
+                    }
+                    else
+                    {
+                        if (is_trivial)
+                        {
+                            res[i] = !negate; // no wildcards in pattern
+                        }
+                        else
+                        {
+                            const size_t start_pos = (required_substring_is_prefix) ? (match - cur_haystack_data) : 0;
+                            const size_t end_pos = cur_haystack_length;
+
+                            res[i] = negate
+                                ^ regexp.getRE2()->Match(
+                                        {reinterpret_cast<const char *>(cur_haystack_data), cur_haystack_length},
+                                        start_pos,
+                                        end_pos,
+                                        re2_st::RE2::UNANCHORED,
+                                        nullptr,
+                                        0);
+                        }
+                    }
+                }
+            }
+            prev_haystack_offset += N;
+            prev_needle_offset = needle_offset[i];
+        }
+    }
+
     template <typename... Args>
     static void constantVector(Args &&...)
     {
-        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Function '{}' doesn't support non-constant needle argument", name);
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Function '{}' doesn't support search with non-constant needles in constant haystack", name);
     }
 };
 
