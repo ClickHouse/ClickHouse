@@ -15,9 +15,9 @@ In some cases, you can still rely on the order of execution. This applies to cas
 
 **Example**
 
-show default.ck table result.
-
 ``` text
+SELECT * FROM default.ck;
+
 ┌─id─┬─name─────┐
 │  1 │ zhangsan │
 │  1 │ ᴺᵁᴸᴸ     │
@@ -30,7 +30,7 @@ show default.ck table result.
 Query:
 
 ``` sql
-select id, groupArray(10)(name) from (select id, name from default.ck group by id, name order by id) group by id;
+select id, groupArray(10)(name) from default.ck group by id;
 ```
 
 Result:
