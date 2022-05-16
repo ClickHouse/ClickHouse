@@ -156,6 +156,7 @@ KeeperStorage::ResponsesForSessions processWatchesImpl(
     return result;
 }
 
+// When this function is updated, update CURRENT_DIGEST_VERSION!!
 UInt64 calculateDigest(std::string_view path, std::string_view data, const Coordination::Stat & stat)
 {
     SipHash hash;
@@ -264,6 +265,7 @@ std::shared_ptr<KeeperStorage::Node> KeeperStorage::UncommittedState::getNode(St
             [&](const UpdateNodeDelta & update_delta)
             {
                 assert(node);
+                node->invalidateDigestCache();
                 update_delta.update_fn(*node);
             },
             [&](auto && /*delta*/) {},
@@ -377,10 +379,10 @@ Coordination::Error KeeperStorage::commit(int64_t commit_zxid, int64_t session_i
                     if (operation.version != -1 && operation.version != node_it->value.stat.version)
                         onStorageInconsistency();
 
-                    nodes_hash -= node_it->value.getDigest(path);
+                    nodes_digest -= node_it->value.getDigest(path);
                     auto updated_node = container.updateValue(path, operation.update_fn);
-                    node_it->value.invalidateDigestCache();
-                    nodes_hash += updated_node->value.getDigest(path);
+                    updated_node->value.invalidateDigestCache();
+                    nodes_digest += updated_node->value.getDigest(path);
 
                     return Coordination::Error::ZOK;
                 }
@@ -478,7 +480,7 @@ bool KeeperStorage::createNode(
         ephemerals[session_id].emplace(path);
 
     auto digest = map_key->getMapped()->value.getDigest(map_key->getKey().toView());
-    nodes_hash += digest;
+    nodes_digest += digest;
 
     return true;
 };
@@ -512,10 +514,9 @@ bool KeeperStorage::removeNode(const std::string & path, int32_t version)
 
     container.erase(path);
 
-    nodes_hash -= prev_node.getDigest(path);
+    nodes_digest -= prev_node.getDigest(path);
     return true;
 }
-
 
 struct KeeperStorageRequestProcessor
 {
@@ -1594,7 +1595,7 @@ KeeperStorageRequestProcessorsFactory::KeeperStorageRequestProcessorsFactory()
 }
 
 
-UInt64 KeeperStorage::calculateNodesHash(UInt64 current_hash, int64_t current_zxid) const
+UInt64 KeeperStorage::calculateNodesDigest(UInt64 current_digest, int64_t current_zxid) const
 {
     std::unordered_map<std::string, std::shared_ptr<Node>> updated_nodes;
 
@@ -1617,7 +1618,7 @@ UInt64 KeeperStorage::calculateNodesHash(UInt64 current_hash, int64_t current_zx
                     if (!updated_nodes.contains(delta.path))
                     {
                         auto old_digest = uncommitted_state.getNode(delta.path, current_zxid)->getDigest(delta.path);
-                        current_hash -= old_digest;
+                        current_digest -= old_digest;
                     }
 
                     updated_nodes.insert_or_assign(delta.path, nullptr);
@@ -1630,7 +1631,7 @@ UInt64 KeeperStorage::calculateNodesHash(UInt64 current_hash, int64_t current_zx
                     if (updated_node_it == updated_nodes.end())
                     {
                         node = uncommitted_state.getNode(delta.path, current_zxid);
-                        current_hash -= node->getDigest(delta.path);
+                        current_digest -= node->getDigest(delta.path);
                         updated_nodes.emplace(delta.path, node);
                     }
                     else
@@ -1647,11 +1648,12 @@ UInt64 KeeperStorage::calculateNodesHash(UInt64 current_hash, int64_t current_zx
         if (updated_node)
         {
             updated_node->invalidateDigestCache();
-            current_hash += updated_node->getDigest(path);
+            current_digest += updated_node->getDigest(path);
         }
     }
 
-    return current_hash;
+
+    return current_digest;
 }
 
 void KeeperStorage::preprocessRequest(
@@ -1659,28 +1661,53 @@ void KeeperStorage::preprocessRequest(
     int64_t session_id,
     int64_t time,
     int64_t new_last_zxid,
-    std::optional<UInt64> expected_hash,
+    Digest expected_digest,
     bool check_acl)
 {
     int64_t last_zxid = getNextZXID() - 1;
 
-    if (new_last_zxid < last_zxid || (uncommitted_transactions.empty() && new_last_zxid == last_zxid))
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR, "Got new ZXID {} smaller or equal to current ZXID ({}). It's a bug", new_last_zxid, zxid);
-
-    if (new_last_zxid == last_zxid && expected_hash && *expected_hash == uncommitted_transactions.back().nodes_hash)
+    if (uncommitted_transactions.empty())
     {
-        if (expected_hash && *expected_hash != uncommitted_transactions.back().nodes_hash)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Got new ZXID {} equal to current ZXID ({}). It's a bug", new_last_zxid, zxid);
+        if (new_last_zxid <= last_zxid)
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR, "Got new ZXID {} smaller or equal to current ZXID ({}). It's a bug", new_last_zxid, last_zxid);
+    }
+    else
+    {
+        // if we are leader node, the request potentially already got processed
+        auto txn_it = std::lower_bound(
+            uncommitted_transactions.begin(),
+            uncommitted_transactions.end(),
+            new_last_zxid,
+            [&](const auto & request, const auto value) { return request.zxid < value; });
+        // this zxid is not found in the uncommitted_transactions so do the regular check
+        if (txn_it == uncommitted_transactions.end())
+        {
+            if (new_last_zxid <= last_zxid)
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Got new ZXID {} smaller or equal to current ZXID ({}). It's a bug",
+                    new_last_zxid,
+                    last_zxid);
+        }
+        else
+        {
+            if (txn_it->zxid == new_last_zxid && checkDigest(txn_it->nodes_digest, expected_digest))
+                // we found the preprocessed request with the same ZXID, we can skip it
+                return;
 
-        // last uncommitted zxids is same as the current one so we are probably pre_committing on the leader
-        // but the leader already preprocessed the request while he appended the ZXID
-        return;
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR, "Found invalid state of uncommitted transactions, missing request with ZXID {}", new_last_zxid);
+        }
     }
 
     TransactionInfo transaction{.zxid = new_last_zxid};
     SCOPE_EXIT({
-        transaction.nodes_hash = expected_hash.value_or(calculateNodesHash(getNodesHash(false), transaction.zxid));
+        if (expected_digest.version == DigestVersion::NO_DIGEST)
+            transaction.nodes_digest = Digest{CURRENT_DIGEST_VERSION, calculateNodesDigest(getNodesDigest(false).value, transaction.zxid)};
+        else
+            transaction.nodes_digest = expected_digest;
+
         uncommitted_transactions.emplace_back(transaction);
     });
 
@@ -1866,12 +1893,12 @@ void KeeperStorage::rollbackRequest(int64_t rollback_zxid)
     uncommitted_transactions.pop_back();
 }
 
-uint64_t KeeperStorage::getNodesHash(bool committed) const
+KeeperStorage::Digest KeeperStorage::getNodesDigest(bool committed) const
 {
     if (committed || uncommitted_transactions.empty())
-        return nodes_hash;
+        return {CURRENT_DIGEST_VERSION, nodes_digest};
 
-    return uncommitted_transactions.back().nodes_hash;
+    return uncommitted_transactions.back().nodes_digest;
 }
 
 void KeeperStorage::clearDeadWatches(int64_t session_id)

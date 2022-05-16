@@ -126,9 +126,9 @@ KeeperStorage::RequestForSession KeeperStateMachine::parseRequest(nuraft::buffer
 
     if (!buffer.eof())
     {
-        UInt64 nodes_hash;
-        readIntBinary(nodes_hash, buffer);
-        request_for_session.nodes_hash.emplace(nodes_hash);
+        readIntBinary(request_for_session.digest.version, buffer);
+        if (request_for_session.digest.version != KeeperStorage::DigestVersion::NO_DIGEST)
+            readIntBinary(request_for_session.digest.value, buffer);
     }
 
     return request_for_session;
@@ -139,7 +139,7 @@ void KeeperStateMachine::preprocess(const KeeperStorage::RequestForSession & req
     if (request_for_session.request->getOpNum() == Coordination::OpNum::SessionID)
         return;
     std::lock_guard lock(storage_and_responses_lock);
-    storage->preprocessRequest(request_for_session.request, request_for_session.session_id, request_for_session.time, request_for_session.zxid, request_for_session.nodes_hash);
+    storage->preprocessRequest(request_for_session.request, request_for_session.session_id, request_for_session.time, request_for_session.zxid, request_for_session.digest);
 }
 
 nuraft::ptr<nuraft::buffer> KeeperStateMachine::commit(const uint64_t log_idx, nuraft::buffer & data)
@@ -177,8 +177,12 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine::commit(const uint64_t log_idx, n
                 throw Exception(ErrorCodes::SYSTEM_ERROR, "Could not push response with session id {} into responses queue", response_for_session.session_id);
     }
 
-    if (request_for_session.nodes_hash)
-        assert(*request_for_session.nodes_hash == storage->getNodesHash(true));
+
+    if (!KeeperStorage::checkDigest(request_for_session.digest, storage->getNodesDigest(true)))
+    {
+        LOG_ERROR(log, "Digest for nodes is not matching after applying request of type {}", request_for_session.request->getOpNum());
+        std::terminate();
+    }
 
     last_committed_idx = log_idx;
     return nullptr;
@@ -407,10 +411,10 @@ int64_t KeeperStateMachine::getNextZxid() const
     return storage->getNextZXID();
 }
 
-UInt64 KeeperStateMachine::getNodesHash() const
+KeeperStorage::Digest KeeperStateMachine::getNodesDigest() const
 {
     std::lock_guard lock(storage_and_responses_lock);
-    return storage->getNodesHash(false);
+    return storage->getNodesDigest(false);
 }
 
 uint64_t KeeperStateMachine::getLastProcessedZxid() const
