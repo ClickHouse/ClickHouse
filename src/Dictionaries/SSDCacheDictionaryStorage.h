@@ -20,6 +20,7 @@
 #include <Common/MemorySanitizer.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/HashTable/HashMap.h>
+#include <Common/logger_useful.h>
 #include <IO/AIO.h>
 #include <IO/BufferWithOwnMemory.h>
 #include <Dictionaries/DictionaryStructure.h>
@@ -477,6 +478,7 @@ public:
             if (!std::filesystem::create_directories(parent_path_directory))
                 throw Exception(ErrorCodes::CANNOT_CREATE_DIRECTORY, "Failed to create directories.");
 
+        LOG_INFO(&Poco::Logger::get("TEMPLOG"), "ProfileEvents[FileOpen]: {}", file_path);
         ProfileEvents::increment(ProfileEvents::FileOpen);
 
         file.fd = ::open(file_path.c_str(), O_RDWR | O_CREAT | O_TRUNC | O_DIRECT, 0666);

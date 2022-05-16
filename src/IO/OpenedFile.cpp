@@ -4,6 +4,7 @@
 
 #include <Common/ProfileEvents.h>
 #include <Common/Exception.h>
+#include <Common/logger_useful.h>
 #include <IO/OpenedFile.h>
 
 
@@ -25,6 +26,7 @@ namespace ErrorCodes
 
 void OpenedFile::open() const
 {
+    LOG_INFO(&Poco::Logger::get("TEMPLOG"), "ProfileEvents[FileOpen]: {}", file_name);
     ProfileEvents::increment(ProfileEvents::FileOpen);
 
     fd = ::open(file_name.c_str(), (flags == -1 ? 0 : flags) | O_RDONLY | O_CLOEXEC);

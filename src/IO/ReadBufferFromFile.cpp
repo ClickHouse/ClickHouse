@@ -3,6 +3,7 @@
 #include <IO/ReadBufferFromFile.h>
 #include <IO/WriteHelpers.h>
 #include <Common/ProfileEvents.h>
+#include <Common/logger_useful.h>
 #include <cerrno>
 
 
@@ -32,6 +33,7 @@ ReadBufferFromFile::ReadBufferFromFile(
     std::optional<size_t> file_size_)
     : ReadBufferFromFileDescriptor(-1, buf_size, existing_memory, alignment, file_size_), file_name(file_name_)
 {
+    LOG_INFO(&Poco::Logger::get("TEMPLOG"), "ProfileEvents[FileOpen]: {}", file_name);
     ProfileEvents::increment(ProfileEvents::FileOpen);
 
 #ifdef __APPLE__

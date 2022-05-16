@@ -3,6 +3,7 @@
 
 #include <Common/ProfileEvents.h>
 #include <Common/formatReadable.h>
+#include <Common/logger_useful.h>
 #include <IO/MMapReadBufferFromFile.h>
 
 
@@ -24,6 +25,7 @@ namespace ErrorCodes
 
 void MMapReadBufferFromFile::open()
 {
+    LOG_INFO(&Poco::Logger::get("TEMPLOG"), "ProfileEvents[FileOpen]: {}", file_name);
     ProfileEvents::increment(ProfileEvents::FileOpen);
 
     fd = ::open(file_name.c_str(), O_RDONLY | O_CLOEXEC);

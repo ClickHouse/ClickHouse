@@ -4,6 +4,7 @@
 #include <Common/ProfileEvents.h>
 #include <Common/formatReadable.h>
 #include <Common/Exception.h>
+#include <Common/logger_useful.h>
 #include <IO/MMappedFile.h>
 
 
@@ -25,6 +26,7 @@ namespace ErrorCodes
 
 void MMappedFile::open()
 {
+    LOG_INFO(&Poco::Logger::get("TEMPLOG"), "ProfileEvents[FileOpen]: {}", file_name);
     ProfileEvents::increment(ProfileEvents::FileOpen);
 
     fd = ::open(file_name.c_str(), O_RDONLY | O_CLOEXEC);
