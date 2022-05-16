@@ -33,7 +33,7 @@ void CompressedWriteBuffer::nextImpl()
         compressed_size = codec->compress(working_buffer.begin(), decompressed_size, out_compressed_ptr);
 
         CityHash_v1_0_2::uint128 checksum = CityHash_v1_0_2::CityHash128(out_compressed_ptr, compressed_size);
-        memcpy(out_checksum_ptr, &checksum, CHECKSUM_SIZE);
+        memcpy(out_checksum_ptr, reinterpret_cast<const char *>(&checksum), CHECKSUM_SIZE);
         out.position() += CHECKSUM_SIZE + compressed_size;
     }
     else
