@@ -26,7 +26,7 @@ namespace ErrorCodes
 }
 
 #ifdef __aarch64__
-extern bool only_ascii_in_vector(uint8x16_t input);
+extern bool only_ascii_in_vector(uint32x4_t input);
 #endif
 extern const UInt8 length_of_utf8_sequence[256];
 
