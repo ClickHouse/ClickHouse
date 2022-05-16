@@ -125,8 +125,7 @@ void MergeTreeDataPartWide::loadIndexGranularity()
     }
     else
     {
-        auto buffer = volume->getDisk()->readFile(marks_file_path, MergeTreeReaderSettings::createReadSettings().adjustBufferSize(marks_file_size), marks_file_size);
-        buffer->setReadUntilEnd(); /// For asynchronous reading from remote fs.
+        auto buffer = volume->getDisk()->readFile(marks_file_path, ReadSettings().adjustBufferSize(marks_file_size), marks_file_size);
         while (!buffer->eof())
         {
             buffer->seek(sizeof(size_t) * 2, SEEK_CUR); /// skip offset_in_compressed file and offset_in_decompressed_block

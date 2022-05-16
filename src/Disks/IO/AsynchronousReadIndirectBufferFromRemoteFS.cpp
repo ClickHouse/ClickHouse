@@ -142,12 +142,6 @@ void AsynchronousReadIndirectBufferFromRemoteFS::setReadUntilPosition(size_t pos
         prefetch_future = {};
     }
 
-    if (position == 0)
-    {
-        read_until_position.reset();
-        return;
-    }
-
     if (position > read_until_position)
     {
         read_until_position = position;
