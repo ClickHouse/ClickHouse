@@ -1,8 +1,6 @@
 #include <atomic>
 #include <chrono>
 #include <memory>
-#include <mutex>
-#include <thread>
 #include <utility>
 #include <Storages/NATS/ReadBufferFromNATSConsumer.h>
 #include <boost/algorithm/string/split.hpp>
@@ -36,16 +34,6 @@ ReadBufferFromNATSConsumer::ReadBufferFromNATSConsumer(
     , queue_name(subscribe_queue_name)
     , received(queue_size_)
 {
-}
-
-ReadBufferFromNATSConsumer::~ReadBufferFromNATSConsumer()
-{
-    for (const auto & subscription : subscriptions)
-    {
-        natsSubscription_Unsubscribe(subscription.get());
-    }
-
-    BufferBase::set(nullptr, 0, 0);
 }
 
 void ReadBufferFromNATSConsumer::subscribe()

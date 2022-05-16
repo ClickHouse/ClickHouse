@@ -67,13 +67,6 @@ NATSSource::~NATSSource()
 
 Chunk NATSSource::generate()
 {
-    auto chunk = generateImpl();
-
-    return chunk;
-}
-
-Chunk NATSSource::generateImpl()
-{
     if (!buffer)
     {
         auto timeout = std::chrono::milliseconds(context->getSettingsRef().rabbitmq_max_wait_ms.totalMilliseconds());
@@ -104,11 +97,7 @@ Chunk NATSSource::generateImpl()
         if (new_rows)
         {
             auto subject = buffer->getSubject();
-
-            for (size_t i = 0; i < new_rows; ++i)
-            {
-                virtual_columns[0]->insert(subject);
-            }
+            virtual_columns[0]->insertMany(subject, new_rows);
 
             total_rows = total_rows + new_rows;
         }

@@ -1156,8 +1156,8 @@ void NO_INLINE Aggregator::executeWithoutKeyImpl(
 
         if (inst->offsets)
             inst->batch_that->addBatchSinglePlace(
-                0,
-                inst->offsets[static_cast<ssize_t>(row_end - 1)],
+                inst->offsets[static_cast<ssize_t>(row_begin) - 1],
+                inst->offsets[row_end - 1],
                 res + inst->state_offset,
                 inst->batch_arguments,
                 arena);

@@ -2,7 +2,7 @@
 
 #include <Storages/NATS/Buffer_fwd.h>
 #include <Storages/NATS/NATSHandler.h>
-#include <Storages/NATS/UVLoop.h>
+#include <Storages/UVLoop.h>
 
 namespace DB
 {

@@ -54,8 +54,6 @@ public:
     ConsumerBufferPtr popReadBuffer();
     ConsumerBufferPtr popReadBuffer(std::chrono::milliseconds timeout);
 
-    ProducerBufferPtr createWriteBuffer();
-
     const String & getFormatName() const { return format_name; }
     NamesAndTypesList getVirtuals() const override;
 
@@ -114,6 +112,9 @@ private:
     bool is_attach;
 
     ConsumerBufferPtr createReadBuffer();
+    ProducerBufferPtr createWriteBuffer(const std::string & subject);
+
+    bool isSubjectInSubscriptions(const std::string & subject);
 
     /// Functions working in the background
     void streamingToViewsFunc();
@@ -124,7 +125,7 @@ private:
     void stopLoop();
     void stopLoopIfNoReaders();
 
-    static Names parseList(const String & list);
+    static Names parseList(const String & list, char delim);
     static String getTableBasedName(String name, const StorageID & table_id);
 
     ContextMutablePtr addSettings(ContextPtr context) const;

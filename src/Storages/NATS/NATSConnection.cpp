@@ -78,7 +78,7 @@ bool NATSConnectionManager::closed()
 
 bool NATSConnectionManager::isConnectedImpl() const
 {
-    return event_handler.connectionRunning() && connection && !natsConnection_IsClosed(connection);
+    return connection && has_connection && !natsConnection_IsClosed(connection);
 }
 
 void NATSConnectionManager::connectImpl()
@@ -117,15 +117,10 @@ void NATSConnectionManager::connectImpl()
         status = natsConnection_Connect(&connection, options);
     }
     if (status == NATS_OK)
-    {
         has_connection = true;
-        event_handler.changeConnectionStatus(true);
-    }
     else
-    {
         LOG_DEBUG(log, "New connection to {} failed. Nats status text: {}. Last error message: {}",
                   connectionInfoForLog(), natsStatus_GetText(status), nats_GetLastError(nullptr));
-    }
 }
 
 void NATSConnectionManager::disconnectImpl()
@@ -138,8 +133,6 @@ void NATSConnectionManager::disconnectImpl()
     size_t cnt_retries = 0;
     while (!natsConnection_IsClosed(connection) && cnt_retries++ != RETRIES_MAX)
         event_handler.iterateLoop();
-
-    event_handler.changeConnectionStatus(false);
 }
 
 void NATSConnectionManager::reconnectedCallback(natsConnection * nc, void * log)
