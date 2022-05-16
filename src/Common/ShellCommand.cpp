@@ -3,7 +3,7 @@
 #include <fcntl.h>
 #include <dlfcn.h>
 #include <unistd.h>
-#include <time.h>
+#include <ctime>
 #include <csignal>
 
 #include <Common/logger_useful.h>
