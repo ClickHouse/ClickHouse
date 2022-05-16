@@ -1,6 +1,6 @@
 #include "LZ4_decompress_faster.h"
 
-#include <string.h>
+#include <cstring>
 #include <iostream>
 #include <Core/Defines.h>
 #include <Common/Stopwatch.h>
