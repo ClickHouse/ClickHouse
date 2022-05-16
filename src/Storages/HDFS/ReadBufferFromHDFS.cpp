@@ -69,25 +69,28 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<S
         if (allow_reuse_hdfs_objects)
         {
             fs = HDFSBuilderFSFactory::instance().getFS(builder);
-            if (!HDFSBuilderFSFactory::instance().tryCallFS(
+            HDFSBuilderFSFactory::instance().tryCallFS(
                     builder,
                     fs,
                     [&](HDFSFSSharedPtr & fs_) -> bool
                     {
                         fin = hdfsOpenFile(fs_.get(), hdfs_file_path.c_str(), O_RDONLY, 0, 0, 0);
                         return fin != nullptr;
-                    }))
-                throw Exception(
-                    ErrorCodes::CANNOT_OPEN_FILE,
-                    "Unable to open HDFS file: {}. Error: {}",
-                    hdfs_uri + hdfs_file_path,
-                    std::string(hdfsGetLastError()));
+                    });
         }
         else
         {
             fs = createSharedHDFSFS(builder->get());
             fin = hdfsOpenFile(fs.get(), hdfs_file_path.c_str(), O_RDONLY, 0, 0, 0);
         }
+
+        if (!fin)
+            throw Exception(
+                ErrorCodes::CANNOT_OPEN_FILE,
+                "Unable to open HDFS file: {}. Error: {}",
+                hdfs_uri + hdfs_file_path,
+                std::string(hdfsGetLastError()));
+
 
         ProfileEvents::increment(ProfileEvents::HDFSReadInitializeMicroseconds, watch.elapsedMicroseconds());
         ProfileEvents::increment(ProfileEvents::HDFSReadInitialize, 1);

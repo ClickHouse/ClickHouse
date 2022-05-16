@@ -168,6 +168,7 @@ public:
                         hdfs_namenode_url,
                         current_path,
                         getContext()->getGlobalContext()->getConfigRef(),
+                        getContext()->getSettingsRef().max_read_buffer_size,
                         0,
                         getContext()->getSettingsRef().allow_reuse_hdfs_objects);
                 }
