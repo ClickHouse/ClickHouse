@@ -1104,7 +1104,10 @@ private:
             ctx->new_data_part->getColumns(),
             skip_part_indices,
             ctx->compression_codec,
-            ctx->txn);
+            ctx->txn,
+            false,
+            false,
+            ctx->context->getWriteSettings());
 
         ctx->mutating_pipeline = QueryPipelineBuilder::getPipeline(std::move(builder));
         ctx->mutating_executor = std::make_unique<PullingPipelineExecutor>(ctx->mutating_pipeline);

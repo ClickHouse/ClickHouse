@@ -1,6 +1,7 @@
 #include "FileSegment.h"
 
 #include <base/getThreadId.h>
+#include <base/scope_guard.h>
 #include <Common/IFileCache.h>
 #include <Common/logger_useful.h>
 #include <Common/hex.h>
@@ -61,7 +62,9 @@ FileSegment::FileSegment(
         /// needed, downloader is set on file segment creation).
         case (State::DOWNLOADING):
         {
-            downloader_id = getCallerId();
+            /// For write-through cache we do not require file segment to have a specific
+            /// downloader, so some checks are removed.
+            write_through_cache_download = true;
             break;
         }
         default:
@@ -220,7 +223,7 @@ void FileSegment::write(const char * from, size_t size, size_t offset_, bool fin
             ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR,
             "Not enough space is reserved. Available: {}, expected: {}", availableSize(), size);
 
-    if (!isDownloader())
+    if (!isDownloader() && !write_through_cache_download)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
                         "Only downloader can do the downloading. (CallerId: {}, DownloaderId: {})",
                         getCallerId(), downloader_id);
@@ -328,7 +331,7 @@ bool FileSegment::reserve(size_t size)
 
         auto caller_id = getCallerId();
         bool is_downloader = caller_id == downloader_id;
-        if (!is_downloader)
+        if (!is_downloader && !write_through_cache_download)
         {
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
@@ -575,6 +578,7 @@ String FileSegment::getInfoForLogImpl(std::lock_guard<std::mutex> & segment_lock
     info << "reserved size: " << reserved_size << ", ";
     info << "downloader id: " << downloader_id << ", ";
     info << "caller id: " << getCallerId();
+    info << "persistent: " << is_persistent;
 
     return info.str();
 }
@@ -666,6 +670,7 @@ FileSegmentPtr FileSegment::getSnapshot(const FileSegmentPtr & file_segment, std
     snapshot->ref_count = file_segment.use_count();
     snapshot->downloaded_size = file_segment->getDownloadedSize();
     snapshot->download_state = file_segment->state();
+    snapshot->is_persistent = file_segment->isPersistent();
 
     return snapshot;
 }

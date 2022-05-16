@@ -25,6 +25,7 @@ namespace ErrorCodes
 LRUFileCache::LRUFileCache(const String & cache_base_path_, const FileCacheSettings & cache_settings_)
     : IFileCache(cache_base_path_, cache_settings_)
     , log(&Poco::Logger::get("LRUFileCache"))
+    , allow_remove_persistent_cache_by_default(cache_settings_.allow_remove_persistent_cache_by_default)
 {
 }
 
@@ -560,6 +561,7 @@ void LRUFileCache::removeIfExists(const Key & key)
         if (file_segment)
         {
             std::lock_guard<std::mutex> segment_lock(file_segment->mutex);
+            file_segment->detach(cache_lock, segment_lock);
             remove(file_segment->key(), file_segment->offset(), cache_lock, segment_lock);
         }
     }
@@ -571,12 +573,9 @@ void LRUFileCache::removeIfExists(const Key & key)
     if (fs::exists(key_path))
         fs::remove(key_path);
 
-#ifndef NDEBUG
-    assertCacheCorrectness(cache_lock);
-#endif
 }
 
-void LRUFileCache::remove()
+void LRUFileCache::removeIfReleasable(bool remove_persistent_files)
 {
     /// Try remove all cached files by cache_base_path.
     /// Only releasable file segments are evicted.
@@ -596,7 +595,10 @@ void LRUFileCache::remove()
         if (cell->releasable())
         {
             auto file_segment = cell->file_segment;
-            if (file_segment)
+            if (file_segment
+                && (!file_segment->isPersistent()
+                    || remove_persistent_files
+                    || allow_remove_persistent_cache_by_default))
             {
                 std::lock_guard segment_lock(file_segment->mutex);
                 file_segment->detach(cache_lock, segment_lock);
@@ -604,6 +606,10 @@ void LRUFileCache::remove()
             }
         }
     }
+
+#ifndef NDEBUG
+    assertCacheCorrectness(cache_lock);
+#endif
 }
 
 void LRUFileCache::remove(
