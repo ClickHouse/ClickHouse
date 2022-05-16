@@ -2,8 +2,8 @@
 
 #include <memory>
 
-#include <boost/noncopyable.hpp>
 #include <uv.h>
+#include <boost/noncopyable.hpp>
 
 #include <Common/Exception.h>
 
@@ -19,7 +19,7 @@ namespace ErrorCodes
 class UVLoop : public boost::noncopyable
 {
 public:
-    UVLoop(): loop_ptr(new uv_loop_t())
+    UVLoop() : loop_ptr(new uv_loop_t())
     {
         int res = uv_loop_init(loop_ptr.get());
 

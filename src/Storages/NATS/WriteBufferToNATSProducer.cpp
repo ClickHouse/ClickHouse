@@ -1,16 +1,14 @@
 #include <Storages/NATS/WriteBufferToNATSProducer.h>
 
-#include <Core/Block.h>
-#include <Columns/ColumnString.h>
-#include <Columns/ColumnsNumber.h>
-#include <Interpreters/Context.h>
-#include <Common/logger_useful.h>
-#include <amqpcpp.h>
-#include <uv.h>
-#include <boost/algorithm/string/split.hpp>
+#include <atomic>
 #include <chrono>
 #include <thread>
-#include <atomic>
+#include <Columns/ColumnString.h>
+#include <Columns/ColumnsNumber.h>
+#include <Core/Block.h>
+#include <Interpreters/Context.h>
+#include <boost/algorithm/string/split.hpp>
+#include <Common/logger_useful.h>
 
 
 namespace DB
@@ -25,28 +23,28 @@ namespace ErrorCodes
 }
 
 WriteBufferToNATSProducer::WriteBufferToNATSProducer(
-        const NATSConfiguration & configuration_,
-        ContextPtr global_context,
-        const String & subject_,
-        std::atomic<bool> & shutdown_called_,
-        Poco::Logger * log_,
-        std::optional<char> delimiter,
-        size_t rows_per_message,
-        size_t chunk_size_)
-        : WriteBuffer(nullptr, 0)
-        , connection(configuration_, log_)
-        , subject(subject_)
-        , shutdown_called(shutdown_called_)
-        , payloads(BATCH)
-        , log(log_)
-        , delim(delimiter)
-        , max_rows(rows_per_message)
-        , chunk_size(chunk_size_)
+    const NATSConfiguration & configuration_,
+    ContextPtr global_context,
+    const String & subject_,
+    std::atomic<bool> & shutdown_called_,
+    Poco::Logger * log_,
+    std::optional<char> delimiter,
+    size_t rows_per_message,
+    size_t chunk_size_)
+    : WriteBuffer(nullptr, 0)
+    , connection(configuration_, log_)
+    , subject(subject_)
+    , shutdown_called(shutdown_called_)
+    , payloads(BATCH)
+    , log(log_)
+    , delim(delimiter)
+    , max_rows(rows_per_message)
+    , chunk_size(chunk_size_)
 {
     if (!connection.connect())
         throw Exception(ErrorCodes::CANNOT_CONNECT_NATS, "Cannot connect to NATS {}", connection.connectionInfoForLog());
 
-    writing_task = global_context->getSchedulePool().createTask("NATSWritingTask", [this]{ writingFunc(); });
+    writing_task = global_context->getSchedulePool().createTask("NATSWritingTask", [this] { writingFunc(); });
     writing_task->deactivate();
 
     reinitializeChunks();
@@ -84,41 +82,42 @@ void WriteBufferToNATSProducer::countRow()
         ++payload_counter;
         if (!payloads.push(payload))
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Could not push to payloads queue");
-        LOG_DEBUG(log, "Pushed payload to queue {} {}", payload, payloads.size());
     }
 }
 
-natsStatus WriteBufferToNATSProducer::publish()
+void WriteBufferToNATSProducer::publish()
+{
+    uv_thread_t flush_thread;
+
+    uv_thread_create(&flush_thread, publishThreadFunc, static_cast<void *>(this));
+
+    connection.getHandler().startLoop();
+    uv_thread_join(&flush_thread);
+}
+
+void WriteBufferToNATSProducer::publishThreadFunc(void * arg)
 {
     String payload;
+    WriteBufferToNATSProducer * buffer = static_cast<WriteBufferToNATSProducer *>(arg);
 
-    natsStatus status{NATS_OK};
-    while (!payloads.empty())
+    natsStatus status;
+    while (!buffer->payloads.empty())
     {
-        bool pop_result = payloads.pop(payload);
+        bool pop_result = buffer->payloads.pop(payload);
 
         if (!pop_result)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Could not pop payload");
+        status = natsConnection_PublishString(buffer->connection.getConnection(), buffer->subject.c_str(), payload.c_str());
 
-        if (status == NATS_OK)
+        if (status != NATS_OK)
         {
-            status = natsConnection_PublishString(connection.getConnection(), subject.c_str(), payload.c_str());
-        }
-        else
-        {
-            LOG_DEBUG(log, "Something went wrong during publishing to NATS subject {}.", subject);
+            LOG_DEBUG(buffer->log, "Something went wrong during publishing to NATS subject. Nats status text: {}. Last error message: {}",
+                      natsStatus_GetText(status), nats_GetLastError(nullptr));
             break;
         }
     }
 
-    if (status == NATS_OK)
-        status = natsConnection_Flush(connection.getConnection());
-
-    if (status != NATS_OK)
-        LOG_DEBUG(log, "Something went wrong during publishing to NATS subject {}.", subject);
-
-    iterateEventLoop();
-    return status;
+    nats_ReleaseThreadMemory();
 }
 
 
@@ -126,12 +125,13 @@ void WriteBufferToNATSProducer::writingFunc()
 {
     while ((!payloads.empty() || wait_all) && !shutdown_called.load())
     {
-        auto status = publish();
+        publish();
 
-        if (wait_payloads.load() && payloads.empty())
+        LOG_DEBUG(log, "Writing func {} {} {}", wait_payloads.load(), payloads.empty(), natsConnection_Buffered(connection.getConnection()));
+        if (wait_payloads.load() && payloads.empty() && natsConnection_Buffered(connection.getConnection()) == 0)
             wait_all = false;
 
-        if (status != NATS_OK && wait_all)
+        if (!connection.isConnected() && wait_all)
             connection.reconnect();
 
         iterateEventLoop();

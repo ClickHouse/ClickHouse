@@ -1,8 +1,8 @@
 #pragma once
 
-#include <Storages/NATS/UVLoop.h>
-#include <Storages/NATS/NATSHandler.h>
 #include <Storages/NATS/Buffer_fwd.h>
+#include <Storages/NATS/NATSHandler.h>
+#include <Storages/NATS/UVLoop.h>
 
 namespace DB
 {
@@ -24,7 +24,6 @@ struct NATSConfiguration
 
 class NATSConnectionManager
 {
-
 public:
     NATSConnectionManager(const NATSConfiguration & configuration_, Poco::Logger * log_);
     ~NATSConnectionManager();
@@ -63,7 +62,7 @@ private:
 
 
     natsConnection * connection;
-    // true if at any point was a successful connection
+    // true if at any point successfully connected to NATS
     bool has_connection = false;
 
     std::mutex mutex;

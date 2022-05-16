@@ -1,16 +1,15 @@
 #pragma once
 
-#include <Core/Names.h>
-#include <base/types.h>
-#include <IO/ReadBuffer.h>
-#include <amqpcpp.h>
 #include <nats.h>
+#include <Core/Names.h>
+#include <IO/ReadBuffer.h>
 #include <Storages/NATS/NATSConnection.h>
+#include <base/types.h>
 #include <Common/ConcurrentBoundedQueue.h>
 
 namespace Poco
 {
-    class Logger;
+class Logger;
 }
 
 namespace DB
@@ -18,16 +17,15 @@ namespace DB
 
 class ReadBufferFromNATSConsumer : public ReadBuffer
 {
-
 public:
     ReadBufferFromNATSConsumer(
-            std::shared_ptr<NATSConnectionManager> connection_,
-            std::vector<String> & subjects_,
-            const String & subscribe_queue_name,
-            Poco::Logger * log_,
-            char row_delimiter_,
-            uint32_t queue_size_,
-            const std::atomic<bool> & stopped_);
+        std::shared_ptr<NATSConnectionManager> connection_,
+        std::vector<String> & subjects_,
+        const String & subscribe_queue_name,
+        Poco::Logger * log_,
+        char row_delimiter_,
+        uint32_t queue_size_,
+        const std::atomic<bool> & stopped_);
 
     ~ReadBufferFromNATSConsumer() override;
 
@@ -37,14 +35,9 @@ public:
         String subject;
     };
 
-    std::vector<SubscriptionPtr> & getChannel() { return subscriptions; }
-    void closeChannel()
-    {
-        for (const auto & subscription : subscriptions)
-            natsSubscription_Unsubscribe(subscription.get());
-    }
+    void subscribe();
+    void unsubscribe();
 
-    void updateSubjects(std::vector<String> & subjects_) { subjects = subjects_; }
     size_t subjectsCount() { return subjects.size(); }
 
     bool isConsumerStopped() { return stopped; }
@@ -57,8 +50,7 @@ public:
 private:
     bool nextImpl() override;
 
-    void subscribe();
-    static void onMsg(natsConnection *nc, natsSubscription *sub, natsMsg * msg, void * closure);
+    static void onMsg(natsConnection * nc, natsSubscription * sub, natsMsg * msg, void * closure);
 
     std::shared_ptr<NATSConnectionManager> connection;
     std::vector<SubscriptionPtr> subscriptions;

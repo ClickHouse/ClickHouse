@@ -1,7 +1,7 @@
-#include <Storages/NATS/NATSSettings.h>
 #include <Parsers/ASTCreateQuery.h>
-#include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTSetQuery.h>
+#include <Storages/NATS/NATSSettings.h>
 #include <Common/Exception.h>
 
 namespace DB
