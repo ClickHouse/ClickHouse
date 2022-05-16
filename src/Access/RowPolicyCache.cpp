@@ -28,17 +28,25 @@ namespace
                 permissions.push_back(filter);
         }
 
-        ASTPtr getResult() &&
+        ASTPtr getResult(bool users_without_row_policies_can_read_rows) &&
         {
-            /// Process permissive filters.
-            restrictions.push_back(makeASTForLogicalOr(std::move(permissions)));
+            if (!permissions.empty() || !users_without_row_policies_can_read_rows)
+            {
+                /// Process permissive filters.
+                restrictions.push_back(makeASTForLogicalOr(std::move(permissions)));
+            }
 
             /// Process restrictive filters.
-            auto result = makeASTForLogicalAnd(std::move(restrictions));
+            ASTPtr result;
+            if (!restrictions.empty())
+                result = makeASTForLogicalAnd(std::move(restrictions));
 
-            bool value;
-            if (tryGetLiteralBool(result.get(), value) && value)
-                result = nullptr;  /// The condition is always true, no need to check it.
+            if (result)
+            {
+                bool value;
+                if (tryGetLiteralBool(result.get(), value) && value)
+                    result = nullptr; /// The condition is always true, no need to check it.
+            }
 
             return result;
         }
@@ -234,7 +242,7 @@ void RowPolicyCache::mixFiltersFor(EnabledRowPolicies & enabled)
     {
         auto & mixed_filter = (*mixed_filters)[key];
         mixed_filter.database_and_table_name = mixer.database_and_table_name;
-        mixed_filter.ast = std::move(mixer.mixer).getResult();
+        mixed_filter.ast = std::move(mixer.mixer).getResult(access_control.isEnabledUsersWithoutRowPoliciesCanReadRows());
     }
 
     enabled.mixed_filters.store(mixed_filters);

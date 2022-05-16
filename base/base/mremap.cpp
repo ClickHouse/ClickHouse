@@ -3,7 +3,7 @@
 #include <cstddef>
 #include <cstdlib>
 #include <cstring>
-#include <errno.h>
+#include <cerrno>
 
 
 void * mremap_fallback(
