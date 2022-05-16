@@ -1,5 +1,5 @@
 ---
-toc_priority: 208
+sidebar_position: 208
 ---
 
 # quantileTDigestWeighted {#quantiletdigestweighted}
@@ -12,9 +12,9 @@ toc_priority: 208
 
 Внутренние состояния функций `quantile*` не объединяются, если они используются в одном запросе. Если вам необходимо вычислить квантили нескольких уровней, используйте функцию [quantiles](#quantiles), это повысит эффективность запроса.
 
-!!! note "Примечание"
+    :::note "Примечание"
     Использование `quantileTDigestWeighted` [не рекомендуется для небольших наборов данных](https://github.com/tdunning/t-digest/issues/167#issuecomment-828650275) и может привести к значительной ошибке. Рассмотрите возможность использования [`quantileTDigest`](../../../sql-reference/aggregate-functions/reference/quantiletdigest.md) в таких случаях.
-
+    :::
 **Синтаксис**
 
 ``` sql

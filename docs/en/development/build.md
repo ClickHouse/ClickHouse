@@ -1,9 +1,10 @@
 ---
-toc_priority: 64
-toc_title: Build on Linux
+sidebar_position: 64
+sidebar_label: Build on Linux
+description: How to build ClickHouse on Linux
 ---
 
-# How to Build ClickHouse on Linux {#how-to-build-clickhouse-for-development}
+# How to Build ClickHouse on Linux
 
 Supported platforms:
 
@@ -74,7 +75,7 @@ This will create the `programs/clickhouse` executable, which can be used with `c
 The build requires the following components:
 
 -   Git (is used only to checkout the sources, it’s not needed for the build)
--   CMake 3.10 or newer
+-   CMake 3.14 or newer
 -   Ninja
 -   C++ compiler: clang-14 or newer
 -   Linker: lld

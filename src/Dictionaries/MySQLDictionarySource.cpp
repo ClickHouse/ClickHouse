@@ -123,7 +123,7 @@ void registerDictionarySourceMysql(DictionarySourceFactory & factory)
 #    include <IO/WriteBufferFromString.h>
 #    include <IO/WriteHelpers.h>
 #    include <Common/LocalDateTime.h>
-#    include <base/logger_useful.h>
+#    include <Common/logger_useful.h>
 #    include "readInvalidateQuery.h"
 #    include <mysqlxx/Exception.h>
 #    include <Core/Settings.h>

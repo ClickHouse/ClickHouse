@@ -1,11 +1,12 @@
 ---
-toc_priority: 61
-toc_title: For Beginners
+sidebar_position: 61
+sidebar_label: Getting Started
+description: Prerequisites and an overview of how to build ClickHouse
 ---
 
-# The Beginner ClickHouse Developer Instruction {#the-beginner-clickhouse-developer-instruction}
+# Getting Started Guide for Building ClickHouse
 
-Building of ClickHouse is supported on Linux, FreeBSD and Mac OS X.
+The building of ClickHouse is supported on Linux, FreeBSD and Mac OS X.
 
 If you use Windows, you need to create a virtual machine with Ubuntu. To start working with a virtual machine please install VirtualBox. You can download Ubuntu from the website: https://www.ubuntu.com/#download. Please create a virtual machine from the downloaded image (you should reserve at least 4GB of RAM for it). To run a command-line terminal in Ubuntu, please locate a program containing the word “terminal” in its name (gnome-terminal, konsole etc.) or just press Ctrl+Alt+T.
 
@@ -228,25 +229,6 @@ KDevelop and QTCreator are other great alternatives of an IDE for developing Cli
 As simple code editors, you can use Sublime Text or Visual Studio Code, or Kate (all of which are available on Linux).
 
 Just in case, it is worth mentioning that CLion creates `build` path on its own, it also on its own selects `debug` for build type, for configuration it uses a version of CMake that is defined in CLion and not the one installed by you, and finally, CLion will use `make` to run build tasks instead of `ninja`. This is normal behaviour, just keep that in mind to avoid confusion.
-
-## Debugging
-
-Many graphical IDEs offer with an integrated debugger but you can also use a standalone debugger.
-
-### GDB
-
-### LLDB
-
-    # tell LLDB where to find the source code
-    settings set target.source-map /path/to/build/dir /path/to/source/dir
-
-    # configure LLDB to display code before/after currently executing line
-    settings set stop-line-count-before 10
-    settings set stop-line-count-after 10
-
-    target create ./clickhouse-client
-    # <set breakpoints here>
-    process launch -- --query="SELECT * FROM TAB"
 
 ## Writing Code {#writing-code}
 

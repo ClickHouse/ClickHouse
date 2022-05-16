@@ -1,7 +1,8 @@
 #include <Processors/Formats/IRowInputFormat.h>
 #include <DataTypes/ObjectUtils.h>
 #include <IO/WriteHelpers.h>    // toString
-#include <base/logger_useful.h>
+#include <IO/WithFileName.h>
+#include <Common/logger_useful.h>
 
 
 namespace DB
@@ -14,10 +15,12 @@ namespace ErrorCodes
     extern const int CANNOT_PARSE_QUOTED_STRING;
     extern const int CANNOT_PARSE_DATE;
     extern const int CANNOT_PARSE_DATETIME;
-    extern const int CANNOT_READ_ARRAY_FROM_TEXT;
-    extern const int CANNOT_READ_ALL_DATA;
     extern const int CANNOT_PARSE_NUMBER;
+    extern const int CANNOT_PARSE_BOOL;
     extern const int CANNOT_PARSE_UUID;
+    extern const int CANNOT_READ_ARRAY_FROM_TEXT;
+    extern const int CANNOT_READ_MAP_FROM_TEXT;
+    extern const int CANNOT_READ_ALL_DATA;
     extern const int TOO_LARGE_STRING_SIZE;
     extern const int INCORRECT_NUMBER_OF_COLUMNS;
     extern const int ARGUMENT_OUT_OF_BOUND;
@@ -32,9 +35,11 @@ bool isParseError(int code)
         || code == ErrorCodes::CANNOT_PARSE_QUOTED_STRING
         || code == ErrorCodes::CANNOT_PARSE_DATE
         || code == ErrorCodes::CANNOT_PARSE_DATETIME
-        || code == ErrorCodes::CANNOT_READ_ARRAY_FROM_TEXT
         || code == ErrorCodes::CANNOT_PARSE_NUMBER
         || code == ErrorCodes::CANNOT_PARSE_UUID
+        || code == ErrorCodes::CANNOT_PARSE_BOOL
+        || code == ErrorCodes::CANNOT_READ_ARRAY_FROM_TEXT
+        || code == ErrorCodes::CANNOT_READ_MAP_FROM_TEXT
         || code == ErrorCodes::CANNOT_READ_ALL_DATA
         || code == ErrorCodes::TOO_LARGE_STRING_SIZE
         || code == ErrorCodes::ARGUMENT_OUT_OF_BOUND       /// For Decimals
@@ -161,6 +166,7 @@ Chunk IRowInputFormat::generate()
             /// Error while trying to obtain verbose diagnostic. Ok to ignore.
         }
 
+        e.setFileName(getFileNameFromReadBuffer(getReadBuffer()));
         e.setLineNumber(total_rows);
         e.addMessage(verbose_diagnostic);
         throw;
@@ -184,7 +190,12 @@ Chunk IRowInputFormat::generate()
             /// Error while trying to obtain verbose diagnostic. Ok to ignore.
         }
 
-        e.addMessage("(at row " + toString(total_rows) + ")\n" + verbose_diagnostic);
+        auto file_name = getFileNameFromReadBuffer(getReadBuffer());
+        if (!file_name.empty())
+            e.addMessage(fmt::format("(in file/uri {})", file_name));
+
+        e.addMessage(fmt::format("(at row {})\n", total_rows));
+        e.addMessage(verbose_diagnostic);
         throw;
     }
 
@@ -202,7 +213,6 @@ Chunk IRowInputFormat::generate()
 
     finalizeObjectColumns(columns);
     Chunk chunk(std::move(columns), num_rows);
-    //chunk.setChunkInfo(std::move(chunk_missing_values));
     return chunk;
 }
 
