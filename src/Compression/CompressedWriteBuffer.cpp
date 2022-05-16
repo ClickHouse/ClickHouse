@@ -1,11 +1,11 @@
 #include <city.h>
 #include <string.h>
 
-#include <base/unaligned.h>
 #include <base/types.h>
+#include <base/unaligned.h>
 
-#include "CompressedWriteBuffer.h"
 #include <Compression/CompressionFactory.h>
+#include "CompressedWriteBuffer.h"
 
 
 namespace DB
@@ -25,11 +25,11 @@ void CompressedWriteBuffer::nextImpl()
     UInt32 compressed_size = 0;
     size_t decompressed_size = offset();
     UInt32 compressed_reserve_size = codec->getCompressedReserveSize(decompressed_size);
-	
-    if(out.available() > (compressed_reserve_size + CHECKSUM_SIZE))
+
+    if (out.available() > compressed_reserve_size + CHECKSUM_SIZE)
     {
-        char *out_checksum_ptr = out.position();
-        char *out_compressed_ptr = out.position() + CHECKSUM_SIZE;
+        char * out_checksum_ptr = out.position();
+        char * out_compressed_ptr = out.position() + CHECKSUM_SIZE;
         compressed_size = codec->compress(working_buffer.begin(), decompressed_size, out_compressed_ptr);
 
         CityHash_v1_0_2::uint128 checksum = CityHash_v1_0_2::CityHash128(out_compressed_ptr, compressed_size);
@@ -52,10 +52,7 @@ CompressedWriteBuffer::~CompressedWriteBuffer()
     finalize();
 }
 
-CompressedWriteBuffer::CompressedWriteBuffer(
-    WriteBuffer & out_,
-    CompressionCodecPtr codec_,
-    size_t buf_size)
+CompressedWriteBuffer::CompressedWriteBuffer(WriteBuffer & out_, CompressionCodecPtr codec_, size_t buf_size)
     : BufferWithOwnMemory<WriteBuffer>(buf_size), out(out_), codec(std::move(codec_))
 {
 }
