@@ -89,7 +89,7 @@ constexpr void callOnDictionaryAttributeType(AttributeUnderlyingType type, F && 
         if (type == other)
             func(DictionaryAttributeType<other>{});
     });
-};
+}
 
 struct DictionarySpecialAttribute final
 {

@@ -35,7 +35,7 @@ static ReturnType onError(const std::string & message [[maybe_unused]], int code
         throw Exception(message, code);
     else
         return false;
-};
+}
 
 
 template <typename ReturnType>
