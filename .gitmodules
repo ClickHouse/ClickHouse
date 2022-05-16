@@ -264,7 +264,7 @@
 	url = https://github.com/zlib-ng/minizip-ng
 [submodule "contrib/spotify-annoy"]
 	path = contrib/spotify-annoy
-	url = https://github.com/spotify/annoy.git
+	url = https://github.com/Vector-Similarity-Search-for-ClickHouse/annoy.git
 [submodule "contrib/wyhash"]
 	path = contrib/wyhash
 	url = https://github.com/wangyi-fudan/wyhash.git
