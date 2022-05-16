@@ -12,7 +12,7 @@
 #define JSON_MAX_DEPTH 100
 
 
-POCO_IMPLEMENT_EXCEPTION(JSONException, Poco::Exception, "JSONException") // NOLINT(cert-err60-cpp, modernize-use-noexcept)
+POCO_IMPLEMENT_EXCEPTION(JSONException, Poco::Exception, "JSONException") // NOLINT(cert-err60-cpp, modernize-use-noexcept, hicpp-use-noexcept)
 
 
 /// Прочитать беззнаковое целое в простом формате из не-0-terminated строки.
