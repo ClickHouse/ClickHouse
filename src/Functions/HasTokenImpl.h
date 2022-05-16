@@ -91,6 +91,12 @@ struct HasTokenImpl
     {
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Function '{}' doesn't support FixedString haystack argument", name);
     }
+
+    template <typename... Args>
+    static void vectorFixedVector(Args &&...)
+    {
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Function '{}' doesn't support FixedString haystack argument", name);
+    }
 };
 
 }

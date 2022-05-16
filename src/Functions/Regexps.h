@@ -50,6 +50,17 @@ namespace Regexps
             return {pattern, flags};
     }
 
+    template<bool no_capture, bool case_insensitive>
+    inline int buildRe2Flags()
+    {
+        int flags = OptimizedRegularExpression::RE_DOT_NL;
+        if constexpr (no_capture)
+            flags |= OptimizedRegularExpression::RE_NO_CAPTURE;
+        if constexpr (case_insensitive)
+            flags |= OptimizedRegularExpression::RE_CASELESS;
+        return flags;
+    }
+
     /** Returns holder of an object from Pool.
       * You must hold the ownership while using the object.
       * In destructor, it returns the object back to the Pool for further reuse.
@@ -62,14 +73,7 @@ namespace Regexps
 
         return known_regexps.get(pattern, [&pattern]
         {
-            int flags = OptimizedRegularExpression::RE_DOT_NL;
-
-            if (no_capture)
-                flags |= OptimizedRegularExpression::RE_NO_CAPTURE;
-
-            if (case_insensitive)
-                flags |= OptimizedRegularExpression::RE_CASELESS;
-
+            const int flags = buildRe2Flags<no_capture, case_insensitive>();
             ProfileEvents::increment(ProfileEvents::RegexpCreated);
             return new Regexp{createRegexp<like>(pattern, flags)};
         });
