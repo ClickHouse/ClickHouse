@@ -205,7 +205,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
 
             for (size_t set_counter = 0; set_counter < grouping_sets_size; ++set_counter)
             {
-                auto & header = ports[set_counter]->getHeader();
+                const auto & header = ports[set_counter]->getHeader();
 
                 /// Here we create a DAG which fills missing keys and adds `__grouping_set` column
                 auto dag = std::make_shared<ActionsDAG>(header.getColumnsWithTypeAndName());
