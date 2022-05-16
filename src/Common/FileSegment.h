@@ -266,7 +266,10 @@ struct FileSegmentsHolder : private boost::noncopyable
 class FileSegmentRangeWriter
 {
 public:
-    FileSegmentRangeWriter(IFileCache * cache_, const FileSegment::Key & key_);
+    FileSegmentRangeWriter(
+        IFileCache * cache_,
+        const FileSegment::Key & key_,
+        std::function<void(const FileSegmentPtr & file_segment)> on_complete_file_segment_func_);
 
     ~FileSegmentRangeWriter();
 
@@ -289,6 +292,7 @@ private:
     size_t current_file_segment_write_offset = 0;
 
     bool finalized = false;
+    std::function<void(const FileSegmentPtr & file_segment)> on_complete_file_segment_func;
 };
 
 }

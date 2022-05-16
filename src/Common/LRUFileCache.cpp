@@ -37,6 +37,7 @@ void LRUFileCache::initialize()
             loadCacheInfoIntoMemory(cache_lock);
         else
             fs::create_directories(cache_base_path);
+
         is_initialized = true;
     }
 }
@@ -660,6 +661,9 @@ void LRUFileCache::loadCacheInfoIntoMemory(std::lock_guard<std::mutex> & cache_l
 
     /// cache_base_path / key_prefix / key / offset
 
+    if (!files.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cache already initialized");
+
     fs::directory_iterator key_prefix_it{cache_base_path};
     for (; key_prefix_it != fs::directory_iterator(); ++key_prefix_it)
     {
@@ -680,8 +684,8 @@ void LRUFileCache::loadCacheInfoIntoMemory(std::lock_guard<std::mutex> & cache_l
                     parsed = tryParse<UInt64>(offset, offset_with_suffix);
                 else
                 {
-                    parsed = tryParse<UInt64>(offset, offset_with_suffix.substr(0, delim_pos+1));
-                    is_persistent = offset_with_suffix.substr(delim_pos) == "persistent";
+                    parsed = tryParse<UInt64>(offset, offset_with_suffix.substr(0, delim_pos));
+                    is_persistent = offset_with_suffix.substr(delim_pos+1) == "persistent";
                 }
 
                 if (!parsed)

@@ -773,10 +773,12 @@ String FileSegmentsHolder::toString()
 
 FileSegmentRangeWriter::FileSegmentRangeWriter(
     IFileCache * cache_,
-    const FileSegment::Key & key_)
+    const FileSegment::Key & key_,
+    std::function<void(const FileSegmentPtr & file_segment)> on_complete_file_segment_func_)
     : cache(cache_)
     , key(key_)
     , current_file_segment_it(file_segments_holder.file_segments.end())
+    , on_complete_file_segment_func(on_complete_file_segment_func_)
 {
 }
 
@@ -813,6 +815,7 @@ bool FileSegmentRangeWriter::write(char * data, size_t size, size_t offset, bool
         if ((*current_file_segment_it)->getAvailableSize() == 0)
         {
             (*current_file_segment_it)->complete(FileSegment::State::DOWNLOADED);
+            on_complete_file_segment_func(*current_file_segment_it);
             current_file_segment_it = allocateFileSegment(current_file_segment_write_offset, is_persistent);
         }
     }
@@ -821,6 +824,7 @@ bool FileSegmentRangeWriter::write(char * data, size_t size, size_t offset, bool
     if (!reserved)
     {
         (*current_file_segment_it)->complete(FileSegment::State::PARTIALLY_DOWNLOADED_NO_CONTINUATION);
+        on_complete_file_segment_func(*current_file_segment_it);
         return false;
     }
 
@@ -843,6 +847,7 @@ void FileSegmentRangeWriter::finalize()
 
     auto & file_segment = *current_file_segment_it;
     file_segment->complete(cache_lock);
+    on_complete_file_segment_func(*current_file_segment_it);
 
     finalized = true;
 }

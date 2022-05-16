@@ -88,6 +88,8 @@ public:
 
     UInt32 getRefCount(const String & path) const override { return delegate->getRefCount(path); }
 
+    DiskPtr getWrappedDisk() const override { return delegate; }
+
 protected:
     Executor & getExecutor() override;
 

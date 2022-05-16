@@ -45,21 +45,23 @@ public:
         , is_persistent_cache_file(is_persistent_cache_file_)
         , query_id(query_id_)
         , enable_cache_log(!query_id_.empty() && settings_.enable_filesystem_cache_log)
-        , writer(cache_.get(), key)
+        , writer(cache_.get(), key, [this](const FileSegmentPtr & file_segment) { appendFilesystemCacheLog(file_segment); })
     {
     }
 
-    void appendFilesystemCacheLog(const FileSegment::Range & file_segment_range)
+    void appendFilesystemCacheLog(const FileSegmentPtr & file_segment)
     {
+        auto file_segment_range = file_segment->range();
         FilesystemCacheLogElement elem
         {
             .event_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()),
             .query_id = query_id,
             .source_file_path = source_path,
             .file_segment_range = { file_segment_range.left, file_segment_range.right },
+            .read_type = FilesystemCacheLogElement::ReadType::READ_FROM_FS_AND_DOWNLOADED_TO_CACHE,
             .requested_range = {},
             .file_segment_size = file_segment_range.size(),
-            .cache_attempted = true,
+            .cache_attempted = false,
             .read_buffer_id = {},
             .profile_counters = std::make_shared<ProfileEvents::Counters::Snapshot>(current_file_segment_counters.getPartiallyAtomicSnapshot()),
         };
