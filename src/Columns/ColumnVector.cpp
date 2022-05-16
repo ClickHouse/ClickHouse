@@ -401,6 +401,12 @@ ColumnPtr ColumnVector<T>::index(const IColumn & indexes, size_t limit) const
 template <typename T>
 ColumnPtr ColumnVector<T>::replicate(const IColumn::Offsets & offsets) const
 {
+    #ifdef __SSE4_2__
+    if constexpr (std::is_same_v<T, UInt32>)
+    {
+        return replicateSSE2(offsets);
+    }
+    #endif
     const size_t size = data.size();
     if (size != offsets.size())
         throw Exception("Size of offsets doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
@@ -420,6 +426,104 @@ ColumnPtr ColumnVector<T>::replicate(const IColumn::Offsets & offsets) const
 
     return res;
 }
+
+#ifdef __SSE4_2__
+template <typename T>
+ColumnPtr ColumnVector<T>::replicateSSE2(const IColumn::Offsets & offsets) const
+{
+    const size_t size = data.size();
+    if (size != offsets.size())
+        throw Exception("Size of offsets doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
+
+    if (0 == size)
+        return this->create();
+
+    auto res = this->create(offsets.back());
+
+    auto it = res->getData().begin(); // NOLINT
+    ///column use paddedpodarray.Don't worry about the 4 conitnues op will out of range
+    if constexpr (std::is_same_v<T, UInt32>)
+    {
+        size_t prev_offset = 0;
+        int cp_begin = -1;
+        for (size_t i = 0; i < size; ++i)
+        {
+            size_t span = offsets[i] - prev_offset;
+            prev_offset = offsets[i];
+            if (span == 1)
+            {
+                if (cp_begin == -1)
+                    cp_begin = i;
+                continue;
+            }
+            ///data :   11 22 33 44 55
+            ///offsets: 0  1  2  3  3
+            ///res:     22 33  44
+            size_t cpsz = (!(cp_begin == -1)) * (i - cp_begin);
+            bool remain = (cpsz & 3);
+            size_t sse_cp_counter = (cpsz >> 2);
+            sse_cp_counter = remain * (sse_cp_counter + 1) + (!remain) * (sse_cp_counter);
+            auto it_tmp = it;
+            size_t data_start = cp_begin;
+            cp_begin = -1;
+            constexpr const int msk_cp = (_MM_SHUFFLE(3, 2, 1, 0));
+            while (sse_cp_counter--)
+            {
+                __m128i cdata = _mm_loadu_si128(reinterpret_cast<const __m128i *>(&data[data_start]));
+                auto cres = _mm_shuffle_epi32(cdata, msk_cp);
+                _mm_storeu_si128(reinterpret_cast<__m128i *>(it_tmp), cres);
+                it_tmp += 4;
+                data_start += 4;
+            }
+            it += cpsz;
+            if (span == 0)
+            {
+                continue;
+            }
+            ///data :   11 22 33
+            ///offsets: 0  0  4
+            ///res:     33 33 33 33
+            size_t shuffle_sz = span;
+            bool shuffle_remain = (shuffle_sz & 3);
+            size_t sse_shuffle_counter = (shuffle_sz >> 2);
+            sse_shuffle_counter = shuffle_remain * (sse_shuffle_counter + 1) + (!shuffle_remain) * (sse_shuffle_counter);
+            it_tmp = it;
+            constexpr const int msk_shuffle = (_MM_SHUFFLE(0, 0, 0, 0));
+            __m128i cdata = _mm_loadu_si128(reinterpret_cast<const __m128i *>(&data[i]));
+            while (sse_shuffle_counter--)
+            {
+                auto cres = _mm_shuffle_epi32(cdata, msk_shuffle);
+                _mm_storeu_si128(reinterpret_cast<__m128i *>(it_tmp), cres);
+                it_tmp += 4;
+            }
+            it += shuffle_sz;
+        }
+        ///data :   11 22 33 44 55
+        ///offsets: 1  2  3  4  5
+        ///res:     11 22 33 44 55
+        if (cp_begin != -1)
+        {
+            size_t cpsz = (size - cp_begin);
+            bool remain = (cpsz & 3);
+            size_t sse_cp_counter = (cpsz >> 2);
+            sse_cp_counter = remain * (sse_cp_counter + 1) + (!remain) * (sse_cp_counter);
+            auto it_tmp = it;
+            size_t data_start = cp_begin;
+            constexpr const int msk_cp = (_MM_SHUFFLE(3, 2, 1, 0));
+            while (sse_cp_counter--)
+            {
+                __m128i cdata = _mm_loadu_si128(reinterpret_cast<const __m128i *>(&data[data_start]));
+                auto cres = _mm_shuffle_epi32(cdata, msk_cp);
+                _mm_storeu_si128(reinterpret_cast<__m128i *>(it_tmp), cres);
+                it_tmp += 4;
+                data_start += 4;
+            }
+            it += cpsz;
+        }
+    }
+    return res;
+}
+#endif
 
 template <typename T>
 void ColumnVector<T>::gather(ColumnGathererStream & gatherer)
