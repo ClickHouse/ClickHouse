@@ -441,7 +441,7 @@ ColumnPtr ColumnVector<T>::replicateSSE2(const IColumn::Offsets & offsets) const
     auto res = this->create(offsets.back());
 
     auto it = res->getData().begin(); // NOLINT
-    ///column use paddedpodarray.Don't worry about the 4 conitnues op will out of range
+    ///column using padded pod array. Don't worry about the 4 conitnues op will out of range
     if constexpr (std::is_same_v<T, UInt32>)
     {
         size_t prev_offset = 0;
