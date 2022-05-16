@@ -43,14 +43,14 @@ or via config (since version 21.11):
     <postgres1>
         <host></host>
         <port></port>
-        <username></username>
+        <user></user>
         <password></password>
         <table></table>
     </postgres1>
     <postgres2>
         <host></host>
         <port></port>
-        <username></username>
+        <user></user>
         <password></password>
     </postgres2>
 </named_collections>
@@ -73,7 +73,7 @@ All joins, aggregations, sorting, `IN [ array ]` conditions and the `LIMIT` samp
 
 PostgreSQL `Array` types are converted into ClickHouse arrays.
 
-:::warning    
+:::warning
 Be careful - in PostgreSQL an array data, created like a `type_name[]`, may contain multi-dimensional arrays of different dimensions in different table rows in same column. But in ClickHouse it is only allowed to have multidimensional arrays of the same count of dimensions in all table rows in same column.
 :::
 

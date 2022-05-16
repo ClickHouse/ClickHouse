@@ -39,6 +39,7 @@ void registerFunctionsHashing(FunctionFactory & factory)
 
     factory.registerFunction<FunctionXxHash32>();
     factory.registerFunction<FunctionXxHash64>();
+    factory.registerFunction<FunctionWyHash64>();
 #if USE_AQUAHASH
     factory.registerFunction<FunctionAquaHash128>();
 #endif
