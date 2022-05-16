@@ -98,10 +98,7 @@ public:
         arma::mat regressors(buffer, n_rows, n_features);
         regressors = regressors.t();
 
-        if (model == nullptr) 
-            LOG_FATAL(&Poco::Logger::root(), "\n\n\n\n\n ZHOPA MODEL  {}\n\n\n\n\n", "status");
-
-        model->TrainArb(regressors, feature_buffers.back().data(), n_rows);
+        model->Train(regressors, feature_buffers.back().data(), n_rows);
         // shady
 
         bool save_status = model->Save(this->filepath);
@@ -167,9 +164,9 @@ MLmodelConfiguration StorageMLmodel::getConfiguration(ASTs engine_args, ContextP
 
 // make for each storage
 
-void registerStorageLinRegg(StorageFactory & factory)
+void registerStorageLinReg(StorageFactory & factory)
 {
-    factory.registerStorage("LinRegg", [](const StorageFactory::Arguments & args)
+    factory.registerStorage("LinReg", [](const StorageFactory::Arguments & args)
     {
         auto linreg_settings = std::make_unique<ModelSettings>();
         linreg_settings->loadFromQuery(*args.storage_def);

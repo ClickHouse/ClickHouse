@@ -28,7 +28,6 @@ void registerStorageGenerateRandom(StorageFactory & factory);
 void registerStorageExecutable(StorageFactory & factory);
 void registerStorageWindowView(StorageFactory & factory);
 void registerStorageLinReg(StorageFactory & factory);
-void registerStorageLinRegg(StorageFactory & factory);
 void registerStorageLogReg(StorageFactory & factory);
 void registerStorageLinearSVM(StorageFactory & factory);
 
@@ -109,7 +108,6 @@ void registerStorages()
     registerStorageExecutable(factory);
     registerStorageWindowView(factory);
     registerStorageLinReg(factory);
-    registerStorageLinRegg(factory);
     registerStorageLogReg(factory);
     registerStorageLinearSVM(factory);
 

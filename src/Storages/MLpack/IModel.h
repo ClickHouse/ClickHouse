@@ -1,12 +1,5 @@
 #pragma once
 
-// #include <Disks/IDisk.h>
-// #include <Poco/Util/Application.h>
-// #include <IO/WriteBufferFromFileDescriptor.h>
-// #include <IO/ReadBufferFromFileDescriptor.h>
-// #include <IO/copyData.h>
-// #include <boost/program_options.hpp>
-// #include <Common/TerminalSize.h>
 #include <Storages/MLpack/ModelSettings.h>
 #include <mlpack/methods/linear_regression/linear_regression.hpp>
 #include <mlpack/methods/logistic_regression/logistic_regression.hpp>
@@ -16,10 +9,6 @@
 #include <Common/PODArray.h>
 #include <Common/logger_useful.h>
 
-// namespace ErrorCodes
-// {
-// extern const int CANNOT_SAVE_MLPACK_MODEL;
-// }
 
 namespace DB
 {
@@ -52,7 +41,7 @@ public:
 
     virtual TrainResult GetModel() const = 0;
 
-    virtual void TrainArb(const arma::mat& regressors, Float64 * target_ptr, size_t n_rows) = 0;
+    virtual void Train(const arma::mat& regressors, Float64 * target_ptr, size_t n_rows) = 0;
     
     virtual bool Save(String filepath) = 0;
 
@@ -72,7 +61,7 @@ public:
 
     TrainResult GetModel() const override { return LinearRegressionResult{{}, model}; }
 
-    void TrainArb(const arma::mat& regressors, Float64 * target_ptr, size_t n_rows) override
+    void Train(const arma::mat& regressors, Float64 * target_ptr, size_t n_rows) override
     {
         arma::rowvec target = arma::rowvec(target_ptr, n_rows);
         model.Train(regressors, target);
@@ -102,13 +91,7 @@ public:
 
     TrainResult GetModel() const override { return LogisticRegressionResult{{}, model}; }
 
-    // void Train(const arma::mat& regressors, const arma::Row<double>& target) override {
-    //     ens::L_BFGS lbfgsOpt;
-
-    //     model.Train(regressors, target, lbfgsOpt);
-    // }
-
-    void TrainArb(const arma::mat& regressors, Float64 * target_ptr, size_t n_rows) override {
+    void Train(const arma::mat& regressors, Float64 * target_ptr, size_t n_rows) override {
         PODArray<size_t> modified_target(n_rows);
         for (size_t i = 0; i < n_rows; ++i)
         {
@@ -144,12 +127,7 @@ public:
 
     TrainResult GetModel() const override { return LinearSVMResult{{}, model}; }
 
-    // void Train(const arma::mat& regressors, const arma::Row<double>& target) override {
-    //     ens::L_BFGS lbfgsOpt;
-    //     model.Train(regressors, target, 2, lbfgsOpt);
-    // }
-
-    void TrainArb(const arma::mat& regressors, Float64 * /*target_ptr*/, size_t n_rows) override 
+    void Train(const arma::mat& regressors, Float64 * /*target_ptr*/, size_t n_rows) override 
     {
         // PODArray<size_t> modified_target;
         // modified_target.resize(n_rows);

@@ -6,7 +6,6 @@
 #include <Storages/ExternalDataSourceConfiguration.h>
 #include <Storages/MLpack/LinRegSettings.h>
 #include <Storages/MLpack/IModel.h>
-// #include "LinRegSettings.h"
 
 namespace DB
 {
