@@ -1126,7 +1126,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
                     // Based on tests total_max_threads has an optimal value when it's about two times of logical CPU cores
                     constexpr size_t thread_factor = 2;
                     LOG_DEBUG(adqm_log,"number of logical cores: {}", std::thread::hardware_concurrency());
-                    total_max_threads = std::thread::hardware_concurrency()*thread_factor;
+                    total_max_threads = std::thread::hardware_concurrency() * thread_factor;
                 }
                 LOG_DEBUG(adqm_log,"Finally total_max_threads: {}", total_max_threads);
                 global_context->getProcessList().setGlobalMaxThreads(total_max_threads);

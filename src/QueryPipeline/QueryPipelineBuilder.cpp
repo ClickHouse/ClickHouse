@@ -510,13 +510,12 @@ size_t QueryPipelineBuilder::getNumThreads() const
         num_threads = std::min(num_threads, max_threads);
 
     LOG_DEBUG(adqm_log,"Recommended num threads: {}", num_threads);
-    auto context = process_list_element->getContext();
-    auto total_max_threads = context->getProcessList().getTotalMaxThreads();
-    if (process_list_element && total_max_threads) {
+    auto total_max_threads = process_list_element->getContext()->getProcessList().getTotalMaxThreads();
+    if (total_max_threads && process_list_element) {
         LOG_DEBUG(adqm_log,"Total number of threads from config: {}", total_max_threads);
         LOG_DEBUG(adqm_log,"Current total num threads: {}",
-                  context->getProcessList().getTotalNumThreads());
-        size_t current_total_num_threads = context->getProcessList().getTotalNumThreads();
+                  process_list_element->getContext()->getProcessList().getTotalNumThreads());
+        size_t current_total_num_threads = process_list_element->getContext()->getProcessList().getTotalNumThreads();
         size_t total_available_threads = 0;
         if (total_max_threads > current_total_num_threads)
             total_available_threads = total_max_threads - current_total_num_threads;
