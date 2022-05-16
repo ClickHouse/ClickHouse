@@ -4,7 +4,7 @@
 #include <Common/Exception.h>
 #include <base/unaligned.h>
 
-#include <string.h>
+#include <cstring>
 
 
 namespace DB
