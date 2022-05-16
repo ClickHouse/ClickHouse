@@ -68,6 +68,8 @@ public:
 
         bool isFinalized() const;
         const DataTypePtr & getLeastCommonType() const { return least_common_type.get(); }
+        const DataTypePtr & getLeastCommonTypeBase() const { return least_common_type.getBase(); }
+        size_t getNumberOfDimensions() const { return least_common_type.getNumberOfDimensions(); }
 
         /// Checks the consistency of column's parts stored in @data.
         void checkTypes() const;
@@ -193,15 +195,18 @@ public:
     void forEachSubcolumn(ColumnCallback callback) override;
     void insert(const Field & field) override;
     void insertDefault() override;
+    void insertFrom(const IColumn & src, size_t n) override;
     void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;
     ColumnPtr replicate(const Offsets & offsets) const override;
     void popBack(size_t length) override;
     Field operator[](size_t n) const override;
     void get(size_t n, Field & res) const override;
+    ColumnPtr permute(const Permutation & perm, size_t limit) const override;
+    ColumnPtr filter(const Filter & filter, ssize_t result_size_hint) const override;
+    ColumnPtr index(const IColumn & indexes, size_t limit) const override;
 
     /// All other methods throw exception.
 
-    ColumnPtr decompress() const override { throwMustBeConcrete(); }
     StringRef getDataAt(size_t) const override { throwMustBeConcrete(); }
     bool isDefaultAt(size_t) const override { throwMustBeConcrete(); }
     void insertData(const char *, size_t) override { throwMustBeConcrete(); }
@@ -211,10 +216,7 @@ public:
     void updateHashWithValue(size_t, SipHash &) const override { throwMustBeConcrete(); }
     void updateWeakHash32(WeakHash32 &) const override { throwMustBeConcrete(); }
     void updateHashFast(SipHash &) const override { throwMustBeConcrete(); }
-    ColumnPtr filter(const Filter &, ssize_t) const override { throwMustBeConcrete(); }
     void expand(const Filter &, bool) override { throwMustBeConcrete(); }
-    ColumnPtr permute(const Permutation &, size_t) const override { throwMustBeConcrete(); }
-    ColumnPtr index(const IColumn &, size_t) const override { throwMustBeConcrete(); }
     int compareAt(size_t, size_t, const IColumn &, int) const override { throwMustBeConcrete(); }
     void compareColumn(const IColumn &, size_t, PaddedPODArray<UInt64> *, PaddedPODArray<Int8> &, int, int) const override { throwMustBeConcrete(); }
     bool hasEqualValues() const override { throwMustBeConcrete(); }
@@ -232,6 +234,9 @@ private:
     {
         throw Exception("ColumnObject must be converted to ColumnTuple before use", ErrorCodes::LOGICAL_ERROR);
     }
+
+    template <typename Func>
+    ColumnPtr applyForSubcolumns(Func && func, std::string_view func_name) const;
 };
 
 }

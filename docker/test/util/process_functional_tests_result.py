@@ -12,7 +12,7 @@ UNKNOWN_SIGN = "[ UNKNOWN "
 SKIPPED_SIGN = "[ SKIPPED "
 HUNG_SIGN = "Found hung queries in processlist"
 
-NO_TASK_TIMEOUT_SIGNS = ["All tests have finished", "No tests were run"]
+SUCCESS_FINISH_SIGNS = ["All tests have finished", "No tests were run"]
 
 RETRIES_SIGN = "Some tests were restarted"
 
@@ -25,14 +25,14 @@ def process_test_log(log_path):
     success = 0
     hung = False
     retries = False
-    task_timeout = True
+    success_finish = False
     test_results = []
     with open(log_path, "r") as test_file:
         for line in test_file:
             original_line = line
             line = line.strip()
-            if any(s in line for s in NO_TASK_TIMEOUT_SIGNS):
-                task_timeout = False
+            if any(s in line for s in SUCCESS_FINISH_SIGNS):
+                success_finish = True
             if HUNG_SIGN in line:
                 hung = True
             if RETRIES_SIGN in line:
@@ -81,7 +81,7 @@ def process_test_log(log_path):
         failed,
         success,
         hung,
-        task_timeout,
+        success_finish,
         retries,
         test_results,
     )
@@ -108,7 +108,7 @@ def process_result(result_path):
             failed,
             success,
             hung,
-            task_timeout,
+            success_finish,
             retries,
             test_results,
         ) = process_test_log(result_path)
@@ -123,10 +123,10 @@ def process_result(result_path):
             description = "Some queries hung, "
             state = "failure"
             test_results.append(("Some queries hung", "FAIL", "0", ""))
-        elif task_timeout:
-            description = "Timeout, "
+        elif not success_finish:
+            description = "Tests are not finished, "
             state = "failure"
-            test_results.append(("Timeout", "FAIL", "0", ""))
+            test_results.append(("Tests are not finished", "FAIL", "0", ""))
         elif retries:
             description = "Some tests restarted, "
             test_results.append(("Some tests restarted", "SKIPPED", "0", ""))

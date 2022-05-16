@@ -213,7 +213,7 @@ void ReplicatedMergeTreeQueue::insertUnlocked(
 {
     auto entry_virtual_parts = entry->getVirtualPartNames(format_version);
 
-    LOG_TEST(log, "Insert entry {} to queue with type {} with virtual parts [{}]", entry->znode_name, entry->typeToString(), fmt::join(entry_virtual_parts, ", "));
+    LOG_TEST(log, "Insert entry {} to queue with type {}", entry->znode_name, entry->getDescriptionForLogs(format_version));
 
     for (const String & virtual_part_name : entry_virtual_parts)
     {
@@ -293,9 +293,9 @@ void ReplicatedMergeTreeQueue::updateStateOnQueueEntryRemoval(
 {
 
     auto entry_virtual_parts = entry->getVirtualPartNames(format_version);
-    LOG_TEST(log, "Removing {} entry {} from queue with type {} with virtual parts [{}]",
+    LOG_TEST(log, "Removing {} entry {} from queue with type {}",
              is_successful ? "successful" : "unsuccessful",
-             entry->znode_name, entry->typeToString(), fmt::join(entry_virtual_parts, ", "));
+             entry->znode_name, entry->getDescriptionForLogs(format_version));
     /// Update insert times.
     if (entry->type == LogEntry::GET_PART || entry->type == LogEntry::ATTACH_PART)
     {
@@ -611,9 +611,7 @@ int32_t ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper
 
     /// Multiple log entries that must be copied to the queue.
 
-    log_entries.erase(
-        std::remove_if(log_entries.begin(), log_entries.end(), [&min_log_entry](const String & entry) { return entry < min_log_entry; }),
-        log_entries.end());
+    std::erase_if(log_entries, [&min_log_entry](const String & entry) { return entry < min_log_entry; });
 
     if (!log_entries.empty())
     {
@@ -775,7 +773,7 @@ void ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper, C
         for (auto it = mutations_by_znode.begin(); it != mutations_by_znode.end();)
         {
             const ReplicatedMergeTreeMutationEntry & entry = *it->second.entry;
-            if (!entries_in_zk_set.count(entry.znode_name))
+            if (!entries_in_zk_set.contains(entry.znode_name))
             {
                 if (!it->second.is_done)
                 {
@@ -806,7 +804,7 @@ void ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper, C
 
         for (const String & znode : entries_in_zk_set)
         {
-            if (!mutations_by_znode.count(znode))
+            if (!mutations_by_znode.contains(znode))
                 entries_to_load.push_back(znode);
         }
     }
@@ -971,7 +969,7 @@ ReplicatedMergeTreeQueue::StringSet ReplicatedMergeTreeQueue::moveSiblingPartsFo
                  t == LogEntry::GET_PART  ||
                  t == LogEntry::ATTACH_PART ||
                  t == LogEntry::MUTATE_PART)
-                && parts_for_merge.count((*it0)->new_part_name))
+                && parts_for_merge.contains((*it0)->new_part_name))
             {
                 queue.splice(queue.end(), queue, it0, it);
             }
@@ -1186,7 +1184,7 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
         size_t sum_parts_size_in_bytes = 0;
         for (const auto & name : entry.source_parts)
         {
-            if (future_parts.count(name))
+            if (future_parts.contains(name))
             {
                 out_postpone_reason = fmt::format(
                     "Not executing log entry {} of type {} for part {} "
@@ -1959,7 +1957,7 @@ ReplicatedMergeTreeMergePredicate::ReplicatedMergeTreeMergePredicate(
         for (auto & block : block_infos)
         {
             Coordination::GetResponse resp = block.contents_future.get();
-            if (resp.error == Coordination::Error::ZOK && lock_holder_paths.count(resp.data))
+            if (resp.error == Coordination::Error::ZOK && lock_holder_paths.contains(resp.data))
                 committing_blocks[block.partition].insert(block.number);
         }
     }

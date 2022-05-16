@@ -10,7 +10,7 @@
 #include <Parsers/parseQuery.h>
 #include <Poco/Net/HTTPServerRequest.h>
 #include <Poco/Net/HTTPServerResponse.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <base/scope_guard.h>
 #include "getIdentifierQuote.h"
 #include "validateODBCConnectionString.h"

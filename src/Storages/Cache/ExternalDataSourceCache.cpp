@@ -6,7 +6,7 @@
 #include <Storages/Cache/ExternalDataSourceCache.h>
 #include <Storages/Cache/RemoteFileMetadataFactory.h>
 #include <base/errnoToString.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <base/sleep.h>
 #include <Poco/Logger.h>
 #include <Common/ErrorCodes.h>
@@ -56,7 +56,7 @@ LocalFileHolder::~LocalFileHolder()
     }
 }
 
-RemoteReadBuffer::RemoteReadBuffer(size_t buff_size) : BufferWithOwnMemory<SeekableReadBufferWithSize>(buff_size)
+RemoteReadBuffer::RemoteReadBuffer(size_t buff_size) : BufferWithOwnMemory<SeekableReadBuffer>(buff_size)
 {
 }
 
@@ -94,7 +94,7 @@ bool RemoteReadBuffer::nextImpl()
         return status;
     }
 
-    //file_buffer::pos should increase correspondingly when RemoteReadBuffer is consumed, otherwise start_offset will be incorrect.
+    /// file_buffer::pos should increase correspondingly when RemoteReadBuffer is consumed, otherwise start_offset will be incorrect.
     local_file_holder->file_buffer->position() = local_file_holder->file_buffer->buffer().begin() + BufferBase::offset();
     auto start_offset = local_file_holder->file_buffer->getPosition();
     auto end_offset = start_offset + local_file_holder->file_buffer->internalBuffer().size();
