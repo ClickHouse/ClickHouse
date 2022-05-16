@@ -1,4 +1,5 @@
 #include <Storages/NATS/NATSHandler.h>
+#include <adapters/libuv.h>
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
 
@@ -11,7 +12,6 @@ namespace DB
 NATSHandler::NATSHandler(uv_loop_t * loop_, Poco::Logger * log_) :
     loop(loop_),
     log(log_),
-    connection_running(false),
     loop_running(false),
     loop_state(Loop::STOP)
 {
@@ -40,11 +40,6 @@ void NATSHandler::startLoop()
 
     LOG_DEBUG(log, "Background loop ended");
     loop_running.store(false);
-}
-
-void NATSHandler::changeConnectionStatus(bool is_running)
-{
-    connection_running.store(is_running);
 }
 
 void NATSHandler::iterateLoop()

@@ -1,5 +1,4 @@
 #include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -21,7 +20,6 @@
 #include <Common/Macros.h>
 #include <Common/logger_useful.h>
 #include <Common/parseAddress.h>
-#include <Common/quoteString.h>
 #include <Common/setThreadName.h>
 
 #include <openssl/ssl.h>
@@ -53,7 +51,7 @@ StorageNATS::StorageNATS(
     : IStorage(table_id_)
     , WithContext(context_->getGlobalContext())
     , nats_settings(std::move(nats_settings_))
-    , subjects(parseList(getContext()->getMacros()->expand(nats_settings->nats_subjects)))
+    , subjects(parseList(getContext()->getMacros()->expand(nats_settings->nats_subjects), ','))
     , format_name(getContext()->getMacros()->expand(nats_settings->nats_format))
     , row_delimiter(nats_settings->nats_row_delimiter.value)
     , schema_name(getContext()->getMacros()->expand(nats_settings->nats_schema))
@@ -71,7 +69,7 @@ StorageNATS::StorageNATS(
     configuration =
     {
         .url = getContext()->getMacros()->expand(nats_settings->nats_url),
-        .servers = parseList(getContext()->getMacros()->expand(nats_settings->nats_server_list)),
+        .servers = parseList(getContext()->getMacros()->expand(nats_settings->nats_server_list), ','),
         .username = nats_username.empty() ? getContext()->getConfigRef().getString("nats.username", "") : nats_username,
         .password = nats_password.empty() ? getContext()->getConfigRef().getString("nats.password", "") : nats_password,
         .token = nats_token.empty() ? getContext()->getConfigRef().getString("nats.token", "") : nats_token,
@@ -115,12 +113,12 @@ StorageNATS::StorageNATS(
 }
 
 
-Names StorageNATS::parseList(const String & list)
+Names StorageNATS::parseList(const String & list, char delim)
 {
     Names result;
     if (list.empty())
         return result;
-    boost::split(result, list, [](char c) { return c == ','; });
+    boost::split(result, list, [delim](char c) { return c == delim; });
     for (String & key : result)
         boost::trim(key);
 
@@ -303,7 +301,32 @@ Pipe StorageNATS::read(
 
 SinkToStoragePtr StorageNATS::write(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context)
 {
-    return std::make_shared<NATSSink>(*this, metadata_snapshot, local_context);
+    auto modified_context = addSettings(local_context);
+    std::string subject = modified_context->getSettingsRef().stream_like_engine_insert_queue.changed
+                          ? modified_context->getSettingsRef().stream_like_engine_insert_queue.value
+                          : "";
+    if (subject.empty())
+    {
+        if (subjects.size() > 1)
+        {
+            throw Exception(
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "This NATS engine reads from multiple subjects. You must specify `stream_like_engine_insert_queue` to choose the subject to write to");
+        }
+        else
+        {
+            subject = subjects[0];
+        }
+    }
+
+    auto pos = subject.find('*');
+    if (pos != std::string::npos || subject.back() == '>')
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Can not publish to wildcard subject");
+
+    if (!isSubjectInSubscriptions(subject))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Selected subject is not among engine subjects");
+
+    return std::make_shared<NATSSink>(*this, metadata_snapshot, local_context, createWriteBuffer(subject));
 }
 
 
@@ -413,11 +436,51 @@ ConsumerBufferPtr StorageNATS::createReadBuffer()
 }
 
 
-ProducerBufferPtr StorageNATS::createWriteBuffer()
+ProducerBufferPtr StorageNATS::createWriteBuffer(const std::string & subject)
 {
     return std::make_shared<WriteBufferToNATSProducer>(
-        configuration, getContext(), subjects[0], shutdown_called, log,
+        configuration, getContext(), subject, shutdown_called, log,
         row_delimiter ? std::optional<char>{row_delimiter} : std::nullopt, 1, 1024);
+}
+
+bool StorageNATS::isSubjectInSubscriptions(const std::string & subject) {
+    auto subject_levels = parseList(subject, '.');
+
+    for (const auto & nats_subject : subjects)
+    {
+        auto nats_subject_levels = parseList(nats_subject, '.');
+        size_t levels_to_check = 0;
+        if (!nats_subject_levels.empty() && nats_subject_levels.back() == ">")
+            levels_to_check = nats_subject_levels.size() - 1;
+        if (levels_to_check)
+        {
+            if (subject_levels.size() < levels_to_check)
+                continue;
+        }
+        else
+        {
+            if (subject_levels.size() != nats_subject_levels.size())
+                continue;
+            levels_to_check = nats_subject_levels.size();
+        }
+
+        bool is_same = true;
+        for (size_t i = 0; i < levels_to_check; ++i)
+        {
+            if (nats_subject_levels[i] == "*")
+                continue;
+
+            if (subject_levels[i] != nats_subject_levels[i])
+            {
+                is_same = false;
+                break;
+            }
+        }
+        if (is_same)
+            return true;
+    }
+
+    return false;
 }
 
 
@@ -633,6 +696,9 @@ void registerStorageNATS(StorageFactory & factory)
 
         if (!nats_settings->nats_format.changed)
             throw Exception("You must specify `nats_format` setting", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+        if (!nats_settings->nats_subjects.changed)
+            throw Exception("You must specify `nats_subjects` setting", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         return std::make_shared<StorageNATS>(args.table_id, args.getContext(), args.columns, std::move(nats_settings), args.attach);
     };

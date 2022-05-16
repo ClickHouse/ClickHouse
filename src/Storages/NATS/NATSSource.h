@@ -47,8 +47,6 @@ private:
         ContextPtr context_,
         const Names & columns,
         size_t max_block_size_);
-
-    Chunk generateImpl();
 };
 
 }

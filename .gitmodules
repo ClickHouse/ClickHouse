@@ -270,4 +270,4 @@
 	url = https://github.com/eigen-mirror/eigen
 [submodule "contrib/nats-io"]
 	path = contrib/nats-io
-	url = https://github.com/tchepavel/nats.c.git
+	url = https://github.com/ClickHouse/nats.c.git
