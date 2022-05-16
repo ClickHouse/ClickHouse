@@ -484,8 +484,8 @@ class MemoryRestoreTask : public IRestoreTask
 {
 public:
     MemoryRestoreTask(
-        std::shared_ptr<StorageMemory> storage_, const BackupPtr & backup_, const String & data_path_in_backup_, ContextMutablePtr context_)
-        : storage(storage_), backup(backup_), data_path_in_backup(data_path_in_backup_), context(context_)
+        std::shared_ptr<StorageMemory> storage_, const BackupPtr & backup_, const String & data_path_in_backup_)
+        : storage(storage_), backup(backup_), data_path_in_backup(data_path_in_backup_)
     {
     }
 
@@ -549,17 +549,16 @@ private:
     std::shared_ptr<StorageMemory> storage;
     BackupPtr backup;
     String data_path_in_backup;
-    ContextMutablePtr context;
 };
 
 
-RestoreTaskPtr StorageMemory::restoreData(ContextMutablePtr context, const ASTs & partitions, const BackupPtr & backup, const String & data_path_in_backup, const StorageRestoreSettings &, const std::shared_ptr<IRestoreCoordination> &)
+RestoreTaskPtr StorageMemory::restoreData(ContextMutablePtr, const ASTs & partitions, const BackupPtr & backup, const String & data_path_in_backup, const StorageRestoreSettings &, const std::shared_ptr<IRestoreCoordination> &)
 {
     if (!partitions.empty())
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Table engine {} doesn't support partitions", getName());
 
     return std::make_unique<MemoryRestoreTask>(
-        typeid_cast<std::shared_ptr<StorageMemory>>(shared_from_this()), backup, data_path_in_backup, context);
+        typeid_cast<std::shared_ptr<StorageMemory>>(shared_from_this()), backup, data_path_in_backup);
 }
 
 
