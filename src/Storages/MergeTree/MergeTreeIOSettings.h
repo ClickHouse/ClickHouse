@@ -14,6 +14,8 @@ using MMappedFileCachePtr = std::shared_ptr<MMappedFileCache>;
 
 struct MergeTreeReaderSettings
 {
+    /// Common read settings.
+    ReadSettings read_settings;
     /// If save_marks_in_cache is false, then, if marks are not in cache,
     ///  we will load them but won't save in the cache, to avoid evicting other data.
     bool save_marks_in_cache = false;
@@ -21,31 +23,6 @@ struct MergeTreeReaderSettings
     bool checksum_on_read = true;
     /// True if we read in order of sorting key.
     bool read_in_order = false;
-
-    MergeTreeReaderSettings()
-    {
-        /// Turn on merge tree related assetions for asynchronous reading from remote filesystem.
-        read_settings.must_read_until_position = true;
-    }
-
-    void setReadSettings(const ReadSettings & settings)
-    {
-        read_settings = settings;
-        read_settings.must_read_until_position = true;
-    }
-
-    const ReadSettings & getReadSettings() const { return read_settings; }
-
-    static ReadSettings createReadSettings()
-    {
-        ReadSettings settings;
-        settings.must_read_until_position = true;
-        return settings;
-    }
-
-private:
-    /// Common read settings.
-    ReadSettings read_settings;
 };
 
 struct MergeTreeWriterSettings

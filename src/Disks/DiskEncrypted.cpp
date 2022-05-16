@@ -287,7 +287,6 @@ std::unique_ptr<ReadBufferFromFileBase> DiskEncrypted::readFile(
 {
     auto wrapped_path = wrappedPath(path);
     auto buffer = delegate->readFile(wrapped_path, settings, read_hint, file_size);
-    buffer->setReadUntilPosition(FileEncryption::Header::kSize);
     if (buffer->eof())
     {
         /// File is empty, that's a normal case, see DiskEncrypted::truncateFile().
@@ -297,7 +296,6 @@ std::unique_ptr<ReadBufferFromFileBase> DiskEncrypted::readFile(
     auto encryption_settings = current_settings.get();
     FileEncryption::Header header = readHeader(*buffer);
     String key = getKey(path, header, *encryption_settings);
-    buffer->setReadUntilPosition(0); /// Reset position back.
     return std::make_unique<ReadBufferFromEncryptedFile>(settings.local_fs_buffer_size, std::move(buffer), key, header);
 }
 

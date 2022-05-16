@@ -49,12 +49,13 @@ static MergeTreeReaderSettings getMergeTreeReaderSettings(
     const ContextPtr & context, const SelectQueryInfo & query_info)
 {
     const auto & settings = context->getSettingsRef();
-    MergeTreeReaderSettings reader_settings;
-    reader_settings.setReadSettings(context->getReadSettings());
-    reader_settings.save_marks_in_cache = true;
-    reader_settings.checksum_on_read = settings.checksum_on_read;
-    reader_settings.read_in_order = query_info.input_order_info != nullptr;
-    return reader_settings;
+    return
+    {
+        .read_settings = context->getReadSettings(),
+        .save_marks_in_cache = true,
+        .checksum_on_read = settings.checksum_on_read,
+        .read_in_order = query_info.input_order_info != nullptr,
+    };
 }
 
 static const PrewhereInfoPtr & getPrewhereInfo(const SelectQueryInfo & query_info)
