@@ -2,7 +2,6 @@
 
 #include <atomic>
 #include <mutex>
-#include <random>
 #include <uv.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Storages/IStorage.h>
@@ -11,7 +10,6 @@
 #include <Storages/NATS/NATSSettings.h>
 #include <Poco/Semaphore.h>
 #include <Common/thread_local_rng.h>
-
 
 namespace DB
 {
@@ -135,15 +133,6 @@ private:
 
     bool streamToViews();
     bool checkDependencies(const StorageID & table_id);
-
-    static String getRandomName()
-    {
-        std::uniform_int_distribution<int> distribution('a', 'z');
-        String random_str(32, ' ');
-        for (auto & c : random_str)
-            c = distribution(thread_local_rng);
-        return random_str;
-    }
 };
 
 }
