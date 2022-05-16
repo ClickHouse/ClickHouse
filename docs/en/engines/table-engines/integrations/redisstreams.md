@@ -21,7 +21,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
     name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
     name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
     ...
-) ENGINE = Redis Streams SETTINGS
+) ENGINE = RedisStreams SETTINGS
     redis_broker = 'host:port',
     redis_stream_list = 'stream_foo,stream_boo',
     redis_group_name = 'my_group'[,]
@@ -75,7 +75,7 @@ Example:
     key UInt64,
     value UInt64,
     date DateTime
-  ) ENGINE = Redis Streams 
+  ) ENGINE = RedisStreams 
     SETTINGS
         redis_broker = 'host:port',
         redis_stream_list = 'stream,
@@ -109,7 +109,7 @@ Example:
   CREATE TABLE queue (
     key UInt64,
     value UInt64
-  ) ENGINE = Redis Streams 
+  ) ENGINE = RedisStreams 
     SETTINGS
         redis_broker = 'localhost:6379',
         redis_stream_list = 'stream,
