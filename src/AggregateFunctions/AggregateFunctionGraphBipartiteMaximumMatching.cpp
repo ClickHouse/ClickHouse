@@ -9,11 +9,6 @@
 
 namespace DB
 {
-namespace ErrorCodes
-{
-    extern const int UNSUPPORTED_PARAMETER;
-}
-
 template <typename VertexType>
 class GraphCountBipartiteMaximumMatching final
     : public GraphOperation<BidirectionalGraphData<VertexType>, GraphCountBipartiteMaximumMatching<VertexType>>

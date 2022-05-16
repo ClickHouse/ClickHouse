@@ -7,10 +7,6 @@
 
 namespace DB
 {
-namespace ErrorCodes
-{
-    extern const int BAD_ARGUMENTS;
-}
 template <typename VertexType>
 class EdgeDistance final : public GraphOperation<BidirectionalGraphData<VertexType>, EdgeDistance<VertexType>, 2>
 {
