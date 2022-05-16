@@ -19,14 +19,16 @@ namespace DB
 #ifdef __aarch64__
 bool only_ascii_in_vector(uint8x16_t input)
 {   
-    // AND of each element of input vector and 0x80
-    uint8x16_t and_result = vandq_s8(input, vdupq_n_u8(0x80));
-
-    // OR between elements of vector of low 8 bytes and vector of high 8 bytes
-    uint8x8_t or_result = vorr_u8(vget_low_u8(and_result), vget_high_u8(and_result));
-
-    // get uint64_t from vector uint64x1_t and return true if equal to zero, false otherwise
-    return !vget_lane_u64(or_result, 0);
+    uint16x8_t high_bits = vreinterpretq_u16_u8(vshrq_n_u8(cmp_res, 7));
+    uint32x4_t paired16 =
+        vreinterpretq_u32_u16(vsraq_n_u16(high_bits, high_bits, 7));
+    uint64x2_t paired32 =
+        vreinterpretq_u64_u32(vsraq_n_u32(paired16, paired16, 14));
+    uint8x16_t paired64 =
+        vreinterpretq_u8_u64(vsraq_n_u64(paired32, paired32, 28));
+    uint32_t mask =
+        vgetq_lane_u8(paired64, 0) | (static_cast<uint64_t>(vgetq_lane_u8(paired64, 8)) << 8);
+    return !mask;
 }
 #endif
 
