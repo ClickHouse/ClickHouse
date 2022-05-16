@@ -14,6 +14,7 @@
 #include <AggregateFunctions/IAggregateFunction.h>
 
 #include <Common/config.h>
+#include <Common/TargetSpecific.h>
 
 #if USE_EMBEDDED_COMPILER
 #    include <llvm/IR/IRBuilder.h>
@@ -58,8 +59,11 @@ struct AggregateFunctionSumData
     }
 
     /// Vectorized version
+    MULTITARGET_FUNCTION_WRAPPER_AVX2_SSE42(addManyImpl,
+    MULTITARGET_FH(
     template <typename Value>
-    void NO_SANITIZE_UNDEFINED NO_INLINE addMany(const Value * __restrict ptr, size_t start, size_t end)
+    void NO_SANITIZE_UNDEFINED NO_INLINE
+    ), /*addManyImpl*/ MULTITARGET_FB((const Value * __restrict ptr, size_t start, size_t end) /// NOLINT
     {
         ptr += start;
         size_t count = end - start;
@@ -95,11 +99,34 @@ struct AggregateFunctionSumData
             ++ptr;
         }
         Impl::add(sum, local_sum);
+    })
+    )
+
+    /// Vectorized version
+    template <typename Value>
+    void NO_INLINE addMany(const Value * __restrict ptr, size_t start, size_t end)
+    {
+#if USE_MULTITARGET_CODE
+        if (isArchSupported(TargetArch::AVX2))
+        {
+            addManyImplAVX2(ptr, start, end);
+            return;
+        }
+        else if (isArchSupported(TargetArch::SSE42))
+        {
+            addManyImplSSE42(ptr, start, end);
+            return;
+        }
+#endif
+
+        addManyImpl(ptr, start, end);
     }
 
+    MULTITARGET_FUNCTION_WRAPPER_AVX2_SSE42(addManyConditionalInternalImpl,
+    MULTITARGET_FH(
     template <typename Value, bool add_if_zero>
     void NO_SANITIZE_UNDEFINED NO_INLINE
-    addManyConditionalInternal(const Value * __restrict ptr, const UInt8 * __restrict condition_map, size_t start, size_t end)
+    ), /*addManyConditionalInternalImpl*/ MULTITARGET_FB((const Value * __restrict ptr, const UInt8 * __restrict condition_map, size_t start, size_t end) /// NOLINT
     {
         ptr += start;
         size_t count = end - start;
@@ -163,6 +190,27 @@ struct AggregateFunctionSumData
             ++condition_map;
         }
         Impl::add(sum, local_sum);
+    })
+    )
+
+    /// Vectorized version
+    template <typename Value, bool add_if_zero>
+    void NO_INLINE addManyConditionalInternal(const Value * __restrict ptr, const UInt8 * __restrict condition_map, size_t start, size_t end)
+    {
+#if USE_MULTITARGET_CODE
+        if (isArchSupported(TargetArch::AVX2))
+        {
+            addManyConditionalInternalImplAVX2<Value, add_if_zero>(ptr, condition_map, start, end);
+            return;
+        }
+        else if (isArchSupported(TargetArch::SSE42))
+        {
+            addManyConditionalInternalImplSSE42<Value, add_if_zero>(ptr, condition_map, start, end);
+            return;
+        }
+#endif
+
+        addManyConditionalInternalImpl<Value, add_if_zero>(ptr, condition_map, start, end);
     }
 
     template <typename Value>
