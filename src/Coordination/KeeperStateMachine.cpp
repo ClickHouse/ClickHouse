@@ -26,7 +26,8 @@ KeeperStateMachine::KeeperStateMachine(
         SnapshotsQueue & snapshots_queue_,
         const std::string & snapshots_path_,
         const CoordinationSettingsPtr & coordination_settings_,
-        const std::string & superdigest_)
+        const std::string & superdigest_,
+        const bool digest_enabled_)
     : coordination_settings(coordination_settings_)
     , snapshot_manager(
         snapshots_path_, coordination_settings->snapshots_to_keep,
@@ -37,6 +38,7 @@ KeeperStateMachine::KeeperStateMachine(
     , last_committed_idx(0)
     , log(&Poco::Logger::get("KeeperStateMachine"))
     , superdigest(superdigest_)
+    , digest_enabled(digest_enabled_)
 {
 }
 
@@ -83,7 +85,7 @@ void KeeperStateMachine::init()
     }
 
     if (!storage)
-        storage = std::make_unique<KeeperStorage>(coordination_settings->dead_session_check_period_ms.totalMilliseconds(), superdigest);
+        storage = std::make_unique<KeeperStorage>(coordination_settings->dead_session_check_period_ms.totalMilliseconds(), superdigest, digest_enabled);
 }
 
 nuraft::ptr<nuraft::buffer> KeeperStateMachine::pre_commit(uint64_t log_idx, nuraft::buffer & data)
@@ -139,7 +141,7 @@ void KeeperStateMachine::preprocess(const KeeperStorage::RequestForSession & req
     if (request_for_session.request->getOpNum() == Coordination::OpNum::SessionID)
         return;
     std::lock_guard lock(storage_and_responses_lock);
-    storage->preprocessRequest(request_for_session.request, request_for_session.session_id, request_for_session.time, request_for_session.zxid, request_for_session.digest);
+    storage->preprocessRequest(request_for_session.request, request_for_session.session_id, request_for_session.time, request_for_session.zxid, true /* check_acl */, request_for_session.digest);
 }
 
 nuraft::ptr<nuraft::buffer> KeeperStateMachine::commit(const uint64_t log_idx, nuraft::buffer & data)
@@ -178,7 +180,7 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine::commit(const uint64_t log_idx, n
     }
 
 
-    if (!KeeperStorage::checkDigest(request_for_session.digest, storage->getNodesDigest(true)))
+    if (digest_enabled && !KeeperStorage::checkDigest(request_for_session.digest, storage->getNodesDigest(true)))
     {
         LOG_ERROR(log, "Digest for nodes is not matching after applying request of type {}", request_for_session.request->getOpNum());
         std::terminate();

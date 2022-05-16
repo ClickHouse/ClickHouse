@@ -21,7 +21,7 @@ enum SnapshotVersion : uint8_t
     V2 = 2, /// with 64 bit buffer header
     V3 = 3, /// compress snapshots with ZSTD codec
     V4 = 4, /// add Node size to snapshots
-    V5 = 5, /// add ZXID to snapshots
+    V5 = 5, /// add ZXID and digest to snapshots
 };
 
 static constexpr auto CURRENT_SNAPSHOT_VERSION = SnapshotVersion::V4;
@@ -80,6 +80,8 @@ public:
     ClusterConfigPtr cluster_config;
     /// Last committed ZXID
     int64_t zxid;
+    /// Current digest of committed nodes
+    uint64_t nodes_digest;
 };
 
 using KeeperStorageSnapshotPtr = std::shared_ptr<KeeperStorageSnapshot>;

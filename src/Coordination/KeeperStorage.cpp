@@ -219,8 +219,8 @@ void KeeperStorage::Node::setDigest(UInt64 digest)
     cached_digest.emplace(digest);
 }
 
-KeeperStorage::KeeperStorage(int64_t tick_time_ms, const String & superdigest_)
-    : session_expiry_queue(tick_time_ms), superdigest(superdigest_)
+KeeperStorage::KeeperStorage(int64_t tick_time_ms, const String & superdigest_, const bool digest_enabled_)
+    : session_expiry_queue(tick_time_ms), digest_enabled(digest_enabled_), superdigest(superdigest_)
 {
     container.insert("/", Node());
 }
@@ -379,10 +379,9 @@ Coordination::Error KeeperStorage::commit(int64_t commit_zxid, int64_t session_i
                     if (operation.version != -1 && operation.version != node_it->value.stat.version)
                         onStorageInconsistency();
 
-                    nodes_digest -= node_it->value.getDigest(path);
+                    removeDigest(node_it->value, path);
                     auto updated_node = container.updateValue(path, operation.update_fn);
-                    updated_node->value.invalidateDigestCache();
-                    nodes_digest += updated_node->value.getDigest(path);
+                    addDigest(updated_node->value, path);
 
                     return Coordination::Error::ZOK;
                 }
@@ -479,9 +478,7 @@ bool KeeperStorage::createNode(
     if (is_ephemeral)
         ephemerals[session_id].emplace(path);
 
-    auto digest = map_key->getMapped()->value.getDigest(map_key->getKey().toView());
-    nodes_digest += digest;
-
+    addDigest(map_key->getMapped()->value, map_key->getKey().toView());
     return true;
 };
 
@@ -514,7 +511,7 @@ bool KeeperStorage::removeNode(const std::string & path, int32_t version)
 
     container.erase(path);
 
-    nodes_digest -= prev_node.getDigest(path);
+    removeDigest(prev_node, path);
     return true;
 }
 
@@ -1661,8 +1658,8 @@ void KeeperStorage::preprocessRequest(
     int64_t session_id,
     int64_t time,
     int64_t new_last_zxid,
-    Digest expected_digest,
-    bool check_acl)
+    bool check_acl,
+    Digest expected_digest)
 {
     int64_t last_zxid = getNextZXID() - 1;
 
@@ -1703,7 +1700,7 @@ void KeeperStorage::preprocessRequest(
 
     TransactionInfo transaction{.zxid = new_last_zxid};
     SCOPE_EXIT({
-        if (expected_digest.version == DigestVersion::NO_DIGEST)
+        if (expected_digest.version == DigestVersion::NO_DIGEST && digest_enabled)
             transaction.nodes_digest = Digest{CURRENT_DIGEST_VERSION, calculateNodesDigest(getNodesDigest(false).value, transaction.zxid)};
         else
             transaction.nodes_digest = expected_digest;
@@ -1895,10 +1892,28 @@ void KeeperStorage::rollbackRequest(int64_t rollback_zxid)
 
 KeeperStorage::Digest KeeperStorage::getNodesDigest(bool committed) const
 {
+    if (!digest_enabled)
+        return {.version = DigestVersion::NO_DIGEST};
+
     if (committed || uncommitted_transactions.empty())
         return {CURRENT_DIGEST_VERSION, nodes_digest};
 
     return uncommitted_transactions.back().nodes_digest;
+}
+
+void KeeperStorage::removeDigest(const Node & node, const std::string_view path)
+{
+    if (digest_enabled)
+        nodes_digest -= node.getDigest(path);
+}
+
+void KeeperStorage::addDigest(const Node & node, const std::string_view path)
+{
+    if (digest_enabled)
+    {
+        node.invalidateDigestCache();
+        nodes_digest += node.getDigest(path);
+    }
 }
 
 void KeeperStorage::clearDeadWatches(int64_t session_id)

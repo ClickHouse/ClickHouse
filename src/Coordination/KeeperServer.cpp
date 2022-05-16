@@ -113,7 +113,8 @@ KeeperServer::KeeperServer(
           snapshots_queue_,
           configuration_and_settings_->snapshot_storage_path,
           coordination_settings,
-          checkAndGetSuperdigest(configuration_and_settings_->super_digest)))
+          checkAndGetSuperdigest(configuration_and_settings_->super_digest),
+          config.getBool("keeper_server.digest_enabled", true)))
     , state_manager(nuraft::cs_new<KeeperStateManager>(
           server_id, "keeper_server", configuration_and_settings_->log_storage_path, config, coordination_settings))
     , log(&Poco::Logger::get("KeeperServer"))

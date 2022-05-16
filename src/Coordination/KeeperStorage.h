@@ -306,9 +306,11 @@ public:
 
     Digest getNodesDigest(bool committed) const;
 
+    const bool digest_enabled;
+
     const String superdigest;
 
-    KeeperStorage(int64_t tick_time_ms, const String & superdigest_);
+    KeeperStorage(int64_t tick_time_ms, const String & superdigest_, bool digest_enabled_ = true);
 
     /// Allocate new session id with the specified timeouts
     int64_t getSessionID(int64_t session_timeout_ms)
@@ -342,8 +344,8 @@ public:
         int64_t session_id,
         int64_t time,
         int64_t new_last_zxid,
-        Digest digest,
-        bool check_acl = true);
+        bool check_acl = true,
+        Digest digest = {DigestVersion::NO_DIGEST, 0});
     void rollbackRequest(int64_t rollback_zxid);
 
     void finalize();
@@ -386,6 +388,10 @@ public:
     void dumpWatches(WriteBufferFromOwnString & buf) const;
     void dumpWatchesByPath(WriteBufferFromOwnString & buf) const;
     void dumpSessionsAndEphemerals(WriteBufferFromOwnString & buf) const;
+
+private:
+    void removeDigest(const Node & node, std::string_view path);
+    void addDigest(const Node & node, std::string_view path);
 };
 
 using KeeperStoragePtr = std::unique_ptr<KeeperStorage>;
