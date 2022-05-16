@@ -24,6 +24,8 @@
 #include <Common/quoteString.h>
 #include <Common/setThreadName.h>
 
+#include <openssl/ssl.h>
+
 namespace DB
 {
 
