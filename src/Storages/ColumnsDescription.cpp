@@ -572,6 +572,27 @@ std::optional<NameAndTypePair> ColumnsDescription::tryGetColumnOrSubcolumn(GetCo
     return tryGetColumn(GetColumnsOptions(kind).withSubcolumns(), column_name);
 }
 
+std::optional<const ColumnDescription> ColumnsDescription::tryGetColumnDescription(const GetColumnsOptions & options, const String & column_name) const
+{
+    auto it = columns.get<1>().find(column_name);
+    if (it != columns.get<1>().end() && (defaultKindToGetKind(it->default_desc.kind) & options.kind))
+        return *it;
+
+    if (options.with_subcolumns)
+    {
+        auto jt = subcolumns.get<0>().find(column_name);
+        if (jt != subcolumns.get<0>().end())
+            return ColumnDescription{jt->name, jt->type};
+    }
+
+    return {};
+}
+
+std::optional<const ColumnDescription> ColumnsDescription::tryGetColumnOrSubcolumnDescription(GetColumnsOptions::Kind kind, const String & column_name) const
+{
+    return tryGetColumnDescription(GetColumnsOptions(kind).withSubcolumns(), column_name);
+}
+
 NameAndTypePair ColumnsDescription::getColumnOrSubcolumn(GetColumnsOptions::Kind kind, const String & column_name) const
 {
     auto column = tryGetColumnOrSubcolumn(kind, column_name);
