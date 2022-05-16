@@ -21,7 +21,7 @@ MeiliSearchConnection::MeiliSearchConnection(const MeiliConfig & conf) : config{
     session.setPort(uri.getPort());
 }
 
-void MeiliSearchConnection::execPostQuery(const String & url, std::string_view post_fields, std::string & response_buffer) const
+String MeiliSearchConnection::execPostQuery(const String & url, std::string_view post_fields) const
 {
     Poco::URI uri(url);
 
@@ -46,13 +46,16 @@ void MeiliSearchConnection::execPostQuery(const String & url, std::string_view p
     // need to separate MeiliSearch response from other situations
     // in order to handle it properly
     if (res.getStatus() / 100 == 2 || res.getStatus() / 100 == 4)
+    {
+        String response_buffer;
         Poco::StreamCopier::copyToString(is, response_buffer);
+        return response_buffer;
+    }
     else
         throw Exception(ErrorCodes::NETWORK_ERROR, res.getReason());
 }
 
-void MeiliSearchConnection::execGetQuery(
-    const String & url, const std::unordered_map<String, String> & query_params, std::string & response_buffer) const
+String MeiliSearchConnection::execGetQuery(const String & url, const std::unordered_map<String, String> & query_params) const
 {
     Poco::URI uri(url);
     for (const auto & kv : query_params)
@@ -77,7 +80,11 @@ void MeiliSearchConnection::execGetQuery(
     // need to separate MeiliSearch response from other situations
     // in order to handle it properly
     if (res.getStatus() / 100 == 2 || res.getStatus() / 100 == 4)
+    {
+        String response_buffer;
         Poco::StreamCopier::copyToString(is, response_buffer);
+        return response_buffer;
+    }
     else
         throw Exception(ErrorCodes::NETWORK_ERROR, res.getReason());
 }
@@ -85,8 +92,6 @@ void MeiliSearchConnection::execGetQuery(
 
 String MeiliSearchConnection::searchQuery(const std::unordered_map<String, String> & query_params) const
 {
-    std::string response_buffer;
-
     WriteBufferFromOwnString post_fields;
 
     post_fields << "{";
@@ -103,32 +108,19 @@ String MeiliSearchConnection::searchQuery(const std::unordered_map<String, Strin
     post_fields << "}";
 
     String url = config.connection_string + "search";
-
-    execPostQuery(url, post_fields.str(), response_buffer);
-
-    return response_buffer;
+    return execPostQuery(url, post_fields.str());
 }
 
 String MeiliSearchConnection::updateQuery(std::string_view data) const
 {
-    String response_buffer;
-
     String url = config.connection_string + "documents";
-
-    execPostQuery(url, data, response_buffer);
-
-    return response_buffer;
+    return execPostQuery(url, data);
 }
 
 String MeiliSearchConnection::getDocumentsQuery(const std::unordered_map<String, String> & query_params) const
 {
-    String response_buffer;
-
     String url = config.connection_string + "documents";
-
-    execGetQuery(url, query_params, response_buffer);
-
-    return response_buffer;
+    return execGetQuery(url, query_params);
 }
 
 }

@@ -1,20 +1,18 @@
 #pragma once
-#include <TableFunctions/ITableFunction.h>
 #include <Storages/MeiliSearch/MeiliSearchConnection.h>
+#include <TableFunctions/ITableFunction.h>
 
 namespace DB
 {
-
 class TableFunctionMeiliSearch : public ITableFunction
 {
 public:
     static constexpr auto name = "MeiliSearch";
-    std::string getName() const override { return name; }
+    String getName() const override { return name; }
 
 private:
     StoragePtr executeImpl(
-            const ASTPtr & ast_function, ContextPtr context,
-            const std::string & table_name, ColumnsDescription cached_columns) const override;
+        const ASTPtr & ast_function, ContextPtr context, const String & table_name, ColumnsDescription cached_columns) const override;
 
     const char * getStorageTypeName() const override { return "MeiliSearch"; }
 
@@ -25,4 +23,3 @@ private:
 };
 
 }
-

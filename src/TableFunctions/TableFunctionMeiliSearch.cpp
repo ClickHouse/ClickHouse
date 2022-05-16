@@ -9,7 +9,7 @@
 namespace DB
 {
 StoragePtr TableFunctionMeiliSearch::executeImpl(
-    const ASTPtr & /* ast_function */, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/) const
+    const ASTPtr & /* ast_function */, ContextPtr context, const String & table_name, ColumnsDescription /*cached_columns*/) const
 {
     auto columns = getActualTableStructure(context);
 
