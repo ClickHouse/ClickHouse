@@ -12,18 +12,19 @@ namespace DB
 NATSSink::NATSSink(
     StorageNATS & storage_,
     const StorageMetadataPtr & metadata_snapshot_,
-    ContextPtr context_)
+    ContextPtr context_,
+    ProducerBufferPtr buffer_)
     : SinkToStorage(metadata_snapshot_->getSampleBlockNonMaterialized())
     , storage(storage_)
     , metadata_snapshot(metadata_snapshot_)
     , context(context_)
+    , buffer(buffer_)
 {
 }
 
 
 void NATSSink::onStart()
 {
-    buffer = storage.createWriteBuffer();
     buffer->activateWriting();
 
     auto format_settings = getFormatSettings(context);

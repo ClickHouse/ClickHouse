@@ -1,6 +1,6 @@
 #pragma once
 
-#include <adapters/libuv.h>
+#include <uv.h>
 #include <memory>
 #include <mutex>
 #include <thread>
@@ -37,9 +37,6 @@ public:
     LockPtr setThreadLocalLoop();
 
     void stopLoop();
-
-    void changeConnectionStatus(bool is_running);
-    bool connectionRunning() const { return connection_running.load(); }
     bool loopRunning() const { return loop_running.load(); }
 
     void updateLoopState(UInt8 state) { loop_state.store(state); }
@@ -52,7 +49,7 @@ private:
     natsOptions * opts = nullptr;
     Poco::Logger * log;
 
-    std::atomic<bool> connection_running, loop_running;
+    std::atomic<bool> loop_running;
     std::atomic<UInt8> loop_state;
     std::mutex startup_mutex;
 };
