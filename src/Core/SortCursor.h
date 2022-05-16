@@ -222,6 +222,10 @@ struct SimpleSortCursor : SortCursorHelper<SimpleSortCursor>
 
     bool ALWAYS_INLINE greaterAt(const SimpleSortCursor & rhs, size_t lhs_pos, size_t rhs_pos) const
     {
+        if (unlikely(impl->sort_columns_size == 0)) {
+            return impl->order > rhs.impl->order;
+        }
+
         const auto & desc = impl->desc[0];
         int direction = desc.direction;
         int nulls_direction = desc.nulls_direction;
