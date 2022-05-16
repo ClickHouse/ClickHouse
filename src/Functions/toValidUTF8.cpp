@@ -25,7 +25,9 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
 }
 
+#ifdef __aarch64__
 extern bool only_ascii_in_vector(uint8x16_t input);
+#endif
 extern const UInt8 length_of_utf8_sequence[256];
 
 namespace
@@ -78,7 +80,7 @@ struct ToValidUTF8Impl
             static constexpr size_t SIMD_BYTES = 16;
             const char * simd_end = p + (end - p) / SIMD_BYTES * SIMD_BYTES;
 
-            while (p < simd_end && only_ascii_in_vector(vld1q_u8(reinterpret_cast<const unsigned char *>(p))))
+            while (p < simd_end && only_ascii_in_vector(vld1q_u8(reinterpret_cast<const uint32_t *>(p))))
                 p += SIMD_BYTES;
             
             if (!(p < end))
