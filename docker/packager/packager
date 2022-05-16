@@ -67,7 +67,13 @@ def pre_build(repo_path: str, env_variables: List[str]):
 
 
 def run_docker_image_with_env(
-    image_name, output, env_variables, ch_root, ccache_dir, docker_image_version
+    image_name,
+    as_root,
+    output,
+    env_variables,
+    ch_root,
+    ccache_dir,
+    docker_image_version,
 ):
     env_part = " -e ".join(env_variables)
     if env_part:
@@ -78,8 +84,13 @@ def run_docker_image_with_env(
     else:
         interactive = ""
 
+    if as_root:
+        user = "0:0"
+    else:
+        user = f"{os.geteuid()}:{os.getegid()}"
+
     cmd = (
-        f"docker run --network=host --rm --volume={output}:/output "
+        f"docker run --network=host --user={user} --rm --volume={output}:/output "
         f"--volume={ch_root}:/build --volume={ccache_dir}:/ccache {env_part} "
         f"{interactive} {image_name}:{docker_image_version}"
     )
@@ -359,6 +370,9 @@ if __name__ == "__main__":
     parser.add_argument(
         "--docker-image-version", default="latest", help="docker image tag to use"
     )
+    parser.add_argument(
+        "--as-root", action="store_true", help="if the container should run as root"
+    )
 
     args = parser.parse_args()
 
@@ -400,6 +414,7 @@ if __name__ == "__main__":
     pre_build(args.clickhouse_repo_path, env_prepared)
     run_docker_image_with_env(
         image_name,
+        args.as_root,
         args.output_dir,
         env_prepared,
         ch_root,
