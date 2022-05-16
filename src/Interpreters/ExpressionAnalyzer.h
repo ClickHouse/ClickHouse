@@ -64,6 +64,7 @@ struct ExpressionAnalyzerData
 
     bool has_aggregation = false;
     NamesAndTypesList aggregation_keys;
+    NamesAndTypesLists aggregation_keys_list;
     bool has_const_aggregation_keys = false;
     AggregateDescriptions aggregate_descriptions;
 
@@ -98,7 +99,7 @@ public:
     /// Ctor for non-select queries. Generally its usage is:
     /// auto actions = ExpressionAnalyzer(query, syntax, context).getActions();
     ExpressionAnalyzer(const ASTPtr & query_, const TreeRewriterResultPtr & syntax_analyzer_result_, ContextPtr context_)
-        : ExpressionAnalyzer(query_, syntax_analyzer_result_, context_, 0, false, {}, {})
+        : ExpressionAnalyzer(query_, syntax_analyzer_result_, context_, 0, false, false, {}, {})
     {
     }
 
@@ -154,6 +155,7 @@ protected:
         ContextPtr context_,
         size_t subquery_depth_,
         bool do_global_,
+        bool is_explain_,
         SubqueriesForSets subqueries_for_sets_,
         PreparedSets prepared_sets_);
 
@@ -168,7 +170,7 @@ protected:
     const NamesAndTypesList & sourceColumns() const { return syntax->required_source_columns; }
     const std::vector<const ASTFunction *> & aggregates() const { return syntax->aggregates; }
     /// Find global subqueries in the GLOBAL IN/JOIN sections. Fills in external_tables.
-    void initGlobalSubqueriesAndExternalTables(bool do_global);
+    void initGlobalSubqueriesAndExternalTables(bool do_global, bool is_explain);
 
     ArrayJoinActionPtr addMultipleArrayJoinAction(ActionsDAGPtr & actions, bool is_left) const;
 
@@ -219,6 +221,8 @@ struct ExpressionAnalysisResult
     bool optimize_read_in_order = false;
     bool optimize_aggregation_in_order = false;
     bool join_has_delayed_stream = false;
+
+    bool use_grouping_set_key = false;
 
     ActionsDAGPtr before_array_join;
     ArrayJoinActionPtr array_join;
@@ -305,6 +309,7 @@ public:
             context_,
             options_.subquery_depth,
             do_global_,
+            options_.is_explain,
             std::move(subqueries_for_sets_),
             std::move(prepared_sets_))
         , metadata_snapshot(metadata_snapshot_)
@@ -319,11 +324,13 @@ public:
     bool hasGlobalSubqueries() { return has_global_subqueries; }
     bool hasTableJoin() const { return syntax->ast_join; }
 
+    bool useGroupingSetKey() const { return aggregation_keys_list.size() > 1; }
+
     const NamesAndTypesList & aggregationKeys() const { return aggregation_keys; }
     bool hasConstAggregationKeys() const { return has_const_aggregation_keys; }
+    const NamesAndTypesLists & aggregationKeysList() const { return aggregation_keys_list; }
     const AggregateDescriptions & aggregates() const { return aggregate_descriptions; }
 
-    const PreparedSets & getPreparedSets() const { return prepared_sets; }
     std::unique_ptr<QueryPlan> getJoinedPlan();
 
     /// Tables that will need to be sent to remote servers for distributed query processing.
