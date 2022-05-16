@@ -24,21 +24,21 @@
 namespace DB
 {
 
-struct TrainResult {}
+struct TrainResult {};
 
 struct LinearRegressionResult : public TrainResult
 {
-   mlpack::regression::LinearRegression model;
+   const mlpack::regression::LinearRegression& model;
 };
 
 struct LogisticRegressionResult : public TrainResult
 {
-   mlpack::regression::LogisticRegression model;
+   const mlpack::regression::LogisticRegression<>& model;
 };
 
 struct LinearSVMResult : public TrainResult
 {
-   mlpack::svm::LinearSVM model;
+   const mlpack::svm::LinearSVM<>& model;
 };
 
 
@@ -50,7 +50,7 @@ public:
 
     virtual String GetName() const = 0;
 
-    virtual const TrainResult& GetModel() const = 0;
+    virtual TrainResult GetModel() const = 0;
 
     virtual void TrainArb(const arma::mat& regressors, Float64 * target_ptr, size_t n_rows) = 0;
     
@@ -68,9 +68,9 @@ public:
         model.Lambda() = model_settings->lambda.value;
     } 
 
-    String GetName() const { return "LinearRegression"; }
+    String GetName() const override { return "LinearRegression"; }
 
-    const TrainResult& GetModel() const { return LinearRegressionResult{model}; }
+    TrainResult GetModel() const override { return LinearRegressionResult{{}, model}; }
 
     void TrainArb(const arma::mat& regressors, Float64 * target_ptr, size_t n_rows) override
     {
@@ -98,9 +98,9 @@ public:
         // auto opt_type = model_settings->optimizer.value;
     } 
 
-    String GetName() const { return "LogisticRegression"; }
+    String GetName() const override { return "LogisticRegression"; }
 
-    const TrainResult& GetModel() const { return LogisticRegressionResult{model}; }
+    TrainResult GetModel() const override { return LogisticRegressionResult{{}, model}; }
 
     // void Train(const arma::mat& regressors, const arma::Row<double>& target) override {
     //     ens::L_BFGS lbfgsOpt;
@@ -140,9 +140,9 @@ public:
         model.Delta() = model_settings->delta.value;
     } 
 
-    String GetName() const { return "LinearSVM"; }
+    String GetName() const override { return "LinearSVM"; }
 
-    const TrainResult& GetModel() const { return LinearSVMResult{model}; }
+    TrainResult GetModel() const override { return LinearSVMResult{{}, model}; }
 
     // void Train(const arma::mat& regressors, const arma::Row<double>& target) override {
     //     ens::L_BFGS lbfgsOpt;

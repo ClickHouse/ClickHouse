@@ -35,10 +35,10 @@ public:
     std::string getName() const override { return "MLmodel"; }
 
     // maybe check on null?
-    const TrainResult& getModel() const { model->GetModel(); }
+    TrainResult getModel() const { return model->GetModel(); }
 
     // check on null?
-    String getModelName() const { model->GetName(); }
+    String getModelName() const { return model->GetName(); }
 
     SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
 
