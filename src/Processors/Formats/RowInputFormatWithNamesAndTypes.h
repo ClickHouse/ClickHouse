@@ -51,10 +51,6 @@ private:
     bool parseRowAndPrintDiagnosticInfo(MutableColumns & columns, WriteBuffer & out) override;
     void tryDeserializeField(const DataTypePtr & type, IColumn & column, size_t file_column) override;
 
-    void setupAllColumnsByTableSchema();
-    void addInputColumn(const String & column_name, std::vector<bool> & read_columns);
-    void insertDefaultsForNotSeenColumns(MutableColumns & columns, RowReadExtension & ext);
-
     bool with_names;
     bool with_types;
     std::unique_ptr<FormatWithNamesAndTypesReader> format_reader;
@@ -128,8 +124,7 @@ public:
         bool with_names_,
         bool with_types_,
         FormatWithNamesAndTypesReader * format_reader_,
-        DataTypePtr default_type_ = nullptr,
-        bool allow_bools_as_numbers_ = false);
+        DataTypePtr default_type_ = nullptr);
 
     NamesAndTypesList readSchema() override;
 
