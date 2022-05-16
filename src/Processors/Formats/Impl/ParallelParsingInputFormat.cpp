@@ -91,7 +91,7 @@ void ParallelParsingInputFormat::parserThreadFunction(ThreadGroupStatusPtr threa
         while (!parsing_finished && (chunk = parser.getChunk()) != Chunk())
         {
             /// Variable chunk is moved, but it is not really used in the next iteration.
-            /// NOLINTNEXTLINE(bugprone-use-after-move)
+            /// NOLINTNEXTLINE(bugprone-use-after-move, hicpp-invalid-access-moved)
             unit.chunk_ext.chunk.emplace_back(std::move(chunk));
             unit.chunk_ext.block_missing_values.emplace_back(parser.getMissingValues());
         }
