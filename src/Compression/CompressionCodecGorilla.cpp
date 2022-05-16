@@ -11,7 +11,7 @@
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/BitHelpers.h>
 
-#include <string.h>
+#include <cstring>
 #include <algorithm>
 #include <type_traits>
 
