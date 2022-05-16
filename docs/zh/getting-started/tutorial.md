@@ -644,7 +644,7 @@ ZooKeeper位置在配置文件中指定:
 
 ``` sql
 CREATE TABLE tutorial.hits_replica (...)
-ENGINE = ReplcatedMergeTree(
+ENGINE = ReplicatedMergeTree(
     '/clickhouse_perftest/tables/{shard}/hits',
     '{replica}'
 )
