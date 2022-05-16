@@ -24,7 +24,7 @@
 #pragma GCC diagnostic ignored "-Wimplicit-fallthrough"
 #pragma GCC diagnostic ignored "-Wzero-as-null-pointer-constant"
 #pragma GCC diagnostic ignored "-Wunused-macros"
-#include <string.h>
+#include <cstring>
 
 #define TOTAL_KEYWORDS 4942
 #define MIN_WORD_LENGTH 4
