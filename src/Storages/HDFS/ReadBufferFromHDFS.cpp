@@ -38,44 +38,56 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<S
 
     String hdfs_uri;
     String hdfs_file_path;
+    off_t file_offset = 0;
+    off_t read_until_position;
+    bool allow_reuse_hdfs_objects;
 
-    const HDFSBuilderFSFactory & factory;
     HDFSBuilderWrapperPtr builder;
     HDFSFSSharedPtr fs;
     hdfsFile fin;
 
-    off_t file_offset = 0;
-    off_t read_until_position = 0;
 
     explicit ReadBufferFromHDFSImpl(
         const std::string & hdfs_uri_,
         const std::string & hdfs_file_path_,
         const Poco::Util::AbstractConfiguration & config_,
-        size_t buf_size_, size_t read_until_position_)
+        size_t buf_size_,
+        size_t read_until_position_,
+        bool allow_reuse_hdfs_objects_ = true)
         : BufferWithOwnMemory<SeekableReadBuffer>(buf_size_)
         , hdfs_uri(hdfs_uri_)
         , hdfs_file_path(hdfs_file_path_)
-        , factory(HDFSBuilderFSFactory::instance())
-        , builder(factory.getBuilder(hdfs_uri_, config_))
         , read_until_position(read_until_position_)
+        , allow_reuse_hdfs_objects(allow_reuse_hdfs_objects_)
+        , builder(
+              allow_reuse_hdfs_objects ? HDFSBuilderFSFactory::instance().getBuilder(hdfs_uri_, config_)
+                                       : std::make_shared<HDFSBuilderWrapper>(hdfs_uri_, config_))
     {
         Stopwatch watch;
         assert(builder && builder->get());
 
-        fs = factory.getFS(builder);
-        if (!factory.tryCallFS(
-                builder,
-                fs,
-                [&](HDFSFSSharedPtr & fs_) -> bool
-                {
-                    fin = hdfsOpenFile(fs_.get(), hdfs_file_path.c_str(), O_RDONLY, 0, 0, 0);
-                    return fin != nullptr;
-                }))
-            throw Exception(
-                ErrorCodes::CANNOT_OPEN_FILE,
-                "Unable to open HDFS file: {}. Error: {}",
-                hdfs_uri + hdfs_file_path,
-                std::string(hdfsGetLastError()));
+        if (allow_reuse_hdfs_objects)
+        {
+            fs = HDFSBuilderFSFactory::instance().getFS(builder);
+            if (!HDFSBuilderFSFactory::instance().tryCallFS(
+                    builder,
+                    fs,
+                    [&](HDFSFSSharedPtr & fs_) -> bool
+                    {
+                        fin = hdfsOpenFile(fs_.get(), hdfs_file_path.c_str(), O_RDONLY, 0, 0, 0);
+                        return fin != nullptr;
+                    }))
+                throw Exception(
+                    ErrorCodes::CANNOT_OPEN_FILE,
+                    "Unable to open HDFS file: {}. Error: {}",
+                    hdfs_uri + hdfs_file_path,
+                    std::string(hdfsGetLastError()));
+        }
+        else
+        {
+            fs = createSharedHDFSFS(builder->get());
+            fin = hdfsOpenFile(fs.get(), hdfs_file_path.c_str(), O_RDONLY, 0, 0, 0);
+        }
 
         ProfileEvents::increment(ProfileEvents::HDFSReadInitializeMicroseconds, watch.elapsedMicroseconds());
         ProfileEvents::increment(ProfileEvents::HDFSReadInitialize, 1);
@@ -162,12 +174,15 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<S
 };
 
 ReadBufferFromHDFS::ReadBufferFromHDFS(
-        const String & hdfs_uri_,
-        const String & hdfs_file_path_,
-        const Poco::Util::AbstractConfiguration & config_,
-        size_t buf_size_, size_t read_until_position_)
+    const String & hdfs_uri_,
+    const String & hdfs_file_path_,
+    const Poco::Util::AbstractConfiguration & config_,
+    size_t buf_size_,
+    size_t read_until_position_,
+    bool allow_reuse_hdfs_objects_)
     : SeekableReadBuffer(nullptr, 0)
-    , impl(std::make_unique<ReadBufferFromHDFSImpl>(hdfs_uri_, hdfs_file_path_, config_, buf_size_, read_until_position_))
+    , impl(std::make_unique<ReadBufferFromHDFSImpl>(
+          hdfs_uri_, hdfs_file_path_, config_, buf_size_, read_until_position_, allow_reuse_hdfs_objects_))
 {
 }
 

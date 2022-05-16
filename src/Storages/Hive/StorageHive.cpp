@@ -165,7 +165,11 @@ public:
                 try
                 {
                     raw_read_buf = std::make_unique<ReadBufferFromHDFS>(
-                        hdfs_namenode_url, current_path, getContext()->getGlobalContext()->getConfigRef());
+                        hdfs_namenode_url,
+                        current_path,
+                        getContext()->getGlobalContext()->getConfigRef(),
+                        0,
+                        getContext()->getSettingsRef().allow_reuse_hdfs_objects);
                 }
                 catch (Exception & e)
                 {

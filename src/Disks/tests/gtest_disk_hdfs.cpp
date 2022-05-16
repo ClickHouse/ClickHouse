@@ -7,6 +7,7 @@
 #define RUN_HDFS_TEST 0
 #if RUN_HDFS_TEST
 
+#include <Storages/HDFS/HDFSCommon.h>
 #include <Disks/HDFS/DiskHDFS.h>
 #include <Poco/Util/XMLConfiguration.h>
 
@@ -22,8 +23,9 @@ TEST(DiskTestHDFS, RemoveFileHDFS)
     auto settings = std::make_unique<DB::DiskHDFSSettings>(1024 * 1024);
     auto disk = DB::DiskHDFS("disk_hdfs", hdfs_uri, std::move(settings), metadata_path, *config);
 
-    auto builder = HDFSBuilderWrapperFactory::instance().getOrCreate(hdfs_uri, *config);
-    DB::HDFSFSPtr fs = DB::createHDFSFS(builder->get());
+    HDFSBuilderFSFactory::setEnv(*config);
+    auto builder = HDFSBuilderFSFactory::instance().getBuilder(hdfs_uri, *config);
+    auto fs = HDFSBuilderFSFactory::instance().getFS(builder);
 
     disk.writeFile(file_name, 1024, DB::WriteMode::Rewrite);
     auto metadata = disk.readMeta(file_name);
@@ -43,6 +45,8 @@ TEST(DiskTestHDFS, RemoveFileHDFS)
 TEST(DiskTestHDFS, WriteReadHDFS)
 {
     Poco::Util::AbstractConfiguration *config = new Poco::Util::XMLConfiguration(config_path);
+    HDFSBuilderFSFactory::setEnv(*config);
+
     auto settings = std::make_unique<DB::DiskHDFSSettings>(1024 * 1024);
     auto disk = DB::DiskHDFS("disk_hdfs", hdfs_uri, std::move(settings), metadata_path, *config);
 
