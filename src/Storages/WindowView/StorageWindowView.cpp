@@ -849,14 +849,13 @@ void StorageWindowView::updateMaxWatermark(UInt32 watermark)
 
 inline void StorageWindowView::cleanup()
 {
-    {
-        std::lock_guard lock(mutex);
-        auto alter_query = getCleanupQuery();
-        InterpreterAlterQuery interpreter_alter(alter_query, getContext());
-        interpreter_alter.execute();
-    }
-
     std::lock_guard lock(fire_signal_mutex);
+    std::lock_guard lock(mutex);
+
+    auto alter_query = getCleanupQuery();
+    InterpreterAlterQuery interpreter_alter(alter_query, getContext());
+    interpreter_alter.execute();
+
     watch_streams.remove_if([](std::weak_ptr<WindowViewSource> & ptr) { return ptr.expired(); });
 }
 
