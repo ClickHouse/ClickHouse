@@ -149,7 +149,10 @@ void KeeperStorageSnapshot::serialize(const KeeperStorageSnapshot & snapshot, Wr
     serializeSnapshotMetadata(snapshot.snapshot_meta, out);
 
     if (snapshot.version >= SnapshotVersion::V5)
+    {
         writeBinary(snapshot.zxid, out);
+        writeBinary(snapshot.nodes_digest, out);
+    }
 
     writeBinary(snapshot.session_id, out);
 
@@ -241,7 +244,10 @@ void KeeperStorageSnapshot::deserialize(SnapshotDeserializationResult & deserial
     KeeperStorage & storage = *deserialization_result.storage;
 
     if (version >= SnapshotVersion::V5)
+    {
         readBinary(storage.zxid, in);
+        readBinary(storage.nodes_digest, in);
+    }
     else
         storage.zxid = deserialization_result.snapshot_meta->get_last_log_idx();
 
@@ -372,6 +378,7 @@ KeeperStorageSnapshot::KeeperStorageSnapshot(KeeperStorage * storage_, const Sna
     , session_id(storage->session_id_counter)
     , cluster_config(cluster_config_)
     , zxid(storage->zxid)
+    , nodes_digest(storage->nodes_digest)
 {
     auto [size, ver] = storage->container.snapshotSizeWithVersion();
     snapshot_container_size = size;
