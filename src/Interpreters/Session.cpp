@@ -343,11 +343,7 @@ ContextMutablePtr Session::makeSessionContext()
         throw Exception("Session context already exists", ErrorCodes::LOGICAL_ERROR);
     if (query_context_created)
         throw Exception("Session context must be created before any query context", ErrorCodes::LOGICAL_ERROR);
-    if (!user_id)
-        throw Exception("Session context must be created after authentication", ErrorCodes::LOGICAL_ERROR);
 
-    LOG_DEBUG(log, "{} Creating session context with user_id: {}",
-            toString(auth_id), toString(*user_id));
     /// Make a new session context.
     ContextMutablePtr new_session_context;
     new_session_context = Context::createCopy(global_context);
@@ -375,11 +371,6 @@ ContextMutablePtr Session::makeSessionContext(const String & session_name_, std:
         throw Exception("Session context already exists", ErrorCodes::LOGICAL_ERROR);
     if (query_context_created)
         throw Exception("Session context must be created before any query context", ErrorCodes::LOGICAL_ERROR);
-    if (!user_id)
-        throw Exception("Session context must be created after authentication", ErrorCodes::LOGICAL_ERROR);
-
-    LOG_DEBUG(log, "{} Creating named session context with name: {}, user_id: {}",
-            toString(auth_id), session_name_, toString(*user_id));
 
     /// Make a new session context OR
     /// if the `session_id` and `user_id` were used before then just get a previously created session context.
@@ -435,24 +426,12 @@ std::shared_ptr<SessionLog> Session::getSessionLog() const
 
 ContextMutablePtr Session::makeQueryContextImpl(const ClientInfo * client_info_to_copy, ClientInfo * client_info_to_move) const
 {
-    if (!user_id)
-        throw Exception("Session context must be created after authentication", ErrorCodes::LOGICAL_ERROR);
-
     /// We can create a query context either from a session context or from a global context.
     bool from_session_context = static_cast<bool>(session_context);
 
     /// Create a new query context.
     ContextMutablePtr query_context = Context::createCopy(from_session_context ? session_context : global_context);
     query_context->makeQueryContext();
-
-    if (auto query_context_user = query_context->getUser())
-    {
-        LOG_DEBUG(log, "{} Creating query context from {} context, user_id: {}, parent context user: {}",
-                  toString(auth_id),
-                  from_session_context ? "session" : "global",
-                  toString(*user_id),
-                  query_context_user->getName());
-    }
 
     /// Copy the specified client info to the new query context.
     auto & res_client_info = query_context->getClientInfo();
