@@ -387,7 +387,7 @@ SELECT bitCount(333);
 
 ## bitHammingDistance {#bithammingdistance}
 
-返回两个整数值的位表示之间的 [Hamming Distance](https://en.wikipedia.org/wiki/Hamming_distance)。可与 [SimHash](....sql-referencefunctionshash-functions.mdngramsimhash) 函数一起使用，用于检测半重复字符串。距离越小，这些字符串就越有可能相同。
+返回两个整数值的位表示之间的 [Hamming Distance](https://en.wikipedia.org/wiki/Hamming_distance)。可与 [SimHash](../../sql-reference/functions/hash-functions.md#ngramsimhash) 函数一起使用，用于检测半重复字符串。距离越小，这些字符串就越有可能相同。
 
 **语法**
 
