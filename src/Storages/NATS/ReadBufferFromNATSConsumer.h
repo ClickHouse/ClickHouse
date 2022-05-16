@@ -27,8 +27,6 @@ public:
         uint32_t queue_size_,
         const std::atomic<bool> & stopped_);
 
-    ~ReadBufferFromNATSConsumer() override;
-
     struct MessageData
     {
         String message;
