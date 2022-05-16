@@ -41,10 +41,10 @@ void StorageSystemAsynchronousInserts::fillData(MutableColumns & res_columns, Co
     if (!insert_queue)
         return;
 
-    auto queue = insert_queue->getQueue();
+    auto [queue, queue_lock] = insert_queue->getQueueLocked();
     for (const auto & [key, elem] : queue)
     {
-        std::lock_guard lock(elem->mutex);
+        std::lock_guard elem_lock(elem->mutex);
 
         if (!elem->data)
             continue;
@@ -62,8 +62,19 @@ void StorageSystemAsynchronousInserts::fillData(MutableColumns & res_columns, Co
         size_t i = 0;
 
         res_columns[i++]->insert(queryToString(insert_query));
-        res_columns[i++]->insert(insert_query.table_id.getDatabaseName());
-        res_columns[i++]->insert(insert_query.table_id.getTableName());
+
+        /// If query is "INSERT INTO FUNCTION" then table_id is empty.
+        if (insert_query.table_id)
+        {
+            res_columns[i++]->insert(insert_query.table_id.getDatabaseName());
+            res_columns[i++]->insert(insert_query.table_id.getTableName());
+        }
+        else
+        {
+            res_columns[i++]->insertDefault();
+            res_columns[i++]->insertDefault();
+        }
+
         res_columns[i++]->insert(insert_query.format);
         res_columns[i++]->insert(time_in_microseconds(elem->data->first_update));
         res_columns[i++]->insert(time_in_microseconds(elem->data->last_update));

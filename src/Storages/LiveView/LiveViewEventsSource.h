@@ -44,7 +44,7 @@ public:
         : SourceWithProgress({ColumnWithTypeAndName(ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "version")}),
           storage(std::move(storage_)), blocks_ptr(std::move(blocks_ptr_)),
           blocks_metadata_ptr(std::move(blocks_metadata_ptr_)),
-          active_ptr(std::move(active_ptr_)), has_limit(has_limit_),
+          active_ptr(active_ptr_), has_limit(has_limit_),
           limit(limit_),
           heartbeat_interval_usec(heartbeat_interval_sec_ * 1000000)
     {

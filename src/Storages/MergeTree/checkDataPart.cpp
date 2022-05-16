@@ -98,7 +98,8 @@ IMergeTreeDataPart::Checksums checkDataPart(
         };
     };
 
-    SerializationInfoByName serialization_infos(columns_txt, {});
+    auto ratio_of_defaults = data_part->storage.getSettings()->ratio_of_defaults_for_sparse_serialization;
+    SerializationInfoByName serialization_infos(columns_txt, SerializationInfo::Settings{ratio_of_defaults, false});
     auto serialization_path = path + IMergeTreeDataPart::SERIALIZATION_FILE_NAME;
 
     if (disk->exists(serialization_path))
@@ -135,7 +136,7 @@ IMergeTreeDataPart::Checksums checkDataPart(
             IMergeTreeDataPart::Checksums projection_checksums_data;
             const auto & projection_path = file_path;
 
-            if (part_type == MergeTreeDataPartType::COMPACT)
+            if (projection->getType() == MergeTreeDataPartType::Compact)
             {
                 auto proj_path = file_path + MergeTreeDataPartCompact::DATA_FILE_NAME_WITH_EXTENSION;
                 auto file_buf = disk->readFile(proj_path);
@@ -174,7 +175,7 @@ IMergeTreeDataPart::Checksums checkDataPart(
                 auto projection_checksum_it = projection_checksums_data.files.find(projection_file_name);
 
                 /// Skip files that we already calculated. Also skip metadata files that are not checksummed.
-                if (projection_checksum_it == projection_checksums_data.files.end() && !files_without_checksums.count(projection_file_name))
+                if (projection_checksum_it == projection_checksums_data.files.end() && !files_without_checksums.contains(projection_file_name))
                 {
                     auto projection_txt_checksum_it = projection_checksum_files_txt.find(file_name);
                     if (projection_txt_checksum_it == projection_checksum_files_txt.end()
@@ -209,7 +210,7 @@ IMergeTreeDataPart::Checksums checkDataPart(
 
     bool check_uncompressed = true;
     /// First calculate checksums for columns data
-    if (part_type == MergeTreeDataPartType::COMPACT)
+    if (part_type == MergeTreeDataPartType::Compact)
     {
         const auto & file_name = MergeTreeDataPartCompact::DATA_FILE_NAME_WITH_EXTENSION;
         checksum_file(path + file_name, file_name);
@@ -217,7 +218,7 @@ IMergeTreeDataPart::Checksums checkDataPart(
         /// We check only checksum of compressed file.
         check_uncompressed = false;
     }
-    else if (part_type == MergeTreeDataPartType::WIDE)
+    else if (part_type == MergeTreeDataPartType::Wide)
     {
         for (const auto & column : columns_list)
         {
@@ -250,7 +251,7 @@ IMergeTreeDataPart::Checksums checkDataPart(
         auto checksum_it = checksums_data.files.find(file_name);
 
         /// Skip files that we already calculated. Also skip metadata files that are not checksummed.
-        if (checksum_it == checksums_data.files.end() && !files_without_checksums.count(file_name))
+        if (checksum_it == checksums_data.files.end() && !files_without_checksums.contains(file_name))
         {
             auto txt_checksum_it = checksum_files_txt.find(file_name);
             if (txt_checksum_it == checksum_files_txt.end() || txt_checksum_it->second.uncompressed_size == 0)

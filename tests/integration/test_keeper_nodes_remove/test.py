@@ -6,11 +6,18 @@ import os
 from kazoo.client import KazooClient, KazooState
 
 cluster = ClickHouseCluster(__file__)
-CONFIG_DIR = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'configs')
+CONFIG_DIR = os.path.join(os.path.dirname(os.path.realpath(__file__)), "configs")
 
-node1 = cluster.add_instance('node1', main_configs=['configs/enable_keeper1.xml'], stay_alive=True)
-node2 = cluster.add_instance('node2', main_configs=['configs/enable_keeper2.xml'], stay_alive=True)
-node3 = cluster.add_instance('node3', main_configs=['configs/enable_keeper3.xml'], stay_alive=True)
+node1 = cluster.add_instance(
+    "node1", main_configs=["configs/enable_keeper1.xml"], stay_alive=True
+)
+node2 = cluster.add_instance(
+    "node2", main_configs=["configs/enable_keeper2.xml"], stay_alive=True
+)
+node3 = cluster.add_instance(
+    "node3", main_configs=["configs/enable_keeper3.xml"], stay_alive=True
+)
+
 
 @pytest.fixture(scope="module")
 def started_cluster():
@@ -24,7 +31,9 @@ def started_cluster():
 
 
 def get_fake_zk(node, timeout=30.0):
-    _fake_zk_instance = KazooClient(hosts=cluster.get_instance_ip(node.name) + ":9181", timeout=timeout)
+    _fake_zk_instance = KazooClient(
+        hosts=cluster.get_instance_ip(node.name) + ":9181", timeout=timeout
+    )
     _fake_zk_instance.start()
     return _fake_zk_instance
 
@@ -45,8 +54,14 @@ def test_nodes_remove(started_cluster):
         assert zk_conn2.exists("test_two_" + str(i)) is not None
         assert zk_conn3.exists("test_two_" + str(i)) is not None
 
-    node2.copy_file_to_container(os.path.join(CONFIG_DIR, "enable_keeper_two_nodes_2.xml"), "/etc/clickhouse-server/config.d/enable_keeper2.xml")
-    node1.copy_file_to_container(os.path.join(CONFIG_DIR, "enable_keeper_two_nodes_1.xml"), "/etc/clickhouse-server/config.d/enable_keeper1.xml")
+    node2.copy_file_to_container(
+        os.path.join(CONFIG_DIR, "enable_keeper_two_nodes_2.xml"),
+        "/etc/clickhouse-server/config.d/enable_keeper2.xml",
+    )
+    node1.copy_file_to_container(
+        os.path.join(CONFIG_DIR, "enable_keeper_two_nodes_1.xml"),
+        "/etc/clickhouse-server/config.d/enable_keeper1.xml",
+    )
 
     node1.query("SYSTEM RELOAD CONFIG")
     node2.query("SYSTEM RELOAD CONFIG")
@@ -70,7 +85,10 @@ def test_nodes_remove(started_cluster):
 
     node3.stop_clickhouse()
 
-    node1.copy_file_to_container(os.path.join(CONFIG_DIR, "enable_single_keeper1.xml"), "/etc/clickhouse-server/config.d/enable_keeper1.xml")
+    node1.copy_file_to_container(
+        os.path.join(CONFIG_DIR, "enable_single_keeper1.xml"),
+        "/etc/clickhouse-server/config.d/enable_keeper1.xml",
+    )
 
     node1.query("SYSTEM RELOAD CONFIG")
     zk_conn = get_fake_zk(node1)

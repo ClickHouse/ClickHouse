@@ -63,15 +63,16 @@ private:
     mutable MySQLClient client;
     MaterializedMySQLSettings * settings;
     String query_prefix;
+    NameSet materialized_tables_list;
 
     // USE MySQL ERROR CODE:
     // https://dev.mysql.com/doc/mysql-errors/5.7/en/server-error-reference.html
-    const int ER_ACCESS_DENIED_ERROR = 1045;
-    const int ER_DBACCESS_DENIED_ERROR = 1044;
-    const int ER_BAD_DB_ERROR = 1049;
+    const int ER_ACCESS_DENIED_ERROR = 1045; /// NOLINT
+    const int ER_DBACCESS_DENIED_ERROR = 1044; /// NOLINT
+    const int ER_BAD_DB_ERROR = 1049; /// NOLINT
 
     // https://dev.mysql.com/doc/mysql-errors/8.0/en/client-error-reference.html
-    const int CR_SERVER_LOST = 2013;
+    const int CR_SERVER_LOST = 2013; /// NOLINT
 
     struct Buffers
     {
@@ -87,7 +88,7 @@ private:
         using BufferAndSortingColumnsPtr = std::shared_ptr<BufferAndSortingColumns>;
         std::unordered_map<String, BufferAndSortingColumnsPtr> data;
 
-        Buffers(const String & database_) : database(database_) {}
+        explicit Buffers(const String & database_) : database(database_) {}
 
         void commit(ContextPtr context);
 

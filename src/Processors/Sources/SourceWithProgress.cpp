@@ -148,8 +148,24 @@ void SourceWithProgress::progress(const Progress & value)
             quota->used({QuotaType::READ_ROWS, value.read_rows}, {QuotaType::READ_BYTES, value.read_bytes});
     }
 
-    ProfileEvents::increment(ProfileEvents::SelectedRows, value.read_rows);
-    ProfileEvents::increment(ProfileEvents::SelectedBytes, value.read_bytes);
+    auto query_kind = IAST::QueryKind::None;
+    if (process_list_elem)
+        query_kind = process_list_elem->getQueryKind();
+
+    if (query_kind == IAST::QueryKind::None || query_kind == IAST::QueryKind::System)
+    {
+        /// Don't increase profile event counters for merges and mutations, cause they use
+        /// a separate counter MergedRows/MergedBytes.
+
+        /// This is a bad way to check that a query is merge or mutation. Will fix it later.
+        /// Note: you can't just check for QueryKind::Select, cause there are
+        /// queries like CREATE AS SELECT or INSERT SELECT.
+    }
+    else
+    {
+        ProfileEvents::increment(ProfileEvents::SelectedRows, value.read_rows);
+        ProfileEvents::increment(ProfileEvents::SelectedBytes, value.read_bytes);
+    }
 }
 
 }

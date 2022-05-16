@@ -121,7 +121,7 @@ void KeeperDispatcher::requestThread()
                         current_batch.clear();
                     }
 
-                    prev_batch = current_batch;
+                    prev_batch = std::move(current_batch);
                     prev_result = result;
                 }
 
@@ -201,7 +201,7 @@ void KeeperDispatcher::setResponse(int64_t session_id, const Coordination::ZooKe
         const Coordination::ZooKeeperSessionIDResponse & session_id_resp = dynamic_cast<const Coordination::ZooKeeperSessionIDResponse &>(*response);
 
         /// Nobody waits for this session id
-        if (session_id_resp.server_id != server->getServerID() || !new_session_id_response_callback.count(session_id_resp.internal_id))
+        if (session_id_resp.server_id != server->getServerID() || !new_session_id_response_callback.contains(session_id_resp.internal_id))
             return;
 
         auto callback = new_session_id_response_callback[session_id_resp.internal_id];
@@ -234,12 +234,14 @@ bool KeeperDispatcher::putRequest(const Coordination::ZooKeeperRequestPtr & requ
     {
         /// If session was already disconnected than we will ignore requests
         std::lock_guard lock(session_to_response_callback_mutex);
-        if (session_to_response_callback.count(session_id) == 0)
+        if (!session_to_response_callback.contains(session_id))
             return false;
     }
 
     KeeperStorage::RequestForSession request_info;
     request_info.request = request;
+    using namespace std::chrono;
+    request_info.time = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
     request_info.session_id = session_id;
 
     std::lock_guard lock(push_request_mutex);
@@ -276,7 +278,7 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
     try
     {
         LOG_DEBUG(log, "Waiting server to initialize");
-        server->startup(configuration_and_settings->enable_ipv6);
+        server->startup(config, configuration_and_settings->enable_ipv6);
         LOG_DEBUG(log, "Server initialized, waiting for quorum");
 
         if (!start_async)
@@ -365,6 +367,11 @@ void KeeperDispatcher::shutdown()
     LOG_DEBUG(log, "Dispatcher shut down");
 }
 
+void KeeperDispatcher::forceRecovery()
+{
+    server->forceRecovery();
+}
+
 KeeperDispatcher::~KeeperDispatcher()
 {
     shutdown();
@@ -400,6 +407,8 @@ void KeeperDispatcher::sessionCleanerTask()
                     request->xid = Coordination::CLOSE_XID;
                     KeeperStorage::RequestForSession request_info;
                     request_info.request = request;
+                    using namespace std::chrono;
+                    request_info.time = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
                     request_info.session_id = dead_session;
                     {
                         std::lock_guard lock(push_request_mutex);
@@ -433,7 +442,7 @@ void KeeperDispatcher::finishSession(int64_t session_id)
 
 void KeeperDispatcher::addErrorResponses(const KeeperStorage::RequestsForSessions & requests_for_sessions, Coordination::Error error)
 {
-    for (const auto & [session_id, request] : requests_for_sessions)
+    for (const auto & [session_id, time, request] : requests_for_sessions)
     {
         KeeperStorage::ResponsesForSessions responses;
         auto response = request->makeResponse();
@@ -477,6 +486,8 @@ int64_t KeeperDispatcher::getSessionID(int64_t session_timeout_ms)
     request->server_id = server->getServerID();
 
     request_info.request = request;
+    using namespace std::chrono;
+    request_info.time = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
     request_info.session_id = -1;
 
     auto promise = std::make_shared<std::promise<int64_t>>();
@@ -529,10 +540,18 @@ void KeeperDispatcher::updateConfigurationThread()
 
         try
         {
+            using namespace std::chrono_literals;
             if (!server->checkInit())
             {
                 LOG_INFO(log, "Server still not initialized, will not apply configuration until initialization finished");
-                std::this_thread::sleep_for(std::chrono::milliseconds(5000));
+                std::this_thread::sleep_for(5000ms);
+                continue;
+            }
+
+            if (server->isRecovering())
+            {
+                LOG_INFO(log, "Server is recovering, will not apply configuration until recovery is finished");
+                std::this_thread::sleep_for(5000ms);
                 continue;
             }
 
@@ -545,6 +564,9 @@ void KeeperDispatcher::updateConfigurationThread()
             bool done = false;
             while (!done)
             {
+                if (server->isRecovering())
+                    break;
+
                 if (shutdown_called)
                     return;
 
@@ -568,6 +590,11 @@ void KeeperDispatcher::updateConfigurationThread()
     }
 }
 
+bool KeeperDispatcher::isServerActive() const
+{
+    return checkInit() && hasLeader() && !server->isRecovering();
+}
+
 void KeeperDispatcher::updateConfiguration(const Poco::Util::AbstractConfiguration & config)
 {
     auto diff = server->getConfigurationDiff(config);
@@ -588,7 +615,6 @@ void KeeperDispatcher::updateConfiguration(const Poco::Util::AbstractConfigurati
 
 void KeeperDispatcher::updateKeeperStatLatency(uint64_t process_time_ms)
 {
-    std::lock_guard lock(keeper_stats_mutex);
     keeper_stats.updateLatency(process_time_ms);
 }
 

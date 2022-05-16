@@ -115,6 +115,7 @@ function start_server
 
 function clone_root
 {
+    git config --global --add safe.directory "$FASTTEST_SOURCE"
     git clone --depth 1 https://github.com/ClickHouse/ClickHouse.git -- "$FASTTEST_SOURCE" 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee "$FASTTEST_OUTPUT/clone_log.txt"
 
     (
@@ -175,10 +176,12 @@ function clone_submodules
             contrib/NuRaft
             contrib/jemalloc
             contrib/replxx
+            contrib/wyhash
+            contrib/eigen
         )
 
         git submodule sync
-        git submodule update --depth 1 --init "${SUBMODULES_TO_UPDATE[@]}"
+        git submodule update --jobs=16 --depth 1 --init "${SUBMODULES_TO_UPDATE[@]}"
         git submodule foreach git reset --hard
         git submodule foreach git checkout @ -f
         git submodule foreach git clean -xfd
@@ -263,9 +266,21 @@ function run_tests
     if [[ $NPROC == 0 ]]; then
       NPROC=1
     fi
-    time clickhouse-test --hung-check -j "${NPROC}" --order=random \
-            --fast-tests-only --no-long --testname --shard --zookeeper --check-zookeeper-session \
-            -- "$FASTTEST_FOCUS" 2>&1 \
+
+    local test_opts=(
+        --hung-check
+        --fast-tests-only
+        --no-random-settings
+        --no-long
+        --testname
+        --shard
+        --zookeeper
+        --check-zookeeper-session
+        --order random
+        --print-time
+        --jobs "${NPROC}"
+    )
+    time clickhouse-test "${test_opts[@]}" -- "$FASTTEST_FOCUS" 2>&1 \
         | ts '%Y-%m-%d %H:%M:%S' \
         | tee "$FASTTEST_OUTPUT/test_result.txt"
     set -e

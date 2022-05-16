@@ -144,6 +144,14 @@ DiskCacheWrapper::readFile(
         }
     }
 
+    auto current_read_settings = settings;
+    /// Do not use RemoteFSReadMethod::threadpool for index and mark files.
+    /// Here it does not make sense since the files are small.
+    /// Note: enabling `threadpool` read requires to call setReadUntilEnd().
+    current_read_settings.remote_fs_method = RemoteFSReadMethod::read;
+    /// Disable data cache.
+    current_read_settings.enable_filesystem_cache = false;
+
     if (metadata->status == DOWNLOADING)
     {
         FileDownloadStatus result_status = DOWNLOADED;
@@ -158,8 +166,12 @@ DiskCacheWrapper::readFile(
 
                 auto tmp_path = path + ".tmp";
                 {
-                    auto src_buffer = DiskDecorator::readFile(path, settings, read_hint, file_size);
-                    auto dst_buffer = cache_disk->writeFile(tmp_path, settings.local_fs_buffer_size, WriteMode::Rewrite);
+                    auto src_buffer = DiskDecorator::readFile(path, current_read_settings, read_hint, file_size);
+
+                    WriteSettings write_settings;
+                    write_settings.enable_filesystem_cache_on_write_operations = false;
+
+                    auto dst_buffer = cache_disk->writeFile(tmp_path, settings.local_fs_buffer_size, WriteMode::Rewrite, write_settings);
                     copyData(*src_buffer, *dst_buffer);
                 }
                 cache_disk->moveFile(tmp_path, path);
@@ -184,14 +196,19 @@ DiskCacheWrapper::readFile(
     if (metadata->status == DOWNLOADED)
         return cache_disk->readFile(path, settings, read_hint, file_size);
 
-    return DiskDecorator::readFile(path, settings, read_hint, file_size);
+    return DiskDecorator::readFile(path, current_read_settings, read_hint, file_size);
 }
 
 std::unique_ptr<WriteBufferFromFileBase>
-DiskCacheWrapper::writeFile(const String & path, size_t buf_size, WriteMode mode)
+DiskCacheWrapper::writeFile(const String & path, size_t buf_size, WriteMode mode, const WriteSettings & settings)
 {
     if (!cache_file_predicate(path))
-        return DiskDecorator::writeFile(path, buf_size, mode);
+        return DiskDecorator::writeFile(path, buf_size, mode, settings);
+
+    WriteSettings current_settings = settings;
+    /// There are two different cache implementations. Disable second one if the first is enabled.
+    /// The first will soon be removed, this disabling is temporary.
+    current_settings.enable_filesystem_cache_on_write_operations = false;
 
     LOG_TEST(log, "Write file {} to cache", backQuote(path));
 
@@ -200,15 +217,15 @@ DiskCacheWrapper::writeFile(const String & path, size_t buf_size, WriteMode mode
         cache_disk->createDirectories(dir_path);
 
     return std::make_unique<WritingToCacheWriteBuffer>(
-        cache_disk->writeFile(path, buf_size, mode),
+        cache_disk->writeFile(path, buf_size, mode, current_settings),
         [this, path]()
         {
             /// Copy file from cache to actual disk when cached buffer is finalized.
             return cache_disk->readFile(path, ReadSettings(), /* read_hint= */ {}, /* file_size= */ {});
         },
-        [this, path, buf_size, mode]()
+        [this, path, buf_size, mode, current_settings]()
         {
-            return DiskDecorator::writeFile(path, buf_size, mode);
+            return DiskDecorator::writeFile(path, buf_size, mode, current_settings);
         });
 }
 
@@ -292,23 +309,26 @@ void DiskCacheWrapper::removeSharedFile(const String & path, bool keep_s3)
     DiskDecorator::removeSharedFile(path, keep_s3);
 }
 
-void DiskCacheWrapper::removeSharedRecursive(const String & path, bool keep_s3)
+void DiskCacheWrapper::removeSharedRecursive(const String & path, bool keep_all, const NameSet & files_to_keep)
 {
     if (cache_disk->exists(path))
-        cache_disk->removeSharedRecursive(path, keep_s3);
-    DiskDecorator::removeSharedRecursive(path, keep_s3);
+        cache_disk->removeSharedRecursive(path, keep_all, files_to_keep);
+    DiskDecorator::removeSharedRecursive(path, keep_all, files_to_keep);
 }
 
 
-void DiskCacheWrapper::removeSharedFiles(const RemoveBatchRequest & files, bool keep_s3)
+void DiskCacheWrapper::removeSharedFiles(const RemoveBatchRequest & files, bool keep_all, const NameSet & files_to_keep)
 {
     for (const auto & file : files)
     {
         if (cache_disk->exists(file.path))
-            cache_disk->removeSharedFile(file.path, keep_s3);
+        {
+            bool keep_file = keep_all || files_to_keep.contains(fs::path(file.path).filename());
+            cache_disk->removeSharedFile(file.path, keep_file);
+        }
     }
 
-    DiskDecorator::removeSharedFiles(files, keep_s3);
+    DiskDecorator::removeSharedFiles(files, keep_all, files_to_keep);
 }
 
 void DiskCacheWrapper::createHardLink(const String & src_path, const String & dst_path)
