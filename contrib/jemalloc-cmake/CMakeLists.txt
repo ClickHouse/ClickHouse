@@ -1,5 +1,5 @@
 if (SANITIZE OR NOT (
-	((OS_LINUX OR OS_FREEBSD) AND (ARCH_AMD64 OR ARCH_ARM OR ARCH_PPC64LE OR ARCH_RISCV64)) OR
+    ((OS_LINUX OR OS_FREEBSD) AND (ARCH_AMD64 OR ARCH_AARCH64 OR ARCH_PPC64LE OR ARCH_RISCV64)) OR
     (OS_DARWIN AND (CMAKE_BUILD_TYPE_UC STREQUAL "RELWITHDEBINFO" OR CMAKE_BUILD_TYPE_UC STREQUAL "DEBUG"))
 ))
     if (ENABLE_JEMALLOC)
@@ -136,8 +136,12 @@ else ()
 endif ()
 # ARCH_
 if (ARCH_AMD64)
-    set(JEMALLOC_INCLUDE_PREFIX "${JEMALLOC_INCLUDE_PREFIX}_x86_64")
-elseif (ARCH_ARM)
+    if (USE_MUSL)
+        set(JEMALLOC_INCLUDE_PREFIX "${JEMALLOC_INCLUDE_PREFIX}_x86_64_musl")
+    else()
+        set(JEMALLOC_INCLUDE_PREFIX "${JEMALLOC_INCLUDE_PREFIX}_x86_64")
+    endif()
+elseif (ARCH_AARCH64)
     set(JEMALLOC_INCLUDE_PREFIX "${JEMALLOC_INCLUDE_PREFIX}_aarch64")
 elseif (ARCH_PPC64LE)
     set(JEMALLOC_INCLUDE_PREFIX "${JEMALLOC_INCLUDE_PREFIX}_ppc64le")
@@ -155,7 +159,12 @@ target_include_directories(_jemalloc SYSTEM PRIVATE
 target_compile_definitions(_jemalloc PRIVATE -DJEMALLOC_NO_PRIVATE_NAMESPACE)
 
 if (CMAKE_BUILD_TYPE_UC STREQUAL "DEBUG")
-    target_compile_definitions(_jemalloc PRIVATE -DJEMALLOC_DEBUG=1)
+    target_compile_definitions(_jemalloc PRIVATE
+        -DJEMALLOC_DEBUG=1
+        # Usage examples:
+        # - MALLOC_CONF=log:.
+        # - MALLOC_CONF='log:core.malloc.exit|core.sallocx.entry|core.sdallocx.entry'
+        -DJEMALLOC_LOG=1)
 endif ()
 
 target_compile_definitions(_jemalloc PRIVATE -DJEMALLOC_PROF=1)

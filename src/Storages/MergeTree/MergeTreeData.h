@@ -110,7 +110,7 @@ namespace ErrorCodes
 /// Several modes are implemented. Modes determine additional actions during merge:
 /// - Ordinary - don't do anything special
 /// - Collapsing - collapse pairs of rows with the opposite values of sign_columns for the same values
-///   of primary key (cf. CollapsingSortedBlockInputStream.h)
+///   of primary key (cf. CollapsingSortedTransform.h)
 /// - Replacing - for all rows with the same primary key keep only the latest one. Or, if the version
 ///   column is set, keep the latest row with the maximal version.
 /// - Summing - sum all numeric columns not contained in the primary key for all rows with the same primary key.
@@ -425,6 +425,8 @@ public:
 
     bool supportsSubcolumns() const override { return true; }
 
+    bool supportsTTL() const override { return true; }
+
     bool supportsDynamicSubcolumns() const override { return true; }
 
     NamesAndTypesList getVirtuals() const override;
@@ -495,6 +497,7 @@ public:
     DataPartsVector getVisibleDataPartsVectorInPartitions(ContextPtr local_context, const std::unordered_set<String> & partition_ids) const;
 
     DataPartsVector getDataPartsVectorInPartitionForInternalUsage(const DataPartState & state, const String & partition_id, DataPartsLock * acquired_lock = nullptr) const;
+    DataPartsVector getDataPartsVectorInPartitionForInternalUsage(const DataPartStates & affordable_states, const String & partition_id, DataPartsLock * acquired_lock = nullptr) const;
 
     /// Returns the part with the given name and state or nullptr if no such part.
     DataPartPtr getPartIfExists(const String & part_name, const DataPartStates & valid_states);
@@ -528,7 +531,7 @@ public:
 
     /// If the table contains too many active parts, sleep for a while to give them time to merge.
     /// If until is non-null, wake up from the sleep earlier if the event happened.
-    void delayInsertOrThrowIfNeeded(Poco::Event * until = nullptr) const;
+    void delayInsertOrThrowIfNeeded(Poco::Event * until, ContextPtr query_context) const;
 
     /// Renames temporary part to a permanent part and adds it to the parts set.
     /// It is assumed that the part does not intersect with existing parts.
@@ -576,11 +579,15 @@ public:
     void removePartsFromWorkingSet(MergeTreeTransaction * txn, const DataPartsVector & remove, bool clear_without_timeout, DataPartsLock * acquired_lock = nullptr);
     void removePartsFromWorkingSet(MergeTreeTransaction * txn, const DataPartsVector & remove, bool clear_without_timeout, DataPartsLock & acquired_lock);
 
-    /// Removes all parts from the working set parts
-    ///  for which (partition_id = drop_range.partition_id && min_block >= drop_range.min_block && max_block <= drop_range.max_block).
-    /// Used in REPLACE PARTITION command;
-    DataPartsVector removePartsInRangeFromWorkingSet(MergeTreeTransaction * txn, const MergeTreePartInfo & drop_range,
-                                                     DataPartsLock & lock);
+    /// Removes all parts covered by drop_range from the working set parts.
+    /// Used in REPLACE PARTITION command.
+    void removePartsInRangeFromWorkingSet(MergeTreeTransaction * txn, const MergeTreePartInfo & drop_range, DataPartsLock & lock);
+
+    /// Same as above, but also returns list of parts to remove from ZooKeeper.
+    /// It includes parts that have been just removed by these method
+    /// and Outdated parts covered by drop_range that were removed earlier for any reason.
+    DataPartsVector removePartsInRangeFromWorkingSetAndGetPartsToRemoveFromZooKeeper(
+        MergeTreeTransaction * txn, const MergeTreePartInfo & drop_range, DataPartsLock & lock);
 
     /// Restores Outdated part and adds it to working set
     void restoreAndActivatePart(const DataPartPtr & part, DataPartsLock * acquired_lock = nullptr);
@@ -609,7 +616,8 @@ public:
     /// Delete irrelevant parts from memory and disk.
     /// If 'force' - don't wait for old_parts_lifetime.
     size_t clearOldPartsFromFilesystem(bool force = false);
-    void clearPartsFromFilesystem(const DataPartsVector & parts);
+    /// Try to clear parts from filesystem. Throw exception in case of errors.
+    void clearPartsFromFilesystem(const DataPartsVector & parts, bool throw_on_error = true, NameSet * parts_failed_to_delete = nullptr);
 
     /// Delete WAL files containing parts, that all already stored on disk.
     size_t clearOldWriteAheadLogs();
@@ -767,9 +775,21 @@ public:
     MergeTreeData & checkStructureAndGetMergeTreeData(const StoragePtr & source_table, const StorageMetadataPtr & src_snapshot, const StorageMetadataPtr & my_snapshot) const;
     MergeTreeData & checkStructureAndGetMergeTreeData(IStorage & source_table, const StorageMetadataPtr & src_snapshot, const StorageMetadataPtr & my_snapshot) const;
 
+    struct HardlinkedFiles
+    {
+        /// Shared table uuid where hardlinks live
+        std::string source_table_shared_id;
+        /// Hardlinked from part
+        std::string source_part_name;
+        /// Hardlinked files list
+        NameSet hardlinks_from_source_part;
+    };
+
     MergeTreeData::MutableDataPartPtr cloneAndLoadDataPartOnSameDisk(
-        const MergeTreeData::DataPartPtr & src_part, const String & tmp_part_prefix, const MergeTreePartInfo & dst_part_info,
-        const StorageMetadataPtr & metadata_snapshot, const MergeTreeTransactionPtr & txn);
+        const MergeTreeData::DataPartPtr & src_part, const String & tmp_part_prefix,
+        const MergeTreePartInfo & dst_part_info, const StorageMetadataPtr & metadata_snapshot,
+        const MergeTreeTransactionPtr & txn, HardlinkedFiles * hardlinked_files,
+        bool copy_instead_of_hardlink);
 
     virtual std::vector<MergeTreeMutationStatus> getMutationsStatus() const = 0;
 
@@ -937,16 +957,14 @@ public:
     bool scheduleDataMovingJob(BackgroundJobsAssignee & assignee);
     bool areBackgroundMovesNeeded() const;
 
+
     /// Lock part in zookeeper for shared data in several nodes
     /// Overridden in StorageReplicatedMergeTree
-    virtual void lockSharedData(const IMergeTreeDataPart &, bool = false) const {} /// NOLINT
+    virtual void lockSharedData(const IMergeTreeDataPart &, bool = false, std::optional<HardlinkedFiles> = {}) const {} /// NOLINT
 
     /// Unlock shared data part in zookeeper
     /// Overridden in StorageReplicatedMergeTree
-    virtual bool unlockSharedData(const IMergeTreeDataPart &) const { return true; }
-
-    /// Remove lock with old name for shared data part after rename
-    virtual bool unlockSharedData(const IMergeTreeDataPart &, const String &) const { return true; }
+    virtual std::pair<bool, NameSet> unlockSharedData(const IMergeTreeDataPart &) const { return std::make_pair(true, NameSet{}); }
 
     /// Fetch part only if some replica has it on shared storage like S3
     /// Overridden in StorageReplicatedMergeTree
@@ -955,6 +973,8 @@ public:
     /// Check shared data usage on other replicas for detached/freezed part
     /// Remove local files and remote files if needed
     virtual bool removeDetachedPart(DiskPtr disk, const String & path, const String & part_name, bool is_freezed);
+
+    virtual String getTableSharedID() const { return ""; }
 
     /// Store metadata for replicated tables
     /// Do nothing for non-replicated tables
@@ -1279,6 +1299,11 @@ private:
     /// Create zero-copy exclusive lock for part and disk. Useful for coordination of
     /// distributed operations which can lead to data duplication. Implemented only in ReplicatedMergeTree.
     virtual std::optional<ZeroCopyLock> tryCreateZeroCopyExclusiveLock(const String &, const DiskPtr &) { return std::nullopt; }
+
+    /// Remove parts from disk calling part->remove(). Can do it in parallel in case of big set of parts and enabled settings.
+    /// If we fail to remove some part and throw_on_error equal to `true` will throw an exception on the first failed part.
+    /// Otherwise, in non-parallel case will break and return.
+    void clearPartsFromFilesystemImpl(const DataPartsVector & parts, NameSet * part_names_successed);
 
     TemporaryParts temporary_parts;
 };

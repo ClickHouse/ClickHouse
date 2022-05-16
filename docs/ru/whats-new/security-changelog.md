@@ -1,6 +1,6 @@
 ---
-toc_priority: 76
-toc_title: Security Changelog
+sidebar_position: 76
+sidebar_label: Security Changelog
 ---
 
 # Security Changelog {#security-changelog}

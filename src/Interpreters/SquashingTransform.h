@@ -23,7 +23,7 @@ class SquashingTransform
 {
 public:
     /// Conditions on rows and bytes are OR-ed. If one of them is zero, then corresponding condition is ignored.
-    SquashingTransform(size_t min_block_size_rows_, size_t min_block_size_bytes_, bool reserve_memory_ = false);
+    SquashingTransform(size_t min_block_size_rows_, size_t min_block_size_bytes_);
 
     /** Add next block and possibly returns squashed block.
       * At end, you need to pass empty block. As the result for last (empty) block, you will get last Result with ready = true.
@@ -34,7 +34,6 @@ public:
 private:
     size_t min_block_size_rows;
     size_t min_block_size_bytes;
-    bool reserve_memory;
 
     Block accumulated_block;
 

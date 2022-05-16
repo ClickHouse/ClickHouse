@@ -1,9 +1,9 @@
 ---
-toc_priority: 20
-toc_title: UK Property Price Paid
+sidebar_label: UK Property Price Paid
+sidebar_position: 1
 ---
 
-# UK Property Price Paid {#uk-property-price-paid}
+# UK Property Price Paid
 
 The dataset contains data about prices paid for real-estate property in England and Wales. The data is available since year 1995.
 The size of the dataset in uncompressed form is about 4 GiB and it will take about 278 MiB in ClickHouse.
