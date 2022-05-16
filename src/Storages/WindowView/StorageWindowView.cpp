@@ -643,6 +643,9 @@ inline void StorageWindowView::fire(UInt32 watermark)
         tryLogCurrentException(__PRETTY_FUNCTION__);
     }
 
+    if (!blocks || blocks->empty())
+        return;
+
     for (const auto & block : *blocks)
     {
         for (auto & watch_stream : watch_streams)
