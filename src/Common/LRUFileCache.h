@@ -34,7 +34,7 @@ public:
 
     void removeIfExists(const Key & key) override;
 
-    void remove() override;
+    void removeIfReleasable(bool remove_persistent_files) override;
 
     std::vector<String> tryGetCachePaths(const Key & key) override;
 
@@ -95,7 +95,7 @@ private:
         /// Pointer to file segment is always hold by the cache itself.
         /// Apart from pointer in cache, it can be hold by cache users, when they call
         /// getorSet(), but cache users always hold it via FileSegmentsHolder.
-        bool releasable() const { return file_segment.unique() && !file_segment->isPersistent(); }
+        bool releasable() const {return file_segment.unique(); }
 
         size_t size() const { return file_segment->reserved_size; }
 
@@ -112,6 +112,7 @@ private:
     CachedFiles files;
     LRUQueue queue;
     Poco::Logger * log;
+    bool allow_remove_persistent_cache_by_default;
 
     FileSegments getImpl(
         const Key & key, const FileSegment::Range & range,

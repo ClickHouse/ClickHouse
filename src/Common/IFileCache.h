@@ -49,7 +49,7 @@ public:
 
     virtual void removeIfExists(const Key & key) = 0;
 
-    virtual void remove() = 0;
+    virtual void removeIfReleasable(bool remove_persistent_files) = 0;
 
     static bool isReadOnly();
 

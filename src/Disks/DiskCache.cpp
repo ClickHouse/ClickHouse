@@ -58,8 +58,8 @@ public:
             .query_id = query_id,
             .source_file_path = source_path,
             .file_segment_range = { file_segment_range.left, file_segment_range.right },
-            .read_type = FilesystemCacheLogElement::ReadType::READ_FROM_FS_AND_DOWNLOADED_TO_CACHE,
             .requested_range = {},
+            .read_type = FilesystemCacheLogElement::ReadType::READ_FROM_FS_AND_DOWNLOADED_TO_CACHE,
             .file_segment_size = file_segment_range.size(),
             .cache_attempted = false,
             .read_buffer_id = {},
@@ -87,7 +87,17 @@ public:
 
         Stopwatch watch(CLOCK_MONOTONIC);
 
-        auto enough_space_in_cache = writer.write(working_buffer.begin(), size, current_download_offset, is_persistent_cache_file);
+        bool enough_space_in_cache;
+        try
+        {
+            enough_space_in_cache = writer.write(working_buffer.begin(), size, current_download_offset, is_persistent_cache_file);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+            caching_stopped = true;
+            return;
+        }
         if (!enough_space_in_cache)
         {
             caching_stopped = true;
@@ -166,10 +176,12 @@ std::unique_ptr<WriteBufferFromFileBase> DiskCache::writeFile(
     String query_id = CurrentThread::isInitialized() && CurrentThread::get().getQueryContext() != nullptr
         ? CurrentThread::getQueryId().toString() : "";
 
-    LOG_TEST(log, "Caching file `{}` to `{}`", impl->getFileName(), cache->hash(impl->getFileName()).toString());
-
     if (cache_on_write)
     {
+        LOG_TRACE(
+            log, "Caching file `{}` ({}) to `{}`, query_id: {}",
+            impl->getFileName(), path, cache->hash(impl->getFileName()).toString(), query_id);
+
         return std::make_unique<CachedWriteBuffer>(
             std::move(impl), cache, impl->getFileName(), isFilePersistent(path), query_id, settings);
     }

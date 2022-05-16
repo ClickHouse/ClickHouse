@@ -55,11 +55,11 @@ SELECT count() FROM system.filesystem_cache;
 21
 OPTIMIZE TABLE test FINAL;
 SELECT count() FROM system.filesystem_cache;
-27
+31
 SET mutations_sync=2;
 ALTER TABLE test UPDATE value = 'kek' WHERE key = 100;
 SELECT count() FROM system.filesystem_cache;
-28
+38
 INSERT INTO test SELECT number, toString(number) FROM numbers(5000000);
 SYSTEM FLUSH LOGS;
 SELECT query, ProfileEvents['RemoteFSReadBytes'] > 0 as remote_fs_read

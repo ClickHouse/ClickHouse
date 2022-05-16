@@ -92,6 +92,7 @@ public:
     UInt64 seconds{};
 
     String filesystem_cache_path;
+    bool drop_persistent_files;
 
     String getID(char) const override { return "SYSTEM query"; }
 
