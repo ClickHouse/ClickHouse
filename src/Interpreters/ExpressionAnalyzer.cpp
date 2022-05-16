@@ -331,12 +331,19 @@ void ExpressionAnalyzer::analyzeAggregation(ActionsDAGPtr & temp_actions)
             NameToIndexMap unique_keys;
             ASTs & group_asts = group_by_ast->children;
 
+            if (select_query->group_by_with_rollup)
+                group_by_kind = GroupByKind::ROLLUP;
+            else if (select_query->group_by_with_cube)
+                group_by_kind = GroupByKind::CUBE;
+            else if (select_query->group_by_with_grouping_sets && group_asts.size() > 1)
+                group_by_kind = GroupByKind::GROUPING_SETS;
+            else
+                group_by_kind = GroupByKind::ORDINARY;
+
             /// For GROUPING SETS with multiple groups we always add virtual __grouping_set column
             /// With set number, which is used as an additional key at the stage of merging aggregating data.
-            bool process_grouping_sets = select_query->group_by_with_grouping_sets && group_asts.size() > 1;
-            if (process_grouping_sets)
+            if (group_by_kind != GroupByKind::ORDINARY)
                 aggregated_columns.emplace_back("__grouping_set", std::make_shared<DataTypeUInt64>());
-            need_grouping_set_column = select_query->group_by_with_rollup || select_query->group_by_with_cube || process_grouping_sets;
 
             for (ssize_t i = 0; i < static_cast<ssize_t>(group_asts.size()); ++i)
             {
@@ -605,7 +612,7 @@ void ExpressionAnalyzer::getRootActions(const ASTPtr & ast, bool no_makeset_for_
         false /* no_makeset */,
         only_consts,
         !isRemoteStorage() /* create_source_for_in */,
-        need_grouping_set_column);
+        group_by_kind);
     ActionsVisitor(visitor_data, log.stream()).visit(ast);
     actions = visitor_data.getActions();
 }
@@ -628,7 +635,7 @@ void ExpressionAnalyzer::getRootActionsNoMakeSet(const ASTPtr & ast, ActionsDAGP
         true /* no_makeset */,
         only_consts,
         !isRemoteStorage() /* create_source_for_in */,
-        need_grouping_set_column);
+        group_by_kind);
     ActionsVisitor(visitor_data, log.stream()).visit(ast);
     actions = visitor_data.getActions();
 }
@@ -652,7 +659,7 @@ void ExpressionAnalyzer::getRootActionsForHaving(
         false /* no_makeset */,
         only_consts,
         true /* create_source_for_in */,
-        need_grouping_set_column);
+        group_by_kind);
     ActionsVisitor(visitor_data, log.stream()).visit(ast);
     actions = visitor_data.getActions();
 }

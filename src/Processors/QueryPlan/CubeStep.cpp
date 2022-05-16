@@ -1,5 +1,6 @@
 #include <Processors/QueryPlan/CubeStep.h>
 #include <Processors/Transforms/CubeTransform.h>
+#include <Processors/QueryPlan/AggregatingStep.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
 namespace DB
@@ -22,7 +23,7 @@ static ITransformingStep::Traits getTraits()
 }
 
 CubeStep::CubeStep(const DataStream & input_stream_, AggregatingTransformParamsPtr params_)
-    : ITransformingStep(input_stream_, params_->getHeader(), getTraits())
+    : ITransformingStep(input_stream_, appendGroupingSetColumn(params_->getHeader()), getTraits())
     , params(std::move(params_))
 {
     /// Aggregation keys are distinct
