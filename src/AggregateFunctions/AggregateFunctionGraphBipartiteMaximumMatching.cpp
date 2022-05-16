@@ -3,6 +3,8 @@
 #include "AggregateFunctionGraphOperation.h"
 #include "AggregateFunctions/AggregateFunctionGraphBidirectionalData.h"
 #include "AggregateFunctions/AggregateFunctionGraphDirectionalData.h"
+#include "DataTypes/DataTypeNullable.h"
+#include "DataTypes/DataTypesNumber.h"
 #include "base/types.h"
 
 namespace DB
@@ -21,7 +23,7 @@ public:
 
     static constexpr const char * name = "GraphCountBipartiteMaximumMatching";
 
-    DataTypePtr getReturnType() const override { return std::make_shared<DataTypeUInt64>(); }
+    DataTypePtr getReturnType() const override { return std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()); }
 
     bool isBipartite(const GraphType & graph, Vertex vertex, HashMap<Vertex, bool> & color, bool currentColor = true) const
     {
@@ -46,7 +48,7 @@ public:
             if (!color.has(vertex))
                 if (!isBipartite(graph, vertex, color))
                     return std::nullopt;
-        return std::make_optional(std::move(color));
+        return color;
     }
 
     bool dfsMatch(Vertex vertex, UInt64 currentColor, const GraphType & graph, HashMap<Vertex, UInt64> & used, VertexMap & matching) const
@@ -68,14 +70,14 @@ public:
         return false;
     }
 
-    UInt64 calculateOperation(ConstAggregateDataPtr __restrict place, Arena *) const
+    std::optional<UInt64> calculateOperation(ConstAggregateDataPtr __restrict place, Arena *) const
     {
         const auto & graph = data(place).graph;
         if (graph.empty())
             return 0;
         const auto color = getColor(graph);
         if (color == std::nullopt)
-            throw Exception("Graph must be bipartite", ErrorCodes::UNSUPPORTED_PARAMETER);
+            return std::nullopt;
         HashMap<Vertex, UInt64> used;
         VertexMap matching;
         UInt64 current_color = 0;

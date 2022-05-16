@@ -3,6 +3,7 @@
 #include "Common/HashTable/HashSet.h"
 #include "AggregateFunctionGraphOperation.h"
 #include "AggregateFunctions/AggregateFunctionGraphDirectionalData.h"
+#include "DataTypes/DataTypeNullable.h"
 #include "base/types.h"
 
 namespace DB
@@ -19,15 +20,14 @@ public:
 
     static constexpr const char * name = "GraphMaxFlow";
 
-    DataTypePtr getReturnType() const override { return std::make_shared<DataTypeUInt64>(); }
+    DataTypePtr getReturnType() const override { return std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()); }
 
-    UInt64 calculateOperation(ConstAggregateDataPtr __restrict place, Arena * arena) const
+    std::optional<UInt64> calculateOperation(ConstAggregateDataPtr __restrict place, Arena * arena) const
     {
         Vertex from = getVertexFromField(parameters.at(0), arena);
         Vertex to = getVertexFromField(parameters.at(1), arena);
         if (!data(place).graph.has(from) || !data(place).graph.has(to))
-            throw Exception(
-                "Aggregate function " + getName() + " requires from, to parameters to present in graph", ErrorCodes::BAD_ARGUMENTS);
+            return std::nullopt;
         if (from == to)
             return std::numeric_limits<UInt64>::max();
         MaxFlow helper(from, to);

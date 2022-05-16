@@ -69,7 +69,7 @@ struct BidirectionalGraphData : DirectionalGraphData<DataType>
             }
         }
 
-        return true;
+        return visited.size() == graph.size();
     }
 
     size_t componentsCount() const

@@ -1,10 +1,12 @@
 #pragma once
 
+#include <optional>
 #include <Columns/ColumnArray.h>
 #include <DataTypes/DataTypeArray.h>
 #include <boost/preprocessor/cat.hpp>
 #include "Common/HashTable/HashSet.h"
 #include <Common/HashTable/HashMap.h>
+#include "Columns/ColumnNullable.h"
 #include "DataTypes/DataTypesNumber.h"
 #include "FactoryHelpers.h"
 #include "Helpers.h"
@@ -76,7 +78,17 @@ public:
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const final
     {
         auto result = calculateOperation(place, arena);
-        assert_cast<ColumnVector<decltype(result)> &>(to).getData().push_back(std::move(result));
+        if constexpr (requires { result == std::nullopt; })
+        {
+            using ResultT = typename decltype(result)::value_type;
+            auto & column = assert_cast<ColumnNullable &>(to);
+            assert_cast<ColumnVector<ResultT> &>(column.getNestedColumn()).getData().push_back(result.value_or(ResultT{}));
+            column.getNullMapData().push_back(!result.has_value());
+        }
+        else
+        {
+            assert_cast<ColumnVector<decltype(result)> &>(to).getData().push_back(std::move(result));
+        }
     }
 
     constexpr bool allocatesMemoryInArena() const final { return Data::allocatesMemoryInArena(); }

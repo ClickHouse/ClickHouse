@@ -1,3 +1,4 @@
+SELECT EdgeDistance(1, 2) (from, to) FROM (SELECT * FROM VALUES('from UInt64, to UInt64', (1, 1)) WHERE 0);
 SELECT EdgeDistance(11, 7) (from, to) FROM VALUES('from UInt64, to UInt64', (1, 2), (2, 3), (3, 4), (4, 5), (5, 6), (6, 7), (7, 8), (8, 9), (9, 10), (10, 11), (11, 12), (12, 13));
 SELECT EdgeDistance(1, 15) (from, to) FROM VALUES('from UInt64, to UInt64', (1, 2), (1, 3), (1, 4), (1, 5), (1, 6), (1, 7), (1, 8), (1, 9), (1, 10), (1, 11), (1, 12), (1, 13), (1, 14), (1, 15), (1, 16), (1, 17));
 SELECT EdgeDistance(3, 10) (from, to) FROM VALUES('from UInt64, to UInt64', (1, 2), (1, 3), (3, 4), (3, 5), (3, 6), (6, 7), (1, 8), (3, 9), (6, 10), (8, 11));
