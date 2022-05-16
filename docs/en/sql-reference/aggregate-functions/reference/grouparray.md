@@ -14,6 +14,7 @@ The second version (with the `max_size` parameter) limits the size of the result
 In some cases, you can still rely on the order of execution. This applies to cases when `SELECT` comes from a subquery that uses `ORDER BY`.
 
 **Example**
+
 show default.ck table result.
 
 ``` text
@@ -29,7 +30,7 @@ show default.ck table result.
 Query:
 
 ``` sql
-select id, groupArray(10)(name) from(select id,name from  default.ck group by id,name order by id) group by id;
+select id, groupArray(10)(name) from (select id, name from default.ck group by id, name order by id) group by id;
 ```
 
 Result:
