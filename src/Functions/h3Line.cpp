@@ -22,6 +22,7 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ILLEGAL_COLUMN;
+    extern const int INCORRECT_DATA;
 }
 
 namespace
@@ -89,30 +90,41 @@ public:
 
 
         auto dst = ColumnArray::create(ColumnUInt64::create());
-        auto & dst_data = dst->getData();
+        auto & dst_data = typeid_cast<ColumnUInt64 &>(dst->getData());
         auto & dst_offsets = dst->getOffsets();
         dst_offsets.resize(input_rows_count);
-        auto current_offset = 0;
 
+        /// First calculate array sizes for all rows and save them in Offsets
+        UInt64 current_offset = 0;
         for (size_t row = 0; row < input_rows_count; ++row)
         {
             const UInt64 start = data_start_index[row];
             const UInt64 end = data_end_index[row];
 
-            // calculate the max number of indexes possible
-            // to allocate the result vector size.
             auto size = gridPathCellsSize(start, end);
-            std::vector<H3Index> results;
-            results.resize(size);
-            gridPathCells(start, end, results.data());
+            if (size < 0)
+                throw Exception(
+                    ErrorCodes::INCORRECT_DATA,
+                    "Line cannot be computed between start H3 index {} and end H3 index {}",
+                    start, end);
 
-            dst_data.reserve(dst_data.size() + size);
-            for (auto hindex : results)
-            {
-                ++current_offset;
-                dst_data.insert(hindex);
-            }
+            current_offset += size;
             dst_offsets[row] = current_offset;
+        }
+
+        /// Allocate based on total size of arrays for all rows
+        dst_data.getData().resize(current_offset);
+
+        /// Fill the array for each row with known size
+        auto* ptr = dst_data.getData().data();
+        current_offset = 0;
+        for (size_t row = 0; row < input_rows_count; ++row)
+        {
+            const UInt64 start = data_start_index[row];
+            const UInt64 end = data_end_index[row];
+            const auto size = dst_offsets[row] - current_offset;
+            gridPathCells(start, end, ptr + current_offset);
+            current_offset += size;
         }
 
         return dst;
