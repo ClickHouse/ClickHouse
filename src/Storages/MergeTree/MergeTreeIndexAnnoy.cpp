@@ -58,13 +58,6 @@ float AnnoyIndexSerialize<Dist>::getSpaceDim() const
     return Base::get_f();
 }
 
-template<typename Dist>
-bool AnnoyIndexSerialize<Dist>::build(int num_of_trees, int n_threads, char** error)
-{
-    Base::_verbose = false;
-    return Base::build(num_of_trees, n_threads, error);
-}
-
 }
 
 
