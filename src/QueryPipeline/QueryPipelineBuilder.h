@@ -8,7 +8,7 @@
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/ProcessList.h>
 #include <Poco/Logger.h>
-#include <loggers/Loggers.h>
+#include <Loggers/Loggers.h>
 
 
 namespace DB
@@ -33,8 +33,6 @@ struct ExpressionActionsSettings;
 
 class IJoin;
 using JoinPtr = std::shared_ptr<IJoin>;
-
-class Context;
 
 class QueryPipelineBuilder
 {
