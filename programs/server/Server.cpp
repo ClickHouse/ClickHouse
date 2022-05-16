@@ -2018,17 +2018,20 @@ void Server::updateServers(
     const auto listen_try = getListenTry(config);
 
     /// Remove servers once all their connections are closed
-    std::erase_if(servers, [&log](auto & server)
+    auto check_server = [&log](const char prefix[], auto & server)
     {
         if (!server.isStopping())
             return false;
         size_t current_connections = server.currentConnections();
-        LOG_DEBUG(log, "Server {} (from one of previous reload): {} ({} connections)",
+        LOG_DEBUG(log, "Server {}{}: {} ({} connections)",
             server.getDescription(),
+            prefix,
             !current_connections ? "finished" : "waiting",
             current_connections);
         return !current_connections;
-    });
+    };
+
+    std::erase_if(servers, std::bind_front(check_server, " (from one of previous reload)"));
 
     for (auto & server : servers)
     {
@@ -2046,17 +2049,7 @@ void Server::updateServers(
 
     createServers(config, listen_hosts, listen_try, server_pool, async_metrics, servers, /* start_servers= */ true);
 
-    std::erase_if(servers, [&log](auto & server)
-    {
-        if (!server.isStopping())
-            return false;
-        size_t current_connections = server.currentConnections();
-        LOG_DEBUG(log, "Server {}: {} ({} connections)",
-            server.getDescription(),
-            !current_connections ? "finished" : "waiting",
-            current_connections);
-        return !current_connections;
-    });
+    std::erase_if(servers, std::bind_front(check_server, ""));
 }
 
 }
