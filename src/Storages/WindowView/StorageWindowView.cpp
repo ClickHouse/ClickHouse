@@ -1070,7 +1070,6 @@ StorageWindowView::StorageWindowView(
         select_table_name = "one";
     }
     select_table_id = StorageID(select_database_name, select_table_name);
-    DatabaseCatalog::instance().addDependency(select_table_id, table_id_);
 
     /// Extract all info from query; substitute Function_tumble and Function_hop with Function_windowID.
     auto inner_query = innerQueryParser(select_query->as<ASTSelectQuery &>());
@@ -1415,6 +1414,8 @@ void StorageWindowView::writeIntoWindowView(
 
 void StorageWindowView::startup()
 {
+    DatabaseCatalog::instance().addDependency(select_table_id, getStorageID());
+
     // Start the working thread
     clean_cache_task->activateAndSchedule();
     fire_task->activateAndSchedule();
@@ -1449,8 +1450,6 @@ void StorageWindowView::checkTableCanBeDropped() const
 
 void StorageWindowView::drop()
 {
-    DatabaseCatalog::instance().removeDependency(select_table_id, getStorageID());
-
     /// Must be guaranteed at this point for database engine Atomic that has_inner_table == false,
     /// because otherwise will be a deadlock.
     dropInnerTableIfAny(true, getContext());
