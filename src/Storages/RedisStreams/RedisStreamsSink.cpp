@@ -10,17 +10,19 @@ namespace DB
 RedisStreamsSink::RedisStreamsSink(
     StorageRedisStreams & storage_,
     const StorageMetadataPtr & metadata_snapshot_,
-    const ContextPtr & context_)
+    const ContextPtr & context_,
+    const std::string & stream_)
     : SinkToStorage(metadata_snapshot_->getSampleBlockNonMaterialized())
     , storage(storage_)
     , metadata_snapshot(metadata_snapshot_)
     , context(context_)
+    , stream(stream_)
 {
 }
 
 void RedisStreamsSink::onStart()
 {
-    buffer = storage.createWriteBuffer();
+    buffer = storage.createWriteBuffer(stream);
 
     auto format_settings = getFormatSettings(context);
     format_settings.protobuf.allow_multiple_rows_without_delimiter = true;

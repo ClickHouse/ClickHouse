@@ -15,7 +15,8 @@ public:
     explicit RedisStreamsSink(
         StorageRedisStreams & storage_,
         const StorageMetadataPtr & metadata_snapshot_,
-        const ContextPtr & context_);
+        const ContextPtr & context_,
+        const std::string & stream_);
 
     void consume(Chunk chunk) override;
     void onStart() override;
@@ -30,6 +31,7 @@ private:
     const ContextPtr context;
     ProducerBufferPtr buffer;
     IOutputFormatPtr format;
+    std::string stream;
 };
 
 }

@@ -593,7 +593,7 @@ def test_redis_insert(redis_cluster):
             else:
                 raise
 
-    for _ in range(10):
+    while True:
         insert_messages = connection.xread({stream_name: "0-0"}, count=50)
 
         # xread returns list of lists of topics and messages - select first topic and its messages
@@ -604,6 +604,85 @@ def test_redis_insert(redis_cluster):
 
     result = "\n".join(map(lambda x: x[1]["key".encode()].decode() + "\t" + x[1]["value".encode()].decode(), insert_messages))
     redis_check_result(result, True)
+
+
+def test_redis_insert_into_table_with_many_streams_wrong(redis_cluster):
+    stream_names = ['insert_many_streams_wrong1', 'insert_many_streams_wrong2']
+    group_name = 'test_insert_many_streams_wrong'
+    connection = redis.Redis(redis_cluster.redis_ip, port=redis_cluster.redis_port, password="clickhouse")
+    for stream_name in stream_names:
+        connection.xgroup_create(stream_name, group_name, '$', mkstream=True)
+
+    instance.query(
+        """
+        CREATE TABLE test.redis (key UInt64, value UInt64)
+            ENGINE = RedisStreams
+            SETTINGS redis_broker = '{}:6379',
+                     redis_stream_list = '{}',
+                     redis_group_name = '{}';
+        """.format(
+            redis_cluster.redis_host,
+            ','.join(stream_names),
+            group_name
+        )
+    )
+
+    values = []
+    for i in range(50):
+        values.append("({i}, {i})".format(i=i))
+    values = ",".join(values)
+
+    instance.query_and_get_error("INSERT INTO test.redis VALUES {}".format(values))
+
+
+def test_redis_insert_into_table_with_many_streams_right(redis_cluster):
+    stream_names = ['insert_many_streams_right1', 'insert_many_streams_right2']
+    group_name = 'test_insert_many_streams_right'
+    connection = redis.Redis(redis_cluster.redis_ip, port=redis_cluster.redis_port, password="clickhouse")
+    for stream_name in stream_names:
+        connection.xgroup_create(stream_name, group_name, '$', mkstream=True)
+
+    instance.query(
+        """
+        CREATE TABLE test.redis (key UInt64, value UInt64)
+            ENGINE = RedisStreams
+            SETTINGS redis_broker = '{}:6379',
+                     redis_stream_list = '{}',
+                     redis_group_name = '{}';
+        """.format(
+            redis_cluster.redis_host,
+            ','.join(stream_names),
+            group_name
+        )
+    )
+
+    values = []
+    for i in range(50):
+        values.append("({i}, {i})".format(i=i))
+    values = ",".join(values)
+
+    while True:
+        try:
+            instance.query("INSERT INTO test.redis SETTINGS stream_like_engine_insert_queue = 'insert_many_stream_rights1' VALUES {}".format(values))
+            break
+        except QueryRuntimeException as e:
+            if "Local: Timed out." in str(e):
+                continue
+            else:
+                raise
+
+    while True:
+        insert_messages = connection.xread({'insert_many_stream_rights1': "0-0"}, count=50)
+
+        # xread returns list of lists of topics and messages - select first topic and its messages
+        insert_messages = insert_messages[0][1]
+        if len(insert_messages) == 50:
+            break
+
+    result = "\n".join(
+        map(lambda x: x[1]["key".encode()].decode() + "\t" + x[1]["value".encode()].decode(), insert_messages))
+    redis_check_result(result, True)
+
 
 
 def test_redis_many_inserts(redis_cluster):

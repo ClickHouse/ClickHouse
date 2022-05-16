@@ -219,10 +219,24 @@ SinkToStoragePtr StorageRedisStreams::write(const ASTPtr &, const StorageMetadat
     auto modified_context = Context::createCopy(local_context);
     modified_context->applySettingsChanges(settings_adjustments);
 
-    if (streams.size() > 1)
-        throw Exception("Can't write to RedisStreams table with multiple streams!", ErrorCodes::NOT_IMPLEMENTED);
+    std::string stream = modified_context->getSettingsRef().stream_like_engine_insert_queue.changed
+        ? modified_context->getSettingsRef().stream_like_engine_insert_queue.value
+        : "";
+    if (stream.empty())
+    {
+        if (streams.size() > 1)
+        {
+            throw Exception(
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "This Redis Streams engine reads from multiple streams. You must specify `stream_like_engine_insert_queue` to choose the stream to write to");
+        }
+        else
+        {
+            stream = streams[0];
+        }
+    }
 
-    return std::make_shared<RedisStreamsSink>(*this, metadata_snapshot, modified_context);
+    return std::make_shared<RedisStreamsSink>(*this, metadata_snapshot, modified_context, stream);
 }
 
 
@@ -304,9 +318,9 @@ ConsumerBufferPtr StorageRedisStreams::popReadBuffer(std::chrono::milliseconds t
     return buffer;
 }
 
-ProducerBufferPtr StorageRedisStreams::createWriteBuffer()
+ProducerBufferPtr StorageRedisStreams::createWriteBuffer(const std::string & stream)
 {
-    return std::make_shared<WriteBufferToRedisStreams>(redis, streams[0], std::nullopt, 1, 1024);
+    return std::make_shared<WriteBufferToRedisStreams>(redis, stream, std::nullopt, 1, 1024);
 }
 
 

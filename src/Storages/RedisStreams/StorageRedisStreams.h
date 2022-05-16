@@ -57,7 +57,7 @@ public:
     ConsumerBufferPtr popReadBuffer();
     ConsumerBufferPtr popReadBuffer(std::chrono::milliseconds timeout);
 
-    ProducerBufferPtr createWriteBuffer();
+    ProducerBufferPtr createWriteBuffer(const std::string & stream);
 
     const auto & getFormatName() const { return "JSONEachRow"; }
 
