@@ -57,7 +57,7 @@ inline UInt64 bytes64MaskToBits64Mask(const UInt8 * bytes64)
     const uint8x16_t bitmask4 = { 0x08, 0x80, 0x08, 0x80, 0x08, 0x80, 0x08, 0x80,
                                     0x08, 0x80, 0x08, 0x80, 0x08, 0x80, 0x08, 0x80 };
 
-    const uint8x16x4_t chunk = vld4q_u8(reinterpret_cast<signed char *>(bytes64));
+    const uint8x16x4_t chunk = vld4q_u8(reinterpret_cast<const unsigned char *>(bytes64));
     const uint8x16_t cmp0 = vceqzq_u8(chunk.val[0]);
     const uint8x16_t cmp1 = vceqzq_u8(chunk.val[1]);
     const uint8x16_t cmp2 = vceqzq_u8(chunk.val[2]);
