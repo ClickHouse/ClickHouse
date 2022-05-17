@@ -154,3 +154,14 @@ private:
     DB::ProcessList * process_list;
     Poco::Logger * logger = &Poco::Logger::get("GlobalOvercommitTracker");
 };
+
+struct OvercommitTrackerBlockerInThread
+{
+    OvercommitTrackerBlockerInThread() { ++counter; }
+    ~OvercommitTrackerBlockerInThread() { --counter; }
+
+    static bool isBlocked() { return counter > 0; }
+
+private:
+    static thread_local size_t counter;
+};
