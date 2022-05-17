@@ -379,8 +379,10 @@ decimal_values = [
 timestamp_values = ["'2015-05-18 07:40:01.123'", "'2019-09-16 19:20:11.123'"]
 timestamp_values_no_subsecond = ["'2015-05-18 07:40:01'", "'2019-09-16 19:20:11'"]
 
+
 def arryToString(expected_clickhouse_values):
     return "\n".join(str(value) for value in expected_clickhouse_values)
+
 
 #  if expected_clickhouse_values is "", compare MySQL and ClickHouse query results directly
 @pytest.mark.parametrize(
