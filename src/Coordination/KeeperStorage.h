@@ -101,7 +101,7 @@ public:
         int64_t time;
         Coordination::ZooKeeperRequestPtr request;
         int64_t zxid{0};
-        Digest digest;
+        std::optional<Digest> digest;
     };
 
     struct AuthID
@@ -211,11 +211,11 @@ public:
         explicit UncommittedState(KeeperStorage & storage_) : storage(storage_) { }
 
         template <typename Visitor>
-        void applyDeltas(StringRef path, const Visitor & visitor, std::optional<int64_t> last_zxid = std::nullopt) const
+        void applyDeltas(StringRef path, const Visitor & visitor, std::optional<int64_t> current_zxid = std::nullopt) const
         {
             for (const auto & delta : deltas)
             {
-                if (last_zxid && delta.zxid >= last_zxid)
+                if (current_zxid && delta.zxid >= current_zxid)
                     break;
 
                 if (path.empty() || delta.path == path)
@@ -223,7 +223,7 @@ public:
             }
         }
 
-        bool hasACL(int64_t session_id, bool is_local, std::function<bool(const AuthID &)>  predicate)
+        bool hasACL(int64_t session_id, bool is_local, std::function<bool(const AuthID &)> predicate)
         {
             for (const auto & session_auth : storage.session_and_auth[session_id])
             {
@@ -233,7 +233,6 @@ public:
 
             if (is_local)
                 return false;
-
 
             for (const auto & delta : deltas)
             {
@@ -245,7 +244,7 @@ public:
             return false;
         }
 
-        std::shared_ptr<Node> getNode(StringRef path, std::optional<int64_t> last_zxid = std::nullopt) const;
+        std::shared_ptr<Node> getNode(StringRef path, std::optional<int64_t> current_zxid = std::nullopt) const;
         bool hasNode(StringRef path) const;
         Coordination::ACLs getACLs(StringRef path) const;
 
@@ -361,7 +360,7 @@ public:
         int64_t time,
         int64_t new_last_zxid,
         bool check_acl = true,
-        Digest digest = {DigestVersion::NO_DIGEST, 0});
+        std::optional<Digest> digest = std::nullopt);
     void rollbackRequest(int64_t rollback_zxid);
 
     void finalize();

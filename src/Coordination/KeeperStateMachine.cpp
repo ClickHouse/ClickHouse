@@ -128,9 +128,10 @@ KeeperStorage::RequestForSession KeeperStateMachine::parseRequest(nuraft::buffer
 
     if (!buffer.eof())
     {
-        readIntBinary(request_for_session.digest.version, buffer);
-        if (request_for_session.digest.version != KeeperStorage::DigestVersion::NO_DIGEST)
-            readIntBinary(request_for_session.digest.value, buffer);
+        request_for_session.digest.emplace();
+        readIntBinary(request_for_session.digest->version, buffer);
+        if (request_for_session.digest->version != KeeperStorage::DigestVersion::NO_DIGEST)
+            readIntBinary(request_for_session.digest->value, buffer);
     }
 
     return request_for_session;
@@ -180,9 +181,19 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine::commit(const uint64_t log_idx, n
     }
 
 
-    if (digest_enabled && !KeeperStorage::checkDigest(request_for_session.digest, storage->getNodesDigest(true)))
+    assert(request_for_session.digest);
+    auto local_nodes_digest = storage->getNodesDigest(true);
+    if (digest_enabled && !KeeperStorage::checkDigest(*request_for_session.digest, local_nodes_digest))
     {
-        LOG_ERROR(log, "Digest for nodes is not matching after applying request of type {}", request_for_session.request->getOpNum());
+        LOG_ERROR(
+            log,
+            "Digest for nodes is not matching after applying request of type '{}'.\nExpected digest - {}, actual digest {} (digest version {}). Keeper will "
+            "terminate to avoid inconsistencies.\nExtra information about the request:\n{}",
+            request_for_session.request->getOpNum(),
+            request_for_session.digest->value,
+            local_nodes_digest.value,
+            request_for_session.digest->version,
+            request_for_session.request->toString());
         std::terminate();
     }
 

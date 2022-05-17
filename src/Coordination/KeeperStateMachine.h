@@ -28,7 +28,8 @@ public:
     /// Read state from the latest snapshot
     void init();
 
-    KeeperStorage::RequestForSession parseRequest(nuraft::buffer & data);
+    static KeeperStorage::RequestForSession parseRequest(nuraft::buffer & data);
+
     void preprocess(const KeeperStorage::RequestForSession & request_for_session);
 
     nuraft::ptr<nuraft::buffer> pre_commit(uint64_t log_idx, nuraft::buffer & data) override;

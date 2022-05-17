@@ -236,7 +236,7 @@ struct Overloaded : Ts...
 template <class... Ts>
 Overloaded(Ts...) -> Overloaded<Ts...>;
 
-std::shared_ptr<KeeperStorage::Node> KeeperStorage::UncommittedState::getNode(StringRef path, std::optional<int64_t> last_zxid) const
+std::shared_ptr<KeeperStorage::Node> KeeperStorage::UncommittedState::getNode(StringRef path, std::optional<int64_t> current_zxid) const
 {
     std::shared_ptr<Node> node{nullptr};
 
@@ -273,7 +273,7 @@ std::shared_ptr<KeeperStorage::Node> KeeperStorage::UncommittedState::getNode(St
             },
             [&](auto && /*delta*/) {},
         },
-        last_zxid);
+        current_zxid);
 
     return node;
 }
@@ -1657,7 +1657,7 @@ void KeeperStorage::preprocessRequest(
     int64_t time,
     int64_t new_last_zxid,
     bool check_acl,
-    Digest expected_digest)
+    std::optional<Digest> digest)
 {
     int64_t last_zxid = getNextZXID() - 1;
 
@@ -1669,7 +1669,9 @@ void KeeperStorage::preprocessRequest(
     }
     else
     {
-        // if we are leader node, the request potentially already got processed
+        // if we are Leader node, the request potentially already got preprocessed
+        // Leader can preprocess requests in a batch so the ZXID we are searching isn't 
+        // guaranteed to be last
         auto txn_it = std::lower_bound(
             uncommitted_transactions.begin(),
             uncommitted_transactions.end(),
@@ -1687,7 +1689,7 @@ void KeeperStorage::preprocessRequest(
         }
         else
         {
-            if (txn_it->zxid == new_last_zxid && checkDigest(txn_it->nodes_digest, expected_digest))
+            if (txn_it->zxid == new_last_zxid)
                 // we found the preprocessed request with the same ZXID, we can skip it
                 return;
 
@@ -1698,10 +1700,17 @@ void KeeperStorage::preprocessRequest(
 
     TransactionInfo transaction{.zxid = new_last_zxid};
     SCOPE_EXIT({
-        if (expected_digest.version == DigestVersion::NO_DIGEST && digest_enabled)
-            transaction.nodes_digest = Digest{CURRENT_DIGEST_VERSION, calculateNodesDigest(getNodesDigest(false).value, transaction.zxid)};
+        if (digest_enabled)
+        {
+            // if the leader has the same digest calculation version we
+            // can skip recalculating and use that value
+            if (digest && digest->version == CURRENT_DIGEST_VERSION)
+                transaction.nodes_digest = *digest;
+            else
+                transaction.nodes_digest = Digest{CURRENT_DIGEST_VERSION, calculateNodesDigest(getNodesDigest(false).value, transaction.zxid)};
+        }
         else
-            transaction.nodes_digest = expected_digest;
+            transaction.nodes_digest = Digest{DigestVersion::NO_DIGEST};
 
         uncommitted_transactions.emplace_back(transaction);
     });
@@ -1825,7 +1834,7 @@ KeeperStorage::ResponsesForSessions KeeperStorage::processRequest(
 
         if (is_local)
         {
-            assert(!zk_request->isReadRequest());
+            assert(zk_request->isReadRequest());
             if (check_acl && !request_processor->checkAuth(*this, session_id, true))
             {
                 response = zk_request->makeResponse();
