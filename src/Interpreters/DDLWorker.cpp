@@ -375,7 +375,8 @@ void DDLWorker::scheduleTasks(bool reinitialized)
             return t->entry_name == entry_name;
         });
 
-        if (task_iter != current_tasks.end()) {
+        if (task_iter != current_tasks.end())
+        {
             /// Task is not processed yet, but already initialized, skip it
             continue;
         }
