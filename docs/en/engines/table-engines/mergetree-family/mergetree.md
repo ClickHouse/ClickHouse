@@ -993,4 +993,9 @@ As the indexes are built only during insertions into table, `INSERT` and `OPTIMI
 You can create your table with index which uses certain algorithm. Now only indices based on the following algorithms are supported:
 
 ##### Index list
--   
+- `faiss(factory_string)` — Contains several methods for similarity search from [Faiss library](https://github.com/facebookresearch/faiss). [The summary of methods](https://github.com/facebookresearch/faiss/wiki/Faiss-indexes) shows existed indexes in the library.  Short parameters description: 
+    - `factory_string` — a string to produce a composite Faiss index. The string is a comma-separated list of components. The format of this string is described [here](https://github.com/facebookresearch/faiss/wiki/The-index-factory). 
+
+    Choosing an index type can be done using [Faiss guidelines](https://github.com/facebookresearch/faiss/wiki/Guidelines-to-choose-an-index). You should keep in mind that the index is built upon `N` granules where `N` is an index `GRANULARITY` parameter. So the total number of elements per one index instance is `index_granularity * N`. The good idea is to use compressed indexes (for example `OPQM_D,...,PQM` from Faiss guidelines) because the I/O operation with an index can be a bottleneck in the searching.
+
+    Some indexes from Faiss have search hyperparameters. You can set these parameters using the string setting `ann_index_params`. The format of this string is described in the ParameterSpace section of [this guideline](https://github.com/facebookresearch/faiss/wiki/Index-IO,-cloning-and-hyper-parameter-tuning).
