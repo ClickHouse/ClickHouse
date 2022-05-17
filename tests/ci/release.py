@@ -121,8 +121,16 @@ class Release:
                 else:
                     logging.info("Skipping prestable stage")
 
-                with self.testing():
-                    logging.info("Testing part of the releasing is done")
+                rollback = self._rollback_stack.copy()
+                try:
+                    with self.testing():
+                        logging.info("Testing part of the releasing is done")
+                except (Exception, KeyboardInterrupt):
+                    logging.fatal("Testing part failed, rollback previous steps")
+                    rollback.reverse()
+                    for cmd in rollback:
+                        self.run(cmd)
+                    raise
 
             elif self.release_type in self.SMALL:
                 with self.stable():
