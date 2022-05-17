@@ -45,6 +45,7 @@ with client(name="client1>", log=log) as client1, client(
 
     client1.send("WATCH 01069_window_view_proc_tumble_watch.wv")
     client1.expect("Query id" + end_of_block)
+    client1.expect("Progress: 0.00 rows.*\)")
     client2.send(
         "INSERT INTO 01069_window_view_proc_tumble_watch.mt VALUES (1, now('US/Samoa') + 3)"
     )
