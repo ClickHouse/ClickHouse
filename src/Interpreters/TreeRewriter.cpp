@@ -1180,7 +1180,15 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
             all_source_columns_set.insert(name);
     }
 
-    normalize(query, result.aliases, all_source_columns_set, select_options.ignore_alias, settings, /* allow_self_aliases = */ true);
+    auto distributed_depth = getContext()->getClientInfo().distributed_depth;
+    normalize(
+        query,
+        result.aliases,
+        all_source_columns_set,
+        select_options.ignore_alias,
+        settings,
+        distributed_depth,
+        /* allow_self_aliases = */ true);
 
     /// Remove unneeded columns according to 'required_result_columns'.
     /// Leave all selected columns in case of DISTINCT; columns that contain arrayJoin function inside.
@@ -1276,7 +1284,8 @@ TreeRewriterResultPtr TreeRewriter::analyze(
 
     TreeRewriterResult result(source_columns, storage, storage_snapshot, false);
 
-    normalize(query, result.aliases, result.source_columns_set, false, settings, allow_self_aliases);
+    auto distributed_depth = getContext()->getClientInfo().distributed_depth;
+    normalize(query, result.aliases, result.source_columns_set, false, settings, distributed_depth, allow_self_aliases);
 
     /// Executing scalar subqueries. Column defaults could be a scalar subquery.
     executeScalarSubqueries(query, getContext(), 0, result.scalars, result.local_scalars, !execute_scalar_subqueries);
@@ -1305,7 +1314,13 @@ TreeRewriterResultPtr TreeRewriter::analyze(
 }
 
 void TreeRewriter::normalize(
-    ASTPtr & query, Aliases & aliases, const NameSet & source_columns_set, bool ignore_alias, const Settings & settings, bool allow_self_aliases)
+    ASTPtr & query,
+    Aliases & aliases,
+    const NameSet & source_columns_set,
+    bool ignore_alias,
+    const Settings & settings,
+    size_t distributed_depth,
+    bool allow_self_aliases)
 {
     UserDefinedSQLFunctionVisitor::Data data_user_defined_functions_visitor;
     UserDefinedSQLFunctionVisitor(data_user_defined_functions_visitor).visit(query);
@@ -1371,8 +1386,12 @@ void TreeRewriter::normalize(
         FunctionNameNormalizer().visit(query.get());
 
     /// Common subexpression elimination. Rewrite rules.
-    QueryNormalizer::Data normalizer_data(aliases, source_columns_set, ignore_alias, settings, allow_self_aliases);
-    QueryNormalizer(normalizer_data).visit(query);
+    auto * select_query = query->as<ASTSelectQuery>();
+    if (!(distributed_depth || (select_query && select_query->query_normalized)))
+    {
+        QueryNormalizer::Data normalizer_data(aliases, source_columns_set, ignore_alias, settings, allow_self_aliases);
+        QueryNormalizer(normalizer_data).visit(query);
+    }
 }
 
 }

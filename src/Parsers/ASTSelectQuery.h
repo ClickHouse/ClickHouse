@@ -89,6 +89,8 @@ public:
     bool group_by_with_grouping_sets = false;
     bool limit_with_ties = false;
 
+    bool query_normalized = false;
+
     ASTPtr & refSelect()    { return getExpression(Expression::SELECT); }
     ASTPtr & refTables()    { return getExpression(Expression::TABLES); }
     ASTPtr & refPrewhere()  { return getExpression(Expression::PREWHERE); }

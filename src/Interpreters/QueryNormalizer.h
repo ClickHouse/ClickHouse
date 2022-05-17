@@ -2,14 +2,14 @@
 
 #include <map>
 
-#include <Parsers/IAST.h>
-#include <Interpreters/Aliases.h>
 #include <Core/Names.h>
+#include <Interpreters/Aliases.h>
+#include <Parsers/ASTSelectQuery.h>
+#include <Parsers/IAST.h>
 
 namespace DB
 {
 
-class ASTSelectQuery;
 class ASTIdentifier;
 struct ASTTablesInSelectQueryElement;
 class Context;
@@ -70,6 +70,8 @@ public:
     void visit(ASTPtr & ast)
     {
         visit(ast, visitor_data);
+        if (auto * select = ast->as<ASTSelectQuery>())
+            select->query_normalized = true;
     }
 
 private:
