@@ -16,7 +16,7 @@
 
 #if defined(USE_MIMALLOC) && USE_MIMALLOC
 # pragma message "Use mimalloc"
-#    include <mimalloc-override.h>
+#    include <mimalloc.h>
 #endif
 
 #if !defined(USE_JEMALLOC) && !defined(USE_MIMALLOC)
@@ -155,7 +155,6 @@ inline ALWAYS_INLINE void untrackMemory(void * ptr [[maybe_unused]], std::size_t
     try
     {
 #if USE_JEMALLOC
-
         /// @note It's also possible to use je_malloc_usable_size() here.
         if (likely(ptr != nullptr))
         {
@@ -164,21 +163,15 @@ inline ALWAYS_INLINE void untrackMemory(void * ptr [[maybe_unused]], std::size_t
             else
                 CurrentMemoryTracker::free_memory(sallocx(ptr, 0));
         }
+#elif USE_MIMALLOC
+        /// @note It's also possible to use je_malloc_usable_size() here.
+        if (likely(ptr != nullptr))
+        {
+            CurrentMemoryTracker::free_memory(mi_malloc_usable_size(ptr));
+        }
 #else
         if (size)
             CurrentMemoryTracker::free_memory(size);
-#    if defined(_GNU_SOURCE) || USE_MIMALLOC
-#    pragma message "defined(_GNU_SOURCE) || USE_MIMALLOC == true"
-        /// It's innaccurate resource free for sanitizers. malloc_usable_size() result is greater or equal to allocated size.
-        /// If we use mimalloc, malloc_usable_size will be expanded to mi_malloc_usable_size
-        else
-            CurrentMemoryTracker::free_memory(malloc_usable_size(ptr));
-// #    elif USE_MIMALLOC
-//         else
-//             CurrentMemoryTracker::free_memory(mi_malloc_usable_size(ptr));
-#    else
-#    pragma message "defined(_GNU_SOURCE) || USE_MIMALLOC == false"
-#    endif
 #endif
     }
     catch (...)
