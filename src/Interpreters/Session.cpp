@@ -10,6 +10,7 @@
 #include <Common/setThreadName.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/SessionLog.h>
+#include <Interpreters/Cluster.h>
 
 #include <magic_enum.hpp>
 
@@ -29,6 +30,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int SESSION_NOT_FOUND;
     extern const int SESSION_IS_LOCKED;
+    extern const int AUTHENTICATION_FAILED;
 }
 
 
@@ -317,6 +319,7 @@ void Session::authenticate(const Credentials & credentials_, const Poco::Net::So
     }
     catch (const Exception & e)
     {
+        onAuthenticationFailure(credentials_, e);
         LOG_DEBUG(log, "{} Authentication failed with error: {}", toString(auth_id), e.what());
         if (auto session_log = getSessionLog())
             session_log->addLoginFailure(auth_id, *prepared_client_info, credentials_.getUserName(), e);
@@ -325,6 +328,20 @@ void Session::authenticate(const Credentials & credentials_, const Poco::Net::So
 
     prepared_client_info->current_user = credentials_.getUserName();
     prepared_client_info->current_address = address;
+}
+
+void Session::authenticateInterserverFake()
+{
+    if (session_context)
+        throw Exception("If there is a session context it must be created after authentication", ErrorCodes::LOGICAL_ERROR);
+    is_internal_interserver_query = true;
+}
+
+void Session::onAuthenticationFailure(const Credentials & credentials_, const Exception & e)
+{
+    LOG_DEBUG(log, "{} Authentication failed with error: {}", toString(auth_id), e.what());
+    if (auto session_log = getSessionLog())
+        session_log->addLoginFailure(auth_id, *prepared_client_info, credentials_.getUserName(), e);
 }
 
 ClientInfo & Session::getClientInfo()
@@ -435,7 +452,7 @@ std::shared_ptr<SessionLog> Session::getSessionLog() const
 
 ContextMutablePtr Session::makeQueryContextImpl(const ClientInfo * client_info_to_copy, ClientInfo * client_info_to_move) const
 {
-    if (!user_id)
+    if (!user_id && !is_internal_interserver_query)
         throw Exception("Session context must be created after authentication", ErrorCodes::LOGICAL_ERROR);
 
     /// We can create a query context either from a session context or from a global context.
@@ -491,13 +508,13 @@ ContextMutablePtr Session::makeQueryContextImpl(const ClientInfo * client_info_t
 
     if (!notified_session_log_about_login)
     {
-        if (auto session_log = getSessionLog(); user && user_id && session_log)
+        if (auto session_log = getSessionLog())
         {
             session_log->addLoginSuccess(
                     auth_id,
                     named_session ? std::optional<std::string>(named_session->key.second) : std::nullopt,
                     *query_context,
-                    *user);
+                    user);
 
             notified_session_log_about_login = true;
         }

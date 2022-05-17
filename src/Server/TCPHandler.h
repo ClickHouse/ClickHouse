@@ -182,7 +182,6 @@ private:
     bool is_interserver_mode = false;
     String salt;
     String cluster;
-    String cluster_secret;
 
     std::mutex task_callback_mutex;
     std::mutex fatal_error_mutex;

@@ -90,6 +90,9 @@ bool Authentication::areCredentialsValid(const Credentials & credentials, const 
             case AuthenticationType::SSL_CERTIFICATE:
                 throw Authentication::Require<BasicCredentials>("ClickHouse X.509 Authentication");
 
+            case AuthenticationType::INTERSERVER_SECRET:
+                throw Authentication::Require<BasicCredentials>("ClickHouse Interserver Authentication");
+
             case AuthenticationType::MAX:
                 break;
         }
@@ -115,6 +118,9 @@ bool Authentication::areCredentialsValid(const Credentials & credentials, const 
 
             case AuthenticationType::SSL_CERTIFICATE:
                 throw Authentication::Require<BasicCredentials>("ClickHouse X.509 Authentication");
+
+            case AuthenticationType::INTERSERVER_SECRET:
+                throw Authentication::Require<BasicCredentials>("ClickHouse Interserver Authentication");
 
             case AuthenticationType::MAX:
                 break;
@@ -146,6 +152,9 @@ bool Authentication::areCredentialsValid(const Credentials & credentials, const 
             case AuthenticationType::SSL_CERTIFICATE:
                 throw Authentication::Require<BasicCredentials>("ClickHouse X.509 Authentication");
 
+            case AuthenticationType::INTERSERVER_SECRET:
+                throw Authentication::Require<BasicCredentials>("ClickHouse Interserver Authentication");
+
             case AuthenticationType::MAX:
                 break;
         }
@@ -167,6 +176,9 @@ bool Authentication::areCredentialsValid(const Credentials & credentials, const 
 
             case AuthenticationType::SSL_CERTIFICATE:
                 return auth_data.getSSLCertificateCommonNames().contains(ssl_certificate_credentials->getCommonName());
+
+            case AuthenticationType::INTERSERVER_SECRET:
+                throw Authentication::Require<BasicCredentials>("ClickHouse Interserver Authentication");
 
             case AuthenticationType::MAX:
                 break;
