@@ -1,12 +1,14 @@
 # Setup integration with ccache to speed up builds, see https://ccache.dev/
 
 if (CMAKE_CXX_COMPILER_LAUNCHER MATCHES "ccache" OR CMAKE_C_COMPILER_LAUNCHER MATCHES "ccache")
-    set(COMPILER_MATCHES_CCACHE 1)
-else()
-    set(COMPILER_MATCHES_CCACHE 0)
+    # custom compiler launcher already defined, most likely because cmake was invoked with like "-DCMAKE_CXX_COMPILER_LAUNCHER=ccache" or
+    # via environment variable --> respect setting and trust that the launcher was specified correctly
+    message(STATUS "Using custom C compiler launcher: ${CMAKE_C_COMPILER_LAUNCHER}")
+    message(STATUS "Using custom C++ compiler launcher: ${CMAKE_CXX_COMPILER_LAUNCHER}")
+    return()
 endif()
 
-if ((ENABLE_CCACHE OR NOT DEFINED ENABLE_CCACHE) AND NOT COMPILER_MATCHES_CCACHE)
+if ((ENABLE_CCACHE OR NOT DEFINED ENABLE_CCACHE))
     find_program (CCACHE_FOUND ccache)
 
     if (CCACHE_FOUND)
@@ -16,7 +18,7 @@ if ((ENABLE_CCACHE OR NOT DEFINED ENABLE_CCACHE) AND NOT COMPILER_MATCHES_CCACHE
     endif()
 endif()
 
-if (NOT CCACHE_FOUND AND NOT DEFINED ENABLE_CCACHE AND NOT COMPILER_MATCHES_CCACHE)
+if (NOT CCACHE_FOUND AND NOT DEFINED ENABLE_CCACHE)
     message(WARNING "CCache is not found. We recommend setting it up if you build ClickHouse from source often. "
             "Setting it up will significantly reduce compilation time for 2nd and consequent builds")
 endif()
@@ -27,7 +29,7 @@ if (NOT ENABLE_CCACHE)
     return()
 endif()
 
-if (CCACHE_FOUND AND NOT COMPILER_MATCHES_CCACHE)
+if (CCACHE_FOUND)
    execute_process(COMMAND ${CCACHE_FOUND} "-V" OUTPUT_VARIABLE CCACHE_VERSION)
    string(REGEX REPLACE "ccache version ([0-9\\.]+).*" "\\1" CCACHE_VERSION ${CCACHE_VERSION})
 
@@ -53,6 +55,6 @@ if (CCACHE_FOUND AND NOT COMPILER_MATCHES_CCACHE)
    else ()
        message(${RECONFIGURE_MESSAGE_LEVEL} "Using ccache: No. Found ${CCACHE_FOUND} (version ${CCACHE_VERSION}) but disabled because of bug: https://bugzilla.samba.org/show_bug.cgi?id=8118")
    endif ()
-elseif (NOT CCACHE_FOUND AND NOT COMPILER_MATCHES_CCACHE)
+elseif (NOT CCACHE_FOUND)
     message (${RECONFIGURE_MESSAGE_LEVEL} "Using ccache: No")
 endif ()
