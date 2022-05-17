@@ -104,7 +104,7 @@ There are many nuances to processing `NULL`. For example, if at least one of the
 
 In queries, you can check `NULL` using the [IS NULL](../sql-reference/operators/index.md#operator-is-null) and [IS NOT NULL](../sql-reference/operators/index.md) operators and the related functions `isNull` and `isNotNull`.
 
-### Heredoc {#heredeoc}
+### Heredoc {#heredoc}
 
 A [heredoc](https://en.wikipedia.org/wiki/Here_document) is a way to define a string (often multiline), while maintaining the original formatting. A heredoc is defined as a custom string literal, placed between two `$` symbols, for example `$heredoc$`. A value between two heredocs is processed "as-is".
 
