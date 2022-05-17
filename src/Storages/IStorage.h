@@ -71,7 +71,7 @@ using DatabaseAndTableName = std::pair<String, String>;
 class IBackup;
 using BackupPtr = std::shared_ptr<const IBackup>;
 class IBackupEntry;
-using BackupEntries = std::vector<std::pair<String, std::unique_ptr<IBackupEntry>>>;
+using BackupEntries = std::vector<std::pair<String, std::shared_ptr<const IBackupEntry>>>;
 class IRestoreTask;
 using RestoreTaskPtr = std::unique_ptr<IRestoreTask>;
 struct StorageRestoreSettings;

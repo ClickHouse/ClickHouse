@@ -111,6 +111,8 @@ if (TARGET ch_contrib::nats_io)
     add_headers_and_sources(dbms Storages/NATS)
 endif()
 
+add_headers_and_sources(dbms Storages/MeiliSearch)
+
 if (TARGET ch_contrib::amqp_cpp)
     add_headers_and_sources(dbms Storages/RabbitMQ)
 endif()
