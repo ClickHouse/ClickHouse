@@ -696,14 +696,13 @@ Dwarf::Die Dwarf::getDieAtOffset(const CompilationUnit & cu, uint64_t offset) co
     die.is64Bit = cu.is64Bit;
     auto code = readULEB(sp);
     die.code = code;
+    die.attr_offset = sp.data() - info_.data() - offset;
+    die.abbr = !cu.abbr_cache.empty() && die.code < kMaxAbbreviationEntries ? cu.abbr_cache[die.code - 1]
+                                                                            : getAbbreviation(die.code, cu.abbrev_offset);
     if (code == 0)
     {
         return die;
     }
-    die.attr_offset = sp.data() - info_.data() - offset;
-    die.abbr = !cu.abbr_cache.empty() && die.code < kMaxAbbreviationEntries ? cu.abbr_cache[die.code - 1]
-                                                                            : getAbbreviation(die.code, cu.abbrev_offset);
-
     return die;
 }
 

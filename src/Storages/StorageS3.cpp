@@ -255,7 +255,7 @@ StorageS3Source::StorageS3Source(
     String name_,
     const Block & sample_block_,
     ContextPtr context_,
-    std::optional<FormatSettings> format_settings_,
+    std::optional<FormatSettings> & format_settings_,
     const ColumnsDescription & columns_,
     UInt64 max_block_size_,
     UInt64 max_single_read_retries_,
@@ -438,7 +438,7 @@ public:
         const String & format,
         const Block & sample_block_,
         ContextPtr context,
-        std::optional<FormatSettings> format_settings_,
+        std::optional<FormatSettings> & format_settings_,
         const CompressionMethod compression_method,
         const StorageS3::S3Configuration & s3_configuration_,
         const String & bucket,
@@ -492,7 +492,7 @@ public:
 
 private:
     Block sample_block;
-    std::optional<FormatSettings> format_settings;
+    std::optional<FormatSettings> & format_settings;
     std::unique_ptr<WriteBuffer> write_buf;
     OutputFormatPtr writer;
 };
@@ -506,7 +506,7 @@ public:
         const String & format_,
         const Block & sample_block_,
         ContextPtr context_,
-        std::optional<FormatSettings> format_settings_,
+        std::optional<FormatSettings> & format_settings_,
         const CompressionMethod compression_method_,
         const StorageS3::S3Configuration & s3_configuration_,
         const String & bucket_,
@@ -594,7 +594,7 @@ StorageS3::StorageS3(
     const ConstraintsDescription & constraints_,
     const String & comment,
     ContextPtr context_,
-    std::optional<FormatSettings> format_settings_,
+    std::optional<FormatSettings> & format_settings_,
     const String & compression_method_,
     bool distributed_processing_,
     ASTPtr partition_by_)

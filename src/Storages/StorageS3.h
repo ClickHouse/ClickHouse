@@ -77,7 +77,7 @@ public:
         String name_,
         const Block & sample_block,
         ContextPtr context_,
-        std::optional<FormatSettings> format_settings_,
+        std::optional<FormatSettings> & format_settings_,
         const ColumnsDescription & columns_,
         UInt64 max_block_size_,
         UInt64 max_single_read_retries_,
@@ -106,7 +106,7 @@ private:
     String compression_hint;
     std::shared_ptr<Aws::S3::S3Client> client;
     Block sample_block;
-    std::optional<FormatSettings> format_settings;
+    std::optional<FormatSettings> & format_settings;
 
 
     std::unique_ptr<ReadBuffer> read_buf;
@@ -145,7 +145,7 @@ public:
         const ConstraintsDescription & constraints_,
         const String & comment,
         ContextPtr context_,
-        std::optional<FormatSettings> format_settings_,
+        std::optional<FormatSettings> & format_settings_,
         const String & compression_method_ = "",
         bool distributed_processing_ = false,
         ASTPtr partition_by_ = nullptr);
@@ -208,7 +208,7 @@ private:
     String compression_method;
     String name;
     const bool distributed_processing;
-    std::optional<FormatSettings> format_settings;
+    std::optional<FormatSettings> & format_settings;
     ASTPtr partition_by;
     bool is_key_with_globs = false;
 
