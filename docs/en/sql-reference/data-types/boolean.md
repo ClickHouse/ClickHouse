@@ -5,7 +5,7 @@ sidebar_label: Boolean
 
 # Boolean Values bool (boolean) {#boolean-values}
 
-Type `bool` is stored UInt8. Possible values `true` (1), `false` (0).
+Type `bool` is stored as UInt8. Possible values `true` (1), `false` (0).
 
 
 ```sql
