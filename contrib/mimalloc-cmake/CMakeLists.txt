@@ -38,6 +38,7 @@ if (ENABLE_MIMALLOC)
         #   error: identifier '_mi_option_last' is reserved because it starts with '_' at global scope
         -Wno-reserved-identifier
     )
+    target_compile_definitions(_mimalloc PRIVATE -DMI_MALLOC_OVERRIDE)
     target_include_directories(_mimalloc SYSTEM BEFORE PUBLIC "${ClickHouse_SOURCE_DIR}/contrib/mimalloc/include")
     add_library(ch_contrib::mimalloc ALIAS _mimalloc)
     message("Added mimalloc library")
