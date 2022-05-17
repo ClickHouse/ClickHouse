@@ -115,8 +115,8 @@ MergeTreeIndexFactory::MergeTreeIndexFactory()
 
     similarity::initLibrary(0, LIB_LOGSTDERR, nullptr);
 
-    registerCreator("simple_hnsw", hnswIndexCreator);
-    registerValidator("simple_hnsw", hnswIndexValidator);
+    registerCreator("hnsw", hnswIndexCreator);
+    registerValidator("hnsw", hnswIndexValidator);
 
     #endif
 
