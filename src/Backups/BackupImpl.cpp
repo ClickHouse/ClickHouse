@@ -303,6 +303,7 @@ void BackupImpl::writeBackupMetadata()
     else
         out = writer->writeFile(".backup");
     out->write(str.data(), str.size());
+    out->finalize();
 }
 
 void BackupImpl::readBackupMetadata()
@@ -647,6 +648,7 @@ void BackupImpl::writeFile(const String & file_name, BackupEntryPtr entry)
     }
 
     copyData(*read_buffer, *out);
+    out->finalize();
 }
 
 
