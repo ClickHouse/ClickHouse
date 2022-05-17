@@ -1224,7 +1224,7 @@ TEST_P(CoordinationTest, TestStorageSnapshotBroken)
     EXPECT_THROW(manager.restoreFromLatestSnapshot(), DB::Exception);
 }
 
-nuraft::ptr<nuraft::buffer> getBufferFromZKRequest(int64_t session_id, const Coordination::ZooKeeperRequestPtr & request)
+nuraft::ptr<nuraft::buffer> getBufferFromZKRequest(int64_t session_id, int64_t zxid, const Coordination::ZooKeeperRequestPtr & request, const std::optional<uint64_t> digest = std::nullopt)
 {
     DB::WriteBufferFromNuraftBuffer buf;
     DB::writeIntBinary(session_id, buf);
@@ -1232,12 +1232,18 @@ nuraft::ptr<nuraft::buffer> getBufferFromZKRequest(int64_t session_id, const Coo
     using namespace std::chrono;
     auto time = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
     DB::writeIntBinary(time, buf);
+    DB::writeIntBinary(zxid, buf);
+    if (digest)
+    {
+        DB::writeIntBinary(DB::KeeperStorage::CURRENT_DIGEST_VERSION, buf);
+        DB::writeIntBinary(*digest, buf);
+    }
     return buf.getBuffer();
 }
 
-nuraft::ptr<nuraft::log_entry> getLogEntryFromZKRequest(size_t term, int64_t session_id, const Coordination::ZooKeeperRequestPtr & request)
+nuraft::ptr<nuraft::log_entry> getLogEntryFromZKRequest(size_t term, int64_t session_id, int64_t zxid, const Coordination::ZooKeeperRequestPtr & request, const std::optional<uint64_t> digest = std::nullopt)
 {
-    auto buffer = getBufferFromZKRequest(session_id, request);
+    auto buffer = getBufferFromZKRequest(session_id, zxid, request, digest);
     return nuraft::cs_new<nuraft::log_entry>(term, buffer);
 }
 
@@ -1259,7 +1265,7 @@ void testLogAndStateMachine(Coordination::CoordinationSettingsPtr settings, uint
     {
         std::shared_ptr<ZooKeeperCreateRequest> request = std::make_shared<ZooKeeperCreateRequest>();
         request->path = "/hello_" + std::to_string(i);
-        auto entry = getLogEntryFromZKRequest(0, 1, request);
+        auto entry = getLogEntryFromZKRequest(0, 1, 1, request);
         changelog.append(entry);
         changelog.end_of_append_batch(0, 0);
 
@@ -1410,7 +1416,7 @@ TEST_P(CoordinationTest, TestEphemeralNodeRemove)
     std::shared_ptr<ZooKeeperCreateRequest> request_c = std::make_shared<ZooKeeperCreateRequest>();
     request_c->path = "/hello";
     request_c->is_ephemeral = true;
-    auto entry_c = getLogEntryFromZKRequest(0, 1, request_c);
+    auto entry_c = getLogEntryFromZKRequest(0, 1, state_machine->getNextZxid(), request_c);
     state_machine->pre_commit(1, entry_c->get_buf());
     state_machine->commit(1, entry_c->get_buf());
     const auto & storage = state_machine->getStorage();
@@ -1419,7 +1425,7 @@ TEST_P(CoordinationTest, TestEphemeralNodeRemove)
     std::shared_ptr<ZooKeeperRemoveRequest> request_d = std::make_shared<ZooKeeperRemoveRequest>();
     request_d->path = "/hello";
     /// Delete from other session
-    auto entry_d = getLogEntryFromZKRequest(0, 2, request_d);
+    auto entry_d = getLogEntryFromZKRequest(0, 2, state_machine->getNextZxid(), request_d);
     state_machine->pre_commit(2, entry_d->get_buf());
     state_machine->commit(2, entry_d->get_buf());
 
@@ -1440,7 +1446,7 @@ TEST_P(CoordinationTest, TestRotateIntervalChanges)
         {
             std::shared_ptr<ZooKeeperCreateRequest> request = std::make_shared<ZooKeeperCreateRequest>();
             request->path = "/hello_" + std::to_string(i);
-            auto entry = getLogEntryFromZKRequest(0, 1, request);
+            auto entry = getLogEntryFromZKRequest(0, 1, i, request);
             changelog.append(entry);
             changelog.end_of_append_batch(0, 0);
         }
@@ -1455,7 +1461,7 @@ TEST_P(CoordinationTest, TestRotateIntervalChanges)
     {
         std::shared_ptr<ZooKeeperCreateRequest> request = std::make_shared<ZooKeeperCreateRequest>();
         request->path = "/hello_" + std::to_string(100 + i);
-        auto entry = getLogEntryFromZKRequest(0, 1, request);
+        auto entry = getLogEntryFromZKRequest(0, 1, i, request);
         changelog_1.append(entry);
         changelog_1.end_of_append_batch(0, 0);
     }
@@ -1470,7 +1476,7 @@ TEST_P(CoordinationTest, TestRotateIntervalChanges)
     {
         std::shared_ptr<ZooKeeperCreateRequest> request = std::make_shared<ZooKeeperCreateRequest>();
         request->path = "/hello_" + std::to_string(200 + i);
-        auto entry = getLogEntryFromZKRequest(0, 1, request);
+        auto entry = getLogEntryFromZKRequest(0, 1, i, request);
         changelog_2.append(entry);
         changelog_2.end_of_append_batch(0, 0);
     }
@@ -1490,7 +1496,7 @@ TEST_P(CoordinationTest, TestRotateIntervalChanges)
     {
         std::shared_ptr<ZooKeeperCreateRequest> request = std::make_shared<ZooKeeperCreateRequest>();
         request->path = "/hello_" + std::to_string(300 + i);
-        auto entry = getLogEntryFromZKRequest(0, 1, request);
+        auto entry = getLogEntryFromZKRequest(0, 1, i, request);
         changelog_3.append(entry);
         changelog_3.end_of_append_batch(0, 0);
     }
@@ -1537,7 +1543,7 @@ TEST_P(CoordinationTest, TestCompressedLogsMultipleRewrite)
     {
         std::shared_ptr<ZooKeeperCreateRequest> request = std::make_shared<ZooKeeperCreateRequest>();
         request->path = "/hello_" + std::to_string(i);
-        auto entry = getLogEntryFromZKRequest(0, 1, request);
+        auto entry = getLogEntryFromZKRequest(0, 1, i, request);
         changelog.append(entry);
         changelog.end_of_append_batch(0, 0);
     }
@@ -1549,7 +1555,7 @@ TEST_P(CoordinationTest, TestCompressedLogsMultipleRewrite)
     {
         std::shared_ptr<ZooKeeperCreateRequest> request = std::make_shared<ZooKeeperCreateRequest>();
         request->path = "/hello_" + std::to_string(i);
-        auto entry = getLogEntryFromZKRequest(0, 1, request);
+        auto entry = getLogEntryFromZKRequest(0, 1, i, request);
         changelog1.append(entry);
         changelog1.end_of_append_batch(0, 0);
     }
@@ -1560,7 +1566,7 @@ TEST_P(CoordinationTest, TestCompressedLogsMultipleRewrite)
     {
         std::shared_ptr<ZooKeeperCreateRequest> request = std::make_shared<ZooKeeperCreateRequest>();
         request->path = "/hello_" + std::to_string(i);
-        auto entry = getLogEntryFromZKRequest(0, 1, request);
+        auto entry = getLogEntryFromZKRequest(0, 1, i, request);
         changelog2.append(entry);
         changelog2.end_of_append_batch(0, 0);
     }
@@ -1769,7 +1775,7 @@ TEST_P(CoordinationTest, TestLogGap)
     {
         std::shared_ptr<ZooKeeperCreateRequest> request = std::make_shared<ZooKeeperCreateRequest>();
         request->path = "/hello_" + std::to_string(i);
-        auto entry = getLogEntryFromZKRequest(0, 1, request);
+        auto entry = getLogEntryFromZKRequest(0, 1, i, request);
         changelog.append(entry);
         changelog.end_of_append_batch(0, 0);
     }
@@ -1907,6 +1913,58 @@ TEST_P(CoordinationTest, TestUncommittedStateBasicCrud)
     ASSERT_FALSE(get_committed_data());
 }
 
+TEST_P(CoordinationTest, TestDigest)
+{
+    using namespace Coordination;
+    using namespace DB;
+
+    ChangelogDirTest snapshots1("./snapshots1");
+    ChangelogDirTest snapshots2("./snapshots2");
+    CoordinationSettingsPtr settings = std::make_shared<CoordinationSettings>();
+
+    ResponsesQueue queue(std::numeric_limits<size_t>::max());
+    SnapshotsQueue snapshots_queue{1};
+    const auto test_digest = [&](const auto modify_digest)
+    {
+        auto state_machine1 = std::make_shared<KeeperStateMachine>(queue, snapshots_queue, "./snapshots1", settings);
+        auto state_machine2 = std::make_shared<KeeperStateMachine>(queue, snapshots_queue, "./snapshots2", settings);
+        state_machine1->init();
+        state_machine2->init();
+
+        std::shared_ptr<ZooKeeperCreateRequest> request_c = std::make_shared<ZooKeeperCreateRequest>();
+        request_c->path = "/hello";
+        auto zxid = state_machine1->getNextZxid();
+        auto entry_c = getLogEntryFromZKRequest(0, 1, zxid, request_c);
+        state_machine1->pre_commit(1, entry_c->get_buf());
+        auto correct_digest = state_machine1->getNodesDigest();
+        ASSERT_EQ(correct_digest.version, DB::KeeperStorage::CURRENT_DIGEST_VERSION);
+        entry_c = getLogEntryFromZKRequest(0, 1, zxid, request_c, correct_digest.value);
+
+        if (modify_digest)
+        {
+            std::shared_ptr<ZooKeeperCreateRequest> modified_c = std::make_shared<ZooKeeperCreateRequest>();
+            modified_c->path = "modified";
+            auto modified_entry = getLogEntryFromZKRequest(0, 1, zxid, modified_c, correct_digest.value);
+            ASSERT_THROW(state_machine2->pre_commit(1, modified_entry->get_buf()), DB::Exception);
+        }
+        else
+            ASSERT_NO_THROW(state_machine2->pre_commit(1, entry_c->get_buf()));
+
+        if (modify_digest)
+        {
+            auto new_digest = modify_digest ? correct_digest.value + 1 : correct_digest.value;
+            auto modified_entry = getLogEntryFromZKRequest(0, 1, zxid, request_c, new_digest);
+            ASSERT_THROW(state_machine1->commit(1, modified_entry->get_buf()), DB::Exception);
+        }
+        else
+            ASSERT_NO_THROW(state_machine1->commit(1, entry_c->get_buf()));
+    };
+
+    test_digest(true);
+    test_digest(true);
+    test_digest(false);
+    test_digest(false);
+}
 
 INSTANTIATE_TEST_SUITE_P(CoordinationTestSuite,
     CoordinationTest,

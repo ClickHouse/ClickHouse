@@ -1701,6 +1701,9 @@ void KeeperStorage::preprocessRequest(
     TransactionInfo transaction{.zxid = new_last_zxid};
     SCOPE_EXIT({
         if (digest_enabled)
+            // if the version of digest we got from the leader is the same as the one this instances has, we can simply copy the value
+            // and just check the digest on the commit
+            // a mistake can happen while applying the changes to the uncommitted_state so for now let's just recalculate the digest here also
             transaction.nodes_digest = Digest{CURRENT_DIGEST_VERSION, calculateNodesDigest(getNodesDigest(false).value, transaction.zxid)};
         else
             transaction.nodes_digest = Digest{DigestVersion::NO_DIGEST};
