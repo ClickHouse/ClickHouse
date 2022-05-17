@@ -4,7 +4,9 @@
 #include <Coordination/ReadBufferFromNuraftBuffer.h>
 #include <Coordination/WriteBufferFromNuraftBuffer.h>
 #include <IO/ReadHelpers.h>
+#include "Common/ZooKeeper/ZooKeeperCommon.h"
 #include <Common/ZooKeeper/ZooKeeperIO.h>
+#include "Coordination/KeeperStorage.h"
 #include <Coordination/KeeperSnapshotManager.h>
 #include <future>
 
@@ -13,7 +15,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
+    extern const int INVALID_STATE;
     extern const int SYSTEM_ERROR;
 }
 
@@ -137,12 +139,39 @@ KeeperStorage::RequestForSession KeeperStateMachine::parseRequest(nuraft::buffer
     return request_for_session;
 }
 
+namespace
+{
+
+void assertDigest(const KeeperStorage::Digest & first, const KeeperStorage::Digest & second, const Coordination::ZooKeeperRequest & request, bool committing)
+{
+    if (!KeeperStorage::checkDigest(first, second))
+    {
+        throw DB::Exception(
+            DB::ErrorCodes::INVALID_STATE,
+            "Digest for nodes is not matching after {} request of type '{}'.\nExpected digest - {}, actual digest {} (digest version {}). Keeper will "
+            "terminate to avoid inconsistencies.\nExtra information about the request:\n{}",
+            committing ? "committing" : "preprocessing",
+            request.getOpNum(),
+            first.value,
+            second.value,
+            first.version,
+            request.toString());
+    }
+}
+
+}
+
 void KeeperStateMachine::preprocess(const KeeperStorage::RequestForSession & request_for_session)
 {
     if (request_for_session.request->getOpNum() == Coordination::OpNum::SessionID)
         return;
-    std::lock_guard lock(storage_and_responses_lock);
-    storage->preprocessRequest(request_for_session.request, request_for_session.session_id, request_for_session.time, request_for_session.zxid, true /* check_acl */, request_for_session.digest);
+    {
+        std::lock_guard lock(storage_and_responses_lock);
+        storage->preprocessRequest(request_for_session.request, request_for_session.session_id, request_for_session.time, request_for_session.zxid, true /* check_acl */, request_for_session.digest);
+    }
+
+    if (digest_enabled && request_for_session.digest)
+        assertDigest(*request_for_session.digest, storage->getNodesDigest(false), *request_for_session.request, false);
 }
 
 nuraft::ptr<nuraft::buffer> KeeperStateMachine::commit(const uint64_t log_idx, nuraft::buffer & data)
@@ -182,21 +211,7 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine::commit(const uint64_t log_idx, n
 
 
     assert(request_for_session.digest);
-    auto local_nodes_digest = storage->getNodesDigest(true);
-    if (digest_enabled && !KeeperStorage::checkDigest(*request_for_session.digest, local_nodes_digest))
-    {
-        LOG_ERROR(
-            log,
-            "Digest for nodes is not matching after applying request of type '{}'.\nExpected digest - {}, actual digest {} (digest version {}). Keeper will "
-            "terminate to avoid inconsistencies.\nExtra information about the request:\n{}",
-            request_for_session.request->getOpNum(),
-            request_for_session.digest->value,
-            local_nodes_digest.value,
-            request_for_session.digest->version,
-            request_for_session.request->toString());
-        std::terminate();
-    }
-
+    assertDigest(*request_for_session.digest, storage->getNodesDigest(true), *request_for_session.request, true);
     last_committed_idx = log_idx;
     return nullptr;
 }
@@ -208,7 +223,7 @@ bool KeeperStateMachine::apply_snapshot(nuraft::snapshot & s)
     { /// save snapshot into memory
         std::lock_guard lock(snapshots_lock);
         if (s.get_last_log_idx() != latest_snapshot_meta->get_last_log_idx())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Required to apply snapshot with last log index {}, but our last log index is {}",
+            throw Exception(ErrorCodes::INVALID_STATE, "Required to apply snapshot with last log index {}, but our last log index is {}",
                             s.get_last_log_idx(), latest_snapshot_meta->get_last_log_idx());
         latest_snapshot_ptr = latest_snapshot_buf;
     }
