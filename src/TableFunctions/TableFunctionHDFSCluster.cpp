@@ -91,7 +91,7 @@ StoragePtr TableFunctionHDFSCluster::getStorage(
     {
         /// On worker node this uri won't contains globs
         storage = std::make_shared<StorageHDFS>(
-            uri,
+            filename,
             StorageID(getDatabaseName(), table_name),
             format,
             getActualTableStructure(context),
@@ -105,7 +105,8 @@ StoragePtr TableFunctionHDFSCluster::getStorage(
     else
     {
         storage = std::make_shared<StorageHDFSCluster>(
-            cluster_name, uri, StorageID(getDatabaseName(), table_name),
+            context,
+            cluster_name, filename, StorageID(getDatabaseName(), table_name),
             format, getActualTableStructure(context), ConstraintsDescription{},
             compression_method);
     }
