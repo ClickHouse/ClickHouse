@@ -913,7 +913,8 @@ void StorageWindowView::threadFuncCleanup()
 {
     try
     {
-        cleanup();
+        if (!shutdown_called)
+            cleanup();
     }
     catch (...)
     {
@@ -926,6 +927,9 @@ void StorageWindowView::threadFuncCleanup()
 
 void StorageWindowView::threadFuncFireProc()
 {
+    if (shutdown_called)
+        return;
+
     std::unique_lock lock(fire_signal_mutex);
     UInt32 timestamp_now = std::time(nullptr);
 
