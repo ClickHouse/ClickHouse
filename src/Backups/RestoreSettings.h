@@ -34,8 +34,7 @@ using RestoreDatabaseCreationMode = RestoreTableCreationMode;
 struct RestoreSettings : public StorageRestoreSettings
 {
     /// Base backup, with this setting we can override the location of the base backup while restoring.
-    /// Any incremental backup keeps inside the information about its base backup,
-    /// so using this setting is optional.
+    /// Any incremental backup keeps inside the information about its base backup, so using this setting is optional.
     std::optional<BackupInfo> base_backup_info;
 
     /// Password used to decrypt the backup.

@@ -2,7 +2,7 @@
 #pragma clang diagnostic ignored "-Wreserved-identifier"
 #endif
 
-#include <string.h>
+#include <cstring>
 #include <IO/BitHelpers.h>
 
 #include <base/types.h>
