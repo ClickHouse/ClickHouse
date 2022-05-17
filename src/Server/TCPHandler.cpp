@@ -1277,7 +1277,7 @@ void TCPHandler::receiveQuery()
         if (salt.empty())
         {
             auto exception = Exception(ErrorCodes::AUTHENTICATION_FAILED, "Interserver authentication failed");
-            session->onAuthenticationFailure(AlwaysAllowCredentials{USER_INTERSERVER_MARKER}, exception);
+            session->onAuthenticationFailure(AlwaysAllowCredentials{USER_INTERSERVER_MARKER}, client_info.initial_address, exception);
             throw exception;
         }
 
@@ -1294,7 +1294,7 @@ void TCPHandler::receiveQuery()
         if (calculated_hash != received_hash)
         {
             auto exception = Exception(ErrorCodes::AUTHENTICATION_FAILED, "Interserver authentication failed");
-            session->onAuthenticationFailure(AlwaysAllowCredentials{USER_INTERSERVER_MARKER}, exception);
+            session->onAuthenticationFailure(AlwaysAllowCredentials{USER_INTERSERVER_MARKER}, client_info.initial_address, exception);
             throw exception;
         }
 
@@ -1312,7 +1312,7 @@ void TCPHandler::receiveQuery()
         auto exception = Exception(
             "Inter-server secret support is disabled, because ClickHouse was built without SSL library",
             ErrorCodes::AUTHENTICATION_FAILED);
-        session->onAuthenticationFailure(AlwaysAllowCredentials{USER_INTERSERVER_MARKER}, exception);
+        session->onAuthenticationFailure(AlwaysAllowCredentials{USER_INTERSERVER_MARKER}, client_info.initial_address, exception);
         throw exception;
 #endif
     }
