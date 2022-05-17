@@ -73,7 +73,7 @@ inline UInt64 bytes64MaskToBits64Mask(const UInt8 * bytes64)
         | ((static_cast<UInt64>(_mm_movemask_epi8(_mm_cmpeq_epi8(
         _mm_loadu_si128(reinterpret_cast<const __m128i *>(bytes64 + 48)), zero16))) << 48) & 0xffff000000000000);
 #elif defined(__aarch64__)
-    UInt64 res = bytes64MaskToBits64MasAarch64(reinterpret_cast<const unsigned char *>(bytes64))
+    UInt64 res = bytes64MaskToBits64MasAarch64(reinterpret_cast<const unsigned char *>(bytes64));
 #else
     UInt64 res = 0;
     for (size_t i = 0; i < 64; ++i)
