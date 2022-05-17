@@ -1657,7 +1657,7 @@ KeeperStorage::ResponsesForSessions KeeperStorage::processRequest(
 
         if (is_local)
         {
-            assert(!zk_request->isReadRequest());
+            assert(zk_request->isReadRequest());
             if (check_acl && !request_processor->checkAuth(*this, session_id, true))
             {
                 response = zk_request->makeResponse();
