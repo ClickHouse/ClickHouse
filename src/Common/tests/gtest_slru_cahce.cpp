@@ -60,6 +60,39 @@ TEST(SLRUCache, remove)
     ASSERT_TRUE(value == nullptr);
 }
 
+TEST(SLRUCache, removeFromProtected)
+{
+    using SimpleCacheBase = DB::CacheBase<int, int>;
+    auto slru_cache = SimpleCacheBase("SLRU", /*max_total_size=*/2, /*max_elements_size=*/0);
+    slru_cache.set(1, std::make_shared<int>(2));
+    slru_cache.set(1, std::make_shared<int>(3));
+
+    auto value = slru_cache.get(1);
+    ASSERT_TRUE(value != nullptr);
+    ASSERT_EQ(*value, 3);
+
+    slru_cache.remove(1);
+    value = slru_cache.get(1);
+    ASSERT_TRUE(value == nullptr);
+
+    slru_cache.set(1, std::make_shared<int>(4));
+    slru_cache.set(1, std::make_shared<int>(5));
+
+    slru_cache.set(2, std::make_shared<int>(6));
+    slru_cache.set(3, std::make_shared<int>(7));
+
+    value = slru_cache.get(1);
+    ASSERT_TRUE(value != nullptr);
+    ASSERT_EQ(*value, 5);
+
+    value = slru_cache.get(3);
+    ASSERT_TRUE(value != nullptr);
+    ASSERT_EQ(*value, 7);
+
+    value = slru_cache.get(2);
+    ASSERT_TRUE(value == nullptr);
+}
+
 TEST(SLRUCache, reset)
 {
     using SimpleCacheBase = DB::CacheBase<int, int>;

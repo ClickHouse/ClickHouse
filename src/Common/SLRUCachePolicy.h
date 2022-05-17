@@ -77,6 +77,10 @@ public:
             return;
         auto & cell = it->second;
         current_size -= cell.size;
+        if (cell.is_protected)
+        {
+            current_protected_size -= cell.size;
+        }
         auto & queue = cell.is_protected ? protected_queue : probationary_queue;
         queue.erase(cell.queue_iterator);
         cells.erase(it);
@@ -188,10 +192,12 @@ protected:
         {
             if (is_protected)
             {
-                return current_weight_size > max_weight_size && queue_size > 0;
+                return ((max_elements_size != 0 && cells.size() - probationary_queue.size() > max_elements_size - probationary_queue.size())
+                        || (current_weight_size > max_weight_size))
+                    && (queue_size > 0);
             }
-            return ((max_elements_size != 0 && queue_size > max_elements_size)
-                || (current_weight_size > max_weight_size)) && (queue_size > 0);
+            return ((max_elements_size != 0 && cells.size() > max_elements_size) || (current_weight_size > max_weight_size))
+                && (queue_size > 0);
         };
 
         while (need_remove())
