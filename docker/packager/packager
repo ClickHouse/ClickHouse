@@ -331,7 +331,7 @@ if __name__ == "__main__":
         args.output_dir = os.path.abspath(os.path.join(os.getcwd(), args.output_dir))
 
     image_type = "binary" if args.package_type == "performance" else args.package_type
-    image_name = "clickhouse/binary-builder"
+    image_name = "altinityinfra/binary-builder"
 
     if not os.path.isabs(args.clickhouse_repo_path):
         ch_root = os.path.abspath(os.path.join(os.getcwd(), args.clickhouse_repo_path))

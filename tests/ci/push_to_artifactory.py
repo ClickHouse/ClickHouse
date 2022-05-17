@@ -225,7 +225,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--bucket-name",
-        default="clickhouse-builds",
+        default="clickhouse-private-test-reports",
         help="AWS S3 bucket name",
     )
     parser.add_argument(

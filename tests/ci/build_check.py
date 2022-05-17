@@ -8,7 +8,7 @@ import sys
 import time
 from typing import List, Optional, Tuple
 
-from env_helper import REPO_COPY, TEMP_PATH, CACHES_PATH, IMAGES_PATH
+from env_helper import REPO_COPY, TEMP_PATH, CACHES_PATH, IMAGES_PATH, S3_BUILDS_BUCKET
 from s3_helper import S3Helper
 from pr_info import PRInfo
 from version_helper import (
@@ -21,7 +21,7 @@ from ci_config import CI_CONFIG, BuildConfig
 from docker_pull_helper import get_image_with_version
 from tee_popen import TeePopen
 
-IMAGE_NAME = "clickhouse/binary-builder"
+IMAGE_NAME = "altinityinfra/binary-builder"
 
 
 def get_build_config(build_check_name: str, build_name: str) -> BuildConfig:
@@ -229,12 +229,12 @@ def main():
         log_url = ""
         for url in build_results:
             if "build_log.log" in url:
-                log_url = "https://s3.amazonaws.com/clickhouse-builds/" + url.replace(
+                log_url = f"https://s3.amazonaws.com/{S3_BUILDS_BUCKET}/" + url.replace(
                     "+", "%2B"
                 ).replace(" ", "%20")
             else:
                 build_urls.append(
-                    "https://s3.amazonaws.com/clickhouse-builds/"
+                    f"https://s3.amazonaws.com/{S3_BUILDS_BUCKET}/"
                     + url.replace("+", "%2B").replace(" ", "%20")
                 )
         success = len(build_urls) > 0

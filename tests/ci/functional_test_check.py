@@ -48,9 +48,9 @@ def get_additional_envs(check_name, run_by_hash_num, run_by_hash_total):
 
 def get_image_name(check_name):
     if "stateless" in check_name.lower():
-        return "clickhouse/stateless-test"
+        return "altinityinfra/stateless-test"
     if "stateful" in check_name.lower():
-        return "clickhouse/stateful-test"
+        return "altinityinfra/stateful-test"
     else:
         raise Exception(f"Cannot deduce image name based on check name {check_name}")
 

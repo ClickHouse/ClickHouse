@@ -400,7 +400,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--repo",
-        default="ClickHouse/ClickHouse",
+        default="Altinity/ClickHouse",
         help="repository to create the release",
     )
     parser.add_argument(

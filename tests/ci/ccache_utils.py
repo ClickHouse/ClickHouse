@@ -5,6 +5,7 @@ import time
 import sys
 import os
 import shutil
+from env_helper import S3_BUILDS_BUCKET
 from pathlib import Path
 
 import requests
@@ -71,7 +72,7 @@ def get_ccache_if_not_exists(
         for obj in objects:
             if ccache_name in obj:
                 logging.info("Found ccache on path %s", obj)
-                url = "https://s3.amazonaws.com/clickhouse-builds/" + obj
+                url = f"https://s3.amazonaws.com/{S3_BUILDS_BUCKET}/" + obj
                 compressed_cache = os.path.join(temp_path, os.path.basename(obj))
                 dowload_file_with_progress(url, compressed_cache)
 
