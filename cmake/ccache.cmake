@@ -1,3 +1,5 @@
+# Setup integration with ccache to speed up builds, see https://ccache.dev/
+
 if (CMAKE_CXX_COMPILER_LAUNCHER MATCHES "ccache" OR CMAKE_C_COMPILER_LAUNCHER MATCHES "ccache")
     set(COMPILER_MATCHES_CCACHE 1)
 else()
@@ -6,6 +8,7 @@ endif()
 
 if ((ENABLE_CCACHE OR NOT DEFINED ENABLE_CCACHE) AND NOT COMPILER_MATCHES_CCACHE)
     find_program (CCACHE_FOUND ccache)
+
     if (CCACHE_FOUND)
         set(ENABLE_CCACHE_BY_DEFAULT 1)
     else()
@@ -18,7 +21,6 @@ if (NOT CCACHE_FOUND AND NOT DEFINED ENABLE_CCACHE AND NOT COMPILER_MATCHES_CCAC
             "Setting it up will significantly reduce compilation time for 2nd and consequent builds")
 endif()
 
-# https://ccache.dev/
 option(ENABLE_CCACHE "Speedup re-compilations using ccache (external tool)" ${ENABLE_CCACHE_BY_DEFAULT})
 
 if (NOT ENABLE_CCACHE)
