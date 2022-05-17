@@ -6,7 +6,6 @@
 #include <Storages/IStorage_fwd.h>
 #include <Storages/TableLockHolder.h>
 #include <Interpreters/Context_fwd.h>
-#include <Interpreters/ProcessList.h>
 
 
 namespace DB
