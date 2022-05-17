@@ -100,6 +100,16 @@ public:
     /// container.
     Container container;
 
+    // Applying ZooKeeper request to storage consists of two steps:
+    //  - preprocessing which, instead of applying the changes directly to storage,
+    //    generates deltas with those changes, denoted with the request ZXID
+    //  - processing which applies deltas with the correct ZXID to the storage
+    //
+    // Delta objects allow us two things:
+    //  - fetch the latest, uncommitted state of an object by getting the committed
+    //    state of that same object from the storage and applying the deltas
+    //    in the same order as they are defined
+    //  - quickly commit the changes to the storage
     struct CreateNodeDelta
     {
         Coordination::Stat stat;
@@ -177,8 +187,7 @@ public:
             }
         }
 
-        template <typename Predicate>
-        bool hasACL(int64_t session_id, bool is_local, Predicate predicate)
+        bool hasACL(int64_t session_id, bool is_local, std::function<bool(const AuthID &)>  predicate)
         {
             for (const auto & session_auth : storage.session_and_auth[session_id])
             {
@@ -192,7 +201,7 @@ public:
 
             for (const auto & delta : deltas)
             {
-                if (auto * auth_delta = std::get_if<KeeperStorage::AddAuthDelta>(&delta.operation);
+                if (const auto * auth_delta = std::get_if<KeeperStorage::AddAuthDelta>(&delta.operation);
                     auth_delta && auth_delta->session_id == session_id && predicate(auth_delta->auth_id))
                     return true;
             }
@@ -212,6 +221,9 @@ public:
 
     Coordination::Error commit(int64_t zxid, int64_t session_id);
 
+    // Create node in the storage
+    // Returns false if it failed to create the node, true otherwise
+    // We don't care about the exact failure because we should've caught it during preprocessing
     bool createNode(
         const std::string & path,
         String data,
@@ -220,6 +232,10 @@ public:
         bool is_ephemeral,
         Coordination::ACLs node_acls,
         int64_t session_id);
+
+    // Remove node in the storage
+    // Returns false if it failed to remove the node, true otherwise
+    // We don't care about the exact failure because we should've caught it during preprocessing
     bool removeNode(const std::string & path, int32_t version);
 
     bool checkACL(StringRef path, int32_t permissions, int64_t session_id, bool is_local);
