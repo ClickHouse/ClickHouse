@@ -45,7 +45,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int CANNOT_OPEN_FILE;
     extern const int LOGICAL_ERROR;
-    extern const int TOO_MANY_PARTS;
+    extern const int TOO_MANY_PARTITIONS;
 }
 
 
@@ -747,7 +747,7 @@ HiveFiles StorageHive::collectHiveFiles(
                         hit_parttions_num += 1;
                         if (hive_max_query_partitions > 0 && hit_parttions_num > hive_max_query_partitions)
                         {
-                            throw Exception(ErrorCodes::TOO_MANY_PARTS, "Too many partitions to query for table {}.{} . max partition is limited to {}", hive_database, hive_table, hive_max_query_partitions);
+                            throw Exception(ErrorCodes::TOO_MANY_PARTITIONS, "Too many partitions to query for table {}.{} . max partition is limited to {}", hive_database, hive_table, hive_max_query_partitions);
                         }
                         hive_files.insert(std::end(hive_files), std::begin(hive_files_in_partition), std::end(hive_files_in_partition));
                     }
