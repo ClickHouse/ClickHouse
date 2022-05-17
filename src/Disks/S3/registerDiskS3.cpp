@@ -1,6 +1,6 @@
 #include <Common/config.h>
 
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
@@ -161,7 +161,7 @@ std::unique_ptr<DiskS3Settings> getSettings(const Poco::Util::AbstractConfigurat
 
     return std::make_unique<DiskS3Settings>(
         getClient(config, config_prefix, context),
-        std::move(rw_settings),
+        rw_settings,
         config.getUInt64(config_prefix + ".min_bytes_for_seek", 1024 * 1024),
         config.getBool(config_prefix + ".send_metadata", false),
         config.getInt(config_prefix + ".thread_pool_size", 16),
@@ -195,6 +195,7 @@ void registerDiskS3(DiskFactory & factory)
             name,
             uri.bucket,
             uri.key,
+            uri.version_id,
             metadata_disk,
             std::move(cache),
             context,

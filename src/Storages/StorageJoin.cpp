@@ -119,7 +119,7 @@ void StorageJoin::mutate(const MutationCommands & commands, ContextPtr context)
 
     auto new_data = std::make_shared<HashJoin>(table_join, getRightSampleBlock(), overwrite);
 
-    // New scope controls lifetime of InputStream.
+    // New scope controls lifetime of pipeline.
     {
         auto storage_ptr = DatabaseCatalog::instance().getTable(getStorageID(), context);
         auto interpreter = std::make_unique<MutationsInterpreter>(storage_ptr, metadata_snapshot, commands, context, true);
@@ -337,7 +337,7 @@ void registerStorageJoin(StorageFactory & factory)
             key_names.push_back(*opt_key);
         }
 
-        return StorageJoin::create(
+        return std::make_shared<StorageJoin>(
             disk,
             args.relative_data_path,
             args.table_id,
