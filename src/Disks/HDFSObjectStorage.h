@@ -99,10 +99,9 @@ public:
 
     void applyNewSettings(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, ContextPtr context) override;
 
-    String getObjectsNamespace() const override { return bucket; }
+    String getObjectsNamespace() const override { return ""; }
 
     std::unique_ptr<IObjectStorage> cloneObjectStorage(const std::string & new_namespace, const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, ContextPtr context) override;
-
 
 private:
     const Poco::Util::AbstractConfiguration & config;
