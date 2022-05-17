@@ -41,7 +41,7 @@ public:
         ASTPtr query;
         Block header;
 
-        const Cluster::ShardInfo & shard_info;
+        Cluster::ShardInfo shard_info;
 
         /// If we connect to replicas lazily.
         /// (When there is a local replica with big delay).
