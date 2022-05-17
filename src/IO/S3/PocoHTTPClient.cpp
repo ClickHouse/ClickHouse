@@ -37,6 +37,11 @@ namespace ProfileEvents
     extern const Event S3WriteRequestsRedirects;
 }
 
+namespace CurrentMetrics
+{
+    extern const Metric S3Requests;
+}
+
 namespace DB::ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
@@ -160,6 +165,7 @@ void PocoHTTPClient::makeRequestInternal(
     };
 
     ProfileEvents::increment(select_metric(S3MetricType::Count));
+    CurrentMetrics::Increment metric_increment{CurrentMetrics::S3Requests};
 
     try
     {

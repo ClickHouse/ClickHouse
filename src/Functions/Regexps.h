@@ -44,23 +44,20 @@ namespace Regexps
     template <bool like>
     inline Regexp createRegexp(const std::string & pattern, int flags)
     {
-        return {pattern, flags};
-    }
-
-    template <>
-    inline Regexp createRegexp<true>(const std::string & pattern, int flags)
-    {
-        return {likePatternToRegexp(pattern), flags};
+        if constexpr (like)
+            return {likePatternToRegexp(pattern), flags};
+        else
+            return {pattern, flags};
     }
 
     /** Returns holder of an object from Pool.
       * You must hold the ownership while using the object.
       * In destructor, it returns the object back to the Pool for further reuse.
       */
-    template <bool like, bool no_capture, bool case_insensitive = false>
+    template <bool like, bool no_capture, bool case_insensitive>
     inline Pool::Pointer get(const std::string & pattern)
     {
-        /// C++11 has thread-safe function-local static on most modern compilers.
+        /// the Singleton is thread-safe in C++11
         static Pool known_regexps; /// Different variables for different pattern parameters.
 
         return known_regexps.get(pattern, [&pattern]
