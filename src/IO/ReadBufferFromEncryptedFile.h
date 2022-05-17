@@ -28,7 +28,9 @@ public:
 
     bool supportsRightBoundedReads() const override { return true; }
 
-    void setReadUntilPosition(size_t position) override;
+    void setReadUntilPosition(size_t position) override { in->setReadUntilPosition(position + FileEncryption::Header::kSize); }
+
+    void setReadUntilEnd() override { in->setReadUntilEnd(); }
 
 private:
     bool nextImpl() override;
