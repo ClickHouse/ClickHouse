@@ -902,7 +902,8 @@ inline void StorageWindowView::cleanup()
 
     auto alter_query = getCleanupQuery();
     auto cleanup_context = Context::createCopy(getContext());
-    cleanup_context->getClientInfo().query_kind = ClientInfo::QueryKind::INITIAL_QUERY;
+    cleanup_context->getClientInfo().setInitialQuery();
+    cleanup_context->setInternalQuery(true);
     InterpreterAlterQuery interpreter_alter(alter_query, cleanup_context);
     interpreter_alter.execute();
 
@@ -922,7 +923,7 @@ void StorageWindowView::threadFuncCleanup()
     }
 
     if (!shutdown_called)
-        clean_cache_task->scheduleAfter(clean_interval_ms);
+        clean_cache_task->scheduleAfter(1000);
 }
 
 void StorageWindowView::threadFuncFireProc()
