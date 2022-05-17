@@ -43,8 +43,9 @@ with client(name="client1>", log=log) as client1, client(
 
     client1.send("WATCH 01056_window_view_proc_hop_watch.wv")
     client1.expect("Query id" + end_of_block)
+    client1.expect("Progress: 0.00 rows.*\)")
     client2.send(
-        "INSERT INTO 01056_window_view_proc_hop_watch.mt VALUES (1, now('US/Samoa') + 1)"
+        "INSERT INTO 01056_window_view_proc_hop_watch.mt VALUES (1, now('US/Samoa') + 3)"
     )
     client1.expect("1" + end_of_block)
     client1.expect("Progress: 1.00 rows.*\)")
