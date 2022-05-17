@@ -54,6 +54,7 @@ To build using Homebrew's vanilla Clang compiler (the only **recommended** way):
 ``` bash
 cd ClickHouse
 mkdir build
+export PATH=$(brew --prefix llvm)/bin:$PATH
 export CC=$(brew --prefix llvm)/bin/clang
 export CXX=$(brew --prefix llvm)/bin/clang++
 cmake -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -S . -B build
@@ -79,6 +80,8 @@ To build using Homebrew's vanilla GCC compiler (this option is only for developm
 ``` bash
 cd ClickHouse
 mkdir build
+export PATH=$(brew --prefix binutils)/bin:$PATH
+export PATH=$(brew --prefix gcc)/bin:$PATH
 export CC=$(brew --prefix gcc)/bin/gcc-11
 export CXX=$(brew --prefix gcc)/bin/g++-11
 cmake -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -S . -B build
