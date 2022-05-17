@@ -370,6 +370,16 @@ void DDLWorker::scheduleTasks(bool reinitialized)
         String entry_name = *it;
         LOG_TRACE(log, "Checking task {}", entry_name);
 
+        auto task_iter = std::find_if(current_tasks.begin(), current_tasks.end(), [&](const auto & t)
+        {
+            return t->entry_name == entry_name;
+        });
+
+        if (task_iter != current_tasks.end()) {
+            /// Task is not processed yet, but already initialized, skip it
+            continue;
+        }
+
         String reason;
         auto task = initAndCheckTask(entry_name, reason, zookeeper);
         if (task)
