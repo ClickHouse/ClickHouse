@@ -151,6 +151,7 @@ void KeeperStorageSnapshot::serialize(const KeeperStorageSnapshot & snapshot, Wr
     if (snapshot.version >= SnapshotVersion::V5)
     {
         writeBinary(snapshot.zxid, out);
+        writeBinary(static_cast<uint8_t>(KeeperStorage::CURRENT_DIGEST_VERSION), out);
         writeBinary(snapshot.nodes_digest, out);
     }
 
@@ -243,10 +244,22 @@ void KeeperStorageSnapshot::deserialize(SnapshotDeserializationResult & deserial
     deserialization_result.snapshot_meta = deserializeSnapshotMetadata(in);
     KeeperStorage & storage = *deserialization_result.storage;
 
+    bool recalculate_digest = storage.digest_enabled;
     if (version >= SnapshotVersion::V5)
     {
         readBinary(storage.zxid, in);
-        readBinary(storage.nodes_digest, in);
+        uint8_t digest_version;
+        readBinary(digest_version, in);
+        if (digest_version != KeeperStorage::DigestVersion::NO_DIGEST)
+        {
+            uint64_t nodes_digest;
+            readBinary(nodes_digest, in);
+            if (digest_version == KeeperStorage::CURRENT_DIGEST_VERSION)
+            {
+                storage.nodes_digest = nodes_digest;
+                recalculate_digest = false;
+            }
+        }
     }
     else
         storage.zxid = deserialization_result.snapshot_meta->get_last_log_idx();
@@ -299,6 +312,9 @@ void KeeperStorageSnapshot::deserialize(SnapshotDeserializationResult & deserial
             storage.ephemerals[node.stat.ephemeralOwner].insert(path);
 
         current_size++;
+
+        if (recalculate_digest)
+            storage.nodes_digest += node.getDigest(path);
     }
 
     for (const auto & itr : storage.container)

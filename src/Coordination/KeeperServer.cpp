@@ -405,9 +405,10 @@ nuraft::ptr<nuraft::buffer> getZooKeeperLogEntry(const KeeperStorage::RequestFor
     request_for_session.request->write(write_buf);
     DB::writeIntBinary(request_for_session.time, write_buf);
     DB::writeIntBinary(request_for_session.zxid, write_buf);
-    DB::writeIntBinary(request_for_session.digest.version, write_buf);
-    if (request_for_session.digest.version != KeeperStorage::DigestVersion::NO_DIGEST)
-        DB::writeIntBinary(request_for_session.digest.value, write_buf);
+    assert(request_for_session.digest);
+    DB::writeIntBinary(request_for_session.digest->version, write_buf);
+    if (request_for_session.digest->version != KeeperStorage::DigestVersion::NO_DIGEST)
+        DB::writeIntBinary(request_for_session.digest->value, write_buf);
 
     return write_buf.getBuffer();
 }
