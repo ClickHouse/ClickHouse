@@ -18,7 +18,7 @@
 #include <Core/Types.h>
 #include <base/types.h>
 #include <consistent_hashing.h>
-#include <Poco/StringTokenizer.h>
+#include <base/find_symbols.h>
 
 namespace ProfileEvents
 {
@@ -228,11 +228,7 @@ void ExternalDataSourceCache::initOnce(ContextPtr context, const String & root_d
     }
     LOG_INFO(
         log, "Initializing local cache for remote data sources. Local cache root path: {}, cache size limit: {}", root_dir_, limit_size_);
-    Poco::StringTokenizer tokenizer(root_dir_, ",");
-    for (size_t i = 0; i < tokenizer.count(); ++i)
-    {
-        root_dirs.emplace_back(tokenizer[i]);
-    }
+    splitInto<','>(root_dirs, root_dir_);
     std::sort(root_dirs.begin(), root_dirs.end());
     local_cache_bytes_read_before_flush = bytes_read_before_flush_;
     lru_caches = std::make_unique<RemoteFileCacheType>(limit_size_);
