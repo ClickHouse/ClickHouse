@@ -816,7 +816,7 @@ inline void writeDateTimeText(DateTime64 datetime64, UInt32 scale, WriteBuffer &
     /// => whole = 0, fractional = -877(After DecimalUtils::split)
     /// => whole = -1(1969-12-31 23:59:59), fractional = 1000 + (-877) = 123(.123)
     using T = typename DateTime64::NativeType;
-    if (datetime64.value < 0)
+    if (datetime64.value < 0 && components.fractional)
     {
         components.fractional = DecimalUtils::scaleMultiplier<T>(scale) + (components.whole ? T(-1) : T(1)) * components.fractional;
         --components.whole;
@@ -999,7 +999,12 @@ void writeText(Decimal<T> x, UInt32 scale, WriteBuffer & ostr, bool trailing_zer
     {
         part = DecimalUtils::getFractionalPart(x, scale);
         if (part || trailing_zeros)
+        {
+            if (part < 0)
+                part *= T(-1);
+
             writeDecimalFractional(part, scale, ostr, trailing_zeros);
+        }
     }
 }
 
