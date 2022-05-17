@@ -107,11 +107,6 @@ bool ReadBufferFromEncryptedFile::nextImpl()
     return true;
 }
 
-void ReadBufferFromEncryptedFile::setReadUntilPosition(size_t position)
-{
-    read_until_position = position;
-}
-
 }
 
 #endif
