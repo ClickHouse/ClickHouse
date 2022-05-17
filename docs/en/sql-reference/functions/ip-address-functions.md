@@ -1,6 +1,6 @@
 ---
-toc_priority: 55
-toc_title: IP Addresses
+sidebar_position: 55
+sidebar_label: IP Addresses
 ---
 
 # Functions for Working with IPv4 and IPv6 Addresses {#functions-for-working-with-ip-addresses}
@@ -477,4 +477,18 @@ Result:
 ┌─isIPAddressInRange('127.0.0.1', 'ffff::/16')─┐
 │                                            0 │
 └──────────────────────────────────────────────┘
+```
+
+Query:
+
+``` sql
+SELECT isIPAddressInRange('::ffff:192.168.0.1', '::ffff:192.168.0.4/128');
+```
+
+Result:
+
+``` text
+┌─isIPAddressInRange('::ffff:192.168.0.1', '::ffff:192.168.0.4/128')─┐
+│                                                                  0 │
+└────────────────────────────────────────────────────────────────────┘
 ```

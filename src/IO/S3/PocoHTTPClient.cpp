@@ -16,7 +16,7 @@
 #include "Poco/StreamCopier.h"
 #include <Poco/Net/HTTPRequest.h>
 #include <Poco/Net/HTTPResponse.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <re2/re2.h>
 
 #include <boost/algorithm/string.hpp>
@@ -35,6 +35,11 @@ namespace ProfileEvents
     extern const Event S3WriteRequestsErrors;
     extern const Event S3WriteRequestsThrottling;
     extern const Event S3WriteRequestsRedirects;
+}
+
+namespace CurrentMetrics
+{
+    extern const Metric S3Requests;
 }
 
 namespace DB::ErrorCodes
@@ -160,6 +165,7 @@ void PocoHTTPClient::makeRequestInternal(
     };
 
     ProfileEvents::increment(select_metric(S3MetricType::Count));
+    CurrentMetrics::Increment metric_increment{CurrentMetrics::S3Requests};
 
     try
     {

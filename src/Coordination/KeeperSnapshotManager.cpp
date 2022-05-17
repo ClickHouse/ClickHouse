@@ -149,9 +149,12 @@ void KeeperStorageSnapshot::serialize(const KeeperStorageSnapshot & snapshot, Wr
     serializeSnapshotMetadata(snapshot.snapshot_meta, out);
     writeBinary(snapshot.session_id, out);
 
-    /// Serialize ACLs MAP
-    writeBinary(snapshot.acl_map.size(), out);
-    for (const auto & [acl_id, acls] : snapshot.acl_map)
+    /// Better to sort before serialization, otherwise snapshots can be different on different replicas
+    std::vector<std::pair<int64_t, Coordination::ACLs>> sorted_acl_map(snapshot.acl_map.begin(), snapshot.acl_map.end());
+    std::sort(sorted_acl_map.begin(), sorted_acl_map.end());
+    /// Serialize ACLs map
+    writeBinary(sorted_acl_map.size(), out);
+    for (const auto & [acl_id, acls] : sorted_acl_map)
     {
         writeBinary(acl_id, out);
         writeBinary(acls.size(), out);
@@ -187,16 +190,22 @@ void KeeperStorageSnapshot::serialize(const KeeperStorageSnapshot & snapshot, Wr
         ++it;
     }
 
+    /// Session must be saved in a sorted order,
+    /// otherwise snapshots will be different
+    std::vector<std::pair<int64_t, int64_t>> sorted_session_and_timeout(snapshot.session_and_timeout.begin(), snapshot.session_and_timeout.end());
+    std::sort(sorted_session_and_timeout.begin(), sorted_session_and_timeout.end());
+
     /// Serialize sessions
-    size_t size = snapshot.session_and_timeout.size();
+    size_t size = sorted_session_and_timeout.size();
+
     writeBinary(size, out);
-    for (const auto & [session_id, timeout] : snapshot.session_and_timeout)
+    for (const auto & [session_id, timeout] : sorted_session_and_timeout)
     {
         writeBinary(session_id, out);
         writeBinary(timeout, out);
 
         KeeperStorage::AuthIDs ids;
-        if (snapshot.session_and_auth.count(session_id))
+        if (snapshot.session_and_auth.contains(session_id))
             ids = snapshot.session_and_auth.at(session_id);
 
         writeBinary(ids.size(), out);

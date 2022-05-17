@@ -169,9 +169,9 @@ obstacle to adoption, that text has been removed.
 
 */
 
-#include <math.h>
-#include <stdint.h>
-#include <stdio.h>
+#include <cmath>
+#include <cstdint>
+#include <cstdio>
 
 double preciseExp10(double x)
 {
