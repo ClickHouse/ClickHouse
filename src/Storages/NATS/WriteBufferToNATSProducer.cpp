@@ -113,6 +113,8 @@ void WriteBufferToNATSProducer::publishThreadFunc(void * arg)
         {
             LOG_DEBUG(buffer->log, "Something went wrong during publishing to NATS subject. Nats status text: {}. Last error message: {}",
                       natsStatus_GetText(status), nats_GetLastError(nullptr));
+            if (!buffer->payloads.push(std::move(payload)))
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Could not push to payloads queue");
             break;
         }
     }

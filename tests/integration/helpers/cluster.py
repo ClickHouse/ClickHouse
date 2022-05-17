@@ -22,12 +22,14 @@ try:
     # Please, add modules that required for specific tests only here.
     # So contributors will be able to run most tests locally
     # without installing tons of unneeded packages that may be not so easy to install.
+    import asyncio
     from cassandra.policies import RoundRobinPolicy
     import cassandra.cluster
     import psycopg2
     from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
     import pymongo
     import pymysql
+    import nats
     from confluent_kafka.avro.cached_schema_registry_client import (
         CachedSchemaRegistryClient,
     )
@@ -212,6 +214,11 @@ def check_rabbitmq_is_available(rabbitmq_id):
     return p.returncode == 0
 
 
+async def check_nats_is_available(nats_ip):
+    nc = await nats.connect('{}:4444'.format(nats_ip), user='click', password='house')
+    return nc.is_connected
+
+
 def enable_consistent_hash_plugin(rabbitmq_id):
     p = subprocess.Popen(
         (
@@ -335,6 +342,7 @@ class ClickHouseCluster:
         self.base_kafka_cmd = []
         self.base_kerberized_kafka_cmd = []
         self.base_rabbitmq_cmd = []
+        self.base_nats_cmd = []
         self.base_cassandra_cmd = []
         self.base_jdbc_bridge_cmd = []
         self.base_redis_cmd = []
@@ -351,6 +359,7 @@ class ClickHouseCluster:
         self.with_kafka = False
         self.with_kerberized_kafka = False
         self.with_rabbitmq = False
+        self.with_nats = False
         self.with_odbc_drivers = False
         self.with_hdfs = False
         self.with_kerberized_hdfs = False
@@ -430,6 +439,12 @@ class ClickHouseCluster:
         self.rabbitmq_port = 5672
         self.rabbitmq_dir = p.abspath(p.join(self.instances_dir, "rabbitmq"))
         self.rabbitmq_logs_dir = os.path.join(self.rabbitmq_dir, "logs")
+
+        self.nats_host = "nats1"
+        self.nats_ip = None
+        self.nats_port = 4444
+        self.nats_docker_id = None
+
 
         # available when with_nginx == True
         self.nginx_host = "nginx"
@@ -1004,6 +1019,26 @@ class ClickHouseCluster:
         ]
         return self.base_rabbitmq_cmd
 
+    def setup_nats_cmd(self, instance, env_variables, docker_compose_yml_dir):
+        self.with_nats = True
+        env_variables["NATS_HOST"] = self.nats_host
+        env_variables["NATS_INTERNAL_PORT"] = "4444"
+        env_variables["NATS_EXTERNAL_PORT"] = str(self.nats_port)
+
+        self.base_cmd.extend(
+            ["--file", p.join(docker_compose_yml_dir, "docker_compose_nats.yml")]
+        )
+        self.base_nats_cmd = [
+            "docker-compose",
+            "--env-file",
+            instance.env_file,
+            "--project-name",
+            self.project_name,
+            "--file",
+            p.join(docker_compose_yml_dir, "docker_compose_nats.yml"),
+        ]
+        return self.base_nats_cmd
+
     def setup_mongo_secure_cmd(self, instance, env_variables, docker_compose_yml_dir):
         self.with_mongo = self.with_mongo_secure = True
         env_variables["MONGO_HOST"] = self.mongo_host
@@ -1170,6 +1205,7 @@ class ClickHouseCluster:
         with_kafka=False,
         with_kerberized_kafka=False,
         with_rabbitmq=False,
+        with_nats=False,
         clickhouse_path_dir=None,
         with_odbc_drivers=False,
         with_postgres=False,
@@ -1258,6 +1294,7 @@ class ClickHouseCluster:
             with_kafka=with_kafka,
             with_kerberized_kafka=with_kerberized_kafka,
             with_rabbitmq=with_rabbitmq,
+            with_nats=with_nats,
             with_nginx=with_nginx,
             with_kerberized_hdfs=with_kerberized_hdfs,
             with_mongo=with_mongo or with_mongo_secure,
@@ -1391,6 +1428,11 @@ class ClickHouseCluster:
         if with_rabbitmq and not self.with_rabbitmq:
             cmds.append(
                 self.setup_rabbitmq_cmd(instance, env_variables, docker_compose_yml_dir)
+            )
+
+        if with_nats and not self.with_nats:
+            cmds.append(
+                self.setup_nats_cmd(instance, env_variables, docker_compose_yml_dir)
             )
 
         if with_nginx and not self.with_nginx:
@@ -1835,6 +1877,18 @@ class ClickHouseCluster:
         if throw:
             raise Exception("Cannot wait RabbitMQ container")
         return False
+
+    def wait_nats_is_available(self, nats_ip, max_retries=5):
+        retries = 0
+        while True:
+            if asyncio.run(check_nats_is_available(nats_ip)):
+                break
+            else:
+                retries += 1
+                if retries > max_retries:
+                    raise Exception("NATS is not available")
+                logging.debug("Waiting for NATS to start up")
+                time.sleep(1)
 
     def wait_nginx_to_start(self, timeout=60):
         self.nginx_ip = self.get_instance_ip(self.nginx_host)
@@ -2284,6 +2338,14 @@ class ClickHouseCluster:
                     if self.wait_rabbitmq_to_start(throw=(i == 4)):
                         break
 
+            if self.with_nats and self.base_nats_cmd:
+                logging.debug("Setup NATS")
+                subprocess_check_call(self.base_nats_cmd + common_opts)
+                self.nats_docker_id = self.get_instance_docker_id("nats1")
+                self.up_called = True
+                self.nats_ip = self.get_instance_ip("nats1")
+                self.wait_nats_is_available(self.nats_ip)
+
             if self.with_hdfs and self.base_hdfs_cmd:
                 logging.debug("Setup HDFS")
                 os.makedirs(self.hdfs_logs_dir)
@@ -2639,6 +2701,7 @@ class ClickHouseInstance:
         with_kafka,
         with_kerberized_kafka,
         with_rabbitmq,
+        with_nats,
         with_nginx,
         with_kerberized_hdfs,
         with_mongo,
@@ -2719,6 +2782,7 @@ class ClickHouseInstance:
         self.with_kafka = with_kafka
         self.with_kerberized_kafka = with_kerberized_kafka
         self.with_rabbitmq = with_rabbitmq
+        self.with_nats = with_nats
         self.with_nginx = with_nginx
         self.with_kerberized_hdfs = with_kerberized_hdfs
         self.with_mongo = with_mongo
@@ -3688,6 +3752,9 @@ class ClickHouseInstance:
 
         if self.with_rabbitmq:
             depends_on.append("rabbitmq1")
+
+        if self.with_nats:
+            depends_on.append("nats1")
 
         if self.with_zookeeper:
             depends_on.append("zoo1")
