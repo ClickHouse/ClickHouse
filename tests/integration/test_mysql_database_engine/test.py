@@ -343,8 +343,8 @@ def test_data_types_support_level_for_mysql_database_engine(started_cluster):
         mysql_node.query("DROP DATABASE test")
 
 
-float_values = [0, 'NULL']
-clickhouse_float_values = [0, '\\N']
+float_values = [0, "NULL"]
+clickhouse_float_values = [0, "\\N"]
 int32_values = [0, 1, -1, 2147483647, -2147483648]
 uint32_values = [
     0,
@@ -356,8 +356,8 @@ int16_values = [0, 1, -1, 32767, -32768]
 uint16_values = [0, 1, 65535]
 int8_values = [0, 1, -1, 127, -128]
 uint8_values = [0, 1, 255]
-string_values = ["'ClickHouse'", 'NULL']
-clickhouse_string_values = ['ClickHouse', '\\N']
+string_values = ["'ClickHouse'", "NULL"]
+clickhouse_string_values = ["ClickHouse", "\\N"]
 date_values = ["'1970-01-01'"]
 date2Date32_values = ["'1925-01-01'", "'2283-11-11'"]
 date2String_values = ["'1000-01-01'", "'9999-12-31'"]
@@ -380,7 +380,7 @@ timestamp_values = ["'2015-05-18 07:40:01.123'", "'2019-09-16 19:20:11.123'"]
 timestamp_values_no_subsecond = ["'2015-05-18 07:40:01'", "'2019-09-16 19:20:11'"]
 
 def arryToString(expected_clickhouse_values):
-    return '\n'.join(str(value) for value in expected_clickhouse_values)
+    return "\n".join(str(value) for value in expected_clickhouse_values)
 
 #  if expected_clickhouse_values is "", compare MySQL and ClickHouse query results directly
 @pytest.mark.parametrize(
@@ -633,8 +633,8 @@ def arryToString(expected_clickhouse_values):
             "common_types",
             "binary(0)",
             "Nullable(FixedString(1))",
-            ['NULL'],
-            ['\\N'],
+            ["NULL"],
+            ["\\N"],
             "",
             id="common_types_25",
         ),
@@ -846,9 +846,10 @@ def test_mysql_types(
         )
 
         expected_format_clickhouse_values = arryToString(expected_clickhouse_values)
-        if expected_format_clickhouse_values == '':
+        if expected_format_clickhouse_values == "":
             expected_format_clickhouse_values = execute_query(
-                mysql_node, "SELECT value FROM ${mysql_db}.${table_name}")
+                mysql_node, "SELECT value FROM ${mysql_db}.${table_name}"
+            )
 
         # Validate values
         assert expected_format_clickhouse_values == execute_query(
@@ -878,7 +879,7 @@ def test_mysql_types(
         )
 
         # Validate values
-        assert  expected_format_clickhouse_values == execute_query(
+        assert expected_format_clickhouse_values == execute_query(
             clickhouse_node,
             "SELECT value FROM ${ch_mysql_db}.${table_name}",
             settings=clickhouse_query_settings,
@@ -896,11 +897,12 @@ def test_mysql_types(
         )
 
         # Validate values
-        assert  expected_format_clickhouse_values == execute_query(
+        assert expected_format_clickhouse_values == execute_query(
             clickhouse_node,
             "SELECT value FROM mysql('mysql57:3306', '${mysql_db}', '${table_name}', 'root', 'clickhouse')",
             settings=clickhouse_query_settings,
         )
+
 
 def test_predefined_connection_configuration(started_cluster):
     with contextlib.closing(
