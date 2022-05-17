@@ -73,11 +73,15 @@ void LocalConnection::sendQuery(
     const String & query_id,
     UInt64 stage,
     const Settings *,
-    const ClientInfo *,
+    const ClientInfo * client_info,
     bool,
     std::function<void(const Progress &)> process_progress_callback)
 {
-    query_context = session.makeQueryContext();
+    /// Suggestion comes without client_info.
+    if (client_info)
+        query_context = session.makeQueryContext(*client_info);
+    else
+        query_context = session.makeQueryContext();
     query_context->setCurrentQueryId(query_id);
     if (send_progress)
     {
