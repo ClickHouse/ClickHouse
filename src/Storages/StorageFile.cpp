@@ -499,13 +499,6 @@ public:
         return storage->getName();
     }
 
-    void onCancel() override
-    {
-        std::lock_guard lock(reader_mutex);
-        if (reader)
-            reader->cancel();
-    }
-
     Chunk generate() override
     {
         while (!finished_generate)
@@ -555,10 +548,7 @@ public:
                 }
 
                 pipeline = std::make_unique<QueryPipeline>(QueryPipelineBuilder::getPipeline(std::move(builder)));
-                {
-                    std::lock_guard lock(reader_mutex);
-                    reader = std::make_unique<PullingPipelineExecutor>(*pipeline);
-                }
+                reader = std::make_unique<PullingPipelineExecutor>(*pipeline);
             }
 
             Chunk chunk;
@@ -590,10 +580,7 @@ public:
                 finished_generate = true;
 
             /// Close file prematurely if stream was ended.
-            {
-                std::lock_guard lock(reader_mutex);
-                reader.reset();
-            }
+            reader.reset();
             pipeline.reset();
             read_buf.reset();
         }
