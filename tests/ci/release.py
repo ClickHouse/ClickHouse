@@ -314,7 +314,7 @@ class Release:
             rollback_cmd = f"git checkout {orig_ref}"
         try:
             yield
-        except BaseException:
+        except (Exception, KeyboardInterrupt):
             logging.warning("Rolling back checked out %s for %s", ref, orig_ref)
             self.run(f"git reset --hard; git checkout {orig_ref}")
             raise
@@ -329,7 +329,7 @@ class Release:
         self._rollback_stack.append(rollback_cmd)
         try:
             yield
-        except BaseException:
+        except (Exception, KeyboardInterrupt):
             logging.warning("Rolling back created branch %s", name)
             self.run(rollback_cmd)
             raise
@@ -344,7 +344,7 @@ class Release:
         self._rollback_stack.append(rollback_cmd)
         try:
             yield
-        except BaseException:
+        except (Exception, KeyboardInterrupt):
             logging.warning("Rolling back label %s", label)
             self.run(rollback_cmd)
             raise
@@ -365,7 +365,7 @@ class Release:
             self._rollback_stack.append(rollback_cmd)
             try:
                 yield
-            except BaseException:
+            except (Exception, KeyboardInterrupt):
                 logging.warning("Rolling back release publishing")
                 self.run(rollback_cmd)
                 raise
@@ -379,7 +379,7 @@ class Release:
         try:
             with self._push(f"'{tag}'"):
                 yield
-        except BaseException:
+        except (Exception, KeyboardInterrupt):
             logging.warning("Rolling back tag %s", tag)
             self.run(rollback_cmd)
             raise
@@ -396,7 +396,7 @@ class Release:
 
         try:
             yield
-        except BaseException:
+        except (Exception, KeyboardInterrupt):
             if with_rollback_on_fail:
                 logging.warning("Rolling back pushed ref %s", ref)
                 self.run(rollback_cmd)
