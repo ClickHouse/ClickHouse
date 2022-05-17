@@ -821,7 +821,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 element.profile_counters = info.profile_counters;
 
                 /// We need to refresh the access info since dependent views might have added extra information, either during
-                /// creation of the view (PushingToViewsBlockOutputStream) or while executing its internal SELECT
+                /// creation of the view (PushingToViews chain) or while executing its internal SELECT
                 const auto & access_info = context_ptr->getQueryAccessInfo();
                 element.query_databases.insert(access_info.databases.begin(), access_info.databases.end());
                 element.query_tables.insert(access_info.tables.begin(), access_info.tables.end());
