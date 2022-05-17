@@ -70,6 +70,7 @@ Chunk IRowInputFormat::generate()
 
     ///auto chunk_missing_values = std::make_unique<ChunkMissingValues>();
     block_missing_values.clear();
+
     size_t num_rows = 0;
 
     try
