@@ -1,5 +1,7 @@
 #include <Disks/HDFSObjectStorage.h>
+
 #include <IO/SeekAvoidingReadBuffer.h>
+#include <IO/copyData.h>
 #include <Storages/HDFS/WriteBufferFromHDFS.h>
 #include <Storages/HDFS/HDFSCommon.h>
 #include <Storages/HDFS/ReadBufferFromHDFS.h>
@@ -42,9 +44,7 @@ std::unique_ptr<SeekableReadBuffer> HDFSObjectStorage::readObject( /// NOLINT
     std::optional<size_t>,
     std::optional<size_t>) const
 {
-    auto buf = std::make_unique<ReadBufferFromHDFS>(path, path, config, read_settings.remote_fs_buffer_size);
-
-    return std::make_unique<SeekAvoidingReadBuffer>(std::move(buf), settings->min_bytes_for_seek);
+    return std::make_unique<ReadBufferFromHDFS>(path, path, config, read_settings.remote_fs_buffer_size);
 }
 
 std::unique_ptr<ReadBufferFromFileBase> HDFSObjectStorage::readObjects( /// NOLINT
@@ -153,11 +153,20 @@ void HDFSObjectStorage::copyObject( /// NOLINT
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "HDFS API doesn't support custom attributes/metadata for stored objects");
 
     auto in = readObject(object_from);
-    auto out = writeObject(object_to);
+    auto out = writeObject(object_to, WriteMode::Rewrite);
     copyData(*in, *out);
     out->finalize();
 }
 
+
+void HDFSObjectStorage::applyNewSettings(const Poco::Util::AbstractConfiguration &, const std::string &, ContextPtr)
+{
+}
+
+std::unique_ptr<IObjectStorage> HDFSObjectStorage::cloneObjectStorage(const std::string &, const Poco::Util::AbstractConfiguration &, const std::string &, ContextPtr)
+{
+    throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "HDFS object storage doesn't support cloning");
+}
 
 }
 
