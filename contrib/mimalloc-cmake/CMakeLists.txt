@@ -33,11 +33,10 @@ if (ENABLE_MIMALLOC)
     set (USE_MIMALLOC 1)
 
     add_library(_mimalloc ${SRCS})
-    target_compile_options(_mimalloc
-        PRIVATE
-            -Wno-reserved-identifier
+    target_compile_options(_mimalloc PRIVATE
         # Note: turn of this warning:
         #   error: identifier '_mi_option_last' is reserved because it starts with '_' at global scope
+        -Wno-reserved-identifier
     )
     target_include_directories(_mimalloc SYSTEM BEFORE PUBLIC "${ClickHouse_SOURCE_DIR}/contrib/mimalloc/include")
     add_library(ch_contrib::mimalloc ALIAS _mimalloc)
