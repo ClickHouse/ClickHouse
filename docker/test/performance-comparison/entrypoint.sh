@@ -184,4 +184,6 @@ ls -lath
     report analyze benchmark metrics \
     ./*.core.dmp ./*.core
 
-cp compare.log /output
+# If the files aren't same, copy it
+cmp --silent compare.log /output/compare.log || \
+  cp compare.log /output
