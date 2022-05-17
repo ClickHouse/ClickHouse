@@ -87,7 +87,7 @@ namespace detail
 
             if (null_map && (*null_map)[i])
             {
-                vec_res[i] = 0;
+                std::fill_n(&vec_res[i], IPV6_BINARY_LENGTH, 0);
                 src_offset = src_next_offset;
                 if constexpr (exception_mode == IPStringToNumExceptionMode::Null)
                     (*vec_null_map_to)[i] = true;
