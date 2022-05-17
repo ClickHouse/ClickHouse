@@ -7,8 +7,6 @@
 #include <Storages/TableLockHolder.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/ProcessList.h>
-#include <Poco/Logger.h>
-#include <Loggers/Loggers.h>
 
 
 namespace DB

@@ -1119,16 +1119,12 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 global_context->setMaxPartitionSizeToDrop(config->getUInt64("max_partition_size_to_drop"));
 
             if (config->has("total_max_threads")) {
-                auto adqm_log = &Poco::Logger::get("ADQM");
                 auto total_max_threads = config->getInt("total_max_threads", 0);
-                LOG_DEBUG(adqm_log,"From config.xml total_max_threads: {}", total_max_threads);
                 if (total_max_threads == -1) {
                     // Based on tests total_max_threads has an optimal value when it's about two times of logical CPU cores
                     constexpr size_t thread_factor = 2;
-                    LOG_DEBUG(adqm_log,"number of logical cores: {}", std::thread::hardware_concurrency());
                     total_max_threads = std::thread::hardware_concurrency() * thread_factor;
                 }
-                LOG_DEBUG(adqm_log,"Finally total_max_threads: {}", total_max_threads);
                 global_context->getProcessList().setGlobalMaxThreads(total_max_threads);
             }
 
