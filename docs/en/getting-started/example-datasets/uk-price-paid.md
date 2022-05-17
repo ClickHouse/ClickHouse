@@ -1,5 +1,6 @@
 ---
 sidebar_label: UK Property Price Paid
+sidebar_position: 1
 ---
 
 # UK Property Price Paid
