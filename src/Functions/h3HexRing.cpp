@@ -93,19 +93,17 @@ public:
         const auto & data_k = col_k->getData();
 
         auto dst = ColumnArray::create(ColumnUInt64::create());
-        auto & dst_data = dst->getData();
+        auto & dst_data = typeid_cast<ColumnUInt64 &>(dst->getData());
         auto & dst_offsets = dst->getOffsets();
         dst_offsets.resize(input_rows_count);
-        auto current_offset = 0;
 
+        /// First calculate array sizes for all rows and save them in Offsets
+        UInt64 current_offset = 0;
         for (size_t row = 0; row < input_rows_count; ++row)
         {
-            const H3Index origin_hindex = data_hindex[row];
             const int k = data_k[row];
 
-            /// Overflow is possible. The function maxGridDiskSize does not check for overflow.
-            /// The calculation is similar to square of k but several times more.
-            /// Let's use huge underestimation as the safe bound. We should not allow to generate too large arrays nevertheless.
+            /// The result size is 6*k. We should not allow to generate too large arrays nevertheless.
             constexpr auto max_k = 10000;
             if (k > max_k)
                 throw Exception(ErrorCodes::PARAMETER_OUT_OF_BOUND, "Too large 'k' argument for {} function, maximum {}", getName(), max_k);
@@ -113,24 +111,30 @@ public:
             if (k < 0)
                 throw Exception(ErrorCodes::PARAMETER_OUT_OF_BOUND, "Argument 'k' for {} function must be non negative", getName());
 
-            const auto vec_size = maxGridDiskSize(k);
-            std::vector<H3Index> hindex_vec;
-            hindex_vec.resize(vec_size);
-            H3Error err = gridRingUnsafe(origin_hindex, k, hindex_vec.data());
+            const auto vec_size = (k == 0 ? 1 : 6 * k);  /// Required size according to comments in gridRingUnsafe() source code
+
+            current_offset += vec_size;
+            dst_offsets[row] = current_offset;
+        }
+
+        /// Allocate based on total size of arrays for all rows
+        dst_data.getData().resize(current_offset);
+
+        /// Fill the array for each row with known size
+        auto* ptr = dst_data.getData().data();
+        current_offset = 0;
+        for (size_t row = 0; row < input_rows_count; ++row)
+        {
+            const H3Index origin_hindex = data_hindex[row];
+            const int k = data_k[row];
+
+            H3Error err = gridRingUnsafe(origin_hindex, k, ptr + current_offset);
 
             if (err)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Incorrect arguments h3Index: {}, k: {}, error: {}", origin_hindex, k, err);
 
-            dst_data.reserve(dst_data.size() + vec_size);
-            for (auto hindex : hindex_vec)
-            {
-                if (hindex != 0)
-                {
-                    ++current_offset;
-                    dst_data.insert(hindex);
-                }
-            }
-            dst_offsets[row] = current_offset;
+            const auto size = dst_offsets[row] - current_offset;
+            current_offset += size;
         }
 
         return dst;
