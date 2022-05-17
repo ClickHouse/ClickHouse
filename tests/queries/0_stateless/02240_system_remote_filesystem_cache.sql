@@ -5,7 +5,7 @@
 SYSTEM DROP FILESYSTEM CACHE;
 SET enable_filesystem_cache_on_write_operations=0;
 DROP TABLE IF EXISTS test;
-CREATE TABLE test (key UInt32, value String) Engine=MergeTree() ORDER BY key SETTINGS storage_policy='s3_cache', min_bytes_for_wide_part = 10485760;
+CREATE TABLE test (key UInt32, value String) Engine=MergeTree() ORDER BY key SETTINGS storage_policy='s3_cache_2', min_bytes_for_wide_part = 10485760;
 INSERT INTO test SELECT number, toString(number) FROM numbers(100);
 
 SELECT  * FROM test FORMAT Null;

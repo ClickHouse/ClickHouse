@@ -8,6 +8,13 @@
                 <access_key_id>clickhouse</access_key_id>
                 <secret_access_key>clickhouse</secret_access_key>
             </s3_disk>
+            <s3_cache>
+                <type>cache</type>
+                <disk>s3_disk</disk>
+                <path>s3_disk_cache/</path>
+                <max_size>22548578304</max_size>
+                <cache_on_write_operations>1</cache_on_write_operations>
+            </s3_cache>
             <s3_disk_2>
                 <type>s3</type>
                 <path>s3_disk_2/</path>
@@ -15,18 +22,10 @@
                 <access_key_id>clickhouse</access_key_id>
                 <secret_access_key>clickhouse</secret_access_key>
             </s3_disk_2>
-            <s3_cache>
-                <type>cache</type>
-                <disk>s3_disk</disk>
-                <path>s3_disk_cache/</path>
-                <max_size>22548578304</max_size>
-                <cache_on_write_operations>1</cache_on_write_operations>
-                <data_cache_path>./s3_cache/</data_cache_path>
-            </s3_cache>
             <s3_cache_2>
                 <type>cache</type>
                 <disk>s3_disk_2</disk>
-                <path>s3_cache/</path>
+                <path>s3_disk_2_cache/</path>
                 <max_size>22548578304</max_size>
             </s3_cache_2>
             <local_disk>
@@ -49,13 +48,6 @@
                     </main>
                 </volumes>
             </s3_cache>
-            <local_cache>
-                <volumes>
-                    <main>
-                        <disk>local_cache</disk>
-                    </main>
-                </volumes>
-            </local_cache>
             <s3_cache_2>
                 <volumes>
                     <main>
@@ -63,6 +55,13 @@
                     </main>
                 </volumes>
             </s3_cache_2>
+            <local_cache>
+                <volumes>
+                    <main>
+                        <disk>local_cache</disk>
+                    </main>
+                </volumes>
+            </local_cache>
         </policies>
     </storage_configuration>
 </clickhouse>
