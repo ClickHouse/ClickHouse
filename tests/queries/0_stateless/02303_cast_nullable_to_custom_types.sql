@@ -14,7 +14,10 @@ select CAST(number % 2 ? '0000:0000:0000:0000:0000:0000:0000:0000' : NULL, 'Null
 
 select toBool(number % 2 ? 'true' : NULL) from numbers(2);
 select toIPv4(number % 2 ? '0.0.0.0' : NULL) from numbers(2);
+select toIPv4OrDefault(number % 2 ? '' : NULL) from numbers(2);
+select toIPv4OrNull(number % 2 ? '' : NULL) from numbers(2);
 select IPv4StringToNum(number % 2 ? '0.0.0.0' : NULL) from numbers(2);
 select toIPv6(number % 2 ? '0000:0000:0000:0000:0000:0000:0000:0000' : NULL) from numbers(2);
+select toIPv6OrDefault(number % 2 ? '' : NULL) from numbers(2);
+select toIPv6OrNull(number % 2 ? '' : NULL) from numbers(2);
 select IPv6StringToNum(number % 2 ? '0000:0000:0000:0000:0000:0000:0000:0000' : NULL) from numbers(2);
-
