@@ -13,7 +13,6 @@ namespace ErrorCodes
 }
 
 const size_t BUFFER_SIZE = 1024 * 1024 * 1024;
-const size_t BLOCK_SIZE = 256 * 1024;
 const size_t MAXP2 = UINT_MAX - (UINT_MAX >> 1);
 
 PigzDeflatingWriteBuffer::PigzDeflatingWriteBuffer(

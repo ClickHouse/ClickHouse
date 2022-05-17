@@ -9,6 +9,7 @@
 #include <IO/ZlibDeflatingWriteBuffer.h>
 #include <IO/ZlibInflatingReadBuffer.h>
 #include <IO/PigzDeflatingWriteBuffer.h>
+#include <IO/PigzInflatingReadBuffer.h>
 #include <IO/PixzDeflatingWriteBuffer.h>
 #include <IO/ZstdDeflatingWriteBuffer.h>
 #include <IO/ZstdInflatingReadBuffer.h>
@@ -127,6 +128,8 @@ static std::unique_ptr<CompressedReadBufferWrapper> createCompressedWrapper(
     if (method == CompressionMethod::Bzip2)
         return std::make_unique<Bzip2ReadBuffer>(std::move(nested), buf_size, existing_memory, alignment);
 #endif
+    if (method == CompressionMethod::PIGzip)
+        return std::make_unique<PigzInflatingReadBuffer>(std::move(nested), buf_size, existing_memory, alignment);
 #if USE_SNAPPY
     if (method == CompressionMethod::Snappy)
         return std::make_unique<HadoopSnappyReadBuffer>(std::move(nested), buf_size, existing_memory, alignment);

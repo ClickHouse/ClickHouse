@@ -12,6 +12,8 @@
 namespace DB
 {
 
+const size_t BLOCK_SIZE = 256 * 1024;
+
 /// Performs compression using zlib library, compress data in parallel and writes it to out_ WriteBuffer.
 class PigzDeflatingWriteBuffer : public WriteBufferWithOwnMemoryDecorator
 {

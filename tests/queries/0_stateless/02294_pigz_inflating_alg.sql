@@ -1,0 +1,15 @@
+SELECT * FROM numbers(10000000) INTO OUTFILE '10m_nubmers_pigz.csv.gz' COMPRESSION 'pigz';
+
+DROP TABLE IF EXISTS test02294;
+CREATE TABLE test02294 (x UInt64) ENGINE = Memory;
+TRUNCATE TABLE test02294;
+
+INSERT INTO test02294 (x) FROM INFILE '10m_nubmers_pigz.csv.gz' COMPRESSION 'pigz';
+
+SELECT count(x) FROM test02294;
+SELECT count(DISTINCT x) FROM test02294;
+
+INSERT INTO test02294 (x) FROM INFILE '10m_nubmers_pigz.csv.gz' COMPRESSION 'pigz';
+
+SELECT count(x) FROM test02294;
+SELECT count(DISTINCT x) FROM test02294;
