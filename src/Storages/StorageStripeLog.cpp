@@ -1,6 +1,6 @@
 #include <sys/stat.h>
 #include <sys/types.h>
-#include <errno.h>
+#include <cerrno>
 
 #include <map>
 #include <optional>
@@ -239,6 +239,8 @@ public:
         /// Save the new file sizes.
         storage.saveFileSizes(lock);
 
+        storage.updateTotalRows(lock);
+
         done = true;
 
         /// unlock should be done from the same thread as lock, and dtor may be
@@ -310,6 +312,8 @@ StorageStripeLog::StorageStripeLog(
             tryLogCurrentException(__PRETTY_FUNCTION__);
         }
     }
+
+    total_bytes = file_checker.getTotalSize();
 }
 
 
@@ -439,7 +443,7 @@ void StorageStripeLog::loadIndices(std::chrono::seconds lock_timeout)
 }
 
 
-void StorageStripeLog::loadIndices(const WriteLock & /* already locked exclusively */)
+void StorageStripeLog::loadIndices(const WriteLock & lock /* already locked exclusively */)
 {
     if (indices_loaded)
         return;
@@ -452,6 +456,9 @@ void StorageStripeLog::loadIndices(const WriteLock & /* already locked exclusive
 
     indices_loaded = true;
     num_indices_saved = indices.blocks.size();
+
+    /// We need indices to calculate the number of rows, and now we have the indices.
+    updateTotalRows(lock);
 }
 
 
@@ -488,6 +495,35 @@ void StorageStripeLog::saveFileSizes(const WriteLock & /* already locked for wri
     file_checker.update(data_file_path);
     file_checker.update(index_file_path);
     file_checker.save();
+    total_bytes = file_checker.getTotalSize();
+}
+
+
+void StorageStripeLog::updateTotalRows(const WriteLock &)
+{
+    if (!indices_loaded)
+        return;
+
+    size_t new_total_rows = 0;
+    for (const auto & block : indices.blocks)
+        new_total_rows += block.num_rows;
+    total_rows = new_total_rows;
+}
+
+std::optional<UInt64> StorageStripeLog::totalRows(const Settings &) const
+{
+    if (indices_loaded)
+        return total_rows;
+
+    if (!total_bytes)
+        return 0;
+
+    return {};
+}
+
+std::optional<UInt64> StorageStripeLog::totalBytes(const Settings &) const
+{
+    return total_bytes;
 }
 
 
@@ -562,14 +598,14 @@ public:
         const std::shared_ptr<StorageStripeLog> storage_,
         const BackupPtr & backup_,
         const String & data_path_in_backup_,
-        ContextMutablePtr context_)
-        : storage(storage_), backup(backup_), data_path_in_backup(data_path_in_backup_), context(context_)
+        std::chrono::seconds lock_timeout_)
+        : storage(storage_), backup(backup_), data_path_in_backup(data_path_in_backup_), lock_timeout(lock_timeout_)
     {
     }
 
     RestoreTasks run() override
     {
-        WriteLock lock{storage->rwlock, getLockTimeout(context)};
+        WriteLock lock{storage->rwlock, lock_timeout};
         if (!lock)
             throw Exception("Lock timeout exceeded", ErrorCodes::TIMEOUT_EXCEEDED);
 
@@ -618,6 +654,7 @@ public:
             /// Finish writing.
             storage->saveIndices(lock);
             storage->saveFileSizes(lock);
+            storage->updateTotalRows(lock);
             return {};
         }
         catch (...)
@@ -633,17 +670,17 @@ private:
     std::shared_ptr<StorageStripeLog> storage;
     BackupPtr backup;
     String data_path_in_backup;
-    ContextMutablePtr context;
+    std::chrono::seconds lock_timeout;
 };
 
 
-RestoreTaskPtr StorageStripeLog::restoreData(ContextMutablePtr context, const ASTs & partitions, const BackupPtr & backup, const String & data_path_in_backup, const StorageRestoreSettings &)
+RestoreTaskPtr StorageStripeLog::restoreData(ContextMutablePtr context, const ASTs & partitions, const BackupPtr & backup, const String & data_path_in_backup, const StorageRestoreSettings &, const std::shared_ptr<IRestoreCoordination> &)
 {
     if (!partitions.empty())
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Table engine {} doesn't support partitions", getName());
 
     return std::make_unique<StripeLogRestoreTask>(
-        typeid_cast<std::shared_ptr<StorageStripeLog>>(shared_from_this()), backup, data_path_in_backup, context);
+        typeid_cast<std::shared_ptr<StorageStripeLog>>(shared_from_this()), backup, data_path_in_backup, getLockTimeout(context));
 }
 
 
@@ -663,7 +700,7 @@ void registerStorageStripeLog(StorageFactory & factory)
         String disk_name = getDiskName(*args.storage_def);
         DiskPtr disk = args.getContext()->getDisk(disk_name);
 
-        return StorageStripeLog::create(
+        return std::make_shared<StorageStripeLog>(
             disk,
             args.relative_data_path,
             args.table_id,

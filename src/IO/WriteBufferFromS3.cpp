@@ -2,7 +2,7 @@
 
 #if USE_AWS_S3
 
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <Common/FileCache.h>
 
 #include <IO/WriteBufferFromS3.h>
@@ -20,8 +20,8 @@
 
 namespace ProfileEvents
 {
-    extern const Event S3WriteBytes;
-    extern const Event RemoteFSCacheDownloadBytes;
+    extern const Event WriteBufferFromS3Bytes;
+    extern const Event CachedReadBufferCacheWriteBytes;
 }
 
 namespace DB
@@ -30,7 +30,6 @@ namespace DB
 // In case server does not return an error on exceeding that number, we print a warning
 // because custom S3 implementation may allow relaxed requirements on that.
 const int S3_WARN_MAX_PARTS = 10000;
-
 
 namespace ErrorCodes
 {
@@ -95,6 +94,7 @@ void WriteBufferFromS3::nextImpl()
     if (cacheEnabled())
     {
         auto cache_key = cache->hash(key);
+
         file_segments_holder.emplace(cache->setDownloading(cache_key, current_download_offset, size));
         current_download_offset += size;
 
@@ -120,7 +120,7 @@ void WriteBufferFromS3::nextImpl()
         }
     }
 
-    ProfileEvents::increment(ProfileEvents::S3WriteBytes, offset());
+    ProfileEvents::increment(ProfileEvents::WriteBufferFromS3Bytes, offset());
 
     last_part_size += offset();
 
@@ -133,6 +133,7 @@ void WriteBufferFromS3::nextImpl()
         writePart();
 
         allocateBuffer();
+        file_segments_holder.reset();
     }
 
     waitForReadyBackGroundTasks();
@@ -150,6 +151,13 @@ void WriteBufferFromS3::allocateBuffer()
 
 WriteBufferFromS3::~WriteBufferFromS3()
 {
+#ifndef NDEBUG
+    if (!is_finalized)
+    {
+        LOG_ERROR(log, "WriteBufferFromS3 is not finalized in destructor. It's a bug");
+        std::terminate();
+    }
+#else
     try
     {
         finalize();
@@ -158,6 +166,7 @@ WriteBufferFromS3::~WriteBufferFromS3()
     {
         tryLogCurrentException(__PRETTY_FUNCTION__);
     }
+#endif
 }
 
 bool WriteBufferFromS3::cacheEnabled() const
@@ -191,6 +200,8 @@ void WriteBufferFromS3::finalizeImpl()
 
     if (!multipart_upload_id.empty())
         completeMultipartUpload();
+
+    is_finalized = true;
 }
 
 void WriteBufferFromS3::createMultipartUpload()
@@ -479,7 +490,7 @@ void WriteBufferFromS3::finalizeCacheIfNeeded(std::optional<FileSegmentsHolder> 
             size_t size = (*file_segment_it)->finalizeWrite();
             file_segment_it = file_segments.erase(file_segment_it);
 
-            ProfileEvents::increment(ProfileEvents::RemoteFSCacheDownloadBytes, size);
+            ProfileEvents::increment(ProfileEvents::CachedReadBufferCacheWriteBytes, size);
         }
         catch (...)
         {

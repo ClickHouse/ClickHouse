@@ -22,12 +22,7 @@ It’ll take some effort to go through, but the result will be very close to pro
 
 For the first time you’ll need to:
 
-#### 1. Install CLI tools from npm
-
-1. `sudo apt-get install npm` for Debian/Ubuntu or `brew install npm` on Mac OS X.
-2. `sudo npm install -g purify-css amphtml-validator`.
-
-#### 2. Set up virtualenv
+#### 1. Set up virtualenv
 
 ``` bash
 $ cd ClickHouse/docs/tools
@@ -37,7 +32,7 @@ $ source venv/bin/activate
 $ pip3 install -r requirements.txt
 ```
 
-#### 3. Run build.py
+#### 2. Run build.py
 
 When all prerequisites are installed, running `build.py` without args (there are some, check `build.py --help`) will generate `ClickHouse/docs/build` folder with complete static html website.
 

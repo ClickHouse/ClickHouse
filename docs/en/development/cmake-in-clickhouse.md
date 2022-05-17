@@ -206,7 +206,7 @@ Note that ClickHouse uses forks of these libraries, see https://github.com/Click
 <td><a href="https://ccache.dev/" target="_blank">https://ccache.dev/</a></td>
 </tr>
 <tr>
-<td><a name="enable-clang-tidy"></a><a href="https://github.com/clickhouse/clickhouse/blob/master/cmake/analysis.cmake#L2" rel="external nofollow noreferrer" target="_blank"><code class="syntax">ENABLE_CLANG_TIDY</code></a></td>
+<td><a name="enable-clang-tidy"></a><a href="https://github.com/clickhouse/clickhouse/blob/master/cmake/clang_tidy.cmake#L2" rel="external nofollow noreferrer" target="_blank"><code class="syntax">ENABLE_CLANG_TIDY</code></a></td>
 <td><code class="syntax">OFF</code></td>
 <td>Use clang-tidy static analyzer</td>
 <td><a href="https://clang.llvm.org/extra/clang-tidy/" target="_blank">https://clang.llvm.org/extra/clang-tidy/</a></td>
@@ -298,6 +298,12 @@ Note that ClickHouse uses forks of these libraries, see https://github.com/Click
 <td><code class="syntax">OFF</code></td>
 <td>Don't allow C++ translation units to compile too long or to take too much memory while compiling.</td>
 <td>Take care to add prlimit in command line before ccache, or else ccache thinks that prlimit is compiler, and clang++ is its input file, and refuses to work  with multiple inputs, e.g in ccache log: [2021-03-31T18:06:32.655327 36900] Command line: /usr/bin/ccache prlimit --as=10000000000 --data=5000000000 --cpu=600 /usr/bin/clang++-11 - ...... std=gnu++2a -MD -MT src/CMakeFiles/dbms.dir/Storages/MergeTree/IMergeTreeDataPart.cpp.o -MF src/CMakeFiles/dbms.dir/Storages/MergeTree/IMergeTreeDataPart.cpp.o.d -o src/CMakeFiles/dbms.dir/Storages/MergeTree/IMergeTreeDataPart.cpp.o -c ../src/Storages/MergeTree/IMergeTreeDataPart.cpp  [2021-03-31T18:06:32.656704 36900] Multiple input files: /usr/bin/clang++-11 and ../src/Storages/MergeTree/IMergeTreeDataPart.cpp  Another way would be to use --ccache-skip option before clang++-11 to make ccache ignore it.</td>
+</tr>
+<tr>
+<td><a name="enable-colored-build"></a><a href="https://github.com/clickhouse/clickhouse/blob/master/CMakeLists.txt#L160" rel="external nofollow noreferrer" target="_blank"><code class="syntax">ENABLE_COLORED_BUILD</code></a></td>
+<td><code class="syntax">ON</code></td>
+<td>Enable colored diagnostics in build log.</td>
+<td></td>
 </tr>
 <tr>
 <td><a name="enable-examples"></a><a href="https://github.com/clickhouse/clickhouse/blob/master/CMakeLists.txt#L201" rel="external nofollow noreferrer" target="_blank"><code class="syntax">ENABLE_EXAMPLES</code></a></td>

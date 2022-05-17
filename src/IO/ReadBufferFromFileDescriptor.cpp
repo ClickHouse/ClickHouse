@@ -1,5 +1,5 @@
-#include <errno.h>
-#include <time.h>
+#include <cerrno>
+#include <ctime>
 #include <optional>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>

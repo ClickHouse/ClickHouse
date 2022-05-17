@@ -170,8 +170,7 @@ Pipe::Pipe(ProcessorPtr source, OutputPort * output, OutputPort * totals, Output
 
 Pipe::Pipe(ProcessorPtr source)
 {
-    if (source->getOutputs().size() != 1)
-        checkSource(*source);
+    checkSource(*source);
 
     if (collected_processors)
         collected_processors->emplace_back(source);
@@ -510,7 +509,7 @@ void Pipe::addTransform(ProcessorPtr transform, OutputPort * totals, OutputPort 
     for (size_t i = 1; i < output_ports.size(); ++i)
         assertBlocksHaveEqualStructure(header, output_ports[i]->getHeader(), "Pipes");
 
-    // Temporarily skip this check. TotaslHavingTransform may return finalized totals but not finalized data.
+    // Temporarily skip this check. TotalsHavingTransform may return finalized totals but not finalized data.
     // if (totals_port)
     //     assertBlocksHaveEqualStructure(header, totals_port->getHeader(), "Pipes");
 

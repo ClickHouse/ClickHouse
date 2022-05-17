@@ -15,7 +15,7 @@ INSERT INTO test SELECT number, toString(number) FROM numbers(100);
 SELECT * FROM test FORMAT Null;
 SELECT count() FROM system.filesystem_cache;
 
-SYSTEM DROP FILESYSTEM CACHE FORCE;
+SYSTEM DROP FILESYSTEM CACHE;
 SELECT count() FROM system.filesystem_cache;
 
 SELECT * FROM test FORMAT Null;
