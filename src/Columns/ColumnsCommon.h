@@ -8,6 +8,9 @@
 #if defined(__AVX512F__) || defined(__AVX512BW__) || defined(__AVX__) || defined(__AVX2__)
 #include <immintrin.h>
 #endif
+#ifdef __aarch64__
+#include <arm_neon.h>
+#endif
 
 /// Common helper methods for implementation of different columns.
 
@@ -19,6 +22,31 @@ namespace ErrorCodes
     extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
     extern const int LOGICAL_ERROR;
 }
+
+UInt64 bytes64MaskToBits64MasAarch64(const unsigned char * src) {
+    const uint8x16_t bitmask1 = { 0x01, 0x10, 0x01, 0x10, 0x01, 0x10, 0x01, 0x10,
+                                    0x01, 0x10, 0x01, 0x10, 0x01, 0x10, 0x01, 0x10};
+    const uint8x16_t bitmask2 = { 0x02, 0x20, 0x02, 0x20, 0x02, 0x20, 0x02, 0x20,
+                                    0x02, 0x20, 0x02, 0x20, 0x02, 0x20, 0x02, 0x20};
+    const uint8x16_t bitmask3 = { 0x04, 0x40, 0x04, 0x40, 0x04, 0x40, 0x04, 0x40,
+                                    0x04, 0x40, 0x04, 0x40, 0x04, 0x40, 0x04, 0x40};
+    const uint8x16_t bitmask4 = { 0x08, 0x80, 0x08, 0x80, 0x08, 0x80, 0x08, 0x80,
+                                    0x08, 0x80, 0x08, 0x80, 0x08, 0x80, 0x08, 0x80};
+
+    const uint8x16x4_t chunk = vld4q_u8(src);
+    const uint8x16_t cmp0 = vceqzq_u8(chunk.val[0]);
+    const uint8x16_t cmp1 = vceqzq_u8(chunk.val[1]);
+    const uint8x16_t cmp2 = vceqzq_u8(chunk.val[2]);
+    const uint8x16_t cmp3 = vceqzq_u8(chunk.val[3]);
+
+    uint8x16_t t0 = vandq_u8(cmp0, bitmask1);
+    uint8x16_t t1 = vbslq_u8(bitmask2, cmp1, t0);
+    uint8x16_t t2 = vbslq_u8(bitmask3, cmp2, t1);
+    uint8x16_t tmp = vbslq_u8(bitmask4, cmp3, t2);
+    uint8x16_t sum = vpaddq_u8(tmp, tmp);
+    return vgetq_lane_u64(vreinterpretq_u64_u8(sum), 0);
+}
+
 
 /// Transform 64-byte mask to 64-bit mask
 inline UInt64 bytes64MaskToBits64Mask(const UInt8 * bytes64)
@@ -44,6 +72,8 @@ inline UInt64 bytes64MaskToBits64Mask(const UInt8 * bytes64)
         _mm_loadu_si128(reinterpret_cast<const __m128i *>(bytes64 + 32)), zero16))) << 32) & 0xffff00000000)
         | ((static_cast<UInt64>(_mm_movemask_epi8(_mm_cmpeq_epi8(
         _mm_loadu_si128(reinterpret_cast<const __m128i *>(bytes64 + 48)), zero16))) << 48) & 0xffff000000000000);
+#elif defined(__aarch64__)
+    UInt64 res = bytes64MaskToBits64MasAarch64(reinterpret_cast<const unsigned char *>(bytes64))
 #else
     UInt64 res = 0;
     for (size_t i = 0; i < 64; ++i)
@@ -96,13 +126,13 @@ ColumnPtr selectIndexImpl(const Column & column, const IColumn & indexes, size_t
         throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH,
             "Size of indexes ({}) is less than required ({})", indexes.size(), limit);
 
-    if (const auto * data_uint8 = detail::getIndexesData<UInt8>(indexes))
+    if (auto * data_uint8 = detail::getIndexesData<UInt8>(indexes))
         return column.template indexImpl<UInt8>(*data_uint8, limit);
-    else if (const auto * data_uint16 = detail::getIndexesData<UInt16>(indexes))
+    else if (auto * data_uint16 = detail::getIndexesData<UInt16>(indexes))
         return column.template indexImpl<UInt16>(*data_uint16, limit);
-    else if (const auto * data_uint32 = detail::getIndexesData<UInt32>(indexes))
+    else if (auto * data_uint32 = detail::getIndexesData<UInt32>(indexes))
         return column.template indexImpl<UInt32>(*data_uint32, limit);
-    else if (const auto * data_uint64 = detail::getIndexesData<UInt64>(indexes))
+    else if (auto * data_uint64 = detail::getIndexesData<UInt64>(indexes))
         return column.template indexImpl<UInt64>(*data_uint64, limit);
     else
         throw Exception("Indexes column for IColumn::select must be ColumnUInt, got " + indexes.getName(),
@@ -118,7 +148,6 @@ ColumnPtr permuteImpl(const Column & column, const IColumn::Permutation & perm, 
     return column.indexImpl(perm, limit);
 }
 
-/// NOLINTNEXTLINE
 #define INSTANTIATE_INDEX_IMPL(Column) \
     template ColumnPtr Column::indexImpl<UInt8>(const PaddedPODArray<UInt8> & indexes, size_t limit) const; \
     template ColumnPtr Column::indexImpl<UInt16>(const PaddedPODArray<UInt16> & indexes, size_t limit) const; \
