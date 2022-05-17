@@ -319,10 +319,7 @@ void Session::authenticate(const Credentials & credentials_, const Poco::Net::So
     }
     catch (const Exception & e)
     {
-        onAuthenticationFailure(credentials_, e);
-        LOG_DEBUG(log, "{} Authentication failed with error: {}", toString(auth_id), e.what());
-        if (auto session_log = getSessionLog())
-            session_log->addLoginFailure(auth_id, *prepared_client_info, credentials_.getUserName(), e);
+        onAuthenticationFailure(credentials_, address, e);
         throw;
     }
 
@@ -337,11 +334,16 @@ void Session::authenticateInterserverFake()
     is_internal_interserver_query = true;
 }
 
-void Session::onAuthenticationFailure(const Credentials & credentials_, const Exception & e)
+void Session::onAuthenticationFailure(const Credentials & credentials_, const Poco::Net::SocketAddress & address_, const Exception & e)
 {
     LOG_DEBUG(log, "{} Authentication failed with error: {}", toString(auth_id), e.what());
     if (auto session_log = getSessionLog())
-        session_log->addLoginFailure(auth_id, *prepared_client_info, credentials_.getUserName(), e);
+    {
+        /// Add source address to the log
+        auto info_for_log = *prepared_client_info;
+        info_for_log.current_address = address_;
+        session_log->addLoginFailure(auth_id, info_for_log, credentials_.getUserName(), e);
+    }
 }
 
 ClientInfo & Session::getClientInfo()

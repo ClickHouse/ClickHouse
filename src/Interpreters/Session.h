@@ -55,7 +55,7 @@ public:
     void authenticateInterserverFake();
 
     /// Writes a row about login failure into session log (if enabled)
-    void onAuthenticationFailure(const Credentials & credentials_, const Exception & e);
+    void onAuthenticationFailure(const Credentials & credentials_, const Poco::Net::SocketAddress & address_, const Exception & e);
 
     /// Returns a reference to session ClientInfo.
     ClientInfo & getClientInfo();
