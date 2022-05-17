@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# Tags: no-parallel
+
 import os
 import sys
 import signal
@@ -31,7 +33,7 @@ with client(name="client1>", log=log) as client1, client(
     client1.expect(prompt)
 
     client1.send(
-        "CREATE TABLE db_01059_event_hop_watch_strict_asc.mt(a Int32, timestamp DateTime) ENGINE=MergeTree ORDER BY tuple()"
+        "CREATE TABLE db_01059_event_hop_watch_strict_asc.mt(a Int32, timestamp DateTime('US/Samoa')) ENGINE=MergeTree ORDER BY tuple()"
     )
     client1.expect(prompt)
     client1.send(
