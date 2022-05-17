@@ -19,7 +19,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int UNSUPPORTED_METHOD;
-    extern const int LOGICAL_ERROR;
+    extern const int HDFS_ERROR;
 }
 
 void HDFSObjectStorage::shutdown()
@@ -86,7 +86,7 @@ void HDFSObjectStorage::listPrefix(const std::string & path, BlobsPathToSize & c
     int32_t num_entries;
     auto * files_list = hdfsListDirectory(hdfs_fs.get(), path.substr(begin_of_path).c_str(), &num_entries);
     if (num_entries == -1)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "HDFSDelete failed with path: " + path);
+        throw Exception(ErrorCodes::HDFS_ERROR, "HDFSDelete failed with path: " + path);
 
     for (int32_t i = 0; i < num_entries; ++i)
         children.emplace_back(files_list[i].mName, files_list[i].mSize);
@@ -100,7 +100,7 @@ void HDFSObjectStorage::removeObject(const std::string & path)
     /// Add path from root to file name
     int res = hdfsDelete(hdfs_fs.get(), path.substr(begin_of_path).c_str(), 0);
     if (res == -1)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "HDFSDelete failed with path: " + path);
+        throw Exception(ErrorCodes::HDFS_ERROR, "HDFSDelete failed with path: " + path);
 
 }
 
@@ -113,7 +113,7 @@ void HDFSObjectStorage::removeObjects(const std::vector<std::string> & paths)
         /// Add path from root to file name
         int res = hdfsDelete(hdfs_fs.get(), hdfs_path.substr(begin_of_path).c_str(), 0);
         if (res == -1)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "HDFSDelete failed with path: " + hdfs_path);
+            throw Exception(ErrorCodes::HDFS_ERROR, "HDFSDelete failed with path: " + hdfs_path);
     }
 }
 
@@ -135,7 +135,7 @@ void HDFSObjectStorage::removeObjectsIfExist(const std::vector<std::string> & pa
         /// Add path from root to file name
         int res = hdfsDelete(hdfs_fs.get(), hdfs_path.substr(begin_of_path).c_str(), 0);
         if (res == -1)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "HDFSDelete failed with path: " + hdfs_path);
+            throw Exception(ErrorCodes::HDFS_ERROR, "HDFSDelete failed with path: " + hdfs_path);
     }
 }
 
