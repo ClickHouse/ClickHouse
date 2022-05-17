@@ -51,17 +51,17 @@ with client(name="client1>", log=log) as client1, client(
     client1.expect("Query id" + end_of_block)
     client1.expect("Progress: 0.00 rows.*\)")
     client2.send(
-        "INSERT INTO 01078_window_view_alter_query_watch.mt VALUES (1, '1990/01/01 12:00:00');"
+        "INSERT INTO 01078_window_view_alter_query_watch.mt VALUES (1, toDateTime('1990/01/01 12:00:00', 'US/Samoa'));"
     )
     client2.expect("Ok.")
     client2.send(
-        "INSERT INTO 01078_window_view_alter_query_watch.mt VALUES (1, '1990/01/01 12:00:05');"
+        "INSERT INTO 01078_window_view_alter_query_watch.mt VALUES (1, toDateTime('1990/01/01 12:00:05', 'US/Samoa'));"
     )
     client2.expect("Ok.")
     client1.expect("1" + end_of_block)
     client1.expect("Progress: 1.00 rows.*\)")
     client2.send(
-        "ALTER TABLE 01078_window_view_alter_query_watch.wv MODIFY QUERY SELECT count(a) AS count, hopEnd(wid) AS w_end FROM 01078_window_view_alter_query_watch.mt GROUP BY hop(timestamp, INTERVAL '2' SECOND, INTERVAL '3' SECOND, 'US/Samoa') AS wid"
+        "ALTER TABLE 01078_window_view_alter_query_watch.wv MODIFY QUERY SELECT count(a) * 2 AS count, hopEnd(wid) AS w_end FROM 01078_window_view_alter_query_watch.mt GROUP BY hop(timestamp, INTERVAL '2' SECOND, INTERVAL '3' SECOND, 'US/Samoa') AS wid"
     )
     client2.expect("Ok.")
     client2.expect(prompt)
@@ -71,11 +71,11 @@ with client(name="client1>", log=log) as client1, client(
     client3.expect("Query id" + end_of_block)
     client3.expect("Progress: 0.00 rows.*\)")
     client2.send(
-        "INSERT INTO 01078_window_view_alter_query_watch.mt VALUES (1, '1990/01/01 12:00:06');"
+        "INSERT INTO 01078_window_view_alter_query_watch.mt VALUES (1, toDateTime('1990/01/01 12:00:06', 'US/Samoa'));"
     )
     client2.expect("Ok.")
     client2.send(
-        "INSERT INTO 01078_window_view_alter_query_watch.mt VALUES (1, '1990/01/01 12:00:10');"
+        "INSERT INTO 01078_window_view_alter_query_watch.mt VALUES (1, toDateTime('1990/01/01 12:00:10', 'US/Samoa'));"
     )
     client2.expect("Ok.")
     client3.expect("2" + end_of_block)
