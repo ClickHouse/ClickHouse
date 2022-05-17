@@ -21,4 +21,5 @@ select * from url('http://127.0.0.1:8123/?query=select+1&user=+INTERSERVER+SECRE
 select * from url('http://127.0.0.1:8123/?query=select+1&user=+++', LineAsString, 's String'); -- { serverError RECEIVED_ERROR_FROM_REMOTE_IO_SERVER }
 
 system flush logs;
-select distinct type, user, auth_type, toString(client_address)!='::ffff:0.0.0.0', client_port!=0, interface from system.session_log where event_time >= now() - interval 5 minute order by type, user, interface;
+select distinct type, user, auth_type, toString(client_address)!='::ffff:0.0.0.0', client_port!=0, interface from system.session_log
+where user in ('default', 'nonexistsnt_user_1119', '   ', ' INTERSERVER SECRET ') and event_time >= now() - interval 5 minute order by type, user, interface;
