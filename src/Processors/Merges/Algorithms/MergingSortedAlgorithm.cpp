@@ -74,10 +74,10 @@ void MergingSortedAlgorithm::initialize(Inputs inputs)
 
     if (has_collation)
         queue_with_collation = SortingHeap<SortCursorWithCollation>(cursors);
-    else if (description.size() > 1)
-        queue_without_collation = SortingHeap<SortCursor>(cursors);
-    else
+    else if (description.size() == 1)
         queue_simple = SortingHeap<SimpleSortCursor>(cursors);
+    else
+        queue_without_collation = SortingHeap<SortCursor>(cursors);
 }
 
 void MergingSortedAlgorithm::consume(Input & input, size_t source_num)
@@ -88,20 +88,20 @@ void MergingSortedAlgorithm::consume(Input & input, size_t source_num)
 
     if (has_collation)
         queue_with_collation.push(cursors[source_num]);
-    else if (description.size() > 1)
-        queue_without_collation.push(cursors[source_num]);
-    else
+    else if (description.size() == 1)
         queue_simple.push(cursors[source_num]);
+    else
+        queue_without_collation.push(cursors[source_num]);
 }
 
 IMergingAlgorithm::Status MergingSortedAlgorithm::merge()
 {
     if (has_collation)
         return mergeImpl(queue_with_collation);
-    else if (description.size() > 1)
-        return mergeImpl(queue_without_collation);
-    else
+    else if (description.size() == 1)
         return mergeImpl(queue_simple);
+    else
+        return mergeImpl(queue_without_collation);
 }
 
 template <typename TSortingHeap>
