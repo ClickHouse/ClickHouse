@@ -19,6 +19,7 @@ enum SessionLogElementType : int8_t
 
 class ContextAccess;
 struct User;
+using UserPtr = std::shared_ptr<const User>;
 
 /** A struct which will be inserted as row into session_log table.
   *
@@ -71,7 +72,7 @@ class SessionLog : public SystemLog<SessionLogElement>
     using SystemLog<SessionLogElement>::SystemLog;
 
 public:
-    void addLoginSuccess(const UUID & auth_id, std::optional<String> session_id, const Context & login_context, const User & login_user);
+    void addLoginSuccess(const UUID & auth_id, std::optional<String> session_id, const Context & login_context, const UserPtr & login_user);
     void addLoginFailure(const UUID & auth_id, const ClientInfo & info, const String & user, const Exception & reason);
     void addLogOut(const UUID & auth_id, const String & user, const ClientInfo & client_info);
 };

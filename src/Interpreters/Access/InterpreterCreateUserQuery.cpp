@@ -6,6 +6,7 @@
 #include <Access/AccessControl.h>
 #include <Access/ContextAccess.h>
 #include <Access/User.h>
+#include <Core/Protocol.h>
 #include <Interpreters/Access/InterpreterSetRoleQuery.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
@@ -37,6 +38,9 @@ namespace
             user.setName(query.new_name);
         else if (query.names->size() == 1)
             user.setName(query.names->front()->toString());
+
+        if (user.getName() == USER_INTERSERVER_MARKER || user.getName().empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "User name is reserved");
 
         if (query.auth_data)
             user.auth_data = *query.auth_data;

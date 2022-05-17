@@ -51,6 +51,12 @@ public:
     void authenticate(const String & user_name, const String & password, const Poco::Net::SocketAddress & address);
     void authenticate(const Credentials & credentials_, const Poco::Net::SocketAddress & address_);
 
+    /// Special method for authentication through "interserver secret" without a user
+    void authenticateInterserverFake();
+
+    /// Writes a row about login failure into session log (if enabled)
+    void onAuthenticationFailure(const Credentials & credentials_, const Exception & e);
+
     /// Returns a reference to session ClientInfo.
     ClientInfo & getClientInfo();
     const ClientInfo & getClientInfo() const;
@@ -86,6 +92,7 @@ private:
 
     mutable UserPtr user;
     std::optional<UUID> user_id;
+    bool is_internal_interserver_query = false;
 
     ContextMutablePtr session_context;
     mutable bool query_context_created = false;

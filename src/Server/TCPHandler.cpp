@@ -79,6 +79,7 @@ namespace ErrorCodes
     extern const int UNEXPECTED_PACKET_FROM_CLIENT;
     extern const int SUPPORT_IS_DISABLED;
     extern const int UNKNOWN_PROTOCOL;
+    extern const int AUTHENTICATION_FAILED;
 }
 
 TCPHandler::TCPHandler(IServer & server_, TCPServer & tcp_server_, const Poco::Net::StreamSocket & socket_, bool parse_proxy_protocol_, std::string server_display_name_)
@@ -1210,25 +1211,6 @@ void TCPHandler::receiveClusterNameAndSalt()
 {
     readStringBinary(cluster, *in);
     readStringBinary(salt, *in, 32);
-
-    try
-    {
-        if (salt.empty())
-            throw NetException("Empty salt is not allowed", ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT);
-
-        cluster_secret = server.context()->getCluster(cluster)->getSecret();
-    }
-    catch (const Exception & e)
-    {
-        try
-        {
-            /// We try to send error information to the client.
-            sendException(e, send_exception_with_stack_trace);
-        }
-        catch (...) {}
-
-        throw;
-    }
 }
 
 void TCPHandler::receiveQuery()
@@ -1239,7 +1221,7 @@ void TCPHandler::receiveQuery()
     state.is_empty = false;
     readStringBinary(state.query_id, *in);
 
-    /// In interserer mode,
+    /// In interserver mode,
     /// initial_user can be empty in case of Distributed INSERT via Buffer/Kafka,
     /// (i.e. when the INSERT is done with the global context without user),
     /// so it is better to reset session to avoid using old user.
@@ -1285,27 +1267,41 @@ void TCPHandler::receiveQuery()
 
     readStringBinary(state.query, *in);
 
+    /// TODO unify interserver authentication (currently this code looks like a backdoor at a first glance)
     if (is_interserver_mode)
     {
 #if USE_SSL
+        String user_for_session_log = client_info.initial_user;
+        if (user_for_session_log.empty())
+            user_for_session_log = USER_INTERSERVER_MARKER;
+        if (salt.empty())
+        {
+            auto exception = Exception(ErrorCodes::AUTHENTICATION_FAILED, "Interserver authentication failed");
+            session->onAuthenticationFailure(AlwaysAllowCredentials{USER_INTERSERVER_MARKER}, exception);
+            throw exception;
+        }
+
         std::string data(salt);
-        data += cluster_secret;
+        data += server.context()->getCluster(cluster)->getSecret();
         data += state.query;
         data += state.query_id;
         data += client_info.initial_user;
 
-        if (received_hash.size() != 32)
-            throw NetException("Unexpected hash received from client", ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT);
-
         std::string calculated_hash = encodeSHA256(data);
+        assert(calculated_hash.size() == 32);
 
+        /// TODO maybe also check that peer address actually belongs to the cluster?
         if (calculated_hash != received_hash)
-            throw NetException("Hash mismatch", ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT);
-        /// TODO: change error code?
+        {
+            auto exception = Exception(ErrorCodes::AUTHENTICATION_FAILED, "Interserver authentication failed");
+            session->onAuthenticationFailure(AlwaysAllowCredentials{USER_INTERSERVER_MARKER}, exception);
+            throw exception;
+        }
 
         if (client_info.initial_user.empty())
         {
             LOG_DEBUG(log, "User (no user, interserver mode)");
+            session->authenticateInterserverFake();
         }
         else
         {
@@ -1313,9 +1309,11 @@ void TCPHandler::receiveQuery()
             session->authenticate(AlwaysAllowCredentials{client_info.initial_user}, client_info.initial_address);
         }
 #else
-        throw Exception(
+        auto exception = Exception(
             "Inter-server secret support is disabled, because ClickHouse was built without SSL library",
-            ErrorCodes::SUPPORT_IS_DISABLED);
+            ErrorCodes::AUTHENTICATION_FAILED);
+        session->onAuthenticationFailure(AlwaysAllowCredentials{USER_INTERSERVER_MARKER}, exception);
+        throw exception;
 #endif
     }
 
