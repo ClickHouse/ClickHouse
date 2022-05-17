@@ -89,6 +89,11 @@ class Release:
         self._git.update()
         self.version = get_version_from_repo(git=self._git)
 
+    def get_stable_release_type(self) -> str:
+        if self.version.minor % 5 == 3:  # our 3 and 8 are LTS
+            return VersionType.LTS
+        return VersionType.STABLE
+
     def check_prerequisites(self):
         """
         Check tooling installed in the system
@@ -195,9 +200,7 @@ class Release:
     def stable(self):
         self.check_no_tags_after()
         self.read_version()
-        version_type = VersionType.STABLE
-        if self.version.minor % 5 == 3:  # our 3 and 8 are LTS
-            version_type = VersionType.LTS
+        version_type = self.get_stable_release_type()
         self.version.with_description(version_type)
         with self._create_gh_release(False):
             self.version = self.version.update(self.release_type)
@@ -206,7 +209,7 @@ class Release:
             update_contributors(raise_error=True)
             # Checkouting the commit of the branch and not the branch itself,
             # then we are able to skip rollback
-            with self._checkout(f"{self.release_branch}@{{0}}", False):
+            with self._checkout(f"{self.release_branch}^0", False):
                 current_commit = self.run("git rev-parse HEAD")
                 self.run(
                     f"git commit -m "
@@ -280,6 +283,7 @@ class Release:
                 with self._create_gh_label(
                     f"v{self.release_branch}-affected", "c2bfff"
                 ):
+                    # The following command is rolled back by self._push
                     self.run(
                         f"gh pr create --repo {self.repo} --title "
                         f"'Release pull request for branch {self.release_branch}' "
@@ -295,7 +299,7 @@ class Release:
     def _bump_testing_version(self, helper_branch: str):
         self.read_version()
         self.version = self.version.update(self.release_type)
-        self.version.with_description("testing")
+        self.version.with_description(VersionType.TESTING)
         update_cmake_version(self.version)
         update_contributors(raise_error=True)
         self.run(
@@ -308,7 +312,7 @@ class Release:
                 f"gh pr create --repo {self.repo} --title 'Update version after "
                 f"release' --head {helper_branch} --body-file '{body_file}'"
             )
-            # Here the prestable part is done
+            # Here the testing part is done
             yield
 
     @contextmanager
