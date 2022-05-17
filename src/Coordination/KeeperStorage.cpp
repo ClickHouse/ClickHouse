@@ -230,6 +230,9 @@ struct Overloaded : Ts...
 {
     using Ts::operator()...;
 };
+
+// explicit deduction guide
+// https://en.cppreference.com/w/cpp/language/class_template_argument_deduction
 template <class... Ts>
 Overloaded(Ts...) -> Overloaded<Ts...>;
 
@@ -766,19 +769,14 @@ struct KeeperStorageGetRequestProcessor final : public KeeperStorageRequestProce
             }
         }
 
-        const auto on_error = [&]([[maybe_unused]] const auto error_code)
-        {
-            if constexpr (local)
-                response.error = error_code;
-            else
-                onStorageInconsistency();
-        };
-
         auto & container = storage.container;
         auto node_it = container.find(request.path);
         if (node_it == container.end())
         {
-            on_error(Coordination::Error::ZNONODE);
+            if constexpr (local)
+                response.error = Coordination::Error::ZNONODE;
+            else
+                onStorageInconsistency();
         }
         else
         {
@@ -910,19 +908,14 @@ struct KeeperStorageExistsRequestProcessor final : public KeeperStorageRequestPr
             }
         }
 
-        const auto on_error = [&]([[maybe_unused]] const auto error_code)
-        {
-            if constexpr (local)
-                response.error = error_code;
-            else
-                onStorageInconsistency();
-        };
-
         auto & container = storage.container;
         auto node_it = container.find(request.path);
         if (node_it == container.end())
         {
-            on_error(Coordination::Error::ZNONODE);
+            if constexpr (local)
+                response.error = Coordination::Error::ZNONODE;
+            else
+                onStorageInconsistency();
         }
         else
         {
@@ -1054,19 +1047,14 @@ struct KeeperStorageListRequestProcessor final : public KeeperStorageRequestProc
             }
         }
 
-        const auto on_error = [&]([[maybe_unused]] const auto error_code)
-        {
-            if constexpr (local)
-                response.error = error_code;
-            else
-                onStorageInconsistency();
-        };
-
         auto & container = storage.container;
         auto node_it = container.find(request.path);
         if (node_it == container.end())
         {
-            on_error(Coordination::Error::ZNONODE);
+            if constexpr (local)
+                response.error = Coordination::Error::ZNONODE;
+            else
+                onStorageInconsistency();
         }
         else
         {
@@ -1204,9 +1192,22 @@ struct KeeperStorageSetACLRequestProcessor final : public KeeperStorageRequestPr
         if (!fixupACL(request.acls, session_auth_ids, node_acls))
             return {{zxid, Coordination::Error::ZINVALIDACL}};
 
-        return {
-            {request.path, zxid, KeeperStorage::SetACLDelta{std::move(node_acls), request.version}},
-            {request.path, zxid, KeeperStorage::UpdateNodeDelta{[](KeeperStorage::Node & n) { ++n.stat.aversion; }}}};
+        return
+        {
+            {
+                request.path,
+                zxid,
+                KeeperStorage::SetACLDelta{std::move(node_acls), request.version}
+            },
+            {
+                request.path,
+                zxid,
+                KeeperStorage::UpdateNodeDelta
+                {
+                    [](KeeperStorage::Node & n) { ++n.stat.aversion; }
+                }
+            }
+        };
     }
 
     Coordination::ZooKeeperResponsePtr process(KeeperStorage & storage, int64_t zxid, int64_t session_id, int64_t /* time */) const override
@@ -1267,19 +1268,14 @@ struct KeeperStorageGetACLRequestProcessor final : public KeeperStorageRequestPr
             }
         }
 
-        const auto on_error = [&]([[maybe_unused]] const auto error_code)
-        {
-            if constexpr (local)
-                response.error = error_code;
-            else
-                onStorageInconsistency();
-        };
-
         auto & container = storage.container;
         auto node_it = container.find(request.path);
         if (node_it == container.end())
         {
-            on_error(Coordination::Error::ZNONODE);
+            if constexpr (local)
+                response.error = Coordination::Error::ZNONODE;
+            else
+                onStorageInconsistency();
         }
         else
         {
@@ -1384,6 +1380,8 @@ struct KeeperStorageMultiRequestProcessor final : public KeeperStorageRequestPro
         Coordination::ZooKeeperMultiResponse & response = dynamic_cast<Coordination::ZooKeeperMultiResponse &>(*response_ptr);
 
         auto & deltas = storage.uncommitted_state.deltas;
+        // the deltas will have atleast SubDeltaEnd or FailedMultiDelta
+        assert(!deltas.empty());
         if (auto * failed_multi = std::get_if<KeeperStorage::FailedMultiDelta>(&deltas.front().operation))
         {
             for (size_t i = 0; i < concrete_requests.size(); ++i)
@@ -1718,6 +1716,9 @@ void KeeperStorage::preprocessRequest(
         {
             for (const auto & ephemeral_path : session_ephemerals->second)
             {
+                // For now just add deltas for removing the node
+                // On commit, ephemerals nodes will be deleted from storage
+                // and removed from the session
                 if (uncommitted_state.hasNode(ephemeral_path))
                 {
                     deltas.emplace_back(
@@ -1824,6 +1825,7 @@ KeeperStorage::ResponsesForSessions KeeperStorage::processRequest(
 
         if (is_local)
         {
+            assert(!zk_request->isReadRequest());
             if (check_acl && !request_processor->checkAuth(*this, session_id, true))
             {
                 response = zk_request->makeResponse();
@@ -1885,7 +1887,10 @@ void KeeperStorage::rollbackRequest(int64_t rollback_zxid)
 
     // we can only rollback the last zxid (if there is any)
     // if there is a delta with a larger zxid, we have invalid state
-    assert(uncommitted_state.deltas.empty() || uncommitted_state.deltas.back().zxid <= rollback_zxid);
+    const auto last_zxid = uncommitted_state.deltas.back().zxid;
+    if (!uncommitted_state.deltas.empty() && last_zxid > rollback_zxid)
+        throw DB::Exception{DB::ErrorCodes::LOGICAL_ERROR, "Invalid state of deltas found while trying to rollback request. Last ZXID ({}) is larger than the requested ZXID ({})", last_zxid, rollback_zxid};
+
     std::erase_if(uncommitted_state.deltas, [rollback_zxid](const auto & delta) { return delta.zxid == rollback_zxid; });
     uncommitted_transactions.pop_back();
 }
