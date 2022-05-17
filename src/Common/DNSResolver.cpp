@@ -228,6 +228,7 @@ std::vector<Poco::Net::SocketAddress> DNSResolver::resolveAddressList(const std:
     std::vector<Poco::Net::IPAddress> ips = impl->disable_cache ? hostByName(host) : impl->cache_host(host);
     auto ips_end = std::unique(ips.begin(), ips.end());
 
+    addresses.reserve(ips_end - ips.begin());
     for (auto ip = ips.begin(); ip != ips_end; ++ip)
         addresses.emplace_back(*ip, port);
 

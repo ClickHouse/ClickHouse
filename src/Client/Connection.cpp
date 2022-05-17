@@ -107,8 +107,6 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
             if (connected)
                 disconnect();
 
-            current_resolved_address = *it;
-
             if (static_cast<bool>(secure))
             {
 #if USE_SSL
@@ -129,7 +127,9 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
 
             try
             {
-                socket->connect(*current_resolved_address, connection_timeout);
+                socket->connect(*it, connection_timeout);
+                current_resolved_address = *it;
+                break;
             }
             catch (Poco::Net::NetException &)
             {
@@ -143,7 +143,6 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
                     throw;
                 continue;
             }
-            break;
         }
 
         socket->setReceiveTimeout(timeouts.receive_timeout);
