@@ -230,7 +230,7 @@ void SessionLog::addLoginSuccess(const UUID & auth_id, std::optional<String> ses
         log_entry.roles = roles_info->getCurrentRolesNames();
 
     if (const auto profile_info = access->getDefaultProfileInfo())
-    log_entry.profiles = profile_info->getProfileNames();
+        log_entry.profiles = profile_info->getProfileNames();
 
     for (const auto & s : settings.allChanged())
         log_entry.settings.emplace_back(s.getName(), s.getValueString());

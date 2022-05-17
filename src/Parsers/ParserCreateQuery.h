@@ -126,6 +126,7 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     ParserKeyword s_materialized{"MATERIALIZED"};
     ParserKeyword s_ephemeral{"EPHEMERAL"};
     ParserKeyword s_alias{"ALIAS"};
+    ParserKeyword s_auto_increment{"AUTO_INCREMENT"};
     ParserKeyword s_comment{"COMMENT"};
     ParserKeyword s_codec{"CODEC"};
     ParserKeyword s_ttl{"TTL"};
@@ -175,6 +176,7 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
         && !s_materialized.checkWithoutMoving(pos, expected)
         && !s_ephemeral.checkWithoutMoving(pos, expected)
         && !s_alias.checkWithoutMoving(pos, expected)
+        && !s_auto_increment.checkWithoutMoving(pos, expected)
         && (require_type
             || (!s_comment.checkWithoutMoving(pos, expected)
                 && !s_codec.checkWithoutMoving(pos, expected))))
@@ -196,12 +198,25 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     }
     else if (s_ephemeral.ignore(pos, expected))
     {
-        default_specifier = "EPHEMERAL";
+        default_specifier = s_ephemeral.getName();
         if (!literal_parser.parse(pos, default_expression, expected) && type)
             default_expression = std::make_shared<ASTLiteral>(Field());
 
         if (!default_expression && !type)
             return false;
+    }
+    else if (s_auto_increment.ignore(pos, expected))
+    {
+        default_specifier = s_auto_increment.getName();
+        /// if type is not provided for a column with AUTO_INCREMENT then using INT by default
+        if (!type)
+        {
+            const String type_int("INT");
+            Tokens tokens(type_int.data(), type_int.data() + type_int.size());
+            Pos tmp_pos(tokens, 0);
+            Expected tmp_expected;
+            ParserDataType().parse(tmp_pos, type, tmp_expected);
+        }
     }
 
     if (require_type && !type && !default_expression)
@@ -248,9 +263,9 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
 
     column_declaration->null_modifier = null_modifier;
 
+    column_declaration->default_specifier = default_specifier;
     if (default_expression)
     {
-        column_declaration->default_specifier = default_specifier;
         column_declaration->default_expression = default_expression;
         column_declaration->children.push_back(std::move(default_expression));
     }
