@@ -727,8 +727,8 @@ HiveFiles StorageHive::collectHiveFiles(
 
     /// Hive files to collect
     HiveFiles hive_files;
-    UInt64 hit_parttions_num = 0;
-    UInt64 hive_max_query_partitions = context_->getSettings().hive_max_query_partitions;
+    Int64 hit_parttions_num = 0;
+    Int64 hive_max_query_partitions = context_->getSettings().max_partitions_to_read;
     /// Mutext to protect hive_files, which maybe appended in multiple threads
     std::mutex hive_files_mutex;
     ThreadPool pool{max_threads};
@@ -745,7 +745,7 @@ HiveFiles StorageHive::collectHiveFiles(
                     {
                         std::lock_guard<std::mutex> lock(hive_files_mutex);
                         hit_parttions_num += 1;
-                        if (hit_parttions_num > hive_max_query_partitions)
+                        if (hive_max_query_partitions > 0 && hit_parttions_num > hive_max_query_partitions)
                         {
                             throw Exception(ErrorCodes::TOO_MANY_PARTS, "Too many partitions to query for table {}.{} . max partition is limited to {}", hive_database, hive_table, hive_max_query_partitions);
                         }
