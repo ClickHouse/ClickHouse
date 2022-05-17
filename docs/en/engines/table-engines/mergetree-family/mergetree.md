@@ -951,3 +951,56 @@ Examples of working configurations can be found in integration tests directory (
 -   `_part_uuid` — Unique part identifier (if enabled MergeTree setting `assign_part_uuids`).
 -   `_partition_value` — Values (a tuple) of a `partition by` expression.
 -   `_sample_factor` — Sample factor (from the query).
+
+# ANN Skip Index [experimental] {#table_engines-ANNIndex}
+
+`ANNIndexes` are designed to speed up two types of queries:
+
+- ######  Type 1: Where 
+   ``` sql 
+   SELECT * FROM table_name WHERE 
+   DistanceFunction(Column, TargetVector) < Value 
+   LIMIT N
+   ```
+- ###### Type 2: OrderBy
+  ``` sql
+  SELECT * FROM table_name [WHERE ...] OrderBy
+  DistanceFunction(Column, TargetVector) 
+  LIMIT N
+  ```
+
+In these queries, `DistanceFunction` is selected from tuples of distance functions. `TargetVector` is a known embedding (something like `(0.1, 0.1, ... )`). `Value` - a float value that will bound the neighbourhood.
+
+!!! note "Note"
+    ANNIndex can't speed up query that satisfies both types and they work only for Tuples. All queries must have the limit, as algorithms are used to find nearest neighbors and need a specific number of them.
+
+Both types of queries are handled the same way. The indexes get `n` neighbors (where `n` is taken from the `LIMIT` section) and work with them. In `ORDER BY` query they remember the numbers of all parts of the granule that have at least one of neighbor. In `WHERE` query they remember only those parts that satisfy the requirements.
+
+###### Create table with ANNIndex
+```
+CREATE TABLE t
+(
+  `id` Int64,
+  `number` Tuple(Float32, Float32, Float32),
+  INDEX x number TYPE annoy GRANULARITY N
+)
+ENGINE = MergeTree
+ORDER BY id;
+```
+
+!!! note "Note"
+    ANNIndexes work only when setting `index_granularity=8192`.
+    
+Number of granules in granularity should be large. With greater `GRANULARITY` indexes remember the data structure better. But some indexes can't be built if they don't have enough data, so this granule will always participate in the query. For more information, see the description of indexes.
+
+As the indexes are built only during insertions into table, `INSERT` and `OPTIMIZE` queries are slower than for ordinary table. OAt this stage indexes remember all the information about the given data. ANNIndexes should be used if you have immutable or rarely changed data and many read requests.
+    
+You can create your table with index which uses certain algorithm. Now only indices based on the following algorithms are supported:
+
+##### Index list
+- `faiss(factory_string)` — Contains several methods for similarity search from [Faiss library](https://github.com/facebookresearch/faiss). [The summary of methods](https://github.com/facebookresearch/faiss/wiki/Faiss-indexes) shows existed indexes in the library.  Short parameters description: 
+    - `factory_string` — a string to produce a composite Faiss index. The string is a comma-separated list of components. The format of this string is described [here](https://github.com/facebookresearch/faiss/wiki/The-index-factory). 
+
+    Choosing an index type can be done using [Faiss guidelines](https://github.com/facebookresearch/faiss/wiki/Guidelines-to-choose-an-index). You should keep in mind that the index is built upon `N` granules where `N` is an index `GRANULARITY` parameter. So the total number of elements per one index instance is `index_granularity * N`. The good idea is to use compressed indexes (for example `OPQM_D,...,PQM` from Faiss guidelines) because the I/O operation with an index can be a bottleneck in the searching.
+
+    Some indexes from Faiss have search hyperparameters. You can set these parameters using the string setting `ann_index_params`. The format of this string is described in the ParameterSpace section of [this guideline](https://github.com/facebookresearch/faiss/wiki/Index-IO,-cloning-and-hyper-parameter-tuning).
