@@ -39,22 +39,29 @@ with client(name="client1>", log=log) as client1, client(
     client1.expect(prompt)
 
     client1.send(
-        "CREATE TABLE 01078_window_view_alter_query_watch.mt(a Int32) ENGINE=MergeTree ORDER BY tuple()"
+        "CREATE TABLE 01078_window_view_alter_query_watch.mt(a Int32, timestamp DateTime) ENGINE=MergeTree ORDER BY tuple()"
     )
     client1.expect(prompt)
     client1.send(
-        "CREATE WINDOW VIEW 01078_window_view_alter_query_watch.wv AS SELECT count(a) AS count FROM 01078_window_view_alter_query_watch.mt GROUP BY tumble(now('US/Samoa'), INTERVAL '1' SECOND, 'US/Samoa') AS wid;"
+        "CREATE WINDOW VIEW 01078_window_view_alter_query_watch.wv WATERMARK=ASCENDING AS SELECT count(a) AS count, hopEnd(wid) AS w_end FROM 01078_window_view_alter_query_watch.mt GROUP BY hop(timestamp, INTERVAL '2' SECOND, INTERVAL '3' SECOND, 'US/Samoa') AS wid"
     )
     client1.expect(prompt)
 
     client1.send("WATCH 01078_window_view_alter_query_watch.wv")
     client1.expect("Query id" + end_of_block)
-    client2.send("INSERT INTO 01078_window_view_alter_query_watch.mt VALUES (1)")
+    client1.expect("Progress: 0.00 rows.*\)")
+    client2.send(
+        "INSERT INTO 01078_window_view_alter_query_watch.mt VALUES (1, '1990/01/01 12:00:00');"
+    )
+    client2.expect("Ok.")
+    client2.send(
+        "INSERT INTO 01078_window_view_alter_query_watch.mt VALUES (1, '1990/01/01 12:00:05');"
+    )
     client2.expect("Ok.")
     client1.expect("1" + end_of_block)
     client1.expect("Progress: 1.00 rows.*\)")
     client2.send(
-        "ALTER TABLE 01078_window_view_alter_query_watch.wv MODIFY QUERY SELECT count(a) AS count FROM 01078_window_view_alter_query_watch.mt GROUP BY tumble(now('US/Samoa'), INTERVAL '1' SECOND, 'US/Samoa') AS wid;"
+        "ALTER TABLE 01078_window_view_alter_query_watch.wv MODIFY QUERY SELECT count(a) AS count, hopEnd(wid) AS w_end FROM 01078_window_view_alter_query_watch.mt GROUP BY hop(timestamp, INTERVAL '2' SECOND, INTERVAL '3' SECOND, 'US/Samoa') AS wid"
     )
     client2.expect("Ok.")
     client2.expect(prompt)
@@ -62,7 +69,14 @@ with client(name="client1>", log=log) as client1, client(
     client1.expect(prompt)
     client3.send("WATCH 01078_window_view_alter_query_watch.wv")
     client3.expect("Query id" + end_of_block)
-    client2.send("INSERT INTO 01078_window_view_alter_query_watch.mt VALUES (1)")
+    client3.expect("Progress: 0.00 rows.*\)")
+    client2.send(
+        "INSERT INTO 01078_window_view_alter_query_watch.mt VALUES (1, '1990/01/01 12:00:06');"
+    )
+    client2.expect("Ok.")
+    client2.send(
+        "INSERT INTO 01078_window_view_alter_query_watch.mt VALUES (1, '1990/01/01 12:00:10');"
+    )
     client2.expect("Ok.")
     client3.expect("2" + end_of_block)
     client3.expect("Progress: 1.00 rows.*\)")
