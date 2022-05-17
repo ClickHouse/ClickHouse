@@ -57,22 +57,9 @@ namespace
 
 void checkTTLExpression(const ExpressionActionsPtr & ttl_expression, const String & result_column_name)
 {
-    for (const auto & action : ttl_expression->getActions())
-    {
-        if (action.node->type == ActionsDAG::ActionType::FUNCTION)
-        {
-            IFunctionBase & func = *action.node->function_base;
-            if (!func.isDeterministic())
-                throw Exception(
-                    "TTL expression cannot contain non-deterministic functions, "
-                    "but contains function "
-                        + func.getName(),
-                    ErrorCodes::BAD_ARGUMENTS);
-        }
-    }
+    ttl_expression->getActionsDAG().assertDeterministic();
 
     const auto & result_column = ttl_expression->getSampleBlock().getByName(result_column_name);
-
     if (!typeid_cast<const DataTypeDateTime *>(result_column.type.get())
         && !typeid_cast<const DataTypeDate *>(result_column.type.get()))
     {
@@ -164,7 +151,8 @@ TTLDescription TTLDescription::getTTLFromAST(
     const ASTPtr & definition_ast,
     const ColumnsDescription & columns,
     ContextPtr context,
-    const KeyDescription & primary_key)
+    const KeyDescription & primary_key,
+    bool is_attach)
 {
     TTLDescription result;
     const auto * ttl_element = definition_ast->as<ASTTTLElement>();
@@ -295,7 +283,8 @@ TTLDescription TTLDescription::getTTLFromAST(
         }
     }
 
-    checkTTLExpression(result.expression, result.result_column);
+    if (!is_attach)
+        checkTTLExpression(result.expression, result.result_column);
     return result;
 }
 
@@ -333,7 +322,8 @@ TTLTableDescription TTLTableDescription::getTTLForTableFromAST(
     const ASTPtr & definition_ast,
     const ColumnsDescription & columns,
     ContextPtr context,
-    const KeyDescription & primary_key)
+    const KeyDescription & primary_key,
+    bool is_attach)
 {
     TTLTableDescription result;
     if (!definition_ast)
@@ -344,7 +334,7 @@ TTLTableDescription TTLTableDescription::getTTLForTableFromAST(
     bool have_unconditional_delete_ttl = false;
     for (const auto & ttl_element_ptr : definition_ast->children)
     {
-        auto ttl = TTLDescription::getTTLFromAST(ttl_element_ptr, columns, context, primary_key);
+        auto ttl = TTLDescription::getTTLFromAST(ttl_element_ptr, columns, context, primary_key, is_attach);
         if (ttl.mode == TTLMode::DELETE)
         {
             if (!ttl.where_expression)
