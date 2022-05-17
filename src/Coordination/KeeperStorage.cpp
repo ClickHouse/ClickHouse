@@ -1689,7 +1689,7 @@ void KeeperStorage::preprocessRequest(
         }
         else
         {
-            if (txn_it->zxid == new_last_zxid)
+            if (txn_it->zxid == new_last_zxid && (!digest || checkDigest(*digest, txn_it->nodes_digest)))
                 // we found the preprocessed request with the same ZXID, we can skip it
                 return;
 
@@ -1701,14 +1701,7 @@ void KeeperStorage::preprocessRequest(
     TransactionInfo transaction{.zxid = new_last_zxid};
     SCOPE_EXIT({
         if (digest_enabled)
-        {
-            // if the leader has the same digest calculation version we
-            // can skip recalculating and use that value
-            if (digest && digest->version == CURRENT_DIGEST_VERSION)
-                transaction.nodes_digest = *digest;
-            else
-                transaction.nodes_digest = Digest{CURRENT_DIGEST_VERSION, calculateNodesDigest(getNodesDigest(false).value, transaction.zxid)};
-        }
+            transaction.nodes_digest = Digest{CURRENT_DIGEST_VERSION, calculateNodesDigest(getNodesDigest(false).value, transaction.zxid)};
         else
             transaction.nodes_digest = Digest{DigestVersion::NO_DIGEST};
 
