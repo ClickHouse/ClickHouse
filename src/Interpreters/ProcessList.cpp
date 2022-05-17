@@ -15,8 +15,6 @@
 #include <IO/WriteHelpers.h>
 #include <Common/logger_useful.h>
 #include <chrono>
-#include <Poco/Logger.h>
-#include <Loggers/Loggers.h>
 
 namespace CurrentMetrics
 {
@@ -72,10 +70,6 @@ static bool isUnlimitedQuery(const IAST * ast)
 ProcessList::EntryPtr ProcessList::insert(const String & query_, const IAST * ast, ContextPtr query_context)
 {
     EntryPtr res;
-    auto adqm_log = &Poco::Logger::get("ADQM");
-    LOG_DEBUG(adqm_log,"Inserting query into process list: {}", query_);
-    LOG_DEBUG(adqm_log,"Num of concurrent queries: {}", processes.size());
-    LOG_DEBUG(adqm_log,"Global Num Threads: {}", getTotalNumThreads());
 
     const ClientInfo & client_info = query_context->getClientInfo();
     const Settings & settings = query_context->getSettingsRef();
