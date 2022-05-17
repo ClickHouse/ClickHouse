@@ -1,6 +1,6 @@
 #include "Exception.h"
 
-#include <string.h>
+#include <cstring>
 #include <cxxabi.h>
 #include <cstdlib>
 #include <Poco/String.h>
