@@ -1,5 +1,8 @@
 #pragma once
 
+#include <list>
+#include <memory>
+
 #include <IO/ReadBuffer.h>
 #include <IO/CompressedReadBufferWrapper.h>
 #include <IO/BufferWithOwnMemory.h>
@@ -36,6 +39,7 @@ private:
 
     CompressedBuf decompressBlock(unsigned char * in_buf, size_t in_len);
     bool writeToInternal();
+    void runDecompressBlockTask(unsigned char * in_buf, size_t in_len);
 
     bool skipped_header_flag = false;
     bool eof_flag = false;
@@ -43,8 +47,8 @@ private:
 
     size_t internal_pos = 0;
 
-    std::vector<CompressedBuf> results;
-    size_t curr_result_i = 0;
+    std::list<std::shared_ptr<CompressedBuf>> results;
+    std::list<std::shared_ptr<CompressedBuf>>::iterator curr_result_it;
     size_t curr_result_pos = 0;
 
     std::string prev_last_slice;

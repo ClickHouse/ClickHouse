@@ -17,6 +17,7 @@ PigzInflatingReadBuffer::PigzInflatingReadBuffer(
     : CompressedReadBufferWrapper(std::move(in_), buf_size, existing_memory, alignment)
     , pool()
 {
+    curr_result_it = results.end();
 }
 
 PigzInflatingReadBuffer::~PigzInflatingReadBuffer()
@@ -42,7 +43,8 @@ bool PigzInflatingReadBuffer::nextImpl()
                 reinterpret_cast<unsigned char *>(&prev_last_slice.front()),
                 prev_last_slice.size()
             );
-            results.push_back(result);
+            results.push_back(std::make_shared<CompressedBuf>(result));
+            curr_result_it = results.begin();
             prev_last_slice.clear();
 
             if (!writeToInternal()) {
@@ -62,7 +64,9 @@ bool PigzInflatingReadBuffer::nextImpl()
         skipped_header_flag = true;
     }
     
-    std::vector<size_t> seps;
+    size_t prev_sep = 0;
+    bool prev_sep_flag = false;
+    size_t last_sep = 0;
     for (size_t i = 0; i + 9 < in_len; ++i) {
         size_t j = i;
         if (in_buf[j++] == 0 &&
@@ -74,46 +78,38 @@ bool PigzInflatingReadBuffer::nextImpl()
             in_buf[j++] == 0 &&
             in_buf[j++] == 255 &&
             in_buf[j++] == 255) {
-            // TODO: тут можно запускать декомпрессию в треде
-            seps.push_back(j);
+
+            size_t curr_sep = j;
+            last_sep = curr_sep;
+            
+            if (!prev_sep_flag) {
+                prev_sep_flag = true;
+                prev_last_slice.append(reinterpret_cast<char*>(in_buf), curr_sep);
+
+                runDecompressBlockTask(reinterpret_cast<unsigned char *>(&prev_last_slice.front()), prev_last_slice.size());
+            } else {
+                runDecompressBlockTask(in_buf + prev_sep, curr_sep - prev_sep);
+            }
+            prev_sep = curr_sep;
         }
+    }
+    if (!prev_sep_flag) {
+        std::cout << "!prev_sep_flag" << std::endl;
+        throw "!prev_sep_flag";
     }
     in->position() = in->buffer().end();
 
-    // TODO: seps.size() == 0
-    if (seps.size() == 0) {
-        throw "seps.size() == 0";
-    }
-
-    prev_last_slice.append(reinterpret_cast<char*>(in_buf), seps[0]);
-
-    results.clear();
-    results.resize(seps.size());
-
-    pool.scheduleOrThrowOnError(
-        [&, in_buf = reinterpret_cast<unsigned char *>(&prev_last_slice.front()), in_len = prev_last_slice.size()]() mutable
-        {
-            results[0] = decompressBlock(in_buf, in_len);
-        });
-    for (size_t i = 0; i < seps.size() - 1; i++) {
-        pool.scheduleOrThrowOnError(
-            [&, i = i, in_buf = in_buf + seps[i], in_len = seps[i + 1] - seps[i]]() mutable
-            {
-                results[i + 1] = decompressBlock(in_buf, in_len);
-            });
-    }
     pool.wait();
-
     writeToInternal();
 
     prev_last_slice.clear();
-    prev_last_slice.append(reinterpret_cast<char*>(in_buf + seps[seps.size() - 1]), in_len - seps[seps.size() - 1]);
+    prev_last_slice.append(reinterpret_cast<char*>(in_buf + last_sep), in_len - last_sep);
 
     return true;
 }
 
 PigzInflatingReadBuffer::CompressedBuf PigzInflatingReadBuffer::decompressBlock(unsigned char * in_buf, size_t in_len) {
-    size_t mem_size = BLOCK_SIZE * 10;
+    size_t mem_size = BLOCK_SIZE * 2;
     
     auto mem = std::make_shared<Memory<>>(mem_size);
 
@@ -152,25 +148,37 @@ bool PigzInflatingReadBuffer::writeToInternal() {
     if (results.empty())
         return true;
 
-    for (; curr_result_i < results.size(); ++curr_result_i) {
-        CompressedBuf curr_result = results[curr_result_i];
+    for (; curr_result_it != results.end(); curr_result_it++) {
+        std::shared_ptr<CompressedBuf> curr_result = *curr_result_it;
         // TODO: записывать через memcpy 
-        for (; curr_result_pos < curr_result.len; ++curr_result_pos) {
+        for (; curr_result_pos < curr_result->len; ++curr_result_pos) {
             if (internal_pos == internal_buffer.size()) {
                 working_buffer.resize(internal_pos);
                 return false;
             }
-            internal_buffer.begin()[internal_pos++] = curr_result.mem->data()[curr_result_pos];
+            internal_buffer.begin()[internal_pos++] = curr_result->mem->data()[curr_result_pos];
             sum_written++;        
         }
         curr_result_pos = 0;
     }
     results.clear();
-    curr_result_i = 0;
+    curr_result_it = results.end();
     curr_result_pos = 0;
     
     working_buffer.resize(internal_pos);
     return true;
+}
+
+void PigzInflatingReadBuffer::runDecompressBlockTask(unsigned char * in_buf, size_t in_len) {
+    results.push_back(std::make_shared<CompressedBuf>());
+    if (results.size() == 1) {
+        curr_result_it = results.begin();
+    }
+    pool.scheduleOrThrowOnError(
+        [&, res = *results.rbegin(), in_buf = in_buf, in_len = in_len]() mutable
+        {
+            *res = decompressBlock(in_buf, in_len);
+        });
 }
 
 }
