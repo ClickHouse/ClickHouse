@@ -11,7 +11,7 @@ namespace DB
 /**
  * @brief StorageHiveCluster is used to run hive query in distributed mode.
  *
- * StorageHiveCluster is implemented on StorageHive, and StorageHive would receive a IHiveQueryTaskFilesCollector object to
+ * StorageHiveCluster is implemented on StorageHive, and StorageHive would receive a IHiveSourceFilesCollector object to
  * get assigned hdfs files to read.
  *
  * Initiator node collects all related hdfs files by parsing the query, and assign files into different cluster nodes.
