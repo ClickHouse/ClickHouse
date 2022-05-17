@@ -211,13 +211,8 @@ function run_tests
     if [ -v CHPC_TEST_RUN_BY_HASH_TOTAL ]; then
         # filter tests array in bash https://stackoverflow.com/a/40375567
         for index in "${!test_files[@]}"; do
-            # sorry for this, just calculating hash(test_name) % total_tests_group == my_test_group_num
-            test_hash_result=$(echo test_files[$index] | perl -ne 'use Digest::MD5 qw(md5); print unpack('Q', md5($_)) % $ENV{CHPC_TEST_RUN_BY_HASH_TOTAL} == $ENV{CHPC_TEST_RUN_BY_HASH_NUM};')
-            # BTW, for some reason when hash(test_name) % total_tests_group != my_test_group_num perl outputs nothing, not zero
-            if [ "$test_hash_result" != "1" ]; then
-                # deleting element from array
+            [ $(( index % CHPC_TEST_RUN_BY_HASH_TOTAL )) != "$CHPC_TEST_RUN_BY_HASH_NUM" ] && \
                 unset -v 'test_files[$index]'
-            fi
         done
         # to have sequential indexes...
         test_files=("${test_files[@]}")
@@ -381,7 +376,6 @@ do
     sed -n "s/^report-threshold\t/$test_name\t/p" < "$test_file" >> "analyze/report-thresholds.tsv"
     sed -n "s/^skipped\t/$test_name\t/p" < "$test_file" >> "analyze/skipped-tests.tsv"
     sed -n "s/^display-name\t/$test_name\t/p" < "$test_file" >> "analyze/query-display-names.tsv"
-    sed -n "s/^short\t/$test_name\t/p" < "$test_file" >> "analyze/marked-short-queries.tsv"
     sed -n "s/^partial\t/$test_name\t/p" < "$test_file" >> "analyze/partial-queries.tsv"
 done
 
@@ -822,7 +816,6 @@ create view query_runs as select * from file('analyze/query-runs.tsv', TSV,
 -- calculate and check the average query run time in the report.
 -- We have to be careful, because we will encounter:
 --  1) partial queries which run only on one server
---  2) short queries which run for a much higher number of times
 --  3) some errors that make query run for a different number of times on a
 --     particular server.
 --
@@ -830,15 +823,11 @@ create view test_runs as
     select test,
         -- Default to 7 runs if there are only 'short' queries in the test, and
         -- we can't determine the number of runs.
-        if((ceil(medianOrDefaultIf(t.runs, not short), 0) as r) != 0, r, 7) runs
+        if((ceil(median(t.runs), 0) as r) != 0, r, 7) runs
     from (
         select
             -- The query id is the same for both servers, so no need to divide here.
             uniqExact(query_id) runs,
-            (test, query_index) in
-                (select * from file('analyze/marked-short-queries.tsv', TSV,
-                    'test text, query_index int'))
-            as short,
             test, query_index
         from query_runs
         group by test, query_index
@@ -921,41 +910,6 @@ create table all_tests_report engine File(TSV, 'report/all-queries.tsv')
         toDecimal64(isFinite(stat_threshold) ? stat_threshold : 0, 3),
         test, query_index, query_display_name
     from queries order by test, query_index;
-
-
--- Report of queries that have inconsistent 'short' markings:
--- 1) have short duration, but are not marked as 'short'
--- 2) the reverse -- marked 'short' but take too long.
--- The threshold for 2) is significantly larger than the threshold for 1), to
--- avoid jitter.
-create view shortness
-    as select
-        (test, query_index) in
-            (select * from file('analyze/marked-short-queries.tsv', TSV,
-            'test text, query_index int'))
-            as marked_short,
-        time, test, query_index, query_display_name
-    from (
-            select right time, test, query_index from queries
-            union all
-            select time_median, test, query_index from partial_query_times
-        ) times
-        left join query_display_names
-            on times.test = query_display_names.test
-                and times.query_index = query_display_names.query_index
-    ;
-
-create table inconsistent_short_marking_report
-    engine File(TSV, 'report/unexpected-query-duration.tsv')
-    as select
-        multiIf(marked_short and time > 0.1, '\"short\" queries must run faster than 0.02 s',
-                not marked_short and time < 0.02, '\"normal\" queries must run longer than 0.1 s',
-                '') problem,
-        marked_short, time,
-        test, query_index, query_display_name
-    from shortness
-    where problem != ''
-    ;
 
 
 --------------------------------------------------------------------------------
@@ -1437,4 +1391,3 @@ esac
 # Print some final debug info to help debug Weirdness, of which there is plenty.
 jobs
 pstree -apgT
-

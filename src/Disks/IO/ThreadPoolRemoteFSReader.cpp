@@ -22,8 +22,8 @@
 
 namespace ProfileEvents
 {
-    extern const Event RemoteFSReadMicroseconds;
-    extern const Event RemoteFSReadBytes;
+    extern const Event ThreadpoolReaderTaskMicroseconds;
+    extern const Event ThreadpoolReaderReadBytes;
 }
 
 namespace CurrentMetrics
@@ -92,8 +92,8 @@ std::future<IAsynchronousReader::Result> ThreadPoolRemoteFSReader<Reader>::submi
 
         watch.stop();
 
-        ProfileEvents::increment(ProfileEvents::RemoteFSReadMicroseconds, watch.elapsedMicroseconds());
-        ProfileEvents::increment(ProfileEvents::RemoteFSReadBytes, result.offset ? result.size - result.offset : result.size);
+        ProfileEvents::increment(ProfileEvents::ThreadpoolReaderTaskMicroseconds, watch.elapsedMicroseconds());
+        ProfileEvents::increment(ProfileEvents::ThreadpoolReaderReadBytes, result.offset ? result.size - result.offset : result.size);
 
         thread_status.detachQuery(/* if_not_detached */true);
 

@@ -1,6 +1,6 @@
 #pragma once
 
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <base/types.h>
 #include <boost/core/noncopyable.hpp>
 #include <Poco/Logger.h>
@@ -20,10 +20,12 @@ struct OvercommitRatio
 
     friend bool operator<(OvercommitRatio const & lhs, OvercommitRatio const & rhs) noexcept
     {
+        Int128 lhs_committed = lhs.committed, lhs_soft_limit = lhs.soft_limit;
+        Int128 rhs_committed = rhs.committed, rhs_soft_limit = rhs.soft_limit;
         // (a / b < c / d) <=> (a * d < c * b)
-        return (lhs.committed * rhs.soft_limit) < (rhs.committed * lhs.soft_limit)
-            || (lhs.soft_limit == 0 && rhs.soft_limit > 0)
-            || (lhs.committed == 0 && rhs.committed == 0 && lhs.soft_limit > rhs.soft_limit);
+        return (lhs_committed * rhs_soft_limit) < (rhs_committed * lhs_soft_limit)
+            || (lhs_soft_limit == 0 && rhs_soft_limit > 0)
+            || (lhs_committed == 0 && rhs_committed == 0 && lhs_soft_limit > rhs_soft_limit);
     }
 
     // actual query memory usage
@@ -33,6 +35,13 @@ struct OvercommitRatio
 };
 
 class MemoryTracker;
+
+enum class QueryCancellationState
+{
+    NONE     = 0,  // Hard limit is not reached, there is no selected query to kill.
+    SELECTED = 1,  // Hard limit is reached, query to stop was chosen but it still is not aware of cancellation.
+    RUNNING  = 2,  // Hard limit is reached, selected query has started the process of cancellation.
+};
 
 // Usually it's hard to set some reasonable hard memory limit
 // (especially, the default value). This class introduces new
@@ -45,9 +54,11 @@ struct OvercommitTracker : boost::noncopyable
 {
     void setMaxWaitTime(UInt64 wait_time);
 
-    bool needToStopQuery(MemoryTracker * tracker);
+    bool needToStopQuery(MemoryTracker * tracker, Int64 amount);
 
-    void unsubscribe(MemoryTracker * tracker);
+    void tryContinueQueryExecutionAfterFree(Int64 amount);
+
+    void onQueryStop(MemoryTracker * tracker);
 
     virtual ~OvercommitTracker() = default;
 
@@ -58,23 +69,16 @@ protected:
 
     // This mutex is used to disallow concurrent access
     // to picked_tracker and cancelation_state variables.
-    mutable std::mutex overcommit_m;
-    mutable std::condition_variable cv;
+    std::mutex overcommit_m;
+    std::condition_variable cv;
 
     std::chrono::microseconds max_wait_time;
-
-    enum class QueryCancelationState
-    {
-        NONE,
-        RUNNING,
-    };
 
     // Specifies memory tracker of the chosen to stop query.
     // If soft limit is not set, all the queries which reach hard limit must stop.
     // This case is represented as picked tracker pointer is set to nullptr and
-    // overcommit tracker is in RUNNING state.
+    // overcommit tracker is in SELECTED state.
     MemoryTracker * picked_tracker;
-    QueryCancelationState cancelation_state;
 
     virtual Poco::Logger * getLogger() = 0;
 
@@ -82,12 +86,26 @@ private:
 
     void pickQueryToExclude()
     {
-        if (cancelation_state != QueryCancelationState::RUNNING)
+        if (cancellation_state == QueryCancellationState::NONE)
         {
             pickQueryToExcludeImpl();
-            cancelation_state = QueryCancelationState::RUNNING;
+            cancellation_state = QueryCancellationState::SELECTED;
         }
     }
+
+    void reset() noexcept
+    {
+        picked_tracker = nullptr;
+        cancellation_state = QueryCancellationState::NONE;
+        freed_memory = 0;
+        allow_release = true;
+    }
+
+    void releaseThreads();
+
+    QueryCancellationState cancellation_state;
+
+    std::unordered_map<MemoryTracker *, Int64> required_per_thread;
 
     // Global mutex which is used in ProcessList to synchronize
     // insertion and deletion of queries.
@@ -95,6 +113,10 @@ private:
     // require this mutex to be locked, because they read list (or sublist)
     // of queries.
     std::mutex & global_mutex;
+    Int64 freed_memory;
+    Int64 required_memory;
+
+    bool allow_release;
 };
 
 namespace DB
@@ -110,7 +132,7 @@ struct UserOvercommitTracker : OvercommitTracker
     ~UserOvercommitTracker() override = default;
 
 protected:
-    void pickQueryToExcludeImpl() override final;
+    void pickQueryToExcludeImpl() override;
 
     Poco::Logger * getLogger() override final { return logger; }
 private:
@@ -125,7 +147,7 @@ struct GlobalOvercommitTracker : OvercommitTracker
     ~GlobalOvercommitTracker() override = default;
 
 protected:
-    void pickQueryToExcludeImpl() override final;
+    void pickQueryToExcludeImpl() override;
 
     Poco::Logger * getLogger() override final { return logger; }
 private:

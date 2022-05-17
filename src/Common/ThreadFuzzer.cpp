@@ -1,4 +1,4 @@
-#include <signal.h>
+#include <csignal>
 #include <sys/time.h>
 #if defined(OS_LINUX)
 #   include <sys/sysinfo.h>
@@ -10,7 +10,7 @@
 #include <base/sleep.h>
 
 #include <IO/ReadHelpers.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 
 #include <Common/Exception.h>
 #include <Common/thread_local_rng.h>

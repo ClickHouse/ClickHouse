@@ -249,9 +249,9 @@ ClusterConfigPtr KeeperStateManager::getLatestConfigFromLogStore() const
     return nullptr;
 }
 
-void KeeperStateManager::flushLogStore()
+void KeeperStateManager::flushAndShutDownLogStore()
 {
-    log_store->flush();
+    log_store->flushChangelogAndShutdown();
 }
 
 void KeeperStateManager::save_config(const nuraft::cluster_config & config)
@@ -284,10 +284,25 @@ ConfigUpdateActions KeeperStateManager::getConfigurationDiff(const Poco::Util::A
     ConfigUpdateActions result;
 
     /// First of all add new servers
-    for (auto [new_id, server_config] : new_ids)
+    for (const auto & [new_id, server_config] : new_ids)
     {
-        if (!old_ids.contains(new_id))
+        auto old_server_it = old_ids.find(new_id);
+        if (old_server_it == old_ids.end())
             result.emplace_back(ConfigUpdateAction{ConfigUpdateActionType::AddServer, server_config});
+        else
+        {
+            const auto & old_endpoint = old_server_it->second->get_endpoint();
+            if (old_endpoint != server_config->get_endpoint())
+            {
+                LOG_WARNING(
+                    &Poco::Logger::get("RaftConfiguration"),
+                    "Config will be ignored because a server with ID {} is already present in the cluster on a different endpoint ({}). "
+                    "The endpoint of the current servers should not be changed. For servers on a new endpoint, please use a new ID.",
+                    new_id,
+                    old_endpoint);
+                return {};
+            }
+        }
     }
 
     /// After that remove old ones
