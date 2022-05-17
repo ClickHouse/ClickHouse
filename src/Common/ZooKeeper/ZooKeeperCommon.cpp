@@ -114,11 +114,9 @@ std::string ZooKeeperAuthRequest::toStringImpl() const
 {
     return fmt::format(
         "type = {}\n"
-        "scheme = {}\n"
-        "data = {}",
+        "scheme = {}",
         type,
-        scheme,
-        data);
+        scheme);
 }
 
 void ZooKeeperCreateRequest::writeImpl(WriteBuffer & out) const
@@ -156,11 +154,9 @@ std::string ZooKeeperCreateRequest::toStringImpl() const
 {
     return fmt::format(
         "path = {}\n"
-        "data = {}\n"
         "is_ephemeral = {}\n"
         "is_sequential = {}",
         path,
-        data,
         is_ephemeral,
         is_sequential);
 }
@@ -270,10 +266,8 @@ std::string ZooKeeperSetRequest::toStringImpl() const
 {
     return fmt::format(
         "path = {}\n",
-        "data = {}\n"
         "version = {}",
         path,
-        data,
         version);
 }
 
