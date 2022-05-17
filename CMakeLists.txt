@@ -486,7 +486,7 @@ add_subdirectory (contrib EXCLUDE_FROM_ALL)
 if (NOT ENABLE_JEMALLOC AND NOT ENABLE_MIMALLOC)
     message (WARNING "Non default allocator is disabled. This is not recommended for production builds.")
 elseif (ENABLE_MIMALLOC)
-    message("Using mimalloc: ", ${USE_MIMALLOC}, ${MIMALLOC_INCLUDE_DIR})
+    message("Using mimalloc: ${USE_MIMALLOC}, ${MIMALLOC_INCLUDE_DIR}")
 endif ()
 
 macro (add_executable target)
