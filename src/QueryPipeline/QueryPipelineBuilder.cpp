@@ -506,9 +506,11 @@ size_t QueryPipelineBuilder::getNumThreads() const
     if (max_threads) //-V1051
         num_threads = std::min(num_threads, max_threads);
 
-    if (process_list_element) {
+    if (process_list_element)
+    {
         auto total_max_threads = process_list_element->getContext()->getProcessList().getTotalMaxThreads();
-        if (total_max_threads) {
+        if (total_max_threads)
+        {
             size_t current_total_num_threads = process_list_element->getContext()->getProcessList().getTotalNumThreads();
             size_t total_available_threads = 0;
             if (total_max_threads > current_total_num_threads)

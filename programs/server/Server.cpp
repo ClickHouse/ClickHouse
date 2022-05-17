@@ -1118,14 +1118,16 @@ int Server::main(const std::vector<std::string> & /*args*/)
             if (config->has("max_partition_size_to_drop"))
                 global_context->setMaxPartitionSizeToDrop(config->getUInt64("max_partition_size_to_drop"));
 
-            if (config->has("total_max_threads")) {
+            if (config->has("total_max_threads"))
+            {
                 auto total_max_threads = config->getInt("total_max_threads", 0);
-                if (total_max_threads == -1) {
+                if (total_max_threads == -1)
+                {
                     // Based on tests total_max_threads has an optimal value when it's about two times of logical CPU cores
                     constexpr size_t thread_factor = 2;
                     total_max_threads = std::thread::hardware_concurrency() * thread_factor;
                 }
-                global_context->getProcessList().setGlobalMaxThreads(total_max_threads);
+                global_context->getProcessList().setTotalMaxThreads(total_max_threads);
             }
 
             if (config->has("max_concurrent_queries"))
