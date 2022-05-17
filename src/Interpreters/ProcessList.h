@@ -315,7 +315,8 @@ protected:
     size_t max_size = 0;        /// 0 means no limit. Otherwise, when limit exceeded, an exception is thrown.
 
     /// The total maximum number of threads for all queries.
-    size_t total_max_threads = 0; /// 0 means no limit. Otherwise, concurrency of query is determinated based on this parameter.
+    /// Sometimes, real total number of threads may exceed total_max_threads parameter.
+    size_t total_max_threads = 0; /// 0 means no limit. Otherwise, concurrency of a query is determinated based on this parameter.
 
     /// Stores per-user info: queries, statistics and limits
     UserToQueries user_to_queries;
