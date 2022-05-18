@@ -2,6 +2,7 @@ import pytest
 import re
 import os.path
 from helpers.cluster import ClickHouseCluster
+from helpers.test_tools import assert_eq_with_retry
 
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance(
@@ -77,11 +78,22 @@ def test_restore_table_into_existing_table(engine):
     assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
     instance.query(f"BACKUP TABLE test.table TO {backup_name}")
 
-    instance.query(f"RESTORE TABLE test.table INTO test.table FROM {backup_name}")
-    assert instance.query("SELECT count(), sum(x) FROM test.table") == "200\t9900\n"
+    expected_error = (
+        "Cannot restore table test.table because it already contains some data"
+    )
+    assert expected_error in instance.query_and_get_error(
+        f"RESTORE TABLE test.table FROM {backup_name}"
+    )
 
-    instance.query(f"RESTORE TABLE test.table INTO test.table FROM {backup_name}")
-    assert instance.query("SELECT count(), sum(x) FROM test.table") == "300\t14850\n"
+    instance.query(
+        f"RESTORE TABLE test.table FROM {backup_name} SETTINGS structure_only=true"
+    )
+    assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
+
+    instance.query(
+        f"RESTORE TABLE test.table FROM {backup_name} SETTINGS allow_non_empty_tables=true"
+    )
+    assert instance.query("SELECT count(), sum(x) FROM test.table") == "200\t9900\n"
 
 
 def test_restore_table_under_another_name():
@@ -93,7 +105,7 @@ def test_restore_table_under_another_name():
 
     assert instance.query("EXISTS test.table2") == "0\n"
 
-    instance.query(f"RESTORE TABLE test.table INTO test.table2 FROM {backup_name}")
+    instance.query(f"RESTORE TABLE test.table AS test.table2 FROM {backup_name}")
     assert instance.query("SELECT count(), sum(x) FROM test.table2") == "100\t4950\n"
 
 
@@ -255,4 +267,32 @@ def test_zip_archive_with_settings():
     instance.query(
         f"RESTORE TABLE test.table FROM {backup_name} SETTINGS password='qwerty'"
     )
+    assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
+
+
+def test_async():
+    create_and_fill_table()
+    assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
+
+    backup_name = new_backup_name()
+    [id, _, status] = instance.query(
+        f"BACKUP TABLE test.table TO {backup_name} ASYNC"
+    ).split("\t")
+    assert status == "MAKING_BACKUP\n"
+    assert_eq_with_retry(
+        instance,
+        f"SELECT status FROM system.backups WHERE uuid='{id}'",
+        "BACKUP_COMPLETE\n",
+    )
+
+    instance.query("DROP TABLE test.table")
+
+    [id, _, status] = instance.query(
+        f"RESTORE TABLE test.table FROM {backup_name} ASYNC"
+    ).split("\t")
+    assert status == "RESTORING\n"
+    assert_eq_with_retry(
+        instance, f"SELECT status FROM system.backups WHERE uuid='{id}'", "RESTORED\n"
+    )
+
     assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
