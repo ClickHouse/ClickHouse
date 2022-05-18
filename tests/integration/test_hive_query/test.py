@@ -392,6 +392,10 @@ def test_cache_read_bytes(started_cluster):
 
 def test_cache_dir_use(started_cluster):
     node = started_cluster.instances['h0_0_0']
-    result0 = node.exec_in_container(['bash', '-c', 'ls /tmp/clickhouse_local_cache | wc -l'])
-    result1 = node.exec_in_container(['bash', '-c', 'ls /tmp/clickhouse_local_cache1 | wc -l'])
-    assert result0 != '0' and result1 != '0'
+    result0 = node.exec_in_container(
+        ["bash", "-c", "ls /tmp/clickhouse_local_cache | wc -l"]
+    )
+    result1 = node.exec_in_container(
+        ["bash", "-c", "ls /tmp/clickhouse_local_cache1 | wc -l"]
+    )
+    assert result0 != "0" and result1 != "0"
