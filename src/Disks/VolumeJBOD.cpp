@@ -94,7 +94,7 @@ DiskPtr VolumeJBOD::getDisk(size_t /* index */) const
         case VolumeLoadBalancing::LEAST_USED:
         {
             std::lock_guard lock(mutex);
-            return disks_by_size.top();
+            return disks_by_size.top().disk;
         }
     }
     __builtin_unreachable();
@@ -128,10 +128,10 @@ ReservationPtr VolumeJBOD::reserve(UInt64 bytes)
         {
             std::lock_guard lock(mutex);
 
-            DiskPtr disk = disks_by_size.top();
-            ReservationPtr reservation = disk->reserve(bytes);
-
+            DiskWithSize disk = disks_by_size.top();
             disks_by_size.pop();
+
+            ReservationPtr reservation = disk.reserve(bytes);
             disks_by_size.push(disk);
 
             return reservation;
