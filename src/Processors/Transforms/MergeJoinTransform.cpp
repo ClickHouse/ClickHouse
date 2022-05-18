@@ -748,7 +748,7 @@ MergeJoinAlgorithm::Status MergeJoinAlgorithm::anyJoin(JoinKind kind)
 
 /// if `source_num == 0` get data from left cursor and fill defaults at right
 /// otherwise - vice versa
-Chunk MergeJoinAlgorithm::createBlockWithDefaults(size_t source_num, size_t start, size_t num_rows)
+Chunk MergeJoinAlgorithm::createBlockWithDefaults(size_t source_num, size_t start, size_t num_rows) const
 {
     ColumnRawPtrs cols;
     {
@@ -778,7 +778,7 @@ Chunk MergeJoinAlgorithm::createBlockWithDefaults(size_t source_num, size_t star
     return result_chunk;
 }
 
-/// This overload also flushes cursort
+/// This function also flushes cursor
 Chunk MergeJoinAlgorithm::createBlockWithDefaults(size_t source_num)
 {
     Chunk result_chunk = createBlockWithDefaults(source_num, cursors[source_num]->cursor.getRow(), cursors[source_num]->cursor.rowsLeft());
@@ -811,7 +811,7 @@ IMergingAlgorithm::Status MergeJoinAlgorithm::merge()
     }
 
     /// check if blocks are not intersecting at all
-    if (int cmp = totallyCompare(cursors[0]->cursor, cursors[1]->cursor); cmp == 111)
+    if (int cmp = totallyCompare(cursors[0]->cursor, cursors[1]->cursor); cmp != 0)
     {
         if (cmp < 0)
         {
@@ -847,7 +847,13 @@ MergeJoinTransform::MergeJoinTransform(
         const Block & output_header,
         size_t max_block_size,
         UInt64 limit_hint_)
-    : IMergingTransform<MergeJoinAlgorithm>(input_headers, output_header, true, limit_hint_, table_join, input_headers, max_block_size)
+    : IMergingTransform<MergeJoinAlgorithm>(
+        input_headers,
+        output_header,
+        /* have_all_inputs_= */ true,
+        limit_hint_,
+        /* empty_chunk_on_finish_= */ true,
+        table_join, input_headers, max_block_size)
     , log(&Poco::Logger::get("MergeJoinTransform"))
 {
     LOG_TRACE(log, "Use MergeJoinTransform");

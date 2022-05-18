@@ -250,14 +250,15 @@ private:
     Status allJoin(ASTTableJoin::Kind kind);
 
     Chunk createBlockWithDefaults(size_t source_num);
-    Chunk createBlockWithDefaults(size_t source_num, size_t start, size_t num_rows);
-
+    Chunk createBlockWithDefaults(size_t source_num, size_t start, size_t num_rows) const;
 
     /// For `USING` join key columns should have values from right side instead of defaults
     std::unordered_map<size_t, size_t> left_to_right_key_remap;
+
     std::vector<FullMergeJoinCursorPtr> cursors;
     std::vector<Chunk> sample_chunks;
 
+    /// Keep some state to make connection between data in different blocks
     AnyJoinState any_join_state;
     std::unique_ptr<AllJoinState> all_join_state;
 
