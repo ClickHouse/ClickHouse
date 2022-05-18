@@ -472,7 +472,8 @@ void Connection::sendQuery(
     UInt64 stage,
     const Settings * settings,
     const ClientInfo * client_info,
-    bool with_pending_data)
+    bool with_pending_data,
+    std::function<void(const Progress &)>)
 {
     if (!connected)
         connect(timeouts);
