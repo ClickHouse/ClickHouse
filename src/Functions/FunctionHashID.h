@@ -147,12 +147,9 @@ public:
 
             auto col_res = ColumnString::create();
 
-            std::string hashid;
-
             for (size_t i = 0; i < input_rows_count; ++i)
             {
-                hashid.assign(hash.encode({numcolumn->getUInt(i)}));
-                col_res->insertDataWithTerminatingZero(hashid.data(), hashid.size() + 1);
+                col_res->insert(hash.encode({numcolumn->getUInt(i)}));
             }
 
             return col_res;
