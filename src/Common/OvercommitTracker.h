@@ -154,3 +154,18 @@ private:
     DB::ProcessList * process_list;
     Poco::Logger * logger = &Poco::Logger::get("GlobalOvercommitTracker");
 };
+
+// This class is used to disallow tracking during logging to avoid deadlocks.
+struct OvercommitTrackerBlockerInThread
+{
+    OvercommitTrackerBlockerInThread() { ++counter; }
+    ~OvercommitTrackerBlockerInThread() { --counter; }
+
+    OvercommitTrackerBlockerInThread(OvercommitTrackerBlockerInThread const &) = delete;
+    OvercommitTrackerBlockerInThread & operator=(OvercommitTrackerBlockerInThread const &) = delete;
+
+    static bool isBlocked() { return counter > 0; }
+
+private:
+    static thread_local size_t counter;
+};
