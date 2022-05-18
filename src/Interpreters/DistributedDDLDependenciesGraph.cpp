@@ -22,7 +22,16 @@ DependenciesGraph::DependenciesGraph(ContextPtr global_context_)
     log = &Poco::Logger::get("DistributedDDLDependenciesGraph");
 }
 
-void DependenciesGraph::addTask(DDLTaskPtr & task)
+void DependenciesGraph::resetState()
+{
+    completely_processed_tasks.clear();
+    tasks_dependencies.independent_queries.clear();
+    tasks_dependencies.dependencies_info.clear();
+    tasks_dependencies.database_objects_in_query.clear();
+    tasks_dependencies.total_queries = 0;
+}
+
+void DependenciesGraph::addTask(DDLTaskPtr && task)
 {
     tasks_dependencies.total_queries++;
     auto name = task->entry_name;
@@ -53,12 +62,11 @@ void DependenciesGraph::addTask(DDLTaskPtr & task)
 
     if (tasks_dependencies.dependencies_info[name].dependencies.empty())
     {
-        completely_processed_tasks[name] = false;
-        tasks_dependencies.independent_queries.push_back(name);
+        tasks_dependencies.independent_queries.insert(name);
     }
 }
 
-QueryNames DependenciesGraph::getTasksToParallelProcess()
+QueryNamesSet DependenciesGraph::getTasksToParallelProcess()
 {
     tasks_processed += tasks_dependencies.independent_queries.size();
 
@@ -70,17 +78,20 @@ QueryNames DependenciesGraph::getTasksToParallelProcess()
 void DependenciesGraph::removeProcessedTasks()
 {
     auto & old_independent_queries = tasks_dependencies.independent_queries;
-    QueryNames new_independent_queries;
 
-    for (const auto& task_name : old_independent_queries)
+    auto task_name_it = old_independent_queries.begin();
+
+    while (task_name_it != old_independent_queries.end())
     {
+        auto & task_name = *task_name_it;
         if (completely_processed_tasks[task_name])
+        {
             removeTask(task_name);
-        else
-            new_independent_queries.push_back(task_name);
+            task_name_it = old_independent_queries.erase(task_name_it);
+            continue;
+        }
+        ++task_name_it;
     }
-
-    tasks_dependencies.independent_queries = new_independent_queries;
 }
 
 void DependenciesGraph::removeTask(String query_name)
@@ -102,13 +113,12 @@ void DependenciesGraph::removeTask(String query_name)
                             query_name, dependent_query, fmt::join(dependencies_set, ", "));
         if (dependencies_set.empty())
         {
-            tasks_dependencies.independent_queries.emplace_back(dependent_query);
-            if (dependent_info.dependent_queries.empty())
-                tasks_dependencies.dependencies_info.erase(dependent_query);
+            tasks_dependencies.independent_queries.insert(dependent_query);
         }
     }
     tasks_dependencies.dependencies_info.erase(query_name);
     tasks_dependencies.database_objects_in_query.erase(query_name);
+    currently_processing_tasks.erase(query_name);
 }
 
 void DependenciesGraph::logDependencyGraph() const
@@ -117,15 +127,13 @@ void DependenciesGraph::logDependencyGraph() const
              tasks_dependencies.independent_queries.size());
     for (const auto & independent_query : tasks_dependencies.independent_queries)
     {
-        auto & query_dependencies = tasks_dependencies.dependencies_info.at(independent_query);
-        bool completely_processed = completely_processed_tasks.at(independent_query);
+        const auto & query_dependencies = tasks_dependencies.dependencies_info.at(independent_query);
 
         LOG_TEST(log,
-                 "Independent query: {} have {} dependencies and {} dependent queries, completely_processed={}.",
+                 "Independent query: {} have {} dependencies and {} dependent queries.",
                  independent_query,
                  query_dependencies.dependencies.size(),
-                 query_dependencies.dependent_queries.size(),
-                 completely_processed);
+                 query_dependencies.dependent_queries.size());
     }
     for (const auto & dependencies : tasks_dependencies.dependencies_info)
     {

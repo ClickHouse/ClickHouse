@@ -25,7 +25,6 @@ namespace DB
 using DDLTaskPtr = std::unique_ptr<DDLTaskBase>;
 using TableNames = std::vector<QualifiedTableName>;
 using TableNamesSet = std::unordered_set<QualifiedTableName>;
-using QueryNames = std::vector<String>;
 using QueryNamesSet = std::unordered_set<String>;
 
 struct QueriesDependenciesInfo
@@ -38,7 +37,7 @@ struct QueriesDependenciesInfo
 
 using QueriesDependenciesInfos = std::unordered_map<String, QueriesDependenciesInfo>; /// entry_name -> Dependencies_queries
 using DatabaseObjectsInAST = std::unordered_map<String, TableNamesSet>;
-using ProcessedInfo = std::unordered_map<String, bool>;
+using ProcessInfo = std::unordered_map<String, bool>;
 
 struct TasksDependencies
 {
@@ -47,8 +46,8 @@ struct TasksDependencies
     /// For logging
     size_t total_queries = 0;
 
-    /// List of tables/dictionaries that do not have any dependencies and can be loaded
-    QueryNames independent_queries;
+    /// Set of tables/dictionaries that do not have any dependencies and can be loaded
+    QueryNamesSet independent_queries;
     /// Adjacent list of dependency graph, contains two maps
     /// 2. query name -> dependent queries list (adjacency list of dependencies graph).
     /// 1. query name -> dependencies of queries (adjacency list of inverted dependencies graph)
@@ -56,6 +55,8 @@ struct TasksDependencies
     /// and dependencies_info[A].dependencies contain B.
     /// We need inverted graph to effectively maintain it on DDL queries that can modify the graph.
     QueriesDependenciesInfos dependencies_info;
+
+    /// Map of sets of table/database/dictionary names on which query depends
     DatabaseObjectsInAST database_objects_in_query;
 };
 
@@ -63,18 +64,21 @@ class DependenciesGraph
 {
 public:
 
-    ProcessedInfo completely_processed_tasks;
+    ProcessInfo completely_processed_tasks;
+    QueryNamesSet currently_processing_tasks;
 
     DependenciesGraph(ContextPtr global_context_);
     DependenciesGraph() = delete;
 
-    void addTask(DDLTaskPtr & task);
+    void addTask(DDLTaskPtr && task);
 
-    void removeTask(String entry_name);
+    void removeTask(String query_name);
 
     void removeProcessedTasks();
 
-    QueryNames getTasksToParallelProcess();
+    void resetState();
+
+    QueryNamesSet getTasksToParallelProcess();
 
 private:
     ContextPtr global_context;

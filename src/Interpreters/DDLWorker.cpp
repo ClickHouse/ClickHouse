@@ -242,7 +242,6 @@ void DDLWorker::scheduleTasks(bool reinitialized)
             LOG_TRACE(log, "Don't have unfinished tasks after restarting");
         else
             LOG_INFO(log, "Have {} unfinished tasks, will check them", current_tasks.size());
-        assert(current_tasks.size() <= pool_size + (worker_pool != nullptr));
         auto task_it = current_tasks.begin();
         while (task_it != current_tasks.end())
         {
@@ -253,6 +252,7 @@ void DDLWorker::scheduleTasks(bool reinitialized)
                 /// Status must be written (but finished/ node may not exist if entry was deleted).
                 /// If someone is deleting entry concurrently, then /active status dir must not exist.
                 assert(zookeeper->exists(task->getFinishedNodePath()) || !zookeeper->exists(fs::path(task->entry_path) / "active"));
+                dependencies_graph.removeTask(task->entry_name);
                 ++task_it;
             }
             else if (task->was_executed)
@@ -265,9 +265,10 @@ void DDLWorker::scheduleTasks(bool reinitialized)
                 /// but we lost connection while waiting for the response.
                 /// Yeah, distributed systems is a zoo.
                 if (status_written)
+                {
                     task->completely_processed = true;
-                else
-                    processTask(*task, zookeeper);
+                    dependencies_graph.removeTask(task->entry_name);
+                }
                 ++task_it;
             }
             else
@@ -394,7 +395,7 @@ void DDLWorker::scheduleTasks(bool reinitialized)
             last_skipped_entry_name.emplace(entry_name);
             continue;
         }
-        dependencies_graph.addTask(task);
+        dependencies_graph.addTask(std::move(task));
         saveTask(std::move(task));
     }
 
@@ -414,9 +415,10 @@ void DDLWorker::scheduleTasks(bool reinitialized)
             continue;
         }
         auto & task_to_process = *(*task_iter);
-
-        if (worker_pool)
+        if (pool_size > dependencies_graph.currently_processing_tasks.size() && worker_pool && 1 < pool_size)
         {
+            dependencies_graph.currently_processing_tasks.insert(task_name);
+
             worker_pool->scheduleOrThrowOnError([this, &task_to_process, zookeeper]()
             {
                 setThreadName("DDLWorkerExec");
@@ -425,6 +427,7 @@ void DDLWorker::scheduleTasks(bool reinitialized)
         }
         else
         {
+            dependencies_graph.currently_processing_tasks.insert(task_name);
             processTask(task_to_process, zookeeper);
         }
     }
@@ -451,7 +454,6 @@ DDLTaskBase & DDLWorker::saveTask(DDLTaskPtr && task)
     /// Parallel execution is enabled ==> Not more than pool_size tasks are currently executing.
     /// Note: If current_tasks.size() == pool_size, then all worker threads are busy,
     /// so we will wait on worker_pool->scheduleOrThrowOnError(...)
-    assert(!worker_pool || current_tasks.size() <= pool_size);
     current_tasks.emplace_back(std::move(task));
     if (first_failed_task_name && *first_failed_task_name == current_tasks.back()->entry_name)
         first_failed_task_name.reset();
@@ -1086,6 +1088,7 @@ void DDLWorker::runMainThread()
             worker_pool = std::make_unique<ThreadPool>(pool_size);
         /// Clear other in-memory state, like server just started.
         current_tasks.clear();
+        dependencies_graph.resetState();
         last_skipped_entry_name.reset();
         max_id = 0;
         LOG_INFO(log, "Cleaned DDLWorker state");
