@@ -441,7 +441,7 @@ ASTPtr StorageWindowView::getCleanupQuery()
     ASTPtr function_equal;
     function_equal = makeASTFunction(
         "less",
-        std::make_shared<ASTIdentifier>(window_id_name),
+        std::make_shared<ASTIdentifier>(inner_window_id_column_name),
         std::make_shared<ASTLiteral>(getCleanupBound()));
 
     auto alter_query = std::make_shared<ASTAlterQuery>();
@@ -497,7 +497,7 @@ std::pair<BlocksPtr, Block> StorageWindowView::getNewBlocks(UInt32 watermark)
     {
         /// SELECT * FROM inner_table WHERE window_id_name == w_end
         /// (because we fire at the end of windows)
-        filter_function = makeASTFunction("equals", std::make_shared<ASTIdentifier>(window_id_name), std::make_shared<ASTLiteral>(watermark));
+        filter_function = makeASTFunction("equals", std::make_shared<ASTIdentifier>(inner_window_id_column_name), std::make_shared<ASTLiteral>(watermark));
     }
     else
     {
@@ -516,7 +516,7 @@ std::pair<BlocksPtr, Block> StorageWindowView::getNewBlocks(UInt32 watermark)
             func_array ->arguments->children.push_back(std::make_shared<ASTLiteral>(w_end));
             w_end = addTime(w_end, window_kind, -slice_num_units, *time_zone);
         }
-        filter_function = makeASTFunction("has", func_array, std::make_shared<ASTIdentifier>(window_id_name));
+        filter_function = makeASTFunction("has", func_array, std::make_shared<ASTIdentifier>(inner_window_id_column_name));
     }
 
     auto syntax_result = TreeRewriter(getContext()).analyze(filter_function, builder.getHeader().getNamesAndTypesList());
@@ -531,7 +531,7 @@ std::pair<BlocksPtr, Block> StorageWindowView::getNewBlocks(UInt32 watermark)
     /// Adding window column
     DataTypes window_column_type{std::make_shared<DataTypeDateTime>(), std::make_shared<DataTypeDateTime>()};
     ColumnWithTypeAndName column;
-    column.name = window_column_name;
+    column.name = inner_window_column_name;
     column.type = std::make_shared<DataTypeTuple>(std::move(window_column_type));
     column.column = column.type->createColumnConst(0, Tuple{w_start, watermark});
     auto adding_column_dag = ActionsDAG::makeAddingColumnActions(std::move(column));
@@ -544,7 +544,7 @@ std::pair<BlocksPtr, Block> StorageWindowView::getNewBlocks(UInt32 watermark)
 
     /// Removing window id column
     auto new_header = builder.getHeader();
-    new_header.erase(window_id_name);
+    new_header.erase(inner_window_id_column_name);
     auto convert_actions_dag = ActionsDAG::makeConvertingActions(
         builder.getHeader().getColumnsWithTypeAndName(),
         new_header.getColumnsWithTypeAndName(),
@@ -694,14 +694,13 @@ std::shared_ptr<ASTCreateQuery> StorageWindowView::getInnerTableCreateQuery(
 
     auto columns_list = std::make_shared<ASTExpressionList>();
 
-    String window_id_column_name;
     if (is_time_column_func_now)
     {
         auto column_window = std::make_shared<ASTColumnDeclaration>();
         column_window->name = window_id_name;
         column_window->type = std::make_shared<ASTIdentifier>("UInt32");
         columns_list->children.push_back(column_window);
-        window_id_column_name = window_id_name;
+        inner_window_id_column_name = window_id_name;
     }
 
     for (const auto & column : t_sample_block.getColumnsWithTypeAndName())
@@ -713,16 +712,18 @@ std::shared_ptr<ASTCreateQuery> StorageWindowView::getInnerTableCreateQuery(
         column_dec->name = column.name;
         column_dec->type = ast;
         columns_list->children.push_back(column_dec);
-        if (!is_time_column_func_now && window_id_column_name.empty() && startsWith(column.name, "windowID"))
+        if (!is_time_column_func_now && inner_window_id_column_name.empty() && startsWith(column.name, "windowID"))
         {
-            window_id_column_name = column.name;
+            inner_window_id_column_name = column.name;
         }
     }
 
-    if (window_id_column_name.empty())
+    if (inner_window_id_column_name.empty())
         throw Exception(
             "The first argument of time window function should not be a constant value.",
             ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_WINDOW_VIEW);
+
+    inner_window_column_name = std::regex_replace(inner_window_id_column_name, std::regex("windowID"), is_tumble ? "tumble" : "hop");
 
     ToIdentifierMatcher::Data query_data;
     query_data.window_id_name = window_id_name;
@@ -1171,11 +1172,6 @@ StorageWindowView::StorageWindowView(
 
     /// Extract information about watermark, lateness.
     eventTimeParser(query);
-
-    if (is_tumble)
-        window_column_name = std::regex_replace(window_id_name, std::regex("windowID"), "tumble");
-    else
-        window_column_name = std::regex_replace(window_id_name, std::regex("windowID"), "hop");
 
     if (attach_)
     {
