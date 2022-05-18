@@ -96,7 +96,7 @@ size_t JSONColumnsBaseBlockInputFormat::readColumn(
 
     do
     {
-        readFieldImpl(*in, column, type, serialization, column_name, format_settings, false);
+        JSONUtils::readField(*in, column, type, serialization, column_name, format_settings, false);
     }
     while (!reader->checkColumnEndOrSkipFieldDelimiter());
 
@@ -185,7 +185,7 @@ void JSONColumnsBaseSchemaReader::chooseResulType(DataTypePtr & type, const Data
 {
     auto common_type_checker = [&](const DataTypePtr & first, const DataTypePtr & second)
     {
-        return getCommonTypeForJSONFormats(first, second, format_settings.json.read_bools_as_numbers);
+        return JSONUtils::getCommonTypeForJSONFormats(first, second, format_settings.json.read_bools_as_numbers);
     };
     chooseResultColumnType(type, new_type, common_type_checker, nullptr, column_name, row);
 }
@@ -260,7 +260,7 @@ DataTypePtr JSONColumnsBaseSchemaReader::readColumnAndGetDataType(const String &
         }
 
         readJSONField(field, in);
-        DataTypePtr field_type = getDataTypeFromJSONField(field);
+        DataTypePtr field_type = JSONUtils::getDataTypeFromField(field);
         chooseResulType(column_type, field_type, column_name, rows_read);
         ++rows_read;
     }

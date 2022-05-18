@@ -21,50 +21,50 @@ JSONCompactRowOutputFormat::JSONCompactRowOutputFormat(
 
 void JSONCompactRowOutputFormat::writeField(const IColumn & column, const ISerialization & serialization, size_t row_num)
 {
-    writeJSONFieldFromColumn(column, serialization, row_num, yield_strings, settings, *ostr);
+    JSONUtils::writeFieldFromColumn(column, serialization, row_num, yield_strings, settings, *ostr);
     ++field_number;
 }
 
 
 void JSONCompactRowOutputFormat::writeFieldDelimiter()
 {
-    writeJSONFieldCompactDelimiter(*ostr);
+    JSONUtils::writeFieldCompactDelimiter(*ostr);
 }
 
 void JSONCompactRowOutputFormat::writeRowStartDelimiter()
 {
-    writeJSONCompactArrayStart(*ostr, 2);
+    JSONUtils::writeCompactArrayStart(*ostr, 2);
 }
 
 
 void JSONCompactRowOutputFormat::writeRowEndDelimiter()
 {
-    writeJSONCompactArrayEnd(*ostr);
+    JSONUtils::writeCompactArrayEnd(*ostr);
     field_number = 0;
     ++row_count;
 }
 
 void JSONCompactRowOutputFormat::writeBeforeTotals()
 {
-    writeJSONFieldDelimiter(*ostr, 2);
-    writeJSONCompactArrayStart(*ostr, 1, "totals");
+    JSONUtils::writeFieldDelimiter(*ostr, 2);
+    JSONUtils::writeCompactArrayStart(*ostr, 1, "totals");
 }
 
 void JSONCompactRowOutputFormat::writeTotals(const Columns & columns, size_t row_num)
 {
-    writeJSONCompactColumns(columns, serializations, row_num, yield_strings, settings, *ostr);
+    JSONUtils::writeCompactColumns(columns, serializations, row_num, yield_strings, settings, *ostr);
 }
 
 void JSONCompactRowOutputFormat::writeAfterTotals()
 {
-    writeJSONCompactArrayEnd(*ostr);
+    JSONUtils::writeCompactArrayEnd(*ostr);
 }
 
 void JSONCompactRowOutputFormat::writeExtremesElement(const char * title, const Columns & columns, size_t row_num)
 {
-    writeJSONCompactArrayStart(*ostr, 2, title);
-    writeJSONCompactColumns(columns, serializations, row_num, yield_strings, settings, *ostr);
-    writeJSONCompactArrayEnd(*ostr);
+    JSONUtils::writeCompactArrayStart(*ostr, 2, title);
+    JSONUtils::writeCompactColumns(columns, serializations, row_num, yield_strings, settings, *ostr);
+    JSONUtils::writeCompactArrayEnd(*ostr);
 }
 
 void registerOutputFormatJSONCompact(FormatFactory & factory)

@@ -48,9 +48,9 @@ void JSONColumnsBaseBlockOutputFormat::writeChunk(Chunk & chunk)
 
 void JSONColumnsBaseBlockOutputFormat::writeColumnEnd(bool is_last)
 {
-    writeJSONCompactArrayEnd(*ostr);
+    JSONUtils::writeCompactArrayEnd(*ostr);
     if (!is_last)
-        writeJSONFieldDelimiter(*ostr);
+        JSONUtils::writeFieldDelimiter(*ostr);
 }
 
 void JSONColumnsBaseBlockOutputFormat::writeColumn(const IColumn & column, const ISerialization & serialization)
@@ -58,7 +58,7 @@ void JSONColumnsBaseBlockOutputFormat::writeColumn(const IColumn & column, const
     for (size_t i = 0; i != column.size(); ++i)
     {
         if (i != 0)
-            writeJSONFieldCompactDelimiter(*ostr);
+            JSONUtils::writeFieldCompactDelimiter(*ostr);
         serialization.serializeTextJSON(column, i, *ostr, format_settings);
     }
 }

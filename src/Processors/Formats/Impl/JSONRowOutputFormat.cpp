@@ -18,7 +18,7 @@ JSONRowOutputFormat::JSONRowOutputFormat(
 {
     bool need_validate_utf8 = false;
     fields = header.getNamesAndTypes();
-    makeNamesAndTypesWithValidUTF8(fields, settings, need_validate_utf8);
+    JSONUtils::makeNamesAndTypesWithValidUTF8(fields, settings, need_validate_utf8);
 
     if (need_validate_utf8)
     {
@@ -32,34 +32,34 @@ JSONRowOutputFormat::JSONRowOutputFormat(
 
 void JSONRowOutputFormat::writePrefix()
 {
-    writeJSONObjectStart(*ostr);
-    writeJSONMetadata(fields, settings, *ostr);
-    writeJSONFieldDelimiter(*ostr, 2);
-    writeJSONArrayStart(*ostr, 1, "data");
+    JSONUtils::writeObjectStart(*ostr);
+    JSONUtils::writeMetadata(fields, settings, *ostr);
+    JSONUtils::writeFieldDelimiter(*ostr, 2);
+    JSONUtils::writeArrayStart(*ostr, 1, "data");
 }
 
 
 void JSONRowOutputFormat::writeField(const IColumn & column, const ISerialization & serialization, size_t row_num)
 {
-    writeJSONFieldFromColumn(column, serialization, row_num, yield_strings, settings, *ostr, fields[field_number].name, 3);
+    JSONUtils::writeFieldFromColumn(column, serialization, row_num, yield_strings, settings, *ostr, fields[field_number].name, 3);
     ++field_number;
 }
 
 void JSONRowOutputFormat::writeFieldDelimiter()
 {
-    writeJSONFieldDelimiter(*ostr);
+    JSONUtils::writeFieldDelimiter(*ostr);
 }
 
 
 void JSONRowOutputFormat::writeRowStartDelimiter()
 {
-    writeJSONObjectStart(*ostr, 2);
+    JSONUtils::writeObjectStart(*ostr, 2);
 }
 
 
 void JSONRowOutputFormat::writeRowEndDelimiter()
 {
-    writeJSONObjectEnd(*ostr, 2);
+    JSONUtils::writeObjectEnd(*ostr, 2);
     field_number = 0;
     ++row_count;
 }
@@ -67,42 +67,42 @@ void JSONRowOutputFormat::writeRowEndDelimiter()
 
 void JSONRowOutputFormat::writeRowBetweenDelimiter()
 {
-    writeJSONFieldDelimiter(*ostr);
+    JSONUtils::writeFieldDelimiter(*ostr);
 }
 
 
 void JSONRowOutputFormat::writeSuffix()
 {
-    writeJSONArrayEnd(*ostr, 1);
+    JSONUtils::writeArrayEnd(*ostr, 1);
 }
 
 void JSONRowOutputFormat::writeBeforeTotals()
 {
-    writeJSONFieldDelimiter(*ostr, 2);
-    writeJSONObjectStart(*ostr, 1, "totals");
+    JSONUtils::writeFieldDelimiter(*ostr, 2);
+    JSONUtils::writeObjectStart(*ostr, 1, "totals");
 }
 
 void JSONRowOutputFormat::writeTotals(const Columns & columns, size_t row_num)
 {
-    writeJSONColumns(columns, fields, serializations, row_num, yield_strings, settings, *ostr, 2);
+    JSONUtils::writeColumns(columns, fields, serializations, row_num, yield_strings, settings, *ostr, 2);
 }
 
 void JSONRowOutputFormat::writeAfterTotals()
 {
-    writeJSONObjectEnd(*ostr, 1);
+    JSONUtils::writeObjectEnd(*ostr, 1);
 }
 
 void JSONRowOutputFormat::writeBeforeExtremes()
 {
-    writeJSONFieldDelimiter(*ostr, 2);
-    writeJSONObjectStart(*ostr, 1, "extremes");
+    JSONUtils::writeFieldDelimiter(*ostr, 2);
+    JSONUtils::writeObjectStart(*ostr, 1, "extremes");
 }
 
 void JSONRowOutputFormat::writeExtremesElement(const char * title, const Columns & columns, size_t row_num)
 {
-    writeJSONObjectStart(*ostr, 2, title);
-    writeJSONColumns(columns, fields, serializations, row_num, yield_strings, settings, *ostr, 3);
-    writeJSONObjectEnd(*ostr, 2);
+    JSONUtils::writeObjectStart(*ostr, 2, title);
+    JSONUtils::writeColumns(columns, fields, serializations, row_num, yield_strings, settings, *ostr, 3);
+    JSONUtils::writeObjectEnd(*ostr, 2);
 }
 
 void JSONRowOutputFormat::writeMinExtreme(const Columns & columns, size_t row_num)
@@ -117,7 +117,7 @@ void JSONRowOutputFormat::writeMaxExtreme(const Columns & columns, size_t row_nu
 
 void JSONRowOutputFormat::writeAfterExtremes()
 {
-    writeJSONObjectEnd(*ostr, 1);
+    JSONUtils::writeObjectEnd(*ostr, 1);
 }
 
 void JSONRowOutputFormat::finalizeImpl()
@@ -126,7 +126,7 @@ void JSONRowOutputFormat::finalizeImpl()
     if (outside_statistics)
         statistics = std::move(*outside_statistics);
 
-    writeJSONAdditionalInfo(
+    JSONUtils::writeAdditionalInfo(
         row_count,
         statistics.rows_before_limit,
         statistics.applied_limit,
@@ -135,7 +135,7 @@ void JSONRowOutputFormat::finalizeImpl()
         settings.write_statistics,
         *ostr);
 
-    writeJSONObjectEnd(*ostr);
+    JSONUtils::writeObjectEnd(*ostr);
     writeChar('\n', *ostr);
     ostr->next();
 }

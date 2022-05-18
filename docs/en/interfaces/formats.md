@@ -403,6 +403,8 @@ Both data output and parsing are supported in this format. For parsing, any orde
 
 Parsing allows the presence of the additional field `tskv` without the equal sign or a value. This field is ignored.
 
+For input format columns with unknown names will be skipped if setting [input_format_skip_unknown_fields](../operations/settings/settings.md#settings-input-format-skip-unknown-fields) is set to 1.
+
 ## CSV {#csv}
 
 Comma Separated Values format ([RFC](https://tools.ietf.org/html/rfc4180)).
@@ -462,15 +464,15 @@ SELECT SearchPhrase, count() AS c FROM test.hits GROUP BY SearchPhrase WITH TOTA
         "meta":
         [
                 {
-                        "name": "'hello'",
+                        "name": "num",
+                        "type": "Int32"
+                },
+                {
+                        "name": "str",
                         "type": "String"
                 },
                 {
-                        "name": "multiply(42, number)",
-                        "type": "UInt64"
-                },
-                {
-                        "name": "range(5)",
+                        "name": "arr",
                         "type": "Array(UInt8)"
                 }
         ],
@@ -478,25 +480,32 @@ SELECT SearchPhrase, count() AS c FROM test.hits GROUP BY SearchPhrase WITH TOTA
         "data":
         [
                 {
-                        "'hello'": "hello",
-                        "multiply(42, number)": "0",
-                        "range(5)": [0,1,2,3,4]
+                        "num": 42,
+                        "str": "hello",
+                        "arr": [0,1]
                 },
                 {
-                        "'hello'": "hello",
-                        "multiply(42, number)": "42",
-                        "range(5)": [0,1,2,3,4]
+                        "num": 43,
+                        "str": "hello",
+                        "arr": [0,1,2]
                 },
                 {
-                        "'hello'": "hello",
-                        "multiply(42, number)": "84",
-                        "range(5)": [0,1,2,3,4]
+                        "num": 44,
+                        "str": "hello",
+                        "arr": [0,1,2,3]
                 }
         ],
 
         "rows": 3,
 
-        "rows_before_limit_at_least": 3
+        "rows_before_limit_at_least": 3,
+
+        "statistics":
+        {
+                "elapsed": 0.001137687,
+                "rows_read": 3,
+                "bytes_read": 24
+        }
 }
 ```
 
@@ -531,15 +540,15 @@ Example:
         "meta":
         [
                 {
-                        "name": "'hello'",
+                        "name": "num",
+                        "type": "Int32"
+                },
+                {
+                        "name": "str",
                         "type": "String"
                 },
                 {
-                        "name": "multiply(42, number)",
-                        "type": "UInt64"
-                },
-                {
-                        "name": "range(5)",
+                        "name": "arr",
                         "type": "Array(UInt8)"
                 }
         ],
@@ -547,100 +556,94 @@ Example:
         "data":
         [
                 {
-                        "'hello'": "hello",
-                        "multiply(42, number)": "0",
-                        "range(5)": "[0,1,2,3,4]"
+                        "num": "42",
+                        "str": "hello",
+                        "arr": "[0,1]"
                 },
                 {
-                        "'hello'": "hello",
-                        "multiply(42, number)": "42",
-                        "range(5)": "[0,1,2,3,4]"
+                        "num": "43",
+                        "str": "hello",
+                        "arr": "[0,1,2]"
                 },
                 {
-                        "'hello'": "hello",
-                        "multiply(42, number)": "84",
-                        "range(5)": "[0,1,2,3,4]"
+                        "num": "44",
+                        "str": "hello",
+                        "arr": "[0,1,2,3]"
                 }
         ],
 
         "rows": 3,
 
-        "rows_before_limit_at_least": 3
+        "rows_before_limit_at_least": 3,
+
+        "statistics":
+        {
+                "elapsed": 0.001403233,
+                "rows_read": 3,
+                "bytes_read": 24
+        }
 }
 ```
 
 ## JSONColumns {#jsoncolumns}
 
 In this format, all data is represented as a single JSON Object.
-Note that JSONColumns output format buffers all data in memory to output it as a single block.
+Note that JSONColumns output format buffers all data in memory to output it as a single block and it can lead to high memory consumption.
 
 Example:
 ```json
 {
-    "name1": [1, 2, 3, 4],
-    "name2": ["Hello", ",", "world", "!"],
-    "name3": [[1, 2], [3, 4], [5, 6], [7, 8]]
+	"num": [42, 43, 44],
+	"str": ["hello", "hello", "hello"],
+	"arr": [[0,1], [0,1,2], [0,1,2,3]]
 }
 ```
 
 Columns with unknown names will be skipped if setting [input_format_skip_unknown_fields](../operations/settings/settings.md#settings-input-format-skip-unknown-fields) is set to 1.
-Columns that are not presente in the block will be filled with default values (you can use  [input_format_defaults_for_omitted_fields](../operations/settings/settings.md#session_settings-input_format_defaults_for_omitted_fields) setting here)
+Columns that are not present in the block will be filled with default values (you can use  [input_format_defaults_for_omitted_fields](../operations/settings/settings.md#session_settings-input_format_defaults_for_omitted_fields) setting here)
 
 
 ## JSONColumnsWithMetadata {#jsoncolumnsmonoblock}
 
-Differs from JSON output format in that it outputs columns as in JSONColumns format.
-This format buffers all data in memory and then outputs them as a single block.
+Differs from JSONColumns output format in that it also outputs some metadata and statistics (similar to JSON output format).
+This format buffers all data in memory and then outputs them as a single block, so, it can lead to high memory consumption.
 
 Example:
 ```json
 {
-	"meta":
-	[
-		{
-			"name": "sum",
-			"type": "UInt64"
-		},
-		{
-			"name": "avg",
-			"type": "Float64"
-		}
-	],
+        "meta":
+        [
+                {
+                        "name": "num",
+                        "type": "Int32"
+                },
+                {
+                        "name": "str",
+                        "type": "String"
+                },
+                {
+                        "name": "arr",
+                        "type": "Array(UInt8)"
+                }
+        ],
 
-	"data":
-	{
-		"sum": ["1", "2", "3", "4"],
-		"avg": [1, 2, 3, 2]
-	},
+        "data":
+        {
+                "num": [42, 43, 44],
+                "str": ["hello", "hello", "hello"],
+                "arr": [[0,1], [0,1,2], [0,1,2,3]]
+        },
 
-	"totals":
-	{
-		"sum": "10",
-		"avg": 2
-	},
+        "rows": 3,
 
-	"extremes":
-	{
-		"min":
-		{
-			"sum": "1",
-			"avg": 1
-		},
-		"max":
-		{
-			"sum": "4",
-			"avg": 3
-		}
-	},
+        "rows_before_limit_at_least": 3,
 
-	"rows": 4,
-
-	"statistics":
-	{
-        "elapsed": 0.003701718,
-		"rows_read": 5,
-		"bytes_read": 20
-	}
+        "statistics":
+        {
+                "elapsed": 0.000272376,
+                "rows_read": 3,
+                "bytes_read": 24
+        }
 }
 ```
 
@@ -696,87 +699,101 @@ Result:
 
 Differs from JSON only in that data rows are output in arrays, not in objects.
 
-Example:
+Examples:
 
-```
-// JSONCompact
+1) JSONCompact:
+```json
 {
         "meta":
         [
                 {
-                        "name": "'hello'",
+                        "name": "num",
+                        "type": "Int32"
+                },
+                {
+                        "name": "str",
                         "type": "String"
                 },
                 {
-                        "name": "multiply(42, number)",
-                        "type": "UInt64"
-                },
-                {
-                        "name": "range(5)",
+                        "name": "arr",
                         "type": "Array(UInt8)"
                 }
         ],
 
         "data":
         [
-                ["hello", "0", [0,1,2,3,4]],
-                ["hello", "42", [0,1,2,3,4]],
-                ["hello", "84", [0,1,2,3,4]]
+                [42, "hello", [0,1]],
+                [43, "hello", [0,1,2]],
+                [44, "hello", [0,1,2,3]]
         ],
 
         "rows": 3,
 
-        "rows_before_limit_at_least": 3
+        "rows_before_limit_at_least": 3,
+
+        "statistics":
+        {
+                "elapsed": 0.001222069,
+                "rows_read": 3,
+                "bytes_read": 24
+        }
 }
 ```
 
-```
-// JSONCompactStrings
+2) JSONCompactStrings
+```json
 {
         "meta":
         [
                 {
-                        "name": "'hello'",
+                        "name": "num",
+                        "type": "Int32"
+                },
+                {
+                        "name": "str",
                         "type": "String"
                 },
                 {
-                        "name": "multiply(42, number)",
-                        "type": "UInt64"
-                },
-                {
-                        "name": "range(5)",
+                        "name": "arr",
                         "type": "Array(UInt8)"
                 }
         ],
 
         "data":
         [
-                ["hello", "0", "[0,1,2,3,4]"],
-                ["hello", "42", "[0,1,2,3,4]"],
-                ["hello", "84", "[0,1,2,3,4]"]
+                ["42", "hello", "[0,1]"],
+                ["43", "hello", "[0,1,2]"],
+                ["44", "hello", "[0,1,2,3]"]
         ],
 
         "rows": 3,
 
-        "rows_before_limit_at_least": 3
+        "rows_before_limit_at_least": 3,
+
+        "statistics":
+        {
+                "elapsed": 0.001572097,
+                "rows_read": 3,
+                "bytes_read": 24
+        }
 }
 ```
 
 ## JSONCompactColumns {#jsoncompactcolumns}
 
 In this format, all data is represented as a single JSON Array.
-Note that JSONCompactColumns output format buffers all data in memory to output it as a single block.
+Note that JSONCompactColumns output format buffers all data in memory to output it as a single block and it can lead to high memory consumption
 
 Example:
 ```json
 [
-    [1, 2, 3, 4],
-    ["Hello", ",", "world", "!"],
-    [[1, 2], [3, 4], [5, 6], [7, 8]]
+	[42, 43, 44],
+	["hello", "hello", "hello"],
+	[[0,1], [0,1,2], [0,1,2,3]]
 ]
 ```
 
-Columns that are not presente in the block will be filled with default values (you can use  [input_format_defaults_for_omitted_fields](../operations/settings/settings.md#session_settings-input_format_defaults_for_omitted_fields) setting here)
+Columns that are not present in the block will be filled with default values (you can use  [input_format_defaults_for_omitted_fields](../operations/settings/settings.md#session_settings-input_format_defaults_for_omitted_fields) setting here)
 
 ## JSONEachRow {#jsoneachrow}
 ## JSONStringsEachRow {#jsonstringseachrow}
@@ -793,15 +810,17 @@ When using these formats, ClickHouse outputs rows as separated, newline-delimite
 
 When inserting the data, you should provide a separate JSON value for each row.
 
+In JSONEachRow/JSONStringsEachRow input formats columns with unknown names will be skipped if setting [input_format_skip_unknown_fields](../operations/settings/settings.md#settings-input-format-skip-unknown-fields) is set to 1.
+
 ## JSONEachRowWithProgress {#jsoneachrowwithprogress}
 ## JSONStringsEachRowWithProgress {#jsonstringseachrowwithprogress}
 
 Differs from `JSONEachRow`/`JSONStringsEachRow` in that ClickHouse will also yield progress information as JSON values.
 
 ```json
-{"row":{"'hello'":"hello","multiply(42, number)":"0","range(5)":[0,1,2,3,4]}}
-{"row":{"'hello'":"hello","multiply(42, number)":"42","range(5)":[0,1,2,3,4]}}
-{"row":{"'hello'":"hello","multiply(42, number)":"84","range(5)":[0,1,2,3,4]}}
+{"row":{"num":42,"str":"hello","arr":[0,1]}}
+{"row":{"num":43,"str":"hello","arr":[0,1,2]}}
+{"row":{"num":44,"str":"hello","arr":[0,1,2,3]}}
 {"progress":{"read_rows":"3","read_bytes":"24","written_rows":"0","written_bytes":"0","total_rows_to_read":"3"}}
 ```
 
@@ -822,11 +841,11 @@ Differs from `JSONCompactStringsEachRow` in that in that it also prints the head
 Differs from `JSONCompactStringsEachRow` in that it also prints two header rows with column names and types, similar to [TabSeparatedWithNamesAndTypes](#tabseparatedwithnamesandtypes).
 
 ```json
-["'hello'", "multiply(42, number)", "range(5)"]
-["String", "UInt64", "Array(UInt8)"]
-["hello", "0", [0,1,2,3,4]]
-["hello", "42", [0,1,2,3,4]]
-["hello", "84", [0,1,2,3,4]]
+["num", "str", "arr"]
+["Int32", "String", "Array(UInt8)"]
+[42, "hello", [0,1]]
+[43, "hello", [0,1,2]]
+[44, "hello", [0,1,2,3]]
 ```
 
 ### Inserting Data {#inserting-data}

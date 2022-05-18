@@ -13,17 +13,17 @@ JSONCompactColumnsBlockOutputFormat::JSONCompactColumnsBlockOutputFormat(WriteBu
 
 void JSONCompactColumnsBlockOutputFormat::writeChunkStart()
 {
-    writeJSONArrayStart(*ostr);
+    JSONUtils::writeArrayStart(*ostr);
 }
 
 void JSONCompactColumnsBlockOutputFormat::writeColumnStart(size_t)
 {
-    writeJSONCompactArrayStart(*ostr, 1);
+    JSONUtils::writeCompactArrayStart(*ostr, 1);
 }
 
 void JSONCompactColumnsBlockOutputFormat::writeChunkEnd()
 {
-    writeJSONArrayEnd(*ostr);
+    JSONUtils::writeArrayEnd(*ostr);
     writeChar('\n', *ostr);
 }
 
