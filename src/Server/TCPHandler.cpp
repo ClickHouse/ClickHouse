@@ -5,7 +5,7 @@
 #include <mutex>
 #include <vector>
 #include <string_view>
-#include <string.h>
+#include <cstring>
 #include <base/types.h>
 #include <base/scope_guard.h>
 #include <Poco/Net/NetException.h>
@@ -1330,6 +1330,7 @@ void TCPHandler::receiveQuery()
         query_context->getIgnoredPartUUIDs()->add(*state.part_uuids_to_ignore);
 
     query_context->setProgressCallback([this] (const Progress & value) { return this->updateProgress(value); });
+    query_context->setFileProgressCallback([this](const FileProgress & value) { this->updateProgress(Progress(value)); });
 
     ///
     /// Settings
@@ -1737,7 +1738,7 @@ void TCPHandler::updateProgress(const Progress & value)
 void TCPHandler::sendProgress()
 {
     writeVarUInt(Protocol::Server::Progress, *out);
-    auto increment = state.progress.fetchAndResetPiecewiseAtomically();
+    auto increment = state.progress.fetchValuesAndResetPiecewiseAtomically();
     increment.write(*out, client_tcp_protocol_version);
     out->next();
 }

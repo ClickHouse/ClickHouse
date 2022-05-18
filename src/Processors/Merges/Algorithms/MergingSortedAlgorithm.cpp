@@ -1,6 +1,8 @@
 #include <Processors/Merges/Algorithms/MergingSortedAlgorithm.h>
 #include <Processors/Transforms/ColumnGathererTransform.h>
 #include <IO/WriteBuffer.h>
+#include <IO/WriteHelpers.h>
+#include <IO/WriteBufferFromString.h>
 
 namespace DB
 {
@@ -22,11 +24,21 @@ MergingSortedAlgorithm::MergingSortedAlgorithm(
     , merged_data(header.cloneEmptyColumns(), use_average_block_sizes, max_block_size)
     , description(std::move(description_))
     , limit(limit_)
-    , has_collation(std::any_of(description.begin(), description.end(), [](const auto & descr) { return descr.collator != nullptr; }))
     , out_row_sources_buf(out_row_sources_buf_)
     , current_inputs(num_inputs)
     , cursors(num_inputs)
 {
+    DataTypes sort_description_types;
+    sort_description_types.reserve(description.size());
+
+    /// Replace column names in description to positions.
+    for (auto & column_description : description)
+    {
+        has_collation |= column_description.collator != nullptr;
+        sort_description_types.emplace_back(header.getByName(column_description.column_name).type);
+    }
+
+    compileSortDescriptionIfNeeded(description, sort_description_types, true /*increase_compile_attemps*/);
 }
 
 void MergingSortedAlgorithm::addInput()

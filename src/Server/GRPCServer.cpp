@@ -627,7 +627,7 @@ namespace
         void executeQuery();
 
         void processInput();
-        void initializeBlockInputStream(const Block & header);
+        void initializePipeline(const Block & header);
         void createExternalTables();
 
         void generateOutput();
@@ -920,7 +920,7 @@ namespace
             if (context != query_context)
                 throw Exception("Unexpected context in Input initializer", ErrorCodes::LOGICAL_ERROR);
             input_function_is_used = true;
-            initializeBlockInputStream(input_storage->getInMemoryMetadataPtr()->getSampleBlock());
+            initializePipeline(input_storage->getInMemoryMetadataPtr()->getSampleBlock());
         });
 
         query_context->setInputBlocksReaderCallback([this](ContextPtr context) -> Block
@@ -967,7 +967,7 @@ namespace
 
         /// This is significant, because parallel parsing may be used.
         /// So we mustn't touch the input stream from other thread.
-        initializeBlockInputStream(io.pipeline.getHeader());
+        initializePipeline(io.pipeline.getHeader());
 
         PushingPipelineExecutor executor(io.pipeline);
         executor.start();
@@ -982,7 +982,7 @@ namespace
         executor.finish();
     }
 
-    void Call::initializeBlockInputStream(const Block & header)
+    void Call::initializePipeline(const Block & header)
     {
         assert(!read_buffer);
         read_buffer = std::make_unique<ReadBufferFromCallback>([this]() -> std::pair<const void *, size_t>
@@ -1482,7 +1482,7 @@ namespace
 
     void Call::addProgressToResult()
     {
-        auto values = progress.fetchAndResetPiecewiseAtomically();
+        auto values = progress.fetchValuesAndResetPiecewiseAtomically();
         if (!values.read_rows && !values.read_bytes && !values.total_rows_to_read && !values.written_rows && !values.written_bytes)
             return;
         auto & grpc_progress = *result.mutable_progress();

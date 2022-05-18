@@ -275,7 +275,7 @@ DDLQueryStatusSource::DDLQueryStatusSource(
     , node_path(zk_node_path)
     , context(context_)
     , watch(CLOCK_MONOTONIC_COARSE)
-    , log(&Poco::Logger::get("DDLQueryStatusInputStream"))
+    , log(&Poco::Logger::get("DDLQueryStatusSource"))
 {
     auto output_mode = context->getSettingsRef().distributed_ddl_output_mode;
     throw_on_timeout = output_mode == DistributedDDLOutputMode::THROW || output_mode == DistributedDDLOutputMode::NONE;

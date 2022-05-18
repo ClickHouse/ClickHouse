@@ -199,7 +199,7 @@ bool MergeTreeIndexAggregatorSet::buildFilter(
     size_t limit,
     ClearableSetVariants & variants) const
 {
-    /// Like DistinctSortedBlockInputStream.
+    /// Like DistinctSortedTransform.
     typename Method::State state(column_ptrs, key_sizes, nullptr);
 
     bool has_new_data = false;

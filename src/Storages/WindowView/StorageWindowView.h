@@ -137,6 +137,25 @@ public:
     void startup() override;
     void shutdown() override;
 
+    Pipe read(
+        const Names & column_names,
+        const StorageSnapshotPtr & storage_snapshot,
+        SelectQueryInfo & query_info,
+        ContextPtr context,
+        QueryProcessingStage::Enum processed_stage,
+        size_t max_block_size,
+        unsigned num_streams) override;
+
+    void read(
+        QueryPlan & query_plan,
+        const Names & column_names,
+        const StorageSnapshotPtr & storage_snapshot,
+        SelectQueryInfo & query_info,
+        ContextPtr context,
+        QueryProcessingStage::Enum processed_stage,
+        size_t max_block_size,
+        unsigned num_streams) override;
+
     Pipe watch(
         const Names & column_names,
         const SelectQueryInfo & query_info,
@@ -191,11 +210,13 @@ private:
     IntervalKind::Kind hop_kind;
     IntervalKind::Kind watermark_kind;
     IntervalKind::Kind lateness_kind;
+    IntervalKind::Kind slide_kind;
     Int64 window_num_units;
     Int64 hop_num_units;
     Int64 slice_num_units;
     Int64 watermark_num_units = 0;
     Int64 lateness_num_units = 0;
+    Int64 slide_num_units;
     String window_id_name;
     String window_id_alias;
     String window_column_name;
