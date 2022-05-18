@@ -94,6 +94,7 @@ T* assert_dynamic_cast(U* ptr)
 
 void testMultiRead(zkutil::ZooKeeper & zk)
 {
+    std::cerr << "Testing multi read request" << std::endl;
     zk.create("/data/multiread", "", zkutil::CreateMode::Persistent);
     zk.create("/data/multiread/d1", "a", zkutil::CreateMode::Persistent);
     zk.create("/data/multiread/d2", "b", zkutil::CreateMode::Persistent);
@@ -110,7 +111,8 @@ void testMultiRead(zkutil::ZooKeeper & zk)
     assert_eq(assert_dynamic_cast<Coordination::GetResponse>(resp[1].get())->data, "a");
     assert_eq(assert_dynamic_cast<Coordination::GetResponse>(resp[3].get())->data, "c");
 
-    const auto * list_resp = assert_dynamic_cast<Coordination::SimpleListResponse>(resp[2].get());
+    auto * list_resp = assert_dynamic_cast<Coordination::SimpleListResponse>(resp[2].get());
+    std::sort(list_resp->names.begin(), list_resp->names.end());
     assert_eq(list_resp->names.size(), 3u);
     assert_eq(list_resp->names[0], "d1");
     assert_eq(list_resp->names[1], "d2");

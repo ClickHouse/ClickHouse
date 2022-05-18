@@ -443,6 +443,11 @@ void ZooKeeperMultiRequest::readImpl(ReadBuffer & in)
         ZooKeeperRequestPtr request = ZooKeeperRequestFactory::instance().get(op_num);
         request->readImpl(in);
         requests.push_back(request);
+        if (request->isReadRequest()) {
+            checkOpKindOrThrow(OpKind::Read);
+        } else {
+            checkOpKindOrThrow(OpKind::Transaction);
+        }
 
         if (in.eof())
             throw Exception("Not enough results received for multi transaction", Error::ZMARSHALLINGERROR);
