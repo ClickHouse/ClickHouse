@@ -1,1 +1,0 @@
-../../../../en/engines/table-engines/integrations/postgresql.md

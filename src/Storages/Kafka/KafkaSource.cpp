@@ -3,7 +3,7 @@
 #include <Formats/FormatFactory.h>
 #include <Storages/Kafka/ReadBufferFromKafkaConsumer.h>
 #include <Processors/Executors/StreamingFormatExecutor.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <Interpreters/Context.h>
 
 #include <Common/ProfileEvents.h>

@@ -7,6 +7,7 @@
 #include <Interpreters/Context.h>
 #include <Storages/System/StorageSystemAggregateFunctionCombinators.h>
 #include <Storages/System/StorageSystemAsynchronousMetrics.h>
+#include <Storages/System/StorageSystemBackups.h>
 #include <Storages/System/StorageSystemBuildOptions.h>
 #include <Storages/System/StorageSystemCollations.h>
 #include <Storages/System/StorageSystemClusters.h>
@@ -71,6 +72,7 @@
 #include <Storages/System/StorageSystemTransactions.h>
 #include <Storages/System/StorageSystemFilesystemCache.h>
 #include <Storages/System/StorageSystemRemoteDataPaths.h>
+#include <Storages/System/StorageSystemCertificates.h>
 
 #ifdef OS_LINUX
 #include <Storages/System/StorageSystemStackTrace.h>
@@ -128,6 +130,7 @@ void attachSystemTablesLocal(ContextPtr context, IDatabase & system_database)
     attach<StorageSystemDataSkippingIndices>(context, system_database, "data_skipping_indices");
     attach<StorageSystemLicenses>(context, system_database, "licenses");
     attach<StorageSystemTimeZones>(context, system_database, "time_zones");
+    attach<StorageSystemBackups>(context, system_database, "backups");
 #ifdef OS_LINUX
     attach<StorageSystemStackTrace>(context, system_database, "stack_trace");
 #endif
@@ -166,6 +169,7 @@ void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, b
     attach<StorageSystemAsynchronousInserts>(context, system_database, "asynchronous_inserts");
     attach<StorageSystemFilesystemCache>(context, system_database, "filesystem_cache");
     attach<StorageSystemRemoteDataPaths>(context, system_database, "remote_data_paths");
+    attach<StorageSystemCertificates>(context, system_database, "certificates");
 
     if (has_zookeeper)
         attach<StorageSystemZooKeeper>(context, system_database, "zookeeper");

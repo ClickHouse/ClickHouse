@@ -45,6 +45,9 @@ public:
     /// Different query plan is used for such joins.
     virtual bool isFilled() const { return false; }
 
+    // That can run FillingRightJoinSideTransform parallelly
+    virtual bool supportParallelJoin() const { return false; }
+
     virtual std::shared_ptr<NotJoinedBlocks>
     getNonJoinedBlocks(const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size) const = 0;
 };

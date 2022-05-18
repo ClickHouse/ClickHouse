@@ -9,7 +9,7 @@
 #include <IO/readFloatText.h>
 #include <IO/Operators.h>
 #include <base/find_symbols.h>
-#include <stdlib.h>
+#include <cstdlib>
 
 #ifdef __SSE2__
     #include <emmintrin.h>
@@ -343,7 +343,7 @@ static void parseComplexEscapeSequence(Vector & s, ReadBuffer & buf)
             && decoded_char != '"'
             && decoded_char != '`'  /// MySQL style identifiers
             && decoded_char != '/'  /// JavaScript in HTML
-            && decoded_char != '='  /// Yandex's TSKV
+            && decoded_char != '='  /// TSKV format invented somewhere
             && !isControlASCII(decoded_char))
         {
             s.push_back('\\');
@@ -588,7 +588,10 @@ void readQuotedStringWithSQLStyle(String & s, ReadBuffer & buf)
 
 template void readQuotedStringInto<true>(PaddedPODArray<UInt8> & s, ReadBuffer & buf);
 template void readQuotedStringInto<true>(String & s, ReadBuffer & buf);
+template void readQuotedStringInto<false>(String & s, ReadBuffer & buf);
 template void readDoubleQuotedStringInto<false>(NullOutput & s, ReadBuffer & buf);
+template void readDoubleQuotedStringInto<false>(String & s, ReadBuffer & buf);
+template void readBackQuotedStringInto<false>(String & s, ReadBuffer & buf);
 
 void readDoubleQuotedString(String & s, ReadBuffer & buf)
 {

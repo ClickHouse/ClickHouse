@@ -1325,6 +1325,46 @@ def test_schema_inference_from_globs(started_cluster):
     )
     assert sorted(result.split()) == ["0", "\\N"]
 
+    instance.query(
+        f"insert into table function s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test3.jsoncompacteachrow', 'JSONCompactEachRow', 'x Nullable(UInt32)') select NULL"
+    )
+
+    url_filename = "test{1,3}.jsoncompacteachrow"
+
+    result = instance.query_and_get_error(
+        f"desc s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{url_filename}')"
+    )
+
+    assert "All attempts to extract table structure from files failed" in result
+
+    result = instance.query_and_get_error(
+        f"desc url('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{url_filename}')"
+    )
+
+    assert "All attempts to extract table structure from files failed" in result
+
+    instance.query(
+        f"insert into table function s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test0.jsoncompacteachrow', 'TSV', 'x String') select '[123;]'"
+    )
+
+    result = instance.query_and_get_error(
+        f"desc s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test*.jsoncompacteachrow')"
+    )
+
+    assert (
+        "Cannot extract table structure from JSONCompactEachRow format file" in result
+    )
+
+    url_filename = "test{0,1,2,3}.jsoncompacteachrow"
+
+    result = instance.query_and_get_error(
+        f"desc url('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{url_filename}')"
+    )
+
+    assert (
+        "Cannot extract table structure from JSONCompactEachRow format file" in result
+    )
+
 
 def test_signatures(started_cluster):
     bucket = started_cluster.minio_bucket
@@ -1414,17 +1454,32 @@ def test_parallel_reading_with_memory_limit(started_cluster):
     instance = started_cluster.instances["dummy"]
 
     instance.query(
-        f"insert into function s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_memory_limit.native') select * from numbers(100000)"
+        f"insert into function s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_memory_limit.native') select * from numbers(1000000)"
     )
 
     result = instance.query_and_get_error(
-        f"select * from url('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_memory_limit.native') settings max_memory_usage=10000"
+        f"select * from url('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_memory_limit.native') settings max_memory_usage=1000"
     )
 
     assert "Memory limit (for query) exceeded" in result
 
-    sleep(5)
+    time.sleep(5)
 
     # Check that server didn't crash
     result = instance.query("select 1")
     assert int(result) == 1
+
+
+def test_wrong_format_usage(started_cluster):
+    bucket = started_cluster.minio_bucket
+    instance = started_cluster.instances["dummy"]
+
+    instance.query(
+        f"insert into function s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_wrong_format.native') select * from numbers(10)"
+    )
+
+    result = instance.query_and_get_error(
+        f"desc s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_wrong_format.native', 'Parquet') settings input_format_allow_seeks=0, max_memory_usage=1000"
+    )
+
+    assert "Not a Parquet file" in result

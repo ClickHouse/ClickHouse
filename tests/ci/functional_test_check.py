@@ -12,7 +12,7 @@ from github import Github
 from env_helper import TEMP_PATH, REPO_COPY, REPORTS_PATH
 from s3_helper import S3Helper
 from get_robot_token import get_best_robot_token
-from pr_info import PRInfo
+from pr_info import FORCE_TESTS_LABEL, PRInfo
 from build_download_helper import download_all_deb_packages
 from download_previous_release import download_previous_release
 from upload_result_helper import upload_results
@@ -359,7 +359,7 @@ if __name__ == "__main__":
     ch_helper.insert_events_into(db="default", table="checks", events=prepared_events)
 
     if state != "success":
-        if "force-tests" in pr_info.labels:
-            print("'force-tests' enabled, will report success")
+        if FORCE_TESTS_LABEL in pr_info.labels:
+            print(f"'{FORCE_TESTS_LABEL}' enabled, will report success")
         else:
             sys.exit(1)

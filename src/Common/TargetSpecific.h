@@ -93,6 +93,13 @@ String toString(TargetArch arch);
 #define USE_MULTITARGET_CODE 1
 
 #if defined(__clang__)
+
+#define AVX512_FUNCTION_SPECIFIC_ATTRIBUTE __attribute__((target("sse,sse2,sse3,ssse3,sse4,popcnt,avx,avx2,avx512f")))
+#define AVX2_FUNCTION_SPECIFIC_ATTRIBUTE __attribute__((target("sse,sse2,sse3,ssse3,sse4,popcnt,avx,avx2")))
+#define AVX_FUNCTION_SPECIFIC_ATTRIBUTE __attribute__((target("sse,sse2,sse3,ssse3,sse4,popcnt,avx"))
+#define SSE42_FUNCTION_SPECIFIC_ATTRIBUTE __attribute__((target("sse,sse2,sse3,ssse3,sse4,popcnt")))
+#define DEFAULT_FUNCTION_SPECIFIC_ATTRIBUTE
+
 #   define BEGIN_AVX512F_SPECIFIC_CODE \
         _Pragma("clang attribute push(__attribute__((target(\"sse,sse2,sse3,ssse3,sse4,popcnt,avx,avx2,avx512f\"))),apply_to=function)")
 #   define BEGIN_AVX2_SPECIFIC_CODE \
@@ -109,6 +116,13 @@ String toString(TargetArch arch);
  */
 #   define DUMMY_FUNCTION_DEFINITION [[maybe_unused]] void _dummy_function_definition();
 #else
+
+#define AVX512_FUNCTION_SPECIFIC_ATTRIBUTE __attribute__((target("sse,sse2,sse3,ssse3,sse4,popcnt,avx,avx2,avx512f,tune=native")))
+#define AVX2_FUNCTION_SPECIFIC_ATTRIBUTE __attribute__((target("sse,sse2,sse3,ssse3,sse4,popcnt,avx,avx2,tune=native")))
+#define AVX_FUNCTION_SPECIFIC_ATTRIBUTE __attribute__((target("sse,sse2,sse3,ssse3,sse4,popcnt,avx,tune=native")))
+#define SSE42_FUNCTION_SPECIFIC_ATTRIBUTE __attribute__((target("sse,sse2,sse3,ssse3,sse4,popcnt",tune=native))))
+#define DEFAULT_FUNCTION_SPECIFIC_ATTRIBUTE
+
 #   define BEGIN_AVX512F_SPECIFIC_CODE \
         _Pragma("GCC push_options") \
         _Pragma("GCC target(\"sse,sse2,sse3,ssse3,sse4,popcnt,avx,avx2,avx512f,tune=native\")")
@@ -211,5 +225,75 @@ DECLARE_AVX2_SPECIFIC_CODE(
 DECLARE_AVX512F_SPECIFIC_CODE(
     constexpr auto BuildArch = TargetArch::AVX512F; /// NOLINT
 ) // DECLARE_AVX512F_SPECIFIC_CODE
+
+/** Runtime Dispatch helpers for class members.
+  *
+  * Example of usage:
+  *
+  * class TestClass
+  * {
+  * public:
+  *     MULTITARGET_FUNCTION_WRAPPER_AVX2_SSE42(testFunctionImpl,
+  *     MULTITARGET_FH(int), /\*testFunction*\/ MULTITARGET_FB((int value)
+  *     {
+  *          return value;
+  *     })
+  *     )
+  *
+  *     void testFunction(int value) {
+  *         if (isArchSupported(TargetArch::AVX2))
+  *         {
+  *             testFunctionImplAVX2(value);
+  *         }
+  *         else if (isArchSupported(TargetArch::SSE42))
+  *         {
+  *             testFunctionImplSSE42(value);
+  *         }
+  *         else
+  *         {
+  *             testFunction(value);
+  *         }
+  *     }
+  *};
+  *
+  */
+
+/// Function header
+#define MULTITARGET_FH(...) __VA_ARGS__
+
+/// Function body
+#define MULTITARGET_FB(...) __VA_ARGS__
+
+#if ENABLE_MULTITARGET_CODE && defined(__GNUC__) && defined(__x86_64__)
+
+/// NOLINTNEXTLINE
+#define MULTITARGET_FUNCTION_WRAPPER_AVX2_SSE42(name, FUNCTION_HEADER, FUNCTION_BODY) \
+    FUNCTION_HEADER \
+    \
+    AVX2_FUNCTION_SPECIFIC_ATTRIBUTE \
+    name##AVX2 \
+    FUNCTION_BODY \
+    \
+    FUNCTION_HEADER \
+    \
+    AVX2_FUNCTION_SPECIFIC_ATTRIBUTE \
+    name##SSE42 \
+    FUNCTION_BODY \
+    \
+    FUNCTION_HEADER \
+    \
+    name \
+    FUNCTION_BODY \
+
+#else
+
+/// NOLINTNEXTLINE
+#define MULTITARGET_FUNCTION_WRAPPER_AVX2_SSE42(name, FUNCTION_HEADER, FUNCTION_BODY) \
+    FUNCTION_HEADER \
+    \
+    name \
+    FUNCTION_BODY \
+
+#endif
 
 }

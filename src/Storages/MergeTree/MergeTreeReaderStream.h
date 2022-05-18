@@ -24,7 +24,8 @@ public:
         const MergeTreeReaderSettings & settings_,
         MarkCache * mark_cache, UncompressedCache * uncompressed_cache,
         size_t file_size_, const MergeTreeIndexGranularityInfo * index_granularity_info_,
-        const ReadBufferFromFileBase::ProfileCallback & profile_callback, clockid_t clock_type);
+        const ReadBufferFromFileBase::ProfileCallback & profile_callback, clockid_t clock_type,
+        bool is_low_cardinality_dictionary_);
 
     void seekToMark(size_t index);
 
@@ -45,6 +46,8 @@ private:
     DiskPtr disk;
     std::string path_prefix;
     std::string data_file_extension;
+
+    bool is_low_cardinality_dictionary = false;
 
     size_t marks_count;
     size_t file_size;

@@ -21,13 +21,16 @@ void TableFunctionNull::parseArguments(const ASTPtr & ast_function, ContextPtr c
 {
     const auto * function = ast_function->as<ASTFunction>();
     if (!function || !function->arguments)
-        throw Exception("Table function '" + getName() + "' requires 'structure'.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+        throw Exception("Table function '" + getName() + "' requires 'structure'", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
     const auto & arguments = function->arguments->children;
-    if (arguments.size() != 1)
-        throw Exception("Table function '" + getName() + "' requires 'structure'.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+    if (!arguments.empty() && arguments.size() != 1)
+        throw Exception(
+            "Table function '" + getName() + "' requires 'structure' argument or empty argument",
+            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-    structure = evaluateConstantExpressionOrIdentifierAsLiteral(arguments[0], context)->as<ASTLiteral>()->value.safeGet<String>();
+    if (!arguments.empty())
+        structure = evaluateConstantExpressionOrIdentifierAsLiteral(arguments[0], context)->as<ASTLiteral>()->value.safeGet<String>();
 }
 
 ColumnsDescription TableFunctionNull::getActualTableStructure(ContextPtr context) const
@@ -37,8 +40,12 @@ ColumnsDescription TableFunctionNull::getActualTableStructure(ContextPtr context
 
 StoragePtr TableFunctionNull::executeImpl(const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/) const
 {
-    auto columns = getActualTableStructure(context);
-    auto res = StorageNull::create(StorageID(getDatabaseName(), table_name), columns, ConstraintsDescription(), String{});
+    ColumnsDescription columns;
+    if (structure != "auto")
+        columns = getActualTableStructure(context);
+    else if (!structure_hint.empty())
+        columns = structure_hint;
+    auto res = std::make_shared<StorageNull>(StorageID(getDatabaseName(), table_name), columns, ConstraintsDescription(), String{});
     res->startup();
     return res;
 }

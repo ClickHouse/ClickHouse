@@ -3,7 +3,7 @@
 #include <memory>
 #include <fmt/format.h>
 
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <Common/ActionBlocker.h>
 
 #include <DataTypes/ObjectUtils.h>
@@ -75,7 +75,7 @@ static void extractMergingAndGatheringColumns(
 
     for (const auto & column : storage_columns)
     {
-        if (key_columns.count(column.name))
+        if (key_columns.contains(column.name))
         {
             merging_columns.emplace_back(column);
             merging_column_names.emplace_back(column.name);
@@ -148,7 +148,6 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
         global_ctx->gathering_column_names,
         global_ctx->merging_columns,
         global_ctx->merging_column_names);
-
 
     auto local_single_disk_volume = std::make_shared<SingleDiskVolume>("volume_" + global_ctx->future_part->name, ctx->disk, 0);
     global_ctx->new_data_part = global_ctx->data->createPart(
@@ -778,6 +777,9 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream()
 
     Names sort_columns = global_ctx->metadata_snapshot->getSortingKeyColumns();
     SortDescription sort_description;
+    sort_description.compile_sort_description = global_ctx->data->getContext()->getSettingsRef().compile_sort_description;
+    sort_description.min_count_to_compile_sort_description = global_ctx->data->getContext()->getSettingsRef().min_count_to_compile_sort_description;
+
     size_t sort_columns_size = sort_columns.size();
     sort_description.reserve(sort_columns_size);
 

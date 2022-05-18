@@ -7,15 +7,13 @@
 ExpressionTransform
   (Limit)
   Limit
-    (Expression)
-    ExpressionTransform
-      (Sorting)
-      MergingSortedTransform 2 → 1
-        (Expression)
-        ExpressionTransform × 2
-          (SettingQuotaAndLimits)
-            (ReadFromMergeTree)
-            MergeTreeInOrder × 2 0 → 1
+    (Sorting)
+    MergingSortedTransform 2 → 1
+      (Expression)
+      ExpressionTransform × 2
+        (SettingQuotaAndLimits)
+          (ReadFromMergeTree)
+          MergeTreeInOrder × 2 0 → 1
 2020-10-01	9
 2020-10-01	9
 2020-10-01	9
@@ -25,18 +23,16 @@ ExpressionTransform
 ExpressionTransform
   (Limit)
   Limit
-    (Expression)
-    ExpressionTransform
-      (Sorting)
-      MergingSortedTransform 2 → 1
-        (Expression)
-        ExpressionTransform × 2
-          (SettingQuotaAndLimits)
-            (ReadFromMergeTree)
-            ReverseTransform
-              MergeTreeReverse 0 → 1
-                ReverseTransform
-                  MergeTreeReverse 0 → 1
+    (Sorting)
+    MergingSortedTransform 2 → 1
+      (Expression)
+      ExpressionTransform × 2
+        (SettingQuotaAndLimits)
+          (ReadFromMergeTree)
+          ReverseTransform
+            MergeTreeReverse 0 → 1
+              ReverseTransform
+                MergeTreeReverse 0 → 1
 2020-10-01	9
 2020-10-01	9
 2020-10-01	9
@@ -46,17 +42,15 @@ ExpressionTransform
 ExpressionTransform
   (Limit)
   Limit
-    (Expression)
-    ExpressionTransform
-      (Sorting)
-      FinishSortingTransform
-        PartialSortingTransform
-          MergingSortedTransform 2 → 1
-            (Expression)
-            ExpressionTransform × 2
-              (SettingQuotaAndLimits)
-                (ReadFromMergeTree)
-                MergeTreeInOrder × 2 0 → 1
+    (Sorting)
+    FinishSortingTransform
+      PartialSortingTransform
+        MergingSortedTransform 2 → 1
+          (Expression)
+          ExpressionTransform × 2
+            (SettingQuotaAndLimits)
+              (ReadFromMergeTree)
+              MergeTreeInOrder × 2 0 → 1
 2020-10-11	0
 2020-10-11	0
 2020-10-11	0

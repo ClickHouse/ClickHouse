@@ -59,6 +59,9 @@ void registerFunctionsTimeWindow(FunctionFactory &);
 void registerFunctionToBool(FunctionFactory &);
 void registerFunctionMinSampleSize(FunctionFactory &);
 
+// meilisearch
+void registerFunctionMeiliMatch(FunctionFactory & factory);
+
 #if USE_SSL
 void registerFunctionEncrypt(FunctionFactory & factory);
 void registerFunctionDecrypt(FunctionFactory & factory);
@@ -122,6 +125,9 @@ void registerFunctions()
     registerFunctionsTimeWindow(factory);
     registerFunctionToBool(factory);
     registerFunctionMinSampleSize(factory);
+
+    //meilisearch
+    registerFunctionMeiliMatch(factory);
 
 #if USE_SSL
     registerFunctionEncrypt(factory);

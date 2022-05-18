@@ -223,7 +223,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
     if (query_info.projection->merge_tree_normal_select_result_ptr)
     {
         auto storage_from_base_parts_of_projection
-            = StorageFromMergeTreeDataPart::create(data, query_info.projection->merge_tree_normal_select_result_ptr);
+            = std::make_shared<StorageFromMergeTreeDataPart>(data, query_info.projection->merge_tree_normal_select_result_ptr);
         auto interpreter = InterpreterSelectQuery(
             query_info.query,
             context,
@@ -374,12 +374,6 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
         std::move(pipe),
         fmt::format("MergeTree(with {} projection {})", query_info.projection->desc->type, query_info.projection->desc->name));
     plan->addStep(std::move(step));
-
-    if (query_info.projection->subqueries_for_sets && !query_info.projection->subqueries_for_sets->empty())
-    {
-        SizeLimits limits(settings.max_rows_to_transfer, settings.max_bytes_to_transfer, settings.transfer_overflow_mode);
-        addCreatingSetsStep(*plan, std::move(*query_info.projection->subqueries_for_sets), limits, context);
-    }
     return plan;
 }
 
@@ -862,7 +856,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 
         for (const auto & index_name : forced_indices)
         {
-            if (!useful_indices_names.count(index_name))
+            if (!useful_indices_names.contains(index_name))
             {
                 throw Exception(
                     ErrorCodes::INDEX_NOT_USED,
@@ -987,7 +981,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
             }
         };
 
-        size_t num_threads = std::min(size_t(num_streams), parts.size());
+        size_t num_threads = std::min<size_t>(num_streams, parts.size());
 
         if (num_threads <= 1)
         {
@@ -1095,7 +1089,7 @@ std::shared_ptr<QueryIdHolder> MergeTreeDataSelectExecutor::checkLimits(
         std::set<String> partitions;
         for (const auto & part_with_ranges : result.parts_with_ranges)
             partitions.insert(part_with_ranges.data_part->info.partition_id);
-        if (partitions.size() > size_t(max_partitions_to_read))
+        if (partitions.size() > static_cast<size_t>(max_partitions_to_read))
             throw Exception(
                 ErrorCodes::TOO_MANY_PARTITIONS,
                 "Too many partitions to read. Current {}, max {}",
@@ -1148,6 +1142,10 @@ static void selectColumnNames(
             virt_column_names.push_back(name);
         }
         else if (name == "_partition_id")
+        {
+            virt_column_names.push_back(name);
+        }
+        else if (name == "_part_offset")
         {
             virt_column_names.push_back(name);
         }
@@ -1576,15 +1574,15 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
             if (index_mark != index_range.begin || !granule || last_index_mark != index_range.begin)
                 granule = reader.read();
 
-            MarkRange data_range(
-                    std::max(ranges[i].begin, index_mark * index_granularity),
-                    std::min(ranges[i].end, (index_mark + 1) * index_granularity));
-
             if (!condition->mayBeTrueOnGranule(granule))
             {
                 ++granules_dropped;
                 continue;
             }
+
+            MarkRange data_range(
+                    std::max(ranges[i].begin, index_mark * index_granularity),
+                    std::min(ranges[i].end, (index_mark + 1) * index_granularity));
 
             if (res.empty() || res.back().end - data_range.begin > min_marks_for_seek)
                 res.push_back(data_range);
@@ -1676,15 +1674,15 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingMergedIndex(
                 }
             }
 
-            MarkRange data_range(
-                std::max(range.begin, index_mark * index_granularity),
-                std::min(range.end, (index_mark + 1) * index_granularity));
-
             if (!condition->mayBeTrueOnGranule(granules))
             {
                 ++granules_dropped;
                 continue;
             }
+
+            MarkRange data_range(
+                std::max(range.begin, index_mark * index_granularity),
+                std::min(range.end, (index_mark + 1) * index_granularity));
 
             if (res.empty() || res.back().end - data_range.begin > min_marks_for_seek)
                 res.push_back(data_range);

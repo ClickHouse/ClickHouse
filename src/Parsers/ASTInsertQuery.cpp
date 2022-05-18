@@ -100,7 +100,7 @@ void ASTInsertQuery::formatImpl(const FormatSettings & settings, FormatState & s
         settings_ast->formatImpl(settings, state, frame);
     }
 
-    /// Compatibility for INSERT w/o SETTINGS to format in oneline, i.e.:
+    /// Compatibility for INSERT without SETTINGS to format in oneline, i.e.:
     ///
     ///     INSERT INTO foo VALUES
     ///

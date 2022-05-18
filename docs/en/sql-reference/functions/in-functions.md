@@ -1,6 +1,6 @@
 ---
-toc_priority: 60
-toc_title: IN Operator
+sidebar_position: 60
+sidebar_label: IN Operator
 ---
 
 # Functions for Implementing the IN Operator {#functions-for-implementing-the-in-operator}

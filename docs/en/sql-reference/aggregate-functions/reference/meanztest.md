@@ -1,6 +1,6 @@
 ---
-toc_priority: 303
-toc_title: meanZTest
+sidebar_position: 303
+sidebar_label: meanZTest
 ---
 
 # meanZTest {#meanztest}

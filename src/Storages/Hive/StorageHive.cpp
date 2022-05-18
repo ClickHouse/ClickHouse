@@ -6,7 +6,7 @@
 #include <boost/algorithm/string/case_conv.hpp>
 #include <fmt/core.h>
 #include <Poco/URI.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 
 #include <Columns/IColumn.h>
 #include <Core/Block.h>
@@ -45,6 +45,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int CANNOT_OPEN_FILE;
     extern const int LOGICAL_ERROR;
+    extern const int TOO_MANY_PARTITIONS;
 }
 
 
@@ -155,8 +156,8 @@ public:
                 if (current_idx >= source_info->hive_files.size())
                     return {};
 
-                const auto & curr_file = source_info->hive_files[current_idx];
-                current_path = curr_file->getPath();
+                const auto & current_file = source_info->hive_files[current_idx];
+                current_path = current_file->getPath();
 
                 String uri_with_path = hdfs_namenode_url + current_path;
                 auto compression = chooseCompressionMethod(current_path, compression_method);
@@ -186,7 +187,7 @@ public:
                     remote_read_buf = RemoteReadBuffer::create(
                         getContext(),
                         std::make_shared<StorageHiveMetadata>(
-                            "Hive", getNameNodeCluster(hdfs_namenode_url), uri_with_path, curr_file->getSize(), curr_file->getLastModTs()),
+                            "Hive", getNameNodeCluster(hdfs_namenode_url), uri_with_path, current_file->getSize(), current_file->getLastModTs()),
                         std::move(raw_read_buf),
                         buff_size,
                         format == "Parquet" || format == "ORC");
@@ -194,13 +195,13 @@ public:
                 else
                     remote_read_buf = std::move(raw_read_buf);
 
-                if (curr_file->getFormat() == FileFormat::TEXT)
+                if (current_file->getFormat() == FileFormat::TEXT)
                     read_buf = wrapReadBufferWithCompressionMethod(std::move(remote_read_buf), compression);
                 else
                     read_buf = std::move(remote_read_buf);
 
                 auto input_format = FormatFactory::instance().getInputFormat(
-                    format, *read_buf, to_read_block, getContext(), max_block_size, updateFormatSettings(curr_file));
+                    format, *read_buf, to_read_block, getContext(), max_block_size, updateFormatSettings(current_file));
 
                 QueryPipelineBuilder builder;
                 builder.init(Pipe(input_format));
@@ -726,6 +727,8 @@ HiveFiles StorageHive::collectHiveFiles(
 
     /// Hive files to collect
     HiveFiles hive_files;
+    Int64 hit_parttions_num = 0;
+    Int64 hive_max_query_partitions = context_->getSettings().max_partitions_to_read;
     /// Mutext to protect hive_files, which maybe appended in multiple threads
     std::mutex hive_files_mutex;
     ThreadPool pool{max_threads};
@@ -741,6 +744,11 @@ HiveFiles StorageHive::collectHiveFiles(
                     if (!hive_files_in_partition.empty())
                     {
                         std::lock_guard<std::mutex> lock(hive_files_mutex);
+                        hit_parttions_num += 1;
+                        if (hive_max_query_partitions > 0 && hit_parttions_num > hive_max_query_partitions)
+                        {
+                            throw Exception(ErrorCodes::TOO_MANY_PARTITIONS, "Too many partitions to query for table {}.{} . Maximum number of partitions to read is limited to {}", hive_database, hive_table, hive_max_query_partitions);
+                        }
                         hive_files.insert(std::end(hive_files), std::begin(hive_files_in_partition), std::end(hive_files_in_partition));
                     }
                 });
@@ -844,7 +852,7 @@ void registerStorageHive(StorageFactory & factory)
             const String & hive_metastore_url = engine_args[0]->as<ASTLiteral &>().value.safeGet<String>();
             const String & hive_database = engine_args[1]->as<ASTLiteral &>().value.safeGet<String>();
             const String & hive_table = engine_args[2]->as<ASTLiteral &>().value.safeGet<String>();
-            return StorageHive::create(
+            return std::make_shared<StorageHive>(
                 hive_metastore_url,
                 hive_database,
                 hive_table,

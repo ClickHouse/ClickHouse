@@ -7,8 +7,7 @@
 #include <Processors/Sources/SourceWithProgress.h>
 #include <Storages/IStorage.h>
 #include <Poco/URI.h>
-#include <base/logger_useful.h>
-#include <base/shared_ptr_helper.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -16,10 +15,21 @@ namespace DB
  * This class represents table engine for external hdfs files.
  * Read method is supported for now.
  */
-class StorageHDFS final : public shared_ptr_helper<StorageHDFS>, public IStorage, WithContext
+class StorageHDFS final : public IStorage, WithContext
 {
-    friend struct shared_ptr_helper<StorageHDFS>;
 public:
+    StorageHDFS(
+        const String & uri_,
+        const StorageID & table_id_,
+        const String & format_name_,
+        const ColumnsDescription & columns_,
+        const ConstraintsDescription & constraints_,
+        const String & comment,
+        ContextPtr context_,
+        const String & compression_method_ = "",
+        bool distributed_processing_ = false,
+        ASTPtr partition_by = nullptr);
+
     String getName() const override { return "HDFS"; }
 
     Pipe read(
@@ -57,17 +67,6 @@ public:
 
 protected:
     friend class HDFSSource;
-    StorageHDFS(
-        const String & uri_,
-        const StorageID & table_id_,
-        const String & format_name_,
-        const ColumnsDescription & columns_,
-        const ConstraintsDescription & constraints_,
-        const String & comment,
-        ContextPtr context_,
-        const String & compression_method_ = "",
-        bool distributed_processing_ = false,
-        ASTPtr partition_by = nullptr);
 
 private:
     std::vector<const String> uris;
