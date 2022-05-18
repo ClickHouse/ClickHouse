@@ -806,6 +806,7 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod()
 template <bool skip_compiled_aggregate_functions>
 void Aggregator::createAggregateStates(AggregateDataPtr & aggregate_data) const
 {
+    printf("we are in createAggregateStates\n");
     for (size_t j = 0; j < params.aggregates_size; ++j)
     {
         if constexpr (skip_compiled_aggregate_functions)
@@ -898,7 +899,7 @@ void NO_INLINE Aggregator::executeImpl(
     bool no_more_keys,
     AggregateDataPtr overflow_row) const
 {
-    printf("number of rows: %zu\n", rows);
+    // printf("number of rows: %zu\n", rows);
     typename Method::State state(key_columns, key_sizes, aggregation_state_cache);
     // todo maybe here
     if (!no_more_keys)
@@ -930,6 +931,7 @@ void NO_INLINE Aggregator::executeImplBatch(
     AggregateFunctionInstruction * aggregate_instructions,
     AggregateDataPtr overflow_row) const
 {
+    printf("we are in executeImplBatch\n");
     /// Optimization for special case when there are no aggregate functions.
     if (params.aggregates_size == 0)
     {
@@ -1630,6 +1632,10 @@ void Aggregator::convertToBlockImpl(
 {
     // aggregated data variant
 //    insert result into
+    printf("key_columns size: %zu\n", key_columns.size());
+    for (size_t i = 0; i < key_columns.size(); i++) {
+        printf("size of column i=%zu, is %zu\n", i, key_columns[i].get()->size());
+    }
     if (data.empty())
         return;
 

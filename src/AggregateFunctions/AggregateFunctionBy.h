@@ -96,7 +96,7 @@ public:
             for (size_t i = 0; i < columns[k]->size(); i++) {
                 Field f;
                 columns[k]->get(i, f);
-//                printf("%s, ", toString(f).c_str());
+                printf("%s, ", toString(f).c_str());
             }
 //            printf("\n\n\n");
 
@@ -106,6 +106,7 @@ public:
 
     void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
+        printf("we are in merge funk\n");
         nested_func->merge(place, rhs, arena);
     }
 
