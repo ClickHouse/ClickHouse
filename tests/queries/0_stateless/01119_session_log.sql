@@ -1,3 +1,5 @@
+-- Tags: no-fasttest
+
 create user "       ";  -- { clientError BAD_ARGUMENTS }
 create user '   spaces';  -- { clientError BAD_ARGUMENTS }
 create user 'spaces    ';  -- { clientError BAD_ARGUMENTS }
