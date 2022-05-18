@@ -5,6 +5,15 @@ FROM remote('127.0.0.{2,3}', numbers(10))
 GROUP BY
     number,
     number % 2
+ORDER BY number; -- { serverError BAD_ARGUMENTS }
+
+SELECT
+    number,
+    grouping(number, number % 2) = 3
+FROM remote('127.0.0.{2,3}', numbers(10))
+GROUP BY
+    number,
+    number % 2
 ORDER BY number;
 
 SELECT
@@ -19,7 +28,7 @@ ORDER BY number;
 
 SELECT
     number,
-    grouping(number, number % 2, number % 3) AS gr
+    grouping(number, number % 2) AS gr
 FROM remote('127.0.0.{2,3}', numbers(10))
 GROUP BY
     number,
@@ -30,7 +39,7 @@ ORDER BY
 
 SELECT
     number,
-    grouping(number, number % 2, number % 3) AS gr
+    grouping(number, number % 2) AS gr
 FROM remote('127.0.0.{2,3}', numbers(10))
 GROUP BY
     ROLLUP(number, number % 2)
