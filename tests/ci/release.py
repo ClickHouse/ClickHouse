@@ -374,7 +374,7 @@ class Release:
             if as_prerelease:
                 prerelease = "--prerelease"
             self.run(
-                f"gh release create {prerelease} --draft --repo {self.repo} "
+                f"gh release create {prerelease} --repo {self.repo} "
                 f"--title 'Release {tag}' '{tag}'"
             )
             rollback_cmd = f"gh release delete --yes --repo {self.repo} '{tag}'"
