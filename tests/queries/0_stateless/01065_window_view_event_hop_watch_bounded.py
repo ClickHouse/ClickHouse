@@ -24,7 +24,9 @@ with client(name="client1>", log=log) as client1, client(
     client2.send("SET allow_experimental_window_view = 1")
     client2.expect(prompt)
 
-    client1.send("CREATE DATABASE IF NOT EXISTS 01065_window_view_event_hop_watch_bounded")
+    client1.send(
+        "CREATE DATABASE IF NOT EXISTS 01065_window_view_event_hop_watch_bounded"
+    )
     client1.expect(prompt)
     client1.send("DROP TABLE IF EXISTS 01065_window_view_event_hop_watch_bounded.mt")
     client1.expect(prompt)
@@ -43,14 +45,22 @@ with client(name="client1>", log=log) as client1, client(
     client1.send("WATCH 01065_window_view_event_hop_watch_bounded.wv")
     client1.expect("Query id" + end_of_block)
     client1.expect("Progress: 0.00 rows.*\)")
-    client2.send("INSERT INTO 01065_window_view_event_hop_watch_bounded.mt VALUES (1, '1990/01/01 12:00:00');")
+    client2.send(
+        "INSERT INTO 01065_window_view_event_hop_watch_bounded.mt VALUES (1, '1990/01/01 12:00:00');"
+    )
     client2.expect("Ok.")
-    client2.send("INSERT INTO 01065_window_view_event_hop_watch_bounded.mt VALUES (1, '1990/01/01 12:00:05');")
+    client2.send(
+        "INSERT INTO 01065_window_view_event_hop_watch_bounded.mt VALUES (1, '1990/01/01 12:00:05');"
+    )
     client2.expect("Ok.")
     client1.expect("1*" + end_of_block)
-    client2.send("INSERT INTO 01065_window_view_event_hop_watch_bounded.mt VALUES (1, '1990/01/01 12:00:06');")
+    client2.send(
+        "INSERT INTO 01065_window_view_event_hop_watch_bounded.mt VALUES (1, '1990/01/01 12:00:06');"
+    )
     client2.expect("Ok.")
-    client2.send("INSERT INTO 01065_window_view_event_hop_watch_bounded.mt VALUES (1, '1990/01/01 12:00:10');")
+    client2.send(
+        "INSERT INTO 01065_window_view_event_hop_watch_bounded.mt VALUES (1, '1990/01/01 12:00:10');"
+    )
     client2.expect("Ok.")
     client1.expect("1*" + end_of_block)
     client1.expect("2*" + end_of_block)
