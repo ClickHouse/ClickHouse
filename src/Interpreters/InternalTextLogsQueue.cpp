@@ -3,7 +3,6 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypesNumber.h>
-#include "Common/OvercommitTracker.h"
 #include <Common/logger_useful.h>
 
 #include <Poco/Message.h>
