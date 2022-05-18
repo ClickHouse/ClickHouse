@@ -1,0 +1,10 @@
+version	Int32					
+serial_number	Nullable(String)					
+signature_algo	Nullable(String)					
+issuer	Nullable(String)					
+not_before	Nullable(String)					
+not_after	Nullable(String)					
+subject	Nullable(String)					
+pkey_algo	Nullable(String)					
+path	String					
+default	UInt8					
