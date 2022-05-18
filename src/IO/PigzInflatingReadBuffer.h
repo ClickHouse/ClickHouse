@@ -45,16 +45,12 @@ private:
     bool eof_flag = false;
     ThreadPool pool;
 
-    size_t internal_pos = 0;
-
     std::list<std::shared_ptr<CompressedBuf>> results;
     std::list<std::shared_ptr<CompressedBuf>>::iterator curr_result_it;
-    size_t curr_result_pos = 0;
+
+    std::shared_ptr<Memory<>> working_memory;
 
     std::string prev_last_slice;
-
-    size_t sum_decomp = 0;
-    size_t sum_written = 0;
 };
 
 }
