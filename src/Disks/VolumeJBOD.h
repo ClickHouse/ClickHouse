@@ -64,12 +64,27 @@ public:
     bool are_merges_avoided = true;
 
 private:
-    struct DiskBySize
+    struct DiskWithSize
     {
-        bool operator()(const DiskPtr & lhs, const DiskPtr & rhs) const
+        DiskPtr disk;
+        uint64_t free_size = 0;
+
+        DiskWithSize(DiskPtr disk_)
+            : disk(disk_)
+            , free_size(disk->getUnreservedSpace())
+        {}
+
+        bool operator<(const DiskWithSize & rhs) const
         {
-            /// TODO: avoid getAvailableSpace() calls
-            return lhs->getUnreservedSpace() < rhs->getUnreservedSpace();
+            return free_size < rhs.free_size;
+        }
+
+        ReservationPtr reserve(uint64_t bytes)
+        {
+            ReservationPtr reservation = disk->reserve(bytes);
+            if (reservation)
+                free_size -= bytes;
+            return reservation;
         }
     };
 
@@ -77,7 +92,7 @@ private:
     /// Index of last used disk, for load_balancing=round_robin
     mutable std::atomic<size_t> last_used = 0;
     /// Priority queue of disks sorted by size, for load_balancing=least_used
-    mutable std::priority_queue<DiskPtr, std::vector<DiskPtr>, DiskBySize> disks_by_size;
+    mutable std::priority_queue<DiskWithSize> disks_by_size;
 
     /// True if parts on this volume participate in merges according to START/STOP MERGES ON VOLUME.
     std::atomic<std::optional<bool>> are_merges_avoided_user_override{std::nullopt};
