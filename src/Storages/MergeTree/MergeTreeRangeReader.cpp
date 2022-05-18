@@ -358,6 +358,7 @@ void MergeTreeRangeReader::ReadResult::setFilterConstFalse()
     num_rows = 0;
 }
 
+///
 void MergeTreeRangeReader::ReadResult::optimize(bool can_read_incomplete_granules, bool allow_filter_columns)
 {
     if (total_rows_per_granule == 0 || filter == nullptr)
@@ -415,6 +416,7 @@ void MergeTreeRangeReader::ReadResult::optimize(bool can_read_incomplete_granule
         need_filter = true;
 }
 
+/// For each read granule
 size_t MergeTreeRangeReader::ReadResult::countZeroTails(const IColumn::Filter & filter_vec, NumRows & zero_tails, bool can_read_incomplete_granules) const
 {
     zero_tails.resize(0);
@@ -594,6 +596,7 @@ size_t MergeTreeRangeReader::ReadResult::numZerosInTail(const UInt8 * begin, con
     return count;
 }
 
+/// Filter size must match total_rows_per_granule
 void MergeTreeRangeReader::ReadResult::setFilter(const ColumnPtr & new_filter)
 {
     if (!new_filter && filter)
@@ -1023,6 +1026,9 @@ Columns MergeTreeRangeReader::continueReadingChain(ReadResult & result, size_t &
     stream.skip(result.numRowsToSkipInLastGranule());
     num_rows += stream.finalize(columns);
 
+
+    // TODO: here we can verify that stream and prev_reader->stream are at exactly same offset
+
     /// added_rows may be zero if all columns were read in prewhere and it's ok.
     if (num_rows && num_rows != result.totalRowsPerGranule())
         throw Exception("RangeReader read " + toString(num_rows) + " rows, but "
@@ -1039,6 +1045,8 @@ static void checkCombinedFiltersSize(size_t bytes_in_first_filter, size_t second
             "does not match second filter size ({})", bytes_in_first_filter, second_filter_size);
 }
 
+/// Second filter size must be equal to number of 1s in the first filter.
+/// The result size is equal to first filter size.
 static ColumnPtr combineFilters(ColumnPtr first, ColumnPtr second)
 {
     ConstantFilterDescription first_const_descr(*first);

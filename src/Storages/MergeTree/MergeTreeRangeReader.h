@@ -207,7 +207,7 @@ public:
 
         size_t countBytesInResultFilter(const IColumn::Filter & filter);
 
-        bool need_filter = false;
+        bool need_filter = false; /// TODO: what exactly does it mean?
 
         Block block_before_prewhere;
 
