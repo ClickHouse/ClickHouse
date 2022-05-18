@@ -121,7 +121,7 @@ namespace JSONUtils
     }
 
     template <class Element>
-    DataTypePtr getDataTypeFromJSONFieldImpl(const Element & field)
+    DataTypePtr getDataTypeFromFieldImpl(const Element & field)
     {
         if (field.isNull())
             return nullptr;
@@ -148,7 +148,7 @@ namespace JSONUtils
             bool is_tuple = false;
             for (const auto element : array)
             {
-                auto type = getDataTypeFromJSONFieldImpl(element);
+                auto type = getDataTypeFromFieldImpl(element);
                 if (!type)
                     return nullptr;
 
@@ -171,7 +171,7 @@ namespace JSONUtils
             bool is_object = false;
             for (const auto key_value_pair : object)
             {
-                auto type = getDataTypeFromJSONFieldImpl(key_value_pair.second);
+                auto type = getDataTypeFromFieldImpl(key_value_pair.second);
                 if (!type)
                     continue;
 
@@ -215,14 +215,14 @@ namespace JSONUtils
 #endif
     }
 
-    DataTypePtr getDataTypeFromJSONField(const String & field)
+    DataTypePtr getDataTypeFromField(const String & field)
     {
         auto [parser, element] = getJSONParserAndElement();
         bool parsed = parser.parse(field, element);
         if (!parsed)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot parse JSON object here: {}", field);
 
-        return getDataTypeFromJSONFieldImpl(element);
+        return getDataTypeFromFieldImpl(element);
     }
 
     template <class Extractor, const char opening_bracket, const char closing_bracket>
@@ -239,7 +239,7 @@ namespace JSONUtils
         DataTypes data_types;
         data_types.reserve(fields.size());
         for (const auto & field : fields)
-            data_types.push_back(getDataTypeFromJSONFieldImpl(field));
+            data_types.push_back(getDataTypeFromFieldImpl(field));
 
         /// TODO: For JSONStringsEachRow/JSONCompactStringsEach all types will be strings.
         ///       Should we try to parse data inside strings somehow in this case?
