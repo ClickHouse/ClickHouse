@@ -54,7 +54,7 @@ MutableColumnPtr ColumnFixedString::cloneResized(size_t size) const
 bool ColumnFixedString::isDefaultAt(size_t index) const
 {
     assert(index < size());
-    return memoryIsZero(chars.data() + index * n, n);
+    return memoryIsZero(chars.data() + index * n, 0, n);
 }
 
 void ColumnFixedString::insert(const Field & x)
@@ -142,68 +142,49 @@ void ColumnFixedString::updateHashFast(SipHash & hash) const
     hash.update(reinterpret_cast<const char *>(chars.data()), size() * n);
 }
 
-template <bool positive>
-struct ColumnFixedString::Cmp
+struct ColumnFixedString::ComparatorBase
 {
     const ColumnFixedString & parent;
-    explicit Cmp(const ColumnFixedString & parent_) : parent(parent_) {}
-    int operator()(size_t lhs, size_t rhs) const
+
+    explicit ComparatorBase(const ColumnFixedString & parent_)
+        : parent(parent_)
+    {
+    }
+
+    ALWAYS_INLINE int compare(size_t lhs, size_t rhs) const
     {
         int res = memcmpSmallAllowOverflow15(parent.chars.data() + lhs * parent.n, parent.chars.data() + rhs * parent.n, parent.n);
 
-        if constexpr (positive)
-            return res;
-        else
-            return -res;
+        return res;
     }
 };
 
-struct ColumnFixedString::less
+void ColumnFixedString::getPermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
+                                    size_t limit, int /*nan_direction_hint*/, Permutation & res) const
 {
-    Cmp<true> cmp;
-    explicit less(const ColumnFixedString & parent_) : cmp(parent_) {}
-    int operator()(size_t lhs, size_t rhs) const { return cmp(lhs, rhs) < 0; }
-};
-
-struct ColumnFixedString::greater
-{
-    Cmp<true> cmp;
-    explicit greater(const ColumnFixedString & parent_) : cmp(parent_) {}
-    int operator()(size_t lhs, size_t rhs) const { return cmp(lhs, rhs) > 0; }
-};
-
-void ColumnFixedString::getPermutation(bool reverse, size_t limit, int /*nan_direction_hint*/, Permutation & res) const
-{
-    size_t s = size();
-    res.resize(s);
-    for (size_t i = 0; i < s; ++i)
-        res[i] = i;
-
-    if (limit >= s)
-        limit = 0;
-
-    if (limit)
-    {
-        if (reverse)
-            ::partial_sort(res.begin(), res.begin() + limit, res.end(), greater(*this));
-        else
-            ::partial_sort(res.begin(), res.begin() + limit, res.end(), less(*this));
-    }
-    else
-    {
-        if (reverse)
-            ::sort(res.begin(), res.end(), greater(*this));
-        else
-            ::sort(res.begin(), res.end(), less(*this));
-    }
+    if (direction == IColumn::PermutationSortDirection::Ascending && stability == IColumn::PermutationSortStability::Unstable)
+        getPermutationImpl(limit, res, ComparatorAscendingUnstable(*this), DefaultSort(), DefaultPartialSort());
+    else if (direction == IColumn::PermutationSortDirection::Ascending && stability == IColumn::PermutationSortStability::Stable)
+        getPermutationImpl(limit, res, ComparatorAscendingStable(*this), DefaultSort(), DefaultPartialSort());
+    else if (direction == IColumn::PermutationSortDirection::Descending && stability == IColumn::PermutationSortStability::Unstable)
+        getPermutationImpl(limit, res, ComparatorDescendingUnstable(*this), DefaultSort(), DefaultPartialSort());
+    else if (direction == IColumn::PermutationSortDirection::Descending && stability == IColumn::PermutationSortStability::Stable)
+        getPermutationImpl(limit, res, ComparatorDescendingStable(*this), DefaultSort(), DefaultPartialSort());
 }
 
-void ColumnFixedString::updatePermutation(bool reverse, size_t limit, int, Permutation & res, EqualRanges & equal_ranges) const
+void ColumnFixedString::updatePermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
+                                    size_t limit, int /*nan_direction_hint*/, Permutation & res, EqualRanges & equal_ranges) const
 {
-    if (reverse)
-        updatePermutationImpl(limit, res, equal_ranges, Cmp<false>(*this));
-    else
-        updatePermutationImpl(limit, res, equal_ranges, Cmp<true>(*this));
+    auto comparator_equal = ComparatorEqual(*this);
+
+    if (direction == IColumn::PermutationSortDirection::Ascending && stability == IColumn::PermutationSortStability::Unstable)
+        updatePermutationImpl(limit, res, equal_ranges, ComparatorAscendingUnstable(*this), comparator_equal, DefaultSort(), DefaultPartialSort());
+    else if (direction == IColumn::PermutationSortDirection::Ascending && stability == IColumn::PermutationSortStability::Stable)
+        updatePermutationImpl(limit, res, equal_ranges, ComparatorAscendingStable(*this), comparator_equal, DefaultSort(), DefaultPartialSort());
+    else if (direction == IColumn::PermutationSortDirection::Descending && stability == IColumn::PermutationSortStability::Unstable)
+        updatePermutationImpl(limit, res, equal_ranges, ComparatorDescendingUnstable(*this), comparator_equal, DefaultSort(), DefaultPartialSort());
+    else if (direction == IColumn::PermutationSortDirection::Descending && stability == IColumn::PermutationSortStability::Stable)
+        updatePermutationImpl(limit, res, equal_ranges, ComparatorDescendingStable(*this), comparator_equal, DefaultSort(), DefaultPartialSort());
 }
 
 void ColumnFixedString::insertRangeFrom(const IColumn & src, size_t start, size_t length)
@@ -226,7 +207,7 @@ ColumnPtr ColumnFixedString::filter(const IColumn::Filter & filt, ssize_t result
 {
     size_t col_size = size();
     if (col_size != filt.size())
-        throw Exception("Size of filter doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
+        throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of filter ({}) doesn't match size of column ({})", filt.size(), col_size);
 
     auto res = ColumnFixedString::create(n);
 
@@ -389,7 +370,7 @@ void ColumnFixedString::getExtremes(Field & min, Field & max) const
     size_t min_idx = 0;
     size_t max_idx = 0;
 
-    auto cmp_less = less(*this);
+    auto cmp_less = ComparatorAscendingUnstable(*this);
     for (size_t i = 1; i < col_size; ++i)
     {
         if (cmp_less(i, min_idx))

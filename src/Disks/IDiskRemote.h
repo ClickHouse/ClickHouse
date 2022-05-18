@@ -3,6 +3,7 @@
 #include <Common/config.h>
 
 #include <atomic>
+#include <Common/FileCache_fwd.h>
 #include <Disks/DiskFactory.h>
 #include <Disks/Executor.h>
 #include <utility>
@@ -12,8 +13,6 @@
 #include <Common/ThreadPool.h>
 #include <filesystem>
 
-namespace fs = std::filesystem;
-
 namespace CurrentMetrics
 {
     extern const Metric DiskSpaceReservedForMerge;
@@ -22,23 +21,23 @@ namespace CurrentMetrics
 namespace DB
 {
 
-/// Helper class to collect paths into chunks of maximum size.
-/// For s3 it is Aws::vector<ObjectIdentifier>, for hdfs it is std::vector<std::string>.
-class RemoteFSPathKeeper
+/// Path to blob with it's size
+struct BlobPathWithSize
 {
-public:
-    RemoteFSPathKeeper(size_t chunk_limit_) : chunk_limit(chunk_limit_) {}
+    std::string relative_path;
+    uint64_t bytes_size;
 
-    virtual ~RemoteFSPathKeeper() = default;
+    BlobPathWithSize() = default;
+    BlobPathWithSize(const BlobPathWithSize & other) = default;
 
-    virtual void addPath(const String & path) = 0;
-
-protected:
-    size_t chunk_limit;
+    BlobPathWithSize(const std::string & relative_path_, uint64_t bytes_size_)
+        : relative_path(relative_path_)
+        , bytes_size(bytes_size_)
+    {}
 };
 
-using RemoteFSPathKeeperPtr = std::shared_ptr<RemoteFSPathKeeper>;
-
+/// List of blobs with their sizes
+using BlobsPathToSize = std::vector<BlobPathWithSize>;
 
 class IAsynchronousReader;
 using AsynchronousReaderPtr = std::shared_ptr<IAsynchronousReader>;
@@ -55,6 +54,7 @@ public:
         const String & name_,
         const String & remote_fs_root_path_,
         DiskPtr metadata_disk_,
+        FileCachePtr cache_,
         const String & log_name_,
         size_t thread_pool_size);
 
@@ -65,6 +65,12 @@ public:
 
     const String & getPath() const final override { return metadata_disk->getPath(); }
 
+    String getCacheBasePath() const final override;
+
+    std::vector<String> getRemotePaths(const String & local_path) const final override;
+
+    void getRemotePathsRecursive(const String & local_path, std::vector<LocalPathWithRemotePaths> & paths_map) override;
+
     /// Methods for working with metadata. For some operations (like hardlink
     /// creation) metadata can be updated concurrently from multiple threads
     /// (file actually rewritten on disk). So additional RW lock is required for
@@ -72,6 +78,8 @@ public:
     Metadata readMetadata(const String & path) const;
     Metadata readMetadataUnlocked(const String & path, std::shared_lock<std::shared_mutex> &) const;
     Metadata readUpdateAndStoreMetadata(const String & path, bool sync, MetadataUpdater updater);
+    Metadata readUpdateStoreMetadataAndRemove(const String & path, bool sync, MetadataUpdater updater);
+
     Metadata readOrCreateUpdateAndStoreMetadata(const String & path, WriteMode mode, bool sync, MetadataUpdater updater);
 
     Metadata createAndStoreMetadata(const String & path, bool sync);
@@ -101,15 +109,16 @@ public:
 
     void removeFileIfExists(const String & path) override { removeSharedFileIfExists(path, false); }
 
-    void removeRecursive(const String & path) override { removeSharedRecursive(path, false); }
+    void removeRecursive(const String & path) override { removeSharedRecursive(path, false, {}); }
+
 
     void removeSharedFile(const String & path, bool delete_metadata_only) override;
 
     void removeSharedFileIfExists(const String & path, bool delete_metadata_only) override;
 
-    void removeSharedFiles(const RemoveBatchRequest & files, bool delete_metadata_only) override;
+    void removeSharedFiles(const RemoveBatchRequest & files, bool keep_all_batch_data, const NameSet & file_names_remove_metadata_only) override;
 
-    void removeSharedRecursive(const String & path, bool delete_metadata_only) override;
+    void removeSharedRecursive(const String & path, bool keep_all_batch_data, const NameSet & file_names_remove_metadata_only) override;
 
     void listFiles(const String & path, std::vector<String> & file_names) override;
 
@@ -141,9 +150,7 @@ public:
 
     bool checkUniqueId(const String & id) const override = 0;
 
-    virtual void removeFromRemoteFS(RemoteFSPathKeeperPtr fs_paths_keeper) = 0;
-
-    virtual RemoteFSPathKeeperPtr createFSPathKeeper() const = 0;
+    virtual void removeFromRemoteFS(const std::vector<String> & paths) = 0;
 
     static AsynchronousReaderPtr getThreadPoolReader();
     static ThreadPool & getThreadPoolWriter();
@@ -163,10 +170,12 @@ protected:
 
     DiskPtr metadata_disk;
 
-private:
-    void removeMetadata(const String & path, RemoteFSPathKeeperPtr fs_paths_keeper);
+    FileCachePtr cache;
 
-    void removeMetadataRecursive(const String & path, RemoteFSPathKeeperPtr fs_paths_keeper);
+private:
+    void removeMetadata(const String & path, std::vector<String> & paths_to_remove);
+
+    void removeMetadataRecursive(const String & path, std::unordered_map<String, std::vector<String>> & paths_to_remove);
 
     bool tryReserve(UInt64 bytes);
 
@@ -178,36 +187,26 @@ private:
 
 using RemoteDiskPtr = std::shared_ptr<IDiskRemote>;
 
-
-/// Minimum info, required to be passed to ReadIndirectBufferFromRemoteFS<T>
-struct RemoteMetadata
-{
-    using PathAndSize = std::pair<String, size_t>;
-
-    /// Remote FS objects paths and their sizes.
-    std::vector<PathAndSize> remote_fs_objects;
-
-    /// URI
-    const String & remote_fs_root_path;
-
-    /// Relative path to metadata file on local FS.
-    const String metadata_file_path;
-
-    RemoteMetadata(const String & remote_fs_root_path_, const String & metadata_file_path_)
-        : remote_fs_root_path(remote_fs_root_path_), metadata_file_path(metadata_file_path_) {}
-};
-
 /// Remote FS (S3, HDFS) metadata file layout:
 /// FS objects, their number and total size of all FS objects.
 /// Each FS object represents a file path in remote FS and its size.
 
-struct IDiskRemote::Metadata : RemoteMetadata
+struct IDiskRemote::Metadata
 {
     using Updater = std::function<bool(IDiskRemote::Metadata & metadata)>;
     /// Metadata file version.
     static constexpr UInt32 VERSION_ABSOLUTE_PATHS = 1;
     static constexpr UInt32 VERSION_RELATIVE_PATHS = 2;
     static constexpr UInt32 VERSION_READ_ONLY_FLAG = 3;
+
+    /// Remote FS objects paths and their sizes.
+    std::vector<BlobPathWithSize> remote_fs_objects;
+
+    /// URI
+    const String & remote_fs_root_path;
+
+    /// Relative path to metadata file on local FS.
+    const String metadata_file_path;
 
     DiskPtr metadata_disk;
 
@@ -232,6 +231,7 @@ struct IDiskRemote::Metadata : RemoteMetadata
 
     static Metadata readMetadata(const String & remote_fs_root_path_, DiskPtr metadata_disk_, const String & metadata_file_path_);
     static Metadata readUpdateAndStoreMetadata(const String & remote_fs_root_path_, DiskPtr metadata_disk_, const String & metadata_file_path_, bool sync, Updater updater);
+    static Metadata readUpdateStoreMetadataAndRemove(const String & remote_fs_root_path_, DiskPtr metadata_disk_, const String & metadata_file_path_, bool sync, Updater updater);
 
     static Metadata createAndStoreMetadata(const String & remote_fs_root_path_, DiskPtr metadata_disk_, const String & metadata_file_path_, bool sync);
     static Metadata createUpdateAndStoreMetadata(const String & remote_fs_root_path_, DiskPtr metadata_disk_, const String & metadata_file_path_, bool sync, Updater updater);

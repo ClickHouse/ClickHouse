@@ -1,4 +1,4 @@
-      ReadFromMergeTree
+      ReadFromMergeTree (default.test_index)
       Indexes:
         MinMax
           Keys: 
@@ -32,6 +32,7 @@
           Granules: 1/2
 -----------------
                   "Node Type": "ReadFromMergeTree",
+                  "Description": "default.test_index",
                   "Indexes": [
                     {
                       "Type": "MinMax",
@@ -89,16 +90,16 @@
   }
 ]
 -----------------
-          ReadFromMergeTree
+          ReadFromMergeTree (default.test_index)
           ReadType: InOrder
           Parts: 1
           Granules: 3
 -----------------
-          ReadFromMergeTree
+          ReadFromMergeTree (default.test_index)
           ReadType: InReverseOrder
           Parts: 1
           Granules: 3
-      ReadFromMergeTree
+      ReadFromMergeTree (default.idx)
       Indexes:
         PrimaryKey
           Keys: 

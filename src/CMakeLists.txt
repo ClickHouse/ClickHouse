@@ -49,6 +49,18 @@ if (COMPILER_GCC)
     add_definitions ("-fno-tree-loop-distribute-patterns")
 endif ()
 
+# ClickHouse developers may use platform-dependent code under some macro (e.g. `#ifdef ENABLE_MULTITARGET`).
+# If turned ON, this option defines such macro.
+# See `src/Common/TargetSpecific.h`
+option(ENABLE_MULTITARGET_CODE "Enable platform-dependent code" ON)
+
+if (ENABLE_MULTITARGET_CODE)
+    add_definitions(-DENABLE_MULTITARGET_CODE=1)
+else()
+    add_definitions(-DENABLE_MULTITARGET_CODE=0)
+endif()
+
+
 add_subdirectory (Access)
 add_subdirectory (Backups)
 add_subdirectory (Columns)
@@ -71,6 +83,9 @@ add_subdirectory (Formats)
 add_subdirectory (Compression)
 add_subdirectory (Server)
 add_subdirectory (Coordination)
+add_subdirectory (Bridge)
+add_subdirectory (Daemon)
+add_subdirectory (Loggers)
 
 
 set(dbms_headers)
@@ -144,7 +159,6 @@ list (APPEND dbms_sources
     AggregateFunctions/AggregateFunctionState.cpp
     AggregateFunctions/AggregateFunctionCount.cpp
     AggregateFunctions/parseAggregateFunctionParameters.cpp)
-
 list (APPEND dbms_headers
     AggregateFunctions/IAggregateFunction.h
     AggregateFunctions/IAggregateFunctionCombinator.h
@@ -155,10 +169,25 @@ list (APPEND dbms_headers
     AggregateFunctions/FactoryHelpers.h
     AggregateFunctions/parseAggregateFunctionParameters.h)
 
-list (APPEND dbms_sources TableFunctions/ITableFunction.cpp TableFunctions/TableFunctionFactory.cpp)
-list (APPEND dbms_headers TableFunctions/ITableFunction.h   TableFunctions/TableFunctionFactory.h)
-list (APPEND dbms_sources Dictionaries/DictionaryFactory.cpp Dictionaries/DictionarySourceFactory.cpp Dictionaries/DictionaryStructure.cpp  Dictionaries/getDictionaryConfigurationFromAST.cpp)
-list (APPEND dbms_headers Dictionaries/DictionaryFactory.h   Dictionaries/DictionarySourceFactory.h   Dictionaries/DictionaryStructure.h Dictionaries/getDictionaryConfigurationFromAST.h)
+list (APPEND dbms_sources
+    TableFunctions/ITableFunction.cpp
+    TableFunctions/TableFunctionView.cpp
+    TableFunctions/TableFunctionFactory.cpp)
+list (APPEND dbms_headers
+    TableFunctions/ITableFunction.h
+    TableFunctions/TableFunctionView.h
+    TableFunctions/TableFunctionFactory.h)
+
+list (APPEND dbms_sources
+    Dictionaries/DictionaryFactory.cpp
+    Dictionaries/DictionarySourceFactory.cpp
+    Dictionaries/DictionaryStructure.cpp
+    Dictionaries/getDictionaryConfigurationFromAST.cpp)
+list (APPEND dbms_headers
+    Dictionaries/DictionaryFactory.h
+    Dictionaries/DictionarySourceFactory.h
+    Dictionaries/DictionaryStructure.h
+    Dictionaries/getDictionaryConfigurationFromAST.h)
 
 if (NOT ENABLE_SSL)
     list (REMOVE_ITEM clickhouse_common_io_sources Common/OpenSSLHelpers.cpp)
@@ -232,7 +261,7 @@ add_object_library(clickhouse_storages_mergetree Storages/MergeTree)
 add_object_library(clickhouse_storages_liveview Storages/LiveView)
 add_object_library(clickhouse_storages_windowview Storages/WindowView)
 add_object_library(clickhouse_client Client)
-add_object_library(clickhouse_bridge Bridge)
+add_object_library(clickhouse_bridge BridgeHelper)
 add_object_library(clickhouse_server Server)
 add_object_library(clickhouse_server_http Server/HTTP)
 add_object_library(clickhouse_formats Formats)
@@ -253,18 +282,16 @@ if (TARGET ch_contrib::nuraft)
     add_object_library(clickhouse_coordination Coordination)
 endif()
 
-set (DBMS_COMMON_LIBRARIES)
-
 if (USE_STATIC_LIBRARIES OR NOT SPLIT_SHARED_LIBRARIES)
     add_library (dbms STATIC ${dbms_headers} ${dbms_sources})
-    target_link_libraries (dbms PRIVATE ch_contrib::libdivide ${DBMS_COMMON_LIBRARIES})
+    target_link_libraries (dbms PRIVATE ch_contrib::libdivide)
     if (TARGET ch_contrib::jemalloc)
         target_link_libraries (dbms PRIVATE ch_contrib::jemalloc)
     endif()
     set (all_modules dbms)
 else()
     add_library (dbms SHARED ${dbms_headers} ${dbms_sources})
-    target_link_libraries (dbms PUBLIC ${all_modules} ${DBMS_COMMON_LIBRARIES})
+    target_link_libraries (dbms PUBLIC ${all_modules})
     target_link_libraries (clickhouse_interpreters PRIVATE ch_contrib::libdivide)
     if (TARGET ch_contrib::jemalloc)
         target_link_libraries (clickhouse_interpreters PRIVATE ch_contrib::jemalloc)
@@ -482,6 +509,11 @@ endif()
 
 target_link_libraries (clickhouse_common_io PUBLIC ch_contrib::fast_float)
 
+if (USE_ORC)
+    dbms_target_link_libraries(PUBLIC ${ORC_LIBRARIES})
+    dbms_target_include_directories(SYSTEM BEFORE PUBLIC ${ORC_INCLUDE_DIR} "${CMAKE_BINARY_DIR}/contrib/orc/c++/include")
+endif ()
+
 if (TARGET ch_contrib::rocksdb)
     dbms_target_link_libraries(PUBLIC ch_contrib::rocksdb)
 endif()
@@ -556,6 +588,14 @@ if (ENABLE_TESTS)
         clickhouse_common_config
         clickhouse_common_zookeeper
         string_utils)
+
+    if (TARGET ch_contrib::simdjson)
+        target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::simdjson)
+    endif()
+
+    if (TARGET ch_contrib::yaml_cpp)
+        target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::yaml_cpp)
+    endif()
 
     add_check(unit_tests_dbms)
 endif ()

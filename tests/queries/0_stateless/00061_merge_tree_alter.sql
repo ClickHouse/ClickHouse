@@ -1,3 +1,5 @@
+-- Tags: no-backward-compatibility-check
+
 DROP TABLE IF EXISTS alter_00061;
 CREATE TABLE alter_00061 (d Date, k UInt64, i32 Int32) ENGINE=MergeTree(d, k, 8192);
 

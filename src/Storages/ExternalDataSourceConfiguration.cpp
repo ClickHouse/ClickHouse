@@ -34,7 +34,7 @@ IMPLEMENT_SETTINGS_TRAITS(EmptySettingsTraits, EMPTY_SETTINGS)
 static const std::unordered_set<std::string_view> dictionary_allowed_keys = {
     "host", "port", "user", "password", "db",
     "database", "table", "schema", "replica",
-    "update_field", "update_tag", "invalidate_query", "query",
+    "update_field", "update_lag", "invalidate_query", "query",
     "where", "name", "secure", "uri", "collection"};
 
 
@@ -325,6 +325,7 @@ void URLBasedDataSourceConfiguration::set(const URLBasedDataSourceConfiguration 
     compression_method = conf.compression_method;
     structure = conf.structure;
     http_method = conf.http_method;
+    headers = conf.headers;
 }
 
 
@@ -363,6 +364,10 @@ std::optional<URLBasedDataSourceConfig> getURLBasedDataSourceConfiguration(const
             else if (key == "structure")
             {
                 configuration.structure = config.getString(config_prefix + ".structure", "");
+            }
+            else if (key == "compression_method")
+            {
+                configuration.compression_method = config.getString(config_prefix + ".compression_method", "");
             }
             else if (key == "headers")
             {

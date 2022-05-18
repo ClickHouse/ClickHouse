@@ -21,12 +21,14 @@ from threading import Thread, Event
 from subprocess import Popen
 from queue import Queue, Empty
 
+
 class TimeoutError(Exception):
     def __init__(self, timeout):
         self.timeout = timeout
 
     def __str__(self):
-        return 'Timeout %.3fs' % float(self.timeout)
+        return "Timeout %.3fs" % float(self.timeout)
+
 
 class ExpectTimeoutError(Exception):
     def __init__(self, pattern, timeout, buffer):
@@ -35,13 +37,14 @@ class ExpectTimeoutError(Exception):
         self.buffer = buffer
 
     def __str__(self):
-        s = 'Timeout %.3fs ' % float(self.timeout)
+        s = "Timeout %.3fs " % float(self.timeout)
         if self.pattern:
-            s += 'for %s ' % repr(self.pattern.pattern)
+            s += "for %s " % repr(self.pattern.pattern)
         if self.buffer:
-            s += 'buffer %s' % repr(self.buffer[:])
-            #s += ' or \'%s\'' % ','.join(['%x' % ord(c) for c in self.buffer[:]])
+            s += "buffer %s" % repr(self.buffer[:])
+            # s += ' or \'%s\'' % ','.join(['%x' % ord(c) for c in self.buffer[:]])
         return s
+
 
 class IO(object):
     class EOF(object):
@@ -54,12 +57,12 @@ class IO(object):
     TIMEOUT = Timeout
 
     class Logger(object):
-        def __init__(self, logger, prefix=''):
+        def __init__(self, logger, prefix=""):
             self._logger = logger
             self._prefix = prefix
 
         def write(self, data):
-            self._logger.write(('\n' + data).replace('\n','\n' + self._prefix))
+            self._logger.write(("\n" + data).replace("\n", "\n" + self._prefix))
 
         def flush(self):
             self._logger.flush()
@@ -76,7 +79,7 @@ class IO(object):
         self.reader = reader
         self._timeout = None
         self._logger = None
-        self._eol = ''
+        self._eol = ""
 
     def __enter__(self):
         return self
@@ -84,7 +87,7 @@ class IO(object):
     def __exit__(self, type, value, traceback):
         self.close()
 
-    def logger(self, logger=None, prefix=''):
+    def logger(self, logger=None, prefix=""):
         if logger:
             self._logger = self.Logger(logger, prefix=prefix)
         return self._logger
@@ -100,15 +103,15 @@ class IO(object):
         return self._eol
 
     def close(self, force=True):
-        self.reader['kill_event'].set()
-        os.system('pkill -TERM -P %d' % self.process.pid)
+        self.reader["kill_event"].set()
+        os.system("pkill -TERM -P %d" % self.process.pid)
         if force:
             self.process.kill()
         else:
             self.process.terminate()
         os.close(self.master)
         if self._logger:
-            self._logger.write('\n')
+            self._logger.write("\n")
             self._logger.flush()
 
     def send(self, data, eol=None):
@@ -134,9 +137,9 @@ class IO(object):
             if self.buffer is not None:
                 self.match = pattern.search(self.buffer, 0)
                 if self.match is not None:
-                    self.after = self.buffer[self.match.start():self.match.end()]
-                    self.before = self.buffer[:self.match.start()]
-                    self.buffer = self.buffer[self.match.end():]
+                    self.after = self.buffer[self.match.start() : self.match.end()]
+                    self.before = self.buffer[: self.match.start()]
+                    self.buffer = self.buffer[self.match.end() :]
                     break
             if timeleft < 0:
                 break
@@ -144,16 +147,16 @@ class IO(object):
                 data = self.read(timeout=timeleft, raise_exception=True)
             except TimeoutError:
                 if self._logger:
-                    self._logger.write((self.buffer or '') + '\n')
+                    self._logger.write((self.buffer or "") + "\n")
                     self._logger.flush()
                 exception = ExpectTimeoutError(pattern, timeout, self.buffer)
                 self.buffer = None
                 raise exception
-            timeleft -= (time.time() - start_time)
+            timeleft -= time.time() - start_time
             if data:
                 self.buffer = (self.buffer + data) if self.buffer else data
         if self._logger:
-            self._logger.write((self.before or '') + (self.after or ''))
+            self._logger.write((self.before or "") + (self.after or ""))
             self._logger.flush()
         if self.match is None:
             exception = ExpectTimeoutError(pattern, timeout, self.buffer)
@@ -162,15 +165,15 @@ class IO(object):
         return self.match
 
     def read(self, timeout=0, raise_exception=False):
-        data = ''
+        data = ""
         timeleft = timeout
         try:
-            while timeleft >= 0 :
+            while timeleft >= 0:
                 start_time = time.time()
                 data += self.queue.get(timeout=timeleft)
                 if data:
                     break
-                timeleft -= (time.time() - start_time)
+                timeleft -= time.time() - start_time
         except Empty:
             if data:
                 return data
@@ -182,9 +185,17 @@ class IO(object):
 
         return data
 
+
 def spawn(command):
     master, slave = pty.openpty()
-    process = Popen(command, preexec_fn=os.setsid, stdout=slave, stdin=slave, stderr=slave, bufsize=1)
+    process = Popen(
+        command,
+        preexec_fn=os.setsid,
+        stdout=slave,
+        stdin=slave,
+        stderr=slave,
+        bufsize=1,
+    )
     os.close(slave)
 
     queue = Queue()
@@ -193,12 +204,18 @@ def spawn(command):
     thread.daemon = True
     thread.start()
 
-    return IO(process, master, queue, reader={'thread':thread, 'kill_event':reader_kill_event})
+    return IO(
+        process,
+        master,
+        queue,
+        reader={"thread": thread, "kill_event": reader_kill_event},
+    )
+
 
 def reader(process, out, queue, kill_event):
     while True:
         try:
-            data = os.read(out, 65536).decode(errors='replace')
+            data = os.read(out, 65536).decode(errors="replace")
             queue.put(data)
         except:
             if kill_event.is_set():

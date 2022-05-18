@@ -72,7 +72,7 @@ struct QualifiedTableName
         QualifiedTableName name;
         if (pos == std::string::npos)
         {
-            name.table = std::move(maybe_qualified_name);
+            name.table = maybe_qualified_name;
         }
         else if (maybe_qualified_name.find('.', pos + 1) != std::string::npos)
         {
@@ -119,7 +119,7 @@ namespace fmt
     template <>
     struct formatter<DB::QualifiedTableName>
     {
-        constexpr auto parse(format_parse_context & ctx)
+        static constexpr auto parse(format_parse_context & ctx)
         {
             return ctx.begin();
         }

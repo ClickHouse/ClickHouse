@@ -1,8 +1,8 @@
 ---
 machine_translated: true
 machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
-toc_priority: 45
-toc_title: "\u5206\u5C42\u5B57\u5178"
+sidebar_position: 45
+sidebar_label: "\u5206\u5C42\u5B57\u5178"
 ---
 
 # 分层字典 {#hierarchical-dictionaries}
@@ -37,7 +37,7 @@ ClickHouse支持分层字典与 [数字键](external-dicts-dict-structure.md#ext
 
 此表包含一列 `parent_region` 包含该元素的最近父项的键。
 
-ClickHouse支持 [等级](external-dicts-dict-structure.md#hierarchical-dict-attr) 属性为 [外部字典](index.md) 属性。 此属性允许您配置类似于上述的分层字典。
+ClickHouse支持 [等级](external-dicts-dict-structure.md#hierarchical-dict-attr) 属性为 [外部字典](./external-dicts-dict-structure.md) 属性。 此属性允许您配置类似于上述的分层字典。
 
 该 [独裁主义](../../../sql-reference/functions/ext-dict-functions.md#dictgethierarchy) 函数允许您获取元素的父链。
 

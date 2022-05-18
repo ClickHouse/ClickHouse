@@ -1,6 +1,6 @@
 ---
-toc_priority: 61
-toc_title: Составные типы
+sidebar_position: 61
+sidebar_label: Составные типы
 ---
 
 # Составные типы {#multiword-types}

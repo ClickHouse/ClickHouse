@@ -1,6 +1,9 @@
 #pragma once
-#if defined(OS_LINUX)
+#if defined(OS_LINUX) || defined(OS_FREEBSD)
 #include <cstdint>
+#if defined(OS_FREEBSD)
+#include <unistd.h>
+#endif
 
 
 namespace DB
@@ -23,7 +26,9 @@ public:
     {
         uint64_t virt;
         uint64_t resident;
+#if defined(OS_LINUX)
         uint64_t shared;
+#endif
         uint64_t code;
         uint64_t data_and_stack;
     };
@@ -35,7 +40,13 @@ public:
     Data get() const;
 
 private:
+#if defined(OS_LINUX)
     int fd;
+#endif
+#if defined(OS_FREEBSD)
+    int pagesize;
+    pid_t self;
+#endif
 };
 
 }

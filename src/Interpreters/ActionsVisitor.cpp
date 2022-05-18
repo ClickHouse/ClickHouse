@@ -81,7 +81,10 @@ static Block createBlockFromCollection(const Collection & collection, const Data
     size_t columns_num = types.size();
     MutableColumns columns(columns_num);
     for (size_t i = 0; i < columns_num; ++i)
+    {
         columns[i] = types[i]->createColumn();
+        columns[i]->reserve(collection.size());
+    }
 
     Row tuple_values;
     for (const auto & value : collection)
@@ -120,7 +123,7 @@ static Block createBlockFromCollection(const Collection & collection, const Data
 
             if (i == tuple_size)
                 for (i = 0; i < tuple_size; ++i)
-                    columns[i]->insert(std::move(tuple_values[i]));
+                    columns[i]->insert(tuple_values[i]);
         }
     }
 
@@ -249,6 +252,17 @@ static Block createBlockFromAST(const ASTPtr & node, const DataTypes & types, Co
     return header.cloneWithColumns(std::move(columns));
 }
 
+
+namespace
+{
+
+/** Create a block for set from expression.
+  * 'set_element_types' - types of what are on the left hand side of IN.
+  * 'right_arg' - list of values: 1, 2, 3 or list of tuples: (1, 2), (3, 4), (5, 6).
+  *
+  *  We need special implementation for ASTFunction, because in case, when we interpret
+  *  large tuple or array as function, `evaluateConstantExpression` works extremely slow.
+  */
 Block createBlockForSet(
     const DataTypePtr & left_arg_type,
     const ASTPtr & right_arg,
@@ -292,6 +306,10 @@ Block createBlockForSet(
     return block;
 }
 
+/** Create a block for set from literal.
+  * 'set_element_types' - types of what are on the left hand side of IN.
+  * 'right_arg' - Literal - Tuple or Array.
+  */
 Block createBlockForSet(
     const DataTypePtr & left_arg_type,
     const std::shared_ptr<ASTFunction> & right_arg,
@@ -343,6 +361,9 @@ Block createBlockForSet(
     return createBlockFromAST(elements_ast, set_element_types, context);
 }
 
+}
+
+
 SetPtr makeExplicitSet(
     const ASTFunction * node, const ActionsDAG & actions, bool create_ordered_set,
     ContextPtr context, const SizeLimits & size_limits, PreparedSets & prepared_sets)
@@ -369,8 +390,8 @@ SetPtr makeExplicitSet(
             element_type = low_cardinality_type->getDictionaryType();
 
     auto set_key = PreparedSetKey::forLiteral(*right_arg, set_element_types);
-    if (prepared_sets.count(set_key))
-        return prepared_sets.at(set_key); /// Already prepared.
+    if (auto it = prepared_sets.find(set_key); it != prepared_sets.end())
+        return it->second; /// Already prepared.
 
     Block block;
     const auto & right_arg_func = std::dynamic_pointer_cast<ASTFunction>(right_arg);
@@ -385,13 +406,13 @@ SetPtr makeExplicitSet(
     set->insertFromBlock(block.getColumnsWithTypeAndName());
     set->finishInsert();
 
-    prepared_sets[set_key] = set;
+    prepared_sets.emplace(set_key, set);
     return set;
 }
 
 ScopeStack::Level::~Level() = default;
 ScopeStack::Level::Level() = default;
-ScopeStack::Level::Level(Level &&) = default;
+ScopeStack::Level::Level(Level &&) noexcept = default;
 
 class ScopeStack::Index
 {
@@ -434,7 +455,7 @@ public:
         return *node;
     }
 
-    bool contains(const std::string & name) const { return map.count(name) > 0; }
+    bool contains(const std::string & name) const { return map.contains(name); }
 };
 
 ActionsMatcher::Data::Data(
@@ -504,7 +525,7 @@ size_t ScopeStack::getColumnLevel(const std::string & name)
     {
         --i;
 
-        if (stack[i].inputs.count(name))
+        if (stack[i].inputs.contains(name))
             return i;
 
         const auto * node = stack[i].index->tryGetNode(name);
@@ -704,7 +725,7 @@ ASTs ActionsMatcher::doUntuple(const ASTFunction * function, ActionsMatcher::Dat
         if (tid != 0)
             tuple_ast = tuple_ast->clone();
 
-        auto literal = std::make_shared<ASTLiteral>(UInt64(++tid));
+        auto literal = std::make_shared<ASTLiteral>(UInt64{++tid});
         visit(*literal, literal, data);
 
         auto func = makeASTFunction("tupleElement", tuple_ast, literal);
@@ -811,14 +832,13 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
             if (!data.only_consts)
             {
                 /// We are in the part of the tree that we are not going to compute. You just need to define types.
-                /// Do not subquery and create sets. We replace "in*" function to "in*IgnoreSet".
+                /// Do not evaluate subquery and create sets. We replace "in*" function to "in*IgnoreSet".
 
                 auto argument_name = node.arguments->children.at(0)->getColumnName();
-
                 data.addFunction(
-                        FunctionFactory::instance().get(node.name + "IgnoreSet", data.getContext()),
-                        { argument_name, argument_name },
-                        column_name);
+                    FunctionFactory::instance().get(node.name + "IgnoreSet", data.getContext()),
+                    {argument_name, argument_name},
+                    column_name);
             }
             return;
         }
@@ -1142,8 +1162,8 @@ SetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool no_su
         if (no_subqueries)
             return {};
         auto set_key = PreparedSetKey::forSubquery(*right_in_operand);
-        if (data.prepared_sets.count(set_key))
-            return data.prepared_sets.at(set_key);
+        if (auto it = data.prepared_sets.find(set_key); it != data.prepared_sets.end())
+            return it->second;
 
         /// A special case is if the name of the table is specified on the right side of the IN statement,
         ///  and the table has the type Set (a previously prepared set).
@@ -1157,7 +1177,7 @@ SetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool no_su
                 StorageSet * storage_set = dynamic_cast<StorageSet *>(table.get());
                 if (storage_set)
                 {
-                    data.prepared_sets[set_key] = storage_set->getSet();
+                    data.prepared_sets.emplace(set_key, storage_set->getSet());
                     return storage_set->getSet();
                 }
             }
@@ -1171,7 +1191,7 @@ SetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool no_su
         /// If you already created a Set with the same subquery / table.
         if (subquery_for_set.set)
         {
-            data.prepared_sets[set_key] = subquery_for_set.set;
+            data.prepared_sets.emplace(set_key, subquery_for_set.set);
             return subquery_for_set.set;
         }
 
@@ -1193,7 +1213,7 @@ SetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool no_su
         }
 
         subquery_for_set.set = set;
-        data.prepared_sets[set_key] = set;
+        data.prepared_sets.emplace(set_key, set);
         return set;
     }
     else

@@ -6,7 +6,7 @@
 #include <Access/Credentials.h>
 #include <Access/LDAPClient.h>
 #include <Common/Exception.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <base/scope_guard.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/JSON/JSON.h>
@@ -140,7 +140,7 @@ void LDAPAccessStorage::applyRoleChangeNoLock(bool grant, const UUID & role_id, 
     std::vector<UUID> user_ids;
 
     // Build a list of ids of the relevant users.
-    if (common_role_names.count(role_name))
+    if (common_role_names.contains(role_name))
     {
         user_ids = memory_storage.findAll<User>();
     }
@@ -208,7 +208,7 @@ void LDAPAccessStorage::assignRolesNoLock(User & user, const LDAPClient::SearchR
 {
     const auto & user_name = user.getName();
     auto & granted_roles = user.granted_roles;
-    const auto local_role_names = mapExternalRolesNoLock(external_roles);
+    auto local_role_names = mapExternalRolesNoLock(external_roles);
 
     auto grant_role = [this, &user_name, &granted_roles] (const String & role_name, const bool common)
     {
@@ -254,7 +254,7 @@ void LDAPAccessStorage::assignRolesNoLock(User & user, const LDAPClient::SearchR
     // Cleanup users_per_roles and granted_role_* mappings.
     for (const auto & old_role_name : old_role_names)
     {
-        if (local_role_names.count(old_role_name))
+        if (local_role_names.contains(old_role_name))
             continue;
 
         const auto rit = users_per_roles.find(old_role_name);
@@ -269,7 +269,7 @@ void LDAPAccessStorage::assignRolesNoLock(User & user, const LDAPClient::SearchR
 
         users_per_roles.erase(rit);
 
-        if (common_role_names.count(old_role_name))
+        if (common_role_names.contains(old_role_name))
             continue;
 
         const auto iit = granted_role_ids.find(old_role_name);
@@ -481,7 +481,9 @@ std::optional<UUID> LDAPAccessStorage::authenticateImpl(
     const Credentials & credentials,
     const Poco::Net::IPAddress & address,
     const ExternalAuthenticators & external_authenticators,
-    bool throw_if_user_not_exists) const
+    bool throw_if_user_not_exists,
+    bool /* allow_no_password */,
+    bool /* allow_plaintext_password */) const
 {
     std::scoped_lock lock(mutex);
     auto id = memory_storage.find<User>(credentials.getUserName());

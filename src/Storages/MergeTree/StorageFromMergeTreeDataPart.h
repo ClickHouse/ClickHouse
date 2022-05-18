@@ -9,22 +9,36 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Core/Defines.h>
 
-#include <base/shared_ptr_helper.h>
-
 
 namespace DB
 {
 
 /// A Storage that allows reading from a single MergeTree data part.
-class StorageFromMergeTreeDataPart final : public shared_ptr_helper<StorageFromMergeTreeDataPart>, public IStorage
+class StorageFromMergeTreeDataPart final : public IStorage
 {
-    friend struct shared_ptr_helper<StorageFromMergeTreeDataPart>;
 public:
+    /// Used in part mutation.
+    explicit StorageFromMergeTreeDataPart(const MergeTreeData::DataPartPtr & part_)
+        : IStorage(getIDFromPart(part_))
+        , parts({part_})
+        , storage(part_->storage)
+        , partition_id(part_->info.partition_id)
+    {
+        setInMemoryMetadata(storage.getInMemoryMetadata());
+    }
+
+    /// Used in queries with projection.
+    StorageFromMergeTreeDataPart(const MergeTreeData & storage_, MergeTreeDataSelectAnalysisResultPtr analysis_result_ptr_)
+        : IStorage(storage_.getStorageID()), storage(storage_), analysis_result_ptr(analysis_result_ptr_)
+    {
+        setInMemoryMetadata(storage.getInMemoryMetadata());
+    }
+
     String getName() const override { return "FromMergeTreeDataPart"; }
 
     Pipe read(
         const Names & column_names,
-        const StorageMetadataPtr & metadata_snapshot,
+        const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,
         ContextPtr context,
         QueryProcessingStage::Enum /*processed_stage*/,
@@ -35,8 +49,7 @@ public:
                                               .readFromParts(
                                                   parts,
                                                   column_names,
-                                                  metadata_snapshot,
-                                                  metadata_snapshot,
+                                                  storage_snapshot,
                                                   query_info,
                                                   context,
                                                   max_block_size,
@@ -76,24 +89,6 @@ public:
     bool materializeTTLRecalculateOnly() const
     {
         return parts.front()->storage.getSettings()->materialize_ttl_recalculate_only;
-    }
-
-protected:
-    /// Used in part mutation.
-    StorageFromMergeTreeDataPart(const MergeTreeData::DataPartPtr & part_)
-        : IStorage(getIDFromPart(part_))
-        , parts({part_})
-        , storage(part_->storage)
-        , partition_id(part_->info.partition_id)
-    {
-        setInMemoryMetadata(storage.getInMemoryMetadata());
-    }
-
-    /// Used in queries with projection.
-    StorageFromMergeTreeDataPart(const MergeTreeData & storage_, MergeTreeDataSelectAnalysisResultPtr analysis_result_ptr_)
-        : IStorage(storage_.getStorageID()), storage(storage_), analysis_result_ptr(analysis_result_ptr_)
-    {
-        setInMemoryMetadata(storage.getInMemoryMetadata());
     }
 
 private:

@@ -33,7 +33,7 @@ struct MarkInCompressedFile
         return "(" + DB::toString(offset_in_compressed_file) + "," + DB::toString(offset_in_decompressed_block) + ")";
     }
 
-    String toStringWithRows(size_t rows_num)
+    String toStringWithRows(size_t rows_num) const
     {
         return "(" + DB::toString(offset_in_compressed_file) + "," + DB::toString(offset_in_decompressed_block) + "," + DB::toString(rows_num) + ")";
     }
@@ -43,7 +43,7 @@ struct MarkInCompressedFile
 class MarksInCompressedFile : public PODArray<MarkInCompressedFile>
 {
 public:
-    MarksInCompressedFile(size_t n) : PODArray(n) {}
+    explicit MarksInCompressedFile(size_t n) : PODArray(n) {}
 
     void read(ReadBuffer & buffer, size_t from, size_t count)
     {
