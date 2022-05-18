@@ -13,12 +13,12 @@ INSERT INTO data (*)
 VALUES (1, 20, 'bsdf', -18731.5032), (2, 30, 'cdsf', 65289.5061), (3, 10, 'asdf', -87586.1517);
 
 -- tests
-select anyOrderBy(n, 'asc') from data;
-select anyOrderBy(n, 'desc') from data;
-select anyOrderBy(s, ' Asc') from data;
-select anyOrderBy(s, ' DESC  ') from data;
-select anyOrderBy(d, 'asc') from data;
-select anyOrderBy(d, ' ') from data;
+select anyOrderBy('asc')(n) from data;
+select anyOrderBy('desc')(n) from data;
+select anyOrderBy(' Asc')(s) from data;
+select anyOrderBy(' DESC  ')(s) from data;
+select anyOrderBy('asc')(d) from data;
+select anyOrderBy(' ')(d) from data;
 
 -- cleanup
 DROP TABLE data;

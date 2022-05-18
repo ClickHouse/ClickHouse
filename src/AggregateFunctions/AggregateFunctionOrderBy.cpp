@@ -26,11 +26,22 @@ public:
             throw Exception("Incorrect number of arguments for aggregate function with " + getName() + " suffix",
                             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        DataTypes newArguments(arguments.size() - 1);
-        for (size_t i = 0; i < arguments.size() - 1; i++) {
+        DataTypes newArguments(arguments.size());
+        for (size_t i = 0; i < arguments.size(); i++) {
             newArguments[i] = arguments[i];
         }
         return newArguments;
+    }
+
+    Array transformParameters(const Array & params) const override 
+    {
+        if (params.empty())
+            throw Exception("Incorrect number of parameters for aggregate function with " + getName() + " suffix",
+                            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+        if (params[0].getType() != Field::Types::Which::String)
+            throw Exception("Incorrect number of arguments for aggregate function with " + getName() + " suffix",
+                            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        return Array(std::next(params.begin()), params.end());
     }
 
     AggregateFunctionPtr transformAggregateFunction(

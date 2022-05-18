@@ -96,6 +96,7 @@ private:
     AggregateFunctionPtr nested_func;
     size_t num_arguments;
     DataTypes arguments_;
+    std::string query;
 
     /*
      * Input: sort parameters. For example "ASC, DESC, ASC"
@@ -103,7 +104,7 @@ private:
      *
      * Output: vector of sort directions (true is upper, false is lower)
      */
-    std::vector<int8_t> parseStringToVector(String & s) const
+    std::vector<int8_t> parseStringToVector(const String & s) const
     {
         std::vector<int8_t> columnToDirection;
         String curDirection;
@@ -180,12 +181,14 @@ public:
         , nested_func(nested_), num_arguments(arguments.size()), arguments_(arguments)
     {
         printf("arguments: %zu, params: %zu\n", arguments.size(), params_.size());
+        printf("param=%s\n", params_[0].get<String>().c_str());
         if (arguments.size() == 0)
             throw Exception(
                 "Aggregate function " + getName() + " require at least one argument", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-        if (arguments[num_arguments - 1]->getName() != "String")
-            throw Exception(
-                "Last parameter for aggregate function combinator " + getName() + " must be String", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        // if (arguments[num_arguments - 1]->getName() != "String")
+            // throw Exception(
+                // "Last parameter for aggregate function combinator " + getName() + " must be String", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        query = params_[0].get<String>();
     }
 
     String getName() const override
@@ -260,14 +263,14 @@ public:
         }
 
         // init query
-        if (data(place).query.empty())
-        {
-            Field field;
-            columns[num_arguments - 1]->get(0, field);
-            data(place).setQuery(field.get<std::string>());
-        }
+        // if (data(place).query.empty())
+        // {
+        //     Field field;
+        //     columns[num_arguments - 1]->get(0, field);
+        //     data(place).setQuery(field.get<std::string>());
+        // }
 
-        for (size_t k = 0; k < num_arguments - 1; k++)
+        for (size_t k = 0; k < num_arguments; k++)
         {
             Field columnField;
             columns[k]->get(row_num, columnField);
@@ -278,11 +281,11 @@ public:
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const override
     {
-        auto columnToDirection = parseStringToVector(data(place).query);
+        // auto columnToDirection = parseStringToVector(data(place).query);
+        auto columnToDirection = parseStringToVector(query);
+        IColumn * columns[num_arguments];
 
-        IColumn * columns[num_arguments - 1];
-
-        for (size_t k = 0; k < num_arguments - 1; k++)
+        for (size_t k = 0; k < num_arguments; k++)
         {
             auto newColumn = arguments_[k]->createColumn();
             for (size_t i = 0; i < data(place).columnsData[k].size(); i++)
@@ -293,8 +296,8 @@ public:
             columns[k] = newColumn.get();
         }
 
-        const IColumn * ans[num_arguments - 1];
-        for (size_t k = 0; k < num_arguments - 1; k++)
+        const IColumn * ans[num_arguments];
+        for (size_t k = 0; k < num_arguments; k++)
         {
             if (columnToDirection[k] == 0)
             {
