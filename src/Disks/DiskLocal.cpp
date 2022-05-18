@@ -437,7 +437,7 @@ void DiskLocal::copy(const String & from_path, const std::shared_ptr<IDisk> & to
         fs::copy(from, to, fs::copy_options::recursive | fs::copy_options::overwrite_existing); /// Use more optimal way.
     }
     else
-        copyThroughBuffers(from_path, to_disk, to_path, true); /// Base implementation.
+        copyThroughBuffers(from_path, to_disk, to_path, /* copy_root_dir */ true); /// Base implementation.
 }
 
 void DiskLocal::copyDirectoryContent(const String & from_dir, const std::shared_ptr<IDisk> & to_disk, const String & to_dir)
