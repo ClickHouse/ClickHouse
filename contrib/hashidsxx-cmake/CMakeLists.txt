@@ -1,10 +1,3 @@
-option(ENABLE_HASHIDSXX "Enable hashidsxx" ${ENABLE_LIBRARIES})
-
-if (NOT ENABLE_HASHIDSXX)
-    message(STATUS "Not using hashidsxx")
-    return()
-endif()
-
 set (LIBRARY_DIR "${ClickHouse_SOURCE_DIR}/contrib/hashidsxx")
 
 set (SRCS

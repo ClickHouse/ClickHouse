@@ -2,19 +2,17 @@
 
 #include <Common/config.h>
 
-#if USE_HASHIDSXX
+#include <hashids.h>
 
-#    include <hashids.h>
+#include <Columns/ColumnString.h>
+#include <Columns/ColumnsNumber.h>
+#include <DataTypes/DataTypeString.h>
+#include <Functions/FunctionFactory.h>
+#include <Functions/FunctionHelpers.h>
+#include <Functions/IFunction.h>
 
-#    include <Columns/ColumnString.h>
-#    include <Columns/ColumnsNumber.h>
-#    include <DataTypes/DataTypeString.h>
-#    include <Functions/FunctionFactory.h>
-#    include <Functions/FunctionHelpers.h>
-#    include <Functions/IFunction.h>
-
-#    include <functional>
-#    include <initializer_list>
+#include <functional>
+#include <initializer_list>
 
 namespace DB
 {
@@ -159,5 +157,3 @@ public:
 };
 
 }
-
-#endif

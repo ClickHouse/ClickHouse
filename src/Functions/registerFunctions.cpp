@@ -132,10 +132,7 @@ void registerFunctions()
 #endif
     registerFunctionTid(factory);
     registerFunctionLogTrace(factory);
-
-#if USE_HASHIDSXX
     registerFunctionHashID(factory);
-#endif
 }
 
 }
