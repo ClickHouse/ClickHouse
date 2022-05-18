@@ -14,7 +14,7 @@ namespace DB
 class CHColumnToArrowColumn
 {
 public:
-    CHColumnToArrowColumn(const Block & header, const std::string & format_name_, bool low_cardinality_as_dictionary_);
+    CHColumnToArrowColumn(const Block & header, const std::string & format_name_, bool low_cardinality_as_dictionary_, bool output_string_as_string_);
 
     void chChunkToArrowTable(std::shared_ptr<arrow::Table> & res, const Chunk & chunk, size_t columns_num);
 
@@ -27,6 +27,10 @@ private:
     /// To avoid converting dictionary from LowCardinality to Arrow
     /// Dictionary every chunk we save it and reuse.
     std::unordered_map<std::string, std::shared_ptr<arrow::Array>> dictionary_values;
+
+    /// Output columns with String data type as Arrow::String type.
+    /// By default Arrow::Binary is used.
+    bool output_string_as_string = false;
 };
 
 }
