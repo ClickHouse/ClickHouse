@@ -58,8 +58,7 @@ public:
         if (arguments.size() > 1)
         {
             const auto & hash_col = arguments[1];
-            const auto * hash_col_type_const = typeid_cast<const ColumnConst *>(hash_col.column.get());
-            if (!isString(hash_col.type) || !hash_col_type_const)
+            if (!isString(hash_col.type) || !isColumnConst(*hash_col.column.get()))
                 throw Exception(
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                     "Second argument of function {} must be String, got {}",
@@ -70,8 +69,7 @@ public:
         if (arguments.size() > 2)
         {
             const auto & min_length_col = arguments[2];
-            const auto * min_length_col_type_const = typeid_cast<const ColumnConst *>(min_length_col.column.get());
-            if (!isUInt8(min_length_col.type) || !min_length_col_type_const)
+            if (!isUInt8(min_length_col.type) || !isColumnConst(*min_length_col.column.get()))
                 throw Exception(
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                     "Third argument of function {} must be UInt8, got {}",
@@ -82,8 +80,7 @@ public:
         if (arguments.size() > 3)
         {
             const auto & alphabet_col = arguments[3];
-            const auto * alphabet_col_type_const = typeid_cast<const ColumnConst *>(alphabet_col.column.get());
-            if (!isString(alphabet_col.type) || !alphabet_col_type_const)
+            if (!isString(alphabet_col.type) || !isColumnConst(*alphabet_col.column.get()))
                 throw Exception(
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                     "Fourth argument of function {} must be String, got {}",
