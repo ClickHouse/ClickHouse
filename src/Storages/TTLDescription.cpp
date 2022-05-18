@@ -55,9 +55,11 @@ TTLAggregateDescription & TTLAggregateDescription::operator=(const TTLAggregateD
 namespace
 {
 
-void checkTTLExpression(const ExpressionActionsPtr & ttl_expression, const String & result_column_name)
+void checkTTLExpression(const ExpressionActionsPtr & ttl_expression, const String & result_column_name, bool is_attach)
 {
-    ttl_expression->getActionsDAG().assertDeterministic();
+    /// Do not apply this check in ATTACH queries for compatibility reasons.
+    if (!is_attach)
+        ttl_expression->getActionsDAG().assertDeterministic();
 
     const auto & result_column = ttl_expression->getSampleBlock().getByName(result_column_name);
     if (!typeid_cast<const DataTypeDateTime *>(result_column.type.get())
@@ -283,8 +285,7 @@ TTLDescription TTLDescription::getTTLFromAST(
         }
     }
 
-    if (!is_attach)
-        checkTTLExpression(result.expression, result.result_column);
+    checkTTLExpression(result.expression, result.result_column, is_attach);
     return result;
 }
 
