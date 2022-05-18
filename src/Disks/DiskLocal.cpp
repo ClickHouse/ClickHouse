@@ -445,7 +445,7 @@ void DiskLocal::copyDirectoryContent(const String & from_dir, const std::shared_
     if (isSameDiskType(*this, *to_disk))
         fs::copy(from_dir, to_dir, fs::copy_options::recursive | fs::copy_options::overwrite_existing); /// Use more optimal way.
     else
-        copyThroughBuffers(from_dir, to_disk, to_dir, false); /// Base implementation.
+        copyThroughBuffers(from_dir, to_disk, to_dir, /* copy_root_dir */ false); /// Base implementation.
 }
 
 SyncGuardPtr DiskLocal::getDirectorySyncGuard(const String & path) const
