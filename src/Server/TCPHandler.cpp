@@ -77,7 +77,6 @@ namespace ErrorCodes
     extern const int POCO_EXCEPTION;
     extern const int SOCKET_TIMEOUT;
     extern const int UNEXPECTED_PACKET_FROM_CLIENT;
-    extern const int SUPPORT_IS_DISABLED;
     extern const int UNKNOWN_PROTOCOL;
     extern const int AUTHENTICATION_FAILED;
 }

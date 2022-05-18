@@ -30,7 +30,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int SESSION_NOT_FOUND;
     extern const int SESSION_IS_LOCKED;
-    extern const int AUTHENTICATION_FAILED;
 }
 
 
