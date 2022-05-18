@@ -1,5 +1,7 @@
 #include <Disks/HDFSObjectStorage.h>
+
 #include <IO/SeekAvoidingReadBuffer.h>
+#include <IO/copyData.h>
 #include <Storages/HDFS/WriteBufferFromHDFS.h>
 #include <Storages/HDFS/HDFSCommon.h>
 #include <Storages/HDFS/ReadBufferFromHDFS.h>
@@ -17,7 +19,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int UNSUPPORTED_METHOD;
-    extern const int LOGICAL_ERROR;
+    extern const int HDFS_ERROR;
 }
 
 void HDFSObjectStorage::shutdown()
@@ -42,9 +44,7 @@ std::unique_ptr<SeekableReadBuffer> HDFSObjectStorage::readObject( /// NOLINT
     std::optional<size_t>,
     std::optional<size_t>) const
 {
-    auto buf = std::make_unique<ReadBufferFromHDFS>(path, path, config, read_settings.remote_fs_buffer_size);
-
-    return std::make_unique<SeekAvoidingReadBuffer>(std::move(buf), settings->min_bytes_for_seek);
+    return std::make_unique<ReadBufferFromHDFS>(path, path, config, read_settings.remote_fs_buffer_size);
 }
 
 std::unique_ptr<ReadBufferFromFileBase> HDFSObjectStorage::readObjects( /// NOLINT
@@ -86,7 +86,7 @@ void HDFSObjectStorage::listPrefix(const std::string & path, BlobsPathToSize & c
     int32_t num_entries;
     auto * files_list = hdfsListDirectory(hdfs_fs.get(), path.substr(begin_of_path).c_str(), &num_entries);
     if (num_entries == -1)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "HDFSDelete failed with path: " + path);
+        throw Exception(ErrorCodes::HDFS_ERROR, "HDFSDelete failed with path: " + path);
 
     for (int32_t i = 0; i < num_entries; ++i)
         children.emplace_back(files_list[i].mName, files_list[i].mSize);
@@ -100,7 +100,7 @@ void HDFSObjectStorage::removeObject(const std::string & path)
     /// Add path from root to file name
     int res = hdfsDelete(hdfs_fs.get(), path.substr(begin_of_path).c_str(), 0);
     if (res == -1)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "HDFSDelete failed with path: " + path);
+        throw Exception(ErrorCodes::HDFS_ERROR, "HDFSDelete failed with path: " + path);
 
 }
 
@@ -113,7 +113,7 @@ void HDFSObjectStorage::removeObjects(const std::vector<std::string> & paths)
         /// Add path from root to file name
         int res = hdfsDelete(hdfs_fs.get(), hdfs_path.substr(begin_of_path).c_str(), 0);
         if (res == -1)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "HDFSDelete failed with path: " + hdfs_path);
+            throw Exception(ErrorCodes::HDFS_ERROR, "HDFSDelete failed with path: " + hdfs_path);
     }
 }
 
@@ -135,7 +135,7 @@ void HDFSObjectStorage::removeObjectsIfExist(const std::vector<std::string> & pa
         /// Add path from root to file name
         int res = hdfsDelete(hdfs_fs.get(), hdfs_path.substr(begin_of_path).c_str(), 0);
         if (res == -1)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "HDFSDelete failed with path: " + hdfs_path);
+            throw Exception(ErrorCodes::HDFS_ERROR, "HDFSDelete failed with path: " + hdfs_path);
     }
 }
 
@@ -153,11 +153,20 @@ void HDFSObjectStorage::copyObject( /// NOLINT
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "HDFS API doesn't support custom attributes/metadata for stored objects");
 
     auto in = readObject(object_from);
-    auto out = writeObject(object_to);
+    auto out = writeObject(object_to, WriteMode::Rewrite);
     copyData(*in, *out);
     out->finalize();
 }
 
+
+void HDFSObjectStorage::applyNewSettings(const Poco::Util::AbstractConfiguration &, const std::string &, ContextPtr)
+{
+}
+
+std::unique_ptr<IObjectStorage> HDFSObjectStorage::cloneObjectStorage(const std::string &, const Poco::Util::AbstractConfiguration &, const std::string &, ContextPtr)
+{
+    throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "HDFS object storage doesn't support cloning");
+}
 
 }
 

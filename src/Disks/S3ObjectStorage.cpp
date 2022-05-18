@@ -34,6 +34,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int S3_ERROR;
+    extern const int BAD_ARGUMENTS;
 }
 
 namespace
@@ -133,12 +134,15 @@ std::unique_ptr<SeekableReadBuffer> S3ObjectStorage::readObject( /// NOLINT
 
 std::unique_ptr<WriteBufferFromFileBase> S3ObjectStorage::writeObject( /// NOLINT
     const std::string & path,
-    WriteMode /* mode */, // S3 doesn't support append, only rewrite
+    WriteMode mode, // S3 doesn't support append, only rewrite
     std::optional<ObjectAttributes> attributes,
     FinalizeCallback && finalize_callback,
     size_t buf_size,
     const WriteSettings & write_settings)
 {
+    if (mode != WriteMode::Rewrite)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "S3 doesn't support append to files");
+
     bool cache_on_write = cache
         && fs::path(path).extension() != ".tmp"
         && write_settings.enable_filesystem_cache_on_write_operations

@@ -41,7 +41,7 @@ void IObjectStorage::copyObjectToAnotherObjectStorage(const std::string & object
         copyObject(object_from, object_to, object_to_attributes);
 
     auto in = readObject(object_from);
-    auto out = object_storage_to.writeObject(object_to);
+    auto out = object_storage_to.writeObject(object_to, WriteMode::Rewrite);
     copyData(*in, *out);
     out->finalize();
 }
