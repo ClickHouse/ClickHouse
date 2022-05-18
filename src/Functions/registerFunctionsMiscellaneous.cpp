@@ -83,7 +83,6 @@ void registerFunctionZooKeeperSessionUptime(FunctionFactory &);
 void registerFunctionGetOSKernelVersion(FunctionFactory &);
 void registerFunctionGetTypeSerializationStreams(FunctionFactory &);
 void registerFunctionFlattenTuple(FunctionFactory &);
-void registerFunctionGrouping(FunctionFactory &);
 
 #if USE_ICU
 void registerFunctionConvertCharset(FunctionFactory &);
@@ -173,7 +172,6 @@ void registerFunctionsMiscellaneous(FunctionFactory & factory)
     registerFunctionGetOSKernelVersion(factory);
     registerFunctionGetTypeSerializationStreams(factory);
     registerFunctionFlattenTuple(factory);
-    registerFunctionGrouping(factory);
 
 #if USE_ICU
     registerFunctionConvertCharset(factory);

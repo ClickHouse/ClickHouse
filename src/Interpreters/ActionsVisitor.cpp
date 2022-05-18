@@ -1,3 +1,4 @@
+#include <memory>
 #include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
 #include <Columns/ColumnArray.h>
@@ -5,6 +6,7 @@
 #include <Core/ColumnNumbers.h>
 #include <Core/ColumnWithTypeAndName.h>
 
+#include <Functions/grouping.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsMiscellaneous.h>
 
@@ -839,89 +841,39 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
 
     if (node.name == "grouping")
     {
-        auto arguments_column_name = data.getUniqueName("__grouping_args");
+        ColumnNumbers arguments_indexes;
+        auto aggregation_keys_number = data.aggregation_keys.size();
+        for (auto const & arg : node.arguments->children)
         {
-            if (!data.hasColumn("__grouping_set_map"))
-            {
-                ColumnWithTypeAndName column;
-                column.name = "__grouping_set_map";
-                switch (data.group_by_kind)
-                {
-                    case GroupByKind::GROUPING_SETS:
-                    {
-                        size_t map_size = data.aggregation_keys.size() + 1;
-                        column.type = std::make_shared<DataTypeArray>(std::make_shared<DataTypeFixedString>(map_size));
-                        Array maps_per_set;
-                        for (auto & grouping_set : data.grouping_set_keys)
-                        {
-                            std::string key_map(map_size, '0');
-                            for (auto index : grouping_set)
-                                key_map[index] = '1';
-                            maps_per_set.push_back(key_map);
-                        }
-                        auto grouping_set_map_column = ColumnArray::create(ColumnFixedString::create(map_size));
-                        grouping_set_map_column->insert(maps_per_set);
-                        column.column = ColumnConst::create(std::move(grouping_set_map_column), 1);
-                        break;
-                    }
-                    case GroupByKind::ROLLUP:
-                    case GroupByKind::CUBE:
-                    {
-                        column.type = std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>());
-                        auto grouping_set_map_column = ColumnArray::create(ColumnUInt64::create());
-                        Array kind_and_keys_size;
-                        kind_and_keys_size.push_back(data.group_by_kind == GroupByKind::ROLLUP ? 0 : 1);
-                        kind_and_keys_size.push_back(data.aggregation_keys.size());
-                        grouping_set_map_column->insert(kind_and_keys_size);
-                        column.column = ColumnConst::create(std::move(grouping_set_map_column), 1);
-                        break;
-                    }
-                    case GroupByKind::ORDINARY:
-                    {
-                        column.type = std::make_shared<DataTypeUInt64>();
-                        auto grouping_set_map_column = ColumnUInt64::create(1, data.aggregation_keys.size());
-                        column.column = ColumnConst::create(std::move(grouping_set_map_column), 1);
-                        break;
-                    }
-                    default:
-                        throw Exception(ErrorCodes::LOGICAL_ERROR,
-                            "Unexpected kind of GROUP BY clause for GROUPING function: {}", data.group_by_kind);
-                }
-
-                data.addColumn(column);
-            }
-            ColumnWithTypeAndName column;
-            column.name = arguments_column_name;
-            column.type = std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>());
-            Array arguments_to_keys_map;
-            for (auto const & arg : node.arguments->children)
-            {
-                size_t pos = data.aggregation_keys.getPosByName(arg->getColumnName());
-                arguments_to_keys_map.push_back(pos);
-            }
-            auto arguments_column = ColumnArray::create(ColumnUInt64::create());
-            arguments_column->insert(Field{arguments_to_keys_map});
-
-            column.column = ColumnConst::create(ColumnPtr(std::move(arguments_column)), 1);
-
-            data.addColumn(column);
+            size_t pos = data.aggregation_keys.getPosByName(arg->getColumnName());
+            if (pos == aggregation_keys_number)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument of GROUPING function {} is not a part of GROUP BY clause", arg->getColumnName());
+            arguments_indexes.push_back(pos);
         }
 
-        if (data.group_by_kind != GroupByKind::ORDINARY)
+        switch (data.group_by_kind)
         {
-            data.addFunction(
-                FunctionFactory::instance().get("grouping", data.getContext()),
-                { "__grouping_set", "__grouping_set_map", arguments_column_name },
-                column_name
-            );
-        }
-        else
-        {
-            data.addFunction(
-                FunctionFactory::instance().get("grouping", data.getContext()),
-                { "__grouping_set_map", arguments_column_name },
-                column_name
-            );
+            case GroupByKind::GROUPING_SETS:
+            {
+                data.addFunction(std::make_shared<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionGroupingForGroupingSets>(std::move(arguments_indexes), data.grouping_set_keys)), { "__grouping_set" }, column_name);
+                break;
+            }
+            case GroupByKind::ROLLUP:
+                data.addFunction(std::make_shared<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionGroupingForRollup>(std::move(arguments_indexes), data.aggregation_keys.size())), { "__grouping_set" }, column_name);
+                break;
+            case GroupByKind::CUBE:
+            {
+                data.addFunction(std::make_shared<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionGroupingForCube>(std::move(arguments_indexes), data.aggregation_keys.size())), { "__grouping_set" }, column_name);
+                break;
+            }
+            case GroupByKind::ORDINARY:
+            {
+                data.addFunction(std::make_shared<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionGroupingOrdinary>(std::move(arguments_indexes))), {}, column_name);
+                break;
+            }
+            default:
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    "Unexpected kind of GROUP BY clause for GROUPING function: {}", data.group_by_kind);
         }
         return;
     }
