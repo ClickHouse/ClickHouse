@@ -1,5 +1,6 @@
 <test>
     <settings>
+        <max_memory_usage>100G</max_memory_usage>
         <allow_experimental_nlp_functions>1</allow_experimental_nlp_functions>
     </settings>
 

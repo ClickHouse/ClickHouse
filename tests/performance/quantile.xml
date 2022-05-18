@@ -1,4 +1,7 @@
 <test>
+    <settings>
+        <max_memory_usage>100G</max_memory_usage>
+    </settings>
     <substitutions>
         <substitution>
            <name>key</name>
