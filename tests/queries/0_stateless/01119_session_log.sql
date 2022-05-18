@@ -20,6 +20,10 @@ select * from url('http://127.0.0.1:8123/?query=select+1&user=nonexistsnt_user_1
 select * from url('http://127.0.0.1:8123/?query=select+1&user=+INTERSERVER+SECRET+', LineAsString, 's String'); -- { serverError RECEIVED_ERROR_FROM_REMOTE_IO_SERVER }
 select * from url('http://127.0.0.1:8123/?query=select+1&user=+++', LineAsString, 's String'); -- { serverError RECEIVED_ERROR_FROM_REMOTE_IO_SERVER }
 
+select * from cluster('test_cluster_interserver_secret', system, one);
+
 system flush logs;
 select distinct type, user, auth_type, toString(client_address)!='::ffff:0.0.0.0', client_port!=0, interface from system.session_log
-where user in ('default', 'nonexistsnt_user_1119', '   ', ' INTERSERVER SECRET ') and event_time >= now() - interval 5 minute order by type, user, interface;
+where user in ('default', 'nonexistsnt_user_1119', '   ', ' INTERSERVER SECRET ')
+and interface in ('HTTP', 'TCP', 'TCP_Interserver')
+and event_time >= now() - interval 5 minute order by type, user, interface;

@@ -85,7 +85,6 @@ private:
     mutable bool notified_session_log_about_login = false;
     const UUID auth_id;
     const ContextPtr global_context;
-    const ClientInfo::Interface interface;
 
     /// ClientInfo that will be copied to a session context when it's created.
     std::optional<ClientInfo> prepared_client_info;

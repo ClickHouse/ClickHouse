@@ -4,4 +4,23 @@
         <table>session_log</table>
         <flush_interval_milliseconds>100000</flush_interval_milliseconds>
     </session_log>
+
+
+    <remote_servers>
+        <test_cluster_interserver_secret>
+            <secret>123457</secret>
+            <shard>
+                <replica>
+                    <host>127.0.0.1</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+            <shard>
+                <replica>
+                    <host>127.0.0.2</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </test_cluster_interserver_secret>
+    </remote_servers>
 </clickhouse>
