@@ -67,7 +67,7 @@ DDLWorker::DDLWorker(
     const CurrentMetrics::Metric * max_pushed_entry_metric_)
     : context(Context::createCopy(context_))
     , log(&Poco::Logger::get(logger_name))
-    , dependencies_graph(context_)
+    , dependencies_graph(Context::createCopy(context_))
     , pool_size(pool_size_)
     , max_entry_metric(max_entry_metric_)
     , max_pushed_entry_metric(max_pushed_entry_metric_)
@@ -371,17 +371,6 @@ void DDLWorker::scheduleTasks(bool reinitialized)
         String entry_name = *it;
         LOG_TRACE(log, "Checking task {}", entry_name);
 
-        auto task_iter = std::find_if(current_tasks.begin(), current_tasks.end(), [&](const auto & t)
-        {
-            return t->entry_name == entry_name;
-        });
-
-        if (task_iter != current_tasks.end())
-        {
-            /// Task is not processed yet, but already initialized, skip it
-            continue;
-        }
-
         String reason;
         auto task = initAndCheckTask(entry_name, reason, zookeeper);
         if (task)
@@ -395,13 +384,13 @@ void DDLWorker::scheduleTasks(bool reinitialized)
             last_skipped_entry_name.emplace(entry_name);
             continue;
         }
-        dependencies_graph.addTask(std::move(task));
         saveTask(std::move(task));
+        dependencies_graph.addTask(std::move(task));
     }
 
     auto tasks_to_process = dependencies_graph.getTasksToParallelProcess();
 
-    for (auto & task_name : tasks_to_process)
+    for (const auto & task_name : tasks_to_process)
     {
         auto task_iter = std::find_if(current_tasks.begin(), current_tasks.end(), [&](const auto & t)
         {
@@ -431,13 +420,6 @@ void DDLWorker::scheduleTasks(bool reinitialized)
             processTask(task_to_process, zookeeper);
         }
     }
-
-    current_tasks.remove_if([&](const DDLTaskPtr & t)
-    {
-        return dependencies_graph.completely_processed_tasks[t->entry_name] = t->completely_processed.load();
-    });
-    dependencies_graph.removeProcessedTasks();
-
 }
 
 DDLTaskBase & DDLWorker::saveTask(DDLTaskPtr && task)
@@ -446,6 +428,7 @@ DDLTaskBase & DDLWorker::saveTask(DDLTaskPtr && task)
     {
         return dependencies_graph.completely_processed_tasks[t->entry_name] = t->completely_processed.load();
     });
+    dependencies_graph.removeProcessedTasks();
     /// Tasks are scheduled and executed in main thread <==> Parallel execution is disabled
     assert((worker_pool != nullptr) == (1 < pool_size));
     /// Parallel execution is disabled ==> All previous tasks are failed to start or finished,

@@ -15,7 +15,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-DependenciesGraph::DependenciesGraph(ContextPtr global_context_)
+DependenciesGraph::DependenciesGraph(ContextMutablePtr global_context_)
         : global_context(Context::createCopy(global_context_))
 {
     tasks_dependencies.default_database = global_context->getCurrentDatabase();
@@ -34,7 +34,9 @@ void DependenciesGraph::resetState()
 void DependenciesGraph::addTask(DDLTaskPtr && task)
 {
     tasks_dependencies.total_queries++;
-    auto name = task->entry_name;
+    const auto & name = task->entry_name;
+    if (tasks_dependencies.database_objects_in_query.contains(name))
+        return;
     auto database_objects_for_added_task = getDependenciesSetFromQuery(global_context, task->query);
     tasks_dependencies.database_objects_in_query[name] = database_objects_for_added_task;
     for (const auto & [query_name, query_objects] : tasks_dependencies.database_objects_in_query)
@@ -71,6 +73,7 @@ QueryNamesSet DependenciesGraph::getTasksToParallelProcess()
     tasks_processed += tasks_dependencies.independent_queries.size();
 
     logDependencyGraph();
+    removeProcessedTasks();
 
     return tasks_dependencies.independent_queries;
 }
@@ -83,7 +86,7 @@ void DependenciesGraph::removeProcessedTasks()
 
     while (task_name_it != old_independent_queries.end())
     {
-        auto & task_name = *task_name_it;
+        const auto & task_name = *task_name_it;
         if (completely_processed_tasks[task_name])
         {
             removeTask(task_name);

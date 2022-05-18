@@ -67,7 +67,7 @@ public:
     ProcessInfo completely_processed_tasks;
     QueryNamesSet currently_processing_tasks;
 
-    DependenciesGraph(ContextPtr global_context_);
+    DependenciesGraph(ContextMutablePtr global_context_);
     DependenciesGraph() = delete;
 
     void addTask(DDLTaskPtr && task);
@@ -81,7 +81,7 @@ public:
     QueryNamesSet getTasksToParallelProcess();
 
 private:
-    ContextPtr global_context;
+    ContextMutablePtr global_context;
 
     TasksDependencies tasks_dependencies;
     Poco::Logger * log;

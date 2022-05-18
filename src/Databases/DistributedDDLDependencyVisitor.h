@@ -17,7 +17,7 @@ class ASTSystemQuery;
 /// Contains also databases with no table name and dictionaries
 using TableNamesSet = std::unordered_set<QualifiedTableName>;
 
-TableNamesSet getDependenciesSetFromQuery(ContextPtr global_context, const ASTPtr & ast);
+TableNamesSet getDependenciesSetFromQuery(ContextMutablePtr global_context, const ASTPtr & ast);
 
 class DistributedDDLDependencyVisitor
 {
@@ -26,7 +26,7 @@ public:
     {
         String default_database;
         TableNamesSet dependencies;
-        ContextPtr global_context;
+        ContextMutablePtr global_context;
         ASTPtr query;
     };
 

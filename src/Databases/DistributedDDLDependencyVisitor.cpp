@@ -14,7 +14,7 @@
 namespace DB
 {
 
-    TableNamesSet getDependenciesSetFromQuery(ContextPtr global_context, const ASTPtr & ast)
+    TableNamesSet getDependenciesSetFromQuery(ContextMutablePtr global_context, const ASTPtr & ast)
     {
         assert(global_context == global_context->getGlobalContext());
         DistributedDDLDependenciesVisitor::Data data;
@@ -48,6 +48,9 @@ namespace DB
     bool DistributedDDLDependencyVisitor::needChildVisit(const ASTPtr & node, const ASTPtr & child)
     {
         if (node->as<ASTStorage>())
+            return false;
+
+        if (node->as<ASTTableIdentifier>())
             return false;
 
         if (auto * create = node->as<ASTCreateQuery>())
