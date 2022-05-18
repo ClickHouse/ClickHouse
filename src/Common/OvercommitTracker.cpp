@@ -192,3 +192,5 @@ void GlobalOvercommitTracker::pickQueryToExcludeImpl()
         current_ratio.committed, current_ratio.soft_limit);
     picked_tracker = query_tracker;
 }
+
+thread_local size_t OvercommitTrackerBlockerInThread::counter = 0;
