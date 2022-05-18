@@ -401,7 +401,7 @@ ColumnPtr ColumnVector<T>::index(const IColumn & indexes, size_t limit) const
 template <typename T>
 ColumnPtr ColumnVector<T>::replicate(const IColumn::Offsets & offsets) const
 {
-    #ifdef __SSE4_2__
+    #ifdef __SSE2__
     if constexpr (std::is_same_v<T, UInt32>)
     {
         return replicateSSE2(offsets);
@@ -427,7 +427,7 @@ ColumnPtr ColumnVector<T>::replicate(const IColumn::Offsets & offsets) const
     return res;
 }
 
-#ifdef __SSE4_2__
+#ifdef __SSE2__
 template <typename T>
 ColumnPtr ColumnVector<T>::replicateSSE2(const IColumn::Offsets & offsets) const
 {
