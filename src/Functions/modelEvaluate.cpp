@@ -14,7 +14,11 @@
 #include <Common/assert_cast.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/Context_fwd.h>
-
+#include <Interpreters/DatabaseCatalog.h>
+#include <Storages/IStorage_fwd.h>
+#include <Storages/IStorage.h>
+#include <Databases/IDatabase.h>
+#include <Storages/MLpack/StorageMLmodel.h>
 
 namespace DB
 {
@@ -99,14 +103,12 @@ public:
     }
 
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t counter_times) const override
     {
         const auto * name_col = checkAndGetColumnConst<ColumnString>(arguments[0].column.get());
         if (!name_col)
             throw Exception("First argument of function " + getName() + " must be a constant string",
                             ErrorCodes::ILLEGAL_COLUMN);
-
-        auto model = models_loader.getModel(name_col->getValue<String>());
 
         ColumnRawPtrs column_ptrs;
         Columns materialized_columns;
@@ -144,7 +146,22 @@ public:
             }
         }
 
-        auto res = model->evaluate(column_ptrs);
+
+        ColumnPtr res;
+
+        const std::string model_name = name_col->getValue<String>();
+        LOG_FATAL(&Poco::Logger::root(), "model name {}", model_name);
+        if (model_name == "lr") {
+            StoragePtr tableptr = DatabaseCatalog::instance().getTable(StorageID{"default", "testerg"}, CurrentThread::get().getQueryContext());
+            std::shared_ptr<StorageMLmodel> casted = std::dynamic_pointer_cast<StorageMLmodel>(tableptr);
+            res = casted->getModel()->evaluateModel(column_ptrs);
+        }
+
+        else
+        {
+            auto model = models_loader.getModel(name_col->getValue<String>());
+            res = model->evaluate(column_ptrs);
+        }
 
         if (null_map)
         {
