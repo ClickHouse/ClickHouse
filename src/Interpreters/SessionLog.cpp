@@ -253,10 +253,12 @@ void SessionLog::addLoginFailure(
     add(log_entry);
 }
 
-void SessionLog::addLogOut(const UUID & auth_id, const String & user, const ClientInfo & client_info)
+void SessionLog::addLogOut(const UUID & auth_id, const UserPtr & login_user, const ClientInfo & client_info)
 {
     auto log_entry = SessionLogElement(auth_id, SESSION_LOGOUT);
-    log_entry.user = user;
+    log_entry.user = login_user ? login_user->getName() : USER_INTERSERVER_MARKER;
+    log_entry.user_identified_with = login_user ? login_user->auth_data.getType() : AuthenticationType::INTERSERVER_SECRET;
+    log_entry.external_auth_server = login_user ? login_user->auth_data.getLDAPServerName() : "";
     log_entry.client_info = client_info;
 
     add(log_entry);

@@ -248,7 +248,6 @@ void Session::shutdownNamedSessions()
 Session::Session(const ContextPtr & global_context_, ClientInfo::Interface interface_, bool is_secure)
     : auth_id(UUIDHelpers::generateV4()),
       global_context(global_context_),
-      interface(interface_),
       log(&Poco::Logger::get(String{magic_enum::enum_name(interface_)} + "-Session"))
 {
     prepared_client_info.emplace();
@@ -269,8 +268,8 @@ Session::~Session()
 
     if (notified_session_log_about_login)
     {
-        if (auto session_log = getSessionLog(); session_log && user)
-            session_log->addLogOut(auth_id, user->getName(), getClientInfo());
+        if (auto session_log = getSessionLog())
+            session_log->addLogOut(auth_id, user, getClientInfo());
     }
 }
 
@@ -348,6 +347,7 @@ void Session::onAuthenticationFailure(const Credentials & credentials_, const Po
 
 ClientInfo & Session::getClientInfo()
 {
+    /// FIXME it may produce different info for LoginSuccess and the corresponding Logout entries in the session log
     return session_context ? session_context->getClientInfo() : *prepared_client_info;
 }
 
@@ -442,11 +442,6 @@ ContextMutablePtr Session::makeQueryContext(ClientInfo && query_client_info) con
 
 std::shared_ptr<SessionLog> Session::getSessionLog() const
 {
-    /// For the LOCAL interface we don't send events to the session log
-    /// because the LOCAL interface is internal, it does nothing with networking.
-    if (interface == ClientInfo::Interface::LOCAL)
-        return nullptr;
-
     // take it from global context, since it outlives the Session and always available.
     // please note that server may have session_log disabled, hence this may return nullptr.
     return global_context->getSessionLog();

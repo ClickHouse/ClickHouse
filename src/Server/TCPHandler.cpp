@@ -1270,19 +1270,21 @@ void TCPHandler::receiveQuery()
     /// TODO unify interserver authentication (currently this code looks like a backdoor at a first glance)
     if (is_interserver_mode)
     {
+        client_info.interface = ClientInfo::Interface::TCP_INTERSERVER;
 #if USE_SSL
         String user_for_session_log = client_info.initial_user;
         if (user_for_session_log.empty())
             user_for_session_log = USER_INTERSERVER_MARKER;
-        if (salt.empty())
+        String cluster_secret = server.context()->getCluster(cluster)->getSecret();
+        if (salt.empty() || cluster_secret.empty())
         {
             auto exception = Exception(ErrorCodes::AUTHENTICATION_FAILED, "Interserver authentication failed");
-            session->onAuthenticationFailure(AlwaysAllowCredentials{USER_INTERSERVER_MARKER}, client_info.initial_address, exception);
+            session->onAuthenticationFailure(AlwaysAllowCredentials{USER_INTERSERVER_MARKER}, socket().peerAddress(), exception);
             throw exception;
         }
 
         std::string data(salt);
-        data += server.context()->getCluster(cluster)->getSecret();
+        data += cluster_secret;
         data += state.query;
         data += state.query_id;
         data += client_info.initial_user;
@@ -1294,10 +1296,12 @@ void TCPHandler::receiveQuery()
         if (calculated_hash != received_hash)
         {
             auto exception = Exception(ErrorCodes::AUTHENTICATION_FAILED, "Interserver authentication failed");
-            session->onAuthenticationFailure(AlwaysAllowCredentials{USER_INTERSERVER_MARKER}, client_info.initial_address, exception);
+            session->onAuthenticationFailure(AlwaysAllowCredentials{USER_INTERSERVER_MARKER}, socket().peerAddress(), exception);
             throw exception;
         }
 
+        /// NOTE Usually we get some fields of client_info (including initial_address and initial_user) from user input,
+        /// so we should not rely on that. However, in this particular case we got client_info from other clickhouse-server, so it's ok.
         if (client_info.initial_user.empty())
         {
             LOG_DEBUG(log, "User (no user, interserver mode)");
@@ -1312,7 +1316,7 @@ void TCPHandler::receiveQuery()
         auto exception = Exception(
             "Inter-server secret support is disabled, because ClickHouse was built without SSL library",
             ErrorCodes::AUTHENTICATION_FAILED);
-        session->onAuthenticationFailure(AlwaysAllowCredentials{USER_INTERSERVER_MARKER}, client_info.initial_address, exception);
+        session->onAuthenticationFailure(AlwaysAllowCredentials{USER_INTERSERVER_MARKER}, socket().peerAddress(), exception);
         throw exception;
 #endif
     }
