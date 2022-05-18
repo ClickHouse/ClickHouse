@@ -47,7 +47,8 @@ public:
         if (arguments.size() < 1)
             throw Exception(ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION, "Function {} expects at least one argument", getName());
 
-        if (!isUnsignedInteger(arguments[0].type))
+        const auto & id_col = arguments[0];
+        if (!isUnsignedInteger(id_col.type))
             throw Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "First argument of function {} must be unsigned integer, got {}",
@@ -56,7 +57,9 @@ public:
 
         if (arguments.size() > 1)
         {
-            if (!isString(arguments[1].type))
+            const auto & hash_col = arguments[1];
+            const auto * hash_col_type_const = typeid_cast<const ColumnConst *>(hash_col.column.get());
+            if (!isString(hash_col.type) || !hash_col_type_const)
                 throw Exception(
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                     "Second argument of function {} must be String, got {}",
@@ -66,7 +69,9 @@ public:
 
         if (arguments.size() > 2)
         {
-            if (!isUInt8(arguments[2].type))
+            const auto & min_length_col = arguments[2];
+            const auto * min_length_col_type_const = typeid_cast<const ColumnConst *>(min_length_col.column.get());
+            if (!isUInt8(min_length_col.type) || !min_length_col_type_const)
                 throw Exception(
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                     "Third argument of function {} must be UInt8, got {}",
@@ -76,7 +81,9 @@ public:
 
         if (arguments.size() > 3)
         {
-            if (!isString(arguments[3].type))
+            const auto & alphabet_col = arguments[3];
+            const auto * alphabet_col_type_const = typeid_cast<const ColumnConst *>(alphabet_col.column.get());
+            if (!isString(alphabet_col.type) || !alphabet_col_type_const)
                 throw Exception(
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                     "Fourth argument of function {} must be String, got {}",
@@ -88,7 +95,7 @@ public:
         {
             throw Exception(
                 ErrorCodes::TOO_MANY_ARGUMENTS_FOR_FUNCTION,
-                "Function {} expect no more than three arguments (integer, salt, optional_alphabet), got {}",
+                "Function {} expect no more than four arguments (integer, salt, min_length, optional_alphabet), got {}",
                 getName(),
                 arguments.size());
         }
