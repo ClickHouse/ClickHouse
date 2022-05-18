@@ -452,7 +452,7 @@ DataTypePtr determineDataTypeByEscapingRule(const String & field, const FormatSe
             return buf.eof() ? type : nullptr;
         }
         case FormatSettings::EscapingRule::JSON:
-            return getDataTypeFromJSONField(field);
+            return JSONUtils::getDataTypeFromField(field);
         case FormatSettings::EscapingRule::CSV:
         {
             if (!format_settings.csv.input_format_use_best_effort_in_schema_inference)

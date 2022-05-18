@@ -16,7 +16,7 @@ JSONColumnsWithMetadataBlockOutputFormat::JSONColumnsWithMetadataBlockOutputForm
     : JSONColumnsBlockOutputFormat(out_, header_, format_settings_, 1)
 {
     bool need_validate_utf8 = false;
-    makeNamesAndTypesWithValidUTF8(fields, format_settings, need_validate_utf8);
+    JSONUtils::makeNamesAndTypesWithValidUTF8(fields, format_settings, need_validate_utf8);
 
     if (need_validate_utf8)
     {
@@ -27,8 +27,8 @@ JSONColumnsWithMetadataBlockOutputFormat::JSONColumnsWithMetadataBlockOutputForm
 
 void JSONColumnsWithMetadataBlockOutputFormat::writePrefix()
 {
-    writeJSONObjectStart(*ostr);
-    writeJSONMetadata(fields, format_settings, *ostr);
+    JSONUtils::writeObjectStart(*ostr);
+    JSONUtils::writeMetadata(fields, format_settings, *ostr);
 }
 
 void JSONColumnsWithMetadataBlockOutputFormat::writeSuffix()
@@ -39,13 +39,13 @@ void JSONColumnsWithMetadataBlockOutputFormat::writeSuffix()
 
 void JSONColumnsWithMetadataBlockOutputFormat::writeChunkStart()
 {
-    writeJSONFieldDelimiter(*ostr, 2);
-    writeJSONObjectStart(*ostr, 1, "data");
+    JSONUtils::writeFieldDelimiter(*ostr, 2);
+    JSONUtils::writeObjectStart(*ostr, 1, "data");
 }
 
 void JSONColumnsWithMetadataBlockOutputFormat::writeChunkEnd()
 {
-    writeJSONObjectEnd(*ostr, indent);
+    JSONUtils::writeObjectEnd(*ostr, indent);
 }
 
 void JSONColumnsWithMetadataBlockOutputFormat::consumeExtremes(Chunk chunk)
@@ -55,19 +55,19 @@ void JSONColumnsWithMetadataBlockOutputFormat::consumeExtremes(Chunk chunk)
         throw Exception("Got " + toString(num_rows) + " in extremes chunk, expected 2", ErrorCodes::LOGICAL_ERROR);
 
     const auto & columns = chunk.getColumns();
-    writeJSONFieldDelimiter(*ostr, 2);
-    writeJSONObjectStart(*ostr, 1, "extremes");
+    JSONUtils::writeFieldDelimiter(*ostr, 2);
+    JSONUtils::writeObjectStart(*ostr, 1, "extremes");
     writeExtremesElement("min", columns, 0);
-    writeJSONFieldDelimiter(*ostr);
+    JSONUtils::writeFieldDelimiter(*ostr);
     writeExtremesElement("max", columns, 1);
-    writeJSONObjectEnd(*ostr, 1);
+    JSONUtils::writeObjectEnd(*ostr, 1);
 }
 
 void JSONColumnsWithMetadataBlockOutputFormat::writeExtremesElement(const char * title, const Columns & columns, size_t row_num)
 {
-    writeJSONObjectStart(*ostr, 2, title);
-    writeJSONColumns(columns, fields, serializations, row_num, false, format_settings, *ostr, 3);
-    writeJSONObjectEnd(*ostr, 2);
+    JSONUtils::writeObjectStart(*ostr, 2, title);
+    JSONUtils::writeColumns(columns, fields, serializations, row_num, false, format_settings, *ostr, 3);
+    JSONUtils::writeObjectEnd(*ostr, 2);
 }
 
 void JSONColumnsWithMetadataBlockOutputFormat::consumeTotals(Chunk chunk)
@@ -77,10 +77,10 @@ void JSONColumnsWithMetadataBlockOutputFormat::consumeTotals(Chunk chunk)
         throw Exception("Got " + toString(num_rows) + " in totals chunk, expected 1", ErrorCodes::LOGICAL_ERROR);
 
     const auto & columns = chunk.getColumns();
-    writeJSONFieldDelimiter(*ostr, 2);
-    writeJSONObjectStart(*ostr, 1, "totals");
-    writeJSONColumns(columns, fields, serializations, 0, false, format_settings, *ostr, 2);
-    writeJSONObjectEnd(*ostr, 1);
+    JSONUtils::writeFieldDelimiter(*ostr, 2);
+    JSONUtils::writeObjectStart(*ostr, 1, "totals");
+    JSONUtils::writeColumns(columns, fields, serializations, 0, false, format_settings, *ostr, 2);
+    JSONUtils::writeObjectEnd(*ostr, 1);
 }
 
 void JSONColumnsWithMetadataBlockOutputFormat::finalizeImpl()
@@ -89,7 +89,7 @@ void JSONColumnsWithMetadataBlockOutputFormat::finalizeImpl()
     if (outside_statistics)
         statistics = std::move(*outside_statistics);
 
-    writeJSONAdditionalInfo(
+    JSONUtils::writeAdditionalInfo(
         rows,
         statistics.rows_before_limit,
         statistics.applied_limit,
@@ -98,7 +98,7 @@ void JSONColumnsWithMetadataBlockOutputFormat::finalizeImpl()
         format_settings.write_statistics,
         *ostr);
 
-    writeJSONObjectEnd(*ostr);
+    JSONUtils::writeObjectEnd(*ostr);
     writeChar('\n', *ostr);
     ostr->next();
 }

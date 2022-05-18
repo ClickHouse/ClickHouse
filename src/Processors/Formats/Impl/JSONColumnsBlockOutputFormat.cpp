@@ -20,17 +20,17 @@ JSONColumnsBlockOutputFormat::JSONColumnsBlockOutputFormat(WriteBuffer & out_, c
 
 void JSONColumnsBlockOutputFormat::writeChunkStart()
 {
-    writeJSONObjectStart(*ostr, indent);
+    JSONUtils::writeObjectStart(*ostr, indent);
 }
 
 void JSONColumnsBlockOutputFormat::writeColumnStart(size_t column_index)
 {
-    writeJSONCompactArrayStart(*ostr, indent + 1, fields[column_index].name.data());
+    JSONUtils::writeCompactArrayStart(*ostr, indent + 1, fields[column_index].name.data());
 }
 
 void JSONColumnsBlockOutputFormat::writeChunkEnd()
 {
-    writeJSONObjectEnd(*ostr, indent);
+    JSONUtils::writeObjectEnd(*ostr, indent);
     writeChar('\n', *ostr);
 }
 
