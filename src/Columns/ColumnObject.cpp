@@ -337,28 +337,90 @@ void ColumnObject::Subcolumn::insert(Field field, FieldInfo info)
 
 void ColumnObject::Subcolumn::insertRangeFrom(const Subcolumn & src, size_t start, size_t length)
 {
-    assert(src.isFinalized());
-    const auto & src_column = src.data.back();
-    const auto & src_type = src.least_common_type.get();
+    assert(start + length <= src.size());
+    size_t end = start + length;
 
     if (data.empty())
     {
-        addNewColumnPart(src.least_common_type.get());
-        data.back()->insertRangeFrom(*src_column, start, length);
-    }
-    else if (least_common_type.get()->equals(*src_type))
-    {
-        data.back()->insertRangeFrom(*src_column, start, length);
+        if (end <= src.num_of_defaults_in_prefix)
+        {
+            num_of_defaults_in_prefix += length;
+            return;
+        }
+
+        if (start < src.num_of_defaults_in_prefix)
+            num_of_defaults_in_prefix += src.num_of_defaults_in_prefix - start;
+
+        addNewColumnPart(src.getLeastCommonType());
     }
     else
     {
-        auto new_least_common_type = getLeastSupertype(DataTypes{least_common_type.get(), src_type}, true);
-        auto casted_column = castColumn({src_column, src_type, ""}, new_least_common_type);
+        if (!least_common_type.get()->equals(*src.getLeastCommonType()))
+        {
+            auto new_least_common_type = getLeastSupertype(DataTypes{least_common_type.get(), src.getLeastCommonType()}, true);
+            if (!new_least_common_type->equals(*new_least_common_type))
+                addNewColumnPart(std::move(new_least_common_type));
+        }
 
-        if (!least_common_type.get()->equals(*new_least_common_type))
-            addNewColumnPart(std::move(new_least_common_type));
+        if (start < src.num_of_defaults_in_prefix)
+            data.back()->insertManyDefaults(src.num_of_defaults_in_prefix - start);
+    }
 
-        data.back()->insertRangeFrom(*casted_column, start, length);
+    auto insert_from_part = [&](const auto & column, size_t from, size_t n)
+    {
+        assert(from + n <= column.size());
+        auto column_type = getDataTypeByColumn(*column);
+
+        if (column_type->equals(*least_common_type.get()))
+        {
+            data.back()->insertRangeFrom(*column, from, n);
+            return;
+        }
+
+        /// If we need to insert large range, there is no sense to cut part of column and cast it.
+        /// Casting of all column and inserting from it can be faster.
+        /// Threshold is just a guess.
+
+        if (n * 3 >= column->size())
+        {
+            auto casted_column = castColumn({column, column_type, ""}, least_common_type.get());
+            data.back()->insertRangeFrom(*casted_column, from, n);
+            return;
+        }
+
+        auto casted_column = column->cut(from, n);
+        casted_column = castColumn({casted_column, column_type, ""}, least_common_type.get());
+        data.back()->insertRangeFrom(*casted_column, 0, n);
+    };
+
+    size_t pos = 0;
+    size_t processed_rows = src.num_of_defaults_in_prefix;
+    while (pos < src.data.size() && processed_rows + src.data[pos]->size() < start)
+    {
+        processed_rows += src.data[pos]->size();
+        ++pos;
+    }
+
+    if (pos < src.data.size())
+    {
+        assert(current_size < start);
+        size_t part_start = start - processed_rows;
+        insert_from_part(src.data[pos], part_start, src.data[pos]->size() - part_start);
+        ++pos;
+    }
+
+    while (pos < src.data.size() && processed_rows + src.data[pos]->size() < end)
+    {
+        insert_from_part(src.data[pos], 0, src.data[pos]->size());
+        processed_rows += src.data[pos]->size();
+        ++pos;
+    }
+
+    if (pos < src.data.size())
+    {
+        assert(current_size < end);
+        size_t part_end = end - processed_rows;
+        insert_from_part(src.data[pos], 0, part_end);
     }
 }
 
@@ -466,60 +528,8 @@ void ColumnObject::Subcolumn::popBack(size_t n)
 
 ColumnObject::Subcolumn ColumnObject::Subcolumn::cut(size_t start, size_t length) const
 {
-    assert(start + length <= size());
-    size_t end = start + length;
-
-    Subcolumn new_subcolumn;
-    new_subcolumn.is_nullable = is_nullable;
-    new_subcolumn.num_of_defaults_in_prefix = 0;
-
-    if (start < num_of_defaults_in_prefix)
-    {
-        if (end < num_of_defaults_in_prefix)
-        {
-            new_subcolumn.num_of_defaults_in_prefix = end - start;
-            new_subcolumn.least_common_type = LeastCommonType{std::make_shared<DataTypeNothing>()};
-            return new_subcolumn;
-        }
-
-        new_subcolumn.num_of_defaults_in_prefix = num_of_defaults_in_prefix - start;
-    }
-
-    size_t pos = 0;
-    size_t current_size = num_of_defaults_in_prefix;
-    while (pos < data.size() && current_size + data[pos]->size() < start)
-    {
-        current_size += data[pos]->size();
-        ++pos;
-    }
-
-    if (pos < data.size())
-    {
-        assert(current_size < start);
-        size_t part_start = start - current_size;
-        new_subcolumn.data.push_back(data[pos]->cut(part_start, data[pos]->size() - part_start));
-        ++pos;
-    }
-
-    while (pos < data.size() && current_size + data[pos]->size() < end)
-    {
-        new_subcolumn.data.push_back(IColumn::mutate(data[pos]));
-        current_size += data[pos]->size();
-        ++pos;
-    }
-
-    if (pos < data.size())
-    {
-        assert(current_size < end);
-        size_t part_end = end - current_size;
-        if (part_end == data[pos]->size())
-            new_subcolumn.data.push_back(IColumn::mutate(data[pos]));
-        else
-            new_subcolumn.data.push_back(data[pos]->cut(0, part_end));
-    }
-
-    assert(!new_subcolumn.data.empty());
-    new_subcolumn.least_common_type = LeastCommonType{getDataTypeByColumn(*new_subcolumn.data.back())};
+    Subcolumn new_subcolumn(0, is_nullable);
+    new_subcolumn.insertRangeFrom(*this, start, length);
     return new_subcolumn;
 }
 
@@ -717,18 +727,9 @@ void ColumnObject::insertFrom(const IColumn & src, size_t n)
 
 void ColumnObject::insertRangeFrom(const IColumn & src, size_t start, size_t length)
 {
-    const auto * src_object = &assert_cast<const ColumnObject &>(src);
-    MutableColumnPtr column_holder;
+    const auto & src_object = assert_cast<const ColumnObject &>(src);
 
-    if (!src_object->isFinalized())
-    {
-        column_holder = IColumn::mutate(src_object->getPtr());
-        auto * mutable_object = &assert_cast<ColumnObject &>(*column_holder);
-        mutable_object->finalize();
-        src_object = mutable_object;
-    }
-
-    for (const auto & entry : src_object->subcolumns)
+    for (const auto & entry : src_object.subcolumns)
     {
         if (!hasSubcolumn(entry->path))
         {
@@ -744,7 +745,7 @@ void ColumnObject::insertRangeFrom(const IColumn & src, size_t start, size_t len
 
     for (auto & entry : subcolumns)
     {
-        if (!src_object->hasSubcolumn(entry->path))
+        if (!src_object.hasSubcolumn(entry->path))
         {
             bool inserted = tryInsertManyDefaultsFromNested(entry);
             if (!inserted)
@@ -781,6 +782,7 @@ MutableColumnPtr ColumnObject::applyForSubcolumns(Func && func) const
         auto new_subcolumn = func(subcolumn->data.getFinalizedColumn());
         res->addSubcolumn(subcolumn->path, new_subcolumn->assumeMutable());
     }
+
     return res;
 }
 
