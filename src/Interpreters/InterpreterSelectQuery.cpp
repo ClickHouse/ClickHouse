@@ -1251,15 +1251,6 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                 query_plan.addStep(std::move(array_join_step));
             }
 
-            if (expressions.before_join)
-            {
-                QueryPlanStepPtr before_join_step = std::make_unique<ExpressionStep>(
-                    query_plan.getCurrentDataStream(),
-                    expressions.before_join);
-                before_join_step->setStepDescription("Before JOIN");
-                query_plan.addStep(std::move(before_join_step));
-            }
-
             /// Optional step to convert key columns to common supertype.
             if (expressions.converting_join_columns)
             {
@@ -1268,6 +1259,15 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                     expressions.converting_join_columns);
                 convert_join_step->setStepDescription("Convert JOIN columns");
                 query_plan.addStep(std::move(convert_join_step));
+            }
+
+            if (expressions.before_join)
+            {
+                QueryPlanStepPtr before_join_step = std::make_unique<ExpressionStep>(
+                    query_plan.getCurrentDataStream(),
+                    expressions.before_join);
+                before_join_step->setStepDescription("Before JOIN");
+                query_plan.addStep(std::move(before_join_step));
             }
 
             if (expressions.hasJoin())
