@@ -534,7 +534,6 @@ ExecutionStatus ExecutionStatus::fromText(const std::string & data)
     return status;
 }
 
-ParsingException::ParsingException() = default;
 ParsingException::ParsingException(const std::string & msg, int code)
     : Exception(msg, code)
 {

@@ -27,7 +27,6 @@ class Exception : public Poco::Exception
 public:
     using FramePointers = std::vector<void *>;
 
-    Exception() = default;
     Exception(const std::string & msg, int code, bool remote_ = false);
 
     Exception(int code, const std::string & message)
@@ -112,7 +111,6 @@ private:
 class ParsingException : public Exception
 {
 public:
-    ParsingException();
     ParsingException(const std::string & msg, int code);
     ParsingException(int code, const std::string & message);
 
