@@ -247,20 +247,9 @@ void PngOutputFormat::drawOneDimension()
     }
     size_t middle = 0;
     middle = static_cast<size_t>((height - 1) * (-min_value) / (max_value - min_value));
-    if (values_size <= width || values_size <= 4 * width)
+    if (values_size <= width)
     {
-        if (values_size >= width)
-        {
-            width = values_size;
-        }
-        else if ((width / values_size) * values_size == values_size)
-        {
-            width = values_size * 2;
-        }
-        else
-        {
-            width = (width / values_size) * values_size;
-        }
+        width = (width / values_size) * values_size;
         data.resize(height * width * 3, 255);
         size_t w = 0;
         size_t len = width / values_size;
