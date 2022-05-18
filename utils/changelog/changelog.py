@@ -19,6 +19,8 @@ from git_helper import is_shallow, git_runner as runner
 
 # This array gives the preferred category order, and is also used to
 # normalize category names.
+# Categories are used in .github/PULL_REQUEST_TEMPLATE.md, keep comments there
+# updated accordingly
 categories_preferred_order = (
     "Backward Incompatible Change",
     "New Feature",
