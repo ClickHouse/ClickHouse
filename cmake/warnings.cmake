@@ -7,7 +7,7 @@
 # - sometimes warnings from 3rd party libraries may come from macro substitutions in our code
 #   and we have to wrap them with #pragma GCC/clang diagnostic ignored
 
-set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wextra")
+set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wextra")
 
 # Add some warnings that are not available even with -Wall -Wextra -Wpedantic.
 # Intended for exploration of new compiler warnings that may be found useful.
@@ -25,6 +25,7 @@ if (COMPILER_CLANG)
     no_warning(vla-extension)
     no_warning(zero-length-array)
     no_warning(c11-extensions)
+    no_warning(unused-command-line-argument)
 
     if (WEVERYTHING)
         add_warning(everything)

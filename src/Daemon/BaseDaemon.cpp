@@ -13,9 +13,9 @@
 #if defined(__linux__)
     #include <sys/prctl.h>
 #endif
-#include <errno.h>
-#include <string.h>
-#include <signal.h>
+#include <cerrno>
+#include <cstring>
+#include <csignal>
 #include <unistd.h>
 
 #include <typeinfo>

@@ -400,7 +400,7 @@ LRUFileCache::FileSegmentCell * LRUFileCache::addCell(
 
     if (files[key].contains(offset))
         throw Exception(
-            ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR,
+            ErrorCodes::LOGICAL_ERROR,
             "Cache already exists for key: `{}`, offset: {}, size: {}.\nCurrent cache structure: {}",
             keyToStr(key), offset, size, dumpStructureUnlocked(key, cache_lock));
 
@@ -609,7 +609,7 @@ void LRUFileCache::remove(const Key & key)
 #endif
 }
 
-void LRUFileCache::remove(bool force_remove_unreleasable)
+void LRUFileCache::remove()
 {
     /// Try remove all cached files by cache_base_path.
     /// Only releasable file segments are evicted.
@@ -626,7 +626,7 @@ void LRUFileCache::remove(bool force_remove_unreleasable)
                 ErrorCodes::LOGICAL_ERROR,
                 "Cache is in inconsistent state: LRU queue contains entries with no cache cell");
 
-        if (cell->releasable() || force_remove_unreleasable)
+        if (cell->releasable())
         {
             auto file_segment = cell->file_segment;
             if (file_segment)
@@ -647,7 +647,7 @@ void LRUFileCache::remove(
 
     auto * cell = getCell(key, offset, cache_lock);
     if (!cell)
-        throw Exception(ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR, "No cache cell for key: {}, offset: {}", keyToStr(key), offset);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "No cache cell for key: {}, offset: {}", keyToStr(key), offset);
 
     if (cell->queue_iterator)
     {
