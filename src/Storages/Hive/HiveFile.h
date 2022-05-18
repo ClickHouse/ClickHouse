@@ -54,6 +54,10 @@ public:
     inline static const String MR_PARQUET_INPUT_FORMAT = "org.apache.hadoop.hive.ql.io.parquet.MapredParquetInputFormat";
     inline static const String AVRO_INPUT_FORMAT = "org.apache.hadoop.hive.ql.io.avro.AvroContainerInputFormat";
     inline static const String ORC_INPUT_FORMAT = "org.apache.hadoop.hive.ql.io.orc.OrcInputFormat";
+    inline static const String CH_HIVE_TEXT_FORAMT = "HiveText";
+    inline static const String CH_ORC_FORAMT = "ORC";
+    inline static const String CH_PARQUET_FORMAT = "Parquet";
+    inline static const String CH_AVRO_FORMAT = "Avro";
     inline static const std::map<String, FileFormat> VALID_HDFS_FORMATS = {
         {RCFILE_INPUT_FORMAT, FileFormat::RC_FILE},
         {TEXT_INPUT_FORMAT, FileFormat::TEXT},
@@ -65,6 +69,14 @@ public:
         {ORC_INPUT_FORMAT, FileFormat::ORC},
     };
 
+    inline static const std::map<String, String> VALID_CH_FORMATS = {
+        {TEXT_INPUT_FORMAT, CH_HIVE_TEXT_FORAMT},
+        {LZO_TEXT_INPUT_FORMAT, CH_HIVE_TEXT_FORAMT},
+        {AVRO_INPUT_FORMAT, CH_AVRO_FORMAT},
+        {MR_PARQUET_INPUT_FORMAT, CH_PARQUET_FORMAT},
+        {ORC_INPUT_FORMAT, CH_ORC_FORAMT},
+    };
+
     static inline bool isFormatClass(const String & format_class) { return VALID_HDFS_FORMATS.count(format_class) > 0; }
     static inline FileFormat toFileFormat(const String & format_class)
     {
@@ -73,6 +85,14 @@ public:
             return VALID_HDFS_FORMATS.find(format_class)->second;
         }
         throw Exception("Unsupported hdfs file format " + format_class, ErrorCodes::NOT_IMPLEMENTED);
+    }
+
+    static String toCHFormat(const String & hive_format_class)
+    {
+        const auto iter = VALID_CH_FORMATS.find(hive_format_class);
+        if (iter == VALID_CH_FORMATS.end())
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported hdfs file format: {}", hive_format_class);
+        return iter->second;
     }
 
     IHiveFile(
@@ -98,7 +118,7 @@ public:
 
     String getFormatName() const { return String(magic_enum::enum_name(getFormat())); }
     const String & getPath() const { return path; }
-    UInt64 getLastModTs() const { return last_modify_time; }
+    UInt64 getLastModifiedTimestamp() const { return last_modify_time; }
     size_t getSize() const { return size; }
     std::optional<size_t> getRows();
     const FieldVector & getPartitionValues() const { return partition_values; }
@@ -255,6 +275,40 @@ private:
     std::unique_ptr<parquet::arrow::FileReader> reader;
     std::map<String, size_t> parquet_column_positions;
 };
+
+class HiveFileFactory : public boost::noncopyable
+{
+public:
+    using HiveFileCreator = std::function<DB::HiveFilePtr(
+        const FieldVector & /*fields*/,
+        const String & /*namenode_url*/,
+        const String & /*path*/,
+        UInt64 /*ts*/,
+        size_t /*size*/,
+        const NamesAndTypesList & /*index_names_and_types*/,
+        const std::shared_ptr<HiveSettings> & /*hive_settings*/,
+        ContextPtr /*context*/)>;
+    static HiveFileFactory & instance();
+
+    HiveFilePtr createFile(
+        const String & format_name,
+        const FieldVector & fields,
+        const String & namenode_url,
+        const String & path,
+        UInt64 ts,
+        size_t size,
+        const NamesAndTypesList & index_names_and_types,
+        const std::shared_ptr<HiveSettings> & hive_settings,
+        ContextPtr context);
+
+protected :
+    HiveFileFactory() = default;
+
+    static void registerHiveFileCreators(HiveFileFactory & instance);
+
+    std::map<String, HiveFileCreator> creators;
+};
+
 }
 
 
