@@ -1,5 +1,5 @@
 ---
-toc_title: DISTINCT
+sidebar_label: DISTINCT
 ---
 
 # DISTINCT子句 {#select-distinct}

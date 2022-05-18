@@ -99,7 +99,7 @@ public:
     {
         const ColumnWithTypeAndName & column_to_cast = arguments[0];
         auto non_const_column_to_cast = column_to_cast.column->convertToFullColumnIfConst();
-        ColumnWithTypeAndName column_to_cast_non_const { std::move(non_const_column_to_cast), column_to_cast.type, column_to_cast.name };
+        ColumnWithTypeAndName column_to_cast_non_const { non_const_column_to_cast, column_to_cast.type, column_to_cast.name };
 
         auto cast_result = castColumnAccurateOrNull(column_to_cast_non_const, return_type);
 
@@ -231,7 +231,7 @@ private:
             {
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "Function {} decimal scale should have native UInt type. Actual {}",
-                    scale_argument.type->getName());
+                    getName(), scale_argument.type->getName());
             }
 
             scale = arguments[additional_argument_index].column->getUInt(0);

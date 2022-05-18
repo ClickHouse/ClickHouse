@@ -51,7 +51,7 @@ public:
 
     void formatImpl(const FormatSettings & s, FormatState & state, FormatStateStacked frame) const override;
 
-    bool empty()
+    bool empty() const
     {
         return (!columns || columns->children.empty()) && (!indices || indices->children.empty()) && (!constraints || constraints->children.empty())
             && (!projections || projections->children.empty());
@@ -111,9 +111,9 @@ public:
 
     ASTPtr clone() const override;
 
-    ASTPtr getRewrittenASTWithoutOnCluster(const std::string & new_database) const override
+    ASTPtr getRewrittenASTWithoutOnCluster(const WithoutOnClusterASTRewriteParams & params) const override
     {
-        return removeOnCluster<ASTCreateQuery>(clone(), new_database);
+        return removeOnCluster<ASTCreateQuery>(clone(), params.default_database);
     }
 
     bool isView() const { return is_ordinary_view || is_materialized_view || is_live_view || is_window_view; }

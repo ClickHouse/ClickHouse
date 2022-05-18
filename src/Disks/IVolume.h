@@ -63,7 +63,7 @@ public:
     Disks & getDisks() { return disks; }
     const Disks & getDisks() const { return disks; }
 
-    /// Returns effective value of whether merges are allowed on this volume (true) or not (false).
+    /// Returns effective value of whether merges are allowed on this volume (false) or not (true).
     virtual bool areMergesAvoided() const { return false; }
 
     /// User setting for enabling and disabling merges on volume.
@@ -79,24 +79,6 @@ public:
     /// Should a new data part be synchronously moved to a volume according to ttl on insert
     /// or move this part in background task asynchronously after insert.
     bool perform_ttl_move_on_insert = true;
-};
-
-/// Reservation for multiple disks at once. Can be used in RAID1 implementation.
-class MultiDiskReservation : public IReservation
-{
-public:
-    MultiDiskReservation(Reservations & reservations, UInt64 size);
-
-    UInt64 getSize() const override { return size; }
-
-    DiskPtr getDisk(size_t i) const override { return reservations[i]->getDisk(); }
-
-    Disks getDisks() const override;
-
-    void update(UInt64 new_size) override;
-private:
-    Reservations reservations;
-    UInt64 size;
 };
 
 }

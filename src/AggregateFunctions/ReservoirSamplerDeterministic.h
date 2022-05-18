@@ -67,7 +67,7 @@ private:
     }
 
 public:
-    ReservoirSamplerDeterministic(const size_t max_sample_size_ = detail::DEFAULT_MAX_SAMPLE_SIZE)
+    explicit ReservoirSamplerDeterministic(const size_t max_sample_size_ = detail::DEFAULT_MAX_SAMPLE_SIZE)
         : max_sample_size{max_sample_size_}
     {
     }
@@ -103,7 +103,7 @@ public:
         sortIfNeeded();
 
         double index = level * (samples.size() - 1);
-        size_t int_index = static_cast<size_t>(index + 0.5);
+        size_t int_index = static_cast<size_t>(index + 0.5); /// NOLINT
         int_index = std::max(0LU, std::min(samples.size() - 1, int_index));
         return samples[int_index].first;
     }

@@ -1,5 +1,6 @@
 #include <Processors/Formats/Impl/ParallelParsingInputFormat.h>
 #include <IO/ReadHelpers.h>
+#include <IO/WithFileName.h>
 #include <Common/CurrentThread.h>
 #include <Common/setThreadName.h>
 
@@ -125,11 +126,19 @@ void ParallelParsingInputFormat::onBackgroundException(size_t offset)
     {
         background_exception = std::current_exception();
         if (ParsingException * e = exception_cast<ParsingException *>(background_exception))
+        {
             if (e->getLineNumber() != -1)
                 e->setLineNumber(e->getLineNumber() + offset);
+
+            auto file_name = getFileNameFromReadBuffer(getReadBuffer());
+            if (!file_name.empty())
+                e->setFileName(file_name);
+        }
     }
+
     if (is_server)
         tryLogCurrentException(__PRETTY_FUNCTION__);
+
     parsing_finished = true;
     first_parser_finished.set();
     reader_condvar.notify_all();

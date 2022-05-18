@@ -398,7 +398,7 @@ void MultipleAccessStorage::updateSubscriptionsToNestedStorages(std::unique_lock
 
             for (const auto & storage : *nested_storages)
             {
-                if (!subscriptions.count(storage))
+                if (!subscriptions.contains(storage))
                     added_subscriptions[static_cast<size_t>(type)].push_back({storage, nullptr});
             }
         }
@@ -436,7 +436,7 @@ void MultipleAccessStorage::updateSubscriptionsToNestedStorages(std::unique_lock
             auto & subscriptions = subscriptions_to_nested_storages[static_cast<size_t>(type)];
             for (auto & [storage, subscription] : added_subscriptions[static_cast<size_t>(type)])
             {
-                if (!subscriptions.count(storage) && (boost::range::find(*nested_storages, storage) != nested_storages->end())
+                if (!subscriptions.contains(storage) && (boost::range::find(*nested_storages, storage) != nested_storages->end())
                     && !handlers_by_type[static_cast<size_t>(type)].empty())
                 {
                     subscriptions.emplace(std::move(storage), std::move(subscription));
@@ -449,14 +449,20 @@ void MultipleAccessStorage::updateSubscriptionsToNestedStorages(std::unique_lock
 }
 
 
-std::optional<UUID> MultipleAccessStorage::authenticateImpl(const Credentials & credentials, const Poco::Net::IPAddress & address, const ExternalAuthenticators & external_authenticators, bool throw_if_user_not_exists) const
+std::optional<UUID>
+MultipleAccessStorage::authenticateImpl(const Credentials & credentials, const Poco::Net::IPAddress & address,
+                                        const ExternalAuthenticators & external_authenticators,
+                                        bool throw_if_user_not_exists,
+                                        bool allow_no_password, bool allow_plaintext_password) const
 {
     auto storages = getStoragesInternal();
     for (size_t i = 0; i != storages->size(); ++i)
     {
         const auto & storage = (*storages)[i];
         bool is_last_storage = (i == storages->size() - 1);
-        auto id = storage->authenticate(credentials, address, external_authenticators, throw_if_user_not_exists && is_last_storage);
+        auto id = storage->authenticate(credentials, address, external_authenticators,
+                                        (throw_if_user_not_exists && is_last_storage),
+                                        allow_no_password, allow_plaintext_password);
         if (id)
         {
             std::lock_guard lock{mutex};

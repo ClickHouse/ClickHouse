@@ -1,6 +1,6 @@
 ---
-toc_priority: 39
-toc_title: numbers
+sidebar_position: 39
+sidebar_label: numbers
 ---
 
 # numbers {#numbers}

@@ -32,6 +32,8 @@ namespace ErrorCodes
     extern const int TIMEOUT_EXCEEDED;
     extern const int UNFINISHED;
     extern const int QUERY_IS_PROHIBITED;
+    extern const int INVALID_SHARD_ID;
+    extern const int NO_SUCH_REPLICA;
     extern const int LOGICAL_ERROR;
 }
 
@@ -47,22 +49,15 @@ bool isSupportedAlterType(int type)
         ASTAlterCommand::NO_TYPE,
     };
 
-    return unsupported_alter_types.count(type) == 0;
+    return !unsupported_alter_types.contains(type);
 }
 
 
-BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, ContextPtr context)
+BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, ContextPtr context, const DDLQueryOnClusterParams & params)
 {
-    return executeDDLQueryOnCluster(query_ptr_, context, {});
-}
+    if (context->getCurrentTransaction() && context->getSettingsRef().throw_on_unsupported_query_inside_transaction)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "ON CLUSTER queries inside transactions are not supported");
 
-BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr, ContextPtr context, const AccessRightsElements & query_requires_access)
-{
-    return executeDDLQueryOnCluster(query_ptr, context, AccessRightsElements{query_requires_access});
-}
-
-BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, ContextPtr context, AccessRightsElements && query_requires_access)
-{
     /// Remove FORMAT <fmt> and INTO OUTFILE <file> if exists
     ASTPtr query_ptr = query_ptr_->clone();
     ASTQueryWithOutput::resetOutputASTIfExist(*query_ptr);
@@ -87,16 +82,39 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, ContextPtr context, 
     }
 
     query->cluster = context->getMacros()->expand(query->cluster);
-    ClusterPtr cluster = context->getCluster(query->cluster);
+    ClusterPtr cluster = params.cluster ? params.cluster : context->getCluster(query->cluster);
     DDLWorker & ddl_worker = context->getDDLWorker();
 
     /// Enumerate hosts which will be used to send query.
-    Cluster::AddressesWithFailover shards = cluster->getShardsAddresses();
     std::vector<HostID> hosts;
-    for (const auto & shard : shards)
+    Cluster::AddressesWithFailover shards = cluster->getShardsAddresses();
+
+    auto collect_hosts_from_replicas = [&](size_t shard_index)
     {
-        for (const auto & addr : shard)
-            hosts.emplace_back(addr);
+        if (shard_index > shards.size())
+            throw Exception(ErrorCodes::INVALID_SHARD_ID, "Cluster {} doesn't have shard #{}", query->cluster, shard_index);
+        const auto & replicas = shards[shard_index - 1];
+        if (params.only_replica_num)
+        {
+            if (params.only_replica_num > replicas.size())
+                throw Exception(ErrorCodes::NO_SUCH_REPLICA, "Cluster {} doesn't have replica #{} in shard #{}", query->cluster, params.only_replica_num, shard_index);
+            hosts.emplace_back(replicas[params.only_replica_num - 1]);
+        }
+        else
+        {
+            for (const auto & addr : replicas)
+                hosts.emplace_back(addr);
+        }
+    };
+
+    if (params.only_shard_num)
+    {
+        collect_hosts_from_replicas(params.only_shard_num);
+    }
+    else
+    {
+        for (size_t shard_index = 1; shard_index <= shards.size(); ++shard_index)
+            collect_hosts_from_replicas(shard_index);
     }
 
     if (hosts.empty())
@@ -104,9 +122,10 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, ContextPtr context, 
 
     /// The current database in a distributed query need to be replaced with either
     /// the local current database or a shard's default database.
+    AccessRightsElements access_to_check = params.access_to_check;
     bool need_replace_current_database = std::any_of(
-        query_requires_access.begin(),
-        query_requires_access.end(),
+        access_to_check.begin(),
+        access_to_check.end(),
         [](const AccessRightsElement & elem) { return elem.isEmptyDatabase(); });
 
     bool use_local_default_database = false;
@@ -134,18 +153,18 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, ContextPtr context, 
 
         if (use_local_default_database)
         {
-            query_requires_access.replaceEmptyDatabase(current_database);
+            access_to_check.replaceEmptyDatabase(current_database);
         }
         else
         {
-            for (size_t i = 0; i != query_requires_access.size();)
+            for (size_t i = 0; i != access_to_check.size();)
             {
-                auto & element = query_requires_access[i];
+                auto & element = access_to_check[i];
                 if (element.isEmptyDatabase())
                 {
-                    query_requires_access.insert(query_requires_access.begin() + i + 1, shard_default_databases.size() - 1, element);
+                    access_to_check.insert(access_to_check.begin() + i + 1, shard_default_databases.size() - 1, element);
                     for (size_t j = 0; j != shard_default_databases.size(); ++j)
-                        query_requires_access[i + j].replaceEmptyDatabase(shard_default_databases[j]);
+                        access_to_check[i + j].replaceEmptyDatabase(shard_default_databases[j]);
                     i += shard_default_databases.size();
                 }
                 else
@@ -158,7 +177,7 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, ContextPtr context, 
     visitor.visitDDL(query_ptr);
 
     /// Check access rights, assume that all servers have the same users config
-    context->checkAccess(query_requires_access);
+    context->checkAccess(access_to_check);
 
     DDLLogEntry entry;
     entry.hosts = std::move(hosts);
@@ -256,7 +275,7 @@ DDLQueryStatusSource::DDLQueryStatusSource(
     , node_path(zk_node_path)
     , context(context_)
     , watch(CLOCK_MONOTONIC_COARSE)
-    , log(&Poco::Logger::get("DDLQueryStatusInputStream"))
+    , log(&Poco::Logger::get("DDLQueryStatusSource"))
 {
     auto output_mode = context->getSettingsRef().distributed_ddl_output_mode;
     throw_on_timeout = output_mode == DistributedDDLOutputMode::THROW || output_mode == DistributedDDLOutputMode::NONE;
@@ -320,12 +339,13 @@ Chunk DDLQueryStatusSource::generate()
             if (throw_on_timeout)
             {
                 if (!first_exception)
-                    first_exception = std::make_unique<Exception>(ErrorCodes::TIMEOUT_EXCEEDED, msg_format,
-                        node_path, timeout_seconds, num_unfinished_hosts, num_active_hosts);
+                    first_exception = std::make_unique<Exception>(
+                        fmt::format(msg_format, node_path, timeout_seconds, num_unfinished_hosts, num_active_hosts),
+                        ErrorCodes::TIMEOUT_EXCEEDED);
                 return {};
             }
 
-            LOG_INFO(log, fmt::runtime(msg_format), node_path, timeout_seconds, num_unfinished_hosts, num_active_hosts);
+            LOG_INFO(log, msg_format, node_path, timeout_seconds, num_unfinished_hosts, num_active_hosts);
 
             NameSet unfinished_hosts = waiting_hosts;
             for (const auto & host_id : finished_hosts)
@@ -358,9 +378,12 @@ Chunk DDLQueryStatusSource::generate()
             /// Paradoxically, this exception will be throw even in case of "never_throw" mode.
 
             if (!first_exception)
-                first_exception = std::make_unique<Exception>(ErrorCodes::UNFINISHED,
-                    "Cannot provide query execution status. The query's node {} has been deleted by the cleaner"
-                    " since it was finished (or its lifetime is expired)", node_path);
+                first_exception = std::make_unique<Exception>(
+                    fmt::format(
+                        "Cannot provide query execution status. The query's node {} has been deleted by the cleaner"
+                        " since it was finished (or its lifetime is expired)",
+                        node_path),
+                    ErrorCodes::UNFINISHED);
             return {};
         }
 
@@ -386,7 +409,8 @@ Chunk DDLQueryStatusSource::generate()
             if (status.code != 0 && !first_exception
                 && context->getSettingsRef().distributed_ddl_output_mode != DistributedDDLOutputMode::NEVER_THROW)
             {
-                first_exception = std::make_unique<Exception>(status.code, "There was an error on [{}:{}]: {}", host, port, status.message);
+                first_exception = std::make_unique<Exception>(
+                    fmt::format("There was an error on [{}:{}]: {}", host, port, status.message), status.code);
             }
 
             ++num_hosts_finished;
@@ -441,9 +465,9 @@ Strings DDLQueryStatusSource::getNewAndUpdate(const Strings & current_list_of_fi
     Strings diff;
     for (const String & host : current_list_of_finished_hosts)
     {
-        if (!waiting_hosts.count(host))
+        if (!waiting_hosts.contains(host))
         {
-            if (!ignoring_hosts.count(host))
+            if (!ignoring_hosts.contains(host))
             {
                 ignoring_hosts.emplace(host);
                 LOG_INFO(log, "Unexpected host {} appeared in task {}", host, node_path);
@@ -451,7 +475,7 @@ Strings DDLQueryStatusSource::getNewAndUpdate(const Strings & current_list_of_fi
             continue;
         }
 
-        if (!finished_hosts.count(host))
+        if (!finished_hosts.contains(host))
         {
             diff.emplace_back(host);
             finished_hosts.emplace(host);

@@ -1,6 +1,6 @@
 ---
-toc_priority: 44
-toc_title: TTL
+sidebar_position: 44
+sidebar_label: TTL
 ---
 
 # 表的 TTL 操作 {#manipulations-with-table-ttl}

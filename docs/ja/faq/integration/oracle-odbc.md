@@ -1,1 +1,0 @@
-../../../en/faq/integration/oracle-odbc.md

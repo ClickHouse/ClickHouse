@@ -549,7 +549,7 @@ private:
 
         CodePoint sample(UInt64 random, double end_multiplier) const
         {
-            UInt64 range = total + UInt64(count_end * end_multiplier);
+            UInt64 range = total + static_cast<UInt64>(count_end * end_multiplier);
             if (range == 0)
                 return END;
 
@@ -728,7 +728,7 @@ public:
                 if (!histogram.total)
                     continue;
 
-                double average = double(histogram.total) / histogram.buckets.size();
+                double average = static_cast<double>(histogram.total) / histogram.buckets.size();
 
                 UInt64 new_total = 0;
                 for (auto & bucket : histogram.buckets)
@@ -909,7 +909,7 @@ public:
 
         ColumnPtr new_nested_column = nested_model->generate(nested_column);
 
-        return ColumnArray::create(IColumn::mutate(std::move(new_nested_column)), IColumn::mutate(std::move(column_array.getOffsetsPtr())));
+        return ColumnArray::create(IColumn::mutate(std::move(new_nested_column)), IColumn::mutate(column_array.getOffsetsPtr()));
     }
 
     void updateSeed() override
@@ -947,7 +947,7 @@ public:
 
         ColumnPtr new_nested_column = nested_model->generate(nested_column);
 
-        return ColumnNullable::create(IColumn::mutate(std::move(new_nested_column)), IColumn::mutate(std::move(column_nullable.getNullMapColumnPtr())));
+        return ColumnNullable::create(IColumn::mutate(std::move(new_nested_column)), IColumn::mutate(column_nullable.getNullMapColumnPtr()));
     }
 
     void updateSeed() override

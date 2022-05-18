@@ -4,8 +4,9 @@ The `EXISTS` operator checks how many records are in the result of a subquery. I
 
 `EXISTS` can be used in a [WHERE](../../sql-reference/statements/select/where.md) clause.
 
-!!! warning "Warning"
-    References to main query tables and columns are not supported in a subquery.
+:::warning    
+References to main query tables and columns are not supported in a subquery.
+:::
 
 **Syntax**
 

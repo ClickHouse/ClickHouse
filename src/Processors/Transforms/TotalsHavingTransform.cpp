@@ -138,7 +138,7 @@ IProcessor::Status TotalsHavingTransform::prepare()
     if (!totals_output.canPush())
         return Status::PortFull;
 
-    if (!totals)
+    if (!total_prepared)
         return Status::Ready;
 
     totals_output.push(std::move(totals));
@@ -312,6 +312,8 @@ void TotalsHavingTransform::prepareTotals()
         /// Note: after expression totals may have several rows if `arrayJoin` was used in expression.
         totals = Chunk(block.getColumns(), num_rows);
     }
+
+    total_prepared = true;
 }
 
 }

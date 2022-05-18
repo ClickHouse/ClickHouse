@@ -1,4 +1,5 @@
-## ClickHouse compressor
+
+# clickhouse-compressor 
 
 Simple program for data compression and decompression.
 

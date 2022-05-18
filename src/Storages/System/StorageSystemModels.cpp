@@ -38,7 +38,7 @@ void StorageSystemModels::fillData(MutableColumns & res_columns, ContextPtr cont
 
         if (load_result.object)
         {
-            const auto model_ptr = std::static_pointer_cast<const IModel>(load_result.object);
+            const auto model_ptr = std::static_pointer_cast<const IMLModel>(load_result.object);
             res_columns[3]->insert(model_ptr->getTypeName());
         }
         else
