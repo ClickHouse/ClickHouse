@@ -1506,6 +1506,31 @@ void StorageWindowView::writeIntoWindowView(
 
 void StorageWindowView::startup()
 {
+    if (is_time_column_func_now)
+        inner_window_id_column_name = window_id_name;
+    else
+    {
+        Aliases aliases;
+        QueryAliasesVisitor(aliases).visit(mergeable_query);
+        auto inner_query_normalized = mergeable_query->clone();
+        QueryNormalizer::Data normalizer_data(aliases, {}, false, getContext()->getSettingsRef(), false);
+        QueryNormalizer(normalizer_data).visit(inner_query_normalized);
+        auto inner_select_query = std::static_pointer_cast<ASTSelectQuery>(inner_query_normalized);
+        auto t_sample_block
+            = InterpreterSelectQuery(inner_select_query, getContext(), SelectQueryOptions(QueryProcessingStage::WithMergeableState))
+                    .getSampleBlock();
+        for (const auto & column : t_sample_block.getColumnsWithTypeAndName())
+        {
+            if (startsWith(column.name, "windowID"))
+            {
+                inner_window_id_column_name = column.name;
+                break;
+            }
+        }
+    }
+
+    inner_window_column_name = std::regex_replace(inner_window_id_column_name, std::regex("windowID"), is_tumble ? "tumble" : "hop");
+
     // Start the working thread
     clean_cache_task->activateAndSchedule();
     fire_task->activateAndSchedule();
