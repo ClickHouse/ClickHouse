@@ -382,7 +382,7 @@ bool StorageLiveView::getNewBlocks()
 
     /// can't set mergeable_blocks here or anywhere else outside the writeIntoLiveView function
     /// as there could be a race codition when the new block has been inserted into
-    /// the source table by the PushingToViewsBlockOutputStream and this method
+    /// the source table by the PushingToViews chain and this method
     /// called before writeIntoLiveView function is called which can lead to
     /// the same block added twice to the mergeable_blocks leading to
     /// inserted data to be duplicated
