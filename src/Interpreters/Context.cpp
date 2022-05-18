@@ -705,7 +705,7 @@ void Context::setUserDefinedPath(const String & path)
     shared->user_defined_path = path;
 }
 
-void Context::addWarningMessage(const String & msg)
+void Context::addWarningMessage(const String & msg) const
 {
     auto lock = getLock();
     shared->addWarningMessage(msg);

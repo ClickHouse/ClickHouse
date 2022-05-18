@@ -110,7 +110,10 @@ void TCPHandler::runImpl()
     setThreadName("TCPHandler");
     ThreadStatus thread_status;
 
-    session = std::make_unique<Session>(server.context(), ClientInfo::Interface::TCP, socket().secure());
+    /// For interserver mode we will create session later
+    if (!is_interserver_mode)
+        session = std::make_unique<Session>(server.context(), ClientInfo::Interface::TCP, socket().secure());
+
     extractConnectionSettingsFromContext(server.context());
 
     socket().setReceiveTimeout(receive_timeout);
@@ -514,6 +517,12 @@ void TCPHandler::runImpl()
         /// It is important to destroy query context here. We do not want it to live arbitrarily longer than the query.
         query_context.reset();
 
+        if (is_interserver_mode)
+        {
+            /// We don't really have session in interserver mode, new one is created for each query. It's better to reset it now.
+            session.reset();
+        }
+
         if (network_error)
             break;
     }
@@ -741,7 +750,7 @@ void TCPHandler::processTablesStatusRequest()
     TablesStatusRequest request;
     request.read(*in, client_tcp_protocol_version);
 
-    ContextPtr context_to_resolve_table_names = session->sessionContext() ? session->sessionContext() : server.context();
+    ContextPtr context_to_resolve_table_names = (session && session->sessionContext()) ? session->sessionContext() : server.context();
 
     TablesStatusResponse response;
     for (const QualifiedTableName & table_name: request.tables)
@@ -1279,7 +1288,7 @@ void TCPHandler::receiveQuery()
         {
             auto exception = Exception(ErrorCodes::AUTHENTICATION_FAILED, "Interserver authentication failed");
             session->onAuthenticationFailure(AlwaysAllowCredentials{USER_INTERSERVER_MARKER}, socket().peerAddress(), exception);
-            throw exception;
+            throw exception; /// NOLINT
         }
 
         std::string data(salt);
@@ -1296,7 +1305,7 @@ void TCPHandler::receiveQuery()
         {
             auto exception = Exception(ErrorCodes::AUTHENTICATION_FAILED, "Interserver authentication failed");
             session->onAuthenticationFailure(AlwaysAllowCredentials{USER_INTERSERVER_MARKER}, socket().peerAddress(), exception);
-            throw exception;
+            throw exception; /// NOLINT
         }
 
         /// NOTE Usually we get some fields of client_info (including initial_address and initial_user) from user input,
@@ -1316,7 +1325,7 @@ void TCPHandler::receiveQuery()
             "Inter-server secret support is disabled, because ClickHouse was built without SSL library",
             ErrorCodes::AUTHENTICATION_FAILED);
         session->onAuthenticationFailure(AlwaysAllowCredentials{USER_INTERSERVER_MARKER}, socket().peerAddress(), exception);
-        throw exception;
+        throw exception; /// NOLINT
 #endif
     }
 
