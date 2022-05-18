@@ -1,0 +1,79 @@
+syntax = "proto3";
+package DB.FoundationDB.Proto;
+import "UUID.proto";
+import "IPv4.proto";
+import "IPv6.proto";
+
+message UInt128 {
+    fixed64 high = 1;
+    fixed64 low = 2;
+}
+
+message UInt256 {
+    fixed64 item1 = 1;
+    fixed64 item2 = 2;
+    fixed64 item3 = 3;
+    fixed64 item4 = 4;
+}
+
+message Decimal32 {
+    sint32 value = 1;
+    uint32 scale = 2;
+}
+
+message Decimal64 {
+    sint64 value = 1;
+    uint32 scale = 2;
+}
+
+message Decimal128 {
+    UInt128 value = 1;
+    uint32 scale = 2;
+}
+
+message Decimal256 {
+    UInt256 value = 1;
+    uint32 scale = 2;
+}
+
+message FieldVector {
+    repeated Field items = 1;
+}
+
+message FieldMap {
+    map <string, Field> data = 1;
+}
+
+message AggregateFunctionState {
+    bytes name = 1;
+    bytes data = 2;
+}
+
+// DB::Field
+message Field {
+    oneof data {
+        // See DB::Field::Types::Which
+        uint64 uint64 = 1;
+        sint64 int64 = 2;
+        double float64 = 3;
+        UInt128 uint128 = 4;
+        UInt128 int128 = 5;
+        bytes string = 6;
+        FieldVector array = 7;
+        FieldVector tuple = 8;
+        Decimal32 decimal32 = 9; 
+        Decimal64 decimal64 = 10; 
+        Decimal128 decimal128 = 11; 
+        Decimal256 decimal256 = 12; 
+        UInt256 uint256 = 13;
+        UUID uuid = 14;
+        UInt256 int256 = 15;
+        FieldVector map = 16;
+        FieldMap object = 17;
+        AggregateFunctionState aggregatefunctionstate = 18;
+        bool bool = 19;
+        IPv4 ipv4 = 20;
+        IPv6 ipv6 = 21;
+        bytes custom = 22; 
+    }
+}

@@ -1,0 +1,28 @@
+diff --git a/bindings/c/fdb_c.cpp b/bindings/c/fdb_c.cpp
+index 32496f28f..168f08496 100644
+--- a/bindings/c/fdb_c.cpp
++++ b/bindings/c/fdb_c.cpp
+@@ -934,6 +934,10 @@ extern "C" DLLEXPORT const char* fdb_get_client_version() {
+ 	return API->getClientVersion();
+ }
+ 
++extern "C" DLLEXPORT FDBFuture* fdb_delay(double seconds) {
++    return (FDBFuture *) onMainThread([=]() { return g_network->delay(seconds, TaskPriority::DefaultDelay); }).extractPtr();
++}
++
+ #if defined(__APPLE__)
+ #include <dlfcn.h>
+ __attribute__((constructor)) static void initialize() {
+diff --git a/bindings/c/foundationdb/fdb_c.h b/bindings/c/foundationdb/fdb_c.h
+index 1088e786d..273d01482 100644
+--- a/bindings/c/foundationdb/fdb_c.h
++++ b/bindings/c/foundationdb/fdb_c.h
+@@ -570,6 +570,8 @@ DLLEXPORT WARN_UNUSED_RESULT FDBFuture* fdb_transaction_get_range_selector(FDBTr
+ #define fdb_transaction_get_range_selector(tr, bkn, bknl, boe, bo, ekn, eknl, eoe, eo, lim) FDB_REMOVED_FUNCTION
+ #endif
+ 
++DLLEXPORT WARN_UNUSED_RESULT FDBFuture* fdb_delay(double seconds);
++
+ #ifdef __cplusplus
+ }
+ #endif

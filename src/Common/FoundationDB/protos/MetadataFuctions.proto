@@ -1,0 +1,13 @@
+syntax = "proto3";
+package DB.FoundationDB.Proto;
+
+message XmlFuncInfo{
+    string name = 1;
+    string xml_udf_name = 2; 
+    string file_contents = 3;
+    uint64 update_time = 4;
+}
+
+message MetaStoreFunctions {
+    map<string, XmlFuncInfo> functions = 1;
+}

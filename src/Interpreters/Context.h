@@ -166,6 +166,8 @@ struct BackgroundTaskSchedulingSettings;
 class ZooKeeperMetadataTransaction;
 using ZooKeeperMetadataTransactionPtr = std::shared_ptr<ZooKeeperMetadataTransaction>;
 
+class MetadataStoreFoundationDB;
+
 class AsynchronousInsertQueue;
 
 /// Callback for external tables initializer
@@ -857,6 +859,10 @@ public:
     void reloadZooKeeperIfChanged(const ConfigurationPtr & config) const;
 
     void setSystemZooKeeperLogAfterInitializationIfNeeded();
+
+    bool hasMetadataStoreFoundationDB() const;
+    void initMetadataStoreFoundationDB(const Poco::Util::AbstractConfiguration & config, const String & config_name) const;
+    std::shared_ptr<MetadataStoreFoundationDB> getMetadataStoreFoundationDB() const;
 
     /// Create a cache of uncompressed blocks of specified size. This can be done only once.
     void setUncompressedCache(const String & uncompressed_cache_policy, size_t max_size_in_bytes);

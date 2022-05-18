@@ -1,0 +1,87 @@
+syntax = "proto3";
+package DB.FoundationDB.Proto;
+import "UUID.proto";
+
+message AccessRightsComponent {
+    string access_flags = 1;
+    string database = 2;
+    string table = 3;
+    repeated string columns = 4;
+}
+
+message GrantedRoleComponent {
+    repeated UUID ids = 1;
+    bool admin_option = 2;
+    bool is_empty = 3;
+}
+
+message SettingsProfileComponent {
+    string setting_name = 1;
+    string value = 2;
+    string min_value = 3;
+    string max_value = 4;
+    optional bool readonly = 5;
+}
+
+message MetadataRoleEntry
+{
+    repeated AccessRightsComponent access = 1;
+    repeated GrantedRoleComponent granted_roles = 2;
+    repeated SettingsProfileComponent settings = 3;
+}
+
+
+message MetadataUserEntry
+{
+    repeated AccessRightsComponent access = 1;
+    string default_database = 2;
+    string grantees = 3;
+    repeated GrantedRoleComponent granted_roles = 4;
+    string default_roles = 5;
+    repeated string allowed_client_hosts_IPAddress = 6;
+    repeated string allowed_client_hosts_IPSubnet = 7;
+    repeated string allowed_client_hosts_names = 8;
+    repeated string allowed_client_hosts_names_regexps = 9;
+    repeated string allowed_client_hosts_names_like = 10;
+    repeated SettingsProfileComponent settings = 11;
+}
+
+message QuotaLimits{
+    uint64 duration = 1;
+    bool randomize_interval = 2;
+}
+
+message MetadataQuotaEntry
+{
+    string to_roles = 1;
+    string key_type = 2;
+    repeated QuotaLimits limits = 3;
+}
+
+message MetadataRowPolicyEntry
+{
+    bool is_permissive = 1;
+    bool is_restrictive = 2;
+    string to_roles = 3;
+    string full_name = 4;
+    string database = 5;
+    string table_name = 6;
+}
+
+message MetadataSettingsProfileEntry
+{
+    repeated SettingsProfileComponent settings = 1;
+    string to_roles = 2;
+}
+
+message AccessEntity {
+    string name = 6;
+    string definition = 7;
+    oneof entity_type {
+        MetadataUserEntry user = 1;
+        MetadataRoleEntry role = 2;
+        MetadataQuotaEntry quota = 3;
+        MetadataRowPolicyEntry row_policy = 4;
+        MetadataSettingsProfileEntry settings_profile = 5;
+    }
+}

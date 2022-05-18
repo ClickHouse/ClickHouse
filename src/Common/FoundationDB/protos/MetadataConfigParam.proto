@@ -1,0 +1,7 @@
+syntax = "proto3";
+package DB.FoundationDB.Proto;
+
+message MetadataConfigParam {
+    string name = 1;
+    string value = 2;
+}

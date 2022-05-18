@@ -6,6 +6,7 @@
 #include <Poco/UUID.h>
 #include <Poco/Net/IPAddress.h>
 #include <Poco/Util/Application.h>
+#include <Common/Exception.h>
 #include <Common/Macros.h>
 #include <Common/escapeForFileName.h>
 #include <Common/EventNotifier.h>
@@ -91,10 +92,13 @@
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/Config/AbstractConfigurationComparison.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
+#include <Common/FoundationDB/MetadataStoreFoundationDB.h>
+#include <Common/FoundationDB/FoundationDBCommon.h>
 #include <Common/ShellCommand.h>
 #include <Common/logger_useful.h>
 #include <base/EnumReflection.h>
 #include <Common/RemoteHostFilter.h>
+#include <Core/ServerUUID.h>
 #include <Interpreters/AsynchronousInsertQueue.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
@@ -207,6 +211,8 @@ struct ContextSharedPart : boost::noncopyable
     mutable std::mutex auxiliary_zookeepers_mutex;
     mutable std::map<String, zkutil::ZooKeeperPtr> auxiliary_zookeepers;    /// Map for auxiliary ZooKeeper clients.
     ConfigurationPtr auxiliary_zookeepers_config;           /// Stores auxiliary zookeepers configs
+
+    mutable std::shared_ptr<MetadataStoreFoundationDB> metadata_store_fdb;
 
     String interserver_io_host;                             /// The host name by which this server is available for other servers.
     UInt16 interserver_io_port = 0;                         /// and port.
@@ -499,6 +505,7 @@ struct ContextSharedPart : boost::noncopyable
             system_logs->shutdown();
 
         DatabaseCatalog::shutdown();
+        FoundationDBNetwork::shutdownIfNeed();
 
         if (merge_mutate_executor)
             merge_mutate_executor->wait();
@@ -4356,4 +4363,18 @@ void Context::setClientProtocolVersion(UInt64 version)
     client_protocol_version = version;
 }
 
+bool Context::hasMetadataStoreFoundationDB() const
+{
+    return shared->metadata_store_fdb != nullptr;
+}
+
+void Context::initMetadataStoreFoundationDB(const Poco::Util::AbstractConfiguration & config, const String & config_name) const
+{
+    shared->metadata_store_fdb = std::make_shared<MetadataStoreFoundationDB>(config, config_name, ServerUUID::get());
+}
+
+std::shared_ptr<MetadataStoreFoundationDB> Context::getMetadataStoreFoundationDB() const
+{
+    return shared->metadata_store_fdb;
+}
 }

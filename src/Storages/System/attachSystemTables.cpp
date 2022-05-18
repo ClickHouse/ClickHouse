@@ -80,6 +80,7 @@
 #include <Storages/System/StorageSystemCertificates.h>
 #include <Storages/System/StorageSystemSchemaInferenceCache.h>
 #include <Storages/System/StorageSystemDroppedTables.h>
+#include <Storages/System/StorageSystemFoundationDB.h>
 
 #ifdef OS_LINUX
 #include <Storages/System/StorageSystemStackTrace.h>
@@ -190,6 +191,8 @@ void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, b
 
     if (context->getConfigRef().getInt("allow_experimental_transactions", 0))
         attach<StorageSystemTransactions>(context, system_database, "transactions");
+    if (context->hasMetadataStoreFoundationDB())
+        attach<StorageSystemFoundationDB>(context, system_database, "foundationdb");
 }
 
 void attachSystemTablesAsync(ContextPtr context, IDatabase & system_database, AsynchronousMetrics & async_metrics)

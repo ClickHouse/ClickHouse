@@ -1,6 +1,6 @@
+#include <chrono>
 #include <Common/ErrorCodes.h>
 #include <Common/Exception.h>
-#include <chrono>
 
 /** Previously, these constants were located in one enum.
   * But in this case there is a problem: when you add a new constant, you need to recompile
@@ -524,7 +524,7 @@
     M(553, LZMA_STREAM_ENCODER_FAILED) \
     M(554, LZMA_STREAM_DECODER_FAILED) \
     M(555, ROCKSDB_ERROR) \
-    M(556, SYNC_MYSQL_USER_ACCESS_ERROR)\
+    M(556, SYNC_MYSQL_USER_ACCESS_ERROR) \
     M(557, UNKNOWN_UNION) \
     M(558, EXPECTED_ALL_OR_DISTINCT) \
     M(559, INVALID_GRPC_QUERY_INFO) \
@@ -650,12 +650,15 @@
     M(679, IO_URING_SUBMIT_ERROR) \
     M(690, MIXED_ACCESS_PARAMETER_TYPES) \
     M(691, UNKNOWN_ELEMENT_OF_ENUM) \
-    \
+\
     M(999, KEEPER_EXCEPTION) \
     M(1000, POCO_EXCEPTION) \
     M(1001, STD_EXCEPTION) \
     M(1002, UNKNOWN_EXCEPTION) \
-/* See END */
+\
+    M(1101, FDB_EXCEPTION) \
+    M(1102, FDB_META_EXCEPTION) \
+    /* See END */
 
 namespace DB
 {
@@ -701,7 +704,10 @@ namespace ErrorCodes
         throw Exception(NO_SUCH_ERROR_CODE, "No error code with name: '{}'", error_name);
     }
 
-    ErrorCode end() { return END + 1; }
+    ErrorCode end()
+    {
+        return END + 1;
+    }
 
     void increment(ErrorCode error_code, bool remote, const std::string & message, const FramePointers & trace)
     {

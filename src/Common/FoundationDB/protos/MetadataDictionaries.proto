@@ -1,0 +1,17 @@
+syntax = "proto3";
+package DB.FoundationDB.Proto;
+import "UUID.proto";
+
+
+
+message DictInfo {
+    string name = 1;
+    string dict_name = 2; 
+    bool in_use  = 3; 
+    uint64 last_update_time = 4;
+    string file_contents = 5;
+}
+
+message MetadataDictionaries {
+    map<string, DictInfo> dicts = 1;
+}

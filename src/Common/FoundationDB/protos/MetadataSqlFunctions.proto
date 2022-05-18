@@ -1,0 +1,10 @@
+syntax = "proto3";
+package DB.FoundationDB.Proto;
+
+message SqlFuncInfo{
+    string sql = 1;
+}
+
+message MetaStoreUserDefinedSQLFunction {
+    map<string, SqlFuncInfo> functions = 1;
+}

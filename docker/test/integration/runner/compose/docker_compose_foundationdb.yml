@@ -1,0 +1,8 @@
+version: '3'
+services:
+  foundationdb1:
+    image: foundationdb/foundationdb:7.1.27
+    environment:
+      FDB_NETWORKING_MODE: container
+      FDB_COORDINATOR_PORT: ${FDB_PORT:-4501}
+      FDB_PORT: ${FDB_PORT:-4501}

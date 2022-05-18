@@ -60,6 +60,7 @@ target_link_libraries(clickhouse_storages_system PRIVATE
     common
     string_utils
     clickhouse_common_zookeeper
+    clickhouse_common_foundationdb
     clickhouse_parsers
     Poco::JSON
     INTERFACE "-Wl,${WHOLE_ARCHIVE} $<TARGET_FILE:information_schema_metadata> -Wl,${NO_WHOLE_ARCHIVE}"

@@ -1,0 +1,106 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index abe427497..7a2f477f8 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -36,6 +36,11 @@ endif()
+ 
+ set(OPEN_FOR_IDE OFF CACHE BOOL "Open this in an IDE (won't compile/link)")
+ 
++# Build portable library
++set(PORTABLE_BINARY ON)
++set(STATIC_LINK_LIBCXX ON)
++set(USE_LD LLD)
++
+ if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
+   if (OPEN_FOR_IDE)
+     message(STATUS "Defaulting build type to 'Debug' for OPEN_FOR_IDE")
+@@ -175,29 +180,38 @@ include(GetMsgpack)
+ add_subdirectory(flow)
+ add_subdirectory(fdbrpc)
+ add_subdirectory(fdbclient)
+-add_subdirectory(fdbserver)
+-add_subdirectory(fdbcli)
+-if(NOT WIN32)
+-  add_subdirectory(fdbmonitor)
+-else()
+-  add_subdirectory(fdbservice)
+-endif()
+-add_subdirectory(fdbbackup)
++# add_subdirectory(fdbserver)
++# add_subdirectory(fdbcli)
++# if(NOT WIN32)
++#   add_subdirectory(fdbmonitor)
++# else()
++#   add_subdirectory(fdbservice)
++# endif()
++# add_subdirectory(fdbbackup)
+ add_subdirectory(contrib)
+-add_subdirectory(tests)
+-add_subdirectory(flowbench EXCLUDE_FROM_ALL)
++# add_subdirectory(tests)
++function(add_fdbclient_test)
++endfunction()
++function(add_unavailable_fdbclient_test)
++endfunction()
++function(package_bindingtester)
++endfunction()
++# add_subdirectory(flowbench EXCLUDE_FROM_ALL)
+ if(WITH_PYTHON AND WITH_C_BINDING)
+   add_subdirectory(bindings)
+ endif()
+-if(WITH_DOCUMENTATION)
+-  add_subdirectory(documentation)
+-endif()
+-
+-if(WIN32)
+-  add_subdirectory(packaging/msi)
+-else()
+-  include(CPack)
+-endif()
++# if(WITH_DOCUMENTATION)
++#   add_subdirectory(documentation)
++# endif()
++
++# if(WIN32)
++#   add_subdirectory(packaging/msi)
++# else()
++#   include(CPack)
++# endif()
++
++# Hotfixs, flow depends on jemalloc
++target_link_libraries(flow PRIVATE jemalloc)
+ 
+ if(CMAKE_SYSTEM_NAME STREQUAL "FreeBSD")
+   add_link_options(-lexecinfo)
+diff --git a/cmake/CompileBoost.cmake b/cmake/CompileBoost.cmake
+index 52788e68c..64572e7e5 100644
+--- a/cmake/CompileBoost.cmake
++++ b/cmake/CompileBoost.cmake
+@@ -51,21 +51,16 @@ function(compile_boost)
+   ExternalProject_add("${COMPILE_BOOST_TARGET}Project"
+     URL "https://boostorg.jfrog.io/artifactory/main/release/1.78.0/source/boost_1_78_0.tar.bz2"
+     URL_HASH SHA256=8681f175d4bdb26c52222665793eef08490d7758529330f98d3b29dd0735bccc
+-    CONFIGURE_COMMAND ${BOOTSTRAP_COMMAND} ${BOOTSTRAP_ARGS} --with-libraries=${BOOTSTRAP_LIBRARIES} --with-toolset=${BOOST_TOOLSET}
+-    BUILD_COMMAND ${B2_COMMAND} link=static ${COMPILE_BOOST_BUILD_ARGS} --prefix=${BOOST_INSTALL_DIR} ${USER_CONFIG_FLAG} install
++    CONFIGURE_COMMAND ""
++    BUILD_COMMAND ""
+     BUILD_IN_SOURCE ON
+-    INSTALL_COMMAND ""
++    INSTALL_COMMAND sh -c "rm -rf ${BOOST_INSTALL_DIR} && mkdir ${BOOST_INSTALL_DIR} && cp -R . ${BOOST_INSTALL_DIR}/include"
+     UPDATE_COMMAND ""
+-    BUILD_BYPRODUCTS "${BOOST_INSTALL_DIR}/boost/config.hpp"
+-                     "${BOOST_INSTALL_DIR}/lib/libboost_context.a")
+-
+-  add_library(${COMPILE_BOOST_TARGET}_context STATIC IMPORTED)
+-  add_dependencies(${COMPILE_BOOST_TARGET}_context ${COMPILE_BOOST_TARGET}Project)
+-  set_target_properties(${COMPILE_BOOST_TARGET}_context PROPERTIES IMPORTED_LOCATION "${BOOST_INSTALL_DIR}/lib/libboost_context.a")
++    BUILD_BYPRODUCTS "${BOOST_INSTALL_DIR}/include")
+ 
+   add_library(${COMPILE_BOOST_TARGET} INTERFACE)
+-  target_include_directories(${COMPILE_BOOST_TARGET} SYSTEM INTERFACE ${BOOST_INSTALL_DIR}/include)
+-  target_link_libraries(${COMPILE_BOOST_TARGET} INTERFACE ${COMPILE_BOOST_TARGET}_context)
++  target_include_directories(${COMPILE_BOOST_TARGET} SYSTEM INTERFACE ${BOOST_INSTALL_DIR}/include)
++  add_dependencies(${COMPILE_BOOST_TARGET} "${COMPILE_BOOST_TARGET}Project")
+ 
+ endfunction(compile_boost)
+ 

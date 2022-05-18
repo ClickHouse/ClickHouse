@@ -1,0 +1,384 @@
+<?xml version="1.0"?>
+
+<!--
+
+This file should not be edited outside of FoundationDB and is provided as reference for bindings writers.
+
+An <Option> looks like:
+
+  <Option name="" code=""
+          paramType="" paramOptional="true" paramDescription=""
+          description="" />
+
+name should be lowercase with underscores, except where capitalization should be somewhat
+ preserved. Individual bindings may convert everything to lowercase, everything to uppercase,
+ or title-capitalize words (but when doing so must preserve other capitalization).
+
+For example, "TLS_key_bytes" may be translated to:
+ - tls_key_bytes
+ - TLS_KEY_BYTE
+ - TLSKeyBytes
+
+If paramType is not present, the option takes no parameter. Otherwise it must be "String", 
+ "Int" or "Bytes". These will be parsed according to the C API spec.
+
+If paramType is set, paramDescription must be present and describe the parameter.
+If paramOptional is set to any value, the parameter is optional, otherwise required.
+description is not currently required but encouraged.
+
+-->
+
+<Options>
+  <Scope name="NetworkOption">
+    <Option name="local_address"  code="10" 
+            paramType="String" paramDescription="IP:PORT" 
+            description="Deprecated"/>
+    <Option name="cluster_file" code="20"
+            paramType="String" paramDescription="path to cluster file"
+            description="Deprecated"/>
+    <Option name="trace_enable" code="30"
+            paramType="String" paramDescription="path to output directory (or NULL for current working directory)"
+            description="Enables trace output to a file in a directory of the clients choosing"/>
+    <Option name="trace_roll_size" code="31"
+            paramType="Int" paramDescription="max size of a single trace output file"
+            description="Sets the maximum size in bytes of a single trace output file. This value should be in the range ``[0, INT64_MAX]``. If the value is set to 0, there is no limit on individual file size. The default is a maximum size of 10,485,760 bytes."/>
+    <Option name="trace_max_logs_size" code="32"
+            paramType="Int" paramDescription="max total size of trace files"
+            description="Sets the maximum size of all the trace output files put together. This value should be in the range ``[0, INT64_MAX]``. If the value is set to 0, there is no limit on the total size of the files. The default is a maximum size of 104,857,600 bytes. If the default roll size is used, this means that a maximum of 10 trace files will be written at a time."/>
+    <Option name="trace_log_group" code="33"
+            paramType="String" paramDescription="value of the LogGroup attribute"
+            description="Sets the 'LogGroup' attribute with the specified value for all events in the trace output files. The default log group is 'default'."/>
+    <Option name="trace_format" code="34"
+            paramType="String" paramDescription="Format of trace files"
+            description="Select the format of the log files. xml (the default) and json are supported."/>
+    <Option name="trace_clock_source" code="35"
+            paramType="String" paramDescription="Trace clock source"
+            description="Select clock source for trace files. now (the default) or realtime are supported." />
+    <Option name="trace_file_identifier" code="36"
+            paramType="String" paramDescription="The identifier that will be part of all trace file names"
+            description="Once provided, this string will be used to replace the port/PID in the log file names." />
+    <Option name="trace_partial_file_suffix" code="39"
+            paramType="String" paramDescription="Append this suffix to partially written log files. When a log file is complete, it is renamed to remove the suffix. No separator is added between the file and the suffix. If you want to add a file extension, you should include the separator - e.g. '.tmp' instead of 'tmp' to add the 'tmp' extension."
+            description="Set file suffix for partially written log files." />
+    <Option name="knob" code="40"
+            paramType="String" paramDescription="knob_name=knob_value"
+            description="Set internal tuning or debugging knobs"/>
+    <Option name="TLS_plugin" code="41"
+            paramType="String" paramDescription="file path or linker-resolved name"
+            description="Deprecated" />
+    <Option name="TLS_cert_bytes" code="42"
+            paramType="Bytes" paramDescription="certificates"
+            description="Set the certificate chain" />
+    <Option name="TLS_cert_path" code="43"
+            paramType="String" paramDescription="file path"
+            description="Set the file from which to load the certificate chain" />
+    <Option name="TLS_key_bytes" code="45"
+            paramType="Bytes" paramDescription="key"
+            description="Set the private key corresponding to your own certificate" />
+    <Option name="TLS_key_path" code="46"
+            paramType="String" paramDescription="file path"
+            description="Set the file from which to load the private key corresponding to your own certificate" />
+    <Option name="TLS_verify_peers" code="47"
+            paramType="Bytes" paramDescription="verification pattern"
+            description="Set the peer certificate field verification criteria" />
+    <Option name="Buggify_enable" code="48"
+            description="" />
+    <Option name="Buggify_disable" code="49"
+            description="" />
+    <Option name="Buggify_section_activated_probability" code="50"
+            paramType="Int" paramDescription="probability expressed as a percentage between 0 and 100"
+            description="Set the probability of a BUGGIFY section being active for the current execution.  Only applies to code paths first traversed AFTER this option is changed." />
+    <Option name="Buggify_section_fired_probability" code="51"
+            paramType="Int" paramDescription="probability expressed as a percentage between 0 and 100"
+            description="Set the probability of an active BUGGIFY section being fired" />
+    <Option name="TLS_ca_bytes" code="52"
+            paramType="Bytes" paramDescription="ca bundle"
+            description="Set the ca bundle" />
+    <Option name="TLS_ca_path" code="53"
+            paramType="String" paramDescription="file path"
+            description="Set the file from which to load the certificate authority bundle" />
+    <Option name="TLS_password" code="54"
+            paramType="String" paramDescription="key passphrase"
+            description="Set the passphrase for encrypted private key. Password should be set before setting the key for the password to be used." />
+    <Option name="disable_multi_version_client_api" code="60"
+            description="Disables the multi-version client API and instead uses the local client directly. Must be set before setting up the network." />
+    <Option name="callbacks_on_external_threads" code="61"
+            description="If set, callbacks from external client libraries can be called from threads created by the FoundationDB client library. Otherwise, callbacks will be called from either the thread used to add the callback or the network thread. Setting this option can improve performance when connected using an external client, but may not be safe to use in all environments. Must be set before setting up the network. WARNING: This feature is considered experimental at this time." />
+    <Option name="external_client_library" code="62"
+            paramType="String" paramDescription="path to client library"
+            description="Adds an external client library for use by the multi-version client API. Must be set before setting up the network." />
+    <Option name="external_client_directory" code="63"
+            paramType="String" paramDescription="path to directory containing client libraries"
+            description="Searches the specified path for dynamic libraries and adds them to the list of client libraries for use by the multi-version client API. Must be set before setting up the network." />
+    <Option name="disable_local_client" code="64"
+            description="Prevents connections through the local client, allowing only connections through externally loaded client libraries." />
+    <Option name="client_threads_per_version" code="65"
+            paramType="Int" paramDescription="Number of client threads to be spawned.  Each cluster will be serviced by a single client thread."
+            description="Spawns multiple worker threads for each version of the client that is loaded.  Setting this to a number greater than one implies disable_local_client." />
+    <Option name="retain_client_library_copies" code="67"
+            description="Retain temporary external client library copies that are created for enabling multi-threading." />
+    <Option name="disable_client_statistics_logging" code="70"
+            description="Disables logging of client statistics, such as sampled transaction activity." />
+    <Option name="enable_slow_task_profiling" code="71"
+            description="Deprecated" />
+    <Option name="enable_run_loop_profiling" code="71"
+            description="Enables debugging feature to perform run loop profiling. Requires trace logging to be enabled. WARNING: this feature is not recommended for use in production." />
+    <Option name="client_buggify_enable" code="80"
+            description="Enable client buggify - will make requests randomly fail (intended for client testing)" />
+    <Option name="client_buggify_disable" code="81"
+            description="Disable client buggify" />
+    <Option name="client_buggify_section_activated_probability" code="82"
+            paramType="Int" paramDescription="probability expressed as a percentage between 0 and 100"
+            description="Set the probability of a CLIENT_BUGGIFY section being active for the current execution." />
+    <Option name="client_buggify_section_fired_probability" code="83"
+            paramType="Int" paramDescription="probability expressed as a percentage between 0 and 100"
+            description="Set the probability of an active CLIENT_BUGGIFY section being fired. A section will only fire if it was activated" />
+    <Option name="distributed_client_tracer" code="90"
+            paramType="String" paramDescription="Distributed tracer type. Choose from none, log_file, or network_lossy"
+            description="Set a tracer to run on the client. Should be set to the same value as the tracer set on the server." />
+    <Option name="supported_client_versions" code="1000"
+            paramType="String" paramDescription="[release version],[source version],[protocol version];..."
+            description="This option is set automatically to communicate the list of supported clients to the active client."
+            hidden="true" />
+    <Option name="external_client" code="1001"
+            description="This option is set automatically on all clients loaded externally using the multi-version API." 
+            hidden="true" />
+    <Option name="external_client_transport_id" code="1002"
+            description="This option tells a child on a multiversion client what transport ID to use."
+            paramType="Int" paramDescription="Transport ID for the child connection"
+            hidden="true" />
+  </Scope>
+
+  <Scope name="DatabaseOption">
+    <Option name="location_cache_size" code="10"
+            paramType="Int" paramDescription="Max location cache entries"
+            description="Set the size of the client location cache. Raising this value can boost performance in very large databases where clients access data in a near-random pattern. Defaults to 100000." />
+    <Option name="max_watches" code="20"
+            paramType="Int" paramDescription="Max outstanding watches"
+            description="Set the maximum number of watches allowed to be outstanding on a database connection. Increasing this number could result in increased resource usage. Reducing this number will not cancel any outstanding watches. Defaults to 10000 and cannot be larger than 1000000." />
+    <Option name="machine_id" code="21"
+            paramType="String" paramDescription="Hexadecimal ID"
+            description="Specify the machine ID that was passed to fdbserver processes running on the same machine as this client, for better location-aware load balancing." />
+    <Option name="datacenter_id" code="22"
+            paramType="String" paramDescription="Hexadecimal ID"
+            description="Specify the datacenter ID that was passed to fdbserver processes running in the same datacenter as this client, for better location-aware load balancing." />
+    <!-- The snapshot RYW options act like defaults for the equivalent transaction options, but database defaults cannot have cumulative effects from multiple calls.
+         Thus, we don't use the defaultFor annotation on these options. -->
+    <Option name="snapshot_ryw_enable" code="26"
+            description="Snapshot read operations will see the results of writes done in the same transaction. This is the default behavior." />
+    <Option name="snapshot_ryw_disable" code="27"
+            description="Snapshot read operations will not see the results of writes done in the same transaction. This was the default behavior prior to API version 300." />
+    <Option name="transaction_logging_max_field_length" code="405" paramType="Int" paramDescription="Maximum length of escaped key and value fields."
+            description="Sets the maximum escaped length of key and value fields to be logged to the trace file via the LOG_TRANSACTION option. This sets the ``transaction_logging_max_field_length`` option of each transaction created by this database. See the transaction option description for more information." 
+            defaultFor="405"/>
+    <Option name="transaction_timeout" code="500"
+            paramType="Int" paramDescription="value in milliseconds of timeout"
+            description="Set a timeout in milliseconds which, when elapsed, will cause each transaction automatically to be cancelled. This sets the ``timeout`` option of each transaction created by this database. See the transaction option description for more information. Using this option requires that the API version is 610 or higher." 
+            defaultFor="500"/>
+    <Option name="transaction_retry_limit" code="501"
+            paramType="Int" paramDescription="number of times to retry"
+            description="Set a maximum number of retries after which additional calls to ``onError`` will throw the most recently seen error code. This sets the ``retry_limit`` option of each transaction created by this database. See the transaction option description for more information." 
+            defaultFor="501"/>
+    <Option name="transaction_max_retry_delay" code="502"
+            paramType="Int" paramDescription="value in milliseconds of maximum delay"
+            description="Set the maximum amount of backoff delay incurred in the call to ``onError`` if the error is retryable. This sets the ``max_retry_delay`` option of each transaction created by this database. See the transaction option description for more information."
+            defaultFor="502"/>
+    <Option name="transaction_size_limit" code="503"
+            paramType="Int" paramDescription="value in bytes"
+            description="Set the maximum transaction size in bytes. This sets the ``size_limit`` option on each transaction created by this database. See the transaction option description for more information." 
+            defaultFor="503"/>
+    <Option name="transaction_causal_read_risky" code="504"
+            description="The read version will be committed, and usually will be the latest committed, but might not be the latest committed in the event of a simultaneous fault and misbehaving clock."
+            defaultFor="20"/>
+    <Option name="transaction_include_port_in_address" code="505"
+            description="Deprecated. Addresses returned by get_addresses_for_key include the port when enabled. As of api version 630, this option is enabled by default and setting this has no effect."
+            defaultFor="23"/>
+    <Option name="transaction_bypass_unreadable" code="700"
+            description="Allows ``get`` operations to read from sections of keyspace that have become unreadable because of versionstamp operations. This sets the ``bypass_unreadable`` option of each transaction created by this database. See the transaction option description for more information."
+            defaultFor="1100"/>
+    <Option name="use_config_database" code="800"
+            description="Use configuration database." />
+    <Option name="test_causal_read_risky" code="900"
+            description="An integer between 0 and 100 (default is 0) expressing the probability that a client will verify it can't read stale data whenever it detects a recovery." />
+  </Scope>
+  
+  <Scope name="TransactionOption">
+    <Option name="causal_write_risky" code="10"
+            description="The transaction, if not self-conflicting, may be committed a second time after commit succeeds, in the event of a fault"/>
+    <Option name="causal_read_risky" code="20"
+            description="The read version will be committed, and usually will be the latest committed, but might not be the latest committed in the event of a simultaneous fault and misbehaving clock."/>
+    <Option name="causal_read_disable" code="21" />
+    <Option name="include_port_in_address" code="23"
+            description="Addresses returned by get_addresses_for_key include the port when enabled. As of api version 630, this option is enabled by default and setting this has no effect." />
+    <Option name="next_write_no_write_conflict_range" code="30"
+            description="The next write performed on this transaction will not generate a write conflict range. As a result, other transactions which read the key(s) being modified by the next write will not conflict with this transaction. Care needs to be taken when using this option on a transaction that is shared between multiple threads. When setting this option, write conflict ranges will be disabled on the next write operation, regardless of what thread it is on." />
+    <Option name="commit_on_first_proxy" code="40"
+            description="Committing this transaction will bypass the normal load balancing across commit proxies and go directly to the specifically nominated 'first commit proxy'."
+            hidden="true" />
+    <Option name="check_writes_enable" code="50"
+            hidden="true" />
+    <Option name="read_your_writes_disable" code="51"
+            description="Reads performed by a transaction will not see any prior mutations that occured in that transaction, instead seeing the value which was in the database at the transaction's read version. This option may provide a small performance benefit for the client, but also disables a number of client-side optimizations which are beneficial for transactions which tend to read and write the same keys within a single transaction. It is an error to set this option after performing any reads or writes on the transaction."/>
+    <Option name="read_ahead_disable" code="52"
+            description="Deprecated" />
+    <Option name="durability_datacenter" code="110" />
+    <Option name="durability_risky" code="120" />
+    <Option name="durability_dev_null_is_web_scale" code="130"
+            description="Deprecated"/>
+    <Option name="priority_system_immediate" code="200"
+            description="Specifies that this transaction should be treated as highest priority and that lower priority transactions should block behind this one. Use is discouraged outside of low-level tools" />
+    <Option name="priority_batch" code="201"
+            description="Specifies that this transaction should be treated as low priority and that default priority transactions will be processed first. Batch priority transactions will also be throttled at load levels smaller than for other types of transactions and may be fully cut off in the event of machine failures. Useful for doing batch work simultaneously with latency-sensitive work" />
+    <Option name="initialize_new_database" code="300"
+            description="This is a write-only transaction which sets the initial configuration. This option is designed for use by database system tools only." />
+    <Option name="access_system_keys" code="301"
+            description="Allows this transaction to read and modify system keys (those that start with the byte 0xFF). Implies raw_access."/>
+    <Option name="read_system_keys" code="302"
+            description="Allows this transaction to read system keys (those that start with the byte 0xFF). Implies raw_access."/>
+    <Option name="raw_access" code="303"
+            description="Allows this transaction to access the raw key-space when tenant mode is on."/>
+    <Option name="debug_dump" code="400" 
+            hidden="true" />
+    <Option name="debug_retry_logging" code="401" paramType="String" paramDescription="Optional transaction name" />
+    <Option name="transaction_logging_enable" code="402" paramType="String" paramDescription="String identifier to be used in the logs when tracing this transaction. The identifier must not exceed 100 characters."
+            description="Deprecated" />
+    <Option name="debug_transaction_identifier" code="403" paramType="String" paramDescription="String identifier to be used when tracing or profiling this transaction. The identifier must not exceed 100 characters."
+            description="Sets a client provided identifier for the transaction that will be used in scenarios like tracing or profiling. Client trace logging or transaction profiling must be separately enabled." />
+    <Option name="log_transaction" code="404"
+            description="Enables tracing for this transaction and logs results to the client trace logs. The DEBUG_TRANSACTION_IDENTIFIER option must be set before using this option, and client trace logging must be enabled to get log output." />
+    <Option name="transaction_logging_max_field_length" code="405" paramType="Int" paramDescription="Maximum length of escaped key and value fields."
+            description="Sets the maximum escaped length of key and value fields to be logged to the trace file via the LOG_TRANSACTION option, after which the field will be truncated. A negative value disables truncation." />
+    <Option name="server_request_tracing" code="406"
+	    description="Sets an identifier for server tracing of this transaction. When committed, this identifier triggers logging when each part of the transaction authority encounters it, which is helpful in diagnosing slowness in misbehaving clusters. The identifier is randomly generated. When there is also a debug_transaction_identifier, both IDs are logged together." />
+    <Option name="timeout" code="500"
+            paramType="Int" paramDescription="value in milliseconds of timeout"
+            description="Set a timeout in milliseconds which, when elapsed, will cause the transaction automatically to be cancelled. Valid parameter values are ``[0, INT_MAX]``. If set to 0, will disable all timeouts. All pending and any future uses of the transaction will throw an exception. The transaction can be used again after it is reset. Prior to API version 610, like all other transaction options, the timeout must be reset after a call to ``onError``. If the API version is 610 or greater, the timeout is not reset after an ``onError`` call. This allows the user to specify a longer timeout on specific transactions than the default timeout specified through the ``transaction_timeout`` database option without the shorter database timeout cancelling transactions that encounter a retryable error. Note that at all API versions, it is safe and legal to set the timeout each time the transaction begins, so most code written assuming the older behavior can be upgraded to the newer behavior without requiring any modification, and the caller is not required to implement special logic in retry loops to only conditionally set this option."
+            persistent="true" />
+    <Option name="retry_limit" code="501"
+            paramType="Int" paramDescription="number of times to retry"
+            description="Set a maximum number of retries after which additional calls to ``onError`` will throw the most recently seen error code. Valid parameter values are ``[-1, INT_MAX]``. If set to -1, will disable the retry limit. Prior to API version 610, like all other transaction options, the retry limit must be reset after a call to ``onError``. If the API version is 610 or greater, the retry limit is not reset after an ``onError`` call. Note that at all API versions, it is safe and legal to set the retry limit each time the transaction begins, so most code written assuming the older behavior can be upgraded to the newer behavior without requiring any modification, and the caller is not required to implement special logic in retry loops to only conditionally set this option." 
+            persistent="true"/>
+    <Option name="max_retry_delay" code="502"
+            paramType="Int" paramDescription="value in milliseconds of maximum delay"
+            description="Set the maximum amount of backoff delay incurred in the call to ``onError`` if the error is retryable. Defaults to 1000 ms. Valid parameter values are ``[0, INT_MAX]``. If the maximum retry delay is less than the current retry delay of the transaction, then the current retry delay will be clamped to the maximum retry delay. Prior to API version 610, like all other transaction options, the maximum retry delay must be reset after a call to ``onError``. If the API version is 610 or greater, the retry limit is not reset after an ``onError`` call. Note that at all API versions, it is safe and legal to set the maximum retry delay each time the transaction begins, so most code written assuming the older behavior can be upgraded to the newer behavior without requiring any modification, and the caller is not required to implement special logic in retry loops to only conditionally set this option."
+            persistent="true"/>
+    <Option name="size_limit" code="503"
+            paramType="Int" paramDescription="value in bytes"
+            description="Set the transaction size limit in bytes. The size is calculated by combining the sizes of all keys and values written or mutated, all key ranges cleared, and all read and write conflict ranges. (In other words, it includes the total size of all data included in the request to the cluster to commit the transaction.) Large transactions can cause performance problems on FoundationDB clusters, so setting this limit to a smaller value than the default can help prevent the client from accidentally degrading the cluster's performance. This value must be at least 32 and cannot be set to higher than 10,000,000, the default transaction size limit." />
+    <Option name="snapshot_ryw_enable" code="600"
+            description="Snapshot read operations will see the results of writes done in the same transaction. This is the default behavior." />
+    <Option name="snapshot_ryw_disable" code="601"
+            description="Snapshot read operations will not see the results of writes done in the same transaction. This was the default behavior prior to API version 300." />
+    <Option name="lock_aware" code="700"
+            description="The transaction can read and write to locked databases, and is responsible for checking that it took the lock."/>
+    <Option name="used_during_commit_protection_disable" code="701"
+            description="By default, operations that are performed on a transaction while it is being committed will not only fail themselves, but they will attempt to fail other in-flight operations (such as the commit) as well. This behavior is intended to help developers discover situations where operations could be unintentionally executed after the transaction has been reset. Setting this option removes that protection, causing only the offending operation to fail."/>
+    <Option name="read_lock_aware" code="702"
+            description="The transaction can read from locked databases."/>
+    <Option name="first_in_batch" code="710"
+            description="No other transactions will be applied before this transaction within the same commit version."
+            hidden="true" />
+    <Option name="use_provisional_proxies" code="711"
+            description="This option should only be used by tools which change the database configuration." />
+    <Option name="report_conflicting_keys" code="712"
+            description="The transaction can retrieve keys that are conflicting with other transactions." />
+    <Option name="special_key_space_relaxed" code="713"
+            description="By default, the special key space will only allow users to read from exactly one module (a subspace in the special key space). Use this option to allow reading from zero or more modules. Users who set this option should be prepared for new modules, which may have different behaviors than the modules they're currently reading. For example, a new module might block or return an error." />
+    <Option name="special_key_space_enable_writes" code="714"
+            description="By default, users are not allowed to write to special keys. Enable this option will implicitly enable all options required to achieve the configuration change." />        
+    <Option name="tag" code="800" paramType="String" paramDescription="String identifier used to associated this transaction with a throttling group. Must not exceed 16 characters."
+            description="Adds a tag to the transaction that can be used to apply manual targeted throttling. At most 5 tags can be set on a transaction." />
+    <Option name="auto_throttle_tag" code="801" paramType="String" paramDescription="String identifier used to associated this transaction with a throttling group. Must not exceed 16 characters."
+            description="Adds a tag to the transaction that can be used to apply manual or automatic targeted throttling. At most 5 tags can be set on a transaction." />
+    <Option name="span_parent" code="900" paramType="Bytes" paramDescription="A byte string of length 16 used to associate the span of this transaction with a parent"
+            description="Adds a parent to the Span of this transaction. Used for transaction tracing. A span can be identified with any 16 bytes"/>
+    <Option name="expensive_clear_cost_estimation_enable" code="1000"
+                description="Asks storage servers for how many bytes a clear key range contains. Otherwise uses the location cache to roughly estimate this." />
+    <Option name="bypass_unreadable" code="1100"
+                description="Allows ``get`` operations to read from sections of keyspace that have become unreadable because of versionstamp operations. These reads will view versionstamp operations as if they were set operations that did not fill in the versionstamp." />            
+    <Option name="use_grv_cache" code="1101"
+            description="Allows this transaction to use cached GRV from the database context. Defaults to off. Upon first usage, starts a background updater to periodically update the cache to avoid stale read versions." />
+    <Option name="skip_grv_cache" code="1102"
+            description="Specifically instruct this transaction to NOT use cached GRV. Primarily used for the read version cache's background updater to avoid attempting to read a cached entry in specific situations."
+            hidden="true"/>
+  </Scope>
+
+  <!-- The enumeration values matter - do not change them without
+       looking at fdb_c.cpp -->
+  <Scope name="StreamingMode">
+    <Option name="want_all" code="-2"
+            description="Client intends to consume the entire range and would like it all transferred as early as possible." />
+    <Option name="iterator" code="-1"
+            description="The default. The client doesn't know how much of the range it is likely to used and wants different performance concerns to be balanced. Only a small portion of data is transferred to the client initially (in order to minimize costs if the client doesn't read the entire range), and as the caller iterates over more items in the range larger batches will be transferred in order to minimize latency. After enough iterations, the iterator mode will eventually reach the same byte limit as ``WANT_ALL``" />
+    <Option name="exact" code="0"
+            description="Infrequently used. The client has passed a specific row limit and wants that many rows delivered in a single batch. Because of iterator operation in client drivers make request batches transparent to the user, consider ``WANT_ALL`` StreamingMode instead. A row limit must be specified if this mode is used." />
+    <Option name="small" code="1"
+            description="Infrequently used. Transfer data in batches small enough to not be much more expensive than reading individual rows, to minimize cost if iteration stops early." />
+    <Option name="medium" code="2"
+            description="Infrequently used. Transfer data in batches sized in between small and large." />
+    <Option name="large" code="3"
+            description="Infrequently used. Transfer data in batches large enough to be, in a high-concurrency environment, nearly as efficient as possible. If the client stops iteration early, some disk and network bandwidth may be wasted. The batch size may still be too small to allow a single client to get high throughput from the database, so if that is what you need consider the SERIAL StreamingMode." />
+    <Option name="serial" code="4"
+            description="Transfer data in batches large enough that an individual client can get reasonable read bandwidth from the database. If the client stops iteration early, considerable disk and network bandwidth may be wasted." />
+  </Scope>
+
+  <Scope name="MutationType">
+    <Option name="add" code="2" 
+            paramType="Bytes" paramDescription="addend"
+            description="Performs an addition of little-endian integers. If the existing value in the database is not present or shorter than ``param``, it is first extended to the length of ``param`` with zero bytes.  If ``param`` is shorter than the existing value in the database, the existing value is truncated to match the length of ``param``. The integers to be added must be stored in a little-endian representation.  They can be signed in two's complement representation or unsigned. You can add to an integer at a known offset in the value by prepending the appropriate number of zero bytes to ``param`` and padding with zero bytes to match the length of the value. However, this offset technique requires that you know the addition will not cause the integer field within the value to overflow."/>
+    <Option name="and" code="6"
+            paramType="Bytes" paramDescription="value with which to perform bitwise and"
+            description="Deprecated"/>
+    <Option name="bit_and" code="6"
+            paramType="Bytes" paramDescription="value with which to perform bitwise and"
+            description="Performs a bitwise ``and`` operation.  If the existing value in the database is not present, then ``param`` is stored in the database. If the existing value in the database is shorter than ``param``, it is first extended to the length of ``param`` with zero bytes.  If ``param`` is shorter than the existing value in the database, the existing value is truncated to match the length of ``param``."/>
+    <Option name="or" code="7"
+            paramType="Bytes" paramDescription="value with which to perform bitwise or"
+            description="Deprecated"/>
+    <Option name="bit_or" code="7"
+            paramType="Bytes" paramDescription="value with which to perform bitwise or"
+            description="Performs a bitwise ``or`` operation.  If the existing value in the database is not present or shorter than ``param``, it is first extended to the length of ``param`` with zero bytes.  If ``param`` is shorter than the existing value in the database, the existing value is truncated to match the length of ``param``."/>
+    <Option name="xor" code="8"
+            paramType="Bytes" paramDescription="value with which to perform bitwise xor"
+            description="Deprecated"/>
+    <Option name="bit_xor" code="8"
+            paramType="Bytes" paramDescription="value with which to perform bitwise xor"
+            description="Performs a bitwise ``xor`` operation.  If the existing value in the database is not present or shorter than ``param``, it is first extended to the length of ``param`` with zero bytes.  If ``param`` is shorter than the existing value in the database, the existing value is truncated to match the length of ``param``."/>
+    <Option name="append_if_fits" code="9"
+            paramType="Bytes" paramDescription="value to append to the database value"
+            description="Appends ``param`` to the end of the existing value already in the database at the given key (or creates the key and sets the value to ``param`` if the key is empty). This will only append the value if the final concatenated value size is less than or equal to the maximum value size (i.e., if it fits). WARNING: No error is surfaced back to the user if the final value is too large because the mutation will not be applied until after the transaction has been committed. Therefore, it is only safe to use this mutation type if one can guarantee that one will keep the total value size under the maximum size."/>
+    <Option name="max" code="12"
+            paramType="Bytes" paramDescription="value to check against database value"
+            description="Performs a little-endian comparison of byte strings. If the existing value in the database is not present or shorter than ``param``, it is first extended to the length of ``param`` with zero bytes.  If ``param`` is shorter than the existing value in the database, the existing value is truncated to match the length of ``param``. The larger of the two values is then stored in the database."/>
+    <Option name="min" code="13"
+            paramType="Bytes" paramDescription="value to check against database value"
+            description="Performs a little-endian comparison of byte strings. If the existing value in the database is not present, then ``param`` is stored in the database. If the existing value in the database is shorter than ``param``, it is first extended to the length of ``param`` with zero bytes.  If ``param`` is shorter than the existing value in the database, the existing value is truncated to match the length of ``param``. The smaller of the two values is then stored in the database."/>
+    <Option name="set_versionstamped_key" code="14"
+            paramType="Bytes" paramDescription="value to which to set the transformed key"
+            description="Transforms ``key`` using a versionstamp for the transaction. Sets the transformed key in the database to ``param``. The key is transformed by removing the final four bytes from the key and reading those as a little-Endian 32-bit integer to get a position ``pos``. The 10 bytes of the key from ``pos`` to ``pos + 10`` are replaced with the versionstamp of the transaction used. The first byte of the key is position 0. A versionstamp is a 10 byte, unique, monotonically (but not sequentially) increasing value for each committed transaction. The first 8 bytes are the committed version of the database (serialized in big-Endian order). The last 2 bytes are monotonic in the serialization order for transactions. WARNING: At this time, versionstamps are compatible with the Tuple layer only in the Java, Python, and Go bindings. Also, note that prior to API version 520, the offset was computed from only the final two bytes rather than the final four bytes." />
+    <Option name="set_versionstamped_value" code="15"
+            paramType="Bytes" paramDescription="value to versionstamp and set"
+            description="Transforms ``param`` using a versionstamp for the transaction. Sets the ``key`` given to the transformed ``param``. The parameter is transformed by removing the final four bytes from ``param`` and reading those as a little-Endian 32-bit integer to get a position ``pos``. The 10 bytes of the parameter from ``pos`` to ``pos + 10`` are replaced with the versionstamp of the transaction used. The first byte of the parameter is position 0. A versionstamp is a 10 byte, unique, monotonically (but not sequentially) increasing value for each committed transaction. The first 8 bytes are the committed version of the database (serialized in big-Endian order). The last 2 bytes are monotonic in the serialization order for transactions. WARNING: At this time, versionstamps are compatible with the Tuple layer only in the Java, Python, and Go bindings. Also, note that prior to API version 520, the versionstamp was always placed at the beginning of the parameter rather than computing an offset." />
+    <Option name="byte_min" code="16"
+            paramType="Bytes" paramDescription="value to check against database value"
+            description="Performs lexicographic comparison of byte strings. If the existing value in the database is not present, then ``param`` is stored. Otherwise the smaller of the two values is then stored in the database."/>
+    <Option name="byte_max" code="17"
+            paramType="Bytes" paramDescription="value to check against database value"
+            description="Performs lexicographic comparison of byte strings. If the existing value in the database is not present, then ``param`` is stored. Otherwise the larger of the two values is then stored in the database."/>
+    <Option name="compare_and_clear" code="20"
+            paramType="Bytes" paramDescription="Value to compare with"
+            description="Performs an atomic ``compare and clear`` operation. If the existing value in the database is equal to the given value, then given key is cleared."/>
+  </Scope>
+
+  <Scope name="ConflictRangeType">
+    <Option name="read" code="0" description="Used to add a read conflict range"/>
+    <Option name="write" code="1" description="Used to add a write conflict range"/>
+  </Scope>
+
+  <Scope name="ErrorPredicate">
+    <Option name="retryable" code="50000" description="Returns ``true`` if the error indicates the operations in the transactions should be retried because of transient error."/>
+    <Option name="maybe_committed" code="50001" description="Returns ``true`` if the error indicates the transaction may have succeeded, though not in a way the system can verify."/>
+    <Option name="retryable_not_committed" code="50002" description="Returns ``true`` if the error indicates the transaction has not committed, though in a way that can be retried."/>
+  </Scope>
+
+</Options>
