@@ -10,6 +10,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
+#include <Interpreters/Context.h>
 
 #include <functional>
 #include <initializer_list>
@@ -22,6 +23,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int SUPPORT_IS_DISABLED;
     extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
     extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
 }
@@ -32,7 +34,14 @@ class FunctionHashID : public IFunction
 public:
     static constexpr auto name = "hashid";
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionHashID>(); }
+    static FunctionPtr create(ContextPtr context)
+    {
+        if (!context->getSettingsRef().allow_experimental_hash_functions)
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                "Hashing function '{}' is experimental. Set `allow_experimental_hash_functions` setting to enable it", name);
+
+        return std::make_shared<FunctionHashID>();
+    }
 
     String getName() const override { return name; }
 
