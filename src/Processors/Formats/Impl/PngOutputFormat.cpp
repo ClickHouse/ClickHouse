@@ -85,9 +85,9 @@ void PngOutputFormat::drawColumn(size_t x, size_t y, size_t len, size_t middle, 
     {
         for (size_t j = 0; j < len; ++j)
         {
-            data[(height - 1 - i) * width * 3 + x * 3 + j * 3] = c.r / 2;
-            data[(height - 1 - i) * width * 3 + x * 3 + j * 3 + 1] = c.g / 2;
-            data[(height - 1 - i) * width * 3 + x * 3 + j * 3 + 2] = c.b / 2;
+            data[(height - 1 - i) * width * 3 + x * 3 + j * 3] = c.r;
+            data[(height - 1 - i) * width * 3 + x * 3 + j * 3 + 1] = c.g;
+            data[(height - 1 - i) * width * 3 + x * 3 + j * 3 + 2] = c.b;
         }
     }
 }
