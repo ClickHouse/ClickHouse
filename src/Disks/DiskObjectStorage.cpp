@@ -777,7 +777,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorage::writeFile(
             [blob_name, count] (DiskObjectStorage::Metadata & metadata) { metadata.addObject(blob_name, count); return true; });
     };
 
-    return object_storage->writeObject(fs::path(remote_fs_root_path) / blob_name, object_attributes, create_metadata_callback, buf_size, settings);
+    return object_storage->writeObject(fs::path(remote_fs_root_path) / blob_name, WriteMode::Rewrite, object_attributes, create_metadata_callback, buf_size, settings);
 }
 
 
@@ -848,7 +848,7 @@ DiskObjectStorageReservation::~DiskObjectStorageReservation()
 void DiskObjectStorageMetadataHelper::createFileOperationObject(const String & operation_name, UInt64 revision, const ObjectAttributes & metadata) const
 {
     const String path = disk->remote_fs_root_path + "operations/r" + revisionToString(revision) + "-" + operation_name;
-    auto buf = disk->object_storage->writeObject(path, metadata);
+    auto buf = disk->object_storage->writeObject(path, WriteMode::Rewrite, metadata);
     buf->write('0');
     buf->finalize();
 }
@@ -892,7 +892,7 @@ void DiskObjectStorageMetadataHelper::saveSchemaVersion(const int & version) con
 {
     auto path = disk->remote_fs_root_path + SCHEMA_VERSION_OBJECT;
 
-    auto buf = disk->object_storage->writeObject(path);
+    auto buf = disk->object_storage->writeObject(path, WriteMode::Rewrite);
     writeIntText(version, *buf);
     buf->finalize();
 
