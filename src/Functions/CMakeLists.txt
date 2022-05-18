@@ -23,6 +23,7 @@ target_link_libraries(clickhouse_functions
         dbms
         ch_contrib::metrohash
         ch_contrib::murmurhash
+        ch_contrib::hashidsxx
 
     PRIVATE
         ch_contrib::zlib
@@ -95,10 +96,6 @@ endif()
 
 if (TARGET ch_contrib::rapidjson)
     target_link_libraries(clickhouse_functions PRIVATE ch_contrib::rapidjson)
-endif()
-
-if (TARGET ch_contrib::hashidsxx)
-    target_link_libraries(clickhouse_functions PRIVATE ch_contrib::hashidsxx)
 endif()
 
 add_subdirectory(GatherUtils)
