@@ -60,6 +60,19 @@ void throwIfError(const Aws::Utils::Outcome<Result, Error> & response)
     }
 }
 
+template <typename Result, typename Error>
+void logIfError(const Aws::Utils::Outcome<Result, Error> & response, std::function<String()> && msg)
+{
+    try
+    {
+        throwIfError(response);
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__, msg());
+    }
+}
+
 }
 
 Aws::S3::Model::HeadObjectOutcome S3ObjectStorage::requestObjectHeadData(const std::string & bucket_from, const std::string & key) const
@@ -212,26 +225,34 @@ void S3ObjectStorage::removeObjects(const std::vector<std::string> & paths)
         return;
 
     auto client_ptr = client.get();
-    std::vector<Aws::S3::Model::ObjectIdentifier> keys;
-    keys.reserve(paths.size());
+    auto settings_ptr = s3_settings.get();
 
-    for (const auto & path : paths)
+    size_t chunk_size_limit = settings_ptr->objects_chunk_size_to_delete;
+    size_t current_position = 0;
+
+    while (current_position < paths.size())
     {
-        Aws::S3::Model::ObjectIdentifier obj;
-        obj.SetKey(path);
-        keys.push_back(obj);
+        std::vector<Aws::S3::Model::ObjectIdentifier> current_chunk;
+        String keys;
+        for (; current_position < paths.size() && current_chunk.size() < chunk_size_limit; ++current_position)
+        {
+            Aws::S3::Model::ObjectIdentifier obj;
+            obj.SetKey(paths[current_position]);
+            current_chunk.push_back(obj);
+
+            if (!keys.empty())
+                keys += ", ";
+            keys += paths[current_position];
+        }
+
+        Aws::S3::Model::Delete delkeys;
+        delkeys.SetObjects(current_chunk);
+        Aws::S3::Model::DeleteObjectsRequest request;
+        request.SetBucket(bucket);
+        request.SetDelete(delkeys);
+        auto outcome = client_ptr->DeleteObjects(request);
+        logIfError(outcome, [&](){return "Can't remove AWS keys: " + keys;});
     }
-
-    Aws::S3::Model::Delete delkeys;
-    delkeys.SetObjects(keys);
-
-    Aws::S3::Model::DeleteObjectsRequest request;
-    request.SetBucket(bucket);
-    request.SetDelete(delkeys);
-    auto outcome = client_ptr->DeleteObjects(request);
-
-    throwIfError(outcome);
-
 }
 
 void S3ObjectStorage::removeObjectIfExists(const std::string & path)
@@ -255,25 +276,35 @@ void S3ObjectStorage::removeObjectsIfExist(const std::vector<std::string> & path
         return;
 
     auto client_ptr = client.get();
+    auto settings_ptr = s3_settings.get();
 
-    std::vector<Aws::S3::Model::ObjectIdentifier> keys;
-    keys.reserve(paths.size());
-    for (const auto & path : paths)
+
+    size_t chunk_size_limit = settings_ptr->objects_chunk_size_to_delete;
+    size_t current_position = 0;
+
+    while (current_position < paths.size())
     {
-        Aws::S3::Model::ObjectIdentifier obj;
-        obj.SetKey(path);
-        keys.push_back(obj);
+        std::vector<Aws::S3::Model::ObjectIdentifier> current_chunk;
+        String keys;
+        for (; current_position < paths.size() && current_chunk.size() < chunk_size_limit; ++current_position)
+        {
+            Aws::S3::Model::ObjectIdentifier obj;
+            obj.SetKey(paths[current_position]);
+            current_chunk.push_back(obj);
+
+            if (!keys.empty())
+                keys += ", ";
+            keys += paths[current_position];
+        }
+
+        Aws::S3::Model::Delete delkeys;
+        delkeys.SetObjects(current_chunk);
+        Aws::S3::Model::DeleteObjectsRequest request;
+        request.SetBucket(bucket);
+        request.SetDelete(delkeys);
+        auto outcome = client_ptr->DeleteObjects(request);
+        logIfError(outcome, [&](){return "Can't remove AWS keys: " + keys;});
     }
-
-    Aws::S3::Model::Delete delkeys;
-    delkeys.SetObjects(keys);
-
-    Aws::S3::Model::DeleteObjectsRequest request;
-    request.SetBucket(bucket);
-    request.SetDelete(delkeys);
-    auto outcome = client_ptr->DeleteObjects(request);
-
-    throwIfError(outcome);
 }
 
 ObjectMetadata S3ObjectStorage::getObjectMetadata(const std::string & path) const
