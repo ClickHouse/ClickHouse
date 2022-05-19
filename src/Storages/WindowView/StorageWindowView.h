@@ -108,7 +108,7 @@ public:
         const StorageID & table_id_,
         ContextPtr context_,
         const ASTCreateQuery & query,
-        const ColumnsDescription & columns,
+        const ColumnsDescription & columns_,
         bool attach_);
 
     String getName() const override { return "WindowView"; }
@@ -166,9 +166,17 @@ public:
 
     std::pair<BlocksPtr, Block> getNewBlocks(UInt32 watermark);
 
+    BlockIO populate();
+
     static void writeIntoWindowView(StorageWindowView & window_view, const Block & block, ContextPtr context);
 
     ASTPtr getMergeableQuery() const { return mergeable_query->clone(); }
+
+    ASTPtr getSourceTableSelectQuery();
+
+    const Block & getInputHeader() const;
+
+    const Block & getOutputHeader() const;
 
 private:
     Poco::Logger * log;
@@ -185,7 +193,8 @@ private:
     bool is_tumble; // false if is hop
     std::atomic<bool> shutdown_called{false};
     bool has_inner_table{true};
-    mutable Block sample_block;
+    mutable Block input_header;
+    mutable Block output_header;
     UInt64 clean_interval_ms;
     const DateLUTImpl * time_zone = nullptr;
     UInt32 max_timestamp = 0;
@@ -255,12 +264,8 @@ private:
     ASTPtr getFinalQuery() const { return final_query->clone(); }
     ASTPtr getFetchColumnQuery(UInt32 w_start, UInt32 w_end) const;
 
-    StoragePtr getParentStorage() const;
-
-    StoragePtr getInnerStorage() const;
-
-    StoragePtr getTargetStorage() const;
-
-    Block & getHeader() const;
+    StoragePtr getSourceTable() const;
+    StoragePtr getInnerTable() const;
+    StoragePtr getTargetTable() const;
 };
 }

@@ -31,6 +31,7 @@
 
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageInMemoryMetadata.h>
+#include <Storages/WindowView/StorageWindowView.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 
 #include <Interpreters/Context.h>
@@ -1450,12 +1451,18 @@ BlockIO InterpreterCreateQuery::fillTableIfNeeded(const ASTCreateQuery & create)
 {
     /// If the query is a CREATE SELECT, insert the data into the table.
     if (create.select && !create.attach
-        && !create.is_ordinary_view && !create.is_live_view && !create.is_window_view
-        && (!create.is_materialized_view || create.is_populate))
+        && !create.is_ordinary_view && !create.is_live_view
+        && (!(create.is_materialized_view || create.is_window_view) || create.is_populate))
     {
         auto insert = std::make_shared<ASTInsertQuery>();
         insert->table_id = {create.getDatabase(), create.getTable(), create.uuid};
-        insert->select = create.select->clone();
+        if (create.is_window_view)
+        {
+            auto table = DatabaseCatalog::instance().getTable(insert->table_id, getContext());
+            insert->select = typeid_cast<StorageWindowView *>(table.get())->getSourceTableSelectQuery();
+        }
+        else
+            insert->select = create.select->clone();
 
         return InterpreterInsertQuery(insert, getContext(),
             getContext()->getSettingsRef().insert_allow_materialized_columns).execute();
