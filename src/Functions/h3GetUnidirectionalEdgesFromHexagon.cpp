@@ -76,26 +76,25 @@ public:
         result_offsets.resize(input_rows_count);
 
         auto current_offset = 0;
-        std::vector<H3Index> res_vec;
         result_data.reserve(input_rows_count);
 
         for (size_t row = 0; row < input_rows_count; ++row)
         {
+            // allocate array of size 6
+            // originToDirectedEdges places 6 edges into
+            // array that's passed to it
+            std::array<H3Index, 6> res;
+
             const UInt64 edge = data_hindex_edge[row];
-            // originToDirectedEdges places only 6 edges into
-            // res_vec that's passed
-            res_vec.resize(6);
+            originToDirectedEdges(edge, res.data());
 
-            originToDirectedEdges(edge, res_vec.data());
-
-            for (auto & i : res_vec)
+            for (auto & i : res)
             {
                 ++current_offset;
                 result_data.emplace_back(i);
             }
 
             result_offsets[row] = current_offset;
-            res_vec.clear();
         }
         return ColumnArray::create(std::move(result_column_data), std::move(result_column_offsets));
     }

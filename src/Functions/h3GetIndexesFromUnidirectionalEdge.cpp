@@ -79,10 +79,10 @@ public:
         for (size_t row = 0; row < input_rows_count; ++row)
         {
             const UInt64 edge = data_hindex_edge[row];
-            std::vector<H3Index> res;
-            // resize to 2 as directedEdgeToCells func sets the origin and
+            // allocate array of size 2
+            // directedEdgeToCells func sets the origin and
             // destination at [0] and [1] of the input vector
-            res.resize(2);
+            std::array<H3Index, 2> res;
 
             directedEdgeToCells(edge, res.data());
 
