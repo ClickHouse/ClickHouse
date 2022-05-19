@@ -719,14 +719,9 @@ public:
 
     /// Prepares entries to backup data of the storage.
     BackupEntries backupData(ContextPtr context, const ASTs & partitions) override;
-    static BackupEntries backupDataParts(const DataPartsVector & data_parts);
 
     /// Extract data from the backup and put it to the storage.
-    RestoreTaskPtr restoreDataParts(
-        const std::unordered_set<String> & partition_ids,
-        const BackupPtr & backup,
-        const String & data_path_in_backup,
-        SimpleIncrement * increment);
+    RestoreTaskPtr restoreData(ContextMutablePtr context, const ASTs & partitions, const BackupPtr & backup, const String & data_path_in_backup, const StorageRestoreSettings & restore_settings, const std::shared_ptr<IRestoreCoordination> & restore_coordination) override;
 
     /// Moves partition to specified Disk
     void movePartitionToDisk(const ASTPtr & partition, const String & name, bool moving_part, ContextPtr context);
@@ -1007,6 +1002,7 @@ protected:
     friend class MergeTask;
     friend class IPartMetadataManager;
     friend class IMergedBlockOutputStream; // for access to log
+    friend class MergeTreeDataRestoreTask;
 
     bool require_part_metadata;
 
@@ -1233,6 +1229,13 @@ protected:
     virtual MutationCommands getFirstAlterMutationCommandsForPart(const DataPartPtr & part) const = 0;
     /// Moves part to specified space, used in ALTER ... MOVE ... queries
     bool movePartsToSpace(const DataPartsVector & parts, SpacePtr space);
+
+    /// Starts restoring a partition, if the function returns false the partition will be skipped.
+    /// Overriden by the replicated storage to skip partitions in case other replicas are already restoring them.
+    virtual bool startRestoringPartition(const String & partition_id, const StorageRestoreSettings & restore_settings, const std::shared_ptr<IRestoreCoordination> & restore_coordination) const;
+
+    /// Attaches restored parts to the storage.
+    virtual void attachRestoredParts(MutableDataPartsVector && parts) = 0;
 
     static void incrementInsertedPartsProfileEvent(MergeTreeDataPartType type);
     static void incrementMergedPartsProfileEvent(MergeTreeDataPartType type);

@@ -3,7 +3,6 @@
 #include <optional>
 
 #include <base/sort.h>
-#include <Backups/IRestoreTask.h>
 #include <Databases/IDatabase.h>
 #include <Common/escapeForFileName.h>
 #include <Common/typeid_cast.h>
@@ -1783,9 +1782,10 @@ CheckResults StorageMergeTree::checkData(const ASTPtr & query, ContextPtr local_
 }
 
 
-RestoreTaskPtr StorageMergeTree::restoreData(ContextMutablePtr local_context, const ASTs & partitions, const BackupPtr & backup, const String & data_path_in_backup, const StorageRestoreSettings &, const std::shared_ptr<IRestoreCoordination> &)
+void StorageMergeTree::attachRestoredParts(MutableDataPartsVector && parts)
 {
-    return restoreDataParts(getPartitionIDsFromQuery(partitions, local_context), backup, data_path_in_backup, &increment);
+    for (auto part : parts)
+        renameTempPartAndAdd(part, NO_TRANSACTION_RAW, &increment);
 }
 
 
