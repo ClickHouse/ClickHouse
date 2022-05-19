@@ -54,12 +54,12 @@ public:
 
         void invalidateDigestCache() const;
         UInt64 getDigest(std::string_view path) const;
-        void setDigest(UInt64 digest);
+
+        void shallowCopy(const Node & other);
 
     private:
         String data;
         ChildrenSet children{};
-
         mutable std::optional<UInt64> cached_digest;
     };
 
@@ -210,19 +210,14 @@ public:
     {
         explicit UncommittedState(KeeperStorage & storage_) : storage(storage_) { }
 
-        template <typename Visitor>
-        void applyDeltas(StringRef path, const Visitor & visitor, std::optional<int64_t> current_zxid = std::nullopt) const
-        {
-            for (const auto & delta : deltas)
-            {
-                if (current_zxid && delta.zxid >= current_zxid)
-                    break;
+        void addDeltas(std::vector<Delta> new_deltas);
+        void commit(int64_t commit_zxid);
+        void rollback(int64_t rollback_zxid);
 
-                if (path.empty() || delta.path == path)
-                    std::visit(visitor, delta.operation);
-            }
-        }
+        std::shared_ptr<Node> getNode(StringRef path) const;
+        Coordination::ACLs getACLs(StringRef path) const;
 
+        void applyDelta(const Delta & delta);
         bool hasACL(int64_t session_id, bool is_local, std::function<bool(const AuthID &)> predicate)
         {
             for (const auto & session_auth : storage.session_and_auth[session_id])
@@ -244,10 +239,16 @@ public:
             return false;
         }
 
-        std::shared_ptr<Node> getNode(StringRef path, std::optional<int64_t> current_zxid = std::nullopt) const;
-        bool hasNode(StringRef path) const;
-        Coordination::ACLs getACLs(StringRef path) const;
+        std::shared_ptr<Node> getNodeFromStorage(StringRef path) const;
 
+        struct UncommittedNode
+        {
+            std::shared_ptr<Node> node{nullptr};
+            Coordination::ACLs acls{};
+            int64_t zxid{0};
+        };
+
+        mutable std::unordered_map<std::string, UncommittedNode> nodes;
         std::deque<Delta> deltas;
         KeeperStorage & storage;
     };
@@ -325,7 +326,7 @@ public:
 
     const String superdigest;
 
-    KeeperStorage(int64_t tick_time_ms, const String & superdigest_, bool digest_enabled_ = true);
+    KeeperStorage(int64_t tick_time_ms, const String & superdigest_, bool digest_enabled_);
 
     /// Allocate new session id with the specified timeouts
     int64_t getSessionID(int64_t session_timeout_ms)
@@ -343,7 +344,7 @@ public:
         session_expiry_queue.addNewSessionOrUpdate(session_id, session_timeout_ms);
     }
 
-    UInt64 calculateNodesDigest(UInt64 current_digest, int64_t current_zxid) const;
+    UInt64 calculateNodesDigest(UInt64 current_digest, const std::vector<Delta> & new_deltas) const;
 
     /// Process user request and return response.
     /// check_acl = false only when converting data from ZooKeeper.

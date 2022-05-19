@@ -1,14 +1,14 @@
-#include <sys/mman.h>
 #include <cerrno>
+#include <future>
+#include <Coordination/KeeperSnapshotManager.h>
 #include <Coordination/KeeperStateMachine.h>
 #include <Coordination/ReadBufferFromNuraftBuffer.h>
 #include <Coordination/WriteBufferFromNuraftBuffer.h>
 #include <IO/ReadHelpers.h>
+#include <sys/mman.h>
 #include "Common/ZooKeeper/ZooKeeperCommon.h"
 #include <Common/ZooKeeper/ZooKeeperIO.h>
 #include "Coordination/KeeperStorage.h"
-#include <Coordination/KeeperSnapshotManager.h>
-#include <future>
 
 namespace DB
 {
@@ -24,17 +24,20 @@ namespace
 }
 
 KeeperStateMachine::KeeperStateMachine(
-        ResponsesQueue & responses_queue_,
-        SnapshotsQueue & snapshots_queue_,
-        const std::string & snapshots_path_,
-        const CoordinationSettingsPtr & coordination_settings_,
-        const std::string & superdigest_,
-        const bool digest_enabled_)
+    ResponsesQueue & responses_queue_,
+    SnapshotsQueue & snapshots_queue_,
+    const std::string & snapshots_path_,
+    const CoordinationSettingsPtr & coordination_settings_,
+    const std::string & superdigest_,
+    const bool digest_enabled_)
     : coordination_settings(coordination_settings_)
     , snapshot_manager(
-        snapshots_path_, coordination_settings->snapshots_to_keep,
-        coordination_settings->compress_snapshots_with_zstd_format, superdigest_,
-        coordination_settings->dead_session_check_period_ms.totalMicroseconds())
+          snapshots_path_,
+          coordination_settings->snapshots_to_keep,
+          coordination_settings->compress_snapshots_with_zstd_format,
+          superdigest_,
+          coordination_settings->dead_session_check_period_ms.totalMicroseconds(),
+          digest_enabled_)
     , responses_queue(responses_queue_)
     , snapshots_queue(snapshots_queue_)
     , last_committed_idx(0)
@@ -58,7 +61,8 @@ void KeeperStateMachine::init()
 
         try
         {
-            auto snapshot_deserialization_result = snapshot_manager.deserializeSnapshotFromBuffer(snapshot_manager.deserializeSnapshotBufferFromDisk(latest_log_index));
+            auto snapshot_deserialization_result
+                = snapshot_manager.deserializeSnapshotFromBuffer(snapshot_manager.deserializeSnapshotBufferFromDisk(latest_log_index));
             latest_snapshot_path = snapshot_manager.getLatestSnapshotPath();
             storage = std::move(snapshot_deserialization_result.storage);
             latest_snapshot_meta = snapshot_deserialization_result.snapshot_meta;
@@ -69,7 +73,11 @@ void KeeperStateMachine::init()
         }
         catch (const DB::Exception & ex)
         {
-            LOG_WARNING(log, "Failed to load from snapshot with index {}, with error {}, will remove it from disk", latest_log_index, ex.displayText());
+            LOG_WARNING(
+                log,
+                "Failed to load from snapshot with index {}, with error {}, will remove it from disk",
+                latest_log_index,
+                ex.displayText());
             snapshot_manager.removeSnapshot(latest_log_index);
         }
     }
@@ -87,7 +95,36 @@ void KeeperStateMachine::init()
     }
 
     if (!storage)
-        storage = std::make_unique<KeeperStorage>(coordination_settings->dead_session_check_period_ms.totalMilliseconds(), superdigest, digest_enabled);
+        storage = std::make_unique<KeeperStorage>(
+            coordination_settings->dead_session_check_period_ms.totalMilliseconds(), superdigest, digest_enabled);
+}
+
+namespace
+{
+
+void assertDigest(
+    const KeeperStorage::Digest & first,
+    const KeeperStorage::Digest & second,
+    const Coordination::ZooKeeperRequest & request,
+    bool committing)
+{
+    if (!KeeperStorage::checkDigest(first, second))
+    {
+        LOG_FATAL(
+            &Poco::Logger::get("KeeperStateMachine"),
+            "Digest for nodes is not matching after {} request of type '{}'.\nExpected digest - {}, actual digest {} (digest version "
+            "{}). Keeper will "
+            "terminate to avoid inconsistencies.\nExtra information about the request:\n{}",
+            committing ? "committing" : "preprocessing",
+            request.getOpNum(),
+            first.value,
+            second.value,
+            first.version,
+            request.toString());
+        std::terminate();
+    }
+}
+
 }
 
 nuraft::ptr<nuraft::buffer> KeeperStateMachine::pre_commit(uint64_t log_idx, nuraft::buffer & data)
@@ -123,7 +160,8 @@ KeeperStorage::RequestForSession KeeperStateMachine::parseRequest(nuraft::buffer
     if (!buffer.eof())
         readIntBinary(request_for_session.time, buffer);
     else /// backward compatibility
-        request_for_session.time = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+        request_for_session.time
+            = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
 
     if (!buffer.eof())
         readIntBinary(request_for_session.zxid, buffer);
@@ -139,37 +177,19 @@ KeeperStorage::RequestForSession KeeperStateMachine::parseRequest(nuraft::buffer
     return request_for_session;
 }
 
-namespace
-{
-
-void assertDigest(const KeeperStorage::Digest & first, const KeeperStorage::Digest & second, const Coordination::ZooKeeperRequest & request, bool committing)
-{
-    if (!KeeperStorage::checkDigest(first, second))
-    {
-        throw DB::Exception(
-            DB::ErrorCodes::INVALID_STATE,
-            "Digest for nodes is not matching after {} request of type '{}'.\nExpected digest - {}, actual digest {} (digest version {}). Keeper will "
-            "terminate to avoid inconsistencies.\nExtra information about the request:\n{}",
-            committing ? "committing" : "preprocessing",
-            request.getOpNum(),
-            first.value,
-            second.value,
-            first.version,
-            request.toString());
-    }
-}
-
-}
-
 void KeeperStateMachine::preprocess(const KeeperStorage::RequestForSession & request_for_session)
 {
     if (request_for_session.request->getOpNum() == Coordination::OpNum::SessionID)
         return;
-    {
-        std::lock_guard lock(storage_and_responses_lock);
-        storage->preprocessRequest(request_for_session.request, request_for_session.session_id, request_for_session.time, request_for_session.zxid, true /* check_acl */, request_for_session.digest);
-    }
 
+    std::lock_guard lock(storage_and_responses_lock);
+    storage->preprocessRequest(
+        request_for_session.request,
+        request_for_session.session_id,
+        request_for_session.time,
+        request_for_session.zxid,
+        true /* check_acl */,
+        request_for_session.digest);
     if (digest_enabled && request_for_session.digest)
         assertDigest(*request_for_session.digest, storage->getNodesDigest(false), *request_for_session.request, false);
 }
@@ -183,7 +203,8 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine::commit(const uint64_t log_idx, n
     /// Special processing of session_id request
     if (request_for_session.request->getOpNum() == Coordination::OpNum::SessionID)
     {
-        const Coordination::ZooKeeperSessionIDRequest & session_id_request = dynamic_cast<const Coordination::ZooKeeperSessionIDRequest &>(*request_for_session.request);
+        const Coordination::ZooKeeperSessionIDRequest & session_id_request
+            = dynamic_cast<const Coordination::ZooKeeperSessionIDRequest &>(*request_for_session.request);
         int64_t session_id;
         std::shared_ptr<Coordination::ZooKeeperSessionIDResponse> response = std::make_shared<Coordination::ZooKeeperSessionIDResponse>();
         response->internal_id = session_id_request.internal_id;
@@ -203,15 +224,22 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine::commit(const uint64_t log_idx, n
     else
     {
         std::lock_guard lock(storage_and_responses_lock);
-        KeeperStorage::ResponsesForSessions responses_for_sessions = storage->processRequest(request_for_session.request, request_for_session.session_id, request_for_session.time, request_for_session.zxid);
+        KeeperStorage::ResponsesForSessions responses_for_sessions = storage->processRequest(
+            request_for_session.request, request_for_session.session_id, request_for_session.time, request_for_session.zxid);
         for (auto & response_for_session : responses_for_sessions)
             if (!responses_queue.push(response_for_session))
-                throw Exception(ErrorCodes::SYSTEM_ERROR, "Could not push response with session id {} into responses queue", response_for_session.session_id);
+                throw Exception(
+                    ErrorCodes::SYSTEM_ERROR,
+                    "Could not push response with session id {} into responses queue",
+                    response_for_session.session_id);
+
+        if (digest_enabled)
+        {
+            assert(request_for_session.digest);
+            assertDigest(*request_for_session.digest, storage->getNodesDigest(true), *request_for_session.request, true);
+        }
     }
 
-
-    assert(request_for_session.digest);
-    assertDigest(*request_for_session.digest, storage->getNodesDigest(true), *request_for_session.request, true);
     last_committed_idx = log_idx;
     return nullptr;
 }
@@ -223,14 +251,18 @@ bool KeeperStateMachine::apply_snapshot(nuraft::snapshot & s)
     { /// save snapshot into memory
         std::lock_guard lock(snapshots_lock);
         if (s.get_last_log_idx() != latest_snapshot_meta->get_last_log_idx())
-            throw Exception(ErrorCodes::INVALID_STATE, "Required to apply snapshot with last log index {}, but our last log index is {}",
-                            s.get_last_log_idx(), latest_snapshot_meta->get_last_log_idx());
+            throw Exception(
+                ErrorCodes::INVALID_STATE,
+                "Required to apply snapshot with last log index {}, but our last log index is {}",
+                s.get_last_log_idx(),
+                latest_snapshot_meta->get_last_log_idx());
         latest_snapshot_ptr = latest_snapshot_buf;
     }
 
     { /// deserialize and apply snapshot to storage
         std::lock_guard lock(storage_and_responses_lock);
-        auto snapshot_deserialization_result = snapshot_manager.deserializeSnapshotFromBuffer(snapshot_manager.deserializeSnapshotBufferFromDisk(s.get_last_log_idx()));
+        auto snapshot_deserialization_result
+            = snapshot_manager.deserializeSnapshotFromBuffer(snapshot_manager.deserializeSnapshotBufferFromDisk(s.get_last_log_idx()));
         storage = std::move(snapshot_deserialization_result.storage);
         latest_snapshot_meta = snapshot_deserialization_result.snapshot_meta;
         cluster_config = snapshot_deserialization_result.cluster_config;
@@ -248,10 +280,14 @@ void KeeperStateMachine::commit_config(const uint64_t /* log_idx */, nuraft::ptr
     cluster_config = ClusterConfig::deserialize(*tmp);
 }
 
-void KeeperStateMachine::rollback(uint64_t log_idx, nuraft::buffer & /*data*/)
+void KeeperStateMachine::rollback(uint64_t log_idx, nuraft::buffer & data)
 {
+    auto request_for_session = parseRequest(data);
+    if (!request_for_session.zxid)
+        request_for_session.zxid = log_idx;
+
     std::lock_guard lock(storage_and_responses_lock);
-    storage->rollbackRequest(log_idx);
+    storage->rollbackRequest(request_for_session.zxid);
 }
 
 nuraft::ptr<nuraft::snapshot> KeeperStateMachine::last_snapshot()
@@ -261,9 +297,7 @@ nuraft::ptr<nuraft::snapshot> KeeperStateMachine::last_snapshot()
     return latest_snapshot_meta;
 }
 
-void KeeperStateMachine::create_snapshot(
-    nuraft::snapshot & s,
-    nuraft::async_result<bool>::handler_type & when_done)
+void KeeperStateMachine::create_snapshot(nuraft::snapshot & s, nuraft::async_result<bool>::handler_type & when_done)
 {
     LOG_DEBUG(log, "Creating snapshot {}", s.get_last_log_idx());
 
@@ -276,19 +310,22 @@ void KeeperStateMachine::create_snapshot(
     }
 
     /// create snapshot task for background execution (in snapshot thread)
-    snapshot_task.create_snapshot = [this, when_done] (KeeperStorageSnapshotPtr && snapshot)
+    snapshot_task.create_snapshot = [this, when_done](KeeperStorageSnapshotPtr && snapshot)
     {
         nuraft::ptr<std::exception> exception(nullptr);
         bool ret = true;
         try
         {
-            {   /// Read storage data without locks and create snapshot
+            { /// Read storage data without locks and create snapshot
                 std::lock_guard lock(snapshots_lock);
-                auto [path, error_code]= snapshot_manager.serializeSnapshotToDisk(*snapshot);
+                auto [path, error_code] = snapshot_manager.serializeSnapshotToDisk(*snapshot);
                 if (error_code)
                 {
-                    throw Exception(ErrorCodes::SYSTEM_ERROR, "Snapshot {} was created failed, error: {}",
-                            snapshot->snapshot_meta->get_last_log_idx(), error_code.message());
+                    throw Exception(
+                        ErrorCodes::SYSTEM_ERROR,
+                        "Snapshot {} was created failed, error: {}",
+                        snapshot->snapshot_meta->get_last_log_idx(),
+                        error_code.message());
                 }
                 latest_snapshot_path = path;
                 latest_snapshot_meta = snapshot->snapshot_meta;
@@ -323,11 +360,7 @@ void KeeperStateMachine::create_snapshot(
 }
 
 void KeeperStateMachine::save_logical_snp_obj(
-    nuraft::snapshot & s,
-    uint64_t & obj_id,
-    nuraft::buffer & data,
-    bool /*is_first_obj*/,
-    bool /*is_last_obj*/)
+    nuraft::snapshot & s, uint64_t & obj_id, nuraft::buffer & data, bool /*is_first_obj*/, bool /*is_last_obj*/)
 {
     LOG_DEBUG(log, "Saving snapshot {} obj_id {}", s.get_last_log_idx(), obj_id);
 
@@ -383,13 +416,8 @@ static int bufferFromFile(Poco::Logger * log, const std::string & path, nuraft::
 }
 
 int KeeperStateMachine::read_logical_snp_obj(
-    nuraft::snapshot & s,
-    void* & /*user_snp_ctx*/,
-    uint64_t obj_id,
-    nuraft::ptr<nuraft::buffer> & data_out,
-    bool & is_last_obj)
+    nuraft::snapshot & s, void *& /*user_snp_ctx*/, uint64_t obj_id, nuraft::ptr<nuraft::buffer> & data_out, bool & is_last_obj)
 {
-
     LOG_DEBUG(log, "Reading snapshot {} obj_id {}", s.get_last_log_idx(), obj_id);
 
     std::lock_guard lock(snapshots_lock);
@@ -397,8 +425,11 @@ int KeeperStateMachine::read_logical_snp_obj(
     /// Let's wait and NuRaft will retry this call.
     if (s.get_last_log_idx() != latest_snapshot_meta->get_last_log_idx())
     {
-        LOG_WARNING(log, "Required to apply snapshot with last log index {}, but our last log index is {}. Will ignore this one and retry",
-                        s.get_last_log_idx(), latest_snapshot_meta->get_last_log_idx());
+        LOG_WARNING(
+            log,
+            "Required to apply snapshot with last log index {}, but our last log index is {}. Will ignore this one and retry",
+            s.get_last_log_idx(),
+            latest_snapshot_meta->get_last_log_idx());
         return -1;
     }
     if (bufferFromFile(log, latest_snapshot_path, data_out))
@@ -415,10 +446,17 @@ void KeeperStateMachine::processReadRequest(const KeeperStorage::RequestForSessi
 {
     /// Pure local request, just process it with storage
     std::lock_guard lock(storage_and_responses_lock);
-    auto responses = storage->processRequest(request_for_session.request, request_for_session.session_id, request_for_session.time, std::nullopt, true /*check_acl*/, true /*is_local*/);
+    auto responses = storage->processRequest(
+        request_for_session.request,
+        request_for_session.session_id,
+        request_for_session.time,
+        std::nullopt,
+        true /*check_acl*/,
+        true /*is_local*/);
     for (const auto & response : responses)
         if (!responses_queue.push(response))
-            throw Exception(ErrorCodes::SYSTEM_ERROR, "Could not push response with session id {} into responses queue", response.session_id);
+            throw Exception(
+                ErrorCodes::SYSTEM_ERROR, "Could not push response with session id {} into responses queue", response.session_id);
 }
 
 void KeeperStateMachine::shutdownStorage()

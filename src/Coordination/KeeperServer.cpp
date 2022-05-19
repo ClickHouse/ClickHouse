@@ -327,6 +327,7 @@ void KeeperServer::startup(const Poco::Util::AbstractConfiguration & config, boo
     {
         auto log_entries = log_store->log_entries(state_machine->last_commit_index() + 1, next_log_idx);
 
+        LOG_INFO(log, "Preprocessing {} log entries", log_entries->size());
         auto idx = state_machine->last_commit_index() + 1;
         for (const auto & entry : *log_entries)
         {
@@ -528,23 +529,21 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
     {
         switch (type)
         {
-            case nuraft::cb_func::PreAppendLogs:
+            case nuraft::cb_func::PreAppendLog:
             {
-                nuraft::req_msg & req = *static_cast<nuraft::req_msg *>(param->ctx);
+                // we are relying on the fact that request are being processed under a mutex
+                // and not a RW lock
+                auto & entry = *static_cast<LogEntryPtr *>(param->ctx);
 
-                for (auto & entry : req.log_entries())
-                {
-                    assert(entry->get_val_type() == nuraft::app_log);
-                    auto next_zxid = state_machine->getNextZxid();
-                    
-                    auto & entry_buf = entry->get_buf();
-                    auto request_for_session = state_machine->parseRequest(entry_buf);
-                    request_for_session.zxid = next_zxid;
-                    state_machine->preprocess(request_for_session);
-                    request_for_session.digest = state_machine->getNodesDigest();
-
-                    entry = nuraft::cs_new<nuraft::log_entry>(entry->get_term(), getZooKeeperLogEntry(request_for_session), entry->get_val_type());
-                }
+                assert(entry->get_val_type() == nuraft::app_log);
+                auto next_zxid = state_machine->getNextZxid();
+                
+                auto & entry_buf = entry->get_buf();
+                auto request_for_session = state_machine->parseRequest(entry_buf);
+                request_for_session.zxid = next_zxid;
+                state_machine->preprocess(request_for_session);
+                request_for_session.digest = state_machine->getNodesDigest();
+                entry = nuraft::cs_new<nuraft::log_entry>(entry->get_term(), getZooKeeperLogEntry(request_for_session), entry->get_val_type());
                 break;
             }
             default:
