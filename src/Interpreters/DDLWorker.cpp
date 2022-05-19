@@ -407,7 +407,14 @@ void DDLWorker::scheduleTasks(bool reinitialized)
             dependencies_graph.removeTask(task_name);
             continue;
         }
+
+        if (dependencies_graph.currently_processing_tasks.contains(task_name))
+            continue;
+
         auto & task_to_process = *(*task_iter);
+
+
+
         if (pool_size > dependencies_graph.currently_processing_tasks.size() && worker_pool && 1 < pool_size)
         {
             dependencies_graph.currently_processing_tasks.insert(task_name);

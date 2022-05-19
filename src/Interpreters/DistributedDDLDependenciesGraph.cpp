@@ -43,7 +43,9 @@ void DependenciesGraph::addTask(DDLTaskPtr && task)
 
     if (database_objects_for_added_task.empty())
     {
+        /// No dependencies means query can't have any dependencies or dependent queries
         tasks_dependencies.independent_queries.insert(name);
+        tasks_dependencies.dependencies_info[name];
         return;
     }
     tasks_dependencies.database_objects_in_query[name] = database_objects_for_added_task;
