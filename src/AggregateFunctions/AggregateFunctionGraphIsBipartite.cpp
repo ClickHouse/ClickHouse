@@ -15,18 +15,23 @@ public:
 
     DataTypePtr getReturnType() const override { return DataTypeFactory::instance().get("Bool"); }
 
+
     bool isBipartite(const GraphType & graph, Vertex vertex, HashMap<Vertex, bool> & color, bool currentColor = true) const
     {
+        std::queue<Vertex> buff;
         color[vertex] = currentColor;
-        for (Vertex next : graph.at(vertex))
-        {
-            if (auto * color_next = color.find(next); color_next == nullptr)
-            {
-                if (!isBipartite(graph, next, color, true ^ currentColor))
+        buff.push(vertex);
+        while (!buff.empty()) {
+            Vertex cur = buff.front();
+            buff.pop();
+            for (Vertex next : graph.at(cur)) {
+                if (!color.has(next)) {
+                    color[next] = true ^ color[cur];
+                    buff.push(next);
+                } else if (color[next] == color[cur]) {
                     return false;
+                }
             }
-            else if (color_next->getMapped() == currentColor)
-                return false;
         }
         return true;
     }
