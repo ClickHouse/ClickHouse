@@ -101,24 +101,74 @@ private:
 
         UInt64 dfs(Vertex vertex, Int64 currentFlow = std::numeric_limits<Int64>::max())
         {
-            if (vertex == ending_point)
-                return currentFlow;
-            for (const UInt64 id : graph.at(vertex))
-            {
-                if (edges[id].getCurrentCapacity() < 1)
-                    continue;
-                const auto to = edges[id].to;
-                if (distance.at(vertex) + 1 != distance.at(to))
-                    continue;
-                UInt64 add = dfs(to, std::min(currentFlow, edges[id].getCurrentCapacity()));
-                if (add > 0)
-                {
-                    edges[id].flow += add;
-                    edges[id ^ 1].flow -= add;
-                    return add;
+            std::vector<std::pair<Vertex, std::decay_t<decltype(graph.at(vertex).begin())>>> dfs_stack;
+            dfs_stack.emplace_back(vertex, graph.at(vertex).begin());
+            HashMap<Vertex, UInt64> par;
+            HashMap<Vertex, Int64> hasFlow;
+            hasFlow[vertex] = currentFlow;
+
+            while (!dfs_stack.empty()) {
+                auto [vertex, it] = dfs_stack.back();
+                if (vertex == ending_point) {
+                    break;
+                }
+                dfs_stack.pop_back();
+                if (it != graph.at(vertex).end()) {
+                    auto cp_it = it;
+                    ++cp_it;
+                    dfs_stack.emplace_back(vertex, cp_it);
+                    UInt64 id = *it;
+                    const auto to = edges[id].to;
+                    if (distance.at(vertex) + 1 != distance.at(to)) {
+                        continue;
+                    }
+                    if (edges[id].getCurrentCapacity() <= 0) {
+                        continue;
+                    }
+                    Int64 add = std::min(hasFlow[vertex], edges[id].getCurrentCapacity());
+                    if (add > 0) {
+                        dfs_stack.emplace_back(to, graph.at(to).begin());
+                        par[to] = id;
+                    }
                 }
             }
-            return 0;
+
+            currentFlow = hasFlow[ending_point];
+
+            if (currentFlow == 0) {
+                return 0;
+            }
+
+            Vertex cur = ending_point;
+
+            while (cur != starting_point) {
+                UInt64 id = par[cur];
+                Vertex parent = edges[id ^ 1].to;
+                edges[id].flow += currentFlow;
+                edges[id ^ 1].flow -= currentFlow;
+                cur = parent;
+            }
+
+            return currentFlow;
+
+            // if (vertex == ending_point)
+            //     return currentFlow;
+            // for (const UInt64 id : graph.at(vertex))
+            // {
+            //     if (edges[id].getCurrentCapacity() < 1)
+            //         continue;
+            //     const auto to = edges[id].to;
+            //     if (distance.at(vertex) + 1 != distance.at(to))
+            //         continue;
+            //     UInt64 add = dfs(to, std::min(currentFlow, edges[id].getCurrentCapacity()));
+            //     if (add > 0)
+            //     {
+            //         edges[id].flow += add;
+            //         edges[id ^ 1].flow -= add;
+            //         return add;
+            //     }
+            // }
+            // return 0;
         }
 
         HashMap<Vertex, UInt64> distance{};
