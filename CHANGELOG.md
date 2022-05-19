@@ -45,7 +45,7 @@
 
 * Improve performance of `avg`, `sum` aggregate functions if used without GROUP BY expression. [#37257](https://github.com/ClickHouse/ClickHouse/pull/37257) ([Maksim Kita](https://github.com/kitaisreal)).
 * Improve performance of unary arithmetic functions (`bitCount`, `bitNot`, `abs`, `intExp2`, `intExp10`, `negate`, `roundAge`, `roundDuration`, `roundToExp2`, `sign`) using dynamic dispatch. [#37289](https://github.com/ClickHouse/ClickHouse/pull/37289) ([Maksim Kita](https://github.com/kitaisreal)).
-* Improve performance or ORDER BY, MergeJoin, insertion into MergeTree using JIT compilation of sort columns comparator. [#34469](https://github.com/ClickHouse/ClickHouse/pull/34469) ([Maksim Kita](https://github.com/kitaisreal)).
+* Improve performance of ORDER BY, MergeJoin, insertion into MergeTree using JIT compilation of sort columns comparator. [#34469](https://github.com/ClickHouse/ClickHouse/pull/34469) ([Maksim Kita](https://github.com/kitaisreal)).
 * Change structure of `system.asynchronous_metric_log`. It will take about 10 times less space. This closes [#36357](https://github.com/ClickHouse/ClickHouse/issues/36357). The field `event_time_microseconds` was removed, because it is useless. [#36360](https://github.com/ClickHouse/ClickHouse/pull/36360) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
 * Load marks for only necessary columns when reading wide parts. [#36879](https://github.com/ClickHouse/ClickHouse/pull/36879) ([Anton Kozlov](https://github.com/tonickkozlov)).
 * Improves performance of file descriptor cache by narrowing mutex scopes. [#36682](https://github.com/ClickHouse/ClickHouse/pull/36682) ([Anton Kozlov](https://github.com/tonickkozlov)).
