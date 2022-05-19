@@ -34,21 +34,24 @@ struct AggregatingTransformParams
     AggregatorListPtr aggregator_list_ptr;
     Aggregator & aggregator;
     bool final;
+    /// Merge data for aggregate projections.
     bool only_merge = false;
 
-    AggregatingTransformParams(const Aggregator::Params & params_, bool final_)
+    AggregatingTransformParams(const Aggregator::Params & params_, bool final_, bool only_merge_)
         : params(params_)
         , aggregator_list_ptr(std::make_shared<AggregatorList>())
         , aggregator(*aggregator_list_ptr->emplace(aggregator_list_ptr->end(), params))
         , final(final_)
+        , only_merge(only_merge_)
     {
     }
 
-    AggregatingTransformParams(const Aggregator::Params & params_, const AggregatorListPtr & aggregator_list_ptr_, bool final_)
+    AggregatingTransformParams(const Aggregator::Params & params_, const AggregatorListPtr & aggregator_list_ptr_, bool final_, bool only_merge_)
         : params(params_)
         , aggregator_list_ptr(aggregator_list_ptr_)
         , aggregator(*aggregator_list_ptr->emplace(aggregator_list_ptr->end(), params))
         , final(final_)
+        , only_merge(only_merge_)
     {
     }
 

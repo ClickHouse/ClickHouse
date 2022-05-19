@@ -69,6 +69,7 @@ AggregatingStep::AggregatingStep(
     Aggregator::Params params_,
     GroupingSetsParamsList grouping_sets_params_,
     bool final_,
+    bool only_merge_,
     size_t max_block_size_,
     size_t aggregation_in_order_max_block_bytes_,
     size_t merge_threads_,
@@ -79,7 +80,8 @@ AggregatingStep::AggregatingStep(
     : ITransformingStep(input_stream_, appendGroupingColumn(params_.getHeader(final_), grouping_sets_params_), getTraits(), false)
     , params(std::move(params_))
     , grouping_sets_params(std::move(grouping_sets_params_))
-    , final(std::move(final_))
+    , final(final_)
+    , only_merge(only_merge_)
     , max_block_size(max_block_size_)
     , aggregation_in_order_max_block_bytes(aggregation_in_order_max_block_bytes_)
     , merge_threads(merge_threads_)
@@ -119,7 +121,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
       * 1. Parallel aggregation is done, and the results should be merged in parallel.
       * 2. An aggregation is done with store of temporary data on the disk, and they need to be merged in a memory efficient way.
       */
-    auto transform_params = std::make_shared<AggregatingTransformParams>(std::move(params), final);
+    auto transform_params = std::make_shared<AggregatingTransformParams>(std::move(params), final, only_merge);
 
     if (!grouping_sets_params.empty())
     {
@@ -169,7 +171,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                     transform_params->params.intermediate_header,
                     transform_params->params.stats_collecting_params
                 };
-                auto transform_params_for_set = std::make_shared<AggregatingTransformParams>(std::move(params_for_set), final);
+                auto transform_params_for_set = std::make_shared<AggregatingTransformParams>(std::move(params_for_set), final, only_merge);
 
                 if (streams > 1)
                 {
