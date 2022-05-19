@@ -37,6 +37,7 @@ void DependenciesGraph::addTask(DDLTaskPtr && task)
     const auto name = task->entry_name;
 
     if (tasks_dependencies.database_objects_in_query.contains(name))
+        /// Skip if already added
         return;
 
     auto database_objects_for_added_task = getDependenciesSetFromQuery(global_context, task->query);
