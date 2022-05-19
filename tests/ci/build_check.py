@@ -321,23 +321,26 @@ def main():
         logging.info("Build log doesn't exist")
 
     # FIXME performance
-    performance_url = []
+    performance_urls = []
     performance_path = os.path.join(build_output_path, "performance.tgz")
     if os.path.exists(performance_path):
-        performance_url.append(
+        performance_urls.append(
             s3_helper.upload_build_file_to_s3(performance_path, s3_performance_path)
         )
         logging.info(
             "Uploaded performance.tgz to %s, now delete to avoid duplication",
-            performance_url[0],
+            performance_urls[0],
         )
         os.remove(performance_path)
 
-    build_urls = s3_helper.upload_build_folder_to_s3(
-        build_output_path,
-        s3_path_prefix,
-        keep_dirs_in_s3_path=False,
-        upload_symlinks=False,
+    build_urls = (
+        s3_helper.upload_build_folder_to_s3(
+            build_output_path,
+            s3_path_prefix,
+            keep_dirs_in_s3_path=False,
+            upload_symlinks=False,
+        )
+        + performance_urls
     )
     logging.info("Got build URLs %s", build_urls)
 
