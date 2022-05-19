@@ -51,9 +51,7 @@ def parse_one_pull_request(item):
                 category = re.sub(r"^[-*\s]*", "", lines[i])
                 i += 1
 
-            elif re.match(
-                r"(?i).*change\s*log\s*entry", lines[i]
-            ):
+            elif re.match(r"(?i).*change\s*log\s*entry", lines[i]):
                 i += 1
                 # Can have one empty line between header and the entry itself. Filter it out.
                 if i < len(lines) and not lines[i]:
@@ -66,7 +64,6 @@ def parse_one_pull_request(item):
                 entry = " ".join(entry_lines)
             else:
                 i += 1
-
 
     if not category:
         # Shouldn't happen, because description check in CI should catch such PRs.
