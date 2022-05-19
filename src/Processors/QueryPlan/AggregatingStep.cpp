@@ -223,7 +223,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                 /// Here we create a DAG which fills missing keys and adds `__grouping_set` column
                 auto dag = std::make_shared<ActionsDAG>(header.getColumnsWithTypeAndName());
                 ActionsDAG::NodeRawConstPtrs index;
-                index.reserve(output_header.columns() + 2);
+                index.reserve(output_header.columns() + 1);
 
                 auto grouping_col = ColumnConst::create(ColumnUInt64::create(1, set_counter), 0);
                 const auto * grouping_node = &dag->addColumn(

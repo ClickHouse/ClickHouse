@@ -65,6 +65,8 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int DUPLICATE_COLUMN;
     extern const int LOGICAL_ERROR;
+    extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
+    extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
 }
 
 static NamesAndTypesList::iterator findColumn(const String & name, NamesAndTypesList & cols)
@@ -841,6 +843,11 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
 
     if (node.name == "grouping")
     {
+        size_t arguments_size = node.arguments->children.size();
+        if (arguments_size == 0)
+            throw Exception(ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION, "Function GROUPING expects at least one argument");
+        if (arguments_size > 64)
+            throw Exception(ErrorCodes::TOO_MANY_ARGUMENTS_FOR_FUNCTION, "Function GROUPING can have up to 64 arguments, but {} provided", arguments_size);
         ColumnNumbers arguments_indexes;
         auto aggregation_keys_number = data.aggregation_keys.size();
         for (auto const & arg : node.arguments->children)
