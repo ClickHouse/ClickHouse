@@ -52,80 +52,39 @@ public:
 
     bool dfsMatch(Vertex vertex, UInt64 currentColor, const GraphType & graph, HashMap<Vertex, UInt64> & used, VertexMap & matching) const
     {
-        // std::queue<Vertex> buff;
-        // buff.push(vertex);
-        // used[vertex] = currentColor;
-        // HashMap<Vertex, Vertex> parent;
-
-        // auto swapPath = [&] (Vertex from) {
-
-        // };
-
-        // while (!buff.empty()) {
-        //     Vertex cur = buff.front();
-        //     buff.pop();
-        //     for (Vertex next : graph.at(cur)) {
-        //         if (std::exchange(used[vertex], currentColor) != currentColor) {
-        //             if (!matching.has(next)) {
-        //                 matching[next] = cur;
-        //                 swapPath(cur);
-        //                 return true;
-        //             } else {
-        //                 buff.push(matching[next]);
-        //             }
-        //         }
-        //     }
-        // }
-
-        // HashMap<Vertex, Vertex> parents;
-
-        // if (used[vertex] == currentColor) {
-        //     return false;
-        // }
-        
-
-        // if (std::exchange(used[vertex], currentColor) == currentColor)
-        //     return false;
-
         std::vector<std::pair<Vertex, std::decay_t<decltype(graph.at(vertex).begin())>>> dfs_stack;
         dfs_stack.emplace_back(vertex, graph.at(vertex).begin());
         used[vertex] = currentColor;
         while (!dfs_stack.empty()) {
             auto [vertex, it] = dfs_stack.back();
             dfs_stack.pop_back();
-            if (it != graph.at(vertex).end()) {
-                auto cp_it = it;
-                ++cp_it;
-                dfs_stack.emplace_back(vertex, cp_it);
-                Vertex next = *it;
-                if (!matching.has(next)) {
-                    while (!dfs_stack.empty()) {
-                        auto [cur_vertex, next_it] = dfs_stack.back();
-                        dfs_stack.pop_back();
-                        --next_it;
-                        matching[*next_it] = cur_vertex;
-                    }
-                    return true;
-                } else if (used[matching[next]] != currentColor) {
-                    dfs_stack.emplace_back(matching[next], graph.at(matching[next]).begin());
-                    used[matching[next]] = currentColor;
+            if (it == graph.at(vertex).end()) {
+                continue;
+            }
+            auto cp_it = it;
+            ++cp_it;
+            dfs_stack.emplace_back(vertex, cp_it);
+            if (it == graph.at(vertex).begin()) {
+                for (auto next : graph.at(vertex)) {
+                    if (!matching.has(next)) {
+                        while (!dfs_stack.empty()) {
+                            auto [cur_vertex, next_it] = dfs_stack.back();
+                            dfs_stack.pop_back();
+                            --next_it;
+                            matching[*next_it] = cur_vertex;
+                        }
+                        return true;
+                    } 
                 }
+            }
+            Vertex next = *it;
+            if (used[matching[next]] != currentColor) {
+                dfs_stack.emplace_back(matching[next], graph.at(matching[next]).begin());
+                used[matching[next]] = currentColor;
             }
         }
 
         return false;
-
-        // used[vertex] = currentColor;
-        // for (Vertex next : graph.at(vertex)) {
-        //     // if (used[next] == currentColor) {
-        //     //     continue;
-        //     // }
-        //     if (!matching.has(next) || dfsMatch(matching[next], currentColor, graph, used, matching)) {
-        //         matching[next] = vertex;
-        //         return true;
-        //     }
-        // }
-        // return false;
     }
 
     std::optional<UInt64> calculateOperation(ConstAggregateDataPtr __restrict place, Arena *) const
