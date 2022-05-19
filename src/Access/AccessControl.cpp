@@ -17,7 +17,7 @@
 #include <Access/AccessChangesNotifier.h>
 #include <Core/Settings.h>
 #include <base/find_symbols.h>
-#include <Poco/ExpireCache.h>
+#include <Poco/AccessExpireCache.h>
 #include <boost/algorithm/string/join.hpp>
 #include <boost/algorithm/string/split.hpp>
 #include <boost/algorithm/string/trim.hpp>
@@ -83,7 +83,7 @@ public:
 
 private:
     const AccessControl & access_control;
-    Poco::ExpireCache<ContextAccess::Params, std::shared_ptr<const ContextAccess>> cache;
+    Poco::AccessExpireCache<ContextAccess::Params, std::shared_ptr<const ContextAccess>> cache;
     std::mutex mutex;
 };
 
