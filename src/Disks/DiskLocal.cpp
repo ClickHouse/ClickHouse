@@ -627,27 +627,27 @@ bool DiskLocal::setup()
 
     /// Try to create a new checker file. The disk status can be either broken or readonly.
     if (disk_checker_magic_number == -1)
-    try
-    {
-        pcg32_fast rng(randomSeed());
-        UInt32 magic_number = rng();
+        try
         {
-            auto buf = writeFile(disk_checker_path, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite, {});
-            writeIntBinary(magic_number, *buf);
+            pcg32_fast rng(randomSeed());
+            UInt32 magic_number = rng();
+            {
+                auto buf = writeFile(disk_checker_path, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite, {});
+                writeIntBinary(magic_number, *buf);
+            }
+            disk_checker_magic_number = magic_number;
         }
-        disk_checker_magic_number = magic_number;
-    }
-    catch (...)
-    {
-        LOG_WARNING(
-            logger,
-            "Cannot create/write to {0}. Disk {1} is either readonly or broken. Without setting up disk checker file, DiskLocalCheckThread "
-            "will not be started. Disk is assumed to be RW. Try manually fix the disk and do `SYSTEM RESTART DISK {1}`",
-            disk_checker_path,
-            name);
-        disk_checker_can_check_read = false;
-        return true;
-    }
+        catch (...)
+        {
+            LOG_WARNING(
+                logger,
+                "Cannot create/write to {0}. Disk {1} is either readonly or broken. Without setting up disk checker file, DiskLocalCheckThread "
+                "will not be started. Disk is assumed to be RW. Try manually fix the disk and do `SYSTEM RESTART DISK {1}`",
+                disk_checker_path,
+                name);
+            disk_checker_can_check_read = false;
+            return true;
+        }
 
     if (disk_checker_magic_number == -1)
         throw Exception("disk_checker_magic_number is not initialized. It's a bug", ErrorCodes::LOGICAL_ERROR);

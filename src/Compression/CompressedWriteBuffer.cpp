@@ -1,5 +1,5 @@
 #include <city.h>
-#include <string.h>
+#include <cstring>
 
 #include <base/unaligned.h>
 #include <base/types.h>

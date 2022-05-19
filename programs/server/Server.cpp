@@ -5,7 +5,7 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/wait.h>
-#include <errno.h>
+#include <cerrno>
 #include <pwd.h>
 #include <unistd.h>
 #include <Poco/Version.h>
@@ -402,8 +402,10 @@ void Server::createServer(
 
     /// If we already have an active server for this listen_host/port_name, don't create it again
     for (const auto & server : servers)
+    {
         if (!server.isStopping() && server.getListenHost() == listen_host && server.getPortName() == port_name)
             return;
+    }
 
     auto port = config.getInt(port_name);
     try
@@ -2011,11 +2013,28 @@ void Server::updateServers(
     std::vector<ProtocolServerAdapter> & servers)
 {
     Poco::Logger * log = &logger();
-    /// Gracefully shutdown servers when their port is removed from config
+
     const auto listen_hosts = getListenHosts(config);
     const auto listen_try = getListenTry(config);
 
+    /// Remove servers once all their connections are closed
+    auto check_server = [&log](const char prefix[], auto & server)
+    {
+        if (!server.isStopping())
+            return false;
+        size_t current_connections = server.currentConnections();
+        LOG_DEBUG(log, "Server {}{}: {} ({} connections)",
+            server.getDescription(),
+            prefix,
+            !current_connections ? "finished" : "waiting",
+            current_connections);
+        return !current_connections;
+    };
+
+    std::erase_if(servers, std::bind_front(check_server, " (from one of previous reload)"));
+
     for (auto & server : servers)
+    {
         if (!server.isStopping())
         {
             bool has_host = std::find(listen_hosts.begin(), listen_hosts.end(), server.getListenHost()) != listen_hosts.end();
@@ -2026,25 +2045,11 @@ void Server::updateServers(
                 LOG_INFO(log, "Stopped listening for {}", server.getDescription());
             }
         }
-
-    createServers(config, listen_hosts, listen_try, server_pool, async_metrics, servers, /* start_servers: */ true);
-
-    /// Remove servers once all their connections are closed
-    while (std::any_of(servers.begin(), servers.end(), [](const auto & server) { return server.isStopping(); }))
-    {
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
-        std::erase_if(servers, [&log](auto & server)
-        {
-            if (!server.isStopping())
-                return false;
-            auto is_finished = server.currentConnections() == 0;
-            if (is_finished)
-                LOG_DEBUG(log, "Server finished: {}", server.getDescription());
-            else
-                LOG_TRACE(log, "Waiting server to finish: {}", server.getDescription());
-            return is_finished;
-        });
     }
+
+    createServers(config, listen_hosts, listen_try, server_pool, async_metrics, servers, /* start_servers= */ true);
+
+    std::erase_if(servers, std::bind_front(check_server, ""));
 }
 
 }

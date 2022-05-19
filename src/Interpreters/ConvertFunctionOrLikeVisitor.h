@@ -14,7 +14,7 @@ class ConvertFunctionOrLikeData
 public:
     using TypeToVisit = ASTFunction;
 
-    void visit(ASTFunction & function, ASTPtr & ast);
+    static void visit(ASTFunction & function, ASTPtr & ast);
 };
 
 using ConvertFunctionOrLikeVisitor = InDepthNodeVisitor<OneTypeMatcher<ConvertFunctionOrLikeData>, true>;
