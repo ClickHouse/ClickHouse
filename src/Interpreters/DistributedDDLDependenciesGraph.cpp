@@ -49,9 +49,9 @@ void DependenciesGraph::addTask(DDLTaskPtr && task)
         tasks_dependencies.independent_queries.insert(name);
         LOG_DEBUG(log, "Added to independent");
         tasks_dependencies.dependencies_info[name].dependencies = {};
-        LOG_DEBUG(log, "Initialized dependencies 1");
+        LOG_DEBUG(log, "Initialized dependencies1");
         tasks_dependencies.dependencies_info[name].dependent_queries = {};
-        LOG_DEBUG(log, "Initialized dependencies 2");
+        LOG_DEBUG(log, "Initialized dependencies2");
         return;
     }
     tasks_dependencies.database_objects_in_query[name] = database_objects_for_added_task;
