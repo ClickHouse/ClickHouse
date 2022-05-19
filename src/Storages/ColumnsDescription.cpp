@@ -31,7 +31,6 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/FunctionNameNormalizer.h>
 
-#include <Common/logger_useful.h>
 
 namespace DB
 {
