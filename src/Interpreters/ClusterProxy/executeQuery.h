@@ -53,7 +53,6 @@ void executeQuery(
     const ClusterPtr & not_optimized_cluster);
 
 
-
 void executeQueryWithParallelReplicas(
     QueryPlan & query_plan,
     const StorageID & main_table,

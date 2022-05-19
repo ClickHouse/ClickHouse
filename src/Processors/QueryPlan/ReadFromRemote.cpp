@@ -219,7 +219,6 @@ void ReadFromRemote::initializePipeline(QueryPipelineBuilder & pipeline, const B
 }
 
 
-
 ReadFromParallelRemoteReplicasStep::ReadFromParallelRemoteReplicasStep(
     ParallelReplicasReadingCoordinatorPtr coordinator_,
     ClusterProxy::SelectStreamFactory::Shard shard_,
@@ -244,8 +243,8 @@ ReadFromParallelRemoteReplicasStep::ReadFromParallelRemoteReplicasStep(
     , scalars(scalars_)
     , external_tables{external_tables_}
     , log(log_)
-    , shard_count(shard_count_) {
-
+    , shard_count(shard_count_)
+{
     std::vector<String> description;
 
     for (size_t replica_num = 0; replica_num < shard.shard_info.getAllNodeCount(); ++replica_num)

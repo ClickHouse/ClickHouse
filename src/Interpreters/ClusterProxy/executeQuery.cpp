@@ -20,6 +20,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int TOO_LARGE_DISTRIBUTED_DEPTH;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace ClusterProxy
@@ -210,7 +211,6 @@ void executeQuery(
     auto union_step = std::make_unique<UnionStep>(std::move(input_streams));
     query_plan.unitePlans(std::move(union_step), std::move(plans));
 }
-
 
 
 void executeQueryWithParallelReplicas(

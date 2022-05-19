@@ -20,7 +20,6 @@
 #include <Processors/QueryPlan/DistributedCreateLocalPlan.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 
-
 namespace ProfileEvents
 {
     extern const Event DistributedConnectionMissingTable;
@@ -273,9 +272,6 @@ SelectStreamFactory::ShardPlans SelectStreamFactory::createForShardWithParallelR
 
     return result;
 }
-
-
-
 
 }
 }
