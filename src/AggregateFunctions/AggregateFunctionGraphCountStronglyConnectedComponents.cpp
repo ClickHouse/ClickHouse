@@ -19,26 +19,49 @@ public:
 
     void dfsOrder(const GraphType & graph, Vertex vertex, VertexSet & used, std::vector<Vertex> & order) const
     {
-        typename VertexSet::LookupResult it;
-        bool inserted;
-        used.emplace(vertex, it, inserted);
-        if (!inserted)
-            return;
-        if (const auto * graph_iter = graph.find(vertex); graph_iter)
-            for (Vertex next : graph_iter->getMapped())
-                dfsOrder(graph, next, used, order);
-        order.emplace_back(vertex);
+        std::vector<std::pair<Vertex, std::decay_t<decltype(graph.at(vertex).begin())>>> dfs_stack;
+        dfs_stack.emplace_back(vertex, graph.at(vertex).begin());
+        used.insert(vertex);
+        while (!dfs_stack.empty()) {
+            auto [vertex, it] = dfs_stack.back();
+            dfs_stack.pop_back();
+            if (it == graph.at(vertex).end()) {
+                order.push_back(vertex);
+            } else {
+                auto cp_it = it;
+                ++cp_it;
+                dfs_stack.emplace_back(vertex, cp_it);
+                if (!used.has(*it)) {
+                    Vertex next = *it;
+                    dfs_stack.emplace_back(next, graph.at(next).begin());
+                    used.insert(next);
+                }
+            }
+        }
     }
 
     void dfsColor(const GraphType & reverseGraph, Vertex vertex, VertexSet & used) const
     {
-        typename VertexSet::LookupResult it;
-        bool inserted;
-        used.emplace(vertex, it, inserted);
-        if (!inserted)
-            return;
-        for (Vertex next : reverseGraph.at(vertex))
-            dfsColor(reverseGraph, next, used);
+        std::queue<Vertex> buff;
+        buff.push(vertex);
+        used.insert(vertex);
+        while (!buff.empty()) {
+            vertex = buff.front();
+            buff.pop();
+            for (Vertex next : reverseGraph.at(vertex)) {
+                if (!used.has(next)) {
+                    buff.push(next);
+                    used.insert(next);
+                }
+            }
+        }
+        // typename VertexSet::LookupResult it;
+        // bool inserted;
+        // used.emplace(vertex, it, inserted);
+        // if (!inserted)
+        //     return;
+        // for (Vertex next : reverseGraph.at(vertex))
+        //     dfsColor(reverseGraph, next, used);
     }
 
     static GraphType createReverseGraph(const GraphType & graph)
