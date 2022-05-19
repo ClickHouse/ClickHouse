@@ -175,8 +175,8 @@ public:
     explicit QueryCache(size_t cache_size_in_bytes)
         : Base(cache_size_in_bytes)
     {
-        std::thread timers_polling_thread(&CacheRemovalScheduler::processRemovalQueue<QueryCache>, &removal_scheduler, this);
-        timers_polling_thread.detach();
+        std::thread cache_removing_thread(&CacheRemovalScheduler::processRemovalQueue<QueryCache>, &removal_scheduler, this);
+        cache_removing_thread.detach();
     }
 
     void addChunk(CacheKey cache_key, Chunk && chunk)
