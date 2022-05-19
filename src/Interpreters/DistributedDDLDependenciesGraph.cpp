@@ -38,15 +38,20 @@ void DependenciesGraph::addTask(DDLTaskPtr && task)
 
     if (tasks_dependencies.database_objects_in_query.contains(name))
         return;
+    LOG_DEBUG(log, "Checked not contains(name)) in graph already");
 
     auto database_objects_for_added_task = getDependenciesSetFromQuery(global_context, task->query);
+    LOG_DEBUG(log, "Got dependencies");
 
     if (database_objects_for_added_task.empty())
     {
         /// No dependencies means query can't have any dependencies or dependent queries
         tasks_dependencies.independent_queries.insert(name);
+        LOG_DEBUG(log, "Added to independent");
         tasks_dependencies.dependencies_info[name].dependencies = {};
+        LOG_DEBUG(log, "Initialized dependencies 1");
         tasks_dependencies.dependencies_info[name].dependent_queries = {};
+        LOG_DEBUG(log, "Initialized dependencies 2");
         return;
     }
     tasks_dependencies.database_objects_in_query[name] = database_objects_for_added_task;
