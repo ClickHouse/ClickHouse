@@ -1766,15 +1766,6 @@ bool ParserExpression2::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                             storage.push_back(std::make_unique<Layer>(TokenType::ClosingRoundBracket, function_name));
                     }
                 }
-                else if (pos->type == TokenType::OpeningSquareBracket)
-                {
-                    next = Action::OPERAND;
-
-                    storage.back()->pushOperand(std::move(tmp));
-                    storage.back()->pushOperator(Operator("arrayElement", 40, 2));
-                    storage.push_back(std::make_unique<Layer>(TokenType::ClosingSquareBracket));
-                    ++pos;
-                }
                 else
                 {
                     storage.back()->pushOperand(std::move(tmp));
@@ -1840,6 +1831,12 @@ bool ParserExpression2::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                     storage.back()->pushOperand(func);
                 }
                 storage.back()->pushOperator(cur_op->second);
+            }
+            else if (pos->type == TokenType::OpeningSquareBracket)
+            {
+                storage.back()->pushOperator(Operator("arrayElement", 40, 2));
+                storage.push_back(std::make_unique<Layer>(TokenType::ClosingSquareBracket));
+                ++pos;
             }
             else if (parseOperator(pos, "::", expected))
             {
