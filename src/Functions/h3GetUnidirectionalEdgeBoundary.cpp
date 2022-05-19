@@ -85,8 +85,8 @@ public:
 
             for (int vert = 0; vert < boundary.numVerts; ++vert)
             {
-                latitude->insert(radsToDegs(boundary.verts[vert].lat));
-                longitude->insert(radsToDegs(boundary.verts[vert].lng));
+                latitude->getData().push_back(radsToDegs(boundary.verts[vert].lat));
+                longitude->getData().push_back(radsToDegs(boundary.verts[vert].lng));
             }
 
             current_offset += boundary.numVerts;
