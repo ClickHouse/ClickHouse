@@ -1,4 +1,7 @@
 #include <Disks/AzureObjectStorage.h>
+
+#if USE_AZURE_BLOB_STORAGE
+
 #include <IO/ReadBufferFromAzureBlobStorage.h>
 #include <IO/WriteBufferFromAzureBlobStorage.h>
 #include <IO/SeekAvoidingReadBuffer.h>
@@ -211,3 +214,5 @@ std::unique_ptr<IObjectStorage> AzureObjectStorage::cloneObjectStorage(const std
 }
 
 }
+
+#endif
