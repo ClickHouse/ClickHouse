@@ -22,16 +22,20 @@ public:
 
     bool isBipartite(const GraphType & graph, Vertex vertex, HashMap<Vertex, bool> & color, bool currentColor = true) const
     {
+        std::queue<Vertex> buff;
         color[vertex] = currentColor;
-        for (Vertex next : graph.at(vertex))
-        {
-            if (!color.has(next))
-            {
-                if (!isBipartite(graph, next, color, true ^ currentColor))
+        buff.push(vertex);
+        while (!buff.empty()) {
+            Vertex cur = buff.front();
+            buff.pop();
+            for (Vertex next : graph.at(cur)) {
+                if (!color.has(next)) {
+                    color[next] = true ^ color[cur];
+                    buff.push(next);
+                } else if (color[next] == color[cur]) {
                     return false;
+                }
             }
-            else if (color[next] == currentColor)
-                return false;
         }
         return true;
     }
@@ -48,21 +52,80 @@ public:
 
     bool dfsMatch(Vertex vertex, UInt64 currentColor, const GraphType & graph, HashMap<Vertex, UInt64> & used, VertexMap & matching) const
     {
-        if (std::exchange(used[vertex], currentColor) == currentColor)
-            return false;
-        for (Vertex next : graph.at(vertex))
-            if (!matching.has(next))
-            {
-                matching[next] = vertex;
-                return true;
+        // std::queue<Vertex> buff;
+        // buff.push(vertex);
+        // used[vertex] = currentColor;
+        // HashMap<Vertex, Vertex> parent;
+
+        // auto swapPath = [&] (Vertex from) {
+
+        // };
+
+        // while (!buff.empty()) {
+        //     Vertex cur = buff.front();
+        //     buff.pop();
+        //     for (Vertex next : graph.at(cur)) {
+        //         if (std::exchange(used[vertex], currentColor) != currentColor) {
+        //             if (!matching.has(next)) {
+        //                 matching[next] = cur;
+        //                 swapPath(cur);
+        //                 return true;
+        //             } else {
+        //                 buff.push(matching[next]);
+        //             }
+        //         }
+        //     }
+        // }
+
+        // HashMap<Vertex, Vertex> parents;
+
+        // if (used[vertex] == currentColor) {
+        //     return false;
+        // }
+        
+
+        // if (std::exchange(used[vertex], currentColor) == currentColor)
+        //     return false;
+
+        std::vector<std::pair<Vertex, std::decay_t<decltype(graph.at(vertex).begin())>>> dfs_stack;
+        dfs_stack.emplace_back(vertex, graph.at(vertex).begin());
+        used[vertex] = currentColor;
+        while (!dfs_stack.empty()) {
+            auto [vertex, it] = dfs_stack.back();
+            dfs_stack.pop_back();
+            if (it != graph.at(vertex).end()) {
+                auto cp_it = it;
+                ++cp_it;
+                dfs_stack.emplace_back(vertex, cp_it);
+                Vertex next = *it;
+                if (!matching.has(next)) {
+                    while (!dfs_stack.empty()) {
+                        auto [cur_vertex, next_it] = dfs_stack.back();
+                        dfs_stack.pop_back();
+                        --next_it;
+                        matching[*next_it] = cur_vertex;
+                    }
+                    return true;
+                } else if (used[matching[next]] != currentColor) {
+                    dfs_stack.emplace_back(matching[next], graph.at(matching[next]).begin());
+                    used[matching[next]] = currentColor;
+                }
             }
-        for (Vertex next : graph.at(vertex))
-            if (dfsMatch(matching[next], currentColor, graph, used, matching))
-            {
-                matching[next] = vertex;
-                return true;
-            }
+        }
+
         return false;
+
+        // used[vertex] = currentColor;
+        // for (Vertex next : graph.at(vertex)) {
+        //     // if (used[next] == currentColor) {
+        //     //     continue;
+        //     // }
+        //     if (!matching.has(next) || dfsMatch(matching[next], currentColor, graph, used, matching)) {
+        //         matching[next] = vertex;
+        //         return true;
+        //     }
+        // }
+        // return false;
     }
 
     std::optional<UInt64> calculateOperation(ConstAggregateDataPtr __restrict place, Arena *) const
@@ -77,8 +140,20 @@ public:
         VertexMap matching;
         UInt64 current_color = 0;
         UInt64 matching_size = 0;
+        for (const auto & [vertex, neighbours] : graph) {
+            if (color->at(vertex)) {
+                for (auto next : neighbours) {
+                    if (!matching.has(next)) {
+                        matching[next] = vertex;
+                        used[vertex] = ++current_color;
+                        ++matching_size;
+                        break;
+                    }
+                }
+            }
+        }
         for (const auto & [vertex, neighbours] : graph)
-            if (color->at(vertex))
+            if (color->at(vertex) && !used.has(vertex))
                 if (dfsMatch(vertex, ++current_color, graph, used, matching))
                     ++matching_size;
         return matching_size;
