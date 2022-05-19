@@ -28,6 +28,7 @@
 #include <Processors/Transforms/getSourceFromASTInsertQuery.h>
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageMaterializedView.h>
+#include <Storages/WindowView/StorageWindowView.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/checkStackSize.h>
 
@@ -102,7 +103,9 @@ Block InterpreterInsertQuery::getSampleBlock(
     /// If the query does not include information about columns
     if (!query.columns)
     {
-        if (no_destination)
+        if (auto * window_view = dynamic_cast<StorageWindowView *>(table.get()))
+            return window_view->getInputHeader();
+        else if (no_destination)
             return metadata_snapshot->getSampleBlockWithVirtuals(table->getVirtuals());
         else
             return metadata_snapshot->getSampleBlockNonMaterialized();

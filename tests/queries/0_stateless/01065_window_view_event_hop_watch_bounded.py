@@ -42,7 +42,7 @@ with client(name="client1>", log=log) as client1, client(
     client1.send(
         "CREATE WINDOW VIEW 01065_window_view_event_hop_watch_bounded.wv ENGINE Memory WATERMARK=INTERVAL '2' SECOND AS SELECT count(a) AS count, hopEnd(wid) AS w_end FROM 01065_window_view_event_hop_watch_bounded.mt GROUP BY hop(timestamp, INTERVAL '2' SECOND, INTERVAL '3' SECOND, 'US/Samoa') AS wid"
     )
-    client1.expect(prompt)
+    client1.expect("Ok.")
 
     client1.send("WATCH 01065_window_view_event_hop_watch_bounded.wv")
     client1.expect("Query id" + end_of_block)
@@ -55,7 +55,7 @@ with client(name="client1>", log=log) as client1, client(
         "INSERT INTO 01065_window_view_event_hop_watch_bounded.mt VALUES (1, '1990/01/01 12:00:05');"
     )
     client2.expect("Ok.")
-    client1.expect("1*" + end_of_block)
+    client1.expect("1" + end_of_block)
     client2.send(
         "INSERT INTO 01065_window_view_event_hop_watch_bounded.mt VALUES (1, '1990/01/01 12:00:06');"
     )
@@ -64,8 +64,7 @@ with client(name="client1>", log=log) as client1, client(
         "INSERT INTO 01065_window_view_event_hop_watch_bounded.mt VALUES (1, '1990/01/01 12:00:10');"
     )
     client2.expect("Ok.")
-    client1.expect("1*" + end_of_block)
-    client1.expect("2*" + end_of_block)
+    client1.expect("2" + end_of_block)
 
     # send Ctrl-C
     client1.send("\x03", eol="")
@@ -76,4 +75,6 @@ with client(name="client1>", log=log) as client1, client(
     client1.send("DROP TABLE 01065_window_view_event_hop_watch_bounded.wv")
     client1.expect(prompt)
     client1.send("DROP TABLE 01065_window_view_event_hop_watch_bounded.mt")
+    client1.expect(prompt)
+    client1.send("DROP DATABASE IF EXISTS 01065_window_view_event_hop_watch_bounded")
     client1.expect(prompt)
