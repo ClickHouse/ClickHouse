@@ -69,7 +69,7 @@ void Client::processError(const String & query) const
 {
     if (server_exception)
     {
-        fmt::print(stderr, "Received exception from the server (version {}):\n{}\n",
+        fmt::print(stderr, "Received exception from server (version {}):\n{}\n",
                 server_version,
                 getExceptionMessage(*server_exception, print_stack_trace, true));
         if (is_interactive)
