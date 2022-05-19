@@ -7,6 +7,10 @@ import requests  # type: ignore
 from get_robot_token import get_parameter_from_ssm
 
 
+class InsertException(Exception):
+    pass
+
+
 class ClickHouseHelper:
     def __init__(self, url=None):
         if url is None:
@@ -58,23 +62,37 @@ class ClickHouseHelper:
                 response.request.body,
             )
 
-            raise Exception(error)
+            raise InsertException(error)
         else:
-            raise Exception(error)
+            raise InsertException(error)
 
     def _insert_json_str_info(self, db, table, json_str):
         self._insert_json_str_info_impl(self.url, self.auth, db, table, json_str)
 
-    def insert_event_into(self, db, table, event):
+    def insert_event_into(self, db, table, event, safe=True):
         event_str = json.dumps(event)
-        self._insert_json_str_info(db, table, event_str)
+        try:
+            self._insert_json_str_info(db, table, event_str)
+        except InsertException as e:
+            logging.error(
+                "Exception happened during inserting data into clickhouse: %s", e
+            )
+            if not safe:
+                raise
 
-    def insert_events_into(self, db, table, events):
+    def insert_events_into(self, db, table, events, safe=True):
         jsons = []
         for event in events:
             jsons.append(json.dumps(event))
 
-        self._insert_json_str_info(db, table, ",".join(jsons))
+        try:
+            self._insert_json_str_info(db, table, ",".join(jsons))
+        except InsertException as e:
+            logging.error(
+                "Exception happened during inserting data into clickhouse: %s", e
+            )
+            if not safe:
+                raise
 
     def _select_and_get_json_each_row(self, db, query):
         params = {
@@ -96,7 +114,7 @@ class ClickHouseHelper:
                     logging.warning("Reponse text %s", response.text)
                 time.sleep(0.1 * i)
 
-        raise Exception("Cannot insert data into clickhouse")
+        raise Exception("Cannot fetch data from clickhouse")
 
     def select_json_each_row(self, db, query):
         text = self._select_and_get_json_each_row(db, query)
@@ -187,4 +205,4 @@ def mark_flaky_tests(clickhouse_helper, check_name, test_results):
             if test_result[1] == "FAIL" and test_result[0] in master_failed_tests:
                 test_result[1] = "FLAKY"
     except Exception as ex:
-        logging.info("Exception happened during flaky tests fetch %s", ex)
+        logging.error("Exception happened during flaky tests fetch %s", ex)
