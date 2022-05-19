@@ -21,8 +21,6 @@
 * Enable memory overcommit by default. [#35921](https://github.com/ClickHouse/ClickHouse/pull/35921) ([Dmitry Novik](https://github.com/novikd)).
 * Add support of GROUPING SETS in GROUP BY clause. This implementation supports a parallel processing of grouping sets. [#33631](https://github.com/ClickHouse/ClickHouse/pull/33631) ([Dmitry Novik](https://github.com/novikd)).
 * Added `system.certificates` table. [#37142](https://github.com/ClickHouse/ClickHouse/pull/37142) ([Yakov Olkhovskiy](https://github.com/yakov-olkhovskiy)).
-* Implemented L1, L2, Linf, Cosine distance functions for arrays and L1, L2, Linf norm functions for arrays.
- [#37033](https://github.com/ClickHouse/ClickHouse/pull/37033) ([qieqieplus](https://github.com/qieqieplus)).
 * Adds `h3Line`, `h3Distance` and `h3HexRing` functions. [#37030](https://github.com/ClickHouse/ClickHouse/pull/37030) ([Bharat Nallan](https://github.com/bharatnc)).
 * New single binary based diagnostics tool (clickhouse-diagnostics). [#36705](https://github.com/ClickHouse/ClickHouse/pull/36705) ([Dale McDiarmid](https://github.com/gingerwizard)).
 * Add output format `Prometheus` [#36051](https://github.com/ClickHouse/ClickHouse/issues/36051). [#36206](https://github.com/ClickHouse/ClickHouse/pull/36206) ([Vladimir C](https://github.com/vdimir)).
@@ -33,6 +31,8 @@
 
 #### Experimental Feature
 
+* Implemented L1, L2, Linf, Cosine distance functions for arrays and L1, L2, Linf norm functions for arrays.
+ [#37033](https://github.com/ClickHouse/ClickHouse/pull/37033) ([qieqieplus](https://github.com/qieqieplus)). Caveat: the functions will be renamed.
 * Improve the `WATCH` query in WindowView: 1. Reduce the latency of providing query results by calling the `fire_condition` signal. 2. Makes the cancel query operation(ctrl-c) faster, by checking `isCancelled()` more frequently. [#37226](https://github.com/ClickHouse/ClickHouse/pull/37226) ([vxider](https://github.com/Vxider)).
 * Introspection for remove filesystem cache. [#36802](https://github.com/ClickHouse/ClickHouse/pull/36802) ([Han Shukai](https://github.com/KinderRiven)).
 * Added new hash function `wyHash64` for SQL. [#36467](https://github.com/ClickHouse/ClickHouse/pull/36467) ([olevino](https://github.com/olevino)).
