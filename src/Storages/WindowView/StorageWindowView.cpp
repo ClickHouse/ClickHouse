@@ -469,6 +469,9 @@ void StorageWindowView::alter(
     auto old_inner_table_id = inner_table_id;
 
     modifying_query = true;
+    SCOPE_EXIT({
+        modifying_query = false;
+    });
     shutdown();
 
     auto inner_query = initInnerQuery(new_select_query->as<ASTSelectQuery &>(), local_context);
