@@ -1,9 +1,9 @@
 #pragma once
 
 #include <Common/config.h>
-#include <Disks/IDiskRemote.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadSettings.h>
+#include <Disks/IObjectStorage.h>
 
 #if USE_AZURE_BLOB_STORAGE
 #include <azure/storage/blobs.hpp>

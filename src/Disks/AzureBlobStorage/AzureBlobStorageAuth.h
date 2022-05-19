@@ -4,7 +4,6 @@
 
 #if USE_AZURE_BLOB_STORAGE
 
-#include <Disks/IDiskRemote.h>
 #include <azure/storage/blobs.hpp>
 #include <Disks/AzureObjectStorage.h>
 
