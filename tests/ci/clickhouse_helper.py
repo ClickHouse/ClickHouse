@@ -32,9 +32,7 @@ class ClickHouseHelper:
         }
 
         for i in range(5):
-            response = requests.post(
-                url, params=params, data=json_str, headers=auth, verify=False
-            )
+            response = requests.post(url, params=params, data=json_str, headers=auth)
 
             logging.info("Response content '%s'", response.content)
 
@@ -103,9 +101,7 @@ class ClickHouseHelper:
         for i in range(5):
             response = None
             try:
-                response = requests.get(
-                    self.url, params=params, headers=self.auth, verify=False
-                )
+                response = requests.get(self.url, params=params, headers=self.auth)
                 response.raise_for_status()
                 return response.text
             except Exception as ex:
