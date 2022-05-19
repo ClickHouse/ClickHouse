@@ -1,12 +1,14 @@
 #pragma once
 
 #include <memory>
-
+#include <condition_variable>
 #include <Common/LRUCache.h>
 
 
 namespace DB
 {
+using QueryCachePtr = std::shared_ptr<QueryCache>;
+
 using Data = std::pair<Block, Chunks>;
 
 struct CacheKey
@@ -27,8 +29,8 @@ struct CacheKey
 
     ASTPtr ast;
     Block header;
-    const Settings & settings;
-    const std::optional<String> & username;
+    Settings settings;
+    std::optional<String> username;
 
     //    static std::set<String> settingsSet(const Settings & settings) {
     //        std::set<String> res;
@@ -41,10 +43,10 @@ struct CacheKey
 
 struct CacheKeyHasher
 {
-    size_t operator()(const CacheKey & k) const
+    size_t operator()(const CacheKey & key) const
     {
-        auto ast_info = k.ast->getTreeHash();
-        auto header_info = k.header.getNamesAndTypesList().toString();
+        auto ast_info = key.ast->getTreeHash();
+        auto header_info = key.header.getNamesAndTypesList().toString();
         //        auto settings_info = settingsHash(k.settings);
         //        auto username_info = std::hash<std::optional<String>>{}(k.username);
 
@@ -83,6 +85,86 @@ struct QueryWeightFunction
     }
 };
 
+class CacheRemovalScheduler
+{
+private:
+    using timestamp = std::chrono::time_point<std::chrono::high_resolution_clock>;
+    using duration = std::chrono::high_resolution_clock::duration;
+public:
+    void scheduleRemoval(duration duration, CacheKey cache_key)
+    {
+        std::lock_guard lock(mutex);
+        TimedCacheKey timer = {now() + duration, cache_key};
+        queue.push(timer);
+        if (queue.top() == timer)
+        {
+            timer_cv.notify_one();
+        }
+    }
+
+    template <typename Cache>
+    [[noreturn]] void processRemovalQueue(Cache * query_cache)
+    {
+        while (true)
+        {
+            std::unique_lock lock(mutex);
+            const std::optional<TimedCacheKey> awaited_timer = nextTimer();
+
+            timer_cv.wait_until(lock,
+                                awaited_timer.has_value() ? awaited_timer->time : infinite_time,
+                                [&]() { return awaited_timer != nextTimer() || (awaited_timer.has_value() && awaited_timer->time <= now()); }
+            );
+
+            if (awaited_timer.has_value() && awaited_timer->time <= now())
+            {
+                query_cache->remove(awaited_timer->cache_key);
+                queue.pop();
+            }
+        }
+    }
+
+
+private:
+    struct TimedCacheKey
+    {
+        TimedCacheKey(timestamp timestamp, CacheKey key)
+            : time(timestamp)
+            , cache_key(key)
+        {}
+
+        bool operator==(const TimedCacheKey& other) const
+        {
+            return time == other.time;
+        }
+
+        bool operator<(const TimedCacheKey& other) const
+        {
+            return time < other.time;
+        }
+
+        timestamp time;
+        CacheKey cache_key;
+    };
+
+    std::optional<TimedCacheKey> nextTimer() const
+    {
+        if (queue.empty())
+        {
+            return std::nullopt;
+        }
+        return std::make_optional(queue.top());
+    }
+
+    static timestamp now()
+    {
+        return std::chrono::high_resolution_clock::now();
+    }
+
+    const timestamp infinite_time = timestamp::max();
+    std::priority_queue<TimedCacheKey> queue;
+    std::condition_variable timer_cv;
+    std::mutex mutex;
+};
 
 class QueryCache : public LRUCache<CacheKey, Data, CacheKeyHasher, QueryWeightFunction>
 {
@@ -90,20 +172,29 @@ private:
     using Base = LRUCache<CacheKey, Data, CacheKeyHasher, QueryWeightFunction>;
 
 public:
-    QueryCache(size_t cache_size_in_bytes)
+    explicit QueryCache(size_t cache_size_in_bytes)
         : Base(cache_size_in_bytes)
     {
-
+        std::thread timers_polling_thread(&CacheRemovalScheduler::processRemovalQueue<QueryCache>, &removal_scheduler, this);
+        timers_polling_thread.detach();
     }
+
+    // join timers_polling_thread in destructor
 
     void addChunk(CacheKey cache_key, Chunk && chunk)
     {
         auto data = get(cache_key);
         data->second.push_back(std::move(chunk));
-//        if (weight(*data) > max_query_cache_entry_size) {
-//             remove the entry from cache + make sure the subsequent chunks will not create it again
-//        }
+        //        if (weight(*data) > max_query_cache_entry_size) {
+        //             remove the entry from cache + make sure the subsequent chunks will not create it again
+        //        }
         set(cache_key, data); // evicts cache if necessary
+    }
+
+    void scheduleRemoval(CacheKey cache_key)
+    {
+        using namespace std::chrono_literals;
+        removal_scheduler.scheduleRemoval(15s, cache_key);
     }
 
     size_t recordQueryRun(CacheKey cache_key)
@@ -116,30 +207,13 @@ public:
         return put_in_cache_mutexes[cache_key];
     }
 
-    void scheduleRemoval(CacheKey cache_key, std::chrono::seconds milis=std::chrono::seconds{15})
-    {
-        auto future = std::async(&QueryCache::removeOnTimeout, this, cache_key, milis);
-        LOG_DEBUG(&Poco::Logger::get("scheduleRemoval"), "after std::async");
-        assert(future.valid());
-        LOG_DEBUG(&Poco::Logger::get("scheduleRemoval"), "after assert");
-    }
-
 private:
-    void removeOnTimeout(CacheKey cache_key, std::chrono::seconds milis=std::chrono::seconds{15})
-    {
-        std::this_thread::sleep_for(milis);
-        remove(cache_key);
-    }
+    CacheRemovalScheduler removal_scheduler;
 
-private:
-//    size_t max_query_cache_entry_size;
     std::unordered_map<CacheKey, size_t, CacheKeyHasher> times_executed;
     std::mutex times_executed_mutex;
-    std::unordered_map<CacheKey, std::mutex, CacheKeyHasher> put_in_cache_mutexes;
-    std::mutex put_in_cache_mutex;
-//    QueryWeightFunction weight;
-};
 
-using QueryCachePtr = std::shared_ptr<QueryCache>;
+    std::unordered_map<CacheKey, std::mutex, CacheKeyHasher> put_in_cache_mutexes;
+};
 
 }
