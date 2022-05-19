@@ -371,7 +371,7 @@ void DDLWorker::scheduleTasks(bool reinitialized)
         String entry_name = *it;
         LOG_TRACE(log, "Checking task {}", entry_name);
 
-        if (dependencies_graph.tasks_dependencies.contains(entry_name))
+        if (dependencies_graph.tasks_dependencies.database_objects_in_query.contains(entry_name) || dependencies_graph.tasks_dependencies.independent_queries.contains(entry_name))
             continue;
 
         String reason;

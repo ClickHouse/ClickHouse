@@ -35,9 +35,17 @@ void DependenciesGraph::addTask(DDLTaskPtr && task)
 {
     tasks_dependencies.total_queries++;
     const auto & name = task->entry_name;
+
     if (tasks_dependencies.database_objects_in_query.contains(name))
         return;
+
     auto database_objects_for_added_task = getDependenciesSetFromQuery(global_context, task->query);
+
+    if (database_objects_for_added_task.empty())
+    {
+        tasks_dependencies.independent_queries.insert(name);
+        return;
+    }
     tasks_dependencies.database_objects_in_query[name] = database_objects_for_added_task;
     for (const auto & [query_name, query_objects] : tasks_dependencies.database_objects_in_query)
     {
