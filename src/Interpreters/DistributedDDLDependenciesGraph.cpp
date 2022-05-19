@@ -37,7 +37,7 @@ void DependenciesGraph::addTask(DDLTaskPtr && task)
     String name = task->entry_name;
 
     if (tasks_dependencies.database_objects_in_query.contains(name))
-        /// Skip if already added
+        /// Skip if already added to graph
         return;
 
     auto database_objects_for_added_task = getDependenciesSetFromQuery(global_context, task->query);
