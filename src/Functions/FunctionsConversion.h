@@ -1349,7 +1349,7 @@ struct ConvertImpl<DataTypeFixedString, ToDataType, Name, ConvertReturnNullOnErr
 template <typename StringColumnType>
 struct ConvertImplGenericFromString
 {
-    static ColumnPtr execute(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable *, size_t input_rows_count)
+    static ColumnPtr execute(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable * column_nullable, size_t input_rows_count)
     {
         static_assert(std::is_same_v<StringColumnType, ColumnString> || std::is_same_v<StringColumnType, ColumnFixedString>,
                 "Can be used only to parse from ColumnString or ColumnFixedString");
@@ -1365,8 +1365,15 @@ struct ConvertImplGenericFromString
 
             FormatSettings format_settings;
             auto serialization = data_type_to.getDefaultSerialization();
+            const auto * null_map = column_nullable ? &column_nullable->getNullMapData() : nullptr;
             for (size_t i = 0; i < input_rows_count; ++i)
             {
+                if (null_map && (*null_map)[i])
+                {
+                    column_to.insertDefault();
+                    continue;
+                }
+
                 const auto & val = col_from_string->getDataAt(i);
                 ReadBufferFromMemory read_buffer(val.data, val.size);
 
@@ -3695,16 +3702,17 @@ private:
                     if (to_type->getCustomName()->getName() == "IPv4")
                     {
                         ret = [cast_ipv4_ipv6_default_on_conversion_error_value](
-                                  ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable *, size_t)
+                                  ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable * column_nullable, size_t)
                             -> ColumnPtr
                         {
                             if (!WhichDataType(result_type).isUInt32())
                                 throw Exception(ErrorCodes::TYPE_MISMATCH, "Wrong result type {}. Expected UInt32", result_type->getName());
 
+                            const auto * null_map = column_nullable ? &column_nullable->getNullMapData() : nullptr;
                             if (cast_ipv4_ipv6_default_on_conversion_error_value)
-                                return convertToIPv4<IPStringToNumExceptionMode::Default>(arguments[0].column);
+                                return convertToIPv4<IPStringToNumExceptionMode::Default>(arguments[0].column, null_map);
                             else
-                                return convertToIPv4<IPStringToNumExceptionMode::Throw>(arguments[0].column);
+                                return convertToIPv4<IPStringToNumExceptionMode::Throw>(arguments[0].column, null_map);
                         };
 
                         return true;
@@ -3713,17 +3721,18 @@ private:
                     if (to_type->getCustomName()->getName() == "IPv6")
                     {
                         ret = [cast_ipv4_ipv6_default_on_conversion_error_value](
-                                  ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable *, size_t)
+                                  ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable * column_nullable, size_t)
                             -> ColumnPtr
                         {
                             if (!WhichDataType(result_type).isFixedString())
                                 throw Exception(
                                     ErrorCodes::TYPE_MISMATCH, "Wrong result type {}. Expected FixedString", result_type->getName());
 
+                            const auto * null_map = column_nullable ? &column_nullable->getNullMapData() : nullptr;
                             if (cast_ipv4_ipv6_default_on_conversion_error_value)
-                                return convertToIPv6<IPStringToNumExceptionMode::Default>(arguments[0].column);
+                                return convertToIPv6<IPStringToNumExceptionMode::Default>(arguments[0].column, null_map);
                             else
-                                return convertToIPv6<IPStringToNumExceptionMode::Throw>(arguments[0].column);
+                                return convertToIPv6<IPStringToNumExceptionMode::Throw>(arguments[0].column, null_map);
                         };
 
                         return true;

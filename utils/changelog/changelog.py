@@ -19,6 +19,8 @@ from git_helper import is_shallow, git_runner as runner
 
 # This array gives the preferred category order, and is also used to
 # normalize category names.
+# Categories are used in .github/PULL_REQUEST_TEMPLATE.md, keep comments there
+# updated accordingly
 categories_preferred_order = (
     "Backward Incompatible Change",
     "New Feature",
@@ -31,6 +33,7 @@ categories_preferred_order = (
 
 FROM_REF = ""
 TO_REF = ""
+SHA_IN_CHANGELOG = []  # type: List[str]
 
 
 class Description:
@@ -97,19 +100,7 @@ class Worker(Thread):
                 logging.info("PR %s does not belong to the repo", api_pr.number)
                 continue
 
-            try:
-                runner.run(
-                    f"git merge-base --is-ancestor '{merge_commit}' '{TO_REF}'",
-                    stderr=DEVNULL,
-                )
-                runner.run(
-                    f"git merge-base --is-ancestor '{FROM_REF}' '{merge_commit}'",
-                    stderr=DEVNULL,
-                )
-                in_changelog = True
-            except CalledProcessError:
-                # Commit is not between from and to refs
-                continue
+            in_changelog = merge_commit in SHA_IN_CHANGELOG
             if in_changelog:
                 desc = generate_description(api_pr, self.repo)
                 if desc is not None:
@@ -296,7 +287,7 @@ def write_changelog(fd: TextIO, descriptions: Dict[str, List[Description]]):
 
             fd.write("\n")
 
-    for category in descriptions:
+    for category in sorted(descriptions):
         if category not in seen_categories:
             fd.write(f"#### {category}\n\n")
             for desc in descriptions[category]:
@@ -314,23 +305,21 @@ def check_refs(from_ref: Optional[str], to_ref: str):
 
     # Check from_ref
     if from_ref is None:
-        FROM_REF = runner.run(f"git describe --abbrev=0 --tags '{TO_REF}~'")
-        # Check if the previsous tag is different for merge commits
-        # I __assume__ we won't have octopus merges, at least for the tagged commits
-        try:
-            alternative_tag = runner.run(
-                f"git describe --abbrev=0 --tags '{TO_REF}^2'", stderr=DEVNULL
-            )
-            if FROM_REF != alternative_tag:
-                raise Exception(
-                    f"Unable to get unified parent tag for {TO_REF}, "
-                    f"define it manually, get {FROM_REF} and {alternative_tag}"
-                )
-        except CalledProcessError:
-            pass
+        # Get all tags pointing to TO_REF
+        tags = runner.run(f"git tag --points-at '{TO_REF}^{{}}'")
+        logging.info("All tags pointing to %s:\n%s", TO_REF, tags)
+        exclude = " ".join([f"--exclude='{tag}'" for tag in tags.split("\n")])
+        FROM_REF = runner.run(f"git describe --abbrev=0 --tags {exclude} '{TO_REF}'")
     else:
         runner.run(f"git rev-parse {FROM_REF}")
         FROM_REF = from_ref
+
+
+def set_sha_in_changelog():
+    global SHA_IN_CHANGELOG
+    SHA_IN_CHANGELOG = runner.run(
+        f"git log --format=format:%H {FROM_REF}..{TO_REF}"
+    ).split("\n")
 
 
 def main():
@@ -348,6 +337,7 @@ def main():
     runner.run("git fetch --tags", stderr=DEVNULL)
 
     check_refs(args.from_ref, args.to_ref)
+    set_sha_in_changelog()
 
     logging.info("Using %s..%s as changelog interval", FROM_REF, TO_REF)
 
