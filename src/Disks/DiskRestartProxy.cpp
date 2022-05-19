@@ -5,8 +5,10 @@
 
 namespace DB
 {
+
 namespace ErrorCodes
-{extern const int DEADLOCK_AVOIDED;
+{
+    extern const int DEADLOCK_AVOIDED;
 }
 
 using Millis = std::chrono::milliseconds;

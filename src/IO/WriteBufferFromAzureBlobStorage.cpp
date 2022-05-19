@@ -12,14 +12,18 @@ namespace DB
 {
 
 WriteBufferFromAzureBlobStorage::WriteBufferFromAzureBlobStorage(
-    std::shared_ptr<Azure::Storage::Blobs::BlobContainerClient> blob_container_client_,
+    std::shared_ptr<const Azure::Storage::Blobs::BlobContainerClient> blob_container_client_,
     const String & blob_path_,
     size_t max_single_part_upload_size_,
-    size_t buf_size_) :
-    BufferWithOwnMemory<WriteBuffer>(buf_size_, nullptr, 0),
-    blob_container_client(blob_container_client_),
-    max_single_part_upload_size(max_single_part_upload_size_),
-    blob_path(blob_path_) {}
+    size_t buf_size_,
+    std::optional<std::map<std::string, std::string>> attributes_)
+    : BufferWithOwnMemory<WriteBuffer>(buf_size_, nullptr, 0)
+    , blob_container_client(blob_container_client_)
+    , max_single_part_upload_size(max_single_part_upload_size_)
+    , blob_path(blob_path_)
+    , attributes(attributes_)
+{
+}
 
 
 WriteBufferFromAzureBlobStorage::~WriteBufferFromAzureBlobStorage()
@@ -29,6 +33,15 @@ WriteBufferFromAzureBlobStorage::~WriteBufferFromAzureBlobStorage()
 
 void WriteBufferFromAzureBlobStorage::finalizeImpl()
 {
+    if (attributes.has_value())
+    {
+        auto blob_client = blob_container_client->GetBlobClient(blob_path);
+        Azure::Storage::Metadata metadata;
+        for (const auto & [key, value] : *attributes)
+            metadata[key] = value;
+        blob_client.SetMetadata(metadata);
+    }
+
     const size_t max_tries = 3;
     for (size_t i = 0; i < max_tries; ++i)
     {

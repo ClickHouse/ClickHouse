@@ -35,7 +35,6 @@ bool HDFSObjectStorage::exists(const std::string & hdfs_uri) const
     const size_t begin_of_path = hdfs_uri.find('/', hdfs_uri.find("//") + 2);
     const String remote_fs_object_path = hdfs_uri.substr(begin_of_path);
     return (0 == hdfsExists(hdfs_fs.get(), remote_fs_object_path.c_str()));
-
 }
 
 std::unique_ptr<SeekableReadBuffer> HDFSObjectStorage::readObject( /// NOLINT
@@ -72,9 +71,9 @@ std::unique_ptr<WriteBufferFromFileBase> HDFSObjectStorage::writeObject( /// NOL
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "HDFS API doesn't support custom attributes/metadata for stored objects");
 
     /// Single O_WRONLY in libhdfs adds O_TRUNC
-    auto hdfs_buffer = std::make_unique<WriteBufferFromHDFS>(path,
-                                                             config, settings->replication, buf_size,
-                                                             mode == WriteMode::Rewrite ? O_WRONLY : O_WRONLY | O_APPEND);
+    auto hdfs_buffer = std::make_unique<WriteBufferFromHDFS>(
+        path, config, settings->replication, buf_size,
+        mode == WriteMode::Rewrite ? O_WRONLY : O_WRONLY | O_APPEND);
 
     return std::make_unique<WriteIndirectBufferFromRemoteFS>(std::move(hdfs_buffer), std::move(finalize_callback), path);
 }

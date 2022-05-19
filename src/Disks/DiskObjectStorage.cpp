@@ -875,7 +875,7 @@ void DiskObjectStorageMetadataHelper::findLastRevision()
     LOG_INFO(disk->log, "Found last revision number {} for disk {}", revision_counter, disk->name);
 }
 
-int DiskObjectStorageMetadataHelper::readSchemaVersion(IObjectStorage * object_storage, const String & source_path) const
+int DiskObjectStorageMetadataHelper::readSchemaVersion(IObjectStorage * object_storage, const String & source_path)
 {
     const std::string path = source_path + SCHEMA_VERSION_OBJECT;
     int version = 0;
