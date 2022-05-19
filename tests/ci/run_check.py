@@ -25,11 +25,14 @@ CAN_BE_TESTED_LABEL = "can be tested"
 DO_NOT_TEST_LABEL = "do not test"
 SUBMODULE_CHANGED_LABEL = "submodule changed"
 
+# They are used in .github/PULL_REQUEST_TEMPLATE.md, keep comments there
+# updated accordingly
 LABELS = {
     "pr-backward-incompatible": ["Backward Incompatible Change"],
     "pr-bugfix": [
         "Bug Fix",
         "Bug Fix (user-visible misbehaviour in official stable or prestable release)",
+        "Bug Fix (user-visible misbehavior in official stable or prestable release)",
     ],
     "pr-build": [
         "Build/Testing/Packaging Improvement",
