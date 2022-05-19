@@ -15,6 +15,7 @@
 #include <Disks/IO/ThreadPoolRemoteFSReader.h>
 #include <Common/FileCache.h>
 
+#include <Poco/Util/AbstractConfiguration.h>
 
 namespace DB
 {
