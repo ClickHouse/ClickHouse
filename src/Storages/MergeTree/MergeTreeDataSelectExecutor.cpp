@@ -291,28 +291,29 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
             }
 
             AggregatingTransformParamsPtr transform_params;
+
+            Aggregator::Params params(
+                header_before_aggregation,
+                keys,
+                aggregates,
+                query_info.projection->aggregate_overflow_row,
+                settings.max_rows_to_group_by,
+                settings.group_by_overflow_mode,
+                settings.group_by_two_level_threshold,
+                settings.group_by_two_level_threshold_bytes,
+                settings.max_bytes_before_external_group_by,
+                settings.empty_result_for_aggregation_by_empty_set,
+                context->getTemporaryVolume(),
+                settings.max_threads,
+                settings.min_free_disk_space_for_temporary_data,
+                settings.compile_aggregate_expressions,
+                settings.min_count_to_compile_aggregate_expression);
+
+            bool only_merge = false;
             if (projection)
             {
-                Aggregator::Params params(
-                    header_before_aggregation,
-                    keys,
-                    aggregates,
-                    query_info.projection->aggregate_overflow_row,
-                    settings.max_rows_to_group_by,
-                    settings.group_by_overflow_mode,
-                    settings.group_by_two_level_threshold,
-                    settings.group_by_two_level_threshold_bytes,
-                    settings.max_bytes_before_external_group_by,
-                    settings.empty_result_for_aggregation_by_empty_set,
-                    context->getTemporaryVolume(),
-                    settings.max_threads,
-                    settings.min_free_disk_space_for_temporary_data,
-                    settings.compile_aggregate_expressions,
-                    settings.min_count_to_compile_aggregate_expression,
-                    header_before_aggregation); // The source header is also an intermediate header
-
-                transform_params = std::make_shared<AggregatingTransformParams>(
-                    std::move(params), aggregator_list_ptr, query_info.projection->aggregate_final);
+                /// The source header is also an intermediate header
+                params.intermediate_header = header_before_aggregation;
 
                 /// This part is hacky.
                 /// We want AggregatingTransform to work with aggregate states instead of normal columns.
@@ -321,30 +322,10 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
                 /// It is needed because data in projection:
                 /// * is not merged completely (we may have states with the same key in different parts)
                 /// * is not split into buckets (so if we just use MergingAggregated, it will use single thread)
-                transform_params->only_merge = true;
+                only_merge = true;
             }
-            else
-            {
-                Aggregator::Params params(
-                    header_before_aggregation,
-                    keys,
-                    aggregates,
-                    query_info.projection->aggregate_overflow_row,
-                    settings.max_rows_to_group_by,
-                    settings.group_by_overflow_mode,
-                    settings.group_by_two_level_threshold,
-                    settings.group_by_two_level_threshold_bytes,
-                    settings.max_bytes_before_external_group_by,
-                    settings.empty_result_for_aggregation_by_empty_set,
-                    context->getTemporaryVolume(),
-                    settings.max_threads,
-                    settings.min_free_disk_space_for_temporary_data,
-                    settings.compile_aggregate_expressions,
-                    settings.min_count_to_compile_aggregate_expression);
-
-                transform_params = std::make_shared<AggregatingTransformParams>(
-                    std::move(params), aggregator_list_ptr, query_info.projection->aggregate_final);
-            }
+            transform_params = std::make_shared<AggregatingTransformParams>(
+                std::move(params), aggregator_list_ptr, query_info.projection->aggregate_final, only_merge);
 
             pipe.resize(pipe.numOutputPorts(), true, true);
 
