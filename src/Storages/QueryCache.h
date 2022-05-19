@@ -179,8 +179,6 @@ public:
         timers_polling_thread.detach();
     }
 
-    // join timers_polling_thread in destructor
-
     void addChunk(CacheKey cache_key, Chunk && chunk)
     {
         auto data = get(cache_key);
