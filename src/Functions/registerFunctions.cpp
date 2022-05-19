@@ -65,6 +65,11 @@ void registerFunctionAESDecryptMysql(FunctionFactory & factory);
 
 #endif
 
+void registerFunctionHelloWorld(FunctionFactory & factory);
+void registerFunctionASCII(FunctionFactory & factory);
+//void registerFunctionSign(FunctionFactory & factory);
+void registerFunctionFormatBytes(FunctionFactory &factory);
+
 void registerFunctions()
 {
     auto & factory = FunctionFactory::instance();
@@ -127,6 +132,10 @@ void registerFunctions()
 #endif
     registerFunctionTid(factory);
     registerFunctionLogTrace(factory);
+    registerFunctionHelloWorld(factory);
+    registerFunctionASCII(factory);
+    //registerFunctionSign(factory);
+    registerFunctionFormatBytes(factory);
 }
 
 }
