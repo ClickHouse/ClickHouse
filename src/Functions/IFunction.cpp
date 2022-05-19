@@ -252,14 +252,14 @@ ColumnPtr IExecutableFunction::executeWithoutSparseColumns(const ColumnsWithType
             auto res = executeWithoutLowCardinalityColumns(columns_without_low_cardinality, dictionary_type, new_input_rows_count, dry_run);
             bool res_is_constant = isColumnConst(*res);
             auto keys = res_is_constant
-                ? res->cloneResized(std::min(static_cast<size_t>(1), input_rows_count))->convertToFullColumnIfConst()
+                ? res->cloneResized(1)->convertToFullColumnIfConst()
                 : res;
 
             auto res_mut_dictionary = DataTypeLowCardinality::createColumnUnique(*res_low_cardinality_type->getDictionaryType());
             ColumnPtr res_indexes = res_mut_dictionary->uniqueInsertRangeFrom(*keys, 0, keys->size());
             ColumnUniquePtr res_dictionary = std::move(res_mut_dictionary);
 
-            if (indexes)
+            if (indexes && !res_is_constant)
                 result = ColumnLowCardinality::create(res_dictionary, res_indexes->index(*indexes, 0));
             else
                 result = ColumnLowCardinality::create(res_dictionary, res_indexes);
