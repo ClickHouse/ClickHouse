@@ -392,27 +392,17 @@ static void extractDependentTable(ContextPtr context, ASTPtr & query, String & s
 
 UInt32 StorageWindowView::getCleanupBound()
 {
-    UInt32 w_bound;
+    if (max_fired_watermark == 0)
+        return 0;
+    if (is_proctime)
+        return max_fired_watermark;
+    else
     {
-        std::lock_guard lock(fire_signal_mutex);
-        w_bound = max_fired_watermark;
-        if (w_bound == 0)
-            return 0;
-
-        if (!is_proctime)
-        {
-            if (max_watermark == 0)
-                return 0;
-            if (allowed_lateness)
-            {
-                UInt32 lateness_bound = addTime(max_timestamp, lateness_kind, -lateness_num_units, *time_zone);
-                lateness_bound = getWindowLowerBound(lateness_bound);
-                if (lateness_bound < w_bound)
-                    w_bound = lateness_bound;
-            }
-        }
+        auto w_bound = max_fired_watermark;
+        if (allowed_lateness)
+            w_bound = addTime(w_bound, lateness_kind, -lateness_num_units, *time_zone);
+        return getWindowLowerBound(w_bound);
     }
-    return w_bound;
 }
 
 ASTPtr StorageWindowView::getCleanupQuery()
@@ -839,7 +829,6 @@ void StorageWindowView::updateMaxWatermark(UInt32 watermark)
         while (max_watermark < watermark)
         {
             fire_signal.push_back(max_watermark);
-            max_fired_watermark = max_watermark;
             max_watermark = addTime(max_watermark, slide_kind, slide_num_units, *time_zone);
         }
     }
@@ -850,7 +839,6 @@ void StorageWindowView::updateMaxWatermark(UInt32 watermark)
         while (max_watermark_bias <= max_timestamp)
         {
             fire_signal.push_back(max_watermark);
-            max_fired_watermark = max_watermark;
             max_watermark = addTime(max_watermark, slide_kind, slide_num_units, *time_zone);
             max_watermark_bias = addTime(max_watermark, slide_kind, slide_num_units, *time_zone);
         }
@@ -862,10 +850,13 @@ void StorageWindowView::updateMaxWatermark(UInt32 watermark)
 
 inline void StorageWindowView::cleanup()
 {
-    InterpreterAlterQuery alter_query(getCleanupQuery(), getContext());
-    alter_query.execute();
+    std::lock_guard fire_signal_lock(fire_signal_mutex);
+    std::lock_guard mutex_lock(mutex);
 
-    std::lock_guard lock(fire_signal_mutex);
+    auto alter_query = getCleanupQuery();
+    InterpreterAlterQuery interpreter_alter(alter_query, getContext());
+    interpreter_alter.execute();
+
     watch_streams.remove_if([](std::weak_ptr<WindowViewSource> & ptr) { return ptr.expired(); });
 }
 
@@ -928,6 +919,7 @@ void StorageWindowView::threadFuncFireEvent()
         while (!fire_signal.empty())
         {
             fire(fire_signal.front());
+            max_fired_watermark = fire_signal.front();
             fire_signal.pop_front();
         }
     }

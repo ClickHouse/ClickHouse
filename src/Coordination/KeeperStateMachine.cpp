@@ -15,7 +15,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int INVALID_STATE;
     extern const int SYSTEM_ERROR;
 }
 
@@ -252,7 +251,7 @@ bool KeeperStateMachine::apply_snapshot(nuraft::snapshot & s)
         std::lock_guard lock(snapshots_lock);
         if (s.get_last_log_idx() != latest_snapshot_meta->get_last_log_idx())
             throw Exception(
-                ErrorCodes::INVALID_STATE,
+                ErrorCodes::LOGICAL_ERROR,
                 "Required to apply snapshot with last log index {}, but our last log index is {}",
                 s.get_last_log_idx(),
                 latest_snapshot_meta->get_last_log_idx());
