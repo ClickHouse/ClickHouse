@@ -590,7 +590,7 @@ ColumnPtr ColumnVector<T>::replicateSSE2(const IColumn::Offsets & offsets) const
             bool remain = (cpsz & 3);
             size_t sse_cp_counter = (cpsz >> 2);
             sse_cp_counter = remain * (sse_cp_counter + 1) + (!remain) * (sse_cp_counter);
-            auto it_tmp = it;
+            auto it_tmp = it; // NOLINT
             size_t data_start = cp_begin;
             cp_begin = -1;
             constexpr const int msk_cp = (_MM_SHUFFLE(3, 2, 1, 0));
@@ -634,7 +634,7 @@ ColumnPtr ColumnVector<T>::replicateSSE2(const IColumn::Offsets & offsets) const
             bool remain = (cpsz & 3);
             size_t sse_cp_counter = (cpsz >> 2);
             sse_cp_counter = remain * (sse_cp_counter + 1) + (!remain) * (sse_cp_counter);
-            auto it_tmp = it;
+            auto it_tmp = it; // NOLINT
             size_t data_start = cp_begin;
             constexpr const int msk_cp = (_MM_SHUFFLE(3, 2, 1, 0));
             while (sse_cp_counter--)
