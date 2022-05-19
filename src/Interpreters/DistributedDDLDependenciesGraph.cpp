@@ -34,7 +34,7 @@ void DependenciesGraph::resetState()
 void DependenciesGraph::addTask(DDLTaskPtr && task)
 {
     tasks_dependencies.total_queries++;
-    const auto name = task->entry_name;
+    String name = task->entry_name;
 
     if (tasks_dependencies.database_objects_in_query.contains(name))
         /// Skip if already added
