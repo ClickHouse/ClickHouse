@@ -292,7 +292,7 @@ def main():
     pr_info = None
     if CI:
         pr_info = PRInfo()
-        release_or_pr = get_release_or_pr(pr_info, {"package_type": ""}, args.version)
+        release_or_pr = get_release_or_pr(pr_info, args.version)
         args.bucket_prefix = (
             f"https://s3.amazonaws.com/{S3_BUILDS_BUCKET}/"
             f"{release_or_pr}/{pr_info.sha}"
