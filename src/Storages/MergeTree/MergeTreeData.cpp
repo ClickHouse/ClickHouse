@@ -2795,7 +2795,7 @@ bool MergeTreeData::renameTempPartAndReplace(
         if (!res.second)
         {
             ProfileEvents::increment(ProfileEvents::DuplicatedInsertedBlocks);
-            LOG_INFO(log, "Block with ID {} already exists as part {}; ignoring it", block_id, res.first.getPartName());
+            LOG_WARNING(log, "Block with ID {} already exists as part {}; ignoring it", block_id, res.first.getPartName());
             return false;
         }
     }
