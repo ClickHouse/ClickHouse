@@ -25,7 +25,6 @@
 * New single binary based diagnostics tool (clickhouse-diagnostics). [#36705](https://github.com/ClickHouse/ClickHouse/pull/36705) ([Dale McDiarmid](https://github.com/gingerwizard)).
 * Add output format `Prometheus` [#36051](https://github.com/ClickHouse/ClickHouse/issues/36051). [#36206](https://github.com/ClickHouse/ClickHouse/pull/36206) ([Vladimir C](https://github.com/vdimir)).
 * Add `MySQLDump` input format. It reads all data from INSERT queries belonging to one table in dump. If there are more than one table, by default it reads data from the first one. [#36667](https://github.com/ClickHouse/ClickHouse/pull/36667) ([Kruglov Pavel](https://github.com/Avogar)).
-* Window function `nth_value` is added. [#36601](https://github.com/ClickHouse/ClickHouse/pull/36601) ([Nikolay](https://github.com/ndchikin)).
 * Show the `total_rows` and `total_bytes` fields in `system.tables` for temporary tables. [#36401](https://github.com/ClickHouse/ClickHouse/issues/36401). [#36439](https://github.com/ClickHouse/ClickHouse/pull/36439) ([xiedeyantu](https://github.com/xiedeyantu)).
 * Allow to override `parts_to_delay_insert` and `parts_to_throw_insert` with query-level settings. If they are defined, they will override table-level settings. [#36371](https://github.com/ClickHouse/ClickHouse/pull/36371) ([Memo](https://github.com/Joeywzr)).
 
