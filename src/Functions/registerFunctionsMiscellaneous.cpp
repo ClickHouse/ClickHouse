@@ -75,6 +75,7 @@ void registerFunctionFile(FunctionFactory &);
 void registerFunctionConnectionId(FunctionFactory &);
 void registerFunctionPartitionId(FunctionFactory &);
 void registerFunctionIsIPAddressContainedIn(FunctionFactory &);
+void registerFunctionsTransactionCounters(FunctionFactory & factory);
 void registerFunctionQueryID(FunctionFactory &);
 void registerFunctionInitialQueryID(FunctionFactory &);
 void registerFunctionServerUUID(FunctionFactory &);
@@ -163,6 +164,7 @@ void registerFunctionsMiscellaneous(FunctionFactory & factory)
     registerFunctionConnectionId(factory);
     registerFunctionPartitionId(factory);
     registerFunctionIsIPAddressContainedIn(factory);
+    registerFunctionsTransactionCounters(factory);
     registerFunctionQueryID(factory);
     registerFunctionInitialQueryID(factory);
     registerFunctionServerUUID(factory);

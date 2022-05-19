@@ -52,12 +52,14 @@ jobs:
     - name: Check docker clickhouse/clickhouse-server building
       run: |
         cd "$GITHUB_WORKSPACE/tests/ci"
-        python3 docker_server.py --release-type auto
-        python3 docker_server.py --release-type auto --no-ubuntu \
+        python3 docker_server.py --release-type auto --version "${{ github.ref }}"
+        python3 docker_server.py --release-type auto --version "${{ github.ref }}" --no-ubuntu \
           --image-repo clickhouse/clickhouse-keeper --image-path docker/keeper
     - name: Cleanup
       if: always()
       run: |
-        docker kill "$(docker ps -q)" ||:
-        docker rm -f "$(docker ps -a -q)" ||:
+        # shellcheck disable=SC2046
+        docker kill $(docker ps -q) ||:
+        # shellcheck disable=SC2046
+        docker rm -f $(docker ps -a -q) ||:
         sudo rm -fr "$TEMP_PATH"

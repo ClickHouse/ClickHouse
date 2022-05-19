@@ -1,6 +1,6 @@
 ---
-toc_priority: 45
-toc_title: Monitoring
+sidebar_position: 45
+sidebar_label: Monitoring
 ---
 
 # Monitoring {#monitoring}

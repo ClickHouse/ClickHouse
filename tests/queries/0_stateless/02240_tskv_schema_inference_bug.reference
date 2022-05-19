@@ -1,8 +1,8 @@
-a	Nullable(String)					
+a	Nullable(Float64)					
 b	Nullable(String)					
-c	Nullable(String)					
-1	s1	\N
+c	Array(Nullable(Float64))					
+1	s1	[]
 2	}	[2]
-\N	\N	\N
-\N	\N	\N
+\N	\N	[]
+\N	\N	[]
 \N	\N	[3]

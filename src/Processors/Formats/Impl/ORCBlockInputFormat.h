@@ -38,6 +38,7 @@ protected:
     }
 
 private:
+    void prepareReader();
 
     // TODO: check that this class implements every part of its parent
 
@@ -52,8 +53,10 @@ private:
     BlockMissingValues block_missing_values;
 
     const FormatSettings format_settings;
+    const std::unordered_set<int> & skip_stripes;
 
-    void prepareReader();
+    int stripe_total = 0;
+    int stripe_current = 0;
 
     std::atomic<int> is_stopped{0};
 };

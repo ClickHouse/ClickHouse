@@ -24,7 +24,7 @@
 #include <Storages/StorageDictionary.h>
 #include <Storages/StorageJoin.h>
 
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <algorithm>
 #include <string>
 #include <vector>
@@ -168,7 +168,7 @@ void TableJoin::deduplicateAndQualifyColumnNames(const NameSet & left_table_colu
 
     for (auto & column : columns_from_joined_table)
     {
-        if (joined_columns.count(column.name))
+        if (joined_columns.contains(column.name))
             continue;
 
         joined_columns.insert(column.name);
@@ -178,7 +178,7 @@ void TableJoin::deduplicateAndQualifyColumnNames(const NameSet & left_table_colu
 
         /// Also qualify unusual column names - that does not look like identifiers.
 
-        if (left_table_columns.count(column.name) || !isValidIdentifierBegin(column.name.at(0)))
+        if (left_table_columns.contains(column.name) || !isValidIdentifierBegin(column.name.at(0)))
             inserted.name = right_table_prefix + column.name;
 
         original_names[inserted.name] = column.name;
@@ -280,7 +280,7 @@ Block TableJoin::getRequiredRightKeys(const Block & right_table_keys, std::vecto
 
     forAllKeys(clauses, [&](const auto & left_key_name, const auto & right_key_name)
     {
-        if (required_keys.count(right_key_name) && !required_right_keys.has(right_key_name))
+        if (required_keys.contains(right_key_name) && !required_right_keys.has(right_key_name))
         {
             const auto & right_key = right_table_keys.getByName(right_key_name);
             required_right_keys.insert(right_key);
@@ -746,6 +746,17 @@ void TableJoin::resetToCross()
 {
     this->resetKeys();
     this->table_join.kind = ASTTableJoin::Kind::Cross;
+}
+
+bool TableJoin::allowParallelHashJoin() const
+{
+    if (dictionary_reader || join_algorithm != JoinAlgorithm::PARALLEL_HASH)
+        return false;
+    if (table_join.kind != ASTTableJoin::Kind::Left && table_join.kind != ASTTableJoin::Kind::Inner)
+        return false;
+    if (isSpecialStorage() || !oneDisjunct())
+        return false;
+    return true;
 }
 
 }

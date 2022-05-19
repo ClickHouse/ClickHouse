@@ -76,7 +76,7 @@ void ZooKeeper::init(const std::string & implementation_, const Strings & hosts_
             auto & host_string = host.host;
             try
             {
-                bool secure = bool(startsWith(host_string, "secure://"));
+                bool secure = startsWith(host_string, "secure://");
 
                 if (secure)
                     host_string.erase(0, strlen("secure://"));
@@ -701,24 +701,34 @@ void ZooKeeper::removeChildrenRecursive(const std::string & path, const String &
     }
 }
 
-void ZooKeeper::tryRemoveChildrenRecursive(const std::string & path, const String & keep_child_node)
+bool ZooKeeper::tryRemoveChildrenRecursive(const std::string & path, bool probably_flat, const String & keep_child_node)
 {
     Strings children;
     if (tryGetChildren(path, children) != Coordination::Error::ZOK)
-        return;
+        return false;
+
+    bool removed_as_expected = true;
     while (!children.empty())
     {
         Coordination::Requests ops;
         Strings batch;
+        ops.reserve(MULTI_BATCH_SIZE);
+        batch.reserve(MULTI_BATCH_SIZE);
         for (size_t i = 0; i < MULTI_BATCH_SIZE && !children.empty(); ++i)
         {
             String child_path = fs::path(path) / children.back();
-            tryRemoveChildrenRecursive(child_path);
+
+            /// Will try to avoid recursive getChildren calls if child_path probably has no children.
+            /// It may be extremely slow when path contain a lot of leaf children.
+            if (!probably_flat)
+                tryRemoveChildrenRecursive(child_path);
+
             if (likely(keep_child_node.empty() || keep_child_node != children.back()))
             {
                 batch.push_back(child_path);
                 ops.emplace_back(zkutil::makeRemoveRequest(child_path, -1));
             }
+
             children.pop_back();
         }
 
@@ -726,10 +736,39 @@ void ZooKeeper::tryRemoveChildrenRecursive(const std::string & path, const Strin
         /// this means someone is concurrently removing these children and we will have
         /// to remove them one by one.
         Coordination::Responses responses;
-        if (tryMulti(ops, responses) != Coordination::Error::ZOK)
-            for (const std::string & child : batch)
-                tryRemove(child);
+        if (tryMulti(ops, responses) == Coordination::Error::ZOK)
+            continue;
+
+        removed_as_expected = false;
+
+        std::vector<zkutil::ZooKeeper::FutureRemove> futures;
+        futures.reserve(batch.size());
+        for (const std::string & child : batch)
+            futures.push_back(asyncTryRemoveNoThrow(child, -1));
+
+        for (size_t i = 0; i < batch.size(); ++i)
+        {
+            auto res = futures[i].get();
+            if (res.error == Coordination::Error::ZOK)
+                continue;
+            if (res.error == Coordination::Error::ZNONODE)
+                continue;
+
+            if (res.error == Coordination::Error::ZNOTEMPTY)
+            {
+                if (probably_flat)
+                {
+                    /// It actually has children, let's remove them
+                    tryRemoveChildrenRecursive(batch[i]);
+                    tryRemove(batch[i]);
+                }
+                continue;
+            }
+
+            throw KeeperException(res.error, batch[i]);
+        }
     }
+    return removed_as_expected;
 }
 
 void ZooKeeper::removeRecursive(const std::string & path)
@@ -762,7 +801,7 @@ bool ZooKeeper::waitForDisappear(const std::string & path, const WaitCondition &
 
     auto callback = [state](const Coordination::GetResponse & response)
     {
-        state->code = int32_t(response.error);
+        state->code = static_cast<int32_t>(response.error);
         if (state->code)
             state->event.set();
     };
@@ -771,7 +810,7 @@ bool ZooKeeper::waitForDisappear(const std::string & path, const WaitCondition &
     {
         if (!state->code)
         {
-            state->code = int32_t(response.error);
+            state->code = static_cast<int32_t>(response.error);
             if (!state->code)
                 state->event_type = response.type;
             state->event.set();
@@ -789,7 +828,7 @@ bool ZooKeeper::waitForDisappear(const std::string & path, const WaitCondition &
         if (!state->event.tryWait(1000))
             continue;
 
-        if (state->code == int32_t(Coordination::Error::ZNONODE))
+        if (state->code == static_cast<int32_t>(Coordination::Error::ZNONODE))
             return true;
 
         if (state->code)
@@ -1229,6 +1268,16 @@ String extractZooKeeperPath(const String & path, bool check_starts_with_slash, P
         return normalizeZooKeeperPath(path.substr(pos + 1, String::npos), check_starts_with_slash, log);
     }
     return normalizeZooKeeperPath(path, check_starts_with_slash, log);
+}
+
+String getSequentialNodeName(const String & prefix, UInt64 number)
+{
+    /// NOTE Sequential counter in ZooKeeper is Int32.
+    assert(number < std::numeric_limits<Int32>::max());
+    constexpr size_t seq_node_digits = 10;
+    String num_str = std::to_string(number);
+    String name = prefix + String(seq_node_digits - num_str.size(), '0') + num_str;
+    return name;
 }
 
 }

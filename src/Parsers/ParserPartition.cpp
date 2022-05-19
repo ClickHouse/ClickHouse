@@ -32,10 +32,6 @@ bool ParserPartition::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     }
     else if (s_all.ignore(pos, expected))
     {
-        ASTPtr value = makeASTFunction("tuple");
-        partition->value = value;
-        partition->children.push_back(value);
-        partition->fields_count = 0;
         partition->all = true;
     }
     else

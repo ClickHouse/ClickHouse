@@ -42,10 +42,6 @@
         </substitution>
     </substitutions>
 
-    <preconditions>
-        <table_exists>test.hits</table_exists>
-    </preconditions>
-
     <create_query>CREATE TABLE IF NOT EXISTS table_{format_slow} ENGINE = File({format_slow}, '/dev/null') AS test.hits</create_query>
     <create_query>CREATE TABLE IF NOT EXISTS table_{format_fast} ENGINE = File({format_fast}, '/dev/null') AS test.hits</create_query>
 

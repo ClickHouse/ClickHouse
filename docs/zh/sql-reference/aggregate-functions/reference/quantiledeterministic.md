@@ -1,5 +1,5 @@
 ---
-toc_priority: 206
+sidebar_position: 206
 ---
 
 # quantileDeterministic {#quantiledeterministic}

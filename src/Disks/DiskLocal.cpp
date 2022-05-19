@@ -6,7 +6,7 @@
 #include <Interpreters/Context.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/quoteString.h>
-#include <Common/renameat2.h>
+#include <Common/atomicRename.h>
 #include <Disks/IO/createReadBufferFromFileBase.h>
 
 #include <fstream>
@@ -19,7 +19,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromTemporaryFile.h>
 #include <IO/WriteHelpers.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 
 namespace CurrentMetrics
 {
@@ -333,6 +333,7 @@ void DiskLocal::replaceFile(const String & from_path, const String & to_path)
 {
     fs::path from_file = fs::path(disk_path) / from_path;
     fs::path to_file = fs::path(disk_path) / to_path;
+    fs::create_directories(to_file.parent_path());
     fs::rename(from_file, to_file);
 }
 
@@ -344,7 +345,7 @@ std::unique_ptr<ReadBufferFromFileBase> DiskLocal::readFile(const String & path,
 }
 
 std::unique_ptr<WriteBufferFromFileBase>
-DiskLocal::writeFile(const String & path, size_t buf_size, WriteMode mode)
+DiskLocal::writeFile(const String & path, size_t buf_size, WriteMode mode, const WriteSettings &)
 {
     int flags = (mode == WriteMode::Append) ? (O_APPEND | O_CREAT | O_WRONLY) : -1;
     return std::make_unique<WriteBufferFromFile>(fs::path(disk_path) / path, buf_size, flags);
@@ -437,6 +438,14 @@ void DiskLocal::copy(const String & from_path, const std::shared_ptr<IDisk> & to
     }
     else
         copyThroughBuffers(from_path, to_disk, to_path); /// Base implementation.
+}
+
+void DiskLocal::copyDirectoryContent(const String & from_dir, const std::shared_ptr<IDisk> & to_disk, const String & to_dir)
+{
+    if (isSameDiskType(*this, *to_disk))
+        fs::copy(from_dir, to_dir, fs::copy_options::recursive | fs::copy_options::overwrite_existing); /// Use more optimal way.
+    else
+        copyThroughBuffers(from_dir, to_disk, to_dir); /// Base implementation.
 }
 
 SyncGuardPtr DiskLocal::getDirectorySyncGuard(const String & path) const
@@ -618,27 +627,27 @@ bool DiskLocal::setup()
 
     /// Try to create a new checker file. The disk status can be either broken or readonly.
     if (disk_checker_magic_number == -1)
-    try
-    {
-        pcg32_fast rng(randomSeed());
-        UInt32 magic_number = rng();
+        try
         {
-            auto buf = writeFile(disk_checker_path, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite);
-            writeIntBinary(magic_number, *buf);
+            pcg32_fast rng(randomSeed());
+            UInt32 magic_number = rng();
+            {
+                auto buf = writeFile(disk_checker_path, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite, {});
+                writeIntBinary(magic_number, *buf);
+            }
+            disk_checker_magic_number = magic_number;
         }
-        disk_checker_magic_number = magic_number;
-    }
-    catch (...)
-    {
-        LOG_WARNING(
-            logger,
-            "Cannot create/write to {0}. Disk {1} is either readonly or broken. Without setting up disk checker file, DiskLocalCheckThread "
-            "will not be started. Disk is assumed to be RW. Try manually fix the disk and do `SYSTEM RESTART DISK {1}`",
-            disk_checker_path,
-            name);
-        disk_checker_can_check_read = false;
-        return true;
-    }
+        catch (...)
+        {
+            LOG_WARNING(
+                logger,
+                "Cannot create/write to {0}. Disk {1} is either readonly or broken. Without setting up disk checker file, DiskLocalCheckThread "
+                "will not be started. Disk is assumed to be RW. Try manually fix the disk and do `SYSTEM RESTART DISK {1}`",
+                disk_checker_path,
+                name);
+            disk_checker_can_check_read = false;
+            return true;
+        }
 
     if (disk_checker_magic_number == -1)
         throw Exception("disk_checker_magic_number is not initialized. It's a bug", ErrorCodes::LOGICAL_ERROR);

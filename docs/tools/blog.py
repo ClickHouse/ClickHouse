@@ -74,7 +74,6 @@ def build_for_lang(lang, args):
                 events=args.events,
                 languages=languages,
                 includes_dir=os.path.join(os.path.dirname(__file__), "..", "_includes"),
-                is_amp=False,
                 is_blog=True,
                 post_meta=post_meta,
                 today=datetime.date.today().isoformat(),

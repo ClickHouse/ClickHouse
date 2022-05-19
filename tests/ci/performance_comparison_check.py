@@ -186,8 +186,11 @@ if __name__ == "__main__":
         if message_match:
             message = message_match.group(1).strip()
 
-        # TODO: Remove me, always green mode for the first time
+        # TODO: Remove me, always green mode for the first time, unless errors
         status = "success"
+        if "errors" in message:
+            status = "failure"
+        # TODO: Remove until here
     except Exception:
         traceback.print_exc()
         status = "failure"

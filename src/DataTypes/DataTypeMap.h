@@ -48,6 +48,8 @@ public:
 
     SerializationPtr doGetDefaultSerialization() const override;
 
+    static bool checkKeyType(DataTypePtr key_type);
+
 private:
     void assertKeyType() const;
 };

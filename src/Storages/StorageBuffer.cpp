@@ -19,7 +19,7 @@
 #include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
 #include <Common/ProfileEvents.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <base/getThreadId.h>
 #include <base/range.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
@@ -203,7 +203,7 @@ QueryProcessingStage::Enum StorageBuffer::getQueryProcessingStage(
         /// TODO: Find a way to support projections for StorageBuffer
         query_info.ignore_projections = true;
         const auto & destination_metadata = destination->getInMemoryMetadataPtr();
-        return destination->getQueryProcessingStage(local_context, to_stage, destination->getStorageSnapshot(destination_metadata), query_info);
+        return destination->getQueryProcessingStage(local_context, to_stage, destination->getStorageSnapshot(destination_metadata, local_context), query_info);
     }
 
     return QueryProcessingStage::FetchColumns;
@@ -248,7 +248,7 @@ void StorageBuffer::read(
         auto destination_lock = destination->lockForShare(local_context->getCurrentQueryId(), local_context->getSettingsRef().lock_acquire_timeout);
 
         auto destination_metadata_snapshot = destination->getInMemoryMetadataPtr();
-        auto destination_snapshot = destination->getStorageSnapshot(destination_metadata_snapshot);
+        auto destination_snapshot = destination->getStorageSnapshot(destination_metadata_snapshot, local_context);
 
         const bool dst_has_same_structure = std::all_of(column_names.begin(), column_names.end(), [metadata_snapshot, destination_metadata_snapshot](const String& column_name)
         {
@@ -1145,7 +1145,7 @@ void registerStorageBuffer(StorageFactory & factory)
             destination_id.table_name = destination_table;
         }
 
-        return StorageBuffer::create(
+        return std::make_shared<StorageBuffer>(
             args.table_id,
             args.columns,
             args.constraints,

@@ -1,6 +1,6 @@
 ---
-toc_priority: 59
-toc_title: Set
+sidebar_position: 59
+sidebar_label: Set
 ---
 
 # Set {#set}

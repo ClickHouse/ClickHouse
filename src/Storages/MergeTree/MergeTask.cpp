@@ -3,7 +3,7 @@
 #include <memory>
 #include <fmt/format.h>
 
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <Common/ActionBlocker.h>
 
 #include <DataTypes/ObjectUtils.h>
@@ -75,7 +75,7 @@ static void extractMergingAndGatheringColumns(
 
     for (const auto & column : storage_columns)
     {
-        if (key_columns.count(column.name))
+        if (key_columns.contains(column.name))
         {
             merging_columns.emplace_back(column);
             merging_column_names.emplace_back(column.name);
@@ -148,7 +148,6 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
         global_ctx->gathering_column_names,
         global_ctx->merging_columns,
         global_ctx->merging_column_names);
-
 
     auto local_single_disk_volume = std::make_shared<SingleDiskVolume>("volume_" + global_ctx->future_part->name, ctx->disk, 0);
     global_ctx->new_data_part = global_ctx->data->createPart(
@@ -230,7 +229,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
         case MergeAlgorithm::Vertical :
         {
             ctx->rows_sources_file = createTemporaryFile(ctx->tmp_disk->getPath());
-            ctx->rows_sources_uncompressed_write_buf = ctx->tmp_disk->writeFile(fileName(ctx->rows_sources_file->path()));
+            ctx->rows_sources_uncompressed_write_buf = ctx->tmp_disk->writeFile(fileName(ctx->rows_sources_file->path()), DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite, global_ctx->context->getWriteSettings());
             ctx->rows_sources_write_buf = std::make_unique<CompressedWriteBuffer>(*ctx->rows_sources_uncompressed_write_buf);
 
             MergeTreeDataPartInMemory::ColumnToSize local_merged_column_to_size;
@@ -260,8 +259,10 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
         global_ctx->merging_columns,
         MergeTreeIndexFactory::instance().getMany(global_ctx->metadata_snapshot->getSecondaryIndices()),
         ctx->compression_codec,
+        global_ctx->txn,
         /*reset_columns=*/ true,
-        ctx->blocks_are_granules_size);
+        ctx->blocks_are_granules_size,
+        global_ctx->context->getWriteSettings());
 
     global_ctx->rows_written = 0;
     ctx->initial_reservation = global_ctx->space_reservation ? global_ctx->space_reservation->getSize() : 0;
@@ -592,6 +593,7 @@ bool MergeTask::MergeProjectionsStage::mergeMinMaxIndexAndPrepareProjections() c
             projection_merging_params,
             global_ctx->new_data_part.get(),
             ".proj",
+            NO_TRANSACTION_PTR,
             global_ctx->data,
             global_ctx->mutator,
             global_ctx->merges_blocker,
@@ -775,6 +777,9 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream()
 
     Names sort_columns = global_ctx->metadata_snapshot->getSortingKeyColumns();
     SortDescription sort_description;
+    sort_description.compile_sort_description = global_ctx->data->getContext()->getSettingsRef().compile_sort_description;
+    sort_description.min_count_to_compile_sort_description = global_ctx->data->getContext()->getSettingsRef().min_count_to_compile_sort_description;
+
     size_t sort_columns_size = sort_columns.size();
     sort_description.reserve(sort_columns_size);
 

@@ -58,9 +58,7 @@ public:
 
     Field operator()(const Null &) const
     {
-        return num_dimensions
-            ? createEmptyArrayField(num_dimensions)
-            : replacement;
+        return num_dimensions ? Array() : replacement;
     }
 
     Field operator()(const Array & x) const
@@ -79,38 +77,6 @@ public:
 private:
     const Field & replacement;
     size_t num_dimensions;
-};
-
-/// Calculates number of dimensions in array field.
-/// Returns 0 for scalar fields.
-class FieldVisitorToNumberOfDimensions : public StaticVisitor<size_t>
-{
-public:
-    size_t operator()(const Array & x) const
-    {
-        const size_t size = x.size();
-        std::optional<size_t> dimensions;
-
-        for (size_t i = 0; i < size; ++i)
-        {
-            /// Do not count Nulls, because they will be replaced by default
-            /// values with proper number of dimensions.
-            if (x[i].isNull())
-                continue;
-
-            size_t current_dimensions = applyVisitor(*this, x[i]);
-            if (!dimensions)
-                dimensions = current_dimensions;
-            else if (current_dimensions != *dimensions)
-                throw Exception(ErrorCodes::NUMBER_OF_DIMENSIONS_MISMATHED,
-                    "Number of dimensions mismatched among array elements");
-        }
-
-        return 1 + dimensions.value_or(0);
-    }
-
-    template <typename T>
-    size_t operator()(const T &) const { return 0; }
 };
 
 /// Visitor that allows to get type of scalar field
@@ -152,6 +118,12 @@ public:
             type_indexes.insert(TypeIndex::Int32);
         else
             type_indexes.insert(TypeIndex::Int64);
+    }
+
+    void operator()(const bool &)
+    {
+        field_types.insert(FieldType::UInt64);
+        type_indexes.insert(TypeIndex::UInt8);
     }
 
     void operator()(const Null &)
@@ -292,7 +264,7 @@ void ColumnObject::Subcolumn::insert(Field field, FieldInfo info)
     if (isNothing(least_common_type.get()))
         column_dim = value_dim;
 
-    if (field.isNull())
+    if (isNothing(base_type))
         value_dim = column_dim;
 
     if (value_dim != column_dim)
@@ -334,7 +306,6 @@ void ColumnObject::Subcolumn::insert(Field field, FieldInfo info)
 void ColumnObject::Subcolumn::insertRangeFrom(const Subcolumn & src, size_t start, size_t length)
 {
     assert(src.isFinalized());
-
     const auto & src_column = src.data.back();
     const auto & src_type = src.least_common_type.get();
 
@@ -646,9 +617,17 @@ void ColumnObject::get(size_t n, Field & res) const
     }
 }
 
+void ColumnObject::insertFrom(const IColumn & src, size_t n)
+{
+    insert(src[n]);
+    finalize();
+}
+
 void ColumnObject::insertRangeFrom(const IColumn & src, size_t start, size_t length)
 {
     const auto & src_object = assert_cast<const ColumnObject &>(src);
+    if (!src_object.isFinalized())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot insertRangeFrom non-finalized ColumnObject");
 
     for (auto & entry : subcolumns)
     {
@@ -656,6 +635,33 @@ void ColumnObject::insertRangeFrom(const IColumn & src, size_t start, size_t len
             entry->data.insertRangeFrom(src_object.getSubcolumn(entry->path), start, length);
         else
             entry->data.insertManyDefaults(length);
+    }
+
+    for (const auto & entry : src_object.subcolumns)
+    {
+        if (!hasSubcolumn(entry->path))
+        {
+            if (entry->path.hasNested())
+            {
+                const auto & base_type = entry->data.getLeastCommonTypeBase();
+                FieldInfo field_info
+                {
+                    .scalar_type = base_type,
+                    .have_nulls = base_type->isNullable(),
+                    .need_convert = false,
+                    .num_dimensions = entry->data.getNumberOfDimensions(),
+                };
+
+                addNestedSubcolumn(entry->path, field_info, num_rows);
+            }
+            else
+            {
+                addSubcolumn(entry->path, num_rows);
+            }
+
+            auto & subcolumn = getSubcolumn(entry->path);
+            subcolumn.insertRangeFrom(entry->data, start, length);
+        }
     }
 
     num_rows += length;
@@ -683,6 +689,36 @@ void ColumnObject::popBack(size_t length)
         entry->data.popBack(length);
 
     num_rows -= length;
+}
+
+template <typename Func>
+ColumnPtr ColumnObject::applyForSubcolumns(Func && func, std::string_view func_name) const
+{
+    if (!isFinalized())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot {} non-finalized ColumnObject", func_name);
+
+    auto res = ColumnObject::create(is_nullable);
+    for (const auto & subcolumn : subcolumns)
+    {
+        auto new_subcolumn = func(subcolumn->data.getFinalizedColumn());
+        res->addSubcolumn(subcolumn->path, new_subcolumn->assumeMutable());
+    }
+    return res;
+}
+
+ColumnPtr ColumnObject::permute(const Permutation & perm, size_t limit) const
+{
+    return applyForSubcolumns([&](const auto & subcolumn) { return subcolumn.permute(perm, limit); }, "permute");
+}
+
+ColumnPtr ColumnObject::filter(const Filter & filter, ssize_t result_size_hint) const
+{
+    return applyForSubcolumns([&](const auto & subcolumn) { return subcolumn.filter(filter, result_size_hint); }, "filter");
+}
+
+ColumnPtr ColumnObject::index(const IColumn & indexes, size_t limit) const
+{
+    return applyForSubcolumns([&](const auto & subcolumn) { return subcolumn.index(indexes, limit); }, "index");
 }
 
 const ColumnObject::Subcolumn & ColumnObject::getSubcolumn(const PathInData & key) const

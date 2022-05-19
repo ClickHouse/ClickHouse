@@ -1,7 +1,7 @@
 #include "StorageMaterializedPostgreSQL.h"
 
 #if USE_LIBPQXX
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 
 #include <Common/Macros.h>
 #include <Common/parseAddress.h>
@@ -147,7 +147,7 @@ StoragePtr StorageMaterializedPostgreSQL::createTemporary() const
     }
 
     auto new_context = Context::createCopy(context);
-    return StorageMaterializedPostgreSQL::create(tmp_table_id, new_context, "temporary", table_id.table_name);
+    return std::make_shared<StorageMaterializedPostgreSQL>(tmp_table_id, new_context, "temporary", table_id.table_name);
 }
 
 
@@ -246,8 +246,9 @@ void StorageMaterializedPostgreSQL::dropInnerTableIfAny(bool no_delay, ContextPt
         return;
 
     replication_handler->shutdownFinal();
+    replication_handler.reset();
 
-    auto nested_table = getNested();
+    auto nested_table = tryGetNested() != nullptr;
     if (nested_table)
         InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind::Drop, getContext(), local_context, getNestedStorageID(), no_delay);
 }
@@ -351,7 +352,7 @@ ASTPtr StorageMaterializedPostgreSQL::getColumnDeclaration(const DataTypePtr & d
 
         ast_expression->name = "DateTime64";
         ast_expression->arguments = std::make_shared<ASTExpressionList>();
-        ast_expression->arguments->children.emplace_back(std::make_shared<ASTLiteral>(UInt32(6)));
+        ast_expression->arguments->children.emplace_back(std::make_shared<ASTLiteral>(static_cast<UInt32>(6)));
         return ast_expression;
     }
 
@@ -568,7 +569,7 @@ void registerStorageMaterializedPostgreSQL(StorageFactory & factory)
         if (has_settings)
             postgresql_replication_settings->loadFromQuery(*args.storage_def);
 
-        return StorageMaterializedPostgreSQL::create(
+        return std::make_shared<StorageMaterializedPostgreSQL>(
                 args.table_id, args.attach, configuration.database, configuration.table, connection_info,
                 metadata, args.getContext(),
                 std::move(postgresql_replication_settings));

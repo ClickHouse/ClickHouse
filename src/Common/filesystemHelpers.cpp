@@ -234,6 +234,11 @@ bool createFile(const std::string & path)
     DB::throwFromErrnoWithPath("Cannot create file: " + path, path, DB::ErrorCodes::CANNOT_CREATE_FILE);
 }
 
+bool exists(const std::string & path)
+{
+    return faccessat(AT_FDCWD, path.c_str(), F_OK, AT_EACCESS) == 0;
+}
+
 bool canRead(const std::string & path)
 {
     struct stat st;
@@ -249,7 +254,6 @@ bool canRead(const std::string & path)
     DB::throwFromErrnoWithPath("Cannot check read access to file: " + path, path, DB::ErrorCodes::PATH_ACCESS_DENIED);
 }
 
-
 bool canWrite(const std::string & path)
 {
     struct stat st;
@@ -263,6 +267,13 @@ bool canWrite(const std::string & path)
             return (st.st_mode & S_IWOTH) != 0 || geteuid() == 0;
     }
     DB::throwFromErrnoWithPath("Cannot check write access to file: " + path, path, DB::ErrorCodes::PATH_ACCESS_DENIED);
+}
+
+bool canExecute(const std::string & path)
+{
+    if (exists(path))
+        return faccessat(AT_FDCWD, path.c_str(), X_OK, AT_EACCESS) == 0;
+    DB::throwFromErrnoWithPath("Cannot check execute access to file: " + path, path, DB::ErrorCodes::PATH_ACCESS_DENIED);
 }
 
 time_t getModificationTime(const std::string & path)

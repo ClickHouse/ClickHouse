@@ -3,7 +3,7 @@
 #include <Processors/IProcessor.h>
 #include <Processors/Executors/ExecutorTasks.h>
 #include <Common/EventCounter.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 
 #include <queue>
 #include <stack>
@@ -56,6 +56,8 @@ private:
 
     /// Flag that checks that initializeExecution was called.
     bool is_execution_initialized = false;
+    /// system.processors_profile_log
+    bool profile_processors = false;
 
     std::atomic_bool cancelled = false;
 

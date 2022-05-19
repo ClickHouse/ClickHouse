@@ -384,16 +384,18 @@ void MergeTreePartition::load(const MergeTreeData & storage, const PartMetadataM
 std::unique_ptr<WriteBufferFromFileBase> MergeTreePartition::store(const MergeTreeData & storage, const DiskPtr & disk, const String & part_path, MergeTreeDataPartChecksums & checksums) const
 {
     auto metadata_snapshot = storage.getInMemoryMetadataPtr();
-    const auto & partition_key_sample = adjustPartitionKey(metadata_snapshot, storage.getContext()).sample_block;
-    return store(partition_key_sample, disk, part_path, checksums);
+    const auto & context = storage.getContext();
+    const auto & partition_key_sample = adjustPartitionKey(metadata_snapshot, context).sample_block;
+    return store(partition_key_sample, disk, part_path, checksums, context->getWriteSettings());
 }
 
-std::unique_ptr<WriteBufferFromFileBase> MergeTreePartition::store(const Block & partition_key_sample, const DiskPtr & disk, const String & part_path, MergeTreeDataPartChecksums & checksums) const
+std::unique_ptr<WriteBufferFromFileBase> MergeTreePartition::store(
+    const Block & partition_key_sample, const DiskPtr & disk, const String & part_path, MergeTreeDataPartChecksums & checksums, const WriteSettings & settings) const
 {
     if (!partition_key_sample)
         return nullptr;
 
-    auto out = disk->writeFile(part_path + "partition.dat");
+    auto out = disk->writeFile(std::filesystem::path(part_path) / "partition.dat", DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite, settings);
     HashingWriteBuffer out_hashing(*out);
     for (size_t i = 0; i < value.size(); ++i)
     {

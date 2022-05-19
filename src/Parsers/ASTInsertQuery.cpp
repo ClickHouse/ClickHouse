@@ -94,32 +94,47 @@ void ASTInsertQuery::formatImpl(const FormatSettings & settings, FormatState & s
                 << quoteString(compression->as<ASTLiteral &>().value.safeGet<std::string>());
     }
 
-    if (select)
-    {
-        settings.ostr << " ";
-        select->formatImpl(settings, state, frame);
-    }
-    else if (watch)
-    {
-        settings.ostr << " ";
-        watch->formatImpl(settings, state, frame);
-    }
-    else
-    {
-        if (!format.empty())
-        {
-            settings.ostr << (settings.hilite ? hilite_keyword : "") << " FORMAT " << (settings.hilite ? hilite_none : "") << format;
-        }
-        else if (!infile)
-        {
-            settings.ostr << (settings.hilite ? hilite_keyword : "") << " VALUES" << (settings.hilite ? hilite_none : "");
-        }
-    }
-
     if (settings_ast)
     {
         settings.ostr << (settings.hilite ? hilite_keyword : "") << settings.nl_or_ws << "SETTINGS " << (settings.hilite ? hilite_none : "");
         settings_ast->formatImpl(settings, state, frame);
+    }
+
+    /// Compatibility for INSERT without SETTINGS to format in oneline, i.e.:
+    ///
+    ///     INSERT INTO foo VALUES
+    ///
+    /// But
+    ///
+    ///     INSERT INTO foo
+    ///     SETTINGS max_threads=1
+    ///     VALUES
+    ///
+    char delim = settings_ast ? settings.nl_or_ws : ' ';
+
+    if (select)
+    {
+        settings.ostr << delim;
+        select->formatImpl(settings, state, frame);
+    }
+    else if (watch)
+    {
+        settings.ostr << delim;
+        watch->formatImpl(settings, state, frame);
+    }
+
+    if (!select && !watch)
+    {
+        if (!format.empty())
+        {
+            settings.ostr << delim
+                          << (settings.hilite ? hilite_keyword : "") << "FORMAT " << (settings.hilite ? hilite_none : "") << format;
+        }
+        else if (!infile)
+        {
+            settings.ostr << delim
+                          << (settings.hilite ? hilite_keyword : "") << "VALUES" << (settings.hilite ? hilite_none : "");
+        }
     }
 }
 

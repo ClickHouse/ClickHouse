@@ -9,6 +9,18 @@ on: # yamllint disable-line rule:truthy
     branches:
       - 'backport/**'
 jobs:
+  PythonUnitTests:
+    runs-on: [self-hosted, style-checker]
+    steps:
+      - name: Clear repository
+        run: |
+          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
+      - name: Check out repository code
+        uses: actions/checkout@v2
+      - name: Python unit tests
+        run: |
+          cd "$GITHUB_WORKSPACE/tests/ci"
+          python3 -m unittest discover -s . -p '*_test.py'
   DockerHubPushAarch64:
     runs-on: [self-hosted, style-checker-aarch64]
     steps:
@@ -100,8 +112,10 @@ jobs:
       - name: Cleanup
         if: always()
         run: |
-          docker kill "$(docker ps -q)" ||:
-          docker rm -f "$(docker ps -a -q)" ||:
+          # shellcheck disable=SC2046
+          docker kill $(docker ps -q) ||:
+          # shellcheck disable=SC2046
+          docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH"
 #########################################################################################
 #################################### ORDINARY BUILDS ####################################
@@ -130,11 +144,10 @@ jobs:
           sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
         uses: actions/checkout@v2
-        with:
-          submodules: 'true'
-          fetch-depth: 0 # otherwise we will have no info about contributors
       - name: Build
         run: |
+          git -C "$GITHUB_WORKSPACE" submodule sync --recursive
+          git -C "$GITHUB_WORKSPACE" submodule update --depth=1 --recursive --init --jobs=10
           sudo rm -fr "$TEMP_PATH"
           mkdir -p "$TEMP_PATH"
           cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
@@ -143,13 +156,15 @@ jobs:
         if: ${{ success() || failure() }}
         uses: actions/upload-artifact@v2
         with:
-          name: ${{ env.BUILD_NAME }}
-          path: ${{ env.TEMP_PATH }}/${{ env.BUILD_NAME }}.json
+          name: ${{ env.BUILD_URLS }}
+          path: ${{ env.TEMP_PATH }}/${{ env.BUILD_URLS }}.json
       - name: Cleanup
         if: always()
         run: |
-          docker kill "$(docker ps -q)" ||:
-          docker rm -f "$(docker ps -a -q)" ||:
+          # shellcheck disable=SC2046
+          docker kill $(docker ps -q) ||:
+          # shellcheck disable=SC2046
+          docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH" "$CACHES_PATH"
   BuilderDebAarch64:
     needs: [DockerHubPush]
@@ -169,28 +184,33 @@ jobs:
         uses: actions/download-artifact@v2
         with:
           name: changed_images
-          path: ${{ runner.temp }}/images_path
+          path: ${{ env.IMAGES_PATH }}
+      - name: Clear repository
+        run: |
+          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
         uses: actions/checkout@v2
-        with:
-          submodules: 'true'
-          fetch-depth: 0 # otherwise we will have no info about contributors
       - name: Build
         run: |
+          git -C "$GITHUB_WORKSPACE" submodule sync --recursive
+          git -C "$GITHUB_WORKSPACE" submodule update --depth=1 --recursive --init --jobs=10
           sudo rm -fr "$TEMP_PATH"
           mkdir -p "$TEMP_PATH"
           cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
           cd "$REPO_COPY/tests/ci" && python3 build_check.py "$CHECK_NAME" "$BUILD_NAME"
       - name: Upload build URLs to artifacts
+        if: ${{ success() || failure() }}
         uses: actions/upload-artifact@v2
         with:
-          name: ${{ env.BUILD_NAME }}
-          path: ${{ runner.temp }}/build_check/${{ env.BUILD_NAME }}.json
+          name: ${{ env.BUILD_URLS }}
+          path: ${{ env.TEMP_PATH }}/${{ env.BUILD_URLS }}.json
       - name: Cleanup
         if: always()
         run: |
-          docker kill "$(docker ps -q)" ||:
-          docker rm -f "$(docker ps -a -q)" ||:
+          # shellcheck disable=SC2046
+          docker kill $(docker ps -q) ||:
+          # shellcheck disable=SC2046
+          docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH" "$CACHES_PATH"
   BuilderDebAsan:
     needs: [DockerHubPush]
@@ -216,11 +236,10 @@ jobs:
           sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
         uses: actions/checkout@v2
-        with:
-          submodules: 'true'
-          fetch-depth: 0 # otherwise we will have no info about contributors
       - name: Build
         run: |
+          git -C "$GITHUB_WORKSPACE" submodule sync --recursive
+          git -C "$GITHUB_WORKSPACE" submodule update --depth=1 --recursive --init --jobs=10
           sudo rm -fr "$TEMP_PATH"
           mkdir -p "$TEMP_PATH"
           cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
@@ -229,13 +248,15 @@ jobs:
         if: ${{ success() || failure() }}
         uses: actions/upload-artifact@v2
         with:
-          name: ${{ env.BUILD_NAME }}
-          path: ${{ env.TEMP_PATH }}/${{ env.BUILD_NAME }}.json
+          name: ${{ env.BUILD_URLS }}
+          path: ${{ env.TEMP_PATH }}/${{ env.BUILD_URLS }}.json
       - name: Cleanup
         if: always()
         run: |
-          docker kill "$(docker ps -q)" ||:
-          docker rm -f "$(docker ps -a -q)" ||:
+          # shellcheck disable=SC2046
+          docker kill $(docker ps -q) ||:
+          # shellcheck disable=SC2046
+          docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH" "$CACHES_PATH"
   BuilderDebTsan:
     needs: [DockerHubPush]
@@ -261,11 +282,10 @@ jobs:
           sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
         uses: actions/checkout@v2
-        with:
-          submodules: 'true'
-          fetch-depth: 0 # otherwise we will have no info about contributors
       - name: Build
         run: |
+          git -C "$GITHUB_WORKSPACE" submodule sync --recursive
+          git -C "$GITHUB_WORKSPACE" submodule update --depth=1 --recursive --init --jobs=10
           sudo rm -fr "$TEMP_PATH"
           mkdir -p "$TEMP_PATH"
           cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
@@ -274,13 +294,15 @@ jobs:
         if: ${{ success() || failure() }}
         uses: actions/upload-artifact@v2
         with:
-          name: ${{ env.BUILD_NAME }}
-          path: ${{ env.TEMP_PATH }}/${{ env.BUILD_NAME }}.json
+          name: ${{ env.BUILD_URLS }}
+          path: ${{ env.TEMP_PATH }}/${{ env.BUILD_URLS }}.json
       - name: Cleanup
         if: always()
         run: |
-          docker kill "$(docker ps -q)" ||:
-          docker rm -f "$(docker ps -a -q)" ||:
+          # shellcheck disable=SC2046
+          docker kill $(docker ps -q) ||:
+          # shellcheck disable=SC2046
+          docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH" "$CACHES_PATH"
   BuilderDebDebug:
     needs: [DockerHubPush]
@@ -306,11 +328,10 @@ jobs:
           sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
         uses: actions/checkout@v2
-        with:
-          submodules: 'true'
-          fetch-depth: 0 # otherwise we will have no info about contributors
       - name: Build
         run: |
+          git -C "$GITHUB_WORKSPACE" submodule sync --recursive
+          git -C "$GITHUB_WORKSPACE" submodule update --depth=1 --recursive --init --jobs=10
           sudo rm -fr "$TEMP_PATH"
           mkdir -p "$TEMP_PATH"
           cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
@@ -319,13 +340,15 @@ jobs:
         if: ${{ success() || failure() }}
         uses: actions/upload-artifact@v2
         with:
-          name: ${{ env.BUILD_NAME }}
-          path: ${{ env.TEMP_PATH }}/${{ env.BUILD_NAME }}.json
+          name: ${{ env.BUILD_URLS }}
+          path: ${{ env.TEMP_PATH }}/${{ env.BUILD_URLS }}.json
       - name: Cleanup
         if: always()
         run: |
-          docker kill "$(docker ps -q)" ||:
-          docker rm -f "$(docker ps -a -q)" ||:
+          # shellcheck disable=SC2046
+          docker kill $(docker ps -q) ||:
+          # shellcheck disable=SC2046
+          docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH" "$CACHES_PATH"
 ############################################################################################
 ##################################### BUILD REPORTER #######################################
@@ -341,10 +364,15 @@ jobs:
     steps:
       - name: Set envs
         run: |
+          DEPENDENCIES=$(cat << 'EOF' | jq '. | length'
+          ${{ toJSON(needs) }}
+          EOF
+          )
+          echo "DEPENDENCIES=$DEPENDENCIES" >> "$GITHUB_ENV"
           cat >> "$GITHUB_ENV" << 'EOF'
-          TEMP_PATH=${{runner.temp}}/report_check
-          REPORTS_PATH=${{runner.temp}}/reports_dir
           CHECK_NAME=ClickHouse build check (actions)
+          REPORTS_PATH=${{runner.temp}}/reports_dir
+          TEMP_PATH=${{runner.temp}}/report_check
           EOF
       - name: Download json reports
         uses: actions/download-artifact@v2
@@ -360,12 +388,14 @@ jobs:
           sudo rm -fr "$TEMP_PATH"
           mkdir -p "$TEMP_PATH"
           cd "$GITHUB_WORKSPACE/tests/ci"
-          python3 build_report_check.py "$CHECK_NAME"
+          python3 build_report_check.py "$CHECK_NAME" "$DEPENDENCIES"
       - name: Cleanup
         if: always()
         run: |
-          docker kill "$(docker ps -q)" ||:
-          docker rm -f "$(docker ps -a -q)" ||:
+          # shellcheck disable=SC2046
+          docker kill $(docker ps -q) ||:
+          # shellcheck disable=SC2046
+          docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH"
 ##############################################################################################
 ########################### FUNCTIONAl STATELESS TESTS #######################################
@@ -402,8 +432,10 @@ jobs:
       - name: Cleanup
         if: always()
         run: |
-          docker kill "$(docker ps -q)" ||:
-          docker rm -f "$(docker ps -a -q)" ||:
+          # shellcheck disable=SC2046
+          docker kill $(docker ps -q) ||:
+          # shellcheck disable=SC2046
+          docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH"
 ##############################################################################################
 ############################ FUNCTIONAl STATEFUL TESTS #######################################
@@ -440,8 +472,10 @@ jobs:
       - name: Cleanup
         if: always()
         run: |
-          docker kill "$(docker ps -q)" ||:
-          docker rm -f "$(docker ps -a -q)" ||:
+          # shellcheck disable=SC2046
+          docker kill $(docker ps -q) ||:
+          # shellcheck disable=SC2046
+          docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH"
 ##############################################################################################
 ######################################### STRESS TESTS #######################################
@@ -481,8 +515,10 @@ jobs:
       - name: Cleanup
         if: always()
         run: |
-          docker kill "$(docker ps -q)" ||:
-          docker rm -f "$(docker ps -a -q)" ||:
+          # shellcheck disable=SC2046
+          docker kill $(docker ps -q) ||:
+          # shellcheck disable=SC2046
+          docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH"
 #############################################################################################
 ############################# INTEGRATION TESTS #############################################
@@ -518,8 +554,10 @@ jobs:
       - name: Cleanup
         if: always()
         run: |
-          docker kill "$(docker ps -q)" ||:
-          docker rm -f "$(docker ps -a -q)" ||:
+          # shellcheck disable=SC2046
+          docker kill $(docker ps -q) ||:
+          # shellcheck disable=SC2046
+          docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH"
   FinishCheck:
     needs:

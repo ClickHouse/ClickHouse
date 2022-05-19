@@ -7,6 +7,7 @@
 #include <Interpreters/AggregationCommon.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterSelectQuery.h>
+#include <Interpreters/MergeTreeTransaction.h>
 #include <IO/HashingWriteBuffer.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDate.h>
@@ -179,7 +180,7 @@ BlocksWithPartition MergeTreeDataWriter::splitBlockIntoParts(
     {
         Row partition(partition_columns.size());
         for (size_t i = 0; i < partition_columns.size(); ++i)
-            partition[i] = Field((*partition_columns[i])[partition_num_to_first_row[num]]);
+            partition[i] = (*partition_columns[i])[partition_num_to_first_row[num]];
         return partition;
     };
 
@@ -227,7 +228,7 @@ Block MergeTreeDataWriter::mergeBlock(
             case MergeTreeData::MergingParams::Collapsing:
                 return std::make_shared<CollapsingSortedAlgorithm>(
                     block, 1, sort_description, merging_params.sign_column,
-                    false, block_size + 1, &Poco::Logger::get("MergeTreeBlockOutputStream"));
+                    false, block_size + 1, &Poco::Logger::get("MergeTreeDataWriter"));
             case MergeTreeData::MergingParams::Summing:
                 return std::make_shared<SummingSortedAlgorithm>(
                     block, 1, sort_description, merging_params.columns_to_sum,
@@ -433,7 +434,9 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPart(
 
     const auto & index_factory = MergeTreeIndexFactory::instance();
     auto out = std::make_unique<MergedBlockOutputStream>(new_data_part, metadata_snapshot, columns,
-        index_factory.getMany(metadata_snapshot->getSecondaryIndices()), compression_codec);
+        index_factory.getMany(metadata_snapshot->getSecondaryIndices()), compression_codec,
+        context->getCurrentTransaction(), false, false, context->getWriteSettings());
+
 
     out->writeWithPermutation(block, perm_ptr);
 
@@ -448,7 +451,11 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPart(
                 temp_part.streams.emplace_back(std::move(stream));
         }
     }
-    auto finalizer = out->finalizePartAsync(new_data_part, data_settings->fsync_after_insert);
+    auto finalizer = out->finalizePartAsync(
+        new_data_part,
+        data_settings->fsync_after_insert,
+        nullptr, nullptr,
+        context->getWriteSettings());
 
     temp_part.part = new_data_part;
     temp_part.streams.emplace_back(TemporaryPart::Stream{.stream = std::move(out), .finalizer = std::move(finalizer)});
@@ -561,7 +568,8 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeProjectionPartImpl(
         metadata_snapshot,
         columns,
         MergeTreeIndices{},
-        compression_codec);
+        compression_codec,
+        NO_TRANSACTION_PTR);
 
     out->writeWithPermutation(block, perm_ptr);
     auto finalizer = out->finalizePartAsync(new_data_part, false);
@@ -582,9 +590,9 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeProjectionPart(
 {
     String part_name = projection.name;
     MergeTreeDataPartType part_type;
-    if (parent_part->getType() == MergeTreeDataPartType::IN_MEMORY)
+    if (parent_part->getType() == MergeTreeDataPartType::InMemory)
     {
-        part_type = MergeTreeDataPartType::IN_MEMORY;
+        part_type = MergeTreeDataPartType::InMemory;
     }
     else
     {
@@ -619,9 +627,9 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempProjectionPart(
 {
     String part_name = fmt::format("{}_{}", projection.name, block_num);
     MergeTreeDataPartType part_type;
-    if (parent_part->getType() == MergeTreeDataPartType::IN_MEMORY)
+    if (parent_part->getType() == MergeTreeDataPartType::InMemory)
     {
-        part_type = MergeTreeDataPartType::IN_MEMORY;
+        part_type = MergeTreeDataPartType::InMemory;
     }
     else
     {
@@ -653,7 +661,7 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeInMemoryProjectionP
 {
     return writeProjectionPartImpl(
         projection.name,
-        MergeTreeDataPartType::IN_MEMORY,
+        MergeTreeDataPartType::InMemory,
         projection.name + ".proj" /* relative_path */,
         false /* is_temp */,
         parent_part,
