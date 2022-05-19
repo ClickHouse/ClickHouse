@@ -215,8 +215,16 @@ void PocoHTTPClient::makeRequestInternal(
               * To overcome this limitation, we encode URL with "Aws::Http::URI" and then pass already prepared URL to Poco.
               */
 
-            Aws::Http::URI aws_target_uri(uri);
-            poco_request.setURI(aws_target_uri.GetPath() + aws_target_uri.GetQueryString());
+            std::string path_and_query;
+            const std::string & query = target_uri.getRawQuery();
+            const std::string reserved = "?#:;+@&="; /// Poco::URI::RESERVED_QUERY_PARAM without '/'.
+            Poco::URI::encode(target_uri.getPath(), reserved, path_and_query);
+            if (!query.empty())
+            {
+                path_and_query += '?';
+                path_and_query += query;
+            }
+            poco_request.setURI(path_and_query);
 
             switch (request.GetMethod())
             {
