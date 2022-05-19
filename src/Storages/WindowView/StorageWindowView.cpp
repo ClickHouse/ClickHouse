@@ -472,6 +472,7 @@ void StorageWindowView::alter(
     SCOPE_EXIT({
         modifying_query = false;
     });
+
     shutdown();
 
     auto inner_query = initInnerQuery(new_select_query->as<ASTSelectQuery &>(), local_context);
@@ -503,7 +504,6 @@ void StorageWindowView::alter(
     setInMemoryMetadata(new_metadata);
 
     startup();
-    modifying_query = false;
 }
 
 void StorageWindowView::checkAlterIsPossible(const AlterCommands & commands, ContextPtr /*local_context*/) const
@@ -1358,6 +1358,7 @@ void StorageWindowView::writeIntoWindowView(
 {
     while (window_view.modifying_query)
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
     if (!window_view.is_proctime && window_view.max_watermark == 0 && block.rows() > 0)
     {
         std::lock_guard lock(window_view.fire_signal_mutex);
