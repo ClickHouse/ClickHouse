@@ -1,6 +1,7 @@
 #pragma once
 #include <Processors/IInflatingTransform.h>
 #include <Processors/Transforms/AggregatingTransform.h>
+#include <Processors/Transforms/finalizeChunk.h>
 
 
 namespace DB
@@ -20,7 +21,8 @@ protected:
 
 private:
     AggregatingTransformParamsPtr params;
-    ColumnNumbers keys;
+    const ColumnNumbers keys;
+    const ColumnsMask aggregates_mask;
 
     Chunks consumed_chunks;
     Chunk cube_chunk;
