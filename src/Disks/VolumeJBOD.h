@@ -82,8 +82,9 @@ private:
         ReservationPtr reserve(uint64_t bytes)
         {
             ReservationPtr reservation = disk->reserve(bytes);
-            if (reservation)
-                free_size -= bytes;
+            /// Not just subtract bytes, but update the value,
+            /// since some reservations may be done directly via IDisk, or not by ClickHouse.
+            free_size = reservation->getUnreservedSpace();
             return reservation;
         }
     };
