@@ -69,7 +69,7 @@ Pipe StorageHiveCluster::read(
     {
         auto iterate_callback_builder = HiveSourceCollectCallbackFactory::instance().getCallback(policy_name);
         if (!iterate_callback_builder)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown hive task policy : {}", policy_name);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown hive source files collect policy : {}", policy_name);
 
 
         IHiveSourceFilesCollectCallback::Arguments args
@@ -130,7 +130,7 @@ Pipe StorageHiveCluster::read(
 
     auto files_collector_ref = HiveSourceCollectorFactory::instance().getCollector(policy_name);
     if (!files_collector_ref)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown hive task policy : {}", policy_name);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown hive source files collect policy : {}", policy_name);
     String task_resp = context_->getReadTaskCallback()();
     IHiveSourceFilesCollector::Arguments args
         = {.context = context_,
@@ -162,7 +162,8 @@ Pipe StorageHiveCluster::read(
         partition_by_ast,
         std::move(local_storage_settings),
         context_,
-        std::make_shared<HiveSourceFilesCollectorBuilder>(files_collector_builder));
+        std::make_shared<HiveSourceFilesCollectorBuilder>(files_collector_builder),
+        true);
 
     return storage_hive->read(column_names_, metadata_snapshot_, query_info_, context_, processed_stage_, max_block_size_, num_streams_);
 }

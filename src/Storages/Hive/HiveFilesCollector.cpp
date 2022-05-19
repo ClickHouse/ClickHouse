@@ -1,3 +1,4 @@
+#include <cstdint>
 #include <Storages/Hive/HiveFilesCollector.h>
 #if USE_HIVE
 #include <Formats/FormatFactory.h>
@@ -17,6 +18,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int INVALID_PARTITION_VALUE;
+    extern const int TOO_MANY_PARTITIONS;
 }
 ASTPtr HiveFilesCollector::extractKeyExpressionList(const ASTPtr & node)
 {
@@ -67,6 +69,8 @@ HiveFiles HiveFilesCollector::collect(HivePruneLevel prune_level)
         return {};
 
     HiveFiles hive_files;
+    Int64 hit_partitions_num = 0;
+    Int64 max_partition_to_read = context->getSettings().max_partitions_to_read; 
     std::mutex hive_files_mutex;
     ThreadPool thread_pool{num_streams};
     if (!partitions.empty())
@@ -78,6 +82,11 @@ HiveFiles HiveFilesCollector::collect(HivePruneLevel prune_level)
                 auto hive_files_in_partition = collectHiveFilesFromPartition(partition, hive_table_metadata, hdfs_fs, prune_level);
                 if (!hive_files_in_partition.empty())
                 {
+                    hit_partitions_num += 1;
+                    if (max_partition_to_read > 0 && hit_partitions_num > max_partition_to_read)
+                    {
+                        throw Exception(ErrorCodes::TOO_MANY_PARTITIONS, "Too many partitions to query for table {}.{} . Maximum number of partitions to read is limited to {}", hive_database, hive_table, max_partition_to_read);
+                    }
                     std::lock_guard<std::mutex> lock(hive_files_mutex);
                     hive_files.insert(std::end(hive_files), std::begin(hive_files_in_partition), std::end(hive_files_in_partition));
                 }
