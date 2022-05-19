@@ -1,11 +1,11 @@
 #pragma once
 
-#include <Common/ConcurrentBoundedQueue.h>
-#include <Coordination/KeeperStorage.h>
-#include <libnuraft/nuraft.hxx>
-#include <Common/logger_useful.h>
 #include <Coordination/CoordinationSettings.h>
 #include <Coordination/KeeperSnapshotManager.h>
+#include <Coordination/KeeperStorage.h>
+#include <libnuraft/nuraft.hxx>
+#include <Common/ConcurrentBoundedQueue.h>
+#include <Common/logger_useful.h>
 
 
 namespace DB
@@ -20,8 +20,10 @@ class KeeperStateMachine : public nuraft::state_machine
 {
 public:
     KeeperStateMachine(
-        ResponsesQueue & responses_queue_, SnapshotsQueue & snapshots_queue_,
-        const std::string & snapshots_path_, const CoordinationSettingsPtr & coordination_settings_,
+        ResponsesQueue & responses_queue_,
+        SnapshotsQueue & snapshots_queue_,
+        const std::string & snapshots_path_,
+        const CoordinationSettingsPtr & coordination_settings_,
         const std::string & superdigest_ = "",
         bool digest_enabled_ = true);
 
@@ -49,32 +51,18 @@ public:
     nuraft::ptr<nuraft::snapshot> last_snapshot() override;
 
     /// Create new snapshot from current state.
-    void create_snapshot(
-        nuraft::snapshot & s,
-        nuraft::async_result<bool>::handler_type & when_done) override;
+    void create_snapshot(nuraft::snapshot & s, nuraft::async_result<bool>::handler_type & when_done) override;
 
     /// Save snapshot which was send by leader to us. After that we will apply it in apply_snapshot.
-    void save_logical_snp_obj(
-        nuraft::snapshot & s,
-        uint64_t & obj_id,
-        nuraft::buffer & data,
-        bool is_first_obj,
-        bool is_last_obj) override;
+    void save_logical_snp_obj(nuraft::snapshot & s, uint64_t & obj_id, nuraft::buffer & data, bool is_first_obj, bool is_last_obj) override;
 
     /// Better name is `serialize snapshot` -- save existing snapshot (created by create_snapshot) into
     /// in-memory buffer data_out.
     int read_logical_snp_obj(
-        nuraft::snapshot & s,
-        void* & user_snp_ctx,
-        uint64_t obj_id,
-        nuraft::ptr<nuraft::buffer> & data_out,
-        bool & is_last_obj) override;
+        nuraft::snapshot & s, void *& user_snp_ctx, uint64_t obj_id, nuraft::ptr<nuraft::buffer> & data_out, bool & is_last_obj) override;
 
     /// just for test
-    KeeperStorage & getStorage()
-    {
-        return *storage;
-    }
+    KeeperStorage & getStorage() { return *storage; }
 
     void shutdownStorage();
 
@@ -108,7 +96,6 @@ public:
     uint64_t getLatestSnapshotBufSize() const;
 
 private:
-
     /// In our state machine we always have a single snapshot which is stored
     /// in memory in compressed (serialized) format.
     SnapshotMetadataPtr latest_snapshot_meta = nullptr;

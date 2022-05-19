@@ -1024,7 +1024,7 @@ TEST_P(CoordinationTest, TestStorageSnapshotSimple)
     ChangelogDirTest test("./snapshots");
     DB::KeeperSnapshotManager manager("./snapshots", 3, params.enable_compression);
 
-    DB::KeeperStorage storage(500, "");
+    DB::KeeperStorage storage(500, "", true);
     addNode(storage, "/hello", "world", 1);
     addNode(storage, "/hello/somepath", "somedata", 3);
     storage.session_id_counter = 5;
@@ -1072,7 +1072,7 @@ TEST_P(CoordinationTest, TestStorageSnapshotMoreWrites)
     ChangelogDirTest test("./snapshots");
     DB::KeeperSnapshotManager manager("./snapshots", 3, params.enable_compression);
 
-    DB::KeeperStorage storage(500, "");
+    DB::KeeperStorage storage(500, "", true);
     storage.getSessionID(130);
 
     for (size_t i = 0; i < 50; ++i)
@@ -1113,7 +1113,7 @@ TEST_P(CoordinationTest, TestStorageSnapshotManySnapshots)
     ChangelogDirTest test("./snapshots");
     DB::KeeperSnapshotManager manager("./snapshots", 3, params.enable_compression);
 
-    DB::KeeperStorage storage(500, "");
+    DB::KeeperStorage storage(500, "", true);
     storage.getSessionID(130);
 
     for (size_t j = 1; j <= 5; ++j)
@@ -1151,7 +1151,7 @@ TEST_P(CoordinationTest, TestStorageSnapshotMode)
     auto params = GetParam();
     ChangelogDirTest test("./snapshots");
     DB::KeeperSnapshotManager manager("./snapshots", 3, params.enable_compression);
-    DB::KeeperStorage storage(500, "");
+    DB::KeeperStorage storage(500, "", true);
     for (size_t i = 0; i < 50; ++i)
     {
         addNode(storage, "/hello_" + std::to_string(i), "world_" + std::to_string(i));
@@ -1204,7 +1204,7 @@ TEST_P(CoordinationTest, TestStorageSnapshotBroken)
     auto params = GetParam();
     ChangelogDirTest test("./snapshots");
     DB::KeeperSnapshotManager manager("./snapshots", 3, params.enable_compression);
-    DB::KeeperStorage storage(500, "");
+    DB::KeeperStorage storage(500, "", true);
     for (size_t i = 0; i < 50; ++i)
     {
         addNode(storage, "/hello_" + std::to_string(i), "world_" + std::to_string(i));
@@ -1579,7 +1579,7 @@ TEST_P(CoordinationTest, TestStorageSnapshotDifferentCompressions)
     ChangelogDirTest test("./snapshots");
     DB::KeeperSnapshotManager manager("./snapshots", 3, params.enable_compression);
 
-    DB::KeeperStorage storage(500, "");
+    DB::KeeperStorage storage(500, "", true);
     addNode(storage, "/hello", "world", 1);
     addNode(storage, "/hello/somepath", "somedata", 3);
     storage.session_id_counter = 5;
@@ -1731,7 +1731,7 @@ TEST_P(CoordinationTest, TestStorageSnapshotEqual)
     {
         DB::KeeperSnapshotManager manager("./snapshots", 3, params.enable_compression);
 
-        DB::KeeperStorage storage(500, "");
+        DB::KeeperStorage storage(500, "", true);
         for (size_t j = 0; j < 5000; ++j)
         {
             addNode(storage, "/hello_" + std::to_string(j), "world", 1);
@@ -1801,7 +1801,7 @@ TEST_P(CoordinationTest, TestUncommittedStateBasicCrud)
     using namespace DB;
     using namespace Coordination;
 
-    DB::KeeperStorage storage{500, ""};
+    DB::KeeperStorage storage{500, "", true};
 
     constexpr std::string_view path = "/test";
 
@@ -1911,59 +1911,6 @@ TEST_P(CoordinationTest, TestUncommittedStateBasicCrud)
     }
 
     ASSERT_FALSE(get_committed_data());
-}
-
-TEST_P(CoordinationTest, TestDigest)
-{
-    using namespace Coordination;
-    using namespace DB;
-
-    ChangelogDirTest snapshots1("./snapshots1");
-    ChangelogDirTest snapshots2("./snapshots2");
-    CoordinationSettingsPtr settings = std::make_shared<CoordinationSettings>();
-
-    ResponsesQueue queue(std::numeric_limits<size_t>::max());
-    SnapshotsQueue snapshots_queue{1};
-    const auto test_digest = [&](const auto modify_digest)
-    {
-        auto state_machine1 = std::make_shared<KeeperStateMachine>(queue, snapshots_queue, "./snapshots1", settings);
-        auto state_machine2 = std::make_shared<KeeperStateMachine>(queue, snapshots_queue, "./snapshots2", settings);
-        state_machine1->init();
-        state_machine2->init();
-
-        std::shared_ptr<ZooKeeperCreateRequest> request_c = std::make_shared<ZooKeeperCreateRequest>();
-        request_c->path = "/hello";
-        auto zxid = state_machine1->getNextZxid();
-        auto entry_c = getLogEntryFromZKRequest(0, 1, zxid, request_c);
-        state_machine1->pre_commit(1, entry_c->get_buf());
-        auto correct_digest = state_machine1->getNodesDigest();
-        ASSERT_EQ(correct_digest.version, DB::KeeperStorage::CURRENT_DIGEST_VERSION);
-        entry_c = getLogEntryFromZKRequest(0, 1, zxid, request_c, correct_digest.value);
-
-        if (modify_digest)
-        {
-            std::shared_ptr<ZooKeeperCreateRequest> modified_c = std::make_shared<ZooKeeperCreateRequest>();
-            modified_c->path = "modified";
-            auto modified_entry = getLogEntryFromZKRequest(0, 1, zxid, modified_c, correct_digest.value);
-            ASSERT_THROW(state_machine2->pre_commit(1, modified_entry->get_buf()), DB::Exception);
-        }
-        else
-            ASSERT_NO_THROW(state_machine2->pre_commit(1, entry_c->get_buf()));
-
-        if (modify_digest)
-        {
-            auto new_digest = modify_digest ? correct_digest.value + 1 : correct_digest.value;
-            auto modified_entry = getLogEntryFromZKRequest(0, 1, zxid, request_c, new_digest);
-            ASSERT_THROW(state_machine1->commit(1, modified_entry->get_buf()), DB::Exception);
-        }
-        else
-            ASSERT_NO_THROW(state_machine1->commit(1, entry_c->get_buf()));
-    };
-
-    test_digest(true);
-    test_digest(true);
-    test_digest(false);
-    test_digest(false);
 }
 
 INSTANTIATE_TEST_SUITE_P(CoordinationTestSuite,

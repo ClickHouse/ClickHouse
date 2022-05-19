@@ -265,7 +265,7 @@ void ZooKeeperSetRequest::readImpl(ReadBuffer & in)
 std::string ZooKeeperSetRequest::toStringImpl() const
 {
     return fmt::format(
-        "path = {}\n",
+        "path = {}\n"
         "version = {}",
         path,
         version);
