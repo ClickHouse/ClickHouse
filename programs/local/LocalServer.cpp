@@ -626,6 +626,7 @@ void LocalServer::processConfig()
 
     ClientInfo & client_info = global_context->getClientInfo();
     client_info.setInitialQuery();
+    client_info.query_kind = query_kind;
 }
 
 
