@@ -403,6 +403,7 @@ void DDLWorker::scheduleTasks(bool reinitialized)
         if (task_iter == current_tasks.end())
         {
             /// Already processed, we should delete dependencies
+
             dependencies_graph.removeTask(task_name);
             continue;
         }
