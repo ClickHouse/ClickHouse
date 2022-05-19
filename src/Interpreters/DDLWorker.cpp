@@ -371,6 +371,9 @@ void DDLWorker::scheduleTasks(bool reinitialized)
         String entry_name = *it;
         LOG_TRACE(log, "Checking task {}", entry_name);
 
+        if (dependencies_graph.tasks_dependencies.contains(entry_name))
+            continue;
+
         String reason;
         auto task = initAndCheckTask(entry_name, reason, zookeeper);
         if (task)
