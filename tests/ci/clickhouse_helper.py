@@ -26,7 +26,7 @@ class ClickHouseHelper:
     def _insert_json_str_info_impl(url, auth, db, table, json_str):
         params = {
             "database": db,
-            "query": "INSERT INTO {table} FORMAT JSONEachRow".format(table=table),
+            "query": f"INSERT INTO {table} FORMAT JSONEachRow",
             "date_time_input_format": "best_effort",
             "send_logs_level": "warning",
         }
@@ -185,17 +185,14 @@ def prepare_tests_results_for_clickhouse(
 
 def mark_flaky_tests(clickhouse_helper, check_name, test_results):
     try:
-        query = """
-        SELECT DISTINCT test_name
-        FROM checks
-        WHERE
-            check_start_time BETWEEN now() - INTERVAL 3 DAY AND now()
-            AND check_name = '{check_name}'
-            AND (test_status = 'FAIL' OR test_status = 'FLAKY')
-            AND pull_request_number = 0
-        """.format(
-            check_name=check_name
-        )
+        query = f"""SELECT DISTINCT test_name
+FROM checks
+WHERE
+    check_start_time BETWEEN now() - INTERVAL 3 DAY AND now()
+    AND check_name = '{check_name}'
+    AND (test_status = 'FAIL' OR test_status = 'FLAKY')
+    AND pull_request_number = 0
+"""
 
         tests_data = clickhouse_helper.select_json_each_row("default", query)
         master_failed_tests = {row["test_name"] for row in tests_data}
