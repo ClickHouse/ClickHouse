@@ -976,16 +976,16 @@ ArrayJoinActionPtr SelectQueryExpressionAnalyzer::appendArrayJoin(ExpressionActi
     return array_join;
 }
 
-void SelectQueryExpressionAnalyzer::appendJoinLeftKeys(ExpressionActionsChain & chain, bool only_types)
+bool SelectQueryExpressionAnalyzer::appendJoinLeftKeys(ExpressionActionsChain & chain, bool only_types)
 {
     ExpressionActionsChain::Step & step = chain.lastStep(columns_after_array_join);
 
     getRootActions(analyzedJoin().leftKeysList(), only_types, step.actions());
+    return true;
 }
 
-JoinPtr SelectQueryExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain, ActionsDAGPtr & converting_join_columns, ActionsDAGPtr & before_join)
+JoinPtr SelectQueryExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain, ActionsDAGPtr & converting_join_columns)
 {
-
     const ColumnsWithTypeAndName & left_sample_columns = chain.getLastStep().getResultColumns();
     JoinPtr table_join = makeTableJoin(*syntax->ast_join, left_sample_columns, converting_join_columns);
 
@@ -994,8 +994,6 @@ JoinPtr SelectQueryExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain
         chain.steps.push_back(std::make_unique<ExpressionActionsChain::ExpressionActionsStep>(converting_join_columns));
         chain.addStep();
     }
-
-    before_join = chain.getLastActions();
 
     ExpressionActionsChain::Step & step = chain.lastStep(columns_after_array_join);
     chain.steps.push_back(std::make_unique<ExpressionActionsChain::JoinStep>(
@@ -1764,7 +1762,8 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
         if (query_analyzer.hasTableJoin())
         {
             query_analyzer.appendJoinLeftKeys(chain, only_types || !first_stage);
-            join = query_analyzer.appendJoin(chain, converting_join_columns, before_join);
+            before_join = chain.getLastActions();
+            join = query_analyzer.appendJoin(chain, converting_join_columns);
             chain.addStep();
         }
 
