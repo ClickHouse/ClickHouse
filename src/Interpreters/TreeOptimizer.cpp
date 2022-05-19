@@ -789,7 +789,8 @@ void TreeOptimizer::apply(ASTPtr & query, TreeRewriterResult & result,
     }
 
     /// GROUP BY injective function elimination.
-    optimizeGroupBy(select_query, context);
+    if (settings.optimize_injective_functions_and_literals_in_group_by)
+        optimizeGroupBy(select_query, context);
 
     /// GROUP BY functions of other keys elimination.
     if (settings.optimize_group_by_function_keys)
