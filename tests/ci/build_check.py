@@ -148,19 +148,21 @@ def create_json_artifact(
         json.dump(result, build_links)
 
 
-def get_release_or_pr(
-    pr_info: PRInfo, build_config: BuildConfig, version: ClickHouseVersion
-) -> str:
+def get_release_or_pr(pr_info: PRInfo, version: ClickHouseVersion) -> Tuple[str, str]:
+    # FIXME performance
+    # performance builds are havily relies on a fixed path for artifacts, that's why
+    # we need to preserve 0 for anything but PR number
+    # It should be fixed in performance-comparison image eventually
+    performance_pr = "0"
     if "release" in pr_info.labels or "release-lts" in pr_info.labels:
         # for release pull requests we use branch names prefixes, not pr numbers
-        return pr_info.head_ref
-    elif pr_info.number == 0 and build_config["package_type"] != "performance":
-        # for pushes to master - major version, but not for performance builds
-        # they havily relies on a fixed path for build package and nobody going
-        # to deploy them somewhere, so it's ok.
-        return f"{version.major}.{version.minor}"
+        return pr_info.head_ref, performance_pr
+    elif pr_info.number == 0:
+        # for pushes to master - major version
+        return f"{version.major}.{version.minor}", performance_pr
     # PR number for anything else
-    return str(pr_info.number)
+    pr_number = str(pr_info.number)
+    return pr_number, pr_number
 
 
 def upload_master_static_binaries(
@@ -201,9 +203,13 @@ def main():
     s3_helper = S3Helper("https://s3.amazonaws.com")
 
     version = get_version_from_repo(git=Git(True))
-    release_or_pr = get_release_or_pr(pr_info, build_config, version)
+    release_or_pr, performance_pr = get_release_or_pr(pr_info, version)
 
     s3_path_prefix = "/".join((release_or_pr, pr_info.sha, build_name))
+    # FIXME performance
+    s3_performance_path = "/".join(
+        (performance_pr, pr_info.sha, build_name, "performance.tgz")
+    )
 
     # If this is rerun, then we try to find already created artifacts and just
     # put them as github actions artifcat (result)
@@ -313,6 +319,19 @@ def main():
         logging.info("Log url %s", log_url)
     else:
         logging.info("Build log doesn't exist")
+
+    # FIXME performance
+    performance_url = []
+    performance_path = os.path.join(build_output_path, "performance.tgz")
+    if os.path.exists(performance_path):
+        performance_url.append(
+            s3_helper.upload_build_file_to_s3(performance_path, s3_performance_path)
+        )
+        logging.info(
+            "Uploaded performance.tgz to %s, now delete to avoid duplication",
+            performance_url[0],
+        )
+        os.remove(performance_path)
 
     build_urls = s3_helper.upload_build_folder_to_s3(
         build_output_path,
