@@ -165,7 +165,10 @@ class Release:
             )
 
         # Prefetch the branch to have it updated
-        self.run(f"git fetch {self.repo.url} {branch}:{branch}")
+        if self._git.branch == branch:
+            self.run("git pull")
+        else:
+            self.run(f"git fetch {self.repo.url} {branch}:{branch}")
         output = self.run(f"git branch --contains={self.release_commit} {branch}")
         if branch not in output:
             raise Exception(
