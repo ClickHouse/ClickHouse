@@ -155,11 +155,11 @@ public:
         const FileSegmentPtr & file_segment,
         std::lock_guard<std::mutex> & cache_lock);
 
-    void detach(
-        std::lock_guard<std::mutex> & cache_lock,
-        std::lock_guard<std::mutex> & segment_lock);
+    void detach(std::lock_guard<std::mutex> & cache_lock);
 
     [[noreturn]] void throwIfDetached() const;
+
+    bool isDetached() const;
 
 private:
     size_t availableSize() const { return reserved_size - downloaded_size; }
@@ -169,7 +169,6 @@ private:
     void assertCorrectnessImpl(std::lock_guard<std::mutex> & segment_lock) const;
     bool hasFinalizedState() const;
 
-    bool isDetached(std::lock_guard<std::mutex> & /* segment_lock */) const { return is_detached; }
     void markAsDetached(std::lock_guard<std::mutex> & segment_lock);
     [[noreturn]] void throwIfDetachedUnlocked(std::lock_guard<std::mutex> & segment_lock) const;
 
@@ -177,7 +176,7 @@ private:
     void assertNotDetached(std::lock_guard<std::mutex> & segment_lock) const;
 
     void setDownloaded(std::lock_guard<std::mutex> & segment_lock);
-    void setDownloadFailed(std::lock_guard<std::mutex> & segment_lock);
+    void setDownloadFailed(std::lock_guard<std::mutex> & segment_lock, State state = State::PARTIALLY_DOWNLOADED_NO_CONTINUATION);
     bool isDownloaderImpl(std::lock_guard<std::mutex> & segment_lock) const;
 
     void wrapWithCacheInfo(Exception & e, const String & message, std::lock_guard<std::mutex> & segment_lock) const;
@@ -188,12 +187,7 @@ private:
     /// FileSegmentsHolder. complete() might check if the caller of the method
     /// is the last alive holder of the segment. Therefore, complete() and destruction
     /// of the file segment pointer must be done under the same cache mutex.
-    void complete(std::lock_guard<std::mutex> & cache_lock);
-    void completeUnlocked(std::lock_guard<std::mutex> & cache_lock, std::lock_guard<std::mutex> & segment_lock);
-
-    void completeImpl(
-        std::lock_guard<std::mutex> & cache_lock,
-        std::lock_guard<std::mutex> & segment_lock);
+    void complete();
 
     void resetDownloaderImpl(std::lock_guard<std::mutex> & segment_lock);
 

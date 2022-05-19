@@ -41,25 +41,6 @@ public:
     /// Restore cache from local filesystem.
     virtual void initialize() = 0;
 
-    virtual void remove(const Key & key) = 0;
-
-    virtual void remove() = 0;
-
-    static bool isReadOnly();
-
-    /// Cache capacity in bytes.
-    size_t capacity() const { return max_size; }
-
-    static Key hash(const String & path);
-
-    String getPathInLocalCache(const Key & key, size_t offset);
-
-    String getPathInLocalCache(const Key & key);
-
-    const String & getBasePath() const { return cache_base_path; }
-
-    virtual std::vector<String> tryGetCachePaths(const Key & key) = 0;
-
     /**
      * Given an `offset` and `size` representing [offset, offset + size) bytes interval,
      * return list of cached non-overlapping non-empty
@@ -84,9 +65,33 @@ public:
      */
     virtual FileSegmentsHolder get(const Key & key, size_t offset, size_t size) = 0;
 
+    virtual void remove(const Key & key) = 0;
+
+    virtual void remove() = 0;
+
     virtual FileSegmentsHolder setDownloading(const Key & key, size_t offset, size_t size) = 0;
 
+
+    const String & getBasePath() const { return cache_base_path; }
+
+    String getPathInLocalCache(const Key & key, size_t offset);
+
+    String getPathInLocalCache(const Key & key);
+
+    /// Get cache key by file path.
+    static Key hash(const String & path);
+
+    /// Is cache read only?
+    /// Cache can be read only if there is no query attached to the thread.
+    /// This applies to read-through cache, not for write-through cache.
+    static bool isReadOnly();
+
+    /// Create a snapshot of the current cache state. Returnes a list
+    /// of file segments for all keys.
     virtual FileSegments getSnapshot() const = 0;
+
+    /// Get paths of all file segments for a given key.
+    virtual std::vector<String> tryGetCachePaths(const Key & key) = 0;
 
     /// For debug.
     virtual String dumpStructure(const Key & key) = 0;
@@ -108,23 +113,6 @@ protected:
     virtual bool tryReserve(
         const Key & key, size_t offset, size_t size,
         std::lock_guard<std::mutex> & cache_lock) = 0;
-
-    virtual void remove(
-        Key key, size_t offset,
-        std::lock_guard<std::mutex> & cache_lock,
-        std::lock_guard<std::mutex> & segment_lock) = 0;
-
-    virtual bool isLastFileSegmentHolder(
-        const Key & key, size_t offset,
-        std::lock_guard<std::mutex> & cache_lock,
-        std::lock_guard<std::mutex> & segment_lock) = 0;
-
-    /// If file segment was partially downloaded and then space reservation fails (because of no
-    /// space left), then update corresponding cache cell metadata (file segment size).
-    virtual void reduceSizeToDownloaded(
-        const Key & key, size_t offset,
-        std::lock_guard<std::mutex> & cache_lock,
-        std::lock_guard<std::mutex> & segment_lock) = 0;
 
     void assertInitialized() const;
 };
@@ -220,8 +208,8 @@ private:
             , queue_iterator(other.queue_iterator) {}
     };
 
-    using FileSegmentsByOffset = std::map<size_t, FileSegmentCell>;
-    using CachedFiles = std::unordered_map<Key, FileSegmentsByOffset>;
+    using CellsByOffset = std::map<size_t, FileSegmentCell>;
+    using CachedFiles = std::unordered_map<Key, CellsByOffset>;
 
     CachedFiles files;
     LRUQueue queue;
@@ -238,26 +226,20 @@ private:
         const Key & key, size_t offset, size_t size,
         FileSegment::State state, std::lock_guard<std::mutex> & cache_lock);
 
+    void removeCell(
+        FileSegmentCell * cell,
+        std::lock_guard<std::mutex> & cache_lock);
+
     void useCell(const FileSegmentCell & cell, FileSegments & result, std::lock_guard<std::mutex> & cache_lock);
 
     bool tryReserve(
         const Key & key, size_t offset, size_t size,
         std::lock_guard<std::mutex> & cache_lock) override;
 
-    void remove(
-        Key key, size_t offset,
-        std::lock_guard<std::mutex> & cache_lock,
-        std::lock_guard<std::mutex> & segment_lock) override;
-
-    bool isLastFileSegmentHolder(
-        const Key & key, size_t offset,
-        std::lock_guard<std::mutex> & cache_lock,
-        std::lock_guard<std::mutex> & segment_lock) override;
-
     void reduceSizeToDownloaded(
-        const Key & key, size_t offset,
-        std::lock_guard<std::mutex> & cache_lock,
-        std::lock_guard<std::mutex> & segment_lock) override;
+        const Key & key,
+        size_t offset,
+        std::lock_guard<std::mutex> & cache_lock);
 
     size_t getAvailableCacheSize() const;
 
@@ -279,7 +261,14 @@ private:
 
     size_t getFileSegmentsNumUnlocked(std::lock_guard<std::mutex> & cache_lock) const;
 
-    void assertCacheCellsCorrectness(const FileSegmentsByOffset & cells_by_offset, std::lock_guard<std::mutex> & cache_lock);
+    void assertCacheCellsCorrectness(const CellsByOffset & cells_by_offset, std::lock_guard<std::mutex> & cache_lock);
+
+    void normalize();
+
+    void normalize(CellsByOffset & cells, std::lock_guard<std::mutex> & cache_lock);
+
+    void resizeCellToDownloadedSize(
+        FileSegmentCell & cell, std::lock_guard<std::mutex> & cache_lock);
 
 public:
     String dumpStructure(const Key & key_) override;
