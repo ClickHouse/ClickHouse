@@ -40,6 +40,13 @@ CREATE TABLE type_json_src (data String) ENGINE = MergeTree ORDER BY tuple();
 
 INSERT INTO type_json_src FORMAT JSONAsString {"k1": 1, "k10": [{"a": "1", "b": "2"}, {"a": "2", "b": "3"}]};
 INSERT INTO type_json_src FORMAT JSONAsString  {"k1": 2, "k10": [{"a": "1", "b": "2", "c": {"k11": "haha"}}]};
+
+-- Temporarily fix test by optimizing data to one part.
+-- If order of insertion of above two lines will be changed,
+-- which can happen during insertion with multiple threads,
+-- this test will fail. TODO: fix this.
+OPTIMIZE TABLE type_json_src FINAL;
+
 INSERT INTO type_json_dst SELECT data FROM type_json_src;
 
 SET output_format_json_named_tuples_as_objects = 1;

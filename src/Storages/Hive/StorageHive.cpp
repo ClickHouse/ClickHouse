@@ -45,6 +45,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int CANNOT_OPEN_FILE;
     extern const int LOGICAL_ERROR;
+    extern const int TOO_MANY_PARTITIONS;
 }
 
 
@@ -726,6 +727,8 @@ HiveFiles StorageHive::collectHiveFiles(
 
     /// Hive files to collect
     HiveFiles hive_files;
+    Int64 hit_parttions_num = 0;
+    Int64 hive_max_query_partitions = context_->getSettings().max_partitions_to_read;
     /// Mutext to protect hive_files, which maybe appended in multiple threads
     std::mutex hive_files_mutex;
     ThreadPool pool{max_threads};
@@ -741,6 +744,11 @@ HiveFiles StorageHive::collectHiveFiles(
                     if (!hive_files_in_partition.empty())
                     {
                         std::lock_guard<std::mutex> lock(hive_files_mutex);
+                        hit_parttions_num += 1;
+                        if (hive_max_query_partitions > 0 && hit_parttions_num > hive_max_query_partitions)
+                        {
+                            throw Exception(ErrorCodes::TOO_MANY_PARTITIONS, "Too many partitions to query for table {}.{} . Maximum number of partitions to read is limited to {}", hive_database, hive_table, hive_max_query_partitions);
+                        }
                         hive_files.insert(std::end(hive_files), std::begin(hive_files_in_partition), std::end(hive_files_in_partition));
                     }
                 });

@@ -218,6 +218,7 @@ public:
         Coordination::ACLs getACLs(StringRef path) const;
 
         void applyDelta(const Delta & delta);
+
         bool hasACL(int64_t session_id, bool is_local, std::function<bool(const AuthID &)> predicate)
         {
             for (const auto & session_auth : storage.session_and_auth[session_id])

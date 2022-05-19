@@ -402,6 +402,9 @@ namespace
 
 Coordination::Error KeeperStorage::commit(int64_t commit_zxid, int64_t session_id)
 {
+    // Deltas are added with increasing ZXIDs
+    // If there are no deltas for the commit_zxid (e.g. read requests), we instantly return
+    // on first delta
     for (auto & delta : uncommitted_state.deltas)
     {
         if (delta.zxid > commit_zxid)
@@ -1431,7 +1434,7 @@ struct KeeperStorageMultiRequestProcessor final : public KeeperStorageRequestPro
         Coordination::ZooKeeperMultiResponse & response = dynamic_cast<Coordination::ZooKeeperMultiResponse &>(*response_ptr);
 
         auto & deltas = storage.uncommitted_state.deltas;
-        // the deltas will have atleast SubDeltaEnd or FailedMultiDelta
+        // the deltas will have at least SubDeltaEnd or FailedMultiDelta
         assert(!deltas.empty());
         if (auto * failed_multi = std::get_if<KeeperStorage::FailedMultiDelta>(&deltas.front().operation))
         {
