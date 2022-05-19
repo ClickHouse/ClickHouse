@@ -551,6 +551,9 @@
              if this setting is true the user B will see all rows, and if this setting is false the user B will see no rows.
              By default this setting is false for compatibility with earlier access configurations. -->
         <users_without_row_policies_can_read_rows>false</users_without_row_policies_can_read_rows>
+        <!-- By default, for backward compatibility ON CLUSTER queries ignore CLUSTER grant,
+             however you can change this behaviour by setting this to true -->
+        <on_cluster_queries_require_cluster_grant>false</on_cluster_queries_require_cluster_grant>
     </access_control_improvements>
 
     <!-- Default profile of settings. -->
