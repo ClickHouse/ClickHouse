@@ -1194,9 +1194,18 @@ void NO_INLINE Aggregator::executeOnIntervalWithoutKeyImpl(
     for (AggregateFunctionInstruction * inst = aggregate_instructions; inst->that; ++inst)
     {
         if (inst->offsets)
-            inst->batch_that->addBatchSinglePlaceFromInterval(inst->offsets[row_begin], inst->offsets[row_end - 1], res + inst->state_offset, inst->batch_arguments, arena);
+            inst->batch_that->addBatchSinglePlaceFromInterval(
+                inst->offsets[static_cast<ssize_t>(row_begin) - 1],
+                inst->offsets[row_end - 1],
+                res + inst->state_offset,
+                inst->batch_arguments, arena);
         else
-            inst->batch_that->addBatchSinglePlaceFromInterval(row_begin, row_end, res + inst->state_offset, inst->batch_arguments, arena);
+            inst->batch_that->addBatchSinglePlaceFromInterval(
+                row_begin,
+                row_end,
+                res + inst->state_offset,
+                inst->batch_arguments,
+                arena);
     }
 }
 

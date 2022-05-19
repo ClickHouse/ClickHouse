@@ -20,10 +20,12 @@ struct OvercommitRatio
 
     friend bool operator<(OvercommitRatio const & lhs, OvercommitRatio const & rhs) noexcept
     {
+        Int128 lhs_committed = lhs.committed, lhs_soft_limit = lhs.soft_limit;
+        Int128 rhs_committed = rhs.committed, rhs_soft_limit = rhs.soft_limit;
         // (a / b < c / d) <=> (a * d < c * b)
-        return (lhs.committed * rhs.soft_limit) < (rhs.committed * lhs.soft_limit)
-            || (lhs.soft_limit == 0 && rhs.soft_limit > 0)
-            || (lhs.committed == 0 && rhs.committed == 0 && lhs.soft_limit > rhs.soft_limit);
+        return (lhs_committed * rhs_soft_limit) < (rhs_committed * lhs_soft_limit)
+            || (lhs_soft_limit == 0 && rhs_soft_limit > 0)
+            || (lhs_committed == 0 && rhs_committed == 0 && lhs_soft_limit > rhs_soft_limit);
     }
 
     // actual query memory usage

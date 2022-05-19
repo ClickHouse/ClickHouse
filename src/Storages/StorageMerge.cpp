@@ -774,7 +774,7 @@ void StorageMerge::convertingSourceStream(
             ColumnWithTypeAndName header_column = header.getByPosition(column_index);
             ColumnWithTypeAndName before_column = before_block_header.getByName(header_column.name);
             /// If the processed_stage greater than FetchColumns and the block structure between streams is different.
-            /// the where expression maybe invalid because of convertingBlockInputStream.
+            /// the where expression maybe invalid because of ConvertingTransform.
             /// So we need to throw exception.
             if (!header_column.type->equals(*before_column.type.get()))
             {

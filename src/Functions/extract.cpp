@@ -21,7 +21,7 @@ struct ExtractImpl
         res_data.reserve(data.size() / 5);
         res_offsets.resize(offsets.size());
 
-        const auto & regexp = Regexps::get<false, false>(pattern);
+        const auto & regexp = Regexps::get<false, false, false>(pattern);
 
         unsigned capture = regexp->getNumberOfSubpatterns() > 0 ? 1 : 0;
         OptimizedRegularExpression::MatchVec matches;
