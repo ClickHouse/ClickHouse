@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Access/EnabledRoles.h>
-#include <Poco/ExpireCache.h>
+#include <Poco/AccessExpireCache.h>
 #include <boost/container/flat_set.hpp>
 #include <map>
 #include <mutex>
@@ -31,7 +31,7 @@ private:
     void roleRemoved(const UUID & role_id);
 
     const AccessControl & access_control;
-    Poco::ExpireCache<UUID, std::pair<RolePtr, scope_guard>> cache;
+    Poco::AccessExpireCache<UUID, std::pair<RolePtr, scope_guard>> cache;
     std::map<EnabledRoles::Params, std::weak_ptr<EnabledRoles>> enabled_roles;
     mutable std::mutex mutex;
 };
