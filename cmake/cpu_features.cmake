@@ -31,7 +31,10 @@ if (ARCH_NATIVE)
 elseif (ARCH_AARCH64)
     set (COMPILER_FLAGS "${COMPILER_FLAGS} -march=armv8-a+crc")
 
-else ()
+elseif (ARCH_PPC64LE)
+    set (COMPILER_FLAGS "${COMPILER_FLAGS} -maltivec -mcpu=power8 -DNO_WARN_X86_INTRINSICS")
+
+elseif (ARCH_AMD64)
     set (TEST_FLAG "-mssse3")
     set (CMAKE_REQUIRED_FLAGS "${TEST_FLAG} -O0")
     check_cxx_source_compiles("
@@ -58,10 +61,6 @@ else ()
     " HAVE_SSE41)
     if (HAVE_SSE41 AND ENABLE_SSE41)
         set (COMPILER_FLAGS "${COMPILER_FLAGS} ${TEST_FLAG}")
-    endif ()
-
-    if (ARCH_PPC64LE)
-        set (COMPILER_FLAGS "${COMPILER_FLAGS} -maltivec -mcpu=power8 -D__SSE2__=1 -DNO_WARN_X86_INTRINSICS")
     endif ()
 
     set (TEST_FLAG "-msse4.2")
@@ -93,7 +92,6 @@ else ()
     endif ()
 
     set (TEST_FLAG "-mpopcnt")
-
     set (CMAKE_REQUIRED_FLAGS "${TEST_FLAG} -O0")
     check_cxx_source_compiles("
         int main() {
@@ -186,6 +184,8 @@ else ()
             set (X86_INTRINSICS_FLAGS "${X86_INTRINSICS_FLAGS} -mavx512f -mavx512bw -mavx512vl -mprefer-vector-width=256")
         endif ()
     endif ()
+else ()
+    # RISC-V + exotic platforms
 endif ()
 
 cmake_pop_check_state ()

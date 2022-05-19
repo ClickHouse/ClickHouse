@@ -77,6 +77,19 @@ ExpressionTransform
 2	3	0	5200
 2	4	0	4800
 2	5	0	5400
+SELECT
+    fact_1_id,
+    fact_3_id,
+    sum(sales_value) AS sales_value
+FROM grouping_sets
+GROUP BY
+    GROUPING SETS (
+        (fact_1_id),
+        (fact_1_id, fact_3_id))
+    WITH TOTALS
+ORDER BY
+    fact_1_id ASC,
+    fact_3_id ASC
 (Expression)
 ExpressionTransform
   (Sorting)

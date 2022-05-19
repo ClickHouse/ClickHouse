@@ -7,8 +7,10 @@
 #include <IO/ReadHelpers.h>
 #include <Parsers/DumpASTNode.h>
 #include <Common/typeid_cast.h>
+#include <Common/StringUtils/StringUtils.h>
 
 #include <Parsers/ASTAsterisk.h>
+#include <Parsers/ASTCollation.h>
 #include <Parsers/ASTColumnsTransformers.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
@@ -1460,6 +1462,31 @@ bool ParserCodec::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     function_node->children.push_back(function_node->arguments);
 
     node = function_node;
+    return true;
+}
+
+bool ParserCollation::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    ASTPtr collation;
+
+    if (!ParserIdentifier(true).parse(pos, collation, expected))
+        return false;
+
+    // check the collation name is valid
+    const String name = getIdentifierName(collation);
+
+    bool valid_collation = name == "binary" ||
+                           endsWith(name, "_bin") ||
+                           endsWith(name, "_ci") ||
+                           endsWith(name, "_cs") ||
+                           endsWith(name, "_ks");
+
+    if (!valid_collation)
+        return false;
+
+    auto collation_node = std::make_shared<ASTCollation>();
+    collation_node->collation = collation;
+    node = collation_node;
     return true;
 }
 

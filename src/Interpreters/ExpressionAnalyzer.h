@@ -63,6 +63,8 @@ struct ExpressionAnalyzerData
     NamesAndTypesList aggregated_columns;
     /// Columns after window functions.
     NamesAndTypesList columns_after_window;
+    /// Keys of ORDER BY
+    NameSet order_by_keys;
 
     bool has_aggregation = false;
     NamesAndTypesList aggregation_keys;

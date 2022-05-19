@@ -1461,13 +1461,14 @@ ActionsDAGPtr SelectQueryExpressionAnalyzer::appendOrderBy(ExpressionActionsChai
     getRootActions(select_query->orderBy(), only_types, step.actions());
 
     bool with_fill = false;
-    NameSet order_by_keys;
 
     for (auto & child : select_query->orderBy()->children)
     {
         auto * ast = child->as<ASTOrderByElement>();
         ASTPtr order_expression = ast->children.at(0);
-        step.addRequiredOutput(order_expression->getColumnName());
+        const String & column_name = order_expression->getColumnName();
+        step.addRequiredOutput(column_name);
+        order_by_keys.emplace(column_name);
 
         if (ast->with_fill)
             with_fill = true;
@@ -1520,8 +1521,7 @@ ActionsDAGPtr SelectQueryExpressionAnalyzer::appendOrderBy(ExpressionActionsChai
     if (with_fill)
     {
         for (const auto & column : step.getResultColumns())
-            if (!order_by_keys.contains(column.name))
-                non_constant_inputs.insert(column.name);
+            non_constant_inputs.insert(column.name);
     }
 
     auto actions = chain.getLastActions();
@@ -1536,17 +1536,21 @@ bool SelectQueryExpressionAnalyzer::appendLimitBy(ExpressionActionsChain & chain
     if (!select_query->limitBy())
         return false;
 
-    /// Use columns for ORDER BY.
-    /// They could be required to do ORDER BY on the initiator in case of distributed queries.
-    ExpressionActionsChain::Step & step = chain.lastStep(chain.getLastStep().getRequiredColumns());
+    ExpressionActionsChain::Step & step = chain.lastStep(aggregated_columns);
 
     getRootActions(select_query->limitBy(), only_types, step.actions());
 
     NameSet existing_column_names;
-    for (const auto & column : chain.getLastStep().getRequiredColumns())
+    for (const auto & column : aggregated_columns)
     {
         step.addRequiredOutput(column.name);
         existing_column_names.insert(column.name);
+    }
+    /// Columns from ORDER BY could be required to do ORDER BY on the initiator in case of distributed queries.
+    for (const auto & column_name : order_by_keys)
+    {
+        step.addRequiredOutput(column_name);
+        existing_column_names.insert(column_name);
     }
 
     auto & children = select_query->limitBy()->children;
