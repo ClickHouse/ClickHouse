@@ -5,6 +5,7 @@
 #include <metrohash.h>
 #include <MurmurHash2.h>
 #include <MurmurHash3.h>
+#include <wyhash.h>
 
 #include "config_functions.h"
 #include "config_core.h"
@@ -1369,6 +1370,29 @@ private:
     }
 };
 
+struct ImplWyHash64
+{
+    static constexpr auto name = "wyHash64";
+    using ReturnType = UInt64;
+
+    static UInt64 apply(const char * s, const size_t len)
+    {
+        return wyhash(s, len, 0, _wyp);
+    }
+    static UInt64 combineHashes(UInt64 h1, UInt64 h2)
+    {
+        union
+        {
+            UInt64 u64[2];
+            char chars[16];
+        };
+        u64[0] = h1;
+        u64[1] = h2;
+        return apply(chars, 16);
+    }
+
+    static constexpr bool use_int_hash_for_pods = false;
+};
 
 struct NameIntHash32 { static constexpr auto name = "intHash32"; };
 struct NameIntHash64 { static constexpr auto name = "intHash64"; };
@@ -1405,5 +1429,7 @@ using FunctionHiveHash = FunctionAnyHash<HiveHashImpl>;
 
 using FunctionXxHash32 = FunctionAnyHash<ImplXxHash32>;
 using FunctionXxHash64 = FunctionAnyHash<ImplXxHash64>;
+
+using FunctionWyHash64 = FunctionAnyHash<ImplWyHash64>;
 
 }

@@ -80,7 +80,7 @@ class OutputStreamWriteBufferAdapter : public avro::OutputStream
 public:
     explicit OutputStreamWriteBufferAdapter(WriteBuffer & out_) : out(out_) {}
 
-    virtual bool next(uint8_t ** data, size_t * len) override
+    bool next(uint8_t ** data, size_t * len) override
     {
         out.nextIfAtEnd();
         *data = reinterpret_cast<uint8_t *>(out.position());
@@ -90,10 +90,10 @@ public:
         return true;
     }
 
-    virtual void backup(size_t len) override { out.position() -= len; }
+    void backup(size_t len) override { out.position() -= len; }
 
-    virtual uint64_t byteCount() const override { return out.count(); }
-    virtual void flush() override { }
+    uint64_t byteCount() const override { return out.count(); }
+    void flush() override { }
 
 private:
     WriteBuffer & out;

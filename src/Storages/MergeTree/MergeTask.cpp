@@ -149,7 +149,6 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
         global_ctx->merging_columns,
         global_ctx->merging_column_names);
 
-
     auto local_single_disk_volume = std::make_shared<SingleDiskVolume>("volume_" + global_ctx->future_part->name, ctx->disk, 0);
     global_ctx->new_data_part = global_ctx->data->createPart(
         global_ctx->future_part->name,
@@ -778,6 +777,9 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream()
 
     Names sort_columns = global_ctx->metadata_snapshot->getSortingKeyColumns();
     SortDescription sort_description;
+    sort_description.compile_sort_description = global_ctx->data->getContext()->getSettingsRef().compile_sort_description;
+    sort_description.min_count_to_compile_sort_description = global_ctx->data->getContext()->getSettingsRef().min_count_to_compile_sort_description;
+
     size_t sort_columns_size = sort_columns.size();
     sort_description.reserve(sort_columns_size);
 

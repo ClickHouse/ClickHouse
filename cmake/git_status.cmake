@@ -11,7 +11,7 @@ if (Git_FOUND)
   message(STATUS "HEAD's commit hash ${GIT_COMMIT_ID}")
   execute_process(
     COMMAND ${GIT_EXECUTABLE} status
-    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR} OUTPUT_STRIP_TRAILING_WHITESPACE)
 else()
   message(STATUS "The git program could not be found.")
 endif()

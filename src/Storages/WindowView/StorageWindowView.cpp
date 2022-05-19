@@ -37,6 +37,11 @@
 #include <Processors/Transforms/WatermarkTransform.h>
 #include <Processors/Transforms/SquashingChunksTransform.h>
 #include <Processors/Transforms/MaterializingTransform.h>
+#include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/SettingQuotaAndLimitsStep.h>
+#include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
+#include <Processors/QueryPlan/ExpressionStep.h>
+#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/Executors/PipelineExecutor.h>
 #include <Processors/Sinks/EmptySink.h>
 #include <Storages/StorageFactory.h>
@@ -387,27 +392,17 @@ static void extractDependentTable(ContextPtr context, ASTPtr & query, String & s
 
 UInt32 StorageWindowView::getCleanupBound()
 {
-    UInt32 w_bound;
+    if (max_fired_watermark == 0)
+        return 0;
+    if (is_proctime)
+        return max_fired_watermark;
+    else
     {
-        std::lock_guard lock(fire_signal_mutex);
-        w_bound = max_fired_watermark;
-        if (w_bound == 0)
-            return 0;
-
-        if (!is_proctime)
-        {
-            if (max_watermark == 0)
-                return 0;
-            if (allowed_lateness)
-            {
-                UInt32 lateness_bound = addTime(max_timestamp, lateness_kind, -lateness_num_units, *time_zone);
-                lateness_bound = getWindowLowerBound(lateness_bound);
-                if (lateness_bound < w_bound)
-                    w_bound = lateness_bound;
-            }
-        }
+        auto w_bound = max_fired_watermark;
+        if (allowed_lateness)
+            w_bound = addTime(w_bound, lateness_kind, -lateness_num_units, *time_zone);
+        return getWindowLowerBound(w_bound);
     }
-    return w_bound;
 }
 
 ASTPtr StorageWindowView::getCleanupQuery()
@@ -572,6 +567,7 @@ inline void StorageWindowView::fire(UInt32 watermark)
             if (auto watch_stream_ptr = watch_stream.lock())
                 watch_stream_ptr->addBlock(block, watermark);
         }
+        fire_condition.notify_all();
     }
     if (!target_table_id.empty())
     {
@@ -833,7 +829,6 @@ void StorageWindowView::updateMaxWatermark(UInt32 watermark)
         while (max_watermark < watermark)
         {
             fire_signal.push_back(max_watermark);
-            max_fired_watermark = max_watermark;
             max_watermark = addTime(max_watermark, slide_kind, slide_num_units, *time_zone);
         }
     }
@@ -844,7 +839,6 @@ void StorageWindowView::updateMaxWatermark(UInt32 watermark)
         while (max_watermark_bias <= max_timestamp)
         {
             fire_signal.push_back(max_watermark);
-            max_fired_watermark = max_watermark;
             max_watermark = addTime(max_watermark, slide_kind, slide_num_units, *time_zone);
             max_watermark_bias = addTime(max_watermark, slide_kind, slide_num_units, *time_zone);
         }
@@ -856,10 +850,13 @@ void StorageWindowView::updateMaxWatermark(UInt32 watermark)
 
 inline void StorageWindowView::cleanup()
 {
-    InterpreterAlterQuery alter_query(getCleanupQuery(), getContext());
-    alter_query.execute();
+    std::lock_guard fire_signal_lock(fire_signal_mutex);
+    std::lock_guard mutex_lock(mutex);
 
-    std::lock_guard lock(fire_signal_mutex);
+    auto alter_query = getCleanupQuery();
+    InterpreterAlterQuery interpreter_alter(alter_query, getContext());
+    interpreter_alter.execute();
+
     watch_streams.remove_if([](std::weak_ptr<WindowViewSource> & ptr) { return ptr.expired(); });
 }
 
@@ -922,8 +919,79 @@ void StorageWindowView::threadFuncFireEvent()
         while (!fire_signal.empty())
         {
             fire(fire_signal.front());
+            max_fired_watermark = fire_signal.front();
             fire_signal.pop_front();
         }
+    }
+}
+
+Pipe StorageWindowView::read(
+    const Names & column_names,
+    const StorageSnapshotPtr & storage_snapshot,
+    SelectQueryInfo & query_info,
+    ContextPtr local_context,
+    QueryProcessingStage::Enum processed_stage,
+    const size_t max_block_size,
+    const unsigned num_streams)
+{
+    QueryPlan plan;
+    read(plan, column_names, storage_snapshot, query_info, local_context, processed_stage, max_block_size, num_streams);
+    return plan.convertToPipe(
+        QueryPlanOptimizationSettings::fromContext(local_context), BuildQueryPipelineSettings::fromContext(local_context));
+}
+
+void StorageWindowView::read(
+    QueryPlan & query_plan,
+    const Names & column_names,
+    const StorageSnapshotPtr & storage_snapshot,
+    SelectQueryInfo & query_info,
+    ContextPtr local_context,
+    QueryProcessingStage::Enum processed_stage,
+    const size_t max_block_size,
+    const unsigned num_streams)
+{
+    if (target_table_id.empty())
+        return;
+
+    auto storage = getTargetStorage();
+    auto lock = storage->lockForShare(local_context->getCurrentQueryId(), local_context->getSettingsRef().lock_acquire_timeout);
+    auto target_metadata_snapshot = storage->getInMemoryMetadataPtr();
+    auto target_storage_snapshot = storage->getStorageSnapshot(target_metadata_snapshot, local_context);
+
+    if (query_info.order_optimizer)
+        query_info.input_order_info = query_info.order_optimizer->getInputOrder(target_metadata_snapshot, local_context);
+
+    storage->read(query_plan, column_names, target_storage_snapshot, query_info, local_context, processed_stage, max_block_size, num_streams);
+
+    if (query_plan.isInitialized())
+    {
+        auto wv_header = getHeaderForProcessingStage(column_names, storage_snapshot, query_info, local_context, processed_stage);
+        auto target_header = query_plan.getCurrentDataStream().header;
+
+        if (!blocksHaveEqualStructure(wv_header, target_header))
+        {
+            auto converting_actions = ActionsDAG::makeConvertingActions(
+                target_header.getColumnsWithTypeAndName(), wv_header.getColumnsWithTypeAndName(), ActionsDAG::MatchColumnsMode::Name);
+            auto converting_step = std::make_unique<ExpressionStep>(query_plan.getCurrentDataStream(), converting_actions);
+            converting_step->setStepDescription("Convert Target table structure to WindowView structure");
+            query_plan.addStep(std::move(converting_step));
+        }
+
+        StreamLocalLimits limits;
+        SizeLimits leaf_limits;
+
+        /// Add table lock for target table.
+        auto adding_limits_and_quota = std::make_unique<SettingQuotaAndLimitsStep>(
+                query_plan.getCurrentDataStream(),
+                storage,
+                std::move(lock),
+                limits,
+                leaf_limits,
+                nullptr,
+                nullptr);
+
+        adding_limits_and_quota->setStepDescription("Lock target table for WindowView");
+        query_plan.addStep(std::move(adding_limits_and_quota));
     }
 }
 
@@ -1316,6 +1384,18 @@ void StorageWindowView::writeIntoWindowView(
     auto metadata_snapshot = inner_storage->getInMemoryMetadataPtr();
     auto output = inner_storage->write(window_view.getMergeableQuery(), metadata_snapshot, local_context);
 
+    if (!blocksHaveEqualStructure(builder.getHeader(), output->getHeader()))
+    {
+        auto convert_actions_dag = ActionsDAG::makeConvertingActions(
+            builder.getHeader().getColumnsWithTypeAndName(),
+            output->getHeader().getColumnsWithTypeAndName(),
+            ActionsDAG::MatchColumnsMode::Name);
+        auto convert_actions = std::make_shared<ExpressionActions>(
+            convert_actions_dag, ExpressionActionsSettings::fromContext(local_context, CompileExpressions::yes));
+
+        builder.addSimpleTransform([&](const Block & header) { return std::make_shared<ExpressionTransform>(header, convert_actions); });
+    }
+
     builder.addChain(Chain(std::move(output)));
     builder.setSinks([&](const Block & cur_header, Pipe::StreamType)
     {
@@ -1337,10 +1417,8 @@ void StorageWindowView::shutdown()
 {
     shutdown_called = true;
 
-    {
-        std::lock_guard lock(mutex);
-        fire_condition.notify_all();
-    }
+    fire_condition.notify_all();
+    fire_signal_condition.notify_all();
 
     clean_cache_task->deactivate();
     fire_task->deactivate();
