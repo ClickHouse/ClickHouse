@@ -74,7 +74,12 @@ clickhouse_client_loop_timeout $TIMEOUT thread3 2> /dev/null &
 clickhouse_client_loop_timeout $TIMEOUT thread4 2> /dev/null &
 clickhouse_client_loop_timeout $TIMEOUT thread5 2> /dev/null &
 
+# wait until the queries above will start,
+# so that clickhouse_test_wait_queries will see them.
+sleep 5
 
-wait
+clickhouse_test_wait_queries 300
 
-$CLICKHOUSE_CLIENT -q "DROP TABLE alter_table"
+echo "OK"
+
+$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS alter_table"
