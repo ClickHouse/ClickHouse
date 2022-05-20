@@ -33,7 +33,7 @@ private:
     QueryCachePtr cache;
     CacheKey cache_key;
     std::shared_ptr<Data> data;
-
+    bool fits_into_memory = true;
 };
 
 }

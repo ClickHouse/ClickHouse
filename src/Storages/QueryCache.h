@@ -172,27 +172,31 @@ private:
     using Base = LRUCache<CacheKey, Data, CacheKeyHasher, QueryWeightFunction>;
 
 public:
-    explicit QueryCache(size_t cache_size_in_bytes)
-        : Base(cache_size_in_bytes)
+    explicit QueryCache(size_t cache_size_in_bytes_, size_t max_query_cache_entry_size_)
+        : Base(cache_size_in_bytes_)
+        , max_query_cache_entry_size(max_query_cache_entry_size_)
     {
         std::thread cache_removing_thread(&CacheRemovalScheduler::processRemovalQueue<QueryCache>, &removal_scheduler, this);
         cache_removing_thread.detach();
     }
 
-    void addChunk(CacheKey cache_key, Chunk && chunk)
+    bool insertChunk(CacheKey cache_key, Chunk && chunk)
     {
         auto data = get(cache_key);
         data->second.push_back(std::move(chunk));
-        //        if (weight(*data) > max_query_cache_entry_size) {
-        //             remove the entry from cache + make sure the subsequent chunks will not create it again
-        //        }
-        set(cache_key, data); // evicts cache if necessary
+        if (query_weight(*data) > max_query_cache_entry_size)
+        {
+             remove(cache_key);
+             return false;
+        }
+        set(cache_key, data); // evicts cache if necessary, the entry with key=cache_key will not get evicted
+        return false;
     }
 
     void scheduleRemoval(CacheKey cache_key)
     {
-        using namespace std::chrono_literals;
-        removal_scheduler.scheduleRemoval(15s, cache_key);
+        auto entry_put_timeout =  std::chrono::milliseconds{cache_key.settings.query_cache_entry_put_timeout};
+        removal_scheduler.scheduleRemoval(entry_put_timeout, cache_key);
     }
 
     size_t recordQueryRun(CacheKey cache_key)
@@ -210,6 +214,9 @@ private:
 
     std::unordered_map<CacheKey, size_t, CacheKeyHasher> times_executed;
     std::mutex times_executed_mutex;
+
+    QueryWeightFunction query_weight;
+    size_t max_query_cache_entry_size;
 
     std::unordered_map<CacheKey, std::mutex, CacheKeyHasher> put_in_cache_mutexes;
 };
