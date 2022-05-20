@@ -105,7 +105,7 @@ Example: `regionToCountry(toUInt32(213)) = 225` converts Moscow (213) to Russia 
 Converts a region to a continent. In every other way, this function is the same as ‘regionToCity’.
 Example: `regionToContinent(toUInt32(213)) = 10001` converts Moscow (213) to Eurasia (10001).
 
-### regionToTopContinent (#regiontotopcontinent) {#regiontotopcontinent-regiontotopcontinent}
+### regionToTopContinent (id,\[, geobase\]) {#regiontotopcontinentid-geobase}
 
 Finds the highest continent in the hierarchy for the region.
 
