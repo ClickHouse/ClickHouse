@@ -120,7 +120,7 @@ namespace
                     return false;
                 value = ast->as<const ASTLiteral &>().value.safeGet<String>();
 
-                if (expect_hash)
+                if (expect_hash && type == AuthenticationType::SHA256_PASSWORD)
                 {
                     if (ParserKeyword{"SALT"}.ignore(pos, expected) && ParserStringLiteral{}.parse(pos, ast, expected))
                     {
