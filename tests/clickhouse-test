@@ -452,6 +452,7 @@ class SettingsRandomizer:
         "prefer_localhost_replica": lambda: random.randint(0, 1),
         "max_block_size": lambda: random.randint(8000, 100000),
         "max_threads": lambda: random.randint(1, 64),
+        "optimize_or_like_chain": lambda: random.randint(0, 1),
     }
 
     @staticmethod

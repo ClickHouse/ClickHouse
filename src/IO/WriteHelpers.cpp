@@ -1,5 +1,5 @@
 #include <IO/WriteHelpers.h>
-#include <inttypes.h>
+#include <cinttypes>
 #include <Common/hex.h>
 
 
