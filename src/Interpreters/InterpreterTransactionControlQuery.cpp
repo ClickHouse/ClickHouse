@@ -56,17 +56,40 @@ BlockIO InterpreterTransactionControlQuery::executeCommit(ContextMutablePtr sess
     if (txn->getState() != MergeTreeTransaction::RUNNING)
         throw Exception(ErrorCodes::INVALID_TRANSACTION, "Transaction is not in RUNNING state");
 
+    TransactionsWaitCSNMode mode = query_context->getSettingsRef().wait_changes_become_visible_after_commit_mode;
+    CSN csn;
     try
     {
-        TransactionLog::instance().commitTransaction(txn);
+        csn = TransactionLog::instance().commitTransaction(txn, /* throw_on_unknown_status */ mode != TransactionsWaitCSNMode::WAIT_UNKNOWN);
     }
     catch (const Exception & e)
     {
-        /// Detach transaction from current context if connection was lost and its status is unknown
         if (e.code() == ErrorCodes::UNKNOWN_STATUS_OF_TRANSACTION)
+        {
+            /// Detach transaction from current context if connection was lost and its status is unknown
             session_context->setCurrentTransaction(NO_TRANSACTION_PTR);
+        }
         throw;
     }
+
+    if (csn == Tx::CommittingCSN)
+    {
+        chassert(mode == TransactionsWaitCSNMode::WAIT_UNKNOWN);
+
+        /// Try to wait for connection to be restored and its status to be loaded.
+        /// It's useful for testing. It allows to enable fault injection (after commit) without breaking tests.
+        txn->waitStateChange(Tx::CommittingCSN);
+
+        if (txn->getState() == MergeTreeTransaction::ROLLED_BACK)
+            throw Exception(ErrorCodes::INVALID_TRANSACTION, "Transaction {} was rolled back", txn->tid);
+        if (txn->getState() != MergeTreeTransaction::COMMITTED)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Transaction {} has invalid state {}", txn->tid, txn->getState());
+    }
+
+    /// Wait for committed changes to become actually visible, so the next transaction in this session will see the changes
+    if (mode != TransactionsWaitCSNMode::ASYNC)
+        TransactionLog::instance().waitForCSNLoaded(csn);
+
     session_context->setCurrentTransaction(NO_TRANSACTION_PTR);
     return {};
 }

@@ -47,6 +47,17 @@ MergeTreeTransaction::State MergeTreeTransaction::getState() const
     return COMMITTED;
 }
 
+bool MergeTreeTransaction::waitStateChange(CSN expected_state_csn) const
+{
+    CSN current_value = expected_state_csn;
+    while (current_value == expected_state_csn && !TransactionLog::instance().isShuttingDown())
+    {
+        csn.wait(current_value);
+        current_value = csn.load();
+    }
+    return current_value != expected_state_csn;
+}
+
 void MergeTreeTransaction::checkIsNotCancelled() const
 {
     CSN c = csn.load();

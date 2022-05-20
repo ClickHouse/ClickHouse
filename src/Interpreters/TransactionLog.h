@@ -97,7 +97,8 @@ public:
     /// Tries to commit transaction. Returns Commit Sequence Number.
     /// Throw if transaction was concurrently killed or if some precommit check failed.
     /// May throw if ZK connection is lost. Transaction status is unknown in this case.
-    CSN commitTransaction(const MergeTreeTransactionPtr & txn);
+    /// Returns CommittingCSN if throw_on_unknown_status is false and connection was lost.
+    CSN commitTransaction(const MergeTreeTransactionPtr & txn, bool throw_on_unknown_status);
 
     /// Releases locks that that were acquired by transaction, releases snapshot, removes transaction from the list of active transactions.
     /// Normally it should not throw, but if it does for some reason (global memory limit exceeded, disk failure, etc)
@@ -118,6 +119,12 @@ public:
     using TransactionsList = std::unordered_map<TIDHash, MergeTreeTransactionPtr>;
     /// Returns copy of list of running transactions.
     TransactionsList getTransactionsList() const;
+
+    /// Waits for provided CSN (and all previous ones) to be loaded from the log.
+    /// Returns false if waiting was interrupted (e.g. by shutdown)
+    bool waitForCSNLoaded(CSN csn) const;
+
+    bool isShuttingDown() const { return stop_flag.load(); }
 
 private:
     void loadLogFromZooKeeper();
@@ -166,6 +173,7 @@ private:
     /// If we lost connection on attempt to create csn- node then we don't know transaction's state.
     using UnknownStateList = std::vector<std::pair<MergeTreeTransaction *, scope_guard>>;
     UnknownStateList unknown_state_list;
+    UnknownStateList unknown_state_list_loaded;
     /// Ordered list of snapshots that are currently used by some transactions. Needed for background cleanup.
     std::list<CSN> snapshots_in_use;
 
@@ -182,6 +190,9 @@ private:
 
     std::atomic_bool stop_flag = false;
     ThreadFromGlobalPool updating_thread;
+
+    Float64 fault_probability_before_commit = 0;
+    Float64 fault_probability_after_commit = 0;
 };
 
 template <typename Derived>

@@ -56,6 +56,8 @@ public:
 
     Float64 elapsedSeconds() const { return elapsed.elapsedSeconds(); }
 
+    bool waitStateChange(CSN expected_state_csn) const;
+
 private:
     scope_guard beforeCommit();
     void afterCommit(CSN assigned_csn) noexcept;
