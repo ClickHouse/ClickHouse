@@ -87,8 +87,9 @@ struct OrderByData {
         EqualRanges er(1, std::pair<size_t, size_t>(0, data[0]->size()));
 
         for (size_t i = num_arguments - num_arguments_for_sorting; i != num_arguments; ++i) {
+            std::cerr << bitmap[i - num_arguments + num_arguments_for_sorting] << std::endl;
             data[i]->updatePermutation(
-                bitmap[i] ? IColumn::PermutationSortDirection::Ascending : IColumn::PermutationSortDirection::Descending,
+                bitmap[i - num_arguments + num_arguments_for_sorting] ? IColumn::PermutationSortDirection::Ascending : IColumn::PermutationSortDirection::Descending,
                 IColumn::PermutationSortStability::Stable, 0, 1, p, er
                 );
         }

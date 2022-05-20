@@ -9,8 +9,8 @@ ORDER BY id
 
 INSERT INTO test (*) VALUES (1, 20, 'a'), (2, 10, 'b')
 
-SELECT * FROM countOrderBy('age asc, name desc')(id, age, name)
+SELECT * FROM groupArrayOrderBy('age asc, name desc')(id, age, name)
 
-SELECT * FROM sumOrderBy('age')(id, age)
+SELECT * FROM groupArrayOrderBy('id')(id, id)
 
 DROP TABLE test
