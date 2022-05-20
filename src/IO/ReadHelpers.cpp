@@ -9,7 +9,7 @@
 #include <IO/readFloatText.h>
 #include <IO/Operators.h>
 #include <base/find_symbols.h>
-#include <stdlib.h>
+#include <cstdlib>
 
 #ifdef __SSE2__
     #include <emmintrin.h>
