@@ -7,6 +7,7 @@
 #include <DataTypes/getLeastSupertype.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
+#include "base/range.h"
 
 namespace DB
 {
@@ -224,7 +225,7 @@ private:
         {
         #define ON_TYPE(type) \
             case TypeIndex::type: \
-                return executeWithTypes<ResultType, FirstArgType, type>(arguments, input_rows_count); \
+                return executeWithTypes<ResultType, FirstArgType, type>(arguments[0].column, arguments[1].column, input_rows_count); \
                 break;
 
             SUPPORTED_TYPES(ON_TYPE)
@@ -240,13 +241,19 @@ private:
     }
 
     template <typename ResultType, typename FirstArgType, typename SecondArgType>
-    ColumnPtr executeWithTypes(const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
+    ColumnPtr executeWithTypes(ColumnPtr col_x, ColumnPtr col_y, size_t input_rows_count) const
     {
-        DataTypePtr type_x = typeid_cast<const DataTypeArray *>(arguments[0].type.get())->getNestedType();
-        DataTypePtr type_y = typeid_cast<const DataTypeArray *>(arguments[1].type.get())->getNestedType();
+        if (typeid_cast<const ColumnConst *>(col_x.get()))
+        {
+            return executeWithTypesFirstArgConst<ResultType, FirstArgType, SecondArgType>(col_x, col_y, input_rows_count);
+        }
+        else if (typeid_cast<const ColumnConst *>(col_y.get()))
+        {
+            return executeWithTypesFirstArgConst<ResultType, SecondArgType, FirstArgType>(col_y, col_x, input_rows_count);
+        }
 
-        ColumnPtr col_x = arguments[0].column->convertToFullColumnIfConst();
-        ColumnPtr col_y = arguments[1].column->convertToFullColumnIfConst();
+        col_x = col_x->convertToFullColumnIfConst();
+        col_y = col_y->convertToFullColumnIfConst();
 
         const auto & array_x = *assert_cast<const ColumnArray *>(col_x.get());
         const auto & array_y = *assert_cast<const ColumnArray *>(col_y.get());
@@ -257,7 +264,7 @@ private:
         const auto & offsets_x = array_x.getOffsets();
         const auto & offsets_y = array_y.getOffsets();
 
-        /// Check that all arrays in both columns are the sames size
+        /// Check that arrays in both columns are the sames size
         for (size_t row = 0; row < offsets_x.size(); ++row)
         {
             if (unlikely(offsets_x[row] != offsets_y[row]))
@@ -288,6 +295,56 @@ private:
         }
         return result;
     }
+
+    /// Special case when the 1st parameter is Const
+    template <typename ResultType, typename FirstArgType, typename SecondArgType>
+    ColumnPtr executeWithTypesFirstArgConst(ColumnPtr col_x, ColumnPtr col_y, size_t input_rows_count) const
+    {
+        col_x = assert_cast<const ColumnConst *>(col_x.get())->getDataColumnPtr();
+        col_y = col_y->convertToFullColumnIfConst();
+
+        const auto & array_x = *assert_cast<const ColumnArray *>(col_x.get());
+        const auto & array_y = *assert_cast<const ColumnArray *>(col_y.get());
+
+        const auto & data_x = typeid_cast<const ColumnVector<FirstArgType> &>(array_x.getData()).getData();
+        const auto & data_y = typeid_cast<const ColumnVector<SecondArgType> &>(array_y.getData()).getData();
+
+        const auto & offsets_x = array_x.getOffsets();
+        const auto & offsets_y = array_y.getOffsets();
+
+        /// Check that arrays in both columns are the sames size
+        ColumnArray::Offset prev_offset = 0;
+        for (size_t row : collections::range(0, offsets_y.size()))
+        {
+            if (unlikely(offsets_x[0] != offsets_y[row] - prev_offset))
+            {
+                throw Exception(
+                    ErrorCodes::SIZES_OF_ARRAYS_DOESNT_MATCH,
+                    "Arguments of function {} have different array sizes: {} and {}",
+                    getName(), offsets_x[0], offsets_y[row] - prev_offset);
+            }
+            prev_offset = offsets_y[row];
+        }
+
+        auto result = ColumnVector<ResultType>::create(input_rows_count);
+        auto & result_data = result->getData();
+
+        /// Do the actual computation
+        ColumnArray::Offset prev = 0;
+        size_t row = 0;
+        for (auto off : offsets_y)
+        {
+            typename Kernel::template State<Float64> state;
+            for (size_t i = 0; prev < off; ++i, ++prev)
+            {
+                Kernel::accumulate(state, data_x[i], data_y[prev]);
+            }
+            result_data[row] = Kernel::finalize(state);
+            row++;
+        }
+        return result;
+    }
+
 };
 
 void registerFunctionArrayDistance(FunctionFactory & factory)
