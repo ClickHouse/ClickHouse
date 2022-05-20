@@ -188,6 +188,8 @@ enum class AccessType
     M(HIVE, "", GLOBAL, SOURCES) \
     M(SOURCES, "", GROUP, ALL) \
     \
+    M(CLUSTER, "", GLOBAL, ALL) /* ON CLUSTER queries */ \
+    \
     M(ALL, "ALL PRIVILEGES", GROUP, NONE) /* full access */ \
     M(NONE, "USAGE, NO PRIVILEGES", GROUP, NONE) /* no access */
 

@@ -108,7 +108,7 @@ public:
         const StorageID & table_id_,
         ContextPtr context_,
         const ASTCreateQuery & query,
-        const ColumnsDescription & columns,
+        const ColumnsDescription & columns_,
         bool attach_);
 
     String getName() const override { return "WindowView"; }
@@ -166,9 +166,17 @@ public:
 
     std::pair<BlocksPtr, Block> getNewBlocks(UInt32 watermark);
 
+    BlockIO populate();
+
     static void writeIntoWindowView(StorageWindowView & window_view, const Block & block, ContextPtr context);
 
     ASTPtr getMergeableQuery() const { return mergeable_query->clone(); }
+
+    ASTPtr getSourceTableSelectQuery();
+
+    const Block & getInputHeader() const;
+
+    const Block & getOutputHeader() const;
 
 private:
     Poco::Logger * log;
@@ -180,12 +188,17 @@ private:
     /// Used to fetch the mergeable state and generate the final result. e.g. SELECT * FROM * GROUP BY tumble(____timestamp, *)
     ASTPtr final_query;
 
+    /// Used to fetch the data from inner storage.
+    ASTPtr inner_fetch_query;
+
     bool is_proctime{true};
     bool is_time_column_func_now;
     bool is_tumble; // false if is hop
     std::atomic<bool> shutdown_called{false};
     bool has_inner_table{true};
-    mutable Block sample_block;
+    bool inner_target_table{false};
+    mutable Block input_header;
+    mutable Block output_header;
     UInt64 clean_interval_ms;
     const DateLUTImpl * time_zone = nullptr;
     UInt32 max_timestamp = 0;
@@ -219,7 +232,8 @@ private:
     Int64 slide_num_units;
     String window_id_name;
     String window_id_alias;
-    String window_column_name;
+    String inner_window_column_name;
+    String inner_window_id_column_name;
     String timestamp_column_name;
 
     StorageID select_table_id = StorageID::createEmpty();
@@ -253,14 +267,9 @@ private:
     void updateMaxTimestamp(UInt32 timestamp);
 
     ASTPtr getFinalQuery() const { return final_query->clone(); }
-    ASTPtr getFetchColumnQuery(UInt32 w_start, UInt32 w_end) const;
 
-    StoragePtr getParentStorage() const;
-
-    StoragePtr getInnerStorage() const;
-
-    StoragePtr getTargetStorage() const;
-
-    Block & getHeader() const;
+    StoragePtr getSourceTable() const;
+    StoragePtr getInnerTable() const;
+    StoragePtr getTargetTable() const;
 };
 }

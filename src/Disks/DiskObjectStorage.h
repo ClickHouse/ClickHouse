@@ -186,7 +186,7 @@ private:
 
     void removeMetadataRecursive(const String & path, std::unordered_map<String, std::vector<String>> & paths_to_remove);
 
-    bool tryReserve(UInt64 bytes);
+    std::optional<UInt64> tryReserve(UInt64 bytes);
 
     bool send_metadata;
 
@@ -254,10 +254,10 @@ class DiskObjectStorageReservation final : public IReservation
 public:
     DiskObjectStorageReservation(const std::shared_ptr<DiskObjectStorage> & disk_, UInt64 size_)
         : disk(disk_), size(size_), metric_increment(CurrentMetrics::DiskSpaceReservedForMerge, size_)
-    {
-    }
 
     UInt64 getSize() const override { return size; }
+
+    UInt64 getUnreservedSpace() const override { return unreserved_space; }
 
     DiskPtr getDisk(size_t i) const override;
 
@@ -270,6 +270,7 @@ public:
 private:
     std::shared_ptr<DiskObjectStorage> disk;
     UInt64 size;
+    UInt64 unreserved_space;
     CurrentMetrics::Increment metric_increment;
 };
 
