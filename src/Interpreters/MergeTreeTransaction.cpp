@@ -38,8 +38,10 @@ void MergeTreeTransaction::setSnapshot(CSN new_snapshot)
 MergeTreeTransaction::State MergeTreeTransaction::getState() const
 {
     CSN c = csn.load();
-    if (c == Tx::UnknownCSN || c == Tx::CommittingCSN)
+    if (c == Tx::UnknownCSN)
         return RUNNING;
+    if (c == Tx::CommittingCSN)
+        return COMMITTING;
     if (c == Tx::RolledBackCSN)
         return ROLLED_BACK;
     return COMMITTED;

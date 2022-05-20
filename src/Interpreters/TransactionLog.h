@@ -127,6 +127,10 @@ private:
     void loadNewEntries();
     void removeOldEntries();
 
+    CSN finalizeCommittedTransaction(MergeTreeTransaction * txn, CSN allocated_csn) noexcept;
+
+    void tryFinalizeUnknownStateTransactions();
+
     static UInt64 deserializeCSN(const String & csn_node_name);
     static String serializeCSN(CSN csn);
     static TransactionID deserializeTID(const String & csn_node_content);
@@ -159,6 +163,9 @@ private:
     mutable std::mutex running_list_mutex;
     /// Transactions that are currently processed
     TransactionsList running_list;
+    /// If we lost connection on attempt to create csn- node then we don't know transaction's state.
+    using UnknownStateList = std::vector<std::pair<MergeTreeTransaction *, scope_guard>>;
+    UnknownStateList unknown_state_list;
     /// Ordered list of snapshots that are currently used by some transactions. Needed for background cleanup.
     std::list<CSN> snapshots_in_use;
 
