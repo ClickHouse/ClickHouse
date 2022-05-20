@@ -540,17 +540,17 @@ void FormatFactory::markOutputFormatSupportsParallelFormatting(const String & na
 
 void FormatFactory::markFormatSupportsSubsetOfColumns(const String & name)
 {
-    auto & target = dict[name].supports_subset_of_columns_columns;
+    auto & target = dict[name].supports_subset_of_columns;
     if (target)
-        throw Exception("FormatFactory: Format " + name + " is already marked as column oriented", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("FormatFactory: Format " + name + " is already marked as supporting subset of columns", ErrorCodes::LOGICAL_ERROR);
     target = true;
 }
 
 
-bool FormatFactory::checkIfFormatSupportsSubsetOfColumns(const String & name)
+bool FormatFactory::checkIfFormatSupportsSubsetOfColumns(const String & name) const
 {
     const auto & target = getCreators(name);
-    return target.supports_subset_of_columns_columns;
+    return target.supports_subset_of_columns;
 }
 
 bool FormatFactory::isInputFormat(const String & name) const
@@ -565,19 +565,19 @@ bool FormatFactory::isOutputFormat(const String & name) const
     return it != dict.end() && it->second.output_creator;
 }
 
-bool FormatFactory::checkIfFormatHasSchemaReader(const String & name)
+bool FormatFactory::checkIfFormatHasSchemaReader(const String & name) const
 {
     const auto & target = getCreators(name);
     return bool(target.schema_reader_creator);
 }
 
-bool FormatFactory::checkIfFormatHasExternalSchemaReader(const String & name)
+bool FormatFactory::checkIfFormatHasExternalSchemaReader(const String & name) const
 {
     const auto & target = getCreators(name);
     return bool(target.external_schema_reader_creator);
 }
 
-bool FormatFactory::checkIfFormatHasAnySchemaReader(const String & name)
+bool FormatFactory::checkIfFormatHasAnySchemaReader(const String & name) const
 {
     return checkIfFormatHasSchemaReader(name) || checkIfFormatHasExternalSchemaReader(name);
 }
