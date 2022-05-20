@@ -618,6 +618,12 @@ void readBackQuotedStringWithSQLStyle(String & s, ReadBuffer & buf)
     readBackQuotedStringInto<true>(s, buf);
 }
 
+template<typename T>
+concept WithResize = requires (T value)
+{
+    { value.resize(1) };
+    { value.size() } -> std::integral<>;
+};
 
 template <typename Vector>
 void readCSVStringInto(Vector & s, ReadBuffer & buf, const FormatSettings::CSV & settings)
@@ -701,7 +707,7 @@ void readCSVStringInto(Vector & s, ReadBuffer & buf, const FormatSettings::CSV &
             if (!buf.hasPendingData())
                 continue;
 
-            if constexpr (!std::is_same_v<Vector, NullOutput>)
+            if constexpr (WithResize<Vector>)
             {
                 /** CSV format can contain insignificant spaces and tabs.
                 * Usually the task of skipping them is for the calling code.
