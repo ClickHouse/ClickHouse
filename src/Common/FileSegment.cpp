@@ -528,6 +528,7 @@ void FileSegment::complete()
         /// reference to file segment apart from cache itself?
         /// Cell needs to be manually removed in this case, because in this case it might not have
         /// git into `queue`, so not removing it manually will lead to memory leaks.
+        /// TODO: This needs to be fixed by introducing per key mutex.
         if (downloaded_size == 0 && cache->getReferencesNum(key(), offset(), cache_lock) == 2)
         {
             cache->remove(key(), offset(), cache_lock);
