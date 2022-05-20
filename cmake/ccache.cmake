@@ -45,7 +45,7 @@ set(LAUNCHER ${CCACHE_EXECUTABLE})
 #
 # (*) https://reproducible-builds.org/specs/source-date-epoch/
 if (CCACHE_VERSION VERSION_GREATER_EQUAL "4.0" AND CCACHE_VERSION VERSION_LESS "4.2")
-    message(STATUS "Ignore SOURCE_DATE_EPOCH for ccache 4.1 / 4.2")
+    message(STATUS "Ignore SOURCE_DATE_EPOCH for ccache 4.0 / 4.1")
     set(LAUNCHER env -u SOURCE_DATE_EPOCH ${CCACHE_EXECUTABLE})
 endif()
 
