@@ -43,7 +43,7 @@ with client(name="client1>", log=log) as client1, client(
     )
     client1.expect(prompt)
     client1.send(
-        "CREATE WINDOW VIEW 01078_window_view_alter_query_watch.wv WATERMARK=ASCENDING AS SELECT count(a) AS count, hopEnd(wid) AS w_end FROM 01078_window_view_alter_query_watch.mt GROUP BY hop(timestamp, INTERVAL '2' SECOND, INTERVAL '3' SECOND, 'US/Samoa') AS wid"
+        "CREATE WINDOW VIEW 01078_window_view_alter_query_watch.wv ENGINE Memory WATERMARK=ASCENDING AS SELECT count(a) AS count, hopEnd(wid) AS w_end FROM 01078_window_view_alter_query_watch.mt GROUP BY hop(timestamp, INTERVAL '2' SECOND, INTERVAL '3' SECOND, 'US/Samoa') AS wid"
     )
     client1.expect(prompt)
 
