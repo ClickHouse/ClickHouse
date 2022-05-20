@@ -17,11 +17,11 @@ public:
 
     DataTypePtr getReturnType() const override { return std::make_shared<DataTypeUInt64>(); }
 
-    void dfsOrder(const GraphType & graph, Vertex vertex, VertexSet & used, std::vector<Vertex> & order) const
+    void dfsOrder(const GraphType & graph, Vertex from, VertexSet & used, std::vector<Vertex> & order) const
     {
-        std::vector<std::pair<Vertex, std::decay_t<decltype(graph.at(vertex).begin())>>> dfs_stack;
-        dfs_stack.emplace_back(vertex, graph.at(vertex).begin());
-        used.insert(vertex);
+        std::vector<std::pair<Vertex, std::decay_t<decltype(graph.at(from).begin())>>> dfs_stack;
+        dfs_stack.emplace_back(from, graph.at(from).begin());
+        used.insert(from);
         while (!dfs_stack.empty()) {
             auto [vertex, it] = dfs_stack.back();
             dfs_stack.pop_back();

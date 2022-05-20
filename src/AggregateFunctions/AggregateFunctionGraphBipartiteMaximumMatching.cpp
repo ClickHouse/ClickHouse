@@ -50,11 +50,11 @@ public:
         return color;
     }
 
-    bool dfsMatch(Vertex vertex, UInt64 currentColor, const GraphType & graph, HashMap<Vertex, UInt64> & used, VertexMap & matching) const
+    bool dfsMatch(Vertex from, UInt64 currentColor, const GraphType & graph, HashMap<Vertex, UInt64> & used, VertexMap & matching) const
     {
-        std::vector<std::pair<Vertex, std::decay_t<decltype(graph.at(vertex).begin())>>> dfs_stack;
-        dfs_stack.emplace_back(vertex, graph.at(vertex).begin());
-        used[vertex] = currentColor;
+        std::vector<std::pair<Vertex, std::decay_t<decltype(graph.at(from).begin())>>> dfs_stack;
+        dfs_stack.emplace_back(from, graph.at(from).begin());
+        used[from] = currentColor;
         while (!dfs_stack.empty()) {
             auto [vertex, it] = dfs_stack.back();
             dfs_stack.pop_back();

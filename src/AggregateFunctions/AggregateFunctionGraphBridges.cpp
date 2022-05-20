@@ -16,14 +16,14 @@ public:
 
     DataTypePtr getReturnType() const override { return std::make_shared<DataTypeUInt64>(); }
 
-    std::vector<Vertex> getDfsOrder(ConstAggregateDataPtr __restrict place, Vertex vertex, HashMap<Vertex, UInt64>& tin, HashMap<Vertex, Vertex>& parents, UInt64& timer) const {
+    std::vector<Vertex> getDfsOrder(ConstAggregateDataPtr __restrict place, Vertex from, HashMap<Vertex, UInt64>& tin, HashMap<Vertex, Vertex>& parents, UInt64& timer) const {
         std::vector<Vertex> order;
         VertexSet used;
-        std::vector<std::pair<Vertex, std::decay_t<decltype(data(place).graph.at(vertex).begin())>>> dfs_stack;
-        dfs_stack.emplace_back(vertex, data(place).graph.at(vertex).begin());
-        used.insert(vertex);
-        parents[vertex] = vertex;
-        tin[vertex] = timer++;
+        std::vector<std::pair<Vertex, std::decay_t<decltype(data(place).graph.at(from).begin())>>> dfs_stack;
+        dfs_stack.emplace_back(from, data(place).graph.at(from).begin());
+        used.insert(from);
+        parents[from] = from;
+        tin[from] = timer++;
         while (!dfs_stack.empty()) {
             auto [vertex, it] = dfs_stack.back();
             dfs_stack.pop_back();
