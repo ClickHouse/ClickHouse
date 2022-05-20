@@ -13,11 +13,11 @@ using Data = std::pair<Block, Chunks>;
 
 struct CacheKey
 {
-    CacheKey(ASTPtr ast_, const Block & header_, const Settings & settings_, const std::optional<String> & username_)
+    CacheKey(ASTPtr ast_, const Block & header_, const Settings & settings_, std::optional<String> username_)
         : ast(ast_)
         , header(header_)
         , settings(settings_)
-        , username(username_) {}
+        , username(std::move(username_)) {}
 
     bool operator==(const CacheKey & other) const
     {
