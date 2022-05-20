@@ -13,6 +13,7 @@
 #include "FileCache_fwd.h"
 #include <Common/logger_useful.h>
 #include <Common/FileSegment.h>
+#include <Common/HashTable/HashMap.h>
 #include <Core/Types.h>
 
 
@@ -221,7 +222,7 @@ private:
     };
 
     using FileSegmentsByOffset = std::map<size_t, FileSegmentCell>;
-    using CachedFiles = std::unordered_map<Key, FileSegmentsByOffset>;
+    using CachedFiles = HashMap<Key, FileSegmentsByOffset, HashCRC32<Key>>;
 
     CachedFiles files;
     LRUQueue queue;

@@ -116,11 +116,11 @@ void LRUFileCache::useCell(
 LRUFileCache::FileSegmentCell * LRUFileCache::getCell(
     const Key & key, size_t offset, std::lock_guard<std::mutex> & /* cache_lock */)
 {
-    auto it = files.find(key);
-    if (it == files.end())
+    auto * it = files.find(key);
+    if (!it)
         return nullptr;
 
-    auto & offsets = it->second;
+    auto & offsets = it->getMapped();
     auto cell_it = offsets.find(offset);
     if (cell_it == offsets.end())
         return nullptr;
@@ -134,11 +134,11 @@ FileSegments LRUFileCache::getImpl(
     /// Given range = [left, right] and non-overlapping ordered set of file segments,
     /// find list [segment1, ..., segmentN] of segments which intersect with given range.
 
-    auto it = files.find(key);
-    if (it == files.end())
+    auto * it = files.find(key);
+    if (!it)
         return {};
 
-    const auto & file_segments = it->second;
+    const auto & file_segments = it->getMapped();
     if (file_segments.empty())
     {
         auto key_path = getPathInLocalCache(key);
@@ -569,11 +569,11 @@ void LRUFileCache::remove(const Key & key)
 
     std::lock_guard cache_lock(mutex);
 
-    auto it = files.find(key);
-    if (it == files.end())
+    auto * it = files.find(key);
+    if (!it)
         return;
 
-    auto & offsets = it->second;
+    auto & offsets = it->getMapped();
 
     std::vector<FileSegmentCell *> to_remove;
     to_remove.reserve(offsets.size());
