@@ -136,6 +136,7 @@ public:
             command,
             configuration.command_arguments,
             std::move(shell_input_pipes),
+            {},
             result_block,
             context,
             shell_command_source_configuration);

@@ -37,6 +37,12 @@ namespace JSONBuilder
     using ItemPtr = std::unique_ptr<IItem>;
 }
 
+struct PipelineBuilderWithResources
+{
+    QueryPipelineBuilderPtr builder;
+    QueryPlanResourceHolder resources;
+};
+
 /// A tree of query steps.
 /// The goal of QueryPlan is to build QueryPipeline.
 /// QueryPlan let delay pipeline creation which is helpful for pipeline-level optimizations.
@@ -57,7 +63,7 @@ public:
 
     void optimize(const QueryPlanOptimizationSettings & optimization_settings);
 
-    QueryPipelineBuilderPtr buildQueryPipeline(
+    PipelineBuilderWithResources buildQueryPipeline(
         const QueryPlanOptimizationSettings & optimization_settings,
         const BuildQueryPipelineSettings & build_pipeline_settings);
 
@@ -89,10 +95,12 @@ public:
     void explainPipeline(WriteBuffer & buffer, const ExplainPipelineOptions & options);
     void explainEstimate(MutableColumns & columns);
 
-    /// Do not allow to change the table while the processors of pipe are alive.
+    /// Do not allow to change the table while the pipeline alive.
     void addTableLock(TableLockHolder lock) { resources.table_locks.emplace_back(std::move(lock)); }
     void addInterpreterContext(std::shared_ptr<const Context> context) { resources.interpreter_context.emplace_back(std::move(context)); }
     void addStorageHolder(StoragePtr storage) { resources.storage_holders.emplace_back(std::move(storage)); }
+
+    void addResources(QueryPlanResourceHolder resources_) { resources = std::move(resources_); }
 
     /// Set upper limit for the recommend number of threads. Will be applied to the newly-created pipelines.
     /// TODO: make it in a better way.

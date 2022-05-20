@@ -119,14 +119,14 @@ std::string XDBCDictionarySource::getUpdateFieldAndDate()
 }
 
 
-Pipe XDBCDictionarySource::loadAll()
+QueryPipeline XDBCDictionarySource::loadAll()
 {
     LOG_TRACE(log, fmt::runtime(load_all_query));
     return loadFromQuery(bridge_url, sample_block, load_all_query);
 }
 
 
-Pipe XDBCDictionarySource::loadUpdatedAll()
+QueryPipeline XDBCDictionarySource::loadUpdatedAll()
 {
     std::string load_query_update = getUpdateFieldAndDate();
 
@@ -135,14 +135,14 @@ Pipe XDBCDictionarySource::loadUpdatedAll()
 }
 
 
-Pipe XDBCDictionarySource::loadIds(const std::vector<UInt64> & ids)
+QueryPipeline XDBCDictionarySource::loadIds(const std::vector<UInt64> & ids)
 {
     const auto query = query_builder.composeLoadIdsQuery(ids);
     return loadFromQuery(bridge_url, sample_block, query);
 }
 
 
-Pipe XDBCDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
+QueryPipeline XDBCDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
 {
     const auto query = query_builder.composeLoadKeysQuery(key_columns, requested_rows, ExternalQueryBuilder::AND_OR_CHAIN);
     return loadFromQuery(bridge_url, sample_block, query);
@@ -204,7 +204,7 @@ std::string XDBCDictionarySource::doInvalidateQuery(const std::string & request)
 }
 
 
-Pipe XDBCDictionarySource::loadFromQuery(const Poco::URI & url, const Block & required_sample_block, const std::string & query) const
+QueryPipeline XDBCDictionarySource::loadFromQuery(const Poco::URI & url, const Block & required_sample_block, const std::string & query) const
 {
     bridge_helper->startBridgeSync();
 
@@ -220,7 +220,7 @@ Pipe XDBCDictionarySource::loadFromQuery(const Poco::URI & url, const Block & re
     auto format = getContext()->getInputFormat(IXDBCBridgeHelper::DEFAULT_FORMAT, *read_buf, required_sample_block, max_block_size);
     format->addBuffer(std::move(read_buf));
 
-    return Pipe(std::move(format));
+    return QueryPipeline(std::move(format));
 }
 
 void registerDictionarySourceXDBC(DictionarySourceFactory & factory)

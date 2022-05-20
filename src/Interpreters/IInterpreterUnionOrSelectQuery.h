@@ -8,6 +8,8 @@
 
 namespace DB
 {
+struct PipelineBuilderWithResources;
+
 class IInterpreterUnionOrSelectQuery : public IInterpreter
 {
 public:
@@ -28,7 +30,7 @@ public:
     }
 
     virtual void buildQueryPlan(QueryPlan & query_plan) = 0;
-    QueryPipelineBuilder buildQueryPipeline();
+    PipelineBuilderWithResources buildQueryPipeline();
 
     virtual void ignoreWithTotals() = 0;
 
@@ -58,6 +60,8 @@ protected:
     bool settings_limit_offset_needed = false;
     bool settings_limit_offset_done = false;
     bool uses_view_source = false;
+
+    void addLimitsAndQuotas(QueryPipeline & pipeline);
 };
 }
 

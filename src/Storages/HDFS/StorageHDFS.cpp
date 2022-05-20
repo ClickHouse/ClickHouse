@@ -33,6 +33,7 @@
 #include <Functions/FunctionsConversion.h>
 
 #include <QueryPipeline/QueryPipeline.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <QueryPipeline/Pipe.h>
 
 #include <Poco/URI.h>
@@ -296,7 +297,7 @@ HDFSSource::HDFSSource(
     UInt64 max_block_size_,
     std::shared_ptr<IteratorWrapper> file_iterator_,
     ColumnsDescription columns_description_)
-    : SourceWithProgress(getHeader(block_for_format_, requested_virtual_columns_))
+    : ISource(getHeader(block_for_format_, requested_virtual_columns_))
     , WithContext(context_)
     , storage(std::move(storage_))
     , block_for_format(block_for_format_)
@@ -337,7 +338,7 @@ bool HDFSSource::initialize()
             return std::make_shared<AddingDefaultsTransform>(header, columns_description, *input_format, getContext());
         });
     }
-    pipeline = std::make_unique<QueryPipeline>(QueryPipelineBuilder::getPipeline(std::move(builder)));
+    pipeline = std::make_unique<QueryPipeline>(QueryPipelineBuilder::getPipeline2(std::move(builder)));
     reader = std::make_unique<PullingPipelineExecutor>(*pipeline);
     return true;
 }

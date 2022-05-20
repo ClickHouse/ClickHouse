@@ -17,7 +17,7 @@
 #include <Interpreters/join_common.h>
 
 #include <Compression/CompressedWriteBuffer.h>
-#include <Processors/Sources/SourceWithProgress.h>
+#include <Processors/ISource.h>
 #include <QueryPipeline/Pipe.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Poco/String.h> /// toLower
@@ -377,11 +377,11 @@ size_t rawSize(const StringRef & t)
     return t.size;
 }
 
-class JoinSource : public SourceWithProgress
+class JoinSource : public ISource
 {
 public:
     JoinSource(HashJoinPtr join_, TableLockHolder lock_holder_, UInt64 max_block_size_, Block sample_block_)
-        : SourceWithProgress(sample_block_)
+        : ISource(sample_block_)
         , join(join_)
         , lock_holder(lock_holder_)
         , max_block_size(max_block_size_)

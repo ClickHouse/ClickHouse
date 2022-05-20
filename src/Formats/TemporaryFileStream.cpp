@@ -31,7 +31,7 @@ void TemporaryFileStream::write(const std::string & path, const Block & header, 
     CompressedWriteBuffer compressed_buf(file_buf, CompressionCodecFactory::instance().get(codec, {}));
     NativeWriter output(compressed_buf, 0, header);
 
-    auto pipeline = QueryPipelineBuilder::getPipeline(std::move(builder));
+    auto pipeline = QueryPipelineBuilder::getPipeline2(std::move(builder));
     PullingPipelineExecutor executor(pipeline);
 
     Block block;

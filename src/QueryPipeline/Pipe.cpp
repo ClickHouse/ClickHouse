@@ -8,7 +8,7 @@
 #include <Processors/Transforms/ExtremesTransform.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Sources/NullSource.h>
-#include <Processors/Sources/SourceWithProgress.h>
+#include <Processors/ISource.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <QueryPipeline/ReadProgressCallback.h>
 #include <Columns/ColumnConst.h>
@@ -703,7 +703,6 @@ void Pipe::addChains(std::vector<Chain> chains)
         connect(*output_ports[i], chains[i].getInputPort());
         output_ports[i] = &chains[i].getOutputPort();
 
-        holder = chains[i].detachResources();
         auto added_processors = Chain::getProcessors(std::move(chains[i]));
         for (auto & transform : added_processors)
         {
@@ -867,30 +866,6 @@ void Pipe::transform(const Transformer & transformer)
     processors.insert(processors.end(), new_processors.begin(), new_processors.end());
 
     max_parallel_streams = std::max<size_t>(max_parallel_streams, output_ports.size());
-}
-
-void Pipe::setLimits(const StreamLocalLimits & limits)
-{
-    if (!read_progress_callback)
-        read_progress_callback = std::make_unique<ReadProgressCallback>();
-
-    read_progress_callback->setLimits(limits);
-}
-
-void Pipe::setLeafLimits(const SizeLimits & leaf_limits)
-{
-    if (!read_progress_callback)
-        read_progress_callback = std::make_unique<ReadProgressCallback>();
-
-    read_progress_callback->setLeafLimits(leaf_limits);
-}
-
-void Pipe::setQuota(const std::shared_ptr<const EnabledQuota> & quota)
-{
-    if (!read_progress_callback)
-        read_progress_callback = std::make_unique<ReadProgressCallback>();
-
-    read_progress_callback->setQuota(quota);
 }
 
 }

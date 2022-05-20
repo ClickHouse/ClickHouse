@@ -13,7 +13,7 @@ namespace DB
 
 // /// Adds progress to ISource.
 // /// This class takes care of limits, quotas, callback on progress and updating performance counters for current thread.
-// class ISourceWithProgress : public ISource
+// class IISource : public ISource
 // {
 // public:
 //     using ISource::ISource;
@@ -45,12 +45,12 @@ namespace DB
 // };
 
 /// Default Implementation for ISource
-// class SourceWithProgress : public ISource
+// class ISource : public ISource
 // {
 // public:
-//     using ISourceWithProgress::ISourceWithProgress;
+//     using IISource::IISource;
 //     /// If enable_auto_progress flag is set, progress() will be automatically called on each generated chunk.
-//     SourceWithProgress(Block header, bool enable_auto_progress);
+//     ISource(Block header, bool enable_auto_progress);
 
 //     void setLimits(const StreamLocalLimits & limits_) final { limits = limits_; }
 //     void setLeafLimits(const SizeLimits & leaf_limits_) final {leaf_limits = leaf_limits_; }

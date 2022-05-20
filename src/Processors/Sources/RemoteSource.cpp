@@ -8,7 +8,7 @@ namespace DB
 {
 
 RemoteSource::RemoteSource(RemoteQueryExecutorPtr executor, bool add_aggregation_info_, bool async_read_)
-    : SourceWithProgress(executor->getHeader(), false)
+    : ISource(executor->getHeader(), false)
     , add_aggregation_info(add_aggregation_info_), query_executor(std::move(executor))
     , async_read(async_read_)
 {
@@ -33,7 +33,7 @@ ISource::Status RemoteSource::prepare()
     if (is_async_state)
         return Status::Async;
 
-    Status status = SourceWithProgress::prepare();
+    Status status = ISource::prepare();
     /// To avoid resetting the connection (because of "unfinished" query) in the
     /// RemoteQueryExecutor it should be finished explicitly.
     if (status == Status::Finished)
@@ -53,7 +53,12 @@ std::optional<Chunk> RemoteSource::tryGenerate()
     if (!was_query_sent)
     {
         /// Progress method will be called on Progress packet.
-        query_executor->setProgressCallback([this](const Progress & value) { progress(value); });
+        query_executor->setProgressCallback([this](const Progress & value)
+        {
+            if (value.total_rows_to_read)
+                addTotalRowsApprox(value.total_rows_to_read);
+            progress(value.read_rows, value.read_bytes);
+        });
 
         /// Get rows_before_limit result for remote query from ProfileInfo packet.
         query_executor->setProfileInfoCallback([this](const ProfileInfo & info)

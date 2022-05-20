@@ -11,6 +11,7 @@ class ISource : public IProcessor
 private:
     ReadProgress read_progress;
     bool read_progress_was_set = false;
+    bool auto_progress;
 
 protected:
     OutputPort & output;
@@ -25,7 +26,7 @@ protected:
     virtual void progress(size_t read_rows, size_t read_bytes);
 
 public:
-    explicit ISource(Block header);
+    explicit ISource(Block header, bool enable_auto_progress = false);
 
     Status prepare() override;
     void work() override;
@@ -35,6 +36,8 @@ public:
 
     /// Default implementation for all the sources.
     std::optional<ReadProgress> getReadProgress() final;
+
+    void addTotalRowsApprox(size_t value) { read_progress.total_rows_approx += value; }
 };
 
 using SourcePtr = std::shared_ptr<ISource>;

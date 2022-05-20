@@ -12,7 +12,7 @@ using StoragePtr = std::shared_ptr<IStorage>;
 class QueryPlan;
 class Context;
 
-class QueryIdHolder;
+struct QueryIdHolder;
 
 struct QueryPlanResourceHolder
 {

@@ -101,11 +101,6 @@ public:
     /// Get processors from Pipe without destroying pipe (used for EXPLAIN to keep QueryPlan).
     const Processors & getProcessors() const { return processors; }
 
-    /// Specify quotas and limits for every ISourceWithProgress.
-    void setLimits(const StreamLocalLimits & limits);
-    void setLeafLimits(const SizeLimits & leaf_limits);
-    void setQuota(const std::shared_ptr<const EnabledQuota> & quota);
-
     void addQueryIdHolder(std::shared_ptr<QueryIdHolder> query_id_holder) { holder.query_id_holder = std::move(query_id_holder); }
 
     PipelineResourcesHolder detachResources();
@@ -113,8 +108,6 @@ public:
 private:
     /// Destruction order: processors, header, locks, temporary storages, local contexts
     PipelineResourcesHolder holder;
-
-    std::unique_ptr<ReadProgressCallback> read_progress_callback;
 
     /// Header is common for all output below.
     Block header;

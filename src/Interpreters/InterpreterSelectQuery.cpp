@@ -56,7 +56,6 @@
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/QueryPlan/ReadNothingStep.h>
 #include <Processors/QueryPlan/RollupStep.h>
-#include <Processors/QueryPlan/SettingQuotaAndLimitsStep.h>
 #include <Processors/QueryPlan/TotalsHavingStep.h>
 #include <Processors/QueryPlan/WindowStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
@@ -65,6 +64,7 @@
 #include <Processors/Transforms/AggregatingTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/FilterTransform.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/MergeTreeWhereOptimizer.h>
@@ -646,36 +646,6 @@ void InterpreterSelectQuery::buildQueryPlan(QueryPlan & query_plan)
         query_plan.addStorageHolder(storage);
 }
 
-static StreamLocalLimits getLimitsForStorage(const Settings & settings, const SelectQueryOptions & options)
-{
-    StreamLocalLimits limits;
-    limits.mode = LimitsMode::LIMITS_TOTAL;
-    limits.size_limits = SizeLimits(settings.max_rows_to_read, settings.max_bytes_to_read, settings.read_overflow_mode);
-    limits.speed_limits.max_execution_time = settings.max_execution_time;
-    limits.timeout_overflow_mode = settings.timeout_overflow_mode;
-
-    /** Quota and minimal speed restrictions are checked on the initiating server of the request, and not on remote servers,
-      *  because the initiating server has a summary of the execution of the request on all servers.
-      *
-      * But limits on data size to read and maximum execution time are reasonable to check both on initiator and
-      *  additionally on each remote server, because these limits are checked per block of data processed,
-      *  and remote servers may process way more blocks of data than are received by initiator.
-      *
-      * The limits to throttle maximum execution speed is also checked on all servers.
-      */
-    if (options.to_stage == QueryProcessingStage::Complete)
-    {
-        limits.speed_limits.min_execution_rps = settings.min_execution_speed;
-        limits.speed_limits.min_execution_bps = settings.min_execution_speed_bytes;
-    }
-
-    limits.speed_limits.max_execution_rps = settings.max_execution_speed;
-    limits.speed_limits.max_execution_bps = settings.max_execution_speed_bytes;
-    limits.speed_limits.timeout_before_checking_execution_speed = settings.timeout_before_checking_execution_speed;
-
-    return limits;
-}
-
 BlockIO InterpreterSelectQuery::execute()
 {
     BlockIO res;
@@ -683,28 +653,13 @@ BlockIO InterpreterSelectQuery::execute()
 
     buildQueryPlan(query_plan);
 
-    res.pipeline = QueryPipelineBuilder::getPipeline(std::move(*query_plan.buildQueryPipeline(
-        QueryPlanOptimizationSettings::fromContext(context), BuildQueryPipelineSettings::fromContext(context))));
+    auto pipeline = query_plan.buildQueryPipeline(
+        QueryPlanOptimizationSettings::fromContext(context), BuildQueryPipelineSettings::fromContext(context));
 
-    const auto & settings = context->getSettingsRef();
+    res.pipeline = QueryPipelineBuilder::getPipeline2(std::move(*pipeline.builder));
+    res.pipeline.addResources(std::move(pipeline.resources));
 
-    StreamLocalLimits limits;
-    SizeLimits leaf_limits;
-    std::shared_ptr<const EnabledQuota> quota;
-
-    /// Set the limits and quota for reading data, the speed and time of the query.
-    if (!options.ignore_limits)
-    {
-        limits = getLimitsForStorage(settings, options);
-        leaf_limits = SizeLimits(settings.max_rows_to_read_leaf, settings.max_bytes_to_read_leaf, settings.read_overflow_mode_leaf);
-    }
-
-    if (!options.ignore_quota && (options.to_stage == QueryProcessingStage::Complete))
-        quota = context->getQuota();
-
-    res.pipeline.setLimits(limits);
-    res.pipeline.setLeafLimits(leaf_limits);
-    res.pipeline.setQuota(quota);
+    addLimitsAndQuotas(res.pipeline);
 
     return res;
 }
@@ -1191,8 +1146,9 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
     {
         if (prepared_pipe)
         {
-            auto prepared_source_step = std::make_unique<ReadFromPreparedSource>(std::move(*prepared_pipe), context);
+            auto prepared_source_step = std::make_unique<ReadFromPreparedSource>(std::move(*prepared_pipe));
             query_plan.addStep(std::move(prepared_source_step));
+            query_plan.addInterpreterContext(context);
         }
 
         if (from_stage == QueryProcessingStage::WithMergeableState &&

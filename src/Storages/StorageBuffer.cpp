@@ -26,9 +26,8 @@
 #include <Processors/Transforms/FilterTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Sinks/SinkToStorage.h>
-#include <Processors/Sources/SourceWithProgress.h>
+#include <Processors/ISource.h>
 #include <Processors/QueryPlan/QueryPlan.h>
-#include <Processors/QueryPlan/SettingQuotaAndLimitsStep.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
@@ -143,11 +142,11 @@ StorageBuffer::StorageBuffer(
 
 
 /// Reads from one buffer (from one block) under its mutex.
-class BufferSource : public SourceWithProgress
+class BufferSource : public ISource
 {
 public:
     BufferSource(const Names & column_names_, StorageBuffer::Buffer & buffer_, const StorageSnapshotPtr & storage_snapshot)
-        : SourceWithProgress(storage_snapshot->getSampleBlockForColumns(column_names_))
+        : ISource(storage_snapshot->getSampleBlockForColumns(column_names_))
         , column_names_and_types(storage_snapshot->getColumnsByNames(
             GetColumnsOptions(GetColumnsOptions::All).withSubcolumns(), column_names_))
         , buffer(buffer_) {}
@@ -334,21 +333,8 @@ void StorageBuffer::read(
 
         if (query_plan.isInitialized())
         {
-            StreamLocalLimits limits;
-            SizeLimits leaf_limits;
-
-            /// Add table lock for destination table.
-            auto adding_limits_and_quota = std::make_unique<SettingQuotaAndLimitsStep>(
-                    query_plan.getCurrentDataStream(),
-                    destination,
-                    std::move(destination_lock),
-                    limits,
-                    leaf_limits,
-                    nullptr,
-                    nullptr);
-
-            adding_limits_and_quota->setStepDescription("Lock destination table for Buffer");
-            query_plan.addStep(std::move(adding_limits_and_quota));
+            query_plan.addStorageHolder(destination);
+            query_plan.addTableLock(std::move(destination_lock));
         }
     }
 

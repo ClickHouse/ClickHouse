@@ -97,8 +97,7 @@ void QueryPlan::unitePlans(QueryPlanStepPtr step, std::vector<std::unique_ptr<Qu
     for (auto & plan : plans)
     {
         max_threads = std::max(max_threads, plan->max_threads);
-        interpreter_context.insert(interpreter_context.end(),
-                                   plan->interpreter_context.begin(), plan->interpreter_context.end());
+        resources = std::move(plan->resources);
     }
 }
 
@@ -153,7 +152,7 @@ void QueryPlan::addStep(QueryPlanStepPtr step)
         isInitialized() ? 1 : 0);
 }
 
-QueryPipelineBuilderPtr QueryPlan::buildQueryPipeline(
+PipelineBuilderWithResources QueryPlan::buildQueryPipeline(
     const QueryPlanOptimizationSettings & optimization_settings,
     const BuildQueryPipelineSettings & build_pipeline_settings)
 {
@@ -196,13 +195,10 @@ QueryPipelineBuilderPtr QueryPlan::buildQueryPipeline(
             stack.push(Frame{.node = frame.node->children[next_child]});
     }
 
-    for (auto & context : interpreter_context)
-        last_pipeline->addInterpreterContext(std::move(context));
-
-    last_pipeline->setProgressCallback(build_pipeline_settings.progress_callback);
+    /// last_pipeline->setProgressCallback(build_pipeline_settings.progress_callback);
     last_pipeline->setProcessListElement(build_pipeline_settings.process_list_element);
 
-    return last_pipeline;
+    return {std::move(last_pipeline), std::move(resources)};
 }
 
 Pipe QueryPlan::convertToPipe(
@@ -217,12 +213,6 @@ Pipe QueryPlan::convertToPipe(
 
     return QueryPipelineBuilder::getPipe(std::move(*buildQueryPipeline(optimization_settings, build_pipeline_settings)));
 }
-
-void QueryPlan::addInterpreterContext(ContextPtr context)
-{
-    interpreter_context.emplace_back(std::move(context));
-}
-
 
 static void explainStep(const IQueryPlanStep & step, JSONBuilder::JSONMap & map, const QueryPlan::ExplainPlanOptions & options)
 {

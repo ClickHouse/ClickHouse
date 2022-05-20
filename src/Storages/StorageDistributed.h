@@ -128,7 +128,7 @@ public:
 
     SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
 
-    QueryPipelineBuilderPtr distributedWrite(const ASTInsertQuery & query, ContextPtr context) override;
+    std::optional<QueryPipeline> distributedWrite(const ASTInsertQuery & query, ContextPtr context) override;
 
     /// Removes temporary data in local filesystem.
     void truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr, TableExclusiveLockHolder &) override;

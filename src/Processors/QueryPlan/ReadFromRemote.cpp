@@ -15,6 +15,7 @@
 #include <Common/checkStackSize.h>
 #include <Client/ConnectionPool.h>
 #include <Client/ConnectionPoolWithFailover.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 
 namespace DB
 {
@@ -170,7 +171,6 @@ void ReadFromRemote::addLazyPipe(Pipes & pipes, const ClusterProxy::IStreamFacto
     };
 
     pipes.emplace_back(createDelayedPipe(shard.header, lazily_create_stream, add_totals, add_extremes));
-    pipes.back().addInterpreterContext(context);
     addConvertingActions(pipes.back(), output_stream->header);
 }
 
@@ -211,7 +211,6 @@ void ReadFromRemote::addPipe(Pipes & pipes, const ClusterProxy::IStreamFactory::
         remote_query_executor->setMainTable(main_table);
 
     pipes.emplace_back(createRemoteSourcePipe(remote_query_executor, add_agg_info, add_totals, add_extremes, async_read));
-    pipes.back().addInterpreterContext(context);
     addConvertingActions(pipes.back(), output_stream->header);
 }
 

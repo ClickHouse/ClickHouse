@@ -9,8 +9,10 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
-ISource::ISource(Block header)
-    : IProcessor({}, {std::move(header)}), output(outputs.front())
+ISource::ISource(Block header, bool enable_auto_progress)
+    : IProcessor({}, {std::move(header)})
+    , auto_progress(enable_auto_progress)
+    , output(outputs.front())
 {
 }
 
@@ -72,7 +74,7 @@ void ISource::work()
             if (current_chunk.chunk)
             {
                 has_input = true;
-                if (!read_progress_was_set)
+                if (auto_progress && !read_progress_was_set)
                     progress(current_chunk.chunk.getNumRows(), current_chunk.chunk.bytes());
             }
         }
