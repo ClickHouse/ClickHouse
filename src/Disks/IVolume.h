@@ -63,7 +63,7 @@ public:
     Disks & getDisks() { return disks; }
     const Disks & getDisks() const { return disks; }
 
-    /// Returns effective value of whether merges are allowed on this volume (true) or not (false).
+    /// Returns effective value of whether merges are allowed on this volume (false) or not (true).
     virtual bool areMergesAvoided() const { return false; }
 
     /// User setting for enabling and disabling merges on volume.
