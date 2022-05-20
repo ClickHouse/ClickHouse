@@ -135,7 +135,7 @@ public:
     AWSEC2MetadataClient& operator =(const AWSEC2MetadataClient && rhs) = delete;
     AWSEC2MetadataClient(const AWSEC2MetadataClient && rhs) = delete;
 
-    virtual ~AWSEC2MetadataClient() override = default;
+    ~AWSEC2MetadataClient() override = default;
 
     using Aws::Internal::AWSHttpResourceClient::GetResource;
 
@@ -272,10 +272,10 @@ public:
     {
     }
 
-    virtual ~AWSEC2InstanceProfileConfigLoader() override = default;
+    ~AWSEC2InstanceProfileConfigLoader() override = default;
 
 protected:
-    virtual bool LoadInternal() override
+    bool LoadInternal() override
     {
         auto credentials_str = use_secure_pull ? client->getDefaultCredentialsSecurely() : client->getDefaultCredentials();
 
