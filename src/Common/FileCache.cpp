@@ -398,7 +398,9 @@ LRUFileCache::FileSegmentCell * LRUFileCache::addCell(
     if (!size)
         return nullptr; /// Empty files are not cached.
 
-    if (files[key].contains(offset))
+    auto & offsets = files[key];
+
+    if (offsets.contains(offset))
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
             "Cache already exists for key: `{}`, offset: {}, size: {}.\nCurrent cache structure: {}",
@@ -406,8 +408,6 @@ LRUFileCache::FileSegmentCell * LRUFileCache::addCell(
 
     auto file_segment = std::make_shared<FileSegment>(offset, size, key, this, state);
     FileSegmentCell cell(std::move(file_segment), this, cache_lock);
-
-    auto & offsets = files[key];
 
     if (offsets.empty())
     {
@@ -817,9 +817,12 @@ std::vector<String> LRUFileCache::tryGetCachePaths(const Key & key)
 {
     std::lock_guard cache_lock(mutex);
 
-    std::vector<String> cache_paths;
+    auto * it = files.find(key);
+    if (!it)
+        return {};
 
-    const auto & cells_by_offset = files[key];
+    const auto & cells_by_offset = it->getMapped();
+    std::vector<String> cache_paths;
 
     for (const auto & [offset, cell] : cells_by_offset)
     {
@@ -987,7 +990,8 @@ String LRUFileCache::dumpStructure(const Key & key)
 String LRUFileCache::dumpStructureUnlocked(const Key & key, std::lock_guard<std::mutex> & cache_lock)
 {
     WriteBufferFromOwnString result;
-    const auto & cells_by_offset = files[key];
+
+    const auto & cells_by_offset = files.at(key);
 
     for (const auto & [offset, cell] : cells_by_offset)
         result << cell.file_segment->getInfoForLog() << "\n";
@@ -1014,14 +1018,16 @@ void LRUFileCache::assertCacheCellsCorrectness(
 
 void LRUFileCache::assertCacheCorrectness(const Key & key, std::lock_guard<std::mutex> & cache_lock)
 {
-    assertCacheCellsCorrectness(files[key], cache_lock);
+    auto * it = files.find(key);
+    if (it)
+        assertCacheCellsCorrectness(it->getMapped(), cache_lock);
     queue.assertCorrectness(this, cache_lock);
 }
 
 void LRUFileCache::assertCacheCorrectness(std::lock_guard<std::mutex> & cache_lock)
 {
     for (const auto & [key, cells_by_offset] : files)
-        assertCacheCellsCorrectness(files[key], cache_lock);
+        assertCacheCellsCorrectness(files.at(key), cache_lock);
     queue.assertCorrectness(this, cache_lock);
 }
 
