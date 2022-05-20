@@ -34,7 +34,7 @@ void JSONColumnsWithMetadataBlockOutputFormat::writePrefix()
 void JSONColumnsWithMetadataBlockOutputFormat::writeSuffix()
 {
     rows = mono_chunk.getNumRows();
-    JSONColumnsBaseBlockOutputFormat::writeSuffix();
+    JSONColumnsBlockOutputFormatBase::writeSuffix();
 }
 
 void JSONColumnsWithMetadataBlockOutputFormat::writeChunkStart()

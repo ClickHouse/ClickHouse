@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Processors/Formats/Impl/JSONColumnsBaseBlockOutputFormat.h>
+#include <Processors/Formats/Impl/JSONColumnsBlockOutputFormatBase.h>
 
 namespace DB
 {
@@ -12,7 +12,7 @@ namespace DB
  *     ...
  * }
  */
-class JSONColumnsBlockOutputFormat : public JSONColumnsBaseBlockOutputFormat
+class JSONColumnsBlockOutputFormat : public JSONColumnsBlockOutputFormatBase
 {
 public:
     JSONColumnsBlockOutputFormat(WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_, size_t indent_ = 0);

@@ -5,7 +5,7 @@
 namespace DB
 {
 
-JSONCompactColumnsReader::JSONCompactColumnsReader(ReadBuffer & in_) : JSONColumnsBaseReader(in_)
+JSONCompactColumnsReader::JSONCompactColumnsReader(ReadBuffer & in_) : JSONColumnsReaderBase(in_)
 {
 }
 
@@ -46,7 +46,7 @@ void registerInputFormatJSONCompactColumns(FormatFactory & factory)
            const RowInputFormatParams &,
            const FormatSettings & settings)
         {
-            return std::make_shared<JSONColumnsBaseBlockInputFormat>(buf, sample, settings, std::make_unique<JSONCompactColumnsReader>(buf));
+            return std::make_shared<JSONColumnsBlockInputFormatBase>(buf, sample, settings, std::make_unique<JSONCompactColumnsReader>(buf));
         }
     );
 }
@@ -57,7 +57,7 @@ void registerJSONCompactColumnsSchemaReader(FormatFactory & factory)
         "JSONCompactColumns",
         [](ReadBuffer & buf, const FormatSettings & settings)
         {
-            return std::make_shared<JSONColumnsBaseSchemaReader>(buf, settings, std::make_unique<JSONCompactColumnsReader>(buf));
+            return std::make_shared<JSONColumnsSchemaReaderBase>(buf, settings, std::make_unique<JSONCompactColumnsReader>(buf));
         }
     );
 }

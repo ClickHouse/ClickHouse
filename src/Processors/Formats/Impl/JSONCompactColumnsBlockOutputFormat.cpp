@@ -7,7 +7,7 @@ namespace DB
 {
 
 JSONCompactColumnsBlockOutputFormat::JSONCompactColumnsBlockOutputFormat(WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_)
-    : JSONColumnsBaseBlockOutputFormat(out_, header_, format_settings_), column_names(header_.getNames())
+    : JSONColumnsBlockOutputFormatBase(out_, header_, format_settings_), column_names(header_.getNames())
 {
 }
 

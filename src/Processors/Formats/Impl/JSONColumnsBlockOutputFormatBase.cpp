@@ -1,4 +1,4 @@
-#include <Processors/Formats/Impl/JSONColumnsBaseBlockOutputFormat.h>
+#include <Processors/Formats/Impl/JSONColumnsBlockOutputFormatBase.h>
 #include <IO/WriteHelpers.h>
 #include <Formats/JSONUtils.h>
 
@@ -6,7 +6,7 @@
 namespace DB
 {
 
-JSONColumnsBaseBlockOutputFormat::JSONColumnsBaseBlockOutputFormat(
+JSONColumnsBlockOutputFormatBase::JSONColumnsBlockOutputFormatBase(
     WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_)
     : IOutputFormat(header_, out_)
     , format_settings(format_settings_)
@@ -15,7 +15,7 @@ JSONColumnsBaseBlockOutputFormat::JSONColumnsBaseBlockOutputFormat(
 {
 }
 
-void JSONColumnsBaseBlockOutputFormat::consume(Chunk chunk)
+void JSONColumnsBlockOutputFormatBase::consume(Chunk chunk)
 {
     if (!mono_chunk)
     {
@@ -26,14 +26,14 @@ void JSONColumnsBaseBlockOutputFormat::consume(Chunk chunk)
     mono_chunk.append(chunk);
 }
 
-void JSONColumnsBaseBlockOutputFormat::writeSuffix()
+void JSONColumnsBlockOutputFormatBase::writeSuffix()
 {
 
     writeChunk(mono_chunk);
     mono_chunk.clear();
 }
 
-void JSONColumnsBaseBlockOutputFormat::writeChunk(Chunk & chunk)
+void JSONColumnsBlockOutputFormatBase::writeChunk(Chunk & chunk)
 {
     writeChunkStart();
     const auto & columns = chunk.getColumns();
@@ -46,14 +46,14 @@ void JSONColumnsBaseBlockOutputFormat::writeChunk(Chunk & chunk)
     writeChunkEnd();
 }
 
-void JSONColumnsBaseBlockOutputFormat::writeColumnEnd(bool is_last)
+void JSONColumnsBlockOutputFormatBase::writeColumnEnd(bool is_last)
 {
     JSONUtils::writeCompactArrayEnd(*ostr);
     if (!is_last)
         JSONUtils::writeFieldDelimiter(*ostr);
 }
 
-void JSONColumnsBaseBlockOutputFormat::writeColumn(const IColumn & column, const ISerialization & serialization)
+void JSONColumnsBlockOutputFormatBase::writeColumn(const IColumn & column, const ISerialization & serialization)
 {
     for (size_t i = 0; i != column.size(); ++i)
     {

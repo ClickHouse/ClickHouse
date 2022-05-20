@@ -12,12 +12,12 @@ class ReadBuffer;
 
 
 /// Base class for reading data in Columnar JSON formats.
-class JSONColumnsBaseReader
+class JSONColumnsReaderBase
 {
 public:
-    JSONColumnsBaseReader(ReadBuffer & in_);
+    JSONColumnsReaderBase(ReadBuffer & in_);
 
-    virtual ~JSONColumnsBaseReader() = default;
+    virtual ~JSONColumnsReaderBase() = default;
 
     void setReadBuffer(ReadBuffer & in_) { in = &in_; }
 
@@ -38,15 +38,15 @@ protected:
 
 
 /// Base class for Columnar JSON input formats. It works with data using
-/// JSONColumnsBaseReader interface.
-/// To implement new Columnar JSON format you need to implement new JSONColumnsBaseReader
-/// interface and provide it to JSONColumnsBaseBlockInputFormat.
-class JSONColumnsBaseBlockInputFormat : public IInputFormat
+/// JSONColumnsReaderBase interface.
+/// To implement new Columnar JSON format you need to implement new JSONColumnsReaderBase
+/// interface and provide it to JSONColumnsBlockInputFormatBase.
+class JSONColumnsBlockInputFormatBase : public IInputFormat
 {
 public:
-    JSONColumnsBaseBlockInputFormat(ReadBuffer & in_, const Block & header_, const FormatSettings & format_settings_, std::unique_ptr<JSONColumnsBaseReader> reader_);
+    JSONColumnsBlockInputFormatBase(ReadBuffer & in_, const Block & header_, const FormatSettings & format_settings_, std::unique_ptr<JSONColumnsReaderBase> reader_);
 
-    String getName() const override { return "JSONColumnsBaseBlockInputFormat"; }
+    String getName() const override { return "JSONColumnsBlockInputFormatBase"; }
 
     void setReadBuffer(ReadBuffer & in_) override;
 
@@ -62,19 +62,19 @@ protected:
     /// Maps column names and their positions in header.
     std::unordered_map<String, size_t> name_to_index;
     Serializations serializations;
-    std::unique_ptr<JSONColumnsBaseReader> reader;
+    std::unique_ptr<JSONColumnsReaderBase> reader;
     BlockMissingValues block_missing_values;
 };
 
 
 /// Base class for schema inference from Columnar JSON input formats. It works with data using
-/// JSONColumnsBaseReader interface.
-/// To implement schema reader for the new Columnar JSON format you need to implement new JSONColumnsBaseReader
-/// interface and provide it to JSONColumnsBaseSchemaReader.
-class JSONColumnsBaseSchemaReader : public ISchemaReader
+/// JSONColumnsReaderBase interface.
+/// To implement schema reader for the new Columnar JSON format you need to implement new JSONColumnsReaderBase
+/// interface and provide it to JSONColumnsSchemaReaderBase.
+class JSONColumnsSchemaReaderBase : public ISchemaReader
 {
 public:
-    JSONColumnsBaseSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_, std::unique_ptr<JSONColumnsBaseReader> reader_);
+    JSONColumnsSchemaReaderBase(ReadBuffer & in_, const FormatSettings & format_settings_, std::unique_ptr<JSONColumnsReaderBase> reader_);
 
 private:
     NamesAndTypesList readSchema() override;
@@ -86,7 +86,7 @@ private:
     void chooseResulType(DataTypePtr & type, const DataTypePtr & new_type, const String & column_name, size_t row) const;
 
     const FormatSettings format_settings;
-    std::unique_ptr<JSONColumnsBaseReader> reader;
+    std::unique_ptr<JSONColumnsReaderBase> reader;
 };
 
 }
