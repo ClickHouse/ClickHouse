@@ -1,5 +1,5 @@
 #if defined(OS_LINUX)
-#include <stdlib.h>
+#include <cstdlib>
 
 /// Interposing these symbols explicitly. The idea works like this: malloc.cpp compiles to a
 /// dedicated object (namely clickhouse_malloc.o), and it will show earlier in the link command
