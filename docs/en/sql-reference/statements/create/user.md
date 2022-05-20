@@ -35,7 +35,7 @@ There are multiple ways of user identification:
 -   `IDENTIFIED WITH ldap SERVER 'server_name'`
 -   `IDENTIFIED WITH kerberos` or `IDENTIFIED WITH kerberos REALM 'realm'`
 
-For identifacation with sha256_hash using `SALT` - hash must be calculated from concatination of 'user' and 'salt'.
+For identifacation with sha256_hash using `SALT` - hash must be calculated from concatination of 'password' and 'salt'.
 
 ## User Host {#user-host}
 
