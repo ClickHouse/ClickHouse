@@ -100,7 +100,7 @@ public:
     explicit ColumnsDescription(NamesAndTypesList ordinary, NamesAndAliases aliases);
 
     /// `after_column` can be a Nested column name;
-    void add(ColumnDescription column, const String & after_column = String(), bool first = false);
+    void add(ColumnDescription column, const String & after_column = String(), bool first = false, bool add_subcolumns = true);
     /// `column_name` can be a Nested column name;
     void remove(const String & column_name);
 
