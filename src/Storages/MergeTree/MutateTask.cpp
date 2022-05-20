@@ -377,10 +377,10 @@ static std::set<MergeTreeIndexPtr> getIndicesToRecalculate(
         /// all required columns.
         /// TODO move this logic to single place.
         QueryPipelineBuilder builder;
-        builder.init(std::move(pipeline));
+        builder.init(pipeline);
         builder.addTransform(std::make_shared<ExpressionTransform>(builder.getHeader(), indices_recalc_expr));
         builder.addTransform(std::make_shared<MaterializingTransform>(builder.getHeader()));
-        pipeline = QueryPipelineBuilder::getPipeline(std::move(builder));
+        QueryPipelineBuilder::updatePipeline(std::move(builder), pipeline);
     }
     return indices_to_recalc;
 }
@@ -1080,7 +1080,7 @@ private:
             throw Exception("Cannot mutate part columns with uninitialized mutations stream. It's a bug", ErrorCodes::LOGICAL_ERROR);
 
         QueryPipelineBuilder builder;
-        builder.init(std::move(ctx->mutating_pipeline));
+        builder.init(ctx->mutating_pipeline);
 
         if (ctx->metadata_snapshot->hasPrimaryKey() || ctx->metadata_snapshot->hasSecondaryIndices())
         {
@@ -1106,7 +1106,7 @@ private:
             ctx->compression_codec,
             ctx->txn);
 
-        ctx->mutating_pipeline = QueryPipelineBuilder::getPipeline(std::move(builder));
+        QueryPipelineBuilder::updatePipeline(std::move(builder), ctx->mutating_pipeline);
         ctx->mutating_executor = std::make_unique<PullingPipelineExecutor>(ctx->mutating_pipeline);
 
         part_merger_writer_task = std::make_unique<PartMergerWriter>(ctx);
@@ -1261,7 +1261,7 @@ private:
         if (ctx->mutating_pipeline.initialized())
         {
             QueryPipelineBuilder builder;
-            builder.init(std::move(ctx->mutating_pipeline));
+            builder.init(ctx->mutating_pipeline);
 
             if (ctx->execute_ttl_type == ExecuteTTLType::NORMAL)
                 builder.addTransform(std::make_shared<TTLTransform>(builder.getHeader(), *ctx->data, ctx->metadata_snapshot, ctx->new_data_part, ctx->time_of_mutation, true));
@@ -1280,7 +1280,7 @@ private:
                 &ctx->source_part->index_granularity_info
             );
 
-            ctx->mutating_pipeline = QueryPipelineBuilder::getPipeline(std::move(builder));
+            QueryPipelineBuilder::updatePipeline(std::move(builder), ctx->mutating_pipeline);
             ctx->mutating_executor = std::make_unique<PullingPipelineExecutor>(ctx->mutating_pipeline);
 
             ctx->projections_to_build = std::vector<ProjectionDescriptionRawPtr>{ctx->projections_to_recalc.begin(), ctx->projections_to_recalc.end()};

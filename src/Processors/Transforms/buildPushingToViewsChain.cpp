@@ -13,6 +13,7 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeSink.h>
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageValues.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Common/CurrentThread.h>
 #include <Common/MemoryTracker.h>
 #include <Common/ProfileEvents.h>
@@ -447,7 +448,7 @@ static QueryPipeline process(Block block, ViewRuntimeData & view, const ViewsDat
         pipeline.getHeader(),
         std::make_shared<ExpressionActions>(std::move(converting))));
 
-    return QueryPipelineBuilder::getPipeline(std::move(pipeline));
+    return QueryPipelineBuilder::getPipeline2(std::move(pipeline));
 }
 
 static void logQueryViews(std::list<ViewRuntimeData> & views, ContextPtr context)

@@ -18,8 +18,8 @@
 
 #include <Common/typeid_cast.h>
 #include <Common/checkStackSize.h>
+#include <QueryPipeline/Pipe.h>
 #include <Processors/QueryPlan/QueryPlan.h>
-#include <Processors/QueryPlan/SettingQuotaAndLimitsStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
@@ -207,21 +207,8 @@ void StorageMaterializedView::read(
             query_plan.addStep(std::move(converting_step));
         }
 
-        StreamLocalLimits limits;
-        SizeLimits leaf_limits;
-
-        /// Add table lock for destination table.
-        auto adding_limits_and_quota = std::make_unique<SettingQuotaAndLimitsStep>(
-                query_plan.getCurrentDataStream(),
-                storage,
-                std::move(lock),
-                limits,
-                leaf_limits,
-                nullptr,
-                nullptr);
-
-        adding_limits_and_quota->setStepDescription("Lock destination table for MaterializedView");
-        query_plan.addStep(std::move(adding_limits_and_quota));
+        query_plan.addStorageHolder(storage);
+        query_plan.addTableLock(std::move(lock));
     }
 }
 

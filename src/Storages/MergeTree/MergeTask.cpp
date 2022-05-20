@@ -423,10 +423,6 @@ void MergeTask::VerticalMergeStage::prepareVerticalMergeForOneColumn() const
         auto column_part_source = std::make_shared<MergeTreeSequentialSource>(
             *global_ctx->data, global_ctx->storage_snapshot, global_ctx->future_part->parts[part_num], column_names, ctx->read_with_direct_io, true);
 
-        /// Dereference unique_ptr
-        column_part_source->setProgressCallback(
-            MergeProgressCallback(global_ctx->merge_list_element_ptr, global_ctx->watch_prev_elapsed, *global_ctx->column_progress));
-
         pipes.emplace_back(std::move(column_part_source));
     }
 
@@ -437,6 +433,13 @@ void MergeTask::VerticalMergeStage::prepareVerticalMergeForOneColumn() const
     pipe.addTransform(std::move(transform));
 
     ctx->column_parts_pipeline = QueryPipeline(std::move(pipe));
+
+    /// Dereference unique_ptr
+    ctx->column_parts_pipeline.setProgressCallback(MergeProgressCallback(
+        global_ctx->merge_list_element_ptr,
+        global_ctx->watch_prev_elapsed,
+        *global_ctx->column_progress));
+
     ctx->executor = std::make_unique<PullingPipelineExecutor>(ctx->column_parts_pipeline);
 
     ctx->column_to = std::make_unique<MergedColumnOnlyOutputStream>(
@@ -758,10 +761,6 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream()
         auto input = std::make_unique<MergeTreeSequentialSource>(
             *global_ctx->data, global_ctx->storage_snapshot, part, global_ctx->merging_column_names, ctx->read_with_direct_io, true);
 
-        /// Dereference unique_ptr and pass horizontal_stage_progress by reference
-        input->setProgressCallback(
-            MergeProgressCallback(global_ctx->merge_list_element_ptr, global_ctx->watch_prev_elapsed, *global_ctx->horizontal_stage_progress));
-
         Pipe pipe(std::move(input));
 
         if (global_ctx->metadata_snapshot->hasSortingKey())
@@ -858,6 +857,8 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream()
     }
 
     global_ctx->merged_pipeline = QueryPipeline(std::move(res_pipe));
+    /// Dereference unique_ptr and pass horizontal_stage_progress by reference
+    global_ctx->merged_pipeline.setProgressCallback(MergeProgressCallback(global_ctx->merge_list_element_ptr, global_ctx->watch_prev_elapsed, *global_ctx->horizontal_stage_progress));
     global_ctx->merging_executor = std::make_unique<PullingPipelineExecutor>(global_ctx->merged_pipeline);
 }
 

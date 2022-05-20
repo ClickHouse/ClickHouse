@@ -10,6 +10,8 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Processors/Transforms/FilterTransform.h>
+#include <Processors/QueryPlan/FilterStep.h>
+#include <Processors/QueryPlan/QueryPlan.h>
 #include <Interpreters/Context.h>
 
 
@@ -24,7 +26,8 @@ bool needRewriteQueryWithFinalForStorage(const Names & column_names, const Stora
     return std::find(column_names.begin(), column_names.end(), version_column.name) == column_names.end();
 }
 
-Pipe readFinalFromNestedStorage(
+void readFinalFromNestedStorage(
+    QueryPlan & query_plan,
     StoragePtr nested_storage,
     const Names & column_names,
     SelectQueryInfo & query_info,
@@ -55,23 +58,25 @@ Pipe readFinalFromNestedStorage(
     }
 
     auto nested_snapshot = nested_storage->getStorageSnapshot(nested_metadata, context);
-    Pipe pipe = nested_storage->read(require_columns_name, nested_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
-    pipe.addTableLock(lock);
-    pipe.addStorageHolder(nested_storage);
+    nested_storage->read(query_plan, require_columns_name, nested_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
+    query_plan.addTableLock(lock);
+    query_plan.addStorageHolder(nested_storage);
 
-    if (!expressions->children.empty() && !pipe.empty())
+    if (!expressions->children.empty())
     {
-        Block pipe_header = pipe.getHeader();
-        auto syntax = TreeRewriter(context).analyze(expressions, pipe_header.getNamesAndTypesList());
-        ExpressionActionsPtr expression_actions = ExpressionAnalyzer(expressions, syntax, context).getActions(true /* add_aliases */, false /* project_result */);
+        const auto & header = query_plan.getCurrentDataStream().header;
+        auto syntax = TreeRewriter(context).analyze(expressions, header.getNamesAndTypesList());
+        auto actions = ExpressionAnalyzer(expressions, syntax, context).getActionsDAG(true /* add_aliases */, false /* project_result */);
 
-        pipe.addSimpleTransform([&](const Block & header)
-        {
-            return std::make_shared<FilterTransform>(header, expression_actions, filter_column_name, false);
-        });
+        auto step = std::make_unique<FilterStep>(
+            query_plan.getCurrentDataStream(),
+            actions,
+            filter_column_name,
+            false);
+
+        step->setStepDescription("Filter columns");
+        query_plan.addStep(std::move(step));
     }
-
-    return pipe;
 }
 }
 

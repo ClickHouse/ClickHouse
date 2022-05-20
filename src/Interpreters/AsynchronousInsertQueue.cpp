@@ -23,6 +23,8 @@
 #include <Access/EnabledQuota.h>
 #include <Formats/FormatFactory.h>
 #include <Common/logger_useful.h>
+#include <QueryPipeline/Pipe.h>
+#include <QueryPipeline/QueryPipeline.h>
 
 
 namespace CurrentMetrics

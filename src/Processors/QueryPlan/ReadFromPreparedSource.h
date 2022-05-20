@@ -9,7 +9,7 @@ namespace DB
 class ReadFromPreparedSource : public ISourceStep
 {
 public:
-    explicit ReadFromPreparedSource(Pipe pipe_, ContextPtr context_ = nullptr);
+    explicit ReadFromPreparedSource(Pipe pipe_);
 
     String getName() const override { return "ReadFromPreparedSource"; }
 

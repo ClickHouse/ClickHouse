@@ -29,7 +29,7 @@
 
 #include <algorithm>
 #include <Processors/Executors/PullingPipelineExecutor.h>
-#include <Processors/Sources/SourceWithProgress.h>
+#include <Processors/ISource.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Common/logger_useful.h>
 #include <Poco/Net/HTTPRequest.h>
@@ -113,7 +113,7 @@ namespace
     }
 
 
-    class StorageURLSource : public SourceWithProgress
+    class StorageURLSource : public ISource
     {
         using URIParams = std::vector<std::pair<String, String>>;
 
@@ -164,7 +164,7 @@ namespace
             const ReadWriteBufferFromHTTP::HTTPHeaderEntries & headers_ = {},
             const URIParams & params = {},
             bool glob_url = false)
-            : SourceWithProgress(sample_block), name(std::move(name_)), uri_info(uri_info_)
+            : ISource(sample_block), name(std::move(name_)), uri_info(uri_info_)
         {
             auto headers = getHeaders(headers_);
 
@@ -199,7 +199,7 @@ namespace
                     [&](const Block & cur_header)
                     { return std::make_shared<AddingDefaultsTransform>(cur_header, columns, *input_format, context); });
 
-                pipeline = std::make_unique<QueryPipeline>(QueryPipelineBuilder::getPipeline(std::move(builder)));
+                pipeline = std::make_unique<QueryPipeline>(QueryPipelineBuilder::getPipeline2(std::move(builder)));
                 reader = std::make_unique<PullingPipelineExecutor>(*pipeline);
             };
         }

@@ -82,7 +82,7 @@ void QueryPipelineBuilder::init(Pipe pipe_)
     pipe = std::move(pipe_);
 }
 
-void QueryPipelineBuilder::init(QueryPipeline pipeline)
+void QueryPipelineBuilder::init(QueryPipeline & pipeline)
 {
     if (initialized())
         throw Exception("Pipeline has already been initialized", ErrorCodes::LOGICAL_ERROR);
@@ -90,8 +90,6 @@ void QueryPipelineBuilder::init(QueryPipeline pipeline)
     if (pipeline.pushing())
         throw Exception("Can't initialize pushing pipeline", ErrorCodes::LOGICAL_ERROR);
 
-    pipe.holder = std::move(pipeline.resources);
-    pipe.processors = std::move(pipeline.processors);
     if (pipeline.output)
     {
         pipe.output_ports = {pipeline.output};
@@ -441,24 +439,9 @@ void QueryPipelineBuilder::addPipelineBefore(QueryPipelineBuilder pipeline)
     addTransform(std::move(processor));
 }
 
-void QueryPipelineBuilder::setProgressCallback(const ProgressCallback & callback)
-{
-    for (auto & processor : pipe.processors)
-    {
-        if (auto * source = dynamic_cast<ISourceWithProgress *>(processor.get()))
-            source->setProgressCallback(callback);
-    }
-}
-
 void QueryPipelineBuilder::setProcessListElement(QueryStatus * elem)
 {
     process_list_element = elem;
-
-    for (auto & processor : pipe.processors)
-    {
-        if (auto * source = dynamic_cast<ISourceWithProgress *>(processor.get()))
-            source->setProcessListElement(elem);
-    }
 }
 
 PipelineExecutorPtr QueryPipelineBuilder::execute()
@@ -469,12 +452,37 @@ PipelineExecutorPtr QueryPipelineBuilder::execute()
     return std::make_shared<PipelineExecutor>(pipe.processors, process_list_element);
 }
 
-QueryPipeline QueryPipelineBuilder::getPipeline(QueryPipelineBuilder builder)
+QueryPipeline QueryPipelineBuilder::getPipeline2(QueryPipelineBuilder builder)
 {
     QueryPipeline res(std::move(builder.pipe));
     res.setNumThreads(builder.getNumThreads());
     res.setProcessListElement(builder.process_list_element);
     return res;
+}
+
+void QueryPipelineBuilder::updatePipeline(QueryPipelineBuilder builder, QueryPipeline & query_pipeline)
+{
+    if (builder.pipe.numOutputPorts() > 0)
+    {
+        builder.pipe.resize(1);
+        query_pipeline.output = builder.pipe.getOutputPort(0);
+        query_pipeline.totals = builder.pipe.getTotalsPort();
+        query_pipeline.extremes = builder.pipe.getExtremesPort();
+
+    }
+    else
+    {
+        query_pipeline.output = nullptr;
+        query_pipeline.totals = nullptr;
+        query_pipeline.extremes = nullptr;
+    }
+
+    query_pipeline.processors.insert(
+        query_pipeline.processors.end(),
+        builder.pipe.processors.begin(), builder.pipe.processors.end());
+
+    query_pipeline.setNumThreads(builder.getNumThreads());
+    query_pipeline.setProcessListElement(builder.process_list_element);
 }
 
 void QueryPipelineBuilder::setCollectedProcessors(Processors * processors)

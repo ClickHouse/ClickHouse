@@ -42,7 +42,8 @@ public:
 
     /// All pipes must have same header.
     void init(Pipe pipe);
-    void init(QueryPipeline pipeline);
+    /// This is a constructor which adds some steps to pipeline.
+    void init(QueryPipeline & pipeline);
     /// Clear and release all resources.
     void reset();
 
@@ -58,6 +59,8 @@ public:
     void addTransform(ProcessorPtr transform);
     void addTransform(ProcessorPtr transform, InputPort * totals, InputPort * extremes);
 
+    /// Note: this two methods do not care about resources inside the chain.
+    /// You should attach them yourself.
     void addChains(std::vector<Chain> chains);
     void addChain(Chain chain);
 
@@ -118,11 +121,6 @@ public:
 
     const Block & getHeader() const { return pipe.getHeader(); }
 
-    void setLimits(const StreamLocalLimits & limits) { pipe.setLimits(limits); }
-    void setLeafLimits(const SizeLimits & limits) { pipe.setLeafLimits(limits); }
-    void setQuota(const std::shared_ptr<const EnabledQuota> & quota) { pipe.setQuota(quota); }
-
-    void setProgressCallback(const ProgressCallback & callback);
     void setProcessListElement(QueryStatus * elem);
 
     /// Recommend number of threads for pipeline execution.
@@ -148,7 +146,8 @@ public:
 
     /// Convert query pipeline to pipe.
     static Pipe getPipe(QueryPipelineBuilder pipeline) { return std::move(pipeline.pipe); }
-    static QueryPipeline getPipeline(QueryPipelineBuilder builder);
+    static QueryPipeline getPipeline2(QueryPipelineBuilder builder);
+    static void updatePipeline(QueryPipelineBuilder builder, QueryPipeline & query_pipeline);
 
 private:
 

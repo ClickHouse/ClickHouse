@@ -50,6 +50,7 @@
 #include <Storages/WindowView/WindowViewSource.h>
 
 #include <QueryPipeline/printPipeline.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 
 namespace DB
 {
@@ -531,7 +532,7 @@ std::pair<BlocksPtr, Block> StorageWindowView::getNewBlocks(UInt32 watermark)
     });
 
     auto header = builder.getHeader();
-    auto pipeline = QueryPipelineBuilder::getPipeline(std::move(builder));
+    auto pipeline = QueryPipelineBuilder::getPipeline2(std::move(builder));
 
     PullingAsyncPipelineExecutor executor(pipeline);
     Block block;

@@ -29,6 +29,8 @@
 #include <Processors/Transforms/MaterializingTransform.h>
 #include <Processors/ConcatProcessor.h>
 #include <Processors/Transforms/ExpressionTransform.h>
+#include <Processors/QueryPlan/QueryPlan.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 
 
 namespace DB
@@ -234,7 +236,8 @@ SelectQueryInfo StorageMerge::getModifiedQueryInfo(
 }
 
 
-Pipe StorageMerge::read(
+void StorageMerge::read(
+    QueryPlan & query_plan,
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
     SelectQueryInfo & query_info,
@@ -275,11 +278,16 @@ Pipe StorageMerge::read(
     StorageListWithLocks selected_tables
         = getSelectedTables(local_context, query_info.query, has_database_virtual_column, has_table_virtual_column);
 
+    query_plan.addInterpreterContext(modified_context);
+
+    QueryPlanResourceHolder resources;
+
     if (selected_tables.empty())
     {
         auto modified_query_info = getModifiedQueryInfo(query_info, modified_context, getStorageID(), false);
         /// FIXME: do we support sampling in this case?
-        return createSources(
+        auto pipe = createSources(
+            resources,
             {},
             modified_query_info,
             processed_stage,
@@ -292,6 +300,9 @@ Pipe StorageMerge::read(
             0,
             has_database_virtual_column,
             has_table_virtual_column);
+
+        IStorage::readFromPipe(query_plan, std::move(pipe), column_names, storage_snapshot, query_info, local_context, getName());
+        return;
     }
 
     size_t tables_count = selected_tables.size();
@@ -386,7 +397,11 @@ Pipe StorageMerge::read(
                 column_names_as_aliases.push_back(ExpressionActions::getSmallestColumn(storage_metadata_snapshot->getColumns().getAllPhysical()));
         }
 
+        query_plan.addStorageHolder(std::get<1>(table));
+        query_plan.addTableLock(std::get<2>(table));
+
         auto source_pipe = createSources(
+            resources,
             nested_storage_snaphsot,
             modified_query_info,
             processed_stage,
@@ -411,10 +426,12 @@ Pipe StorageMerge::read(
         // because narrowPipe doesn't preserve order.
         narrowPipe(pipe, num_streams);
 
-    return pipe;
+    IStorage::readFromPipe(query_plan, std::move(pipe), column_names, storage_snapshot, query_info, local_context, getName());
+    query_plan.addResources(std::move(resources));
 }
 
 Pipe StorageMerge::createSources(
+    QueryPlanResourceHolder & resources,
     const StorageSnapshotPtr & storage_snapshot,
     SelectQueryInfo & modified_query_info,
     const QueryProcessingStage::Enum & processed_stage,
@@ -429,19 +446,21 @@ Pipe StorageMerge::createSources(
     bool has_table_virtual_column,
     bool concat_streams)
 {
-    const auto & [database_name, storage, struct_lock, table_name] = storage_with_lock;
+    const auto & [database_name, storage, _, table_name] = storage_with_lock;
     auto & modified_select = modified_query_info.query->as<ASTSelectQuery &>();
 
     Pipe pipe;
 
     if (!storage)
     {
-        pipe = QueryPipelineBuilder::getPipe(InterpreterSelectQuery(
+        auto pipeline = InterpreterSelectQuery(
             modified_query_info.query, modified_context,
             Pipe(std::make_shared<SourceFromSingleChunk>(header)),
             SelectQueryOptions(processed_stage).analyze()).buildQueryPipeline());
 
-        pipe.addInterpreterContext(modified_context);
+        resources = std::move(pipeline.resources);
+        pipe = QueryPipelineBuilder::getPipe(std::move(*pipeline.builder));
+
         return pipe;
     }
 
@@ -543,10 +562,6 @@ Pipe StorageMerge::createSources(
         /// Subordinary tables could have different but convertible types, like numeric types of different width.
         /// We must return streams with structure equals to structure of Merge table.
         convertingSourceStream(header, storage_snapshot->metadata, aliases, modified_context, modified_query_info.query, pipe, processed_stage);
-
-        pipe.addTableLock(struct_lock);
-        pipe.addStorageHolder(storage);
-        pipe.addInterpreterContext(modified_context);
     }
 
     return pipe;

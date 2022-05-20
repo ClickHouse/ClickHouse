@@ -3,6 +3,8 @@
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/IProcessor.h>
 #include <Processors/LimitTransform.h>
+#include <Interpreters/ActionsDAG.h>
+#include <Interpreters/ExpressionActions.h>
 #include <QueryPipeline/ReadProgressCallback.h>
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipeline.h>
@@ -11,11 +13,14 @@
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Sources/RemoteSource.h>
-#include <Processors/Sources/SourceWithProgress.h>
+#include <Processors/ISource.h>
 #include <Processors/Transforms/CountingTransform.h>
 #include <Processors/Transforms/LimitsCheckingTransform.h>
 #include <Processors/Transforms/MaterializingTransform.h>
 #include <Processors/Transforms/PartialSortingTransform.h>
+#include <Processors/Transforms/ExpressionTransform.h>
+#include <Processors/QueryPlan/ReadFromPreparedSource.h>
+
 namespace DB
 {
 
@@ -389,7 +394,6 @@ void QueryPipeline::complete(Pipe pipe)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Pipeline must be pushing to be completed with pipe");
 
     pipe.resize(1);
-    resources = pipe.detachResources();
     pipe.dropExtremes();
     pipe.dropTotals();
     connect(*pipe.getOutputPort(0), *input);
@@ -468,20 +472,12 @@ Block QueryPipeline::getHeader() const
 
 void QueryPipeline::setProgressCallback(const ProgressCallback & callback)
 {
-    if (read_progress_callback)
-        read_progress_callback = std::make_unique<ReadProgressCallback>();
-
-    read_progress_callback->setProgressCallback(callback);
+    progress_callback = callback;
 }
 
 void QueryPipeline::setProcessListElement(QueryStatus * elem)
 {
     process_list_element = elem;
-
-    if (read_progress_callback)
-        read_progress_callback = std::make_unique<ReadProgressCallback>();
-
-    read_progress_callback->setProcessListElement(elem);
 
     if (pushing())
     {
@@ -492,8 +488,12 @@ void QueryPipeline::setProcessListElement(QueryStatus * elem)
     }
 }
 
+void QueryPipeline::setQuota(std::shared_ptr<const EnabledQuota> quota_)
+{
+    quota = std::move(quota_);
+}
 
-void QueryPipeline::setLimitsAndQuota(const StreamLocalLimits & limits, std::shared_ptr<const EnabledQuota> quota)
+void QueryPipeline::setLimitsAndQuota(const StreamLocalLimits & limits, std::shared_ptr<const EnabledQuota> quota_)
 {
     if (!pulling())
         throw Exception(
@@ -501,7 +501,7 @@ void QueryPipeline::setLimitsAndQuota(const StreamLocalLimits & limits, std::sha
             "It is possible to set limits and quota only to pulling QueryPipeline");
 
     auto transform = std::make_shared<LimitsCheckingTransform>(output->getHeader(), limits);
-    transform->setQuota(quota);
+    transform->setQuota(quota_);
     connect(*output, transform->getInputPort());
     output = &transform->getOutputPort();
     processors.emplace_back(std::move(transform));
@@ -518,20 +518,68 @@ bool QueryPipeline::tryGetResultRowsAndBytes(UInt64 & result_rows, UInt64 & resu
     return true;
 }
 
-void QueryPipeline::setQuota(std::shared_ptr<const EnabledQuota> quota_)
-{
-    quota = std::move(quota_);
-}
-
 void QueryPipeline::addStorageHolder(StoragePtr storage)
 {
     resources.storage_holders.emplace_back(std::move(storage));
+}
+
+void QueryPipeline::addCompletedPipeline(QueryPipeline other)
+{
+    if (!other.completed())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot add not completed pipeline");
+
+    resources = std::move(other.resources);
+    processors.insert(processors.end(), other.processors.begin(), other.processors.end());
 }
 
 void QueryPipeline::reset()
 {
     QueryPipeline to_remove = std::move(*this);
     *this = QueryPipeline();
+}
+
+// Pipe QueryPipeline::toPipe(QueryPipeline pipeline, QueryPlanResourceHolder & out_resources)
+// {
+//     if (!pipeline.pulling())
+//         throw Exception(ErrorCodes::LOGICAL_ERROR, "Pipeline must be pulling to be converted to pipe");
+
+//     out_resources = std::move(pipeline.resources);
+
+//     Pipe pipe;
+//     pipe.processors = std::move(pipeline.processors);
+//     pipe.header = pipeline.output->getHeader();
+//     pipe.output_ports = {pipeline.output};
+//     pipe.totals_port = pipeline.totals;
+//     pipe.extremes_port = pipeline.extremes;
+
+//     return pipe;
+//}
+
+static void addExpression(OutputPort *& port, ExpressionActionsPtr actions, Processors & processors)
+{
+    if (port)
+    {
+        auto transform = std::make_shared<ExpressionTransform>(port->getHeader(), actions);
+        connect(*port, transform->getInputPort());
+        port = &transform->getOutputPort();
+        processors.emplace_back(std::move(transform));
+    }
+}
+
+void QueryPipeline::convertStructureTo(const ColumnsWithTypeAndName & columns)
+{
+    if (!pulling())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Pipeline must be pulling to convert header");
+
+    auto converting = ActionsDAG::makeConvertingActions(
+        output->getHeader().getColumnsWithTypeAndName(),
+        columns,
+        ActionsDAG::MatchColumnsMode::Position);
+
+    auto actions = std::make_shared<ExpressionActions>(converting);
+    addExpression(output, actions, processors);
+    addExpression(totals, actions, processors);
+    addExpression(extremes, actions, processors);
 }
 
 }

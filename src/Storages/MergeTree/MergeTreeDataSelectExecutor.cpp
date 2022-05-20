@@ -24,6 +24,7 @@
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/UnionStep.h>
+#include <Processors/QueryPlan/QueryIdHolder.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 
 #include <Core/UUID.h>

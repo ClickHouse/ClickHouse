@@ -365,11 +365,11 @@ void FlatDictionary::updateData()
     }
     else
     {
-        Pipe pipe(source_ptr->loadUpdatedAll());
+        auto pipeline(source_ptr->loadUpdatedAll());
         mergeBlockWithPipe<DictionaryKeyType::Simple>(
             dict_struct.getKeysSize(),
             *update_field_loaded_block,
-            std::move(pipe));
+            std::move(pipeline));
     }
 
     if (update_field_loaded_block)

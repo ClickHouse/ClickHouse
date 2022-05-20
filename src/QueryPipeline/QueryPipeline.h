@@ -30,6 +30,9 @@ class SinkToStorage;
 class ISource;
 class ISink;
 
+struct ColumnWithTypeAndName;
+using ColumnsWithTypeAndName = std::vector<ColumnWithTypeAndName>;
+
 class QueryPipeline
 {
 public:
@@ -95,7 +98,7 @@ public:
 
     void setProcessListElement(QueryStatus * elem);
     void setProgressCallback(const ProgressCallback & callback);
-    void setLimitsAndQuota(const StreamLocalLimits & limits, std::shared_ptr<const EnabledQuota> quota);
+    void setLimitsAndQuota(const StreamLocalLimits & limits, std::shared_ptr<const EnabledQuota> quota_);
     bool tryGetResultRowsAndBytes(UInt64 & result_rows, UInt64 & result_bytes) const;
 
     void setLimits(const StreamLocalLimits & limits) { local_limits = limits; }
@@ -104,7 +107,20 @@ public:
 
     void addStorageHolder(StoragePtr storage);
 
+    /// Existing resources are not released here, see move ctor for QueryPlanResourceHolder.
+    void addResources(QueryPlanResourceHolder holder) { resources = std::move(holder); }
+
+    /// Add processors and resources from other pipeline. Other pipeline should be completed.
+    void addCompletedPipeline(QueryPipeline other);
+
     const Processors & getProcessors() const { return processors; }
+
+    /// Convert pulling pipeline to pipe. Drops limits, quota, progress callback.
+    //static Pipe toPipe(QueryPipeline pipeline, QueryPlanResourceHolder & out_resources);
+
+    /// For pulling pipeline, convert structure to expected.
+    /// Trash, need to remove later.
+    void convertStructureTo(const ColumnsWithTypeAndName & columns);
 
     void reset();
 

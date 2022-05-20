@@ -14,6 +14,7 @@
 #include <Parsers/ASTCreateQuery.h>
 
 #include <QueryPipeline/Pipe.h>
+#include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
@@ -134,12 +135,15 @@ Pipe StorageExecutable::read(
             user_scripts_path);
 
     Pipes inputs;
+    QueryPlanResourceHolder resources;
     inputs.reserve(input_queries.size());
 
     for (auto & input_query : input_queries)
     {
         InterpreterSelectWithUnionQuery interpreter(input_query, context, {});
-        inputs.emplace_back(QueryPipelineBuilder::getPipe(interpreter.buildQueryPipeline()));
+        auto pipeline = interpreter.buildQueryPipeline();
+        resources = std::move(pipeline.resources);
+        inputs.emplace_back(QueryPipelineBuilder::getPipe(std::move(*pipeline.builder)));
     }
 
     /// For executable pool we read data from input streams and convert it to single blocks streams.
@@ -157,7 +161,7 @@ Pipe StorageExecutable::read(
         configuration.read_number_of_rows_from_process_output = true;
     }
 
-    return coordinator->createPipe(script_path, settings.script_arguments, std::move(inputs), std::move(sample_block), context, configuration);
+    return coordinator->createPipe(script_path, settings.script_arguments, std::move(inputs), std::move(resources), std::move(sample_block), context, configuration);
 }
 
 void registerStorageExecutable(StorageFactory & factory)

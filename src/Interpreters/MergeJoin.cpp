@@ -592,7 +592,7 @@ void MergeJoin::mergeInMemoryRightBlocks()
     builder.addTransform(std::make_shared<MergeSortingTransform>(
         builder.getHeader(), right_sort_description, max_rows_in_right_block, 0, 0, 0, 0, nullptr, 0));
 
-    auto pipeline = QueryPipelineBuilder::getPipeline(std::move(builder));
+    auto pipeline = QueryPipelineBuilder::getPipeline2(std::move(builder));
     PullingPipelineExecutor executor(pipeline);
 
     Block block;

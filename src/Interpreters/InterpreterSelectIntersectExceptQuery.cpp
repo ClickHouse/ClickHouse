@@ -9,6 +9,7 @@
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 
 
 namespace DB
@@ -123,6 +124,8 @@ void InterpreterSelectIntersectExceptQuery::buildQueryPlan(QueryPlan & query_pla
     auto max_threads = context->getSettingsRef().max_threads;
     auto step = std::make_unique<IntersectOrExceptStep>(std::move(data_streams), final_operator, max_threads);
     query_plan.unitePlans(std::move(step), std::move(plans));
+
+    query_plan.addInterpreterContext(context);
 }
 
 BlockIO InterpreterSelectIntersectExceptQuery::execute()
@@ -136,10 +139,10 @@ BlockIO InterpreterSelectIntersectExceptQuery::execute()
         QueryPlanOptimizationSettings::fromContext(context),
         BuildQueryPipelineSettings::fromContext(context));
 
-    pipeline->addInterpreterContext(context);
+    res.pipeline = QueryPipelineBuilder::getPipeline2(std::move(*pipeline.builder));
+    res.pipeline.addResources(std::move(pipeline.resources));
 
-    res.pipeline = QueryPipelineBuilder::getPipeline(std::move(*query_plan.buildQueryPipeline(
-    QueryPlanOptimizationSettings::fromContext(context), BuildQueryPipelineSettings::fromContext(context))));
+    addLimitsAndQuotas(res.pipeline);
 
     return res;
 }

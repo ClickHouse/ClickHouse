@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Processors/Sources/SourceWithProgress.h>
+#include <Processors/ISource.h>
 #include <Processors/RowsBeforeLimitCounter.h>
 #include <QueryPipeline/Pipe.h>
 #include <atomic>
@@ -14,7 +14,7 @@ using RemoteQueryExecutorPtr = std::shared_ptr<RemoteQueryExecutor>;
 class RemoteQueryExecutorReadContext;
 
 /// Source from RemoteQueryExecutor. Executes remote query and returns query result chunks.
-class RemoteSource : public SourceWithProgress
+class RemoteSource : public ISource
 {
 public:
     /// Flag add_aggregation_info tells if AggregatedChunkInfo should be added to result chunk.

@@ -14,9 +14,11 @@
 #include <Core/Defines.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <QueryPipeline/Pipe.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Processors/Transforms/SquashingChunksTransform.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
+#include <Processors/QueryPlan/QueryPlan.h>
 #include <base/range.h>
 
 
@@ -283,10 +285,11 @@ Block ProjectionDescription::calculate(const Block & block, ContextPtr context) 
                            type == ProjectionDescription::Type::Normal ? QueryProcessingStage::FetchColumns
                                                                        : QueryProcessingStage::WithMergeableState})
                        .buildQueryPipeline();
-    builder.resize(1);
-    builder.addTransform(std::make_shared<SquashingChunksTransform>(builder.getHeader(), block.rows(), block.bytes()));
+    builder.builder->resize(1);
+    builder.builder->addTransform(std::make_shared<SquashingChunksTransform>(builder.getHeader(), block.rows(), block.bytes()));
 
-    auto pipeline = QueryPipelineBuilder::getPipeline(std::move(builder));
+    auto pipeline = QueryPipelineBuilder::getPipeline2(std::move(*builder.builder));
+    pipeline.addResources(std::move(builder.resources));
     PullingPipelineExecutor executor(pipeline);
     Block ret;
     executor.pull(ret);
