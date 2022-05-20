@@ -16,7 +16,10 @@ if ((NOT CMAKE_BUILD_TYPE_UC STREQUAL "DEBUG") AND (NOT SANITIZE) AND (NOT CMAKE
 endif ()
 
 if (COMPILER_CLANG)
+    # Add some warnings that are not available even with -Wall -Wextra -Wpedantic.
+    # We want to get everything out of the compiler for code quality.
     add_warning(everything)
+
     add_warning(pedantic)
     no_warning(vla-extension)
     no_warning(zero-length-array)
