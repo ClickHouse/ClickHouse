@@ -160,8 +160,7 @@ static void setLazyExecutionInfo(
     const ActionsDAGReverseInfo::NodeInfo & node_info = reverse_info.nodes_info[reverse_info.reverse_index.at(node)];
 
     /// If node is used in result or it doesn't have parents, we can't enable lazy execution.
-    if (node_info.used_in_result || node_info.parents.empty() || node->type != ActionsDAG::ActionType::FUNCTION
-        || node->type != ActionsDAG::ActionType::ALIAS)
+    if (node_info.used_in_result || node_info.parents.empty() || (node->type != ActionsDAG::ActionType::FUNCTION && node->type != ActionsDAG::ActionType::ALIAS))
     {
         lazy_execution_info.can_be_lazy_executed = false;
         return;
