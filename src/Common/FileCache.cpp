@@ -788,6 +788,32 @@ void LRUFileCache::loadCacheInfoIntoMemory(std::lock_guard<std::mutex> & cache_l
 #endif
 }
 
+size_t LRUFileCache::getReferencesNum(
+    const Key & key, size_t offset,
+    std::lock_guard<std::mutex> & cache_lock)
+{
+    auto * cell = getCell(key, offset, cache_lock);
+    if (!cell)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "There is no cell for key {} and offset {}", keyToStr(key), offset);
+
+    return cell->file_segment.use_count();
+}
+
+void LRUFileCache::remove(
+    const Key & key, size_t offset,
+    std::lock_guard<std::mutex> & cache_lock)
+{
+    auto * cell = getCell(key, offset, cache_lock);
+    if (!cell)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "There is no cell for key {} and offset {}", keyToStr(key), offset);
+
+    removeCell(*cell, cache_lock);
+}
+
 FileSegments LRUFileCache::getSnapshot() const
 {
     std::lock_guard cache_lock(mutex);

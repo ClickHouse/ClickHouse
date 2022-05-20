@@ -115,6 +115,14 @@ protected:
         std::lock_guard<std::mutex> & cache_lock) = 0;
 
     void assertInitialized() const;
+
+    virtual void remove(
+        const Key & key, size_t offset,
+        std::lock_guard<std::mutex> & cache_lock) = 0;
+
+    virtual size_t getReferencesNum(
+        const Key & key, size_t offset,
+        std::lock_guard<std::mutex> & cache_lock) = 0;
 };
 
 using FileCachePtr = std::shared_ptr<IFileCache>;
@@ -267,6 +275,14 @@ private:
 
     void resizeCellToDownloadedSize(
         FileSegmentCell & cell, std::lock_guard<std::mutex> & cache_lock);
+
+    void remove(
+        const Key & key, size_t offset,
+        std::lock_guard<std::mutex> & cache_lock) override;
+
+    size_t getReferencesNum(
+        const Key & key, size_t offset,
+        std::lock_guard<std::mutex> & cache_lock) override;
 
 public:
     String dumpStructure(const Key & key_) override;
