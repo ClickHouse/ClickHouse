@@ -106,14 +106,14 @@ ColumnsDescription StorageSnapshot::getDescriptionForColumns(const Names & colum
     for (const auto & name : column_names)
     {
         auto column = columns.tryGetColumnOrSubcolumnDescription(GetColumnsOptions::All, name);
-        auto object_column = object_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, name);
+        auto object_column = object_columns.tryGetColumnOrSubcolumnDescription(GetColumnsOptions::All, name);
         if (column && !object_column)
         {
-            res.add(*column);
+            res.add(*column, "", false, false);
         }
         else if (object_column)
         {
-            res.add({object_column->name, object_column->type});
+            res.add(*object_column, "", false, false);
         }
         else if (auto it = virtual_columns.find(name); it != virtual_columns.end())
         {
