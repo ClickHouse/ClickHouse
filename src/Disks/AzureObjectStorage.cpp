@@ -196,10 +196,9 @@ void AzureObjectStorage::copyObject( /// NOLINT
 void AzureObjectStorage::applyNewSettings(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, ContextPtr context)
 {
     auto new_settings = getAzureBlobStorageSettings(config, config_prefix, context);
-    auto new_client = getAzureBlobContainerClient(config, config_prefix);
-
-    client.set(std::move(new_client));
     settings.set(std::move(new_settings));
+
+    /// We don't update client
 }
 
 
