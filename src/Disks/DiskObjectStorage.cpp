@@ -720,27 +720,30 @@ void DiskObjectStorage::removeSharedRecursive(const String & path, bool keep_all
     }
 }
 
-bool DiskObjectStorage::tryReserve(UInt64 bytes)
+std::optional<UInt64>  DiskObjectStorage::tryReserve(UInt64 bytes)
 {
     std::lock_guard lock(reservation_mutex);
+
+    auto available_space = getAvailableSpace();
+    UInt64 unreserved_space = available_space - std::min(available_space, reserved_bytes);
+
     if (bytes == 0)
     {
         LOG_TRACE(log, "Reserving 0 bytes on remote_fs disk {}", backQuote(name));
         ++reservation_count;
-        return true;
+        return {unreserved_space};
     }
 
-    auto available_space = getAvailableSpace();
-    UInt64 unreserved_space = available_space - std::min(available_space, reserved_bytes);
     if (unreserved_space >= bytes)
     {
         LOG_TRACE(log, "Reserving {} on disk {}, having unreserved {}.",
             ReadableSize(bytes), backQuote(name), ReadableSize(unreserved_space));
         ++reservation_count;
         reserved_bytes += bytes;
-        return true;
+        return {unreserved_space - bytes};
     }
-    return false;
+
+    return {};
 }
 
 std::unique_ptr<ReadBufferFromFileBase> DiskObjectStorage::readFile(

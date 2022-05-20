@@ -253,7 +253,10 @@ class DiskObjectStorageReservation final : public IReservation
 {
 public:
     DiskObjectStorageReservation(const std::shared_ptr<DiskObjectStorage> & disk_, UInt64 size_)
-        : disk(disk_), size(size_), metric_increment(CurrentMetrics::DiskSpaceReservedForMerge, size_)
+        : disk(disk_)
+        , size(size_)
+        , metric_increment(CurrentMetrics::DiskSpaceReservedForMerge, size_)
+    {}
 
     UInt64 getSize() const override { return size; }
 
