@@ -16,7 +16,13 @@ public:
 
     DataTypePtr getReturnType() const override { return std::make_shared<DataTypeUInt64>(); }
 
-    std::vector<Vertex> getDfsOrder(ConstAggregateDataPtr __restrict place, Vertex from, HashMap<Vertex, UInt64>& tin, HashMap<Vertex, Vertex>& parents, UInt64& timer) const {
+    std::vector<Vertex> getDfsOrder(
+        ConstAggregateDataPtr __restrict place,
+        Vertex from,
+        HashMap<Vertex, UInt64> & tin,
+        HashMap<Vertex, Vertex> & parents,
+        UInt64 & timer) const
+    {
         std::vector<Vertex> order;
         VertexSet used;
         std::vector<std::pair<Vertex, std::decay_t<decltype(data(place).graph.at(from).begin())>>> dfs_stack;
@@ -24,16 +30,21 @@ public:
         used.insert(from);
         parents[from] = from;
         tin[from] = timer++;
-        while (!dfs_stack.empty()) {
+        while (!dfs_stack.empty())
+        {
             auto [vertex, it] = dfs_stack.back();
             dfs_stack.pop_back();
-            if (it == data(place).graph.at(vertex).end()) {
+            if (it == data(place).graph.at(vertex).end())
+            {
                 order.push_back(vertex);
-            } else {
+            }
+            else
+            {
                 auto cp_it = it;
                 ++cp_it;
                 dfs_stack.emplace_back(vertex, cp_it);
-                if (!used.has(*it)) {
+                if (!used.has(*it))
+                {
                     Vertex next = *it;
                     dfs_stack.emplace_back(next, data(place).graph.at(next).begin());
                     used.insert(next);
@@ -57,12 +68,13 @@ public:
         HashMap<Vertex, Vertex> parents;
         auto order = getDfsOrder(place, from, tin, parents, timer);
 
-        for (Vertex vertex : order) {
+        for (Vertex vertex : order)
+        {
             up[vertex] = tin[vertex];
         }
-        
+
         std::string s;
-        
+
         // if constexpr (std::is_same_v<Vertex, UInt64>) {
         //     s += "order = ";
         //     for (auto i : order) {
@@ -76,25 +88,33 @@ public:
         //     }
         // }
 
-        for (Vertex vertex : order) {
+        for (Vertex vertex : order)
+        {
             // up[vertex] = tin[vertex];
             used.insert(vertex);
             Vertex parent = parents.at(vertex);
             HashMap<Vertex, UInt64> edges;
-            for (Vertex next : data(place).graph.at(vertex)) {
+            for (Vertex next : data(place).graph.at(vertex))
+            {
                 ++edges[next];
             }
-            for (Vertex next : data(place).graph.at(vertex)) {
-                if (next != parent) {
-                    if (used.has(next)) {
+            for (Vertex next : data(place).graph.at(vertex))
+            {
+                if (next != parent)
+                {
+                    if (used.has(next))
+                    {
                         up[vertex] = std::min(up[vertex], up[next]);
-                        if (up[next] > tin[vertex] && edges.at(next) == 1) {
+                        if (up[next] > tin[vertex] && edges.at(next) == 1)
+                        {
                             // if constexpr (std::is_same_v<Vertex, UInt64>) {
                             //     s += "vertex = " + std::to_string(vertex) + ", next = " + std::to_string(next) + " | ";
                             // }
                             ++cntBridges;
                         }
-                    } else {
+                    }
+                    else
+                    {
                         up[vertex] = std::min(up[vertex], tin[next]);
                     }
                 }

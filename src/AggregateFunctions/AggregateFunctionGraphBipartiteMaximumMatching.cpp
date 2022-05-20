@@ -25,14 +25,19 @@ public:
         std::queue<Vertex> buff;
         color[vertex] = currentColor;
         buff.push(vertex);
-        while (!buff.empty()) {
+        while (!buff.empty())
+        {
             Vertex cur = buff.front();
             buff.pop();
-            for (Vertex next : graph.at(cur)) {
-                if (!color.has(next)) {
+            for (Vertex next : graph.at(cur))
+            {
+                if (!color.has(next))
+                {
                     color[next] = true ^ color[cur];
                     buff.push(next);
-                } else if (color[next] == color[cur]) {
+                }
+                else if (color[next] == color[cur])
+                {
                     return false;
                 }
             }
@@ -55,30 +60,37 @@ public:
         std::vector<std::pair<Vertex, std::decay_t<decltype(graph.at(from).begin())>>> dfs_stack;
         dfs_stack.emplace_back(from, graph.at(from).begin());
         used[from] = currentColor;
-        while (!dfs_stack.empty()) {
+        while (!dfs_stack.empty())
+        {
             auto [vertex, it] = dfs_stack.back();
             dfs_stack.pop_back();
-            if (it == graph.at(vertex).end()) {
+            if (it == graph.at(vertex).end())
+            {
                 continue;
             }
             auto cp_it = it;
             ++cp_it;
             dfs_stack.emplace_back(vertex, cp_it);
-            if (it == graph.at(vertex).begin()) {
-                for (auto next : graph.at(vertex)) {
-                    if (!matching.has(next)) {
-                        while (!dfs_stack.empty()) {
+            if (it == graph.at(vertex).begin())
+            {
+                for (auto next : graph.at(vertex))
+                {
+                    if (!matching.has(next))
+                    {
+                        while (!dfs_stack.empty())
+                        {
                             auto [cur_vertex, next_it] = dfs_stack.back();
                             dfs_stack.pop_back();
                             --next_it;
                             matching[*next_it] = cur_vertex;
                         }
                         return true;
-                    } 
+                    }
                 }
             }
             Vertex next = *it;
-            if (used[matching[next]] != currentColor) {
+            if (used[matching[next]] != currentColor)
+            {
                 dfs_stack.emplace_back(matching[next], graph.at(matching[next]).begin());
                 used[matching[next]] = currentColor;
             }
@@ -99,10 +111,14 @@ public:
         VertexMap matching;
         UInt64 current_color = 0;
         UInt64 matching_size = 0;
-        for (const auto & [vertex, neighbours] : graph) {
-            if (color->at(vertex)) {
-                for (auto next : neighbours) {
-                    if (!matching.has(next)) {
+        for (const auto & [vertex, neighbours] : graph)
+        {
+            if (color->at(vertex))
+            {
+                for (auto next : neighbours)
+                {
+                    if (!matching.has(next))
+                    {
                         matching[next] = vertex;
                         used[vertex] = ++current_color;
                         ++matching_size;

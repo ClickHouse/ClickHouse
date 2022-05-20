@@ -22,16 +22,21 @@ public:
         std::vector<std::pair<Vertex, std::decay_t<decltype(graph.at(from).begin())>>> dfs_stack;
         dfs_stack.emplace_back(from, graph.at(from).begin());
         used.insert(from);
-        while (!dfs_stack.empty()) {
+        while (!dfs_stack.empty())
+        {
             auto [vertex, it] = dfs_stack.back();
             dfs_stack.pop_back();
-            if (it == graph.at(vertex).end()) {
+            if (it == graph.at(vertex).end())
+            {
                 order.push_back(vertex);
-            } else {
+            }
+            else
+            {
                 auto cp_it = it;
                 ++cp_it;
                 dfs_stack.emplace_back(vertex, cp_it);
-                if (!used.has(*it)) {
+                if (!used.has(*it))
+                {
                     Vertex next = *it;
                     dfs_stack.emplace_back(next, graph.at(next).begin());
                     used.insert(next);
@@ -45,11 +50,14 @@ public:
         std::queue<Vertex> buff;
         buff.push(vertex);
         used.insert(vertex);
-        while (!buff.empty()) {
+        while (!buff.empty())
+        {
             vertex = buff.front();
             buff.pop();
-            for (Vertex next : reverseGraph.at(vertex)) {
-                if (!used.has(next)) {
+            for (Vertex next : reverseGraph.at(vertex))
+            {
+                if (!used.has(next))
+                {
                     buff.push(next);
                     used.insert(next);
                 }

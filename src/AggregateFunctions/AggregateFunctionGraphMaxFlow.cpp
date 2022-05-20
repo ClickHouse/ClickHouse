@@ -107,26 +107,32 @@ private:
             HashMap<Vertex, Int64> hasFlow;
             hasFlow[from] = currentFlow;
 
-            while (!dfs_stack.empty()) {
+            while (!dfs_stack.empty())
+            {
                 auto [vertex, it] = dfs_stack.back();
-                if (vertex == ending_point) {
+                if (vertex == ending_point)
+                {
                     break;
                 }
                 dfs_stack.pop_back();
-                if (it != graph.at(vertex).end()) {
+                if (it != graph.at(vertex).end())
+                {
                     auto cp_it = it;
                     ++cp_it;
                     dfs_stack.emplace_back(vertex, cp_it);
                     UInt64 id = *it;
                     const auto to = edges[id].to;
-                    if (distance.at(vertex) + 1 != distance.at(to)) {
+                    if (distance.at(vertex) + 1 != distance.at(to))
+                    {
                         continue;
                     }
-                    if (edges[id].getCurrentCapacity() <= 0) {
+                    if (edges[id].getCurrentCapacity() <= 0)
+                    {
                         continue;
                     }
                     Int64 add = std::min(hasFlow[vertex], edges[id].getCurrentCapacity());
-                    if (add > 0) {
+                    if (add > 0)
+                    {
                         dfs_stack.emplace_back(to, graph.at(to).begin());
                         par[to] = id;
                     }
@@ -135,13 +141,15 @@ private:
 
             currentFlow = hasFlow[ending_point];
 
-            if (currentFlow == 0) {
+            if (currentFlow == 0)
+            {
                 return 0;
             }
 
             Vertex cur = ending_point;
 
-            while (cur != starting_point) {
+            while (cur != starting_point)
+            {
                 UInt64 id = par[cur];
                 Vertex parent = edges[id ^ 1].to;
                 edges[id].flow += currentFlow;

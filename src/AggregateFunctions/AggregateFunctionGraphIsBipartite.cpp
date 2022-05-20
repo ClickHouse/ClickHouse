@@ -21,14 +21,19 @@ public:
         std::queue<Vertex> buff;
         color[vertex] = currentColor;
         buff.push(vertex);
-        while (!buff.empty()) {
+        while (!buff.empty())
+        {
             Vertex cur = buff.front();
             buff.pop();
-            for (Vertex next : graph.at(cur)) {
-                if (!color.has(next)) {
+            for (Vertex next : graph.at(cur))
+            {
+                if (!color.has(next))
+                {
                     color[next] = true ^ color[cur];
                     buff.push(next);
-                } else if (color[next] == color[cur]) {
+                }
+                else if (color[next] == color[cur])
+                {
                     return false;
                 }
             }
