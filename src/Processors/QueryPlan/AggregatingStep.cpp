@@ -374,4 +374,10 @@ void AggregatingStep::describePipeline(FormatSettings & settings) const
     }
 }
 
+void AggregatingStep::updateOutputStream()
+{
+    output_stream = createOutputStream(
+        input_streams.front(), appendGroupingColumn(params.getHeader(final), grouping_sets_params), getDataStreamTraits());
+}
+
 }

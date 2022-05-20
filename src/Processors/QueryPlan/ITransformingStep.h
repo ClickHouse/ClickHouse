@@ -55,6 +55,16 @@ public:
     const TransformTraits & getTransformTraits() const { return transform_traits; }
     const DataStreamTraits & getDataStreamTraits() const { return data_stream_traits; }
 
+    void updateInputStream(DataStream input_stream)
+    {
+        input_streams.clear();
+        input_streams.emplace_back(std::move(input_stream));
+
+        updateOutputStream();
+
+        updateDistinctColumns(output_stream->header, output_stream->distinct_columns);
+    }
+
     void describePipeline(FormatSettings & settings) const override;
 
     /// Append extra processors for this step.
@@ -73,6 +83,11 @@ protected:
     TransformTraits transform_traits;
 
 private:
+    virtual void updateOutputStream()
+    {
+        output_stream = createOutputStream(input_streams.front(), input_streams.front().header, getDataStreamTraits());
+    }
+
     /// We collect processors got after pipeline transformation.
     Processors processors;
     bool collect_processors;

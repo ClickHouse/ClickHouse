@@ -27,6 +27,8 @@ public:
     void describeActions(FormatSettings & settings) const override;
 
 private:
+    void updateOutputStream() override;
+
     AggregatingTransformParamsPtr params;
     bool memory_efficient_aggregation;
     size_t max_threads;

@@ -18,14 +18,15 @@ public:
     void describeActions(JSONBuilder::JSONMap & map) const override;
     void describeActions(FormatSettings & settings) const override;
 
-    void updateInputStream(DataStream input_stream);
     void setResultHeader(Block result_header);
 
     const ArrayJoinActionPtr & arrayJoin() const { return array_join; }
 
 private:
-    ArrayJoinActionPtr array_join;
+    void updateOutputStream() override;
+
     Block res_header;
+    ArrayJoinActionPtr array_join;
 };
 
 }

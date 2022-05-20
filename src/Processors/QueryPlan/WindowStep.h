@@ -26,9 +26,10 @@ public:
     void describeActions(FormatSettings & settings) const override;
 
 private:
+    void updateOutputStream() override;
+
     WindowDescription window_description;
     std::vector<WindowFunctionDescription> window_functions;
-    Block input_header;
 };
 
 }

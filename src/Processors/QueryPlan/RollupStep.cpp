@@ -43,4 +43,14 @@ void RollupStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQ
     });
 }
 
+void RollupStep::updateOutputStream()
+{
+    output_stream = createOutputStream(input_streams.front(), params->getHeader(), getDataStreamTraits());
+
+    /// Aggregation keys are distinct
+    for (auto key : params->params.keys)
+        output_stream->distinct_columns.insert(params->params.src_header.getByPosition(key).name);
+}
+
+
 }

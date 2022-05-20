@@ -57,4 +57,9 @@ void FillingStep::describeActions(JSONBuilder::JSONMap & map) const
     map.add("Sort Description", explainSortDescription(sort_description));
 }
 
+void FillingStep::updateOutputStream()
+{
+    output_stream = createOutputStream(
+        input_streams.front(), FillingTransform::transformHeader(input_streams.front().header, sort_description), getDataStreamTraits());
+}
 }

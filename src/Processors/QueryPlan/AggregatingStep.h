@@ -54,6 +54,8 @@ public:
     const Aggregator::Params & getParams() const { return params; }
 
 private:
+    void updateOutputStream() override;
+
     Aggregator::Params params;
     GroupingSetsParamsList grouping_sets_params;
     bool final;

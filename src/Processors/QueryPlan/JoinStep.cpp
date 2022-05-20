@@ -87,4 +87,11 @@ void FilledJoinStep::transformPipeline(QueryPipelineBuilder & pipeline, const Bu
     });
 }
 
+void FilledJoinStep::updateOutputStream()
+{
+    output_stream = createOutputStream(
+        input_streams.front(), JoiningTransform::transformHeader(input_streams.front().header, join), getDataStreamTraits());
+}
+
+
 }

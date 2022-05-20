@@ -35,7 +35,10 @@ public:
     const ActionsDAGPtr & getActions() const { return actions_dag; }
 
 private:
+    void updateOutputStream() override;
+
     const ColumnsMask aggregates_mask;
+
     bool overflow_row;
     ActionsDAGPtr actions_dag;
     String filter_column_name;

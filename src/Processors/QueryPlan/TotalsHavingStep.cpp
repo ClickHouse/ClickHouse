@@ -125,4 +125,14 @@ void TotalsHavingStep::describeActions(JSONBuilder::JSONMap & map) const
     }
 }
 
+void TotalsHavingStep::updateOutputStream()
+{
+    output_stream = createOutputStream(
+        input_streams.front(),
+        TotalsHavingTransform::transformHeader(
+            input_streams.front().header, actions_dag.get(), filter_column_name, remove_filter, final, aggregates_mask),
+        getDataStreamTraits());
+}
+
+
 }

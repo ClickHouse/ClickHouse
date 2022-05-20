@@ -21,6 +21,8 @@ public:
 
     const Aggregator::Params & getParams() const;
 private:
+    void updateOutputStream() override;
+
     AggregatingTransformParamsPtr params;
 };
 

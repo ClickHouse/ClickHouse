@@ -73,4 +73,14 @@ void MergingAggregatedStep::describeActions(JSONBuilder::JSONMap & map) const
     params->params.explain(map);
 }
 
+void MergingAggregatedStep::updateOutputStream()
+{
+    output_stream = createOutputStream(input_streams.front(), params->getHeader(), getDataStreamTraits());
+
+    /// Aggregation keys are distinct
+    for (auto key : params->params.keys)
+        output_stream->distinct_columns.insert(params->params.intermediate_header.getByPosition(key).name);
+}
+
+
 }
