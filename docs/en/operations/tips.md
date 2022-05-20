@@ -118,11 +118,11 @@ in XML configuration.
 This is important for ClickHouse to be able to get correct information with `cpuid` instruction.
 Otherwise you may get `Illegal instruction` crashes when hypervisor is run on old CPU models.
 
-## ZooKeeper {#zookeeper}
+## ClickHouse Keeper and ZooKeeper {#zookeeper}
 
-You are probably already using ZooKeeper for other purposes. You can use the same installation of ZooKeeper, if it isn’t already overloaded.
+ClickHouse Keeper is recommended to replace ZooKeeper for ClickHouse clusters.  See the documentation for [ClickHouse Keeper](clickhouse-keeper.md)
 
-It’s best to use a fresh version of ZooKeeper – 3.4.9 or later. The version in stable Linux distributions may be outdated.
+If you would like to continue using ZooKeeper then it is best to use a fresh version of ZooKeeper – 3.4.9 or later. The version in stable Linux distributions may be outdated.
 
 You should never use manually written scripts to transfer data between different ZooKeeper clusters, because the result will be incorrect for sequential nodes. Never use the “zkcopy” utility for the same reason: https://github.com/ksprojects/zkcopy/issues/15
 
