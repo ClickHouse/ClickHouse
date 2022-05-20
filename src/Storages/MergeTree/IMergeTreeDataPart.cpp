@@ -1282,12 +1282,12 @@ void IMergeTreeDataPart::storeVersionMetadata() const
 
 void IMergeTreeDataPart::appendCSNToVersionMetadata(VersionMetadata::WhichCSN which_csn) const
 {
-    assert(!version.creation_tid.isEmpty());
-    assert(!(which_csn == VersionMetadata::WhichCSN::CREATION && version.creation_tid.isPrehistoric()));
-    assert(!(which_csn == VersionMetadata::WhichCSN::CREATION && version.creation_csn == 0));
-    assert(!(which_csn == VersionMetadata::WhichCSN::REMOVAL && (version.removal_tid.isPrehistoric() || version.removal_tid.isEmpty())));
-    assert(!(which_csn == VersionMetadata::WhichCSN::REMOVAL && version.removal_csn == 0));
-    assert(isStoredOnDisk());
+    chassert(!version.creation_tid.isEmpty());
+    chassert(!(which_csn == VersionMetadata::WhichCSN::CREATION && version.creation_tid.isPrehistoric()));
+    chassert(!(which_csn == VersionMetadata::WhichCSN::CREATION && version.creation_csn == 0));
+    chassert(!(which_csn == VersionMetadata::WhichCSN::REMOVAL && (version.removal_tid.isPrehistoric() || version.removal_tid.isEmpty())));
+    chassert(!(which_csn == VersionMetadata::WhichCSN::REMOVAL && version.removal_csn == 0));
+    chassert(isStoredOnDisk());
 
     /// Small enough appends to file are usually atomic,
     /// so we append new metadata instead of rewriting file to reduce number of fsyncs.
@@ -1303,10 +1303,10 @@ void IMergeTreeDataPart::appendCSNToVersionMetadata(VersionMetadata::WhichCSN wh
 
 void IMergeTreeDataPart::appendRemovalTIDToVersionMetadata(bool clear) const
 {
-    assert(!version.creation_tid.isEmpty());
-    assert(version.removal_csn == 0);
-    assert(!version.removal_tid.isEmpty());
-    assert(isStoredOnDisk());
+    chassert(!version.creation_tid.isEmpty());
+    chassert(version.removal_csn == 0);
+    chassert(!version.removal_tid.isEmpty());
+    chassert(isStoredOnDisk());
 
     if (version.creation_tid.isPrehistoric() && !clear)
     {

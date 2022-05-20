@@ -145,24 +145,29 @@ void TransactionLog::loadEntries(Strings::const_iterator beg, Strings::const_ite
 
     NOEXCEPT_SCOPE;
     LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
-    std::lock_guard lock{mutex};
-    for (const auto & entry : loaded)
     {
-        if (entry.first == Tx::EmptyTID.getHash())
-            continue;
+        std::lock_guard lock{mutex};
+        for (const auto & entry : loaded)
+        {
+            if (entry.first == Tx::EmptyTID.getHash())
+                continue;
 
-        tid_to_csn.emplace(entry.first, entry.second);
+            tid_to_csn.emplace(entry.first, entry.second);
+        }
+        last_loaded_entry = last_entry;
     }
-    last_loaded_entry = last_entry;
-    latest_snapshot = loaded.back().second.csn;
-    local_tid_counter = Tx::MaxReservedLocalTID;
+    {
+        std::lock_guard lock{running_list_mutex};
+        latest_snapshot = loaded.back().second.csn;
+        local_tid_counter = Tx::MaxReservedLocalTID;
+    }
 }
 
 void TransactionLog::loadLogFromZooKeeper()
 {
-    assert(!zookeeper);
-    assert(tid_to_csn.empty());
-    assert(last_loaded_entry.empty());
+    chassert(!zookeeper);
+    chassert(tid_to_csn.empty());
+    chassert(last_loaded_entry.empty());
     zookeeper = global_context->getZooKeeper();
 
     /// We do not write local_tid_counter to disk or zk and maintain it only in memory.
@@ -172,7 +177,7 @@ void TransactionLog::loadLogFromZooKeeper()
     if (code != Coordination::Error::ZOK)
     {
         /// Log probably does not exist, create it
-        assert(code == Coordination::Error::ZNONODE);
+        chassert(code == Coordination::Error::ZNONODE);
         zookeeper->createAncestors(zookeeper_path_log);
         Coordination::Requests ops;
         ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/tail_ptr", serializeCSN(Tx::MaxReservedCSN), zkutil::CreateMode::Persistent));
@@ -192,11 +197,11 @@ void TransactionLog::loadLogFromZooKeeper()
     /// 2. simplify log rotation
     /// 3. support 64-bit CSNs on top of Apache ZooKeeper (it uses Int32 for sequential numbers)
     Strings entries_list = zookeeper->getChildren(zookeeper_path_log, nullptr, log_updated_event);
-    assert(!entries_list.empty());
+    chassert(!entries_list.empty());
     std::sort(entries_list.begin(), entries_list.end());
     loadEntries(entries_list.begin(), entries_list.end());
-    assert(!last_loaded_entry.empty());
-    assert(latest_snapshot == deserializeCSN(last_loaded_entry));
+    chassert(!last_loaded_entry.empty());
+    chassert(latest_snapshot == deserializeCSN(last_loaded_entry));
     local_tid_counter = Tx::MaxReservedLocalTID;
 
     tail_ptr = deserializeCSN(zookeeper->get(zookeeper_path + "/tail_ptr"));
@@ -241,12 +246,12 @@ void TransactionLog::runUpdatingThread()
 void TransactionLog::loadNewEntries()
 {
     Strings entries_list = zookeeper->getChildren(zookeeper_path_log, nullptr, log_updated_event);
-    assert(!entries_list.empty());
+    chassert(!entries_list.empty());
     std::sort(entries_list.begin(), entries_list.end());
     auto it = std::upper_bound(entries_list.begin(), entries_list.end(), last_loaded_entry);
     loadEntries(it, entries_list.end());
-    assert(last_loaded_entry == entries_list.back());
-    assert(latest_snapshot == deserializeCSN(last_loaded_entry));
+    chassert(last_loaded_entry == entries_list.back());
+    chassert(latest_snapshot == deserializeCSN(last_loaded_entry));
     latest_snapshot.notify_all();
 }
 
@@ -396,7 +401,7 @@ void TransactionLog::rollbackTransaction(const MergeTreeTransactionPtr & txn) no
     if (!txn->rollback())
     {
         /// Transaction was cancelled concurrently, it's already rolled back.
-        assert(txn->csn == Tx::RolledBackCSN);
+        chassert(txn->csn == Tx::RolledBackCSN);
         return;
     }
 
@@ -438,8 +443,8 @@ CSN TransactionLog::getCSN(const TIDHash & tid)
 
 CSN TransactionLog::getCSNImpl(const TIDHash & tid_hash) const
 {
-    assert(tid_hash);
-    assert(tid_hash != Tx::EmptyTID.getHash());
+    chassert(tid_hash);
+    chassert(tid_hash != Tx::EmptyTID.getHash());
 
     std::lock_guard lock{mutex};
     auto it = tid_to_csn.find(tid_hash);
@@ -467,6 +472,8 @@ CSN TransactionLog::getOldestSnapshot() const
     std::lock_guard lock{running_list_mutex};
     if (snapshots_in_use.empty())
         return getLatestSnapshot();
+    chassert(running_list.size() == snapshots_in_use.size());
+    chassert(snapshots_in_use.size() < 2 || snapshots_in_use.front() <= *++snapshots_in_use.begin());
     return snapshots_in_use.front();
 }
 
