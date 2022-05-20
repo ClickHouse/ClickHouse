@@ -35,16 +35,17 @@ endif()
 message(STATUS "Using ccache: ${CCACHE_EXECUTABLE} (version ${CCACHE_VERSION})")
 set(LAUNCHER ${CCACHE_EXECUTABLE})
 
-# debian (debhelpers) set SOURCE_DATE_EPOCH environment variable, that is
-# filled from the debian/changelog or current time.
+# Work around a well-intended but unfortunate behavior of ccache 4.0 & 4.1 with
+# environment variable SOURCE_DATE_EPOCH. This variable provides an alternative
+# to source-code embedded timestamps (__DATE__/__TIME__) and therefore helps with
+# reproducible builds (*). SOURCE_DATE_EPOCH is set automatically by the
+# distribution, e.g. Debian. Ccache 4.0 & 4.1 incorporate SOURCE_DATE_EPOCH into
+# the hash calculation regardless they contain timestamps or not. This invalidates
+# the cache whenever SOURCE_DATE_EPOCH changes. As a fix, ignore SOURCE_DATE_EPOCH.
 #
-# - 4.0+ ccache always includes this environment variable into the hash
-#   of the manifest, which do not allow to use previous cache,
-# - 4.2+ ccache ignores SOURCE_DATE_EPOCH for every file w/o __DATE__/__TIME__
-#
-# Exclude SOURCE_DATE_EPOCH env for ccache versions between [4.0, 4.2).
+# (*) https://reproducible-builds.org/specs/source-date-epoch/
 if (CCACHE_VERSION VERSION_GREATER_EQUAL "4.0" AND CCACHE_VERSION VERSION_LESS "4.2")
-    message(STATUS "Ignore SOURCE_DATE_EPOCH for ccache")
+    message(STATUS "Ignore SOURCE_DATE_EPOCH for ccache 4.1 / 4.2")
     set(LAUNCHER env -u SOURCE_DATE_EPOCH ${CCACHE_EXECUTABLE})
 endif()
 
