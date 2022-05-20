@@ -14,6 +14,7 @@ class CachingStep : public ITransformingStep
 {
 public:
     CachingStep(const DataStream & input_stream_, QueryCachePtr cache_, CacheKey cache_key_);
+    ~CachingStep();
 
     String getName() const override { return "Caching"; }
 
@@ -22,6 +23,7 @@ public:
 private:
     QueryCachePtr cache;
     CacheKey cache_key;
+    bool execute_caching = false;
 };
 
 }

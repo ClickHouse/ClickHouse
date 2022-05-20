@@ -627,12 +627,9 @@ void InterpreterSelectQuery::executePutInCache(QueryPlan & query_plan, CacheKey 
     QueryCachePtr query_cache = context->getQueryCache();
     size_t num_query_runs = query_cache->recordQueryRun(query_cache_key);
 
-    std::mutex & mutex = query_cache->getPutInCacheMutex(query_cache_key);
-
-    if (!mutex.try_lock() || !settings.query_cache_active_usage || query_cache->get(query_cache_key)
+    if (!settings.query_cache_active_usage || query_cache->get(query_cache_key)
         || num_query_runs < settings.min_query_runs_before_caching)
     {
-        mutex.unlock();
         return;
     }
 

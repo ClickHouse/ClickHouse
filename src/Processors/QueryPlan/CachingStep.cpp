@@ -23,10 +23,22 @@ static ITransformingStep::Traits getTraits()
 
 void CachingStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
-    pipeline.addSimpleTransform([&](const Block & header, QueryPipelineBuilder::StreamType) -> ProcessorPtr
+    if (cache->getPutInCacheMutex(cache_key).try_lock())
     {
-        return std::make_shared<CachingTransform>(header, cache, cache_key.ast, cache_key.settings, cache_key.username);
-    });
+        execute_caching = true;
+        pipeline.addSimpleTransform(
+            [&](const Block & header, QueryPipelineBuilder::StreamType) -> ProcessorPtr
+            { return std::make_shared<CachingTransform>(header, cache, cache_key.ast, cache_key.settings, cache_key.username); });
+    }
+}
+
+CachingStep::~CachingStep()
+{
+    if (execute_caching)
+    {
+        cache->getPutInCacheMutex(cache_key).unlock();
+        cache->scheduleRemoval(cache_key);
+    }
 }
 
 CachingStep::CachingStep(const DataStream & input_stream_, QueryCachePtr cache_, CacheKey cache_key_)

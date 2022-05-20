@@ -21,11 +21,6 @@ public:
                                          }).first))
     {}
     String getName() const override { return "CachingTransform"; }
-    ~CachingTransform() override
-    {
-        cache->getPutInCacheMutex(cache_key).unlock();
-        cache->scheduleRemoval(cache_key);
-    }
 
 protected:
     void transform(Chunk & chunk) override;
