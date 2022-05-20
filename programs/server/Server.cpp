@@ -1123,8 +1123,8 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 auto total_max_threads = config->getInt("total_max_threads", 0);
                 if (total_max_threads == -1)
                 {
-                    // Based on tests total_max_threads has an optimal value when it's about two times of logical CPU cores
-                    constexpr size_t thread_factor = 2;
+                    // Based on tests total_max_threads has an optimal value when it's about 3 times of logical CPU cores
+                    constexpr size_t thread_factor = 3;
                     total_max_threads = std::thread::hardware_concurrency() * thread_factor;
                 }
                 global_context->getProcessList().setTotalMaxThreads(total_max_threads);

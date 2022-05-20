@@ -269,6 +269,13 @@
     <http_server_default_response><![CDATA[<html ng-app="SMI2"><head><base href="http://ui.tabix.io/"></head><body><div ui-view="" class="content-ui"></div><script src="http://loader.tabix.io/master.js"></script></body></html>]]></http_server_default_response>
     -->
 
+    <!-- Maximum number of query processing threads to run all queries.
+         Note that This is not a hard limit. In case if the limit is reached the query will still get one thread to run.
+         For value equals to -1 this parameter is initialized by number of logical cores multiplies by 3.
+         Which is a good heuristic for CPU-bound tasks.
+    -->
+    <total_max_threads>-1</total_max_threads>
+    
     <!-- Maximum number of concurrent queries. -->
     <max_concurrent_queries>100</max_concurrent_queries>
 
