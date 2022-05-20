@@ -251,6 +251,8 @@ private:
     void sendTotals(const Block & totals);
     void sendExtremes(const Block & extremes);
     void sendProfileEvents();
+    void sendSelectProfileEvents();
+    void sendInsertProfileEvents();
 
     /// Creates state.block_in/block_out for blocks read/write, depending on whether compression is enabled.
     void initBlockInput();
