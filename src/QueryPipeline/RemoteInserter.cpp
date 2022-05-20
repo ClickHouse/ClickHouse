@@ -72,6 +72,10 @@ RemoteInserter::RemoteInserter(
             if (auto log_queue = CurrentThread::getInternalTextLogsQueue())
                 log_queue->pushBlock(std::move(packet.block));
         }
+        else if (Protocol::Server::ProfileEvents == packet.type)
+        {
+            // Do nothing
+        }
         else if (Protocol::Server::TableColumns == packet.type)
         {
             /// Server could attach ColumnsDescription in front of stream for column defaults. There's no need to pass it through cause
@@ -129,6 +133,10 @@ void RemoteInserter::onFinish()
         else if (Protocol::Server::Exception == packet.type)
             packet.exception->rethrow();
         else if (Protocol::Server::Log == packet.type)
+        {
+            // Do nothing
+        }
+        else if (Protocol::Server::ProfileEvents == packet.type)
         {
             // Do nothing
         }
