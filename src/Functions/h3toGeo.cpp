@@ -3,7 +3,7 @@
 #if USE_H3
 
 #include <array>
-#include <math.h>
+#include <cmath>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>

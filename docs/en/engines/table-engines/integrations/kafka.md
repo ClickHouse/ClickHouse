@@ -189,6 +189,8 @@ Example:
 -   `_timestamp` — Timestamp of the message.
 -   `_timestamp_ms` — Timestamp in milliseconds of the message.
 -   `_partition` — Partition of Kafka topic.
+-   `_headers.name` — Array of message's headers keys.
+-   `_headers.value` — Array of message's headers values.
 
 **See Also**
 

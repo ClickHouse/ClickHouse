@@ -22,7 +22,7 @@
 #include <typeinfo>
 #include <vector>
 
-#include <string.h>
+#include <cstring>
 
 /// For the expansion of gtest macros.
 #if defined(__clang__)
