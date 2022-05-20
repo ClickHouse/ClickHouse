@@ -4,7 +4,7 @@
 #include <Interpreters/Aggregator.h>
 #include <Processors/ISimpleTransform.h>
 #include <Processors/Transforms/AggregatingTransform.h>
-#include <Processors/Transforms/TotalsHavingTransform.h>
+#include <Processors/Transforms/finalizeChunk.h>
 
 namespace DB
 {
@@ -90,25 +90,14 @@ private:
 class FinalizeAggregatedTransform : public ISimpleTransform
 {
 public:
-    FinalizeAggregatedTransform(Block header, AggregatingTransformParamsPtr params_)
-        : ISimpleTransform({std::move(header)}, {params_->getHeader()}, true)
-        , params(params_) {}
+    FinalizeAggregatedTransform(Block header, AggregatingTransformParamsPtr params_);
 
-    void transform(Chunk & chunk) override
-    {
-        if (params->final)
-            finalizeChunk(chunk);
-        else if (!chunk.getChunkInfo())
-        {
-            auto info = std::make_shared<AggregatedChunkInfo>();
-            chunk.setChunkInfo(std::move(info));
-        }
-    }
-
+    void transform(Chunk & chunk) override;
     String getName() const override { return "FinalizeAggregatedTransform"; }
 
 private:
     AggregatingTransformParamsPtr params;
+    ColumnsMask aggregates_mask;
 };
 
 
