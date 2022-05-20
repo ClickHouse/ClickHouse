@@ -1,4 +1,4 @@
--- Tags: no-backward-compatibility-check:22.4
+-- Tags: no-backward-compatibility-check:22.5.1
 
 SELECT
     number
