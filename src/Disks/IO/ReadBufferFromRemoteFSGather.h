@@ -1,9 +1,9 @@
 #pragma once
 
 #include <Common/config.h>
-#include <Disks/IDiskRemote.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadSettings.h>
+#include <Disks/IObjectStorage.h>
 
 #if USE_AZURE_BLOB_STORAGE
 #include <azure/storage/blobs.hpp>
@@ -146,7 +146,7 @@ class ReadBufferFromAzureBlobStorageGather final : public ReadBufferFromRemoteFS
 {
 public:
     ReadBufferFromAzureBlobStorageGather(
-        std::shared_ptr<Azure::Storage::Blobs::BlobContainerClient> blob_container_client_,
+        std::shared_ptr<const Azure::Storage::Blobs::BlobContainerClient> blob_container_client_,
         const std::string & common_path_prefix_,
         const BlobsPathToSize & blobs_to_read_,
         size_t max_single_read_retries_,
@@ -162,7 +162,7 @@ public:
     SeekableReadBufferPtr createImplementationBufferImpl(const String & path, size_t file_size) override;
 
 private:
-    std::shared_ptr<Azure::Storage::Blobs::BlobContainerClient> blob_container_client;
+    std::shared_ptr<const Azure::Storage::Blobs::BlobContainerClient> blob_container_client;
     size_t max_single_read_retries;
     size_t max_single_download_retries;
 };

@@ -298,7 +298,7 @@ public:
     void createFileOperationObject(const String & operation_name, UInt64 revision, const ObjectAttributes & metadata) const;
     void findLastRevision();
 
-    int readSchemaVersion(IObjectStorage * object_storage, const String & source_path) const;
+    static int readSchemaVersion(IObjectStorage * object_storage, const String & source_path);
     void saveSchemaVersion(const int & version) const;
     void updateObjectMetadata(const String & key, const ObjectAttributes & metadata) const;
     void migrateFileToRestorableSchema(const String & path) const;

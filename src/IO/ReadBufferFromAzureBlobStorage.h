@@ -17,8 +17,8 @@ class ReadBufferFromAzureBlobStorage : public SeekableReadBuffer, public WithFil
 {
 public:
 
-    explicit ReadBufferFromAzureBlobStorage(
-        std::shared_ptr<Azure::Storage::Blobs::BlobContainerClient> blob_container_client_,
+    ReadBufferFromAzureBlobStorage(
+        std::shared_ptr<const Azure::Storage::Blobs::BlobContainerClient> blob_container_client_,
         const String & path_,
         size_t max_single_read_retries_,
         size_t max_single_download_retries_,
@@ -41,7 +41,7 @@ private:
     void initialize();
 
     std::unique_ptr<Azure::Core::IO::BodyStream> data_stream;
-    std::shared_ptr<Azure::Storage::Blobs::BlobContainerClient> blob_container_client;
+    std::shared_ptr<const Azure::Storage::Blobs::BlobContainerClient> blob_container_client;
     std::unique_ptr<Azure::Storage::Blobs::BlobClient> blob_client;
 
     const String path;
