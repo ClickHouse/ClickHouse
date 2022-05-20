@@ -92,34 +92,9 @@ NameAndTypePair StorageSnapshot::getColumn(const GetColumnsOptions & options, co
 Block StorageSnapshot::getSampleBlockForColumns(const Names & column_names) const
 {
     Block res;
-
-    const auto & columns = getMetadataForQuery()->getColumns();
-    for (const auto & name : column_names)
-    {
-        auto column = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, name);
-        auto object_column = object_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, name);
-
-        if (column && !object_column)
-        {
-            res.insert({column->type->createColumn(), column->type, column->name});
-        }
-        else if (object_column)
-        {
-            res.insert({object_column->type->createColumn(), object_column->type, object_column->name});
-        }
-        else if (auto it = virtual_columns.find(name); it != virtual_columns.end())
-        {
-            /// Virtual columns must be appended after ordinary, because user can
-            /// override them.
-            const auto & type = it->second;
-            res.insert({type->createColumn(), type, name});
-        }
-        else
-        {
-            throw Exception(ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK,
-                "Column {} not found in table {}", backQuote(name), storage.getStorageID().getNameForLogs());
-        }
-    }
+    auto columns_description = getDescriptionForColumns(column_names);
+    for (const auto & column : columns_description)
+        res.insert({column.type->createColumn(), column.type, column.name});
 
     return res;
 }
