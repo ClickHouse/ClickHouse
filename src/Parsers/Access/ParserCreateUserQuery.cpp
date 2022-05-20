@@ -46,7 +46,7 @@ namespace
     }
 
 
-    bool parseAuthenticationData(IParserBase::Pos & pos, Expected & expected, bool /*id_mode*/, AuthenticationData & auth_data)
+    bool parseAuthenticationData(IParserBase::Pos & pos, Expected & expected, AuthenticationData & auth_data)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
@@ -447,7 +447,7 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         if (!auth_data)
         {
             AuthenticationData new_auth_data;
-            if (parseAuthenticationData(pos, expected, attach_mode, new_auth_data))
+            if (parseAuthenticationData(pos, expected, new_auth_data))
             {
                 auth_data = std::move(new_auth_data);
                 continue;
