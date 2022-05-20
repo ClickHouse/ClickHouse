@@ -297,6 +297,10 @@ static std::unordered_set<const ActionsDAG::Node *> processShortCircuitFunctions
             short_circuit_nodes[&node] = short_circuit_settings;
     }
 
+    /// If there is no short-circuit functions, no need to do anything.
+    if (short_circuit_nodes.empty())
+        return {};
+
     auto reverse_info = getActionsDAGReverseInfo(nodes, actions_dag.getIndex());
 
     /// For each node we fill LazyExecutionInfo.
