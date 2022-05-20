@@ -543,7 +543,7 @@ bool LRUFileCache::tryReserve(
     assert(trash.empty());
     for (auto & cell : trash)
     {
-        removeCell(cell, cache_lock);
+        removeCell(*cell, cache_lock);
     }
 
     if (is_overflow())
@@ -564,23 +564,13 @@ bool LRUFileCache::tryReserve(
 
     for (auto & cell : to_evict)
     {
-        removeCell(cell, cache_lock);
+        removeCell(*cell, cache_lock);
     }
 
     if (queue.getTotalWeight(cache_lock) > (1ull << 63))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cache became inconsistent. There must be a bug");
 
     return true;
-}
-
-void LRUFileCache::normalize()
-{
-    std::lock_guard cache_lock(mutex);
-
-    for (auto & [key, cells_by_offset] : files)
-    {
-        normalize(cells_by_offset, cache_lock);
-    }
 }
 
 void LRUFileCache::normalize(CellsByOffset & cells, std::lock_guard<std::mutex> & cache_lock)
@@ -593,7 +583,7 @@ void LRUFileCache::normalize(CellsByOffset & cells, std::lock_guard<std::mutex> 
      *     => remove from cache completely.
      * 2. file segment downloaded size < file segment size
      *     => resize.
-     * In both cases normalization operations are very leightweight.
+     * In both cases normalization operations are very lightweight.
      * Both cases are normal cases: a user can request some file segments
      * but might not fully use them (can happen, for example, because of
      * `LIMIT n` in a query).
@@ -618,7 +608,7 @@ void LRUFileCache::normalize(CellsByOffset & cells, std::lock_guard<std::mutex> 
 
     for (auto & cell : to_remove)
     {
-        removeCell(cell, cache_lock);
+        removeCell(*cell, cache_lock);
     }
 }
 
@@ -648,7 +638,7 @@ void LRUFileCache::remove(const Key & key)
                 "Cannot remove file from cache because someone reads from it. File segment info: {}",
                 cell->file_segment->getInfoForLog());
 
-        removeCell(cell, cache_lock);
+        removeCell(*cell, cache_lock);
     }
 
     auto key_path = getPathInLocalCache(key);
@@ -683,22 +673,22 @@ void LRUFileCache::remove()
 
         if (cell->releasable())
         {
-            removeCell(cell, cache_lock);
+            removeCell(*cell, cache_lock);
         }
     }
 }
 
 void LRUFileCache::removeCell(
-    FileSegmentCell * cell,
+    const FileSegmentCell & cell,
     std::lock_guard<std::mutex> & cache_lock)
 {
-    if (cell->queue_iterator)
+    if (cell.queue_iterator)
     {
-        queue.remove(*cell->queue_iterator, cache_lock);
+        queue.remove(*cell.queue_iterator, cache_lock);
     }
 
-    Key key = cell->file_segment->key();
-    size_t offset = cell->file_segment->offset();
+    Key key = cell.file_segment->key();
+    size_t offset = cell.file_segment->offset();
 
     auto & offsets = files[key];
     offsets.erase(offset);

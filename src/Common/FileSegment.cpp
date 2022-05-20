@@ -475,12 +475,11 @@ void FileSegment::complete(State state)
     std::lock_guard segment_lock(mutex);
 
     {
+        download_state = state;
+
         SCOPE_EXIT({
-            download_state = state;
             cv.notify_all();
         });
-
-        assertNotDetached(segment_lock);
 
         bool is_downloader = isDownloaderImpl(segment_lock);
         if (!is_downloader)
@@ -499,6 +498,8 @@ void FileSegment::complete(State state)
                 "Cannot complete file segment with state: {}",
                 stateToString(state));
         }
+
+        assertNotDetached(segment_lock);
 
         if (state == State::DOWNLOADED)
         {
@@ -526,8 +527,9 @@ void FileSegment::complete()
 
     if (isDownloaderImpl(segment_lock))
     {
+        downloader_id.clear();
+
         SCOPE_EXIT({
-            downloader_id.clear();
             cv.notify_all();
         });
 

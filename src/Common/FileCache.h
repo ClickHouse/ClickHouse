@@ -86,7 +86,7 @@ public:
     /// This applies to read-through cache, not for write-through cache.
     static bool isReadOnly();
 
-    /// Create a snapshot of the current cache state. Returnes a list
+    /// Create a snapshot of the current cache state. Returns a list
     /// of file segments for all keys.
     virtual FileSegments getSnapshot() const = 0;
 
@@ -227,7 +227,7 @@ private:
         FileSegment::State state, std::lock_guard<std::mutex> & cache_lock);
 
     void removeCell(
-        FileSegmentCell * cell,
+        const FileSegmentCell & cell,
         std::lock_guard<std::mutex> & cache_lock);
 
     void useCell(const FileSegmentCell & cell, FileSegments & result, std::lock_guard<std::mutex> & cache_lock);
@@ -262,8 +262,6 @@ private:
     size_t getFileSegmentsNumUnlocked(std::lock_guard<std::mutex> & cache_lock) const;
 
     void assertCacheCellsCorrectness(const CellsByOffset & cells_by_offset, std::lock_guard<std::mutex> & cache_lock);
-
-    void normalize();
 
     void normalize(CellsByOffset & cells, std::lock_guard<std::mutex> & cache_lock);
 
