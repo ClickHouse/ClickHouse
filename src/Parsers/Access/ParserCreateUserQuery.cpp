@@ -46,7 +46,7 @@ namespace
     }
 
 
-    bool parseAuthenticationData(IParserBase::Pos & pos, Expected & expected, bool id_mode, AuthenticationData & auth_data)
+    bool parseAuthenticationData(IParserBase::Pos & pos, Expected & expected, bool /*id_mode*/, AuthenticationData & auth_data)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
@@ -120,7 +120,7 @@ namespace
                     return false;
                 value = ast->as<const ASTLiteral &>().value.safeGet<String>();
 
-                if (id_mode && expect_hash)
+                if (expect_hash)
                 {
                     if (ParserKeyword{"SALT"}.ignore(pos, expected) && ParserStringLiteral{}.parse(pos, ast, expected))
                     {
