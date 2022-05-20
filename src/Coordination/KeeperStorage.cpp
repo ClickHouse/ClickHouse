@@ -390,13 +390,13 @@ Coordination::ACLs KeeperStorage::UncommittedState::getACLs(StringRef path) cons
 namespace
 {
 
-    [[noreturn]] void onStorageInconsistency()
-    {
-        LOG_ERROR(
-            &Poco::Logger::get("KeeperStorage"),
-            "Inconsistency found between uncommitted and committed data. Keeper will terminate to avoid undefined behaviour.");
-        std::terminate();
-    }
+[[noreturn]] void onStorageInconsistency()
+{
+    LOG_ERROR(
+        &Poco::Logger::get("KeeperStorage"),
+        "Inconsistency found between uncommitted and committed data. Keeper will terminate to avoid undefined behaviour.");
+    std::terminate();
+}
 
 }
 
@@ -1033,9 +1033,17 @@ struct KeeperStorageSetRequestProcessor final : public KeeperStorageRequestProce
                 },
                 request.version});
 
-        new_deltas.emplace_back(parentPath(request.path).toString(), zxid, KeeperStorage::UpdateNodeDelta{[](KeeperStorage::Node & parent) {
-                                    parent.stat.cversion++;
-                                }});
+        new_deltas.emplace_back(
+                parentPath(request.path).toString(),
+                zxid,
+                KeeperStorage::UpdateNodeDelta
+                {
+                    [](KeeperStorage::Node & parent)
+                    {
+                        parent.stat.cversion++;
+                    }
+                }
+        );
 
         digest = storage.calculateNodesDigest(digest, new_deltas);
         return new_deltas;
