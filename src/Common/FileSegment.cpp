@@ -521,8 +521,6 @@ void FileSegment::complete()
 {
     std::lock_guard segment_lock(mutex);
 
-    assertNotDetached(segment_lock);
-
     if (download_state == State::SKIP_CACHE || is_detached)
         return;
 
@@ -718,13 +716,7 @@ FileSegmentsHolder::~FileSegmentsHolder()
     {
         try
         {
-            /// If file segment is detached, it is not owned by cache, so it will be destructed
-            /// at this point, therefore no completion required.
-            if ((*file_segment_it)->isDetached() == false)
-            {
-                (*file_segment_it)->complete();
-            }
-
+            (*file_segment_it)->complete();
             file_segment_it = file_segments.erase(file_segment_it);
         }
         catch (...)
