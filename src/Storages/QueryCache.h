@@ -21,24 +21,16 @@ struct CacheKey
 
     bool operator==(const CacheKey & other) const
     {
-        return ast->getTreeHash() == other.ast->getTreeHash() && header == other.header
-            //               && settingsSet(settings) == settingsSet(other.settings)
-            //               && username == other.username
-            ;
+        return ast->getTreeHash() == other.ast->getTreeHash()
+               && header == other.header
+               && settings == other.settings
+               && username == other.username;
     }
 
     ASTPtr ast;
     Block header;
     Settings settings;
     std::optional<String> username;
-
-    //    static std::set<String> settingsSet(const Settings & settings) {
-    //        std::set<String> res;
-    //        for (const auto & s : settings.all()) {
-    //            res.insert(s.getValueString());
-    //        }
-    //        return res;
-    //    }
 };
 
 struct CacheKeyHasher
@@ -46,25 +38,27 @@ struct CacheKeyHasher
     size_t operator()(const CacheKey & key) const
     {
         auto ast_info = key.ast->getTreeHash();
-        auto header_info = key.header.getNamesAndTypesList().toString();
-        //        auto settings_info = settingsHash(k.settings);
-        //        auto username_info = std::hash<std::optional<String>>{}(k.username);
+        auto header_info = std::hash<String>{}(key.header.getNamesAndTypesList().toString());
+        auto settings_info = settingsHash(key.settings);
+        auto username_info = std::hash<std::optional<String>>{}(key.username);
 
-        return ast_info.first + ast_info.second * 9273 + std::hash<String>{}(header_info)*9273 * 9273
-            //            + settings_info * 9273 * 9273 * 9273
-            //              + username_info * 9273 * 9273 * 9273 * 9273
-            ;
+        return ast_info.first + ast_info.second * 9273
+               + header_info * 9273 * 9273
+               + settings_info * 9273 * 9273 * 9273
+               + username_info * 9273 * 9273 * 9273 * 9273;
     }
-    //private:
-    //    static size_t settingsHash(const Settings & settings) {
-    //        size_t hash = 0;
-    //        size_t coefficient = 1;
-    //        for (const auto & s : settings) {
-    //            hash += std::hash<String>{}(s.getValueString()) * coefficient;
-    //            coefficient *= 53;
-    //        }
-    //        return hash;
-    //    }
+
+    private:
+        static size_t settingsHash(const Settings & settings) {
+            size_t hash = 0;
+            size_t coefficient = 1;
+            for (const auto & setting : settings)
+            {
+                hash += std::hash<String>{}(setting.getValueString()) * coefficient;
+                coefficient *= 53;
+            }
+            return hash;
+        }
 };
 
 struct QueryWeightFunction
@@ -184,10 +178,11 @@ public:
     {
         auto data = get(cache_key);
         data->second.push_back(std::move(chunk));
+
         if (query_weight(*data) > max_query_cache_entry_size)
         {
-             remove(cache_key);
-             return false;
+            remove(cache_key);
+            return false;
         }
         set(cache_key, data); // evicts cache if necessary, the entry with key=cache_key will not get evicted
         return false;

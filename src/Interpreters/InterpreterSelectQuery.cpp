@@ -643,8 +643,8 @@ void InterpreterSelectQuery::buildQueryPlan(QueryPlan & query_plan)
 {
     auto query_cache_key = CacheKey{query_ptr, source_header, context->getSettingsRef(),
                                     context->getSettingsRef().share_query_cache
-                                        ? std::make_optional<String>(context->getUserName())
-                                        : std::optional<String>()
+                                        ? std::optional<String>()
+                                        : std::make_optional<String>(context->getUserName())
                                     };
 
     if (auto query_result = context->getQueryCache()->get(query_cache_key);
