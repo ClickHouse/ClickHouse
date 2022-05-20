@@ -1,4 +1,4 @@
-#include <Processors/Formats/Impl/JSONColumnsBaseBlockInputFormat.h>
+#include <Processors/Formats/Impl/JSONColumnsBlockInputFormatBase.h>
 #include <Formats/JSONUtils.h>
 #include <IO/ReadHelpers.h>
 #include <base/find_symbols.h>
@@ -13,11 +13,11 @@ namespace ErrorCodes
 }
 
 
-JSONColumnsBaseReader::JSONColumnsBaseReader(ReadBuffer & in_) : in(&in_)
+JSONColumnsReaderBase::JSONColumnsReaderBase(ReadBuffer & in_) : in(&in_)
 {
 }
 
-bool JSONColumnsBaseReader::checkColumnEnd()
+bool JSONColumnsReaderBase::checkColumnEnd()
 {
     skipWhitespaceIfAny(*in);
     if (!in->eof() && *in->position() == ']')
@@ -29,7 +29,7 @@ bool JSONColumnsBaseReader::checkColumnEnd()
     return false;
 }
 
-bool JSONColumnsBaseReader::checkColumnEndOrSkipFieldDelimiter()
+bool JSONColumnsReaderBase::checkColumnEndOrSkipFieldDelimiter()
 {
     if (checkColumnEnd())
         return true;
@@ -39,7 +39,7 @@ bool JSONColumnsBaseReader::checkColumnEndOrSkipFieldDelimiter()
     return false;
 }
 
-bool JSONColumnsBaseReader::checkChunkEndOrSkipColumnDelimiter()
+bool JSONColumnsReaderBase::checkChunkEndOrSkipColumnDelimiter()
 {
     if (checkChunkEnd())
         return true;
@@ -49,7 +49,7 @@ bool JSONColumnsBaseReader::checkChunkEndOrSkipColumnDelimiter()
     return false;
 }
 
-void JSONColumnsBaseReader::skipColumn()
+void JSONColumnsReaderBase::skipColumn()
 {
     /// We assume that we already read '[', so we should skip until matched ']'.
     size_t balance = 1;
@@ -76,8 +76,8 @@ void JSONColumnsBaseReader::skipColumn()
     }
 }
 
-JSONColumnsBaseBlockInputFormat::JSONColumnsBaseBlockInputFormat(
-    ReadBuffer & in_, const Block & header_, const FormatSettings & format_settings_, std::unique_ptr<JSONColumnsBaseReader> reader_)
+JSONColumnsBlockInputFormatBase::JSONColumnsBlockInputFormatBase(
+    ReadBuffer & in_, const Block & header_, const FormatSettings & format_settings_, std::unique_ptr<JSONColumnsReaderBase> reader_)
     : IInputFormat(header_, in_)
     , format_settings(format_settings_)
     , fields(header_.getNamesAndTypes())
@@ -87,7 +87,7 @@ JSONColumnsBaseBlockInputFormat::JSONColumnsBaseBlockInputFormat(
 {
 }
 
-size_t JSONColumnsBaseBlockInputFormat::readColumn(
+size_t JSONColumnsBlockInputFormatBase::readColumn(
     IColumn & column, const DataTypePtr & type, const SerializationPtr & serialization, const String & column_name)
 {
     /// Check for empty column.
@@ -103,13 +103,13 @@ size_t JSONColumnsBaseBlockInputFormat::readColumn(
     return column.size();
 }
 
-void JSONColumnsBaseBlockInputFormat::setReadBuffer(ReadBuffer & in_)
+void JSONColumnsBlockInputFormatBase::setReadBuffer(ReadBuffer & in_)
 {
     reader->setReadBuffer(in_);
     IInputFormat::setReadBuffer(in_);
 }
 
-Chunk JSONColumnsBaseBlockInputFormat::generate()
+Chunk JSONColumnsBlockInputFormatBase::generate()
 {
     MutableColumns columns = getPort().getHeader().cloneEmptyColumns();
     block_missing_values.clear();
@@ -175,13 +175,13 @@ Chunk JSONColumnsBaseBlockInputFormat::generate()
     return Chunk(std::move(columns), rows);
 }
 
-JSONColumnsBaseSchemaReader::JSONColumnsBaseSchemaReader(
-    ReadBuffer & in_, const FormatSettings & format_settings_, std::unique_ptr<JSONColumnsBaseReader> reader_)
+JSONColumnsSchemaReaderBase::JSONColumnsSchemaReaderBase(
+    ReadBuffer & in_, const FormatSettings & format_settings_, std::unique_ptr<JSONColumnsReaderBase> reader_)
     : ISchemaReader(in_), format_settings(format_settings_), reader(std::move(reader_))
 {
 }
 
-void JSONColumnsBaseSchemaReader::chooseResulType(DataTypePtr & type, const DataTypePtr & new_type, const String & column_name, size_t row) const
+void JSONColumnsSchemaReaderBase::chooseResulType(DataTypePtr & type, const DataTypePtr & new_type, const String & column_name, size_t row) const
 {
     auto common_type_checker = [&](const DataTypePtr & first, const DataTypePtr & second)
     {
@@ -190,7 +190,7 @@ void JSONColumnsBaseSchemaReader::chooseResulType(DataTypePtr & type, const Data
     chooseResultColumnType(type, new_type, common_type_checker, nullptr, column_name, row);
 }
 
-NamesAndTypesList JSONColumnsBaseSchemaReader::readSchema()
+NamesAndTypesList JSONColumnsSchemaReaderBase::readSchema()
 {
     size_t total_rows_read = 0;
     std::unordered_map<String, DataTypePtr> names_to_types;
@@ -242,7 +242,7 @@ NamesAndTypesList JSONColumnsBaseSchemaReader::readSchema()
     return result;
 }
 
-DataTypePtr JSONColumnsBaseSchemaReader::readColumnAndGetDataType(const String & column_name, size_t & rows_read, size_t max_rows_to_read)
+DataTypePtr JSONColumnsSchemaReaderBase::readColumnAndGetDataType(const String & column_name, size_t & rows_read, size_t max_rows_to_read)
 {
     /// Check for empty column.
     if (reader->checkColumnEnd())

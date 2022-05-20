@@ -1,5 +1,5 @@
 #pragma once
-#include <Processors/Formats/Impl/JSONColumnsBaseBlockOutputFormat.h>
+#include <Processors/Formats/Impl/JSONColumnsBlockOutputFormatBase.h>
 
 namespace DB
 {
@@ -11,7 +11,7 @@ namespace DB
  *     ...
  * ]
  */
-class JSONCompactColumnsBlockOutputFormat : public JSONColumnsBaseBlockOutputFormat
+class JSONCompactColumnsBlockOutputFormat : public JSONColumnsBlockOutputFormatBase
 {
 public:
     JSONCompactColumnsBlockOutputFormat(WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_);
@@ -24,7 +24,7 @@ protected:
 
     void writeColumnStart(size_t column_index) override;
 
-    Names column_names;
+    const Names column_names;
 };
 
 }

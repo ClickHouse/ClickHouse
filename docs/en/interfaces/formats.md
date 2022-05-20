@@ -403,7 +403,7 @@ Both data output and parsing are supported in this format. For parsing, any orde
 
 Parsing allows the presence of the additional field `tskv` without the equal sign or a value. This field is ignored.
 
-For input format columns with unknown names will be skipped if setting [input_format_skip_unknown_fields](../operations/settings/settings.md#settings-input-format-skip-unknown-fields) is set to 1.
+During import, columns with unknown names will be skipped if setting [input_format_skip_unknown_fields](../operations/settings/settings.md#settings-input-format-skip-unknown-fields) is set to 1.
 
 ## CSV {#csv}
 
@@ -599,7 +599,7 @@ Example:
 }
 ```
 
-Columns with unknown names will be skipped if setting [input_format_skip_unknown_fields](../operations/settings/settings.md#settings-input-format-skip-unknown-fields) is set to 1.
+During import, columns with unknown names will be skipped if setting [input_format_skip_unknown_fields](../operations/settings/settings.md#settings-input-format-skip-unknown-fields) is set to 1.
 Columns that are not present in the block will be filled with default values (you can use  [input_format_defaults_for_omitted_fields](../operations/settings/settings.md#session_settings-input_format_defaults_for_omitted_fields) setting here)
 
 
@@ -621,6 +621,7 @@ Example:
                         "name": "str",
                         "type": "String"
                 },
+               
                 {
                         "name": "arr",
                         "type": "Array(UInt8)"

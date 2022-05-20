@@ -12,12 +12,12 @@ class WriteBuffer;
 
 /// Base class for Columnar JSON output formats.
 /// It buffers all data and outputs it as a single block in writeSuffix() method.
-class JSONColumnsBaseBlockOutputFormat : public IOutputFormat
+class JSONColumnsBlockOutputFormatBase : public IOutputFormat
 {
 public:
-    JSONColumnsBaseBlockOutputFormat(WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_);
+    JSONColumnsBlockOutputFormatBase(WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_);
 
-    String getName() const override { return "JSONColumnsBaseBlockOutputFormat"; }
+    String getName() const override { return "JSONColumnsBlockOutputFormatBase"; }
 
 protected:
     void consume(Chunk chunk) override;
@@ -32,7 +32,7 @@ protected:
     void writeColumnEnd(bool is_last);
 
     const FormatSettings format_settings;
-    Serializations serializations;
+    const Serializations serializations;
 
     WriteBuffer * ostr;
 

@@ -8,7 +8,7 @@ namespace DB
 {
 
 JSONColumnsBlockOutputFormat::JSONColumnsBlockOutputFormat(WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_, size_t indent_)
-    : JSONColumnsBaseBlockOutputFormat(out_, header_, format_settings_), fields(header_.getNamesAndTypes()), indent(indent_)
+    : JSONColumnsBlockOutputFormatBase(out_, header_, format_settings_), fields(header_.getNamesAndTypes()), indent(indent_)
 {
     for (auto & field : fields)
     {

@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Processors/Formats/Impl/JSONColumnsBaseBlockInputFormat.h>
+#include <Processors/Formats/Impl/JSONColumnsBlockInputFormatBase.h>
 
 namespace DB
 {
@@ -12,7 +12,7 @@ namespace DB
  *     ...
  * }
  */
-class JSONColumnsReader : public JSONColumnsBaseReader
+class JSONColumnsReader : public JSONColumnsReaderBase
 {
 public:
     JSONColumnsReader(ReadBuffer & in_);
