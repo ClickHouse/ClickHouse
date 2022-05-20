@@ -350,14 +350,6 @@ INDEX map_key_index mapKeys(map_column) TYPE bloom_filter GRANULARITY 1
 INDEX map_key_index mapValues(map_column) TYPE bloom_filter GRANULARITY 1
 ```
 
-- `diskann([num_of_threads, alpha, graph_degree, search_list_size, pruning_set_size])` -- Stores and operates with ANN search graph built by [DiskANN algortihm](https://proceedings.neurips.cc/paper/2019/file/09853c7fb1d3f8ee67a61b6bf4a7f8e6-Paper.pdf). Can be used for optimizations
-of operations working with vector distances.
-    - num_of_threads — number of threads to use for index building process. Default value: 1.
-    - alpha — A float value which determines the diameter of the graph, which will be approximately log n to the base alpha. Typical values are between 1 to 1.5. 1 will yield the sparsest graph, 1.5 will yield denser graphs. Default value: 1.2.
-    - graph_degree — the degree of the graph index, typically between 32 and 150. Larger parameter will result in larger indices and longer indexing times, but might yield better search quality. Default value: 90.
-    - search_list_size — the size of search list we maintain during index building. Typical values are between 75 to 400. Larger values will take more time to build but result in indices that provide higher recall for the same search complexity. Ensure that value of L is at least that of R value unless you need to build indices really quickly and can somewhat compromise on quality. Default value: 150.
-    - pruning_set_size — maximum candidate set size during pruning procedure. Default value: 1500.
-
 
 ``` sql
 INDEX sample_index (u64 * length(s)) TYPE minmax GRANULARITY 4
@@ -366,30 +358,26 @@ INDEX sample_index3 (lower(str), str) TYPE ngrambf_v1(3, 256, 2, 0) GRANULARITY 
 ```
 
 #### Functions Support {#functions-support}
-
 Conditions in the `WHERE` clause contains calls of the functions that operate with columns. If the column is a part of an index, ClickHouse tries to use this index when performing the functions. ClickHouse supports different subsets of functions for using indexes.
-
 The `set` index can be used with all functions. Function subsets for other indexes are shown in the table below.
-
-| Function (operator) / Index                                                                                | primary key | minmax | ngrambf_v1 | tokenbf_v1 | bloom_filter | diskann |
-|------------------------------------------------------------------------------------------------------------|-------------|--------|-------------|-------------|---------------|-----|
-| [equals (=, ==)](../../../sql-reference/functions/comparison-functions.md#function-equals)                 | ✔           | ✔      | ✔           | ✔           | ✔             | ✗              |
-| [notEquals(!=, &lt;&gt;)](../../../sql-reference/functions/comparison-functions.md#function-notequals)     | ✔           | ✔      | ✔           | ✔           | ✔             | ✗              |
-| [like](../../../sql-reference/functions/string-search-functions.md#function-like)                          | ✔           | ✔      | ✔           | ✔           | ✗             | ✗              |
-| [notLike](../../../sql-reference/functions/string-search-functions.md#function-notlike)                    | ✔           | ✔      | ✔           | ✔           | ✗             | ✗              |
-| [startsWith](../../../sql-reference/functions/string-functions.md#startswith)                              | ✔           | ✔      | ✔           | ✔           | ✗             | ✗              |
-| [endsWith](../../../sql-reference/functions/string-functions.md#endswith)                                  | ✗           | ✗      | ✔           | ✔           | ✗             | ✗              |
-| [multiSearchAny](../../../sql-reference/functions/string-search-functions.md#function-multisearchany)      | ✗           | ✗      | ✔           | ✗           | ✗             | ✗              |
-| [in](../../../sql-reference/functions/in-functions#in-functions)                                           | ✔           | ✔      | ✔           | ✔           | ✔             | ✗              |
-| [notIn](../../../sql-reference/functions/in-functions#in-functions)                                        | ✔           | ✔      | ✔           | ✔           | ✔             | ✗              |
-| [less (<)](../../../sql-reference/functions/comparison-functions.md#function-less)                         | ✔           | ✔      | ✗           | ✗           | ✗             | ✔              |
-| [greater (>)](../../../sql-reference/functions/comparison-functions.md#function-greater)                   | ✔           | ✔      | ✗           | ✗           | ✗             | ✗              |
-| [lessOrEquals (<=)](../../../sql-reference/functions/comparison-functions.md#function-lessorequals)        | ✔           | ✔      | ✗           | ✗           | ✗             | ✔              |
-| [greaterOrEquals (>=)](../../../sql-reference/functions/comparison-functions.md#function-greaterorequals)  | ✔           | ✔      | ✗           | ✗           | ✗             | ✗              |
-| [empty](../../../sql-reference/functions/array-functions#function-empty)                                   | ✔           | ✔      | ✗           | ✗           | ✗             | ✗              |
-| [notEmpty](../../../sql-reference/functions/array-functions#function-notempty)                             | ✔           | ✔      | ✗           | ✗           | ✗             | ✗              |
-| hasToken                                                                                                   | ✗           | ✗      | ✗           | ✔           | ✗             | ✗              |
-
+| Function (operator) / Index                                                                                | primary key | minmax | ngrambf_v1 | tokenbf_v1 | bloom_filter |
+|------------------------------------------------------------------------------------------------------------|-------------|--------|-------------|-------------|---------------|
+| [equals (=, ==)](../../../sql-reference/functions/comparison-functions.md#function-equals)                 | ✔           | ✔      | ✔           | ✔           | ✔             |
+| [notEquals(!=, <>)](../../../sql-reference/functions/comparison-functions.md#function-notequals)         | ✔           | ✔      | ✔           | ✔           | ✔             |
+| [like](../../../sql-reference/functions/string-search-functions.md#function-like)                          | ✔           | ✔      | ✔           | ✔           | ✗             |
+| [notLike](../../../sql-reference/functions/string-search-functions.md#function-notlike)                    | ✔           | ✔      | ✔           | ✔           | ✗             |
+| [startsWith](../../../sql-reference/functions/string-functions.md#startswith)                              | ✔           | ✔      | ✔           | ✔           | ✗             |
+| [endsWith](../../../sql-reference/functions/string-functions.md#endswith)                                  | ✗           | ✗      | ✔           | ✔           | ✗             |
+| [multiSearchAny](../../../sql-reference/functions/string-search-functions.md#function-multisearchany)      | ✗           | ✗      | ✔           | ✗           | ✗             |
+| [in](../../../sql-reference/functions/in-functions.md#in-functions)                                        | ✔           | ✔      | ✔           | ✔           | ✔             |
+| [notIn](../../../sql-reference/functions/in-functions.md#in-functions)                                     | ✔           | ✔      | ✔           | ✔           | ✔             |
+| [less (<)](../../../sql-reference/functions/comparison-functions.md#function-less)                        | ✔           | ✔      | ✗           | ✗           | ✗             |
+| [greater (>)](../../../sql-reference/functions/comparison-functions.md#function-greater)                  | ✔           | ✔      | ✗           | ✗           | ✗             |
+| [lessOrEquals (<=)](../../../sql-reference/functions/comparison-functions.md#function-lessorequals)       | ✔           | ✔      | ✗           | ✗           | ✗             |
+| [greaterOrEquals (>=)](../../../sql-reference/functions/comparison-functions.md#function-greaterorequals) | ✔           | ✔      | ✗           | ✗           | ✗             |
+| [empty](../../../sql-reference/functions/array-functions.md#function-empty)                                | ✔           | ✔      | ✗           | ✗           | ✗             |
+| [notEmpty](../../../sql-reference/functions/array-functions.md#function-notempty)                          | ✔           | ✔      | ✗           | ✗           | ✗             |
+| hasToken                                                                                                   | ✗           | ✗      | ✗           | ✔           | ✗             |
 Functions with a constant argument that is less than ngram size can’t be used by `ngrambf_v1` for query optimization.
 
 :::note
@@ -1006,4 +994,10 @@ As the indexes are built only during insertions into table, `INSERT` and `OPTIMI
 You can create your table with index which uses certain algorithm. Now only indices based on the following algorithms are supported:
 
 ##### Index list
--   
+- `diskann([num_of_threads, alpha, graph_degree, search_list_size, pruning_set_size])` -- Stores and operates with ANN search graph built by [DiskANN algortihm](https://proceedings.neurips.cc/paper/2019/file/09853c7fb1d3f8ee67a61b6bf4a7f8e6-Paper.pdf). Can be used for optimizations
+of operations working with vector distances.
+    - num_of_threads — number of threads to use for index building process. Default value: 1.
+    - alpha — A float value which determines the diameter of the graph, which will be approximately log n to the base alpha. Typical values are between 1 to 1.5. 1 will yield the sparsest graph, 1.5 will yield denser graphs. Default value: 1.2.
+    - graph_degree — the degree of the graph index, typically between 32 and 150. Larger parameter will result in larger indices and longer indexing times, but might yield better search quality. Default value: 90.
+    - search_list_size — the size of search list we maintain during index building. Typical values are between 75 to 400. Larger values will take more time to build but result in indices that provide higher recall for the same search complexity. Ensure that value of L is at least that of R value unless you need to build indices really quickly and can somewhat compromise on quality. Default value: 150.
+    - pruning_set_size — maximum candidate set size during pruning procedure. Default value: 1500.
