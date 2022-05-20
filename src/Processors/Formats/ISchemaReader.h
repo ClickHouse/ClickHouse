@@ -129,6 +129,6 @@ void chooseResultColumnType(
     size_t row);
 
 void checkResultColumnTypeAndAppend(
-    NamesAndTypesList & result, DataTypePtr & type, const String & name, const DataTypePtr & default_type, size_t max_rows_to_read);
+    NamesAndTypesList & result, DataTypePtr & type, const String & name, const DataTypePtr & default_type, size_t rows_read);
 
 }
