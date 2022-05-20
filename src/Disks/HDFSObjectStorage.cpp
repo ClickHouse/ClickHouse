@@ -106,14 +106,7 @@ void HDFSObjectStorage::removeObject(const std::string & path)
 void HDFSObjectStorage::removeObjects(const std::vector<std::string> & paths)
 {
     for (const auto & hdfs_path : paths)
-    {
-        const size_t begin_of_path = hdfs_path.find('/', hdfs_path.find("//") + 2);
-
-        /// Add path from root to file name
-        int res = hdfsDelete(hdfs_fs.get(), hdfs_path.substr(begin_of_path).c_str(), 0);
-        if (res == -1)
-            throw Exception(ErrorCodes::HDFS_ERROR, "HDFSDelete failed with path: " + hdfs_path);
-    }
+        removeObject(hdfs_path);
 }
 
 void HDFSObjectStorage::removeObjectIfExists(const std::string & path)
@@ -125,17 +118,7 @@ void HDFSObjectStorage::removeObjectIfExists(const std::string & path)
 void HDFSObjectStorage::removeObjectsIfExist(const std::vector<std::string> & paths)
 {
     for (const auto & hdfs_path : paths)
-    {
-        if (!exists(hdfs_path))
-            continue;
-
-        const size_t begin_of_path = hdfs_path.find('/', hdfs_path.find("//") + 2);
-
-        /// Add path from root to file name
-        int res = hdfsDelete(hdfs_fs.get(), hdfs_path.substr(begin_of_path).c_str(), 0);
-        if (res == -1)
-            throw Exception(ErrorCodes::HDFS_ERROR, "HDFSDelete failed with path: " + hdfs_path);
-    }
+        removeObjectIfExists(hdfs_path);
 }
 
 ObjectMetadata HDFSObjectStorage::getObjectMetadata(const std::string &) const
