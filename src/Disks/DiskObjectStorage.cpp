@@ -500,6 +500,9 @@ String DiskObjectStorage::getUniqueId(const String & path) const
 
 bool DiskObjectStorage::checkObjectExists(const String & path) const
 {
+    if (!path.starts_with(remote_fs_root_path))
+        return false;
+
     return object_storage->exists(path);
 }
 
@@ -714,7 +717,9 @@ void DiskObjectStorage::removeSharedRecursive(const String & path, bool keep_all
         for (auto && [local_path, remote_paths] : paths_to_remove)
         {
             if (!file_names_remove_metadata_only.contains(fs::path(local_path).filename()))
+            {
                 remove_from_remote.insert(remove_from_remote.end(), remote_paths.begin(), remote_paths.end());
+            }
         }
         removeFromRemoteFS(remove_from_remote);
     }
@@ -763,6 +768,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorage::writeFile(
     const WriteSettings & settings)
 {
     auto blob_name = getRandomASCIIString();
+    auto blob_path = fs::path(remote_fs_root_path) / blob_name;
 
     std::optional<ObjectAttributes> object_attributes;
     if (send_metadata)
@@ -781,7 +787,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorage::writeFile(
             [blob_name, count] (DiskObjectStorage::Metadata & metadata) { metadata.addObject(blob_name, count); return true; });
     };
 
-    return object_storage->writeObject(fs::path(remote_fs_root_path) / blob_name, WriteMode::Rewrite, object_attributes, create_metadata_callback, buf_size, settings);
+    return object_storage->writeObject(blob_path, mode, object_attributes, std::move(create_metadata_callback), buf_size, settings);
 }
 
 
