@@ -355,31 +355,7 @@ void setUserAndGroup()
     static constexpr size_t buf_size = 16384; /// Linux man page says it is enough. Nevertheless, we will check if it's not enough and throw.
     std::unique_ptr<char[]> buf(new char[buf_size]);
 
-    const char * env_uid = getenv("CLICKHOUSE_SETUID");
-    if (env_uid && env_uid[0])
-    {
-        /// Is it numeric id or name?
-        uid_t uid = 0;
-        if (!tryParse(uid, env_uid) || uid == 0)
-        {
-            passwd entry{};
-            passwd * result{};
-
-            if (0 != getpwnam_r(env_uid, &entry, buf.get(), buf_size, &result))
-                throwFromErrno(fmt::format("Cannot do 'getpwnam_r' to obtain uid from user name, specified in the CLICKHOUSE_SETUID environment variable ({})", env_uid), ErrorCodes::SYSTEM_ERROR);
-
-            if (!result)
-                throw Exception("User {} specified in the CLICKHOUSE_SETUID environment variable is not found in the system", ErrorCodes::BAD_ARGUMENTS);
-
-            uid = entry.pw_uid;
-        }
-
-        if (uid == 0)
-            throw Exception("User specified in the CLICKHOUSE_SETUID environment variable has id 0, but dropping privileges to uid 0 does not make sense", ErrorCodes::BAD_ARGUMENTS);
-
-        if (0 != setuid(uid))
-            throwFromErrno(fmt::format("Cannot do 'setuid' to user, specified in the CLICKHOUSE_SETUID environment variable ({})", env_uid), ErrorCodes::SYSTEM_ERROR);
-    }
+    /// Set the group first, because if we set user, the privileges will be already dropped and we will not be able to set the group later.
 
     const char * env_gid = getenv("CLICKHOUSE_SETGID");
     if (env_gid && env_gid[0])
@@ -404,6 +380,32 @@ void setUserAndGroup()
 
         if (0 != setgid(gid))
             throwFromErrno(fmt::format("Cannot do 'setgid' to user, specified in the CLICKHOUSE_SETGID environment variable ({})", env_gid), ErrorCodes::SYSTEM_ERROR);
+    }
+
+    const char * env_uid = getenv("CLICKHOUSE_SETUID");
+    if (env_uid && env_uid[0])
+    {
+        /// Is it numeric id or name?
+        uid_t uid = 0;
+        if (!tryParse(uid, env_uid) || uid == 0)
+        {
+            passwd entry{};
+            passwd * result{};
+
+            if (0 != getpwnam_r(env_uid, &entry, buf.get(), buf_size, &result))
+                throwFromErrno(fmt::format("Cannot do 'getpwnam_r' to obtain uid from user name, specified in the CLICKHOUSE_SETUID environment variable ({})", env_uid), ErrorCodes::SYSTEM_ERROR);
+
+            if (!result)
+                throw Exception("User {} specified in the CLICKHOUSE_SETUID environment variable is not found in the system", ErrorCodes::BAD_ARGUMENTS);
+
+            uid = entry.pw_uid;
+        }
+
+        if (uid == 0)
+            throw Exception("User specified in the CLICKHOUSE_SETUID environment variable has id 0, but dropping privileges to uid 0 does not make sense", ErrorCodes::BAD_ARGUMENTS);
+
+        if (0 != setuid(uid))
+            throwFromErrno(fmt::format("Cannot do 'setuid' to user, specified in the CLICKHOUSE_SETUID environment variable ({})", env_uid), ErrorCodes::SYSTEM_ERROR);
     }
 }
 
