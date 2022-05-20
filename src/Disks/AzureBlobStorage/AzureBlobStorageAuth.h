@@ -4,14 +4,16 @@
 
 #if USE_AZURE_BLOB_STORAGE
 
-#include <Disks/IDiskRemote.h>
 #include <azure/storage/blobs.hpp>
+#include <Disks/AzureObjectStorage.h>
 
 namespace DB
 {
 
-std::shared_ptr<Azure::Storage::Blobs::BlobContainerClient> getAzureBlobContainerClient(
+std::unique_ptr<Azure::Storage::Blobs::BlobContainerClient> getAzureBlobContainerClient(
     const Poco::Util::AbstractConfiguration & config, const String & config_prefix);
+
+std::unique_ptr<AzureObjectStorageSettings> getAzureBlobStorageSettings(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, ContextPtr /*context*/);
 
 }
 

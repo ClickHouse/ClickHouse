@@ -80,7 +80,6 @@ void registerDiskS3(DiskFactory & factory)
 
         FileCachePtr cache = getCachePtrForDisk(name, config, config_prefix, context);
 
-
         ObjectStoragePtr s3_storage = std::make_unique<S3ObjectStorage>(
             std::move(cache), getClient(config, config_prefix, context),
             getSettings(config, config_prefix, context),
