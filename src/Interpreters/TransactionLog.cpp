@@ -21,6 +21,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int UNKNOWN_STATUS_OF_TRANSACTION;
 }
 
 static void tryWriteEventToSystemLog(Poco::Logger * log, ContextPtr context,
@@ -217,7 +218,8 @@ void TransactionLog::runUpdatingThread()
             if (stop_flag.load())
                 return;
 
-            if (getZooKeeper()->expired())
+            bool connection_loss = getZooKeeper()->expired();
+            if (connection_loss)
             {
                 auto new_zookeeper = global_context->getZooKeeper();
                 std::lock_guard lock{mutex};
@@ -226,6 +228,9 @@ void TransactionLog::runUpdatingThread()
 
             loadNewEntries();
             removeOldEntries();
+
+            if (connection_loss)
+                tryFinalizeUnknownStateTransactions();
         }
         catch (const Coordination::Exception &)
         {
@@ -314,6 +319,32 @@ void TransactionLog::removeOldEntries()
         tid_to_csn.erase(tid_hash);
 }
 
+void TransactionLog::tryFinalizeUnknownStateTransactions()
+{
+    /// We just recovered connection to [Zoo]Keeper.
+    /// Check if transactions in unknown state were actually committed or not and finalize or rollback them.
+    UnknownStateList list;
+    {
+        std::lock_guard lock{running_list_mutex};
+        std::swap(list, unknown_state_list);
+    }
+
+    for (auto & [txn, state_guard] : list)
+    {
+        /// CSNs must be already loaded, only need to check if the corresponding mapping exists.
+        if (auto csn = getCSN(txn->tid))
+        {
+            finalizeCommittedTransaction(txn, csn);
+        }
+        else
+        {
+            assertTIDIsNotOutdated(txn->tid);
+            state_guard = {};
+            rollbackTransaction(txn->shared_from_this());
+        }
+    }
+}
+
 CSN TransactionLog::getLatestSnapshot() const
 {
     return latest_snapshot.load();
@@ -342,55 +373,90 @@ MergeTreeTransactionPtr TransactionLog::beginTransaction()
 CSN TransactionLog::commitTransaction(const MergeTreeTransactionPtr & txn)
 {
     /// Some precommit checks, may throw
-    auto committing_lock = txn->beforeCommit();
+    auto state_guard = txn->beforeCommit();
 
-    CSN new_csn;
+    CSN allocated_csn = Tx::UnknownCSN;
     if (txn->isReadOnly())
     {
         /// Don't need to allocate CSN in ZK for readonly transactions, it's safe to use snapshot/start_csn as "commit" timestamp
         LOG_TEST(log, "Closing readonly transaction {}", txn->tid);
-        new_csn = txn->snapshot;
-        tryWriteEventToSystemLog(log, global_context, TransactionsInfoLogElement::COMMIT, txn->tid, new_csn);
     }
     else
     {
         LOG_TEST(log, "Committing transaction {}", txn->dumpDescription());
-        /// TODO handle connection loss
         /// TODO support batching
         auto current_zookeeper = getZooKeeper();
-        String path_created = current_zookeeper->create(zookeeper_path_log + "/csn-", serializeTID(txn->tid), zkutil::CreateMode::PersistentSequential);    /// Commit point
-        NOEXCEPT_SCOPE;
+        String csn_path_created;
+        try
+        {
+            /// Commit point
+            csn_path_created = current_zookeeper->create(zookeeper_path_log + "/csn-", serializeTID(txn->tid), zkutil::CreateMode::PersistentSequential);
+        }
+        catch (const Coordination::Exception & e)
+        {
+            if (!Coordination::isHardwareError(e.code))
+                throw;
 
+            /// We don't know if transaction has been actually committed or not.
+            /// The only thing we can do is to postpone its finalization.
+            {
+                std::lock_guard lock{running_list_mutex};
+                unknown_state_list.emplace_back(txn.get(), std::move(state_guard));
+            }
+            log_updated_event->set();
+            throw Exception(ErrorCodes::UNKNOWN_STATUS_OF_TRANSACTION, "Connection lost on attempt to commit transaction {}, will finalize it later: {}", txn->tid, e.message());
+        }
+
+        NOEXCEPT_SCOPE;
         /// FIXME Transactions: Sequential node numbers in ZooKeeper are Int32, but 31 bit is not enough for production use
         /// (overflow is possible in a several weeks/months of active usage)
-        new_csn = deserializeCSN(path_created.substr(zookeeper_path_log.size() + 1));
+        allocated_csn = deserializeCSN(csn_path_created.substr(zookeeper_path_log.size() + 1));
+    }
 
-        LOG_INFO(log, "Transaction {} committed with CSN={}", txn->tid, new_csn);
-        tryWriteEventToSystemLog(log, global_context, TransactionsInfoLogElement::COMMIT, txn->tid, new_csn);
+    return finalizeCommittedTransaction(txn.get(), allocated_csn);
+}
+
+CSN TransactionLog::finalizeCommittedTransaction(MergeTreeTransaction * txn, CSN allocated_csn) noexcept
+{
+    chassert(!allocated_csn == txn->isReadOnly());
+    if (allocated_csn)
+    {
+        LOG_INFO(log, "Transaction {} committed with CSN={}", txn->tid, allocated_csn);
+        tryWriteEventToSystemLog(log, global_context, TransactionsInfoLogElement::COMMIT, txn->tid, allocated_csn);
 
         /// Wait for committed changes to become actually visible, so the next transaction in this session will see the changes
         /// TODO it's optional, add a setting for this
         auto current_latest_snapshot = latest_snapshot.load();
-        while (current_latest_snapshot < new_csn && !stop_flag)
+        while (current_latest_snapshot < allocated_csn && !stop_flag)
         {
             latest_snapshot.wait(current_latest_snapshot);
             current_latest_snapshot = latest_snapshot.load();
         }
     }
+    else
+    {
+        /// Transaction was readonly
+        allocated_csn = txn->snapshot;
+        tryWriteEventToSystemLog(log, global_context, TransactionsInfoLogElement::COMMIT, txn->tid, allocated_csn);
+    }
 
     /// Write allocated CSN, so we will be able to cleanup log in ZK. This method is noexcept.
-    txn->afterCommit(new_csn);
+    txn->afterCommit(allocated_csn);
 
     {
         /// Finally we can remove transaction from the list and release the snapshot
+        MergeTreeTransactionPtr txn_ptr;
         std::lock_guard lock{running_list_mutex};
+        snapshots_in_use.erase(txn->snapshot_in_use_it);
         bool removed = running_list.erase(txn->tid.getHash());
         if (!removed)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "I's a bug: TID {} {} doesn't exist", txn->tid.getHash(), txn->tid);
-        snapshots_in_use.erase(txn->snapshot_in_use_it);
+        {
+            LOG_ERROR(log , "I's a bug: TID {} {} doesn't exist", txn->tid.getHash(), txn->tid);
+            abort();
+        }
     }
 
-    return new_csn;
+    return allocated_csn;
 }
 
 void TransactionLog::rollbackTransaction(const MergeTreeTransactionPtr & txn) noexcept
@@ -400,8 +466,8 @@ void TransactionLog::rollbackTransaction(const MergeTreeTransactionPtr & txn) no
 
     if (!txn->rollback())
     {
-        /// Transaction was cancelled concurrently, it's already rolled back.
-        chassert(txn->csn == Tx::RolledBackCSN);
+        /// Transaction was cancelled or committed concurrently
+        chassert(txn->csn != Tx::UnknownCSN);
         return;
     }
 

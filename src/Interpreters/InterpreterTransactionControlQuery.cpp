@@ -10,6 +10,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int INVALID_TRANSACTION;
+    extern const int UNKNOWN_STATUS_OF_TRANSACTION;
 }
 
 BlockIO InterpreterTransactionControlQuery::execute()
@@ -55,7 +56,17 @@ BlockIO InterpreterTransactionControlQuery::executeCommit(ContextMutablePtr sess
     if (txn->getState() != MergeTreeTransaction::RUNNING)
         throw Exception(ErrorCodes::INVALID_TRANSACTION, "Transaction is not in RUNNING state");
 
-    TransactionLog::instance().commitTransaction(txn);
+    try
+    {
+        TransactionLog::instance().commitTransaction(txn);
+    }
+    catch (const Exception & e)
+    {
+        /// Detach transaction from current context if connection was lost and its status is unknown
+        if (e.code() == ErrorCodes::UNKNOWN_STATUS_OF_TRANSACTION)
+            session_context->setCurrentTransaction(NO_TRANSACTION_PTR);
+        throw;
+    }
     session_context->setCurrentTransaction(NO_TRANSACTION_PTR);
     return {};
 }
@@ -67,6 +78,8 @@ BlockIO InterpreterTransactionControlQuery::executeRollback(ContextMutablePtr se
         throw Exception(ErrorCodes::INVALID_TRANSACTION, "There is no current transaction");
     if (txn->getState() == MergeTreeTransaction::COMMITTED)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Transaction is in COMMITTED state");
+    if (txn->getState() == MergeTreeTransaction::COMMITTING)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Transaction is in COMMITTING state");
 
     if (txn->getState() == MergeTreeTransaction::RUNNING)
         TransactionLog::instance().rollbackTransaction(txn);

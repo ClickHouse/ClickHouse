@@ -26,6 +26,7 @@ public:
     enum State
     {
         RUNNING,
+        COMMITTING,
         COMMITTED,
         ROLLED_BACK,
     };
