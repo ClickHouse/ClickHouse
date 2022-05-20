@@ -38,10 +38,9 @@ ExpressionStep::ExpressionStep(const DataStream & input_stream_, ActionsDAGPtr a
     updateDistinctColumns(output_stream->header, output_stream->distinct_columns);
 }
 
-void ExpressionStep::updateInputStream(DataStream input_stream, bool keep_header)
+void ExpressionStep::updateInputStream(DataStream input_stream)
 {
-    Block out_header = keep_header ? std::move(output_stream->header)
-                                   : ExpressionTransform::transformHeader(input_stream.header, *actions_dag);
+    Block out_header = std::move(output_stream->header);
     output_stream = createOutputStream(
             input_stream,
             std::move(out_header),

@@ -20,7 +20,7 @@ public:
 
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings) override;
 
-    void updateInputStream(DataStream input_stream, bool keep_header);
+    void updateInputStream(DataStream input_stream);
 
     void describeActions(FormatSettings & settings) const override;
 

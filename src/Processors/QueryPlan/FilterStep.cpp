@@ -46,16 +46,9 @@ FilterStep::FilterStep(
     updateDistinctColumns(output_stream->header, output_stream->distinct_columns);
 }
 
-void FilterStep::updateInputStream(DataStream input_stream, bool keep_header)
+void FilterStep::updateInputStream(DataStream input_stream)
 {
     Block out_header = std::move(output_stream->header);
-    if (keep_header)
-        out_header = FilterTransform::transformHeader(
-            input_stream.header,
-            *actions_dag,
-            filter_column_name,
-            remove_filter_column);
-
     output_stream = createOutputStream(
             input_stream,
             std::move(out_header),

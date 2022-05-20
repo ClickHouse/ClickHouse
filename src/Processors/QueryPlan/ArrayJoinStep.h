@@ -18,7 +18,8 @@ public:
     void describeActions(JSONBuilder::JSONMap & map) const override;
     void describeActions(FormatSettings & settings) const override;
 
-    void updateInputStream(DataStream input_stream, Block result_header);
+    void updateInputStream(DataStream input_stream);
+    void setResultHeader(Block result_header);
 
     const ArrayJoinActionPtr & arrayJoin() const { return array_join; }
 

@@ -34,7 +34,7 @@ ArrayJoinStep::ArrayJoinStep(const DataStream & input_stream_, ArrayJoinActionPt
 {
 }
 
-void ArrayJoinStep::updateInputStream(DataStream input_stream, Block result_header)
+void ArrayJoinStep::updateInputStream(DataStream input_stream)
 {
     output_stream = createOutputStream(
             input_stream,
@@ -43,6 +43,10 @@ void ArrayJoinStep::updateInputStream(DataStream input_stream, Block result_head
 
     input_streams.clear();
     input_streams.emplace_back(std::move(input_stream));
+}
+
+void ArrayJoinStep::setResultHeader(Block result_header)
+{
     res_header = std::move(result_header);
 }
 

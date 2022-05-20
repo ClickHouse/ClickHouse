@@ -56,7 +56,8 @@ size_t tryLiftUpArrayJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
 
         child->setStepDescription(std::move(description));
 
-        array_join_step->updateInputStream(child->getOutputStream(), expected_header);
+        array_join_step->updateInputStream(child->getOutputStream());
+        array_join_step->setResultHeader(std::move(expected_header));
         return 2;
     }
 
@@ -70,7 +71,7 @@ size_t tryLiftUpArrayJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
     node.step = std::make_unique<ExpressionStep>(node.children.at(0)->step->getOutputStream(),
                                                  std::move(split_actions.first));
     node.step->setStepDescription(description);
-    array_join_step->updateInputStream(node.step->getOutputStream(), {});
+    array_join_step->updateInputStream(node.step->getOutputStream());
 
     if (expression_step)
         parent = std::make_unique<ExpressionStep>(array_join_step->getOutputStream(), split_actions.second);
