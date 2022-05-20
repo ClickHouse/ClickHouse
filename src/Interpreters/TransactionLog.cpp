@@ -53,6 +53,8 @@ TransactionLog::TransactionLog()
 
     zookeeper_path = global_context->getConfigRef().getString("transaction_log.zookeeper_path", "/clickhouse/txn");
     zookeeper_path_log = zookeeper_path + "/log";
+    fault_probability_before_commit = global_context->getConfigRef().getDouble("transaction_log.fault_probability_before_commit", 0);
+    fault_probability_after_commit = global_context->getConfigRef().getDouble("transaction_log.fault_probability_after_commit", 0);
 
     loadLogFromZooKeeper();
 
@@ -214,7 +216,10 @@ void TransactionLog::runUpdatingThread()
     {
         try
         {
-            log_updated_event->wait();
+            /// Do not wait if we have some transactions to finalize
+            if (!unknown_state_list_loaded.empty())
+                log_updated_event->wait();
+
             if (stop_flag.load())
                 return;
 
@@ -229,7 +234,7 @@ void TransactionLog::runUpdatingThread()
             loadNewEntries();
             removeOldEntries();
 
-            if (connection_loss)
+            if (connection_loss || fault_probability_before_commit || fault_probability_after_commit)
                 tryFinalizeUnknownStateTransactions();
         }
         catch (const Coordination::Exception &)
@@ -325,8 +330,22 @@ void TransactionLog::tryFinalizeUnknownStateTransactions()
     /// Check if transactions in unknown state were actually committed or not and finalize or rollback them.
     UnknownStateList list;
     {
+        /// We must be sure that the corresponding CSN entry is loaded from ZK.
+        /// Otherwise we may accidentally rollback committed transaction in case of race condition like this:
+        ///   - runUpdatingThread: loaded some entries, ready to call tryFinalizeUnknownStateTransactions()
+        ///   - commitTransaction: creates CSN entry in the log (txn is committed)
+        ///   - [session expires]
+        ///   - commitTransaction: catches Coordination::Exception (maybe due to fault injection), appends txn to unknown_state_list
+        ///   - runUpdatingThread: calls tryFinalizeUnknownStateTransactions(), fails to find CSN for this txn, rolls it back
+        /// So all CSN entries that might exist at the moment of appending txn to unknown_state_list
+        /// must be loaded from ZK before we start finalize that txn.
+        /// That's why we use two lists here:
+        ///    1. At first we put txn into unknown_state_list
+        ///    2. We move it to unknown_state_list_loaded when runUpdatingThread done at least one iteration
+        ///    3. Then we can safely finalize txns from unknown_state_list_loaded, because all required entries are loaded
         std::lock_guard lock{running_list_mutex};
         std::swap(list, unknown_state_list);
+        std::swap(list, unknown_state_list_loaded);
     }
 
     for (auto & [txn, state_guard] : list)
@@ -370,7 +389,7 @@ MergeTreeTransactionPtr TransactionLog::beginTransaction()
     return txn;
 }
 
-CSN TransactionLog::commitTransaction(const MergeTreeTransactionPtr & txn)
+CSN TransactionLog::commitTransaction(const MergeTreeTransactionPtr & txn, bool throw_on_unknown_status)
 {
     /// Some precommit checks, may throw
     auto state_guard = txn->beforeCommit();
@@ -389,8 +408,22 @@ CSN TransactionLog::commitTransaction(const MergeTreeTransactionPtr & txn)
         String csn_path_created;
         try
         {
+            if (unlikely(fault_probability_before_commit))
+            {
+                std::bernoulli_distribution fault(fault_probability_before_commit);
+                if (fault(thread_local_rng))
+                    throw Coordination::Exception("Fault injected (before commit)", Coordination::Error::ZCONNECTIONLOSS);
+            }
+
             /// Commit point
             csn_path_created = current_zookeeper->create(zookeeper_path_log + "/csn-", serializeTID(txn->tid), zkutil::CreateMode::PersistentSequential);
+
+            if (unlikely(fault_probability_after_commit))
+            {
+                std::bernoulli_distribution fault(fault_probability_after_commit);
+                if (fault(thread_local_rng))
+                    throw Coordination::Exception("Fault injected (after commit)", Coordination::Error::ZCONNECTIONLOSS);
+            }
         }
         catch (const Coordination::Exception & e)
         {
@@ -404,7 +437,13 @@ CSN TransactionLog::commitTransaction(const MergeTreeTransactionPtr & txn)
                 unknown_state_list.emplace_back(txn.get(), std::move(state_guard));
             }
             log_updated_event->set();
-            throw Exception(ErrorCodes::UNKNOWN_STATUS_OF_TRANSACTION, "Connection lost on attempt to commit transaction {}, will finalize it later: {}", txn->tid, e.message());
+            if (throw_on_unknown_status)
+                throw Exception(ErrorCodes::UNKNOWN_STATUS_OF_TRANSACTION,
+                                "Connection lost on attempt to commit transaction {}, will finalize it later: {}",
+                                txn->tid, e.message());
+
+            LOG_INFO(log, "Connection lost on attempt to commit transaction {}, will finalize it later: {}", txn->tid, e.message());
+            return Tx::CommittingCSN;
         }
 
         NOEXCEPT_SCOPE;
@@ -423,15 +462,6 @@ CSN TransactionLog::finalizeCommittedTransaction(MergeTreeTransaction * txn, CSN
     {
         LOG_INFO(log, "Transaction {} committed with CSN={}", txn->tid, allocated_csn);
         tryWriteEventToSystemLog(log, global_context, TransactionsInfoLogElement::COMMIT, txn->tid, allocated_csn);
-
-        /// Wait for committed changes to become actually visible, so the next transaction in this session will see the changes
-        /// TODO it's optional, add a setting for this
-        auto current_latest_snapshot = latest_snapshot.load();
-        while (current_latest_snapshot < allocated_csn && !stop_flag)
-        {
-            latest_snapshot.wait(current_latest_snapshot);
-            current_latest_snapshot = latest_snapshot.load();
-        }
     }
     else
     {
@@ -457,6 +487,17 @@ CSN TransactionLog::finalizeCommittedTransaction(MergeTreeTransaction * txn, CSN
     }
 
     return allocated_csn;
+}
+
+bool TransactionLog::waitForCSNLoaded(CSN csn) const
+{
+    auto current_latest_snapshot = latest_snapshot.load();
+    while (current_latest_snapshot < csn && !stop_flag)
+    {
+        latest_snapshot.wait(current_latest_snapshot);
+        current_latest_snapshot = latest_snapshot.load();
+    }
+    return csn <= current_latest_snapshot;
 }
 
 void TransactionLog::rollbackTransaction(const MergeTreeTransactionPtr & txn) noexcept

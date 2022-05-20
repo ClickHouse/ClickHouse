@@ -391,7 +391,9 @@ void VersionMetadata::read(ReadBuffer & buf)
         {
             /// NOTE Metadata file may actually contain multiple creation TIDs, we need the last one.
             removal_tid = TransactionID::read(buf);
-            if (!removal_tid.isEmpty())
+            if (removal_tid.isEmpty())
+                removal_tid_lock = 0;
+            else
                 removal_tid_lock = removal_tid.getHash();
         }
         else if (name == REMOVAL_CSN_STR)
