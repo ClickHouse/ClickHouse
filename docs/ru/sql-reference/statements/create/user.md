@@ -35,7 +35,7 @@ CREATE USER [IF NOT EXISTS | OR REPLACE] name1 [ON CLUSTER cluster_name1]
 -   `IDENTIFIED WITH ldap SERVER 'server_name'`
 -   `IDENTIFIED WITH kerberos` or `IDENTIFIED WITH kerberos REALM 'realm'`
 
-Для идентификации с sha256_hash используя `SALT` - хэш должен быть вычислен от конкатенации 'user' и 'salt'.
+Для идентификации с sha256_hash используя `SALT` - хэш должен быть вычислен от конкатенации 'password' и 'salt'.
 
 ## Пользовательский хост
 
