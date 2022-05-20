@@ -1,6 +1,6 @@
 # zookeeper {#system-zookeeper}
 
-The table does not exist unless ClickHouse Keeper or ZooKeeper is configured. Th `system.zookeeper` exposes data from the Keeper cluster defined in the config.
+The table does not exist unless ClickHouse Keeper or ZooKeeper is configured. The `system.zookeeper` table exposes data from the Keeper cluster defined in the config.
 The query must either have a ‘path =’   condition or a `path IN`  condition set with the `WHERE` clause as shown below. This corresponds to the path of the children that you want to get data for.
 
 The query `SELECT * FROM system.zookeeper WHERE path = '/clickhouse'` outputs data for all children on the `/clickhouse` node.
