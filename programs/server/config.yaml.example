@@ -78,7 +78,9 @@ redis:
 
     Database settings. Maps redis database to ClickHouse table.
     db:
-        _0: table_name
+        _0:
+            database: database_name
+            table: table_name
 
 # HTTP API with TLS (HTTPS).
 # You have to configure certificate to enable this interface.

@@ -1,6 +1,7 @@
 #include <IO/ReadBufferFromPocoSocket.h>
 #include <IO/WriteBufferFromPocoSocket.h>
 
+#include "Core/iostream_debug_helpers.h"
 #include "RedisHandler.h"
 #include "RedisProtocol.hpp"
 
@@ -10,6 +11,9 @@
 #include <Poco/Util/LayeredConfiguration.h>
 #include <Common/setThreadName.h>
 
+#include <DataTypes/DataTypeString.h>
+
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/Session.h>
 #include <Interpreters/executeQuery.h>
 
@@ -25,6 +29,7 @@ namespace ErrorCodes
 {
     extern const int SUPPORT_IS_DISABLED;
     extern const int NOT_IMPLEMENTED;
+    extern const int UNKNOWN_DATABASE;
 }
 
 RedisHandler::RedisHandler(const Poco::Net::StreamSocket & socket_, IServer & server_, TCPServer & tcp_server_)
@@ -70,7 +75,14 @@ void RedisHandler::run()
                     continue;
                 }
 
-                RedisProtocol::BulkStringResponse resp("Hello world");
+                if (!table_ptr)
+                {
+                    RedisProtocol::ErrorResponse resp(Poco::format("No database/table selected for %d", db));
+                    resp.serialize(*out);
+                    continue;
+                }
+
+                RedisProtocol::NilResponse resp;
                 resp.serialize(*out);
             }
             else if (req.getMethod() == "mget")
@@ -86,12 +98,27 @@ void RedisHandler::run()
                     continue;
                 }
 
-                std::vector<String> hello_worlds(get_req.getKeys().size());
-                for (size_t i = 0; i < get_req.getKeys().size(); ++i)
-                {   
-                    hello_worlds[i] = "Hello world";
+                if (!table_ptr)
+                {
+                    RedisProtocol::ErrorResponse resp(Poco::format("No database/table selected for %d", db));
+                    resp.serialize(*out);
+                    continue;
                 }
-                RedisProtocol::BulkStringArrayResponse resp(hello_worlds);
+
+                // TODO: Complete me 
+                ColumnWithTypeAndName keys(std::make_shared<DataTypeString>(), "keys");
+                for (const auto & key : get_req.getKeys())
+                {
+                    keys.column.insert(key);
+                }
+                table_ptr->getByKeys(keys, );
+
+                std::vector<std::optional<String>> hello_worlds(get_req.getKeys().size());
+                for (size_t i = 0; i < get_req.getKeys().size(); ++i)
+                {
+                    hello_worlds[i] = std::nullopt;
+                }
+                RedisProtocol::ArrayResponse resp(hello_worlds);
                 resp.serialize(*out);
             }
             else if (req.getMethod() == "auth")
@@ -127,8 +154,30 @@ void RedisHandler::run()
                     continue;
                 }
 
-                // TODO: Validate db value
-                db = select_req.getDb();
+                String db_name = server.config().getString(Poco::format("redis.db._%d.database", select_req.getDb()), "");
+                String table_name = server.config().getString(Poco::format("redis.db._%d.table", select_req.getDb()), "");
+                if (db_name.empty() || table_name.empty())
+                {
+                    RedisProtocol::ErrorResponse resp(Poco::format("Database or table is not set for %d", select_req.getDb()));
+                    resp.serialize(*out);
+                    continue;
+                }
+
+                if (!table_ptr || db != select_req.getDb())
+                {
+                    try
+                    {
+                        auto db_ptr = DatabaseCatalog::instance().getDatabase(db_name, server.context());
+                        table_ptr = db_ptr->getTable(table_name, server.context());
+                    }
+                    catch (...)
+                    {
+                        RedisProtocol::ErrorResponse resp(Poco::format("Unknown database %s", db_name));
+                        resp.serialize(*out);
+                        continue;
+                    }
+                    db = select_req.getDb();
+                }
 
                 RedisProtocol::SimpleStringResponse resp(RedisProtocol::Message::OK);
                 resp.serialize(*out);

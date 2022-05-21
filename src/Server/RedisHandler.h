@@ -1,11 +1,13 @@
 #pragma once
 
+#include <Access/Common/AuthenticationData.h>
+#include <Storages/IKVStorage.h>
 #include <Poco/Net/StreamSocket.h>
 #include <Poco/Net/TCPServerConnection.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/config.h>
 #include <Common/logger_useful.h>
-#include "Access/Common/AuthenticationData.h"
+
 #include "IServer.h"
 #include "RedisProtocol.hpp"
 
@@ -39,6 +41,7 @@ private:
     void makeSecureConnection();
 
     Int64 db = 0;
+    IKVStoragePtr table_ptr;
 
     RedisProtocol::AuthenticationManager authentication_manager;
     bool authenticated = false;

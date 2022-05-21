@@ -119,6 +119,13 @@ namespace RedisProtocol
             writeCRLF();
         }
 
+        void writeNumber(const Int64 value)
+        {
+            writeDataType(DataType::INTEGER);
+            writeString(std::to_string(value), *buf);
+            writeCRLF();
+        }
+
     private:
         void writeDataType(DataType type) { buf->write(static_cast<char>(type)); }
 
@@ -293,10 +300,10 @@ namespace RedisProtocol
         const String & value;
     };
 
-    class BulkStringArrayResponse : public Response
+    class ArrayResponse : public Response
     {
     public:
-        explicit BulkStringArrayResponse(const std::vector<String> & values_) : values(values_) { }
+        explicit ArrayResponse(const std::vector<std::optional<String>> & values_) : values(values_) { }
 
         void serialize(WriteBuffer & out) final
         {
@@ -304,12 +311,19 @@ namespace RedisProtocol
             writer.writeArray(values.size());
             for (const auto & value : values)
             {
-                writer.writeBulkString(value);
+                if (value.has_value())
+                {
+                    writer.writeBulkString(value.value());
+                }
+                else
+                {
+                    writer.writeNumber(-1);
+                }
             }
         }
 
     private:
-        const std::vector<String> & values;
+        const std::vector<std::optional<String>> & values;
     };
 
     class ErrorResponse : public Response
@@ -325,6 +339,16 @@ namespace RedisProtocol
 
     private:
         const String & error;
+    };
+
+    class NilResponse : public Response
+    {
+    public:
+        void serialize(WriteBuffer & out) final
+        {
+            Writer writer(&out);
+            writer.writeNumber(-1);
+        }
     };
 
     class AuthenticationManager
