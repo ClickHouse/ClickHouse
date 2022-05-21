@@ -18,7 +18,7 @@
 
 -   `is_temporary` ([UInt8](../../sql-reference/data-types/int-uint.md)) — флаг, указывающий на то, временная это таблица или нет.
 
--   `data_paths` (Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md))) — пути к данным таблицы в файловых системах.
+-   `data_paths` ([Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md))) — пути к данным таблицы в файловых системах.
 
 -   `metadata_path` ([String](../../sql-reference/data-types/string.md)) — путь к табличным метаданным в файловой системе.
 
