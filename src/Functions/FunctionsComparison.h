@@ -143,7 +143,8 @@ struct NumComparisonImpl
         }
     }))
 
-    static void NO_INLINE vectorConstant(const ContainerA & a, B b, PaddedPODArray<UInt8> & c) {
+    static void NO_INLINE vectorConstant(const ContainerA & a, B b, PaddedPODArray<UInt8> & c)
+    {
 #if USE_MULTITARGET_CODE
         if (isArchSupported(TargetArch::AVX2))
         {
