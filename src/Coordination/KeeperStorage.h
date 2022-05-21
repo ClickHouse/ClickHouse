@@ -1,14 +1,14 @@
 #pragma once
 
-#include <Common/ZooKeeper/IKeeper.h>
-#include <Common/ConcurrentBoundedQueue.h>
-#include <Common/ZooKeeper/ZooKeeperCommon.h>
-#include <Coordination/SessionExpiryQueue.h>
-#include <Coordination/ACLMap.h>
-#include <Coordination/SnapshotableHashTable.h>
-#include <IO/WriteBufferFromString.h>
 #include <unordered_map>
 #include <vector>
+#include <Coordination/ACLMap.h>
+#include <Coordination/SessionExpiryQueue.h>
+#include <Coordination/SnapshotableHashTable.h>
+#include <IO/WriteBufferFromString.h>
+#include <Common/ConcurrentBoundedQueue.h>
+#include <Common/ZooKeeper/IKeeper.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 
 #include <absl/container/flat_hash_set.h>
 
@@ -29,31 +29,32 @@ struct KeeperStorageSnapshot;
 class KeeperStorage
 {
 public:
-
     struct Node
     {
-        String data;
         uint64_t acl_id = 0; /// 0 -- no ACL by default
         bool is_sequental = false;
         Coordination::Stat stat{};
         int32_t seq_num = 0;
-        ChildrenSet children{};
         uint64_t size_bytes; // save size to avoid calculate every time
 
-        Node()
-        {
-            size_bytes = sizeof(size_bytes);
-            size_bytes += data.size();
-            size_bytes += sizeof(acl_id);
-            size_bytes += sizeof(is_sequental);
-            size_bytes += sizeof(stat);
-            size_bytes += sizeof(seq_num);
-        }
+        Node() : size_bytes(sizeof(Node)) { }
+
         /// Object memory size
-        uint64_t sizeInBytes() const
-        {
-            return size_bytes;
-        }
+        uint64_t sizeInBytes() const { return size_bytes; }
+
+        void setData(String new_data);
+
+        const auto & getData() const noexcept { return data; }
+
+        void addChild(StringRef child_path);
+
+        void removeChild(StringRef child_path);
+
+        const auto & getChildren() const noexcept { return children; }
+
+    private:
+        String data;
+        ChildrenSet children{};
     };
 
     struct ResponseForSession
@@ -66,6 +67,7 @@ public:
     struct RequestForSession
     {
         int64_t session_id;
+        int64_t time;
         Coordination::ZooKeeperRequestPtr request;
     };
 
@@ -74,10 +76,7 @@ public:
         std::string scheme;
         std::string id;
 
-        bool operator==(const AuthID & other) const
-        {
-            return scheme == other.scheme && id == other.id;
-        }
+        bool operator==(const AuthID & other) const { return scheme == other.scheme && id == other.id; }
     };
 
     using RequestsForSessions = std::vector<RequestForSession>;
@@ -92,7 +91,6 @@ public:
     using SessionAndAuth = std::unordered_map<int64_t, AuthIDs>;
     using Watches = std::map<String /* path, relative of root_path */, SessionIDs>;
 
-public:
     int64_t session_id_counter{1};
 
     SessionAndAuth session_and_auth;
@@ -102,9 +100,149 @@ public:
     /// container.
     Container container;
 
+    // Applying ZooKeeper request to storage consists of two steps:
+    //  - preprocessing which, instead of applying the changes directly to storage,
+    //    generates deltas with those changes, denoted with the request ZXID
+    //  - processing which applies deltas with the correct ZXID to the storage
+    //
+    // Delta objects allow us two things:
+    //  - fetch the latest, uncommitted state of an object by getting the committed
+    //    state of that same object from the storage and applying the deltas
+    //    in the same order as they are defined
+    //  - quickly commit the changes to the storage
+    struct CreateNodeDelta
+    {
+        Coordination::Stat stat;
+        bool is_ephemeral;
+        bool is_sequental;
+        Coordination::ACLs acls;
+        String data;
+    };
+
+    struct RemoveNodeDelta
+    {
+        int32_t version{-1};
+    };
+
+    struct UpdateNodeDelta
+    {
+        std::function<void(Node &)> update_fn;
+        int32_t version{-1};
+    };
+
+    struct SetACLDelta
+    {
+        Coordination::ACLs acls;
+        int32_t version{-1};
+    };
+
+    struct ErrorDelta
+    {
+        Coordination::Error error;
+    };
+
+    struct FailedMultiDelta
+    {
+        std::vector<Coordination::Error> error_codes;
+    };
+
+    // Denotes end of a subrequest in multi request
+    struct SubDeltaEnd
+    {
+    };
+
+    struct AddAuthDelta
+    {
+        int64_t session_id;
+        AuthID auth_id;
+    };
+
+    using Operation
+        = std::variant<CreateNodeDelta, RemoveNodeDelta, UpdateNodeDelta, SetACLDelta, AddAuthDelta, ErrorDelta, SubDeltaEnd, FailedMultiDelta>;
+
+    struct Delta
+    {
+        Delta(String path_, int64_t zxid_, Operation operation_) : path(std::move(path_)), zxid(zxid_), operation(std::move(operation_)) { }
+
+        Delta(int64_t zxid_, Coordination::Error error) : Delta("", zxid_, ErrorDelta{error}) { }
+
+        Delta(int64_t zxid_, Operation subdelta) : Delta("", zxid_, subdelta) { }
+
+        String path;
+        int64_t zxid;
+        Operation operation;
+    };
+
+    struct UncommittedState
+    {
+        explicit UncommittedState(KeeperStorage & storage_) : storage(storage_) { }
+
+        template <typename Visitor>
+        void applyDeltas(StringRef path, const Visitor & visitor) const
+        {
+            for (const auto & delta : deltas)
+            {
+                if (path.empty() || delta.path == path)
+                    std::visit(visitor, delta.operation);
+            }
+        }
+
+        bool hasACL(int64_t session_id, bool is_local, std::function<bool(const AuthID &)> predicate)
+        {
+            for (const auto & session_auth : storage.session_and_auth[session_id])
+            {
+                if (predicate(session_auth))
+                    return true;
+            }
+
+            if (is_local)
+                return false;
+
+
+            for (const auto & delta : deltas)
+            {
+                if (const auto * auth_delta = std::get_if<KeeperStorage::AddAuthDelta>(&delta.operation);
+                    auth_delta && auth_delta->session_id == session_id && predicate(auth_delta->auth_id))
+                    return true;
+            }
+
+            return false;
+        }
+
+        std::shared_ptr<Node> getNode(StringRef path);
+        bool hasNode(StringRef path) const;
+        Coordination::ACLs getACLs(StringRef path) const;
+
+        std::deque<Delta> deltas;
+        KeeperStorage & storage;
+    };
+
+    UncommittedState uncommitted_state{*this};
+
+    Coordination::Error commit(int64_t zxid, int64_t session_id);
+
+    // Create node in the storage
+    // Returns false if it failed to create the node, true otherwise
+    // We don't care about the exact failure because we should've caught it during preprocessing
+    bool createNode(
+        const std::string & path,
+        String data,
+        const Coordination::Stat & stat,
+        bool is_sequental,
+        bool is_ephemeral,
+        Coordination::ACLs node_acls,
+        int64_t session_id);
+
+    // Remove node in the storage
+    // Returns false if it failed to remove the node, true otherwise
+    // We don't care about the exact failure because we should've caught it during preprocessing
+    bool removeNode(const std::string & path, int32_t version);
+
+    bool checkACL(StringRef path, int32_t permissions, int64_t session_id, bool is_local);
+
     /// Mapping session_id -> set of ephemeral nodes paths
     Ephemerals ephemerals;
-    /// Mapping sessuib_id -> set of watched nodes paths
+    /// Mapping session_id -> set of watched nodes paths
     SessionAndWatcher sessions_and_watchers;
     /// Expiration queue for session, allows to get dead sessions at some point of time
     SessionExpiryQueue session_expiry_queue;
@@ -120,19 +258,15 @@ public:
 
     /// Currently active watches (node_path -> subscribed sessions)
     Watches watches;
-    Watches list_watches;   /// Watches for 'list' request (watches on children).
+    Watches list_watches; /// Watches for 'list' request (watches on children).
 
     void clearDeadWatches(int64_t session_id);
 
     /// Get current zxid
-    int64_t getZXID() const
-    {
-        return zxid;
-    }
+    int64_t getZXID() const { return zxid; }
 
     const String superdigest;
 
-public:
     KeeperStorage(int64_t tick_time_ms, const String & superdigest_);
 
     /// Allocate new session id with the specified timeouts
@@ -153,77 +287,53 @@ public:
 
     /// Process user request and return response.
     /// check_acl = false only when converting data from ZooKeeper.
-    ResponsesForSessions processRequest(const Coordination::ZooKeeperRequestPtr & request, int64_t session_id, std::optional<int64_t> new_last_zxid, bool check_acl = true);
+    ResponsesForSessions processRequest(
+        const Coordination::ZooKeeperRequestPtr & request,
+        int64_t session_id,
+        int64_t time,
+        std::optional<int64_t> new_last_zxid,
+        bool check_acl = true,
+        bool is_local = false);
+    void preprocessRequest(
+        const Coordination::ZooKeeperRequestPtr & request, int64_t session_id, int64_t time, int64_t new_last_zxid, bool check_acl = true);
+    void rollbackRequest(int64_t rollback_zxid);
 
     void finalize();
 
     /// Set of methods for creating snapshots
 
     /// Turn on snapshot mode, so data inside Container is not deleted, but replaced with new version.
-    void enableSnapshotMode(size_t up_to_size)
-    {
-        container.enableSnapshotMode(up_to_size);
-    }
+    void enableSnapshotMode(size_t up_to_version) { container.enableSnapshotMode(up_to_version); }
 
     /// Turn off snapshot mode.
-    void disableSnapshotMode()
-    {
-        container.disableSnapshotMode();
-    }
+    void disableSnapshotMode() { container.disableSnapshotMode(); }
 
-    Container::const_iterator getSnapshotIteratorBegin() const
-    {
-        return container.begin();
-    }
+    Container::const_iterator getSnapshotIteratorBegin() const { return container.begin(); }
 
     /// Clear outdated data from internal container.
-    void clearGarbageAfterSnapshot()
-    {
-        container.clearOutdatedNodes();
-    }
+    void clearGarbageAfterSnapshot() { container.clearOutdatedNodes(); }
 
     /// Get all active sessions
-    const SessionAndTimeout & getActiveSessions() const
-    {
-        return session_and_timeout;
-    }
+    const SessionAndTimeout & getActiveSessions() const { return session_and_timeout; }
 
     /// Get all dead sessions
-    std::vector<int64_t> getDeadSessions()
-    {
-        return session_expiry_queue.getExpiredSessions();
-    }
+    std::vector<int64_t> getDeadSessions() const { return session_expiry_queue.getExpiredSessions(); }
 
     /// Introspection functions mostly used in 4-letter commands
-    uint64_t getNodesCount() const
-    {
-        return container.size();
-    }
+    uint64_t getNodesCount() const { return container.size(); }
 
-    uint64_t getApproximateDataSize() const
-    {
-        return container.getApproximateDataSize();
-    }
+    uint64_t getApproximateDataSize() const { return container.getApproximateDataSize(); }
 
-    uint64_t getArenaDataSize() const
-    {
-        return container.keyArenaSize();
-    }
+    uint64_t getArenaDataSize() const { return container.keyArenaSize(); }
 
 
     uint64_t getTotalWatchesCount() const;
 
-    uint64_t getWatchedPathsCount() const
-    {
-        return watches.size() + list_watches.size();
-    }
+    uint64_t getWatchedPathsCount() const { return watches.size() + list_watches.size(); }
 
     uint64_t getSessionsWithWatchesCount() const;
 
-    uint64_t getSessionWithEphemeralNodesCount() const
-    {
-        return ephemerals.size();
-    }
+    uint64_t getSessionWithEphemeralNodesCount() const { return ephemerals.size(); }
     uint64_t getTotalEphemeralNodesCount() const;
 
     void dumpWatches(WriteBufferFromOwnString & buf) const;

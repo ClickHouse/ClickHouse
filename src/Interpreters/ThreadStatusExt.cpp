@@ -49,7 +49,7 @@ void ThreadStatus::applyQuerySettings()
     initQueryProfiler();
 
     untracked_memory_limit = settings.max_untracked_memory;
-    if (settings.memory_profiler_step && settings.memory_profiler_step < UInt64(untracked_memory_limit))
+    if (settings.memory_profiler_step && settings.memory_profiler_step < static_cast<UInt64>(untracked_memory_limit))
         untracked_memory_limit = settings.memory_profiler_step;
 
 #if defined(OS_LINUX)
@@ -401,7 +401,6 @@ void ThreadStatus::detachQuery(bool exit_if_already_detached, bool thread_exits)
     performance_counters.setParent(&ProfileEvents::global_counters);
     memory_tracker.reset();
 
-    /// Must reset pointer to thread_group's memory_tracker, because it will be destroyed two lines below (will reset to its parent).
     memory_tracker.setParent(thread_group->memory_tracker.getParent());
 
     query_id.clear();
@@ -595,6 +594,16 @@ CurrentThread::QueryScope::QueryScope(ContextMutablePtr query_context)
     CurrentThread::attachQueryContext(query_context);
     if (!query_context->hasQueryContext())
         query_context->makeQueryContext();
+}
+
+CurrentThread::QueryScope::QueryScope(ContextPtr query_context)
+{
+    if (!query_context->hasQueryContext())
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR, "Cannot initialize query scope without query context");
+
+    CurrentThread::initializeQuery();
+    CurrentThread::attachQueryContext(query_context);
 }
 
 void CurrentThread::QueryScope::logPeakMemoryUsage()

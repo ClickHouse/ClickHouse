@@ -1,6 +1,6 @@
 ---
-toc_priority: 46
-toc_title: Working with maps
+sidebar_position: 46
+sidebar_label: Working with maps
 ---
 
 # Functions for maps {#functions-for-working-with-tuple-maps}

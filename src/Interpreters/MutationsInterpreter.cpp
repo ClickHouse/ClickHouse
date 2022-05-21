@@ -173,7 +173,7 @@ ColumnDependencies getAllColumnDependencies(const StorageMetadataPtr & metadata_
         new_updated_columns.clear();
         for (const auto & dependency : new_dependencies)
         {
-            if (!dependencies.count(dependency))
+            if (!dependencies.contains(dependency))
             {
                 dependencies.insert(dependency);
                 if (!dependency.isReadOnly())
@@ -362,7 +362,7 @@ static void validateUpdateColumns(
             throw Exception("There is no column " + backQuote(column_name) + " in table", ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
         }
 
-        if (key_columns.count(column_name))
+        if (key_columns.contains(column_name))
             throw Exception("Cannot UPDATE key column " + backQuote(column_name), ErrorCodes::CANNOT_UPDATE_COLUMN);
 
         auto materialized_it = column_to_affected_materialized.find(column_name);
@@ -370,7 +370,7 @@ static void validateUpdateColumns(
         {
             for (const String & materialized : materialized_it->second)
             {
-                if (key_columns.count(materialized))
+                if (key_columns.contains(materialized))
                     throw Exception("Updated column " + backQuote(column_name) + " affects MATERIALIZED column "
                         + backQuote(materialized) + ", which is a key column. Cannot UPDATE it.",
                         ErrorCodes::CANNOT_UPDATE_COLUMN);
@@ -451,7 +451,7 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
                 auto syntax_result = TreeRewriter(context).analyze(query, all_columns);
                 for (const String & dependency : syntax_result->requiredSourceColumns())
                 {
-                    if (updated_columns.count(dependency))
+                    if (updated_columns.contains(dependency))
                         column_to_affected_materialized[dependency].push_back(column.name);
                 }
             }
@@ -831,7 +831,9 @@ ASTPtr MutationsInterpreter::prepareInterpreterSelectQuery(std::vector<Stage> & 
         /// e.g. ALTER referencing the same table in scalar subquery
         bool execute_scalar_subqueries = !dry_run;
         auto syntax_result = TreeRewriter(context).analyze(
-            all_asts, all_columns, storage, metadata_snapshot, false, true, execute_scalar_subqueries);
+            all_asts, all_columns, storage, storage->getStorageSnapshot(metadata_snapshot, context),
+            false, true, execute_scalar_subqueries);
+
         if (execute_scalar_subqueries && context->hasQueryContext())
             for (const auto & it : syntax_result->getScalars())
                 context->getQueryContext()->addScalar(it.first, it.second);
@@ -1052,7 +1054,7 @@ std::optional<SortDescription> MutationsInterpreter::getStorageSortDescriptionIf
     for (size_t i = 0; i < sort_columns_size; ++i)
     {
         if (header.has(sort_columns[i]))
-            sort_description.emplace_back(header.getPositionByName(sort_columns[i]), 1, 1);
+            sort_description.emplace_back(sort_columns[i], 1, 1);
         else
             return {};
     }
@@ -1069,7 +1071,7 @@ bool MutationsInterpreter::Stage::isAffectingAllColumns(const Names & storage_co
 {
     /// is subset
     for (const auto & storage_column : storage_columns)
-        if (!output_columns.count(storage_column))
+        if (!output_columns.contains(storage_column))
             return false;
 
     return true;

@@ -1,6 +1,6 @@
 ---
-toc_priority: 39
-toc_title: EXPLAIN
+sidebar_position: 39
+sidebar_label: EXPLAIN
 ---
 
 # EXPLAIN Statement {#explain}
@@ -10,7 +10,7 @@ Shows the execution plan of a statement.
 Syntax:
 
 ```sql
-EXPLAIN [AST | SYNTAX | PLAN | PIPELINE | TABLE OVERRIDE] [setting = value, ...]
+EXPLAIN [AST | SYNTAX | PLAN | PIPELINE | ESTIMATE | TABLE OVERRIDE] [setting = value, ...]
     [
       SELECT ... |
       tableFunction(...) [COLUMNS (...)] [ORDER BY ...] [PARTITION BY ...] [PRIMARY KEY] [SAMPLE BY ...] [TTL ...]
@@ -138,8 +138,9 @@ Union
           ReadFromStorage (SystemNumbers)
 ```
 
-!!! note "Note"
-    Step and query cost estimation is not supported.
+:::note    
+Step and query cost estimation is not supported.
+:::
 
 When `json = 1`, the query plan is represented in JSON format. Every node is a dictionary that always has the keys `Node Type` and `Plans`. `Node Type` is a string with a step name. `Plans` is an array with child step descriptions. Other optional keys may be added depending on node type and settings.
 
@@ -446,8 +447,8 @@ Result:
 └─────────────────────────────────────────────────────────┘
 ```
 
-!!! note "Note"
-    The validation is not complete, so a successfull query does not guarantee that the override would
-    not cause issues.
+:::note    
+The validation is not complete, so a successfull query does not guarantee that the override would not cause issues.
+:::
 
 [Оriginal article](https://clickhouse.com/docs/en/sql-reference/statements/explain/) <!--hide-->

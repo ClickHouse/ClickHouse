@@ -1,3 +1,4 @@
+#include <Interpreters/Aggregator.h>
 #include <Interpreters/AsynchronousMetrics.h>
 #include <Interpreters/AsynchronousMetricLog.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
@@ -8,10 +9,13 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/typeid_cast.h>
 #include <Common/filesystemHelpers.h>
+#include <Common/FileCacheFactory.h>
+#include <Common/FileCache.h>
 #include <Server/ProtocolServerAdapter.h>
 #include <Storages/MarkCache.h>
 #include <Storages/StorageMergeTree.h>
 #include <Storages/StorageReplicatedMergeTree.h>
+#include <Storages/MergeTree/MergeTreeMetadataCache.h>
 #include <IO/UncompressedCache.h>
 #include <IO/MMappedFileCache.h>
 #include <IO/ReadHelpers.h>
@@ -373,7 +377,7 @@ static void calculateMaxAndSum(Max & max, Sum & sum, T x)
         max = x;
 }
 
-#if USE_JEMALLOC && JEMALLOC_VERSION_MAJOR >= 4
+#if USE_JEMALLOC
 uint64_t updateJemallocEpoch()
 {
     uint64_t value = 0;
@@ -607,6 +611,24 @@ void AsynchronousMetrics::update(std::chrono::system_clock::time_point update_ti
         }
     }
 
+    {
+        auto caches = FileCacheFactory::instance().getAll();
+        for (const auto & [_, cache_data] : caches)
+        {
+            new_values["FilesystemCacheBytes"] = cache_data.cache->getUsedCacheSize();
+            new_values["FilesystemCacheFiles"] = cache_data.cache->getFileSegmentsNum();
+        }
+    }
+
+#if USE_ROCKSDB
+    {
+        if (auto metadata_cache = getContext()->tryGetMergeTreeMetadataCache())
+        {
+            new_values["MergeTreeMetadataCacheSize"] = metadata_cache->getEstimateNumKeys();
+        }
+    }
+#endif
+
 #if USE_EMBEDDED_COMPILER
     {
         if (auto * compiled_expression_cache = CompiledExpressionCacheFactory::instance().tryGetCache())
@@ -617,16 +639,28 @@ void AsynchronousMetrics::update(std::chrono::system_clock::time_point update_ti
     }
 #endif
 
+
     new_values["Uptime"] = getContext()->getUptimeSeconds();
 
+    {
+        if (const auto stats = getHashTablesCacheStatistics())
+        {
+            new_values["HashTableStatsCacheEntries"] = stats->entries;
+            new_values["HashTableStatsCacheHits"] = stats->hits;
+            new_values["HashTableStatsCacheMisses"] = stats->misses;
+        }
+    }
+
     /// Process process memory usage according to OS
-#if defined(OS_LINUX)
+#if defined(OS_LINUX) || defined(OS_FREEBSD)
     {
         MemoryStatisticsOS::Data data = memory_stat.get();
 
         new_values["MemoryVirtual"] = data.virt;
         new_values["MemoryResident"] = data.resident;
+#if !defined(OS_FREEBSD)
         new_values["MemoryShared"] = data.shared;
+#endif
         new_values["MemoryCode"] = data.code;
         new_values["MemoryDataAndStack"] = data.data_and_stack;
 
@@ -653,7 +687,9 @@ void AsynchronousMetrics::update(std::chrono::system_clock::time_point update_ti
             CurrentMetrics::set(CurrentMetrics::MemoryTracking, new_amount);
         }
     }
+#endif
 
+#if defined(OS_LINUX)
     if (loadavg)
     {
         try
@@ -1429,7 +1465,7 @@ void AsynchronousMetrics::update(std::chrono::system_clock::time_point update_ti
         }
     }
 
-#if USE_JEMALLOC && JEMALLOC_VERSION_MAJOR >= 4
+#if USE_JEMALLOC
     // 'epoch' is a special mallctl -- it updates the statistics. Without it, all
     // the following calls will return stale values. It increments and returns
     // the current epoch number, which might be useful to log as a sanity check.

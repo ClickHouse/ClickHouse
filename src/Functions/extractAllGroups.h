@@ -55,7 +55,7 @@ public:
     static constexpr auto Kind = Impl::Kind;
     static constexpr auto name = Impl::Name;
 
-    FunctionExtractAllGroups(ContextPtr context_)
+    explicit FunctionExtractAllGroups(ContextPtr context_)
         : context(context_)
     {}
 
@@ -95,7 +95,7 @@ public:
             throw Exception("Length of 'needle' argument must be greater than 0.", ErrorCodes::BAD_ARGUMENTS);
 
         using StringPiece = typename Regexps::Regexp::StringPieceType;
-        auto holder = Regexps::get<false, false>(needle);
+        auto holder = Regexps::get<false, false, false>(needle);
         const auto & regexp = holder->getRE2();
 
         if (!regexp)

@@ -13,7 +13,7 @@
 #include <Common/Exception.h>
 #include <Common/CurrentThread.h>
 #include <IO/WriteHelpers.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <chrono>
 
 
@@ -195,7 +195,10 @@ ProcessList::EntryPtr ProcessList::insert(const String & query_, const IAST * as
                     ErrorCodes::QUERY_WITH_SAME_ID_IS_ALREADY_RUNNING);
         }
 
-        ProcessListForUser & user_process_list = user_to_queries[client_info.current_user];
+        auto user_process_list_it = user_to_queries.find(client_info.current_user);
+        if (user_process_list_it == user_to_queries.end())
+            user_process_list_it = user_to_queries.emplace(client_info.current_user, this).first;
+        ProcessListForUser & user_process_list = user_process_list_it->second;
 
         /// Actualize thread group info
         auto thread_group = CurrentThread::getGroup();
@@ -209,7 +212,7 @@ ProcessList::EntryPtr ProcessList::insert(const String & query_, const IAST * as
 
             /// Set query-level memory trackers
             thread_group->memory_tracker.setOrRaiseHardLimit(settings.max_memory_usage);
-            thread_group->memory_tracker.setSoftLimit(settings.max_guaranteed_memory_usage);
+            thread_group->memory_tracker.setSoftLimit(settings.memory_overcommit_ratio_denominator);
 
             if (query_context->hasTraceCollector())
             {
@@ -235,14 +238,11 @@ ProcessList::EntryPtr ProcessList::insert(const String & query_, const IAST * as
 
         process_it->setUserProcessList(&user_process_list);
 
-        {
-            BlockQueryIfMemoryLimit block_query{user_process_list.user_overcommit_tracker};
-            user_process_list.queries.emplace(client_info.current_query_id, &res->get());
-        }
+        user_process_list.queries.emplace(client_info.current_query_id, &res->get());
 
         /// Track memory usage for all simultaneously running queries from single user.
         user_process_list.user_memory_tracker.setOrRaiseHardLimit(settings.max_memory_usage_for_user);
-        user_process_list.user_memory_tracker.setSoftLimit(settings.max_guaranteed_memory_usage_for_user);
+        user_process_list.user_memory_tracker.setSoftLimit(settings.memory_overcommit_ratio_denominator_for_user);
         user_process_list.user_memory_tracker.setDescription("(for user)");
         user_process_list.user_overcommit_tracker.setMaxWaitTime(settings.memory_usage_overcommit_max_wait_microseconds);
 
@@ -289,7 +289,6 @@ ProcessListEntry::~ProcessListEntry()
     {
         if (running_query->second == process_list_element_ptr)
         {
-            BlockQueryIfMemoryLimit block_query{user_process_list.user_overcommit_tracker};
             user_process_list.queries.erase(running_query->first);
             found = true;
         }
@@ -345,9 +344,9 @@ QueryStatus::~QueryStatus()
     if (auto * memory_tracker = getMemoryTracker())
     {
         if (user_process_list)
-            user_process_list->user_overcommit_tracker.unsubscribe(memory_tracker);
+            user_process_list->user_overcommit_tracker.onQueryStop(memory_tracker);
         if (auto shared_context = getContext())
-            shared_context->getGlobalOvercommitTracker()->unsubscribe(memory_tracker);
+            shared_context->getGlobalOvercommitTracker()->onQueryStop(memory_tracker);
     }
 }
 
@@ -456,6 +455,7 @@ QueryStatusInfo QueryStatus::getInfo(bool get_thread_list, bool get_profile_even
     res.client_info       = client_info;
     res.elapsed_seconds   = watch.elapsedSeconds();
     res.is_cancelled      = is_killed.load(std::memory_order_relaxed);
+    res.is_all_data_sent  = is_all_data_sent.load(std::memory_order_relaxed);
     res.read_rows         = progress_in.read_rows;
     res.read_bytes        = progress_in.read_bytes;
     res.total_rows        = progress_in.total_rows_to_read;
@@ -502,8 +502,8 @@ ProcessList::Info ProcessList::getInfo(bool get_thread_list, bool get_profile_ev
 }
 
 
-ProcessListForUser::ProcessListForUser()
-    : user_overcommit_tracker(this)
+ProcessListForUser::ProcessListForUser(ProcessList * global_process_list)
+    : user_overcommit_tracker(global_process_list, this)
 {
     user_memory_tracker.setOvercommitTracker(&user_overcommit_tracker);
 }

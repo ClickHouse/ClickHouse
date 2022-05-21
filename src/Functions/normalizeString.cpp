@@ -8,7 +8,7 @@
 #include <unicode/unorm2.h>
 #include <unicode/ustring.h>
 #include <unicode/utypes.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <Columns/ColumnString.h>
 #include <Parsers/IAST_fwd.h>
 
@@ -97,8 +97,6 @@ struct NormalizeUTF8Impl
 
         ColumnString::Offset current_from_offset = 0;
         ColumnString::Offset current_to_offset = 0;
-
-        icu::UnicodeString to_string;
 
         PODArray<UChar> from_uchars;
         PODArray<UChar> to_uchars;

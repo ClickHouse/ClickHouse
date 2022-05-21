@@ -56,14 +56,17 @@ MergeTreeDataPartWriterOnDisk::Stream::Stream(
     const std::string & marks_file_extension_,
     const CompressionCodecPtr & compression_codec_,
     size_t max_compress_block_size_,
+    const WriteSettings & query_write_settings,
     bool use_marks_) :
     escaped_column_name(escaped_column_name_),
     data_file_extension{data_file_extension_},
     marks_file_extension{marks_file_extension_},
-    plain_file(disk_->writeFile(data_path_ + data_file_extension, max_compress_block_size_, WriteMode::Rewrite)),
+    plain_file(disk_->writeFile(data_path_ + data_file_extension, max_compress_block_size_, WriteMode::Rewrite, query_write_settings)),
     plain_hashing(*plain_file),
     compressed_buf(plain_hashing, compression_codec_, max_compress_block_size_),
     compressed(compressed_buf),
+    marks_file(disk_->writeFile(marks_path_ + marks_file_extension, 4096, WriteMode::Rewrite, query_write_settings)),
+    marks(nullptr),
     use_marks(use_marks_)
 {
     if (use_marks)
@@ -176,7 +179,7 @@ void MergeTreeDataPartWriterOnDisk::initPrimaryIndex()
 {
     if (metadata_snapshot->hasPrimaryKey())
     {
-        index_file_stream = data_part->volume->getDisk()->writeFile(part_path + "primary.idx", DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite);
+        index_file_stream = data_part->volume->getDisk()->writeFile(part_path + "primary.idx", DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite, settings.query_write_settings);
         index_stream = std::make_unique<HashingWriteBuffer>(*index_file_stream);
     }
 }
@@ -192,7 +195,7 @@ void MergeTreeDataPartWriterOnDisk::initSkipIndices()
                         data_part->volume->getDisk(),
                         part_path + stream_name, index_helper->getSerializedFileExtension(),
                         part_path + stream_name, marks_file_extension,
-                        default_codec, settings.max_compress_block_size));
+                        default_codec, settings.max_compress_block_size, settings.query_write_settings));
         skip_indices_aggregators.push_back(index_helper->createIndexAggregator());
         skip_index_accumulated_marks.push_back(0);
     }

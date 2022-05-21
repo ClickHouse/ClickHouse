@@ -12,6 +12,7 @@ CubeTransform::CubeTransform(Block header, AggregatingTransformParamsPtr params_
     : IAccumulatingTransform(std::move(header), params_->getHeader())
     , params(std::move(params_))
     , keys(params->params.keys)
+    , aggregates_mask(getAggregatesMask(params->getHeader(), params->params.aggregates))
 {
     if (keys.size() >= 8 * sizeof(mask))
         throw Exception("Too many keys are used for CubeTransform.", ErrorCodes::LOGICAL_ERROR);
@@ -45,7 +46,7 @@ Chunk CubeTransform::generate()
         consumed_chunks.clear();
 
         auto num_rows = cube_chunk.getNumRows();
-        mask = (UInt64(1) << keys.size()) - 1;
+        mask = (static_cast<UInt64>(1) << keys.size()) - 1;
 
         current_columns = cube_chunk.getColumns();
         current_zero_columns.clear();
@@ -73,7 +74,7 @@ Chunk CubeTransform::generate()
         cube_chunk = merge(std::move(chunks), false);
     }
 
-    finalizeChunk(gen_chunk);
+    finalizeChunk(gen_chunk, aggregates_mask);
     return gen_chunk;
 }
 

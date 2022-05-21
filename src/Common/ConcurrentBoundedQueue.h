@@ -100,6 +100,11 @@ public:
         return emplace(x);
     }
 
+    [[nodiscard]] bool push(T && x)
+    {
+        return emplace(std::move(x));
+    }
+
     /// Returns false if queue is finished
     template <typename... Args>
     [[nodiscard]] bool emplace(Args &&... args)
@@ -118,6 +123,11 @@ public:
     [[nodiscard]] bool tryPush(const T & x, UInt64 milliseconds = 0)
     {
         return emplaceImpl(milliseconds, x);
+    }
+
+    [[nodiscard]] bool tryPush(T && x, UInt64 milliseconds = 0)
+    {
+        return emplaceImpl(milliseconds, std::move(x));
     }
 
     /// Returns false if queue is finished or object was not emplaced during timeout

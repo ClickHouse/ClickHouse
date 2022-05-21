@@ -58,6 +58,7 @@ public:
             const std::string & marks_file_extension_,
             const CompressionCodecPtr & compression_codec_,
             size_t max_compress_block_size_,
+            const WriteSettings & query_write_settings,
             bool use_marks = true);
 
         String escaped_column_name;

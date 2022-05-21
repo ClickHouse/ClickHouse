@@ -80,7 +80,7 @@ TableFunctionPtr TableFunctionFactory::tryGet(
 
 bool TableFunctionFactory::isTableFunctionName(const std::string & name) const
 {
-    return table_functions.count(name);
+    return table_functions.contains(name);
 }
 
 TableFunctionFactory & TableFunctionFactory::instance()

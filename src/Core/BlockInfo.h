@@ -46,7 +46,7 @@ struct BlockInfo
     void read(ReadBuffer & in);
 };
 
-/// Block extension to support delayed defaults. AddingDefaultsBlockInputStream uses it to replace missing values with column defaults.
+/// Block extension to support delayed defaults. AddingDefaultsTransform uses it to replace missing values with column defaults.
 class BlockMissingValues
 {
 public:

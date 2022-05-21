@@ -100,7 +100,7 @@ enum ComputeWidthMode
 };
 
 template <ComputeWidthMode mode>
-static size_t computeWidthImpl(const UInt8 * data, size_t size, size_t prefix, size_t limit) noexcept
+size_t computeWidthImpl(const UInt8 * data, size_t size, size_t prefix, size_t limit) noexcept
 {
     UTF8Decoder decoder;
     size_t width = 0;

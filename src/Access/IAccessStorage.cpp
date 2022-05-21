@@ -23,6 +23,7 @@ namespace ErrorCodes
     extern const int IP_ADDRESS_NOT_ALLOWED;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
+    extern const int AUTHENTICATION_FAILED;
 }
 
 
@@ -440,9 +441,11 @@ void IAccessStorage::notify(const Notifications & notifications)
 UUID IAccessStorage::authenticate(
     const Credentials & credentials,
     const Poco::Net::IPAddress & address,
-    const ExternalAuthenticators & external_authenticators) const
+    const ExternalAuthenticators & external_authenticators,
+    bool allow_no_password,
+    bool allow_plaintext_password) const
 {
-    return *authenticateImpl(credentials, address, external_authenticators, /* throw_if_user_not_exists = */ true);
+    return *authenticateImpl(credentials, address, external_authenticators, /* throw_if_user_not_exists = */ true, allow_no_password, allow_plaintext_password);
 }
 
 
@@ -450,9 +453,11 @@ std::optional<UUID> IAccessStorage::authenticate(
     const Credentials & credentials,
     const Poco::Net::IPAddress & address,
     const ExternalAuthenticators & external_authenticators,
-    bool throw_if_user_not_exists) const
+    bool throw_if_user_not_exists,
+    bool allow_no_password,
+    bool allow_plaintext_password) const
 {
-    return authenticateImpl(credentials, address, external_authenticators, throw_if_user_not_exists);
+    return authenticateImpl(credentials, address, external_authenticators, throw_if_user_not_exists, allow_no_password, allow_plaintext_password);
 }
 
 
@@ -460,7 +465,9 @@ std::optional<UUID> IAccessStorage::authenticateImpl(
     const Credentials & credentials,
     const Poco::Net::IPAddress & address,
     const ExternalAuthenticators & external_authenticators,
-    bool throw_if_user_not_exists) const
+    bool throw_if_user_not_exists,
+    bool allow_no_password,
+    bool allow_plaintext_password) const
 {
     if (auto id = find<User>(credentials.getUserName()))
     {
@@ -468,6 +475,11 @@ std::optional<UUID> IAccessStorage::authenticateImpl(
         {
             if (!isAddressAllowed(*user, address))
                 throwAddressNotAllowed(address);
+
+            auto auth_type = user->auth_data.getType();
+            if (((auth_type == AuthenticationType::NO_PASSWORD) && !allow_no_password) ||
+                ((auth_type == AuthenticationType::PLAINTEXT_PASSWORD) && !allow_plaintext_password))
+                throwAuthenticationTypeNotAllowed(auth_type);
 
             if (!areCredentialsValid(*user, credentials, external_authenticators))
                 throwInvalidCredentials();
@@ -598,6 +610,13 @@ void IAccessStorage::throwAddressNotAllowed(const Poco::Net::IPAddress & address
     throw Exception("Connections from " + address.toString() + " are not allowed", ErrorCodes::IP_ADDRESS_NOT_ALLOWED);
 }
 
+void IAccessStorage::throwAuthenticationTypeNotAllowed(AuthenticationType auth_type)
+{
+    throw Exception(
+        ErrorCodes::AUTHENTICATION_FAILED,
+        "Authentication type {} is not allowed, check the setting allow_{} in the server configuration",
+        toString(auth_type), AuthenticationTypeInfo::get(auth_type).name);
+}
 void IAccessStorage::throwInvalidCredentials()
 {
     throw Exception("Invalid credentials", ErrorCodes::WRONG_PASSWORD);

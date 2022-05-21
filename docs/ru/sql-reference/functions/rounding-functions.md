@@ -1,6 +1,6 @@
 ---
-toc_priority: 45
-toc_title: "Функции округления"
+sidebar_position: 45
+sidebar_label: "Функции округления"
 ---
 
 # Функции округления {#funktsii-okrugleniia}

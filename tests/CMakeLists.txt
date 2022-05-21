@@ -7,7 +7,7 @@ else ()
     include (${ClickHouse_SOURCE_DIR}/cmake/add_check.cmake)
 endif ()
 
-option (ENABLE_CLICKHOUSE_TEST "Install clickhouse-test script and relevant tests scenarios" ON)
+option (ENABLE_CLICKHOUSE_TEST "Install clickhouse-test script and relevant tests scenarios" OFF)
 
 if (ENABLE_CLICKHOUSE_TEST)
     install (PROGRAMS clickhouse-test DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)

@@ -404,8 +404,9 @@ bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ASTPtr settings;
 
     bool storage_like = false;
+    bool parsed_engine_keyword = s_engine.ignore(pos, expected);
 
-    if (s_engine.ignore(pos, expected))
+    if (parsed_engine_keyword)
     {
         s_eq.ignore(pos, expected);
 
@@ -471,7 +472,10 @@ bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                 return false;
         }
 
-        if (s_settings.ignore(pos, expected))
+        /// Do not allow SETTINGS clause without ENGINE,
+        /// because we cannot distinguish engine settings from query settings in this case.
+        /// And because settings for each engine are different.
+        if (parsed_engine_keyword && s_settings.ignore(pos, expected))
         {
             if (!settings_p.parse(pos, settings, expected))
                 return false;
@@ -875,11 +879,13 @@ bool ParserCreateWindowViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected &
     ParserKeyword s_as("AS");
     ParserKeyword s_view("VIEW");
     ParserKeyword s_window("WINDOW");
+    ParserKeyword s_populate("POPULATE");
     ParserToken s_dot(TokenType::Dot);
     ParserToken s_eq(TokenType::Equals);
     ParserToken s_lparen(TokenType::OpeningRoundBracket);
     ParserToken s_rparen(TokenType::ClosingRoundBracket);
     ParserStorage storage_p;
+    ParserStorage storage_inner;
     ParserTablePropertiesDeclarationList table_properties_p;
     ParserIntervalOperatorExpression watermark_p;
     ParserIntervalOperatorExpression lateness_p;
@@ -889,6 +895,7 @@ bool ParserCreateWindowViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected &
     ASTPtr to_table;
     ASTPtr columns_list;
     ASTPtr storage;
+    ASTPtr inner_storage;
     ASTPtr watermark;
     ASTPtr lateness;
     ASTPtr as_database;
@@ -902,6 +909,7 @@ bool ParserCreateWindowViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected &
     bool is_watermark_bounded = false;
     bool allowed_lateness = false;
     bool if_not_exists = false;
+    bool is_populate = false;
 
     if (!s_create.ignore(pos, expected))
     {
@@ -946,8 +954,17 @@ bool ParserCreateWindowViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected &
             return false;
     }
 
-    /// Inner table ENGINE for WINDOW VIEW
-    storage_p.parse(pos, storage, expected);
+    if (ParserKeyword{"INNER"}.ignore(pos, expected))
+    {
+        /// Inner table ENGINE for WINDOW VIEW
+        storage_inner.parse(pos, inner_storage, expected);
+    }
+
+    if (!to_table)
+    {
+        /// Target table ENGINE for WINDOW VIEW
+        storage_p.parse(pos, storage, expected);
+    }
 
     // WATERMARK
     if (ParserKeyword{"WATERMARK"}.ignore(pos, expected))
@@ -973,6 +990,9 @@ bool ParserCreateWindowViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected &
         if (!lateness_p.parse(pos, lateness, expected))
             return false;
     }
+
+    if (s_populate.ignore(pos, expected))
+        is_populate = true;
 
     /// AS SELECT ...
     if (!s_as.ignore(pos, expected))
@@ -1000,12 +1020,14 @@ bool ParserCreateWindowViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected &
 
     query->set(query->columns_list, columns_list);
     query->set(query->storage, storage);
+    query->set(query->inner_storage, inner_storage);
     query->is_watermark_strictly_ascending = is_watermark_strictly_ascending;
     query->is_watermark_ascending = is_watermark_ascending;
     query->is_watermark_bounded = is_watermark_bounded;
     query->watermark_function = watermark;
     query->allowed_lateness = allowed_lateness;
     query->lateness_function = lateness;
+    query->is_populate = is_populate;
 
     tryGetIdentifierNameInto(as_database, query->as_database);
     tryGetIdentifierNameInto(as_table, query->as_table);

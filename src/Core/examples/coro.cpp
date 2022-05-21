@@ -4,7 +4,7 @@
 #include <optional>
 
 #include <Common/Exception.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <Poco/ConsoleChannel.h>
 #include <Poco/Logger.h>
 #include <Poco/AutoPtr.h>
@@ -84,7 +84,7 @@ struct Task
         std::cout << "    Task " << tag << std::endl;
     }
     Task(Task &) = delete;
-    Task(Task &&rhs) : my(rhs.my), tag(rhs.tag)
+    Task(Task &&rhs) noexcept : my(rhs.my), tag(rhs.tag)
     {
         rhs.my = {};
         std::cout << "    Task&& " << tag << std::endl;

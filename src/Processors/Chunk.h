@@ -90,7 +90,7 @@ public:
     bool hasRows() const { return num_rows > 0; }
     bool hasColumns() const { return !columns.empty(); }
     bool empty() const { return !hasRows() && !hasColumns(); }
-    operator bool() const { return !empty(); }
+    operator bool() const { return !empty(); } /// NOLINT
 
     void addColumn(ColumnPtr column);
     void addColumn(size_t position, ColumnPtr column);

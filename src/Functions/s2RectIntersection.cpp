@@ -68,7 +68,11 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        const auto * col_lo1 = checkAndGetColumn<ColumnUInt64>(arguments[0].column.get());
+        auto non_const_arguments = arguments;
+        for (auto & argument : non_const_arguments)
+            argument.column = argument.column->convertToFullColumnIfConst();
+
+        const auto * col_lo1 = checkAndGetColumn<ColumnUInt64>(non_const_arguments[0].column.get());
         if (!col_lo1)
             throw Exception(
                 ErrorCodes::ILLEGAL_COLUMN,
@@ -78,7 +82,7 @@ public:
                 getName());
         const auto & data_lo1 = col_lo1->getData();
 
-        const auto * col_hi1 = checkAndGetColumn<ColumnFloat64>(arguments[1].column.get());
+        const auto * col_hi1 = checkAndGetColumn<ColumnUInt64>(non_const_arguments[1].column.get());
         if (!col_hi1)
             throw Exception(
                 ErrorCodes::ILLEGAL_COLUMN,
@@ -88,7 +92,7 @@ public:
                 getName());
         const auto & data_hi1 = col_hi1->getData();
 
-        const auto * col_lo2 = checkAndGetColumn<ColumnUInt64>(arguments[2].column.get());
+        const auto * col_lo2 = checkAndGetColumn<ColumnUInt64>(non_const_arguments[2].column.get());
         if (!col_lo2)
             throw Exception(
                 ErrorCodes::ILLEGAL_COLUMN,
@@ -98,7 +102,7 @@ public:
                 getName());
         const auto & data_lo2 = col_lo2->getData();
 
-        const auto * col_hi2 = checkAndGetColumn<ColumnFloat64>(arguments[3].column.get());
+        const auto * col_hi2 = checkAndGetColumn<ColumnUInt64>(non_const_arguments[3].column.get());
         if (!col_hi2)
             throw Exception(
                 ErrorCodes::ILLEGAL_COLUMN,

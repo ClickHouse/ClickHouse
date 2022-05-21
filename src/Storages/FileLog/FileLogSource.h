@@ -15,7 +15,7 @@ class FileLogSource : public SourceWithProgress
 public:
     FileLogSource(
         StorageFileLog & storage_,
-        const StorageMetadataPtr & metadata_snapshot_,
+        const StorageSnapshotPtr & storage_snapshot_,
         const ContextPtr & context_,
         const Names & columns,
         size_t max_block_size_,
@@ -36,7 +36,7 @@ protected:
 
 private:
     StorageFileLog & storage;
-    StorageMetadataPtr metadata_snapshot;
+    StorageSnapshotPtr storage_snapshot;
     ContextPtr context;
     Names column_names;
     UInt64 max_block_size;
@@ -52,7 +52,7 @@ private:
     Block virtual_header;
 
     /// The start pos and end pos of files responsible by this stream,
-    /// does not include end
+    /// does not include end.
     size_t start;
     size_t end;
 };

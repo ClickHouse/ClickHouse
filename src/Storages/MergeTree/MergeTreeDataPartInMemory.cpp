@@ -6,7 +6,7 @@
 #include <DataTypes/NestedUtils.h>
 #include <Interpreters/Context.h>
 #include <Poco/Logger.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -23,7 +23,7 @@ MergeTreeDataPartInMemory::MergeTreeDataPartInMemory(
         const VolumePtr & volume_,
         const std::optional<String> & relative_path_,
         const IMergeTreeDataPart * parent_part_)
-    : IMergeTreeDataPart(storage_, name_, volume_, relative_path_, Type::IN_MEMORY, parent_part_)
+    : IMergeTreeDataPart(storage_, name_, volume_, relative_path_, Type::InMemory, parent_part_)
 {
     default_codec = CompressionCodecFactory::instance().get("NONE", {});
 }
@@ -35,7 +35,7 @@ MergeTreeDataPartInMemory::MergeTreeDataPartInMemory(
         const VolumePtr & volume_,
         const std::optional<String> & relative_path_,
         const IMergeTreeDataPart * parent_part_)
-    : IMergeTreeDataPart(storage_, name_, info_, volume_, relative_path_, Type::IN_MEMORY, parent_part_)
+    : IMergeTreeDataPart(storage_, name_, info_, volume_, relative_path_, Type::InMemory, parent_part_)
 {
     default_codec = CompressionCodecFactory::instance().get("NONE", {});
 }
@@ -92,7 +92,7 @@ void MergeTreeDataPartInMemory::flushToDisk(const String & base_path, const Stri
 
     auto compression_codec = storage.getContext()->chooseCompressionCodec(0, 0);
     auto indices = MergeTreeIndexFactory::instance().getMany(metadata_snapshot->getSecondaryIndices());
-    MergedBlockOutputStream out(new_data_part, metadata_snapshot, columns, indices, columns, compression_codec);
+    MergedBlockOutputStream out(new_data_part, metadata_snapshot, columns, indices, columns, compression_codec, NO_TRANSACTION_PTR);
     out.write(block);
     const auto & projections = metadata_snapshot->getProjections();
     for (const auto & [projection_name, projection] : projection_parts)
@@ -123,7 +123,7 @@ void MergeTreeDataPartInMemory::flushToDisk(const String & base_path, const Stri
             auto projection_indices = MergeTreeIndexFactory::instance().getMany(desc.metadata->getSecondaryIndices());
             MergedBlockOutputStream projection_out(
                 projection_data_part, desc.metadata, projection_part->columns, projection_indices,
-                projection_part->columns, projection_compression_codec);
+                projection_part->columns, projection_compression_codec, NO_TRANSACTION_PTR);
 
             projection_out.write(projection_part->block);
             projection_out.finalizePart(projection_data_part, false);
