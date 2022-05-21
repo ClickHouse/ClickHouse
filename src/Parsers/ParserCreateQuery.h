@@ -132,10 +132,12 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     ParserKeyword s_ttl{"TTL"};
     ParserKeyword s_remove{"REMOVE"};
     ParserKeyword s_type{"TYPE"};
+    ParserKeyword s_collate{"COLLATE"};
     ParserTernaryOperatorExpression expr_parser;
     ParserStringLiteral string_literal_parser;
     ParserLiteral literal_parser;
     ParserCodec codec_parser;
+    ParserCollation collation_parser;
     ParserExpression expression_parser;
 
     /// mandatory column name
@@ -171,6 +173,7 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     ASTPtr comment_expression;
     ASTPtr codec_expression;
     ASTPtr ttl_expression;
+    ASTPtr collation_expression;
 
     if (!s_default.checkWithoutMoving(pos, expected)
         && !s_materialized.checkWithoutMoving(pos, expected)
@@ -185,6 +188,11 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
             return false;
         if (!type_parser.parse(pos, type, expected))
             return false;
+        if (s_collate.ignore(pos, expected))
+        {
+            if (!collation_parser.parse(pos, collation_expression, expected))
+                return false;
+        }
     }
 
     Pos pos_before_specifier = pos;
@@ -286,6 +294,11 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     {
         column_declaration->ttl = ttl_expression;
         column_declaration->children.push_back(std::move(ttl_expression));
+    }
+    if (collation_expression)
+    {
+        column_declaration->collation = collation_expression;
+        column_declaration->children.push_back(std::move(collation_expression));
     }
 
     return true;
@@ -406,7 +419,7 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
-/// CREATE|ATTACH WINDOW VIEW [IF NOT EXISTS] [db.]name [TO [db.]name] [ENGINE [db.]name] [WATERMARK function] AS SELECT ...
+/// CREATE|ATTACH WINDOW VIEW [IF NOT EXISTS] [db.]name [TO [db.]name] [INNER ENGINE [db.]name] [ENGINE [db.]name] [WATERMARK function] [ALLOWED_LATENESS = interval_function] [POPULATE] AS SELECT ...
 class ParserCreateWindowViewQuery : public IParserBase
 {
 protected:
