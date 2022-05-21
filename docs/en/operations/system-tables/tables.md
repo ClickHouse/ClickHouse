@@ -18,7 +18,7 @@ Columns:
 
 -   `is_temporary` ([UInt8](../../sql-reference/data-types/int-uint.md)) - Flag that indicates whether the table is temporary.
 
--   `data_paths` (Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md))) - Paths to the table data in the file systems.
+-   `data_paths` ([Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md))) - Paths to the table data in the file systems.
 
 -   `metadata_path` ([String](../../sql-reference/data-types/string.md)) - Path to the table metadata in the file system.
 
