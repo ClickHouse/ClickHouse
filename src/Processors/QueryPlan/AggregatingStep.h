@@ -42,7 +42,7 @@ public:
         InputOrderInfoPtr group_by_info_,
         SortDescription group_by_sort_description_,
         bool optimize_distributed_aggregation_,
-        ContextMutablePtr context_);
+        ContextPtr context_);
 
     String getName() const override { return "Aggregating"; }
 
@@ -77,7 +77,7 @@ private:
 
     bool optimize_distributed_aggregation;
 
-    ContextMutablePtr context;
+    ContextPtr context;
 };
 
 }

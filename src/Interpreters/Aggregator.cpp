@@ -1664,7 +1664,8 @@ void Aggregator::convertToBlockImpl(
         convertToBlockImplNotFinal(method, data, std::move(raw_key_columns), aggregate_columns);
     }
     /// In order to release memory early.
-    data.clearAndShrink();
+    if (!params.keep_state_after_read)
+        data.clearAndShrink();
 }
 
 
@@ -1708,25 +1709,28 @@ inline void Aggregator::insertAggregatesIntoColumns(Mapped & mapped, MutableColu
         exception = std::current_exception();
     }
 
-    /** Destroy states that are no longer needed. This loop does not throw.
-        *
-        * Don't destroy states for "-State" aggregate functions,
-        *  because the ownership of this state is transferred to ColumnAggregateFunction
-        *  and ColumnAggregateFunction will take care.
-        *
-        * But it's only for states that has been transferred to ColumnAggregateFunction
-        *  before exception has been thrown;
-        */
-    for (size_t destroy_i = 0; destroy_i < params.aggregates_size; ++destroy_i)
+    if (!params.keep_state_after_read)
     {
-        /// If ownership was not transferred to ColumnAggregateFunction.
-        if (!(destroy_i < insert_i && aggregate_functions[destroy_i]->isState()))
-            aggregate_functions[destroy_i]->destroy(
-                mapped + offsets_of_aggregate_states[destroy_i]);
-    }
+        /** Destroy states that are no longer needed. This loop does not throw.
+            *
+            * Don't destroy states for "-State" aggregate functions,
+            *  because the ownership of this state is transferred to ColumnAggregateFunction
+            *  and ColumnAggregateFunction will take care.
+            *
+            * But it's only for states that has been transferred to ColumnAggregateFunction
+            *  before exception has been thrown;
+            */
+        for (size_t destroy_i = 0; destroy_i < params.aggregates_size; ++destroy_i)
+        {
+            /// If ownership was not transferred to ColumnAggregateFunction.
+            if (!(destroy_i < insert_i && aggregate_functions[destroy_i]->isState()))
+                aggregate_functions[destroy_i]->destroy(
+                    mapped + offsets_of_aggregate_states[destroy_i]);
+        }
 
-    /// Mark the cell as destroyed so it will not be destroyed in destructor.
-    mapped = nullptr;
+        /// Mark the cell as destroyed so it will not be destroyed in destructor.
+        mapped = nullptr;
+    }
 
     if (exception)
         std::rethrow_exception(exception);
@@ -1762,9 +1766,7 @@ void NO_INLINE Aggregator::convertToBlockImplFinal(
         places.emplace_back(mapped);
 
         /// Mark the cell as destroyed so it will not be destroyed in destructor.
-        if (!params.keep_state_after_read) {
-            mapped = nullptr;
-        }
+        mapped = nullptr;
     });
 
     std::exception_ptr exception;
@@ -1820,9 +1822,8 @@ void NO_INLINE Aggregator::convertToBlockImplFinal(
 
             /// For State AggregateFunction ownership of aggregate place is passed to result column after insert
             bool is_state = aggregate_functions[destroy_index]->isState();
-            bool destroy_place_after_insert = !is_state && !params.keep_state_after_read;
 
-            aggregate_functions[destroy_index]->insertResultIntoBatch(0, places.size(), places.data(), offset, *final_aggregate_column, arena, destroy_place_after_insert);
+            aggregate_functions[destroy_index]->insertResultIntoBatch(0, places.size(), places.data(), offset, *final_aggregate_column, arena, !is_state);
         }
     }
     catch (...)
@@ -1880,7 +1881,8 @@ void NO_INLINE Aggregator::convertToBlockImplNotFinal(
         for (size_t i = 0; i < params.aggregates_size; ++i)
             aggregate_columns[i]->push_back(mapped + offsets_of_aggregate_states[i]);
 
-        mapped = nullptr;
+        if (!params.keep_state_after_read)
+            mapped = nullptr;
     });
 }
 
@@ -1914,6 +1916,9 @@ Block Aggregator::prepareBlockAndFill(
 
             /// The ColumnAggregateFunction column captures the shared ownership of the arena with the aggregate function states.
             ColumnAggregateFunction & column_aggregate_func = assert_cast<ColumnAggregateFunction &>(*aggregate_columns[i]);
+
+            if (params.keep_state_after_read)
+                column_aggregate_func.disableStateDestruction();
 
             for (auto & pool : data_variants.aggregates_pools)
                 column_aggregate_func.addArena(pool);
@@ -2048,7 +2053,9 @@ Block Aggregator::prepareBlockAndFillWithoutKey(AggregatedDataVariants & data_va
             {
                 for (size_t i = 0; i < params.aggregates_size; ++i)
                     aggregate_columns[i]->push_back(data + offsets_of_aggregate_states[i]);
-                data = nullptr;
+
+                if (!params.keep_state_after_read)
+                    data = nullptr;
             }
             else
             {
@@ -2067,7 +2074,7 @@ Block Aggregator::prepareBlockAndFillWithoutKey(AggregatedDataVariants & data_va
     if (is_overflows)
         block.info.is_overflows = true;
 
-    if (final)
+    if (final && !params.keep_state_after_read)
         destroyWithoutKey(data_variants);
 
     return block;
@@ -2222,7 +2229,7 @@ BlocksList Aggregator::convertToBlocks(AggregatedDataVariants & data_variants, b
             blocks.splice(blocks.end(), prepareBlocksAndFillTwoLevel(data_variants, final, thread_pool.get()));
     }
 
-    if (!final)
+    if (!final && !params.keep_state_after_read)
     {
         /// data_variants will not destroy the states of aggregate functions in the destructor.
         /// Now ColumnAggregateFunction owns the states.
@@ -2972,7 +2979,7 @@ Block Aggregator::mergeBlocks(BlocksList & blocks, bool final)
         block = prepareBlockAndFillSingleLevel(result, final);
     /// NOTE: two-level data is not possible here - chooseAggregationMethod chooses only among single-level methods.
 
-    if (!final)
+    if (!final && !params.keep_state_after_read)
     {
         /// Pass ownership of aggregate function states from result to ColumnAggregateFunction objects in the resulting block.
         result.aggregator = nullptr;

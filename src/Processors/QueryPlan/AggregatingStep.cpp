@@ -62,7 +62,9 @@ AggregatingStep::AggregatingStep(
     size_t temporary_data_merge_threads_,
     bool storage_has_evenly_distributed_read_,
     InputOrderInfoPtr group_by_info_,
-    SortDescription group_by_sort_description_)
+    SortDescription group_by_sort_description_,
+    bool optimize_distributed_aggregation_,
+    ContextPtr context_)
     : ITransformingStep(input_stream_, appendGroupingColumn(params_.getHeader(final_), grouping_sets_params_), getTraits(), false)
     , params(std::move(params_))
     , grouping_sets_params(std::move(grouping_sets_params_))
@@ -74,8 +76,8 @@ AggregatingStep::AggregatingStep(
     , storage_has_evenly_distributed_read(storage_has_evenly_distributed_read_)
     , group_by_info(std::move(group_by_info_))
     , group_by_sort_description(std::move(group_by_sort_description_))
-    // , optimize_distributed_aggregation(optimize_distributed_aggregation_)
-    // , context(context_)
+    , optimize_distributed_aggregation(optimize_distributed_aggregation_)
+    , context(context_)
 {
 }
 

@@ -79,6 +79,9 @@ private:
     /// This may be useful for proper memory tracking, since source column may contain aggregate states.
     bool force_data_ownership = false;
 
+    /// Do not call destroy in destructor if disabled.
+    bool destroy_states = true;
+
     /// Array of pointers to aggregation states, that are placed in arenas.
     Container data;
 
@@ -248,5 +251,7 @@ public:
     bool structureEquals(const IColumn &) const override;
 
     MutableColumnPtr cloneResized(size_t size) const override;
+
+    void disableStateDestruction();
 };
 }

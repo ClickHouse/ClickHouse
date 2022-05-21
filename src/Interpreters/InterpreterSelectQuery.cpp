@@ -1211,11 +1211,10 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                 && !expressions.hasHaving()
                 && !expressions.has_window)
             {
+                const auto input_order_info = query_info.input_order_info ? query_info.input_order_info
+                                                 : (query_info.projection ? query_info.projection->input_order_info : nullptr);
                 if (expressions.has_order_by)
-                    executeOrder(
-                        query_plan,
-                        query_info.input_order_info ? query_info.input_order_info
-                                                    : (query_info.projection ? query_info.projection->input_order_info : nullptr));
+                    executeOrder(query_plan, input_order_info, false);
 
                 if (expressions.has_order_by && query.limitLength())
                     executeDistinct(query_plan, false, expressions.selected_columns, true);
@@ -1611,8 +1610,8 @@ static void executeMergeAggregatedImpl(
     bool overflow_row,
     bool final,
     bool is_remote_storage,
-    bool optimize_distributed_aggregation,
     bool has_grouping_sets,
+    bool optimize_distributed_aggregation,
     const Settings & settings,
     const NamesAndTypesList & aggregation_keys,
     const AggregateDescriptions & aggregates,
@@ -2371,7 +2370,8 @@ void InterpreterSelectQuery::executeAggregation(QueryPlan & query_plan, const Ac
         storage_has_evenly_distributed_read,
         std::move(group_by_info),
         std::move(group_by_sort_description),
-        optimize_distributed_aggregation);
+        optimize_distributed_aggregation,
+        context);
     query_plan.addStep(std::move(aggregating_step));
 }
 
@@ -2391,9 +2391,9 @@ void InterpreterSelectQuery::executeMergeAggregated(QueryPlan & query_plan, bool
         query_plan,
         overflow_row,
         final,
-        optimize_distributed_aggregation,
         storage && storage->isRemote(),
         has_grouping_sets,
+        optimize_distributed_aggregation,
         context->getSettingsRef(),
         query_analyzer->aggregationKeys(),
         query_analyzer->aggregates(),
@@ -2545,7 +2545,8 @@ void InterpreterSelectQuery::executeWindow(QueryPlan & query_plan)
                 settings.remerge_sort_lowered_memory_bytes_ratio,
                 settings.max_bytes_before_external_sort,
                 context->getTemporaryVolume(),
-                settings.min_free_disk_space_for_temporary_data);
+                settings.min_free_disk_space_for_temporary_data,
+                false /* optimize_distributed_aggregation */);
             sorting_step->setStepDescription("Sorting for window '" + window.window_name + "'");
             query_plan.addStep(std::move(sorting_step));
         }

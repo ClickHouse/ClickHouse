@@ -932,6 +932,8 @@ public:
         bool compile_aggregate_expressions;
         size_t min_count_to_compile_aggregate_expression;
 
+        const bool keep_state_after_read;
+
         struct StatsCollectingParams
         {
             StatsCollectingParams();

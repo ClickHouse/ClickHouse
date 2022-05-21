@@ -23,7 +23,7 @@ public:
         size_t max_bytes_before_external_sort_,
         VolumePtr tmp_volume_,
         size_t min_free_disk_space_,
-        bool optimize_distributed_aggregation);
+        bool optimize_distributed_aggregation_);
 
     /// FinishSorting
     SortingStep(
