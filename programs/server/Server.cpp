@@ -1395,8 +1395,11 @@ int Server::main(const std::vector<std::string> & /*args*/)
     fs::create_directories(format_schema_path);
 
     /// Check sanity of MergeTreeSettings on server startup
-    global_context->getMergeTreeSettings().sanityCheck(settings);
-    global_context->getReplicatedMergeTreeSettings().sanityCheck(settings);
+    {
+        size_t background_pool_tasks = global_context->getMergeMutateExecutor()->getMaxTasksCount();
+        global_context->getMergeTreeSettings().sanityCheck(background_pool_tasks);
+        global_context->getReplicatedMergeTreeSettings().sanityCheck(background_pool_tasks);
+    }
 
     /// try set up encryption. There are some errors in config, error will be printed and server wouldn't start.
     CompressionCodecEncrypted::Configuration::instance().load(config(), "encryption_codecs");
