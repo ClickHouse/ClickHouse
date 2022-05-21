@@ -22,4 +22,6 @@ public:
         PaddedPODArray<UInt8> * null_map) const = 0;
 };
 
+using IKVStoragePtr = std::shared_ptr<IKeyValueStorage>;
+
 }
