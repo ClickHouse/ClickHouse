@@ -353,7 +353,7 @@ void TransactionLog::tryFinalizeUnknownStateTransactions()
         /// CSNs must be already loaded, only need to check if the corresponding mapping exists.
         if (auto csn = getCSN(txn->tid))
         {
-            finalizeCommittedTransaction(txn, csn);
+            finalizeCommittedTransaction(txn, csn, state_guard);
         }
         else
         {
@@ -452,10 +452,10 @@ CSN TransactionLog::commitTransaction(const MergeTreeTransactionPtr & txn, bool 
         allocated_csn = deserializeCSN(csn_path_created.substr(zookeeper_path_log.size() + 1));
     }
 
-    return finalizeCommittedTransaction(txn.get(), allocated_csn);
+    return finalizeCommittedTransaction(txn.get(), allocated_csn, state_guard);
 }
 
-CSN TransactionLog::finalizeCommittedTransaction(MergeTreeTransaction * txn, CSN allocated_csn) noexcept
+CSN TransactionLog::finalizeCommittedTransaction(MergeTreeTransaction * txn, CSN allocated_csn, scope_guard & state_guard) noexcept
 {
     chassert(!allocated_csn == txn->isReadOnly());
     if (allocated_csn)
@@ -472,10 +472,10 @@ CSN TransactionLog::finalizeCommittedTransaction(MergeTreeTransaction * txn, CSN
 
     /// Write allocated CSN, so we will be able to cleanup log in ZK. This method is noexcept.
     txn->afterCommit(allocated_csn);
+    state_guard = {};
 
     {
         /// Finally we can remove transaction from the list and release the snapshot
-        MergeTreeTransactionPtr txn_ptr;
         std::lock_guard lock{running_list_mutex};
         snapshots_in_use.erase(txn->snapshot_in_use_it);
         bool removed = running_list.erase(txn->tid.getHash());
