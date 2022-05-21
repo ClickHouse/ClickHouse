@@ -23,7 +23,9 @@ BOOST_PP_SEQ_FOR_EACH(EXTERN_GRAPH_OPERATION_FACTORY, , GRAPH_FUNCTION_CLASSES)
 void registerGraphAggregateFunctions(AggregateFunctionFactory & factory)
 {
 #define REGISTER_GRAPH_FUNCTION(r, data, elem) \
-    factory.registerFunction(BOOST_PP_STRINGIZE(elem), {BOOST_PP_CAT(createGraphOperation, elem), AggregateFunctionProperties{}});
+    factory.registerFunction(BOOST_PP_STRINGIZE(elem), \
+        {BOOST_PP_CAT(createGraphOperation, elem), \
+         AggregateFunctionProperties{.returns_default_when_only_null = true, .is_order_dependent = false}});
 
     BOOST_PP_SEQ_FOR_EACH(REGISTER_GRAPH_FUNCTION, , GRAPH_FUNCTION_CLASSES)
 }
