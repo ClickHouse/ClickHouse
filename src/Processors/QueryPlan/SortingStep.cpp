@@ -169,7 +169,6 @@ void SortingStep::transformPipeline(QueryPipelineBuilder & pipeline, const Build
     }
     else if (type == Type::Full)
     {
-        // std::cerr << "mylog: type == Type::Full" << std::endl;
         pipeline.addSimpleTransform([&](const Block & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
         {
             if (stream_type != QueryPipelineBuilder::StreamType::Main)

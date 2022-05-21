@@ -18,11 +18,6 @@ MergingAggregatedTransform::MergingAggregatedTransform(
     : IAccumulatingTransform(std::move(header_), params_->getHeader())
     , params(std::move(params_)), max_threads(max_threads_), query_info(query_info_), context(context_)
 {
-    // std::cerr << "mylog: MergingAggregatedTransform init" << std::endl;
-    auto shards = query_info.getCluster()->getShardsInfo();
-    //     std::cerr << "mylog: hasRemoteConnections " << shard_info.hasRemoteConnections() << std::endl;
-    //     remote_executors.push_back(std::make_shared<RemoteQueryExecutor>(shard_info.pool, "SELECT 1", header_, context));
-    // }
 }
 
 void MergingAggregatedTransform::consume(Chunk chunk)
@@ -140,7 +135,6 @@ IProcessor::Status MergingAggregatedOptimizedTransform::prepare()
         }
         else
         {
-            // std::cerr << "mylog: need_generate else" << std::endl;
             output.push(std::move(top_chunk));
             output.finish();
             input.close();
@@ -151,7 +145,6 @@ IProcessor::Status MergingAggregatedOptimizedTransform::prepare()
     {
         if (is_consume_finished)
         {
-            // std::cerr << "mylog: is_consume_finished" << std::endl;
             output.push(std::move(top_chunk));
             output.finish();
             return Status::Finished;
@@ -180,10 +173,9 @@ void MergingAggregatedOptimizedTransform::consume(Chunk chunk)
 {
     LOG_TRACE(log, "MergingAggregatedOptimizedTransform");
     size_t input_rows = chunk.getNumRows();
-    if (!input_rows) {
-        // std::cerr << "mylog: if (!input_rows)" << std::endl;
+    if (!input_rows)
         return;
-    }
+
     const auto & info = chunk.getChunkInfo();
     if (!info)
         throw Exception("Chunk info was not set for chunk in MergingAggregatedTransform.", ErrorCodes::LOGICAL_ERROR);

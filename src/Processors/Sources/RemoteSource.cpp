@@ -124,7 +124,6 @@ std::optional<Chunk> RemoteSource::tryGenerate()
         info->is_overflows = block.info.is_overflows;
         info->order_num = block.info.order_num;
         info->is_lookup = block.info.is_lookup;
-        // std::cerr << std::boolalpha << "mylog:  " << info->is_lookup << " " << info->order_num << std::endl;
         chunk.setChunkInfo(std::move(info));
     }
 

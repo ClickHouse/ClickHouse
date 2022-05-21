@@ -211,12 +211,8 @@ static Block adaptBlockStructure(const Block & block, const Block & header)
 }
 
 void RemoteQueryExecutor::sendGetRequest(const Block & block) {
-    if (!requested && connections->hasActiveConnections()) {
-        // std::cerr << "mylog: sent get request" << std::endl;
+    if (connections->hasActiveConnections()) {
         connections->sendGetRequest(block);
-        // requested = true;
-    } else {
-        // std::cerr << "mylog: not sent get request" << std::endl;
     }
 }
 

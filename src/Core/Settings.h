@@ -410,8 +410,7 @@ static constexpr UInt64 operator""_GiB(unsigned long long value)
     M(Bool, cancel_http_readonly_queries_on_client_close, false, "Cancel HTTP readonly queries when a client closes the connection without waiting for response.", 0) \
     M(Bool, external_table_functions_use_nulls, true, "If it is set to true, external table functions will implicitly use Nullable type if needed. Otherwise NULLs will be substituted with default values. Currently supported only by 'mysql', 'postgresql' and 'odbc' table functions.", 0) \
     M(Bool, external_table_strict_query, false, "If it is set to true, transforming expression to local filter is forbidden for queries to external tables.", 0) \
-    M(Bool, optimize_distributed_aggregation, false, "", 0) \
-    M(Bool, force, false, "", 0) \
+    M(Bool, optimize_distributed_aggregation, false, "Enable optimized pipeline for distributed agggreagtion with sort by sublinear monotonic aggreagate function", 0) \
     \
     M(Bool, allow_hyperscan, true, "Allow functions that use Hyperscan library. Disable to avoid potentially long compilation times and excessive resource usage.", 0) \
     M(UInt64, max_hyperscan_regexp_length, 0, "Max length of regexp than can be used in hyperscan multi-match functions. Zero means unlimited.", 0) \

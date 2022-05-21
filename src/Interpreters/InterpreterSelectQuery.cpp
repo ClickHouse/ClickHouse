@@ -1108,13 +1108,12 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
         options.to_stage > QueryProcessingStage::WithMergeableState &&
         !query.group_by_with_totals && !query.group_by_with_rollup && !query.group_by_with_cube;
 
-    bool optimize_distributed_aggregation = settings.force || (
+    bool optimize_distributed_aggregation =
         settings.optimize_distributed_aggregation &&
         expressions.need_aggregate &&
         expressions.has_order_by &&
         query.limitLength() &&
-        optimizeOrderBySublinearAggregateFunction(query)
-    );
+        optimizeOrderBySublinearAggregateFunction(query);
 
     bool use_grouping_set_key = expressions.use_grouping_set_key;
 

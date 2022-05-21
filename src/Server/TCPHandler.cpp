@@ -383,12 +383,6 @@ void TCPHandler::runImpl()
             }
 
             state.io.onFinish();
-            // std::cerr << "mylog: state.io.onFinish();" << std::endl;
-            // std::cerr << "mylog: " << query_context->aggregating_memory_holder.isEmpty() << std::endl;
-            // if (query_context->hasAggregatingMemory()) {
-            //     std::cerr << "mylog: query_context->hasAggregatingMemory()" << std::endl;
-            //     readData();
-            // }
 
             /// Do it before sending end of stream, to have a chance to show log message in client.
             query_scope->logPeakMemoryUsage();
@@ -718,14 +712,6 @@ void TCPHandler::processOrdinaryQueryWithProcessors()
             {
                 // Field val;
                 block.info.order_num = order_num++;
-                // std::cerr << "mylog: block.info.order_num " << block.info.order_num << std::endl;
-                // for (size_t i = 0; i < block.columns(); ++i) {
-                //     if (!typeid_cast<const ColumnAggregateFunction *>(block.getByPosition(i).column.get())) {
-                //         block.getByPosition(i).column->get(0, val);
-                //         std::cerr << toString(val) << " ";
-                //     }
-                // }
-                // std::cerr << std::endl;
                 if (!state.io.null_format)
                     sendData(block);
             }
@@ -756,7 +742,6 @@ void TCPHandler::processOrdinaryQueryWithProcessors()
     }
 
     sendProgress();
-    // std::cerr << "mylog: processed request" << std::endl;
 }
 
 
@@ -1647,7 +1632,6 @@ bool TCPHandler::isQueryCancelled(bool receive_lookups)
     // size_t i = 0;
     while (static_cast<ReadBufferFromPocoSocket &>(*in).poll(0))
     {
-        // std::cerr << "mylog: iter" << i++ << std::endl;
         if (in->eof())
         {
             LOG_INFO(log, "Client has dropped the connection, cancel the query.");
@@ -1679,7 +1663,6 @@ bool TCPHandler::isQueryCancelled(bool receive_lookups)
                 return true;
             case Protocol::Client::GetRequest:
                 if (receive_lookups) {
-                    // std::cerr << "mylog: received GET" << std::endl;
                     processGetRequest();
                     break;
                 } else {

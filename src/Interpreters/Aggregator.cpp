@@ -1822,8 +1822,9 @@ void NO_INLINE Aggregator::convertToBlockImplFinal(
 
             /// For State AggregateFunction ownership of aggregate place is passed to result column after insert
             bool is_state = aggregate_functions[destroy_index]->isState();
+            bool destroy_place_after_insert = !is_state;
 
-            aggregate_functions[destroy_index]->insertResultIntoBatch(0, places.size(), places.data(), offset, *final_aggregate_column, arena, !is_state);
+            aggregate_functions[destroy_index]->insertResultIntoBatch(0, places.size(), places.data(), offset, *final_aggregate_column, arena, destroy_place_after_insert);
         }
     }
     catch (...)
@@ -1949,7 +1950,6 @@ Block Aggregator::prepareBlockAndFill(
         }
     }
 
-    // std::cerr << "mylog:  filler(key_columns, aggregate_columns_data, final_aggregate_columns, final);" << std::endl;
     filler(key_columns, aggregate_columns_data, final_aggregate_columns, final);
 
     Block res = header.cloneEmpty();

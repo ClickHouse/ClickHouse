@@ -259,7 +259,6 @@ void GroupingAggregatedTransform::addChunk(Chunk chunk, size_t input)
     {
         Int32 bucket = agg_info->bucket_num;
         bool is_overflows = agg_info->is_overflows;
-        // std::cerr << "mylog :" << bucket << std::endl;
         if (is_overflows)
             overflow_chunks.emplace_back(std::move(chunk));
         else if (bucket < 0)
