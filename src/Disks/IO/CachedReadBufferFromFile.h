@@ -6,6 +6,7 @@
 #include <IO/SeekableReadBuffer.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/ReadSettings.h>
+#include <IO/ReadBufferFromFileBase.h>
 #include <Interpreters/FilesystemCacheLog.h>
 
 
@@ -17,20 +18,20 @@ extern const Metric FilesystemCacheReadBuffers;
 namespace DB
 {
 
-class CachedReadBufferFromRemoteFS : public SeekableReadBuffer
+class CachedReadBufferFromFile : public ReadBufferFromFileBase
 {
 public:
     using RemoteFSFileReaderCreator = std::function<FileSegment::RemoteFileReaderPtr()>;
 
-    CachedReadBufferFromRemoteFS(
-        const String & remote_fs_object_path_,
+    CachedReadBufferFromFile(
+        const String & source_file_path_,
         FileCachePtr cache_,
         RemoteFSFileReaderCreator remote_file_reader_creator_,
         const ReadSettings & settings_,
         const String & query_id_,
         size_t read_until_position_);
 
-    ~CachedReadBufferFromRemoteFS() override;
+    ~CachedReadBufferFromFile() override;
 
     bool nextImpl() override;
 
@@ -43,6 +44,8 @@ public:
     String getInfoForLog() override;
 
     void setReadUntilPosition(size_t position) override;
+
+    String getFileName() const override { return source_file_path; }
 
     enum class ReadType
     {
@@ -79,7 +82,7 @@ private:
 
     Poco::Logger * log;
     IFileCache::Key cache_key;
-    String remote_fs_object_path;
+    String source_file_path;
     FileCachePtr cache;
     ReadSettings settings;
 

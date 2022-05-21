@@ -53,6 +53,8 @@ public:
 
     std::optional<size_t> getFileSize() override;
 
+    bool isIntegratedWithFilesystemCache() const override { return true; }
+
 private:
     bool nextImpl() override;
 

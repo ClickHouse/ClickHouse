@@ -13,7 +13,11 @@ namespace ErrorCodes
 
 void FileCacheSettings::loadFromConfig(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix)
 {
+    if (!config.has(config_prefix + ".max_size"))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected cache size (`size`) in configuration");
+
     max_size = config.getUInt64(config_prefix + ".max_size", 0);
+
     if (max_size == 0)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected non-zero size for cache configuration");
 
@@ -22,6 +26,11 @@ void FileCacheSettings::loadFromConfig(const Poco::Util::AbstractConfiguration &
     cache_on_write_operations = config.getUInt64(config_prefix + ".cache_on_write_operations", false);
     do_not_evict_index_and_mark_files = config.getUInt64(config_prefix + ".do_not_evict_index_and_mark_files", true);
     allow_remove_persistent_cache_by_default = config.getUInt64(config_prefix + ".allow_remove_persistent_cache_by_default", true);
+
+    auto path = config.getString(config_prefix + ".path", "");
+    if (path.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Disk Cache requires `path` field (cache base path) in config");
+
 }
 
 }

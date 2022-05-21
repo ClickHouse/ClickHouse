@@ -27,6 +27,8 @@ public:
 
     ReadBuffer & getWrappedReadBuffer() { return *impl; }
 
+    bool isIntegratedWithFilesystemCache() const override { return impl->isIntegratedWithFilesystemCache(); }
+
 protected:
     std::unique_ptr<SeekableReadBuffer> impl;
     String file_name;

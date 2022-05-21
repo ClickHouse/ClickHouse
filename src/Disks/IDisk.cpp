@@ -94,6 +94,20 @@ void IDisk::truncateFile(const String &, size_t)
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Truncate operation is not implemented for disk of type {}", getType());
 }
 
+void IDisk::iterateRecursively(const String & path, std::function<void(const String & path)> func)
+{
+    if (isFile(path))
+    {
+        func(path);
+        return;
+    }
+
+    for (auto it = iterateDirectory(path); it->isValid(); it->next())
+    {
+        iterateRecursively(it->path(), func);
+    }
+}
+
 SyncGuardPtr IDisk::getDirectorySyncGuard(const String & /* path */) const
 {
     return nullptr;
