@@ -1005,7 +1005,7 @@ Pipe RangeHashedDictionary<dictionary_key_type>::read(const Names & column_names
         return result;
     };
 
-    auto coordinator = DictionarySourceCoordinator::create(
+    auto coordinator = std::make_shared<DictionarySourceCoordinator>(
         dictionary,
         column_names,
         std::move(key_columns),

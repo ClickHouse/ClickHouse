@@ -178,7 +178,7 @@ public:
       */
     virtual Status prepare()
     {
-        throw Exception("Method 'prepare' is not implemented for " + getName() + " processor", ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'prepare' is not implemented for {} processor", getName());
     }
 
     using PortNumbers = std::vector<UInt64>;
@@ -193,7 +193,7 @@ public:
       */
     virtual void work()
     {
-        throw Exception("Method 'work' is not implemented for " + getName() + " processor", ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'work' is not implemented for {} processor", getName());
     }
 
     /** Executor must call this method when 'prepare' returned Async.
@@ -212,7 +212,7 @@ public:
       */
     virtual int schedule()
     {
-        throw Exception("Method 'schedule' is not implemented for " + getName() + " processor", ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'schedule' is not implemented for {} processor", getName());
     }
 
     /** You must call this method if 'prepare' returned ExpandPipeline.
@@ -226,7 +226,7 @@ public:
       */
     virtual Processors expandPipeline()
     {
-        throw Exception("Method 'expandPipeline' is not implemented for " + getName() + " processor", ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'expandPipeline' is not implemented for {} processor", getName());
     }
 
     /// In case if query was cancelled executor will wait till all processors finish their jobs.
@@ -258,7 +258,7 @@ public:
             ++number;
         }
 
-        throw Exception("Can't find input port for " + getName() + " processor", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't find input port for {} processor", getName());
     }
 
     UInt64 getOutputPortNumber(const OutputPort * output_port) const
@@ -272,7 +272,7 @@ public:
             ++number;
         }
 
-        throw Exception("Can't find output port for " + getName() + " processor", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't find output port for {} processor", getName());
     }
 
     const auto & getInputs() const { return inputs; }

@@ -8,7 +8,7 @@
 #include <unicode/unorm2.h>
 #include <unicode/ustring.h>
 #include <unicode/utypes.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <Columns/ColumnString.h>
 #include <Parsers/IAST_fwd.h>
 

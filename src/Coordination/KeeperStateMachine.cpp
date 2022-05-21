@@ -44,7 +44,6 @@ namespace
         else /// backward compatibility
             request_for_session.time = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
 
-
         return request_for_session;
     }
 }
@@ -114,6 +113,21 @@ void KeeperStateMachine::init()
         storage = std::make_unique<KeeperStorage>(coordination_settings->dead_session_check_period_ms.totalMilliseconds(), superdigest);
 }
 
+nuraft::ptr<nuraft::buffer> KeeperStateMachine::pre_commit(uint64_t log_idx, nuraft::buffer & data)
+{
+    preprocess(log_idx, data);
+    return nullptr;
+}
+
+void KeeperStateMachine::preprocess(const uint64_t log_idx, nuraft::buffer & data)
+{
+    auto request_for_session = parseRequest(data);
+    if (request_for_session.request->getOpNum() == Coordination::OpNum::SessionID)
+        return;
+    std::lock_guard lock(storage_and_responses_lock);
+    storage->preprocessRequest(request_for_session.request, request_for_session.session_id, request_for_session.time, log_idx);
+}
+
 nuraft::ptr<nuraft::buffer> KeeperStateMachine::commit(const uint64_t log_idx, nuraft::buffer & data)
 {
     auto request_for_session = parseRequest(data);
@@ -175,11 +189,17 @@ bool KeeperStateMachine::apply_snapshot(nuraft::snapshot & s)
 }
 
 
-void KeeperStateMachine::commit_config(const uint64_t /*log_idx*/, nuraft::ptr<nuraft::cluster_config> & new_conf)
+void KeeperStateMachine::commit_config(const uint64_t /* log_idx */, nuraft::ptr<nuraft::cluster_config> & new_conf)
 {
     std::lock_guard lock(cluster_config_lock);
     auto tmp = new_conf->serialize();
     cluster_config = ClusterConfig::deserialize(*tmp);
+}
+
+void KeeperStateMachine::rollback(uint64_t log_idx, nuraft::buffer & /*data*/)
+{
+    std::lock_guard lock(storage_and_responses_lock);
+    storage->rollbackRequest(log_idx);
 }
 
 nuraft::ptr<nuraft::snapshot> KeeperStateMachine::last_snapshot()
@@ -343,7 +363,7 @@ void KeeperStateMachine::processReadRequest(const KeeperStorage::RequestForSessi
 {
     /// Pure local request, just process it with storage
     std::lock_guard lock(storage_and_responses_lock);
-    auto responses = storage->processRequest(request_for_session.request, request_for_session.session_id, request_for_session.time, std::nullopt);
+    auto responses = storage->processRequest(request_for_session.request, request_for_session.session_id, request_for_session.time, std::nullopt, true /*check_acl*/, true /*is_local*/);
     for (const auto & response : responses)
         if (!responses_queue.push(response))
             throw Exception(ErrorCodes::SYSTEM_ERROR, "Could not push response with session id {} into responses queue", response.session_id);

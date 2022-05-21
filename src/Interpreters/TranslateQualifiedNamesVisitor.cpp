@@ -196,7 +196,7 @@ void TranslateQualifiedNamesMatcher::visit(ASTExpressionList & node, const ASTPt
         bool has_asterisk = false;
         for (const auto & child : node.children)
         {
-            if (child->as<ASTAsterisk>() || child->as<ASTColumnsMatcher>())
+            if (child->as<ASTAsterisk>() || child->as<ASTColumnsListMatcher>() || child->as<ASTColumnsRegexpMatcher>())
             {
                 if (tables_with_columns.empty())
                     throw Exception("An asterisk cannot be replaced with empty columns.", ErrorCodes::LOGICAL_ERROR);
@@ -229,47 +229,40 @@ void TranslateQualifiedNamesMatcher::visit(ASTExpressionList & node, const ASTPt
                     for (const auto & column : *cols)
                     {
                         if (first_table || !data.join_using_columns.contains(column.name))
-                        {
                             addIdentifier(columns, table.table, column.name);
-                        }
                     }
                 }
-
                 first_table = false;
             }
-            for (const auto & transformer : asterisk->children)
-            {
-                IASTColumnsTransformer::transform(transformer, columns);
-            }
-        }
-        else if (const auto * asterisk_pattern = child->as<ASTColumnsMatcher>())
-        {
-            if (asterisk_pattern->column_list)
-            {
-                for (const auto & ident : asterisk_pattern->column_list->children)
-                    columns.emplace_back(ident->clone());
-            }
-            else
-            {
-                bool first_table = true;
-                for (const auto & table : tables_with_columns)
-                {
-                    for (const auto & column : table.columns)
-                    {
-                        if (asterisk_pattern->isColumnMatching(column.name) && (first_table || !data.join_using_columns.contains(column.name)))
-                        {
-                            addIdentifier(columns, table.table, column.name);
-                        }
-                    }
 
-                    first_table = false;
-                }
-            }
-            // ColumnsMatcher's transformers start to appear at child 1
-            for (auto it = asterisk_pattern->children.begin() + 1; it != asterisk_pattern->children.end(); ++it)
+            for (const auto & transformer : asterisk->children)
+                IASTColumnsTransformer::transform(transformer, columns);
+        }
+        else if (auto * asterisk_column_list = child->as<ASTColumnsListMatcher>())
+        {
+            for (const auto & ident : asterisk_column_list->column_list->children)
+                columns.emplace_back(ident->clone());
+
+            for (const auto & transformer : asterisk_column_list->children)
+                IASTColumnsTransformer::transform(transformer, columns);
+        }
+        else if (const auto * asterisk_regexp_pattern = child->as<ASTColumnsRegexpMatcher>())
+        {
+            bool first_table = true;
+            for (const auto & table : tables_with_columns)
             {
-                IASTColumnsTransformer::transform(*it, columns);
+                for (const auto & column : table.columns)
+                {
+                    if (asterisk_regexp_pattern->isColumnMatching(column.name) && (first_table || !data.join_using_columns.count(column.name)))
+                    {
+                        addIdentifier(columns, table.table, column.name);
+                    }
+                }
+                first_table = false;
             }
+
+            for (const auto & transformer : asterisk_regexp_pattern->children)
+                IASTColumnsTransformer::transform(transformer, columns);
         }
         else if (const auto * qualified_asterisk = child->as<ASTQualifiedAsterisk>())
         {
@@ -280,12 +273,11 @@ void TranslateQualifiedNamesMatcher::visit(ASTExpressionList & node, const ASTPt
                 if (ident_db_and_name.satisfies(table.table, true))
                 {
                     for (const auto & column : table.columns)
-                    {
                         addIdentifier(columns, table.table, column.name);
-                    }
                     break;
                 }
             }
+
             // QualifiedAsterisk's transformers start to appear at child 1
             for (auto it = qualified_asterisk->children.begin() + 1; it != qualified_asterisk->children.end(); ++it)
             {

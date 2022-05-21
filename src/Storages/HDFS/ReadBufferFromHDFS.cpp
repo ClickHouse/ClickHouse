@@ -58,7 +58,7 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<S
         hdfsCloseFile(fs.get(), fin);
     }
 
-    std::optional<size_t> getTotalSize() const
+    std::optional<size_t> getFileSize() const
     {
         auto * file_info = hdfsGetPathInfo(fs.get(), hdfs_file_path.c_str());
         if (!file_info)
@@ -125,14 +125,14 @@ ReadBufferFromHDFS::ReadBufferFromHDFS(
         const String & hdfs_file_path_,
         const Poco::Util::AbstractConfiguration & config_,
         size_t buf_size_, size_t read_until_position_)
-    : SeekableReadBufferWithSize(nullptr, 0)
+    : SeekableReadBuffer(nullptr, 0)
     , impl(std::make_unique<ReadBufferFromHDFSImpl>(hdfs_uri_, hdfs_file_path_, config_, buf_size_, read_until_position_))
 {
 }
 
-std::optional<size_t> ReadBufferFromHDFS::getTotalSize()
+std::optional<size_t> ReadBufferFromHDFS::getFileSize()
 {
-    return impl->getTotalSize();
+    return impl->getFileSize();
 }
 
 bool ReadBufferFromHDFS::nextImpl()

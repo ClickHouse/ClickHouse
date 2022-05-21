@@ -131,6 +131,23 @@ ls -la /
 
 clickhouse-client -q "system flush logs" ||:
 
+# Stop server so we can safely read data with clickhouse-local.
+# Why do we read data with clickhouse-local?
+# Because it's the simplest way to read it when server has crashed.
+if [ "$NUM_TRIES" -gt "1" ]; then
+    clickhouse-client -q "system shutdown" ||:
+    sleep 10
+else
+    sudo clickhouse stop ||:
+fi
+
+
+if [[ -n "$USE_DATABASE_REPLICATED" ]] && [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]; then
+    clickhouse-client --port 19000 -q "system shutdown" ||:
+    clickhouse-client --port 29000 -q "system shutdown" ||:
+    sleep 10
+fi
+
 grep -Fa "Fatal" /var/log/clickhouse-server/clickhouse-server.log ||:
 pigz < /var/log/clickhouse-server/clickhouse-server.log > /test_output/clickhouse-server.log.gz &
 
@@ -143,18 +160,17 @@ pigz < /var/log/clickhouse-server/clickhouse-server.log > /test_output/clickhous
 #   for files >64MB, we want this files to be compressed explicitly
 for table in query_log zookeeper_log trace_log transactions_info_log
 do
-    clickhouse-client -q "select * from system.$table format TSVWithNamesAndTypes" | pigz > /test_output/$table.tsv.gz &
+    clickhouse-local --path /var/lib/clickhouse/ -q "select * from system.$table format TSVWithNamesAndTypes" | pigz > /test_output/$table.tsv.gz ||:
     if [[ -n "$USE_DATABASE_REPLICATED" ]] && [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]; then
-        clickhouse-client --port 19000 -q "select * from system.$table format TSVWithNamesAndTypes" | pigz > /test_output/$table.1.tsv.gz &
-        clickhouse-client --port 29000 -q "select * from system.$table format TSVWithNamesAndTypes" | pigz > /test_output/$table.2.tsv.gz &
+        clickhouse-local --path /var/lib/clickhouse1/ -q "select * from system.$table format TSVWithNamesAndTypes" | pigz > /test_output/$table.1.tsv.gz ||:
+        clickhouse-local --path /var/lib/clickhouse2/ -q "select * from system.$table format TSVWithNamesAndTypes" | pigz > /test_output/$table.2.tsv.gz ||:
     fi
 done
-wait ||:
 
 # Also export trace log in flamegraph-friendly format.
 for trace_type in CPU Memory Real
 do
-    clickhouse-client -q "
+    clickhouse-local --path /var/lib/clickhouse/ -q "
             select
                 arrayStringConcat((arrayMap(x -> concat(splitByChar('/', addressToLine(x))[-1], '#', demangle(addressToSymbol(x)) ), trace)), ';') AS stack,
                 count(*) AS samples
@@ -164,10 +180,9 @@ do
             order by samples desc
             settings allow_introspection_functions = 1
             format TabSeparated" \
-        | pigz > "/test_output/trace-log-$trace_type-flamegraph.tsv.gz" &
+        | pigz > "/test_output/trace-log-$trace_type-flamegraph.tsv.gz" ||:
 done
 
-wait ||:
 
 # Compressed (FIXME: remove once only github actions will be left)
 rm /var/log/clickhouse-server/clickhouse-server.log

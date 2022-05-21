@@ -105,6 +105,8 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.pretty.max_rows = settings.output_format_pretty_max_rows;
     format_settings.pretty.max_value_width = settings.output_format_pretty_max_value_width;
     format_settings.pretty.output_format_pretty_row_numbers = settings.output_format_pretty_row_numbers;
+    format_settings.protobuf.input_flatten_google_wrappers = settings.input_format_protobuf_flatten_google_wrappers;
+    format_settings.protobuf.output_nullables_with_google_wrappers = settings.output_format_protobuf_nullables_with_google_wrappers;
     format_settings.regexp.escaping_rule = settings.format_regexp_escaping_rule;
     format_settings.regexp.regexp = settings.format_regexp;
     format_settings.regexp.skip_unmatched = settings.format_regexp_skip_unmatched;
@@ -148,6 +150,8 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.msgpack.output_uuid_representation = settings.output_format_msgpack_uuid_representation;
     format_settings.max_rows_to_read_for_schema_inference = settings.input_format_max_rows_to_read_for_schema_inference;
     format_settings.column_names_for_schema_inference = settings.column_names_for_schema_inference;
+    format_settings.mysql_dump.table_name = settings.input_format_mysql_dump_table_name;
+    format_settings.mysql_dump.map_column_names = settings.input_format_mysql_dump_map_column_names;
 
     /// Validate avro_schema_registry_url with RemoteHostFilter when non-empty and in Server context
     if (format_settings.schema.is_server)
@@ -217,7 +221,6 @@ InputFormatPtr FormatFactory::getInput(
         auto parser_creator = [input_getter, sample, row_input_format_params, format_settings]
             (ReadBuffer & input) -> InputFormatPtr
             { return input_getter(input, sample, row_input_format_params, format_settings); };
-
 
         ParallelParsingInputFormat::Params params{
             buf, sample, parser_creator, file_segmentation_engine, name, settings.max_threads, settings.min_chunk_bytes_for_parallel_parsing,
@@ -374,7 +377,7 @@ String FormatFactory::getContentType(
 SchemaReaderPtr FormatFactory::getSchemaReader(
     const String & name,
     ReadBuffer & buf,
-    ContextPtr context,
+    ContextPtr & context,
     const std::optional<FormatSettings> & _format_settings) const
 {
     const auto & schema_reader_creator = dict.at(name).schema_reader_creator;
@@ -387,7 +390,7 @@ SchemaReaderPtr FormatFactory::getSchemaReader(
 
 ExternalSchemaReaderPtr FormatFactory::getExternalSchemaReader(
     const String & name,
-    ContextPtr context,
+    ContextPtr & context,
     const std::optional<FormatSettings> & _format_settings) const
 {
     const auto & external_schema_reader_creator = dict.at(name).external_schema_reader_creator;

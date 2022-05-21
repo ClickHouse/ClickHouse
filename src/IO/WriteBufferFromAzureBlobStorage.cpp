@@ -5,7 +5,7 @@
 #include <IO/WriteBufferFromAzureBlobStorage.h>
 #include <Disks/RemoteDisksCommon.h>
 #include <Common/getRandomASCIIString.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 
 
 namespace DB

@@ -717,9 +717,7 @@ namespace DB
                 column.type = recursiveRemoveLowCardinality(column.type);
                 column.column = recursiveRemoveLowCardinality(column.column);
             }
-            bool is_column_nullable = false;
-            auto arrow_type = getArrowType(column.type, column.column, column.name, format_name, &is_column_nullable);
-            arrow_fields.emplace_back(std::make_shared<arrow::Field>(column.name, arrow_type, is_column_nullable));
+
             header_columns.emplace_back(std::move(column));
         }
     }
@@ -740,6 +738,13 @@ namespace DB
             if (!low_cardinality_as_dictionary)
                 column = recursiveRemoveLowCardinality(column);
 
+            if (!is_arrow_fields_initialized)
+            {
+                bool is_column_nullable = false;
+                auto arrow_type = getArrowType(header_column.type, column, header_column.name, format_name, &is_column_nullable);
+                arrow_fields.emplace_back(std::make_shared<arrow::Field>(header_column.name, arrow_type, is_column_nullable));
+            }
+
             arrow::MemoryPool* pool = arrow::default_memory_pool();
             std::unique_ptr<arrow::ArrayBuilder> array_builder;
             arrow::Status status = MakeBuilder(pool, arrow_fields[column_i]->type(), &array_builder);
@@ -757,6 +762,7 @@ namespace DB
         std::shared_ptr<arrow::Schema> arrow_schema = std::make_shared<arrow::Schema>(arrow_fields);
 
         res = arrow::Table::Make(arrow_schema, arrow_arrays);
+        is_arrow_fields_initialized = true;
     }
 }
 

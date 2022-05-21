@@ -44,7 +44,7 @@ NativeReader::NativeReader(ReadBuffer & istr_, UInt64 server_revision_,
 {
     istr_concrete = typeid_cast<CompressedReadBufferFromFile *>(&istr);
     if (!istr_concrete)
-        throw Exception("When need to use index for NativeBlockInputStream, istr must be CompressedReadBufferFromFile.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("When need to use index for NativeReader, istr must be CompressedReadBufferFromFile.", ErrorCodes::LOGICAL_ERROR);
 
     if (index_block_it == index_block_end)
         return;
@@ -80,7 +80,7 @@ void NativeReader::readData(const ISerialization & serialization, ColumnPtr & co
 
     if (column->size() != rows)
         throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
-            "Cannot read all data in NativeBlockInputStream. Rows read: {}. Rows expected: {}", column->size(), rows);
+            "Cannot read all data in NativeReader. Rows read: {}. Rows expected: {}", column->size(), rows);
 }
 
 

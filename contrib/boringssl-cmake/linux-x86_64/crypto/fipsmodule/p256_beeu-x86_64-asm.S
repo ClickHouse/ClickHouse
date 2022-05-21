@@ -340,4 +340,3 @@ beeu_mod_inverse_vartime:
 
 .size	beeu_mod_inverse_vartime, .-beeu_mod_inverse_vartime
 #endif
-.section	.note.GNU-stack,"",@progbits
