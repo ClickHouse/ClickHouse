@@ -136,18 +136,8 @@ IProcessor::Status IMergingTransformBase::prepare()
     bool is_port_full = !output.canPush();
 
     /// Push if has data.
-    if ((state.output_chunk || state.output_chunk.hasChunkInfo()) && !is_port_full) {
-        // for (const auto & column : state.output_chunk.getColumns()) {
-        //     Field val;
-        //     std::cerr << "in merging algo" << std::endl;
-        //     if (!typeid_cast<const ColumnAggregateFunction *>(column.get())) {
-        //         column->get(0, val);
-        //         std::cerr << toString(val) << " ";
-        //     }
-        //     std::cerr << std::endl;
-        // }
+    if ((state.output_chunk || state.output_chunk.hasChunkInfo()) && !is_port_full)
         output.push(std::move(state.output_chunk));
-    }
 
     if (!is_initialized)
         return prepareInitializeInputs();

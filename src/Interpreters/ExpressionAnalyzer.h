@@ -348,7 +348,6 @@ public:
     /// Create Set-s that we make from IN section to use index on them.
     void makeSetsForIndex(const ASTPtr & node);
 
-    // void analyzeAggregateFunctionsInOrderBy();
 private:
     StorageMetadataPtr metadata_snapshot;
     /// If non-empty, ignore all expressions not from this list.

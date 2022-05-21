@@ -1799,7 +1799,6 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
                     context->getSettingsRef().optimize_aggregation_in_order
                     && storage && query.groupBy();
 
-            // query_analyzer.analyzeAggregateFunctionsInOrderBy();
             query_analyzer.appendGroupBy(chain, only_types || !first_stage, optimize_aggregation_in_order, group_by_elements_actions);
             query_analyzer.appendAggregateFunctionsArguments(chain, only_types || !first_stage);
             before_aggregation = chain.getLastActions();

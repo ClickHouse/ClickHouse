@@ -1008,6 +1008,7 @@ void Context::addExternalTable(const String & table_name, TemporaryTableHolder &
     external_tables_mapping.emplace(table_name, std::make_shared<TemporaryTableHolder>(std::move(temporary_table)));
 }
 
+
 std::shared_ptr<TemporaryTableHolder> Context::removeExternalTable(const String & table_name)
 {
     if (isGlobalContext())
