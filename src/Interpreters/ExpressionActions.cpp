@@ -297,7 +297,7 @@ static std::unordered_set<const ActionsDAG::Node *> processShortCircuitFunctions
             short_circuit_nodes[&node] = short_circuit_settings;
     }
 
-    /// If there is no short-circuit functions, no need to do anything.
+    /// If there are no short-circuit functions, no need to do anything.
     if (short_circuit_nodes.empty())
         return {};
 
