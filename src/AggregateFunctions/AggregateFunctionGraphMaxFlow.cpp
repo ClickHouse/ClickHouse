@@ -60,7 +60,8 @@ private:
 
         UInt64 getMaxFlow()
         {
-            if (starting_point == ending_point) {
+            if (starting_point == ending_point)
+            {
                 return std::numeric_limits<Int64>::max();
             }
             UInt64 answer = 0;
