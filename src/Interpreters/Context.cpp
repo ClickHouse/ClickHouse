@@ -3422,6 +3422,7 @@ ReadSettings Context::getReadSettings() const
     res.read_from_filesystem_cache_if_exists_otherwise_bypass_cache = settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache;
     res.enable_filesystem_cache_log = settings.enable_filesystem_cache_log;
     res.filesystem_cache_do_not_evict_index_and_marks_files = settings.filesystem_cache_do_not_evict_index_and_marks_files;
+    res.enable_filesystem_cache_on_lower_level = settings.enable_filesystem_cache_on_lower_level;
 
     res.remote_read_min_bytes_for_seek = settings.remote_read_min_bytes_for_seek;
 

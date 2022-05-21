@@ -823,6 +823,13 @@ bool FileSegmentRangeWriter::write(char * data, size_t size, size_t offset, bool
             on_complete_file_segment_func(*current_file_segment_it);
             current_file_segment_it = allocateFileSegment(current_file_segment_write_offset, is_persistent);
         }
+        else if ((*current_file_segment_it)->getDownloadOffset() != offset)
+        {
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Cannot file segment download offset {} does not match current write offset {}",
+                (*current_file_segment_it)->getDownloadOffset(), offset);
+        }
     }
 
     bool reserved = (*current_file_segment_it)->reserve(size);
@@ -830,10 +837,26 @@ bool FileSegmentRangeWriter::write(char * data, size_t size, size_t offset, bool
     {
         (*current_file_segment_it)->complete(FileSegment::State::PARTIALLY_DOWNLOADED_NO_CONTINUATION);
         on_complete_file_segment_func(*current_file_segment_it);
+
+        LOG_DEBUG(
+            &Poco::Logger::get("FileSegmentRangeWriter"),
+            "Unsuccessful space reservation attempt (size: {}, file segment info: {}",
+            size, (*current_file_segment_it)->getInfoForLog());
+
         return false;
     }
 
-    (*current_file_segment_it)->write(data, size, offset);
+    try
+    {
+        (*current_file_segment_it)->write(data, size, offset);
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+        assert(false);
+        return false;
+    }
+
     current_file_segment_write_offset += size;
 
     return true;
@@ -870,7 +893,7 @@ FileSegmentRangeWriter::~FileSegmentRangeWriter()
     }
 }
 
-void FileSegmentRangeWriter::clearDownloaded()
+void FileSegmentRangeWriter::clear()
 {
     auto & file_segments = file_segments_holder.file_segments;
 

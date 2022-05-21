@@ -13,6 +13,9 @@ class Logger;
 namespace DB
 {
 
+/**
+ * DiskCache implements a disk interface which adds cache to the underkying disk.
+ */
 class DiskCache : public DiskDecorator
 {
 public:
@@ -47,6 +50,14 @@ public:
 private:
     void removeCache(const String & path);
     void removeCacheRecursive(const String & path);
+
+    // String wrappedPath(const String & path) const
+    // {
+    //     // if path starts_with disk_path -> got already wrapped path
+    //     if (!disk_path.empty() && path.starts_with(disk_path))
+    //         return path;
+    //     return disk_path + path;
+    // }
 
     String cache_disk_name;
     String cache_base_path;

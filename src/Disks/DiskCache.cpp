@@ -7,6 +7,7 @@
 #include <Disks/DiskFactory.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/WriteBufferFromFileDecorator.h>
+#include <Disks/IO/CachedReadBufferFromFile.h>
 #include <Interpreters/FilesystemCacheLog.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <filesystem>
@@ -26,6 +27,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int FILE_DOESNT_EXIST;
 }
 
 class CachedWriteBuffer final : public WriteBufferFromFileDecorator
@@ -45,8 +47,54 @@ public:
         , is_persistent_cache_file(is_persistent_cache_file_)
         , query_id(query_id_)
         , enable_cache_log(!query_id_.empty() && settings_.enable_filesystem_cache_log)
-        , writer(cache_.get(), key, [this](const FileSegmentPtr & file_segment) { appendFilesystemCacheLog(file_segment); })
+        , cache_writer(cache_.get(), key, [this](const FileSegmentPtr & file_segment) { appendFilesystemCacheLog(file_segment); })
     {
+    }
+
+    void nextImpl() override
+    {
+        size_t size = offset();
+        swap(*impl);
+
+        try
+        {
+            /// Write data to the underlying buffer.
+            impl->next();
+        }
+        catch (...)
+        {
+            /// If something was already written to cache, remove it.
+            cache_writer.clear();
+            throw;
+        }
+
+        swap(*impl);
+
+        /// Write data to cache.
+        cacheData(working_buffer.begin(), size);
+        current_download_offset += size;
+    }
+
+    void cacheData(char * data, size_t size)
+    {
+        Stopwatch watch(CLOCK_MONOTONIC);
+
+        bool cached;
+        try
+        {
+            cached = cache_writer.write(data, size, current_download_offset, is_persistent_cache_file);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+            return;
+        }
+
+        if (!cached)
+            return;
+
+        ProfileEvents::increment(ProfileEvents::CachedWriteBufferCacheWriteBytes, size);
+        ProfileEvents::increment(ProfileEvents::CachedWriteBufferCacheWriteMicroseconds, watch.elapsedMicroseconds());
     }
 
     void appendFilesystemCacheLog(const FileSegmentPtr & file_segment)
@@ -72,46 +120,9 @@ public:
             cache_log->add(elem);
     }
 
-    void nextImpl() override
-    {
-        size_t size = offset();
-
-        swap(*impl);
-
-        impl->next();
-
-        swap(*impl);
-
-        if (caching_stopped)
-            return;
-
-        Stopwatch watch(CLOCK_MONOTONIC);
-
-        bool enough_space_in_cache;
-        try
-        {
-            enough_space_in_cache = writer.write(working_buffer.begin(), size, current_download_offset, is_persistent_cache_file);
-        }
-        catch (...)
-        {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
-            caching_stopped = true;
-            return;
-        }
-        if (!enough_space_in_cache)
-        {
-            caching_stopped = true;
-            return;
-        }
-
-        current_download_offset += size;
-        ProfileEvents::increment(ProfileEvents::CachedWriteBufferCacheWriteBytes, size);
-        ProfileEvents::increment(ProfileEvents::CachedWriteBufferCacheWriteMicroseconds, watch.elapsedMicroseconds());
-    }
-
     void preFinalize() override
     {
-        writer.finalize();
+        cache_writer.finalize();
     }
 
 private:
@@ -124,10 +135,10 @@ private:
     const String query_id;
     bool enable_cache_log;
 
-    FileSegmentRangeWriter writer;
-    bool caching_stopped = false;
+    FileSegmentRangeWriter cache_writer;
     ProfileEvents::Counters current_file_segment_counters;
 };
+
 
 DiskCache::DiskCache(
     const String & disk_name_,
@@ -161,7 +172,24 @@ std::unique_ptr<ReadBufferFromFileBase> DiskCache::readFile(
     if (settings.filesystem_cache_do_not_evict_index_and_marks_files && isFilePersistent(path))
         read_settings.cache_file_as_persistent = true;
 
-    return DiskDecorator::readFile(path, read_settings, read_hint, file_size);
+    auto impl = DiskDecorator::readFile(path, read_settings, read_hint, file_size);
+
+    LOG_ERROR(log, "Read file: {}", path);
+
+    /// If underlying read buffer does caching on its own, do not wrap it in caching buffer.
+    if (impl->isIntegratedWithFilesystemCache() && settings.enable_filesystem_cache_on_lower_level)
+    {
+        return impl;
+    }
+    else
+    {
+        std::terminate();
+        // auto full_path = fs::path(getPath()) / path;
+        // String query_id = CurrentThread::isInitialized() && CurrentThread::get().getQueryContext() ? CurrentThread::getQueryId().toString() : "";
+        // auto implementation_buffer_creator = [created = std::move(impl)]() mutable { return std::move(created); };
+
+        /// return std::make_unique<CachedReadBufferFromFile>(full_path, cache, std::move(implementation_buffer_creator), settings, query_id);
+    }
 }
 
 std::unique_ptr<WriteBufferFromFileBase> DiskCache::writeFile(
@@ -201,17 +229,20 @@ void DiskCache::removeCache(const String & path)
 
 void DiskCache::removeCacheRecursive(const String & path)
 {
-    std::vector<LocalPathWithRemotePaths> remote_paths_per_local_path;
-    getRemotePathsRecursive(path, remote_paths_per_local_path);
-
-    for (const auto & [_, remote_paths] : remote_paths_per_local_path)
+    iterateRecursively(path, [this](const String & disk_path)
     {
-        for (const auto & remote_path : remote_paths)
+        try
         {
-            auto key = cache->hash(remote_path);
-            cache->removeIfExists(key);
+            removeCache(disk_path);
         }
-    }
+        catch (const Exception & e)
+        {
+            /// Protect against concurrent file delition.
+            if (e.code() == ErrorCodes::FILE_DOESNT_EXIST)
+                return;
+            throw;
+        }
+    });
 }
 
 bool DiskCache::removeFile(const String & path)

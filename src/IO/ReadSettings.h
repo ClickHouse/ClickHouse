@@ -83,6 +83,7 @@ struct ReadSettings
     bool enable_filesystem_cache_log = false;
     bool filesystem_cache_do_not_evict_index_and_marks_files = true;
     bool cache_file_as_persistent = false;
+    bool enable_filesystem_cache_on_lower_level = true;
 
     size_t remote_read_min_bytes_for_seek = DBMS_DEFAULT_BUFFER_SIZE;
 

@@ -31,6 +31,8 @@ public:
 
     void setReadUntilEnd() override;
 
+    bool isIntegratedWithFilesystemCache() const override { return true; }
+
 private:
     bool nextImpl() override;
 

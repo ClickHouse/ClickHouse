@@ -18,7 +18,6 @@ protected:
     bool use_pread = false;               /// To access one fd from multiple threads, use 'pread' syscall instead of 'read'.
 
     size_t file_offset_of_buffer_end = 0; /// What offset in file corresponds to working_buffer.end().
-    std::optional<size_t> read_until_position; /// For right bounded reads.
 
     int fd;
 
@@ -62,10 +61,6 @@ public:
     off_t size();
 
     void setProgressCallback(ContextPtr context);
-
-    bool supportsRightBoundedReads() const override { return true; }
-
-    void setReadUntilPosition(size_t position) override;
 
 private:
     /// Assuming file descriptor supports 'select', check that we have data to read or wait until timeout.

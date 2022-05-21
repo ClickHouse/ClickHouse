@@ -61,6 +61,8 @@ public:
     virtual size_t getFileOffsetOfBufferEnd() const { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getFileOffsetOfBufferEnd() not implemented"); }
 
     virtual bool supportsRightBoundedReads() const { return false; }
+
+    virtual bool isIntegratedWithFilesystemCache() const { return false; }
 };
 
 using SeekableReadBufferPtr = std::shared_ptr<SeekableReadBuffer>;

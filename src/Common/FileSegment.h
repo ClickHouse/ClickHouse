@@ -279,7 +279,7 @@ public:
     void finalize();
 
     /// If exception happened on remote fs write, we consider current cache invalid.
-    void clearDownloaded();
+    void clear();
 
 private:
     FileSegments::iterator allocateFileSegment(size_t offset, bool is_persistent);

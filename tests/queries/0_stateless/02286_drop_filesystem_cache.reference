@@ -27,4 +27,4 @@ SELECT count() FROM system.filesystem_cache;
 3
 SYSTEM DROP FILESYSTEM CACHE 's3_disk_2_cache/';
 SELECT count() FROM system.filesystem_cache;
-2
+1

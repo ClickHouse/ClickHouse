@@ -8,6 +8,7 @@
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/WriteHelpers.h>
 #include <IO/Progress.h>
+#include <Common/logger_useful.h>
 #include <sys/stat.h>
 
 
@@ -55,9 +56,6 @@ bool ReadBufferFromFileDescriptor::nextImpl()
     assert(!internal_buffer.empty());
 
     /// This is a workaround of a read pass EOF bug in linux kernel with pread()
-    if (file_size.has_value() && file_offset_of_buffer_end >= *file_size)
-        return false;
-
     size_t bytes_read = 0;
     while (!bytes_read)
     {
@@ -69,17 +67,10 @@ bool ReadBufferFromFileDescriptor::nextImpl()
         {
             CurrentMetrics::Increment metric_increment{CurrentMetrics::Read};
 
-            size_t bytes_to_read = internal_buffer.size();
-            if (read_until_position)
-            {
-                assert(*read_until_position > file_offset_of_buffer_end);
-                bytes_to_read = std::min(bytes_to_read, *read_until_position - file_offset_of_buffer_end);
-            }
-
             if (use_pread)
-                res = ::pread(fd, internal_buffer.begin(), bytes_to_read, file_offset_of_buffer_end);
+                res = ::pread(fd, internal_buffer.begin(), internal_buffer.size(), file_offset_of_buffer_end);
             else
-                res = ::read(fd, internal_buffer.begin(), bytes_to_read);
+                res = ::read(fd, internal_buffer.begin(), internal_buffer.size());
         }
         if (!res)
             break;
@@ -87,8 +78,7 @@ bool ReadBufferFromFileDescriptor::nextImpl()
         if (-1 == res && errno != EINTR)
         {
             ProfileEvents::increment(ProfileEvents::ReadBufferFromFileDescriptorReadFailed);
-            throwFromErrnoWithPath("Cannot read from file " + getFileName(), getFileName(),
-                                   ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR);
+            throwFromErrnoWithPath("Cannot read from file: " + getFileName(), getFileName(), ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR);
         }
 
         if (res > 0)
@@ -277,11 +267,6 @@ void ReadBufferFromFileDescriptor::setProgressCallback(ContextPtr context)
     {
         file_progress_callback(FileProgress(progress.bytes_read, 0));
     });
-}
-
-void ReadBufferFromFileDescriptor::setReadUntilPosition(size_t position)
-{
-    read_until_position = position;
 }
 
 }

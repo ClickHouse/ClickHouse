@@ -16,7 +16,7 @@
 #include <Storages/HDFS/ReadBufferFromHDFS.h>
 #endif
 
-#include <Disks/IO/CachedReadBufferFromRemoteFS.h>
+#include <Disks/IO/CachedReadBufferFromFile.h>
 #include <Common/logger_useful.h>
 #include <filesystem>
 #include <iostream>
@@ -61,8 +61,9 @@ SeekableReadBufferPtr ReadBufferFromS3Gather::createImplementationBufferImpl(con
 
     if (with_cache)
     {
-        return std::make_shared<CachedReadBufferFromRemoteFS>(
-            remote_path, settings.remote_fs_cache, remote_file_reader_creator, settings, query_id, read_until_position ? read_until_position : file_size);
+        return std::make_shared<CachedReadBufferFromFile>(
+            remote_path, settings.remote_fs_cache, remote_file_reader_creator,
+            settings, query_id, read_until_position ? read_until_position : file_size);
     }
 
     return remote_file_reader_creator();
