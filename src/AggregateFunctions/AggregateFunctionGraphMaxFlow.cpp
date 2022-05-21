@@ -60,6 +60,9 @@ private:
 
         UInt64 getMaxFlow()
         {
+            if (starting_point == ending_point) {
+                return std::numeric_limits<Int64>::max();
+            }
             UInt64 answer = 0;
             while (bfs())
             {
@@ -122,11 +125,11 @@ private:
                     dfs_stack.emplace_back(vertex, cp_it);
                     UInt64 id = *it;
                     const auto to = edges[id].to;
-                    if (distance.at(vertex) + 1 != distance.at(to))
+                    if (edges[id].getCurrentCapacity() <= 0)
                     {
                         continue;
                     }
-                    if (edges[id].getCurrentCapacity() <= 0)
+                    if (distance.at(vertex) + 1 != distance.at(to))
                     {
                         continue;
                     }
@@ -135,6 +138,7 @@ private:
                     {
                         dfs_stack.emplace_back(to, graph.at(to).begin());
                         par[to] = id;
+                        hasFlow[to] = add;
                     }
                 }
             }
