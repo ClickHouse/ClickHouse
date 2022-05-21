@@ -1093,7 +1093,10 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
     bool use_grouping_set_key = expressions.use_grouping_set_key;
 
     if (query.group_by_with_grouping_sets && query.group_by_with_totals)
-       throw Exception("WITH TOTALS and GROUPING SETS are not supported together", ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "WITH TOTALS and GROUPING SETS are not supported together");
+
+    if (query.group_by_with_grouping_sets && (query.group_by_with_rollup || query.group_by_with_cube))
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "GROUPING SETS are not supported together with ROLLUP and CUBE");
 
     if (query_info.projection && query_info.projection->desc->type == ProjectionDescription::Type::Aggregate)
     {
@@ -2358,8 +2361,11 @@ void InterpreterSelectQuery::executeTotalsAndHaving(
 {
     const Settings & settings = context->getSettingsRef();
 
+    const auto & header_before = query_plan.getCurrentDataStream().header;
+
     auto totals_having_step = std::make_unique<TotalsHavingStep>(
         query_plan.getCurrentDataStream(),
+        getAggregatesMask(header_before, query_analyzer->aggregates()),
         overflow_row,
         expression,
         has_having ? getSelectQuery().having()->getColumnName() : "",

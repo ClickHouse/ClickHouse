@@ -419,7 +419,7 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
-/// CREATE|ATTACH WINDOW VIEW [IF NOT EXISTS] [db.]name [TO [db.]name] [ENGINE [db.]name] [WATERMARK function] AS SELECT ...
+/// CREATE|ATTACH WINDOW VIEW [IF NOT EXISTS] [db.]name [TO [db.]name] [INNER ENGINE [db.]name] [ENGINE [db.]name] [WATERMARK function] [ALLOWED_LATENESS = interval_function] [POPULATE] AS SELECT ...
 class ParserCreateWindowViewQuery : public IParserBase
 {
 protected:
