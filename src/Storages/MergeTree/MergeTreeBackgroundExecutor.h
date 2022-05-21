@@ -10,9 +10,9 @@
 #include <iostream>
 
 #include <boost/circular_buffer.hpp>
+#include <boost/noncopyable.hpp>
 
-#include <base/shared_ptr_helper.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <Common/ThreadPool.h>
 #include <Common/Stopwatch.h>
 #include <Storages/MergeTree/IExecutableTask.h>
@@ -128,7 +128,7 @@ private:
 };
 
 /**
- *  Executor for a background MergeTree related operations such as merges, mutations, fetches an so on.
+ *  Executor for a background MergeTree related operations such as merges, mutations, fetches and so on.
  *  It can execute only successors of ExecutableTask interface.
  *  Which is a self-written coroutine. It suspends, when returns true from executeStep() method.
  *
@@ -156,10 +156,9 @@ private:
  *  So, when a Storage want to shutdown, it must wait until all its background operaions are finished.
  */
 template <class Queue>
-class MergeTreeBackgroundExecutor final : public shared_ptr_helper<MergeTreeBackgroundExecutor<Queue>>
+class MergeTreeBackgroundExecutor final : boost::noncopyable
 {
 public:
-
     MergeTreeBackgroundExecutor(
         String name_,
         size_t threads_count_,
@@ -189,12 +188,16 @@ public:
         wait();
     }
 
+    /// Handler for hot-reloading
+    /// Supports only increasing the number of threads and tasks, because
+    /// implementing tasks eviction will definitely be too error-prone and buggy.
+    void increaseThreadsAndMaxTasksCount(size_t new_threads_count, size_t new_max_tasks_count);
+
     bool trySchedule(ExecutableTaskPtr task);
     void removeTasksCorrespondingToStorage(StorageID id);
     void wait();
 
 private:
-
     String name;
     size_t threads_count{0};
     size_t max_tasks_count{0};
@@ -210,6 +213,7 @@ private:
     std::condition_variable has_tasks;
     std::atomic_bool shutdown{false};
     ThreadPool pool;
+    Poco::Logger * log = &Poco::Logger::get("MergeTreeBackgroundExecutor");
 };
 
 extern template class MergeTreeBackgroundExecutor<MergeMutateRuntimeQueue>;

@@ -131,7 +131,7 @@ IProcessor::Status IMergingTransformBase::prepare()
         return Status::Finished;
     }
 
-    /// Do not disable inputs, so it will work in the same way as with AsynchronousBlockInputStream, like before.
+    /// Do not disable inputs, so they can be executed in parallel.
     bool is_port_full = !output.canPush();
 
     /// Push if has data.

@@ -1,6 +1,5 @@
 #include "ColumnVector.h"
 
-#include <pdqsort.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnCompressed.h>
 #include <Columns/MaskOperations.h>
@@ -25,6 +24,12 @@
 #if defined(__SSE2__)
 #    include <emmintrin.h>
 #endif
+
+#if USE_EMBEDDED_COMPILER
+#include <DataTypes/Native.h>
+#include <llvm/IR/IRBuilder.h>
+#endif
+
 
 namespace DB
 {
@@ -101,12 +106,58 @@ struct ColumnVector<T>::less
 };
 
 template <typename T>
+struct ColumnVector<T>::less_stable
+{
+    const Self & parent;
+    int nan_direction_hint;
+    less_stable(const Self & parent_, int nan_direction_hint_) : parent(parent_), nan_direction_hint(nan_direction_hint_) {}
+    bool operator()(size_t lhs, size_t rhs) const
+    {
+        if (unlikely(parent.data[lhs] == parent.data[rhs]))
+            return lhs < rhs;
+
+        if constexpr (std::is_floating_point_v<T>)
+        {
+            if (unlikely(std::isnan(parent.data[lhs]) && std::isnan(parent.data[rhs])))
+            {
+                return lhs < rhs;
+            }
+        }
+
+        return CompareHelper<T>::less(parent.data[lhs], parent.data[rhs], nan_direction_hint);
+    }
+};
+
+template <typename T>
 struct ColumnVector<T>::greater
 {
     const Self & parent;
     int nan_direction_hint;
     greater(const Self & parent_, int nan_direction_hint_) : parent(parent_), nan_direction_hint(nan_direction_hint_) {}
     bool operator()(size_t lhs, size_t rhs) const { return CompareHelper<T>::greater(parent.data[lhs], parent.data[rhs], nan_direction_hint); }
+};
+
+template <typename T>
+struct ColumnVector<T>::greater_stable
+{
+    const Self & parent;
+    int nan_direction_hint;
+    greater_stable(const Self & parent_, int nan_direction_hint_) : parent(parent_), nan_direction_hint(nan_direction_hint_) {}
+    bool operator()(size_t lhs, size_t rhs) const
+    {
+        if (unlikely(parent.data[lhs] == parent.data[rhs]))
+            return lhs < rhs;
+
+        if constexpr (std::is_floating_point_v<T>)
+        {
+            if (unlikely(std::isnan(parent.data[lhs]) && std::isnan(parent.data[rhs])))
+            {
+                return lhs < rhs;
+            }
+        }
+
+        return CompareHelper<T>::greater(parent.data[lhs], parent.data[rhs], nan_direction_hint);
+    }
 };
 
 template <typename T>
@@ -117,7 +168,6 @@ struct ColumnVector<T>::equals
     equals(const Self & parent_, int nan_direction_hint_) : parent(parent_), nan_direction_hint(nan_direction_hint_) {}
     bool operator()(size_t lhs, size_t rhs) const { return CompareHelper<T>::equals(parent.data[lhs], parent.data[rhs], nan_direction_hint); }
 };
-
 
 namespace
 {
@@ -139,9 +189,47 @@ namespace
     };
 }
 
+#if USE_EMBEDDED_COMPILER
 
 template <typename T>
-void ColumnVector<T>::getPermutation(bool reverse, size_t limit, int nan_direction_hint, IColumn::Permutation & res) const
+bool ColumnVector<T>::isComparatorCompilable() const
+{
+    /// TODO: for std::is_floating_point_v<T> we need implement is_nan in LLVM IR.
+    return std::is_integral_v<T>;
+}
+
+template <typename T>
+llvm::Value * ColumnVector<T>::compileComparator(llvm::IRBuilderBase & builder, llvm::Value * lhs, llvm::Value * rhs, llvm::Value *) const
+{
+    llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
+
+    if constexpr (std::is_integral_v<T>)
+    {
+        // a > b ? 1 : (a < b ? -1 : 0);
+
+        bool is_signed = std::is_signed_v<T>;
+
+        auto * lhs_greater_than_rhs_result = llvm::ConstantInt::getSigned(b.getInt8Ty(), 1);
+        auto * lhs_less_than_rhs_result = llvm::ConstantInt::getSigned(b.getInt8Ty(), -1);
+        auto * lhs_equals_rhs_result = llvm::ConstantInt::getSigned(b.getInt8Ty(), 0);
+
+        auto * lhs_greater_than_rhs = is_signed ? b.CreateICmpSGT(lhs, rhs) : b.CreateICmpUGT(lhs, rhs);
+        auto * lhs_less_than_rhs = is_signed ? b.CreateICmpSLT(lhs, rhs) : b.CreateICmpULT(lhs, rhs);
+        auto * if_lhs_less_than_rhs_result = b.CreateSelect(lhs_less_than_rhs, lhs_less_than_rhs_result, lhs_equals_rhs_result);
+
+        return b.CreateSelect(lhs_greater_than_rhs, lhs_greater_than_rhs_result, if_lhs_less_than_rhs_result);
+    }
+    else
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Method compileComparator is not supported for type {}", TypeName<T>);
+    }
+}
+
+#endif
+
+template <typename T>
+void ColumnVector<T>::getPermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
+                                    size_t limit, int nan_direction_hint, IColumn::Permutation & res) const
 {
     size_t s = data.size();
     res.resize(s);
@@ -157,21 +245,33 @@ void ColumnVector<T>::getPermutation(bool reverse, size_t limit, int nan_directi
         for (size_t i = 0; i < s; ++i)
             res[i] = i;
 
-        if (reverse)
-            partial_sort(res.begin(), res.begin() + limit, res.end(), greater(*this, nan_direction_hint));
-        else
-            partial_sort(res.begin(), res.begin() + limit, res.end(), less(*this, nan_direction_hint));
+        if (direction == IColumn::PermutationSortDirection::Ascending && stability == IColumn::PermutationSortStability::Unstable)
+            ::partial_sort(res.begin(), res.begin() + limit, res.end(), less(*this, nan_direction_hint));
+        else if (direction == IColumn::PermutationSortDirection::Ascending && stability == IColumn::PermutationSortStability::Stable)
+            ::partial_sort(res.begin(), res.begin() + limit, res.end(), less_stable(*this, nan_direction_hint));
+        else if (direction == IColumn::PermutationSortDirection::Descending && stability == IColumn::PermutationSortStability::Unstable)
+            ::partial_sort(res.begin(), res.begin() + limit, res.end(), greater(*this, nan_direction_hint));
+        else if (direction == IColumn::PermutationSortDirection::Descending && stability == IColumn::PermutationSortStability::Stable)
+            ::partial_sort(res.begin(), res.begin() + limit, res.end(), greater_stable(*this, nan_direction_hint));
     }
     else
     {
         /// A case for radix sort
+        /// LSD RadixSort is stable
         if constexpr (is_arithmetic_v<T> && !is_big_int_v<T>)
         {
+            bool reverse = direction == IColumn::PermutationSortDirection::Descending;
+            bool ascending = direction == IColumn::PermutationSortDirection::Ascending;
+            bool sort_is_stable = stability == IColumn::PermutationSortStability::Stable;
+
+            /// TODO: LSD RadixSort is currently not stable if direction is descending, or value is floating point
+            bool use_radix_sort = (sort_is_stable && ascending && !std::is_floating_point_v<T>) || !sort_is_stable;
+
             /// Thresholds on size. Lower threshold is arbitrary. Upper threshold is chosen by the type for histogram counters.
-            if (s >= 256 && s <= std::numeric_limits<UInt32>::max())
+            if (s >= 256 && s <= std::numeric_limits<UInt32>::max() && use_radix_sort)
             {
                 PaddedPODArray<ValueWithIndex<T>> pairs(s);
-                for (UInt32 i = 0; i < UInt32(s); ++i)
+                for (UInt32 i = 0; i < static_cast<UInt32>(s); ++i)
                     pairs[i] = {data[i], i};
 
                 RadixSort<RadixSortTraits<T>>::executeLSD(pairs.data(), s, reverse, res.data());
@@ -203,31 +303,56 @@ void ColumnVector<T>::getPermutation(bool reverse, size_t limit, int nan_directi
         for (size_t i = 0; i < s; ++i)
             res[i] = i;
 
-        if (reverse)
-            pdqsort(res.begin(), res.end(), greater(*this, nan_direction_hint));
-        else
-            pdqsort(res.begin(), res.end(), less(*this, nan_direction_hint));
+        if (direction == IColumn::PermutationSortDirection::Ascending && stability == IColumn::PermutationSortStability::Unstable)
+            ::sort(res.begin(), res.end(), less(*this, nan_direction_hint));
+        else if (direction == IColumn::PermutationSortDirection::Ascending && stability == IColumn::PermutationSortStability::Stable)
+            ::sort(res.begin(), res.end(), less_stable(*this, nan_direction_hint));
+        else if (direction == IColumn::PermutationSortDirection::Descending && stability == IColumn::PermutationSortStability::Unstable)
+            ::sort(res.begin(), res.end(), greater(*this, nan_direction_hint));
+        else if (direction == IColumn::PermutationSortDirection::Descending && stability == IColumn::PermutationSortStability::Stable)
+            ::sort(res.begin(), res.end(), greater_stable(*this, nan_direction_hint));
     }
 }
 
 template <typename T>
-void ColumnVector<T>::updatePermutation(bool reverse, size_t limit, int nan_direction_hint, IColumn::Permutation & res, EqualRanges & equal_range) const
+void ColumnVector<T>::updatePermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
+                                    size_t limit, int nan_direction_hint, IColumn::Permutation & res, EqualRanges & equal_ranges) const
 {
-    auto sort = [](auto begin, auto end, auto pred) { pdqsort(begin, end, pred); };
+    auto sort = [](auto begin, auto end, auto pred) { ::sort(begin, end, pred); };
     auto partial_sort = [](auto begin, auto mid, auto end, auto pred) { ::partial_sort(begin, mid, end, pred); };
 
-    if (reverse)
+    if (direction == IColumn::PermutationSortDirection::Ascending && stability == IColumn::PermutationSortStability::Unstable)
+    {
         this->updatePermutationImpl(
-            limit, res, equal_range,
-            greater(*this, nan_direction_hint),
-            equals(*this, nan_direction_hint),
-            sort, partial_sort);
-    else
-        this->updatePermutationImpl(
-            limit, res, equal_range,
+            limit, res, equal_ranges,
             less(*this, nan_direction_hint),
             equals(*this, nan_direction_hint),
             sort, partial_sort);
+    }
+    else if (direction == IColumn::PermutationSortDirection::Ascending && stability == IColumn::PermutationSortStability::Stable)
+    {
+        this->updatePermutationImpl(
+            limit, res, equal_ranges,
+            less_stable(*this, nan_direction_hint),
+            equals(*this, nan_direction_hint),
+            sort, partial_sort);
+    }
+    else if (direction == IColumn::PermutationSortDirection::Descending && stability == IColumn::PermutationSortStability::Unstable)
+    {
+        this->updatePermutationImpl(
+            limit, res, equal_ranges,
+            greater(*this, nan_direction_hint),
+            equals(*this, nan_direction_hint),
+            sort, partial_sort);
+    }
+    else if (direction == IColumn::PermutationSortDirection::Descending && stability == IColumn::PermutationSortStability::Stable)
+    {
+        this->updatePermutationImpl(
+            limit, res, equal_ranges,
+            greater_stable(*this, nan_direction_hint),
+            equals(*this, nan_direction_hint),
+            sort, partial_sort);
+    }
 }
 
 template <typename T>
@@ -299,7 +424,7 @@ ColumnPtr ColumnVector<T>::filter(const IColumn::Filter & filt, ssize_t result_s
 {
     size_t size = data.size();
     if (size != filt.size())
-        throw Exception("Size of filter doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
+        throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of filter ({}) doesn't match size of column ({})", filt.size(), size);
 
     auto res = this->create();
     Container & res_data = res->getData();
@@ -368,7 +493,7 @@ void ColumnVector<T>::applyZeroMap(const IColumn::Filter & filt, bool inverted)
 {
     size_t size = data.size();
     if (size != filt.size())
-        throw Exception("Size of filter doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
+        throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of filter ({}) doesn't match size of column ({})", filt.size(), size);
 
     const UInt8 * filt_pos = filt.data();
     const UInt8 * filt_end = filt_pos + size;

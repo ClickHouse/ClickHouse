@@ -10,7 +10,7 @@
 
 #include "config_functions.h"
 
-/** FastOps is a fast vector math library from Mikhail Parakhin (former Yandex CTO),
+/** FastOps is a fast vector math library from Mikhail Parakhin, https://www.linkedin.com/in/mikhail-parakhin/
   * Enabled by default.
   */
 #if USE_FASTOPS
@@ -125,7 +125,7 @@ private:
     {
         const auto & src_data = col->getData();
         const size_t size = src_data.size();
-        UInt32 scale = src_data.getScale();
+        UInt32 scale = col->getScale();
 
         auto dst = ColumnVector<ReturnType>::create();
         auto & dst_data = dst->getData();

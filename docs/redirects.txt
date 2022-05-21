@@ -6,6 +6,7 @@ changelog/2017.md whats-new/changelog/2017.md
 changelog/2018.md whats-new/changelog/2018.md
 changelog/2019.md whats-new/changelog/2019.md
 changelog/index.md whats-new/changelog/index.md
+commercial/cloud.md https://clickhouse.com/cloud/
 data_types/array.md sql-reference/data-types/array.md
 data_types/boolean.md sql-reference/data-types/boolean.md
 data_types/date.md sql-reference/data-types/date.md

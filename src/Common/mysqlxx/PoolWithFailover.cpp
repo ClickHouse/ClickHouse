@@ -128,6 +128,14 @@ PoolWithFailover::Entry PoolWithFailover::get()
     /// If we cannot connect to some replica due to pool overflow, than we will wait and connect.
     PoolPtr * full_pool = nullptr;
 
+    struct ErrorDetail
+    {
+        int code;
+        std::string description;
+    };
+
+    std::unordered_map<std::string, ErrorDetail> replica_name_to_error_detail;
+
     for (size_t try_no = 0; try_no < max_tries; ++try_no)
     {
         full_pool = nullptr;
@@ -160,6 +168,8 @@ PoolWithFailover::Entry PoolWithFailover::get()
                     }
 
                     app.logger().warning("Connection to " + pool->getDescription() + " failed: " + e.displayText());
+                    replica_name_to_error_detail.insert_or_assign(pool->getDescription(), ErrorDetail{e.code(), e.displayText()});
+
                     continue;
                 }
 
@@ -179,8 +189,19 @@ PoolWithFailover::Entry PoolWithFailover::get()
     DB::WriteBufferFromOwnString message;
     message << "Connections to all replicas failed: ";
     for (auto it = replicas_by_priority.begin(); it != replicas_by_priority.end(); ++it)
+    {
         for (auto jt = it->second.begin(); jt != it->second.end(); ++jt)
+        {
             message << (it == replicas_by_priority.begin() && jt == it->second.begin() ? "" : ", ") << (*jt)->getDescription();
+
+            if (auto error_detail_it = replica_name_to_error_detail.find(((*jt)->getDescription()));
+                error_detail_it != replica_name_to_error_detail.end())
+            {
+                const auto & [code, description] = error_detail_it->second;
+                message << ", ERROR " << code  << " : " << description;
+            }
+        }
+    }
 
     throw Poco::Exception(message.str());
 }

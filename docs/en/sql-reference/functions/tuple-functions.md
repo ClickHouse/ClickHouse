@@ -1,6 +1,6 @@
 ---
-toc_priority: 66
-toc_title: Tuples
+sidebar_position: 66
+sidebar_label: Tuples
 ---
 
 # Functions for Working with Tuples {#tuple-functions}
@@ -22,7 +22,7 @@ tuple(x, y, …)
 ## tupleElement {#tupleelement}
 
 A function that allows getting a column from a tuple.
-‘N’ is the column index, starting from 1. N must be a constant. ‘N’ must be a constant. ‘N’ must be a strict postive integer no greater than the size of the tuple.
+‘N’ is the column index, starting from 1. ‘N’ must be a constant. ‘N’ must be a strict postive integer no greater than the size of the tuple.
 There is no cost to execute the function.
 
 The function implements the operator `x.N`.

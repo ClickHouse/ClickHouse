@@ -13,9 +13,11 @@
 #include <base/itoa.h>
 #include <base/map.h>
 #include <base/range.h>
+#include <base/sort.h>
 #include <Dictionaries/DictionarySource.h>
 #include <Dictionaries/DictionaryFactory.h>
 #include <Functions/FunctionHelpers.h>
+
 
 namespace DB
 {
@@ -145,7 +147,7 @@ static void validateKeyTypes(const DataTypes & key_types)
 template <typename T, typename Comp>
 size_t sortAndUnique(std::vector<T> & vec, Comp comp)
 {
-    std::sort(vec.begin(), vec.end(),
+    ::sort(vec.begin(), vec.end(),
               [&](const auto & a, const auto & b) { return comp(a, b) < 0; });
 
     auto new_end = std::unique(vec.begin(), vec.end(),
@@ -286,8 +288,8 @@ ColumnUInt8::Ptr IPAddressDictionary::hasKeys(const Columns & key_columns, const
 {
     validateKeyTypes(key_types);
 
-    const auto first_column = key_columns.front();
-    const auto rows = first_column->size();
+    const auto & first_column = key_columns.front();
+    const size_t rows = first_column->size();
 
     auto result = ColumnUInt8::create(rows);
     auto & out = result->getData();
@@ -299,7 +301,7 @@ ColumnUInt8::Ptr IPAddressDictionary::hasKeys(const Columns & key_columns, const
         uint8_t addrv6_buf[IPV6_BINARY_LENGTH];
         for (const auto i : collections::range(0, rows))
         {
-            auto addrv4 = UInt32(first_column->get64(i));
+            auto addrv4 = static_cast<UInt32>(first_column->get64(i));
             auto found = tryLookupIPv4(addrv4, addrv6_buf);
             out[i] = (found != ipNotFound());
             keys_found += out[i];
@@ -385,7 +387,7 @@ void IPAddressDictionary::loadData()
                 setAttributeValue(attribute, attribute_column[row]);
             }
 
-            const auto [addr, prefix] = parseIPFromString(std::string_view(key_column_ptr->getDataAt(row)));
+            const auto [addr, prefix] = parseIPFromString(std::string_view{key_column_ptr->getDataAt(row)});
             has_ipv6 = has_ipv6 || (addr.family() == Poco::Net::IPAddress::IPv6);
 
             size_t row_number = ip_records.size();
@@ -611,8 +613,8 @@ void IPAddressDictionary::getItemsByTwoKeyColumnsImpl(
     ValueSetter && set_value,
     DefaultValueExtractor & default_value_extractor) const
 {
-    const auto first_column = key_columns.front();
-    const auto rows = first_column->size();
+    const auto & first_column = key_columns.front();
+    const size_t rows = first_column->size();
     auto & vec = std::get<ContainerType<AttributeType>>(attribute.maps);
 
     if (const auto * ipv4_col = std::get_if<IPv4Container>(&ip_column))
@@ -692,10 +694,9 @@ void IPAddressDictionary::getItemsImpl(
     ValueSetter && set_value,
     DefaultValueExtractor & default_value_extractor) const
 {
-    const auto first_column = key_columns.front();
-    const auto rows = first_column->size();
+    const auto & first_column = key_columns.front();
+    const size_t rows = first_column->size();
 
-    // special case for getBlockInputStream
     if (unlikely(key_columns.size() == 2))
     {
         getItemsByTwoKeyColumnsImpl<AttributeType>(
@@ -714,7 +715,7 @@ void IPAddressDictionary::getItemsImpl(
         for (const auto i : collections::range(0, rows))
         {
             // addrv4 has native endianness
-            auto addrv4 = UInt32(first_column->get64(i));
+            auto addrv4 = static_cast<UInt32>(first_column->get64(i));
             auto found = tryLookupIPv4(addrv4, addrv6_buf);
             if (found != ipNotFound())
             {
@@ -871,7 +872,7 @@ Pipe IPAddressDictionary::read(const Names & column_names, size_t max_block_size
     }
 
     std::shared_ptr<const IDictionary> dictionary = shared_from_this();
-    auto coordinator = DictionarySourceCoordinator::create(dictionary, column_names, std::move(key_columns_with_type), std::move(view_columns), max_block_size);
+    auto coordinator = std::make_shared<DictionarySourceCoordinator>(dictionary, column_names, std::move(key_columns_with_type), std::move(view_columns), max_block_size);
     auto result = coordinator->read(num_streams);
 
     return result;

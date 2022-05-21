@@ -15,6 +15,8 @@
 #cmakedefine01 USE_NURAFT
 #cmakedefine01 USE_NLP
 #cmakedefine01 USE_KRB5
+#cmakedefine01 USE_SIMDJSON
+#cmakedefine01 USE_RAPIDJSON
 #cmakedefine01 USE_FILELOG
 #cmakedefine01 USE_ODBC
 #cmakedefine01 USE_REPLXX

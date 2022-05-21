@@ -3,10 +3,18 @@
 #include <algorithm>
 
 #include <Common/setThreadName.h>
+#include <Common/Exception.h>
 #include <Storages/MergeTree/BackgroundJobsAssignee.h>
+
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int ABORTED;
+}
+
 
 template <class Queue>
 void MergeTreeBackgroundExecutor<Queue>::wait()
@@ -18,6 +26,40 @@ void MergeTreeBackgroundExecutor<Queue>::wait()
     }
 
     pool.wait();
+}
+
+template <class Queue>
+void MergeTreeBackgroundExecutor<Queue>::increaseThreadsAndMaxTasksCount(size_t new_threads_count, size_t new_max_tasks_count)
+{
+    std::lock_guard lock(mutex);
+
+    /// Do not throw any exceptions from global pool. Just log a warning and silently return.
+    if (new_threads_count < threads_count)
+    {
+        LOG_WARNING(log, "Loaded new threads count for {}Executor from top level config, but new value ({}) is not greater than current {}", name, new_threads_count, threads_count);
+        return;
+    }
+
+    if (new_max_tasks_count < max_tasks_count)
+    {
+        LOG_WARNING(log, "Loaded new max tasks count for {}Executor from top level config, but new value ({}) is not greater than current {}", name, new_max_tasks_count, max_tasks_count);
+        return;
+    }
+
+    LOG_INFO(log, "Loaded new threads count ({}) and max tasks count ({}) for {}Executor", new_threads_count, new_max_tasks_count, name);
+
+    pending.setCapacity(new_max_tasks_count);
+    active.set_capacity(new_max_tasks_count);
+
+    pool.setMaxThreads(std::max(1UL, new_threads_count));
+    pool.setMaxFreeThreads(std::max(1UL, new_threads_count));
+    pool.setQueueSize(std::max(1UL, new_threads_count));
+
+    for (size_t number = threads_count; number < new_threads_count; ++number)
+        pool.scheduleOrThrowOnError([this] { threadFunction(); });
+
+    max_tasks_count = new_max_tasks_count;
+    threads_count = new_threads_count;
 }
 
 
@@ -86,11 +128,17 @@ void MergeTreeBackgroundExecutor<Queue>::routine(TaskRuntimeDataPtr item)
         ALLOW_ALLOCATIONS_IN_SCOPE;
         need_execute_again = item->task->executeStep();
     }
+    catch (const Exception & e)
+    {
+        if (e.code() == ErrorCodes::ABORTED)    /// Cancelled merging parts is not an error - log as info.
+            LOG_INFO(log, fmt::runtime(getCurrentExceptionMessage(false)));
+        else
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
     catch (...)
     {
         tryLogCurrentException(__PRETTY_FUNCTION__);
     }
-
 
     if (need_execute_again)
     {
@@ -118,7 +166,6 @@ void MergeTreeBackgroundExecutor<Queue>::routine(TaskRuntimeDataPtr item)
         return;
     }
 
-
     {
         std::lock_guard guard(mutex);
         erase_from_active();
@@ -132,11 +179,17 @@ void MergeTreeBackgroundExecutor<Queue>::routine(TaskRuntimeDataPtr item)
             /// But it is rather safe, because we have try...catch block here, and another one in ThreadPool.
             item->task->onCompleted();
         }
+        catch (const Exception & e)
+        {
+            if (e.code() == ErrorCodes::ABORTED)    /// Cancelled merging parts is not an error - log as info.
+                LOG_INFO(log, fmt::runtime(getCurrentExceptionMessage(false)));
+            else
+                tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
         catch (...)
         {
             tryLogCurrentException(__PRETTY_FUNCTION__);
         }
-
 
         /// We have to call reset() under a lock, otherwise a race is possible.
         /// Imagine, that task is finally completed (last execution returned false),

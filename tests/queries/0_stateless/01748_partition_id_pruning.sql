@@ -14,6 +14,8 @@ select * from x where _partition_id in (select partitionId(number + 1) from numb
 
 -- trivial count optimization test
 set max_rows_to_read = 2; -- one row for subquery + subquery itself
+-- TODO: Relax the limits because we might build prepared set twice with _minmax_count_projection
+set max_rows_to_read = 3;
 select count() from x where _partition_id in (select partitionId(number + 1) from numbers(1));
 
 drop table x;

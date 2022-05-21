@@ -1,5 +1,5 @@
 ---
-toc_title: PREWHERE
+sidebar_label: PREWHERE
 ---
 
 # PREWHERE 子句 {#prewhere-clause}

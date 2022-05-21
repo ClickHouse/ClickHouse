@@ -75,7 +75,11 @@ namespace
 /* Recursive directory listing with matched paths as a result.
  * Have the same method in StorageHDFS.
  */
-std::vector<std::string> listFilesWithRegexpMatching(const std::string & path_for_ls, const std::string & for_match, size_t & total_bytes_to_read)
+void listFilesWithRegexpMatchingImpl(
+    const std::string & path_for_ls,
+    const std::string & for_match,
+    size_t & total_bytes_to_read,
+    std::vector<std::string> & result)
 {
     const size_t first_glob = for_match.find_first_of("*?{");
 
@@ -86,10 +90,9 @@ std::vector<std::string> listFilesWithRegexpMatching(const std::string & path_fo
     auto regexp = makeRegexpPatternFromGlobs(suffix_with_globs.substr(0, next_slash));
     re2::RE2 matcher(regexp);
 
-    std::vector<std::string> result;
     const std::string prefix_without_globs = path_for_ls + for_match.substr(1, end_of_path_without_globs);
     if (!fs::exists(prefix_without_globs))
-        return result;
+        return;
 
     const fs::directory_iterator end;
     for (fs::directory_iterator it(prefix_without_globs); it != end; ++it)
@@ -98,25 +101,34 @@ std::vector<std::string> listFilesWithRegexpMatching(const std::string & path_fo
         const size_t last_slash = full_path.rfind('/');
         const String file_name = full_path.substr(last_slash);
         const bool looking_for_directory = next_slash != std::string::npos;
+
         /// Condition is_directory means what kind of path is it in current iteration of ls
-        if (!fs::is_directory(it->path()) && !looking_for_directory)
+        if (!it->is_directory() && !looking_for_directory)
         {
             if (re2::RE2::FullMatch(file_name, matcher))
             {
-                total_bytes_to_read += fs::file_size(it->path());
+                total_bytes_to_read += it->file_size();
                 result.push_back(it->path().string());
             }
         }
-        else if (fs::is_directory(it->path()) && looking_for_directory)
+        else if (it->is_directory() && looking_for_directory)
         {
             if (re2::RE2::FullMatch(file_name, matcher))
             {
                 /// Recursion depth is limited by pattern. '*' works only for depth = 1, for depth = 2 pattern path is '*/*'. So we do not need additional check.
-                Strings result_part = listFilesWithRegexpMatching(fs::path(full_path) / "", suffix_with_globs.substr(next_slash), total_bytes_to_read);
-                std::move(result_part.begin(), result_part.end(), std::back_inserter(result));
+                listFilesWithRegexpMatchingImpl(fs::path(full_path) / "", suffix_with_globs.substr(next_slash), total_bytes_to_read, result);
             }
         }
     }
+}
+
+std::vector<std::string> listFilesWithRegexpMatching(
+    const std::string & path_for_ls,
+    const std::string & for_match,
+    size_t & total_bytes_to_read)
+{
+    std::vector<std::string> result;
+    listFilesWithRegexpMatchingImpl(path_for_ls, for_match, total_bytes_to_read, result);
     return result;
 }
 
@@ -126,7 +138,11 @@ std::string getTablePath(const std::string & table_dir_path, const std::string &
 }
 
 /// Both db_dir_path and table_path must be converted to absolute paths (in particular, path cannot contain '..').
-void checkCreationIsAllowed(ContextPtr context_global, const std::string & db_dir_path, const std::string & table_path)
+void checkCreationIsAllowed(
+    ContextPtr context_global,
+    const std::string & db_dir_path,
+    const std::string & table_path,
+    bool can_be_directory)
 {
     if (context_global->getApplicationType() != Context::ApplicationType::SERVER)
         return;
@@ -135,8 +151,12 @@ void checkCreationIsAllowed(ContextPtr context_global, const std::string & db_di
     if (!fileOrSymlinkPathStartsWith(table_path, db_dir_path) && table_path != "/dev/null")
         throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED, "File `{}` is not inside `{}`", table_path, db_dir_path);
 
-    if (fs::exists(table_path) && fs::is_directory(table_path))
-        throw Exception("File must not be a directory", ErrorCodes::INCORRECT_FILE_NAME);
+    if (can_be_directory)
+    {
+        auto table_path_stat = fs::status(table_path);
+        if (fs::exists(table_path_stat) && fs::is_directory(table_path_stat))
+            throw Exception("File must not be a directory", ErrorCodes::INCORRECT_FILE_NAME);
+    }
 }
 
 std::unique_ptr<ReadBuffer> createReadBuffer(
@@ -179,8 +199,9 @@ std::unique_ptr<ReadBuffer> createReadBuffer(
         method = chooseCompressionMethod(current_path, compression_method);
     }
 
-    /// For clickhouse-local add progress callback to display progress bar.
-    if (context->getApplicationType() == Context::ApplicationType::LOCAL)
+    /// For clickhouse-local and clickhouse-client add progress callback to display progress bar.
+    if (context->getApplicationType() == Context::ApplicationType::LOCAL
+        || context->getApplicationType() == Context::ApplicationType::CLIENT)
     {
         auto & in = static_cast<ReadBufferFromFileDescriptor &>(*nested_buffer);
         in.setProgressCallback(context);
@@ -199,27 +220,68 @@ Strings StorageFile::getPathsList(const String & table_path, const String & user
         fs_table_path = user_files_absolute_path / fs_table_path;
 
     Strings paths;
+
     /// Do not use fs::canonical or fs::weakly_canonical.
     /// Otherwise it will not allow to work with symlinks in `user_files_path` directory.
     String path = fs::absolute(fs_table_path).lexically_normal(); /// Normalize path.
-    if (path.find_first_of("*?{") == std::string::npos)
+    bool can_be_directory = true;
+
+    if (path.find(PartitionedSink::PARTITION_ID_WILDCARD) != std::string::npos)
+    {
+        paths.push_back(path);
+    }
+    else if (path.find_first_of("*?{") == std::string::npos)
     {
         std::error_code error;
-        if (fs::exists(path))
-            total_bytes_to_read += fs::file_size(path, error);
+        size_t size = fs::file_size(path, error);
+        if (!error)
+            total_bytes_to_read += size;
+
         paths.push_back(path);
     }
     else
+    {
+        /// We list only non-directory files.
         paths = listFilesWithRegexpMatching("/", path, total_bytes_to_read);
+        can_be_directory = false;
+    }
 
     for (const auto & cur_path : paths)
-        checkCreationIsAllowed(context, user_files_absolute_path, cur_path);
+        checkCreationIsAllowed(context, user_files_absolute_path, cur_path, can_be_directory);
 
     return paths;
 }
 
+ColumnsDescription StorageFile::getTableStructureFromFileDescriptor(ContextPtr context)
+{
+    /// If we want to read schema from file descriptor we should create
+    /// a read buffer from fd, create a checkpoint, read some data required
+    /// for schema inference, rollback to checkpoint and then use the created
+    /// peekable read buffer on the first read from storage. It's needed because
+    /// in case of file descriptor we have a stream of data and we cannot
+    /// start reading data from the beginning after reading some data for
+    /// schema inference.
+    ReadBufferIterator read_buffer_iterator = [&]()
+    {
+        /// We will use PeekableReadBuffer to create a checkpoint, so we need a place
+        /// where we can store the original read buffer.
+        read_buffer_from_fd = createReadBuffer("", true, getName(), table_fd, compression_method, context);
+        auto read_buf = std::make_unique<PeekableReadBuffer>(*read_buffer_from_fd);
+        read_buf->setCheckpoint();
+        return read_buf;
+    };
 
-ColumnsDescription StorageFile::getTableStructureFromData(
+    auto columns = readSchemaFromFormat(format_name, format_settings, read_buffer_iterator, false, context, peekable_read_buffer_from_fd);
+    if (peekable_read_buffer_from_fd)
+    {
+        /// If we have created read buffer in readSchemaFromFormat we should rollback to checkpoint.
+        assert_cast<PeekableReadBuffer *>(peekable_read_buffer_from_fd.get())->rollbackToCheckpoint();
+        has_peekable_read_buffer_from_fd = true;
+    }
+    return columns;
+}
+
+ColumnsDescription StorageFile::getTableStructureFromFile(
     const String & format,
     const std::vector<String> & paths,
     const String & compression_method,
@@ -236,22 +298,22 @@ ColumnsDescription StorageFile::getTableStructureFromData(
         return ColumnsDescription(source->getOutputs().front().getHeader().getNamesAndTypesList());
     }
 
-    auto read_buffer_creator = [&]()
-    {
-        String path;
-        auto it = std::find_if(paths.begin(), paths.end(), [](const String & p){ return std::filesystem::exists(p); });
-        if (it == paths.end())
-            throw Exception(
-                ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE,
-                "Cannot extract table structure from {} format file, because there are no files with provided path. You must specify "
-                "table structure manually",
-                format);
+    if (paths.empty() && !FormatFactory::instance().checkIfFormatHasExternalSchemaReader(format))
+        throw Exception(
+            ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE,
+            "Cannot extract table structure from {} format file, because there are no files with provided path. You must specify "
+            "table structure manually",
+            format);
 
-        path = *it;
-        return createReadBuffer(path, false, "File", -1, compression_method, context);
+    ReadBufferIterator read_buffer_iterator = [&, it = paths.begin()]() mutable -> std::unique_ptr<ReadBuffer>
+    {
+        if (it == paths.end())
+            return nullptr;
+
+        return createReadBuffer(*it++, false, "File", -1, compression_method, context);
     };
 
-    return readSchemaFromFormat(format, format_settings, read_buffer_creator, context);
+    return readSchemaFromFormat(format, format_settings, read_buffer_iterator, paths.size() > 1, context);
 }
 
 bool StorageFile::isColumnOriented() const
@@ -272,8 +334,6 @@ StorageFile::StorageFile(int table_fd_, CommonArguments args)
         throw Exception("Using file descriptor as source of storage isn't allowed for server daemons", ErrorCodes::DATABASE_ACCESS_DENIED);
     if (args.format_name == "Distributed")
         throw Exception("Distributed format is allowed only with explicit file path", ErrorCodes::INCORRECT_FILE_NAME);
-    if (args.columns.empty())
-        throw Exception("Automatic schema inference is not allowed when using file descriptor as source of storage", ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE);
 
     is_db_table = false;
     use_table_fd = true;
@@ -287,7 +347,11 @@ StorageFile::StorageFile(const std::string & table_path_, const std::string & us
     is_db_table = false;
     paths = getPathsList(table_path_, user_files_path, args.getContext(), total_bytes_to_read);
     is_path_with_globs = paths.size() > 1;
-    path_for_partitioned_write = table_path_;
+    if (!paths.empty())
+        path_for_partitioned_write = paths.front();
+    else
+        path_for_partitioned_write = table_path_;
+
     setStorageMetadata(args);
 }
 
@@ -302,8 +366,11 @@ StorageFile::StorageFile(const std::string & relative_table_dir_path, CommonArgu
     String table_dir_path = fs::path(base_path) / relative_table_dir_path / "";
     fs::create_directories(table_dir_path);
     paths = {getTablePath(table_dir_path, format_name)};
-    if (fs::exists(paths[0]))
-        total_bytes_to_read = fs::file_size(paths[0]);
+
+    std::error_code error;
+    size_t size = fs::file_size(paths[0], error);
+    if (!error)
+        total_bytes_to_read = size;
 
     setStorageMetadata(args);
 }
@@ -323,9 +390,15 @@ void StorageFile::setStorageMetadata(CommonArguments args)
 
     if (args.format_name == "Distributed" || args.columns.empty())
     {
-        auto columns = getTableStructureFromData(format_name, paths, compression_method, format_settings, args.getContext());
-        if (!args.columns.empty() && args.columns != columns)
-            throw Exception("Table structure and file structure are different", ErrorCodes::INCOMPATIBLE_COLUMNS);
+        ColumnsDescription columns;
+        if (use_table_fd)
+            columns = getTableStructureFromFileDescriptor(args.getContext());
+        else
+        {
+            columns = getTableStructureFromFile(format_name, paths, compression_method, format_settings, args.getContext());
+            if (!args.columns.empty() && args.columns != columns)
+                throw Exception("Table structure and file structure are different", ErrorCodes::INCOMPATIBLE_COLUMNS);
+        }
         storage_metadata.setColumns(columns);
     }
     else
@@ -360,6 +433,8 @@ public:
 
         bool need_path_column = false;
         bool need_file_column = false;
+
+        size_t total_bytes_to_read = 0;
     };
 
     using FilesInfoPtr = std::shared_ptr<FilesInfo>;
@@ -368,40 +443,47 @@ public:
     {
         auto header = metadata_snapshot->getSampleBlock();
 
-        /// Note: AddingDefaultsBlockInputStream doesn't change header.
+        /// Note: AddingDefaultsTransform doesn't change header.
 
         if (need_path_column)
-            header.insert({DataTypeString().createColumn(), std::make_shared<DataTypeString>(), "_path"});
+            header.insert(
+                {DataTypeLowCardinality{std::make_shared<DataTypeString>()}.createColumn(),
+                 std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()),
+                 "_path"});
         if (need_file_column)
-            header.insert({DataTypeString().createColumn(), std::make_shared<DataTypeString>(), "_file"});
+            header.insert(
+                {DataTypeLowCardinality{std::make_shared<DataTypeString>()}.createColumn(),
+                 std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()),
+                 "_file"});
 
         return header;
     }
 
     static Block getBlockForSource(
         const StorageFilePtr & storage,
-        const StorageMetadataPtr & metadata_snapshot,
+        const StorageSnapshotPtr & storage_snapshot,
         const ColumnsDescription & columns_description,
         const FilesInfoPtr & files_info)
     {
         if (storage->isColumnOriented())
-            return metadata_snapshot->getSampleBlockForColumns(
-                columns_description.getNamesOfPhysical(), storage->getVirtuals(), storage->getStorageID());
+            return storage_snapshot->getSampleBlockForColumns(columns_description.getNamesOfPhysical());
         else
-            return getHeader(metadata_snapshot, files_info->need_path_column, files_info->need_file_column);
+            return getHeader(storage_snapshot->metadata, files_info->need_path_column, files_info->need_file_column);
     }
 
     StorageFileSource(
         std::shared_ptr<StorageFile> storage_,
-        const StorageMetadataPtr & metadata_snapshot_,
+        const StorageSnapshotPtr & storage_snapshot_,
         ContextPtr context_,
         UInt64 max_block_size_,
         FilesInfoPtr files_info_,
-        ColumnsDescription columns_description_)
-        : SourceWithProgress(getBlockForSource(storage_, metadata_snapshot_, columns_description_, files_info_))
+        ColumnsDescription columns_description_,
+        std::unique_ptr<ReadBuffer> read_buf_)
+        : SourceWithProgress(getBlockForSource(storage_, storage_snapshot_, columns_description_, files_info_))
         , storage(std::move(storage_))
-        , metadata_snapshot(metadata_snapshot_)
+        , storage_snapshot(storage_snapshot_)
         , files_info(std::move(files_info_))
+        , read_buf(std::move(read_buf_))
         , columns_description(std::move(columns_description_))
         , context(context_)
         , max_block_size(max_block_size_)
@@ -443,13 +525,14 @@ public:
                     }
                 }
 
-                read_buf = createReadBuffer(current_path, storage->use_table_fd, storage->getName(), storage->table_fd, storage->compression_method, context);
+                if (!read_buf)
+                    read_buf = createReadBuffer(current_path, storage->use_table_fd, storage->getName(), storage->table_fd, storage->compression_method, context);
 
                 auto get_block_for_format = [&]() -> Block
                 {
                     if (storage->isColumnOriented())
-                        return metadata_snapshot->getSampleBlockForColumns(columns_description.getNamesOfPhysical());
-                    return metadata_snapshot->getSampleBlock();
+                        return storage_snapshot->getSampleBlockForColumns(columns_description.getNamesOfPhysical());
+                    return storage_snapshot->metadata->getSampleBlock();
                 };
 
                 auto format = context->getInputFormat(
@@ -474,13 +557,12 @@ public:
             Chunk chunk;
             if (reader->pull(chunk))
             {
-                //Columns columns = res.getColumns();
                 UInt64 num_rows = chunk.getNumRows();
 
                 /// Enrich with virtual columns.
                 if (files_info->need_path_column)
                 {
-                    auto column = DataTypeString().createColumnConst(num_rows, current_path);
+                    auto column = DataTypeLowCardinality{std::make_shared<DataTypeString>()}.createColumnConst(num_rows, current_path);
                     chunk.addColumn(column->convertToFullColumnIfConst());
                 }
 
@@ -489,10 +571,29 @@ public:
                     size_t last_slash_pos = current_path.find_last_of('/');
                     auto file_name = current_path.substr(last_slash_pos + 1);
 
-                    auto column = DataTypeString().createColumnConst(num_rows, std::move(file_name));
+                    auto column = DataTypeLowCardinality{std::make_shared<DataTypeString>()}.createColumnConst(num_rows, std::move(file_name));
                     chunk.addColumn(column->convertToFullColumnIfConst());
                 }
 
+                if (num_rows)
+                {
+                    auto bytes_per_row = std::ceil(static_cast<double>(chunk.bytes()) / num_rows);
+                    size_t total_rows_approx = std::ceil(static_cast<double>(files_info->total_bytes_to_read) / bytes_per_row);
+                    total_rows_approx_accumulated += total_rows_approx;
+                    ++total_rows_count_times;
+                    total_rows_approx = total_rows_approx_accumulated / total_rows_count_times;
+
+                    /// We need to add diff, because total_rows_approx is incremental value.
+                    /// It would be more correct to send total_rows_approx as is (not a diff),
+                    /// but incrementation of total_rows_to_read does not allow that.
+                    /// A new field can be introduces for that to be sent to client, but it does not worth it.
+                    if (total_rows_approx > total_rows_approx_prev)
+                    {
+                        size_t diff = total_rows_approx - total_rows_approx_prev;
+                        addTotalRowsApprox(diff);
+                        total_rows_approx_prev = total_rows_approx;
+                    }
+                }
                 return chunk;
             }
 
@@ -512,7 +613,7 @@ public:
 
 private:
     std::shared_ptr<StorageFile> storage;
-    StorageMetadataPtr metadata_snapshot;
+    StorageSnapshotPtr storage_snapshot;
     FilesInfoPtr files_info;
     String current_path;
     Block sample_block;
@@ -528,26 +629,32 @@ private:
     bool finished_generate = false;
 
     std::shared_lock<std::shared_timed_mutex> shared_lock;
+
+    UInt64 total_rows_approx_accumulated = 0;
+    size_t total_rows_count_times = 0;
+    UInt64 total_rows_approx_prev = 0;
 };
 
 
 Pipe StorageFile::read(
     const Names & column_names,
-    const StorageMetadataPtr & metadata_snapshot,
+    const StorageSnapshotPtr & storage_snapshot,
     SelectQueryInfo & /*query_info*/,
     ContextPtr context,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t max_block_size,
     unsigned num_streams)
 {
-    if (use_table_fd)   /// need to call ctr BlockInputStream
+    if (use_table_fd)
+    {
         paths = {""};   /// when use fd, paths are empty
+    }
     else
     {
         if (paths.size() == 1 && !fs::exists(paths[0]))
         {
             if (context->getSettingsRef().engine_file_empty_if_not_exists)
-                return Pipe(std::make_shared<NullSource>(metadata_snapshot->getSampleBlockForColumns(column_names, getVirtuals(), getStorageID())));
+                return Pipe(std::make_shared<NullSource>(storage_snapshot->getSampleBlockForColumns(column_names)));
             else
                 throw Exception("File " + paths[0] + " doesn't exist", ErrorCodes::FILE_DOESNT_EXIST);
         }
@@ -555,6 +662,7 @@ Pipe StorageFile::read(
 
     auto files_info = std::make_shared<StorageFileSource::FilesInfo>();
     files_info->files = paths;
+    files_info->total_bytes_to_read = total_bytes_to_read;
 
     for (const auto & column : column_names)
     {
@@ -574,7 +682,8 @@ Pipe StorageFile::read(
 
     /// Set total number of bytes to process. For progress bar.
     auto progress_callback = context->getFileProgressCallback();
-    if (context->getApplicationType() == Context::ApplicationType::LOCAL && progress_callback)
+
+    if (progress_callback)
         progress_callback(FileProgress(0, total_bytes_to_read));
 
     for (size_t i = 0; i < num_streams; ++i)
@@ -583,13 +692,21 @@ Pipe StorageFile::read(
         {
             if (isColumnOriented())
                 return ColumnsDescription{
-                    metadata_snapshot->getSampleBlockForColumns(column_names, getVirtuals(), getStorageID()).getNamesAndTypesList()};
+                    storage_snapshot->getSampleBlockForColumns(column_names).getNamesAndTypesList()};
             else
-                return metadata_snapshot->getColumns();
+                return storage_snapshot->metadata->getColumns();
         };
 
+        /// In case of reading from fd we have to check whether we have already created
+        /// the read buffer from it in Storage constructor (for schema inference) or not.
+        /// If yes, then we should use it in StorageFileSource. Atomic bool flag is needed
+        /// to prevent data race in case of parallel reads.
+        std::unique_ptr<ReadBuffer> read_buffer;
+        if (has_peekable_read_buffer_from_fd.exchange(false))
+            read_buffer = std::move(peekable_read_buffer_from_fd);
+
         pipes.emplace_back(std::make_shared<StorageFileSource>(
-            this_ptr, metadata_snapshot, context, max_block_size, files_info, get_columns_for_format()));
+            this_ptr, storage_snapshot, context, max_block_size, files_info, get_columns_for_format(), std::move(read_buffer)));
     }
 
     return Pipe::unitePipes(std::move(pipes));
@@ -692,11 +809,25 @@ public:
         writer->write(getHeader().cloneWithColumns(chunk.detachColumns()));
     }
 
+    void onException() override
+    {
+        write_buf->finalize();
+    }
+
     void onFinish() override
     {
-        writer->finalize();
-        writer->flush();
-        write_buf->finalize();
+        try
+        {
+            writer->finalize();
+            writer->flush();
+            write_buf->finalize();
+        }
+        catch (...)
+        {
+            /// Stop ParallelFormattingOutputFormat correctly.
+            writer.reset();
+            throw;
+        }
     }
 
 private:
@@ -752,7 +883,7 @@ public:
     {
         auto partition_path = PartitionedSink::replaceWildcards(path, partition_id);
         PartitionedSink::validatePartitionKey(partition_path, true);
-        checkCreationIsAllowed(context, context->getUserFilesPath(), partition_path);
+        checkCreationIsAllowed(context, context->getUserFilesPath(), partition_path, /*can_be_directory=*/ true);
         return std::make_shared<StorageFileSink>(
             metadata_snapshot,
             table_name_for_log,
@@ -804,6 +935,7 @@ SinkToStoragePtr StorageFile::write(
     {
         if (path_for_partitioned_write.empty())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty path for partitioned write");
+
         fs::create_directories(fs::path(path_for_partitioned_write).parent_path());
 
         return std::make_shared<PartitionedStorageFileSink>(
@@ -830,9 +962,10 @@ SinkToStoragePtr StorageFile::write(
             path = paths.back();
             fs::create_directories(fs::path(path).parent_path());
 
+            std::error_code error_code;
             if (!context->getSettingsRef().engine_file_truncate_on_insert && !is_path_with_globs
-                && !FormatFactory::instance().checkIfFormatSupportAppend(format_name, context, format_settings) && fs::exists(paths.back())
-                && fs::file_size(paths.back()) != 0)
+                && !FormatFactory::instance().checkIfFormatSupportAppend(format_name, context, format_settings)
+                && fs::file_size(paths.back(), error_code) != 0 && !error_code)
             {
                 if (context->getSettingsRef().engine_file_allow_create_multiple_files)
                 {
@@ -999,7 +1132,7 @@ void registerStorageFile(StorageFactory & factory)
             }
 
             if (engine_args_ast.size() == 1) /// Table in database
-                return StorageFile::create(factory_args.relative_data_path, storage_args);
+                return std::make_shared<StorageFile>(factory_args.relative_data_path, storage_args);
 
             /// Will use FD if engine_args[1] is int literal or identifier with std* name
             int source_fd = -1;
@@ -1039,9 +1172,9 @@ void registerStorageFile(StorageFactory & factory)
                 storage_args.compression_method = "auto";
 
             if (0 <= source_fd) /// File descriptor
-                return StorageFile::create(source_fd, storage_args);
+                return std::make_shared<StorageFile>(source_fd, storage_args);
             else /// User's file
-                return StorageFile::create(source_path, factory_args.getContext()->getUserFilesPath(), storage_args);
+                return std::make_shared<StorageFile>(source_path, factory_args.getContext()->getUserFilesPath(), storage_args);
         },
         storage_features);
 }
@@ -1050,8 +1183,7 @@ void registerStorageFile(StorageFactory & factory)
 NamesAndTypesList StorageFile::getVirtuals() const
 {
     return NamesAndTypesList{
-        {"_path", std::make_shared<DataTypeString>()},
-        {"_file", std::make_shared<DataTypeString>()}
-    };
+        {"_path", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
+        {"_file", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())}};
 }
 }

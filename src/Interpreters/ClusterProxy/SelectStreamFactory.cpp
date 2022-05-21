@@ -8,11 +8,13 @@
 #include <TableFunctions/TableFunctionFactory.h>
 #include <IO/ConnectionTimeoutsContext.h>
 #include <Interpreters/RequiredSourceColumnsVisitor.h>
+#include <DataTypes/ObjectUtils.h>
 
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
+#include <Processors/QueryPlan/DistributedCreateLocalPlan.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 
 
@@ -35,61 +37,14 @@ namespace ClusterProxy
 
 SelectStreamFactory::SelectStreamFactory(
     const Block & header_,
-    QueryProcessingStage::Enum processed_stage_,
-    bool has_virtual_shard_num_column_)
+    const ColumnsDescriptionByShardNum & objects_by_shard_,
+    const StorageSnapshotPtr & storage_snapshot_,
+    QueryProcessingStage::Enum processed_stage_)
     : header(header_),
-    processed_stage{processed_stage_},
-    has_virtual_shard_num_column(has_virtual_shard_num_column_)
+    objects_by_shard(objects_by_shard_),
+    storage_snapshot(storage_snapshot_),
+    processed_stage(processed_stage_)
 {
-}
-
-
-namespace
-{
-
-ActionsDAGPtr getConvertingDAG(const Block & block, const Block & header)
-{
-    /// Convert header structure to expected.
-    /// Also we ignore constants from result and replace it with constants from header.
-    /// It is needed for functions like `now64()` or `randConstant()` because their values may be different.
-    return ActionsDAG::makeConvertingActions(
-        block.getColumnsWithTypeAndName(),
-        header.getColumnsWithTypeAndName(),
-        ActionsDAG::MatchColumnsMode::Name,
-        true);
-}
-
-void addConvertingActions(QueryPlan & plan, const Block & header)
-{
-    if (blocksHaveEqualStructure(plan.getCurrentDataStream().header, header))
-        return;
-
-    auto convert_actions_dag = getConvertingDAG(plan.getCurrentDataStream().header, header);
-    auto converting = std::make_unique<ExpressionStep>(plan.getCurrentDataStream(), convert_actions_dag);
-    plan.addStep(std::move(converting));
-}
-
-std::unique_ptr<QueryPlan> createLocalPlan(
-    const ASTPtr & query_ast,
-    const Block & header,
-    ContextPtr context,
-    QueryProcessingStage::Enum processed_stage,
-    UInt32 shard_num,
-    UInt32 shard_count)
-{
-    checkStackSize();
-
-    auto query_plan = std::make_unique<QueryPlan>();
-
-    InterpreterSelectQuery interpreter(
-        query_ast, context, SelectQueryOptions(processed_stage).setShardInfo(shard_num, shard_count));
-    interpreter.buildQueryPlan(*query_plan);
-
-    addConvertingActions(*query_plan, header);
-
-    return query_plan;
-}
-
 }
 
 void SelectStreamFactory::createForShard(
@@ -102,19 +57,19 @@ void SelectStreamFactory::createForShard(
     Shards & remote_shards,
     UInt32 shard_count)
 {
-    auto modified_query_ast = query_ast->clone();
-    if (has_virtual_shard_num_column)
-        VirtualColumnUtils::rewriteEntityInAst(modified_query_ast, "_shard_num", shard_info.shard_num, "toUInt32");
+    auto it = objects_by_shard.find(shard_info.shard_num);
+    if (it != objects_by_shard.end())
+        replaceMissedSubcolumnsByConstants(storage_snapshot->object_columns, it->second, query_ast);
 
     auto emplace_local_stream = [&]()
     {
-        local_plans.emplace_back(createLocalPlan(modified_query_ast, header, context, processed_stage, shard_info.shard_num, shard_count));
+        local_plans.emplace_back(createLocalPlan(query_ast, header, context, processed_stage, shard_info.shard_num, shard_count, /*coordinator=*/nullptr));
     };
 
     auto emplace_remote_stream = [&](bool lazy = false, UInt32 local_delay = 0)
     {
         remote_shards.emplace_back(Shard{
-            .query = modified_query_ast,
+            .query = query_ast,
             .header = header,
             .shard_num = shard_info.shard_num,
             .num_replicas = shard_info.getAllNodeCount(),

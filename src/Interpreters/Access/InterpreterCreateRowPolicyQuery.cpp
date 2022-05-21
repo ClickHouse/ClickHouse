@@ -5,6 +5,7 @@
 #include <Parsers/formatAST.h>
 #include <Access/AccessControl.h>
 #include <Access/Common/AccessFlags.h>
+#include <Access/Common/AccessRightsElement.h>
 #include <Access/RowPolicy.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
@@ -45,21 +46,25 @@ namespace
 BlockIO InterpreterCreateRowPolicyQuery::execute()
 {
     auto & query = query_ptr->as<ASTCreateRowPolicyQuery &>();
-    auto & access_control = getContext()->getAccessControl();
-    getContext()->checkAccess(query.alter ? AccessType::ALTER_ROW_POLICY : AccessType::CREATE_ROW_POLICY);
+    auto required_access = getRequiredAccess();
 
     if (!query.cluster.empty())
     {
         query.replaceCurrentUserTag(getContext()->getUserName());
-        return executeDDLQueryOnCluster(query_ptr, getContext());
+        DDLQueryOnClusterParams params;
+        params.access_to_check = std::move(required_access);
+        return executeDDLQueryOnCluster(query_ptr, getContext(), params);
     }
 
     assert(query.names->cluster.empty());
+    auto & access_control = getContext()->getAccessControl();
+    getContext()->checkAccess(required_access);
+
+    query.replaceEmptyDatabase(getContext()->getCurrentDatabase());
+
     std::optional<RolesOrUsersSet> roles_from_query;
     if (query.roles)
         roles_from_query = RolesOrUsersSet{*query.roles, access_control, getContext()->getUserID()};
-
-    query.replaceEmptyDatabase(getContext()->getCurrentDatabase());
 
     if (query.alter)
     {
@@ -103,6 +108,17 @@ BlockIO InterpreterCreateRowPolicyQuery::execute()
 void InterpreterCreateRowPolicyQuery::updateRowPolicyFromQuery(RowPolicy & policy, const ASTCreateRowPolicyQuery & query)
 {
     updateRowPolicyFromQueryImpl(policy, query, {}, {});
+}
+
+
+AccessRightsElements InterpreterCreateRowPolicyQuery::getRequiredAccess() const
+{
+    const auto & query = query_ptr->as<const ASTCreateRowPolicyQuery &>();
+    AccessRightsElements res;
+    auto access_type = (query.alter ? AccessType::ALTER_ROW_POLICY : AccessType::CREATE_ROW_POLICY);
+    for (const auto & row_policy_name : query.names->full_names)
+        res.emplace_back(access_type, row_policy_name.database, row_policy_name.table_name);
+    return res;
 }
 
 }

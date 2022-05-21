@@ -1,9 +1,9 @@
 ---
-toc_priority: 35
-toc_title: ALTER
+sidebar_position: 35
+sidebar_label: ALTER
 ---
 
-## ALTER {#query_language_queries_alter}
+# ALTER
 
 Most `ALTER TABLE` queries modify table settings or data:
 
@@ -16,8 +16,9 @@ Most `ALTER TABLE` queries modify table settings or data:
 -   [CONSTRAINT](../../../sql-reference/statements/alter/constraint.md)
 -   [TTL](../../../sql-reference/statements/alter/ttl.md)
 
-!!! note "Note"
-    Most `ALTER TABLE` queries are supported only for [\*MergeTree](../../../engines/table-engines/mergetree-family/index.md) tables, as well as [Merge](../../../engines/table-engines/special/merge.md) and [Distributed](../../../engines/table-engines/special/distributed.md).
+:::note    
+Most `ALTER TABLE` queries are supported only for [\*MergeTree](../../../engines/table-engines/mergetree-family/index.md) tables, as well as [Merge](../../../engines/table-engines/special/merge.md) and [Distributed](../../../engines/table-engines/special/distributed.md).
+:::
 
 These `ALTER` statements manipulate views:
 
@@ -54,7 +55,8 @@ For all `ALTER` queries, you can use the [replication_alter_partitions_sync](../
 
 You can specify how long (in seconds) to wait for inactive replicas to execute all `ALTER` queries with the [replication_wait_for_inactive_replica_timeout](../../../operations/settings/settings.md#replication-wait-for-inactive-replica-timeout) setting.
 
-!!! info "Note"
-    For all `ALTER` queries, if `replication_alter_partitions_sync = 2` and some replicas are not active for more than the time, specified in the `replication_wait_for_inactive_replica_timeout` setting, then an exception `UNFINISHED` is thrown.
+:::note    
+For all `ALTER` queries, if `replication_alter_partitions_sync = 2` and some replicas are not active for more than the time, specified in the `replication_wait_for_inactive_replica_timeout` setting, then an exception `UNFINISHED` is thrown.
+:::
 
 For `ALTER TABLE ... UPDATE|DELETE` queries the synchronicity is defined by the [mutations_sync](../../../operations/settings/settings.md#mutations_sync) setting.

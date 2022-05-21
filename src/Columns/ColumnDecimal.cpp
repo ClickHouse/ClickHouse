@@ -9,7 +9,6 @@
 #include <base/sort.h>
 #include <base/scope_guard.h>
 
-
 #include <IO/WriteHelpers.h>
 
 #include <Columns/ColumnsCommon.h>
@@ -31,12 +30,6 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
 }
-
-template class DecimalPaddedPODArray<Decimal32>;
-template class DecimalPaddedPODArray<Decimal64>;
-template class DecimalPaddedPODArray<Decimal128>;
-template class DecimalPaddedPODArray<Decimal256>;
-template class DecimalPaddedPODArray<DateTime64>;
 
 template <is_decimal T>
 int ColumnDecimal<T>::compareAt(size_t n, size_t m, const IColumn & rhs_, int) const
@@ -129,41 +122,89 @@ void ColumnDecimal<T>::updateHashFast(SipHash & hash) const
 }
 
 template <is_decimal T>
-void ColumnDecimal<T>::getPermutation(bool reverse, size_t limit, int , IColumn::Permutation & res) const
+void ColumnDecimal<T>::getPermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
+                                    size_t limit, int, IColumn::Permutation & res) const
 {
-#if 1 /// TODO: perf test
-    if (data.size() <= std::numeric_limits<UInt32>::max())
+    auto comparator_ascending = [this](size_t lhs, size_t rhs) { return data[lhs] < data[rhs]; };
+    auto comparator_ascending_stable = [this](size_t lhs, size_t rhs)
     {
-        PaddedPODArray<UInt32> tmp_res;
-        permutation(reverse, limit, tmp_res);
+        if (unlikely(data[lhs] == data[rhs]))
+            return lhs < rhs;
 
-        res.resize(tmp_res.size());
-        for (size_t i = 0; i < tmp_res.size(); ++i)
-            res[i] = tmp_res[i];
-        return;
-    }
-#endif
+        return data[lhs] < data[rhs];
+    };
+    auto comparator_descending = [this](size_t lhs, size_t rhs) { return data[lhs] > data[rhs]; };
+    auto comparator_descending_stable = [this](size_t lhs, size_t rhs)
+    {
+        if (unlikely(data[lhs] == data[rhs]))
+            return lhs < rhs;
 
-    permutation(reverse, limit, res);
+        return data[lhs] > data[rhs];
+    };
+
+    if (direction == IColumn::PermutationSortDirection::Ascending && stability == IColumn::PermutationSortStability::Unstable)
+        this->getPermutationImpl(limit, res, comparator_ascending, DefaultSort(), DefaultPartialSort());
+    else if (direction == IColumn::PermutationSortDirection::Ascending && stability == IColumn::PermutationSortStability::Stable)
+        this->getPermutationImpl(limit, res, comparator_ascending_stable, DefaultSort(), DefaultPartialSort());
+    else if (direction == IColumn::PermutationSortDirection::Descending && stability == IColumn::PermutationSortStability::Unstable)
+        this->getPermutationImpl(limit, res, comparator_descending, DefaultSort(), DefaultPartialSort());
+    else
+        this->getPermutationImpl(limit, res, comparator_descending_stable, DefaultSort(), DefaultPartialSort());
 }
 
 template <is_decimal T>
-void ColumnDecimal<T>::updatePermutation(bool reverse, size_t limit, int, IColumn::Permutation & res, EqualRanges & equal_ranges) const
+void ColumnDecimal<T>::updatePermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
+                                        size_t limit, int, IColumn::Permutation & res, EqualRanges & equal_ranges) const
 {
-    auto equals = [this](size_t lhs, size_t rhs) { return data[lhs] == data[rhs]; };
-    auto sort = [](auto begin, auto end, auto pred) { std::sort(begin, end, pred); };
+    auto comparator_descending = [this](size_t lhs, size_t rhs) { return data[lhs] > data[rhs]; };
+    auto comparator_descending_stable = [this](size_t lhs, size_t rhs)
+    {
+        if (unlikely(data[lhs] == data[rhs]))
+            return lhs < rhs;
+
+        return data[lhs] > data[rhs];
+    };
+
+    auto comparator_ascending = [this](size_t lhs, size_t rhs) { return data[lhs] < data[rhs]; };
+    auto comparator_ascending_stable = [this](size_t lhs, size_t rhs)
+    {
+        if (unlikely(data[lhs] == data[rhs]))
+            return lhs < rhs;
+
+        return data[lhs] < data[rhs];
+    };
+    auto equals_comparator = [this](size_t lhs, size_t rhs) { return data[lhs] == data[rhs]; };
+    auto sort = [](auto begin, auto end, auto pred) { ::sort(begin, end, pred); };
     auto partial_sort = [](auto begin, auto mid, auto end, auto pred) { ::partial_sort(begin, mid, end, pred); };
 
-    if (reverse)
+    if (direction == IColumn::PermutationSortDirection::Ascending && stability == IColumn::PermutationSortStability::Unstable)
+    {
         this->updatePermutationImpl(
             limit, res, equal_ranges,
-            [this](size_t lhs, size_t rhs) { return data[lhs] > data[rhs]; },
-            equals, sort, partial_sort);
+            comparator_ascending,
+            equals_comparator, sort, partial_sort);
+    }
+    else if (direction == IColumn::PermutationSortDirection::Ascending && stability == IColumn::PermutationSortStability::Stable)
+    {
+        this->updatePermutationImpl(
+            limit, res, equal_ranges,
+            comparator_ascending_stable,
+            equals_comparator, sort, partial_sort);
+    }
+    else if (direction == IColumn::PermutationSortDirection::Descending && stability == IColumn::PermutationSortStability::Unstable)
+    {
+        this->updatePermutationImpl(
+            limit, res, equal_ranges,
+            comparator_descending,
+            equals_comparator, sort, partial_sort);
+    }
     else
+    {
         this->updatePermutationImpl(
             limit, res, equal_ranges,
-            [this](size_t lhs, size_t rhs) { return data[lhs] < data[rhs]; },
-            equals, sort, partial_sort);
+            comparator_descending_stable,
+            equals_comparator, sort, partial_sort);
+    }
 }
 
 template <is_decimal T>
@@ -225,7 +266,7 @@ ColumnPtr ColumnDecimal<T>::filter(const IColumn::Filter & filt, ssize_t result_
 {
     size_t size = data.size();
     if (size != filt.size())
-        throw Exception("Size of filter doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
+        throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of filter ({}) doesn't match size of column ({})", filt.size(), size);
 
     auto res = this->create(0, scale);
     Container & res_data = res->getData();

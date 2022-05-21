@@ -1,6 +1,6 @@
 ---
-toc_priority: 19
-toc_title: HTTP客户端
+sidebar_position: 19
+sidebar_label: HTTP客户端
 ---
 
 # HTTP客户端 {#http-interface}
@@ -15,6 +15,17 @@ HTTP接口允许您在任何编程语言的任何平台上使用ClickHouse。我
 
 ``` bash
 $ curl 'http://localhost:8123/'
+Ok.
+```
+
+Web UI 可以通过这个地址访问: `http://localhost:8123/play`.
+在运行状况检查脚本中，使用`GET /ping`请求。这个处理方法总是返回 "Ok"。(以换行结尾)。可从18.12.13版获得。请参见' /replicas_status '检查复制集的延迟。
+
+
+``` bash
+$ curl 'http://localhost:8123/ping'
+Ok.
+$ curl 'http://localhost:8123/replicas_status'
 Ok.
 ```
 

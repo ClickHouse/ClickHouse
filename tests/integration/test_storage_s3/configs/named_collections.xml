@@ -30,5 +30,10 @@
             <access_key_id>minio</access_key_id>
             <secret_access_key>minio123</secret_access_key>
         </s3_arrow>
+        <s3_parquet2>
+            <url>http://minio1:9001/root/test.parquet</url>
+            <access_key_id>minio</access_key_id>
+            <secret_access_key>minio123</secret_access_key>
+        </s3_parquet2>
     </named_collections>
 </clickhouse>

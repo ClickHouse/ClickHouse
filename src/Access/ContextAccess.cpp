@@ -14,10 +14,10 @@
 #include <Core/Settings.h>
 #include <IO/WriteHelpers.h>
 #include <Poco/Logger.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <boost/algorithm/string/join.hpp>
 #include <boost/range/algorithm/set_algorithm.hpp>
-#include <assert.h>
+#include <cassert>
 
 
 namespace DB
@@ -359,7 +359,7 @@ std::shared_ptr<const AccessRights> ContextAccess::getAccessRightsWithImplicit()
 
 
 template <bool throw_if_denied, bool grant_option, typename... Args>
-bool ContextAccess::checkAccessImplHelper(const AccessFlags & flags, const Args &... args) const
+bool ContextAccess::checkAccessImplHelper(AccessFlags flags, const Args &... args) const
 {
     auto access_granted = [&]
     {
@@ -378,6 +378,9 @@ bool ContextAccess::checkAccessImplHelper(const AccessFlags & flags, const Args 
             throw Exception(getUserName() + ": " + error_msg, error_code);
         return false;
     };
+
+    if (flags & AccessType::CLUSTER && !access_control->doesOnClusterQueriesRequireClusterGrant())
+        flags &= ~AccessType::CLUSTER;
 
     if (!flags || is_full_access)
         return access_granted();
@@ -425,6 +428,7 @@ bool ContextAccess::checkAccessImplHelper(const AccessFlags & flags, const Args 
             | AccessType::TRUNCATE;
 
         const AccessFlags dictionary_ddl = AccessType::CREATE_DICTIONARY | AccessType::DROP_DICTIONARY;
+        const AccessFlags function_ddl = AccessType::CREATE_FUNCTION | AccessType::DROP_FUNCTION;
         const AccessFlags table_and_dictionary_ddl = table_ddl | dictionary_ddl;
         const AccessFlags write_table_access = AccessType::INSERT | AccessType::OPTIMIZE;
         const AccessFlags write_dcl_access = AccessType::ACCESS_MANAGEMENT - AccessType::SHOW_ACCESS;
@@ -432,7 +436,7 @@ bool ContextAccess::checkAccessImplHelper(const AccessFlags & flags, const Args 
         const AccessFlags not_readonly_flags = write_table_access | table_and_dictionary_ddl | write_dcl_access | AccessType::SYSTEM | AccessType::KILL_QUERY;
         const AccessFlags not_readonly_1_flags = AccessType::CREATE_TEMPORARY_TABLE;
 
-        const AccessFlags ddl_flags = table_ddl | dictionary_ddl;
+        const AccessFlags ddl_flags = table_ddl | dictionary_ddl | function_ddl;
         const AccessFlags introspection_flags = AccessType::INTROSPECTION;
     };
     static const PrecalculatedFlags precalc;

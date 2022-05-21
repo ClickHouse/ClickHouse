@@ -3,7 +3,7 @@
 #if USE_H3
 
 #include <array>
-#include <math.h>
+#include <cmath>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
@@ -11,6 +11,7 @@
 #include <Common/typeid_cast.h>
 #include <base/range.h>
 
+#include <constants.h>
 #include <h3api.h>
 
 
@@ -20,6 +21,8 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int INCORRECT_DATA;
+    extern const int ILLEGAL_COLUMN;
+    extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
 namespace
@@ -68,9 +71,39 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        const auto * col_lon = arguments[0].column.get();
-        const auto * col_lat = arguments[1].column.get();
-        const auto * col_res = arguments[2].column.get();
+        auto non_const_arguments = arguments;
+        for (auto & argument : non_const_arguments)
+            argument.column = argument.column->convertToFullColumnIfConst();
+
+        const auto * col_lon = checkAndGetColumn<ColumnFloat64>(non_const_arguments[0].column.get());
+        if (!col_lon)
+            throw Exception(
+                    ErrorCodes::ILLEGAL_COLUMN,
+                    "Illegal type {} of argument {} of function {}. Must be Float64.",
+                    arguments[0].type->getName(),
+                    1,
+                    getName());
+        const auto & data_lon = col_lon->getData();
+
+        const auto * col_lat = checkAndGetColumn<ColumnFloat64>(non_const_arguments[1].column.get());
+        if (!col_lat)
+            throw Exception(
+                    ErrorCodes::ILLEGAL_COLUMN,
+                    "Illegal type {} of argument {} of function {}. Must be Float64.",
+                    arguments[1].type->getName(),
+                    2,
+                    getName());
+        const auto & data_lat = col_lat->getData();
+
+        const auto * col_res = checkAndGetColumn<ColumnUInt8>(non_const_arguments[2].column.get());
+        if (!col_res)
+            throw Exception(
+                    ErrorCodes::ILLEGAL_COLUMN,
+                    "Illegal type {} of argument {} of function {}. Must be UInt8.",
+                    arguments[2].type->getName(),
+                    3,
+                    getName());
+        const auto & data_res = col_res->getData();
 
         auto dst = ColumnVector<UInt64>::create();
         auto & dst_data = dst->getData();
@@ -78,9 +111,17 @@ public:
 
         for (size_t row = 0; row < input_rows_count; ++row)
         {
-            const double lon = col_lon->getFloat64(row);
-            const double lat = col_lat->getFloat64(row);
-            const UInt8 res = col_res->getUInt(row);
+            const double lon = data_lon[row];
+            const double lat = data_lat[row];
+            const UInt8 res = data_res[row];
+
+            if (res > MAX_H3_RES)
+                throw Exception(
+                        ErrorCodes::ARGUMENT_OUT_OF_BOUND,
+                        "The argument 'resolution' ({}) of function {} is out of bounds because the maximum resolution in H3 library is ",
+                        toString(res),
+                        getName(),
+                        MAX_H3_RES);
 
             LatLng coord;
             coord.lng = degsToRads(lon);

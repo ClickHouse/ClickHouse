@@ -1,7 +1,7 @@
 ---
-toc_folder_title: F.A.Q.
+sidebar_label: F.A.Q.
 toc_hidden: true
-toc_priority: 76
+sidebar_position: 76
 ---
 
 # ClickHouse 问答 F.A.Q {#clickhouse-f-a-q}
@@ -26,6 +26,7 @@ toc_priority: 76
 -   **[运维操作](../faq/operations/index.md)**
     -   [如果想在生产环境部署，需要用哪个版本的 ClickHouse 呢?](../faq/operations/production.md)
     -   [是否可能从 ClickHouse 数据表中删除所有旧的数据记录?](../faq/operations/delete-old-data.md)
+    -   [ClickHouse支持多区域复制吗?](../faq/operations/multi-region-replication.md)
 -   **[集成开发](../faq/integration/index.md)**
     -   [如何从 ClickHouse 导出数据到一个文件?](../faq/integration/file-export.md)
     -   [如果我用ODBC链接Oracle数据库出现编码问题该怎么办?](../faq/integration/oracle-odbc.md)

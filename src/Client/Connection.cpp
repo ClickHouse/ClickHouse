@@ -93,37 +93,58 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
 {
     try
     {
-        if (connected)
-            disconnect();
-
         LOG_TRACE(log_wrapper.get(), "Connecting. Database: {}. User: {}{}{}",
             default_database.empty() ? "(not specified)" : default_database,
             user,
             static_cast<bool>(secure) ? ". Secure" : "",
             static_cast<bool>(compression) ? "" : ". Uncompressed");
 
-        if (static_cast<bool>(secure))
-        {
-#if USE_SSL
-            socket = std::make_unique<Poco::Net::SecureStreamSocket>();
-
-            /// we resolve the ip when we open SecureStreamSocket, so to make Server Name Indication (SNI)
-            /// work we need to pass host name separately. It will be send into TLS Hello packet to let
-            /// the server know which host we want to talk with (single IP can process requests for multiple hosts using SNI).
-            static_cast<Poco::Net::SecureStreamSocket*>(socket.get())->setPeerHostName(host);
-#else
-            throw Exception{"tcp_secure protocol is disabled because poco library was built without NetSSL support.", ErrorCodes::SUPPORT_IS_DISABLED};
-#endif
-        }
-        else
-        {
-            socket = std::make_unique<Poco::Net::StreamSocket>();
-        }
-
-        current_resolved_address = DNSResolver::instance().resolveAddress(host, port);
-
+        auto addresses = DNSResolver::instance().resolveAddressList(host, port);
         const auto & connection_timeout = static_cast<bool>(secure) ? timeouts.secure_connection_timeout : timeouts.connection_timeout;
-        socket->connect(*current_resolved_address, connection_timeout);
+
+        for (auto it = addresses.begin(); it != addresses.end();)
+        {
+            if (connected)
+                disconnect();
+
+            if (static_cast<bool>(secure))
+            {
+#if USE_SSL
+                socket = std::make_unique<Poco::Net::SecureStreamSocket>();
+
+                /// we resolve the ip when we open SecureStreamSocket, so to make Server Name Indication (SNI)
+                /// work we need to pass host name separately. It will be send into TLS Hello packet to let
+                /// the server know which host we want to talk with (single IP can process requests for multiple hosts using SNI).
+                static_cast<Poco::Net::SecureStreamSocket*>(socket.get())->setPeerHostName(host);
+#else
+                throw Exception{"tcp_secure protocol is disabled because poco library was built without NetSSL support.", ErrorCodes::SUPPORT_IS_DISABLED};
+#endif
+            }
+            else
+            {
+                socket = std::make_unique<Poco::Net::StreamSocket>();
+            }
+
+            try
+            {
+                socket->connect(*it, connection_timeout);
+                current_resolved_address = *it;
+                break;
+            }
+            catch (Poco::Net::NetException &)
+            {
+                if (++it == addresses.end())
+                    throw;
+                continue;
+            }
+            catch (Poco::TimeoutException &)
+            {
+                if (++it == addresses.end())
+                    throw;
+                continue;
+            }
+        }
+
         socket->setReceiveTimeout(timeouts.receive_timeout);
         socket->setSendTimeout(timeouts.send_timeout);
         socket->setNoDelay(true);
@@ -161,16 +182,17 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
     }
     catch (Poco::TimeoutException & e)
     {
-        /// disconnect() will reset the socket, get timeouts before.
-        const std::string & message = fmt::format("{} ({}, receive timeout {} ms, send timeout {} ms)",
-            e.displayText(), getDescription(),
-            socket->getReceiveTimeout().totalMilliseconds(),
-            socket->getSendTimeout().totalMilliseconds());
-
         disconnect();
 
         /// Add server address to exception. Also Exception will remember stack trace. It's a pity that more precise exception type is lost.
-        throw NetException(message, ErrorCodes::SOCKET_TIMEOUT);
+        /// This exception can only be thrown from socket->connect(), so add information about connection timeout.
+        const auto & connection_timeout = static_cast<bool>(secure) ? timeouts.secure_connection_timeout : timeouts.connection_timeout;
+        throw NetException(
+            ErrorCodes::SOCKET_TIMEOUT,
+            "{} ({}, connection timeout {} ms)",
+            e.displayText(),
+            getDescription(),
+            connection_timeout.totalMilliseconds());
     }
 }
 
@@ -377,9 +399,10 @@ bool Connection::ping()
 {
     // LOG_TRACE(log_wrapper.get(), "Ping");
 
-    TimeoutSetter timeout_setter(*socket, sync_request_timeout, true);
     try
     {
+        TimeoutSetter timeout_setter(*socket, sync_request_timeout, true);
+
         UInt64 pong = 0;
         writeVarUInt(Protocol::Client::Ping, *out);
         out->next();
@@ -405,7 +428,11 @@ bool Connection::ping()
     }
     catch (const Poco::Exception & e)
     {
-        LOG_TRACE(log_wrapper.get(), e.displayText());
+        /// Explicitly disconnect since ping() can receive EndOfStream,
+        /// and in this case this ping() will return false,
+        /// while next ping() may return true.
+        disconnect();
+        LOG_TRACE(log_wrapper.get(), fmt::runtime(e.displayText()));
         return false;
     }
 
@@ -445,7 +472,8 @@ void Connection::sendQuery(
     UInt64 stage,
     const Settings * settings,
     const ClientInfo * client_info,
-    bool with_pending_data)
+    bool with_pending_data,
+    std::function<void(const Progress &)>)
 {
     if (!connected)
         connect(timeouts);
@@ -844,8 +872,8 @@ Packet Connection::receivePacket()
 
         switch (res.type)
         {
-            case Protocol::Server::Data: [[fallthrough]];
-            case Protocol::Server::Totals: [[fallthrough]];
+            case Protocol::Server::Data:
+            case Protocol::Server::Totals:
             case Protocol::Server::Extremes:
                 res.block = receiveData();
                 return res;

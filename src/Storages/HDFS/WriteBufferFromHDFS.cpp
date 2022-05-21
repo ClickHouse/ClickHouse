@@ -25,7 +25,7 @@ struct WriteBufferFromHDFS::WriteBufferFromHDFSImpl
     HDFSBuilderWrapper builder;
     HDFSFSPtr fs;
 
-    explicit WriteBufferFromHDFSImpl(
+    WriteBufferFromHDFSImpl(
             const std::string & hdfs_uri_,
             const Poco::Util::AbstractConfiguration & config_,
             int replication_,

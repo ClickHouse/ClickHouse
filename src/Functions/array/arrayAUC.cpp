@@ -112,7 +112,8 @@ public:
             sorted_labels[i].label = label;
         }
 
-        std::sort(sorted_labels.begin(), sorted_labels.end(), [](const auto & lhs, const auto & rhs) { return lhs.score > rhs.score; });
+        /// Stable sort is required for for labels to apply in same order if score is equal
+        std::stable_sort(sorted_labels.begin(), sorted_labels.end(), [](const auto & lhs, const auto & rhs) { return lhs.score > rhs.score; });
 
         /// We will first calculate non-normalized area.
 
@@ -131,7 +132,7 @@ public:
         if (count_positive == 0 || count_positive == size)
             return std::numeric_limits<ResultType>::quiet_NaN();
 
-        return ResultType(area) / count_positive / (size - count_positive);
+        return static_cast<ResultType>(area) / count_positive / (size - count_positive);
     }
 };
 

@@ -1,5 +1,7 @@
 #include <Dictionaries/RangeHashedDictionary.h>
 
+#include <Common/ArenaUtils.h>
+
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeEnum.h>
@@ -196,7 +198,7 @@ ColumnPtr RangeHashedDictionary<dictionary_key_type>::getColumn(
     callOnDictionaryAttributeType(attribute.type, type_call);
 
     if (is_attribute_nullable)
-        result = ColumnNullable::create(std::move(result), std::move(col_null_map_to));
+        result = ColumnNullable::create(result, std::move(col_null_map_to));
 
     return result;
 }
@@ -296,7 +298,7 @@ ColumnPtr RangeHashedDictionary<dictionary_key_type>::getColumnInternal(
     callOnDictionaryAttributeType(attribute.type, type_call);
 
     if (is_attribute_nullable)
-        result = ColumnNullable::create(std::move(result), std::move(col_null_map_to));
+        result = ColumnNullable::create(result, std::move(col_null_map_to));
 
     return result;
 }
@@ -1003,7 +1005,7 @@ Pipe RangeHashedDictionary<dictionary_key_type>::read(const Names & column_names
         return result;
     };
 
-    auto coordinator = DictionarySourceCoordinator::create(
+    auto coordinator = std::make_shared<DictionarySourceCoordinator>(
         dictionary,
         column_names,
         std::move(key_columns),

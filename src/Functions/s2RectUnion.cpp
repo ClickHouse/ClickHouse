@@ -19,6 +19,7 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int BAD_ARGUMENTS;
+    extern const int ILLEGAL_COLUMN;
 }
 
 namespace
@@ -65,10 +66,49 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        const auto * col_lo1 = arguments[0].column.get();
-        const auto * col_hi1 = arguments[1].column.get();
-        const auto * col_lo2 = arguments[2].column.get();
-        const auto * col_hi2 = arguments[3].column.get();
+        auto non_const_arguments = arguments;
+        for (auto & argument : non_const_arguments)
+            argument.column = argument.column->convertToFullColumnIfConst();
+
+        const auto * col_lo1 = checkAndGetColumn<ColumnUInt64>(non_const_arguments[0].column.get());
+        if (!col_lo1)
+            throw Exception(
+                ErrorCodes::ILLEGAL_COLUMN,
+                "Illegal type {} of argument {} of function {}. Must be UInt64",
+                arguments[0].type->getName(),
+                1,
+                getName());
+        const auto & data_lo1 = col_lo1->getData();
+
+        const auto * col_hi1 = checkAndGetColumn<ColumnUInt64>(non_const_arguments[1].column.get());
+        if (!col_hi1)
+            throw Exception(
+                ErrorCodes::ILLEGAL_COLUMN,
+                "Illegal type {} of argument {} of function {}. Must be UInt64",
+                arguments[1].type->getName(),
+                2,
+                getName());
+        const auto & data_hi1 = col_hi1->getData();
+
+        const auto * col_lo2 = checkAndGetColumn<ColumnUInt64>(non_const_arguments[2].column.get());
+        if (!col_lo2)
+            throw Exception(
+                ErrorCodes::ILLEGAL_COLUMN,
+                "Illegal type {} of argument {} of function {}. Must be UInt64",
+                arguments[2].type->getName(),
+                3,
+                getName());
+        const auto & data_lo2 = col_lo2->getData();
+
+        const auto * col_hi2 = checkAndGetColumn<ColumnUInt64>(non_const_arguments[3].column.get());
+        if (!col_hi2)
+            throw Exception(
+                ErrorCodes::ILLEGAL_COLUMN,
+                "Illegal type {} of argument {} of function {}. Must be UInt64",
+                arguments[3].type->getName(),
+                4,
+                getName());
+        const auto & data_hi2 = col_hi2->getData();
 
         auto col_res_first = ColumnUInt64::create();
         auto col_res_second = ColumnUInt64::create();
@@ -81,10 +121,10 @@ public:
 
         for (size_t row = 0; row < input_rows_count; ++row)
         {
-            const auto lo1 = S2CellId(col_lo1->getUInt(row));
-            const auto hi1 = S2CellId(col_hi1->getUInt(row));
-            const auto lo2 = S2CellId(col_lo2->getUInt(row));
-            const auto hi2 = S2CellId(col_hi2->getUInt(row));
+            const auto lo1 = S2CellId(data_lo1[row]);
+            const auto hi1 = S2CellId(data_hi1[row]);
+            const auto lo2 = S2CellId(data_lo2[row]);
+            const auto hi2 = S2CellId(data_hi2[row]);
 
             if (!lo1.is_valid() || !hi1.is_valid())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "First rectangle is not valid");

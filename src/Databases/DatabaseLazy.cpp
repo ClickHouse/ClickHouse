@@ -10,8 +10,9 @@
 #include <Storages/IStorage.h>
 #include <Common/escapeForFileName.h>
 
-#include <base/logger_useful.h>
-#include <base/scope_guard_safe.h>
+#include <Common/logger_useful.h>
+#include <Common/scope_guard_safe.h>
+#include <base/sort.h>
 #include <iomanip>
 #include <filesystem>
 
@@ -151,7 +152,7 @@ DatabaseTablesIteratorPtr DatabaseLazy::getTablesIterator(ContextPtr, const Filt
         if (!filter_by_table_name || filter_by_table_name(table_name))
             filtered_tables.push_back(table_name);
     }
-    std::sort(filtered_tables.begin(), filtered_tables.end());
+    ::sort(filtered_tables.begin(), filtered_tables.end());
     return std::make_unique<DatabaseLazyIterator>(*this, std::move(filtered_tables));
 }
 

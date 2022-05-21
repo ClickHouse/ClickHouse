@@ -15,7 +15,7 @@ class IColumn;
 class SerializationCustomSimpleText : public SerializationWrapper
 {
 public:
-    SerializationCustomSimpleText(const SerializationPtr & nested_);
+    explicit SerializationCustomSimpleText(const SerializationPtr & nested_);
 
     // Methods that subclasses must override in order to get full serialization/deserialization support.
     virtual void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override = 0;

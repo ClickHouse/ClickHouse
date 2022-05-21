@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Interpreters/PreparedSets.h>
+#include <Interpreters/SubqueryForSet.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Core/SortDescription.h>
 #include <Core/Names.h>
@@ -87,19 +88,22 @@ struct FilterDAGInfo
 
 struct InputOrderInfo
 {
+    SortDescription order_key_fixed_prefix_descr;
     SortDescription order_key_prefix_descr;
     int direction;
     UInt64 limit;
 
-    InputOrderInfo(const SortDescription & order_key_prefix_descr_, int direction_, UInt64 limit_)
-        : order_key_prefix_descr(order_key_prefix_descr_), direction(direction_), limit(limit_) {}
-
-    bool operator ==(const InputOrderInfo & other) const
+    InputOrderInfo(
+        const SortDescription & order_key_fixed_prefix_descr_,
+        const SortDescription & order_key_prefix_descr_,
+        int direction_, UInt64 limit_)
+        : order_key_fixed_prefix_descr(order_key_fixed_prefix_descr_)
+        , order_key_prefix_descr(order_key_prefix_descr_)
+        , direction(direction_), limit(limit_)
     {
-        return order_key_prefix_descr == other.order_key_prefix_descr && direction == other.direction;
     }
 
-    bool operator !=(const InputOrderInfo & other) const { return !(*this == other); }
+    bool operator==(const InputOrderInfo &) const = default;
 };
 
 class IMergeTreeDataPart;
@@ -124,7 +128,7 @@ struct ProjectionCandidate
     ReadInOrderOptimizerPtr order_optimizer;
     InputOrderInfoPtr input_order_info;
     ManyExpressionActions group_by_elements_actions;
-    std::shared_ptr<SubqueriesForSets> subqueries_for_sets;
+    SortDescription group_by_elements_order_descr;
     MergeTreeDataSelectAnalysisResultPtr merge_tree_projection_select_result_ptr;
     MergeTreeDataSelectAnalysisResultPtr merge_tree_normal_select_result_ptr;
 };
@@ -133,7 +137,7 @@ struct ProjectionCandidate
   *  that can be used during query processing
   *  inside storage engines.
   */
-struct SelectQueryInfo
+struct SelectQueryInfoBase
 {
     ASTPtr query;
     ASTPtr view_query; /// Optimized VIEW query
@@ -172,6 +176,16 @@ struct SelectQueryInfo
     bool settings_limit_offset_done = false;
     Block minmax_count_projection_block;
     MergeTreeDataSelectAnalysisResultPtr merge_tree_select_result_ptr;
+};
+
+/// Contains non-copyable stuff
+struct SelectQueryInfo : SelectQueryInfoBase
+{
+    SelectQueryInfo() = default;
+    SelectQueryInfo(const SelectQueryInfo & other) : SelectQueryInfoBase(other) {}
+
+    /// Make subquery_for_sets reusable across different interpreters.
+    SubqueriesForSets subquery_for_sets;
 };
 
 }

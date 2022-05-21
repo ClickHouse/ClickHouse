@@ -9,7 +9,7 @@
 #include <IO/readFloatText.h>
 #include <IO/Operators.h>
 #include <base/find_symbols.h>
-#include <stdlib.h>
+#include <cstdlib>
 
 #ifdef __SSE2__
     #include <emmintrin.h>
@@ -26,6 +26,7 @@ namespace ErrorCodes
     extern const int CANNOT_PARSE_DATETIME;
     extern const int CANNOT_PARSE_DATE;
     extern const int INCORRECT_DATA;
+    extern const int ATTEMPT_TO_READ_AFTER_EOF;
 }
 
 template <typename IteratorSrc, typename IteratorDst>
@@ -137,6 +138,12 @@ void assertEOF(ReadBuffer & buf)
         throwAtAssertionFailed("eof", buf);
 }
 
+void assertNotEOF(ReadBuffer & buf)
+{
+    if (buf.eof())
+        throw Exception("Attempt to read after EOF", ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF);
+}
+
 
 void assertStringCaseInsensitive(const char * s, ReadBuffer & buf)
 {
@@ -217,6 +224,15 @@ void readStringUntilWhitespaceInto(Vector & s, ReadBuffer & buf)
 }
 
 template <typename Vector>
+void readStringUntilNewlineInto(Vector & s, ReadBuffer & buf)
+{
+    readStringUntilCharsInto<'\n'>(s, buf);
+}
+
+template void readStringUntilNewlineInto<PaddedPODArray<UInt8>>(PaddedPODArray<UInt8> & s, ReadBuffer & buf);
+template void readStringUntilNewlineInto<String>(String & s, ReadBuffer & buf);
+
+template <typename Vector>
 void readNullTerminated(Vector & s, ReadBuffer & buf)
 {
     readStringUntilCharsInto<'\0'>(s, buf);
@@ -239,7 +255,7 @@ void readString(String & s, ReadBuffer & buf)
 }
 
 template void readStringInto<PaddedPODArray<UInt8>>(PaddedPODArray<UInt8> & s, ReadBuffer & buf);
-
+template void readStringInto<String>(String & s, ReadBuffer & buf);
 
 template <typename Vector>
 void readStringUntilEOFInto(Vector & s, ReadBuffer & buf)
@@ -327,7 +343,7 @@ static void parseComplexEscapeSequence(Vector & s, ReadBuffer & buf)
             && decoded_char != '"'
             && decoded_char != '`'  /// MySQL style identifiers
             && decoded_char != '/'  /// JavaScript in HTML
-            && decoded_char != '='  /// Yandex's TSKV
+            && decoded_char != '='  /// TSKV format invented somewhere
             && !isControlASCII(decoded_char))
         {
             s.push_back('\\');
@@ -571,7 +587,11 @@ void readQuotedStringWithSQLStyle(String & s, ReadBuffer & buf)
 
 
 template void readQuotedStringInto<true>(PaddedPODArray<UInt8> & s, ReadBuffer & buf);
+template void readQuotedStringInto<true>(String & s, ReadBuffer & buf);
+template void readQuotedStringInto<false>(String & s, ReadBuffer & buf);
 template void readDoubleQuotedStringInto<false>(NullOutput & s, ReadBuffer & buf);
+template void readDoubleQuotedStringInto<false>(String & s, ReadBuffer & buf);
+template void readBackQuotedStringInto<false>(String & s, ReadBuffer & buf);
 
 void readDoubleQuotedString(String & s, ReadBuffer & buf)
 {
@@ -773,6 +793,68 @@ template bool readJSONStringInto<PaddedPODArray<UInt8>, bool>(PaddedPODArray<UIn
 template void readJSONStringInto<NullOutput>(NullOutput & s, ReadBuffer & buf);
 template void readJSONStringInto<String>(String & s, ReadBuffer & buf);
 
+template <typename Vector, typename ReturnType>
+ReturnType readJSONObjectPossiblyInvalid(Vector & s, ReadBuffer & buf)
+{
+    static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
+
+    auto error = [](const char * message [[maybe_unused]], int code [[maybe_unused]])
+    {
+        if constexpr (throw_exception)
+            throw ParsingException(message, code);
+        return ReturnType(false);
+    };
+
+    if (buf.eof() || *buf.position() != '{')
+        return error("JSON should start from opening curly bracket", ErrorCodes::INCORRECT_DATA);
+
+    s.push_back(*buf.position());
+    ++buf.position();
+
+    Int64 balance = 1;
+    bool quotes = false;
+
+    while (!buf.eof())
+    {
+        char * next_pos = find_first_symbols<'\\', '{', '}', '"'>(buf.position(), buf.buffer().end());
+        appendToStringOrVector(s, buf, next_pos);
+        buf.position() = next_pos;
+
+        if (!buf.hasPendingData())
+            continue;
+
+        s.push_back(*buf.position());
+
+        if (*buf.position() == '\\')
+        {
+            ++buf.position();
+            if (!buf.eof())
+            {
+                s.push_back(*buf.position());
+                ++buf.position();
+            }
+
+            continue;
+        }
+
+        if (*buf.position() == '"')
+            quotes = !quotes;
+        else if (!quotes) // can be only '{' or '}'
+            balance += *buf.position() == '{' ? 1 : -1;
+
+        ++buf.position();
+
+        if (balance == 0)
+            return ReturnType(true);
+
+        if (balance <    0)
+            break;
+    }
+
+    return error("JSON should have equal number of opening and closing brackets", ErrorCodes::INCORRECT_DATA);
+}
+
+template void readJSONObjectPossiblyInvalid<String>(String & s, ReadBuffer & buf);
 
 template <typename ReturnType>
 ReturnType readDateTextFallback(LocalDate & date, ReadBuffer & buf)
@@ -1294,6 +1376,7 @@ void readQuotedFieldIntoString(String & s, ReadBuffer & buf)
     /// - Tuples: (...)
     /// - Maps: {...}
     /// - NULL
+    /// - Bool: true/false
     /// - Number: integer, float, decimal.
 
     if (*buf.position() == '\'')
@@ -1321,6 +1404,16 @@ void readQuotedFieldIntoString(String & s, ReadBuffer & buf)
             assertStringCaseInsensitive("an", buf);
             s.append("NaN");
         }
+    }
+    else if (checkCharCaseInsensitive('t', buf))
+    {
+        assertStringCaseInsensitive("rue", buf);
+        s.append("true");
+    }
+    else if (checkCharCaseInsensitive('f', buf))
+    {
+        assertStringCaseInsensitive("alse", buf);
+        s.append("false");
     }
     else
     {

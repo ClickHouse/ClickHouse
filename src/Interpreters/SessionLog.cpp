@@ -77,7 +77,7 @@ SessionLogElement::SessionLogElement(const UUID & auth_id_, Type type_)
 
 NamesAndTypesList SessionLogElement::getNamesAndTypes()
 {
-    const auto event_type = std::make_shared<DataTypeEnum8>(
+    auto event_type = std::make_shared<DataTypeEnum8>(
         DataTypeEnum8::Values
         {
             {"LoginFailure",           static_cast<Int8>(SESSION_LOGIN_FAILURE)},
@@ -86,7 +86,7 @@ NamesAndTypesList SessionLogElement::getNamesAndTypes()
         });
 
 #define AUTH_TYPE_NAME_AND_VALUE(v) std::make_pair(AuthenticationTypeInfo::get(v).raw_name, static_cast<Int8>(v))
-    const auto identified_with_column = std::make_shared<DataTypeEnum8>(
+    auto identified_with_column = std::make_shared<DataTypeEnum8>(
         DataTypeEnum8::Values
         {
             AUTH_TYPE_NAME_AND_VALUE(AuthType::NO_PASSWORD),
@@ -97,20 +97,24 @@ NamesAndTypesList SessionLogElement::getNamesAndTypes()
             AUTH_TYPE_NAME_AND_VALUE(AuthType::KERBEROS)
         });
 #undef AUTH_TYPE_NAME_AND_VALUE
+    static_assert(static_cast<int>(AuthenticationType::MAX) == 7);
 
-    const auto interface_type_column = std::make_shared<DataTypeEnum8>(
+    auto interface_type_column = std::make_shared<DataTypeEnum8>(
         DataTypeEnum8::Values
         {
             {"TCP",                    static_cast<Int8>(Interface::TCP)},
             {"HTTP",                   static_cast<Int8>(Interface::HTTP)},
             {"gRPC",                   static_cast<Int8>(Interface::GRPC)},
             {"MySQL",                  static_cast<Int8>(Interface::MYSQL)},
-            {"PostgreSQL",             static_cast<Int8>(Interface::POSTGRESQL)}
+            {"PostgreSQL",             static_cast<Int8>(Interface::POSTGRESQL)},
+            {"Local",                  static_cast<Int8>(Interface::LOCAL)},
+            {"TCP_Interserver",        static_cast<Int8>(Interface::TCP_INTERSERVER)}
         });
+    static_assert(magic_enum::enum_count<Interface>() == 7);
 
-    const auto lc_string_datatype = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
+    auto lc_string_datatype = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
 
-    const auto settings_type_column = std::make_shared<DataTypeArray>(
+    auto settings_type_column = std::make_shared<DataTypeArray>(
         std::make_shared<DataTypeTuple>(
             DataTypes({
                 // setting name
@@ -226,7 +230,7 @@ void SessionLog::addLoginSuccess(const UUID & auth_id, std::optional<String> ses
         log_entry.roles = roles_info->getCurrentRolesNames();
 
     if (const auto profile_info = access->getDefaultProfileInfo())
-    log_entry.profiles = profile_info->getProfileNames();
+        log_entry.profiles = profile_info->getProfileNames();
 
     for (const auto & s : settings.allChanged())
         log_entry.settings.emplace_back(s.getName(), s.getValueString());

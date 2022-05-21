@@ -42,7 +42,7 @@ Alter	ALTER TABLE sqllt.table DROP COLUMN the_new_col;
 Alter	ALTER TABLE sqllt.table UPDATE i = i + 1 WHERE 1;
 Alter	ALTER TABLE sqllt.table DELETE WHERE i > 65535;
 Select	-- not done, seems to hard, so I\'ve skipped queries of ALTER-X, where X is:\n-- PARTITION\n-- ORDER BY\n-- SAMPLE BY\n-- INDEX\n-- CONSTRAINT\n-- TTL\n-- USER\n-- QUOTA\n-- ROLE\n-- ROW POLICY\n-- SETTINGS PROFILE\n\nSELECT \'SYSTEM queries\';
-System	SYSTEM FLUSH LOGS
+System	SYSTEM FLUSH LOGS;
 System	SYSTEM STOP MERGES sqllt.table
 System	SYSTEM START MERGES sqllt.table
 System	SYSTEM STOP TTL MERGES sqllt.table

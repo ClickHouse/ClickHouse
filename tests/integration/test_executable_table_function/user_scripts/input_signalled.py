@@ -4,9 +4,9 @@ import sys
 import os
 import signal
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     for line in sys.stdin:
         os.signal(os.getpid(), signal.SIGTERM)
 
-        print("Key " + line, end='')
+        print("Key " + line, end="")
         sys.stdout.flush()

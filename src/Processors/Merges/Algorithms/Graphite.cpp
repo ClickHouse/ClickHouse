@@ -10,8 +10,10 @@
 #include <unordered_map>
 
 #include <fmt/format.h>
+#include <base/sort.h>
 
 #include <Poco/Util/AbstractConfiguration.h>
+
 
 using namespace std::literals;
 
@@ -87,7 +89,7 @@ inline static const Patterns & selectPatternsForMetricType(const Graphite::Param
 
 Graphite::RollupRule selectPatternForPath(
         const Graphite::Params & params,
-        const StringRef path)
+        StringRef path)
 {
     const Graphite::Pattern * first_match = &undef_pattern;
 
@@ -272,9 +274,9 @@ std::string buildTaggedRegex(std::string regexp_str)
     std::vector<std::string> tags;
 
     splitInto<';'>(tags, regexp_str);
-    /* remove empthy elements */
+    /* remove empty elements */
     using namespace std::string_literals;
-    tags.erase(std::remove(tags.begin(), tags.end(), ""s), tags.end());
+    std::erase(tags, ""s);
     if (tags[0].find('=') == tags[0].npos)
     {
         if (tags.size() == 1) /* only name */
@@ -286,7 +288,7 @@ std::string buildTaggedRegex(std::string regexp_str)
     else
         regexp_str = "[\\?&]";
 
-    std::sort(std::begin(tags), std::end(tags)); /* sorted tag keys */
+    ::sort(std::begin(tags), std::end(tags)); /* sorted tag keys */
     regexp_str += fmt::format(
         "{}{}",
         fmt::join(tags, "&(.*&)?"),
@@ -419,7 +421,7 @@ appendGraphitePattern(
 
     /// retention should be in descending order of age.
     if (pattern.type & pattern.TypeRetention) /// TypeRetention or TypeAll
-        std::sort(pattern.retentions.begin(), pattern.retentions.end(), compareRetentions);
+        ::sort(pattern.retentions.begin(), pattern.retentions.end(), compareRetentions);
 
     patterns.emplace_back(pattern);
     return patterns.back();

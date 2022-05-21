@@ -81,7 +81,7 @@ INNER JOIN t_sparse_full USING(u) ORDER BY id, u, s LIMIT 5;
 SELECT '======';
 
 SELECT id, u, s FROM (SELECT number * 2 AS u FROM numbers(10)) AS t1
-FULL JOIN t_sparse_full USING(u) ORDER BY id LIMIT 5;
+FULL JOIN t_sparse_full USING(u) ORDER BY id, u, s LIMIT 5;
 
 SELECT '======';
 

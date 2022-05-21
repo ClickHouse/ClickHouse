@@ -1,6 +1,6 @@
 #include <Common/config.h>
 
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
@@ -19,6 +19,7 @@
 #include "Disks/DiskRestartProxy.h"
 #include "Disks/DiskLocal.h"
 #include "Disks/RemoteDisksCommon.h"
+#include <Common/FileCacheFactory.h>
 
 namespace DB
 {
@@ -151,11 +152,16 @@ getClient(const Poco::Util::AbstractConfiguration & config, const String & confi
 
 std::unique_ptr<DiskS3Settings> getSettings(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, ContextPtr context)
 {
+    S3Settings::ReadWriteSettings rw_settings;
+    rw_settings.max_single_read_retries = config.getUInt64(config_prefix + ".s3_max_single_read_retries", context->getSettingsRef().s3_max_single_read_retries);
+    rw_settings.min_upload_part_size = config.getUInt64(config_prefix + ".s3_min_upload_part_size", context->getSettingsRef().s3_min_upload_part_size);
+    rw_settings.upload_part_size_multiply_factor = config.getUInt64(config_prefix + ".s3_upload_part_size_multiply_factor", context->getSettingsRef().s3_upload_part_size_multiply_factor);
+    rw_settings.upload_part_size_multiply_parts_count_threshold = config.getUInt64(config_prefix + ".s3_upload_part_size_multiply_parts_count_threshold", context->getSettingsRef().s3_upload_part_size_multiply_parts_count_threshold);
+    rw_settings.max_single_part_upload_size = config.getUInt64(config_prefix + ".s3_max_single_part_upload_size", context->getSettingsRef().s3_max_single_part_upload_size);
+
     return std::make_unique<DiskS3Settings>(
         getClient(config, config_prefix, context),
-        config.getUInt64(config_prefix + ".s3_max_single_read_retries", context->getSettingsRef().s3_max_single_read_retries),
-        config.getUInt64(config_prefix + ".s3_min_upload_part_size", context->getSettingsRef().s3_min_upload_part_size),
-        config.getUInt64(config_prefix + ".s3_max_single_part_upload_size", context->getSettingsRef().s3_max_single_part_upload_size),
+        rw_settings,
         config.getUInt64(config_prefix + ".min_bytes_for_seek", 1024 * 1024),
         config.getBool(config_prefix + ".send_metadata", false),
         config.getInt(config_prefix + ".thread_pool_size", 16),
@@ -174,16 +180,24 @@ void registerDiskS3(DiskFactory & factory)
                       ContextPtr context,
                       const DisksMap & /*map*/) -> DiskPtr {
         S3::URI uri(Poco::URI(config.getString(config_prefix + ".endpoint")));
+
+        if (uri.key.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "No key in S3 uri: {}", uri.uri.toString());
+
         if (uri.key.back() != '/')
-            throw Exception("S3 path must ends with '/', but '" + uri.key + "' doesn't.", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "S3 path must ends with '/', but '{}' doesn't.", uri.key);
 
         auto [metadata_path, metadata_disk] = prepareForLocalMetadata(name, config, config_prefix, context);
+
+        FileCachePtr cache = getCachePtrForDisk(name, config, config_prefix, context);
 
         std::shared_ptr<IDisk> s3disk = std::make_shared<DiskS3>(
             name,
             uri.bucket,
             uri.key,
+            uri.version_id,
             metadata_disk,
+            std::move(cache),
             context,
             getSettings(config, config_prefix, context),
             getSettings);
@@ -198,7 +212,16 @@ void registerDiskS3(DiskFactory & factory)
 
         s3disk->startup();
 
-        if (config.getBool(config_prefix + ".cache_enabled", true))
+
+#ifdef NDEBUG
+        bool use_cache = true;
+#else
+        /// Current S3 cache implementation lead to allocations in destructor of
+        /// read buffer.
+        bool use_cache = false;
+#endif
+
+        if (config.getBool(config_prefix + ".cache_enabled", use_cache))
         {
             String cache_path = config.getString(config_prefix + ".cache_path", context->getPath() + "disks/" + name + "/cache/");
             s3disk = wrapWithCache(s3disk, "s3-cache", cache_path, metadata_path);

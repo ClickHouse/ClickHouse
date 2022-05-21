@@ -16,6 +16,7 @@
 #include <Columns/ColumnSet.h>
 #include <queue>
 #include <stack>
+#include <base/sort.h>
 #include <Common/JSONBuilder.h>
 #include <Core/SettingsEnums.h>
 
@@ -158,8 +159,8 @@ static void setLazyExecutionInfo(
 
     const ActionsDAGReverseInfo::NodeInfo & node_info = reverse_info.nodes_info[reverse_info.reverse_index.at(node)];
 
-    /// If node is used in result, we can't enable lazy execution.
-    if (node_info.used_in_result)
+    /// If node is used in result or it doesn't have parents, we can't enable lazy execution.
+    if (node_info.used_in_result || node_info.parents.empty())
         lazy_execution_info.can_be_lazy_executed = false;
 
     /// To fill lazy execution info for current node we need to create it for all it's parents.
@@ -735,7 +736,7 @@ void ExpressionActions::execute(Block & block, size_t & num_rows, bool dry_run) 
     }
     else
     {
-        std::sort(execution_context.inputs_pos.rbegin(), execution_context.inputs_pos.rend());
+        ::sort(execution_context.inputs_pos.rbegin(), execution_context.inputs_pos.rend());
         for (auto input : execution_context.inputs_pos)
             if (input >= 0)
                 block.erase(input);
@@ -747,7 +748,7 @@ void ExpressionActions::execute(Block & block, size_t & num_rows, bool dry_run) 
         if (execution_context.columns[pos].column)
             res.insert(execution_context.columns[pos]);
 
-    for (const auto & item : block)
+    for (auto && item : block)
         res.insert(std::move(item));
 
     block.swap(res);
@@ -928,7 +929,7 @@ void ExpressionActionsChain::addStep(NameSet non_constant_inputs)
 
     ColumnsWithTypeAndName columns = steps.back()->getResultColumns();
     for (auto & column : columns)
-        if (column.column && isColumnConst(*column.column) && non_constant_inputs.count(column.name))
+        if (column.column && isColumnConst(*column.column) && non_constant_inputs.contains(column.name))
             column.column = nullptr;
 
     steps.push_back(std::make_unique<ExpressionActionsStep>(std::make_shared<ActionsDAG>(columns)));
@@ -949,7 +950,7 @@ void ExpressionActionsChain::finalize()
             const NameSet & additional_input = steps[i + 1]->additional_input;
             for (const auto & it : steps[i + 1]->getRequiredColumns())
             {
-                if (additional_input.count(it.name) == 0)
+                if (!additional_input.contains(it.name))
                 {
                     auto iter = required_output.find(it.name);
                     if (iter == required_output.end())
@@ -1000,7 +1001,7 @@ ExpressionActionsChain::ArrayJoinStep::ArrayJoinStep(ArrayJoinActionPtr array_jo
     {
         required_columns.emplace_back(NameAndTypePair(column.name, column.type));
 
-        if (array_join->columns.count(column.name) > 0)
+        if (array_join->columns.contains(column.name))
         {
             const auto * array = typeid_cast<const DataTypeArray *>(column.type.get());
             column.type = array->getNestedType();
@@ -1017,12 +1018,12 @@ void ExpressionActionsChain::ArrayJoinStep::finalize(const NameSet & required_ou
 
     for (const auto & column : result_columns)
     {
-        if (array_join->columns.count(column.name) != 0 || required_output_.count(column.name) != 0)
+        if (array_join->columns.contains(column.name) || required_output_.contains(column.name))
             new_result_columns.emplace_back(column);
     }
     for (const auto & column : required_columns)
     {
-        if (array_join->columns.count(column.name) != 0 || required_output_.count(column.name) != 0)
+        if (array_join->columns.contains(column.name) || required_output_.contains(column.name))
             new_required_columns.emplace_back(column);
     }
 
@@ -1065,7 +1066,7 @@ void ExpressionActionsChain::JoinStep::finalize(const NameSet & required_output_
 
     for (const auto & column : required_columns)
     {
-        if (required_names.count(column.name) != 0)
+        if (required_names.contains(column.name))
             new_required_columns.emplace_back(column);
     }
 
@@ -1075,7 +1076,7 @@ void ExpressionActionsChain::JoinStep::finalize(const NameSet & required_output_
 
     for (const auto & column : result_columns)
     {
-        if (required_names.count(column.name) != 0)
+        if (required_names.contains(column.name))
             new_result_columns.emplace_back(column);
     }
 

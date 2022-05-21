@@ -72,8 +72,18 @@ void ASTProjectionSelectQuery::formatImpl(const FormatSettings & s, FormatState 
 
     if (orderBy())
     {
+        /// Let's convert the ASTFunction into ASTExpressionList, which generates consistent format
+        /// between GROUP BY and ORDER BY projection definition.
         s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "ORDER BY " << (s.hilite ? hilite_none : "");
-        orderBy()->formatImpl(s, state, frame);
+        ASTPtr order_by;
+        if (auto * func = orderBy()->as<ASTFunction>())
+            order_by = func->arguments;
+        else
+        {
+            order_by = std::make_shared<ASTExpressionList>();
+            order_by->children.push_back(orderBy());
+        }
+        s.one_line ? order_by->formatImpl(s, state, frame) : order_by->as<ASTExpressionList &>().formatImplMultiline(s, state, frame);
     }
 }
 
@@ -90,7 +100,7 @@ void ASTProjectionSelectQuery::setExpression(Expression expr, ASTPtr && ast)
         else
             children[it->second] = ast;
     }
-    else if (positions.count(expr))
+    else if (positions.contains(expr))
     {
         size_t pos = positions[expr];
         children.erase(children.begin() + pos);
@@ -103,7 +113,7 @@ void ASTProjectionSelectQuery::setExpression(Expression expr, ASTPtr && ast)
 
 ASTPtr & ASTProjectionSelectQuery::getExpression(Expression expr)
 {
-    if (!positions.count(expr))
+    if (!positions.contains(expr))
         throw Exception("Get expression before set", ErrorCodes::LOGICAL_ERROR);
     return children[positions[expr]];
 }

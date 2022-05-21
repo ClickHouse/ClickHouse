@@ -3,6 +3,7 @@
 #include <Access/RowPolicy.h>
 #include <Access/User.h>
 #include <Access/SettingsProfile.h>
+#include <Access/AccessControl.h>
 #include <Dictionaries/IDictionary.h>
 #include <Common/Config/ConfigReloader.h>
 #include <Common/StringUtils/StringUtils.h>
@@ -13,7 +14,7 @@
 #include <Poco/JSON/JSON.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Stringifier.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <boost/range/algorithm/copy.hpp>
 #include <boost/range/adaptor/map.hpp>
 #include <cstring>
@@ -30,9 +31,9 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
-
 namespace
 {
+
     UUID generateID(AccessEntityType type, const String & name)
     {
         Poco::MD5Engine md5;
@@ -48,13 +49,11 @@ namespace
     UUID generateID(const IAccessEntity & entity) { return generateID(entity.getType(), entity.getName()); }
 
 
-    UserPtr parseUser(const Poco::Util::AbstractConfiguration & config, const String & user_name)
+    UserPtr parseUser(const Poco::Util::AbstractConfiguration & config, const String & user_name, bool allow_no_password, bool allow_plaintext_password)
     {
         auto user = std::make_shared<User>();
         user->setName(user_name);
-
         String user_config = "users." + user_name;
-
         bool has_no_password = config.has(user_config + ".no_password");
         bool has_password_plaintext = config.has(user_config + ".password");
         bool has_password_sha256_hex = config.has(user_config + ".password_sha256_hex");
@@ -62,13 +61,17 @@ namespace
         bool has_ldap = config.has(user_config + ".ldap");
         bool has_kerberos = config.has(user_config + ".kerberos");
 
-        size_t num_password_fields = has_no_password + has_password_plaintext + has_password_sha256_hex + has_password_double_sha1_hex + has_ldap + has_kerberos;
+        const auto certificates_config = user_config + ".ssl_certificates";
+        bool has_certificates = config.has(certificates_config);
+
+        size_t num_password_fields = has_no_password + has_password_plaintext + has_password_sha256_hex + has_password_double_sha1_hex + has_ldap + has_kerberos + has_certificates;
+
         if (num_password_fields > 1)
-            throw Exception("More than one field of 'password', 'password_sha256_hex', 'password_double_sha1_hex', 'no_password', 'ldap', 'kerberos' are used to specify password for user " + user_name + ". Must be only one of them.",
+            throw Exception("More than one field of 'password', 'password_sha256_hex', 'password_double_sha1_hex', 'no_password', 'ldap', 'kerberos', 'ssl_certificates' are used to specify authentication info for user " + user_name + ". Must be only one of them.",
                 ErrorCodes::BAD_ARGUMENTS);
 
         if (num_password_fields < 1)
-            throw Exception("Either 'password' or 'password_sha256_hex' or 'password_double_sha1_hex' or 'no_password' or 'ldap' or 'kerberos' must be specified for user " + user_name + ".", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception("Either 'password' or 'password_sha256_hex' or 'password_double_sha1_hex' or 'no_password' or 'ldap' or 'kerberos' or 'ssl_certificates' must be specified for user " + user_name + ".", ErrorCodes::BAD_ARGUMENTS);
 
         if (has_password_plaintext)
         {
@@ -104,6 +107,35 @@ namespace
 
             user->auth_data = AuthenticationData{AuthenticationType::KERBEROS};
             user->auth_data.setKerberosRealm(realm);
+        }
+        else if (has_certificates)
+        {
+            user->auth_data = AuthenticationData{AuthenticationType::SSL_CERTIFICATE};
+
+            /// Fill list of allowed certificates.
+            Poco::Util::AbstractConfiguration::Keys keys;
+            config.keys(certificates_config, keys);
+            boost::container::flat_set<String> common_names;
+            for (const String & key : keys)
+            {
+                if (key.starts_with("common_name"))
+                {
+                    String value = config.getString(certificates_config + "." + key);
+                    common_names.insert(std::move(value));
+                }
+                else
+                    throw Exception("Unknown certificate pattern type: " + key, ErrorCodes::BAD_ARGUMENTS);
+            }
+            user->auth_data.setSSLCertificateCommonNames(std::move(common_names));
+        }
+
+        auto auth_type = user->auth_data.getType();
+        if (((auth_type == AuthenticationType::NO_PASSWORD) && !allow_no_password) ||
+            ((auth_type == AuthenticationType::PLAINTEXT_PASSWORD) && !allow_plaintext_password))
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "Authentication type {} is not allowed, check the setting allow_{} in the server configuration",
+                            toString(auth_type), AuthenticationTypeInfo::get(auth_type).name);
         }
 
         const auto profile_name_config = user_config + ".profile";
@@ -201,19 +233,18 @@ namespace
     }
 
 
-    std::vector<AccessEntityPtr> parseUsers(const Poco::Util::AbstractConfiguration & config)
+    std::vector<AccessEntityPtr> parseUsers(const Poco::Util::AbstractConfiguration & config, bool allow_no_password, bool allow_plaintext_password)
     {
         Poco::Util::AbstractConfiguration::Keys user_names;
         config.keys("users", user_names);
 
         std::vector<AccessEntityPtr> users;
         users.reserve(user_names.size());
-
         for (const auto & user_name : user_names)
         {
             try
             {
-                users.push_back(parseUser(config, user_name));
+                users.push_back(parseUser(config, user_name, allow_no_password, allow_plaintext_password));
             }
             catch (Exception & e)
             {
@@ -309,7 +340,7 @@ namespace
     }
 
 
-    std::vector<AccessEntityPtr> parseRowPolicies(const Poco::Util::AbstractConfiguration & config)
+    std::vector<AccessEntityPtr> parseRowPolicies(const Poco::Util::AbstractConfiguration & config, bool users_without_row_policies_can_read_rows)
     {
         std::map<std::pair<String /* database */, String /* table */>, std::unordered_map<String /* user */, String /* filter */>> all_filters_map;
 
@@ -365,8 +396,19 @@ namespace
             const auto & [database, table_name] = database_and_table_name;
             for (const String & user_name : user_names)
             {
+                String filter;
                 auto it = user_to_filters.find(user_name);
-                String filter = (it != user_to_filters.end()) ? it->second : "1";
+                if (it != user_to_filters.end())
+                {
+                    filter = it->second;
+                }
+                else
+                {
+                    if (users_without_row_policies_can_read_rows)
+                        continue;
+                    else
+                        filter = "1";
+                }
 
                 auto policy = std::make_shared<RowPolicy>();
                 policy->setFullName(user_name, database, table_name);
@@ -381,7 +423,7 @@ namespace
 
     SettingsProfileElements parseSettingsConstraints(const Poco::Util::AbstractConfiguration & config,
                                                      const String & path_to_constraints,
-                                                     Fn<void(std::string_view)> auto && check_setting_name_function)
+                                                     const AccessControl & access_control)
     {
         SettingsProfileElements profile_elements;
         Poco::Util::AbstractConfiguration::Keys keys;
@@ -389,8 +431,7 @@ namespace
 
         for (const String & setting_name : keys)
         {
-            if (check_setting_name_function)
-                check_setting_name_function(setting_name);
+            access_control.checkSettingNameIsAllowed(setting_name);
 
             SettingsProfileElement profile_element;
             profile_element.setting_name = setting_name;
@@ -418,7 +459,7 @@ namespace
     std::shared_ptr<SettingsProfile> parseSettingsProfile(
         const Poco::Util::AbstractConfiguration & config,
         const String & profile_name,
-        Fn<void(std::string_view)> auto && check_setting_name_function)
+        const AccessControl & access_control)
     {
         auto profile = std::make_shared<SettingsProfile>();
         profile->setName(profile_name);
@@ -440,13 +481,12 @@ namespace
 
             if (key == "constraints" || key.starts_with("constraints["))
             {
-                profile->elements.merge(parseSettingsConstraints(config, profile_config + "." + key, check_setting_name_function));
+                profile->elements.merge(parseSettingsConstraints(config, profile_config + "." + key, access_control));
                 continue;
             }
 
             const auto & setting_name = key;
-            if (check_setting_name_function)
-                check_setting_name_function(setting_name);
+            access_control.checkSettingNameIsAllowed(setting_name);
 
             SettingsProfileElement profile_element;
             profile_element.setting_name = setting_name;
@@ -460,7 +500,7 @@ namespace
 
     std::vector<AccessEntityPtr> parseSettingsProfiles(
         const Poco::Util::AbstractConfiguration & config,
-        Fn<void(std::string_view)> auto && check_setting_name_function)
+        const AccessControl & access_control)
     {
         Poco::Util::AbstractConfiguration::Keys profile_names;
         config.keys("profiles", profile_names);
@@ -472,7 +512,7 @@ namespace
         {
             try
             {
-                profiles.push_back(parseSettingsProfile(config, profile_name, check_setting_name_function));
+                profiles.push_back(parseSettingsProfile(config, profile_name, access_control));
             }
             catch (Exception & e)
             {
@@ -485,14 +525,8 @@ namespace
     }
 }
 
-
-UsersConfigAccessStorage::UsersConfigAccessStorage(const CheckSettingNameFunction & check_setting_name_function_)
-    : UsersConfigAccessStorage(STORAGE_TYPE, check_setting_name_function_)
-{
-}
-
-UsersConfigAccessStorage::UsersConfigAccessStorage(const String & storage_name_, const CheckSettingNameFunction & check_setting_name_function_)
-    : IAccessStorage(storage_name_), check_setting_name_function(check_setting_name_function_)
+UsersConfigAccessStorage::UsersConfigAccessStorage(const String & storage_name_, const AccessControl & access_control_)
+    : IAccessStorage(storage_name_), access_control(access_control_)
 {
 }
 
@@ -511,7 +545,6 @@ String UsersConfigAccessStorage::getStorageParamsJSON() const
     return oss.str();
 }
 
-
 String UsersConfigAccessStorage::getPath() const
 {
     std::lock_guard lock{load_mutex};
@@ -522,7 +555,6 @@ bool UsersConfigAccessStorage::isPathEqual(const String & path_) const
 {
     return getPath() == path_;
 }
-
 
 void UsersConfigAccessStorage::setConfig(const Poco::Util::AbstractConfiguration & config)
 {
@@ -536,14 +568,16 @@ void UsersConfigAccessStorage::parseFromConfig(const Poco::Util::AbstractConfigu
 {
     try
     {
+        bool no_password_allowed = access_control.isNoPasswordAllowed();
+        bool plaintext_password_allowed = access_control.isPlaintextPasswordAllowed();
         std::vector<std::pair<UUID, AccessEntityPtr>> all_entities;
-        for (const auto & entity : parseUsers(config))
+        for (const auto & entity : parseUsers(config, no_password_allowed, plaintext_password_allowed))
             all_entities.emplace_back(generateID(*entity), entity);
         for (const auto & entity : parseQuotas(config))
             all_entities.emplace_back(generateID(*entity), entity);
-        for (const auto & entity : parseRowPolicies(config))
+        for (const auto & entity : parseRowPolicies(config, access_control.isEnabledUsersWithoutRowPoliciesCanReadRows()))
             all_entities.emplace_back(generateID(*entity), entity);
-        for (const auto & entity : parseSettingsProfiles(config, check_setting_name_function))
+        for (const auto & entity : parseSettingsProfiles(config, access_control))
             all_entities.emplace_back(generateID(*entity), entity);
         memory_storage.setAll(all_entities);
     }
@@ -572,6 +606,7 @@ void UsersConfigAccessStorage::load(
         [&](Poco::AutoPtr<Poco::Util::AbstractConfiguration> new_config, bool /*initial_loading*/)
         {
             parseFromConfig(*new_config);
+
             Settings::checkNoSettingNamesAtTopLevel(*new_config, users_config_path);
         },
         /* already_loaded = */ false);

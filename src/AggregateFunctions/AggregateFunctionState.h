@@ -20,13 +20,12 @@ class AggregateFunctionState final : public IAggregateFunctionHelper<AggregateFu
 {
 private:
     AggregateFunctionPtr nested_func;
-    DataTypes arguments;
-    Array params;
 
 public:
     AggregateFunctionState(AggregateFunctionPtr nested_, const DataTypes & arguments_, const Array & params_)
         : IAggregateFunctionHelper<AggregateFunctionState>(arguments_, params_)
-        , nested_func(nested_), arguments(arguments_), params(params_) {}
+        , nested_func(nested_)
+    {}
 
     String getName() const override
     {
@@ -52,6 +51,8 @@ public:
     {
         return nested_func->getDefaultVersion();
     }
+
+    size_t getVersionFromRevision(size_t revision) const override { return nested_func->getVersionFromRevision(revision); }
 
     void create(AggregateDataPtr __restrict place) const override
     {

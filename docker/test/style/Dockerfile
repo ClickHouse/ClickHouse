@@ -11,11 +11,13 @@ RUN apt-get update && env DEBIAN_FRONTEND=noninteractive apt-get install --yes \
     curl \
     git \
     libxml2-utils \
+    moreutils \
     pylint \
+    python3-fuzzywuzzy \
     python3-pip \
     shellcheck \
     yamllint \
-    && pip3 install codespell PyGithub boto3 unidiff dohq-artifactory
+    && pip3 install black boto3 codespell dohq-artifactory PyGithub unidiff
 
 # Architecture of the image when BuildKit/buildx is used
 ARG TARGETARCH
