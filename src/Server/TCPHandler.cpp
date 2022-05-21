@@ -1427,20 +1427,12 @@ void TCPHandler::processGetRequest() {
     auto temporary_id = StorageID::createEmpty();
     readStringBinary(temporary_id.table_name, *in);
 
-    /// Read one block from the network and write it down
     Block block = state.block_in->read();
-
-    // const auto& params = state.aggregating_memory_holder.aggregator_transform_params;
-
-    // Columns columns = block.getColumns();
-    // ColumnRawPtrs key_columns(params->params.keys_size);
-    // for (size_t i = 0; i < params->params.keys_size; ++i) {
-    //     key_columns[i] = columns.at(params->params.keys[i]).get();
-    // }
-    // Block res = state.aggregating_memory_holder.lookupBlock(key_columns);
     Block res = state.aggregating_memory_holder.lookupBlock(block);
+
     res.info.is_lookup = true;
     res.info.order_num = block.info.order_num;
+
     sendData(res);
 };
 
@@ -1617,19 +1609,15 @@ void TCPHandler::initProfileEventsBlockOutput(const Block & block)
 
 bool TCPHandler::isQueryCancelled(bool receive_lookups)
 {
-    if (state.is_cancelled || state.sent_all_data) {
-        std::cerr << "if (state.is_cancelled || state.sent_all_data)" << std::endl;\
+    if (state.is_cancelled || state.sent_all_data)
         return true;
-    }
 
-    // if (after_check_cancelled.elapsed() / 1000 < interactive_delay) {
-    //     std::cerr << "if (after_check_cancelled.elapsed() / 1000 < interactive_delay)" << std::endl;
-    //     return false;
-    // }
+    if (after_check_cancelled.elapsed() / 1000 < interactive_delay && state.aggregating_memory_holder.isEmpty())
+        return false;
+
     after_check_cancelled.restart();
 
     /// During request execution the only packet that can come from the client is stopping the query.
-    // size_t i = 0;
     while (static_cast<ReadBufferFromPocoSocket &>(*in).poll(0))
     {
         if (in->eof())
@@ -1646,9 +1634,9 @@ bool TCPHandler::isQueryCancelled(bool receive_lookups)
         switch (packet_type)
         {
             case Protocol::Client::Cancel:
-                if (state.empty()) {
+                if (state.empty())
                     throw NetException("Unexpected packet Cancel received from client", ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT);
-                }
+
                 LOG_INFO(log, "Query was cancelled.");
                 state.is_cancelled = true;
                 /// For testing connection collector.
