@@ -110,10 +110,6 @@ void TCPHandler::runImpl()
     setThreadName("TCPHandler");
     ThreadStatus thread_status;
 
-    /// For interserver mode we will create session later
-    if (!is_interserver_mode)
-        session = std::make_unique<Session>(server.context(), ClientInfo::Interface::TCP, socket().secure());
-
     extractConnectionSettingsFromContext(server.context());
 
     socket().setReceiveTimeout(receive_timeout);
@@ -950,7 +946,7 @@ bool TCPHandler::receiveProxyHeader()
     }
 
     LOG_TRACE(log, "Forwarded client address from PROXY header: {}", forwarded_address);
-    session->getClientInfo().forwarded_for = forwarded_address;
+    forwarded_for = std::move(forwarded_address);
     return true;
 }
 
@@ -977,6 +973,29 @@ std::string formatHTTPErrorResponseWhenUserIsConnectedToWrongPort(const Poco::Ut
 
 }
 
+std::unique_ptr<Session> TCPHandler::makeSession()
+{
+    auto interface = is_interserver_mode ? ClientInfo::Interface::TCP_INTERSERVER : ClientInfo::Interface::TCP;
+
+    auto res = std::make_unique<Session>(server.context(), interface, socket().secure());
+
+    auto & client_info = res->getClientInfo();
+    client_info.forwarded_for = forwarded_for;
+    client_info.client_name = client_name;
+    client_info.client_version_major = client_version_major;
+    client_info.client_version_minor = client_version_minor;
+    client_info.client_version_patch = client_version_patch;
+    client_info.client_tcp_protocol_version = client_tcp_protocol_version;
+
+    client_info.connection_client_version_major = client_version_major;
+    client_info.connection_client_version_minor = client_version_minor;
+    client_info.connection_client_version_patch = client_version_patch;
+    client_info.connection_tcp_protocol_version = client_tcp_protocol_version;
+
+    client_info.interface = interface;
+
+    return res;
+}
 
 void TCPHandler::receiveHello()
 {
@@ -1020,26 +1039,14 @@ void TCPHandler::receiveHello()
         (!user.empty() ? ", user: " + user : "")
     );
 
-    auto & client_info = session->getClientInfo();
-    client_info.client_name = client_name;
-    client_info.client_version_major = client_version_major;
-    client_info.client_version_minor = client_version_minor;
-    client_info.client_version_patch = client_version_patch;
-    client_info.client_tcp_protocol_version = client_tcp_protocol_version;
-
-    client_info.connection_client_version_major = client_version_major;
-    client_info.connection_client_version_minor = client_version_minor;
-    client_info.connection_client_version_patch = client_version_patch;
-    client_info.connection_tcp_protocol_version = client_tcp_protocol_version;
-
     is_interserver_mode = (user == USER_INTERSERVER_MARKER);
     if (is_interserver_mode)
     {
-        client_info.interface = ClientInfo::Interface::TCP_INTERSERVER;
         receiveClusterNameAndSalt();
         return;
     }
 
+    session = makeSession();
     session->authenticate(user, password, socket().peerAddress());
 }
 
@@ -1235,7 +1242,7 @@ void TCPHandler::receiveQuery()
     /// so it is better to reset session to avoid using old user.
     if (is_interserver_mode)
     {
-        session = std::make_unique<Session>(server.context(), ClientInfo::Interface::TCP_INTERSERVER, socket().secure());
+        session = makeSession();
     }
 
     /// Read client info.
@@ -1305,7 +1312,6 @@ void TCPHandler::receiveQuery()
         if (client_info.initial_user.empty())
         {
             LOG_DEBUG(log, "User (no user, interserver mode)");
-            session->authenticateInterserverFake();
         }
         else
         {
