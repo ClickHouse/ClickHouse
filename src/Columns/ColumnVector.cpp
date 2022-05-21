@@ -590,12 +590,12 @@ ColumnPtr ColumnVector<T>::replicateSSE2(const IColumn::Offsets & offsets) const
         auto it_tmp = it; // NOLINT
         size_t data_start = copy_begin;
         copy_begin = -1;
-        constexpr const int msk_cp = _MM_SHUFFLE(3, 2, 1, 0);
+        constexpr const int copy_mask = _MM_SHUFFLE(3, 2, 1, 0);
         while (sse_copy_counter)
         {
-            __m128i cdata = _mm_loadu_si128(reinterpret_cast<const __m128i *>(&data[data_start]));
-            auto cres = _mm_shuffle_epi32(cdata, msk_cp);
-            _mm_storeu_si128(reinterpret_cast<__m128i *>(it_tmp), cres);
+            __m128i data_to_copy = _mm_loadu_si128(reinterpret_cast<const __m128i *>(&data[data_start]));
+            auto copy_result = _mm_shuffle_epi32(data_to_copy, copy_mask);
+            _mm_storeu_si128(reinterpret_cast<__m128i *>(it_tmp), copy_result);
             it_tmp += 4;
             data_start += 4;
             --sse_copy_counter;
@@ -613,12 +613,12 @@ ColumnPtr ColumnVector<T>::replicateSSE2(const IColumn::Offsets & offsets) const
         size_t sse_shuffle_counter = (shuffle_sz >> 2);
         sse_shuffle_counter = shuffle_remain * (sse_shuffle_counter + 1) + (!shuffle_remain) * (sse_shuffle_counter);
         it_tmp = it;
-        constexpr const int msk_shuffle = (_MM_SHUFFLE(0, 0, 0, 0));
-        __m128i cdata = _mm_loadu_si128(reinterpret_cast<const __m128i *>(&data[i]));
+        constexpr const int shuffle_mask = (_MM_SHUFFLE(0, 0, 0, 0));
+        __m128i data_to_copy = _mm_loadu_si128(reinterpret_cast<const __m128i *>(&data[i]));
         while (sse_shuffle_counter)
         {
-            auto cres = _mm_shuffle_epi32(cdata, msk_shuffle);
-            _mm_storeu_si128(reinterpret_cast<__m128i *>(it_tmp), cres);
+            auto copy_result = _mm_shuffle_epi32(data_to_copy, shuffle_mask);
+            _mm_storeu_si128(reinterpret_cast<__m128i *>(it_tmp), copy_result);
             it_tmp += 4;
             --sse_shuffle_counter;
         }
@@ -636,12 +636,12 @@ ColumnPtr ColumnVector<T>::replicateSSE2(const IColumn::Offsets & offsets) const
         sse_copy_counter = remain * (sse_copy_counter + 1) + (!remain) * (sse_copy_counter);
         auto it_tmp = it; // NOLINT
         size_t data_start = copy_begin;
-        constexpr const int msk_cp = (_MM_SHUFFLE(3, 2, 1, 0));
+        constexpr const int copy_mask = (_MM_SHUFFLE(3, 2, 1, 0));
         while (sse_copy_counter)
         {
-            __m128i cdata = _mm_loadu_si128(reinterpret_cast<const __m128i *>(&data[data_start]));
-            auto cres = _mm_shuffle_epi32(cdata, msk_cp);
-            _mm_storeu_si128(reinterpret_cast<__m128i *>(it_tmp), cres);
+            __m128i data_to_copy = _mm_loadu_si128(reinterpret_cast<const __m128i *>(&data[data_start]));
+            auto copy_result = _mm_shuffle_epi32(data_to_copy, copy_mask);
+            _mm_storeu_si128(reinterpret_cast<__m128i *>(it_tmp), copy_result);
             it_tmp += 4;
             data_start += 4;
             --sse_copy_counter;
