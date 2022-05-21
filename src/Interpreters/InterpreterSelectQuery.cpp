@@ -82,6 +82,7 @@
 #include <Common/checkStackSize.h>
 #include <base/map.h>
 #include <base/scope_guard_safe.h>
+#include <ios>
 #include <memory>
 
 
@@ -854,6 +855,24 @@ static SortDescription getSortDescription(const ASTSelectQuery & query, ContextP
     return order_descr;
 }
 
+static bool optimizeOrderBySublinearAggregateFunction(const ASTSelectQuery & query)
+{
+    if (!query.orderBy()) {
+        return false;
+    }
+    const auto & order_by_elements = query.orderBy()->children;
+    if (order_by_elements.size() != 1) {
+        return false;
+    }
+    const auto & elem = order_by_elements[0];
+    const auto & order_by_elem = elem->as<ASTOrderByElement &>();
+    if (order_by_elem.direction != -1) {
+        return false;
+    }
+    const auto * func = elem->children.front()->as<ASTFunction>();
+    return func && (func->name == "count" || func->name == "countState" || func->name == "uniq" || func->name == "uniqState");
+}
+
 static InterpolateDescriptionPtr getInterpolateDescription(
     const ASTSelectQuery & query, const Block & source_block, const Block & result_block, const Aliases & aliases, ContextPtr context)
 {
@@ -974,10 +993,10 @@ static std::pair<UInt64, UInt64> getLimitLengthAndOffset(const ASTSelectQuery & 
 }
 
 
-static UInt64 getLimitForSorting(const ASTSelectQuery & query, ContextPtr context)
+static UInt64 getLimitForSorting(const ASTSelectQuery & query, ContextPtr context, bool optimize_distributed_aggregation)
 {
     /// Partial sort can be done if there is LIMIT but no DISTINCT or LIMIT BY, neither ARRAY JOIN.
-    if (!query.distinct && !query.limitBy() && !query.limit_with_ties && !query.arrayJoinExpressionList().first && query.limitLength())
+    if (!query.distinct && !query.limitBy() && !query.limit_with_ties && !query.arrayJoinExpressionList().first && query.limitLength() && !optimize_distributed_aggregation)
     {
         auto [limit_length, limit_offset] = getLimitLengthAndOffset(query, context);
         if (limit_length > std::numeric_limits<UInt64>::max() - limit_offset)
@@ -1074,6 +1093,21 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
         expressions.need_aggregate &&
         options.to_stage > QueryProcessingStage::WithMergeableState &&
         !query.group_by_with_totals && !query.group_by_with_rollup && !query.group_by_with_cube;
+
+    bool optimize_distributed_aggregation = settings.force || (
+        settings.optimize_distributed_aggregation &&
+        expressions.need_aggregate &&
+        expressions.has_order_by &&
+        query.limitLength() &&
+        optimizeOrderBySublinearAggregateFunction(query)
+    );
+    // std::cerr << "mylog: optimize_distributed_aggregation " << optimize_distributed_aggregation << std::endl;
+    // std::cerr << "expressions.first_stage = " << std::boolalpha << expressions.first_stage << std::endl;
+    // std::cerr << "settings.optimize_distributed_aggregation = " << std::boolalpha << settings.optimize_distributed_aggregation << std::endl;
+    // std::cerr << "expressions.need_aggregate = " << std::boolalpha << expressions.need_aggregate << std::endl;
+    // std::cerr << "expressions.has_order_by = " << std::boolalpha << expressions.has_order_by << std::endl;
+    // std::cerr << "query.limitLength()= " << std::boolalpha << query.limitLength() << std::endl;
+    // std::cerr << "optimizeOrderBySublinearAggregateFunction(query) = " << std::boolalpha << optimizeOrderBySublinearAggregateFunction(query) << std::endl;
 
     if (query_info.projection && query_info.projection->desc->type == ProjectionDescription::Type::Aggregate)
     {
@@ -1189,7 +1223,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
 
             preliminary_sort();
             if (expressions.need_aggregate)
-                executeMergeAggregated(query_plan, aggregate_overflow_row, aggregate_final);
+                executeMergeAggregated(query_plan, aggregate_overflow_row, aggregate_final, false);
         }
         if (from_aggregation_stage)
         {
@@ -1291,7 +1325,13 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
             if (expressions.need_aggregate)
             {
                 executeAggregation(
-                    query_plan, expressions.before_aggregation, aggregate_overflow_row, aggregate_final, query_info.input_order_info);
+                    query_plan,
+                    expressions.before_aggregation,
+                    aggregate_overflow_row,
+                    aggregate_final,
+                    query_info.input_order_info,
+                    optimize_distributed_aggregation
+                );
                 /// We need to reset input order info, so that executeOrder can't use it
                 query_info.input_order_info.reset();
                 if (query_info.projection)
@@ -1308,6 +1348,9 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
             // code for "second_stage" that has to execute the rest.
             if (expressions.need_aggregate)
             {
+                if (expressions.has_order_by && optimize_distributed_aggregation) {
+                    executeOrder(query_plan, query_info.input_order_info, optimize_distributed_aggregation);
+                }
                 // We have aggregation, so we can't execute any later-stage
                 // expressions on shards, neither "before window functions" nor
                 // "before ORDER BY".
@@ -1346,8 +1389,10 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
             else if (expressions.need_aggregate)
             {
                 /// If you need to combine aggregated results from multiple servers
-                if (!expressions.first_stage)
-                    executeMergeAggregated(query_plan, aggregate_overflow_row, aggregate_final);
+                if (!expressions.first_stage) {
+                    std::cerr << "mylog: merging aggregated" << std::endl;
+                    executeMergeAggregated(query_plan, aggregate_overflow_row, aggregate_final, optimize_distributed_aggregation);
+                }
 
                 if (!aggregate_final)
                 {
@@ -1415,7 +1460,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                 }
             }
 
-            if (expressions.has_order_by)
+            if (expressions.has_order_by && !optimize_distributed_aggregation)
             {
                 /** If there is an ORDER BY for distributed query processing,
                   *  but there is no aggregation, then on the remote servers ORDER BY was made
@@ -1431,13 +1476,15 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                 else if (!expressions.first_stage
                     && !expressions.need_aggregate
                     && !expressions.has_window
-                    && !(query.group_by_with_totals && !aggregate_final))
-                    executeMergeSorted(query_plan, "for ORDER BY, without aggregation");
-                else    /// Otherwise, just sort.
-                    executeOrder(
-                        query_plan,
-                        query_info.input_order_info ? query_info.input_order_info
-                                                    : (query_info.projection ? query_info.projection->input_order_info : nullptr));
+                    && !(query.group_by_with_totals && !aggregate_final)) {
+                        executeMergeSorted(query_plan, "for ORDER BY, without aggregation");
+                    }
+                else /// Otherwise, just sort.
+                {
+                    auto input_sorting_info = query_info.input_order_info ? query_info.input_order_info :
+                                             (query_info.projection ? query_info.projection->input_order_info : nullptr);
+                    executeOrder(query_plan, input_sorting_info, optimize_distributed_aggregation);
+                }
             }
 
             /** Optimization - if there are several sources and there is LIMIT, then first apply the preliminary LIMIT,
@@ -1465,7 +1512,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                                   !settings.extremes &&
                                   !has_withfill;
             bool apply_offset = options.to_stage != QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit;
-            if (apply_prelimit)
+            if (apply_prelimit && !optimize_distributed_aggregation)
             {
                 executePreLimit(query_plan, /* do_not_skip_offset= */!apply_offset);
             }
@@ -1486,7 +1533,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
 
             /// If we have 'WITH TIES', we need execute limit before projection,
             /// because in that case columns from 'ORDER BY' are used.
-            if (query.limit_with_ties && apply_offset)
+            if (query.limit_with_ties && apply_offset && !optimize_distributed_aggregation)
             {
                 executeLimit(query_plan);
             }
@@ -1509,7 +1556,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
             /// since LIMIT will apply OFFSET too.
             /// This is the case for various optimizations for distributed queries,
             /// and when LIMIT cannot be applied it will be applied on the initiator anyway.
-            if (apply_limit && !limit_applied && apply_offset)
+            if (apply_limit && !limit_applied && apply_offset && !optimize_distributed_aggregation)
                 executeLimit(query_plan);
 
             if (apply_offset)
@@ -1556,9 +1603,14 @@ static void executeMergeAggregatedImpl(
     bool overflow_row,
     bool final,
     bool is_remote_storage,
+    bool optimize_distributed_aggregation,
     const Settings & settings,
     const NamesAndTypesList & aggregation_keys,
-    const AggregateDescriptions & aggregates)
+    const AggregateDescriptions & aggregates,
+    const SelectQueryInfo & query_info,
+    ContextPtr context,
+    UInt64 limit,
+    SortDescription description)
 {
     const auto & header_before_merge = query_plan.getCurrentDataStream().header;
 
@@ -1590,13 +1642,21 @@ static void executeMergeAggregatedImpl(
         std::move(transform_params),
         settings.distributed_aggregation_memory_efficient && is_remote_storage,
         settings.max_threads,
-        settings.aggregation_memory_efficient_merge_threads);
+        settings.aggregation_memory_efficient_merge_threads,
+        query_info,
+        context,
+        optimize_distributed_aggregation,
+        description,
+        limit);
 
     query_plan.addStep(std::move(merging_aggregated));
 }
 
 void InterpreterSelectQuery::addEmptySourceToQueryPlan(
-    QueryPlan & query_plan, const Block & source_header, const SelectQueryInfo & query_info, ContextPtr context_)
+    QueryPlan & query_plan,
+    const Block & source_header,
+    const SelectQueryInfo & query_info,
+    ContextPtr context_)
 {
     Pipe pipe(std::make_shared<NullSource>(source_header));
 
@@ -1665,9 +1725,14 @@ void InterpreterSelectQuery::addEmptySourceToQueryPlan(
                 query_info.projection->aggregate_overflow_row,
                 query_info.projection->aggregate_final,
                 false,
+                false,
                 context_->getSettingsRef(),
                 query_info.projection->aggregation_keys,
-                query_info.projection->aggregate_descriptions);
+                query_info.projection->aggregate_descriptions,
+                query_info,
+                context_,
+                0,
+                {});
         }
     }
 }
@@ -2085,7 +2150,7 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
             }
 
             /// If we don't have filtration, we can pushdown limit to reading stage for optimizations.
-            UInt64 limit = (query.hasFiltration() || query.groupBy()) ? 0 : getLimitForSorting(query, context);
+            UInt64 limit = (query.hasFiltration() || query.groupBy()) ? 0 : getLimitForSorting(query, context, false);
             if (query_info.projection)
                 query_info.projection->input_order_info
                     = query_info.projection->order_optimizer->getInputOrder(query_info.projection->desc->metadata, context, limit);
@@ -2167,7 +2232,7 @@ void InterpreterSelectQuery::executeWhere(QueryPlan & query_plan, const ActionsD
 }
 
 
-void InterpreterSelectQuery::executeAggregation(QueryPlan & query_plan, const ActionsDAGPtr & expression, bool overflow_row, bool final, InputOrderInfoPtr group_by_info)
+void InterpreterSelectQuery::executeAggregation(QueryPlan & query_plan, const ActionsDAGPtr & expression, bool overflow_row, bool final, InputOrderInfoPtr group_by_info, bool optimize_distributed_aggregation)
 {
     auto expression_before_aggregation = std::make_unique<ExpressionStep>(query_plan.getCurrentDataStream(), expression);
     expression_before_aggregation->setStepDescription("Before GROUP BY");
@@ -2240,13 +2305,22 @@ void InterpreterSelectQuery::executeAggregation(QueryPlan & query_plan, const Ac
         temporary_data_merge_threads,
         storage_has_evenly_distributed_read,
         std::move(group_by_info),
-        std::move(group_by_sort_description));
+        std::move(group_by_sort_description),
+        optimize_distributed_aggregation,
+        context);
 
     query_plan.addStep(std::move(aggregating_step));
 }
 
-void InterpreterSelectQuery::executeMergeAggregated(QueryPlan & query_plan, bool overflow_row, bool final)
+void InterpreterSelectQuery::executeMergeAggregated(
+    QueryPlan & query_plan,
+    bool overflow_row,
+    bool final,
+    bool optimize_distributed_aggregation)
 {
+    auto & query = getSelectQuery();
+    SortDescription description = getSortDescription(query, context);
+    UInt64 limit = getLimitForSorting(query, context, false);
     /// If aggregate projection was chosen for table, avoid adding MergeAggregated.
     /// It is already added by storage (because of performance issues).
     /// TODO: We should probably add another one processing stage for storage?
@@ -2258,10 +2332,15 @@ void InterpreterSelectQuery::executeMergeAggregated(QueryPlan & query_plan, bool
         query_plan,
         overflow_row,
         final,
+        optimize_distributed_aggregation,
         storage && storage->isRemote(),
         context->getSettingsRef(),
         query_analyzer->aggregationKeys(),
-        query_analyzer->aggregates());
+        query_analyzer->aggregates(),
+        query_info,
+        context,
+        limit,
+        description);
 }
 
 
@@ -2423,7 +2502,8 @@ void InterpreterSelectQuery::executeWindow(QueryPlan & query_plan)
                 settings.remerge_sort_lowered_memory_bytes_ratio,
                 settings.max_bytes_before_external_sort,
                 context->getTemporaryVolume(),
-                settings.min_free_disk_space_for_temporary_data);
+                settings.min_free_disk_space_for_temporary_data,
+                false);
             sorting_step->setStepDescription("Sorting for window '" + w.window_name + "'");
             query_plan.addStep(std::move(sorting_step));
         }
@@ -2450,11 +2530,11 @@ void InterpreterSelectQuery::executeOrderOptimized(QueryPlan & query_plan, Input
     query_plan.addStep(std::move(finish_sorting_step));
 }
 
-void InterpreterSelectQuery::executeOrder(QueryPlan & query_plan, InputOrderInfoPtr input_sorting_info)
+void InterpreterSelectQuery::executeOrder(QueryPlan & query_plan, InputOrderInfoPtr input_sorting_info, bool optimize_distributed_aggregation)
 {
     auto & query = getSelectQuery();
     SortDescription output_order_descr = getSortDescription(query, context);
-    UInt64 limit = getLimitForSorting(query, context);
+    UInt64 limit = getLimitForSorting(query, context, optimize_distributed_aggregation);
 
     if (input_sorting_info)
     {
@@ -2481,7 +2561,8 @@ void InterpreterSelectQuery::executeOrder(QueryPlan & query_plan, InputOrderInfo
         settings.remerge_sort_lowered_memory_bytes_ratio,
         settings.max_bytes_before_external_sort,
         context->getTemporaryVolume(),
-        settings.min_free_disk_space_for_temporary_data);
+        settings.min_free_disk_space_for_temporary_data,
+        optimize_distributed_aggregation);
 
     sorting_step->setStepDescription("Sorting for ORDER BY");
     query_plan.addStep(std::move(sorting_step));
@@ -2492,7 +2573,7 @@ void InterpreterSelectQuery::executeMergeSorted(QueryPlan & query_plan, const st
 {
     auto & query = getSelectQuery();
     SortDescription order_descr = getSortDescription(query, context);
-    UInt64 limit = getLimitForSorting(query, context);
+    UInt64 limit = getLimitForSorting(query, context, false);
 
     executeMergeSorted(query_plan, order_descr, limit, description);
 }

@@ -41,6 +41,7 @@ public:
         ClientInfo & client_info,
         bool with_pending_data) override;
 
+    void sendGetRequest(const Block& block) override;
     void sendReadTaskResponse(const String &) override;
     void sendMergeTreeReadTaskResponse(PartitionReadResponse response) override;
 

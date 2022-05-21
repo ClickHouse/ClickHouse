@@ -33,6 +33,7 @@ public:
         ClientInfo & client_info,
         bool with_pending_data) = 0;
 
+    virtual void sendGetRequest(const Block & block) = 0;
     virtual void sendReadTaskResponse(const String &) = 0;
     virtual void sendMergeTreeReadTaskResponse(PartitionReadResponse response) = 0;
 

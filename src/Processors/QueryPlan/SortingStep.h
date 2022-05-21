@@ -22,7 +22,8 @@ public:
         double remerge_lowered_memory_bytes_ratio_,
         size_t max_bytes_before_external_sort_,
         VolumePtr tmp_volume_,
-        size_t min_free_disk_space_);
+        size_t min_free_disk_space_,
+        bool optimize_distributed_aggregation);
 
     /// FinishSorting
     SortingStep(
@@ -52,7 +53,7 @@ public:
     void updateInputStream(DataStream input_stream);
     void updateOutputStream(Block result_header);
 
-    SortDescription getSortDescription() const { return result_description; }
+    SortDescription getSortDescription() const { return output_stream->sort_description; }
 
 private:
 

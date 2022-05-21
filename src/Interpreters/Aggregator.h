@@ -1002,11 +1002,12 @@ public:
             const Block & intermediate_header,
             const ColumnNumbers & keys,
             const AggregateDescriptions & aggregates,
-            bool final);
+            bool final,
+            bool append_finalized_columns);
 
-        Block getHeader(bool final) const
+        Block getHeader(bool final, bool append_finalized_columns = false) const
         {
-            return getHeader(src_header, intermediate_header, keys, aggregates, final);
+            return getHeader(src_header, intermediate_header, keys, aggregates, final, append_finalized_columns);
         }
 
         /// Returns keys and aggregated for EXPLAIN query
@@ -1090,6 +1091,7 @@ private:
     friend class ConvertingAggregatedToChunksTransform;
     friend class ConvertingAggregatedToChunksSource;
     friend class AggregatingInOrderTransform;
+    friend class AggregatingMemoryHolder;
 
     Params params;
 

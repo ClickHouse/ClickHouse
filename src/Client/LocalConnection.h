@@ -102,7 +102,7 @@ public:
 
     void sendCancel() override;
 
-    void sendData(const Block & block, const String & name/* = "" */, bool scalar/* = false */) override;
+    void sendData(const Block & block, const String & name/* = "" */, bool scalar/* = false */, bool get_request) override;
 
     void sendExternalTablesData(ExternalTablesData &) override;
 

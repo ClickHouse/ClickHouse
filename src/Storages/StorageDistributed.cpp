@@ -1522,4 +1522,3 @@ void registerStorageDistributed(StorageFactory & factory)
 }
 
 }
-

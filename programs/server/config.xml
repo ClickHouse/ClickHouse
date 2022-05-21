@@ -367,7 +367,7 @@
 
     <!-- Path to temporary data for processing hard queries. -->
     <tmp_path>/var/lib/clickhouse/tmp/</tmp_path>
-    
+
     <!-- Disable AuthType plaintext_password and no_password for ACL. -->
     <!-- <allow_plaintext_password>0</allow_plaintext_password> -->
     <!-- <allow_no_password>0</allow_no_password> -->`
@@ -622,6 +622,33 @@
          https://clickhouse.com/docs/en/operations/table_engines/distributed/
       -->
     <remote_servers>
+        <logs>
+            <!-- <shard>
+                <replica>
+                    <host>localhost</host>
+                    <port>9000</port>
+                </replica>
+            </shard> -->
+            <shard>
+                <replica>
+                    <host>localhost</host>
+                    <port>9001</port>
+                </replica>
+            </shard>
+            <shard>
+                <replica>
+                    <host>localhost</host>
+                    <port>9002</port>
+                </replica>
+            </shard>
+            <!-- <shard>
+                <replica>
+                    <host>localhost</host>
+                    <port>9002</port>
+                </replica>
+            </shard> -->
+        </logs>
+
         <!-- Test only shard config for testing distributed storage -->
         <test_shard_localhost>
             <!-- Inter-server per-cluster secret for Distributed queries

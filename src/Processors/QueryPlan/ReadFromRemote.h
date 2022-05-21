@@ -6,6 +6,7 @@
 #include <Interpreters/StorageID.h>
 #include <Interpreters/ClusterProxy/IStreamFactory.h>
 #include <Storages/MergeTree/ParallelReplicasReadingCoordinator.h>
+#include <Processors/Sources/RemoteSource.h>
 
 namespace DB
 {
@@ -27,7 +28,7 @@ public:
         QueryProcessingStage::Enum stage_,
         StorageID main_table_,
         ASTPtr table_func_ptr_,
-        ContextPtr context_,
+        ContextMutablePtr context_,
         ThrottlerPtr throttler_,
         Scalars scalars_,
         Tables external_tables_,
@@ -51,7 +52,7 @@ private:
     StorageID main_table;
     ASTPtr table_func_ptr;
 
-    ContextPtr context;
+    ContextMutablePtr context;
 
     ThrottlerPtr throttler;
     Scalars scalars;
@@ -60,16 +61,22 @@ private:
     Poco::Logger * log;
 
     UInt32 shard_count;
+
+    std::map<UInt32, RemoteQueryExecutorPtr> remote_query_executors_map;
+
     void addLazyPipe(Pipes & pipes, const ClusterProxy::IStreamFactory::Shard & shard,
         std::shared_ptr<ParallelReplicasReadingCoordinator> coordinator,
         std::shared_ptr<ConnectionPoolWithFailover> pool,
         std::optional<IConnections::ReplicaInfo> replica_info);
-    void addPipe(Pipes & pipes, const ClusterProxy::IStreamFactory::Shard & shard,
+
+    void addPipe(Pipes & pipes, const ClusterProxy::IStreamFactory::Shard & shard);
+
+    void addPipeForReplica();
+
+    void createExecutor(const ClusterProxy::IStreamFactory::Shard & shard,
         std::shared_ptr<ParallelReplicasReadingCoordinator> coordinator,
         std::shared_ptr<ConnectionPoolWithFailover> pool,
         std::optional<IConnections::ReplicaInfo> replica_info);
-
-    void addPipeForReplica();
 };
 
 }

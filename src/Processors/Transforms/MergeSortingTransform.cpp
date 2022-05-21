@@ -9,7 +9,7 @@
 #include <Formats/NativeReader.h>
 #include <Formats/NativeWriter.h>
 #include <Disks/IVolume.h>
-
+#include <Columns/ColumnAggregateFunction.h>
 
 namespace ProfileEvents
 {
@@ -246,6 +246,15 @@ void MergeSortingTransform::generate()
     if (merge_sorter)
     {
         generated_chunk = merge_sorter->read();
+        // std::cerr << "in generated_chunk algo" << std::endl;
+        // Field val;
+        // for (const auto & column : generated_chunk.getColumns()) {
+        //     if (!typeid_cast<const ColumnAggregateFunction *>(column.get())) {
+        //         column->get(0, val);
+        //         std::cerr << toString(val) << " ";
+        //     }
+        // }
+        // std::cerr << std::endl;
         if (!generated_chunk)
             merge_sorter.reset();
         else

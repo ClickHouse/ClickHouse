@@ -91,6 +91,7 @@ public:
     ///                     and it should pass INITIAL_QUERY.
     void sendQuery(ClientInfo::QueryKind query_kind = ClientInfo::QueryKind::SECONDARY_QUERY);
 
+    void sendGetRequest(const Block & block);
     /// Query is resent to a replica, the query itself can be modified.
     std::atomic<bool> resent_query { false };
 
@@ -210,6 +211,7 @@ private:
       */
     std::atomic<bool> got_duplicated_part_uuids{ false };
 
+    std::atomic<bool> requested { false };
     /// Parts uuids, collected from remote replicas
     std::mutex duplicated_part_uuids_mutex;
     std::vector<UUID> duplicated_part_uuids;

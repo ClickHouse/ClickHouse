@@ -67,7 +67,7 @@ ReadFromRemote::ReadFromRemote(
     QueryProcessingStage::Enum stage_,
     StorageID main_table_,
     ASTPtr table_func_ptr_,
-    ContextPtr context_,
+    ContextMutablePtr context_,
     ThrottlerPtr throttler_,
     Scalars scalars_,
     Tables external_tables_,
@@ -174,21 +174,11 @@ void ReadFromRemote::addLazyPipe(Pipes & pipes, const ClusterProxy::IStreamFacto
     addConvertingActions(pipes.back(), output_stream->header);
 }
 
-void ReadFromRemote::addPipe(Pipes & pipes, const ClusterProxy::IStreamFactory::Shard & shard,
+void ReadFromRemote::createExecutor(const ClusterProxy::IStreamFactory::Shard & shard,
     std::shared_ptr<ParallelReplicasReadingCoordinator> coordinator,
     std::shared_ptr<ConnectionPoolWithFailover> pool,
     std::optional<IConnections::ReplicaInfo> replica_info)
 {
-    bool add_agg_info = stage == QueryProcessingStage::WithMergeableState;
-    bool add_totals = false;
-    bool add_extremes = false;
-    bool async_read = context->getSettingsRef().async_socket_for_remote;
-    if (stage == QueryProcessingStage::Complete)
-    {
-        add_totals = shard.query->as<ASTSelectQuery &>().group_by_with_totals;
-        add_extremes = context->getSettingsRef().extremes;
-    }
-
     String query_string = formattedAST(shard.query);
 
     scalars["_shard_num"]
@@ -210,7 +200,27 @@ void ReadFromRemote::addPipe(Pipes & pipes, const ClusterProxy::IStreamFactory::
     if (!table_func_ptr)
         remote_query_executor->setMainTable(main_table);
 
-    pipes.emplace_back(createRemoteSourcePipe(remote_query_executor, add_agg_info, add_totals, add_extremes, async_read));
+    remote_query_executors_map[shard.shard_num] = remote_query_executor;
+}
+
+
+void ReadFromRemote::addPipe(Pipes & pipes, const ClusterProxy::IStreamFactory::Shard & shard)
+{
+    bool add_agg_info = stage == QueryProcessingStage::WithMergeableState;
+    bool add_totals = false;
+    bool add_extremes = false;
+    bool async_read = context->getSettingsRef().async_socket_for_remote;
+    if (stage == QueryProcessingStage::Complete)
+    {
+        add_totals = shard.query->as<ASTSelectQuery &>().group_by_with_totals;
+        add_extremes = context->getSettingsRef().extremes;
+    }
+    RemoteQueryExecutorPtrs neighbour_executors;
+    for (const auto& [shard_num, executor]: remote_query_executors_map) {
+        if (shard.shard_num != shard_num)
+            neighbour_executors.push_back(executor);
+    }
+    pipes.emplace_back(createRemoteSourcePipe(remote_query_executors_map[shard.shard_num], neighbour_executors, add_agg_info, add_totals, add_extremes, async_read, shard.shard_num));
     pipes.back().addInterpreterContext(context);
     addConvertingActions(pipes.back(), output_stream->header);
 }
@@ -245,10 +255,17 @@ void ReadFromRemote::initializePipeline(QueryPipelineBuilder & pipeline, const B
                 auto pool_with_failover =  std::make_shared<ConnectionPoolWithFailover>(
                     ConnectionPoolPtrs{pool}, current_settings.load_balancing);
 
-                if (shard.lazy)
+                if (shard.lazy) {
                     addLazyPipe(pipes, shard, coordinator, pool_with_failover, replica_info);
-                else
-                    addPipe(pipes, shard, coordinator, pool_with_failover, replica_info);
+                } else {
+                    createExecutor(shard, coordinator, pool_with_failover, replica_info);
+                }
+            }
+        }
+        for (const auto & shard : shards)
+        {
+            if (!shard.lazy) {
+                addPipe(pipes, shard);
             }
         }
     }
@@ -256,10 +273,18 @@ void ReadFromRemote::initializePipeline(QueryPipelineBuilder & pipeline, const B
     {
         for (const auto & shard : shards)
         {
-            if (shard.lazy)
+            if (shard.lazy) {
                 addLazyPipe(pipes, shard, /*coordinator=*/nullptr, /*pool*/{}, /*replica_info*/std::nullopt);
-            else
-                addPipe(pipes, shard, /*coordinator=*/nullptr, /*pool*/{}, /*replica_info*/std::nullopt);
+            }
+            else {
+                createExecutor(shard, /*coordinator=*/nullptr, /*pool*/{}, /*replica_info*/std::nullopt);
+            }
+        }
+        for (const auto & shard : shards)
+        {
+            if (!shard.lazy) {
+                addPipe(pipes, shard);
+            }
         }
     }
 

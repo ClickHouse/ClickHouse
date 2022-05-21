@@ -91,5 +91,4 @@ private:
     const Poco::Net::NameValueCollection & params;
 };
 
-
 }

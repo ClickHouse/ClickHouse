@@ -4,6 +4,7 @@
 #include <Poco/Util/Application.h>
 
 #include <base/sort.h>
+#include <Common/randomSeed.h>
 #include <Common/Stopwatch.h>
 #include <Common/setThreadName.h>
 #include <Common/formatReadable.h>
@@ -370,7 +371,8 @@ Block Aggregator::Params::getHeader(
     const Block & intermediate_header,
     const ColumnNumbers & keys,
     const AggregateDescriptions & aggregates,
-    bool final)
+    bool final,
+    bool append_finalized_columns)
 {
     Block res;
 
@@ -409,6 +411,12 @@ Block Aggregator::Params::getHeader(
 
             res.insert({ type, aggregate.column_name });
         }
+    }
+
+    if (append_finalized_columns)
+    {
+        for (const auto & aggregate : aggregates)
+            res.insert({ aggregate.function->getReturnType(), aggregate.column_name + "_tmp_finalized"});
     }
 
     return materializeBlock(res);
@@ -1689,7 +1697,9 @@ void NO_INLINE Aggregator::convertToBlockImplFinal(
         places.emplace_back(mapped);
 
         /// Mark the cell as destroyed so it will not be destroyed in destructor.
-        mapped = nullptr;
+        if (!params.keep_state_after_read) {
+            mapped = nullptr;
+        }
     });
 
     std::exception_ptr exception;
@@ -1745,7 +1755,7 @@ void NO_INLINE Aggregator::convertToBlockImplFinal(
 
             /// For State AggregateFunction ownership of aggregate place is passed to result column after insert
             bool is_state = aggregate_functions[destroy_index]->isState();
-            bool destroy_place_after_insert = !is_state;
+            bool destroy_place_after_insert = !is_state && !params.keep_state_after_read;
 
             aggregate_functions[destroy_index]->insertResultIntoBatch(places.size(), places.data(), offset, *final_aggregate_column, arena, destroy_place_after_insert);
         }
@@ -1869,6 +1879,7 @@ Block Aggregator::prepareBlockAndFill(
         }
     }
 
+    // std::cerr << "mylog:  filler(key_columns, aggregate_columns_data, final_aggregate_columns, final);" << std::endl;
     filler(key_columns, aggregate_columns_data, final_aggregate_columns, final);
 
     Block res = header.cloneEmpty();

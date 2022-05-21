@@ -28,12 +28,23 @@ MergingAggregatedStep::MergingAggregatedStep(
     AggregatingTransformParamsPtr params_,
     bool memory_efficient_aggregation_,
     size_t max_threads_,
-    size_t memory_efficient_merge_threads_)
+    size_t memory_efficient_merge_threads_,
+    const SelectQueryInfo & query_info_,
+    ContextPtr context_,
+    bool optimize_distributed_aggregation_,
+    SortDescription description_,
+    UInt64 limit_)
     : ITransformingStep(input_stream_, params_->getHeader(), getTraits())
     , params(params_)
     , memory_efficient_aggregation(memory_efficient_aggregation_)
     , max_threads(max_threads_)
     , memory_efficient_merge_threads(memory_efficient_merge_threads_)
+    , query_info(query_info_)
+    , context(context_)
+    , optimize_distributed_aggregation(optimize_distributed_aggregation_)
+    , description(description_)
+    , limit(limit_)
+
 {
     /// Aggregation keys are distinct
     for (auto key : params->params.keys)
@@ -50,7 +61,16 @@ void MergingAggregatedStep::transformPipeline(QueryPipelineBuilder & pipeline, c
         /// Now merge the aggregated blocks
         pipeline.addSimpleTransform([&](const Block & header)
         {
-            return std::make_shared<MergingAggregatedTransform>(header, params, max_threads);
+            return std::make_shared<MergingAggregatedTransform>(header, params, max_threads, query_info, context);
+        });
+    }
+    else if (optimize_distributed_aggregation)
+    {
+        pipeline.resize(1);
+
+        pipeline.addSimpleTransform([&](const Block & header)
+        {
+            return std::make_shared<MergingAggregatedOptimizedTransform>(header, params, description, limit);
         });
     }
     else

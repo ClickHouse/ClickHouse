@@ -24,7 +24,9 @@ public:
         size_t temporary_data_merge_threads_,
         bool storage_has_evenly_distributed_read_,
         InputOrderInfoPtr group_by_info_,
-        SortDescription group_by_sort_description_);
+        SortDescription group_by_sort_description_,
+        bool optimize_distributed_aggregation_,
+        ContextMutablePtr context_);
 
     String getName() const override { return "Aggregating"; }
 
@@ -56,6 +58,9 @@ private:
 
     Processors aggregating;
 
+    bool optimize_distributed_aggregation;
+
+    ContextMutablePtr context;
 };
 
 }

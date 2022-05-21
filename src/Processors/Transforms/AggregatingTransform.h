@@ -22,6 +22,8 @@ class AggregatedChunkInfo : public ChunkInfo
 public:
     bool is_overflows = false;
     Int32 bucket_num = -1;
+    bool is_lookup = false;
+    UInt32 order_num = 0;
 };
 
 using AggregatorList = std::list<Aggregator>;
@@ -126,42 +128,13 @@ private:
     /// To read the data that was flushed into the temporary data file.
     Processors processors;
 
-    AggregatingTransformParamsPtr params;
-    Poco::Logger * log = &Poco::Logger::get("AggregatingTransform");
+    void setCurrentChunk(Chunk chunk);
 
-    ColumnRawPtrs key_columns;
-    Aggregator::AggregateColumns aggregate_columns;
+    void initialize();
 
-    /** Used if there is a limit on the maximum number of rows in the aggregation,
-     *   and if group_by_overflow_mode == ANY.
-     *  In this case, new keys are not added to the set, but aggregation is performed only by
-     *   keys that have already managed to get into the set.
-     */
-    bool no_more_keys = false;
+    void mergeSingleLevel();
 
-    ManyAggregatedDataPtr many_data;
-    AggregatedDataVariants & variants;
-    size_t max_threads = 1;
-    size_t temporary_data_merge_threads = 1;
-
-    /// TODO: calculate time only for aggregation.
-    Stopwatch watch;
-
-    UInt64 src_rows = 0;
-    UInt64 src_bytes = 0;
-
-    bool is_generate_initialized = false;
-    bool is_consume_finished = false;
-    bool is_pipeline_created = false;
-
-    Chunk current_chunk;
-    bool read_current_chunk = false;
-
-    bool is_consume_started = false;
-
-    void initGenerate();
+    void createSources();
 };
-
-Chunk convertToChunk(const Block & block);
 
 }

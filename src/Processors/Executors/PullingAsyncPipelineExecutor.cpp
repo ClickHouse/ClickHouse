@@ -158,6 +158,7 @@ bool PullingAsyncPipelineExecutor::pull(Block & block, uint64_t milliseconds)
     {
         if (const auto * agg_info = typeid_cast<const AggregatedChunkInfo *>(chunk_info.get()))
         {
+            // std::cerr << "PullingAsyncPipelineExecutor pulled " << block.info.bucket_num << " " << block.info.is_overflows << std::endl;
             block.info.bucket_num = agg_info->bucket_num;
             block.info.is_overflows = agg_info->is_overflows;
         }

@@ -1258,13 +1258,13 @@ void ClientBase::sendDataFromPipe(Pipe&& pipe, ASTPtr parsed_query, bool have_mo
 
         if (block)
         {
-            connection->sendData(block, /* name */"", /* scalar */false);
+            connection->sendData(block, /* name */"", /* scalar */false, false);
             processed_rows += block.rows();
         }
     }
 
     if (!have_more_data)
-        connection->sendData({}, "", false);
+        connection->sendData({}, "", false, false);
 }
 
 void ClientBase::sendDataFromStdin(Block & sample, const ColumnsDescription & columns_description, ASTPtr parsed_query)

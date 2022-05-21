@@ -50,7 +50,7 @@
 #include <Processors/Executors/PushingAsyncPipelineExecutor.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Sinks/SinkToStorage.h>
-
+#include <Processors/Transforms/AggregatingTransform.h>
 #include "Core/Protocol.h"
 #include "TCPHandler.h"
 
@@ -303,6 +303,11 @@ void TCPHandler::runImpl()
                 return state.block_for_input;
             });
 
+            query_context->setAggregatingMemoryCallback([this] (AggregatingMemoryHolder holder)
+            {
+                state.aggregating_memory_holder = holder;
+            });
+
             customizeContext(query_context);
 
             /// This callback is needed for requesting read tasks inside pipeline for distributed processing
@@ -327,6 +332,7 @@ void TCPHandler::runImpl()
                 sendMergeTreeReadTaskRequestAssumeLocked(std::move(request));
                 return receivePartitionMergeTreeReadTaskResponseAssumeLocked();
             });
+
 
             /// Processing Query
             state.io = executeQuery(state.query, query_context, false, state.stage);
@@ -354,7 +360,7 @@ void TCPHandler::runImpl()
                     {
                         std::lock_guard lock(fatal_error_mutex);
 
-                        if (isQueryCancelled())
+                        if (isQueryCancelled(false))
                             return true;
 
                         sendProgress();
@@ -377,6 +383,12 @@ void TCPHandler::runImpl()
             }
 
             state.io.onFinish();
+            // std::cerr << "mylog: state.io.onFinish();" << std::endl;
+            // std::cerr << "mylog: " << query_context->aggregating_memory_holder.isEmpty() << std::endl;
+            // if (query_context->hasAggregatingMemory()) {
+            //     std::cerr << "mylog: query_context->hasAggregatingMemory()" << std::endl;
+            //     readData();
+            // }
 
             /// Do it before sending end of stream, to have a chance to show log message in client.
             query_scope->logPeakMemoryUsage();
@@ -676,11 +688,12 @@ void TCPHandler::processOrdinaryQueryWithProcessors()
         CurrentMetrics::Increment query_thread_metric_increment{CurrentMetrics::QueryThread};
 
         Block block;
+        UInt32 order_num = 0;
         while (executor.pull(block, interactive_delay / 1000))
         {
             std::unique_lock lock(task_callback_mutex);
 
-            if (isQueryCancelled())
+            if (isQueryCancelled(true))
             {
                 /// Several callback like callback for parallel reading could be called from inside the pipeline
                 /// and we have to unlock the mutex from our side to prevent deadlock.
@@ -702,6 +715,16 @@ void TCPHandler::processOrdinaryQueryWithProcessors()
 
             if (block)
             {
+                // Field val;
+                block.info.order_num = order_num++;
+                // std::cerr << "mylog: block.info.order_num " << block.info.order_num << std::endl;
+                // for (size_t i = 0; i < block.columns(); ++i) {
+                //     if (!typeid_cast<const ColumnAggregateFunction *>(block.getByPosition(i).column.get())) {
+                //         block.getByPosition(i).column->get(0, val);
+                //         std::cerr << toString(val) << " ";
+                //     }
+                // }
+                // std::cerr << std::endl;
                 if (!state.io.null_format)
                     sendData(block);
             }
@@ -714,7 +737,7 @@ void TCPHandler::processOrdinaryQueryWithProcessors()
           *  because we have not read all the data yet,
           *  and there could be ongoing calculations in other threads at the same time.
           */
-        if (!isQueryCancelled())
+        if (!isQueryCancelled(false))
         {
             sendTotals(executor.getTotalsBlock());
             sendExtremes(executor.getExtremesBlock());
@@ -732,6 +755,7 @@ void TCPHandler::processOrdinaryQueryWithProcessors()
     }
 
     sendProgress();
+    // std::cerr << "mylog: processed request" << std::endl;
 }
 
 
@@ -1123,6 +1147,11 @@ bool TCPHandler::receivePacket()
             out->next();
             return false;
 
+        case Protocol::Client::GetRequest:
+            receiveUnexpectedData(false);
+            std::cerr << "received late GET" << std::endl;
+            return false;
+
         default:
             throw Exception("Unknown packet " + toString(packet_type) + " from client", ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT);
     }
@@ -1397,6 +1426,30 @@ void TCPHandler::receiveUnexpectedQuery()
     throw NetException("Unexpected packet Query received from client", ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT);
 }
 
+void TCPHandler::processGetRequest() {
+    initBlockInput();
+
+    /// The name of the temporary table for writing data, default to empty string
+    auto temporary_id = StorageID::createEmpty();
+    readStringBinary(temporary_id.table_name, *in);
+
+    /// Read one block from the network and write it down
+    Block block = state.block_in->read();
+
+    // const auto& params = state.aggregating_memory_holder.aggregator_transform_params;
+
+    // Columns columns = block.getColumns();
+    // ColumnRawPtrs key_columns(params->params.keys_size);
+    // for (size_t i = 0; i < params->params.keys_size; ++i) {
+    //     key_columns[i] = columns.at(params->params.keys[i]).get();
+    // }
+    // Block res = state.aggregating_memory_holder.lookupBlock(key_columns);
+    Block res = state.aggregating_memory_holder.lookupBlock(block);
+    res.info.is_lookup = true;
+    res.info.order_num = block.info.order_num;
+    sendData(res);
+};
+
 bool TCPHandler::receiveData(bool scalar)
 {
     initBlockInput();
@@ -1568,19 +1621,24 @@ void TCPHandler::initProfileEventsBlockOutput(const Block & block)
 }
 
 
-bool TCPHandler::isQueryCancelled()
+bool TCPHandler::isQueryCancelled(bool receive_lookups)
 {
-    if (state.is_cancelled || state.sent_all_data)
+    if (state.is_cancelled || state.sent_all_data) {
+        std::cerr << "if (state.is_cancelled || state.sent_all_data)" << std::endl;\
         return true;
+    }
 
-    if (after_check_cancelled.elapsed() / 1000 < interactive_delay)
-        return false;
-
+    // if (after_check_cancelled.elapsed() / 1000 < interactive_delay) {
+    //     std::cerr << "if (after_check_cancelled.elapsed() / 1000 < interactive_delay)" << std::endl;
+    //     return false;
+    // }
     after_check_cancelled.restart();
 
     /// During request execution the only packet that can come from the client is stopping the query.
-    if (static_cast<ReadBufferFromPocoSocket &>(*in).poll(0))
+    // size_t i = 0;
+    while (static_cast<ReadBufferFromPocoSocket &>(*in).poll(0))
     {
+        // std::cerr << "mylog: iter" << i++ << std::endl;
         if (in->eof())
         {
             LOG_INFO(log, "Client has dropped the connection, cancel the query.");
@@ -1595,8 +1653,9 @@ bool TCPHandler::isQueryCancelled()
         switch (packet_type)
         {
             case Protocol::Client::Cancel:
-                if (state.empty())
+                if (state.empty()) {
                     throw NetException("Unexpected packet Cancel received from client", ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT);
+                }
                 LOG_INFO(log, "Query was cancelled.");
                 state.is_cancelled = true;
                 /// For testing connection collector.
@@ -1609,7 +1668,14 @@ bool TCPHandler::isQueryCancelled()
                 }
 
                 return true;
-
+            case Protocol::Client::GetRequest:
+                if (receive_lookups) {
+                    // std::cerr << "mylog: received GET" << std::endl;
+                    processGetRequest();
+                    break;
+                } else {
+                    return false;
+                }
             default:
                 throw NetException("Unknown packet from client " + toString(packet_type), ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT);
         }

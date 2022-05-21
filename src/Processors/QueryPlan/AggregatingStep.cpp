@@ -35,8 +35,10 @@ AggregatingStep::AggregatingStep(
     size_t temporary_data_merge_threads_,
     bool storage_has_evenly_distributed_read_,
     InputOrderInfoPtr group_by_info_,
-    SortDescription group_by_sort_description_)
-    : ITransformingStep(input_stream_, params_.getHeader(final_), getTraits(), false)
+    SortDescription group_by_sort_description_,
+    bool optimize_distributed_aggregation_,
+    ContextMutablePtr context_)
+    : ITransformingStep(input_stream_, params_.getHeader(final_, optimize_distributed_aggregation_ && params_.max_threads > 1), getTraits(), false)
     , params(std::move(params_))
     , final(std::move(final_))
     , max_block_size(max_block_size_)
@@ -46,6 +48,8 @@ AggregatingStep::AggregatingStep(
     , storage_has_evenly_distributed_read(storage_has_evenly_distributed_read_)
     , group_by_info(std::move(group_by_info_))
     , group_by_sort_description(std::move(group_by_sort_description_))
+    , optimize_distributed_aggregation(optimize_distributed_aggregation_)
+    , context(context_)
 {
 }
 
@@ -160,20 +164,49 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
             return std::make_shared<AggregatingTransform>(header, transform_params, many_data, counter++, merge_threads, temporary_data_merge_threads);
         });
 
+        aggregating = collector.detachProcessors(0);
+
         pipeline.resize(1);
 
-        aggregating = collector.detachProcessors(0);
+        if (optimize_distributed_aggregation)
+        {
+            pipeline.addSimpleTransform([&](const Block & header)
+            {
+                return std::make_shared<AppendFinalizedTransform>(header, params.getHeader(final, optimize_distributed_aggregation));
+            });
+
+            auto holder = AggregatingMemoryHolder(many_data, transform_params);
+            context->getAggregatingMemoryCallback()(holder);
+        }
     }
     else
     {
         pipeline.resize(1);
 
+        auto many_data = std::make_shared<ManyAggregatedData>(1);
+
         pipeline.addSimpleTransform([&](const Block & header)
         {
-            return std::make_shared<AggregatingTransform>(header, transform_params);
+            return std::make_shared<AggregatingTransform>(header, transform_params, many_data);
         });
 
         aggregating = collector.detachProcessors(0);
+
+        if (optimize_distributed_aggregation)
+        {
+            pipeline.addSimpleTransform([&](const Block & header)
+            {
+                return std::make_shared<AppendFinalizedTransform>(header, params.getHeader(final, optimize_distributed_aggregation));
+            });
+
+            auto holder = AggregatingMemoryHolder(many_data, transform_params);
+            context->getAggregatingMemoryCallback()(holder);
+        }
+
+        // pipeline.addSimpleTransform([&](const Block & header)
+        // {
+        //     return std::make_shared<LookupingTransform>(header, params.getHeader(final, false), transform_params, holder);
+        // });
     }
 }
 

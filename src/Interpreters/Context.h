@@ -8,6 +8,7 @@
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/MergeTreeTransactionHolder.h>
+#include <Interpreters/AggregatingMemoryHolder.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage_fwd.h>
 #include <Common/MultiVersion.h>
@@ -17,7 +18,6 @@
 #include <base/types.h>
 #include <Storages/MergeTree/ParallelReplicasReadingCoordinator.h>
 #include <Storages/ColumnsDescription.h>
-
 
 #include "config_core.h"
 
@@ -157,7 +157,7 @@ using InputBlocksReader = std::function<Block(ContextPtr)>;
 
 /// Used in distributed task processing
 using ReadTaskCallback = std::function<String()>;
-
+using AggregatingMemoryCallback = std::function<void(AggregatingMemoryHolder)>;
 using MergeTreeReadTaskCallback = std::function<std::optional<PartitionReadResponse>(PartitionReadRequest)>;
 
 
@@ -322,6 +322,8 @@ private:
 public:
     // Top-level OpenTelemetry trace context for the query. Makes sense only for a query context.
     OpenTelemetryTraceContext query_trace_context;
+
+    std::optional<AggregatingMemoryCallback> aggregating_memory_callback;
 
 private:
     using SampleBlockCache = std::unordered_map<std::string, Block>;
@@ -923,6 +925,10 @@ public:
 
     MergeTreeReadTaskCallback getMergeTreeReadTaskCallback() const;
     void setMergeTreeReadTaskCallback(MergeTreeReadTaskCallback && callback);
+
+
+    AggregatingMemoryCallback getAggregatingMemoryCallback() const;
+    void setAggregatingMemoryCallback(AggregatingMemoryCallback && callback);
 
     /// Background executors related methods
     void initializeBackgroundExecutorsIfNeeded();

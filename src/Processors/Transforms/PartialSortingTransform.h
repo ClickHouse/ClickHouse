@@ -16,7 +16,7 @@ public:
     /// limit - if not 0, then you can sort each block not completely, but only `limit` first rows by order.
     PartialSortingTransform(
         const Block & header_,
-        SortDescription & description_,
+        const SortDescription & description_,
         UInt64 limit_ = 0);
 
     String getName() const override { return "PartialSortingTransform"; }

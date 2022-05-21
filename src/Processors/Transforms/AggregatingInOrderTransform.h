@@ -5,6 +5,8 @@
 #include <Processors/ISimpleTransform.h>
 #include <Processors/Transforms/AggregatingTransform.h>
 #include <Processors/Transforms/TotalsHavingTransform.h>
+#include <Interpreters/Context.h>
+#include "Interpreters/AggregatingMemoryHolder.h"
 
 namespace DB
 {
@@ -99,5 +101,50 @@ private:
     AggregatingTransformParamsPtr params;
 };
 
+class AppendFinalizedTransform : public ISimpleTransform
+{
+public:
+    AppendFinalizedTransform(Block input_header, Block output_header)
+        : ISimpleTransform({std::move(input_header)}, {std::move(output_header)}, true) {}
+
+    void transform(Chunk & chunk) override
+    {
+        for (const auto& column: chunk.getColumns()) {
+            if (typeid_cast<const ColumnAggregateFunction *>(column.get())) {
+                auto mut_column = IColumn::mutate(column);
+                chunk.addColumn(ColumnAggregateFunction::convertToValues(IColumn::mutate(std::move(mut_column))));
+            }
+        }
+    }
+
+    String getName() const override { return "AppendFinalizedTransform"; }
+};
+
+class LookupingTransform : public ISimpleTransform
+{
+public:
+    LookupingTransform(Block input_header, Block output_header, AggregatingTransformParamsPtr params_, AggregatingMemoryHolder holder_)
+        : ISimpleTransform({std::move(input_header)}, {std::move(output_header)}, true)
+        , params(params_)
+        , holder(holder_) {}
+
+    void transform(Chunk & chunk) override
+    {
+        Columns columns = chunk.getColumns();
+        ColumnRawPtrs key_columns(params->params.keys_size);
+        for (size_t i = 0; i < params->params.keys_size; ++i) {
+            key_columns[i] = columns.at(params->params.keys[i]).get();
+        }
+        Block res = holder.lookupBlock(key_columns);
+        chunk.setColumns(res.getColumns(), chunk.getNumRows());
+    }
+
+    String getName() const override { return "LookupingTransform"; }
+
+private:
+    AggregatingTransformParamsPtr params;
+
+    AggregatingMemoryHolder holder;
+};
 
 }

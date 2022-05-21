@@ -17,7 +17,7 @@
 #include <Interpreters/ProfileEventsExt.h>
 #include <Formats/NativeReader.h>
 #include <Formats/NativeWriter.h>
-
+#include <Interpreters/AggregatingMemoryHolder.h>
 #include <Storages/MergeTree/ParallelReplicasReadingCoordinator.h>
 
 #include "IServer.h"
@@ -96,6 +96,7 @@ struct QueryState
     /// sample block from StorageInput
     Block input_header;
 
+    AggregatingMemoryHolder aggregating_memory_holder;
     /// If true, the data packets will be skipped instead of reading. Used to recover after errors.
     bool skipping_data = false;
 
@@ -235,6 +236,7 @@ private:
     void sendHello();
     void sendData(const Block & block);    /// Write a block to the network.
     void sendLogData(const Block & block);
+    void processGetRequest();
     void sendTableColumns(const ColumnsDescription & columns);
     void sendException(const Exception & e, bool with_stack_trace);
     void sendProgress();
@@ -254,7 +256,7 @@ private:
     void initLogsBlockOutput(const Block & block);
     void initProfileEventsBlockOutput(const Block & block);
 
-    bool isQueryCancelled();
+    bool isQueryCancelled(bool receive_lookups);
 
     /// This function is called from different threads.
     void updateProgress(const Progress & value);

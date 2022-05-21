@@ -1,6 +1,8 @@
 #pragma once
 #include <Processors/QueryPlan/ITransformingStep.h>
+#include <Storages/SelectQueryInfo.h>
 #include <QueryPipeline/SizeLimits.h>
+#include "Core/SortDescription.h"
 
 namespace DB
 {
@@ -17,7 +19,12 @@ public:
         AggregatingTransformParamsPtr params_,
         bool memory_efficient_aggregation_,
         size_t max_threads_,
-        size_t memory_efficient_merge_threads_);
+        size_t memory_efficient_merge_threads_,
+        const SelectQueryInfo & query_info_,
+        ContextPtr context_,
+        bool optimize_distributed_aggregation_,
+        SortDescription description_,
+        UInt64 limit_);
 
     String getName() const override { return "MergingAggregated"; }
 
@@ -31,6 +38,11 @@ private:
     bool memory_efficient_aggregation;
     size_t max_threads;
     size_t memory_efficient_merge_threads;
+    const SelectQueryInfo & query_info;
+    ContextPtr context;
+    bool optimize_distributed_aggregation;
+    SortDescription description;
+    UInt64 limit;
 };
 
 }

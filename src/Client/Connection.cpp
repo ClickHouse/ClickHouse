@@ -23,6 +23,7 @@
 #include <Common/OpenSSLHelpers.h>
 #include <Common/randomSeed.h>
 #include "Core/Block.h"
+#include "Core/Protocol.h"
 #include <Interpreters/ClientInfo.h>
 #include <Compression/CompressionFactory.h>
 #include <QueryPipeline/Pipe.h>
@@ -542,7 +543,7 @@ void Connection::sendQuery(
     /// Send empty block which means end of data.
     if (!with_pending_data)
     {
-        sendData(Block(), "", false);
+        sendData(Block(), "", false, false);
         out->next();
     }
 }
@@ -559,7 +560,7 @@ void Connection::sendCancel()
 }
 
 
-void Connection::sendData(const Block & block, const String & name, bool scalar)
+void Connection::sendData(const Block & block, const String & name, bool scalar, bool get_request)
 {
     if (!block_out)
     {
@@ -571,7 +572,9 @@ void Connection::sendData(const Block & block, const String & name, bool scalar)
         block_out = std::make_unique<NativeWriter>(*maybe_compressed_out, server_revision, block.cloneEmpty());
     }
 
-    if (scalar)
+    if (get_request) {
+        writeVarUInt(Protocol::Client::GetRequest, *out);
+    } else if (scalar)
         writeVarUInt(Protocol::Client::Scalar, *out);
     else
         writeVarUInt(Protocol::Client::Data, *out);
@@ -650,7 +653,7 @@ void Connection::sendScalarsData(Scalars & data)
     for (auto & elem : data)
     {
         rows += elem.second.rows();
-        sendData(elem.second, elem.first, true /* scalar */);
+        sendData(elem.second, elem.first, true /* scalar */, false);
     }
 
     out_bytes = out->count() - out_bytes;
@@ -705,7 +708,7 @@ protected:
         num_rows += chunk.getNumRows();
 
         auto block = getPort().getHeader().cloneWithColumns(chunk.detachColumns());
-        connection.sendData(block, table_data.table_name, false);
+        connection.sendData(block, table_data.table_name, false, false);
     }
 
 private:
@@ -721,7 +724,7 @@ void Connection::sendExternalTablesData(ExternalTablesData & data)
     if (data.empty())
     {
         /// Send empty block, which means end of data transfer.
-        sendData(Block(), "", false);
+        sendData(Block(), "", false, false);
         return;
     }
 
@@ -759,11 +762,11 @@ void Connection::sendExternalTablesData(ExternalTablesData & data)
 
         /// If table is empty, send empty block with name.
         if (read_rows == 0)
-            sendData(sink->getPort().getHeader(), elem->table_name, false);
+            sendData(sink->getPort().getHeader(), elem->table_name, false, false);
     }
 
     /// Send empty block, which means end of data transfer.
-    sendData(Block(), "", false);
+    sendData(Block(), "", false, false);
 
     out_bytes = out->count() - out_bytes;
     maybe_compressed_out_bytes = maybe_compressed_out->count() - maybe_compressed_out_bytes;

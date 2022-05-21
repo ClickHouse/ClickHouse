@@ -210,6 +210,16 @@ static Block adaptBlockStructure(const Block & block, const Block & header)
     return res;
 }
 
+void RemoteQueryExecutor::sendGetRequest(const Block & block) {
+    if (!requested && connections->hasActiveConnections()) {
+        // std::cerr << "mylog: sent get request" << std::endl;
+        connections->sendGetRequest(block);
+        // requested = true;
+    } else {
+        // std::cerr << "mylog: not sent get request" << std::endl;
+    }
+}
+
 void RemoteQueryExecutor::sendQuery(ClientInfo::QueryKind query_kind)
 {
     if (sent_query)
@@ -276,8 +286,9 @@ Block RemoteQueryExecutor::read()
 
         Packet packet = connections->receivePacket();
 
-        if (auto block = processPacket(std::move(packet)))
+        if (auto block = processPacket(std::move(packet))) {
             return *block;
+        }
         else if (got_duplicated_part_uuids)
             return std::get<Block>(restartQueryWithoutDuplicatedUUIDs());
     }

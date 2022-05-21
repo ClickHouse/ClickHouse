@@ -95,7 +95,7 @@ public:
     virtual void sendCancel() = 0;
 
     /// Send block of data; if name is specified, server will write it to external (temporary) table of that name.
-    virtual void sendData(const Block & block, const String & name, bool scalar) = 0;
+    virtual void sendData(const Block & block, const String & name, bool scalar, bool get_request) = 0;
 
     /// Send all contents of external (temporary) tables.
     virtual void sendExternalTablesData(ExternalTablesData & data) = 0;

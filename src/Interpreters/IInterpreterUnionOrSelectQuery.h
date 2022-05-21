@@ -60,4 +60,3 @@ protected:
     bool uses_view_source = false;
 };
 }
-

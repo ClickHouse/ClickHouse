@@ -19,6 +19,21 @@ RemoteSource::RemoteSource(RemoteQueryExecutorPtr executor, bool add_aggregation
             add_aggregation_info = true;
 }
 
+RemoteSource::RemoteSource(RemoteQueryExecutorPtr executor, RemoteQueryExecutorPtrs neighbour_executors_, bool add_aggregation_info_, bool async_read_, size_t shard_num_)
+    : SourceWithProgress(executor->getHeader(), false)
+    , add_aggregation_info(add_aggregation_info_), query_executor(std::move(executor))
+    , neighbour_executors(neighbour_executors_)
+    , shard_num(shard_num_)
+    , async_read(async_read_)
+{
+    /// Add AggregatedChunkInfo if we expect DataTypeAggregateFunction as a result.
+    const auto & sample = getPort().getHeader();
+    for (auto & type : sample.getDataTypes())
+        if (typeid_cast<const DataTypeAggregateFunction *>(type.get()))
+            add_aggregation_info = true;
+
+}
+
 RemoteSource::~RemoteSource() = default;
 
 ISource::Status RemoteSource::prepare()
@@ -92,6 +107,13 @@ std::optional<Chunk> RemoteSource::tryGenerate()
         return {};
     }
 
+    if (!block.info.is_lookup) {
+        block.info.order_num = block.info.order_num * (neighbour_executors.size() + 1) + (shard_num - 1);
+        // for (const auto & executor: neighbour_executors) {
+        //     executor->sendGetRequest(block);
+        // }
+    }
+
     UInt64 num_rows = block.rows();
     Chunk chunk(block.getColumns(), num_rows);
 
@@ -100,6 +122,9 @@ std::optional<Chunk> RemoteSource::tryGenerate()
         auto info = std::make_shared<AggregatedChunkInfo>();
         info->bucket_num = block.info.bucket_num;
         info->is_overflows = block.info.is_overflows;
+        info->order_num = block.info.order_num;
+        info->is_lookup = block.info.is_lookup;
+        // std::cerr << std::boolalpha << "mylog:  " << info->is_lookup << " " << info->order_num << std::endl;
         chunk.setChunkInfo(std::move(info));
     }
 
@@ -163,12 +188,34 @@ Chunk RemoteExtremesSource::generate()
     return {};
 }
 
+Pipe createRemoteSourcePipe(
+    RemoteQueryExecutorPtr query_executor,
+    bool add_aggregation_info,
+    bool add_totals,
+    bool add_extremes,
+    bool async_read)
+{
+    Pipe pipe(std::make_shared<RemoteSource>(query_executor, add_aggregation_info, async_read));
+
+    if (add_totals)
+        pipe.addTotalsSource(std::make_shared<RemoteTotalsSource>(query_executor));
+
+    if (add_extremes)
+        pipe.addExtremesSource(std::make_shared<RemoteExtremesSource>(query_executor));
+
+    return pipe;
+}
 
 Pipe createRemoteSourcePipe(
     RemoteQueryExecutorPtr query_executor,
-    bool add_aggregation_info, bool add_totals, bool add_extremes, bool async_read)
+    RemoteQueryExecutorPtrs neighbour_executors,
+    bool add_aggregation_info,
+    bool add_totals,
+    bool add_extremes,
+    bool async_read,
+    size_t shard_num)
 {
-    Pipe pipe(std::make_shared<RemoteSource>(query_executor, add_aggregation_info, async_read));
+    Pipe pipe(std::make_shared<RemoteSource>(query_executor, neighbour_executors, add_aggregation_info, async_read, shard_num));
 
     if (add_totals)
         pipe.addTotalsSource(std::make_shared<RemoteTotalsSource>(query_executor));

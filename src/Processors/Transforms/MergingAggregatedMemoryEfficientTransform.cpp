@@ -76,7 +76,7 @@ bool GroupingAggregatedTransform::tryPushTwoLevelData()
             chunks_map.erase(batch_it);
             return false;
         }
-
+        // std::cerr << "pushData" << std::endl;
         pushData(std::move(cur_chunks), batch_it->first, false);
         chunks_map.erase(batch_it);
         return true;
@@ -91,9 +91,11 @@ bool GroupingAggregatedTransform::tryPushTwoLevelData()
     }
     else
     {
-        for (; next_bucket_to_push < current_bucket; ++next_bucket_to_push)
+        for (; next_bucket_to_push < current_bucket; ++next_bucket_to_push) {
+            // std::cerr << "next_bucket_to_push " << next_bucket_to_push << std::endl;
             if (try_push_by_iter(chunks_map.find(next_bucket_to_push)))
                 return true;
+        }
     }
 
     return false;
@@ -257,7 +259,7 @@ void GroupingAggregatedTransform::addChunk(Chunk chunk, size_t input)
     {
         Int32 bucket = agg_info->bucket_num;
         bool is_overflows = agg_info->is_overflows;
-
+        // std::cerr << "mylog :" << bucket << std::endl;
         if (is_overflows)
             overflow_chunks.emplace_back(std::move(chunk));
         else if (bucket < 0)

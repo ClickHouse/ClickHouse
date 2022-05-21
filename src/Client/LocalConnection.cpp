@@ -168,7 +168,7 @@ void LocalConnection::sendQuery(
     }
 }
 
-void LocalConnection::sendData(const Block & block, const String &, bool)
+void LocalConnection::sendData(const Block & block, const String &, bool, bool)
 {
     if (!block)
         return;

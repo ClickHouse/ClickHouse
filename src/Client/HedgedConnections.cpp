@@ -127,6 +127,19 @@ void HedgedConnections::sendIgnoredPartUUIDs(const std::vector<UUID> & uuids)
     pipeline_for_new_replicas.add(send_ignored_part_uuids);
 }
 
+void HedgedConnections::sendGetRequest(const Block & block) {
+    std::lock_guard lock(cancel_mutex);
+
+    auto send_get_request = [&block](ReplicaState & replica) { replica.connection->sendData(block, "", false, true); };
+
+    for (auto & offset_state : offset_states)
+        for (auto & replica : offset_state.replicas)
+            if (replica.connection)
+                send_get_request(replica);
+
+    pipeline_for_new_replicas.add(send_get_request);
+};
+
 void HedgedConnections::sendQuery(
     const ConnectionTimeouts & timeouts,
     const String & query,

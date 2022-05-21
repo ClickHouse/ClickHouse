@@ -41,7 +41,11 @@ struct HashMethodOneNumber
     /// If the keys of a fixed length then key_sizes contains their lengths, empty otherwise.
     HashMethodOneNumber(const ColumnRawPtrs & key_columns, const Sizes & /*key_sizes*/, const HashMethodContextPtr &)
     {
+        // std::cerr << "before key_columns[0]->getRawData().data;" << std::endl;
+        // std::cerr << key_columns.size() << std::endl;
+        // std::cerr << key_columns[0] << std::endl;
         vec = key_columns[0]->getRawData().data;
+        // std::cerr << "after key_columns[0]->getRawData().data;" << std::endl;
     }
 
     explicit HashMethodOneNumber(const IColumn * column)

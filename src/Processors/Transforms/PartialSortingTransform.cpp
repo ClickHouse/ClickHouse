@@ -6,7 +6,7 @@ namespace DB
 {
 
 PartialSortingTransform::PartialSortingTransform(
-    const Block & header_, SortDescription & description_, UInt64 limit_)
+    const Block & header_, const SortDescription & description_, UInt64 limit_)
     : ISimpleTransform(header_, header_, false)
     , description(description_), limit(limit_)
 {
@@ -127,6 +127,7 @@ void PartialSortingTransform::transform(Chunk & chunk)
         }
     }
 
+    // std::cerr << " sortBlock(block, description, limit);" << description[0].column_name << " " << limit << std::endl ;
     sortBlock(block, description, limit);
 
     /// Check if we can use this block for optimization.

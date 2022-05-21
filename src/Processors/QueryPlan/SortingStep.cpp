@@ -8,6 +8,7 @@
 #include <Processors/Transforms/PartialSortingTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Common/JSONBuilder.h>
+#include <Columns/ColumnAggregateFunction.h>
 
 namespace DB
 {
@@ -38,7 +39,8 @@ SortingStep::SortingStep(
     double remerge_lowered_memory_bytes_ratio_,
     size_t max_bytes_before_external_sort_,
     VolumePtr tmp_volume_,
-    size_t min_free_disk_space_)
+    size_t min_free_disk_space_,
+    bool optimize_distributed_aggregation_)
     : ITransformingStep(input_stream, input_stream.header, getTraits(limit_))
     , type(Type::Full)
     , result_description(description_)
@@ -50,8 +52,15 @@ SortingStep::SortingStep(
     , max_bytes_before_external_sort(max_bytes_before_external_sort_), tmp_volume(tmp_volume_)
     , min_free_disk_space(min_free_disk_space_)
 {
+    if (optimize_distributed_aggregation_) {
+        for (auto & column: result_description) {
+            if (typeid_cast<const ColumnAggregateFunction *>(input_stream.header.getByName(column.column_name).column.get())) {
+                column.column_name += "_tmp_finalized";
+            }
+        }
+    }
     /// TODO: check input_stream is partially sorted by the same description.
-    output_stream->sort_description = result_description;
+    output_stream->sort_description = description_;
     output_stream->sort_mode = DataStream::SortMode::Stream;
 }
 
@@ -148,6 +157,7 @@ void SortingStep::transformPipeline(QueryPipelineBuilder & pipeline, const Build
     }
     else if (type == Type::Full)
     {
+        // std::cerr << "mylog: type == Type::Full" << std::endl;
         pipeline.addSimpleTransform([&](const Block & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
         {
             if (stream_type != QueryPipelineBuilder::StreamType::Main)
@@ -186,7 +196,7 @@ void SortingStep::transformPipeline(QueryPipelineBuilder & pipeline, const Build
         /// If there are several streams, then we merge them into one
         if (pipeline.getNumStreams() > 1)
         {
-
+            std::cerr << "several streams" << std::endl;
             auto transform = std::make_shared<MergingSortedTransform>(
                     pipeline.getHeader(),
                     pipeline.getNumStreams(),

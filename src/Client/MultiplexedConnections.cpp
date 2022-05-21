@@ -106,6 +106,17 @@ void MultiplexedConnections::sendExternalTablesData(std::vector<ExternalTablesDa
     }
 }
 
+void MultiplexedConnections::sendGetRequest(const Block& block) {
+    std::lock_guard lock(cancel_mutex);
+
+    for (ReplicaState & state : replica_states)
+    {
+        Connection * connection = state.connection;
+        if (connection != nullptr)
+            connection->sendData(block, "", false, true);
+    }
+}
+
 void MultiplexedConnections::sendQuery(
     const ConnectionTimeouts & timeouts,
     const String & query,

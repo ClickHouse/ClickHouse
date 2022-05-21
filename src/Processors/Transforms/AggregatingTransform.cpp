@@ -5,6 +5,7 @@
 #include <QueryPipeline/Pipe.h>
 #include <Processors/Transforms/MergingAggregatedMemoryEfficientTransform.h>
 #include <Core/ProtocolDefines.h>
+#include <Interpreters/AggregatingMemoryHolder.h>
 
 namespace ProfileEvents
 {
@@ -386,9 +387,10 @@ private:
     }
 };
 
-AggregatingTransform::AggregatingTransform(Block header, AggregatingTransformParamsPtr params_)
+
+AggregatingTransform::AggregatingTransform(Block header, AggregatingTransformParamsPtr params_, ManyAggregatedDataPtr many_data_)
     : AggregatingTransform(std::move(header), std::move(params_)
-    , std::make_unique<ManyAggregatedData>(1), 0, 1, 1)
+    , many_data_, 0, 1, 1)
 {
 }
 
@@ -627,6 +629,32 @@ void AggregatingTransform::initGenerate()
 
         processors = Pipe::detachProcessors(std::move(pipe));
     }
+}
+
+AggregatingMemoryHolder::AggregatingMemoryHolder(ManyAggregatedDataPtr many_data_, AggregatingTransformParamsPtr aggregator_transform_params_)
+    : many_data(many_data_)
+    , aggregator_transform_params(aggregator_transform_params_) {
+        std::cerr << "Holder cretaed" << std::endl;
+    }
+
+Block AggregatingMemoryHolder::lookupBlock(ColumnRawPtrs key_columns) const {
+    auto prepared_data = aggregator_transform_params->aggregator.prepareVariantsToMerge(many_data->variants);
+    auto prepared_data_ptr = std::make_shared<ManyAggregatedDataVariants>(std::move(prepared_data));
+
+    Block block = aggregator_transform_params->aggregator.readBlockByFilterKeys(
+        prepared_data_ptr, key_columns, aggregator_transform_params->final);
+
+    return block;
+}
+
+Block AggregatingMemoryHolder::lookupBlock(const Block & filter_block) const {
+    auto prepared_data = aggregator_transform_params->aggregator.prepareVariantsToMerge(many_data->variants);
+    auto prepared_data_ptr = std::make_shared<ManyAggregatedDataVariants>(std::move(prepared_data));
+
+    Block block = aggregator_transform_params->aggregator.readBlockByFilterBlock(
+        prepared_data_ptr, filter_block, aggregator_transform_params->final);
+
+    return block;
 }
 
 }

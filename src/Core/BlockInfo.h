@@ -30,7 +30,9 @@ struct BlockInfo
 
 #define APPLY_FOR_BLOCK_INFO_FIELDS(M) \
     M(bool,     is_overflows,     false,     1) \
-    M(Int32,    bucket_num,     -1,     2)
+    M(Int32,    bucket_num,     -1,     2) \
+    M(bool,     is_lookup,  false,  3) \
+    M(UInt32,   order_num,     0,     4) \
 
 #define DECLARE_FIELD(TYPE, NAME, DEFAULT, FIELD_NUM) \
     TYPE NAME = DEFAULT;

@@ -88,7 +88,7 @@ void RemoteInserter::write(Block block)
 {
     try
     {
-        connection.sendData(block, /* name */"", /* scalar */false);
+        connection.sendData(block, /* name */"", /* scalar */false, false);
     }
     catch (const NetException &)
     {
@@ -115,7 +115,7 @@ void RemoteInserter::writePrepared(ReadBuffer & buf, size_t size)
 void RemoteInserter::onFinish()
 {
     /// Empty block means end of data.
-    connection.sendData(Block(), /* name */"", /* scalar */false);
+    connection.sendData(Block(), /* name */"", /* scalar */false, false);
 
     /// Wait for EndOfStream or Exception packet, skip Log packets.
     while (true)

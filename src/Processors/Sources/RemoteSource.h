@@ -10,6 +10,7 @@ namespace DB
 
 class RemoteQueryExecutor;
 using RemoteQueryExecutorPtr = std::shared_ptr<RemoteQueryExecutor>;
+using RemoteQueryExecutorPtrs = std::vector<RemoteQueryExecutorPtr>;
 
 class RemoteQueryExecutorReadContext;
 
@@ -21,6 +22,7 @@ public:
     /// AggregatedChunkInfo stores the bucket number used for two-level aggregation.
     /// This flag should be typically enabled for queries with GROUP BY which are executed till WithMergeableState.
     RemoteSource(RemoteQueryExecutorPtr executor, bool add_aggregation_info_, bool async_read_);
+    RemoteSource(RemoteQueryExecutorPtr executor, RemoteQueryExecutorPtrs neighbour_executors, bool add_aggregation_info_, bool async_read_, size_t shard_num);
     ~RemoteSource() override;
 
     Status prepare() override;
@@ -42,8 +44,9 @@ private:
     bool was_query_sent = false;
     bool add_aggregation_info = false;
     RemoteQueryExecutorPtr query_executor;
+    RemoteQueryExecutorPtrs neighbour_executors;
     RowsBeforeLimitCounterPtr rows_before_limit;
-
+    size_t shard_num;
     const bool async_read;
     bool is_async_state = false;
     std::unique_ptr<RemoteQueryExecutorReadContext> read_context;
@@ -86,5 +89,10 @@ private:
 Pipe createRemoteSourcePipe(
     RemoteQueryExecutorPtr query_executor,
     bool add_aggregation_info, bool add_totals, bool add_extremes, bool async_read);
+
+Pipe createRemoteSourcePipe(
+    RemoteQueryExecutorPtr query_executor,
+    RemoteQueryExecutorPtrs neighbour_executors,
+    bool add_aggregation_info, bool add_totals, bool add_extremes, bool async_read, size_t shard_num);
 
 }

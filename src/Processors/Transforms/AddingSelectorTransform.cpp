@@ -70,6 +70,7 @@ void AddingSelectorTransform::transform(Chunk & input_chunk, Chunk & output_chun
     chunk_info->selector = fillSelector(hash, num_outputs);
 
     input_chunk.swap(output_chunk);
+    // std::cerr << "mylog: AddingSelectorTransform" << std::endl;
     output_chunk.setChunkInfo(std::move(chunk_info));
 }
 
