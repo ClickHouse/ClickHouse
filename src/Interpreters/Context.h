@@ -8,7 +8,6 @@
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/MergeTreeTransactionHolder.h>
-#include <Interpreters/AggregatingMemoryHolder.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage_fwd.h>
 #include <Common/MultiVersion.h>
@@ -159,9 +158,11 @@ using InputBlocksReader = std::function<Block(ContextPtr)>;
 
 /// Used in distributed task processing
 using ReadTaskCallback = std::function<String()>;
-using AggregatingMemoryCallback = std::function<void(AggregatingMemoryHolder)>;
+
 using MergeTreeReadTaskCallback = std::function<std::optional<PartitionReadResponse>(PartitionReadRequest)>;
 
+class AggregatingMemoryHolder;
+using AggregatingMemoryCallback = std::function<void(AggregatingMemoryHolder)>;
 
 #if USE_ROCKSDB
 class MergeTreeMetadataCache;

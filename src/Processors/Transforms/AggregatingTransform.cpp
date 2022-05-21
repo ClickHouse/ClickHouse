@@ -386,9 +386,8 @@ private:
     }
 };
 
-AggregatingTransform::AggregatingTransform(Block header, AggregatingTransformParamsPtr params_)
-    : AggregatingTransform(std::move(header), std::move(params_)
-    , std::make_unique<ManyAggregatedData>(1), 0, 1, 1)
+AggregatingTransform::AggregatingTransform(Block header, AggregatingTransformParamsPtr params_, ManyAggregatedDataPtr many_data_)
+    : AggregatingTransform(std::move(header), std::move(params_),  std::move(many_data_), 0, 1, 1)
 {
 }
 

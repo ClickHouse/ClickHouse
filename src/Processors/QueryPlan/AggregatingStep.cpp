@@ -65,7 +65,7 @@ AggregatingStep::AggregatingStep(
     SortDescription group_by_sort_description_,
     bool optimize_distributed_aggregation_,
     ContextPtr context_)
-    : ITransformingStep(input_stream_, appendGroupingColumn(params_.getHeader(final_), grouping_sets_params_), getTraits(), false)
+    : ITransformingStep(input_stream_, appendGroupingColumn(params_.getHeader(final_, optimize_distributed_aggregation_), grouping_sets_params_), getTraits(), false)
     , params(std::move(params_))
     , grouping_sets_params(std::move(grouping_sets_params_))
     , final(std::move(final_))
@@ -157,14 +157,15 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                     transform_params->params.min_free_disk_space,
                     transform_params->params.compile_aggregate_expressions,
                     transform_params->params.min_count_to_compile_aggregate_expression,
+                    transform_params->params.keep_state_after_read,
                     transform_params->params.intermediate_header,
                     transform_params->params.stats_collecting_params
                 };
                 auto transform_params_for_set = std::make_shared<AggregatingTransformParams>(std::move(params_for_set), final);
+                auto many_data = std::make_shared<ManyAggregatedData>(streams);
 
                 if (streams > 1)
                 {
-                    auto many_data = std::make_shared<ManyAggregatedData>(streams);
                     for (size_t j = 0; j < streams; ++j)
                     {
                         auto aggregation_for_set = std::make_shared<AggregatingTransform>(input_header, transform_params_for_set, many_data, j, merge_threads, temporary_data_merge_threads);
@@ -177,7 +178,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                 }
                 else
                 {
-                    auto aggregation_for_set = std::make_shared<AggregatingTransform>(input_header, transform_params_for_set);
+                    auto aggregation_for_set = std::make_shared<AggregatingTransform>(input_header, transform_params_for_set, many_data);
                     connect(*ports[i], aggregation_for_set->getInputs().front());
                     ports[i] = &aggregation_for_set->getOutputs().front();
                     processors.push_back(aggregation_for_set);
@@ -332,7 +333,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
         if (!storage_has_evenly_distributed_read)
             pipeline.resize(pipeline.getNumStreams(), true, true);
 
-        auto many_data = std::make_shared<ManyAggregatedData>(pipeline.getNumStreams());
+        ManyAggregatedDataPtr many_data = std::make_shared<ManyAggregatedData>(pipeline.getNumStreams());
 
         size_t counter = 0;
         pipeline.addSimpleTransform([&](const Block & header)
@@ -359,7 +360,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
     {
         pipeline.resize(1);
 
-        auto many_data = std::make_shared<ManyAggregatedData>(1);
+        ManyAggregatedDataPtr many_data = std::make_shared<ManyAggregatedData>(1);
 
         pipeline.addSimpleTransform([&](const Block & header)
         {

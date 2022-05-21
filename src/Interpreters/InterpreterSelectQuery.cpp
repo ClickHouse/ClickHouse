@@ -2247,8 +2247,11 @@ static Aggregator::Params getAggregatorParams(
     const Block & current_data_stream_header,
     const ColumnNumbers & keys,
     const AggregateDescriptions & aggregates,
-    bool overflow_row, const Settings & settings,
-    size_t group_by_two_level_threshold, size_t group_by_two_level_threshold_bytes)
+    bool overflow_row,
+    const Settings & settings,
+    size_t group_by_two_level_threshold,
+    size_t group_by_two_level_threshold_bytes,
+    bool keep_state_after_read)
 {
     const auto stats_collecting_params = Aggregator::Params::StatsCollectingParams(
         query_ptr,
@@ -2274,6 +2277,7 @@ static Aggregator::Params getAggregatorParams(
         settings.min_free_disk_space_for_temporary_data,
         settings.compile_aggregate_expressions,
         settings.min_count_to_compile_aggregate_expression,
+        keep_state_after_read,
         Block{},
         stats_collecting_params
     };
@@ -2339,7 +2343,7 @@ void InterpreterSelectQuery::executeAggregation(QueryPlan & query_plan, const Ac
         keys.push_back(header_before_aggregation.getPositionByName(key.name));
 
     auto aggregator_params = getAggregatorParams(query_ptr, *query_analyzer, *context, header_before_aggregation, keys, aggregates, overflow_row, settings,
-                 settings.group_by_two_level_threshold, settings.group_by_two_level_threshold_bytes);
+                 settings.group_by_two_level_threshold, settings.group_by_two_level_threshold_bytes, optimize_distributed_aggregation);
 
     auto grouping_sets_params = getAggregatorGroupingSetsParams(*query_analyzer, header_before_aggregation, keys);
 
@@ -2444,7 +2448,7 @@ void InterpreterSelectQuery::executeRollupOrCube(QueryPlan & query_plan, Modific
     for (const auto & key : query_analyzer->aggregationKeys())
         keys.push_back(header_before_transform.getPositionByName(key.name));
 
-    auto params = getAggregatorParams(query_ptr, *query_analyzer, *context, header_before_transform, keys, query_analyzer->aggregates(), false, settings, 0, 0);
+    auto params = getAggregatorParams(query_ptr, *query_analyzer, *context, header_before_transform, keys, query_analyzer->aggregates(), false, settings, 0, 0, false);
     auto transform_params = std::make_shared<AggregatingTransformParams>(std::move(params), true);
 
     QueryPlanStepPtr step;

@@ -46,7 +46,7 @@ private:
     bool consume_started = false;
     bool generate_started = false;
 
-    const SelectQueryInfo & query_info;
+    [[maybe_unused]] const SelectQueryInfo & query_info;
     ContextPtr context;
 
     RemoteQueryExecutorPtrs remote_executors;

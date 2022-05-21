@@ -18,6 +18,7 @@ MergingAggregatedTransform::MergingAggregatedTransform(
     : IAccumulatingTransform(std::move(header_), params_->getHeader())
     , params(std::move(params_)), max_threads(max_threads_), query_info(query_info_), context(context_)
 {
+
 }
 
 void MergingAggregatedTransform::consume(Chunk chunk)

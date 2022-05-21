@@ -13,6 +13,8 @@ class AggregatedChunkInfo : public ChunkInfo
 public:
     bool is_overflows = false;
     Int32 bucket_num = -1;
+    bool is_lookup = false;
+    UInt32 order_num = 0;
 };
 
 using AggregatorList = std::list<Aggregator>;
@@ -93,7 +95,7 @@ using ManyAggregatedDataPtr = std::shared_ptr<ManyAggregatedData>;
 class AggregatingTransform : public IProcessor
 {
 public:
-    AggregatingTransform(Block header, AggregatingTransformParamsPtr params_);
+    AggregatingTransform(Block header, AggregatingTransformParamsPtr params_, ManyAggregatedDataPtr many_data_);
 
     /// For Parallel aggregating.
     AggregatingTransform(

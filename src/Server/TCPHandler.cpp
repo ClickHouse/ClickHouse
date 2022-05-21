@@ -50,7 +50,6 @@
 #include <Processors/Executors/PushingAsyncPipelineExecutor.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Sinks/SinkToStorage.h>
-#include <Processors/Transforms/AggregatingTransform.h>
 #include "Core/Protocol.h"
 #include "TCPHandler.h"
 

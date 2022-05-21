@@ -969,6 +969,7 @@ public:
             size_t min_free_disk_space_,
             bool compile_aggregate_expressions_,
             size_t min_count_to_compile_aggregate_expression_,
+            bool keep_state_after_read_,
             const Block & intermediate_header_ = {},
             const StatsCollectingParams & stats_collecting_params_ = {})
             : src_header(src_header_)
@@ -989,6 +990,7 @@ public:
             , min_free_disk_space(min_free_disk_space_)
             , compile_aggregate_expressions(compile_aggregate_expressions_)
             , min_count_to_compile_aggregate_expression(min_count_to_compile_aggregate_expression_)
+            , keep_state_after_read(keep_state_after_read_)
             , stats_collecting_params(stats_collecting_params_)
         {
         }

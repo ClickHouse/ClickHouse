@@ -17,7 +17,7 @@
 #include <Interpreters/ProfileEventsExt.h>
 #include <Formats/NativeReader.h>
 #include <Formats/NativeWriter.h>
-#include <Interpreters/AggregatingMemoryHolder.h>
+#include <Processors/Transforms/AggregatingTransform.h>
 #include <Storages/MergeTree/ParallelReplicasReadingCoordinator.h>
 
 #include "IServer.h"
@@ -41,6 +41,7 @@ struct ProfileInfo;
 class TCPServer;
 class NativeWriter;
 class NativeReader;
+class AggregatingMemoryHolder;
 
 /// State of query processing.
 struct QueryState
