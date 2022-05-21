@@ -102,24 +102,6 @@ private:
     ColumnsMask aggregates_mask;
 };
 
-class AggregatingMemoryHolder
-{
-public:
-    AggregatingMemoryHolder() = default;
-    AggregatingMemoryHolder(ManyAggregatedDataPtr many_data_, AggregatingTransformParamsPtr aggregator_transform_params_);
-
-    Block lookupBlock(ColumnRawPtrs key_columns) const;
-
-    Block lookupBlock(const Block & filter_block) const;
-
-    bool isEmpty() const {
-        return many_data == nullptr;
-    }
-
-    ManyAggregatedDataPtr many_data;
-    AggregatingTransformParamsPtr aggregator_transform_params;
-};
-
 class AppendFinalizedTransform : public ISimpleTransform
 {
 public:
