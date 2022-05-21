@@ -325,13 +325,6 @@ void Session::authenticate(const Credentials & credentials_, const Poco::Net::So
     prepared_client_info->current_address = address;
 }
 
-void Session::authenticateInterserverFake()
-{
-    if (session_context)
-        throw Exception("If there is a session context it must be created after authentication", ErrorCodes::LOGICAL_ERROR);
-    is_internal_interserver_query = true;
-}
-
 void Session::onAuthenticationFailure(const Credentials & credentials_, const Poco::Net::SocketAddress & address_, const Exception & e)
 {
     LOG_DEBUG(log, "{} Authentication failed with error: {}", toString(auth_id), e.what());
@@ -448,7 +441,7 @@ std::shared_ptr<SessionLog> Session::getSessionLog() const
 
 ContextMutablePtr Session::makeQueryContextImpl(const ClientInfo * client_info_to_copy, ClientInfo * client_info_to_move) const
 {
-    if (!user_id && !is_internal_interserver_query)
+    if (!user_id && getClientInfo().interface != ClientInfo::Interface::TCP_INTERSERVER)
         throw Exception("Session context must be created after authentication", ErrorCodes::LOGICAL_ERROR);
 
     /// We can create a query context either from a session context or from a global context.

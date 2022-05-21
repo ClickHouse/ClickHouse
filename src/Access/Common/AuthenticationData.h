@@ -32,8 +32,6 @@ enum class AuthenticationType
     /// Certificates may only be trusted if 'strict' SSL mode is enabled.
     SSL_CERTIFICATE,
 
-    INTERSERVER_SECRET,
-
     MAX,
 };
 

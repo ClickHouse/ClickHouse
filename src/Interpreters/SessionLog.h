@@ -47,7 +47,7 @@ struct SessionLogElement
     Decimal64 event_time_microseconds{};
 
     String user;
-    AuthenticationType user_identified_with = AuthenticationType::NO_PASSWORD;
+    std::optional<AuthenticationType> user_identified_with;
     String external_auth_server;
     Strings roles;
     Strings profiles;

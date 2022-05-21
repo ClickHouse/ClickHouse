@@ -147,6 +147,8 @@ private:
     bool parse_proxy_protocol = false;
     Poco::Logger * log;
 
+    String forwarded_for;
+
     String client_name;
     UInt64 client_version_major = 0;
     UInt64 client_version_minor = 0;
@@ -202,6 +204,8 @@ private:
     void runImpl();
 
     void extractConnectionSettingsFromContext(const ContextPtr & context);
+
+    std::unique_ptr<Session> makeSession();
 
     bool receiveProxyHeader();
     void receiveHello();

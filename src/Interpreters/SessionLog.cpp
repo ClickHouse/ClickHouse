@@ -96,10 +96,9 @@ NamesAndTypesList SessionLogElement::getNamesAndTypes()
             AUTH_TYPE_NAME_AND_VALUE(AuthType::DOUBLE_SHA1_PASSWORD),
             AUTH_TYPE_NAME_AND_VALUE(AuthType::LDAP),
             AUTH_TYPE_NAME_AND_VALUE(AuthType::KERBEROS),
-            AUTH_TYPE_NAME_AND_VALUE(AuthType::INTERSERVER_SECRET),
         });
 #undef AUTH_TYPE_NAME_AND_VALUE
-    static_assert(static_cast<int>(AuthenticationType::MAX) == 8);
+    static_assert(static_cast<int>(AuthenticationType::MAX) == 7);
 
     auto interface_type_column = std::make_shared<DataTypeEnum8>(
         DataTypeEnum8::Values
@@ -135,7 +134,7 @@ NamesAndTypesList SessionLogElement::getNamesAndTypes()
         {"event_time_microseconds", std::make_shared<DataTypeDateTime64>(6)},
 
         {"user", std::make_shared<DataTypeString>()},
-        {"auth_type", std::move(identified_with_column)},
+        {"auth_type", std::make_shared<DataTypeNullable>(std::move(identified_with_column))},
 
         {"profiles", std::make_shared<DataTypeArray>(lc_string_datatype)},
         {"roles", std::make_shared<DataTypeArray>(lc_string_datatype)},
@@ -171,7 +170,7 @@ void SessionLogElement::appendToBlock(MutableColumns & columns) const
     columns[i++]->insert(event_time_microseconds);
 
     columns[i++]->insert(user);
-    columns[i++]->insert(user_identified_with);
+    columns[i++]->insert(user_identified_with ? Field(*user_identified_with) : Field());
 
     fillColumnArray(profiles, *columns[i++]);
     fillColumnArray(roles, *columns[i++]);
@@ -219,7 +218,8 @@ void SessionLog::addLoginSuccess(const UUID & auth_id, std::optional<String> ses
     log_entry.client_info = client_info;
 
     log_entry.user = login_user ? login_user->getName() : USER_INTERSERVER_MARKER;
-    log_entry.user_identified_with = login_user ? login_user->auth_data.getType() : AuthenticationType::INTERSERVER_SECRET;
+    if (login_user)
+        log_entry.user_identified_with = login_user->auth_data.getType();
     log_entry.external_auth_server = login_user ? login_user->auth_data.getLDAPServerName() : "";
 
     if (session_id)
@@ -257,7 +257,8 @@ void SessionLog::addLogOut(const UUID & auth_id, const UserPtr & login_user, con
 {
     auto log_entry = SessionLogElement(auth_id, SESSION_LOGOUT);
     log_entry.user = login_user ? login_user->getName() : USER_INTERSERVER_MARKER;
-    log_entry.user_identified_with = login_user ? login_user->auth_data.getType() : AuthenticationType::INTERSERVER_SECRET;
+    if (login_user)
+        log_entry.user_identified_with = login_user->auth_data.getType();
     log_entry.external_auth_server = login_user ? login_user->auth_data.getLDAPServerName() : "";
     log_entry.client_info = client_info;
 
