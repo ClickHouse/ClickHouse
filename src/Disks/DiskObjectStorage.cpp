@@ -786,7 +786,11 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorage::writeFile(
             [blob_name, count] (DiskObjectStorage::Metadata & metadata) { metadata.addObject(blob_name, count); return true; });
     };
 
-    return object_storage->writeObject(fs::path(remote_fs_root_path) / blob_name, mode, object_attributes, std::move(create_metadata_callback), buf_size, settings);
+    /// We always use mode Rewrite because we simulate append using metadata and different files
+    return object_storage->writeObject(
+        fs::path(remote_fs_root_path) / blob_name, WriteMode::Rewrite, object_attributes,
+        std::move(create_metadata_callback),
+        buf_size, settings);
 }
 
 
