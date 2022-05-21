@@ -134,7 +134,7 @@ private:
     void loadNewEntries();
     void removeOldEntries();
 
-    CSN finalizeCommittedTransaction(MergeTreeTransaction * txn, CSN allocated_csn) noexcept;
+    CSN finalizeCommittedTransaction(MergeTreeTransaction * txn, CSN allocated_csn, scope_guard & state_guard) noexcept;
 
     void tryFinalizeUnknownStateTransactions();
 
