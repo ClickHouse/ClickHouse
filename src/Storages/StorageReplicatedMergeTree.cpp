@@ -1151,6 +1151,9 @@ void StorageReplicatedMergeTree::setTableStructure(
                 new_metadata.table_ttl = TTLTableDescription{};
             }
         }
+
+        if (metadata_diff.comment_changed)
+            new_metadata.comment = metadata_diff.comment;
     }
 
     /// Changes in columns may affect following metadata fields
@@ -4774,6 +4777,11 @@ void StorageReplicatedMergeTree::alter(
                 future_metadata_in_zk.ttl_table = serializeAST(*future_metadata.table_ttl.definition_ast);
             else /// TTL was removed
                 future_metadata_in_zk.ttl_table = "";
+        }
+
+        if (future_metadata.comment != current_metadata->comment)
+        {
+            future_metadata_in_zk.comment = future_metadata.comment;
         }
 
         String new_indices_str = future_metadata.secondary_indices.toString();
