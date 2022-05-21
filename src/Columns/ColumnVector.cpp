@@ -608,9 +608,9 @@ ColumnPtr ColumnVector<T>::replicateSSE2(const IColumn::Offsets & offsets) const
         /// data :   11 22 33
         /// offsets: 0  0  4
         /// res:     33 33 33 33
-        size_t shuffle_sz = span;
-        bool shuffle_remain = (shuffle_sz & 3);
-        size_t sse_shuffle_counter = (shuffle_sz >> 2);
+        size_t shuffle_size = span;
+        bool shuffle_remain = (shuffle_size & 3);
+        size_t sse_shuffle_counter = (shuffle_size >> 2);
         sse_shuffle_counter = shuffle_remain * (sse_shuffle_counter + 1) + (!shuffle_remain) * (sse_shuffle_counter);
         it_tmp = it;
         constexpr const int shuffle_mask = (_MM_SHUFFLE(0, 0, 0, 0));
@@ -622,7 +622,7 @@ ColumnPtr ColumnVector<T>::replicateSSE2(const IColumn::Offsets & offsets) const
             it_tmp += 4;
             --sse_shuffle_counter;
         }
-        it += shuffle_sz;
+        it += shuffle_size;
     }
 
     /// data :   11 22 33 44 55
