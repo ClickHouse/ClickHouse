@@ -103,6 +103,7 @@ class ReservationDelegate : public IReservation
 public:
     ReservationDelegate(ReservationPtr delegate_, DiskPtr wrapper_) : delegate(std::move(delegate_)), wrapper(wrapper_) { }
     UInt64 getSize() const override { return delegate->getSize(); }
+    UInt64 getUnreservedSpace() const override { return delegate->getUnreservedSpace(); }
     DiskPtr getDisk(size_t) const override { return wrapper; }
     Disks getDisks() const override { return {wrapper}; }
     void update(UInt64 new_size) override { delegate->update(new_size); }

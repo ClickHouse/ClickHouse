@@ -402,6 +402,10 @@ public:
     /// Get reservation size.
     virtual UInt64 getSize() const = 0;
 
+    /// Space available for reservation
+    /// (with this reservation already take into account).
+    virtual UInt64 getUnreservedSpace() const = 0;
+
     /// Get i-th disk where reservation take place.
     virtual DiskPtr getDisk(size_t i = 0) const = 0; /// NOLINT
 

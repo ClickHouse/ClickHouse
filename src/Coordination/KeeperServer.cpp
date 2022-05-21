@@ -15,6 +15,7 @@
 #include <IO/WriteHelpers.h>
 #include <boost/algorithm/string.hpp>
 #include <libnuraft/cluster_config.hxx>
+#include <libnuraft/log_val_type.hxx>
 #include <libnuraft/raft_server.hxx>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/Util/Application.h>
@@ -314,6 +315,22 @@ void KeeperServer::startup(const Poco::Util::AbstractConfiguration & config, boo
     state_machine->init();
 
     state_manager->loadLogStore(state_machine->last_commit_index() + 1, coordination_settings->reserved_log_items);
+
+    auto log_store = state_manager->load_log_store();
+    auto next_log_idx = log_store->next_slot();
+    if (next_log_idx > 0 && next_log_idx > state_machine->last_commit_index())
+    {
+        auto log_entries = log_store->log_entries(state_machine->last_commit_index() + 1, next_log_idx);
+
+        auto idx = state_machine->last_commit_index() + 1;
+        for (const auto & entry : *log_entries)
+        {
+            if (entry && entry->get_val_type() == nuraft::log_val_type::app_log)
+                state_machine->preprocess(idx, entry->get_buf());
+
+            ++idx;
+        }
+    }
 
     loadLatestConfig();
 

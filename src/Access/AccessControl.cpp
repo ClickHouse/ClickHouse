@@ -163,6 +163,10 @@ void AccessControl::setUpFromMainConfig(const Poco::Util::AbstractConfiguration 
         "access_control_improvements.users_without_row_policies_can_read_rows",
         false /* false because we need to be compatible with earlier access configurations */));
 
+    setOnClusterQueriesRequireClusterGrant(config_.getBool(
+        "access_control_improvements.on_cluster_queries_require_cluster_grant",
+        false /* false because we need to be compatible with earlier access configurations */));
+
     addStoragesFromMainConfig(config_, config_path_, get_zookeeper_function_);
 }
 
