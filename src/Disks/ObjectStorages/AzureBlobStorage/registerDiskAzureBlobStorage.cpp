@@ -7,9 +7,10 @@
 #include <Disks/DiskRestartProxy.h>
 #include <Disks/DiskCacheWrapper.h>
 #include <Disks/RemoteDisksCommon.h>
-#include <Disks/AzureBlobStorage/AzureBlobStorageAuth.h>
-#include <Disks/AzureObjectStorage.h>
-#include <Disks/DiskObjectStorage.h>
+#include <Disks/ObjectStorages/DiskObjectStorage.h>
+
+#include <Disks/ObjectStorages/AzureBlobStorage/AzureBlobStorageAuth.h>
+#include <Disks/ObjectStorages/AzureBlobStorage/AzureObjectStorage.h>
 
 namespace DB
 {

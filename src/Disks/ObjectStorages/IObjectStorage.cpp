@@ -1,4 +1,4 @@
-#include <Disks/IObjectStorage.h>
+#include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Disks/IO/ThreadPoolRemoteFSReader.h>
 #include <IO/copyData.h>
 
@@ -19,7 +19,6 @@ ThreadPool & IObjectStorage::getThreadPoolWriter()
     static ThreadPool writer(pool_size, pool_size, queue_size);
     return writer;
 }
-
 
 std::string IObjectStorage::getCacheBasePath() const
 {

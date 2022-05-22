@@ -1,5 +1,4 @@
-#include <Disks/S3ObjectStorage.h>
-
+#include <Disks/ObjectStorages/S3/S3ObjectStorage.h>
 
 #if USE_AWS_S3
 
@@ -13,8 +12,7 @@
 #include <IO/ReadBufferFromS3.h>
 #include <IO/SeekAvoidingReadBuffer.h>
 #include <Interpreters/threadPoolCallbackRunner.h>
-#include <Disks/S3/diskSettings.h>
-
+#include <Disks/ObjectStorages/S3/diskSettings.h>
 
 #include <aws/s3/model/CopyObjectRequest.h>
 #include <aws/s3/model/ListObjectsV2Request.h>

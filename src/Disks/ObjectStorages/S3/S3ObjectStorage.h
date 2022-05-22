@@ -4,7 +4,7 @@
 
 #if USE_AWS_S3
 
-#include <Disks/IObjectStorage.h>
+#include <Disks/ObjectStorages/IObjectStorage.h>
 #include <memory>
 #include <aws/s3/S3Client.h>
 #include <aws/s3/model/HeadObjectResult.h>

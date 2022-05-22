@@ -4,22 +4,23 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
-#include "Disks/DiskFactory.h"
+#include <Disks/DiskFactory.h>
 
 #if USE_AWS_S3
 
 #include <aws/core/client/DefaultRetryStrategy.h>
 #include <IO/S3Common.h>
-#include <Disks/DiskObjectStorage.h>
+#include <Disks/ObjectStorages/DiskObjectStorage.h>
+#include <Disks/ObjectStorages/S3/S3ObjectStorage.h>
 #include <Disks/DiskCacheWrapper.h>
 #include <Storages/StorageS3Settings.h>
-#include <Disks/S3/ProxyConfiguration.h>
-#include <Disks/S3/ProxyListConfiguration.h>
-#include <Disks/S3/ProxyResolverConfiguration.h>
+#include <Disks/ObjectStorages/S3/ProxyConfiguration.h>
+#include <Disks/ObjectStorages/S3/ProxyListConfiguration.h>
+#include <Disks/ObjectStorages/S3/ProxyResolverConfiguration.h>
 #include <Disks/DiskRestartProxy.h>
 #include <Disks/DiskLocal.h>
 #include <Disks/RemoteDisksCommon.h>
-#include <Disks/S3/diskSettings.h>
+#include <Disks/ObjectStorages/S3/diskSettings.h>
 #include <Common/FileCacheFactory.h>
 
 namespace DB

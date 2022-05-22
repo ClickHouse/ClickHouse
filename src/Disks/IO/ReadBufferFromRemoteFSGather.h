@@ -3,7 +3,7 @@
 #include <Common/config.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadSettings.h>
-#include <Disks/IObjectStorage.h>
+#include <Disks/ObjectStorages/IObjectStorage.h>
 
 #if USE_AZURE_BLOB_STORAGE
 #include <azure/storage/blobs.hpp>

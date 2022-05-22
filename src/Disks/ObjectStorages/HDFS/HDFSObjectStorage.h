@@ -1,56 +1,58 @@
 #pragma once
 #include <Common/config.h>
 
-#if USE_AZURE_BLOB_STORAGE
 
-#include <Disks/RemoteDisksCommon.h>
-#include <Disks/IO/ReadBufferFromRemoteFSGather.h>
-#include <Disks/IO/AsynchronousReadIndirectBufferFromRemoteFS.h>
-#include <Disks/IO/ReadIndirectBufferFromRemoteFS.h>
-#include <Disks/IO/WriteIndirectBufferFromRemoteFS.h>
-#include <Disks/IObjectStorage.h>
-#include <Common/getRandomASCIIString.h>
+#if USE_HDFS
 
+#include <Disks/IDisk.h>
+#include <Disks/ObjectStorages/IObjectStorage.h>
+#include <Storages/HDFS/HDFSCommon.h>
+#include <Core/UUID.h>
+#include <memory>
+#include <Poco/Util/AbstractConfiguration.h>
 
 namespace DB
 {
 
-struct AzureObjectStorageSettings
+struct HDFSObjectStorageSettings
 {
-    AzureObjectStorageSettings(
-        uint64_t max_single_part_upload_size_,
-        uint64_t min_bytes_for_seek_,
-        int max_single_read_retries_,
-        int max_single_download_retries_)
-        : max_single_part_upload_size(max_single_part_upload_size_)
-        , min_bytes_for_seek(min_bytes_for_seek_)
-        , max_single_read_retries(max_single_read_retries_)
-        , max_single_download_retries(max_single_download_retries_)
-    {
-    }
 
-    size_t max_single_part_upload_size; /// NOTE: on 32-bit machines it will be at most 4GB, but size_t is also used in BufferBase for offset
-    uint64_t min_bytes_for_seek;
-    size_t max_single_read_retries;
-    size_t max_single_download_retries;
+    HDFSObjectStorageSettings() = default;
+
+    size_t min_bytes_for_seek;
+    int objects_chunk_size_to_delete;
+    int replication;
+
+    HDFSObjectStorageSettings(
+            int min_bytes_for_seek_,
+            int objects_chunk_size_to_delete_,
+            int replication_)
+        : min_bytes_for_seek(min_bytes_for_seek_)
+        , objects_chunk_size_to_delete(objects_chunk_size_to_delete_)
+        , replication(replication_)
+    {}
 };
 
-using AzureClient = Azure::Storage::Blobs::BlobContainerClient;
-using AzureClientPtr = std::unique_ptr<Azure::Storage::Blobs::BlobContainerClient>;
 
-class AzureObjectStorage : public IObjectStorage
+class HDFSObjectStorage : public IObjectStorage
 {
 public:
 
-    using SettingsPtr = std::unique_ptr<AzureObjectStorageSettings>;
+    using SettingsPtr = std::unique_ptr<HDFSObjectStorageSettings>;
 
-    AzureObjectStorage(
+    HDFSObjectStorage(
         FileCachePtr && cache_,
-        const String & name_,
-        AzureClientPtr && client_,
-        SettingsPtr && settings_);
+        const String & hdfs_root_path_,
+        SettingsPtr settings_,
+        const Poco::Util::AbstractConfiguration & config_)
+        : IObjectStorage(std::move(cache_))
+        , config(config_)
+        , hdfs_builder(createHDFSBuilder(hdfs_root_path_, config))
+        , hdfs_fs(createHDFSFS(hdfs_builder.get()))
+        , settings(std::move(settings_))
+    {}
 
-    bool exists(const std::string & uri) const override;
+    bool exists(const std::string & hdfs_uri) const override;
 
     std::unique_ptr<SeekableReadBuffer> readObject( /// NOLINT
         const std::string & path,
@@ -91,9 +93,9 @@ public:
         const std::string & object_to,
         std::optional<ObjectAttributes> object_to_attributes = {}) override;
 
-    void shutdown() override {}
+    void shutdown() override;
 
-    void startup() override {}
+    void startup() override;
 
     void applyNewSettings(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, ContextPtr context) override;
 
@@ -102,10 +104,14 @@ public:
     std::unique_ptr<IObjectStorage> cloneObjectStorage(const std::string & new_namespace, const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, ContextPtr context) override;
 
 private:
-    const String name;
-    /// client used to access the files in the Blob Storage cloud
-    MultiVersion<Azure::Storage::Blobs::BlobContainerClient> client;
-    MultiVersion<AzureObjectStorageSettings> settings;
+    const Poco::Util::AbstractConfiguration & config;
+
+    HDFSBuilderWrapper hdfs_builder;
+    HDFSFSPtr hdfs_fs;
+
+    SettingsPtr settings;
+
+
 };
 
 }
