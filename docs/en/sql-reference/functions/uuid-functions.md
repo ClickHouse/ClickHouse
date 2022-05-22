@@ -43,7 +43,7 @@ SELECT * FROM t_uuid
 └──────────────────────────────────────┘
 ```
 
-**Usage example if mupliple columns needed to be generated in one row**
+**Usage example if it is needed to generate multiple values in one row**
 
 ```sql
 SELECT generateUUIDv4(1), generateUUIDv4(2)
