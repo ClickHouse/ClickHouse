@@ -18,7 +18,6 @@ namespace ErrorCodes
 DependenciesGraph::DependenciesGraph(ContextMutablePtr global_context_)
         : global_context(global_context_)
 {
-    tasks_dependencies.default_database = global_context->getCurrentDatabase();
     log = &Poco::Logger::get("DistributedDDLDependenciesGraph");
 }
 
