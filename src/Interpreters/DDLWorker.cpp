@@ -374,6 +374,8 @@ void DDLWorker::scheduleTasks(bool reinitialized)
         if (dependencies_graph.tasks_dependencies.database_objects_in_query.contains(entry_name) || dependencies_graph.tasks_dependencies.independent_queries.contains(entry_name))
             continue;
 
+        LOG_DEBUG(log, "Checked database_objects_in_query contains");
+
         String reason;
         auto task = initAndCheckTask(entry_name, reason, zookeeper);
         if (task)
@@ -388,7 +390,9 @@ void DDLWorker::scheduleTasks(bool reinitialized)
             continue;
         }
         saveTask(std::move(task));
+        LOG_DEBUG(log, "Saved task");
         dependencies_graph.addTask(std::move(task));
+        LOG_DEBUG(log, "Added task to graph");
     }
 
     auto tasks_to_process = dependencies_graph.getTasksToParallelProcess();

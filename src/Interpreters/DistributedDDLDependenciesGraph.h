@@ -41,12 +41,10 @@ using ProcessInfo = std::unordered_map<String, bool>;
 
 struct TasksDependencies
 {
-    String default_database;
-
     /// For logging
     size_t total_queries = 0;
 
-    /// Set of tables/dictionaries that do not have any dependencies and can be loaded
+    /// Set of queries that do not have any dependencies and can be executed
     QueryNamesSet independent_queries;
     /// Adjacent list of dependency graph, contains two maps
     /// 2. query name -> dependent queries list (adjacency list of dependencies graph).
