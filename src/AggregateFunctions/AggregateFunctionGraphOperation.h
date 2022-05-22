@@ -36,9 +36,6 @@ public:
     GraphOperation(const DataTypePtr & data_type_, const Array & parameters_)
         : IAggregateFunctionDataHelper<Data, GraphOperation>({data_type_}, parameters_)
     {
-        for (const auto & parameter : parameters_)
-            if (parameter.isNull())
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Can't pass NULL to {} parameters", getName());
     }
 
     String getName() const final { return UnderlyingT::name; }
@@ -69,7 +66,7 @@ public:
         }
         else
         {
-            return field.get<Vertex>();
+            return field.safeGet<Vertex>();
         }
     }
 
