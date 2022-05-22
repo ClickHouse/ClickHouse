@@ -391,7 +391,7 @@ void DDLWorker::scheduleTasks(bool reinitialized)
         }
         saveTask(std::move(task));
         LOG_DEBUG(log, "Saved task");
-        dependencies_graph.addTask(std::move(task));
+        dependencies_graph.addTask(task);
         LOG_DEBUG(log, "Added task to graph");
     }
 

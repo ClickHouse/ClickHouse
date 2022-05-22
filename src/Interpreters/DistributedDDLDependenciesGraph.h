@@ -69,7 +69,7 @@ public:
     DependenciesGraph(ContextMutablePtr global_context_);
     DependenciesGraph() = delete;
 
-    void addTask(DDLTaskPtr && task);
+    void addTask(DDLTaskPtr & task);
 
     void removeTask(String query_name);
 
