@@ -217,6 +217,18 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
+/** Parse collation
+  * COLLATE utf8_unicode_ci NOT NULL
+  */
+class ParserCollation : public IParserBase
+{
+protected:
+    const char * getName() const override { return "collation"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+private:
+    static const char * valid_collations[];
+};
+
 /// Fast path of cast operator "::".
 /// It tries to read literal as text.
 /// If it fails, later operator will be transformed to function CAST.

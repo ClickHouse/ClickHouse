@@ -8,7 +8,7 @@
 namespace DB
 {
 class IBackupEntry;
-using BackupEntryPtr = std::unique_ptr<IBackupEntry>;
+using BackupEntryPtr = std::shared_ptr<const IBackupEntry>;
 
 /// Represents a backup, i.e. a storage of BackupEntries which can be accessed by their names.
 /// A backup can be either incremental or non-incremental. An incremental backup doesn't store

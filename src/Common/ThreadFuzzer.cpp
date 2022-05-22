@@ -1,4 +1,4 @@
-#include <signal.h>
+#include <csignal>
 #include <sys/time.h>
 #if defined(OS_LINUX)
 #   include <sys/sysinfo.h>
