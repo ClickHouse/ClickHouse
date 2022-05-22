@@ -174,7 +174,7 @@ std::unique_ptr<ReadBufferFromFileBase> DiskCache::readFile(
 
     auto impl = DiskDecorator::readFile(path, read_settings, read_hint, file_size);
 
-    LOG_ERROR(log, "Read file: {}", path);
+    LOG_TRACE(log, "Read file: {}", path);
 
     /// If underlying read buffer does caching on its own, do not wrap it in caching buffer.
     if (impl->isIntegratedWithFilesystemCache() && settings.enable_filesystem_cache_on_lower_level)

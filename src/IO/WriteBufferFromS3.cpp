@@ -20,7 +20,6 @@
 namespace ProfileEvents
 {
     extern const Event WriteBufferFromS3Bytes;
-    extern const Event CachedReadBufferCacheWriteBytes;
 }
 
 namespace DB
