@@ -3,6 +3,7 @@
 #include <Disks/IDisk.h>
 #include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Disks/ObjectStorages/DiskObjectStorageMetadataHelper.h>
+#include <Disks/ObjectStorages/DiskObjectStorageMetadata.h>
 #include <re2/re2.h>
 
 namespace CurrentMetrics
@@ -13,7 +14,11 @@ namespace CurrentMetrics
 namespace DB
 {
 
-
+/// Disk build on top of IObjectStorage. Use additional disk (local for example)
+/// for metadata storage. Metadata is a small files with mapping from local paths to
+/// objects in object storage, like:
+/// "/var/lib/clickhouse/data/db/table/all_0_0_0/columns.txt" -> /xxxxxxxxxxxxxxxxxxxx
+///                                                           -> /yyyyyyyyyyyyyyyyyyyy
 class DiskObjectStorage : public IDisk
 {
 
@@ -37,7 +42,7 @@ public:
 
     bool supportParallelWrite() const override { return true; }
 
-    struct Metadata;
+    using Metadata = DiskObjectStorageMetadata;
     using MetadataUpdater = std::function<bool(Metadata & metadata)>;
 
     const String & getName() const override { return name; }
@@ -190,62 +195,6 @@ private:
     bool send_metadata;
 
     std::unique_ptr<DiskObjectStorageMetadataHelper> metadata_helper;
-};
-
-struct DiskObjectStorage::Metadata
-{
-    using Updater = std::function<bool(DiskObjectStorage::Metadata & metadata)>;
-    /// Metadata file version.
-    static constexpr UInt32 VERSION_ABSOLUTE_PATHS = 1;
-    static constexpr UInt32 VERSION_RELATIVE_PATHS = 2;
-    static constexpr UInt32 VERSION_READ_ONLY_FLAG = 3;
-
-    /// Remote FS objects paths and their sizes.
-    std::vector<BlobPathWithSize> remote_fs_objects;
-
-    /// URI
-    const String & remote_fs_root_path;
-
-    /// Relative path to metadata file on local FS.
-    const String metadata_file_path;
-
-    DiskPtr metadata_disk;
-
-    /// Total size of all remote FS (S3, HDFS) objects.
-    size_t total_size = 0;
-
-    /// Number of references (hardlinks) to this metadata file.
-    ///
-    /// FIXME: Why we are tracking it explicetly, without
-    /// info from filesystem????
-    UInt32 ref_count = 0;
-
-    /// Flag indicates that file is read only.
-    bool read_only = false;
-
-    Metadata(
-        const String & remote_fs_root_path_,
-        DiskPtr metadata_disk_,
-        const String & metadata_file_path_);
-
-    void addObject(const String & path, size_t size);
-
-    static Metadata readMetadata(const String & remote_fs_root_path_, DiskPtr metadata_disk_, const String & metadata_file_path_);
-    static Metadata readUpdateAndStoreMetadata(const String & remote_fs_root_path_, DiskPtr metadata_disk_, const String & metadata_file_path_, bool sync, Updater updater);
-    static Metadata readUpdateStoreMetadataAndRemove(const String & remote_fs_root_path_, DiskPtr metadata_disk_, const String & metadata_file_path_, bool sync, Updater updater);
-
-    static Metadata createAndStoreMetadata(const String & remote_fs_root_path_, DiskPtr metadata_disk_, const String & metadata_file_path_, bool sync);
-    static Metadata createUpdateAndStoreMetadata(const String & remote_fs_root_path_, DiskPtr metadata_disk_, const String & metadata_file_path_, bool sync, Updater updater);
-    static Metadata createAndStoreMetadataIfNotExists(const String & remote_fs_root_path_, DiskPtr metadata_disk_, const String & metadata_file_path_, bool sync, bool overwrite);
-
-    /// Serialize metadata to string (very same with saveToBuffer)
-    std::string serializeToString();
-
-private:
-    /// Fsync metadata file if 'sync' flag is set.
-    void save(bool sync = false);
-    void saveToBuffer(WriteBuffer & buffer, bool sync);
-    void load();
 };
 
 class DiskObjectStorageReservation final : public IReservation

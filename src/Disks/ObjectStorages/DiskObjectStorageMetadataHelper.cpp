@@ -13,6 +13,7 @@ namespace ErrorCodes
 {
     extern const int UNKNOWN_FORMAT;
     extern const int LOGICAL_ERROR;
+    extern const int BAD_ARGUMENTS;
 }
 
 static String revisionToString(UInt64 revision)

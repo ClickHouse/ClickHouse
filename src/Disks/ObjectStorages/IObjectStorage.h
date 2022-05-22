@@ -65,7 +65,7 @@ public:
     /// Path exists or not
     virtual bool exists(const std::string & path) const = 0;
 
-    /// List on prefix, return childs with their sizes.
+    /// List on prefix, return children with their sizes.
     virtual void listPrefix(const std::string & path, BlobsPathToSize & children) const = 0;
 
     /// Get object metadata if supported. It should be possible to receive
