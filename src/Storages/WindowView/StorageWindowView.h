@@ -203,6 +203,7 @@ private:
     bool inner_target_table{false};
     mutable Block input_header;
     mutable Block output_header;
+    UInt64 fire_signal_timeout_s;
     UInt64 clean_interval_ms;
     const DateLUTImpl * time_zone = nullptr;
     UInt32 max_timestamp = 0;
