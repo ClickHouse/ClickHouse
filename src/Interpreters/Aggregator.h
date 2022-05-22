@@ -1411,6 +1411,31 @@ private:
         MutableColumns & final_key_columns) const;
 
     static bool hasSparseArguments(AggregateFunctionInstruction * aggregate_instructions);
+
+    template <typename Method, typename Table>
+    void convertToBlockImplByFilterKeys(
+        Method &,
+        Table & data,
+        MutableColumns & key_columns,
+        AggregateColumnsData & aggregate_columns,
+        MutableColumns & final_aggregate_columns,
+        Arena * arena,
+        const ColumnRawPtrs & filter_keys,
+        bool final) const;
+
+    template <typename Method>
+    Block convertOneBucketToBlockByFilterKeys(
+        AggregatedDataVariants & data_variants,
+        Method & method,
+        Arena * arena,
+        size_t bucket,
+        const ColumnRawPtrs & filter_keys,
+        bool final) const;
+
+    Block readBlockByFilterBlock(
+        ManyAggregatedDataVariantsPtr data,
+        const Block & filter_block,
+        bool final) const;
 };
 
 

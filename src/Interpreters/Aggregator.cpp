@@ -3170,5 +3170,183 @@ void Aggregator::destroyAllAggregateStates(AggregatedDataVariants & result) cons
         throw Exception("Unknown aggregated data variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
 }
 
+Block Aggregator::readBlockByFilterBlock(
+    ManyAggregatedDataVariantsPtr many_data,
+    const Block & filter_block,
+    bool final) const
+{
+    AggregatedDataVariantsPtr & data = many_data->at(0);
+
+    if (data->isTwoLevel())
+    {
+        Arena arena;
+        std::vector<Block> result_blocks;
+
+        auto & merged_data = *data;
+        auto method = merged_data.type;
+
+        ColumnRawPtrs key_columns(params.keys_size);
+
+        /// Remember the columns we will work with
+        for (size_t i = 0; i < params.keys_size; ++i)
+            key_columns[i] = filter_block.safeGetByPosition(i).column.get();
+
+        std::vector<Block> filter_blocks(256);
+
+    #define M(NAME) \
+        else if (merged_data.type == AggregatedDataVariants::Type::NAME) \
+            convertBlockToTwoLevelImpl(*merged_data.NAME, merged_data.aggregates_pool, \
+                key_columns, filter_block, filter_blocks);
+
+        if (false) {} // NOLINT
+        APPLY_FOR_VARIANTS_TWO_LEVEL(M)
+    #undef M
+
+        // TODO find bucket by key, to eliminate iteration?
+        for (const auto& block: filter_blocks)
+        {
+            if (!block)
+                continue;
+
+            size_t bucket = block.info.bucket_num;
+
+            ColumnRawPtrs filter_keys(params.keys_size);
+            for (size_t i = 0; i < params.keys_size; ++i)
+                filter_keys[i] = block.safeGetByPosition(i).column.get();
+
+            Block result_block;
+            if (false) {} // NOLINT
+        #define M(NAME) \
+            else if (method == AggregatedDataVariants::Type::NAME) \
+            { \
+                mergeBucketImpl<decltype(merged_data.NAME)::element_type>(*many_data, bucket, &arena); \
+                result_block = convertOneBucketToBlockByFilterKeys(merged_data, *merged_data.NAME, &arena, bucket, filter_keys, final); \
+            }
+            APPLY_FOR_VARIANTS_TWO_LEVEL(M)
+        #undef M
+            if (block.rows()) {
+                result_blocks.push_back(std::move(result_block));
+            }
+        }
+
+        auto result = filter_block.cloneEmpty();
+        for (size_t column_no = 0; column_no < result.columns(); ++column_no) {
+            auto col_to = IColumn::mutate(std::move(result.getByPosition(column_no).column));
+            for (const auto& from: result_blocks) {
+                const IColumn & col_from = *from.getByPosition(column_no).column.get();
+                col_to->insertRangeFrom(col_from, 0, from.rows());
+            }
+            result.getByPosition(column_no).column = std::move(col_to);
+        }
+        return result;
+    }
+
+#define M(NAME) \
+            else if (data->type == AggregatedDataVariants::Type::NAME) \
+                mergeSingleLevelDataImpl<decltype(data->NAME)::element_type>(*many_data);
+    if (false) {} // NOLINT
+    APPLY_FOR_VARIANTS_SINGLE_LEVEL(M)
+#undef M
+    else
+        throw Exception("Unknown aggregated data variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
+
+    // prepareBlockAndFillSingleLevel
+    AggregatedDataVariants & data_variants = *data;
+
+    size_t rows = data_variants.sizeWithoutOverflowRow();
+
+    ColumnRawPtrs filter_keys(params.keys_size);
+    /// Remember the columns we will work with
+    for (size_t i = 0; i < params.keys_size; ++i)
+        filter_keys[i] = filter_block.safeGetByPosition(i).column.get();
+
+    auto filler = [&data_variants, this, filter_keys](
+        MutableColumns & key_columns,
+        AggregateColumnsData & aggregate_columns,
+        MutableColumns & final_aggregate_columns,
+        bool final_)
+    {
+    #define M(NAME) \
+        else if (data_variants.type == AggregatedDataVariants::Type::NAME) \
+            convertToBlockImplByFilterKeys(*data_variants.NAME, data_variants.NAME->data, \
+                key_columns, aggregate_columns, final_aggregate_columns, data_variants.aggregates_pool, filter_keys, final_);
+
+        if (false) {} // NOLINT
+        APPLY_FOR_VARIANTS_SINGLE_LEVEL(M)
+    #undef M
+        else
+            throw Exception("Unknown aggregated data variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
+    };
+    return prepareBlockAndFill(data_variants, final, rows, filler);
+}
+
+template <typename Method>
+Block Aggregator::convertOneBucketToBlockByFilterKeys(
+    AggregatedDataVariants & data_variants,
+    Method & method,
+    Arena * arena,
+    size_t bucket,
+    const ColumnRawPtrs & filter_keys,
+    bool final) const
+{
+    return prepareBlockAndFill(data_variants, final, method.data.impls[bucket].size(),
+        [bucket, &method, arena, filter_keys, this] (
+            MutableColumns & key_columns,
+            AggregateColumnsData & aggregate_columns,
+            MutableColumns & final_aggregate_columns,
+            bool final_)
+        {
+            convertToBlockImplByFilterKeys(method, method.data.impls[bucket],
+                key_columns, aggregate_columns, final_aggregate_columns, arena, filter_keys, final_);
+        });
+}
+
+
+template <typename Method, typename Table>
+void Aggregator::convertToBlockImplByFilterKeys(
+    Method &,
+    Table & data,
+    MutableColumns & key_columns,
+    AggregateColumnsData & aggregate_columns,
+    MutableColumns & final_aggregate_columns,
+    Arena * arena,
+    const ColumnRawPtrs & filter_keys,
+    bool final) const
+{
+    if (data.empty()) {
+        std::cerr << "data.empty()" << std::endl;
+        return;
+    }
+
+    if (key_columns.size() != params.keys_size)
+        throw Exception{"Aggregate. Unexpected key columns size.", ErrorCodes::LOGICAL_ERROR};
+
+    std::vector<IColumn *> raw_key_columns;
+    key_columns.reserve(key_columns.size());
+    for (auto & column : key_columns)
+        raw_key_columns.push_back(column.get());
+
+    typename Method::State state(filter_keys, key_sizes, aggregation_state_cache);
+
+    Arena temp_arena;
+    for (size_t row = 0; row < filter_keys[0]->size(); ++row)
+    {
+        auto find_result = state.findKey(data, row, temp_arena);
+        if (!find_result.isFound())
+            continue;
+
+        for (size_t key = 0; key < raw_key_columns.size(); ++key)
+            raw_key_columns[key]->insertFrom(*filter_keys[key], row);
+
+        AggregateDataPtr mapped = find_result.getMapped();
+
+        if (final) {
+            insertAggregatesIntoColumns(mapped, final_aggregate_columns, arena);
+        } else {
+            for (size_t i = 0; i < params.aggregates_size; ++i)
+                aggregate_columns[i]->push_back(mapped + offsets_of_aggregate_states[i]);
+        }
+    }
+}
 
 }

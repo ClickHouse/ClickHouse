@@ -109,9 +109,9 @@ std::optional<Chunk> RemoteSource::tryGenerate()
 
     if (!block.info.is_lookup) {
         block.info.order_num = block.info.order_num * (neighbour_executors.size() + 1) + (shard_num - 1);
-        // for (const auto & executor: neighbour_executors) {
-        //     executor->sendGetRequest(block);
-        // }
+        for (const auto & executor: neighbour_executors) {
+            executor->sendGetRequest(block);
+        }
     }
 
     UInt64 num_rows = block.rows();

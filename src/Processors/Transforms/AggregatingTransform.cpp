@@ -634,16 +634,6 @@ AggregatingMemoryHolder::AggregatingMemoryHolder(ManyAggregatedDataPtr many_data
         std::cerr << "Holder cretaed" << std::endl;
     }
 
-Block AggregatingMemoryHolder::lookupBlock(ColumnRawPtrs key_columns) const {
-    auto prepared_data = aggregator_transform_params->aggregator.prepareVariantsToMerge(many_data->variants);
-    auto prepared_data_ptr = std::make_shared<ManyAggregatedDataVariants>(std::move(prepared_data));
-
-    Block block = aggregator_transform_params->aggregator.readBlockByFilterKeys(
-        prepared_data_ptr, key_columns, aggregator_transform_params->final);
-
-    return block;
-}
-
 Block AggregatingMemoryHolder::lookupBlock(const Block & filter_block) const {
     auto prepared_data = aggregator_transform_params->aggregator.prepareVariantsToMerge(many_data->variants);
     auto prepared_data_ptr = std::make_shared<ManyAggregatedDataVariants>(std::move(prepared_data));
