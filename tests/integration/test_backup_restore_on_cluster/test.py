@@ -389,7 +389,7 @@ def test_replicated_database_async():
         f"BACKUP DATABASE mydb ON CLUSTER 'cluster' TO {backup_name} ASYNC"
     ).split("\t")
 
-    assert status == "MAKING_BACKUP\n"
+    assert status == "MAKING_BACKUP\n" or status == "BACKUP_COMPLETE\n"
 
     assert_eq_with_retry(
         node1,
@@ -403,7 +403,7 @@ def test_replicated_database_async():
         f"RESTORE DATABASE mydb ON CLUSTER 'cluster' FROM {backup_name} ASYNC"
     ).split("\t")
 
-    assert status == "RESTORING\n"
+    assert status == "RESTORING\n" or status == "RESTORED\n"
 
     assert_eq_with_retry(
         node1, f"SELECT status FROM system.backups WHERE uuid='{id}'", "RESTORED\n"

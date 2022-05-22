@@ -278,7 +278,7 @@ def test_async():
     [id, _, status] = instance.query(
         f"BACKUP TABLE test.table TO {backup_name} ASYNC"
     ).split("\t")
-    assert status == "MAKING_BACKUP\n"
+    assert status == "MAKING_BACKUP\n" or status == "BACKUP_COMPLETE\n"
     assert_eq_with_retry(
         instance,
         f"SELECT status FROM system.backups WHERE uuid='{id}'",
@@ -290,7 +290,7 @@ def test_async():
     [id, _, status] = instance.query(
         f"RESTORE TABLE test.table FROM {backup_name} ASYNC"
     ).split("\t")
-    assert status == "RESTORING\n"
+    assert status == "RESTORING\n" or status == "RESTORED\n"
     assert_eq_with_retry(
         instance, f"SELECT status FROM system.backups WHERE uuid='{id}'", "RESTORED\n"
     )
