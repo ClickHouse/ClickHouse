@@ -221,7 +221,7 @@ public:
 
     virtual DiskPtr getWrappedDisk() const
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method `getWrappedDisk()` is not implemeneted for disk: {}", getType());
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method `getWrappedDisk()` is not implemented for disk: {}", getType());
     }
 
     /// Returns a list of paths because for Log family engines there might be

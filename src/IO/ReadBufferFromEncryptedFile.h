@@ -26,8 +26,6 @@ public:
 
     std::string getFileName() const override { return in->getFileName(); }
 
-    bool supportsRightBoundedReads() const override { return true; }
-
     void setReadUntilPosition(size_t position) override { in->setReadUntilPosition(position + FileEncryption::Header::kSize); }
 
     void setReadUntilEnd() override { in->setReadUntilEnd(); }
@@ -38,7 +36,6 @@ private:
     std::unique_ptr<ReadBufferFromFileBase> in;
 
     off_t offset = 0;
-    std::optional<off_t> read_until_position;
 
     bool need_seek = false;
 

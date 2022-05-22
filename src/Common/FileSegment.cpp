@@ -428,7 +428,7 @@ void FileSegment::complete(State state)
     assertNotDetached(segment_lock);
 
     bool is_downloader = isDownloaderImpl(segment_lock);
-    if (!is_downloader)
+    if (!is_downloader && !write_through_cache_download)
     {
         cv.notify_all();
         throw Exception(ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR,
@@ -871,11 +871,16 @@ void FileSegmentRangeWriter::finalize()
     if (file_segments.empty() || current_file_segment_it == file_segments.end())
         return;
 
-    std::lock_guard cache_lock(cache->mutex);
-
-    auto & file_segment = *current_file_segment_it;
-    file_segment->complete(cache_lock);
-    on_complete_file_segment_func(*current_file_segment_it);
+    if ((*current_file_segment_it)->getDownloadedSize() > 0)
+    {
+        (*current_file_segment_it)->complete(FileSegment::State::DOWNLOADED);
+        on_complete_file_segment_func(*current_file_segment_it);
+    }
+    else
+    {
+        std::lock_guard cache_lock(cache->mutex);
+        (*current_file_segment_it)->complete(cache_lock);
+    }
 
     finalized = true;
 }
