@@ -134,6 +134,10 @@ public:
         const Names & deduplicate_by_columns,
         ContextPtr context) override;
 
+    void alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & table_lock_holder) override;
+
+    void checkAlterIsPossible(const AlterCommands & commands, ContextPtr context) const override;
+
     void startup() override;
     void shutdown() override;
 
@@ -187,14 +191,14 @@ private:
     ASTPtr mergeable_query;
     /// Used to fetch the mergeable state and generate the final result. e.g. SELECT * FROM * GROUP BY tumble(____timestamp, *)
     ASTPtr final_query;
-
     /// Used to fetch the data from inner storage.
     ASTPtr inner_fetch_query;
 
-    bool is_proctime{true};
+    bool is_proctime;
     bool is_time_column_func_now;
     bool is_tumble; // false if is hop
     std::atomic<bool> shutdown_called{false};
+    std::atomic<bool> modifying_query{false};
     bool has_inner_table{true};
     bool inner_target_table{false};
     mutable Block input_header;
@@ -204,10 +208,10 @@ private:
     UInt32 max_timestamp = 0;
     UInt32 max_watermark = 0; // next watermark to fire
     UInt32 max_fired_watermark = 0;
-    bool is_watermark_strictly_ascending{false};
-    bool is_watermark_ascending{false};
-    bool is_watermark_bounded{false};
-    bool allowed_lateness{false};
+    bool is_watermark_strictly_ascending;
+    bool is_watermark_ascending;
+    bool is_watermark_bounded;
+    bool allowed_lateness;
     UInt32 next_fire_signal;
     std::deque<UInt32> fire_signal;
     std::list<std::weak_ptr<WindowViewSource>> watch_streams;
@@ -227,8 +231,8 @@ private:
     Int64 window_num_units;
     Int64 hop_num_units;
     Int64 slice_num_units;
-    Int64 watermark_num_units = 0;
-    Int64 lateness_num_units = 0;
+    Int64 watermark_num_units;
+    Int64 lateness_num_units;
     Int64 slide_num_units;
     String window_id_name;
     String window_id_alias;
@@ -240,6 +244,8 @@ private:
     StorageID target_table_id = StorageID::createEmpty();
     StorageID inner_table_id = StorageID::createEmpty();
 
+    ASTPtr inner_table_engine;
+
     BackgroundSchedulePool::TaskHolder clean_cache_task;
     BackgroundSchedulePool::TaskHolder fire_task;
 
@@ -248,9 +254,8 @@ private:
 
     ASTPtr innerQueryParser(const ASTSelectQuery & query);
     void eventTimeParser(const ASTCreateQuery & query);
+    ASTPtr initInnerQuery(ASTSelectQuery query, ContextPtr context);
 
-    std::shared_ptr<ASTCreateQuery> getInnerTableCreateQuery(
-        const ASTPtr & inner_query, ASTStorage * storage, const String & database_name, const String & table_name);
     UInt32 getCleanupBound();
     ASTPtr getCleanupQuery();
 
@@ -267,6 +272,7 @@ private:
     void updateMaxTimestamp(UInt32 timestamp);
 
     ASTPtr getFinalQuery() const { return final_query->clone(); }
+    ASTPtr getInnerTableCreateQuery(const ASTPtr & inner_query, const StorageID & inner_table_id);
 
     StoragePtr getSourceTable() const;
     StoragePtr getInnerTable() const;
