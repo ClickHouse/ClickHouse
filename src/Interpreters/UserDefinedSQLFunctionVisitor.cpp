@@ -46,9 +46,9 @@ ASTPtr UserDefinedSQLFunctionMatcher::tryToReplaceFunction(const ASTFunction & f
     auto user_defined_function = UserDefinedSQLFunctionFactory::instance().tryGet(function.name);
     if (!user_defined_function)
         return nullptr;
+    // !! use separate factory for InterpFunctons?
     const auto & create_function_query = user_defined_function->as<ASTCreateLambdaFunctionQuery>();
     if (!create_function_query) {
-        // !! execute (where?)
         return nullptr;  // InterpFunction
     }
 

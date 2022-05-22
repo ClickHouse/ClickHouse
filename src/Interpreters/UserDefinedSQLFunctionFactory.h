@@ -5,6 +5,7 @@
 
 #include <Common/NamePrompter.h>
 
+#include <Functions/IFunction.h>
 #include <Parsers/ASTCreateFunctionQuery.h>
 #include <Interpreters/Context_fwd.h>
 
@@ -36,6 +37,10 @@ public:
 
     /// Get function create query for function_name. If no function registered with function_name return nullptr.
     ASTPtr tryGet(const String & function_name) const;
+
+    /// Create an executable function from an InterpFunc query.
+    // !! use separete factory class
+    FunctionOverloadResolverPtr tryGetExec(const String & function_name, ContextPtr context) const;
 
     /// Check if function with function_name registered.
     bool has(const String & function_name) const;

@@ -40,7 +40,7 @@
 #include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/UserDefinedExecutableFunctionFactory.h>
-
+#include <Interpreters/UserDefinedSQLFunctionFactory.h>
 
 namespace DB
 {
@@ -885,6 +885,11 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
         return;
 
     FunctionOverloadResolverPtr function_builder = UserDefinedExecutableFunctionFactory::instance().tryGet(node.name, data.getContext());
+
+    if (!function_builder)
+    {
+        function_builder = UserDefinedSQLFunctionFactory::instance().tryGetExec(node.name, data.getContext());
+    }
 
     if (!function_builder)
     {
