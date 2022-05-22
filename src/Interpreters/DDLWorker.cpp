@@ -180,7 +180,7 @@ DDLTaskPtr DDLWorker::initAndCheckTask(const String & entry_name, String & out_r
     {
         /// What should we do if we even cannot parse host name and therefore cannot properly submit execution status?
         /// We can try to create fail node using FQDN if it equal to host name in cluster config attempt will be successful.
-        /// Otherwise, that node will be ignored by DDLQueryStatusInputStream.
+        /// Otherwise, that node will be ignored by DDLQueryStatusSource.
         out_reason = "Incorrect task format";
         write_error_status(host_fqdn_id, ExecutionStatus::fromCurrentException().serializeText(), out_reason);
         return {};
@@ -707,6 +707,8 @@ bool DDLWorker::tryExecuteQueryOnLeaderReplica(
     if (zookeeper->exists(is_executed_path, nullptr, event))
     {
         LOG_DEBUG(log, "Task {} has already been executed by replica ({}) of the same shard.", task.entry_name, zookeeper->get(is_executed_path));
+        if (auto op = task.getOpToUpdateLogPointer())
+            task.ops.push_back(op);
         return true;
     }
 
@@ -751,6 +753,8 @@ bool DDLWorker::tryExecuteQueryOnLeaderReplica(
             {
                 LOG_DEBUG(log, "Task {} has already been executed by replica ({}) of the same shard.", task.entry_name, executed_by);
                 executed_by_other_leader = true;
+                if (auto op = task.getOpToUpdateLogPointer())
+                    task.ops.push_back(op);
                 break;
             }
 
@@ -778,6 +782,8 @@ bool DDLWorker::tryExecuteQueryOnLeaderReplica(
         {
             LOG_DEBUG(log, "Task {} has already been executed by replica ({}) of the same shard.", task.entry_name, zookeeper->get(is_executed_path));
             executed_by_other_leader = true;
+            if (auto op = task.getOpToUpdateLogPointer())
+                task.ops.push_back(op);
             break;
         }
         else

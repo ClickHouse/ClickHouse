@@ -2,7 +2,6 @@
 
 #include <Storages/IStorage.h>
 #include <Poco/URI.h>
-#include <base/shared_ptr_helper.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Formats/FormatSettings.h>
 #include <IO/CompressionMethod.h>
@@ -115,6 +114,7 @@ public:
 
     std::string getName() const override { return "StorageURLSink"; }
     void consume(Chunk chunk) override;
+    void onException() override;
     void onFinish() override;
 
 private:
@@ -122,9 +122,8 @@ private:
     OutputFormatPtr writer;
 };
 
-class StorageURL : public shared_ptr_helper<StorageURL>, public IStorageURLBase
+class StorageURL : public IStorageURLBase
 {
-    friend struct shared_ptr_helper<StorageURL>;
 public:
     StorageURL(
         const String & uri_,

@@ -102,7 +102,8 @@ protected:
 
     std::atomic<bool> is_killed { false };
 
-    /// All data to the client already had been sent. Including EndOfStream.
+    /// All data to the client already had been sent.
+    /// Including EndOfStream or Exception.
     std::atomic<bool> is_all_data_sent { false };
 
     void setUserProcessList(ProcessListForUser * user_process_list_);

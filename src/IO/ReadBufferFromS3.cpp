@@ -19,9 +19,9 @@
 
 namespace ProfileEvents
 {
-    extern const Event S3ReadMicroseconds;
-    extern const Event S3ReadBytes;
-    extern const Event S3ReadRequestsErrors;
+    extern const Event ReadBufferFromS3Microseconds;
+    extern const Event ReadBufferFromS3Bytes;
+    extern const Event ReadBufferFromS3RequestsErrors;
     extern const Event ReadBufferSeekCancelConnection;
 }
 
@@ -121,14 +121,14 @@ bool ReadBufferFromS3::nextImpl()
             /// Try to read a next portion of data.
             next_result = impl->next();
             watch.stop();
-            ProfileEvents::increment(ProfileEvents::S3ReadMicroseconds, watch.elapsedMicroseconds());
+            ProfileEvents::increment(ProfileEvents::ReadBufferFromS3Microseconds, watch.elapsedMicroseconds());
             break;
         }
         catch (const Exception & e)
         {
             watch.stop();
-            ProfileEvents::increment(ProfileEvents::S3ReadMicroseconds, watch.elapsedMicroseconds());
-            ProfileEvents::increment(ProfileEvents::S3ReadRequestsErrors, 1);
+            ProfileEvents::increment(ProfileEvents::ReadBufferFromS3Microseconds, watch.elapsedMicroseconds());
+            ProfileEvents::increment(ProfileEvents::ReadBufferFromS3RequestsErrors, 1);
 
             LOG_DEBUG(
                 log,
@@ -157,7 +157,7 @@ bool ReadBufferFromS3::nextImpl()
 
     BufferBase::set(impl->buffer().begin(), impl->buffer().size(), impl->offset()); /// use the buffer returned by `impl`
 
-    ProfileEvents::increment(ProfileEvents::S3ReadBytes, working_buffer.size());
+    ProfileEvents::increment(ProfileEvents::ReadBufferFromS3Bytes, working_buffer.size());
     offset += working_buffer.size();
 
     return true;

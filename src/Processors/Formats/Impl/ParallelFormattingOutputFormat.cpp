@@ -161,7 +161,7 @@ namespace DB
         try
         {
             auto & unit = processing_units[current_unit_number];
-            assert(unit.status = READY_TO_FORMAT);
+            assert(unit.status == READY_TO_FORMAT);
 
             /// We want to preallocate memory buffer (increase capacity)
             /// and put the pointer at the beginning of the buffer

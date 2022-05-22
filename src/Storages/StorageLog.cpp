@@ -398,6 +398,7 @@ void LogSink::onFinish()
 
     storage.saveMarks(lock);
     storage.saveFileSizes(lock);
+    storage.updateTotalRows(lock);
 
     done = true;
 
@@ -581,6 +582,8 @@ StorageLog::StorageLog(
             tryLogCurrentException(__PRETTY_FUNCTION__);
         }
     }
+
+    total_bytes = file_checker.getTotalSize();
 }
 
 
@@ -624,7 +627,7 @@ void StorageLog::loadMarks(std::chrono::seconds lock_timeout)
     loadMarks(lock);
 }
 
-void StorageLog::loadMarks(const WriteLock & /* already locked exclusively */)
+void StorageLog::loadMarks(const WriteLock & lock /* already locked exclusively */)
 {
     if (!use_marks_file || marks_loaded)
         return;
@@ -655,6 +658,9 @@ void StorageLog::loadMarks(const WriteLock & /* already locked exclusively */)
 
     marks_loaded = true;
     num_marks_saved = num_marks;
+
+    /// We need marks to calculate the number of rows, and now we have the marks.
+    updateTotalRows(lock);
 }
 
 void StorageLog::saveMarks(const WriteLock & /* already locked for writing */)
@@ -713,6 +719,7 @@ void StorageLog::saveFileSizes(const WriteLock & /* already locked for writing *
         file_checker.update(marks_file_path);
 
     file_checker.save();
+    total_bytes = file_checker.getTotalSize();
 }
 
 
@@ -887,6 +894,32 @@ IStorage::ColumnSizeByName StorageLog::getColumnSizes() const
     return column_sizes;
 }
 
+void StorageLog::updateTotalRows(const WriteLock &)
+{
+    if (!use_marks_file || !marks_loaded)
+        return;
+
+    if (num_data_files)
+        total_rows = data_files[INDEX_WITH_REAL_ROW_COUNT].marks.empty() ? 0 : data_files[INDEX_WITH_REAL_ROW_COUNT].marks.back().rows;
+    else
+        total_rows = 0;
+}
+
+std::optional<UInt64> StorageLog::totalRows(const Settings &) const
+{
+    if (use_marks_file && marks_loaded)
+        return total_rows;
+
+    if (!total_bytes)
+        return 0;
+
+    return {};
+}
+
+std::optional<UInt64> StorageLog::totalBytes(const Settings &) const
+{
+    return total_bytes;
+}
 
 BackupEntries StorageLog::backupData(ContextPtr context, const ASTs & partitions)
 {
@@ -960,14 +993,13 @@ class LogRestoreTask : public IRestoreTask
 
 public:
     LogRestoreTask(
-        std::shared_ptr<StorageLog> storage_, const BackupPtr & backup_, const String & data_path_in_backup_, ContextMutablePtr context_)
-        : storage(storage_), backup(backup_), data_path_in_backup(data_path_in_backup_), context(context_)
+        std::shared_ptr<StorageLog> storage_, const BackupPtr & backup_, const String & data_path_in_backup_, std::chrono::seconds lock_timeout_)
+        : storage(storage_), backup(backup_), data_path_in_backup(data_path_in_backup_), lock_timeout(lock_timeout_)
     {
     }
 
     RestoreTasks run() override
     {
-        auto lock_timeout = getLockTimeout(context);
         WriteLock lock{storage->rwlock, lock_timeout};
         if (!lock)
             throw Exception("Lock timeout exceeded", ErrorCodes::TIMEOUT_EXCEEDED);
@@ -1044,6 +1076,7 @@ public:
             /// Finish writing.
             storage->saveMarks(lock);
             storage->saveFileSizes(lock);
+            storage->updateTotalRows(lock);
         }
         catch (...)
         {
@@ -1060,7 +1093,7 @@ private:
     std::shared_ptr<StorageLog> storage;
     BackupPtr backup;
     String data_path_in_backup;
-    ContextMutablePtr context;
+    std::chrono::seconds lock_timeout;
 };
 
 RestoreTaskPtr StorageLog::restoreData(ContextMutablePtr context, const ASTs & partitions, const BackupPtr & backup, const String & data_path_in_backup, const StorageRestoreSettings &, const std::shared_ptr<IRestoreCoordination> &)
@@ -1069,7 +1102,7 @@ RestoreTaskPtr StorageLog::restoreData(ContextMutablePtr context, const ASTs & p
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Table engine {} doesn't support partitions", getName());
 
     return std::make_unique<LogRestoreTask>(
-        typeid_cast<std::shared_ptr<StorageLog>>(shared_from_this()), backup, data_path_in_backup, context);
+        typeid_cast<std::shared_ptr<StorageLog>>(shared_from_this()), backup, data_path_in_backup, getLockTimeout(context));
 }
 
 
@@ -1089,7 +1122,7 @@ void registerStorageLog(StorageFactory & factory)
         String disk_name = getDiskName(*args.storage_def);
         DiskPtr disk = args.getContext()->getDisk(disk_name);
 
-        return StorageLog::create(
+        return std::make_shared<StorageLog>(
             args.engine_name,
             disk,
             args.relative_data_path,

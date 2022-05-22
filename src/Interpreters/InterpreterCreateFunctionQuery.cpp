@@ -61,8 +61,12 @@ BlockIO InterpreterCreateFunctionQuery::execute()
 
 void InterpreterCreateFunctionQuery::validateFunction(ASTPtr function, const String & name)
 {
-    auto & lambda_function = function->as<ASTFunction &>();
-    auto & lambda_function_expression_list = lambda_function.arguments->children;
+    ASTFunction * lambda_function = function->as<ASTFunction>();
+
+    if (!lambda_function)
+        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Expected function, got: {}", function->formatForErrorMessage());
+
+    auto & lambda_function_expression_list = lambda_function->arguments->children;
 
     if (lambda_function_expression_list.size() != 2)
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Lambda must have arguments and body");

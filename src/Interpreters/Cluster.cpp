@@ -286,8 +286,9 @@ Cluster::Address Cluster::Address::fromFullString(const String & full_string)
 
 /// Implementation of Clusters class
 
-Clusters::Clusters(const Poco::Util::AbstractConfiguration & config, const Settings & settings, const String & config_prefix)
+Clusters::Clusters(const Poco::Util::AbstractConfiguration & config, const Settings & settings, MultiVersion<Macros>::Version macros, const String & config_prefix)
 {
+    this->macros_ = macros;
     updateClusters(config, settings, config_prefix);
 }
 
@@ -296,7 +297,8 @@ ClusterPtr Clusters::getCluster(const std::string & cluster_name) const
 {
     std::lock_guard lock(mutex);
 
-    auto it = impl.find(cluster_name);
+    auto expanded_cluster_name = macros_->expand(cluster_name);
+    auto it = impl.find(expanded_cluster_name);
     return (it != impl.end()) ? it->second : nullptr;
 }
 
@@ -721,6 +723,20 @@ Cluster::Cluster(Cluster::SubclusterTag, const Cluster & from, const std::vector
     name = from.name;
 
     initMisc();
+}
+
+std::vector<Strings> Cluster::getHostIDs() const
+{
+    std::vector<Strings> host_ids;
+    host_ids.resize(addresses_with_failover.size());
+    for (size_t i = 0; i != addresses_with_failover.size(); ++i)
+    {
+        const auto & addresses = addresses_with_failover[i];
+        host_ids[i].resize(addresses.size());
+        for (size_t j = 0; j != addresses.size(); ++j)
+            host_ids[i][j] = addresses[j].toString();
+    }
+    return host_ids;
 }
 
 const std::string & Cluster::ShardInfo::insertPathForInternalReplication(bool prefer_localhost_replica, bool use_compact_format) const

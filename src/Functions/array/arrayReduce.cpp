@@ -186,7 +186,7 @@ ColumnPtr FunctionArrayReduce::executeImpl(const ColumnsWithTypeAndName & argume
         while (const auto * func = typeid_cast<const AggregateFunctionState *>(that))
             that = func->getNestedFunction().get();
 
-        that->addBatchArray(input_rows_count, places.data(), 0, aggregate_arguments, offsets->data(), arena.get());
+        that->addBatchArray(0, input_rows_count, places.data(), 0, aggregate_arguments, offsets->data(), arena.get());
     }
 
     for (size_t i = 0; i < input_rows_count; ++i)

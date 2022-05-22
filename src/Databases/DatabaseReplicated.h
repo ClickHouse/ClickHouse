@@ -42,6 +42,8 @@ public:
     void detachTablePermanently(ContextPtr context, const String & table_name) override;
     void removeDetachedPermanentlyFlag(ContextPtr context, const String & table_name, const String & table_metadata_path, bool attach) const override;
 
+    bool waitForReplicaToProcessAllEntries(UInt64 timeout_ms);
+
     /// Try to execute DLL query on current host as initial query. If query is succeed,
     /// then it will be executed on all replicas.
     BlockIO tryEnqueueReplicatedDDL(const ASTPtr & query, ContextPtr query_context, bool internal = false);
