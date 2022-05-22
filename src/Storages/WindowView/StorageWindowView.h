@@ -18,8 +18,9 @@ using ASTPtr = std::shared_ptr<IAST>;
  * StorageWindowView.
  *
  * CREATE WINDOW VIEW [IF NOT EXISTS] [db.]name [TO [db.]name]
- * [ENGINE [db.]name]
+ * [INNER ENGINE engine] [ENGINE engine]
  * [WATERMARK strategy] [ALLOWED_LATENESS interval_function]
+ * [POPULATE]
  * AS SELECT ...
  * GROUP BY [tumble/hop(...)]
  *
