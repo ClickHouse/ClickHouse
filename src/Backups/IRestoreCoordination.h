@@ -37,13 +37,6 @@ public:
         std::chrono::seconds timeout = std::chrono::seconds(-1) /* no timeout */)
         = 0;
 
-    /// Adds a path in backup used by a replicated table.
-    /// This function can be called multiple times for the same table with different `host_id`, and in that case
-    /// getReplicatedTableDataPath() will choose `data_path_in_backup` with the lexicographycally first `host_id`.
-    virtual void addReplicatedTableDataPath(
-        const String & host_id, const DatabaseAndTableName & table_name, const String & table_zk_path, const String & data_path_in_backup)
-        = 0;
-
     /// Sets that a specified host has finished restoring metadata, successfully or with an error.
     /// In the latter case `error_message` should be set.
     virtual void finishRestoringMetadata(const String & host_id, const String & error_message = {}) = 0;
@@ -51,9 +44,6 @@ public:
     /// Waits for a specified list of hosts to finish restoring their metadata.
     virtual void waitForAllHostsRestoredMetadata(
         const Strings & host_ids, std::chrono::seconds timeout = std::chrono::seconds(-1) /* no timeout */) const = 0;
-
-    /// Gets path in backup used by a replicated table.
-    virtual String getReplicatedTableDataPath(const String & table_zk_path) const = 0;
 
     /// Sets that this replica is going to restore a partition in a replicated table.
     /// The function returns false if this partition is being already restored by another replica.

@@ -380,23 +380,6 @@ namespace
                 data_path_in_backup = PathsInBackup{*backup}.getDataPath(
                     table_name_in_backup, restore_settings->shard_num_in_backup, restore_settings->replica_num_in_backup);
                 has_data = !backup->listFiles(data_path_in_backup).empty();
-
-                const auto * replicated_table = typeid_cast<const StorageReplicatedMergeTree *>(storage.get());
-                if (replicated_table)
-                {
-                    /// We need to be consistent when we're restoring replicated tables.
-                    /// It's allowed for a backup to contain multiple replicas of the same replicated table,
-                    /// and when we restore it we need to choose single data path in the backup to restore this table on each replica.
-                    /// That's why we use the restore coordination here: on restoring metadata stage each replica sets its own
-                    /// `data_path_in_backup` for same zookeeper path, and then the restore coordination choose one `data_path_in_backup`
-                    /// to use for restoring data.
-                    restore_coordination->addReplicatedTableDataPath(
-                        restore_settings->host_id,
-                        table_name_in_backup,
-                        replicated_table->getZooKeeperName() + replicated_table->getZooKeeperPath(),
-                        data_path_in_backup);
-                    has_data = true;
-                }
             }
         }
 

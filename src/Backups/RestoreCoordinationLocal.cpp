@@ -60,41 +60,6 @@ void RestoreCoordinationLocal::waitForAllHostsRestoredMetadata(const Strings & /
 {
 }
 
-void RestoreCoordinationLocal::addReplicatedTableDataPath(const String & /* host_id */,
-                                                          const DatabaseAndTableName & table_name,
-                                                          const String & table_zk_path,
-                                                          const String & data_path_in_backup)
-{
-    std::lock_guard lock{mutex};
-    auto it = replicated_tables_data_paths.find(table_zk_path);
-    if (it == replicated_tables_data_paths.end())
-    {
-        ReplicatedTableDataPath new_info;
-        new_info.table_name = table_name;
-        new_info.data_path_in_backup = data_path_in_backup;
-        replicated_tables_data_paths.emplace(table_zk_path, std::move(new_info));
-        return;
-    }
-    else
-    {
-        auto & cur_info = it->second;
-        if (table_name < cur_info.table_name)
-        {
-            cur_info.table_name = table_name;
-            cur_info.data_path_in_backup = data_path_in_backup;
-        }
-    }
-}
-
-String RestoreCoordinationLocal::getReplicatedTableDataPath(const String & table_zk_path) const
-{
-    std::lock_guard lock{mutex};
-    auto it = replicated_tables_data_paths.find(table_zk_path);
-    if (it == replicated_tables_data_paths.end())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Replicated data path is not set for zk_path={}", table_zk_path);
-    return it->second.data_path_in_backup;
-}
-
 bool RestoreCoordinationLocal::startInsertingDataToPartitionInReplicatedTable(
     const String & /* host_id */, const DatabaseAndTableName & table_name, const String & table_zk_path, const String & partition_name)
 {
