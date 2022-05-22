@@ -34,12 +34,12 @@ ExecutingGraph::Edge & ExecutingGraph::addEdge(Edges & edges, Edge edge, const I
 {
     auto it = processors_map.find(to);
     if (it == processors_map.end())
-    {
-        String msg = "Processor " + to->getName() + " was found as " + (edge.backward ? "input" : "output")
-                     + " for processor " + from->getName() + ", but not found in list of processors.";
-
-        throw Exception(msg, ErrorCodes::LOGICAL_ERROR);
-    }
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Processor {} was found as {} for processor {}, but not found in list of processors",
+            to->getName(),
+            edge.backward ? "input" : "output",
+            from->getName());
 
     edge.to = it->second;
     auto & added_edge = edges.emplace_back(std::move(edge));
@@ -127,9 +127,8 @@ bool ExecutingGraph::expandPipeline(std::stack<uint64_t> & stack, uint64_t pid)
     while (nodes.size() < num_processors)
     {
         auto * processor = processors[nodes.size()].get();
-        if (processors_map.count(processor))
-            throw Exception("Processor " + processor->getName() + " was already added to pipeline.",
-                            ErrorCodes::LOGICAL_ERROR);
+        if (processors_map.contains(processor))
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Processor {} was already added to pipeline", processor->getName());
 
         processors_map[processor] = nodes.size();
         nodes.emplace_back(std::make_unique<Node>(processor, nodes.size()));

@@ -1,6 +1,6 @@
 ---
-toc_priority: 45
-toc_title: hdfs
+sidebar_position: 45
+sidebar_label: hdfs
 ---
 
 # hdfs {#hdfs}
@@ -78,8 +78,9 @@ SELECT count(*)
 FROM hdfs('hdfs://hdfs1:9000/{some,another}_dir/*', 'TSV', 'name String, value UInt32')
 ```
 
-!!! warning "Warning"
-    If your listing of files contains number ranges with leading zeros, use the construction with braces for each digit separately or use `?`.
+:::warning    
+If your listing of files contains number ranges with leading zeros, use the construction with braces for each digit separately or use `?`.
+:::
 
 **Example**
 

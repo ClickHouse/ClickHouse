@@ -1,1 +1,0 @@
-../../../en/faq/general/olap.md

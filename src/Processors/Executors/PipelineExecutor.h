@@ -3,7 +3,7 @@
 #include <Processors/IProcessor.h>
 #include <Processors/Executors/ExecutorTasks.h>
 #include <Common/EventCounter.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 
 #include <queue>
 #include <stack>

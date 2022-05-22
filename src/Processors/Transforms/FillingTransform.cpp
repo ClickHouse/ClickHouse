@@ -26,7 +26,7 @@ Block FillingTransform::transformHeader(Block header, const SortDescription & so
 
     /// Columns which are not from sorting key may not be constant anymore.
     for (auto & column : header)
-        if (column.column && isColumnConst(*column.column) && !sort_keys.count(column.name))
+        if (column.column && isColumnConst(*column.column) && !sort_keys.contains(column.name))
             column.column = column.type->createColumn();
 
     return header;
@@ -155,7 +155,7 @@ FillingTransform::FillingTransform(
     std::vector<bool> is_fill_column(header_.columns());
     for (size_t i = 0, size = sort_description.size(); i < size; ++i)
     {
-        if (interpolate_description && interpolate_description->result_columns_set.count(sort_description[i].column_name))
+        if (interpolate_description && interpolate_description->result_columns_set.contains(sort_description[i].column_name))
             throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
                 "Column '{}' is participating in ORDER BY ... WITH FILL expression and can't be INTERPOLATE output",
                 sort_description[i].column_name);
@@ -193,7 +193,7 @@ FillingTransform::FillingTransform(
                 p != interpolate_description->required_columns_map.end())
                     input_positions.emplace_back(idx, p->second);
 
-        if (!is_fill_column[idx] && !(interpolate_description && interpolate_description->result_columns_set.count(column.name)))
+        if (!is_fill_column[idx] && !(interpolate_description && interpolate_description->result_columns_set.contains(column.name)))
                 other_column_positions.push_back(idx);
 
         ++idx;

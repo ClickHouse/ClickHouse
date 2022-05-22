@@ -1,8 +1,4 @@
 <test>
-    <preconditions>
-        <table_exists>hits_10m_single</table_exists>
-    </preconditions>
-
     <create_query>CREATE TABLE strings (words String) ENGINE Memory</create_query>
     <fill_query>INSERT INTO strings SELECT SearchPhrase FROM hits_10m_single WHERE length(SearchPhrase) > 0</fill_query>
 

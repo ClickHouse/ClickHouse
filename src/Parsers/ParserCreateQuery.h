@@ -1,16 +1,15 @@
 #pragma once
 
-#include <Parsers/IParserBase.h>
-#include <Parsers/ExpressionElementParsers.h>
-#include <Parsers/ExpressionListParsers.h>
-#include <Parsers/ASTNameTypePair.h>
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTIdentifier_fwd.h>
+#include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTNameTypePair.h>
 #include <Parsers/CommonParsers.h>
+#include <Parsers/ExpressionElementParsers.h>
+#include <Parsers/ExpressionListParsers.h>
+#include <Parsers/IParserBase.h>
 #include <Parsers/ParserDataType.h>
 #include <Poco/String.h>
-#include <Parsers/ASTLiteral.h>
-
 
 namespace DB
 {
@@ -134,6 +133,7 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     ParserKeyword s_type{"TYPE"};
     ParserTernaryOperatorExpression expr_parser;
     ParserStringLiteral string_literal_parser;
+    ParserLiteral literal_parser;
     ParserCodec codec_parser;
     ParserExpression expression_parser;
 
@@ -197,8 +197,11 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     else if (s_ephemeral.ignore(pos, expected))
     {
         default_specifier = "EPHEMERAL";
-        if (!expr_parser.parse(pos, default_expression, expected) && type)
+        if (!literal_parser.parse(pos, default_expression, expected) && type)
             default_expression = std::make_shared<ASTLiteral>(Field());
+
+        if (!default_expression && !type)
+            return false;
     }
 
     if (require_type && !type && !default_expression)

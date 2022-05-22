@@ -160,6 +160,12 @@ public:
     /// Recursively copy data containing at `from_path` to `to_path` located at `to_disk`.
     virtual void copy(const String & from_path, const std::shared_ptr<IDisk> & to_disk, const String & to_path);
 
+    /// Recursively copy files from from_dir to to_dir. Create to_dir if not exists.
+    virtual void copyDirectoryContent(const String & from_dir, const std::shared_ptr<IDisk> & to_disk, const String & to_dir);
+
+    /// Copy file `from_file_path` to `to_file_path` located at `to_disk`.
+    virtual void copyFile(const String & from_file_path, IDisk & to_disk, const String & to_file_path);
+
     /// List files at `path` and add their names to `file_names`
     virtual void listFiles(const String & path, std::vector<String> & file_names) = 0;
 
@@ -192,17 +198,18 @@ public:
     /// Remove file. Throws exception if file doesn't exists or if directory is not empty.
     /// Differs from removeFile for S3/HDFS disks
     /// Second bool param is a flag to remove (true) or keep (false) shared data on S3
-    virtual void removeSharedFile(const String & path, bool) { removeFile(path); }
+    virtual void removeSharedFile(const String & path, bool /* keep_shared_data */) { removeFile(path); }
 
     /// Remove file or directory with all children. Use with extra caution. Throws exception if file doesn't exists.
     /// Differs from removeRecursive for S3/HDFS disks
-    /// Second bool param is a flag to remove (true) or keep (false) shared data on S3
-    virtual void removeSharedRecursive(const String & path, bool) { removeRecursive(path); }
+    /// Second bool param is a flag to remove (false) or keep (true) shared data on S3.
+    /// Third param determines which files cannot be removed even if second is true.
+    virtual void removeSharedRecursive(const String & path, bool /* keep_all_shared_data */, const NameSet & /* file_names_remove_metadata_only */) { removeRecursive(path); }
 
     /// Remove file or directory if it exists.
     /// Differs from removeFileIfExists for S3/HDFS disks
     /// Second bool param is a flag to remove (true) or keep (false) shared data on S3
-    virtual void removeSharedFileIfExists(const String & path, bool) { removeFileIfExists(path); }
+    virtual void removeSharedFileIfExists(const String & path, bool /* keep_shared_data */) { removeFileIfExists(path); }
 
 
     virtual String getCacheBasePath() const { return ""; }
@@ -237,14 +244,17 @@ public:
 
     /// Batch request to remove multiple files.
     /// May be much faster for blob storage.
-    virtual void removeSharedFiles(const RemoveBatchRequest & files, bool keep_in_remote_fs)
+    /// Second bool param is a flag to remove (true) or keep (false) shared data on S3.
+    /// Third param determines which files cannot be removed even if second is true.
+    virtual void removeSharedFiles(const RemoveBatchRequest & files, bool keep_all_batch_data, const NameSet & file_names_remove_metadata_only)
     {
         for (const auto & file : files)
         {
+            bool keep_file = keep_all_batch_data || file_names_remove_metadata_only.contains(fs::path(file.path).filename());
             if (file.if_exists)
-                removeSharedFileIfExists(file.path, keep_in_remote_fs);
+                removeSharedFileIfExists(file.path, keep_file);
             else
-                removeSharedFile(file.path, keep_in_remote_fs);
+                removeSharedFile(file.path, keep_file);
         }
     }
 
@@ -343,7 +353,7 @@ protected:
     /// Base implementation of the function copy().
     /// It just opens two files, reads data by portions from the first file, and writes it to the second one.
     /// A derived class may override copy() to provide a faster implementation.
-    void copyThroughBuffers(const String & from_path, const std::shared_ptr<IDisk> & to_disk, const String & to_path);
+    void copyThroughBuffers(const String & from_path, const std::shared_ptr<IDisk> & to_disk, const String & to_path, bool copy_root_dir = true);
 
 private:
     std::unique_ptr<Executor> executor;

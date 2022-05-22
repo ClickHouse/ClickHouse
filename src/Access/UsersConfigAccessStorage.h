@@ -12,6 +12,7 @@ namespace Poco::Util
 
 namespace DB
 {
+class AccessControl;
 class ConfigReloader;
 
 /// Implementation of IAccessStorage which loads all from users.xml periodically.
@@ -20,13 +21,8 @@ class UsersConfigAccessStorage : public IAccessStorage
 public:
 
     static constexpr char STORAGE_TYPE[] = "users.xml";
-    using CheckSettingNameFunction = std::function<void(const std::string_view &)>;
-    using IsNoPasswordFunction = std::function<bool()>;
-    using IsPlaintextPasswordFunction =  std::function<bool()>;
 
-    UsersConfigAccessStorage(const String & storage_name_ = STORAGE_TYPE, const CheckSettingNameFunction & check_setting_name_function_ = {}, const IsNoPasswordFunction & is_no_password_allowed_function_ ={}, const IsPlaintextPasswordFunction & is_plaintext_password_allowed_function_ = {}); /// NOLINT
-    UsersConfigAccessStorage(const CheckSettingNameFunction & check_setting_name_function_, const IsNoPasswordFunction & is_no_password_allowed_function_, const IsPlaintextPasswordFunction & is_plaintext_password_allowed_function_); /// NOLINT
-
+    UsersConfigAccessStorage(const String & storage_name_, const AccessControl & access_control_);
     ~UsersConfigAccessStorage() override;
 
     const char * getStorageType() const override { return STORAGE_TYPE; }
@@ -58,10 +54,8 @@ private:
     scope_guard subscribeForChangesImpl(const UUID & id, const OnChangedHandler & handler) const override;
     scope_guard subscribeForChangesImpl(AccessEntityType type, const OnChangedHandler & handler) const override;
 
+    const AccessControl & access_control;
     MemoryAccessStorage memory_storage;
-    CheckSettingNameFunction check_setting_name_function;
-    IsNoPasswordFunction is_no_password_allowed_function;
-    IsPlaintextPasswordFunction is_plaintext_password_allowed_function;
     String path;
     std::unique_ptr<ConfigReloader> config_reloader;
     mutable std::mutex load_mutex;

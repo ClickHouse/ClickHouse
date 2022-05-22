@@ -241,7 +241,7 @@ void registerStorageView(StorageFactory & factory)
         if (args.query.storage)
             throw Exception("Specifying ENGINE is not allowed for a View", ErrorCodes::INCORRECT_QUERY);
 
-        return StorageView::create(args.table_id, args.query, args.columns, args.comment);
+        return std::make_shared<StorageView>(args.table_id, args.query, args.columns, args.comment);
     });
 }
 

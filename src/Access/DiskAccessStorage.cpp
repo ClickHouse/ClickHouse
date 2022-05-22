@@ -6,7 +6,7 @@
 #include <IO/WriteBufferFromFile.h>
 #include <Interpreters/Access/InterpreterCreateUserQuery.h>
 #include <Interpreters/Access/InterpreterShowGrantsQuery.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <Poco/JSON/JSON.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Stringifier.h>
@@ -430,7 +430,7 @@ std::vector<UUID> DiskAccessStorage::findAllImpl(AccessEntityType type) const
 bool DiskAccessStorage::exists(const UUID & id) const
 {
     std::lock_guard lock{mutex};
-    return entries_by_id.count(id);
+    return entries_by_id.contains(id);
 }
 
 
@@ -611,7 +611,7 @@ bool DiskAccessStorage::updateNoLock(const UUID & id, const UpdateFunc & update_
     bool name_changed = (new_name != old_name);
     if (name_changed)
     {
-        if (entries_by_name.count(new_name))
+        if (entries_by_name.contains(new_name))
             throwNameCollisionCannotRename(type, old_name, new_name);
         scheduleWriteLists(type);
     }

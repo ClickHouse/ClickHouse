@@ -17,7 +17,7 @@
 #include <Common/PipeFDs.h>
 #include <Common/CurrentThread.h>
 #include <base/getThreadId.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 
 
 namespace DB

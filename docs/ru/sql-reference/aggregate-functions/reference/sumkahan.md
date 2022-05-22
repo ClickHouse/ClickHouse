@@ -1,5 +1,5 @@
 ---
-toc_priority: 145
+sidebar_position: 145
 ---
 
 # sumKahan {#agg_function-sumKahan}

@@ -3,7 +3,7 @@
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Coordination/KeeperStorage.h>
 #include <libnuraft/nuraft.hxx>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <Coordination/CoordinationSettings.h>
 #include <Coordination/KeeperSnapshotManager.h>
 

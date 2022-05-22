@@ -36,6 +36,7 @@ namespace
         String auth_type_name = AuthenticationTypeInfo::get(auth_type).name;
         String value_prefix;
         std::optional<String> value;
+        std::optional<String> salt;
         const boost::container::flat_set<String> * values = nullptr;
 
         if (show_password ||
@@ -56,6 +57,10 @@ namespace
                     auth_type_name = "sha256_hash";
                     value_prefix = "BY";
                     value = auth_data.getPasswordHashHex();
+                    if (!auth_data.getSalt().empty())
+                    {
+                        salt = auth_data.getSalt();
+                    }
                     break;
                 }
                 case AuthenticationType::DOUBLE_SHA1_PASSWORD:
@@ -107,6 +112,8 @@ namespace
         if (value)
         {
             settings.ostr << " " << quoteString(*value);
+            if (salt)
+                settings.ostr << " SALT " << quoteString(*salt);
         }
         else if (values)
         {

@@ -1,7 +1,5 @@
 #pragma once
 
-#include <base/shared_ptr_helper.h>
-
 #include <Core/Names.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/IStorage.h>
@@ -26,13 +24,30 @@ namespace DB
 
 /** See the description of the data structure in MergeTreeData.
   */
-class StorageMergeTree final : public shared_ptr_helper<StorageMergeTree>, public MergeTreeData
+class StorageMergeTree final : public MergeTreeData
 {
-    friend struct shared_ptr_helper<StorageMergeTree>;
 public:
+    /** Attach the table with the appropriate name, along the appropriate path (with / at the end),
+      *  (correctness of names and paths are not checked)
+      *  consisting of the specified columns.
+      *
+      * See MergeTreeData constructor for comments on parameters.
+      */
+    StorageMergeTree(
+        const StorageID & table_id_,
+        const String & relative_data_path_,
+        const StorageInMemoryMetadata & metadata,
+        bool attach,
+        ContextMutablePtr context_,
+        const String & date_column_name,
+        const MergingParams & merging_params_,
+        std::unique_ptr<MergeTreeSettings> settings_,
+        bool has_force_restore_data_flag);
+
     void startup() override;
     void flush() override;
     void shutdown() override;
+
     ~StorageMergeTree() override;
 
     std::string getName() const override { return merging_params.getModeName() + "MergeTree"; }
@@ -99,7 +114,7 @@ public:
 
     CheckResults checkData(const ASTPtr & query, ContextPtr context) override;
 
-    RestoreTaskPtr restoreData(ContextMutablePtr context, const ASTs & partitions, const BackupPtr & backup, const String & data_path_in_backup, const StorageRestoreSettings & restore_settings) override;
+    RestoreTaskPtr restoreData(ContextMutablePtr context, const ASTs & partitions, const BackupPtr & backup, const String & data_path_in_backup, const StorageRestoreSettings & restore_settings, const std::shared_ptr<IRestoreCoordination> & restore_coordination) override;
 
     bool scheduleDataProcessingJob(BackgroundJobsAssignee & assignee) override;
 
@@ -256,23 +271,6 @@ private:
 
 
 protected:
-
-    /** Attach the table with the appropriate name, along the appropriate path (with / at the end),
-      *  (correctness of names and paths are not checked)
-      *  consisting of the specified columns.
-      *
-      * See MergeTreeData constructor for comments on parameters.
-      */
-    StorageMergeTree(
-        const StorageID & table_id_,
-        const String & relative_data_path_,
-        const StorageInMemoryMetadata & metadata,
-        bool attach,
-        ContextMutablePtr context_,
-        const String & date_column_name,
-        const MergingParams & merging_params_,
-        std::unique_ptr<MergeTreeSettings> settings_,
-        bool has_force_restore_data_flag);
 
     MutationCommands getFirstAlterMutationCommandsForPart(const DataPartPtr & part) const override;
 };

@@ -1,10 +1,11 @@
 ---
-toc_priority: 58
-toc_title: External Dictionaries
+sidebar_position: 58
+sidebar_label: External Dictionaries
 ---
 
-!!! attention "Attention"
-    For dictionaries, created with [DDL queries](../../sql-reference/statements/create/dictionary.md), the `dict_name` parameter must be fully specified, like `<database>.<dict_name>`. Otherwise, the current database is used.
+:::note    
+For dictionaries created with [DDL queries](../../sql-reference/statements/create/dictionary.md), the `dict_name` parameter must be fully specified, like `<database>.<dict_name>`. Otherwise, the current database is used.
+:::
 
 # Functions for Working with External Dictionaries {#ext_dict_functions}
 

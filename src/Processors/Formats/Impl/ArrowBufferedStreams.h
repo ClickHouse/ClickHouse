@@ -17,7 +17,6 @@ class ReadBuffer;
 class WriteBuffer;
 
 class SeekableReadBuffer;
-class SeekableReadBufferWithSize;
 struct FormatSettings;
 
 class ArrowBufferedOutputStream : public arrow::io::OutputStream
@@ -46,9 +45,9 @@ private:
 class RandomAccessFileFromSeekableReadBuffer : public arrow::io::RandomAccessFile
 {
 public:
-    RandomAccessFileFromSeekableReadBuffer(SeekableReadBuffer & in_, off_t file_size_);
+    RandomAccessFileFromSeekableReadBuffer(ReadBuffer & in_, off_t file_size_);
 
-    explicit RandomAccessFileFromSeekableReadBuffer(SeekableReadBufferWithSize & in_);
+    explicit RandomAccessFileFromSeekableReadBuffer(ReadBuffer & in_);
 
     arrow::Result<int64_t> GetSize() override;
 
@@ -65,7 +64,8 @@ public:
     arrow::Status Seek(int64_t position) override;
 
 private:
-    SeekableReadBuffer & in;
+    ReadBuffer & in;
+    SeekableReadBuffer & seekable_in;
     std::optional<off_t> file_size;
     bool is_open = false;
 
