@@ -18,37 +18,6 @@ namespace ErrorCodes
     extern const int FAILED_TO_SYNC_BACKUP_OR_RESTORE;
 }
 
-namespace
-{
-    struct ReplicatedTableDataPath
-    {
-        String host_id;
-        DatabaseAndTableName table_name;
-        String data_path_in_backup;
-
-        String serialize() const
-        {
-            WriteBufferFromOwnString out;
-            writeBinary(host_id, out);
-            writeBinary(table_name.first, out);
-            writeBinary(table_name.second, out);
-            writeBinary(data_path_in_backup, out);
-            return out.str();
-        }
-
-        static ReplicatedTableDataPath deserialize(const String & str)
-        {
-            ReadBufferFromString in{str};
-            ReplicatedTableDataPath res;
-            readBinary(res.host_id, in);
-            readBinary(res.table_name.first, in);
-            readBinary(res.table_name.second, in);
-            readBinary(res.data_path_in_backup, in);
-            return res;
-        }
-    };
-}
-
 
 class RestoreCoordinationDistributed::ReplicatedDatabasesMetadataSync
 {
@@ -297,45 +266,6 @@ void RestoreCoordinationDistributed::finishRestoringMetadata(const String & host
 void RestoreCoordinationDistributed::waitForAllHostsRestoredMetadata(const Strings & host_ids, std::chrono::seconds timeout) const
 {
     all_metadata_barrier.waitForAllHostsToFinish(host_ids, timeout);
-}
-
-void RestoreCoordinationDistributed::addReplicatedTableDataPath(
-    const String & host_id,
-    const DatabaseAndTableName & table_name,
-    const String & table_zk_path,
-    const String & data_path_in_backup)
-{
-    auto zookeeper = get_zookeeper();
-    String path = zookeeper_path + "/repl_tables_paths/" + escapeForFileName(table_zk_path);
-
-    ReplicatedTableDataPath new_info;
-    new_info.host_id = host_id;
-    new_info.table_name = table_name;
-    new_info.data_path_in_backup = data_path_in_backup;
-    String new_info_str = new_info.serialize();
-
-    auto code = zookeeper->tryCreate(path, new_info_str, zkutil::CreateMode::Persistent);
-    if ((code != Coordination::Error::ZOK) && (code != Coordination::Error::ZNODEEXISTS))
-        throw zkutil::KeeperException(code, path);
-
-    while (code != Coordination::Error::ZOK)
-    {
-        Coordination::Stat stat;
-        ReplicatedTableDataPath cur_info = ReplicatedTableDataPath::deserialize(zookeeper->get(path, &stat));
-        if ((cur_info.host_id < host_id) || ((cur_info.host_id == host_id) && (cur_info.table_name <= table_name)))
-            break;
-        code = zookeeper->trySet(path, new_info_str, stat.version);
-        if ((code != Coordination::Error::ZOK) && (code != Coordination::Error::ZBADVERSION))
-            throw zkutil::KeeperException(code, path);
-    }
-}
-
-String RestoreCoordinationDistributed::getReplicatedTableDataPath(const String & table_zk_path_) const
-{
-    auto zookeeper = get_zookeeper();
-    String path = zookeeper_path + "/repl_tables_paths/" + escapeForFileName(table_zk_path_);
-    auto info = ReplicatedTableDataPath::deserialize(zookeeper->get(path));
-    return info.data_path_in_backup;
 }
 
 bool RestoreCoordinationDistributed::startInsertingDataToPartitionInReplicatedTable(
