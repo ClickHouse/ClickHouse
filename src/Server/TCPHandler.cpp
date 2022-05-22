@@ -5,7 +5,7 @@
 #include <mutex>
 #include <vector>
 #include <string_view>
-#include <string.h>
+#include <cstring>
 #include <base/types.h>
 #include <base/scope_guard.h>
 #include <Poco/Net/NetException.h>
@@ -31,7 +31,6 @@
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Interpreters/Session.h>
-#include <Interpreters/ProcessList.h>
 #include <Server/TCPServer.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/MergeTree/MergeTreeDataPartUUID.h>
@@ -533,6 +532,7 @@ void TCPHandler::extractConnectionSettingsFromContext(const ContextPtr & context
     sleep_in_send_tables_status = settings.sleep_in_send_tables_status_ms;
     unknown_packet_in_send_data = settings.unknown_packet_in_send_data;
     sleep_in_receive_cancel = settings.sleep_in_receive_cancel_ms;
+    sleep_after_receiving_query = settings.sleep_after_receiving_query_ms;
 }
 
 
@@ -767,7 +767,7 @@ void TCPHandler::processTablesStatusRequest()
     writeVarUInt(Protocol::Server::TablesStatusResponse, *out);
 
     /// For testing hedged requests
-    if (sleep_in_send_tables_status.totalMilliseconds())
+    if (unlikely(sleep_in_send_tables_status.totalMilliseconds()))
     {
         out->next();
         std::chrono::milliseconds ms(sleep_in_send_tables_status.totalMilliseconds());
@@ -1105,7 +1105,7 @@ bool TCPHandler::receivePacket()
         case Protocol::Client::Cancel:
         {
             /// For testing connection collector.
-            if (sleep_in_receive_cancel.totalMilliseconds())
+            if (unlikely(sleep_in_receive_cancel.totalMilliseconds()))
             {
                 std::chrono::milliseconds ms(sleep_in_receive_cancel.totalMilliseconds());
                 std::this_thread::sleep_for(ms);
@@ -1154,7 +1154,7 @@ String TCPHandler::receiveReadTaskResponseAssumeLocked()
         {
             state.is_cancelled = true;
             /// For testing connection collector.
-            if (sleep_in_receive_cancel.totalMilliseconds())
+            if (unlikely(sleep_in_receive_cancel.totalMilliseconds()))
             {
                 std::chrono::milliseconds ms(sleep_in_receive_cancel.totalMilliseconds());
                 std::this_thread::sleep_for(ms);
@@ -1187,7 +1187,7 @@ std::optional<PartitionReadResponse> TCPHandler::receivePartitionMergeTreeReadTa
         {
             state.is_cancelled = true;
             /// For testing connection collector.
-            if (sleep_in_receive_cancel.totalMilliseconds())
+            if (unlikely(sleep_in_receive_cancel.totalMilliseconds()))
             {
                 std::chrono::milliseconds ms(sleep_in_receive_cancel.totalMilliseconds());
                 std::this_thread::sleep_for(ms);
@@ -1329,6 +1329,7 @@ void TCPHandler::receiveQuery()
         query_context->getIgnoredPartUUIDs()->add(*state.part_uuids_to_ignore);
 
     query_context->setProgressCallback([this] (const Progress & value) { return this->updateProgress(value); });
+    query_context->setFileProgressCallback([this](const FileProgress & value) { this->updateProgress(Progress(value)); });
 
     ///
     /// Settings
@@ -1364,6 +1365,13 @@ void TCPHandler::receiveQuery()
     if (query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
     {
         query_context->setSetting("normalize_function_names", false);
+    }
+
+    /// For testing hedged requests
+    if (unlikely(sleep_after_receiving_query.totalMilliseconds()))
+    {
+        std::chrono::milliseconds ms(sleep_after_receiving_query.totalMilliseconds());
+        std::this_thread::sleep_for(ms);
     }
 }
 
@@ -1472,7 +1480,7 @@ bool TCPHandler::receiveUnexpectedData(bool throw_exception)
         maybe_compressed_in = in;
 
     auto skip_block_in = std::make_shared<NativeReader>(*maybe_compressed_in, client_tcp_protocol_version);
-    bool read_ok = skip_block_in->read();
+    bool read_ok = !!skip_block_in->read();
 
     if (!read_ok)
         state.read_all_data = true;
@@ -1602,7 +1610,7 @@ bool TCPHandler::isQueryCancelled()
                 state.is_cancelled = true;
                 /// For testing connection collector.
                 {
-                    if (sleep_in_receive_cancel.totalMilliseconds())
+                    if (unlikely(sleep_in_receive_cancel.totalMilliseconds()))
                     {
                         std::chrono::milliseconds ms(sleep_in_receive_cancel.totalMilliseconds());
                         std::this_thread::sleep_for(ms);
@@ -1702,6 +1710,8 @@ void TCPHandler::sendTableColumns(const ColumnsDescription & columns)
 
 void TCPHandler::sendException(const Exception & e, bool with_stack_trace)
 {
+    state.io.setAllDataSent();
+
     writeVarUInt(Protocol::Server::Exception, *out);
     writeException(e, *out, with_stack_trace);
     out->next();
@@ -1711,11 +1721,7 @@ void TCPHandler::sendException(const Exception & e, bool with_stack_trace)
 void TCPHandler::sendEndOfStream()
 {
     state.sent_all_data = true;
-    /// The following queries does not have process_list_entry:
-    /// - internal
-    /// - SHOW PROCESSLIST
-    if (state.io.process_list_entry)
-        (*state.io.process_list_entry)->setAllDataSent();
+    state.io.setAllDataSent();
 
     writeVarUInt(Protocol::Server::EndOfStream, *out);
     out->next();
@@ -1731,7 +1737,7 @@ void TCPHandler::updateProgress(const Progress & value)
 void TCPHandler::sendProgress()
 {
     writeVarUInt(Protocol::Server::Progress, *out);
-    auto increment = state.progress.fetchAndResetPiecewiseAtomically();
+    auto increment = state.progress.fetchValuesAndResetPiecewiseAtomically();
     increment.write(*out, client_tcp_protocol_version);
     out->next();
 }

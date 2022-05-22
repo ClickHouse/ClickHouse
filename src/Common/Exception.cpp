@@ -1,6 +1,6 @@
 #include "Exception.h"
 
-#include <string.h>
+#include <cstring>
 #include <cxxabi.h>
 #include <cstdlib>
 #include <Poco/String.h>
@@ -55,12 +55,6 @@ void handle_error_code([[maybe_unused]] const std::string & msg, int code, bool 
 Exception::Exception(const std::string & msg, int code, bool remote_)
     : Poco::Exception(msg, code)
     , remote(remote_)
-{
-    handle_error_code(msg, code, remote, getStackFramePointers());
-}
-
-Exception::Exception(const std::string & msg, const Exception & nested, int code)
-    : Poco::Exception(msg, nested, code)
 {
     handle_error_code(msg, code, remote, getStackFramePointers());
 }
@@ -276,7 +270,7 @@ static void getNotEnoughMemoryMessage(std::string & msg)
 #endif
 }
 
-static std::string getExtraExceptionInfo(const std::exception & e)
+std::string getExtraExceptionInfo(const std::exception & e)
 {
     String msg;
     try

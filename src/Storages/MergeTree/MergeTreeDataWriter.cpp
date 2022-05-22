@@ -228,7 +228,7 @@ Block MergeTreeDataWriter::mergeBlock(
             case MergeTreeData::MergingParams::Collapsing:
                 return std::make_shared<CollapsingSortedAlgorithm>(
                     block, 1, sort_description, merging_params.sign_column,
-                    false, block_size + 1, &Poco::Logger::get("MergeTreeBlockOutputStream"));
+                    false, block_size + 1, &Poco::Logger::get("MergeTreeDataWriter"));
             case MergeTreeData::MergingParams::Summing:
                 return std::make_shared<SummingSortedAlgorithm>(
                     block, 1, sort_description, merging_params.columns_to_sum,
@@ -590,9 +590,9 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeProjectionPart(
 {
     String part_name = projection.name;
     MergeTreeDataPartType part_type;
-    if (parent_part->getType() == MergeTreeDataPartType::IN_MEMORY)
+    if (parent_part->getType() == MergeTreeDataPartType::InMemory)
     {
-        part_type = MergeTreeDataPartType::IN_MEMORY;
+        part_type = MergeTreeDataPartType::InMemory;
     }
     else
     {
@@ -627,9 +627,9 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempProjectionPart(
 {
     String part_name = fmt::format("{}_{}", projection.name, block_num);
     MergeTreeDataPartType part_type;
-    if (parent_part->getType() == MergeTreeDataPartType::IN_MEMORY)
+    if (parent_part->getType() == MergeTreeDataPartType::InMemory)
     {
-        part_type = MergeTreeDataPartType::IN_MEMORY;
+        part_type = MergeTreeDataPartType::InMemory;
     }
     else
     {
@@ -661,7 +661,7 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeInMemoryProjectionP
 {
     return writeProjectionPartImpl(
         projection.name,
-        MergeTreeDataPartType::IN_MEMORY,
+        MergeTreeDataPartType::InMemory,
         projection.name + ".proj" /* relative_path */,
         false /* is_temp */,
         parent_part,

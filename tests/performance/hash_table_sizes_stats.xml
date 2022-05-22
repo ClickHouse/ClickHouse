@@ -3,10 +3,6 @@
         <max_size_to_preallocate_for_aggregation>1000000000</max_size_to_preallocate_for_aggregation>
     </settings>
 
-    <preconditions>
-        <table_exists>hits_100m_single</table_exists>
-    </preconditions>
-
     <substitutions>
         <substitution>
             <name>table_name</name>

@@ -263,7 +263,7 @@ ClickHouse проверяет условия для `min_part_size` и `min_part
 **Пример**
 
 ``` xml
-<user_defined_executable_functions_config>*_dictionary.xml</user_defined_executable_functions_config>
+<user_defined_executable_functions_config>*_function.xml</user_defined_executable_functions_config>
 ```
 
 ## dictionaries_lazy_load {#server_configuration_parameters-dictionaries_lazy_load}

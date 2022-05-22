@@ -30,6 +30,8 @@ public:
         const BlobsPathToSize & blobs_to_read_,
         const ReadSettings & settings_);
 
+    ~ReadBufferFromRemoteFSGather() override;
+
     String getFileName() const;
 
     void reset();
@@ -55,7 +57,7 @@ public:
     size_t getImplementationBufferOffset() const;
 
 protected:
-    virtual SeekableReadBufferPtr createImplementationBuffer(const String & path, size_t file_size) = 0;
+    virtual SeekableReadBufferPtr createImplementationBufferImpl(const String & path, size_t file_size) = 0;
 
     std::string common_path_prefix;
 
@@ -63,13 +65,18 @@ protected:
 
     ReadSettings settings;
 
-    bool use_external_buffer;
-
     size_t read_until_position = 0;
 
-    String current_path;
+    String current_file_path;
+    size_t current_file_size = 0;
+
+    bool with_cache;
+
+    String query_id;
 
 private:
+    SeekableReadBufferPtr createImplementationBuffer(const String & path, size_t file_size);
+
     bool nextImpl() override;
 
     void initialize();
@@ -77,6 +84,8 @@ private:
     bool readImpl();
 
     bool moveToNextBuffer();
+
+    void appendFilesystemCacheLog();
 
     SeekableReadBufferPtr current_buf;
 
@@ -92,6 +101,10 @@ private:
     size_t bytes_to_ignore = 0;
 
     Poco::Logger * log;
+
+    size_t total_bytes_read_from_current_file = 0;
+
+    bool enable_cache_log = false;
 };
 
 
@@ -116,7 +129,7 @@ public:
     {
     }
 
-    SeekableReadBufferPtr createImplementationBuffer(const String & path, size_t file_size) override;
+    SeekableReadBufferPtr createImplementationBufferImpl(const String & path, size_t file_size) override;
 
 private:
     std::shared_ptr<Aws::S3::S3Client> client_ptr;
@@ -146,7 +159,7 @@ public:
     {
     }
 
-    SeekableReadBufferPtr createImplementationBuffer(const String & path, size_t file_size) override;
+    SeekableReadBufferPtr createImplementationBufferImpl(const String & path, size_t file_size) override;
 
 private:
     std::shared_ptr<Azure::Storage::Blobs::BlobContainerClient> blob_container_client;
@@ -171,7 +184,7 @@ public:
     {
     }
 
-    SeekableReadBufferPtr createImplementationBuffer(const String & path, size_t file_size) override;
+    SeekableReadBufferPtr createImplementationBufferImpl(const String & path, size_t file_size) override;
 
 private:
     String uri;
@@ -198,7 +211,7 @@ public:
         hdfs_uri = hdfs_uri_.substr(0, begin_of_path);
     }
 
-    SeekableReadBufferPtr createImplementationBuffer(const String & path, size_t file_size) override;
+    SeekableReadBufferPtr createImplementationBufferImpl(const String & path, size_t file_size) override;
 
 private:
     const Poco::Util::AbstractConfiguration & config;

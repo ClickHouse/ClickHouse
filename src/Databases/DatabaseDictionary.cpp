@@ -31,7 +31,7 @@ namespace
             DictionaryStructure dictionary_structure = ExternalDictionariesLoader::getDictionaryStructure(*load_result.config);
             auto comment = load_result.config->config->getString("dictionary.comment", "");
 
-            return StorageDictionary::create(
+            return std::make_shared<StorageDictionary>(
                 StorageID(database_name, load_result.name),
                 load_result.name,
                 dictionary_structure,

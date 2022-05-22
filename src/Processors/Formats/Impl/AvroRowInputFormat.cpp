@@ -386,8 +386,8 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(avro::Node
         }
         case avro::AVRO_SYMBOLIC:
             return createDeserializeFn(avro::resolveSymbol(root_node), target_type);
-        case avro::AVRO_MAP: [[fallthrough]];
-        case avro::AVRO_RECORD: [[fallthrough]];
+        case avro::AVRO_MAP:
+        case avro::AVRO_RECORD:
         default:
             break;
     }

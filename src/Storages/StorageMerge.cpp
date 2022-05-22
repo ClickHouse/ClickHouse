@@ -774,7 +774,7 @@ void StorageMerge::convertingSourceStream(
             ColumnWithTypeAndName header_column = header.getByPosition(column_index);
             ColumnWithTypeAndName before_column = before_block_header.getByName(header_column.name);
             /// If the processed_stage greater than FetchColumns and the block structure between streams is different.
-            /// the where expression maybe invalid because of convertingBlockInputStream.
+            /// the where expression maybe invalid because of ConvertingTransform.
             /// So we need to throw exception.
             if (!header_column.type->equals(*before_column.type.get()))
             {
@@ -854,7 +854,7 @@ void registerStorageMerge(StorageFactory & factory)
         engine_args[1] = evaluateConstantExpressionAsLiteral(engine_args[1], args.getLocalContext());
         String table_name_regexp = engine_args[1]->as<ASTLiteral &>().value.safeGet<String>();
 
-        return StorageMerge::create(
+        return std::make_shared<StorageMerge>(
             args.table_id, args.columns, args.comment, source_database_name_or_regexp, is_regexp, table_name_regexp, args.getContext());
     },
     {

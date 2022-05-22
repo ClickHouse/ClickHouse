@@ -233,7 +233,7 @@
             vertical-align: top;
         }
 
-        td.right
+        .right
         {
             text-align: right;
         }
@@ -270,6 +270,26 @@
         {
             white-space: pre-wrap;
             max-width: none;
+        }
+
+        td.transposed
+        {
+            max-width: none;
+            overflow: auto;
+            white-space: pre-wrap;
+        }
+
+        td.empty-result
+        {
+            text-align: center;
+            vertical-align: middle;
+        }
+
+        div.empty-result
+        {
+            opacity: 10%;
+            font-size: 7vw;
+            font-family: Liberation Sans, DejaVu Sans, sans-serif;
         }
 
         /* The style for SQL NULL */
@@ -613,8 +633,108 @@
         }
     }
 
+    function renderCell(cell, col_idx, settings)
+    {
+        let td = document.createElement('td');
+
+        let is_null = (cell === null);
+        let is_link = false;
+
+        /// Test: SELECT number, toString(number) AS str, number % 2 ? number : NULL AS nullable, range(number) AS arr, CAST((['hello', 'world'], [number, number % 2]) AS Map(String, UInt64)) AS map FROM numbers(10)
+        let text;
+        if (is_null) {
+            text = 'ᴺᵁᴸᴸ';
+        } else if (typeof(cell) === 'object') {
+            text = JSON.stringify(cell);
+        } else {
+            text = cell;
+
+            /// If it looks like URL, create a link. This is for convenience.
+            if (typeof(cell) == 'string' && cell.match(/^https?:\/\/\S+$/)) {
+                is_link = true;
+            }
+        }
+
+        let node = document.createTextNode(text);
+        if (is_link) {
+            let link = document.createElement('a');
+            link.appendChild(node);
+            link.href = text;
+            link.setAttribute('target', '_blank');
+            node = link;
+        }
+
+        if (settings.is_transposed) {
+            td.className = 'left transposed';
+        } else {
+            td.className = settings.column_is_number[col_idx] ? 'right' : 'left';
+        }
+        if (is_null) {
+            td.className += ' null';
+        }
+
+        /// If it's a number, render bar in background.
+        if (!settings.is_transposed && settings.column_need_render_bars[col_idx] && text > 0) {
+            const ratio = 100 * text / settings.column_maximums[col_idx];
+
+            let div = document.createElement('div');
+
+            div.style.width = '100%';
+            div.style.background = `linear-gradient(to right,
+                var(--bar-color) 0%, var(--bar-color) ${ratio}%,
+                transparent ${ratio}%, transparent 100%)`;
+
+            div.appendChild(node);
+            node = div;
+        }
+
+        td.appendChild(node);
+        return td;
+    }
+
+    function renderTableTransposed(response)
+    {
+        let tbody = document.createElement('tbody');
+        for (let col_idx in response.meta) {
+            let tr = document.createElement('tr');
+            {
+                let th = document.createElement('th');
+                th.className = 'right';
+                th.style.width = '0';
+                th.appendChild(document.createTextNode(response.meta[col_idx].name));
+                tr.appendChild(th);
+            }
+            for (let row_idx in response.data)
+            {
+                let cell = response.data[row_idx][col_idx];
+                const td = renderCell(cell, col_idx, {is_transposed: true});
+                tr.appendChild(td);
+            }
+            if (response.data.length == 0 && col_idx == 0)
+            {
+                /// If result is empty, show this fact with a style.
+                let td = document.createElement('td');
+                td.rowSpan = response.meta.length;
+                td.className = 'empty-result';
+                let div = document.createElement('div');
+                div.appendChild(document.createTextNode("empty result"));
+                div.className = 'empty-result';
+                td.appendChild(div);
+                tr.appendChild(td);
+            }
+            tbody.appendChild(tr);
+        }
+        let table = document.getElementById('data-table');
+        table.appendChild(tbody);
+    }
+
     function renderTable(response)
     {
+        if (response.data.length <= 1 && response.meta.length >= 5) {
+            renderTableTransposed(response)
+            return;
+        }
+
         let thead = document.createElement('thead');
         for (let idx in response.meta) {
             let th = document.createElement('th');
@@ -628,66 +748,25 @@
         const max_rows = 10000 / response.meta.length;
         let row_num = 0;
 
-        const column_is_number = response.meta.map(elem => !!elem.type.match(/^(U?Int|Decimal|Float)/));
+        const column_is_number = response.meta.map(elem => !!elem.type.match(/^(Nullable\()?(U?Int|Decimal|Float)/));
         const column_maximums = column_is_number.map((elem, idx) => elem ? Math.max(...response.data.map(row => row[idx])) : 0);
         const column_minimums = column_is_number.map((elem, idx) => elem ? Math.min(...response.data.map(row => Math.max(0, row[idx]))) : 0);
         const column_need_render_bars = column_is_number.map((elem, idx) => column_maximums[idx] > 0 && column_maximums[idx] > column_minimums[idx]);
+
+        const settings = {
+            is_transposed: false,
+            column_is_number: column_is_number,
+            column_maximums: column_maximums,
+            column_minimums: column_minimums,
+            column_need_render_bars: column_need_render_bars,
+        };
 
         let tbody = document.createElement('tbody');
         for (let row_idx in response.data) {
             let tr = document.createElement('tr');
             for (let col_idx in response.data[row_idx]) {
-                let td = document.createElement('td');
                 let cell = response.data[row_idx][col_idx];
-
-                let is_null = (cell === null);
-                let is_link = false;
-
-                /// Test: SELECT number, toString(number) AS str, number % 2 ? number : NULL AS nullable, range(number) AS arr, CAST((['hello', 'world'], [number, number % 2]) AS Map(String, UInt64)) AS map FROM numbers(10)
-                let text;
-                if (is_null) {
-                    text = 'ᴺᵁᴸᴸ';
-                } else if (typeof(cell) === 'object') {
-                    text = JSON.stringify(cell);
-                } else {
-                    text = cell;
-
-                    /// If it looks like URL, create a link. This is for convenience.
-                    if (typeof(cell) == 'string' && cell.match(/^https?:\/\/\S+$/)) {
-                        is_link = true;
-                    }
-                }
-
-                let node = document.createTextNode(text);
-                if (is_link) {
-                    let link = document.createElement('a');
-                    link.appendChild(node);
-                    link.href = text;
-                    link.setAttribute('target', '_blank');
-                    node = link;
-                }
-
-                td.className = column_is_number[col_idx] ? 'right' : 'left';
-                if (is_null) {
-                    td.className += ' null';
-                }
-
-                /// If it's a number, render bar in background.
-                if (column_need_render_bars[col_idx] && text > 0) {
-                    const ratio = 100 * text / column_maximums[col_idx];
-
-                    let div = document.createElement('div');
-
-                    div.style.width = '100%';
-                    div.style.background = `linear-gradient(to right,
-                        var(--bar-color) 0%, var(--bar-color) ${ratio}%,
-                        transparent ${ratio}%, transparent 100%)`;
-
-                    div.appendChild(node);
-                    node = div;
-                }
-
-                td.appendChild(node);
+                const td = renderCell(cell, col_idx, settings);
                 tr.appendChild(td);
             }
             tbody.appendChild(tr);
@@ -787,10 +866,7 @@
         document.documentElement.setAttribute('data-theme', theme);
     }
 
-    /**
-     * First we check if theme is set via the 'theme' GET parameter, if not, we check localStorage,
-     * otherwise we check OS preference
-     */
+    /// First we check if theme is set via the 'theme' GET parameter, if not, we check localStorage, otherwise we check OS preference.
     let theme = current_url.searchParams.get('theme');
     if (['dark', 'light'].indexOf(theme) === -1) {
         theme = window.localStorage.getItem('theme');
