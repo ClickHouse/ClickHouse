@@ -567,7 +567,7 @@ ColumnPtr ColumnVector<T>::replicateSSE2(const IColumn::Offsets & offsets) const
 
     size_t prev_offset = 0;
     int copy_begin = -1;
-    
+    size_t size = offsets.size();
     for (size_t i = 0; i < size; ++i)
     {
         size_t span = offsets[i] - prev_offset;
