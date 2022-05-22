@@ -18,18 +18,8 @@ CI_CONFIG = {
             "tidy": "disable",
             "with_coverage": False,
         },
-        "performance": {
-            "compiler": "clang-14",
-            "build_type": "",
-            "sanitizer": "",
-            "package_type": "performance",
-            "bundled": "bundled",
-            "splitted": "unsplitted",
-            "tidy": "disable",
-            "with_coverage": False,
-        },
         "coverity": {
-            "compiler": "clang-13",
+            "compiler": "clang-14",
             "build_type": "",
             "sanitizer": "",
             "package_type": "coverity",
@@ -39,17 +29,6 @@ CI_CONFIG = {
             "with_coverage": False,
             "official": False,
         },
-        # FIXME update to gcc-12 and turn on
-        # "binary_gcc": {
-        #     "compiler": "gcc-11",
-        #     "build_type": "",
-        #     "sanitizer": "",
-        #     "package_type": "binary",
-        #     "bundled": "bundled",
-        #     "splitted": "unsplitted",
-        #     "tidy": "disable",
-        #     "with_coverage": False,
-        # },
         "package_aarch64": {
             "compiler": "clang-14-aarch64",
             "build_type": "",
@@ -202,7 +181,6 @@ CI_CONFIG = {
     "builds_report_config": {
         "ClickHouse build check (actions)": [
             "package_release",
-            "performance",
             "coverity",
             "package_aarch64",
             "package_asan",
@@ -220,7 +198,6 @@ CI_CONFIG = {
             "binary_freebsd",
             "binary_darwin_aarch64",
             "binary_ppc64le",
-            # "binary_gcc",
         ],
     },
     "tests_config": {
@@ -326,9 +303,6 @@ CI_CONFIG = {
         "Testflows check (actions)": {
             "required_build": "package_release",
         },
-        # "Unit tests (release-gcc, actions)": {
-        #     "required_build": "binary_gcc",
-        # },
         "Unit tests (release-clang, actions)": {
             "required_build": "binary_release",
         },
@@ -372,7 +346,7 @@ CI_CONFIG = {
             "required_build": "binary_release",
         },
         "Performance Comparison (actions)": {
-            "required_build": "performance",
+            "required_build": "package_release",
         },
     },
 }  # type: dict

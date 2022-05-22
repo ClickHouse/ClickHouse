@@ -29,11 +29,13 @@ There are multiple ways of user identification:
 -   `IDENTIFIED WITH no_password`
 -   `IDENTIFIED WITH plaintext_password BY 'qwerty'`
 -   `IDENTIFIED WITH sha256_password BY 'qwerty'` or `IDENTIFIED BY 'password'`
--   `IDENTIFIED WITH sha256_hash BY 'hash'`
+-   `IDENTIFIED WITH sha256_hash BY 'hash'` or `IDENTIFIED WITH sha256_hash BY 'hash' SALT 'salt'`
 -   `IDENTIFIED WITH double_sha1_password BY 'qwerty'`
 -   `IDENTIFIED WITH double_sha1_hash BY 'hash'`
 -   `IDENTIFIED WITH ldap SERVER 'server_name'`
 -   `IDENTIFIED WITH kerberos` or `IDENTIFIED WITH kerberos REALM 'realm'`
+
+For identification with sha256_hash using `SALT` - hash must be calculated from concatination of 'password' and 'salt'.
 
 ## User Host {#user-host}
 

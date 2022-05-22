@@ -108,7 +108,7 @@ public:
     /// Approximate number of allocated bytes in memory - for profiling and limits.
     size_t allocatedBytes() const;
 
-    operator bool() const { return !!columns(); } /// NOLINT
+    explicit operator bool() const { return !!columns(); }
     bool operator!() const { return !this->operator bool(); } /// NOLINT
 
     /** Get a list of column names separated by commas. */
