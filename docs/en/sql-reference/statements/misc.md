@@ -1,6 +1,6 @@
 ---
 toc_hidden: true
-toc_priority: 41
+sidebar_position: 70
 ---
 
 # Miscellaneous Statements {#miscellaneous-queries}

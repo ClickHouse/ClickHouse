@@ -1,6 +1,6 @@
 ---
-toc_priority: 58
-toc_title: Permissions for Queries
+sidebar_position: 58
+sidebar_label: Permissions for Queries
 ---
 
 # Permissions for Queries {#permissions_for_queries}

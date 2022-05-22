@@ -2,7 +2,6 @@
 
 #include <map>
 #include <shared_mutex>
-#include <base/shared_ptr_helper.h>
 
 #include <Disks/IDisk.h>
 #include <Storages/IStorage.h>
@@ -19,14 +18,28 @@ namespace DB
   * Also implements TinyLog - a table engine that is suitable for small chunks of the log.
   * It differs from Log in the absence of mark files.
   */
-class StorageLog final : public shared_ptr_helper<StorageLog>, public IStorage
+class StorageLog final : public IStorage
 {
     friend class LogSource;
     friend class LogSink;
     friend class LogRestoreTask;
-    friend struct shared_ptr_helper<StorageLog>;
 
 public:
+    /** Attach the table with the appropriate name, along the appropriate path (with / at the end),
+      *  (the correctness of names and paths is not verified)
+      *  consisting of the specified columns; Create files if they do not exist.
+      */
+    StorageLog(
+        const String & engine_name_,
+        DiskPtr disk_,
+        const std::string & relative_path_,
+        const StorageID & table_id_,
+        const ColumnsDescription & columns_,
+        const ConstraintsDescription & constraints_,
+        const String & comment,
+        bool attach,
+        size_t max_compress_block_size_);
+
     ~StorageLog() override;
     String getName() const override { return engine_name; }
 
@@ -52,25 +65,12 @@ public:
     bool supportsSubcolumns() const override { return true; }
     ColumnSizeByName getColumnSizes() const override;
 
+    std::optional<UInt64> totalRows(const Settings & settings) const override;
+    std::optional<UInt64> totalBytes(const Settings & settings) const override;
+
     bool hasDataToBackup() const override { return true; }
     BackupEntries backupData(ContextPtr context, const ASTs & partitions) override;
-    RestoreTaskPtr restoreData(ContextMutablePtr context, const ASTs & partitions, const BackupPtr & backup, const String & data_path_in_backup, const StorageRestoreSettings & restore_settings) override;
-
-protected:
-    /** Attach the table with the appropriate name, along the appropriate path (with / at the end),
-      *  (the correctness of names and paths is not verified)
-      *  consisting of the specified columns; Create files if they do not exist.
-      */
-    StorageLog(
-        const String & engine_name_,
-        DiskPtr disk_,
-        const std::string & relative_path_,
-        const StorageID & table_id_,
-        const ColumnsDescription & columns_,
-        const ConstraintsDescription & constraints_,
-        const String & comment,
-        bool attach,
-        size_t max_compress_block_size_);
+    RestoreTaskPtr restoreData(ContextMutablePtr context, const ASTs & partitions, const BackupPtr & backup, const String & data_path_in_backup, const StorageRestoreSettings & restore_settings, const std::shared_ptr<IRestoreCoordination> & restore_coordination) override;
 
 private:
     using ReadLock = std::shared_lock<std::shared_timed_mutex>;
@@ -93,6 +93,9 @@ private:
 
     /// Saves the sizes of the data and marks files.
     void saveFileSizes(const WriteLock &);
+
+    /// Recalculates the number of rows stored in this table.
+    void updateTotalRows(const WriteLock &);
 
     /** Offsets to some row number in a file for column in table.
       * They are needed so that you can read the data in several threads.
@@ -130,6 +133,9 @@ private:
     String marks_file_path;
     std::atomic<bool> marks_loaded = false;
     size_t num_marks_saved = 0;
+
+    std::atomic<UInt64> total_rows = 0;
+    std::atomic<UInt64> total_bytes = 0;
 
     FileChecker file_checker;
 

@@ -27,6 +27,6 @@ FOREACH ( LINE ${_CONTENT} )
 endforeach ()
 
 # all the sources parsed. Now just add the lib
-add_library(_stemmer STATIC ${_SOURCES} ${_HEADERS} )
+add_library(_stemmer ${_SOURCES} ${_HEADERS} )
 target_include_directories(_stemmer SYSTEM PUBLIC "${STEMMER_INCLUDE_DIR}")
 add_library(ch_contrib::stemmer ALIAS _stemmer)

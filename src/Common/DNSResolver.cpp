@@ -89,7 +89,7 @@ static DNSResolver::IPAddresses resolveIPAddressImpl(const std::string & host)
 
     /// NOTE:
     /// - Poco::Net::DNS::resolveOne(host) doesn't work for IP addresses like 127.0.0.2
-    /// - Poco::Net::IPAddress::tryParse() expect hex string for IPv6 (w/o brackets)
+    /// - Poco::Net::IPAddress::tryParse() expect hex string for IPv6 (without brackets)
     if (host.starts_with('['))
     {
         assert(host.ends_with(']'));

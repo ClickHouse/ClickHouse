@@ -19,7 +19,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromTemporaryFile.h>
 #include <IO/WriteHelpers.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 
 namespace CurrentMetrics
 {
@@ -438,6 +438,14 @@ void DiskLocal::copy(const String & from_path, const std::shared_ptr<IDisk> & to
     }
     else
         copyThroughBuffers(from_path, to_disk, to_path); /// Base implementation.
+}
+
+void DiskLocal::copyDirectoryContent(const String & from_dir, const std::shared_ptr<IDisk> & to_disk, const String & to_dir)
+{
+    if (isSameDiskType(*this, *to_disk))
+        fs::copy(from_dir, to_dir, fs::copy_options::recursive | fs::copy_options::overwrite_existing); /// Use more optimal way.
+    else
+        copyThroughBuffers(from_dir, to_disk, to_dir); /// Base implementation.
 }
 
 SyncGuardPtr DiskLocal::getDirectorySyncGuard(const String & path) const

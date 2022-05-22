@@ -1,6 +1,6 @@
 #pragma once
 
-#include <IO/BufferWithOwnMemory.h>
+#include <IO/CompressedReadBufferWrapper.h>
 #include <IO/CompressionMethod.h>
 #include <IO/ReadBuffer.h>
 
@@ -13,7 +13,7 @@ namespace ErrorCodes
 {
 }
 
-class ZstdInflatingReadBuffer : public BufferWithOwnMemory<ReadBuffer>
+class ZstdInflatingReadBuffer : public CompressedReadBufferWrapper
 {
 public:
     explicit ZstdInflatingReadBuffer(
@@ -27,7 +27,6 @@ public:
 private:
     bool nextImpl() override;
 
-    std::unique_ptr<ReadBuffer> in;
     ZSTD_DCtx * dctx;
     ZSTD_inBuffer input;
     ZSTD_outBuffer output;

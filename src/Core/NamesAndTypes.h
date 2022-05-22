@@ -109,6 +109,8 @@ public:
     std::optional<NameAndTypePair> tryGetByName(const std::string & name) const;
 };
 
+using NamesAndTypesLists = std::vector<NamesAndTypesList>;
+
 }
 
 namespace std

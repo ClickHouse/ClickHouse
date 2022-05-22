@@ -22,7 +22,7 @@ std::unique_ptr<MergeTreeReaderStream> makeIndexReader(
         std::move(settings), mark_cache, uncompressed_cache,
         part->getFileSizeOrZero(index->getFileName() + extension),
         &part->index_granularity_info,
-        ReadBufferFromFileBase::ProfileCallback{}, CLOCK_MONOTONIC_COARSE);
+        ReadBufferFromFileBase::ProfileCallback{}, CLOCK_MONOTONIC_COARSE, false);
 }
 
 }

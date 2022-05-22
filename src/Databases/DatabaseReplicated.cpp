@@ -45,6 +45,7 @@ namespace ErrorCodes
 
 static constexpr const char * DROPPED_MARK = "DROPPED";
 static constexpr const char * BROKEN_TABLES_SUFFIX = "_broken_tables";
+static constexpr const char * BROKEN_REPLICATED_TABLES_SUFFIX = "_broken_replicated_tables";
 
 
 zkutil::ZooKeeperPtr DatabaseReplicated::getZooKeeper() const
@@ -311,6 +312,11 @@ void DatabaseReplicated::createEmptyLogEntry(const ZooKeeperPtr & current_zookee
     DatabaseReplicatedDDLWorker::enqueueQueryImpl(current_zookeeper, entry, this, true);
 }
 
+bool DatabaseReplicated::waitForReplicaToProcessAllEntries(UInt64 timeout_ms)
+{
+    return ddl_worker->waitForReplicaToProcessAllEntries(timeout_ms);
+}
+
 void DatabaseReplicated::createReplicaNodesInZooKeeper(const zkutil::ZooKeeperPtr & current_zookeeper)
 {
     /// Write host name to replica_path, it will protect from multiple replicas with the same name
@@ -410,6 +416,8 @@ void DatabaseReplicated::checkQueryValid(const ASTPtr & query, ContextPtr query_
 
             Macros::MacroExpansionInfo info;
             info.table_id = {getDatabaseName(), create->getTable(), create->uuid};
+            info.shard = getShardName();
+            info.replica = getReplicaName();
             query_context->getMacros()->expand(maybe_path, info);
             bool maybe_shard_macros = info.expanded_other;
             info.expanded_other = false;
@@ -459,7 +467,7 @@ void DatabaseReplicated::checkQueryValid(const ASTPtr & query, ContextPtr query_
     }
 }
 
-BlockIO DatabaseReplicated::tryEnqueueReplicatedDDL(const ASTPtr & query, ContextPtr query_context)
+BlockIO DatabaseReplicated::tryEnqueueReplicatedDDL(const ASTPtr & query, ContextPtr query_context, bool internal)
 {
 
     if (query_context->getCurrentTransaction() && query_context->getSettingsRef().throw_on_unsupported_query_inside_transaction)
@@ -468,7 +476,7 @@ BlockIO DatabaseReplicated::tryEnqueueReplicatedDDL(const ASTPtr & query, Contex
     if (is_readonly)
         throw Exception(ErrorCodes::NO_ZOOKEEPER, "Database is in readonly mode, because it cannot connect to ZooKeeper");
 
-    if (query_context->getClientInfo().query_kind != ClientInfo::QueryKind::INITIAL_QUERY)
+    if (!internal && (query_context->getClientInfo().query_kind != ClientInfo::QueryKind::INITIAL_QUERY))
         throw Exception(ErrorCodes::INCORRECT_QUERY, "It's not initial query. ON CLUSTER is not allowed for Replicated database.");
 
     checkQueryValid(query, query_context);
@@ -505,6 +513,9 @@ static UUID getTableUUIDIfReplicated(const String & metadata, ContextPtr context
 
 void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeeper, UInt32 our_log_ptr, UInt32 max_log_ptr)
 {
+    is_recovering = true;
+    SCOPE_EXIT({ is_recovering = false; });
+
     /// Let's compare local (possibly outdated) metadata with (most actual) metadata stored in ZooKeeper
     /// and try to update the set of local tables.
     /// We could drop all local tables and create the new ones just like it's new replica.
@@ -582,6 +593,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
 
     String db_name = getDatabaseName();
     String to_db_name = getDatabaseName() + BROKEN_TABLES_SUFFIX;
+    String to_db_name_replicated = getDatabaseName() + BROKEN_REPLICATED_TABLES_SUFFIX;
     if (total_tables * db_settings.max_broken_tables_ratio < tables_to_detach.size())
         throw Exception(ErrorCodes::DATABASE_REPLICATION_FAILED, "Too many tables to recreate: {} of {}", tables_to_detach.size(), total_tables);
     else if (!tables_to_detach.empty())
@@ -592,6 +604,13 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
         /// and make possible creation of new table with the same UUID.
         String query = fmt::format("CREATE DATABASE IF NOT EXISTS {} ENGINE=Ordinary", backQuoteIfNeed(to_db_name));
         auto query_context = Context::createCopy(getContext());
+        executeQuery(query, query_context, true);
+
+        /// But we want to avoid discarding UUID of ReplicatedMergeTree tables, because it will not work
+        /// if zookeeper_path contains {uuid} macro. Replicated database do not recreate replicated tables on recovery,
+        /// so it's ok to save UUID of replicated table.
+        query = fmt::format("CREATE DATABASE IF NOT EXISTS {} ENGINE=Atomic", backQuoteIfNeed(to_db_name_replicated));
+        query_context = Context::createCopy(getContext());
         executeQuery(query, query_context, true);
     }
 
@@ -607,6 +626,18 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
 
         auto table = tryGetTable(table_name, getContext());
 
+        auto move_table_to_database = [&](const String & broken_table_name, const String & to_database_name)
+        {
+            /// Table probably stores some data. Let's move it to another database.
+            String to_name = fmt::format("{}_{}_{}", broken_table_name, max_log_ptr, thread_local_rng() % 1000);
+            LOG_DEBUG(log, "Will RENAME TABLE {} TO {}.{}", backQuoteIfNeed(broken_table_name), backQuoteIfNeed(to_database_name), backQuoteIfNeed(to_name));
+            assert(db_name < to_database_name);
+            DDLGuardPtr to_table_guard = DatabaseCatalog::instance().getDDLGuard(to_database_name, to_name);
+            auto to_db_ptr = DatabaseCatalog::instance().getDatabase(to_database_name);
+            DatabaseAtomic::renameTable(make_query_context(), broken_table_name, *to_db_ptr, to_name, false, false);
+            ++moved_tables;
+        };
+
         if (!table->storesDataOnDisk())
         {
             LOG_DEBUG(log, "Will DROP TABLE {}, because it does not store data on disk and can be safely dropped", backQuoteIfNeed(table_name));
@@ -616,16 +647,13 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
             table->flushAndShutdown();
             DatabaseAtomic::dropTable(make_query_context(), table_name, true);
         }
+        else if (!table->supportsReplication())
+        {
+            move_table_to_database(table_name, to_db_name);
+        }
         else
         {
-            /// Table probably stores some data. Let's move it to another database.
-            String to_name = fmt::format("{}_{}_{}", table_name, max_log_ptr, thread_local_rng() % 1000);
-            LOG_DEBUG(log, "Will RENAME TABLE {} TO {}.{}", backQuoteIfNeed(table_name), backQuoteIfNeed(to_db_name), backQuoteIfNeed(to_name));
-            assert(db_name < to_db_name);
-            DDLGuardPtr to_table_guard = DatabaseCatalog::instance().getDDLGuard(to_db_name, to_name);
-            auto to_db_ptr = DatabaseCatalog::instance().getDatabase(to_db_name);
-            DatabaseAtomic::renameTable(make_query_context(), table_name, *to_db_ptr, to_name, false, false);
-            ++moved_tables;
+            move_table_to_database(table_name, to_db_name_replicated);
         }
     }
 

@@ -9,7 +9,7 @@
 #include <Processors/Formats/IInputFormat.h>
 #include <Interpreters/Context.h>
 #include <Poco/Net/HTTPRequest.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include "DictionarySourceFactory.h"
 #include "DictionarySourceHelpers.h"
 #include "DictionaryStructure.h"

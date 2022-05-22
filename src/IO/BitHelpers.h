@@ -55,7 +55,7 @@ public:
     ~BitReader() = default;
 
     // reads bits_to_read high-bits from bits_buffer
-    inline UInt64 readBits(UInt8 bits_to_read)
+    ALWAYS_INLINE inline UInt64 readBits(UInt8 bits_to_read)
     {
         if (bits_to_read > bits_count)
             fillBitBuffer();
@@ -71,7 +71,7 @@ public:
         return getBitsFromBitBuffer<PEEK>(8);
     }
 
-    inline UInt8 readBit()
+    ALWAYS_INLINE inline UInt8 readBit()
     {
         return static_cast<UInt8>(readBits(1));
     }
@@ -122,7 +122,7 @@ private:
 
 
     // Fills internal bits_buffer with data from source, reads at most 64 bits
-    size_t fillBitBuffer()
+    ALWAYS_INLINE size_t fillBitBuffer()
     {
         const size_t available = source_end - source_current;
         const auto bytes_to_read = std::min<size_t>(64 / 8, available);

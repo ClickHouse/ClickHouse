@@ -135,7 +135,7 @@ void RequiredSourceColumnsMatcher::visit(const ASTSelectQuery & select, const AS
             {
                 if (auto * ident = fn->as<ASTIdentifier>())
                 {
-                    if (select_columns.count(ident->getColumnName()) == 0)
+                    if (!select_columns.contains(ident->getColumnName()))
                         data.addColumnIdentifier(*ident);
                     return;
                 }
@@ -181,7 +181,7 @@ void RequiredSourceColumnsMatcher::visit(const ASTIdentifier & node, const ASTPt
     if (node.name().empty())
         throw Exception("Expected not empty name", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-    if (!data.private_aliases.count(node.name()))
+    if (!data.private_aliases.contains(node.name()))
         data.addColumnIdentifier(node);
 }
 

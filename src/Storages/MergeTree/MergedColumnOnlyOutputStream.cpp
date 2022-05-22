@@ -85,7 +85,7 @@ MergedColumnOnlyOutputStream::fillChecksums(
         if (disk->exists(file_path))
             disk->removeFile(file_path);
 
-        if (all_checksums.files.count(removed_file))
+        if (all_checksums.files.contains(removed_file))
             all_checksums.files.erase(removed_file);
     }
 

@@ -1,6 +1,6 @@
 ---
-toc_priority: 54
-toc_title: URLs
+sidebar_position: 54
+sidebar_label: URLs
 ---
 
 # Functions for Working with URLs {#functions-for-working-with-urls}

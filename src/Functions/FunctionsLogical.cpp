@@ -565,7 +565,7 @@ ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeShortCircuit(ColumnsWithTy
     /// The result is !mask_n.
 
     bool inverted = Name::name != NameAnd::name;
-    UInt8 null_value = UInt8(Name::name == NameAnd::name);
+    UInt8 null_value = static_cast<UInt8>(Name::name == NameAnd::name);
     IColumn::Filter mask(arguments[0].column->size(), 1);
 
     /// If result is nullable, we need to create null bytemap of the resulting column.

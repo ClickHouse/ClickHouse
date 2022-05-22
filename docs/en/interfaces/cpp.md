@@ -1,6 +1,6 @@
 ---
-toc_priority: 24
-toc_title: C++ Client Library
+sidebar_position: 24
+sidebar_label: C++ Client Library
 ---
 
 # C++ Client Library {#c-client-library}

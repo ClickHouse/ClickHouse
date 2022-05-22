@@ -1,5 +1,5 @@
 ---
-toc_priority: 110
+sidebar_position: 110
 ---
 
 # groupArray {#agg_function-grouparray}

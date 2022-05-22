@@ -1,6 +1,6 @@
 ---
-toc_priority: 21
-toc_title: OnTime
+sidebar_position: 21
+sidebar_label: OnTime
 ---
 
 # OnTime {#ontime}

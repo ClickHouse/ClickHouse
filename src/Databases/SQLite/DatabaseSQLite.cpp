@@ -2,7 +2,7 @@
 
 #if USE_SQLITE
 
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Databases/SQLite/fetchSQLiteTableStructure.h>
@@ -145,7 +145,7 @@ StoragePtr DatabaseSQLite::fetchTable(const String & table_name, ContextPtr loca
     if (!columns)
         return StoragePtr{};
 
-    auto storage = StorageSQLite::create(
+    auto storage = std::make_shared<StorageSQLite>(
         StorageID(database_name, table_name),
         sqlite_db,
         database_path,

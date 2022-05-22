@@ -185,7 +185,7 @@ DataTypePtr getDataTypeFromJSONFieldImpl(const Element & field)
         }
 
         if (is_object)
-            return std::make_shared<DataTypeObject>("json", false);
+            return std::make_shared<DataTypeObject>("json", true);
 
         if (value_type)
             return std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), value_type);
@@ -348,6 +348,40 @@ bool readFieldImpl(ReadBuffer & in, IColumn & column, const DataTypePtr & type, 
         e.addMessage("(while reading the value of key " + column_name + ")");
         throw;
     }
+}
+
+DataTypePtr getCommonTypeForJSONFormats(const DataTypePtr & first, const DataTypePtr & second, bool allow_bools_as_numbers)
+{
+    if (allow_bools_as_numbers)
+    {
+        auto not_nullable_first = removeNullable(first);
+        auto not_nullable_second = removeNullable(second);
+        /// Check if we have Bool and Number and if so make the result type Number
+        bool bool_type_presents = isBool(not_nullable_first) || isBool(not_nullable_second);
+        bool number_type_presents = isNumber(not_nullable_first) || isNumber(not_nullable_second);
+        if (bool_type_presents && number_type_presents)
+        {
+            if (isBool(not_nullable_first))
+                return second;
+            return first;
+        }
+    }
+
+    /// If we have Map and Object, make result type Object
+    bool object_type_presents = isObject(first) || isObject(second);
+    bool map_type_presents = isMap(first) || isMap(second);
+    if (object_type_presents && map_type_presents)
+    {
+        if (isObject(first))
+            return first;
+        return second;
+    }
+
+    /// If we have different Maps, make result type Object
+    if (isMap(first) && isMap(second) && !first->equals(*second))
+        return std::make_shared<DataTypeObject>("json", true);
+
+    return nullptr;
 }
 
 }

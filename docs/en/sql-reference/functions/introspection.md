@@ -1,14 +1,15 @@
 ---
-toc_priority: 65
-toc_title: Introspection
+sidebar_position: 65
+sidebar_label: Introspection
 ---
 
 # Introspection Functions {#introspection-functions}
 
 You can use functions described in this chapter to introspect [ELF](https://en.wikipedia.org/wiki/Executable_and_Linkable_Format) and [DWARF](https://en.wikipedia.org/wiki/DWARF) for query profiling.
 
-!!! warning "Warning"
-    These functions are slow and may impose security considerations.
+:::warning    
+These functions are slow and may impose security considerations.
+:::
 
 For proper operation of introspection functions:
 

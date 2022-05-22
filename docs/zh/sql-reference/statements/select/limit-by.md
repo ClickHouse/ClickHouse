@@ -1,5 +1,5 @@
 ---
-toc_title: LIMIT BY
+sidebar_label: LIMIT BY
 ---
 
 # LIMIT BY子句 {#limit-by-clause}

@@ -35,7 +35,7 @@ StoragePtr TableFunctionSQLite::executeImpl(const ASTPtr & /*ast_function*/,
 {
     auto columns = getActualTableStructure(context);
 
-    auto storage = StorageSQLite::create(StorageID(getDatabaseName(), table_name),
+    auto storage = std::make_shared<StorageSQLite>(StorageID(getDatabaseName(), table_name),
                                          sqlite_db,
                                          database_path,
                                          remote_table_name,

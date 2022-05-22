@@ -1,6 +1,6 @@
 ---
-toc_priority: 35
-toc_title: Arrays
+sidebar_position: 35
+sidebar_label: Arrays
 ---
 
 # Array Functions {#functions-for-working-with-arrays}
@@ -17,8 +17,9 @@ empty([x])
 
 An array is considered empty if it does not contain any elements.
 
-!!! note "Note"
-    Can be optimized by enabling the [optimize_functions_to_subcolumns](../../operations/settings/settings.md#optimize-functions-to-subcolumns) setting. With `optimize_functions_to_subcolumns = 1` the function reads only [size0](../../sql-reference/data-types/array.md#array-size) subcolumn instead of reading and processing the whole array column. The query `SELECT empty(arr) FROM TABLE;` transforms to `SELECT arr.size0 = 0 FROM TABLE;`.
+:::note    
+Can be optimized by enabling the [optimize_functions_to_subcolumns](../../operations/settings/settings.md#optimize-functions-to-subcolumns) setting. With `optimize_functions_to_subcolumns = 1` the function reads only [size0](../../sql-reference/data-types/array.md#array-size) subcolumn instead of reading and processing the whole array column. The query `SELECT empty(arr) FROM TABLE;` transforms to `SELECT arr.size0 = 0 FROM TABLE;`.
+:::
 
 The function also works for [strings](string-functions.md#empty) or [UUID](uuid-functions.md#empty).
 
@@ -60,8 +61,9 @@ notEmpty([x])
 
 An array is considered non-empty if it contains at least one element.
 
-!!! note "Note"
-    Can be optimized by enabling the [optimize_functions_to_subcolumns](../../operations/settings/settings.md#optimize-functions-to-subcolumns) setting. With `optimize_functions_to_subcolumns = 1` the function reads only [size0](../../sql-reference/data-types/array.md#array-size) subcolumn instead of reading and processing the whole array column. The query `SELECT notEmpty(arr) FROM table` transforms to `SELECT arr.size0 != 0 FROM TABLE`.
+:::note    
+Can be optimized by enabling the [optimize_functions_to_subcolumns](../../operations/settings/settings.md#optimize-functions-to-subcolumns) setting. With `optimize_functions_to_subcolumns = 1` the function reads only [size0](../../sql-reference/data-types/array.md#array-size) subcolumn instead of reading and processing the whole array column. The query `SELECT notEmpty(arr) FROM table` transforms to `SELECT arr.size0 != 0 FROM TABLE`.
+:::
 
 The function also works for [strings](string-functions.md#notempty) or [UUID](uuid-functions.md#notempty).
 
@@ -618,9 +620,9 @@ arraySlice(array, offset[, length])
 
 **Arguments**
 
--   `array` – Array of data.
--   `offset` – Indent from the edge of the array. A positive value indicates an offset on the left, and a negative value is an indent on the right. Numbering of the array items begins with 1.
--   `length` – The length of the required slice. If you specify a negative value, the function returns an open slice `[offset, array_length - length)`. If you omit the value, the function returns the slice `[offset, the_end_of_array]`.
+- `array` – Array of data.
+- `offset` – Indent from the edge of the array. A positive value indicates an offset on the left, and a negative value is an indent on the right. Numbering of the array items begins with 1.
+- `length` – The length of the required slice. If you specify a negative value, the function returns an open slice `[offset, array_length - length]`. If you omit the value, the function returns the slice `[offset, the_end_of_array]`.
 
 **Example**
 
@@ -733,8 +735,9 @@ SELECT arraySort((x, y) -> -y, [0, 1, 2], [1, 2, 3]) as res;
 └─────────┘
 ```
 
-!!! note "Note"
-    To improve sorting efficiency, the [Schwartzian transform](https://en.wikipedia.org/wiki/Schwartzian_transform) is used.
+:::note    
+To improve sorting efficiency, the [Schwartzian transform](https://en.wikipedia.org/wiki/Schwartzian_transform) is used.
+:::
 
 ## arrayReverseSort(\[func,\] arr, …) {#array_functions-reverse-sort}
 
@@ -1392,21 +1395,9 @@ Returns the first element in the `arr1` array for which `func` returns something
 
 Note that the `arrayFirst` is a [higher-order function](../../sql-reference/functions/index.md#higher-order-functions). You must pass a lambda function to it as the first argument, and it can’t be omitted.
 
-## arrayFirstOrNull(func, arr1, …) {#array-first-or-null}
-
-Returns the first element in the `arr1` array for which `func` returns something other than 0. If there are no such element, returns null.
-
-Note that the `arrayFirstOrNull` is a [higher-order function](../../sql-reference/functions/index.md#higher-order-functions). You must pass a lambda function to it as the first argument, and it can’t be omitted.
-
 ## arrayLast(func, arr1, …) {#array-last}
 
 Returns the last element in the `arr1` array for which `func` returns something other than 0.
-
-Note that the `arrayLast` is a [higher-order function](../../sql-reference/functions/index.md#higher-order-functions). You must pass a lambda function to it as the first argument, and it can’t be omitted.
-
-## arrayLastOrNull(func, arr1, …) {#array-last-or-null}
-
-Returns the last element in the `arr1` array for which `func` returns something other than 0. If there are no such element, returns null.
 
 Note that the `arrayLast` is a [higher-order function](../../sql-reference/functions/index.md#higher-order-functions). You must pass a lambda function to it as the first argument, and it can’t be omitted.
 

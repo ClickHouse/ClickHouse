@@ -1,6 +1,6 @@
 #pragma once
 
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <Disks/DiskLocalCheckThread.h>
 #include <Disks/IDisk.h>
 #include <IO/ReadBufferFromFile.h>
@@ -67,6 +67,8 @@ public:
     void replaceFile(const String & from_path, const String & to_path) override;
 
     void copy(const String & from_path, const std::shared_ptr<IDisk> & to_disk, const String & to_path) override;
+
+    void copyDirectoryContent(const String & from_dir, const std::shared_ptr<IDisk> & to_disk, const String & to_dir) override;
 
     void listFiles(const String & path, std::vector<String> & file_names) override;
 
