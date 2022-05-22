@@ -20,7 +20,7 @@ namespace DB
 
 struct FormatImpl
 {
-    static constexpr size_t right_padding = 15;
+    static constexpr size_t right_padding = 31;
 
     template <typename... Args>
     static inline void formatExecute(bool possibly_has_column_string, bool possibly_has_column_fixed_string, Args &&... args)

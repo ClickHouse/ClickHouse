@@ -503,7 +503,7 @@ TEST(Common, PODNoOverallocation)
         }
     }
 
-    EXPECT_EQ(capacities, (std::vector<size_t>{4065, 8161, 16353, 32737, 65505, 131041, 262113, 524257, 1048545}));
+    EXPECT_EQ(capacities, (std::vector<size_t>{4033, 8129, 16321, 32705, 65473, 131009, 262081, 524225, 1048513}));
 }
 
 template <size_t size>

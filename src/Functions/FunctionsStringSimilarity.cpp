@@ -43,7 +43,7 @@ struct NgramDistanceImpl
     static constexpr size_t max_string_size = 1u << 15;
 
     /// Default padding to read safely.
-    static constexpr size_t default_padding = 16;
+    static constexpr size_t default_padding = 32;
 
     /// Max codepoints to store at once. 16 is for batching usage and PODArray has this padding.
     static constexpr size_t simultaneously_codepoints_num = default_padding + N - 1;

@@ -38,7 +38,7 @@ private:
     static constexpr size_t pad_right = 31;
 
     /// Contiguous MemoryChunk of memory and pointer to free space inside it. Member of single-linked list.
-    struct alignas(16) MemoryChunk : private Allocator<false>    /// empty base optimization
+    struct alignas(32) MemoryChunk : private Allocator<false> /// empty base optimization
     {
         char * begin;
         char * pos;
