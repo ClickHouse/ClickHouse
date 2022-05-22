@@ -11,9 +11,15 @@ The functions for working with UUID are listed below.
 
 Generates the [UUID](../data-types/uuid.md) of [version 4](https://tools.ietf.org/html/rfc4122#section-4.4).
 
+**Syntax**
+
 ``` sql
-generateUUIDv4()
+generateUUIDv4([x])
 ```
+
+**Arguments**
+
+-   `x` — [Expression](../../sql-reference/syntax.md#syntax-expressions) resulting in any of the [supported data types](../../sql-reference/data-types/index.md#data_types). The resulting value is discarded, but the expression itself if used for bypassing [common subexpression elimination](../../sql-reference/functions/index.md#common-subexpression-elimination) if the function is called multiple times in one query. Optional parameter.
 
 **Returned value**
 
@@ -35,6 +41,15 @@ SELECT * FROM t_uuid
 ┌────────────────────────────────────x─┐
 │ f4bf890f-f9dc-4332-ad5c-0c18e73f28e9 │
 └──────────────────────────────────────┘
+```
+
+**Usage example if mupliple columns needed to be generated in one row**
+
+```sql
+SELECT generateUUIDv4(1), generateUUIDv4(2)
+┌─generateUUIDv4(1)────────────────────┬─generateUUIDv4(2)────────────────────┐
+│ 2d49dc6e-ddce-4cd0-afb8-790956df54c1 │ 8abf8c13-7dea-4fdf-af3e-0e18767770e6 │
+└──────────────────────────────────────┴──────────────────────────────────────┘
 ```
 
 ## empty {#empty}
