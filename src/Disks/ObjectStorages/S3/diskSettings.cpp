@@ -1,4 +1,4 @@
-#include <Disks/S3/diskSettings.h>
+#include <Disks/ObjectStorages/S3/diskSettings.h>
 
 #include <Common/StringUtils/StringUtils.h>
 

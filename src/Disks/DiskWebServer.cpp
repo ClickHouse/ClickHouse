@@ -10,11 +10,10 @@
 #include <IO/WriteHelpers.h>
 
 #include <Disks/IDisk.h>
-#include <Disks/IObjectStorage.h>
+#include <Disks/ObjectStorages/IObjectStorage.h>
 #include <IO/ReadBufferFromFile.h>
 
 #include <Disks/IO/AsynchronousReadIndirectBufferFromRemoteFS.h>
-
 
 #include <Disks/IO/ReadIndirectBufferFromRemoteFS.h>
 #include <Disks/IO/WriteIndirectBufferFromRemoteFS.h>

@@ -1,4 +1,4 @@
-#include <Disks/AzureObjectStorage.h>
+#include <Disks/ObjectStorages/AzureBlobStorage/AzureObjectStorage.h>
 
 #if USE_AZURE_BLOB_STORAGE
 
@@ -6,7 +6,8 @@
 #include <IO/WriteBufferFromAzureBlobStorage.h>
 #include <IO/SeekAvoidingReadBuffer.h>
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
-#include <Disks/AzureBlobStorage/AzureBlobStorageAuth.h>
+
+#include <Disks/ObjectStorages/AzureBlobStorage/AzureBlobStorageAuth.h>
 
 namespace DB
 {

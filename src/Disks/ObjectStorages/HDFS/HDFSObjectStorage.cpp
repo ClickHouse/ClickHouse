@@ -1,9 +1,11 @@
-#include <Disks/HDFSObjectStorage.h>
+#include <Disks/ObjectStorages/HDFS/HDFSObjectStorage.h>
 
 #include <IO/SeekAvoidingReadBuffer.h>
 #include <IO/copyData.h>
+
 #include <Storages/HDFS/WriteBufferFromHDFS.h>
 #include <Storages/HDFS/HDFSCommon.h>
+
 #include <Storages/HDFS/ReadBufferFromHDFS.h>
 #include <Disks/IO/AsynchronousReadIndirectBufferFromRemoteFS.h>
 #include <Disks/IO/ReadIndirectBufferFromRemoteFS.h>

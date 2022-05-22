@@ -1,4 +1,4 @@
-#include <Disks/AzureBlobStorage/AzureBlobStorageAuth.h>
+#include <Disks/ObjectStorages/AzureBlobStorage/AzureBlobStorageAuth.h>
 
 #if USE_AZURE_BLOB_STORAGE
 

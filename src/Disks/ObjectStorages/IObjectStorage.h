@@ -52,6 +52,9 @@ struct ObjectMetadata
 
 using FinalizeCallback = std::function<void(size_t bytes_count)>;
 
+/// Base class for all object storages which implement some subset of ordinary filesystem operations.
+///
+/// Examples of object storages are S3, Azure Blob Storage, HDFS.
 class IObjectStorage
 {
 public:
@@ -59,18 +62,24 @@ public:
         : cache(std::move(cache_))
     {}
 
+    /// Path exists or not
     virtual bool exists(const std::string & path) const = 0;
 
+    /// List on prefix, return childs with their sizes.
     virtual void listPrefix(const std::string & path, BlobsPathToSize & children) const = 0;
 
+    /// Get object metadata if supported. It should be possible to receive
+    /// at least size of object
     virtual ObjectMetadata getObjectMetadata(const std::string & path) const = 0;
 
+    /// Read single path from object storage, don't use cache
     virtual std::unique_ptr<SeekableReadBuffer> readObject( /// NOLINT
         const std::string & path,
         const ReadSettings & read_settings = ReadSettings{},
         std::optional<size_t> read_hint = {},
         std::optional<size_t> file_size = {}) const = 0;
 
+    /// Read multiple objects with common prefix, use cache
     virtual std::unique_ptr<ReadBufferFromFileBase> readObjects( /// NOLINT
         const std::string & common_path_prefix,
         const BlobsPathToSize & blobs_to_read,
@@ -87,21 +96,28 @@ public:
         size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
         const WriteSettings & write_settings = {}) = 0;
 
-    /// Remove file. Throws exception if file doesn't exists or it's a directory.
+    /// Remove object. Throws exception if object doesn't exists.
     virtual void removeObject(const std::string & path) = 0;
 
+    /// Remove multiple objects. Some object storages can do batch remove in a more
+    /// optimal way.
     virtual void removeObjects(const std::vector<std::string> & paths) = 0;
 
-    /// Remove file if it exists.
+    /// Remove object on path if exists
     virtual void removeObjectIfExists(const std::string & path) = 0;
 
+    /// Remove objects on path if exists
     virtual void removeObjectsIfExist(const std::vector<std::string> & paths) = 0;
 
+    /// Copy object with different attributes if required
     virtual void copyObject( /// NOLINT
         const std::string & object_from,
         const std::string & object_to,
         std::optional<ObjectAttributes> object_to_attributes = {}) = 0;
 
+    /// Copy object to another instance of object storage
+    /// by default just read the object from source object storage and write
+    /// to destination through buffers.
     virtual void copyObjectToAnotherObjectStorage( /// NOLINT
         const std::string & object_from,
         const std::string & object_to,
@@ -110,6 +126,7 @@ public:
 
     virtual ~IObjectStorage() = default;
 
+    /// Path to directory with objects cache
     std::string getCacheBasePath() const;
 
     static AsynchronousReaderPtr getThreadPoolReader();
@@ -122,10 +139,15 @@ public:
 
     void removeFromCache(const std::string & path);
 
+    /// Apply new settings, in most cases reiniatilize client and some other staff
     virtual void applyNewSettings(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, ContextPtr context) = 0;
 
+    /// Sometimes object storages have something similar to chroot or namespace, for example
+    /// buckets in S3. If object storage doesn't have any namepaces return empty string.
     virtual String getObjectsNamespace() const = 0;
 
+    /// FIXME: confusing function required for a very specific case. Create new instance of object storage
+    /// in different namespace.
     virtual std::unique_ptr<IObjectStorage> cloneObjectStorage(const std::string & new_namespace, const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, ContextPtr context) = 0;
 
 protected:
