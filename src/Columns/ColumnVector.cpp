@@ -565,8 +565,8 @@ ColumnPtr ColumnVector<T>::replicateSSE2(const IColumn::Offsets & offsets) const
 
     /// Column is using PaddedPODArray, so we don't have to worry about the 4 out of range elements.
 
-    size_t prev_offset = 0;
-    int copy_begin = -1;
+    IColumn::Offset  prev_offset = 0;
+    std::optional<size_t> copy_begin;
     size_t size = offsets.size();
     for (size_t i = 0; i < size; ++i)
     {
@@ -574,7 +574,7 @@ ColumnPtr ColumnVector<T>::replicateSSE2(const IColumn::Offsets & offsets) const
         prev_offset = offsets[i];
         if (span == 1)
         {
-            if (copy_begin == -1)
+            if (!copy_begin)
                 copy_begin = i;
             continue;
         }
@@ -583,13 +583,13 @@ ColumnPtr ColumnVector<T>::replicateSSE2(const IColumn::Offsets & offsets) const
         /// offsets: 0  1  2  3  3
         /// res:     22 33  44
 
-        size_t copy_size = (!(copy_begin == -1)) * (i - copy_begin);
+        size_t copy_size = (static_cast<bool>(copy_begin)) * (i - (*copy_begin));
         bool remain = (copy_size & 3);
         size_t sse_copy_counter = (copy_size >> 2);
         sse_copy_counter = remain * (sse_copy_counter + 1) + (!remain) * (sse_copy_counter);
         auto it_tmp = it; // NOLINT
-        size_t data_start = copy_begin;
-        copy_begin = -1;
+        size_t data_start = (static_cast<bool>(copy_begin))*(*copy_begin);
+        copy_begin.reset();
         constexpr const int copy_mask = _MM_SHUFFLE(3, 2, 1, 0);
         while (sse_copy_counter)
         {
@@ -628,14 +628,14 @@ ColumnPtr ColumnVector<T>::replicateSSE2(const IColumn::Offsets & offsets) const
     /// data :   11 22 33 44 55
     /// offsets: 1  2  3  4  5
     /// res:     11 22 33 44 55
-    if (copy_begin != -1)
+    if (copy_begin)
     {
-        size_t copy_size = (size - copy_begin);
+        size_t copy_size = (size - (*copy_begin));
         bool remain = (copy_size & 3);
         size_t sse_copy_counter = (copy_size >> 2);
         sse_copy_counter = remain * (sse_copy_counter + 1) + (!remain) * (sse_copy_counter);
         auto it_tmp = it; // NOLINT
-        size_t data_start = copy_begin;
+        size_t data_start = *copy_begin;
         constexpr const int copy_mask = (_MM_SHUFFLE(3, 2, 1, 0));
         while (sse_copy_counter)
         {
