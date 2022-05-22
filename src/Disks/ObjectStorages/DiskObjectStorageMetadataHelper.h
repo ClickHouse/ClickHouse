@@ -10,7 +10,7 @@ class DiskObjectStorage;
 /// Class implements storage of ObjectStorage metadata inside object storage itself,
 /// so it's possible to recover from this remote information in case of local disk loss.
 ///
-/// This machanism can be enabled with `<send_metadata>true</send_metadata>` option inside
+/// This mechanism can be enabled with `<send_metadata>true</send_metadata>` option inside
 /// disk configuration. Implemented only for S3 and Azure Block storage. Other object storages
 /// doesn't support metadata for blobs.
 ///
