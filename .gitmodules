@@ -114,6 +114,7 @@
 [submodule "contrib/aws"]
 	path = contrib/aws
 	url = https://github.com/ClickHouse/aws-sdk-cpp.git
+	branch = pull/10/head
 [submodule "aws-c-event-stream"]
 	path = contrib/aws-c-event-stream
 	url = https://github.com/ClickHouse/aws-c-event-stream.git
