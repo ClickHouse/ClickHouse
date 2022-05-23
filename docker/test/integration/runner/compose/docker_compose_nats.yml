@@ -1,24 +1,7 @@
 version: '2.3'
 services:
-  nats:
+  nats1:
     image: nats
-    command: "--cluster_name NATS --cluster nats://0.0.0.0:6222 --http_port 8222 "
-    networks: ["nats"]
-  nats-1:
     ports:
-      - "${NATS_EXTERNAL_PORT_USER}:${NATS_INTERNAL_PORT}"
-    image: nats
-    command: "--cluster_name NATS --cluster nats://0.0.0.0:6222 --routes=nats://ruser:T0pS3cr3t@nats:6222 --user click --pass house"
-    networks: ["nats"]
-    depends_on: ["nats"]
-  nats-2:
-    ports:
-      - "${NATS_EXTERNAL_PORT_TOKEN}:${NATS_INTERNAL_PORT}"
-    image: nats
-    command: "--cluster_name NATS --cluster nats://0.0.0.0:6222 --routes=nats://ruser:T0pS3cr3t@nats:6222 --auth clickhouse"
-    networks: ["nats"]
-    depends_on: ["nats"]
-
-networks:
-  nats:
-    name: nats
+      - "${NATS_EXTERNAL_PORT}:${NATS_INTERNAL_PORT}"
+    command: "-p 4444 --user click --pass house"

@@ -127,9 +127,6 @@ StorageMaterializedView::StorageMaterializedView(
 
         target_table_id = DatabaseCatalog::instance().getTable({manual_create_query->getDatabase(), manual_create_query->getTable()}, getContext())->getStorageID();
     }
-
-    if (!select.select_table_id.empty())
-        DatabaseCatalog::instance().addDependency(select.select_table_id, getStorageID());
 }
 
 QueryProcessingStage::Enum StorageMaterializedView::getQueryProcessingStage(
@@ -398,6 +395,14 @@ void StorageMaterializedView::renameInMemory(const StorageID & new_table_id)
     const auto & select_query = metadata_snapshot->getSelectQuery();
     // TODO Actually we don't need to update dependency if MV has UUID, but then db and table name will be outdated
     DatabaseCatalog::instance().updateDependency(select_query.select_table_id, old_table_id, select_query.select_table_id, getStorageID());
+}
+
+void StorageMaterializedView::startup()
+{
+    auto metadata_snapshot = getInMemoryMetadataPtr();
+    const auto & select_query = metadata_snapshot->getSelectQuery();
+    if (!select_query.select_table_id.empty())
+        DatabaseCatalog::instance().addDependency(select_query.select_table_id, getStorageID());
 }
 
 void StorageMaterializedView::shutdown()

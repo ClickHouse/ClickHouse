@@ -70,7 +70,7 @@ StorageNATS::StorageNATS(
     {
         .url = getContext()->getMacros()->expand(nats_settings->nats_url),
         .servers = parseList(getContext()->getMacros()->expand(nats_settings->nats_server_list), ','),
-        .username = nats_username.empty() ? getContext()->getConfigRef().getString("nats.username", "") : nats_username,
+        .username = nats_username.empty() ? getContext()->getConfigRef().getString("nats.user", "") : nats_username,
         .password = nats_password.empty() ? getContext()->getConfigRef().getString("nats.password", "") : nats_password,
         .token = nats_token.empty() ? getContext()->getConfigRef().getString("nats.token", "") : nats_token,
         .max_reconnect = static_cast<int>(nats_settings->nats_max_reconnect.value),
@@ -92,7 +92,8 @@ StorageNATS::StorageNATS(
     {
         connection = std::make_shared<NATSConnectionManager>(configuration, log);
         if (!connection->connect())
-            throw Exception(ErrorCodes::CANNOT_CONNECT_NATS, "Cannot connect to {}", connection->connectionInfoForLog());
+            throw Exception(ErrorCodes::CANNOT_CONNECT_NATS, "Cannot connect to {}. Nats last error: {}",
+                            connection->connectionInfoForLog(), nats_GetLastError(nullptr));
     }
     catch (...)
     {
@@ -204,8 +205,39 @@ void StorageNATS::decrementReader()
 
 void StorageNATS::connectionFunc()
 {
-    if (!connection->reconnect())
+    if (consumers_ready)
+        return;
+
+    bool needs_rescheduling = true;
+    if (connection->reconnect())
+        needs_rescheduling &= !initBuffers();
+
+    if (needs_rescheduling)
         connection_task->scheduleAfter(RESCHEDULE_MS);
+}
+
+bool StorageNATS::initBuffers()
+{
+    size_t num_initialized = 0;
+    for (auto & buffer : buffers)
+    {
+        try
+        {
+            buffer->subscribe();
+            ++num_initialized;
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log);
+            break;
+        }
+    }
+
+    startLoop();
+    const bool are_buffers_initialized = num_initialized == num_created_consumers;
+    if (are_buffers_initialized)
+        consumers_ready.store(true);
+    return are_buffers_initialized;
 }
 
 
@@ -247,6 +279,9 @@ Pipe StorageNATS::read(
     size_t /* max_block_size */,
     unsigned /* num_streams */)
 {
+    if (!consumers_ready)
+        throw Exception("NATS consumers setup not finished. Connection might be lost", ErrorCodes::CANNOT_CONNECT_NATS);
+
     if (num_created_consumers == 0)
         return {};
 
@@ -332,11 +367,6 @@ SinkToStoragePtr StorageNATS::write(const ASTPtr &, const StorageMetadataPtr & m
 
 void StorageNATS::startup()
 {
-    if (!connection->isConnected())
-    {
-        connection_task->activateAndSchedule();
-    }
-
     for (size_t i = 0; i < num_consumers; ++i)
     {
         try
@@ -352,6 +382,9 @@ void StorageNATS::startup()
             tryLogCurrentException(log);
         }
     }
+
+    if (!connection->isConnected() || !initBuffers())
+        connection_task->activateAndSchedule();
 
     streaming_task->activateAndSchedule();
 }
