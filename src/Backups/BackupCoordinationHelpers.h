@@ -2,6 +2,7 @@
 
 #include <Backups/IBackupCoordination.h>
 #include <Common/ZooKeeper/Common.h>
+#include <Interpreters/StorageID.h>
 #include <map>
 #include <unordered_map>
 
@@ -9,19 +10,30 @@
 namespace DB
 {
 
+/// A pair of host ID and storage ID.
+struct BackupCoordinationHostIDAndStorageID
+{
+    String host_id;
+    StorageID storage_id;
+
+    BackupCoordinationHostIDAndStorageID(const String & host_id_, const StorageID & storage_id_);
+    String serialize() const;
+    static String serialize(const String & host_id_, const StorageID & storage_id_);
+    static BackupCoordinationHostIDAndStorageID deserialize(const String & str);
+
+    struct Less
+    {
+        bool operator()(const BackupCoordinationHostIDAndStorageID & lhs, const BackupCoordinationHostIDAndStorageID & rhs) const;
+        bool operator()(const std::shared_ptr<const BackupCoordinationHostIDAndStorageID> & lhs, const std::shared_ptr<const BackupCoordinationHostIDAndStorageID> & rhs) const;
+    };
+};
+
+
 /// Helper designed to be used in an implementation of the IBackupCoordination interface in the part related to replicated tables.
-class BackupCoordinationReplicatedTablesInfo
+class BackupCoordinationReplicatedPartNames
 {
 public:
-    BackupCoordinationReplicatedTablesInfo() = default;
-
-    /// Adds a data path in backup for a replicated table.
-    /// Multiple replicas of the replicated table call this function and then all the added paths can be returned by call of the function
-    /// getReplicatedTableDataPaths().
-    void addDataPath(const String & table_zk_path, const String & table_data_path);
-
-    /// Returns all the data paths in backup added for a replicated table (see also addReplicatedTableDataPath()).
-    Strings getDataPaths(const String & table_zk_path) const;
+    BackupCoordinationReplicatedPartNames() = default;
 
     using PartNameAndChecksum = IBackupCoordination::PartNameAndChecksum;
 
@@ -31,36 +43,54 @@ public:
     /// Checksums are used only to control that parts under the same names on different replicas are the same.
     void addPartNames(
         const String & host_id,
-        const DatabaseAndTableName & table_name,
-        const String & table_zk_path,
-        const std::vector<PartNameAndChecksum> & part_names_and_checksums);
+        const StorageID & table_id,
+        const std::vector<PartNameAndChecksum> & part_names_and_checksums,
+        const String & table_zk_path);
 
-    void preparePartNamesByLocations();
+    bool has(const String & host_id, const StorageID & table_id) const;
+
+    /// Adds a data path in backup for a replicated table.
+    /// Multiple replicas of the replicated table call this function and then all the added paths can be returned by call of the function
+    /// getReplicatedTableDataPaths().
+    void addDataPath(const String & host_id, const StorageID & table_id, const String & data_path);
+
+    void preparePartNames();
 
     /// Returns the names of the parts which a specified replica of a replicated table should put to the backup.
     /// This is the same list as it was added by call of the function addReplicatedTablePartNames() but without duplications and without
     /// parts covered by another parts.
-    Strings getPartNames(const String & host_id, const DatabaseAndTableName & table_name, const String & table_zk_path) const;
+    Strings getPartNames(const String & host_id, const StorageID & table_id) const;
+
+    /// Returns all the data paths in backup added for a replicated table (see also addReplicatedTableDataPath()).
+    Strings getDataPaths(const String & host_id, const StorageID & table_id) const;
 
 private:
     class CoveredPartsFinder;
-    struct HostAndTableName;
 
     struct PartLocations
     {
-        std::vector<std::shared_ptr<const HostAndTableName>> host_and_table_names;
+        std::vector<std::shared_ptr<const BackupCoordinationHostIDAndStorageID>> hosts_and_tables;
         UInt128 checksum;
     };
 
     struct TableInfo
     {
+        std::map<String /* part_name */, PartLocations> part_names_with_locations; /// Should be ordered because we need this map to be in the same order on every replica.
         Strings data_paths;
-        std::map<String /* part_name */, PartLocations> part_locations_by_names; /// Should be ordered because we need this map to be in the same order on every replica.
-        std::unordered_map<String /* host_id */, std::map<DatabaseAndTableName, Strings /* part_names */>> part_names_by_locations;
     };
 
-    std::unordered_map<String /* zk_path */, TableInfo> tables;
-    bool part_names_by_locations_prepared = false;
+    struct ExtendedTableInfo
+    {
+        TableInfo * table_info;
+        Strings part_names;
+    };
+
+    ExtendedTableInfo & getTableInfo(const String & host_id, const StorageID & table_id);
+    const ExtendedTableInfo & getTableInfo(const String & host_id, const StorageID & table_id) const;
+
+    std::map<String /* table_zk_path */, TableInfo> tables_by_zk_path; /// Should be ordered because we need this map to be in the same order on every replica.
+    std::unordered_map<String /* host_id */, std::map<StorageID, ExtendedTableInfo>> tables;
+    bool part_names_prepared = false;
 };
 
 

@@ -18,18 +18,21 @@ public:
     BackupCoordinationLocal();
     ~BackupCoordinationLocal() override;
 
-    void addReplicatedTableDataPath(const String & table_zk_path, const String & table_data_path) override;
-    void addReplicatedTablePartNames(
+    void addReplicatedPartNames(
         const String & host_id,
-        const DatabaseAndTableName & table_name,
-        const String & table_zk_path,
-        const std::vector<PartNameAndChecksum> & part_names_and_checksums) override;
+        const StorageID & table_id,
+        const std::vector<PartNameAndChecksum> & part_names_and_checksums,
+        const String & table_zk_path) override;
+
+    bool hasReplicatedPartNames(const String & host_id, const StorageID & table_id) const override;
+
+    void addReplicatedTableDataPath(const String & host_id, const StorageID & table_id, const String & table_data_path) override;
 
     void finishPreparing(const String & host_id, const String & error_message) override;
     void waitForAllHostsPrepared(const Strings & host_ids, std::chrono::seconds timeout) const override;
 
-    Strings getReplicatedTableDataPaths(const String & table_zk_path) const override;
-    Strings getReplicatedTablePartNames(const String & host_id, const DatabaseAndTableName & table_name, const String & table_zk_path) const override;
+    Strings getReplicatedPartNames(const String & host_id, const StorageID & table_id) const override;
+    Strings getReplicatedTableDataPaths(const String & host_id, const StorageID & table_id) const override;
 
     void addFileInfo(const FileInfo & file_info, bool & is_data_file_required) override;
     void updateFileInfo(const FileInfo & file_info) override;
@@ -46,7 +49,7 @@ public:
 
 private:
     mutable std::mutex mutex;
-    BackupCoordinationReplicatedTablesInfo replicated_tables;
+    BackupCoordinationReplicatedPartNames replicated_part_names;
     std::map<String /* file_name */, SizeAndChecksum> file_names; /// Should be ordered alphabetically, see listFiles(). For empty files we assume checksum = 0.
     std::map<SizeAndChecksum, FileInfo> file_infos; /// Information about files. Without empty files.
     Strings archive_suffixes;

@@ -409,11 +409,11 @@ Strings StorageMaterializedView::getDataPaths() const
     return {};
 }
 
-BackupEntries StorageMaterializedView::backupData(ContextPtr context_, const ASTs & partitions_)
+BackupEntries StorageMaterializedView::backupData(ContextPtr context_, const ASTs & partitions_, const StorageBackupSettings & backup_settings, const std::shared_ptr<IBackupCoordination> & backup_coordination)
 {
     if (!hasInnerTable())
         return {};
-    return getTargetTable()->backupData(context_, partitions_);
+    return getTargetTable()->backupData(context_, partitions_, backup_settings, backup_coordination);
 }
 
 RestoreTaskPtr StorageMaterializedView::restoreData(ContextMutablePtr context_, const ASTs & partitions_, const BackupPtr & backup_, const String & data_path_in_backup_, const StorageRestoreSettings & restore_settings_, const std::shared_ptr<IRestoreCoordination> & restore_coordination_)

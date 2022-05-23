@@ -246,7 +246,7 @@ bool IStorage::isStaticStorage() const
     return false;
 }
 
-BackupEntries IStorage::backupData(ContextPtr, const ASTs &)
+BackupEntries IStorage::backupData(ContextPtr, const ASTs &, const StorageBackupSettings &, const std::shared_ptr<IBackupCoordination> &)
 {
     throw Exception("Table engine " + getName() + " doesn't support backups", ErrorCodes::NOT_IMPLEMENTED);
 }

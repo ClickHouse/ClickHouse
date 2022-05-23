@@ -16,16 +16,22 @@ BackupCoordinationLocal::BackupCoordinationLocal() : log(&Poco::Logger::get("Bac
 
 BackupCoordinationLocal::~BackupCoordinationLocal() = default;
 
-void BackupCoordinationLocal::addReplicatedTableDataPath(const String & table_zk_path, const String & table_data_path)
+void BackupCoordinationLocal::addReplicatedPartNames(const String & /* host_id */, const StorageID & table_id, const std::vector<PartNameAndChecksum> & part_names_and_checksums, const String & table_zk_path)
 {
     std::lock_guard lock{mutex};
-    replicated_tables.addDataPath(table_zk_path, table_data_path);
+    replicated_part_names.addPartNames("", table_id, part_names_and_checksums, table_zk_path);
 }
 
-void BackupCoordinationLocal::addReplicatedTablePartNames(const String & /* host_id */, const DatabaseAndTableName & table_name, const String & table_zk_path, const std::vector<PartNameAndChecksum> & part_names_and_checksums)
+bool BackupCoordinationLocal::hasReplicatedPartNames(const String & /* host_id */, const StorageID & table_id) const
 {
     std::lock_guard lock{mutex};
-    replicated_tables.addPartNames("", table_name, table_zk_path, part_names_and_checksums);
+    return replicated_part_names.has("", table_id);
+}
+
+void BackupCoordinationLocal::addReplicatedTableDataPath(const String & /* host_id */, const StorageID & table_id, const String & table_data_path)
+{
+    std::lock_guard lock{mutex};
+    replicated_part_names.addDataPath("", table_id, table_data_path);
 }
 
 void BackupCoordinationLocal::finishPreparing(const String & /* host_id */, const String & error_message)
@@ -34,23 +40,23 @@ void BackupCoordinationLocal::finishPreparing(const String & /* host_id */, cons
     if (!error_message.empty())
         return;
 
-    replicated_tables.preparePartNamesByLocations();
+    replicated_part_names.preparePartNames();
 }
 
 void BackupCoordinationLocal::waitForAllHostsPrepared(const Strings & /* host_ids */, std::chrono::seconds /* timeout */) const
 {
 }
 
-Strings BackupCoordinationLocal::getReplicatedTableDataPaths(const String & table_zk_path) const
+Strings BackupCoordinationLocal::getReplicatedPartNames(const String & /* host_id */, const StorageID & table_id) const
 {
     std::lock_guard lock{mutex};
-    return replicated_tables.getDataPaths(table_zk_path);
+    return replicated_part_names.getPartNames("", table_id);
 }
 
-Strings BackupCoordinationLocal::getReplicatedTablePartNames(const String & /* host_id */, const DatabaseAndTableName & table_name, const String & table_zk_path) const
+Strings BackupCoordinationLocal::getReplicatedTableDataPaths(const String & /* host_id */, const StorageID & table_id) const
 {
     std::lock_guard lock{mutex};
-    return replicated_tables.getPartNames("", table_name, table_zk_path);
+    return replicated_part_names.getDataPaths("", table_id);
 }
 
 

@@ -17,18 +17,21 @@ public:
     BackupCoordinationDistributed(const String & zookeeper_path_, zkutil::GetZooKeeper get_zookeeper_);
     ~BackupCoordinationDistributed() override;
 
-    void addReplicatedTableDataPath(const String & table_zk_path, const String & table_data_path) override;
-    void addReplicatedTablePartNames(
+    void addReplicatedPartNames(
         const String & host_id,
-        const DatabaseAndTableName & table_name,
-        const String & table_zk_path,
-        const std::vector<PartNameAndChecksum> & part_names_and_checksums) override;
+        const StorageID & table_id,
+        const std::vector<PartNameAndChecksum> & part_names_and_checksums,
+        const String & table_zk_path) override;
+
+    bool hasReplicatedPartNames(const String & host_id, const StorageID & table_id) const override;
+
+    void addReplicatedTableDataPath(const String & host_id, const StorageID & table_id, const String & table_data_path) override;
 
     void finishPreparing(const String & host_id, const String & error_message) override;
     void waitForAllHostsPrepared(const Strings & host_ids, std::chrono::seconds timeout) const override;
 
-    Strings getReplicatedTableDataPaths(const String & table_zk_path) const override;
-    Strings getReplicatedTablePartNames(const String & host_id, const DatabaseAndTableName & table_name, const String & table_zk_path) const override;
+    Strings getReplicatedPartNames(const String & host_id, const StorageID & table_id) const override;
+    Strings getReplicatedTableDataPaths(const String & host_id, const StorageID & table_id) const override;
 
     void addFileInfo(const FileInfo & file_info, bool & is_data_file_required) override;
     void updateFileInfo(const FileInfo & file_info) override;
@@ -47,12 +50,12 @@ public:
 private:
     void createRootNodes();
     void removeAllNodes();
-    void prepareReplicatedTablesInfo() const;
+    void prepareReplicatedPartNames() const;
 
     const String zookeeper_path;
     const zkutil::GetZooKeeper get_zookeeper;
     BackupCoordinationDistributedBarrier preparing_barrier;
-    mutable std::optional<BackupCoordinationReplicatedTablesInfo> replicated_tables;
+    mutable std::optional<BackupCoordinationReplicatedPartNames> replicated_part_names;
 };
 
 }

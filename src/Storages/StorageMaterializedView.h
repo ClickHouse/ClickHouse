@@ -96,7 +96,7 @@ public:
     Strings getDataPaths() const override;
 
     bool hasDataToBackup() const override { return hasInnerTable(); }
-    BackupEntries backupData(ContextPtr context_, const ASTs & partitions_) override;
+    BackupEntries backupData(ContextPtr context_, const ASTs & partitions_, const StorageBackupSettings & backup_settings, const std::shared_ptr<IBackupCoordination> & backup_coordination) override;
     RestoreTaskPtr restoreData(ContextMutablePtr context_, const ASTs & partitions_, const BackupPtr & backup, const String & data_path_in_backup_, const StorageRestoreSettings & restore_settings_, const std::shared_ptr<IRestoreCoordination> & restore_coordination_) override;
 
     std::optional<UInt64> totalRows(const Settings & settings) const override;

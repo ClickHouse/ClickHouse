@@ -5,7 +5,7 @@
 
 namespace DB
 {
-using DatabaseAndTableName = std::pair<String, String>;
+struct StorageID;
 
 /// Keeps information about files contained in a backup.
 class IRestoreCoordination
@@ -48,7 +48,7 @@ public:
     /// Sets that this replica is going to restore a partition in a replicated table.
     /// The function returns false if this partition is being already restored by another replica.
     virtual bool startInsertingDataToPartitionInReplicatedTable(
-        const String & host_id, const DatabaseAndTableName & table_name, const String & table_zk_path, const String & partition_name)
+        const String & host_id, const StorageID & table_id, const String & table_zk_path, const String & partition_name)
         = 0;
 
     /// Removes remotely stored information.

@@ -3,6 +3,7 @@
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/escapeForFileName.h>
 #include <Common/logger_useful.h>
+#include <Interpreters/StorageID.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
@@ -270,7 +271,7 @@ void RestoreCoordinationDistributed::waitForAllHostsRestoredMetadata(const Strin
 
 bool RestoreCoordinationDistributed::startInsertingDataToPartitionInReplicatedTable(
     const String & host_id_,
-    const DatabaseAndTableName & table_name_,
+    const StorageID & table_id_,
     const String & table_zk_path_,
     const String & partition_name_)
 {
@@ -280,7 +281,7 @@ bool RestoreCoordinationDistributed::startInsertingDataToPartitionInReplicatedTa
     zookeeper->createIfNotExists(path, "");
 
     path += "/" + escapeForFileName(partition_name_);
-    String new_info = host_id_ + "|" + table_name_.first + "|" + table_name_.second;
+    String new_info = BackupCoordinationHostIDAndStorageID::serialize(host_id_, table_id_);
 
     auto code = zookeeper->tryCreate(path, new_info, zkutil::CreateMode::Persistent);
     if ((code != Coordination::Error::ZOK) && (code != Coordination::Error::ZNODEEXISTS))

@@ -47,12 +47,12 @@ public:
     /// The function returns false if this partition is being already restored by another replica.
     bool startInsertingDataToPartitionInReplicatedTable(
         const String & host_id,
-        const DatabaseAndTableName & table_name,
+        const StorageID & table_id,
         const String & table_zk_path,
         const String & partition_name) override;
 
 private:
-    std::map<std::pair<String /* table_zk_path */, String /* partition_name */>, DatabaseAndTableName> replicated_tables_partitions;
+    std::map<std::pair<String /* table_zk_path */, String /* partition_name */>, StorageID> replicated_tables_partitions;
     mutable std::mutex mutex;
     const Poco::Logger * log;
 };

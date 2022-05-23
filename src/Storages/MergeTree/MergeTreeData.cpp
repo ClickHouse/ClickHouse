@@ -4059,7 +4059,7 @@ Pipe MergeTreeData::alterPartition(
 }
 
 
-BackupEntries MergeTreeData::backupData(ContextPtr local_context, const ASTs & partitions)
+BackupEntries MergeTreeData::backupData(ContextPtr local_context, const ASTs & partitions, const StorageBackupSettings &, const std::shared_ptr<IBackupCoordination> &)
 {
     DataPartsVector data_parts;
     if (partitions.empty())
