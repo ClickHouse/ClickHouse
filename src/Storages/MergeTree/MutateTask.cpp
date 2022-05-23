@@ -433,6 +433,17 @@ std::set<ProjectionDescriptionRawPtr> getProjectionsToRecalculate(
 }
 
 
+/// Return set of statistics which should be recalculated during mutation
+static MergeTreeStatisticsPtr getStatisticsToRecalculate(
+    const NameSet & /*updated_columns*/,
+    const StorageMetadataPtr & /*metadata_snapshot*/,
+    ContextPtr /*context*/,
+    const NameSet & /*materialized_indices*/,
+    const MergeTreeData::DataPartPtr & /*source_part*/)
+{
+    return nullptr;
+}
+
 /// Files, that we don't need to remove and don't need to hardlink, for example columns.txt and checksums.txt.
 /// Because we will generate new versions of them after we perform mutation.
 NameSet collectFilesToSkip(
@@ -440,8 +451,8 @@ NameSet collectFilesToSkip(
     const Block & updated_header,
     const std::set<MergeTreeIndexPtr> & indices_to_recalc,
     const String & mrk_extension,
-    const std::set<ProjectionDescriptionRawPtr> & projections_to_recalc
-    //const MergeTreeStatisticsPtr & statistics_to_recalc
+    const std::set<ProjectionDescriptionRawPtr> & projections_to_recalc,
+    const MergeTreeStatisticsPtr & /*statistics_to_recalc*/
     )
 {
     NameSet files_to_skip = source_part->getFileNamesWithoutChecksums();
@@ -700,7 +711,7 @@ struct MutationContext
     NameSet updated_columns;
     std::set<MergeTreeIndexPtr> indices_to_recalc;
     std::set<ProjectionDescriptionRawPtr> projections_to_recalc;
-    //MergeTreeStatisticsPtr statistics_to_recalc;
+    MergeTreeStatisticsPtr statistics_to_recalc;
     NameSet files_to_skip;
     NameToNameVector files_to_rename;
 
@@ -1541,16 +1552,16 @@ bool MutateTask::prepare()
             ctx->mutating_pipeline, ctx->updated_columns, ctx->metadata_snapshot, ctx->context, ctx->materialized_indices, ctx->source_part);
         ctx->projections_to_recalc = MutationHelpers::getProjectionsToRecalculate(
             ctx->updated_columns, ctx->metadata_snapshot, ctx->materialized_projections, ctx->source_part);
-        //ctx->statistics_to_recalc = MutationHelpers::getStatisticsToRecalculate(
-        //    ctx->updated_columns, ctx->metadata_snapshot, ctx->context, ctx->materialized_statistics, ctx->source_part);
+        ctx->statistics_to_recalc = MutationHelpers::getStatisticsToRecalculate(
+            ctx->updated_columns, ctx->metadata_snapshot, ctx->context, ctx->materialized_statistics, ctx->source_part);
 
         ctx->files_to_skip = MutationHelpers::collectFilesToSkip(
             ctx->source_part,
             ctx->updated_header,
             ctx->indices_to_recalc,
             ctx->mrk_extension,
-            ctx->projections_to_recalc
-            //ctx->statistics_to_recalc
+            ctx->projections_to_recalc,
+            ctx->statistics_to_recalc
             );
         ctx->files_to_rename = MutationHelpers::collectFilesForRenames(ctx->source_part, ctx->for_file_renames, ctx->mrk_extension);
 
