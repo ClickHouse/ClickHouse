@@ -8,7 +8,6 @@ import logging
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV
 from helpers.client import QueryRuntimeException
-from helpers.network import PartitionManager
 
 import json
 import subprocess

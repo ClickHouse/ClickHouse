@@ -2432,7 +2432,7 @@ SELECT idx, i FROM null_in WHERE i IN (1, NULL) SETTINGS transform_null_in = 1;
 
 Разрешает или запрещает использование типа данных `LowCardinality` с форматом данных [Native](../../interfaces/formats.md#native).
 
-Если использование типа `LowCardinality` ограничено, сервер CLickHouse преобразует столбцы `LowCardinality` в обычные столбцы для запросов `SELECT`, а обычные столбцы - в столбцы `LowCardinality` для запросов `INSERT`.
+Если использование типа `LowCardinality` ограничено, сервер ClickHouse преобразует столбцы `LowCardinality` в обычные столбцы для запросов `SELECT`, а обычные столбцы - в столбцы `LowCardinality` для запросов `INSERT`.
 
 В основном настройка используется для сторонних клиентов, не поддерживающих тип данных `LowCardinality`.
 

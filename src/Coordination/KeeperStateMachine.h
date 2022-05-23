@@ -27,16 +27,16 @@ public:
     /// Read state from the latest snapshot
     void init();
 
-    /// Currently not supported
-    nuraft::ptr<nuraft::buffer> pre_commit(const uint64_t /*log_idx*/, nuraft::buffer & /*data*/) override { return nullptr; }
+    void preprocess(uint64_t log_idx, nuraft::buffer & data);
+
+    nuraft::ptr<nuraft::buffer> pre_commit(uint64_t log_idx, nuraft::buffer & data) override;
 
     nuraft::ptr<nuraft::buffer> commit(const uint64_t log_idx, nuraft::buffer & data) override; /// NOLINT
 
     /// Save new cluster config to our snapshot (copy of the config stored in StateManager)
     void commit_config(const uint64_t log_idx, nuraft::ptr<nuraft::cluster_config> & new_conf) override; /// NOLINT
 
-    /// Currently not supported
-    void rollback(const uint64_t /*log_idx*/, nuraft::buffer & /*data*/) override {}
+    void rollback(uint64_t log_idx, nuraft::buffer & data) override;
 
     uint64_t last_commit_index() override { return last_committed_idx; }
 
