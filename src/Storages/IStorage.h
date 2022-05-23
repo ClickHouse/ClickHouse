@@ -72,7 +72,9 @@ class IBackupEntry;
 using BackupEntries = std::vector<std::pair<String, std::shared_ptr<const IBackupEntry>>>;
 class IRestoreTask;
 using RestoreTaskPtr = std::unique_ptr<IRestoreTask>;
+struct StorageBackupSettings;
 struct StorageRestoreSettings;
+class IBackupCoordination;
 class IRestoreCoordination;
 
 struct ColumnSize
@@ -229,7 +231,7 @@ public:
     virtual bool hasDataToBackup() const { return false; }
 
     /// Prepares entries to backup data of the storage.
-    virtual BackupEntries backupData(ContextPtr context, const ASTs & partitions);
+    virtual BackupEntries backupData(ContextPtr context, const ASTs & partitions, const StorageBackupSettings & backup_settings, const std::shared_ptr<IBackupCoordination> & backup_coordination);
 
     /// Extract data from the backup and put it to the storage.
     virtual RestoreTaskPtr restoreData(ContextMutablePtr context, const ASTs & partitions, const BackupPtr & backup, const String & data_path_in_backup, const StorageRestoreSettings & restore_settings, const std::shared_ptr<IRestoreCoordination> & restore_coordination);

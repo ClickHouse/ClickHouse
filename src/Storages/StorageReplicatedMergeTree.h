@@ -777,6 +777,9 @@ private:
 
     void startBackgroundMovesIfNeeded() override;
 
+    /// Prepares entries to backup data of the storage.
+    BackupEntries backupData(ContextPtr context, const ASTs & partitions, const StorageBackupSettings & backup_settings, const std::shared_ptr<IBackupCoordination> & backup_coordination) override;
+
     /// Starts restoring a partition, if the function returns false the partition will be skipped.
     /// We need to skip partitions in case other replicas are already restoring them.
     bool startRestoringPartition(const String & partition_id, const StorageRestoreSettings & restore_settings, const std::shared_ptr<IRestoreCoordination> & restore_coordination) const override;

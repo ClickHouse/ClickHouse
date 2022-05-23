@@ -921,7 +921,7 @@ std::optional<UInt64> StorageLog::totalBytes(const Settings &) const
     return total_bytes;
 }
 
-BackupEntries StorageLog::backupData(ContextPtr context, const ASTs & partitions)
+BackupEntries StorageLog::backupData(ContextPtr context, const ASTs & partitions, const StorageBackupSettings &, const std::shared_ptr<IBackupCoordination> &)
 {
     if (!partitions.empty())
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Table engine {} doesn't support partitions", getName());

@@ -71,7 +71,7 @@ public:
     void truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr, TableExclusiveLockHolder &) override;
 
     bool hasDataToBackup() const override { return true; }
-    BackupEntries backupData(ContextPtr context, const ASTs & partitions) override;
+    BackupEntries backupData(ContextPtr context, const ASTs & partitions, const StorageBackupSettings & backup_settings, const std::shared_ptr<IBackupCoordination> & backup_coordination) override;
     RestoreTaskPtr restoreData(ContextMutablePtr context, const ASTs & partitions, const BackupPtr & backup, const String & data_path_in_backup, const StorageRestoreSettings & restore_settings, const std::shared_ptr<IRestoreCoordination> & restore_coordination) override;
 
     std::optional<UInt64> totalRows(const Settings &) const override;

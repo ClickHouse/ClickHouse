@@ -44,7 +44,7 @@ public:
     /// The function returns false if this partition is being already restored by another replica.
     bool startInsertingDataToPartitionInReplicatedTable(
         const String & host_id,
-        const DatabaseAndTableName & table_name,
+        const StorageID & table_id,
         const String & table_zk_path,
         const String & partition_name) override;
 

@@ -15,7 +15,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/formatAST.h>
 #include <Storages/IStorage.h>
-#include <Storages/StorageReplicatedMergeTree.h>
+#include <Storages/MergeTree/MergeTreePartInfo.h>
 
 
 namespace DB
@@ -197,93 +197,53 @@ namespace
         /// Prepares to backup a single table and probably its database's definition.
         void prepareToBackupTable(const DatabaseAndTableName & table_name_, const ASTs & partitions_)
         {
-            auto [database, storage] = DatabaseCatalog::instance().getDatabaseAndTable({table_name_.first, table_name_.second}, context);
-            prepareToBackupTable(table_name_, {database, storage}, partitions_);
+            auto database_and_table = DatabaseCatalog::instance().getDatabaseAndTable({table_name_.first, table_name_.second}, context);
+            prepareToBackupTable(database_and_table, partitions_);
         }
 
-        void prepareToBackupTable(const DatabaseAndTableName & table_name_, const DatabaseAndTable & table_, const ASTs & partitions_)
+        void prepareToBackupTable(const DatabaseAndTable & table_, const ASTs & partitions_)
         {
             const auto & database = table_.first;
             const auto & storage = table_.second;
+            auto table_id = storage->getStorageID();
 
             if (!database->hasTablesToBackup())
                 throw Exception(
                     ErrorCodes::CANNOT_BACKUP_TABLE,
                     "Cannot backup the {} because it's contained in a hollow database (engine: {})",
-                    formatTableNameOrTemporaryTableName(table_name_),
+                    table_id.getNameForLogs(),
                     database->getEngineName());
 
             /// Check that we are not trying to backup the same table again.
-            DatabaseAndTableName name_in_backup = renaming_settings.getNewTableName(table_name_);
+            DatabaseAndTableName name_in_backup = renaming_settings.getNewTableName(DatabaseAndTableName{table_id.database_name, table_id.table_name});
             if (tables.contains(name_in_backup))
                 throw Exception(ErrorCodes::CANNOT_BACKUP_TABLE, "Cannot backup the {} twice", formatTableNameOrTemporaryTableName(name_in_backup));
 
             /// Make a create query for this table.
-            auto create_query = prepareCreateQueryForBackup(database->getCreateTableQuery(table_name_.second, context));
+            auto create_query = prepareCreateQueryForBackup(database->getCreateTableQuery(table_id.table_name, context));
             String data_path = PathsInBackup::getDataPath(*create_query, shard_num_in_backup, replica_num_in_backup);
 
-            String zk_path;
-            BackupEntries data = prepareToBackupTableData(table_name_, storage, partitions_, data_path, zk_path);
+            BackupEntries data = prepareToBackupTableData(storage, partitions_);
 
-            TableInfo info;
-            info.table_name = table_name_;
+            bool has_replicated_parts = backup_coordination->hasReplicatedPartNames(backup_settings.host_id, table_id);
+            if (has_replicated_parts)
+                backup_coordination->addReplicatedTableDataPath(backup_settings.host_id, table_id, data_path);
+
+            TableInfo & info = tables.emplace(name_in_backup, table_id).first->second;
             info.create_query = create_query;
             info.storage = storage;
             info.data = std::move(data);
             info.data_path = std::move(data_path);
-            info.zk_path = std::move(zk_path);
-            tables[name_in_backup] = std::move(info);
+            info.has_replicated_parts = has_replicated_parts;
         }
 
-        BackupEntries prepareToBackupTableData(const DatabaseAndTableName & table_name_, const StoragePtr & storage_, const ASTs & partitions_, const String & data_path, String & zk_path)
+        BackupEntries prepareToBackupTableData(const StoragePtr & storage_, const ASTs & partitions_) const
         {
-            zk_path.clear();
-
-            const StorageReplicatedMergeTree * replicated_table = typeid_cast<const StorageReplicatedMergeTree *>(storage_.get());
-            bool has_data = (storage_->hasDataToBackup() || replicated_table) && !backup_settings.structure_only;
+            bool has_data = storage_->hasDataToBackup() && !backup_settings.structure_only;
             if (!has_data)
                 return {};
 
-            BackupEntries data = storage_->backupData(context, partitions_);
-            if (!replicated_table)
-                return data;
-
-            zk_path = replicated_table->getZooKeeperName() + replicated_table->getZooKeeperPath();
-            backup_coordination->addReplicatedTableDataPath(zk_path, data_path);
-            std::unordered_map<String, SipHash> parts;
-            for (const auto & [relative_path, backup_entry] : data)
-            {
-                size_t slash_pos = relative_path.find('/');
-                if (slash_pos != String::npos)
-                {
-                    String part_name = relative_path.substr(0, slash_pos);
-                    if (MergeTreePartInfo::tryParsePartName(part_name, MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING))
-                    {
-                        auto & hash = parts[part_name];
-                        if (relative_path.ends_with(".bin"))
-                        {
-                            auto checksum = backup_entry->getChecksum();
-                            hash.update(relative_path);
-                            hash.update(backup_entry->getSize());
-                            hash.update(*checksum);
-                        }
-                    }
-                }
-            }
-
-            std::vector<IBackupCoordination::PartNameAndChecksum> part_names_and_checksums;
-            part_names_and_checksums.reserve(parts.size());
-            for (auto & [part_name, hash] : parts)
-            {
-                UInt128 checksum;
-                hash.get128(checksum);
-                auto & part_name_and_checksum = part_names_and_checksums.emplace_back();
-                part_name_and_checksum.part_name = part_name;
-                part_name_and_checksum.checksum = checksum;
-            }
-            backup_coordination->addReplicatedTablePartNames(backup_settings.host_id, table_name_, zk_path, part_names_and_checksums);
-
-            return data;
+            return storage_->backupData(context, partitions_, backup_settings, backup_coordination);
         }
 
         /// Prepares to restore a database and all tables in it.
@@ -318,7 +278,7 @@ namespace
                 {
                     if (except_list_.contains(it->name()))
                         continue;
-                    prepareToBackupTable({database_name_, it->name()}, {database_, it->table()}, {});
+                    prepareToBackupTable({database_, it->table()}, {});
                 }
             }
         }
@@ -364,15 +324,15 @@ namespace
 
         void appendBackupEntriesForData(BackupEntries & res, const TableInfo & info) const
         {
-            if (info.zk_path.empty())
+            if (!info.has_replicated_parts)
             {
                 for (const auto & [relative_path, backup_entry] : info.data)
                     res.emplace_back(info.data_path + relative_path, backup_entry);
                 return;
             }
 
-            Strings data_paths = backup_coordination->getReplicatedTableDataPaths(info.zk_path);
-            Strings part_names = backup_coordination->getReplicatedTablePartNames(backup_settings.host_id, info.table_name, info.zk_path);
+            Strings data_paths = backup_coordination->getReplicatedTableDataPaths(backup_settings.host_id, info.table_id);
+            Strings part_names = backup_coordination->getReplicatedPartNames(backup_settings.host_id, info.table_id);
             std::unordered_set<std::string_view> part_names_set{part_names.begin(), part_names.end()};
             for (const auto & [relative_path, backup_entry] : info.data)
             {
@@ -396,12 +356,13 @@ namespace
         /// Information which is used to make an instance of RestoreTableFromBackupTask.
         struct TableInfo
         {
-            DatabaseAndTableName table_name;
+            explicit TableInfo(const StorageID & table_id_) : table_id(table_id_) {}
+            StorageID table_id;
             ASTPtr create_query;
             StoragePtr storage;
             BackupEntries data;
             String data_path;
-            String zk_path;
+            bool has_replicated_parts = false;
         };
 
         /// Information which is used to make an instance of RestoreDatabaseFromBackupTask.

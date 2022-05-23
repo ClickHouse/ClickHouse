@@ -71,7 +71,10 @@
 #include <Interpreters/SelectQueryOptions.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 
+#include <Backups/IBackupCoordination.h>
+#include <Backups/IBackupEntry.h>
 #include <Backups/IRestoreCoordination.h>
+#include <Backups/BackupSettings.h>
 #include <Backups/RestoreSettings.h>
 
 #include <Poco/DirectoryIterator.h>
@@ -8223,16 +8226,56 @@ void StorageReplicatedMergeTree::createAndStoreFreezeMetadata(DiskPtr disk, Data
 }
 
 
+BackupEntries StorageReplicatedMergeTree::backupData(ContextPtr local_context, const ASTs & partitions, const StorageBackupSettings & backup_settings, const std::shared_ptr<IBackupCoordination> & backup_coordination)
+{
+    auto backup_entries = MergeTreeData::backupData(local_context, partitions, backup_settings, backup_coordination);
+
+    std::unordered_map<String, SipHash> parts;
+    for (const auto & [relative_path, backup_entry] : backup_entries)
+    {
+        size_t slash_pos = relative_path.find('/');
+        if (slash_pos != String::npos)
+        {
+            String part_name = relative_path.substr(0, slash_pos);
+            if (MergeTreePartInfo::tryParsePartName(part_name, MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING))
+            {
+                auto & hash = parts[part_name];
+                if (relative_path.ends_with(".bin"))
+                {
+                    auto checksum = backup_entry->getChecksum();
+                    hash.update(relative_path);
+                    hash.update(backup_entry->getSize());
+                    hash.update(*checksum);
+                }
+            }
+        }
+    }
+
+    std::vector<IBackupCoordination::PartNameAndChecksum> part_names_and_checksums;
+    part_names_and_checksums.reserve(parts.size());
+    for (auto & [part_name, hash] : parts)
+    {
+        UInt128 checksum;
+        hash.get128(checksum);
+        auto & part_name_and_checksum = part_names_and_checksums.emplace_back();
+        part_name_and_checksum.part_name = part_name;
+        part_name_and_checksum.checksum = checksum;
+    }
+
+    String full_zk_path = getZooKeeperName() + getZooKeeperPath();
+    backup_coordination->addReplicatedPartNames(backup_settings.host_id, getStorageID(), part_names_and_checksums, full_zk_path);
+
+    return backup_entries;
+}
+
 bool StorageReplicatedMergeTree::startRestoringPartition(
     const String & partition_id,
     const StorageRestoreSettings & restore_settings,
     const std::shared_ptr<IRestoreCoordination> & restore_coordination) const
 {
     String full_zk_path = getZooKeeperName() + getZooKeeperPath();
-    auto storage_id = getStorageID();
-    DatabaseAndTableName table_name = {storage_id.database_name, storage_id.table_name};
     return restore_coordination->startInsertingDataToPartitionInReplicatedTable(
-        restore_settings.host_id, table_name, full_zk_path, partition_id);
+        restore_settings.host_id, getStorageID(), full_zk_path, partition_id);
 }
 
 void StorageReplicatedMergeTree::attachRestoredParts(MutableDataPartsVector && parts)

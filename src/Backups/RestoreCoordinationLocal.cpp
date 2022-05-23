@@ -2,7 +2,7 @@
 #include <Backups/formatTableNameOrTemporaryTableName.h>
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
-#include <base/chrono_io.h>
+#include <Interpreters/StorageID.h>
 
 
 namespace DB
@@ -61,12 +61,12 @@ void RestoreCoordinationLocal::waitForAllHostsRestoredMetadata(const Strings & /
 }
 
 bool RestoreCoordinationLocal::startInsertingDataToPartitionInReplicatedTable(
-    const String & /* host_id */, const DatabaseAndTableName & table_name, const String & table_zk_path, const String & partition_name)
+    const String & /* host_id */, const StorageID & table_id, const String & table_zk_path, const String & partition_name)
 {
     std::lock_guard lock{mutex};
     auto key = std::pair{table_zk_path, partition_name};
-    auto it = replicated_tables_partitions.try_emplace(std::move(key), table_name).first;
-    return it->second == table_name;
+    auto it = replicated_tables_partitions.try_emplace(std::move(key), table_id).first;
+    return it->second == table_id;
 }
 
 }
