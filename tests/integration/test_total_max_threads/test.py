@@ -82,14 +82,22 @@ def test_total_max_threads_limit_reached(started_cluster):
     def thread_select():
         logging.debug("ADQM: started another thread")
         node4.query(
-            "SELECT sleep(3) FROM numbers_mt(10000000) settings max_threads=100"
+            "SELECT count(*) FROM numbers_mt(1e11) settings max_threads=100",
+            query_id="background_query",
         )
         logging.debug("ADQM: finished another thread")
 
     another_thread = threading.Thread(target=thread_select)
     another_thread.start()
 
-    time.sleep(0.5)
+    while (
+        node4.query(
+            "SELECT count(*) FROM system.processes where query_id = 'background_query'"
+        )
+        == "0\n"
+    ):
+        time.sleep(0.1)
+
     logging.debug("ADQM: started main query")
     node4.query(
         "SELECT count(*) FROM numbers_mt(10000000) settings max_threads=5",
@@ -105,4 +113,5 @@ def test_total_max_threads_limit_reached(started_cluster):
         )
         == "2\n"
     )
+    node4.query("KILL QUERY WHERE user = 'default' SYNC")
     logging.debug("ADQM: test end")
