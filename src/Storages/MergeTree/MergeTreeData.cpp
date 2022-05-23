@@ -5559,8 +5559,9 @@ std::optional<ProjectionCandidate> MergeTreeData::getQueryProcessingStageWithAgg
         // If optimize_aggregation_in_order = true, we need additional information to transform the projection's pipeline.
         auto attach_aggregation_in_order_info = [&]()
         {
-            for (const auto & key : keys)
+            for (const auto & desc : select.getQueryAnalyzer()->aggregationKeys())
             {
+                const String & key = desc.name;
                 auto actions_dag = analysis_result.before_aggregation->clone();
                 actions_dag->foldActionsByProjection({key}, sample_block_for_keys);
                 candidate.group_by_elements_actions.emplace_back(std::make_shared<ExpressionActions>(actions_dag, actions_settings));
