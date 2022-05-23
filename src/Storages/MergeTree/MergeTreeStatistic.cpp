@@ -168,7 +168,6 @@ void MergeTreeStatistics::deserializeBinary(ReadBuffer & istr)
         case static_cast<size_t>(StatisticType::COLUMN_DISRIBUTION):
             column_distributions->deserializeBinary(istr);
             break;
-        //  block_distributions->deserializeBinary(istr);
         default:
             throw Exception("Unknown statistic type", ErrorCodes::LOGICAL_ERROR);
         }

@@ -795,7 +795,7 @@ MergeTreeStatisticsPtr IMergeTreeDataPart::loadStats() const {
     for (const String & file_name : file_names) {
         if (file_name.ends_with(PART_STATS_FILE_EXT)) {
             const String stats_file_path = String(fs::path(getFullRelativePath()) / file_name);
-            //const String stats_file_path = entry.path();
+
             LOG_DEBUG(&Poco::Logger::get("PART"), "partitions stats create {}", stats_file_path);
             if (volume->getDisk()->exists(stats_file_path))
             {

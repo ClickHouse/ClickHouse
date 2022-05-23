@@ -4,7 +4,6 @@ SET optimize_move_to_prewhere = 1;
 SET allow_experimental_stats_for_prewhere_optimization = 1;
 SET mutations_sync = 1;
 
--- SIMPLE tdigest stat
 CREATE TABLE alters_stats
 (
     a Int,

@@ -12,10 +12,6 @@ struct StatisticDescription
     /// Definition AST of statistic
     ASTPtr definition_ast;
 
-    /// List of expressions for statistic calculation
-    /// Contains only columns (col1, col2, ...)
-    //ASTPtr expression_list_ast;
-
     /// Statistic name
     String name;
 

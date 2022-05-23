@@ -455,7 +455,7 @@ public:
     }
 
     /** Finds approximate quantile of value.
-        TODO: check it
+        Return lower and upper bounds.
       */
     std::pair<Float32, Float32> cdf(T value) {
         if (centroids.empty() || std::isnan(value) || std::isinf(value))
@@ -483,8 +483,6 @@ public:
             Float64 right = current_x - 0.5 * (c.count == 1);
 
             if (value <= c.mean) {
-                // interpolate? [prev_mean, c.mean]
-                // Poco::Logger::get("CDF").information("left  " + std::to_string(left) + " right " + std::to_string(right) + " cnt" + std::to_string(count));
                 return {left / count, right / count};
             }
 

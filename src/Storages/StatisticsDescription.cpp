@@ -63,7 +63,6 @@ StatisticDescription StatisticDescription::getStatisticFromAST(const ASTPtr & de
 
 StatisticDescription::StatisticDescription(const StatisticDescription & other)
     : definition_ast(other.definition_ast ? other.definition_ast->clone() : nullptr)
-    //, expression_list_ast(other.expression_list_ast ? other.expression_list_ast->clone() : nullptr)
     , name(other.name)
     , type(other.type)
     , column_names(other.column_names)
@@ -79,11 +78,6 @@ StatisticDescription & StatisticDescription::operator=(const StatisticDescriptio
         definition_ast = other.definition_ast->clone();
     else
         definition_ast.reset();
-    
-    //if (other.expression_list_ast)
-    //    expression_list_ast = other.expression_list_ast->clone();
-    //else
-    //    expression_list_ast.reset();
 
     name = other.name;
     type = other.type;
