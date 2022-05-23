@@ -92,6 +92,8 @@ private:
 
     uint64_t milliseconds_to_wait;
 
+    /// True if consumers have subscribed to all subjects
+    std::atomic<bool> consumers_ready{false};
     /// Needed for tell MV or producer background tasks
     /// that they must finish as soon as possible.
     std::atomic<bool> shutdown_called{false};
@@ -116,10 +118,13 @@ private:
 
     bool isSubjectInSubscriptions(const std::string & subject);
 
+
     /// Functions working in the background
     void streamingToViewsFunc();
     void loopingFunc();
     void connectionFunc();
+
+    bool initBuffers();
 
     void startLoop();
     void stopLoop();
