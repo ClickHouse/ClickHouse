@@ -72,26 +72,26 @@
         <max_threads>1</max_threads>
     </settings>
 
+    <!-- Norm kinds-->
+    <substitutions>
+        <substitution>
+            <name>norm</name>
+            <values>
+                <value>L1</value>
+                <value>L2</value>
+                <value>Linf</value>
+            </values>
+        </substitution>
+    </substitutions>
+
     <!-- Tuples -->
-
-    <query>SELECT sum(dist) FROM (SELECT L1Norm(t) AS dist FROM tuples_{element_type})</query>
-    <query>SELECT sum(dist) FROM (SELECT L2Norm(t) AS dist FROM tuples_{element_type})</query>
-    <query>SELECT sum(dist) FROM (SELECT LinfNorm(t) AS dist FROM tuples_{element_type})</query>
-
-    <query>WITH (SELECT t FROM tuples_{element_type} limit 1) AS a SELECT sum(dist) FROM (SELECT L1Distance(a, t) AS dist FROM tuples_{element_type})</query>
-    <query>WITH (SELECT t FROM tuples_{element_type} limit 1) AS a SELECT sum(dist) FROM (SELECT L2Distance(a, t) AS dist FROM tuples_{element_type})</query>
-    <query>WITH (SELECT t FROM tuples_{element_type} limit 1) AS a SELECT sum(dist) FROM (SELECT LinfDistance(a, t) AS dist FROM tuples_{element_type})</query>
+    <query>SELECT sum(dist) FROM (SELECT {norm}Norm(t) AS dist FROM tuples_{element_type})</query>
+    <query>WITH (SELECT t FROM tuples_{element_type} limit 1) AS a SELECT sum(dist) FROM (SELECT {norm}Distance(a, t) AS dist FROM tuples_{element_type})</query>
     <query>WITH (SELECT t FROM tuples_{element_type} limit 1) AS a SELECT sum(dist) FROM (SELECT cosineDistance(a, t) AS dist FROM tuples_{element_type})</query>
 
     <!-- Arrays -->
-
-    <query>SELECT sum(dist) FROM (SELECT arrayL1Norm(v) AS dist FROM vecs_{element_type})</query>
-    <query>SELECT sum(dist) FROM (SELECT arrayL2Norm(v) AS dist FROM vecs_{element_type})</query>
-    <query>SELECT sum(dist) FROM (SELECT arrayLinfNorm(v) AS dist FROM vecs_{element_type})</query>
-
-    <query>WITH (SELECT v FROM vecs_{element_type} limit 1) AS a SELECT sum(dist) FROM (SELECT arrayL1Distance(a, v) AS dist FROM vecs_{element_type})</query>
-    <query>WITH (SELECT v FROM vecs_{element_type} limit 1) AS a SELECT sum(dist) FROM (SELECT arrayL2Distance(a, v) AS dist FROM vecs_{element_type})</query>
-    <query>WITH (SELECT v FROM vecs_{element_type} limit 1) AS a SELECT sum(dist) FROM (SELECT arrayLinfDistance(a, v) AS dist FROM vecs_{element_type})</query>
+    <query>SELECT sum(dist) FROM (SELECT array{norm}Norm(v) AS dist FROM vecs_{element_type})</query>
+    <query>WITH (SELECT v FROM vecs_{element_type} limit 1) AS a SELECT sum(dist) FROM (SELECT array{norm}Distance(a, v) AS dist FROM vecs_{element_type})</query>
     <query>WITH (SELECT v FROM vecs_{element_type} limit 1) AS a SELECT sum(dist) FROM (SELECT arrayCosineDistance(a, v) AS dist FROM vecs_{element_type})</query>
 
     <drop_query>DROP TABLE vecs_{element_type}</drop_query>
