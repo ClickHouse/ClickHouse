@@ -1,7 +1,7 @@
 #include <Disks/ObjectStorages/HDFS/HDFSObjectStorage.h>
+#include <Disks/ObjectStorages/DiskObjectStorageCommon.h>
 #include <Disks/ObjectStorages/DiskObjectStorage.h>
 #include <Disks/DiskFactory.h>
-#include <Disks/RemoteDisksCommon.h>
 #include <Storages/HDFS/HDFSCommon.h>
 
 namespace DB

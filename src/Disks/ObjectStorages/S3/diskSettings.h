@@ -12,9 +12,9 @@
 #include <Disks/ObjectStorages/S3/ProxyConfiguration.h>
 #include <Disks/ObjectStorages/S3/ProxyListConfiguration.h>
 #include <Disks/ObjectStorages/S3/ProxyResolverConfiguration.h>
+#include <Disks/ObjectStorages/DiskObjectStorageCommon.h>
 #include <Disks/DiskRestartProxy.h>
 #include <Disks/DiskLocal.h>
-#include <Disks/RemoteDisksCommon.h>
 #include <Common/FileCacheFactory.h>
 
 namespace DB
