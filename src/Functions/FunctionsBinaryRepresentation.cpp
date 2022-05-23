@@ -253,13 +253,13 @@ struct UnbinImpl
 
 /// Encode number or string to string with binary or hexadecimal representation
 template <typename Impl>
-class EncodeToBinaryRepr : public IFunction
+class EncodeToBinaryRepresentation : public IFunction
 {
 public:
     static constexpr auto name = Impl::name;
     static constexpr size_t word_size = Impl::word_size;
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<EncodeToBinaryRepr>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<EncodeToBinaryRepresentation>(); }
 
     String getName() const override { return name; }
 
@@ -550,12 +550,12 @@ public:
 
 /// Decode number or string from string with binary or hexadecimal representation
 template <typename Impl>
-class DecodeFromBinaryRepr : public IFunction
+class DecodeFromBinaryRepresentation : public IFunction
 {
 public:
     static constexpr auto name = Impl::name;
     static constexpr size_t word_size = Impl::word_size;
-    static FunctionPtr create(ContextPtr) { return std::make_shared<DecodeFromBinaryRepr>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<DecodeFromBinaryRepresentation>(); }
 
     String getName() const override { return name; }
 
@@ -623,10 +623,10 @@ public:
 
 void registerFunctionsBinaryRepr(FunctionFactory & factory)
 {
-    factory.registerFunction<EncodeToBinaryRepr<HexImpl>>(FunctionFactory::CaseInsensitive);
-    factory.registerFunction<DecodeFromBinaryRepr<UnhexImpl>>(FunctionFactory::CaseInsensitive);
-    factory.registerFunction<EncodeToBinaryRepr<BinImpl>>(FunctionFactory::CaseInsensitive);
-    factory.registerFunction<DecodeFromBinaryRepr<UnbinImpl>>(FunctionFactory::CaseInsensitive);
+    factory.registerFunction<EncodeToBinaryRepresentation<HexImpl>>(FunctionFactory::CaseInsensitive);
+    factory.registerFunction<DecodeFromBinaryRepresentation<UnhexImpl>>(FunctionFactory::CaseInsensitive);
+    factory.registerFunction<EncodeToBinaryRepresentation<BinImpl>>(FunctionFactory::CaseInsensitive);
+    factory.registerFunction<DecodeFromBinaryRepresentation<UnbinImpl>>(FunctionFactory::CaseInsensitive);
 }
 
 }
