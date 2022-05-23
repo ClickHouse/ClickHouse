@@ -1,40 +1,36 @@
-#include <cstddef>
 #include <string>
-#include <vector>
-#include <type_traits>
+#include <fmt/format.h>
+
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/IColumn.h>
+
 #include <Core/Block.h>
 #include <Core/ColumnsWithTypeAndName.h>
-#include <Core/Field.h>
-#include <Core/Protocol.h>
+
 #include <Interpreters/Context.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/Session.h>
 #include <Interpreters/loadMetadata.h>
-#include <fmt/format.h>
 #include <Interpreters/QueryThreadLog.h>
 #include <Interpreters/executeQuery.h>
+
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
+
 #include <pybind11/pybind11.h>
 #include <pybind11/numpy.h>
-#include <pybind11/embed.h>
 #include <pybind11/stl.h>
-#include <Core/ServerUUID.h>
-#include <IO/WriteHelpers.h>
-#include <Client/LocalConnection.h>
+
 #include <Common/tests/gtest_global_context.h>
 #include <Common/Config/ConfigProcessor.h>
-#include <Common/typeid_cast.h>
-#include "base/types.h"
+
 #include <Storages/System/attachSystemTables.h>
 #include <Storages/System/attachInformationSchemaTables.h>
 #include <Storages/registerStorages.h>
 #include <Storages/Cache/registerRemoteFileMetadatas.h>
-#include <Poco/Util/XMLConfiguration.h>
+
 #include <Poco/Util/XMLConfiguration.h>
 #include <Databases/DatabaseMemory.h>
 #include <Databases/DatabaseOnDisk.h>
@@ -42,7 +38,6 @@
 #include <DataTypes/DataTypeString.h>
 #include <Dictionaries/registerDictionaries.h>
 #include <Disks/registerDisks.h>
-#include <fmt/format.h>
 #include <Formats/registerFormats.h>
 #include <TableFunctions/registerTableFunctions.h>
 #include <Functions/registerFunctions.h>
