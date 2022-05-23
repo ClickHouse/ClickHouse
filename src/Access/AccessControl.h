@@ -133,6 +133,10 @@ public:
     void setEnabledUsersWithoutRowPoliciesCanReadRows(bool enable) { users_without_row_policies_can_read_rows = enable; }
     bool isEnabledUsersWithoutRowPoliciesCanReadRows() const { return users_without_row_policies_can_read_rows; }
 
+    /// Require CLUSTER grant for ON CLUSTER queries.
+    void setOnClusterQueriesRequireClusterGrant(bool enable) { on_cluster_queries_require_cluster_grant = enable; }
+    bool doesOnClusterQueriesRequireClusterGrant() const { return on_cluster_queries_require_cluster_grant; }
+
     UUID authenticate(const Credentials & credentials, const Poco::Net::IPAddress & address) const;
     void setExternalAuthenticatorsConfig(const Poco::Util::AbstractConfiguration & config);
 
@@ -190,6 +194,7 @@ private:
     std::atomic_bool allow_plaintext_password = true;
     std::atomic_bool allow_no_password = true;
     std::atomic_bool users_without_row_policies_can_read_rows = false;
+    std::atomic_bool on_cluster_queries_require_cluster_grant = false;
 };
 
 }

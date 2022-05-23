@@ -12,9 +12,10 @@ namespace ErrorCodes
     extern const int TYPE_MISMATCH;
     extern const int INCORRECT_DATA;
     extern const int EMPTY_DATA_PASSED;
+    extern const int BAD_ARGUMENTS;
 }
 
-static void chooseResultType(
+void chooseResultColumnType(
     DataTypePtr & type,
     const DataTypePtr & new_type,
     CommonDataTypeChecker common_type_checker,
@@ -48,16 +49,14 @@ static void chooseResultType(
     }
 }
 
-static void checkTypeAndAppend(NamesAndTypesList & result, DataTypePtr & type, const String & name, const DataTypePtr & default_type, size_t max_rows_to_read)
+void checkResultColumnTypeAndAppend(NamesAndTypesList & result, DataTypePtr & type, const String & name, const DataTypePtr & default_type, size_t rows_read)
 {
     if (!type)
     {
         if (!default_type)
             throw Exception(
                 ErrorCodes::ONLY_NULLS_WHILE_READING_SCHEMA,
-                "Cannot determine table structure by first {} rows of data, because some columns contain only Nulls. To increase the maximum "
-                "number of rows to read for structure determination, use setting input_format_max_rows_to_read_for_schema_inference",
-                max_rows_to_read);
+                "Cannot determine table structure by first {} rows of data, because some columns contain only Nulls", rows_read);
 
         type = default_type;
     }
@@ -65,7 +64,7 @@ static void checkTypeAndAppend(NamesAndTypesList & result, DataTypePtr & type, c
 }
 
 IRowSchemaReader::IRowSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings)
-    : ISchemaReader(in_), max_rows_to_read(format_settings.max_rows_to_read_for_schema_inference)
+    : ISchemaReader(in_)
 {
     if (!format_settings.column_names_for_schema_inference.empty())
     {
@@ -94,8 +93,14 @@ IRowSchemaReader::IRowSchemaReader(ReadBuffer & in_, const FormatSettings & form
 
 NamesAndTypesList IRowSchemaReader::readSchema()
 {
+    if (max_rows_to_read == 0)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Cannot read rows to determine the schema, the maximum number of rows to read is set to 0. "
+            "Most likely setting input_format_max_rows_to_read_for_schema_inference is set to 0");
+
     DataTypes data_types = readRowAndGetDataTypes();
-    for (size_t row = 1; row < max_rows_to_read; ++row)
+    for (rows_read = 1; rows_read < max_rows_to_read; ++rows_read)
     {
         DataTypes new_data_types = readRowAndGetDataTypes();
         if (new_data_types.empty())
@@ -111,7 +116,7 @@ NamesAndTypesList IRowSchemaReader::readSchema()
             if (!new_data_types[i])
                 continue;
 
-            chooseResultType(data_types[i], new_data_types[i], common_type_checker, getDefaultType(i), std::to_string(i + 1), row);
+            chooseResultColumnType(data_types[i], new_data_types[i], common_type_checker, getDefaultType(i), std::to_string(i + 1), rows_read);
         }
     }
 
@@ -136,7 +141,7 @@ NamesAndTypesList IRowSchemaReader::readSchema()
     for (size_t i = 0; i != data_types.size(); ++i)
     {
         /// Check that we could determine the type of this column.
-        checkTypeAndAppend(result, data_types[i], column_names[i], getDefaultType(i), max_rows_to_read);
+        checkResultColumnTypeAndAppend(result, data_types[i], column_names[i], getDefaultType(i), rows_read);
     }
 
     return result;
@@ -151,13 +156,19 @@ DataTypePtr IRowSchemaReader::getDefaultType(size_t column) const
     return nullptr;
 }
 
-IRowWithNamesSchemaReader::IRowWithNamesSchemaReader(ReadBuffer & in_, size_t max_rows_to_read_, DataTypePtr default_type_)
-    : ISchemaReader(in_), max_rows_to_read(max_rows_to_read_), default_type(default_type_)
+IRowWithNamesSchemaReader::IRowWithNamesSchemaReader(ReadBuffer & in_, DataTypePtr default_type_)
+    : ISchemaReader(in_), default_type(default_type_)
 {
 }
 
 NamesAndTypesList IRowWithNamesSchemaReader::readSchema()
 {
+    if (max_rows_to_read == 0)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Cannot read rows to determine the schema, the maximum number of rows to read is set to 0. "
+            "Most likely setting input_format_max_rows_to_read_for_schema_inference is set to 0");
+
     bool eof = false;
     auto names_and_types = readRowAndGetNamesAndDataTypes(eof);
     std::unordered_map<String, DataTypePtr> names_to_types;
@@ -170,7 +181,7 @@ NamesAndTypesList IRowWithNamesSchemaReader::readSchema()
         names_order.push_back(name);
     }
 
-    for (size_t row = 1; row < max_rows_to_read; ++row)
+    for (rows_read = 1; rows_read < max_rows_to_read; ++rows_read)
     {
         auto new_names_and_types = readRowAndGetNamesAndDataTypes(eof);
         if (eof)
@@ -189,7 +200,7 @@ NamesAndTypesList IRowWithNamesSchemaReader::readSchema()
             }
 
             auto & type = it->second;
-            chooseResultType(type, new_type, common_type_checker, default_type, name, row);
+            chooseResultColumnType(type, new_type, common_type_checker, default_type, name, rows_read);
         }
     }
 
@@ -202,7 +213,7 @@ NamesAndTypesList IRowWithNamesSchemaReader::readSchema()
     {
         auto & type = names_to_types[name];
         /// Check that we could determine the type of this column.
-        checkTypeAndAppend(result, type, name, default_type, max_rows_to_read);
+        checkResultColumnTypeAndAppend(result, type, name, default_type, rows_read);
     }
 
     return result;

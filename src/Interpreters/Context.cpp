@@ -1385,7 +1385,7 @@ void Context::killCurrentQuery()
     {
         process_list_elem->cancelQuery(true);
     }
-};
+}
 
 String Context::getDefaultFormat() const
 {
