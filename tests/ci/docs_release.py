@@ -25,7 +25,7 @@ if __name__ == "__main__":
     repo_path = REPO_COPY
 
     gh = Github(get_best_robot_token())
-    pr_info = PRInfo(need_changed_files=True)
+    pr_info = PRInfo()
     rerun_helper = RerunHelper(gh, pr_info, NAME)
     if rerun_helper.is_already_finished_by_status():
         logging.info("Check is already finished according to github status, exiting")
