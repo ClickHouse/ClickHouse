@@ -504,14 +504,14 @@ void QueryPipelineBuilder::setProcessListElement(QueryStatus * elem)
 size_t QueryPipelineBuilder::getNumThreads() const
 {
     auto num_threads = pipe.maxParallelStreams();
-    
+
     auto adqm_log = &Poco::Logger::get("ADQM");
     LOG_DEBUG(adqm_log,"maxParallelStreams: {}", num_threads);
     LOG_DEBUG(adqm_log,"max_threads: {}", max_threads);
 
     if (max_threads) //-V1051
         num_threads = std::min(num_threads, max_threads);
-    
+
     LOG_DEBUG(adqm_log,"Recommended num threads: {}", num_threads);
 
     if (process_list_element)
