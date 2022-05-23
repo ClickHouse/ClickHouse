@@ -56,7 +56,10 @@ public:
 
     Float64 elapsedSeconds() const { return elapsed.elapsedSeconds(); }
 
-    bool waitStateChange(CSN expected_state_csn) const;
+    /// Waits for transaction state to become not equal to the state corresponding to current_state_csn
+    bool waitStateChange(CSN current_state_csn) const;
+
+    CSN getCSN() const { return csn; }
 
 private:
     scope_guard beforeCommit();
