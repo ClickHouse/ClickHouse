@@ -1,9 +1,10 @@
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
+#include <Functions/FunctionWithNumericParams.h>
+#include <Functions/DateTimeFunction.h>
 #include <Interpreters/castColumn.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnsNumber.h>
-#include <Functions/FunctionWithNumericParams.h>
 
 #include <Common/DateLUT.h>
 
@@ -37,20 +38,20 @@ public:
 
     bool isVariadic() const override { return false; }
 
-    size_t getNumberOfArguments() const override { return 1; }
+    size_t getNumberOfArguments() const override { return argument_names.size(); }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         checkRequiredArguments(arguments, argument_names, 0);
         return std::make_shared<typename Traits::ReturnDataType>();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         Columns converted_arguments;
         convertRequiredArguments(arguments, argument_names, converted_arguments);
 
-        const auto & num_data = typeid_cast<const ColumnUInt64 &>(*converted_arguments[0]).getData();
+        const auto & num_data = typeid_cast<const ColumnUInt32 &>(*converted_arguments[0]).getData();
         auto res_column = Traits::ReturnColumnType::create(input_rows_count);
         auto & res_data = res_column->getData();
 
@@ -59,9 +60,9 @@ public:
         for (size_t i = 0; i < input_rows_count; i++)
         {
             const auto num = num_data[i];
-            const int year = num % 10000;
-            const int month = (num / 10000) % 100;
-            const int day = (num / 1000000) % 100;
+            const auto year = num % 10000;
+            const auto month = (num / 10000) % 100;
+            const auto day = (num / 1000000) % 100;
 
             Int32 day_num = 0;
 
@@ -103,22 +104,12 @@ struct YYYYMMDDToDate32Traits
     static constexpr auto MAX_DATE = YearMonthDayToSingleInt(MAX_YEAR, 11, 11);
 };
 
-template <typename Traits>
-class FunctionYYYYMMDDhhmmssToDateTime : public FunctionWithNumericParamsBase
+class FunctionYYYYMMDDhhmmssToDateTime : public FunctionWithNumericParamsBase, public DateTimeFunction
 {
 protected:
     static constexpr std::array<const char *, 1> argument_names = {"num"};
-
 public:
-    static constexpr auto name = Traits::name;
-
-    bool isInjective(const ColumnsWithTypeAndName &) const override { return false; }
-
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
-
-    bool useDefaultImplementationForNulls() const override { return true; }
-
-    bool useDefaultImplementationForConstants() const override { return true; }
+    static constexpr auto name = "YYYYMMDDhhmmssToDateTime";
 
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionYYYYMMDDhhmmssToDateTime>(); }
 
@@ -126,31 +117,63 @@ public:
 
     bool isVariadic() const override { return false; }
 
-    size_t getNumberOfArguments() const override { return 1; }
+    size_t getNumberOfArguments() const override { return argument_names.size(); }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         checkRequiredArguments(arguments, argument_names, 1);
-        return std::make_shared<typename Traits::ReturnDataType>();
+
+        std::string timezone;
+        if (arguments.size() == argument_names.size() + 1)
+            timezone = extractTimezone(arguments.back());
+
+        return std::make_shared<DataTypeDateTime>(timezone);
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
+        std::string timezone;
+        if (arguments.size() == argument_names.size() + 1)
+            timezone = extractTimezone(arguments.back());
+
         Columns converted_arguments;
         convertRequiredArguments(arguments, argument_names, converted_arguments);
 
-        const auto & num_data = typeid_cast<const ColumnUInt64 &>(*converted_arguments[0]).getData();
-        auto res_column = Traits::ReturnColumnType::create(input_rows_count);
+        const auto & num_data = typeid_cast<const ColumnInt32 &>(*converted_arguments[0]).getData();
+        auto res_column = ColumnUInt32::create(input_rows_count);
         auto & res_data = res_column->getData();
+
+        const auto & date_lut = DateLUT::instance(timezone);
+
+        for (size_t i = 0; i < input_rows_count; i++)
+        {
+            const auto num = num_data[i];
+            const Int32 year = num % 10000;
+            const Int32 month = (num / 10000) % 100;
+            const Int32 day = (num / 1000000) % 100;
+            const Int32 hour = (num / 100000000) % 100;
+            const Int32 minute = (num / 10000000000) % 100;
+            const Int32 second = (num / 1000000000000) % 100;
+
+            auto date_time = dateTime(year, month, day, hour, minute, second, date_lut);
+
+            if (unlikely(date_time < 0))
+                date_time = 0;
+            else if (unlikely(date_time > 0x0ffffffffll))
+                date_time = 0x0ffffffffll;
+
+            res_data[i] = date_time;
+        }
 
         return res_column;
     }
 };
 
-void registerFunctionsMakeDate(FunctionFactory & factory)
+void registerFunctionsNumToDate(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionYYYYMMDDToDate<YYYYMMDDToDateTraits>>();
     factory.registerFunction<FunctionYYYYMMDDToDate<YYYYMMDDToDate32Traits>>();
+    factory.registerFunction<FunctionYYYYMMDDhhmmssToDateTime>();
 }
 
 }

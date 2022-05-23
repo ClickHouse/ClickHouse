@@ -9,6 +9,7 @@ void registerFunctionsArithmetic(FunctionFactory &);
 void registerFunctionsArray(FunctionFactory &);
 void registerFunctionsTuple(FunctionFactory &);
 void registerFunctionsMakeDate(FunctionFactory &);
+void registerFunctionsNumToDate(FunctionFactory &);
 void registerFunctionsMap(FunctionFactory &);
 void registerFunctionsBitmap(FunctionFactory &);
 void registerFunctionsBinaryRepr(FunctionFactory &);
@@ -79,6 +80,7 @@ void registerFunctions()
     registerFunctionsArray(factory);
     registerFunctionsTuple(factory);
     registerFunctionsMakeDate(factory);
+    registerFunctionsNumToDate(factory);
     registerFunctionsMap(factory);
     registerFunctionsBitmap(factory);
     registerFunctionsBinaryRepr(factory);
