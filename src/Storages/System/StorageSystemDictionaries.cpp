@@ -73,7 +73,6 @@ void StorageSystemDictionaries::fillData(MutableColumns & res_columns, ContextPt
     for (const auto & load_result : external_dictionaries.getLoadResults())
     {
         const auto dict_ptr = std::dynamic_pointer_cast<const IDictionary>(load_result.object);
-        DictionaryStructure dictionary_structure = ExternalDictionariesLoader::getDictionaryStructure(*load_result.config);
 
         StorageID dict_id = StorageID::createEmpty();
         if (dict_ptr)
@@ -101,15 +100,28 @@ void StorageSystemDictionaries::fillData(MutableColumns & res_columns, ContextPt
         else
             res_columns[i++]->insertDefault();
 
-        res_columns[i++]->insert(collections::map<Array>(dictionary_structure.getKeysNames(), [] (auto & name) { return name; }));
+        std::string dict_key_description;
+        if (dict_ptr)
+        {
+            DictionaryStructure dictionary_structure = ExternalDictionariesLoader::getDictionaryStructure(*load_result.config);
+            dict_key_description = dictionary_structure.getKeyDescription();
+            res_columns[i++]->insert(collections::map<Array>(dictionary_structure.getKeysNames(), [](auto & name) { return name; }));
 
-        if (dictionary_structure.id)
-            res_columns[i++]->insert(Array({"UInt64"}));
+            if (dictionary_structure.id)
+                res_columns[i++]->insert(Array({"UInt64"}));
+            else
+                res_columns[i++]->insert(
+                    collections::map<Array>(*dictionary_structure.key, [](auto & attr) { return attr.type->getName(); }));
+
+            res_columns[i++]->insert(collections::map<Array>(dictionary_structure.attributes, [](auto & attr) { return attr.name; }));
+            res_columns[i++]->insert(
+                collections::map<Array>(dictionary_structure.attributes, [](auto & attr) { return attr.type->getName(); }));
+        }
         else
-            res_columns[i++]->insert(collections::map<Array>(*dictionary_structure.key, [] (auto & attr) { return attr.type->getName(); }));
-
-        res_columns[i++]->insert(collections::map<Array>(dictionary_structure.attributes, [] (auto & attr) { return attr.name; }));
-        res_columns[i++]->insert(collections::map<Array>(dictionary_structure.attributes, [] (auto & attr) { return attr.type->getName(); }));
+        {
+            for (size_t j = 0; j != 4; ++j) // Number of empty fields if dict_ptr is null
+                res_columns[i++]->insertDefault();
+        }
 
         if (dict_ptr)
         {
@@ -156,8 +168,7 @@ void StorageSystemDictionaries::fillData(MutableColumns & res_columns, ContextPt
         }
 
         /// Start fill virtual columns
-
-        res_columns[i++]->insert(dictionary_structure.getKeyDescription());
+        res_columns[i++]->insert(dict_key_description);
     }
 }
 

@@ -1,0 +1,39 @@
+<dictionaries>
+  <dictionary>
+    <name>broken_metadata</name>
+    <source>
+      <executable>
+        <command>echo "1,2,b,c"</command>
+        <format>CSV</format>
+      </executable>
+    </source>
+    <lifetime>
+      <min>86400</min>
+      <max>90000</max>
+    </lifetime>
+    <layout>
+      <flat />
+    </layout>
+    <structure>
+      <id>
+        <name>prefix_id</name>
+      </id>
+      <attribute>
+        <name>first</name>
+        <type>UInt32</type>
+        <!-- OOPS! null value incompatible with type -->
+        <null_value>UNKNOWN</null_value>
+      </attribute>
+      <attribute>
+        <name>second</name>
+        <type>String</type>
+        <null_value>UNKNOWN</null_value>
+      </attribute>
+      <attribute>
+        <name>third</name>
+        <type>String</type>
+        <null_value>UNKNOWN</null_value>
+      </attribute>
+    </structure>
+  </dictionary>
+</dictionaries>

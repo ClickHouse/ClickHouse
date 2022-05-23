@@ -62,6 +62,9 @@ Tables DatabaseDictionary::listTables(const FilterByNameFunction & filter_by_nam
     String db_name = getDatabaseName();
     for (auto & load_result : load_results)
     {
+        if (load_result.status == ExternalLoaderStatus::FAILED)
+            continue;
+
         auto storage = createStorageDictionary(db_name, load_result, getContext());
         if (storage)
             tables.emplace(storage->getStorageID().table_name, storage);
