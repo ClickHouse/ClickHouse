@@ -1,14 +1,29 @@
 <test>
+
+    <substitutions>
+        <substitution>
+            <name>element_type</name>
+            <values>
+                <value>UInt8</value>
+                <value>Int16</value>
+                <value>Int32</value>
+                <value>Int64</value>
+                <value>Float32</value>
+                <value>Float64</value>
+            </values>
+        </substitution>
+    </substitutions>
+
     <create_query>
-        CREATE TABLE vecs_d (
-            v Array(Float32)
+        CREATE TABLE vecs_{element_type} (
+            v Array({element_type})
         ) ENGINE=Memory;
     </create_query>
 
     <!-- Gererate arrays with random data -->
 
-    <create_query>
-        INSERT INTO vecs_d
+    <fill_query>
+        INSERT INTO vecs_{element_type}
         SELECT v FROM (
             SELECT
                 number AS n,
@@ -25,45 +40,58 @@
                     rand(n*10+9)
                 ] AS v
             FROM system.numbers
-            LIMIT 30000000
+            LIMIT 10000000
         );
-    </create_query>
+    </fill_query>
 
     <!-- The same data in the form of tuples -->
 
     <create_query>
-        CREATE TABLE tuples_d (
-            t Tuple(Float32, Float32, Float32, Float32, Float32, Float32, Float32, Float32, Float32, Float32)
+        CREATE TABLE tuples_{element_type} (
+            t Tuple(
+                {element_type},
+                {element_type},
+                {element_type},
+                {element_type},
+                {element_type},
+                {element_type},
+                {element_type},
+                {element_type},
+                {element_type},
+                {element_type}
+            )
         ) ENGINE=Memory;
     </create_query>
 
-    <create_query>
-        INSERT INTO tuples_d
-        SELECT (v[1], v[2], v[3], v[4], v[5], v[6], v[7], v[8], v[9], v[10]) FROM vecs_d;
-    </create_query>
+    <fill_query>
+        INSERT INTO tuples_{element_type}
+        SELECT (v[1], v[2], v[3], v[4], v[5], v[6], v[7], v[8], v[9], v[10]) FROM vecs_{element_type};
+    </fill_query>
+
 
     <!-- Tuples -->
 
-    <query>select sum(dist) from (select L1Norm(t) as dist from tuples_d)</query>
-    <query>select sum(dist) from (select L2Norm(t) as dist from tuples_d)</query>
-    <query>select sum(dist) from (select LinfNorm(t) as dist from tuples_d)</query>
+    <query>SELECT sum(dist) FROM (SELECT L1Norm(t) AS dist FROM tuples_{element_type})</query>
+    <query>SELECT sum(dist) FROM (SELECT L2Norm(t) AS dist FROM tuples_{element_type})</query>
+    <query>SELECT sum(dist) FROM (SELECT LinfNorm(t) AS dist FROM tuples_{element_type})</query>
 
-    <query>select sum(dist) from (select L1Distance((1.0,2.0,3.0,4.0,5,6,7,8,9,0), t) as dist from tuples_d)</query>
-    <query>select sum(dist) from (select L2Distance((1.0,2.0,3.0,4.0,5,6,7,8,9,0), t) as dist from tuples_d)</query>
-    <query>select sum(dist) from (select LinfDistance((1.0,2.0,3.0,4.0,5,6,7,8,9,0), t) as dist from tuples_d)</query>
-    <query>select sum(dist) from (select cosineDistance((1.0,2.0,3.0,4.0,5,6,7,8,9,0), t) as dist from tuples_d)</query>
+    <query>WITH (SELECT t FROM tuples_{element_type} limit 1) AS a SELECT sum(dist) FROM (SELECT L1Distance(a, t) AS dist FROM tuples_{element_type})</query>
+    <query>WITH (SELECT t FROM tuples_{element_type} limit 1) AS a SELECT sum(dist) FROM (SELECT L2Distance(a, t) AS dist FROM tuples_{element_type})</query>
+    <query>WITH (SELECT t FROM tuples_{element_type} limit 1) AS a SELECT sum(dist) FROM (SELECT LinfDistance(a, t) AS dist FROM tuples_{element_type})</query>
+    <query>WITH (SELECT t FROM tuples_{element_type} limit 1) AS a SELECT sum(dist) FROM (SELECT cosineDistance(a, t) AS dist FROM tuples_{element_type})</query>
 
     <!-- Arrays -->
 
-    <query>select sum(dist) from (select arrayL1Norm(v) as dist from vecs_d)</query>
-    <query>select sum(dist) from (select arrayL2Norm(v) as dist from vecs_d)</query>
-    <query>select sum(dist) from (select arrayLinfNorm(v) as dist from vecs_d)</query>
+    <query>SELECT sum(dist) FROM (SELECT arrayL1Norm(v) AS dist FROM vecs_{element_type})</query>
+    <query>SELECT sum(dist) FROM (SELECT arrayL2Norm(v) AS dist FROM vecs_{element_type})</query>
+    <query>SELECT sum(dist) FROM (SELECT arrayLinfNorm(v) AS dist FROM vecs_{element_type})</query>
 
-    <query>select sum(dist) from (select arrayL1Distance([1.0,2.0,3.0,4.0,5,6,7,8,9,0], v) as dist from vecs_d)</query>
-    <query>select sum(dist) from (select arrayL2Distance([1.0,2.0,3.0,4.0,5,6,7,8,9,0], v) as dist from vecs_d)</query>
-    <query>select sum(dist) from (select arrayLinfDistance([1.0,2.0,3.0,4.0,5,6,7,8,9,0], v) as dist from vecs_d)</query>
-    <query>select sum(dist) from (select arrayCosineDistance([1.0,2.0,3.0,4.0,5,6,7,8,9,0], v) as dist from vecs_d)</query>
+    <query>WITH (SELECT v FROM vecs_{element_type} limit 1) AS a SELECT sum(dist) FROM (SELECT arrayL1Distance(a, v) AS dist FROM vecs_{element_type})</query>
+    <query>WITH (SELECT v FROM vecs_{element_type} limit 1) AS a SELECT sum(dist) FROM (SELECT arrayL2Distance(a, v) AS dist FROM vecs_{element_type})</query>
+    <query>WITH (SELECT v FROM vecs_{element_type} limit 1) AS a SELECT sum(dist) FROM (SELECT arrayLinfDistance(a, v) AS dist FROM vecs_{element_type})</query>
+    <query>WITH (SELECT v FROM vecs_{element_type} limit 1) AS a SELECT sum(dist) FROM (SELECT arrayCosineDistance(a, v) AS dist FROM vecs_{element_type})</query>
 
-    <drop_query>DROP TABLE vecs_d</drop_query>
-    <drop_query>DROP TABLE tuples_d</drop_query>
+    <drop_query>DROP TABLE vecs_{element_type}</drop_query>
+    <drop_query>DROP TABLE tuples_{element_type}</drop_query>
+
 </test>
