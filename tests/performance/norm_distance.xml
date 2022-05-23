@@ -1,0 +1,69 @@
+<test>
+    <create_query>
+        CREATE TABLE vecs_d (
+            v Array(Float32)
+        ) ENGINE=Memory;
+    </create_query>
+
+    <!-- Gererate arrays with random data -->
+
+    <create_query>
+        INSERT INTO vecs_d
+        SELECT v FROM (
+            SELECT
+                number AS n,
+                [
+                    rand(n*10),
+                    rand(n*10+1),
+                    rand(n*10+2),
+                    rand(n*10+3),
+                    rand(n*10+4),
+                    rand(n*10+5),
+                    rand(n*10+6),
+                    rand(n*10+7),
+                    rand(n*10+8),
+                    rand(n*10+9)
+                ] AS v
+            FROM system.numbers
+            LIMIT 30000000
+        );
+    </create_query>
+
+    <!-- The same data in the form of tuples -->
+
+    <create_query>
+        CREATE TABLE tuples_d (
+            t Tuple(Float32, Float32, Float32, Float32, Float32, Float32, Float32, Float32, Float32, Float32)
+        ) ENGINE=Memory;
+    </create_query>
+
+    <create_query>
+        INSERT INTO tuples_d
+        SELECT (v[1], v[2], v[3], v[4], v[5], v[6], v[7], v[8], v[9], v[10]) FROM vecs_d;
+    </create_query>
+
+    <!-- Tuples -->
+
+    <query>select sum(dist) from (select L1Norm(t) as dist from tuples_d)</query>
+    <query>select sum(dist) from (select L2Norm(t) as dist from tuples_d)</query>
+    <query>select sum(dist) from (select LinfNorm(t) as dist from tuples_d)</query>
+
+    <query>select sum(dist) from (select L1Distance((1.0,2.0,3.0,4.0,5,6,7,8,9,0), t) as dist from tuples_d)</query>
+    <query>select sum(dist) from (select L2Distance((1.0,2.0,3.0,4.0,5,6,7,8,9,0), t) as dist from tuples_d)</query>
+    <query>select sum(dist) from (select LinfDistance((1.0,2.0,3.0,4.0,5,6,7,8,9,0), t) as dist from tuples_d)</query>
+    <query>select sum(dist) from (select cosineDistance((1.0,2.0,3.0,4.0,5,6,7,8,9,0), t) as dist from tuples_d)</query>
+
+    <!-- Arrays -->
+
+    <query>select sum(dist) from (select arrayL1Norm(v) as dist from vecs_d)</query>
+    <query>select sum(dist) from (select arrayL2Norm(v) as dist from vecs_d)</query>
+    <query>select sum(dist) from (select arrayLinfNorm(v) as dist from vecs_d)</query>
+
+    <query>select sum(dist) from (select arrayL1Distance([1.0,2.0,3.0,4.0,5,6,7,8,9,0], v) as dist from vecs_d)</query>
+    <query>select sum(dist) from (select arrayL2Distance([1.0,2.0,3.0,4.0,5,6,7,8,9,0], v) as dist from vecs_d)</query>
+    <query>select sum(dist) from (select arrayLinfDistance([1.0,2.0,3.0,4.0,5,6,7,8,9,0], v) as dist from vecs_d)</query>
+    <query>select sum(dist) from (select arrayCosineDistance([1.0,2.0,3.0,4.0,5,6,7,8,9,0], v) as dist from vecs_d)</query>
+
+    <drop_query>DROP TABLE vecs_d</drop_query>
+    <drop_query>DROP TABLE tuples_d</drop_query>
+</test>
