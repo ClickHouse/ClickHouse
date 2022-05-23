@@ -108,8 +108,8 @@ private:
             std::vector<std::pair<Vertex, std::decay_t<decltype(graph.at(from).begin())>>> dfs_stack;
             dfs_stack.emplace_back(from, graph.at(from).begin());
             HashMap<Vertex, UInt64> par;
-            HashMap<Vertex, Int64> hasFlow;
-            hasFlow[from] = currentFlow;
+            HashMap<Vertex, Int64> has_flow;
+            has_flow[from] = currentFlow;
 
             while (!dfs_stack.empty())
             {
@@ -134,17 +134,17 @@ private:
                     {
                         continue;
                     }
-                    Int64 add = std::min(hasFlow[vertex], edges[id].getCurrentCapacity());
+                    Int64 add = std::min(has_flow[vertex], edges[id].getCurrentCapacity());
                     if (add > 0)
                     {
                         dfs_stack.emplace_back(to, graph.at(to).begin());
                         par[to] = id;
-                        hasFlow[to] = add;
+                        has_flow[to] = add;
                     }
                 }
             }
 
-            currentFlow = hasFlow[ending_point];
+            currentFlow = has_flow[ending_point];
 
             if (currentFlow == 0)
             {
