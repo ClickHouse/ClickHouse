@@ -2,6 +2,8 @@
 
 #include <cmath>
 #include <cstring>
+#include <string>
+#include <string_view>
 #include <limits>
 #include <algorithm>
 #include <iterator>
@@ -1348,6 +1350,12 @@ inline T parse(const String & s)
 }
 
 template <typename T>
+inline T parse(std::string_view)
+{
+    return parse<T>(s.data(), s.size());
+}
+
+template <typename T>
 inline bool tryParse(T & res, const char * data)
 {
     return tryParse(res, data, strlen(data));
@@ -1355,6 +1363,12 @@ inline bool tryParse(T & res, const char * data)
 
 template <typename T>
 inline bool tryParse(T & res, const String & s)
+{
+    return tryParse(res, s.data(), s.size());
+}
+
+template <typename T>
+inline bool tryParse(T & res, std::string_view s)
 {
     return tryParse(res, s.data(), s.size());
 }

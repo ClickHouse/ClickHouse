@@ -25,14 +25,6 @@
 #include <base/scope_guard.h>
 
 
-namespace DB
-{
-    namespace ErrorCodes
-    {
-        extern const int BAD_ARGUMENTS;
-    }
-}
-
 /// Universal executable for various clickhouse applications
 #if ENABLE_CLICKHOUSE_SERVER
 int mainEntryClickHouseServer(int argc, char ** argv);
