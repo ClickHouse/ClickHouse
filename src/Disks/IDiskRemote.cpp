@@ -23,7 +23,7 @@ namespace ErrorCodes
     extern const int INCORRECT_DISK_INDEX;
     extern const int UNKNOWN_FORMAT;
     extern const int FILE_ALREADY_EXISTS;
-    extern const int PATH_ACCESS_DENIED;;
+    extern const int PATH_ACCESS_DENIED;
     extern const int FILE_DOESNT_EXIST;
     extern const int BAD_FILE_TYPE;
 }
@@ -637,34 +637,40 @@ void IDiskRemote::createHardLink(const String & src_path, const String & dst_pat
 
 ReservationPtr IDiskRemote::reserve(UInt64 bytes)
 {
-    if (!tryReserve(bytes))
+    auto unreserved_space = tryReserve(bytes);
+    if (!unreserved_space.has_value())
         return {};
 
-    return std::make_unique<DiskRemoteReservation>(std::static_pointer_cast<IDiskRemote>(shared_from_this()), bytes);
+    return std::make_unique<DiskRemoteReservation>(
+        std::static_pointer_cast<IDiskRemote>(shared_from_this()),
+        bytes, unreserved_space.value());
 }
 
 
-bool IDiskRemote::tryReserve(UInt64 bytes)
+std::optional<UInt64> IDiskRemote::tryReserve(UInt64 bytes)
 {
     std::lock_guard lock(reservation_mutex);
+
+    auto available_space = getAvailableSpace();
+    UInt64 unreserved_space = available_space - std::min(available_space, reserved_bytes);
+
     if (bytes == 0)
     {
         LOG_TRACE(log, "Reserving 0 bytes on remote_fs disk {}", backQuote(name));
         ++reservation_count;
-        return true;
+        return {unreserved_space};
     }
 
-    auto available_space = getAvailableSpace();
-    UInt64 unreserved_space = available_space - std::min(available_space, reserved_bytes);
     if (unreserved_space >= bytes)
     {
         LOG_TRACE(log, "Reserving {} on disk {}, having unreserved {}.",
             ReadableSize(bytes), backQuote(name), ReadableSize(unreserved_space));
         ++reservation_count;
         reserved_bytes += bytes;
-        return true;
+        return {unreserved_space - bytes};
     }
-    return false;
+
+    return {};
 }
 
 String IDiskRemote::getUniqueId(const String & path) const
