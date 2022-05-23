@@ -392,10 +392,11 @@ void MergeTreeDataPartWriterOnDisk::fillStatisticsChecksums(MergeTreeData::DataP
     MergeTreeStatistics stats;
     stats.setDistributionStatistics(std::move(column_distribution_stats));
 
-    // Different stats can be stored in different files
+    // One statistic can be stored in several files
     // in order not to interfere with vertical merges.
     // It is possible because one stat is calculated exactly for one column.
-    // TODO: split by columns
+    // Statements STATISTIC name (a,b,c ...) TYPE AUTO are treated as several different statistics (one for each column).
+    // We need such statements for easy management.
     for (const String & statistic_name : statistic_names)
     {
         const auto filename = generateFileNameForStatistics(statistic_name);
