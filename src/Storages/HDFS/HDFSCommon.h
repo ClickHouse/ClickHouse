@@ -100,9 +100,7 @@ private:
 };
 
 using HDFSBuilderWrapperPtr = std::shared_ptr<HDFSBuilderWrapper>;
-using HDFSFSPtr = std::unique_ptr<std::remove_pointer_t<hdfsFS>, detail::HDFSFsDeleter>;
-using HDFSFSSharedPtr = std::shared_ptr<std::remove_pointer_t<hdfsFS>>;
-
+using HDFSFSPtr = std::shared_ptr<std::remove_pointer_t<hdfsFS>>;
 
 class HDFSFSPool : public boost::noncopyable
 {
@@ -111,19 +109,19 @@ public:
 
     ~HDFSFSPool() = default;
 
-    HDFSFSSharedPtr getFS();
+    HDFSFSPtr getFS();
 
-    bool tryCallFS(HDFSFSSharedPtr & fs, std::function<bool(HDFSFSSharedPtr &)> callback);
+    bool tryCallFS(HDFSFSPtr & fs, std::function<bool(HDFSFSPtr &)> callback);
 
 private:
-    HDFSFSSharedPtr unsafeGetFS();
+    HDFSFSPtr unsafeGetFS();
 
     const uint32_t max_items;
     const uint32_t min_items;
     const HDFSBuilderWrapperPtr builder;
 
     uint32_t current_index;
-    std::vector<HDFSFSSharedPtr> pool;
+    std::vector<HDFSFSPtr> pool;
     std::mutex mutex;
 };
 
@@ -138,11 +136,11 @@ public:
 
     HDFSBuilderWrapperPtr getBuilder(const String & hdfs_uri, const Poco::Util::AbstractConfiguration & config) const;
 
-    HDFSFSSharedPtr getFS(const String & hdfs_uri, const Poco::Util::AbstractConfiguration & config) const;
+    HDFSFSPtr getFS(const String & hdfs_uri, const Poco::Util::AbstractConfiguration & config) const;
 
-    HDFSFSSharedPtr getFS(HDFSBuilderWrapperPtr builder) const;
+    HDFSFSPtr getFS(HDFSBuilderWrapperPtr builder) const;
 
-    bool tryCallFS(HDFSBuilderWrapperPtr builder, HDFSFSSharedPtr & fs, std::function<bool(HDFSFSSharedPtr &)> callback) const;
+    bool tryCallFS(HDFSBuilderWrapperPtr builder, HDFSFSPtr & fs, std::function<bool(HDFSFSPtr &)> callback) const;
 
 private:
     HDFSFSPoolPtr getFSPool(HDFSBuilderWrapperPtr builder) const;
@@ -156,7 +154,6 @@ private:
 };
 
 HDFSFSPtr createHDFSFS(hdfsBuilder * builder);
-HDFSFSSharedPtr createSharedHDFSFS(hdfsBuilder * builder);
 String getNameNodeUrl(const String & hdfs_url);
 String getNameNodeCluster(const String & hdfs_url);
 

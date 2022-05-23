@@ -148,11 +148,11 @@ HiveMetastoreClient::HiveTableMetadata::getFilesByLocation(const HDFSBuilderWrap
     Poco::URI location_uri(location);
 
     HDFSFileInfo ls;
-    HDFSFSSharedPtr fs = HDFSBuilderFSFactory::instance().getFS(builder);
+    HDFSFSPtr fs = HDFSBuilderFSFactory::instance().getFS(builder);
     HDFSBuilderFSFactory::instance().tryCallFS(
         builder,
         fs,
-        [&](HDFSFSSharedPtr & fs_) -> bool
+        [&](HDFSFSPtr & fs_) -> bool
         {
             ls.file_info = hdfsListDirectory(fs_.get(), location_uri.getPath().c_str(), &ls.length);
             return ls.file_info != nullptr;

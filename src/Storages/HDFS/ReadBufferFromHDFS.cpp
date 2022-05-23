@@ -43,7 +43,7 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<S
     bool allow_reuse_hdfs_objects;
 
     HDFSBuilderWrapperPtr builder;
-    HDFSFSSharedPtr fs;
+    HDFSFSPtr fs;
     hdfsFile fin;
 
 
@@ -72,7 +72,7 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<S
             HDFSBuilderFSFactory::instance().tryCallFS(
                     builder,
                     fs,
-                    [&](HDFSFSSharedPtr & fs_) -> bool
+                    [&](HDFSFSPtr & fs_) -> bool
                     {
                         fin = hdfsOpenFile(fs_.get(), hdfs_file_path.c_str(), O_RDONLY, 0, 0, 0);
                         return fin != nullptr;
@@ -80,7 +80,7 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<S
         }
         else
         {
-            fs = createSharedHDFSFS(builder->get());
+            fs = createHDFSFS(builder->get());
             fin = hdfsOpenFile(fs.get(), hdfs_file_path.c_str(), O_RDONLY, 0, 0, 0);
         }
 
