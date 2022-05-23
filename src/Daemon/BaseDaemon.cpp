@@ -451,7 +451,7 @@ static std::string createDirectory(const std::string & file)
         return "";
     fs::create_directories(path);
     return path;
-};
+}
 
 
 static bool tryCreateDirectories(Poco::Logger * logger, const std::string & path)
@@ -794,7 +794,7 @@ static void addSignalHandler(const std::vector<int> & signals, signal_function h
 
     if (out_handled_signals)
         std::copy(signals.begin(), signals.end(), std::back_inserter(*out_handled_signals));
-};
+}
 
 
 static void blockSignals(const std::vector<int> & signals)
@@ -816,7 +816,7 @@ static void blockSignals(const std::vector<int> & signals)
 
     if (pthread_sigmask(SIG_BLOCK, &sig_set, nullptr))
         throw Poco::Exception("Cannot block signal.");
-};
+}
 
 
 void BaseDaemon::initializeTerminationAndSignalProcessing()
