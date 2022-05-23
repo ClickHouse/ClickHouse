@@ -1444,8 +1444,9 @@ void readQuotedField(String & s, ReadBuffer & buf)
     readQuotedFieldInto(s, buf);
 }
 
-void readJSONFieldIntoString(String & s, ReadBuffer & buf)
+void readJSONField(String & s, ReadBuffer & buf)
 {
+    s.clear();
     auto parse_func = [](ReadBuffer & in) { skipJSONField(in, "json_field"); };
     readParsedValueInto(s, buf, parse_func);
 }

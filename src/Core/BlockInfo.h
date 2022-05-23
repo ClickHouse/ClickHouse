@@ -56,7 +56,10 @@ public:
     const RowsBitMask & getDefaultsBitmask(size_t column_idx) const;
     /// Check that we have to replace default value at least in one of columns
     bool hasDefaultBits(size_t column_idx) const;
+    /// Set bit for a specified row in a single column.
     void setBit(size_t column_idx, size_t row_idx);
+    /// Set bits for all rows in a single column.
+    void setBits(size_t column_idx, size_t rows);
     bool empty() const { return rows_mask_by_column_id.empty(); }
     size_t size() const { return rows_mask_by_column_id.size(); }
     void clear() { rows_mask_by_column_id.clear(); }
