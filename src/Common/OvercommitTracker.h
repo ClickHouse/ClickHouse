@@ -36,6 +36,16 @@ struct OvercommitRatio
 
 class MemoryTracker;
 
+enum class OvercommitResult
+{
+    NONE,
+    DISABLED,
+    MEMORY_FREED,
+    SELECTED,
+    TIMEOUTED,
+    NOT_ENOUGH_FREED,
+};
+
 enum class QueryCancellationState
 {
     NONE     = 0,  // Hard limit is not reached, there is no selected query to kill.
@@ -54,7 +64,7 @@ struct OvercommitTracker : boost::noncopyable
 {
     void setMaxWaitTime(UInt64 wait_time);
 
-    bool needToStopQuery(MemoryTracker * tracker, Int64 amount);
+    OvercommitResult needToStopQuery(MemoryTracker * tracker, Int64 amount);
 
     void tryContinueQueryExecutionAfterFree(Int64 amount);
 
