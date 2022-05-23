@@ -91,12 +91,6 @@ struct ReadSettings
     size_t http_retry_max_backoff_ms = 1600;
     bool http_skip_not_found_url_for_globs = true;
 
-    /// Set to true for MergeTree tables to make sure
-    /// that last position (offset in compressed file) is always passed.
-    /// (Otherwise asynchronous reading from remote fs is not efficient).
-    /// If reading is done without final position set, throw logical_error.
-    bool must_read_until_position = false;
-
     ReadSettings adjustBufferSize(size_t file_size) const
     {
         ReadSettings res = *this;
