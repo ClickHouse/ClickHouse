@@ -240,9 +240,7 @@ void TransactionLog::runUpdatingThread()
 
             loadNewEntries();
             removeOldEntries();
-
-            if (connection_loss || fault_probability_before_commit || fault_probability_after_commit)
-                tryFinalizeUnknownStateTransactions();
+            tryFinalizeUnknownStateTransactions();
         }
         catch (const Coordination::Exception &)
         {
