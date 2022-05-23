@@ -112,8 +112,8 @@ try
 
     std::string_view user_and_group = argv[1];
 
-    std::string_view user;
-    std::string_view group;
+    std::string user;
+    std::string group;
 
     auto pos = user_and_group.find(':');
     if (pos == std::string_view::npos)
@@ -126,7 +126,7 @@ try
         group = user_and_group.substr(pos + 1);
     }
 
-    setUserAndGroup(user, group);
+    setUserAndGroup(std::move(user), std::move(group));
 
     execvp(argv[0], &argv[2]);
     throwFromErrno("Cannot execvp", ErrorCodes::SYSTEM_ERROR);
