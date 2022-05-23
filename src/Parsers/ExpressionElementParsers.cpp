@@ -927,6 +927,12 @@ bool ParserFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         return false;
     const char * contents_end = pos->begin;
 
+    ParserKeyword totals("TOTALS");
+    bool has_totals = false;
+    
+    if (totals.ignore(pos, expected))
+        has_totals = true;
+
     if (pos->type != TokenType::ClosingRoundBracket)
         return false;
     ++pos;
@@ -963,6 +969,9 @@ bool ParserFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         if (has_distinct)
             return false;
 
+        if (has_totals)
+            return false;
+
         expr_list_params = expr_list_args;
         expr_list_args = nullptr;
 
@@ -994,7 +1003,10 @@ bool ParserFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
         if (!contents.parse(pos, expr_list_args, expected))
             return false;
-
+        
+        if (totals.ignore(pos, expected))
+            has_totals = true;
+        
         if (pos->type != TokenType::ClosingRoundBracket)
             return false;
         ++pos;
@@ -1006,6 +1018,9 @@ bool ParserFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     /// func(DISTINCT ...) is equivalent to funcDistinct(...)
     if (has_distinct)
         function_node->name += "Distinct";
+    
+    if (has_totals)
+        function_node->totals = true;
 
     function_node->arguments = expr_list_args;
     function_node->children.push_back(function_node->arguments);

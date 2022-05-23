@@ -1812,7 +1812,18 @@ void NO_INLINE Aggregator::convertToBlockImplFinal(
             bool is_state = aggregate_functions[destroy_index]->isState();
             bool destroy_place_after_insert = !is_state;
 
-            aggregate_functions[destroy_index]->insertResultIntoBatch(0, places.size(), places.data(), offset, *final_aggregate_column, arena, destroy_place_after_insert);
+            if (params.aggregates[destroy_index].totals) {
+                PaddedPODArray<AggregateDataPtr> tmp_places;
+                for (size_t i = 1; i < places.size(); ++i) {
+                    aggregate_functions[destroy_index]->merge(places[0], places[i]);
+                }
+                for (size_t i = 0; i < places.size(); ++i) {
+                    tmp_places.emplace_back(places[0]);
+                }
+                aggregate_functions[destroy_index]->insertResultIntoBatch(0, tmp_places.size(), tmp_places.data(), offset, *final_aggregate_column, arena, destroy_place_after_insert);
+            } else {
+                aggregate_functions[destroy_index]->insertResultIntoBatch(0, places.size(), places.data(), offset, *final_aggregate_column, arena, destroy_place_after_insert);
+            }
         }
     }
     catch (...)
