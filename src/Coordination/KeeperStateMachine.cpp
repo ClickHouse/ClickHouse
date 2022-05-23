@@ -225,7 +225,7 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine::commit(const uint64_t log_idx, n
     {
         std::lock_guard lock(storage_and_responses_lock);
         KeeperStorage::ResponsesForSessions responses_for_sessions = storage->processRequest(
-            request_for_session.request, request_for_session.session_id, request_for_session.time, request_for_session.zxid);
+            request_for_session.request, request_for_session.session_id, request_for_session.zxid);
         for (auto & response_for_session : responses_for_sessions)
             if (!responses_queue.push(response_for_session))
                 throw Exception(
@@ -449,7 +449,6 @@ void KeeperStateMachine::processReadRequest(const KeeperStorage::RequestForSessi
     auto responses = storage->processRequest(
         request_for_session.request,
         request_for_session.session_id,
-        request_for_session.time,
         std::nullopt,
         true /*check_acl*/,
         true /*is_local*/);

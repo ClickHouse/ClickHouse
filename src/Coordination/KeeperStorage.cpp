@@ -400,7 +400,7 @@ namespace
 
 }
 
-Coordination::Error KeeperStorage::commit(int64_t commit_zxid, int64_t session_id)
+Coordination::Error KeeperStorage::commit(int64_t commit_zxid)
 {
     // Deltas are added with increasing ZXIDs
     // If there are no deltas for the commit_zxid (e.g. read requests), we instantly return
@@ -421,8 +421,7 @@ Coordination::Error KeeperStorage::commit(int64_t commit_zxid, int64_t session_i
                             std::move(operation.data),
                             operation.stat,
                             operation.is_sequental,
-                            std::move(operation.acls),
-                            session_id))
+                            std::move(operation.acls)))
                         onStorageInconsistency();
 
                     return Coordination::Error::ZOK;
@@ -502,8 +501,7 @@ bool KeeperStorage::createNode(
     String data,
     const Coordination::Stat & stat,
     bool is_sequental,
-    Coordination::ACLs node_acls,
-    int64_t /*session_id*/)
+    Coordination::ACLs node_acls)
 {
     auto parent_path = parentPath(path);
     auto node_it = container.find(parent_path);
@@ -551,6 +549,7 @@ bool KeeperStorage::removeNode(const std::string & path, int32_t version)
     if (prev_node.stat.ephemeralOwner != 0)
     {
         auto ephemerals_it = ephemerals.find(prev_node.stat.ephemeralOwner);
+        assert(ephemerals_it != ephemerals.end());
         ephemerals_it->second.erase(path);
         if (ephemerals_it->second.empty())
             ephemerals.erase(ephemerals_it);
@@ -573,7 +572,7 @@ struct KeeperStorageRequestProcessor
     Coordination::ZooKeeperRequestPtr zk_request;
 
     explicit KeeperStorageRequestProcessor(const Coordination::ZooKeeperRequestPtr & zk_request_) : zk_request(zk_request_) { }
-    virtual Coordination::ZooKeeperResponsePtr process(KeeperStorage & storage, int64_t zxid, int64_t session_id, int64_t time) const = 0;
+    virtual Coordination::ZooKeeperResponsePtr process(KeeperStorage & storage, int64_t zxid) const = 0;
     virtual std::vector<KeeperStorage::Delta>
     preprocess(KeeperStorage & /*storage*/, int64_t /*zxid*/, int64_t /*session_id*/, int64_t /*time*/, uint64_t & /*digest*/) const
     {
@@ -582,7 +581,7 @@ struct KeeperStorageRequestProcessor
 
     // process the request using locally committed data
     virtual Coordination::ZooKeeperResponsePtr
-    processLocal(KeeperStorage & /*storage*/, int64_t /*zxid*/, int64_t /*session_id*/, int64_t /*time*/) const
+    processLocal(KeeperStorage & /*storage*/, int64_t /*zxid*/) const
     {
         throw Exception{DB::ErrorCodes::LOGICAL_ERROR, "Cannot process the request locally"};
     }
@@ -601,7 +600,7 @@ struct KeeperStorageHeartbeatRequestProcessor final : public KeeperStorageReques
 {
     using KeeperStorageRequestProcessor::KeeperStorageRequestProcessor;
     Coordination::ZooKeeperResponsePtr
-    process(KeeperStorage & /* storage */, int64_t /* zxid */, int64_t /* session_id */, int64_t /* time */) const override
+    process(KeeperStorage & /* storage */, int64_t /* zxid */) const override
     {
         return zk_request->makeResponse();
     }
@@ -611,7 +610,7 @@ struct KeeperStorageSyncRequestProcessor final : public KeeperStorageRequestProc
 {
     using KeeperStorageRequestProcessor::KeeperStorageRequestProcessor;
     Coordination::ZooKeeperResponsePtr
-    process(KeeperStorage & /* storage */, int64_t /* zxid */, int64_t /* session_id */, int64_t /* time */) const override
+    process(KeeperStorage & /* storage */, int64_t /* zxid */) const override
     {
         auto response = zk_request->makeResponse();
         dynamic_cast<Coordination::ZooKeeperSyncResponse &>(*response).path
@@ -719,6 +718,9 @@ struct KeeperStorageCreateRequestProcessor final : public KeeperStorageRequestPr
         if (!fixupACL(request.acls, storage.session_and_auth[session_id], node_acls))
             return {{zxid, Coordination::Error::ZINVALIDACL}};
 
+        if (request.is_ephemeral)
+            storage.ephemerals[session_id].emplace(path_created);
+
         Coordination::Stat stat;
         stat.czxid = zxid;
         stat.mzxid = zxid;
@@ -755,19 +757,16 @@ struct KeeperStorageCreateRequestProcessor final : public KeeperStorageRequestPr
                                                ++node.stat.numChildren;
                                            }});
 
-        if (request.is_ephemeral)
-            storage.ephemerals[session_id].emplace(path_created);
-
         digest = storage.calculateNodesDigest(digest, new_deltas);
         return new_deltas;
     }
 
-    Coordination::ZooKeeperResponsePtr process(KeeperStorage & storage, int64_t zxid, int64_t session_id, int64_t /*time*/) const override
+    Coordination::ZooKeeperResponsePtr process(KeeperStorage & storage, int64_t zxid) const override
     {
         Coordination::ZooKeeperResponsePtr response_ptr = zk_request->makeResponse();
         Coordination::ZooKeeperCreateResponse & response = dynamic_cast<Coordination::ZooKeeperCreateResponse &>(*response_ptr);
 
-        if (const auto result = storage.commit(zxid, session_id); result != Coordination::Error::ZOK)
+        if (const auto result = storage.commit(zxid); result != Coordination::Error::ZOK)
         {
             response.error = result;
             return response_ptr;
@@ -809,7 +808,7 @@ struct KeeperStorageGetRequestProcessor final : public KeeperStorageRequestProce
     }
 
     template <bool local>
-    Coordination::ZooKeeperResponsePtr processImpl(KeeperStorage & storage, int64_t zxid, int64_t session_id, int64_t /* time */) const
+    Coordination::ZooKeeperResponsePtr processImpl(KeeperStorage & storage, int64_t zxid) const
     {
         Coordination::ZooKeeperResponsePtr response_ptr = zk_request->makeResponse();
         Coordination::ZooKeeperGetResponse & response = dynamic_cast<Coordination::ZooKeeperGetResponse &>(*response_ptr);
@@ -817,7 +816,7 @@ struct KeeperStorageGetRequestProcessor final : public KeeperStorageRequestProce
 
         if constexpr (!local)
         {
-            if (const auto result = storage.commit(zxid, session_id); result != Coordination::Error::ZOK)
+            if (const auto result = storage.commit(zxid); result != Coordination::Error::ZOK)
             {
                 response.error = result;
                 return response_ptr;
@@ -844,14 +843,14 @@ struct KeeperStorageGetRequestProcessor final : public KeeperStorageRequestProce
     }
 
 
-    Coordination::ZooKeeperResponsePtr process(KeeperStorage & storage, int64_t zxid, int64_t session_id, int64_t time) const override
+    Coordination::ZooKeeperResponsePtr process(KeeperStorage & storage, int64_t zxid) const override
     {
-        return processImpl<false>(storage, zxid, session_id, time);
+        return processImpl<false>(storage, zxid);
     }
 
-    Coordination::ZooKeeperResponsePtr processLocal(KeeperStorage & storage, int64_t zxid, int64_t session_id, int64_t time) const override
+    Coordination::ZooKeeperResponsePtr processLocal(KeeperStorage & storage, int64_t zxid) const override
     {
-        return processImpl<true>(storage, zxid, session_id, time);
+        return processImpl<true>(storage, zxid);
     }
 };
 
@@ -918,12 +917,12 @@ struct KeeperStorageRemoveRequestProcessor final : public KeeperStorageRequestPr
         return new_deltas;
     }
 
-    Coordination::ZooKeeperResponsePtr process(KeeperStorage & storage, int64_t zxid, int64_t session_id, int64_t /* time */) const override
+    Coordination::ZooKeeperResponsePtr process(KeeperStorage & storage, int64_t zxid) const override
     {
         Coordination::ZooKeeperResponsePtr response_ptr = zk_request->makeResponse();
         Coordination::ZooKeeperRemoveResponse & response = dynamic_cast<Coordination::ZooKeeperRemoveResponse &>(*response_ptr);
 
-        response.error = storage.commit(zxid, session_id);
+        response.error = storage.commit(zxid);
         return response_ptr;
     }
 
@@ -950,7 +949,7 @@ struct KeeperStorageExistsRequestProcessor final : public KeeperStorageRequestPr
     }
 
     template <bool local>
-    Coordination::ZooKeeperResponsePtr processImpl(KeeperStorage & storage, int64_t zxid, int64_t session_id, int64_t /* time */) const
+    Coordination::ZooKeeperResponsePtr processImpl(KeeperStorage & storage, int64_t zxid) const
     {
         Coordination::ZooKeeperResponsePtr response_ptr = zk_request->makeResponse();
         Coordination::ZooKeeperExistsResponse & response = dynamic_cast<Coordination::ZooKeeperExistsResponse &>(*response_ptr);
@@ -958,7 +957,7 @@ struct KeeperStorageExistsRequestProcessor final : public KeeperStorageRequestPr
 
         if constexpr (!local)
         {
-            if (const auto result = storage.commit(zxid, session_id); result != Coordination::Error::ZOK)
+            if (const auto result = storage.commit(zxid); result != Coordination::Error::ZOK)
             {
                 response.error = result;
                 return response_ptr;
@@ -983,14 +982,14 @@ struct KeeperStorageExistsRequestProcessor final : public KeeperStorageRequestPr
         return response_ptr;
     }
 
-    Coordination::ZooKeeperResponsePtr process(KeeperStorage & storage, int64_t zxid, int64_t session_id, int64_t time) const override
+    Coordination::ZooKeeperResponsePtr process(KeeperStorage & storage, int64_t zxid) const override
     {
-        return processImpl<false>(storage, zxid, session_id, time);
+        return processImpl<false>(storage, zxid);
     }
 
-    Coordination::ZooKeeperResponsePtr processLocal(KeeperStorage & storage, int64_t zxid, int64_t session_id, int64_t time) const override
+    Coordination::ZooKeeperResponsePtr processLocal(KeeperStorage & storage, int64_t zxid) const override
     {
-        return processImpl<true>(storage, zxid, session_id, time);
+        return processImpl<true>(storage, zxid);
     }
 };
 
@@ -1047,7 +1046,7 @@ struct KeeperStorageSetRequestProcessor final : public KeeperStorageRequestProce
         return new_deltas;
     }
 
-    Coordination::ZooKeeperResponsePtr process(KeeperStorage & storage, int64_t zxid, int64_t session_id, int64_t /*time*/) const override
+    Coordination::ZooKeeperResponsePtr process(KeeperStorage & storage, int64_t zxid) const override
     {
         auto & container = storage.container;
 
@@ -1055,7 +1054,7 @@ struct KeeperStorageSetRequestProcessor final : public KeeperStorageRequestProce
         Coordination::ZooKeeperSetResponse & response = dynamic_cast<Coordination::ZooKeeperSetResponse &>(*response_ptr);
         Coordination::ZooKeeperSetRequest & request = dynamic_cast<Coordination::ZooKeeperSetRequest &>(*zk_request);
 
-        if (const auto result = storage.commit(zxid, session_id); result != Coordination::Error::ZOK)
+        if (const auto result = storage.commit(zxid); result != Coordination::Error::ZOK)
         {
             response.error = result;
             return response_ptr;
@@ -1099,7 +1098,7 @@ struct KeeperStorageListRequestProcessor final : public KeeperStorageRequestProc
 
 
     template <bool local>
-    Coordination::ZooKeeperResponsePtr processImpl(KeeperStorage & storage, int64_t zxid, int64_t session_id, int64_t /* time */) const
+    Coordination::ZooKeeperResponsePtr processImpl(KeeperStorage & storage, int64_t zxid) const
     {
         Coordination::ZooKeeperResponsePtr response_ptr = zk_request->makeResponse();
         Coordination::ZooKeeperListResponse & response = dynamic_cast<Coordination::ZooKeeperListResponse &>(*response_ptr);
@@ -1107,7 +1106,7 @@ struct KeeperStorageListRequestProcessor final : public KeeperStorageRequestProc
 
         if constexpr (!local)
         {
-            if (const auto result = storage.commit(zxid, session_id); result != Coordination::Error::ZOK)
+            if (const auto result = storage.commit(zxid); result != Coordination::Error::ZOK)
             {
                 response.error = result;
                 return response_ptr;
@@ -1142,14 +1141,14 @@ struct KeeperStorageListRequestProcessor final : public KeeperStorageRequestProc
         return response_ptr;
     }
 
-    Coordination::ZooKeeperResponsePtr process(KeeperStorage & storage, int64_t zxid, int64_t session_id, int64_t time) const override
+    Coordination::ZooKeeperResponsePtr process(KeeperStorage & storage, int64_t zxid) const override
     {
-        return processImpl<false>(storage, zxid, session_id, time);
+        return processImpl<false>(storage, zxid);
     }
 
-    Coordination::ZooKeeperResponsePtr processLocal(KeeperStorage & storage, int64_t zxid, int64_t session_id, int64_t time) const override
+    Coordination::ZooKeeperResponsePtr processLocal(KeeperStorage & storage, int64_t zxid) const override
     {
-        return processImpl<true>(storage, zxid, session_id, time);
+        return processImpl<true>(storage, zxid);
     }
 };
 
@@ -1177,7 +1176,7 @@ struct KeeperStorageCheckRequestProcessor final : public KeeperStorageRequestPro
     }
 
     template <bool local>
-    Coordination::ZooKeeperResponsePtr processImpl(KeeperStorage & storage, int64_t zxid, int64_t session_id, int64_t /* time */) const
+    Coordination::ZooKeeperResponsePtr processImpl(KeeperStorage & storage, int64_t zxid) const
     {
         Coordination::ZooKeeperResponsePtr response_ptr = zk_request->makeResponse();
         Coordination::ZooKeeperCheckResponse & response = dynamic_cast<Coordination::ZooKeeperCheckResponse &>(*response_ptr);
@@ -1185,7 +1184,7 @@ struct KeeperStorageCheckRequestProcessor final : public KeeperStorageRequestPro
 
         if constexpr (!local)
         {
-            if (const auto result = storage.commit(zxid, session_id); result != Coordination::Error::ZOK)
+            if (const auto result = storage.commit(zxid); result != Coordination::Error::ZOK)
             {
                 response.error = result;
                 return response_ptr;
@@ -1218,14 +1217,14 @@ struct KeeperStorageCheckRequestProcessor final : public KeeperStorageRequestPro
         return response_ptr;
     }
 
-    Coordination::ZooKeeperResponsePtr process(KeeperStorage & storage, int64_t zxid, int64_t session_id, int64_t time) const override
+    Coordination::ZooKeeperResponsePtr process(KeeperStorage & storage, int64_t zxid) const override
     {
-        return processImpl<false>(storage, zxid, session_id, time);
+        return processImpl<false>(storage, zxid);
     }
 
-    Coordination::ZooKeeperResponsePtr processLocal(KeeperStorage & storage, int64_t zxid, int64_t session_id, int64_t time) const override
+    Coordination::ZooKeeperResponsePtr processLocal(KeeperStorage & storage, int64_t zxid) const override
     {
-        return processImpl<true>(storage, zxid, session_id, time);
+        return processImpl<true>(storage, zxid);
     }
 };
 
@@ -1269,13 +1268,13 @@ struct KeeperStorageSetACLRequestProcessor final : public KeeperStorageRequestPr
         return new_deltas;
     }
 
-    Coordination::ZooKeeperResponsePtr process(KeeperStorage & storage, int64_t zxid, int64_t session_id, int64_t /* time */) const override
+    Coordination::ZooKeeperResponsePtr process(KeeperStorage & storage, int64_t zxid) const override
     {
         Coordination::ZooKeeperResponsePtr response_ptr = zk_request->makeResponse();
         Coordination::ZooKeeperSetACLResponse & response = dynamic_cast<Coordination::ZooKeeperSetACLResponse &>(*response_ptr);
         Coordination::ZooKeeperSetACLRequest & request = dynamic_cast<Coordination::ZooKeeperSetACLRequest &>(*zk_request);
 
-        if (const auto result = storage.commit(zxid, session_id); result != Coordination::Error::ZOK)
+        if (const auto result = storage.commit(zxid); result != Coordination::Error::ZOK)
         {
             response.error = result;
             return response_ptr;
@@ -1312,7 +1311,7 @@ struct KeeperStorageGetACLRequestProcessor final : public KeeperStorageRequestPr
     }
 
     template <bool local>
-    Coordination::ZooKeeperResponsePtr processImpl(KeeperStorage & storage, int64_t zxid, int64_t session_id, int64_t /* time */) const
+    Coordination::ZooKeeperResponsePtr processImpl(KeeperStorage & storage, int64_t zxid) const
     {
         Coordination::ZooKeeperResponsePtr response_ptr = zk_request->makeResponse();
         Coordination::ZooKeeperGetACLResponse & response = dynamic_cast<Coordination::ZooKeeperGetACLResponse &>(*response_ptr);
@@ -1320,7 +1319,7 @@ struct KeeperStorageGetACLRequestProcessor final : public KeeperStorageRequestPr
 
         if constexpr (!local)
         {
-            if (const auto result = storage.commit(zxid, session_id); result != Coordination::Error::ZOK)
+            if (const auto result = storage.commit(zxid); result != Coordination::Error::ZOK)
             {
                 response.error = result;
                 return response_ptr;
@@ -1345,14 +1344,14 @@ struct KeeperStorageGetACLRequestProcessor final : public KeeperStorageRequestPr
         return response_ptr;
     }
 
-    Coordination::ZooKeeperResponsePtr process(KeeperStorage & storage, int64_t zxid, int64_t session_id, int64_t time) const override
+    Coordination::ZooKeeperResponsePtr process(KeeperStorage & storage, int64_t zxid) const override
     {
-        return processImpl<false>(storage, zxid, session_id, time);
+        return processImpl<false>(storage, zxid);
     }
 
-    Coordination::ZooKeeperResponsePtr processLocal(KeeperStorage & storage, int64_t zxid, int64_t session_id, int64_t time) const override
+    Coordination::ZooKeeperResponsePtr processLocal(KeeperStorage & storage, int64_t zxid) const override
     {
-        return processImpl<true>(storage, zxid, session_id, time);
+        return processImpl<true>(storage, zxid);
     }
 };
 
@@ -1434,7 +1433,7 @@ struct KeeperStorageMultiRequestProcessor final : public KeeperStorageRequestPro
         return {};
     }
 
-    Coordination::ZooKeeperResponsePtr process(KeeperStorage & storage, int64_t zxid, int64_t session_id, int64_t time) const override
+    Coordination::ZooKeeperResponsePtr process(KeeperStorage & storage, int64_t zxid) const override
     {
         Coordination::ZooKeeperResponsePtr response_ptr = zk_request->makeResponse();
         Coordination::ZooKeeperMultiResponse & response = dynamic_cast<Coordination::ZooKeeperMultiResponse &>(*response_ptr);
@@ -1456,7 +1455,7 @@ struct KeeperStorageMultiRequestProcessor final : public KeeperStorageRequestPro
 
         for (size_t i = 0; i < concrete_requests.size(); ++i)
         {
-            auto cur_response = concrete_requests[i]->process(storage, zxid, session_id, time);
+            auto cur_response = concrete_requests[i]->process(storage, zxid);
             response.responses[i] = cur_response;
             storage.uncommitted_state.commit(zxid);
         }
@@ -1465,14 +1464,14 @@ struct KeeperStorageMultiRequestProcessor final : public KeeperStorageRequestPro
         return response_ptr;
     }
 
-    Coordination::ZooKeeperResponsePtr processLocal(KeeperStorage & storage, int64_t zxid, int64_t session_id, int64_t time) const override
+    Coordination::ZooKeeperResponsePtr processLocal(KeeperStorage & storage, int64_t zxid) const override
     {
         Coordination::ZooKeeperResponsePtr response_ptr = zk_request->makeResponse();
         Coordination::ZooKeeperMultiResponse & response = dynamic_cast<Coordination::ZooKeeperMultiResponse &>(*response_ptr);
 
         for (size_t i = 0; i < concrete_requests.size(); ++i)
         {
-            auto cur_response = concrete_requests[i]->process(storage, zxid, session_id, time);
+            auto cur_response = concrete_requests[i]->processLocal(storage, zxid);
 
             response.responses[i] = cur_response;
             if (cur_response->error != Coordination::Error::ZOK)
@@ -1514,7 +1513,7 @@ struct KeeperStorageMultiRequestProcessor final : public KeeperStorageRequestPro
 struct KeeperStorageCloseRequestProcessor final : public KeeperStorageRequestProcessor
 {
     using KeeperStorageRequestProcessor::KeeperStorageRequestProcessor;
-    Coordination::ZooKeeperResponsePtr process(KeeperStorage &, int64_t, int64_t, int64_t /* time */) const override
+    Coordination::ZooKeeperResponsePtr process(KeeperStorage &, int64_t) const override
     {
         throw DB::Exception("Called process on close request", ErrorCodes::LOGICAL_ERROR);
     }
@@ -1549,12 +1548,12 @@ struct KeeperStorageAuthRequestProcessor final : public KeeperStorageRequestProc
         return new_deltas;
     }
 
-    Coordination::ZooKeeperResponsePtr process(KeeperStorage & storage, int64_t zxid, int64_t session_id, int64_t /* time */) const override
+    Coordination::ZooKeeperResponsePtr process(KeeperStorage & storage, int64_t zxid) const override
     {
         Coordination::ZooKeeperResponsePtr response_ptr = zk_request->makeResponse();
         Coordination::ZooKeeperAuthResponse & auth_response = dynamic_cast<Coordination::ZooKeeperAuthResponse &>(*response_ptr);
 
-        if (const auto result = storage.commit(zxid, session_id); result != Coordination::Error::ZOK)
+        if (const auto result = storage.commit(zxid); result != Coordination::Error::ZOK)
             auth_response.error = result;
 
         return response_ptr;
@@ -1789,7 +1788,6 @@ void KeeperStorage::preprocessRequest(
 KeeperStorage::ResponsesForSessions KeeperStorage::processRequest(
     const Coordination::ZooKeeperRequestPtr & zk_request,
     int64_t session_id,
-    int64_t time,
     std::optional<int64_t> new_last_zxid,
     bool check_acl,
     bool is_local)
@@ -1817,7 +1815,7 @@ KeeperStorage::ResponsesForSessions KeeperStorage::processRequest(
 
     if (zk_request->getOpNum() == Coordination::OpNum::Close) /// Close request is special
     {
-        commit(zxid, session_id);
+        commit(zxid);
 
         for (const auto & delta : uncommitted_state.deltas)
         {
@@ -1849,7 +1847,7 @@ KeeperStorage::ResponsesForSessions KeeperStorage::processRequest(
     else if (zk_request->getOpNum() == Coordination::OpNum::Heartbeat) /// Heartbeat request is also special
     {
         KeeperStorageRequestProcessorPtr storage_request = KeeperStorageRequestProcessorsFactory::instance().get(zk_request);
-        auto response = storage_request->process(*this, zxid, session_id, time);
+        auto response = storage_request->process(*this, zxid);
         response->xid = zk_request->xid;
         response->zxid = getZXID();
 
@@ -1871,12 +1869,12 @@ KeeperStorage::ResponsesForSessions KeeperStorage::processRequest(
             }
             else
             {
-                response = request_processor->processLocal(*this, zxid, session_id, time);
+                response = request_processor->processLocal(*this, zxid);
             }
         }
         else
         {
-            response = request_processor->process(*this, zxid, session_id, time);
+            response = request_processor->process(*this, zxid);
             uncommitted_state.commit(zxid);
         }
 

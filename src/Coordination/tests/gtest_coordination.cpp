@@ -1224,7 +1224,7 @@ TEST_P(CoordinationTest, TestStorageSnapshotBroken)
     EXPECT_THROW(manager.restoreFromLatestSnapshot(), DB::Exception);
 }
 
-nuraft::ptr<nuraft::buffer> getBufferFromZKRequest(int64_t session_id, int64_t zxid, const Coordination::ZooKeeperRequestPtr & request, const std::optional<uint64_t> digest = std::nullopt)
+nuraft::ptr<nuraft::buffer> getBufferFromZKRequest(int64_t session_id, int64_t zxid, const Coordination::ZooKeeperRequestPtr & request)
 {
     DB::WriteBufferFromNuraftBuffer buf;
     DB::writeIntBinary(session_id, buf);
@@ -1233,17 +1233,13 @@ nuraft::ptr<nuraft::buffer> getBufferFromZKRequest(int64_t session_id, int64_t z
     auto time = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
     DB::writeIntBinary(time, buf);
     DB::writeIntBinary(zxid, buf);
-    if (digest)
-    {
-        DB::writeIntBinary(DB::KeeperStorage::CURRENT_DIGEST_VERSION, buf);
-        DB::writeIntBinary(*digest, buf);
-    }
+    DB::writeIntBinary(DB::KeeperStorage::DigestVersion::NO_DIGEST, buf);
     return buf.getBuffer();
 }
 
-nuraft::ptr<nuraft::log_entry> getLogEntryFromZKRequest(size_t term, int64_t session_id, int64_t zxid, const Coordination::ZooKeeperRequestPtr & request, const std::optional<uint64_t> digest = std::nullopt)
+nuraft::ptr<nuraft::log_entry> getLogEntryFromZKRequest(size_t term, int64_t session_id, int64_t zxid, const Coordination::ZooKeeperRequestPtr & request)
 {
-    auto buffer = getBufferFromZKRequest(session_id, zxid, request, digest);
+    auto buffer = getBufferFromZKRequest(session_id, zxid, request);
     return nuraft::cs_new<nuraft::log_entry>(term, buffer);
 }
 
@@ -1265,7 +1261,7 @@ void testLogAndStateMachine(Coordination::CoordinationSettingsPtr settings, uint
     {
         std::shared_ptr<ZooKeeperCreateRequest> request = std::make_shared<ZooKeeperCreateRequest>();
         request->path = "/hello_" + std::to_string(i);
-        auto entry = getLogEntryFromZKRequest(0, 1, 1, request);
+        auto entry = getLogEntryFromZKRequest(0, 1, i, request);
         changelog.append(entry);
         changelog.end_of_append_batch(0, 0);
 
@@ -1809,7 +1805,7 @@ TEST_P(CoordinationTest, TestUncommittedStateBasicCrud)
     {
         auto request = std::make_shared<ZooKeeperGetRequest>();
         request->path = path;
-        auto responses = storage.processRequest(request, 0, 0, std::nullopt, true, true);
+        auto responses = storage.processRequest(request, 0, std::nullopt, true, true);
         const auto & get_response = getSingleResponse<ZooKeeperGetResponse>(responses);
 
         if (get_response.error != Error::ZOK)
@@ -1857,19 +1853,19 @@ TEST_P(CoordinationTest, TestUncommittedStateBasicCrud)
     ASSERT_FALSE(get_committed_data());
 
     {
-        const auto responses = storage.processRequest(create_request, 0, 0, 1);
+        const auto responses = storage.processRequest(create_request, 0, 1);
         const auto & create_response = getSingleResponse<ZooKeeperCreateResponse>(responses);
         ASSERT_EQ(create_response.error, Error::ZOK);
     }
 
     {
-        const auto responses = storage.processRequest(create_request, 0, 0, 2);
+        const auto responses = storage.processRequest(create_request, 0, 2);
         const auto & create_response = getSingleResponse<ZooKeeperCreateResponse>(responses);
         ASSERT_EQ(create_response.error, Error::ZNODEEXISTS);
     }
 
     {
-        const auto responses = storage.processRequest(after_create_get, 0, 0, 3);
+        const auto responses = storage.processRequest(after_create_get, 0, 3);
         const auto & get_response = getSingleResponse<ZooKeeperGetResponse>(responses);
         ASSERT_EQ(get_response.error, Error::ZOK);
         ASSERT_EQ(get_response.data, "initial_data");
@@ -1878,13 +1874,13 @@ TEST_P(CoordinationTest, TestUncommittedStateBasicCrud)
     ASSERT_EQ(get_committed_data(), "initial_data");
 
     {
-        const auto responses = storage.processRequest(set_request, 0, 0, 4);
+        const auto responses = storage.processRequest(set_request, 0, 4);
         const auto & create_response = getSingleResponse<ZooKeeperSetResponse>(responses);
         ASSERT_EQ(create_response.error, Error::ZOK);
     }
 
     {
-        const auto responses = storage.processRequest(after_set_get, 0, 0, 5);
+        const auto responses = storage.processRequest(after_set_get, 0, 5);
         const auto & get_response = getSingleResponse<ZooKeeperGetResponse>(responses);
         ASSERT_EQ(get_response.error, Error::ZOK);
         ASSERT_EQ(get_response.data, "new_data");
@@ -1893,19 +1889,19 @@ TEST_P(CoordinationTest, TestUncommittedStateBasicCrud)
     ASSERT_EQ(get_committed_data(), "new_data");
 
     {
-        const auto responses = storage.processRequest(remove_request, 0, 0, 6);
+        const auto responses = storage.processRequest(remove_request, 0, 6);
         const auto & create_response = getSingleResponse<ZooKeeperRemoveResponse>(responses);
         ASSERT_EQ(create_response.error, Error::ZOK);
     }
 
     {
-        const auto responses = storage.processRequest(remove_request, 0, 0, 7);
+        const auto responses = storage.processRequest(remove_request, 0, 7);
         const auto & create_response = getSingleResponse<ZooKeeperRemoveResponse>(responses);
         ASSERT_EQ(create_response.error, Error::ZNONODE);
     }
 
     {
-        const auto responses = storage.processRequest(after_remove_get, 0, 0, 8);
+        const auto responses = storage.processRequest(after_remove_get, 0, 8);
         const auto & get_response = getSingleResponse<ZooKeeperGetResponse>(responses);
         ASSERT_EQ(get_response.error, Error::ZNONODE);
     }
