@@ -78,6 +78,7 @@ public:
     virtual void serializeBinary(const String & name, WriteBuffer & ostr) const = 0;
     virtual void deserializeBinary(ReadBuffer & istr) = 0;
 
+    // Estimates probability that lower < item  < right. 
     virtual std::optional<double> estimateProbability(const String & column, const Field & lower, const Field & upper) const = 0;
     virtual void add(const String & name, const IDistributionStatisticPtr & stat) = 0;
 };

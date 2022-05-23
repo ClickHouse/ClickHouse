@@ -32,19 +32,17 @@ OPTIMIZE TABLE alters_stats FINAL;
 
 ALTER TABLE alters_stats ADD STATISTIC st1 (a, b, c) TYPE tdigest;
 ALTER TABLE alters_stats ADD STATISTIC st2 (d);
-
 SYSTEM RELOAD STATISTICS alters_stats;
+--SELECT sleep(1);
 
 EXPLAIN SYNTAX SELECT a, b, c, d, heavy, heavy2 FROM alters_stats WHERE a == 10 AND b == 100 AND c == 0 AND d == 100;
 
 SHOW CREATE TABLE alters_stats;
 
-ALTER TABLE alters_stats ADD STATISTIC st3 (d, k) TYPE tdigest;
+ALTER TABLE alters_stats ADD STATISTIC st3 (d);
 ALTER TABLE alters_stats DROP STATISTIC st2;
-
-SHOW CREATE TABLE alters_stats;
-
-ALTER TABLE alters_stats MODIFY STATISTIC st3 (d);
+SYSTEM RELOAD STATISTICS alters_stats;
+--SELECT sleep(1);
 
 SHOW CREATE TABLE alters_stats;
 
@@ -52,21 +50,22 @@ EXPLAIN SYNTAX SELECT a, b, c, d, heavy, heavy2 FROM alters_stats WHERE a == 10 
 
 ALTER TABLE alters_stats MATERIALIZE STATISTIC st1;
 ALTER TABLE alters_stats MATERIALIZE STATISTIC st3;
-
 SYSTEM RELOAD STATISTICS alters_stats;
+--SELECT sleep(1);
 
 EXPLAIN SYNTAX SELECT a, b, c, d, heavy, heavy2 FROM alters_stats WHERE a == 10 AND b == 100 AND c == 0 AND d == 100;
 
 ALTER TABLE alters_stats DROP STATISTIC st3;
-
 SYSTEM RELOAD STATISTICS alters_stats;
+--SELECT sleep(1);
 
 EXPLAIN SYNTAX SELECT a, b, c, d, heavy, heavy2 FROM alters_stats WHERE a == 10 AND b == 100 AND c == 3 AND d == 100;
 
 ALTER TABLE alters_stats CLEAR STATISTIC st1;
-SHOW CREATE TABLE alters_stats;
-
 SYSTEM RELOAD STATISTICS alters_stats;
+--SELECT sleep(1);
+
+SHOW CREATE TABLE alters_stats;
 
 EXPLAIN SYNTAX SELECT a, b, c, d, heavy, heavy2 FROM alters_stats WHERE a == 10 AND b == 100 AND c == 3 AND d == 100;
 

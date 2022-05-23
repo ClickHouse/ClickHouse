@@ -35,7 +35,12 @@ String generateFileNameForStatistics(const String & name) {
 
 bool MergeTreeDistributionStatistics::empty() const
 {
-    return column_to_stats.empty();
+    for (const auto& [column, stat] : column_to_stats) {
+        if (!stat->empty()) {
+            return false;
+        }
+    }
+    return true;
 }
 
 void MergeTreeDistributionStatistics::merge(const std::shared_ptr<IDistributionStatistics> & other)
@@ -80,7 +85,7 @@ std::optional<double> MergeTreeDistributionStatistics::estimateProbability(const
     const auto & stat = column_to_stats.at(column);
     if (stat->empty())
     {
-        return 1;
+        return std::nullopt;
     }
     return stat->estimateProbability(lower, upper);
 }
