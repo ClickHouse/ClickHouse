@@ -3,7 +3,6 @@
 #if USE_AZURE_BLOB_STORAGE
 
 #include <IO/WriteBufferFromAzureBlobStorage.h>
-#include <Disks/RemoteDisksCommon.h>
 #include <Common/getRandomASCIIString.h>
 #include <Common/logger_useful.h>
 

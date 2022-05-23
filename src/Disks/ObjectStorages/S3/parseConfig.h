@@ -6,15 +6,14 @@
 
 #include <aws/core/client/DefaultRetryStrategy.h>
 #include <IO/S3Common.h>
-#include <Disks/S3/DiskS3.h>
-#include "Disks/DiskCacheWrapper.h"
-#include "Storages/StorageS3Settings.h"
-#include "ProxyConfiguration.h"
-#include "ProxyListConfiguration.h"
-#include "ProxyResolverConfiguration.h"
-#include "Disks/DiskRestartProxy.h"
-#include "Disks/DiskLocal.h"
-#include "Disks/RemoteDisksCommon.h"
+#include <Disks/DiskCacheWrapper.h>
+#include <Storages/StorageS3Settings.h>
+#include <Disks/ObjectStorages/S3/ProxyConfiguration.h>
+#include <Disks/ObjectStorages/S3/ProxyListConfiguration.h>
+#include <Disks/ObjectStorages/S3/ProxyResolverConfiguration.h>
+#include <Disks/DiskRestartProxy.h>
+#include <Disks/DiskLocal.h>
+#include <Disks/ObjectStorages/DiskObjectStorageCommon.h>
 #include <Common/FileCacheFactory.h>
 
 

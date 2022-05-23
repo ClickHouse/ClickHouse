@@ -3,7 +3,7 @@
 #if USE_AWS_S3
 
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
-#include <Disks/RemoteDisksCommon.h>
+#include <Disks/ObjectStorages/DiskObjectStorageCommon.h>
 #include <Disks/IO/AsynchronousReadIndirectBufferFromRemoteFS.h>
 #include <Disks/IO/ReadIndirectBufferFromRemoteFS.h>
 #include <Disks/IO/WriteIndirectBufferFromRemoteFS.h>

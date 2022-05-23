@@ -3,7 +3,7 @@
 
 #if USE_AZURE_BLOB_STORAGE
 
-#include <Disks/RemoteDisksCommon.h>
+#include <Disks/ObjectStorages/DiskObjectStorageCommon.h>
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
 #include <Disks/IO/AsynchronousReadIndirectBufferFromRemoteFS.h>
 #include <Disks/IO/ReadIndirectBufferFromRemoteFS.h>

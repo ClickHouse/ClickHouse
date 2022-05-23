@@ -6,7 +6,7 @@
 
 #include <Disks/DiskRestartProxy.h>
 #include <Disks/DiskCacheWrapper.h>
-#include <Disks/RemoteDisksCommon.h>
+#include <Disks/ObjectStorages/DiskObjectStorageCommon.h>
 #include <Disks/ObjectStorages/DiskObjectStorage.h>
 
 #include <Disks/ObjectStorages/AzureBlobStorage/AzureBlobStorageAuth.h>
