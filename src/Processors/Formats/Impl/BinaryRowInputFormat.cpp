@@ -114,7 +114,6 @@ void registerInputFormatRowBinary(FormatFactory & factory)
     };
 
     registerWithNamesAndTypes("RowBinary", register_func);
-    factory.markFormatSupportsSubsetOfColumns("RowBinaryWithNamesAndTypes");
     factory.registerFileExtension("bin", "RowBinary");
 }
 

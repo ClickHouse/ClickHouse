@@ -8,13 +8,11 @@
             <name>format</name>
             <values>
                 <value>TabSeparatedWithNames</value>
-                <value>TabSeparatedRawWithNames</value>
                 <value>CustomSeparatedWithNames</value>
                 <value>CSVWithNames</value>
                 <value>JSONEachRow</value>
                 <value>JSONCompactEachRowWithNames</value>
                 <value>TSKV</value>
-                <value>RowBinaryWithNamesAndTypes</value>
                 <value>Avro</value>
                 <value>ORC</value>
                 <value>Parquet</value>
