@@ -329,7 +329,9 @@ void KeeperStorage::UncommittedState::commit(int64_t commit_zxid)
     }
 
     // delete all cached nodes that were not modified after the commit_zxid
-    std::erase_if(nodes, [commit_zxid](const auto & node) { return node.second.zxid == commit_zxid; });
+    // the commit can end on SubDeltaEnd so we don't want to clear cached nodes too soon
+    if (deltas.empty() || deltas.front().zxid > commit_zxid)
+        std::erase_if(nodes, [commit_zxid](const auto & node) { return node.second.zxid == commit_zxid; });
 }
 
 void KeeperStorage::UncommittedState::rollback(int64_t rollback_zxid)
@@ -343,6 +345,35 @@ void KeeperStorage::UncommittedState::rollback(int64_t rollback_zxid)
             "Invalid state of deltas found while trying to rollback request. Last ZXID ({}) is larger than the requested ZXID ({})",
             last_zxid,
             rollback_zxid);
+
+    // we need to undo ephemeral mapping modifications
+    // CreateNodeDelta added ephemeral for session id -> we need to remove it
+    // RemoveNodeDelta removed ephemeral for session id -> we need to add it back
+    for (auto delta_it = deltas.rbegin(); delta_it != deltas.rend(); ++delta_it)
+    {
+        if (delta_it->zxid < rollback_zxid)
+            break;
+
+        assert(delta_it->zxid == rollback_zxid);
+        if (!delta_it->path.empty())
+        {
+            std::visit(
+                [&]<typename DeltaType>(const DeltaType & operation)
+                {
+                    if constexpr (std::same_as<DeltaType, CreateNodeDelta>)
+                    {
+                        if (operation.stat.ephemeralOwner != 0)
+                            storage.unregisterEphemeralPath(operation.stat.ephemeralOwner, delta_it->path);
+                    }
+                    else if constexpr (std::same_as<DeltaType, RemoveNodeDelta>)
+                    {
+                        if (operation.ephemeral_owner != 0)
+                            storage.ephemerals[operation.ephemeral_owner].emplace(delta_it->path);
+                    }
+                },
+                delta_it->operation);
+        }
+    }
 
     std::erase_if(deltas, [rollback_zxid](const auto & delta) { return delta.zxid == rollback_zxid; });
 
@@ -546,15 +577,6 @@ bool KeeperStorage::removeNode(const std::string & path, int32_t version)
         return false;
 
     auto prev_node = node_it->value;
-    if (prev_node.stat.ephemeralOwner != 0)
-    {
-        auto ephemerals_it = ephemerals.find(prev_node.stat.ephemeralOwner);
-        assert(ephemerals_it != ephemerals.end());
-        ephemerals_it->second.erase(path);
-        if (ephemerals_it->second.empty())
-            ephemerals.erase(ephemerals_it);
-    }
-
     acl_map.removeUsage(prev_node.acl_id);
 
     container.updateValue(
@@ -664,6 +686,14 @@ bool KeeperStorage::checkACL(StringRef path, int32_t permission, int64_t session
     return false;
 }
 
+void KeeperStorage::unregisterEphemeralPath(int64_t session_id, const std::string & path)
+{
+    auto ephemerals_it = ephemerals.find(session_id);
+    assert(ephemerals_it != ephemerals.end());
+    ephemerals_it->second.erase(path);
+    if (ephemerals_it->second.empty())
+        ephemerals.erase(ephemerals_it);
+}
 
 struct KeeperStorageCreateRequestProcessor final : public KeeperStorageRequestProcessor
 {
@@ -878,11 +908,15 @@ struct KeeperStorageRemoveRequestProcessor final : public KeeperStorageRequestPr
             new_deltas.emplace_back(
                 std::string{parent_path},
                 zxid,
-                KeeperStorage::UpdateNodeDelta{[zxid](KeeperStorage::Node & parent)
-                                               {
-                                                   if (parent.stat.pzxid < zxid)
-                                                       parent.stat.pzxid = zxid;
-                                               }});
+                KeeperStorage::UpdateNodeDelta
+                {
+                    [zxid](KeeperStorage::Node & parent)
+                    {
+                        if (parent.stat.pzxid < zxid)
+                            parent.stat.pzxid = zxid;
+                   }
+                }
+            );
         };
 
         auto node = storage.uncommitted_state.getNode(request.path);
@@ -910,7 +944,10 @@ struct KeeperStorageRemoveRequestProcessor final : public KeeperStorageRequestPr
                                                ++parent.stat.cversion;
                                            }});
 
-        new_deltas.emplace_back(request.path, zxid, KeeperStorage::RemoveNodeDelta{request.version});
+        if (node->stat.ephemeralOwner != 0)
+            storage.unregisterEphemeralPath(node->stat.ephemeralOwner, request.path);
+
+        new_deltas.emplace_back(request.path, zxid, KeeperStorage::RemoveNodeDelta{request.version, node->stat.ephemeralOwner});
 
         digest = storage.calculateNodesDigest(digest, new_deltas);
 
@@ -1567,10 +1604,6 @@ void KeeperStorage::finalize()
 
     finalized = true;
 
-    for (const auto & [session_id, ephemerals_paths] : ephemerals)
-        for (const String & ephemeral_path : ephemerals_paths)
-            container.erase(ephemeral_path);
-
     ephemerals.clear();
 
     watches.clear();
@@ -1753,23 +1786,24 @@ void KeeperStorage::preprocessRequest(
         {
             for (const auto & ephemeral_path : session_ephemerals->second)
             {
-                // For now just add deltas for removing the node
-                // On commit, ephemerals nodes will be deleted from storage
-                // and removed from the session
-                if (uncommitted_state.getNode(ephemeral_path))
-                {
-                    new_deltas.emplace_back(
-                        parentPath(ephemeral_path).toString(),
-                        new_last_zxid,
-                        UpdateNodeDelta{[ephemeral_path](Node & parent)
-                                        {
-                                            --parent.stat.numChildren;
-                                            ++parent.stat.cversion;
-                                        }});
+                new_deltas.emplace_back
+                (
+                    parentPath(ephemeral_path).toString(),
+                    new_last_zxid,
+                    UpdateNodeDelta
+                    {
+                        [ephemeral_path](Node & parent)
+                        {
+                            --parent.stat.numChildren;
+                            ++parent.stat.cversion;
+                        }
+                    }
+                );
 
-                    new_deltas.emplace_back(ephemeral_path, new_last_zxid, RemoveNodeDelta());
-                }
+                new_deltas.emplace_back(ephemeral_path, transaction.zxid, RemoveNodeDelta{.ephemeral_owner = session_id});
             }
+
+            ephemerals.erase(session_ephemerals);
         }
 
         new_digest = calculateNodesDigest(new_digest, new_deltas);

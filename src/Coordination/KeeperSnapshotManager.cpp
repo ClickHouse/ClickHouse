@@ -388,6 +388,7 @@ KeeperStorageSnapshot::KeeperStorageSnapshot(KeeperStorage * storage_, uint64_t 
     , session_id(storage->session_id_counter)
     , cluster_config(cluster_config_)
     , zxid(storage->zxid)
+    , nodes_digest(storage->nodes_digest)
 {
     auto [size, ver] = storage->container.snapshotSizeWithVersion();
     snapshot_container_size = size;

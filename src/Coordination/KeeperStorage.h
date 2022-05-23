@@ -154,6 +154,7 @@ public:
     struct RemoveNodeDelta
     {
         int32_t version{-1};
+        int64_t ephemeral_owner{0};
     };
 
     struct UpdateNodeDelta
@@ -273,6 +274,8 @@ public:
     bool removeNode(const std::string & path, int32_t version);
 
     bool checkACL(StringRef path, int32_t permissions, int64_t session_id, bool is_local);
+
+    void unregisterEphemeralPath(int64_t session_id, const std::string & path);
 
     /// Mapping session_id -> set of ephemeral nodes paths
     Ephemerals ephemerals;
