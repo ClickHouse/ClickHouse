@@ -32,7 +32,7 @@ void DependenciesGraph::resetState()
 
 void DependenciesGraph::addTask(DDLTaskPtr & task)
 {
-    LOG_DEBUG(log, "Start adding task");
+    LOG_DEBUG(log, "Start  adding task");
     tasks_dependencies.total_queries++;
     auto name = task->entry_name;
     LOG_DEBUG(log, "Got name");
