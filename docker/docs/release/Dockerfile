@@ -20,28 +20,22 @@ RUN apt-get update \
             openssl \
             python3-pip \
             software-properties-common \
-            language-pack-zh* \
-            chinese* \
             fonts-arphic-ukai \
             fonts-arphic-uming \
             fonts-ipafont-mincho \
             fonts-ipafont-gothic \
             fonts-unfonts-core \
             xvfb \
-            nodejs \
-            npm \
-            openjdk-11-jdk \
             ssh-client \
-    && pip --no-cache-dir install scipy \
     && apt-get autoremove --yes \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-RUN wget 'https://github.com/wkhtmltopdf/packaging/releases/download/0.12.6-1/wkhtmltox_0.12.6-1.focal_amd64.deb'
-
-RUN npm i -g purify-css
-
 RUN pip3 install --ignore-installed --upgrade setuptools pip virtualenv
+
+# We create the most popular default 1000:1000 ubuntu user to not have ssh issues when running with UID==1000
+RUN useradd --create-home --uid 1000 --user-group ubuntu \
+  && ssh-keyscan -t rsa github.com >> /etc/ssh/ssh_known_hosts
 
 COPY run.sh /
 
