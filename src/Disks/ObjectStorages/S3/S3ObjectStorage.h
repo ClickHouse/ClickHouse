@@ -79,7 +79,7 @@ public:
         const WriteSettings & write_settings = {}) override;
 
     void listPrefix(const std::string & path, BlobsPathToSize & children) const override;
-    /// Remove file. Throws exception if file doesn't exists or it's a directory.
+    /// Remove file. Throws exception if file doesn't exist or it's a directory.
     void removeObject(const std::string & path) override;
 
     void removeObjects(const std::vector<std::string> & paths) override;
