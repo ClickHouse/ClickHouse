@@ -142,7 +142,7 @@ void DependenciesGraph::logDependencyGraph() const
              tasks_dependencies.independent_queries.size());
     for (const auto & independent_query : tasks_dependencies.independent_queries)
     {
-        const auto & query_dependencies = tasks_dependencies.dependencies_info.at(independent_query);
+        auto & query_dependencies = tasks_dependencies.dependencies_info.at(independent_query);
 
         LOG_TEST(log,
                  "Independent query: {} have {} dependencies and {} dependent queries.",
