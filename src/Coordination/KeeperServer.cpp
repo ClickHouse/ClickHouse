@@ -500,7 +500,7 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
                     raft_instance->forceReconfigure(config);
 
                     // Single node cluster doesn't need to wait for any other nodes
-                    // so we can finish recovering immediatelly after applying
+                    // so we can finish recovering immediately after applying
                     // new configuration
                     if (config->get_servers().size() == 1)
                         finish_recovering();

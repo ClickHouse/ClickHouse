@@ -21,7 +21,7 @@ def get_nodes():
                 f"node{i+1}",
                 main_configs=[
                     f"configs/enable_keeper{i+1}.xml",
-                    f"configs/use_keeper.xml"
+                    f"configs/use_keeper.xml",
                 ],
                 stay_alive=True,
             )
