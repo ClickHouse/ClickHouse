@@ -12,7 +12,7 @@ class DiskObjectStorage;
 ///
 /// This mechanism can be enabled with `<send_metadata>true</send_metadata>` option inside
 /// disk configuration. Implemented only for S3 and Azure Blob storage. Other object storages
-/// doesn't support metadata for blobs.
+/// don't support metadata for blobs.
 ///
 /// FIXME: this class is very intrusive and use a lot of DiskObjectStorage internals.
 /// FIXME: it's very complex and unreliable, need to implement something better.
