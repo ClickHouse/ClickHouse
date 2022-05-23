@@ -73,24 +73,8 @@ public:
             up[vertex] = tin[vertex];
         }
 
-        std::string s;
-
-        // if constexpr (std::is_same_v<Vertex, UInt64>) {
-        //     s += "order = ";
-        //     for (auto i : order) {
-        //         s += std::to_string(i);
-        //         s += " ";
-        //     }
-        //     s += "tin = ";
-        //     for (auto i : order) {
-        //         s += std::to_string(tin[i]);
-        //         s += " ";
-        //     }
-        // }
-
         for (Vertex vertex : order)
         {
-            // up[vertex] = tin[vertex];
             used.insert(vertex);
             Vertex parent = parents.at(vertex);
             HashMap<Vertex, UInt64> edges;
@@ -107,9 +91,6 @@ public:
                         up[vertex] = std::min(up[vertex], up[next]);
                         if (up[next] > tin[vertex] && edges.at(next) == 1)
                         {
-                            // if constexpr (std::is_same_v<Vertex, UInt64>) {
-                            //     s += "vertex = " + std::to_string(vertex) + ", next = " + std::to_string(next) + " | ";
-                            // }
                             ++cntBridges;
                         }
                     }
@@ -120,39 +101,6 @@ public:
                 }
             }
         }
-
-        // if constexpr (std::is_same_v<Vertex, UInt64>) {
-        //     s += "up = ";
-        //     for (auto i : order) {
-        //         s += std::to_string(up[i]);
-        //         s += " ";
-        //     }
-        //     s += "\n";
-        // }
-
-        // std::cout << s << std::endl;
-
-        // throw std::runtime_error(s);
-
-        // used.insert(vertex);
-        // tin[vertex] = timer;
-        // up[vertex] = timer;
-        // ++timer;
-
-        // for (Vertex next : data(place).graph.at(vertex))
-        // {
-        //     if (next == parent)
-        //         continue;
-        //     else if (used.has(next))
-        //         up[vertex] = std::min(up[vertex], tin[next]);
-        //     else
-        //     {
-        //         countBridges(place, next, vertex, used, tin, up, cntBridges, timer);
-        //         up[vertex] = std::min(up[vertex], up[next]);
-        //         if (up[next] > tin[vertex])
-        //             ++cntBridges;
-        //     }
-        // }
     }
 
     UInt64 calculateOperation(ConstAggregateDataPtr __restrict place, Arena *) const

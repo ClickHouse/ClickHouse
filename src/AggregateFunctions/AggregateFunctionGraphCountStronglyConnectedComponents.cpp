@@ -63,13 +63,6 @@ public:
                 }
             }
         }
-        // typename VertexSet::LookupResult it;
-        // bool inserted;
-        // used.emplace(vertex, it, inserted);
-        // if (!inserted)
-        //     return;
-        // for (Vertex next : reverseGraph.at(vertex))
-        //     dfsColor(reverseGraph, next, used);
     }
 
     static GraphType createReverseGraph(const GraphType & graph)
