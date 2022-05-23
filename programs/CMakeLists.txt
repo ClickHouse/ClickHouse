@@ -62,6 +62,8 @@ option (ENABLE_CLICKHOUSE_KEEPER "ClickHouse alternative to ZooKeeper" ${ENABLE_
 
 option (ENABLE_CLICKHOUSE_KEEPER_CONVERTER "Util allows to convert ZooKeeper logs and snapshots into clickhouse-keeper snapshot" ${ENABLE_CLICKHOUSE_ALL})
 
+option (ENABLE_CLICKHOUSE_SU "A tool similar to 'su'" ${ENABLE_CLICKHOUSE_ALL})
+
 if (NOT ENABLE_NURAFT)
     # RECONFIGURE_MESSAGE_LEVEL should not be used here,
     # since ENABLE_NURAFT is set to OFF for FreeBSD and Darwin.
@@ -237,6 +239,7 @@ add_subdirectory (install)
 add_subdirectory (git-import)
 add_subdirectory (bash-completion)
 add_subdirectory (static-files-disk-uploader)
+add_subdirectory (su)
 
 if (ENABLE_CLICKHOUSE_KEEPER)
     add_subdirectory (keeper)
@@ -269,7 +272,8 @@ if (CLICKHOUSE_ONE_SHARED)
     ${CLICKHOUSE_ODBC_BRIDGE_SOURCES}
     ${CLICKHOUSE_KEEPER_SOURCES}
     ${CLICKHOUSE_KEEPER_CONVERTER_SOURCES}
-    ${CLICKHOUSE_STATIC_FILES_DISK_UPLOADER_SOURCES})
+    ${CLICKHOUSE_STATIC_FILES_DISK_UPLOADER_SOURCES}
+    ${CLICKHOUSE_SU_SOURCES})
 
     target_link_libraries(clickhouse-lib
       ${CLICKHOUSE_SERVER_LINK}
@@ -285,7 +289,8 @@ if (CLICKHOUSE_ONE_SHARED)
       ${CLICKHOUSE_ODBC_BRIDGE_LINK}
       ${CLICKHOUSE_KEEPER_LINK}
       ${CLICKHOUSE_KEEPER_CONVERTER_LINK}
-      ${CLICKHOUSE_STATIC_FILES_DISK_UPLOADER_LINK})
+      ${CLICKHOUSE_STATIC_FILES_DISK_UPLOADER_LINK}
+      ${CLICKHOUSE_SU_LINK})
 
     target_include_directories(clickhouse-lib
       ${CLICKHOUSE_SERVER_INCLUDE}
@@ -319,7 +324,7 @@ if (CLICKHOUSE_SPLIT_BINARY)
         clickhouse-git-import
         clickhouse-copier
         clickhouse-static-files-disk-uploader
-    )
+        clickhouse-su)
 
     if (ENABLE_CLICKHOUSE_ODBC_BRIDGE)
         list (APPEND CLICKHOUSE_ALL_TARGETS clickhouse-odbc-bridge)
@@ -387,6 +392,9 @@ else ()
     if (ENABLE_CLICKHOUSE_STATIC_FILES_DISK_UPLOADER)
         clickhouse_target_link_split_lib(clickhouse static-files-disk-uploader)
     endif ()
+    if (ENABLE_CLICKHOUSE_SU)
+        clickhouse_target_link_split_lib(clickhouse su)
+    endif ()
     if (ENABLE_CLICKHOUSE_KEEPER)
         clickhouse_target_link_split_lib(clickhouse keeper)
     endif()
@@ -452,6 +460,11 @@ else ()
         add_custom_target (clickhouse-static-files-disk-uploader ALL COMMAND ${CMAKE_COMMAND} -E create_symlink clickhouse clickhouse-static-files-disk-uploader DEPENDS clickhouse)
         install (FILES "${CMAKE_CURRENT_BINARY_DIR}/clickhouse-static-files-disk-uploader" DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
         list(APPEND CLICKHOUSE_BUNDLE clickhouse-static-files-disk-uploader)
+    endif ()
+    if (ENABLE_CLICKHOUSE_SU)
+        add_custom_target (clickhouse-su ALL COMMAND ${CMAKE_COMMAND} -E create_symlink clickhouse clickhouse-su DEPENDS clickhouse)
+        install (FILES "${CMAKE_CURRENT_BINARY_DIR}/clickhouse-su" DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
+        list(APPEND CLICKHOUSE_BUNDLE clickhouse-su)
     endif ()
 
     if (ENABLE_CLICKHOUSE_KEEPER)

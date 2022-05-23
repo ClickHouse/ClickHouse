@@ -925,10 +925,7 @@ namespace
             executable.string(), config.string(), pid_file.string());
 
         if (!user.empty())
-        {
-            if (0 != setenv("CLICKHOUSE_SETUID", user.c_str(), true))
-                throwFromErrno("Cannot set environment variable CLICKHOUSE_SETUID that is required to dropping privileges", ErrorCodes::SYSTEM_ERROR);
-        }
+            command = fmt::format("clickhouse su '{}' {}", user, command);
 
         fmt::print("Will run {}\n", command);
         executeScript(command, true);
