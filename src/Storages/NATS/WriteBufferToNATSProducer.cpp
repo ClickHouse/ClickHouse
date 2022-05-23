@@ -125,18 +125,26 @@ void WriteBufferToNATSProducer::publishThreadFunc(void * arg)
 
 void WriteBufferToNATSProducer::writingFunc()
 {
-    while ((!payloads.empty() || wait_all) && !shutdown_called.load())
+    try
     {
-        publish();
+        while ((!payloads.empty() || wait_all) && !shutdown_called.load())
+        {
+            publish();
 
-        LOG_DEBUG(log, "Writing func {} {} {}", wait_payloads.load(), payloads.empty(), natsConnection_Buffered(connection.getConnection()));
-        if (wait_payloads.load() && payloads.empty() && natsConnection_Buffered(connection.getConnection()) == 0)
-            wait_all = false;
+            LOG_DEBUG(
+                log, "Writing func {} {} {}", wait_payloads.load(), payloads.empty(), natsConnection_Buffered(connection.getConnection()));
+            if (wait_payloads.load() && payloads.empty() && natsConnection_Buffered(connection.getConnection()) == 0)
+                wait_all = false;
 
-        if (!connection.isConnected() && wait_all)
-            connection.reconnect();
+            if (!connection.isConnected() && wait_all)
+                connection.reconnect();
 
-        iterateEventLoop();
+            iterateEventLoop();
+        }
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log);
     }
 
     LOG_DEBUG(log, "Producer on subject {} completed", subject);
