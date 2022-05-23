@@ -55,19 +55,19 @@ void setUserAndGroup(std::string arg_uid, std::string arg_gid)
             group * result{};
 
             if (0 != getgrnam_r(arg_gid.data(), &entry, buf.get(), buf_size, &result))
-                throwFromErrno(fmt::format("Cannot do 'getgrnam_r' to obtain gid from group name, specified in the CLICKHOUSE_SETGID environment variable ({})", arg_gid), ErrorCodes::SYSTEM_ERROR);
+                throwFromErrno(fmt::format("Cannot do 'getgrnam_r' to obtain gid from group name ({})", arg_gid), ErrorCodes::SYSTEM_ERROR);
 
             if (!result)
-                throw Exception("Group {} specified in the CLICKHOUSE_SETGID environment variable is not found in the system", ErrorCodes::BAD_ARGUMENTS);
+                throw Exception("Group {} is not found in the system", ErrorCodes::BAD_ARGUMENTS);
 
             gid = entry.gr_gid;
         }
 
         if (gid == 0)
-            throw Exception("Group specified in the CLICKHOUSE_SETGID environment variable has id 0, but dropping privileges to gid 0 does not make sense", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception("Group has id 0, but dropping privileges to gid 0 does not make sense", ErrorCodes::BAD_ARGUMENTS);
 
         if (0 != setgid(gid))
-            throwFromErrno(fmt::format("Cannot do 'setgid' to user, specified in the CLICKHOUSE_SETGID environment variable ({})", arg_gid), ErrorCodes::SYSTEM_ERROR);
+            throwFromErrno(fmt::format("Cannot do 'setgid' to user ({})", arg_gid), ErrorCodes::SYSTEM_ERROR);
     }
 
     if (!arg_uid.empty())
@@ -80,19 +80,19 @@ void setUserAndGroup(std::string arg_uid, std::string arg_gid)
             passwd * result{};
 
             if (0 != getpwnam_r(arg_uid.data(), &entry, buf.get(), buf_size, &result))
-                throwFromErrno(fmt::format("Cannot do 'getpwnam_r' to obtain uid from user name, specified in the CLICKHOUSE_SETUID environment variable ({})", arg_uid), ErrorCodes::SYSTEM_ERROR);
+                throwFromErrno(fmt::format("Cannot do 'getpwnam_r' to obtain uid from user name ({})", arg_uid), ErrorCodes::SYSTEM_ERROR);
 
             if (!result)
-                throw Exception("User {} specified in the CLICKHOUSE_SETUID environment variable is not found in the system", ErrorCodes::BAD_ARGUMENTS);
+                throw Exception("User {} is not found in the system", ErrorCodes::BAD_ARGUMENTS);
 
             uid = entry.pw_uid;
         }
 
         if (uid == 0)
-            throw Exception("User specified in the CLICKHOUSE_SETUID environment variable has id 0, but dropping privileges to uid 0 does not make sense", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception("User has id 0, but dropping privileges to uid 0 does not make sense", ErrorCodes::BAD_ARGUMENTS);
 
         if (0 != setuid(uid))
-            throwFromErrno(fmt::format("Cannot do 'setuid' to user, specified in the CLICKHOUSE_SETUID environment variable ({})", arg_uid), ErrorCodes::SYSTEM_ERROR);
+            throwFromErrno(fmt::format("Cannot do 'setuid' to user ({})", arg_uid), ErrorCodes::SYSTEM_ERROR);
     }
 }
 
