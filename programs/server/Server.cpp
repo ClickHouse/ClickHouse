@@ -1095,7 +1095,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
             total_memory_tracker.setMetric(CurrentMetrics::MemoryTracking);
 
             auto * global_overcommit_tracker = global_context->getGlobalOvercommitTracker();
-            UInt64 max_overcommit_wait_time = config->getUInt64("global_memory_usage_overcommit_max_wait_microseconds", 200);
+            UInt64 max_overcommit_wait_time = config->getUInt64("global_memory_usage_overcommit_max_wait_microseconds", 5'000'000);
             global_overcommit_tracker->setMaxWaitTime(max_overcommit_wait_time);
             total_memory_tracker.setOvercommitTracker(global_overcommit_tracker);
 
