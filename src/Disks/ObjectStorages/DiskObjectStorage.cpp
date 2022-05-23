@@ -423,8 +423,9 @@ void DiskObjectStorage::removeMetadata(const String & path, std::vector<String> 
             {
                 for (const auto & [remote_fs_object_path, _] : metadata.remote_fs_objects)
                 {
-                    paths_to_remove.push_back(fs::path(remote_fs_root_path) / remote_fs_object_path);
-                    object_storage->removeFromCache(fs::path(remote_fs_root_path) / remote_fs_object_path);
+                    String object_path = fs::path(remote_fs_root_path) / remote_fs_object_path;
+                    paths_to_remove.push_back(object_path);
+                    object_storage->removeFromCache(object_path);
                 }
 
                 return false;
