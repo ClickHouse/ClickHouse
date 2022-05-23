@@ -170,7 +170,7 @@ endif ()
 target_compile_definitions(_jemalloc PRIVATE -DJEMALLOC_PROF=1)
 
 if (USE_UNWIND)
-    target_compile_definitions (_jemalloc PRIVATE -DJEMALLOC_PROF_LIBUNWIND=1)
+    target_compile_definitions (_jemalloc PRIVATE -DJEMALLOC_PROF_LIBGCC=1)
     target_link_libraries (_jemalloc PRIVATE unwind)
 endif ()
 
