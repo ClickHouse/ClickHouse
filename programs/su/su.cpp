@@ -133,6 +133,6 @@ try
 }
 catch (...)
 {
-    std::cerr << DB::getCurrentExceptionMessage(false);
+    std::cerr << DB::getCurrentExceptionMessage(false) << '\n';
     return 1;
 }
