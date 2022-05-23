@@ -1,9 +1,9 @@
 #include <string>
 #include <fmt/format.h>
 
+#include <Columns/IColumn.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnVector.h>
-#include <Columns/IColumn.h>
 
 #include <Core/Block.h>
 #include <Core/ColumnsWithTypeAndName.h>
