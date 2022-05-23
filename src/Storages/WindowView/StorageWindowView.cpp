@@ -497,7 +497,8 @@ std::pair<BlocksPtr, Block> StorageWindowView::getNewBlocks(UInt32 watermark)
     });
 
     Pipes pipes;
-    auto pipe = QueryPipelineBuilder::getPipe(std::move(builder));
+    QueryPlanResourceHolder resources;
+    auto pipe = QueryPipelineBuilder::getPipe(std::move(builder), resources);
     pipes.emplace_back(std::move(pipe));
 
     auto creator = [&](const StorageID & blocks_id_global)

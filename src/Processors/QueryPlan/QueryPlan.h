@@ -37,12 +37,6 @@ namespace JSONBuilder
     using ItemPtr = std::unique_ptr<IItem>;
 }
 
-struct PipelineBuilderWithResources
-{
-    QueryPipelineBuilderPtr builder;
-    QueryPlanResourceHolder resources;
-};
-
 /// A tree of query steps.
 /// The goal of QueryPlan is to build QueryPipeline.
 /// QueryPlan let delay pipeline creation which is helpful for pipeline-level optimizations.
@@ -63,7 +57,7 @@ public:
 
     void optimize(const QueryPlanOptimizationSettings & optimization_settings);
 
-    PipelineBuilderWithResources buildQueryPipeline(
+    QueryPipelineBuilderPtr buildQueryPipeline(
         const QueryPlanOptimizationSettings & optimization_settings,
         const BuildQueryPipelineSettings & build_pipeline_settings);
 
@@ -117,6 +111,7 @@ public:
     using Nodes = std::list<Node>;
 
 private:
+    QueryPlanResourceHolder resources;
     Nodes nodes;
     Node * root = nullptr;
 
@@ -125,8 +120,6 @@ private:
 
     /// Those fields are passed to QueryPipeline.
     size_t max_threads = 0;
-
-    QueryPlanResourceHolder resources;
 };
 
 std::string debugExplainStep(const IQueryPlanStep & step);

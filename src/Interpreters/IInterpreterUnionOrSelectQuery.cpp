@@ -14,14 +14,14 @@ void IInterpreterUnionOrSelectQuery::extendQueryLogElemImpl(QueryLogElement & el
 }
 
 
-PipelineBuilderWithResources IInterpreterUnionOrSelectQuery::buildQueryPipeline()
+QueryPipelineBuilder IInterpreterUnionOrSelectQuery::buildQueryPipeline()
 {
     QueryPlan query_plan;
 
     buildQueryPlan(query_plan);
 
-    return query_plan.buildQueryPipeline(
-        QueryPlanOptimizationSettings::fromContext(context), BuildQueryPipelineSettings::fromContext(context));
+    return std::move(*query_plan.buildQueryPipeline(
+        QueryPlanOptimizationSettings::fromContext(context), BuildQueryPipelineSettings::fromContext(context)));
 }
 
 static StreamLocalLimits getLimitsForStorage(const Settings & settings, const SelectQueryOptions & options)

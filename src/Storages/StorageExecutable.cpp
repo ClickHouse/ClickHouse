@@ -141,9 +141,8 @@ Pipe StorageExecutable::read(
     for (auto & input_query : input_queries)
     {
         InterpreterSelectWithUnionQuery interpreter(input_query, context, {});
-        auto pipeline = interpreter.buildQueryPipeline();
-        resources = std::move(pipeline.resources);
-        inputs.emplace_back(QueryPipelineBuilder::getPipe(std::move(*pipeline.builder)));
+        auto builder = interpreter.buildQueryPipeline();
+        inputs.emplace_back(QueryPipelineBuilder::getPipe(std::move(builder), resources));
     }
 
     /// For executable pool we read data from input streams and convert it to single blocks streams.

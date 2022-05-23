@@ -73,7 +73,7 @@ StoragePtr InterpreterInsertQuery::getTable(ASTInsertQuery & query)
             InterpreterSelectWithUnionQuery interpreter_select{
                 query.select, getContext(), SelectQueryOptions(QueryProcessingStage::Complete, 1)};
             auto tmp_pipeline = interpreter_select.buildQueryPipeline();
-            ColumnsDescription structure_hint{tmp_pipeline.builder->getHeader().getNamesAndTypesList()};
+            ColumnsDescription structure_hint{tmp_pipeline.getHeader().getNamesAndTypesList()};
             table_function_ptr->setStructureHint(structure_hint);
         }
 
@@ -363,18 +363,14 @@ BlockIO InterpreterInsertQuery::execute()
 
                 InterpreterSelectWithUnionQuery interpreter_select{
                     query.select, new_context, SelectQueryOptions(QueryProcessingStage::Complete, 1)};
-                auto builder = interpreter_select.buildQueryPipeline();
-                pipeline = std::move(*builder.builder);
-                resources = std::move(builder.resources);
+                pipeline = interpreter_select.buildQueryPipeline();
             }
             else
             {
                 /// Passing 1 as subquery_depth will disable limiting size of intermediate result.
                 InterpreterSelectWithUnionQuery interpreter_select{
                     query.select, getContext(), SelectQueryOptions(QueryProcessingStage::Complete, 1)};
-                auto builder = interpreter_select.buildQueryPipeline();
-                pipeline = std::move(*builder.builder);
-                resources = std::move(builder.resources);
+                pipeline = interpreter_select.buildQueryPipeline();
             }
 
             pipeline.dropTotalsAndExtremes();

@@ -144,13 +144,17 @@ public:
             max_threads = max_threads_;
     }
 
+    void addResources(QueryPlanResourceHolder resources_) { resources = std::move(resources_); }
+
     /// Convert query pipeline to pipe.
-    static Pipe getPipe(QueryPipelineBuilder pipeline) { return std::move(pipeline.pipe); }
+    static Pipe getPipe(QueryPipelineBuilder pipeline, QueryPlanResourceHolder & resources);
     static QueryPipeline getPipeline2(QueryPipelineBuilder builder);
     static void updatePipeline(QueryPipelineBuilder builder, QueryPipeline & query_pipeline);
 
 private:
 
+    /// Destruction order: processors, header, locks, temporary storages, local contexts
+    QueryPlanResourceHolder resources;
     Pipe pipe;
 
     /// Limit on the number of threads. Zero means no limit.
