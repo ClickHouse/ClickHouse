@@ -16,7 +16,6 @@ namespace DB
 
     TableNamesSet getDependenciesSetFromQuery(ContextMutablePtr global_context, const ASTPtr & ast)
     {
-        assert(global_context == global_context->getGlobalContext());
         DistributedDDLDependenciesVisitor::Data data;
         data.default_database = global_context->getCurrentDatabase();
         data.query = ast;
