@@ -907,8 +907,8 @@ SortDescription InterpreterSelectQuery::getSortDescription(const ASTSelectQuery 
             order_descr.emplace_back(name, order_by_elem.direction, order_by_elem.nulls_direction, collator);
     }
 
-    order_descr.compile_sort_description = context->getSettingsRef().compile_sort_description;
-    order_descr.min_count_to_compile_sort_description = context->getSettingsRef().min_count_to_compile_sort_description;
+    order_descr.compile_sort_description = context_->getSettingsRef().compile_sort_description;
+    order_descr.min_count_to_compile_sort_description = context_->getSettingsRef().min_count_to_compile_sort_description;
 
     return order_descr;
 }
