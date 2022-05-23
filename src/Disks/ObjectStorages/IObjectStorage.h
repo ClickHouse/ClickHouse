@@ -72,14 +72,14 @@ public:
     /// at least size of object
     virtual ObjectMetadata getObjectMetadata(const std::string & path) const = 0;
 
-    /// Read single path from object storage, don't use cache
+    /// Read single path from object storage
     virtual std::unique_ptr<SeekableReadBuffer> readObject( /// NOLINT
         const std::string & path,
         const ReadSettings & read_settings = ReadSettings{},
         std::optional<size_t> read_hint = {},
         std::optional<size_t> file_size = {}) const = 0;
 
-    /// Read multiple objects with common prefix, use cache
+    /// Read multiple objects with common prefix
     virtual std::unique_ptr<ReadBufferFromFileBase> readObjects( /// NOLINT
         const std::string & common_path_prefix,
         const BlobsPathToSize & blobs_to_read,

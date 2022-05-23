@@ -24,10 +24,10 @@ public:
         size_t max_single_download_retries_,
         size_t tmp_buffer_size_,
         bool use_external_buffer_ = false,
-        size_t read_until_position_ = 0
-    );
+        size_t read_until_position_ = 0);
 
     off_t seek(off_t off, int whence) override;
+
     off_t getPosition() override;
 
     bool nextImpl() override;

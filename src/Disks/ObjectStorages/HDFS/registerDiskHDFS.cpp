@@ -31,9 +31,8 @@ void registerDiskHDFS(DiskFactory & factory)
             config.getInt(config_prefix + ".objects_chunk_size_to_delete", 1000),
             context_->getSettingsRef().hdfs_replication
         );
-        FileCachePtr cache = getCachePtrForDisk(name, config, config_prefix, context_);
-
-        ObjectStoragePtr hdfs_storage = std::make_unique<HDFSObjectStorage>(std::move(cache), uri, std::move(settings), config);
+        /// FIXME Cache currently unsupported :(
+        ObjectStoragePtr hdfs_storage = std::make_unique<HDFSObjectStorage>(nullptr, uri, std::move(settings), config);
 
         auto metadata_disk = prepareForLocalMetadata(name, config, config_prefix, context_).second;
         uint64_t copy_thread_pool_size = config.getUInt(config_prefix + ".thread_pool_size", 16);
