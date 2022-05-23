@@ -317,7 +317,7 @@ void Session::authenticate(const Credentials & credentials_, const Poco::Net::So
     }
     catch (const Exception & e)
     {
-        onAuthenticationFailure(credentials_, address, e);
+        onAuthenticationFailure(credentials_.getUserName(), address, e);
         throw;
     }
 
@@ -325,7 +325,7 @@ void Session::authenticate(const Credentials & credentials_, const Poco::Net::So
     prepared_client_info->current_address = address;
 }
 
-void Session::onAuthenticationFailure(const Credentials & credentials_, const Poco::Net::SocketAddress & address_, const Exception & e)
+void Session::onAuthenticationFailure(const std::optional<String> & user_name, const Poco::Net::SocketAddress & address_, const Exception & e)
 {
     LOG_DEBUG(log, "{} Authentication failed with error: {}", toString(auth_id), e.what());
     if (auto session_log = getSessionLog())
@@ -333,7 +333,7 @@ void Session::onAuthenticationFailure(const Credentials & credentials_, const Po
         /// Add source address to the log
         auto info_for_log = *prepared_client_info;
         info_for_log.current_address = address_;
-        session_log->addLoginFailure(auth_id, info_for_log, credentials_.getUserName(), e);
+        session_log->addLoginFailure(auth_id, info_for_log, user_name, e);
     }
 }
 

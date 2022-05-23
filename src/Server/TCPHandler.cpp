@@ -1039,7 +1039,7 @@ void TCPHandler::receiveHello()
         (!user.empty() ? ", user: " + user : "")
     );
 
-    is_interserver_mode = (user == USER_INTERSERVER_MARKER);
+    is_interserver_mode = (user == USER_INTERSERVER_MARKER) && password.empty();
     if (is_interserver_mode)
     {
         receiveClusterNameAndSalt();
@@ -1274,19 +1274,16 @@ void TCPHandler::receiveQuery()
 
     readStringBinary(state.query, *in);
 
-    /// TODO unify interserver authentication (currently this code looks like a backdoor at a first glance)
+    /// TODO Unify interserver authentication (and make sure that it's secure enough)
     if (is_interserver_mode)
     {
         client_info.interface = ClientInfo::Interface::TCP_INTERSERVER;
 #if USE_SSL
-        String user_for_session_log = client_info.initial_user;
-        if (user_for_session_log.empty())
-            user_for_session_log = USER_INTERSERVER_MARKER;
         String cluster_secret = server.context()->getCluster(cluster)->getSecret();
         if (salt.empty() || cluster_secret.empty())
         {
             auto exception = Exception(ErrorCodes::AUTHENTICATION_FAILED, "Interserver authentication failed");
-            session->onAuthenticationFailure(AlwaysAllowCredentials{USER_INTERSERVER_MARKER}, socket().peerAddress(), exception);
+            session->onAuthenticationFailure(/* user_name */ std::nullopt, socket().peerAddress(), exception);
             throw exception; /// NOLINT
         }
 
@@ -1303,7 +1300,7 @@ void TCPHandler::receiveQuery()
         if (calculated_hash != received_hash)
         {
             auto exception = Exception(ErrorCodes::AUTHENTICATION_FAILED, "Interserver authentication failed");
-            session->onAuthenticationFailure(AlwaysAllowCredentials{USER_INTERSERVER_MARKER}, socket().peerAddress(), exception);
+            session->onAuthenticationFailure(/* user_name */ std::nullopt, socket().peerAddress(), exception);
             throw exception; /// NOLINT
         }
 
@@ -1322,7 +1319,7 @@ void TCPHandler::receiveQuery()
         auto exception = Exception(
             "Inter-server secret support is disabled, because ClickHouse was built without SSL library",
             ErrorCodes::AUTHENTICATION_FAILED);
-        session->onAuthenticationFailure(AlwaysAllowCredentials{USER_INTERSERVER_MARKER}, socket().peerAddress(), exception);
+        session->onAuthenticationFailure(/* user_name */ std::nullopt, socket().peerAddress(), exception);
         throw exception; /// NOLINT
 #endif
     }
