@@ -11,7 +11,7 @@ class DiskObjectStorage;
 /// so it's possible to recover from this remote information in case of local disk loss.
 ///
 /// This mechanism can be enabled with `<send_metadata>true</send_metadata>` option inside
-/// disk configuration. Implemented only for S3 and Azure Block storage. Other object storages
+/// disk configuration. Implemented only for S3 and Azure Blob storage. Other object storages
 /// doesn't support metadata for blobs.
 ///
 /// FIXME: this class is very intrusive and use a lot of DiskObjectStorage internals.
