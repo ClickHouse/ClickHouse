@@ -55,7 +55,7 @@ void setUserAndGroup(std::string arg_uid, std::string arg_gid)
             group * result{};
 
             if (0 != getgrnam_r(arg_gid.data(), &entry, buf.get(), buf_size, &result))
-                throwFromErrno(fmt::format("Cannot do 'getgrnam_r' to obtain gid from group name, specified in the CLICKHOUSE_SETGID environment variable ({})", env_gid), ErrorCodes::SYSTEM_ERROR);
+                throwFromErrno(fmt::format("Cannot do 'getgrnam_r' to obtain gid from group name, specified in the CLICKHOUSE_SETGID environment variable ({})", arg_gid), ErrorCodes::SYSTEM_ERROR);
 
             if (!result)
                 throw Exception("Group {} specified in the CLICKHOUSE_SETGID environment variable is not found in the system", ErrorCodes::BAD_ARGUMENTS);
@@ -80,7 +80,7 @@ void setUserAndGroup(std::string arg_uid, std::string arg_gid)
             passwd * result{};
 
             if (0 != getpwnam_r(arg_uid.data(), &entry, buf.get(), buf_size, &result))
-                throwFromErrno(fmt::format("Cannot do 'getpwnam_r' to obtain uid from user name, specified in the CLICKHOUSE_SETUID environment variable ({})", env_uid), ErrorCodes::SYSTEM_ERROR);
+                throwFromErrno(fmt::format("Cannot do 'getpwnam_r' to obtain uid from user name, specified in the CLICKHOUSE_SETUID environment variable ({})", arg_uid), ErrorCodes::SYSTEM_ERROR);
 
             if (!result)
                 throw Exception("User {} specified in the CLICKHOUSE_SETUID environment variable is not found in the system", ErrorCodes::BAD_ARGUMENTS);
