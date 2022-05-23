@@ -1,5 +1,6 @@
 #include <Interpreters/ProcessList.h>
 #include "PostgreSQLOutputFormat.h"
+#include <DataTypes/DataTypeNullable.h>
 
 namespace DB
 {
@@ -24,7 +25,13 @@ void PostgreSQLOutputFormat::writePrefix()
         for (size_t i = 0; i < header.columns(); ++i)
         {
             const auto & column_name = header.getColumnsWithTypeAndName()[i].name;
-            columns.emplace_back(column_name, data_types[i]->getTypeId());
+            TypeIndex type_index = data_types[i]->getTypeId();
+            if (type_index == TypeIndex::Nullable)
+            {
+                const DataTypePtr & data_type = typeid_cast<const DataTypeNullable &>(*data_types[i]).getNestedType();
+                type_index = data_type->getTypeId();
+            }
+            columns.emplace_back(column_name, type_index);
             serializations.emplace_back(data_types[i]->getDefaultSerialization());
         }
         message_transport.send(PostgreSQLProtocol::Messaging::RowDescription(columns));

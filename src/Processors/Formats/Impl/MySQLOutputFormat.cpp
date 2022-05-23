@@ -5,6 +5,7 @@
 #include <Formats/FormatSettings.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ProcessList.h>
+#include <DataTypes/DataTypeNullable.h>
 
 
 namespace DB
@@ -51,7 +52,13 @@ void MySQLOutputFormat::writePrefix()
         for (size_t i = 0; i < header.columns(); ++i)
         {
             const auto & column_name = header.getColumnsWithTypeAndName()[i].name;
-            packet_endpoint->sendPacket(getColumnDefinition(column_name, data_types[i]->getTypeId()));
+            TypeIndex type_index = data_types[i]->getTypeId();
+            if (type_index == TypeIndex::Nullable)
+            {
+                const DataTypePtr & data_type = typeid_cast<const DataTypeNullable &>(*data_types[i]).getNestedType();
+                type_index = data_type->getTypeId();
+            }
+            packet_endpoint->sendPacket(getColumnDefinition(column_name, type_index));
         }
 
         if (!(client_capabilities & Capability::CLIENT_DEPRECATE_EOF))
