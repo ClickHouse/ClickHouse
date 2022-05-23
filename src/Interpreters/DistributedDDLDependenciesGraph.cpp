@@ -30,10 +30,9 @@ void DependenciesGraph::resetState()
     tasks_dependencies.total_queries = 0;
 }
 
-void DependenciesGraph::addTask(DDLTaskPtr & task)
+void DependenciesGraph::addTask(DDLTaskPtr && task)
 {
-    LOG_DEBUG(log, "Start  adding task");
-    tasks_dependencies.total_queries++;
+    LOG_DEBUG(log, "Start adding task");
     auto name = task->entry_name;
     LOG_DEBUG(log, "Got name");
     if (tasks_dependencies.database_objects_in_query.contains(name))

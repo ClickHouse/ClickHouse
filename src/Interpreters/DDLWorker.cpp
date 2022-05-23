@@ -389,10 +389,10 @@ void DDLWorker::scheduleTasks(bool reinitialized)
             last_skipped_entry_name.emplace(entry_name);
             continue;
         }
+        dependencies_graph.addTask(std::move(task));
+        LOG_DEBUG(log, "Added task to graph");
         saveTask(std::move(task));
         LOG_DEBUG(log, "Saved task");
-        dependencies_graph.addTask(task);
-        LOG_DEBUG(log, "Added task to graph");
     }
 
     auto tasks_to_process = dependencies_graph.getTasksToParallelProcess();
