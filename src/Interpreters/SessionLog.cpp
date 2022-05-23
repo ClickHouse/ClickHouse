@@ -133,7 +133,7 @@ NamesAndTypesList SessionLogElement::getNamesAndTypes()
         {"event_time", std::make_shared<DataTypeDateTime>()},
         {"event_time_microseconds", std::make_shared<DataTypeDateTime64>(6)},
 
-        {"user", std::make_shared<DataTypeString>()},
+        {"user", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())},
         {"auth_type", std::make_shared<DataTypeNullable>(std::move(identified_with_column))},
 
         {"profiles", std::make_shared<DataTypeArray>(lc_string_datatype)},
@@ -169,7 +169,8 @@ void SessionLogElement::appendToBlock(MutableColumns & columns) const
     columns[i++]->insert(event_time);
     columns[i++]->insert(event_time_microseconds);
 
-    columns[i++]->insert(user);
+    assert((user && user_identified_with) || client_info.interface == ClientInfo::Interface::TCP_INTERSERVER);
+    columns[i++]->insert(user ? Field(*user) : Field());
     columns[i++]->insert(user_identified_with ? Field(*user_identified_with) : Field());
 
     fillColumnArray(profiles, *columns[i++]);
@@ -217,9 +218,11 @@ void SessionLog::addLoginSuccess(const UUID & auth_id, std::optional<String> ses
     DB::SessionLogElement log_entry(auth_id, SESSION_LOGIN_SUCCESS);
     log_entry.client_info = client_info;
 
-    log_entry.user = login_user ? login_user->getName() : USER_INTERSERVER_MARKER;
     if (login_user)
+    {
+        log_entry.user = login_user->getName();
         log_entry.user_identified_with = login_user->auth_data.getType();
+    }
     log_entry.external_auth_server = login_user ? login_user->auth_data.getLDAPServerName() : "";
 
     if (session_id)
@@ -240,7 +243,7 @@ void SessionLog::addLoginSuccess(const UUID & auth_id, std::optional<String> ses
 void SessionLog::addLoginFailure(
         const UUID & auth_id,
         const ClientInfo & info,
-        const String & user,
+        const std::optional<String> & user,
         const Exception & reason)
 {
     SessionLogElement log_entry(auth_id, SESSION_LOGIN_FAILURE);
@@ -256,9 +259,11 @@ void SessionLog::addLoginFailure(
 void SessionLog::addLogOut(const UUID & auth_id, const UserPtr & login_user, const ClientInfo & client_info)
 {
     auto log_entry = SessionLogElement(auth_id, SESSION_LOGOUT);
-    log_entry.user = login_user ? login_user->getName() : USER_INTERSERVER_MARKER;
     if (login_user)
+    {
+        log_entry.user = login_user->getName();
         log_entry.user_identified_with = login_user->auth_data.getType();
+    }
     log_entry.external_auth_server = login_user ? login_user->auth_data.getLDAPServerName() : "";
     log_entry.client_info = client_info;
 

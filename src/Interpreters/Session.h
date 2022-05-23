@@ -52,7 +52,7 @@ public:
     void authenticate(const Credentials & credentials_, const Poco::Net::SocketAddress & address_);
 
     /// Writes a row about login failure into session log (if enabled)
-    void onAuthenticationFailure(const Credentials & credentials_, const Poco::Net::SocketAddress & address_, const Exception & e);
+    void onAuthenticationFailure(const std::optional<String> & user_name, const Poco::Net::SocketAddress & address_, const Exception & e);
 
     /// Returns a reference to session ClientInfo.
     ClientInfo & getClientInfo();
