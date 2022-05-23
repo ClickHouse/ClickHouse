@@ -11,10 +11,10 @@ add_subdirectory(pybind11)
 find_package(PythonLibs REQUIRED)
 include_directories(${PYTHON_INCLUDE_DIRS})
 
-pybind11_add_module(mylib mylib.cpp)
-target_link_libraries(mylib PRIVATE readpassphrase dbms clickhouse_storages_system ${PYTHON_LIBRARIES})
-target_include_directories(mylib SYSTEM PUBLIC ${ClickHouse_SOURCE_DIR}/src)
-target_include_directories(mylib SYSTEM PRIVATE ${ClickHouse_SOURCE_DIR}/contrib/fmtlib/include)
+pybind11_add_module(clickhousepy clickhousepy.cpp)
+target_link_libraries(clickhousepy PRIVATE readpassphrase dbms clickhouse_storages_system clickhouse_functions clickhouse_aggregate_functions clickhouse_table_functions ${PYTHON_LIBRARIES})
+target_include_directories(clickhousepy SYSTEM PUBLIC ${ClickHouse_SOURCE_DIR}/src)
+target_include_directories(clickhousepy SYSTEM PRIVATE ${ClickHouse_SOURCE_DIR}/contrib/fmtlib/include)
 
 
 endif()
