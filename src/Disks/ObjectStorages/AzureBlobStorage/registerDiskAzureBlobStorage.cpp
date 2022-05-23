@@ -72,14 +72,12 @@ void registerDiskAzureBlobStorage(DiskFactory & factory)
     {
         auto [metadata_path, metadata_disk] = prepareForLocalMetadata(name, config, config_prefix, context);
 
-        FileCachePtr cache = getCachePtrForDisk(name, config, config_prefix, context);
-
+        /// FIXME Cache currently unsupported :(
         ObjectStoragePtr azure_object_storage = std::make_unique<AzureObjectStorage>(
-            std::move(cache),
+            nullptr,
             name,
             getAzureBlobContainerClient(config, config_prefix),
             getAzureBlobStorageSettings(config, config_prefix, context));
-
 
         uint64_t copy_thread_pool_size = config.getUInt(config_prefix + ".thread_pool_size", 16);
         bool send_metadata = config.getBool(config_prefix + ".send_metadata", false);

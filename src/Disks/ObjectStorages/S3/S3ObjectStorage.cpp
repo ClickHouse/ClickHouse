@@ -139,7 +139,16 @@ std::unique_ptr<SeekableReadBuffer> S3ObjectStorage::readObject( /// NOLINT
     std::optional<size_t>) const
 {
     auto settings_ptr = s3_settings.get();
-    return std::make_unique<ReadBufferFromS3>(client.get(), bucket, path, version_id, settings_ptr->s3_settings.max_single_read_retries, read_settings);
+    ReadSettings disk_read_settings{read_settings};
+    if (cache)
+    {
+        if (IFileCache::isReadOnly())
+            disk_read_settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache = true;
+
+        disk_read_settings.remote_fs_cache = cache;
+    }
+
+    return std::make_unique<ReadBufferFromS3>(client.get(), bucket, path, version_id, settings_ptr->s3_settings.max_single_read_retries, disk_read_settings);
 }
 
 
@@ -190,11 +199,12 @@ void S3ObjectStorage::listPrefix(const std::string & path, BlobsPathToSize & chi
 
         auto result = outcome.GetResult();
         auto objects = result.GetContents();
-        for (const auto & object : objects)
-            children.emplace_back(object.GetKey(), object.GetSize());
 
         if (objects.empty())
             break;
+
+        for (const auto & object : objects)
+            children.emplace_back(object.GetKey(), object.GetSize());
 
         request.SetContinuationToken(outcome.GetResult().GetNextContinuationToken());
     } while (outcome.GetResult().GetIsTruncated());
@@ -249,7 +259,8 @@ void S3ObjectStorage::removeObjects(const std::vector<std::string> & paths)
         request.SetBucket(bucket);
         request.SetDelete(delkeys);
         auto outcome = client_ptr->DeleteObjects(request);
-        logIfError(outcome, [&](){return "Can't remove AWS keys: " + keys;});
+        if (outcome.GetError().GetErrorType() != Aws::S3::S3Errors::RESOURCE_NOT_FOUND)
+            throwIfError(outcome);
     }
 }
 
@@ -265,7 +276,9 @@ void S3ObjectStorage::removeObjectIfExists(const std::string & path)
     Aws::S3::Model::DeleteObjectsRequest request;
     request.SetBucket(bucket);
     request.SetDelete(delkeys);
-    client_ptr->DeleteObjects(request);
+    auto outcome = client_ptr->DeleteObjects(request);
+    if (outcome.GetError().GetErrorType() != Aws::S3::S3Errors::RESOURCE_NOT_FOUND)
+        throwIfError(outcome);
 }
 
 void S3ObjectStorage::removeObjectsIfExist(const std::vector<std::string> & paths)
