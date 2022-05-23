@@ -119,8 +119,6 @@ private:
         const ContextPtr & context_,
         PruneLevel prune_level = PruneLevel::Max) const;
 
-    void getActualColumnsToRead(Block & sample_block, const Block & header_block, const NameSet & partition_columns) const;
-
     void lazyInitialize();
 
     std::optional<UInt64>

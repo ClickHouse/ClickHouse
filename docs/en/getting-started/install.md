@@ -238,7 +238,7 @@ To start the server as a daemon, run:
 $ sudo clickhouse start
 ```
 
-There are also another ways to run ClickHouse:
+There are also other ways to run ClickHouse:
 
 ``` bash
 $ sudo service clickhouse-server start

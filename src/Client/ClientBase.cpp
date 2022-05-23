@@ -119,6 +119,17 @@ namespace ProfileEvents
 namespace DB
 {
 
+static ClientInfo::QueryKind parseQueryKind(const String & query_kind)
+{
+    if (query_kind == "initial_query")
+        return ClientInfo::QueryKind::INITIAL_QUERY;
+    if (query_kind == "secondary_query")
+        return ClientInfo::QueryKind::SECONDARY_QUERY;
+    if (query_kind == "no_query")
+        return ClientInfo::QueryKind::NO_QUERY;
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown query kind {}", query_kind);
+}
+
 static void incrementProfileEventsBlock(Block & dst, const Block & src)
 {
     if (!dst)
@@ -2125,6 +2136,7 @@ void ClientBase::init(int argc, char ** argv)
 
         ("query,q", po::value<std::string>(), "query")
         ("stage", po::value<std::string>()->default_value("complete"), "Request query processing up to specified stage: complete,fetch_columns,with_mergeable_state,with_mergeable_state_after_aggregation,with_mergeable_state_after_aggregation_and_limit")
+        ("query_kind", po::value<std::string>()->default_value("initial_query"), "One of initial_query/secondary_query/no_query")
         ("query_id", po::value<std::string>(), "query_id")
         ("progress", "print progress of queries execution")
 
@@ -2255,6 +2267,7 @@ void ClientBase::init(int argc, char ** argv)
         server_logs_file = options["server_logs_file"].as<std::string>();
 
     query_processing_stage = QueryProcessingStage::fromString(options["stage"].as<std::string>());
+    query_kind = parseQueryKind(options["query_kind"].as<std::string>());
     profile_events.print = options.count("print-profile-events");
     profile_events.delay_ms = options["profile-events-delay-ms"].as<UInt64>();
 
