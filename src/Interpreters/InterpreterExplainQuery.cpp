@@ -347,7 +347,8 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                 if (settings.graph)
                 {
                     /// Pipe holds QueryPlan, should not go out-of-scope
-                    auto pipe = QueryPipelineBuilder::getPipe(std::move(*pipeline.builder));
+                    QueryPlanResourceHolder resources;
+                    auto pipe = QueryPipelineBuilder::getPipe(std::move(*pipeline), resources);
                     const auto & processors = pipe.getProcessors();
 
                     if (settings.compact)

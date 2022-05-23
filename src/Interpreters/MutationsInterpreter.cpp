@@ -740,7 +740,7 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
                 auto source = std::make_shared<NullSource>(first_stage_header);
                 plan.addStep(std::make_unique<ReadFromPreparedSource>(Pipe(std::move(source))));
                 auto pipeline = addStreamsForLaterStages(stages_copy, plan);
-                updated_header = std::make_unique<Block>(pipeline.builder->getHeader());
+                updated_header = std::make_unique<Block>(pipeline.getHeader());
             }
 
             /// Special step to recalculate affected indices, projections and TTL expressions.
@@ -888,7 +888,7 @@ ASTPtr MutationsInterpreter::prepareInterpreterSelectQuery(std::vector<Stage> & 
     return select;
 }
 
-PipelineBuilderWithResources MutationsInterpreter::addStreamsForLaterStages(const std::vector<Stage> & prepared_stages, QueryPlan & plan) const
+QueryPipelineBuilder MutationsInterpreter::addStreamsForLaterStages(const std::vector<Stage> & prepared_stages, QueryPlan & plan) const
 {
     for (size_t i_stage = 1; i_stage < prepared_stages.size(); ++i_stage)
     {
@@ -922,11 +922,11 @@ PipelineBuilderWithResources MutationsInterpreter::addStreamsForLaterStages(cons
     QueryPlanOptimizationSettings do_not_optimize_plan;
     do_not_optimize_plan.optimize_plan = false;
 
-    auto pipeline = plan.buildQueryPipeline(
+    auto pipeline = std::move(*plan.buildQueryPipeline(
         do_not_optimize_plan,
-        BuildQueryPipelineSettings::fromContext(context));
+        BuildQueryPipelineSettings::fromContext(context)));
 
-    pipeline.builder->addSimpleTransform([&](const Block & header)
+    pipeline.addSimpleTransform([&](const Block & header)
     {
         return std::make_shared<MaterializingTransform>(header);
     });
@@ -979,16 +979,15 @@ QueryPipeline MutationsInterpreter::execute()
 
     /// Sometimes we update just part of columns (for example UPDATE mutation)
     /// in this case we don't read sorting key, so just we don't check anything.
-    if (auto sort_desc = getStorageSortDescriptionIfPossible(builder.builder->getHeader()))
+    if (auto sort_desc = getStorageSortDescriptionIfPossible(builder.getHeader()))
     {
-        builder.builder->addSimpleTransform([&](const Block & header)
+        builder.addSimpleTransform([&](const Block & header)
         {
             return std::make_shared<CheckSortedTransform>(header, *sort_desc);
         });
     }
 
-    auto pipeline = QueryPipelineBuilder::getPipeline2(std::move(*builder.builder));
-    pipeline.addResources(std::move(builder.resources));
+    auto pipeline = QueryPipelineBuilder::getPipeline2(std::move(builder));
 
     if (!updated_header)
         updated_header = std::make_unique<Block>(pipeline.getHeader());

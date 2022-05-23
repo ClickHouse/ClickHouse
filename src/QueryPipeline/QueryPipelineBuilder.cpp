@@ -432,7 +432,7 @@ void QueryPipelineBuilder::addPipelineBefore(QueryPipelineBuilder pipeline)
 
     Pipes pipes;
     pipes.emplace_back(std::move(pipe));
-    pipes.emplace_back(QueryPipelineBuilder::getPipe(std::move(pipeline)));
+    pipes.emplace_back(QueryPipelineBuilder::getPipe(std::move(pipeline), resources));
     pipe = Pipe::unitePipes(std::move(pipes), collected_processors, true);
 
     auto processor = std::make_shared<DelayedPortsProcessor>(getHeader(), pipe.numOutputPorts(), delayed_streams, true);
@@ -452,9 +452,16 @@ PipelineExecutorPtr QueryPipelineBuilder::execute()
     return std::make_shared<PipelineExecutor>(pipe.processors, process_list_element);
 }
 
+Pipe QueryPipelineBuilder::getPipe(QueryPipelineBuilder pipeline, QueryPlanResourceHolder & resources)
+{
+    resources = std::move(pipeline.resources);
+    return std::move(pipeline.pipe);
+}
+
 QueryPipeline QueryPipelineBuilder::getPipeline2(QueryPipelineBuilder builder)
 {
     QueryPipeline res(std::move(builder.pipe));
+    res.addResources(std::move(builder.resources));
     res.setNumThreads(builder.getNumThreads());
     res.setProcessListElement(builder.process_list_element);
     return res;
@@ -476,6 +483,8 @@ void QueryPipelineBuilder::updatePipeline(QueryPipelineBuilder builder, QueryPip
         query_pipeline.totals = nullptr;
         query_pipeline.extremes = nullptr;
     }
+
+    query_pipeline.addResources(std::move(builder.resources));
 
     query_pipeline.processors.insert(
         query_pipeline.processors.end(),

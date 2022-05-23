@@ -285,11 +285,10 @@ Block ProjectionDescription::calculate(const Block & block, ContextPtr context) 
                            type == ProjectionDescription::Type::Normal ? QueryProcessingStage::FetchColumns
                                                                        : QueryProcessingStage::WithMergeableState})
                        .buildQueryPipeline();
-    builder.builder->resize(1);
-    builder.builder->addTransform(std::make_shared<SquashingChunksTransform>(builder.getHeader(), block.rows(), block.bytes()));
+    builder.resize(1);
+    builder.addTransform(std::make_shared<SquashingChunksTransform>(builder.getHeader(), block.rows(), block.bytes()));
 
-    auto pipeline = QueryPipelineBuilder::getPipeline2(std::move(*builder.builder));
-    pipeline.addResources(std::move(builder.resources));
+    auto pipeline = QueryPipelineBuilder::getPipeline2(std::move(builder));
     PullingPipelineExecutor executor(pipeline);
     Block ret;
     executor.pull(ret);

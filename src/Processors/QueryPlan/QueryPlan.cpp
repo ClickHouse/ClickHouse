@@ -152,7 +152,7 @@ void QueryPlan::addStep(QueryPlanStepPtr step)
         isInitialized() ? 1 : 0);
 }
 
-PipelineBuilderWithResources QueryPlan::buildQueryPipeline(
+QueryPipelineBuilderPtr QueryPlan::buildQueryPipeline(
     const QueryPlanOptimizationSettings & optimization_settings,
     const BuildQueryPipelineSettings & build_pipeline_settings)
 {
@@ -197,8 +197,9 @@ PipelineBuilderWithResources QueryPlan::buildQueryPipeline(
 
     /// last_pipeline->setProgressCallback(build_pipeline_settings.progress_callback);
     last_pipeline->setProcessListElement(build_pipeline_settings.process_list_element);
+    last_pipeline->addResources(std::move(resources));
 
-    return {std::move(last_pipeline), std::move(resources)};
+    return last_pipeline;
 }
 
 Pipe QueryPlan::convertToPipe(

@@ -453,13 +453,12 @@ Pipe StorageMerge::createSources(
 
     if (!storage)
     {
-        auto pipeline = InterpreterSelectQuery(
+        auto builder = InterpreterSelectQuery(
             modified_query_info.query, modified_context,
             Pipe(std::make_shared<SourceFromSingleChunk>(header)),
-            SelectQueryOptions(processed_stage).analyze()).buildQueryPipeline());
+            SelectQueryOptions(processed_stage).analyze()).buildQueryPipeline();
 
-        resources = std::move(pipeline.resources);
-        pipe = QueryPipelineBuilder::getPipe(std::move(*pipeline.builder));
+        pipe = QueryPipelineBuilder::getPipe(std::move(builder), resources);
 
         return pipe;
     }
@@ -501,7 +500,7 @@ Pipe StorageMerge::createSources(
             modified_query_info.query, modified_context, SelectQueryOptions(processed_stage).ignoreProjections()};
 
 
-        pipe = QueryPipelineBuilder::getPipe(interpreter.buildQueryPipeline());
+        pipe = QueryPipelineBuilder::getPipe(interpreter.buildQueryPipeline(), resources);
 
         /** Materialization is needed, since from distributed storage the constants come materialized.
           * If you do not do this, different types (Const and non-Const) columns will be produced in different threads,

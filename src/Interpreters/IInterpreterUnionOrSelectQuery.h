@@ -8,7 +8,6 @@
 
 namespace DB
 {
-struct PipelineBuilderWithResources;
 
 class IInterpreterUnionOrSelectQuery : public IInterpreter
 {
@@ -30,7 +29,7 @@ public:
     }
 
     virtual void buildQueryPlan(QueryPlan & query_plan) = 0;
-    PipelineBuilderWithResources buildQueryPipeline();
+    QueryPipelineBuilder buildQueryPipeline();
 
     virtual void ignoreWithTotals() = 0;
 

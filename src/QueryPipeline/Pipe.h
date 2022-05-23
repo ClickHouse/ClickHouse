@@ -106,7 +106,6 @@ public:
     PipelineResourcesHolder detachResources();
 
 private:
-    /// Destruction order: processors, header, locks, temporary storages, local contexts
     PipelineResourcesHolder holder;
 
     /// Header is common for all output below.

@@ -12,6 +12,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/tests/gtest_global_context.h>
 #include <Common/tests/gtest_global_register.h>
+#include "Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h"
 
 #include <memory>
 #include <Processors/Executors/PullingPipelineExecutor.h>
@@ -20,6 +21,9 @@
 #include <Processors/Sinks/SinkToStorage.h>
 #include <QueryPipeline/Chain.h>
 #include <QueryPipeline/QueryPipeline.h>
+#include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 
 #if !defined(__clang__)
 #    pragma GCC diagnostic push
@@ -126,7 +130,12 @@ std::string readData(DB::StoragePtr & table, const DB::ContextPtr context)
     QueryProcessingStage::Enum stage = table->getQueryProcessingStage(
         context, QueryProcessingStage::Complete, storage_snapshot, query_info);
 
-    QueryPipeline pipeline(table->read(column_names, storage_snapshot, query_info, context, stage, 8192, 1));
+    QueryPlan plan;
+    table->read(plan, column_names, storage_snapshot, query_info, context, stage, 8192, 1);
+
+    auto pipeline = QueryPipelineBuilder::getPipeline2(std::move(*plan.buildQueryPipeline(
+        QueryPlanOptimizationSettings::fromContext(context),
+        BuildQueryPipelineSettings::fromContext(context))));
 
     Block sample;
     {
