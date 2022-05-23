@@ -227,8 +227,15 @@ void TransactionLog::runUpdatingThread()
             if (connection_loss)
             {
                 auto new_zookeeper = global_context->getZooKeeper();
-                std::lock_guard lock{mutex};
-                zookeeper = new_zookeeper;
+                {
+                    std::lock_guard lock{mutex};
+                    zookeeper = new_zookeeper;
+                }
+
+                /// It's possible that we connected to different [Zoo]Keeper instance
+                /// so we may read a bit stale state. Run some writing request before loading log entries
+                /// to make that instance up-to-date.
+                zookeeper->set(zookeeper_path_log, "");
             }
 
             loadNewEntries();
@@ -446,6 +453,8 @@ CSN TransactionLog::commitTransaction(const MergeTreeTransactionPtr & txn, bool 
             return Tx::CommittingCSN;
         }
 
+        /// Do not allow exceptions between commit point and the and of transaction finalization
+        /// (otherwise it may stuck in COMMITTING state holding snapshot).
         NOEXCEPT_SCOPE;
         /// FIXME Transactions: Sequential node numbers in ZooKeeper are Int32, but 31 bit is not enough for production use
         /// (overflow is possible in a several weeks/months of active usage)

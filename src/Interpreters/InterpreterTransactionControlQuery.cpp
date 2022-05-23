@@ -84,6 +84,8 @@ BlockIO InterpreterTransactionControlQuery::executeCommit(ContextMutablePtr sess
             throw Exception(ErrorCodes::INVALID_TRANSACTION, "Transaction {} was rolled back", txn->tid);
         if (txn->getState() != MergeTreeTransaction::COMMITTED)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Transaction {} has invalid state {}", txn->tid, txn->getState());
+
+        csn = txn->getCSN();
     }
 
     /// Wait for committed changes to become actually visible, so the next transaction in this session will see the changes
