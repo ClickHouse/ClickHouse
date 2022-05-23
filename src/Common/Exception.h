@@ -46,8 +46,8 @@ public:
 
     Exception * clone() const override { return new Exception(*this); }
     void rethrow() const override { throw *this; }
-    const char * name() const throw() override { return "DB::Exception"; }
-    const char * what() const throw() override { return message().data(); }
+    const char * name() const noexcept override { return "DB::Exception"; }
+    const char * what() const noexcept override { return message().data(); }
 
     /// Add something to the existing message.
     template <typename... Args>
@@ -75,7 +75,7 @@ private:
 #endif
     bool remote = false;
 
-    const char * className() const throw() override { return "DB::Exception"; }
+    const char * className() const noexcept override { return "DB::Exception"; }
 };
 
 
@@ -100,8 +100,8 @@ private:
     int saved_errno;
     std::optional<std::string> path;
 
-    const char * name() const throw() override { return "DB::ErrnoException"; }
-    const char * className() const throw() override { return "DB::ErrnoException"; }
+    const char * name() const noexcept override { return "DB::ErrnoException"; }
+    const char * className() const noexcept override { return "DB::ErrnoException"; }
 };
 
 
@@ -141,8 +141,8 @@ private:
     String file_name;
     mutable std::string formatted_message;
 
-    const char * name() const throw() override { return "DB::ParsingException"; }
-    const char * className() const throw() override { return "DB::ParsingException"; }
+    const char * name() const noexcept override { return "DB::ParsingException"; }
+    const char * className() const noexcept override { return "DB::ParsingException"; }
 };
 
 

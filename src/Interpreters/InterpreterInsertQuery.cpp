@@ -206,7 +206,7 @@ static bool isTrivialSelect(const ASTPtr & select)
     }
     /// This query is ASTSelectWithUnionQuery subquery
     return false;
-};
+}
 
 Chain InterpreterInsertQuery::buildChain(
     const StoragePtr & table,
