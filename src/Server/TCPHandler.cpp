@@ -1488,7 +1488,7 @@ bool TCPHandler::receiveUnexpectedData(bool throw_exception)
         maybe_compressed_in = in;
 
     auto skip_block_in = std::make_shared<NativeReader>(*maybe_compressed_in, client_tcp_protocol_version);
-    bool read_ok = skip_block_in->read();
+    bool read_ok = !!skip_block_in->read();
 
     if (!read_ok)
         state.read_all_data = true;

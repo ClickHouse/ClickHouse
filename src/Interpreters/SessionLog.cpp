@@ -62,7 +62,7 @@ void fillColumnArray(const Strings & data, IColumn & column)
     }
     auto & offsets = array.getOffsets();
     offsets.push_back(offsets.back() + size);
-};
+}
 
 }
 
