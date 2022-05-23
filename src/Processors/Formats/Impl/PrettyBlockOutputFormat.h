@@ -33,11 +33,12 @@ protected:
     size_t row_number_width = 7; // "10000. "
 
     const FormatSettings format_settings;
+    Serializations serializations;
 
     using Widths = PODArray<size_t>;
     using WidthsPerColumn = std::vector<Widths>;
 
-    virtual void write(const Chunk & chunk, PortKind port_kind);
+    virtual void write(Chunk chunk, PortKind port_kind);
     void writeSuffix() override;
 
     void onRowsReadBeforeUpdate() override { total_rows = getRowsReadBefore(); }
