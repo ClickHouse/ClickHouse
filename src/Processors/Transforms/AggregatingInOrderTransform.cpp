@@ -38,7 +38,7 @@ AggregatingInOrderTransform::AggregatingInOrderTransform(
     , variants(*many_data->variants[current_variant])
 {
     /// We won't finalize states in order to merge same states (generated due to multi-thread execution) in AggregatingSortedTransform
-    res_header = params->getCustomHeader(false);
+    res_header = params->getCustomHeader(/* final_= */ false);
 
     for (size_t i = 0; i < group_by_info->order_key_prefix_descr.size(); ++i)
     {
@@ -308,6 +308,24 @@ void AggregatingInOrderTransform::generate()
 
     res_rows += to_push_chunk.getNumRows();
     need_generate = false;
+}
+
+FinalizeAggregatedTransform::FinalizeAggregatedTransform(Block header, AggregatingTransformParamsPtr params_)
+    : ISimpleTransform({std::move(header)}, {params_->getHeader()}, true)
+    , params(params_)
+    , aggregates_mask(getAggregatesMask(params->getHeader(), params->params.aggregates))
+{
+}
+
+void FinalizeAggregatedTransform::transform(Chunk & chunk)
+{
+    if (params->final)
+        finalizeChunk(chunk, aggregates_mask);
+    else if (!chunk.getChunkInfo())
+    {
+        auto info = std::make_shared<AggregatedChunkInfo>();
+        chunk.setChunkInfo(std::move(info));
+    }
 }
 
 
