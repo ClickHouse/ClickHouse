@@ -135,6 +135,9 @@ Checks: '*,
 
 WarningsAsErrors: '*'
 
+# HeaderFilterRegex: '^.*/(src|base)/.*(h|hpp)$'
+HeaderFilterRegex: '^.*/(src)/.*(h|hpp)$'
+
 CheckOptions:
   - key: readability-identifier-naming.ClassCase
     value: CamelCase
