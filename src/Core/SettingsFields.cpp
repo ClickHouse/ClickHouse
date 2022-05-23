@@ -255,9 +255,13 @@ void SettingFieldMilliseconds::parseFromString(const String & str)
 template <SettingFieldTimespanUnit unit_>
 void SettingFieldTimespan<unit_>::writeBinary(WriteBuffer & out) const
 {
-    /// Note that this is unchanged and returns UInt64 for both seconds and milliseconds for
-    /// compatibility reasons as it's only used by the clients or servers older than
-    /// DBMS_MIN_REVISION_WITH_SETTINGS_SERIALIZED_AS_STRINGS
+    /// Note that this returns an UInt64 (for both seconds and milliseconds units) for compatibility reasons as the value
+    /// for seconds used to be a integer (now a Float64)
+    /// This method is only used to communicate with clients or servers older than DBMS_MIN_REVISION_WITH_SETTINGS_SERIALIZED_AS_STRINGS
+    /// in which the value was passed as binary (as a UInt64)
+    /// Later versions pass the setting values as String (using toString() and parseFromString()) and there passing "1.2" will
+    /// lead to `1` on releases with integer seconds or `1.2` on more recent releases
+    /// See https://github.com/ClickHouse/ClickHouse/issues/36940 for more details
     auto num_units = operator UInt64();
     writeVarUInt(num_units, out);
 }
