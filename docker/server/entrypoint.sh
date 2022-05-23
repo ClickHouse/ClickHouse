@@ -90,18 +90,12 @@ if [ -n "$CLICKHOUSE_USER" ] && [ "$CLICKHOUSE_USER" != "default" ] || [ -n "$CL
 EOT
 fi
 
-# Drop privileges
-CLICKHOUSE_SETUID="${USER}"
-CLICKHOUSE_SETGID="${GROUP}"
-export CLICKHOUSE_SETUID
-export CLICKHOUSE_SETGID
-
 if [ -n "$(ls /docker-entrypoint-initdb.d/)" ] || [ -n "$CLICKHOUSE_DB" ]; then
     # port is needed to check if clickhouse-server is ready for connections
     HTTP_PORT="$(clickhouse extract-from-config --config-file "$CLICKHOUSE_CONFIG" --key=http_port)"
 
     # Listen only on localhost until the initialization is done
-    /usr/bin/clickhouse-server --config-file="$CLICKHOUSE_CONFIG" -- --listen_host=127.0.0.1 &
+    /usr/bin/clickhouse su "${USER}:${GROUP}" /usr/bin/clickhouse-server --config-file="$CLICKHOUSE_CONFIG" -- --listen_host=127.0.0.1 &
     pid="$!"
 
     # check if clickhouse is ready to accept connections
@@ -157,7 +151,7 @@ if [[ $# -lt 1 ]] || [[ "$1" == "--"* ]]; then
     # so the container can't be finished by ctrl+c
     CLICKHOUSE_WATCHDOG_ENABLE=${CLICKHOUSE_WATCHDOG_ENABLE:-0}
     export CLICKHOUSE_WATCHDOG_ENABLE
-    /usr/bin/clickhouse-server --config-file="$CLICKHOUSE_CONFIG" "$@"
+    /usr/bin/clickhouse su "${USER}:${GROUP}" /usr/bin/clickhouse-server --config-file="$CLICKHOUSE_CONFIG" "$@"
 fi
 
 # Otherwise, we assume the user want to run his own process, for example a `bash` shell to explore this image
