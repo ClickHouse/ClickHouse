@@ -190,6 +190,7 @@ ReadBufferFromHDFS::ReadResult ReadBufferFromHDFS::readInto(char * data, size_t 
     if (eof())
         return {0, 0};
 
+    /// Make sure returned size no greater than available bytes in working_buffer
     size_t count = std::min(size, available());
     memcpy(data, position(), count);
     position() += count;
