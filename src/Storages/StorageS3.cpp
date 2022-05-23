@@ -609,6 +609,7 @@ StorageS3::StorageS3(
     , partition_by(partition_by_)
     , is_key_with_globs(uri_.key.find_first_of("*?{") != std::string::npos)
 {
+    FormatFactory::instance().checkFormatName(format_name);
     context_->getGlobalContext()->getRemoteHostFilter().checkURL(uri_.uri);
     StorageInMemoryMetadata storage_metadata;
 
