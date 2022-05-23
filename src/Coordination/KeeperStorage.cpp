@@ -328,7 +328,7 @@ void KeeperStorage::UncommittedState::commit(int64_t commit_zxid)
         deltas.pop_front();
     }
 
-    // delete all cached nodes that were not modifed after the commit_zxid
+    // delete all cached nodes that were not modified after the commit_zxid
     std::erase_if(nodes, [commit_zxid](const auto & node) { return node.second.zxid == commit_zxid; });
 }
 
@@ -338,11 +338,11 @@ void KeeperStorage::UncommittedState::rollback(int64_t rollback_zxid)
     // if there is a delta with a larger zxid, we have invalid state
     const auto last_zxid = deltas.back().zxid;
     if (!deltas.empty() && last_zxid > rollback_zxid)
-        throw DB::Exception{
+        throw DB::Exception(
             DB::ErrorCodes::LOGICAL_ERROR,
             "Invalid state of deltas found while trying to rollback request. Last ZXID ({}) is larger than the requested ZXID ({})",
             last_zxid,
-            rollback_zxid};
+            rollback_zxid);
 
     std::erase_if(deltas, [rollback_zxid](const auto & delta) { return delta.zxid == rollback_zxid; });
 
