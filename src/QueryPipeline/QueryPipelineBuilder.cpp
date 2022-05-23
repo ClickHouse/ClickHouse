@@ -507,7 +507,7 @@ size_t QueryPipelineBuilder::getNumThreads() const
     
     auto adqm_log = &Poco::Logger::get("ADQM");
     LOG_DEBUG(adqm_log,"maxParallelStreams: {}", num_threads);
-    LOG_DEBUG(adqm_log,"max_threads: {}", max_threads);    
+    LOG_DEBUG(adqm_log,"max_threads: {}", max_threads);
 
     if (max_threads) //-V1051
         num_threads = std::min(num_threads, max_threads);
