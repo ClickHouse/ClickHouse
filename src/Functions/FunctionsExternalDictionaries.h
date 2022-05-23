@@ -1061,7 +1061,7 @@ public:
         size_t level_,
         DictionaryHierarchicalParentToChildIndexPtr hierarchical_parent_to_child_index,
         std::shared_ptr<FunctionDictHelper> dictionary_helper_)
-        : name(name_)
+        : name(std::move(name_))
         , level(level_)
         , hierarchical_parent_to_child_index(std::move(hierarchical_parent_to_child_index))
         , dictionary_helper(std::move(dictionary_helper_))
@@ -1104,7 +1104,7 @@ public:
         size_t level_,
         DictionaryHierarchicalParentToChildIndexPtr hierarchical_parent_to_child_index,
         std::shared_ptr<FunctionDictHelper> helper_)
-        : name(name_)
+        : name(std::move(name_))
         , argument_types(argument_types_)
         , result_type(result_type_)
         , level(level_)
@@ -1200,7 +1200,7 @@ public:
         DataTypes argument_types;
         argument_types.reserve(arguments.size());
 
-        for (auto & argument : arguments)
+        for (const auto & argument : arguments)
             argument_types.emplace_back(argument.type);
 
         return std::make_shared<FunctionDictGetDescendantsBase>(name, argument_types, result_type, level, hierarchical_parent_to_child_index, dictionary_helper);
