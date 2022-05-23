@@ -100,7 +100,8 @@ public:
         UInt64 stage/* = QueryProcessingStage::Complete */,
         const Settings * settings/* = nullptr */,
         const ClientInfo * client_info/* = nullptr */,
-        bool with_pending_data/* = false */) override;
+        bool with_pending_data/* = false */,
+        std::function<void(const Progress &)> process_progress_callback) override;
 
     void sendCancel() override;
 
