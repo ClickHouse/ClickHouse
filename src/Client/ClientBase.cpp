@@ -58,6 +58,10 @@
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <QueryPipeline/QueryPipeline.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
+#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
 #include <Interpreters/ReplaceQueryParameterVisitor.h>
@@ -1153,16 +1157,26 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
         try
         {
             auto metadata = storage->getInMemoryMetadataPtr();
+            QueryPlan plan;
+            storage->read(
+                    plan,
+                    sample.getNames(),
+                    storage->getStorageSnapshot(metadata, global_context),
+                    query_info,
+                    global_context,
+                    {},
+                    global_context->getSettingsRef().max_block_size,
+                    getNumberOfPhysicalCPUCores());
+
+            auto builder = plan.buildQueryPipeline(
+                QueryPlanOptimizationSettings::fromContext(global_context),
+                BuildQueryPipelineSettings::fromContext(global_context));
+
+            QueryPlanResourceHolder resources;
+            auto pipe = QueryPipelineBuilder::getPipe(std::move(*builder), resources);
+
             sendDataFromPipe(
-                storage->read(
-                        sample.getNames(),
-                        storage->getStorageSnapshot(metadata, global_context),
-                        query_info,
-                        global_context,
-                        {},
-                        global_context->getSettingsRef().max_block_size,
-                        getNumberOfPhysicalCPUCores()
-                    ),
+                std::move(pipe),
                 parsed_query,
                 have_data_in_stdin
             );

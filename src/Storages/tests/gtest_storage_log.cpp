@@ -12,7 +12,6 @@
 #include <Common/typeid_cast.h>
 #include <Common/tests/gtest_global_context.h>
 #include <Common/tests/gtest_global_register.h>
-#include "Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h"
 
 #include <memory>
 #include <Processors/Executors/PullingPipelineExecutor.h>
@@ -23,6 +22,7 @@
 #include <QueryPipeline/QueryPipeline.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
+#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
 #if !defined(__clang__)

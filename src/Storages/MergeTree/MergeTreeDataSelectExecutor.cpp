@@ -171,6 +171,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
     Pipes pipes;
     Pipe projection_pipe;
     Pipe ordinary_pipe;
+    QueryPlanResourceHolder resources;
 
     auto projection_plan = std::make_unique<QueryPlan>();
     if (query_info.projection->desc->is_minmax_count_projection)
@@ -217,8 +218,9 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
             projection_plan->addStep(std::move(expression_before_aggregation));
         }
 
-        projection_pipe = projection_plan->convertToPipe(
+        auto builder = projection_plan->buildQueryPipeline(
             QueryPlanOptimizationSettings::fromContext(context), BuildQueryPipelineSettings::fromContext(context));
+        projection_pipe = QueryPipelineBuilder::getPipe(std::move(*builder), resources);
     }
 
     if (query_info.projection->merge_tree_normal_select_result_ptr)
@@ -247,8 +249,9 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
             ordinary_query_plan.addStep(std::move(where_step));
         }
 
-        ordinary_pipe = ordinary_query_plan.convertToPipe(
+        auto builder = ordinary_query_plan.buildQueryPipeline(
             QueryPlanOptimizationSettings::fromContext(context), BuildQueryPipelineSettings::fromContext(context));
+        ordinary_pipe = QueryPipelineBuilder::getPipe(std::move(*builder), resources);
     }
 
     if (query_info.projection->desc->type == ProjectionDescription::Type::Aggregate)

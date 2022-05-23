@@ -113,7 +113,7 @@ void ReadFromRemote::addLazyPipe(Pipes & pipes, const ClusterProxy::IStreamFacto
             scalars = scalars, external_tables = external_tables,
             stage = stage, local_delay = shard.local_delay,
             add_agg_info, add_totals, add_extremes, async_read]() mutable
-        -> Pipe
+        -> QueryPipelineBuilder
     {
         auto current_settings = context->getSettingsRef();
         auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(
@@ -147,9 +147,9 @@ void ReadFromRemote::addLazyPipe(Pipes & pipes, const ClusterProxy::IStreamFacto
         {
             auto plan = createLocalPlan(query, header, context, stage, shard_num, shard_count, coordinator);
 
-            return QueryPipelineBuilder::getPipe(std::move(*plan->buildQueryPipeline(
+            return std::move(*plan->buildQueryPipeline(
                 QueryPlanOptimizationSettings::fromContext(context),
-                BuildQueryPipelineSettings::fromContext(context))));
+                BuildQueryPipelineSettings::fromContext(context)));
         }
         else
         {
@@ -166,7 +166,10 @@ void ReadFromRemote::addLazyPipe(Pipes & pipes, const ClusterProxy::IStreamFacto
                 pool, std::move(connections), query_string, header, context, throttler, scalars, external_tables, stage,
                 RemoteQueryExecutor::Extension{.parallel_reading_coordinator = std::move(coordinator), .replica_info = replica_info});
 
-            return createRemoteSourcePipe(remote_query_executor, add_agg_info, add_totals, add_extremes, async_read);
+            auto pipe = createRemoteSourcePipe(remote_query_executor, add_agg_info, add_totals, add_extremes, async_read);
+            QueryPipelineBuilder builder;
+            builder.init(std::move(pipe));
+            return builder;
         }
     };
 

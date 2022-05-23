@@ -322,6 +322,7 @@ public:
     /// It's needed for ReplacingMergeTree wrappers such as MaterializedMySQL and MaterializedPostrgeSQL
     virtual bool needRewriteQueryWithFinal(const Names & /*column_names*/) const { return false; }
 
+private:
     /** Read a set of columns from the table.
       * Accepts a list of columns to read, as well as a description of the query,
       *  from which information can be extracted about how to retrieve data
@@ -351,6 +352,7 @@ public:
         size_t /*max_block_size*/,
         unsigned /*num_streams*/);
 
+public:
     /// Other version of read which adds reading step to query plan.
     /// Default implementation creates ReadFromStorageStep and uses usual read.
     virtual void read(

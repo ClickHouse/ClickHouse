@@ -104,21 +104,21 @@ StorageView::StorageView(
 }
 
 
-Pipe StorageView::read(
-    const Names & column_names,
-    const StorageSnapshotPtr & storage_snapshot,
-    SelectQueryInfo & query_info,
-    ContextPtr context,
-    QueryProcessingStage::Enum processed_stage,
-    const size_t max_block_size,
-    const unsigned num_streams)
-{
-    QueryPlan plan;
-    read(plan, column_names, storage_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
-    return plan.convertToPipe(
-        QueryPlanOptimizationSettings::fromContext(context),
-        BuildQueryPipelineSettings::fromContext(context));
-}
+// Pipe StorageView::read(
+//     const Names & column_names,
+//     const StorageSnapshotPtr & storage_snapshot,
+//     SelectQueryInfo & query_info,
+//     ContextPtr context,
+//     QueryProcessingStage::Enum processed_stage,
+//     const size_t max_block_size,
+//     const unsigned num_streams)
+// {
+//     QueryPlan plan;
+//     read(plan, column_names, storage_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
+//     return plan.convertToPipe(
+//         QueryPlanOptimizationSettings::fromContext(context),
+//         BuildQueryPipelineSettings::fromContext(context));
+// }
 
 void StorageView::read(
         QueryPlan & query_plan,

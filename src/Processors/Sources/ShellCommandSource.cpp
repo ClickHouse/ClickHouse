@@ -251,7 +251,6 @@ namespace
         using SendDataTask = std::function<void(void)>;
 
         ShellCommandSource(
-            QueryPlanResourceHolder resources_,
             ContextPtr context_,
             const std::string & format_,
             size_t command_read_timeout_milliseconds,
@@ -262,7 +261,6 @@ namespace
             std::unique_ptr<ShellCommandHolder> && command_holder_ = nullptr,
             std::shared_ptr<ProcessPool> process_pool_ = nullptr)
             : ISource(sample_block_)
-            , resources(std::move(resources_))
             , context(context_)
             , format(format_)
             , sample_block(sample_block_)
@@ -403,7 +401,6 @@ namespace
             }
         }
 
-        QueryPlanResourceHolder resources;
         ContextPtr context;
         std::string format;
         Block sample_block;
@@ -465,7 +462,6 @@ Pipe ShellCommandSourceCoordinator::createPipe(
     const std::string & command,
     const std::vector<std::string> & arguments,
     std::vector<Pipe> && input_pipes,
-    QueryPlanResourceHolder resources,
     Block sample_block,
     ContextPtr context,
     const ShellCommandSourceConfiguration & source_configuration)
@@ -573,7 +569,6 @@ Pipe ShellCommandSourceCoordinator::createPipe(
     }
 
     auto source = std::make_unique<ShellCommandSource>(
-        std::move(resources),
         context,
         configuration.format,
         configuration.command_read_timeout_milliseconds,
@@ -583,9 +578,8 @@ Pipe ShellCommandSourceCoordinator::createPipe(
         source_configuration,
         std::move(process_holder),
         process_pool);
-    auto pipe = Pipe(std::move(source));
 
-    return pipe;
+    return Pipe(std::move(source));
 }
 
 }

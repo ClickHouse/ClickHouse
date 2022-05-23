@@ -146,21 +146,21 @@ QueryProcessingStage::Enum StorageMaterializedView::getQueryProcessingStage(
     return getTargetTable()->getQueryProcessingStage(local_context, to_stage, getTargetTable()->getStorageSnapshot(target_metadata, local_context), query_info);
 }
 
-Pipe StorageMaterializedView::read(
-    const Names & column_names,
-    const StorageSnapshotPtr & storage_snapshot,
-    SelectQueryInfo & query_info,
-    ContextPtr local_context,
-    QueryProcessingStage::Enum processed_stage,
-    const size_t max_block_size,
-    const unsigned num_streams)
-{
-    QueryPlan plan;
-    read(plan, column_names, storage_snapshot, query_info, local_context, processed_stage, max_block_size, num_streams);
-    return plan.convertToPipe(
-        QueryPlanOptimizationSettings::fromContext(local_context),
-        BuildQueryPipelineSettings::fromContext(local_context));
-}
+// Pipe StorageMaterializedView::read(
+//     const Names & column_names,
+//     const StorageSnapshotPtr & storage_snapshot,
+//     SelectQueryInfo & query_info,
+//     ContextPtr local_context,
+//     QueryProcessingStage::Enum processed_stage,
+//     const size_t max_block_size,
+//     const unsigned num_streams)
+// {
+//     QueryPlan plan;
+//     read(plan, column_names, storage_snapshot, query_info, local_context, processed_stage, max_block_size, num_streams);
+//     return plan.convertToPipe(
+//         QueryPlanOptimizationSettings::fromContext(local_context),
+//         BuildQueryPipelineSettings::fromContext(local_context));
+// }
 
 void StorageMaterializedView::read(
     QueryPlan & query_plan,
