@@ -255,7 +255,7 @@ public:
 
     UncommittedState uncommitted_state{*this};
 
-    Coordination::Error commit(int64_t zxid, int64_t session_id);
+    Coordination::Error commit(int64_t zxid);
 
     // Create node in the storage
     // Returns false if it failed to create the node, true otherwise
@@ -265,8 +265,7 @@ public:
         String data,
         const Coordination::Stat & stat,
         bool is_sequental,
-        Coordination::ACLs node_acls,
-        int64_t session_id);
+        Coordination::ACLs node_acls);
 
     // Remove node in the storage
     // Returns false if it failed to remove the node, true otherwise
@@ -350,7 +349,6 @@ public:
     ResponsesForSessions processRequest(
         const Coordination::ZooKeeperRequestPtr & request,
         int64_t session_id,
-        int64_t time,
         std::optional<int64_t> new_last_zxid,
         bool check_acl = true,
         bool is_local = false);
