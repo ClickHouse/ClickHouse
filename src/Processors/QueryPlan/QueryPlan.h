@@ -62,9 +62,9 @@ public:
         const BuildQueryPipelineSettings & build_pipeline_settings);
 
     /// If initialized, build pipeline and convert to pipe. Otherwise, return empty pipe.
-    Pipe convertToPipe(
-        const QueryPlanOptimizationSettings & optimization_settings,
-        const BuildQueryPipelineSettings & build_pipeline_settings);
+    // Pipe convertToPipe(
+    //     const QueryPlanOptimizationSettings & optimization_settings,
+    //     const BuildQueryPipelineSettings & build_pipeline_settings);
 
     struct ExplainPlanOptions
     {

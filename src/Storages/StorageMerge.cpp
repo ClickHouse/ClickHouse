@@ -22,6 +22,8 @@
 #include <Columns/ColumnString.h>
 #include <Common/typeid_cast.h>
 #include <Common/checkStackSize.h>
+#include "Processors/QueryPlan/BuildQueryPipelineSettings.h"
+#include "Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h"
 #include <Databases/IDatabase.h>
 #include <base/range.h>
 #include <algorithm>
@@ -478,7 +480,9 @@ Pipe StorageMerge::createSources(
         if (real_column_names.empty())
             real_column_names.push_back(ExpressionActions::getSmallestColumn(storage_snapshot->metadata->getColumns().getAllPhysical()));
 
-        pipe = storage->read(
+        QueryPlan plan;
+        storage->read(
+            plan,
             real_column_names,
             storage_snapshot,
             modified_query_info,
@@ -486,6 +490,12 @@ Pipe StorageMerge::createSources(
             processed_stage,
             max_block_size,
             UInt32(streams_num));
+
+        auto builder = plan.buildQueryPipeline(
+            QueryPlanOptimizationSettings::fromContext(modified_context),
+            BuildQueryPipelineSettings::fromContext(modified_context));
+
+        pipe = QueryPipelineBuilder::getPipe(std::move(*builder), resources);
     }
     else if (processed_stage > storage_stage)
     {
