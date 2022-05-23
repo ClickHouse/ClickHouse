@@ -13,7 +13,6 @@ SET(AWS_S3_LIBRARY_DIR "${ClickHouse_SOURCE_DIR}/contrib/aws/aws-cpp-sdk-s3")
 SET(AWS_CORE_LIBRARY_DIR "${ClickHouse_SOURCE_DIR}/contrib/aws/aws-cpp-sdk-core")
 SET(AWS_CRT_LIBRARY_DIR "${ClickHouse_SOURCE_DIR}/contrib/aws/crt/aws-crt-cpp")
 SET(AWS_CRT_C_IO_LIBRARY_DIR "${ClickHouse_SOURCE_DIR}/contrib/aws/crt/aws-crt-cpp/crt/aws-c-io")
-SET(AWS_CRT_C_COMMON_LIBRARY_DIR "${ClickHouse_SOURCE_DIR}/contrib/aws/crt/aws-crt-cpp/crt/aws-c-common")
 SET(AWS_CRT_C_MQTT_LIBRARY_DIR "${ClickHouse_SOURCE_DIR}/contrib/aws/crt/aws-crt-cpp/crt/aws-c-mqtt")
 SET(AWS_CRT_C_AUTH_LIBRARY_DIR "${ClickHouse_SOURCE_DIR}/contrib/aws/crt/aws-crt-cpp/crt/aws-c-auth")
 SET(AWS_CRT_C_SDKUTILS_LIBRARY_DIR "${ClickHouse_SOURCE_DIR}/contrib/aws/crt/aws-crt-cpp/crt/aws-c-sdkutils")
@@ -95,7 +94,6 @@ set(S3_INCLUDES
     "${AWS_COMMON_LIBRARY_DIR}/include/"
     "${AWS_CRT_LIBRARY_DIR}/include/"
     "${AWS_CRT_C_IO_LIBRARY_DIR}/include/"
-    "${AWS_CRT_C_COMMON_LIBRARY_DIR}/include/"
     "${AWS_CRT_C_MQTT_LIBRARY_DIR}/include/"
     "${AWS_CRT_C_AUTH_LIBRARY_DIR}/include/"
     "${AWS_CRT_C_SDKUTILS_LIBRARY_DIR}/include/"
