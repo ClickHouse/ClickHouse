@@ -421,7 +421,6 @@ Coordination::Error KeeperStorage::commit(int64_t commit_zxid, int64_t session_i
                             std::move(operation.data),
                             operation.stat,
                             operation.is_sequental,
-                            operation.is_ephemeral,
                             std::move(operation.acls),
                             session_id))
                         onStorageInconsistency();
@@ -503,9 +502,8 @@ bool KeeperStorage::createNode(
     String data,
     const Coordination::Stat & stat,
     bool is_sequental,
-    bool is_ephemeral,
     Coordination::ACLs node_acls,
-    int64_t session_id)
+    int64_t /*session_id*/)
 {
     auto parent_path = parentPath(path);
     auto node_it = container.find(parent_path);
@@ -532,9 +530,6 @@ bool KeeperStorage::createNode(
     /// Take child path from key owned by map.
     auto child_path = getBaseName(map_key->getKey());
     container.updateValue(parent_path, [child_path](KeeperStorage::Node & parent) { parent.addChild(child_path); });
-
-    if (is_ephemeral)
-        ephemerals[session_id].emplace(path);
 
     addDigest(map_key->getMapped()->value, map_key->getKey().toView());
     return true;
@@ -740,7 +735,7 @@ struct KeeperStorageCreateRequestProcessor final : public KeeperStorageRequestPr
         new_deltas.emplace_back(
             std::move(path_created),
             zxid,
-            KeeperStorage::CreateNodeDelta{stat, request.is_ephemeral, request.is_sequential, std::move(node_acls), request.data});
+            KeeperStorage::CreateNodeDelta{stat, request.is_sequential, std::move(node_acls), request.data});
 
         int32_t parent_cversion = request.parent_cversion;
 
@@ -759,6 +754,9 @@ struct KeeperStorageCreateRequestProcessor final : public KeeperStorageRequestPr
                                                    node.stat.pzxid = zxid;
                                                ++node.stat.numChildren;
                                            }});
+
+        if (request.is_ephemeral)
+            storage.ephemerals[session_id].emplace(path_created);
 
         digest = storage.calculateNodesDigest(digest, new_deltas);
         return new_deltas;
@@ -1776,7 +1774,6 @@ void KeeperStorage::preprocessRequest(
         }
 
         new_digest = calculateNodesDigest(new_digest, new_deltas);
-
         return;
     }
 

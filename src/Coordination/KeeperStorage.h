@@ -146,7 +146,6 @@ public:
     struct CreateNodeDelta
     {
         Coordination::Stat stat;
-        bool is_ephemeral;
         bool is_sequental;
         Coordination::ACLs acls;
         String data;
@@ -266,7 +265,6 @@ public:
         String data,
         const Coordination::Stat & stat,
         bool is_sequental,
-        bool is_ephemeral,
         Coordination::ACLs node_acls,
         int64_t session_id);
 
