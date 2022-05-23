@@ -1,5 +1,5 @@
 #include <Formats/EscapingRuleUtils.h>
-#include <Formats/JSONEachRowUtils.h>
+#include <Formats/JSONUtils.h>
 #include <Formats/ReadSchemaUtils.h>
 #include <DataTypes/Serializations/SerializationNullable.h>
 #include <DataTypes/DataTypeString.h>
@@ -83,7 +83,7 @@ void skipFieldByEscapingRule(ReadBuffer & buf, FormatSettings::EscapingRule esca
             readEscapedString(tmp, buf);
             break;
         case FormatSettings::EscapingRule::Quoted:
-            readQuotedFieldIntoString(tmp, buf);
+            readQuotedField(tmp, buf);
             break;
         case FormatSettings::EscapingRule::CSV:
             readCSVString(tmp, buf, format_settings.csv);
@@ -219,13 +219,13 @@ String readByEscapingRule(ReadBuffer & buf, FormatSettings::EscapingRule escapin
             if constexpr (read_string)
                 readQuotedString(result, buf);
             else
-                readQuotedFieldIntoString(result, buf);
+                readQuotedField(result, buf);
             break;
         case FormatSettings::EscapingRule::JSON:
             if constexpr (read_string)
                 readJSONString(result, buf);
             else
-                readJSONFieldIntoString(result, buf);
+                readJSONField(result, buf);
             break;
         case FormatSettings::EscapingRule::Raw:
             readString(result, buf);
@@ -452,7 +452,7 @@ DataTypePtr determineDataTypeByEscapingRule(const String & field, const FormatSe
             return buf.eof() ? type : nullptr;
         }
         case FormatSettings::EscapingRule::JSON:
-            return getDataTypeFromJSONField(field);
+            return JSONUtils::getDataTypeFromField(field);
         case FormatSettings::EscapingRule::CSV:
         {
             if (!format_settings.csv.input_format_use_best_effort_in_schema_inference)
