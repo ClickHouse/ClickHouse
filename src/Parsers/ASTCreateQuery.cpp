@@ -394,6 +394,12 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
 
     frame.expression_list_always_start_on_new_line = false; //-V519
 
+    if (inner_storage)
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << " INNER" << (settings.hilite ? hilite_none : "");
+        inner_storage->formatImpl(settings, state, frame);
+    }
+
     if (storage)
         storage->formatImpl(settings, state, frame);
 

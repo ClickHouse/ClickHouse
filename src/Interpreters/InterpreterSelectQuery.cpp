@@ -1093,7 +1093,10 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
     bool use_grouping_set_key = expressions.use_grouping_set_key;
 
     if (query.group_by_with_grouping_sets && query.group_by_with_totals)
-       throw Exception("WITH TOTALS and GROUPING SETS are not supported together", ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "WITH TOTALS and GROUPING SETS are not supported together");
+
+    if (query.group_by_with_grouping_sets && (query.group_by_with_rollup || query.group_by_with_cube))
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "GROUPING SETS are not supported together with ROLLUP and CUBE");
 
     if (query_info.projection && query_info.projection->desc->type == ProjectionDescription::Type::Aggregate)
     {
@@ -1168,6 +1171,12 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
         LOG_TRACE(log, "{} -> {}", QueryProcessingStage::toString(from_stage), QueryProcessingStage::toString(options.to_stage));
     }
 
+    if (query_info.projection && query_info.projection->input_order_info && query_info.input_order_info)
+       throw Exception("InputOrderInfo is set for projection and for query", ErrorCodes::LOGICAL_ERROR);
+    InputOrderInfoPtr input_order_info_for_order;
+    if (!expressions.need_aggregate)
+        input_order_info_for_order = query_info.projection ? query_info.projection->input_order_info : query_info.input_order_info;
+
     if (options.to_stage > QueryProcessingStage::FetchColumns)
     {
         auto preliminary_sort = [&]()
@@ -1183,10 +1192,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                 && !expressions.has_window)
             {
                 if (expressions.has_order_by)
-                    executeOrder(
-                        query_plan,
-                        query_info.input_order_info ? query_info.input_order_info
-                                                    : (query_info.projection ? query_info.projection->input_order_info : nullptr));
+                    executeOrder(query_plan, input_order_info_for_order);
 
                 if (expressions.has_order_by && query.limitLength())
                     executeDistinct(query_plan, false, expressions.selected_columns, true);
@@ -1311,15 +1317,8 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                 executeWhere(query_plan, expressions.before_where, expressions.remove_where_filter);
 
             if (expressions.need_aggregate)
-            {
                 executeAggregation(
                     query_plan, expressions.before_aggregation, aggregate_overflow_row, aggregate_final, query_info.input_order_info);
-
-                /// We need to reset input order info, so that executeOrder can't use it
-                query_info.input_order_info.reset();
-                if (query_info.projection)
-                    query_info.projection->input_order_info.reset();
-            }
 
             // Now we must execute:
             // 1) expressions before window functions,
@@ -1455,10 +1454,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                     && !(query.group_by_with_totals && !aggregate_final))
                     executeMergeSorted(query_plan, "for ORDER BY, without aggregation");
                 else    /// Otherwise, just sort.
-                    executeOrder(
-                        query_plan,
-                        query_info.input_order_info ? query_info.input_order_info
-                                                    : (query_info.projection ? query_info.projection->input_order_info : nullptr));
+                    executeOrder(query_plan, input_order_info_for_order);
             }
 
             /** Optimization - if there are several sources and there is LIMIT, then first apply the preliminary LIMIT,
@@ -2747,12 +2743,6 @@ void InterpreterSelectQuery::executeExtremes(QueryPlan & query_plan)
 
 void InterpreterSelectQuery::executeSubqueriesInSetsAndJoins(QueryPlan & query_plan, SubqueriesForSets & subqueries_for_sets)
 {
-    // const auto & input_order_info = query_info.input_order_info
-    //     ? query_info.input_order_info
-    //     : (query_info.projection ? query_info.projection->input_order_info : nullptr);
-    // if (input_order_info)
-    //     executeMergeSorted(query_plan, input_order_info->order_key_prefix_descr, 0, "before creating sets for subqueries and joins");
-
     const Settings & settings = context->getSettingsRef();
 
     SizeLimits limits(settings.max_rows_to_transfer, settings.max_bytes_to_transfer, settings.transfer_overflow_mode);
