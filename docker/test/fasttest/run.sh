@@ -178,7 +178,7 @@ function clone_submodules
             contrib/replxx
             contrib/wyhash
             contrib/eigen
-            contrib/nats-io
+            contrib/hashidsxx
         )
 
         git submodule sync
