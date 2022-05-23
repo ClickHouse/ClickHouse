@@ -32,25 +32,23 @@ void DependenciesGraph::resetState()
 
 void DependenciesGraph::addTask(DDLTaskPtr && task)
 {
-    LOG_DEBUG(log, "Start adding task");
     auto name = task->entry_name;
-    LOG_DEBUG(log, "Got name");
     if (tasks_dependencies.database_objects_in_query.contains(name))
         /// Skip if already added
         return;
-    LOG_DEBUG(log, "Checked not contains(name)) in graph already");
 
     auto database_objects_for_added_task = getDependenciesSetFromQuery(global_context, task->query);
-    LOG_DEBUG(log, "Got dependencies");
+    tasks_dependencies.database_objects_in_query[name] = database_objects_for_added_task;
 
     if (database_objects_for_added_task.empty())
     {
         /// No dependencies means query can't have any dependencies or dependent queries
         tasks_dependencies.independent_queries.insert(name);
-        LOG_DEBUG(log, "Added to independent");
+        tasks_dependencies.dependencies_info[name].dependencies = {};
+        tasks_dependencies.dependencies_info[name].dependent_queries = {};
         return;
     }
-    tasks_dependencies.database_objects_in_query[name] = database_objects_for_added_task;
+
     for (const auto & [query_name, query_objects] : tasks_dependencies.database_objects_in_query)
     {
         if (name == query_name)
