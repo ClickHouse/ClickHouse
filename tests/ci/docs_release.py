@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import argparse
 import logging
 import subprocess
 import os
@@ -15,11 +16,25 @@ from upload_result_helper import upload_results
 from docker_pull_helper import get_image_with_version
 from commit_status_helper import get_commit
 from rerun_helper import RerunHelper
+from tee_popen import TeePopen
 
 NAME = "Docs Release (actions)"
 
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+        description="ClickHouse building script using prebuilt Docker image",
+    )
+    parser.add_argument(
+        "--as-root", action="store_true", help="if the container should run as root"
+    )
+    return parser.parse_args()
+
+
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
+    args = parse_args()
 
     temp_path = TEMP_PATH
     repo_path = REPO_COPY
@@ -41,19 +56,21 @@ if __name__ == "__main__":
         os.makedirs(test_output)
 
     token = CLOUDFLARE_TOKEN
+    if args.as_root:
+        user = "0:0"
+    else:
+        user = f"{os.geteuid()}:{os.getegid()}"
     cmd = (
         "docker run --cap-add=SYS_PTRACE --volume=$SSH_AUTH_SOCK:/ssh-agent "
-        f"-e SSH_AUTH_SOCK=/ssh-agent -e CLOUDFLARE_TOKEN={token} "
+        f"--user={user} -e SSH_AUTH_SOCK=/ssh-agent -e CLOUDFLARE_TOKEN={token} "
         f"-e EXTRA_BUILD_ARGS='--verbose' --volume={repo_path}:/repo_path"
         f" --volume={test_output}:/output_path {docker_image}"
     )
 
     run_log_path = os.path.join(test_output, "runlog.log")
 
-    with open(run_log_path, "w", encoding="utf-8") as log, SSHKey(
-        "ROBOT_CLICKHOUSE_SSH_KEY"
-    ):
-        with subprocess.Popen(cmd, shell=True, stderr=log, stdout=log) as process:
+    with SSHKey("ROBOT_CLICKHOUSE_SSH_KEY"):
+        with TeePopen(cmd, run_log_path) as process:
             retcode = process.wait()
             if retcode == 0:
                 logging.info("Run successfully")
