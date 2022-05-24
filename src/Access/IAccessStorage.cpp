@@ -410,34 +410,6 @@ bool IAccessStorage::updateImpl(const UUID & id, const UpdateFunc &, bool throw_
 }
 
 
-scope_guard IAccessStorage::subscribeForChanges(AccessEntityType type, const OnChangedHandler & handler) const
-{
-    return subscribeForChangesImpl(type, handler);
-}
-
-
-scope_guard IAccessStorage::subscribeForChanges(const UUID & id, const OnChangedHandler & handler) const
-{
-    return subscribeForChangesImpl(id, handler);
-}
-
-
-scope_guard IAccessStorage::subscribeForChanges(const std::vector<UUID> & ids, const OnChangedHandler & handler) const
-{
-    scope_guard subscriptions;
-    for (const auto & id : ids)
-        subscriptions.join(subscribeForChangesImpl(id, handler));
-    return subscriptions;
-}
-
-
-void IAccessStorage::notify(const Notifications & notifications)
-{
-    for (const auto & [fn, id, new_entity] : notifications)
-        fn(id, new_entity);
-}
-
-
 UUID IAccessStorage::authenticate(
     const Credentials & credentials,
     const Poco::Net::IPAddress & address,
