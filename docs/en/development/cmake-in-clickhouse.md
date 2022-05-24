@@ -13,11 +13,6 @@ cmake .. \
     -DCMAKE_C_COMPILER=$(which clang-13) \
     -DCMAKE_CXX_COMPILER=$(which clang++-13) \
     -DCMAKE_BUILD_TYPE=Debug \
-    -DENABLE_CLICKHOUSE_ALL=OFF \
-    -DENABLE_CLICKHOUSE_SERVER=ON \
-    -DENABLE_CLICKHOUSE_CLIENT=ON \
-    -DENABLE_LIBRARIES=OFF \
-    -DUSE_UNWIND=ON \
     -DENABLE_UTILS=OFF \
     -DENABLE_TESTS=OFF
 ```
@@ -300,6 +295,12 @@ Note that ClickHouse uses forks of these libraries, see https://github.com/Click
 <td>Take care to add prlimit in command line before ccache, or else ccache thinks that prlimit is compiler, and clang++ is its input file, and refuses to work  with multiple inputs, e.g in ccache log: [2021-03-31T18:06:32.655327 36900] Command line: /usr/bin/ccache prlimit --as=10000000000 --data=5000000000 --cpu=600 /usr/bin/clang++-11 - ...... std=gnu++2a -MD -MT src/CMakeFiles/dbms.dir/Storages/MergeTree/IMergeTreeDataPart.cpp.o -MF src/CMakeFiles/dbms.dir/Storages/MergeTree/IMergeTreeDataPart.cpp.o.d -o src/CMakeFiles/dbms.dir/Storages/MergeTree/IMergeTreeDataPart.cpp.o -c ../src/Storages/MergeTree/IMergeTreeDataPart.cpp  [2021-03-31T18:06:32.656704 36900] Multiple input files: /usr/bin/clang++-11 and ../src/Storages/MergeTree/IMergeTreeDataPart.cpp  Another way would be to use --ccache-skip option before clang++-11 to make ccache ignore it.</td>
 </tr>
 <tr>
+<td><a name="enable-colored-build"></a><a href="https://github.com/clickhouse/clickhouse/blob/master/CMakeLists.txt#L160" rel="external nofollow noreferrer" target="_blank"><code class="syntax">ENABLE_COLORED_BUILD</code></a></td>
+<td><code class="syntax">ON</code></td>
+<td>Enable colored diagnostics in build log.</td>
+<td></td>
+</tr>
+<tr>
 <td><a name="enable-examples"></a><a href="https://github.com/clickhouse/clickhouse/blob/master/CMakeLists.txt#L201" rel="external nofollow noreferrer" target="_blank"><code class="syntax">ENABLE_EXAMPLES</code></a></td>
 <td><code class="syntax">OFF</code></td>
 <td>Build all example programs in 'examples' subdirectories</td>
@@ -412,12 +413,6 @@ Note that ClickHouse uses forks of these libraries, see https://github.com/Click
 <td><code class="syntax">OFF</code></td>
 <td>Enable -Werror compiler option</td>
 <td>Using system libs can cause a lot of warnings in includes (on macro expansion).</td>
-</tr>
-<tr>
-<td><a name="weverything"></a><a href="https://github.com/clickhouse/clickhouse/blob/master/cmake/warnings.cmake#L15" rel="external nofollow noreferrer" target="_blank"><code class="syntax">WEVERYTHING</code></a></td>
-<td><code class="syntax">ON</code></td>
-<td>Enable -Weverything option with some exceptions.</td>
-<td>Add some warnings that are not available even with -Wall -Wextra -Wpedantic. Intended for exploration of new compiler warnings that may be found useful. Applies to clang only</td>
 </tr>
 <tr>
 <td><a name="with-coverage"></a><a href="https://github.com/clickhouse/clickhouse/blob/master/CMakeLists.txt#L344" rel="external nofollow noreferrer" target="_blank"><code class="syntax">WITH_COVERAGE</code></a></td>

@@ -9,7 +9,7 @@ TEMP_PATH = os.getenv("TEMP_PATH", module_dir)
 
 CACHES_PATH = os.getenv("CACHES_PATH", TEMP_PATH)
 CLOUDFLARE_TOKEN = os.getenv("CLOUDFLARE_TOKEN")
-GITHUB_EVENT_PATH = os.getenv("GITHUB_EVENT_PATH")
+GITHUB_EVENT_PATH = os.getenv("GITHUB_EVENT_PATH", "")
 GITHUB_REPOSITORY = os.getenv("GITHUB_REPOSITORY", "ClickHouse/ClickHouse")
 GITHUB_RUN_ID = os.getenv("GITHUB_RUN_ID", "0")
 GITHUB_SERVER_URL = os.getenv("GITHUB_SERVER_URL", "https://github.com")
