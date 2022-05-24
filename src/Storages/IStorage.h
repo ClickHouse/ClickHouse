@@ -585,7 +585,7 @@ public:
     /// Returns true if all disks of storage are read-only.
     virtual bool isStaticStorage() const;
 
-    virtual bool isColumnOriented() const { return false; }
+    virtual bool supportsSubsetOfColumns() const { return false; }
 
     /// If it is possible to quickly determine exact number of rows in the table at this moment of time, then return it.
     /// Used for:
