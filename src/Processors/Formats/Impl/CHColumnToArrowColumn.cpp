@@ -11,7 +11,6 @@
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnMap.h>
 #include <Core/callOnTypeIndex.h>
-#include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeArray.h>
@@ -215,14 +214,16 @@ namespace DB
         std::unordered_map<String, std::shared_ptr<arrow::Array>> & dictionary_values)
     {
         const auto * column_tuple = assert_cast<const ColumnTuple *>(column.get());
-        const auto & nested_types =  assert_cast<const DataTypeTuple *>(column_type.get())->getElements();
+        const auto * type_tuple = assert_cast<const DataTypeTuple *>(column_type.get());
+        const auto & nested_types = type_tuple->getElements();
+        const auto & nested_names = type_tuple->getElementNames();
 
         arrow::StructBuilder & builder = assert_cast<arrow::StructBuilder &>(*array_builder);
 
         for (size_t i = 0; i != column_tuple->tupleSize(); ++i)
         {
             ColumnPtr nested_column = column_tuple->getColumnPtr(i);
-            fillArrowArray(column_name + "." + std::to_string(i), nested_column, nested_types[i], null_bytemap, builder.field_builder(i), format_name, start, end, output_string_as_string, dictionary_values);
+            fillArrowArray(column_name + "." + nested_names[i], nested_column, nested_types[i], null_bytemap, builder.field_builder(i), format_name, start, end, output_string_as_string, dictionary_values);
         }
 
         for (size_t i = start; i != end; ++i)
@@ -661,14 +662,15 @@ namespace DB
 
         if (isTuple(column_type))
         {
-            const auto & nested_types = assert_cast<const DataTypeTuple *>(column_type.get())->getElements();
+            const auto & tuple_type = assert_cast<const DataTypeTuple *>(column_type.get());
+            const auto & nested_types = tuple_type->getElements();
+            const auto & nested_names = tuple_type->getElementNames();
             const auto * tuple_column = assert_cast<const ColumnTuple *>(column.get());
             std::vector<std::shared_ptr<arrow::Field>> nested_fields;
             for (size_t i = 0; i != nested_types.size(); ++i)
             {
-                String name = column_name + "." + std::to_string(i);
-                auto nested_arrow_type = getArrowType(nested_types[i], tuple_column->getColumnPtr(i), name, format_name, output_string_as_string, out_is_column_nullable);
-                nested_fields.push_back(std::make_shared<arrow::Field>(name, nested_arrow_type, *out_is_column_nullable));
+                auto nested_arrow_type = getArrowType(nested_types[i], tuple_column->getColumnPtr(i), nested_names[i], format_name, output_string_as_string, out_is_column_nullable);
+                nested_fields.push_back(std::make_shared<arrow::Field>(nested_names[i], nested_arrow_type, *out_is_column_nullable));
             }
             return arrow::struct_(nested_fields);
         }
