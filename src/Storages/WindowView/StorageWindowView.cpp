@@ -272,40 +272,13 @@ namespace
         }
     };
 
-    IntervalKind strToIntervalKind(const String& interval_str)
-    {
-        if (interval_str == "Nanosecond")
-            return IntervalKind::Nanosecond;
-        else if (interval_str == "Microsecond")
-            return IntervalKind::Microsecond;
-        else if (interval_str == "Millisecond")
-            return IntervalKind::Millisecond;
-        else if (interval_str == "Second")
-            return IntervalKind::Second;
-        else if (interval_str == "Minute")
-            return IntervalKind::Minute;
-        else if (interval_str == "Hour")
-            return IntervalKind::Hour;
-        else if (interval_str == "Day")
-            return IntervalKind::Day;
-        else if (interval_str == "Week")
-            return IntervalKind::Week;
-        else if (interval_str == "Month")
-            return IntervalKind::Month;
-        else if (interval_str == "Quarter")
-            return IntervalKind::Quarter;
-        else if (interval_str == "Year")
-            return IntervalKind::Year;
-        __builtin_unreachable();
-    }
-
     void extractWindowArgument(const ASTPtr & ast, IntervalKind::Kind & kind, Int64 & num_units, String err_msg)
     {
         const auto * arg = ast->as<ASTFunction>();
-        if (!arg || !startsWith(arg->name, "toInterval"))
+        if (!arg || !startsWith(arg->name, "toInterval")
+        || !IntervalKind::tryParseString(Poco::toLower(arg->name.substr(10)), kind))
             throw Exception(err_msg, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-        kind = strToIntervalKind(arg->name.substr(10));
         const auto * interval_unit = arg->children.front()->children.front()->as<ASTLiteral>();
         if (!interval_unit
             || (interval_unit->value.getType() != Field::Types::String
@@ -1061,7 +1034,7 @@ void StorageWindowView::threadFuncCleanup()
     }
 
     if (!shutdown_called)
-        clean_cache_task->scheduleAfter(1000);
+        clean_cache_task->scheduleAfter(clean_interval_ms);
 }
 
 void StorageWindowView::threadFuncFireProc()
@@ -1102,7 +1075,7 @@ void StorageWindowView::threadFuncFireEvent()
     std::unique_lock lock(fire_signal_mutex);
     while (!shutdown_called)
     {
-        bool signaled = std::cv_status::no_timeout == fire_signal_condition.wait_for(lock, std::chrono::seconds(5));
+        bool signaled = std::cv_status::no_timeout == fire_signal_condition.wait_for(lock, std::chrono::seconds(fire_signal_timeout_s));
         if (!signaled)
             continue;
 
@@ -1229,6 +1202,7 @@ StorageWindowView::StorageWindowView(
     : IStorage(table_id_)
     , WithContext(context_->getGlobalContext())
     , log(&Poco::Logger::get(fmt::format("StorageWindowView({}.{})", table_id_.database_name, table_id_.table_name)))
+    , fire_signal_timeout_s(context_->getSettingsRef().wait_for_window_view_fire_signal_timeout.totalSeconds())
     , clean_interval_ms(context_->getSettingsRef().window_view_clean_interval.totalMilliseconds())
 {
     if (!query.select)
@@ -1497,14 +1471,10 @@ void StorageWindowView::writeIntoWindowView(
 
     if (lateness_bound > 0) /// Add filter, which leaves rows with timestamp >= lateness_bound
     {
-        ASTPtr args = std::make_shared<ASTExpressionList>();
-        args->children.push_back(std::make_shared<ASTIdentifier>(window_view.timestamp_column_name));
-        args->children.push_back(std::make_shared<ASTLiteral>(lateness_bound));
-
-        auto filter_function = std::make_shared<ASTFunction>();
-        filter_function->name = "greaterOrEquals";
-        filter_function->arguments = args;
-        filter_function->children.push_back(filter_function->arguments);
+        auto filter_function = makeASTFunction(
+            "greaterOrEquals",
+            std::make_shared<ASTIdentifier>(window_view.timestamp_column_name),
+            std::make_shared<ASTLiteral>(lateness_bound));
 
         ASTPtr query = filter_function;
         NamesAndTypesList columns;
