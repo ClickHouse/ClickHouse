@@ -1183,7 +1183,7 @@ public:
 
         if (arguments.size() == 3)
         {
-            if (!isColumnConst(*arguments[2].column))
+            if (!arguments[2].column || !isColumnConst(*arguments[2].column))
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                     "Illegal type of third argument of function {}. Expected const unsigned integer.",
                     getName());
