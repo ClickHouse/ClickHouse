@@ -3,7 +3,6 @@ from helpers.cluster import ClickHouseCluster
 
 import threading
 import time
-import logging
 
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance(
@@ -77,15 +76,11 @@ def test_total_max_threads_defined_1(started_cluster):
 
 
 def test_total_max_threads_limit_reached(started_cluster):
-    logging.debug("ADQM: test begin")
-
     def thread_select():
-        logging.debug("ADQM: started another thread")
         node4.query(
             "SELECT count(*) FROM numbers_mt(1e11) settings max_threads=100",
             query_id="background_query",
         )
-        logging.debug("ADQM: finished another thread")
 
     another_thread = threading.Thread(target=thread_select)
     another_thread.start()
@@ -98,14 +93,11 @@ def test_total_max_threads_limit_reached(started_cluster):
     ):
         time.sleep(0.1)
 
-    logging.debug("ADQM: started main query")
     node4.query(
         "SELECT count(*) FROM numbers_mt(10000000) settings max_threads=5",
         query_id="test_total_max_threads_4",
     )
-    logging.debug("ADQM: finished main query")
     another_thread.join()
-    logging.debug("ADQM: logs: %s", node4.grep_in_log("ADQM"))
     node4.query("SYSTEM FLUSH LOGS")
     assert (
         node4.query(
@@ -114,4 +106,3 @@ def test_total_max_threads_limit_reached(started_cluster):
         == "2\n"
     )
     node4.query("KILL QUERY WHERE user = 'default' SYNC")
-    logging.debug("ADQM: test end")
