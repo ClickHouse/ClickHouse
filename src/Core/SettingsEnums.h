@@ -183,6 +183,15 @@ enum class ShortCircuitFunctionEvaluation
 
 DECLARE_SETTING_ENUM(ShortCircuitFunctionEvaluation)
 
+enum class TransactionsWaitCSNMode
+{
+    ASYNC,
+    WAIT,
+    WAIT_UNKNOWN,
+};
+
+DECLARE_SETTING_ENUM(TransactionsWaitCSNMode)
+
 DECLARE_SETTING_ENUM_WITH_RENAME(EnumComparingMode, FormatSettings::EnumComparingMode)
 
 DECLARE_SETTING_ENUM_WITH_RENAME(EscapingRule, FormatSettings::EscapingRule)

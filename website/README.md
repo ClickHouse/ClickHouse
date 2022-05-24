@@ -22,19 +22,7 @@ pip3 install -r requirements.txt
 
 virtualenv build
 
-./build.py --skip-multi-page --skip-blog --skip-docs --livereload 8080
+./build.py --livereload 8080
 
 # Open the web browser and go to http://localhost:8080/
-```
-
-# How to quickly test the blog
-
-```
-./build.py --skip-multi-page --skip-docs --livereload 8080
-```
-
-# How to quickly test the broken links in docs
-
-```
-./build.py --skip-multi-page --skip-blog --lang en --livereload 8080
 ```
