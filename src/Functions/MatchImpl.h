@@ -63,14 +63,33 @@ inline bool likePatternIsSubstring(std::string_view pattern, String & res)
 
 }
 
-/** 'like'             - if true, treat pattern as SQL LIKE, otherwise as re2 regexp.
- *  'negate'           - if true, negate result
- *  'case_insensitive' - if true, match case insensitively
- *
-  * NOTE: We want to run regexp search for whole columns by one call (as implemented in function 'position')
-  *  but for that, regexp engine must support \0 bytes and their interpretation as string boundaries.
-  */
-template <typename Name, bool like, bool negate, bool case_insensitive>
+// For more readable instantiations of MatchImpl<>
+struct MatchTraits
+{
+enum class Syntax
+{
+    Like,
+    Re2
+};
+
+enum class Case
+{
+    Sensitive,
+    Insensitive
+};
+
+enum class Result
+{
+    DontNegate,
+    Negate
+};
+};
+
+/**
+ * NOTE: We want to run regexp search for whole columns by one call (as implemented in function 'position')
+ *  but for that, regexp engine must support \0 bytes and their interpretation as string boundaries.
+ */
+template <typename Name, MatchTraits::Syntax syntax_, MatchTraits::Case case_, MatchTraits::Result result_>
 struct MatchImpl
 {
     static constexpr bool use_default_implementation_for_constants = true;
@@ -80,6 +99,10 @@ struct MatchImpl
     static ColumnNumbers getArgumentsThatAreAlwaysConstant() { return {2};}
 
     using ResultType = UInt8;
+
+    static constexpr bool is_like = (syntax_ == MatchTraits::Syntax::Like);
+    static constexpr bool case_insensitive = (case_ == MatchTraits::Case::Insensitive);
+    static constexpr bool negate = (result_ == MatchTraits::Result::Negate);
 
     using Searcher = std::conditional_t<case_insensitive,
           VolnitskyCaseInsensitiveUTF8,
@@ -101,7 +124,7 @@ struct MatchImpl
 
         /// A simple case where the [I]LIKE expression reduces to finding a substring in a string
         String strstr_pattern;
-        if (like && impl::likePatternIsSubstring(needle, strstr_pattern))
+        if (is_like && impl::likePatternIsSubstring(needle, strstr_pattern))
         {
             const UInt8 * const begin = haystack_data.data();
             const UInt8 * const end = haystack_data.data() + haystack_data.size();
@@ -139,7 +162,7 @@ struct MatchImpl
         }
         else
         {
-            auto regexp = Regexps::get<like, true, case_insensitive>(needle);
+            auto regexp = Regexps::get<is_like, true, case_insensitive>(needle);
 
             String required_substring;
             bool is_trivial;
@@ -252,7 +275,7 @@ struct MatchImpl
 
         /// A simple case where the LIKE expression reduces to finding a substring in a string
         String strstr_pattern;
-        if (like && impl::likePatternIsSubstring(needle, strstr_pattern))
+        if (is_like && impl::likePatternIsSubstring(needle, strstr_pattern))
         {
             const UInt8 * const begin = haystack.data();
             const UInt8 * const end = haystack.data() + haystack.size();
@@ -295,7 +318,7 @@ struct MatchImpl
         }
         else
         {
-            auto regexp = Regexps::get<like, true, case_insensitive>(needle);
+            auto regexp = Regexps::get<is_like, true, case_insensitive>(needle);
 
             String required_substring;
             bool is_trivial;
@@ -440,7 +463,7 @@ struct MatchImpl
                     reinterpret_cast<const char *>(cur_needle_data),
                     cur_needle_length);
 
-            if (like && impl::likePatternIsSubstring(needle, required_substr))
+            if (is_like && impl::likePatternIsSubstring(needle, required_substr))
             {
                 if (required_substr.size() > cur_haystack_length)
                     res[i] = negate;
@@ -457,7 +480,7 @@ struct MatchImpl
                 // each row is expected to contain a different like/re2 pattern
                 // --> bypass the regexp cache, instead construct the pattern on-the-fly
                 const int flags = Regexps::buildRe2Flags<true, case_insensitive>();
-                const auto & regexp = Regexps::Regexp(Regexps::createRegexp<like>(needle, flags));
+                const auto & regexp = Regexps::Regexp(Regexps::createRegexp<is_like>(needle, flags));
 
                 regexp.getAnalyzeResult(required_substr, is_trivial, required_substring_is_prefix);
 
@@ -557,7 +580,7 @@ struct MatchImpl
                     reinterpret_cast<const char *>(cur_needle_data),
                     cur_needle_length);
 
-            if (like && impl::likePatternIsSubstring(needle, required_substr))
+            if (is_like && impl::likePatternIsSubstring(needle, required_substr))
             {
                 if (required_substr.size() > cur_haystack_length)
                     res[i] = negate;
@@ -574,7 +597,7 @@ struct MatchImpl
                 // each row is expected to contain a different like/re2 pattern
                 // --> bypass the regexp cache, instead construct the pattern on-the-fly
                 const int flags = Regexps::buildRe2Flags<true, case_insensitive>();
-                const auto & regexp = Regexps::Regexp(Regexps::createRegexp<like>(needle, flags));
+                const auto & regexp = Regexps::Regexp(Regexps::createRegexp<is_like>(needle, flags));
 
                 regexp.getAnalyzeResult(required_substr, is_trivial, required_substring_is_prefix);
 
