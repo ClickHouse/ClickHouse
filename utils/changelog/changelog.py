@@ -352,9 +352,10 @@ def main():
     # Get starting and ending dates for gathering PRs
     # Add one day after and before to mitigate TZ possible issues
     # `tag^{}` format gives commit ref when we have annotated tags
-    from_date = runner.run(f"git log -1 --format=format:%as '{FROM_REF}^{{}}'")
+    # format %cs gives a committer date, works better for cherry-picked commits
+    from_date = runner.run(f"git log -1 --format=format:%cs '{FROM_REF}^{{}}'")
     from_date = (date.fromisoformat(from_date) - timedelta(1)).isoformat()
-    to_date = runner.run(f"git log -1 --format=format:%as '{TO_REF}^{{}}'")
+    to_date = runner.run(f"git log -1 --format=format:%cs '{TO_REF}^{{}}'")
     to_date = (date.fromisoformat(to_date) + timedelta(1)).isoformat()
 
     # Get all PRs for the given time frame
