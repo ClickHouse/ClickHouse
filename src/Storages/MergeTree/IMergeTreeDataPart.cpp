@@ -1809,6 +1809,23 @@ void IMergeTreeDataPart::makeCloneOnDisk(const DiskPtr & disk, const String & di
     volume->getDisk()->removeFileIfExists(fs::path(path_to_clone) / DELETE_ON_DESTROY_MARKER_FILE_NAME);
 }
 
+void IMergeTreeDataPart::makeCloneToOtherDisk(const DiskPtr & disk, const String & directory_name,const String & relative_data_path) const
+{
+    if (disk->getName() == volume->getDisk()->getName())
+        throw Exception("Can not clone data part " + name + " to same disk " + volume->getDisk()->getName(), ErrorCodes::LOGICAL_ERROR);
+    String path_to_clone = fs::path(relative_data_path) / directory_name;
+    if (disk->exists(path_to_clone))
+    {
+        LOG_WARNING(storage.log, "Path {} already exists. Will remove it and clone again.", fullPath(disk, path_to_clone));
+        disk->removeRecursive(fs::path(path_to_clone) / "");
+    }
+    disk->createDirectories(path_to_clone);
+    LOG_DEBUG(storage.log,"to_path {}",path_to_clone);
+    volume->getDisk()->copyDirectoryContent(fs::path(getFullRelativePath()), disk ,path_to_clone);
+    volume->getDisk()->removeFileIfExists(fs::path(path_to_clone) / DELETE_ON_DESTROY_MARKER_FILE_NAME);
+    volume->getDisk()->removeFileIfExists(fs::path(path_to_clone) / TXN_VERSION_METADATA_FILE_NAME);
+}
+
 void IMergeTreeDataPart::checkConsistencyBase() const
 {
     String path = getFullRelativePath();

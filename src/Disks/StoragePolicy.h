@@ -11,6 +11,7 @@
 #include <Common/Exception.h>
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
+#include <Common/randomSeed.h>
 
 #include <memory>
 #include <mutex>
@@ -50,6 +51,8 @@ public:
     /// Used when it's not important, for example for
     /// mutations files
     DiskPtr getAnyDisk() const override;
+
+    DiskPtr getRandomDisk() const override;
 
     DiskPtr tryGetDiskByName(const String & disk_name) const override;
 

@@ -6,6 +6,7 @@
 #include <Interpreters/Context.h>
 #include <Common/escapeForFileName.h>
 #include <Common/quoteString.h>
+#include <Common/randomSeed.h>
 
 #include <set>
 
@@ -184,6 +185,12 @@ DiskPtr StoragePolicy::getAnyDisk() const
     throw Exception(ErrorCodes::NOT_ENOUGH_SPACE, "All disks in storage policy {} are broken", name);
 }
 
+DiskPtr StoragePolicy::getRandomDisk() const
+{
+    Disks disks = getDisks();
+    pcg64 rng(randomSeed());
+    return disks[rng() % disks.size()];
+}
 
 DiskPtr StoragePolicy::tryGetDiskByName(const String & disk_name) const
 {

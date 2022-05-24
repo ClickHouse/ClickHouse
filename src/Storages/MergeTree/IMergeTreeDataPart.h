@@ -363,6 +363,9 @@ public:
     /// Makes full clone of part in specified subdirectory (relative to storage data directory, e.g. "detached") on another disk
     void makeCloneOnDisk(const DiskPtr & disk, const String & directory_name) const;
 
+    /// Makes full clone of part with specific directory name to other disk ( if directory_name is empty, ordinary name wll be kept )
+    void makeCloneToOtherDisk(const DiskPtr & disk, const String & directory_name,const String & relative_data_path) const;
+
     /// Checks that .bin and .mrk files exist.
     ///
     /// NOTE: Doesn't take column renames into account, if some column renames

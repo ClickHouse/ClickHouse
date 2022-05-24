@@ -39,6 +39,7 @@ public:
     /// Used when it's not important, for example for
     /// mutations files
     virtual DiskPtr getAnyDisk() const = 0;
+    virtual DiskPtr getRandomDisk() const = 0;
     virtual DiskPtr tryGetDiskByName(const String & disk_name) const = 0;
     DiskPtr getDiskByName(const String & disk_name) const;
     /// Get free space from most free disk

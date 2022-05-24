@@ -5805,7 +5805,7 @@ MergeTreeData & MergeTreeData::checkStructureAndGetMergeTreeData(
     return checkStructureAndGetMergeTreeData(*source_table, src_snapshot, my_snapshot);
 }
 
-MergeTreeData::MutableDataPartPtr MergeTreeData::cloneAndLoadDataPartOnSameDisk(
+MergeTreeData::MutableDataPartPtr MergeTreeData::cloneAndLoadDataPart(
     const MergeTreeData::DataPartPtr & src_part,
     const String & tmp_part_prefix,
     const MergeTreePartInfo & dst_part_info,
@@ -5815,25 +5815,24 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::cloneAndLoadDataPartOnSameDisk(
     bool copy_instead_of_hardlink)
 {
     /// Check that the storage policy contains the disk where the src_part is located.
-    bool does_storage_policy_allow_same_disk = false;
+    bool is_on_same_disk = false;
     for (const DiskPtr & disk : getStoragePolicy()->getDisks())
     {
         if (disk->getName() == src_part->volume->getDisk()->getName())
         {
-            does_storage_policy_allow_same_disk = true;
+            is_on_same_disk = true;
             break;
         }
     }
-    if (!does_storage_policy_allow_same_disk)
-        throw Exception(
-            "Could not clone and load part " + quoteString(src_part->getFullPath()) + " because disk does not belong to storage policy",
-            ErrorCodes::BAD_ARGUMENTS);
+
+    auto target_disk = is_on_same_disk ? src_part->volume->getDisk() : getStoragePolicy()->getRandomDisk();
+    auto source_disk = src_part->volume->getDisk() ;
 
     String dst_part_name = src_part->getNewName(dst_part_info);
     assert(!tmp_part_prefix.empty());
     String tmp_dst_part_name = tmp_part_prefix + dst_part_name;
 
-    auto reservation = reserveSpace(src_part->getBytesOnDisk(), src_part->volume->getDisk());
+    auto reservation = reserveSpace(src_part->getBytesOnDisk(), target_disk);
     auto disk = reservation->getDisk();
     String src_part_path = src_part->getFullRelativePath();
     String dst_part_path = relative_data_path + tmp_dst_part_name;
@@ -5854,17 +5853,22 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::cloneAndLoadDataPartOnSameDisk(
     if (copy_instead_of_hardlink)
         with_copy = " (copying data)";
 
-    LOG_DEBUG(log, "Cloning part {} to {}{}", fullPath(disk, src_part_path), fullPath(disk, dst_part_path), with_copy);
+    LOG_DEBUG(log, "Cloning part {} to {}{}", fullPath(source_disk, src_part_path), fullPath(disk, dst_part_path), with_copy);
 
-    localBackup(disk, src_part_path, dst_part_path, /* make_source_readonly */ false, {}, /* copy_instead_of_hardlinks */ copy_instead_of_hardlink);
+    if (is_on_same_disk)
+    {
+        localBackup(disk, src_part_path, dst_part_path, /* make_source_readonly */ false);
+        disk->removeFileIfExists(fs::path(dst_part_path) / IMergeTreeDataPart::DELETE_ON_DESTROY_MARKER_FILE_NAME);
+        disk->removeFileIfExists(fs::path(dst_part_path) / IMergeTreeDataPart::TXN_VERSION_METADATA_FILE_NAME);
+    } else {
+        src_part->makeCloneToOtherDisk(disk, tmp_dst_part_name, relative_data_path);
+    }
 
-    disk->removeFileIfExists(fs::path(dst_part_path) / IMergeTreeDataPart::DELETE_ON_DESTROY_MARKER_FILE_NAME);
-    disk->removeFileIfExists(fs::path(dst_part_path) / IMergeTreeDataPart::TXN_VERSION_METADATA_FILE_NAME);
 
     auto single_disk_volume = std::make_shared<SingleDiskVolume>(disk->getName(), disk, 0);
     auto dst_data_part = createPart(dst_part_name, dst_part_info, single_disk_volume, tmp_dst_part_name);
 
-    if (!copy_instead_of_hardlink && hardlinked_files)
+    if (is_on_same_disk && !copy_instead_of_hardlink && hardlinked_files)
     {
         hardlinked_files->source_part_name = src_part->name;
         hardlinked_files->source_table_shared_id = src_part->storage.getTableSharedID();
