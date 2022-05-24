@@ -7,6 +7,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnString.h>
 #include <Interpreters/castColumn.h>
+#include <../src/IO/ReadHelpers.h>
 
 
 namespace DB {
@@ -49,21 +50,29 @@ public:
     }
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        const ColumnPtr & column = arguments[0].column;
-        //ошибки
-        auto string_type = std::make_shared<DataTypeUInt64>();
+        auto string_type = std::make_shared<DataTypeString>();
         auto casted_column = castColumn(std::move(arguments[0]), string_type);
-        const ColumnUInt64 * column_concrete = checkAndGetColumn<ColumnUInt64>(casted_column.get());
-
-        if (!column_concrete)
-            throw Exception("Illegal column " + column->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_COLUMN);
         
-        const typename ColumnVector<UInt64>::Container & data = column_concrete->getData();
+        const ColumnString * col = checkAndGetColumn<ColumnString>(casted_column.get()); 
         auto result_column = ColumnString::create();
+
+        const ColumnString::Chars & vec_src = col-> getChars();
+        const ColumnString::Offsets & offsets_src = col-> getOffsets();
+        size_t prev_offset = 0;
         
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            UInt64 number = data[i];
+            int nxt = offsets_src[i];
+            String ans;
+            for (int j = prev_offset; j < nxt; ++j) {
+                ans+= *reinterpret_cast<const char*>(&vec_src[j]);
+            }
+            UInt64 number = 0;
+            if (!tryParse<UInt64>(number, ans.data(), ans.size())) {
+                number = 0;
+            }
+            prev_offset = nxt;
+
             size_t pos = Borders.size();
             for (size_t idx = 1; idx < Borders.size() - 1; ++idx) {
                 if (number < Borders[idx]) {
@@ -72,7 +81,7 @@ public:
                 }
             }
             Float64 otherNumber = static_cast<Float64>(number) / static_cast<Float64>(Borders[pos - 1]);
-            std::string ans;
+            ans = "";
             if (pos != 1) {
                 UInt64 Dec = static_cast<UInt64>(round(otherNumber * 100));
                 UInt8 r = Dec % 100;

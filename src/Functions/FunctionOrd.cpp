@@ -19,10 +19,10 @@ namespace ErrorCodes
 }
 
 
-class FunctionSpace : public IFunction {
+class FunctionOrd : public IFunction {
 public:
-    static constexpr auto name = "space";
-    static FunctionPtr create(ContextPtr) {return std::make_shared<FunctionSpace>(); }
+    static constexpr auto name = "ord";
+    static FunctionPtr create(ContextPtr) {return std::make_shared<FunctionOrd>(); }
     String getName() const override { return name; }
     bool useDefaultImplementationForConstants() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return false; }
@@ -34,21 +34,24 @@ public:
                 + toString(arguments.size()) + ", should be at least 1.",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        if (!isInteger(arguments[0]) && !isFloat(arguments[0]) && !isString(arguments[0]))
+        if (!isInteger(arguments[0]) && !isString(arguments[0]) && !isFloat(arguments[0]))
                 throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName()
-                                + ", must be Integer",
+                                + ", must be Integer, String or Float number",
                                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-        return std::make_shared<DataTypeString>(); 
+        return std::make_shared<DataTypeUInt64>(); 
     }
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
-    {        
+    {
+        
         auto string_type = std::make_shared<DataTypeString>();
         auto casted_column = castColumn(std::move(arguments[0]), string_type);
         
         const ColumnString * col = checkAndGetColumn<ColumnString>(casted_column.get()); 
 
-        auto result_column = ColumnString::create();
+        auto col_res = ColumnUInt64::create();
+        ColumnUInt64::Container & vec_res = col_res->getData();
+        vec_res.resize(input_rows_count);
 
         const ColumnString::Chars & vec_src = col-> getChars();
         const ColumnString::Offsets & offsets_src = col-> getOffsets();
@@ -56,26 +59,37 @@ public:
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            uint32_t res = 0;
-            const uint8_t start = '0';
-            for (size_t j = prev_offset; j < vec_src.size(); j++) {
-                if (vec_src[j] >= '0' && vec_src[j] <= '9') {
-                    res = res * 10 + *reinterpret_cast<const uint8_t*>(&vec_src[j]) - start;
-                } else {
-                    break;
+            uint8_t firstByte = *reinterpret_cast<const uint8_t*>(&vec_src[prev_offset]);
+            if (!(firstByte >> 7)) {
+                vec_res[i] = firstByte;
+            }
+            else {
+                vec_res[i] = 0;
+                uint32_t cntBits = 0;
+                uint64_t power = 1;
+                for (int bit = 0; bit < 4; ++bit) {
+                    if ((firstByte >> (7 - bit)) & 1) {
+                        ++cntBits;
+                        power*= 256;
+                    } else {
+                        break;
+                    }
+                }
+                power/= 256;
+                for (uint32_t byte = prev_offset; byte < prev_offset + cntBits; ++byte) {
+                    uint64_t value = *reinterpret_cast<const uint8_t*>(&vec_src[byte]);
+                    vec_res[i]+= power * value;
+                    power/= 256;
                 }
             }
-            std::string ans;
-            ans.resize(res, ' ');
-            result_column->insertData(ans.data(), ans.size());
             prev_offset = offsets_src[i];
         }
-        return result_column;
+        return col_res;
     }
 };
 
-void registerFunctionSpace(FunctionFactory & factory) {
-    factory.registerFunction<FunctionSpace>();   
+void registerFunctionOrd(FunctionFactory & factory) {
+    factory.registerFunction<FunctionOrd>();   
 }
 
 }

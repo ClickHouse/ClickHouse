@@ -65,10 +65,15 @@ void registerFunctionAESDecryptMysql(FunctionFactory & factory);
 
 #endif
 
-void registerFunctionHelloWorld(FunctionFactory & factory);
 void registerFunctionASCII(FunctionFactory & factory);
-//void registerFunctionSign(FunctionFactory & factory);
 void registerFunctionFormatBytes(FunctionFactory &factory);
+void registerFunctionBitLength(FunctionFactory &factory);
+void registerFunctionSpace(FunctionFactory &factory);
+void registerFunctionConcatWs(FunctionFactory &factory);
+void registerFunctionConv(FunctionFactory &factory);
+void registerFunctionInstr(FunctionFactory & factory);
+void registerFunctionOrd(FunctionFactory & factory);
+void registerFunctionElt(FunctionFactory & factory);
 
 void registerFunctions()
 {
@@ -132,10 +137,15 @@ void registerFunctions()
 #endif
     registerFunctionTid(factory);
     registerFunctionLogTrace(factory);
-    registerFunctionHelloWorld(factory);
     registerFunctionASCII(factory);
-    //registerFunctionSign(factory);
+    registerFunctionSpace(factory);
+    registerFunctionBitLength(factory);
+    registerFunctionConcatWs(factory);
+    registerFunctionConv(factory);
     registerFunctionFormatBytes(factory);
+    registerFunctionInstr(factory);
+    registerFunctionOrd(factory);
+    registerFunctionElt(factory);
 }
 
 }
