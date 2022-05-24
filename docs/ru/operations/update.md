@@ -1,6 +1,6 @@
 ---
-toc_priority: 47
-toc_title: "Обновление ClickHouse"
+sidebar_position: 47
+sidebar_label: "Обновление ClickHouse"
 ---
 
 # Обновление ClickHouse {#clickhouse-upgrade}
@@ -15,9 +15,9 @@ $ sudo service clickhouse-server restart
 
 Если ClickHouse установлен не из рекомендуемых deb-пакетов, используйте соответствующий метод обновления.
 
-!!! note "Примечание"
+    :::note "Примечание"
     Вы можете обновить сразу несколько серверов, кроме случая, когда все реплики одного шарда отключены.
-
+    :::
 Обновление ClickHouse до определенной версии:
 
 **Пример**

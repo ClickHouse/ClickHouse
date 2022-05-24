@@ -10,7 +10,7 @@
 #include <Poco/Net/HTTPRequest.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/LocalDateTime.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include "DictionarySourceFactory.h"
 #include "DictionaryStructure.h"
 #include "readInvalidateQuery.h"
@@ -50,7 +50,7 @@ namespace
         {
             if (!qualified_name.database.empty())
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Dictionary source of type {} specifies a schema but schema is not supported by {}-driver",
+                    "Dictionary source specifies a schema but schema is not supported by {}-driver",
                     bridge_.getName());
         }
 
@@ -121,7 +121,7 @@ std::string XDBCDictionarySource::getUpdateFieldAndDate()
 
 Pipe XDBCDictionarySource::loadAll()
 {
-    LOG_TRACE(log, load_all_query);
+    LOG_TRACE(log, fmt::runtime(load_all_query));
     return loadFromQuery(bridge_url, sample_block, load_all_query);
 }
 
@@ -130,7 +130,7 @@ Pipe XDBCDictionarySource::loadUpdatedAll()
 {
     std::string load_query_update = getUpdateFieldAndDate();
 
-    LOG_TRACE(log, load_query_update);
+    LOG_TRACE(log, fmt::runtime(load_query_update));
     return loadFromQuery(bridge_url, sample_block, load_query_update);
 }
 

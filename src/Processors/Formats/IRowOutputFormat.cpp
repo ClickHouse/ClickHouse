@@ -12,12 +12,11 @@ namespace ErrorCodes
 
 IRowOutputFormat::IRowOutputFormat(const Block & header, WriteBuffer & out_, const Params & params_)
     : IOutputFormat(header, out_)
+    , num_columns(header.columns())
     , types(header.getDataTypes())
+    , serializations(header.getSerializations())
     , params(params_)
 {
-    serializations.reserve(types.size());
-    for (const auto & type : types)
-        serializations.push_back(type->getDefaultSerialization());
 }
 
 void IRowOutputFormat::consume(DB::Chunk chunk)
@@ -68,8 +67,6 @@ void IRowOutputFormat::consumeExtremes(DB::Chunk chunk)
 
 void IRowOutputFormat::write(const Columns & columns, size_t row_num)
 {
-    size_t num_columns = columns.size();
-
     writeRowStartDelimiter();
 
     for (size_t i = 0; i < num_columns; ++i)

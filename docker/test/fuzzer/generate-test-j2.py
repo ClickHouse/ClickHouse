@@ -11,7 +11,7 @@ def removesuffix(text, suffix):
     https://www.python.org/dev/peps/pep-0616/
     """
     if suffix and text.endswith(suffix):
-        return text[:-len(suffix)]
+        return text[: -len(suffix)]
     else:
         return text[:]
 

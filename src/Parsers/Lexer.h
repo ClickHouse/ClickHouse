@@ -28,6 +28,7 @@ namespace DB
     \
     M(Comma) \
     M(Semicolon) \
+    M(VerticalDelimiter)      /** Vertical delimiter \G */ \
     M(Dot)                    /** Compound identifiers, like a.b or tuple access operator a.1, (x, y).2. */ \
                               /** Need to be distinguished from floating point number with omitted integer part: .1 */ \
     \

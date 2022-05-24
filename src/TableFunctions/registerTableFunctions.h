@@ -18,6 +18,8 @@ void registerTableFunctionValues(TableFunctionFactory & factory);
 void registerTableFunctionInput(TableFunctionFactory & factory);
 void registerTableFunctionGenerate(TableFunctionFactory & factory);
 
+void registerTableFunctionMeiliSearch(TableFunctionFactory & factory);
+
 #if USE_AWS_S3
 void registerTableFunctionS3(TableFunctionFactory & factory);
 void registerTableFunctionS3Cluster(TableFunctionFactory & factory);
@@ -27,6 +29,10 @@ void registerTableFunctionCOS(TableFunctionFactory & factory);
 #if USE_HDFS
 void registerTableFunctionHDFS(TableFunctionFactory & factory);
 void registerTableFunctionHDFSCluster(TableFunctionFactory & factory);
+#endif
+
+#if USE_HIVE
+void registerTableFunctionHive(TableFunctionFactory & factory);
 #endif
 
 void registerTableFunctionODBC(TableFunctionFactory & factory);
@@ -47,6 +53,8 @@ void registerTableFunctionSQLite(TableFunctionFactory & factory);
 #endif
 
 void registerTableFunctionDictionary(TableFunctionFactory & factory);
+
+void registerTableFunctionFormat(TableFunctionFactory & factory);
 
 void registerTableFunctions();
 

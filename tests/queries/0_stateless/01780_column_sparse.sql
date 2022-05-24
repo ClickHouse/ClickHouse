@@ -35,8 +35,8 @@ SETTINGS ratio_of_defaults_for_sparse_serialization = 0;
 
 INSERT INTO t_sparse_1 VALUES (1, 6), (2, 1), (3, 0), (4, -1), (5, 0), (6, 0), (7, -2), (8, 0), (9, 0), (10, 4), (11, 0);
 
-SELECT * FROM t_sparse_1 ORDER BY v;
-SELECT * FROM t_sparse_1 ORDER BY v DESC;
+SELECT * FROM t_sparse_1 ORDER BY v, id;
+SELECT * FROM t_sparse_1 ORDER BY v DESC, id;
 SELECT * FROM t_sparse_1 ORDER BY v, id LIMIT 5;
 SELECT * FROM t_sparse_1 ORDER BY v DESC, id LIMIT 5;
 

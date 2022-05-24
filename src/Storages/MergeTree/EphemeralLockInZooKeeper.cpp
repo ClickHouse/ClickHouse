@@ -1,6 +1,6 @@
 #include <Storages/MergeTree/EphemeralLockInZooKeeper.h>
 #include <Common/ZooKeeper/KeeperException.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <base/types.h>
 
 

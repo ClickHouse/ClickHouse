@@ -18,6 +18,7 @@
 #include <Parsers/ParserSelectWithUnionQuery.h>
 #include <Parsers/ParserSetQuery.h>
 #include <Common/typeid_cast.h>
+#include <Parsers/ASTColumnDeclaration.h>
 
 
 namespace DB
@@ -353,20 +354,27 @@ bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ASTPtr ttl_table;
     ASTPtr settings;
 
-    if (!s_engine.ignore(pos, expected))
-        return false;
+    bool storage_like = false;
+    bool parsed_engine_keyword = s_engine.ignore(pos, expected);
 
-    s_eq.ignore(pos, expected);
+    if (parsed_engine_keyword)
+    {
+        s_eq.ignore(pos, expected);
 
-    if (!ident_with_optional_params_p.parse(pos, engine, expected))
-        return false;
+        if (!ident_with_optional_params_p.parse(pos, engine, expected))
+            return false;
+        storage_like = true;
+    }
 
     while (true)
     {
         if (!partition_by && s_partition_by.ignore(pos, expected))
         {
             if (expression_p.parse(pos, partition_by, expected))
+            {
+                storage_like = true;
                 continue;
+            }
             else
                 return false;
         }
@@ -374,7 +382,10 @@ bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         if (!primary_key && s_primary_key.ignore(pos, expected))
         {
             if (expression_p.parse(pos, primary_key, expected))
+            {
+                storage_like = true;
                 continue;
+            }
             else
                 return false;
         }
@@ -382,7 +393,10 @@ bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         if (!order_by && s_order_by.ignore(pos, expected))
         {
             if (expression_p.parse(pos, order_by, expected))
+            {
+                storage_like = true;
                 continue;
+            }
             else
                 return false;
         }
@@ -390,7 +404,10 @@ bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         if (!sample_by && s_sample_by.ignore(pos, expected))
         {
             if (expression_p.parse(pos, sample_by, expected))
+            {
+                storage_like = true;
                 continue;
+            }
             else
                 return false;
         }
@@ -398,19 +415,29 @@ bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         if (!ttl_table && s_ttl.ignore(pos, expected))
         {
             if (parser_ttl_list.parse(pos, ttl_table, expected))
+            {
+                storage_like = true;
                 continue;
+            }
             else
                 return false;
         }
 
-        if (s_settings.ignore(pos, expected))
+        /// Do not allow SETTINGS clause without ENGINE,
+        /// because we cannot distinguish engine settings from query settings in this case.
+        /// And because settings for each engine are different.
+        if (parsed_engine_keyword && s_settings.ignore(pos, expected))
         {
             if (!settings_p.parse(pos, settings, expected))
                 return false;
+            storage_like = true;
         }
 
         break;
     }
+    // If any part of storage definition is found create storage node
+    if (!storage_like)
+        return false;
 
     auto storage = std::make_shared<ASTStorage>();
     storage->set(storage->engine, engine);
@@ -549,13 +576,11 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
 
         if (!storage_parse_result && !is_temporary)
         {
-            if (!s_as.ignore(pos, expected))
+            if (s_as.ignore(pos, expected) && !table_function_p.parse(pos, as_table_function, expected))
                 return false;
-            if (!table_function_p.parse(pos, as_table_function, expected))
-            {
-                return false;
-            }
         }
+
+        /// Will set default table engine if Storage clause was not parsed
     }
     /** Create queries without list of columns:
       *  - CREATE|ATTACH TABLE ... AS ...
@@ -590,10 +615,6 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
                 }
             }
         }
-        else if (!storage)
-        {
-            return false;
-        }
     }
     auto comment = parseComment(pos, expected);
 
@@ -625,12 +646,14 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     if (comment)
         query->set(query->comment, comment);
 
-    if (query->storage && query->columns_list && query->columns_list->primary_key)
+    if (query->columns_list && query->columns_list->primary_key)
     {
-        if (query->storage->primary_key)
-        {
+        /// If engine is not set will use default one
+        if (!query->storage)
+            query->set(query->storage, std::make_shared<ASTStorage>());
+        else if (query->storage->primary_key)
             throw Exception("Multiple primary keys are not allowed.", ErrorCodes::BAD_ARGUMENTS);
-        }
+
         query->storage->primary_key = query->columns_list->primary_key;
     }
 
@@ -807,11 +830,13 @@ bool ParserCreateWindowViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected &
     ParserKeyword s_as("AS");
     ParserKeyword s_view("VIEW");
     ParserKeyword s_window("WINDOW");
+    ParserKeyword s_populate("POPULATE");
     ParserToken s_dot(TokenType::Dot);
     ParserToken s_eq(TokenType::Equals);
     ParserToken s_lparen(TokenType::OpeningRoundBracket);
     ParserToken s_rparen(TokenType::ClosingRoundBracket);
     ParserStorage storage_p;
+    ParserStorage storage_inner;
     ParserTablePropertiesDeclarationList table_properties_p;
     ParserIntervalOperatorExpression watermark_p;
     ParserIntervalOperatorExpression lateness_p;
@@ -821,6 +846,7 @@ bool ParserCreateWindowViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected &
     ASTPtr to_table;
     ASTPtr columns_list;
     ASTPtr storage;
+    ASTPtr inner_storage;
     ASTPtr watermark;
     ASTPtr lateness;
     ASTPtr as_database;
@@ -834,6 +860,7 @@ bool ParserCreateWindowViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected &
     bool is_watermark_bounded = false;
     bool allowed_lateness = false;
     bool if_not_exists = false;
+    bool is_populate = false;
 
     if (!s_create.ignore(pos, expected))
     {
@@ -878,8 +905,17 @@ bool ParserCreateWindowViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected &
             return false;
     }
 
-    /// Inner table ENGINE for WINDOW VIEW
-    storage_p.parse(pos, storage, expected);
+    if (ParserKeyword{"INNER"}.ignore(pos, expected))
+    {
+        /// Inner table ENGINE for WINDOW VIEW
+        storage_inner.parse(pos, inner_storage, expected);
+    }
+
+    if (!to_table)
+    {
+        /// Target table ENGINE for WINDOW VIEW
+        storage_p.parse(pos, storage, expected);
+    }
 
     // WATERMARK
     if (ParserKeyword{"WATERMARK"}.ignore(pos, expected))
@@ -905,6 +941,9 @@ bool ParserCreateWindowViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected &
         if (!lateness_p.parse(pos, lateness, expected))
             return false;
     }
+
+    if (s_populate.ignore(pos, expected))
+        is_populate = true;
 
     /// AS SELECT ...
     if (!s_as.ignore(pos, expected))
@@ -932,12 +971,14 @@ bool ParserCreateWindowViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected &
 
     query->set(query->columns_list, columns_list);
     query->set(query->storage, storage);
+    query->set(query->inner_storage, inner_storage);
     query->is_watermark_strictly_ascending = is_watermark_strictly_ascending;
     query->is_watermark_ascending = is_watermark_ascending;
     query->is_watermark_bounded = is_watermark_bounded;
     query->watermark_function = watermark;
     query->allowed_lateness = allowed_lateness;
     query->lateness_function = lateness;
+    query->is_populate = is_populate;
 
     tryGetIdentifierNameInto(as_database, query->as_database);
     tryGetIdentifierNameInto(as_table, query->as_table);
@@ -1263,8 +1304,8 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     if (is_materialized_view && !to_table)
     {
         /// Internal ENGINE for MATERIALIZED VIEW must be specified.
-        if (!storage_p.parse(pos, storage, expected))
-            return false;
+        /// Actually check it in Interpreter as default_table_engine can be set
+        storage_p.parse(pos, storage, expected);
 
         if (s_populate.ignore(pos, expected))
             is_populate = true;

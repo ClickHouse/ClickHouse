@@ -86,7 +86,7 @@ enum class AccessType
     M(CREATE_DICTIONARY, "", DICTIONARY, CREATE) /* allows to execute {CREATE|ATTACH} DICTIONARY */\
     M(CREATE_TEMPORARY_TABLE, "", GLOBAL, CREATE) /* allows to create and manipulate temporary tables;
                                                      implicitly enabled by the grant CREATE_TABLE on any table */ \
-    M(CREATE_FUNCTION, "", DATABASE, CREATE) /* allows to execute CREATE FUNCTION */ \
+    M(CREATE_FUNCTION, "", GLOBAL, CREATE) /* allows to execute CREATE FUNCTION */ \
     M(CREATE, "", GROUP, ALL) /* allows to execute {CREATE|ATTACH} */ \
     \
     M(DROP_DATABASE, "", DATABASE, DROP) /* allows to execute {DROP|DETACH} DATABASE */\
@@ -94,7 +94,7 @@ enum class AccessType
     M(DROP_VIEW, "", VIEW, DROP) /* allows to execute {DROP|DETACH} TABLE for views;
                                     implicitly enabled by the grant DROP_TABLE */\
     M(DROP_DICTIONARY, "", DICTIONARY, DROP) /* allows to execute {DROP|DETACH} DICTIONARY */\
-    M(DROP_FUNCTION, "", DATABASE, DROP) /* allows to execute DROP FUNCTION */\
+    M(DROP_FUNCTION, "", GLOBAL, DROP) /* allows to execute DROP FUNCTION */\
     M(DROP, "", GROUP, ALL) /* allows to execute {DROP|DETACH} */\
     \
     M(TRUNCATE, "TRUNCATE TABLE", TABLE, ALL) \
@@ -102,6 +102,7 @@ enum class AccessType
     \
     M(KILL_QUERY, "", GLOBAL, ALL) /* allows to kill a query started by another user
                                       (anyone can kill his own queries) */\
+    M(KILL_TRANSACTION, "", GLOBAL, ALL) \
     \
     M(MOVE_PARTITION_BETWEEN_SHARDS, "", GLOBAL, ALL) /* required to be able to move a part/partition to a table
                                                          identified by its ZooKeeper path */\
@@ -113,9 +114,9 @@ enum class AccessType
     M(ALTER_ROLE, "", GLOBAL, ACCESS_MANAGEMENT) \
     M(DROP_ROLE, "", GLOBAL, ACCESS_MANAGEMENT) \
     M(ROLE_ADMIN, "", GLOBAL, ACCESS_MANAGEMENT) /* allows to grant and revoke the roles which are not granted to the current user with admin option */\
-    M(CREATE_ROW_POLICY, "CREATE POLICY", GLOBAL, ACCESS_MANAGEMENT) \
-    M(ALTER_ROW_POLICY, "ALTER POLICY", GLOBAL, ACCESS_MANAGEMENT) \
-    M(DROP_ROW_POLICY, "DROP POLICY", GLOBAL, ACCESS_MANAGEMENT) \
+    M(CREATE_ROW_POLICY, "CREATE POLICY", TABLE, ACCESS_MANAGEMENT) \
+    M(ALTER_ROW_POLICY, "ALTER POLICY", TABLE, ACCESS_MANAGEMENT) \
+    M(DROP_ROW_POLICY, "DROP POLICY", TABLE, ACCESS_MANAGEMENT) \
     M(CREATE_QUOTA, "", GLOBAL, ACCESS_MANAGEMENT) \
     M(ALTER_QUOTA, "", GLOBAL, ACCESS_MANAGEMENT) \
     M(DROP_QUOTA, "", GLOBAL, ACCESS_MANAGEMENT) \
@@ -124,7 +125,7 @@ enum class AccessType
     M(DROP_SETTINGS_PROFILE, "DROP PROFILE", GLOBAL, ACCESS_MANAGEMENT) \
     M(SHOW_USERS, "SHOW CREATE USER", GLOBAL, SHOW_ACCESS) \
     M(SHOW_ROLES, "SHOW CREATE ROLE", GLOBAL, SHOW_ACCESS) \
-    M(SHOW_ROW_POLICIES, "SHOW POLICIES, SHOW CREATE ROW POLICY, SHOW CREATE POLICY", GLOBAL, SHOW_ACCESS) \
+    M(SHOW_ROW_POLICIES, "SHOW POLICIES, SHOW CREATE ROW POLICY, SHOW CREATE POLICY", TABLE, SHOW_ACCESS) \
     M(SHOW_QUOTAS, "SHOW CREATE QUOTA", GLOBAL, SHOW_ACCESS) \
     M(SHOW_SETTINGS_PROFILES, "SHOW PROFILES, SHOW CREATE SETTINGS PROFILE, SHOW CREATE PROFILE", GLOBAL, SHOW_ACCESS) \
     M(SHOW_ACCESS, "", GROUP, ACCESS_MANAGEMENT) \
@@ -157,6 +158,7 @@ enum class AccessType
     M(SYSTEM_SYNC_REPLICA, "SYNC REPLICA", TABLE, SYSTEM) \
     M(SYSTEM_RESTART_REPLICA, "RESTART REPLICA", TABLE, SYSTEM) \
     M(SYSTEM_RESTORE_REPLICA, "RESTORE REPLICA", TABLE, SYSTEM) \
+    M(SYSTEM_SYNC_DATABASE_REPLICA, "SYNC DATABASE REPLICA", DATABASE, SYSTEM) \
     M(SYSTEM_FLUSH_DISTRIBUTED, "FLUSH DISTRIBUTED", TABLE, SYSTEM_FLUSH) \
     M(SYSTEM_FLUSH_LOGS, "FLUSH LOGS", GLOBAL, SYSTEM_FLUSH) \
     M(SYSTEM_FLUSH, "", GROUP, SYSTEM) \
@@ -166,6 +168,7 @@ enum class AccessType
     M(dictGet, "dictHas, dictGetHierarchy, dictIsIn", DICTIONARY, ALL) /* allows to execute functions dictGet(), dictHas(), dictGetHierarchy(), dictIsIn() */\
     \
     M(addressToLine, "", GLOBAL, INTROSPECTION) /* allows to execute function addressToLine() */\
+    M(addressToLineWithInlines, "", GLOBAL, INTROSPECTION) /* allows to execute function addressToLineWithInlines() */\
     M(addressToSymbol, "", GLOBAL, INTROSPECTION) /* allows to execute function addressToSymbol() */\
     M(demangle, "", GLOBAL, INTROSPECTION) /* allows to execute function demangle() */\
     M(INTROSPECTION, "INTROSPECTION FUNCTIONS", GROUP, ALL) /* allows to execute functions addressToLine(), addressToSymbol(), demangle()*/\
@@ -174,6 +177,7 @@ enum class AccessType
     M(URL, "", GLOBAL, SOURCES) \
     M(REMOTE, "", GLOBAL, SOURCES) \
     M(MONGO, "", GLOBAL, SOURCES) \
+    M(MEILISEARCH, "", GLOBAL, SOURCES) \
     M(MYSQL, "", GLOBAL, SOURCES) \
     M(POSTGRES, "", GLOBAL, SOURCES) \
     M(SQLITE, "", GLOBAL, SOURCES) \
@@ -181,7 +185,10 @@ enum class AccessType
     M(JDBC, "", GLOBAL, SOURCES) \
     M(HDFS, "", GLOBAL, SOURCES) \
     M(S3, "", GLOBAL, SOURCES) \
+    M(HIVE, "", GLOBAL, SOURCES) \
     M(SOURCES, "", GROUP, ALL) \
+    \
+    M(CLUSTER, "", GLOBAL, ALL) /* ON CLUSTER queries */ \
     \
     M(ALL, "ALL PRIVILEGES", GROUP, NONE) /* full access */ \
     M(NONE, "USAGE, NO PRIVILEGES", GROUP, NONE) /* no access */

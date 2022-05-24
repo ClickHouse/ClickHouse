@@ -158,7 +158,6 @@ void ASTTableJoin::formatImplBeforeTable(const FormatSettings & settings, Format
     switch (locality)
     {
         case Locality::Unspecified:
-            break;
         case Locality::Local:
             break;
         case Locality::Global:
@@ -247,10 +246,12 @@ void ASTTableJoin::formatImpl(const FormatSettings & settings, FormatState & sta
 
 void ASTArrayJoin::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
+    std::string indent_str = settings.one_line ? "" : std::string(4 * frame.indent, ' ');
     frame.expression_list_prepend_whitespace = true;
 
     settings.ostr << (settings.hilite ? hilite_keyword : "")
         << settings.nl_or_ws
+        << indent_str
         << (kind == Kind::Left ? "LEFT " : "") << "ARRAY JOIN" << (settings.hilite ? hilite_none : "");
 
     settings.one_line

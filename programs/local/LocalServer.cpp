@@ -12,9 +12,10 @@
 #include <Interpreters/loadMetadata.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <base/getFQDNOrHostName.h>
-#include <base/scope_guard_safe.h>
+#include <Common/scope_guard_safe.h>
 #include <Interpreters/UserDefinedSQLObjectsLoader.h>
 #include <Interpreters/Session.h>
+#include <Access/AccessControl.h>
 #include <Common/Exception.h>
 #include <Common/Macros.h>
 #include <Common/Config/ConfigProcessor.h>
@@ -22,14 +23,15 @@
 #include <Common/TLDListsHolder.h>
 #include <Common/quoteString.h>
 #include <Common/randomSeed.h>
-#include <loggers/Loggers.h>
+#include <Loggers/Loggers.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/UseSSL.h>
+#include <IO/IOThreadPool.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ASTInsertQuery.h>
-#include <base/ErrorHandlers.h>
+#include <Common/ErrorHandlers.h>
 #include <Functions/registerFunctions.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <TableFunctions/registerTableFunctions.h>
@@ -91,92 +93,6 @@ void LocalServer::processError(const String &) const
 }
 
 
-bool LocalServer::executeMultiQuery(const String & all_queries_text)
-{
-    bool echo_query = echo_queries;
-
-    /// Several queries separated by ';'.
-    /// INSERT data is ended by the end of line, not ';'.
-    /// An exception is VALUES format where we also support semicolon in
-    /// addition to end of line.
-    const char * this_query_begin = all_queries_text.data();
-    const char * this_query_end;
-    const char * all_queries_end = all_queries_text.data() + all_queries_text.size();
-
-    String full_query; // full_query is the query + inline INSERT data + trailing comments (the latter is our best guess for now).
-    String query_to_execute;
-    ASTPtr parsed_query;
-    std::optional<Exception> current_exception;
-
-    while (true)
-    {
-        auto stage = analyzeMultiQueryText(this_query_begin, this_query_end, all_queries_end,
-                                           query_to_execute, parsed_query, all_queries_text, current_exception);
-        switch (stage)
-        {
-            case MultiQueryProcessingStage::QUERIES_END:
-            case MultiQueryProcessingStage::PARSING_FAILED:
-            {
-                return true;
-            }
-            case MultiQueryProcessingStage::CONTINUE_PARSING:
-            {
-                continue;
-            }
-            case MultiQueryProcessingStage::PARSING_EXCEPTION:
-            {
-                if (current_exception)
-                    current_exception->rethrow();
-                return true;
-            }
-            case MultiQueryProcessingStage::EXECUTE_QUERY:
-            {
-                full_query = all_queries_text.substr(this_query_begin - all_queries_text.data(), this_query_end - this_query_begin);
-
-                try
-                {
-                    processParsedSingleQuery(full_query, query_to_execute, parsed_query, echo_query, false);
-                }
-                catch (...)
-                {
-                    if (!is_interactive && !ignore_error)
-                        throw;
-
-                    // Surprisingly, this is a client error. A server error would
-                    // have been reported w/o throwing (see onReceiveSeverException()).
-                    client_exception = std::make_unique<Exception>(getCurrentExceptionMessage(print_stack_trace), getCurrentExceptionCode());
-                    have_error = true;
-                }
-
-                // For INSERTs with inline data: use the end of inline data as
-                // reported by the format parser (it is saved in sendData()).
-                // This allows us to handle queries like:
-                //   insert into t values (1); select 1
-                // , where the inline data is delimited by semicolon and not by a
-                // newline.
-                auto * insert_ast = parsed_query->as<ASTInsertQuery>();
-                if (insert_ast && insert_ast->data)
-                {
-                    this_query_end = insert_ast->end;
-                    adjustQueryEnd(this_query_end, all_queries_end, global_context->getSettingsRef().max_parser_depth);
-                }
-
-                // Report error.
-                if (have_error)
-                    processError(full_query);
-
-                // Stop processing queries if needed.
-                if (have_error && !ignore_error)
-                    return is_interactive;
-
-                this_query_begin = this_query_end;
-                break;
-            }
-        }
-    }
-}
-
-
 void LocalServer::initialize(Poco::Util::Application & self)
 {
     Poco::Util::Application::initialize(self);
@@ -190,6 +106,17 @@ void LocalServer::initialize(Poco::Util::Application & self)
         auto loaded_config = config_processor.loadConfig();
         config().add(loaded_config.configuration.duplicate(), PRIO_DEFAULT, false);
     }
+
+    GlobalThreadPool::initialize(
+        config().getUInt("max_thread_pool_size", 10000),
+        config().getUInt("max_thread_pool_free_size", 1000),
+        config().getUInt("thread_pool_queue_size", 10000)
+    );
+
+    IOThreadPool::initialize(
+        config().getUInt("max_io_thread_pool_size", 100),
+        config().getUInt("max_io_thread_pool_free_size", 0),
+        config().getUInt("io_thread_pool_queue_size", 10000));
 }
 
 
@@ -269,6 +196,11 @@ void LocalServer::tryInitPath()
     if (path.back() != '/')
         path += '/';
 
+    fs::create_directories(fs::path(path) / "user_defined/");
+    fs::create_directories(fs::path(path) / "data/");
+    fs::create_directories(fs::path(path) / "metadata/");
+    fs::create_directories(fs::path(path) / "metadata_dropped/");
+
     global_context->setPath(path);
 
     global_context->setTemporaryStorage(path + "tmp");
@@ -313,9 +245,15 @@ void LocalServer::cleanup()
 }
 
 
+static bool checkIfStdinIsRegularFile()
+{
+    struct stat file_stat;
+    return fstat(STDIN_FILENO, &file_stat) == 0 && S_ISREG(file_stat.st_mode);
+}
+
 std::string LocalServer::getInitialCreateTableQuery()
 {
-    if (!config().has("table-structure") && !config().has("table-file"))
+    if (!config().has("table-structure") && !config().has("table-file") && !config().has("table-data-format") && (!checkIfStdinIsRegularFile() || !config().has("query")))
         return {};
 
     auto table_name = backQuoteIfNeed(config().getString("table-name", "table"));
@@ -337,8 +275,9 @@ std::string LocalServer::getInitialCreateTableQuery()
         format_from_file_name = FormatFactory::instance().getFormatFromFileName(file_name, false);
     }
 
-    auto data_format
-        = backQuoteIfNeed(config().getString("table-data-format", format_from_file_name.empty() ? "TSV" : format_from_file_name));
+    auto data_format = backQuoteIfNeed(
+        config().getString("table-data-format", config().getString("format", format_from_file_name.empty() ? "TSV" : format_from_file_name)));
+
 
     if (table_structure == "auto")
         table_structure = "";
@@ -381,7 +320,9 @@ void LocalServer::setupUsers()
         "</clickhouse>";
 
     ConfigurationPtr users_config;
-
+    auto & access_control = global_context->getAccessControl();
+    access_control.setNoPasswordAllowed(config().getBool("allow_no_password", true));
+    access_control.setPlaintextPasswordAllowed(config().getBool("allow_plaintext_password", true));
     if (config().has("users_config") || config().has("config-file") || fs::exists("config.xml"))
     {
         const auto users_config_path = config().getString("users_config", config().getString("config-file", "config.xml"));
@@ -390,10 +331,7 @@ void LocalServer::setupUsers()
         users_config = loaded_config.configuration;
     }
     else
-    {
         users_config = getConfigurationFromXMLString(minimal_default_user_xml);
-    }
-
     if (users_config)
         global_context->setUsersConfig(users_config);
     else
@@ -404,7 +342,8 @@ void LocalServer::setupUsers()
 void LocalServer::connect()
 {
     connection_parameters = ConnectionParameters(config());
-    connection = LocalConnection::createConnection(connection_parameters, global_context, need_render_progress);
+    connection = LocalConnection::createConnection(
+        connection_parameters, global_context, need_render_progress, need_render_profile_events, server_display_name);
 }
 
 
@@ -507,6 +446,14 @@ catch (...)
     return getCurrentExceptionCode();
 }
 
+void LocalServer::updateLoggerLevel(const String & logs_level)
+{
+    if (!logging_initialized)
+        return;
+
+    config().setString("logger.level", logs_level);
+    updateLevels(config(), logger());
+}
 
 void LocalServer::processConfig()
 {
@@ -518,50 +465,46 @@ void LocalServer::processConfig()
 
         if (config().has("multiquery"))
             is_multiquery = true;
-
-        load_suggestions = true;
     }
     else
     {
-        if (delayed_interactive)
-        {
-            load_suggestions = true;
-        }
-
         need_render_progress = config().getBool("progress", false);
         echo_queries = config().hasOption("echo") || config().hasOption("verbose");
         ignore_error = config().getBool("ignore-error", false);
         is_multiquery = true;
     }
+
     print_stack_trace = config().getBool("stacktrace", false);
+    load_suggestions = (is_interactive || delayed_interactive) && !config().getBool("disable_suggestion", false);
 
     auto logging = (config().has("logger.console")
                     || config().has("logger.level")
                     || config().has("log-level")
+                    || config().has("send_logs_level")
                     || config().has("logger.log"));
 
-    auto file_logging = config().has("server_logs_file");
-    if (is_interactive && logging && !file_logging)
-        throw Exception("For interactive mode logging is allowed only with --server_logs_file option",
-                        ErrorCodes::BAD_ARGUMENTS);
+    auto level = config().getString("log-level", "trace");
 
-    if (file_logging)
+    if (config().has("server_logs_file"))
     {
-        auto level = Poco::Logger::parseLevel(config().getString("log-level", "trace"));
-        Poco::Logger::root().setLevel(level);
+        auto poco_logs_level = Poco::Logger::parseLevel(level);
+        Poco::Logger::root().setLevel(poco_logs_level);
         Poco::Logger::root().setChannel(Poco::AutoPtr<Poco::SimpleFileChannel>(new Poco::SimpleFileChannel(server_logs_file)));
+        logging_initialized = true;
     }
-    else if (logging)
+    else if (logging || is_interactive)
     {
-        // force enable logging
         config().setString("logger", "logger");
-        // sensitive data rules are not used here
+        auto log_level_default = is_interactive && !logging ? "none" : level;
+        config().setString("logger.level", config().getString("log-level", config().getString("send_logs_level", log_level_default)));
         buildLoggers(config(), logger(), "clickhouse-local");
+        logging_initialized = true;
     }
     else
     {
         Poco::Logger::root().setLevel("none");
         Poco::Logger::root().setChannel(Poco::AutoPtr<Poco::NullChannel>(new Poco::NullChannel()));
+        logging_initialized = false;
     }
 
     shared_context = Context::createShared();
@@ -601,8 +544,7 @@ void LocalServer::processConfig()
     if (uncompressed_cache_size)
         global_context->setUncompressedCache(uncompressed_cache_size);
 
-    /// Size of cache for marks (index of MergeTree family of tables). It is necessary.
-    /// Specify default value for mark_cache_size explicitly!
+    /// Size of cache for marks (index of MergeTree family of tables).
     size_t mark_cache_size = config().getUInt64("mark_cache_size", 5368709120);
     if (mark_cache_size)
         global_context->setMarkCache(mark_cache_size);
@@ -612,8 +554,7 @@ void LocalServer::processConfig()
     if (index_uncompressed_cache_size)
         global_context->setIndexUncompressedCache(index_uncompressed_cache_size);
 
-    /// Size of cache for index marks (index of MergeTree skip indices). It is necessary.
-    /// Specify default value for index_mark_cache_size explicitly!
+    /// Size of cache for index marks (index of MergeTree skip indices).
     size_t index_mark_cache_size = config().getUInt64("index_mark_cache_size", 0);
     if (index_mark_cache_size)
         global_context->setIndexMarkCache(index_mark_cache_size);
@@ -648,7 +589,6 @@ void LocalServer::processConfig()
         /// Lock path directory before read
         status.emplace(fs::path(path) / "status", StatusFile::write_full_info);
 
-        fs::create_directories(fs::path(path) / "user_defined/");
         LOG_DEBUG(log, "Loading user defined objects from {}", path);
         Poco::File(path + "user_defined/").createDirectories();
         UserDefinedSQLObjectsLoader::instance().loadObjects(global_context);
@@ -656,9 +596,6 @@ void LocalServer::processConfig()
         LOG_DEBUG(log, "Loaded user defined objects.");
 
         LOG_DEBUG(log, "Loading metadata from {}", path);
-        fs::create_directories(fs::path(path) / "data/");
-        fs::create_directories(fs::path(path) / "metadata/");
-
         loadMetadataSystem(global_context);
         attachSystemTablesLocal(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::SYSTEM_DATABASE));
         attachInformationSchema(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::INFORMATION_SCHEMA));
@@ -687,6 +624,7 @@ void LocalServer::processConfig()
 
     ClientInfo & client_info = global_context->getClientInfo();
     client_info.setInitialQuery();
+    client_info.query_kind = query_kind;
 }
 
 
@@ -773,7 +711,7 @@ void LocalServer::applyCmdOptions(ContextMutablePtr context)
 }
 
 
-void LocalServer::processOptions(const OptionsDescription &, const CommandLineOptions & options, const std::vector<Arguments> &)
+void LocalServer::processOptions(const OptionsDescription &, const CommandLineOptions & options, const std::vector<Arguments> &, const std::vector<Arguments> &)
 {
     if (options.count("table"))
         config().setString("table-name", options["table"].as<std::string>());
@@ -795,10 +733,20 @@ void LocalServer::processOptions(const OptionsDescription &, const CommandLineOp
         config().setString("logger.log", options["logger.log"].as<std::string>());
     if (options.count("logger.level"))
         config().setString("logger.level", options["logger.level"].as<std::string>());
+    if (options.count("send_logs_level"))
+        config().setString("send_logs_level", options["send_logs_level"].as<std::string>());
+}
+
+void LocalServer::readArguments(int argc, char ** argv, Arguments & common_arguments, std::vector<Arguments> &, std::vector<Arguments> &)
+{
+    for (int arg_num = 1; arg_num < argc; ++arg_num)
+    {
+        const char * arg = argv[arg_num];
+        common_arguments.emplace_back(arg);
+    }
 }
 
 }
-
 
 #pragma GCC diagnostic ignored "-Wunused-function"
 #pragma GCC diagnostic ignored "-Wmissing-declarations"

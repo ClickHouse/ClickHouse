@@ -90,11 +90,11 @@ struct AggregateFunctionIntervalLengthSumData
 
     void sort()
     {
-        if (!sorted)
-        {
-            ::sort(std::begin(segments), std::end(segments));
-            sorted = true;
-        }
+        if (sorted)
+            return;
+
+        ::sort(std::begin(segments), std::end(segments));
+        sorted = true;
     }
 
     void serialize(WriteBuffer & buf) const

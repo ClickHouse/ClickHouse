@@ -56,7 +56,7 @@ off_t ReadBufferFromEncryptedFile::seek(off_t off, int whence)
         offset = new_pos;
 
         /// No more reading from the current working buffer until next() is called.
-        pos = working_buffer.end();
+        resetWorkingBuffer();
         assert(!hasPendingData());
     }
 
@@ -96,6 +96,7 @@ bool ReadBufferFromEncryptedFile::nextImpl()
     working_buffer.resize(bytes_read);
     encryptor.decrypt(encrypted_buffer.data(), bytes_read, working_buffer.begin());
 
+    offset += bytes_read;
     pos = working_buffer.begin();
     return true;
 }

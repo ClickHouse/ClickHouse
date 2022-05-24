@@ -1,6 +1,6 @@
 ---
-toc_priority: 18
-toc_title: "Терабайт логов кликов от Criteo"
+sidebar_position: 18
+sidebar_label: "Терабайт логов кликов от Criteo"
 ---
 
 # Терабайт логов кликов от Criteo {#terabait-logov-klikov-ot-criteo}

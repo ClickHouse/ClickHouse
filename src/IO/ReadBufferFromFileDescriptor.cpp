@@ -1,5 +1,5 @@
-#include <errno.h>
-#include <time.h>
+#include <cerrno>
+#include <ctime>
 #include <optional>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
@@ -176,8 +176,8 @@ off_t ReadBufferFromFileDescriptor::seek(off_t offset, int whence)
 
         off_t offset_after_seek_pos = new_pos - seek_pos;
 
-        /// First put position at the end of the buffer so the next read will fetch new data to the buffer.
-        pos = working_buffer.end();
+        /// First reset the buffer so the next read will fetch new data to the buffer.
+        resetWorkingBuffer();
 
         /// In case of using 'pread' we just update the info about the next position in file.
         /// In case of using 'read' we call 'lseek'.
@@ -191,7 +191,7 @@ off_t ReadBufferFromFileDescriptor::seek(off_t offset, int whence)
 
             off_t res = ::lseek(fd, seek_pos, SEEK_SET);
             if (-1 == res)
-                throwFromErrnoWithPath("Cannot seek through file " + getFileName(), getFileName(),
+                throwFromErrnoWithPath(fmt::format("Cannot seek through file {} at offset {}", getFileName(), seek_pos), getFileName(),
                     ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
 
             /// Also note that seeking past the file size is not allowed.

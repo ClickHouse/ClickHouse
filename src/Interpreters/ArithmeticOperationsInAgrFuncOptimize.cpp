@@ -59,13 +59,13 @@ Field zeroField(const Field & value)
 {
     switch (value.getType())
     {
-        case Field::Types::UInt64: return UInt64(0);
-        case Field::Types::Int64: return Int64(0);
-        case Field::Types::Float64: return Float64(0);
-        case Field::Types::UInt128: return UInt128(0);
-        case Field::Types::Int128: return Int128(0);
-        case Field::Types::UInt256: return UInt256(0);
-        case Field::Types::Int256: return Int256(0);
+        case Field::Types::UInt64: return static_cast<UInt64>(0);
+        case Field::Types::Int64: return static_cast<Int64>(0);
+        case Field::Types::Float64: return static_cast<Float64>(0);
+        case Field::Types::UInt128: return static_cast<UInt128>(0);
+        case Field::Types::Int128: return static_cast<Int128>(0);
+        case Field::Types::UInt256: return static_cast<UInt256>(0);
+        case Field::Types::Int256: return static_cast<Int256>(0);
         default:
             break;
     }
@@ -85,7 +85,7 @@ const String & changeNameIfNeeded(const String & func_name, const String & child
         { "max", "min" }
     };
 
-    if (literal.value < zeroField(literal.value) && matches.count(func_name) && matches.find(func_name)->second.count(child_name))
+    if (literal.value < zeroField(literal.value) && matches.contains(func_name) && matches.find(func_name)->second.contains(child_name))
         return swap_to.find(func_name)->second;
 
     return func_name;
@@ -103,8 +103,8 @@ ASTPtr tryExchangeFunctions(const ASTFunction & func)
     auto lower_name = Poco::toLower(func.name);
 
     const ASTFunction * child_func = getInternalFunction(func);
-    if (!child_func || !child_func->arguments || child_func->arguments->children.size() != 2 || !supported.count(lower_name)
-        || !supported.find(lower_name)->second.count(child_func->name))
+    if (!child_func || !child_func->arguments || child_func->arguments->children.size() != 2 || !supported.contains(lower_name)
+        || !supported.find(lower_name)->second.contains(child_func->name))
         return {};
 
     auto original_alias = func.tryGetAlias();

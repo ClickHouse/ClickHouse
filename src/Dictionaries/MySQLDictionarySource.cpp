@@ -34,7 +34,7 @@ static const std::unordered_set<std::string_view> dictionary_allowed_keys = {
     "host", "port", "user", "password",
     "db", "database", "table", "schema",
     "update_field", "invalidate_query", "priority",
-    "update_tag", "dont_check_update_time",
+    "update_lag", "dont_check_update_time",
     "query", "where", "name" /* name_collection */, "socket",
     "share_connection", "fail_on_connection_loss", "close_connection",
     "ssl_ca", "ssl_cert", "ssl_key",
@@ -123,7 +123,7 @@ void registerDictionarySourceMysql(DictionarySourceFactory & factory)
 #    include <IO/WriteBufferFromString.h>
 #    include <IO/WriteHelpers.h>
 #    include <Common/LocalDateTime.h>
-#    include <base/logger_useful.h>
+#    include <Common/logger_useful.h>
 #    include "readInvalidateQuery.h"
 #    include <mysqlxx/Exception.h>
 #    include <Core/Settings.h>
@@ -193,7 +193,7 @@ Pipe MySQLDictionarySource::loadAll()
     auto connection = pool->get();
     last_modification = getLastModification(connection, false);
 
-    LOG_TRACE(log, load_all_query);
+    LOG_TRACE(log, fmt::runtime(load_all_query));
     return loadFromQuery(load_all_query);
 }
 
@@ -203,7 +203,7 @@ Pipe MySQLDictionarySource::loadUpdatedAll()
     last_modification = getLastModification(connection, false);
 
     std::string load_update_query = getUpdateFieldAndDate();
-    LOG_TRACE(log, load_update_query);
+    LOG_TRACE(log, fmt::runtime(load_update_query));
     return loadFromQuery(load_update_query);
 }
 
@@ -289,7 +289,7 @@ LocalDateTime MySQLDictionarySource::getLastModification(mysqlxx::Pool::Entry & 
     {
         auto query = connection->query("SHOW TABLE STATUS LIKE " + quoteForLike(configuration.table));
 
-        LOG_TRACE(log, query.str());
+        LOG_TRACE(log, fmt::runtime(query.str()));
 
         auto result = query.use();
 

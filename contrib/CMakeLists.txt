@@ -78,6 +78,7 @@ add_contrib (croaring-cmake croaring)
 add_contrib (zstd-cmake zstd)
 add_contrib (zlib-ng-cmake zlib-ng)
 add_contrib (bzip2-cmake bzip2)
+add_contrib (minizip-ng-cmake minizip-ng)
 add_contrib (snappy-cmake snappy)
 add_contrib (rocksdb-cmake rocksdb)
 add_contrib (thrift-cmake thrift)
@@ -93,6 +94,7 @@ if (ENABLE_FUZZING)
     add_contrib (libprotobuf-mutator-cmake libprotobuf-mutator)
 endif()
 
+add_contrib (wyhash-cmake wyhash)
 add_contrib (cityhash102)
 add_contrib (libfarmhash)
 add_contrib (icu-cmake icu)
@@ -118,9 +120,13 @@ add_contrib (fastops-cmake fastops)
 add_contrib (libuv-cmake libuv)
 add_contrib (amqpcpp-cmake AMQP-CPP) # requires: libuv
 add_contrib (cassandra-cmake cassandra) # requires: libuv
-add_contrib (curl-cmake curl)
-add_contrib (azure-cmake azure)
-add_contrib (sentry-native-cmake sentry-native) # requires: curl
+
+if (ENABLE_CURL_BUILD)
+    add_contrib (curl-cmake curl)
+    add_contrib (azure-cmake azure)
+    add_contrib (sentry-native-cmake sentry-native) # requires: curl
+endif()
+
 add_contrib (fmtlib-cmake fmtlib)
 add_contrib (krb5-cmake krb5)
 add_contrib (cyrus-sasl-cmake cyrus-sasl) # for krb5
@@ -134,6 +140,7 @@ add_contrib (libpq-cmake libpq)
 add_contrib (nuraft-cmake NuRaft)
 add_contrib (fast_float-cmake fast_float)
 add_contrib (datasketches-cpp-cmake datasketches-cpp)
+add_contrib (hashidsxx-cmake hashidsxx)
 
 option(ENABLE_NLP "Enable NLP functions support" ${ENABLE_LIBRARIES})
 if (ENABLE_NLP)
@@ -146,6 +153,7 @@ endif()
 
 add_contrib (sqlite-cmake sqlite-amalgamation)
 add_contrib (s2geometry-cmake s2geometry)
+add_contrib (eigen-cmake eigen)
 
 # Put all targets defined here and in subdirectories under "contrib/<immediate-subdir>" folders in GUI-based IDEs.
 # Some of third-party projects may override CMAKE_FOLDER or FOLDER property of their targets, so they would not appear

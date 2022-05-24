@@ -119,8 +119,9 @@ FROM t_null
 
 There are two options for IN-s with subqueries (similar to JOINs): normal `IN` / `JOIN` and `GLOBAL IN` / `GLOBAL JOIN`. They differ in how they are run for distributed query processing.
 
-!!! attention "Attention"
-    Remember that the algorithms described below may work differently depending on the [settings](../../operations/settings/settings.md) `distributed_product_mode` setting.
+:::note    
+Remember that the algorithms described below may work differently depending on the [settings](../../operations/settings/settings.md) `distributed_product_mode` setting.
+:::
 
 When using the regular IN, the query is sent to remote servers, and each of them runs the subqueries in the `IN` or `JOIN` clause.
 
@@ -215,6 +216,17 @@ This is more optimal than using the normal IN. However, keep the following point
 5.  If you need to use GLOBAL IN often, plan the location of the ClickHouse cluster so that a single group of replicas resides in no more than one data center with a fast network between them, so that a query can be processed entirely within a single data center.
 
 It also makes sense to specify a local table in the `GLOBAL IN` clause, in case this local table is only available on the requestor server and you want to use data from it on remote servers.
+
+### Distributed Subqueries and max_rows_in_set
+
+You can use [`max_rows_in_set`](../../operations/settings/query-complexity.md#max-rows-in-set) and [`max_bytes_in_set`](../../operations/settings/query-complexity.md#max-rows-in-set) to control how much data is tranferred during distributed queries. 
+
+This is specially important if the  `global in` query returns a large amount of data. Consider the following sql - 
+```sql
+select * from table1 where col1 global in (select col1 from table2 where <some_predicate>)
+```
+ 
+If `some_predicate` is not selective enough, it will return large amount of data and cause performance issues. In such cases, it is wise to limit the data transfer over the network. Also, note that [`set_overflow_mode`](../../operations/settings/query-complexity.md#set_overflow_mode) is set to `throw` (by default) meaning that an exception is raised when these thresholds are met.
 
 ### Distributed Subqueries and max_parallel_replicas {#max_parallel_replica-subqueries}
 

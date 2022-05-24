@@ -9,3 +9,5 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 $CLICKHOUSE_CLIENT -q "select * from numbers(10) format Parquet" > $CLICKHOUSE_TMP/data.parquet
 $CLICKHOUSE_LOCAL -q "select * from table" --file="-" < $CLICKHOUSE_TMP/data.parquet 
 
+echo "1,\"String\", \"[1, 2, 3]\"" | $CLICKHOUSE_LOCAL -q "select * from table" --input-format=CSV
+

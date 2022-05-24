@@ -1,6 +1,6 @@
 ---
-toc_priority: 46
-toc_title: UUID
+sidebar_position: 46
+sidebar_label: UUID
 ---
 
 # UUID {#uuid-data-type}

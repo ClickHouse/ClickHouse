@@ -1,6 +1,6 @@
 ---
-toc_priority: 31
-toc_title: Syntax
+sidebar_position: 2
+sidebar_label: Syntax
 ---
 
 # Syntax {#syntax}
@@ -30,7 +30,7 @@ There may be any number of space symbols between syntactical constructions (incl
 
 ClickHouse supports either SQL-style and C-style comments:
 
--   SQL-style comments start with `--` and continue to the end of the line, a space after `--` can be omitted.
+-   SQL-style comments start with `--`, `#!` or `# ` and continue to the end of the line, a space after `--` and `#!` can be omitted.
 -   C-style are from `/*` to `*/`and can be multiline, spaces are not required either.
 
 ## Keywords {#syntax-keywords}
@@ -104,11 +104,11 @@ There are many nuances to processing `NULL`. For example, if at least one of the
 
 In queries, you can check `NULL` using the [IS NULL](../sql-reference/operators/index.md#operator-is-null) and [IS NOT NULL](../sql-reference/operators/index.md) operators and the related functions `isNull` and `isNotNull`.
 
-### Heredoc {#heredeoc}
+### Heredoc {#heredoc}
 
-A [heredoc](https://en.wikipedia.org/wiki/Here_document) is a way to define a string (often multiline), while maintaining the original formatting. A heredoc is defined as a custom string literal, placed between two `$` symbols, for example `$heredoc$`. A value between two heredocs is processed "as-is". 
+A [heredoc](https://en.wikipedia.org/wiki/Here_document) is a way to define a string (often multiline), while maintaining the original formatting. A heredoc is defined as a custom string literal, placed between two `$` symbols, for example `$heredoc$`. A value between two heredocs is processed "as-is".
 
-You can use a heredoc to embed snippets of SQL, HTML, or XML code, etc. 
+You can use a heredoc to embed snippets of SQL, HTML, or XML code, etc.
 
 **Example**
 
@@ -152,7 +152,7 @@ expr AS alias
 
         For example, `SELECT table_name_alias.column_name FROM table_name table_name_alias`.
 
-        In the [CAST](sql_reference/functions/type_conversion_functions.md#type_conversion_function-cast) function, the `AS` keyword has another meaning. See the description of the function.
+        In the [CAST](./functions/type-conversion-functions.md#type_conversion_function-cast) function, the `AS` keyword has another meaning. See the description of the function.
 
 -   `expr` — Any expression supported by ClickHouse.
 

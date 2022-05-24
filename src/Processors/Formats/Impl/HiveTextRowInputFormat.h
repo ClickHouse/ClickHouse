@@ -11,8 +11,7 @@ namespace DB
 {
 
 /// A stream for input data in Hive Text format.
-/// Parallel parsing is disabled currently.
-class HiveTextRowInputFormat : public CSVRowInputFormat
+class HiveTextRowInputFormat final : public CSVRowInputFormat
 {
 public:
     HiveTextRowInputFormat(const Block & header_, ReadBuffer & in_, const Params & params_, const FormatSettings & format_settings_);
@@ -24,7 +23,7 @@ private:
         const Block & header_, std::unique_ptr<PeekableReadBuffer> buf_, const Params & params_, const FormatSettings & format_settings_);
 };
 
-class HiveTextFormatReader : public CSVFormatReader
+class HiveTextFormatReader final : public CSVFormatReader
 {
 public:
     HiveTextFormatReader(std::unique_ptr<PeekableReadBuffer> buf_, const FormatSettings & format_settings_);

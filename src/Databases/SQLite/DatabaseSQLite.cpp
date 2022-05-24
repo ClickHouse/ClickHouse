@@ -2,7 +2,7 @@
 
 #if USE_SQLITE
 
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Databases/SQLite/fetchSQLiteTableStructure.h>
@@ -94,7 +94,7 @@ bool DatabaseSQLite::checkSQLiteTable(const String & table_name) const
     if (!sqlite_db)
         sqlite_db = openSQLiteDB(database_path, getContext(), /* throw_on_error */true);
 
-    const String query = fmt::format("SELECT name FROM sqlite_master WHERE type='table' AND name='{table_name}';", table_name);
+    const String query = fmt::format("SELECT name FROM sqlite_master WHERE type='table' AND name='{}';", table_name);
 
     auto callback_get_data = [](void * res, int, char **, char **) -> int
     {
@@ -145,7 +145,7 @@ StoragePtr DatabaseSQLite::fetchTable(const String & table_name, ContextPtr loca
     if (!columns)
         return StoragePtr{};
 
-    auto storage = StorageSQLite::create(
+    auto storage = std::make_shared<StorageSQLite>(
         StorageID(database_name, table_name),
         sqlite_db,
         database_path,

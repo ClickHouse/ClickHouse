@@ -1,9 +1,9 @@
 ---
-toc_priority: 21
-toc_title: OnTime
+sidebar_label: OnTime Airline Flight Data
+description: Dataset containing the on-time performance of airline flights
 ---
 
-# OnTime {#ontime}
+# OnTime 
 
 This dataset can be obtained in two ways:
 
@@ -156,8 +156,13 @@ $ sudo service clickhouse-server restart
 $ clickhouse-client --query "select count(*) from datasets.ontime"
 ```
 
+:::note    
+If you will run the queries described below, you have to use the full table name, `datasets.ontime`.
+:::
+
+
 !!! info "Info"
-    If you will run the queries described below, you have to use the full table name, `datasets.ontime`.
+    If you are using the prepared partitions or the Online Playground replace any occurrence of `IATA_CODE_Reporting_Airline` or `IATA_CODE_Reporting_Airline AS Carrier` in the following queries with `Carrier` (see `describe ontime`).
 
 ## Queries {#queries}
 

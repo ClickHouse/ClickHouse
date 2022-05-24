@@ -163,7 +163,7 @@ NamesAndTypesList NamesAndTypesList::filter(const NameSet & names) const
     NamesAndTypesList res;
     for (const NameAndTypePair & column : *this)
     {
-        if (names.count(column.name))
+        if (names.contains(column.name))
             res.push_back(column);
     }
     return res;

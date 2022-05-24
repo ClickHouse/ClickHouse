@@ -1,6 +1,6 @@
 ---
-toc_priority: 1
-toc_title: 云
+sidebar_position: 1
+sidebar_label: 云
 ---
 
 # ClickHouse 云服务提供商 {#clickhouse-cloud-service-providers}

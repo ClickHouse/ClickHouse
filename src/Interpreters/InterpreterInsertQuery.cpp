@@ -1,6 +1,8 @@
 #include <Interpreters/InterpreterInsertQuery.h>
 
 #include <Access/Common/AccessFlags.h>
+#include <Access/EnabledQuota.h>
+#include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Columns/ColumnNullable.h>
 #include <Processors/Transforms/buildPushingToViewsChain.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -26,6 +28,7 @@
 #include <Processors/Transforms/getSourceFromASTInsertQuery.h>
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageMaterializedView.h>
+#include <Storages/WindowView/StorageWindowView.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/checkStackSize.h>
 
@@ -51,6 +54,8 @@ InterpreterInsertQuery::InterpreterInsertQuery(
     , async_insert(async_insert_)
 {
     checkStackSize();
+    if (auto quota = getContext()->getQuota())
+        quota->checkExceeded(QuotaType::WRITTEN_BYTES);
 }
 
 
@@ -60,6 +65,18 @@ StoragePtr InterpreterInsertQuery::getTable(ASTInsertQuery & query)
     {
         const auto & factory = TableFunctionFactory::instance();
         TableFunctionPtr table_function_ptr = factory.get(query.table_function, getContext());
+
+        /// If table function needs structure hint from select query
+        /// we can create a temporary pipeline and get the header.
+        if (query.select && table_function_ptr->needStructureHint())
+        {
+            InterpreterSelectWithUnionQuery interpreter_select{
+                query.select, getContext(), SelectQueryOptions(QueryProcessingStage::Complete, 1)};
+            QueryPipelineBuilder tmp_pipeline = interpreter_select.buildQueryPipeline();
+            ColumnsDescription structure_hint{tmp_pipeline.getHeader().getNamesAndTypesList()};
+            table_function_ptr->setStructureHint(structure_hint);
+        }
+
         return table_function_ptr->execute(query.table_function, getContext(), table_function_ptr->getName());
     }
 
@@ -86,7 +103,9 @@ Block InterpreterInsertQuery::getSampleBlock(
     /// If the query does not include information about columns
     if (!query.columns)
     {
-        if (no_destination)
+        if (auto * window_view = dynamic_cast<StorageWindowView *>(table.get()))
+            return window_view->getInputHeader();
+        else if (no_destination)
             return metadata_snapshot->getSampleBlockWithVirtuals(table->getVirtuals());
         else
             return metadata_snapshot->getSampleBlockNonMaterialized();
@@ -109,27 +128,47 @@ Block InterpreterInsertQuery::getSampleBlock(
     const StoragePtr & table,
     const StorageMetadataPtr & metadata_snapshot) const
 {
-    Block table_sample = metadata_snapshot->getSampleBlock();
-    Block table_sample_non_materialized = metadata_snapshot->getSampleBlockNonMaterialized();
+    Block table_sample_physical = metadata_snapshot->getSampleBlock();
+    Block table_sample_insertable = metadata_snapshot->getSampleBlockInsertable();
     Block res;
     for (const auto & current_name : names)
     {
-        /// The table does not have a column with that name
-        if (!table_sample.has(current_name))
-            throw Exception("No such column " + current_name + " in table " + table->getStorageID().getNameForLogs(),
-                ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
-
-        if (!allow_materialized && !table_sample_non_materialized.has(current_name))
-            throw Exception("Cannot insert column " + current_name + ", because it is MATERIALIZED column.", ErrorCodes::ILLEGAL_COLUMN);
         if (res.has(current_name))
             throw Exception("Column " + current_name + " specified more than once", ErrorCodes::DUPLICATE_COLUMN);
 
-        res.insert(ColumnWithTypeAndName(table_sample.getByName(current_name).type, current_name));
+        /// Column is not ordinary or ephemeral
+        if (!table_sample_insertable.has(current_name))
+        {
+            /// Column is materialized
+            if (table_sample_physical.has(current_name))
+            {
+                if (!allow_materialized)
+                    throw Exception("Cannot insert column " + current_name + ", because it is MATERIALIZED column.",
+                        ErrorCodes::ILLEGAL_COLUMN);
+                res.insert(ColumnWithTypeAndName(table_sample_physical.getByName(current_name).type, current_name));
+            }
+            else /// The table does not have a column with that name
+                throw Exception("No such column " + current_name + " in table " + table->getStorageID().getNameForLogs(),
+                    ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
+        }
+        else
+            res.insert(ColumnWithTypeAndName(table_sample_insertable.getByName(current_name).type, current_name));
     }
     return res;
 }
 
+static bool hasAggregateFunctions(const IAST * ast)
+{
+    if (const auto * func = typeid_cast<const ASTFunction *>(ast))
+        if (AggregateFunctionFactory::instance().isAggregateFunctionName(func->name))
+            return true;
 
+    for (const auto & child : ast->children)
+        if (hasAggregateFunctions(child.get()))
+            return true;
+
+    return false;
+}
 /** A query that just reads all data without any complex computations or filetering.
   * If we just pipe the result to INSERT, we don't have to use too many threads for read.
   */
@@ -162,11 +201,12 @@ static bool isTrivialSelect(const ASTPtr & select)
             && !select_query->groupBy()
             && !select_query->having()
             && !select_query->orderBy()
-            && !select_query->limitBy());
+            && !select_query->limitBy()
+            && !hasAggregateFunctions(select_query));
     }
     /// This query is ASTSelectWithUnionQuery subquery
     return false;
-};
+}
 
 Chain InterpreterInsertQuery::buildChain(
     const StoragePtr & table,
@@ -176,7 +216,7 @@ Chain InterpreterInsertQuery::buildChain(
     std::atomic_uint64_t * elapsed_counter_ms)
 {
     auto sample = getSampleBlock(columns, table, metadata_snapshot);
-    return buildChainImpl(table, metadata_snapshot, std::move(sample) , thread_status, elapsed_counter_ms);
+    return buildChainImpl(table, metadata_snapshot, sample, thread_status, elapsed_counter_ms);
 }
 
 Chain InterpreterInsertQuery::buildChainImpl(
@@ -248,7 +288,7 @@ Chain InterpreterInsertQuery::buildChainImpl(
             table_prefers_large_blocks ? settings.min_insert_block_size_bytes : 0));
     }
 
-    auto counting = std::make_shared<CountingTransform>(out.getInputHeader(), thread_status);
+    auto counting = std::make_shared<CountingTransform>(out.getInputHeader(), thread_status, getContext()->getQuota());
     counting->setProcessListElement(context_ptr->getProcessListElement());
     out.addSource(std::move(counting));
 
@@ -263,6 +303,8 @@ BlockIO InterpreterInsertQuery::execute()
     QueryPipelineBuilder pipeline;
 
     StoragePtr table = getTable(query);
+    checkStorageSupportsTransactionsIfNeeded(table, getContext());
+
     StoragePtr inner_table;
     if (const auto * mv = dynamic_cast<const StorageMaterializedView *>(table.get()))
         inner_table = mv->getTargetTable();
@@ -274,6 +316,9 @@ BlockIO InterpreterInsertQuery::execute()
     auto metadata_snapshot = table->getInMemoryMetadataPtr();
 
     auto query_sample_block = getSampleBlock(query, table, metadata_snapshot);
+
+    /// For table functions we check access while executing
+    /// getTable() -> ITableFunction::execute().
     if (!query.table_function)
         getContext()->checkAccess(AccessType::INSERT, query.table_id, query_sample_block.getNames());
 
@@ -334,6 +379,7 @@ BlockIO InterpreterInsertQuery::execute()
 
                 auto new_context = Context::createCopy(context);
                 new_context->setSettings(new_settings);
+                new_context->setInsertionTable(getContext()->getInsertionTable());
 
                 InterpreterSelectWithUnionQuery interpreter_select{
                     query.select, new_context, SelectQueryOptions(QueryProcessingStage::Complete, 1)};
@@ -350,7 +396,7 @@ BlockIO InterpreterInsertQuery::execute()
             pipeline.dropTotalsAndExtremes();
 
             if (table->supportsParallelInsert() && settings.max_insert_threads > 1)
-                out_streams_size = std::min(size_t(settings.max_insert_threads), pipeline.getNumStreams());
+                out_streams_size = std::min(static_cast<size_t>(settings.max_insert_threads), pipeline.getNumStreams());
 
             pipeline.resize(out_streams_size);
 
@@ -366,7 +412,7 @@ BlockIO InterpreterInsertQuery::execute()
                     for (size_t col_idx = 0; col_idx < query_columns.size(); ++col_idx)
                     {
                         /// Change query sample block columns to Nullable to allow inserting nullable columns, where NULL values will be substituted with
-                        /// default column values (in AddingDefaultBlockOutputStream), so all values will be cast correctly.
+                        /// default column values (in AddingDefaultsTransform), so all values will be cast correctly.
                         if (input_columns[col_idx].type->isNullable() && !query_columns[col_idx].type->isNullable() && output_columns.hasDefault(query_columns[col_idx].name))
                             query_sample_block.setColumn(col_idx, ColumnWithTypeAndName(makeNullable(query_columns[col_idx].column), makeNullable(query_columns[col_idx].type), query_columns[col_idx].name));
                     }
@@ -408,7 +454,7 @@ BlockIO InterpreterInsertQuery::execute()
         });
 
         /// We need to convert Sparse columns to full, because it's destination storage
-        /// may not support it may have different settings for applying Sparse serialization.
+        /// may not support it or may have different settings for applying Sparse serialization.
         pipeline.addSimpleTransform([&](const Block & in_header) -> ProcessorPtr
         {
             return std::make_shared<MaterializingTransform>(in_header);

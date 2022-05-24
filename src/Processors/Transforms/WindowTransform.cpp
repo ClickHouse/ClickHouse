@@ -7,6 +7,7 @@
 #include <Columns/ColumnLowCardinality.h>
 #include <base/arithmeticOverflow.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnAggregateFunction.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -22,6 +23,7 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int NOT_IMPLEMENTED;
+    extern const int ILLEGAL_COLUMN;
 }
 
 // Interface for true window functions. It's not much of an interface, they just
@@ -206,7 +208,7 @@ WindowTransform::WindowTransform(const Block & input_header_,
     {
         column = std::move(column)->convertToFullColumnIfConst();
     }
-    input_header.setColumns(std::move(input_columns));
+    input_header.setColumns(input_columns);
 
     // Initialize window function workspaces.
     workspaces.reserve(functions.size());
@@ -423,7 +425,7 @@ auto WindowTransform::moveRowNumberNoCheck(const RowNumber & _x, int64_t offset)
 {
     RowNumber x = _x;
 
-    if (offset > 0)
+    if (offset > 0 && x != blocksEnd())
     {
         for (;;)
         {
@@ -486,7 +488,7 @@ auto WindowTransform::moveRowNumberNoCheck(const RowNumber & _x, int64_t offset)
         }
     }
 
-    return std::tuple{x, offset};
+    return std::tuple<RowNumber, int64_t>{x, offset};
 }
 
 auto WindowTransform::moveRowNumber(const RowNumber & _x, int64_t offset) const
@@ -503,7 +505,7 @@ auto WindowTransform::moveRowNumber(const RowNumber & _x, int64_t offset) const
     assert(oo == 0);
 #endif
 
-    return std::tuple{x, o};
+    return std::tuple<RowNumber, int64_t>{x, o};
 }
 
 
@@ -986,7 +988,23 @@ void WindowTransform::writeOutCurrentRow()
             auto * buf = ws.aggregate_function_state.data();
             // FIXME does it also allocate the result on the arena?
             // We'll have to pass it out with blocks then...
-            a->insertResultInto(buf, *result_column, arena.get());
+
+            if (a->isState())
+            {
+                /// AggregateFunction's states should be inserted into column using specific way
+                auto * res_col_aggregate_function = typeid_cast<ColumnAggregateFunction *>(result_column);
+                if (!res_col_aggregate_function)
+                {
+                    throw Exception("State function " + a->getName() + " inserts results into non-state column ",
+                                    ErrorCodes::ILLEGAL_COLUMN);
+                }
+                res_col_aggregate_function->insertFrom(buf);
+            }
+            else
+            {
+                a->insertResultInto(buf, *result_column, arena.get());
+            }
+
         }
     }
 
@@ -1981,7 +1999,7 @@ struct WindowFunctionLagLeadInFrame final : public WindowFunction
             return;
         }
 
-        const auto supertype = getLeastSupertype({argument_types[0], argument_types[2]});
+        const auto supertype = getLeastSupertype(DataTypes{argument_types[0], argument_types[2]});
         if (!supertype)
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
@@ -2067,6 +2085,74 @@ struct WindowFunctionLagLeadInFrame final : public WindowFunction
     }
 };
 
+struct WindowFunctionNthValue final : public WindowFunction
+{
+    WindowFunctionNthValue(const std::string & name_,
+            const DataTypes & argument_types_, const Array & parameters_)
+        : WindowFunction(name_, argument_types_, parameters_)
+    {
+        if (!parameters.empty())
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Function {} cannot be parameterized", name_);
+        }
+
+        if (argument_types.size() != 2)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Function {} takes exactly two arguments", name_);
+        }
+
+        if (!isInt64OrUInt64FieldType(argument_types[1]->getDefault().getType()))
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Offset must be an integer, '{}' given",
+                argument_types[1]->getName());
+        }
+    }
+
+    DataTypePtr getReturnType() const override { return argument_types[0]; }
+
+    bool allocatesMemoryInArena() const override { return false; }
+
+    void windowInsertResultInto(const WindowTransform * transform,
+        size_t function_index) override
+    {
+        const auto & current_block = transform->blockAt(transform->current_row);
+        IColumn & to = *current_block.output_columns[function_index];
+        const auto & workspace = transform->workspaces[function_index];
+
+        int64_t offset = (*current_block.input_columns[
+                workspace.argument_column_indices[1]])[
+            transform->current_row.row].get<Int64>();
+
+        /// Either overflow or really negative value, both is not acceptable.
+        if (offset <= 0)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "The offset for function {} must be in (0, {}], {} given",
+                getName(), INT64_MAX, offset);
+        }
+
+        --offset;
+        const auto [target_row, offset_left] = transform->moveRowNumber(transform->frame_start, offset);
+        if (offset_left != 0
+            || target_row < transform->frame_start
+            || transform->frame_end <= target_row)
+        {
+            // Offset is outside the frame.
+            to.insertDefault();
+        }
+        else
+        {
+            // Offset is inside the frame.
+            to.insertFrom(*transform->blockAt(target_row).input_columns[
+                    workspace.argument_column_indices[0]],
+               target_row.row);
+        }
+    }
+};
+
 
 void registerWindowFunctions(AggregateFunctionFactory & factory)
 {
@@ -2116,6 +2202,13 @@ void registerWindowFunctions(AggregateFunctionFactory & factory)
         {
             return std::make_shared<WindowFunctionRowNumber>(name, argument_types,
                 parameters);
+        }, properties}, AggregateFunctionFactory::CaseInsensitive);
+
+    factory.registerFunction("nth_value", {[](const std::string & name,
+            const DataTypes & argument_types, const Array & parameters, const Settings *)
+        {
+            return std::make_shared<WindowFunctionNthValue>(
+                name, argument_types, parameters);
         }, properties}, AggregateFunctionFactory::CaseInsensitive);
 
     factory.registerFunction("lagInFrame", {[](const std::string & name,

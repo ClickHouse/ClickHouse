@@ -21,7 +21,7 @@ class ReadBuffer;
   * An equal sign can be escaped in the field name.
   * Also, as an additional element there may be a useless tskv fragment - it needs to be ignored.
   */
-class TSKVRowInputFormat : public IRowInputFormat
+class TSKVRowInputFormat final : public IRowInputFormat
 {
 public:
     TSKVRowInputFormat(ReadBuffer & in_, Block header_, Params params_, const FormatSettings & format_settings_);
@@ -59,7 +59,7 @@ public:
     TSKVSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_);
 
 private:
-    std::unordered_map<String, DataTypePtr> readRowAndGetNamesAndDataTypes() override;
+    NamesAndTypesList readRowAndGetNamesAndDataTypes(bool & eof) override;
 
     const FormatSettings format_settings;
     bool first_row = true;

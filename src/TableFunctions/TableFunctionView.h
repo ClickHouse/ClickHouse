@@ -16,6 +16,9 @@ class TableFunctionView : public ITableFunction
 public:
     static constexpr auto name = "view";
     std::string getName() const override { return name; }
+
+    const ASTSelectWithUnionQuery & getSelectQuery() const;
+
 private:
     StoragePtr executeImpl(const ASTPtr & ast_function, ContextPtr context, const String & table_name, ColumnsDescription cached_columns) const override;
     const char * getStorageTypeName() const override { return "View"; }

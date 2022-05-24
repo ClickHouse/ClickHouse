@@ -17,7 +17,7 @@
   <changefreq>weekly</changefreq>
 </url>
 <url>
-  <loc>https://clickhouse.com/codebrowser/html_report/ClickHouse/index.html</loc>
+  <loc>https://clickhouse.com/codebrowser/ClickHouse/index.html</loc>
   <changefreq>daily</changefreq>
 </url>
 </urlset>

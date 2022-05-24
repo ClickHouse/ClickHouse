@@ -31,7 +31,7 @@ private:
 
 #ifdef __SSE2__
         const auto bytes_sse = sizeof(__m128i);
-        const auto src_end_sse = src_end - (src_end - src) % bytes_sse;
+        const auto * src_end_sse = src_end - (src_end - src) % bytes_sse;
 
         const auto v_not_case_lower_bound = _mm_set1_epi8(not_case_lower_bound - 1);
         const auto v_not_case_upper_bound = _mm_set1_epi8(not_case_upper_bound + 1);

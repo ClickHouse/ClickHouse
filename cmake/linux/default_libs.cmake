@@ -42,8 +42,8 @@ if (NOT OS_ANDROID)
     add_subdirectory(base/harmful)
 endif ()
 
-include (cmake/find/unwind.cmake)
-include (cmake/find/cxx.cmake)
+include (cmake/unwind.cmake)
+include (cmake/cxx.cmake)
 
 target_link_libraries(global-group INTERFACE
     -Wl,--start-group

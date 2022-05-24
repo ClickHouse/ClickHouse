@@ -14,9 +14,12 @@ struct ConstraintsDescription
 {
 public:
     ConstraintsDescription() { update(); }
-    ConstraintsDescription(const ASTs & constraints_);
+    explicit ConstraintsDescription(const ASTs & constraints_);
     ConstraintsDescription(const ConstraintsDescription & other);
     ConstraintsDescription & operator=(const ConstraintsDescription & other);
+
+    ConstraintsDescription(ConstraintsDescription && other) noexcept;
+    ConstraintsDescription & operator=(ConstraintsDescription && other) noexcept;
 
     bool empty() const { return constraints.empty(); }
     String toString() const;

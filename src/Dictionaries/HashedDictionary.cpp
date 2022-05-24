@@ -1,5 +1,6 @@
 #include "HashedDictionary.h"
 
+#include <Common/ArenaUtils.h>
 #include <Core/Defines.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <Columns/ColumnsNumber.h>
@@ -11,7 +12,7 @@
 #include <Dictionaries//DictionarySource.h>
 #include <Dictionaries/DictionaryFactory.h>
 #include <Dictionaries/HierarchyDictionariesUtils.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 
 namespace
 {
@@ -158,7 +159,7 @@ ColumnPtr HashedDictionary<dictionary_key_type, sparse>::getColumn(
     callOnDictionaryAttributeType(attribute.type, type_call);
 
     if (is_attribute_nullable)
-        result = ColumnNullable::create(std::move(result), std::move(col_null_map_to));
+        result = ColumnNullable::create(result, std::move(col_null_map_to));
 
     return result;
 }
@@ -648,7 +649,7 @@ void HashedDictionary<dictionary_key_type, sparse>::calculateBytesAllocated()
             if constexpr (sparse || std::is_same_v<AttributeValueType, Field>)
             {
                 /// bucket_count() - Returns table size, that includes empty and deleted
-                /// size()         - Returns table size, w/o empty and deleted
+                /// size()         - Returns table size, without empty and deleted
                 /// and since this is sparsehash, empty cells should not be significant,
                 /// and since items cannot be removed from the dictionary, deleted is also not important.
                 bytes_allocated += container.size() * (sizeof(KeyType) + sizeof(AttributeValueType));
@@ -744,7 +745,7 @@ Pipe HashedDictionary<dictionary_key_type, sparse>::read(const Names & column_na
     }
 
     std::shared_ptr<const IDictionary> dictionary = shared_from_this();
-    auto coordinator = DictionarySourceCoordinator::create(dictionary, column_names, std::move(key_columns), max_block_size);
+    auto coordinator = std::make_shared<DictionarySourceCoordinator>(dictionary, column_names, std::move(key_columns), max_block_size);
     auto result = coordinator->read(num_streams);
 
     return result;

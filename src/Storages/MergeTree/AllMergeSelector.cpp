@@ -8,7 +8,7 @@ namespace DB
 
 AllMergeSelector::PartsRange AllMergeSelector::select(
     const PartsRanges & parts_ranges,
-    const size_t /*max_total_size_to_merge*/)
+    size_t /*max_total_size_to_merge*/)
 {
     size_t min_partition_size = 0;
     PartsRanges::const_iterator best_partition;

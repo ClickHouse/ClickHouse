@@ -44,8 +44,8 @@ public:
 private:
     SubqueryForSet subquery;
 
-    std::unique_ptr<PushingPipelineExecutor> executor;
     QueryPipeline table_out;
+    std::unique_ptr<PushingPipelineExecutor> executor;
     UInt64 read_rows = 0;
     Stopwatch watch;
 

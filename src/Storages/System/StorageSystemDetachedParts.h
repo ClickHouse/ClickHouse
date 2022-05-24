@@ -11,26 +11,23 @@ namespace DB
   * We don't use StorageSystemPartsBase, because it introduces virtual _state
   * column and column aliases which we don't need.
   */
-class StorageSystemDetachedParts final :
-        public shared_ptr_helper<StorageSystemDetachedParts>,
-        public IStorage
+class StorageSystemDetachedParts final : public IStorage
 {
-    friend struct shared_ptr_helper<StorageSystemDetachedParts>;
 public:
+    explicit StorageSystemDetachedParts(const StorageID & table_id_);
+
     std::string getName() const override { return "SystemDetachedParts"; }
     bool isSystemStorage() const override { return true; }
 
 protected:
-    explicit StorageSystemDetachedParts(const StorageID & table_id_);
-
     Pipe read(
             const Names & /* column_names */,
-            const StorageMetadataPtr & metadata_snapshot,
+            const StorageSnapshotPtr & storage_snapshot,
             SelectQueryInfo & query_info,
             ContextPtr context,
             QueryProcessingStage::Enum /*processed_stage*/,
-            const size_t /*max_block_size*/,
-            const unsigned /*num_streams*/) override;
+            size_t /*max_block_size*/,
+            unsigned /*num_streams*/) override;
 };
 
 }
