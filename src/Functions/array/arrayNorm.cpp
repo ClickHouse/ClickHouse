@@ -21,8 +21,8 @@ struct L1Norm
 {
     static inline String name = "L1";
 
-    template <typename ResultType, typename ArgumentType>
-    inline static ResultType accumulate(ResultType result, ArgumentType value)
+    template <typename ResultType>
+    inline static ResultType accumulate(ResultType result, ResultType value)
     {
         return result + fabs(value);
     }
@@ -38,8 +38,8 @@ struct L2Norm
 {
     static inline String name = "L2";
 
-    template <typename ResultType, typename ArgumentType>
-    inline static ResultType accumulate(ResultType result, ArgumentType value)
+    template <typename ResultType>
+    inline static ResultType accumulate(ResultType result, ResultType value)
     {
         return result + value * value;
     }
@@ -56,8 +56,8 @@ struct LinfNorm
 {
     static inline String name = "Linf";
 
-    template <typename ResultType, typename ArgumentType>
-    inline static ResultType accumulate(ResultType result, ArgumentType value)
+    template <typename ResultType>
+    inline static ResultType accumulate(ResultType result, ResultType value)
     {
         return fmax(result, fabs(value));
     }
@@ -189,7 +189,7 @@ private:
             Float64 result = 0;
             for (; prev < off; ++prev)
             {
-                result = Kernel::accumulate(result, data[prev]);
+                result = Kernel::template accumulate<Float64>(result, data[prev]);
             }
             result_data[row] = Kernel::finalize(result);
             row++;
