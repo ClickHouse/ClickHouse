@@ -1815,7 +1815,7 @@ void NO_INLINE Aggregator::convertToBlockImplFinal(
             if (params.aggregates[destroy_index].totals) {
                 PaddedPODArray<AggregateDataPtr> tmp_places;
                 for (size_t i = 1; i < places.size(); ++i) {
-                    aggregate_functions[destroy_index]->merge(places[0], places[i]);
+                    aggregate_functions[destroy_index]->merge(places[0], places[i], arena);
                 }
                 for (size_t i = 0; i < places.size(); ++i) {
                     tmp_places.emplace_back(places[0]);
