@@ -25,8 +25,6 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Core/Settings.h>
 #include <Core/SettingsQuirks.h>
-#include <Poco/Logger.h>
-#include <Loggers/Loggers.h>
 
 namespace DB
 {
@@ -505,35 +503,23 @@ size_t QueryPipelineBuilder::getNumThreads() const
 {
     auto num_threads = pipe.maxParallelStreams();
 
-    auto adqm_log = &Poco::Logger::get("ADQM");
-    LOG_DEBUG(adqm_log,"maxParallelStreams: {}", num_threads);
-    LOG_DEBUG(adqm_log,"max_threads: {}", max_threads);
-
     if (max_threads) //-V1051
         num_threads = std::min(num_threads, max_threads);
-
-    LOG_DEBUG(adqm_log,"Recommended num threads: {}", num_threads);
 
     if (process_list_element)
     {
         auto total_max_threads = process_list_element->getContext()->getProcessList().getTotalMaxThreads();
         if (total_max_threads)
         {
-            LOG_DEBUG(adqm_log,"Total number of threads from config: {}", total_max_threads);
-            LOG_DEBUG(adqm_log,"Current total num threads: {}",
-                  process_list_element->getContext()->getProcessList().getTotalNumThreads());
             size_t current_total_num_threads = process_list_element->getContext()->getProcessList().getTotalNumThreads();
             size_t total_available_threads = 0;
             if (total_max_threads > current_total_num_threads)
                 total_available_threads = total_max_threads - current_total_num_threads;
-            LOG_DEBUG(adqm_log,"Total available threads: {}", total_available_threads);
             num_threads = std::min(num_threads, total_available_threads);
-            LOG_DEBUG(adqm_log,"Recommended num threads: {}", num_threads);
         }
     }
 
     num_threads = std::max<size_t>(1, num_threads);
-    LOG_DEBUG(adqm_log,"Finally num threads: {}", num_threads);
     return num_threads;
 }
 
