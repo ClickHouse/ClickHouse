@@ -73,7 +73,6 @@ ReplicatedMergeTreeTableMetadata::ReplicatedMergeTreeTableMetadata(const MergeTr
         index_granularity_bytes = 0;
 
     constraints = metadata_snapshot->getConstraints().toString();
-    comment = metadata_snapshot->comment;
 }
 
 void ReplicatedMergeTreeTableMetadata::write(WriteBuffer & out) const
@@ -109,9 +108,6 @@ void ReplicatedMergeTreeTableMetadata::write(WriteBuffer & out) const
 
     if (!constraints.empty())
         out << "constraints: " << constraints << "\n";
-
-    if (!comment.empty())
-        out << "comment: " << quote << comment << "\n";
 }
 
 String ReplicatedMergeTreeTableMetadata::toString() const
@@ -159,18 +155,8 @@ void ReplicatedMergeTreeTableMetadata::read(ReadBuffer & in)
     else
         index_granularity_bytes = 0;
 
-    String verb;
-    readStringUntilWhitespace(verb, in);
-
-    if (verb == "constraints:")
-    {
+    if (checkString("constraints: ", in))
         in >> " " >> constraints >> "\n";
-
-        readStringUntilWhitespace(verb, in);
-    }
-
-    if (verb == "comment:")
-        in >> " " >> quote >> comment >> "\n";
 }
 
 ReplicatedMergeTreeTableMetadata ReplicatedMergeTreeTableMetadata::parse(const String & s)
@@ -362,12 +348,6 @@ ReplicatedMergeTreeTableMetadata::checkAndFindDiff(const ReplicatedMergeTreeTabl
     {
         diff.constraints_changed = true;
         diff.new_constraints = from_zk.constraints;
-    }
-
-    if (comment != from_zk.comment)
-    {
-        diff.comment_changed = true;
-        diff.comment = from_zk.comment;
     }
 
     return diff;
