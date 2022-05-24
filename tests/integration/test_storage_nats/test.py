@@ -467,7 +467,7 @@ def test_nats_protobuf(nats_cluster):
             SETTINGS nats_url = 'nats1:4444',
                      nats_subjects = 'pb',
                      nats_format = 'Protobuf',
-                     nats_schema = 'nats.proto:KeyValueProto';
+                     nats_schema = 'nats.proto:ProtoKeyValue';
         CREATE TABLE test.view (key UInt64, value UInt64)
             ENGINE = MergeTree()
             ORDER BY key;
@@ -482,7 +482,7 @@ def test_nats_protobuf(nats_cluster):
 
     data = b""
     for i in range(0, 20):
-        msg = nats_pb2.KeyValueProto()
+        msg = nats_pb2.ProtoKeyValue()
         msg.key = i
         msg.value = str(i)
         serialized_msg = msg.SerializeToString()
@@ -490,7 +490,7 @@ def test_nats_protobuf(nats_cluster):
     asyncio.run(nats_produce_messages(nats_cluster.nats_ip, 'pb', bytes=data))
     data = b""
     for i in range(20, 21):
-        msg = nats_pb2.KeyValueProto()
+        msg = nats_pb2.ProtoKeyValue()
         msg.key = i
         msg.value = str(i)
         serialized_msg = msg.SerializeToString()
@@ -498,7 +498,7 @@ def test_nats_protobuf(nats_cluster):
     asyncio.run(nats_produce_messages(nats_cluster.nats_ip, 'pb', bytes=data))
     data = b""
     for i in range(21, 50):
-        msg = nats_pb2.KeyValueProto()
+        msg = nats_pb2.ProtoKeyValue()
         msg.key = i
         msg.value = str(i)
         serialized_msg = msg.SerializeToString()
