@@ -102,6 +102,7 @@ void IColumn::compareImpl(const Derived & rhs, size_t rhs_row_num,
             row = indexes[i];
 
         int res = static_cast<const Derived *>(this)->compareAt(row, rhs_row_num, rhs, nan_direction_hint);
+        assert(res == 1 || res == -1 || res == 0);
         compare_results[row] = static_cast<Int8>(res);
 
         if constexpr (reversed)
