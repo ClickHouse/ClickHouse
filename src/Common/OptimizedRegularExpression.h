@@ -103,7 +103,7 @@ private:
     std::unique_ptr<RegexType> re2;
     unsigned number_of_subpatterns;
 
-    static void analyze(const std::string & regexp_, std::string & required_substring, bool & is_trivial, bool & required_substring_is_prefix);
+    static void analyze(std::string_view regexp_, std::string & required_substring, bool & is_trivial, bool & required_substring_is_prefix);
 };
 
 using OptimizedRegularExpression = OptimizedRegularExpressionImpl<true>;
