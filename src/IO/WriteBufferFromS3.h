@@ -47,7 +47,7 @@ class WriteBufferFromFile;
 class WriteBufferFromS3 final : public BufferWithOwnMemory<WriteBuffer>
 {
 public:
-    explicit WriteBufferFromS3(
+    WriteBufferFromS3(
         std::shared_ptr<Aws::S3::S3Client> client_ptr_,
         const String & bucket_,
         const String & key_,
@@ -105,6 +105,7 @@ private:
     std::vector<String> part_tags;
 
     bool is_prefinalized = false;
+    bool is_finalized = false;
 
     /// Following fields are for background uploads in thread pool (if specified).
     /// We use std::function to avoid dependency of Interpreters

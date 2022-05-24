@@ -260,10 +260,12 @@
     \
     M(QueryMemoryLimitExceeded, "Number of times when memory limit exceeded for query.") \
     \
-    M(RemoteFSReadMicroseconds, "Time of reading from remote filesystem.") \
-    M(RemoteFSReadBytes, "Read bytes from remote filesystem.") \
-    M(RemoteFSCacheReadBytes, "Read bytes from cache of remote filesystem.") \
-    M(RemoteFSCacheDownloadBytes, "Bytes downloaded to cache from remote filesystem.") \
+    M(CachedReadBufferReadFromSourceMicroseconds, "Time reading from filesystem cache source (from remote filesystem, etc)") \
+    M(CachedReadBufferReadFromCacheMicroseconds, "Time reading from filesystem cache") \
+    M(CachedReadBufferReadFromSourceBytes, "Bytes read from filesystem cache source (from remote fs, etc)") \
+    M(CachedReadBufferReadFromCacheBytes, "Bytes read from filesystem cache") \
+    M(CachedReadBufferCacheWriteBytes, "Bytes written from source (remote fs, etc) to filesystem cache") \
+    M(CachedReadBufferCacheWriteMicroseconds, "Time spent writing data into filesystem cache") \
     \
     M(RemoteFSSeeks, "Total number of seeks for async buffer") \
     M(RemoteFSPrefetches, "Number of prefetches made with asynchronous reading from remote filesystem") \
@@ -274,6 +276,15 @@
     M(RemoteFSLazySeeks, "Number of lazy seeks") \
     M(RemoteFSSeeksWithReset, "Number of seeks which lead to a new connection") \
     M(RemoteFSBuffers, "Number of buffers created for asynchronous reading from remote filesystem") \
+    \
+    M(ThreadpoolReaderTaskMicroseconds, "Time spent getting the data in asynchronous reading") \
+    M(ThreadpoolReaderReadBytes, "Bytes read from a threadpool task in asynchronous reading") \
+    \
+    M(FileSegmentWaitReadBufferMicroseconds, "Metric per file segment. Time spend waiting for internal read buffer (includes cache waiting)") \
+    M(FileSegmentReadMicroseconds, "Metric per file segment. Time spend reading from file") \
+    M(FileSegmentCacheWriteMicroseconds, "Metric per file segment. Time spend writing data to cache") \
+    M(FileSegmentPredownloadMicroseconds, "Metric per file segment. Time spent predownloading data to cache (predownloading - finishing file segment download (after someone who failed to do that) up to the point current thread was requested to do)") \
+    M(FileSegmentUsedBytes, "Metric per file segment. How many bytes were actually used from current file segment") \
     \
     M(ReadBufferSeekCancelConnection, "Number of seeks which lead to new connection (s3, http)") \
     \

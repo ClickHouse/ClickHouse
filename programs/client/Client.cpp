@@ -1,4 +1,4 @@
-#include <stdlib.h>
+#include <cstdlib>
 #include <fcntl.h>
 #include <map>
 #include <iostream>
@@ -109,7 +109,7 @@ std::vector<String> Client::loadWarningMessages()
     connection->sendQuery(connection_parameters.timeouts, "SELECT message FROM system.warnings", "" /* query_id */,
                           QueryProcessingStage::Complete,
                           &global_context->getSettingsRef(),
-                          &global_context->getClientInfo(), false);
+                          &global_context->getClientInfo(), false, {});
     while (true)
     {
         Packet packet = connection->receivePacket();
@@ -1038,6 +1038,7 @@ void Client::processConfig()
     ClientInfo & client_info = global_context->getClientInfo();
     client_info.setInitialQuery();
     client_info.quota_key = config().getString("quota_key", "");
+    client_info.query_kind = query_kind;
 }
 
 

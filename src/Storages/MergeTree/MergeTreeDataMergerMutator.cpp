@@ -603,12 +603,12 @@ MergeTreeData::DataPartPtr MergeTreeDataMergerMutator::renameMergedTemporaryPart
          *   then we get here.
          *
          * When M > N parts could be replaced?
-         * - new block was added in ReplicatedMergeTreeBlockOutputStream;
+         * - new block was added in ReplicatedMergeTreeSink;
          * - it was added to working dataset in memory and renamed on filesystem;
          * - but ZooKeeper transaction that adds it to reference dataset in ZK failed;
          * - and it is failed due to connection loss, so we don't rollback working dataset in memory,
          *   because we don't know if the part was added to ZK or not
-         *   (see ReplicatedMergeTreeBlockOutputStream)
+         *   (see ReplicatedMergeTreeSink)
          * - then method selectPartsToMerge selects a range and sees, that EphemeralLock for the block in this part is unlocked,
          *   and so it is possible to merge a range skipping this part.
          *   (NOTE: Merging with part that is not in ZK is not possible, see checks in 'createLogEntryToMergeParts'.)
