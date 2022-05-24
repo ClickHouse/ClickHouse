@@ -22,7 +22,7 @@ struct CacheKey
     bool operator==(const CacheKey & other) const
     {
         return ast->getTreeHash() == other.ast->getTreeHash()
-               && header == other.header
+               && header.getNamesAndTypesList() == other.header.getNamesAndTypesList()
                && settings == other.settings
                && username == other.username;
     }
