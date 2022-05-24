@@ -3480,6 +3480,10 @@ jobs:
       - PerformanceComparison1
       - PerformanceComparison2
       - PerformanceComparison3
+      - PerformanceComparisonAarch0
+      - PerformanceComparisonAarch1
+      - PerformanceComparisonAarch2
+      - PerformanceComparisonAarch3
       - UnitTestsAsan
       - UnitTestsTsan
       - UnitTestsMsan
