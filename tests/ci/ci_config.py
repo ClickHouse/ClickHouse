@@ -363,5 +363,8 @@ CI_CONFIG = {
         "Performance Comparison (actions)": {
             "required_build": "package_release",
         },
+        "Performance Comparison Aarch64": {
+            "required_build": "package_aarch64",
+        },
     },
 }  # type: dict
