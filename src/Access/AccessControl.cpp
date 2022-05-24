@@ -169,7 +169,6 @@ void AccessControl::setUpFromMainConfig(const Poco::Util::AbstractConfiguration 
         false /* false because we need to be compatible with earlier access configurations */));
 
     addStoragesFromMainConfig(config_, config_path_, get_zookeeper_function_);
-    checkNoReservedUsersInConfigs();
 }
 
 
@@ -185,16 +184,6 @@ void AccessControl::setUsersConfig(const Poco::Util::AbstractConfiguration & use
         }
     }
     addUsersConfigStorage(users_config_);
-    checkNoReservedUsersInConfigs();
-}
-
-void AccessControl::checkNoReservedUsersInConfigs()
-{
-    /// Unfortunately, there is not way to distinguish USER_INTERSERVER_MARKER from actual username in native protocol,
-    /// so we have to ensure that no such user will appear.
-    /// Also it was possible to create a user with empty name for some reason.
-    if (find<User>(USER_INTERSERVER_MARKER) || find<User>(""))
-        throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG, "Found reserved username in configs");
 }
 
 void AccessControl::addUsersConfigStorage(const Poco::Util::AbstractConfiguration & users_config_)
@@ -251,7 +240,6 @@ void AccessControl::reloadUsersConfigs()
         if (auto users_config_storage = typeid_cast<std::shared_ptr<UsersConfigAccessStorage>>(storage))
             users_config_storage->reload();
     }
-    checkNoReservedUsersInConfigs();
 }
 
 void AccessControl::startPeriodicReloadingUsersConfigs()

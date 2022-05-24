@@ -125,7 +125,7 @@ namespace
     void checkGranteesAreAllowed(const AccessControl & access_control, const ContextAccess & current_user_access, const std::vector<UUID> & grantee_ids)
     {
         auto current_user = current_user_access.getUser();
-        if (!current_user || (current_user->grantees == RolesOrUsersSet::AllTag{}))
+        if (current_user && (current_user->grantees == RolesOrUsersSet::AllTag{}))
             return;
 
         for (const auto & id : grantee_ids)
