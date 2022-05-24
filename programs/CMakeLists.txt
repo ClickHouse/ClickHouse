@@ -323,8 +323,7 @@ if (CLICKHOUSE_SPLIT_BINARY)
         clickhouse-obfuscator
         clickhouse-git-import
         clickhouse-copier
-        clickhouse-static-files-disk-uploader
-        clickhouse-su)
+        clickhouse-static-files-disk-uploader)
 
     if (ENABLE_CLICKHOUSE_ODBC_BRIDGE)
         list (APPEND CLICKHOUSE_ALL_TARGETS clickhouse-odbc-bridge)
