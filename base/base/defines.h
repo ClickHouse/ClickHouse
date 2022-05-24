@@ -105,6 +105,25 @@
 #   define ASAN_POISON_MEMORY_REGION(a, b)
 #endif
 
+#if !defined(ABORT_ON_LOGICAL_ERROR)
+    #if !defined(NDEBUG) || defined(ADDRESS_SANITIZER) || defined(THREAD_SANITIZER) || defined(MEMORY_SANITIZER) || defined(UNDEFINED_BEHAVIOR_SANITIZER)
+        #define ABORT_ON_LOGICAL_ERROR
+    #endif
+#endif
+
+/// chassert(x) is similar to assert(x), but:
+///     - works in builds with sanitizers, not only in debug builds
+///     - tries to print failed assertion into server log
+/// It can be used for all assertions except heavy ones.
+/// Heavy assertions (that run loops or call complex functions) are allowed in debug builds only.
+#if !defined(chassert)
+    #if defined(ABORT_ON_LOGICAL_ERROR)
+        #define chassert(x) static_cast<bool>(x) ? void(0) : abortOnFailedAssertion(#x)
+    #else
+        #define chassert(x) ((void)0)
+    #endif
+#endif
+
 /// A template function for suppressing warnings about unused variables or function results.
 template <typename... Args>
 constexpr void UNUSED(Args &&... args [[maybe_unused]])

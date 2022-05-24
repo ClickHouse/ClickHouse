@@ -444,9 +444,10 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
         if (auto txn = context->getCurrentTransaction())
         {
-            assert(txn->getState() != MergeTreeTransaction::COMMITTED);
+            chassert(txn->getState() != MergeTreeTransaction::COMMITTING);
+            chassert(txn->getState() != MergeTreeTransaction::COMMITTED);
             if (txn->getState() == MergeTreeTransaction::ROLLED_BACK && !ast->as<ASTTransactionControl>() && !ast->as<ASTExplainQuery>())
-                throw Exception(ErrorCodes::INVALID_TRANSACTION, "Cannot execute query: transaction is rolled back");
+                throw Exception(ErrorCodes::INVALID_TRANSACTION, "Cannot execute query because current transaction failed. Expecting ROLLBACK statement.");
         }
 
         /// Interpret SETTINGS clauses as early as possible (before invoking the corresponding interpreter),
