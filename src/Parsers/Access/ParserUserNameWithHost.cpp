@@ -24,11 +24,6 @@ namespace
             if (!parseIdentifierOrStringLiteral(pos, expected, base_name))
                 return false;
 
-            /// Previously username was silently trimmed. Now we throw an exception instead.
-            /// But it's not clear why spaces were not allowed.
-            if (base_name.empty() || base_name.starts_with(' ') || base_name.ends_with(' '))
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "User name cannot start or end with spaces and cannot be empty");
-
             String host_pattern;
             if (ParserToken{TokenType::At}.ignore(pos, expected))
             {

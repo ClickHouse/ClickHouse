@@ -57,8 +57,6 @@ public:
     /// This function add UsersConfigAccessStorage if it wasn't added before.
     void setUsersConfig(const Poco::Util::AbstractConfiguration & users_config_);
 
-    void checkNoReservedUsersInConfigs();
-
     /// Adds UsersConfigAccessStorage.
     void addUsersConfigStorage(const Poco::Util::AbstractConfiguration & users_config_);
 

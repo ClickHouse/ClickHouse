@@ -1,13 +1,5 @@
 -- Tags: no-fasttest
 
-create user "       ";  -- { clientError BAD_ARGUMENTS }
-create user '   spaces';  -- { clientError BAD_ARGUMENTS }
-create user 'spaces    ';  -- { clientError BAD_ARGUMENTS }
-create user ` INTERSERVER SECRET `;  -- { clientError BAD_ARGUMENTS }
-create user '';  -- { clientError BAD_ARGUMENTS }
-alter user default rename to " spaces ";  -- { clientError BAD_ARGUMENTS }
-alter user default rename to '';  -- { clientError BAD_ARGUMENTS }
-
 select * from remote('127.0.0.2', system, one, 'default', '');
 select * from remote('127.0.0.2', system, one, 'default', 'wrong password'); -- { serverError AUTHENTICATION_FAILED }
 select * from remote('127.0.0.2', system, one, 'nonexistsnt_user_1119', ''); -- { serverError AUTHENTICATION_FAILED }
