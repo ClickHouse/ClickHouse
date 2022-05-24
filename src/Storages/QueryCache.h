@@ -92,28 +92,30 @@ public:
     template <typename Cache>
     void processRemovalQueue(Cache * query_cache)
     {
-        while (true)
+        while (process_removal_queue.load())
         {
             std::unique_lock lock(mutex);
 
-            // take the timer with the lowest timestamp from the queue
+            // take the timer with the lowest timestamp from the queue if there is one
             const std::optional<TimedCacheKey> awaited_timer = nextTimer();
 
-            // wake up if either a timer with a lower timestamp than awaited_timer was pushed to the queue, or the awaited_timer went off
-            timer_cv.wait_until(lock,
-                                awaited_timer.has_value() ? awaited_timer->time : infinite_time,
-                                [&]() { return awaited_timer != nextTimer() || (awaited_timer.has_value() && awaited_timer->time <= now()); }
-            );
-
-            queue.pop();
-            lock.unlock();
+            // wake up if either a timer with a lower timestamp than awaited_timer was pushed to the queue, the awaited_timer went off or the server was stoped
+            timer_cv.wait_until(lock, awaited_timer.has_value() ? awaited_timer->time : infinite_time);
 
             // if awaited_timer went off, remove entry from cache
             if (awaited_timer.has_value() && awaited_timer->time <= now())
             {
+                lock.unlock();
+                queue.pop();
                 query_cache->remove(awaited_timer->cache_key);
             }
         }
+    }
+
+    void stopProcessingRemovalQueue()
+    {
+        process_removal_queue.store(false);
+        timer_cv.notify_one();
     }
 
 
@@ -154,6 +156,7 @@ private:
     }
 
     const Timestamp infinite_time = Timestamp::max();
+    std::atomic<bool> process_removal_queue{true};
     std::priority_queue<TimedCacheKey> queue;
     std::condition_variable timer_cv;
     std::mutex mutex;
@@ -167,9 +170,15 @@ private:
 public:
     explicit QueryCache(size_t cache_size_in_bytes_)
         : Base(cache_size_in_bytes_)
+        , removal_scheduler()
+        , cache_removing_thread(&CacheRemovalScheduler::processRemovalQueue<QueryCache>, &removal_scheduler, this)
     {
-        std::thread cache_removing_thread(&CacheRemovalScheduler::processRemovalQueue<QueryCache>, &removal_scheduler, this);
-        cache_removing_thread.detach();
+    }
+
+    ~QueryCache() override
+    {
+        removal_scheduler.stopProcessingRemovalQueue();
+        cache_removing_thread.join();
     }
 
     bool insertChunk(CacheKey cache_key, Chunk && chunk)
@@ -205,6 +214,7 @@ public:
 
 private:
     CacheRemovalScheduler removal_scheduler;
+    std::thread cache_removing_thread;
 
     std::unordered_map<CacheKey, size_t, CacheKeyHasher> times_executed;
     std::mutex times_executed_mutex;
