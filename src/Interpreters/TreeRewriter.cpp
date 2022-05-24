@@ -1305,7 +1305,7 @@ TreeRewriterResultPtr TreeRewriter::analyze(
 }
 
 void TreeRewriter::normalize(
-    ASTPtr & query, Aliases & aliases, const NameSet & source_columns_set, bool ignore_alias, const Settings & settings, bool allow_self_aliases, ContextPtr context)
+    ASTPtr & query, Aliases & aliases, const NameSet & source_columns_set, bool ignore_alias, const Settings & settings, bool allow_self_aliases, ContextPtr context_)
 {
     UserDefinedSQLFunctionVisitor::Data data_user_defined_functions_visitor;
     UserDefinedSQLFunctionVisitor(data_user_defined_functions_visitor).visit(query);
@@ -1370,7 +1370,7 @@ void TreeRewriter::normalize(
     /// Notice: function name normalization is disabled when it's a secondary query, because queries are either
     /// already normalized on initiator node, or not normalized and should remain unnormalized for
     /// compatibility.
-    if (context->getClientInfo().query_kind != ClientInfo::QueryKind::SECONDARY_QUERY && settings.normalize_function_names)
+    if (context_->getClientInfo().query_kind != ClientInfo::QueryKind::SECONDARY_QUERY && settings.normalize_function_names)
         FunctionNameNormalizer().visit(query.get());
 
     /// Common subexpression elimination. Rewrite rules.
