@@ -82,7 +82,7 @@ struct ToValidUTF8Impl
 
             while (p < simd_end && only_ascii_in_vector(vld1q_u32(reinterpret_cast<const uint32_t *>(p))))
                 p += SIMD_BYTES;
-            
+
             if (!(p < end))
                 break;
 #endif

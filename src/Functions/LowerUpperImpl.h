@@ -63,7 +63,7 @@ private:
         }
 
 #elif defined(__aarch64__)
-        // doesnt' work as expected yet
+        // doesn't work as expected yet
 
         const auto bytes_simd = sizeof(uint8x16_t);
         const auto * src_end_simd = src_end - (src_end - src) % bytes_simd;
