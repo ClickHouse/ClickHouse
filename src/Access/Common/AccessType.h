@@ -178,6 +178,7 @@ enum class AccessType
     M(URL, "", GLOBAL, SOURCES) \
     M(REMOTE, "", GLOBAL, SOURCES) \
     M(MONGO, "", GLOBAL, SOURCES) \
+    M(MEILISEARCH, "", GLOBAL, SOURCES) \
     M(MYSQL, "", GLOBAL, SOURCES) \
     M(POSTGRES, "", GLOBAL, SOURCES) \
     M(SQLITE, "", GLOBAL, SOURCES) \
@@ -187,6 +188,8 @@ enum class AccessType
     M(S3, "", GLOBAL, SOURCES) \
     M(HIVE, "", GLOBAL, SOURCES) \
     M(SOURCES, "", GROUP, ALL) \
+    \
+    M(CLUSTER, "", GLOBAL, ALL) /* ON CLUSTER queries */ \
     \
     M(ALL, "ALL PRIVILEGES", GROUP, NONE) /* full access */ \
     M(NONE, "USAGE, NO PRIVILEGES", GROUP, NONE) /* no access */
