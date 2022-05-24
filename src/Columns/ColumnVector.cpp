@@ -589,7 +589,7 @@ ColumnPtr ColumnVector<T>::replicateSSE2(const IColumn::Offsets & offsets) const
             size_t sse_copy_counter = (copy_size >> 2);
             sse_copy_counter = remain * (sse_copy_counter + 1) + (!remain) * (sse_copy_counter);
             auto it_tmp = it; // NOLINT
-            size_t data_start = (*copy_begin);
+            size_t data_start = *copy_begin;
             copy_begin.reset();
             constexpr const int copy_mask = _MM_SHUFFLE(3, 2, 1, 0);
             while (sse_copy_counter)
