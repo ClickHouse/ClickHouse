@@ -20,7 +20,7 @@ struct StatisticDescription
     /// Names of statistic columns
     Names column_names;
 
-    /// Data types of statistic  columns
+    /// Data types of statistic columns
     DataTypes data_types;
 
     static StatisticDescription getStatisticFromAST(const ASTPtr & definition_ast, const ColumnsDescription & columns, ContextPtr context);

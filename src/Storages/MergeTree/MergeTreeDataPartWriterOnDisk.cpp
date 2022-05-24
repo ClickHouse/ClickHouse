@@ -99,7 +99,7 @@ MergeTreeDataPartWriterOnDisk::MergeTreeDataPartWriterOnDisk(
     const NamesAndTypesList & columns_list_,
     const StorageMetadataPtr & metadata_snapshot_,
     const MergeTreeIndices & indices_to_recalc_,
-    const NamesAndTypesList & statistics_columns_to_recalc_,
+    const StatisticDescriptions & statistics_descriptions_,
     const String & marks_file_extension_,
     const CompressionCodecPtr & default_codec_,
     const MergeTreeWriterSettings & settings_,
@@ -107,7 +107,7 @@ MergeTreeDataPartWriterOnDisk::MergeTreeDataPartWriterOnDisk(
     : IMergeTreeDataPartWriter(data_part_,
         columns_list_, metadata_snapshot_, settings_, index_granularity_)
     , skip_indices(indices_to_recalc_)
-    , statistics_columns_to_recalc(statistics_columns_to_recalc_)
+    , statistics_descriptions(statistics_descriptions_)
     , part_path(data_part_->getFullRelativePath())
     , marks_file_extension(marks_file_extension_)
     , default_codec(default_codec_)
@@ -205,9 +205,9 @@ void MergeTreeDataPartWriterOnDisk::initStats()
 {
     stats_collectors = MergeTreeStatisticFactory::instance()
         .getDistributionStatisticCollectors(
-            metadata_snapshot->getStatistics(),
+            statistics_descriptions,
             metadata_snapshot->getColumns(),
-            statistics_columns_to_recalc);
+            columns_list);
 }
 
 void MergeTreeDataPartWriterOnDisk::calculateAndSerializePrimaryIndex(const Block & primary_index_block, const Granules & granules_to_write)
@@ -385,7 +385,7 @@ void MergeTreeDataPartWriterOnDisk::fillStatisticsChecksums(MergeTreeData::DataP
         {
             auto stat = stats_collector->getStatisticAndReset();
             statistic_names.insert(stat->name());
-            column_distribution_stats->add(stats_collector->column(), std::move(stat));
+            column_distribution_stats->add(stats_collector->column(), stat);
         }
     }
 
@@ -450,8 +450,10 @@ Names MergeTreeDataPartWriterOnDisk::getSkipIndicesColumns() const
 Names MergeTreeDataPartWriterOnDisk::getStatsColumns() const
 {
     std::unordered_set<String> stats_column_names_set;
-    for (const auto & statistics_column_to_recalc : statistics_columns_to_recalc) {
-        stats_column_names_set.insert(statistics_column_to_recalc.name);
+    for (const auto & statistics_description : statistics_descriptions) {
+        for (const auto & column_name : statistics_description.column_names) {
+            stats_column_names_set.insert(column_name);
+        }
     }
     return Names(std::begin(stats_column_names_set), std::end(stats_column_names_set));
 }
