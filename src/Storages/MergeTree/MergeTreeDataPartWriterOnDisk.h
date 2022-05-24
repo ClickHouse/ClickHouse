@@ -94,6 +94,7 @@ public:
         const NamesAndTypesList & columns_list,
         const StorageMetadataPtr & metadata_snapshot_,
         const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
+        const NamesAndTypesList & statistics_columns,
         const StatisticDescriptions & statistics_descriptions,
         const String & marks_file_extension,
         const CompressionCodecPtr & default_codec,
@@ -139,6 +140,7 @@ protected:
     Names getStatsColumns() const;
 
     const MergeTreeIndices skip_indices;
+    const NamesAndTypesList statistics_columns;
     const StatisticDescriptions statistics_descriptions;
 
     const String part_path;

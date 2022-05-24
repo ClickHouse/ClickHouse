@@ -603,6 +603,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToMemory(
             metadata_snapshot->projections.get(projection_name).metadata,
             block.getNamesAndTypesList(),
             {},
+            block.getNamesAndTypesList(),
             {},
             CompressionCodecFactory::instance().get("NONE", {}),
             NO_TRANSACTION_PTR);
@@ -628,7 +629,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToMemory(
     new_data_part->partition.create(metadata_snapshot, block, 0, context);
 
     MergedBlockOutputStream part_out(
-        new_data_part, metadata_snapshot, block.getNamesAndTypesList(), {}, {},
+        new_data_part, metadata_snapshot, block.getNamesAndTypesList(), {}, block.getNamesAndTypesList(), {},
         CompressionCodecFactory::instance().get("NONE", {}), NO_TRANSACTION_PTR);
 
     part_out.write(block);

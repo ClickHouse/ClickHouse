@@ -4,6 +4,10 @@
 #include <boost/algorithm/string/replace.hpp>
 #include <Common/logger_useful.h>
 #include <Common/escapeForFileName.h>
+#include "Core/Names.h"
+#include "Core/NamesAndTypes.h"
+#include "Storages/ColumnsDescription.h"
+#include "Storages/StatisticsDescription.h"
 #include <Interpreters/SquashingTransform.h>
 #include <Parsers/queryToString.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
@@ -24,6 +28,7 @@
 #include <Storages/MergeTree/MergeTreeStatistic.h>
 #include <Storages/MergeTree/StorageFromMergeTreeDataPart.h>
 #include <Storages/MutationCommands.h>
+#include <Poco/Logger.h>
 
 
 namespace CurrentMetrics
@@ -320,6 +325,41 @@ static std::vector<ProjectionDescriptionRawPtr> getProjectionsForNewDataPart(
     return new_projections;
 }
 
+static StatisticDescriptions getStatisticsForNewDataPart(
+    const StatisticDescriptions & all_statistics,
+    const MutationCommands & commands_for_removes)
+{
+    NameSet removed_statistics;
+    for (const auto & command : commands_for_removes)
+        if (command.type == MutationCommand::DROP_STATISTIC)
+            removed_statistics.insert(command.column_name); // Column name???
+
+    StatisticDescriptions new_statistics;
+    for (const auto & statistic : all_statistics)
+        if (!removed_statistics.contains(statistic.name)) {
+            new_statistics.push_back(statistic);
+            Poco::Logger::get("getStatisticsForNewDataPart").information(statistic.name);
+        }
+    return new_statistics;
+}
+
+static NamesAndTypesList getStatisticsColumns(const ColumnsDescription & columns, const StatisticDescriptions & statistics)
+{
+    NameSet used_columns;
+    for (const auto& statistic : statistics) {
+        for (const auto& column : statistic.column_names) {
+            used_columns.insert(column);
+        }
+    }
+    
+    NamesAndTypesList result;
+    for (const auto& column : columns) {
+        if (used_columns.contains(column.name)) {
+            result.emplace_back(column.name, column.type);
+        }
+    }
+    return result;
+}
 
 /// Return set of indices which should be recalculated during mutation also
 /// wraps input stream into additional expression stream
@@ -434,14 +474,25 @@ std::set<ProjectionDescriptionRawPtr> getProjectionsToRecalculate(
 
 
 /// Return set of statistics which should be recalculated during mutation
-static MergeTreeStatisticsPtr getStatisticsToRecalculate(
+static StatisticDescriptions getStatisticsToRecalculate(
     const NameSet & /*updated_columns*/,
-    const StorageMetadataPtr & /*metadata_snapshot*/,
+    const StorageMetadataPtr & metadata_snapshot,
     ContextPtr /*context*/,
-    const NameSet & /*materialized_indices*/,
+    const NameSet & materialized_statistics,
     const MergeTreeData::DataPartPtr & /*source_part*/)
 {
-    return nullptr;
+    StatisticDescriptions result;
+    const auto& statistics = metadata_snapshot->getStatistics();
+    for (const auto& statistic : statistics) {
+        // statistics are always fully recalculated;
+        // TODO: decide if we really need it
+        // TODO: do not recalc stats for existing columns
+        if (materialized_statistics.contains(statistic.name)) {
+            result.push_back(statistic);
+            Poco::Logger::get("getStatisticsToRecalculate").information(statistic.name);
+        }
+    }
+    return result;
 }
 
 /// Files, that we don't need to remove and don't need to hardlink, for example columns.txt and checksums.txt.
@@ -452,7 +503,7 @@ NameSet collectFilesToSkip(
     const std::set<MergeTreeIndexPtr> & indices_to_recalc,
     const String & mrk_extension,
     const std::set<ProjectionDescriptionRawPtr> & projections_to_recalc,
-    const MergeTreeStatisticsPtr & /*statistics_to_recalc*/
+    const StatisticDescriptions & statistics_to_recalc
     )
 {
     NameSet files_to_skip = source_part->getFileNamesWithoutChecksums();
@@ -477,12 +528,17 @@ NameSet collectFilesToSkip(
     for (const auto & projection : projections_to_recalc)
         files_to_skip.insert(projection->getDirectoryName());
     
-    //for (const auto & [filename, _] : source_part->checksums.files)
-    //{
-    //    if (filename.starts_with(std::string{PART_STATS_FILE_NAME} + "_" + command.column_name + "_")
-    //                && filename.ends_with(PART_STATS_FILE_EXT))
-    //}
-    //statistics_to_recalc.
+    
+    // TODO: исправить
+    for (const auto & [filename, _] : source_part->checksums.files)
+    {
+        for (const auto& statistic : statistics_to_recalc) {
+            if (filename.starts_with(std::string{PART_STATS_FILE_NAME} + "_" + statistic.name + "_") && filename.ends_with(PART_STATS_FILE_EXT)) {
+                files_to_skip.insert(filename);
+                Poco::Logger::get("collectFilesToSkip").information(statistic.name + " " + filename);
+            }
+        }
+    }
 
     return files_to_skip;
 }
@@ -531,6 +587,7 @@ static NameToNameVector collectFilesForRenames(
                     && filename.ends_with(PART_STATS_FILE_EXT))
                 {
                     rename_vector.emplace_back(filename, "");
+                    Poco::Logger::get("collectFilesForRenames").information(command.column_name + " " + filename);
                 }
             }
         }
@@ -650,6 +707,7 @@ void finalizeMutatedPart(
         MergeTreeData::DataPart::calculateTotalSizeOnDisk(new_data_part->volume->getDisk(), part_path));
     new_data_part->default_codec = codec;
     new_data_part->calculateColumnsAndSecondaryIndicesSizesOnDisk();
+    // TODO: same for statistics
 }
 
 }
@@ -711,7 +769,7 @@ struct MutationContext
     NameSet updated_columns;
     std::set<MergeTreeIndexPtr> indices_to_recalc;
     std::set<ProjectionDescriptionRawPtr> projections_to_recalc;
-    MergeTreeStatisticsPtr statistics_to_recalc;
+    StatisticDescriptions statistics_to_recalc;
     NameSet files_to_skip;
     NameToNameVector files_to_rename;
 
@@ -1120,8 +1178,8 @@ private:
 
         auto skip_part_indices = MutationHelpers::getIndicesForNewDataPart(ctx->metadata_snapshot->getSecondaryIndices(), ctx->for_file_renames);
         ctx->projections_to_build = MutationHelpers::getProjectionsForNewDataPart(ctx->metadata_snapshot->getProjections(), ctx->for_file_renames);
-        // Statistics are lightweight, so we caclucate them for all provided columns and don't need similar expression.
-        // TODO: check if stats are not created again??? metadata can be old, see getIndicesForNewDataPart
+        auto statistics_descriptions = MutationHelpers::getStatisticsForNewDataPart(ctx->metadata_snapshot->getStatistics(), ctx->for_file_renames);
+        auto statistics_columns = MutationHelpers::getStatisticsColumns(ctx->metadata_snapshot->getColumns(), statistics_descriptions);
 
         if (!ctx->mutating_pipeline.initialized())
             throw Exception("Cannot mutate part columns with uninitialized mutations stream. It's a bug", ErrorCodes::LOGICAL_ERROR);
@@ -1150,13 +1208,15 @@ private:
             ctx->metadata_snapshot,
             ctx->new_data_part->getColumns(),
             skip_part_indices,
-            ctx->metadata_snapshot->getStatistics(),
+            statistics_columns,
+            statistics_descriptions,
             ctx->compression_codec,
             ctx->txn);
 
         ctx->mutating_pipeline = QueryPipelineBuilder::getPipeline(std::move(builder));
         ctx->mutating_executor = std::make_unique<PullingPipelineExecutor>(ctx->mutating_pipeline);
 
+        Poco::Logger::get("PREPARE").information("all "  + std::to_string(statistics_descriptions.size()));
         part_merger_writer_task = std::make_unique<PartMergerWriter>(ctx);
     }
 
@@ -1306,8 +1366,14 @@ private:
 
         ctx->compression_codec = ctx->source_part->default_codec;
 
+        Poco::Logger::get("PREPARE").information("SOME ");
         if (ctx->mutating_pipeline.initialized())
         {
+            Poco::Logger::get("PREPARE").information("SOME inside " + std::to_string(ctx->statistics_to_recalc.size()) + " " + std::to_string(ctx->updated_header.columns()));
+            // Poco::Logger::get("PREPARE").information("SOME : " + ctx->statistics_to_recalc.front().name);
+            for (const auto& col : ctx->updated_header.getNames()) {
+                Poco::Logger::get("PREPARE").information("SOME col : " + col);
+            }
             QueryPipelineBuilder builder;
             builder.init(std::move(ctx->mutating_pipeline));
 
@@ -1317,13 +1383,16 @@ private:
             if (ctx->execute_ttl_type == ExecuteTTLType::RECALCULATE)
                 builder.addTransform(std::make_shared<TTLCalcTransform>(builder.getHeader(), *ctx->data, ctx->metadata_snapshot, ctx->new_data_part, ctx->time_of_mutation, true));
 
+
+
             ctx->out = std::make_shared<MergedColumnOnlyOutputStream>(
                 ctx->new_data_part,
                 ctx->metadata_snapshot,
                 ctx->updated_header,
                 ctx->compression_codec,
                 std::vector<MergeTreeIndexPtr>(ctx->indices_to_recalc.begin(), ctx->indices_to_recalc.end()),
-                ctx->metadata_snapshot->getStatistics(),
+                MutationHelpers::getStatisticsColumns(ctx->metadata_snapshot->getColumns(), ctx->statistics_to_recalc),
+                ctx->statistics_to_recalc,
                 nullptr,
                 ctx->source_part->index_granularity,
                 &ctx->source_part->index_granularity_info
@@ -1567,7 +1636,7 @@ bool MutateTask::prepare()
 
         if (ctx->indices_to_recalc.empty() &&
             ctx->projections_to_recalc.empty() &&
-            //ctx->statistics_to_recalc->empty() &&
+            ctx->statistics_to_recalc.empty() &&
             ctx->mutation_kind != MutationsInterpreter::MutationKind::MUTATE_OTHER
             && ctx->files_to_rename.empty())
         {

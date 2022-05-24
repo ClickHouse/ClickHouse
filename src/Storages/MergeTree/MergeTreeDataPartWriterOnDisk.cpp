@@ -99,6 +99,7 @@ MergeTreeDataPartWriterOnDisk::MergeTreeDataPartWriterOnDisk(
     const NamesAndTypesList & columns_list_,
     const StorageMetadataPtr & metadata_snapshot_,
     const MergeTreeIndices & indices_to_recalc_,
+    const NamesAndTypesList & statistics_columns_,
     const StatisticDescriptions & statistics_descriptions_,
     const String & marks_file_extension_,
     const CompressionCodecPtr & default_codec_,
@@ -107,6 +108,7 @@ MergeTreeDataPartWriterOnDisk::MergeTreeDataPartWriterOnDisk(
     : IMergeTreeDataPartWriter(data_part_,
         columns_list_, metadata_snapshot_, settings_, index_granularity_)
     , skip_indices(indices_to_recalc_)
+    , statistics_columns(statistics_columns_)
     , statistics_descriptions(statistics_descriptions_)
     , part_path(data_part_->getFullRelativePath())
     , marks_file_extension(marks_file_extension_)
@@ -207,7 +209,7 @@ void MergeTreeDataPartWriterOnDisk::initStats()
         .getDistributionStatisticCollectors(
             statistics_descriptions,
             metadata_snapshot->getColumns(),
-            columns_list);
+            statistics_columns);
 }
 
 void MergeTreeDataPartWriterOnDisk::calculateAndSerializePrimaryIndex(const Block & primary_index_block, const Granules & granules_to_write)

@@ -60,6 +60,7 @@ IMergeTreeDataPart::MergeTreeWriterPtr MergeTreeDataPartWide::getWriter(
     const NamesAndTypesList & columns_list,
     const StorageMetadataPtr & metadata_snapshot,
     const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
+    const NamesAndTypesList & statistics_columns_,
     const StatisticDescriptions & statistics_descriptions,
     const CompressionCodecPtr & default_codec_,
     const MergeTreeWriterSettings & writer_settings,
@@ -67,7 +68,7 @@ IMergeTreeDataPart::MergeTreeWriterPtr MergeTreeDataPartWide::getWriter(
 {
     return std::make_unique<MergeTreeDataPartWriterWide>(
         shared_from_this(), columns_list, metadata_snapshot, indices_to_recalc,
-        statistics_descriptions, index_granularity_info.marks_file_extension,
+        statistics_columns_, statistics_descriptions, index_granularity_info.marks_file_extension,
         default_codec_, writer_settings, computed_index_granularity);
 }
 

@@ -438,6 +438,7 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPart(
     const auto & index_factory = MergeTreeIndexFactory::instance();
     auto out = std::make_unique<MergedBlockOutputStream>(new_data_part, metadata_snapshot, columns,
         index_factory.getMany(metadata_snapshot->getSecondaryIndices()),
+        columns,
         context->getSettings().calculate_stats_during_insert ? metadata_snapshot->getStatistics() : StatisticDescriptions{},
         compression_codec,
         context->getCurrentTransaction(), false, false, context->getWriteSettings());
@@ -573,6 +574,7 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeProjectionPartImpl(
         metadata_snapshot,
         columns,
         MergeTreeIndices{},
+        columns,
         StatisticDescriptions{},
         compression_codec,
         NO_TRANSACTION_PTR);

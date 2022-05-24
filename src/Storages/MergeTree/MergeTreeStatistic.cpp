@@ -379,7 +379,7 @@ IMergeTreeDistributionStatisticCollectorPtrs MergeTreeStatisticFactory::getDistr
     const ColumnsDescription & columns,
     const NamesAndTypesList & columns_for_collection) const
 {
-    std::unordered_set<String> columns_names_for_collection;
+    NameSet columns_names_for_collection;
     for (const auto & column_for_collection : columns_for_collection) {
         columns_names_for_collection.insert(column_for_collection.name);
     }
