@@ -63,7 +63,7 @@ public:
 
     NamesAndTypesList getVirtuals() const override;
 
-    bool isColumnOriented() const override;
+    bool supportsSubsetOfColumns() const override;
 
     std::optional<UInt64> totalRows(const Settings & settings) const override;
     std::optional<UInt64> totalRowsByPartitionPredicate(const SelectQueryInfo & query_info, ContextPtr context_) const override;
@@ -116,8 +116,6 @@ private:
         const HiveTableMetadataPtr & hive_table_metadata,
         const ContextPtr & context_,
         PruneLevel prune_level = PruneLevel::Max) const;
-
-    void getActualColumnsToRead(Block & sample_block, const Block & header_block, const NameSet & partition_columns) const;
 
     void lazyInitialize();
 

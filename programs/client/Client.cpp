@@ -1,4 +1,4 @@
-#include <stdlib.h>
+#include <cstdlib>
 #include <fcntl.h>
 #include <map>
 #include <iostream>
@@ -1038,6 +1038,7 @@ void Client::processConfig()
     ClientInfo & client_info = global_context->getClientInfo();
     client_info.setInitialQuery();
     client_info.quota_key = config().getString("quota_key", "");
+    client_info.query_kind = query_kind;
 }
 
 
