@@ -115,9 +115,13 @@ struct MatchImpl
         const ColumnPtr & start_pos_,
         PaddedPODArray<UInt8> & res)
     {
+        const size_t haystack_size = haystack_offsets.size();
+
+        if (haystack_size != res.size())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Function '{}' unexpectedly received a different number of haystacks and results", name);
+
         if (start_pos_ != nullptr)
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Function '{}' doesn't support start_pos argument", name);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Function '{}' doesn't support start_pos argument", name);
 
         if (haystack_offsets.empty())
             return;
@@ -169,8 +173,6 @@ struct MatchImpl
             bool required_substring_is_prefix; /// for `anchored` execution of the regexp.
 
             regexp->getAnalyzeResult(required_substring, is_trivial, required_substring_is_prefix);
-
-            size_t haystack_size = haystack_offsets.size();
 
             if (required_substring.empty())
             {
@@ -270,6 +272,11 @@ struct MatchImpl
         const String & needle,
         PaddedPODArray<UInt8> & res)
     {
+        const size_t haystack_size = haystack.size() / N;
+
+        if (haystack_size != res.size())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Function '{}' unexpectedly received a different number of haystacks and results", name);
+
         if (haystack.empty())
             return;
 
@@ -325,8 +332,6 @@ struct MatchImpl
             bool required_substring_is_prefix; /// for `anchored` execution of the regexp.
 
             regexp->getAnalyzeResult(required_substring, is_trivial, required_substring_is_prefix);
-
-            const size_t haystack_size = haystack.size() / N;
 
             if (required_substring.empty())
             {
@@ -433,13 +438,11 @@ struct MatchImpl
     {
         const size_t haystack_size = haystack_offsets.size();
 
-        if (haystack_size != needle_offset.size())
-            throw Exception(ErrorCodes::LOGICAL_ERROR,
-                    "Function '{}' unexpectedly received a different number of haystacks and needles", name);
+        if (haystack_size != needle_offset.size() || haystack_size != res.size())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Function '{}' unexpectedly received a different number of haystacks, needles and results", name);
 
         if (start_pos_ != nullptr)
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Function '{}' doesn't support start_pos argument", name);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Function '{}' doesn't support start_pos argument", name);
 
         if (haystack_offsets.empty())
             return;
@@ -549,13 +552,11 @@ struct MatchImpl
     {
         const size_t haystack_size = haystack.size()/N;
 
-        if (haystack_size != needle_offset.size())
-            throw Exception(ErrorCodes::LOGICAL_ERROR,
-                    "Function '{}' unexpectedly received a different number of haystacks and needles", name);
+        if (haystack_size != needle_offset.size() || haystack_size != res.size())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Function '{}' unexpectedly received a different number of haystacks, needles and results", name);
 
         if (start_pos_ != nullptr)
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Function '{}' doesn't support start_pos argument", name);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Function '{}' doesn't support start_pos argument", name);
 
         if (haystack.empty())
             return;
