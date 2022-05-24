@@ -252,7 +252,8 @@ private:
 
 protected:
     RWLockImpl::LockHolder tryLockTimed(
-        const RWLock & rwlock, RWLockImpl::Type type, const String & query_id, const std::chrono::milliseconds & acquire_timeout) const;
+        const RWLock & rwlock, RWLockImpl::Type type, const String & query_id, const std::chrono::milliseconds & acquire_timeout,
+        bool throw_if_timeout = true) const;
 
 public:
     /// Lock table for share. This lock must be acuqired if you want to be sure,
@@ -260,6 +261,7 @@ public:
     /// variety of cases starting from SELECT queries to background merges in
     /// MergeTree.
     TableLockHolder lockForShare(const String & query_id, const std::chrono::milliseconds & acquire_timeout);
+    TableLockHolder tryLockForShare(const String & query_id, const std::chrono::milliseconds & acquire_timeout);
 
     /// Lock table for alter. This lock must be acuqired in ALTER queries to be
     /// sure, that we execute only one simultaneous alter. Doesn't affect share lock.

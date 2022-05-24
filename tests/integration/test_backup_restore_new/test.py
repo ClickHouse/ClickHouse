@@ -78,9 +78,7 @@ def test_restore_table_into_existing_table(engine):
     assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
     instance.query(f"BACKUP TABLE test.table TO {backup_name}")
 
-    expected_error = (
-        "Cannot restore table test.table because it already contains some data"
-    )
+    expected_error = "already contains some data"
     assert expected_error in instance.query_and_get_error(
         f"RESTORE TABLE test.table FROM {backup_name}"
     )

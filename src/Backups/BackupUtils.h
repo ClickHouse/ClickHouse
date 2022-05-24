@@ -24,7 +24,7 @@ BackupEntries makeBackupEntries(
     const ASTBackupQuery::Elements & elements,
     const BackupSettings & backup_settings,
     std::shared_ptr<IBackupCoordination> backup_coordination,
-    std::chrono::seconds timeout_for_other_nodes_to_prepare = std::chrono::seconds::zero());
+    std::chrono::seconds timeout_for_preparing = std::chrono::seconds::zero());
 
 /// Write backup entries to an opened backup.
 void writeBackupEntries(BackupMutablePtr backup, BackupEntries && backup_entries, ThreadPool & thread_pool);

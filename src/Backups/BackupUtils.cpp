@@ -5,7 +5,6 @@
 #include <Backups/DDLRenamingVisitor.h>
 #include <Backups/IBackup.h>
 #include <Backups/IBackupCoordination.h>
-#include <Backups/formatTableNameOrTemporaryTableName.h>
 #include <Backups/replaceTableUUIDWithMacroInReplicatedTableDef.h>
 #include <Common/escapeForFileName.h>
 #include <Access/Common/AccessRightsElement.h>
@@ -16,6 +15,7 @@
 #include <Parsers/formatAST.h>
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
+#include <base/sleep.h>
 
 
 namespace DB
@@ -50,16 +50,6 @@ namespace
             return getPathForShardAndReplica(shard_index, replica_index) + String{"metadata/"} + escapeForFileName(database_name) + ".sql";
         }
 
-        static String getMetadataPath(const IAST & create_query, size_t shard_index, size_t replica_index)
-        {
-            const auto & create = create_query.as<const ASTCreateQuery &>();
-            if (!create.table)
-                return getMetadataPath(create.getDatabase(), shard_index, replica_index);
-            if (create.temporary)
-                return getMetadataPath({DatabaseCatalog::TEMPORARY_DATABASE, create.getTable()}, shard_index, replica_index);
-            return getMetadataPath({create.getDatabase(), create.getTable()}, shard_index, replica_index);
-        }
-
         /// Returns the path to table's data in backup.
         static String getDataPath(const DatabaseAndTableName & table_name, size_t shard_index, size_t replica_index)
         {
@@ -68,16 +58,6 @@ namespace
             assert(!table_name.first.empty() && !table_name.second.empty());
             return getPathForShardAndReplica(shard_index, replica_index) + String{"data/"} + escapeForFileName(table_name.first) + "/"
                 + escapeForFileName(table_name.second) + "/";
-        }
-
-        static String getDataPath(const IAST & create_query, size_t shard_index, size_t replica_index)
-        {
-            const auto & create = create_query.as<const ASTCreateQuery &>();
-            if (!create.table)
-                return {};
-            if (create.temporary)
-                return getDataPath({DatabaseCatalog::TEMPORARY_DATABASE, create.getTable()}, shard_index, replica_index);
-            return getDataPath({create.getDatabase(), create.getTable()}, shard_index, replica_index);
         }
 
     private:
@@ -106,11 +86,15 @@ namespace
         }
 
         /// Prepares internal structures for making backup entries.
-        void prepare(const ASTBackupQuery::Elements & elements, std::chrono::seconds timeout_for_other_nodes_to_prepare)
+        void prepare(const ASTBackupQuery::Elements & elements, std::chrono::seconds timeout)
         {
             try
             {
-                prepareImpl(elements);
+                calculateShardNumAndReplicaNumInBackup();
+                renaming_settings.setFromBackupQuery(elements);
+                collectDatabasesAndTables(elements, timeout);
+                collectTablesData();
+                releaseTables();
             }
             catch (...)
             {
@@ -126,20 +110,22 @@ namespace
             backup_coordination->waitForAllHostsPrepared(
                 BackupSettings::Util::filterHostIDs(
                     backup_settings.cluster_host_ids, backup_settings.shard_num, backup_settings.replica_num),
-                timeout_for_other_nodes_to_prepare);
+                timeout);
         }
 
         /// Makes backup entries, should be called after prepare().
-        BackupEntries makeBackupEntries() const
+        BackupEntries makeBackupEntries() &&
         {
-            BackupEntries res;
-            for (const auto & info : databases | boost::adaptors::map_values)
-                res.push_back(makeBackupEntryForMetadata(*info.create_query));
+            renameAndAdjustCreateQueries();
 
-            for (const auto & info : tables | boost::adaptors::map_values)
+            BackupEntries res;
+            for (const auto & [db_name_in_backup, db_info] : databases)
+                res.push_back(makeBackupEntryFromMetadata(db_name_in_backup, *db_info.create_query));
+
+            for (const auto & [table_name_in_backup, table_info] : tables)
             {
-                res.push_back(makeBackupEntryForMetadata(*info.create_query));
-                appendBackupEntriesForData(res, info);
+                res.push_back(makeBackupEntryFromMetadata(table_name_in_backup, *table_info.create_query));
+                appendBackupEntriesWithData(res, table_info);
             }
 
             /// A backup cannot be empty.
@@ -150,37 +136,6 @@ namespace
         }
 
     private:
-        void prepareImpl(const ASTBackupQuery::Elements & elements)
-        {
-            calculateShardNumAndReplicaNumInBackup();
-            renaming_settings.setFromBackupQuery(elements);
-
-            for (const auto & element : elements)
-            {
-                switch (element.type)
-                {
-                    case ElementType::TABLE:
-                    {
-                        prepareToBackupTable(element.name, element.partitions);
-                        break;
-                    }
-
-                    case ElementType::DATABASE:
-                    {
-                        const String & database_name = element.name.first;
-                        prepareToBackupDatabase(database_name, element.except_list);
-                        break;
-                    }
-
-                    case ElementType::ALL_DATABASES:
-                    {
-                        prepareToBackupAllDatabases(element.except_list);
-                        break;
-                    }
-                }
-            }
-        }
-
         void calculateShardNumAndReplicaNumInBackup()
         {
             size_t shard_num = 0;
@@ -194,82 +149,153 @@ namespace
             replica_num_in_backup = replica_num;
         }
 
-        /// Prepares to backup a single table and probably its database's definition.
-        void prepareToBackupTable(const DatabaseAndTableName & table_name_, const ASTs & partitions_)
+        /// Collects information about databases and tables which will be in the backup.
+        void collectDatabasesAndTables(const ASTBackupQuery::Elements & elements, std::chrono::seconds timeout)
         {
-            auto database_and_table = DatabaseCatalog::instance().getDatabaseAndTable({table_name_.first, table_name_.second}, context);
-            prepareToBackupTable(database_and_table, partitions_);
+            /// Tables can be dropped or renamed while we're collecting them.
+            /// That's why we will sometimes have to do that in multiple passes.
+            bool use_timeout = timeout.count() >= 0;
+            auto start_time = std::chrono::steady_clock::now();
+            bool ok = false;
+            while (!use_timeout || (std::chrono::steady_clock::now() - start_time < timeout))
+            {
+                ok = tryCollectDatabasesAndTables(elements, /* throw_if_not_locked_or_renamed= */ false);
+                if (ok)
+                    break;
+                sleepForMilliseconds(50);
+            }
+
+            if (!ok)
+                tryCollectDatabasesAndTables(elements, /* throw_if_not_locked_or_renamed= */ true);
         }
 
-        void prepareToBackupTable(const DatabaseAndTable & table_, const ASTs & partitions_)
+        bool tryCollectDatabasesAndTables(const ASTBackupQuery::Elements & elements, bool throw_if_not_locked_or_renamed)
         {
-            const auto & database = table_.first;
-            const auto & storage = table_.second;
+            bool ok = true;
+
+            for (const auto & element : elements)
+            {
+                switch (element.type)
+                {
+                    case ElementType::TABLE:
+                    {
+                        ok &= tryCollectTable(element.name, element.partitions, throw_if_not_locked_or_renamed);
+                        break;
+                    }
+
+                    case ElementType::DATABASE:
+                    {
+                        const String & database_name = element.name.first;
+                        ok &= tryCollectDatabase(database_name, element.except_list, throw_if_not_locked_or_renamed);
+                        break;
+                    }
+
+                    case ElementType::ALL_DATABASES:
+                    {
+                        ok &= tryCollectAllDatabases(element.except_list, throw_if_not_locked_or_renamed);
+                        break;
+                    }
+                }
+
+                if (!ok)
+                    break;
+            }
+
+            if (!ok)
+            {
+                databases.clear();
+                tables.clear();
+            }
+
+            return ok;
+        }
+
+        bool tryCollectTable(const DatabaseAndTableName & table_name, const ASTs & partitions, bool throw_if_not_locked_or_renamed)
+        {
+            auto database_and_table = DatabaseCatalog::instance().getDatabaseAndTable({table_name.first, table_name.second}, context);
+            return tryCollectTable(table_name, database_and_table, partitions, throw_if_not_locked_or_renamed);
+        }
+
+        bool tryCollectTable(const DatabaseAndTableName & table_name, const DatabaseAndTable & database_and_table, const ASTs & partitions, bool throw_if_not_locked_or_renamed)
+        {
+            const auto & database = database_and_table.first;
+            const auto & storage = database_and_table.second;
+            
+            auto table_lock = storage->tryLockForShare(context->getInitialQueryId(), context->getSettingsRef().lock_acquire_timeout);
             auto table_id = storage->getStorageID();
 
+            if (!table_lock)
+            {
+                if (throw_if_not_locked_or_renamed)
+                    throw Exception(ErrorCodes::CANNOT_BACKUP_TABLE, "Couldn't lock the table {} for backup", table_id.getFullTableName());
+                return false;
+            }
+
+            if ((table_id.database_name != table_name.first) || (table_id.table_name != table_name.second))
+            {
+                if (throw_if_not_locked_or_renamed)
+                    throw Exception(ErrorCodes::CANNOT_BACKUP_TABLE, "Table {}.{} suddenly changed its name to {}",
+                                    backQuoteIfNeed(table_name.first), backQuoteIfNeed(table_name.second), table_id.getFullTableName());
+                return false;
+            }
+
+            auto create_query = typeid_cast<std::shared_ptr<ASTCreateQuery>>(database->tryGetCreateTableQuery(table_name.second, context));
+            if (!create_query || (create_query->getDatabase() != table_name.first) || (create_query->getTable() != table_name.second))
+            {
+                if (throw_if_not_locked_or_renamed)
+                    throw Exception(ErrorCodes::CANNOT_BACKUP_TABLE, "Couldn't get a create query for the table {}", table_id.getFullTableName());
+                return false;
+            }
+            
             if (!database->hasTablesToBackup())
                 throw Exception(
                     ErrorCodes::CANNOT_BACKUP_TABLE,
-                    "Cannot backup the {} because it's contained in a hollow database (engine: {})",
-                    table_id.getNameForLogs(),
+                    "Cannot backup the table {} because it's contained in a hollow database (engine: {})",
+                    table_id.getFullTableName(),
                     database->getEngineName());
 
             /// Check that we are not trying to backup the same table again.
-            DatabaseAndTableName name_in_backup = renaming_settings.getNewTableName(DatabaseAndTableName{table_id.database_name, table_id.table_name});
+            DatabaseAndTableName name_in_backup
+                = renaming_settings.getNewTableName(DatabaseAndTableName{table_id.database_name, table_id.table_name});
             if (tables.contains(name_in_backup))
-                throw Exception(ErrorCodes::CANNOT_BACKUP_TABLE, "Cannot backup the {} twice", formatTableNameOrTemporaryTableName(name_in_backup));
+                throw Exception(
+                    ErrorCodes::CANNOT_BACKUP_TABLE, "Cannot backup the table {}.{} twice", backQuoteIfNeed(name_in_backup.first), backQuoteIfNeed(name_in_backup.second));
 
-            /// Make a create query for this table.
-            auto create_query = prepareCreateQueryForBackup(database->getCreateTableQuery(table_id.table_name, context));
-            String data_path = PathsInBackup::getDataPath(*create_query, shard_num_in_backup, replica_num_in_backup);
-
-            BackupEntries data = prepareToBackupTableData(storage, partitions_);
-
-            bool has_replicated_parts = backup_coordination->hasReplicatedPartNames(backup_settings.host_id, table_id);
-            if (has_replicated_parts)
-                backup_coordination->addReplicatedTableDataPath(backup_settings.host_id, table_id, data_path);
-
-            TableInfo & info = tables.emplace(name_in_backup, table_id).first->second;
-            info.create_query = create_query;
-            info.storage = storage;
-            info.data = std::move(data);
-            info.data_path = std::move(data_path);
-            info.has_replicated_parts = has_replicated_parts;
+            TableInfo & table_info = tables.emplace(name_in_backup, table_id).first->second;
+            table_info.storage = storage;
+            table_info.create_query = create_query;
+            table_info.partitions = partitions;
+            table_info.table_lock = std::move(table_lock);
+            return true;
         }
 
-        BackupEntries prepareToBackupTableData(const StoragePtr & storage_, const ASTs & partitions_) const
-        {
-            bool has_data = storage_->hasDataToBackup() && !backup_settings.structure_only;
-            if (!has_data)
-                return {};
-
-            return storage_->backupData(context, partitions_, backup_settings, backup_coordination);
-        }
-
-        /// Prepares to restore a database and all tables in it.
-        void prepareToBackupDatabase(const String & database_name_, const std::set<String> & except_list_)
+        bool tryCollectDatabase(const String & database_name_, const std::set<String> & except_list_, bool throw_if_not_locked_or_renamed)
         {
             auto database = DatabaseCatalog::instance().getDatabase(database_name_, context);
-            prepareToBackupDatabase(database_name_, database, except_list_);
+            return tryCollectDatabase(database_name_, database, except_list_, throw_if_not_locked_or_renamed);
         }
 
-        void prepareToBackupDatabase(const String & database_name_, const DatabasePtr & database_, const std::set<String> & except_list_)
+        bool tryCollectDatabase(const String & database_name_, const DatabasePtr & database_, const std::set<String> & except_list_, bool throw_if_not_locked_or_renamed)
         {
+            auto create_query = typeid_cast<std::shared_ptr<ASTCreateQuery>>(database_->getCreateDatabaseQuery());
+            if (!create_query)
+                throw Exception(ErrorCodes::CANNOT_BACKUP_DATABASE, "Couldn't get a create query for database {}", backQuoteIfNeed(database_name_));
+
+            if ((create_query->getDatabase() != database_name_))
+            {
+                if (throw_if_not_locked_or_renamed)
+                    throw Exception(ErrorCodes::CANNOT_BACKUP_TABLE, "Database {} suddenly changed its name to {}",
+                                    backQuoteIfNeed(database_name_), backQuoteIfNeed(create_query->getDatabase()));
+                return false;
+            }
+
             /// Check that we are not trying to restore the same database again.
             String name_in_backup = renaming_settings.getNewDatabaseName(database_name_);
             if (databases.contains(name_in_backup))
                 throw Exception(ErrorCodes::CANNOT_BACKUP_DATABASE, "Cannot backup the database {} twice", backQuoteIfNeed(name_in_backup));
 
-            /// Of course we're not going to backup the definition of the system or the temporary database.
-            if (!isSystemOrTemporaryDatabase(database_name_))
-            {
-                /// Make a create query for this database.
-                auto create_query = prepareCreateQueryForBackup(database_->getCreateDatabaseQuery());
-
-                DatabaseInfo info;
-                info.create_query = create_query;
-                databases[name_in_backup] = std::move(info);
-            }
+            DatabaseInfo & db_info = databases.emplace(name_in_backup, DatabaseInfo{}).first->second;
+            db_info.create_query = create_query;
 
             /// Backup tables in this database.
             if (database_->hasTablesToBackup())
@@ -278,29 +304,79 @@ namespace
                 {
                     if (except_list_.contains(it->name()))
                         continue;
-                    prepareToBackupTable({database_, it->table()}, {});
+                    if (!tryCollectTable({database_name_, it->name()}, {database_, it->table()}, {}, throw_if_not_locked_or_renamed))
+                        return false;
                 }
             }
+
+            return true;
         }
 
-        /// Prepares to backup all the databases contained in the backup.
-        void prepareToBackupAllDatabases(const std::set<String> & except_list_)
+        bool tryCollectAllDatabases(const std::set<String> & except_list_, bool throw_if_not_locked_or_renamed)
         {
             for (const auto & [database_name, database] : DatabaseCatalog::instance().getDatabases())
             {
                 if (except_list_.contains(database_name))
                     continue;
-                if (isSystemOrTemporaryDatabase(database_name))
+                if (!tryCollectDatabase(database_name, database, {}, throw_if_not_locked_or_renamed))
+                    return false;
+            }
+            return true;
+        }
+
+        /// Collects the data of all tables. It means we will make temporary hard links for all the data files.
+        void collectTablesData()
+        {
+            if (backup_settings.structure_only)
+                return;
+
+            for (auto & [name_in_backup, table_info] : tables)
+            {
+                auto storage = table_info.storage;
+                if (!storage->hasDataToBackup())
                     continue;
-                prepareToBackupDatabase(database_name, database, {});
+
+                const auto & table_id = table_info.table_id;
+                auto data = storage->backupData(context, table_info.partitions, backup_settings, backup_coordination);
+                String data_path = PathsInBackup::getDataPath(name_in_backup, shard_num_in_backup, replica_num_in_backup);
+
+                bool has_replicated_parts = backup_coordination->hasReplicatedPartNames(backup_settings.host_id, table_id);
+                if (has_replicated_parts)
+                    backup_coordination->addReplicatedTableDataPath(backup_settings.host_id, table_id, data_path);
+
+                table_info.data = std::move(data);
+                table_info.data_path = std::move(data_path);
+                table_info.has_replicated_parts = has_replicated_parts;
+
+                table_info.table_lock.reset();
+                table_info.storage.reset();
             }
         }
 
-        /// Do renaming in the create query according to the renaming config.
-        std::shared_ptr<ASTCreateQuery> prepareCreateQueryForBackup(const ASTPtr & ast) const
+        /// Releases table locks because we can continue making the backup without them.
+        void releaseTables()
+        {
+            for (auto & table_info : tables | boost::adaptors::map_values)
+            {
+                table_info.table_lock.reset();
+                table_info.storage.reset();
+            }
+        }
+
+        /// Do renaming in the create queries according to the renaming config.
+        void renameAndAdjustCreateQueries()
+        {
+            for (auto & info : databases | boost::adaptors::map_values)
+                info.create_query = renameAndAdjustCreateQuery(info.create_query);
+
+            for (auto & info : tables | boost::adaptors::map_values)
+                info.create_query = renameAndAdjustCreateQuery(info.create_query);
+        }
+
+        std::shared_ptr<ASTCreateQuery> renameAndAdjustCreateQuery(const ASTPtr & ast) const
         {
             ASTPtr query = ast;
-            ::DB::renameInCreateQuery(query, context, renaming_settings);
+            renameInCreateQuery(query, context, renaming_settings);
             auto create_query = typeid_cast<std::shared_ptr<ASTCreateQuery>>(query);
             replaceTableUUIDWithMacroInReplicatedTableDef(*create_query, create_query->uuid);
             create_query->uuid = UUIDHelpers::Nil;
@@ -308,21 +384,26 @@ namespace
             return create_query;
         }
 
-        static bool isSystemOrTemporaryDatabase(const String & database_name)
-        {
-            return (database_name == DatabaseCatalog::SYSTEM_DATABASE) || (database_name == DatabaseCatalog::TEMPORARY_DATABASE);
-        }
-
-        std::pair<String, BackupEntryPtr> makeBackupEntryForMetadata(const IAST & create_query) const
+        /// Makes a backup entry to backup table's metadata.
+        std::pair<String, BackupEntryPtr> makeBackupEntryFromMetadata(const String & database_name, const IAST & create_query) const
         {
             auto metadata_entry = std::make_unique<BackupEntryFromMemory>(serializeAST(create_query));
-            String metadata_path = PathsInBackup::getMetadataPath(create_query, shard_num_in_backup, replica_num_in_backup);
+            String metadata_path = PathsInBackup::getMetadataPath(database_name, shard_num_in_backup, replica_num_in_backup);
+            return {metadata_path, std::move(metadata_entry)};
+        }
+
+        /// Makes a backup entry to backup database's metadata.
+        std::pair<String, BackupEntryPtr> makeBackupEntryFromMetadata(const DatabaseAndTableName & table_name, const IAST & create_query) const
+        {
+            auto metadata_entry = std::make_unique<BackupEntryFromMemory>(serializeAST(create_query));
+            String metadata_path = PathsInBackup::getMetadataPath(table_name, shard_num_in_backup, replica_num_in_backup);
             return {metadata_path, std::move(metadata_entry)};
         }
 
         struct TableInfo;
 
-        void appendBackupEntriesForData(BackupEntries & res, const TableInfo & info) const
+        /// Appends backup entries with tables' data to the list.
+        void appendBackupEntriesWithData(BackupEntries & res, const TableInfo & info) const
         {
             if (!info.has_replicated_parts)
             {
@@ -353,19 +434,21 @@ namespace
             }
         }
 
-        /// Information which is used to make an instance of RestoreTableFromBackupTask.
+        /// Information which is used to backup the definition and the data of a table.
         struct TableInfo
         {
             explicit TableInfo(const StorageID & table_id_) : table_id(table_id_) {}
             StorageID table_id;
-            ASTPtr create_query;
+            std::shared_ptr<ASTCreateQuery> create_query;
             StoragePtr storage;
+            TableLockHolder table_lock;
+            ASTs partitions;
             BackupEntries data;
             String data_path;
             bool has_replicated_parts = false;
         };
 
-        /// Information which is used to make an instance of RestoreDatabaseFromBackupTask.
+        /// Information which is used to backup the definition of a database.
         struct DatabaseInfo
         {
             ASTPtr create_query;
@@ -388,11 +471,11 @@ BackupEntries makeBackupEntries(
     const Elements & elements,
     const BackupSettings & backup_settings,
     std::shared_ptr<IBackupCoordination> backup_coordination,
-    std::chrono::seconds timeout_for_other_nodes_to_prepare)
+    std::chrono::seconds timeout_for_preparing)
 {
     BackupEntriesBuilder builder{context, backup_settings, backup_coordination};
-    builder.prepare(elements, timeout_for_other_nodes_to_prepare);
-    return builder.makeBackupEntries();
+    builder.prepare(elements, timeout_for_preparing);
+    return std::move(builder).makeBackupEntries();
 }
 
 

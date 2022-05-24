@@ -210,9 +210,7 @@ def test_backup_restore_on_single_replica():
     node1.query("DROP DATABASE mydb NO DELAY")
 
     # Cannot restore table because it already contains data on other replicas.
-    expected_error = (
-        "Cannot restore table mydb.test because it already contains some data"
-    )
+    expected_error = "already contains some data"
     assert expected_error in node1.query_and_get_error(
         f"RESTORE DATABASE mydb FROM {backup_name}"
     )
@@ -254,9 +252,7 @@ def test_table_with_parts_in_queue_considered_non_empty():
     node1.query("DROP DATABASE mydb NO DELAY")
 
     # Cannot restore table because it already contains data on other replicas.
-    expected_error = (
-        "Cannot restore table mydb.test because it already contains some data"
-    )
+    expected_error = "already contains some data"
     assert expected_error in node1.query_and_get_error(
         f"RESTORE DATABASE mydb FROM {backup_name}"
     )

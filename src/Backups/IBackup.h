@@ -45,9 +45,11 @@ public:
     /// files stored in the "data/" directory inside the backup.
     virtual Strings listFiles(const String & prefix = "", const String & terminator = "/") const = 0; /// NOLINT
 
+    using SizeAndChecksum = std::pair<UInt64, UInt128>;
+
     /// Checks if an entry with a specified name exists.
     virtual bool fileExists(const String & file_name) const = 0;
-    virtual bool fileExists(const std::pair<UInt64, UInt128> & size_and_checksum) const = 0;
+    virtual bool fileExists(const SizeAndChecksum & size_and_checksum) const = 0;
 
     /// Returns the size of the entry's data.
     /// This function does the same as `read(file_name)->getSize()` but faster.
@@ -56,8 +58,6 @@ public:
     /// Returns the checksum of the entry's data.
     /// This function does the same as `read(file_name)->getCheckum()` but faster.
     virtual UInt128 getFileChecksum(const String & file_name) const = 0;
-
-    using SizeAndChecksum = std::pair<UInt64, UInt128>;
 
     /// Returns both the size and checksum in one call.
     virtual SizeAndChecksum getFileSizeAndChecksum(const String & file_name) const = 0;
