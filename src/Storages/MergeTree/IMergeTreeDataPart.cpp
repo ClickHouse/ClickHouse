@@ -1282,12 +1282,12 @@ void IMergeTreeDataPart::storeVersionMetadata() const
 
 void IMergeTreeDataPart::appendCSNToVersionMetadata(VersionMetadata::WhichCSN which_csn) const
 {
-    assert(!version.creation_tid.isEmpty());
-    assert(!(which_csn == VersionMetadata::WhichCSN::CREATION && version.creation_tid.isPrehistoric()));
-    assert(!(which_csn == VersionMetadata::WhichCSN::CREATION && version.creation_csn == 0));
-    assert(!(which_csn == VersionMetadata::WhichCSN::REMOVAL && (version.removal_tid.isPrehistoric() || version.removal_tid.isEmpty())));
-    assert(!(which_csn == VersionMetadata::WhichCSN::REMOVAL && version.removal_csn == 0));
-    assert(isStoredOnDisk());
+    chassert(!version.creation_tid.isEmpty());
+    chassert(!(which_csn == VersionMetadata::WhichCSN::CREATION && version.creation_tid.isPrehistoric()));
+    chassert(!(which_csn == VersionMetadata::WhichCSN::CREATION && version.creation_csn == 0));
+    chassert(!(which_csn == VersionMetadata::WhichCSN::REMOVAL && (version.removal_tid.isPrehistoric() || version.removal_tid.isEmpty())));
+    chassert(!(which_csn == VersionMetadata::WhichCSN::REMOVAL && version.removal_csn == 0));
+    chassert(isStoredOnDisk());
 
     /// Small enough appends to file are usually atomic,
     /// so we append new metadata instead of rewriting file to reduce number of fsyncs.
@@ -1303,10 +1303,10 @@ void IMergeTreeDataPart::appendCSNToVersionMetadata(VersionMetadata::WhichCSN wh
 
 void IMergeTreeDataPart::appendRemovalTIDToVersionMetadata(bool clear) const
 {
-    assert(!version.creation_tid.isEmpty());
-    assert(version.removal_csn == 0);
-    assert(!version.removal_tid.isEmpty());
-    assert(isStoredOnDisk());
+    chassert(!version.creation_tid.isEmpty());
+    chassert(version.removal_csn == 0);
+    chassert(!version.removal_tid.isEmpty());
+    chassert(isStoredOnDisk());
 
     if (version.creation_tid.isPrehistoric() && !clear)
     {
@@ -1437,7 +1437,9 @@ bool IMergeTreeDataPart::assertHasValidVersionMetadata() const
         bool valid_removal_tid = version.removal_tid == file.removal_tid || version.removal_tid == Tx::PrehistoricTID;
         bool valid_creation_csn = version.creation_csn == file.creation_csn || version.creation_csn == Tx::RolledBackCSN;
         bool valid_removal_csn = version.removal_csn == file.removal_csn || version.removal_csn == Tx::PrehistoricCSN;
-        if (!valid_creation_tid || !valid_removal_tid || !valid_creation_csn || !valid_removal_csn)
+        bool valid_removal_tid_lock = (version.removal_tid.isEmpty() && version.removal_tid_lock == 0)
+            || (version.removal_tid_lock == version.removal_tid.getHash());
+        if (!valid_creation_tid || !valid_removal_tid || !valid_creation_csn || !valid_removal_csn || !valid_removal_tid_lock)
             throw Exception(ErrorCodes::CORRUPTED_DATA, "Invalid version metadata file");
         return true;
     }
@@ -1445,7 +1447,8 @@ bool IMergeTreeDataPart::assertHasValidVersionMetadata() const
     {
         WriteBufferFromOwnString expected;
         version.write(expected);
-        tryLogCurrentException(storage.log, fmt::format("File {} contains:\n{}\nexpected:\n{}", version_file_name, content, expected.str()));
+        tryLogCurrentException(storage.log, fmt::format("File {} contains:\n{}\nexpected:\n{}\nlock: {}",
+                                                        version_file_name, content, expected.str(), version.removal_tid_lock));
         return false;
     }
 }

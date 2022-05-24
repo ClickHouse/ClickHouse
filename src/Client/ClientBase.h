@@ -139,7 +139,7 @@ private:
     void sendDataFromStdin(Block & sample, const ColumnsDescription & columns_description, ASTPtr parsed_query);
     void sendExternalTables(ASTPtr parsed_query);
 
-    void initBlockOutputStream(const Block & block, ASTPtr parsed_query);
+    void initOutputFormat(const Block & block, ASTPtr parsed_query);
     void initLogsOutputStream();
 
     String prompt() const;
@@ -256,6 +256,7 @@ protected:
     } profile_events;
 
     QueryProcessingStage::Enum query_processing_stage;
+    ClientInfo::QueryKind query_kind;
 
     bool fake_drop = false;
 

@@ -21,7 +21,7 @@
 namespace ProfileEvents
 {
     extern const Event WriteBufferFromS3Bytes;
-    extern const Event RemoteFSCacheDownloadBytes;
+    extern const Event CachedReadBufferCacheWriteBytes;
 }
 
 namespace DB
@@ -151,6 +151,13 @@ void WriteBufferFromS3::allocateBuffer()
 
 WriteBufferFromS3::~WriteBufferFromS3()
 {
+#ifndef NDEBUG
+    if (!is_finalized)
+    {
+        LOG_ERROR(log, "WriteBufferFromS3 is not finalized in destructor. It's a bug");
+        std::terminate();
+    }
+#else
     try
     {
         finalize();
@@ -159,6 +166,7 @@ WriteBufferFromS3::~WriteBufferFromS3()
     {
         tryLogCurrentException(__PRETTY_FUNCTION__);
     }
+#endif
 }
 
 bool WriteBufferFromS3::cacheEnabled() const
@@ -192,6 +200,8 @@ void WriteBufferFromS3::finalizeImpl()
 
     if (!multipart_upload_id.empty())
         completeMultipartUpload();
+
+    is_finalized = true;
 }
 
 void WriteBufferFromS3::createMultipartUpload()
@@ -480,7 +490,7 @@ void WriteBufferFromS3::finalizeCacheIfNeeded(std::optional<FileSegmentsHolder> 
             size_t size = (*file_segment_it)->finalizeWrite();
             file_segment_it = file_segments.erase(file_segment_it);
 
-            ProfileEvents::increment(ProfileEvents::RemoteFSCacheDownloadBytes, size);
+            ProfileEvents::increment(ProfileEvents::CachedReadBufferCacheWriteBytes, size);
         }
         catch (...)
         {
