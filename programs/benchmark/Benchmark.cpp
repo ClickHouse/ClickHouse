@@ -1,8 +1,8 @@
 #include <unistd.h>
-#include <stdlib.h>
+#include <cstdlib>
 #include <fcntl.h>
-#include <signal.h>
-#include <time.h>
+#include <csignal>
+#include <ctime>
 #include <iostream>
 #include <fstream>
 #include <iomanip>
