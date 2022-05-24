@@ -9,7 +9,7 @@
 #include <IO/readFloatText.h>
 #include <IO/Operators.h>
 #include <base/find_symbols.h>
-#include <stdlib.h>
+#include <cstdlib>
 
 #ifdef __SSE2__
     #include <emmintrin.h>
@@ -1363,7 +1363,7 @@ static void readQuotedFieldInBrackets(String & s, ReadBuffer & buf)
     }
 }
 
-void readQuotedFieldIntoString(String & s, ReadBuffer & buf)
+void readQuotedField(String & s, ReadBuffer & buf)
 {
     s.clear();
 
@@ -1427,8 +1427,9 @@ void readQuotedFieldIntoString(String & s, ReadBuffer & buf)
     }
 }
 
-void readJSONFieldIntoString(String & s, ReadBuffer & buf)
+void readJSONField(String & s, ReadBuffer & buf)
 {
+    s.clear();
     auto parse_func = [](ReadBuffer & in) { skipJSONField(in, "json_field"); };
     readParsedValueIntoString(s, buf, parse_func);
 }
