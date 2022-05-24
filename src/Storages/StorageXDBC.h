@@ -67,7 +67,7 @@ private:
 
     Block getHeaderBlock(const Names & column_names, const StorageSnapshotPtr & storage_snapshot) const override;
 
-    bool isColumnOriented() const override;
+    bool supportsSubsetOfColumns() const override;
 };
 
 }

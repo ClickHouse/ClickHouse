@@ -265,6 +265,12 @@
 [submodule "contrib/wyhash"]
 	path = contrib/wyhash
 	url = https://github.com/wangyi-fudan/wyhash.git
+[submodule "contrib/eigen"]
+	path = contrib/eigen
+	url = https://github.com/eigen-mirror/eigen
+[submodule "contrib/hashidsxx"]
+	path = contrib/hashidsxx
+	url = https://github.com/schoentoon/hashidsxx.git
 [submodule "contrib/lodepng"]
 	path = contrib/lodepng
 	url = https://github.com/lvandeve/lodepng

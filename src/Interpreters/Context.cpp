@@ -535,6 +535,7 @@ ContextMutablePtr Context::createCopy(const ContextMutablePtr & other)
 Context::~Context() = default;
 
 InterserverIOHandler & Context::getInterserverIOHandler() { return shared->interserver_io_handler; }
+const InterserverIOHandler & Context::getInterserverIOHandler() const { return shared->interserver_io_handler; }
 
 std::unique_lock<std::recursive_mutex> Context::getLock() const
 {
@@ -1377,7 +1378,7 @@ void Context::killCurrentQuery()
     {
         process_list_elem->cancelQuery(true);
     }
-};
+}
 
 String Context::getDefaultFormat() const
 {
@@ -2226,7 +2227,7 @@ bool Context::hasAuxiliaryZooKeeper(const String & name) const
     return getConfigRef().has("auxiliary_zookeepers." + name);
 }
 
-InterserverCredentialsPtr Context::getInterserverCredentials()
+InterserverCredentialsPtr Context::getInterserverCredentials() const
 {
     return shared->interserver_io_credentials.get();
 }
@@ -3417,6 +3418,7 @@ ReadSettings Context::getReadSettings() const
     res.enable_filesystem_cache = settings.enable_filesystem_cache;
     res.filesystem_cache_max_wait_sec = settings.filesystem_cache_max_wait_sec;
     res.read_from_filesystem_cache_if_exists_otherwise_bypass_cache = settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache;
+    res.enable_filesystem_cache_log = settings.enable_filesystem_cache_log;
 
     res.remote_read_min_bytes_for_seek = settings.remote_read_min_bytes_for_seek;
 

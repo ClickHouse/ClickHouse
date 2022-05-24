@@ -303,14 +303,14 @@ void DDLRenamingSettings::setFromBackupQuery(const ASTBackupQuery::Elements & ba
             {
                 const String & table_name = element.name.second;
                 String database_name = element.name.first;
-                if (element.name_is_in_temp_db)
+                if (element.is_temp_db)
                     database_name = DatabaseCatalog::TEMPORARY_DATABASE;
                 assert(!table_name.empty());
                 assert(!database_name.empty());
 
                 const String & new_table_name = element.new_name.second;
                 String new_database_name = element.new_name.first;
-                if (element.new_name_is_in_temp_db)
+                if (element.is_temp_db)
                     new_database_name = DatabaseCatalog::TEMPORARY_DATABASE;
                 assert(!new_table_name.empty());
                 assert(!new_database_name.empty());
@@ -322,12 +322,12 @@ void DDLRenamingSettings::setFromBackupQuery(const ASTBackupQuery::Elements & ba
             case ASTBackupQuery::DATABASE:
             {
                 String database_name = element.name.first;
-                if (element.name_is_in_temp_db)
+                if (element.is_temp_db)
                     database_name = DatabaseCatalog::TEMPORARY_DATABASE;
                 assert(!database_name.empty());
 
                 String new_database_name = element.new_name.first;
-                if (element.new_name_is_in_temp_db)
+                if (element.is_temp_db)
                     new_database_name = DatabaseCatalog::TEMPORARY_DATABASE;
                 assert(!new_database_name.empty());
 
