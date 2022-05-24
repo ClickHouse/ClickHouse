@@ -762,7 +762,7 @@ public:
     std::shared_ptr<MMappedFileCache> getMMappedFileCache() const;
     void dropMMappedFileCache() const;
 
-    void setQueryCache(size_t cache_size_in_bytes, size_t max_query_cache_entry_size);
+    void setQueryCache(size_t cache_size_in_bytes);
     std::shared_ptr<QueryCache> getQueryCache() const;
     void dropQueryCache() const;
 
