@@ -259,8 +259,7 @@ void S3ObjectStorage::removeObjects(const std::vector<std::string> & paths)
         request.SetBucket(bucket);
         request.SetDelete(delkeys);
         auto outcome = client_ptr->DeleteObjects(request);
-        if (outcome.GetError().GetErrorType() != Aws::S3::S3Errors::RESOURCE_NOT_FOUND)
-            throwIfError(outcome);
+        throwIfError(outcome);
     }
 }
 
@@ -277,7 +276,7 @@ void S3ObjectStorage::removeObjectIfExists(const std::string & path)
     request.SetBucket(bucket);
     request.SetDelete(delkeys);
     auto outcome = client_ptr->DeleteObjects(request);
-    if (outcome.GetError().GetErrorType() != Aws::S3::S3Errors::RESOURCE_NOT_FOUND)
+    if (!outcome.IsSuccess() && outcome.GetError().GetErrorType() != Aws::S3::S3Errors::RESOURCE_NOT_FOUND)
         throwIfError(outcome);
 }
 
@@ -314,7 +313,8 @@ void S3ObjectStorage::removeObjectsIfExist(const std::vector<std::string> & path
         request.SetBucket(bucket);
         request.SetDelete(delkeys);
         auto outcome = client_ptr->DeleteObjects(request);
-        logIfError(outcome, [&](){return "Can't remove AWS keys: " + keys;});
+        if (!outcome.IsSuccess() && outcome.GetError().GetErrorType() != Aws::S3::S3Errors::RESOURCE_NOT_FOUND)
+            throwIfError(outcome);
     }
 }
 
