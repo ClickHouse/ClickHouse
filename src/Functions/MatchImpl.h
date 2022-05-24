@@ -18,6 +18,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
+    extern const int LOGICAL_ERROR;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
@@ -410,7 +411,7 @@ struct MatchImpl
         const size_t haystack_size = haystack_offsets.size();
 
         if (haystack_size != needle_offset.size())
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
                     "Function '{}' unexpectedly received a different number of haystacks and needles", name);
 
         if (start_pos_ != nullptr)
@@ -527,7 +528,7 @@ struct MatchImpl
         const size_t haystack_size = haystack.size()/N;
 
         if (haystack_size != needle_offset.size())
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
                     "Function '{}' unexpectedly received a different number of haystacks and needles", name);
 
         if (start_pos_ != nullptr)
