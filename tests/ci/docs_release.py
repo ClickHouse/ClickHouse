@@ -55,21 +55,22 @@ if __name__ == "__main__":
     if not os.path.exists(test_output):
         os.makedirs(test_output)
 
-    token = CLOUDFLARE_TOKEN
     if args.as_root:
         user = "0:0"
     else:
         user = f"{os.geteuid()}:{os.getegid()}"
-    cmd = (
-        "docker run --cap-add=SYS_PTRACE --volume=$SSH_AUTH_SOCK:/ssh-agent "
-        f"--user={user} -e SSH_AUTH_SOCK=/ssh-agent -e CLOUDFLARE_TOKEN={token} "
-        f"-e EXTRA_BUILD_ARGS='--verbose' --volume={repo_path}:/repo_path"
-        f" --volume={test_output}:/output_path {docker_image}"
-    )
 
     run_log_path = os.path.join(test_output, "runlog.log")
 
     with SSHKey("ROBOT_CLICKHOUSE_SSH_KEY"):
+        cmd = (
+            f"docker run --cap-add=SYS_PTRACE --user={user} "
+            f"--volume='{os.getenv('SSH_AUTH_SOCK', '')}:/ssh-agent' "
+            f"--volume={repo_path}:/repo_path --volume={test_output}:/output_path "
+            f"-e SSH_AUTH_SOCK=/ssh-agent -e EXTRA_BUILD_ARGS='--verbose' "
+            f"-e CLOUDFLARE_TOKEN={CLOUDFLARE_TOKEN} {docker_image}"
+        )
+        logging.info("Running command: %s", cmd)
         with TeePopen(cmd, run_log_path) as process:
             retcode = process.wait()
             if retcode == 0:
