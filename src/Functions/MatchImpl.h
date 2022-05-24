@@ -481,7 +481,7 @@ struct MatchImpl
             {
                 // each row is expected to contain a different like/re2 pattern
                 // --> bypass the regexp cache, instead construct the pattern on-the-fly
-                const int flags = Regexps::buildRe2Flags<true, case_insensitive>();
+                const int flags = Regexps::buildRe2Flags</*no_capture*/ true, case_insensitive>();
                 const auto & regexp = Regexps::Regexp(Regexps::createRegexp<is_like>(needle, flags));
 
                 regexp.getAnalyzeResult(required_substr, is_trivial, required_substring_is_prefix);
@@ -595,7 +595,7 @@ struct MatchImpl
             {
                 // each row is expected to contain a different like/re2 pattern
                 // --> bypass the regexp cache, instead construct the pattern on-the-fly
-                const int flags = Regexps::buildRe2Flags<true, case_insensitive>();
+                const int flags = Regexps::buildRe2Flags</*no_capture*/ true, case_insensitive>();
                 const auto & regexp = Regexps::Regexp(Regexps::createRegexp<is_like>(needle, flags));
 
                 regexp.getAnalyzeResult(required_substr, is_trivial, required_substring_is_prefix);
