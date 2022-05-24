@@ -5,6 +5,7 @@
 #include <Processors/Transforms/SquashingChunksTransform.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/extractKeyExpressionList.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 
 namespace DB
 {
@@ -59,16 +60,14 @@ std::shared_ptr<ASTStorage> createASTStorageDistributed(
 }
 
 
-Block getBlockWithAllStreamData(QueryPipeline pipeline)
+Block getBlockWithAllStreamData(QueryPipelineBuilder builder)
 {
-    QueryPipelineBuilder builder;
-    builder.init(std::move(pipeline));
     builder.addTransform(std::make_shared<SquashingChunksTransform>(
         builder.getHeader(),
         std::numeric_limits<size_t>::max(),
         std::numeric_limits<size_t>::max()));
 
-    auto cur_pipeline = QueryPipelineBuilder::getPipeline(std::move(builder));
+    auto cur_pipeline = QueryPipelineBuilder::getPipeline2(std::move(builder));
     Block block;
     PullingPipelineExecutor executor(cur_pipeline);
     executor.pull(block);
