@@ -9,11 +9,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int BAD_ARGUMENTS;
-}
-
 namespace
 {
     bool parseUserNameWithHost(IParserBase::Pos & pos, Expected & expected, std::shared_ptr<ASTUserNameWithHost> & ast)

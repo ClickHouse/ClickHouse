@@ -6,7 +6,6 @@
 #include <Access/AccessControl.h>
 #include <Access/ContextAccess.h>
 #include <Access/User.h>
-#include <Core/Protocol.h>
 #include <Interpreters/Access/InterpreterSetRoleQuery.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>

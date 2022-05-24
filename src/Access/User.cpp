@@ -24,8 +24,10 @@ void User::setName(const String & name_)
     /// Unfortunately, there is not way to distinguish USER_INTERSERVER_MARKER from actual username in native protocol,
     /// so we have to ensure that no such user will appear.
     /// Also it was possible to create a user with empty name for some reason.
-    if (name_ == USER_INTERSERVER_MARKER || name_.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "User name is reserved");
+    if (name_.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "User name is empty");
+    if (name_ == USER_INTERSERVER_MARKER)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "User name '{}' is reserved", USER_INTERSERVER_MARKER);
     name = name_;
 }
 
