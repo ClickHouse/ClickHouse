@@ -131,12 +131,13 @@
         {
             /* Make enough space for medium/large queries but allowing query textarea to grow. */
             min-height: 20%;
+            display: grid;
         }
 
         #query
         {
-            height: 100%;
-            width: 100%;
+            /* Keeps query text-area's width full screen even when user adjusting the width of the query box. */
+            min-width: 100%;
         }
 
         #inputs
