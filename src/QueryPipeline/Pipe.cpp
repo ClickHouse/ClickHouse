@@ -102,11 +102,6 @@ static OutputPort * uniteTotals(const OutputPortRawPtrs & ports, const Block & h
     return totals_port;
 }
 
-PipelineResourcesHolder Pipe::detachResources()
-{
-    return std::move(holder);
-}
-
 Pipe::Pipe(ProcessorPtr source, OutputPort * output, OutputPort * totals, OutputPort * extremes)
 {
     if (!source->getInputs().empty())
@@ -298,19 +293,13 @@ Pipe Pipe::unitePipes(Pipes pipes, Processors * collected_processors, bool allow
 {
     Pipe res;
 
-    for (auto & pipe : pipes)
-        res.holder = std::move(pipe.holder); /// see move assignment for Pipe::Holder.
-
     pipes = removeEmptyPipes(std::move(pipes));
 
     if (pipes.empty())
         return res;
 
     if (pipes.size() == 1)
-    {
-        pipes[0].holder = std::move(res.holder);
         return std::move(pipes[0]);
-    }
 
     OutputPortRawPtrs totals;
     OutputPortRawPtrs extremes;

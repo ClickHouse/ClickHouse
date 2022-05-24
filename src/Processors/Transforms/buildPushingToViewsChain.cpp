@@ -448,7 +448,7 @@ static QueryPipeline process(Block block, ViewRuntimeData & view, const ViewsDat
         pipeline.getHeader(),
         std::make_shared<ExpressionActions>(std::move(converting))));
 
-    return QueryPipelineBuilder::getPipeline2(std::move(pipeline));
+    return QueryPipelineBuilder::getPipeline(std::move(pipeline));
 }
 
 static void logQueryViews(std::list<ViewRuntimeData> & views, ContextPtr context)

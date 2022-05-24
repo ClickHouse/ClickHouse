@@ -656,7 +656,7 @@ BlockIO InterpreterSelectQuery::execute()
     auto builder = query_plan.buildQueryPipeline(
         QueryPlanOptimizationSettings::fromContext(context), BuildQueryPipelineSettings::fromContext(context));
 
-    res.pipeline = QueryPipelineBuilder::getPipeline2(std::move(*builder));
+    res.pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
 
     addLimitsAndQuotas(res.pipeline);
 

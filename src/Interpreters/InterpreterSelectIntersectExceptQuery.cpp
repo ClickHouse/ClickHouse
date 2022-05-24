@@ -139,7 +139,7 @@ BlockIO InterpreterSelectIntersectExceptQuery::execute()
         QueryPlanOptimizationSettings::fromContext(context),
         BuildQueryPipelineSettings::fromContext(context));
 
-    res.pipeline = QueryPipelineBuilder::getPipeline2(std::move(*builder));
+    res.pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
 
     addLimitsAndQuotas(res.pipeline);
 

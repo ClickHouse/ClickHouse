@@ -468,7 +468,7 @@ BlockIO InterpreterInsertQuery::execute()
                     throw Exception("Cannot insert column " + column.name + ", because it is MATERIALIZED column.", ErrorCodes::ILLEGAL_COLUMN);
         }
 
-        res.pipeline = QueryPipelineBuilder::getPipeline2(std::move(pipeline));
+        res.pipeline = QueryPipelineBuilder::getPipeline(std::move(pipeline));
     }
     else
     {

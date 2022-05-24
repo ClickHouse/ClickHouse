@@ -145,11 +145,11 @@ public:
     }
 
     void addResources(QueryPlanResourceHolder resources_) { resources = std::move(resources_); }
+    void setQueryIdHolder(std::shared_ptr<QueryIdHolder> query_id_holder) { resources.query_id_holder = std::move(query_id_holder); }
 
     /// Convert query pipeline to pipe.
     static Pipe getPipe(QueryPipelineBuilder pipeline, QueryPlanResourceHolder & resources);
-    static QueryPipeline getPipeline2(QueryPipelineBuilder builder);
-    static void updatePipeline(QueryPipelineBuilder builder, QueryPipeline & query_pipeline);
+    static QueryPipeline getPipeline(QueryPipelineBuilder builder);
 
 private:
 

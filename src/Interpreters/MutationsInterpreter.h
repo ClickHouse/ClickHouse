@@ -50,7 +50,7 @@ public:
     size_t evaluateCommandsSize();
 
     /// The resulting stream will return blocks containing only changed columns and columns, that we need to recalculate indices.
-    QueryPipeline execute();
+    QueryPipelineBuilder execute();
 
     /// Only changed columns.
     Block getUpdatedHeader() const;

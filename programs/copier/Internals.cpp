@@ -67,7 +67,7 @@ Block getBlockWithAllStreamData(QueryPipelineBuilder builder)
         std::numeric_limits<size_t>::max(),
         std::numeric_limits<size_t>::max()));
 
-    auto cur_pipeline = QueryPipelineBuilder::getPipeline2(std::move(builder));
+    auto cur_pipeline = QueryPipelineBuilder::getPipeline(std::move(builder));
     Block block;
     PullingPipelineExecutor executor(cur_pipeline);
     executor.pull(block);

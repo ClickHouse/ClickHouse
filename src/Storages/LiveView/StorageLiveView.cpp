@@ -122,7 +122,7 @@ MergeableBlocksPtr StorageLiveView::collectMergeableBlocks(ContextPtr local_cont
 
     new_mergeable_blocks->sample_block = builder.getHeader();
 
-    auto pipeline = QueryPipelineBuilder::getPipeline2(std::move(builder));
+    auto pipeline = QueryPipelineBuilder::getPipeline(std::move(builder));
     PullingAsyncPipelineExecutor executor(pipeline);
     Block this_block;
 
@@ -246,7 +246,7 @@ void StorageLiveView::writeIntoLiveView(
             return std::make_shared<MaterializingTransform>(cur_header);
         });
 
-        auto pipeline = QueryPipelineBuilder::getPipeline2(std::move(builder));
+        auto pipeline = QueryPipelineBuilder::getPipeline(std::move(builder));
         PullingAsyncPipelineExecutor executor(pipeline);
         Block this_block;
 
@@ -390,7 +390,7 @@ bool StorageLiveView::getNewBlocks()
     auto new_mergeable_blocks = collectMergeableBlocks(live_view_context);
     Pipes from = blocksToPipes(new_mergeable_blocks->blocks, new_mergeable_blocks->sample_block);
     auto builder = completeQuery(std::move(from));
-    auto pipeline = QueryPipelineBuilder::getPipeline2(std::move(builder));
+    auto pipeline = QueryPipelineBuilder::getPipeline(std::move(builder));
 
     PullingAsyncPipelineExecutor executor(pipeline);
     Block block;

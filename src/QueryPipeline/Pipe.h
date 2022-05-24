@@ -101,13 +101,7 @@ public:
     /// Get processors from Pipe without destroying pipe (used for EXPLAIN to keep QueryPlan).
     const Processors & getProcessors() const { return processors; }
 
-    void addQueryIdHolder(std::shared_ptr<QueryIdHolder> query_id_holder) { holder.query_id_holder = std::move(query_id_holder); }
-
-    PipelineResourcesHolder detachResources();
-
 private:
-    PipelineResourcesHolder holder;
-
     /// Header is common for all output below.
     Block header;
     Processors processors;
