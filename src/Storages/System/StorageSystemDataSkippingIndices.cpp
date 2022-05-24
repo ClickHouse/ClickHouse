@@ -9,6 +9,7 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Parsers/queryToString.h>
 #include <Processors/ISource.h>
+#include <QueryPipeline/Pipe.h>
 
 
 namespace DB
