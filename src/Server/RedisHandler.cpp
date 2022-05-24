@@ -4,6 +4,9 @@
 #include "Core/iostream_debug_helpers.h"
 #include "RedisHandler.h"
 #include "RedisProtocol.hpp"
+#include "Storages/IKVStorage.h"
+
+#include <Columns/ColumnString.h>
 
 #include <Server/TCPServer.h>
 #include <base/scope_guard.h>
@@ -77,12 +80,19 @@ void RedisHandler::run()
 
                 if (!table_ptr)
                 {
-                    RedisProtocol::ErrorResponse resp(Poco::format("No database/table selected for %d", db));
+                    RedisProtocol::ErrorResponse resp(Poco::format("No table selected for %d", db));
                     resp.serialize(*out);
                     continue;
                 }
 
-                RedisProtocol::NilResponse resp;
+                auto result = getByKeys(get_req.getKeys());
+                if (result.empty() || !result[0].has_value())
+                {
+                    RedisProtocol::NilResponse resp;
+                    resp.serialize(*out);
+                    continue;
+                }
+                RedisProtocol::BulkStringResponse resp(result[0].value());
                 resp.serialize(*out);
             }
             else if (req.getMethod() == "mget")
@@ -100,25 +110,13 @@ void RedisHandler::run()
 
                 if (!table_ptr)
                 {
-                    RedisProtocol::ErrorResponse resp(Poco::format("No database/table selected for %d", db));
+                    RedisProtocol::ErrorResponse resp(Poco::format("No table selected for %d", db));
                     resp.serialize(*out);
                     continue;
                 }
 
-                // TODO: Complete me 
-                ColumnWithTypeAndName keys(std::make_shared<DataTypeString>(), "keys");
-                for (const auto & key : get_req.getKeys())
-                {
-                    keys.column.insert(key);
-                }
-                table_ptr->getByKeys(keys, );
-
-                std::vector<std::optional<String>> hello_worlds(get_req.getKeys().size());
-                for (size_t i = 0; i < get_req.getKeys().size(); ++i)
-                {
-                    hello_worlds[i] = std::nullopt;
-                }
-                RedisProtocol::ArrayResponse resp(hello_worlds);
+                auto result = getByKeys(get_req.getKeys());
+                RedisProtocol::ArrayResponse resp(result);
                 resp.serialize(*out);
             }
             else if (req.getMethod() == "auth")
@@ -156,9 +154,10 @@ void RedisHandler::run()
 
                 String db_name = server.config().getString(Poco::format("redis.db._%d.database", select_req.getDb()), "");
                 String table_name = server.config().getString(Poco::format("redis.db._%d.table", select_req.getDb()), "");
-                if (db_name.empty() || table_name.empty())
+                String column_name = server.config().getString(Poco::format("redis.db._%d.column", select_req.getDb()), "");
+                if (db_name.empty() || table_name.empty() || column_name.empty())
                 {
-                    RedisProtocol::ErrorResponse resp(Poco::format("Database or table is not set for %d", select_req.getDb()));
+                    RedisProtocol::ErrorResponse resp(Poco::format("Database, table or column is not set for %d", select_req.getDb()));
                     resp.serialize(*out);
                     continue;
                 }
@@ -170,13 +169,23 @@ void RedisHandler::run()
                         auto db_ptr = DatabaseCatalog::instance().getDatabase(db_name, server.context());
                         table_ptr = db_ptr->getTable(table_name, server.context());
                     }
-                    catch (...)
+                    catch (const Exception & e)
                     {
-                        RedisProtocol::ErrorResponse resp(Poco::format("Unknown database %s", db_name));
+                        RedisProtocol::ErrorResponse resp(e.message());
+                        resp.serialize(*out);
+                        continue;
+                    }
+                    table = dynamic_cast<IKeyValueStorage *>(table_ptr.get());
+                    if (table == nullptr)
+                    {
+                        table_ptr.reset();
+                        RedisProtocol::ErrorResponse resp(
+                            Poco::format("Selected table %s in database %s doesnt support key-value operations", table_name, db_name));
                         resp.serialize(*out);
                         continue;
                     }
                     db = select_req.getDb();
+                    column = column_name;
                 }
 
                 RedisProtocol::SimpleStringResponse resp(RedisProtocol::Message::OK);
@@ -208,6 +217,37 @@ void RedisHandler::run()
         RedisProtocol::ErrorResponse resp(exc.message());
         resp.serialize(*out);
     }
+}
+
+std::vector<std::optional<String>> RedisHandler::getByKeys(const std::vector<String> & keys)
+{
+    std::vector<std::optional<String>> result;
+
+    auto keys_column = ColumnVector<String>::create();
+    keys_column->getData().reserve(keys.size());
+    keys_column->getData().insert(keys.begin(), keys.end());
+
+    ColumnWithTypeAndName keys_named_column(std::move(keys_column), std::make_shared<DataTypeString>(), "keys");
+    Block sample_block = table->getInMemoryMetadataPtr()->getSampleBlock();
+    PaddedPODArray<UInt8> null_map(table->getColumnSizes().size());
+
+    auto chunk = table->getByKeys(keys_named_column, sample_block, &null_map);
+
+    for (const auto & chunk_column : chunk.getColumns())
+    {
+        if (chunk_column->getName() == column)
+        {
+            result.resize(chunk_column->size());
+            for (size_t i = 0; i < chunk_column->size(); ++i)
+            {
+                if (StringRef data = chunk_column->getDataAt(i); !data.empty())
+                {
+                    result[i] = data.toString();
+                }
+            }
+        }
+    }
+    return result;
 }
 
 void RedisHandler::makeSecureConnection()

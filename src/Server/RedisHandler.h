@@ -40,8 +40,12 @@ public:
 private:
     void makeSecureConnection();
 
+    std::vector<std::optional<String>> getByKeys(const std::vector<String> & keys);
+
     Int64 db = 0;
-    IKVStoragePtr table_ptr;
+    StoragePtr table_ptr;
+    IKeyValueStorage * table = nullptr;
+    String column;
 
     RedisProtocol::AuthenticationManager authentication_manager;
     bool authenticated = false;
