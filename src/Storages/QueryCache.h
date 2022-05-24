@@ -167,9 +167,8 @@ private:
     using Base = LRUCache<CacheKey, Data, CacheKeyHasher, QueryWeightFunction>;
 
 public:
-    explicit QueryCache(size_t cache_size_in_bytes_, size_t max_query_cache_entry_size_)
+    explicit QueryCache(size_t cache_size_in_bytes_)
         : Base(cache_size_in_bytes_)
-        , max_query_cache_entry_size(max_query_cache_entry_size_)
     {
         std::thread cache_removing_thread(&CacheRemovalScheduler::processRemovalQueue<QueryCache>, &removal_scheduler, this);
         cache_removing_thread.detach();
@@ -180,7 +179,7 @@ public:
         auto data = get(cache_key);
         data->second.push_back(std::move(chunk));
 
-        if (query_weight(*data) > max_query_cache_entry_size)
+        if (query_weight(*data) > cache_key.settings.max_query_cache_entry_size)
         {
             remove(cache_key);
             return false;
@@ -213,7 +212,6 @@ private:
     std::mutex times_executed_mutex;
 
     QueryWeightFunction query_weight;
-    size_t max_query_cache_entry_size;
 
     std::unordered_map<CacheKey, std::mutex, CacheKeyHasher> put_in_cache_mutexes;
 };
