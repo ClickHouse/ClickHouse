@@ -16,20 +16,17 @@ public:
 
     PngOutputFormat(WriteBuffer & out_, const Block & header_);
     String getName() const override { return "PngOutputFormat"; }
-    void flush() override;
 
 private:
-    void drawColumn(size_t x, size_t y, size_t len, size_t middle, Colour c);
-    void drawPoint(size_t x, size_t y, Colour c);
+    void drawPoint(size_t x, size_t y, const Colour & c);
     void connectPoints(int x1, int y1, int x2, int y2);
-
+    void drawColumn(size_t x, size_t y, size_t len, size_t middle, const Colour & c);
     void resampleData(size_t w, size_t h);
 
-    void writePngToFile();
     void getExtremesOfChunks(Field & min_field, Field & max_field, size_t column);
+    void writePngToFile();
     void drawOneDimension();
     void drawTwoDimension();
-    void writePrefix() override;
     void consume(Chunk) override;
     void finalizeImpl() override;
 
