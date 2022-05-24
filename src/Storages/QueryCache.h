@@ -73,37 +73,45 @@ struct QueryWeightFunction
 class CacheRemovalScheduler
 {
 private:
-    using timestamp = std::chrono::time_point<std::chrono::high_resolution_clock>;
-    using duration = std::chrono::high_resolution_clock::duration;
+    using Timestamp = std::chrono::time_point<std::chrono::high_resolution_clock>;
+    using Duration = std::chrono::high_resolution_clock::duration;
 public:
-    void scheduleRemoval(duration duration, CacheKey cache_key)
+    void scheduleRemoval(Duration duration, CacheKey cache_key)
     {
-        std::lock_guard lock(mutex);
+        std::unique_lock lock(mutex);
         TimedCacheKey timer = {now() + duration, cache_key};
         queue.push(timer);
-        if (queue.top() == timer)
+        auto top = queue.top();
+        lock.unlock();
+        if (top == timer)
         {
             timer_cv.notify_one();
         }
     }
 
     template <typename Cache>
-    [[noreturn]] void processRemovalQueue(Cache * query_cache)
+    void processRemovalQueue(Cache * query_cache)
     {
         while (true)
         {
             std::unique_lock lock(mutex);
+
+            // take the timer with the lowest timestamp from the queue
             const std::optional<TimedCacheKey> awaited_timer = nextTimer();
 
+            // wake up if either a timer with a lower timestamp than awaited_timer was pushed to the queue, or the awaited_timer went off
             timer_cv.wait_until(lock,
                                 awaited_timer.has_value() ? awaited_timer->time : infinite_time,
                                 [&]() { return awaited_timer != nextTimer() || (awaited_timer.has_value() && awaited_timer->time <= now()); }
             );
 
+            queue.pop();
+            lock.unlock();
+
+            // if awaited_timer went off, remove entry from cache
             if (awaited_timer.has_value() && awaited_timer->time <= now())
             {
                 query_cache->remove(awaited_timer->cache_key);
-                queue.pop();
             }
         }
     }
@@ -112,7 +120,7 @@ public:
 private:
     struct TimedCacheKey
     {
-        TimedCacheKey(timestamp timestamp, CacheKey key)
+        TimedCacheKey(Timestamp timestamp, CacheKey key)
             : time(timestamp)
             , cache_key(key)
         {}
@@ -127,7 +135,7 @@ private:
             return time < other.time;
         }
 
-        timestamp time;
+        Timestamp time;
         CacheKey cache_key;
     };
 
@@ -140,12 +148,12 @@ private:
         return std::make_optional(queue.top());
     }
 
-    static timestamp now()
+    static Timestamp now()
     {
         return std::chrono::high_resolution_clock::now();
     }
 
-    const timestamp infinite_time = timestamp::max();
+    const Timestamp infinite_time = Timestamp::max();
     std::priority_queue<TimedCacheKey> queue;
     std::condition_variable timer_cv;
     std::mutex mutex;
