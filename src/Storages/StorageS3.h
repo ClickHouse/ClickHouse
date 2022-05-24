@@ -234,7 +234,7 @@ private:
         ContextPtr ctx,
         std::vector<String> * read_keys_in_distributed_processing = nullptr);
 
-    bool isColumnOriented() const override;
+    bool supportsSubsetOfColumns() const override;
 };
 
 }
