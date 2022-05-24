@@ -48,6 +48,7 @@ inline UInt64 bytes64MaskToBits64Mask(const UInt8 * bytes64)
         | ((static_cast<UInt64>(_mm_movemask_epi8(_mm_cmpeq_epi8(
         _mm_loadu_si128(reinterpret_cast<const __m128i *>(bytes64 + 48)), zero16))) << 48) & 0xffff000000000000);
 #elif defined(__aarch64__)
+    // replacement of _mm512_setzero_epi32 for arm
     const uint8x16x4_t chunk = vld4q_u8(reinterpret_cast<const unsigned char *>(bytes64));
     const uint8x16_t cmp0 = vceqzq_u8(chunk.val[0]);
     const uint8x16_t cmp1 = vceqzq_u8(chunk.val[1]);

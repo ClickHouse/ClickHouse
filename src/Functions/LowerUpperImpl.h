@@ -63,15 +63,16 @@ private:
         }
 
 #elif defined(__aarch64__)
+        // doesnt' work as expected yet
 
-        const auto bytes_sse = 128;
-        const auto * src_end_sse = src_end - (src_end - src) % bytes_sse;
+        const auto bytes_simd = sizeof(uint8x16_t);
+        const auto * src_end_simd = src_end - (src_end - src) % bytes_simd;
 
         const uint8x16_t v_not_case_lower_bound = vdupq_n_u8(not_case_lower_bound);
         const uint8x16_t v_not_case_upper_bound = vdupq_n_u8(not_case_upper_bound);
         const uint8x16_t v_flip_case_mask = vdupq_n_u8(flip_case_mask);
 
-        for (; src < src_end_sse; src += bytes_sse, dst += bytes_sse)
+        for (; src < src_end_simd; src += bytes_simd, dst += bytes_simd)
         {
             /// load 16 sequential 8-bit characters
             const uint8x16_t chars = vld1q_u8(reinterpret_cast<const unsigned char *>(src));
