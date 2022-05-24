@@ -1568,7 +1568,7 @@ TaskStatus ClusterCopier::processPartitionPieceTaskImpl(
                 {
                     return std::make_shared<ExpressionTransform>(header, actions);
                 });
-                input = QueryPipelineBuilder::getPipeline2(std::move(builder));
+                input = QueryPipelineBuilder::getPipeline(std::move(builder));
             }
 
             /// Fail-fast optimization to abort copying when the current clean state expires

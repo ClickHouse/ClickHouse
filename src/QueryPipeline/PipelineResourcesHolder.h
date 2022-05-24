@@ -28,16 +28,6 @@ struct QueryPlanResourceHolder
     std::vector<std::shared_ptr<const Context>> interpreter_context;
     std::vector<StoragePtr> storage_holders;
     std::vector<TableLockHolder> table_locks;
-};
-
-struct PipelineResourcesHolder
-{
-    PipelineResourcesHolder();
-    PipelineResourcesHolder(PipelineResourcesHolder &&) noexcept;
-    ~PipelineResourcesHolder();
-    /// Custom move assignment does not destroy data from lhs. It appends data from rhs to lhs.
-    PipelineResourcesHolder& operator=(PipelineResourcesHolder &&) noexcept;
-
     std::shared_ptr<QueryIdHolder> query_id_holder;
 };
 

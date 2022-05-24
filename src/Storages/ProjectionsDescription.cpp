@@ -288,7 +288,7 @@ Block ProjectionDescription::calculate(const Block & block, ContextPtr context) 
     builder.resize(1);
     builder.addTransform(std::make_shared<SquashingChunksTransform>(builder.getHeader(), block.rows(), block.bytes()));
 
-    auto pipeline = QueryPipelineBuilder::getPipeline2(std::move(builder));
+    auto pipeline = QueryPipelineBuilder::getPipeline(std::move(builder));
     PullingPipelineExecutor executor(pipeline);
     Block ret;
     executor.pull(ret);

@@ -964,7 +964,7 @@ void MutationsInterpreter::validate()
     auto pipeline = addStreamsForLaterStages(stages, plan);
 }
 
-QueryPipeline MutationsInterpreter::execute()
+QueryPipelineBuilder MutationsInterpreter::execute()
 {
     if (!can_execute)
         throw Exception("Cannot execute mutations interpreter because can_execute flag set to false", ErrorCodes::LOGICAL_ERROR);
@@ -987,12 +987,10 @@ QueryPipeline MutationsInterpreter::execute()
         });
     }
 
-    auto pipeline = QueryPipelineBuilder::getPipeline2(std::move(builder));
-
     if (!updated_header)
-        updated_header = std::make_unique<Block>(pipeline.getHeader());
+        updated_header = std::make_unique<Block>(builder.getHeader());
 
-    return pipeline;
+    return builder;
 }
 
 Block MutationsInterpreter::getUpdatedHeader() const

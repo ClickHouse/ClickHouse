@@ -28,7 +28,7 @@ SortedBlocksWriter::SortedFiles flushToManyFiles(const String & tmp_path, const 
                                                  const String & codec, std::function<void(const Block &)> callback = [](const Block &){})
 {
     std::vector<std::unique_ptr<TemporaryFile>> files;
-    auto pipeline = QueryPipelineBuilder::getPipeline2(std::move(builder));
+    auto pipeline = QueryPipelineBuilder::getPipeline(std::move(builder));
     PullingPipelineExecutor executor(pipeline);
 
     Block block;
@@ -308,7 +308,7 @@ Block SortedBlocksBuffer::mergeBlocks(Blocks && blocks) const
             builder.addTransform(std::move(transform));
         }
 
-        auto pipeline = QueryPipelineBuilder::getPipeline2(std::move(builder));
+        auto pipeline = QueryPipelineBuilder::getPipeline(std::move(builder));
         PullingPipelineExecutor executor(pipeline);
         Block block;
         while (executor.pull(block))

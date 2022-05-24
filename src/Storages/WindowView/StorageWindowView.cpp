@@ -533,7 +533,7 @@ std::pair<BlocksPtr, Block> StorageWindowView::getNewBlocks(UInt32 watermark)
     });
 
     auto header = builder.getHeader();
-    auto pipeline = QueryPipelineBuilder::getPipeline2(std::move(builder));
+    auto pipeline = QueryPipelineBuilder::getPipeline(std::move(builder));
 
     PullingAsyncPipelineExecutor executor(pipeline);
     Block block;

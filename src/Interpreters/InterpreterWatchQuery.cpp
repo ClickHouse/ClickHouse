@@ -34,7 +34,7 @@ namespace ErrorCodes
 BlockIO InterpreterWatchQuery::execute()
 {
     BlockIO res;
-    res.pipeline = QueryPipelineBuilder::getPipeline2(buildQueryPipeline());
+    res.pipeline = QueryPipelineBuilder::getPipeline(buildQueryPipeline());
 
     /// Constraints on the result, the quota on the result, and also callback for progress.
     {

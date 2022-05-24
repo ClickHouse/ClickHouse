@@ -161,7 +161,7 @@ void ExternalTablesHandler::handlePart(const Poco::Net::MessageHeader & header, 
     auto sink = storage->write(ASTPtr(), storage->getInMemoryMetadataPtr(), getContext());
 
     /// Write data
-    auto pipeline = QueryPipelineBuilder::getPipeline2(std::move(*data->pipe));
+    auto pipeline = QueryPipelineBuilder::getPipeline(std::move(*data->pipe));
     pipeline.complete(std::move(sink));
     pipeline.setNumThreads(1);
 

@@ -19,6 +19,7 @@
 #include <Compression/CompressedWriteBuffer.h>
 #include <Processors/ISource.h>
 #include <QueryPipeline/Pipe.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Poco/String.h> /// toLower
 
@@ -123,7 +124,7 @@ void StorageJoin::mutate(const MutationCommands & commands, ContextPtr context)
     {
         auto storage_ptr = DatabaseCatalog::instance().getTable(getStorageID(), context);
         auto interpreter = std::make_unique<MutationsInterpreter>(storage_ptr, metadata_snapshot, commands, context, true);
-        auto pipeline = interpreter->execute();
+        auto pipeline = QueryPipelineBuilder::getPipeline(interpreter->execute());
         PullingPipelineExecutor executor(pipeline);
 
         Block block;

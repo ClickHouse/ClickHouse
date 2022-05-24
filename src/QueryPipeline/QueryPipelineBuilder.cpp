@@ -264,11 +264,13 @@ QueryPipelineBuilder QueryPipelineBuilder::unitePipelines(
     bool will_limit_max_threads = true;
     size_t max_threads = 0;
     Pipes pipes;
+    QueryPlanResourceHolder resources;
 
     for (auto & pipeline_ptr : pipelines)
     {
         auto & pipeline = *pipeline_ptr;
         pipeline.checkInitialized();
+        resources = std::move(pipeline.resources);
         pipeline.pipe.collected_processors = collected_processors;
 
         pipes.emplace_back(std::move(pipeline.pipe));
@@ -284,6 +286,7 @@ QueryPipelineBuilder QueryPipelineBuilder::unitePipelines(
 
     QueryPipelineBuilder pipeline;
     pipeline.init(Pipe::unitePipes(std::move(pipes), collected_processors, false));
+    pipeline.addResources(std::move(resources));
 
     if (will_limit_max_threads)
     {
@@ -392,7 +395,7 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelines(
     step->appendExtraProcessors(processors);
 
     left->pipe.processors.insert(left->pipe.processors.end(), right->pipe.processors.begin(), right->pipe.processors.end());
-    left->pipe.holder = std::move(right->pipe.holder);
+    left->resources = std::move(right->resources);
     left->pipe.header = left->pipe.output_ports.front()->getHeader();
     left->pipe.max_parallel_streams = std::max(left->pipe.max_parallel_streams, right->pipe.max_parallel_streams);
     return left;
@@ -458,7 +461,7 @@ Pipe QueryPipelineBuilder::getPipe(QueryPipelineBuilder pipeline, QueryPlanResou
     return std::move(pipeline.pipe);
 }
 
-QueryPipeline QueryPipelineBuilder::getPipeline2(QueryPipelineBuilder builder)
+QueryPipeline QueryPipelineBuilder::getPipeline(QueryPipelineBuilder builder)
 {
     QueryPipeline res(std::move(builder.pipe));
     res.addResources(std::move(builder.resources));
@@ -467,32 +470,32 @@ QueryPipeline QueryPipelineBuilder::getPipeline2(QueryPipelineBuilder builder)
     return res;
 }
 
-void QueryPipelineBuilder::updatePipeline(QueryPipelineBuilder builder, QueryPipeline & query_pipeline)
-{
-    if (builder.pipe.numOutputPorts() > 0)
-    {
-        builder.pipe.resize(1);
-        query_pipeline.output = builder.pipe.getOutputPort(0);
-        query_pipeline.totals = builder.pipe.getTotalsPort();
-        query_pipeline.extremes = builder.pipe.getExtremesPort();
+// void QueryPipelineBuilder::updatePipeline(QueryPipelineBuilder builder, QueryPipeline & query_pipeline)
+// {
+//     if (builder.pipe.numOutputPorts() > 0)
+//     {
+//         builder.pipe.resize(1);
+//         query_pipeline.output = builder.pipe.getOutputPort(0);
+//         query_pipeline.totals = builder.pipe.getTotalsPort();
+//         query_pipeline.extremes = builder.pipe.getExtremesPort();
 
-    }
-    else
-    {
-        query_pipeline.output = nullptr;
-        query_pipeline.totals = nullptr;
-        query_pipeline.extremes = nullptr;
-    }
+//     }
+//     else
+//     {
+//         query_pipeline.output = nullptr;
+//         query_pipeline.totals = nullptr;
+//         query_pipeline.extremes = nullptr;
+//     }
 
-    query_pipeline.addResources(std::move(builder.resources));
+//     query_pipeline.addResources(std::move(builder.resources));
 
-    query_pipeline.processors.insert(
-        query_pipeline.processors.end(),
-        builder.pipe.processors.begin(), builder.pipe.processors.end());
+//     query_pipeline.processors.insert(
+//         query_pipeline.processors.end(),
+//         builder.pipe.processors.begin(), builder.pipe.processors.end());
 
-    query_pipeline.setNumThreads(builder.getNumThreads());
-    query_pipeline.setProcessListElement(builder.process_list_element);
-}
+//     query_pipeline.setNumThreads(builder.getNumThreads());
+//     query_pipeline.setProcessListElement(builder.process_list_element);
+// }
 
 void QueryPipelineBuilder::setCollectedProcessors(Processors * processors)
 {

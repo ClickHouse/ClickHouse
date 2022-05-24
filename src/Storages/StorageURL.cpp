@@ -199,7 +199,7 @@ namespace
                     [&](const Block & cur_header)
                     { return std::make_shared<AddingDefaultsTransform>(cur_header, columns, *input_format, context); });
 
-                pipeline = std::make_unique<QueryPipeline>(QueryPipelineBuilder::getPipeline2(std::move(builder)));
+                pipeline = std::make_unique<QueryPipeline>(QueryPipelineBuilder::getPipeline(std::move(builder)));
                 reader = std::make_unique<PullingPipelineExecutor>(*pipeline);
             };
         }
