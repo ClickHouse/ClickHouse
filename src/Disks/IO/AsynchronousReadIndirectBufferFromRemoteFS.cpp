@@ -47,7 +47,6 @@ AsynchronousReadIndirectBufferFromRemoteFS::AsynchronousReadIndirectBufferFromRe
     , impl(impl_)
     , prefetch_buffer(settings_.remote_fs_buffer_size)
     , min_bytes_for_seek(min_bytes_for_seek_)
-    , must_read_until_position(settings_.must_read_until_position)
 #ifndef NDEBUG
     , log(&Poco::Logger::get("AsynchronousBufferFromRemoteFS"))
 #else
@@ -93,9 +92,6 @@ bool AsynchronousReadIndirectBufferFromRemoteFS::hasPendingDataToRead()
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Read beyond last offset ({} > {}, info: {})",
                             file_offset_of_buffer_end, *read_until_position, impl->getInfoForLog());
     }
-    else if (must_read_until_position)
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-                        "Reading for MergeTree family tables must be done with last position boundary");
 
     return true;
 }
@@ -168,6 +164,9 @@ bool AsynchronousReadIndirectBufferFromRemoteFS::nextImpl()
     if (!hasPendingDataToRead())
         return false;
 
+    Stopwatch watch;
+    CurrentMetrics::Increment metric_increment{CurrentMetrics::AsynchronousReadWait};
+
     size_t size = 0;
     if (prefetch_future.valid())
     {
@@ -175,8 +174,6 @@ bool AsynchronousReadIndirectBufferFromRemoteFS::nextImpl()
 
         size_t offset = 0;
         {
-            Stopwatch watch;
-            CurrentMetrics::Increment metric_increment{CurrentMetrics::AsynchronousReadWait};
             auto result = prefetch_future.get();
             size = result.size;
             offset = result.offset;
@@ -208,6 +205,9 @@ bool AsynchronousReadIndirectBufferFromRemoteFS::nextImpl()
             setWithBytesToIgnore(memory.data(), size, offset);
         }
     }
+
+    watch.stop();
+    ProfileEvents::increment(ProfileEvents::AsynchronousReadWaitMicroseconds, watch.elapsedMicroseconds());
 
     file_offset_of_buffer_end = impl->getFileOffsetOfBufferEnd();
     assert(file_offset_of_buffer_end == impl->getImplementationBufferOffset());
