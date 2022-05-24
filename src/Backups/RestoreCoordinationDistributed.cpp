@@ -1,5 +1,4 @@
 #include <Backups/RestoreCoordinationDistributed.h>
-#include <Backups/formatTableNameOrTemporaryTableName.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/escapeForFileName.h>
 #include <Common/logger_useful.h>
@@ -61,9 +60,9 @@ public:
         const String & error_message_)
     {
         if (error_message_.empty())
-            LOG_TRACE(log, "Created table {}.{}", database_name_, table_name_);
+            LOG_TRACE(log, "Created table {}.{}", backQuoteIfNeed(database_name_), backQuoteIfNeed(table_name_));
         else
-            LOG_TRACE(log, "Failed to created table {}.{}: {}", database_name_, table_name_, error_message_);
+            LOG_TRACE(log, "Failed to created table {}.{}: {}", backQuoteIfNeed(database_name_), backQuoteIfNeed(table_name_), error_message_);
 
         auto zookeeper = get_zookeeper();
         String path = zookeeper_path + "/" + escapeForFileName(database_zk_path_) + "/" + escapeForFileName(table_name_);
@@ -114,7 +113,8 @@ public:
             if (!status.error_message.empty() || status.ready)
                 break;
 
-            LOG_TRACE(log, "Waiting for host {} to create table {}.{}", status.host_id, status.table_name.first, status.table_name.second);
+            LOG_TRACE(log, "Waiting for host {} to create table {}.{}", status.host_id, 
+                      backQuoteIfNeed(status.table_name.first), backQuoteIfNeed(status.table_name.second));
 
             {
                 std::unique_lock dummy_lock{dummy_mutex};
@@ -141,22 +141,19 @@ public:
 
         if (!status.error_message.empty())
             throw Exception(
-                ErrorCodes::FAILED_TO_SYNC_BACKUP_OR_RESTORE,
-                "Host {} failed to create table {}.{}: {}", status.host_id, status.table_name.first, status.table_name.second, status.error_message);
+                ErrorCodes::FAILED_TO_SYNC_BACKUP_OR_RESTORE, "Host {} failed to create table {}.{}: {}", status.host_id,
+                backQuoteIfNeed(status.table_name.first), backQuoteIfNeed(status.table_name.second), status.error_message);
 
         if (status.ready)
         {
-            LOG_TRACE(log, "Host {} created table {}.{}", status.host_id, status.table_name.first, status.table_name.second);
+            LOG_TRACE(log, "Host {} created table {}.{}", status.host_id,
+                      backQuoteIfNeed(status.table_name.first), backQuoteIfNeed(status.table_name.second));
             return;
         }
 
         throw Exception(
-            ErrorCodes::FAILED_TO_SYNC_BACKUP_OR_RESTORE,
-            "Host {} was unable to create table {}.{} in {}",
-            status.host_id,
-            status.table_name.first,
-            table_name_,
-            to_string(timeout_));
+            ErrorCodes::FAILED_TO_SYNC_BACKUP_OR_RESTORE, "Host {} was unable to create table {}.{} in {}", status.host_id,
+            backQuoteIfNeed(status.table_name.first), backQuoteIfNeed(status.table_name.second), to_string(timeout_));
     }
 
 private:

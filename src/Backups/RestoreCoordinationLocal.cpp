@@ -1,5 +1,4 @@
 #include <Backups/RestoreCoordinationLocal.h>
-#include <Backups/formatTableNameOrTemporaryTableName.h>
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
 #include <Interpreters/StorageID.h>
@@ -37,9 +36,9 @@ void RestoreCoordinationLocal::finishCreatingTableInReplicatedDB(
     const String & error_message)
 {
     if (error_message.empty())
-        LOG_TRACE(log, "Created table {}.{}", database_name, table_name);
+        LOG_TRACE(log, "Created table {}.{}", backQuoteIfNeed(database_name), backQuoteIfNeed(table_name));
     else
-        LOG_TRACE(log, "Failed to created table {}.{}: {}", database_name, table_name, error_message);
+        LOG_TRACE(log, "Failed to created table {}.{}: {}", backQuoteIfNeed(database_name), backQuoteIfNeed(table_name), error_message);
 }
 
 /// Wait for another host to create a table in a replicated database.

@@ -31,10 +31,10 @@ bool IStorage::isVirtualColumn(const String & column_name, const StorageMetadata
 }
 
 RWLockImpl::LockHolder IStorage::tryLockTimed(
-    const RWLock & rwlock, RWLockImpl::Type type, const String & query_id, const std::chrono::milliseconds & acquire_timeout) const
+    const RWLock & rwlock, RWLockImpl::Type type, const String & query_id, const std::chrono::milliseconds & acquire_timeout, bool throw_if_timeout) const
 {
     auto lock_holder = rwlock->getLock(type, query_id, acquire_timeout);
-    if (!lock_holder)
+    if (!lock_holder && throw_if_timeout)
     {
         const String type_str = type == RWLockImpl::Type::Read ? "READ" : "WRITE";
         throw Exception(
@@ -58,6 +58,11 @@ TableLockHolder IStorage::lockForShare(const String & query_id, const std::chron
     }
 
     return result;
+}
+
+TableLockHolder IStorage::tryLockForShare(const String & query_id, const std::chrono::milliseconds & acquire_timeout)
+{
+    return tryLockTimed(drop_lock, RWLockImpl::Read, query_id, acquire_timeout, /* throw_if_timeout= */ false);
 }
 
 IStorage::AlterLockHolder IStorage::lockForAlter(const std::chrono::milliseconds & acquire_timeout)

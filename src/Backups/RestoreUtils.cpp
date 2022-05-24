@@ -8,7 +8,6 @@
 #include <Backups/IBackupEntry.h>
 #include <Backups/IRestoreTask.h>
 #include <Backups/IRestoreCoordination.h>
-#include <Backups/formatTableNameOrTemporaryTableName.h>
 #include <Common/escapeForFileName.h>
 #include <Databases/IDatabase.h>
 #include <Databases/DatabaseReplicated.h>
@@ -227,8 +226,8 @@ namespace
 
             throw Exception(
                 ErrorCodes::CANNOT_RESTORE_DATABASE,
-                "The database {} already exists but has a different definition: {}, "
-                "compare to its definition in the backup: {}",
+                "The database {} already exists but has a different definition: {} "
+                "comparing to its definition in the backup: {}",
                 backQuoteIfNeed(create_query->getDatabase()),
                 serializeAST(*database_create_query),
                 serializeAST(*create_query));
@@ -239,6 +238,29 @@ namespace
         RestoreSettingsPtr restore_settings;
         DatabasePtr database;
         ASTPtr database_create_query;
+    };
+
+
+    /// Wrapper to keep a table lock with data restoring tasks.
+    class RestoreTableDataTask : public IRestoreTask
+    {
+    public:
+        RestoreTableDataTask(RestoreTaskPtr internal_task_, TableLockHolder table_lock_)
+            : internal_task(std::move(internal_task_)), table_lock(std::move(table_lock_))
+        {
+        }
+
+        RestoreTasks run() override
+        {
+            auto res_tasks = internal_task->run();
+            for (auto & res_task : res_tasks)
+                res_task = std::make_unique<RestoreTableDataTask>(std::move(res_task), table_lock);
+            return res_tasks;
+        }
+
+    private:
+        RestoreTaskPtr internal_task;
+        TableLockHolder table_lock;
     };
 
 
@@ -360,10 +382,9 @@ namespace
                 {
                     throw Exception(
                         ErrorCodes::CANNOT_RESTORE_TABLE,
-                        "Table {}.{} in the replicated database {} was not synced from another node in {}",
-                        table_name.first,
-                        table_name.second,
-                        table_name.first,
+                        "Table {}.{} stored in a replicated database was not synced with another node in {}",
+                        backQuoteIfNeed(table_name.first),
+                        backQuoteIfNeed(table_name.second),
                         to_string(timeout_for_restoring_metadata));
                 }
                 replicated_database_synced = replicated_database->waitForReplicaToProcessAllEntries(50);
@@ -373,6 +394,7 @@ namespace
         void getStorage()
         {
             storage = database->getTable(table_name.second, context);
+            table_lock = storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef().lock_acquire_timeout);
             storage_create_query = database->getCreateTableQuery(table_name.second, context);
 
             if (!restore_settings->structure_only)
@@ -389,9 +411,9 @@ namespace
             {
                 throw Exception(
                     ErrorCodes::CANNOT_RESTORE_TABLE,
-                    "The {} already exists but has a different definition: {}, "
-                    "compare to its definition in the backup: {}",
-                    formatTableNameOrTemporaryTableName(table_name),
+                    "The table {}.{} already exists but has a different definition: {} "
+                    "comparing to its definition in the backup: {}",
+                    backQuoteIfNeed(table_name.first), backQuoteIfNeed(table_name.second),
                     serializeAST(*storage_create_query),
                     serializeAST(*create_query));
             }
@@ -434,9 +456,9 @@ namespace
             {
                 throw Exception(
                     ErrorCodes::CANNOT_RESTORE_TABLE,
-                    "Cannot restore {} because it already contains some data. You can set structure_only=true or "
+                    "Cannot restore the data of the table {}.{} because it already contains some data. You can set structure_only=true or "
                     "allow_non_empty_tables=true to overcome that in the way you want",
-                    formatTableNameOrTemporaryTableName(table_name));
+                    backQuoteIfNeed(table_name.first), backQuoteIfNeed(table_name.second));
             }
         }
 
@@ -449,13 +471,13 @@ namespace
             {
                 throw Exception(
                     ErrorCodes::CANNOT_RESTORE_TABLE,
-                    "Cannot attach data of the {} in the backup to the existing {} because of they are not compatible. "
-                    "Here is the definition of the {} in the backup: {}, and here is the definition of the existing {}: {}",
-                    formatTableNameOrTemporaryTableName(table_name_in_backup),
-                    formatTableNameOrTemporaryTableName(table_name),
-                    formatTableNameOrTemporaryTableName(table_name_in_backup),
+                    "Cannot attach data of the table {}.{} in the backup to the existing table {}.{} because of they are not compatible. "
+                    "Here is the definition of the table {}.{} in the backup: {}, and here is the definition of the existing table {}.{}: {}",
+                    backQuoteIfNeed(table_name_in_backup.first), backQuoteIfNeed(table_name_in_backup.second),
+                    backQuoteIfNeed(table_name.first), backQuoteIfNeed(table_name.second),
+                    backQuoteIfNeed(table_name_in_backup.first), backQuoteIfNeed(table_name_in_backup.second),
                     serializeAST(*create_query),
-                    formatTableNameOrTemporaryTableName(table_name),
+                    backQuoteIfNeed(table_name.first), backQuoteIfNeed(table_name.second),
                     serializeAST(*storage_create_query));
             }
         }
@@ -465,9 +487,14 @@ namespace
             if (restore_settings->structure_only || !has_data)
                 return {};
 
+            auto restore_data_task = storage->restoreData(context, partitions, backup, data_path_in_backup, *restore_settings, restore_coordination);
+            if (!restore_data_task)
+                return {};
+
+            restore_data_task = std::make_unique<RestoreTableDataTask>(std::move(restore_data_task), table_lock);
+
             RestoreTasks tasks;
-            tasks.emplace_back(
-                storage->restoreData(context, partitions, backup, data_path_in_backup, *restore_settings, restore_coordination));
+            tasks.emplace_back(std::move(restore_data_task));
             return tasks;
         }
 
@@ -483,6 +510,7 @@ namespace
         DatabasePtr database;
         std::shared_ptr<DatabaseReplicated> replicated_database;
         StoragePtr storage;
+        TableLockHolder table_lock;
         ASTPtr storage_create_query;
         bool has_data = false;
         String data_path_in_backup;
@@ -603,7 +631,8 @@ namespace
             DatabaseAndTableName new_table_name = renaming_settings.getNewTableName(table_name_);
             if (tables.contains(new_table_name))
                 throw Exception(
-                    ErrorCodes::CANNOT_RESTORE_TABLE, "Cannot restore the {} twice", formatTableNameOrTemporaryTableName(new_table_name));
+                    ErrorCodes::CANNOT_RESTORE_TABLE, "Cannot restore the table {}.{} twice",
+                    backQuoteIfNeed(new_table_name.first), backQuoteIfNeed(new_table_name.second));
 
             /// Make a create query for this table.
             auto create_query = renameInCreateQuery(readCreateQueryFromBackup(table_name_));
@@ -684,8 +713,8 @@ namespace
             if (!backup->fileExists(create_query_path))
                 throw Exception(
                     ErrorCodes::CANNOT_RESTORE_TABLE,
-                    "Cannot restore the {} because there is no such table in the backup",
-                    formatTableNameOrTemporaryTableName(table_name));
+                    "Cannot restore the table {}.{} because there is no such table in the backup",
+                    backQuoteIfNeed(table_name.first), backQuoteIfNeed(table_name.second));
             auto read_buffer = backup->readFile(create_query_path)->getReadBuffer();
             String create_query_str;
             readStringUntilEOF(create_query_str, *read_buffer);
