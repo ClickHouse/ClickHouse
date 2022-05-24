@@ -28,8 +28,8 @@ struct L1Distance
         FloatType sum = 0;
     };
 
-    template <typename ResultType, typename FirstArgType, typename SecondArgType>
-    static void accumulate(State<ResultType> & state, FirstArgType x, SecondArgType y)
+    template <typename ResultType>
+    static void accumulate(State<ResultType> & state, ResultType x, ResultType y)
     {
         state.sum += fabs(x - y);
     }
@@ -51,8 +51,8 @@ struct L2Distance
         FloatType sum = 0;
     };
 
-    template <typename ResultType, typename FirstArgType, typename SecondArgType>
-    static void accumulate(State<ResultType> & state, FirstArgType x, SecondArgType y)
+    template <typename ResultType>
+    static void accumulate(State<ResultType> & state, ResultType x, ResultType y)
     {
         state.sum += (x - y) * (x - y);
     }
@@ -74,8 +74,8 @@ struct LinfDistance
         FloatType dist = 0;
     };
 
-    template <typename ResultType, typename FirstArgType, typename SecondArgType>
-    static void accumulate(State<ResultType> & state, FirstArgType x, SecondArgType y)
+    template <typename ResultType>
+    static void accumulate(State<ResultType> & state, ResultType x, ResultType y)
     {
         state.dist = fmax(state.dist, fabs(x - y));
     }
@@ -98,8 +98,8 @@ struct CosineDistance
         FloatType y_squared = 0;
     };
 
-    template <typename ResultType, typename FirstArgType, typename SecondArgType>
-    static void accumulate(State<ResultType> & state, FirstArgType x, SecondArgType y)
+    template <typename ResultType>
+    static void accumulate(State<ResultType> & state, ResultType x, ResultType y)
     {
         state.dot_prod += x * y;
         state.x_squared += x * x;
@@ -288,7 +288,7 @@ private:
             typename Kernel::template State<Float64> state;
             for (; prev < off; ++prev)
             {
-                Kernel::accumulate(state, data_x[prev], data_y[prev]);
+                Kernel::template accumulate<Float64>(state, data_x[prev], data_y[prev]);
             }
             result_data[row] = Kernel::finalize(state);
             row++;
@@ -337,7 +337,7 @@ private:
             typename Kernel::template State<Float64> state;
             for (size_t i = 0; prev < off; ++i, ++prev)
             {
-                Kernel::accumulate(state, data_x[i], data_y[prev]);
+                Kernel::template accumulate<Float64>(state, data_x[i], data_y[prev]);
             }
             result_data[row] = Kernel::finalize(state);
             row++;
