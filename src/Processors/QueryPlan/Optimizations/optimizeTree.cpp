@@ -34,7 +34,7 @@ void optimizeTree(const QueryPlanOptimizationSettings & settings, QueryPlan::Nod
     };
 
     std::stack<Frame> stack;
-    stack.push(Frame{.node = &root});
+    stack.push({.node = &root});
 
     size_t max_optimizations_to_apply = settings.max_optimizations_to_apply;
     size_t total_applied_optimizations = 0;
@@ -50,10 +50,10 @@ void optimizeTree(const QueryPlanOptimizationSettings & settings, QueryPlan::Nod
             /// Traverse all children first.
             if (frame.next_child < frame.node->children.size())
             {
-                stack.push(Frame
+                stack.push(
                 {
-                       .node = frame.node->children[frame.next_child],
-                       .depth_limit = frame.depth_limit ? (frame.depth_limit - 1) : 0,
+                    .node = frame.node->children[frame.next_child],
+                    .depth_limit = frame.depth_limit ? (frame.depth_limit - 1) : 0,
                 });
 
                 ++frame.next_child;

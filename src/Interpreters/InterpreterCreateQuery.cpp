@@ -578,7 +578,12 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
             if (col_decl.type)
                 column.type = name_type_it->type;
             else
+            {
                 column.type = defaults_sample_block.getByName(column.name).type;
+                /// set nullability for case of column declaration w/o type but with default expression
+                if ((col_decl.null_modifier && *col_decl.null_modifier) || make_columns_nullable)
+                    column.type = makeNullable(column.type);
+            }
 
             column.default_desc.kind = columnDefaultKindFromString(col_decl.default_specifier);
             column.default_desc.expression = default_expr;

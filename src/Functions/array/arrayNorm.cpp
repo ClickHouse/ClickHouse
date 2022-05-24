@@ -1,4 +1,6 @@
+#include <cmath>
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnsNumber.h>
 #include <Columns/IColumn.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -6,8 +8,6 @@
 #include <DataTypes/getLeastSupertype.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
-
-#include <Eigen/Core>
 
 namespace DB
 {
@@ -17,25 +17,58 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-template <const int N>
-struct LpNorm
+struct L1Norm
 {
-    static inline String name = "L" + std::to_string(N);
-    template <typename T>
-    static void compute(const std::vector<Eigen::VectorX<T>> & vec, PaddedPODArray<T> & array)
+    static inline String name = "L1";
+
+    template <typename ResultType, typename ArgumentType>
+    inline static ResultType accumulate(ResultType result, ArgumentType value)
     {
-        array.reserve(vec.size());
-        for (const auto & v : vec)
-        {
-            array.push_back(v.template lpNorm<N>());
-        }
+        return result + fabs(value);
+    }
+
+    template <typename ResultType>
+    inline static ResultType finalize(ResultType result)
+    {
+        return result;
     }
 };
 
-struct LinfNorm : LpNorm<Eigen::Infinity>
+struct L2Norm
+{
+    static inline String name = "L2";
+
+    template <typename ResultType, typename ArgumentType>
+    inline static ResultType accumulate(ResultType result, ArgumentType value)
+    {
+        return result + value * value;
+    }
+
+    template <typename ResultType>
+    inline static ResultType finalize(ResultType result)
+    {
+        return sqrt(result);
+    }
+};
+
+
+struct LinfNorm
 {
     static inline String name = "Linf";
+
+    template <typename ResultType, typename ArgumentType>
+    inline static ResultType accumulate(ResultType result, ArgumentType value)
+    {
+        return fmax(result, fabs(value));
+    }
+
+    template <typename ResultType>
+    inline static ResultType finalize(ResultType result)
+    {
+        return result;
+    }
 };
+
 
 template <class Kernel>
 class FunctionArrayNorm : public IFunction
@@ -84,72 +117,53 @@ public:
     }
 
     ColumnPtr
-    executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t /*input_rows_count*/) const override
+    executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         DataTypePtr type = typeid_cast<const DataTypeArray *>(arguments[0].type.get())->getNestedType();
         ColumnPtr column = arguments[0].column->convertToFullColumnIfConst();
         const auto * arr = assert_cast<const ColumnArray *>(column.get());
 
-        auto result = result_type->createColumn();
         switch (result_type->getTypeId())
         {
             case TypeIndex::Float32:
-                executeWithType<Float32>(*arr, type, result);
+                return executeWithResultType<Float32>(*arr, type, input_rows_count);
                 break;
             case TypeIndex::Float64:
-                executeWithType<Float64>(*arr, type, result);
+                return executeWithResultType<Float64>(*arr, type, input_rows_count);
                 break;
             default:
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected result type.");
         }
-        return result;
     }
 
 private:
-    template <typename MatrixType>
-    void executeWithType(const ColumnArray & array, const DataTypePtr & type, MutableColumnPtr & column) const
-    {
-        std::vector<Eigen::VectorX<MatrixType>> vec;
-        columnToVectors(array, type, vec);
-        auto & data = assert_cast<ColumnVector<MatrixType> &>(*column).getData();
-        Kernel::compute(vec, data);
-    }
 
-    template <typename MatrixType>
-    void columnToVectors(const ColumnArray & array, const DataTypePtr & nested_type, std::vector<Eigen::VectorX<MatrixType>> & vec) const
+#define SUPPORTED_TYPES(action) \
+    action(UInt8)   \
+    action(UInt16)  \
+    action(UInt32)  \
+    action(UInt64)  \
+    action(Int8)    \
+    action(Int16)   \
+    action(Int32)   \
+    action(Int64)   \
+    action(Float32) \
+    action(Float64)
+
+
+    template <typename ResultType>
+    ColumnPtr executeWithResultType(const ColumnArray & array, const DataTypePtr & nested_type, size_t input_rows_count) const
     {
         switch (nested_type->getTypeId())
         {
-            case TypeIndex::UInt8:
-                fillVectors<MatrixType, UInt8>(vec, array);
+        #define ON_TYPE(type) \
+            case TypeIndex::type: \
+                return executeWithTypes<ResultType, type>(array, input_rows_count); \
                 break;
-            case TypeIndex::UInt16:
-                fillVectors<MatrixType, UInt16>(vec, array);
-                break;
-            case TypeIndex::UInt32:
-                fillVectors<MatrixType, UInt32>(vec, array);
-                break;
-            case TypeIndex::UInt64:
-                fillVectors<MatrixType, UInt64>(vec, array);
-                break;
-            case TypeIndex::Int8:
-                fillVectors<MatrixType, Int8>(vec, array);
-                break;
-            case TypeIndex::Int16:
-                fillVectors<MatrixType, Int16>(vec, array);
-                break;
-            case TypeIndex::Int32:
-                fillVectors<MatrixType, Int32>(vec, array);
-                break;
-            case TypeIndex::Int64:
-                fillVectors<MatrixType, Int64>(vec, array);
-                break;
-            case TypeIndex::Float32:
-                fillVectors<MatrixType, Float32>(vec, array);
-                break;
-            case TypeIndex::Float64:
-                fillVectors<MatrixType, Float64>(vec, array);
-                break;
+
+            SUPPORTED_TYPES(ON_TYPE)
+        #undef ON_TYPE
+
             default:
                 throw Exception(
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
@@ -159,46 +173,35 @@ private:
         }
     }
 
-    template <typename MatrixType, typename DataType>
-    requires std::is_same_v<MatrixType, DataType>
-    void fillVectors(std::vector<Eigen::VectorX<MatrixType>> & vec, const ColumnArray & array) const
+    template <typename ResultType, typename ArgumentType>
+    static ColumnPtr executeWithTypes(const ColumnArray & array, size_t input_rows_count)
     {
-        const auto & data = typeid_cast<const ColumnVector<DataType> &>(array.getData()).getData();
+        const auto & data = typeid_cast<const ColumnVector<ArgumentType> &>(array.getData()).getData();
         const auto & offsets = array.getOffsets();
-        vec.reserve(offsets.size());
-        ColumnArray::Offset prev = 0;
-        for (auto off : offsets)
-        {
-            vec.emplace_back(Eigen::Map<const Eigen::VectorX<MatrixType>>(data.data() + prev, off - prev));
-            prev = off;
-        }
-    }
 
-    template <typename MatrixType, typename DataType>
-    void fillVectors(std::vector<Eigen::VectorX<MatrixType>> & vec, const ColumnArray & array) const
-    {
-        const auto & data = typeid_cast<const ColumnVector<DataType> &>(array.getData()).getData();
-        const auto & offsets = array.getOffsets();
-        vec.reserve(offsets.size());
+        auto result_col = ColumnVector<ResultType>::create(input_rows_count);
+        auto & result_data = result_col->getData();
 
         ColumnArray::Offset prev = 0;
+        size_t row = 0;
         for (auto off : offsets)
         {
-            Eigen::VectorX<MatrixType> mat(off - prev);
-            for (ColumnArray::Offset row = 0; row + prev < off; ++row)
+            Float64 result = 0;
+            for (; prev < off; ++prev)
             {
-                mat[row] = static_cast<MatrixType>(data[prev + row]);
+                result = Kernel::accumulate(result, data[prev]);
             }
-            prev = off;
-            vec.emplace_back(mat);
+            result_data[row] = Kernel::finalize(result);
+            row++;
         }
+        return result_col;
     }
 };
 
 void registerFunctionArrayNorm(FunctionFactory & factory)
 {
-    factory.registerFunction<FunctionArrayNorm<LpNorm<1>>>();
-    factory.registerFunction<FunctionArrayNorm<LpNorm<2>>>();
+    factory.registerFunction<FunctionArrayNorm<L1Norm>>();
+    factory.registerFunction<FunctionArrayNorm<L2Norm>>();
     factory.registerFunction<FunctionArrayNorm<LinfNorm>>();
 }
 
