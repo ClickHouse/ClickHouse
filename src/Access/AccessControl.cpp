@@ -15,7 +15,6 @@
 #include <Access/User.h>
 #include <Access/ExternalAuthenticators.h>
 #include <Core/Settings.h>
-#include <Core/Protocol.h>
 #include <base/find_symbols.h>
 #include <Poco/ExpireCache.h>
 #include <boost/algorithm/string/join.hpp>
