@@ -49,7 +49,8 @@ struct CacheKeyHasher
     }
 
     private:
-        static size_t settingsHash(const Settings & settings) {
+        static size_t settingsHash(const Settings & settings)
+        {
             size_t hash = 0;
             size_t coefficient = 1;
             for (const auto & setting : settings)
@@ -200,7 +201,8 @@ public:
         return ++times_executed[cache_key];
     }
 
-    std::mutex& getPutInCacheMutex(CacheKey cache_key) {
+    std::mutex& getPutInCacheMutex(CacheKey cache_key)
+    {
         return put_in_cache_mutexes[cache_key];
     }
 
