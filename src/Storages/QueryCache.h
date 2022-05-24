@@ -83,6 +83,8 @@ public:
         queue.push(timer);
         auto top = queue.top();
         lock.unlock();
+
+        // if the newly scheduled timer turned out to have the smallest timestamp in the entire queue, notify timer_cv
         if (top == timer)
         {
             timer_cv.notify_one();
