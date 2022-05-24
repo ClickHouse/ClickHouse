@@ -1,12 +1,9 @@
 #include <Coordination/Defines.h>
 #include <Coordination/KeeperServer.h>
 
-#include "Coordination/Changelog.h"
-#include "IO/WriteBuffer.h"
 #include "config_core.h"
 
 #include <chrono>
-#include <condition_variable>
 #include <filesystem>
 #include <string>
 #include <Coordination/KeeperStateMachine.h>

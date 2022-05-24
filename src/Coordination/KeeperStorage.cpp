@@ -1297,8 +1297,21 @@ struct KeeperStorageSetACLRequestProcessor final : public KeeperStorageRequestPr
             return {{zxid, Coordination::Error::ZINVALIDACL}};
 
         std::vector<KeeperStorage::Delta> new_deltas
-            = {{request.path, zxid, KeeperStorage::SetACLDelta{std::move(node_acls), request.version}},
-               {request.path, zxid, KeeperStorage::UpdateNodeDelta{[](KeeperStorage::Node & n) { ++n.stat.aversion; }}}};
+        {
+            {
+                request.path,
+                zxid,
+                KeeperStorage::SetACLDelta{std::move(node_acls), request.version}
+            },
+            {
+                request.path,
+                zxid,
+                KeeperStorage::UpdateNodeDelta
+                {
+                    [](KeeperStorage::Node & n) { ++n.stat.aversion; }
+                }
+            }
+        };
 
         digest = storage.calculateNodesDigest(digest, new_deltas);
 

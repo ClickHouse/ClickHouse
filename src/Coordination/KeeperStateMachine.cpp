@@ -112,7 +112,7 @@ void assertDigest(
     {
         LOG_FATAL(
             &Poco::Logger::get("KeeperStateMachine"),
-            "Digest for nodes is not matching after {} request of type '{}'.\nExpected digest - {}, actual digest {} (digest version "
+            "Digest for nodes is not matching after {} request of type '{}'.\nExpected digest - {}, actual digest - {} (digest version "
             "{}). Keeper will "
             "terminate to avoid inconsistencies.\nExtra information about the request:\n{}",
             committing ? "committing" : "preprocessing",
