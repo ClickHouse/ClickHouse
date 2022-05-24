@@ -37,29 +37,19 @@ struct CacheKeyHasher
 {
     size_t operator()(const CacheKey & key) const
     {
-        auto ast_info = key.ast->getTreeHash();
-        auto header_info = std::hash<String>{}(key.header.getNamesAndTypesList().toString());
-        auto settings_info = settingsHash(key.settings);
-        auto username_info = std::hash<std::optional<String>>{}(key.username);
-
-        return ast_info.first + ast_info.second * 9273
-               + header_info * 9273 * 9273
-               + settings_info * 9273 * 9273 * 9273
-               + username_info * 9273 * 9273 * 9273 * 9273;
+         SipHash hash;
+         hash.update(key.ast->getTreeHash());
+         hash.update(key.header.getNamesAndTypesList().toString());
+         for (const auto & setting : key.settings)
+         {
+             hash.update(setting.getValueString());
+         }
+         if (key.username.has_value())
+         {
+             hash.update(*key.username);
+         }
+         return hash.get64();
     }
-
-    private:
-        static size_t settingsHash(const Settings & settings)
-        {
-            size_t hash = 0;
-            size_t coefficient = 1;
-            for (const auto & setting : settings)
-            {
-                hash += std::hash<String>{}(setting.getValueString()) * coefficient;
-                coefficient *= 53;
-            }
-            return hash;
-        }
 };
 
 struct QueryWeightFunction
