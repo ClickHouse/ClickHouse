@@ -116,3 +116,6 @@ if __name__ == "__main__":
     commit.create_status(
         context=NAME, description=description, state=status, target_url=report_url
     )
+
+    if status == "failure":
+        sys.exit(1)
