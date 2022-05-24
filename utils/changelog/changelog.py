@@ -174,6 +174,11 @@ def parse_args() -> argparse.Namespace:
         help="a password that should be used when user is given",
     )
     parser.add_argument(
+        "--with-testing-tags",
+        action="store_true",
+        help="by default '*-testing' tags are ignored, this argument enables them too",
+    )
+    parser.add_argument(
         "--from",
         dest="from_ref",
         help="git ref for a starting point of changelog, by default is calculated "
@@ -296,7 +301,7 @@ def write_changelog(fd: TextIO, descriptions: Dict[str, List[Description]]):
             fd.write("\n")
 
 
-def check_refs(from_ref: Optional[str], to_ref: str):
+def check_refs(from_ref: Optional[str], to_ref: str, with_testing_tags: bool):
     global FROM_REF, TO_REF
     TO_REF = to_ref
 
@@ -306,10 +311,13 @@ def check_refs(from_ref: Optional[str], to_ref: str):
     # Check from_ref
     if from_ref is None:
         # Get all tags pointing to TO_REF
-        tags = runner.run(f"git tag --points-at '{TO_REF}^{{}}'")
+        tags = runner.run(f"git tag --points-at '{TO_REF}^{{}}'").split("\n")
         logging.info("All tags pointing to %s:\n%s", TO_REF, tags)
-        exclude = " ".join([f"--exclude='{tag}'" for tag in tags.split("\n")])
-        FROM_REF = runner.run(f"git describe --abbrev=0 --tags {exclude} '{TO_REF}'")
+        if not with_testing_tags:
+            tags.append("*-testing")
+        exclude = " ".join([f"--exclude='{tag}'" for tag in tags])
+        cmd = f"git describe --abbrev=0 --tags {exclude} '{TO_REF}'"
+        FROM_REF = runner.run(cmd)
     else:
         runner.run(f"git rev-parse {FROM_REF}")
         FROM_REF = from_ref
@@ -336,7 +344,7 @@ def main():
     logging.info("Fetching all tags")
     runner.run("git fetch --tags", stderr=DEVNULL)
 
-    check_refs(args.from_ref, args.to_ref)
+    check_refs(args.from_ref, args.to_ref, args.with_testing_tags)
     set_sha_in_changelog()
 
     logging.info("Using %s..%s as changelog interval", FROM_REF, TO_REF)
