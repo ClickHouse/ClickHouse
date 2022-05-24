@@ -274,8 +274,8 @@
          For value equals to -1 this parameter is initialized by number of logical cores multiplies by 3.
          Which is a good heuristic for CPU-bound tasks.
     -->
-    <total_max_threads>-1</total_max_threads>
-    
+    <total_max_threads>0</total_max_threads>
+
     <!-- Maximum number of concurrent queries. -->
     <max_concurrent_queries>100</max_concurrent_queries>
 

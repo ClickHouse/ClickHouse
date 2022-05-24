@@ -703,12 +703,12 @@ On hosts with low RAM and swap, you possibly need setting `max_server_memory_usa
 -   [max_server_memory_usage](#max_server_memory_usage)
 
 ## total_max_threads {#total-max-threads}
-The maximum number of query processing threads, excluding threads for retrieving data from remote servers, allowed to run all queries. This is not a hard limit. In case if the limit is reached the query will still get one thread to run. 
+The maximum number of query processing threads, excluding threads for retrieving data from remote servers, allowed to run all queries. This is not a hard limit. In case if the limit is reached the query will still get one thread to run.
 
 Possible values:
--   Positive integer. 
+-   Positive integer.
 -   0 — No limit.
--   -1 — The parameter is initialized by number of logical cores multiplies by 3. Which is a good heuristic for CPU-bound tasks. 
+-   -1 — The parameter is initialized by number of logical cores multiplies by 3. Which is a good heuristic for CPU-bound tasks.
 
 Default value: `0`.
 
