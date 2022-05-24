@@ -1,6 +1,7 @@
 #include <Common/Exception.h>
 #include <IO/ReadHelpers.h>
 #include <fmt/format.h>
+#include <vector>
 
 #include <sys/types.h>
 #include <unistd.h>
@@ -128,7 +129,13 @@ try
 
     setUserAndGroup(std::move(user), std::move(group));
 
-    execvp(argv[0], &argv[2]);
+    std::vector<char *> new_argv;
+    new_argv.reserve(argc - 1);
+    new_argv.insert(new_argv.begin(), argv + 2, argv + argc);
+    new_argv.push_back(nullptr);
+
+    execvp(new_argv.front(), new_argv.data());
+
     throwFromErrno("Cannot execvp", ErrorCodes::SYSTEM_ERROR);
 }
 catch (...)
