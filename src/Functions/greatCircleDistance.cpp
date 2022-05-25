@@ -272,7 +272,8 @@ private:
         dst_data.resize(input_rows_count);
 
         auto arguments_copy = arguments;
-        for (auto & argument : arguments_copy) {
+        for (auto & argument : arguments_copy)
+        {
             argument.column = argument.column->convertToFullColumnIfConst();
             argument.column = castColumn(argument, result_type);
             argument.type = result_type;
