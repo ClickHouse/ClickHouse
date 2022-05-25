@@ -68,8 +68,10 @@ public:
     using Params = ContextAccessParams;
     const Params & getParams() const { return params; }
 
-    /// Returns the current user. The function can return nullptr.
+    /// Returns the current user. Throws if user is nullptr.
     UserPtr getUser() const;
+    /// Same as above, but can return nullptr.
+    UserPtr tryGetUser() const;
     String getUserName() const;
     std::optional<UUID> getUserID() const { return getParams().user_id; }
 

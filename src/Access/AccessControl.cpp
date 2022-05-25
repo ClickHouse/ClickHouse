@@ -69,7 +69,7 @@ public:
         auto x = cache.get(params);
         if (x)
         {
-            if ((*x)->getUser())
+            if ((*x)->tryGetUser())
                 return *x;
             /// No user, probably the user has been dropped while it was in the cache.
             cache.remove(params);

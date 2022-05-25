@@ -770,8 +770,6 @@ void Context::setUser(const UUID & user_id_)
         user_id_, /* current_roles = */ {}, /* use_default_roles = */ true, settings, current_database, client_info);
 
     auto user = access->getUser();
-    if (!user)
-        throw Exception(ErrorCodes::UNKNOWN_USER, "User has been dropped");
 
     current_roles = std::make_shared<std::vector<UUID>>(user->granted_roles.findGranted(user->default_roles));
 
@@ -819,9 +817,6 @@ void Context::setCurrentRoles(const std::vector<UUID> & current_roles_)
 void Context::setCurrentRolesDefault()
 {
     auto user = getUser();
-    if (!user)
-        throw Exception(ErrorCodes::UNKNOWN_USER, "User has been dropped");
-
     setCurrentRoles(user->granted_roles.findGranted(user->default_roles));
 }
 
@@ -3452,6 +3447,16 @@ WriteSettings Context::getWriteSettings() const
     res.enable_filesystem_cache_on_write_operations = settings.enable_filesystem_cache_on_write_operations;
 
     return res;
+}
+
+bool Context::isAccessAlreadyChecked() const
+{
+    return access_already_checked;
+}
+
+void Context::setAccessAlreadyChecked()
+{
+    access_already_checked = true;
 }
 
 }

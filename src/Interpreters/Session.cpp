@@ -451,7 +451,7 @@ ContextMutablePtr Session::makeQueryContextImpl(const ClientInfo * client_info_t
     ContextMutablePtr query_context = Context::createCopy(from_session_context ? session_context : global_context);
     query_context->makeQueryContext();
 
-    if (auto query_context_user = query_context->getUser())
+    if (auto query_context_user = query_context->getAccess()->tryGetUser())
     {
         LOG_DEBUG(log, "{} Creating query context from {} context, user_id: {}, parent context user: {}",
                   toString(auth_id),
@@ -488,7 +488,7 @@ ContextMutablePtr Session::makeQueryContextImpl(const ClientInfo * client_info_t
     query_context->enableRowPoliciesOfInitialUser();
 
     /// Set user information for the new context: current profiles, roles, access rights.
-    if (user_id && !query_context->getUser())
+    if (user_id && !query_context->getAccess()->tryGetUser())
         query_context->setUser(*user_id);
 
     /// Query context is ready.
