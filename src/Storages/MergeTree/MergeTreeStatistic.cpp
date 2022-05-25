@@ -33,6 +33,14 @@ String generateFileNameForStatistics(const String & name) {
         PART_STATS_FILE_EXT);
 }
 
+String generateFileNameForStatistics(const String & name, const String & column) {
+    return fmt::format("{}_{}_{}.{}",
+        PART_STATS_FILE_NAME,
+        name,
+        column,
+        PART_STATS_FILE_EXT);
+}
+
 bool MergeTreeDistributionStatistics::empty() const
 {
     for (const auto& [column, stat] : column_to_stats) {

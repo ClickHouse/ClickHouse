@@ -755,7 +755,6 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
                     stages_copy.back().output_columns = stage.output_columns;
                     stages_copy.back().filters = stage.filters;
                 }
-                Poco::Logger::get("PREPARE111").information(std::to_string(stages_copy.size()));
                 const ASTPtr select_query = prepareInterpreterSelectQuery(stages_copy, /* dry_run = */ true);
                 InterpreterSelectQuery interpreter{
                     select_query, context, storage, metadata_snapshot,
@@ -778,7 +777,6 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
     }
 
     is_prepared = true;
-    Poco::Logger::get("PREPARE222").information(std::to_string(stages.size()));
     return prepareInterpreterSelectQuery(stages, dry_run);
 }
 

@@ -332,7 +332,7 @@ static StatisticDescriptions getStatisticsForNewDataPart(
     NameSet removed_statistics;
     for (const auto & command : commands_for_removes)
         if (command.type == MutationCommand::DROP_STATISTIC)
-            removed_statistics.insert(command.column_name); // Column name???
+            removed_statistics.insert(command.column_name);
 
     StatisticDescriptions new_statistics;
     for (const auto & statistic : all_statistics)
@@ -484,12 +484,10 @@ static StatisticDescriptions getStatisticsToRecalculate(
     StatisticDescriptions result;
     const auto& statistics = metadata_snapshot->getStatistics();
     for (const auto& statistic : statistics) {
-        // statistics are always fully recalculated;
-        // TODO: decide if we really need it
-        // TODO: do not recalc stats for existing columns
         if (materialized_statistics.contains(statistic.name)) {
             result.push_back(statistic);
-            Poco::Logger::get("getStatisticsToRecalculate").information(statistic.name);
+        } else {
+            // TODO:changed columns
         }
     }
     return result;
@@ -529,13 +527,12 @@ NameSet collectFilesToSkip(
         files_to_skip.insert(projection->getDirectoryName());
     
     
-    // TODO: исправить
     for (const auto & [filename, _] : source_part->checksums.files)
     {
         for (const auto& statistic : statistics_to_recalc) {
+            // TODO: read file and check columns inside.
             if (filename.starts_with(std::string{PART_STATS_FILE_NAME} + "_" + statistic.name + "_") && filename.ends_with(PART_STATS_FILE_EXT)) {
                 files_to_skip.insert(filename);
-                Poco::Logger::get("collectFilesToSkip").information(statistic.name + " " + filename);
             }
         }
     }

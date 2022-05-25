@@ -376,67 +376,67 @@ void MergeTreeDataPartWriterOnDisk::finishSkipIndicesSerialization(bool sync)
 
 void MergeTreeDataPartWriterOnDisk::fillStatisticsChecksums(MergeTreeData::DataPart::Checksums & checksums)
 {
+    // One statistic can be stored in several files
+    // in order not to interfere with vertical merges.
+    // It is possible because one stat is calculated exactly for one column.
+    // Statements STATISTIC name (a,b,c ...) TYPE AUTO are treated as several different statistics (one for each column).
+    // We need such statements for easy management.
     if (stats_collectors.empty())
         return;
     
     std::set<String> statistic_names;
-    auto column_distribution_stats = std::make_shared<MergeTreeDistributionStatistics>();
+    
     for (auto & stats_collector : stats_collectors)
     {
         if (!stats_collector->empty())
         {
             auto stat = stats_collector->getStatisticAndReset();
             statistic_names.insert(stat->name());
+
+            auto column_distribution_stats = std::make_shared<MergeTreeDistributionStatistics>();
             column_distribution_stats->add(stats_collector->column(), stat);
+
+            MergeTreeStatistics stats;
+            stats.setDistributionStatistics(std::move(column_distribution_stats));
+
+            const auto filename = generateFileNameForStatistics(stat->name(), stats_collector->column());
+            LOG_DEBUG(&Poco::Logger::get("finishStatisticsSerialization"), "Stat: {} file: {}", stat->name(), filename);
+
+            if (statistic_and_column_to_stream.emplace(std::pair<String, String>{stat->name(), stats_collector->column()}, std::make_unique<StatisticsStream>()).second)
+            {
+                auto& stream = statistic_and_column_to_stream.at(std::pair<String, String>{stat->name(), stats_collector->column()});
+                stream->plain_buffer = data_part->volume->getDisk()->writeFile(
+                    part_path + filename,
+                    DBMS_DEFAULT_BUFFER_SIZE,
+                    WriteMode::Rewrite);
+                stream->hashing_buffer = std::make_unique<HashingWriteBuffer>(*stream->plain_buffer);
+                auto & stats_stream = stream->hashing_buffer;
+
+                stats.serializeBinary(stat->name(), *stats_stream);
+
+                stats_stream->next();
+                checksums.files[filename].file_size = stats_stream->count();
+                checksums.files[filename].file_hash = stats_stream->getHash();
+            }
+            else
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "It's a bug: Statistic {} already exists.", stat->name());
         }
-    }
-
-    MergeTreeStatistics stats;
-    stats.setDistributionStatistics(std::move(column_distribution_stats));
-
-    // One statistic can be stored in several files
-    // in order not to interfere with vertical merges.
-    // It is possible because one stat is calculated exactly for one column.
-    // Statements STATISTIC name (a,b,c ...) TYPE AUTO are treated as several different statistics (one for each column).
-    // We need such statements for easy management.
-    for (const String & statistic_name : statistic_names)
-    {
-        const auto filename = generateFileNameForStatistics(statistic_name);
-        LOG_DEBUG(&Poco::Logger::get("finishStatisticsSerialization"), "Stat: {} file: {}", statistic_name, filename);
-        if (statistic_to_stream.emplace(statistic_name, std::make_unique<StatisticsStream>()).second)
-        {
-            statistic_to_stream.at(statistic_name)->plain_buffer = data_part->volume->getDisk()->writeFile(
-                part_path + filename,
-                DBMS_DEFAULT_BUFFER_SIZE,
-                WriteMode::Rewrite);
-            statistic_to_stream.at(statistic_name)->hashing_buffer = std::make_unique<HashingWriteBuffer>(
-                *statistic_to_stream.at(statistic_name)->plain_buffer);
-            auto & stats_stream = statistic_to_stream.at(statistic_name)->hashing_buffer;
-
-            stats.serializeBinary(statistic_name, *stats_stream);
-
-            stats_stream->next();
-            checksums.files[filename].file_size = stats_stream->count();
-            checksums.files[filename].file_hash = stats_stream->getHash();
-        }
-        else
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "It's a bug: Statistic {} already exists.", statistic_name);
     }
 }
 
 void MergeTreeDataPartWriterOnDisk::finishStatisticsSerialization(bool sync)
 {
-    if (stats_collectors.empty() || statistic_to_stream.empty())
+    if (stats_collectors.empty() || statistic_and_column_to_stream.empty())
         return;
     
-    for (const auto & [_, stats_file_stream] : statistic_to_stream)
+    for (const auto & [_, stats_file_stream] : statistic_and_column_to_stream)
     {
         stats_file_stream->plain_buffer->finalize();
         if (sync)
             stats_file_stream->plain_buffer->sync();
     }
 
-    statistic_to_stream.clear();
+    statistic_and_column_to_stream.clear();
     stats_collectors.clear();
 }
 
