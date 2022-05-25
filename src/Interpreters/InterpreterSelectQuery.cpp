@@ -2060,12 +2060,15 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
         if (prewhere_info)
             query_info.prewhere_info = prewhere_info;
 
+        bool optimize_read_in_order = analysis_result.optimize_read_in_order;
+        bool optimize_aggregation_in_order = analysis_result.optimize_aggregation_in_order && !query_analyzer->useGroupingSetKey();
+
         /// Create optimizer with prepared actions.
         /// Maybe we will need to calc input_order_info later, e.g. while reading from StorageMerge.
-        if ((analysis_result.optimize_read_in_order || analysis_result.optimize_aggregation_in_order)
+        if ((optimize_read_in_order || optimize_aggregation_in_order)
             && (!query_info.projection || query_info.projection->complete))
         {
-            if (analysis_result.optimize_read_in_order)
+            if (optimize_read_in_order)
             {
                 if (query_info.projection)
                 {
@@ -2291,7 +2294,7 @@ void InterpreterSelectQuery::executeAggregation(QueryPlan & query_plan, const Ac
 
     SortDescription group_by_sort_description;
 
-    if (group_by_info && settings.optimize_aggregation_in_order)
+    if (group_by_info && settings.optimize_aggregation_in_order && !query_analyzer->useGroupingSetKey())
         group_by_sort_description = getSortDescriptionFromGroupBy(getSelectQuery());
     else
         group_by_info = nullptr;
