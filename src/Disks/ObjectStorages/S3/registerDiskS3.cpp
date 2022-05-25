@@ -10,6 +10,7 @@
 
 #include <aws/core/client/DefaultRetryStrategy.h>
 
+#include <base/getFQDNOrHostName.h>
 #include <Common/FileCacheFactory.h>
 
 #include <Disks/DiskCacheWrapper.h>

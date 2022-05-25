@@ -36,7 +36,12 @@ public:
     {
     public:
         DisclosedGlobIterator(
-            const Aws::S3::S3Client & client_, const S3::URI & globbed_uri_, ASTPtr query, const Block & virtual_header, ContextPtr context);
+            const Aws::S3::S3Client & client_,
+            const S3::URI & globbed_uri_,
+            ASTPtr query,
+            const Block & virtual_header,
+            ContextPtr context);
+
         String next();
 
     private:

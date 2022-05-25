@@ -23,7 +23,7 @@ static String revisionToString(UInt64 revision)
 
 void DiskObjectStorageMetadataHelper::createFileOperationObject(const String & operation_name, UInt64 revision, const ObjectAttributes & metadata) const
 {
-    const String path = disk->remote_fs_root_path + "operations/r" + revisionToString(revision) + "-" + operation_name;
+    const String path = disk->remote_fs_root_path + "operations/r" + revisionToString(revision) + operation_log_suffix + "-" + operation_name;
     auto buf = disk->object_storage->writeObject(path, WriteMode::Rewrite, metadata);
     buf->write('0');
     buf->finalize();
@@ -300,13 +300,43 @@ static String shrinkKey(const String & path, const String & key)
 static std::tuple<UInt64, String> extractRevisionAndOperationFromKey(const String & key)
 {
     String revision_str;
+    String suffix;
     String operation;
-    /// Key has format: ../../r{revision}-{operation}
-    static const re2::RE2 key_regexp {".*/r(\\d+)-(\\w+)$"};
+    /// Key has format: ../../r{revision}(-{hostname})-{operation}
+    static const re2::RE2 key_regexp{".*/r(\\d+)(-[\\w\\d\\-\\.]+)?-(\\w+)$"};
 
-    re2::RE2::FullMatch(key, key_regexp, &revision_str, &operation);
+    re2::RE2::FullMatch(key, key_regexp, &revision_str, &suffix, &operation);
 
     return {(revision_str.empty() ? 0 : static_cast<UInt64>(std::bitset<64>(revision_str).to_ullong())), operation};
+}
+
+void DiskObjectStorageMetadataHelper::moveRecursiveOrRemove(const String & from_path, const String & to_path, bool send_metadata)
+{
+    if (disk->exists(to_path))
+    {
+        if (send_metadata)
+        {
+            auto revision = ++revision_counter;
+            const ObjectAttributes object_metadata {
+                {"from_path", from_path},
+                {"to_path", to_path}
+            };
+            createFileOperationObject("rename", revision, object_metadata);
+        }
+        if (disk->isDirectory(from_path))
+        {
+            for (auto it = disk->iterateDirectory(from_path); it->isValid(); it->next())
+                moveRecursiveOrRemove(it->path(), fs::path(to_path) / it->name(), false);
+        }
+        else
+        {
+            disk->removeFile(from_path);
+        }
+    }
+    else
+    {
+        disk->moveFile(from_path, to_path, send_metadata);
+    }
 }
 
 void DiskObjectStorageMetadataHelper::restoreFiles(IObjectStorage * source_object_storage, const RestoreInformation & restore_information)
@@ -385,7 +415,6 @@ void DiskObjectStorageMetadataHelper::processRestoreFiles(IObjectStorage * sourc
         else
             continue;
 
-
         disk->createDirectories(directoryPath(path));
         auto relative_key = shrinkKey(source_path, key);
 
@@ -457,7 +486,7 @@ void DiskObjectStorageMetadataHelper::restoreFileOperations(IObjectStorage * sou
                 auto to_path = object_attributes["to_path"];
                 if (disk->exists(from_path))
                 {
-                    disk->moveFile(from_path, to_path, send_metadata);
+                    moveRecursiveOrRemove(from_path, to_path, send_metadata);
 
                     LOG_TRACE(disk->log, "Revision {}. Restored rename {} -> {}", revision, from_path, to_path);
 
