@@ -34,25 +34,40 @@ class StorageS3Source : public ISource, WithContext
 public:
     class DisclosedGlobIterator
     {
-        public:
-            DisclosedGlobIterator(Aws::S3::S3Client &, const S3::URI &);
-            String next();
-        private:
-            class Impl;
-            /// shared_ptr to have copy constructor
-            std::shared_ptr<Impl> pimpl;
+    public:
+        DisclosedGlobIterator(
+            Aws::S3::S3Client & client_, const S3::URI & globbed_uri_, ASTPtr query, const Block & virtual_header, ContextPtr context);
+        String next();
+
+    private:
+        class Impl;
+        /// shared_ptr to have copy constructor
+        std::shared_ptr<Impl> pimpl;
     };
 
     class KeysIterator
     {
-        public:
-            explicit KeysIterator(const std::vector<String> & keys_);
-            String next();
+    public:
+        explicit KeysIterator(
+            const std::vector<String> & keys_, const String & bucket_, ASTPtr query, const Block & virtual_header, ContextPtr context);
+        String next();
 
-        private:
-            class Impl;
-            /// shared_ptr to have copy constructor
-            std::shared_ptr<Impl> pimpl;
+    private:
+        class Impl;
+        /// shared_ptr to have copy constructor
+        std::shared_ptr<Impl> pimpl;
+    };
+
+    class ReadTasksIterator
+    {
+    public:
+        ReadTasksIterator(const std::vector<String> & read_tasks_, const ReadTaskCallback & new_read_tasks_callback_);
+        String next();
+
+    private:
+        class Impl;
+        /// shared_ptr to have copy constructor
+        std::shared_ptr<Impl> pimpl;
     };
 
     using IteratorWrapper = std::function<String()>;
@@ -108,7 +123,7 @@ private:
 
     Poco::Logger * log = &Poco::Logger::get("StorageS3Source");
 
-    /// Recreate ReadBuffer and BlockInputStream for each file.
+    /// Recreate ReadBuffer and Pipeline for each file.
     bool initialize();
 
     std::unique_ptr<ReadBuffer> createS3ReadBuffer(const String & key);
@@ -191,6 +206,7 @@ private:
     S3Configuration s3_configuration;
     std::vector<String> keys;
     NamesAndTypesList virtual_columns;
+    Block virtual_block;
 
     String format_name;
     String compression_method;
@@ -200,9 +216,19 @@ private:
     ASTPtr partition_by;
     bool is_key_with_globs = false;
 
+    std::vector<String> read_tasks_used_in_schema_inference;
+
     static void updateS3Configuration(ContextPtr, S3Configuration &);
 
-    static std::shared_ptr<StorageS3Source::IteratorWrapper> createFileIterator(const S3Configuration & s3_configuration, const std::vector<String> & keys, bool is_key_with_globs, bool distributed_processing, ContextPtr local_context);
+    static std::shared_ptr<StorageS3Source::IteratorWrapper> createFileIterator(
+        const S3Configuration & s3_configuration,
+        const std::vector<String> & keys,
+        bool is_key_with_globs,
+        bool distributed_processing,
+        ContextPtr local_context,
+        ASTPtr query,
+        const Block & virtual_block,
+        const std::vector<String> & read_tasks = {});
 
     static ColumnsDescription getTableStructureFromDataImpl(
         const String & format,
@@ -211,9 +237,10 @@ private:
         bool distributed_processing,
         bool is_key_with_globs,
         const std::optional<FormatSettings> & format_settings,
-        ContextPtr ctx);
+        ContextPtr ctx,
+        std::vector<String> * read_keys_in_distributed_processing = nullptr);
 
-    bool isColumnOriented() const override;
+    bool supportsSubsetOfColumns() const override;
 };
 
 }

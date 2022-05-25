@@ -36,6 +36,9 @@ public:
     /// Returns stored file size.
     size_t getFileSize(const String & full_file_path) const;
 
+    /// Returns total size of all files.
+    size_t getTotalSize() const;
+
 private:
     void load();
 

@@ -310,7 +310,7 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectPartsToMerge(
         parts_to_merge = delete_ttl_selector.select(parts_ranges, max_total_size_to_merge);
         if (!parts_to_merge.empty())
         {
-            future_part->merge_type = MergeType::TTL_DELETE;
+            future_part->merge_type = MergeType::TTLDelete;
         }
         else if (metadata_snapshot->hasAnyRecompressionTTL())
         {
@@ -322,7 +322,7 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectPartsToMerge(
 
             parts_to_merge = recompress_ttl_selector.select(parts_ranges, max_total_size_to_merge);
             if (!parts_to_merge.empty())
-                future_part->merge_type = MergeType::TTL_RECOMPRESS;
+                future_part->merge_type = MergeType::TTLRecompress;
         }
     }
 
@@ -603,12 +603,12 @@ MergeTreeData::DataPartPtr MergeTreeDataMergerMutator::renameMergedTemporaryPart
          *   then we get here.
          *
          * When M > N parts could be replaced?
-         * - new block was added in ReplicatedMergeTreeBlockOutputStream;
+         * - new block was added in ReplicatedMergeTreeSink;
          * - it was added to working dataset in memory and renamed on filesystem;
          * - but ZooKeeper transaction that adds it to reference dataset in ZK failed;
          * - and it is failed due to connection loss, so we don't rollback working dataset in memory,
          *   because we don't know if the part was added to ZK or not
-         *   (see ReplicatedMergeTreeBlockOutputStream)
+         *   (see ReplicatedMergeTreeSink)
          * - then method selectPartsToMerge selects a range and sees, that EphemeralLock for the block in this part is unlocked,
          *   and so it is possible to merge a range skipping this part.
          *   (NOTE: Merging with part that is not in ZK is not possible, see checks in 'createLogEntryToMergeParts'.)

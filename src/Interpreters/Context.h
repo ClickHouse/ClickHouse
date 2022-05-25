@@ -83,6 +83,7 @@ class AsynchronousMetricLog;
 class OpenTelemetrySpanLog;
 class ZooKeeperLog;
 class SessionLog;
+class BackupsWorker;
 class TransactionsInfoLog;
 class ProcessorsProfileLog;
 class FilesystemCacheLog;
@@ -602,6 +603,8 @@ public:
     Lemmatizers & getLemmatizers() const;
 #endif
 
+    BackupsWorker & getBackupsWorker() const;
+
     /// I/O formats.
     InputFormatPtr getInputFormat(const String & name, ReadBuffer & buf, const Block & sample, UInt64 max_block_size, const std::optional<FormatSettings> & format_settings = std::nullopt) const;
 
@@ -609,6 +612,7 @@ public:
     OutputFormatPtr getOutputFormatParallelIfPossible(const String & name, WriteBuffer & buf, const Block & sample) const;
 
     InterserverIOHandler & getInterserverIOHandler();
+    const InterserverIOHandler & getInterserverIOHandler() const;
 
     /// How other servers can access this for downloading replicated data.
     void setInterserverIOAddress(const String & host, UInt16 port);
@@ -616,7 +620,7 @@ public:
 
     /// Credentials which server will use to communicate with others
     void updateInterserverCredentials(const Poco::Util::AbstractConfiguration & config);
-    InterserverCredentialsPtr getInterserverCredentials();
+    InterserverCredentialsPtr getInterserverCredentials() const;
 
     /// Interserver requests scheme (http or https)
     void setInterserverScheme(const String & scheme);

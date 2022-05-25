@@ -1151,6 +1151,10 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
     if (remove_duplicates)
         renameDuplicatedColumns(select_query);
 
+    /// Perform it before analyzing JOINs, because it may change number of columns with names unique and break some login inside JOINs
+    if (settings.optimize_normalize_count_variants)
+        TreeOptimizer::optimizeCountConstantAndSumOne(query);
+
     if (tables_with_columns.size() > 1)
     {
         const auto & right_table = tables_with_columns[1];

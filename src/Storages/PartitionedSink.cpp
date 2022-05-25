@@ -111,6 +111,13 @@ void PartitionedSink::consume(Chunk chunk)
     }
 }
 
+void PartitionedSink::onException()
+{
+    for (auto & [_, sink] : partition_id_to_sink)
+    {
+        sink->onException();
+    }
+}
 
 void PartitionedSink::onFinish()
 {

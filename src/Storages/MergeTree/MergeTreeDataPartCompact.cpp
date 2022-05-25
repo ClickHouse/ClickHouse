@@ -22,7 +22,7 @@ MergeTreeDataPartCompact::MergeTreeDataPartCompact(
         const VolumePtr & volume_,
         const std::optional<String> & relative_path_,
         const IMergeTreeDataPart * parent_part_)
-    : IMergeTreeDataPart(storage_, name_, volume_, relative_path_, Type::COMPACT, parent_part_)
+    : IMergeTreeDataPart(storage_, name_, volume_, relative_path_, Type::Compact, parent_part_)
 {
 }
 
@@ -33,7 +33,7 @@ MergeTreeDataPartCompact::MergeTreeDataPartCompact(
         const VolumePtr & volume_,
         const std::optional<String> & relative_path_,
         const IMergeTreeDataPart * parent_part_)
-    : IMergeTreeDataPart(storage_, name_, info_, volume_, relative_path_, Type::COMPACT, parent_part_)
+    : IMergeTreeDataPart(storage_, name_, info_, volume_, relative_path_, Type::Compact, parent_part_)
 {
 }
 

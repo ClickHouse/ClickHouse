@@ -120,7 +120,7 @@ struct MultiMatchAnyImpl
         memset(accum.data(), 0, accum.size());
         for (size_t j = 0; j < needles.size(); ++j)
         {
-            MatchImpl<Name, false, false>::vectorConstant(haystack_data, haystack_offsets, needles[j].toString(), nullptr, accum);
+            MatchImpl<Name, false, false, false>::vectorConstant(haystack_data, haystack_offsets, needles[j].toString(), nullptr, accum);
             for (size_t i = 0; i < res.size(); ++i)
             {
                 if constexpr (FindAny)

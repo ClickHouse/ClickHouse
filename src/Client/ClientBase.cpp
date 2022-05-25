@@ -2,7 +2,6 @@
 
 #include <iostream>
 #include <iomanip>
-#include <string_view>
 #include <filesystem>
 #include <map>
 #include <unordered_map>
@@ -123,6 +122,17 @@ namespace ProfileEvents
 
 namespace DB
 {
+
+static ClientInfo::QueryKind parseQueryKind(const String & query_kind)
+{
+    if (query_kind == "initial_query")
+        return ClientInfo::QueryKind::INITIAL_QUERY;
+    if (query_kind == "secondary_query")
+        return ClientInfo::QueryKind::SECONDARY_QUERY;
+    if (query_kind == "no_query")
+        return ClientInfo::QueryKind::NO_QUERY;
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown query kind {}", query_kind);
+}
 
 static void incrementProfileEventsBlock(Block & dst, const Block & src)
 {
@@ -396,7 +406,7 @@ void ClientBase::onData(Block & block, ASTPtr parsed_query)
     processed_rows += block.rows();
 
     /// Even if all blocks are empty, we still need to initialize the output stream to write empty resultset.
-    initBlockOutputStream(block, parsed_query);
+    initOutputFormat(block, parsed_query);
 
     /// The header block containing zero rows was used to initialize
     /// output_format, do not output it.
@@ -443,14 +453,14 @@ void ClientBase::onLogData(Block & block)
 
 void ClientBase::onTotals(Block & block, ASTPtr parsed_query)
 {
-    initBlockOutputStream(block, parsed_query);
+    initOutputFormat(block, parsed_query);
     output_format->setTotals(block);
 }
 
 
 void ClientBase::onExtremes(Block & block, ASTPtr parsed_query)
 {
-    initBlockOutputStream(block, parsed_query);
+    initOutputFormat(block, parsed_query);
     output_format->setExtremes(block);
 }
 
@@ -470,7 +480,7 @@ void ClientBase::onProfileInfo(const ProfileInfo & profile_info)
 }
 
 
-void ClientBase::initBlockOutputStream(const Block & block, ASTPtr parsed_query)
+void ClientBase::initOutputFormat(const Block & block, ASTPtr parsed_query)
 try
 {
     if (!output_format)
@@ -723,7 +733,8 @@ void ClientBase::processOrdinaryQuery(const String & query_to_execute, ASTPtr pa
                 query_processing_stage,
                 &global_context->getSettingsRef(),
                 &global_context->getClientInfo(),
-                true);
+                true,
+                [&](const Progress & progress) { onProgress(progress); });
 
             if (send_external_tables)
                 sendExternalTables(parsed_query);
@@ -1076,7 +1087,8 @@ void ClientBase::processInsertQuery(const String & query_to_execute, ASTPtr pars
         query_processing_stage,
         &global_context->getSettingsRef(),
         &global_context->getClientInfo(),
-        true);
+        true,
+        [&](const Progress & progress) { onProgress(progress); });
 
     if (send_external_tables)
         sendExternalTables(parsed_query);
@@ -1108,7 +1120,9 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
     if (!parsed_insert_query)
         return;
 
-    if (need_render_progress)
+    bool have_data_in_stdin = !is_interactive && !stdin_is_a_tty && !std_in.eof();
+
+    if (need_render_progress && have_data_in_stdin)
     {
         /// Set total_bytes_to_read for current fd.
         FileProgress file_progress(0, std_in.size());
@@ -1117,8 +1131,6 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
         /// Set callback to be called on file progress.
         progress_indication.setFileProgressCallback(global_context, true);
     }
-
-    bool have_data_in_stdin = !is_interactive && !stdin_is_a_tty && !std_in.eof();
 
     /// If data fetched from file (maybe compressed file)
     if (parsed_insert_query->infile)
@@ -1444,15 +1456,7 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
             apply_query_settings(*with_output->settings_ast);
 
         if (!connection->checkConnected())
-        {
-            auto poco_logs_level = Poco::Logger::parseLevel(config().getString("send_logs_level", "none"));
-            /// Print under WARNING also because it is used by clickhouse-test.
-            if (poco_logs_level >= Poco::Message::PRIO_WARNING)
-            {
-                fmt::print(stderr, "Connection lost. Reconnecting.\n");
-            }
             connect();
-        }
 
         ASTPtr input_function;
         if (insert && insert->select)
@@ -1509,7 +1513,9 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
 
     if (is_interactive)
     {
-        std::cout << std::endl << processed_rows << " rows in set. Elapsed: " << progress_indication.elapsedSeconds() << " sec. ";
+        std::cout << std::endl
+            << processed_rows << " row" << (processed_rows == 1 ? "" : "s")
+            << " in set. Elapsed: " << progress_indication.elapsedSeconds() << " sec. ";
         progress_indication.writeFinalProgress();
         std::cout << std::endl << std::endl;
     }
@@ -2079,156 +2085,6 @@ void ClientBase::showClientVersion()
 }
 
 
-void ClientBase::readArguments(
-    int argc,
-    char ** argv,
-    Arguments & common_arguments,
-    std::vector<Arguments> & external_tables_arguments,
-    std::vector<Arguments> & hosts_and_ports_arguments)
-{
-    /** We allow different groups of arguments:
-        * - common arguments;
-        * - arguments for any number of external tables each in form "--external args...",
-        *   where possible args are file, name, format, structure, types;
-        * - param arguments for prepared statements.
-        * Split these groups before processing.
-        */
-
-    bool in_external_group = false;
-
-    std::string prev_host_arg;
-    std::string prev_port_arg;
-
-    for (int arg_num = 1; arg_num < argc; ++arg_num)
-    {
-        std::string_view arg = argv[arg_num];
-
-        if (arg == "--external")
-        {
-            in_external_group = true;
-            external_tables_arguments.emplace_back(Arguments{""});
-        }
-        /// Options with value after equal sign.
-        else if (
-            in_external_group
-            && (arg.starts_with("--file=") || arg.starts_with("--name=") || arg.starts_with("--format=") || arg.starts_with("--structure=")
-                || arg.starts_with("--types=")))
-        {
-            external_tables_arguments.back().emplace_back(arg);
-        }
-        /// Options with value after whitespace.
-        else if (in_external_group && (arg == "--file" || arg == "--name" || arg == "--format" || arg == "--structure" || arg == "--types"))
-        {
-            if (arg_num + 1 < argc)
-            {
-                external_tables_arguments.back().emplace_back(arg);
-                ++arg_num;
-                arg = argv[arg_num];
-                external_tables_arguments.back().emplace_back(arg);
-            }
-            else
-                break;
-        }
-        else
-        {
-            in_external_group = false;
-
-            /// Parameter arg after underline.
-            if (arg.starts_with("--param_"))
-            {
-                auto param_continuation = arg.substr(strlen("--param_"));
-                auto equal_pos = param_continuation.find_first_of('=');
-
-                if (equal_pos == std::string::npos)
-                {
-                    /// param_name value
-                    ++arg_num;
-                    if (arg_num >= argc)
-                        throw Exception("Parameter requires value", ErrorCodes::BAD_ARGUMENTS);
-                    arg = argv[arg_num];
-                    query_parameters.emplace(String(param_continuation), String(arg));
-                }
-                else
-                {
-                    if (equal_pos == 0)
-                        throw Exception("Parameter name cannot be empty", ErrorCodes::BAD_ARGUMENTS);
-
-                    /// param_name=value
-                    query_parameters.emplace(param_continuation.substr(0, equal_pos), param_continuation.substr(equal_pos + 1));
-                }
-            }
-            else if (arg.starts_with("--host") || arg.starts_with("-h"))
-            {
-                std::string host_arg;
-                /// --host host
-                if (arg == "--host" || arg == "-h")
-                {
-                    ++arg_num;
-                    if (arg_num >= argc)
-                        throw Exception("Host argument requires value", ErrorCodes::BAD_ARGUMENTS);
-                    arg = argv[arg_num];
-                    host_arg = "--host=";
-                    host_arg.append(arg);
-                }
-                else
-                    host_arg = arg;
-
-                /// --port port1 --host host1
-                if (!prev_port_arg.empty())
-                {
-                    hosts_and_ports_arguments.push_back({host_arg, prev_port_arg});
-                    prev_port_arg.clear();
-                }
-                else
-                {
-                    /// --host host1 --host host2
-                    if (!prev_host_arg.empty())
-                        hosts_and_ports_arguments.push_back({prev_host_arg});
-
-                    prev_host_arg = host_arg;
-                }
-            }
-            else if (arg.starts_with("--port"))
-            {
-                auto port_arg = String{arg};
-                /// --port port
-                if (arg == "--port")
-                {
-                    port_arg.push_back('=');
-                    ++arg_num;
-                    if (arg_num >= argc)
-                        throw Exception("Port argument requires value", ErrorCodes::BAD_ARGUMENTS);
-                    arg = argv[arg_num];
-                    port_arg.append(arg);
-                }
-
-                /// --host host1 --port port1
-                if (!prev_host_arg.empty())
-                {
-                    hosts_and_ports_arguments.push_back({port_arg, prev_host_arg});
-                    prev_host_arg.clear();
-                }
-                else
-                {
-                    /// --port port1 --port port2
-                    if (!prev_port_arg.empty())
-                        hosts_and_ports_arguments.push_back({prev_port_arg});
-
-                    prev_port_arg = port_arg;
-                }
-            }
-            else if (arg == "--allow_repeated_settings")
-                allow_repeated_settings = true;
-            else
-                common_arguments.emplace_back(arg);
-        }
-    }
-    if (!prev_host_arg.empty())
-        hosts_and_ports_arguments.push_back({prev_host_arg});
-    if (!prev_port_arg.empty())
-        hosts_and_ports_arguments.push_back({prev_port_arg});
-}
-
 void ClientBase::parseAndCheckOptions(OptionsDescription & options_description, po::variables_map & options, Arguments & arguments)
 {
     if (allow_repeated_settings)
@@ -2294,6 +2150,7 @@ void ClientBase::init(int argc, char ** argv)
 
         ("query,q", po::value<std::string>(), "query")
         ("stage", po::value<std::string>()->default_value("complete"), "Request query processing up to specified stage: complete,fetch_columns,with_mergeable_state,with_mergeable_state_after_aggregation,with_mergeable_state_after_aggregation_and_limit")
+        ("query_kind", po::value<std::string>()->default_value("initial_query"), "One of initial_query/secondary_query/no_query")
         ("query_id", po::value<std::string>(), "query_id")
         ("progress", "print progress of queries execution")
 
@@ -2424,6 +2281,7 @@ void ClientBase::init(int argc, char ** argv)
         server_logs_file = options["server_logs_file"].as<std::string>();
 
     query_processing_stage = QueryProcessingStage::fromString(options["stage"].as<std::string>());
+    query_kind = parseQueryKind(options["query_kind"].as<std::string>());
     profile_events.print = options.count("print-profile-events");
     profile_events.delay_ms = options["profile-events-delay-ms"].as<UInt64>();
 

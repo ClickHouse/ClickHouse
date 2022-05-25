@@ -694,6 +694,49 @@ auto s = std::string{"Hello"};
 
 **2.** Exception specifiers from C++03 are not used.
 
+**3.** Constructs which have convenient syntactic sugar in modern C++, e.g.
+
+```
+// Traditional way without syntactic sugar
+template <typename G, typename = std::enable_if_t<std::is_same<G, F>::value, void>> // SFINAE via std::enable_if, usage of ::value
+std::pair<int, int> func(const E<G> & e) // explicitly specified return type
+{
+    if (elements.count(e)) // .count() membership test
+    {
+        // ...
+    }
+
+    elements.erase(
+        std::remove_if(
+            elements.begin(), elements.end(),
+            [&](const auto x){
+                return x == 1;
+            }),
+        elements.end()); // remove-erase idiom
+
+    return std::make_pair(1, 2); // create pair via make_pair()
+}
+
+// With syntactic sugar (C++14/17/20)
+template <typename G>
+requires std::same_v<G, F> // SFINAE via C++20 concept, usage of C++14 template alias
+auto func(const E<G> & e) // auto return type (C++14)
+{
+    if (elements.contains(e)) // C++20 .contains membership test
+    {
+        // ...
+    }
+
+    elements.erase_if(
+        elements,
+        [&](const auto x){
+            return x == 1;
+        }); // C++20 std::erase_if
+
+    return {1, 2}; // or: return std::pair(1, 2); // create pair via initialization list or value initialization (C++17)
+}
+```
+
 ## Platform {#platform}
 
 **1.** We write code for a specific platform.

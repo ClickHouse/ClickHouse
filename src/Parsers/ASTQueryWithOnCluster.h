@@ -12,11 +12,8 @@ struct WithoutOnClusterASTRewriteParams
     /// Default database from the cluster's configuration.
     String default_database;
 
-    /// 1-based index of the current shard in the cluster's configuration.
-    size_t shard_index;
-
-    /// 1-based index of the current replica in the cluster's configuration.
-    size_t replica_index;
+    /// The ID of the current host in the format.
+    String host_id;
 };
 
 
