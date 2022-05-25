@@ -21,3 +21,5 @@ select h3GetUnidirectionalEdge(stringToH3('85283473fffffff'), stringToH3('852834
 
 SELECT h3UnidirectionalEdgeIsValid(1248204388774707199) as edge;
 SELECT h3UnidirectionalEdgeIsValid(1248204388774707197) as edge;
+
+SELECT h3GetUnidirectionalEdge(stringToH3('85283473ffffff'), stringToH3('852\03477fffffff')), NULL, NULL; -- { serverError 43 }
