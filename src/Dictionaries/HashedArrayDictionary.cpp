@@ -311,8 +311,8 @@ DictionaryHierarchicalParentToChildIndexPtr HashedArrayDictionary<dictionary_key
             if (it == index_to_key.end())
                 continue;
 
-            auto parent_key = it->getMapped();
-            auto child_key = parent_keys_container[i];
+            auto child_key = it->getMapped();
+            auto parent_key = parent_keys_container[i];
             parent_to_child[parent_key].emplace_back(child_key);
         }
 
