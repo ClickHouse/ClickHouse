@@ -1,4 +1,4 @@
-# Contributing to ClickHouse
+# Contributing to ClickHousetest
 
 ClickHouse is an open project, and you can contribute to it in many ways. You can help with ideas, code, or documentation. We appreciate any efforts that help us to make the project better.
 
