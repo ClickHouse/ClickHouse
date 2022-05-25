@@ -101,6 +101,8 @@ public:
 
     std::string dumpStructure() const;
 
+    void append(const Chunk & chunk);
+
 private:
     Columns columns;
     UInt64 num_rows = 0;
