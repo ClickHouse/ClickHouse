@@ -2,6 +2,13 @@ SELECT arrayL1Norm([1, 2, 3]);
 SELECT arrayL2Norm([3., 4., 5.]);
 SELECT arrayLinfNorm([0, 0, 2]);
 
+-- Overflows
+WITH CAST([-547274980, 1790553898, 1981517754, 1908431500, 1352428565, -573412550, -552499284, 2096941042], 'Array(Int32)') AS a
+SELECT
+    arrayL1Norm(a),
+    arrayL2Norm(a),
+    arrayLinfNorm(a);
+
 DROP TABLE IF EXISTS vec1;
 DROP TABLE IF EXISTS vec1f;
 DROP TABLE IF EXISTS vec1d;

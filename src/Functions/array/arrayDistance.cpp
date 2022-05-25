@@ -145,7 +145,6 @@ public:
             case TypeIndex::Int16:
             case TypeIndex::Int32:
             case TypeIndex::Float32:
-                return std::make_shared<DataTypeFloat32>();
             case TypeIndex::UInt64:
             case TypeIndex::Int64:
             case TypeIndex::Float64:
@@ -164,9 +163,6 @@ public:
     {
         switch (result_type->getTypeId())
         {
-            case TypeIndex::Float32:
-                return executeWithResultType<Float32>(arguments, input_rows_count);
-                break;
             case TypeIndex::Float64:
                 return executeWithResultType<Float64>(arguments, input_rows_count);
                 break;
