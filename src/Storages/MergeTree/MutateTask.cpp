@@ -1106,6 +1106,8 @@ private:
 
         ctx->mutating_pipeline = QueryPipelineBuilder::getPipeline(std::move(builder));
         ctx->mutating_pipeline.setProgressCallback(ctx->progress_callback);
+        /// Is calculated inside MergeProgressCallback.
+        ctx->mutating_pipeline.disableProfileEventUpdate();
         ctx->mutating_executor = std::make_unique<PullingPipelineExecutor>(ctx->mutating_pipeline);
 
         part_merger_writer_task = std::make_unique<PartMergerWriter>(ctx);
@@ -1280,6 +1282,8 @@ private:
 
             ctx->mutating_pipeline = QueryPipelineBuilder::getPipeline(std::move(builder));
             ctx->mutating_pipeline.setProgressCallback(ctx->progress_callback);
+            /// Is calculated inside MergeProgressCallback.
+            ctx->mutating_pipeline.disableProfileEventUpdate();
             ctx->mutating_executor = std::make_unique<PullingPipelineExecutor>(ctx->mutating_pipeline);
 
             ctx->projections_to_build = std::vector<ProjectionDescriptionRawPtr>{ctx->projections_to_recalc.begin(), ctx->projections_to_recalc.end()};

@@ -1,5 +1,4 @@
 #pragma once
-#include <Processors/Executors/IReadProgressCallback.h>
 #include <Common/Stopwatch.h>
 #include <QueryPipeline/StreamLocalLimits.h>
 #include <IO/Progress.h>
@@ -10,7 +9,7 @@ namespace DB
 class QueryStatus;
 class EnabledQuota;
 
-class ReadProgressCallback final : public IReadProgressCallback
+class ReadProgressCallback
 {
 public:
     void setLimits(const StreamLocalLimits & limits_) { limits = limits_; }
@@ -20,7 +19,11 @@ public:
     void setProgressCallback(const ProgressCallback & callback) { progress_callback = callback; }
     void addTotalRowsApprox(size_t value) { total_rows_approx += value; }
 
-    bool onProgress(uint64_t read_rows, uint64_t read_bytes) final;
+    /// Skip updating profile events.
+    /// For merges in mutations it may need special logic, it's done inside ProgressCallback.
+    void disableProfileEventUpdate() { update_profile_events = false; }
+
+    bool onProgress(uint64_t read_rows, uint64_t read_bytes);
 
 private:
     StreamLocalLimits limits;
@@ -35,6 +38,8 @@ private:
     Stopwatch total_stopwatch {CLOCK_MONOTONIC_COARSE};    /// Time with waiting time.
     /// According to total_stopwatch in microseconds.
     UInt64 last_profile_events_update_time = 0;
+
+    bool update_profile_events = true;
 };
 
 }

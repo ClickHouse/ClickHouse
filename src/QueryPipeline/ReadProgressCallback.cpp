@@ -122,8 +122,11 @@ bool ReadProgressCallback::onProgress(uint64_t read_rows, uint64_t read_bytes)
             quota->used({QuotaType::READ_ROWS, value.read_rows}, {QuotaType::READ_BYTES, value.read_bytes});
     }
 
-    ProfileEvents::increment(ProfileEvents::SelectedRows, value.read_rows);
-    ProfileEvents::increment(ProfileEvents::SelectedBytes, value.read_bytes);
+    if (update_profile_events)
+    {
+        ProfileEvents::increment(ProfileEvents::SelectedRows, value.read_rows);
+        ProfileEvents::increment(ProfileEvents::SelectedBytes, value.read_bytes);
+    }
 
     return true;
 }

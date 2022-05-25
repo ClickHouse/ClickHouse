@@ -29,6 +29,7 @@ class IOutputFormat;
 class SinkToStorage;
 class ISource;
 class ISink;
+class ReadProgressCallback;
 
 struct ColumnWithTypeAndName;
 using ColumnsWithTypeAndName = std::vector<ColumnWithTypeAndName>;
@@ -110,13 +111,17 @@ public:
     /// Existing resources are not released here, see move ctor for QueryPlanResourceHolder.
     void addResources(QueryPlanResourceHolder holder) { resources = std::move(holder); }
 
+    /// Skip updating profile events.
+    /// For merges in mutations it may need special logic, it's done inside ProgressCallback.
+    void disableProfileEventUpdate() { update_profile_events = false; }
+
+    /// Create progress callback from limits and quotas.
+    std::unique_ptr<ReadProgressCallback> getReadProgressCallback() const;
+
     /// Add processors and resources from other pipeline. Other pipeline should be completed.
     void addCompletedPipeline(QueryPipeline other);
 
     const Processors & getProcessors() const { return processors; }
-
-    /// Convert pulling pipeline to pipe. Drops limits, quota, progress callback.
-    //static Pipe toPipe(QueryPipeline pipeline, QueryPlanResourceHolder & out_resources);
 
     /// For pulling pipeline, convert structure to expected.
     /// Trash, need to remove later.
@@ -131,6 +136,7 @@ private:
     StreamLocalLimits local_limits;
     SizeLimits leaf_limits;
     std::shared_ptr<const EnabledQuota> quota;
+    bool update_profile_events = true;
 
     Processors processors;
 

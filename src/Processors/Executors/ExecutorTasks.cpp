@@ -128,7 +128,7 @@ void ExecutorTasks::pushTasks(Queue & queue, Queue & async_queue, ExecutionThrea
     }
 }
 
-void ExecutorTasks::init(size_t num_threads_, bool profile_processors, IReadProgressCallback * callback)
+void ExecutorTasks::init(size_t num_threads_, bool profile_processors, ReadProgressCallback * callback)
 {
     num_threads = num_threads_;
     threads_queue.init(num_threads);

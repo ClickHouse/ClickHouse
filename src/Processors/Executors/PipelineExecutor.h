@@ -2,7 +2,6 @@
 
 #include <Processors/IProcessor.h>
 #include <Processors/Executors/ExecutorTasks.h>
-#include <Processors/Executors/IReadProgressCallback.h>
 #include <Common/EventCounter.h>
 #include <Common/logger_useful.h>
 
@@ -16,6 +15,9 @@ namespace DB
 class QueryStatus;
 class ExecutingGraph;
 using ExecutingGraphPtr = std::unique_ptr<ExecutingGraph>;
+
+class ReadProgressCallback;
+using ReadProgressCallbackPtr = std::unique_ptr<ReadProgressCallback>;
 
 /// Executes query pipeline.
 class PipelineExecutor
