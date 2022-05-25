@@ -338,12 +338,11 @@ void KeeperStorage::UncommittedState::rollback(int64_t rollback_zxid)
 {
     // we can only rollback the last zxid (if there is any)
     // if there is a delta with a larger zxid, we have invalid state
-    const auto last_zxid = deltas.back().zxid;
-    if (!deltas.empty() && last_zxid > rollback_zxid)
+    if (!deltas.empty() && deltas.back().zxid > rollback_zxid)
         throw DB::Exception(
             DB::ErrorCodes::LOGICAL_ERROR,
             "Invalid state of deltas found while trying to rollback request. Last ZXID ({}) is larger than the requested ZXID ({})",
-            last_zxid,
+            deltas.back().zxid,
             rollback_zxid);
 
     // we need to undo ephemeral mapping modifications
