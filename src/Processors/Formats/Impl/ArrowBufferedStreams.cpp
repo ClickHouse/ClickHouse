@@ -64,8 +64,6 @@ arrow::Result<int64_t> RandomAccessFileFromSeekableReadBuffer::GetSize()
     {
         if (isBufferWithFileSize(in))
             file_size = getFileSizeFromReadBuffer(in);
-        if (!file_size)
-            throw Exception(ErrorCodes::UNKNOWN_FILE_SIZE, "Cannot find out size of file");
     }
     return arrow::Result<int64_t>(*file_size);
 }
