@@ -15,10 +15,10 @@
 #include <Processors/Formats/IRowInputFormat.h>
 #include <Processors/Formats/ISchemaReader.h>
 
-#include <avro/DataFile.hh>
-#include <avro/Decoder.hh>
-#include <avro/Schema.hh>
-#include <avro/ValidSchema.hh>
+#include <DataFile.hh>
+#include <Decoder.hh>
+#include <Schema.hh>
+#include <ValidSchema.hh>
 
 
 namespace DB
