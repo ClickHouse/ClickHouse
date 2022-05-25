@@ -41,7 +41,6 @@
 #include <Processors/Transforms/SquashingChunksTransform.h>
 #include <Processors/Transforms/MaterializingTransform.h>
 #include <Processors/QueryPlan/QueryPlan.h>
-#include <Processors/QueryPlan/SettingQuotaAndLimitsStep.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
@@ -1092,20 +1091,20 @@ void StorageWindowView::threadFuncFireEvent()
     }
 }
 
-Pipe StorageWindowView::read(
-    const Names & column_names,
-    const StorageSnapshotPtr & storage_snapshot,
-    SelectQueryInfo & query_info,
-    ContextPtr local_context,
-    QueryProcessingStage::Enum processed_stage,
-    const size_t max_block_size,
-    const unsigned num_streams)
-{
-    QueryPlan plan;
-    read(plan, column_names, storage_snapshot, query_info, local_context, processed_stage, max_block_size, num_streams);
-    return plan.convertToPipe(
-        QueryPlanOptimizationSettings::fromContext(local_context), BuildQueryPipelineSettings::fromContext(local_context));
-}
+// Pipe StorageWindowView::read(
+//     const Names & column_names,
+//     const StorageSnapshotPtr & storage_snapshot,
+//     SelectQueryInfo & query_info,
+//     ContextPtr local_context,
+//     QueryProcessingStage::Enum processed_stage,
+//     const size_t max_block_size,
+//     const unsigned num_streams)
+// {
+//     QueryPlan plan;
+//     read(plan, column_names, storage_snapshot, query_info, local_context, processed_stage, max_block_size, num_streams);
+//     return plan.convertToPipe(
+//         QueryPlanOptimizationSettings::fromContext(local_context), BuildQueryPipelineSettings::fromContext(local_context));
+// }
 
 void StorageWindowView::read(
     QueryPlan & query_plan,
@@ -1144,21 +1143,8 @@ void StorageWindowView::read(
             query_plan.addStep(std::move(converting_step));
         }
 
-        StreamLocalLimits limits;
-        SizeLimits leaf_limits;
-
-        /// Add table lock for target table.
-        auto adding_limits_and_quota = std::make_unique<SettingQuotaAndLimitsStep>(
-                query_plan.getCurrentDataStream(),
-                storage,
-                std::move(lock),
-                limits,
-                leaf_limits,
-                nullptr,
-                nullptr);
-
-        adding_limits_and_quota->setStepDescription("Lock target table for WindowView");
-        query_plan.addStep(std::move(adding_limits_and_quota));
+        query_plan.addStorageHolder(storage);
+        query_plan.addTableLock(std::move(lock));
     }
 }
 
