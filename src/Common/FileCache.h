@@ -7,6 +7,7 @@
 #include <mutex>
 #include <unordered_map>
 #include <unordered_set>
+#include <boost/functional/hash.hpp>
 #include <boost/noncopyable.hpp>
 #include <map>
 
@@ -225,7 +226,16 @@ private:
     using CachedFiles = std::unordered_map<Key, FileSegmentsByOffset>;
 
     using AccessKeyAndOffset = std::pair<Key, size_t>;
-    using AccessRecord = std::map<AccessKeyAndOffset, LRUQueue::Iterator>;
+
+    struct KeyAndOffsetHash
+    {
+        std::size_t operator()(const AccessKeyAndOffset & key) const
+        {
+            return std::hash<UInt128>()(key.first) ^ std::hash<UInt64>()(key.second);
+        }
+    };
+
+    using AccessRecord = std::unordered_map<AccessKeyAndOffset, LRUQueue::Iterator, KeyAndOffsetHash>;
 
     CachedFiles files;
     LRUQueue queue;
