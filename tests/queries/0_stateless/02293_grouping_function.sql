@@ -9,6 +9,7 @@ GROUP BY
     )
 ORDER BY number, gr; -- { serverError BAD_ARGUMENTS }
 
+-- { echoOn }
 SELECT
     number,
     grouping(number, number % 2) AS gr

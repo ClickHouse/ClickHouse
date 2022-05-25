@@ -7,6 +7,7 @@ GROUP BY
     number % 2
 ORDER BY number; -- { serverError BAD_ARGUMENTS }
 
+-- { echoOn }
 SELECT
     number,
     grouping(number, number % 2) = 3
