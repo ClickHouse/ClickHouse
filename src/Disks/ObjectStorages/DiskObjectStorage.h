@@ -172,6 +172,10 @@ public:
     void restoreMetadataIfNeeded(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, ContextPtr context);
 
     void onFreeze(const String & path) override;
+
+    void syncRevision(UInt64 revision) override;
+
+    UInt64 getRevision() const override;
 private:
     const String name;
     const String remote_fs_root_path;

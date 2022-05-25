@@ -239,7 +239,11 @@ private:
 };
 
 StorageS3Source::DisclosedGlobIterator::DisclosedGlobIterator(
-    const Aws::S3::S3Client & client_, const S3::URI & globbed_uri_, ASTPtr query, const Block & virtual_header, ContextPtr context)
+    const Aws::S3::S3Client & client_,
+    const S3::URI & globbed_uri_,
+    ASTPtr query,
+    const Block & virtual_header,
+    ContextPtr context)
     : pimpl(std::make_shared<StorageS3Source::DisclosedGlobIterator::Impl>(client_, globbed_uri_, query, virtual_header, context))
 {
 }

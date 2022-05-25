@@ -622,6 +622,17 @@ void DiskObjectStorage::restoreMetadataIfNeeded(const Poco::Util::AbstractConfig
     }
 }
 
+void DiskObjectStorage::syncRevision(UInt64 revision)
+{
+    metadata_helper->syncRevision(revision);
+}
+
+UInt64 DiskObjectStorage::getRevision() const
+{
+    return metadata_helper->getRevision();
+}
+
+
 DiskPtr DiskObjectStorageReservation::getDisk(size_t i) const
 {
     if (i != 0)

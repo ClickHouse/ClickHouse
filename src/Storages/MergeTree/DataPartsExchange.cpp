@@ -518,7 +518,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
     if (!disk)
         disk = reservation->getDisk();
 
-    UInt64 revision = parse<UInt64>(in.getResponseCookie("disk_revision", "0"));
+    UInt64 revision = parse<UInt64>(in->getResponseCookie("disk_revision", "0"));
     if (revision)
         disk->syncRevision(revision);
 
