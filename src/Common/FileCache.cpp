@@ -935,7 +935,7 @@ LRUFileCache::LRUQueue::Iterator LRUFileCache::LRUQueue::add(
     const IFileCache::Key & key, size_t offset, size_t size, std::lock_guard<std::mutex> & /* cache_lock */)
 {
 #ifndef NDEBUG
-    for (const auto & [entry_key, entry_offset, _, _] : queue)
+    for (const auto & [entry_key, entry_offset, _, __] : queue)
     {
         if (entry_key == key && entry_offset == offset)
             throw Exception(
