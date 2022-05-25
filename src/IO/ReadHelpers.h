@@ -931,12 +931,29 @@ inline ReturnType readDateTimeTextImpl(DateTime64 & datetime64, UInt32 scale, Re
             ++buf.position();
 
         /// Keep sign of fractional part the same with whole part if datetime64 is negative
-        /// 1965-12-12 12:12:12.123 => whole = -127914468, fraction = 123(sign>0) -> new whole = -127914467, new fraction = 877(sign<0)
+        /// Case1:
+        ///     1965-12-12 12:12:12.123
+        ///     => whole = -127914468, fractional = 123(coefficient>0)
+        ///     => new whole = -127914467, new fractional = 877(coefficient<0)
+        ///
+        /// Case2:
+        ///     1969-12-31 23:59:59.123
+        ///     => whole = -1, fractional = 123(coefficient>0)
+        ///     => new whole = 0, new fractional = -877(coefficient>0)
         if (components.whole < 0 && components.fractional != 0)
         {
             const auto scale_multiplier = DecimalUtils::scaleMultiplier<DateTime64::NativeType>(scale);
             ++components.whole;
-            components.fractional = scale_multiplier - components.fractional;
+            if (components.whole)
+            {
+                /// whole keep the sign, fractional should be non-negative
+                components.fractional = scale_multiplier - components.fractional;
+            }
+            else
+            {
+                /// when whole is zero, fractional should keep the sign
+                components.fractional = components.fractional - scale_multiplier;
+            }
         }
     }
     /// 9908870400 is time_t value for 2184-01-01 UTC (a bit over the last year supported by DateTime64)
@@ -1425,8 +1442,8 @@ struct PcgDeserializer
     }
 };
 
-void readQuotedFieldIntoString(String & s, ReadBuffer & buf);
+void readQuotedField(String & s, ReadBuffer & buf);
 
-void readJSONFieldIntoString(String & s, ReadBuffer & buf);
+void readJSONField(String & s, ReadBuffer & buf);
 
 }

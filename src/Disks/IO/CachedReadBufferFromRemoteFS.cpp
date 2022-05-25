@@ -282,6 +282,20 @@ SeekableReadBufferPtr CachedReadBufferFromRemoteFS::getReadBufferForFileSegment(
             }
             case FileSegment::State::PARTIALLY_DOWNLOADED:
             {
+                if (file_segment->getDownloadOffset() > file_offset_of_buffer_end)
+                {
+                    ///                      segment{k} state: PARTIALLY_DOWNLOADED
+                    /// cache:           [______|___________
+                    ///                         ^
+                    ///                         download_offset (in progress)
+                    /// requested_range:    [__________]
+                    ///                     ^
+                    ///                     file_offset_of_buffer_end
+
+                    read_type = ReadType::CACHED;
+                    return getCacheReadBuffer(range.left);
+                }
+
                 auto downloader_id = file_segment->getOrSetDownloader();
                 if (downloader_id == file_segment->getCallerId())
                 {

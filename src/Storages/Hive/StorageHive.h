@@ -77,8 +77,6 @@ private:
     using HiveTableMetadataPtr = HiveMetastoreClient::HiveTableMetadataPtr;
     using PruneLevel = HivePruneLevel;
 
-    void getActualColumnsToRead(Block & sample_block, const Block & header_block, const NameSet & partition_columns) const;
-
     static ASTPtr extractKeyExpressionList(const ASTPtr & node);
     void lazyInitialize();
 

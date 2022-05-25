@@ -1176,7 +1176,7 @@ void addFoundRowAll(
             ++current_offset;
         }
     }
-};
+}
 
 template <bool add_missing, bool need_offset>
 void addNotFoundRow(AddedColumns & added [[maybe_unused]], IColumn::Offset & current_offset [[maybe_unused]])
