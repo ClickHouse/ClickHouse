@@ -107,6 +107,13 @@ size_t FileSegment::getDownloadedSize(std::lock_guard<std::mutex> & /* segment_l
     return downloaded_size;
 }
 
+void FileSegment::resizeToDownloadedSize(
+    std::lock_guard<std::mutex> & /* segment_lock */, std::lock_guard<std::mutex> & /* cache_lock */)
+{
+    LOG_TEST(log, "Resize cell {} to downloaded: {}", range().toString(), downloaded_size);
+    segment_range = Range(segment_range.left, segment_range.left + downloaded_size - 1);
+}
+
 String FileSegment::getCallerId()
 {
     if (!CurrentThread::isInitialized()
@@ -420,7 +427,7 @@ void FileSegment::completeBatchAndResetDownloader()
     cv.notify_all();
 }
 
-void FileSegment::complete(State state)
+void FileSegment::complete(State state, bool auto_resize)
 {
     std::lock_guard cache_lock(cache->mutex);
     std::lock_guard segment_lock(mutex);
@@ -445,7 +452,21 @@ void FileSegment::complete(State state)
     }
 
     if (state == State::DOWNLOADED)
+    {
+        if (auto_resize && downloaded_size != range().size())
+        {
+            resizeToDownloadedSize(segment_lock, cache_lock);
+        }
+
+        /// Update states and finalize cache write buffer.
         setDownloaded(segment_lock);
+
+        if (downloaded_size != range().size())
+            throw Exception(
+                ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR,
+                "Cannot complete file segment as DOWNLOADED, because downloaded size ({}) does not match expected size ({})",
+                downloaded_size, range().size());
+    }
 
     download_state = state;
 
@@ -539,8 +560,7 @@ void FileSegment::completeImpl(std::lock_guard<std::mutex> & cache_lock, std::lo
             * it only when nobody needs it.
             */
             download_state = State::PARTIALLY_DOWNLOADED_NO_CONTINUATION;
-            LOG_TEST(log, "Resize cell {} to downloaded: {}", range().toString(), current_downloaded_size);
-            cache->reduceSizeToDownloaded(key(), offset(), cache_lock, segment_lock);
+            resizeToDownloadedSize(segment_lock, cache_lock);
         }
 
         markAsDetached(segment_lock);
@@ -819,7 +839,7 @@ bool FileSegmentRangeWriter::write(char * data, size_t size, size_t offset, bool
 
         if ((*current_file_segment_it)->getAvailableSize() == 0)
         {
-            (*current_file_segment_it)->complete(FileSegment::State::DOWNLOADED);
+            (*current_file_segment_it)->complete(FileSegment::State::DOWNLOADED, true);
             on_complete_file_segment_func(*current_file_segment_it);
             current_file_segment_it = allocateFileSegment(current_file_segment_write_offset, is_persistent);
         }
@@ -873,7 +893,7 @@ void FileSegmentRangeWriter::finalize()
 
     if ((*current_file_segment_it)->getDownloadedSize() > 0)
     {
-        (*current_file_segment_it)->complete(FileSegment::State::DOWNLOADED);
+        (*current_file_segment_it)->complete(FileSegment::State::DOWNLOADED, true);
         on_complete_file_segment_func(*current_file_segment_it);
     }
     else

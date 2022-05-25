@@ -29,6 +29,8 @@ public:
 
     bool isIntegratedWithFilesystemCache() const override { return impl->isIntegratedWithFilesystemCache(); }
 
+    size_t getFileSize() override;
+
 protected:
     std::unique_ptr<SeekableReadBuffer> impl;
     String file_name;

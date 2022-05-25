@@ -133,7 +133,7 @@ public:
 
     void completeBatchAndResetDownloader();
 
-    void complete(State state);
+    void complete(State state, bool auto_resize = false);
 
     String getInfoForLog() const;
 
@@ -166,6 +166,7 @@ private:
     bool isDetached(std::lock_guard<std::mutex> & /* segment_lock */) const { return is_detached; }
     void markAsDetached(std::lock_guard<std::mutex> & segment_lock);
     [[noreturn]] void throwIfDetachedUnlocked(std::lock_guard<std::mutex> & segment_lock) const;
+    void resizeToDownloadedSize(std::lock_guard<std::mutex> & segment_lock, std::lock_guard<std::mutex> & cache_lock);
 
     void assertDetachedStatus(std::lock_guard<std::mutex> & segment_lock) const;
     void assertNotDetached(std::lock_guard<std::mutex> & segment_lock) const;
@@ -191,7 +192,7 @@ private:
 
     void resetDownloaderImpl(std::lock_guard<std::mutex> & segment_lock);
 
-    const Range segment_range;
+    Range segment_range;
 
     State download_state;
     String downloader_id;

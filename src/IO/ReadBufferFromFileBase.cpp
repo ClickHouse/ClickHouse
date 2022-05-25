@@ -3,6 +3,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
+
 ReadBufferFromFileBase::ReadBufferFromFileBase() : BufferWithOwnMemory<SeekableReadBuffer>(0)
 {
 }
@@ -18,5 +23,12 @@ ReadBufferFromFileBase::ReadBufferFromFileBase(
 }
 
 ReadBufferFromFileBase::~ReadBufferFromFileBase() = default;
+
+size_t ReadBufferFromFileBase::getFileSize()
+{
+    if (file_size)
+        return *file_size;
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "getFileSize() is not implemented for read buffer");
+}
 
 }
