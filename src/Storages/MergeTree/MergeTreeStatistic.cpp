@@ -188,6 +188,33 @@ void MergeTreeStatistics::setDistributionStatistics(IDistributionStatisticsPtr &
     column_distributions = std::move(merge_tree_stat);
 }
 
+size_t MergeTreeStatistics::getSizeInMemory() const
+{
+    return column_distributions->getSizeInMemory();
+}
+
+size_t MergeTreeDistributionStatistics::getSizeInMemory() const
+{
+    size_t sum = 0;
+    for (const auto & [_, statistic] : column_to_stats)
+    {
+        sum += statistic->getSizeInMemory();
+    }
+    return sum;
+}
+
+size_t MergeTreeDistributionStatistics::getSizeInMemoryByName(const String& name) const
+{
+    size_t sum = 0;
+    for (const auto & [_, statistic] : column_to_stats)
+    {
+        if (statistic->name() == name) {
+            sum += statistic->getSizeInMemory();
+        }
+    }
+    return sum;
+}
+
 void MergeTreeDistributionStatistics::serializeBinary(const String & name, WriteBuffer & ostr) const
 {
     const auto & size_type = DataTypePtr(std::make_shared<DataTypeUInt64>());
@@ -199,12 +226,12 @@ void MergeTreeDistributionStatistics::serializeBinary(const String & name, Write
         std::count_if(
             std::begin(column_to_stats), std::end(column_to_stats),
             [&name](const auto & elem) { return name == elem.second->name(); }), ostr);
-    for (const auto & [column, stat] : column_to_stats)
+    for (const auto & [column, statistic] : column_to_stats)
     {
-        if (stat->name() == name)
+        if (statistic->name() == name)
         {
             str_serialization->serializeBinary(column, ostr);
-            stat->serializeBinary(ostr);
+            statistic->serializeBinary(ostr);
         }
     }
 }

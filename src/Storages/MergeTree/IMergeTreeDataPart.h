@@ -19,6 +19,7 @@
 #include <Storages/MergeTree/IPartMetadataManager.h>
 
 #include <shared_mutex>
+#include <unordered_map>
 
 namespace zkutil
 {
@@ -61,6 +62,7 @@ public:
     using NameToNumber = std::unordered_map<std::string, size_t>;
 
     using IndexSizeByName = std::unordered_map<std::string, ColumnSize>;
+    using StatisticSizeByName = std::unordered_map<std::string, StatisticSize>;
 
     using Type = MergeTreeDataPartType;
 
@@ -119,6 +121,10 @@ public:
     /// NOTE: Returns zeros if secondary indexes are not found in checksums.
     /// Otherwise return information about secondary index size on disk.
     IndexSize getSecondaryIndexSize(const String & secondary_index_name) const;
+
+    /// NOTE: Returns zeros if statistics are not found in checksums.
+    /// Otherwise return information about statistic size on disk.
+    StatisticSize getStatisticSize(const String & statistic_name) const;
 
     /// Return information about column size on disk for all columns in part
     ColumnSize getTotalColumnsSize() const { return total_columns_size; }
@@ -384,7 +390,7 @@ public:
     static UInt64 calculateTotalSizeOnDisk(const DiskPtr & disk_, const String & from);
 
     /// Calculate column and secondary indices sizes on disk.
-    void calculateColumnsAndSecondaryIndicesSizesOnDisk();
+    void calculateColumnsAndSecondaryIndicesAndStatisticsSizesOnDisk();
 
     String getRelativePathForPrefix(const String & prefix, bool detached = false) const;
 
@@ -495,6 +501,7 @@ protected:
     ColumnSize total_secondary_indices_size;
 
     IndexSizeByName secondary_index_sizes;
+    StatisticSizeByName statistic_sizes;
 
     /// Total size on disk, not only columns. May not contain size of
     /// checksums.txt and columns.txt. 0 - if not counted;
@@ -590,6 +597,8 @@ private:
     void calculateColumnsSizesOnDisk();
 
     void calculateSecondaryIndicesSizesOnDisk();
+
+    void calculateStatisticsSizesOnDisk();
 
     void appendFilesOfPartitionAndMinMaxIndex(Strings & files) const;
 

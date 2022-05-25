@@ -176,7 +176,7 @@ MergedBlockOutputStream::Finalizer MergedBlockOutputStream::finalizePartAsync(
     new_part->checksums = checksums;
     new_part->setBytesOnDisk(checksums.getTotalSizeOnDisk());
     new_part->index_granularity = writer->getIndexGranularity();
-    new_part->calculateColumnsAndSecondaryIndicesSizesOnDisk();
+    new_part->calculateColumnsAndSecondaryIndicesAndStatisticsSizesOnDisk();
 
     if (default_codec != nullptr)
         new_part->default_codec = default_codec;

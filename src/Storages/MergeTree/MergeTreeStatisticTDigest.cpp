@@ -184,6 +184,11 @@ double MergeTreeColumnDistributionStatisticTDigest::estimateProbability(const Fi
         return 1.0 - 0.0;
 }
 
+size_t MergeTreeColumnDistributionStatisticTDigest::getSizeInMemory() const
+{
+    return sketch.getAllocatedBytes();
+}
+
 MergeTreeColumnDistributionStatisticCollectorTDigest::MergeTreeColumnDistributionStatisticCollectorTDigest(
     const String & name_,
     const String & column_name_)

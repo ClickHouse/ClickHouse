@@ -100,7 +100,7 @@ protected:
                     continue;
                 const auto statistics = metadata_snapshot->getStatistics();
 
-                //auto statistics_sizes = table->getStatisticsSizes();
+                const auto statistics_sizes = table->getStatisticSizes();
                 for (const auto & statistic : statistics)
                 {
                     ++rows_count;
@@ -130,19 +130,19 @@ protected:
                     if (column_mask[src_stat++])
                         res_columns[res_stat++]->insert(statistic.type);
 
-                    //auto & secondary_index_size = secondary_index_sizes[index.name];
+                    const auto & secondary_index_size = statistics_sizes.at(statistic.name);
 
                     /// 'in ram bytes' column
                     if (column_mask[src_stat++])
-                        res_columns[res_stat++]->insert(0);
+                        res_columns[res_stat++]->insert(secondary_index_size.data_ram);
 
                     // 'compressed bytes' column
                     if (column_mask[src_stat++])
-                        res_columns[res_stat++]->insert(0);
+                        res_columns[res_stat++]->insert(secondary_index_size.data_compressed);
 
                     // 'uncompressed bytes' column
                     if (column_mask[src_stat++])
-                        res_columns[res_stat++]->insert(0);
+                        res_columns[res_stat++]->insert(secondary_index_size.data_uncompressed);
                 }
             }
         }

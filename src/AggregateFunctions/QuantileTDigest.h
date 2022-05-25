@@ -204,6 +204,11 @@ class QuantileTDigest
     }
 
 public:
+    size_t getAllocatedBytes() const
+    {
+        return sizeof(QuantileTDigest) + centroids.allocated_bytes();
+    }
+
     /** Performs compression of accumulated centroids
       * When merging, the invariant is retained to the maximum size of each
       * centroid that does not exceed `4 q (1 - q) \ delta N`.

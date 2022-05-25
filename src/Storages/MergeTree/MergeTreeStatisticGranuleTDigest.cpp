@@ -188,6 +188,11 @@ double MergeTreeGranuleDistributionStatisticTDigest::estimateProbability(const F
         return 1.0 - 0.0;
 }
 
+size_t MergeTreeGranuleDistributionStatisticTDigest::getSizeInMemory() const
+{
+    return min_sketch.getAllocatedBytes() + max_sketch.getAllocatedBytes();
+}
+
 MergeTreeGranuleDistributionStatisticCollectorTDigest::MergeTreeGranuleDistributionStatisticCollectorTDigest(
     const String & name_,
     const String & column_name_)

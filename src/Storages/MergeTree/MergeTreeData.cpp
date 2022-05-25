@@ -57,6 +57,7 @@
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/VirtualColumnUtils.h>
 #include "Functions/DateTimeTransforms.h"
+#include "Storages/StatisticsDescription.h"
 #include <AggregateFunctions/AggregateFunctionCount.h>
 #include <Common/escapeForFileName.h>
 #include <Common/Exception.h>
@@ -1010,10 +1011,7 @@ void MergeTreeData::updateStatisticsByPartition()
     for (const auto & part : parts)
     {
         const String & partition_id = part->info.partition_id;
-        LOG_DEBUG(log, "Update stats by partitions : partition_id={}", partition_id);
         const auto loaded_stats = part->loadStats();
-        LOG_DEBUG(log, "Update stats by partitions : partition_id={} {} {}",
-            partition_id, partition_to_stats_new.contains(partition_id), loaded_stats == nullptr);
         if (loaded_stats != nullptr)
         {
             if (partition_to_stats_new.contains(partition_id))
@@ -1023,13 +1021,28 @@ void MergeTreeData::updateStatisticsByPartition()
         }
     }
 
+    StatisticSizeByName statistic_sizes_in_memory;
     for (const auto & [partition, stat] : partition_to_stats_new)
     {
         LOG_DEBUG(log, "Update stats by partitions : partition={} emp={}", partition, stat->empty());
+        if (!stat->empty()) {
+            auto distribution_statistics = stat->getDistributionStatistics();
+            for (const auto& statistic_name : distribution_statistics->getStatisticsNames()) {
+                statistic_sizes_in_memory[statistic_name].data_ram += distribution_statistics->getSizeInMemoryByName(statistic_name);
+            }
+        }
     }
 
-    std::unique_lock lock(partition_to_stats_mutex);
-    std::swap(partition_to_stats, partition_to_stats_new);
+    {
+        std::unique_lock lock(partition_to_stats_mutex);
+        std::swap(partition_to_stats, partition_to_stats_new);
+    }
+    {
+        auto lock = lockParts();
+        for (const auto& [name, size] : statistic_sizes_in_memory) {
+            statistics_sizes[name].data_ram += size.data_ram;
+        }
+    }
 }
 
 String MergeTreeData::MergingParams::getModeName() const
@@ -3718,6 +3731,7 @@ static void loadPartAndFixMetadataImpl(MergeTreeData::MutableDataPartPtr part)
     disk->removeFileIfExists(fs::path(full_part_path) / IMergeTreeDataPart::TXN_VERSION_METADATA_FILE_NAME);
 }
 
+//TODO: add stats
 void MergeTreeData::calculateColumnAndSecondaryIndexSizesImpl()
 {
     column_sizes.clear();
@@ -3743,6 +3757,13 @@ void MergeTreeData::addPartContributionToColumnAndSecondaryIndexSizes(const Data
         IndexSize & total_secondary_index_size = secondary_index_sizes[index.name];
         IndexSize part_index_size = part->getSecondaryIndexSize(index.name);
         total_secondary_index_size.add(part_index_size);
+    }
+
+    auto statistics_descriptions = getInMemoryMetadataPtr()->getStatistics();
+    for (const auto & statistic : statistics_descriptions) {
+        auto& statistic_size = statistics_sizes[statistic.name];
+        const auto part_statistic_size = part->getStatisticSize(statistic.name);
+        statistic_size.add(part_statistic_size);
     }
 }
 
@@ -3785,6 +3806,24 @@ void MergeTreeData::removePartContributionToColumnAndSecondaryIndexSizes(const D
         log_subtract(total_secondary_index_size.data_compressed, part_secondary_index_size.data_compressed, ".data_compressed");
         log_subtract(total_secondary_index_size.data_uncompressed, part_secondary_index_size.data_uncompressed, ".data_uncompressed");
         log_subtract(total_secondary_index_size.marks, part_secondary_index_size.marks, ".marks");
+    }
+
+    auto statistics_descriptions = getInMemoryMetadataPtr()->getStatistics();
+    for (const auto & statistic : statistics_descriptions) {
+        auto& statistic_size = statistics_sizes[statistic.name];
+        const auto part_statistic_size = part->getStatisticSize(statistic.name);
+
+        auto log_subtract = [&](size_t & from, size_t value, const char * field)
+        {
+            if (value > from)
+                LOG_ERROR(log, "Possibly incorrect statistic size subtraction: {} - {} = {}, index: {}, field: {}",
+                    from, value, from - value, statistic.name, field);
+
+            from -= value;
+        };
+
+        log_subtract(statistic_size.data_compressed, part_statistic_size.data_compressed, ".data_compressed");
+        log_subtract(statistic_size.data_uncompressed, part_statistic_size.data_uncompressed, ".data_uncompressed");
     }
 }
 

@@ -43,6 +43,8 @@ public:
     double estimateQuantileUpper(const Field& value) const override;
     double estimateProbability(const Field& lower, const Field& upper) const override;
 
+    size_t getSizeInMemory() const override;
+
 private:
     const String stat_name;
     const String column_name;

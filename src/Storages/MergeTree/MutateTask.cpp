@@ -709,8 +709,7 @@ void finalizeMutatedPart(
     new_data_part->setBytesOnDisk(
         MergeTreeData::DataPart::calculateTotalSizeOnDisk(new_data_part->volume->getDisk(), part_path));
     new_data_part->default_codec = codec;
-    new_data_part->calculateColumnsAndSecondaryIndicesSizesOnDisk();
-    // TODO: same for statistics
+    new_data_part->calculateColumnsAndSecondaryIndicesAndStatisticsSizesOnDisk();
 }
 
 }

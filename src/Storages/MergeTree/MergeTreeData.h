@@ -765,6 +765,12 @@ public:
         return secondary_index_sizes;
     }
 
+    StatisticSizeByName getStatisticSizes() const override
+    {
+        auto lock = lockParts();
+        return statistics_sizes;
+    }
+
     /// For ATTACH/DETACH/DROP PARTITION.
     String getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr context) const;
     std::unordered_set<String> getPartitionIDsFromQuery(const ASTs & asts, ContextPtr context) const;
@@ -1023,6 +1029,9 @@ protected:
 
     /// Current secondary index sizes in compressed and uncompressed form.
     IndexSizeByName secondary_index_sizes;
+
+    /// Current secondary index sizes in ram, compressed and uncompressed form.
+    StatisticSizeByName statistics_sizes;
 
     /// Engine-specific methods
     BrokenPartCallback broken_part_callback;

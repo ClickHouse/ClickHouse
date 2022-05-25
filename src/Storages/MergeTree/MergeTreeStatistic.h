@@ -61,6 +61,9 @@ public:
     std::optional<double> estimateProbability(const String & column, const Field & lower, const Field & upper) const override;
     void add(const String & column, const IDistributionStatisticPtr & stat) override;
 
+    size_t getSizeInMemory() const override;
+    size_t getSizeInMemoryByName(const String& name) const override;
+
 private:
     std::unordered_map<String, IDistributionStatisticPtr> column_to_stats;
 };
@@ -81,6 +84,8 @@ public:
 
     void setDistributionStatistics(IDistributionStatisticsPtr && stat) override;
     IConstDistributionStatisticsPtr getDistributionStatistics() const override;
+
+    size_t getSizeInMemory() const override;
 
 private:
     MergeTreeDistributionStatisticsPtr column_distributions;

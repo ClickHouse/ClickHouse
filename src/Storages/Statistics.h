@@ -47,6 +47,8 @@ public:
     // Checks if statistic has right type
     virtual bool validateTypeBinary(ReadBuffer & istr) const = 0;
     virtual void deserializeBinary(ReadBuffer & istr) = 0;
+
+    virtual size_t getSizeInMemory() const = 0;
 };
 
 using IStatisticPtr = std::shared_ptr<IStatistic>;
@@ -81,6 +83,9 @@ public:
     // Estimates probability that lower < item  < right. 
     virtual std::optional<double> estimateProbability(const String & column, const Field & lower, const Field & upper) const = 0;
     virtual void add(const String & name, const IDistributionStatisticPtr & stat) = 0;
+
+    virtual size_t getSizeInMemory() const = 0;
+    virtual size_t getSizeInMemoryByName(const String& name) const = 0;
 };
 
 using IDistributionStatisticsPtr = std::shared_ptr<IDistributionStatistics>;
@@ -101,6 +106,8 @@ public:
 
     virtual void setDistributionStatistics(IDistributionStatisticsPtr && stat) = 0;
     virtual IConstDistributionStatisticsPtr getDistributionStatistics() const = 0;
+
+    virtual size_t getSizeInMemory() const = 0;
 };
 
 using IStatisticsPtr = std::shared_ptr<IStatistics>;
