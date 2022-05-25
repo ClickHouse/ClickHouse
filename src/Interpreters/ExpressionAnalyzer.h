@@ -205,6 +205,11 @@ protected:
 
     NamesAndTypesList getColumnsAfterArrayJoin(ActionsDAGPtr & actions, const NamesAndTypesList & src_columns);
     NamesAndTypesList analyzeJoin(ActionsDAGPtr & actions, const NamesAndTypesList & src_columns);
+
+    AggregationKeysInfo getAggregationKeysInfo() const noexcept
+    {
+      return { aggregation_keys, aggregation_keys_indexes_list, group_by_kind };
+    }
 };
 
 class SelectQueryExpressionAnalyzer;

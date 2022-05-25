@@ -473,9 +473,7 @@ ActionsMatcher::Data::Data(
     ContextPtr context_,
     SizeLimits set_size_limit_,
     size_t subquery_depth_,
-    const NamesAndTypesList & source_columns_,
-    const NamesAndTypesList & aggregation_keys_,
-    const ColumnNumbersList & grouping_set_keys_,
+    std::reference_wrapper<const NamesAndTypesList> source_columns_,
     ActionsDAGPtr actions_dag,
     PreparedSets & prepared_sets_,
     SubqueriesForSets & subqueries_for_sets_,
@@ -483,22 +481,20 @@ ActionsMatcher::Data::Data(
     bool no_makeset_,
     bool only_consts_,
     bool create_source_for_in_,
-    GroupByKind group_by_kind_)
+    AggregationKeysInfo aggregation_keys_info_)
     : WithContext(context_)
     , set_size_limit(set_size_limit_)
     , subquery_depth(subquery_depth_)
     , source_columns(source_columns_)
-    , aggregation_keys(aggregation_keys_)
-    , grouping_set_keys(grouping_set_keys_)
     , prepared_sets(prepared_sets_)
     , subqueries_for_sets(subqueries_for_sets_)
     , no_subqueries(no_subqueries_)
     , no_makeset(no_makeset_)
     , only_consts(only_consts_)
     , create_source_for_in(create_source_for_in_)
-    , group_by_kind(group_by_kind_)
     , visit_depth(0)
     , actions_stack(std::move(actions_dag), context_)
+    , aggregation_keys_info(aggregation_keys_info_)
     , next_unique_suffix(actions_stack.getLastActions().getIndex().size() + 1)
 {
 }
@@ -848,29 +844,31 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
             throw Exception(ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION, "Function GROUPING expects at least one argument");
         if (arguments_size > 64)
             throw Exception(ErrorCodes::TOO_MANY_ARGUMENTS_FOR_FUNCTION, "Function GROUPING can have up to 64 arguments, but {} provided", arguments_size);
+        auto keys_info = data.aggregation_keys_info;
+        auto aggregation_keys_number = keys_info.aggregation_keys.size();
+
         ColumnNumbers arguments_indexes;
-        auto aggregation_keys_number = data.aggregation_keys.size();
         for (auto const & arg : node.arguments->children)
         {
-            size_t pos = data.aggregation_keys.getPosByName(arg->getColumnName());
+            size_t pos = keys_info.aggregation_keys.getPosByName(arg->getColumnName());
             if (pos == aggregation_keys_number)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument of GROUPING function {} is not a part of GROUP BY clause", arg->getColumnName());
             arguments_indexes.push_back(pos);
         }
 
-        switch (data.group_by_kind)
+        switch (keys_info.group_by_kind)
         {
             case GroupByKind::GROUPING_SETS:
             {
-                data.addFunction(std::make_shared<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionGroupingForGroupingSets>(std::move(arguments_indexes), data.grouping_set_keys)), { "__grouping_set" }, column_name);
+                data.addFunction(std::make_shared<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionGroupingForGroupingSets>(std::move(arguments_indexes), keys_info.grouping_set_keys)), { "__grouping_set" }, column_name);
                 break;
             }
             case GroupByKind::ROLLUP:
-                data.addFunction(std::make_shared<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionGroupingForRollup>(std::move(arguments_indexes), data.aggregation_keys.size())), { "__grouping_set" }, column_name);
+                data.addFunction(std::make_shared<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionGroupingForRollup>(std::move(arguments_indexes), aggregation_keys_number)), { "__grouping_set" }, column_name);
                 break;
             case GroupByKind::CUBE:
             {
-                data.addFunction(std::make_shared<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionGroupingForCube>(std::move(arguments_indexes), data.aggregation_keys.size())), { "__grouping_set" }, column_name);
+                data.addFunction(std::make_shared<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionGroupingForCube>(std::move(arguments_indexes), aggregation_keys_number)), { "__grouping_set" }, column_name);
                 break;
             }
             case GroupByKind::ORDINARY:
@@ -880,7 +878,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
             }
             default:
                 throw Exception(ErrorCodes::LOGICAL_ERROR,
-                    "Unexpected kind of GROUP BY clause for GROUPING function: {}", data.group_by_kind);
+                    "Unexpected kind of GROUP BY clause for GROUPING function: {}", keys_info.group_by_kind);
         }
         return;
     }
