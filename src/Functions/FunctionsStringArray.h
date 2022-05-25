@@ -448,7 +448,7 @@ public:
 class SplitByRegexpImpl
 {
 private:
-    Regexps::Pool::Pointer re;
+    Regexps::RegexpPtr re;
     OptimizedRegularExpression::MatchVec matches;
 
     Pos pos;
@@ -532,7 +532,7 @@ public:
 class ExtractAllImpl
 {
 private:
-    Regexps::Pool::Pointer re;
+    Regexps::RegexpPtr re;
     OptimizedRegularExpression::MatchVec matches;
     size_t capture;
 

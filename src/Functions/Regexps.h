@@ -9,7 +9,7 @@
 #include <vector>
 #include <Functions/likePatternToRegexp.h>
 #include <Common/Exception.h>
-#include <Common/ObjectPool.h>
+#include <Common/LRUCache.h>
 #include <Common/OptimizedRegularExpression.h>
 #include <Common/ProfileEvents.h>
 #include <Common/config.h>
@@ -39,16 +39,8 @@ namespace ErrorCodes
 namespace Regexps
 {
 using Regexp = OptimizedRegularExpressionSingleThreaded;
-using Pool = ObjectPoolMap<Regexp, String>;
-
-template <bool like>
-inline Regexp createRegexp(const std::string & pattern, int flags)
-{
-    if constexpr (like)
-        return {likePatternToRegexp(pattern), flags};
-    else
-        return {pattern, flags};
-}
+using Cache = LRUCache<String, Regexp>;
+using RegexpPtr = Cache::MappedPtr;
 
 template<bool no_capture, bool case_insensitive>
 inline int buildRe2Flags()
@@ -61,22 +53,23 @@ inline int buildRe2Flags()
     return flags;
 }
 
-/** Returns holder of an object from Pool.
-  * You must hold the ownership while using the object.
-  * In destructor, it returns the object back to the Pool for further reuse.
-  */
+/// Probes the cache of known compiled regexps for the given string pattern and returns a compiled regexp if
+/// found. Otherwise, a new cache entry is created.
 template <bool like, bool no_capture, bool case_insensitive>
-inline Pool::Pointer get(const std::string & pattern)
+inline RegexpPtr get(const String & pattern)
 {
-    /// the Singleton is thread-safe in C++11
-    static Pool known_regexps; /// Different variables for different pattern parameters.
+    static Cache known_regexps(42'000);
 
-    return known_regexps.get(pattern, [&pattern]
+    auto [regexp_ptr, _] = known_regexps.getOrSet(pattern, [&pattern]()
     {
         const int flags = buildRe2Flags<no_capture, case_insensitive>();
         ProfileEvents::increment(ProfileEvents::RegexpCreated);
-        return new Regexp{createRegexp<like>(pattern, flags)};
+        if constexpr (like)
+            return std::make_shared<Regexp>(likePatternToRegexp(pattern), flags);
+        else
+            return std::make_shared<Regexp>(pattern, flags);
     });
+    return regexp_ptr;
 }
 
 }

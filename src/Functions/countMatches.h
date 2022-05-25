@@ -55,7 +55,7 @@ public:
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         const ColumnConst * column_pattern = checkAndGetColumnConstStringOrFixedString(arguments[1].column.get());
-        Regexps::Pool::Pointer re = Regexps::get<false /* like */, true /* is_no_capture */, CountMatchesBase::case_insensitive>(column_pattern->getValue<String>());
+        Regexps::RegexpPtr re = Regexps::get<false /* like */, true /* is_no_capture */, CountMatchesBase::case_insensitive>(column_pattern->getValue<String>());
         OptimizedRegularExpression::MatchVec matches;
 
         const IColumn * column_haystack = arguments[0].column.get();
@@ -95,7 +95,7 @@ public:
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Error in FunctionCountMatches::getReturnTypeImpl()");
     }
 
-    static uint64_t countMatches(StringRef src, Regexps::Pool::Pointer & re, OptimizedRegularExpression::MatchVec & matches)
+    static uint64_t countMatches(StringRef src, Regexps::RegexpPtr & re, OptimizedRegularExpression::MatchVec & matches)
     {
         /// Only one match is required, no need to copy more.
         static const unsigned matches_limit = 1;
