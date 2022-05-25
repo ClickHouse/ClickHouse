@@ -165,6 +165,7 @@ private:
             Key key;
             size_t offset;
             size_t size;
+            size_t hits = 0;
 
             FileKeyAndOffset(const Key & key_, size_t offset_, size_t size_) : key(key_), offset(offset_), size(size_) {}
         };
@@ -223,8 +224,17 @@ private:
     using FileSegmentsByOffset = std::map<size_t, FileSegmentCell>;
     using CachedFiles = std::unordered_map<Key, FileSegmentsByOffset>;
 
+    using AccessKeyAndOffset = std::pair<Key, size_t>;
+    using AccessRecord = std::map<AccessKeyAndOffset, LRUQueue::Iterator>;
+
     CachedFiles files;
     LRUQueue queue;
+
+    LRUQueue stash_queue;
+    AccessRecord records;
+    size_t max_stash_element_size;
+    size_t enable_cache_hits_threshold;
+    
     Poco::Logger * log;
 
     FileSegments getImpl(
