@@ -233,9 +233,8 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine::commit(const uint64_t log_idx, n
                     "Could not push response with session id {} into responses queue",
                     response_for_session.session_id);
 
-        if (digest_enabled)
+        if (digest_enabled && request_for_session.digest)
         {
-            assert(request_for_session.digest);
             assertDigest(*request_for_session.digest, storage->getNodesDigest(true), *request_for_session.request, true);
         }
     }
