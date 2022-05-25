@@ -6,6 +6,14 @@ SELECT arrayCosineDistance([1, 2, 3], [3, 5, 7]);
 SELECT arrayL2Distance([1, 2, 3], NULL);
 SELECT arrayCosineDistance([1, 2, 3], [0, 0, 0]);
 
+-- Overflows
+WITH CAST([-547274980, 1790553898, 1981517754, 1908431500, 1352428565, -573412550, -552499284, 2096941042], 'Array(Int32)') AS a
+SELECT
+    arrayL1Distance(a,a),
+    arrayL2Distance(a,a),
+    arrayLinfDistance(a,a),
+    arrayCosineDistance(a, a);
+
 DROP TABLE IF EXISTS vec1;
 DROP TABLE IF EXISTS vec2;
 DROP TABLE IF EXISTS vec2f;
