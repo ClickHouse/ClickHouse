@@ -94,10 +94,11 @@ void ReadBufferFromNATSConsumer::onMsg(natsConnection *, natsSubscription *, nat
         if (buffer->row_delimiter != '\0')
             message_received += buffer->row_delimiter;
 
-        if (!buffer->received.push({
-                .message = std::move(message_received),
-                .subject = std::move(subject),
-            }))
+        MessageData data = {
+            .message = message_received,
+            .subject = subject,
+        };
+        if (!buffer->received.push(std::move(data)))
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Could not push to received queue");
     }
 

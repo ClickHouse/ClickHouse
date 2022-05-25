@@ -827,6 +827,11 @@ def test_nats_many_inserts(nats_cluster):
                      nats_subjects = 'many_inserts',
                      nats_format = 'TSV',
                      nats_row_delimiter = '\\n';
+        CREATE TABLE test.view_many (key UInt64, value UInt64)
+            ENGINE = MergeTree
+            ORDER BY key;
+        CREATE MATERIALIZED VIEW test.consumer_many TO test.view_many AS
+            SELECT * FROM test.nats_consume;
     """
     )
     while not check_table_is_ready(instance, "test.nats_consume"):
@@ -858,23 +863,16 @@ def test_nats_many_inserts(nats_cluster):
         time.sleep(random.uniform(0, 1))
         thread.start()
 
-    instance.query(
-        """
-        CREATE TABLE test.view_many (key UInt64, value UInt64)
-            ENGINE = MergeTree
-            ORDER BY key;
-        CREATE MATERIALIZED VIEW test.consumer_many TO test.view_many AS
-            SELECT * FROM test.nats_consume;
-    """
-    )
-
     for thread in threads:
         thread.join()
 
-    while True:
+    time_limit_sec = 300
+    deadline = time.monotonic() + time_limit_sec
+
+    while time.monotonic() < deadline:
         result = instance.query("SELECT count() FROM test.view_many")
         print(result, messages_num * threads_num)
-        if int(result) == messages_num * threads_num:
+        if int(result) >= messages_num * threads_num:
             break
         time.sleep(1)
 
@@ -889,7 +887,7 @@ def test_nats_many_inserts(nats_cluster):
 
     assert (
         int(result) == messages_num * threads_num
-    ), "ClickHouse lost some messages: {}".format(result)
+    ), "ClickHouse lost some messages or got duplicated ones. Total count: {}".format(result)
 
 
 def test_nats_overloaded_insert(nats_cluster):
@@ -952,10 +950,13 @@ def test_nats_overloaded_insert(nats_cluster):
         time.sleep(random.uniform(0, 1))
         thread.start()
 
-    while True:
+    time_limit_sec = 300
+    deadline = time.monotonic() + time_limit_sec
+
+    while time.monotonic() < deadline:
         result = instance.query("SELECT count() FROM test.view_overload")
         time.sleep(1)
-        if int(result) == messages_num * threads_num:
+        if int(result) >= messages_num * threads_num:
             break
 
     instance.query(
@@ -972,7 +973,7 @@ def test_nats_overloaded_insert(nats_cluster):
 
     assert (
         int(result) == messages_num * threads_num
-    ), "ClickHouse lost some messages: {}".format(result)
+    ), "ClickHouse lost some messages or got duplicated ones. Total count: {}".format(result)
 
 
 def test_nats_virtual_column(nats_cluster):
