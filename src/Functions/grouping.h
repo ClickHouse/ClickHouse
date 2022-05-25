@@ -93,6 +93,12 @@ public:
         return FunctionGroupingBase::executeImpl(arguments, input_rows_count,
             [this](UInt64 set_index, UInt64 arg_index)
             {
+                // For ROLLUP(a, b, c) there will be following grouping set indexes:
+                // | GROUPING SET | INDEX |
+                // | (a, b, c)    |   0   |
+                // | (a, b)       |   1   |
+                // | (a)          |   2   |
+                // | ()           |   3   |
                 return arg_index < aggregation_keys_number - set_index;
             }
         );
@@ -117,6 +123,12 @@ public:
         return FunctionGroupingBase::executeImpl(arguments, input_rows_count,
             [this](UInt64 set_index, UInt64 arg_index)
             {
+                // For CUBE(a, b) there will be following grouping set indexes:
+                // | GROUPING SET | INDEX |
+                // | (a, b)       |   0   |
+                // | (a)          |   1   |
+                // | (b)          |   2   |
+                // | ()           |   3   |
                 auto set_mask = (ONE << aggregation_keys_number) - 1 - set_index;
                 return set_mask & (ONE << (aggregation_keys_number - arg_index - 1));
             }
