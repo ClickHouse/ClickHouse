@@ -93,6 +93,12 @@ namespace ProfileEvents
     extern const Event DelayedInserts;
     extern const Event DelayedInsertsMilliseconds;
     extern const Event DuplicatedInsertedBlocks;
+    extern const Event InsertedWideParts;
+    extern const Event InsertedCompactParts;
+    extern const Event InsertedInMemoryParts;
+    extern const Event MergedIntoWideParts;
+    extern const Event MergedIntoCompactParts;
+    extern const Event MergedIntoInMemoryParts;
 }
 
 namespace CurrentMetrics
@@ -1716,6 +1722,7 @@ void MergeTreeData::removePartsFinally(const MergeTreeData::DataPartsVector & pa
             part_log_elem.part_name = part->name;
             part_log_elem.bytes_compressed_on_disk = part->getBytesOnDisk();
             part_log_elem.rows = part->rows_count;
+            part_log_elem.part_type = part->getType();
 
             part_log->add(part_log_elem);
         }
@@ -6190,6 +6197,7 @@ try
         part_log_elem.path_on_disk = result_part->getFullPath();
         part_log_elem.bytes_compressed_on_disk = result_part->getBytesOnDisk();
         part_log_elem.rows = result_part->rows_count;
+        part_log_elem.part_type = result_part->getType();
     }
 
     part_log_elem.source_part_names.reserve(source_parts.size());
@@ -6754,6 +6762,42 @@ StorageSnapshotPtr MergeTreeData::getStorageSnapshot(const StorageMetadataPtr & 
     snapshot_data->parts = getVisibleDataPartsVectorUnlocked(query_context, lock);
     return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, object_columns, std::move(snapshot_data));
 }
+
+#define FOR_EACH_PART_TYPE(M) \
+    M(Wide) \
+    M(Compact) \
+    M(InMemory)
+
+#define DECLARE_INCREMENT_EVENT_CASE(Event, Type) \
+    case MergeTreeDataPartType::Type: \
+        ProfileEvents::increment(ProfileEvents::Event##Type##Parts); \
+        break;
+
+#define DECLARE_INCREMENT_EVENT(value, CASE) \
+    switch (value) \
+    { \
+        FOR_EACH_PART_TYPE(CASE) \
+        default: \
+            break; \
+    }
+
+void MergeTreeData::incrementInsertedPartsProfileEvent(MergeTreeDataPartType type)
+{
+    #define DECLARE_INSERTED_EVENT_CASE(Type) DECLARE_INCREMENT_EVENT_CASE(Inserted, Type)
+    DECLARE_INCREMENT_EVENT(type.getValue(), DECLARE_INSERTED_EVENT_CASE)
+    #undef DECLARE_INSERTED_EVENT
+}
+
+void MergeTreeData::incrementMergedPartsProfileEvent(MergeTreeDataPartType type)
+{
+    #define DECLARE_MERGED_EVENT_CASE(Type) DECLARE_INCREMENT_EVENT_CASE(MergedInto, Type)
+    DECLARE_INCREMENT_EVENT(type.getValue(), DECLARE_MERGED_EVENT_CASE)
+    #undef DECLARE_MERGED_EVENT
+}
+
+#undef FOR_EACH_PART_TYPE
+#undef DECLARE_INCREMENT_EVENT_CASE
+#undef DECLARE_INCREMENT_EVENT
 
 CurrentlySubmergingEmergingTagger::~CurrentlySubmergingEmergingTagger()
 {
