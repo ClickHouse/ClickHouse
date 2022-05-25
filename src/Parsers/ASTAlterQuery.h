@@ -47,10 +47,9 @@ public:
         DROP_INDEX,
         MATERIALIZE_INDEX,
 
-        ADD_STATISTIC, // metadata
-        DROP_STATISTIC, // metadata + mutation
-        MATERIALIZE_STATISTIC, // mutation
-        MODIFY_STATISTIC, // metadata
+        ADD_STATISTIC,
+        DROP_STATISTIC,
+        MATERIALIZE_STATISTIC,
 
         ADD_CONSTRAINT,
         DROP_CONSTRAINT,

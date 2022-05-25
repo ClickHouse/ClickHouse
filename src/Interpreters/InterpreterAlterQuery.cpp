@@ -330,11 +330,6 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(const AS
             required_access.emplace_back(AccessType::ALTER_MATERIALIZE_STATISTIC, database, table);
             break;
         }
-        case ASTAlterCommand::MODIFY_STATISTIC:
-        {
-            required_access.emplace_back(AccessType::ALTER_MODIFY_STATISTIC, database, table);
-            break;
-        }
         case ASTAlterCommand::ADD_CONSTRAINT:
         {
             required_access.emplace_back(AccessType::ALTER_ADD_CONSTRAINT, database, table);

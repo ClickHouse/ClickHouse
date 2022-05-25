@@ -344,18 +344,6 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
 
         return command;
     }
-    else if (command_ast->type == ASTAlterCommand::MODIFY_STATISTIC)
-    {
-        AlterCommand command;
-        command.ast = command_ast->clone();
-        command.type = AlterCommand::MODIFY_STATISTIC;
-
-        const auto & ast_stat_decl = command_ast->statistic_decl->as<ASTStatisticDeclaration &>();
-        command.statistic_decl = command_ast->statistic_decl;
-        command.statistic_name = ast_stat_decl.name;
-        command.if_exists = command_ast->if_exists;
-        return command;
-    }
     else if (command_ast->type == ASTAlterCommand::MODIFY_TTL)
     {
         AlterCommand command;
@@ -672,25 +660,6 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
 
             metadata.statistics.erase(erase_it);
         }
-    }
-    else if (type == MODIFY_STATISTIC)
-    {
-        auto modify_it = std::find_if(
-                metadata.statistics.begin(),
-                metadata.statistics.end(),
-                [this](const auto & statistic)
-                {
-                    return statistic.name == statistic_name;
-                });
-
-        if (modify_it == metadata.statistics.end())
-        {
-            if (if_exists)
-                return;
-            throw Exception("Wrong statistic name. Cannot find statistic " + backQuote(statistic_name) + " to drop.", ErrorCodes::BAD_ARGUMENTS);
-        }
-
-        *modify_it = StatisticDescription::getStatisticFromAST(statistic_decl, metadata.columns, context);
     }
     else if (type == ADD_CONSTRAINT)
     {

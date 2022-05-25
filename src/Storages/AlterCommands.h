@@ -36,7 +36,6 @@ struct AlterCommand
         DROP_INDEX,
         ADD_STATISTIC,
         DROP_STATISTIC,
-        MODIFY_STATISTIC,
         ADD_CONSTRAINT,
         DROP_CONSTRAINT,
         ADD_PROJECTION,

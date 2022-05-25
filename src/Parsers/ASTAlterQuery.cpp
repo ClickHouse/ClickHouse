@@ -105,7 +105,6 @@ const char * ASTAlterCommand::typeToString(ASTAlterCommand::Type type)
         case ADD_STATISTIC: return "ADD_STATISTIC";
         case DROP_STATISTIC: return "DROP_STATISTIC";
         case MATERIALIZE_STATISTIC: return "MATERIALIZE_STATISTIC";
-        case MODIFY_STATISTIC: return "MODIFY_STATISTIC";
         case ADD_CONSTRAINT: return "ADD_CONSTRAINT";
         case DROP_CONSTRAINT: return "DROP_CONSTRAINT";
         case ADD_PROJECTION: return "ADD_PROJECTION";
@@ -286,12 +285,6 @@ void ASTAlterCommand::formatImpl(const FormatSettings & settings, FormatState & 
             settings.ostr << (settings.hilite ? hilite_keyword : "") << " IN PARTITION " << (settings.hilite ? hilite_none : "");
             partition->formatImpl(settings, state, frame);
         }
-    }
-    else if (type == ASTAlterCommand::MODIFY_STATISTIC)
-    {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << "MODIFY STATISTIC " << (settings.hilite ? hilite_none : "");
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << (if_exists ? "IF EXISTS " : "") << (settings.hilite ? hilite_none : "");
-        statistic_decl->formatImpl(settings, state, frame);
     }
     else if (type == ASTAlterCommand::ADD_CONSTRAINT)
     {

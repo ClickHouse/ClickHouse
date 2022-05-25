@@ -48,7 +48,6 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ParserKeyword s_drop_statistic("DROP STATISTIC");
     ParserKeyword s_clear_statistic("CLEAR STATISTIC");
     ParserKeyword s_materialize_statistic("MATERIALIZE STATISTIC");
-    ParserKeyword s_modify_statistic("MODIFY STATISTIC");
 
     ParserKeyword s_add_constraint("ADD CONSTRAINT");
     ParserKeyword s_drop_constraint("DROP CONSTRAINT");
@@ -397,17 +396,6 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                     if (!parser_partition.parse(pos, command->partition, expected))
                         return false;
                 }
-            }
-            else if (s_modify_statistic.ignore(pos, expected))
-            {
-                if (s_if_exists.ignore(pos, expected))
-                    command->if_exists = true;
-
-                if (!parser_stat_decl.parse(pos, command->statistic_decl, expected))
-                    return false;
-
-                command->type = ASTAlterCommand::MODIFY_STATISTIC;
-                command->detach = false;
             }
             else if (s_add_projection.ignore(pos, expected))
             {
