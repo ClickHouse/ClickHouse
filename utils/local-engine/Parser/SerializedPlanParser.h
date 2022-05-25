@@ -104,7 +104,7 @@ private:
     void reorderJoinOutput(DB::QueryPlan & plan, DB::Names cols);
     std::string getFunctionName(std::string function_sig, const substrait::Type& output_type);
     DB::ActionsDAGPtr parseFunction(const DataStream & input, const substrait::Expression &rel, std::string & result_name, DB::ActionsDAGPtr actions_dag = nullptr, bool keep_result = false);
-    DB::ActionsDAGPtr parseFunctionWithDAG(const substrait::Expression &rel, std::string & result_name, DB::ActionsDAGPtr actions_dag = nullptr, bool keep_result = false);
+    const ActionsDAG::Node * parseFunctionWithDAG(const substrait::Expression &rel, std::string & result_name, DB::ActionsDAGPtr actions_dag = nullptr, bool keep_result = false);
     DB::QueryPlanStepPtr parseAggregate(DB::QueryPlan & plan, const substrait::AggregateRel &rel);
     const DB::ActionsDAG::Node * parseArgument(DB::ActionsDAGPtr action_dag, const substrait::Expression &rel);
     std::string getUniqueName(std::string name)

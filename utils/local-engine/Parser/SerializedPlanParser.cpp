@@ -269,13 +269,7 @@ QueryPlanPtr SerializedPlanParser::parseOp(const substrait::Rel & rel)
                         required_columns.emplace_back(NameWithAlias(name, name));
                     }
                 }
-                else if (expr.has_literal())
-                {
-                    const auto * const_col = parseArgument(actions_dag, expr);
-                    actions_dag->addOrReplaceInIndex(*const_col);
-                    required_columns.emplace_back(NameWithAlias(const_col->result_name, const_col->result_name));
-                }
-                else if (expr.has_cast())
+                else if (expr.has_cast() || expr.has_if_then() || expr.has_literal())
                 {
                     const auto * node = parseArgument(actions_dag, expr);
                     actions_dag->addOrReplaceInIndex(*node);
@@ -283,6 +277,7 @@ QueryPlanPtr SerializedPlanParser::parseOp(const substrait::Rel & rel)
                 }
                 else
                 {
+                    LOG_ERROR(&Poco::Logger::get("SerializedPlanParser"), "unsupported projection type {}.", magic_enum::enum_name(expr.rex_type_case()));
                     throw std::runtime_error("unsupported projection type");
                 }
             }
@@ -537,7 +532,7 @@ std::string SerializedPlanParser::getFunctionName(std::string function_signature
     return ch_function_name;
 }
 
-DB::ActionsDAGPtr SerializedPlanParser::parseFunctionWithDAG(
+const ActionsDAG::Node * SerializedPlanParser::parseFunctionWithDAG(
     const substrait::Expression & rel, string & result_name, DB::ActionsDAGPtr actions_dag, bool keep_result)
 {
     if (!rel.has_scalar_function())
@@ -564,10 +559,11 @@ DB::ActionsDAGPtr SerializedPlanParser::parseFunctionWithDAG(
             args.emplace_back(parseArgument(actions_dag, arg));
         }
     }
+    const ActionsDAG::Node * result_node;
     if (function_name == "alias")
     {
         result_name = args[0]->result_name;
-        actions_dag->addAlias(actions_dag->findInIndex(result_name), result_name);
+        result_node = &actions_dag->addAlias(actions_dag->findInIndex(result_name), result_name);
     }
     else
     {
@@ -578,8 +574,9 @@ DB::ActionsDAGPtr SerializedPlanParser::parseFunctionWithDAG(
         const auto * function_node = &actions_dag->addFunction(function_builder, args, result_name);
         if (keep_result)
             actions_dag->addOrReplaceInIndex(*function_node);
+        result_node = function_node;
     }
-    return actions_dag;
+    return result_node;
 }
 
 ActionsDAGPtr SerializedPlanParser::parseFunction(
@@ -590,7 +587,8 @@ ActionsDAGPtr SerializedPlanParser::parseFunction(
     {
         actions_dag = std::make_shared<ActionsDAG>(blockToNameAndTypeList(input.header));
     }
-    return parseFunctionWithDAG(rel, result_name, actions_dag, keep_result);
+    parseFunctionWithDAG(rel, result_name, actions_dag, keep_result);
+    return actions_dag;
 }
 
 const ActionsDAG::Node * SerializedPlanParser::parseArgument(ActionsDAGPtr action_dag, const substrait::Expression & rel)
@@ -811,21 +809,28 @@ const ActionsDAG::Node * SerializedPlanParser::parseArgument(ActionsDAGPtr actio
                 throw std::runtime_error("doesn't support cast type " + rel.cast().type().DebugString());
             }
             DB::ActionsDAG::NodeRawConstPtrs args;
-            if (rel.cast().input().has_selection())
+            auto cast_input = rel.cast().input();
+            if (cast_input.has_selection())
             {
                 args.emplace_back(parseArgument(action_dag, rel.cast().input()));
             }
-            else if (rel.cast().input().has_if_then())
+            else if (cast_input.has_if_then())
             {
                 args.emplace_back(parseArgument(action_dag, rel.cast().input()));
+            }
+            else if (cast_input.has_scalar_function())
+            {
+                std::string result;
+                const auto * node = parseFunctionWithDAG(cast_input, result, action_dag, false);
+                args.emplace_back(node);
             }
             else
             {
                 LOG_ERROR(
                     &Poco::Logger::get("SerializedPlanParser"),
-                    "there is no selection for cast input {}",
+                    "unsupported cast input {}",
                     rel.cast().input().DebugString());
-                throw std::runtime_error("there is no selection for cast input " + rel.cast().input().DebugString());
+                throw std::runtime_error("unsupported cast input " + rel.cast().input().DebugString());
             }
             auto function_builder = DB::FunctionFactory::instance().get(ch_function_name, this->context);
             std::string args_name;
@@ -867,9 +872,14 @@ const ActionsDAG::Node * SerializedPlanParser::parseArgument(ActionsDAGPtr actio
             const auto * function_node = &action_dag->addFunction(function_multi_if, args, result_name);
             return function_node;
         }
+        case substrait::Expression::RexTypeCase::kScalarFunction:
+        {
+            std::string result;
+            return parseFunctionWithDAG(rel, result, action_dag, false);
+        }
         default:
         {
-            LOG_ERROR(&Poco::Logger::get("SerializedPlanParser"), "unsupported arg type {}", magic_enum::enum_name(rel.rex_type_case()));
+            LOG_ERROR(&Poco::Logger::get("SerializedPlanParser"), "unsupported arg type {} : {}", magic_enum::enum_name(rel.rex_type_case()), rel.DebugString());
             throw std::runtime_error("unsupported arg type");
 
         }
