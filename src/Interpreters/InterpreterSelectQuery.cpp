@@ -2810,23 +2810,5 @@ void InterpreterSelectQuery::initSettings()
 
     }
 }
-Chunk InterpreterSelectQuery::to_single_chunk(const Chunks& chunks)
-{
-    if (chunks.empty())
-    {
-        return {};
-    }
-    auto result_columns = chunks[0].clone().mutateColumns();
-    for (size_t i = 1; i != chunks.size(); ++i)
-    {
-        auto columns = chunks[i].getColumns();
-        for (size_t j = 0; j != columns.size(); ++j)
-        {
-            result_columns[j]->insertRangeFrom(*columns[j], 0, columns[j]->size());
-        }
-    }
-    const size_t num_rows = result_columns[0]->size();
-    return Chunk(std::move(result_columns), num_rows);
-}
 
 }
