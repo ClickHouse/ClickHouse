@@ -11,6 +11,7 @@ SELECT
        number % 100 AS sales_value
 FROM system.numbers limit 1000;
 
+-- { echoOn }
 SELECT
     fact_3_id,
     fact_4_id
@@ -96,4 +97,5 @@ GROUP BY
     ( fact_3_id, fact_4_id))
 ORDER BY fact_3_id ASC NULLS FIRST;
 
+-- { echoOff }
 DROP TABLE IF EXISTS grouping_sets;
