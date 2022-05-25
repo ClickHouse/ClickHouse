@@ -2,7 +2,7 @@
 
 #if USE_HDFS
 #include <mutex>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <Storages/HDFS/HDFSCommon.h>
 #include <Storages/HDFS/ReadBufferFromHDFS.h>
 #include <Disks/IO/ThreadPoolRemoteFSReader.h>
@@ -36,12 +36,12 @@ namespace ErrorCodes
 
 AsynchronousReadBufferFromHDFS::AsynchronousReadBufferFromHDFS(
     AsynchronousReaderPtr reader_, const ReadSettings & settings_, std::shared_ptr<ReadBufferFromHDFS> impl_)
-    : BufferWithOwnMemory<SeekableReadBufferWithSize>(settings_.remote_fs_buffer_size)
+    : BufferWithOwnMemory<SeekableReadBuffer>(settings_.remote_fs_buffer_size)
     , reader(reader_)
     , priority(settings_.priority)
     , impl(std::move(impl_))
     , prefetch_buffer(settings_.remote_fs_buffer_size)
-    , read_until_position(impl->getTotalSize())
+    , read_until_position(impl->getFileSize())
     , log(&Poco::Logger::get("AsynchronousReadBufferFromHDFS"))
 {
     ProfileEvents::increment(ProfileEvents::RemoteFSBuffers);
@@ -87,9 +87,9 @@ void AsynchronousReadBufferFromHDFS::prefetch()
 }
 
 
-std::optional<size_t> AsynchronousReadBufferFromHDFS::getTotalSize()
+std::optional<size_t> AsynchronousReadBufferFromHDFS::getFileSize()
 {
-    return impl->getTotalSize();
+    return impl->getFileSize();
 }
 
 
