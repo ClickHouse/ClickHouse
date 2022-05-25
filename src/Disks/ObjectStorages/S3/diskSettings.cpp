@@ -1,6 +1,25 @@
 #include <Disks/ObjectStorages/S3/diskSettings.h>
 
+#if USE_AWS_S3
+
 #include <Common/StringUtils/StringUtils.h>
+#include <Common/logger_useful.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
+#include <Interpreters/Context.h>
+#include "Disks/DiskFactory.h"
+
+#include <aws/core/client/DefaultRetryStrategy.h>
+#include <base/getFQDNOrHostName.h>
+#include <IO/S3Common.h>
+#include <Disks/DiskCacheWrapper.h>
+#include <Storages/StorageS3Settings.h>
+#include <Disk/ObjectStorages/S3/ProxyConfiguration.h>
+#include <Disk/ObjectStorages/S3/ProxyListConfiguration.h>
+#include <Disk/ObjectStorages/S3/ProxyResolverConfiguration.h>
+#include <Disks/DiskRestartProxy.h>
+#include <Disks/DiskLocal.h>
+#include <Common/FileCacheFactory.h>
 
 namespace DB
 {
@@ -130,3 +149,4 @@ std::unique_ptr<Aws::S3::S3Client> getClient(const Poco::Util::AbstractConfigura
 }
 
 }
+>>>>>> master:src/Disks/S3/registerDiskS3.cpp
