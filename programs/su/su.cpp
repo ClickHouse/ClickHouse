@@ -64,7 +64,7 @@ void setUserAndGroup(std::string arg_uid, std::string arg_gid)
             gid = entry.gr_gid;
         }
 
-        if (gid == 0)
+        if (gid == 0 && getgid() != 0)
             throw Exception("Group has id 0, but dropping privileges to gid 0 does not make sense", ErrorCodes::BAD_ARGUMENTS);
 
         if (0 != setgid(gid))
@@ -89,7 +89,7 @@ void setUserAndGroup(std::string arg_uid, std::string arg_gid)
             uid = entry.pw_uid;
         }
 
-        if (uid == 0)
+        if (uid == 0 && getuid() != 0)
             throw Exception("User has id 0, but dropping privileges to uid 0 does not make sense", ErrorCodes::BAD_ARGUMENTS);
 
         if (0 != setuid(uid))
