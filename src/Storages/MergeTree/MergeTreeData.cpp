@@ -1378,7 +1378,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
 
         /// Check if CSNs were witten after committing transaction, update and write if needed.
         bool version_updated = false;
-        assert(!version.creation_tid.isEmpty());
+        chassert(!version.creation_tid.isEmpty());
         if (!part->version.creation_csn)
         {
             auto min = TransactionLog::getCSN(version.creation_tid);
