@@ -128,7 +128,7 @@ public:
                 return executeWithResultType<Float64>(*arr, type, input_rows_count);
                 break;
             default:
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected result type.");
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected result type {}", result_type->getName());
         }
     }
 
@@ -194,11 +194,9 @@ private:
     }
 };
 
-void registerFunctionArrayNorm(FunctionFactory & factory)
-{
-    factory.registerFunction<FunctionArrayNorm<L1Norm>>();
-    factory.registerFunction<FunctionArrayNorm<L2Norm>>();
-    factory.registerFunction<FunctionArrayNorm<LinfNorm>>();
-}
+/// These functions are used by TupleOrArrayFunction
+FunctionPtr createFunctionArrayL1Norm(ContextPtr context_) { return FunctionArrayNorm<L1Norm>::create(context_); }
+FunctionPtr createFunctionArrayL2Norm(ContextPtr context_) { return FunctionArrayNorm<L2Norm>::create(context_); }
+FunctionPtr createFunctionArrayLinfNorm(ContextPtr context_) { return FunctionArrayNorm<LinfNorm>::create(context_); }
 
 }

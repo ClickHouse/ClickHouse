@@ -167,7 +167,7 @@ public:
                 return executeWithResultType<Float64>(arguments, input_rows_count);
                 break;
             default:
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected result type.");
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected result type {}", result_type->getName());
         }
     }
 
@@ -343,12 +343,10 @@ private:
 
 };
 
-void registerFunctionArrayDistance(FunctionFactory & factory)
-{
-    factory.registerFunction<FunctionArrayDistance<L1Distance>>();
-    factory.registerFunction<FunctionArrayDistance<L2Distance>>();
-    factory.registerFunction<FunctionArrayDistance<LinfDistance>>();
-    factory.registerFunction<FunctionArrayDistance<CosineDistance>>();
-}
+/// These functions are used by TupleOrArrayFunction
+FunctionPtr createFunctionArrayL1Distance(ContextPtr context_) { return FunctionArrayDistance<L1Distance>::create(context_); }
+FunctionPtr createFunctionArrayL2Distance(ContextPtr context_) { return FunctionArrayDistance<L2Distance>::create(context_); }
+FunctionPtr createFunctionArrayLinfDistance(ContextPtr context_) { return FunctionArrayDistance<LinfDistance>::create(context_); }
+FunctionPtr createFunctionArrayCosineDistance(ContextPtr context_) { return FunctionArrayDistance<CosineDistance>::create(context_); }
 
 }
