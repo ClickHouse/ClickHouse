@@ -25,6 +25,7 @@ public:
 
     CachedReadBufferFromFile(
         const String & source_file_path_,
+        const IFileCache::Key & cache_key_,
         FileCachePtr cache_,
         RemoteFSFileReaderCreator remote_file_reader_creator_,
         const ReadSettings & settings_,
