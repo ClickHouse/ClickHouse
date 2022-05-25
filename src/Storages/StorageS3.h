@@ -34,25 +34,28 @@ class StorageS3Source : public SourceWithProgress, WithContext
 public:
     class DisclosedGlobIterator
     {
-        public:
-            DisclosedGlobIterator(Aws::S3::S3Client &, const S3::URI &);
-            String next();
-        private:
-            class Impl;
-            /// shared_ptr to have copy constructor
-            std::shared_ptr<Impl> pimpl;
+    public:
+        DisclosedGlobIterator(
+            Aws::S3::S3Client & client_, const S3::URI & globbed_uri_, ASTPtr query, const Block & virtual_header, ContextPtr context);
+        String next();
+
+    private:
+        class Impl;
+        /// shared_ptr to have copy constructor
+        std::shared_ptr<Impl> pimpl;
     };
 
     class KeysIterator
     {
-        public:
-            explicit KeysIterator(const std::vector<String> & keys_);
-            String next();
+    public:
+        explicit KeysIterator(
+            const std::vector<String> & keys_, const String & bucket_, ASTPtr query, const Block & virtual_header, ContextPtr context);
+        String next();
 
-        private:
-            class Impl;
-            /// shared_ptr to have copy constructor
-            std::shared_ptr<Impl> pimpl;
+    private:
+        class Impl;
+        /// shared_ptr to have copy constructor
+        std::shared_ptr<Impl> pimpl;
     };
 
     class ReadTasksIterator
@@ -203,6 +206,7 @@ private:
     S3Configuration s3_configuration;
     std::vector<String> keys;
     NamesAndTypesList virtual_columns;
+    Block virtual_block;
 
     String format_name;
     String compression_method;
@@ -222,6 +226,8 @@ private:
         bool is_key_with_globs,
         bool distributed_processing,
         ContextPtr local_context,
+        ASTPtr query,
+        const Block & virtual_block,
         const std::vector<String> & read_tasks = {});
 
     static ColumnsDescription getTableStructureFromDataImpl(
