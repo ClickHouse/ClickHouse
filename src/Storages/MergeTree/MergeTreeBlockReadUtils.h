@@ -30,7 +30,7 @@ NameSet injectRequiredColumns(
     Names & columns);
 
 
-/// A batch of work for MergeTreeThreadSelectBlockInputStream
+/// A batch of work for MergeTreeThreadSelectProcessor
 struct MergeTreeReadTask
 {
     /// data part which should be read while performing this task

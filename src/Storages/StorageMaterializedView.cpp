@@ -127,9 +127,6 @@ StorageMaterializedView::StorageMaterializedView(
 
         target_table_id = DatabaseCatalog::instance().getTable({manual_create_query->getDatabase(), manual_create_query->getTable()}, getContext())->getStorageID();
     }
-
-    if (!select.select_table_id.empty())
-        DatabaseCatalog::instance().addDependency(select.select_table_id, getStorageID());
 }
 
 QueryProcessingStage::Enum StorageMaterializedView::getQueryProcessingStage(
@@ -387,6 +384,14 @@ void StorageMaterializedView::renameInMemory(const StorageID & new_table_id)
     DatabaseCatalog::instance().updateDependency(select_query.select_table_id, old_table_id, select_query.select_table_id, getStorageID());
 }
 
+void StorageMaterializedView::startup()
+{
+    auto metadata_snapshot = getInMemoryMetadataPtr();
+    const auto & select_query = metadata_snapshot->getSelectQuery();
+    if (!select_query.select_table_id.empty())
+        DatabaseCatalog::instance().addDependency(select_query.select_table_id, getStorageID());
+}
+
 void StorageMaterializedView::shutdown()
 {
     auto metadata_snapshot = getInMemoryMetadataPtr();
@@ -432,6 +437,26 @@ RestoreTaskPtr StorageMaterializedView::restoreData(ContextMutablePtr context_, 
     if (!hasInnerTable())
         return {};
     return getTargetTable()->restoreData(context_, partitions_, backup_, data_path_in_backup_, restore_settings_, restore_coordination_);
+}
+
+std::optional<UInt64> StorageMaterializedView::totalRows(const Settings & settings) const
+{
+    if (hasInnerTable())
+    {
+        if (auto table = tryGetTargetTable())
+            return table->totalRows(settings);
+    }
+    return {};
+}
+
+std::optional<UInt64> StorageMaterializedView::totalBytes(const Settings & settings) const
+{
+    if (hasInnerTable())
+    {
+        if (auto table = tryGetTargetTable())
+            return table->totalBytes(settings);
+    }
+    return {};
 }
 
 ActionLock StorageMaterializedView::getActionLock(StorageActionBlockType type)

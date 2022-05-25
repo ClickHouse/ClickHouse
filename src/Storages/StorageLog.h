@@ -65,6 +65,9 @@ public:
     bool supportsSubcolumns() const override { return true; }
     ColumnSizeByName getColumnSizes() const override;
 
+    std::optional<UInt64> totalRows(const Settings & settings) const override;
+    std::optional<UInt64> totalBytes(const Settings & settings) const override;
+
     bool hasDataToBackup() const override { return true; }
     BackupEntries backupData(ContextPtr context, const ASTs & partitions) override;
     RestoreTaskPtr restoreData(ContextMutablePtr context, const ASTs & partitions, const BackupPtr & backup, const String & data_path_in_backup, const StorageRestoreSettings & restore_settings, const std::shared_ptr<IRestoreCoordination> & restore_coordination) override;
@@ -90,6 +93,9 @@ private:
 
     /// Saves the sizes of the data and marks files.
     void saveFileSizes(const WriteLock &);
+
+    /// Recalculates the number of rows stored in this table.
+    void updateTotalRows(const WriteLock &);
 
     /** Offsets to some row number in a file for column in table.
       * They are needed so that you can read the data in several threads.
@@ -127,6 +133,9 @@ private:
     String marks_file_path;
     std::atomic<bool> marks_loaded = false;
     size_t num_marks_saved = 0;
+
+    std::atomic<UInt64> total_rows = 0;
+    std::atomic<UInt64> total_bytes = 0;
 
     FileChecker file_checker;
 

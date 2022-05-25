@@ -31,7 +31,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_PROJECTION;
     extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
-};
+}
 
 bool ProjectionDescription::isPrimaryKeyColumnPossiblyWrappedInFunctions(const ASTPtr & node) const
 {
