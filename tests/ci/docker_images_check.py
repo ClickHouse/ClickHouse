@@ -404,7 +404,11 @@ def main():
     elif args.image_path:
         pr_info.changed_files = set(i for i in args.image_path)
     else:
-        pr_info.fetch_changed_files()
+        try:
+            pr_info.fetch_changed_files()
+        except TypeError:
+            # If the event does not contain diff, nothing will be built
+            pass
 
     changed_images = get_changed_docker_images(pr_info, images_dict)
     if changed_images:
