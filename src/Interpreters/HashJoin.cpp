@@ -538,6 +538,7 @@ void HashJoin::dataMapInit(MapsVariant & map)
 
 bool HashJoin::overDictionary() const
 {
+    assert(data->type != Type::DICT || table_join->getDictionaryReader());
     return data->type == Type::DICT;
 }
 
@@ -910,13 +911,14 @@ public:
     AddedColumns(
         const Block & block_with_columns_to_add,
         const Block & block,
-        const Block & saved_block_sample,
+        const Block & saved_block_sample_,
         const HashJoin & join,
         std::vector<JoinOnKeyColumns> && join_on_keys_,
         bool is_asof_join,
         bool is_join_get_)
         : join_on_keys(join_on_keys_)
         , rows_to_add(block.rows())
+        , saved_block_sample(saved_block_sample_)
         , is_join_get(is_join_get_)
     {
         size_t num_columns_to_add = block_with_columns_to_add.columns();
@@ -959,6 +961,8 @@ public:
     template <bool has_defaults>
     void appendFromBlock(const Block & block, size_t row_num)
     {
+        assertBlocksHaveEqualStructure(saved_block_sample, block, "appendFromBlock");
+
         if constexpr (has_defaults)
             applyLazyDefaults();
 
@@ -1024,6 +1028,7 @@ private:
     size_t lazy_defaults_count = 0;
     /// for ASOF
     const IColumn * left_asof_key = nullptr;
+    Block saved_block_sample;
 
     bool is_join_get;
 
