@@ -410,9 +410,6 @@ LRUFileCache::FileSegmentCell * LRUFileCache::addCell(
     {
         if (state == FileSegment::State::EMPTY)
         {
-            LOG_TEST(log, "[addCell] FileSegment key:{}, offset:{}, state:{}, enable_cache_hits:{}, current_element_size:{}/{}.",
-                keyToStr(key), offset, FileSegment::stateToString(state), enable_cache_hits_threshold, stash_queue.getElementsNum(cache_lock), max_stash_element_size);
-      
             auto record = records.find({key, offset});
 
             if (record == records.end())
