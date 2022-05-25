@@ -273,6 +273,7 @@ private:
 
         auto arguments_copy = arguments;
         for (auto & argument : arguments_copy) {
+            argument.column = argument.column->convertToFullColumnIfConst();
             argument.column = castColumn(argument, result_type);
             argument.type = result_type;
         }
