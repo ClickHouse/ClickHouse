@@ -603,8 +603,6 @@ void ExpressionAnalyzer::getRootActions(const ASTPtr & ast, bool no_makeset_for_
         settings.size_limits_for_set,
         subquery_depth,
         sourceColumns(),
-        aggregation_keys,
-        aggregation_keys_indexes_list,
         std::move(actions),
         prepared_sets,
         subqueries_for_sets,
@@ -612,7 +610,7 @@ void ExpressionAnalyzer::getRootActions(const ASTPtr & ast, bool no_makeset_for_
         false /* no_makeset */,
         only_consts,
         !isRemoteStorage() /* create_source_for_in */,
-        group_by_kind);
+        getAggregationKeysInfo());
     ActionsVisitor(visitor_data, log.stream()).visit(ast);
     actions = visitor_data.getActions();
 }
@@ -626,8 +624,6 @@ void ExpressionAnalyzer::getRootActionsNoMakeSet(const ASTPtr & ast, ActionsDAGP
         settings.size_limits_for_set,
         subquery_depth,
         sourceColumns(),
-        aggregation_keys,
-        aggregation_keys_indexes_list,
         std::move(actions),
         prepared_sets,
         subqueries_for_sets,
@@ -635,7 +631,7 @@ void ExpressionAnalyzer::getRootActionsNoMakeSet(const ASTPtr & ast, ActionsDAGP
         true /* no_makeset */,
         only_consts,
         !isRemoteStorage() /* create_source_for_in */,
-        group_by_kind);
+        getAggregationKeysInfo());
     ActionsVisitor(visitor_data, log.stream()).visit(ast);
     actions = visitor_data.getActions();
 }
@@ -650,8 +646,6 @@ void ExpressionAnalyzer::getRootActionsForHaving(
         settings.size_limits_for_set,
         subquery_depth,
         sourceColumns(),
-        aggregation_keys,
-        aggregation_keys_indexes_list,
         std::move(actions),
         prepared_sets,
         subqueries_for_sets,
@@ -659,7 +653,7 @@ void ExpressionAnalyzer::getRootActionsForHaving(
         false /* no_makeset */,
         only_consts,
         true /* create_source_for_in */,
-        group_by_kind);
+        getAggregationKeysInfo());
     ActionsVisitor(visitor_data, log.stream()).visit(ast);
     actions = visitor_data.getActions();
 }
