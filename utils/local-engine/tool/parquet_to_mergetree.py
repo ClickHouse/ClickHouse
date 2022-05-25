@@ -41,11 +41,11 @@ def transform(data_path, source, schema, dst):
         command2 = get_move_command(data_path, dst, no+1)
         command3 = get_clean_command(data_path)
         if os.system(command3) != 0:
-            raise command3 + " failed"
+            raise Exception(command3 + " failed")
         if os.system(command1) != 0:
-            raise command1 + " failed"
+            raise Exception(command1 + " failed")
         if os.system(command2) != 0:
-            raise command2 + " failed"
+            raise Exception(command2 + " failed")
         print(f"{abs_file}")
 
 
@@ -54,4 +54,6 @@ python3 parquet_to_mergetree.py --path=/root/data/tmp --source=/home/ubuntu/tpch
 """
 if __name__ == '__main__':
     args = parser.parse_args()
+    if not os.path.exists(args.dst):
+        os.mkdir(args.dst)
     transform(args.path, args.source, args.schema, args.dst)

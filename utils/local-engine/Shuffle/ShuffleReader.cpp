@@ -1,4 +1,5 @@
 #include "ShuffleReader.h"
+#include <Common/DebugUtils.h>
 #include <Shuffle/ShuffleSplitter.h>
 #include <Common/Exception.h>
 
@@ -25,7 +26,10 @@ Block* local_engine::ShuffleReader::read()
     if (header.columns() == 0)
         header = cur_block->cloneEmpty();
     if (cur_block->columns() == 0)
+    {
+        delete cur_block;
         cur_block = new Block(header.cloneEmpty());
+    }
     return cur_block;
 }
 ShuffleReader::~ShuffleReader()

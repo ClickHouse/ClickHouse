@@ -1,6 +1,5 @@
 #pragma once
-#include <Columns/ColumnString.h>
-#include <Columns/ColumnsNumber.h>
+
 #include <Core/Block.h>
 
 namespace debug

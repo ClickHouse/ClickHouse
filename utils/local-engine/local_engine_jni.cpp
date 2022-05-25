@@ -251,7 +251,14 @@ jshort Java_io_glutenproject_vectorized_CHColumnVector_nativeGetShort(JNIEnv * e
 jint Java_io_glutenproject_vectorized_CHColumnVector_nativeGetInt(JNIEnv * env, jobject obj, jint row_id, jlong block_address, jint column_position)
 {
     auto col = getColumnFromColumnVector(env, obj, block_address, column_position);
-    return reinterpret_cast<const jint*>(col.column->getDataAt(row_id).data)[0];
+    if (col.type->getTypeId() == TypeIndex::Date)
+    {
+        return col.column->getUInt(row_id);
+    }
+    else
+    {
+        return col.column->getInt(row_id);
+    }
 }
 
 jlong Java_io_glutenproject_vectorized_CHColumnVector_nativeGetLong(JNIEnv * env, jobject obj, jint row_id, jlong block_address, jint column_position)

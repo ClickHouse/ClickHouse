@@ -232,7 +232,6 @@ TEST(TestSelect, MergeTreeWriteTest)
                                                                                 );
 
     auto sink = std::make_shared<local_engine::CustomMergeTreeSink>(custom_merge_tree, metadata, global_context);
-
     auto files_info = std::make_shared<FilesInfo>();
     files_info->files.push_back("/home/kyligence/Documents/test-dataset/intel-gazelle-test-150.snappy.parquet");
     auto source = std::make_shared<BatchParquetFileSource>(files_info, metadata->getSampleBlock(), SerializedPlanParser::global_context);

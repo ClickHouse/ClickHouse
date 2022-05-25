@@ -115,7 +115,7 @@ std::unique_ptr<ReadBuffer> BatchParquetFileSource::getReadBufferFromFileURI(con
 #endif
     else
     {
-        throw std::runtime_error("unsupported schema");
+        throw std::runtime_error("unsupported schema " + schema);
     }
 }
 std::unique_ptr<ReadBuffer> BatchParquetFileSource::getReadBufferFromLocal(const String & file)

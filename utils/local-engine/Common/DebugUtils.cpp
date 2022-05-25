@@ -3,6 +3,7 @@
 #include <Formats/FormatSettings.h>
 #include <Functions/FunctionHelpers.h>
 #include <IO/WriteBufferFromString.h>
+#include <Columns/ColumnString.h>
 
 namespace debug
 {

@@ -24,20 +24,39 @@ static const std::map<std::string, std::string> SCALAR_FUNCTIONS = {
     {"is_not_null","isNotNull"},
     {"gte","greaterOrEquals"},
     {"gt", "greater"},
-    {"and", "and"},
     {"lte", "lessOrEquals"},
     {"lt", "less"},
-    {"TO_DATE", "toDate"},
     {"equal", "equals"},
+
+    {"and", "and"},
+    {"or", "or"},
+    {"not", "not"},
+    {"xor", "xor"},
+
+    {"TO_DATE", "toDate"},
     {"cast", ""},
     {"alias", "alias"},
+
     {"subtract", "minus"},
     {"multiply", "multiply"},
     {"add", "plus"},
+    {"divide", "divide"},
+    {"modulus", "modulo"},
+
+    {"like", "like"},
+    {"not_like", "notLike"},
+    {"starts_with", "startsWith"},
+    {"ends_with", "endsWith"},
+    {"contains", "countSubstrings"},
+
+    {"in", "in"},
+
     // aggregate functions
     {"count", "count"},
     {"avg", "avg"},
-    {"sum", "sum"}
+    {"sum", "sum"},
+    {"min", "min"},
+    {"max", "max"}
 };
 
 static const std::set<std::string> FUNCTION_NEED_KEEP_ARGUMENTS = {"alias"};
@@ -51,7 +70,7 @@ struct QueryContext {
 class SerializedPlanParser
 {
 public:
-    SerializedPlanParser(const ContextPtr & context);
+    explicit SerializedPlanParser(const ContextPtr & context);
     static void initFunctionEnv();
     DB::QueryPlanPtr parse(std::string& plan);
     DB::QueryPlanPtr parse(std::unique_ptr<substrait::Plan> plan);
@@ -81,8 +100,11 @@ public:
 private:
     static DB::NamesAndTypesList blockToNameAndTypeList(const DB::Block & header);
     DB::QueryPlanPtr parseOp(const substrait::Rel &rel);
+    DB::QueryPlanPtr parseJoin(substrait::JoinRel join, DB::QueryPlanPtr left, DB::QueryPlanPtr right);
+    void reorderJoinOutput(DB::QueryPlan & plan, DB::Names cols);
     std::string getFunctionName(std::string function_sig, const substrait::Type& output_type);
     DB::ActionsDAGPtr parseFunction(const DataStream & input, const substrait::Expression &rel, std::string & result_name, DB::ActionsDAGPtr actions_dag = nullptr, bool keep_result = false);
+    DB::ActionsDAGPtr parseFunctionWithDAG(const substrait::Expression &rel, std::string & result_name, DB::ActionsDAGPtr actions_dag = nullptr, bool keep_result = false);
     DB::QueryPlanStepPtr parseAggregate(DB::QueryPlan & plan, const substrait::AggregateRel &rel);
     const DB::ActionsDAG::Node * parseArgument(DB::ActionsDAGPtr action_dag, const substrait::Expression &rel);
     std::string getUniqueName(std::string name)

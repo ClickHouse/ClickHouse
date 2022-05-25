@@ -184,7 +184,9 @@ public:
     }
 
     ASTTableJoin::Kind kind() const { return table_join.kind; }
+    void setKind(ASTTableJoin::Kind kind) { table_join.kind = kind; }
     ASTTableJoin::Strictness strictness() const { return table_join.strictness; }
+    void setStrictness(ASTTableJoin::Strictness strictness) { table_join.strictness = strictness; }
     bool sameStrictnessAndKind(ASTTableJoin::Strictness, ASTTableJoin::Kind) const;
     const SizeLimits & sizeLimits() const { return size_limits; }
     VolumePtr getTemporaryVolume() { return tmp_volume; }
