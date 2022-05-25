@@ -551,8 +551,7 @@ void FileSegment::completeUnlocked(std::lock_guard<std::mutex> & cache_lock, std
         /// Segment state can be changed from DOWNLOADING or EMPTY only if the caller is the
         /// downloader or the only owner of the segment.
 
-        bool can_update_segment_state = isDownloaderImpl(segment_lock)
-            || cache->isLastFileSegmentHolder(key(), offset(), cache_lock, segment_lock);
+        bool can_update_segment_state = isDownloaderImpl(segment_lock) || is_last_holder;
 
         if (can_update_segment_state)
             download_state = State::PARTIALLY_DOWNLOADED;
