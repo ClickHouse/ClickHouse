@@ -301,8 +301,9 @@ private:
         std::unordered_set<std::string> table_functions;
     };
 
-    /// Needs to be chandged while having const context in factories methods
+    /// Needs to be changed while having const context in factories methods
     mutable QueryFactoriesInfo query_factories_info;
+    mutable std::mutex query_factories_info_mutex;
 
     /// TODO: maybe replace with temporary tables?
     StoragePtr view_source;                 /// Temporary StorageValues used to generate alias columns for materialized views
