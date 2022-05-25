@@ -59,11 +59,11 @@ struct AggregateFunctionSumData
     }
 
     /// Vectorized version
-    MULTITARGET_FUNCTION_WRAPPER_AVX2_SSE42(addManyImpl,
-    MULTITARGET_FH(
+    MULTITARGET_FUNCTION_AVX2_SSE42(
+    MULTITARGET_FUNCTION_HEADER(
     template <typename Value>
     void NO_SANITIZE_UNDEFINED NO_INLINE
-    ), /*addManyImpl*/ MULTITARGET_FB((const Value * __restrict ptr, size_t start, size_t end) /// NOLINT
+    ), addManyImpl, MULTITARGET_FUNCTION_BODY((const Value * __restrict ptr, size_t start, size_t end) /// NOLINT
     {
         ptr += start;
         size_t count = end - start;
@@ -122,11 +122,11 @@ struct AggregateFunctionSumData
         addManyImpl(ptr, start, end);
     }
 
-    MULTITARGET_FUNCTION_WRAPPER_AVX2_SSE42(addManyConditionalInternalImpl,
-    MULTITARGET_FH(
+    MULTITARGET_FUNCTION_AVX2_SSE42(
+    MULTITARGET_FUNCTION_HEADER(
     template <typename Value, bool add_if_zero>
     void NO_SANITIZE_UNDEFINED NO_INLINE
-    ), /*addManyConditionalInternalImpl*/ MULTITARGET_FB((const Value * __restrict ptr, const UInt8 * __restrict condition_map, size_t start, size_t end) /// NOLINT
+    ), addManyConditionalInternalImpl, MULTITARGET_FUNCTION_BODY((const Value * __restrict ptr, const UInt8 * __restrict condition_map, size_t start, size_t end) /// NOLINT
     {
         ptr += start;
         size_t count = end - start;
