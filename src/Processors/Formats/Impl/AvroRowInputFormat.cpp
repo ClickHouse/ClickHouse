@@ -279,30 +279,42 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(avro::Node
             break;
         case avro::AVRO_UNION:
         {
-            auto nullable_deserializer = [root_node, target_type](size_t non_null_union_index)
+            if (root_node->leaves() == 2
+                && (root_node->leafAt(0)->type() == avro::AVRO_NULL || root_node->leafAt(1)->type() == avro::AVRO_NULL))
             {
-                auto nested_deserialize = createDeserializeFn(root_node->leafAt(non_null_union_index), removeNullable(target_type));
-                return [non_null_union_index, nested_deserialize](IColumn & column, avro::Decoder & decoder)
+                size_t non_null_union_index = root_node->leafAt(0)->type() == avro::AVRO_NULL ? 1 : 0;
+                if (target.isNullable())
                 {
-                    ColumnNullable & col = assert_cast<ColumnNullable &>(column);
-                    size_t union_index = decoder.decodeUnionIndex();
-                    if (union_index == non_null_union_index)
+                    auto nested_deserialize = this->createDeserializeFn(root_node->leafAt(non_null_union_index), removeNullable(target_type));
+                    return [non_null_union_index, nested_deserialize](IColumn & column, avro::Decoder & decoder)
                     {
-                        nested_deserialize(col.getNestedColumn(), decoder);
-                        col.getNullMapData().push_back(0);
-                    }
-                    else
+                        ColumnNullable & col = assert_cast<ColumnNullable &>(column);
+                        size_t union_index = decoder.decodeUnionIndex();
+                        if (union_index == non_null_union_index)
+                        {
+                            nested_deserialize(col.getNestedColumn(), decoder);
+                            col.getNullMapData().push_back(0);
+                        }
+                        else
+                        {
+                            col.insertDefault();
+                        }
+                    };
+                }
+
+                if (null_as_default)
+                {
+                    auto nested_deserialize = this->createDeserializeFn(root_node->leafAt(non_null_union_index), target_type);
+                    return [non_null_union_index, nested_deserialize](IColumn & column, avro::Decoder & decoder)
                     {
-                        col.insertDefault();
-                    }
-                };
-            };
-            if (root_node->leaves() == 2 && target.isNullable())
-            {
-                if (root_node->leafAt(0)->type() == avro::AVRO_NULL)
-                    return nullable_deserializer(1);
-                if (root_node->leafAt(1)->type() == avro::AVRO_NULL)
-                    return nullable_deserializer(0);
+                        size_t union_index = decoder.decodeUnionIndex();
+                        if (union_index == non_null_union_index)
+                            nested_deserialize(column, decoder);
+                        else
+                            column.insertDefault();
+                    };
+                }
+
             }
             break;
         }
@@ -625,7 +637,8 @@ AvroDeserializer::Action AvroDeserializer::createAction(const Block & header, co
     }
 }
 
-AvroDeserializer::AvroDeserializer(const Block & header, avro::ValidSchema schema, bool allow_missing_fields)
+AvroDeserializer::AvroDeserializer(const Block & header, avro::ValidSchema schema, bool allow_missing_fields, bool null_as_default_)
+    : null_as_default(null_as_default_)
 {
     const auto & schema_root = schema.root();
     if (schema_root->type() != avro::AVRO_RECORD)
@@ -663,15 +676,15 @@ void AvroDeserializer::deserializeRow(MutableColumns & columns, avro::Decoder & 
 
 
 AvroRowInputFormat::AvroRowInputFormat(const Block & header_, ReadBuffer & in_, Params params_, const FormatSettings & format_settings_)
-    : IRowInputFormat(header_, in_, params_),
-      allow_missing_fields(format_settings_.avro.allow_missing_fields)
+    : IRowInputFormat(header_, in_, params_), format_settings(format_settings_)
 {
 }
 
 void AvroRowInputFormat::readPrefix()
 {
     file_reader_ptr = std::make_unique<avro::DataFileReaderBase>(std::make_unique<InputStreamReadBufferAdapter>(*in));
-    deserializer_ptr = std::make_unique<AvroDeserializer>(output.getHeader(), file_reader_ptr->dataSchema(), allow_missing_fields);
+    deserializer_ptr = std::make_unique<AvroDeserializer>(
+        output.getHeader(), file_reader_ptr->dataSchema(), format_settings.avro.allow_missing_fields, format_settings.avro.null_as_default);
     file_reader_ptr->init();
 }
 
@@ -857,7 +870,8 @@ const AvroDeserializer & AvroConfluentRowInputFormat::getOrCreateDeserializer(Sc
     if (it == deserializer_cache.end())
     {
         auto schema = schema_registry->getSchema(schema_id);
-        AvroDeserializer deserializer(output.getHeader(), schema, format_settings.avro.allow_missing_fields);
+        AvroDeserializer deserializer(
+            output.getHeader(), schema, format_settings.avro.allow_missing_fields, format_settings.avro.null_as_default);
         it = deserializer_cache.emplace(schema_id, deserializer).first;
     }
     return it->second;
@@ -939,7 +953,8 @@ DataTypePtr AvroSchemaReader::avroNodeToDataType(avro::NodePtr node)
             if (node->leaves() == 2 && (node->leafAt(0)->type() == avro::Type::AVRO_NULL || node->leafAt(1)->type() == avro::Type::AVRO_NULL))
             {
                 size_t nested_leaf_index = node->leafAt(0)->type() == avro::Type::AVRO_NULL ? 1 : 0;
-                return makeNullable(avroNodeToDataType(node->leafAt(nested_leaf_index)));
+                auto nested_type = avroNodeToDataType(node->leafAt(nested_leaf_index));
+                return nested_type->canBeInsideNullable() ? makeNullable(nested_type) : nested_type;
             }
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Avro type  UNION is not supported for inserting.");
         case avro::Type::AVRO_SYMBOLIC:
