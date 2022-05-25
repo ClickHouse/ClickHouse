@@ -177,6 +177,7 @@ public:
         , cache(cache_)
         , data(std::move(cache->getOrSet(cache_key, [&] { return std::make_shared<Data>(cache_key_.header, Chunks{}); }).first))
     {
+        tryAcquire();
     }
 
     ~CachePutHolder()
@@ -188,16 +189,10 @@ public:
         }
     }
 
-    bool tryAcquire()
-    {
-        bool result = mutex.try_lock();
-        executing_put_in_cache.store(result);
-        return result;
-    }
 
     void insertChunk(Chunk && chunk)
     {
-        if (!fits_into_memory)
+        if (!fits_into_memory || !executing_put_in_cache.load())
         {
             return;
         }
@@ -213,6 +208,13 @@ public:
     }
 
 private:
+    bool tryAcquire()
+    {
+        bool result = mutex.try_lock();
+        executing_put_in_cache.store(result);
+        return result;
+    }
+
     std::mutex & mutex;
     CacheRemovalScheduler * removal_scheduler;
     CacheKey cache_key;
@@ -295,6 +297,11 @@ public:
     bool containsResult(CacheKey cache_key)
     {
         return cache->get(cache_key) != nullptr;
+    }
+
+    void reset()
+    {
+        cache->reset();
     }
 
     ~QueryCache()

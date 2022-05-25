@@ -20,7 +20,8 @@ public:
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
 private:
-    CachePutHolder holder;
+    QueryCachePtr cache;
+    CacheKey cache_key;
 };
 
 }

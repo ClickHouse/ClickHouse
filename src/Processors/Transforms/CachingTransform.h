@@ -11,10 +11,12 @@ namespace DB
 class CachingTransform : public ISimpleTransform
 {
 public:
-    CachingTransform(const Block & header_, CachePutHolder && holder_)
+    CachingTransform(const Block & header_, QueryCachePtr cache, CacheKey cache_key)
         : ISimpleTransform(header_, header_, false)
-        , holder(holder_)
-    {}
+        , holder(cache->tryPutInCache(cache_key))
+    {
+    }
+
     String getName() const override { return "CachingTransform"; }
 
 protected:

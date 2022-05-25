@@ -24,17 +24,15 @@ static ITransformingStep::Traits getTraits()
 void CachingStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
     // only returns true for one thread, so that multiple threads are not caching the same query result at the same time
-    if (holder.tryAcquire())
-    {
-        pipeline.addSimpleTransform(
-            [&](const Block & header, QueryPipelineBuilder::StreamType) -> ProcessorPtr
-            { return std::make_shared<CachingTransform>(header, std::move(holder)); });
-    }
+    pipeline.addSimpleTransform(
+        [&](const Block & header, QueryPipelineBuilder::StreamType) -> ProcessorPtr
+        { return std::make_shared<CachingTransform>(header, cache, cache_key); });
 }
 
 CachingStep::CachingStep(const DataStream & input_stream_, QueryCachePtr cache_, CacheKey cache_key_)
     : ITransformingStep(input_stream_, input_stream_.header, getTraits())
-    , holder(cache_->tryPutInCache(cache_key_))
+    , cache(cache_)
+    , cache_key(cache_key_)
 {
 }
 
