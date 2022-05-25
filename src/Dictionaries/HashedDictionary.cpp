@@ -331,6 +331,7 @@ DictionaryHierarchyParentToChildIndexPtr HashedDictionary<dictionary_key_type, s
         const CollectionType<UInt64> & parent_keys = std::get<CollectionType<UInt64>>(hierarchical_attribute.container);
 
         HashMap<UInt64, PaddedPODArray<UInt64>> parent_to_child;
+        parent_to_child.reserve(parent_keys.size());
 
         for (const auto & [key, value] : parent_keys)
             parent_to_child[value].emplace_back(key);
