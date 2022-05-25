@@ -1,13 +1,13 @@
-SELECT arrayL1Norm([1, 2, 3]);
-SELECT arrayL2Norm([3., 4., 5.]);
-SELECT arrayLinfNorm([0, 0, 2]);
+SELECT L1Norm([1, 2, 3]);
+SELECT L2Norm([3., 4., 5.]);
+SELECT LinfNorm([0, 0, 2]);
 
 -- Overflows
 WITH CAST([-547274980, 1790553898, 1981517754, 1908431500, 1352428565, -573412550, -552499284, 2096941042], 'Array(Int32)') AS a
 SELECT
-    arrayL1Norm(a),
-    arrayL2Norm(a),
-    arrayLinfNorm(a);
+    L1Norm(a),
+    L2Norm(a),
+    LinfNorm(a);
 
 DROP TABLE IF EXISTS vec1;
 DROP TABLE IF EXISTS vec1f;
@@ -19,16 +19,16 @@ INSERT INTO vec1 VALUES (1, [3, 4]), (2, [2]), (3, [3, 3, 3]), (4, NULL);
 INSERT INTO vec1f VALUES (1, [3, 4]), (2, [2]), (3, [3, 3, 3]), (4, NULL);
 INSERT INTO vec1d VALUES (1, [3, 4]), (2, [2]), (3, [3, 3, 3]), (4, NULL);
 
-SELECT id, arrayL2Norm(v) FROM vec1;
-SELECT id, arrayL1Norm(materialize([5., 6.])) FROM vec1;
+SELECT id, L2Norm(v) FROM vec1;
+SELECT id, L1Norm(materialize([5., 6.])) FROM vec1;
 
-SELECT id, arrayL2Norm(v) FROM vec1f;
-SELECT id, arrayL1Norm(materialize([5., 6.])) FROM vec1f;
+SELECT id, L2Norm(v) FROM vec1f;
+SELECT id, L1Norm(materialize([5., 6.])) FROM vec1f;
 
-SELECT id, arrayL2Norm(v) FROM vec1d;
-SELECT id, arrayL1Norm(materialize([5., 6.])) FROM vec1d;
+SELECT id, L2Norm(v) FROM vec1d;
+SELECT id, L1Norm(materialize([5., 6.])) FROM vec1d;
 
-SELECT arrayL1Norm((1, 2,)); -- { serverError 43 }
+SELECT L1Norm(1, 2); -- { serverError 42 }
 
 DROP TABLE vec1;
 DROP TABLE vec1f;
