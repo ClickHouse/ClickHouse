@@ -79,6 +79,8 @@ FROM
 WHERE endsWith(local_path, 'data.bin')
 FORMAT Vertical;
 
+SYSTEM STOP MERGES test;
+
 SELECT count() FROM (SELECT arrayJoin(cache_paths) AS cache_path, local_path, remote_path FROM system.remote_data_paths ) AS data_paths INNER JOIN system.filesystem_cache AS caches ON data_paths.cache_path = caches.cache_path;
 SELECT count() FROM system.filesystem_cache;
 
@@ -89,6 +91,9 @@ SELECT count() FROM system.filesystem_cache;
 INSERT INTO test SELECT number, toString(number) FROM numbers(100);
 INSERT INTO test SELECT number, toString(number) FROM numbers(300, 10000);
 SELECT count() FROM system.filesystem_cache;
+
+SYSTEM START MERGES test;
+
 OPTIMIZE TABLE test FINAL;
 SELECT count() FROM system.filesystem_cache;
 
@@ -98,12 +103,18 @@ SELECT count() FROM system.filesystem_cache;
 
 INSERT INTO test SELECT number, toString(number) FROM numbers(5000000);
 SYSTEM FLUSH LOGS;
-SELECT query, ProfileEvents['RemoteFSReadBytes'] > 0 as remote_fs_read
-FROM system.query_log
-WHERE query LIKE 'SELECT number, toString(number) FROM numbers(5000000)%'
-AND type = 'QueryFinish'
-AND current_database = currentDatabase()
-ORDER BY query_start_time DESC
+SELECT
+    query, ProfileEvents['RemoteFSReadBytes'] > 0 as remote_fs_read
+FROM
+    system.query_log
+WHERE
+    query LIKE 'SELECT number, toString(number) FROM numbers(5000000)%'
+    AND type = 'QueryFinish'
+    AND current_database = currentDatabase()
+ORDER BY
+    query_start_time
+    DESC
 LIMIT 1;
+
 SELECT count() FROM test;
 SELECT count() FROM test WHERE value LIKE '%010%';
