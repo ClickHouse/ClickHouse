@@ -101,14 +101,9 @@
 
         #controls
         {
-            /* Make enough space for even huge queries. */
-            height: 20%;
             /* When a page will be scrolled horizontally due to large table size, keep controls in place. */
             position: sticky;
             left: 0;
-            /* This allows query textarea to occupy the remaining height while other elements have fixed height. */
-            display: flex;
-            flex-direction: column;
         }
 
         /* Otherwise Webkit based browsers will display ugly border on focus. */
@@ -146,15 +141,10 @@
             background-color: var(--element-background-color);
         }
 
-        #query_div
-        {
-            /* Make enough space for medium/large queries but allowing query textarea to grow. */
-            min-height: 20%;
-            display: grid;
-        }
-
         #query
         {
+            /* Make enough space for even big queries. */
+            height: calc(20vh);
             /* Keeps query text-area's width full screen even when user adjusting the width of the query box. */
             min-width: 100%;
         }
