@@ -83,6 +83,9 @@ public:
 
     UInt32 getRefCount(const String & path) const override { return delegate->getRefCount(path); }
 
+    void syncRevision(UInt64 revision) override { delegate->syncRevision(revision); }
+    UInt64 getRevision() const override { return delegate->getRevision(); }
+
 protected:
     Executor & getExecutor() override;
 
