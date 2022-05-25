@@ -507,7 +507,7 @@ bool LRUFileCache::tryReserve(
     std::vector<FileSegmentCell *> to_evict;
     std::vector<FileSegmentCell *> trash;
 
-    for (const auto & [entry_key, entry_offset, entry_size, entry_hits] : queue)
+    for (const auto & [entry_key, entry_offset, entry_size, _] : queue)
     {
         if (!is_overflow())
             break;
@@ -655,7 +655,7 @@ void LRUFileCache::remove()
     std::vector<FileSegment *> to_remove;
     for (auto it = queue.begin(); it != queue.end();)
     {
-        const auto & [key, offset, size, hits] = *it++;
+        const auto & [key, offset, size, _] = *it++;
         auto * cell = getCell(key, offset, cache_lock);
         if (!cell)
             throw Exception(
@@ -935,7 +935,7 @@ LRUFileCache::LRUQueue::Iterator LRUFileCache::LRUQueue::add(
     const IFileCache::Key & key, size_t offset, size_t size, std::lock_guard<std::mutex> & /* cache_lock */)
 {
 #ifndef NDEBUG
-    for (const auto & [entry_key, entry_offset, _] : queue)
+    for (const auto & [entry_key, entry_offset, _, _] : queue)
     {
         if (entry_key == key && entry_offset == offset)
             throw Exception(
@@ -971,7 +971,7 @@ bool LRUFileCache::LRUQueue::contains(
 {
     /// This method is used for assertions in debug mode.
     /// So we do not care about complexity here.
-    for (const auto & [entry_key, entry_offset, size, hits] : queue)
+    for (const auto & [entry_key, entry_offset, size, _] : queue)
     {
         if (key == entry_key && offset == entry_offset)
             return true;
@@ -984,7 +984,7 @@ void LRUFileCache::LRUQueue::assertCorrectness(LRUFileCache * cache, std::lock_g
     [[maybe_unused]] size_t total_size = 0;
     for (auto it = queue.begin(); it != queue.end();)
     {
-        auto & [key, offset, size, hits] = *it++;
+        auto & [key, offset, size, _] = *it++;
 
         auto * cell = cache->getCell(key, offset, cache_lock);
         if (!cell)
@@ -1006,7 +1006,7 @@ void LRUFileCache::LRUQueue::assertCorrectness(LRUFileCache * cache, std::lock_g
 String LRUFileCache::LRUQueue::toString(std::lock_guard<std::mutex> & /* cache_lock */) const
 {
     String result;
-    for (const auto & [key, offset, size, hits] : queue)
+    for (const auto & [key, offset, size, _] : queue)
     {
         if (!result.empty())
             result += ", ";
