@@ -234,7 +234,7 @@ private:
     AccessRecord records;
     size_t max_stash_element_size;
     size_t enable_cache_hits_threshold;
-    
+
     Poco::Logger * log;
 
     FileSegments getImpl(
