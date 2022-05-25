@@ -67,6 +67,26 @@ SSL connection:
 For secure connection use `nats_secure = 1`.
 The default behaviour of the used library is not to check if the created TLS connection is sufficiently secure. Whether the certificate is expired, self-signed, missing or invalid: the connection is simply permitted. More strict checking of certificates can possibly be implemented in the future.
 
+Writing to NATS table:
+
+If table reads only from one subject, any insert will publish to the same subject.
+However, if table reads from multiple subjects, we need to specify which subject we want to publish to.
+That is why whenever inserting into table with multiple subjects, setting `stream_like_engine_insert_queue` is needed.
+You can select one of the subjects the table reads from and publish your data there. For example:
+
+``` sql
+  CREATE TABLE queue (
+    key UInt64,
+    value UInt64
+  ) ENGINE = NATS 
+    SETTINGS nats_url = 'localhost:4444',
+             nats_subjects = 'subject1,subject2',
+             nats_format = 'JSONEachRow';
+
+  INSERT INTO queue 
+  SETTINGS stream_like_engine_insert_queue = 'subject2'
+  VALUES (1, 1);
+```
 
 Also format settings can be added along with nats-related settings.
 
@@ -79,7 +99,7 @@ Example:
     date DateTime
   ) ENGINE = NATS 
     SETTINGS nats_url = 'localhost:4444',
-             nats_subject = 'subject1',
+             nats_subjects = 'subject1',
              nats_format = 'JSONEachRow',
              date_time_input_format = 'best_effort';
 ```
@@ -114,7 +134,7 @@ Example:
     value UInt64
   ) ENGINE = NATS 
     SETTINGS nats_url = 'localhost:4444',
-             nats_subject = 'subject1',
+             nats_subjects = 'subject1',
              nats_format = 'JSONEachRow',
              date_time_input_format = 'best_effort';
 
