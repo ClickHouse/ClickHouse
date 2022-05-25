@@ -338,7 +338,7 @@ private:
         std::unordered_set<std::string> storages;
         std::unordered_set<std::string> table_functions;
 
-        std::mutex mutex;
+        mutable std::mutex mutex;
     };
 
     /// Needs to be changed while having const context in factories methods
