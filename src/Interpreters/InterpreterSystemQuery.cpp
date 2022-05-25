@@ -35,6 +35,7 @@
 #include <Interpreters/TransactionsInfoLog.h>
 #include <Interpreters/ProcessorsProfileLog.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
+#include <Interpreters/TransactionLog.h>
 #include <Access/ContextAccess.h>
 #include <Access/Common/AllowedClientHosts.h>
 #include <Databases/IDatabase.h>
@@ -442,6 +443,9 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::SYNC_DATABASE_REPLICA:
             syncReplicatedDatabase(query);
             break;
+        case Type::SYNC_TRANSACTION_LOG:
+            syncTransactionLog();
+            break;
         case Type::FLUSH_DISTRIBUTED:
             flushDistributed(query);
             break;
@@ -763,6 +767,13 @@ void InterpreterSystemQuery::syncReplicatedDatabase(ASTSystemQuery & query)
 }
 
 
+void InterpreterSystemQuery::syncTransactionLog()
+{
+    getContext()->checkTransactionsAreAllowed(/* explicit_tcl_query */ true);
+    TransactionLog::instance().sync();
+}
+
+
 void InterpreterSystemQuery::flushDistributed(ASTSystemQuery &)
 {
     getContext()->checkAccess(AccessType::SYSTEM_FLUSH_DISTRIBUTED, table_id);
@@ -935,6 +946,11 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::SYNC_DATABASE_REPLICA:
         {
             required_access.emplace_back(AccessType::SYSTEM_SYNC_DATABASE_REPLICA, query.getDatabase());
+            break;
+        }
+        case Type::SYNC_TRANSACTION_LOG:
+        {
+            required_access.emplace_back(AccessType::SYSTEM_SYNC_TRANSACTION_LOG);
             break;
         }
         case Type::FLUSH_DISTRIBUTED:
