@@ -70,7 +70,7 @@ HiveFiles HiveFilesCollector::collect(HivePruneLevel prune_level)
 
     HiveFiles hive_files;
     Int64 hit_partitions_num = 0;
-    Int64 max_partition_to_read = context->getSettings().max_partitions_to_read; 
+    Int64 max_partition_to_read = context->getSettings().max_partitions_to_read;
     std::mutex hive_files_mutex;
     ThreadPool thread_pool{num_streams};
     if (!partitions.empty())
