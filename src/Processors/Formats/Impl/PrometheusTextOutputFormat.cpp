@@ -113,20 +113,20 @@ void PrometheusTextOutputFormat::fixupBucketLabels(CurrentMetric & metric)
         {
             bool lhs_labels_contain_sum = lhs.labels.contains("sum");
             bool lhs_labels_contain_count = lhs.labels.contains("count");
-            bool lhs_labels_contain_sum_and_count = lhs_labels_contain_sum || lhs_labels_contain_count;
+            bool lhs_labels_contain_sum_or_count = lhs_labels_contain_sum || lhs_labels_contain_count;
 
             bool rhs_labels_contain_sum = rhs.labels.contains("sum");
             bool rhs_labels_contain_count = rhs.labels.contains("count");
-            bool rhs_labels_contain_sum_and_count = rhs_labels_contain_sum || rhs_labels_contain_count;
+            bool rhs_labels_contain_sum_or_count = rhs_labels_contain_sum || rhs_labels_contain_count;
 
             /// rows with labels at the beginning and then `_sum` and `_count`
             if (lhs_labels_contain_sum && rhs_labels_contain_count)
                 return true;
             else if (lhs_labels_contain_count && rhs_labels_contain_sum)
                 return false;
-            else if (rhs_labels_contain_sum_and_count && !lhs_labels_contain_sum_and_count)
+            else if (rhs_labels_contain_sum_or_count && !lhs_labels_contain_sum_or_count)
                 return true;
-            else if (lhs_labels_contain_sum_and_count && !rhs_labels_contain_sum_and_count)
+            else if (lhs_labels_contain_sum_or_count && !rhs_labels_contain_sum_or_count)
                 return false;
 
             auto lit = lhs.labels.find(bucket_label);
