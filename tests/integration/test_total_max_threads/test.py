@@ -3,6 +3,7 @@ from helpers.cluster import ClickHouseCluster
 
 import threading
 import time
+from helpers.client import QueryRuntimeException
 
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance(
@@ -75,34 +76,48 @@ def test_total_max_threads_defined_1(started_cluster):
     )
 
 
+# In config_limit_reached.xml there is total_max_threads=10
+# Background query starts in a separate thread to reach this limit.
+# When this limit is reached the foreground query gets less than 5 queries despite the fact that it has settings max_threads=5
 def test_total_max_threads_limit_reached(started_cluster):
-    def thread_select():
-        node4.query(
-            "SELECT count(*) FROM numbers_mt(1e11) settings max_threads=100",
-            query_id="background_query",
-        )
+    def background_query():
+        try:
+            node4.query(
+                "SELECT count(*) FROM numbers_mt(1e11) settings max_threads=100",
+                query_id="background_query",
+            )
+        except QueryRuntimeException:
+            pass
 
-    another_thread = threading.Thread(target=thread_select)
-    another_thread.start()
+    background_thread = threading.Thread(target=background_query)
+    background_thread.start()
 
-    while (
-        node4.query(
-            "SELECT count(*) FROM system.processes where query_id = 'background_query'"
-        )
-        == "0\n"
-    ):
+    def limit_reached():
+        s_count = node4.query(
+            "SELECT sum(length(thread_ids)) FROM system.processes"
+        ).strip()
+        if s_count:
+            count = int(s_count)
+        else:
+            count = 0
+        return count >= 10
+
+    while not limit_reached():
         time.sleep(0.1)
 
     node4.query(
         "SELECT count(*) FROM numbers_mt(10000000) settings max_threads=5",
         query_id="test_total_max_threads_4",
     )
-    another_thread.join()
+
     node4.query("SYSTEM FLUSH LOGS")
-    assert (
-        node4.query(
-            "select length(thread_ids) from system.query_log where current_database = currentDatabase() and type = 'QueryFinish' and query_id = 'test_total_max_threads_4'"
-        )
-        == "2\n"
-    )
-    node4.query("KILL QUERY WHERE user = 'default' SYNC")
+    s_count = node4.query(
+        "select length(thread_ids) from system.query_log where current_database = currentDatabase() and type = 'QueryFinish' and query_id = 'test_total_max_threads_4'"
+    ).strip()
+    if s_count:
+        count = int(s_count)
+    else:
+        count = 0
+    assert count < 5
+    node4.query("KILL QUERY WHERE query_id = 'background_query' SYNC")
+    background_thread.join()
