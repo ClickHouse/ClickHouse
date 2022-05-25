@@ -3,7 +3,20 @@
 namespace DB
 {
 
-BoundedReadBuffer::BoundedReadBuffer(std::unique_ptr<SeekableReadBuffer> impl_) : ReadBufferFromFileDecorator(std::move(impl_)) {}
+BoundedReadBuffer::BoundedReadBuffer(std::unique_ptr<SeekableReadBuffer> impl_)
+    : ReadBufferFromFileDecorator(std::move(impl_))
+{
+}
+
+void BoundedReadBuffer::setReadUntilPosition(size_t position)
+{
+    read_until_position = position;
+}
+
+void BoundedReadBuffer::setReadUntilEnd()
+{
+    read_until_position.reset();
+}
 
 bool BoundedReadBuffer::nextImpl()
 {

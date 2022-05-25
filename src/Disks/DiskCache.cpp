@@ -5,10 +5,14 @@
 #include <Common/FileSegment.h>
 #include <Common/logger_useful.h>
 #include <Common/filesystemHelpers.h>
+
 #include <Disks/DiskFactory.h>
+#include <Disks/IO/CachedReadBufferFromFile.h>
+
 #include <IO/ReadBufferFromFile.h>
 #include <IO/WriteBufferFromFileDecorator.h>
-#include <Disks/IO/CachedReadBufferFromFile.h>
+#include <IO/BoundedReadBuffer.h>
+
 #include <Interpreters/FilesystemCacheLog.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <filesystem>
@@ -199,15 +203,19 @@ std::unique_ptr<ReadBufferFromFileBase> DiskCache::readFile(
                 throw Exception(ErrorCodes::CANNOT_USE_CACHE, "Failed to find out file size for: {}", path);
         }
 
-        auto full_path = fs::path(getPath()) / path;
-        String query_id = CurrentThread::isInitialized() && CurrentThread::get().getQueryContext() ? CurrentThread::getQueryId().toString() : "";
         auto implementation_buffer_creator = [=, this]()
         {
-            return DiskDecorator::readFile(path, read_settings, read_hint, file_size);
+            auto implemenetation_buffer = DiskDecorator::readFile(path, read_settings, read_hint, file_size);
+            return std::make_unique<BoundedReadBuffer>(std::move(implemenetation_buffer));
         };
 
+        auto full_path = fs::path(getPath()) / path;
         auto file_id = toString(getINodeNumberFromPath(full_path));
         auto key = cache->hash(file_id);
+
+        String query_id =
+            CurrentThread::isInitialized() && CurrentThread::get().getQueryContext() ? CurrentThread::getQueryId().toString() : "";
+
         return std::make_unique<CachedReadBufferFromFile>(
             full_path, key, cache, implementation_buffer_creator, read_settings, query_id, file_size.value());
     }
