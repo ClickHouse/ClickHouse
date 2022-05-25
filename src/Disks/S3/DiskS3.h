@@ -69,7 +69,8 @@ public:
         DiskPtr metadata_disk_,
         ContextPtr context_,
         SettingsPtr settings_,
-        GetDiskSettings settings_getter_);
+        GetDiskSettings settings_getter_,
+        String operation_log_suffix_);
 
     std::unique_ptr<ReadBufferFromFileBase> readFile(
         const String & path,
@@ -111,6 +112,9 @@ public:
     void onFreeze(const String & path) override;
 
     void applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr context, const String &, const DisksMap &) override;
+
+    void syncRevision(UInt64 revision) override;
+    UInt64 getRevision() const override;
 
 private:
     void createFileOperationObject(const String & operation_name, UInt64 revision, const ObjectMetadata & metadata);
@@ -154,6 +158,10 @@ private:
     /// Forms detached path '../../detached/part_name/' from '../../part_name/'
     static String pathToDetached(const String & source_path);
 
+    /// Move file or files in directory when possible and remove files in other case
+    /// to restore by S3 operation log with same operations from different replicas
+    void moveRecursiveOrRemove(const String & from_path, const String & to_path, bool send_metadata);
+
     const String bucket;
 
     const String version_id;
@@ -169,8 +177,8 @@ private:
     /// File at path {metadata_path}/restore contains metadata restore information
     inline static const String RESTORE_FILE_NAME = "restore";
 
-    /// Key has format: ../../r{revision}-{operation}
-    const re2::RE2 key_regexp {".*/r(\\d+)-(\\w+)$"};
+    /// Key has format: ../../r{revision}(-{hostname})-{operation}
+    const re2::RE2 key_regexp {".*/r(\\d+)(-[\\w\\d\\-\\.]+)?-(\\w+)$"};
 
     /// Object contains information about schema version.
     inline static const String SCHEMA_VERSION_OBJECT = ".SCHEMA_VERSION";
@@ -180,6 +188,8 @@ private:
     const std::vector<String> data_roots {"data", "store"};
 
     ContextPtr context;
+
+    String operation_log_suffix;
 };
 
 }

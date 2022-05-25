@@ -22,7 +22,7 @@ public:
 
 private:
     BlockIO executeBegin(ContextMutablePtr session_context);
-    static BlockIO executeCommit(ContextMutablePtr session_context);
+    BlockIO executeCommit(ContextMutablePtr session_context);
     static BlockIO executeRollback(ContextMutablePtr session_context);
     static BlockIO executeSetSnapshot(ContextMutablePtr session_context, UInt64 snapshot);
 

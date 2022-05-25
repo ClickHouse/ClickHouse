@@ -425,7 +425,7 @@ auto WindowTransform::moveRowNumberNoCheck(const RowNumber & _x, int64_t offset)
 {
     RowNumber x = _x;
 
-    if (offset > 0)
+    if (offset > 0 && x != blocksEnd())
     {
         for (;;)
         {

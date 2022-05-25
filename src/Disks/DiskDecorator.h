@@ -90,6 +90,10 @@ public:
 
     DiskPtr getWrappedDisk() const override { return delegate; }
 
+    void syncRevision(UInt64 revision) override { delegate->syncRevision(revision); }
+
+    UInt64 getRevision() const override { return delegate->getRevision(); }
+
 protected:
     Executor & getExecutor() override;
 

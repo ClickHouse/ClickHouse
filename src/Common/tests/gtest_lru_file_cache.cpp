@@ -33,7 +33,7 @@ void assertRange(
     ASSERT_EQ(range.left, expected_range.left);
     ASSERT_EQ(range.right, expected_range.right);
     ASSERT_EQ(file_segment->state(), expected_state);
-};
+}
 
 void printRanges(const auto & segments)
 {

@@ -93,7 +93,7 @@ protected:
         QueryProcessingStage::Enum & processed_stage,
         size_t max_block_size) const;
 
-    bool isColumnOriented() const override;
+    bool supportsSubsetOfColumns() const override;
 
 private:
     virtual Block getHeaderBlock(const Names & column_names, const StorageSnapshotPtr & storage_snapshot) const = 0;
