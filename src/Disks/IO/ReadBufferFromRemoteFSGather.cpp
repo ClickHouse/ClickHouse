@@ -61,8 +61,9 @@ SeekableReadBufferPtr ReadBufferFromS3Gather::createImplementationBufferImpl(con
 
     if (with_cache)
     {
+        auto cache_key = settings.remote_fs_cache->hash(remote_path);
         return std::make_shared<CachedReadBufferFromFile>(
-            remote_path, settings.remote_fs_cache, remote_file_reader_creator,
+            remote_path, cache_key, settings.remote_fs_cache, remote_file_reader_creator,
             settings, query_id, file_size, read_until_position ? std::optional<size_t>(read_until_position) : std::nullopt);
     }
 

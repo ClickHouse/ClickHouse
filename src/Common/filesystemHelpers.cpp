@@ -232,6 +232,19 @@ size_t getSizeFromFileDescriptor(int fd, const String & file_name)
     return buf.st_size;
 }
 
+int getINodeNumberFromPath(const String & path)
+{
+    struct stat file_stat;
+    if (stat(path.data(), &file_stat))
+    {
+        throwFromErrnoWithPath(
+            "Cannot execute stat for file " + path,
+            path,
+            ErrorCodes::CANNOT_STAT);
+    }
+    return file_stat.st_ino;
+}
+
 }
 
 

@@ -4,6 +4,7 @@
 #include <Common/IFileCache.h>
 #include <Common/FileSegment.h>
 #include <Common/logger_useful.h>
+#include <Common/filesystemHelpers.h>
 #include <Disks/DiskFactory.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/WriteBufferFromFileDecorator.h>
@@ -28,6 +29,7 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int FILE_DOESNT_EXIST;
+    extern const int CANNOT_USE_CACHE;
 }
 
 class CachedWriteBuffer final : public WriteBufferFromFileDecorator
@@ -36,18 +38,18 @@ public:
     CachedWriteBuffer(
         std::unique_ptr<WriteBuffer> impl_,
         FileCachePtr cache_,
-        const String & path_,
+        const String & source_path_,
+        const IFileCache::Key & key_,
         bool is_persistent_cache_file_,
         const String & query_id_,
         const WriteSettings & settings_)
         : WriteBufferFromFileDecorator(std::move(impl_))
         , cache(cache_)
-        , source_path(path_)
-        , key(cache_->hash(path_))
+        , source_path(source_path_)
+        , key(key_)
         , is_persistent_cache_file(is_persistent_cache_file_)
         , query_id(query_id_)
         , enable_cache_log(!query_id_.empty() && settings_.enable_filesystem_cache_log)
-        , cache_writer(cache_.get(), key, [this](const FileSegmentPtr & file_segment) { appendFilesystemCacheLog(file_segment); })
     {
     }
 
@@ -64,7 +66,7 @@ public:
         catch (...)
         {
             /// If something was already written to cache, remove it.
-            cache_writer.clear();
+            cache_writer->clear();
             throw;
         }
 
@@ -77,12 +79,18 @@ public:
 
     void cacheData(char * data, size_t size)
     {
+        if (!cache_writer)
+        {
+            cache_writer = std::make_unique<FileSegmentRangeWriter>(
+                cache.get(), key, [this](const FileSegmentPtr & file_segment) { appendFilesystemCacheLog(file_segment); });
+        }
+
         Stopwatch watch(CLOCK_MONOTONIC);
 
         bool cached;
         try
         {
-            cached = cache_writer.write(data, size, current_download_offset, is_persistent_cache_file);
+            cached = cache_writer->write(data, size, current_download_offset, is_persistent_cache_file);
         }
         catch (...)
         {
@@ -122,7 +130,8 @@ public:
 
     void preFinalize() override
     {
-        cache_writer.finalize();
+        if (cache_writer)
+            cache_writer->finalize();
     }
 
 private:
@@ -135,8 +144,8 @@ private:
     const String query_id;
     bool enable_cache_log;
 
-    FileSegmentRangeWriter cache_writer;
     ProfileEvents::Counters current_file_segment_counters;
+    std::unique_ptr<FileSegmentRangeWriter> cache_writer;
 };
 
 
@@ -183,12 +192,24 @@ std::unique_ptr<ReadBufferFromFileBase> DiskCache::readFile(
     }
     else
     {
-        std::terminate();
-        // auto full_path = fs::path(getPath()) / path;
-        // String query_id = CurrentThread::isInitialized() && CurrentThread::get().getQueryContext() ? CurrentThread::getQueryId().toString() : "";
-        // auto implementation_buffer_creator = [created = std::move(impl)]() mutable { return std::move(created); };
+        if (!file_size)
+        {
+            file_size = impl->getFileSize();
+            if (!file_size)
+                throw Exception(ErrorCodes::CANNOT_USE_CACHE, "Failed to find out file size for: {}", path);
+        }
 
-        /// return std::make_unique<CachedReadBufferFromFile>(full_path, cache, std::move(implementation_buffer_creator), settings, query_id);
+        auto full_path = fs::path(getPath()) / path;
+        String query_id = CurrentThread::isInitialized() && CurrentThread::get().getQueryContext() ? CurrentThread::getQueryId().toString() : "";
+        auto implementation_buffer_creator = [=, this]()
+        {
+            return DiskDecorator::readFile(path, read_settings, read_hint, file_size);
+        };
+
+        auto file_id = toString(getINodeNumberFromPath(full_path));
+        auto key = cache->hash(file_id);
+        return std::make_unique<CachedReadBufferFromFile>(
+            full_path, key, cache, implementation_buffer_creator, read_settings, query_id, file_size.value());
     }
 }
 
@@ -210,62 +231,92 @@ std::unique_ptr<WriteBufferFromFileBase> DiskCache::writeFile(
             log, "Caching file `{}` ({}) to `{}`, query_id: {}",
             impl->getFileName(), path, cache->hash(impl->getFileName()).toString(), query_id);
 
+        IFileCache::Key key;
+        if (isRemote())
+        {
+            key = cache->hash(impl->getFileName());
+        }
+        else
+        {
+            String full_path = fs::path(getPath()) / path;
+            auto file_id = toString(getINodeNumberFromPath(full_path));
+            key = cache->hash(file_id);
+        }
         return std::make_unique<CachedWriteBuffer>(
-            std::move(impl), cache, impl->getFileName(), isFilePersistent(path), query_id, settings);
+            std::move(impl), cache, impl->getFileName(), key, isFilePersistent(path), query_id, settings);
     }
 
     return impl;
 }
 
-void DiskCache::removeCache(const String & path)
+void DiskCache::removeCacheIfExists(const String & path)
 {
-    auto remote_paths = getRemotePaths(path);
-    for (const auto & remote_path : remote_paths)
+    try
     {
-        auto key = cache->hash(remote_path);
-        cache->removeIfExists(key);
+        if (isRemote())
+        {
+            auto remote_paths = getRemotePaths(path);
+            for (const auto & remote_path : remote_paths)
+            {
+                auto key = cache->hash(remote_path);
+                cache->removeIfExists(key);
+            }
+        }
+        else
+        {
+            String full_path = fs::path(getPath()) / path;
+            auto file_id = toString(getINodeNumberFromPath(full_path));
+            auto key = cache->hash(file_id);
+            cache->removeIfExists(key);
+        }
+    }
+    catch (const Exception & e)
+    {
+#ifdef NDEBUG
+        /// Protect against concurrent file delition.
+        if (e.code() == ErrorCodes::FILE_DOESNT_EXIST)
+        {
+            LOG_WARNING(
+                log,
+                "Cache file for path {} does not exist. "
+                "Possibly because of a concurrent attempt to delete it",
+                path);
+            return;
+        }
+#endif
+        throw;
     }
 }
 
-void DiskCache::removeCacheRecursive(const String & path)
+void DiskCache::removeCacheIfExistsRecursive(const String & path)
 {
     iterateRecursively(path, [this](const String & disk_path)
     {
-        try
-        {
-            removeCache(disk_path);
-        }
-        catch (const Exception & e)
-        {
-            /// Protect against concurrent file delition.
-            if (e.code() == ErrorCodes::FILE_DOESNT_EXIST)
-                return;
-            throw;
-        }
+        removeCacheIfExists(disk_path);
     });
 }
 
 bool DiskCache::removeFile(const String & path)
 {
-    removeCache(path);
+    removeCacheIfExists(path);
     return DiskDecorator::removeFile(path);
 }
 
 bool DiskCache::removeFileIfExists(const String & path)
 {
-    removeCache(path);
+    removeCacheIfExists(path);
     return DiskDecorator::removeFileIfExists(path);
 }
 
 void DiskCache::removeDirectory(const String & path)
 {
-    removeCacheRecursive(path);
+    removeCacheIfExistsRecursive(path);
     DiskDecorator::removeDirectory(path);
 }
 
 void DiskCache::removeRecursive(const String & path)
 {
-    removeCacheRecursive(path);
+    removeCacheIfExistsRecursive(path);
     DiskDecorator::removeRecursive(path);
 }
 

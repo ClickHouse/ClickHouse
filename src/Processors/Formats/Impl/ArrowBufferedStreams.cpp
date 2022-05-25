@@ -22,7 +22,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int UNKNOWN_FILE_SIZE;
     extern const int INCORRECT_DATA;
 }
 

@@ -36,6 +36,7 @@ namespace ErrorCodes
 
 CachedReadBufferFromFile::CachedReadBufferFromFile(
     const String & source_file_path_,
+    const IFileCache::Key & cache_key_,
     FileCachePtr cache_,
     RemoteFSFileReaderCreator remote_file_reader_creator_,
     const ReadSettings & settings_,
@@ -48,7 +49,7 @@ CachedReadBufferFromFile::CachedReadBufferFromFile(
 #else
     , log(&Poco::Logger::get("CachedReadBufferFromFile"))
 #endif
-    , cache_key(cache_->hash(source_file_path_))
+    , cache_key(cache_key_)
     , source_file_path(source_file_path_)
     , cache(cache_)
     , settings(settings_)

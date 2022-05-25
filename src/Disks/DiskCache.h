@@ -12,16 +12,16 @@ class Logger;
 
 namespace DB
 {
-
 /**
  * DiskCache implements a disk interface which adds cache to the underkying disk.
  */
 class DiskCache : public DiskDecorator
 {
+friend class CachedWriteBuffer;
 public:
     DiskCache(const String & disk_name_, const String & path_, std::shared_ptr<IDisk> delegate_, FileCachePtr cache_);
 
-    const String & getName() const final override { return cache_disk_name; }
+    const String & getName() const override { return cache_disk_name; }
 
     DiskType getType() const override { return DiskType::Cache; }
 
@@ -48,16 +48,8 @@ public:
     ReservationPtr reserve(UInt64 bytes) override;
 
 private:
-    void removeCache(const String & path);
-    void removeCacheRecursive(const String & path);
-
-    // String wrappedPath(const String & path) const
-    // {
-    //     // if path starts_with disk_path -> got already wrapped path
-    //     if (!disk_path.empty() && path.starts_with(disk_path))
-    //         return path;
-    //     return disk_path + path;
-    // }
+    void removeCacheIfExists(const String & path);
+    void removeCacheIfExistsRecursive(const String & path);
 
     String cache_disk_name;
     String cache_base_path;
