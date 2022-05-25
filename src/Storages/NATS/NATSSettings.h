@@ -9,7 +9,7 @@ class ASTStorage;
 
 #define NATS_RELATED_SETTINGS(M) \
     M(String, nats_url, "", "A host-port to connect to NATS server.", 0) \
-    M(String, nats_subjects, "", "List of subject for NATS table to subscribe/publsh to.", 0) \
+    M(String, nats_subjects, "", "List of subject for NATS table to subscribe/publish to.", 0) \
     M(String, nats_format, "", "The message format.", 0) \
     M(Char, nats_row_delimiter, '\0', "The character to be considered as a delimiter.", 0) \
     M(String, nats_schema, "", "Schema identifier (used by schema-based formats) for NATS engine", 0) \

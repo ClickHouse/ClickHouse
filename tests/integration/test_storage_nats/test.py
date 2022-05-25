@@ -887,7 +887,9 @@ def test_nats_many_inserts(nats_cluster):
 
     assert (
         int(result) == messages_num * threads_num
-    ), "ClickHouse lost some messages or got duplicated ones. Total count: {}".format(result)
+    ), "ClickHouse lost some messages or got duplicated ones. Total count: {}".format(
+        result
+    )
 
 
 def test_nats_overloaded_insert(nats_cluster):
@@ -973,7 +975,9 @@ def test_nats_overloaded_insert(nats_cluster):
 
     assert (
         int(result) == messages_num * threads_num
-    ), "ClickHouse lost some messages or got duplicated ones. Total count: {}".format(result)
+    ), "ClickHouse lost some messages or got duplicated ones. Total count: {}".format(
+        result
+    )
 
 
 def test_nats_virtual_column(nats_cluster):
