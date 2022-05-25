@@ -34,7 +34,6 @@ public:
         Key() = default;
         explicit Key(const UInt128 & key_) : key(key_) {}
 
-        bool operator<(const Key & other) const { return key < other.key; }
         bool operator==(const Key & other) const { return key == other.key; }
     };
 
@@ -119,13 +118,6 @@ protected:
         std::lock_guard<std::mutex> & segment_lock) = 0;
 
     virtual bool isLastFileSegmentHolder(
-        const Key & key, size_t offset,
-        std::lock_guard<std::mutex> & cache_lock,
-        std::lock_guard<std::mutex> & segment_lock) = 0;
-
-    /// If file segment was partially downloaded and then space reservation fails (because of no
-    /// space left), then update corresponding cache cell metadata (file segment size).
-    virtual void reduceSizeToDownloaded(
         const Key & key, size_t offset,
         std::lock_guard<std::mutex> & cache_lock,
         std::lock_guard<std::mutex> & segment_lock) = 0;

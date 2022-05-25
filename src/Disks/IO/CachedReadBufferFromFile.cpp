@@ -40,8 +40,9 @@ CachedReadBufferFromFile::CachedReadBufferFromFile(
     RemoteFSFileReaderCreator remote_file_reader_creator_,
     const ReadSettings & settings_,
     const String & query_id_,
-    size_t read_until_position_)
-    : ReadBufferFromFileBase(settings_.remote_fs_buffer_size, nullptr, 0)
+    size_t file_size_,
+    std::optional<size_t> read_until_position_)
+    : ReadBufferFromFileBase(settings_.remote_fs_buffer_size, nullptr, 0, file_size_)
 #ifndef NDEBUG
     , log(&Poco::Logger::get("CachedReadBufferFromFile(" + source_file_path_ + ")"))
 #else
@@ -51,7 +52,7 @@ CachedReadBufferFromFile::CachedReadBufferFromFile(
     , source_file_path(source_file_path_)
     , cache(cache_)
     , settings(settings_)
-    , read_until_position(read_until_position_)
+    , read_until_position(read_until_position_ ? *read_until_position_ : file_size_)
     , remote_file_reader_creator(remote_file_reader_creator_)
     , is_persistent(settings_.cache_file_as_persistent)
     , query_id(query_id_)
@@ -128,8 +129,8 @@ SeekableReadBufferPtr CachedReadBufferFromFile::getCacheReadBuffer(size_t offset
     local_read_settings.local_fs_method = LocalFSReadMethod::pread;
 
     auto buf = createReadBufferFromFileBase(path, local_read_settings);
-    auto * from_fd = dynamic_cast<ReadBufferFromFileDescriptor*>(buf.get());
-    if (from_fd && from_fd->size() == 0)
+    auto * from_fd = dynamic_cast<ReadBufferFromFileBase*>(buf.get());
+    if (from_fd && from_fd->getFileSize() == 0)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to read from an empty cache file: {}", path);
 
     return buf;
@@ -407,8 +408,8 @@ SeekableReadBufferPtr CachedReadBufferFromFile::getImplementationBuffer(FileSegm
         case ReadType::CACHED:
         {
 #ifndef NDEBUG
-            auto * file_reader = dynamic_cast<ReadBufferFromFileDescriptor *>(read_buffer_for_file_segment.get());
-            size_t file_size = file_reader->size();
+            auto * file_reader = dynamic_cast<ReadBufferFromFileBase *>(read_buffer_for_file_segment.get());
+            size_t file_size = file_reader->getFileSize();
 
             if (file_size == 0 || range.left + file_size <= file_offset_of_buffer_end)
                 throw Exception(
@@ -835,9 +836,9 @@ bool CachedReadBufferFromFile::nextImplStep()
     if (!result)
     {
 #ifndef NDEBUG
-        if (auto * cache_file_reader = dynamic_cast<ReadBufferFromFileDescriptor *>(implementation_buffer.get()))
+        if (auto * cache_file_reader = dynamic_cast<ReadBufferFromFileBase *>(implementation_buffer.get()))
         {
-            auto cache_file_size = cache_file_reader->size();
+            auto cache_file_size = cache_file_reader->getFileSize();
             if (cache_file_size == 0)
                 throw Exception(
                     ErrorCodes::LOGICAL_ERROR, "Attempt to read from an empty cache file: {} (just before actual read)", cache_file_size);
@@ -950,8 +951,8 @@ bool CachedReadBufferFromFile::nextImplStep()
     if (size == 0 && file_offset_of_buffer_end < read_until_position)
     {
         std::optional<size_t> cache_file_size;
-        if (auto * cache_file_reader = dynamic_cast<ReadBufferFromFileDescriptor *>(implementation_buffer.get()))
-            cache_file_size = cache_file_reader->size();
+        if (auto * cache_file_reader = dynamic_cast<ReadBufferFromFileBase *>(implementation_buffer.get()))
+            cache_file_size = cache_file_reader->getFileSize();
 
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,

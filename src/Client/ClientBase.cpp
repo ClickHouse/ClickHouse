@@ -1121,7 +1121,7 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
     if (need_render_progress && have_data_in_stdin)
     {
         /// Set total_bytes_to_read for current fd.
-        FileProgress file_progress(0, std_in.size());
+        FileProgress file_progress(0, std_in.getFileSize());
         progress_indication.updateProgress(Progress(file_progress));
 
         /// Set callback to be called on file progress.

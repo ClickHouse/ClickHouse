@@ -142,11 +142,6 @@ private:
         std::lock_guard<std::mutex> & cache_lock,
         std::lock_guard<std::mutex> & segment_lock) override;
 
-    void reduceSizeToDownloaded(
-        const Key & key, size_t offset,
-        std::lock_guard<std::mutex> & cache_lock,
-        std::lock_guard<std::mutex> & segment_lock) override;
-
     size_t getAvailableCacheSize() const;
 
     void loadCacheInfoIntoMemory(std::lock_guard<std::mutex> & cache_lock);

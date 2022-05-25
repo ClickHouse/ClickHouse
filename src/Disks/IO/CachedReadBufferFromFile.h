@@ -29,7 +29,8 @@ public:
         RemoteFSFileReaderCreator remote_file_reader_creator_,
         const ReadSettings & settings_,
         const String & query_id_,
-        size_t read_until_position_);
+        size_t file_size_,
+        std::optional<size_t> read_until_position_ = std::nullopt);
 
     ~CachedReadBufferFromFile() override;
 

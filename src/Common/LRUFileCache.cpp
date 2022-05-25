@@ -742,39 +742,6 @@ void LRUFileCache::loadCacheInfoIntoMemory(std::lock_guard<std::mutex> & cache_l
 #endif
 }
 
-void LRUFileCache::reduceSizeToDownloaded(
-    const Key & key, size_t offset,
-    std::lock_guard<std::mutex> & cache_lock, std::lock_guard<std::mutex> & /* segment_lock */)
-{
-    /**
-     * In case file was partially downloaded and it's download cannot be continued
-     * because of no space left in cache, we need to be able to cut cell's size to downloaded_size.
-     */
-
-    auto * cell = getCell(key, offset, cache_lock);
-
-    if (!cell)
-    {
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "No cell found for key: {}, offset: {}",
-            key.toString(), offset);
-    }
-
-     auto file_segment = cell->file_segment;
-
-    size_t downloaded_size = file_segment->downloaded_size;
-    if (downloaded_size == file_segment->range().size())
-    {
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "Nothing to reduce, file segment fully downloaded, key: {}, offset: {}",
-            key.toString(), offset);
-    }
-
-    cell->file_segment = std::make_shared<FileSegment>(offset, downloaded_size, key, this, FileSegment::State::DOWNLOADED, file_segment->isPersistent());
-}
-
 bool LRUFileCache::isLastFileSegmentHolder(
     const Key & key, size_t offset,
     std::lock_guard<std::mutex> & cache_lock, std::lock_guard<std::mutex> & /* segment_lock */)
