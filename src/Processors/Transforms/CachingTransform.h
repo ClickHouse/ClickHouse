@@ -11,24 +11,16 @@ namespace DB
 class CachingTransform : public ISimpleTransform
 {
 public:
-    CachingTransform(const Block & header_, QueryCachePtr cache_, ASTPtr query_ptr_, Settings settings_, std::optional<String> username_)
+    CachingTransform(const Block & header_, CachePutHolder && holder_)
         : ISimpleTransform(header_, header_, false)
-        , cache(cache_)
-        , cache_key(query_ptr_, header_, settings_, username_)
-        , data(std::move(cache->getOrSet(cache_key, [&]
-                                         {
-                                             return std::make_shared<Data>(header_, Chunks{});
-                                         }).first))
+        , holder(holder_)
     {}
     String getName() const override { return "CachingTransform"; }
 
 protected:
     void transform(Chunk & chunk) override;
 private:
-    QueryCachePtr cache;
-    CacheKey cache_key;
-    std::shared_ptr<Data> data;
-    bool fits_into_memory = true;
+    CachePutHolder holder;
 };
 
 }

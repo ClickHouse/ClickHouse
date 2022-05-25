@@ -629,7 +629,7 @@ void InterpreterSelectQuery::executePutInCache(QueryPlan & query_plan, CacheKey 
     QueryCachePtr query_cache = context->getQueryCache();
     size_t num_query_runs = query_cache->recordQueryRun(query_cache_key);
 
-    if (!settings.query_cache_active_usage || query_cache->get(query_cache_key)
+    if (!settings.query_cache_active_usage || query_cache->containsResult(query_cache_key)
         || num_query_runs < settings.min_query_runs_before_caching)
     {
         return;
@@ -649,18 +649,12 @@ void InterpreterSelectQuery::buildQueryPlan(QueryPlan & query_plan)
                                         : std::make_optional<String>(context->getUserName())
                                     };
 
-    if (auto query_result = context->getQueryCache()->get(query_cache_key);
-        query_result && context->getSettingsRef().query_cache_passive_usage)
+    if (auto cache_holder = context->getQueryCache()->tryReadFromCache(query_cache_key);
+        cache_holder.containsResult() && context->getSettingsRef().query_cache_passive_usage)
     {
-        LOG_DEBUG(&Poco::Logger::get("InterpreterSelectQuery::buildQueryPlan"), "reading query result from cache ...");
-        const auto &header= query_result->first;
-        const auto &chunks = query_result->second;
-
-        Pipe pipe(std::make_shared<SourceFromSingleChunk>(header, to_single_chunk(chunks)));
-        auto read_from_cache_step = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
+        auto read_from_cache_step = std::make_unique<ReadFromPreparedSource>(cache_holder.getPipe());
         read_from_cache_step->setStepDescription("Read query result from cache");
         query_plan.addStep(std::move(read_from_cache_step));
-        LOG_DEBUG(&Poco::Logger::get("InterpreterSelectQuery::buildQueryPlan"), "read query result from cache");
         return;
     }
     executeImpl(query_plan, std::move(input_pipe));

@@ -3,6 +3,7 @@
 #include <memory>
 #include <condition_variable>
 #include <Common/LRUCache.h>
+#include <Processors/Sources/SourceFromSingleChunk.h>
 
 
 namespace DB
@@ -92,7 +93,7 @@ public:
     }
 
     template <typename Cache>
-    void processRemovalQueue(Cache * query_cache)
+    void processRemovalQueue(Cache * cache)
     {
         while (process_removal_queue.load())
         {
@@ -109,7 +110,7 @@ public:
             {
                 lock.unlock();
                 queue.pop();
-                query_cache->remove(awaited_timer->cache_key);
+                cache->remove(awaited_timer->cache_key);
             }
         }
     }
@@ -164,43 +165,142 @@ private:
     std::mutex mutex;
 };
 
-class QueryCache : public LRUCache<CacheKey, Data, CacheKeyHasher, QueryWeightFunction>
+class CachePutHolder
 {
 private:
-    using Base = LRUCache<CacheKey, Data, CacheKeyHasher, QueryWeightFunction>;
-
+    using Cache = LRUCache<CacheKey, Data, CacheKeyHasher, QueryWeightFunction>;
 public:
-    explicit QueryCache(size_t cache_size_in_bytes_)
-        : Base(cache_size_in_bytes_)
-        , removal_scheduler()
-        , cache_removing_thread(&CacheRemovalScheduler::processRemovalQueue<QueryCache>, &removal_scheduler, this)
+    CachePutHolder(std::mutex & mutex_, CacheRemovalScheduler * removal_scheduler_, CacheKey cache_key_, Cache * cache_)
+        : mutex(mutex_)
+        , removal_scheduler(removal_scheduler_)
+        , cache_key(cache_key_)
+        , cache(cache_)
+        , data(std::move(cache->getOrSet(cache_key, [&] { return std::make_shared<Data>(cache_key_.header, Chunks{}); }).first))
     {
     }
 
-    ~QueryCache() override
+    ~CachePutHolder()
     {
-        removal_scheduler.stopProcessingRemovalQueue();
-        cache_removing_thread.join();
+        if (executing_put_in_cache.load())
+        {
+            mutex.unlock();
+            removal_scheduler->scheduleRemoval(std::chrono::milliseconds{cache_key.settings.query_cache_entry_put_timeout}, cache_key);
+        }
     }
 
-    bool insertChunk(CacheKey cache_key, Chunk && chunk)
+    bool tryAcquire()
     {
-        auto data = get(cache_key);
+        bool result = mutex.try_lock();
+        executing_put_in_cache.store(result);
+        return result;
+    }
+
+    void insertChunk(Chunk && chunk)
+    {
+        if (!fits_into_memory)
+        {
+            return;
+        }
+        data = cache->get(cache_key);
         data->second.push_back(std::move(chunk));
 
         if (query_weight(*data) > cache_key.settings.max_query_cache_entry_size)
         {
-            remove(cache_key);
-            return false;
+            cache->remove(cache_key);
+            fits_into_memory = false;
         }
-        set(cache_key, data); // evicts cache if necessary, the entry with key=cache_key will not get evicted
-        return false;
+        cache->set(cache_key, data); // evicts cache if necessary, the entry with key=cache_key will not get evicted
     }
 
-    void scheduleRemoval(CacheKey cache_key)
+private:
+    std::mutex & mutex;
+    CacheRemovalScheduler * removal_scheduler;
+    CacheKey cache_key;
+    Cache * cache;
+
+    std::atomic<bool> executing_put_in_cache{false};
+    bool fits_into_memory = true;
+    std::shared_ptr<Data> data;
+
+    QueryWeightFunction query_weight;
+};
+
+class CacheReadHolder
+{
+public:
+    explicit CacheReadHolder(std::shared_ptr<Data> data)
     {
-        auto entry_put_timeout =  std::chrono::milliseconds{cache_key.settings.query_cache_entry_put_timeout};
-        removal_scheduler.scheduleRemoval(entry_put_timeout, cache_key);
+        if (data == nullptr)
+        {
+            return;
+        }
+
+        pipe = Pipe(std::make_shared<SourceFromSingleChunk>(data->first, toSingleChunk(data->second)));
+    }
+
+    bool containsResult() const
+    {
+        return !pipe.empty();
+    }
+
+    Pipe && getPipe()
+    {
+        return std::move(pipe);
+    }
+
+private:
+    static Chunk toSingleChunk(const Chunks& chunks)
+    {
+        if (chunks.empty())
+        {
+            return {};
+        }
+        auto result_columns = chunks[0].clone().mutateColumns();
+        for (size_t i = 1; i != chunks.size(); ++i)
+        {
+            auto columns = chunks[i].getColumns();
+            for (size_t j = 0; j != columns.size(); ++j)
+            {
+                result_columns[j]->insertRangeFrom(*columns[j], 0, columns[j]->size());
+            }
+        }
+        const size_t num_rows = result_columns[0]->size();
+        return Chunk(std::move(result_columns), num_rows);
+    }
+
+    Pipe pipe;
+};
+
+class QueryCache
+{
+private:
+    using Cache = LRUCache<CacheKey, Data, CacheKeyHasher, QueryWeightFunction>;
+public:
+    explicit QueryCache(size_t cache_size_in_bytes_)
+        : cache(std::make_unique<Cache>(cache_size_in_bytes_))
+        , removal_scheduler()
+        , cache_removing_thread(&CacheRemovalScheduler::processRemovalQueue<Cache>, &removal_scheduler, cache.get())
+    {
+    }
+
+    CachePutHolder tryPutInCache(CacheKey cache_key)
+    {
+        return CachePutHolder(put_in_cache_mutexes[cache_key], &removal_scheduler, cache_key, cache.get());
+    }
+
+    CacheReadHolder tryReadFromCache(CacheKey cache_key) {
+        return CacheReadHolder(cache->get(cache_key));
+    }
+
+    bool containsResult(CacheKey cache_key)
+    {
+        return cache->get(cache_key) != nullptr;
+    }
+
+    ~QueryCache()
+    {
+        removal_scheduler.stopProcessingRemovalQueue();
+        cache_removing_thread.join();
     }
 
     size_t recordQueryRun(CacheKey cache_key)
@@ -209,19 +309,15 @@ public:
         return ++times_executed[cache_key];
     }
 
-    std::mutex& getPutInCacheMutex(CacheKey cache_key)
-    {
-        return put_in_cache_mutexes[cache_key];
-    }
 
 private:
+    std::unique_ptr<Cache> cache;
+
     CacheRemovalScheduler removal_scheduler;
     std::thread cache_removing_thread;
 
     std::unordered_map<CacheKey, size_t, CacheKeyHasher> times_executed;
     std::mutex times_executed_mutex;
-
-    QueryWeightFunction query_weight;
 
     std::unordered_map<CacheKey, std::mutex, CacheKeyHasher> put_in_cache_mutexes;
 };

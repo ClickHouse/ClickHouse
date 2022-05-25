@@ -23,28 +23,19 @@ static ITransformingStep::Traits getTraits()
 
 void CachingStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
-    if (cache->getPutInCacheMutex(cache_key).try_lock())
+    // only returns true for one thread, so that multiple threads are not caching the same query result at the same time
+    if (holder.tryAcquire())
     {
-        execute_caching = true;
         pipeline.addSimpleTransform(
             [&](const Block & header, QueryPipelineBuilder::StreamType) -> ProcessorPtr
-            { return std::make_shared<CachingTransform>(header, cache, cache_key.ast, cache_key.settings, cache_key.username); });
-    }
-}
-
-CachingStep::~CachingStep()
-{
-    if (execute_caching)
-    {
-        cache->getPutInCacheMutex(cache_key).unlock();
-        cache->scheduleRemoval(cache_key);
+            { return std::make_shared<CachingTransform>(header, std::move(holder)); });
     }
 }
 
 CachingStep::CachingStep(const DataStream & input_stream_, QueryCachePtr cache_, CacheKey cache_key_)
     : ITransformingStep(input_stream_, input_stream_.header, getTraits())
-    , cache(cache_)
-    , cache_key(std::move(cache_key_))
-{}
+    , holder(cache_->tryPutInCache(cache_key_))
+{
+}
 
 }
