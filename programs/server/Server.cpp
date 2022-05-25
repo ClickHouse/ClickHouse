@@ -1314,7 +1314,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
     global_context->setConfigReloadCallback([&]()
     {
         main_config_reloader->reload();
-        access_control.reloadUsersConfigs();
+        access_control.reload();
     });
 
     /// Limit on total number of concurrently executed queries.
@@ -1405,6 +1405,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
         /// Stop reloading of the main config. This must be done before `global_context->shutdown()` because
         /// otherwise the reloading may pass a changed config to some destroyed parts of ContextSharedPart.
         main_config_reloader.reset();
+        access_control.stopPeriodicReloading();
 
         async_metrics.stop();
 
@@ -1628,7 +1629,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
         buildLoggers(config(), logger());
 
         main_config_reloader->start();
-        access_control.startPeriodicReloadingUsersConfigs();
+        access_control.startPeriodicReloading();
         if (dns_cache_updater)
             dns_cache_updater->start();
 

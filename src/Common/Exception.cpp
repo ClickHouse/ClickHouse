@@ -35,6 +35,18 @@ namespace ErrorCodes
     extern const int CANNOT_MREMAP;
 }
 
+void abortOnFailedAssertion(const String & description)
+{
+    LOG_FATAL(&Poco::Logger::root(), "Logical error: '{}'.", description);
+
+    /// This is to suppress -Wmissing-noreturn
+    volatile bool always_false = false;
+    if (always_false)
+        return;
+
+    abort();
+}
+
 /// - Aborts the process if error code is LOGICAL_ERROR.
 /// - Increments error codes statistics.
 void handle_error_code([[maybe_unused]] const std::string & msg, int code, bool remote, const Exception::FramePointers & trace)
@@ -44,8 +56,7 @@ void handle_error_code([[maybe_unused]] const std::string & msg, int code, bool 
 #ifdef ABORT_ON_LOGICAL_ERROR
     if (code == ErrorCodes::LOGICAL_ERROR)
     {
-        LOG_FATAL(&Poco::Logger::root(), "Logical error: '{}'.", msg);
-        abort();
+        abortOnFailedAssertion(msg);
     }
 #endif
 
