@@ -6,7 +6,7 @@
 namespace DB
 {
 
-class IReadProgressCallback;
+class ReadProgressCallback;
 
 /// Context for each executing thread of PipelineExecutor.
 class ExecutionThreadContext
@@ -28,7 +28,7 @@ private:
     std::exception_ptr exception;
 
     /// Callback for read progress.
-    IReadProgressCallback * read_progress_callback = nullptr;
+    ReadProgressCallback * read_progress_callback = nullptr;
 
 public:
 #ifndef NDEBUG
@@ -61,7 +61,7 @@ public:
     void setException(std::exception_ptr exception_) { exception = exception_; }
     void rethrowExceptionIfHas();
 
-    explicit ExecutionThreadContext(size_t thread_number_, bool profile_processors_, IReadProgressCallback * callback)
+    explicit ExecutionThreadContext(size_t thread_number_, bool profile_processors_, ReadProgressCallback * callback)
         : read_progress_callback(callback)
         , thread_number(thread_number_)
         , profile_processors(profile_processors_)

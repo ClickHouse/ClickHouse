@@ -582,4 +582,20 @@ void QueryPipeline::convertStructureTo(const ColumnsWithTypeAndName & columns)
     addExpression(extremes, actions, processors);
 }
 
+std::unique_ptr<ReadProgressCallback> QueryPipeline::getReadProgressCallback() const
+{
+    auto callback = std::make_unique<ReadProgressCallback>();
+
+    callback->setProgressCallback(progress_callback);
+    callback->setQuota(quota);
+    callback->setLimits(local_limits);
+    callback->setLeafLimits(leaf_limits);
+    callback->setProcessListElement(process_list_element);
+
+    if (!update_profile_events)
+        callback->disableProfileEventUpdate();
+
+    return callback;
+}
+
 }
