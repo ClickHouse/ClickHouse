@@ -48,7 +48,7 @@ public:
 private:
     bool nextImpl() override;
 
-    static void onMsg(natsConnection * nc, natsSubscription * sub, natsMsg * msg, void * closure);
+    static void onMsg(natsConnection * nc, natsSubscription * sub, natsMsg * msg, void * consumer);
 
     std::shared_ptr<NATSConnectionManager> connection;
     std::vector<SubscriptionPtr> subscriptions;
