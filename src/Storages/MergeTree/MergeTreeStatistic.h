@@ -24,7 +24,6 @@ enum class MergeTreeDistributionStatisticType
     GRANULE_TDIGEST,
 };
 
-String generateFileNameForStatistics(const String & name);
 String generateFileNameForStatistics(const String & name, const String & columns);
 
 class IMergeTreeDistributionStatisticCollector {

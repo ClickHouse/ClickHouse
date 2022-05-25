@@ -25,14 +25,6 @@ namespace ErrorCodes
     extern const int INCORRECT_QUERY;
 }
 
-String generateFileNameForStatistics(const String & name) {
-    return fmt::format("{}_{}_{}.{}",
-        PART_STATS_FILE_NAME,
-        name,
-        std::uniform_int_distribution<UInt64>()(thread_local_rng),
-        PART_STATS_FILE_EXT);
-}
-
 String generateFileNameForStatistics(const String & name, const String & column) {
     return fmt::format("{}_{}_{}.{}",
         PART_STATS_FILE_NAME,

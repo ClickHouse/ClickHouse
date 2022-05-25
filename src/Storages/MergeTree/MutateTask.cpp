@@ -475,19 +475,27 @@ std::set<ProjectionDescriptionRawPtr> getProjectionsToRecalculate(
 
 /// Return set of statistics which should be recalculated during mutation
 static StatisticDescriptions getStatisticsToRecalculate(
-    const NameSet & /*updated_columns*/,
+    const NameSet & updated_columns,
     const StorageMetadataPtr & metadata_snapshot,
     ContextPtr /*context*/,
     const NameSet & materialized_statistics,
-    const MergeTreeData::DataPartPtr & /*source_part*/)
+    const MergeTreeData::DataPartPtr & source_part)
 {
     StatisticDescriptions result;
     const auto& statistics = metadata_snapshot->getStatistics();
     for (const auto& statistic : statistics) {
         if (materialized_statistics.contains(statistic.name)) {
-            result.push_back(statistic);
+            // It's enough to check only one file
+            const auto filename = generateFileNameForStatistics(statistic.name, statistic.column_names.front());
+            if (!source_part->checksums.has(filename)) {
+                result.push_back(statistic);
+            }
         } else {
-            // TODO:changed columns
+            for (const auto& column_name : statistic.column_names) {
+                if (updated_columns.contains(column_name)) {
+                    result.push_back(statistic);
+                }
+            }
         }
     }
     return result;
@@ -526,12 +534,10 @@ NameSet collectFilesToSkip(
     for (const auto & projection : projections_to_recalc)
         files_to_skip.insert(projection->getDirectoryName());
     
-    
-    for (const auto & [filename, _] : source_part->checksums.files)
-    {
-        for (const auto& statistic : statistics_to_recalc) {
-            // TODO: read file and check columns inside.
-            if (filename.starts_with(std::string{PART_STATS_FILE_NAME} + "_" + statistic.name + "_") && filename.ends_with(PART_STATS_FILE_EXT)) {
+    for (const auto& statistic : statistics_to_recalc) {
+        for (const auto& column_name : statistic.column_names) {
+            const auto filename = generateFileNameForStatistics(statistic.name, column_name);
+            if (updated_header.has(column_name) && source_part->checksums.has(filename)) {
                 files_to_skip.insert(filename);
             }
         }

@@ -383,15 +383,12 @@ void MergeTreeDataPartWriterOnDisk::fillStatisticsChecksums(MergeTreeData::DataP
     // We need such statements for easy management.
     if (stats_collectors.empty())
         return;
-    
-    std::set<String> statistic_names;
-    
+        
     for (auto & stats_collector : stats_collectors)
     {
         if (!stats_collector->empty())
         {
             auto stat = stats_collector->getStatisticAndReset();
-            statistic_names.insert(stat->name());
 
             auto column_distribution_stats = std::make_shared<MergeTreeDistributionStatistics>();
             column_distribution_stats->add(stats_collector->column(), stat);
@@ -419,7 +416,7 @@ void MergeTreeDataPartWriterOnDisk::fillStatisticsChecksums(MergeTreeData::DataP
                 checksums.files[filename].file_hash = stats_stream->getHash();
             }
             else
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "It's a bug: Statistic {} already exists.", stat->name());
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "It's a bug: Statistic {}:{} already exists.", stat->name(), stats_collector->column());
         }
     }
 }
