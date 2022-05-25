@@ -221,7 +221,7 @@ def check_rabbitmq_is_available(rabbitmq_id):
 
 
 async def check_nats_is_available(nats_ip):
-    nc = await nats.connect('{}:4444'.format(nats_ip), user='click', password='house')
+    nc = await nats.connect("{}:4444".format(nats_ip), user="click", password="house")
     return nc.is_connected
 
 
@@ -457,7 +457,6 @@ class ClickHouseCluster:
         self.nats_ip = None
         self.nats_port = 4444
         self.nats_docker_id = None
-
 
         # available when with_nginx == True
         self.nginx_host = "nginx"

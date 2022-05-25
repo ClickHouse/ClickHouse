@@ -476,7 +476,8 @@ ProducerBufferPtr StorageNATS::createWriteBuffer(const std::string & subject)
         row_delimiter ? std::optional<char>{row_delimiter} : std::nullopt, 1, 1024);
 }
 
-bool StorageNATS::isSubjectInSubscriptions(const std::string & subject) {
+bool StorageNATS::isSubjectInSubscriptions(const std::string & subject)
+{
     auto subject_levels = parseList(subject, '.');
 
     for (const auto & nats_subject : subjects)
