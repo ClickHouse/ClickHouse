@@ -34,6 +34,7 @@ instance = cluster.add_instance(
 
 # Helpers
 
+
 def wait_nats_to_start(nats_ip, timeout=180):
     start = time.time()
     while time.time() - start < timeout:
@@ -94,8 +95,9 @@ def nats_setup_teardown():
 
 # Tests
 
+
 async def nats_produce_messages(ip, subject, messages=(), bytes=None):
-    nc = await nats.connect('{}:4444'.format(ip), user='click', password='house')
+    nc = await nats.connect("{}:4444".format(ip), user="click", password="house")
     logging.debug("NATS connection status: " + str(nc.is_connected))
 
     for message in messages:
@@ -116,7 +118,6 @@ def check_table_is_ready(instance, table_name):
         return False
 
 
-
 def test_nats_select(nats_cluster):
     instance.query(
         """
@@ -128,14 +129,14 @@ def test_nats_select(nats_cluster):
                      nats_row_delimiter = '\\n';
         """
     )
-    while not check_table_is_ready(instance, 'test.nats'):
+    while not check_table_is_ready(instance, "test.nats"):
         logging.debug("Table test.nats is not yet ready")
         time.sleep(0.5)
 
     messages = []
     for i in range(50):
         messages.append(json.dumps({"key": i, "value": i}))
-    asyncio.run(nats_produce_messages(nats_cluster.nats_ip, 'select', messages))
+    asyncio.run(nats_produce_messages(nats_cluster.nats_ip, "select", messages))
 
     # The order of messages in select * from test.nats is not guaranteed, so sleep to collect everything in one select
     time.sleep(1)
@@ -176,7 +177,7 @@ def test_nats_json_without_delimiter(nats_cluster):
                      nats_format = 'JSONEachRow';
         """
     )
-    while not check_table_is_ready(instance, 'test.nats'):
+    while not check_table_is_ready(instance, "test.nats"):
         logging.debug("Table test.nats is not yet ready")
         time.sleep(0.5)
 
@@ -185,13 +186,13 @@ def test_nats_json_without_delimiter(nats_cluster):
         messages += json.dumps({"key": i, "value": i}) + "\n"
 
     all_messages = [messages]
-    asyncio.run(nats_produce_messages(nats_cluster.nats_ip, 'json', all_messages))
+    asyncio.run(nats_produce_messages(nats_cluster.nats_ip, "json", all_messages))
 
     messages = ""
     for i in range(25, 50):
         messages += json.dumps({"key": i, "value": i}) + "\n"
     all_messages = [messages]
-    asyncio.run(nats_produce_messages(nats_cluster.nats_ip, 'json', all_messages))
+    asyncio.run(nats_produce_messages(nats_cluster.nats_ip, "json", all_messages))
 
     time.sleep(1)
 
@@ -220,7 +221,7 @@ def test_nats_csv_with_delimiter(nats_cluster):
                      nats_row_delimiter = '\\n';
         """
     )
-    while not check_table_is_ready(instance, 'test.nats'):
+    while not check_table_is_ready(instance, "test.nats"):
         logging.debug("Table test.nats is not yet ready")
         time.sleep(0.5)
 
@@ -228,7 +229,7 @@ def test_nats_csv_with_delimiter(nats_cluster):
     for i in range(50):
         messages.append("{i}, {i}".format(i=i))
 
-    asyncio.run(nats_produce_messages(nats_cluster.nats_ip, 'csv', messages))
+    asyncio.run(nats_produce_messages(nats_cluster.nats_ip, "csv", messages))
 
     time.sleep(1)
 
@@ -259,16 +260,15 @@ def test_nats_tsv_with_delimiter(nats_cluster):
             SELECT * FROM test.nats;
         """
     )
-    while not check_table_is_ready(instance, 'test.nats'):
+    while not check_table_is_ready(instance, "test.nats"):
         logging.debug("Table test.nats is not yet ready")
         time.sleep(0.5)
-
 
     messages = []
     for i in range(50):
         messages.append("{i}\t{i}".format(i=i))
 
-    asyncio.run(nats_produce_messages(nats_cluster.nats_ip, 'tsv', messages))
+    asyncio.run(nats_produce_messages(nats_cluster.nats_ip, "tsv", messages))
 
     result = ""
     for _ in range(60):
@@ -277,7 +277,10 @@ def test_nats_tsv_with_delimiter(nats_cluster):
             break
 
     nats_check_result(result, True)
+
+
 #
+
 
 def test_nats_macros(nats_cluster):
     instance.query(
@@ -289,15 +292,14 @@ def test_nats_macros(nats_cluster):
                      nats_format = '{nats_format}'
         """
     )
-    while not check_table_is_ready(instance, 'test.nats'):
+    while not check_table_is_ready(instance, "test.nats"):
         logging.debug("Table test.nats is not yet ready")
         time.sleep(0.5)
-
 
     message = ""
     for i in range(50):
         message += json.dumps({"key": i, "value": i}) + "\n"
-    asyncio.run(nats_produce_messages(nats_cluster.nats_ip, 'macro', [message]))
+    asyncio.run(nats_produce_messages(nats_cluster.nats_ip, "macro", [message]))
 
     time.sleep(1)
 
@@ -334,16 +336,15 @@ def test_nats_materialized_view(nats_cluster):
             SELECT * FROM test.nats group by (key, value);
     """
     )
-    while not check_table_is_ready(instance, 'test.nats'):
+    while not check_table_is_ready(instance, "test.nats"):
         logging.debug("Table test.nats is not yet ready")
         time.sleep(0.5)
-
 
     messages = []
     for i in range(50):
         messages.append(json.dumps({"key": i, "value": i}))
 
-    asyncio.run(nats_produce_messages(nats_cluster.nats_ip, 'mv', messages))
+    asyncio.run(nats_produce_messages(nats_cluster.nats_ip, "mv", messages))
 
     time_limit_sec = 60
     deadline = time.monotonic() + time_limit_sec
@@ -381,15 +382,14 @@ def test_nats_materialized_view_with_subquery(nats_cluster):
             SELECT * FROM (SELECT * FROM test.nats);
     """
     )
-    while not check_table_is_ready(instance, 'test.nats'):
+    while not check_table_is_ready(instance, "test.nats"):
         logging.debug("Table test.nats is not yet ready")
         time.sleep(0.5)
-
 
     messages = []
     for i in range(50):
         messages.append(json.dumps({"key": i, "value": i}))
-    asyncio.run(nats_produce_messages(nats_cluster.nats_ip, 'mvsq', messages))
+    asyncio.run(nats_produce_messages(nats_cluster.nats_ip, "mvsq", messages))
 
     time_limit_sec = 60
     deadline = time.monotonic() + time_limit_sec
@@ -427,15 +427,14 @@ def test_nats_many_materialized_views(nats_cluster):
             SELECT * FROM test.nats;
     """
     )
-    while not check_table_is_ready(instance, 'test.nats'):
+    while not check_table_is_ready(instance, "test.nats"):
         logging.debug("Table test.nats is not yet ready")
         time.sleep(0.5)
-
 
     messages = []
     for i in range(50):
         messages.append(json.dumps({"key": i, "value": i}))
-    asyncio.run(nats_produce_messages(nats_cluster.nats_ip, 'mmv', messages))
+    asyncio.run(nats_produce_messages(nats_cluster.nats_ip, "mmv", messages))
 
     time_limit_sec = 60
     deadline = time.monotonic() + time_limit_sec
@@ -475,10 +474,9 @@ def test_nats_protobuf(nats_cluster):
             SELECT * FROM test.nats;
         """
     )
-    while not check_table_is_ready(instance, 'test.nats'):
+    while not check_table_is_ready(instance, "test.nats"):
         logging.debug("Table test.nats is not yet ready")
         time.sleep(0.5)
-
 
     data = b""
     for i in range(0, 20):
@@ -487,7 +485,7 @@ def test_nats_protobuf(nats_cluster):
         msg.value = str(i)
         serialized_msg = msg.SerializeToString()
         data = data + _VarintBytes(len(serialized_msg)) + serialized_msg
-    asyncio.run(nats_produce_messages(nats_cluster.nats_ip, 'pb', bytes=data))
+    asyncio.run(nats_produce_messages(nats_cluster.nats_ip, "pb", bytes=data))
     data = b""
     for i in range(20, 21):
         msg = nats_pb2.ProtoKeyValue()
@@ -495,7 +493,7 @@ def test_nats_protobuf(nats_cluster):
         msg.value = str(i)
         serialized_msg = msg.SerializeToString()
         data = data + _VarintBytes(len(serialized_msg)) + serialized_msg
-    asyncio.run(nats_produce_messages(nats_cluster.nats_ip, 'pb', bytes=data))
+    asyncio.run(nats_produce_messages(nats_cluster.nats_ip, "pb", bytes=data))
     data = b""
     for i in range(21, 50):
         msg = nats_pb2.ProtoKeyValue()
@@ -503,8 +501,7 @@ def test_nats_protobuf(nats_cluster):
         msg.value = str(i)
         serialized_msg = msg.SerializeToString()
         data = data + _VarintBytes(len(serialized_msg)) + serialized_msg
-    asyncio.run(nats_produce_messages(nats_cluster.nats_ip, 'pb', bytes=data))
-
+    asyncio.run(nats_produce_messages(nats_cluster.nats_ip, "pb", bytes=data))
 
     result = ""
     time_limit_sec = 60
@@ -527,7 +524,6 @@ def test_nats_big_message(nats_cluster):
         for i in range(nats_messages)
     ]
 
-
     instance.query(
         """
         CREATE TABLE test.nats (key UInt64, value String)
@@ -542,17 +538,16 @@ def test_nats_big_message(nats_cluster):
             SELECT * FROM test.nats;
     """
     )
-    while not check_table_is_ready(instance, 'test.nats'):
+    while not check_table_is_ready(instance, "test.nats"):
         logging.debug("Table test.nats is not yet ready")
         time.sleep(0.5)
 
-    asyncio.run(nats_produce_messages(nats_cluster.nats_ip, 'big', messages))
+    asyncio.run(nats_produce_messages(nats_cluster.nats_ip, "big", messages))
 
     while True:
         result = instance.query("SELECT count() FROM test.view")
         if int(result) == batch_messages * nats_messages:
             break
-
 
     assert (
         int(result) == nats_messages * batch_messages
@@ -572,9 +567,11 @@ def test_nats_mv_combo(nats_cluster):
                      nats_num_consumers = {},
                      nats_format = 'JSONEachRow',
                      nats_row_delimiter = '\\n';
-    """.format(NUM_CONSUMERS)
+    """.format(
+            NUM_CONSUMERS
+        )
     )
-    while not check_table_is_ready(instance, 'test.nats'):
+    while not check_table_is_ready(instance, "test.nats"):
         logging.debug("Table test.nats is not yet ready")
         time.sleep(0.5)
 
@@ -603,7 +600,7 @@ def test_nats_mv_combo(nats_cluster):
         for _ in range(messages_num):
             messages.append(json.dumps({"key": i[0], "value": i[0]}))
             i[0] += 1
-        asyncio.run(nats_produce_messages(nats_cluster.nats_ip, 'combo', messages))
+        asyncio.run(nats_produce_messages(nats_cluster.nats_ip, "combo", messages))
 
     threads = []
     threads_num = 20
@@ -653,7 +650,7 @@ def test_nats_insert(nats_cluster):
                      nats_row_delimiter = '\\n';
     """
     )
-    while not check_table_is_ready(instance, 'test.nats'):
+    while not check_table_is_ready(instance, "test.nats"):
         logging.debug("Table test.nats is not yet ready")
         time.sleep(0.5)
 
@@ -665,8 +662,10 @@ def test_nats_insert(nats_cluster):
     insert_messages = []
 
     async def sub_to_nats():
-        nc = await nats.connect('{}:4444'.format(nats_cluster.nats_ip), user='click', password='house')
-        sub = await nc.subscribe('insert')
+        nc = await nats.connect(
+            "{}:4444".format(nats_cluster.nats_ip), user="click", password="house"
+        )
+        sub = await nc.subscribe("insert")
         await sub.unsubscribe(50)
         async for msg in sub.messages:
             insert_messages.append(msg.data.decode())
@@ -707,7 +706,7 @@ def test_nats_many_subjects_insert_wrong(nats_cluster):
                      nats_row_delimiter = '\\n';
     """
     )
-    while not check_table_is_ready(instance, 'test.nats'):
+    while not check_table_is_ready(instance, "test.nats"):
         logging.debug("Table test.nats is not yet ready")
         time.sleep(0.5)
 
@@ -720,13 +719,34 @@ def test_nats_many_subjects_insert_wrong(nats_cluster):
     instance.query_and_get_error("INSERT INTO test.nats VALUES {}".format(values))
 
     # can't insert into wildcard subjects
-    instance.query_and_get_error("INSERT INTO test.nats SETTINGS stream_like_engine_insert_queue='insert2.>' VALUES {}".format(values))
-    instance.query_and_get_error("INSERT INTO test.nats SETTINGS stream_like_engine_insert_queue='insert3.*.foo' VALUES {}".format(values))
+    instance.query_and_get_error(
+        "INSERT INTO test.nats SETTINGS stream_like_engine_insert_queue='insert2.>' VALUES {}".format(
+            values
+        )
+    )
+    instance.query_and_get_error(
+        "INSERT INTO test.nats SETTINGS stream_like_engine_insert_queue='insert3.*.foo' VALUES {}".format(
+            values
+        )
+    )
 
     # specified subject is not among engine's subjects
-    instance.query_and_get_error("INSERT INTO test.nats SETTINGS stream_like_engine_insert_queue='insert4' VALUES {}".format(values))
-    instance.query_and_get_error("INSERT INTO test.nats SETTINGS stream_like_engine_insert_queue='insert3.foo.baz' VALUES {}".format(values))
-    instance.query_and_get_error("INSERT INTO test.nats SETTINGS stream_like_engine_insert_queue='foo.insert2' VALUES {}".format(values))
+    instance.query_and_get_error(
+        "INSERT INTO test.nats SETTINGS stream_like_engine_insert_queue='insert4' VALUES {}".format(
+            values
+        )
+    )
+    instance.query_and_get_error(
+        "INSERT INTO test.nats SETTINGS stream_like_engine_insert_queue='insert3.foo.baz' VALUES {}".format(
+            values
+        )
+    )
+    instance.query_and_get_error(
+        "INSERT INTO test.nats SETTINGS stream_like_engine_insert_queue='foo.insert2' VALUES {}".format(
+            values
+        )
+    )
+
 
 def test_nats_many_subjects_insert_right(nats_cluster):
     instance.query(
@@ -739,7 +759,7 @@ def test_nats_many_subjects_insert_right(nats_cluster):
                      nats_row_delimiter = '\\n';
     """
     )
-    while not check_table_is_ready(instance, 'test.nats'):
+    while not check_table_is_ready(instance, "test.nats"):
         logging.debug("Table test.nats is not yet ready")
         time.sleep(0.5)
 
@@ -751,8 +771,10 @@ def test_nats_many_subjects_insert_right(nats_cluster):
     insert_messages = []
 
     async def sub_to_nats():
-        nc = await nats.connect('{}:4444'.format(nats_cluster.nats_ip), user='click', password='house')
-        sub = await nc.subscribe('right_insert1')
+        nc = await nats.connect(
+            "{}:4444".format(nats_cluster.nats_ip), user="click", password="house"
+        )
+        sub = await nc.subscribe("right_insert1")
         await sub.unsubscribe(50)
         async for msg in sub.messages:
             insert_messages.append(msg.data.decode())
@@ -769,7 +791,11 @@ def test_nats_many_subjects_insert_right(nats_cluster):
 
     while True:
         try:
-            instance.query("INSERT INTO test.nats SETTINGS stream_like_engine_insert_queue='right_insert1' VALUES {}".format(values))
+            instance.query(
+                "INSERT INTO test.nats SETTINGS stream_like_engine_insert_queue='right_insert1' VALUES {}".format(
+                    values
+                )
+            )
             break
         except QueryRuntimeException as e:
             if "Local: Timed out." in str(e):
@@ -803,7 +829,7 @@ def test_nats_many_inserts(nats_cluster):
                      nats_row_delimiter = '\\n';
     """
     )
-    while not check_table_is_ready(instance, 'test.nats_consume'):
+    while not check_table_is_ready(instance, "test.nats_consume"):
         logging.debug("Table test.nats_consume is not yet ready")
         time.sleep(0.5)
 
@@ -816,9 +842,7 @@ def test_nats_many_inserts(nats_cluster):
     def insert():
         while True:
             try:
-                instance.query(
-                    "INSERT INTO test.nats_many VALUES {}".format(values)
-                )
+                instance.query("INSERT INTO test.nats_many VALUES {}".format(values))
                 break
             except QueryRuntimeException as e:
                 if "Local: Timed out." in str(e):
@@ -896,7 +920,7 @@ def test_nats_overloaded_insert(nats_cluster):
             SELECT * FROM test.nats_consume;
     """
     )
-    while not check_table_is_ready(instance, 'test.nats_consume'):
+    while not check_table_is_ready(instance, "test.nats_consume"):
         logging.debug("Table test.nats_consume is not yet ready")
         time.sleep(0.5)
 
@@ -963,10 +987,9 @@ def test_nats_virtual_column(nats_cluster):
         SELECT value, key, _subject FROM test.nats_virtuals;
     """
     )
-    while not check_table_is_ready(instance, 'test.nats_virtuals'):
+    while not check_table_is_ready(instance, "test.nats_virtuals"):
         logging.debug("Table test.nats_virtuals is not yet ready")
         time.sleep(0.5)
-
 
     message_num = 10
     i = 0
@@ -975,14 +998,13 @@ def test_nats_virtual_column(nats_cluster):
         messages.append(json.dumps({"key": i, "value": i}))
         i += 1
 
-    asyncio.run(nats_produce_messages(nats_cluster.nats_ip, 'virtuals', messages))
+    asyncio.run(nats_produce_messages(nats_cluster.nats_ip, "virtuals", messages))
 
     while True:
         result = instance.query("SELECT count() FROM test.view")
         time.sleep(1)
         if int(result) == message_num:
             break
-
 
     result = instance.query(
         """
@@ -1029,7 +1051,7 @@ def test_nats_virtual_column_with_materialized_view(nats_cluster):
         FROM test.nats_virtuals_mv;
     """
     )
-    while not check_table_is_ready(instance, 'test.nats_virtuals_mv'):
+    while not check_table_is_ready(instance, "test.nats_virtuals_mv"):
         logging.debug("Table test.nats_virtuals_mv is not yet ready")
         time.sleep(0.5)
 
@@ -1040,7 +1062,7 @@ def test_nats_virtual_column_with_materialized_view(nats_cluster):
         messages.append(json.dumps({"key": i, "value": i}))
         i += 1
 
-    asyncio.run(nats_produce_messages(nats_cluster.nats_ip, 'virtuals_mv', messages))
+    asyncio.run(nats_produce_messages(nats_cluster.nats_ip, "virtuals_mv", messages))
 
     while True:
         result = instance.query("SELECT count() FROM test.view")
@@ -1048,10 +1070,7 @@ def test_nats_virtual_column_with_materialized_view(nats_cluster):
         if int(result) == message_num:
             break
 
-
-    result = instance.query(
-        "SELECT key, value, subject FROM test.view ORDER BY key"
-    )
+    result = instance.query("SELECT key, value, subject FROM test.view ORDER BY key")
     expected = """\
 0	0	virtuals_mv
 1	1	virtuals_mv
@@ -1107,20 +1126,25 @@ def test_nats_many_consumers_to_each_queue(nats_cluster):
                 table_id
             )
         )
-        while not check_table_is_ready(instance, 'test.many_consumers_{}'.format(table_id)):
-            logging.debug("Table test.many_consumers_{} is not yet ready".format(table_id))
+        while not check_table_is_ready(
+            instance, "test.many_consumers_{}".format(table_id)
+        ):
+            logging.debug(
+                "Table test.many_consumers_{} is not yet ready".format(table_id)
+            )
             time.sleep(0.5)
 
     i = [0]
     messages_num = 1000
-
 
     def produce():
         messages = []
         for _ in range(messages_num):
             messages.append(json.dumps({"key": i[0], "value": i[0]}))
             i[0] += 1
-        asyncio.run(nats_produce_messages(nats_cluster.nats_ip, 'many_consumers', messages))
+        asyncio.run(
+            nats_produce_messages(nats_cluster.nats_ip, "many_consumers", messages)
+        )
 
     threads = []
     threads_num = 20
@@ -1187,10 +1211,9 @@ def test_nats_restore_failed_connection_without_losses_on_write(nats_cluster):
                      nats_row_delimiter = '\\n';
     """
     )
-    while not check_table_is_ready(instance, 'test.consume'):
+    while not check_table_is_ready(instance, "test.consume"):
         logging.debug("Table test.consume is not yet ready")
         time.sleep(0.5)
-
 
     messages_num = 100000
     values = []
@@ -1269,7 +1292,7 @@ def test_nats_no_connection_at_startup_2(nats_cluster):
             SELECT * FROM test.cs;
     """
     )
-    while not check_table_is_ready(instance, 'test.cs'):
+    while not check_table_is_ready(instance, "test.cs"):
         logging.debug("Table test.cs is not yet ready")
         time.sleep(0.5)
 
@@ -1282,7 +1305,7 @@ def test_nats_no_connection_at_startup_2(nats_cluster):
     messages = []
     for i in range(messages_num):
         messages.append(json.dumps({"key": i, "value": i}))
-    asyncio.run(nats_produce_messages(nats_cluster.nats_ip, 'cs', messages))
+    asyncio.run(nats_produce_messages(nats_cluster.nats_ip, "cs", messages))
 
     while True:
         result = instance.query("SELECT count() FROM test.view")
@@ -1314,10 +1337,9 @@ def test_nats_format_factory_settings(nats_cluster):
                      date_time_input_format = 'best_effort';
         """
     )
-    while not check_table_is_ready(instance, 'test.format_settings'):
+    while not check_table_is_ready(instance, "test.format_settings"):
         logging.debug("Table test.format_settings is not yet ready")
         time.sleep(0.5)
-
 
     message = json.dumps(
         {"id": "format_settings_test", "date": "2021-01-19T14:42:33.1829214Z"}
@@ -1326,7 +1348,9 @@ def test_nats_format_factory_settings(nats_cluster):
         """SELECT parseDateTimeBestEffort(CAST('2021-01-19T14:42:33.1829214Z', 'String'))"""
     )
 
-    asyncio.run(nats_produce_messages(nats_cluster.nats_ip, 'format_settings', [message]))
+    asyncio.run(
+        nats_produce_messages(nats_cluster.nats_ip, "format_settings", [message])
+    )
 
     while True:
         result = instance.query("SELECT date FROM test.format_settings")
@@ -1343,7 +1367,9 @@ def test_nats_format_factory_settings(nats_cluster):
         """
     )
 
-    asyncio.run(nats_produce_messages(nats_cluster.nats_ip, 'format_settings', [message]))
+    asyncio.run(
+        nats_produce_messages(nats_cluster.nats_ip, "format_settings", [message])
+    )
     while True:
         result = instance.query("SELECT date FROM test.view")
         if result == expected:
@@ -1386,20 +1412,20 @@ def test_nats_drop_mv(nats_cluster):
             SELECT * FROM test.nats;
     """
     )
-    while not check_table_is_ready(instance, 'test.nats'):
+    while not check_table_is_ready(instance, "test.nats"):
         logging.debug("Table test.nats is not yet ready")
         time.sleep(0.5)
 
     messages = []
     for i in range(20):
         messages.append(json.dumps({"key": i, "value": i}))
-    asyncio.run(nats_produce_messages(nats_cluster.nats_ip, 'mv', messages))
+    asyncio.run(nats_produce_messages(nats_cluster.nats_ip, "mv", messages))
 
     instance.query("DROP VIEW test.consumer")
     messages = []
     for i in range(20, 40):
         messages.append(json.dumps({"key": i, "value": i}))
-    asyncio.run(nats_produce_messages(nats_cluster.nats_ip, 'mv', messages))
+    asyncio.run(nats_produce_messages(nats_cluster.nats_ip, "mv", messages))
 
     instance.query(
         """
@@ -1410,7 +1436,7 @@ def test_nats_drop_mv(nats_cluster):
     messages = []
     for i in range(40, 50):
         messages.append(json.dumps({"key": i, "value": i}))
-    asyncio.run(nats_produce_messages(nats_cluster.nats_ip, 'mv', messages))
+    asyncio.run(nats_produce_messages(nats_cluster.nats_ip, "mv", messages))
 
     while True:
         result = instance.query("SELECT * FROM test.view ORDER BY key")
@@ -1423,7 +1449,7 @@ def test_nats_drop_mv(nats_cluster):
     messages = []
     for i in range(50, 60):
         messages.append(json.dumps({"key": i, "value": i}))
-    asyncio.run(nats_produce_messages(nats_cluster.nats_ip, 'mv', messages))
+    asyncio.run(nats_produce_messages(nats_cluster.nats_ip, "mv", messages))
 
     count = 0
     while True:
@@ -1440,11 +1466,15 @@ def test_nats_predefined_configuration(nats_cluster):
         CREATE TABLE test.nats (key UInt64, value UInt64)
             ENGINE = NATS(nats1) """
     )
-    while not check_table_is_ready(instance, 'test.nats'):
+    while not check_table_is_ready(instance, "test.nats"):
         logging.debug("Table test.nats is not yet ready")
         time.sleep(0.5)
 
-    asyncio.run(nats_produce_messages(nats_cluster.nats_ip, 'named', [json.dumps({"key": 1, "value": 2})]))
+    asyncio.run(
+        nats_produce_messages(
+            nats_cluster.nats_ip, "named", [json.dumps({"key": 1, "value": 2})]
+        )
+    )
     while True:
         result = instance.query(
             "SELECT * FROM test.nats ORDER BY key", ignore_error=True
