@@ -191,7 +191,11 @@ void StorageMergeTree::shutdown()
         /// parts which will remove themselves in their destructors. If so, we
         /// may have race condition between our remove call and background
         /// process.
-        clearOldPartsFromFilesystem(true);
+        /// Do not clear old parts in case when server is shutting down because it failed to start due to some exception.
+
+        if (Context::getGlobalContextInstance()->getApplicationType() == Context::ApplicationType::SERVER
+            && Context::getGlobalContextInstance()->isServerCompletelyStarted())
+            clearOldPartsFromFilesystem(true);
     }
     catch (...)
     {
