@@ -247,6 +247,17 @@ void ContextAccess::calculateAccessRights() const
 
 UserPtr ContextAccess::getUser() const
 {
+    auto res = tryGetUser();
+
+    if (likely(res))
+        return res;
+
+    throw Exception(ErrorCodes::UNKNOWN_USER, "User has been dropped");
+}
+
+
+UserPtr ContextAccess::tryGetUser() const
+{
     std::lock_guard lock{mutex};
     return user;
 }
@@ -385,7 +396,7 @@ bool ContextAccess::checkAccessImplHelper(AccessFlags flags, const Args &... arg
     if (!flags || is_full_access)
         return access_granted();
 
-    if (!getUser())
+    if (!tryGetUser())
         return access_denied("User has been dropped", ErrorCodes::UNKNOWN_USER);
 
     /// Access to temporary tables is controlled in an unusual way, not like normal tables.
@@ -576,7 +587,7 @@ bool ContextAccess::checkAdminOptionImplHelper(const Container & role_ids, const
             throw Exception(getUserName() + ": " + msg, error_code);
     };
 
-    if (!getUser())
+    if (!tryGetUser())
     {
         show_error("User has been dropped", ErrorCodes::UNKNOWN_USER);
         return false;

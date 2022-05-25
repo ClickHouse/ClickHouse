@@ -117,7 +117,7 @@ namespace
     void checkGranteeIsAllowed(const ContextAccess & current_user_access, const UUID & grantee_id, const IAccessEntity & grantee)
     {
         auto current_user = current_user_access.getUser();
-        if (!current_user || !current_user->grantees.match(grantee_id))
+        if (!current_user->grantees.match(grantee_id))
             throw Exception(grantee.formatTypeWithName() + " is not allowed as grantee", ErrorCodes::ACCESS_DENIED);
     }
 
@@ -125,7 +125,7 @@ namespace
     void checkGranteesAreAllowed(const AccessControl & access_control, const ContextAccess & current_user_access, const std::vector<UUID> & grantee_ids)
     {
         auto current_user = current_user_access.getUser();
-        if (current_user && (current_user->grantees == RolesOrUsersSet::AllTag{}))
+        if (current_user->grantees == RolesOrUsersSet::AllTag{})
             return;
 
         for (const auto & id : grantee_ids)
@@ -411,7 +411,7 @@ BlockIO InterpreterGrantQuery::execute()
     String current_database = getContext()->getCurrentDatabase();
     elements_to_grant.replaceEmptyDatabase(current_database);
     elements_to_revoke.replaceEmptyDatabase(current_database);
-    bool need_check_grantees_are_allowed = true;
+    bool need_check_grantees_are_allowed = !getContext()->isAccessAlreadyChecked();
     checkGrantOption(access_control, *current_user_access, grantees, need_check_grantees_are_allowed, elements_to_grant, elements_to_revoke);
 
     /// Check if the current user has corresponding roles granted with admin option.

@@ -25,9 +25,10 @@ NamesAndTypesList StorageSystemCurrentRoles::getNamesAndTypes()
 void StorageSystemCurrentRoles::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
 {
     auto roles_info = context->getRolesInfo();
-    auto user = context->getUser();
-    if (!roles_info || !user)
+    if (!roles_info)
         return;
+
+    auto user = context->getUser();
 
     size_t column_index = 0;
     auto & column_role_name = assert_cast<ColumnString &>(*res_columns[column_index++]);
