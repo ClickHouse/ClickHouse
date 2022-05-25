@@ -426,19 +426,19 @@ LRUFileCache::FileSegmentCell * LRUFileCache::addCell(
                     records.erase({remove_queue_iter->key, remove_queue_iter->offset});
                     stash_queue.remove(remove_queue_iter, cache_lock);
                 }
+
                 /// For segments that do not reach the download threshold, we do not download them, but directly read them
-                return std::make_shared<FileSegment>(offset, size, key, this, FileSegment::State::SKIP_CACHE);
+                state = queue_iter->hits >= enable_cache_hits_threshold ? FileSegment::State::EMPTY : FileSegment::State::SKIP_CACHE;
+                return std::make_shared<FileSegment>(offset, size, key, this, state);
             }
             else
             {
                 auto queue_iter = record->second;
                 queue_iter->hits++;
                 stash_queue.moveToEnd(queue_iter, cache_lock);
-                
-                if (queue_iter->hits >= enable_cache_hits_threshold)
-                    return std::make_shared<FileSegment>(offset, size, key, this, FileSegment::State::EMPTY);
-                else
-                    return std::make_shared<FileSegment>(offset, size, key, this, FileSegment::State::SKIP_CACHE);
+
+                state = queue_iter->hits >= enable_cache_hits_threshold ? FileSegment::State::EMPTY : FileSegment::State::SKIP_CACHE;
+                return std::make_shared<FileSegment>(offset, size, key, this, state);
             }
         }
         else
