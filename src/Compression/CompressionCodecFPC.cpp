@@ -72,7 +72,7 @@ UInt32 CompressionCodecFPC::getMaxCompressedDataSize(UInt32 uncompressed_size) c
     if (float_count % 2 != 0) {
         ++float_count;
     }
-    return HEADER_SIZE + (float_count + float_count / 2) * float_width;
+    return HEADER_SIZE + float_count * float_width + float_count / 2;
 }
 
 namespace
@@ -453,7 +453,8 @@ UInt32 CompressionCodecFPC::doCompressData(const char * source, UInt32 source_si
     dest[1] = static_cast<char>(level);
     dest[2] = static_cast<char>(encodeEndianness(std::endian::native));
 
-    auto destination = std::as_writable_bytes(std::span(dest, source_size).subspan(HEADER_SIZE));
+    auto dest_size = getMaxCompressedDataSize(source_size);
+    auto destination = std::as_writable_bytes(std::span(dest, dest_size).subspan(HEADER_SIZE));
     auto src = std::as_bytes(std::span(source, source_size));
     switch (float_width)
     {
