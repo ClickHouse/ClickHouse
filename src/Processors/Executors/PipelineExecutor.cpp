@@ -1,4 +1,3 @@
-#include <queue>
 #include <IO/WriteBufferFromString.h>
 #include <Common/CurrentThread.h>
 #include <Common/setThreadName.h>
@@ -240,6 +239,9 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, std::atomic_bool * yie
                 tasks.pushTasks(queue, async_queue, context);
             }
 
+            // Upscale if possible
+            spawnThreads();
+
 #ifndef NDEBUG
             context.processing_time_ns += processing_time_watch.elapsed();
 #endif
@@ -265,6 +267,56 @@ void PipelineExecutor::initializeExecution(size_t num_threads)
 
     tasks.init(num_threads, profile_processors);
     tasks.fill(queue);
+
+    slots = ConcurrencyControl::instance().allocate(1, num_threads);
+    std::unique_lock lock{threads_mutex};
+    threads.reserve(num_threads);
+}
+
+void PipelineExecutor::spawnThreads()
+{
+    while (auto slot = slots->tryAcquire())
+    {
+        std::unique_lock lock{threads_mutex};
+        size_t thread_num = threads.size();
+        threads.emplace_back([this, thread_num, thread_group = CurrentThread::getGroup(), slot = std::move(slot)]
+        {
+            /// ThreadStatus thread_status;
+
+            setThreadName("QueryPipelineEx");
+
+            if (thread_group)
+                CurrentThread::attachTo(thread_group);
+
+            try
+            {
+                executeSingleThread(thread_num);
+            }
+            catch (...)
+            {
+                /// In case of exception from executor itself, stop other threads.
+                finish();
+                tasks.getThreadContext(thread_num).setException(std::current_exception());
+            }
+        });
+    }
+}
+
+void PipelineExecutor::joinThreads()
+{
+    for (size_t thread_num = 0; ; thread_num++)
+    {
+        std::unique_lock lock{threads_mutex};
+        if (thread_num >= threads.size())
+            break;
+        if (threads[thread_num].joinable())
+        {
+            auto & thread = threads[thread_num];
+            lock.unlock(); // to avoid deadlock if thread we are going to join starts spawning threads
+            thread.join();
+        }
+    }
+    // NOTE: No races: all concurrent spawnThreads() calls are done from `threads`, but they're already joined.
 }
 
 void PipelineExecutor::executeImpl(size_t num_threads)
@@ -273,59 +325,27 @@ void PipelineExecutor::executeImpl(size_t num_threads)
 
     initializeExecution(num_threads);
 
-    using ThreadsData = std::vector<ThreadFromGlobalPool>;
-    ThreadsData threads;
-    threads.reserve(num_threads);
-
     bool finished_flag = false;
 
     SCOPE_EXIT_SAFE(
         if (!finished_flag)
         {
             finish();
-
-            for (auto & thread : threads)
-                if (thread.joinable())
-                    thread.join();
+            joinThreads();
         }
     );
 
     if (num_threads > 1)
     {
-        auto thread_group = CurrentThread::getGroup();
-
-        for (size_t i = 0; i < num_threads; ++i)
-        {
-            threads.emplace_back([this, thread_group, thread_num = i]
-            {
-                /// ThreadStatus thread_status;
-
-                setThreadName("QueryPipelineEx");
-
-                if (thread_group)
-                    CurrentThread::attachTo(thread_group);
-
-                try
-                {
-                    executeSingleThread(thread_num);
-                }
-                catch (...)
-                {
-                    /// In case of exception from executor itself, stop other threads.
-                    finish();
-                    tasks.getThreadContext(thread_num).setException(std::current_exception());
-                }
-            });
-        }
-
+        spawnThreads(); // start at least one thread
         tasks.processAsyncTasks();
-
-        for (auto & thread : threads)
-            if (thread.joinable())
-                thread.join();
+        joinThreads();
     }
     else
+    {
+        auto slot = slots->tryAcquire();
         executeSingleThread(0);
+    }
 
     finished_flag = true;
 }
