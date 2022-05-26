@@ -142,6 +142,8 @@ void registerCodecFPC(CompressionCodecFactory & factory)
                 throw Exception("FPC codec argument must be integer", ErrorCodes::ILLEGAL_CODEC_PARAMETER);
 
             level = literal->value.safeGet<UInt8>();
+            if (level == 0)
+                throw Exception("FPC codec level must be at least 1", ErrorCodes::ILLEGAL_CODEC_PARAMETER);
         }
         return std::make_shared<CompressionCodecFPC>(float_width, level);
     };
