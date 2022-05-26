@@ -196,6 +196,8 @@ private:
 
         Iterator end() { return queue.end(); }
 
+        void removeAll(std::lock_guard<std::mutex> & cache_lock);
+
     private:
         std::list<FileKeyAndOffset> queue;
         size_t cache_size = 0;
