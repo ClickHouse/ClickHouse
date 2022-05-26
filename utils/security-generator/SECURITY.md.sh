@@ -20,8 +20,8 @@ The following versions of ClickHouse server are currently being supported with s
 
 clickhouse-local --query "
 SELECT
-    concat(CAST(y, 'String'), '.', if(y < ((toYear(today()) - 2000) - 1), '*', CAST(m, 'String'))) AS Version,
-    if((n <= 3) OR (is_lts AND (lts_n <= 2)), '✔️', 'x') AS Supported
+    y::String || '.' || (y < toYear(today()) - 2000 - 1 ? '*' : m::String) AS Version
+    (n <= 3 OR (is_lts AND lts_n <= 2)) ? '✔️' : 'x' AS Supported
 FROM
 (
     SELECT
@@ -34,8 +34,8 @@ FROM
     (
         WITH
             extractGroups(version, 'v(\\d+).(\\d+)') AS v,
-            CAST(v[1], 'UInt8') AS y,
-            CAST(v[2], 'UInt8') AS m
+            v[1]::UInt8 AS y,
+            v[2]::UInt8 AS m
         SELECT
             y,
             m
