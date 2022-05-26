@@ -9,7 +9,9 @@
 #ifdef __SSE2__
 #include <emmintrin.h>
 
+#if defined(__AVX2__)
 #include <immintrin.h>
+#endif
 
 /** memcpy function could work suboptimal if all the following conditions are met:
   * 1. Size of memory region is relatively small (approximately, under 50 bytes).
