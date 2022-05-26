@@ -674,7 +674,7 @@ void MergeTreeWhereOptimizer::optimizeByRanks(ASTSelectQuery & select) const
         {
             // For simple conditions selectivity is already calculated. Now multiply only complex conditions.
             if (!it->description) {
-                prewhere_selectivity *= analyzeComplexSelectivity(it->node);
+                prewhere_selectivity *= analyzeComplexSelectivity(it->node).value_or(1);
             }
 
             prewhere_conditions.splice(prewhere_conditions.end(), where_conditions, it++);
@@ -708,7 +708,7 @@ void MergeTreeWhereOptimizer::optimizeByRanks(ASTSelectQuery & select) const
     };
 
     for (auto& condition : complex_conditions) {
-        condition.selectivity = analyzeComplexSelectivity(condition.condition.node);
+        condition.selectivity = analyzeComplexSelectivity(condition.condition.node).value_or(1);
         recalculate_complex_condition_size_and_rank(condition);
     }
 
@@ -944,9 +944,79 @@ void MergeTreeWhereOptimizer::determineArrayJoinedNames(ASTSelectQuery & select)
         array_joined_names.emplace(ast->getAliasOrColumnName());
 }
 
-double MergeTreeWhereOptimizer::analyzeComplexSelectivity(const ASTPtr & /*expression*/) const
+std::optional<double> MergeTreeWhereOptimizer::analyzeComplexSelectivity(const ASTPtr & node) const
 {
-    return 1;
+    const auto * func = node->as<ASTFunction>();
+
+    if (func && func->name == "and")
+    {
+        double result = 1;
+        bool ok = false;
+        for (const auto & child : node->children)
+        {
+            if (const auto selectivity = analyzeComplexSelectivity(child); selectivity) {
+                result *= *selectivity;
+                ok = true;
+            }
+        }
+        if (ok) {
+            return result;
+        } else {
+            return std::nullopt;
+        }
+    }
+    else if (func && func->name == "or")
+    {
+        double result = 1;
+        bool ok = false;
+        for (const auto & child : node->children)
+        {
+            if (const auto selectivity = analyzeComplexSelectivity(child); selectivity) {
+                result *= (1 - *selectivity);
+                ok = true;
+            }
+        }
+        if (ok) {
+            return 1 - result;
+        } else {
+            return std::nullopt;
+        }
+    }
+    else if (func && func->name == "not")
+    {
+        const auto result = analyzeComplexSelectivity(node->children.front());
+        if (!result) {
+            return std::nullopt;
+        } else {
+            return 1 - *result;
+        }
+    }
+    else if (const auto description = parseCondition(node); description) {
+        switch (description->type)
+        {
+        case ConditionDescription::Type::EQUAL:
+            return stats->getDistributionStatistics()->estimateProbability(
+                    description->identifier,
+                    description->constant,
+                    description->constant).value_or(1);
+        case ConditionDescription::Type::NOT_EQUAL:
+            return 1 - stats->getDistributionStatistics()->estimateProbability(
+                    description->identifier,
+                    description->constant,
+                    description->constant).value_or(0);
+        case ConditionDescription::Type::LESS_OR_EQUAL:
+            return stats->getDistributionStatistics()->estimateProbability(
+                    description->identifier,
+                    {},
+                    description->constant).value_or(1);
+        case ConditionDescription::Type::GREATER_OR_EQUAL:
+            return stats->getDistributionStatistics()->estimateProbability(
+                    description->identifier,
+                    description->constant,
+                    {}).value_or(1);
+        }
+    }
+    return std::nullopt;
 }
 
 }

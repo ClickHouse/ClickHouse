@@ -159,7 +159,7 @@ private:
     std::vector<ColumnWithRank> getSimpleColumns(const std::unordered_map<std::string, Conditions> & column_to_simple_conditions) const;
     double scoreSelectivity(const std::optional<ConditionDescription> & condition_description) const;
 
-    double analyzeComplexSelectivity(const ASTPtr & expression) const;
+    std::optional<double> analyzeComplexSelectivity(const ASTPtr & node) const;
 
     struct ConditionWithRank {
         explicit ConditionWithRank(
