@@ -42,7 +42,7 @@ NameSet IMergedBlockOutputStream::removeEmptyColumnsFromPart(
         return {};
 
     for (const auto & column : empty_columns)
-        LOG_TRACE(storage.log, "Skipping expired/empty column {} for {}", column, data_part->name);
+        LOG_TRACE(storage.log, "Skipping expired/empty column {} for part {}", column, data_part->name);
 
     /// Collect counts for shared streams of different columns. As an example, Nested columns have shared stream with array sizes.
     std::map<String, size_t> stream_counts;

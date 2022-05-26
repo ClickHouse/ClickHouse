@@ -274,7 +274,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
             if (ttl.finished())
             {
                 global_ctx->new_data_part->expired_columns.insert(column_name);
-                LOG_TRACE(ctx->log, "Adding expired column {} for {}", column_name, global_ctx->new_data_part->name);
+                LOG_TRACE(ctx->log, "Adding expired column {} for part {}", column_name, global_ctx->new_data_part->name);
                 std::erase(global_ctx->gathering_column_names, column_name);
                 std::erase(global_ctx->merging_column_names, column_name);
                 ++expired_columns;
