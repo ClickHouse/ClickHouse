@@ -124,11 +124,11 @@ void registerCodecFPC(CompressionCodecFactory & factory)
     auto method_code = static_cast<UInt8>(CompressionMethodByte::FPC);
     auto codec_builder = [&](const ASTPtr & arguments, const IDataType * column_type) -> CompressionCodecPtr
     {
-        if (!column_type)
-        {
-            throw Exception("FPC codec must have associated column", ErrorCodes::BAD_ARGUMENTS);
-        }
-        UInt8 level{0};
+        UInt8 float_width{0};
+        if (column_type != nullptr)
+            float_width = getFloatBytesSize(*column_type);
+
+        UInt8 level{12};
         if (arguments && !arguments->children.empty())
         {
             if (arguments->children.size() > 1)
@@ -139,13 +139,11 @@ void registerCodecFPC(CompressionCodecFactory & factory)
 
             const auto * literal = arguments->children.front()->as<ASTLiteral>();
             if (!literal)
-            {
                 throw Exception("FPC codec argument must be integer", ErrorCodes::ILLEGAL_CODEC_PARAMETER);
-            }
 
             level = literal->value.safeGet<UInt8>();
         }
-        return std::make_shared<CompressionCodecFPC>(getFloatBytesSize(*column_type), level);
+        return std::make_shared<CompressionCodecFPC>(float_width, level);
     };
     factory.registerCompressionCodecWithType("FPC", method_code, codec_builder);
 }
@@ -474,26 +472,28 @@ void CompressionCodecFPC::doDecompressData(const char * source, UInt32 source_si
         throw Exception("Cannot decompress. File has wrong header", ErrorCodes::CANNOT_DECOMPRESS);
 
     auto compressed_data = std::span(source, source_size);
-    if (static_cast<UInt8>(compressed_data[0]) != float_width)
-        throw Exception("Cannot decompress. File has incorrect float width", ErrorCodes::CANNOT_DECOMPRESS);
-    if (static_cast<UInt8>(compressed_data[1]) != level)
-        throw Exception("Cannot decompress. File has incorrect compression level", ErrorCodes::CANNOT_DECOMPRESS);
     if (decodeEndianness(static_cast<UInt8>(compressed_data[2])) != std::endian::native)
         throw Exception("Cannot decompress. File has incorrect endianness", ErrorCodes::CANNOT_DECOMPRESS);
 
+    auto compressed_float_width = static_cast<UInt8>(compressed_data[0]);
+    auto compressed_level = static_cast<UInt8>(compressed_data[1]);
+    if (compressed_level == 0)
+        throw Exception("Cannot decompress. File has incorrect level", ErrorCodes::CANNOT_DECOMPRESS);
+
     auto destination = std::as_writable_bytes(std::span(dest, uncompressed_size));
     auto src = std::as_bytes(compressed_data.subspan(HEADER_SIZE));
-    switch (float_width)
+    switch (compressed_float_width)
     {
         case sizeof(Float64):
-            FPCOperation<UInt64>(destination, level).decode(src, uncompressed_size);
+            FPCOperation<UInt64>(destination, compressed_level).decode(src, uncompressed_size);
             break;
         case sizeof(Float32):
-            FPCOperation<UInt32>(destination, level).decode(src, uncompressed_size);
+            FPCOperation<UInt32>(destination, compressed_level).decode(src, uncompressed_size);
             break;
         default:
             break;
     }
+    throw Exception("Cannot decompress. File has incorrect float width", ErrorCodes::CANNOT_DECOMPRESS);
 }
 
 }
