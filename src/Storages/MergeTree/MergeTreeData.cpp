@@ -6763,41 +6763,41 @@ StorageSnapshotPtr MergeTreeData::getStorageSnapshot(const StorageMetadataPtr & 
     return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, object_columns, std::move(snapshot_data));
 }
 
-#define FOR_EACH_PART_TYPE(M) \
-    M(Wide) \
-    M(Compact) \
-    M(InMemory)
-
-#define DECLARE_INCREMENT_EVENT_CASE(Event, Type) \
-    case MergeTreeDataPartType::Type: \
-        ProfileEvents::increment(ProfileEvents::Event##Type##Parts); \
-        break;
-
-#define DECLARE_INCREMENT_EVENT(value, CASE) \
-    switch (value) \
-    { \
-        FOR_EACH_PART_TYPE(CASE) \
-        default: \
-            break; \
-    }
-
 void MergeTreeData::incrementInsertedPartsProfileEvent(MergeTreeDataPartType type)
 {
-    #define DECLARE_INSERTED_EVENT_CASE(Type) DECLARE_INCREMENT_EVENT_CASE(Inserted, Type)
-    DECLARE_INCREMENT_EVENT(type.getValue(), DECLARE_INSERTED_EVENT_CASE)
-    #undef DECLARE_INSERTED_EVENT
+    switch (type.getValue())
+    {
+        case MergeTreeDataPartType::Wide:
+            ProfileEvents::increment(ProfileEvents::InsertedWideParts);
+            break;
+        case MergeTreeDataPartType::Compact:
+            ProfileEvents::increment(ProfileEvents::InsertedCompactParts);
+            break;
+        case MergeTreeDataPartType::InMemory:
+            ProfileEvents::increment(ProfileEvents::InsertedInMemoryParts);
+            break;
+        default:
+            break;
+    }
 }
 
 void MergeTreeData::incrementMergedPartsProfileEvent(MergeTreeDataPartType type)
 {
-    #define DECLARE_MERGED_EVENT_CASE(Type) DECLARE_INCREMENT_EVENT_CASE(MergedInto, Type)
-    DECLARE_INCREMENT_EVENT(type.getValue(), DECLARE_MERGED_EVENT_CASE)
-    #undef DECLARE_MERGED_EVENT
+    switch (type.getValue())
+    {
+        case MergeTreeDataPartType::Wide:
+            ProfileEvents::increment(ProfileEvents::MergedIntoWideParts);
+            break;
+        case MergeTreeDataPartType::Compact:
+            ProfileEvents::increment(ProfileEvents::MergedIntoCompactParts);
+            break;
+        case MergeTreeDataPartType::InMemory:
+            ProfileEvents::increment(ProfileEvents::MergedIntoInMemoryParts);
+            break;
+        default:
+            break;
+    }
 }
-
-#undef FOR_EACH_PART_TYPE
-#undef DECLARE_INCREMENT_EVENT_CASE
-#undef DECLARE_INCREMENT_EVENT
 
 CurrentlySubmergingEmergingTagger::~CurrentlySubmergingEmergingTagger()
 {
