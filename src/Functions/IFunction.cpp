@@ -9,6 +9,7 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnSparse.h>
+#include <Columns/ColumnNothing.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/Native.h>
@@ -203,6 +204,32 @@ ColumnPtr IExecutableFunction::defaultImplementationForNulls(
     return nullptr;
 }
 
+ColumnPtr IExecutableFunction::defaultImplementationForNothing(
+    const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count) const
+{
+    if (!useDefaultImplementationForNothing())
+        return nullptr;
+
+    bool is_nothing_type_presented = false;
+    for (const auto & arg : args)
+        is_nothing_type_presented |= isNothing(arg.type);
+
+    if (!is_nothing_type_presented)
+        return nullptr;
+
+    if (!isNothing(result_type))
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Function {} with argument with type Nothing and default implementation for Nothing "
+            "is expected to return result with type Nothing, got {}",
+            getName(),
+            result_type->getName());
+
+    if (input_rows_count > 0)
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot create non-empty column with type Nothing");
+    return ColumnNothing::create(0);
+}
+
 ColumnPtr IExecutableFunction::executeWithoutLowCardinalityColumns(
     const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const
 {
@@ -210,6 +237,9 @@ ColumnPtr IExecutableFunction::executeWithoutLowCardinalityColumns(
         return res;
 
     if (auto res = defaultImplementationForNulls(args, result_type, input_rows_count, dry_run))
+        return res;
+
+    if (auto res = defaultImplementationForNothing(args, result_type, input_rows_count))
         return res;
 
     ColumnPtr res;
@@ -433,6 +463,15 @@ DataTypePtr IFunctionOverloadResolver::getReturnTypeWithoutLowCardinality(const 
             Block nested_columns = createBlockWithNestedColumns(arguments);
             auto return_type = getReturnTypeImpl(ColumnsWithTypeAndName(nested_columns.begin(), nested_columns.end()));
             return makeNullable(return_type);
+        }
+    }
+
+    if (!arguments.empty() && useDefaultImplementationForNothing())
+    {
+        for (const auto & arg : arguments)
+        {
+            if (isNothing(arg.type))
+                return std::make_shared<DataTypeNothing>();
         }
     }
 
