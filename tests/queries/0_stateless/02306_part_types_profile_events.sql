@@ -24,7 +24,7 @@ SYSTEM STOP MERGES t_parts_profile_events;
 SYSTEM FLUSH LOGS;
 
 SELECT count(), sum(ProfileEvents['InsertedWideParts']), sum(ProfileEvents['InsertedCompactParts'])
-    FROM system.query_log WHERE has(databases, currentDatabase())
+    FROM system.query_log WHERE current_database = currentDatabase()
         AND log_comment = '02306_part_types_profile_events'
         AND query ILIKE 'INSERT INTO%' AND type = 'QueryFinish';
 
