@@ -36,6 +36,7 @@ namespace ErrorCodes
 static constexpr auto threshold = 2;
 static constexpr double EPS = 1e-9;
 static constexpr double RANK_CORRECTION = 1e9;
+static constexpr double MAX_RANK = RANK_CORRECTION;
 
 namespace
 {
@@ -530,6 +531,14 @@ bool MergeTreeWhereOptimizer::ColumnWithRank::operator==(const ColumnWithRank & 
     return rank == other.rank;
 }
 
+bool MergeTreeWhereOptimizer::ConditionWithRank::operator<(const ConditionWithRank & other) const {
+    return rank < other.rank;
+}
+
+bool MergeTreeWhereOptimizer::ConditionWithRank::operator==(const ConditionWithRank & other) const {
+    return rank == other.rank;
+}
+
 std::vector<MergeTreeWhereOptimizer::ColumnWithRank> MergeTreeWhereOptimizer::getSimpleColumns(
     const std::unordered_map<std::string, Conditions> & column_to_simple_conditions) const {
     std::vector<MergeTreeWhereOptimizer::ColumnWithRank> rank_to_column;
@@ -638,7 +647,7 @@ void MergeTreeWhereOptimizer::optimizeByRanks(ASTSelectQuery & select) const
         LOG_INFO(&Poco::Logger::get("TEST"), "currloss = {} predloss ={}", current_loss, predicted_loss);
 
         // stop if difference is small
-        if (current_loss + EPS < predicted_loss)
+        if (current_loss - EPS < predicted_loss)
         {
             break;   
         }
@@ -650,7 +659,7 @@ void MergeTreeWhereOptimizer::optimizeByRanks(ASTSelectQuery & select) const
         columns_in_prewhere.insert(column);
     }
 
-    Conditions complex_conditions;
+    std::list<ConditionWithRank> complex_conditions;
     // Let's collect conditions that can be calculated in prewhere using columns_in_prewhere.
     for (auto it = where_conditions.begin(); it != where_conditions.end();)
     {
@@ -663,20 +672,69 @@ void MergeTreeWhereOptimizer::optimizeByRanks(ASTSelectQuery & select) const
                     return columns_in_prewhere.contains(ident);
                 }))
         {
+            // For simple conditions selectivity is already calculated. Now multiply only complex conditions.
+            if (!it->description) {
+                prewhere_selectivity *= analyzeComplexSelectivity(it->node);
+            }
+
             prewhere_conditions.splice(prewhere_conditions.end(), where_conditions, it++);
         }
         else
         {
             if (it->viable) {
-                complex_conditions.push_back(*it);
+                complex_conditions.emplace_back(*it);
             }
             ++it;
         }
     }
 
     // Now let's move complex conditions
-    // TODO: complex_conditions
-    
+    auto current_column_sizes = column_sizes;
+    for (const auto& column : columns_in_prewhere) {
+        current_column_sizes[column] = 0;
+    }
+
+    auto recalculate_complex_condition_size_and_rank = [&current_column_sizes] (ConditionWithRank& condition) {
+        condition.condition.columns_size = 0;
+        for (const auto& column : condition.condition.identifiers) {
+            condition.condition.columns_size += current_column_sizes[column];
+        }
+        if (condition.condition.columns_size == 0) {
+            // If there are no new columns then simply move condition to prewhere.
+            condition.rank = -MAX_RANK;
+        } else {
+            condition.rank = -(1 - condition.selectivity) * RANK_CORRECTION / condition.condition.columns_size;
+        }
+    };
+
+    for (auto& condition : complex_conditions) {
+        condition.selectivity = analyzeComplexSelectivity(condition.condition.node);
+        recalculate_complex_condition_size_and_rank(condition);
+    }
+
+    while (!complex_conditions.empty()) {
+        const double current_loss = prewhere_columns_size + prewhere_selectivity * where_columns_size;
+        auto min_it = std::min_element(complex_conditions.begin(), complex_conditions.end());
+        const double predicted_loss = (prewhere_columns_size + min_it->condition.columns_size) + prewhere_selectivity * min_it->selectivity * (where_columns_size - min_it->condition.columns_size);
+        if (current_loss - EPS < predicted_loss) {
+            break;
+        }
+
+        prewhere_columns_size += min_it->condition.columns_size;
+        where_columns_size -= min_it->condition.columns_size;
+        prewhere_selectivity *= min_it->selectivity;
+
+        for (const auto& column : min_it->condition.identifiers) {
+            current_column_sizes[column] = 0;
+        }
+
+        prewhere_conditions.push_back(min_it->condition);
+        complex_conditions.erase(min_it);
+
+        for (auto& condition : complex_conditions) {
+            recalculate_complex_condition_size_and_rank(condition);
+        }
+    }
 
     /// Nothing was moved.
     if (prewhere_conditions.empty())
@@ -884,6 +942,11 @@ void MergeTreeWhereOptimizer::determineArrayJoinedNames(ASTSelectQuery & select)
 
     for (const auto & ast : array_join_expression_list->children)
         array_joined_names.emplace(ast->getAliasOrColumnName());
+}
+
+double MergeTreeWhereOptimizer::analyzeComplexSelectivity(const ASTPtr & /*expression*/) const
+{
+    return 1;
 }
 
 }

@@ -162,21 +162,17 @@ private:
     double analyzeComplexSelectivity(const ASTPtr & expression) const;
 
     struct ConditionWithRank {
-        ConditionWithRank(
-            double selectivity_,
+        explicit ConditionWithRank(
             Condition condition_)
             : rank(0)
-            , selectivity(selectivity_)
+            , selectivity(0)
             , condition(condition_) {
         }
 
         bool operator<(const ConditionWithRank & other) const;
         bool operator==(const ConditionWithRank & other) const;
 
-        void recalculateRank();
-
         double rank;
-
         double selectivity;
         Condition condition;
     };
