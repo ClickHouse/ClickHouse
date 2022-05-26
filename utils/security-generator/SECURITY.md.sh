@@ -21,7 +21,7 @@ The following versions of ClickHouse server are currently being supported with s
 clickhouse-local --query "
 SELECT
     y::String || '.' || (y < toYear(today()) - 2000 - 1 ? '*' : m::String) AS Version,
-    (n <= 3 OR (is_lts AND lts_n <= 2)) ? '✔️' : 'x' AS Supported
+    (n <= 3 OR (is_lts AND lts_n <= 2)) ? '✔️' : '❌' AS Supported
 FROM
 (
     SELECT
