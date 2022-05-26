@@ -96,7 +96,7 @@ INSERT INTO test SELECT number, toString(number) FROM numbers(100);
 INSERT INTO test SELECT number, toString(number) FROM numbers(300, 10000);
 SELECT count() FROM system.filesystem_cache;
 21
-SYSTEM START MERGES test
+SYSTEM START MERGES test;
 OPTIMIZE TABLE test FINAL;
 SELECT count() FROM system.filesystem_cache;
 27
@@ -105,7 +105,6 @@ ALTER TABLE test UPDATE value = 'kek' WHERE key = 100;
 SELECT count() FROM system.filesystem_cache;
 28
 INSERT INTO test SELECT number, toString(number) FROM numbers(5000000);
-SYSTEM FLUSH LOGS;
 SYSTEM FLUSH LOGS;
 SELECT
     query, ProfileEvents['RemoteFSReadBytes'] > 0 as remote_fs_read

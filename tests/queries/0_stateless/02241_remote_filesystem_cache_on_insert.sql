@@ -6,9 +6,8 @@ SET enable_filesystem_cache_on_write_operations=1;
 
 DROP TABLE IF EXISTS test;
 CREATE TABLE test (key UInt32, value String) Engine=MergeTree() ORDER BY key SETTINGS storage_policy='s3_cache', min_bytes_for_wide_part = 10485760;
-
+SYSTEM STOP MERGES test;
 SYSTEM DROP FILESYSTEM CACHE;
-
 SELECT file_segment_range_begin, file_segment_range_end, size, state
 FROM
 (
@@ -78,8 +77,6 @@ FROM
 )
 WHERE endsWith(local_path, 'data.bin')
 FORMAT Vertical;
-
-SYSTEM STOP MERGES test;
 
 SELECT count() FROM (SELECT arrayJoin(cache_paths) AS cache_path, local_path, remote_path FROM system.remote_data_paths ) AS data_paths INNER JOIN system.filesystem_cache AS caches ON data_paths.cache_path = caches.cache_path;
 SELECT count() FROM system.filesystem_cache;
