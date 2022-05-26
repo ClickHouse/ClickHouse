@@ -303,7 +303,7 @@ static std::tuple<UInt64, String> extractRevisionAndOperationFromKey(const Strin
     String suffix;
     String operation;
     /// Key has format: ../../r{revision}(-{hostname})-{operation}
-    static const re2::RE2 key_regexp{".*/r(\\d+)(-[\\w\\d\\-\\.]+)?-(\\w+)$"};
+    static const re2::RE2 key_regexp{R"(.*/r(\d+)(-[\w\d\-\.]+)?-(\w+)$)"};
 
     re2::RE2::FullMatch(key, key_regexp, &revision_str, &suffix, &operation);
 
