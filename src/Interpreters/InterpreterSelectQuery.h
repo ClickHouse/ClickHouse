@@ -175,8 +175,6 @@ private:
 
     String generateFilterActions(ActionsDAGPtr & actions, const Names & prerequisite_columns = {}) const;
 
-    static Chunk to_single_chunk(const Chunks& chunks);
-
     enum class Modificator
     {
         ROLLUP = 0,
