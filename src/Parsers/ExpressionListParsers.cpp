@@ -785,18 +785,85 @@ public:
         Operator cur_op;
         while (popOperator(cur_op))
         {
-            // Special case for ternary operator
-            if (cur_op.func_name == "if_pre")
+            ASTPtr func;
+
+            // Special case of ternary operator
+            if (cur_op.func_name == "if_1")
                 return false;
 
             if (cur_op.func_name == "if")
             {
                 Operator tmp;
-                if (!popOperator(tmp) || tmp.func_name != "if_pre")
+                if (!popOperator(tmp) || tmp.func_name != "if_1")
                     return false;
             }
 
-            auto func = makeASTFunction(cur_op.func_name);
+            // Special case of a BETWEEN b AND c operator
+            if (cur_op.func_name == "between_1" || cur_op.func_name == "not_between_1")
+                return false;
+
+            if (cur_op.func_name == "between_2")
+            {
+                Operator tmp;
+                if (!popOperator(tmp) || !(tmp.func_name == "between_1" || tmp.func_name == "not_between_1"))
+                    return false;
+
+                bool negative = tmp.func_name == "not_between_1";
+
+                ASTs arguments;
+                if (!lastNOperands(arguments, 3))
+                    return false;
+                
+                // subject = arguments[0], left = arguments[1], right = arguments[2]
+                auto f_combined_expression = std::make_shared<ASTFunction>();
+                auto args_combined_expression = std::make_shared<ASTExpressionList>();
+
+                /// [NOT] BETWEEN left AND right
+                auto f_left_expr = std::make_shared<ASTFunction>();
+                auto args_left_expr = std::make_shared<ASTExpressionList>();
+
+                auto f_right_expr = std::make_shared<ASTFunction>();
+                auto args_right_expr = std::make_shared<ASTExpressionList>();
+
+                args_left_expr->children.emplace_back(arguments[0]);
+                args_left_expr->children.emplace_back(arguments[1]);
+
+                args_right_expr->children.emplace_back(arguments[0]);
+                args_right_expr->children.emplace_back(arguments[2]);
+
+                if (negative)
+                {
+                    /// NOT BETWEEN
+                    f_left_expr->name = "less";
+                    f_right_expr->name = "greater";
+                    f_combined_expression->name = "or";
+                }
+                else
+                {
+                    /// BETWEEN
+                    f_left_expr->name = "greaterOrEquals";
+                    f_right_expr->name = "lessOrEquals";
+                    f_combined_expression->name = "and";
+                }
+
+                f_left_expr->arguments = args_left_expr;
+                f_left_expr->children.emplace_back(f_left_expr->arguments);
+
+                f_right_expr->arguments = args_right_expr;
+                f_right_expr->children.emplace_back(f_right_expr->arguments);
+
+                args_combined_expression->children.emplace_back(f_left_expr);
+                args_combined_expression->children.emplace_back(f_right_expr);
+
+                f_combined_expression->arguments = args_combined_expression;
+                f_combined_expression->children.emplace_back(f_combined_expression->arguments);
+
+                func = f_combined_expression;
+            }
+            else
+            {
+                func = makeASTFunction(cur_op.func_name);
+            }
 
             if (!lastNOperands(func->children[0]->children, cur_op.arity))
                 return false;
@@ -863,6 +930,21 @@ public:
         return true;
     }
 
+    void addBetween()
+    {
+        ++open_between;
+    }
+
+    void subBetween()
+    {
+        --open_between;
+    }
+
+    bool hasBetween()
+    {
+        return open_between > 0;
+    }
+
 protected:
     std::vector<Operator> operators;
     ASTs operands;
@@ -873,6 +955,8 @@ protected:
     bool layer_zero;
 
     ASTPtr parameters;
+
+    int open_between = 0;
 };
 
 
@@ -1679,8 +1763,10 @@ bool ParserExpression2::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         {"NOT IN",        Operator("notIn", 10, 2)},
         {"GLOBAL IN",     Operator("globalIn", 10, 2)},
         {"GLOBAL NOT IN", Operator("globalNotIn", 10, 2)},
-        {"?",             Operator("if_pre", 3, 0)},
+        {"?",             Operator("if_1", 3, 0)},
         {":",             Operator("if", 4, 3)},
+        {"BETWEEN",       Operator("between_1", 5, 0)},
+        {"NOT BETWEEN",   Operator("not_between_1", 5, 0)},
     });
 
     static std::vector<std::pair<const char *, Operator>> op_table_unary({
@@ -1707,7 +1793,7 @@ bool ParserExpression2::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     while (pos.isValid())
     {
-        // // LOG_FATAL(&Poco::Logger::root(), "#pos: {}", String(pos->begin, pos->size()));
+        // LOG_FATAL(&Poco::Logger::root(), "#pos: {}", String(pos->begin, pos->size()));
         if (!storage.back()->parse(pos, expected, next))
             return false;
 
@@ -1875,7 +1961,15 @@ bool ParserExpression2::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
             if (cur_op != op_table.end())
             {
-                while (storage.back()->previousPriority() >= cur_op->second.priority)
+                auto op = cur_op->second;
+
+                if (op.func_name == "and" && storage.back()->hasBetween())
+                {
+                    storage.back()->subBetween();
+                    op = Operator("between_2", 6, 0);
+                }
+
+                while (storage.back()->previousPriority() >= op.priority)
                 {
                     Operator prev_op;
                     storage.back()->popOperator(prev_op);
@@ -1886,11 +1980,14 @@ bool ParserExpression2::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
                     storage.back()->pushOperand(func);
                 }
-                storage.back()->pushOperator(cur_op->second);
+                storage.back()->pushOperator(op);
 
                 // isNull & isNotNull is postfix unary operator
-                if (cur_op->second.func_name == "isNull" || cur_op->second.func_name == "isNotNull")
+                if (op.func_name == "isNull" || op.func_name == "isNotNull")
                     next = Action::OPERATOR;
+
+                if (op.func_name == "between_1" || op.func_name == "not_between_1")
+                    storage.back()->addBetween();
             }
             else if (pos->type == TokenType::OpeningSquareBracket)
             {
