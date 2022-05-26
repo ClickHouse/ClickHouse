@@ -10,11 +10,6 @@
             [jepsen.control.util :as cu]
             [jepsen.os.ubuntu :as ubuntu]))
 
-(defn get-clickhouse-sky
-  [version]
-  (c/exec :sky :get :-d common-prefix :-N :Backbone version)
-  (str common-prefix "/clickhouse"))
-
 (defn get-clickhouse-url
   [url]
   (non-precise-cached-wget! url))
@@ -27,7 +22,6 @@
   [source]
   (info "Downloading clickhouse from" source)
   (cond
-    (clojure.string/starts-with? source "rbtorrent:") (get-clickhouse-sky source)
     (clojure.string/starts-with? source "http") (get-clickhouse-url source)
     (.exists (io/file source)) (get-clickhouse-scp source)
     :else (throw (Exception. (str "Don't know how to download clickhouse from" source)))))
