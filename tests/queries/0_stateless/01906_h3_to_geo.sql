@@ -25,7 +25,7 @@ INSERT INTO h3_indexes VALUES (639763125756281263);
 INSERT INTO h3_indexes VALUES (644178757620501158);
 
 
-SELECT h3ToGeo(h3_index) FROM h3_indexes ORDER BY h3_index;
+WITH h3ToGeo(h3_index) AS p SELECT round(p.1, 3), round(p.2, 3) FROM h3_indexes ORDER BY h3_index;
 
 DROP TABLE h3_indexes;
 
