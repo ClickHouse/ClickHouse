@@ -408,7 +408,7 @@ LRUFileCache::FileSegmentCell * LRUFileCache::addCell(
 
     auto skip_or_download = [&]() -> FileSegmentPtr
     {
-        if (state == FileSegment::State::EMPTY)
+        if (state == FileSegment::State::EMPTY && enable_cache_hits_threshold)
         {
             auto record = records.find({key, offset});
 
@@ -425,8 +425,7 @@ LRUFileCache::FileSegmentCell * LRUFileCache::addCell(
                 }
 
                 /// For segments that do not reach the download threshold, we do not download them, but directly read them
-                state = queue_iter->hits >= enable_cache_hits_threshold ? FileSegment::State::EMPTY : FileSegment::State::SKIP_CACHE;
-                return std::make_shared<FileSegment>(offset, size, key, this, state);
+                return std::make_shared<FileSegment>(offset, size, key, this, FileSegment::State::SKIP_CACHE);
             }
             else
             {
@@ -673,6 +672,10 @@ void LRUFileCache::remove()
             }
         }
     }
+
+    /// Remove all access information.
+    records.clear();
+    stash_queue.removeAll(cache_lock);
 }
 
 void LRUFileCache::remove(
@@ -953,6 +956,12 @@ void LRUFileCache::LRUQueue::remove(Iterator queue_it, std::lock_guard<std::mute
 {
     cache_size -= queue_it->size;
     queue.erase(queue_it);
+}
+
+void LRUFileCache::LRUQueue::removeAll(std::lock_guard<std::mutex> & /* cache_lock */)
+{
+    queue.clear();
+    cache_size = 0;
 }
 
 void LRUFileCache::LRUQueue::moveToEnd(Iterator queue_it, std::lock_guard<std::mutex> & /* cache_lock */)

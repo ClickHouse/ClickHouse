@@ -532,7 +532,10 @@ void FileSegment::completeUnlocked(std::lock_guard<std::mutex> & cache_lock, std
     bool is_last_holder = cache->isLastFileSegmentHolder(key(), offset(), cache_lock, segment_lock);
 
     if (is_last_holder && download_state == State::SKIP_CACHE)
+    {
         cache->remove(key(), offset(), cache_lock, segment_lock);
+        return;
+    }
 
     if (download_state == State::SKIP_CACHE || is_detached)
         return;
