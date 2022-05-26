@@ -491,7 +491,7 @@ bool CachedReadBufferFromRemoteFS::completeFileSegmentAndGetNext()
 
     /// Do not hold pointer to file segment if it is not needed anymore
     /// so can become releasable and can be evicted from cache.
-    /// If the status of filesegment state is SKIP_CACHE, it will not be deleted. 
+    /// If the status of filesegment state is SKIP_CACHE, it will not be deleted.
     /// It will be deleted from the cache when the holder is destructed.
     if ((*file_segment_it)->state() != FileSegment::State::SKIP_CACHE)
         file_segments_holder->file_segments.erase(file_segment_it);
