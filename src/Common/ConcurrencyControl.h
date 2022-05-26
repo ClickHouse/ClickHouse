@@ -127,7 +127,7 @@ public:
             granted++;
             allocated++;
             return allocated < limit;
-            // WARNING: `waiter` iterator is invalided after returning false
+            // WARNING: `waiter` iterator is invalidated after returning false
         }
 
         ConcurrencyControl & parent;
@@ -136,7 +136,7 @@ public:
         const Slots limit;
 
         std::mutex mutex; // the following values must be accessed under this mutex
-        Slots allocated = 0;
+        Slots allocated = 0; // allocated total (including already released)
         Slots granted = 0; // allocated, but not yet acquired
         Slots released = 0;
     };
