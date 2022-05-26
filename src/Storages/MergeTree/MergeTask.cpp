@@ -200,6 +200,20 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
         ctx->need_remove_expired_values = false;
     }
 
+    /// Skip fully expired columns manually, since in case of need_remove_expired_values is not set,
+    /// TTLTransform will not be used, and columns that had been removed by TTL will be added again with default values.
+    if (!ctx->need_remove_expired_values)
+    {
+        for (auto & [column_name, ttl] : global_ctx->new_data_part->ttl_infos.columns_ttl)
+        {
+            if (ttl.finished())
+            {
+                global_ctx->new_data_part->expired_columns.insert(column_name);
+                LOG_TRACE(ctx->log, "Adding expired column {} for {}", column_name, global_ctx->new_data_part->name);
+            }
+        }
+    }
+
     ctx->sum_input_rows_upper_bound = global_ctx->merge_list_element_ptr->total_rows_count;
     ctx->sum_compressed_bytes_upper_bound = global_ctx->merge_list_element_ptr->total_size_bytes_compressed;
     global_ctx->chosen_merge_algorithm = chooseMergeAlgorithm();
