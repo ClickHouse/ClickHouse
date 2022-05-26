@@ -161,6 +161,7 @@ CREATE TABLE system.dictionaries
     `attribute.names` Array(String),
     `attribute.types` Array(String),
     `bytes_allocated` UInt64,
+    `hierarchical_index_bytes_allocated` UInt64,
     `query_count` UInt64,
     `hit_rate` Float64,
     `found_rate` Float64,
