@@ -42,9 +42,12 @@ AsynchronousReadBufferFromHDFS::AsynchronousReadBufferFromHDFS(
     , impl(std::move(impl_))
     , prefetch_buffer(settings_.remote_fs_buffer_size)
     , read_until_position(impl->getFileSize())
+    , use_prefetch(settings_.remote_fs_prefetch)
     , log(&Poco::Logger::get("AsynchronousReadBufferFromHDFS"))
 {
     ProfileEvents::increment(ProfileEvents::RemoteFSBuffers);
+    if (use_prefetch)
+        prefetch();
 }
 
 bool AsynchronousReadBufferFromHDFS::hasPendingDataToRead()
@@ -142,6 +145,10 @@ bool AsynchronousReadBufferFromHDFS::nextImpl()
 
     file_offset_of_buffer_end = impl->getFileOffsetOfBufferEnd();
     prefetch_future = {};
+
+    if (use_prefetch)
+        prefetch();
+
     return size;
 }
 
