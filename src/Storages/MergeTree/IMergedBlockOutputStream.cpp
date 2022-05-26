@@ -34,20 +34,7 @@ NameSet IMergedBlockOutputStream::removeEmptyColumnsFromPart(
     SerializationInfoByName & serialization_infos,
     MergeTreeData::DataPart::Checksums & checksums)
 {
-    NameSet empty_columns = data_part->expired_columns;
-
-    /// Skip fully expired columns manually, since TTLTransform not always applied.
-    /// (and only it, via TTLColumnAlgorithm, fills expired_columns)
-    for (auto & [column, ttl] : data_part->ttl_infos.columns_ttl)
-    {
-        if (empty_columns.contains(column))
-            continue;
-        if (!ttl.finished())
-            continue;
-
-        empty_columns.insert(column);
-        LOG_TRACE(storage.log, "Adding expired column {} for {} (from column TTL)", column, data_part->name);
-    }
+    const NameSet & empty_columns = data_part->expired_columns;
 
     /// For compact part we have to override whole file with data, it's not
     /// worth it
