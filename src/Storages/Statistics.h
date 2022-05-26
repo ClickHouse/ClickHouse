@@ -16,15 +16,6 @@ enum class StatisticType
 {
     // Distribution for values in column
     COLUMN_DISRIBUTION = 1,
-    // The same but value is counted only once per block
-    // BLOCK_DISTRIBUTION = 2,
-    //COLUMN_MOST_FREQUENT, -- in list => bad selectivity
-    //COLUMN_DISTINCT_COUNT, -- for join/group by
-    //COLUMN_LOW_CARDINALITY_COUNT, -- exact per block stats for low cardinality
-    //COLUMN_COUNT_SKETCH, -- per block count
-    //COLUMN_NULL_COUNT, -- like postgres
-    //COLUMN_CORRELATION_WITH_PRIMARY, -- like postgres
-    //...
     LAST,
 };
 
@@ -80,7 +71,7 @@ public:
     virtual void serializeBinary(const String & name, WriteBuffer & ostr) const = 0;
     virtual void deserializeBinary(ReadBuffer & istr) = 0;
 
-    // Estimates probability that lower < item  < right. 
+    // Estimates probability that lower <= item  <= right. 
     virtual std::optional<double> estimateProbability(const String & column, const Field & lower, const Field & upper) const = 0;
     virtual void add(const String & name, const IDistributionStatisticPtr & stat) = 0;
 

@@ -210,13 +210,8 @@ const std::unordered_map<MergeTreeWhereOptimizer::ConditionDescription::Type, st
     return compare_type_to_string;
 }
 
-std::optional<MergeTreeWhereOptimizer::ConditionDescription> MergeTreeWhereOptimizer::parseCondition(
-    const ASTPtr & condition) const
+const std::unordered_map<std::string, MergeTreeWhereOptimizer::ConditionDescription::Type>& MergeTreeWhereOptimizer::getStringToCompareFuncs() const
 {
-    const auto * function = condition->as<ASTFunction>();
-    if (!function)
-        return std::nullopt;
-
     static const std::unordered_map<String, ConditionDescription::Type> compare_funcs = {
         {"equals", ConditionDescription::Type::EQUAL},
         {"notEquals", ConditionDescription::Type::NOT_EQUAL},
@@ -225,10 +220,21 @@ std::optional<MergeTreeWhereOptimizer::ConditionDescription> MergeTreeWhereOptim
         {"greaterOrEquals", ConditionDescription::Type::GREATER_OR_EQUAL},
         {"lessOrEquals", ConditionDescription::Type::LESS_OR_EQUAL},
     };
-    if (!compare_funcs.contains(function->name))
+    return compare_funcs;
+}
+
+std::optional<MergeTreeWhereOptimizer::ConditionDescription> MergeTreeWhereOptimizer::parseCondition(
+    const ASTPtr & condition) const
+{
+    const auto * function = condition->as<ASTFunction>();
+    if (!function)
         return std::nullopt;
 
-    ConditionDescription::Type compare_type = compare_funcs.at(function->name);
+    
+    if (!getStringToCompareFuncs().contains(function->name))
+        return std::nullopt;
+
+    ConditionDescription::Type compare_type = getStringToCompareFuncs().at(function->name);
 
     auto * left_arg = function->arguments->children.front().get();
     auto * right_arg = function->arguments->children.back().get();
@@ -447,33 +453,26 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const ASTPtr & node,
         
         if (use_new_scoring) {
             cond.description = parseCondition(node);
-            cond.selectivity = scoreSelectivity(cond.description);
         }
 
         if (cond.viable)
         {
-            if (!use_new_scoring)
+            if (use_new_scoring)
             {
-                cond.good = isConditionGood(node);
-                cond.selectivity = 1;
-                cond.rank = 0;
+                cond.good = isConditionGoodNew(node);
             }
             else
             {
-                cond.good = isConditionGoodNew(node);
-                // See page 5 in https://dsf.berkeley.edu/jmh/miscpapers/sigmod93.pdf
-                // Cost per tuple = mean size of tuple = columns_size / count.
-                cond.rank = (1 - cond.selectivity) * RANK_CORRECTION / cond.columns_size;
+                cond.good = isConditionGood(node);
             }
         }
 
         LOG_DEBUG(
             &Poco::Logger::get("COND"),
-            "{} -> v={} g={} r={} clmsz={} sz={}",
+            "{} -> v={} g={} clmsz={} sz={}",
             cond.node->dumpTree(),
             cond.viable,
             cond.good,
-            cond.rank,
             cond.columns_size,
             cond.identifiers.size());
 
@@ -544,10 +543,22 @@ std::vector<MergeTreeWhereOptimizer::ColumnWithRank> MergeTreeWhereOptimizer::ge
             switch (condition.description->type)
             {
             case ConditionDescription::Type::EQUAL:
-                min_selectivity = std::min(min_selectivity, condition.selectivity);
+                if (right_limit.isNull() || lessOrEquals(condition.description->constant, right_limit))
+                {
+                    right_limit = condition.description->constant;
+                }
+                if (left_limit.isNull() || lessOrEquals(left_limit, condition.description->constant))
+                {
+                    left_limit = condition.description->constant;
+                }
                 break;
             case ConditionDescription::Type::NOT_EQUAL:
-                min_selectivity = std::min(min_selectivity, condition.selectivity);
+                min_selectivity = std::min(
+                    min_selectivity,
+                    1 - stats->getDistributionStatistics()->estimateProbability(
+                        column,
+                        condition.description->constant,
+                        condition.description->constant).value_or(0));
                 break;
             case ConditionDescription::Type::LESS_OR_EQUAL:
                 if (right_limit.isNull() || lessOrEquals(condition.description->constant, right_limit))
@@ -631,7 +642,7 @@ void MergeTreeWhereOptimizer::optimizeByRanks(ASTSelectQuery & select) const
         LOG_INFO(&Poco::Logger::get("TEST"), "rnk={} sel={} clm={}", rank, selectivity, column);
         LOG_INFO(&Poco::Logger::get("TEST"), "currloss = {} predloss ={}", current_loss, predicted_loss);
 
-        // don't stop if difference is small
+        // stop if difference is small
         if (current_loss + EPS < predicted_loss)
         {
             break;   
@@ -664,16 +675,18 @@ void MergeTreeWhereOptimizer::optimizeByRanks(ASTSelectQuery & select) const
         }
     }
 
+    // Now let's move complex conditions
+    // TODO: complex_conditions
+
     /// Nothing was moved.
     if (prewhere_conditions.empty())
         return;
 
     /// Rewrite the SELECT query.
-
     select.setExpression(ASTSelectQuery::Expression::WHERE, reconstruct(where_conditions));
     select.setExpression(ASTSelectQuery::Expression::PREWHERE, reconstruct(prewhere_conditions));
 
-    LOG_DEBUG(log, "MergeTreeWhereOptimizer: condition \"{}\" moved to PREWHERE by new algorithm", select.prewhere());
+    LOG_DEBUG(log, "MergeTreeWhereOptimizer: condition \"{}\" moved to PREWHERE by ranks algorithm", select.prewhere());
 }
 
 void MergeTreeWhereOptimizer::optimizeBySize(ASTSelectQuery & select) const
@@ -741,7 +754,7 @@ void MergeTreeWhereOptimizer::optimizeBySize(ASTSelectQuery & select) const
     select.setExpression(ASTSelectQuery::Expression::WHERE, reconstruct(where_conditions));
     select.setExpression(ASTSelectQuery::Expression::PREWHERE, reconstruct(prewhere_conditions));
 
-    LOG_DEBUG(log, "MergeTreeWhereOptimizer: condition \"{}\" moved to PREWHERE", select.prewhere());
+    LOG_DEBUG(log, "MergeTreeWhereOptimizer: condition \"{}\" moved to PREWHERE by sizes algorithm", select.prewhere());
 }
 
 

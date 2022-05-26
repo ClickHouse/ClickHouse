@@ -437,7 +437,6 @@ std::vector<StatisticDescription> MergeTreeStatisticFactory::getSplittedStatisti
             result.back().column_names = {column.name};
             result.back().data_types = {column.type};
             result.back().definition_ast = stat.definition_ast->clone();
-            //result.back().expression_list_ast = nullptr;
             result.back().name = stat.name;
             result.back().type = "granule_tdigest";
         }

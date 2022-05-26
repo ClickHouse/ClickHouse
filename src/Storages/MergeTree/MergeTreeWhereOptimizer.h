@@ -89,10 +89,6 @@ private:
         /// old algorithm
         bool good = false;
 
-        /// New algorithm
-        double rank = 0;
-        double selectivity = 0;
-
         auto tuple() const
         {
             return std::make_tuple(!viable, !good, columns_size, identifiers.size());
@@ -166,6 +162,7 @@ private:
 
     const std::unordered_map<ConditionDescription::Type, ConditionDescription::Type>& getCompareFuncsSwaps() const;
     const std::unordered_map<ConditionDescription::Type, std::string>& getCompareTypeToString() const;
+    const std::unordered_map<std::string, ConditionDescription::Type>& getStringToCompareFuncs() const;
 
     using StringSet = std::unordered_set<std::string>;
 
