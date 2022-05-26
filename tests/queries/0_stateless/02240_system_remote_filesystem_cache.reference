@@ -2,7 +2,6 @@
 
 SYSTEM DROP FILESYSTEM CACHE;
 SET enable_filesystem_cache_on_write_operations=0;
-set enable_cache_hits_threshold=0;
 DROP TABLE IF EXISTS test;
 CREATE TABLE test (key UInt32, value String) Engine=MergeTree() ORDER BY key SETTINGS storage_policy='s3_cache', min_bytes_for_wide_part = 10485760;
 INSERT INTO test SELECT number, toString(number) FROM numbers(100);
@@ -18,7 +17,6 @@ SELECT file_segment_range_begin, file_segment_range_end, size FROM system.filesy
 0	745	746
 SYSTEM DROP FILESYSTEM CACHE;
 SELECT file_segment_range_begin, file_segment_range_end, size FROM system.filesystem_cache;
-set enable_cache_hits_threshold=1;
 DROP TABLE IF EXISTS test;
 CREATE TABLE test (key UInt32, value String) Engine=MergeTree() ORDER BY key SETTINGS storage_policy='s3_cache_3', min_bytes_for_wide_part = 10485760;
 INSERT INTO test SELECT number, toString(number) FROM numbers(100);
