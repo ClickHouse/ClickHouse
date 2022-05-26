@@ -149,6 +149,21 @@ ContextAccess::ContextAccess(const AccessControl & access_control_, const Params
 }
 
 
+ContextAccess::~ContextAccess()
+{
+    enabled_settings.reset();
+    enabled_quota.reset();
+    enabled_row_policies.reset();
+    access_with_implicit.reset();
+    access.reset();
+    roles_info.reset();
+    subscription_for_roles_changes.reset();
+    enabled_roles.reset();
+    subscription_for_user_change.reset();
+    user.reset();
+}
+
+
 void ContextAccess::initialize()
 {
      std::lock_guard lock{mutex};

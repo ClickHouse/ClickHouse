@@ -582,9 +582,9 @@ ColumnsDescription IStorageURLBase::getTableStructureFromData(
     return readSchemaFromFormat(format, format_settings, read_buffer_iterator, urls_to_check.size() > 1, context);
 }
 
-bool IStorageURLBase::isColumnOriented() const
+bool IStorageURLBase::supportsSubsetOfColumns() const
 {
-    return FormatFactory::instance().checkIfFormatIsColumnOriented(format_name);
+    return FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(format_name);
 }
 
 Pipe IStorageURLBase::read(
@@ -600,10 +600,9 @@ Pipe IStorageURLBase::read(
 
     ColumnsDescription columns_description;
     Block block_for_format;
-    if (isColumnOriented())
+    if (supportsSubsetOfColumns())
     {
-        columns_description = ColumnsDescription{
-            storage_snapshot->getSampleBlockForColumns(column_names).getNamesAndTypesList()};
+        columns_description = storage_snapshot->getDescriptionForColumns(column_names);
         block_for_format = storage_snapshot->getSampleBlockForColumns(columns_description.getNamesOfPhysical());
     }
     else
@@ -688,10 +687,9 @@ Pipe StorageURLWithFailover::read(
 {
     ColumnsDescription columns_description;
     Block block_for_format;
-    if (isColumnOriented())
+    if (supportsSubsetOfColumns())
     {
-        columns_description = ColumnsDescription{
-            storage_snapshot->getSampleBlockForColumns(column_names).getNamesAndTypesList()};
+        columns_description = storage_snapshot->getDescriptionForColumns(column_names);
         block_for_format = storage_snapshot->getSampleBlockForColumns(columns_description.getNamesOfPhysical());
     }
     else
