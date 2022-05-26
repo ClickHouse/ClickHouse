@@ -114,13 +114,15 @@ DiskS3::DiskS3(
     FileCachePtr cache_,
     ContextPtr context_,
     SettingsPtr settings_,
-    GetDiskSettings settings_getter_)
+    GetDiskSettings settings_getter_,
+    String operation_log_suffix_)
     : IDiskRemote(name_, s3_root_path_, metadata_disk_, std::move(cache_), "DiskS3", settings_->thread_pool_size)
     , bucket(std::move(bucket_))
     , version_id(std::move(version_id_))
     , current_settings(std::move(settings_))
     , settings_getter(settings_getter_)
     , context(context_)
+    , operation_log_suffix(operation_log_suffix_)
 {
 }
 
@@ -289,7 +291,7 @@ void DiskS3::shutdown()
 void DiskS3::createFileOperationObject(const String & operation_name, UInt64 revision, const DiskS3::ObjectMetadata & metadata)
 {
     auto settings = current_settings.get();
-    const String key = "operations/r" + revisionToString(revision) + "-" + operation_name;
+    const String key = "operations/r" + revisionToString(revision) + operation_log_suffix + "-" + operation_name;
     WriteBufferFromS3 buffer(
         settings->client,
         bucket,
@@ -862,6 +864,36 @@ void DiskS3::processRestoreFiles(const String & source_bucket, const String & so
     }
 }
 
+void DiskS3::moveRecursiveOrRemove(const String & from_path, const String & to_path, bool send_metadata)
+{
+    if (exists(to_path))
+    {
+        if (send_metadata)
+        {
+            auto revision = ++revision_counter;
+            const ObjectMetadata object_metadata {
+                {"from_path", from_path},
+                {"to_path", to_path}
+            };
+            createFileOperationObject("rename", revision, object_metadata);
+        }
+        if (isDirectory(from_path))
+        {
+            for (auto it = iterateDirectory(from_path); it->isValid(); it->next())
+                moveRecursiveOrRemove(it->path(), fs::path(to_path) / it->name(), false);
+        }
+        else
+        {
+            removeFile(from_path);
+            LOG_WARNING(log, "Collision in S3 operation log: rename from '{}' to '{}', file removed", from_path, to_path);
+        }
+    }
+    else
+    {
+        moveFile(from_path, to_path, send_metadata);
+    }
+}
+
 void DiskS3::restoreFileOperations(const RestoreInformation & restore_information)
 {
     auto settings = current_settings.get();
@@ -904,7 +936,7 @@ void DiskS3::restoreFileOperations(const RestoreInformation & restore_informatio
                 auto to_path = object_metadata["to_path"];
                 if (exists(from_path))
                 {
-                    moveFile(from_path, to_path, send_metadata);
+                    moveRecursiveOrRemove(from_path, to_path, send_metadata);
                     LOG_TRACE(log, "Revision {}. Restored rename {} -> {}", revision, from_path, to_path);
 
                     if (restore_information.detached && isDirectory(to_path))
@@ -987,9 +1019,10 @@ void DiskS3::restoreFileOperations(const RestoreInformation & restore_informatio
 std::tuple<UInt64, String> DiskS3::extractRevisionAndOperationFromKey(const String & key)
 {
     String revision_str;
+    String suffix;
     String operation;
 
-    re2::RE2::FullMatch(key, key_regexp, &revision_str, &operation);
+    re2::RE2::FullMatch(key, key_regexp, &revision_str, &suffix, &operation);
 
     return {(revision_str.empty() ? UNKNOWN_REVISION : static_cast<UInt64>(std::bitset<64>(revision_str).to_ullong())), operation};
 }
@@ -1030,6 +1063,17 @@ void DiskS3::applyNewSettings(const Poco::Util::AbstractConfiguration & config, 
 
     if (AsyncExecutor * exec = dynamic_cast<AsyncExecutor*>(&getExecutor()))
         exec->setMaxThreads(current_settings.get()->thread_pool_size);
+}
+
+void DiskS3::syncRevision(UInt64 revision)
+{
+    UInt64 local_revision = revision_counter.load();
+    while ((revision > local_revision) && revision_counter.compare_exchange_weak(local_revision, revision));
+}
+
+UInt64 DiskS3::getRevision() const
+{
+    return revision_counter.load();
 }
 
 DiskS3Settings::DiskS3Settings(

@@ -9,6 +9,7 @@
 #if USE_AWS_S3
 
 #include <aws/core/client/DefaultRetryStrategy.h>
+#include <base/getFQDNOrHostName.h>
 #include <IO/S3Common.h>
 #include "DiskS3.h"
 #include "Disks/DiskCacheWrapper.h"
@@ -200,7 +201,8 @@ void registerDiskS3(DiskFactory & factory)
             std::move(cache),
             context,
             getSettings(config, config_prefix, context),
-            getSettings);
+            getSettings,
+            "-" + getFQDNOrHostName());
 
         /// This code is used only to check access to the corresponding disk.
         if (!config.getBool(config_prefix + ".skip_access_check", false))

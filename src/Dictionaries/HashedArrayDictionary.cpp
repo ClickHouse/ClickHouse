@@ -37,6 +37,7 @@ HashedArrayDictionary<dictionary_key_type>::HashedArrayDictionary(
 {
     createAttributes();
     loadData();
+    buildHierarchyParentToChildIndexIfNeeded();
     calculateBytesAllocated();
 }
 
@@ -282,18 +283,14 @@ ColumnUInt8::Ptr HashedArrayDictionary<dictionary_key_type>::isInHierarchy(
 }
 
 template <DictionaryKeyType dictionary_key_type>
-ColumnPtr HashedArrayDictionary<dictionary_key_type>::getDescendants(
-    ColumnPtr key_column [[maybe_unused]],
-    const DataTypePtr &,
-    size_t level [[maybe_unused]]) const
+DictionaryHierarchicalParentToChildIndexPtr HashedArrayDictionary<dictionary_key_type>::getHierarchicalIndex() const
 {
     if constexpr (dictionary_key_type == DictionaryKeyType::Simple)
     {
-        PaddedPODArray<UInt64> keys_backup;
-        const auto & keys = getColumnVectorData(this, key_column, keys_backup);
+        if (hierarchical_index)
+            return hierarchical_index;
 
         size_t hierarchical_attribute_index = *dict_struct.hierarchical_attribute_index;
-
         const auto & hierarchical_attribute = attributes[hierarchical_attribute_index];
         const AttributeContainerType<UInt64> & parent_keys_container = std::get<AttributeContainerType<UInt64>>(hierarchical_attribute.container);
 
@@ -306,6 +303,7 @@ ColumnPtr HashedArrayDictionary<dictionary_key_type>::getDescendants(
             index_to_key[value] = key;
 
         HashMap<UInt64, PaddedPODArray<UInt64>> parent_to_child;
+        parent_to_child.reserve(index_to_key.size());
 
         for (size_t i = 0; i < parent_keys_container.size(); ++i)
         {
@@ -313,13 +311,33 @@ ColumnPtr HashedArrayDictionary<dictionary_key_type>::getDescendants(
             if (it == index_to_key.end())
                 continue;
 
-            auto parent_key = it->getMapped();
-            auto child_key = parent_keys_container[i];
+            auto child_key = it->getMapped();
+            auto parent_key = parent_keys_container[i];
             parent_to_child[parent_key].emplace_back(child_key);
         }
 
+        return std::make_shared<DictionaryHierarchicalParentToChildIndex>(parent_to_child);
+    }
+    else
+    {
+        return nullptr;
+    }
+}
+
+template <DictionaryKeyType dictionary_key_type>
+ColumnPtr HashedArrayDictionary<dictionary_key_type>::getDescendants(
+    ColumnPtr key_column [[maybe_unused]],
+    const DataTypePtr &,
+    size_t level [[maybe_unused]],
+    DictionaryHierarchicalParentToChildIndexPtr parent_to_child_index [[maybe_unused]]) const
+{
+    if constexpr (dictionary_key_type == DictionaryKeyType::Simple)
+    {
+        PaddedPODArray<UInt64> keys_backup;
+        const auto & keys = getColumnVectorData(this, key_column, keys_backup);
+
         size_t keys_found = 0;
-        auto result = getKeysDescendantsArray(keys, parent_to_child, level, keys_found);
+        auto result = getKeysDescendantsArray(keys, *parent_to_child_index, level, keys_found);
 
         query_count.fetch_add(keys.size(), std::memory_order_relaxed);
         found_count.fetch_add(keys_found, std::memory_order_relaxed);
@@ -694,6 +712,16 @@ void HashedArrayDictionary<dictionary_key_type>::loadData()
 }
 
 template <DictionaryKeyType dictionary_key_type>
+void HashedArrayDictionary<dictionary_key_type>::buildHierarchyParentToChildIndexIfNeeded()
+{
+    if (!dict_struct.hierarchical_attribute_index)
+        return;
+
+    if (dict_struct.attributes[*dict_struct.hierarchical_attribute_index].bidirectional)
+        hierarchical_index = getHierarchicalIndex();
+}
+
+template <DictionaryKeyType dictionary_key_type>
 void HashedArrayDictionary<dictionary_key_type>::calculateBytesAllocated()
 {
     bytes_allocated += attributes.size() * sizeof(attributes.front());
@@ -730,10 +758,16 @@ void HashedArrayDictionary<dictionary_key_type>::calculateBytesAllocated()
             bytes_allocated += (*attribute.is_index_null).size();
     }
 
-    bytes_allocated += string_arena.size();
-
     if (update_field_loaded_block)
         bytes_allocated += update_field_loaded_block->allocatedBytes();
+
+    if (hierarchical_index)
+    {
+        hierarchical_index_bytes_allocated = hierarchical_index->getSizeInBytes();
+        bytes_allocated += hierarchical_index_bytes_allocated;
+    }
+
+    bytes_allocated += string_arena.size();
 }
 
 template <DictionaryKeyType dictionary_key_type>
