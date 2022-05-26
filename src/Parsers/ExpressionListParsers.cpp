@@ -613,7 +613,7 @@ public:
     {
     }
 
-    Operator(String func_name_, Int32 priority_, Int32 arity_) : func_name(func_name_), priority(priority_), arity(arity_)
+    Operator(String func_name_, Int32 priority_, Int32 arity_ = 2) : func_name(func_name_), priority(priority_), arity(arity_)
     {
     }
 
@@ -780,7 +780,7 @@ public:
         return true;
     }
 
-    bool wrapLayer()
+    bool wrapLayer(bool push_to_result = true)
     {
         Operator cur_op;
         while (popOperator(cur_op))
@@ -804,13 +804,18 @@ public:
             pushOperand(func);
         }
 
-        ASTPtr res;
-        if (!popOperand(res))
+        ASTPtr node;
+        if (!popOperand(node))
             return false;
 
-        pushResult(res);
+        bool res = empty();
 
-        return empty();
+        if (push_to_result)
+            pushResult(node);
+        else
+            pushOperand(node);
+
+        return res;
     }
 
     bool parseLambda()
@@ -844,10 +849,13 @@ public:
 
     bool parseAlias(ASTPtr node)
     {
-        if (result.empty())
+        if (!wrapLayer(false))
             return false;
 
-        if (auto * ast_with_alias = dynamic_cast<ASTWithAlias *>(result.back().get()))
+        if (operands.empty())
+            return false;
+
+        if (auto * ast_with_alias = dynamic_cast<ASTWithAlias *>(operands.back().get()))
             tryGetIdentifierNameInto(node, ast_with_alias->alias);
         else
             return false;
@@ -911,8 +919,7 @@ public:
                 if (!wrapLayer())
                     return false;
 
-                result[0] = makeASTFunction("CAST", result[0], result[1]);
-                result.pop_back();
+                result = {makeASTFunction("CAST", result[0], result[1])};
                 state = -1;
                 return true;
             }
@@ -1048,6 +1055,17 @@ public:
                     return false;
 
                 state = 2;
+            }
+        }
+
+        if (state == 1)
+        {
+            if (ParserToken(TokenType::Comma).ignore(pos, expected))
+            {
+                action = Action::OPERAND;
+
+                if (!wrapLayer())
+                    return false;
             }
         }
 
@@ -1613,8 +1631,8 @@ bool ParserExpression2::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         {"OR",            Operator("or", 4, 2)},
         {"||",            Operator("concat", 30, 2)},          // concat() func
         {".",             Operator("tupleElement", 40, 2)},    // tupleElement() func
-        {"IS NULL",       Operator("isNull", 40, 1)},          // IS (NOT) NULL - correct priority ?
-        {"IS NOT NULL",   Operator("isNotNull", 40, 1)},
+        {"IS NULL",       Operator("isNull", 9, 1)},           // IS (NOT) NULL
+        {"IS NOT NULL",   Operator("isNotNull", 9, 1)},
         {"LIKE",          Operator("like", 10, 2)},            // LIKE funcs
         {"ILIKE",         Operator("ilike", 10, 2)},
         {"NOT LIKE",      Operator("notLike", 10, 2)},
@@ -1831,6 +1849,10 @@ bool ParserExpression2::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                     storage.back()->pushOperand(func);
                 }
                 storage.back()->pushOperator(cur_op->second);
+
+                // isNull & isNotNull is postfix unary operator
+                if (cur_op->second.func_name == "isNull" || cur_op->second.func_name == "isNotNull")
+                    next = Action::OPERATOR;
             }
             else if (pos->type == TokenType::OpeningSquareBracket)
             {
@@ -1858,24 +1880,8 @@ bool ParserExpression2::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             }
             else if (storage.size() > 1 && ParserAlias(false).parse(pos, tmp, expected))
             {
-                if (!storage.back()->parse(pos, expected, next))
-                    return false;
                 if (!storage.back()->parseAlias(tmp))
                     return false;
-
-                // duplicate code :(
-                if (storage.back()->isFinished())
-                {
-                    next = Action::OPERATOR;
-
-                    ASTPtr res;
-                    if (!storage.back()->getResult(res))
-                        return false;
-
-                    storage.pop_back();
-                    storage.back()->pushOperand(res);
-                    continue;
-                }
             }
             else if (pos->type == TokenType::Comma)
             {
