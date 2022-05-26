@@ -212,38 +212,6 @@ SeekableReadBufferPtr CachedReadBufferFromRemoteFS::getReadBufferForFileSegment(
                 read_type = ReadType::REMOTE_FS_READ_BYPASS_CACHE;
                 return getRemoteFSReadBuffer(file_segment, read_type);
             }
-            case FileSegment::State::EMPTY:
-            {
-                auto downloader_id = file_segment->getOrSetDownloader();
-                if (downloader_id == file_segment->getCallerId())
-                {
-                    if (file_offset_of_buffer_end == file_segment->getDownloadOffset())
-                    {
-                        read_type = ReadType::REMOTE_FS_READ_AND_PUT_IN_CACHE;
-                        return getRemoteFSReadBuffer(file_segment, read_type);
-                    }
-                    else
-                    {
-                        ///                      segment{k}
-                        /// cache:           [______|___________
-                        ///                         ^
-                        ///                         download_offset
-                        /// requested_range:            [__________]
-                        ///                             ^
-                        ///                             file_offset_of_buffer_end
-                        assert(file_offset_of_buffer_end > file_segment->getDownloadOffset());
-                        bytes_to_predownload = file_offset_of_buffer_end - file_segment->getDownloadOffset();
-
-                        read_type = ReadType::REMOTE_FS_READ_AND_PUT_IN_CACHE;
-                        return getRemoteFSReadBuffer(file_segment, read_type);
-                    }
-                }
-                else
-                {
-                    download_state = file_segment->state();
-                    continue;
-                }
-            }
             case FileSegment::State::DOWNLOADING:
             {
                 size_t download_offset = file_segment->getDownloadOffset();
@@ -280,6 +248,7 @@ SeekableReadBufferPtr CachedReadBufferFromRemoteFS::getReadBufferForFileSegment(
                 read_type = ReadType::CACHED;
                 return getCacheReadBuffer(range.left);
             }
+            case FileSegment::State::EMPTY:
             case FileSegment::State::PARTIALLY_DOWNLOADED:
             {
                 if (file_segment->getDownloadOffset() > file_offset_of_buffer_end)
