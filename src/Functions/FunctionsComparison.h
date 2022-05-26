@@ -85,8 +85,9 @@ struct NumComparisonImpl
     using ContainerA = PaddedPODArray<A>;
     using ContainerB = PaddedPODArray<B>;
 
-    MULTITARGET_FUNCTION_WRAPPER_AVX2_SSE42(vectorVectorImpl,
-    MULTITARGET_FH(static void), /*vectorVectorImpl*/ MULTITARGET_FB((const ContainerA & a, const ContainerB & b, PaddedPODArray<UInt8> & c) /// NOLINT
+    MULTITARGET_FUNCTION_AVX2_SSE42(
+    MULTITARGET_FUNCTION_HEADER(static void), vectorVectorImpl, MULTITARGET_FUNCTION_BODY(( /// NOLINT
+        const ContainerA & a, const ContainerB & b, PaddedPODArray<UInt8> & c)
     {
         /** GCC 4.8.2 vectorizes a loop only if it is written in this form.
           * In this case, if you loop through the array index (the code will look simpler),
@@ -127,8 +128,9 @@ struct NumComparisonImpl
     }
 
 
-    MULTITARGET_FUNCTION_WRAPPER_AVX2_SSE42(vectorConstantImpl,
-    MULTITARGET_FH(static void), /*vectorConstantImpl*/ MULTITARGET_FB((const ContainerA & a, B b, PaddedPODArray<UInt8> & c) /// NOLINT
+    MULTITARGET_FUNCTION_AVX2_SSE42(
+    MULTITARGET_FUNCTION_HEADER(static void), vectorConstantImpl, MULTITARGET_FUNCTION_BODY(( /// NOLINT
+        const ContainerA & a, B b, PaddedPODArray<UInt8> & c)
     {
         size_t size = a.size();
         const A * __restrict a_pos = a.data();
