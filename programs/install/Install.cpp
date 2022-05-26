@@ -925,24 +925,7 @@ namespace
             executable.string(), config.string(), pid_file.string());
 
         if (!user.empty())
-        {
-#if defined(OS_FREEBSD)
-            command = fmt::format("su -m '{}' -c '{}'", user, command);
-#else
-            bool may_need_sudo = geteuid() != 0;
-            if (may_need_sudo)
-            {
-                struct passwd *p = getpwuid(geteuid());
-                // Only use sudo when we are not the given user
-                if (p == nullptr || std::string(p->pw_name) != user)
-                    command = fmt::format("sudo -u '{}' {}", user, command);
-            }
-            else
-            {
-                command = fmt::format("su -s /bin/sh '{}' -c '{}'", user, command);
-            }
-#endif
-        }
+            command = fmt::format("clickhouse su '{}' {}", user, command);
 
         fmt::print("Will run {}\n", command);
         executeScript(command, true);
