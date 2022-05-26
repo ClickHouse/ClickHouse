@@ -151,7 +151,7 @@ static bool isConditionGood(const ASTPtr & condition)
 
     return false;
 }
-
+/*
 static bool isConditionGoodNew(const ASTPtr & condition)
 {
     const auto * function = condition->as<ASTFunction>();
@@ -186,7 +186,7 @@ static bool isConditionGoodNew(const ASTPtr & condition)
         }
     }
     return false;
-}
+}*/
 
 const std::unordered_map<MergeTreeWhereOptimizer::ConditionDescription::Type, MergeTreeWhereOptimizer::ConditionDescription::Type>& MergeTreeWhereOptimizer::getCompareFuncsSwaps() const
 {
@@ -459,7 +459,7 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const ASTPtr & node,
         {
             if (use_new_scoring)
             {
-                cond.good = isConditionGoodNew(node);
+                //cond.good = isConditionGoodNew(node);
             }
             else
             {
@@ -597,16 +597,11 @@ void MergeTreeWhereOptimizer::optimizeByRanks(ASTSelectQuery & select) const
 {
     Conditions where_conditions = analyze(select.where(), select.final());
     std::unordered_map<std::string, Conditions> column_to_simple_conditions;
-    Conditions complex_conditions;
     for (const auto & condition : where_conditions)
     {
         if (condition.viable && condition.description)
         {
             column_to_simple_conditions[condition.description->identifier].push_back(condition);
-        }
-        else
-        {
-            complex_conditions.push_back(condition);
         }
     }
     Conditions prewhere_conditions;
@@ -655,6 +650,7 @@ void MergeTreeWhereOptimizer::optimizeByRanks(ASTSelectQuery & select) const
         columns_in_prewhere.insert(column);
     }
 
+    Conditions complex_conditions;
     // Let's collect conditions that can be calculated in prewhere using columns_in_prewhere.
     for (auto it = where_conditions.begin(); it != where_conditions.end();)
     {
@@ -671,12 +667,16 @@ void MergeTreeWhereOptimizer::optimizeByRanks(ASTSelectQuery & select) const
         }
         else
         {
+            if (it->viable) {
+                complex_conditions.push_back(*it);
+            }
             ++it;
         }
     }
 
     // Now let's move complex conditions
     // TODO: complex_conditions
+    
 
     /// Nothing was moved.
     if (prewhere_conditions.empty())

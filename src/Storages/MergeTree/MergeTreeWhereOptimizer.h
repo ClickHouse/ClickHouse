@@ -55,8 +55,6 @@ private:
 
     // Description of simple expression (ident <=> lit).
     // Used by new planner.
-    // TODO: support tuples
-    // TODO: support monotonic functions
     struct ConditionDescription
     {
         enum class Type {
@@ -79,7 +77,7 @@ private:
         
         NameSet identifiers;
 
-        // TODO: support many identifiers (OR)
+        // TODO: support OR
         std::optional<ConditionDescription> description;
 
         /// Can condition be moved to prewhere?
@@ -89,6 +87,7 @@ private:
         /// old algorithm
         bool good = false;
 
+        /// used by old algorithm
         auto tuple() const
         {
             return std::make_tuple(!viable, !good, columns_size, identifiers.size());
@@ -159,6 +158,28 @@ private:
 
     std::vector<ColumnWithRank> getSimpleColumns(const std::unordered_map<std::string, Conditions> & column_to_simple_conditions) const;
     double scoreSelectivity(const std::optional<ConditionDescription> & condition_description) const;
+
+    double analyzeComplexSelectivity(const ASTPtr & expression) const;
+
+    struct ConditionWithRank {
+        ConditionWithRank(
+            double selectivity_,
+            Condition condition_)
+            : rank(0)
+            , selectivity(selectivity_)
+            , condition(condition_) {
+        }
+
+        bool operator<(const ConditionWithRank & other) const;
+        bool operator==(const ConditionWithRank & other) const;
+
+        void recalculateRank();
+
+        double rank;
+
+        double selectivity;
+        Condition condition;
+    };
 
     const std::unordered_map<ConditionDescription::Type, ConditionDescription::Type>& getCompareFuncsSwaps() const;
     const std::unordered_map<ConditionDescription::Type, std::string>& getCompareTypeToString() const;
