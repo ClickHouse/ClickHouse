@@ -183,6 +183,22 @@ public:
         table_join.strictness = strictness;
     }
 
+    // for Transform function
+    TableJoin(SizeLimits limits, bool use_nulls, ASTTableJoin::Kind kind, ASTTableJoin::Strictness strictness,
+              const Names & key_names_left, const Names & key_names_right)
+        : size_limits(limits)
+        , default_max_bytes(0)
+        , join_use_nulls(use_nulls)
+        , join_algorithm(JoinAlgorithm::HASH)
+    {
+        JoinOnClause clause;
+        clause.key_names_left = key_names_left;
+        clause.key_names_right = key_names_right;
+        clauses.emplace_back(clause);
+        table_join.kind = kind;
+        table_join.strictness = strictness;
+    }
+
     ASTTableJoin::Kind kind() const { return table_join.kind; }
     ASTTableJoin::Strictness strictness() const { return table_join.strictness; }
     bool sameStrictnessAndKind(ASTTableJoin::Strictness, ASTTableJoin::Kind) const;
