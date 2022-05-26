@@ -45,7 +45,7 @@ static void executeJob(ExecutingGraph::Node * node, ReadProgressCallback * read_
     {
         node->processor->work();
 
-        /// Update read progress ony for source nodes.
+        /// Update read progress only for source nodes.
         bool is_source = node->back_edges.empty();
 
         if (is_source && read_progress_callback)
