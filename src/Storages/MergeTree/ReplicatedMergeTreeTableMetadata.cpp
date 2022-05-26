@@ -156,7 +156,7 @@ void ReplicatedMergeTreeTableMetadata::read(ReadBuffer & in)
         index_granularity_bytes = 0;
 
     if (checkString("constraints: ", in))
-        in >> " " >> constraints >> "\n";
+        in >> constraints >> "\n";
 }
 
 ReplicatedMergeTreeTableMetadata ReplicatedMergeTreeTableMetadata::parse(const String & s)
