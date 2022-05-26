@@ -124,6 +124,8 @@ void ReadBufferFromRemoteFSGather::appendFilesystemCacheLog()
         .read_type = FilesystemCacheLogElement::ReadType::READ_FROM_FS_BYPASSING_CACHE,
         .file_segment_size = total_bytes_read_from_current_file,
         .cache_attempted = false,
+        .read_buffer_id = "",
+        .profile_counters = nullptr,
     };
 
     if (auto cache_log = Context::getGlobalContextInstance()->getFilesystemCacheLog())

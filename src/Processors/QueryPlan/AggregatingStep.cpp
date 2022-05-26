@@ -133,7 +133,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
         pipeline.transform([&](OutputPortRawPtrs ports)
         {
             assert(streams * grouping_sets_size == ports.size());
-            Processors processors;
+            Processors aggregating_processors;
             for (size_t i = 0; i < grouping_sets_size; ++i)
             {
                 Aggregator::Params params_for_set
@@ -168,7 +168,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                         // for transform #j should skip ports of first (j-1) streams.
                         connect(*ports[i + grouping_sets_size * j], aggregation_for_set->getInputs().front());
                         ports[i + grouping_sets_size * j] = &aggregation_for_set->getOutputs().front();
-                        processors.push_back(aggregation_for_set);
+                        aggregating_processors.push_back(aggregation_for_set);
                     }
                 }
                 else
@@ -176,7 +176,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                     auto aggregation_for_set = std::make_shared<AggregatingTransform>(input_header, transform_params_for_set);
                     connect(*ports[i], aggregation_for_set->getInputs().front());
                     ports[i] = &aggregation_for_set->getOutputs().front();
-                    processors.push_back(aggregation_for_set);
+                    aggregating_processors.push_back(aggregation_for_set);
                 }
             }
 
@@ -194,7 +194,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                     for (auto input_it = inputs.begin(); input_it != inputs.end(); output_it += grouping_sets_size, ++input_it)
                         connect(*ports[output_it], *input_it);
                     new_ports.push_back(&resize->getOutputs().front());
-                    processors.push_back(resize);
+                    aggregating_processors.push_back(resize);
                 }
 
                 ports.swap(new_ports);
@@ -242,10 +242,10 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                 auto transform = std::make_shared<ExpressionTransform>(header, expression);
 
                 connect(*ports[set_counter], transform->getInputPort());
-                processors.emplace_back(std::move(transform));
+                aggregating_processors.emplace_back(std::move(transform));
             }
 
-            return processors;
+            return aggregating_processors;
         });
 
         aggregating = collector.detachProcessors(0);

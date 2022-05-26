@@ -51,8 +51,6 @@ RUN apt-get update \
         rename \
         software-properties-common \
         tzdata \
-        gcc-12 \
-        g++-12 \
         --yes --no-install-recommends \
     && apt-get clean
 
@@ -90,6 +88,9 @@ RUN git clone --depth 1 https://github.com/tpoechtrager/cctools-port.git \
 
 # Download toolchain and SDK for Darwin
 RUN wget -nv https://github.com/phracker/MacOSX-SDKs/releases/download/11.3/MacOSX11.0.sdk.tar.xz
+
+RUN add-apt-repository ppa:ubuntu-toolchain-r/ppa --yes \
+    && apt install gcc-12 g++-12 --yes
 
 # Architecture of the image when BuildKit/buildx is used
 ARG TARGETARCH
