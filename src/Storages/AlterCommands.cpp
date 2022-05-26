@@ -596,7 +596,6 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
     }
     else if (type == ADD_STATISTIC)
     {
-        LOG_DEBUG(&Poco::Logger::get("STATS:"), "ADD_STAtISTIC start");
         if (std::any_of(
                 metadata.statistics.cbegin(),
                 metadata.statistics.cend(),
@@ -634,10 +633,8 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
 
             ++insert_it;
         }
-        LOG_DEBUG(&Poco::Logger::get("STATS:"), "ADD_STAtISTIC added");
 
         metadata.statistics.emplace(insert_it, StatisticDescription::getStatisticFromAST(statistic_decl, metadata.columns, context));
-        LOG_DEBUG(&Poco::Logger::get("STATS:"), "ADD_STAtISTIC size={}", metadata.statistics.size());
     }
     else if (type == DROP_STATISTIC)
     {

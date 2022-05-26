@@ -397,7 +397,6 @@ void MergeTreeDataPartWriterOnDisk::fillStatisticsChecksums(MergeTreeData::DataP
             stats.setDistributionStatistics(std::move(column_distribution_stats));
 
             const auto filename = generateFileNameForStatistics(stat->name(), stats_collector->column());
-            LOG_DEBUG(&Poco::Logger::get("finishStatisticsSerialization"), "Stat: {} file: {}", stat->name(), filename);
 
             if (statistic_and_column_to_stream.emplace(std::pair<String, String>{stat->name(), stats_collector->column()}, std::make_unique<StatisticsStream>()).second)
             {

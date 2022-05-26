@@ -336,10 +336,8 @@ static StatisticDescriptions getStatisticsForNewDataPart(
 
     StatisticDescriptions new_statistics;
     for (const auto & statistic : all_statistics)
-        if (!removed_statistics.contains(statistic.name)) {
+        if (!removed_statistics.contains(statistic.name))
             new_statistics.push_back(statistic);
-            Poco::Logger::get("getStatisticsForNewDataPart").information(statistic.name);
-        }
     return new_statistics;
 }
 
@@ -590,7 +588,6 @@ static NameToNameVector collectFilesForRenames(
                     && filename.ends_with(PART_STATS_FILE_EXT))
                 {
                     rename_vector.emplace_back(filename, "");
-                    Poco::Logger::get("collectFilesForRenames").information(command.column_name + " " + filename);
                 }
             }
         }
@@ -1218,7 +1215,6 @@ private:
         ctx->mutating_pipeline = QueryPipelineBuilder::getPipeline(std::move(builder));
         ctx->mutating_executor = std::make_unique<PullingPipelineExecutor>(ctx->mutating_pipeline);
 
-        Poco::Logger::get("PREPARE").information("all "  + std::to_string(statistics_descriptions.size()));
         part_merger_writer_task = std::make_unique<PartMergerWriter>(ctx);
     }
 
@@ -1368,14 +1364,8 @@ private:
 
         ctx->compression_codec = ctx->source_part->default_codec;
 
-        Poco::Logger::get("PREPARE").information("SOME ");
         if (ctx->mutating_pipeline.initialized())
         {
-            Poco::Logger::get("PREPARE").information("SOME inside " + std::to_string(ctx->statistics_to_recalc.size()) + " " + std::to_string(ctx->updated_header.columns()));
-            // Poco::Logger::get("PREPARE").information("SOME : " + ctx->statistics_to_recalc.front().name);
-            for (const auto& col : ctx->updated_header.getNames()) {
-                Poco::Logger::get("PREPARE").information("SOME col : " + col);
-            }
             QueryPipelineBuilder builder;
             builder.init(std::move(ctx->mutating_pipeline));
 

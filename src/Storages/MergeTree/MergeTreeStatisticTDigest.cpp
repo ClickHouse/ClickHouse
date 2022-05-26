@@ -64,10 +64,10 @@ void MergeTreeColumnDistributionStatisticTDigest::merge(const IStatisticPtr & ot
     {
         throw Exception("Unknown distribution sketch type", ErrorCodes::LOGICAL_ERROR);
     }
-    Poco::Logger::get("MergeTreeColumnDistributionStatisticTDigest").information(
-            "MERGE: 50% = " + std::to_string(sketch.getFloat(0.5))
-            + " 90% = " + std::to_string(sketch.getFloat(0.9))
-            + " 1% = " + std::to_string(sketch.getFloat(0.01)));
+    //Poco::Logger::get("MergeTreeColumnDistributionStatisticTDigest").information(
+    //        "MERGE: 50% = " + std::to_string(sketch.getFloat(0.5))
+    //        + " 90% = " + std::to_string(sketch.getFloat(0.9))
+    //        + " 1% = " + std::to_string(sketch.getFloat(0.01)));
 }
 
 const String& MergeTreeColumnDistributionStatisticTDigest::getColumnsRequiredForStatisticCalculation() const
@@ -103,10 +103,10 @@ void MergeTreeColumnDistributionStatisticTDigest::deserializeBinary(ReadBuffer &
     size_serialization->deserializeBinary(unused, istr);
 
     sketch.deserialize(istr);
-    Poco::Logger::get("MergeTreeColumnDistributionStatisticTDigest").information(
-        "LOAD: 50% = " + std::to_string(sketch.getFloat(0.5))
-        + " 90% = " + std::to_string(sketch.getFloat(0.9))
-        + " 1% = " + std::to_string(sketch.getFloat(0.01)));
+    //Poco::Logger::get("MergeTreeColumnDistributionStatisticTDigest").information(
+    //    "LOAD: 50% = " + std::to_string(sketch.getFloat(0.5))
+    //    + " 90% = " + std::to_string(sketch.getFloat(0.9))
+    //    + " 1% = " + std::to_string(sketch.getFloat(0.01)));
     is_empty = false;
 }
 
@@ -169,11 +169,11 @@ double MergeTreeColumnDistributionStatisticTDigest::estimateProbability(const Fi
 {
     // lower <= value <= upper
     // null = infty
-    Poco::Logger::get("MergeTreeColumnDistributionStatisticTDigest").information("est " + toString(lower) + " " + toString(upper));
-    Poco::Logger::get("MergeTreeColumnDistributionStatisticTDigest").information("emp=" + toString(empty()));
-    Poco::Logger::get("MergeTreeColumnDistributionStatisticTDigest").information("sktch50=" + toString(sketch.getFloat(0.5)) + " " + toString(sketch.getFloat(1)));
-    Poco::Logger::get("MergeTreeColumnDistributionStatisticTDigest").information("upper = " + (upper.isNull() ? "null" : std::to_string(estimateQuantileUpper(upper))));
-    Poco::Logger::get("MergeTreeColumnDistributionStatisticTDigest").information("lower = " + (lower.isNull() ? "null" : std::to_string(estimateQuantileUpper(lower))));
+    // Poco::Logger::get("MergeTreeColumnDistributionStatisticTDigest").information("est " + toString(lower) + " " + toString(upper));
+    // Poco::Logger::get("MergeTreeColumnDistributionStatisticTDigest").information("emp=" + toString(empty()));
+    // Poco::Logger::get("MergeTreeColumnDistributionStatisticTDigest").information("sktch50=" + toString(sketch.getFloat(0.5)) + " " + toString(sketch.getFloat(1)));
+    // Poco::Logger::get("MergeTreeColumnDistributionStatisticTDigest").information("upper = " + (upper.isNull() ? "null" : std::to_string(estimateQuantileUpper(upper))));
+    // Poco::Logger::get("MergeTreeColumnDistributionStatisticTDigest").information("lower = " + (lower.isNull() ? "null" : std::to_string(estimateQuantileUpper(lower))));
     if (!lower.isNull() && !upper.isNull())
         return std::max(std::min(estimateQuantileUpper(upper) - estimateQuantileLower(lower), 1.0), 0.0);
     else if (!lower.isNull())

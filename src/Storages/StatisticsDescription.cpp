@@ -44,10 +44,6 @@ StatisticDescription StatisticDescription::getStatisticFromAST(const ASTPtr & de
     for (const auto & ast : expr_list->children)
     {
         ASTIdentifier* ident = ast->as<ASTIdentifier>();
-        Poco::Logger::get("TEST").information(ident->name() + " " + ident->getColumnName());
-        for (const auto& cl : columns) {
-            Poco::Logger::get("TEXT").information(cl.name);
-        }
         if (!ident || !columns.hasPhysical(ident->getColumnName()))
             throw Exception("Incorrect column", ErrorCodes::INCORRECT_QUERY);
         const auto & column = columns.get(ident->getColumnName());
@@ -56,7 +52,6 @@ StatisticDescription StatisticDescription::getStatisticFromAST(const ASTPtr & de
     }
 
     UNUSED(context);
-    Poco::Logger::get("KEK").information(stat.name + " " + stat.type);
 
     return stat;
 }

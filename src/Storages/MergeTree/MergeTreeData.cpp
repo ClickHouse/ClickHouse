@@ -931,7 +931,6 @@ std::optional<UInt64> MergeTreeData::totalRowsByPartitionPredicateImpl(
 MergeTreeStatisticsPtr MergeTreeData::getStatisticsByPartitionPredicateImpl(
     const SelectQueryInfo & query_info, ContextPtr local_context) const
 {
-    Poco::Logger::get("getStatisticsByPartitionPredicate").information("START");
     auto parts = getDataPartsVectorForInternalUsage();
     std::unordered_set<String> partitions;
 
@@ -952,7 +951,6 @@ MergeTreeStatisticsPtr MergeTreeData::getStatisticsByPartitionPredicateImpl(
     PartitionPruner partition_pruner(metadata_snapshot, query_info, local_context, true /* strict */);
     if (partition_pruner.isUseless() && !valid)
     {
-        Poco::Logger::get("getStatisticsByPartitionPredicate").information("pruner");
         for (const auto & part : parts)
         {
             partitions.emplace(part->info.partition_id);
@@ -960,8 +958,6 @@ MergeTreeStatisticsPtr MergeTreeData::getStatisticsByPartitionPredicateImpl(
     }
     else
     {
-        // TODO: parts_values???
-        Poco::Logger::get("getStatisticsByPartitionPredicate").information("partitions");
         for (const auto & part : parts)
         {
             if (!partition_pruner.canBePruned(*part))
@@ -971,14 +967,12 @@ MergeTreeStatisticsPtr MergeTreeData::getStatisticsByPartitionPredicateImpl(
         }
     }
 
-    Poco::Logger::get("getStatisticsByPartitionPredicate").information("valid");
 
     std::vector<MergeTreeStatisticsPtr> stats_for_merge;
     {
         std::shared_lock lock(partition_to_stats_mutex);
         for (const auto & partition : partitions)
         {
-            Poco::Logger::get("getStatisticsByPartitionPredicate").information("KEK PARTITION " + partition);
             auto it = partition_to_stats.find(partition);
             if (it != std::end(partition_to_stats))
             {
@@ -991,7 +985,6 @@ MergeTreeStatisticsPtr MergeTreeData::getStatisticsByPartitionPredicateImpl(
         metadata_snapshot->getStatistics(), metadata_snapshot->getColumns());
     for (const auto& stat : stats_for_merge)
         res->merge(stat);
-    Poco::Logger::get("getStatisticsByPartitionPredicate").information("RES " + std::to_string(stats_for_merge.size()));
     return res;
 }
 
@@ -1024,7 +1017,7 @@ void MergeTreeData::updateStatisticsByPartition()
     StatisticSizeByName statistic_sizes_in_memory;
     for (const auto & [partition, stat] : partition_to_stats_new)
     {
-        LOG_DEBUG(log, "Update stats by partitions : partition={} emp={}", partition, stat->empty());
+        // LOG_DEBUG(log, "Update stats by partitions : partition={} empty={}", partition, stat->empty());
         if (!stat->empty()) {
             auto distribution_statistics = stat->getDistributionStatistics();
             for (const auto& statistic_name : distribution_statistics->getStatisticsNames()) {
@@ -3731,7 +3724,6 @@ static void loadPartAndFixMetadataImpl(MergeTreeData::MutableDataPartPtr part)
     disk->removeFileIfExists(fs::path(full_part_path) / IMergeTreeDataPart::TXN_VERSION_METADATA_FILE_NAME);
 }
 
-//TODO: add stats
 void MergeTreeData::calculateColumnAndSecondaryIndexSizesImpl()
 {
     column_sizes.clear();

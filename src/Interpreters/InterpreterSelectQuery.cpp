@@ -456,8 +456,6 @@ InterpreterSelectQuery::InterpreterSelectQuery(
                 /// Extract column compressed sizes.
                 std::unordered_map<std::string, UInt64> column_compressed_sizes;
                 for (const auto & [name, sizes] : column_sizes) {
-                    LOG_DEBUG(&Poco::Logger::get(">>>>>"), "name={} size={} size2={}",
-                        name, sizes.data_compressed, sizes.data_uncompressed);
                     column_compressed_sizes[name] = sizes.data_compressed;
                 }
 
