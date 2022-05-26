@@ -221,20 +221,22 @@ bool HDFSFSPool::tryCallFS(HDFSFSPtr & fs, std::function<bool(HDFSFSPtr &)> call
         if (callback(fs))
             return true;
 
+        if (retry < 3)
         {
             std::lock_guard lock{mutex};
 
-            bool still_in_pool = false;
+            bool need_recreate_fs = false;
             for (auto & i : pool)
             {
                 if (i == fs)
                 {
-                    still_in_pool = true;
+                    need_recreate_fs = true;
                     fs = i = createHDFSFS(builder->get());
+                    break;
                 }
             }
 
-            if (!still_in_pool)
+            if (!need_recreate_fs)
             {
                 fs = unsafeGetFS();
             }
