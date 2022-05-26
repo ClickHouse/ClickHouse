@@ -491,9 +491,8 @@ void CompressionCodecFPC::doDecompressData(const char * source, UInt32 source_si
             FPCOperation<UInt32>(destination, compressed_level).decode(src, uncompressed_size);
             break;
         default:
-            break;
+            throw Exception("Cannot decompress. File has incorrect float width", ErrorCodes::CANNOT_DECOMPRESS);
     }
-    throw Exception("Cannot decompress. File has incorrect float width", ErrorCodes::CANNOT_DECOMPRESS);
 }
 
 }
