@@ -226,7 +226,7 @@ MergeTreeData::MergeTreeData(
 
     /// Check sanity of MergeTreeSettings. Only when table is created.
     if (!attach)
-        settings->sanityCheck(getContext()->getSettingsRef());
+        settings->sanityCheck(getContext()->getMergeMutateExecutor()->getMaxTasksCount());
 
     MergeTreeDataFormatVersion min_format_version(0);
     if (!date_column_name.empty())
@@ -1364,7 +1364,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
 
         /// Check if CSNs were witten after committing transaction, update and write if needed.
         bool version_updated = false;
-        assert(!version.creation_tid.isEmpty());
+        chassert(!version.creation_tid.isEmpty());
         if (!part->version.creation_csn)
         {
             auto min = TransactionLog::getCSN(version.creation_tid);
@@ -1754,14 +1754,48 @@ size_t MergeTreeData::clearOldPartsFromFilesystem(bool force)
     return parts_to_remove.size();
 }
 
-void MergeTreeData::clearPartsFromFilesystem(const DataPartsVector & parts_to_remove)
+
+void MergeTreeData::clearPartsFromFilesystem(const DataPartsVector & parts, bool throw_on_error, NameSet * parts_failed_to_delete)
+{
+    NameSet part_names_successeded;
+
+    auto get_failed_parts = [&part_names_successeded, &parts_failed_to_delete, &parts] ()
+    {
+        if (part_names_successeded.size() == parts.size())
+            return;
+
+        if (parts_failed_to_delete)
+        {
+            for (const auto & part : parts)
+            {
+                if (!part_names_successeded.contains(part->name))
+                    parts_failed_to_delete->insert(part->name);
+            }
+        }
+    };
+
+    try
+    {
+        clearPartsFromFilesystemImpl(parts, &part_names_successeded);
+        get_failed_parts();
+    }
+    catch (...)
+    {
+        get_failed_parts();
+
+        if (throw_on_error)
+            throw;
+    }
+}
+
+void MergeTreeData::clearPartsFromFilesystemImpl(const DataPartsVector & parts_to_remove, NameSet * part_names_successed)
 {
     const auto settings = getSettings();
     if (parts_to_remove.size() > 1 && settings->max_part_removal_threads > 1 && parts_to_remove.size() > settings->concurrent_part_removal_threshold)
     {
         /// Parallel parts removal.
-
         size_t num_threads = std::min<size_t>(settings->max_part_removal_threads, parts_to_remove.size());
+        std::mutex part_names_mutex;
         ThreadPool pool(num_threads);
 
         /// NOTE: Under heavy system load you may get "Cannot schedule a task" from ThreadPool.
@@ -1774,6 +1808,11 @@ void MergeTreeData::clearPartsFromFilesystem(const DataPartsVector & parts_to_re
 
                 LOG_DEBUG(log, "Removing part from filesystem {}", part->name);
                 part->remove();
+                if (part_names_successed)
+                {
+                    std::lock_guard lock(part_names_mutex);
+                    part_names_successed->insert(part->name);
+                }
             });
         }
 
@@ -1785,6 +1824,8 @@ void MergeTreeData::clearPartsFromFilesystem(const DataPartsVector & parts_to_re
         {
             LOG_DEBUG(log, "Removing part from filesystem {}", part->name);
             part->remove();
+            if (part_names_successed)
+                part_names_successed->insert(part->name);
         }
     }
 }
@@ -2528,7 +2569,7 @@ void MergeTreeData::changeSettings(
         /// Reset to default settings before applying existing.
         auto copy = getDefaultSettings();
         copy->applyChanges(new_changes);
-        copy->sanityCheck(getContext()->getSettingsRef());
+        copy->sanityCheck(getContext()->getMergeMutateExecutor()->getMaxTasksCount());
 
         storage_settings.set(std::move(copy));
         StorageInMemoryMetadata new_metadata = getInMemoryMetadata();
@@ -2989,7 +3030,7 @@ MergeTreeData::DataPartsVector MergeTreeData::removePartsInRangeFromWorkingSetAn
     /// We a going to remove active parts covered by drop_range without timeout.
     /// Let's also reset timeout for inactive parts
     /// and add these parts to list of parts to remove from ZooKeeper
-    auto inactive_parts_to_remove_immediately = getDataPartsVectorInPartitionForInternalUsage(DataPartState::Outdated, drop_range.partition_id, &lock);
+    auto inactive_parts_to_remove_immediately = getDataPartsVectorInPartitionForInternalUsage({DataPartState::Outdated, DataPartState::Deleting}, drop_range.partition_id, &lock);
 
     /// FIXME refactor removePartsFromWorkingSet(...), do not remove parts twice
     removePartsFromWorkingSet(txn, parts_to_remove, clear_without_timeout, lock);
@@ -3459,6 +3500,19 @@ MergeTreeData::DataPartsVector MergeTreeData::getVisibleDataPartsVectorInPartiti
     }
 
     return getDataPartsVectorInPartitionForInternalUsage(MergeTreeDataPartState::Active, partition_id, acquired_lock);
+}
+
+
+MergeTreeData::DataPartsVector MergeTreeData::getDataPartsVectorInPartitionForInternalUsage(const DataPartStates & affordable_states, const String & partition_id, DataPartsLock * acquired_lock) const
+{
+    auto lock = (acquired_lock) ? DataPartsLock() : lockParts();
+    DataPartsVector res;
+    for (const auto & state : affordable_states)
+    {
+        DataPartStateAndPartitionID state_with_partition{state, partition_id};
+        res.insert(res.end(), data_parts_by_state_and_info.lower_bound(state_with_partition), data_parts_by_state_and_info.upper_bound(state_with_partition));
+    }
+    return res;
 }
 
 MergeTreeData::DataPartsVector MergeTreeData::getDataPartsVectorInPartitionForInternalUsage(
@@ -6503,63 +6557,85 @@ ReservationPtr MergeTreeData::balancedReservation(
     ReservationPtr reserved_space;
     auto min_bytes_to_rebalance_partition_over_jbod = getSettings()->min_bytes_to_rebalance_partition_over_jbod;
     if (tagger_ptr && min_bytes_to_rebalance_partition_over_jbod > 0 && part_size >= min_bytes_to_rebalance_partition_over_jbod)
-    try
     {
-        const auto & disks = getStoragePolicy()->getVolume(max_volume_index)->getDisks();
-        std::map<String, size_t> disk_occupation;
-        std::map<String, std::vector<String>> disk_parts_for_logging;
-        for (const auto & disk : disks)
-            disk_occupation.emplace(disk->getName(), 0);
-
-        std::set<String> committed_big_parts_from_partition;
-        std::set<String> submerging_big_parts_from_partition;
-        std::lock_guard lock(currently_submerging_emerging_mutex);
-
-        for (const auto & part : currently_submerging_big_parts)
+        try
         {
-            if (part_info.partition_id == part->info.partition_id)
-                submerging_big_parts_from_partition.insert(part->name);
-        }
+            const auto & disks = getStoragePolicy()->getVolume(max_volume_index)->getDisks();
+            std::map<String, size_t> disk_occupation;
+            std::map<String, std::vector<String>> disk_parts_for_logging;
+            for (const auto & disk : disks)
+                disk_occupation.emplace(disk->getName(), 0);
 
-        {
-            auto lock_parts = lockParts();
-            if (covered_parts.empty())
+            std::set<String> committed_big_parts_from_partition;
+            std::set<String> submerging_big_parts_from_partition;
+            std::lock_guard lock(currently_submerging_emerging_mutex);
+
+            for (const auto & part : currently_submerging_big_parts)
             {
-                // It's a part fetch. Calculate `covered_parts` here.
-                MergeTreeData::DataPartPtr covering_part;
-                covered_parts = getActivePartsToReplace(part_info, part_name, covering_part, lock_parts);
+                if (part_info.partition_id == part->info.partition_id)
+                    submerging_big_parts_from_partition.insert(part->name);
             }
 
-            // Remove irrelevant parts.
-            std::erase_if(covered_parts,
-                    [min_bytes_to_rebalance_partition_over_jbod](const auto & part)
-                    {
-                        return !(part->isStoredOnDisk() && part->getBytesOnDisk() >= min_bytes_to_rebalance_partition_over_jbod);
-                    });
-
-            // Include current submerging big parts which are not yet in `currently_submerging_big_parts`
-            for (const auto & part : covered_parts)
-                submerging_big_parts_from_partition.insert(part->name);
-
-            for (const auto & part : getDataPartsStateRange(MergeTreeData::DataPartState::Active))
             {
-                if (part->isStoredOnDisk() && part->getBytesOnDisk() >= min_bytes_to_rebalance_partition_over_jbod
-                    && part_info.partition_id == part->info.partition_id)
+                auto lock_parts = lockParts();
+                if (covered_parts.empty())
                 {
-                    auto name = part->volume->getDisk()->getName();
-                    auto it = disk_occupation.find(name);
-                    if (it != disk_occupation.end())
-                    {
-                        if (submerging_big_parts_from_partition.find(part->name) == submerging_big_parts_from_partition.end())
+                    // It's a part fetch. Calculate `covered_parts` here.
+                    MergeTreeData::DataPartPtr covering_part;
+                    covered_parts = getActivePartsToReplace(part_info, part_name, covering_part, lock_parts);
+                }
+
+                // Remove irrelevant parts.
+                std::erase_if(covered_parts,
+                        [min_bytes_to_rebalance_partition_over_jbod](const auto & part)
                         {
-                            it->second += part->getBytesOnDisk();
-                            disk_parts_for_logging[name].push_back(formatReadableSizeWithBinarySuffix(part->getBytesOnDisk()));
-                            committed_big_parts_from_partition.insert(part->name);
+                            return !(part->isStoredOnDisk() && part->getBytesOnDisk() >= min_bytes_to_rebalance_partition_over_jbod);
+                        });
+
+                // Include current submerging big parts which are not yet in `currently_submerging_big_parts`
+                for (const auto & part : covered_parts)
+                    submerging_big_parts_from_partition.insert(part->name);
+
+                for (const auto & part : getDataPartsStateRange(MergeTreeData::DataPartState::Active))
+                {
+                    if (part->isStoredOnDisk() && part->getBytesOnDisk() >= min_bytes_to_rebalance_partition_over_jbod
+                        && part_info.partition_id == part->info.partition_id)
+                    {
+                        auto name = part->volume->getDisk()->getName();
+                        auto it = disk_occupation.find(name);
+                        if (it != disk_occupation.end())
+                        {
+                            if (submerging_big_parts_from_partition.find(part->name) == submerging_big_parts_from_partition.end())
+                            {
+                                it->second += part->getBytesOnDisk();
+                                disk_parts_for_logging[name].push_back(formatReadableSizeWithBinarySuffix(part->getBytesOnDisk()));
+                                committed_big_parts_from_partition.insert(part->name);
+                            }
+                            else
+                            {
+                                disk_parts_for_logging[name].push_back(formatReadableSizeWithBinarySuffix(part->getBytesOnDisk()) + " (submerging)");
+                            }
                         }
                         else
                         {
-                            disk_parts_for_logging[name].push_back(formatReadableSizeWithBinarySuffix(part->getBytesOnDisk()) + " (submerging)");
+                            // Part is on different volume. Ignore it.
                         }
+                    }
+                }
+            }
+
+            for (const auto & [name, emerging_part] : currently_emerging_big_parts)
+            {
+                // It's possible that the emerging big parts are committed and get added twice. Thus a set is used to deduplicate.
+                if (committed_big_parts_from_partition.find(name) == committed_big_parts_from_partition.end()
+                    && part_info.partition_id == emerging_part.partition_id)
+                {
+                    auto it = disk_occupation.find(emerging_part.disk_name);
+                    if (it != disk_occupation.end())
+                    {
+                        it->second += emerging_part.estimate_bytes;
+                        disk_parts_for_logging[emerging_part.disk_name].push_back(
+                            formatReadableSizeWithBinarySuffix(emerging_part.estimate_bytes) + " (emerging)");
                     }
                     else
                     {
@@ -6567,88 +6643,68 @@ ReservationPtr MergeTreeData::balancedReservation(
                     }
                 }
             }
-        }
 
-        for (const auto & [name, emerging_part] : currently_emerging_big_parts)
-        {
-            // It's possible that the emerging big parts are committed and get added twice. Thus a set is used to deduplicate.
-            if (committed_big_parts_from_partition.find(name) == committed_big_parts_from_partition.end()
-                && part_info.partition_id == emerging_part.partition_id)
+            size_t min_occupation_size = std::numeric_limits<size_t>::max();
+            std::vector<String> candidates;
+            for (const auto & [disk_name, size] : disk_occupation)
             {
-                auto it = disk_occupation.find(emerging_part.disk_name);
-                if (it != disk_occupation.end())
+                if (size < min_occupation_size)
                 {
-                    it->second += emerging_part.estimate_bytes;
-                    disk_parts_for_logging[emerging_part.disk_name].push_back(
-                        formatReadableSizeWithBinarySuffix(emerging_part.estimate_bytes) + " (emerging)");
+                    min_occupation_size = size;
+                    candidates = {disk_name};
                 }
+                else if (size == min_occupation_size)
+                {
+                    candidates.push_back(disk_name);
+                }
+            }
+
+            if (!candidates.empty())
+            {
+                // Random pick one disk from best candidates
+                std::shuffle(candidates.begin(), candidates.end(), thread_local_rng);
+                String selected_disk_name = candidates.front();
+                WriteBufferFromOwnString log_str;
+                writeCString("\nbalancer: \n", log_str);
+                for (const auto & [disk_name, per_disk_parts] : disk_parts_for_logging)
+                    writeString(fmt::format("  {}: [{}]\n", disk_name, fmt::join(per_disk_parts, ", ")), log_str);
+                LOG_DEBUG(log, fmt::runtime(log_str.str()));
+
+                if (ttl_infos)
+                    reserved_space = tryReserveSpacePreferringTTLRules(
+                        metadata_snapshot,
+                        part_size,
+                        *ttl_infos,
+                        time(nullptr),
+                        max_volume_index,
+                        is_insert,
+                        getStoragePolicy()->getDiskByName(selected_disk_name));
                 else
+                    reserved_space = tryReserveSpace(part_size, getStoragePolicy()->getDiskByName(selected_disk_name));
+
+                if (reserved_space)
                 {
-                    // Part is on different volume. Ignore it.
+                    currently_emerging_big_parts.emplace(
+                        part_name, EmergingPartInfo{reserved_space->getDisk(0)->getName(), part_info.partition_id, part_size});
+
+                    for (const auto & part : covered_parts)
+                    {
+                        if (currently_submerging_big_parts.contains(part))
+                            LOG_WARNING(log, "currently_submerging_big_parts contains duplicates. JBOD might lose balance");
+                        else
+                            currently_submerging_big_parts.insert(part);
+                    }
+
+                    // Record submerging big parts in the tagger to clean them up.
+                    tagger_ptr->emplace(*this, part_name, std::move(covered_parts), log);
                 }
             }
         }
-
-        size_t min_occupation_size = std::numeric_limits<size_t>::max();
-        std::vector<String> candidates;
-        for (const auto & [disk_name, size] : disk_occupation)
+        catch (...)
         {
-            if (size < min_occupation_size)
-            {
-                min_occupation_size = size;
-                candidates = {disk_name};
-            }
-            else if (size == min_occupation_size)
-            {
-                candidates.push_back(disk_name);
-            }
+            LOG_DEBUG(log, "JBOD balancer encounters an error. Fallback to random disk selection");
+            tryLogCurrentException(log);
         }
-
-        if (!candidates.empty())
-        {
-            // Random pick one disk from best candidates
-            std::shuffle(candidates.begin(), candidates.end(), thread_local_rng);
-            String selected_disk_name = candidates.front();
-            WriteBufferFromOwnString log_str;
-            writeCString("\nbalancer: \n", log_str);
-            for (const auto & [disk_name, per_disk_parts] : disk_parts_for_logging)
-                writeString(fmt::format("  {}: [{}]\n", disk_name, fmt::join(per_disk_parts, ", ")), log_str);
-            LOG_DEBUG(log, fmt::runtime(log_str.str()));
-
-            if (ttl_infos)
-                reserved_space = tryReserveSpacePreferringTTLRules(
-                    metadata_snapshot,
-                    part_size,
-                    *ttl_infos,
-                    time(nullptr),
-                    max_volume_index,
-                    is_insert,
-                    getStoragePolicy()->getDiskByName(selected_disk_name));
-            else
-                reserved_space = tryReserveSpace(part_size, getStoragePolicy()->getDiskByName(selected_disk_name));
-
-            if (reserved_space)
-            {
-                currently_emerging_big_parts.emplace(
-                    part_name, EmergingPartInfo{reserved_space->getDisk(0)->getName(), part_info.partition_id, part_size});
-
-                for (const auto & part : covered_parts)
-                {
-                    if (currently_submerging_big_parts.contains(part))
-                        LOG_WARNING(log, "currently_submerging_big_parts contains duplicates. JBOD might lose balance");
-                    else
-                        currently_submerging_big_parts.insert(part);
-                }
-
-                // Record submerging big parts in the tagger to clean them up.
-                tagger_ptr->emplace(*this, part_name, std::move(covered_parts), log);
-            }
-        }
-    }
-    catch (...)
-    {
-        LOG_DEBUG(log, "JBOD balancer encounters an error. Fallback to random disk selection");
-        tryLogCurrentException(log);
     }
     return reserved_space;
 }

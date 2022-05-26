@@ -540,7 +540,7 @@ public:
         Arena * arena)
         const override
     {
-        size_t current_offset = 0;
+        size_t current_offset = offsets[static_cast<ssize_t>(row_begin) - 1];
         for (size_t i = row_begin; i < row_end; ++i)
         {
             size_t next_offset = offsets[i];

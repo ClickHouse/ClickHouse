@@ -24,6 +24,7 @@
 #include <Coordination/KeeperLogStore.h>
 #include <Coordination/Changelog.h>
 #include <filesystem>
+#include <Common/SipHash.h>
 
 #include <Coordination/SnapshotableHashTable.h>
 
@@ -1707,6 +1708,46 @@ TEST_P(CoordinationTest, ChangelogInsertThreeTimesHard)
     changelog4.append(entry);
     changelog4.end_of_append_batch(0, 0);
     EXPECT_EQ(changelog4.next_slot(), 5);
+}
+
+TEST_P(CoordinationTest, TestStorageSnapshotEqual)
+{
+    auto params = GetParam();
+    ChangelogDirTest test("./snapshots");
+    std::optional<UInt128> snapshot_hash;
+    for (size_t i = 0; i < 15; ++i)
+    {
+        DB::KeeperSnapshotManager manager("./snapshots", 3, params.enable_compression);
+
+        DB::KeeperStorage storage(500, "");
+        for (size_t j = 0; j < 5000; ++j)
+        {
+            addNode(storage, "/hello_" + std::to_string(j), "world", 1);
+            addNode(storage, "/hello/somepath_" + std::to_string(j), "somedata", 3);
+        }
+
+        storage.session_id_counter = 5;
+
+        storage.ephemerals[3] = {"/hello"};
+        storage.ephemerals[1] = {"/hello/somepath"};
+
+        for (size_t j = 0; j < 3333; ++j)
+            storage.getSessionID(130 * j);
+
+        DB::KeeperStorageSnapshot snapshot(&storage, storage.zxid);
+
+        auto buf = manager.serializeSnapshotToBuffer(snapshot);
+
+        auto new_hash = sipHash128(reinterpret_cast<char *>(buf->data()), buf->size());
+        if (!snapshot_hash.has_value())
+        {
+            snapshot_hash = new_hash;
+        }
+        else
+        {
+            EXPECT_EQ(*snapshot_hash, new_hash);
+        }
+    }
 }
 
 

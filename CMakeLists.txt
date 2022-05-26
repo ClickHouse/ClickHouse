@@ -1,32 +1,6 @@
 cmake_minimum_required(VERSION 3.14)
 
-foreach(policy
-        CMP0023
-        CMP0048 # CMake 3.0
-        CMP0074 # CMake 3.12
-        CMP0077
-        CMP0079
-    )
-    if(POLICY ${policy})
-        cmake_policy(SET ${policy} NEW)
-    endif()
-endforeach()
-
-# set default policy
-foreach(default_policy_var_name
-        # make option() honor normal variables for BUILD_SHARED_LIBS:
-        # - re2
-        # - snappy
-        CMAKE_POLICY_DEFAULT_CMP0077
-        # Google Test from sources uses too old cmake, 2.6.x, and CMP0022 should
-        # set, to avoid using deprecated LINK_INTERFACE_LIBRARIES(_<CONFIG>)? over
-        # INTERFACE_LINK_LIBRARIES.
-        CMAKE_POLICY_DEFAULT_CMP0022
-    )
-    set(${default_policy_var_name} NEW)
-endforeach()
-
-project(ClickHouse)
+project(ClickHouse LANGUAGES C CXX ASM)
 
 # If turned off: e.g. when ENABLE_FOO is ON, but FOO tool was not found, the CMake will continue.
 option(FAIL_ON_UNSUPPORTED_OPTIONS_COMBINATION
@@ -39,11 +13,10 @@ else()
     set(RECONFIGURE_MESSAGE_LEVEL WARNING)
 endif()
 
-enable_language(C CXX ASM)
-
 include (cmake/arch.cmake)
 include (cmake/target.cmake)
 include (cmake/tools.cmake)
+include (cmake/ccache.cmake)
 include (cmake/clang_tidy.cmake)
 include (cmake/git_status.cmake)
 
@@ -52,7 +25,6 @@ include (cmake/git_status.cmake)
 macro (export)
 endmacro ()
 
-set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_CURRENT_SOURCE_DIR}/cmake/Modules/")
 set(CMAKE_EXPORT_COMPILE_COMMANDS 1) # Write compile_commands.json
 set(CMAKE_LINK_DEPENDS_NO_SHARED 1) # Do not relink all depended targets on .so
 set(CMAKE_CONFIGURATION_TYPES "RelWithDebInfo;Debug;Release;MinSizeRel" CACHE STRING "" FORCE)
@@ -66,8 +38,6 @@ set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 if (NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/sysroot/README.md")
     message (FATAL_ERROR "Submodules are not initialized. Run\n\tgit submodule update --init --recursive")
 endif ()
-
-include (cmake/ccache.cmake)
 
 # Take care to add prlimit in command line before ccache, or else ccache thinks that
 # prlimit is compiler, and clang++ is its input file, and refuses to work  with
@@ -161,20 +131,22 @@ add_library(global-libs INTERFACE)
 include (cmake/fuzzer.cmake)
 include (cmake/sanitize.cmake)
 
-if (CMAKE_GENERATOR STREQUAL "Ninja" AND NOT DISABLE_COLORED_BUILD)
+option(ENABLE_COLORED_BUILD "Enable colors in compiler output" ON)
+
+set (CMAKE_COLOR_MAKEFILE ${ENABLE_COLORED_BUILD}) # works only for the makefile generator
+
+if (ENABLE_COLORED_BUILD AND CMAKE_GENERATOR STREQUAL "Ninja")
     # Turn on colored output. https://github.com/ninja-build/ninja/wiki/FAQ
     set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fdiagnostics-color=always")
     set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fdiagnostics-color=always")
+    # ... such manually setting of flags can be removed once CMake supports a variable to
+    # activate colors in *all* build systems: https://gitlab.kitware.com/cmake/cmake/-/issues/15502
 endif ()
 
 include (cmake/check_flags.cmake)
 include (cmake/add_warning.cmake)
 
-set (COMMON_WARNING_FLAGS "${COMMON_WARNING_FLAGS} -Wall")    # -Werror and many more is also added inside cmake/warnings.cmake
-
 if (COMPILER_CLANG)
-    # clang: warning: argument unused during compilation: '-specs=/usr/share/dpkg/no-pie-compile.specs' [-Wunused-command-line-argument]
-    set (COMMON_WARNING_FLAGS "${COMMON_WARNING_FLAGS} -Wno-unused-command-line-argument")
     # generate ranges for fast "addr2line" search
     if (NOT CMAKE_BUILD_TYPE_UC STREQUAL "RELEASE")
         set(COMPILER_FLAGS "${COMPILER_FLAGS} -gdwarf-aranges")
@@ -371,14 +343,17 @@ set (COMPILER_FLAGS "${COMPILER_FLAGS}")
 # Our built-in unwinder only supports DWARF version up to 4.
 set (DEBUG_INFO_FLAGS "-g -gdwarf-4")
 
-set (CMAKE_BUILD_COLOR_MAKEFILE          ON)
-set (CMAKE_CXX_FLAGS                     "${CMAKE_CXX_FLAGS} ${COMPILER_FLAGS} ${PLATFORM_EXTRA_CXX_FLAG} ${COMMON_WARNING_FLAGS} ${CXX_WARNING_FLAGS}")
+set (CMAKE_CXX_FLAGS                     "${CMAKE_CXX_FLAGS} ${COMPILER_FLAGS}")
 set (CMAKE_CXX_FLAGS_RELWITHDEBINFO      "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} -O3 ${DEBUG_INFO_FLAGS} ${CMAKE_CXX_FLAGS_ADD}")
 set (CMAKE_CXX_FLAGS_DEBUG               "${CMAKE_CXX_FLAGS_DEBUG} -O0 ${DEBUG_INFO_FLAGS} -fno-inline ${CMAKE_CXX_FLAGS_ADD}")
 
-set (CMAKE_C_FLAGS                       "${CMAKE_C_FLAGS} ${COMPILER_FLAGS} ${COMMON_WARNING_FLAGS} ${CMAKE_C_FLAGS_ADD}")
+set (CMAKE_C_FLAGS                       "${CMAKE_C_FLAGS} ${COMPILER_FLAGS} ${CMAKE_C_FLAGS_ADD}")
 set (CMAKE_C_FLAGS_RELWITHDEBINFO        "${CMAKE_C_FLAGS_RELWITHDEBINFO} -O3 ${DEBUG_INFO_FLAGS} ${CMAKE_C_FLAGS_ADD}")
 set (CMAKE_C_FLAGS_DEBUG                 "${CMAKE_C_FLAGS_DEBUG} -O0 ${DEBUG_INFO_FLAGS} -fno-inline ${CMAKE_C_FLAGS_ADD}")
+
+set (CMAKE_ASM_FLAGS                     "${CMAKE_ASM_FLAGS} ${COMPILER_FLAGS} ${CMAKE_ASM_FLAGS_ADD}")
+set (CMAKE_ASM_FLAGS_RELWITHDEBINFO      "${CMAKE_ASM_FLAGS_RELWITHDEBINFO} -O3 ${DEBUG_INFO_FLAGS} ${CMAKE_ASM_FLAGS_ADD}")
+set (CMAKE_ASM_FLAGS_DEBUG               "${CMAKE_ASM_FLAGS_DEBUG} -O0 ${DEBUG_INFO_FLAGS} -fno-inline ${CMAKE_ASM_FLAGS_ADD}")
 
 if (COMPILER_CLANG)
     if (OS_DARWIN)
@@ -423,13 +398,6 @@ endif ()
 # Turns on all external libs like s3, kafka, ODBC, ...
 option(ENABLE_LIBRARIES "Enable all external libraries by default" ON)
 
-if (NOT (OS_LINUX OR OS_DARWIN))
-    # Using system libs can cause a lot of warnings in includes (on macro expansion).
-    option(WERROR "Enable -Werror compiler option" OFF)
-else ()
-    option(WERROR "Enable -Werror compiler option" ON)
-endif ()
-
 # Increase stack size on Musl. We need big stack for our recursive-descend parser.
 if (USE_MUSL)
     set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-z,stack-size=2097152")
@@ -447,6 +415,13 @@ elseif (OS_FREEBSD)
 endif ()
 link_libraries(global-group)
 
+if (NOT (OS_LINUX OR OS_DARWIN))
+    # Using system libs can cause a lot of warnings in includes (on macro expansion).
+    option(WERROR "Enable -Werror compiler option" OFF)
+else ()
+    option(WERROR "Enable -Werror compiler option" ON)
+endif ()
+
 if (WERROR)
     # Don't pollute CMAKE_CXX_FLAGS with -Werror as it will break some CMake checks.
     # Instead, adopt modern cmake usage requirement.
@@ -455,7 +430,7 @@ endif ()
 
 # Make this extra-checks for correct library dependencies.
 if (OS_LINUX AND NOT SANITIZE)
-    target_link_options(global-group INTERFACE "-Wl,--no-undefined")
+    target_link_options(global-group INTERFACE "LINKER:--no-undefined")
 endif ()
 
 ######################################
@@ -466,7 +441,7 @@ set (CMAKE_POSTFIX_VARIABLE "CMAKE_${CMAKE_BUILD_TYPE_UC}_POSTFIX")
 
 if (USE_STATIC_LIBRARIES)
     set (CMAKE_POSITION_INDEPENDENT_CODE OFF)
-    if (OS_LINUX AND NOT ARCH_ARM)
+    if (OS_LINUX AND NOT ARCH_AARCH64)
         # Slightly more efficient code can be generated
         # It's disabled for ARM because otherwise ClickHouse cannot run on Android.
         set (CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} -fno-pie")
@@ -500,8 +475,7 @@ endif ()
 message (STATUS
     "Building for: ${CMAKE_SYSTEM} ${CMAKE_SYSTEM_PROCESSOR} ${CMAKE_LIBRARY_ARCHITECTURE} ;
     USE_STATIC_LIBRARIES=${USE_STATIC_LIBRARIES}
-    SPLIT_SHARED=${SPLIT_SHARED_LIBRARIES}
-    CCACHE=${CCACHE_FOUND} ${CCACHE_VERSION}")
+    SPLIT_SHARED=${SPLIT_SHARED_LIBRARIES}")
 
 include (GNUInstallDirs)
 

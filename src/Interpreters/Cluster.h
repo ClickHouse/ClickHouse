@@ -2,6 +2,8 @@
 
 #include <Client/ConnectionPool.h>
 #include <Client/ConnectionPoolWithFailover.h>
+#include <Common/Macros.h>
+#include <Common/MultiVersion.h>
 
 #include <Poco/Net/SocketAddress.h>
 
@@ -290,7 +292,7 @@ using ClusterPtr = std::shared_ptr<Cluster>;
 class Clusters
 {
 public:
-    Clusters(const Poco::Util::AbstractConfiguration & config, const Settings & settings, const String & config_prefix = "remote_servers");
+    Clusters(const Poco::Util::AbstractConfiguration & config, const Settings & settings, MultiVersion<Macros>::Version macros, const String & config_prefix = "remote_servers");
 
     Clusters(const Clusters &) = delete;
     Clusters & operator=(const Clusters &) = delete;
@@ -308,6 +310,8 @@ protected:
 
     /// setup outside of this class, stored to prevent deleting from impl on config update
     std::unordered_set<std::string> automatic_clusters;
+
+    MultiVersion<Macros>::Version macros_;
 
     Impl impl;
     mutable std::mutex mutex;

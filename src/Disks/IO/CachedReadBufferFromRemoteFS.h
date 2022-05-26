@@ -26,7 +26,10 @@ public:
         FileCachePtr cache_,
         RemoteFSFileReaderCreator remote_file_reader_creator_,
         const ReadSettings & settings_,
+        const String & query_id_,
         size_t read_until_position_);
+
+    ~CachedReadBufferFromRemoteFS() override;
 
     bool nextImpl() override;
 
@@ -116,8 +119,10 @@ private:
 
     String query_id;
     bool enable_logging = false;
+    String current_buffer_id;
 
     CurrentMetrics::Increment metric_increment{CurrentMetrics::FilesystemCacheReadBuffers};
+    ProfileEvents::Counters current_file_segment_counters;
 };
 
 }

@@ -18,16 +18,6 @@ CI_CONFIG = {
             "tidy": "disable",
             "with_coverage": False,
         },
-        "performance": {
-            "compiler": "clang-13",
-            "build_type": "",
-            "sanitizer": "",
-            "package_type": "performance",
-            "bundled": "bundled",
-            "splitted": "unsplitted",
-            "tidy": "disable",
-            "with_coverage": False,
-        },
         "coverity": {
             "compiler": "clang-13",
             "build_type": "",
@@ -37,6 +27,7 @@ CI_CONFIG = {
             "splitted": "unsplitted",
             "tidy": "disable",
             "with_coverage": False,
+            "official": False,
         },
         "binary_gcc": {
             "compiler": "gcc-12",
@@ -190,6 +181,7 @@ CI_CONFIG = {
             "build_type": "",
             "sanitizer": "",
             "package_type": "binary",
+            "static_binary_name": "powerpc64le",
             "bundled": "bundled",
             "splitted": "unsplitted",
             "tidy": "disable",
@@ -199,7 +191,6 @@ CI_CONFIG = {
     "builds_report_config": {
         "ClickHouse build check (actions)": [
             "package_release",
-            "performance",
             "coverity",
             "package_aarch64",
             "package_asan",
@@ -217,7 +208,7 @@ CI_CONFIG = {
             "binary_freebsd",
             "binary_darwin_aarch64",
             "binary_ppc64le",
-            "binary_gcc",
+            # "binary_gcc",
         ],
     },
     "tests_config": {
@@ -323,9 +314,9 @@ CI_CONFIG = {
         "Testflows check (actions)": {
             "required_build": "package_release",
         },
-        "Unit tests (release-gcc, actions)": {
-            "required_build": "binary_gcc",
-        },
+        # "Unit tests (release-gcc, actions)": {
+        #     "required_build": "binary_gcc",
+        # },
         "Unit tests (release-clang, actions)": {
             "required_build": "binary_release",
         },
@@ -369,7 +360,7 @@ CI_CONFIG = {
             "required_build": "binary_release",
         },
         "Performance Comparison (actions)": {
-            "required_build": "performance",
+            "required_build": "package_release",
         },
     },
 }  # type: dict

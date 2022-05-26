@@ -83,8 +83,11 @@ UInt64 MergeTreeDataMergerMutator::getMaxSourcePartsSizeForMerge() const
 UInt64 MergeTreeDataMergerMutator::getMaxSourcePartsSizeForMerge(size_t max_count, size_t scheduled_tasks_count) const
 {
     if (scheduled_tasks_count > max_count)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: invalid argument passed to \
-            getMaxSourcePartsSize: scheduled_tasks_count = {} > max_count = {}", scheduled_tasks_count, max_count);
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Logical error: invalid argument passed to getMaxSourcePartsSize: scheduled_tasks_count = {} > max_count = {}",
+            scheduled_tasks_count, max_count);
+    }
 
     size_t free_entries = max_count - scheduled_tasks_count;
     const auto data_settings = data.getSettings();
@@ -603,12 +606,12 @@ MergeTreeData::DataPartPtr MergeTreeDataMergerMutator::renameMergedTemporaryPart
          *   then we get here.
          *
          * When M > N parts could be replaced?
-         * - new block was added in ReplicatedMergeTreeBlockOutputStream;
+         * - new block was added in ReplicatedMergeTreeSink;
          * - it was added to working dataset in memory and renamed on filesystem;
          * - but ZooKeeper transaction that adds it to reference dataset in ZK failed;
          * - and it is failed due to connection loss, so we don't rollback working dataset in memory,
          *   because we don't know if the part was added to ZK or not
-         *   (see ReplicatedMergeTreeBlockOutputStream)
+         *   (see ReplicatedMergeTreeSink)
          * - then method selectPartsToMerge selects a range and sees, that EphemeralLock for the block in this part is unlocked,
          *   and so it is possible to merge a range skipping this part.
          *   (NOTE: Merging with part that is not in ZK is not possible, see checks in 'createLogEntryToMergeParts'.)
