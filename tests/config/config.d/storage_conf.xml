@@ -31,7 +31,6 @@
                 <cache_enabled>0</cache_enabled>
                 <data_cache_max_size>22548578304</data_cache_max_size>
                 <cache_on_write_operations>1</cache_on_write_operations>
-                <data_cache_path>./s3_cache/</data_cache_path>
                 <enable_cache_hits_threshold>1</enable_cache_hits_threshold>
             </s3_cache_3>
         </disks>
