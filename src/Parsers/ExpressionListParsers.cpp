@@ -847,7 +847,7 @@ public:
         return true;
     }
 
-    bool parseAlias(ASTPtr node)
+    bool insertAlias(ASTPtr node)
     {
         if (!wrapLayer(false))
             return false;
@@ -881,28 +881,67 @@ class CastLayer : public Layer
 public:
     bool parse(IParser::Pos & pos, Expected & expected, Action & action) override
     {
+        ParserKeyword as_keyword_parser("AS");
+        ASTPtr alias;
+
         /// expr AS type
         if (state == 0)
         {
-            if (ParserKeyword("AS").ignore(pos, expected))
+            ASTPtr type_node;
+
+            if (as_keyword_parser.ignore(pos, expected))
             {
-                if (!wrapLayer())
-                    return false;
+                auto old_pos = pos;
 
-                ASTPtr type_node;
-
-                if (ParserDataType().parse(pos, type_node, expected) && ParserToken(TokenType::ClosingRoundBracket).ignore(pos, expected))
+                if (ParserIdentifier().parse(pos, alias, expected) &&
+                    as_keyword_parser.ignore(pos, expected) &&
+                    ParserDataType().parse(pos, type_node, expected) &&
+                    ParserToken(TokenType::ClosingRoundBracket).ignore(pos, expected))
                 {
-                    result[0] = createFunctionCast(result[0], type_node);
+                    if (!insertAlias(alias))
+                        return false;
+
+                    if (!wrapLayer())
+                        return false;
+
+                    result = {createFunctionCast(result[0], type_node)};
                     state = -1;
                     return true;
                 }
-                else
+
+                pos = old_pos;
+
+                if (ParserIdentifier().parse(pos, alias, expected) &&
+                    ParserToken(TokenType::Comma).ignore(pos, expected))
                 {
-                    return false;
+                    action = Action::OPERAND;
+                    if (!insertAlias(alias))
+                        return false;
+
+                    if (!wrapLayer())
+                        return false;
+
+                    state = 1;
+                    return true;
                 }
+
+                pos = old_pos;
+
+                if (ParserDataType().parse(pos, type_node, expected) &&
+                    ParserToken(TokenType::ClosingRoundBracket).ignore(pos, expected))
+                {
+                    if (!wrapLayer())
+                        return false;
+
+                    result = {createFunctionCast(result[0], type_node)};
+                    state = -1;
+                    return true;
+                }
+
+                return false;
             }
-            else if (ParserToken(TokenType::Comma).ignore(pos, expected))
+
+            if (ParserToken(TokenType::Comma).ignore(pos, expected))
             {
                 action = Action::OPERAND;
 
@@ -910,6 +949,7 @@ public:
                     return false;
 
                 state = 1;
+                return true;
             }
         }
         if (state == 1)
@@ -1372,22 +1412,20 @@ public:
 
                 if (!wrapLayer())
                     return false;
-
-                state = 3;
             }
-        }
 
-        if (state == 3)
-        {
             if (ParserToken(TokenType::ClosingRoundBracket).ignore(pos, expected))
             {
                 if (!wrapLayer())
                     return false;
 
-                if (result.size() != 2)
+                if (result.size() == 2)
+                    result = {makeASTFunction("dateDiff", std::make_shared<ASTLiteral>(interval_kind.toDateDiffUnit()), result[0], result[1])};
+                else if (result.size() == 3)
+                    result = {makeASTFunction("dateDiff", std::make_shared<ASTLiteral>(interval_kind.toDateDiffUnit()), result[0], result[1], result[2])};
+                else
                     return false;
 
-                result = {makeASTFunction("dateDiff", std::make_shared<ASTLiteral>(interval_kind.toDateDiffUnit()), result[0], result[1])};
                 state = -1;
             }
         }
@@ -1669,7 +1707,7 @@ bool ParserExpression2::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     while (pos.isValid())
     {
-        // LOG_FATAL(&Poco::Logger::root(), "#pos: {}", String(pos->begin, pos->size()));
+        // // LOG_FATAL(&Poco::Logger::root(), "#pos: {}", String(pos->begin, pos->size()));
         if (!storage.back()->parse(pos, expected, next))
             return false;
 
@@ -1878,9 +1916,9 @@ bool ParserExpression2::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
                 storage.back()->pushOperator(Operator("lambda", 2, 2));
             }
-            else if (storage.size() > 1 && ParserAlias(false).parse(pos, tmp, expected))
+            else if (storage.size() > 1 && ParserAlias(true).parse(pos, tmp, expected))
             {
-                if (!storage.back()->parseAlias(tmp))
+                if (!storage.back()->insertAlias(tmp))
                     return false;
             }
             else if (pos->type == TokenType::Comma)
