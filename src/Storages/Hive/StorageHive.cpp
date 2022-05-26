@@ -133,6 +133,9 @@ public:
             if (to_read_block.has(name_type.name))
                 to_read_block.erase(name_type.name);
         }
+
+        /// Apply read buffer prefetch for HiveText format, because it is read sequentially
+        read_settings.remote_fs_prefetch = format == "HiveText";
     }
 
     FormatSettings updateFormatSettings(const HiveFilePtr & hive_file)

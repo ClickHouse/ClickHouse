@@ -57,6 +57,7 @@ private:
 
     size_t file_offset_of_buffer_end = 0;
     std::optional<size_t> read_until_position;
+    bool use_prefetch;
 
     Poco::Logger * log;
 };
