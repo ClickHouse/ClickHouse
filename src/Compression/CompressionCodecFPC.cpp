@@ -69,9 +69,8 @@ CompressionCodecFPC::CompressionCodecFPC(UInt8 float_size, UInt8 compression_lev
 UInt32 CompressionCodecFPC::getMaxCompressedDataSize(UInt32 uncompressed_size) const
 {
     auto float_count = (uncompressed_size + float_width - 1) / float_width;
-    if (float_count % 2 != 0) {
+    if (float_count % 2 != 0)
         ++float_count;
-    }
     return HEADER_SIZE + float_count * float_width + float_count / 2;
 }
 
@@ -106,7 +105,8 @@ UInt8 encodeEndianness(std::endian endian)
     throw Exception("Unsupported endianness", ErrorCodes::BAD_ARGUMENTS);
 }
 
-std::endian decodeEndianness(UInt8 endian) {
+std::endian decodeEndianness(UInt8 endian)
+{
     switch (endian)
     {
         case 0:
@@ -152,7 +152,8 @@ namespace
 {
 
 template <std::unsigned_integral TUint> requires (sizeof(TUint) >= 4)
-class DfcmPredictor {
+class DfcmPredictor
+{
 public:
     explicit DfcmPredictor(std::size_t table_size): table(table_size, 0), prev_value{0}, hash{0}
     {
@@ -191,7 +192,8 @@ private:
 };
 
 template <std::unsigned_integral TUint> requires (sizeof(TUint) >= 4)
-class FcmPredictor {
+class FcmPredictor
+{
 public:
     explicit FcmPredictor(std::size_t table_size): table(table_size, 0), hash{0}
     {
