@@ -31,6 +31,8 @@ public:
         const ReadSettings & settings_,
         const String & query_id_,
         size_t file_size_,
+        bool allow_seeks_,
+        bool use_external_buffer_,
         std::optional<size_t> read_until_position_ = std::nullopt);
 
     ~CachedReadBufferFromFile() override;
@@ -128,6 +130,10 @@ private:
     String query_id;
     bool enable_logging = false;
     String current_buffer_id;
+
+    bool allow_seeks;
+    [[maybe_unused]]bool use_external_buffer;
+    bool range_finished = false;
 
     CurrentMetrics::Increment metric_increment{CurrentMetrics::FilesystemCacheReadBuffers};
     ProfileEvents::Counters current_file_segment_counters;
