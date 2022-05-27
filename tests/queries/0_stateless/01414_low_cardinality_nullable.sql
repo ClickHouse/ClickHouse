@@ -140,7 +140,7 @@ SELECT count() FROM lc_nullable WHERE has(u64, 1);
 SELECT count() FROM lc_nullable WHERE has(f32, 1);
 SELECT count() FROM lc_nullable WHERE has(f64, 1);
 SELECT count() FROM lc_nullable WHERE has(date, toDate('1970-01-02'));
-SELECT count() FROM lc_nullable WHERE has(date_time, toDateTime('1970-01-01 03:00:01', 'Asia/Istanbul'));
+SELECT count() FROM lc_nullable WHERE has(date_time, toDateTime('1970-01-01 02:00:01', 'Asia/Istanbul'));
 SELECT count() FROM lc_nullable WHERE has(str, '1');
 SELECT count() FROM lc_nullable WHERE has(fixed_string, toFixedString('1', 5));
 
@@ -168,7 +168,7 @@ SELECT count() FROM lc_nullable WHERE has(u64, 5);
 SELECT count() FROM lc_nullable WHERE has(f32, 5);
 SELECT count() FROM lc_nullable WHERE has(f64, 5);
 SELECT count() FROM lc_nullable WHERE has(date, toDate('1970-01-06'));
-SELECT count() FROM lc_nullable WHERE has(date_time, toDateTime('1970-01-01 03:00:05', 'Asia/Istanbul'));
+SELECT count() FROM lc_nullable WHERE has(date_time, toDateTime('1970-01-01 02:00:05', 'Asia/Istanbul'));
 SELECT count() FROM lc_nullable WHERE has(str, '5');
 SELECT count() FROM lc_nullable WHERE has(fixed_string, toFixedString('5', 5));
 
@@ -183,7 +183,7 @@ SELECT count() FROM lc_nullable WHERE has(u64, 10);
 SELECT count() FROM lc_nullable WHERE has(f32, 10);
 SELECT count() FROM lc_nullable WHERE has(f64, 10);
 SELECT count() FROM lc_nullable WHERE has(date, toDate('1970-01-11'));
-SELECT count() FROM lc_nullable WHERE has(date_time, toDateTime('1970-01-01 03:00:10', 'Asia/Istanbul'));
+SELECT count() FROM lc_nullable WHERE has(date_time, toDateTime('1970-01-01 02:00:10', 'Asia/Istanbul'));
 SELECT count() FROM lc_nullable WHERE has(str, '10');
 SELECT count() FROM lc_nullable WHERE has(fixed_string, toFixedString('10', 5));
 
@@ -213,7 +213,7 @@ SELECT count() FROM lc_nullable WHERE has(u64, 100);
 SELECT count() FROM lc_nullable WHERE has(f32, 100);
 SELECT count() FROM lc_nullable WHERE has(f64, 100);
 SELECT count() FROM lc_nullable WHERE has(date, toDate('1970-04-11'));
-SELECT count() FROM lc_nullable WHERE has(date_time, toDateTime('1970-01-01 03:01:40', 'Asia/Istanbul'));
+SELECT count() FROM lc_nullable WHERE has(date_time, toDateTime('1970-01-01 02:01:40', 'Asia/Istanbul'));
 SELECT count() FROM lc_nullable WHERE has(str, '100');
 SELECT count() FROM lc_nullable WHERE has(fixed_string, toFixedString('100', 5));
 

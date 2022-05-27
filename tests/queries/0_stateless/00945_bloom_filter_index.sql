@@ -42,7 +42,7 @@ SELECT COUNT() FROM bloom_filter_types_test WHERE u64 = 1 SETTINGS max_rows_to_r
 SELECT COUNT() FROM bloom_filter_types_test WHERE f32 = 1 SETTINGS max_rows_to_read = 6;
 SELECT COUNT() FROM bloom_filter_types_test WHERE f64 = 1 SETTINGS max_rows_to_read = 6;
 SELECT COUNT() FROM bloom_filter_types_test WHERE date = '1970-01-02' SETTINGS max_rows_to_read = 6;
-SELECT COUNT() FROM bloom_filter_types_test WHERE date_time = toDateTime('1970-01-01 03:00:01', 'Asia/Istanbul') SETTINGS max_rows_to_read = 6;
+SELECT COUNT() FROM bloom_filter_types_test WHERE date_time = toDateTime('1970-01-01 02:00:01', 'Asia/Istanbul') SETTINGS max_rows_to_read = 6;
 SELECT COUNT() FROM bloom_filter_types_test WHERE str = '1' SETTINGS max_rows_to_read = 12;
 SELECT COUNT() FROM bloom_filter_types_test WHERE fixed_string = toFixedString('1', 5) SETTINGS max_rows_to_read = 12;
 
@@ -68,7 +68,7 @@ SELECT COUNT() FROM bloom_filter_array_types_test WHERE has(u64, 1);
 SELECT COUNT() FROM bloom_filter_array_types_test WHERE has(f32, 1);
 SELECT COUNT() FROM bloom_filter_array_types_test WHERE has(f64, 1);
 SELECT COUNT() FROM bloom_filter_array_types_test WHERE has(date, toDate('1970-01-02'));
-SELECT COUNT() FROM bloom_filter_array_types_test WHERE has(date_time, toDateTime('1970-01-01 03:00:01', 'Asia/Istanbul'));
+SELECT COUNT() FROM bloom_filter_array_types_test WHERE has(date_time, toDateTime('1970-01-01 02:00:01', 'Asia/Istanbul'));
 SELECT COUNT() FROM bloom_filter_array_types_test WHERE has(str, '1');
 SELECT COUNT() FROM bloom_filter_array_types_test WHERE has(fixed_string, toFixedString('1', 5));
 
@@ -83,7 +83,7 @@ SELECT COUNT() FROM bloom_filter_array_types_test WHERE has(u64, 5);
 SELECT COUNT() FROM bloom_filter_array_types_test WHERE has(f32, 5);
 SELECT COUNT() FROM bloom_filter_array_types_test WHERE has(f64, 5);
 SELECT COUNT() FROM bloom_filter_array_types_test WHERE has(date, toDate('1970-01-06'));
-SELECT COUNT() FROM bloom_filter_array_types_test WHERE has(date_time, toDateTime('1970-01-01 03:00:05', 'Asia/Istanbul'));
+SELECT COUNT() FROM bloom_filter_array_types_test WHERE has(date_time, toDateTime('1970-01-01 02:00:05', 'Asia/Istanbul'));
 SELECT COUNT() FROM bloom_filter_array_types_test WHERE has(str, '5');
 SELECT COUNT() FROM bloom_filter_array_types_test WHERE has(fixed_string, toFixedString('5', 5));
 
@@ -98,7 +98,7 @@ SELECT COUNT() FROM bloom_filter_array_types_test WHERE has(u64, 10);
 SELECT COUNT() FROM bloom_filter_array_types_test WHERE has(f32, 10);
 SELECT COUNT() FROM bloom_filter_array_types_test WHERE has(f64, 10);
 SELECT COUNT() FROM bloom_filter_array_types_test WHERE has(date, toDate('1970-01-11'));
-SELECT COUNT() FROM bloom_filter_array_types_test WHERE has(date_time, toDateTime('1970-01-01 03:00:10', 'Asia/Istanbul'));
+SELECT COUNT() FROM bloom_filter_array_types_test WHERE has(date_time, toDateTime('1970-01-01 02:00:10', 'Asia/Istanbul'));
 SELECT COUNT() FROM bloom_filter_array_types_test WHERE has(str, '10');
 SELECT COUNT() FROM bloom_filter_array_types_test WHERE has(fixed_string, toFixedString('10', 5));
 
@@ -121,7 +121,7 @@ SELECT COUNT() FROM bloom_filter_null_types_test WHERE u64 = 1 SETTINGS max_rows
 SELECT COUNT() FROM bloom_filter_null_types_test WHERE f32 = 1 SETTINGS max_rows_to_read = 6;
 SELECT COUNT() FROM bloom_filter_null_types_test WHERE f64 = 1 SETTINGS max_rows_to_read = 6;
 SELECT COUNT() FROM bloom_filter_null_types_test WHERE date = '1970-01-02' SETTINGS max_rows_to_read = 6;
-SELECT COUNT() FROM bloom_filter_null_types_test WHERE date_time = toDateTime('1970-01-01 03:00:01', 'Asia/Istanbul') SETTINGS max_rows_to_read = 6;
+SELECT COUNT() FROM bloom_filter_null_types_test WHERE date_time = toDateTime('1970-01-01 02:00:01', 'Asia/Istanbul') SETTINGS max_rows_to_read = 6;
 SELECT COUNT() FROM bloom_filter_null_types_test WHERE str = '1' SETTINGS max_rows_to_read = 12;
 SELECT COUNT() FROM bloom_filter_null_types_test WHERE fixed_string = toFixedString('1', 5) SETTINGS max_rows_to_read = 12;
 
@@ -219,7 +219,7 @@ SELECT COUNT() FROM bloom_filter_array_lc_null_types_test WHERE has(u64, 1);
 SELECT COUNT() FROM bloom_filter_array_lc_null_types_test WHERE has(f32, 1);
 SELECT COUNT() FROM bloom_filter_array_lc_null_types_test WHERE has(f64, 1);
 SELECT COUNT() FROM bloom_filter_array_lc_null_types_test WHERE has(date, toDate('1970-01-02'));
-SELECT COUNT() FROM bloom_filter_array_lc_null_types_test WHERE has(date_time, toDateTime('1970-01-01 03:00:01', 'Asia/Istanbul'));
+SELECT COUNT() FROM bloom_filter_array_lc_null_types_test WHERE has(date_time, toDateTime('1970-01-01 02:00:01', 'Asia/Istanbul'));
 SELECT COUNT() FROM bloom_filter_array_lc_null_types_test WHERE has(str, '1');
 SELECT COUNT() FROM bloom_filter_array_lc_null_types_test WHERE has(fixed_string, toFixedString('1', 5));
 
@@ -234,7 +234,7 @@ SELECT COUNT() FROM bloom_filter_array_lc_null_types_test WHERE has(u64, 5);
 SELECT COUNT() FROM bloom_filter_array_lc_null_types_test WHERE has(f32, 5);
 SELECT COUNT() FROM bloom_filter_array_lc_null_types_test WHERE has(f64, 5);
 SELECT COUNT() FROM bloom_filter_array_lc_null_types_test WHERE has(date, toDate('1970-01-06'));
-SELECT COUNT() FROM bloom_filter_array_lc_null_types_test WHERE has(date_time, toDateTime('1970-01-01 03:00:05', 'Asia/Istanbul'));
+SELECT COUNT() FROM bloom_filter_array_lc_null_types_test WHERE has(date_time, toDateTime('1970-01-01 02:00:05', 'Asia/Istanbul'));
 SELECT COUNT() FROM bloom_filter_array_lc_null_types_test WHERE has(str, '5');
 SELECT COUNT() FROM bloom_filter_array_lc_null_types_test WHERE has(fixed_string, toFixedString('5', 5));
 
@@ -249,7 +249,7 @@ SELECT COUNT() FROM bloom_filter_array_lc_null_types_test WHERE has(u64, 10);
 SELECT COUNT() FROM bloom_filter_array_lc_null_types_test WHERE has(f32, 10);
 SELECT COUNT() FROM bloom_filter_array_lc_null_types_test WHERE has(f64, 10);
 SELECT COUNT() FROM bloom_filter_array_lc_null_types_test WHERE has(date, toDate('1970-01-11'));
-SELECT COUNT() FROM bloom_filter_array_lc_null_types_test WHERE has(date_time, toDateTime('1970-01-01 03:00:10', 'Asia/Istanbul'));
+SELECT COUNT() FROM bloom_filter_array_lc_null_types_test WHERE has(date_time, toDateTime('1970-01-01 02:00:10', 'Asia/Istanbul'));
 SELECT COUNT() FROM bloom_filter_array_lc_null_types_test WHERE has(str, '10');
 SELECT COUNT() FROM bloom_filter_array_lc_null_types_test WHERE has(fixed_string, toFixedString('10', 5));
 
@@ -279,7 +279,7 @@ SELECT COUNT() FROM bloom_filter_array_lc_null_types_test WHERE has(u64, 100);
 SELECT COUNT() FROM bloom_filter_array_lc_null_types_test WHERE has(f32, 100);
 SELECT COUNT() FROM bloom_filter_array_lc_null_types_test WHERE has(f64, 100);
 SELECT COUNT() FROM bloom_filter_array_lc_null_types_test WHERE has(date, toDate('1970-04-11'));
-SELECT COUNT() FROM bloom_filter_array_lc_null_types_test WHERE has(date_time, toDateTime('1970-01-01 03:01:40', 'Asia/Istanbul'));
+SELECT COUNT() FROM bloom_filter_array_lc_null_types_test WHERE has(date_time, toDateTime('1970-01-01 02:01:40', 'Asia/Istanbul'));
 SELECT COUNT() FROM bloom_filter_array_lc_null_types_test WHERE has(str, '100');
 SELECT COUNT() FROM bloom_filter_array_lc_null_types_test WHERE has(fixed_string, toFixedString('100', 5));
 
