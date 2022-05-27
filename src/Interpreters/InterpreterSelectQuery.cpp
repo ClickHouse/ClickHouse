@@ -1676,6 +1676,17 @@ void InterpreterSelectQuery::addEmptySourceToQueryPlan(
     }
 }
 
+bool InterpreterSelectQuery::hasRemoteStorage() const
+{
+    if (storage)
+        return storage->isRemote();
+
+    if (interpreter_subquery)
+        return interpreter_subquery->hasRemoteStorage();
+
+    return false;
+}
+
 void InterpreterSelectQuery::setMergeTreeReadTaskCallbackAndClientInfo(MergeTreeReadTaskCallback && callback)
 {
     context->getClientInfo().collaborate_with_initiator = true;

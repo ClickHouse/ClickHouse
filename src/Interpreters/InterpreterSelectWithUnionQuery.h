@@ -41,6 +41,8 @@ public:
 
     bool supportsTransactions() const override { return true; }
 
+    bool hasRemoteStorage() const override;
+
 private:
     std::vector<std::unique_ptr<IInterpreterUnionOrSelectQuery>> nested_interpreters;
 

@@ -30,6 +30,8 @@ public:
 
     void ignoreWithTotals() override;
 
+    bool hasRemoteStorage() const override;
+
 private:
     static String getName() { return "SelectIntersectExceptQuery"; }
 

@@ -346,6 +346,15 @@ BlockIO InterpreterSelectWithUnionQuery::execute()
     return res;
 }
 
+bool InterpreterSelectWithUnionQuery::hasRemoteStorage() const
+{
+    for (const auto & interpreter : nested_interpreters)
+        if (interpreter->hasRemoteStorage())
+            return true;
+
+    return false;
+}
+
 
 void InterpreterSelectWithUnionQuery::ignoreWithTotals()
 {

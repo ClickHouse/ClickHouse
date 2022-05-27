@@ -146,6 +146,15 @@ BlockIO InterpreterSelectIntersectExceptQuery::execute()
     return res;
 }
 
+bool InterpreterSelectIntersectExceptQuery::hasRemoteStorage() const
+{
+    for (const auto & interpreter : nested_interpreters)
+        if (interpreter->hasRemoteStorage())
+            return true;
+
+    return false;
+}
+
 void InterpreterSelectIntersectExceptQuery::ignoreWithTotals()
 {
     for (auto & interpreter : nested_interpreters)

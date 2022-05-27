@@ -50,6 +50,10 @@ public:
     /// You can find more details about this under ExecuteScalarSubqueriesMatcher::visit
     bool usesViewSource() const { return uses_view_source; }
 
+    static void addLimitsAndQuotas(QueryPipeline & pipeline, const Context & context, const SelectQueryOptions & options, bool has_remote);
+
+    virtual bool hasRemoteStorage() const = 0;
+
 protected:
     ASTPtr query_ptr;
     ContextMutablePtr context;

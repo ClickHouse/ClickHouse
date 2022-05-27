@@ -80,6 +80,8 @@ void ExpressionStep::describeActions(FormatSettings & settings) const
     String prefix(settings.offset, ' ');
     bool first = true;
 
+    std::cerr << actions_dag->dumpDAG() << std::endl;
+
     auto expression = std::make_shared<ExpressionActions>(actions_dag);
     for (const auto & action : expression->getActions())
     {

@@ -576,7 +576,7 @@ void QueryPipeline::convertStructureTo(const ColumnsWithTypeAndName & columns)
         columns,
         ActionsDAG::MatchColumnsMode::Position);
 
-    auto actions = std::make_shared<ExpressionActions>(converting);
+    auto actions = std::make_shared<ExpressionActions>(std::move(converting));
     addExpression(output, actions, processors);
     addExpression(totals, actions, processors);
     addExpression(extremes, actions, processors);
