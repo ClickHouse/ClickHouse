@@ -1,4 +1,5 @@
 #include <Columns/ColumnTuple.h>
+#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNothing.h>
@@ -6,6 +7,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/ITupleFunction.h>
 #include <Functions/castTypeToEither.h>
+#include "Functions/IFunction.h"
 
 namespace DB
 {
@@ -1065,6 +1067,120 @@ public:
     }
 };
 
+
+/// An adaptor to call Norm/Distance function for tuple or array depending on the 1st argument type
+template <class Traits>
+class TupleOrArrayFunction : public IFunction
+{
+public:
+    static inline String name = Traits::name;
+
+    explicit TupleOrArrayFunction(ContextPtr context_)
+        : IFunction()
+        , tuple_function(Traits::CreateTupleFunction(context_))
+        , array_function(Traits::CreateArrayFunction(context_)) {}
+
+    static FunctionPtr create(ContextPtr context_) { return std::make_shared<TupleOrArrayFunction>(context_); }
+
+    String getName() const override { return name; }
+
+    size_t getNumberOfArguments() const override { return tuple_function->getNumberOfArguments(); }
+
+    bool useDefaultImplementationForConstants() const override { return true; }
+
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        bool is_array = checkDataTypes<DataTypeArray>(arguments[0].type.get());
+        return (is_array ? array_function : tuple_function)->getReturnTypeImpl(arguments);
+    }
+
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    {
+        bool is_array = checkDataTypes<DataTypeArray>(arguments[0].type.get());
+        return (is_array ? array_function : tuple_function)->executeImpl(arguments, result_type, input_rows_count);
+    }
+
+private:
+    FunctionPtr tuple_function;
+    FunctionPtr array_function;
+};
+
+extern FunctionPtr createFunctionArrayL1Norm(ContextPtr context_);
+extern FunctionPtr createFunctionArrayL2Norm(ContextPtr context_);
+extern FunctionPtr createFunctionArrayLinfNorm(ContextPtr context_);
+
+extern FunctionPtr createFunctionArrayL1Distance(ContextPtr context_);
+extern FunctionPtr createFunctionArrayL2Distance(ContextPtr context_);
+extern FunctionPtr createFunctionArrayLinfDistance(ContextPtr context_);
+extern FunctionPtr createFunctionArrayCosineDistance(ContextPtr context_);
+
+struct L1NormTraits
+{
+    static inline String name = "L1Norm";
+
+    static constexpr auto CreateTupleFunction = FunctionL1Norm::create;
+    static constexpr auto CreateArrayFunction = createFunctionArrayL1Norm;
+};
+
+struct L2NormTraits
+{
+    static inline String name = "L2Norm";
+
+    static constexpr auto CreateTupleFunction = FunctionL2Norm::create;
+    static constexpr auto CreateArrayFunction = createFunctionArrayL2Norm;
+};
+
+struct LinfNormTraits
+{
+    static inline String name = "LinfNorm";
+
+    static constexpr auto CreateTupleFunction = FunctionLinfNorm::create;
+    static constexpr auto CreateArrayFunction = createFunctionArrayLinfNorm;
+};
+
+struct L1DistanceTraits
+{
+    static inline String name = "L1Distance";
+
+    static constexpr auto CreateTupleFunction = FunctionL1Distance::create;
+    static constexpr auto CreateArrayFunction = createFunctionArrayL1Distance;
+};
+
+struct L2DistanceTraits
+{
+    static inline String name = "L2Distance";
+
+    static constexpr auto CreateTupleFunction = FunctionL2Distance::create;
+    static constexpr auto CreateArrayFunction = createFunctionArrayL2Distance;
+};
+
+struct LinfDistanceTraits
+{
+    static inline String name = "LinfDistance";
+
+    static constexpr auto CreateTupleFunction = FunctionLinfDistance::create;
+    static constexpr auto CreateArrayFunction = createFunctionArrayLinfDistance;
+};
+
+struct CosineDistanceTraits
+{
+    static inline String name = "cosineDistance";
+
+    static constexpr auto CreateTupleFunction = FunctionCosineDistance::create;
+    static constexpr auto CreateArrayFunction = createFunctionArrayCosineDistance;
+};
+
+using TupleOrArrayFunctionL1Norm = TupleOrArrayFunction<L1NormTraits>;
+using TupleOrArrayFunctionL2Norm = TupleOrArrayFunction<L2NormTraits>;
+using TupleOrArrayFunctionLinfNorm = TupleOrArrayFunction<LinfNormTraits>;
+
+using TupleOrArrayFunctionL1Distance = TupleOrArrayFunction<L1DistanceTraits>;
+using TupleOrArrayFunctionL2Distance = TupleOrArrayFunction<L2DistanceTraits>;
+using TupleOrArrayFunctionLinfDistance = TupleOrArrayFunction<LinfDistanceTraits>;
+using TupleOrArrayFunctionCosineDistance = TupleOrArrayFunction<CosineDistanceTraits>;
+
 void registerVectorFunctions(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionTuplePlus>();
@@ -1081,19 +1197,19 @@ void registerVectorFunctions(FunctionFactory & factory)
     factory.registerFunction<FunctionDotProduct>();
     factory.registerAlias("scalarProduct", FunctionDotProduct::name, FunctionFactory::CaseInsensitive);
 
-    factory.registerFunction<FunctionL1Norm>();
-    factory.registerFunction<FunctionL2Norm>();
-    factory.registerFunction<FunctionLinfNorm>();
+    factory.registerFunction<TupleOrArrayFunctionL1Norm>();
+    factory.registerFunction<TupleOrArrayFunctionL2Norm>();
+    factory.registerFunction<TupleOrArrayFunctionLinfNorm>();
     factory.registerFunction<FunctionLpNorm>();
 
-    factory.registerAlias("normL1", FunctionL1Norm::name, FunctionFactory::CaseInsensitive);
-    factory.registerAlias("normL2", FunctionL2Norm::name, FunctionFactory::CaseInsensitive);
-    factory.registerAlias("normLinf", FunctionLinfNorm::name, FunctionFactory::CaseInsensitive);
+    factory.registerAlias("normL1", TupleOrArrayFunctionL1Norm::name, FunctionFactory::CaseInsensitive);
+    factory.registerAlias("normL2", TupleOrArrayFunctionL2Norm::name, FunctionFactory::CaseInsensitive);
+    factory.registerAlias("normLinf", TupleOrArrayFunctionLinfNorm::name, FunctionFactory::CaseInsensitive);
     factory.registerAlias("normLp", FunctionLpNorm::name, FunctionFactory::CaseInsensitive);
 
-    factory.registerFunction<FunctionL1Distance>();
-    factory.registerFunction<FunctionL2Distance>();
-    factory.registerFunction<FunctionLinfDistance>();
+    factory.registerFunction<TupleOrArrayFunctionL1Distance>();
+    factory.registerFunction<TupleOrArrayFunctionL2Distance>();
+    factory.registerFunction<TupleOrArrayFunctionLinfDistance>();
     factory.registerFunction<FunctionLpDistance>();
 
     factory.registerAlias("distanceL1", FunctionL1Distance::name, FunctionFactory::CaseInsensitive);
@@ -1111,6 +1227,6 @@ void registerVectorFunctions(FunctionFactory & factory)
     factory.registerAlias("normalizeLinf", FunctionLinfNormalize::name, FunctionFactory::CaseInsensitive);
     factory.registerAlias("normalizeLp", FunctionLpNormalize::name, FunctionFactory::CaseInsensitive);
 
-    factory.registerFunction<FunctionCosineDistance>();
+    factory.registerFunction<TupleOrArrayFunctionCosineDistance>();
 }
 }
