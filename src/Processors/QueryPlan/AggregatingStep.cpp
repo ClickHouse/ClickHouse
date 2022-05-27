@@ -336,7 +336,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
             return std::make_shared<AggregatingTransform>(header, transform_params, many_data, counter++, merge_threads, temporary_data_merge_threads);
         });
 
-        pipeline.resize(1);
+        pipeline.resize(pipeline.getNumStreams(), /* force */ true);
 
         aggregating = collector.detachProcessors(0);
     }
