@@ -135,8 +135,13 @@
          (do
            (info node "Coordination files exists, going to compress")
            (c/cd data-dir
-                 (c/exec :tar :czf "coordination.tar.gz" "coordination")))))
-      (let [common-logs [stderr-file (str logs-dir "/clickhouse-keeper.log") (str data-dir "/coordination.tar.gz")]
+                 (c/exec :tar :czf "coordination.tar.gz" "coordination"))))
+       (if (cu/exists? (str logs-dir "/clickhouse-keeper.log"))
+         (do
+           (info node "Clickhouse logs exist, going to compress")
+           (c/cd logs-dir
+                 (c/exec :gzip "clickhouse-keeper.log"))) (info node "Logs are missing")))
+      (let [common-logs [stderr-file (str logs-dir "/clickhouse-keeper.log.gz") (str data-dir "/coordination.tar.gz")]
             gdb-log (str logs-dir "/gdb.log")]
         (if (cu/exists? (str logs-dir "/gdb.log"))
           (conj common-logs gdb-log)
