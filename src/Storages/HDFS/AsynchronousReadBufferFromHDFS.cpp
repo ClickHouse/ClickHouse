@@ -48,6 +48,11 @@ AsynchronousReadBufferFromHDFS::AsynchronousReadBufferFromHDFS(
     ProfileEvents::increment(ProfileEvents::RemoteFSBuffers);
     if (use_prefetch)
         prefetch();
+
+    sum_interval = 0;
+    sum_duration = 0;
+    sum_wait = 0;
+    next_times = 0;
 }
 
 bool AsynchronousReadBufferFromHDFS::hasPendingDataToRead()
@@ -95,12 +100,22 @@ std::optional<size_t> AsynchronousReadBufferFromHDFS::getFileSize()
     return impl->getFileSize();
 }
 
+String AsynchronousReadBufferFromHDFS::getFileName() const
+{
+    return impl->getFileName();
+}
+
 
 bool AsynchronousReadBufferFromHDFS::nextImpl()
 {
     if (!hasPendingDataToRead())
         return false;
 
+    ++next_times;
+    sum_interval += interval_watch.elapsedMicroseconds();
+
+    Stopwatch next_watch;
+    Int64 wait = -1;
     size_t size = 0;
     if (prefetch_future.valid())
     {
@@ -117,7 +132,8 @@ bool AsynchronousReadBufferFromHDFS::nextImpl()
 
             /// If prefetch_future is valid, size should always be greater than zero.
             assert(offset < size);
-            ProfileEvents::increment(ProfileEvents::AsynchronousReadWaitMicroseconds, watch.elapsedMicroseconds());
+            wait = watch.elapsedMicroseconds();
+            ProfileEvents::increment(ProfileEvents::AsynchronousReadWaitMicroseconds, wait);
         }
 
         prefetch_buffer.swap(memory);
@@ -149,6 +165,9 @@ bool AsynchronousReadBufferFromHDFS::nextImpl()
     if (use_prefetch)
         prefetch();
 
+    sum_duration += next_watch.elapsedMicroseconds();
+    sum_wait += wait;
+    interval_watch.restart();
     return size;
 }
 
@@ -219,6 +238,18 @@ void AsynchronousReadBufferFromHDFS::finalize()
 
 AsynchronousReadBufferFromHDFS::~AsynchronousReadBufferFromHDFS()
 {
+    LOG_INFO(
+        log,
+        "object:{} path:{} next_times:{} interval:{}|{} duration:{}|{} wait:{}|{}",
+        reinterpret_cast<std::uintptr_t>(this),
+        getFileName(),
+        next_times,
+        sum_interval,
+        double(sum_interval)/next_times,
+        sum_duration,
+        double(sum_duration)/next_times,
+        sum_wait,
+        double(sum_wait)/next_times);
     finalize();
 }
 
