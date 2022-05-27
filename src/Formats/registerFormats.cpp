@@ -15,6 +15,9 @@ void registerFileSegmentationEngineRegexp(FormatFactory & factory);
 void registerFileSegmentationEngineJSONAsString(FormatFactory & factory);
 void registerFileSegmentationEngineJSONAsObject(FormatFactory & factory);
 void registerFileSegmentationEngineJSONCompactEachRow(FormatFactory & factory);
+#if USE_HIVE
+void registerFileSegmentationEngineHiveText(FormatFactory & factory);
+#endif
 
 /// Formats for both input/output.
 
@@ -55,6 +58,8 @@ void registerInputFormatRawBLOB(FormatFactory & factory);
 void registerOutputFormatRawBLOB(FormatFactory & factory);
 void registerInputFormatCustomSeparated(FormatFactory & factory);
 void registerOutputFormatCustomSeparated(FormatFactory & factory);
+void registerInputFormatCapnProto(FormatFactory & factory);
+void registerOutputFormatCapnProto(FormatFactory & factory);
 
 /// Output only (presentational) formats.
 
@@ -71,7 +76,7 @@ void registerOutputFormatNull(FormatFactory & factory);
 void registerOutputFormatMySQLWire(FormatFactory & factory);
 void registerOutputFormatMarkdown(FormatFactory & factory);
 void registerOutputFormatPostgreSQLWire(FormatFactory & factory);
-void registerOutputFormatCapnProto(FormatFactory & factory);
+void registerOutputFormatPrometheus(FormatFactory & factory);
 
 /// Input only formats.
 
@@ -79,7 +84,7 @@ void registerInputFormatRegexp(FormatFactory & factory);
 void registerInputFormatJSONAsString(FormatFactory & factory);
 void registerInputFormatJSONAsObject(FormatFactory & factory);
 void registerInputFormatLineAsString(FormatFactory & factory);
-void registerInputFormatCapnProto(FormatFactory & factory);
+void registerInputFormatMySQLDump(FormatFactory & factory);
 
 #if USE_HIVE
 void registerInputFormatHiveText(FormatFactory & factory);
@@ -113,6 +118,7 @@ void registerRegexpSchemaReader(FormatFactory & factory);
 void registerTSKVSchemaReader(FormatFactory & factory);
 void registerValuesSchemaReader(FormatFactory & factory);
 void registerTemplateSchemaReader(FormatFactory & factory);
+void registerMySQLSchemaReader(FormatFactory & factory);
 
 void registerFileExtensions(FormatFactory & factory);
 
@@ -127,6 +133,10 @@ void registerFormats()
     registerFileSegmentationEngineJSONAsString(factory);
     registerFileSegmentationEngineJSONAsObject(factory);
     registerFileSegmentationEngineJSONCompactEachRow(factory);
+#if USE_HIVE
+    registerFileSegmentationEngineHiveText(factory);
+#endif
+
 
     registerInputFormatNative(factory);
     registerOutputFormatNative(factory);
@@ -181,6 +191,7 @@ void registerFormats()
     registerOutputFormatMarkdown(factory);
     registerOutputFormatPostgreSQLWire(factory);
     registerOutputFormatCapnProto(factory);
+    registerOutputFormatPrometheus(factory);
 
     registerInputFormatRegexp(factory);
     registerInputFormatJSONAsString(factory);
@@ -191,6 +202,7 @@ void registerFormats()
 #endif
 
     registerInputFormatCapnProto(factory);
+    registerInputFormatMySQLDump(factory);
 
     registerNonTrivialPrefixAndSuffixCheckerJSONEachRow(factory);
     registerNonTrivialPrefixAndSuffixCheckerJSONAsString(factory);
@@ -219,6 +231,7 @@ void registerFormats()
     registerTSKVSchemaReader(factory);
     registerValuesSchemaReader(factory);
     registerTemplateSchemaReader(factory);
+    registerMySQLSchemaReader(factory);
 }
 
 }

@@ -251,6 +251,9 @@ namespace
 
 void DDLRenamingSettings::setNewTableName(const DatabaseAndTableName & old_table_name, const DatabaseAndTableName & new_table_name)
 {
+    if (old_table_name.first.empty() || old_table_name.second.empty() || new_table_name.first.empty() || new_table_name.second.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty names are not allowed for DDLRenamingSettings::setNewTableName");
+
     auto it = old_to_new_table_names.find(old_table_name);
     if ((it != old_to_new_table_names.end()))
     {
@@ -266,6 +269,9 @@ void DDLRenamingSettings::setNewTableName(const DatabaseAndTableName & old_table
 
 void DDLRenamingSettings::setNewDatabaseName(const String & old_database_name, const String & new_database_name)
 {
+    if (old_database_name.empty() || new_database_name.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty names are not allowed for DDLRenamingSettings::setNewDatabaseName");
+
     auto it = old_to_new_database_names.find(old_database_name);
     if ((it != old_to_new_database_names.end()))
     {
@@ -277,12 +283,12 @@ void DDLRenamingSettings::setNewDatabaseName(const String & old_database_name, c
     old_to_new_database_names[old_database_name] = new_database_name;
 }
 
-void DDLRenamingSettings::setFromBackupQuery(const ASTBackupQuery & backup_query, const String & current_database)
+void DDLRenamingSettings::setFromBackupQuery(const ASTBackupQuery & backup_query)
 {
-    setFromBackupQuery(backup_query.elements, current_database);
+    setFromBackupQuery(backup_query.elements);
 }
 
-void DDLRenamingSettings::setFromBackupQuery(const ASTBackupQuery::Elements & backup_query_elements, const String & current_database)
+void DDLRenamingSettings::setFromBackupQuery(const ASTBackupQuery::Elements & backup_query_elements)
 {
     old_to_new_table_names.clear();
     old_to_new_database_names.clear();
@@ -299,15 +305,15 @@ void DDLRenamingSettings::setFromBackupQuery(const ASTBackupQuery::Elements & ba
                 String database_name = element.name.first;
                 if (element.name_is_in_temp_db)
                     database_name = DatabaseCatalog::TEMPORARY_DATABASE;
-                else if (database_name.empty())
-                    database_name = current_database;
+                assert(!table_name.empty());
+                assert(!database_name.empty());
 
                 const String & new_table_name = element.new_name.second;
                 String new_database_name = element.new_name.first;
                 if (element.new_name_is_in_temp_db)
                     new_database_name = DatabaseCatalog::TEMPORARY_DATABASE;
-                else if (new_database_name.empty())
-                    new_database_name = current_database;
+                assert(!new_table_name.empty());
+                assert(!new_database_name.empty());
 
                 setNewTableName({database_name, table_name}, {new_database_name, new_table_name});
                 break;
@@ -318,10 +324,12 @@ void DDLRenamingSettings::setFromBackupQuery(const ASTBackupQuery::Elements & ba
                 String database_name = element.name.first;
                 if (element.name_is_in_temp_db)
                     database_name = DatabaseCatalog::TEMPORARY_DATABASE;
+                assert(!database_name.empty());
 
                 String new_database_name = element.new_name.first;
                 if (element.new_name_is_in_temp_db)
                     new_database_name = DatabaseCatalog::TEMPORARY_DATABASE;
+                assert(!new_database_name.empty());
 
                 setNewDatabaseName(database_name, new_database_name);
                 break;

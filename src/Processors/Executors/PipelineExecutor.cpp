@@ -10,7 +10,7 @@
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
-#include <base/scope_guard_safe.h>
+#include <Common/scope_guard_safe.h>
 
 #ifndef NDEBUG
     #include <Common/Stopwatch.h>
@@ -185,10 +185,10 @@ void PipelineExecutor::executeSingleThread(size_t thread_num)
     auto & context = tasks.getThreadContext(thread_num);
     LOG_TRACE(log,
               "Thread finished. Total time: {} sec. Execution time: {} sec. Processing time: {} sec. Wait time: {} sec.",
-              (context.total_time_ns / 1e9),
-              (context.execution_time_ns / 1e9),
-              (context.processing_time_ns / 1e9),
-              (context.wait_time_ns / 1e9));
+              context.total_time_ns / 1e9,
+              context.execution_time_ns / 1e9,
+              context.processing_time_ns / 1e9,
+              context.wait_time_ns / 1e9);
 #endif
 }
 

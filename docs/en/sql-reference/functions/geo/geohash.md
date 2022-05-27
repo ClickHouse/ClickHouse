@@ -1,5 +1,5 @@
 ---
-toc_title: Geohash
+sidebar_label: Geohash
 ---
 
 # Functions for Working with Geohash {#geohash}
@@ -80,8 +80,9 @@ geohashesInBox(longitude_min, latitude_min, longitude_max, latitude_max, precisi
 -   `latitude_max` — Maximum latitude. Range: `[-90°, 90°]`. Type: [Float](../../../sql-reference/data-types/float.md).
 -   `precision` — Geohash precision. Range: `[1, 12]`. Type: [UInt8](../../../sql-reference/data-types/int-uint.md).
 
-!!! info "Note"
-    All coordinate parameters must be of the same type: either `Float32` or `Float64`.
+:::note    
+All coordinate parameters must be of the same type: either `Float32` or `Float64`.
+:::
 
 **Returned values**
 
@@ -90,8 +91,9 @@ geohashesInBox(longitude_min, latitude_min, longitude_max, latitude_max, precisi
 
 Type: [Array](../../../sql-reference/data-types/array.md)([String](../../../sql-reference/data-types/string.md)).
 
-!!! info "Note"
-    Function throws an exception if resulting array is over 10’000’000 items long.
+:::note    
+Function throws an exception if resulting array is over 10’000’000 items long.
+:::
 
 **Example**
 

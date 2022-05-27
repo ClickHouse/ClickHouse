@@ -1,11 +1,11 @@
 ---
-toc_priority: 45
-toc_title: Hierarchical dictionaries
+sidebar_position: 45
+sidebar_label: Hierarchical dictionaries
 ---
 
-# Hierarchical Dictionaries {#hierarchical-dictionaries}
+# Hierarchical Dictionaries 
 
-ClickHouse supports hierarchical dictionaries with a [numeric key](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-structure.md#ext_dict-numeric-key).
+ClickHouse supports hierarchical dictionaries with a [numeric key](../../dictionaries/external-dictionaries/external-dicts-dict-structure.md#numeric-key).
 
 Look at the following hierarchical structure:
 
@@ -35,7 +35,7 @@ This hierarchy can be expressed as the following dictionary table.
 
 This table contains a column `parent_region` that contains the key of the nearest parent for the element.
 
-ClickHouse supports the [hierarchical](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-structure.md#hierarchical-dict-attr) property for [external dictionary](../../../sql-reference/dictionaries/external-dictionaries/index.md) attributes. This property allows you to configure the hierarchical dictionary similar to described above.
+ClickHouse supports the [hierarchical](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-structure.md#hierarchical-dict-attr) property for [external dictionary](../../../sql-reference/dictionaries/external-dictionaries/) attributes. This property allows you to configure the hierarchical dictionary similar to described above.
 
 The [dictGetHierarchy](../../../sql-reference/functions/ext-dict-functions.md#dictgethierarchy) function allows you to get the parent chain of an element.
 

@@ -1,1 +1,0 @@
-../../../en/sql-reference/functions/tuple-functions.md

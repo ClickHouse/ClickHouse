@@ -12,6 +12,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTColumnsMatcher.h>
+#include <Parsers/ASTColumnsTransformers.h>
 #include <Parsers/ASTQualifiedAsterisk.h>
 #include <Parsers/ParserTablesInSelectQuery.h>
 #include <Parsers/ExpressionListParsers.h>
@@ -81,6 +82,7 @@ public:
         /// By default should_add_column_predicate returns true for any column name
         void addTableColumns(
             const String & table_name,
+            ASTs & columns,
             ShouldAddColumnPredicate should_add_column_predicate = [](const String &) { return true; })
         {
             auto it = table_columns.find(table_name);
@@ -105,7 +107,7 @@ public:
                     else
                         identifier = std::make_shared<ASTIdentifier>(std::vector<String>{it->first, column.name});
 
-                    new_select_expression_list->children.emplace_back(std::move(identifier));
+                    columns.emplace_back(std::move(identifier));
                 }
             }
         }
@@ -129,14 +131,18 @@ private:
 
         for (const auto & child : node.children)
         {
-            if (child->as<ASTAsterisk>())
+            ASTs columns;
+            if (const auto * asterisk = child->as<ASTAsterisk>())
             {
                 has_asterisks = true;
 
                 for (auto & table_name : data.tables_order)
-                    data.addTableColumns(table_name);
+                    data.addTableColumns(table_name, columns);
+
+                for (const auto & transformer : asterisk->children)
+                    IASTColumnsTransformer::transform(transformer, columns);
             }
-            else if (child->as<ASTQualifiedAsterisk>())
+            else if (const auto * qualified_asterisk = child->as<ASTQualifiedAsterisk>())
             {
                 has_asterisks = true;
 
@@ -144,17 +150,44 @@ private:
                     throw Exception("Logical error: qualified asterisk must have exactly one child", ErrorCodes::LOGICAL_ERROR);
                 auto & identifier = child->children[0]->as<ASTTableIdentifier &>();
 
-                data.addTableColumns(identifier.name());
+                data.addTableColumns(identifier.name(), columns);
+
+                // QualifiedAsterisk's transformers start to appear at child 1
+                for (auto it = qualified_asterisk->children.begin() + 1; it != qualified_asterisk->children.end(); ++it)
+                {
+                    IASTColumnsTransformer::transform(*it, columns);
+                }
             }
-            else if (auto * columns_matcher = child->as<ASTColumnsMatcher>())
+            else if (const auto * columns_list_matcher = child->as<ASTColumnsListMatcher>())
+            {
+                has_asterisks = true;
+
+                for (const auto & ident : columns_list_matcher->column_list->children)
+                    columns.emplace_back(ident->clone());
+
+                for (const auto & transformer : columns_list_matcher->children)
+                    IASTColumnsTransformer::transform(transformer, columns);
+            }
+            else if (const auto * columns_regexp_matcher = child->as<ASTColumnsRegexpMatcher>())
             {
                 has_asterisks = true;
 
                 for (auto & table_name : data.tables_order)
-                    data.addTableColumns(table_name, [&](const String & column_name) { return columns_matcher->isColumnMatching(column_name); });
+                    data.addTableColumns(
+                        table_name,
+                        columns,
+                        [&](const String & column_name) { return columns_regexp_matcher->isColumnMatching(column_name); });
+
+                for (const auto & transformer : columns_regexp_matcher->children)
+                    IASTColumnsTransformer::transform(transformer, columns);
             }
             else
                 data.new_select_expression_list->children.push_back(child);
+
+            data.new_select_expression_list->children.insert(
+                data.new_select_expression_list->children.end(),
+                std::make_move_iterator(columns.begin()),
+                std::make_move_iterator(columns.end()));
         }
 
         if (!has_asterisks)
@@ -259,7 +292,7 @@ struct CollectColumnIdentifiersMatcher
         void addIdentifier(const ASTIdentifier & ident)
         {
             for (const auto & aliases : ignored)
-                if (aliases.count(ident.name()))
+                if (aliases.contains(ident.name()))
                     return;
             identifiers.push_back(const_cast<ASTIdentifier *>(&ident));
         }
@@ -324,7 +357,7 @@ struct CheckAliasDependencyVisitorData
 
     void visit(ASTIdentifier & ident, ASTPtr &)
     {
-        if (!dependency && aliases.count(ident.name()))
+        if (!dependency && aliases.contains(ident.name()))
             dependency = &ident;
     }
 };
@@ -470,7 +503,7 @@ void restoreName(ASTIdentifier & ident, const String & original_name, NameSet & 
     if (original_name.empty())
         return;
 
-    if (!restored_names.count(original_name))
+    if (!restored_names.contains(original_name))
     {
         ident.setAlias(original_name);
         restored_names.emplace(original_name);
@@ -502,7 +535,7 @@ std::vector<TableNeededColumns> normalizeColumnNamesExtractNeeded(
 
     for (ASTIdentifier * ident : identifiers)
     {
-        bool got_alias = aliases.count(ident->name());
+        bool got_alias = aliases.contains(ident->name());
         bool allow_ambiguous = got_alias; /// allow ambiguous column overridden by an alias
 
         if (auto table_pos = IdentifierSemantic::chooseTableColumnMatch(*ident, tables, allow_ambiguous))
@@ -520,13 +553,13 @@ std::vector<TableNeededColumns> normalizeColumnNamesExtractNeeded(
                 }
                 String short_name = ident->shortName();
                 String original_long_name;
-                if (public_identifiers.count(ident))
+                if (public_identifiers.contains(ident))
                     original_long_name = ident->name();
 
                 size_t count = countTablesWithColumn(tables, short_name);
 
                 /// isValidIdentifierBegin retuired to be consistent with TableJoin::deduplicateAndQualifyColumnNames
-                if (count > 1 || aliases.count(short_name) || !isValidIdentifierBegin(short_name.at(0)))
+                if (count > 1 || aliases.contains(short_name) || !isValidIdentifierBegin(short_name.at(0)))
                 {
                     const auto & table = tables[*table_pos];
                     IdentifierSemantic::setColumnLongName(*ident, table.table); /// table.column -> table_alias.column
@@ -654,7 +687,7 @@ void JoinToSubqueryTransformMatcher::visit(ASTSelectQuery & select, ASTPtr & ast
                     for (auto * ident : on_identifiers)
                     {
                         auto it = data.aliases.find(ident->name());
-                        if (!on_aliases.count(ident->name()) && it != data.aliases.end())
+                        if (!on_aliases.contains(ident->name()) && it != data.aliases.end())
                         {
                             auto alias_expression = it->second;
                             alias_pushdown[table_pos].push_back(alias_expression);
@@ -684,7 +717,7 @@ void JoinToSubqueryTransformMatcher::visit(ASTSelectQuery & select, ASTPtr & ast
 
     /// Check same name in aliases, USING and ON sections. Cannot push down alias to ON through USING cause of name masquerading.
     for (auto * ident : using_identifiers)
-        if (on_aliases.count(ident->name()))
+        if (on_aliases.contains(ident->name()))
             throw Exception("Cannot rewrite JOINs. Alias '" + ident->name() + "' appears both in ON and USING", ErrorCodes::NOT_IMPLEMENTED);
     using_identifiers.clear();
 

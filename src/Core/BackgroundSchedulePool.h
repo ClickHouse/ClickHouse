@@ -48,7 +48,9 @@ public:
 
     TaskHolder createTask(const std::string & log_name, const TaskFunc & function);
 
-    size_t getNumberOfThreads() const { return size; }
+    /// As for MergeTreeBackgroundExecutor we refuse to implement tasks eviction, because it will
+    /// be error prone. We support only increasing number of threads at runtime.
+    void increaseThreadsCount(size_t new_threads_count);
 
     /// thread_name_ cannot be longer then 13 bytes (2 bytes is reserved for "/D" suffix for delayExecutionThreadFunction())
     BackgroundSchedulePool(size_t size_, CurrentMetrics::Metric tasks_metric_, const char *thread_name_);
@@ -66,8 +68,6 @@ private:
     /// Remove task, that was scheduled with delay, from schedule.
     void cancelDelayedTask(const TaskInfoPtr & task_info, std::lock_guard<std::mutex> & task_schedule_mutex_lock);
 
-    /// Number for worker threads.
-    const size_t size;
     std::atomic<bool> shutdown {false};
     Threads threads;
     Poco::NotificationQueue queue;

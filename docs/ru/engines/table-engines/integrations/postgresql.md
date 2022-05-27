@@ -1,6 +1,6 @@
 ---
-toc_priority: 11
-toc_title: PostgreSQL
+sidebar_position: 11
+sidebar_label: PostgreSQL
 ---
 
 #PostgreSQL {#postgresql}
@@ -47,7 +47,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 PostgreSQL массивы конвертируются в массивы ClickHouse.
 
-!!! info "Внимание"
+:::info "Внимание"
     Будьте внимательны, в PostgreSQL массивы, созданные как `type_name[]`, являются многомерными и могут содержать в себе разное количество измерений в разных строках одной таблицы. Внутри ClickHouse допустимы только многомерные массивы с одинаковым кол-вом измерений во всех строках таблицы.
 
 Поддерживает несколько реплик, которые должны быть перечислены через `|`. Например:

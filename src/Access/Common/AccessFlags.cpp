@@ -178,7 +178,7 @@ namespace
             }
             else
             {
-                if (nodes.count(keyword))
+                if (nodes.contains(keyword))
                     throw Exception(keyword + " declared twice", ErrorCodes::LOGICAL_ERROR);
                 node = std::make_unique<Node>(keyword, node_type);
                 nodes[node->keyword] = node.get();
@@ -204,7 +204,7 @@ namespace
             {
                 auto parent_node = std::make_unique<Node>(parent_keyword);
                 it_parent = nodes.emplace(parent_node->keyword, parent_node.get()).first;
-                assert(!owned_nodes.count(parent_node->keyword));
+                assert(!owned_nodes.contains(parent_node->keyword));
                 std::string_view parent_keyword_as_string_view = parent_node->keyword;
                 owned_nodes[parent_keyword_as_string_view] = std::move(parent_node);
             }
@@ -224,9 +224,9 @@ namespace
 
 #           undef MAKE_ACCESS_FLAGS_NODE
 
-            if (!owned_nodes.count("NONE"))
+            if (!owned_nodes.contains("NONE"))
                 throw Exception("'NONE' not declared", ErrorCodes::LOGICAL_ERROR);
-            if (!owned_nodes.count("ALL"))
+            if (!owned_nodes.contains("ALL"))
                 throw Exception("'ALL' not declared", ErrorCodes::LOGICAL_ERROR);
 
             all_node = std::move(owned_nodes["ALL"]);

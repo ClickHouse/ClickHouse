@@ -1,6 +1,6 @@
 ---
-toc_priority: 19
-toc_title: AMPLab Big Data Benchmark
+sidebar_label: AMPLab Big Data Benchmark
+description: A benchmark dataset used for comparing the performance of data warehousing solutions.
 ---
 
 # AMPLab Big Data Benchmark {#amplab-big-data-benchmark}

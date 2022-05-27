@@ -1,7 +1,7 @@
 ---
 title: 如何从 ClickHouse 导出数据到一个文件?
 toc_hidden: true
-toc_priority: 10
+sidebar_position: 10
 ---
 
 # 如何从 ClickHouse 导出数据到一个文件? {#how-to-export-to-file}

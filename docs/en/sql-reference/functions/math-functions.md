@@ -1,6 +1,6 @@
 ---
-toc_priority: 44
-toc_title: Mathematical
+sidebar_position: 44
+sidebar_label: Mathematical
 ---
 
 # Mathematical Functions {#mathematical-functions}

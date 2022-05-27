@@ -805,6 +805,13 @@ inline void writeDateTimeText(DateTime64 datetime64, UInt32 scale, WriteBuffer &
     scale = scale > MaxScale ? MaxScale : scale;
 
     auto components = DecimalUtils::split(datetime64, scale);
+    /// -127914467.877 => whole = -127914467, fraction = 877 => new whole = -127914468(1965-12-12 12:12:12), new fraction = 123(.123) => 1965-12-12 12:12:12.123
+    if (components.whole < 0 && components.fractional != 0)
+    {
+        --components.whole;
+        components.fractional = DecimalUtils::scaleMultiplier<DateTime64::NativeType>(scale) - components.fractional;
+    }
+
     writeDateTimeText<date_delimeter, time_delimeter, between_date_time_delimiter>(LocalDateTime(components.whole, time_zone), buf);
 
     if (scale > 0)

@@ -158,7 +158,6 @@ void ASTTableJoin::formatImplBeforeTable(const FormatSettings & settings, Format
     switch (locality)
     {
         case Locality::Unspecified:
-            break;
         case Locality::Local:
             break;
         case Locality::Global:

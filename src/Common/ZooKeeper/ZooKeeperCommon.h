@@ -45,7 +45,7 @@ struct ZooKeeperResponse : virtual Response
 
 using ZooKeeperResponsePtr = std::shared_ptr<ZooKeeperResponse>;
 
-/// Exposed in header file for Yandex.Metrica code.
+/// Exposed in header file for some external code.
 struct ZooKeeperRequest : virtual Request
 {
     XID xid = 0;

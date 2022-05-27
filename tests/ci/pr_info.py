@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import json
+import logging
 import os
 
 from unidiff import PatchSet  # type: ignore
@@ -11,6 +12,8 @@ from env_helper import (
     GITHUB_RUN_URL,
     GITHUB_EVENT_PATH,
 )
+
+FORCE_TESTS_LABEL = "force tests"
 
 DIFF_IN_DOCUMENTATION_EXT = [
     ".html",
@@ -98,12 +101,20 @@ class PRInfo:
         if "pull_request" in github_event:  # pull request and other similar events
             self.number = github_event["pull_request"]["number"]
             if pr_event_from_api:
-                response = get_with_retries(
-                    f"https://api.github.com/repos/{GITHUB_REPOSITORY}"
-                    f"/pulls/{self.number}",
-                    sleep=RETRY_SLEEP,
-                )
-                github_event["pull_request"] = response.json()
+                try:
+                    response = get_with_retries(
+                        f"https://api.github.com/repos/{GITHUB_REPOSITORY}"
+                        f"/pulls/{self.number}",
+                        sleep=RETRY_SLEEP,
+                    )
+                    github_event["pull_request"] = response.json()
+                except Exception as e:
+                    logging.warning(
+                        "Unable to get pull request event %s from API, "
+                        "fallback to received event. Exception: %s",
+                        self.number,
+                        e,
+                    )
 
             if "after" in github_event:
                 self.sha = github_event["after"]
@@ -209,7 +220,7 @@ class PRInfo:
         else:
             diff_object = PatchSet(response.text)
             self.changed_files = {f.path for f in diff_object}
-        print("Fetched info about %d changed files", len(self.changed_files))
+        print("Fetched info about %d changed files" % len(self.changed_files))
 
     def get_dict(self):
         return {
@@ -247,7 +258,7 @@ class PRInfo:
 
     def can_skip_builds_and_use_version_from_master(self):
         # TODO: See a broken loop
-        if "force tests" in self.labels:
+        if FORCE_TESTS_LABEL in self.labels:
             return False
 
         if self.changed_files is None or not self.changed_files:
@@ -266,7 +277,7 @@ class PRInfo:
 
     def can_skip_integration_tests(self):
         # TODO: See a broken loop
-        if "force tests" in self.labels:
+        if FORCE_TESTS_LABEL in self.labels:
             return False
 
         if self.changed_files is None or not self.changed_files:
@@ -283,7 +294,7 @@ class PRInfo:
 
     def can_skip_functional_tests(self):
         # TODO: See a broken loop
-        if "force tests" in self.labels:
+        if FORCE_TESTS_LABEL in self.labels:
             return False
 
         if self.changed_files is None or not self.changed_files:

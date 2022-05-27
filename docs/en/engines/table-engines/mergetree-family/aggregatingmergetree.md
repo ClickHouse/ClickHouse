@@ -1,6 +1,6 @@
 ---
-toc_priority: 35
-toc_title: AggregatingMergeTree
+sidebar_position: 60
+sidebar_label:  AggregatingMergeTree
 ---
 
 # AggregatingMergeTree {#aggregatingmergetree}
@@ -42,8 +42,9 @@ When creating a `AggregatingMergeTree` table the same [clauses](../../../engines
 
 <summary>Deprecated Method for Creating a Table</summary>
 
-!!! attention "Attention"
-    Do not use this method in new projects and, if possible, switch the old projects to the method described above.
+:::warning
+Do not use this method in new projects and, if possible, switch the old projects to the method described above.
+:::
 
 ``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]

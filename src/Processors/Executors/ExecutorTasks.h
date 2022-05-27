@@ -50,6 +50,7 @@ public:
 
     void rethrowFirstThreadException();
 
+    void tryWakeUpAnyOtherThreadWithTasks(ExecutionThreadContext & self, std::unique_lock<std::mutex> & lock);
     void tryGetTask(ExecutionThreadContext & context);
     void pushTasks(Queue & queue, Queue & async_queue, ExecutionThreadContext & context);
 

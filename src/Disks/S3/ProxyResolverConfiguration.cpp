@@ -7,7 +7,7 @@
 #include "Poco/StreamCopier.h"
 #include <Poco/Net/HTTPRequest.h>
 #include <Poco/Net/HTTPResponse.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <Common/DNSResolver.h>
 
 namespace DB::ErrorCodes
@@ -63,7 +63,7 @@ Aws::Client::ClientConfigurationPerRequest ProxyResolverConfiguration::getConfig
         {
             auto resolved_endpoint = endpoint;
             resolved_endpoint.setHost(resolved_hosts[i].toString());
-            session = makeHTTPSession(endpoint, timeouts, false);
+            session = makeHTTPSession(resolved_endpoint, timeouts, false);
 
             try
             {

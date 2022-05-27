@@ -26,7 +26,7 @@ void ApplyWithAliasVisitor::visit(ASTPtr & ast, const Data & data)
             }
             for (const auto & with_alias : data.exprs)
             {
-                if (!current_names.count(with_alias.first))
+                if (!current_names.contains(with_alias.first))
                     with->children.push_back(with_alias.second->clone());
             }
         }
