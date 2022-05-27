@@ -166,17 +166,17 @@ struct MatchImpl
         }
         else
         {
-            auto regexp = Regexps::get<is_like, /*no_capture*/ true, case_insensitive>(needle);
+            const auto & regexp = Regexps::Regexp(Regexps::createRegexp<is_like, /*no_capture*/ true, case_insensitive>(needle));
 
             String required_substring;
             bool is_trivial;
             bool required_substring_is_prefix; /// for `anchored` execution of the regexp.
 
-            regexp->getAnalyzeResult(required_substring, is_trivial, required_substring_is_prefix);
+            regexp.getAnalyzeResult(required_substring, is_trivial, required_substring_is_prefix);
 
             if (required_substring.empty())
             {
-                if (!regexp->getRE2()) /// An empty regexp. Always matches.
+                if (!regexp.getRE2()) /// An empty regexp. Always matches.
                 {
                     if (haystack_size)
                         memset(res.data(), !negate, haystack_size * sizeof(res[0]));
@@ -186,7 +186,7 @@ struct MatchImpl
                     size_t prev_offset = 0;
                     for (size_t i = 0; i < haystack_size; ++i)
                     {
-                        const bool match = regexp->getRE2()->Match(
+                        const bool match = regexp.getRE2()->Match(
                                 {reinterpret_cast<const char *>(&haystack_data[prev_offset]), haystack_offsets[i] - prev_offset - 1},
                                 0,
                                 haystack_offsets[i] - prev_offset - 1,
@@ -241,7 +241,7 @@ struct MatchImpl
                             const size_t start_pos = (required_substring_is_prefix) ? (reinterpret_cast<const char *>(pos) - str_data) : 0;
                             const size_t end_pos = str_size;
 
-                            const bool match = regexp->getRE2()->Match(
+                            const bool match = regexp.getRE2()->Match(
                                     {str_data, str_size},
                                     start_pos,
                                     end_pos,
@@ -325,17 +325,17 @@ struct MatchImpl
         }
         else
         {
-            auto regexp = Regexps::get<is_like, /*no_capture*/ true, case_insensitive>(needle);
+            const auto & regexp = Regexps::Regexp(Regexps::createRegexp<is_like, /*no_capture*/ true, case_insensitive>(needle));
 
             String required_substring;
             bool is_trivial;
             bool required_substring_is_prefix; /// for `anchored` execution of the regexp.
 
-            regexp->getAnalyzeResult(required_substring, is_trivial, required_substring_is_prefix);
+            regexp.getAnalyzeResult(required_substring, is_trivial, required_substring_is_prefix);
 
             if (required_substring.empty())
             {
-                if (!regexp->getRE2()) /// An empty regexp. Always matches.
+                if (!regexp.getRE2()) /// An empty regexp. Always matches.
                 {
                     if (haystack_size)
                         memset(res.data(), !negate, haystack_size * sizeof(res[0]));
@@ -345,7 +345,7 @@ struct MatchImpl
                     size_t offset = 0;
                     for (size_t i = 0; i < haystack_size; ++i)
                     {
-                        const bool match = regexp->getRE2()->Match(
+                        const bool match = regexp.getRE2()->Match(
                                 {reinterpret_cast<const char *>(&haystack[offset]), N},
                                 0,
                                 N,
@@ -403,7 +403,7 @@ struct MatchImpl
                                 const size_t start_pos = (required_substring_is_prefix) ? (reinterpret_cast<const char *>(pos) - str_data) : 0;
                                 const size_t end_pos = N;
 
-                                const bool match = regexp->getRE2()->Match(
+                                const bool match = regexp.getRE2()->Match(
                                         {str_data, N},
                                         start_pos,
                                         end_pos,
@@ -454,6 +454,9 @@ struct MatchImpl
         size_t prev_haystack_offset = 0;
         size_t prev_needle_offset = 0;
 
+        Regexps::LocalCacheTable cache;
+        Regexps::RegexpPtr regexp;
+
         for (size_t i = 0; i < haystack_size; ++i)
         {
             const auto * const cur_haystack_data = &haystack_data[prev_haystack_offset];
@@ -479,7 +482,7 @@ struct MatchImpl
             }
             else
             {
-                auto regexp = Regexps::get<is_like, /*no_capture*/ true, case_insensitive>(needle);
+                cache.getOrSet<is_like, /*no_capture*/ true, case_insensitive>(needle, regexp);
 
                 regexp->getAnalyzeResult(required_substr, is_trivial, required_substring_is_prefix);
 
@@ -565,6 +568,9 @@ struct MatchImpl
         size_t prev_haystack_offset = 0;
         size_t prev_needle_offset = 0;
 
+        Regexps::LocalCacheTable cache;
+        Regexps::RegexpPtr regexp;
+
         for (size_t i = 0; i < haystack_size; ++i)
         {
             const auto * const cur_haystack_data = &haystack[prev_haystack_offset];
@@ -590,7 +596,7 @@ struct MatchImpl
             }
             else
             {
-                auto regexp = Regexps::get<is_like, /*no_capture*/ true, case_insensitive>(needle);
+                cache.getOrSet<is_like, /*no_capture*/ true, case_insensitive>(needle, regexp);
 
                 regexp->getAnalyzeResult(required_substr, is_trivial, required_substring_is_prefix);
 
