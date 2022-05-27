@@ -11,6 +11,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeInterval.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/convertFieldToType.h>
 
@@ -2086,64 +2087,40 @@ struct WindowFunctionLagLeadInFrame final : public WindowFunction
 };
 
 
-struct WindowFunctionNonNegativeDerivative final : public WindowFunction
+// nonNegativeDerivative(metric_column, timestamp_column[, INTERVAL 1 SECOND])
+struct WindowFunctionNonNegativeDerivative final : public RecurrentWindowFunction<0>
 {
+    static constexpr size_t ARGUMENT_METRIC = 0;
+    static constexpr size_t ARGUMENT_TIMESTAMP = 1;
+    static constexpr size_t ARGUMENT_INTERVAL = 2;
+
     WindowFunctionNonNegativeDerivative(const std::string & name_,
-                                 const DataTypes & argument_types_, const Array & parameters_)
-        : WindowFunction(name_, argument_types_, parameters_)
+                                            const DataTypes & argument_types_, const Array & parameters_)
+        : RecurrentWindowFunction(name_, argument_types_, parameters_)
     {
-        if (!parameters.empty())
+        if (argument_types.size() != 2 && argument_types.size() != 3)
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                            "Function {} cannot be parameterized", name_);
+                            "Function {} takes 2 or 3 arguments", name_);
         }
 
-        if (argument_types.empty())
+        if (!isNumber(argument_types[ARGUMENT_METRIC]))
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                            "Function {} takes at least one argument", name_);
+                            "Argument {} must be a number, '{}' given",
+                            ARGUMENT_METRIC,
+                            argument_types[ARGUMENT_METRIC]->getName());
         }
 
-        if (argument_types.size() == 1)
-        {
-            return;
-        }
-
-        if (!isInt64OrUInt64FieldType(argument_types[1]->getDefault().getType()))
+        if (!isNumber(argument_types[ARGUMENT_TIMESTAMP]) && !isDateTime(argument_types[ARGUMENT_TIMESTAMP]) && !isDateTime64(argument_types[ARGUMENT_TIMESTAMP]))
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                            "Offset must be an integer, '{}' given",
-                            argument_types[1]->getName());
+                            "Argument {} must be DateTime, DateTime64 or a number, '{}' given",
+                            ARGUMENT_TIMESTAMP,
+                            argument_types[ARGUMENT_TIMESTAMP]->getName());
         }
+        interval_length = applyVisitor(FieldVisitorConvertToNumber<Float64>(), parameters_[0].get<Float64>());
 
-        if (argument_types.size() == 2)
-        {
-            return;
-        }
-
-        const auto supertype = getLeastSupertype(DataTypes{argument_types[0], argument_types[2]});
-        if (!supertype)
-        {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                            "There is no supertype for the argument type '{}' and the default value type '{}'",
-                            argument_types[0]->getName(),
-                            argument_types[2]->getName());
-        }
-        if (!argument_types[0]->equals(*supertype))
-        {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                            "The supertype '{}' for the argument type '{}' and the default value type '{}' is not the same as the argument type",
-                            supertype->getName(),
-                            argument_types[0]->getName(),
-                            argument_types[2]->getName());
-        }
-
-        if (argument_types.size() > 3)
-        {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                            "Function '{}' accepts at most 3 arguments, {} given",
-                            name, argument_types.size());
-        }
     }
 
     DataTypePtr getReturnType() const override { return argument_types[0]; }
@@ -2153,58 +2130,58 @@ struct WindowFunctionNonNegativeDerivative final : public WindowFunction
     void windowInsertResultInto(const WindowTransform * transform,
                                 size_t function_index) override
     {
-        const auto & current_block = transform->blockAt(transform->current_row);
-        IColumn & to = *current_block.output_columns[function_index];
-        const auto & workspace = transform->workspaces[function_index];
+//        const auto & current_block = transform->blockAt(transform->current_row);
+//        IColumn & to = *current_block.output_columns[function_index];
+//        const auto & workspace = transform->workspaces[function_index];
+//
+//        const auto * interval_type = checkAndGetDataType<DataTypeInterval>(interval_column.type.get());
 
-        int64_t offset = 1;
-        if (argument_types.size() > 1)
-        {
-            offset = (*current_block.input_columns[
-                workspace.argument_column_indices[1]])[
-                         transform->current_row.row].get<Int64>();
+//        if (argument_types.size() > 2)
+//        {
+//            interval_kind = (*current_block.input_columns[
+//                workspace.argument_column_indices[2]])[
+//                         transform->current_row.row].get<IntervalKind>();
+//        }
+//
+//
+//        //const DataTypeInterval interval_type = (*current_block.input_columns[workspace.argument_column_indices[ARGUMENT_TIMESTAMP]]).getDataType();
+//        const auto * interval_type = checkAndGetDataType<DataTypeInterval>(interval_column.type.get());
+//
+//        if (!interval_type)
+//            throw Exception(
+//                "Illegal column for second argument of function " + getName() + ", must be an interval of time.",
+//                ErrorCodes::ILLEGAL_COLUMN);
+//
+//        const auto * interval_column_const_int64 = checkAndGetColumnConst<ColumnInt64>(interval_column.column.get());
+//        if (!interval_column_const_int64)
+//            throw Exception(
+//                "Illegal column for second argument of function " + getName() + ", must be a const interval of time.", ErrorCodes::ILLEGAL_COLUMN);
+//
+//        Int64 num_units = interval_column_const_int64->getValue<Int64>();
+//        if (num_units <= 0)
+//            throw Exception("Value for second argument of function " + getName() + " must be positive.", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
 
-            /// Either overflow or really negative value, both is not acceptable.
-            if (offset < 0)
-            {
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                                "The offset for function {} must be in (0, {}], {} given",
-                                getName(), INT64_MAX, offset);
-            }
-        }
+//        const IColumn & default_column = *current_block.input_columns[workspace.argument_column_indices[2]].get();
+//        const auto ts_scale = *current_block.input_columns[workspace.argument_column_indices[2]].get
+//
+//        if (interval_kind == IntervalKind::Second || interval_kind == IntervalKind::Millisecond || interval_kind == IntervalKind::Microsecond || interval_kind == IntervalKind::Nanosecond){
+//            auto nanosecs_in_interval = interval_kind.toAvgNanoseconds();
+//        }
 
-        const auto [target_row, offset_left] = transform->moveRowNumber(
-            transform->current_row, offset * (is_lead ? 1 : -1));
+        Float64 last_metric = getLastValueFromInputColumn<Float64>(transform, function_index, ARGUMENT_METRIC);
+        Float64 last_timestamp = getLastValueFromInputColumn<Float64>(transform, function_index, ARGUMENT_TIMESTAMP);
 
-        if (offset_left != 0
-            || target_row < transform->frame_start
-            || transform->frame_end <= target_row)
-        {
-            // Offset is outside the frame.
-            if (argument_types.size() > 2)
-            {
-                // Column with default values is specified.
-                // The conversion through Field is inefficient, but we accept
-                // subtypes of the argument type as a default value (for convenience),
-                // and it's a pain to write conversion that respects ColumnNothing
-                // and ColumnConst and so on.
-                const IColumn & default_column = *current_block.input_columns[
-                                                                   workspace.argument_column_indices[2]].get();
-                to.insert(default_column[transform->current_row.row]);
-            }
-            else
-            {
-                to.insertDefault();
-            }
-        }
-        else
-        {
-            // Offset is inside the frame.
-            to.insertFrom(*transform->blockAt(target_row).input_columns[
-                              workspace.argument_column_indices[0]],
-                          target_row.row);
-        }
+        Float64 curr_metric = getCurrentValueFromInputColumn<Float64>(transform, function_index, ARGUMENT_METRIC);
+        Float64 curr_timestamp = getCurrentValueFromInputColumn<Float64>(transform, function_index, ARGUMENT_TIMESTAMP);
+
+        Float64 time_elapsed = last_timestamp - curr_timestamp;
+        Float64 metric_diff = last_metric - curr_metric;
+        Float64 result = metric_diff / time_elapsed * interval_length;
+
+        setValueToOutputColumn(transform, function_index, result);
     }
+private:
+    Float64 interval_length = 1;
 };
 
 

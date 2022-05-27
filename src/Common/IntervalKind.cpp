@@ -7,6 +7,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int SYNTAX_ERROR;
+    extern const int NOT_IMPLEMENTED;
 }
 
 Int32 IntervalKind::toAvgSeconds() const
@@ -26,6 +27,19 @@ Int32 IntervalKind::toAvgSeconds() const
         case IntervalKind::Year: return 31556952;   /// The average length of a Gregorian year is equal to 365.2425 days
     }
     __builtin_unreachable();
+}
+
+UInt64 IntervalKind::toAvgNanoseconds() const
+{
+    switch (kind)
+    {
+        case IntervalKind::Nanosecond: return 1;
+        case IntervalKind::Microsecond: return 1000;
+        case IntervalKind::Millisecond: return 1000000;
+        case IntervalKind::Second: return 1 * 1000000000;
+        default:
+            throw Exception("Only sub-second interval can be converted to nanoseconds", ErrorCodes::NOT_IMPLEMENTED);
+    }
 }
 
 IntervalKind IntervalKind::fromAvgSeconds(Int64 num_seconds)
