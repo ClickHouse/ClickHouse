@@ -1,0 +1,45 @@
+/testc	c	
+/testc/c	c	
+/testc/c/c	c	
+/testc/c/c	d	
+/testc/c/c	e	
+/testc/c/c	f	
+/testc/c/c	kk	
+/testc/c/c/c	c	
+/testc/c/c/c/c	c	
+/testc/c/c/c/c/c	c	
+/testc/c/c/c/c/c/c	c	9
+/testc/c/c/c/c/c/c/c	c	10
+/testc/c/c/d	e	10
+/testc/c/c/d	f	11
+/testc/c/c/d	g	12
+/testc/c/c/e	g	13
+/testc/c/c/f	g	14
+/testc/c/c/kk	g	15
+/testz	c	
+/testz/c	cd	
+/testz/c/cd	dd	
+/testz/c/cd/dd	testc	y
+-------------------------
+/testc	c	
+/testc/c	c	
+/testc/c/c	c	
+/testc/c/c	d	
+/testc/c/c	e	
+/testc/c/c	f	
+/testc/c/c	kk	
+/testc/c/c/c	c	
+/testc/c/c/c/c	c	
+/testc/c/c/c/c/c	c	
+/testc/c/c/c/c/c/c	c	9
+/testc/c/c/c/c/c/c/c	c	10
+/testc/c/c/d	e	10
+/testc/c/c/d	f	11
+/testc/c/c/d	g	12
+/testc/c/c/e	g	13
+/testc/c/c/f	g	14
+/testc/c/c/kk	g	15
+/testz	c	
+/testz/c	cd	
+/testz/c/cd	dd	
+/testz/c/cd/dd	testc	y

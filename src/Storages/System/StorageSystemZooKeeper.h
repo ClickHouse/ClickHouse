@@ -18,6 +18,8 @@ public:
 
     static NamesAndTypesList getNamesAndTypes();
 
+    SinkToStoragePtr write(const ASTPtr & /*query*/, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr /*context*/) override;
+
 protected:
     using IStorageSystemOneBlock::IStorageSystemOneBlock;
 
