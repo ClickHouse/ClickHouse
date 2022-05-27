@@ -41,12 +41,10 @@ public:
     using SettingsPtr = std::unique_ptr<HDFSObjectStorageSettings>;
 
     HDFSObjectStorage(
-        FileCachePtr && cache_,
         const String & hdfs_root_path_,
         SettingsPtr settings_,
         const Poco::Util::AbstractConfiguration & config_)
-        : IObjectStorage(std::move(cache_))
-        , config(config_)
+        : config(config_)
         , hdfs_builder(createHDFSBuilder(hdfs_root_path_, config))
         , hdfs_fs(createHDFSFS(hdfs_builder.get()))
         , settings(std::move(settings_))

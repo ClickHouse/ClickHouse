@@ -4,7 +4,9 @@
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromString.h>
+#include <IO/WriteBufferFromFile.h>
 #include <Common/checkStackSize.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {

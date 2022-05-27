@@ -120,7 +120,7 @@ private:
     {
         std::size_t operator()(const AccessKeyAndOffset & key) const
         {
-            return std::hash<UInt128>()(key.first) ^ std::hash<UInt64>()(key.second);
+            return std::hash<UInt128>()(key.first.key) ^ std::hash<UInt64>()(key.second);
         }
     };
 

@@ -32,7 +32,7 @@ void registerDiskHDFS(DiskFactory & factory)
             context_->getSettingsRef().hdfs_replication
         );
         /// FIXME Cache currently unsupported :(
-        ObjectStoragePtr hdfs_storage = std::make_unique<HDFSObjectStorage>(nullptr, uri, std::move(settings), config);
+        ObjectStoragePtr hdfs_storage = std::make_unique<HDFSObjectStorage>(uri, std::move(settings), config);
 
         auto metadata_disk = prepareForLocalMetadata(name, config, config_prefix, context_).second;
         uint64_t copy_thread_pool_size = config.getUInt(config_prefix + ".thread_pool_size", 16);

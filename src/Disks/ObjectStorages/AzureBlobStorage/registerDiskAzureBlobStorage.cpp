@@ -72,9 +72,7 @@ void registerDiskAzureBlobStorage(DiskFactory & factory)
     {
         auto [metadata_path, metadata_disk] = prepareForLocalMetadata(name, config, config_prefix, context);
 
-        /// FIXME Cache currently unsupported :(
         ObjectStoragePtr azure_object_storage = std::make_unique<AzureObjectStorage>(
-            nullptr,
             name,
             getAzureBlobContainerClient(config, config_prefix),
             getAzureBlobStorageSettings(config, config_prefix, context));
@@ -100,14 +98,6 @@ void registerDiskAzureBlobStorage(DiskFactory & factory)
             checkReadWithOffset(*azure_blob_storage_disk);
             checkRemoveAccess(*azure_blob_storage_disk);
         }
-
-#ifdef NDEBUG
-        bool use_cache = true;
-#else
-        /// Current cache implementation lead to allocations in destructor of
-        /// read buffer.
-        bool use_cache = false;
-#endif
 
         azure_blob_storage_disk->startup(context);
 

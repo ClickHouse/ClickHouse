@@ -11,7 +11,6 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-std::shared_ptr<DiskCacheWrapper> wrapWithCache(
 static String getDiskMetadataPath(
     const String & name,
     const Poco::Util::AbstractConfiguration & config,

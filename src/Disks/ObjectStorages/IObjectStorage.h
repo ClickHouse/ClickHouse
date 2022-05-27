@@ -13,7 +13,6 @@
 
 #include <Disks/IO/AsynchronousReadIndirectBufferFromRemoteFS.h>
 #include <Common/ThreadPool.h>
-#include <Common/FileCache.h>
 #include <Disks/WriteMode.h>
 
 
@@ -58,9 +57,7 @@ using FinalizeCallback = std::function<void(size_t bytes_count)>;
 class IObjectStorage
 {
 public:
-    explicit IObjectStorage(FileCachePtr && cache_)
-        : cache(std::move(cache_))
-    {}
+    IObjectStorage() = default;
 
     /// Path exists or not
     virtual bool exists(const std::string & path) const = 0;
@@ -127,7 +124,7 @@ public:
     virtual ~IObjectStorage() = default;
 
     /// Path to directory with objects cache
-    std::string getCacheBasePath() const;
+    virtual std::string getCacheBasePath() const { return ""; }
 
     static AsynchronousReaderPtr getThreadPoolReader();
 
@@ -136,8 +133,6 @@ public:
     virtual void shutdown() = 0;
 
     virtual void startup() = 0;
-
-    void removeFromCache(const std::string & path);
 
     /// Apply new settings, in most cases reiniatilize client and some other staff
     virtual void applyNewSettings(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, ContextPtr context) = 0;
@@ -149,9 +144,6 @@ public:
     /// FIXME: confusing function required for a very specific case. Create new instance of object storage
     /// in different namespace.
     virtual std::unique_ptr<IObjectStorage> cloneObjectStorage(const std::string & new_namespace, const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, ContextPtr context) = 0;
-
-protected:
-    FileCachePtr cache;
 };
 
 using ObjectStoragePtr = std::unique_ptr<IObjectStorage>;
