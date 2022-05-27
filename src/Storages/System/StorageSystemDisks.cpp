@@ -1,7 +1,6 @@
 #include <Storages/System/StorageSystemDisks.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Interpreters/Context.h>
-#include <Disks/IDiskRemote.h>
 
 namespace DB
 {

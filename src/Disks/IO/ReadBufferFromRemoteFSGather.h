@@ -1,9 +1,9 @@
 #pragma once
 
 #include <Common/config.h>
-#include <Disks/IDiskRemote.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadSettings.h>
+#include <Disks/ObjectStorages/IObjectStorage.h>
 
 #if USE_AZURE_BLOB_STORAGE
 #include <azure/storage/blobs.hpp>
@@ -114,7 +114,7 @@ class ReadBufferFromS3Gather final : public ReadBufferFromRemoteFSGather
 {
 public:
     ReadBufferFromS3Gather(
-        std::shared_ptr<Aws::S3::S3Client> client_ptr_,
+        std::shared_ptr<const Aws::S3::S3Client> client_ptr_,
         const String & bucket_,
         const String & version_id_,
         const std::string & common_path_prefix_,
@@ -132,7 +132,7 @@ public:
     SeekableReadBufferPtr createImplementationBufferImpl(const String & path, size_t file_size) override;
 
 private:
-    std::shared_ptr<Aws::S3::S3Client> client_ptr;
+    std::shared_ptr<const Aws::S3::S3Client> client_ptr;
     String bucket;
     String version_id;
     UInt64 max_single_read_retries;
@@ -146,7 +146,7 @@ class ReadBufferFromAzureBlobStorageGather final : public ReadBufferFromRemoteFS
 {
 public:
     ReadBufferFromAzureBlobStorageGather(
-        std::shared_ptr<Azure::Storage::Blobs::BlobContainerClient> blob_container_client_,
+        std::shared_ptr<const Azure::Storage::Blobs::BlobContainerClient> blob_container_client_,
         const std::string & common_path_prefix_,
         const BlobsPathToSize & blobs_to_read_,
         size_t max_single_read_retries_,
@@ -162,7 +162,7 @@ public:
     SeekableReadBufferPtr createImplementationBufferImpl(const String & path, size_t file_size) override;
 
 private:
-    std::shared_ptr<Azure::Storage::Blobs::BlobContainerClient> blob_container_client;
+    std::shared_ptr<const Azure::Storage::Blobs::BlobContainerClient> blob_container_client;
     size_t max_single_read_retries;
     size_t max_single_download_retries;
 };
