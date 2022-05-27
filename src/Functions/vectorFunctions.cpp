@@ -810,12 +810,14 @@ public:
 
         const auto & p_column = arguments[1];
 
-        const auto * p_column_const = assert_cast<const ColumnConst *>(p_column.column.get());
+        if (!isColumnConst(*p_column.column) && p_column.column->size() != 1)
+            throw Exception{"Second argument for function " + getName() + " must be either constant Float64 or constant UInt", ErrorCodes::ILLEGAL_COLUMN};
+
         double p;
-        if (isFloat(p_column_const->getDataType()))
-            p = p_column_const->getFloat64(0);
-        else if (isUnsignedInteger(p_column_const->getDataType()))
-            p = p_column_const->getUInt(0);
+        if (isFloat(p_column.column->getDataType()))
+            p = p_column.column->getFloat64(0);
+        else if (isUnsignedInteger(p_column.column->getDataType()))
+            p = p_column.column->getUInt(0);
         else
             throw Exception{"Second argument for function " + getName() + " must be either constant Float64 or constant UInt", ErrorCodes::ILLEGAL_COLUMN};
 
@@ -1109,10 +1111,12 @@ private:
 
 extern FunctionPtr createFunctionArrayL1Norm(ContextPtr context_);
 extern FunctionPtr createFunctionArrayL2Norm(ContextPtr context_);
+extern FunctionPtr createFunctionArrayLpNorm(ContextPtr context_);
 extern FunctionPtr createFunctionArrayLinfNorm(ContextPtr context_);
 
 extern FunctionPtr createFunctionArrayL1Distance(ContextPtr context_);
 extern FunctionPtr createFunctionArrayL2Distance(ContextPtr context_);
+extern FunctionPtr createFunctionArrayLpDistance(ContextPtr context_);
 extern FunctionPtr createFunctionArrayLinfDistance(ContextPtr context_);
 extern FunctionPtr createFunctionArrayCosineDistance(ContextPtr context_);
 
@@ -1130,6 +1134,14 @@ struct L2NormTraits
 
     static constexpr auto CreateTupleFunction = FunctionL2Norm::create;
     static constexpr auto CreateArrayFunction = createFunctionArrayL2Norm;
+};
+
+struct LpNormTraits
+{
+    static inline String name = "LpNorm";
+
+    static constexpr auto CreateTupleFunction = FunctionLpNorm::create;
+    static constexpr auto CreateArrayFunction = createFunctionArrayLpNorm;
 };
 
 struct LinfNormTraits
@@ -1156,6 +1168,14 @@ struct L2DistanceTraits
     static constexpr auto CreateArrayFunction = createFunctionArrayL2Distance;
 };
 
+struct LpDistanceTraits
+{
+    static inline String name = "LpDistance";
+
+    static constexpr auto CreateTupleFunction = FunctionLpDistance::create;
+    static constexpr auto CreateArrayFunction = createFunctionArrayLpDistance;
+};
+
 struct LinfDistanceTraits
 {
     static inline String name = "LinfDistance";
@@ -1174,10 +1194,12 @@ struct CosineDistanceTraits
 
 using TupleOrArrayFunctionL1Norm = TupleOrArrayFunction<L1NormTraits>;
 using TupleOrArrayFunctionL2Norm = TupleOrArrayFunction<L2NormTraits>;
+using TupleOrArrayFunctionLpNorm = TupleOrArrayFunction<LpNormTraits>;
 using TupleOrArrayFunctionLinfNorm = TupleOrArrayFunction<LinfNormTraits>;
 
 using TupleOrArrayFunctionL1Distance = TupleOrArrayFunction<L1DistanceTraits>;
 using TupleOrArrayFunctionL2Distance = TupleOrArrayFunction<L2DistanceTraits>;
+using TupleOrArrayFunctionLpDistance = TupleOrArrayFunction<LpDistanceTraits>;
 using TupleOrArrayFunctionLinfDistance = TupleOrArrayFunction<LinfDistanceTraits>;
 using TupleOrArrayFunctionCosineDistance = TupleOrArrayFunction<CosineDistanceTraits>;
 
@@ -1200,7 +1222,7 @@ void registerVectorFunctions(FunctionFactory & factory)
     factory.registerFunction<TupleOrArrayFunctionL1Norm>();
     factory.registerFunction<TupleOrArrayFunctionL2Norm>();
     factory.registerFunction<TupleOrArrayFunctionLinfNorm>();
-    factory.registerFunction<FunctionLpNorm>();
+    factory.registerFunction<TupleOrArrayFunctionLpNorm>();
 
     factory.registerAlias("normL1", TupleOrArrayFunctionL1Norm::name, FunctionFactory::CaseInsensitive);
     factory.registerAlias("normL2", TupleOrArrayFunctionL2Norm::name, FunctionFactory::CaseInsensitive);
@@ -1210,7 +1232,7 @@ void registerVectorFunctions(FunctionFactory & factory)
     factory.registerFunction<TupleOrArrayFunctionL1Distance>();
     factory.registerFunction<TupleOrArrayFunctionL2Distance>();
     factory.registerFunction<TupleOrArrayFunctionLinfDistance>();
-    factory.registerFunction<FunctionLpDistance>();
+    factory.registerFunction<TupleOrArrayFunctionLpDistance>();
 
     factory.registerAlias("distanceL1", FunctionL1Distance::name, FunctionFactory::CaseInsensitive);
     factory.registerAlias("distanceL2", FunctionL2Distance::name, FunctionFactory::CaseInsensitive);
