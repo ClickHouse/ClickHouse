@@ -12,6 +12,12 @@ using QueryCachePtr = std::shared_ptr<QueryCache>;
 
 struct CacheEntry
 {
+    CacheEntry(Chunks chunks_, bool is_writing_)
+        : chunks(std::move(chunks_))
+        , is_writing(is_writing_)
+    {
+    }
+
     Chunks chunks;
     std::atomic<bool> is_writing;
 };
