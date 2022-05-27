@@ -17,6 +17,7 @@ CREATE TABLE prewhere
 ENGINE=MergeTree() ORDER BY a
 SETTINGS experimantal_stats_update_period = 100000;
 
+SELECT 'empty';
 EXPLAIN SYNTAX SELECT a, b, c, d, heavy, heavy2 FROM prewhere WHERE a == 10 AND b == 100 AND c == 0 AND d == 100;
 
 INSERT INTO prewhere SELECT
@@ -31,6 +32,7 @@ LIMIT 1000000;
 
 SYSTEM RELOAD STATISTICS prewhere;
 
+SELECT 'tdigest test';
 EXPLAIN SYNTAX SELECT a, b, c, d, heavy, heavy2 FROM prewhere WHERE a == 10 AND b == 100 AND c == 0 AND d == 100;
 EXPLAIN SYNTAX SELECT a, b, c, d, heavy, heavy2 FROM prewhere WHERE a > 0 AND c > 0 AND d < 100 AND b < 100;
 EXPLAIN SYNTAX SELECT a, b, c, d, heavy, heavy2 FROM prewhere WHERE a > 0 AND c > 0 AND d > 100 AND b > 100;
@@ -56,6 +58,7 @@ CREATE TABLE prewhere
 ENGINE=MergeTree() ORDER BY a
 SETTINGS experimantal_stats_update_period = 100000;
 
+SELECT 'empty 2';
 EXPLAIN SYNTAX SELECT a, b, c, d, heavy, heavy2 FROM prewhere WHERE a == 10 AND b == 100 AND c == 0 AND d == 100;
 
 INSERT INTO prewhere SELECT
@@ -69,6 +72,8 @@ FROM system.numbers
 LIMIT 1000000;
 
 SYSTEM RELOAD STATISTICS prewhere;
+
+SELECT 'auto test';
 
 -- test simple selectivity
 EXPLAIN SYNTAX SELECT a, b, c, d, heavy, heavy2 FROM prewhere WHERE a == 10 AND b == 100 AND c == 0 AND d == 100;
@@ -89,5 +94,7 @@ EXPLAIN SYNTAX SELECT b, d FROM prewhere WHERE c > 0 AND (b, d) > (10000, 10000)
 EXPLAIN SYNTAX SELECT b, d FROM prewhere WHERE c > 0 AND (10000, 10000) < (b, d);
 EXPLAIN SYNTAX SELECT b, d FROM prewhere WHERE c > 0 AND d > 10000 AND (b, d) < (10000, 10000);
 EXPLAIN SYNTAX SELECT b, d FROM prewhere WHERE c > 0 AND d > 10000 AND (b, d) = (10000, 10000);
+
+SELECT 'segment test';
 
 DROP TABLE prewhere SYNC;

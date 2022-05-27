@@ -1,3 +1,4 @@
+empty
 SELECT
     a,
     b,
@@ -7,6 +8,7 @@ SELECT
     heavy2
 FROM prewhere
 WHERE (a = 10) AND (b = 100) AND (c = 0) AND (d = 100)
+tdigest test
 SELECT
     a,
     b,
@@ -57,6 +59,7 @@ SELECT
 FROM prewhere
 PREWHERE d < 100
 WHERE (d < 100) AND ((a > 0) AND (c > 0) AND (b > 100))
+empty 2
 SELECT
     a,
     b,
@@ -66,6 +69,7 @@ SELECT
     heavy2
 FROM prewhere
 WHERE (a = 10) AND (b = 100) AND (c = 0) AND (d = 100)
+auto test
 SELECT
     a,
     b,
@@ -170,3 +174,4 @@ SELECT
 FROM prewhere
 PREWHERE b = 10000
 WHERE (b = 10000) AND ((c > 0) AND (d > 10000) AND (d = 10000))
+segment test
