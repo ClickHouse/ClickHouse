@@ -3277,7 +3277,7 @@ jobs:
 #############################################################################################
   Jepsen:
     needs: [BuilderBinRelease]
-    uses: ./.github/workflows/jepsen.yml  # yamllint disable-line
+    uses: ./.github/workflows/jepsen.yml
 
   FinishCheck:
     needs:
