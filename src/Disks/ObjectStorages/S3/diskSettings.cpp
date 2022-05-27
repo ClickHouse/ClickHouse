@@ -1,53 +1,49 @@
-#include <Common/config.h>
+#include <Disks/ObjectStorages/S3/diskSettings.h>
 
+#if USE_AWS_S3
+
+#include <Common/StringUtils/StringUtils.h>
 #include <Common/logger_useful.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
 #include "Disks/DiskFactory.h"
 
-#if USE_AWS_S3
-
 #include <aws/core/client/DefaultRetryStrategy.h>
 #include <base/getFQDNOrHostName.h>
 #include <IO/S3Common.h>
-#include "DiskS3.h"
-#include "Disks/DiskCacheWrapper.h"
-#include "Storages/StorageS3Settings.h"
-#include "ProxyConfiguration.h"
-#include "ProxyListConfiguration.h"
-#include "ProxyResolverConfiguration.h"
-#include "Disks/DiskRestartProxy.h"
-#include "Disks/DiskLocal.h"
-#include "Disks/RemoteDisksCommon.h"
+#include <Disks/DiskCacheWrapper.h>
+#include <Storages/StorageS3Settings.h>
+#include <Disks/ObjectStorages/S3/ProxyConfiguration.h>
+#include <Disks/ObjectStorages/S3/ProxyListConfiguration.h>
+#include <Disks/ObjectStorages/S3/ProxyResolverConfiguration.h>
+#include <Disks/DiskRestartProxy.h>
+#include <Disks/DiskLocal.h>
 #include <Common/FileCacheFactory.h>
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
-    extern const int PATH_ACCESS_DENIED;
 }
 
-namespace
+std::unique_ptr<S3ObjectStorageSettings> getSettings(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, ContextPtr context)
 {
-void checkWriteAccess(IDisk & disk)
-{
-    auto file = disk.writeFile("test_acl", DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite);
-    file->write("test", 4);
-}
+    S3Settings::ReadWriteSettings rw_settings;
+    rw_settings.max_single_read_retries = config.getUInt64(config_prefix + ".s3_max_single_read_retries", context->getSettingsRef().s3_max_single_read_retries);
+    rw_settings.min_upload_part_size = config.getUInt64(config_prefix + ".s3_min_upload_part_size", context->getSettingsRef().s3_min_upload_part_size);
+    rw_settings.upload_part_size_multiply_factor = config.getUInt64(config_prefix + ".s3_upload_part_size_multiply_factor", context->getSettingsRef().s3_upload_part_size_multiply_factor);
+    rw_settings.upload_part_size_multiply_parts_count_threshold = config.getUInt64(config_prefix + ".s3_upload_part_size_multiply_parts_count_threshold", context->getSettingsRef().s3_upload_part_size_multiply_parts_count_threshold);
+    rw_settings.max_single_part_upload_size = config.getUInt64(config_prefix + ".s3_max_single_part_upload_size", context->getSettingsRef().s3_max_single_part_upload_size);
 
-void checkReadAccess(const String & disk_name, IDisk & disk)
-{
-    auto file = disk.readFile("test_acl");
-    String buf(4, '0');
-    file->readStrict(buf.data(), 4);
-    if (buf != "test")
-        throw Exception("No read access to S3 bucket in disk " + disk_name, ErrorCodes::PATH_ACCESS_DENIED);
+    return std::make_unique<S3ObjectStorageSettings>(
+        rw_settings,
+        config.getUInt64(config_prefix + ".min_bytes_for_seek", 1024 * 1024),
+        config.getInt(config_prefix + ".list_object_keys_size", 1000),
+        config.getInt(config_prefix + ".objects_chunk_size_to_delete", 1000));
 }
-
-void checkRemoveAccess(IDisk & disk) { disk.removeFile("test_acl"); }
 
 std::shared_ptr<S3::ProxyResolverConfiguration> getProxyResolverConfiguration(
     const String & prefix, const Poco::Util::AbstractConfiguration & proxy_resolver_config)
@@ -112,12 +108,13 @@ std::shared_ptr<S3::ProxyConfiguration> getProxyConfiguration(const String & pre
     return getProxyListConfiguration(prefix + ".proxy", config);
 }
 
-std::shared_ptr<Aws::S3::S3Client>
-getClient(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, ContextPtr context)
+
+std::unique_ptr<Aws::S3::S3Client> getClient(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, ContextPtr context)
 {
     S3::PocoHTTPClientConfiguration client_configuration = S3::ClientFactory::instance().createClientConfiguration(
         config.getString(config_prefix + ".region", ""),
-        context->getRemoteHostFilter(), context->getGlobalContext()->getSettingsRef().s3_max_redirects);
+        context->getRemoteHostFilter(), context->getGlobalContext()->getSettingsRef().s3_max_redirects,
+        context->getGlobalContext()->getSettingsRef().enable_s3_requests_logging);
 
     S3::URI uri(Poco::URI(config.getString(config_prefix + ".endpoint")));
     if (uri.key.back() != '/')
@@ -151,93 +148,6 @@ getClient(const Poco::Util::AbstractConfiguration & config, const String & confi
         config.getBool(config_prefix + ".use_insecure_imds_request", config.getBool("s3.use_insecure_imds_request", false)));
 }
 
-std::unique_ptr<DiskS3Settings> getSettings(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, ContextPtr context)
-{
-    S3Settings::ReadWriteSettings rw_settings;
-    rw_settings.max_single_read_retries = config.getUInt64(config_prefix + ".s3_max_single_read_retries", context->getSettingsRef().s3_max_single_read_retries);
-    rw_settings.min_upload_part_size = config.getUInt64(config_prefix + ".s3_min_upload_part_size", context->getSettingsRef().s3_min_upload_part_size);
-    rw_settings.upload_part_size_multiply_factor = config.getUInt64(config_prefix + ".s3_upload_part_size_multiply_factor", context->getSettingsRef().s3_upload_part_size_multiply_factor);
-    rw_settings.upload_part_size_multiply_parts_count_threshold = config.getUInt64(config_prefix + ".s3_upload_part_size_multiply_parts_count_threshold", context->getSettingsRef().s3_upload_part_size_multiply_parts_count_threshold);
-    rw_settings.max_single_part_upload_size = config.getUInt64(config_prefix + ".s3_max_single_part_upload_size", context->getSettingsRef().s3_max_single_part_upload_size);
-
-    return std::make_unique<DiskS3Settings>(
-        getClient(config, config_prefix, context),
-        rw_settings,
-        config.getUInt64(config_prefix + ".min_bytes_for_seek", 1024 * 1024),
-        config.getBool(config_prefix + ".send_metadata", false),
-        config.getInt(config_prefix + ".thread_pool_size", 16),
-        config.getInt(config_prefix + ".list_object_keys_size", 1000),
-        config.getInt(config_prefix + ".objects_chunk_size_to_delete", 1000));
 }
-
-}
-
-
-void registerDiskS3(DiskFactory & factory)
-{
-    auto creator = [](const String & name,
-                      const Poco::Util::AbstractConfiguration & config,
-                      const String & config_prefix,
-                      ContextPtr context,
-                      const DisksMap & /*map*/) -> DiskPtr {
-        S3::URI uri(Poco::URI(config.getString(config_prefix + ".endpoint")));
-
-        if (uri.key.empty())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "No key in S3 uri: {}", uri.uri.toString());
-
-        if (uri.key.back() != '/')
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "S3 path must ends with '/', but '{}' doesn't.", uri.key);
-
-        auto [metadata_path, metadata_disk] = prepareForLocalMetadata(name, config, config_prefix, context);
-
-        FileCachePtr cache = getCachePtrForDisk(name, config, config_prefix, context);
-
-        std::shared_ptr<IDisk> s3disk = std::make_shared<DiskS3>(
-            name,
-            uri.bucket,
-            uri.key,
-            uri.version_id,
-            metadata_disk,
-            std::move(cache),
-            context,
-            getSettings(config, config_prefix, context),
-            getSettings,
-            "-" + getFQDNOrHostName());
-
-        /// This code is used only to check access to the corresponding disk.
-        if (!config.getBool(config_prefix + ".skip_access_check", false))
-        {
-            checkWriteAccess(*s3disk);
-            checkReadAccess(name, *s3disk);
-            checkRemoveAccess(*s3disk);
-        }
-
-        s3disk->startup();
-
-
-#ifdef NDEBUG
-        bool use_cache = true;
-#else
-        /// Current S3 cache implementation lead to allocations in destructor of
-        /// read buffer.
-        bool use_cache = false;
-#endif
-
-        if (config.getBool(config_prefix + ".cache_enabled", use_cache))
-        {
-            String cache_path = config.getString(config_prefix + ".cache_path", context->getPath() + "disks/" + name + "/cache/");
-            s3disk = wrapWithCache(s3disk, "s3-cache", cache_path, metadata_path);
-        }
-
-        return std::make_shared<DiskRestartProxy>(s3disk);
-    };
-    factory.registerDiskType("s3", creator);
-}
-
-}
-
-#else
-
-void registerDiskS3(DiskFactory &) {}
 
 #endif
