@@ -6,7 +6,7 @@ namespace DB
 {
 
 /// Transforms the [I]LIKE expression into regexp re2. For example, abc%def -> ^abc.*def$
-inline String likePatternToRegexp(const String & pattern)
+inline String likePatternToRegexp(std::string_view pattern)
 {
     String res;
     res.reserve(pattern.size() * 2);

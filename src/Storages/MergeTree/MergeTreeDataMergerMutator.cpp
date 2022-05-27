@@ -83,8 +83,11 @@ UInt64 MergeTreeDataMergerMutator::getMaxSourcePartsSizeForMerge() const
 UInt64 MergeTreeDataMergerMutator::getMaxSourcePartsSizeForMerge(size_t max_count, size_t scheduled_tasks_count) const
 {
     if (scheduled_tasks_count > max_count)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: invalid argument passed to \
-            getMaxSourcePartsSize: scheduled_tasks_count = {} > max_count = {}", scheduled_tasks_count, max_count);
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Logical error: invalid argument passed to getMaxSourcePartsSize: scheduled_tasks_count = {} > max_count = {}",
+            scheduled_tasks_count, max_count);
+    }
 
     size_t free_entries = max_count - scheduled_tasks_count;
     const auto data_settings = data.getSettings();

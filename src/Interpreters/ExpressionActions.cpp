@@ -160,8 +160,11 @@ static void setLazyExecutionInfo(
     const ActionsDAGReverseInfo::NodeInfo & node_info = reverse_info.nodes_info[reverse_info.reverse_index.at(node)];
 
     /// If node is used in result or it doesn't have parents, we can't enable lazy execution.
-    if (node_info.used_in_result || node_info.parents.empty())
+    if (node_info.used_in_result || node_info.parents.empty() || (node->type != ActionsDAG::ActionType::FUNCTION && node->type != ActionsDAG::ActionType::ALIAS))
+    {
         lazy_execution_info.can_be_lazy_executed = false;
+        return;
+    }
 
     /// To fill lazy execution info for current node we need to create it for all it's parents.
     for (const auto & parent : node_info.parents)
@@ -172,7 +175,7 @@ static void setLazyExecutionInfo(
         {
             /// Use set, because one node can be more than one argument.
             /// Example: expr1 AND expr2 AND expr1.
-            std::set<size_t> indexes;
+            std::unordered_set<size_t> indexes;
             for (size_t i = 0; i != parent->children.size(); ++i)
             {
                 if (node == parent->children[i])
@@ -293,6 +296,10 @@ static std::unordered_set<const ActionsDAG::Node *> processShortCircuitFunctions
         if (node.type == ActionsDAG::ActionType::FUNCTION && node.function_base->isShortCircuit(short_circuit_settings, node.children.size()) && !node.children.empty())
             short_circuit_nodes[&node] = short_circuit_settings;
     }
+
+    /// If there are no short-circuit functions, no need to do anything.
+    if (short_circuit_nodes.empty())
+        return {};
 
     auto reverse_info = getActionsDAGReverseInfo(nodes, actions_dag.getIndex());
 
@@ -1034,7 +1041,7 @@ void ExpressionActionsChain::ArrayJoinStep::finalize(const NameSet & required_ou
 ExpressionActionsChain::JoinStep::JoinStep(
     std::shared_ptr<TableJoin> analyzed_join_,
     JoinPtr join_,
-    ColumnsWithTypeAndName required_columns_)
+    const ColumnsWithTypeAndName & required_columns_)
     : Step({})
     , analyzed_join(std::move(analyzed_join_))
     , join(std::move(join_))
@@ -1042,11 +1049,8 @@ ExpressionActionsChain::JoinStep::JoinStep(
     for (const auto & column : required_columns_)
         required_columns.emplace_back(column.name, column.type);
 
-    NamesAndTypesList result_names_and_types = required_columns;
-    analyzed_join->addJoinedColumnsAndCorrectTypes(result_names_and_types, true);
-    for (const auto & [name, type] : result_names_and_types)
-        /// `column` is `nullptr` because we don't care on constness here, it may be changed in join
-        result_columns.emplace_back(nullptr, type, name);
+    result_columns = required_columns_;
+    analyzed_join->addJoinedColumnsAndCorrectTypes(result_columns, true);
 }
 
 void ExpressionActionsChain::JoinStep::finalize(const NameSet & required_output_)
