@@ -1,3 +1,5 @@
+-- Tags: zookeeper
+
 set allow_unrestricted_reads_from_keeper = 'true';
 
 -- test recursive create and big transaction
