@@ -55,16 +55,32 @@ SeekableReadBufferPtr ReadBufferFromS3Gather::createImplementationBufferImpl(con
     auto remote_file_reader_creator = [=, this]()
     {
         return std::make_unique<ReadBufferFromS3>(
-            client_ptr, bucket, remote_path, version_id, max_single_read_retries,
-            settings, /* use_external_buffer */true, /* offset */ 0, read_until_position, /* restricted_seek */true);
+            client_ptr,
+            bucket,
+            remote_path,
+            version_id,
+            max_single_read_retries,
+            settings,
+            /* use_external_buffer */true,
+            /* offset */0,
+            read_until_position,
+            /* restricted_seek */true);
     };
 
     if (with_cache)
     {
         auto cache_key = settings.remote_fs_cache->hash(remote_path);
         return std::make_shared<CachedReadBufferFromFile>(
-            remote_path, cache_key, settings.remote_fs_cache, remote_file_reader_creator,
-            settings, query_id, file_size, read_until_position ? std::optional<size_t>(read_until_position) : std::nullopt);
+            remote_path,
+            cache_key,
+            settings.remote_fs_cache,
+            remote_file_reader_creator,
+            settings,
+            query_id,
+            file_size,
+            /* allow_seeks */false,
+            /* use_external_buffer */true,
+            read_until_position ? std::optional<size_t>(read_until_position) : std::nullopt);
     }
 
     return remote_file_reader_creator();

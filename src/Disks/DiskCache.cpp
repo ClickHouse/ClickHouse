@@ -217,7 +217,15 @@ std::unique_ptr<ReadBufferFromFileBase> DiskCache::readFile(
             CurrentThread::isInitialized() && CurrentThread::get().getQueryContext() ? CurrentThread::getQueryId().toString() : "";
 
         return std::make_unique<CachedReadBufferFromFile>(
-            full_path, key, cache, implementation_buffer_creator, read_settings, query_id, file_size.value());
+            full_path,
+            key,
+            cache,
+            implementation_buffer_creator,
+            read_settings,
+            query_id,
+            file_size.value(),
+            /* allow_seeks */true,
+            /* use_external_buffer */false);
     }
 }
 
@@ -251,7 +259,13 @@ std::unique_ptr<WriteBufferFromFileBase> DiskCache::writeFile(
             key = cache->hash(file_id);
         }
         return std::make_unique<CachedWriteBuffer>(
-            std::move(impl), cache, impl->getFileName(), key, isFilePersistent(path), query_id, settings);
+            std::move(impl),
+            cache,
+            impl->getFileName(),
+            key,
+            isFilePersistent(path),
+            query_id,
+            settings);
     }
 
     return impl;

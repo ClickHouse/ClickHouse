@@ -42,6 +42,8 @@ CachedReadBufferFromFile::CachedReadBufferFromFile(
     const ReadSettings & settings_,
     const String & query_id_,
     size_t file_size_,
+    bool allow_seeks_,
+    bool use_external_buffer_,
     std::optional<size_t> read_until_position_)
     : ReadBufferFromFileBase(settings_.remote_fs_buffer_size, nullptr, 0, file_size_)
 #ifndef NDEBUG
@@ -59,6 +61,8 @@ CachedReadBufferFromFile::CachedReadBufferFromFile(
     , query_id(query_id_)
     , enable_logging(!query_id.empty() && settings_.enable_filesystem_cache_log)
     , current_buffer_id(getRandomASCIIString(8))
+    , allow_seeks(allow_seeks_)
+    , use_external_buffer(use_external_buffer_)
 {
 }
 
@@ -99,6 +103,9 @@ void CachedReadBufferFromFile::appendFilesystemCacheLog(
 
 void CachedReadBufferFromFile::initialize(size_t offset, size_t size)
 {
+    if (initialized)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Caching buffer already initialized");
+
     if (settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache)
     {
         file_segments_holder.emplace(cache->get(cache_key, offset, size));
@@ -645,6 +652,7 @@ void CachedReadBufferFromFile::predownload(FileSegmentPtr & file_segment)
                 read_type = ReadType::REMOTE_FS_READ_BYPASS_CACHE;
 
                 swap(*implementation_buffer);
+
                 working_buffer.resize(0);
                 position() = working_buffer.end();
 
@@ -740,6 +748,12 @@ bool CachedReadBufferFromFile::nextImpl()
 
 bool CachedReadBufferFromFile::nextImplStep()
 {
+    if (file_offset_of_buffer_end == read_until_position)
+    {
+        assert(range_finished);
+        return false;
+    }
+
     last_caller_id = FileSegment::getCallerId();
 
     assertCorrectness();
@@ -797,6 +811,7 @@ bool CachedReadBufferFromFile::nextImplStep()
     }
 
     assert(!internal_buffer.empty());
+
     swap(*implementation_buffer);
 
     auto & file_segment = *current_file_segment_it;
@@ -957,11 +972,14 @@ bool CachedReadBufferFromFile::nextImplStep()
 
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
-            "Having zero bytes, but range is not finished: file offset: {}, reading until: {}, read type: {}, cache file size: {}",
+            "Having zero bytes, but range is not finished: file offset: {}, starting offset: {}, reading until: {}, "
+            "read type: {}, cache file size: {}, current file segment: {}",
             file_offset_of_buffer_end,
+            first_offset,
             read_until_position,
             toString(read_type),
-            cache_file_size ? std::to_string(*cache_file_size) : "None");
+            cache_file_size ? std::to_string(*cache_file_size) : "None",
+            file_segment->getInfoForLog());
     }
 
     return result;
@@ -970,15 +988,51 @@ bool CachedReadBufferFromFile::nextImplStep()
 off_t CachedReadBufferFromFile::seek(off_t offset, int whence)
 {
     if (initialized)
-        throw Exception(ErrorCodes::CANNOT_SEEK_THROUGH_FILE, "Seek is allowed only before first read attempt from the buffer");
+    {
+        if (!allow_seeks)
+        {
+            throw Exception(
+                ErrorCodes::CANNOT_SEEK_THROUGH_FILE,
+                "Seek is allowed only before first read attempt from the buffer");
+        }
 
-    if (whence != SEEK_SET)
+        file_segments_holder.reset();
+        initialized = false;
+    }
+
+    size_t new_pos = offset;
+
+    if (allow_seeks)
+    {
+        if (whence != SEEK_SET && whence != SEEK_CUR)
+        {
+            throw Exception("Exptected SEEK_SET or SEEK_CUR as whence", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+        }
+
+        if (whence == SEEK_CUR)
+        {
+            new_pos = file_offset_of_buffer_end - (working_buffer.end() - pos) + offset;
+        }
+
+        if (file_offset_of_buffer_end - working_buffer.size() <= new_pos && new_pos <= file_offset_of_buffer_end)
+        {
+            pos = working_buffer.end() - file_offset_of_buffer_end + new_pos;
+            assert(pos >= working_buffer.begin());
+            assert(pos <= working_buffer.end());
+            return new_pos;
+        }
+
+        if (new_pos == read_until_position)
+        {
+            range_finished = true;
+        }
+    }
+    else if (whence != SEEK_SET)
+    {
         throw Exception(ErrorCodes::CANNOT_SEEK_THROUGH_FILE, "Only SEEK_SET allowed");
+    }
 
-    first_offset = offset;
-    file_offset_of_buffer_end = offset;
-    size_t size = getTotalSizeToRead();
-    initialize(offset, size);
+    first_offset = file_offset_of_buffer_end = new_pos;
 
     return offset;
 }
@@ -997,9 +1051,13 @@ size_t CachedReadBufferFromFile::getTotalSizeToRead()
     return read_until_position - file_offset_of_buffer_end;
 }
 
-void CachedReadBufferFromFile::setReadUntilPosition(size_t)
+void CachedReadBufferFromFile::setReadUntilPosition(size_t position)
 {
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Method `setReadUntilPosition()` not allowed");
+    if (!allow_seeks)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Method `setReadUntilPosition()` not allowed");
+
+    read_until_position = position;
+    initialized = false;
 }
 
 off_t CachedReadBufferFromFile::getPosition()

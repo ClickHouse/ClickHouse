@@ -20,6 +20,8 @@ public:
 
     off_t seek(off_t off, int whence) override;
 
+    Range getRemainingReadRange() const override;
+
 private:
     std::optional<size_t> read_until_position;
     size_t file_offset_of_buffer_end = 0;
