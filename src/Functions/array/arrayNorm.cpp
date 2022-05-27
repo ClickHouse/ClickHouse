@@ -21,8 +21,8 @@ struct L1Norm
 {
     static inline String name = "L1";
 
-    template <typename ResultType, typename ArgumentType>
-    inline static ResultType accumulate(ResultType result, ArgumentType value)
+    template <typename ResultType>
+    inline static ResultType accumulate(ResultType result, ResultType value)
     {
         return result + fabs(value);
     }
@@ -38,8 +38,8 @@ struct L2Norm
 {
     static inline String name = "L2";
 
-    template <typename ResultType, typename ArgumentType>
-    inline static ResultType accumulate(ResultType result, ArgumentType value)
+    template <typename ResultType>
+    inline static ResultType accumulate(ResultType result, ResultType value)
     {
         return result + value * value;
     }
@@ -56,8 +56,8 @@ struct LinfNorm
 {
     static inline String name = "Linf";
 
-    template <typename ResultType, typename ArgumentType>
-    inline static ResultType accumulate(ResultType result, ArgumentType value)
+    template <typename ResultType>
+    inline static ResultType accumulate(ResultType result, ResultType value)
     {
         return fmax(result, fabs(value));
     }
@@ -102,7 +102,6 @@ public:
             case TypeIndex::Int16:
             case TypeIndex::Int32:
             case TypeIndex::Float32:
-                return std::make_shared<DataTypeFloat32>();
             case TypeIndex::UInt64:
             case TypeIndex::Int64:
             case TypeIndex::Float64:
@@ -125,14 +124,11 @@ public:
 
         switch (result_type->getTypeId())
         {
-            case TypeIndex::Float32:
-                return executeWithResultType<Float32>(*arr, type, input_rows_count);
-                break;
             case TypeIndex::Float64:
                 return executeWithResultType<Float64>(*arr, type, input_rows_count);
                 break;
             default:
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected result type.");
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected result type {}", result_type->getName());
         }
     }
 
@@ -189,7 +185,7 @@ private:
             Float64 result = 0;
             for (; prev < off; ++prev)
             {
-                result = Kernel::accumulate(result, data[prev]);
+                result = Kernel::template accumulate<Float64>(result, data[prev]);
             }
             result_data[row] = Kernel::finalize(result);
             row++;
@@ -198,11 +194,9 @@ private:
     }
 };
 
-void registerFunctionArrayNorm(FunctionFactory & factory)
-{
-    factory.registerFunction<FunctionArrayNorm<L1Norm>>();
-    factory.registerFunction<FunctionArrayNorm<L2Norm>>();
-    factory.registerFunction<FunctionArrayNorm<LinfNorm>>();
-}
+/// These functions are used by TupleOrArrayFunction
+FunctionPtr createFunctionArrayL1Norm(ContextPtr context_) { return FunctionArrayNorm<L1Norm>::create(context_); }
+FunctionPtr createFunctionArrayL2Norm(ContextPtr context_) { return FunctionArrayNorm<L2Norm>::create(context_); }
+FunctionPtr createFunctionArrayLinfNorm(ContextPtr context_) { return FunctionArrayNorm<LinfNorm>::create(context_); }
 
 }
