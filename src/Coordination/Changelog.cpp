@@ -10,7 +10,6 @@
 #include <Common/Exception.h>
 #include <Common/SipHash.h>
 #include <Common/logger_useful.h>
-#include "IO/WriteBufferFromString.h"
 
 
 namespace DB
