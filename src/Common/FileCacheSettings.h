@@ -17,6 +17,8 @@ struct FileCacheSettings
     bool do_not_evict_index_and_mark_files = true;
     bool allow_remove_persistent_cache_by_default = true;
 
+    size_t enable_cache_hits_threshold = REMOTE_FS_OBJECTS_CACHE_ENABLE_HITS_THRESHOLD;
+
     void loadFromConfig(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix);
 };
 

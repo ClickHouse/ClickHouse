@@ -496,7 +496,7 @@ DiskLocal::DiskLocal(
         disk_checker = std::make_unique<DiskLocalCheckThread>(this, context, local_disk_check_period_ms);
 }
 
-void DiskLocal::startup()
+void DiskLocal::startup(ContextPtr)
 {
     try
     {
@@ -684,7 +684,7 @@ void registerDiskLocal(DiskFactory & factory)
 
         std::shared_ptr<IDisk> disk
             = std::make_shared<DiskLocal>(name, path, keep_free_space_bytes, context, config.getUInt("local_disk_check_period_ms", 0));
-        disk->startup();
+        disk->startup(context);
         return std::make_shared<DiskRestartProxy>(disk);
     };
     factory.registerDiskType("local", creator);
