@@ -317,7 +317,11 @@ void MergeTreeDeduplicationLog::shutdown()
         return;
 
     stopped = true;
-    current_writer->finalize();
+    if (current_writer)
+    {
+        current_writer->finalize();
+        current_writer.reset();
+    }
 }
 
 MergeTreeDeduplicationLog::~MergeTreeDeduplicationLog()
