@@ -233,6 +233,7 @@ void registerDictionarySourceHTTP(DictionarySourceFactory & factory)
         Poco::Net::HTTPBasicCredentials credentials;
         ReadWriteBufferFromHTTP::HTTPHeaderEntries header_entries;
         String url;
+        String endpoint;
         String format;
 
         auto named_collection = created_from_ddl
@@ -241,6 +242,7 @@ void registerDictionarySourceHTTP(DictionarySourceFactory & factory)
         if (named_collection)
         {
             url = named_collection->configuration.url;
+            endpoint = named_collection->configuration.endpoint;
             format = named_collection->configuration.format;
 
             credentials.setUsername(named_collection->configuration.user);
@@ -278,12 +280,21 @@ void registerDictionarySourceHTTP(DictionarySourceFactory & factory)
             }
 
             url = config.getString(settings_config_prefix + ".url", "");
+            endpoint = config.getString(settings_config_prefix + ".endpoint", "");
             format =config.getString(settings_config_prefix + ".format", "");
         }
 
+        if (url.ends_with('/'))
+        {
+            if (endpoint.starts_with('/'))
+                url.pop_back();
+        }
+        else if (!endpoint.empty() && !endpoint.starts_with('/'))
+            url.push_back('/');
+
         auto configuration = HTTPDictionarySource::Configuration
         {
-            .url = url,
+            .url = url + endpoint,
             .format = format,
             .update_field = config.getString(settings_config_prefix + ".update_field", ""),
             .update_lag = config.getUInt64(settings_config_prefix + ".update_lag", 1),
