@@ -76,7 +76,8 @@ DB::PipeFDs signal_pipe;
   */
 static void call_default_signal_handler(int sig)
 {
-    signal(sig, SIG_DFL);
+    if (SIG_ERR == signal(sig, SIG_DFL))
+        throwFromErrno("Cannot set signal handler.", ErrorCodes::CANNOT_SET_SIGNAL_HANDLER);
     raise(sig);
 }
 
@@ -498,9 +499,8 @@ BaseDaemon::~BaseDaemon()
     signal_listener_thread.join();
     /// Reset signals to SIG_DFL to avoid trying to write to the signal_pipe that will be closed after.
     for (int sig : handled_signals)
-    {
-        signal(sig, SIG_DFL);
-    }
+        if (SIG_ERR == signal(sig, SIG_DFL))
+            throwFromErrno("Cannot set signal handler.", ErrorCodes::CANNOT_SET_SIGNAL_HANDLER);
     signal_pipe.close();
 }
 
