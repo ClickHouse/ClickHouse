@@ -342,8 +342,6 @@ struct ContextSharedPart
         /// Stop periodic reloading of the configuration files.
         /// This must be done first because otherwise the reloading may pass a changed config
         /// to some destroyed parts of ContextSharedPart.
-        if (access_control)
-            access_control->stopPeriodicReloadingUsersConfigs();
         if (external_dictionaries_loader)
             external_dictionaries_loader->enablePeriodicUpdates(false);
         if (external_user_defined_executable_functions_loader)
@@ -1080,7 +1078,7 @@ void Context::addQueryFactoriesInfo(QueryLogFactories factory_type, const String
     if (isGlobalContext())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot have query factories info");
 
-    auto lock = getLock();
+    std::lock_guard lock(query_factories_info.mutex);
 
     switch (factory_type)
     {
@@ -1378,7 +1376,7 @@ void Context::killCurrentQuery()
     {
         process_list_elem->cancelQuery(true);
     }
-};
+}
 
 String Context::getDefaultFormat() const
 {
