@@ -16,6 +16,9 @@
 #include <Interpreters/Set.h>
 #include <Interpreters/interpretSubquery.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
+#include <Processors/Sinks/SinkToStorage.h>
+#include <boost/algorithm/string/join.hpp>
+#include <boost/algorithm/string.hpp>
 #include <algorithm>
 #include <deque>
 
@@ -28,6 +31,128 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
+// ZkNodeCache is a trie tree to cache all the zookeeper writes. The purpose of this struct is to avoid creating/setting nodes
+// repeatedly. For example, If we create path /a/b/c/d/e and path /a/b/d/f in the same transaction. We don't want to create
+// their common path "/a/b" twice. This data structure will cache this changes and generates the eventual requests within one pass.
+struct ZkNodeCache
+{
+    using ZkNodeCachePtr = std::shared_ptr<ZkNodeCache>;
+
+    std::unordered_map<String, ZkNodeCachePtr> children;
+    String value;
+    String path;
+    bool exists;
+    bool changed;
+
+    ZkNodeCache() : path("/"), exists(true), changed(false) { }
+    ZkNodeCache(String path_, bool exists_) : path(path_), exists(exists_), changed(false) { }
+
+    void insert(const std::vector<String> & nodes, zkutil::ZooKeeperPtr zookeeper, const String & value_to_set, size_t index)
+    {
+        if (index >= nodes.size())
+        {
+            value = value_to_set;
+            changed = true;
+            return;
+        }
+        const String & child_name = nodes[index];
+        index++;
+        if (!children.contains(child_name))
+        {
+            String subPath = "/" + boost::algorithm::join(std::vector<String>(nodes.begin(), nodes.begin() + index), "/");
+            bool chExist = false;
+            if (exists)
+            {
+                // If this node doesn't exists, neither will its child.
+                chExist = zookeeper->exists(subPath);
+            }
+            children[child_name] = std::make_shared<ZkNodeCache>(subPath, chExist);
+        }
+        children[child_name]->insert(nodes, zookeeper, value_to_set, index);
+    }
+
+    void generate_requests(Coordination::Requests & requests)
+    {
+        // If the node doesn't exists, we should generate create request.
+        // If the node exists, we should generate set request.
+        // This dfs will prove ancestor nodes are processed first.
+        if (!exists)
+        {
+            auto request = std::make_shared<Coordination::CreateRequest>();
+            request->path = path;
+            request->data = value;
+            request->is_ephemeral = false;
+            request->is_sequential = false;
+            requests.push_back(request);
+        }
+        else if (changed)
+        {
+            auto request = std::make_shared<Coordination::SetRequest>();
+            request->path = path;
+            request->data = value;
+            request->version = -1;
+            requests.push_back(request);
+        }
+        for (auto [_, child] : children)
+            child->generate_requests(requests);
+    }
+};
+
+class ZooKeeperSink : public SinkToStorage
+{
+    zkutil::ZooKeeperPtr zookeeper;
+
+    ZkNodeCache cache;
+
+public:
+    ZooKeeperSink(const Block & header, ContextPtr context) : SinkToStorage(header), zookeeper(context->getZooKeeper()) { }
+    String getName() const override { return "ZooKeeperSink"; }
+
+    void consume(Chunk chunk) override
+    {
+        auto block = getHeader().cloneWithColumns(chunk.getColumns());
+        size_t rows = block.rows();
+        for (size_t i = 0; i < rows; i++)
+        {
+            String name = block.getByPosition(0).column->getDataAt(i).toString();
+            String value = block.getByPosition(1).column->getDataAt(i).toString();
+            String path = block.getByPosition(2).column->getDataAt(i).toString();
+
+            // We don't expect a "name" contains a path.
+            if (name.find("/") != std::string::npos)
+            {
+                throw Exception("column name should not contains \'/\'", ErrorCodes::BAD_ARGUMENTS);
+            }
+
+            std::vector<String> path_vec;
+            boost::split(path_vec, path, boost::is_any_of("/"));
+            // Remove all the empty node. for path '/a//b///c/d/' we get <a b c d>
+            for (int j = int(path_vec.size()) - 1; j >= 0; j--)
+            {
+                if (path_vec[j] == "")
+                    path_vec.erase(path_vec.begin() + j);
+            }
+            path_vec.push_back(name);
+            cache.insert(path_vec, zookeeper, value, 0);
+        }
+    }
+
+    void onFinish() override
+    {
+        Coordination::Requests requests;
+        cache.generate_requests(requests);
+        zookeeper->multi(requests);
+    }
+};
+
+SinkToStoragePtr StorageSystemZooKeeper::write(const ASTPtr &, const StorageMetadataPtr &, ContextPtr context)
+{
+    Block write_header;
+    write_header.insert(ColumnWithTypeAndName(std::make_shared<DataTypeString>(), "name"));
+    write_header.insert(ColumnWithTypeAndName(std::make_shared<DataTypeString>(), "value"));
+    write_header.insert(ColumnWithTypeAndName(std::make_shared<DataTypeString>(), "path"));
+    return std::make_shared<ZooKeeperSink>(write_header, context);
+}
 
 NamesAndTypesList StorageSystemZooKeeper::getNamesAndTypes()
 {
