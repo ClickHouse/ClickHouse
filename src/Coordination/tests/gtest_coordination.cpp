@@ -699,13 +699,32 @@ TEST_P(CoordinationTest, ChangelogTestStartNewLogAfterRead)
     EXPECT_TRUE(fs::exists("./logs/changelog_36_40.bin" + params.extension));
 }
 
+namespace
+{
+void assertBrokenLogRemoved(const fs::path & log_folder, const fs::path & filename)
+{
+        EXPECT_FALSE(fs::exists(log_folder / filename));
+        // broken logs are sent to the detached/{timestamp} folder
+        // we don't know timestamp so we iterate all of them
+        for (const auto & dir_entry : fs::recursive_directory_iterator(log_folder / "detached"))
+        {
+            if (dir_entry.path().filename() == filename)
+                return;
+        }
+
+        FAIL() << "Broken log " << filename << " was not moved to the detached folder";
+}
+
+}
 
 TEST_P(CoordinationTest, ChangelogTestReadAfterBrokenTruncate)
 {
-    auto params = GetParam();
-    ChangelogDirTest test("./logs");
+    static const fs::path log_folder{"./logs"};
 
-    DB::KeeperLogStore changelog("./logs", 5, true, params.enable_compression);
+    auto params = GetParam();
+    ChangelogDirTest test(log_folder);
+
+    DB::KeeperLogStore changelog(log_folder, 5, true, params.enable_compression);
     changelog.init(1, 0);
 
     for (size_t i = 0; i < 35; ++i)
@@ -737,10 +756,10 @@ TEST_P(CoordinationTest, ChangelogTestReadAfterBrokenTruncate)
     EXPECT_TRUE(fs::exists("./logs/changelog_6_10.bin" + params.extension));
     EXPECT_TRUE(fs::exists("./logs/changelog_11_15.bin" + params.extension));
 
-    EXPECT_FALSE(fs::exists("./logs/changelog_16_20.bin" + params.extension));
-    EXPECT_FALSE(fs::exists("./logs/changelog_21_25.bin" + params.extension));
-    EXPECT_FALSE(fs::exists("./logs/changelog_26_30.bin" + params.extension));
-    EXPECT_FALSE(fs::exists("./logs/changelog_31_35.bin" + params.extension));
+    assertBrokenLogRemoved(log_folder, "changelog_16_20.bin" + params.extension);
+    assertBrokenLogRemoved(log_folder, "changelog_21_25.bin" + params.extension);
+    assertBrokenLogRemoved(log_folder, "changelog_26_30.bin" + params.extension);
+    assertBrokenLogRemoved(log_folder, "changelog_31_35.bin" + params.extension);
 
     auto entry = getLogEntry("h", 7777);
     changelog_reader.append(entry);
@@ -752,10 +771,10 @@ TEST_P(CoordinationTest, ChangelogTestReadAfterBrokenTruncate)
     EXPECT_TRUE(fs::exists("./logs/changelog_6_10.bin" + params.extension));
     EXPECT_TRUE(fs::exists("./logs/changelog_11_15.bin" + params.extension));
 
-    EXPECT_FALSE(fs::exists("./logs/changelog_16_20.bin" + params.extension));
-    EXPECT_FALSE(fs::exists("./logs/changelog_21_25.bin" + params.extension));
-    EXPECT_FALSE(fs::exists("./logs/changelog_26_30.bin" + params.extension));
-    EXPECT_FALSE(fs::exists("./logs/changelog_31_35.bin" + params.extension));
+    assertBrokenLogRemoved(log_folder, "changelog_16_20.bin" + params.extension);
+    assertBrokenLogRemoved(log_folder, "changelog_21_25.bin" + params.extension);
+    assertBrokenLogRemoved(log_folder, "changelog_26_30.bin" + params.extension);
+    assertBrokenLogRemoved(log_folder, "changelog_31_35.bin" + params.extension);
 
     DB::KeeperLogStore changelog_reader2("./logs", 5, true, params.enable_compression);
     changelog_reader2.init(1, 0);
@@ -789,13 +808,12 @@ TEST_P(CoordinationTest, ChangelogTestReadAfterBrokenTruncate2)
 
     EXPECT_EQ(changelog_reader.size(), 0);
     EXPECT_TRUE(fs::exists("./logs/changelog_1_20.bin" + params.extension));
-    EXPECT_FALSE(fs::exists("./logs/changelog_21_40.bin" + params.extension));
+    assertBrokenLogRemoved("./logs", "changelog_21_40.bin" + params.extension);
     auto entry = getLogEntry("hello_world", 7777);
     changelog_reader.append(entry);
     changelog_reader.end_of_append_batch(0, 0);
     EXPECT_EQ(changelog_reader.size(), 1);
     EXPECT_EQ(changelog_reader.last_entry()->get_term(), 7777);
-
 
     DB::KeeperLogStore changelog_reader2("./logs", 1, true, params.enable_compression);
     changelog_reader2.init(1, 0);
@@ -826,10 +844,40 @@ TEST_P(CoordinationTest, ChangelogTestLostFiles)
     DB::KeeperLogStore changelog_reader("./logs", 20, true, params.enable_compression);
     /// It should print error message, but still able to start
     changelog_reader.init(5, 0);
-    EXPECT_FALSE(fs::exists("./logs/changelog_1_20.bin" + params.extension));
-    EXPECT_FALSE(fs::exists("./logs/changelog_21_40.bin" + params.extension));
+    assertBrokenLogRemoved("./logs", "changelog_21_40.bin" + params.extension);
 }
 
+TEST_P(CoordinationTest, ChangelogTestLostFiles2)
+{
+    auto params = GetParam();
+    ChangelogDirTest test("./logs");
+
+    DB::KeeperLogStore changelog("./logs", 10, true, params.enable_compression);
+    changelog.init(1, 0);
+
+    for (size_t i = 0; i < 35; ++i)
+    {
+        auto entry = getLogEntry(std::to_string(i) + "_hello_world", (i + 44) * 10);
+        changelog.append(entry);
+    }
+    changelog.end_of_append_batch(0, 0);
+
+    EXPECT_TRUE(fs::exists("./logs/changelog_1_10.bin" + params.extension));
+    EXPECT_TRUE(fs::exists("./logs/changelog_11_20.bin" + params.extension));
+    EXPECT_TRUE(fs::exists("./logs/changelog_21_30.bin" + params.extension));
+    EXPECT_TRUE(fs::exists("./logs/changelog_31_40.bin" + params.extension));
+
+    // we have a gap in our logs, we need to remove all the logs after the gap
+    fs::remove("./logs/changelog_21_30.bin" + params.extension);
+
+    DB::KeeperLogStore changelog_reader("./logs", 10, true, params.enable_compression);
+    /// It should print error message, but still able to start
+    changelog_reader.init(5, 0);
+    EXPECT_TRUE(fs::exists("./logs/changelog_1_10.bin" + params.extension));
+    EXPECT_TRUE(fs::exists("./logs/changelog_11_20.bin" + params.extension));
+
+    assertBrokenLogRemoved("./logs", "changelog_31_40.bin" + params.extension);
+}
 struct IntNode
 {
     int value;
