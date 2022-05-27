@@ -410,7 +410,7 @@ ContextMutablePtr Session::makeSessionContext(const String & session_name_, std:
     prepared_client_info.reset();
 
     /// Set user information for the new context: current profiles, roles, access rights.
-    if (user_id && !new_session_context->getUser())
+    if (user_id && !new_session_context->getAccess()->tryGetUser())
         new_session_context->setUser(*user_id);
 
     /// Session context is ready.
