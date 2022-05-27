@@ -2,7 +2,6 @@
 
 #include <Common/config.h>
 #include <IO/ReadBufferFromFile.h>
-#include <Disks/IDiskRemote.h>
 #include <utility>
 
 

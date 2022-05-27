@@ -66,7 +66,7 @@ public:
     std::vector<String> getRemotePaths(const String & path) const override;
     void getRemotePathsRecursive(const String & path, std::vector<LocalPathWithRemotePaths> & paths_map) override;
 
-    void restart();
+    void restart(ContextPtr context);
 
 private:
     friend class RestartAwareReadBuffer;

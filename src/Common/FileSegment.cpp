@@ -67,6 +67,10 @@ FileSegment::FileSegment(
             write_through_cache_download = true;
             break;
         }
+        case (State::SKIP_CACHE):
+        {
+            break;
+        }
         default:
         {
             throw Exception(ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR, "Can create cell with either EMPTY, DOWNLOADED, DOWNLOADING state");
@@ -497,6 +501,14 @@ void FileSegment::complete(std::lock_guard<std::mutex> & cache_lock)
 
 void FileSegment::completeUnlocked(std::lock_guard<std::mutex> & cache_lock, std::lock_guard<std::mutex> & segment_lock)
 {
+    bool is_last_holder = cache->isLastFileSegmentHolder(key(), offset(), cache_lock, segment_lock);
+
+    if (is_last_holder && download_state == State::SKIP_CACHE)
+    {
+        cache->remove(key(), offset(), cache_lock, segment_lock);
+        return;
+    }
+
     if (download_state == State::SKIP_CACHE || is_detached)
         return;
 
@@ -514,8 +526,7 @@ void FileSegment::completeUnlocked(std::lock_guard<std::mutex> & cache_lock, std
         /// Segment state can be changed from DOWNLOADING or EMPTY only if the caller is the
         /// downloader or the only owner of the segment.
 
-        bool can_update_segment_state = isDownloaderImpl(segment_lock)
-            || cache->isLastFileSegmentHolder(key(), offset(), cache_lock, segment_lock);
+        bool can_update_segment_state = isDownloaderImpl(segment_lock) || is_last_holder;
 
         if (can_update_segment_state)
             download_state = State::PARTIALLY_DOWNLOADED;

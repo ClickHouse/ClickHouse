@@ -1,6 +1,5 @@
 #include "ReadBufferFromRemoteFSGather.h"
 
-#include <Disks/IDiskRemote.h>
 #include <IO/SeekableReadBuffer.h>
 #include <Disks/IO/ReadBufferFromWebServer.h>
 
