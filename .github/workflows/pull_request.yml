@@ -298,7 +298,7 @@ jobs:
           docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH"
   BuilderBinRelease:
-    needs: [DockerHubPush]
+    needs: [DockerHubPush, FastTest]
     runs-on: [self-hosted, builder]
     steps:
       - name: Set envs
@@ -3276,8 +3276,8 @@ jobs:
 ###################################### JEPSEN TESTS #########################################
 #############################################################################################
   Jepsen:
-      needs: [BuilderBinRelease]
-      uses: ./.github/workflows/jepsen.yml
+    needs: [BuilderBinRelease]
+    uses: ./.github/workflows/jepsen.yml  # yamllint disable-line
 
   FinishCheck:
     needs:
