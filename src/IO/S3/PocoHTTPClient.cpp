@@ -54,10 +54,12 @@ namespace DB::S3
 PocoHTTPClientConfiguration::PocoHTTPClientConfiguration(
         const String & force_region_,
         const RemoteHostFilter & remote_host_filter_,
-        unsigned int s3_max_redirects_)
+        unsigned int s3_max_redirects_,
+        bool enable_s3_requests_logging_)
     : force_region(force_region_)
     , remote_host_filter(remote_host_filter_)
     , s3_max_redirects(s3_max_redirects_)
+    , enable_s3_requests_logging(enable_s3_requests_logging_)
 {
 }
 
@@ -92,16 +94,17 @@ void PocoHTTPClientConfiguration::updateSchemeAndRegion()
 }
 
 
-PocoHTTPClient::PocoHTTPClient(const PocoHTTPClientConfiguration & clientConfiguration)
-    : per_request_configuration(clientConfiguration.perRequestConfiguration)
-    , error_report(clientConfiguration.error_report)
+PocoHTTPClient::PocoHTTPClient(const PocoHTTPClientConfiguration & client_configuration)
+    : per_request_configuration(client_configuration.perRequestConfiguration)
+    , error_report(client_configuration.error_report)
     , timeouts(ConnectionTimeouts(
-          Poco::Timespan(clientConfiguration.connectTimeoutMs * 1000), /// connection timeout.
-          Poco::Timespan(clientConfiguration.requestTimeoutMs * 1000), /// send timeout.
-          Poco::Timespan(clientConfiguration.requestTimeoutMs * 1000) /// receive timeout.
+          Poco::Timespan(client_configuration.connectTimeoutMs * 1000), /// connection timeout.
+          Poco::Timespan(client_configuration.requestTimeoutMs * 1000), /// send timeout.
+          Poco::Timespan(client_configuration.requestTimeoutMs * 1000) /// receive timeout.
           ))
-    , remote_host_filter(clientConfiguration.remote_host_filter)
-    , s3_max_redirects(clientConfiguration.s3_max_redirects)
+    , remote_host_filter(client_configuration.remote_host_filter)
+    , s3_max_redirects(client_configuration.s3_max_redirects)
+    , enable_s3_requests_logging(client_configuration.enable_s3_requests_logging)
 {
 }
 
@@ -124,7 +127,8 @@ void PocoHTTPClient::makeRequestInternal(
     Poco::Logger * log = &Poco::Logger::get("AWSClient");
 
     auto uri = request.GetUri().GetURIString();
-    LOG_TEST(log, "Make request to: {}", uri);
+    if (enable_s3_requests_logging)
+        LOG_TEST(log, "Make request to: {}", uri);
 
     enum class S3MetricType
     {
@@ -250,7 +254,8 @@ void PocoHTTPClient::makeRequestInternal(
 
             if (request.GetContentBody())
             {
-                LOG_TEST(log, "Writing request body.");
+                if (enable_s3_requests_logging)
+                    LOG_TEST(log, "Writing request body.");
 
                 if (attempt > 0) /// rewind content body buffer.
                 {
@@ -258,24 +263,28 @@ void PocoHTTPClient::makeRequestInternal(
                     request.GetContentBody()->seekg(0);
                 }
                 auto size = Poco::StreamCopier::copyStream(*request.GetContentBody(), request_body_stream);
-                LOG_TEST(log, "Written {} bytes to request body", size);
+                if (enable_s3_requests_logging)
+                    LOG_TEST(log, "Written {} bytes to request body", size);
             }
 
-            LOG_TEST(log, "Receiving response...");
+            if (enable_s3_requests_logging)
+                LOG_TEST(log, "Receiving response...");
             auto & response_body_stream = session->receiveResponse(poco_response);
 
             watch.stop();
             ProfileEvents::increment(select_metric(S3MetricType::Microseconds), watch.elapsedMicroseconds());
 
             int status_code = static_cast<int>(poco_response.getStatus());
-            LOG_TEST(log, "Response status: {}, {}", status_code, poco_response.getReason());
+            if (enable_s3_requests_logging)
+                LOG_TEST(log, "Response status: {}, {}", status_code, poco_response.getReason());
 
             if (poco_response.getStatus() == Poco::Net::HTTPResponse::HTTP_TEMPORARY_REDIRECT)
             {
                 auto location = poco_response.get("location");
                 remote_host_filter.checkURL(Poco::URI(location));
                 uri = location;
-                LOG_TEST(log, "Redirecting request to new location: {}", location);
+                if (enable_s3_requests_logging)
+                    LOG_TEST(log, "Redirecting request to new location: {}", location);
 
                 ProfileEvents::increment(select_metric(S3MetricType::Redirects));
 
@@ -285,13 +294,21 @@ void PocoHTTPClient::makeRequestInternal(
             response->SetResponseCode(static_cast<Aws::Http::HttpResponseCode>(status_code));
             response->SetContentType(poco_response.getContentType());
 
-            WriteBufferFromOwnString headers_ss;
-            for (const auto & [header_name, header_value] : poco_response)
+            if (enable_s3_requests_logging)
             {
-                response->AddHeader(header_name, header_value);
-                headers_ss << header_name << ": " << header_value << "; ";
+                WriteBufferFromOwnString headers_ss;
+                for (const auto & [header_name, header_value] : poco_response)
+                {
+                    response->AddHeader(header_name, header_value);
+                    headers_ss << header_name << ": " << header_value << "; ";
+                }
+                LOG_TEST(log, "Received headers: {}", headers_ss.str());
             }
-            LOG_TEST(log, "Received headers: {}", headers_ss.str());
+            else
+            {
+                for (const auto & [header_name, header_value] : poco_response)
+                    response->AddHeader(header_name, header_value);
+            }
 
             if (status_code == 429 || status_code == 503)
             { // API throttling
