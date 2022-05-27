@@ -2,16 +2,9 @@
 
 #include <string.h>
 
-#include <base/defines.h>
-
-#include <Common/TargetSpecific.h>
-
 #ifdef __SSE2__
 #include <emmintrin.h>
 
-#if defined(__AVX2__)
-#include <immintrin.h>
-#endif
 
 /** memcpy function could work suboptimal if all the following conditions are met:
   * 1. Size of memory region is relatively small (approximately, under 50 bytes).
@@ -36,40 +29,18 @@
 
 namespace detail
 {
-
-DECLARE_DEFAULT_CODE(
-
-inline void memcpySmallAllowReadWriteOverflow15Impl(char * __restrict dst, const char * __restrict src, ssize_t n)
-{
-    while (n > 0)
+    inline void memcpySmallAllowReadWriteOverflow15Impl(char * __restrict dst, const char * __restrict src, ssize_t n)
     {
-        _mm_storeu_si128(reinterpret_cast<__m128i *>(dst), _mm_loadu_si128(reinterpret_cast<const __m128i *>(src)));
+        while (n > 0)
+        {
+            _mm_storeu_si128(reinterpret_cast<__m128i *>(dst),
+                _mm_loadu_si128(reinterpret_cast<const __m128i *>(src)));
 
-        dst += 16;
-        src += 16;
-        n -= 16;
+            dst += 16;
+            src += 16;
+            n -= 16;
+        }
     }
-}
-
-)
-
-DECLARE_AVX2_SPECIFIC_CODE (
-
-inline void memcpySmallAllowReadWriteOverflow15Impl(char * __restrict dst, const char * __restrict src, ssize_t n)
-{
-    while (n > 0)
-    {
-        _mm256_storeu_si256(reinterpret_cast<__m256i *>(dst),
-            _mm256_loadu_si256(reinterpret_cast<const __m256i *>(src)));
-
-        dst += 32;
-        src += 32;
-        n -= 32;
-    }
-}
-
-)
-
 }
 
 /** Works under assumption, that it's possible to read up to 15 excessive bytes after end of 'src' region
@@ -77,11 +48,7 @@ inline void memcpySmallAllowReadWriteOverflow15Impl(char * __restrict dst, const
   */
 inline void memcpySmallAllowReadWriteOverflow15(void * __restrict dst, const void * __restrict src, size_t n)
 {
-#if USE_MULTITARGET_CODE
-     if (likely(isArchSupported(DB::TargetArch::AVX2)))
-        return detail::TargetSpecific::AVX2::memcpySmallAllowReadWriteOverflow15Impl(reinterpret_cast<char *>(dst), reinterpret_cast<const char *>(src), n);
-#endif
-     detail::TargetSpecific::Default::memcpySmallAllowReadWriteOverflow15Impl(reinterpret_cast<char *>(dst), reinterpret_cast<const char *>(src), n);
+    detail::memcpySmallAllowReadWriteOverflow15Impl(reinterpret_cast<char *>(dst), reinterpret_cast<const char *>(src), n);
 }
 
 /** NOTE There was also a function, that assumes, that you could read any bytes inside same memory page of src.
