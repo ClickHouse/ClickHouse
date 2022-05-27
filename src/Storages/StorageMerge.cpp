@@ -399,9 +399,6 @@ void StorageMerge::read(
                 column_names_as_aliases.push_back(ExpressionActions::getSmallestColumn(storage_metadata_snapshot->getColumns().getAllPhysical()));
         }
 
-        query_plan.addStorageHolder(std::get<1>(table));
-        query_plan.addTableLock(std::get<2>(table));
-
         auto source_pipe = createSources(
             resources,
             nested_storage_snaphsot,
@@ -417,7 +414,13 @@ void StorageMerge::read(
             has_database_virtual_column,
             has_table_virtual_column);
 
-        pipes.emplace_back(std::move(source_pipe));
+        if (!source_pipe.empty())
+        {
+            query_plan.addStorageHolder(std::get<1>(table));
+            query_plan.addTableLock(std::get<2>(table));
+
+            pipes.emplace_back(std::move(source_pipe));
+        }
     }
 
     auto pipe = Pipe::unitePipes(std::move(pipes));
@@ -490,6 +493,9 @@ Pipe StorageMerge::createSources(
             processed_stage,
             max_block_size,
             UInt32(streams_num));
+
+        if (!plan.isInitialized())
+            return {};
 
         auto builder = plan.buildQueryPipeline(
             QueryPlanOptimizationSettings::fromContext(modified_context),

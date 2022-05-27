@@ -52,6 +52,9 @@ static void executeJob(ExecutingGraph::Node * node, ReadProgressCallback * read_
         {
             if (auto read_progress = node->processor->getReadProgress())
             {
+                if (read_progress->total_rows_approx)
+                    read_progress_callback->addTotalRowsApprox(read_progress->total_rows_approx);
+
                 if (!read_progress_callback->onProgress(read_progress->read_rows, read_progress->read_bytes))
                     node->processor->cancel();
             }

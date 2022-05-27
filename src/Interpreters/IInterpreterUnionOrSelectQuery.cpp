@@ -54,9 +54,9 @@ static StreamLocalLimits getLimitsForStorage(const Settings & settings, const Se
     return limits;
 }
 
-void IInterpreterUnionOrSelectQuery::addLimitsAndQuotas(QueryPipeline & pipeline)
+void IInterpreterUnionOrSelectQuery::addLimitsAndQuotas(QueryPipeline & pipeline, const Context & context, const SelectQueryOptions & options, bool has_remote)
 {
-    const auto & settings = context->getSettingsRef();
+    const auto & settings = context.getSettingsRef();
 
     StreamLocalLimits limits;
     SizeLimits leaf_limits;
@@ -70,11 +70,20 @@ void IInterpreterUnionOrSelectQuery::addLimitsAndQuotas(QueryPipeline & pipeline
     }
 
     if (!options.ignore_quota && (options.to_stage == QueryProcessingStage::Complete))
-        quota = context->getQuota();
+        quota = context.getQuota();
+
+    if (!has_remote)
+    {
+        pipeline.setLeafLimits(leaf_limits);
+    }
 
     pipeline.setLimits(limits);
-    pipeline.setLeafLimits(leaf_limits);
     pipeline.setQuota(quota);
+}
+
+void IInterpreterUnionOrSelectQuery::addLimitsAndQuotas(QueryPipeline & pipeline)
+{
+    addLimitsAndQuotas(pipeline, *context, options, hasRemoteStorage());
 }
 
 }

@@ -122,6 +122,8 @@ public:
     /// It will set shard_num and shard_count to the client_info
     void setProperClientInfo();
 
+    bool hasRemoteStorage() const override;
+
 private:
     InterpreterSelectQuery(
         const ASTPtr & query_ptr_,
