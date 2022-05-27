@@ -238,7 +238,7 @@ void AsynchronousReadBufferFromHDFS::finalize()
 
 AsynchronousReadBufferFromHDFS::~AsynchronousReadBufferFromHDFS()
 {
-    LOG_INFO(
+    LOG_TEST(
         log,
         "object:{} path:{} next_times:{} interval:{}|{} duration:{}|{} wait:{}|{}",
         reinterpret_cast<std::uintptr_t>(this),
@@ -250,6 +250,7 @@ AsynchronousReadBufferFromHDFS::~AsynchronousReadBufferFromHDFS()
         double(sum_duration)/next_times,
         sum_wait,
         double(sum_wait)/next_times);
+
     finalize();
 }
 
