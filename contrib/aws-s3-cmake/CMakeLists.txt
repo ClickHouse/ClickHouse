@@ -12,12 +12,16 @@ endif()
 SET(AWS_S3_LIBRARY_DIR "${ClickHouse_SOURCE_DIR}/contrib/aws/aws-cpp-sdk-s3")
 SET(AWS_CORE_LIBRARY_DIR "${ClickHouse_SOURCE_DIR}/contrib/aws/aws-cpp-sdk-core")
 SET(AWS_CRT_LIBRARY_DIR "${ClickHouse_SOURCE_DIR}/contrib/aws/crt/aws-crt-cpp")
+SET(AWS_CRT_S2N_LIBRARY_DIR "${ClickHouse_SOURCE_DIR}/contrib/aws/crt/aws-crt-cpp/crt/s2n")
 SET(AWS_CRT_C_IO_LIBRARY_DIR "${ClickHouse_SOURCE_DIR}/contrib/aws/crt/aws-crt-cpp/crt/aws-c-io")
 SET(AWS_CRT_C_MQTT_LIBRARY_DIR "${ClickHouse_SOURCE_DIR}/contrib/aws/crt/aws-crt-cpp/crt/aws-c-mqtt")
 SET(AWS_CRT_C_AUTH_LIBRARY_DIR "${ClickHouse_SOURCE_DIR}/contrib/aws/crt/aws-crt-cpp/crt/aws-c-auth")
 SET(AWS_CRT_C_SDKUTILS_LIBRARY_DIR "${ClickHouse_SOURCE_DIR}/contrib/aws/crt/aws-crt-cpp/crt/aws-c-sdkutils")
 SET(AWS_CRT_C_CAL_LIBRARY_DIR "${ClickHouse_SOURCE_DIR}/contrib/aws/crt/aws-crt-cpp/crt/aws-c-cal")
+SET(AWS_CRT_S2N_LIBRARY_DIR "${ClickHouse_SOURCE_DIR}/contrib/aws/crt/aws-crt-cpp/crt/s2n")
 SET(AWS_CRT_C_HTTP_LIBRARY_DIR "${ClickHouse_SOURCE_DIR}/contrib/aws/crt/aws-crt-cpp/crt/aws-c-http")
+SET(AWS_CRT_C_COMPRESSION_LIBRARY_DIR "${ClickHouse_SOURCE_DIR}/contrib/aws/crt/aws-crt-cpp/crt/aws-c-compression")
+SET(AWS_CRT_C_S3_LIBRARY_DIR "${ClickHouse_SOURCE_DIR}/contrib/aws/crt/aws-crt-cpp/crt/aws-c-s3")
 SET(AWS_CHECKSUMS_LIBRARY_DIR "${ClickHouse_SOURCE_DIR}/contrib/aws-checksums")
 SET(AWS_COMMON_LIBRARY_DIR "${ClickHouse_SOURCE_DIR}/contrib/aws-c-common")
 SET(AWS_EVENT_STREAM_LIBRARY_DIR "${ClickHouse_SOURCE_DIR}/contrib/aws-c-event-stream")
@@ -29,14 +33,15 @@ configure_file("${AWS_CORE_LIBRARY_DIR}/include/aws/core/SDKConfig.h.in"
 configure_file("${AWS_COMMON_LIBRARY_DIR}/include/aws/common/config.h.in"
     "${CMAKE_CURRENT_BINARY_DIR}/include/aws/common/config.h" @ONLY)
 
-
 file(GLOB AWS_CORE_SOURCES
     "${AWS_CORE_LIBRARY_DIR}/source/*.cpp"
     "${AWS_CORE_LIBRARY_DIR}/source/auth/*.cpp"
+    "${AWS_CORE_LIBRARY_DIR}/source/auth/signer/*.cpp"
     "${AWS_CORE_LIBRARY_DIR}/source/client/*.cpp"
     "${AWS_CORE_LIBRARY_DIR}/source/http/*.cpp"
     "${AWS_CORE_LIBRARY_DIR}/source/http/standard/*.cpp"
     "${AWS_CORE_LIBRARY_DIR}/source/config/*.cpp"
+    "${AWS_CORE_LIBRARY_DIR}/source/config/defaults/*.cpp"
     "${AWS_CORE_LIBRARY_DIR}/source/external/cjson/*.cpp"
     "${AWS_CORE_LIBRARY_DIR}/source/external/tinyxml2/*.cpp"
     "${AWS_CORE_LIBRARY_DIR}/source/internal/*.cpp"
@@ -63,6 +68,14 @@ file(GLOB AWS_S3_SOURCES
     "${AWS_S3_LIBRARY_DIR}/source/*.cpp"
 )
 
+file (GLOB AWS_CRT_C_MQTT_SOURCES
+    "${AWS_CRT_C_MQTT_LIBRARY_DIR}/source/*.c"
+)
+
+file (GLOB AWS_CRT_C_SDKUTILS_SOURCES
+    "${AWS_CRT_C_SDKUTILS_LIBRARY_DIR}/source/*.c"
+)
+
 file(GLOB AWS_S3_MODEL_SOURCES
     "${AWS_S3_LIBRARY_DIR}/source/model/*.cpp"
 )
@@ -74,6 +87,56 @@ file(GLOB AWS_EVENT_STREAM_SOURCES
 file(GLOB AWS_COMMON_SOURCES
     "${AWS_COMMON_LIBRARY_DIR}/source/*.c"
     "${AWS_COMMON_LIBRARY_DIR}/source/posix/*.c"
+)
+
+file (GLOB_RECURSE AWS_CRT_C_IO_SOURCES "${AWS_CRT_C_IO_LIBRARY_DIR}/source/*.c")
+list (FILTER AWS_CRT_C_IO_SOURCES EXCLUDE REGEX "/windows/|/darwin/|/bsd/")
+
+file (GLOB AWS_CRT_C_HTTP_SOURCES "${AWS_CRT_C_HTTP_LIBRARY_DIR}/source/*.c")
+
+file (GLOB AWS_CRT_C_COMPRESSION_SOURCES "${AWS_CRT_C_COMPRESSION_LIBRARY_DIR}/source/*.c")
+
+file (GLOB AWS_CRT_C_CAL_SOURCES
+    "${AWS_CRT_C_CAL_LIBRARY_DIR}/source/*.c"
+    "${AWS_CRT_C_CAL_LIBRARY_DIR}/source/unix/*.c"
+)
+
+file (GLOB AWS_CRT_C_S3_SOURCES
+    "${AWS_CRT_C_S3_LIBRARY_DIR}/source/*.c"
+)
+
+file (GLOB AWS_CRT_C_AUTH_SOURCES
+    "${AWS_CRT_C_AUTH_LIBRARY_DIR}/source/*.c"
+    "${AWS_CRT_C_AUTH_LIBRARY_DIR}/source/external/*.c"
+)
+
+file (GLOB AWS_CRT_S2N_SOURCES
+    "${AWS_CRT_S2N_LIBRARY_DIR}/utils/*.c"
+    "${AWS_CRT_S2N_LIBRARY_DIR}/error/*.c"
+    "${AWS_CRT_S2N_LIBRARY_DIR}/tls/*.c"
+    "${AWS_CRT_S2N_LIBRARY_DIR}/tls/extensions/*.c"
+    "${AWS_CRT_S2N_LIBRARY_DIR}/crypto/*.c"
+    "${AWS_CRT_S2N_LIBRARY_DIR}/pq-crypto/*.c"
+    "${AWS_CRT_S2N_LIBRARY_DIR}/pq-crypto/kyber_r3/*.c"
+    "${AWS_CRT_S2N_LIBRARY_DIR}/pq-crypto/kyber_r2/*.c"
+    "${AWS_CRT_S2N_LIBRARY_DIR}/pq-crypto/kyber_90s_r2/*.c"
+    "${AWS_CRT_S2N_LIBRARY_DIR}/pq-crypto/sike_r3/*.c"
+    "${AWS_CRT_S2N_LIBRARY_DIR}/pq-crypto/sike_r1/fp_generic_r1.c"
+    "${AWS_CRT_S2N_LIBRARY_DIR}/pq-crypto/sike_r1/P503_r1.c"
+    "${AWS_CRT_S2N_LIBRARY_DIR}/pq-crypto/sike_r1/sike_r1_kem.c"
+    "${AWS_CRT_S2N_LIBRARY_DIR}/pq-crypto/sike_r1/fips202_r1.c"
+    "${AWS_CRT_S2N_LIBRARY_DIR}/pq-crypto/bike_r1/*.c"
+    "${AWS_CRT_S2N_LIBRARY_DIR}/pq-crypto/bike_r2/*.c"
+    "${AWS_CRT_S2N_LIBRARY_DIR}/pq-crypto/bike_r3/*.c"
+    "${AWS_CRT_S2N_LIBRARY_DIR}/stuffer/*.c"
+)
+
+file (GLOB AWS_CRT_SOURCES
+    "${AWS_CRT_LIBRARY_DIR}/source/*.cpp"
+    "${AWS_CRT_LIBRARY_DIR}/source/io/*.cpp"
+    "${AWS_CRT_LIBRARY_DIR}/source/external/*.cpp"
+    "${AWS_CRT_LIBRARY_DIR}/source/http/*.cpp"
+    "${AWS_CRT_LIBRARY_DIR}/source/auth/*.cpp"
 )
 
 file(GLOB AWS_CHECKSUMS_SOURCES
@@ -88,17 +151,31 @@ file(GLOB S3_UNIFIED_SRC
     ${AWS_S3_SOURCES}
     ${AWS_S3_MODEL_SOURCES}
     ${AWS_CORE_SOURCES}
+    ${AWS_CRT_SOURCES}
+    ${AWS_CRT_C_HTTP_SOURCES}
+    ${AWS_CRT_C_COMPRESSION_SOURCES}
+    ${AWS_CRT_C_IO_SOURCES}
+    ${AWS_CRT_C_CAL_SOURCES}
+    ${AWS_CRT_C_S3_SOURCES}
+    ${AWS_CRT_S2N_SOURCES}
+    ${AWS_CRT_C_MQTT_SOURCES}
+    ${AWS_CRT_C_AUTH_SOURCES}
+    ${AWS_CRT_C_SDKUTILS_SOURCES}
 )
 
 set(S3_INCLUDES
     "${AWS_COMMON_LIBRARY_DIR}/include/"
     "${AWS_CRT_LIBRARY_DIR}/include/"
+    "${AWS_CRT_S2N_LIBRARY_DIR}/api/"
     "${AWS_CRT_C_IO_LIBRARY_DIR}/include/"
     "${AWS_CRT_C_MQTT_LIBRARY_DIR}/include/"
     "${AWS_CRT_C_AUTH_LIBRARY_DIR}/include/"
     "${AWS_CRT_C_SDKUTILS_LIBRARY_DIR}/include/"
     "${AWS_CRT_C_CAL_LIBRARY_DIR}/include/"
     "${AWS_CRT_C_HTTP_LIBRARY_DIR}/include/"
+    "${AWS_CRT_C_COMPRESSION_LIBRARY_DIR}/include/"
+    "${AWS_CRT_C_S3_LIBRARY_DIR}/include/"
+    "${AWS_CRT_S2N_LIBRARY_DIR}/"
     "${AWS_EVENT_STREAM_LIBRARY_DIR}/include/"
     "${AWS_S3_LIBRARY_DIR}/include/"
     "${AWS_CORE_LIBRARY_DIR}/include/"
@@ -124,7 +201,7 @@ target_compile_definitions(_aws_s3 PUBLIC "AWS_SDK_VERSION_PATCH=231")
 target_include_directories(_aws_s3 SYSTEM BEFORE PUBLIC ${S3_INCLUDES})
 
 if (TARGET OpenSSL::SSL)
-    target_compile_definitions(_aws_s3 PUBLIC -DENABLE_OPENSSL_ENCRYPTION)
+    target_compile_definitions(_aws_s3 PUBLIC -DENABLE_OPENSSL_ENCRYPTION -DOPENSSL_IS_AWSLC)
     target_link_libraries(_aws_s3 PRIVATE OpenSSL::Crypto OpenSSL::SSL)
 endif()
 
