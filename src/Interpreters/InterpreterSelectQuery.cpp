@@ -169,11 +169,11 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 {}
 
 InterpreterSelectQuery::InterpreterSelectQuery(
-        const ASTPtr & query_ptr_,
-        ContextPtr context_,
-        Pipe input_pipe_,
-        const SelectQueryOptions & options_)
-        : InterpreterSelectQuery(query_ptr_, context_, std::move(input_pipe_), nullptr, options_.copy().noSubquery())
+    const ASTPtr & query_ptr_,
+    ContextPtr context_,
+    Pipe input_pipe_,
+    const SelectQueryOptions & options_)
+    : InterpreterSelectQuery(query_ptr_, context_, std::move(input_pipe_), nullptr, options_.copy().noSubquery())
 {}
 
 InterpreterSelectQuery::InterpreterSelectQuery(
@@ -302,7 +302,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
     if (settings.max_subquery_depth && options.subquery_depth > settings.max_subquery_depth)
         throw Exception("Too deep subqueries. Maximum: " + settings.max_subquery_depth.toString(),
-            ErrorCodes::TOO_DEEP_SUBQUERIES);
+                        ErrorCodes::TOO_DEEP_SUBQUERIES);
 
     bool has_input = input_pipe != std::nullopt;
     if (input_pipe)
@@ -647,7 +647,7 @@ void InterpreterSelectQuery::buildQueryPlan(QueryPlan & query_plan)
                                     context->getSettingsRef().share_query_cache
                                         ? std::optional<String>()
                                         : std::make_optional<String>(context->getUserName())
-                                    };
+    };
 
     if (auto cache_holder = context->getQueryCache()->tryReadFromCache(query_cache_key);
         cache_holder.containsResult() && context->getSettingsRef().query_cache_passive_usage)
@@ -851,26 +851,26 @@ static FillColumnDescription getWithFillDescription(const ASTOrderByElement & or
     {
         if (applyVisitor(FieldVisitorAccurateLess(), descr.fill_step, Field{0}))
             throw Exception("WITH FILL STEP value cannot be negative for sorting in ascending direction",
-                ErrorCodes::INVALID_WITH_FILL_EXPRESSION);
+                            ErrorCodes::INVALID_WITH_FILL_EXPRESSION);
 
         if (!descr.fill_from.isNull() && !descr.fill_to.isNull() &&
             applyVisitor(FieldVisitorAccurateLess(), descr.fill_to, descr.fill_from))
         {
             throw Exception("WITH FILL TO value cannot be less than FROM value for sorting in ascending direction",
-                ErrorCodes::INVALID_WITH_FILL_EXPRESSION);
+                            ErrorCodes::INVALID_WITH_FILL_EXPRESSION);
         }
     }
     else
     {
         if (applyVisitor(FieldVisitorAccurateLess(), Field{0}, descr.fill_step))
             throw Exception("WITH FILL STEP value cannot be positive for sorting in descending direction",
-                ErrorCodes::INVALID_WITH_FILL_EXPRESSION);
+                            ErrorCodes::INVALID_WITH_FILL_EXPRESSION);
 
         if (!descr.fill_from.isNull() && !descr.fill_to.isNull() &&
             applyVisitor(FieldVisitorAccurateLess(), descr.fill_from, descr.fill_to))
         {
             throw Exception("WITH FILL FROM value cannot be less than TO value for sorting in descending direction",
-                ErrorCodes::INVALID_WITH_FILL_EXPRESSION);
+                            ErrorCodes::INVALID_WITH_FILL_EXPRESSION);
         }
     }
 
@@ -940,13 +940,13 @@ static InterpolateDescriptionPtr getInterpolateDescription(
                 {
                     if (!col_set.insert(result_block_column->name).second)
                         throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
-                            "Duplicate INTERPOLATE column '{}'", interpolate.column);
+                                        "Duplicate INTERPOLATE column '{}'", interpolate.column);
 
                     result_columns.emplace_back(result_block_column->type, result_block_column->name);
                 }
                 else
                     throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER,
-                        "Missing column '{}' as an INTERPOLATE expression target", interpolate.column);
+                                    "Missing column '{}' as an INTERPOLATE expression target", interpolate.column);
 
                 exprs->children.emplace_back(interpolate.expr->clone());
             }
@@ -966,7 +966,7 @@ static InterpolateDescriptionPtr getInterpolateDescription(
         ExpressionAnalyzer analyzer(exprs, syntax_result, context);
         ActionsDAGPtr actions = analyzer.getActionsDAG(true);
         ActionsDAGPtr conv_dag = ActionsDAG::makeConvertingActions(actions->getResultColumns(),
-            result_columns, ActionsDAG::MatchColumnsMode::Position, true);
+                                                                   result_columns, ActionsDAG::MatchColumnsMode::Position, true);
         ActionsDAGPtr merge_dag = ActionsDAG::merge(std::move(*actions->clone()), std::move(*conv_dag));
 
         interpolate_descr = std::make_shared<InterpolateDescription>(merge_dag, aliases);
@@ -1207,7 +1207,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
     }
 
     if (query_info.projection && query_info.projection->input_order_info && query_info.input_order_info)
-       throw Exception("InputOrderInfo is set for projection and for query", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("InputOrderInfo is set for projection and for query", ErrorCodes::LOGICAL_ERROR);
     InputOrderInfoPtr input_order_info_for_order;
     if (!expressions.need_aggregate)
         input_order_info_for_order = query_info.projection ? query_info.projection->input_order_info : query_info.input_order_info;
@@ -1450,7 +1450,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
             else if (expressions.need_aggregate)
             {
                 executeExpression(query_plan, expressions.before_window,
-                    "Before window functions");
+                                  "Before window functions");
                 executeWindow(query_plan);
                 executeExpression(query_plan, expressions.before_order_by, "Before ORDER BY");
                 executeDistinct(query_plan, true, expressions.selected_columns, true);
@@ -1484,9 +1484,9 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                 if (from_aggregation_stage)
                     executeMergeSorted(query_plan, "after aggregation stage for ORDER BY");
                 else if (!expressions.first_stage
-                    && !expressions.need_aggregate
-                    && !expressions.has_window
-                    && !(query.group_by_with_totals && !aggregate_final))
+                         && !expressions.need_aggregate
+                         && !expressions.has_window
+                         && !(query.group_by_with_totals && !aggregate_final))
                     executeMergeSorted(query_plan, "for ORDER BY, without aggregation");
                 else    /// Otherwise, just sort.
                     executeOrder(query_plan, input_order_info_for_order);
@@ -1509,13 +1509,13 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
 
             bool apply_limit = options.to_stage != QueryProcessingStage::WithMergeableStateAfterAggregation;
             bool apply_prelimit = apply_limit &&
-                                  query.limitLength() && !query.limit_with_ties &&
-                                  !hasWithTotalsInAnySubqueryInFromClause(query) &&
-                                  !query.arrayJoinExpressionList().first &&
-                                  !query.distinct &&
-                                  !expressions.hasLimitBy() &&
-                                  !settings.extremes &&
-                                  !has_withfill;
+                query.limitLength() && !query.limit_with_ties &&
+                !hasWithTotalsInAnySubqueryInFromClause(query) &&
+                !query.arrayJoinExpressionList().first &&
+                !query.distinct &&
+                !expressions.hasLimitBy() &&
+                !settings.extremes &&
+                !has_withfill;
             bool apply_offset = options.to_stage != QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit;
             if (apply_prelimit)
             {
@@ -1663,28 +1663,28 @@ void InterpreterSelectQuery::addEmptySourceToQueryPlan(
         if (prewhere_info.alias_actions)
         {
             pipe.addSimpleTransform([&](const Block & header)
-            {
-                return std::make_shared<ExpressionTransform>(header,
-                    std::make_shared<ExpressionActions>(prewhere_info.alias_actions));
-            });
+                                    {
+                                        return std::make_shared<ExpressionTransform>(header,
+                                                                                     std::make_shared<ExpressionActions>(prewhere_info.alias_actions));
+                                    });
         }
 
         if (prewhere_info.row_level_filter)
         {
             pipe.addSimpleTransform([&](const Block & header)
-            {
-                return std::make_shared<FilterTransform>(header,
-                    std::make_shared<ExpressionActions>(prewhere_info.row_level_filter),
-                    prewhere_info.row_level_column_name, true);
-            });
+                                    {
+                                        return std::make_shared<FilterTransform>(header,
+                                                                                 std::make_shared<ExpressionActions>(prewhere_info.row_level_filter),
+                                                                                 prewhere_info.row_level_column_name, true);
+                                    });
         }
 
         pipe.addSimpleTransform([&](const Block & header)
-        {
-            return std::make_shared<FilterTransform>(
-                header, std::make_shared<ExpressionActions>(prewhere_info.prewhere_actions),
-                prewhere_info.prewhere_column_name, prewhere_info.remove_prewhere_column);
-        });
+                                {
+                                    return std::make_shared<FilterTransform>(
+                                        header, std::make_shared<ExpressionActions>(prewhere_info.prewhere_actions),
+                                        prewhere_info.prewhere_column_name, prewhere_info.remove_prewhere_column);
+                                });
     }
 
     auto read_from_pipe = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
@@ -2320,7 +2320,7 @@ void InterpreterSelectQuery::executeAggregation(QueryPlan & query_plan, const Ac
         keys.push_back(header_before_aggregation.getPositionByName(key.name));
 
     auto aggregator_params = getAggregatorParams(query_ptr, *query_analyzer, *context, header_before_aggregation, keys, aggregates, overflow_row, settings,
-                 settings.group_by_two_level_threshold, settings.group_by_two_level_threshold_bytes);
+                                                 settings.group_by_two_level_threshold, settings.group_by_two_level_threshold_bytes);
 
     auto grouping_sets_params = getAggregatorGroupingSetsParams(*query_analyzer, header_before_aggregation, keys);
 
@@ -2467,7 +2467,7 @@ static bool windowDescriptionComparator(const WindowDescription * _left, const W
 }
 
 static bool sortIsPrefix(const WindowDescription & _prefix,
-    const WindowDescription & _full)
+                         const WindowDescription & _full)
 {
     const auto & prefix = _prefix.full_sort_description;
     const auto & full = _full.full_sort_description;
@@ -2741,8 +2741,8 @@ void InterpreterSelectQuery::executeLimit(QueryPlan & query_plan)
         }
 
         auto limit = std::make_unique<LimitStep>(
-                query_plan.getCurrentDataStream(),
-                limit_length, limit_offset, always_read_till_end, query.limit_with_ties, order_descr);
+            query_plan.getCurrentDataStream(),
+            limit_length, limit_offset, always_read_till_end, query.limit_with_ties, order_descr);
 
         if (query.limit_with_ties)
             limit->setStepDescription("LIMIT WITH TIES");

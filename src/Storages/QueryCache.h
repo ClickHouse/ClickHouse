@@ -10,7 +10,11 @@ namespace DB
 {
 using QueryCachePtr = std::shared_ptr<QueryCache>;
 
-using Data = std::pair<Block, Chunks>;
+class CacheEntry
+{
+    Chunks chunks;
+    std::atomic<bool> is_writing;
+};
 
 struct CacheKey
 {
@@ -23,9 +27,9 @@ struct CacheKey
     bool operator==(const CacheKey & other) const
     {
         return ast->getTreeHash() == other.ast->getTreeHash()
-               && header.getNamesAndTypesList() == other.header.getNamesAndTypesList()
-               && settings == other.settings
-               && username == other.username;
+            && header.getNamesAndTypesList() == other.header.getNamesAndTypesList()
+            && settings == other.settings
+            && username == other.username;
     }
 
     ASTPtr ast;
@@ -38,27 +42,26 @@ struct CacheKeyHasher
 {
     size_t operator()(const CacheKey & key) const
     {
-         SipHash hash;
-         hash.update(key.ast->getTreeHash());
-         hash.update(key.header.getNamesAndTypesList().toString());
-         for (const auto & setting : key.settings)
-         {
-             hash.update(setting.getValueString());
-         }
-         if (key.username.has_value())
-         {
-             hash.update(*key.username);
-         }
-         return hash.get64();
+        SipHash hash;
+        hash.update(key.ast->getTreeHash());
+        hash.update(key.header.getNamesAndTypesList().toString());
+        for (const auto & setting : key.settings)
+        {
+            hash.update(setting.getValueString());
+        }
+        if (key.username.has_value())
+        {
+            hash.update(*key.username);
+        }
+        return hash.get64();
     }
 };
 
 struct QueryWeightFunction
 {
-    size_t operator()(const Data & data) const
+    size_t operator()(const CacheEntry & data) const
     {
-        const Block & block = data.first;
-        const Chunks & chunks = data.second;
+        const Chunks & chunks = data.chunks;
 
         size_t res = 0;
         for (const auto & chunk : chunks)
@@ -168,76 +171,66 @@ private:
 class CachePutHolder
 {
 private:
-    using Cache = LRUCache<CacheKey, Data, CacheKeyHasher, QueryWeightFunction>;
+    using Cache = LRUCache<CacheKey, CacheEntry, CacheKeyHasher, QueryWeightFunction>;
 public:
-    CachePutHolder(std::mutex & mutex_, CacheRemovalScheduler * removal_scheduler_, CacheKey cache_key_, Cache * cache_)
-        : mutex(mutex_)
-        , removal_scheduler(removal_scheduler_)
+    CachePutHolder(CacheRemovalScheduler * removal_scheduler_, CacheKey cache_key_, Cache * cache_)
+        : removal_scheduler(removal_scheduler_)
         , cache_key(cache_key_)
         , cache(cache_)
-        , data(std::move(cache->getOrSet(cache_key, [&] { return std::make_shared<Data>(cache_key_.header, Chunks{}); }).first))
+        , data(std::move(cache->getOrSet(cache_key, [&] {
+                                             can_insert = true;
+                                             return std::make_shared<CacheEntry>(Chunks{}, true);
+                                         }).first))
     {
-        tryAcquire();
     }
 
     ~CachePutHolder()
     {
-        if (executing_put_in_cache.load())
+        if (can_insert)
         {
-            mutex.unlock();
             removal_scheduler->scheduleRemoval(std::chrono::milliseconds{cache_key.settings.query_cache_entry_put_timeout}, cache_key);
+            data->is_writing = false;
         }
     }
-
 
     void insertChunk(Chunk && chunk)
     {
-        if (!fits_into_memory || !executing_put_in_cache.load())
+        if (!can_insert)
         {
             return;
         }
-        data = cache->get(cache_key);
-        data->second.push_back(std::move(chunk));
+        data->chunks.push_back(std::move(chunk));
 
         if (query_weight(*data) > cache_key.settings.max_query_cache_entry_size)
         {
-            cache->remove(cache_key);
-            fits_into_memory = false;
+            can_insert = false;
         }
-        cache->set(cache_key, data); // evicts cache if necessary, the entry with key=cache_key will not get evicted
     }
 
 private:
-    bool tryAcquire()
-    {
-        bool result = mutex.try_lock();
-        executing_put_in_cache.store(result);
-        return result;
-    }
-
-    std::mutex & mutex;
     CacheRemovalScheduler * removal_scheduler;
     CacheKey cache_key;
-    Cache * cache;
 
-    std::atomic<bool> executing_put_in_cache{false};
-    bool fits_into_memory = true;
-    std::shared_ptr<Data> data;
+    bool can_insert = false;
+    std::shared_ptr<CacheEntry> data;
 
     QueryWeightFunction query_weight;
 };
 
 class CacheReadHolder
 {
+private:
+    using Cache = LRUCache<CacheKey, CacheEntry, CacheKeyHasher, QueryWeightFunction>;
 public:
-    explicit CacheReadHolder(std::shared_ptr<Data> data)
+    explicit CacheReadHolder(Cache * cache, CacheKey cacheKey)
     {
-        if (data == nullptr)
+        std::shared_ptr<CacheEntry> data = cache->get(cacheKey);
+        if (data == nullptr || data->is_writing.load())
         {
             return;
         }
 
-        pipe = Pipe(std::make_shared<SourceFromSingleChunk>(data->first, toSingleChunk(data->second)));
+        pipe = Pipe(std::make_shared<SourceFromSingleChunk>(cacheKey.header, toSingleChunk(data->chunks)));
     }
 
     bool containsResult() const
@@ -245,7 +238,7 @@ public:
         return !pipe.empty();
     }
 
-    Pipe && getPipe()
+    Pipe && getPipe(Block header)
     {
         return std::move(pipe);
     }
@@ -276,7 +269,7 @@ private:
 class QueryCache
 {
 private:
-    using Cache = LRUCache<CacheKey, Data, CacheKeyHasher, QueryWeightFunction>;
+    using Cache = LRUCache<CacheKey, CacheEntry, CacheKeyHasher, QueryWeightFunction>;
 public:
     explicit QueryCache(size_t cache_size_in_bytes_)
         : cache(std::make_unique<Cache>(cache_size_in_bytes_))
@@ -287,11 +280,11 @@ public:
 
     CachePutHolder tryPutInCache(CacheKey cache_key)
     {
-        return CachePutHolder(put_in_cache_mutexes[cache_key], &removal_scheduler, cache_key, cache.get());
+        return CachePutHolder(&removal_scheduler, cache_key, cache.get());
     }
 
     CacheReadHolder tryReadFromCache(CacheKey cache_key) {
-        return CacheReadHolder(cache->get(cache_key));
+        return CacheReadHolder(cache.get(), cache_key);
     }
 
     bool containsResult(CacheKey cache_key)
@@ -325,8 +318,6 @@ private:
 
     std::unordered_map<CacheKey, size_t, CacheKeyHasher> times_executed;
     std::mutex times_executed_mutex;
-
-    std::unordered_map<CacheKey, std::mutex, CacheKeyHasher> put_in_cache_mutexes;
 };
 
 }
