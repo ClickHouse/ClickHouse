@@ -20,7 +20,7 @@
 namespace DB
 {
 
-class AsynchronousReadBufferFromHDFS : public BufferWithOwnMemory<SeekableReadBuffer>, public WithFileSize
+class AsynchronousReadBufferFromHDFS : public BufferWithOwnMemory<SeekableReadBuffer>, public WithFileName, public WithFileSize
 {
 public:
     AsynchronousReadBufferFromHDFS(
@@ -35,6 +35,8 @@ public:
     void prefetch() override;
 
     std::optional<size_t> getFileSize() override;
+
+    String getFileName() const override;
 
     off_t getPosition() override;
 
@@ -60,6 +62,13 @@ private:
     bool use_prefetch;
 
     Poco::Logger * log;
+
+    /// Metrics to profile prefetch
+    Stopwatch interval_watch;
+    Int64 sum_interval;
+    Int64 sum_duration;
+    Int64 sum_wait;
+    Int64 next_times;
 };
 
 }

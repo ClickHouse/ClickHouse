@@ -135,7 +135,8 @@ public:
         }
 
         /// Apply read buffer prefetch for HiveText format, because it is read sequentially
-        read_settings.remote_fs_prefetch = format == "HiveText";
+        if (read_settings.remote_fs_prefetch)
+            read_settings.remote_fs_prefetch = format == "HiveText";
     }
 
     FormatSettings updateFormatSettings(const HiveFilePtr & hive_file)
