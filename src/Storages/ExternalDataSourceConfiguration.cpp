@@ -248,6 +248,63 @@ std::optional<ExternalDataSourceInfo> getExternalDataSourceConfiguration(
     return std::nullopt;
 }
 
+std::optional<URLBasedDataSourceConfig> getURLBasedDataSourceConfiguration(
+    const Poco::Util::AbstractConfiguration & dict_config, const String & dict_config_prefix, ContextPtr context)
+{
+    URLBasedDataSourceConfiguration configuration;
+    auto collection_name = dict_config.getString(dict_config_prefix + ".name", "");
+    if (!collection_name.empty())
+    {
+        const auto & config = context->getConfigRef();
+        const auto & collection_prefix = fmt::format("named_collections.{}", collection_name);
+
+        if (!config.has(collection_prefix))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "There is no collection named `{}` in config", collection_name);
+
+        configuration.url =
+            dict_config.getString(dict_config_prefix + ".url", config.getString(collection_prefix + ".url", ""));
+        configuration.format =
+            dict_config.getString(dict_config_prefix + ".format", config.getString(collection_prefix + ".format", ""));
+        configuration.compression_method =
+            dict_config.getString(dict_config_prefix + ".compression", config.getString(collection_prefix + ".compression_method", ""));
+        configuration.structure =
+            dict_config.getString(dict_config_prefix + ".structure", config.getString(collection_prefix + ".structure", ""));
+        configuration.user =
+            dict_config.getString(dict_config_prefix + ".credentials.user", config.getString(collection_prefix + ".credentials.user", ""));
+        configuration.password =
+            dict_config.getString(dict_config_prefix + ".credentials.password", config.getString(collection_prefix + ".credentials.password", ""));
+
+        String headers_prefix;
+        const Poco::Util::AbstractConfiguration *headers_config = nullptr;
+        if (dict_config.has(dict_config_prefix + ".headers"))
+        {
+            headers_prefix = dict_config_prefix + ".headers";
+            headers_config = &dict_config;
+        }
+        else
+        {
+            headers_prefix = collection_prefix + ".headers";
+            headers_config = &config;
+        }
+
+        if (headers_config)
+        {
+            Poco::Util::AbstractConfiguration::Keys header_keys;
+            headers_config->keys(headers_prefix, header_keys);
+            headers_prefix += ".";
+            for (const auto & header : header_keys)
+            {
+                const auto header_prefix = headers_prefix + header;
+                configuration.headers.emplace_back(
+                    std::make_pair(headers_config->getString(header_prefix + ".name"), headers_config->getString(header_prefix + ".value")));
+            }
+        }
+
+        return URLBasedDataSourceConfig{ .configuration = configuration };
+    }
+
+    return std::nullopt;
+}
 
 ExternalDataSourcesByPriority getExternalDataSourceConfigurationByPriority(
     const Poco::Util::AbstractConfiguration & dict_config, const String & dict_config_prefix, ContextPtr context, HasConfigKeyFunc has_config_key)

@@ -8,6 +8,7 @@
 #include <IO/WriteHelpers.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Interpreters/Context.h>
+#include <Storages/ExternalDataSourceConfiguration.h>
 #include <Poco/Net/HTTPRequest.h>
 #include <Common/logger_useful.h>
 #include "DictionarySourceFactory.h"
@@ -228,44 +229,68 @@ void registerDictionarySourceHTTP(DictionarySourceFactory & factory)
         if (dict_struct.has_expressions)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Dictionary source of type `http` does not support attribute expressions");
 
-        auto context = copyContextAndApplySettingsFromDictionaryConfig(global_context, config, config_prefix);
-
-        const auto & settings_config_prefix = config_prefix + ".http";
-        const auto & credentials_prefix = settings_config_prefix + ".credentials";
-
+        auto settings_config_prefix = config_prefix + ".http";
         Poco::Net::HTTPBasicCredentials credentials;
-
-        if (config.has(credentials_prefix))
-        {
-            credentials.setUsername(config.getString(credentials_prefix + ".user", ""));
-            credentials.setPassword(config.getString(credentials_prefix + ".password", ""));
-        }
-
-        const auto & headers_prefix = settings_config_prefix + ".headers";
         ReadWriteBufferFromHTTP::HTTPHeaderEntries header_entries;
+        String url;
+        String format;
 
-        if (config.has(headers_prefix))
+        auto named_collection = created_from_ddl
+                            ? getURLBasedDataSourceConfiguration(config, settings_config_prefix, global_context)
+                            : std::nullopt;
+        if (named_collection)
         {
-            Poco::Util::AbstractConfiguration::Keys config_keys;
-            config.keys(headers_prefix, config_keys);
+            url = named_collection->configuration.url;
+            format = named_collection->configuration.format;
 
-            header_entries.reserve(config_keys.size());
-            for (const auto & key : config_keys)
+            credentials.setUsername(named_collection->configuration.user);
+            credentials.setPassword(named_collection->configuration.password);
+
+            header_entries.reserve(named_collection->configuration.headers.size());
+            for (const auto & header : named_collection->configuration.headers)
+                header_entries.emplace_back(std::make_tuple(header.first, header.second.get<String>()));
+        }
+        else
+        {
+            const auto & credentials_prefix = settings_config_prefix + ".credentials";
+
+            if (config.has(credentials_prefix))
             {
-                const auto header_key = config.getString(headers_prefix + "." + key + ".name", "");
-                const auto header_value = config.getString(headers_prefix + "." + key + ".value", "");
-                header_entries.emplace_back(std::make_tuple(header_key, header_value));
+                credentials.setUsername(config.getString(credentials_prefix + ".user", ""));
+                credentials.setPassword(config.getString(credentials_prefix + ".password", ""));
             }
+
+            const auto & headers_prefix = settings_config_prefix + ".headers";
+
+
+            if (config.has(headers_prefix))
+            {
+                Poco::Util::AbstractConfiguration::Keys config_keys;
+                config.keys(headers_prefix, config_keys);
+
+                header_entries.reserve(config_keys.size());
+                for (const auto & key : config_keys)
+                {
+                    const auto header_key = config.getString(headers_prefix + "." + key + ".name", "");
+                    const auto header_value = config.getString(headers_prefix + "." + key + ".value", "");
+                    header_entries.emplace_back(std::make_tuple(header_key, header_value));
+                }
+            }
+
+            url = config.getString(settings_config_prefix + ".url", "");
+            format =config.getString(settings_config_prefix + ".format", "");
         }
 
         auto configuration = HTTPDictionarySource::Configuration
         {
-            .url = config.getString(settings_config_prefix + ".url", ""),
-            .format =config.getString(settings_config_prefix + ".format", ""),
+            .url = url,
+            .format = format,
             .update_field = config.getString(settings_config_prefix + ".update_field", ""),
             .update_lag = config.getUInt64(settings_config_prefix + ".update_lag", 1),
             .header_entries = std::move(header_entries) //-V1030
         };
+
+        auto context = copyContextAndApplySettingsFromDictionaryConfig(global_context, config, config_prefix);
 
         return std::make_unique<HTTPDictionarySource>(dict_struct, configuration, credentials, sample_block, context, created_from_ddl);
     };
