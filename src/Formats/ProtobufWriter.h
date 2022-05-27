@@ -16,7 +16,7 @@ class WriteBuffer;
 class ProtobufWriter
 {
 public:
-    ProtobufWriter(WriteBuffer & out_);
+    explicit ProtobufWriter(WriteBuffer & out_);
     ~ProtobufWriter();
 
     void startMessage();

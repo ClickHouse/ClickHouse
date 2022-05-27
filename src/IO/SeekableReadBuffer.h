@@ -1,6 +1,7 @@
 #pragma once
 
 #include <IO/ReadBuffer.h>
+#include <IO/WithFileSize.h>
 #include <optional>
 
 namespace DB
@@ -61,21 +62,5 @@ public:
 };
 
 using SeekableReadBufferPtr = std::shared_ptr<SeekableReadBuffer>;
-
-
-class SeekableReadBufferWithSize : public SeekableReadBuffer
-{
-public:
-    SeekableReadBufferWithSize(Position ptr, size_t size)
-        : SeekableReadBuffer(ptr, size) {}
-    SeekableReadBufferWithSize(Position ptr, size_t size, size_t offset)
-        : SeekableReadBuffer(ptr, size, offset) {}
-
-    /// set std::nullopt in case it is impossible to find out total size.
-    virtual std::optional<size_t> getTotalSize() = 0;
-
-protected:
-    std::optional<size_t> file_size;
-};
 
 }

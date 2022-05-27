@@ -79,7 +79,7 @@ StoragePtr TableFunctionHDFSCluster::executeImpl(
     if (context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
     {
         /// On worker node this uri won't contains globs
-        storage = StorageHDFS::create(
+        storage = std::make_shared<StorageHDFS>(
             uri,
             StorageID(getDatabaseName(), table_name),
             format,
@@ -93,7 +93,7 @@ StoragePtr TableFunctionHDFSCluster::executeImpl(
     }
     else
     {
-        storage = StorageHDFSCluster::create(
+        storage = std::make_shared<StorageHDFSCluster>(
             cluster_name, uri, StorageID(getDatabaseName(), table_name),
             format, getActualTableStructure(context), ConstraintsDescription{},
             compression_method);

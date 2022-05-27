@@ -1,6 +1,6 @@
 ---
-toc_priority: 38
-toc_title: GraphiteMergeTree
+sidebar_position: 38
+sidebar_label: GraphiteMergeTree
 ---
 
 # GraphiteMergeTree {#graphitemergetree}

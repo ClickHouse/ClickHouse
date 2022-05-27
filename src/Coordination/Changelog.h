@@ -121,6 +121,8 @@ public:
     /// Fsync latest log to disk and flush buffer
     void flush();
 
+    void shutdown();
+
     uint64_t size() const
     {
         return logs.size();
@@ -146,7 +148,6 @@ private:
     /// Clean useless log files in a background thread
     void cleanLogThread();
 
-private:
     const std::string changelogs_dir;
     const uint64_t rotate_interval;
     const bool force_sync;

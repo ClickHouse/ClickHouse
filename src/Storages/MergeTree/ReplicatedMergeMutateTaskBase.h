@@ -1,6 +1,6 @@
 #pragma once
 
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 
 #include <Storages/MergeTree/IExecutableTask.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeQueue.h>
@@ -38,7 +38,14 @@ public:
 protected:
     using PartLogWriter =  std::function<void(const ExecutionStatus &)>;
 
-    virtual std::pair<bool, PartLogWriter> prepare() = 0;
+    struct PrepareResult
+    {
+        bool prepared_successfully;
+        bool need_to_check_missing_part_in_fetch;
+        PartLogWriter part_log_writer;
+    };
+
+    virtual PrepareResult prepare() = 0;
     virtual bool finalize(ReplicatedMergeMutateTaskBase::PartLogWriter write_part_log) = 0;
 
     /// Will execute a part of inner MergeTask or MutateTask

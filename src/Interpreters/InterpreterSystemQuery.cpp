@@ -7,6 +7,8 @@
 #include <Common/ThreadPool.h>
 #include <Common/escapeForFileName.h>
 #include <Common/ShellCommand.h>
+#include <Common/FileCacheFactory.h>
+#include <Common/FileCache.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
@@ -29,10 +31,15 @@
 #include <Interpreters/AsynchronousMetricLog.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Interpreters/ZooKeeperLog.h>
+#include <Interpreters/FilesystemCacheLog.h>
+#include <Interpreters/TransactionsInfoLog.h>
+#include <Interpreters/ProcessorsProfileLog.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
+#include <Interpreters/TransactionLog.h>
 #include <Access/ContextAccess.h>
 #include <Access/Common/AllowedClientHosts.h>
 #include <Databases/IDatabase.h>
+#include <Databases/DatabaseReplicated.h>
 #include <Disks/DiskRestartProxy.h>
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageReplicatedMergeTree.h>
@@ -204,7 +211,11 @@ BlockIO InterpreterSystemQuery::execute()
     auto & query = query_ptr->as<ASTSystemQuery &>();
 
     if (!query.cluster.empty())
-        return executeDDLQueryOnCluster(query_ptr, getContext(), getRequiredAccessForDDLOnCluster());
+    {
+        DDLQueryOnClusterParams params;
+        params.access_to_check = getRequiredAccessForDDLOnCluster();
+        return executeDDLQueryOnCluster(query_ptr, getContext(), params);
+    }
 
     using Type = ASTSystemQuery::Type;
 
@@ -296,6 +307,21 @@ BlockIO InterpreterSystemQuery::execute()
                 cache->reset();
             break;
 #endif
+        case Type::DROP_FILESYSTEM_CACHE:
+        {
+            if (query.filesystem_cache_path.empty())
+            {
+                auto caches = FileCacheFactory::instance().getAll();
+                for (const auto & [_, cache_data] : caches)
+                    cache_data.cache->remove();
+            }
+            else
+            {
+                auto cache = FileCacheFactory::instance().get(query.filesystem_cache_path);
+                cache->remove();
+            }
+            break;
+        }
         case Type::RELOAD_DICTIONARY:
         {
             getContext()->checkAccess(AccessType::SYSTEM_RELOAD_DICTIONARY);
@@ -414,6 +440,12 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::SYNC_REPLICA:
             syncReplica(query);
             break;
+        case Type::SYNC_DATABASE_REPLICA:
+            syncReplicatedDatabase(query);
+            break;
+        case Type::SYNC_TRANSACTION_LOG:
+            syncTransactionLog();
+            break;
         case Type::FLUSH_DISTRIBUTED:
             flushDistributed(query);
             break;
@@ -443,7 +475,10 @@ BlockIO InterpreterSystemQuery::execute()
                 [&] { if (auto opentelemetry_span_log = getContext()->getOpenTelemetrySpanLog()) opentelemetry_span_log->flush(true); },
                 [&] { if (auto query_views_log = getContext()->getQueryViewsLog()) query_views_log->flush(true); },
                 [&] { if (auto zookeeper_log = getContext()->getZooKeeperLog()) zookeeper_log->flush(true); },
-                [&] { if (auto session_log = getContext()->getSessionLog()) session_log->flush(true); }
+                [&] { if (auto session_log = getContext()->getSessionLog()) session_log->flush(true); },
+                [&] { if (auto transactions_info_log = getContext()->getTransactionsInfoLog()) transactions_info_log->flush(true); },
+                [&] { if (auto processors_profile_log = getContext()->getProcessorsProfileLog()) processors_profile_log->flush(true); },
+                [&] { if (auto cache_log = getContext()->getFilesystemCacheLog()) cache_log->flush(true); }
             );
             break;
         }
@@ -567,7 +602,7 @@ void InterpreterSystemQuery::restartReplicas(ContextMutablePtr system_context)
     for (auto & guard : guards)
         guard.second = catalog.getDDLGuard(guard.first.database_name, guard.first.table_name);
 
-    ThreadPool pool(std::min(size_t(getNumberOfPhysicalCPUCores()), replica_names.size()));
+    ThreadPool pool(std::min(static_cast<size_t>(getNumberOfPhysicalCPUCores()), replica_names.size()));
 
     for (auto & replica : replica_names)
     {
@@ -701,15 +736,43 @@ void InterpreterSystemQuery::syncReplica(ASTSystemQuery &)
         if (!storage_replicated->waitForShrinkingQueueSize(0, getContext()->getSettingsRef().receive_timeout.totalMilliseconds()))
         {
             LOG_ERROR(log, "SYNC REPLICA {}: Timed out!", table_id.getNameForLogs());
-            throw Exception(
-                    "SYNC REPLICA " + table_id.getNameForLogs() + ": command timed out. "
-                    "See the 'receive_timeout' setting", ErrorCodes::TIMEOUT_EXCEEDED);
+            throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "SYNC REPLICA {}: command timed out. " \
+                    "See the 'receive_timeout' setting", table_id.getNameForLogs());
         }
         LOG_TRACE(log, "SYNC REPLICA {}: OK", table_id.getNameForLogs());
     }
     else
         throw Exception(ErrorCodes::BAD_ARGUMENTS, table_is_not_replicated.data(), table_id.getNameForLogs());
 }
+
+
+void InterpreterSystemQuery::syncReplicatedDatabase(ASTSystemQuery & query)
+{
+    const auto database_name = query.getDatabase();
+    auto database = DatabaseCatalog::instance().getDatabase(database_name);
+
+    if (auto * ptr = typeid_cast<DatabaseReplicated *>(database.get()))
+    {
+        LOG_TRACE(log, "Synchronizing entries in the database replica's (name: {}) queue with the log", database_name);
+        if (!ptr->waitForReplicaToProcessAllEntries(getContext()->getSettingsRef().receive_timeout.totalMilliseconds()))
+        {
+            LOG_ERROR(log, "SYNC DATABASE REPLICA {}: Timed out!", database_name);
+            throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "SYNC DATABASE REPLICA {}: command timed out. " \
+                    "See the 'receive_timeout' setting", database_name);
+        }
+        LOG_TRACE(log, "SYNC DATABASE REPLICA {}: OK", database_name);
+    }
+    else
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "SYSTEM SYNC DATABASE REPLICA query is intended to work only with Replicated engine");
+}
+
+
+void InterpreterSystemQuery::syncTransactionLog()
+{
+    getContext()->checkTransactionsAreAllowed(/* explicit_tcl_query */ true);
+    TransactionLog::instance().sync();
+}
+
 
 void InterpreterSystemQuery::flushDistributed(ASTSystemQuery &)
 {
@@ -742,40 +805,41 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
 
     switch (query.type)
     {
-        case Type::SHUTDOWN: [[fallthrough]];
-        case Type::KILL: [[fallthrough]];
+        case Type::SHUTDOWN:
+        case Type::KILL:
         case Type::SUSPEND:
         {
             required_access.emplace_back(AccessType::SYSTEM_SHUTDOWN);
             break;
         }
-        case Type::DROP_DNS_CACHE: [[fallthrough]];
-        case Type::DROP_MARK_CACHE: [[fallthrough]];
-        case Type::DROP_MMAP_CACHE: [[fallthrough]];
+        case Type::DROP_DNS_CACHE:
+        case Type::DROP_MARK_CACHE:
+        case Type::DROP_MMAP_CACHE:
 #if USE_EMBEDDED_COMPILER
-        case Type::DROP_COMPILED_EXPRESSION_CACHE: [[fallthrough]];
+        case Type::DROP_COMPILED_EXPRESSION_CACHE:
 #endif
         case Type::DROP_UNCOMPRESSED_CACHE:
         case Type::DROP_INDEX_MARK_CACHE:
         case Type::DROP_INDEX_UNCOMPRESSED_CACHE:
+        case Type::DROP_FILESYSTEM_CACHE:
         {
             required_access.emplace_back(AccessType::SYSTEM_DROP_CACHE);
             break;
         }
-        case Type::RELOAD_DICTIONARY: [[fallthrough]];
-        case Type::RELOAD_DICTIONARIES: [[fallthrough]];
+        case Type::RELOAD_DICTIONARY:
+        case Type::RELOAD_DICTIONARIES:
         case Type::RELOAD_EMBEDDED_DICTIONARIES:
         {
             required_access.emplace_back(AccessType::SYSTEM_RELOAD_DICTIONARY);
             break;
         }
-        case Type::RELOAD_MODEL: [[fallthrough]];
+        case Type::RELOAD_MODEL:
         case Type::RELOAD_MODELS:
         {
             required_access.emplace_back(AccessType::SYSTEM_RELOAD_MODEL);
             break;
         }
-        case Type::RELOAD_FUNCTION: [[fallthrough]];
+        case Type::RELOAD_FUNCTION:
         case Type::RELOAD_FUNCTIONS:
         {
             required_access.emplace_back(AccessType::SYSTEM_RELOAD_FUNCTION);
@@ -791,7 +855,7 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
             required_access.emplace_back(AccessType::SYSTEM_RELOAD_SYMBOLS);
             break;
         }
-        case Type::STOP_MERGES: [[fallthrough]];
+        case Type::STOP_MERGES:
         case Type::START_MERGES:
         {
             if (!query.table)
@@ -800,7 +864,7 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
                 required_access.emplace_back(AccessType::SYSTEM_MERGES, query.getDatabase(), query.getTable());
             break;
         }
-        case Type::STOP_TTL_MERGES: [[fallthrough]];
+        case Type::STOP_TTL_MERGES:
         case Type::START_TTL_MERGES:
         {
             if (!query.table)
@@ -809,7 +873,7 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
                 required_access.emplace_back(AccessType::SYSTEM_TTL_MERGES, query.getDatabase(), query.getTable());
             break;
         }
-        case Type::STOP_MOVES: [[fallthrough]];
+        case Type::STOP_MOVES:
         case Type::START_MOVES:
         {
             if (!query.table)
@@ -818,7 +882,7 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
                 required_access.emplace_back(AccessType::SYSTEM_MOVES, query.getDatabase(), query.getTable());
             break;
         }
-        case Type::STOP_FETCHES: [[fallthrough]];
+        case Type::STOP_FETCHES:
         case Type::START_FETCHES:
         {
             if (!query.table)
@@ -827,7 +891,7 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
                 required_access.emplace_back(AccessType::SYSTEM_FETCHES, query.getDatabase(), query.getTable());
             break;
         }
-        case Type::STOP_DISTRIBUTED_SENDS: [[fallthrough]];
+        case Type::STOP_DISTRIBUTED_SENDS:
         case Type::START_DISTRIBUTED_SENDS:
         {
             if (!query.table)
@@ -836,7 +900,7 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
                 required_access.emplace_back(AccessType::SYSTEM_DISTRIBUTED_SENDS, query.getDatabase(), query.getTable());
             break;
         }
-        case Type::STOP_REPLICATED_SENDS: [[fallthrough]];
+        case Type::STOP_REPLICATED_SENDS:
         case Type::START_REPLICATED_SENDS:
         {
             if (!query.table)
@@ -845,7 +909,7 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
                 required_access.emplace_back(AccessType::SYSTEM_REPLICATED_SENDS, query.getDatabase(), query.getTable());
             break;
         }
-        case Type::STOP_REPLICATION_QUEUES: [[fallthrough]];
+        case Type::STOP_REPLICATION_QUEUES:
         case Type::START_REPLICATION_QUEUES:
         {
             if (!query.table)
@@ -879,6 +943,16 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
             required_access.emplace_back(AccessType::SYSTEM_RESTART_REPLICA);
             break;
         }
+        case Type::SYNC_DATABASE_REPLICA:
+        {
+            required_access.emplace_back(AccessType::SYSTEM_SYNC_DATABASE_REPLICA, query.getDatabase());
+            break;
+        }
+        case Type::SYNC_TRANSACTION_LOG:
+        {
+            required_access.emplace_back(AccessType::SYSTEM_SYNC_TRANSACTION_LOG);
+            break;
+        }
         case Type::FLUSH_DISTRIBUTED:
         {
             required_access.emplace_back(AccessType::SYSTEM_FLUSH_DISTRIBUTED, query.getDatabase(), query.getTable());
@@ -894,11 +968,11 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
             required_access.emplace_back(AccessType::SYSTEM_RESTART_DISK);
             break;
         }
-        case Type::STOP_LISTEN_QUERIES: break;
-        case Type::START_LISTEN_QUERIES: break;
-        case Type::STOP_THREAD_FUZZER: break;
-        case Type::START_THREAD_FUZZER: break;
-        case Type::UNKNOWN: break;
+        case Type::STOP_LISTEN_QUERIES:
+        case Type::START_LISTEN_QUERIES:
+        case Type::STOP_THREAD_FUZZER:
+        case Type::START_THREAD_FUZZER:
+        case Type::UNKNOWN:
         case Type::END: break;
     }
     return required_access;

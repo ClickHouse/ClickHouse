@@ -29,7 +29,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_PROJECTION;
     extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
-};
+}
 
 bool ProjectionDescription::isPrimaryKeyColumnPossiblyWrappedInFunctions(const ASTPtr & node) const
 {
@@ -284,7 +284,7 @@ Block ProjectionDescription::calculate(const Block & block, ContextPtr context) 
                                                                        : QueryProcessingStage::WithMergeableState})
                        .buildQueryPipeline();
     builder.resize(1);
-    builder.addTransform(std::make_shared<SquashingChunksTransform>(builder.getHeader(), block.rows(), 0));
+    builder.addTransform(std::make_shared<SquashingChunksTransform>(builder.getHeader(), block.rows(), block.bytes()));
 
     auto pipeline = QueryPipelineBuilder::getPipeline(std::move(builder));
     PullingPipelineExecutor executor(pipeline);
@@ -328,14 +328,18 @@ ProjectionsDescription ProjectionsDescription::parse(const String & str, const C
 
 bool ProjectionsDescription::has(const String & projection_name) const
 {
-    return map.count(projection_name) > 0;
+    return map.contains(projection_name);
 }
 
 const ProjectionDescription & ProjectionsDescription::get(const String & projection_name) const
 {
     auto it = map.find(projection_name);
     if (it == map.end())
-        throw Exception("There is no projection " + projection_name + " in table", ErrorCodes::NO_SUCH_PROJECTION_IN_TABLE);
+    {
+        String exception_message = fmt::format("There is no projection {} in table", projection_name);
+        appendHintsMessage(exception_message, projection_name);
+        throw Exception(exception_message, ErrorCodes::NO_SUCH_PROJECTION_IN_TABLE);
+    }
 
     return *(it->second);
 }
@@ -376,11 +380,23 @@ void ProjectionsDescription::remove(const String & projection_name, bool if_exis
     {
         if (if_exists)
             return;
-        throw Exception("There is no projection " + projection_name + " in table.", ErrorCodes::NO_SUCH_PROJECTION_IN_TABLE);
+
+        String exception_message = fmt::format("There is no projection {} in table", projection_name);
+        appendHintsMessage(exception_message, projection_name);
+        throw Exception(exception_message, ErrorCodes::NO_SUCH_PROJECTION_IN_TABLE);
     }
 
     projections.erase(it->second);
     map.erase(it);
+}
+
+std::vector<String> ProjectionsDescription::getAllRegisteredNames() const
+{
+    std::vector<String> names;
+    names.reserve(map.size());
+    for (const auto & pair : map)
+        names.push_back(pair.first);
+    return names;
 }
 
 ExpressionActionsPtr

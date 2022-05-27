@@ -49,12 +49,11 @@ void TableFunctionFormat::parseArguments(const ASTPtr & ast_function, ContextPtr
 
 ColumnsDescription TableFunctionFormat::getActualTableStructure(ContextPtr context) const
 {
-    auto read_buffer_creator = [&]()
+    ReadBufferIterator read_buffer_iterator = [&]()
     {
         return std::make_unique<ReadBufferFromString>(data);
     };
-
-    return readSchemaFromFormat(format, std::nullopt, read_buffer_creator, context);
+    return readSchemaFromFormat(format, std::nullopt, read_buffer_iterator, false, context);
 }
 
 Block TableFunctionFormat::parseData(ColumnsDescription columns, ContextPtr context) const
@@ -86,7 +85,7 @@ StoragePtr TableFunctionFormat::executeImpl(const ASTPtr & /*ast_function*/, Con
 {
     auto columns = getActualTableStructure(context);
     Block res_block = parseData(columns, context);
-    auto res = StorageValues::create(StorageID(getDatabaseName(), table_name), columns, res_block);
+    auto res = std::make_shared<StorageValues>(StorageID(getDatabaseName(), table_name), columns, res_block);
     res->startup();
     return res;
 }

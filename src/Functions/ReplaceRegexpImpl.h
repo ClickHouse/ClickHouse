@@ -33,8 +33,8 @@ struct ReplaceRegexpImpl
         /// Otherwise - paste this string verbatim.
         std::string literal;
 
-        Instruction(int substitution_num_) : substitution_num(substitution_num_) {}
-        Instruction(std::string literal_) : literal(std::move(literal_)) {}
+        Instruction(int substitution_num_) : substitution_num(substitution_num_) {} /// NOLINT
+        Instruction(std::string literal_) : literal(std::move(literal_)) {} /// NOLINT
     };
 
     using Instructions = std::vector<Instruction>;

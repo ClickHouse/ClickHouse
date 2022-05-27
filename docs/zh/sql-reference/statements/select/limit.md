@@ -1,5 +1,5 @@
 ---
-toc_title: LIMIT
+sidebar_label: LIMIT
 ---
 
 # LIMIT {#limit-clause}
