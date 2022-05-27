@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Tags: no-s3-storage
 set -eo pipefail
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
