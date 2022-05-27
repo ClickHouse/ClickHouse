@@ -63,7 +63,7 @@ void MergeTreeDataPartChecksums::checkEqual(const MergeTreeDataPartChecksums & r
     {
         const String & name = it.first;
 
-        if (!files.count(name))
+        if (!files.contains(name))
             throw Exception("Unexpected file " + name + " in data part", ErrorCodes::UNEXPECTED_FILE_IN_DATA_PART);
     }
 

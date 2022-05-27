@@ -1,6 +1,6 @@
 #include <Common/config.h>
 
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
@@ -9,6 +9,7 @@
 #if USE_AWS_S3
 
 #include <aws/core/client/DefaultRetryStrategy.h>
+#include <base/getFQDNOrHostName.h>
 #include <IO/S3Common.h>
 #include "DiskS3.h"
 #include "Disks/DiskCacheWrapper.h"
@@ -152,13 +153,16 @@ getClient(const Poco::Util::AbstractConfiguration & config, const String & confi
 
 std::unique_ptr<DiskS3Settings> getSettings(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, ContextPtr context)
 {
+    S3Settings::ReadWriteSettings rw_settings;
+    rw_settings.max_single_read_retries = config.getUInt64(config_prefix + ".s3_max_single_read_retries", context->getSettingsRef().s3_max_single_read_retries);
+    rw_settings.min_upload_part_size = config.getUInt64(config_prefix + ".s3_min_upload_part_size", context->getSettingsRef().s3_min_upload_part_size);
+    rw_settings.upload_part_size_multiply_factor = config.getUInt64(config_prefix + ".s3_upload_part_size_multiply_factor", context->getSettingsRef().s3_upload_part_size_multiply_factor);
+    rw_settings.upload_part_size_multiply_parts_count_threshold = config.getUInt64(config_prefix + ".s3_upload_part_size_multiply_parts_count_threshold", context->getSettingsRef().s3_upload_part_size_multiply_parts_count_threshold);
+    rw_settings.max_single_part_upload_size = config.getUInt64(config_prefix + ".s3_max_single_part_upload_size", context->getSettingsRef().s3_max_single_part_upload_size);
+
     return std::make_unique<DiskS3Settings>(
         getClient(config, config_prefix, context),
-        config.getUInt64(config_prefix + ".s3_max_single_read_retries", context->getSettingsRef().s3_max_single_read_retries),
-        config.getUInt64(config_prefix + ".s3_min_upload_part_size", context->getSettingsRef().s3_min_upload_part_size),
-        config.getUInt64(config_prefix + ".s3_upload_part_size_multiply_factor", context->getSettingsRef().s3_upload_part_size_multiply_factor),
-        config.getUInt64(config_prefix + ".s3_upload_part_size_multiply_parts_count_threshold", context->getSettingsRef().s3_upload_part_size_multiply_parts_count_threshold),
-        config.getUInt64(config_prefix + ".s3_max_single_part_upload_size", context->getSettingsRef().s3_max_single_part_upload_size),
+        rw_settings,
         config.getUInt64(config_prefix + ".min_bytes_for_seek", 1024 * 1024),
         config.getBool(config_prefix + ".send_metadata", false),
         config.getInt(config_prefix + ".thread_pool_size", 16),
@@ -192,11 +196,13 @@ void registerDiskS3(DiskFactory & factory)
             name,
             uri.bucket,
             uri.key,
+            uri.version_id,
             metadata_disk,
             std::move(cache),
             context,
             getSettings(config, config_prefix, context),
-            getSettings);
+            getSettings,
+            "-" + getFQDNOrHostName());
 
         /// This code is used only to check access to the corresponding disk.
         if (!config.getBool(config_prefix + ".skip_access_check", false))

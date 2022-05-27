@@ -16,7 +16,7 @@ public:
     struct DrainCallback
     {
         Poco::Timespan drain_timeout;
-        void operator()(int fd, Poco::Timespan, const std::string fd_description = "") const;
+        void operator()(int fd, Poco::Timespan, const std::string & fd_description = "") const;
     };
 
     /// Send all scalars to replicas.

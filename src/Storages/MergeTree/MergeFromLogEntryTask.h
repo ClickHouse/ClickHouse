@@ -14,7 +14,7 @@
 namespace DB
 {
 
-class MergeFromLogEntryTask : public shared_ptr_helper<MergeFromLogEntryTask>, public ReplicatedMergeMutateTaskBase
+class MergeFromLogEntryTask : public ReplicatedMergeMutateTaskBase
 {
 public:
     template <class Callback>
@@ -25,7 +25,7 @@ public:
 
 protected:
     /// Both return false if we can't execute merge.
-    std::pair<bool, ReplicatedMergeMutateTaskBase::PartLogWriter> prepare() override;
+    ReplicatedMergeMutateTaskBase::PrepareResult prepare() override;
     bool finalize(ReplicatedMergeMutateTaskBase::PartLogWriter write_part_log) override;
 
     bool executeInnerTask() override

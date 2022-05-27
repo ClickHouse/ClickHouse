@@ -480,25 +480,25 @@ void registerStorageGenerateRandom(StorageFactory & factory)
         if (engine_args.size() == 3)
             max_array_length = engine_args[2]->as<const ASTLiteral &>().value.safeGet<UInt64>();
 
-        return StorageGenerateRandom::create(args.table_id, args.columns, args.comment, max_array_length, max_string_length, random_seed);
+        return std::make_shared<StorageGenerateRandom>(args.table_id, args.columns, args.comment, max_array_length, max_string_length, random_seed);
     });
 }
 
 Pipe StorageGenerateRandom::read(
     const Names & column_names,
-    const StorageMetadataPtr & metadata_snapshot,
+    const StorageSnapshotPtr & storage_snapshot,
     SelectQueryInfo & /*query_info*/,
     ContextPtr context,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t max_block_size,
     unsigned num_streams)
 {
-    metadata_snapshot->check(column_names, getVirtuals(), getStorageID());
+    storage_snapshot->check(column_names);
 
     Pipes pipes;
     pipes.reserve(num_streams);
 
-    const ColumnsDescription & our_columns = metadata_snapshot->getColumns();
+    const ColumnsDescription & our_columns = storage_snapshot->metadata->getColumns();
     Block block_header;
     for (const auto & name : column_names)
     {

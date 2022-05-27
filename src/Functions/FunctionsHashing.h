@@ -5,6 +5,7 @@
 #include <metrohash.h>
 #include <MurmurHash2.h>
 #include <MurmurHash3.h>
+#include <wyhash.h>
 
 #include "config_functions.h"
 #include "config_core.h"
@@ -38,8 +39,8 @@
 #include <Columns/ColumnTuple.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
-#include <Functions/TargetSpecific.h>
 #include <Functions/PerformanceAdaptors.h>
+#include <Common/TargetSpecific.h>
 #include <base/range.h>
 #include <base/bit_cast.h>
 
@@ -987,7 +988,8 @@ private:
             const size_t nested_size = nested_column->size();
 
             typename ColumnVector<ToType>::Container vec_temp(nested_size);
-            executeAny<true>(nested_type, nested_column, vec_temp);
+            bool nested_is_first = true;
+            executeForArgument(nested_type, nested_column, vec_temp, nested_is_first);
 
             const size_t size = offsets.size();
 
@@ -1058,8 +1060,7 @@ private:
         else if (which.isString()) executeString<first>(icolumn, vec_to);
         else if (which.isFixedString()) executeString<first>(icolumn, vec_to);
         else if (which.isArray()) executeArray<first>(from_type, icolumn, vec_to);
-        else
-            executeGeneric<first>(icolumn, vec_to);
+        else executeGeneric<first>(icolumn, vec_to);
     }
 
     void executeForArgument(const IDataType * type, const IColumn * column, typename ColumnVector<ToType>::Container & vec_to, bool & is_first) const
@@ -1369,6 +1370,29 @@ private:
     }
 };
 
+struct ImplWyHash64
+{
+    static constexpr auto name = "wyHash64";
+    using ReturnType = UInt64;
+
+    static UInt64 apply(const char * s, const size_t len)
+    {
+        return wyhash(s, len, 0, _wyp);
+    }
+    static UInt64 combineHashes(UInt64 h1, UInt64 h2)
+    {
+        union
+        {
+            UInt64 u64[2];
+            char chars[16];
+        };
+        u64[0] = h1;
+        u64[1] = h2;
+        return apply(chars, 16);
+    }
+
+    static constexpr bool use_int_hash_for_pods = false;
+};
 
 struct NameIntHash32 { static constexpr auto name = "intHash32"; };
 struct NameIntHash64 { static constexpr auto name = "intHash64"; };
@@ -1405,5 +1429,7 @@ using FunctionHiveHash = FunctionAnyHash<HiveHashImpl>;
 
 using FunctionXxHash32 = FunctionAnyHash<ImplXxHash32>;
 using FunctionXxHash64 = FunctionAnyHash<ImplXxHash64>;
+
+using FunctionWyHash64 = FunctionAnyHash<ImplWyHash64>;
 
 }

@@ -1,6 +1,6 @@
 ---
-toc_priority: 65
-toc_title: Map(key, value)
+sidebar_position: 65
+sidebar_label: Map(key, value)
 ---
 
 # Map(key, value) {#data_type-map}

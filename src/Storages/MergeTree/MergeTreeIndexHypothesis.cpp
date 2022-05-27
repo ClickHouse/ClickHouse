@@ -18,7 +18,7 @@ MergeTreeIndexGranuleHypothesis::MergeTreeIndexGranuleHypothesis(const String & 
 {
 }
 
-MergeTreeIndexGranuleHypothesis::MergeTreeIndexGranuleHypothesis(const String & index_name_, const bool met_)
+MergeTreeIndexGranuleHypothesis::MergeTreeIndexGranuleHypothesis(const String & index_name_, bool met_)
     : index_name(index_name_), is_empty(false), met(met_)
 {
 }

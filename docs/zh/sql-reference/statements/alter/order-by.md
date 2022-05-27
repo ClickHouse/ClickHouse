@@ -1,6 +1,6 @@
 ---
-toc_priority: 41
-toc_title: ORDER BY
+sidebar_position: 41
+sidebar_label: ORDER BY
 ---
 
 # 操作排序键表达式 {#manipulations-with-key-expressions}

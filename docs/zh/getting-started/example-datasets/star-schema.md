@@ -1,6 +1,6 @@
 ---
-toc_priority: 16
-toc_title: Star Schema Benchmark
+sidebar_position: 16
+sidebar_label: Star Schema Benchmark
 ---
 
 # Star Schema Benchmark {#star-schema-benchmark}

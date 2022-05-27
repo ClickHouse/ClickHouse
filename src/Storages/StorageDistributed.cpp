@@ -9,6 +9,8 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/ObjectUtils.h>
+#include <DataTypes/NestedUtils.h>
 
 #include <Storages/Distributed/DistributedSink.h>
 #include <Storages/StorageFactory.h>
@@ -55,6 +57,7 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/getClusterName.h>
 #include <Interpreters/getTableExpressions.h>
+#include <Interpreters/RequiredSourceColumnsVisitor.h>
 #include <Functions/IFunction.h>
 #include <TableFunctions/TableFunctionView.h>
 #include <TableFunctions/TableFunctionFactory.h>
@@ -277,9 +280,9 @@ void replaceConstantExpressions(
     ContextPtr context,
     const NamesAndTypesList & columns,
     ConstStoragePtr storage,
-    const StorageMetadataPtr & metadata_snapshot)
+    const StorageSnapshotPtr & storage_snapshot)
 {
-    auto syntax_result = TreeRewriter(context).analyze(node, columns, storage, metadata_snapshot);
+    auto syntax_result = TreeRewriter(context).analyze(node, columns, storage, storage_snapshot);
     Block block_with_constants = KeyCondition::getBlockWithConstants(node, syntax_result, context);
 
     InDepthNodeVisitor<ReplacingConstantExpressionsMatcher, true> visitor(block_with_constants);
@@ -311,6 +314,7 @@ NamesAndTypesList StorageDistributed::getVirtuals() const
         NameAndTypePair("_part_uuid", std::make_shared<DataTypeUUID>()),
         NameAndTypePair("_partition_id", std::make_shared<DataTypeString>()),
         NameAndTypePair("_sample_factor", std::make_shared<DataTypeFloat64>()),
+        NameAndTypePair("_part_offset", std::make_shared<DataTypeUInt64>()),
         NameAndTypePair("_shard_num", std::make_shared<DataTypeUInt32>()), /// deprecated
     };
 }
@@ -423,7 +427,7 @@ StorageDistributed::StorageDistributed(
 QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
     ContextPtr local_context,
     QueryProcessingStage::Enum to_stage,
-    const StorageMetadataPtr & metadata_snapshot,
+    const StorageSnapshotPtr & storage_snapshot,
     SelectQueryInfo & query_info) const
 {
     const auto & settings = local_context->getSettingsRef();
@@ -437,7 +441,7 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
     /// (Anyway it will be calculated in the read())
     if (nodes > 1 && settings.optimize_skip_unused_shards)
     {
-        ClusterPtr optimized_cluster = getOptimizedCluster(local_context, metadata_snapshot, query_info.query);
+        ClusterPtr optimized_cluster = getOptimizedCluster(local_context, storage_snapshot, query_info.query);
         if (optimized_cluster)
         {
             LOG_DEBUG(log, "Skipping irrelevant shards - the query will be sent to the following shards of the cluster (shard numbers): {}",
@@ -590,9 +594,62 @@ std::optional<QueryProcessingStage::Enum> StorageDistributed::getOptimizedQueryP
     return QueryProcessingStage::Complete;
 }
 
+static bool requiresObjectColumns(const ColumnsDescription & all_columns, ASTPtr query)
+{
+    if (!hasObjectColumns(all_columns))
+        return false;
+
+    if (!query)
+        return true;
+
+    RequiredSourceColumnsVisitor::Data columns_context;
+    RequiredSourceColumnsVisitor(columns_context).visit(query);
+
+    auto required_columns = columns_context.requiredColumns();
+    for (const auto & required_column : required_columns)
+    {
+        auto name_in_storage = Nested::splitName(required_column).first;
+        auto column_in_storage = all_columns.tryGetPhysical(name_in_storage);
+
+        if (column_in_storage && isObject(column_in_storage->type))
+            return true;
+    }
+
+    return false;
+}
+
+StorageSnapshotPtr StorageDistributed::getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const
+{
+    return getStorageSnapshotForQuery(metadata_snapshot, nullptr, query_context);
+}
+
+StorageSnapshotPtr StorageDistributed::getStorageSnapshotForQuery(
+    const StorageMetadataPtr & metadata_snapshot, const ASTPtr & query, ContextPtr /*query_context*/) const
+{
+    /// If query doesn't use columns of type Object, don't deduce
+    /// concrete types for them, because it required extra round trip.
+    auto snapshot_data = std::make_unique<SnapshotData>();
+    if (!requiresObjectColumns(metadata_snapshot->getColumns(), query))
+        return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, ColumnsDescription{}, std::move(snapshot_data));
+
+    snapshot_data->objects_by_shard = getExtendedObjectsOfRemoteTables(
+        *getCluster(),
+        StorageID{remote_database, remote_table},
+        metadata_snapshot->getColumns(),
+        getContext());
+
+    auto object_columns = DB::getObjectColumns(
+        snapshot_data->objects_by_shard.begin(),
+        snapshot_data->objects_by_shard.end(),
+        metadata_snapshot->getColumns(),
+        [](const auto & shard_num_and_columns) -> const auto & { return shard_num_and_columns.second; });
+
+    return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, object_columns, std::move(snapshot_data));
+}
+
 Pipe StorageDistributed::read(
     const Names & column_names,
-    const StorageMetadataPtr & metadata_snapshot,
+    const StorageSnapshotPtr & storage_snapshot,
     SelectQueryInfo & query_info,
     ContextPtr local_context,
     QueryProcessingStage::Enum processed_stage,
@@ -600,7 +657,7 @@ Pipe StorageDistributed::read(
     const unsigned num_streams)
 {
     QueryPlan plan;
-    read(plan, column_names, metadata_snapshot, query_info, local_context, processed_stage, max_block_size, num_streams);
+    read(plan, column_names, storage_snapshot, query_info, local_context, processed_stage, max_block_size, num_streams);
     return plan.convertToPipe(
         QueryPlanOptimizationSettings::fromContext(local_context),
         BuildQueryPipelineSettings::fromContext(local_context));
@@ -609,7 +666,7 @@ Pipe StorageDistributed::read(
 void StorageDistributed::read(
     QueryPlan & query_plan,
     const Names &,
-    const StorageMetadataPtr &,
+    const StorageSnapshotPtr & storage_snapshot,
     SelectQueryInfo & query_info,
     ContextPtr local_context,
     QueryProcessingStage::Enum processed_stage,
@@ -642,9 +699,12 @@ void StorageDistributed::read(
     if (!remote_table_function_ptr)
         main_table = StorageID{remote_database, remote_table};
 
+    const auto & snapshot_data = assert_cast<const SnapshotData &>(*storage_snapshot->data);
     ClusterProxy::SelectStreamFactory select_stream_factory =
         ClusterProxy::SelectStreamFactory(
             header,
+            snapshot_data.objects_by_shard,
+            storage_snapshot,
             processed_stage);
 
     ClusterProxy::executeQuery(
@@ -698,7 +758,7 @@ SinkToStoragePtr StorageDistributed::write(const ASTPtr &, const StorageMetadata
     else
         columns_to_send = metadata_snapshot->getSampleBlockNonMaterialized().getNames();
 
-    /// DistributedBlockOutputStream will not own cluster, but will own ConnectionPools of the cluster
+    /// DistributedSink will not own cluster, but will own ConnectionPools of the cluster
     return std::make_shared<DistributedSink>(
         local_context, *this, metadata_snapshot, cluster, insert_sync, timeout,
         StorageID{remote_database, remote_table}, columns_to_send);
@@ -930,7 +990,7 @@ void StorageDistributed::drop()
     // (in shutdown()).
     shutdown();
 
-    // Distributed table w/o sharding_key does not allows INSERTs
+    // Distributed table without sharding_key does not allows INSERTs
     if (relative_data_path.empty())
         return;
 
@@ -990,14 +1050,14 @@ void StorageDistributed::createDirectoryMonitors(const DiskPtr & disk)
         {
             const auto & tmp_path = dir_path / "tmp";
 
-            /// "tmp" created by DistributedBlockOutputStream
+            /// "tmp" created by DistributedSink
             if (std::filesystem::is_directory(tmp_path) && std::filesystem::is_empty(tmp_path))
                 std::filesystem::remove(tmp_path);
 
             if (std::filesystem::is_empty(dir_path))
             {
                 LOG_DEBUG(log, "Removing {} (used for async INSERT into Distributed)", dir_path.string());
-                /// Will be created by DistributedBlockOutputStream on demand.
+                /// Will be created by DistributedSink on demand.
                 std::filesystem::remove(dir_path);
             }
             else
@@ -1077,7 +1137,7 @@ ClusterPtr StorageDistributed::getCluster() const
 }
 
 ClusterPtr StorageDistributed::getOptimizedCluster(
-    ContextPtr local_context, const StorageMetadataPtr & metadata_snapshot, const ASTPtr & query_ptr) const
+    ContextPtr local_context, const StorageSnapshotPtr & storage_snapshot, const ASTPtr & query_ptr) const
 {
     ClusterPtr cluster = getCluster();
     const Settings & settings = local_context->getSettingsRef();
@@ -1086,7 +1146,7 @@ ClusterPtr StorageDistributed::getOptimizedCluster(
 
     if (has_sharding_key && sharding_key_is_usable)
     {
-        ClusterPtr optimized = skipUnusedShards(cluster, query_ptr, metadata_snapshot, local_context);
+        ClusterPtr optimized = skipUnusedShards(cluster, query_ptr, storage_snapshot, local_context);
         if (optimized)
             return optimized;
     }
@@ -1142,7 +1202,7 @@ IColumn::Selector StorageDistributed::createSelector(const ClusterPtr cluster, c
 ClusterPtr StorageDistributed::skipUnusedShards(
     ClusterPtr cluster,
     const ASTPtr & query_ptr,
-    const StorageMetadataPtr & metadata_snapshot,
+    const StorageSnapshotPtr & storage_snapshot,
     ContextPtr local_context) const
 {
     const auto & select = query_ptr->as<ASTSelectQuery &>();
@@ -1162,7 +1222,7 @@ ClusterPtr StorageDistributed::skipUnusedShards(
         condition_ast = select.prewhere() ? select.prewhere()->clone() : select.where()->clone();
     }
 
-    replaceConstantExpressions(condition_ast, local_context, metadata_snapshot->getColumns().getAll(), shared_from_this(), metadata_snapshot);
+    replaceConstantExpressions(condition_ast, local_context, storage_snapshot->metadata->getColumns().getAll(), shared_from_this(), storage_snapshot);
 
     size_t limit = local_context->getSettingsRef().optimize_skip_unused_shards_limit;
     if (!limit || limit > SSIZE_MAX)
@@ -1317,7 +1377,7 @@ void StorageDistributed::delayInsertOrThrowIfNeeded() const
     {
         /// Step is 5% of the delay and minimal one second.
         /// NOTE: max_delay_to_insert is in seconds, and step is in ms.
-        const size_t step_ms = std::min<double>(1., double(distributed_settings.max_delay_to_insert) * 1'000 * 0.05);
+        const size_t step_ms = std::min<double>(1., static_cast<double>(distributed_settings.max_delay_to_insert) * 1'000 * 0.05);
         UInt64 delayed_ms = 0;
 
         do {
@@ -1439,7 +1499,7 @@ void registerStorageDistributed(StorageFactory & factory)
         if (!distributed_settings.monitor_max_sleep_time_ms.changed)
             distributed_settings.monitor_max_sleep_time_ms = Poco::Timespan(context->getSettingsRef().distributed_directory_monitor_max_sleep_time_ms);
 
-        return StorageDistributed::create(
+        return std::make_shared<StorageDistributed>(
             args.table_id,
             args.columns,
             args.constraints,
@@ -1463,3 +1523,4 @@ void registerStorageDistributed(StorageFactory & factory)
 }
 
 }
+

@@ -38,41 +38,42 @@ namespace ErrorCodes
 
 namespace Regexps
 {
-    using Regexp = OptimizedRegularExpressionImpl<false>;
+    using Regexp = OptimizedRegularExpressionSingleThreaded;
     using Pool = ObjectPoolMap<Regexp, String>;
 
     template <bool like>
     inline Regexp createRegexp(const std::string & pattern, int flags)
     {
-        return {pattern, flags};
+        if constexpr (like)
+            return {likePatternToRegexp(pattern), flags};
+        else
+            return {pattern, flags};
     }
 
-    template <>
-    inline Regexp createRegexp<true>(const std::string & pattern, int flags)
+    template<bool no_capture, bool case_insensitive>
+    inline int buildRe2Flags()
     {
-        return {likePatternToRegexp(pattern), flags};
+        int flags = OptimizedRegularExpression::RE_DOT_NL;
+        if constexpr (no_capture)
+            flags |= OptimizedRegularExpression::RE_NO_CAPTURE;
+        if constexpr (case_insensitive)
+            flags |= OptimizedRegularExpression::RE_CASELESS;
+        return flags;
     }
 
     /** Returns holder of an object from Pool.
       * You must hold the ownership while using the object.
       * In destructor, it returns the object back to the Pool for further reuse.
       */
-    template <bool like, bool no_capture, bool case_insensitive = false>
+    template <bool like, bool no_capture, bool case_insensitive>
     inline Pool::Pointer get(const std::string & pattern)
     {
-        /// C++11 has thread-safe function-local static on most modern compilers.
+        /// the Singleton is thread-safe in C++11
         static Pool known_regexps; /// Different variables for different pattern parameters.
 
         return known_regexps.get(pattern, [&pattern]
         {
-            int flags = OptimizedRegularExpression::RE_DOT_NL;
-
-            if (no_capture)
-                flags |= OptimizedRegularExpression::RE_NO_CAPTURE;
-
-            if (case_insensitive)
-                flags |= Regexps::Regexp::RE_CASELESS;
-
+            const int flags = buildRe2Flags<no_capture, case_insensitive>();
             ProfileEvents::increment(ProfileEvents::RegexpCreated);
             return new Regexp{createRegexp<like>(pattern, flags)};
         });

@@ -3,7 +3,7 @@
 #include <Common/setThreadName.h>
 #include <Common/Stopwatch.h>
 #include <Common/CurrentThread.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <chrono>
 
 
@@ -149,17 +149,33 @@ Coordination::WatchCallback BackgroundSchedulePoolTaskInfo::getWatchCallback()
 
 
 BackgroundSchedulePool::BackgroundSchedulePool(size_t size_, CurrentMetrics::Metric tasks_metric_, const char *thread_name_)
-    : size(size_)
-    , tasks_metric(tasks_metric_)
+    : tasks_metric(tasks_metric_)
     , thread_name(thread_name_)
 {
-    LOG_INFO(&Poco::Logger::get("BackgroundSchedulePool/" + thread_name), "Create BackgroundSchedulePool with {} threads", size);
+    LOG_INFO(&Poco::Logger::get("BackgroundSchedulePool/" + thread_name), "Create BackgroundSchedulePool with {} threads", size_);
 
-    threads.resize(size);
+    threads.resize(size_);
     for (auto & thread : threads)
         thread = ThreadFromGlobalPool([this] { threadFunction(); });
 
     delayed_thread = ThreadFromGlobalPool([this] { delayExecutionThreadFunction(); });
+}
+
+
+void BackgroundSchedulePool::increaseThreadsCount(size_t new_threads_count)
+{
+    const size_t old_threads_count = threads.size();
+
+    if (new_threads_count < old_threads_count)
+    {
+        LOG_WARNING(&Poco::Logger::get("BackgroundSchedulePool/" + thread_name),
+            "Tried to increase the number of threads but the new threads count ({}) is not greater than old one ({})", new_threads_count, old_threads_count);
+        return;
+    }
+
+    threads.resize(new_threads_count);
+    for (size_t i = old_threads_count; i < new_threads_count; ++i)
+        threads[i] = ThreadFromGlobalPool([this] { threadFunction(); });
 }
 
 

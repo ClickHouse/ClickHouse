@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Interpreters/PreparedSets.h>
+#include <Interpreters/SubqueryForSet.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Core/SortDescription.h>
 #include <Core/Names.h>
@@ -128,7 +129,6 @@ struct ProjectionCandidate
     InputOrderInfoPtr input_order_info;
     ManyExpressionActions group_by_elements_actions;
     SortDescription group_by_elements_order_descr;
-    std::shared_ptr<SubqueriesForSets> subqueries_for_sets;
     MergeTreeDataSelectAnalysisResultPtr merge_tree_projection_select_result_ptr;
     MergeTreeDataSelectAnalysisResultPtr merge_tree_normal_select_result_ptr;
 };
@@ -137,7 +137,7 @@ struct ProjectionCandidate
   *  that can be used during query processing
   *  inside storage engines.
   */
-struct SelectQueryInfo
+struct SelectQueryInfoBase
 {
     ASTPtr query;
     ASTPtr view_query; /// Optimized VIEW query
@@ -176,6 +176,16 @@ struct SelectQueryInfo
     bool settings_limit_offset_done = false;
     Block minmax_count_projection_block;
     MergeTreeDataSelectAnalysisResultPtr merge_tree_select_result_ptr;
+};
+
+/// Contains non-copyable stuff
+struct SelectQueryInfo : SelectQueryInfoBase
+{
+    SelectQueryInfo() = default;
+    SelectQueryInfo(const SelectQueryInfo & other) : SelectQueryInfoBase(other) {}
+
+    /// Make subquery_for_sets reusable across different interpreters.
+    SubqueriesForSets subquery_for_sets;
 };
 
 }

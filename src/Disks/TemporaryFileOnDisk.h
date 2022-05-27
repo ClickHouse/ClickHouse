@@ -15,7 +15,7 @@ using DiskPtr = std::shared_ptr<IDisk>;
 class TemporaryFileOnDisk
 {
 public:
-    TemporaryFileOnDisk(const DiskPtr & disk_, const String & prefix_ = "tmp");
+    explicit TemporaryFileOnDisk(const DiskPtr & disk_, const String & prefix_ = "tmp");
     ~TemporaryFileOnDisk();
 
     DiskPtr getDisk() const { return disk; }

@@ -107,7 +107,7 @@ struct TemporaryTableHolder : boost::noncopyable, WithContext
 
     StoragePtr getTable() const;
 
-    operator bool () const { return id != UUIDHelpers::Nil; }
+    operator bool () const { return id != UUIDHelpers::Nil; } /// NOLINT
 
     IDatabase * temporary_tables = nullptr;
     UUID id = UUIDHelpers::Nil;
