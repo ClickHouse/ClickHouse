@@ -253,7 +253,6 @@ std::optional<MergeTreeWhereOptimizer::ConditionDescription> MergeTreeWhereOptim
         if (const auto * literal = right_arg->as<ASTLiteral>())
         {
             const auto & field = literal->value;
-            LOG_INFO(&Poco::Logger::get("TEST>>>"), "DESC column = {} type={} field={}", ident->getColumnName(), compare_type, field);
             return ConditionDescription{ident->getColumnName(), compare_type, field};
         }
     }
@@ -456,26 +455,19 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const ASTPtr & node,
             cond.description = parseCondition(node);
         }
 
-        if (cond.viable)
+        if (cond.viable && !use_new_scoring)
         {
-            if (use_new_scoring)
-            {
-                //cond.good = isConditionGoodNew(node);
-            }
-            else
-            {
-                cond.good = isConditionGood(node);
-            }
+            cond.good = isConditionGood(node);
         }
 
-        LOG_DEBUG(
-            &Poco::Logger::get("COND"),
-            "{} -> v={} g={} clmsz={} sz={}",
-            cond.node->dumpTree(),
-            cond.viable,
-            cond.good,
-            cond.columns_size,
-            cond.identifiers.size());
+        //LOG_DEBUG(
+        //    &Poco::Logger::get("COND"),
+        //    "{} -> v={} g={} clmsz={} sz={}",
+        //    cond.node->dumpTree(),
+        //    cond.viable,
+        //    cond.good,
+        //    cond.columns_size,
+        //    cond.identifiers.size());
 
         res.emplace_back(std::move(cond));
     }

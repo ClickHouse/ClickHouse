@@ -58,7 +58,7 @@ void MergeTreeColumnDistributionStatisticTDigest::merge(const IStatisticPtr & ot
     {
         is_empty &= other_ptr->is_empty;
         sketch.merge(other_ptr->sketch);
-        Poco::Logger::get("MergeTreeColumnDistributionStatisticTDigest").information("MERGED emp=" + std::to_string(empty()));
+        // Poco::Logger::get("MergeTreeColumnDistributionStatisticTDigest").information("MERGED emp=" + std::to_string(empty()));
     }
     else
     {
