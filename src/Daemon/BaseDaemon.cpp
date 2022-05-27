@@ -68,6 +68,14 @@
 
 namespace fs = std::filesystem;
 
+namespace DB
+{
+    namespace ErrorCodes
+    {
+        extern const int CANNOT_SET_SIGNAL_HANDLER;
+    }
+}
+
 DB::PipeFDs signal_pipe;
 
 
