@@ -2,6 +2,7 @@
 
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <IO/WriteBufferFromFileBase.h>
 
 namespace DB
 {

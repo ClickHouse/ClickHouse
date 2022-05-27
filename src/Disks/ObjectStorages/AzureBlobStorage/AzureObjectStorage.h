@@ -45,7 +45,6 @@ public:
     using SettingsPtr = std::unique_ptr<AzureObjectStorageSettings>;
 
     AzureObjectStorage(
-        FileCachePtr && cache_,
         const String & name_,
         AzureClientPtr && client_,
         SettingsPtr && settings_);

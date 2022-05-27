@@ -42,13 +42,11 @@ class S3ObjectStorage : public IObjectStorage
 {
 public:
     S3ObjectStorage(
-        FileCachePtr && cache_,
         std::unique_ptr<Aws::S3::S3Client> && client_,
         std::unique_ptr<S3ObjectStorageSettings> && s3_settings_,
         String version_id_,
         String bucket_)
-        : IObjectStorage(std::move(cache_))
-        , bucket(bucket_)
+        : bucket(bucket_)
         , client(std::move(client_))
         , s3_settings(std::move(s3_settings_))
         , version_id(std::move(version_id_))

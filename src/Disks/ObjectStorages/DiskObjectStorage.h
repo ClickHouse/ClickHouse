@@ -53,11 +53,6 @@ public:
 
     void getRemotePathsRecursive(const String & local_path, std::vector<LocalPathWithRemotePaths> & paths_map) override;
 
-    std::string getCacheBasePath() const override
-    {
-        return object_storage->getCacheBasePath();
-    }
-
     /// Methods for working with metadata. For some operations (like hardlink
     /// creation) metadata can be updated concurrently from multiple threads
     /// (file actually rewritten on disk). So additional RW lock is required for
@@ -94,15 +89,15 @@ public:
 
     void replaceFile(const String & from_path, const String & to_path) override;
 
-    void removeFile(const String & path) override { removeSharedFile(path, false); }
+    bool removeFile(const String & path) override { return removeSharedFile(path, false); }
 
-    void removeFileIfExists(const String & path) override { removeSharedFileIfExists(path, false); }
+    bool removeFileIfExists(const String & path) override { return removeSharedFileIfExists(path, false); }
 
     void removeRecursive(const String & path) override { removeSharedRecursive(path, false, {}); }
 
-    void removeSharedFile(const String & path, bool delete_metadata_only) override;
+    bool removeSharedFile(const String & path, bool delete_metadata_only) override;
 
-    void removeSharedFileIfExists(const String & path, bool delete_metadata_only) override;
+    bool removeSharedFileIfExists(const String & path, bool delete_metadata_only) override;
 
     void removeSharedRecursive(const String & path, bool keep_all_batch_data, const NameSet & file_names_remove_metadata_only) override;
 

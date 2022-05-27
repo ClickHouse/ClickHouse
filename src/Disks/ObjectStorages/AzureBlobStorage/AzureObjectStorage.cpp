@@ -21,12 +21,10 @@ namespace ErrorCodes
 
 
 AzureObjectStorage::AzureObjectStorage(
-    FileCachePtr && cache_,
     const String & name_,
     AzureClientPtr && client_,
     SettingsPtr && settings_)
-    : IObjectStorage(std::move(cache_))
-    , name(name_)
+    : name(name_)
     , client(std::move(client_))
     , settings(std::move(settings_))
 {
@@ -206,7 +204,6 @@ void AzureObjectStorage::applyNewSettings(const Poco::Util::AbstractConfiguratio
 std::unique_ptr<IObjectStorage> AzureObjectStorage::cloneObjectStorage(const std::string &, const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, ContextPtr context)
 {
     return std::make_unique<AzureObjectStorage>(
-        nullptr,
         name,
         getAzureBlobContainerClient(config, config_prefix),
         getAzureBlobStorageSettings(config, config_prefix, context)

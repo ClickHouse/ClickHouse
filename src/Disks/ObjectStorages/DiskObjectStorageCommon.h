@@ -8,7 +8,6 @@
 #include <Common/getRandomASCIIString.h>
 
 #include <Disks/IDisk.h>
-#include <Disks/DiskCacheWrapper.h>
 
 namespace DB
 {

@@ -13,7 +13,7 @@
 #include <boost/algorithm/string.hpp>
 #include <Common/filesystemHelpers.h>
 #include <Disks/IO/ThreadPoolRemoteFSReader.h>
-#include <Common/FileCache.h>
+#include <Common/IFileCache.h>
 #include <Disks/ObjectStorages/DiskObjectStorageMetadataHelper.h>
 #include <Poco/Util/AbstractConfiguration.h>
 
@@ -258,13 +258,17 @@ void DiskObjectStorage::replaceFile(const String & from_path, const String & to_
         moveFile(from_path, to_path);
 }
 
-void DiskObjectStorage::removeSharedFile(const String & path, bool delete_metadata_only)
+bool DiskObjectStorage::removeSharedFile(const String & path, bool delete_metadata_only)
 {
     std::vector<String> paths_to_remove;
     removeMetadata(path, paths_to_remove);
 
-    if (!delete_metadata_only)
+    bool remove_from_remote_fs = !delete_metadata_only && !paths_to_remove.empty();
+
+    if (remove_from_remote_fs)
         removeFromRemoteFS(paths_to_remove);
+
+    return remove_from_remote_fs;
 }
 
 void DiskObjectStorage::removeFromRemoteFS(const std::vector<String> & paths)
@@ -425,7 +429,7 @@ void DiskObjectStorage::removeMetadata(const String & path, std::vector<String> 
                 {
                     String object_path = fs::path(remote_fs_root_path) / remote_fs_object_path;
                     paths_to_remove.push_back(object_path);
-                    object_storage->removeFromCache(object_path);
+                    /// object_storage->removeFromCache(object_path);
                 }
 
                 return false;
@@ -501,15 +505,21 @@ ReservationPtr DiskObjectStorage::reserve(UInt64 bytes)
     return std::make_unique<DiskObjectStorageReservation>(std::static_pointer_cast<DiskObjectStorage>(shared_from_this()), bytes);
 }
 
-void DiskObjectStorage::removeSharedFileIfExists(const String & path, bool delete_metadata_only)
+bool DiskObjectStorage::removeSharedFileIfExists(const String & path, bool delete_metadata_only)
 {
     std::vector<String> paths_to_remove;
+    bool remove_from_remote_fs = false;
+
     if (metadata_disk->exists(path))
     {
         removeMetadata(path, paths_to_remove);
-        if (!delete_metadata_only)
+
+        remove_from_remote_fs = !delete_metadata_only && !paths_to_remove.empty();
+        if (remove_from_remote_fs)
             removeFromRemoteFS(paths_to_remove);
     }
+
+    return remove_from_remote_fs;
 }
 
 void DiskObjectStorage::removeSharedRecursive(const String & path, bool keep_all_batch_data, const NameSet & file_names_remove_metadata_only)
