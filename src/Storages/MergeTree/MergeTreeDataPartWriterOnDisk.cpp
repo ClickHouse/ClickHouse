@@ -388,12 +388,11 @@ void MergeTreeDataPartWriterOnDisk::fillStatisticsChecksums(MergeTreeData::DataP
     {
         if (!stats_collector->empty())
         {
-            auto stat = stats_collector->getStatisticAndReset();
+            MergeTreeStatistics stats;
 
+            auto stat = stats_collector->getDistributionStatisticAndReset();
             auto column_distribution_stats = std::make_shared<MergeTreeDistributionStatistics>();
             column_distribution_stats->add(stats_collector->column(), stat);
-
-            MergeTreeStatistics stats;
             stats.setDistributionStatistics(std::move(column_distribution_stats));
 
             const auto filename = generateFileNameForStatistics(stat->name(), stats_collector->column());

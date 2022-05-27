@@ -4,6 +4,7 @@
 #include <Common/Exception.h>
 #include "DataTypes/DataTypesNumber.h"
 #include "IO/WriteBufferFromString.h"
+#include "Storages/Statistics.h"
 #include <limits>
 #include <memory>
 #include <Poco/Logger.h>
@@ -218,7 +219,12 @@ bool MergeTreeColumnDistributionStatisticCollectorTDigest::empty() const
     return !sketch.has_value();
 }
 
-IDistributionStatisticPtr MergeTreeColumnDistributionStatisticCollectorTDigest::getStatisticAndReset()
+StatisticType MergeTreeColumnDistributionStatisticCollectorTDigest::statisticType() const
+{
+    return StatisticType::NUMERIC_COLUMN_DISRIBUTION;
+}
+
+IDistributionStatisticPtr MergeTreeColumnDistributionStatisticCollectorTDigest::getDistributionStatisticAndReset()
 {
     if (empty())
         throw Exception("TDigest collector is empty", ErrorCodes::LOGICAL_ERROR);
@@ -263,7 +269,7 @@ IDistributionStatisticPtr creatorColumnDistributionStatisticTDigest(
     return std::make_shared<MergeTreeColumnDistributionStatisticTDigest>(stat.name, column.name);
 }
 
-IMergeTreeDistributionStatisticCollectorPtr creatorColumnDistributionStatisticCollectorTDigest(
+IMergeTreeStatisticCollectorPtr creatorColumnDistributionStatisticCollectorTDigest(
     const StatisticDescription & stat, const ColumnDescription & column)
 {
     validatorColumnDistributionStatisticTDigest(stat, column);

@@ -58,7 +58,9 @@ public:
     const String & type() const override;
     const String & column() const override;
     bool empty() const override;
-    IDistributionStatisticPtr getStatisticAndReset() override;
+
+    StatisticType statisticType() const override;
+    IDistributionStatisticPtr getDistributionStatisticAndReset() override;
 
     void update(const Block & block, size_t * pos, size_t limit) override;
     void granuleFinished() override;
@@ -71,7 +73,7 @@ private:
 
 IDistributionStatisticPtr creatorColumnDistributionStatisticTDigest(
     const StatisticDescription & stat, const ColumnDescription & column);
-IMergeTreeDistributionStatisticCollectorPtr creatorColumnDistributionStatisticCollectorTDigest(
+IMergeTreeStatisticCollectorPtr creatorColumnDistributionStatisticCollectorTDigest(
     const StatisticDescription & stat, const ColumnDescription & column);
 void validatorColumnDistributionStatisticTDigest(
     const StatisticDescription & stat, const ColumnDescription & column);

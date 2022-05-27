@@ -78,7 +78,7 @@ private:
 
 IDistributionStatisticPtr creatorGranuleDistributionStatisticTDigest(
     const StatisticDescription & stat, const ColumnDescription & column);
-IMergeTreeDistributionStatisticCollectorPtr creatorGranuleDistributionStatisticCollectorTDigest(
+IMergeTreeStatisticCollectorPtr creatorGranuleDistributionStatisticCollectorTDigest(
     const StatisticDescription & stat, const ColumnDescription & column);
 void validatorGranuleDistributionStatisticTDigest(
     const StatisticDescription & stat, const ColumnDescription & column);

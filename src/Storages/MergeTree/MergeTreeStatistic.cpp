@@ -266,7 +266,7 @@ IConstDistributionStatisticsPtr MergeTreeStatistics::getDistributionStatistics()
 
 void MergeTreeStatisticFactory::registerCreators(
     const std::string & stat_type,
-    StatCreator creator,
+    DistributionStatisticsCreator creator,
     CollectorCreator collector,
     Validator validator)
 {
@@ -347,7 +347,7 @@ MergeTreeStatisticsPtr MergeTreeStatisticFactory::get(
     return result;
 }
 
-IMergeTreeDistributionStatisticCollectorPtr MergeTreeStatisticFactory::getDistributionStatisticCollector(
+IMergeTreeStatisticCollectorPtr MergeTreeStatisticFactory::getDistributionStatisticCollector(
     const StatisticDescription & stat, const ColumnDescription & column) const
 {
     auto it = collectors.find(stat.type);
@@ -367,7 +367,7 @@ IMergeTreeDistributionStatisticCollectorPtr MergeTreeStatisticFactory::getDistri
     return {it->second(stat, column)};
 }
 
-IMergeTreeDistributionStatisticCollectorPtrs MergeTreeStatisticFactory::getDistributionStatisticCollectors(
+IMergeTreeStatisticCollectorPtrs MergeTreeStatisticFactory::getDistributionStatisticCollectors(
     const std::vector<StatisticDescription> & stats,
     const ColumnsDescription & columns,
     const NamesAndTypesList & columns_for_collection) const
@@ -377,7 +377,7 @@ IMergeTreeDistributionStatisticCollectorPtrs MergeTreeStatisticFactory::getDistr
         columns_names_for_collection.insert(column_for_collection.name);
     }
 
-    IMergeTreeDistributionStatisticCollectorPtrs result;
+    IMergeTreeStatisticCollectorPtrs result;
     for (const auto & stat_description : stats) {
         for (const auto & column : stat_description.column_names) {
             if (columns_names_for_collection.contains(column)) {

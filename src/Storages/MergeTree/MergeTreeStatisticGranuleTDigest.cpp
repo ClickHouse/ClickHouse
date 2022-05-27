@@ -221,7 +221,12 @@ bool MergeTreeGranuleDistributionStatisticCollectorTDigest::empty() const
     return !min_sketch.has_value() || !max_sketch.has_value();
 }
 
-IDistributionStatisticPtr MergeTreeGranuleDistributionStatisticCollectorTDigest::getStatisticAndReset()
+StatisticType MergeTreeGranuleDistributionStatisticCollectorTDigest::statisticType() const
+{
+    return StatisticType::NUMERIC_COLUMN_DISRIBUTION;
+}
+
+IDistributionStatisticPtr MergeTreeGranuleDistributionStatisticCollectorTDigest::getDistributionStatisticAndReset()
 {
     if (empty())
         throw Exception("GranuleTDigest collector is empty", ErrorCodes::LOGICAL_ERROR);
@@ -286,7 +291,7 @@ IDistributionStatisticPtr creatorGranuleDistributionStatisticTDigest(
     return std::make_shared<MergeTreeGranuleDistributionStatisticTDigest>(stat.name, column.name);
 }
 
-IMergeTreeDistributionStatisticCollectorPtr creatorGranuleDistributionStatisticCollectorTDigest(
+IMergeTreeStatisticCollectorPtr creatorGranuleDistributionStatisticCollectorTDigest(
     const StatisticDescription & stat, const ColumnDescription & column)
 {
     validatorGranuleDistributionStatisticTDigest(stat, column);

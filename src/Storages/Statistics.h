@@ -91,6 +91,9 @@ public:
     virtual std::optional<double> estimateSubstringsProbability(const Strings& needles) const = 0;    
 };
 
+using IStringSearchStatisticPtr = std::shared_ptr<IStringSearchStatistic>;
+using IStringSearchStatisticPtrs = std::vector<IStringSearchStatisticPtr>;
+
 
 class IStringSearchStatistics {
 public:
@@ -112,6 +115,9 @@ public:
     virtual size_t getSizeInMemory() const = 0;
     virtual size_t getSizeInMemoryByName(const String& name) const = 0;
 };
+
+using IStringSearchStatisticsPtr = std::shared_ptr<IStringSearchStatistics>;
+using IConstStringSearchStatisticsPtr = std::shared_ptr<const IStringSearchStatistics>;
 
 
 class IStatistics {

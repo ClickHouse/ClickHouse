@@ -35,7 +35,11 @@ public:
     virtual const String & type() const = 0;
     virtual const String & column() const = 0;
     virtual bool empty() const = 0;
-    virtual IDistributionStatisticPtr getStatisticAndReset() = 0;
+
+    virtual StatisticType statisticType() const = 0;
+
+    virtual IDistributionStatisticPtr getDistributionStatisticAndReset() { return nullptr; }
+    virtual IStringSearchStatisticPtr getStringSearchStatisticAndReset() { return nullptr; }
 
     /// Updates the stored info using rows of the specified block.
     /// Reads no more than `limit` rows.
@@ -44,8 +48,8 @@ public:
     virtual void granuleFinished() = 0;
 };
 
-using IMergeTreeDistributionStatisticCollectorPtr = std::shared_ptr<IMergeTreeDistributionStatisticCollector>;
-using IMergeTreeDistributionStatisticCollectorPtrs = std::vector<IMergeTreeDistributionStatisticCollectorPtr>;
+using IMergeTreeStatisticCollectorPtr = std::shared_ptr<IMergeTreeDistributionStatisticCollector>;
+using IMergeTreeStatisticCollectorPtrs = std::vector<IMergeTreeStatisticCollectorPtr>;
 
 class MergeTreeDistributionStatistics : public IDistributionStatistics {
 public:
@@ -98,9 +102,9 @@ class MergeTreeStatisticFactory : private boost::noncopyable
 public:
     static MergeTreeStatisticFactory & instance();
 
-    using StatCreator = std::function<IDistributionStatisticPtr(
+    using DistributionStatisticsCreator = std::function<IDistributionStatisticPtr(
         const StatisticDescription & stat, const ColumnDescription & column)>;
-    using CollectorCreator = std::function<IMergeTreeDistributionStatisticCollectorPtr(
+    using CollectorCreator = std::function<IMergeTreeStatisticCollectorPtr(
         const StatisticDescription & stat, const ColumnDescription & column)>;
     using Validator = std::function<void(
         const StatisticDescription & stat, const ColumnDescription & column)>;
@@ -116,7 +120,7 @@ public:
     // Creates collectors for available pairs (stat, column).
     // Statistics on different columns are computed independently,
     // so collector can calculate statistics only on subset of columns provided in columns_for_collection.
-    IMergeTreeDistributionStatisticCollectorPtrs getDistributionStatisticCollectors(
+    IMergeTreeStatisticCollectorPtrs getDistributionStatisticCollectors(
         const std::vector<StatisticDescription> & stats,
         const ColumnsDescription & columns,
         const NamesAndTypesList & columns_for_collection) const;
@@ -128,7 +132,7 @@ private:
     IDistributionStatisticPtr getDistributionStatistic(
         const StatisticDescription & stat, const ColumnDescription & column) const;
 
-    IMergeTreeDistributionStatisticCollectorPtr getDistributionStatisticCollector(
+    IMergeTreeStatisticCollectorPtr getDistributionStatisticCollector(
         const StatisticDescription & stat, const ColumnDescription & column) const;
     
     std::vector<StatisticDescription> getSplittedStatistics(
@@ -136,15 +140,15 @@ private:
 
     void registerCreators(
         const std::string & stat_type,
-        StatCreator creator,
+        DistributionStatisticsCreator creator,
         CollectorCreator collector,
         Validator validator);
 
-    using StatCreators = std::unordered_map<std::string, StatCreator>;
+    using DistributionStatisticsCreators = std::unordered_map<std::string, DistributionStatisticsCreator>;
     using CollectorCreators = std::unordered_map<std::string, CollectorCreator>;
     using Validators = std::unordered_map<std::string, Validator>;
 
-    StatCreators creators;
+    DistributionStatisticsCreators creators;
     CollectorCreators collectors;
     Validators validators;
 };

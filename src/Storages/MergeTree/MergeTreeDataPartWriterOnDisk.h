@@ -158,7 +158,7 @@ protected:
         std::unique_ptr<HashingWriteBuffer> hashing_buffer = nullptr;
     };
     std::map<std::pair<String, String>, std::unique_ptr<StatisticsStream>> statistic_and_column_to_stream;
-    IMergeTreeDistributionStatisticCollectorPtrs stats_collectors;
+    IMergeTreeStatisticCollectorPtrs stats_collectors;
 
     std::unique_ptr<WriteBufferFromFileBase> index_file_stream;
     std::unique_ptr<HashingWriteBuffer> index_stream;
