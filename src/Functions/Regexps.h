@@ -9,7 +9,6 @@
 #include <vector>
 #include <Functions/likePatternToRegexp.h>
 #include <Common/Exception.h>
-#include <Common/LRUCache.h>
 #include <Common/OptimizedRegularExpression.h>
 #include <Common/ProfileEvents.h>
 #include <Common/config.h>
@@ -39,38 +38,72 @@ namespace ErrorCodes
 namespace Regexps
 {
 using Regexp = OptimizedRegularExpressionSingleThreaded;
-using Cache = LRUCache<String, Regexp>;
-using RegexpPtr = Cache::MappedPtr;
+using RegexpPtr = std::shared_ptr<Regexp>;
 
-template<bool no_capture, bool case_insensitive>
-inline int buildRe2Flags()
+template <bool like, bool no_capture, bool case_insensitive>
+inline Regexp createRegexp(const std::string & pattern)
 {
     int flags = OptimizedRegularExpression::RE_DOT_NL;
     if constexpr (no_capture)
         flags |= OptimizedRegularExpression::RE_NO_CAPTURE;
     if constexpr (case_insensitive)
         flags |= OptimizedRegularExpression::RE_CASELESS;
-    return flags;
+
+    if constexpr (like)
+        return {likePatternToRegexp(pattern), flags};
+    else
+        return {pattern, flags};
 }
 
-/// Probes the cache of known compiled regexps for the given string pattern and returns a compiled regexp if
-/// found. Otherwise, a new cache entry is created.
-template <bool like, bool no_capture, bool case_insensitive>
-inline RegexpPtr get(const String & pattern)
+/// Caches compiled re2 objects for given string patterns. Intended to support the common situation of a small set of patterns which are
+/// evaluated over and over within the same query. In these situations, usage of the cache will save unnecessary pattern re-compilation.
+/// However, we must be careful that caching does not add too much static overhead to overall pattern evaluation. Therefore, the cache is
+/// intentionally very lightweight: a) no thread-safety/mutexes, b) small & fixed capacity, c) no collision list, d) but also no open
+/// addressing, instead collisions simply replace the existing element.
+class LocalCacheTable
 {
-    static Cache known_regexps(42'000);
+public:
+    using RegexpPtr = std::shared_ptr<Regexp>;
 
-    auto [regexp_ptr, _] = known_regexps.getOrSet(pattern, [&pattern]()
+    LocalCacheTable()
+        : known_regexps(max_regexp_cache_size, {"", nullptr})
     {
-        const int flags = buildRe2Flags<no_capture, case_insensitive>();
-        ProfileEvents::increment(ProfileEvents::RegexpCreated);
-        if constexpr (like)
-            return std::make_shared<Regexp>(likePatternToRegexp(pattern), flags);
+    }
+
+    template <bool like, bool no_capture, bool case_insensitive>
+    void getOrSet(const String & pattern, RegexpPtr & regexp)
+    {
+        StringAndRegexp & bucket = known_regexps[hasher(pattern) % max_regexp_cache_size];
+
+        if (likely(bucket.regexp != nullptr))
+        {
+            if (pattern == bucket.pattern)
+                regexp = bucket.regexp;
+            else
+            {
+                regexp = std::make_shared<Regexp>(createRegexp<like, no_capture, case_insensitive>(pattern));
+                bucket = {pattern, regexp};
+            }
+        }
         else
-            return std::make_shared<Regexp>(pattern, flags);
-    });
-    return regexp_ptr;
-}
+        {
+            regexp = std::make_shared<Regexp>(createRegexp<like, no_capture, case_insensitive>(pattern));
+            bucket = {pattern, regexp};
+        }
+    }
+
+private:
+    std::hash<std::string> hasher;
+    struct StringAndRegexp
+    {
+        std::string pattern;
+        RegexpPtr regexp;
+    };
+    using CacheTable = std::vector<StringAndRegexp>;
+    CacheTable known_regexps;
+
+    constexpr static size_t max_regexp_cache_size = 100; // collision probability
+};
 
 }
 
