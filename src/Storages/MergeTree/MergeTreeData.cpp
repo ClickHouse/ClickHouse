@@ -3072,7 +3072,7 @@ void MergeTreeData::forgetPartAndMoveToDetached(const MergeTreeData::DataPartPtr
         throw Exception("No such data part " + part_to_detach->getNameWithState(), ErrorCodes::NO_SUCH_DATA_PART);
 
     /// What if part_to_detach is a reference to *it_part? Make a new owner just in case.
-    DataPartPtr part = *it_part;
+    const DataPartPtr & part = *it_part;
 
     if (part->getState() == DataPartState::Active)
     {
