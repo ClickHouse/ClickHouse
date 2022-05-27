@@ -203,12 +203,14 @@ public:
         if (query_weight(*data) > cache_key.settings.max_query_cache_entry_size)
         {
             can_insert = false;
+            cache->remove(cache_key);
         }
     }
 
 private:
     CacheRemovalScheduler * removal_scheduler;
     CacheKey cache_key;
+    Cache * cache;
 
     bool can_insert = false;
     std::shared_ptr<CacheEntry> data;
