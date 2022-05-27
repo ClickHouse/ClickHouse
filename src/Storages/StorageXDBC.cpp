@@ -11,7 +11,7 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageURL.h>
 #include <Storages/transformQueryForExternalDatabase.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <Common/escapeForFileName.h>
 
 
@@ -57,7 +57,7 @@ std::string StorageXDBC::getReadMethod() const
 
 std::vector<std::pair<std::string, std::string>> StorageXDBC::getReadURIParams(
     const Names & /* column_names */,
-    const StorageMetadataPtr & /* metadata_snapshot */,
+    const StorageSnapshotPtr & /*storage_snapshot*/,
     const SelectQueryInfo & /*query_info*/,
     ContextPtr /*context*/,
     QueryProcessingStage::Enum & /*processed_stage*/,
@@ -101,17 +101,17 @@ std::function<void(std::ostream &)> StorageXDBC::getReadPOSTDataCallback(
 
 Pipe StorageXDBC::read(
     const Names & column_names,
-    const StorageMetadataPtr & metadata_snapshot,
+    const StorageSnapshotPtr & storage_snapshot,
     SelectQueryInfo & query_info,
     ContextPtr local_context,
     QueryProcessingStage::Enum processed_stage,
     size_t max_block_size,
     unsigned num_streams)
 {
-    metadata_snapshot->check(column_names, getVirtuals(), getStorageID());
+    storage_snapshot->check(column_names);
 
     bridge_helper->startBridgeSync();
-    return IStorageURLBase::read(column_names, metadata_snapshot, query_info, local_context, processed_stage, max_block_size, num_streams);
+    return IStorageURLBase::read(column_names, storage_snapshot, query_info, local_context, processed_stage, max_block_size, num_streams);
 }
 
 SinkToStoragePtr StorageXDBC::write(const ASTPtr & /* query */, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context)
@@ -140,14 +140,14 @@ SinkToStoragePtr StorageXDBC::write(const ASTPtr & /* query */, const StorageMet
         chooseCompressionMethod(uri, compression_method));
 }
 
-bool StorageXDBC::isColumnOriented() const
+bool StorageXDBC::supportsSubsetOfColumns() const
 {
     return true;
 }
 
-Block StorageXDBC::getHeaderBlock(const Names & column_names, const StorageMetadataPtr & metadata_snapshot) const
+Block StorageXDBC::getHeaderBlock(const Names & column_names, const StorageSnapshotPtr & storage_snapshot) const
 {
-    return metadata_snapshot->getSampleBlockForColumns(column_names, getVirtuals(), getStorageID());
+    return storage_snapshot->getSampleBlockForColumns(column_names);
 }
 
 std::string StorageXDBC::getName() const

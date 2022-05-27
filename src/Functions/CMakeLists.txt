@@ -13,6 +13,7 @@ add_library(clickhouse_functions ${clickhouse_functions_sources})
 
 target_link_libraries(clickhouse_functions
     PUBLIC
+        ch_contrib::wyhash
         ch_contrib::cityhash
         ch_contrib::farmhash
         clickhouse_dictionaries
@@ -22,6 +23,7 @@ target_link_libraries(clickhouse_functions
         dbms
         ch_contrib::metrohash
         ch_contrib::murmurhash
+        ch_contrib::hashidsxx
 
     PRIVATE
         ch_contrib::zlib
@@ -94,17 +96,6 @@ endif()
 
 if (TARGET ch_contrib::rapidjson)
     target_link_libraries(clickhouse_functions PRIVATE ch_contrib::rapidjson)
-endif()
-
-# ClickHouse developers may use platform-dependent code under some macro (e.g. `#ifdef ENABLE_MULTITARGET`).
-# If turned ON, this option defines such macro.
-# See `src/Functions/TargetSpecific.h`
-option(ENABLE_MULTITARGET_CODE "Enable platform-dependent code" ON)
-
-if (ENABLE_MULTITARGET_CODE)
-    add_definitions(-DENABLE_MULTITARGET_CODE=1)
-else()
-    add_definitions(-DENABLE_MULTITARGET_CODE=0)
 endif()
 
 add_subdirectory(GatherUtils)

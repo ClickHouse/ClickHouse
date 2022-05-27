@@ -63,7 +63,7 @@ public:
       */
     virtual PartsRange select(
         const PartsRanges & parts_ranges,
-        const size_t max_total_size_to_merge) = 0;
+        size_t max_total_size_to_merge) = 0;
 
     virtual ~IMergeSelector() = default;
 };

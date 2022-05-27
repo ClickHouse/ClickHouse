@@ -5,19 +5,32 @@ from helpers.client import QueryRuntimeException
 
 cluster = ClickHouseCluster(__file__)
 
-node_shard = cluster.add_instance('node1', main_configs=['configs/remote_servers.xml'])
+node_shard = cluster.add_instance("node1", main_configs=["configs/remote_servers.xml"])
 
-node_dist = cluster.add_instance('node2', main_configs=['configs/remote_servers.xml'], image='yandex/clickhouse-server',
-                                tag='21.11.9.1', stay_alive=True, with_installed_binary=True)
+node_dist = cluster.add_instance(
+    "node2",
+    main_configs=["configs/remote_servers.xml"],
+    image="yandex/clickhouse-server",
+    tag="21.11.9.1",
+    stay_alive=True,
+    with_installed_binary=True,
+)
+
 
 @pytest.fixture(scope="module")
 def started_cluster():
     try:
         cluster.start()
 
-        node_shard.query("CREATE TABLE local_table(id UInt32, val String) ENGINE = MergeTree ORDER BY id")
-        node_dist.query("CREATE TABLE local_table(id UInt32, val String) ENGINE = MergeTree ORDER BY id")
-        node_dist.query("CREATE TABLE dist_table(id UInt32, val String) ENGINE = Distributed(test_cluster, default, local_table, rand())")
+        node_shard.query(
+            "CREATE TABLE local_table(id UInt32, val String) ENGINE = MergeTree ORDER BY id"
+        )
+        node_dist.query(
+            "CREATE TABLE local_table(id UInt32, val String) ENGINE = MergeTree ORDER BY id"
+        )
+        node_dist.query(
+            "CREATE TABLE dist_table(id UInt32, val String) ENGINE = Distributed(test_cluster, default, local_table, rand())"
+        )
 
         yield cluster
 

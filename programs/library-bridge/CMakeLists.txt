@@ -24,10 +24,9 @@ target_link_libraries(clickhouse-library-bridge PRIVATE
 
 set_target_properties(clickhouse-library-bridge PROPERTIES RUNTIME_OUTPUT_DIRECTORY ..)
 
-if (BUILD_STRIPPED_BINARIES_PREFIX)
-    clickhouse_strip_binary(TARGET clickhouse-library-bridge DESTINATION_DIR ${CMAKE_CURRENT_BINARY_DIR}/../${BUILD_STRIPPED_BINARIES_PREFIX} BINARY_PATH ../clickhouse-library-bridge)
-endif()
-
-if (NOT BUILD_STRIPPED_BINARIES_PREFIX)
+if (INSTALL_STRIPPED_BINARIES)
+    clickhouse_strip_binary(TARGET clickhouse-library-bridge DESTINATION_DIR ${CMAKE_CURRENT_BINARY_DIR}/../${STRIPPED_BINARIES_OUTPUT} BINARY_PATH ../clickhouse-library-bridge)
+else()
+    clickhouse_make_empty_debug_info_for_nfpm(TARGET clickhouse-library-bridge DESTINATION_DIR ${CMAKE_CURRENT_BINARY_DIR}/../${STRIPPED_BINARIES_OUTPUT})
     install(TARGETS clickhouse-library-bridge RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
 endif()

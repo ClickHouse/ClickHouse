@@ -1,7 +1,6 @@
 ---
-toc_folder_title: Log Family
-toc_priority: 29
-toc_title: Introduction
+sidebar_position: 20
+sidebar_label:  Log Family
 ---
 
 # Log Engine Family {#log-engine-family}

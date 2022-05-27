@@ -11,15 +11,15 @@
 #include <base/types.h>
 #include <Interpreters/Context.h>
 #include <IO/SeekableReadBuffer.h>
+#include <IO/WithFileName.h>
 
 
 namespace DB
 {
-
 /** Accepts HDFS path to file and opens it.
  * Closes file by himself (thus "owns" a file descriptor).
  */
-class ReadBufferFromHDFS : public SeekableReadBufferWithSize
+class ReadBufferFromHDFS : public SeekableReadBuffer, public WithFileName, public WithFileSize
 {
 struct ReadBufferFromHDFSImpl;
 
@@ -37,9 +37,11 @@ public:
 
     off_t getPosition() override;
 
-    std::optional<size_t> getTotalSize() override;
+    std::optional<size_t> getFileSize() override;
 
     size_t getFileOffsetOfBufferEnd() const override;
+
+    String getFileName() const override;
 
 private:
     std::unique_ptr<ReadBufferFromHDFSImpl> impl;

@@ -77,8 +77,7 @@ static size_t tryAddNewFilterStep(
     /// New filter column is the first one.
     auto split_filter_column_name = (*split_filter->getIndex().begin())->result_name;
     node.step = std::make_unique<FilterStep>(
-            node.children.at(0)->step->getOutputStream(),
-            std::move(split_filter), std::move(split_filter_column_name), true);
+        node.children.at(0)->step->getOutputStream(), std::move(split_filter), std::move(split_filter_column_name), true);
 
     return 3;
 }
@@ -171,7 +170,7 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
 
         Names allowed_inputs;
         for (const auto & column : array_join_header)
-            if (keys.count(column.name) == 0)
+            if (!keys.contains(column.name))
                 allowed_inputs.push_back(column.name);
 
         // for (const auto & name : allowed_inputs)
@@ -194,13 +193,13 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
         /// Push down is for left table only. We need to update JoinStep for push down into right.
         /// Only inner and left join are supported. Other types may generate default values for left table keys.
         /// So, if we push down a condition like `key != 0`, not all rows may be filtered.
-        if (table_join.oneDisjunct() && (table_join.kind() == ASTTableJoin::Kind::Inner || table_join.kind() == ASTTableJoin::Kind::Left))
+        if (table_join.kind() == ASTTableJoin::Kind::Inner || table_join.kind() == ASTTableJoin::Kind::Left)
         {
             const auto & left_header = join->getInputStreams().front().header;
             const auto & res_header = join->getOutputStream().header;
             Names allowed_keys;
-            const auto & key_names_left = table_join.getOnlyClause().key_names_left;
-            for (const auto & name : key_names_left)
+            const auto & source_columns = left_header.getNames();
+            for (const auto & name : source_columns)
             {
                 /// Skip key if it is renamed.
                 /// I don't know if it is possible. Just in case.

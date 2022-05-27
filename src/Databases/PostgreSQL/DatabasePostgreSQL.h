@@ -81,7 +81,7 @@ private:
 
     bool checkPostgresTable(const String & table_name) const;
 
-    StoragePtr fetchTable(const String & table_name, ContextPtr context, const bool table_checked) const;
+    StoragePtr fetchTable(const String & table_name, ContextPtr context, bool table_checked) const;
 
     void removeOutdatedTables();
 

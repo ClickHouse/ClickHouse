@@ -17,7 +17,7 @@ class ComparisonGraph
 {
 public:
     /// atomic_formulas are extracted from constraints.
-    ComparisonGraph(const std::vector<ASTPtr> & atomic_formulas);
+    explicit ComparisonGraph(const std::vector<ASTPtr> & atomic_formulas);
 
     enum class CompareResult
     {
@@ -32,15 +32,15 @@ public:
 
     static CompareResult atomToCompareResult(const CNFQuery::AtomicFormula & atom);
     static CompareResult functionNameToCompareResult(const std::string & name);
-    static CompareResult inverseCompareResult(const CompareResult result);
+    static CompareResult inverseCompareResult(CompareResult result);
 
     CompareResult compare(const ASTPtr & left, const ASTPtr & right) const;
 
     /// It's possible that left <expected> right
-    bool isPossibleCompare(const CompareResult expected, const ASTPtr & left, const ASTPtr & right) const;
+    bool isPossibleCompare(CompareResult expected, const ASTPtr & left, const ASTPtr & right) const;
 
     /// It's always true that left <expected> right
-    bool isAlwaysCompare(const CompareResult expected, const ASTPtr & left, const ASTPtr & right) const;
+    bool isAlwaysCompare(CompareResult expected, const ASTPtr & left, const ASTPtr & right) const;
 
     /// Returns all expressions from component to which @ast belongs if any.
     std::vector<ASTPtr> getEqual(const ASTPtr & ast) const;
@@ -52,11 +52,11 @@ public:
     std::optional<std::size_t> getComponentId(const ASTPtr & ast) const;
 
     /// Returns all expressions from component.
-    std::vector<ASTPtr> getComponent(const std::size_t id) const;
+    std::vector<ASTPtr> getComponent(size_t id) const;
 
     size_t getNumOfComponents() const { return graph.vertices.size(); }
 
-    bool hasPath(const size_t left, const size_t right) const;
+    bool hasPath(size_t left, size_t right) const;
 
     /// Find constants lessOrEqual and greaterOrEqual.
     /// For int and double linear programming can be applied here.
@@ -131,7 +131,7 @@ private:
     /// Assigns index of component for each vertex.
     static void dfsComponents(
         const Graph & reversed_graph, size_t v,
-        OptionalIndices & components, const size_t component);
+        OptionalIndices & components, size_t component);
 
     enum class Path
     {
@@ -140,7 +140,7 @@ private:
     };
 
     static CompareResult pathToCompareResult(Path path, bool inverse);
-    std::optional<Path> findPath(const size_t start, const size_t finish) const;
+    std::optional<Path> findPath(size_t start, size_t finish) const;
 
     /// Calculate @dists.
     static std::map<std::pair<size_t, size_t>, Path> buildDistsFromGraph(const Graph & g);

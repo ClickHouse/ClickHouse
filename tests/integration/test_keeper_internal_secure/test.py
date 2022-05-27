@@ -8,11 +8,39 @@ import os
 import time
 
 cluster = ClickHouseCluster(__file__)
-node1 = cluster.add_instance('node1', main_configs=['configs/enable_secure_keeper1.xml', 'configs/ssl_conf.xml', 'configs/server.crt', 'configs/server.key', 'configs/rootCA.pem'])
-node2 = cluster.add_instance('node2', main_configs=['configs/enable_secure_keeper2.xml', 'configs/ssl_conf.xml', 'configs/server.crt', 'configs/server.key', 'configs/rootCA.pem'])
-node3 = cluster.add_instance('node3', main_configs=['configs/enable_secure_keeper3.xml', 'configs/ssl_conf.xml', 'configs/server.crt', 'configs/server.key', 'configs/rootCA.pem'])
+node1 = cluster.add_instance(
+    "node1",
+    main_configs=[
+        "configs/enable_secure_keeper1.xml",
+        "configs/ssl_conf.xml",
+        "configs/server.crt",
+        "configs/server.key",
+        "configs/rootCA.pem",
+    ],
+)
+node2 = cluster.add_instance(
+    "node2",
+    main_configs=[
+        "configs/enable_secure_keeper2.xml",
+        "configs/ssl_conf.xml",
+        "configs/server.crt",
+        "configs/server.key",
+        "configs/rootCA.pem",
+    ],
+)
+node3 = cluster.add_instance(
+    "node3",
+    main_configs=[
+        "configs/enable_secure_keeper3.xml",
+        "configs/ssl_conf.xml",
+        "configs/server.crt",
+        "configs/server.key",
+        "configs/rootCA.pem",
+    ],
+)
 
 from kazoo.client import KazooClient, KazooState
+
 
 @pytest.fixture(scope="module")
 def started_cluster():
@@ -24,10 +52,14 @@ def started_cluster():
     finally:
         cluster.shutdown()
 
+
 def get_fake_zk(nodename, timeout=30.0):
-    _fake_zk_instance = KazooClient(hosts=cluster.get_instance_ip(nodename) + ":9181", timeout=timeout)
+    _fake_zk_instance = KazooClient(
+        hosts=cluster.get_instance_ip(nodename) + ":9181", timeout=timeout
+    )
     _fake_zk_instance.start()
     return _fake_zk_instance
+
 
 def test_secure_raft_works(started_cluster):
     try:

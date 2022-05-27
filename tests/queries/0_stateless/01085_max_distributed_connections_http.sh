@@ -15,3 +15,5 @@ while [[ $i -lt $retries ]]; do
     timeout 1.8s ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&max_distributed_connections=2&max_threads=1" -d "$query" && break
     ((++i))
 done
+
+clickhouse_test_wait_queries 60

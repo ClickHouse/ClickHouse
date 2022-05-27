@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Bridge/LibraryBridgeHelper.h>
+#include <BridgeHelper/LibraryBridgeHelper.h>
 #include <Common/LocalDateTime.h>
 #include <Core/UUID.h>
 #include "DictionaryStructure.h"

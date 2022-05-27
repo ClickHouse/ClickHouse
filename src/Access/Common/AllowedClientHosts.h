@@ -18,7 +18,7 @@ public:
     class IPSubnet
     {
     public:
-        IPSubnet() {}
+        IPSubnet() = default;
         IPSubnet(const IPAddress & prefix_, const IPAddress & mask_) { set(prefix_, mask_); }
         IPSubnet(const IPAddress & prefix_, size_t num_prefix_bits) { set(prefix_, num_prefix_bits); }
         explicit IPSubnet(const IPAddress & address) { set(address); }
@@ -43,9 +43,9 @@ public:
 
     struct AnyHostTag {};
 
-    AllowedClientHosts() {}
-    AllowedClientHosts(AnyHostTag) { addAnyHost(); }
-    ~AllowedClientHosts() {}
+    AllowedClientHosts() = default;
+    AllowedClientHosts(AnyHostTag) { addAnyHost(); } /// NOLINT
+    ~AllowedClientHosts() = default;
 
     AllowedClientHosts(const AllowedClientHosts & src) = default;
     AllowedClientHosts & operator =(const AllowedClientHosts & src) = default;
