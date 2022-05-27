@@ -139,7 +139,7 @@ void MergeTreeStatistics::serializeBinary(const String & name, WriteBuffer & ost
     auto size_serialization = size_type->getDefaultSerialization();
     size_serialization->serializeBinary(1, ostr);
     // TODO: support versions and multiple distrs
-    size_serialization->serializeBinary(static_cast<size_t>(StatisticType::COLUMN_DISRIBUTION), ostr);
+    size_serialization->serializeBinary(static_cast<size_t>(StatisticType::NUMERIC_COLUMN_DISRIBUTION), ostr);
     column_distributions->serializeBinary(name, ostr);
 }
 
@@ -155,7 +155,7 @@ void MergeTreeStatistics::deserializeBinary(ReadBuffer & istr)
     for (size_t stat_index = 0; stat_index < stats_count; ++stat_index) {
         size_serialization->deserializeBinary(field, istr);
         switch (field.get<size_t>()) {
-        case static_cast<size_t>(StatisticType::COLUMN_DISRIBUTION):
+        case static_cast<size_t>(StatisticType::NUMERIC_COLUMN_DISRIBUTION):
             column_distributions->deserializeBinary(istr);
             break;
         default:

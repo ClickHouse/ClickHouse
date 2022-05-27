@@ -152,42 +152,6 @@ static bool isConditionGood(const ASTPtr & condition)
 
     return false;
 }
-/*
-static bool isConditionGoodNew(const ASTPtr & condition)
-{
-    const auto * function = condition->as<ASTFunction>();
-    if (!function)
-        return false;
-
-    std::unordered_set<String> compare_funcs = {
-        "equals",
-        "notEquals",
-        "less",
-        "greater",
-        "greaterOrEquals",
-        "lessOrEquals",
-    };
-    if (!compare_funcs.contains(function->name))
-        return false;
-
-    auto * left_arg = function->arguments->children.front().get();
-    auto * right_arg = function->arguments->children.back().get();
-
-    /// try to ensure left_arg points to ASTIdentifier
-    if (!left_arg->as<ASTIdentifier>() && right_arg->as<ASTIdentifier>())
-        std::swap(left_arg, right_arg);
-
-    if (left_arg->as<ASTIdentifier>())
-    {
-        /// condition may be "good" if only right_arg is a constant and its value is outside the threshold
-        if (const auto * literal = right_arg->as<ASTLiteral>())
-        {
-            const auto type = literal->value.getType();
-            return type == Field::Types::UInt64 || type == Field::Types::Int64 || type == Field::Types::Float64;
-        }
-    }
-    return false;
-}*/
 
 const std::unordered_map<MergeTreeWhereOptimizer::ConditionDescription::Type, MergeTreeWhereOptimizer::ConditionDescription::Type>& MergeTreeWhereOptimizer::getCompareFuncsSwaps() const
 {
@@ -425,10 +389,12 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const ASTPtr & node,
     }
     else if (!use_new_scoring && tryAnalyzeTupleEquals(res, func, is_final))
     {
+        // TODO: check tuple only from numbers
         /// analyzed
     }
     else if (use_new_scoring && tryAnalyzeTupleCompare(res, func, is_final))
     {
+        // TODO: check tuple only from numbers
         /// analyzed
     }
     else

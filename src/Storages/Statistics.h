@@ -15,7 +15,8 @@ namespace DB
 enum class StatisticType
 {
     // Distribution for values in column
-    COLUMN_DISRIBUTION = 1,
+    NUMERIC_COLUMN_DISRIBUTION = 1,
+    STRING_SEARCH = 2,
     LAST,
 };
 
@@ -81,6 +82,36 @@ public:
 
 using IDistributionStatisticsPtr = std::shared_ptr<IDistributionStatistics>;
 using IConstDistributionStatisticsPtr = std::shared_ptr<const IDistributionStatistics>;
+
+
+class IStringSearchStatistic : public IStatistic {
+public:
+    virtual double estimateStringProbability(const String& needle) const = 0;
+
+    virtual std::optional<double> estimateSubstringsProbability(const Strings& needles) const = 0;    
+};
+
+
+class IStringSearchStatistics {
+public:
+    virtual ~IStringSearchStatistics() = default;
+
+    virtual bool empty() const = 0;
+
+    virtual void merge(const std::shared_ptr<IStringSearchStatistics> & other) = 0;
+
+    virtual Names getStatisticsNames() const = 0;
+    virtual void serializeBinary(const String & name, WriteBuffer & ostr) const = 0;
+    virtual void deserializeBinary(ReadBuffer & istr) = 0;
+
+    virtual std::optional<double> estimateStringProbability(const String & column, const String& needle) const = 0;
+    virtual std::optional<double> estimateSubstringsProbability(const String & column, const Strings& needles) const = 0;
+
+    virtual void add(const String & name, const IStringSearchStatistics & stat) = 0;
+
+    virtual size_t getSizeInMemory() const = 0;
+    virtual size_t getSizeInMemoryByName(const String& name) const = 0;
+};
 
 
 class IStatistics {
