@@ -252,7 +252,7 @@ LpNorm::ConstParams FunctionArrayNorm<LpNorm>::initConstParams(const ColumnsWith
                     getName());
 
     Float64 p = arguments[1].column->getFloat64(0);
-    if (p < 1 || p == HUGE_VAL)
+    if (p < 1 || p >= HUGE_VAL)
         throw Exception(
                     ErrorCodes::ARGUMENT_OUT_OF_BOUND,
                     "Second argument for function {} must be not less than one and not be an infinity",

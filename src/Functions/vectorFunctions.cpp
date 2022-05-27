@@ -821,7 +821,7 @@ public:
         else
             throw Exception{"Second argument for function " + getName() + " must be either constant Float64 or constant UInt", ErrorCodes::ILLEGAL_COLUMN};
 
-        if (p < 1 || p == HUGE_VAL)
+        if (p < 1 || p >= HUGE_VAL)
             throw Exception{"Second argument for function " + getName() + " must be not less than one and not be an infinity", ErrorCodes::ARGUMENT_OUT_OF_BOUND};
 
         auto abs = FunctionFactory::instance().get("abs", context);
