@@ -175,3 +175,23 @@ FROM prewhere
 PREWHERE b = 10000
 WHERE (b = 10000) AND ((c > 0) AND (d > 10000) AND (d = 10000))
 segment test
+SELECT
+    a,
+    b,
+    c,
+    d,
+    heavy,
+    heavy2
+FROM prewhere
+PREWHERE b < 1000
+WHERE (b < 1000) AND ((c < 10) AND (d < 100000) AND (a > 100) AND (d > 10000))
+SELECT
+    a,
+    b,
+    c,
+    d,
+    heavy,
+    heavy2
+FROM prewhere
+PREWHERE (d < 105000) AND (d > 10000)
+WHERE ((d < 105000) AND (d > 10000)) AND ((b < 100000) AND (c < 10) AND (a > 100))

@@ -173,10 +173,10 @@ double MergeTreeGranuleDistributionStatisticTDigest::estimateProbability(const F
 {
     // lower <= value <= upper
     // null = infty
-    //Poco::Logger::get("MergeTreeGranuleDistributionStatisticTDigest").information("est " + toString(lower) + " " + toString(upper));
-    //Poco::Logger::get("MergeTreeGranuleDistributionStatisticTDigest").information("emp=" + toString(empty()));
-    //Poco::Logger::get("MergeTreeGranuleDistributionStatisticTDigest").information("upper = " + (upper.isNull() ? "null" : std::to_string(estimateQuantileUpper(upper))));
-    //Poco::Logger::get("MergeTreeGranuleDistributionStatisticTDigest").information("lower = " + (lower.isNull() ? "null" : std::to_string(estimateQuantileUpper(lower))));
+    // Poco::Logger::get("MergeTreeGranuleDistributionStatisticTDigest").information(column_name);
+    // Poco::Logger::get("MergeTreeGranuleDistributionStatisticTDigest").information("est " + toString(lower) + " " + toString(upper) + "emp=" + toString(empty()));
+    // Poco::Logger::get("MergeTreeGranuleDistributionStatisticTDigest").information("upper = " + (upper.isNull() ? "null" : std::to_string(estimateQuantileUpper(upper))));
+    // Poco::Logger::get("MergeTreeGranuleDistributionStatisticTDigest").information("lower = " + (lower.isNull() ? "null" : std::to_string(estimateQuantileUpper(lower))));
     if (!lower.isNull() && !upper.isNull())
         return std::max(std::min(estimateQuantileUpper(upper) - estimateQuantileLower(lower), 1.0), 0.0);
     else if (!lower.isNull())

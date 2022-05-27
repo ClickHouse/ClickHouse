@@ -624,10 +624,10 @@ void MergeTreeWhereOptimizer::optimizeByRanks(ASTSelectQuery & select) const
     size_t prewhere_columns_size = 0;
     size_t where_columns_size = total_size_of_queried_columns;
     double prewhere_selectivity = 1;
-    LOG_INFO(&Poco::Logger::get("TEST"), "START totalsz = {} rtc ={}", where_columns_size, rank_to_column.size());
+    //LOG_INFO(log, "START totalsz = {} rtc ={}", where_columns_size, rank_to_column.size());
     for (const auto & [rank, selectivity, column] : rank_to_column)
     {
-        LOG_INFO(&Poco::Logger::get("TEST???"), "rnk={} sel={} clm={} sz={}", rank, selectivity, column, getIdentifiersColumnSize({column}));
+        LOG_INFO(log, "optimizeByRanks: column={} rank={} selectivity={} size={}", column, rank, selectivity, getIdentifiersColumnSize({column}));
     }
     for (const auto & [rank, selectivity, column] : rank_to_column)
     {
@@ -643,8 +643,7 @@ void MergeTreeWhereOptimizer::optimizeByRanks(ASTSelectQuery & select) const
         // We think that columns are independent.
         const double predicted_loss = (prewhere_columns_size + column_size) + prewhere_selectivity * selectivity * (where_columns_size - column_size);
         
-        LOG_INFO(&Poco::Logger::get("TEST"), "rnk={} sel={} clm={}", rank, selectivity, column);
-        LOG_INFO(&Poco::Logger::get("TEST"), "currloss = {} predloss ={}", current_loss, predicted_loss);
+        LOG_INFO(log, "optimizeByRanks: try to move column '{}' (rank={}) current_loss={} predicted_loss={}", column, rank, current_loss, predicted_loss);
 
         // stop if difference is small
         if (current_loss - EPS < predicted_loss)

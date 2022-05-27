@@ -97,4 +97,8 @@ EXPLAIN SYNTAX SELECT b, d FROM prewhere WHERE c > 0 AND d > 10000 AND (b, d) = 
 
 SELECT 'segment test';
 
+EXPLAIN SYNTAX SELECT a, b, c, d, heavy, heavy2 FROM prewhere WHERE b < 1000 AND c < 10 AND d < 100000 AND a > 100 AND d > 10000;
+EXPLAIN SYNTAX SELECT a, b, c, d, heavy, heavy2 FROM prewhere WHERE b < 100000 AND c < 10 AND d < 105000 AND a > 100 AND d > 10000;
+
+
 DROP TABLE prewhere SYNC;
