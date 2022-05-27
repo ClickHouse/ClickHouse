@@ -15,20 +15,13 @@ using namespace std::chrono_literals;
 constexpr std::chrono::microseconds ZERO_MICROSEC = 0us;
 
 OvercommitTracker::OvercommitTracker(std::mutex & global_mutex_)
-    : max_wait_time(ZERO_MICROSEC)
-    , picked_tracker(nullptr)
+    : picked_tracker(nullptr)
     , cancellation_state(QueryCancellationState::NONE)
     , global_mutex(global_mutex_)
     , freed_memory(0)
     , required_memory(0)
     , allow_release(true)
 {}
-
-void OvercommitTracker::setMaxWaitTime(UInt64 wait_time)
-{
-    std::lock_guard guard(overcommit_m);
-    max_wait_time = wait_time * 1us;
-}
 
 OvercommitResult OvercommitTracker::needToStopQuery(MemoryTracker * tracker, Int64 amount)
 {
@@ -40,6 +33,8 @@ OvercommitResult OvercommitTracker::needToStopQuery(MemoryTracker * tracker, Int
     // ProcessListEntry::~ProcessListEntry().
     std::unique_lock<std::mutex> global_lock(global_mutex);
     std::unique_lock<std::mutex> lk(overcommit_m);
+
+    auto max_wait_time = tracker->getOvercommitWaitingTime();
 
     if (max_wait_time == ZERO_MICROSEC)
         return OvercommitResult::DISABLED;

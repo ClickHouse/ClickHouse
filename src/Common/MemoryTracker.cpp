@@ -82,6 +82,8 @@ namespace ProfileEvents
     extern const Event QueryMemoryLimitExceeded;
 }
 
+using namespace std::chrono_literals;
+
 static constexpr size_t log_peak_memory_usage_every = 1ULL << 30;
 
 MemoryTracker total_memory_tracker(nullptr, VariableContext::Global);
@@ -360,6 +362,12 @@ OvercommitRatio MemoryTracker::getOvercommitRatio()
 OvercommitRatio MemoryTracker::getOvercommitRatio(Int64 limit)
 {
     return { amount.load(std::memory_order_relaxed), limit };
+}
+
+
+void MemoryTracker::setOvercommitWaitingTime(UInt64 wait_time)
+{
+    max_wait_time.store(wait_time * 1us, std::memory_order_relaxed);
 }
 
 
