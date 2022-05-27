@@ -16,11 +16,13 @@
 /testc/c/c/e	g	13
 /testc/c/c/f	g	14
 /testc/c/c/kk	g	15
-/testz	c	
-/testz/c	cd	
-/testz/c/cd	dd	
-/testz/c/cd/dd	testc	y
 -------------------------
+/	clickhouse	
+/	testc	x
+/	testz	z
+/	zookeeper	
+/clickhouse	task_queue	
+/clickhouse/task_queue	ddl	
 /testc	c	
 /testc/c	c	
 /testc/c/c	c	
@@ -43,3 +45,5 @@
 /testz/c	cd	
 /testz/c/cd	dd	
 /testz/c/cd/dd	testc	y
+/zookeeper	config	
+/zookeeper	quota	
