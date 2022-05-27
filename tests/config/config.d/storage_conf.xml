@@ -50,6 +50,18 @@
                 <max_size>22548578304</max_size>
                 <cache_on_write_operations>1</cache_on_write_operations>
             </local_cache>
+            <local_disk_3>
+                <type>local</type>
+                <path>local_disk_3/</path>
+            </local_disk_3>
+            <local_cache_3>
+                <type>cache</type>
+                <disk>local_disk_3</disk>
+                <path>local_cache_3/</path>
+                <max_size>22548578304</max_size>
+                <cache_on_write_operations>1</cache_on_write_operations>
+                <enable_cache_hits_threshold>1</enable_cache_hits_threshold>
+            </local_cache_3>
         </disks>
         <policies>
             <s3_cache>
@@ -80,6 +92,13 @@
                     </main>
                 </volumes>
             </local_cache>
+            <local_cache_3>
+                <volumes>
+                    <main>
+                        <disk>local_cache_3</disk>
+                    </main>
+                </volumes>
+            </local_cache_3>
         </policies>
     </storage_configuration>
 </clickhouse>
