@@ -15,7 +15,7 @@ insert into system.zookeeper (name, path, value) values ('testz', '/', 'y');
 insert into system.zookeeper (name, path, value) values ('testc', 'testz//c/cd/dd//', 'y');
 insert into system.zookeeper (name, value, path) values ('testz', 'z', '/');
 
-SELECT * FROM (SELECT path, name, value FROM system.zookeeper ORDER BY path, name) WHERE path LIKE '/test%';
+SELECT * FROM (SELECT path, name, value FROM system.zookeeper ORDER BY path, name);
 
 -- test exceptions 
 insert into system.zookeeper (name, path, value) values ('a/b/c', '/', 'y'); -- { serverError 36 }
