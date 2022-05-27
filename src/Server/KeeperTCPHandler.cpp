@@ -11,7 +11,7 @@
 #include <Common/Stopwatch.h>
 #include <Common/NetException.h>
 #include <Common/setThreadName.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <chrono>
 #include <Common/PipeFDs.h>
 #include <Poco/Util/AbstractConfiguration.h>
@@ -345,7 +345,7 @@ void KeeperTCPHandler::runImpl()
         return;
     }
 
-    if (keeper_dispatcher->checkInit() && keeper_dispatcher->hasLeader())
+    if (keeper_dispatcher->isServerActive())
     {
         try
         {
@@ -365,15 +365,7 @@ void KeeperTCPHandler::runImpl()
     }
     else
     {
-        String reason;
-        if (!keeper_dispatcher->checkInit() && !keeper_dispatcher->hasLeader())
-            reason = "server is not initialized yet and no alive leader exists";
-        else if (!keeper_dispatcher->checkInit())
-            reason = "server is not initialized yet";
-        else
-            reason = "no alive leader exists";
-
-        LOG_WARNING(log, "Ignoring user request, because {}", reason);
+        LOG_WARNING(log, "Ignoring user request, because the server is not active yet");
         sendHandshake(false);
         return;
     }

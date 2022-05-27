@@ -122,7 +122,7 @@ void Settings::checkNoSettingNamesAtTopLevel(const Poco::Util::AbstractConfigura
     for (auto setting : settings.all())
     {
         const auto & name = setting.getName();
-        if (config.has(name))
+        if (config.has(name) && !setting.isObsolete())
         {
             throw Exception(fmt::format("A setting '{}' appeared at top level in config {}."
                 " But it is user-level setting that should be located in users.xml inside <profiles> section for specific profile."

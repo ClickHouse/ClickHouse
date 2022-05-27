@@ -1,6 +1,6 @@
 #include <Storages/MergeTree/MergeFromLogEntryTask.h>
 
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <Common/ProfileEvents.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 
@@ -37,7 +37,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
         };
     }
 
-    if (entry.merge_type == MergeType::TTL_RECOMPRESS &&
+    if (entry.merge_type == MergeType::TTLRecompress &&
         (time(nullptr) - entry.create_time) <= storage_settings_ptr->try_fetch_recompressed_part_timeout.totalSeconds() &&
         entry.source_replica != storage.replica_name)
     {
@@ -81,7 +81,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
         if (!source_part_or_covering)
         {
             /// We do not have one of source parts locally, try to take some already merged part from someone.
-            LOG_DEBUG(log, "Don't have all parts for merge {}; will try to fetch it instead", entry.new_part_name);
+            LOG_DEBUG(log, "Don't have all parts (at least part {} is missing) for merge {}; will try to fetch it instead", source_part_name, entry.new_part_name);
             return PrepareResult{
                 .prepared_successfully = false,
                 .need_to_check_missing_part_in_fetch = true,

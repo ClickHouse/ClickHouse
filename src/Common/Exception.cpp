@@ -4,7 +4,7 @@
 #include <cxxabi.h>
 #include <cstdlib>
 #include <Poco/String.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 #include <IO/Operators.h>
@@ -55,12 +55,6 @@ void handle_error_code([[maybe_unused]] const std::string & msg, int code, bool 
 Exception::Exception(const std::string & msg, int code, bool remote_)
     : Poco::Exception(msg, code)
     , remote(remote_)
-{
-    handle_error_code(msg, code, remote, getStackFramePointers());
-}
-
-Exception::Exception(const std::string & msg, const Exception & nested, int code)
-    : Poco::Exception(msg, nested, code)
 {
     handle_error_code(msg, code, remote, getStackFramePointers());
 }
@@ -276,7 +270,7 @@ static void getNotEnoughMemoryMessage(std::string & msg)
 #endif
 }
 
-static std::string getExtraExceptionInfo(const std::exception & e)
+std::string getExtraExceptionInfo(const std::exception & e)
 {
     String msg;
     try
@@ -555,13 +549,24 @@ std::string ParsingException::displayText() const
 {
     try
     {
-        if (line_number == -1)
-            formatted_message = message();
-        else
-            formatted_message = message() + fmt::format(": (at row {})\n", line_number);
+        formatted_message = message();
+        bool need_newline = false;
+        if (!file_name.empty())
+        {
+            formatted_message += fmt::format(": (in file/uri {})", file_name);
+            need_newline = true;
+        }
+
+        if (line_number != -1)
+        {
+            formatted_message += fmt::format(": (at row {})", line_number);
+            need_newline = true;
+        }
+
+        if (need_newline)
+            formatted_message += "\n";
     }
-    catch (...)
-    {}
+    catch (...) {}
 
     if (!formatted_message.empty())
     {

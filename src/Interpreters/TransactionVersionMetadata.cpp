@@ -8,7 +8,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromString.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -144,7 +144,7 @@ bool VersionMetadata::isRemovalTIDLocked() const
 
 void VersionMetadata::setCreationTID(const TransactionID & tid, TransactionInfoContext * context)
 {
-    /// NOTE ReplicatedMergeTreeBlockOutputStream may add one part multiple times
+    /// NOTE ReplicatedMergeTreeSink may add one part multiple times
     assert(creation_tid.isEmpty() || creation_tid == tid);
     creation_tid = tid;
     if (context)

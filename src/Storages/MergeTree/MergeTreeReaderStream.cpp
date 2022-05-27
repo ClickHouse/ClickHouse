@@ -22,10 +22,12 @@ MergeTreeReaderStream::MergeTreeReaderStream(
         MarkCache * mark_cache_,
         UncompressedCache * uncompressed_cache, size_t file_size_,
         const MergeTreeIndexGranularityInfo * index_granularity_info_,
-        const ReadBufferFromFileBase::ProfileCallback & profile_callback, clockid_t clock_type)
+        const ReadBufferFromFileBase::ProfileCallback & profile_callback, clockid_t clock_type,
+        bool is_low_cardinality_dictionary_)
     : disk(std::move(disk_))
     , path_prefix(path_prefix_)
     , data_file_extension(data_file_extension_)
+    , is_low_cardinality_dictionary(is_low_cardinality_dictionary_)
     , marks_count(marks_count_)
     , file_size(file_size_)
     , mark_cache(mark_cache_)
@@ -133,11 +135,8 @@ size_t MergeTreeReaderStream::getRightOffset(size_t right_mark_non_included)
         {
             need_to_check_marks_from_the_right = true;
         }
-        else
+        else if (is_low_cardinality_dictionary)
         {
-            size_t right_mark_included = right_mark_non_included - 1;
-            const MarkInCompressedFile & right_mark_included_in_file = marks_loader.getMark(right_mark_included);
-
             /// Also, in LowCardinality dictionary several consecutive marks can point to
             /// the same offset. So to get true bytes offset we have to get first
             /// non-equal mark.
@@ -151,9 +150,16 @@ size_t MergeTreeReaderStream::getRightOffset(size_t right_mark_non_included)
             ///  Mark 192, points to [2081424, 0] <--- what we are looking for
             ///  Mark 193, points to [2081424, 0]
             ///  Mark 194, points to [2081424, 0]
-            if (right_mark_included_in_file.offset_in_compressed_file == result_right_offset)
-                need_to_check_marks_from_the_right = true;
+
+            /// Also, in some cases, when one granule is not-atomically written (which is possible at merges)
+            /// one granule may require reading of two dictionaries which starts from different marks.
+            /// The only correct way is to take offset from at least next different granule from the right one.
+
+            /// Check test_s3_low_cardinality_right_border.
+
+            need_to_check_marks_from_the_right = true;
         }
+
 
         /// Let's go to the right and find mark with bigger offset in compressed file
         if (need_to_check_marks_from_the_right)

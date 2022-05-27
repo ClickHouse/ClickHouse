@@ -298,7 +298,7 @@ void registerInputFormatCSV(FormatFactory & factory)
     registerWithNamesAndTypes("CSV", register_func);
 }
 
-static std::pair<bool, size_t> fileSegmentationEngineCSVImpl(ReadBuffer & in, DB::Memory<> & memory, size_t min_chunk_size, size_t min_rows)
+std::pair<bool, size_t> fileSegmentationEngineCSVImpl(ReadBuffer & in, DB::Memory<> & memory, size_t min_chunk_size, size_t min_rows)
 {
     char * pos = in.position();
     bool quotes = false;

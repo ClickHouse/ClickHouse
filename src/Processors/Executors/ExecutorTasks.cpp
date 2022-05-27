@@ -28,6 +28,23 @@ void ExecutorTasks::rethrowFirstThreadException()
         executor_context->rethrowExceptionIfHas();
 }
 
+void ExecutorTasks::tryWakeUpAnyOtherThreadWithTasks(ExecutionThreadContext & self, std::unique_lock<std::mutex> & lock)
+{
+    if (!task_queue.empty() && !threads_queue.empty() && !finished)
+    {
+        size_t next_thread = self.thread_number + 1 == num_threads ? 0 : (self.thread_number + 1);
+        auto thread_to_wake = task_queue.getAnyThreadWithTasks(next_thread);
+
+        if (threads_queue.has(thread_to_wake))
+            threads_queue.pop(thread_to_wake);
+        else
+            thread_to_wake = threads_queue.popAny();
+
+        lock.unlock();
+        executor_contexts[thread_to_wake]->wakeUp();
+    }
+}
+
 void ExecutorTasks::tryGetTask(ExecutionThreadContext & context)
 {
     {
@@ -43,20 +60,7 @@ void ExecutorTasks::tryGetTask(ExecutionThreadContext & context)
 
         if (context.hasTask())
         {
-            if (!task_queue.empty() && !threads_queue.empty())
-            {
-                size_t next_thread = context.thread_number + 1 == num_threads ? 0 : (context.thread_number + 1);
-                auto thread_to_wake = task_queue.getAnyThreadWithTasks(next_thread);
-
-                if (threads_queue.has(thread_to_wake))
-                    threads_queue.pop(thread_to_wake);
-                else
-                    thread_to_wake = threads_queue.popAny();
-
-                lock.unlock();
-                executor_contexts[thread_to_wake]->wakeUp();
-            }
-
+            tryWakeUpAnyOtherThreadWithTasks(context, lock);
             return;
         }
 
@@ -120,20 +124,7 @@ void ExecutorTasks::pushTasks(Queue & queue, Queue & async_queue, ExecutionThrea
             queue.pop();
         }
 
-        if (!threads_queue.empty() && !task_queue.empty() && !finished)
-        {
-            size_t next_thread = context.thread_number + 1 == num_threads ? 0 : (context.thread_number + 1);
-            auto thread_to_wake = task_queue.getAnyThreadWithTasks(next_thread);
-
-            if (threads_queue.has(thread_to_wake))
-                threads_queue.pop(thread_to_wake);
-            else
-                thread_to_wake = threads_queue.popAny();
-
-            lock.unlock();
-
-            executor_contexts[thread_to_wake]->wakeUp();
-        }
+        tryWakeUpAnyOtherThreadWithTasks(context, lock);
     }
 }
 

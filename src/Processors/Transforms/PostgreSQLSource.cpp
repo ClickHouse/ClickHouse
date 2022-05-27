@@ -16,7 +16,7 @@
 #include <IO/ReadBufferFromString.h>
 #include <Common/assert_cast.h>
 #include <base/range.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 
 
 namespace DB
@@ -86,7 +86,7 @@ void PostgreSQLSource<T>::onStart()
         }
     }
 
-    stream = std::make_unique<pqxx::stream_from>(*tx, pqxx::from_query, std::string_view(query_str));
+    stream = std::make_unique<pqxx::stream_from>(*tx, pqxx::from_query, std::string_view{query_str});
 }
 
 template<typename T>

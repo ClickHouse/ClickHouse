@@ -217,7 +217,7 @@ void registerStorageExecutable(StorageFactory & factory)
             settings.loadFromQuery(*args.storage_def);
 
         auto global_context = args.getContext()->getGlobalContext();
-        return StorageExecutable::create(args.table_id, format, settings, input_queries, columns, constraints);
+        return std::make_shared<StorageExecutable>(args.table_id, format, settings, input_queries, columns, constraints);
     };
 
     StorageFactory::StorageFeatures storage_features;

@@ -1,8 +1,9 @@
 #include "DiskWebServer.h"
 
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <Common/escapeForFileName.h>
 
+#include <IO/ConnectionTimeoutsContext.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <IO/SeekAvoidingReadBuffer.h>
 #include <IO/ReadHelpers.h>
@@ -165,10 +166,10 @@ std::unique_ptr<ReadBufferFromFileBase> DiskWebServer::readFile(const String & p
     auto remote_path = fs_path.parent_path() / (escapeForFileName(fs_path.stem()) + fs_path.extension().string());
     remote_path = remote_path.string().substr(url.size());
 
-    RemoteMetadata meta(path, remote_path);
-    meta.remote_fs_objects.emplace_back(remote_path, iter->second.size);
+    std::vector<BlobPathWithSize> blobs_to_read;
+    blobs_to_read.emplace_back(remote_path, iter->second.size);
 
-    auto web_impl = std::make_unique<ReadBufferFromWebServerGather>(url, meta.remote_fs_root_path, meta.remote_fs_objects, getContext(), read_settings);
+    auto web_impl = std::make_unique<ReadBufferFromWebServerGather>(url, path, blobs_to_read, getContext(), read_settings);
 
     if (read_settings.remote_fs_method == RemoteFSReadMethod::threadpool)
     {

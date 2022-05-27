@@ -24,6 +24,8 @@ public:
 
     ~PeekableReadBuffer() override;
 
+    void prefetch() override { sub_buf.prefetch(); }
+
     /// Sets checkpoint at current position
     ALWAYS_INLINE inline void setCheckpoint()
     {
@@ -66,7 +68,7 @@ public:
     bool hasUnreadData() const;
 
     // for streaming reading (like in Kafka) we need to restore initial state of the buffer
-    // w/o recreating the buffer.
+    // without recreating the buffer.
     void reset();
 
 private:

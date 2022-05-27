@@ -23,7 +23,7 @@ public:
         if (txn)
             res = {txn->tid.start_csn, txn->tid.local_tid, txn->tid.host_id};
         else
-            res = {UInt64(0), UInt64(0), UUIDHelpers::Nil};
+            res = {static_cast<UInt64>(0), static_cast<UInt64>(0), UUIDHelpers::Nil};
         return res;
     }
 

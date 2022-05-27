@@ -1,7 +1,7 @@
 ### Changelog category (leave one):
 - New Feature
 - Improvement
-- Bug Fix (user-visible misbehaviour in official stable or prestable release)
+- Bug Fix (user-visible misbehavior in official stable or prestable release)
 - Performance Improvement
 - Backward Incompatible Change
 - Build/Testing/Packaging Improvement
@@ -13,4 +13,4 @@
 ...
 
 
-> Information about CI checks: https://clickhouse.tech/docs/en/development/continuous-integration/
+> Information about CI checks: https://clickhouse.com/docs/en/development/continuous-integration/

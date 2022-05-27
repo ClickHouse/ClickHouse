@@ -13,7 +13,7 @@ namespace DB
 
 
 class MutateTask;
-using MutateTaskPtr = std::shared_ptr<MutateTask>;\
+using MutateTaskPtr = std::shared_ptr<MutateTask>;
 
 
 class MergeTreeDataMergerMutator;
@@ -44,6 +44,8 @@ public:
         return promise.get_future();
     }
 
+    const MergeTreeData::HardlinkedFiles & getHardlinkedFiles() const;
+
 private:
 
     bool prepare();
@@ -55,7 +57,6 @@ private:
     };
 
     State state{State::NEED_PREPARE};
-
 
     std::promise<MergeTreeData::MutableDataPartPtr> promise;
 

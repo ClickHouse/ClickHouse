@@ -1,5 +1,5 @@
 ---
-toc_priority: 195
+sidebar_position: 195
 ---
 
 # uniqTheta {#agg_function-uniqthetasketch}

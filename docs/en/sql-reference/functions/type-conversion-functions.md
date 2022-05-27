@@ -1,6 +1,6 @@
 ---
-toc_priority: 38
-toc_title: Type Conversion
+sidebar_position: 38
+sidebar_label: Type Conversion
 ---
 
 # Type Conversion Functions {#type-conversion-functions}
@@ -689,8 +689,9 @@ x::t
 
 -    Converted value.
 
-!!! note "Note"
-    If the input value does not fit the bounds of the target type, the result overflows. For example, `CAST(-1, 'UInt8')` returns `255`.
+:::note    
+If the input value does not fit the bounds of the target type, the result overflows. For example, `CAST(-1, 'UInt8')` returns `255`.
+:::
 
 **Examples**
 
@@ -1432,8 +1433,9 @@ Result:
 
 Converts a `DateTime64` to a `Int64` value with fixed sub-second precision. Input value is scaled up or down appropriately depending on it precision.
 
-!!! info "Note"
-    The output value is a timestamp in UTC, not in the timezone of `DateTime64`.
+:::note    
+The output value is a timestamp in UTC, not in the timezone of `DateTime64`.
+:::
 
 **Syntax**
 

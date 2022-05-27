@@ -1,6 +1,6 @@
 ---
-toc_priority: 14
-toc_title: Playground
+sidebar_position: 14
+sidebar_label: Playground
 ---
 
 # ClickHouse Playground {#clickhouse-playground}

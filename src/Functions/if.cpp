@@ -45,7 +45,7 @@ using namespace GatherUtils;
   */
 
 template <typename ArrayCond, typename ArrayA, typename ArrayB, typename ArrayResult, typename ResultType>
-static inline void fillVectorVector(const ArrayCond & cond, const ArrayA & a, const ArrayB & b, ArrayResult & res)
+inline void fillVectorVector(const ArrayCond & cond, const ArrayA & a, const ArrayB & b, ArrayResult & res)
 {
     size_t size = cond.size();
     bool a_is_short = a.size() < size;
@@ -77,7 +77,7 @@ static inline void fillVectorVector(const ArrayCond & cond, const ArrayA & a, co
 }
 
 template <typename ArrayCond, typename ArrayA, typename B, typename ArrayResult, typename ResultType>
-static inline void fillVectorConstant(const ArrayCond & cond, const ArrayA & a, B b, ArrayResult & res)
+inline void fillVectorConstant(const ArrayCond & cond, const ArrayA & a, B b, ArrayResult & res)
 {
     size_t size = cond.size();
     bool a_is_short = a.size() < size;
@@ -95,7 +95,7 @@ static inline void fillVectorConstant(const ArrayCond & cond, const ArrayA & a, 
 }
 
 template <typename ArrayCond, typename A, typename ArrayB, typename ArrayResult, typename ResultType>
-static inline void fillConstantVector(const ArrayCond & cond, A a, const ArrayB & b, ArrayResult & res)
+inline void fillConstantVector(const ArrayCond & cond, A a, const ArrayB & b, ArrayResult & res)
 {
     size_t size = cond.size();
     bool b_is_short = b.size() < size;

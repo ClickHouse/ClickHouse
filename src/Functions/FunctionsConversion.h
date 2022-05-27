@@ -3283,6 +3283,19 @@ private:
                 return res;
             };
         }
+        else if (checkAndGetDataType<DataTypeObject>(from_type.get()))
+        {
+            return [is_nullable = to_type->hasNullableSubcolumns()] (ColumnsWithTypeAndName & arguments, const DataTypePtr & , const ColumnNullable * , size_t) -> ColumnPtr
+            {
+                auto & column_object = assert_cast<const ColumnObject &>(*arguments.front().column);
+                auto res = ColumnObject::create(is_nullable);
+                for (size_t i = 0; i < column_object.size(); i++)
+                    res->insert(column_object[i]);
+
+                res->finalize();
+                return res;
+            };
+        }
 
         throw Exception(ErrorCodes::TYPE_MISMATCH,
             "Cast to Object can be performed only from flatten named Tuple, Map or String. Got: {}", from_type->getName());
@@ -3576,7 +3589,7 @@ private:
                     const auto & nullable_col = assert_cast<const ColumnNullable &>(*col);
                     const auto & null_map = nullable_col.getNullMapData();
 
-                    if (!memoryIsZero(null_map.data(), null_map.size()))
+                    if (!memoryIsZero(null_map.data(), 0, null_map.size()))
                         throw Exception{"Cannot convert NULL value to non-Nullable type",
                                         ErrorCodes::CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN};
                 }

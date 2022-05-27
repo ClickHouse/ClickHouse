@@ -1,6 +1,6 @@
 ---
-toc_folder_title: 快速上手
-toc_priority: 2
+sidebar_label: 快速上手
+sidebar_position: 2
 ---
 
 # 入门 {#ru-men}

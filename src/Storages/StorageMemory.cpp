@@ -1,6 +1,7 @@
 #include <cassert>
 #include <Common/Exception.h>
 
+#include <boost/noncopyable.hpp>
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/getColumnFromBlock.h>
 #include <Interpreters/inplaceBlockConversions.h>
@@ -377,11 +378,9 @@ void StorageMemory::truncate(
 }
 
 
-class MemoryBackupEntriesBatch : public shared_ptr_helper<MemoryBackupEntriesBatch>, public IBackupEntriesBatch
+class MemoryBackupEntriesBatch : public IBackupEntriesBatch, boost::noncopyable
 {
-private:
-    friend struct shared_ptr_helper<MemoryBackupEntriesBatch>;
-
+public:
     MemoryBackupEntriesBatch(
         const StorageMetadataPtr & metadata_snapshot_, const std::shared_ptr<const Blocks> blocks_, UInt64 max_compress_block_size_)
         : IBackupEntriesBatch({"data.bin", "index.mrk", "sizes.json"})
@@ -391,6 +390,7 @@ private:
     {
     }
 
+private:
     static constexpr const size_t kDataBinPos = 0;
     static constexpr const size_t kIndexMrkPos = 1;
     static constexpr const size_t kSizesJsonPos = 2;
@@ -448,7 +448,7 @@ private:
         });
     }
 
-    std::unique_ptr<ReadBuffer> getReadBuffer(size_t index) override
+    std::unique_ptr<SeekableReadBuffer> getReadBuffer(size_t index) override
     {
         initialize();
         return createReadBufferFromFileBase(file_paths[index], {});
@@ -475,7 +475,7 @@ BackupEntries StorageMemory::backupData(ContextPtr context, const ASTs & partiti
     if (!partitions.empty())
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Table engine {} doesn't support partitions", getName());
 
-    return MemoryBackupEntriesBatch::create(getInMemoryMetadataPtr(), data.get(), context->getSettingsRef().max_compress_block_size)
+    return std::make_shared<MemoryBackupEntriesBatch>(getInMemoryMetadataPtr(), data.get(), context->getSettingsRef().max_compress_block_size)
         ->getBackupEntries();
 }
 
@@ -553,7 +553,7 @@ private:
 };
 
 
-RestoreTaskPtr StorageMemory::restoreData(ContextMutablePtr context, const ASTs & partitions, const BackupPtr & backup, const String & data_path_in_backup, const StorageRestoreSettings &)
+RestoreTaskPtr StorageMemory::restoreData(ContextMutablePtr context, const ASTs & partitions, const BackupPtr & backup, const String & data_path_in_backup, const StorageRestoreSettings &, const std::shared_ptr<IRestoreCoordination> &)
 {
     if (!partitions.empty())
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Table engine {} doesn't support partitions", getName());
@@ -589,7 +589,7 @@ void registerStorageMemory(StorageFactory & factory)
         if (has_settings)
             settings.loadFromQuery(*args.storage_def);
 
-        return StorageMemory::create(args.table_id, args.columns, args.constraints, args.comment, settings.compress);
+        return std::make_shared<StorageMemory>(args.table_id, args.columns, args.constraints, args.comment, settings.compress);
     },
     {
         .supports_settings = true,

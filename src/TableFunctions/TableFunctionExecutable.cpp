@@ -80,7 +80,7 @@ StoragePtr TableFunctionExecutable::executeImpl(const ASTPtr & /*ast_function*/,
     settings.script_name = script_name;
     settings.script_arguments = arguments;
 
-    auto storage = StorageExecutable::create(storage_id, format, settings, input_queries, getActualTableStructure(context), ConstraintsDescription{});
+    auto storage = std::make_shared<StorageExecutable>(storage_id, format, settings, input_queries, getActualTableStructure(context), ConstraintsDescription{});
     storage->startup();
     return storage;
 }

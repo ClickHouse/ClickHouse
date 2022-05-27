@@ -7,6 +7,7 @@
 #include <Poco/Version.h>
 #include <Poco/Exception.h>
 
+#include <base/defines.h>
 #include <Common/StackTrace.h>
 
 #include <fmt/format.h>
@@ -28,7 +29,6 @@ public:
 
     Exception() = default;
     Exception(const std::string & msg, int code, bool remote_ = false);
-    Exception(const std::string & msg, const Exception & nested, int code);
 
     Exception(int code, const std::string & message)
         : Exception(message, code)
@@ -132,8 +132,15 @@ public:
     int getLineNumber() const { return line_number; }
     void setLineNumber(int line_number_) { line_number = line_number_;}
 
+    const String getFileName() const { return file_name; }
+    void setFileName(const String & file_name_) { file_name = file_name_; }
+
+    Exception * clone() const override { return new ParsingException(*this); }
+    void rethrow() const override { throw *this; }
+
 private:
     ssize_t line_number{-1};
+    String file_name;
     mutable std::string formatted_message;
 
     const char * name() const throw() override { return "DB::ParsingException"; }
@@ -170,6 +177,8 @@ std::string getCurrentExceptionMessage(bool with_stacktrace, bool check_embedded
 int getCurrentExceptionCode();
 int getExceptionErrorCode(std::exception_ptr e);
 
+/// Returns string containing extra diagnostic info for specific exceptions (like "no space left on device" and "memory limit exceeded")
+std::string getExtraExceptionInfo(const std::exception & e);
 
 /// An execution status of any piece of code, contains return code and optional error
 struct ExecutionStatus

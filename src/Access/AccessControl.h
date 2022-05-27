@@ -50,6 +50,9 @@ public:
     AccessControl();
     ~AccessControl() override;
 
+    void setUpFromMainConfig(const Poco::Util::AbstractConfiguration & config_, const String & config_path_,
+                             const zkutil::GetZooKeeper & get_zookeeper_function_);
+
     /// Parses access entities from a configuration loaded from users.xml.
     /// This function add UsersConfigAccessStorage if it wasn't added before.
     void setUsersConfig(const Poco::Util::AbstractConfiguration & users_config_);
@@ -122,6 +125,12 @@ public:
     void setPlaintextPasswordAllowed(const bool allow_plaintext_password_);
     bool isPlaintextPasswordAllowed() const;
 
+    /// Enables logic that users without permissive row policies can still read rows using a SELECT query.
+    /// For example, if there two users A, B and a row policy is defined only for A, then
+    /// if this setting is true the user B will see all rows, and if this setting is false the user B will see no rows.
+    void setEnabledUsersWithoutRowPoliciesCanReadRows(bool enable) { users_without_row_policies_can_read_rows = enable; }
+    bool isEnabledUsersWithoutRowPoliciesCanReadRows() const { return users_without_row_policies_can_read_rows; }
+
     UUID authenticate(const Credentials & credentials, const Poco::Net::IPAddress & address) const;
     void setExternalAuthenticatorsConfig(const Poco::Util::AbstractConfiguration & config);
 
@@ -178,6 +187,7 @@ private:
     std::unique_ptr<CustomSettingsPrefixes> custom_settings_prefixes;
     std::atomic_bool allow_plaintext_password = true;
     std::atomic_bool allow_no_password = true;
+    std::atomic_bool users_without_row_policies_can_read_rows = false;
 };
 
 }

@@ -256,7 +256,7 @@ Pipe StorageSystemPartsBase::read(
     std::vector<UInt8> columns_mask(sample.columns());
     for (size_t i = 0; i < sample.columns(); ++i)
     {
-        if (names_set.count(sample.getByPosition(i).name))
+        if (names_set.contains(sample.getByPosition(i).name))
         {
             columns_mask[i] = 1;
             header.insert(sample.getByPosition(i));
