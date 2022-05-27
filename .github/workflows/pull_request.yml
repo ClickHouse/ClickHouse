@@ -298,7 +298,7 @@ jobs:
           docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH"
   BuilderBinRelease:
-    needs: [DockerHubPush, FastTest]
+    needs: [DockerHubPush]
     runs-on: [self-hosted, builder]
     steps:
       - name: Set envs
