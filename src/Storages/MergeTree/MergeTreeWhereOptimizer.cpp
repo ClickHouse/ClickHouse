@@ -23,6 +23,7 @@
 #include <Storages/StorageMerge.h>
 #include <Storages/StorageMergeTree.h>
 #include <unordered_map>
+#include <variant>
 
 namespace DB
 {
@@ -153,53 +154,53 @@ static bool isConditionGood(const ASTPtr & condition)
     return false;
 }
 
-const std::unordered_map<MergeTreeWhereOptimizer::ConditionDescription::Type, MergeTreeWhereOptimizer::ConditionDescription::Type>& MergeTreeWhereOptimizer::getCompareFuncsSwaps() const
+const std::unordered_map<MergeTreeWhereOptimizer::NumericConditionDescription::Type, MergeTreeWhereOptimizer::NumericConditionDescription::Type>& MergeTreeWhereOptimizer::getCompareFuncsSwaps() const
 {
-    static const std::unordered_map<ConditionDescription::Type, ConditionDescription::Type> compare_funcs_swap = {
-        {ConditionDescription::Type::EQUAL, ConditionDescription::Type::EQUAL},
-        {ConditionDescription::Type::NOT_EQUAL, ConditionDescription::Type::NOT_EQUAL},
-        {ConditionDescription::Type::LESS_OR_EQUAL, ConditionDescription::Type::GREATER_OR_EQUAL},
-        {ConditionDescription::Type::GREATER_OR_EQUAL, ConditionDescription::Type::LESS_OR_EQUAL},
+    static const std::unordered_map<NumericConditionDescription::Type, NumericConditionDescription::Type> compare_funcs_swap = {
+        {NumericConditionDescription::Type::EQUAL, NumericConditionDescription::Type::EQUAL},
+        {NumericConditionDescription::Type::NOT_EQUAL, NumericConditionDescription::Type::NOT_EQUAL},
+        {NumericConditionDescription::Type::LESS_OR_EQUAL, NumericConditionDescription::Type::GREATER_OR_EQUAL},
+        {NumericConditionDescription::Type::GREATER_OR_EQUAL, NumericConditionDescription::Type::LESS_OR_EQUAL},
     };
     return compare_funcs_swap;
 }
 
-const std::unordered_map<MergeTreeWhereOptimizer::ConditionDescription::Type, std::string>& MergeTreeWhereOptimizer::getCompareTypeToString() const
+const std::unordered_map<MergeTreeWhereOptimizer::NumericConditionDescription::Type, std::string>& MergeTreeWhereOptimizer::getCompareTypeToString() const
 {
-    static const std::unordered_map<ConditionDescription::Type, std::string> compare_type_to_string = {
-        {ConditionDescription::Type::EQUAL, "equals"},
-        {ConditionDescription::Type::NOT_EQUAL, "notEquals"},
-        {ConditionDescription::Type::LESS_OR_EQUAL, "lessOrEquals"},
-        {ConditionDescription::Type::GREATER_OR_EQUAL, "greaterOrEquals"},
+    static const std::unordered_map<NumericConditionDescription::Type, std::string> compare_type_to_string = {
+        {NumericConditionDescription::Type::EQUAL, "equals"},
+        {NumericConditionDescription::Type::NOT_EQUAL, "notEquals"},
+        {NumericConditionDescription::Type::LESS_OR_EQUAL, "lessOrEquals"},
+        {NumericConditionDescription::Type::GREATER_OR_EQUAL, "greaterOrEquals"},
     };
     return compare_type_to_string;
 }
 
-const std::unordered_map<std::string, MergeTreeWhereOptimizer::ConditionDescription::Type>& MergeTreeWhereOptimizer::getStringToCompareFuncs() const
+const std::unordered_map<std::string, MergeTreeWhereOptimizer::NumericConditionDescription::Type>& MergeTreeWhereOptimizer::getStringToCompareFuncs() const
 {
-    static const std::unordered_map<String, ConditionDescription::Type> compare_funcs = {
-        {"equals", ConditionDescription::Type::EQUAL},
-        {"notEquals", ConditionDescription::Type::NOT_EQUAL},
-        {"less", ConditionDescription::Type::LESS_OR_EQUAL},
-        {"greater", ConditionDescription::Type::GREATER_OR_EQUAL},
-        {"greaterOrEquals", ConditionDescription::Type::GREATER_OR_EQUAL},
-        {"lessOrEquals", ConditionDescription::Type::LESS_OR_EQUAL},
+    static const std::unordered_map<String, NumericConditionDescription::Type> compare_funcs = {
+        {"equals", NumericConditionDescription::Type::EQUAL},
+        {"notEquals", NumericConditionDescription::Type::NOT_EQUAL},
+        {"less", NumericConditionDescription::Type::LESS_OR_EQUAL},
+        {"greater", NumericConditionDescription::Type::GREATER_OR_EQUAL},
+        {"greaterOrEquals", NumericConditionDescription::Type::GREATER_OR_EQUAL},
+        {"lessOrEquals", NumericConditionDescription::Type::LESS_OR_EQUAL},
     };
     return compare_funcs;
 }
 
-std::optional<MergeTreeWhereOptimizer::ConditionDescription> MergeTreeWhereOptimizer::parseCondition(
+std::variant<std::monostate, MergeTreeWhereOptimizer::NumericConditionDescription> MergeTreeWhereOptimizer::parseCondition(
     const ASTPtr & condition) const
 {
     const auto * function = condition->as<ASTFunction>();
     if (!function)
-        return std::nullopt;
+        return std::monostate{};
 
     
     if (!getStringToCompareFuncs().contains(function->name))
-        return std::nullopt;
+        return std::monostate{};
 
-    ConditionDescription::Type compare_type = getStringToCompareFuncs().at(function->name);
+    NumericConditionDescription::Type compare_type = getStringToCompareFuncs().at(function->name);
 
     auto * left_arg = function->arguments->children.front().get();
     auto * right_arg = function->arguments->children.back().get();
@@ -217,35 +218,35 @@ std::optional<MergeTreeWhereOptimizer::ConditionDescription> MergeTreeWhereOptim
         if (const auto * literal = right_arg->as<ASTLiteral>())
         {
             const auto & field = literal->value;
-            return ConditionDescription{ident->getColumnName(), compare_type, field};
+            return NumericConditionDescription{ident->getColumnName(), compare_type, field};
         }
     }
 
-    return std::nullopt;
+    return std::monostate{};
 }
 
-double MergeTreeWhereOptimizer::scoreSelectivity(const std::optional<MergeTreeWhereOptimizer::ConditionDescription> & condition_description) const
+double MergeTreeWhereOptimizer::scoreSelectivity(const std::optional<MergeTreeWhereOptimizer::NumericConditionDescription> & condition_description) const
 {
     if (!condition_description)
         return 1;
 
     switch  (condition_description->type) {
-    case ConditionDescription::Type::EQUAL:
+    case NumericConditionDescription::Type::EQUAL:
         return stats->getDistributionStatistics()->estimateProbability(
             condition_description->identifier,
             condition_description->constant,
             condition_description->constant).value_or(1);
-    case ConditionDescription::Type::NOT_EQUAL:
+    case NumericConditionDescription::Type::NOT_EQUAL:
         return 1 - stats->getDistributionStatistics()->estimateProbability(
             condition_description->identifier,
             condition_description->constant,
             condition_description->constant).value_or(0);
-    case ConditionDescription::Type::LESS_OR_EQUAL:
+    case NumericConditionDescription::Type::LESS_OR_EQUAL:
         return stats->getDistributionStatistics()->estimateProbability(
             condition_description->identifier,
             {},
             condition_description->constant).value_or(1);
-    case ConditionDescription::Type::GREATER_OR_EQUAL:
+    case NumericConditionDescription::Type::GREATER_OR_EQUAL:
         return stats->getDistributionStatistics()->estimateProbability(
             condition_description->identifier,
             condition_description->constant,
@@ -304,19 +305,19 @@ bool MergeTreeWhereOptimizer::tryAnalyzeTupleEquals(Conditions & res, const ASTF
 
 bool MergeTreeWhereOptimizer::tryAnalyzeTupleCompare(Conditions & res, const ASTFunction * func, bool is_final) const
 {
-    static const std::unordered_map<String, ConditionDescription::Type> compare_funcs = {
-        {"equals", ConditionDescription::Type::EQUAL},
+    static const std::unordered_map<String, NumericConditionDescription::Type> compare_funcs = {
+        {"equals", NumericConditionDescription::Type::EQUAL},
         // notEquals
-        {"less", ConditionDescription::Type::LESS_OR_EQUAL},
-        {"greater", ConditionDescription::Type::GREATER_OR_EQUAL},
-        {"greaterOrEquals", ConditionDescription::Type::GREATER_OR_EQUAL},
-        {"lessOrEquals", ConditionDescription::Type::LESS_OR_EQUAL},
+        {"less", NumericConditionDescription::Type::LESS_OR_EQUAL},
+        {"greater", NumericConditionDescription::Type::GREATER_OR_EQUAL},
+        {"greaterOrEquals", NumericConditionDescription::Type::GREATER_OR_EQUAL},
+        {"lessOrEquals", NumericConditionDescription::Type::LESS_OR_EQUAL},
     };
 
     if (!func || !compare_funcs.contains(func->name) || func->arguments->children.size() != 2)
         return false;
 
-    ConditionDescription::Type compare = compare_funcs.at(func->name);
+    NumericConditionDescription::Type compare = compare_funcs.at(func->name);
 
     Tuple tuple_lit;
     const ASTFunction * tuple_other = nullptr;
@@ -333,7 +334,7 @@ bool MergeTreeWhereOptimizer::tryAnalyzeTupleCompare(Conditions & res, const AST
     if (!tuple_other || tuple_lit.size() != tuple_other->arguments->children.size() || tuple_lit.empty())
         return false;
 
-    if (compare == ConditionDescription::Type::EQUAL)
+    if (compare == NumericConditionDescription::Type::EQUAL)
     {
         for (size_t i = 0; i < tuple_lit.size(); ++i)
         {
@@ -419,6 +420,8 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const ASTPtr & node,
         
         if (use_new_scoring) {
             cond.description = parseCondition(node);
+        } else {
+            cond.description = std::monostate{};
         }
 
         if (cond.viable && !use_new_scoring)
@@ -501,42 +504,48 @@ std::vector<MergeTreeWhereOptimizer::ColumnWithRank> MergeTreeWhereOptimizer::ge
     const std::unordered_map<std::string, Conditions> & column_to_simple_conditions) const {
     std::vector<MergeTreeWhereOptimizer::ColumnWithRank> rank_to_column;
     for (const auto & [column, conditions] : column_to_simple_conditions) {
+        // check column type
         double min_selectivity = 1;
         Field left_limit;
         Field right_limit;
         // Conditions are connected using AND
         for (const auto & condition : conditions)
         {
-            switch (condition.description->type)
+            if (!std::holds_alternative<NumericConditionDescription>(condition.description)) {
+                LOG_ERROR(log, "Bad description!");
+            }
+
+            const auto& description = std::get<NumericConditionDescription>(condition.description);
+            switch (description.type)
             {
-            case ConditionDescription::Type::EQUAL:
-                if (right_limit.isNull() || lessOrEquals(condition.description->constant, right_limit))
+            case NumericConditionDescription::Type::EQUAL:
+                if (right_limit.isNull() || lessOrEquals(description.constant, right_limit))
                 {
-                    right_limit = condition.description->constant;
+                    right_limit = description.constant;
                 }
-                if (left_limit.isNull() || lessOrEquals(left_limit, condition.description->constant))
+                if (left_limit.isNull() || lessOrEquals(left_limit, description.constant))
                 {
-                    left_limit = condition.description->constant;
+                    left_limit = description.constant;
                 }
                 break;
-            case ConditionDescription::Type::NOT_EQUAL:
+            case NumericConditionDescription::Type::NOT_EQUAL:
                 min_selectivity = std::min(
                     min_selectivity,
                     1 - stats->getDistributionStatistics()->estimateProbability(
                         column,
-                        condition.description->constant,
-                        condition.description->constant).value_or(0));
+                        description.constant,
+                        description.constant).value_or(0));
                 break;
-            case ConditionDescription::Type::LESS_OR_EQUAL:
-                if (right_limit.isNull() || lessOrEquals(condition.description->constant, right_limit))
+            case NumericConditionDescription::Type::LESS_OR_EQUAL:
+                if (right_limit.isNull() || lessOrEquals(description.constant, right_limit))
                 {
-                    right_limit = condition.description->constant;
+                    right_limit = description.constant;
                 }
                 break;
-            case ConditionDescription::Type::GREATER_OR_EQUAL:
-                if (left_limit.isNull() || lessOrEquals(left_limit, condition.description->constant))
+            case NumericConditionDescription::Type::GREATER_OR_EQUAL:
+                if (left_limit.isNull() || lessOrEquals(left_limit, description.constant))
                 {
-                    left_limit = condition.description->constant;
+                    left_limit = description.constant;
                 }
                 break; 
             }
@@ -566,9 +575,9 @@ void MergeTreeWhereOptimizer::optimizeByRanks(ASTSelectQuery & select) const
     std::unordered_map<std::string, Conditions> column_to_simple_conditions;
     for (const auto & condition : where_conditions)
     {
-        if (condition.viable && condition.description)
+        if (condition.viable && std::holds_alternative<NumericConditionDescription>(condition.description))
         {
-            column_to_simple_conditions[condition.description->identifier].push_back(condition);
+            column_to_simple_conditions[std::get<NumericConditionDescription>(condition.description).identifier].push_back(condition);
         }
     }
     Conditions prewhere_conditions;
@@ -630,7 +639,7 @@ void MergeTreeWhereOptimizer::optimizeByRanks(ASTSelectQuery & select) const
                 }))
         {
             // For simple conditions selectivity is already calculated. Now multiply only complex conditions.
-            if (!it->description) {
+            if (!std::holds_alternative<NumericConditionDescription>(it->description)) {
                 prewhere_selectivity *= analyzeComplexSelectivity(it->node).value_or(1);
             }
 
@@ -948,28 +957,29 @@ std::optional<double> MergeTreeWhereOptimizer::analyzeComplexSelectivity(const A
             return 1 - *result;
         }
     }
-    else if (const auto description = parseCondition(node); description) {
-        switch (description->type)
+    else if (const auto description_variant = parseCondition(node); std::holds_alternative<NumericConditionDescription>(description_variant)) {
+        const auto& description = std::get<NumericConditionDescription>(description_variant);
+        switch (description.type)
         {
-        case ConditionDescription::Type::EQUAL:
+        case NumericConditionDescription::Type::EQUAL:
             return stats->getDistributionStatistics()->estimateProbability(
-                    description->identifier,
-                    description->constant,
-                    description->constant).value_or(1);
-        case ConditionDescription::Type::NOT_EQUAL:
+                    description.identifier,
+                    description.constant,
+                    description.constant).value_or(1);
+        case NumericConditionDescription::Type::NOT_EQUAL:
             return 1 - stats->getDistributionStatistics()->estimateProbability(
-                    description->identifier,
-                    description->constant,
-                    description->constant).value_or(0);
-        case ConditionDescription::Type::LESS_OR_EQUAL:
+                    description.identifier,
+                    description.constant,
+                    description.constant).value_or(0);
+        case NumericConditionDescription::Type::LESS_OR_EQUAL:
             return stats->getDistributionStatistics()->estimateProbability(
-                    description->identifier,
+                    description.identifier,
                     {},
-                    description->constant).value_or(1);
-        case ConditionDescription::Type::GREATER_OR_EQUAL:
+                    description.constant).value_or(1);
+        case NumericConditionDescription::Type::GREATER_OR_EQUAL:
             return stats->getDistributionStatistics()->estimateProbability(
-                    description->identifier,
-                    description->constant,
+                    description.identifier,
+                    description.constant,
                     {}).value_or(1);
         }
     }
