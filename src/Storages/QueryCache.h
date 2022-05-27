@@ -10,7 +10,7 @@ namespace DB
 {
 using QueryCachePtr = std::shared_ptr<QueryCache>;
 
-class CacheEntry
+struct CacheEntry
 {
     Chunks chunks;
     std::atomic<bool> is_writing;
@@ -68,8 +68,6 @@ struct QueryWeightFunction
         {
             res += chunk.allocatedBytes();
         }
-        res += block.allocatedBytes();
-
         return res;
     }
 };
@@ -177,7 +175,8 @@ public:
         : removal_scheduler(removal_scheduler_)
         , cache_key(cache_key_)
         , cache(cache_)
-        , data(std::move(cache->getOrSet(cache_key, [&] {
+        , data(std::move(cache_->getOrSet(cache_key,
+                                         [&] {
                                              can_insert = true;
                                              return std::make_shared<CacheEntry>(Chunks{}, true);
                                          }).first))
@@ -238,7 +237,7 @@ public:
         return !pipe.empty();
     }
 
-    Pipe && getPipe(Block header)
+    Pipe && getPipe()
     {
         return std::move(pipe);
     }
