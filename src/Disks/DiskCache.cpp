@@ -292,7 +292,7 @@ void DiskCache::removeCacheIfExists(const String & path)
             cache->removeIfExists(key);
         }
     }
-    catch (const Exception & e)
+    catch ([[maybe_unused]] const Exception & e)
     {
 #ifdef NDEBUG
         /// Protect against concurrent file delition.

@@ -22,6 +22,13 @@
                 <access_key_id>clickhouse</access_key_id>
                 <secret_access_key>clickhouse</secret_access_key>
             </s3_disk_2>
+            <s3_disk_3>
+                <type>s3</type>
+                <path>s3_disk_3/</path>
+                <endpoint>http://localhost:11111/test/00170_test/</endpoint>
+                <access_key_id>clickhouse</access_key_id>
+                <secret_access_key>clickhouse</secret_access_key>
+            </s3_disk_3>
             <s3_cache_2>
                 <type>cache</type>
                 <disk>s3_disk_2</disk>
@@ -29,12 +36,10 @@
                 <max_size>22548578304</max_size>
             </s3_cache_2>
             <s3_cache_3>
-                <type>s3</type>
-                <endpoint>http://localhost:11111/test/00170_test/</endpoint>
-                <access_key_id>clickhouse</access_key_id>
-                <secret_access_key>clickhouse</secret_access_key>
-                <data_cache_enabled>1</data_cache_enabled>
-                <cache_enabled>0</cache_enabled>
+                <type>cache</type>
+                <disk>s3_disk_3</disk>
+                <path>s3_disk_3_cache/</path>
+                <max_size>22548578304</max_size>
                 <data_cache_max_size>22548578304</data_cache_max_size>
                 <cache_on_write_operations>1</cache_on_write_operations>
                 <enable_cache_hits_threshold>1</enable_cache_hits_threshold>

@@ -32,6 +32,7 @@ namespace ErrorCodes
     extern const int CANNOT_SEEK_THROUGH_FILE;
     extern const int CANNOT_USE_CACHE;
     extern const int LOGICAL_ERROR;
+    extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
 CachedReadBufferFromFile::CachedReadBufferFromFile(
@@ -978,7 +979,7 @@ off_t CachedReadBufferFromFile::seek(off_t offset, int whence)
     {
         if (whence != SEEK_SET && whence != SEEK_CUR)
         {
-            throw Exception("Exptected SEEK_SET or SEEK_CUR as whence", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+            throw Exception("Expected SEEK_SET or SEEK_CUR as whence", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
         }
 
         if (whence == SEEK_CUR)
