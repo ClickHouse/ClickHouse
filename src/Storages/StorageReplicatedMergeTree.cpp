@@ -7758,7 +7758,8 @@ String StorageReplicatedMergeTree::getSharedDataReplica(
 }
 
 
-Strings StorageReplicatedMergeTree::getZeroCopyPartPath(const MergeTreeSettings & settings, DiskType disk_type, const String & table_uuid,
+Strings StorageReplicatedMergeTree::getZeroCopyPartPath(
+    const MergeTreeSettings & settings, DiskType disk_type, const String & table_uuid,
     const String & part_name, const String & zookeeper_path_old)
 {
     Strings res;
