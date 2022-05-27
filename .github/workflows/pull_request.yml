@@ -3272,6 +3272,13 @@ jobs:
           # shellcheck disable=SC2046
           docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH"
+#############################################################################################
+###################################### JEPSEN TESTS #########################################
+#############################################################################################
+  Jepsen:
+      needs: [BuilderBinRelease]
+      uses: ./.github/workflows/jepsen.yml
+
   FinishCheck:
     needs:
       - StyleCheck
@@ -3336,6 +3343,7 @@ jobs:
       - SplitBuildSmokeTest
       - CompatibilityCheck
       - IntegrationTestsFlakyCheck
+      - Jepsen
     runs-on: [self-hosted, style-checker]
     steps:
       - name: Clear repository
