@@ -1,9 +1,9 @@
 ---
-toc_priority: 32
-toc_title: Atomic
+sidebar_label: Atomic
+sidebar_position: 10
 ---
 
-# Atomic {#atomic}
+# Atomic 
 
 It supports non-blocking [DROP TABLE](#drop-detach-table) and [RENAME TABLE](#rename-table) queries and atomic [EXCHANGE TABLES](#exchange-tables) queries. `Atomic` database engine is used by default.
 
@@ -18,14 +18,21 @@ CREATE DATABASE test [ENGINE = Atomic];
 ### Table UUID {#table-uuid}
 
 All tables in database `Atomic` have persistent [UUID](../../sql-reference/data-types/uuid.md) and store data in directory `/clickhouse_path/store/xxx/xxxyyyyy-yyyy-yyyy-yyyy-yyyyyyyyyyyy/`, where `xxxyyyyy-yyyy-yyyy-yyyy-yyyyyyyyyyyy` is UUID of the table.
-Usually, the UUID is generated automatically, but the user can also explicitly specify the UUID in the same way when creating the table (this is not recommended). To display the `SHOW CREATE` query with the UUID you can use setting [show_table_uuid_in_table_create_query_if_not_nil](../../operations/settings/settings.md#show_table_uuid_in_table_create_query_if_not_nil). For example:
+Usually, the UUID is generated automatically, but the user can also explicitly specify the UUID in the same way when creating the table (this is not recommended). 
+
+For example:
 
 ```sql
 CREATE TABLE name UUID '28f1c61c-2970-457a-bffe-454156ddcfef' (n UInt64) ENGINE = ...;
 ```
+
+:::note
+You can use the [show_table_uuid_in_table_create_query_if_not_nil](../../operations/settings/settings.md#show_table_uuid_in_table_create_query_if_not_nil) setting to display the UUID with the `SHOW CREATE` query. 
+:::
+
 ### RENAME TABLE {#rename-table}
 
-[RENAME](../../sql-reference/statements/rename.md) queries are performed without changing UUID and moving table data. These queries do not wait for the completion of queries using the table and are executed instantly.
+[RENAME](../../sql-reference/statements/rename.md) queries are performed without changing the UUID or moving table data. These queries do not wait for the completion of queries using the table and are executed instantly.
 
 ### DROP/DETACH TABLE {#drop-detach-table}
 

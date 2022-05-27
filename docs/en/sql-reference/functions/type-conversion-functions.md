@@ -1,6 +1,6 @@
 ---
-toc_priority: 38
-toc_title: Type Conversion
+sidebar_position: 38
+sidebar_label: Type Conversion
 ---
 
 # Type Conversion Functions {#type-conversion-functions}
@@ -689,8 +689,9 @@ x::t
 
 -    Converted value.
 
-!!! note "Note"
-    If the input value does not fit the bounds of the target type, the result overflows. For example, `CAST(-1, 'UInt8')` returns `255`.
+:::note    
+If the input value does not fit the bounds of the target type, the result overflows. For example, `CAST(-1, 'UInt8')` returns `255`.
+:::
 
 **Examples**
 
@@ -1012,7 +1013,7 @@ Result:
 Query:
 
 ``` sql
-SELECT parseDateTimeBestEffort('Sat, 18 Aug 2018 07:22:16 GMT', 'Europe/Moscow')
+SELECT parseDateTimeBestEffort('Sat, 18 Aug 2018 07:22:16 GMT', 'Asia/Istanbul')
 AS parseDateTimeBestEffort;
 ```
 
@@ -1206,7 +1207,7 @@ Result:
 Query:
 
 ``` sql
-SELECT parseDateTimeBestEffortUSOrNull('02-10-2021 21:12:57 GMT', 'Europe/Moscow') AS parseDateTimeBestEffortUSOrNull;
+SELECT parseDateTimeBestEffortUSOrNull('02-10-2021 21:12:57 GMT', 'Asia/Istanbul') AS parseDateTimeBestEffortUSOrNull;
 ```
 
 Result:
@@ -1292,7 +1293,7 @@ Result:
 Query:
 
 ``` sql
-SELECT parseDateTimeBestEffortUSOrZero('02-10-2021 21:12:57 GMT', 'Europe/Moscow') AS parseDateTimeBestEffortUSOrZero;
+SELECT parseDateTimeBestEffortUSOrZero('02-10-2021 21:12:57 GMT', 'Asia/Istanbul') AS parseDateTimeBestEffortUSOrZero;
 ```
 
 Result:
@@ -1362,7 +1363,7 @@ SELECT parseDateTime64BestEffort('2021-01-01 01:01:00.12346') AS a, toTypeName(a
 UNION ALL
 SELECT parseDateTime64BestEffort('2021-01-01 01:01:00.12346',6) AS a, toTypeName(a) AS t
 UNION ALL
-SELECT parseDateTime64BestEffort('2021-01-01 01:01:00.12346',3,'Europe/Moscow') AS a, toTypeName(a) AS t
+SELECT parseDateTime64BestEffort('2021-01-01 01:01:00.12346',3,'Asia/Istanbul') AS a, toTypeName(a) AS t
 FORMAT PrettyCompactMonoBlock;
 ```
 
@@ -1373,7 +1374,7 @@ Result:
 │ 2021-01-01 01:01:00.123000 │ DateTime64(3)                  │
 │ 2021-01-01 00:00:00.000000 │ DateTime64(3)                  │
 │ 2021-01-01 01:01:00.123460 │ DateTime64(6)                  │
-│ 2020-12-31 22:01:00.123000 │ DateTime64(3, 'Europe/Moscow') │
+│ 2020-12-31 22:01:00.123000 │ DateTime64(3, 'Asia/Istanbul') │
 └────────────────────────────┴────────────────────────────────┘
 ```
 
@@ -1432,8 +1433,9 @@ Result:
 
 Converts a `DateTime64` to a `Int64` value with fixed sub-second precision. Input value is scaled up or down appropriately depending on it precision.
 
-!!! info "Note"
-    The output value is a timestamp in UTC, not in the timezone of `DateTime64`.
+:::note    
+The output value is a timestamp in UTC, not in the timezone of `DateTime64`.
+:::
 
 **Syntax**
 

@@ -1,6 +1,6 @@
 ---
-toc_priority: 71
-toc_title: "Используемые сторонние библиотеки"
+sidebar_position: 71
+sidebar_label: "Используемые сторонние библиотеки"
 ---
 
 

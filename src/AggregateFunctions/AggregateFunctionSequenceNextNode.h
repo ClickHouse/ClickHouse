@@ -216,7 +216,7 @@ public:
         a.value.push_back(v->clone(arena), arena);
     }
 
-    void create(AggregateDataPtr place) const override
+    void create(AggregateDataPtr place) const override /// NOLINT
     {
         new (place) Data;
     }

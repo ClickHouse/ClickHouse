@@ -165,7 +165,7 @@ void Set::setHeader(const ColumnsWithTypeAndName & header)
 
 bool Set::insertFromBlock(const ColumnsWithTypeAndName & columns)
 {
-    std::unique_lock lock(rwlock);
+    std::lock_guard<std::shared_mutex> lock(rwlock);
 
     if (data.empty())
         throw Exception("Method Set::setHeader must be called before Set::insertFromBlock", ErrorCodes::LOGICAL_ERROR);
@@ -430,8 +430,8 @@ MergeTreeSetIndex::MergeTreeSetIndex(const Columns & set_elements, std::vector<K
     SortDescription sort_description;
     for (size_t i = 0; i < tuple_size; ++i)
     {
-        block_to_sort.insert({ ordered_set[i], nullptr, "_" + toString(i) });
-        sort_description.emplace_back(i, 1, 1);
+        block_to_sort.insert({ordered_set[i], nullptr, ordered_set[i]->getName()});
+        sort_description.emplace_back(ordered_set[i]->getName(), 1, 1);
     }
 
     sortBlock(block_to_sort, sort_description);

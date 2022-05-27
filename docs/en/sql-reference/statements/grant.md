@@ -1,6 +1,6 @@
 ---
-toc_priority: 38
-toc_title: GRANT
+sidebar_position: 38
+sidebar_label: GRANT
 ---
 
 # GRANT Statement {#grant}
@@ -170,6 +170,7 @@ Hierarchy of privileges:
     -   `SYSTEM FLUSH`
         -   `SYSTEM FLUSH DISTRIBUTED`
         -   `SYSTEM FLUSH LOGS`
+    -   `CLUSTER` (see also `access_control_improvements.on_cluster_queries_require_cluster_grant` configuration directive)
 -   [INTROSPECTION](#grant-introspection)
     -   `addressToLine`
     -   `addressToLineWithInlines`

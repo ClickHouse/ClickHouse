@@ -40,7 +40,10 @@ enum class ExecuteTTLType
 class MergeTreeDataMergerMutator
 {
 public:
-    using AllowedMergingPredicate = std::function<bool (const MergeTreeData::DataPartPtr &, const MergeTreeData::DataPartPtr &, String *)>;
+    using AllowedMergingPredicate = std::function<bool (const MergeTreeData::DataPartPtr &,
+                                                        const MergeTreeData::DataPartPtr &,
+                                                        const MergeTreeTransaction *,
+                                                        String *)>;
 
     MergeTreeDataMergerMutator(MergeTreeData & data_, size_t max_tasks_count_);
 
@@ -72,6 +75,7 @@ public:
         size_t max_total_size_to_merge,
         const AllowedMergingPredicate & can_merge,
         bool merge_with_ttl_allowed,
+        const MergeTreeTransactionPtr & txn,
         String * out_disable_reason = nullptr);
 
     /** Select all the parts in the specified partition for merge, if possible.
@@ -85,6 +89,7 @@ public:
         const String & partition_id,
         bool final,
         const StorageMetadataPtr & metadata_snapshot,
+        const MergeTreeTransactionPtr & txn,
         String * out_disable_reason = nullptr,
         bool optimize_skip_merged_partitions = false);
 
@@ -107,6 +112,7 @@ public:
         bool deduplicate,
         const Names & deduplicate_by_columns,
         const MergeTreeData::MergingParams & merging_params,
+        const MergeTreeTransactionPtr & txn,
         const IMergeTreeDataPart * parent_part = nullptr,
         const String & suffix = "");
 
@@ -118,12 +124,14 @@ public:
         MergeListEntry * merge_entry,
         time_t time_of_mutation,
         ContextPtr context,
+        const MergeTreeTransactionPtr & txn,
         ReservationSharedPtr space_reservation,
         TableLockHolder & table_lock_holder);
 
     MergeTreeData::DataPartPtr renameMergedTemporaryPart(
         MergeTreeData::MutableDataPartPtr & new_data_part,
         const MergeTreeData::DataPartsVector & parts,
+        const MergeTreeTransactionPtr & txn,
         MergeTreeData::Transaction * out_transaction = nullptr);
 
 
@@ -137,27 +145,6 @@ private:
 
     friend class MutateTask;
     friend class MergeTask;
-
-    /** Split mutation commands into two parts:
-      * First part should be executed by mutations interpreter.
-      * Other is just simple drop/renames, so they can be executed without interpreter.
-      */
-    static void splitMutationCommands(
-        MergeTreeData::DataPartPtr part,
-        const MutationCommands & commands,
-        MutationCommands & for_interpreter,
-        MutationCommands & for_file_renames);
-
-    /// Get the columns list of the resulting part in the same order as storage_columns.
-    static std::pair<NamesAndTypesList, SerializationInfoByName> getColumnsForNewDataPart(
-        MergeTreeData::DataPartPtr source_part,
-        const Block & updated_header,
-        NamesAndTypesList storage_columns,
-        const SerializationInfoByName & serialization_infos,
-        const MutationCommands & commands_for_removes);
-
-    static ExecuteTTLType shouldExecuteTTL(
-        const StorageMetadataPtr & metadata_snapshot, const ColumnDependencies & dependencies);
 
 public :
     /** Is used to cancel all merges and mutations. On cancel() call all currently running actions will throw exception soon.
@@ -176,7 +163,6 @@ private:
         bool need_remove_expired_values,
         const MergeTreeData::MergingParams & merging_params) const;
 
-private:
     MergeTreeData & data;
     const size_t max_tasks_count;
 

@@ -1,6 +1,5 @@
 #pragma once
 
-#include <base/shared_ptr_helper.h>
 #include <Storages/System/IStorageSystemOneBlock.h>
 
 
@@ -12,9 +11,8 @@ class Context;
 
 /** Implements `zookeeper` system table, which allows you to view the data in ZooKeeper for debugging purposes.
   */
-class StorageSystemZooKeeper final : public shared_ptr_helper<StorageSystemZooKeeper>, public IStorageSystemOneBlock<StorageSystemZooKeeper>
+class StorageSystemZooKeeper final : public IStorageSystemOneBlock<StorageSystemZooKeeper>
 {
-    friend struct shared_ptr_helper<StorageSystemZooKeeper>;
 public:
     std::string getName() const override { return "SystemZooKeeper"; }
 

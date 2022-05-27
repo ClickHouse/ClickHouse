@@ -36,10 +36,10 @@ struct ReadableSize
 template <>
 struct fmt::formatter<ReadableSize>
 {
-    constexpr auto parse(format_parse_context & ctx)
+    constexpr static auto parse(format_parse_context & ctx)
     {
-        auto it = ctx.begin();
-        auto end = ctx.end();
+        const auto * it = ctx.begin();
+        const auto * end = ctx.end();
 
         /// Only support {}.
         if (it != end && *it != '}')

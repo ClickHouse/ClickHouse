@@ -5,7 +5,6 @@
 #include <Interpreters/ClientInfo.h>
 #include <Core/UUID.h>
 #include <base/scope_guard.h>
-#include <base/shared_ptr_helper.h>
 #include <boost/container/flat_set.hpp>
 #include <mutex>
 #include <optional>
@@ -156,9 +155,11 @@ public:
     /// without any limitations. This is used for the global context.
     static std::shared_ptr<const ContextAccess> getFullAccess();
 
+    ~ContextAccess();
+
 private:
     friend class AccessControl;
-    ContextAccess() {}
+    ContextAccess() {} /// NOLINT
     ContextAccess(const AccessControl & access_control_, const Params & params_);
 
     void initialize();
@@ -180,7 +181,7 @@ private:
     bool checkAccessImpl(const AccessRightsElements & elements) const;
 
     template <bool throw_if_denied, bool grant_option, typename... Args>
-    bool checkAccessImplHelper(const AccessFlags & flags, const Args &... args) const;
+    bool checkAccessImplHelper(AccessFlags flags, const Args &... args) const;
 
     template <bool throw_if_denied, bool grant_option>
     bool checkAccessImplHelper(const AccessRightsElement & element) const;

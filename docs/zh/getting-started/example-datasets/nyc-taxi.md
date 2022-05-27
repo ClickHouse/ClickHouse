@@ -1,6 +1,6 @@
 ---
-toc_priority: 20
-toc_title: New York Taxi Data
+sidebar_position: 20
+sidebar_label: New York Taxi Data
 ---
 
 # 纽约出租车数据 {#niu-yue-shi-chu-zu-che-shu-ju}

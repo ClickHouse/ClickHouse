@@ -11,47 +11,34 @@ set -o errexit
 set -o pipefail
 
 echo "
-	DROP TABLE IF EXISTS storage_join_race;
-	CREATE TABLE storage_join_race (x UInt64, y UInt64) Engine = Join(ALL, FULL, x);
+    DROP TABLE IF EXISTS storage_join_race;
+    CREATE TABLE storage_join_race (x UInt64, y UInt64) Engine = Join(ALL, FULL, x);
 " | $CLICKHOUSE_CLIENT -n
 
 function read_thread_big()
 {
-    while true; do 
-        echo "
-            SELECT * FROM ( SELECT number AS x FROM numbers(100000) ) AS t1 ALL FULL JOIN storage_join_race USING (x) FORMAT Null;
-        " | $CLICKHOUSE_CLIENT -n
-    done
+    $CLICKHOUSE_CLIENT -n -q "SELECT * FROM ( SELECT number AS x FROM numbers(100000) ) AS t1 ALL FULL JOIN storage_join_race USING (x) FORMAT Null"
 }
 
 function read_thread_small()
 {
-    while true; do 
-        echo "
-            SELECT * FROM ( SELECT number AS x FROM numbers(10) ) AS t1 ALL FULL JOIN storage_join_race USING (x) FORMAT Null;
-        " | $CLICKHOUSE_CLIENT -n
-    done
+    $CLICKHOUSE_CLIENT -n -q "SELECT * FROM ( SELECT number AS x FROM numbers(10) ) AS t1 ALL FULL JOIN storage_join_race USING (x) FORMAT Null"
 }
 
 function read_thread_select()
 {
-    while true; do
-        echo "
-            SELECT * FROM storage_join_race FORMAT Null;
-        " | $CLICKHOUSE_CLIENT -n
-    done
+    $CLICKHOUSE_CLIENT -n -q "SELECT * FROM storage_join_race FORMAT Null"
 }
 
-# https://stackoverflow.com/questions/9954794/execute-a-shell-function-with-timeout
-export -f read_thread_big;
-export -f read_thread_small;
-export -f read_thread_select;
+export -f read_thread_big
+export -f read_thread_small
+export -f read_thread_select
 
 TIMEOUT=20
 
-timeout $TIMEOUT bash -c read_thread_big 2> /dev/null &
-timeout $TIMEOUT bash -c read_thread_small 2> /dev/null &
-timeout $TIMEOUT bash -c read_thread_select 2> /dev/null &
+clickhouse_client_loop_timeout $TIMEOUT read_thread_big 2> /dev/null &
+clickhouse_client_loop_timeout $TIMEOUT read_thread_small 2> /dev/null &
+clickhouse_client_loop_timeout $TIMEOUT read_thread_select 2> /dev/null &
 
 echo "
     INSERT INTO storage_join_race SELECT number AS x, number AS y FROM numbers (10000000);

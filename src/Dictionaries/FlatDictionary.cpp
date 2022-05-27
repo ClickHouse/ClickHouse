@@ -32,19 +32,18 @@ FlatDictionary::FlatDictionary(
     const StorageID & dict_id_,
     const DictionaryStructure & dict_struct_,
     DictionarySourcePtr source_ptr_,
-    const DictionaryLifetime dict_lifetime_,
     Configuration configuration_,
     BlockPtr update_field_loaded_block_)
     : IDictionary(dict_id_)
     , dict_struct(dict_struct_)
     , source_ptr{std::move(source_ptr_)}
-    , dict_lifetime(dict_lifetime_)
     , configuration(configuration_)
     , loaded_keys(configuration.initial_array_size, false)
     , update_field_loaded_block(std::move(update_field_loaded_block_))
 {
     createAttributes();
     loadData();
+    buildHierarchyParentToChildIndexIfNeeded();
     calculateBytesAllocated();
 }
 
@@ -246,30 +245,43 @@ ColumnUInt8::Ptr FlatDictionary::isInHierarchy(
     return result;
 }
 
-ColumnPtr FlatDictionary::getDescendants(
-    ColumnPtr key_column,
-    const DataTypePtr &,
-    size_t level) const
+DictionaryHierarchyParentToChildIndexPtr FlatDictionary::getHierarchicalIndex() const
 {
-    PaddedPODArray<UInt64> keys_backup;
-    const auto & keys = getColumnVectorData(this, key_column, keys_backup);
+    if (hierarhical_index)
+        return hierarhical_index;
 
     size_t hierarchical_attribute_index = *dict_struct.hierarchical_attribute_index;
     const auto & hierarchical_attribute = attributes[hierarchical_attribute_index];
     const ContainerType<UInt64> & parent_keys = std::get<ContainerType<UInt64>>(hierarchical_attribute.container);
 
     HashMap<UInt64, PaddedPODArray<UInt64>> parent_to_child;
+    parent_to_child.reserve(element_count);
 
-    for (size_t i = 0; i < parent_keys.size(); ++i)
+    UInt64 child_keys_size = static_cast<UInt64>(parent_keys.size());
+
+    for (UInt64 child_key = 0; child_key < child_keys_size; ++child_key)
     {
-        auto parent_key = parent_keys[i];
+        if (!loaded_keys[child_key])
+            continue;
 
-        if (loaded_keys[i])
-            parent_to_child[parent_key].emplace_back(static_cast<UInt64>(i));
+        auto parent_key = parent_keys[child_key];
+        parent_to_child[parent_key].emplace_back(child_key);
     }
 
+    return std::make_shared<DictionaryHierarchicalParentToChildIndex>(parent_to_child);
+}
+
+ColumnPtr FlatDictionary::getDescendants(
+    ColumnPtr key_column,
+    const DataTypePtr &,
+    size_t level,
+    DictionaryHierarchicalParentToChildIndexPtr parent_to_child_index) const
+{
+    PaddedPODArray<UInt64> keys_backup;
+    const auto & keys = getColumnVectorData(this, key_column, keys_backup);
+
     size_t keys_found;
-    auto result = getKeysDescendantsArray(keys, parent_to_child, level, keys_found);
+    auto result = getKeysDescendantsArray(keys, *parent_to_child_index, level, keys_found);
 
     query_count.fetch_add(keys.size(), std::memory_order_relaxed);
     found_count.fetch_add(keys_found, std::memory_order_relaxed);
@@ -402,6 +414,15 @@ void FlatDictionary::loadData()
         throw Exception(ErrorCodes::DICTIONARY_IS_EMPTY, "{}: dictionary source is empty and 'require_nonempty' property is set.", getFullName());
 }
 
+void FlatDictionary::buildHierarchyParentToChildIndexIfNeeded()
+{
+    if (!dict_struct.hierarchical_attribute_index)
+        return;
+
+    if (dict_struct.attributes[*dict_struct.hierarchical_attribute_index].bidirectional)
+        hierarhical_index = getHierarchicalIndex();
+}
+
 void FlatDictionary::calculateBytesAllocated()
 {
     bytes_allocated += attributes.size() * sizeof(attributes.front());
@@ -440,6 +461,12 @@ void FlatDictionary::calculateBytesAllocated()
 
     if (update_field_loaded_block)
         bytes_allocated += update_field_loaded_block->allocatedBytes();
+
+    if (hierarhical_index)
+    {
+        hierarchical_index_bytes_allocated = hierarhical_index->getSizeInBytes();
+        bytes_allocated += hierarchical_index_bytes_allocated;
+    }
 
     bytes_allocated += string_arena.size();
 }
@@ -575,7 +602,7 @@ Pipe FlatDictionary::read(const Names & column_names, size_t max_block_size, siz
     ColumnsWithTypeAndName key_columns = {ColumnWithTypeAndName(keys_column, std::make_shared<DataTypeUInt64>(), dict_struct.id->name)};
 
     std::shared_ptr<const IDictionary> dictionary = shared_from_this();
-    auto coordinator = DictionarySourceCoordinator::create(dictionary, column_names, std::move(key_columns), max_block_size);
+    auto coordinator =std::make_shared<DictionarySourceCoordinator>(dictionary, column_names, std::move(key_columns), max_block_size);
     auto result = coordinator->read(num_streams);
 
     return result;
@@ -604,18 +631,19 @@ void registerDictionaryFlat(DictionaryFactory & factory)
         static constexpr size_t default_max_array_size = 500000;
 
         String dictionary_layout_prefix = config_prefix + ".layout" + ".flat";
+        const DictionaryLifetime dict_lifetime{config, config_prefix + ".lifetime"};
 
         FlatDictionary::Configuration configuration
         {
             .initial_array_size = config.getUInt64(dictionary_layout_prefix + ".initial_array_size", default_initial_array_size),
             .max_array_size = config.getUInt64(dictionary_layout_prefix + ".max_array_size", default_max_array_size),
-            .require_nonempty = config.getBool(config_prefix + ".require_nonempty", false)
+            .require_nonempty = config.getBool(config_prefix + ".require_nonempty", false),
+            .dict_lifetime = dict_lifetime
         };
 
         const auto dict_id = StorageID::fromDictionaryConfig(config, config_prefix);
-        const DictionaryLifetime dict_lifetime{config, config_prefix + ".lifetime"};
 
-        return std::make_unique<FlatDictionary>(dict_id, dict_struct, std::move(source_ptr), dict_lifetime, std::move(configuration));
+        return std::make_unique<FlatDictionary>(dict_id, dict_struct, std::move(source_ptr), std::move(configuration));
     };
 
     factory.registerLayout("flat", create_layout, false);

@@ -1,0 +1,4 @@
+<clickhouse>
+    <dns_cache_update_period>1</dns_cache_update_period>
+    <dns_max_consecutive_failures>6</dns_max_consecutive_failures>
+</clickhouse>

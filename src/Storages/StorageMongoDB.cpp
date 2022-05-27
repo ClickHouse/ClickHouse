@@ -38,13 +38,10 @@ StorageMongoDB::StorageMongoDB(
     const ConstraintsDescription & constraints_,
     const String & comment)
     : IStorage(table_id_)
-    , host(host_)
-    , port(port_)
     , database_name(database_name_)
     , collection_name(collection_name_)
     , username(username_)
     , password(password_)
-    , options(options_)
     , uri("mongodb://" + host_ + ":" + std::to_string(port_) + "/" + database_name_ + "?" + options_)
 {
     StorageInMemoryMetadata storage_metadata;
@@ -73,16 +70,16 @@ void StorageMongoDB::connectIfNotConnected()
         auto auth_db = database_name;
         if (auth_source != query_params.end())
             auth_db = auth_source->second;
-#       if POCO_VERSION >= 0x01070800
-            if (!username.empty() && !password.empty())
-            {
-                Poco::MongoDB::Database poco_db(auth_db);
-                if (!poco_db.authenticate(*connection, username, password, Poco::MongoDB::Database::AUTH_SCRAM_SHA1))
-                    throw Exception("Cannot authenticate in MongoDB, incorrect user or password", ErrorCodes::MONGODB_CANNOT_AUTHENTICATE);
-            }
-#       else
-            authenticate(*connection, database_name, username, password);
-#       endif
+#if POCO_VERSION >= 0x01070800
+        if (!username.empty() && !password.empty())
+        {
+            Poco::MongoDB::Database poco_db(auth_db);
+            if (!poco_db.authenticate(*connection, username, password, Poco::MongoDB::Database::AUTH_SCRAM_SHA1))
+                throw Exception("Cannot authenticate in MongoDB, incorrect user or password", ErrorCodes::MONGODB_CANNOT_AUTHENTICATE);
+        }
+#else
+        authenticate(*connection, database_name, username, password);
+#endif
         authenticated = true;
     }
 }
@@ -90,7 +87,7 @@ void StorageMongoDB::connectIfNotConnected()
 
 Pipe StorageMongoDB::read(
     const Names & column_names,
-    const StorageMetadataPtr & metadata_snapshot,
+    const StorageSnapshotPtr & storage_snapshot,
     SelectQueryInfo & /*query_info*/,
     ContextPtr /*context*/,
     QueryProcessingStage::Enum /*processed_stage*/,
@@ -99,16 +96,16 @@ Pipe StorageMongoDB::read(
 {
     connectIfNotConnected();
 
-    metadata_snapshot->check(column_names, getVirtuals(), getStorageID());
+    storage_snapshot->check(column_names);
 
     Block sample_block;
     for (const String & column_name : column_names)
     {
-        auto column_data = metadata_snapshot->getColumns().getPhysical(column_name);
+        auto column_data = storage_snapshot->metadata->getColumns().getPhysical(column_name);
         sample_block.insert({ column_data.type, column_data.name });
     }
 
-    return Pipe(std::make_shared<MongoDBSource>(connection, createCursor(database_name, collection_name, sample_block), sample_block, max_block_size, true));
+    return Pipe(std::make_shared<MongoDBSource>(connection, createCursor(database_name, collection_name, sample_block), sample_block, max_block_size));
 }
 
 
@@ -156,6 +153,8 @@ StorageMongoDBConfiguration StorageMongoDB::getConfiguration(ASTs engine_args, C
 
     }
 
+    context->getRemoteHostFilter().checkHostAndPort(configuration.host, toString(configuration.port));
+
     return configuration;
 }
 
@@ -166,7 +165,7 @@ void registerStorageMongoDB(StorageFactory & factory)
     {
         auto configuration = StorageMongoDB::getConfiguration(args.engine_args, args.getLocalContext());
 
-        return StorageMongoDB::create(
+        return std::make_shared<StorageMongoDB>(
             args.table_id,
             configuration.host,
             configuration.port,

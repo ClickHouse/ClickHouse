@@ -1,6 +1,6 @@
 ---
-toc_priority: 21
-toc_title: Вышки сотовой связи
+sidebar_position: 21
+sidebar_label: Вышки сотовой связи
 ---
 
 # Вышки сотовой связи {#cell-towers}

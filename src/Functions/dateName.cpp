@@ -112,7 +112,7 @@ public:
             || (res = executeType<DataTypeDateTime64>(arguments, result_type))))
             throw Exception(
                 ErrorCodes::ILLEGAL_COLUMN,
-                "Illegal column {} of function {], must be Date or DateTime.",
+                "Illegal column {} of function {}, must be Date or DateTime.",
                 arguments[1].column->getName(),
                 getName());
 
