@@ -263,6 +263,8 @@ std::optional<URLBasedDataSourceConfig> getURLBasedDataSourceConfiguration(
 
         configuration.url =
             dict_config.getString(dict_config_prefix + ".url", config.getString(collection_prefix + ".url", ""));
+        configuration.endpoint =
+            dict_config.getString(dict_config_prefix + ".endpoint", config.getString(collection_prefix + ".endpoint", ""));
         configuration.format =
             dict_config.getString(dict_config_prefix + ".format", config.getString(collection_prefix + ".format", ""));
         configuration.compression_method =
