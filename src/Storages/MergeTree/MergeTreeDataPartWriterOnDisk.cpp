@@ -390,18 +390,28 @@ void MergeTreeDataPartWriterOnDisk::fillStatisticsChecksums(MergeTreeData::DataP
         {
             MergeTreeStatistics stats;
 
-            auto stat = stats_collector->getDistributionStatisticAndReset();
             auto column_distribution_stats = std::make_shared<MergeTreeDistributionStatistics>();
             auto string_search_stats = std::make_shared<MergeTreeStringSearchStatistics>();
-            column_distribution_stats->add(stats_collector->column(), stat);
+            switch (stats_collector->statisticType()) {
+                case StatisticType::NUMERIC_COLUMN_DISRIBUTION:
+                    column_distribution_stats->add(stats_collector->column(), stats_collector->getDistributionStatisticAndReset());
+                    break;
+                case StatisticType::STRING_SEARCH:
+                    string_search_stats->add(stats_collector->column(), stats_collector->getStringSearchStatisticAndReset());
+                    break;
+                default:
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown statistic collector type.");
+            }
             stats.setDistributionStatistics(std::move(column_distribution_stats));
             stats.setStringSearchStatistics(std::move(string_search_stats));
 
-            const auto filename = generateFileNameForStatistics(stat->name(), stats_collector->column());
+            const auto statistic_name = stats_collector->name();
 
-            if (statistic_and_column_to_stream.emplace(std::pair<String, String>{stat->name(), stats_collector->column()}, std::make_unique<StatisticsStream>()).second)
+            const auto filename = generateFileNameForStatistics(statistic_name, stats_collector->column());
+
+            if (statistic_and_column_to_stream.emplace(std::pair<String, String>{statistic_name, stats_collector->column()}, std::make_unique<StatisticsStream>()).second)
             {
-                auto& stream = statistic_and_column_to_stream.at(std::pair<String, String>{stat->name(), stats_collector->column()});
+                auto& stream = statistic_and_column_to_stream.at(std::pair<String, String>{statistic_name, stats_collector->column()});
                 stream->plain_buffer = data_part->volume->getDisk()->writeFile(
                     part_path + filename,
                     DBMS_DEFAULT_BUFFER_SIZE,
@@ -409,14 +419,14 @@ void MergeTreeDataPartWriterOnDisk::fillStatisticsChecksums(MergeTreeData::DataP
                 stream->hashing_buffer = std::make_unique<HashingWriteBuffer>(*stream->plain_buffer);
                 auto & stats_stream = stream->hashing_buffer;
 
-                stats.serializeBinary(stat->name(), *stats_stream);
+                stats.serializeBinary(statistic_name, *stats_stream);
 
                 stats_stream->next();
                 checksums.files[filename].file_size = stats_stream->count();
                 checksums.files[filename].file_hash = stats_stream->getHash();
             }
             else
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "It's a bug: Statistic {}:{} already exists.", stat->name(), stats_collector->column());
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "It's a bug: Statistic {}:{} already exists.", statistic_name, stats_collector->column());
         }
     }
 }
