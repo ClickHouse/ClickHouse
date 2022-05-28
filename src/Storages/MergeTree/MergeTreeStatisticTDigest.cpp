@@ -260,7 +260,7 @@ void MergeTreeColumnDistributionStatisticCollectorTDigest::granuleFinished()
     // do nothing
 }
 
-IDistributionStatisticPtr creatorColumnDistributionStatisticTDigest(
+IStatisticPtr creatorColumnDistributionStatisticTDigest(
     const StatisticDescription & stat, const ColumnDescription & column)
 {
     validatorColumnDistributionStatisticTDigest(stat, column);

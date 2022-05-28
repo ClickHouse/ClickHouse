@@ -47,7 +47,7 @@ private:
     bool is_empty;
 };
 
-class MergeTreeColumnDistributionStatisticCollectorTDigest : public IMergeTreeDistributionStatisticCollector
+class MergeTreeColumnDistributionStatisticCollectorTDigest : public IMergeTreeStatisticCollector
 {
 public:
     explicit MergeTreeColumnDistributionStatisticCollectorTDigest(
@@ -71,7 +71,7 @@ private:
     std::optional<QuantileTDigest<Float32>> sketch;
 };
 
-IDistributionStatisticPtr creatorColumnDistributionStatisticTDigest(
+IStatisticPtr creatorColumnDistributionStatisticTDigest(
     const StatisticDescription & stat, const ColumnDescription & column);
 IMergeTreeStatisticCollectorPtr creatorColumnDistributionStatisticCollectorTDigest(
     const StatisticDescription & stat, const ColumnDescription & column);

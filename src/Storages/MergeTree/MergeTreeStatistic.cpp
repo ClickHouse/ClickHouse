@@ -5,6 +5,7 @@
 #include <base/defines.h>
 #include <Common/Exception.h>
 #include <Common/thread_local_rng.h>
+#include "Storages/Statistics.h"
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <fmt/core.h>
@@ -62,7 +63,6 @@ void MergeTreeDistributionStatistics::merge(const std::shared_ptr<IDistributionS
             // Skip unknown columns.
             // This is valid because everything is merged into empty stats created from metadata.
             // Differences can be caused by alters.
-            //column_to_stats[column]->merge(stat);
         }
     }
 }
@@ -103,7 +103,7 @@ Names MergeTreeDistributionStatistics::getStatisticsNames() const
 
 bool MergeTreeStatistics::empty() const
 {
-    return column_distributions->empty();
+    return column_distributions->empty() && string_search->empty();
 }
 
 void MergeTreeStatistics::merge(const std::shared_ptr<IStatistics>& other)
@@ -115,11 +115,17 @@ void MergeTreeStatistics::merge(const std::shared_ptr<IStatistics>& other)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "MergeTreeStatistics can not be merged with other statistics");
 
     column_distributions->merge(merge_tree_stats->column_distributions);
+    string_search->merge(merge_tree_stats->string_search);
 }
 
 Names MergeTreeStatistics::getStatisticsNames() const
 {
-    return column_distributions->getStatisticsNames();
+    Names result;
+    const auto numeric_distributions = column_distributions->getStatisticsNames();
+    result.insert(std::end(result), std::begin(numeric_distributions), std::end(numeric_distributions));
+    const auto string_searches = string_search->getStatisticsNames();
+    result.insert(std::end(result), std::begin(string_searches), std::end(string_searches));
+    return result;
 }
 
 // Serialization:
@@ -137,10 +143,11 @@ void MergeTreeStatistics::serializeBinary(const String & name, WriteBuffer & ost
 {
     const auto & size_type = DataTypePtr(std::make_shared<DataTypeUInt64>());
     auto size_serialization = size_type->getDefaultSerialization();
-    size_serialization->serializeBinary(1, ostr);
-    // TODO: support versions and multiple distrs
+    size_serialization->serializeBinary(2, ostr);
     size_serialization->serializeBinary(static_cast<size_t>(StatisticType::NUMERIC_COLUMN_DISRIBUTION), ostr);
     column_distributions->serializeBinary(name, ostr);
+    size_serialization->serializeBinary(static_cast<size_t>(StatisticType::STRING_SEARCH), ostr);
+    string_search->serializeBinary(name, ostr);
 }
 
 void MergeTreeStatistics::deserializeBinary(ReadBuffer & istr)
@@ -158,6 +165,9 @@ void MergeTreeStatistics::deserializeBinary(ReadBuffer & istr)
         case static_cast<size_t>(StatisticType::NUMERIC_COLUMN_DISRIBUTION):
             column_distributions->deserializeBinary(istr);
             break;
+        case static_cast<size_t>(StatisticType::STRING_SEARCH):
+            string_search->deserializeBinary(istr);
+            break;
         default:
             throw Exception("Unknown statistic type", ErrorCodes::LOGICAL_ERROR);
         }
@@ -173,9 +183,18 @@ void MergeTreeStatistics::setDistributionStatistics(IDistributionStatisticsPtr &
     column_distributions = std::move(merge_tree_stat);
 }
 
+void MergeTreeStatistics::setStringSearchStatistics(IStringSearchStatisticsPtr && stat)
+{
+    auto merge_tree_stat = std::dynamic_pointer_cast<MergeTreeStringSearchStatistics>(stat);
+    if (!merge_tree_stat)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "MergeTreeStatistics can not be merged with other statistics");
+
+    string_search = std::move(merge_tree_stat);
+}
+
 size_t MergeTreeStatistics::getSizeInMemory() const
 {
-    return column_distributions->getSizeInMemory();
+    return column_distributions->getSizeInMemory() + string_search->getSizeInMemory();
 }
 
 size_t MergeTreeDistributionStatistics::getSizeInMemory() const
@@ -259,14 +278,177 @@ void MergeTreeDistributionStatistics::deserializeBinary(ReadBuffer & istr)
     }
 }
 
+bool MergeTreeStringSearchStatistics::empty() const
+{
+    for (const auto& [column, stat] : column_to_stats) {
+        if (!stat->empty()) {
+            return false;
+        }
+    }
+    return true;
+}
+
+void MergeTreeStringSearchStatistics::merge(const std::shared_ptr<IStringSearchStatistics> & other)
+{
+    if (!other)
+        return;
+    const auto merge_tree_stats = std::dynamic_pointer_cast<MergeTreeStringSearchStatistics>(other);
+    if (!merge_tree_stats)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "MergeTreeStatistics can not be merged with other statistics");
+    
+    for (const auto & [column, stat] : merge_tree_stats->column_to_stats)
+    {
+        if (column_to_stats.contains(column))
+        {
+            column_to_stats.at(column)->merge(stat);
+        }
+    }
+}
+
+Names MergeTreeStringSearchStatistics::getStatisticsNames() const
+{
+    std::set<String> statistics;
+    for (const auto & [column, stat] : column_to_stats)
+    {
+        statistics.insert(stat->name());
+    }
+    return Names(std::begin(statistics), std::end(statistics)); 
+}
+
+void MergeTreeStringSearchStatistics::serializeBinary(const String & name, WriteBuffer & ostr) const
+{
+    // todo: get rid of copy-paste
+    const auto & size_type = DataTypePtr(std::make_shared<DataTypeUInt64>());
+    auto size_serialization = size_type->getDefaultSerialization();
+    const auto & str_type = DataTypePtr(std::make_shared<DataTypeString>());
+    auto str_serialization = str_type->getDefaultSerialization();
+
+    size_serialization->serializeBinary(
+        std::count_if(
+            std::begin(column_to_stats), std::end(column_to_stats),
+            [&name](const auto & elem) { return name == elem.second->name(); }), ostr);
+    for (const auto & [column, statistic] : column_to_stats)
+    {
+        if (statistic->name() == name)
+        {
+            str_serialization->serializeBinary(column, ostr);
+            statistic->serializeBinary(ostr);
+        }
+    }
+}
+
+void MergeTreeStringSearchStatistics::deserializeBinary(ReadBuffer & istr)
+{
+    const auto & size_type = DataTypePtr(std::make_shared<DataTypeUInt64>());
+    auto size_serialization = size_type->getDefaultSerialization();
+    const auto & str_type = DataTypePtr(std::make_shared<DataTypeString>());
+    auto str_serialization = str_type->getDefaultSerialization();
+
+    Field field;
+    size_serialization->deserializeBinary(field, istr);
+    const auto stats_count = field.get<size_t>();
+
+    for (size_t index = 0; index < stats_count; ++index)
+    {
+        str_serialization->deserializeBinary(field, istr);
+        const auto column = field.get<String>();
+        auto it = column_to_stats.find(column);
+        if (it == std::end(column_to_stats))
+        {
+            size_serialization->deserializeBinary(field, istr);
+            const auto data_type = field.get<size_t>();
+            UNUSED(data_type);
+            size_serialization->deserializeBinary(field, istr);
+            const auto data_count = field.get<size_t>();
+            istr.ignore(data_count);
+        }
+        else if (!it->second->validateTypeBinary(istr))
+        {
+            size_serialization->deserializeBinary(field, istr);
+            const auto data_count = field.get<size_t>();
+            istr.ignore(data_count);
+        }
+        else
+        {
+            it->second->deserializeBinary(istr);
+        }
+    }
+}
+
+std::optional<double> MergeTreeStringSearchStatistics::estimateStringProbability(const String & column, const String& needle) const
+{
+    if (!column_to_stats.contains(column))
+    {
+        return std::nullopt;
+    }
+    const auto & stat = column_to_stats.at(column);
+    if (stat->empty())
+    {
+        return std::nullopt;
+    }
+    return stat->estimateStringProbability(needle);
+}
+
+std::optional<double> MergeTreeStringSearchStatistics::estimateSubstringsProbability(const String & column, const Strings& needles) const
+{
+    if (!column_to_stats.contains(column))
+    {
+        return std::nullopt;
+    }
+    const auto & stat = column_to_stats.at(column);
+    if (stat->empty())
+    {
+        return std::nullopt;
+    }
+    return stat->estimateSubstringsProbability(needles);
+}
+
+void MergeTreeStringSearchStatistics::add(const String & column, const IStringSearchStatisticPtr & stat)
+{
+    // TODO: MergeTreeStatisticsBase to get rid of copy paste
+    if (stat == nullptr)
+    {
+        column_to_stats.erase(column);
+        return;
+    }
+    column_to_stats[column] = stat;
+}
+
+size_t MergeTreeStringSearchStatistics::getSizeInMemory() const
+{
+    size_t sum = 0;
+    for (const auto & [_, statistic] : column_to_stats)
+    {
+        sum += statistic->getSizeInMemory();
+    }
+    return sum;
+}
+
+size_t MergeTreeStringSearchStatistics::getSizeInMemoryByName(const String& name) const
+{
+    size_t sum = 0;
+    for (const auto & [_, statistic] : column_to_stats)
+    {
+        if (statistic->name() == name) {
+            sum += statistic->getSizeInMemory();
+        }
+    }
+    return sum;
+}
+
 IConstDistributionStatisticsPtr MergeTreeStatistics::getDistributionStatistics() const
 {
     return column_distributions;
 }
 
+IConstStringSearchStatisticsPtr MergeTreeStatistics::getStringSearchStatistics() const
+{
+    return string_search;
+}
+
 void MergeTreeStatisticFactory::registerCreators(
     const std::string & stat_type,
-    DistributionStatisticsCreator creator,
+    StatisticsCreator creator,
     CollectorCreator collector,
     Validator validator)
 {
@@ -307,7 +489,7 @@ void MergeTreeStatisticFactory::validate(
     }
 }
 
-IDistributionStatisticPtr MergeTreeStatisticFactory::getDistributionStatistic(
+IStatisticPtr MergeTreeStatisticFactory::getStatistic(
     const StatisticDescription & stat,
     const ColumnDescription & column) const
 {
@@ -333,21 +515,24 @@ MergeTreeStatisticsPtr MergeTreeStatisticFactory::get(
     const ColumnsDescription & columns) const
 {
     auto column_distribution_stats = std::make_shared<MergeTreeDistributionStatistics>();
+    auto string_search_stats = std::make_shared<MergeTreeStringSearchStatistics>();
     for (const auto & stat_description : stats) {
         // move to params
         for (const auto & column : stat_description.column_names) {
             for (const auto & stat : getSplittedStatistics(stat_description, columns.get(column))) {
-                column_distribution_stats->add(column, getDistributionStatistic(stat, columns.get(column)));
+                // TODO: change
+                column_distribution_stats->add(column, std::dynamic_pointer_cast<IDistributionStatistic>(getStatistic(stat, columns.get(column))));
             }
         }
     }
 
     auto result = std::make_shared<MergeTreeStatistics>();
     result->setDistributionStatistics(std::move(column_distribution_stats));
+    result->setStringSearchStatistics(std::move(string_search_stats));
     return result;
 }
 
-IMergeTreeStatisticCollectorPtr MergeTreeStatisticFactory::getDistributionStatisticCollector(
+IMergeTreeStatisticCollectorPtr MergeTreeStatisticFactory::getStatisticCollector(
     const StatisticDescription & stat, const ColumnDescription & column) const
 {
     auto it = collectors.find(stat.type);
@@ -367,7 +552,7 @@ IMergeTreeStatisticCollectorPtr MergeTreeStatisticFactory::getDistributionStatis
     return {it->second(stat, column)};
 }
 
-IMergeTreeStatisticCollectorPtrs MergeTreeStatisticFactory::getDistributionStatisticCollectors(
+IMergeTreeStatisticCollectorPtrs MergeTreeStatisticFactory::getStatisticCollectors(
     const std::vector<StatisticDescription> & stats,
     const ColumnsDescription & columns,
     const NamesAndTypesList & columns_for_collection) const
@@ -382,7 +567,7 @@ IMergeTreeStatisticCollectorPtrs MergeTreeStatisticFactory::getDistributionStati
         for (const auto & column : stat_description.column_names) {
             if (columns_names_for_collection.contains(column)) {
                 for (const auto & stat : getSplittedStatistics(stat_description, columns.get(column))) {
-                    result.emplace_back(getDistributionStatisticCollector(stat, columns.get(column)));
+                    result.emplace_back(getStatisticCollector(stat, columns.get(column)));
                 }
             }
         }

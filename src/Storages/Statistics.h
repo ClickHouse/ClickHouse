@@ -110,7 +110,7 @@ public:
     virtual std::optional<double> estimateStringProbability(const String & column, const String& needle) const = 0;
     virtual std::optional<double> estimateSubstringsProbability(const String & column, const Strings& needles) const = 0;
 
-    virtual void add(const String & name, const IStringSearchStatistics & stat) = 0;
+    virtual void add(const String & name, const IStringSearchStatisticPtr & stat) = 0;
 
     virtual size_t getSizeInMemory() const = 0;
     virtual size_t getSizeInMemoryByName(const String& name) const = 0;
@@ -134,6 +134,9 @@ public:
 
     virtual void setDistributionStatistics(IDistributionStatisticsPtr && stat) = 0;
     virtual IConstDistributionStatisticsPtr getDistributionStatistics() const = 0;
+
+    virtual void setStringSearchStatistics(IStringSearchStatisticsPtr && stat) = 0;
+    virtual IConstStringSearchStatisticsPtr getStringSearchStatistics() const = 0;
 
     virtual size_t getSizeInMemory() const = 0;
 };

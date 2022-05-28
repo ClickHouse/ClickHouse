@@ -51,7 +51,7 @@ private:
 };
 
 template<bool fullstring>
-class MergeTreeGranuleDistributionStatisticCollectorTDigest : public IMergeTreeDistributionStatisticCollector
+class MergeTreeGranuleDistributionStatisticCollectorTDigest : public IMergeTreeStatisticCollector
 {
 public:
     explicit MergeTreeGranuleDistributionStatisticCollectorTDigest(

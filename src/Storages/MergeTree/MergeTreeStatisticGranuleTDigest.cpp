@@ -282,7 +282,7 @@ void MergeTreeGranuleDistributionStatisticCollectorTDigest::granuleFinished()
     max_current.reset();
 }
 
-IDistributionStatisticPtr creatorGranuleDistributionStatisticTDigest(
+IStatisticPtr creatorGranuleDistributionStatisticTDigest(
     const StatisticDescription & stat, const ColumnDescription & column)
 {
     validatorGranuleDistributionStatisticTDigest(stat, column);

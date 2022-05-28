@@ -206,7 +206,7 @@ void MergeTreeDataPartWriterOnDisk::initSkipIndices()
 void MergeTreeDataPartWriterOnDisk::initStats()
 {
     stats_collectors = MergeTreeStatisticFactory::instance()
-        .getDistributionStatisticCollectors(
+        .getStatisticCollectors(
             statistics_descriptions,
             metadata_snapshot->getColumns(),
             statistics_columns);
@@ -392,8 +392,10 @@ void MergeTreeDataPartWriterOnDisk::fillStatisticsChecksums(MergeTreeData::DataP
 
             auto stat = stats_collector->getDistributionStatisticAndReset();
             auto column_distribution_stats = std::make_shared<MergeTreeDistributionStatistics>();
+            auto string_search_stats = std::make_shared<MergeTreeStringSearchStatistics>();
             column_distribution_stats->add(stats_collector->column(), stat);
             stats.setDistributionStatistics(std::move(column_distribution_stats));
+            stats.setStringSearchStatistics(std::move(string_search_stats));
 
             const auto filename = generateFileNameForStatistics(stat->name(), stats_collector->column());
 

@@ -26,9 +26,9 @@ enum class MergeTreeDistributionStatisticType
 
 String generateFileNameForStatistics(const String & name, const String & columns);
 
-class IMergeTreeDistributionStatisticCollector {
+class IMergeTreeStatisticCollector {
 public:
-    virtual ~IMergeTreeDistributionStatisticCollector() = default;
+    virtual ~IMergeTreeStatisticCollector() = default;
 
     virtual const String& name() const = 0;
 
@@ -48,7 +48,7 @@ public:
     virtual void granuleFinished() = 0;
 };
 
-using IMergeTreeStatisticCollectorPtr = std::shared_ptr<IMergeTreeDistributionStatisticCollector>;
+using IMergeTreeStatisticCollectorPtr = std::shared_ptr<IMergeTreeStatisticCollector>;
 using IMergeTreeStatisticCollectorPtrs = std::vector<IMergeTreeStatisticCollectorPtr>;
 
 class MergeTreeDistributionStatistics : public IDistributionStatistics {
@@ -74,6 +74,31 @@ private:
 
 using MergeTreeDistributionStatisticsPtr = std::shared_ptr<MergeTreeDistributionStatistics>;
 
+class MergeTreeStringSearchStatistics : public IStringSearchStatistics {
+public:
+    bool empty() const override;
+
+    void merge(const std::shared_ptr<IStringSearchStatistics> & other)  override;
+
+    Names getStatisticsNames() const override;
+
+    void serializeBinary(const String & name, WriteBuffer & ostr) const override;
+    void deserializeBinary(ReadBuffer & istr) override;
+
+    std::optional<double> estimateStringProbability(const String & column, const String& needle) const override;
+    std::optional<double> estimateSubstringsProbability(const String & column, const Strings& needles) const override;
+
+    void add(const String & column, const IStringSearchStatisticPtr & stat) override;
+
+    size_t getSizeInMemory() const override;
+    size_t getSizeInMemoryByName(const String& name) const override;
+
+private:
+    std::unordered_map<String, IStringSearchStatisticPtr> column_to_stats;
+};
+
+using MergeTreeStringSearchStatisticsPtr = std::shared_ptr<MergeTreeStringSearchStatistics>;
+
 // Stats stored for each part
 class MergeTreeStatistics : public IStatistics {
 public:
@@ -89,10 +114,14 @@ public:
     void setDistributionStatistics(IDistributionStatisticsPtr && stat) override;
     IConstDistributionStatisticsPtr getDistributionStatistics() const override;
 
+    void setStringSearchStatistics(IStringSearchStatisticsPtr && stat) override;
+    IConstStringSearchStatisticsPtr getStringSearchStatistics() const override;
+
     size_t getSizeInMemory() const override;
 
 private:
     MergeTreeDistributionStatisticsPtr column_distributions;
+    MergeTreeStringSearchStatisticsPtr string_search;
 };
 
 using MergeTreeStatisticsPtr = std::shared_ptr<MergeTreeStatistics>;
@@ -102,8 +131,9 @@ class MergeTreeStatisticFactory : private boost::noncopyable
 public:
     static MergeTreeStatisticFactory & instance();
 
-    using DistributionStatisticsCreator = std::function<IDistributionStatisticPtr(
+    using StatisticsCreator = std::function<IStatisticPtr(
         const StatisticDescription & stat, const ColumnDescription & column)>;
+
     using CollectorCreator = std::function<IMergeTreeStatisticCollectorPtr(
         const StatisticDescription & stat, const ColumnDescription & column)>;
     using Validator = std::function<void(
@@ -120,7 +150,7 @@ public:
     // Creates collectors for available pairs (stat, column).
     // Statistics on different columns are computed independently,
     // so collector can calculate statistics only on subset of columns provided in columns_for_collection.
-    IMergeTreeStatisticCollectorPtrs getDistributionStatisticCollectors(
+    IMergeTreeStatisticCollectorPtrs getStatisticCollectors(
         const std::vector<StatisticDescription> & stats,
         const ColumnsDescription & columns,
         const NamesAndTypesList & columns_for_collection) const;
@@ -129,10 +159,10 @@ protected:
     MergeTreeStatisticFactory();
 
 private:
-    IDistributionStatisticPtr getDistributionStatistic(
+    IStatisticPtr getStatistic(
         const StatisticDescription & stat, const ColumnDescription & column) const;
 
-    IMergeTreeStatisticCollectorPtr getDistributionStatisticCollector(
+    IMergeTreeStatisticCollectorPtr getStatisticCollector(
         const StatisticDescription & stat, const ColumnDescription & column) const;
     
     std::vector<StatisticDescription> getSplittedStatistics(
@@ -140,11 +170,11 @@ private:
 
     void registerCreators(
         const std::string & stat_type,
-        DistributionStatisticsCreator creator,
+        StatisticsCreator creator,
         CollectorCreator collector,
         Validator validator);
 
-    using DistributionStatisticsCreators = std::unordered_map<std::string, DistributionStatisticsCreator>;
+    using DistributionStatisticsCreators = std::unordered_map<std::string, StatisticsCreator>;
     using CollectorCreators = std::unordered_map<std::string, CollectorCreator>;
     using Validators = std::unordered_map<std::string, Validator>;
 

@@ -53,7 +53,7 @@ private:
     bool is_empty;
 };
 
-class MergeTreeGranuleDistributionStatisticCollectorTDigest : public IMergeTreeDistributionStatisticCollector
+class MergeTreeGranuleDistributionStatisticCollectorTDigest : public IMergeTreeStatisticCollector
 {
 public:
     explicit MergeTreeGranuleDistributionStatisticCollectorTDigest(
@@ -80,7 +80,7 @@ private:
     std::optional<Float32> max_current;
 };
 
-IDistributionStatisticPtr creatorGranuleDistributionStatisticTDigest(
+IStatisticPtr creatorGranuleDistributionStatisticTDigest(
     const StatisticDescription & stat, const ColumnDescription & column);
 IMergeTreeStatisticCollectorPtr creatorGranuleDistributionStatisticCollectorTDigest(
     const StatisticDescription & stat, const ColumnDescription & column);
