@@ -56,7 +56,7 @@ int doCompress(char * input, char * output, off_t & in_offset, off_t & out_offse
     size_t compressed_size = ZSTD_compress2(cctx, output + out_offset, output_size, input + in_offset, input_size);
     if (ZSTD_isError(compressed_size))
     {
-        std::cout << "Cannot compress block with ZSTD: " + std::string(ZSTD_getErrorName(compressed_size)) << std::endl;
+        std::cerr << "Cannot compress block with ZSTD: " + std::string(ZSTD_getErrorName(compressed_size)) << std::endl;
         return 1;
     }
     in_offset += input_size;
@@ -81,7 +81,7 @@ int compress(int in_fd, int out_fd, int level, off_t & pointer, const struct sta
     ZSTD_CCtx * cctx = ZSTD_createCCtx();
     if (cctx == nullptr)
     {
-        std::cout << "Failed to create context for compression" << std::endl;
+        std::cerr << "Failed to create context for compression" << std::endl;
         return 1;
     }
 
@@ -91,13 +91,13 @@ int compress(int in_fd, int out_fd, int level, off_t & pointer, const struct sta
     check_result = ZSTD_CCtx_setParameter(cctx, ZSTD_c_compressionLevel, level);
     if (ZSTD_isError(check_result))
     {
-        std::cout << "Failed to set compression level: " + std::string(ZSTD_getErrorName(check_result)) << std::endl;
+        std::cerr << "Failed to set compression level: " + std::string(ZSTD_getErrorName(check_result)) << std::endl;
         return 1;
     }
     check_result = ZSTD_CCtx_setParameter(cctx, ZSTD_c_checksumFlag, 1);
     if (ZSTD_isError(check_result))
     {
-        std::cout << "Failed to set checksums: " + std::string(ZSTD_getErrorName(check_result)) << std::endl;
+        std::cerr << "Failed to set checksums: " + std::string(ZSTD_getErrorName(check_result)) << std::endl;
         return 1;
     }
 
@@ -237,7 +237,11 @@ int compressFiles(char* filenames[], int count, int output_fd, int level, const 
         /// Remember information about file name
         /// This should be made after the file is opened
         /// because filename should be extracted from path
-        names[i] = strrchr(filenames[i], '/') + 1;
+        names[i] = strrchr(filenames[i], '/');
+        if (names[i])
+            ++names[i];
+        else
+            names[i] = filenames[i];
         files_data[i].name_length = strlen(names[i]);
         sum_file_size += files_data[i].name_length;
 
@@ -294,6 +298,49 @@ int compressFiles(char* filenames[], int count, int output_fd, int level, const 
     return 0;
 }
 
+int copy_decompressor(int output_fd)
+{
+    int input_fd = open("decompressor", O_RDONLY);
+    if (input_fd == -1)
+    {
+        perror(nullptr);
+        return 1;
+    }
+    
+    char buf[1ul<<19];
+    ssize_t n = 0;
+    do
+    {
+        n = read(input_fd, buf, sizeof(buf));
+
+        if (0 == n)
+            break;
+
+        if (n < 0)
+        {
+            close(input_fd);
+            perror(nullptr);
+            return 1;
+        }
+
+        while (n > 0)
+        {
+            ssize_t sz = write(output_fd, buf, n);
+            if (sz < 0)
+            {
+                close(input_fd);
+                perror(nullptr);
+                return 1;
+            }
+            n -= sz;
+        }
+    } while (true);
+
+    close(input_fd);
+
+    return 0;
+}
+
 int main(int argc, char* argv[])
 {
     if (argc < 3)
@@ -319,6 +366,9 @@ int main(int argc, char* argv[])
         return 1;
     }
     ++start_of_files;
+
+    if (copy_decompressor(output_fd))
+        return 1;
 
     struct stat info_out;
     if (0 != fstat(output_fd, &info_out))
