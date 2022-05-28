@@ -1,39 +1,50 @@
 <clickhouse>
     <storage_configuration>
+        <!-- cache setting -->
+        <cache>
+            <cache_1>
+                <data_cache_max_size>22548578304</data_cache_max_size>
+                <cache_on_write_operations>1</cache_on_write_operations>
+                <data_cache_path>./s3_cache/</data_cache_path>
+            </cache_1>
+            <cache_2>
+                <data_cache_max_size>22548578304</data_cache_max_size>
+                <cache_on_write_operations>0</cache_on_write_operations>
+            </cache_2>
+            <cache_3>
+                <data_cache_max_size>22548578304</data_cache_max_size>
+                <cache_on_write_operations>1</cache_on_write_operations>
+                <enable_cache_hits_threshold>1</enable_cache_hits_threshold>
+            </cache_3>
+        <cache>
+        <!-- disk -->
         <disks>
             <s3_cache>
                 <type>s3</type>
                 <endpoint>http://localhost:11111/test/00170_test/</endpoint>
                 <access_key_id>clickhouse</access_key_id>
                 <secret_access_key>clickhouse</secret_access_key>
-                <data_cache_enabled>1</data_cache_enabled>
                 <cache_enabled>0</cache_enabled>
-                <data_cache_max_size>22548578304</data_cache_max_size>
-                <cache_on_write_operations>1</cache_on_write_operations>
-                <data_cache_path>./s3_cache/</data_cache_path>
+                <cache>cache_1</cache>
             </s3_cache>
             <s3_cache_2>
                 <type>s3</type>
                 <endpoint>http://localhost:11111/test/00170_test/</endpoint>
                 <access_key_id>clickhouse</access_key_id>
                 <secret_access_key>clickhouse</secret_access_key>
-                <data_cache_enabled>1</data_cache_enabled>
                 <cache_enabled>0</cache_enabled>
-                <data_cache_max_size>22548578304</data_cache_max_size>
-                <cache_on_write_operations>0</cache_on_write_operations>
+                <cache>cache_2</cache>
             </s3_cache_2>
             <s3_cache_3>
                 <type>s3</type>
                 <endpoint>http://localhost:11111/test/00170_test/</endpoint>
                 <access_key_id>clickhouse</access_key_id>
                 <secret_access_key>clickhouse</secret_access_key>
-                <data_cache_enabled>1</data_cache_enabled>
                 <cache_enabled>0</cache_enabled>
-                <data_cache_max_size>22548578304</data_cache_max_size>
-                <cache_on_write_operations>1</cache_on_write_operations>
-                <enable_cache_hits_threshold>1</enable_cache_hits_threshold>
+                <cache>cache_3</cache>
             </s3_cache_3>
         </disks>
+        <!-- storage policies -->
         <policies>
             <s3_cache>
                 <volumes>
