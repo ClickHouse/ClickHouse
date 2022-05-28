@@ -1,0 +1,16 @@
+<?xml version="1.0"?>
+<clickhouse>
+    <named_collections>
+        <urldb>
+            <url>http://nginx:80/test_dict</url>
+            <method>PUT</method>
+            <format>TSV</format>
+            <structure>k String, v String</structure>
+        </urldb>
+        <urldict>
+            <url>http://nginx:80/</url>
+            <endpoint>/test_dict</endpoint>
+            <format>TabSeparated</format>
+        </urldict>
+    </named_collections>
+</clickhouse>
