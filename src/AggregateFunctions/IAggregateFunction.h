@@ -429,7 +429,7 @@ public:
         const auto * values = &column_sparse.getValuesColumn();
         auto offset_it = column_sparse.getIterator(row_begin);
 
-        for (size_t i = 0; i < row_end; ++i, ++offset_it)
+        for (size_t i = row_begin; i < row_end; ++i, ++offset_it)
             static_cast<const Derived *>(this)->add(places[offset_it.getCurrentRow()] + place_offset,
                                                     &values, offset_it.getValueIndex(), arena);
     }
