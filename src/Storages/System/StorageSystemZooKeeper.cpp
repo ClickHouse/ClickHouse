@@ -94,7 +94,7 @@ struct ZkNodeCache
             requests.push_back(request);
         }
         for (auto [_, child] : children)
-            child->generate_requests(requests);
+            child->generateRequests(requests);
     }
 };
 
