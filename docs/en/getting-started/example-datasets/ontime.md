@@ -398,7 +398,7 @@ ORDER BY c DESC
 LIMIT 10;
 ```
 
-You can also play with the data in Playground, [example](https://gh-api.clickhouse.com/play?user=play#U0VMRUNUIERheU9mV2VlaywgY291bnQoKikgQVMgYwpGUk9NIG9udGltZQpXSEVSRSBZZWFyPj0yMDAwIEFORCBZZWFyPD0yMDA4CkdST1VQIEJZIERheU9mV2VlawpPUkRFUiBCWSBjIERFU0M7Cg==).
+You can also play with the data in Playground, [example](https://play.clickhouse.com/play?user=play#U0VMRUNUIERheU9mV2VlaywgY291bnQoKikgQVMgYwpGUk9NIG9udGltZQpXSEVSRSBZZWFyPj0yMDAwIEFORCBZZWFyPD0yMDA4CkdST1VQIEJZIERheU9mV2VlawpPUkRFUiBCWSBjIERFU0M7Cg==).
 
 This performance test was created by Vadim Tkachenko. See:
 
