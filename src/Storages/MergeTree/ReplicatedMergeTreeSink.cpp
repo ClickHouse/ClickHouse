@@ -261,6 +261,7 @@ void ReplicatedMergeTreeSink::finishDelayedChunk(zkutil::ZooKeeperPtr & zookeepe
             /// Set a special error code if the block is duplicate
             int error = (deduplicate && part->is_duplicate) ? ErrorCodes::INSERT_WAS_DEDUPLICATED : 0;
             PartLog::addNewPart(storage.getContext(), part, partition.elapsed_ns, ExecutionStatus(error));
+            storage.incrementInsertedPartsProfileEvent(part->getType());
         }
         catch (...)
         {
