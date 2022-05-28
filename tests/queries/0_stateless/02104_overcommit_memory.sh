@@ -5,8 +5,8 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-$CLICKHOUSE_CLIENT -q 'CREATE USER IF NOT EXISTS u1 IDENTIFIED WITH no_password'
-$CLICKHOUSE_CLIENT -q 'GRANT ALL ON *.* TO u1'
+$CLICKHOUSE_CLIENT -q 'CREATE USER IF NOT EXISTS u02104 IDENTIFIED WITH no_password'
+$CLICKHOUSE_CLIENT -q 'GRANT ALL ON *.* TO u02104'
 
 function overcommited()
 {
@@ -46,4 +46,4 @@ else
     echo "OVERCOMMITED WITH USER LIMIT WAS KILLED"
 fi
 
-$CLICKHOUSE_CLIENT -q 'DROP USER IF EXISTS u1'
+$CLICKHOUSE_CLIENT -q 'DROP USER IF EXISTS u02104'
