@@ -189,7 +189,7 @@ const std::unordered_map<std::string, MergeTreeWhereOptimizer::NumericConditionD
     return compare_funcs;
 }
 
-std::variant<std::monostate, MergeTreeWhereOptimizer::NumericConditionDescription> MergeTreeWhereOptimizer::parseCondition(
+MergeTreeWhereOptimizer::ConditionDescriptionVariant MergeTreeWhereOptimizer::parseCondition(
     const ASTPtr & condition) const
 {
     const auto * function = condition->as<ASTFunction>();
@@ -225,34 +225,58 @@ std::variant<std::monostate, MergeTreeWhereOptimizer::NumericConditionDescriptio
     return std::monostate{};
 }
 
-double MergeTreeWhereOptimizer::scoreSelectivity(const std::optional<MergeTreeWhereOptimizer::NumericConditionDescription> & condition_description) const
+/*double MergeTreeWhereOptimizer::scoreSelectivity(const std::optional<MergeTreeWhereOptimizer::NumericConditionDescription> & condition_description) const
 {
     if (!condition_description)
         return 1;
 
     switch  (condition_description->type) {
     case NumericConditionDescription::Type::EQUAL:
-        return stats->getDistributionStatistics()->estimateProbability(
-            condition_description->identifier,
-            condition_description->constant,
-            condition_description->constant).value_or(1);
+        if (stats->getDistributionStatistics()->has(condition_description->identifier)) {
+            return stats->getDistributionStatistics()->estimateProbability(
+                condition_description->identifier,
+                condition_description->constant,
+                condition_description->constant).value_or(1);
+        } else if (stats->getStringSearchStatistics()->has(condition_description->identifier)) {
+            return stats->getStringSearchStatistics()->estimateStringProbability(
+                condition_description->identifier,
+                condition_description->constant.get<String>()).value_or(1);
+        } else {
+            return 1;
+        }
     case NumericConditionDescription::Type::NOT_EQUAL:
-        return 1 - stats->getDistributionStatistics()->estimateProbability(
-            condition_description->identifier,
-            condition_description->constant,
-            condition_description->constant).value_or(0);
+        if (stats->getDistributionStatistics()->has(condition_description->identifier)) {
+            return 1 - stats->getDistributionStatistics()->estimateProbability(
+                condition_description->identifier,
+                condition_description->constant,
+                condition_description->constant).value_or(0);
+        } else if (stats->getStringSearchStatistics()->has(condition_description->identifier)) {
+            return 1 - stats->getStringSearchStatistics()->estimateStringProbability(
+                condition_description->identifier,
+                condition_description->constant.get<String>()).value_or(0);
+        } else {
+            return 1;
+        }
     case NumericConditionDescription::Type::LESS_OR_EQUAL:
-        return stats->getDistributionStatistics()->estimateProbability(
-            condition_description->identifier,
-            {},
-            condition_description->constant).value_or(1);
+        if (stats->getDistributionStatistics()->has(condition_description->identifier)) {
+            return stats->getDistributionStatistics()->estimateProbability(
+                condition_description->identifier,
+                {},
+                condition_description->constant).value_or(1);
+        } else {
+            return 1;
+        }
     case NumericConditionDescription::Type::GREATER_OR_EQUAL:
-        return stats->getDistributionStatistics()->estimateProbability(
-            condition_description->identifier,
-            condition_description->constant,
-            {}).value_or(1); 
+        if (stats->getDistributionStatistics()->has(condition_description->identifier)) {
+            return stats->getDistributionStatistics()->estimateProbability(
+                condition_description->identifier,
+                condition_description->constant,
+                {}).value_or(1); 
+        } else {
+            return 1;
+        }
     }
-}
+}*/
 
 static const ASTFunction * getAsTuple(const ASTPtr & node)
 {
@@ -471,7 +495,8 @@ ASTPtr MergeTreeWhereOptimizer::reconstruct(const Conditions & conditions)
     return function;
 }
 
-void MergeTreeWhereOptimizer::optimize(ASTSelectQuery & select) const {
+void MergeTreeWhereOptimizer::optimize(ASTSelectQuery & select) const
+{
     if (!select.where() || select.prewhere())
         return;
     if (use_new_scoring)
@@ -484,86 +509,134 @@ void MergeTreeWhereOptimizer::optimize(ASTSelectQuery & select) const {
     }
 }
 
-bool MergeTreeWhereOptimizer::ColumnWithRank::operator<(const ColumnWithRank & other) const {
+bool MergeTreeWhereOptimizer::ColumnWithRank::operator<(const ColumnWithRank & other) const
+{
     return rank < other.rank;
 }
 
-bool MergeTreeWhereOptimizer::ColumnWithRank::operator==(const ColumnWithRank & other) const {
+bool MergeTreeWhereOptimizer::ColumnWithRank::operator==(const ColumnWithRank & other) const
+{
     return rank == other.rank;
 }
 
-bool MergeTreeWhereOptimizer::ConditionWithRank::operator<(const ConditionWithRank & other) const {
+bool MergeTreeWhereOptimizer::ConditionWithRank::operator<(const ConditionWithRank & other) const
+{
     return rank < other.rank;
 }
 
-bool MergeTreeWhereOptimizer::ConditionWithRank::operator==(const ConditionWithRank & other) const {
+bool MergeTreeWhereOptimizer::ConditionWithRank::operator==(const ConditionWithRank & other) const
+{
     return rank == other.rank;
 }
 
 std::vector<MergeTreeWhereOptimizer::ColumnWithRank> MergeTreeWhereOptimizer::getSimpleColumns(
-    const std::unordered_map<std::string, Conditions> & column_to_simple_conditions) const {
+    const std::unordered_map<std::string, Conditions> & column_to_simple_conditions) const
+{
     std::vector<MergeTreeWhereOptimizer::ColumnWithRank> rank_to_column;
-    for (const auto & [column, conditions] : column_to_simple_conditions) {
-        // check column type
-        double min_selectivity = 1;
-        Field left_limit;
-        Field right_limit;
-        // Conditions are connected using AND
-        for (const auto & condition : conditions)
+    for (const auto & [column, conditions] : column_to_simple_conditions)
+    {
+        if (stats->getDistributionStatistics()->has(column))
         {
-            if (!std::holds_alternative<NumericConditionDescription>(condition.description)) {
-                LOG_ERROR(log, "Bad description!");
-            }
-
-            const auto& description = std::get<NumericConditionDescription>(condition.description);
-            switch (description.type)
+            double min_selectivity = 1;
+            Field left_limit;
+            Field right_limit;
+            // Conditions are connected using AND
+            for (const auto & condition : conditions)
             {
-            case NumericConditionDescription::Type::EQUAL:
-                if (right_limit.isNull() || lessOrEquals(description.constant, right_limit))
-                {
-                    right_limit = description.constant;
+                if (!std::holds_alternative<NumericConditionDescription>(condition.description)) {
+                    LOG_ERROR(log, "Bad description!");
                 }
-                if (left_limit.isNull() || lessOrEquals(left_limit, description.constant))
-                {
-                    left_limit = description.constant;
-                }
-                break;
-            case NumericConditionDescription::Type::NOT_EQUAL:
-                min_selectivity = std::min(
-                    min_selectivity,
-                    1 - stats->getDistributionStatistics()->estimateProbability(
-                        column,
-                        description.constant,
-                        description.constant).value_or(0));
-                break;
-            case NumericConditionDescription::Type::LESS_OR_EQUAL:
-                if (right_limit.isNull() || lessOrEquals(description.constant, right_limit))
-                {
-                    right_limit = description.constant;
-                }
-                break;
-            case NumericConditionDescription::Type::GREATER_OR_EQUAL:
-                if (left_limit.isNull() || lessOrEquals(left_limit, description.constant))
-                {
-                    left_limit = description.constant;
-                }
-                break; 
-            }
-        }
-        min_selectivity = std::min(
-            min_selectivity,
-            stats->getDistributionStatistics()->estimateProbability(
-                column,
-                left_limit,
-                right_limit).value_or(1));
 
-        // See page 5 in https://dsf.berkeley.edu/jmh/miscpapers/sigmod93.pdf
-        // rank = (1 - selectivity) / cost per tuple;
-        // Cost per tuple = mean size of tuple = columns_size / count.
-        rank_to_column.emplace_back(
-            -(1 - min_selectivity) * RANK_CORRECTION / getIdentifiersColumnSize({column}),
-            min_selectivity,
-            column);
+                const auto& description = std::get<NumericConditionDescription>(condition.description);
+                switch (description.type)
+                {
+                case NumericConditionDescription::Type::EQUAL:
+                    if (right_limit.isNull() || lessOrEquals(description.constant, right_limit))
+                    {
+                        right_limit = description.constant;
+                    }
+                    if (left_limit.isNull() || lessOrEquals(left_limit, description.constant))
+                    {
+                        left_limit = description.constant;
+                    }
+                    break;
+                case NumericConditionDescription::Type::NOT_EQUAL:
+                    min_selectivity = std::min(
+                        min_selectivity,
+                        1 - stats->getDistributionStatistics()->estimateProbability(
+                            column,
+                            description.constant,
+                            description.constant).value_or(0));
+                    break;
+                case NumericConditionDescription::Type::LESS_OR_EQUAL:
+                    if (right_limit.isNull() || lessOrEquals(description.constant, right_limit))
+                    {
+                        right_limit = description.constant;
+                    }
+                    break;
+                case NumericConditionDescription::Type::GREATER_OR_EQUAL:
+                    if (left_limit.isNull() || lessOrEquals(left_limit, description.constant))
+                    {
+                        left_limit = description.constant;
+                    }
+                    break; 
+                }
+            }
+            min_selectivity = std::min(
+                min_selectivity,
+                stats->getDistributionStatistics()->estimateProbability(
+                    column,
+                    left_limit,
+                    right_limit).value_or(1));
+
+            // See page 5 in https://dsf.berkeley.edu/jmh/miscpapers/sigmod93.pdf
+            // rank = (1 - selectivity) / cost per tuple;
+            // Cost per tuple = mean size of tuple = columns_size / count.
+            rank_to_column.emplace_back(
+                -(1 - min_selectivity) * RANK_CORRECTION / getIdentifiersColumnSize({column}),
+                min_selectivity,
+                column);
+        } else if (stats->getStringSearchStatistics()->has(column)) {
+            double min_selectivity = 1;
+            // Conditions are connected using AND
+            for (const auto & condition : conditions)
+            {
+                if (!std::holds_alternative<NumericConditionDescription>(condition.description)) {
+                    LOG_ERROR(log, "Bad description!");
+                }
+
+                const auto& description = std::get<NumericConditionDescription>(condition.description);
+                switch (description.type)
+                {
+                case NumericConditionDescription::Type::EQUAL:
+                    min_selectivity = std::min(
+                        min_selectivity,
+                        stats->getStringSearchStatistics()->estimateStringProbability(
+                            description.identifier,
+                            description.constant.get<String>()).value_or(1));
+                    break;
+                case NumericConditionDescription::Type::NOT_EQUAL:
+                    min_selectivity = std::min(
+                        min_selectivity,
+                        1 - stats->getStringSearchStatistics()->estimateStringProbability(
+                            description.identifier,
+                            description.constant.get<String>()).value_or(0));
+                    break;
+                default:
+                    break;
+                }
+            }
+
+            rank_to_column.emplace_back(
+                -(1 - min_selectivity) * RANK_CORRECTION / getIdentifiersColumnSize({column}),
+                min_selectivity,
+                column);
+        } else {
+            rank_to_column.emplace_back(
+                -(1 - 1) * RANK_CORRECTION / getIdentifiersColumnSize({column}),
+                1,
+                column);
+        }
     }
     std::sort(std::begin(rank_to_column), std::end(rank_to_column));
     return rank_to_column;
@@ -958,6 +1031,7 @@ std::optional<double> MergeTreeWhereOptimizer::analyzeComplexSelectivity(const A
         }
     }
     else if (const auto description_variant = parseCondition(node); std::holds_alternative<NumericConditionDescription>(description_variant)) {
+        // todo: support string
         const auto& description = std::get<NumericConditionDescription>(description_variant);
         switch (description.type)
         {

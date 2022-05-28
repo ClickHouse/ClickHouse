@@ -69,7 +69,7 @@ INSERT INTO prewhere SELECT
     format('test {} test {}', toString(number), toString(number + 10)) AS heavy,
     format('text {} tafst{}afsd', toString(cityHash64(number)), toString(cityHash64(number))) AS heavy2
 FROM system.numbers
-LIMIT 1000000;
+LIMIT 1000000; -- TODO: turn off compact parts instead???
 
 SYSTEM RELOAD STATISTICS prewhere;
 

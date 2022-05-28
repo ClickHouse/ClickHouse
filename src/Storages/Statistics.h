@@ -76,7 +76,9 @@ public:
 
     // Estimates probability that lower <= item  <= right. 
     virtual std::optional<double> estimateProbability(const String & column, const Field & lower, const Field & upper) const = 0;
+
     virtual void add(const String & name, const IDistributionStatisticPtr & stat) = 0;
+    virtual bool has(const String & name) const = 0;
 
     virtual size_t getSizeInMemory() const = 0;
     virtual size_t getSizeInMemoryByName(const String& name) const = 0;
@@ -115,6 +117,7 @@ public:
     virtual std::optional<double> estimateSubstringsProbability(const String & column, const Strings& needles) const = 0;
 
     virtual void add(const String & name, const IStringSearchStatisticPtr & stat) = 0;
+    virtual bool has(const String & name) const = 0;
 
     virtual size_t getSizeInMemory() const = 0;
     virtual size_t getSizeInMemoryByName(const String& name) const = 0;

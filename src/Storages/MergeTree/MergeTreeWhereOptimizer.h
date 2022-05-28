@@ -69,6 +69,21 @@ private:
         Field constant;
     };
 
+    /*struct StringConditionDescription
+    {
+        enum class Type {
+            EQUAL,
+            NOT_EQUAL,
+        };
+
+        String identifier;
+        Type type;
+        Field constant;
+    };*/
+
+    using ConditionDescriptionVariant = std::variant<
+        std::monostate, NumericConditionDescription/*, StringConditionDescription*/>;
+
     // Conditions 
     struct Condition
     {
@@ -78,7 +93,7 @@ private:
         NameSet identifiers;
 
         // TODO: support OR
-        std::variant<std::monostate, NumericConditionDescription> description;
+        ConditionDescriptionVariant description;
 
         /// Can condition be moved to prewhere?
         bool viable = false;
@@ -106,7 +121,7 @@ private:
     bool tryAnalyzeTupleCompare(Conditions & res, const ASTFunction * func, bool is_final) const;
     void analyzeImpl(Conditions & res, const ASTPtr & node, bool is_final) const;
 
-    std::variant<std::monostate, NumericConditionDescription> parseCondition(const ASTPtr & condition) const;
+    ConditionDescriptionVariant parseCondition(const ASTPtr & condition) const;
 
     /// Transform conjunctions chain in WHERE expression to Conditions list.
     Conditions analyze(const ASTPtr & expression, bool is_final) const;

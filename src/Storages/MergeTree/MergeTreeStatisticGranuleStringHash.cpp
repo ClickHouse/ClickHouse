@@ -1,6 +1,7 @@
 #include <limits>
 #include <city.h>
 #include <Storages/MergeTree/MergeTreeStatisticGranuleStringHash.h>
+#include <Poco/Logger.h>
 #include "Common/HashTable/Hash.h"
 #include "Core/ColumnWithTypeAndName.h"
 #include "Core/Types.h"
@@ -11,6 +12,7 @@
 #include "Storages/MergeTree/MergeTreeStatistic.h"
 #include "Storages/Statistics.h"
 #include "base/defines.h"
+#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -130,11 +132,14 @@ void MergeTreeGranuleStringHashStatistic::merge(const IStatisticPtr & other)
 {
     auto other_ptr = std::dynamic_pointer_cast<MergeTreeGranuleStringHashStatistic>(other);
     // versions control???
+    LOG_DEBUG(&Poco::Logger::get("MERGE"), "emp={}", is_empty);
     if (other_ptr)
     {
         is_empty &= other_ptr->is_empty;
         total_granules += other_ptr->total_granules;
         sketch.merge(other_ptr->sketch);
+
+        LOG_DEBUG(&Poco::Logger::get("MERGE"), "NEW emp={}", is_empty);
     }
     else
     {
@@ -161,6 +166,7 @@ void MergeTreeGranuleStringHashStatistic::serializeBinary(WriteBuffer & ostr) co
     size_serialization->serializeBinary(static_cast<size_t>(MergeTreeStringSearchStatisticType::GRANULE_COUNT_MIN_SKETCH_HASH), ostr);
     size_serialization->serializeBinary(wb.str().size(), ostr);
     ostr.write(wb.str().data(), wb.str().size());
+    LOG_DEBUG(&Poco::Logger::get("MergeTreeGranuleStringHashStatistic"), "SERIALIZED sz = {} tg={}", wb.str().size(), total_granules);
 }
 
 bool MergeTreeGranuleStringHashStatistic::validateTypeBinary(ReadBuffer & istr) const
@@ -182,10 +188,12 @@ void MergeTreeGranuleStringHashStatistic::deserializeBinary(ReadBuffer & istr)
     readIntBinary(total_granules, istr);
     sketch.deserialize(istr);
     is_empty = false;
+    LOG_DEBUG(&Poco::Logger::get("MERGE STAT"), "DESERIALIZE", is_empty);
 }
 
 double MergeTreeGranuleStringHashStatistic::estimateStringProbability(const String& needle) const
 {
+    LOG_DEBUG(&Poco::Logger::get("MergeTreeGranuleStringHashStatistic"), "count={} total={}", sketch.getStringCount(needle), total_granules);
     return sketch.getStringCount(needle) / static_cast<double>(total_granules);
 }
 

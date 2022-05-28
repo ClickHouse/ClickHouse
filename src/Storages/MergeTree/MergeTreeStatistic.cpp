@@ -3,6 +3,7 @@
 #include <Core/Field.h>
 #include <algorithm>
 #include <base/defines.h>
+#include "Common/logger_useful.h"
 #include <Common/Exception.h>
 #include <Common/thread_local_rng.h>
 #include "Storages/Statistics.h"
@@ -92,6 +93,11 @@ void MergeTreeDistributionStatistics::add(const String & column, const IDistribu
     column_to_stats[column] = stat;
 }
 
+bool MergeTreeDistributionStatistics::has(const String & name) const
+{
+    return column_to_stats.contains(name);
+}
+
 Names MergeTreeDistributionStatistics::getStatisticsNames() const
 {
     std::set<String> statistics;
@@ -149,6 +155,7 @@ void MergeTreeStatistics::serializeBinary(const String & name, WriteBuffer & ost
     column_distributions->serializeBinary(name, ostr);
     size_serialization->serializeBinary(static_cast<size_t>(StatisticType::STRING_SEARCH), ostr);
     string_search->serializeBinary(name, ostr);
+    LOG_DEBUG(&Poco::Logger::get("MergeTreeStatistics"), "SERIALIZED FINISHED");
 }
 
 void MergeTreeStatistics::deserializeBinary(ReadBuffer & istr)
@@ -164,15 +171,18 @@ void MergeTreeStatistics::deserializeBinary(ReadBuffer & istr)
         size_serialization->deserializeBinary(field, istr);
         switch (field.get<size_t>()) {
         case static_cast<size_t>(StatisticType::NUMERIC_COLUMN_DISRIBUTION):
+            LOG_DEBUG(&Poco::Logger::get("MergeTreeStatistics"), "DESERIALIZED NUMBERS");
             column_distributions->deserializeBinary(istr);
             break;
         case static_cast<size_t>(StatisticType::STRING_SEARCH):
+            LOG_DEBUG(&Poco::Logger::get("MergeTreeStatistics"), "DESERIALIZED STRING");
             string_search->deserializeBinary(istr);
             break;
         default:
             throw Exception("Unknown statistic type", ErrorCodes::LOGICAL_ERROR);
         }
     }
+    LOG_DEBUG(&Poco::Logger::get("MergeTreeStatistics"), "DESERIALIZED FINISHED");
 }
 
 void MergeTreeStatistics::setDistributionStatistics(IDistributionStatisticsPtr && stat)
@@ -251,6 +261,7 @@ void MergeTreeDistributionStatistics::deserializeBinary(ReadBuffer & istr)
     Field field;
     size_serialization->deserializeBinary(field, istr);
     const auto stats_count = field.get<size_t>();
+    LOG_DEBUG(&Poco::Logger::get("MergeTreeDistributionStatistics"), "deserializeBinary {}", stats_count);
 
     for (size_t index = 0; index < stats_count; ++index)
     {
@@ -287,6 +298,11 @@ bool MergeTreeStringSearchStatistics::empty() const
         }
     }
     return true;
+}
+
+bool MergeTreeStringSearchStatistics::has(const String & name) const
+{
+    return column_to_stats.contains(name);
 }
 
 void MergeTreeStringSearchStatistics::merge(const std::shared_ptr<IStringSearchStatistics> & other)
@@ -348,6 +364,7 @@ void MergeTreeStringSearchStatistics::deserializeBinary(ReadBuffer & istr)
     Field field;
     size_serialization->deserializeBinary(field, istr);
     const auto stats_count = field.get<size_t>();
+    LOG_DEBUG(&Poco::Logger::get("MergeTreeStringSearchStatistics"), "deserializeBinary {}", stats_count);
 
     for (size_t index = 0; index < stats_count; ++index)
     {
@@ -380,11 +397,13 @@ std::optional<double> MergeTreeStringSearchStatistics::estimateStringProbability
 {
     if (!column_to_stats.contains(column))
     {
+        Poco::Logger::get("MergeTreeStringSearchStatistics").information("NOT FOUND");
         return std::nullopt;
     }
     const auto & stat = column_to_stats.at(column);
     if (stat->empty())
     {
+        Poco::Logger::get("MergeTreeStringSearchStatistics").information("EMPTY");
         return std::nullopt;
     }
     return stat->estimateStringProbability(needle);

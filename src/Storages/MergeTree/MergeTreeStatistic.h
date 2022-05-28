@@ -68,7 +68,9 @@ public:
     void deserializeBinary(ReadBuffer & istr) override;
 
     std::optional<double> estimateProbability(const String & column, const Field & lower, const Field & upper) const override;
+
     void add(const String & column, const IDistributionStatisticPtr & stat) override;
+    bool has(const String & name) const override;
 
     size_t getSizeInMemory() const override;
     size_t getSizeInMemoryByName(const String& name) const override;
@@ -94,6 +96,7 @@ public:
     std::optional<double> estimateSubstringsProbability(const String & column, const Strings& needles) const override;
 
     void add(const String & column, const IStringSearchStatisticPtr & stat) override;
+    bool has(const String & name) const override;
 
     size_t getSizeInMemory() const override;
     size_t getSizeInMemoryByName(const String& name) const override;
