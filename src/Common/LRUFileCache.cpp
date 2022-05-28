@@ -1010,7 +1010,8 @@ void LRUFileCache::assertCacheCellsCorrectness(
         if (file_segment->reserved_size != 0)
         {
             assert(cell.queue_iterator);
-            assert(queue.contains(file_segment->key(), file_segment->offset(), cache_lock));
+            /// FIXME: this is too slow, need to make it O(1)
+            /// assert(queue.contains(file_segment->key(), file_segment->offset(), cache_lock));
         }
     }
 }
