@@ -37,7 +37,7 @@ void CountMinSketch::addString(const String& str)
 {
     const auto hash = getStringHash(str);
     for (const auto seed : COUNT_MIN_SKETCH_SEEDS) {
-        ++data[getUintHash(hash, seed)];
+        ++data[getUintHash(hash, seed) % data.size()];
     }
 }
 
@@ -46,7 +46,7 @@ size_t CountMinSketch::getStringCount(const String& str) const
     size_t result = std::numeric_limits<size_t>::max();
     const auto hash = getStringHash(str);
     for (const auto seed : COUNT_MIN_SKETCH_SEEDS) {
-        result = std::min(result, static_cast<size_t>(data[getUintHash(hash, seed)]));
+        result = std::min(result, static_cast<size_t>(data[getUintHash(hash, seed) % data.size()]));
     }
     return result;
 }
