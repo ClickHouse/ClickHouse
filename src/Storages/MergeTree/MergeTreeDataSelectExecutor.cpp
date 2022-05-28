@@ -278,13 +278,6 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
                 keys.push_back(header_before_aggregation.getPositionByName(key.name));
 
             AggregateDescriptions aggregates = query_info.projection->aggregate_descriptions;
-            if (!projection)
-            {
-                for (auto & descr : aggregates)
-                    if (descr.arguments.empty())
-                        for (const auto & name : descr.argument_names)
-                            descr.arguments.push_back(header_before_aggregation.getPositionByName(name));
-            }
 
             AggregatingTransformParamsPtr transform_params;
             if (projection)

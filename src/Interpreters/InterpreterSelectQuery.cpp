@@ -2280,10 +2280,6 @@ void InterpreterSelectQuery::executeAggregation(QueryPlan & query_plan, const Ac
     const auto & header_before_aggregation = query_plan.getCurrentDataStream().header;
 
     AggregateDescriptions aggregates = query_analyzer->aggregates();
-    for (auto & descr : aggregates)
-        if (descr.arguments.empty())
-            for (const auto & name : descr.argument_names)
-                descr.arguments.push_back(header_before_aggregation.getPositionByName(name));
 
     const Settings & settings = context->getSettingsRef();
 

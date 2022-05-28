@@ -390,10 +390,10 @@ Block Aggregator::Params::getHeader(
 
         for (const auto & aggregate : aggregates)
         {
-            size_t arguments_size = aggregate.arguments.size();
+            size_t arguments_size = aggregate.argument_names.size();
             DataTypes argument_types(arguments_size);
             for (size_t j = 0; j < arguments_size; ++j)
-                argument_types[j] = src_header.safeGetByPosition(aggregate.arguments[j]).type;
+                argument_types[j] = src_header.getByName(aggregate.argument_names[j]).type;
 
             DataTypePtr type;
             if (final)
@@ -1210,11 +1210,15 @@ void NO_INLINE Aggregator::executeOnIntervalWithoutKeyImpl(
 }
 
 
-void Aggregator::prepareAggregateInstructions(Columns columns, AggregateColumns & aggregate_columns, Columns & materialized_columns,
-    AggregateFunctionInstructions & aggregate_functions_instructions, NestedColumnsHolder & nested_columns_holder) const
+void Aggregator::prepareAggregateInstructions(
+    Columns columns,
+    AggregateColumns & aggregate_columns,
+    Columns & materialized_columns,
+    AggregateFunctionInstructions & aggregate_functions_instructions,
+    NestedColumnsHolder & nested_columns_holder) const
 {
     for (size_t i = 0; i < params.aggregates_size; ++i)
-        aggregate_columns[i].resize(params.aggregates[i].arguments.size());
+        aggregate_columns[i].resize(params.aggregates[i].argument_names.size());
 
     aggregate_functions_instructions.resize(params.aggregates_size + 1);
     aggregate_functions_instructions[params.aggregates_size].that = nullptr;
@@ -1226,7 +1230,8 @@ void Aggregator::prepareAggregateInstructions(Columns columns, AggregateColumns 
 
         for (size_t j = 0; j < aggregate_columns[i].size(); ++j)
         {
-            materialized_columns.push_back(columns.at(params.aggregates[i].arguments[j])->convertToFullColumnIfConst());
+            const auto pos = params.src_header.getPositionByName(params.aggregates[i].argument_names[j]);
+            materialized_columns.push_back(columns.at(pos)->convertToFullColumnIfConst());
             aggregate_columns[i][j] = materialized_columns.back().get();
 
             auto full_column = allow_sparse_arguments

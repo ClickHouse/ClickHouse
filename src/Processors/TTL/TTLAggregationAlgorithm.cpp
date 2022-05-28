@@ -22,11 +22,6 @@ TTLAggregationAlgorithm::TTLAggregationAlgorithm(
     key_columns.resize(description.group_by_keys.size());
     AggregateDescriptions aggregates = description.aggregate_descriptions;
 
-    for (auto & descr : aggregates)
-        if (descr.arguments.empty())
-            for (const auto & name : descr.argument_names)
-                descr.arguments.push_back(header.getPositionByName(name));
-
     columns_for_aggregator.resize(description.aggregate_descriptions.size());
     const Settings & settings = storage_.getContext()->getSettingsRef();
 
