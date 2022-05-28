@@ -48,11 +48,11 @@ LAYOUT(LAYOUT_TYPE(param value)) -- layout settings
 ...
 ```
 
-Ключ словаря имеет тип [UInt64](../../../sql-reference/data-types/int-uint.md), `complex-key*` словари позволяют произвольный тип ключа (составной, и из разных типов).
+Ключ словарей не имеющих слово `complex-key*` в названии имеет тип [UInt64](../../../sql-reference/data-types/int-uint.md), `complex-key*` словари позволяют произвольный тип ключа (составной, и из разных типов).
 
 [UInt64](../../../sql-reference/data-types/int-uint.md) ключи в XML словарях задаются тегом `<id>`.
 
-Пример:
+Пример конфигурации (поле key_column имеет тип UInt64):
 ```xml
 ...
 <structure>
@@ -62,9 +62,9 @@ LAYOUT(LAYOUT_TYPE(param value)) -- layout settings
 ...
 ```
 
-Cоставные ключи в XML словарях задаются тегом `<key>`.
+Cоставные `complex` ключи в XML словарях задаются тегом `<key>`.
 
-Пример составного ключа (ключ состоит из одного элемента с типом [String](../../../sql-reference/data-types/string.md)):
+Пример конфигурации составного ключа (ключ состоит из одного элемента с типом [String](../../../sql-reference/data-types/string.md)):
 ```xml
 ...
 <structure>
