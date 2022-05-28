@@ -133,25 +133,24 @@ public:
 
     using StatisticsCreator = std::function<IStatisticPtr(
         const StatisticDescription & stat, const ColumnDescription & column)>;
-
     using CollectorCreator = std::function<IMergeTreeStatisticCollectorPtr(
         const StatisticDescription & stat, const ColumnDescription & column)>;
     using Validator = std::function<void(
         const StatisticDescription & stat, const ColumnDescription & column)>;
 
     void validate(
-        const std::vector<StatisticDescription> & stats,
+        const std::vector<StatisticDescription> & statistics,
         const ColumnsDescription & columns) const;
     
     MergeTreeStatisticsPtr get(
-        const std::vector<StatisticDescription> & stats,
+        const std::vector<StatisticDescription> & statistics,
         const ColumnsDescription & columns) const;
 
     // Creates collectors for available pairs (stat, column).
     // Statistics on different columns are computed independently,
     // so collector can calculate statistics only on subset of columns provided in columns_for_collection.
     IMergeTreeStatisticCollectorPtrs getStatisticCollectors(
-        const std::vector<StatisticDescription> & stats,
+        const std::vector<StatisticDescription> & statistics,
         const ColumnsDescription & columns,
         const NamesAndTypesList & columns_for_collection) const;
 
@@ -160,13 +159,13 @@ protected:
 
 private:
     IStatisticPtr getStatistic(
-        const StatisticDescription & stat, const ColumnDescription & column) const;
+        const StatisticDescription & statistic, const ColumnDescription & column) const;
 
     IMergeTreeStatisticCollectorPtr getStatisticCollector(
-        const StatisticDescription & stat, const ColumnDescription & column) const;
+        const StatisticDescription & statistic, const ColumnDescription & column) const;
     
     std::vector<StatisticDescription> getSplittedStatistics(
-        const StatisticDescription & stat, const ColumnDescription & column) const;
+        const StatisticDescription & statistic, const ColumnDescription & column) const;
 
     void registerCreators(
         const std::string & stat_type,

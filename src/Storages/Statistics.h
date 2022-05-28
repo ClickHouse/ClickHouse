@@ -27,8 +27,8 @@ public:
     virtual ~IStatistic() = default;
 
     virtual const String& name() const = 0;
-
     virtual const String& type() const = 0;
+    virtual StatisticType statisticType() const = 0;
 
     virtual bool empty() const = 0;
     virtual void merge(const std::shared_ptr<IStatistic> & other) = 0;
@@ -48,6 +48,8 @@ using IStatisticPtr = std::shared_ptr<IStatistic>;
 
 class IDistributionStatistic : public IStatistic {
 public:
+    StatisticType statisticType() const override { return StatisticType::NUMERIC_COLUMN_DISRIBUTION; }
+
     // some quantile of value smaller than value 
     virtual double estimateQuantileLower(const Field& value) const = 0;
     // some quantile of value greater than value
@@ -86,6 +88,8 @@ using IConstDistributionStatisticsPtr = std::shared_ptr<const IDistributionStati
 
 class IStringSearchStatistic : public IStatistic {
 public:
+    StatisticType statisticType() const override { return StatisticType::STRING_SEARCH; }
+
     virtual double estimateStringProbability(const String& needle) const = 0;
 
     virtual std::optional<double> estimateSubstringsProbability(const Strings& needles) const = 0;    

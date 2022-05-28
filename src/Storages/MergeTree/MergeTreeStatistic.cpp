@@ -464,10 +464,10 @@ void MergeTreeStatisticFactory::registerCreators(
 }
 
 void MergeTreeStatisticFactory::validate(
-    const std::vector<StatisticDescription> & stats,
+    const std::vector<StatisticDescription> & statistics,
     const ColumnsDescription & columns) const
 {
-    for (const auto & stat_description : stats) {
+    for (const auto & stat_description : statistics) {
         for (const auto & column : stat_description.column_names) {
             for (const auto & stat : getSplittedStatistics(stat_description, columns.get(column))) {
                 auto it = validators.find(stat.type);
@@ -490,13 +490,13 @@ void MergeTreeStatisticFactory::validate(
 }
 
 IStatisticPtr MergeTreeStatisticFactory::getStatistic(
-    const StatisticDescription & stat,
+    const StatisticDescription & statistic,
     const ColumnDescription & column) const
 {
-    auto it = creators.find(stat.type);
+    auto it = creators.find(statistic.type);
     if (it == creators.end())
         throw Exception(
-                "Unknown Stat type '" + stat.type + "'. Available statistic types: " +
+                "Unknown Stat type '" + statistic.type + "'. Available statistic types: " +
                 std::accumulate(creators.cbegin(), creators.cend(), std::string{},
                         [] (auto && left, const auto & right) -> std::string
                         {
@@ -507,21 +507,29 @@ IStatisticPtr MergeTreeStatisticFactory::getStatistic(
                         }),
                 ErrorCodes::INCORRECT_QUERY);
 
-    return {it->second(stat, column)};
+    return {it->second(statistic, column)};
 }
 
 MergeTreeStatisticsPtr MergeTreeStatisticFactory::get(
-    const std::vector<StatisticDescription> & stats,
+    const std::vector<StatisticDescription> & statistics,
     const ColumnsDescription & columns) const
 {
     auto column_distribution_stats = std::make_shared<MergeTreeDistributionStatistics>();
     auto string_search_stats = std::make_shared<MergeTreeStringSearchStatistics>();
-    for (const auto & stat_description : stats) {
-        // move to params
-        for (const auto & column : stat_description.column_names) {
-            for (const auto & stat : getSplittedStatistics(stat_description, columns.get(column))) {
-                // TODO: change
-                column_distribution_stats->add(column, std::dynamic_pointer_cast<IDistributionStatistic>(getStatistic(stat, columns.get(column))));
+    for (const auto & statistics_description : statistics) {
+        for (const auto & column : statistics_description.column_names) {
+            for (const auto & statistic_description : getSplittedStatistics(statistics_description, columns.get(column))) {
+                auto statistic = getStatistic(statistic_description, columns.get(column));
+                switch (statistic->statisticType()) {
+                    case StatisticType::NUMERIC_COLUMN_DISRIBUTION:
+                        column_distribution_stats->add(column, std::dynamic_pointer_cast<IDistributionStatistic>(statistic));
+                        break;
+                    case StatisticType::STRING_SEARCH:
+                        string_search_stats->add(column, std::dynamic_pointer_cast<IStringSearchStatistic>(statistic));
+                        break;
+                    default:
+                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown statistic collector type.");
+                }
             }
         }
     }
@@ -533,12 +541,12 @@ MergeTreeStatisticsPtr MergeTreeStatisticFactory::get(
 }
 
 IMergeTreeStatisticCollectorPtr MergeTreeStatisticFactory::getStatisticCollector(
-    const StatisticDescription & stat, const ColumnDescription & column) const
+    const StatisticDescription & statistic, const ColumnDescription & column) const
 {
-    auto it = collectors.find(stat.type);
+    auto it = collectors.find(statistic.type);
     if (it == collectors.end())
         throw Exception(
-                "Unknown Stat type '" + stat.type + "'. Available statistic types: " +
+                "Unknown Stat type '" + statistic.type + "'. Available statistic types: " +
                 std::accumulate(collectors.cbegin(), collectors.cend(), std::string{},
                         [] (auto && left, const auto & right) -> std::string
                         {
@@ -549,11 +557,11 @@ IMergeTreeStatisticCollectorPtr MergeTreeStatisticFactory::getStatisticCollector
                         }),
                 ErrorCodes::INCORRECT_QUERY);
 
-    return {it->second(stat, column)};
+    return {it->second(statistic, column)};
 }
 
 IMergeTreeStatisticCollectorPtrs MergeTreeStatisticFactory::getStatisticCollectors(
-    const std::vector<StatisticDescription> & stats,
+    const std::vector<StatisticDescription> & statistics,
     const ColumnsDescription & columns,
     const NamesAndTypesList & columns_for_collection) const
 {
@@ -563,11 +571,11 @@ IMergeTreeStatisticCollectorPtrs MergeTreeStatisticFactory::getStatisticCollecto
     }
 
     IMergeTreeStatisticCollectorPtrs result;
-    for (const auto & stat_description : stats) {
-        for (const auto & column : stat_description.column_names) {
+    for (const auto & statictic_description : statistics) {
+        for (const auto & column : statictic_description.column_names) {
             if (columns_names_for_collection.contains(column)) {
-                for (const auto & stat : getSplittedStatistics(stat_description, columns.get(column))) {
-                    result.emplace_back(getStatisticCollector(stat, columns.get(column)));
+                for (const auto & statistic : getSplittedStatistics(statictic_description, columns.get(column))) {
+                    result.emplace_back(getStatisticCollector(statistic, columns.get(column)));
                 }
             }
         }
@@ -576,10 +584,10 @@ IMergeTreeStatisticCollectorPtrs MergeTreeStatisticFactory::getStatisticCollecto
 }
 
 std::vector<StatisticDescription> MergeTreeStatisticFactory::getSplittedStatistics(
-    const StatisticDescription & stat, const ColumnDescription & column) const
+    const StatisticDescription & statistic, const ColumnDescription & column) const
 {
-    if (stat.type != "auto") {
-        return {stat};
+    if (statistic.type != "auto") {
+        return {statistic};
     } else {
         /// let's select stats for column by ourselfs
         std::vector<StatisticDescription> result;
@@ -587,8 +595,8 @@ std::vector<StatisticDescription> MergeTreeStatisticFactory::getSplittedStatisti
             result.emplace_back();
             result.back().column_names = {column.name};
             result.back().data_types = {column.type};
-            result.back().definition_ast = stat.definition_ast->clone();
-            result.back().name = stat.name;
+            result.back().definition_ast = statistic.definition_ast->clone();
+            result.back().name = statistic.name;
             result.back().type = "granule_tdigest";
         }
         return result;
