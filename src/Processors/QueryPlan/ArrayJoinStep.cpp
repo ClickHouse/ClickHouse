@@ -40,33 +40,13 @@ void ArrayJoinStep::updateOutputStream()
         input_streams.front(), ArrayJoinTransform::transformHeader(input_streams.front().header, array_join), getDataStreamTraits());
 }
 
-void ArrayJoinStep::setResultHeader(Block result_header)
-{
-    res_header = std::move(result_header);
-}
-
-void ArrayJoinStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings)
+void ArrayJoinStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
     pipeline.addSimpleTransform([&](const Block & header, QueryPipelineBuilder::StreamType stream_type)
     {
         bool on_totals = stream_type == QueryPipelineBuilder::StreamType::Totals;
         return std::make_shared<ArrayJoinTransform>(header, array_join, on_totals);
     });
-
-    if (res_header && !blocksHaveEqualStructure(res_header, output_stream->header))
-    {
-        auto actions_dag = ActionsDAG::makeConvertingActions(
-                pipeline.getHeader().getColumnsWithTypeAndName(),
-                res_header.getColumnsWithTypeAndName(),
-                ActionsDAG::MatchColumnsMode::Name);
-
-        auto actions = std::make_shared<ExpressionActions>(actions_dag, settings.getActionsSettings());
-
-        pipeline.addSimpleTransform([&](const Block & header)
-        {
-            return std::make_shared<ExpressionTransform>(header, actions);
-        });
-    }
 }
 
 void ArrayJoinStep::describeActions(FormatSettings & settings) const
