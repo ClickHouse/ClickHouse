@@ -79,7 +79,6 @@ FileCachePtr getCachePtrForDisk(
     cache->initialize();
 
     auto * log = &Poco::Logger::get("Disk(" + name + ")");
-    LOG_INFO(log, "Disk registered with prefix [{}], cache_prefix [{}]", config_prefix, cache_config_prefix);
 
     LOG_INFO(log, "Disk registered with cache path: {}. Cache size: {}, max cache elements size: {}, max_file_segment_size: {}, enable_cache_hits_threshold: {}",
              file_cache_settings.cache_base_path,
