@@ -29,7 +29,7 @@
 #include <Storages/CompressionCodecSelector.h>
 #include <Storages/StorageS3Settings.h>
 #include <Disks/DiskLocal.h>
-#include <Disks/IDiskRemote.h>
+#include <Disks/ObjectStorages/IObjectStorage.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Interpreters/ActionLocksManager.h>
 #include <Interpreters/ExternalLoaderXMLConfigRepository.h>
@@ -313,7 +313,7 @@ struct ContextSharedPart
         /// since it may use per-user MemoryTracker which will be destroyed here.
         try
         {
-            IDiskRemote::getThreadPoolWriter().wait();
+            IObjectStorage::getThreadPoolWriter().wait();
         }
         catch (...)
         {
@@ -342,8 +342,6 @@ struct ContextSharedPart
         /// Stop periodic reloading of the configuration files.
         /// This must be done first because otherwise the reloading may pass a changed config
         /// to some destroyed parts of ContextSharedPart.
-        if (access_control)
-            access_control->stopPeriodicReloadingUsersConfigs();
         if (external_dictionaries_loader)
             external_dictionaries_loader->enablePeriodicUpdates(false);
         if (external_user_defined_executable_functions_loader)
@@ -1081,7 +1079,7 @@ void Context::addQueryFactoriesInfo(QueryLogFactories factory_type, const String
     if (isGlobalContext())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot have query factories info");
 
-    auto lock = getLock();
+    std::lock_guard lock(query_factories_info.mutex);
 
     switch (factory_type)
     {
