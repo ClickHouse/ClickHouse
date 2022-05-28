@@ -17,8 +17,9 @@
 /default/1-insert-testc/c/c/f	g	14
 /default/1-insert-testc/c/c/kk	g	14
 -------------------------
+/default/2-insert-testx	testb	z
 /default/2-insert-testx	testc	x
-/default/2-insert-testx	testz	z
+/default/2-insert-testx	testz	y
 /default/2-insert-testz	c	
 /default/2-insert-testz/c	cd	
 /default/2-insert-testz/c/cd	dd	
