@@ -1,7 +1,6 @@
 #include <Storages/MergeTree/DataPartsExchange.h>
 
 #include <Formats/NativeWriter.h>
-#include <Disks/IDiskRemote.h>
 #include <Disks/SingleDiskVolume.h>
 #include <Disks/createVolume.h>
 #include <IO/HTTPCommon.h>
@@ -140,6 +139,16 @@ void Service::processQuery(const HTMLForm & params, ReadBuffer & /*body*/, Write
         part = findPart(part_name);
 
         CurrentMetrics::Increment metric_increment{CurrentMetrics::ReplicatedSend};
+
+        {
+            auto disk = part->volume->getDisk();
+            UInt64 revision = parse<UInt64>(params.get("disk_revision", "0"));
+            if (revision)
+                disk->syncRevision(revision);
+            revision = disk->getRevision();
+            if (revision)
+                response.addCookie({"disk_revision", toString(revision)});
+        }
 
         if (client_protocol_version >= REPLICATION_PROTOCOL_VERSION_WITH_PARTS_SIZE)
             writeBinary(part->checksums.getTotalSizeOnDisk(), out);
@@ -419,6 +428,13 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
         {"compress",                "false"}
     });
 
+    if (disk)
+    {
+        UInt64 revision = disk->getRevision();
+        if (revision)
+            uri.addQueryParameter("disk_revision", toString(revision));
+    }
+
     Strings capability;
     if (try_zero_copy && data_settings->allow_remote_fs_zero_copy_replication)
     {
@@ -502,6 +518,10 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
     }
     if (!disk)
         disk = reservation->getDisk();
+
+    UInt64 revision = parse<UInt64>(in.getResponseCookie("disk_revision", "0"));
+    if (revision)
+        disk->syncRevision(revision);
 
     bool sync = (data_settings->min_compressed_bytes_to_fsync_after_fetch
                     && sum_files_size >= data_settings->min_compressed_bytes_to_fsync_after_fetch);

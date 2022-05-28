@@ -93,6 +93,12 @@ namespace ProfileEvents
     extern const Event DelayedInserts;
     extern const Event DelayedInsertsMilliseconds;
     extern const Event DuplicatedInsertedBlocks;
+    extern const Event InsertedWideParts;
+    extern const Event InsertedCompactParts;
+    extern const Event InsertedInMemoryParts;
+    extern const Event MergedIntoWideParts;
+    extern const Event MergedIntoCompactParts;
+    extern const Event MergedIntoInMemoryParts;
 }
 
 namespace CurrentMetrics
@@ -226,7 +232,7 @@ MergeTreeData::MergeTreeData(
 
     /// Check sanity of MergeTreeSettings. Only when table is created.
     if (!attach)
-        settings->sanityCheck(getContext()->getSettingsRef());
+        settings->sanityCheck(getContext()->getMergeMutateExecutor()->getMaxTasksCount());
 
     MergeTreeDataFormatVersion min_format_version(0);
     if (!date_column_name.empty())
@@ -1716,6 +1722,7 @@ void MergeTreeData::removePartsFinally(const MergeTreeData::DataPartsVector & pa
             part_log_elem.part_name = part->name;
             part_log_elem.bytes_compressed_on_disk = part->getBytesOnDisk();
             part_log_elem.rows = part->rows_count;
+            part_log_elem.part_type = part->getType();
 
             part_log->add(part_log_elem);
         }
@@ -2569,7 +2576,7 @@ void MergeTreeData::changeSettings(
         /// Reset to default settings before applying existing.
         auto copy = getDefaultSettings();
         copy->applyChanges(new_changes);
-        copy->sanityCheck(getContext()->getSettingsRef());
+        copy->sanityCheck(getContext()->getMergeMutateExecutor()->getMaxTasksCount());
 
         storage_settings.set(std::move(copy));
         StorageInMemoryMetadata new_metadata = getInMemoryMetadata();
@@ -6190,6 +6197,7 @@ try
         part_log_elem.path_on_disk = result_part->getFullPath();
         part_log_elem.bytes_compressed_on_disk = result_part->getBytesOnDisk();
         part_log_elem.rows = result_part->rows_count;
+        part_log_elem.part_type = result_part->getType();
     }
 
     part_log_elem.source_part_names.reserve(source_parts.size());
@@ -6753,6 +6761,42 @@ StorageSnapshotPtr MergeTreeData::getStorageSnapshot(const StorageMetadataPtr & 
     auto lock = lockParts();
     snapshot_data->parts = getVisibleDataPartsVectorUnlocked(query_context, lock);
     return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, object_columns, std::move(snapshot_data));
+}
+
+void MergeTreeData::incrementInsertedPartsProfileEvent(MergeTreeDataPartType type)
+{
+    switch (type.getValue())
+    {
+        case MergeTreeDataPartType::Wide:
+            ProfileEvents::increment(ProfileEvents::InsertedWideParts);
+            break;
+        case MergeTreeDataPartType::Compact:
+            ProfileEvents::increment(ProfileEvents::InsertedCompactParts);
+            break;
+        case MergeTreeDataPartType::InMemory:
+            ProfileEvents::increment(ProfileEvents::InsertedInMemoryParts);
+            break;
+        default:
+            break;
+    }
+}
+
+void MergeTreeData::incrementMergedPartsProfileEvent(MergeTreeDataPartType type)
+{
+    switch (type.getValue())
+    {
+        case MergeTreeDataPartType::Wide:
+            ProfileEvents::increment(ProfileEvents::MergedIntoWideParts);
+            break;
+        case MergeTreeDataPartType::Compact:
+            ProfileEvents::increment(ProfileEvents::MergedIntoCompactParts);
+            break;
+        case MergeTreeDataPartType::InMemory:
+            ProfileEvents::increment(ProfileEvents::MergedIntoInMemoryParts);
+            break;
+        default:
+            break;
+    }
 }
 
 CurrentlySubmergingEmergingTagger::~CurrentlySubmergingEmergingTagger()

@@ -157,6 +157,8 @@ public:
     /// without any limitations. This is used for the global context.
     static std::shared_ptr<const ContextAccess> getFullAccess();
 
+    ~ContextAccess();
+
 private:
     friend class AccessControl;
     ContextAccess() {} /// NOLINT
