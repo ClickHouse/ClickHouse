@@ -62,6 +62,12 @@ void MergeTreeBackgroundExecutor<Queue>::increaseThreadsAndMaxTasksCount(size_t 
     threads_count = new_threads_count;
 }
 
+template <class Queue>
+size_t MergeTreeBackgroundExecutor<Queue>::getMaxTasksCount() const
+{
+    std::lock_guard lock(mutex);
+    return max_tasks_count;
+}
 
 template <class Queue>
 bool MergeTreeBackgroundExecutor<Queue>::trySchedule(ExecutableTaskPtr task)
