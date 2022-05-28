@@ -243,37 +243,6 @@ def get_transactions_list(args):
         return f"Cannot get list of transactions: {e}"
 
 
-def get_processlist_after_test(args):
-    log_comment = args.testcase_basename
-    database = args.testcase_database
-    if args.replicated_database:
-        return clickhouse_execute_json(
-            args,
-            f"""
-        SELECT materialize((hostName(), tcpPort())) as host, *
-        FROM clusterAllReplicas('test_cluster_database_replicated', system.processes)
-        WHERE
-            query NOT LIKE '%system.processes%' AND
-            {'NOT is_all_data_sent AND' if args.suppport_system_processes_is_all_data_sent else ''}
-            Settings['log_comment'] = '{log_comment}' AND
-            current_database = '{database}'
-        """,
-        )
-    else:
-        return clickhouse_execute_json(
-            args,
-            f"""
-        SELECT *
-        FROM system.processes
-        WHERE
-            query NOT LIKE '%system.processes%' AND
-            {'NOT is_all_data_sent AND' if args.suppport_system_processes_is_all_data_sent else ''}
-            Settings['log_comment'] = '{log_comment}' AND
-            current_database = '{database}'
-        """,
-        )
-
-
 # collect server stacktraces using gdb
 def get_stacktraces_from_gdb(server_pid):
     try:
