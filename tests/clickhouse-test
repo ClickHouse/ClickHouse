@@ -375,7 +375,6 @@ class FailureReason(enum.Enum):
     RESULT_DIFF = "result differs with reference: "
     TOO_LONG = "Test runs too long (> 60s). Make it faster."
     INTERNAL_QUERY_FAIL = "Internal query (CREATE/DROP DATABASE) failed:"
-    LEFT_QUERIES = "Queries left in background after the test finished:"
 
     # SKIPPED reasons
     DISABLED = "disabled"
@@ -827,21 +826,6 @@ class TestCase:
                 total_time,
                 description,
             )
-
-        left_queries_check = args.no_left_queries_check is False
-        if self.tags and "no-left-queries-check" in self.tags:
-            left_queries_check = False
-        if left_queries_check:
-            processlist = get_processlist_after_test(self.testcase_args)
-            if processlist:
-                description += f"\n{json.dumps(processlist, indent=4)}\n"
-                return TestResult(
-                    self.name,
-                    TestStatus.FAIL,
-                    FailureReason.LEFT_QUERIES,
-                    total_time,
-                    description,
-                )
 
         if os.path.exists(self.stdout_file):
             os.remove(self.stdout_file)
