@@ -129,7 +129,7 @@ public:
             // Remove all the empty node. for path '/a//b///c/d/' we get <a b c d>
             for (int j = int(path_vec.size()) - 1; j >= 0; j--)
             {
-                if (path_vec[j].empty()) 
+                if (path_vec[j].empty())
                     path_vec.erase(path_vec.begin() + j);
             }
             path_vec.push_back(name);
