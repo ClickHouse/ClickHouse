@@ -13,6 +13,7 @@
 #include <numeric>
 #include <Parsers/ASTExpressionList.h>
 #include <Poco/Logger.h>
+#include <Storages/MergeTree/MergeTreeStatisticGranuleStringHash.h>
 #include <Storages/MergeTree/MergeTreeStatisticGranuleTDigest.h>
 #include <Storages/MergeTree/MergeTreeStatisticTDigest.h>
 #include <string>
@@ -598,6 +599,13 @@ std::vector<StatisticDescription> MergeTreeStatisticFactory::getSplittedStatisti
             result.back().definition_ast = statistic.definition_ast->clone();
             result.back().name = statistic.name;
             result.back().type = "granule_tdigest";
+        } else if (column.type->getTypeId() == TypeIndex::String && !column.type->isNullable()) {
+            result.emplace_back();
+            result.back().column_names = {column.name};
+            result.back().data_types = {column.type};
+            result.back().definition_ast = statistic.definition_ast->clone();
+            result.back().name = statistic.name;
+            result.back().type = "granule_string_hash";
         }
         return result;
     }
@@ -614,6 +622,11 @@ MergeTreeStatisticFactory::MergeTreeStatisticFactory() {
         creatorGranuleDistributionStatisticTDigest,
         creatorGranuleDistributionStatisticCollectorTDigest,
         validatorGranuleDistributionStatisticTDigest);
+    registerCreators(
+        "granule_string_hash",
+        creatorGranuleStringHashStatistic,
+        creatorGranuleStringHashStatisticCollector,
+        validatorGranuleStringHashStatistic);
 }
 
 MergeTreeStatisticFactory & MergeTreeStatisticFactory::instance()

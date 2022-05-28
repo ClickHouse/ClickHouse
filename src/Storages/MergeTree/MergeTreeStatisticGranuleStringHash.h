@@ -1,29 +1,50 @@
 #pragma once
 
-#include <optional>
-#include <Storages/MergeTree/MergeTreeStatistic.h>
 #include <base/types.h>
+#include <Storages/MergeTree/MergeTreeStatistic.h>
+#include <Storages/Statistics.h>
+#include "IO/ReadBuffer.h"
+#include <optional>
+#include <unordered_set>
 
 namespace DB
 {
 
 class CountMinSketch {
+public:
+    CountMinSketch();
 
+    void addString(const String& str);
+
+    size_t getStringCount(const String& str) const;
+    size_t getSizeInMemory() const;
+
+    void merge(const CountMinSketch& other);
+
+    void serialize(WriteBuffer& wb) const;
+    void deserialize(ReadBuffer& rb);
+
+private:
+    size_t getStringHash(const String& str) const;
+    size_t getUintHash(size_t hash, size_t seed) const;
+
+    std::vector<UInt32> data;
 };
 
 /*
-Sketch for finding fraction of granules that can contain strings or substrings.
+Sketch for finding fraction of granules that can contain strings (todo: or substrings).
 */
-template<bool fullstring>
-class MergeTreeGranuleDistributionStatisticTDigest : public IDistributionStatistic
+class MergeTreeGranuleStringHashStatistic : public IStringSearchStatistic
 {
 public:
-    explicit MergeTreeGranuleDistributionStatisticTDigest(
+    MergeTreeGranuleStringHashStatistic(
         const String & name_,
         const String & column_name_);
-    MergeTreeGranuleDistributionStatisticTDigest(
+    MergeTreeGranuleStringHashStatistic(
         const String & name_,
-        const String & column_name_);
+        const String & column_name_,
+        size_t total_granules_,
+        CountMinSketch&& sketch_);
 
     const String& name() const override;
     const String& type() const override;
@@ -36,50 +57,50 @@ public:
     bool validateTypeBinary(ReadBuffer & istr) const override;
     void deserializeBinary(ReadBuffer & istr) override;
 
-    double estimateQuantileLower(const Field& value) const override;
-    double estimateQuantileUpper(const Field& value) const override;
-    double estimateProbability(const Field& lower, const Field& upper) const override;
+    double estimateStringProbability(const String& needle) const override;
+    std::optional<double> estimateSubstringsProbability(const Strings& needles) const override;
 
     size_t getSizeInMemory() const override;
 
 private:
-    const String stat_name;
+    const String statistic_name;
     const String column_name;
-    mutable QuantileTDigest<Float32> min_sketch;
-    mutable QuantileTDigest<Float32> max_sketch;
+    size_t total_granules;
+    CountMinSketch sketch;
     bool is_empty;
 };
 
-template<bool fullstring>
-class MergeTreeGranuleDistributionStatisticCollectorTDigest : public IMergeTreeStatisticCollector
+class MergeTreeGranuleStringHashStatisticCollector : public IMergeTreeStatisticCollector
 {
 public:
-    explicit MergeTreeGranuleDistributionStatisticCollectorTDigest(
+    MergeTreeGranuleStringHashStatisticCollector(
         const String & name_,
         const String & column_name_);
 
     const String& name() const override;
     const String & type() const override;
+
+    StatisticType statisticType() const override;
+
     const String & column() const override;
     bool empty() const override;
-    IDistributionStatisticPtr getStatisticAndReset() override;
+    IStringSearchStatisticPtr getStringSearchStatisticAndReset() override;
 
     void update(const Block & block, size_t * pos, size_t limit) override;
     void granuleFinished() override;
 
 private:
-    const String stat_name;
+    const String statistic_name;
     const String column_name;
-    std::optional<QuantileTDigest<Float32>> min_sketch;
-    std::optional<QuantileTDigest<Float32>> max_sketch;
-    std::optional<Float32> min_current;
-    std::optional<Float32> max_current;
+    std::unordered_set<std::string> granule_string_set;
+    CountMinSketch sketch;
+    size_t total_granules;
 };
 
-IDistributionStatisticPtr creatorGranuleDistributionStatisticTDigest(
-    const StatisticDescription & stat, const ColumnDescription & column);
-IMergeTreeStatisticCollectorPtr creatorGranuleDistributionStatisticCollectorTDigest(
-    const StatisticDescription & stat, const ColumnDescription & column);
-void validatorGranuleDistributionStatisticTDigest(
-    const StatisticDescription & stat, const ColumnDescription & column);
+IStringSearchStatisticPtr creatorGranuleStringHashStatistic(
+    const StatisticDescription & statistic, const ColumnDescription & column);
+IMergeTreeStatisticCollectorPtr creatorGranuleStringHashStatisticCollector(
+    const StatisticDescription & statistic, const ColumnDescription & column);
+void validatorGranuleStringHashStatistic(
+    const StatisticDescription & statistic, const ColumnDescription & column);
 }

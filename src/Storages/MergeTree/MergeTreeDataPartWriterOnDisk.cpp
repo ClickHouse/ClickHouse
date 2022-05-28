@@ -406,7 +406,6 @@ void MergeTreeDataPartWriterOnDisk::fillStatisticsChecksums(MergeTreeData::DataP
             stats.setStringSearchStatistics(std::move(string_search_stats));
 
             const auto statistic_name = stats_collector->name();
-
             const auto filename = generateFileNameForStatistics(statistic_name, stats_collector->column());
 
             if (statistic_and_column_to_stream.emplace(std::pair<String, String>{statistic_name, stats_collector->column()}, std::make_unique<StatisticsStream>()).second)

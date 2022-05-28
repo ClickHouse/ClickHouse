@@ -19,7 +19,7 @@ This estimates are approximate, so they can not be used for data skipping.
 class MergeTreeGranuleDistributionStatisticTDigest : public IDistributionStatistic
 {
 public:
-    explicit MergeTreeGranuleDistributionStatisticTDigest(
+    MergeTreeGranuleDistributionStatisticTDigest(
         const String & name_,
         const String & column_name_);
     MergeTreeGranuleDistributionStatisticTDigest(

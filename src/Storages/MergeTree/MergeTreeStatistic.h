@@ -24,6 +24,11 @@ enum class MergeTreeDistributionStatisticType
     GRANULE_TDIGEST,
 };
 
+enum class MergeTreeStringSearchStatisticType
+{
+    GRANULE_COUNT_MIN_SKETCH_HASH,
+};
+
 String generateFileNameForStatistics(const String & name, const String & columns);
 
 class IMergeTreeStatisticCollector {

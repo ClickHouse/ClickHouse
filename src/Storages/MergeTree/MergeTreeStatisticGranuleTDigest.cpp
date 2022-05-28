@@ -91,7 +91,7 @@ void MergeTreeGranuleDistributionStatisticTDigest::serializeBinary(WriteBuffer &
     auto size_serialization = size_type->getDefaultSerialization();
     size_serialization->serializeBinary(static_cast<size_t>(MergeTreeDistributionStatisticType::GRANULE_TDIGEST), ostr);
     size_serialization->serializeBinary(wb.str().size(), ostr);
-    ostr.write(wb.str().data(), wb.str().size());    
+    ostr.write(wb.str().data(), wb.str().size());
 }
 
 bool MergeTreeGranuleDistributionStatisticTDigest::validateTypeBinary(ReadBuffer & istr) const
@@ -107,8 +107,8 @@ void MergeTreeGranuleDistributionStatisticTDigest::deserializeBinary(ReadBuffer 
 {
     const auto & size_type = DataTypePtr(std::make_shared<DataTypeUInt64>());
     auto size_serialization = size_type->getDefaultSerialization();
-    Field unused;
-    size_serialization->deserializeBinary(unused, istr);
+    Field unused_size;
+    size_serialization->deserializeBinary(unused_size, istr);
 
     min_sketch.deserialize(istr);
     max_sketch.deserialize(istr);
@@ -207,8 +207,8 @@ const String & MergeTreeGranuleDistributionStatisticCollectorTDigest::name() con
 
 const String & MergeTreeGranuleDistributionStatisticCollectorTDigest::type() const
 {
-    static String name = "granule_tdigest";
-    return name;
+    static String type = "granule_tdigest";
+    return type;
 }
 
 const String & MergeTreeGranuleDistributionStatisticCollectorTDigest::column() const
