@@ -1,5 +1,6 @@
 SELECT L1Distance([0, 0, 0], [1, 2, 3]);
 SELECT L2Distance([1, 2, 3], [0, 0, 0]);
+SELECT LpDistance([1, 2, 3], [0, 0, 0], 3.5);
 SELECT LinfDistance([1, 2, 3], [0, 0, 0]);
 SELECT cosineDistance([1, 2, 3], [3, 5, 7]);
 
@@ -26,6 +27,7 @@ CREATE TABLE vec2d (id UInt64, v Array(Float64)) ENGINE = Memory;
 INSERT INTO vec1 VALUES (1, [3, 4, 5]), (2, [2, 4, 8]), (3, [7, 7, 7]);
 SELECT L1Distance(v, [0, 0, 0]) FROM vec1;
 SELECT L2Distance(v, [0, 0, 0]) FROM vec1;
+SELECT LpDistance(v, [0, 0, 0], 3.14) FROM vec1;
 SELECT LinfDistance([5, 4, 3], v) FROM vec1;
 SELECT cosineDistance([3, 2, 1], v) FROM vec1;
 SELECT LinfDistance(v, materialize([0, -2, 0])) FROM vec1;
@@ -42,6 +44,10 @@ SELECT v1.id, v2.id, L2Distance(v1.v, v2.v) as dist FROM vec1 v1, vec2d v2;
 
 SELECT L1Distance([0, 0], [1]); -- { serverError 190 }
 SELECT L2Distance([1, 2], (3,4)); -- { serverError 43 }
+SELECT LpDistance([1, 2], [3,4]); -- { serverError 42 }
+SELECT LpDistance([1, 2], [3,4], -1.); -- { serverError 69 }
+SELECT LpDistance([1, 2], [3,4], 'aaa'); -- { serverError 43 }
+SELECT LpDistance([1, 2], [3,4], materialize(2.7)); -- { serverError 44 }
 
 DROP TABLE vec1;
 DROP TABLE vec2;
