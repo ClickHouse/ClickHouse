@@ -55,7 +55,6 @@ MESSAGES_TO_RETRY = [
     "DB::Exception: New table appeared in database being dropped or detached. Try again",
     "is already started to be removing by another replica right now",
     "DB::Exception: Cannot enqueue query",
-    "line 1: wait_for: No record of process",  # Something weird from bash internals, let's just retry
     "is executing longer than distributed_ddl_task_timeout",  # FIXME
 ]
 
