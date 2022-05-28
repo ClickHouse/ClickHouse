@@ -61,7 +61,7 @@ LAYOUT(LAYOUT_TYPE(param value)) -- layout settings
 ```
 
 Cоставные ключи в XML словарях задаются тегом `<key>`
-```
+```xml
 ...
 <structure>
     <key>
