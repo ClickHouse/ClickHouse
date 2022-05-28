@@ -59,19 +59,19 @@ struct ZkNodeCache
         index++;
         if (!children.contains(child_name))
         {
-            String subPath = "/" + boost::algorithm::join(std::vector<String>(nodes.begin(), nodes.begin() + index), "/");
-            bool chExist = false;
+            String sub_path = "/" + boost::algorithm::join(std::vector<String>(nodes.begin(), nodes.begin() + index), "/");
+            bool ch_exist = false;
             if (exists)
             {
                 // If this node doesn't exists, neither will its child.
-                chExist = zookeeper->exists(subPath);
+                ch_exist = zookeeper->exists(sub_path);
             }
-            children[child_name] = std::make_shared<ZkNodeCache>(subPath, chExist);
+            children[child_name] = std::make_shared<ZkNodeCache>(sub_path, ch_exist);
         }
         children[child_name]->insert(nodes, zookeeper, value_to_set, index);
     }
 
-    void generate_requests(Coordination::Requests & requests)
+    void generateRequests(Coordination::Requests & requests)
     {
         // If the node doesn't exists, we should generate create request.
         // If the node exists, we should generate set request.
@@ -119,7 +119,7 @@ public:
             String path = block.getByPosition(2).column->getDataAt(i).toString();
 
             // We don't expect a "name" contains a path.
-            if (name.find("/") != std::string::npos)
+            if (name.find('/') != std::string::npos)
             {
                 throw Exception("column name should not contains \'/\'", ErrorCodes::BAD_ARGUMENTS);
             }
@@ -129,7 +129,7 @@ public:
             // Remove all the empty node. for path '/a//b///c/d/' we get <a b c d>
             for (int j = int(path_vec.size()) - 1; j >= 0; j--)
             {
-                if (path_vec[j] == "")
+                if (path_vec[j].empty()) 
                     path_vec.erase(path_vec.begin() + j);
             }
             path_vec.push_back(name);
@@ -140,7 +140,7 @@ public:
     void onFinish() override
     {
         Coordination::Requests requests;
-        cache.generate_requests(requests);
+        cache.generateRequests(requests);
         zookeeper->multi(requests);
     }
 };
