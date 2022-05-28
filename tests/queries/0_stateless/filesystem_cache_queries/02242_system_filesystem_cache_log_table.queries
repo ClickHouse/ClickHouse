@@ -10,10 +10,10 @@ CREATE TABLE test (key UInt32, value String) Engine=MergeTree() ORDER BY key SET
 SYSTEM STOP MERGES test;
 INSERT INTO test SELECT number, toString(number) FROM numbers(100000);
 
-SELECT 2240, * FROM test FORMAT Null;
+SELECT 2240, '_storagePolicy', * FROM test FORMAT Null;
 SYSTEM FLUSH LOGS;
-SELECT file_segment_range, read_type FROM system.filesystem_cache_log WHERE read_type='READ_FROM_FS_AND_DOWNLOADED_TO_CACHE' AND query_id = (SELECT query_id from system.query_log where query LIKE '%SELECT 2240%' AND current_database = currentDatabase() ORDER BY event_time desc LIMIT 1);
+SELECT file_segment_range, read_type FROM system.filesystem_cache_log WHERE query_id = (SELECT query_id from system.query_log where query LIKE '%SELECT 2240%_storagePolicy%' AND current_database = currentDatabase() AND type = 'QueryFinish' ORDER BY event_time desc LIMIT 1);
 
-SELECT 2241, * FROM test FORMAT Null;
+SELECT 2241, '_storagePolicy', * FROM test FORMAT Null;
 SYSTEM FLUSH LOGS;
-SELECT file_segment_range, read_type FROM system.filesystem_cache_log WHERE read_type='READ_FROM_CACHE' AND query_id = (SELECT query_id from system.query_log where query LIKE '%SELECT 2241%' AND current_database = currentDatabase() ORDER BY event_time desc LIMIT 1);
+SELECT file_segment_range, read_type FROM system.filesystem_cache_log WHERE query_id = (SELECT query_id from system.query_log where query LIKE '%SELECT 2241%_storagePolicy%' AND current_database = currentDatabase() AND type = 'QueryFinish' ORDER BY event_time desc LIMIT 1);
