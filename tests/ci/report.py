@@ -9,7 +9,7 @@ HTML_BASE_TEST_TEMPLATE = """
 <html>
   <style>
 @import url('https://fonts.googleapis.com/css2?family=Hind+Siliguri&display=swap');
-body { font-family: "Hind Siliguri", Arial, sans-serif; background: #EEE; }
+body {{ font-family: "Hind Siliguri", Arial, sans-serif; background: #EEE; }}
 h1 {{ margin-left: 10px; }}
 th, td {{ border: 0; padding: 5px 10px 5px 10px; text-align: left; vertical-align: top; line-height: 1.5; background-color: #FFF;
 td {{ white-space: pre; font-family: Monospace, Courier New; }}
