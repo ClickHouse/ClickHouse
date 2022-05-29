@@ -2119,8 +2119,17 @@ struct WindowFunctionNonNegativeDerivative final : public RecurrentWindowFunctio
                             ARGUMENT_TIMESTAMP,
                             argument_types[ARGUMENT_TIMESTAMP]->getName());
         }
-        interval_length = applyVisitor(FieldVisitorConvertToNumber<Float64>(), parameters_[0].get<Float64>());
 
+        const DataTypeInterval * interval_datatype = checkAndGetDataType<DataTypeInterval>(argument_types[ARGUMENT_INTERVAL].get());
+        if (!interval_datatype)
+        {
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Argument {} must be an INTERVAL, '{}' given",
+                ARGUMENT_INTERVAL,
+                argument_types[ARGUMENT_INTERVAL]->getName());
+        }
+        interval_length = interval_datatype->getKind().toAvgSeconds();
     }
 
     DataTypePtr getReturnType() const override { return argument_types[0]; }
@@ -2130,43 +2139,11 @@ struct WindowFunctionNonNegativeDerivative final : public RecurrentWindowFunctio
     void windowInsertResultInto(const WindowTransform * transform,
                                 size_t function_index) override
     {
-//        const auto & current_block = transform->blockAt(transform->current_row);
-//        IColumn & to = *current_block.output_columns[function_index];
-//        const auto & workspace = transform->workspaces[function_index];
-//
-//        const auto * interval_type = checkAndGetDataType<DataTypeInterval>(interval_column.type.get());
+        const auto & current_block = transform->blockAt(transform->current_row);
+        const auto & workspace = transform->workspaces[function_index];
 
-//        if (argument_types.size() > 2)
-//        {
-//            interval_kind = (*current_block.input_columns[
-//                workspace.argument_column_indices[2]])[
-//                         transform->current_row.row].get<IntervalKind>();
-//        }
-//
-//
-//        //const DataTypeInterval interval_type = (*current_block.input_columns[workspace.argument_column_indices[ARGUMENT_TIMESTAMP]]).getDataType();
-//        const auto * interval_type = checkAndGetDataType<DataTypeInterval>(interval_column.type.get());
-//
-//        if (!interval_type)
-//            throw Exception(
-//                "Illegal column for second argument of function " + getName() + ", must be an interval of time.",
-//                ErrorCodes::ILLEGAL_COLUMN);
-//
-//        const auto * interval_column_const_int64 = checkAndGetColumnConst<ColumnInt64>(interval_column.column.get());
-//        if (!interval_column_const_int64)
-//            throw Exception(
-//                "Illegal column for second argument of function " + getName() + ", must be a const interval of time.", ErrorCodes::ILLEGAL_COLUMN);
-//
-//        Int64 num_units = interval_column_const_int64->getValue<Int64>();
-//        if (num_units <= 0)
-//            throw Exception("Value for second argument of function " + getName() + " must be positive.", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
-
-//        const IColumn & default_column = *current_block.input_columns[workspace.argument_column_indices[2]].get();
-//        const auto ts_scale = *current_block.input_columns[workspace.argument_column_indices[2]].get
-//
-//        if (interval_kind == IntervalKind::Second || interval_kind == IntervalKind::Millisecond || interval_kind == IntervalKind::Microsecond || interval_kind == IntervalKind::Nanosecond){
-//            auto nanosecs_in_interval = interval_kind.toAvgNanoseconds();
-//        }
+        auto interval_duration = interval_length *
+            (*current_block.input_columns[workspace.argument_column_indices[ARGUMENT_INTERVAL]]).getFloat64(0);
 
         Float64 last_metric = getLastValueFromInputColumn<Float64>(transform, function_index, ARGUMENT_METRIC);
         Float64 last_timestamp = getLastValueFromInputColumn<Float64>(transform, function_index, ARGUMENT_TIMESTAMP);
@@ -2176,9 +2153,9 @@ struct WindowFunctionNonNegativeDerivative final : public RecurrentWindowFunctio
 
         Float64 time_elapsed = last_timestamp - curr_timestamp;
         Float64 metric_diff = last_metric - curr_metric;
-        Float64 result = metric_diff / time_elapsed * interval_length;
+        Float64 result = metric_diff / time_elapsed * interval_duration;
 
-        setValueToOutputColumn(transform, function_index, result);
+        setValueToOutputColumn(transform, function_index, result >= 0 ? result : 0);
     }
 private:
     Float64 interval_length = 1;
