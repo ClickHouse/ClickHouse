@@ -126,6 +126,8 @@ public:
 
     bool isShuttingDown() const { return stop_flag.load(); }
 
+    void sync() const;
+
 private:
     void loadLogFromZooKeeper();
     void runUpdatingThread();
