@@ -1,21 +1,19 @@
 #include <Storages/StorageExecutable.h>
 
 #include <filesystem>
+#include <unistd.h>
 
 #include <boost/algorithm/string/split.hpp>
 
-#include <Common/ShellCommand.h>
 #include <Common/filesystemHelpers.h>
 
 #include <Core/Block.h>
 
-#include <IO/ReadHelpers.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 
 #include <QueryPipeline/Pipe.h>
-#include <Processors/ISimpleTransform.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
@@ -123,9 +121,15 @@ Pipe StorageExecutable::read(
             script_name,
             user_scripts_path);
 
-    if (!std::filesystem::exists(std::filesystem::path(script_path)))
+    if (!FS::exists(script_path))
          throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
             "Executable file {} does not exist inside user scripts folder {}",
+            script_name,
+            user_scripts_path);
+
+    if (!FS::canExecute(script_path))
+         throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+            "Executable file {} is not executable inside user scripts folder {}",
             script_name,
             user_scripts_path);
 
@@ -213,7 +217,7 @@ void registerStorageExecutable(StorageFactory & factory)
             settings.loadFromQuery(*args.storage_def);
 
         auto global_context = args.getContext()->getGlobalContext();
-        return StorageExecutable::create(args.table_id, format, settings, input_queries, columns, constraints);
+        return std::make_shared<StorageExecutable>(args.table_id, format, settings, input_queries, columns, constraints);
     };
 
     StorageFactory::StorageFeatures storage_features;
@@ -230,5 +234,5 @@ void registerStorageExecutable(StorageFactory & factory)
     }, storage_features);
 }
 
-};
+}
 

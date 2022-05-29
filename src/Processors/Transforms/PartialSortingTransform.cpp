@@ -22,9 +22,7 @@ static ColumnRawPtrs extractColumns(const Block & block, const SortDescription &
 
     for (size_t i = 0; i < size; ++i)
     {
-        const IColumn * column = !description[i].column_name.empty()
-            ? block.getByName(description[i].column_name).column.get()
-            : block.safeGetByPosition(description[i].column_number).column.get();
+        const IColumn * column = block.getByName(description[i].column_name).column.get();
         res.emplace_back(column);
     }
 
@@ -83,9 +81,7 @@ size_t getFilterMask(const ColumnRawPtrs & lhs, const ColumnRawPtrs & rhs, size_
     {
         /// Leave only rows that are less then row from rhs.
         filter[i] = compare_results[i] < 0;
-
-        if (filter[i])
-            ++result_size_hint;
+        result_size_hint += filter[i];
     }
 
     return result_size_hint;

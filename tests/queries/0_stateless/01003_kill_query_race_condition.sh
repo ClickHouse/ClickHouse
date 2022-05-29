@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: race
+# Tags: race, no-parallel
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -9,12 +9,12 @@ set -e
 
 function thread1()
 {
-    $CLICKHOUSE_CLIENT --query_id=hello --query "SELECT count() FROM numbers(1000000000)" --format Null;
+    $CLICKHOUSE_CLIENT --query_id=hello_01003 --query "SELECT count() FROM numbers(1000000000)" --format Null;
 }
 
 function thread2()
 {
-    $CLICKHOUSE_CLIENT --query "KILL QUERY WHERE query_id = 'hello'" --format Null
+    $CLICKHOUSE_CLIENT --query "KILL QUERY WHERE query_id = 'hello_01003'" --format Null
     sleep 0.$RANDOM
 }
 

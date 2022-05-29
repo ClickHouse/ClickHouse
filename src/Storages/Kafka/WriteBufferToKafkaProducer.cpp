@@ -3,6 +3,16 @@
 #include "Columns/ColumnString.h"
 #include "Columns/ColumnsNumber.h"
 
+#include <Common/ProfileEvents.h>
+
+namespace ProfileEvents
+{
+    extern const Event KafkaRowsWritten;
+    extern const Event KafkaProducerFlushes;
+    extern const Event KafkaMessagesProduced;
+    extern const Event KafkaProducerErrors;
+}
+
 namespace DB
 {
 WriteBufferToKafkaProducer::WriteBufferToKafkaProducer(
@@ -53,6 +63,8 @@ WriteBufferToKafkaProducer::~WriteBufferToKafkaProducer()
 
 void WriteBufferToKafkaProducer::countRow(const Columns & columns, size_t current_row)
 {
+    ProfileEvents::increment(ProfileEvents::KafkaRowsWritten);
+
     if (++rows % max_rows == 0)
     {
         const std::string & last_chunk = chunks.back();
@@ -103,8 +115,10 @@ void WriteBufferToKafkaProducer::countRow(const Columns & columns, size_t curren
                     producer->poll(timeout);
                     continue;
                 }
+                ProfileEvents::increment(ProfileEvents::KafkaProducerErrors);
                 throw;
             }
+            ProfileEvents::increment(ProfileEvents::KafkaMessagesProduced);
 
             break;
         }
@@ -126,9 +140,12 @@ void WriteBufferToKafkaProducer::flush()
         {
             if (e.get_error() == RD_KAFKA_RESP_ERR__TIMED_OUT)
                 continue;
+
+            ProfileEvents::increment(ProfileEvents::KafkaProducerErrors);
             throw;
         }
 
+        ProfileEvents::increment(ProfileEvents::KafkaProducerFlushes);
         break;
     }
 }

@@ -5,7 +5,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Poco/Util/AbstractConfiguration.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <Common/ThreadPool.h>
 #include <numeric>
 

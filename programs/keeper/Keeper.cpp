@@ -10,8 +10,8 @@
 #include <filesystem>
 #include <IO/UseSSL.h>
 #include <Core/ServerUUID.h>
-#include <base/logger_useful.h>
-#include <base/ErrorHandlers.h>
+#include <Common/logger_useful.h>
+#include <Common/ErrorHandlers.h>
 #include <base/scope_guard.h>
 #include <base/safeExit.h>
 #include <Poco/Net/NetException.h>
@@ -62,6 +62,7 @@ namespace ErrorCodes
     extern const int NETWORK_ERROR;
     extern const int MISMATCHING_USERS_FOR_PROCESS_AND_DATA;
     extern const int FAILED_TO_GETPWUID;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace
@@ -239,6 +240,18 @@ std::string Keeper::getDefaultConfigFileName() const
     return "keeper_config.xml";
 }
 
+void Keeper::handleCustomArguments(const std::string & arg, [[maybe_unused]] const std::string & value) // NOLINT
+{
+    if (arg == "force-recovery")
+    {
+        assert(value.empty());
+        config().setBool("keeper_server.force_recovery", true);
+        return;
+    }
+
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid argument {} provided", arg);
+}
+
 void Keeper::defineOptions(Poco::Util::OptionSet & options)
 {
     options.addOption(
@@ -251,6 +264,12 @@ void Keeper::defineOptions(Poco::Util::OptionSet & options)
             .required(false)
             .repeatable(false)
             .binding("version"));
+    options.addOption(
+        Poco::Util::Option("force-recovery", "force-recovery", "Force recovery mode allowing Keeper to overwrite cluster configuration without quorum")
+        .required(false)
+        .repeatable(false)
+        .noArgument()
+        .callback(Poco::Util::OptionCallback<Keeper>(this, &Keeper::handleCustomArguments)));
     BaseDaemon::defineOptions(options);
 }
 
@@ -341,7 +360,7 @@ int Keeper::main(const std::vector<std::string> & /*args*/)
     auto servers = std::make_shared<std::vector<ProtocolServerAdapter>>();
 
     /// Initialize keeper RAFT. Do nothing if no keeper_server in config.
-    tiny_context.initializeKeeperDispatcher(/* start_async = */false);
+    tiny_context.initializeKeeperDispatcher(/* start_async = */ true);
     FourLetterCommandFactory::registerCommands(*tiny_context.getKeeperDispatcher());
 
     auto config_getter = [this] () -> const Poco::Util::AbstractConfiguration &

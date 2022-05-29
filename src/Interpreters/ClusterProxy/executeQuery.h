@@ -37,8 +37,8 @@ class IStreamFactory;
 ContextMutablePtr updateSettingsForCluster(
     const Cluster & cluster, ContextPtr context, const Settings & settings, Poco::Logger * log = nullptr);
 
-/// Execute a distributed query, creating a vector of BlockInputStreams, from which the result can be read.
-/// `stream_factory` object encapsulates the logic of creating streams for a different type of query
+/// Execute a distributed query, creating a query plan, from which the query pipeline can be built.
+/// `stream_factory` object encapsulates the logic of creating plans for a different type of query
 /// (currently SELECT, DESCRIBE).
 void executeQuery(
     QueryPlan & query_plan,

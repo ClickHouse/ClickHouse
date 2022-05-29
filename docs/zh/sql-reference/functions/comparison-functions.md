@@ -1,6 +1,6 @@
 ---
-toc_priority: 36
-toc_title: 比较函数
+sidebar_position: 36
+sidebar_label: 比较函数
 ---
 
 # 比较函数 {#bi-jiao-han-shu}
@@ -22,14 +22,14 @@ toc_title: 比较函数
 
 ## 等于，a=b和a==b 运算符 {#equals-a-b-and-a-b-operator}
 
-## 不等于，a!=b和a<>b 运算符 {#notequals-a-operator-b-and-a-b}
+## 不等于，a!=b和a&lt;&gt;b 运算符 {#notequals-a-operator-b-and-a-b}
 
-## 少, < 运算符 {#less-operator}
+## 少, &lt; 运算符 {#less-operator}
 
-## 大于, > 运算符 {#greater-operator}
+## 大于, &gt; 运算符 {#greater-operator}
 
-## 小于等于, <= 运算符 {#lessorequals-operator}
+## 小于等于, &lt;= 运算符 {#lessorequals-operator}
 
-## 大于等于, >= 运算符 {#greaterorequals-operator}
+## 大于等于, &gt;= 运算符 {#greaterorequals-operator}
 
 [来源文章](https://clickhouse.com/docs/en/query_language/functions/comparison_functions/) <!--hide-->

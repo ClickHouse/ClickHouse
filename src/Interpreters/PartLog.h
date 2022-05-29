@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Storages/MergeTree/MergeTreeDataPartType.h>
 #include <Interpreters/SystemLog.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/NamesAndAliases.h>
@@ -35,6 +36,8 @@ struct PartLogElement
     String disk_name;
     String path_on_disk;
 
+    MergeTreeDataPartType part_type;
+
     /// Size of the part
     UInt64 rows = 0;
 
@@ -57,6 +60,7 @@ struct PartLogElement
     static NamesAndTypesList getNamesAndTypes();
     static NamesAndAliases getNamesAndAliases() { return {}; }
     void appendToBlock(MutableColumns & columns) const;
+    static const char * getCustomColumnList() { return nullptr; }
 };
 
 class IMergeTreeDataPart;

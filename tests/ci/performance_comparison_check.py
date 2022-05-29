@@ -8,16 +8,19 @@ import json
 import subprocess
 import traceback
 import re
+from typing import Dict
 
 from github import Github
 
-from pr_info import PRInfo
-from s3_helper import S3Helper
-from get_robot_token import get_best_robot_token
-from docker_pull_helper import get_image_with_version
 from commit_status_helper import get_commit, post_commit_status
-from tee_popen import TeePopen
+from ci_config import CI_CONFIG
+from docker_pull_helper import get_image_with_version
+from env_helper import GITHUB_EVENT_PATH, GITHUB_RUN_URL
+from get_robot_token import get_best_robot_token
+from pr_info import PRInfo
 from rerun_helper import RerunHelper
+from s3_helper import S3Helper
+from tee_popen import TeePopen
 
 IMAGE_NAME = "clickhouse/performance-comparison"
 
@@ -32,7 +35,8 @@ def get_run_command(
     image,
 ):
     return (
-        f"docker run --privileged --volume={workspace}:/workspace --volume={result_path}:/output "
+        f"docker run --privileged --volume={workspace}:/workspace "
+        f"--volume={result_path}:/output "
         f"--volume={repo_tests_path}:/usr/share/clickhouse-test "
         f"--cap-add syslog --cap-add sys_admin --cap-add sys_rawio "
         f"-e PR_TO_TEST={pr_to_test} -e SHA_TO_TEST={sha_to_test} {additional_env} "
@@ -68,11 +72,12 @@ if __name__ == "__main__":
     reports_path = os.getenv("REPORTS_PATH", "./reports")
 
     check_name = sys.argv[1]
+    required_build = CI_CONFIG["tests_config"][check_name]["required_build"]
 
     if not os.path.exists(temp_path):
         os.makedirs(temp_path)
 
-    with open(os.getenv("GITHUB_EVENT_PATH"), "r", encoding="utf-8") as event_file:
+    with open(GITHUB_EVENT_PATH, "r", encoding="utf-8") as event_file:
         event = json.load(event_file)
 
     gh = Github(get_best_robot_token())
@@ -82,21 +87,25 @@ if __name__ == "__main__":
     docker_env = ""
 
     docker_env += " -e S3_URL=https://s3.amazonaws.com/clickhouse-builds"
+    docker_env += f" -e BUILD_NAME={required_build}"
 
     if pr_info.number == 0:
         pr_link = commit.html_url
     else:
         pr_link = f"https://github.com/ClickHouse/ClickHouse/pull/{pr_info.number}"
 
-    task_url = f"https://github.com/ClickHouse/ClickHouse/actions/runs/{os.getenv('GITHUB_RUN_ID')}"
-    docker_env += ' -e CHPC_ADD_REPORT_LINKS="<a href={}>Job (actions)</a> <a href={}>Tested commit</a>"'.format(
-        task_url, pr_link
+    docker_env += (
+        f' -e CHPC_ADD_REPORT_LINKS="<a href={GITHUB_RUN_URL}>'
+        f'Job (actions)</a> <a href={pr_link}>Tested commit</a>"'
     )
 
     if "RUN_BY_HASH_TOTAL" in os.environ:
-        run_by_hash_total = int(os.getenv("RUN_BY_HASH_TOTAL"))
-        run_by_hash_num = int(os.getenv("RUN_BY_HASH_NUM"))
-        docker_env += f" -e CHPC_TEST_RUN_BY_HASH_TOTAL={run_by_hash_total} -e CHPC_TEST_RUN_BY_HASH_NUM={run_by_hash_num}"
+        run_by_hash_total = int(os.getenv("RUN_BY_HASH_TOTAL", "1"))
+        run_by_hash_num = int(os.getenv("RUN_BY_HASH_NUM", "1"))
+        docker_env += (
+            f" -e CHPC_TEST_RUN_BY_HASH_TOTAL={run_by_hash_total}"
+            f" -e CHPC_TEST_RUN_BY_HASH_NUM={run_by_hash_num}"
+        )
         check_name_with_group = (
             check_name + f" [{run_by_hash_num + 1}/{run_by_hash_total}]"
         )
@@ -156,13 +165,12 @@ if __name__ == "__main__":
     )
     s3_prefix = f"{pr_info.number}/{pr_info.sha}/{check_name_prefix}/"
     s3_helper = S3Helper("https://s3.amazonaws.com")
-    for file in paths:
+    uploaded = {}  # type: Dict[str, str]
+    for name, path in paths.items():
         try:
-            paths[file] = s3_helper.upload_test_report_to_s3(
-                paths[file], s3_prefix + file
-            )
+            uploaded[name] = s3_helper.upload_test_report_to_s3(path, s3_prefix + name)
         except Exception:
-            paths[file] = ""
+            uploaded[name] = ""
             traceback.print_exc()
 
     # Upload all images and flamegraphs to S3
@@ -177,16 +185,22 @@ if __name__ == "__main__":
     status = ""
     message = ""
     try:
-        report_text = open(os.path.join(result_path, "report.html"), "r").read()
-        status_match = re.search("<!--[ ]*status:(.*)-->", report_text)
-        message_match = re.search("<!--[ ]*message:(.*)-->", report_text)
+        with open(
+            os.path.join(result_path, "report.html"), "r", encoding="utf-8"
+        ) as report_fd:
+            report_text = report_fd.read()
+            status_match = re.search("<!--[ ]*status:(.*)-->", report_text)
+            message_match = re.search("<!--[ ]*message:(.*)-->", report_text)
         if status_match:
             status = status_match.group(1).strip()
         if message_match:
             message = message_match.group(1).strip()
 
-        # TODO: Remove me, always green mode for the first time
+        # TODO: Remove me, always green mode for the first time, unless errors
         status = "success"
+        if "errors" in message:
+            status = "failure"
+        # TODO: Remove until here
     except Exception:
         traceback.print_exc()
         status = "failure"
@@ -199,20 +213,23 @@ if __name__ == "__main__":
         status = "failure"
         message = "No message in report."
 
-    report_url = task_url
+    report_url = GITHUB_RUN_URL
 
-    if paths["runlog.log"]:
-        report_url = paths["runlog.log"]
+    if uploaded["runlog.log"]:
+        report_url = uploaded["runlog.log"]
 
-    if paths["compare.log"]:
-        report_url = paths["compare.log"]
+    if uploaded["compare.log"]:
+        report_url = uploaded["compare.log"]
 
-    if paths["output.7z"]:
-        report_url = paths["output.7z"]
+    if uploaded["output.7z"]:
+        report_url = uploaded["output.7z"]
 
-    if paths["report.html"]:
-        report_url = paths["report.html"]
+    if uploaded["report.html"]:
+        report_url = uploaded["report.html"]
 
     post_commit_status(
         gh, pr_info.sha, check_name_with_group, message, status, report_url
     )
+
+    if status == "error":
+        sys.exit(1)

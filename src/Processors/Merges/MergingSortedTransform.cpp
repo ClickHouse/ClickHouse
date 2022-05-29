@@ -2,7 +2,7 @@
 #include <Processors/Transforms/ColumnGathererTransform.h>
 #include <IO/WriteBuffer.h>
 
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {

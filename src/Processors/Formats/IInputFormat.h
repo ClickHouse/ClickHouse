@@ -2,26 +2,12 @@
 
 #include <Processors/ISource.h>
 #include <IO/ReadBuffer.h>
+#include <Interpreters/Context.h>
+#include <Formats/ColumnMapping.h>
 
 
 namespace DB
 {
-/// Used to pass info from header between different InputFormats in ParallelParsing
-struct ColumnMapping
-{
-    /// Non-atomic because there is strict `happens-before` between read and write access
-    /// See InputFormatParallelParsing
-    bool is_set{false};
-    /// Maps indexes of columns in the input file to indexes of table columns
-    using OptionalIndexes = std::vector<std::optional<size_t>>;
-    OptionalIndexes column_indexes_for_input_fields;
-
-    /// The list of column indexes that are not presented in input data.
-    std::vector<UInt8> not_presented_columns;
-
-    /// The list of column names in input data. Needed for better exception messages.
-    std::vector<String> names_of_columns;
-};
 
 using ColumnMappingPtr = std::shared_ptr<ColumnMapping>;
 
@@ -45,12 +31,13 @@ public:
     /** In some usecase (hello Kafka) we need to read a lot of tiny streams in exactly the same format.
      * The recreating of parser for each small stream takes too long, so we introduce a method
      * resetParser() which allow to reset the state of parser to continue reading of
-     * source stream w/o recreating that.
+     * source stream without recreating that.
      * That should be called after current buffer was fully read.
      */
     virtual void resetParser();
 
     virtual void setReadBuffer(ReadBuffer & in_);
+    const ReadBuffer & getReadBuffer() const { return *in; }
 
     virtual const BlockMissingValues & getMissingValues() const
     {

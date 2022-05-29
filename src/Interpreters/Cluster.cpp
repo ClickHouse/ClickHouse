@@ -132,7 +132,9 @@ Cluster::Address::Address(
     bool secure_,
     Int64 priority_,
     UInt32 shard_index_,
-    UInt32 replica_index_)
+    UInt32 replica_index_,
+    String cluster_name_,
+    String cluster_secret_)
     : user(user_), password(password_)
 {
     bool can_be_local = true;
@@ -164,6 +166,8 @@ Cluster::Address::Address(
     is_local = can_be_local && isLocal(clickhouse_port);
     shard_index = shard_index_;
     replica_index = replica_index_;
+    cluster = cluster_name_;
+    cluster_secret = cluster_secret_;
 }
 
 
@@ -282,8 +286,9 @@ Cluster::Address Cluster::Address::fromFullString(const String & full_string)
 
 /// Implementation of Clusters class
 
-Clusters::Clusters(const Poco::Util::AbstractConfiguration & config, const Settings & settings, const String & config_prefix)
+Clusters::Clusters(const Poco::Util::AbstractConfiguration & config, const Settings & settings, MultiVersion<Macros>::Version macros, const String & config_prefix)
 {
+    this->macros_ = macros;
     updateClusters(config, settings, config_prefix);
 }
 
@@ -292,7 +297,8 @@ ClusterPtr Clusters::getCluster(const std::string & cluster_name) const
 {
     std::lock_guard lock(mutex);
 
-    auto it = impl.find(cluster_name);
+    auto expanded_cluster_name = macros_->expand(cluster_name);
+    auto it = impl.find(expanded_cluster_name);
     return (it != impl.end()) ? it->second : nullptr;
 }
 
@@ -537,9 +543,13 @@ Cluster::Cluster(
     bool treat_local_as_remote,
     bool treat_local_port_as_remote,
     bool secure,
-    Int64 priority)
+    Int64 priority,
+    String cluster_name,
+    String cluster_secret)
 {
     UInt32 current_shard_num = 1;
+
+    secret = cluster_secret;
 
     for (const auto & shard : names)
     {
@@ -554,7 +564,9 @@ Cluster::Cluster(
                 secure,
                 priority,
                 current_shard_num,
-                current.size() + 1);
+                current.size() + 1,
+                cluster_name,
+                cluster_secret);
 
         addresses_with_failover.emplace_back(current);
 
@@ -690,6 +702,9 @@ Cluster::Cluster(Cluster::ReplicasAsShardsTag, const Cluster & from, const Setti
         }
     }
 
+    secret = from.secret;
+    name = from.name;
+
     initMisc();
 }
 
@@ -704,7 +719,24 @@ Cluster::Cluster(Cluster::SubclusterTag, const Cluster & from, const std::vector
             addresses_with_failover.emplace_back(from.addresses_with_failover.at(index));
     }
 
+    secret = from.secret;
+    name = from.name;
+
     initMisc();
+}
+
+std::vector<Strings> Cluster::getHostIDs() const
+{
+    std::vector<Strings> host_ids;
+    host_ids.resize(addresses_with_failover.size());
+    for (size_t i = 0; i != addresses_with_failover.size(); ++i)
+    {
+        const auto & addresses = addresses_with_failover[i];
+        host_ids[i].resize(addresses.size());
+        for (size_t j = 0; j != addresses.size(); ++j)
+            host_ids[i][j] = addresses[j].toString();
+    }
+    return host_ids;
 }
 
 const std::string & Cluster::ShardInfo::insertPathForInternalReplication(bool prefer_localhost_replica, bool use_compact_format) const

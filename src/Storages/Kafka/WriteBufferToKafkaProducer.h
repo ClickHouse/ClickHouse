@@ -7,6 +7,14 @@
 
 #include <list>
 
+#include <Common/CurrentMetrics.h>
+
+namespace CurrentMetrics
+{
+    extern const Metric KafkaProducers;
+}
+
+
 namespace DB
 {
 class Block;
@@ -32,6 +40,7 @@ private:
     void nextImpl() override;
     void addChunk();
     void reinitializeChunks();
+    CurrentMetrics::Increment metric_increment{CurrentMetrics::KafkaProducers};
 
     ProducerPtr producer;
     const std::string topic;

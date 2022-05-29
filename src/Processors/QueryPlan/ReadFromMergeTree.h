@@ -100,7 +100,8 @@ public:
         bool enable_parallel_reading
     );
 
-    String getName() const override { return "ReadFromMergeTree"; }
+    static constexpr auto name = "ReadFromMergeTree";
+    String getName() const override { return name; }
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 

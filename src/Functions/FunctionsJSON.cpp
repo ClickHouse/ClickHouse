@@ -123,7 +123,7 @@ public:
             bool document_ok = false;
             if (col_json_const)
             {
-                std::string_view json{reinterpret_cast<const char *>(&chars[0]), offsets[0] - 1};
+                std::string_view json{reinterpret_cast<const char *>(chars.data()), offsets[0] - 1};
                 document_ok = parser.parse(json, document);
             }
 
@@ -896,7 +896,7 @@ struct JSONExtractTree
             if (element.isInt64())
             {
                 Type value;
-                if (!accurate::convertNumeric(element.getInt64(), value) || !only_values.count(value))
+                if (!accurate::convertNumeric(element.getInt64(), value) || !only_values.contains(value))
                     return false;
                 col_vec.insertValue(value);
                 return true;
@@ -905,7 +905,7 @@ struct JSONExtractTree
             if (element.isUInt64())
             {
                 Type value;
-                if (!accurate::convertNumeric(element.getUInt64(), value) || !only_values.count(value))
+                if (!accurate::convertNumeric(element.getUInt64(), value) || !only_values.contains(value))
                     return false;
                 col_vec.insertValue(value);
                 return true;

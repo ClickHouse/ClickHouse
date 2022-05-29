@@ -214,8 +214,9 @@ def test_insert_same_partition_and_merge(cluster, merge_vertical, node_name):
     # Wait for merges and old parts deletion
     for attempt in range(0, 10):
         parts_count = node.query(
-            "SELECT COUNT(*) FROM system.parts WHERE table = 's3_test' FORMAT Values"
+            "SELECT COUNT(*) FROM system.parts WHERE table = 's3_test' and active = 1 FORMAT Values"
         )
+
         if parts_count == "(1)":
             break
 
@@ -228,7 +229,9 @@ def test_insert_same_partition_and_merge(cluster, merge_vertical, node_name):
     assert (
         node.query("SELECT count(distinct(id)) FROM s3_test FORMAT Values") == "(8192)"
     )
-    wait_for_delete_s3_objects(cluster, FILES_OVERHEAD_PER_PART_WIDE + FILES_OVERHEAD)
+    wait_for_delete_s3_objects(
+        cluster, FILES_OVERHEAD_PER_PART_WIDE + FILES_OVERHEAD, timeout=45
+    )
 
 
 @pytest.mark.parametrize("node_name", ["node"])

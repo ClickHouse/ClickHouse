@@ -5,6 +5,7 @@
 #include <Formats/FormatFactory.h>
 #include <IO/PeekableReadBuffer.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeObject.h>
 
 namespace DB
 {
@@ -70,6 +71,15 @@ public:
     NamesAndTypesList readSchema() override
     {
         return {{"json", std::make_shared<DataTypeString>()}};
+    }
+};
+
+class JSONAsObjectExternalSchemaReader : public IExternalSchemaReader
+{
+public:
+    NamesAndTypesList readSchema() override
+    {
+        return {{"json", std::make_shared<DataTypeObject>("json", false)}};
     }
 };
 
