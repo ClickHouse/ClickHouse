@@ -914,54 +914,6 @@ WHERE diff != 1
 
 Same as for [runningDifference](./other-functions.md#other_functions-runningdifference), the difference is the value of the first row, returned the value of the first row, and each subsequent row returns the difference from the previous row.
 
-## nonNegativeDerivative(metric, timestamp[, INTERVAL]) {#other_functions-nonnegativederivative}
-
-Calculates the growth ratio of given metric values by given timestamps.
-Returns 0 for the first row and derivative for all the consecutive rows.
-If at some point derivative is less than zero, this value is ignored and the result is 0.
-
-!!! warning "Warning"
-It can reach the previous row only inside the currently processed data block.
-The result of the function depends on the affected data blocks and the order of data in the block.
-
-!!! warning "Warning"
-The rows order used during the calculation of `nonNegativeDerivative` can differ from the order of rows returned to the user.
-To prevent that you can make a subquery with [ORDER BY](../../sql-reference/statements/select/order-by.md) and call the function from outside the subquery.
-
-Example:
-
-``` sql
-SELECT
-    ts,
-    metric,
-    nonNegativeDerivative(metric, ts, toIntervalNanosecond(3)) AS nnd
-FROM
-(
-    SELECT *
-    FROM 
-    values('id Int32, ts DateTime(3), metric Float64',
-    (1, toDateTime64('1979-12-12 21:21:21.123', 3, 'UTC'), 1.1),
-    (2, toDateTime64('1979-12-12 21:21:21.124', 3, 'UTC'), 2.34),
-    (3, toDateTime64('1979-12-12 21:21:21.127', 3, 'UTC'), 3.7),
-    (4, toDateTime64('1979-12-12 21:21:21.129', 3, 'UTC'), 2.1))
-)
-
-```
-
-``` text
-┌──────────────────────ts─┬─metric─┬──────────────────────nnd─┐
-│ 1979-12-13 00:21:21.123 │    1.1 │                        0 │
-│ 1979-12-13 00:21:21.124 │   2.34 │               0.00000372 │
-│ 1979-12-13 00:21:21.127 │    3.7 │ 0.0000013600000000000005 │
-│ 1979-12-13 00:21:21.129 │    2.1 │                        0 │
-└─────────────────────────┴────────┴──────────────────────────┘
-
-```
-
-!!! note "Note"
-Like with [runningDifference](#runningdifferencex-other_functions-runningdifference), block size affects the result. With each new block, the function state is reset.
-
-
 ## runningConcurrency {#runningconcurrency}
 
 Calculates the number of concurrent events.
