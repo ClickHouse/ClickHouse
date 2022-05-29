@@ -147,6 +147,16 @@ Features:
 
 [Zeppelin-Interpreter-for-ClickHouse](https://github.com/SiderZhang/Zeppelin-Interpreter-for-ClickHouse) is a [Zeppelin](https://zeppelin.apache.org) interpreter for ClickHouse. Compared with JDBC interpreter, it can provide better timeout control for long running queries.
 
+### ClickCat {#clickcat}
+
+[ClickCat](http://8.135.49.240:8080/dashboard) is a firendly user interface that lets you search,explore and visualize your ClickHouse Data.
+
+Features:
+
+-   An online SQL editor which can run your SQL code without any installing.
+-   You can observe all processes and mutations. For those unfinished processes, you can kill them in ui.
+-   The Metrics contains Cluster Analysis,Data Analysis,Query Analysis.
+
 ## Commercial {#commercial}
 
 ### DataGrip {#datagrip}
