@@ -119,27 +119,50 @@ void MergeTreeDataPartWide::loadIndexGranularity()
             std::string(fs::path(data_part_storage->getFullPath()) / marks_file_path));
 
     size_t marks_file_size = data_part_storage->getFileSize(marks_file_path);
-
-    if (!index_granularity_info.is_adaptive)
+    if (!index_granularity_info.is_compress_marks)
     {
-        size_t marks_count = marks_file_size / index_granularity_info.getMarkSizeInBytes();
-        index_granularity.resizeWithFixedGranularity(marks_count, index_granularity_info.fixed_index_granularity); /// all the same
+        if (!index_granularity_info.is_adaptive)
+        {
+            size_t marks_count = marks_file_size / index_granularity_info.getMarkSizeInBytes();
+            index_granularity.resizeWithFixedGranularity(marks_count, index_granularity_info.fixed_index_granularity); /// all the same
+        }
+        else
+        {
+            auto buffer = data_part_storage->readFile(marks_file_path, ReadSettings().adjustBufferSize(marks_file_size), marks_file_size, std::nullopt);
+            while (!buffer->eof())
+            {
+                buffer->seek(sizeof(size_t) * 2, SEEK_CUR); /// skip offset_in_compressed file and offset_in_decompressed_block
+                size_t granularity;
+                readIntBinary(granularity, *buffer);
+                index_granularity.appendMark(granularity);
+            }
+
+            if (index_granularity.getMarksCount() * index_granularity_info.getMarkSizeInBytes() != marks_file_size)
+                throw Exception("Cannot read all marks from file " + data_part_storage->getFullPath() + "/" + marks_file_path, ErrorCodes::CANNOT_READ_ALL_DATA);
+        }
     }
     else
     {
-        auto buffer = data_part_storage->readFile(marks_file_path, ReadSettings().adjustBufferSize(marks_file_size), marks_file_size, std::nullopt);
-        while (!buffer->eof())
+        CompressedReadBufferFromFile buffer(
+            data_part_storage->readFile(marks_file_path, ReadSettings().adjustBufferSize(marks_file_size), marks_file_size, std::nullopt));
+
+        MarksInCompressedFile mark(1);
+        size_t marks_count = 0;
+        while (!buffer.eof())
         {
-            buffer->seek(sizeof(size_t) * 2, SEEK_CUR); /// skip offset_in_compressed file and offset_in_decompressed_block
-            size_t granularity;
-            readIntBinary(granularity, *buffer);
-            index_granularity.appendMark(granularity);
+            buffer.readStrict(reinterpret_cast<char *>(mark.data()), sizeof(size_t) * 2); /// skip offset_in_compressed file and offset_in_decompressed_block
+            ++marks_count;
+
+            if (index_granularity_info.is_adaptive)
+            {
+                size_t granularity;
+                readIntBinary(granularity, buffer);
+                index_granularity.appendMark(granularity);
+            }
         }
 
-        if (index_granularity.getMarksCount() * index_granularity_info.getMarkSizeInBytes() != marks_file_size)
-            throw Exception(
-                ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read all marks from file {}",
-                std::string(fs::path(data_part_storage->getFullPath()) / marks_file_path));
+        if (!index_granularity_info.is_adaptive)
+            index_granularity.resizeWithFixedGranularity(marks_count, index_granularity_info.fixed_index_granularity);
     }
 
     index_granularity.setInitialized();

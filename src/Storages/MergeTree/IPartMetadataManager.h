@@ -9,6 +9,7 @@ namespace DB
 
 class IMergeTreeDataPart;
 
+class ReadBuffer;
 class SeekableReadBuffer;
 
 class IDisk;
@@ -29,8 +30,8 @@ public:
 
     virtual ~IPartMetadataManager() = default;
 
-    /// Read metadata content and return SeekableReadBuffer object.
-    virtual std::unique_ptr<SeekableReadBuffer> read(const String & file_name) const = 0;
+    /// Read metadata content and return ReadBuffer object.
+    virtual std::unique_ptr<ReadBuffer> read(const String & file_name) const = 0;
 
     /// Return true if metadata exists in part.
     virtual bool exists(const String & file_name) const = 0;
@@ -49,6 +50,9 @@ public:
 
     /// Check all metadatas in part.
     virtual std::unordered_map<String, uint128> check() const = 0;
+
+    /// Determine whether to compress by file extension
+    bool isCompressFromFileName(const String & file_name) const;
 
 protected:
     const IMergeTreeDataPart * part;

@@ -110,6 +110,10 @@ void MergeTreeDataPartWriterWide::addStreams(
         else /// otherwise return only generic codecs and don't use info about the` data_type
             compression_codec = CompressionCodecFactory::instance().get(effective_codec_desc, nullptr, default_codec, true);
 
+        ParserCodec codec_parser;
+        auto ast = parseQuery(codec_parser, "(" + Poco::toUpper(settings.marks_compression_codec) + ")", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
+        CompressionCodecPtr marks_compression_codec = CompressionCodecFactory::instance().get(ast, nullptr);
+
         column_streams[stream_name] = std::make_unique<Stream>(
             stream_name,
             data_part_storage_builder,
@@ -117,6 +121,8 @@ void MergeTreeDataPartWriterWide::addStreams(
             stream_name, marks_file_extension,
             compression_codec,
             settings.max_compress_block_size,
+            marks_compression_codec,
+            settings.marks_compress_block_size,
             settings.query_write_settings);
     };
 
@@ -266,10 +272,10 @@ void MergeTreeDataPartWriterWide::writeSingleMark(
 void MergeTreeDataPartWriterWide::flushMarkToFile(const StreamNameAndMark & stream_with_mark, size_t rows_in_mark)
 {
     Stream & stream = *column_streams[stream_with_mark.stream_name];
-    writeIntBinary(stream_with_mark.mark.offset_in_compressed_file, stream.marks);
-    writeIntBinary(stream_with_mark.mark.offset_in_decompressed_block, stream.marks);
+    writeIntBinary(stream_with_mark.mark.offset_in_compressed_file, stream.is_compress_marks? stream.marks_compressed : stream.marks_hashing);
+    writeIntBinary(stream_with_mark.mark.offset_in_decompressed_block, stream.is_compress_marks? stream.marks_compressed : stream.marks_hashing);
     if (settings.can_use_adaptive_granularity)
-        writeIntBinary(rows_in_mark, stream.marks);
+        writeIntBinary(rows_in_mark, stream.is_compress_marks? stream.marks_compressed : stream.marks_hashing);
 }
 
 StreamsWithMarks MergeTreeDataPartWriterWide::getCurrentMarksForColumn(
@@ -420,7 +426,10 @@ void MergeTreeDataPartWriterWide::validateColumnOfFixedSize(const NameAndTypePai
     if (!data_part_storage->exists(mrk_path))
         return;
 
-    auto mrk_in = data_part_storage->readFile(mrk_path, {}, std::nullopt, std::nullopt);
+    auto mrk_file_in = data_part_storage->readFile(mrk_path, {}, std::nullopt, std::nullopt);
+    DB::CompressedReadBufferFromFile mrk_compressed_in(data_part_storage->readFile(mrk_path, {}, std::nullopt, std::nullopt));
+    ReadBuffer & mrk_in = data_part->index_granularity_info.is_compress_marks? static_cast<ReadBuffer &>(mrk_compressed_in)
+                                                                               : *mrk_file_in;
     DB::CompressedReadBufferFromFile bin_in(data_part_storage->readFile(bin_path, {}, std::nullopt, std::nullopt));
     bool must_be_last = false;
     UInt64 offset_in_compressed_file = 0;
@@ -429,15 +438,15 @@ void MergeTreeDataPartWriterWide::validateColumnOfFixedSize(const NameAndTypePai
 
     size_t mark_num;
 
-    for (mark_num = 0; !mrk_in->eof(); ++mark_num)
+    for (mark_num = 0; !mrk_in.eof(); ++mark_num)
     {
         if (mark_num > index_granularity.getMarksCount())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Incorrect number of marks in memory {}, on disk (at least) {}", index_granularity.getMarksCount(), mark_num + 1);
 
-        DB::readBinary(offset_in_compressed_file, *mrk_in);
-        DB::readBinary(offset_in_decompressed_block, *mrk_in);
+        DB::readBinary(offset_in_compressed_file, mrk_in);
+        DB::readBinary(offset_in_decompressed_block, mrk_in);
         if (settings.can_use_adaptive_granularity)
-            DB::readBinary(index_granularity_rows, *mrk_in);
+            DB::readBinary(index_granularity_rows, mrk_in);
         else
             index_granularity_rows = data_part->index_granularity_info.fixed_index_granularity;
 
@@ -446,7 +455,7 @@ void MergeTreeDataPartWriterWide::validateColumnOfFixedSize(const NameAndTypePai
             if (index_granularity_rows != 0)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "We ran out of binary data but still have non empty mark #{} with rows number {}", mark_num, index_granularity_rows);
 
-            if (!mrk_in->eof())
+            if (!mrk_in.eof())
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Mark #{} must be last, but we still have some to read", mark_num);
 
             break;
@@ -508,7 +517,7 @@ void MergeTreeDataPartWriterWide::validateColumnOfFixedSize(const NameAndTypePai
         }
     }
 
-    if (!mrk_in->eof())
+    if (!mrk_in.eof())
         throw Exception(ErrorCodes::LOGICAL_ERROR,
                         "Still have something in marks stream, last mark #{} index granularity size {}, last rows {}", mark_num, index_granularity.getMarksCount(), index_granularity_rows);
     if (!bin_in.eof())
