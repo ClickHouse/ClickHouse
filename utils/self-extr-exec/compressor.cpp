@@ -4,50 +4,11 @@
 #include <sys/mman.h>
 #include <fcntl.h>
 #include <sys/stat.h>
-#include <sys/types.h>
 #include <unistd.h>
 #include <stdlib.h>
 
-/*
-Overview of compression:
-     ______________________
-    |     Decompressor     |
-    |----------------------|
-    |   Compressed file 1  |
-    |   Compressed file 2  |
-    |         ...          |
-    |----------------------|
-    |   Info about 1 file  |
-    |   Info about 2 file  |
-    |         ...          |
-    |----------------------|
-    |      Metadata        |
-    |______________________|
-*/
+#include "types.h"
 
-/*
-Metadata contains:
-    1) number of files to support multiple file compression
-    2) start_of_files_data to know start of files metadata
-    3) end of binary to know start of compressed data
-    4) uncompressed data size
-*/
-struct MetaData
-{
-    size_t number_of_files     = 0;
-    size_t start_of_files_data = 0;
-};
-
-/// Information about each file for correct extraction.
-/// Each file data is followed by name of file
-/// with length equals to name_length.
-struct FileData
-{
-    size_t start             = 0;
-    size_t end               = 0;
-    size_t name_length       = 0;
-    size_t uncompressed_size = 0;
-};
 
 /// Main compression part
 int doCompress(char * input, char * output, off_t & in_offset, off_t & out_offset,
@@ -261,6 +222,9 @@ int compressFiles(char* filenames[], int count, int output_fd, int level, const 
         }
 
         std::cout << "Input file current size is " << info_in.st_size << std::endl;
+
+        /// Save umask
+        files_data[i].umask = info_in.st_mode;
 
         /// Remember information about uncompressed size of file and
         /// start of it's compression version
