@@ -9,11 +9,10 @@ from github import Github
 
 from env_helper import (
     GITHUB_REPOSITORY,
-    TEMP_PATH,
-    REPO_COPY,
+    GITHUB_RUN_URL,
     REPORTS_PATH,
-    GITHUB_SERVER_URL,
-    GITHUB_RUN_ID,
+    REPO_COPY,
+    TEMP_PATH,
 )
 from s3_helper import S3Helper
 from get_robot_token import get_best_robot_token
@@ -126,7 +125,7 @@ if __name__ == "__main__":
             logging.info("Exception uploading file %s text %s", f, ex)
             paths[f] = ""
 
-    report_url = f"{GITHUB_SERVER_URL}/{GITHUB_REPOSITORY}/actions/runs/{GITHUB_RUN_ID}"
+    report_url = GITHUB_RUN_URL
     if paths["runlog.log"]:
         report_url = paths["runlog.log"]
     if paths["main.log"]:
@@ -169,6 +168,8 @@ if __name__ == "__main__":
         report_url,
         check_name,
     )
+
+    ch_helper.insert_events_into(db="default", table="checks", events=prepared_events)
 
     logging.info("Result: '%s', '%s', '%s'", status, description, report_url)
     print(f"::notice ::Report url: {report_url}")

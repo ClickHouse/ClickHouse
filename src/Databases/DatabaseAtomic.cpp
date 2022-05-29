@@ -1,10 +1,11 @@
 #include <Databases/DatabaseAtomic.h>
 #include <Databases/DatabaseOnDisk.h>
+#include <Databases/DatabaseReplicated.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadBufferFromFile.h>
 #include <Parsers/formatAST.h>
-#include <Common/renameat2.h>
+#include <Common/atomicRename.h>
 #include <Storages/StorageMaterializedView.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
@@ -110,18 +111,19 @@ StoragePtr DatabaseAtomic::detachTable(ContextPtr /* context */, const String & 
 
 void DatabaseAtomic::dropTable(ContextPtr local_context, const String & table_name, bool no_delay)
 {
-    auto storage = tryGetTable(table_name, local_context);
+    auto table = tryGetTable(table_name, local_context);
     /// Remove the inner table (if any) to avoid deadlock
     /// (due to attempt to execute DROP from the worker thread)
-    if (storage)
-        storage->dropInnerTableIfAny(no_delay, local_context);
+    if (table)
+        table->dropInnerTableIfAny(no_delay, local_context);
+    else
+        throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table {}.{} doesn't exist",
+                        backQuote(database_name), backQuote(table_name));
 
     String table_metadata_path = getObjectMetadataPath(table_name);
     String table_metadata_path_drop;
-    StoragePtr table;
     {
         std::unique_lock lock(mutex);
-        table = getTableUnlocked(table_name, lock);
         table_metadata_path_drop = DatabaseCatalog::instance().getPathForDroppedMetadata(table->getStorageID());
         auto txn = local_context->getZooKeeperMetadataTransaction();
         if (txn && !local_context->isInternalSubquery())
@@ -151,14 +153,18 @@ void DatabaseAtomic::renameTable(ContextPtr local_context, const String & table_
 {
     if (typeid(*this) != typeid(to_database))
     {
-        if (!typeid_cast<DatabaseOrdinary *>(&to_database))
+        if (typeid_cast<DatabaseOrdinary *>(&to_database))
+        {
+            /// Allow moving tables between Atomic and Ordinary (with table lock)
+            DatabaseOnDisk::renameTable(local_context, table_name, to_database, to_table_name, exchange, dictionary);
+            return;
+        }
+
+        if (!allowMoveTableToOtherDatabaseEngine(to_database))
             throw Exception("Moving tables between databases of different engines is not supported", ErrorCodes::NOT_IMPLEMENTED);
-        /// Allow moving tables between Atomic and Ordinary (with table lock)
-        DatabaseOnDisk::renameTable(local_context, table_name, to_database, to_table_name, exchange, dictionary);
-        return;
     }
 
-    if (exchange && !supportsRenameat2())
+    if (exchange && !supportsAtomicRename())
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "RENAME EXCHANGE is not supported");
 
     auto & other_db = dynamic_cast<DatabaseAtomic &>(to_database);
@@ -230,15 +236,19 @@ void DatabaseAtomic::renameTable(ContextPtr local_context, const String & table_
     if (dictionary && !table->isDictionary())
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Use RENAME/EXCHANGE TABLE (instead of RENAME/EXCHANGE DICTIONARY) for tables");
 
-    table->checkTableCanBeRenamed();
+    StorageID old_table_id = table->getStorageID();
+    StorageID new_table_id = {other_db.database_name, to_table_name, old_table_id.uuid};
+    table->checkTableCanBeRenamed({new_table_id});
     assert_can_move_mat_view(table);
     StoragePtr other_table;
+    StorageID other_table_new_id = StorageID::createEmpty();
     if (exchange)
     {
         other_table = other_db.getTableUnlocked(to_table_name, other_db_lock);
         if (dictionary && !other_table->isDictionary())
             throw Exception(ErrorCodes::INCORRECT_QUERY, "Use RENAME/EXCHANGE TABLE (instead of RENAME/EXCHANGE DICTIONARY) for tables");
-        other_table->checkTableCanBeRenamed();
+        other_table_new_id = {database_name, table_name, other_table->getStorageID().uuid};
+        other_table->checkTableCanBeRenamed(other_table_new_id);
         assert_can_move_mat_view(other_table);
     }
 
@@ -260,11 +270,9 @@ void DatabaseAtomic::renameTable(ContextPtr local_context, const String & table_
     if (exchange)
         other_table_data_path = detach(other_db, to_table_name, other_table->storesDataOnDisk());
 
-    auto old_table_id = table->getStorageID();
-
-    table->renameInMemory({other_db.database_name, to_table_name, old_table_id.uuid});
+    table->renameInMemory(new_table_id);
     if (exchange)
-        other_table->renameInMemory({database_name, table_name, other_table->getStorageID().uuid});
+        other_table->renameInMemory(other_table_new_id);
 
     if (!inside_database)
     {
@@ -353,7 +361,7 @@ void DatabaseAtomic::assertDetachedTableNotInUse(const UUID & uuid)
     /// 3. ATTACH TABLE table; (new instance of Storage with the same UUID is created, instances share data on disk)
     /// 4. INSERT INTO table ...; (both Storage instances writes data without any synchronization)
     /// To avoid it, we remember UUIDs of detached tables and does not allow ATTACH table with such UUID until detached instance still in use.
-    if (detached_tables.count(uuid))
+    if (detached_tables.contains(uuid))
         throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS, "Cannot attach table with UUID {}, "
                         "because it was detached but still used by some query. Retry later.", toString(uuid));
 }
@@ -571,7 +579,7 @@ void DatabaseAtomic::waitDetachedTableNotInUse(const UUID & uuid)
         {
             std::lock_guard lock{mutex};
             not_in_use = cleanupDetachedTables();
-            if (detached_tables.count(uuid) == 0)
+            if (!detached_tables.contains(uuid))
                 return;
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(100));

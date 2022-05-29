@@ -127,9 +127,6 @@ StorageMaterializedView::StorageMaterializedView(
 
         target_table_id = DatabaseCatalog::instance().getTable({manual_create_query->getDatabase(), manual_create_query->getTable()}, getContext())->getStorageID();
     }
-
-    if (!select.select_table_id.empty())
-        DatabaseCatalog::instance().addDependency(select.select_table_id, getStorageID());
 }
 
 QueryProcessingStage::Enum StorageMaterializedView::getQueryProcessingStage(
@@ -143,7 +140,7 @@ QueryProcessingStage::Enum StorageMaterializedView::getQueryProcessingStage(
     /// converting and use it just like a normal view.
     query_info.ignore_projections = true;
     const auto & target_metadata = getTargetTable()->getInMemoryMetadataPtr();
-    return getTargetTable()->getQueryProcessingStage(local_context, to_stage, getTargetTable()->getStorageSnapshot(target_metadata), query_info);
+    return getTargetTable()->getQueryProcessingStage(local_context, to_stage, getTargetTable()->getStorageSnapshot(target_metadata, local_context), query_info);
 }
 
 Pipe StorageMaterializedView::read(
@@ -175,7 +172,7 @@ void StorageMaterializedView::read(
     auto storage = getTargetTable();
     auto lock = storage->lockForShare(local_context->getCurrentQueryId(), local_context->getSettingsRef().lock_acquire_timeout);
     auto target_metadata_snapshot = storage->getInMemoryMetadataPtr();
-    auto target_storage_snapshot = storage->getStorageSnapshot(target_metadata_snapshot);
+    auto target_storage_snapshot = storage->getStorageSnapshot(target_metadata_snapshot, local_context);
 
     if (query_info.order_optimizer)
         query_info.input_order_info = query_info.order_optimizer->getInputOrder(target_metadata_snapshot, local_context);
@@ -400,6 +397,14 @@ void StorageMaterializedView::renameInMemory(const StorageID & new_table_id)
     DatabaseCatalog::instance().updateDependency(select_query.select_table_id, old_table_id, select_query.select_table_id, getStorageID());
 }
 
+void StorageMaterializedView::startup()
+{
+    auto metadata_snapshot = getInMemoryMetadataPtr();
+    const auto & select_query = metadata_snapshot->getSelectQuery();
+    if (!select_query.select_table_id.empty())
+        DatabaseCatalog::instance().addDependency(select_query.select_table_id, getStorageID());
+}
+
 void StorageMaterializedView::shutdown()
 {
     auto metadata_snapshot = getInMemoryMetadataPtr();
@@ -440,11 +445,31 @@ BackupEntries StorageMaterializedView::backupData(ContextPtr context_, const AST
     return getTargetTable()->backupData(context_, partitions_);
 }
 
-RestoreTaskPtr StorageMaterializedView::restoreData(ContextMutablePtr context_, const ASTs & partitions_, const BackupPtr & backup_, const String & data_path_in_backup_, const StorageRestoreSettings & restore_settings_)
+RestoreTaskPtr StorageMaterializedView::restoreData(ContextMutablePtr context_, const ASTs & partitions_, const BackupPtr & backup_, const String & data_path_in_backup_, const StorageRestoreSettings & restore_settings_, const std::shared_ptr<IRestoreCoordination> & restore_coordination_)
 {
     if (!hasInnerTable())
         return {};
-    return getTargetTable()->restoreData(context_, partitions_, backup_, data_path_in_backup_, restore_settings_);
+    return getTargetTable()->restoreData(context_, partitions_, backup_, data_path_in_backup_, restore_settings_, restore_coordination_);
+}
+
+std::optional<UInt64> StorageMaterializedView::totalRows(const Settings & settings) const
+{
+    if (hasInnerTable())
+    {
+        if (auto table = tryGetTargetTable())
+            return table->totalRows(settings);
+    }
+    return {};
+}
+
+std::optional<UInt64> StorageMaterializedView::totalBytes(const Settings & settings) const
+{
+    if (hasInnerTable())
+    {
+        if (auto table = tryGetTargetTable())
+            return table->totalBytes(settings);
+    }
+    return {};
 }
 
 ActionLock StorageMaterializedView::getActionLock(StorageActionBlockType type)
@@ -462,7 +487,7 @@ void registerStorageMaterializedView(StorageFactory & factory)
     factory.registerStorage("MaterializedView", [](const StorageFactory::Arguments & args)
     {
         /// Pass local_context here to convey setting for inner table
-        return StorageMaterializedView::create(
+        return std::make_shared<StorageMaterializedView>(
             args.table_id, args.getLocalContext(), args.query,
             args.columns, args.attach, args.comment);
     });

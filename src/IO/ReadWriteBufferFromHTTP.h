@@ -1,6 +1,7 @@
 #pragma once
 
 #include <functional>
+#include <Common/RangeGenerator.h>
 #include <IO/ConnectionTimeouts.h>
 #include <IO/HTTPCommon.h>
 #include <IO/ParallelReadBuffer.h>
@@ -8,7 +9,8 @@
 #include <IO/ReadBufferFromIStream.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadSettings.h>
-#include <base/logger_useful.h>
+#include <IO/WithFileName.h>
+#include <Common/logger_useful.h>
 #include <base/sleep.h>
 #include <base/types.h>
 #include <Poco/Any.h>
@@ -84,7 +86,7 @@ public:
 namespace detail
 {
     template <typename UpdatableSessionPtr>
-    class ReadWriteBufferFromHTTPBase : public SeekableReadBufferWithSize
+    class ReadWriteBufferFromHTTPBase : public SeekableReadBuffer, public WithFileName, public WithFileSize
     {
     public:
         using HTTPHeaderEntry = std::tuple<std::string, std::string>;
@@ -197,7 +199,7 @@ namespace detail
             }
         }
 
-        std::optional<size_t> getTotalSize() override
+        std::optional<size_t> getFileSize() override
         {
             if (read_range.end)
                 return *read_range.end - getRangeBegin();
@@ -221,6 +223,8 @@ namespace detail
 
             return read_range.end;
         }
+
+        String getFileName() const override { return uri.toString(); }
 
         enum class InitializeError
         {
@@ -266,7 +270,7 @@ namespace detail
             bool delay_initialization = false,
             bool use_external_buffer_ = false,
             bool http_skip_not_found_url_ = false)
-            : SeekableReadBufferWithSize(nullptr, 0)
+            : SeekableReadBuffer(nullptr, 0)
             , uri {uri_}
             , method {!method_.empty() ? method_ : out_stream_callback_ ? Poco::Net::HTTPRequest::HTTP_POST : Poco::Net::HTTPRequest::HTTP_GET}
             , session {session_}
@@ -635,43 +639,6 @@ public:
     void buildNewSession(const Poco::URI & uri) override { session = makeHTTPSession(uri, timeouts); }
 };
 
-class RangeGenerator
-{
-public:
-    explicit RangeGenerator(size_t total_size_, size_t range_step_, size_t range_start = 0)
-        : from(range_start), range_step(range_step_), total_size(total_size_)
-    {
-    }
-
-    size_t totalRanges() const { return static_cast<size_t>(round(static_cast<float>(total_size - from) / range_step)); }
-
-    using Range = std::pair<size_t, size_t>;
-
-    // return upper exclusive range of values, i.e. [from_range, to_range>
-    std::optional<Range> nextRange()
-    {
-        if (from >= total_size)
-        {
-            return std::nullopt;
-        }
-
-        auto to = from + range_step;
-        if (to >= total_size)
-        {
-            to = total_size;
-        }
-
-        Range range{from, to};
-        from = to;
-        return std::move(range);
-    }
-
-private:
-    size_t from;
-    size_t range_step;
-    size_t total_size;
-};
-
 class ReadWriteBufferFromHTTP : public detail::ReadWriteBufferFromHTTPBase<std::shared_ptr<UpdatableSession>>
 {
     using Parent = detail::ReadWriteBufferFromHTTPBase<std::shared_ptr<UpdatableSession>>;
@@ -710,7 +677,7 @@ public:
     }
 };
 
-class RangedReadWriteBufferFromHTTPFactory : public ParallelReadBuffer::ReadBufferFactory
+class RangedReadWriteBufferFromHTTPFactory : public ParallelReadBuffer::ReadBufferFactory, public WithFileName
 {
     using OutStreamCallback = ReadWriteBufferFromHTTP::OutStreamCallback;
 
@@ -782,7 +749,9 @@ public:
         return off;
     }
 
-    std::optional<size_t> getTotalSize() override { return total_object_size; }
+    std::optional<size_t> getFileSize() override { return total_object_size; }
+
+    String getFileName() const override { return uri.toString(); }
 
 private:
     RangeGenerator range_generator;

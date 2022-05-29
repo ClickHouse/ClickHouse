@@ -1,4 +1,33 @@
+---
+sidebar_label: Settings
+sidebar_position: 52
+slug: /en/operations/settings/settings
+---
+
 # Settings {#settings}
+
+## allow_nondeterministic_mutations {#allow_nondeterministic_mutations}
+
+User-level setting that allows mutations on replicated tables to make use of non-deterministic functions such as `dictGet`.
+
+Given that, for example, dictionaries, can be out of sync across nodes, mutations that pull values from them are disallowed on replicated tables by default. Enabling this setting allows this behavior, making it the user's responsibility to ensure that the data used is in sync across all nodes.
+
+Default value: 0.
+
+**Example**
+
+``` xml
+<profiles>
+    <default>
+        <allow_nondeterministic_mutations>1</allow_nondeterministic_mutations>
+        
+        <!-- ... -->
+    </default>
+
+    <!-- ... -->
+
+</profiles>
+```
 
 ## distributed_product_mode {#distributed-product-mode}
 
@@ -401,8 +430,9 @@ Default value: 1.
 
 When performing `INSERT` queries, replace omitted input column values with default values of the respective columns. This option only applies to [JSONEachRow](../../interfaces/formats.md#jsoneachrow), [CSV](../../interfaces/formats.md#csv), [TabSeparated](../../interfaces/formats.md#tabseparated) formats and formats with `WithNames`/`WithNamesAndTypes` suffixes.
 
-!!! note "Note"
-    When this option is enabled, extended table metadata are sent from server to client. It consumes additional computing resources on the server and can reduce performance.
+:::note
+When this option is enabled, extended table metadata are sent from server to client. It consumes additional computing resources on the server and can reduce performance.
+:::
 
 Possible values:
 
@@ -690,8 +720,9 @@ When using `partial_merge` algorithm ClickHouse sorts the data and dumps it to t
 
 Changes behaviour of join operations with `ANY` strictness.
 
-!!! warning "Attention"
-    This setting applies only for `JOIN` operations with [Join](../../engines/table-engines/special/join.md) engine tables.
+:::warning
+This setting applies only for `JOIN` operations with [Join](../../engines/table-engines/special/join.md) engine tables.
+:::
 
 Possible values:
 
@@ -762,8 +793,9 @@ Default value: 64.
 
 Enables legacy ClickHouse server behaviour in `ANY INNER|LEFT JOIN` operations.
 
-!!! note "Warning"
-    Use this setting only for backward compatibility if your use cases depend on legacy `JOIN` behaviour.
+:::warning
+Use this setting only for backward compatibility if your use cases depend on legacy `JOIN` behaviour.
+:::
 
 When the legacy behaviour enabled:
 
@@ -1137,8 +1169,9 @@ Higher values will lead to higher memory usage.
 
 The maximum size of blocks of uncompressed data before compressing for writing to a table. By default, 1,048,576 (1 MiB). Specifying smaller block size generally leads to slightly reduced compression ratio, the compression and decompression speed increases slightly due to cache locality, and memory consumption is reduced.
 
-!!! note "Warning"
-    This is an expert-level setting, and you shouldn't change it if you're just getting started with ClickHouse.
+:::warning
+This is an expert-level setting, and you shouldn't change it if you're just getting started with ClickHouse.
+:::
 
 Don’t confuse blocks for compression (a chunk of memory consisting of bytes) with blocks for query processing (a set of rows from a table).
 
@@ -1154,8 +1187,9 @@ We are writing a UInt32-type column (4 bytes per value). When writing 8192 rows,
 
 We are writing a URL column with the String type (average size of 60 bytes per value). When writing 8192 rows, the average will be slightly less than 500 KB of data. Since this is more than 65,536, a compressed block will be formed for each mark. In this case, when reading data from the disk in the range of a single mark, extra data won’t be decompressed.
 
-!!! note "Warning"
-    This is an expert-level setting, and you shouldn't change it if you're just getting started with ClickHouse.
+:::warning
+This is an expert-level setting, and you shouldn't change it if you're just getting started with ClickHouse.
+:::
 
 ## max_query_size {#settings-max_query_size}
 
@@ -1243,8 +1277,9 @@ Default value: `0`.
 
 Could be used for throttling speed when replicating the data to add or replace new nodes.
 
-!!! note "Note"
-    60000000 bytes/s approximatly corresponds to 457 Mbps (60000000 / 1024 / 1024 * 8).
+:::note
+60000000 bytes/s approximatly corresponds to 457 Mbps (60000000 / 1024 / 1024 * 8).
+:::
 
 ## max_replicated_sends_network_bandwidth_for_server {#max_replicated_sends_network_bandwidth_for_server}
 
@@ -1263,8 +1298,9 @@ Default value: `0`.
 
 Could be used for throttling speed when replicating the data to add or replace new nodes.
 
-!!! note "Note"
-    60000000 bytes/s approximatly corresponds to 457 Mbps (60000000 / 1024 / 1024 * 8).
+:::note
+60000000 bytes/s approximatly corresponds to 457 Mbps (60000000 / 1024 / 1024 * 8).
+:::
 
 ## connect_timeout_with_failover_ms {#connect-timeout-with-failover-ms}
 
@@ -1426,8 +1462,9 @@ Possible values:
 
 Default value: 1.
 
-!!! warning "Warning"
-    Disable this setting if you use [max_parallel_replicas](#settings-max_parallel_replicas).
+:::warning
+Disable this setting if you use [max_parallel_replicas](#settings-max_parallel_replicas).
+:::
 
 ## totals_mode {#totals-mode}
 
@@ -1458,8 +1495,9 @@ This setting is useful for replicated tables with a sampling key. A query may be
 - The sampling key is an expression that is expensive to calculate.
 - The cluster latency distribution has a long tail, so that querying more servers increases the query overall latency.
 
-!!! warning "Warning"
-    This setting will produce incorrect results when joins or subqueries are involved, and all tables don't meet certain requirements. See [Distributed Subqueries and max_parallel_replicas](../../sql-reference/operators/in.md#max_parallel_replica-subqueries) for more details.
+:::warning
+This setting will produce incorrect results when joins or subqueries are involved, and all tables don't meet certain requirements. See [Distributed Subqueries and max_parallel_replicas](../../sql-reference/operators/in.md#max_parallel_replica-subqueries) for more details.
+:::
 
 ## compile_expressions {#compile-expressions}
 
@@ -1800,12 +1838,12 @@ Usage
 
 By default, deduplication is not performed for materialized views but is done upstream, in the source table.
 If an INSERTed block is skipped due to deduplication in the source table, there will be no insertion into attached materialized views. This behaviour exists to enable the insertion of highly aggregated data into materialized views, for cases where inserted blocks are the same after materialized view aggregation but derived from different INSERTs into the source table.
-At the same time, this behaviour “breaks” `INSERT` idempotency. If an `INSERT` into the main table was successful and `INSERT` into a materialized view failed (e.g. because of communication failure with Zookeeper) a client will get an error and can retry the operation. However, the materialized view won’t receive the second insert because it will be discarded by deduplication in the main (source) table. The setting `deduplicate_blocks_in_dependent_materialized_views` allows for changing this behaviour. On retry, a materialized view will receive the repeat insert and will perform a deduplication check by itself,
+At the same time, this behaviour “breaks” `INSERT` idempotency. If an `INSERT` into the main table was successful and `INSERT` into a materialized view failed (e.g. because of communication failure with ClickHouse Keeper) a client will get an error and can retry the operation. However, the materialized view won’t receive the second insert because it will be discarded by deduplication in the main (source) table. The setting `deduplicate_blocks_in_dependent_materialized_views` allows for changing this behaviour. On retry, a materialized view will receive the repeat insert and will perform a deduplication check by itself,
 ignoring check result for the source table, and will insert rows lost because of the first failure.
 
 ## insert_deduplication_token {#insert_deduplication_token}
 
-The setting allows a user to provide own deduplication semantic in MergeTree/ReplicatedMergeTree  
+The setting allows a user to provide own deduplication semantic in MergeTree/ReplicatedMergeTree
 For example, by providing a unique value for the setting in each INSERT statement,
 user can avoid the same inserted data being deduplicated.
 
@@ -1831,7 +1869,7 @@ INSERT INTO test_table Values SETTINGS insert_deduplication_token = 'test' (1);
 -- the next insert won't be deduplicated because insert_deduplication_token is different
 INSERT INTO test_table Values SETTINGS insert_deduplication_token = 'test1' (1);
 
--- the next insert will be deduplicated because insert_deduplication_token 
+-- the next insert will be deduplicated because insert_deduplication_token
 -- is the same as one of the previous
 INSERT INTO test_table Values SETTINGS insert_deduplication_token = 'test' (2);
 
@@ -2111,8 +2149,9 @@ See also:
 -   [distributed_push_down_limit](#distributed-push-down-limit)
 -   [optimize_skip_unused_shards](#optimize-skip-unused-shards)
 
-!!! note "Note"
-    Right now it requires `optimize_skip_unused_shards` (the reason behind this is that one day it may be enabled by default, and it will work correctly only if data was inserted via Distributed table, i.e. data is distributed according to sharding_key).
+:::note
+Right now it requires `optimize_skip_unused_shards` (the reason behind this is that one day it may be enabled by default, and it will work correctly only if data was inserted via Distributed table, i.e. data is distributed according to sharding_key).
+:::
 
 ## optimize_throw_if_noop {#setting-optimize_throw_if_noop}
 
@@ -2254,18 +2293,21 @@ Possible values:
 
 Default value: 0.
 
-!!! note "Note"
-    This setting also affects broken batches (that may appears because of abnormal server (machine) termination and no `fsync_after_insert`/`fsync_directories` for [Distributed](../../engines/table-engines/special/distributed.md) table engine).
+:::note
+This setting also affects broken batches (that may appears because of abnormal server (machine) termination and no `fsync_after_insert`/`fsync_directories` for [Distributed](../../engines/table-engines/special/distributed.md) table engine).
+:::
 
-!!! warning "Warning"
-    You should not rely on automatic batch splitting, since this may hurt performance.
+:::warning
+You should not rely on automatic batch splitting, since this may hurt performance.
+:::
 
 ## os_thread_priority {#setting-os-thread-priority}
 
 Sets the priority ([nice](https://en.wikipedia.org/wiki/Nice_(Unix))) for threads that execute queries. The OS scheduler considers this priority when choosing the next thread to run on each available CPU core.
 
-!!! warning "Warning"
-    To use this setting, you need to set the `CAP_SYS_NICE` capability. The `clickhouse-server` package sets it up during installation. Some virtual environments do not allow you to set the `CAP_SYS_NICE` capability. In this case, `clickhouse-server` shows a message about it at the start.
+:::warning
+To use this setting, you need to set the `CAP_SYS_NICE` capability. The `clickhouse-server` package sets it up during installation. Some virtual environments do not allow you to set the `CAP_SYS_NICE` capability. In this case, `clickhouse-server` shows a message about it at the start.
+:::
 
 Possible values:
 
@@ -2414,21 +2456,10 @@ Possible values:
 
 Default value: 0.
 
-## background_pool_size {#background_pool_size}
-
-Sets the number of threads performing background operations in table engines (for example, merges in [MergeTree engine](../../engines/table-engines/mergetree-family/index.md) tables). This setting is applied from the `default` profile at the ClickHouse server start and can’t be changed in a user session. By adjusting this setting, you manage CPU and disk load. Smaller pool size utilizes less CPU and disk resources, but background processes advance slower which might eventually impact query performance.
-
-Before changing it, please also take a look at related [MergeTree settings](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-merge_tree), such as `number_of_free_entries_in_pool_to_lower_max_size_of_merge` and `number_of_free_entries_in_pool_to_execute_mutation`.
-
-Possible values:
-
--   Any positive integer.
-
-Default value: 16.
 
 ## merge_selecting_sleep_ms {#merge_selecting_sleep_ms}
 
-Sleep time for merge selecting when no part is selected. A lower setting triggers selecting tasks in `background_schedule_pool` frequently, which results in a large number of requests to Zookeeper in large-scale clusters.
+Sleep time for merge selecting when no part is selected. A lower setting triggers selecting tasks in `background_schedule_pool` frequently, which results in a large number of requests to ClickHouse Keeper in large-scale clusters.
 
 Possible values:
 
@@ -2539,9 +2570,10 @@ Possible values:
 
 Default value: `1`.
 
-!!! note "Note"
-    - with `use_compact_format_in_distributed_parts_names=0` changes from cluster definition will not be applied for async INSERT.
-    - with `use_compact_format_in_distributed_parts_names=1` changing the order of the nodes in the cluster definition, will change the `shard_index`/`replica_index` so be aware.
+:::note
+- with `use_compact_format_in_distributed_parts_names=0` changes from cluster definition will not be applied for async INSERT.
+- with `use_compact_format_in_distributed_parts_names=1` changing the order of the nodes in the cluster definition, will change the `shard_index`/`replica_index` so be aware.
+:::
 
 ## background_buffer_flush_schedule_pool_size {#background_buffer_flush_schedule_pool_size}
 
@@ -2575,7 +2607,7 @@ Default value: 128.
 
 ## background_fetches_pool_size {#background_fetches_pool_size}
 
-Sets the number of threads performing background fetches for [replicated](../../engines/table-engines/mergetree-family/replication.md) tables. This setting is applied at the ClickHouse server start and can’t be changed in a user session. For production usage with frequent small insertions or slow ZooKeeper cluster is recommended to use default value.
+Sets the number of threads performing background fetches for [replicated](../../engines/table-engines/mergetree-family/replication.md) tables. This setting is applied at the ClickHouse server start and can’t be changed in a user session. For production usage with frequent small insertions or slow ZooKeeper cluster it is recommended to use default value.
 
 Possible values:
 
@@ -3196,11 +3228,13 @@ Possible values:
 
 Default value: `0`.
 
-!!! warning "Warning"
-    Nullable primary key usually indicates bad design. It is forbidden in almost all main stream DBMS. The feature is mainly for [AggregatingMergeTree](../../engines/table-engines/mergetree-family/aggregatingmergetree.md) and is not heavily tested. Use with care.
+:::warning
+Nullable primary key usually indicates bad design. It is forbidden in almost all main stream DBMS. The feature is mainly for [AggregatingMergeTree](../../engines/table-engines/mergetree-family/aggregatingmergetree.md) and is not heavily tested. Use with care.
+:::
 
-!!! warning "Warning"
-    Do not enable this feature in version `<= 21.8`. It's not properly implemented and may lead to server crash.
+:::warning
+Do not enable this feature in version `<= 21.8`. It's not properly implemented and may lead to server crash.
+:::
 
 ## aggregate_functions_null_for_empty {#aggregate_functions_null_for_empty}
 
@@ -3289,19 +3323,6 @@ Possible values:
 -   0 or 1 — Disabled. `SELECT` queries are executed in a single thread.
 
 Default value: `16`.
-
-## max_insert_delayed_streams_for_parallel_write {#max-insert-delayed-streams-for-parallel-write}
-
-The maximum number of streams (columns) to delay final part flush.
-
-It makes difference only if underlying storage supports parallel write (i.e. S3), otherwise it will not give any benefit.
-
-Possible values:
-
--   Positive integer.
--   0 or 1 — Disabled.
-
-Default value: `1000` for S3 and `0` otherwise.
 
 ## opentelemetry_start_trace_probability {#opentelemetry-start-trace-probability}
 
@@ -4227,3 +4248,44 @@ Default value: 0.
 The waiting time in seconds for currently handled connections when shutdown server.
 
 Default Value: 5.
+
+## input_format_mysql_dump_table_name (#input-format-mysql-dump-table-name)
+
+The name of the table from which to read data from in MySQLDump input format.
+
+## input_format_mysql_dump_map_columns (#input-format-mysql-dump-map-columns)
+
+Enables matching columns from table in MySQL dump and columns from ClickHouse table by names in MySQLDump input format.
+
+Possible values:
+
+- 0 — Disabled.
+- 1 — Enabled.
+
+Default value: 1.
+
+## memory_overcommit_ratio_denominator
+
+It represents soft memory limit in case when hard limit is reached on user level.
+This value is used to compute overcommit ratio for the query.
+Zero means skip the query.
+Read more about [memory overcommit](memory-overcommit.md).
+
+Default value: `1GiB`.
+
+## memory_usage_overcommit_max_wait_microseconds
+
+Maximum time thread will wait for memory to be freed in the case of memory overcommit on a user level.
+If the timeout is reached and memory is not freed, an exception is thrown.
+Read more about [memory overcommit](memory-overcommit.md).
+
+Default value: `200`.
+
+## memory_overcommit_ratio_denominator_for_user
+
+It represents soft memory limit in case when hard limit is reached on global level.
+This value is used to compute overcommit ratio for the query.
+Zero means skip the query.
+Read more about [memory overcommit](memory-overcommit.md).
+
+Default value: `1GiB`.

@@ -1,6 +1,6 @@
 #include <Storages/MergeTree/MergeFromLogEntryTask.h>
 
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <Common/ProfileEvents.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 
@@ -37,7 +37,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
         };
     }
 
-    if (entry.merge_type == MergeType::TTL_RECOMPRESS &&
+    if (entry.merge_type == MergeType::TTLRecompress &&
         (time(nullptr) - entry.create_time) <= storage_settings_ptr->try_fetch_recompressed_part_timeout.totalSeconds() &&
         entry.source_replica != storage.replica_name)
     {
@@ -81,7 +81,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
         if (!source_part_or_covering)
         {
             /// We do not have one of source parts locally, try to take some already merged part from someone.
-            LOG_DEBUG(log, "Don't have all parts for merge {}; will try to fetch it instead", entry.new_part_name);
+            LOG_DEBUG(log, "Don't have all parts (at least part {} is missing) for merge {}; will try to fetch it instead", source_part_name, entry.new_part_name);
             return PrepareResult{
                 .prepared_successfully = false,
                 .need_to_check_missing_part_in_fetch = true,
@@ -184,7 +184,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
 
     if (storage_settings_ptr->allow_remote_fs_zero_copy_replication)
     {
-        if (auto disk = reserved_space->getDisk(); disk->getType() == DB::DiskType::S3)
+        if (auto disk = reserved_space->getDisk(); disk->supportZeroCopyReplication())
         {
             String dummy;
             if (!storage.findReplicaHavingCoveringPart(entry.new_part_name, true, dummy).empty())
@@ -227,7 +227,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
         future_merged_part,
         settings);
 
-    transaction_ptr = std::make_unique<MergeTreeData::Transaction>(storage);
+    transaction_ptr = std::make_unique<MergeTreeData::Transaction>(storage, NO_TRANSACTION_RAW);
     stopwatch_ptr = std::make_unique<Stopwatch>();
 
     merge_task = storage.merger_mutator.mergePartsToTemporaryPart(
@@ -241,7 +241,8 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
             reserved_space,
             entry.deduplicate,
             entry.deduplicate_by_columns,
-            storage.merging_params);
+            storage.merging_params,
+            NO_TRANSACTION_PTR);
 
 
     /// Adjust priority
@@ -264,7 +265,7 @@ bool MergeFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWrite
     /// Task is not needed
     merge_task.reset();
 
-    storage.merger_mutator.renameMergedTemporaryPart(part, parts, transaction_ptr.get());
+    storage.merger_mutator.renameMergedTemporaryPart(part, parts, NO_TRANSACTION_PTR, transaction_ptr.get());
 
     try
     {
@@ -279,14 +280,17 @@ bool MergeFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWrite
             ProfileEvents::increment(ProfileEvents::DataAfterMergeDiffersFromReplica);
 
             LOG_ERROR(log,
-                "{}. Data after merge is not byte-identical to data on another replicas. There could be several"
-                " reasons: 1. Using newer version of compression library after server update. 2. Using another"
-                " compression method. 3. Non-deterministic compression algorithm (highly unlikely). 4."
-                " Non-deterministic merge algorithm due to logical error in code. 5. Data corruption in memory due"
-                " to bug in code. 6. Data corruption in memory due to hardware issue. 7. Manual modification of"
-                " source data after server startup. 8. Manual modification of checksums stored in ZooKeeper. 9."
-                " Part format related settings like 'enable_mixed_granularity_parts' are different on different"
-                " replicas. We will download merged part from replica to force byte-identical result.",
+                "{}. Data after merge is not byte-identical to data on another replicas. There could be several reasons:"
+                " 1. Using newer version of compression library after server update."
+                " 2. Using another compression method."
+                " 3. Non-deterministic compression algorithm (highly unlikely)."
+                " 4. Non-deterministic merge algorithm due to logical error in code."
+                " 5. Data corruption in memory due to bug in code."
+                " 6. Data corruption in memory due to hardware issue."
+                " 7. Manual modification of source data after server startup."
+                " 8. Manual modification of checksums stored in ZooKeeper."
+                " 9. Part format related settings like 'enable_mixed_granularity_parts' are different on different replicas."
+                " We will download merged part from replica to force byte-identical result.",
                 getCurrentExceptionMessage(false));
 
             write_part_log(ExecutionStatus::fromCurrentException());
@@ -318,6 +322,7 @@ bool MergeFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWrite
     ProfileEvents::increment(ProfileEvents::ReplicatedPartMerges);
 
     write_part_log({});
+    storage.incrementMergedPartsProfileEvent(part->getType());
 
     return true;
 }

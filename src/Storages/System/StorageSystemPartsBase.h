@@ -1,6 +1,5 @@
 #pragma once
 
-#include <base/shared_ptr_helper.h>
 #include <Formats/FormatSettings.h>
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/MergeTreeData.h>
@@ -23,7 +22,7 @@ struct StoragesInfo
     bool need_inactive_parts = false;
     MergeTreeData * data = nullptr;
 
-    operator bool() const { return storage != nullptr; } /// NOLINT
+    explicit operator bool() const { return storage != nullptr; }
     MergeTreeData::DataPartsVector
     getParts(MergeTreeData::DataPartStateVector & state, bool has_state_column, bool require_projection_parts = false) const;
 };
@@ -78,7 +77,7 @@ protected:
     StorageSystemPartsBase(const StorageID & table_id_, NamesAndTypesList && columns_);
 
     virtual void
-    processNextStorage(MutableColumns & columns, std::vector<UInt8> & columns_mask, const StoragesInfo & info, bool has_state_column) = 0;
+    processNextStorage(ContextPtr context, MutableColumns & columns, std::vector<UInt8> & columns_mask, const StoragesInfo & info, bool has_state_column) = 0;
 };
 
 }

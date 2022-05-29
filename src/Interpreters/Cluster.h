@@ -2,6 +2,8 @@
 
 #include <Client/ConnectionPool.h>
 #include <Client/ConnectionPoolWithFailover.h>
+#include <Common/Macros.h>
+#include <Common/MultiVersion.h>
 
 #include <Poco/Net/SocketAddress.h>
 
@@ -55,7 +57,9 @@ public:
         bool treat_local_as_remote,
         bool treat_local_port_as_remote,
         bool secure = false,
-        Int64 priority = 1);
+        Int64 priority = 1,
+        String cluster_name = "",
+        String cluster_secret = "");
 
     Cluster(const Cluster &)= delete;
     Cluster & operator=(const Cluster &) = delete;
@@ -127,7 +131,9 @@ public:
             bool secure_ = false,
             Int64 priority_ = 1,
             UInt32 shard_index_ = 0,
-            UInt32 replica_index_ = 0);
+            UInt32 replica_index_ = 0,
+            String cluster_name = "",
+            String cluster_secret_ = "");
 
         /// Returns 'escaped_host_name:port'
         String toString() const;
@@ -225,6 +231,9 @@ public:
     /// The number of all shards.
     size_t getShardCount() const { return shards_info.size(); }
 
+    /// Returns an array of arrays of strings in the format 'escaped_host_name:port' for all replicas of all shards in the cluster.
+    std::vector<Strings> getHostIDs() const;
+
     const String & getSecret() const { return secret; }
 
     /// Get a subcluster consisting of one shard - index by count (from 0) of the shard of this cluster.
@@ -283,7 +292,7 @@ using ClusterPtr = std::shared_ptr<Cluster>;
 class Clusters
 {
 public:
-    Clusters(const Poco::Util::AbstractConfiguration & config, const Settings & settings, const String & config_prefix = "remote_servers");
+    Clusters(const Poco::Util::AbstractConfiguration & config, const Settings & settings, MultiVersion<Macros>::Version macros, const String & config_prefix = "remote_servers");
 
     Clusters(const Clusters &) = delete;
     Clusters & operator=(const Clusters &) = delete;
@@ -301,6 +310,8 @@ protected:
 
     /// setup outside of this class, stored to prevent deleting from impl on config update
     std::unordered_set<std::string> automatic_clusters;
+
+    MultiVersion<Macros>::Version macros_;
 
     Impl impl;
     mutable std::mutex mutex;

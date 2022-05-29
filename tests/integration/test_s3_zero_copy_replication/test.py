@@ -361,6 +361,8 @@ def test_s3_zero_copy_with_ttl_delete(cluster, large_data, iterations):
             )
 
         node1.query("OPTIMIZE TABLE ttl_delete_test FINAL")
+
+        node1.query("SYSTEM SYNC REPLICA ttl_delete_test")
         node2.query("SYSTEM SYNC REPLICA ttl_delete_test")
 
         if large_data:

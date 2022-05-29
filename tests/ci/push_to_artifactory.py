@@ -40,13 +40,12 @@ class Packages:
             "_".join((name, version, arch + ".deb")) for name, arch in self.packages
         )
 
-        rev = "2"
         self.rpm = tuple(
-            "-".join((name, version, rev + "." + self.rpm_arch[arch] + ".rpm"))
+            "-".join((name, version + "." + self.rpm_arch[arch] + ".rpm"))
             for name, arch in self.packages
         )
 
-        self.tgz = tuple(f"{name}-{version}.tgz" for name, _ in self.packages)
+        self.tgz = tuple(f"{name}-{version}-amd64.tgz" for name, _ in self.packages)
 
     def arch(self, deb_pkg: str) -> str:
         if deb_pkg not in self.deb:

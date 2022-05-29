@@ -442,4 +442,6 @@ private:
     bool strict;
 };
 
+String extractFixedPrefixFromLikePattern(const String & like_pattern);
+
 }

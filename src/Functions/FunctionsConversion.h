@@ -53,6 +53,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Interpreters/Context.h>
+#include <Common/HashTable/HashMap.h>
 
 
 namespace DB
@@ -886,7 +887,7 @@ struct ConvertImplGenericToString
         const IColumn & col_from = *col_with_type_and_name.column;
 
         size_t size = col_from.size();
-        auto col_to = result_type->createColumn();
+        auto col_to = removeNullable(result_type)->createColumn();
 
         {
             ColumnStringHelpers::WriteHelper write_helper(
@@ -1348,7 +1349,7 @@ struct ConvertImpl<DataTypeFixedString, ToDataType, Name, ConvertReturnNullOnErr
 template <typename StringColumnType>
 struct ConvertImplGenericFromString
 {
-    static ColumnPtr execute(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable *, size_t input_rows_count)
+    static ColumnPtr execute(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable * column_nullable, size_t input_rows_count)
     {
         static_assert(std::is_same_v<StringColumnType, ColumnString> || std::is_same_v<StringColumnType, ColumnFixedString>,
                 "Can be used only to parse from ColumnString or ColumnFixedString");
@@ -1364,8 +1365,15 @@ struct ConvertImplGenericFromString
 
             FormatSettings format_settings;
             auto serialization = data_type_to.getDefaultSerialization();
+            const auto * null_map = column_nullable ? &column_nullable->getNullMapData() : nullptr;
             for (size_t i = 0; i < input_rows_count; ++i)
             {
+                if (null_map && (*null_map)[i])
+                {
+                    column_to.insertDefault();
+                    continue;
+                }
+
                 const auto & val = col_from_string->getDataAt(i);
                 ReadBufferFromMemory read_buffer(val.data, val.size);
 
@@ -2508,6 +2516,8 @@ protected:
     }
 
     bool useDefaultImplementationForNulls() const override { return false; }
+    /// CAST(Nothing, T) -> T
+    bool useDefaultImplementationForNothing() const override { return false; }
     bool useDefaultImplementationForConstants() const override { return true; }
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
@@ -2706,13 +2716,10 @@ private:
         return createWrapper<ToDataType>(from_type, to_type, requested_result_is_nullable);
     }
 
-    WrapperType createUInt8ToUInt8Wrapper(const DataTypePtr from_type, const DataTypePtr to_type) const
+    WrapperType createUInt8ToBoolWrapper(const DataTypePtr from_type, const DataTypePtr to_type) const
     {
         return [from_type, to_type] (ColumnsWithTypeAndName & arguments, const DataTypePtr &, const ColumnNullable *, size_t /*input_rows_count*/) -> ColumnPtr
         {
-            if (isBool(from_type) || !isBool(to_type))
-                return arguments.front().column;
-
             /// Special case when we convert UInt8 column to Bool column.
             /// both columns have type UInt8, but we shouldn't use identity wrapper,
             /// because Bool column can contain only 0 and 1.
@@ -2960,8 +2967,7 @@ private:
         /// For named tuples allow conversions for tuples with
         /// different sets of elements. If element exists in @to_type
         /// and doesn't exist in @to_type it will be filled by default values.
-        if (from_type->haveExplicitNames() && from_type->serializeNames()
-            && to_type->haveExplicitNames() && to_type->serializeNames())
+        if (from_type->haveExplicitNames() && to_type->haveExplicitNames())
         {
             const auto & from_names = from_type->getElementNames();
             std::unordered_map<String, size_t> from_positions;
@@ -3143,52 +3149,138 @@ private:
         }
     }
 
+    WrapperType createTupleToObjectWrapper(const DataTypeTuple & from_tuple, bool has_nullable_subcolumns) const
+    {
+        if (!from_tuple.haveExplicitNames())
+            throw Exception(ErrorCodes::TYPE_MISMATCH,
+            "Cast to Object can be performed only from flatten Named Tuple. Got: {}", from_tuple.getName());
+
+        PathsInData paths;
+        DataTypes from_types;
+
+        std::tie(paths, from_types) = flattenTuple(from_tuple.getPtr());
+        auto to_types = from_types;
+
+        for (auto & type : to_types)
+        {
+            if (isTuple(type) || isNested(type))
+                throw Exception(ErrorCodes::TYPE_MISMATCH,
+                    "Cast to Object can be performed only from flatten Named Tuple. Got: {}",
+                    from_tuple.getName());
+
+            type = recursiveRemoveLowCardinality(type);
+        }
+
+        return [element_wrappers = getElementWrappers(from_types, to_types),
+            has_nullable_subcolumns, from_types, to_types, paths]
+            (ColumnsWithTypeAndName & arguments, const DataTypePtr &, const ColumnNullable * nullable_source, size_t input_rows_count)
+        {
+            size_t tuple_size = to_types.size();
+            auto flattened_column = flattenTuple(arguments.front().column);
+            const auto & column_tuple = assert_cast<const ColumnTuple &>(*flattened_column);
+
+            if (tuple_size != column_tuple.getColumns().size())
+                throw Exception(ErrorCodes::TYPE_MISMATCH,
+                    "Expected tuple with {} subcolumn, but got {} subcolumns",
+                    tuple_size, column_tuple.getColumns().size());
+
+            auto res = ColumnObject::create(has_nullable_subcolumns);
+            for (size_t i = 0; i < tuple_size; ++i)
+            {
+                ColumnsWithTypeAndName element = {{column_tuple.getColumns()[i], from_types[i], "" }};
+                auto converted_column = element_wrappers[i](element, to_types[i], nullable_source, input_rows_count);
+                res->addSubcolumn(paths[i], converted_column->assumeMutable());
+            }
+
+            return res;
+        };
+    }
+
+    WrapperType createMapToObjectWrapper(const DataTypeMap & from_map, bool has_nullable_subcolumns) const
+    {
+        auto key_value_types = from_map.getKeyValueTypes();
+
+        if (!isStringOrFixedString(key_value_types[0]))
+            throw Exception(ErrorCodes::TYPE_MISMATCH,
+                "Cast to Object from Map can be performed only from Map "
+                "with String or FixedString key. Got: {}", from_map.getName());
+
+        const auto & value_type = key_value_types[1];
+        auto to_value_type = value_type;
+
+        if (!has_nullable_subcolumns && value_type->isNullable())
+            to_value_type = removeNullable(value_type);
+
+        if (has_nullable_subcolumns && !value_type->isNullable())
+            to_value_type = makeNullable(value_type);
+
+        DataTypes to_key_value_types{std::make_shared<DataTypeString>(), std::move(to_value_type)};
+        auto element_wrappers = getElementWrappers(key_value_types, to_key_value_types);
+
+        return [has_nullable_subcolumns, element_wrappers, key_value_types, to_key_value_types]
+            (ColumnsWithTypeAndName & arguments, const DataTypePtr &, const ColumnNullable * nullable_source, size_t) -> ColumnPtr
+        {
+            const auto & column_map = assert_cast<const ColumnMap &>(*arguments.front().column);
+            const auto & offsets = column_map.getNestedColumn().getOffsets();
+            auto key_value_columns = column_map.getNestedData().getColumnsCopy();
+
+            for (size_t i = 0; i < 2; ++i)
+            {
+                ColumnsWithTypeAndName element{{key_value_columns[i], key_value_types[i], ""}};
+                key_value_columns[i] = element_wrappers[i](element, to_key_value_types[i], nullable_source, key_value_columns[i]->size());
+            }
+
+            const auto & key_column_str = assert_cast<const ColumnString &>(*key_value_columns[0]);
+            const auto & value_column = *key_value_columns[1];
+
+            using SubcolumnsMap = HashMap<StringRef, MutableColumnPtr, StringRefHash>;
+            SubcolumnsMap subcolumns;
+
+            for (size_t row = 0; row < offsets.size(); ++row)
+            {
+                for (size_t i = offsets[static_cast<ssize_t>(row) - 1]; i < offsets[row]; ++i)
+                {
+                    auto ref = key_column_str.getDataAt(i);
+
+                    bool inserted;
+                    SubcolumnsMap::LookupResult it;
+                    subcolumns.emplace(ref, it, inserted);
+                    auto & subcolumn = it->getMapped();
+
+                    if (inserted)
+                        subcolumn = value_column.cloneEmpty()->cloneResized(row);
+
+                    /// Map can have duplicated keys. We insert only first one.
+                    if (subcolumn->size() == row)
+                        subcolumn->insertFrom(value_column, i);
+                }
+
+                /// Insert default values for keys missed in current row.
+                for (const auto & [_, subcolumn] : subcolumns)
+                    if (subcolumn->size() == row)
+                        subcolumn->insertDefault();
+            }
+
+            auto column_object = ColumnObject::create(has_nullable_subcolumns);
+            for (auto && [key, subcolumn] : subcolumns)
+            {
+                PathInData path(key.toView());
+                column_object->addSubcolumn(path, std::move(subcolumn));
+            }
+
+            return column_object;
+        };
+    }
+
     WrapperType createObjectWrapper(const DataTypePtr & from_type, const DataTypeObject * to_type) const
     {
         if (const auto * from_tuple = checkAndGetDataType<DataTypeTuple>(from_type.get()))
         {
-            if (!from_tuple->haveExplicitNames())
-                 throw Exception(ErrorCodes::TYPE_MISMATCH,
-                    "Cast to Object can be performed only from flatten Named Tuple. Got: {}", from_type->getName());
-
-            PathsInData paths;
-            DataTypes from_types;
-
-            std::tie(paths, from_types) = flattenTuple(from_type);
-            auto to_types = from_types;
-
-            for (auto & type : to_types)
-            {
-                if (isTuple(type) || isNested(type))
-                     throw Exception(ErrorCodes::TYPE_MISMATCH,
-                        "Cast to Object can be performed only from flatten Named Tuple. Got: {}", from_type->getName());
-
-                type = recursiveRemoveLowCardinality(type);
-            }
-
-            return [element_wrappers = getElementWrappers(from_types, to_types),
-                has_nullable_subcolumns = to_type->hasNullableSubcolumns(), from_types, to_types, paths]
-                (ColumnsWithTypeAndName & arguments, const DataTypePtr &, const ColumnNullable * nullable_source, size_t input_rows_count)
-            {
-                size_t tuple_size = to_types.size();
-                auto flattened_column = flattenTuple(arguments.front().column);
-                const auto & column_tuple = assert_cast<const ColumnTuple &>(*flattened_column);
-
-                if (tuple_size != column_tuple.getColumns().size())
-                    throw Exception(ErrorCodes::TYPE_MISMATCH,
-                        "Expected tuple with {} subcolumn, but got {} subcolumns",
-                        tuple_size, column_tuple.getColumns().size());
-
-                auto res = ColumnObject::create(has_nullable_subcolumns);
-                for (size_t i = 0; i < tuple_size; ++i)
-                {
-                    ColumnsWithTypeAndName element = {{column_tuple.getColumns()[i], from_types[i], "" }};
-                    auto converted_column = element_wrappers[i](element, to_types[i], nullable_source, input_rows_count);
-                    res->addSubcolumn(paths[i], converted_column->assumeMutable());
-                }
-
-                return res;
-            };
+            return createTupleToObjectWrapper(*from_tuple, to_type->hasNullableSubcolumns());
+        }
+        else if (const auto * from_map = checkAndGetDataType<DataTypeMap>(from_type.get()))
+        {
+            return createMapToObjectWrapper(*from_map, to_type->hasNullableSubcolumns());
         }
         else if (checkAndGetDataType<DataTypeString>(from_type.get()))
         {
@@ -3200,9 +3292,22 @@ private:
                 return res;
             };
         }
+        else if (checkAndGetDataType<DataTypeObject>(from_type.get()))
+        {
+            return [is_nullable = to_type->hasNullableSubcolumns()] (ColumnsWithTypeAndName & arguments, const DataTypePtr & , const ColumnNullable * , size_t) -> ColumnPtr
+            {
+                auto & column_object = assert_cast<const ColumnObject &>(*arguments.front().column);
+                auto res = ColumnObject::create(is_nullable);
+                for (size_t i = 0; i < column_object.size(); i++)
+                    res->insert(column_object[i]);
+
+                res->finalize();
+                return res;
+            };
+        }
 
         throw Exception(ErrorCodes::TYPE_MISMATCH,
-            "Cast to Object can be performed only from flatten named tuple or string. Got: {}", from_type->getName());
+            "Cast to Object can be performed only from flatten named Tuple, Map or String. Got: {}", from_type->getName());
     }
 
     template <typename FieldType>
@@ -3493,7 +3598,7 @@ private:
                     const auto & nullable_col = assert_cast<const ColumnNullable &>(*col);
                     const auto & null_map = nullable_col.getNullMapData();
 
-                    if (!memoryIsZero(null_map.data(), null_map.size()))
+                    if (!memoryIsZero(null_map.data(), 0, null_map.size()))
                         throw Exception{"Cannot convert NULL value to non-Nullable type",
                                         ErrorCodes::CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN};
                 }
@@ -3509,15 +3614,19 @@ private:
     /// 'requested_result_is_nullable' is true if CAST to Nullable type is requested.
     WrapperType prepareImpl(const DataTypePtr & from_type, const DataTypePtr & to_type, bool requested_result_is_nullable) const
     {
-        bool convert_to_ipv6 = to_type->getCustomName() && to_type->getCustomName()->getName() == "IPv6";
+        if (isUInt8(from_type) && isBool(to_type))
+            return createUInt8ToBoolWrapper(from_type, to_type);
 
-        if (from_type->equals(*to_type) && !convert_to_ipv6)
-        {
-            if (isUInt8(from_type))
-                return createUInt8ToUInt8Wrapper(from_type, to_type);
+        /// We can cast IPv6 into IPv6, IPv4 into IPv4, but we should not allow to cast FixedString(16) into IPv6 as part of identity cast
+        bool safe_convert_custom_types = true;
 
+        if (const auto * to_type_custom_name = to_type->getCustomName())
+            safe_convert_custom_types = from_type->getCustomName() && from_type->getCustomName()->getName() == to_type_custom_name->getName();
+        else if (const auto * from_type_custom_name = from_type->getCustomName())
+            safe_convert_custom_types = to_type->getCustomName() && from_type_custom_name->getName() == to_type->getCustomName()->getName();
+
+        if (from_type->equals(*to_type) && safe_convert_custom_types)
             return createIdentityWrapper(from_type);
-        }
         else if (WhichDataType(from_type).isNothing())
             return createNothingWrapper(to_type.get());
 
@@ -3594,16 +3703,17 @@ private:
                     if (to_type->getCustomName()->getName() == "IPv4")
                     {
                         ret = [cast_ipv4_ipv6_default_on_conversion_error_value](
-                                  ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable *, size_t)
+                                  ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable * column_nullable, size_t)
                             -> ColumnPtr
                         {
                             if (!WhichDataType(result_type).isUInt32())
                                 throw Exception(ErrorCodes::TYPE_MISMATCH, "Wrong result type {}. Expected UInt32", result_type->getName());
 
+                            const auto * null_map = column_nullable ? &column_nullable->getNullMapData() : nullptr;
                             if (cast_ipv4_ipv6_default_on_conversion_error_value)
-                                return convertToIPv4<IPStringToNumExceptionMode::Default>(arguments[0].column);
+                                return convertToIPv4<IPStringToNumExceptionMode::Default>(arguments[0].column, null_map);
                             else
-                                return convertToIPv4<IPStringToNumExceptionMode::Throw>(arguments[0].column);
+                                return convertToIPv4<IPStringToNumExceptionMode::Throw>(arguments[0].column, null_map);
                         };
 
                         return true;
@@ -3612,17 +3722,18 @@ private:
                     if (to_type->getCustomName()->getName() == "IPv6")
                     {
                         ret = [cast_ipv4_ipv6_default_on_conversion_error_value](
-                                  ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable *, size_t)
+                                  ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable * column_nullable, size_t)
                             -> ColumnPtr
                         {
                             if (!WhichDataType(result_type).isFixedString())
                                 throw Exception(
                                     ErrorCodes::TYPE_MISMATCH, "Wrong result type {}. Expected FixedString", result_type->getName());
 
+                            const auto * null_map = column_nullable ? &column_nullable->getNullMapData() : nullptr;
                             if (cast_ipv4_ipv6_default_on_conversion_error_value)
-                                return convertToIPv6<IPStringToNumExceptionMode::Default>(arguments[0].column);
+                                return convertToIPv6<IPStringToNumExceptionMode::Default>(arguments[0].column, null_map);
                             else
-                                return convertToIPv6<IPStringToNumExceptionMode::Throw>(arguments[0].column);
+                                return convertToIPv6<IPStringToNumExceptionMode::Throw>(arguments[0].column, null_map);
                         };
 
                         return true;

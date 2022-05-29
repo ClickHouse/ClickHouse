@@ -9,6 +9,7 @@
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/TableOverrideUtils.h>
+#include <Interpreters/MergeTreeTransaction.h>
 #include <Formats/FormatFactory.h>
 #include <Parsers/DumpASTNode.h>
 #include <Parsers/queryToString.h>
@@ -268,6 +269,9 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
     bool single_line = false;
     bool insert_buf = true;
 
+    SelectQueryOptions options;
+    options.setExplain();
+
     switch (ast.getKind())
     {
         case ASTExplainQuery::ParsedAST:
@@ -298,7 +302,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             auto settings = checkAndGetSettings<QueryPlanSettings>(ast.getSettings());
             QueryPlan plan;
 
-            InterpreterSelectWithUnionQuery interpreter(ast.getExplainedQuery(), getContext(), SelectQueryOptions());
+            InterpreterSelectWithUnionQuery interpreter(ast.getExplainedQuery(), getContext(), options);
             interpreter.buildQueryPlan(plan);
 
             if (settings.optimize)
@@ -333,7 +337,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                 auto settings = checkAndGetSettings<QueryPipelineSettings>(ast.getSettings());
                 QueryPlan plan;
 
-                InterpreterSelectWithUnionQuery interpreter(ast.getExplainedQuery(), getContext(), SelectQueryOptions());
+                InterpreterSelectWithUnionQuery interpreter(ast.getExplainedQuery(), getContext(), options);
                 interpreter.buildQueryPlan(plan);
                 auto pipeline = plan.buildQueryPipeline(
                     QueryPlanOptimizationSettings::fromContext(getContext()),
@@ -398,6 +402,23 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             TableOverrideAnalyzer override_analyzer(ast.getTableOverride());
             override_analyzer.analyze(metadata_snapshot, override_info);
             override_info.appendTo(buf);
+            break;
+        }
+        case ASTExplainQuery::CurrentTransaction:
+        {
+            if (ast.getSettings())
+                throw Exception("Settings are not supported for EXPLAIN CURRENT TRANSACTION query.", ErrorCodes::UNKNOWN_SETTING);
+
+            if (auto txn = getContext()->getCurrentTransaction())
+            {
+                String dump = txn->dumpDescription();
+                buf.write(dump.data(), dump.size());
+            }
+            else
+            {
+                writeCString("<no current transaction>", buf);
+            }
+
             break;
         }
     }

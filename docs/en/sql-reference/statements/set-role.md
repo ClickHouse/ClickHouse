@@ -1,6 +1,6 @@
 ---
-toc_priority: 51
-toc_title: SET ROLE
+sidebar_position: 51
+sidebar_label: SET ROLE
 ---
 
 # SET ROLE Statement {#set-role-statement}

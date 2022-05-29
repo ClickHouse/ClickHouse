@@ -12,13 +12,14 @@
 #include <Columns/IColumn.h>
 #include <Columns/ColumnString.h>
 
+#include "config_core.h"
+
+#if USE_EMBEDDED_COMPILER
+#include <Interpreters/JIT/compileFunction.h>
+#endif
 
 namespace DB
 {
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
 
 /** Cursor allows to compare rows in different blocks (and parts).
   * Cursor moves inside single block.
@@ -53,6 +54,10 @@ struct SortCursorImpl
       */
     IColumn::Permutation * permutation = nullptr;
 
+#if USE_EMBEDDED_COMPILER
+    std::vector<ColumnData> raw_sort_columns_data;
+#endif
+
     SortCursorImpl() = default;
 
     SortCursorImpl(const Block & block, const SortDescription & desc_, size_t order_ = 0, IColumn::Permutation * perm = nullptr)
@@ -61,31 +66,30 @@ struct SortCursorImpl
         reset(block, perm);
     }
 
-    SortCursorImpl(const Columns & columns, const SortDescription & desc_, size_t order_ = 0, IColumn::Permutation * perm = nullptr)
+    SortCursorImpl(
+        const Block & header,
+        const Columns & columns,
+        const SortDescription & desc_,
+        size_t order_ = 0,
+        IColumn::Permutation * perm = nullptr)
         : desc(desc_), sort_columns_size(desc.size()), order(order_), need_collation(desc.size())
     {
-        for (auto & column_desc : desc)
-        {
-            if (!column_desc.column_name.empty())
-                throw Exception("SortDescription should contain column position if SortCursor was used without header.",
-                        ErrorCodes::LOGICAL_ERROR);
-        }
-        reset(columns, {}, perm);
+        reset(columns, header, perm);
     }
 
     bool empty() const { return rows == 0; }
 
     /// Set the cursor to the beginning of the new block.
-    void reset(const Block & block, IColumn::Permutation * perm = nullptr)
-    {
-        reset(block.getColumns(), block, perm);
-    }
+    void reset(const Block & block, IColumn::Permutation * perm = nullptr) { reset(block.getColumns(), block, perm); }
 
     /// Set the cursor to the beginning of the new block.
     void reset(const Columns & columns, const Block & block, IColumn::Permutation * perm = nullptr)
     {
         all_columns.clear();
         sort_columns.clear();
+#if USE_EMBEDDED_COMPILER
+        raw_sort_columns_data.clear();
+#endif
 
         size_t num_columns = columns.size();
 
@@ -95,11 +99,13 @@ struct SortCursorImpl
         for (size_t j = 0, size = desc.size(); j < size; ++j)
         {
             auto & column_desc = desc[j];
-            size_t column_number = !column_desc.column_name.empty()
-                                   ? block.getPositionByName(column_desc.column_name)
-                                   : column_desc.column_number;
+            size_t column_number = block.getPositionByName(column_desc.column_name);
             sort_columns.push_back(columns[column_number].get());
 
+#if USE_EMBEDDED_COMPILER
+            if (desc.compiled_sort_description)
+                raw_sort_columns_data.emplace_back(getColumnData(sort_columns.back()));
+#endif
             need_collation[j] = desc[j].collator != nullptr && sort_columns.back()->isCollationSupported();
             has_collation |= need_collation[j];
         }
@@ -174,17 +180,36 @@ struct SortCursor : SortCursorHelper<SortCursor>
     /// The specified row of this cursor is greater than the specified row of another cursor.
     bool ALWAYS_INLINE greaterAt(const SortCursor & rhs, size_t lhs_pos, size_t rhs_pos) const
     {
+#if USE_EMBEDDED_COMPILER
+        if (impl->desc.compiled_sort_description && rhs.impl->desc.compiled_sort_description)
+        {
+            assert(impl->raw_sort_columns_data.size() == rhs.impl->raw_sort_columns_data.size());
+
+            auto sort_description_func_typed = reinterpret_cast<JITSortDescriptionFunc>(impl->desc.compiled_sort_description);
+            int res = sort_description_func_typed(lhs_pos, rhs_pos, impl->raw_sort_columns_data.data(), rhs.impl->raw_sort_columns_data.data()); /// NOLINT
+
+            if (res > 0)
+                return true;
+            if (res < 0)
+                return false;
+
+            return impl->order > rhs.impl->order;
+        }
+#endif
+
         for (size_t i = 0; i < impl->sort_columns_size; ++i)
         {
             const auto & desc = impl->desc[i];
             int direction = desc.direction;
             int nulls_direction = desc.nulls_direction;
             int res = direction * impl->sort_columns[i]->compareAt(lhs_pos, rhs_pos, *(rhs.impl->sort_columns[i]), nulls_direction);
+
             if (res > 0)
                 return true;
             if (res < 0)
                 return false;
         }
+
         return impl->order > rhs.impl->order;
     }
 };
@@ -200,8 +225,26 @@ struct SimpleSortCursor : SortCursorHelper<SimpleSortCursor>
         const auto & desc = impl->desc[0];
         int direction = desc.direction;
         int nulls_direction = desc.nulls_direction;
-        int res = impl->sort_columns[0]->compareAt(lhs_pos, rhs_pos, *(rhs.impl->sort_columns[0]), nulls_direction);
-        return res != 0 && ((res > 0) == (direction > 0));
+
+        bool result = false;
+
+#if USE_EMBEDDED_COMPILER
+        if (impl->desc.compiled_sort_description && rhs.impl->desc.compiled_sort_description)
+        {
+            assert(impl->raw_sort_columns_data.size() == rhs.impl->raw_sort_columns_data.size());
+
+            auto sort_description_func_typed = reinterpret_cast<JITSortDescriptionFunc>(impl->desc.compiled_sort_description);
+            int jit_result = sort_description_func_typed(lhs_pos, rhs_pos, impl->raw_sort_columns_data.data(), rhs.impl->raw_sort_columns_data.data()); /// NOLINT
+            result = jit_result > 0;
+        }
+        else
+#endif
+        {
+            int non_jit_result = impl->sort_columns[0]->compareAt(lhs_pos, rhs_pos, *(rhs.impl->sort_columns[0]), nulls_direction);
+            result = (non_jit_result != 0 && ((non_jit_result > 0) == (direction > 0)));
+        }
+
+        return result;
     }
 };
 
@@ -367,12 +410,12 @@ private:
 };
 
 template <typename TLeftColumns, typename TRightColumns>
-bool less(const TLeftColumns & lhs, const TRightColumns & rhs, size_t i, size_t j, const SortDescription & descr)
+bool less(const TLeftColumns & lhs, const TRightColumns & rhs, size_t i, size_t j, const SortDescriptionWithPositions & descr)
 {
     for (const auto & elem : descr)
     {
         size_t ind = elem.column_number;
-        int res = elem.direction * lhs[ind]->compareAt(i, j, *rhs[ind], elem.nulls_direction);
+        int res = elem.base.direction * lhs[ind]->compareAt(i, j, *rhs[ind], elem.base.nulls_direction);
         if (res < 0)
             return true;
         else if (res > 0)

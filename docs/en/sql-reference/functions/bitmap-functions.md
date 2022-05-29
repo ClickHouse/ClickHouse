@@ -1,6 +1,6 @@
 ---
-toc_priority: 49
-toc_title: Bitmap
+sidebar_position: 49
+sidebar_label: Bitmap
 ---
 
 # Bitmap Functions {#bitmap-functions}

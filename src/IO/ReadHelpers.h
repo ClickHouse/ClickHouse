@@ -2,6 +2,8 @@
 
 #include <cmath>
 #include <cstring>
+#include <string>
+#include <string_view>
 #include <limits>
 #include <algorithm>
 #include <iterator>
@@ -163,6 +165,7 @@ void readVectorBinary(std::vector<T> & v, ReadBuffer & buf, size_t MAX_VECTOR_SI
 
 void assertString(const char * s, ReadBuffer & buf);
 void assertEOF(ReadBuffer & buf);
+void assertNotEOF(ReadBuffer & buf);
 
 [[noreturn]] void throwAtAssertionFailed(const char * s, ReadBuffer & buf);
 
@@ -617,6 +620,8 @@ void readStringUntilNewlineInto(Vector & s, ReadBuffer & buf);
 struct NullOutput
 {
     void append(const char *, size_t) {}
+    void append(const char *) {}
+    void append(const char *, const char *) {}
     void push_back(char) {} /// NOLINT
 };
 
@@ -851,6 +856,8 @@ inline ReturnType readDateTimeTextImpl(time_t & datetime, ReadBuffer & buf, cons
 
     /// YYYY-MM-DD hh:mm:ss
     static constexpr auto DateTimeStringInputSize = 19;
+    ///YYYY-MM-DD
+    static constexpr auto DateStringInputSize = 10;
     bool optimistic_path_for_date_time_input = s + DateTimeStringInputSize <= buf.buffer().end();
 
     if (optimistic_path_for_date_time_input)
@@ -861,16 +868,27 @@ inline ReturnType readDateTimeTextImpl(time_t & datetime, ReadBuffer & buf, cons
             UInt8 month = (s[5] - '0') * 10 + (s[6] - '0');
             UInt8 day = (s[8] - '0') * 10 + (s[9] - '0');
 
-            UInt8 hour = (s[11] - '0') * 10 + (s[12] - '0');
-            UInt8 minute = (s[14] - '0') * 10 + (s[15] - '0');
-            UInt8 second = (s[17] - '0') * 10 + (s[18] - '0');
+            UInt8 hour = 0;
+            UInt8 minute = 0;
+            UInt8 second = 0;
+            ///simply determine whether it is YYYY-MM-DD hh:mm:ss or YYYY-MM-DD by the content of the tenth character in an optimistic scenario
+            bool dt_long = (s[10] == ' ' || s[10] == 'T');
+            if (dt_long)
+            {
+                hour = (s[11] - '0') * 10 + (s[12] - '0');
+                minute = (s[14] - '0') * 10 + (s[15] - '0');
+                second = (s[17] - '0') * 10 + (s[18] - '0');
+            }
 
             if (unlikely(year == 0))
                 datetime = 0;
             else
                 datetime = date_lut.makeDateTime(year, month, day, hour, minute, second);
 
-            buf.position() += DateTimeStringInputSize;
+            if (dt_long)
+                buf.position() += DateTimeStringInputSize;
+            else
+                buf.position() += DateStringInputSize;
             return ReturnType(true);
         }
         else
@@ -915,6 +933,32 @@ inline ReturnType readDateTimeTextImpl(DateTime64 & datetime64, UInt32 scale, Re
         /// Ignore digits that are out of precision.
         while (!buf.eof() && isNumericASCII(*buf.position()))
             ++buf.position();
+
+        /// Keep sign of fractional part the same with whole part if datetime64 is negative
+        /// Case1:
+        ///     1965-12-12 12:12:12.123
+        ///     => whole = -127914468, fractional = 123(coefficient>0)
+        ///     => new whole = -127914467, new fractional = 877(coefficient<0)
+        ///
+        /// Case2:
+        ///     1969-12-31 23:59:59.123
+        ///     => whole = -1, fractional = 123(coefficient>0)
+        ///     => new whole = 0, new fractional = -877(coefficient>0)
+        if (components.whole < 0 && components.fractional != 0)
+        {
+            const auto scale_multiplier = DecimalUtils::scaleMultiplier<DateTime64::NativeType>(scale);
+            ++components.whole;
+            if (components.whole)
+            {
+                /// whole keep the sign, fractional should be non-negative
+                components.fractional = scale_multiplier - components.fractional;
+            }
+            else
+            {
+                /// when whole is zero, fractional should keep the sign
+                components.fractional = components.fractional - scale_multiplier;
+            }
+        }
     }
     /// 9908870400 is time_t value for 2184-01-01 UTC (a bit over the last year supported by DateTime64)
     else if (whole >= 9908870400LL)
@@ -1325,6 +1369,12 @@ inline T parse(const String & s)
 }
 
 template <typename T>
+inline T parse(std::string_view s)
+{
+    return parse<T>(s.data(), s.size());
+}
+
+template <typename T>
 inline bool tryParse(T & res, const char * data)
 {
     return tryParse(res, data, strlen(data));
@@ -1332,6 +1382,12 @@ inline bool tryParse(T & res, const char * data)
 
 template <typename T>
 inline bool tryParse(T & res, const String & s)
+{
+    return tryParse(res, s.data(), s.size());
+}
+
+template <typename T>
+inline bool tryParse(T & res, std::string_view s)
 {
     return tryParse(res, s.data(), s.size());
 }
@@ -1402,8 +1458,11 @@ struct PcgDeserializer
     }
 };
 
-void readQuotedFieldIntoString(String & s, ReadBuffer & buf);
+template <typename Vector>
+void readQuotedFieldInto(Vector & s, ReadBuffer & buf);
 
-void readJSONFieldIntoString(String & s, ReadBuffer & buf);
+void readQuotedField(String & s, ReadBuffer & buf);
+
+void readJSONField(String & s, ReadBuffer & buf);
 
 }

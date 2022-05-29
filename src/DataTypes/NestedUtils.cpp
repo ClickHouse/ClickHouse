@@ -1,4 +1,4 @@
-#include <string.h>
+#include <cstring>
 
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
@@ -14,6 +14,8 @@
 #include <Columns/ColumnConst.h>
 
 #include <Parsers/IAST.h>
+
+#include <boost/algorithm/string/case_conv.hpp>
 
 
 namespace DB
@@ -156,7 +158,7 @@ NamesAndTypesList collect(const NamesAndTypesList & names_and_types)
     auto nested_types = getSubcolumnsOfNested(names_and_types);
 
     for (const auto & name_type : names_and_types)
-        if (!isArray(name_type.type) || !nested_types.count(splitName(name_type.name).first))
+        if (!isArray(name_type.type) || !nested_types.contains(splitName(name_type.name).first))
             res.push_back(name_type);
 
     for (const auto & name_type : nested_types)
@@ -227,14 +229,17 @@ void validateArraySizes(const Block & block)
 }
 
 
-std::unordered_set<String> getAllTableNames(const Block & block)
+std::unordered_set<String> getAllTableNames(const Block & block, bool to_lower_case)
 {
     std::unordered_set<String> nested_table_names;
-    for (auto & name : block.getNames())
+    for (const auto & name : block.getNames())
     {
         auto nested_table_name = Nested::extractTableName(name);
+        if (to_lower_case)
+            boost::to_lower(nested_table_name);
+
         if (!nested_table_name.empty())
-            nested_table_names.insert(nested_table_name);
+            nested_table_names.insert(std::move(nested_table_name));
     }
     return nested_table_names;
 }

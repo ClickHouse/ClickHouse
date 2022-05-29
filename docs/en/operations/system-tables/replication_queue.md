@@ -1,6 +1,6 @@
-# system.replication_queue {#system_tables-replication_queue}
+# replication_queue {#system_tables-replication_queue}
 
-Contains information about tasks from replication queues stored in ZooKeeper for tables in the `ReplicatedMergeTree` family.
+Contains information about tasks from replication queues stored in Clickhouse Keeper, or ZooKeeper, for tables in the `ReplicatedMergeTree` family.
 
 Columns:
 
@@ -8,11 +8,11 @@ Columns:
 
 -   `table` ([String](../../sql-reference/data-types/string.md)) — Name of the table.
 
--   `replica_name` ([String](../../sql-reference/data-types/string.md)) — Replica name in ZooKeeper. Different replicas of the same table have different names.
+-   `replica_name` ([String](../../sql-reference/data-types/string.md)) — Replica name in ClickHouse Keeper. Different replicas of the same table have different names.
 
 -   `position` ([UInt32](../../sql-reference/data-types/int-uint.md)) — Position of the task in the queue.
 
--   `node_name` ([String](../../sql-reference/data-types/string.md)) — Node name in ZooKeeper.
+-   `node_name` ([String](../../sql-reference/data-types/string.md)) — Node name in ClickHouse Keeper.
 
 -   `type` ([String](../../sql-reference/data-types/string.md)) — Type of the task in the queue, one of:
 

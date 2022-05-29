@@ -114,7 +114,7 @@ A large number of parts in a table reduces performance of ClickHouse queries and
 
 ## replicated_deduplication_window {#replicated-deduplication-window}
 
-The number of most recently inserted blocks for which Zookeeper stores hash sums to check for duplicates.
+The number of most recently inserted blocks for which ClickHouse Keeper stores hash sums to check for duplicates.
 
 Possible values:
 
@@ -123,7 +123,7 @@ Possible values:
 
 Default value: 100.
 
-The `Insert` command creates one or more blocks (parts). When inserting into Replicated tables, ClickHouse for [insert deduplication](../../engines/table-engines/mergetree-family/replication/) writes the hash sums of the created parts into Zookeeper. Hash sums are stored only for the most recent `replicated_deduplication_window` blocks. The oldest hash sums are removed from Zookeeper.
+The `Insert` command creates one or more blocks (parts). For [insert deduplication](../../engines/table-engines/mergetree-family/replication/), when writing into replicated tables, ClickHouse writes the hash sums of the created parts into ClickHouse Keeper. Hash sums are stored only for the most recent `replicated_deduplication_window` blocks. The oldest hash sums are removed from ClickHouse Keeper.
 A large number of `replicated_deduplication_window` slows down `Inserts` because it needs to compare more entries.
 The hash sum is calculated from the composition of the field names and types and the data of the inserted part (stream of bytes).
 
@@ -142,7 +142,7 @@ A deduplication mechanism is used, similar to replicated tables (see [replicated
 
 ## replicated_deduplication_window_seconds {#replicated-deduplication-window-seconds}
 
-The number of seconds after which the hash sums of the inserted blocks are removed from Zookeeper.
+The number of seconds after which the hash sums of the inserted blocks are removed from ClickHouse Keeper.
 
 Possible values:
 
@@ -150,7 +150,7 @@ Possible values:
 
 Default value: 604800 (1 week).
 
-Similar to [replicated_deduplication_window](#replicated-deduplication-window), `replicated_deduplication_window_seconds` specifies how long to store hash sums of blocks for insert deduplication. Hash sums older than `replicated_deduplication_window_seconds` are removed from Zookeeper, even if they are less than ` replicated_deduplication_window`.
+Similar to [replicated_deduplication_window](#replicated-deduplication-window), `replicated_deduplication_window_seconds` specifies how long to store hash sums of blocks for insert deduplication. Hash sums older than `replicated_deduplication_window_seconds` are removed from ClickHouse Keeper, even if they are less than ` replicated_deduplication_window`.
 
 ## replicated_fetches_http_connection_timeout {#replicated_fetches_http_connection_timeout}
 
@@ -381,3 +381,36 @@ Possible values:
 
 Default value: `1` second.
 
+## max_concurrent_queries {#max-concurrent-queries}
+
+Max number of concurrently executed queries related to the MergeTree table. Queries will still be limited by other `max_concurrent_queries` settings.
+
+Possible values:
+
+-   Positive integer.
+-   0 — No limit.
+
+Default value: `0` (no limit).
+
+**Example**
+
+``` xml
+<max_concurrent_queries>50</max_concurrent_queries>
+```
+
+## min_marks_to_honor_max_concurrent_queries {#min-marks-to-honor-max-concurrent-queries}
+
+The minimal number of marks read by the query for applying the [max_concurrent_queries](#max-concurrent-queries) setting. Note that queries will still be limited by other `max_concurrent_queries` settings.
+
+Possible values:
+
+-   Positive integer.
+-   0 — Disabled (`max_concurrent_queries` limit applied to no queries).
+
+Default value: `0` (limit never applied).
+
+**Example**
+
+``` xml
+<min_marks_to_honor_max_concurrent_queries>10</min_marks_to_honor_max_concurrent_queries>
+```

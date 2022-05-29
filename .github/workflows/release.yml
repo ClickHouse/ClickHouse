@@ -36,3 +36,30 @@ jobs:
         overwrite: true
         tag: ${{ github.ref }}
         file_glob: true
+  ############################################################################################
+  ##################################### Docker images  #######################################
+  ############################################################################################
+  DockerServerImages:
+    runs-on: [self-hosted, style-checker]
+    steps:
+    - name: Clear repository
+      run: |
+        sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
+    - name: Check out repository code
+      uses: actions/checkout@v2
+      with:
+        fetch-depth: 0  # otherwise we will have no version info
+    - name: Check docker clickhouse/clickhouse-server building
+      run: |
+        cd "$GITHUB_WORKSPACE/tests/ci"
+        python3 docker_server.py --release-type auto --version "${{ github.ref }}"
+        python3 docker_server.py --release-type auto --version "${{ github.ref }}" --no-ubuntu \
+          --image-repo clickhouse/clickhouse-keeper --image-path docker/keeper
+    - name: Cleanup
+      if: always()
+      run: |
+        # shellcheck disable=SC2046
+        docker kill $(docker ps -q) ||:
+        # shellcheck disable=SC2046
+        docker rm -f $(docker ps -a -q) ||:
+        sudo rm -fr "$TEMP_PATH"

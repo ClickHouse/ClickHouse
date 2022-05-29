@@ -1,6 +1,6 @@
 ---
-toc_priority: 62
-toc_title: Constraints on Settings
+sidebar_position: 62
+sidebar_label: Constraints on Settings
 ---
 
 # Constraints on Settings {#constraints-on-settings}
