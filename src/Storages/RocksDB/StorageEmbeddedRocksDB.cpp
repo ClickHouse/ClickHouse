@@ -254,7 +254,7 @@ public:
         const size_t max_block_size_)
         : SourceWithProgress(header)
         , storage(storage_)
-        , primary_key_pos(header.getPositionByName(storage.getPrimaryKey()))
+        , primary_key_pos(header.getPositionByName(storage.getPrimaryKey()[0]))
         , keys(keys_)
         , begin(begin_)
         , end(end_)
@@ -270,7 +270,7 @@ public:
         const size_t max_block_size_)
         : SourceWithProgress(header)
         , storage(storage_)
-        , primary_key_pos(header.getPositionByName(storage.getPrimaryKey()))
+        , primary_key_pos(header.getPositionByName(storage.getPrimaryKey()[0]))
         , iterator(std::move(iterator_))
         , max_block_size(max_block_size_)
     {
@@ -294,7 +294,7 @@ public:
             return {};
         }
 
-        const auto & key_column_type = sample_block.getByName(storage.getPrimaryKey()).type;
+        const auto & key_column_type = sample_block.getByName(storage.getPrimaryKey()[0]).type;
         std::vector<std::string> holder;
         auto slices_keys = getSlicedKeys(it, end, key_column_type, max_block_size, holder);
         return storage.getByKeysImpl(slices_keys, sample_block, nullptr);
@@ -553,15 +553,19 @@ std::vector<rocksdb::Status> StorageEmbeddedRocksDB::multiGet(const std::vector<
 }
 
 Chunk StorageEmbeddedRocksDB::getByKeys(
-    const ColumnWithTypeAndName & col,
+    const ColumnsWithTypeAndName & cols,
     const Block & sample_block,
-    PaddedPODArray<UInt8> * null_map) const
+    PaddedPODArray<UInt8> * null_map,
+    ContextPtr /*context*/) const
 {
-    std::vector<std::string> holder;
-    auto sliced_keys = getSlicedKeys(col, holder);
+    if (cols.size() != 1)
+        throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Assertion failed: {} != 1", cols.size());
 
-    if (sliced_keys.size() != col.column->size())
-        throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Assertion failed: {} != {}", sliced_keys.size(), col.column->size());
+    std::vector<std::string> holder;
+    auto sliced_keys = getSlicedKeys(cols[0], holder);
+
+    if (sliced_keys.size() != cols[0].column->size())
+        throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Assertion failed: {} != {}", sliced_keys.size(), cols[0].column->size());
 
     return getByKeysImpl(sliced_keys, sample_block, null_map);
 }
@@ -609,7 +613,7 @@ Chunk StorageEmbeddedRocksDB::getByKeysImpl(
     std::vector<String> values;
     Block sample_block = getInMemoryMetadataPtr()->getSampleBlock();
 
-    size_t primary_key_pos = sample_block.getPositionByName(getPrimaryKey());
+    size_t primary_key_pos = sample_block.getPositionByName(getPrimaryKey()[0]);
 
     MutableColumns columns = sample_block.cloneEmptyColumns();
     auto statuses = multiGet(slices_keys, values);

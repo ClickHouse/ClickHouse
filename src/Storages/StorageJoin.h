@@ -89,6 +89,11 @@ public:
 
     bool useNulls() const { return use_nulls; }
 
+    std::vector<String> getPrimaryKey() const override { return key_names; }
+
+    Chunk getByKeys(const ColumnsWithTypeAndName & cols, const Block & output_block, PaddedPODArray<UInt8> * null_map, ContextPtr context)
+        const override;
+
 private:
     Block sample_block;
     const Names key_names;

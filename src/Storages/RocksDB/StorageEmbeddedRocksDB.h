@@ -56,12 +56,13 @@ public:
 
     std::shared_ptr<rocksdb::Statistics> getRocksDBStatistics() const;
     std::vector<rocksdb::Status> multiGet(const std::vector<rocksdb::Slice> & slices_keys, std::vector<String> & values) const;
-    const String & getPrimaryKey() const override { return primary_key; }
+    std::vector<String> getPrimaryKey() const override { return {primary_key}; }
 
     Chunk getByKeys(
-        const ColumnWithTypeAndName & col,
+        const ColumnsWithTypeAndName & cols,
         const Block & sample_block,
-        PaddedPODArray<UInt8> * null_map) const override;
+        PaddedPODArray<UInt8> * null_map,
+        ContextPtr context) const override;
 
     Chunk getByKeysImpl(
         const std::vector<rocksdb::Slice> & slices_keys,

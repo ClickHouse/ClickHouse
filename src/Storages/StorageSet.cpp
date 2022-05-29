@@ -15,6 +15,7 @@
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <filesystem>
+#include <DataTypes/DataTypeFactory.h>
 
 namespace fs = std::filesystem;
 
@@ -31,6 +32,7 @@ namespace ErrorCodes
 namespace ErrorCodes
 {
     extern const int INCORRECT_FILE_NAME;
+    extern const int LOGICAL_ERROR;
 }
 
 
@@ -122,7 +124,7 @@ StorageSetOrJoinBase::StorageSetOrJoinBase(
     const ConstraintsDescription & constraints_,
     const String & comment,
     bool persistent_)
-    : IStorage(table_id_), disk(disk_), persistent(persistent_)
+    : IKeyValueStorage(table_id_), disk(disk_), persistent(persistent_)
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
@@ -179,6 +181,20 @@ void StorageSet::truncate(const ASTPtr &, const StorageMetadataPtr & metadata_sn
     set->setHeader(header.getColumnsWithTypeAndName());
 }
 
+std::vector<String> StorageSet::getPrimaryKey() const {
+    return {"keys"};
+};
+
+Chunk StorageSet::getByKeys(
+    const ColumnsWithTypeAndName & cols, const Block & sample_block, PaddedPODArray<UInt8> * /*null_map*/, ContextPtr /*context*/) const
+{
+    if (sample_block.columns() != 1)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Assertion failed: {} != 1", sample_block.columns());
+
+    auto columns = sample_block.cloneEmptyColumns();
+    auto result = set->execute(cols, false);
+    return Chunk({std::move(result)}, result->size());
+}
 
 void StorageSetOrJoinBase::restore()
 {

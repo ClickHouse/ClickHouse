@@ -1,25 +1,25 @@
-#include <Storages/StorageJoin.h>
-#include <Storages/StorageFactory.h>
-#include <Storages/StorageSet.h>
-#include <Storages/TableLockHolder.h>
-#include <Interpreters/HashJoin.h>
-#include <Interpreters/Context.h>
-#include <Parsers/ASTCreateQuery.h>
-#include <Parsers/ASTIdentifier_fwd.h>
 #include <Core/ColumnNumbers.h>
 #include <DataTypes/NestedUtils.h>
-#include <Interpreters/joinDispatch.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/HashJoin.h>
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/castColumn.h>
-#include <Common/quoteString.h>
-#include <Common/Exception.h>
+#include <Interpreters/joinDispatch.h>
 #include <Interpreters/join_common.h>
+#include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTIdentifier_fwd.h>
+#include <Storages/StorageFactory.h>
+#include <Storages/StorageJoin.h>
+#include <Storages/StorageSet.h>
+#include <Storages/TableLockHolder.h>
+#include <Common/Exception.h>
+#include <Common/quoteString.h>
 
 #include <Compression/CompressedWriteBuffer.h>
+#include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Sources/SourceWithProgress.h>
 #include <QueryPipeline/Pipe.h>
-#include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Poco/String.h> /// toLower
 
 
@@ -150,7 +150,7 @@ void StorageJoin::mutate(const MutationCommands & commands, ContextPtr context)
 
         std::vector<std::string> files;
         disk->listFiles(path, files);
-        for (const auto & file_name: files)
+        for (const auto & file_name : files)
         {
             if (file_name.ends_with(".bin"))
                 disk->removeFileIfExists(path + file_name);
@@ -164,10 +164,11 @@ HashJoinPtr StorageJoin::getJoinLocked(std::shared_ptr<TableJoin> analyzed_join,
 {
     auto metadata_snapshot = getInMemoryMetadataPtr();
     if (!analyzed_join->sameStrictnessAndKind(strictness, kind))
-        throw Exception("Table " + getStorageID().getNameForLogs() + " has incompatible type of JOIN.", ErrorCodes::INCOMPATIBLE_TYPE_OF_JOIN);
+        throw Exception(
+            "Table " + getStorageID().getNameForLogs() + " has incompatible type of JOIN.", ErrorCodes::INCOMPATIBLE_TYPE_OF_JOIN);
 
-    if ((analyzed_join->forceNullableRight() && !use_nulls) ||
-        (!analyzed_join->forceNullableRight() && isLeftOrFull(analyzed_join->kind()) && use_nulls))
+    if ((analyzed_join->forceNullableRight() && !use_nulls)
+        || (!analyzed_join->forceNullableRight() && isLeftOrFull(analyzed_join->kind()) && use_nulls))
         throw Exception(
             ErrorCodes::INCOMPATIBLE_TYPE_OF_JOIN,
             "Table {} needs the same join_use_nulls setting as present in LEFT or FULL JOIN",
@@ -202,13 +203,13 @@ size_t StorageJoin::getSize(ContextPtr context) const
     return join->getTotalRowCount();
 }
 
-std::optional<UInt64> StorageJoin::totalRows(const Settings &settings) const
+std::optional<UInt64> StorageJoin::totalRows(const Settings & settings) const
 {
     TableLockHolder holder = tryLockTimed(rwlock, RWLockImpl::Read, RWLockImpl::NO_QUERY, settings.lock_acquire_timeout);
     return join->getTotalRowCount();
 }
 
-std::optional<UInt64> StorageJoin::totalBytes(const Settings &settings) const
+std::optional<UInt64> StorageJoin::totalBytes(const Settings & settings) const
 {
     TableLockHolder holder = tryLockTimed(rwlock, RWLockImpl::Read, RWLockImpl::NO_QUERY, settings.lock_acquire_timeout);
     return join->getTotalByteCount();
@@ -224,6 +225,19 @@ ColumnWithTypeAndName StorageJoin::joinGet(const Block & block, const Block & bl
     TableLockHolder holder = tryLockTimedWithContext(rwlock, RWLockImpl::Read, context);
     return join->joinGet(block, block_with_columns_to_add);
 }
+
+
+Chunk StorageJoin::getByKeys(
+    const ColumnsWithTypeAndName & cols, const Block & output_block, PaddedPODArray<UInt8> * /*null_map*/, ContextPtr context) const
+{
+    if (cols.size() != key_names.size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Assertion failed: {} != {}", cols.size(), key_names.size());
+
+    auto result = joinGet(cols, output_block, context);
+
+    return Chunk(output_block.getColumns(), output_block.getColumns().at(0)->size());
+}
+
 
 void registerStorageJoin(StorageFactory & factory)
 {
@@ -301,8 +315,8 @@ void registerStorageJoin(StorageFactory & factory)
         }
 
         if (strictness == ASTTableJoin::Strictness::Unspecified)
-            throw Exception("First parameter of storage Join must be ANY or ALL or SEMI or ANTI (without quotes).",
-                            ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(
+                "First parameter of storage Join must be ANY or ALL or SEMI or ANTI (without quotes).", ErrorCodes::BAD_ARGUMENTS);
 
         if (auto opt_kind_id = tryGetIdentifierName(engine_args[1]))
         {
@@ -323,8 +337,8 @@ void registerStorageJoin(StorageFactory & factory)
         }
 
         if (kind == ASTTableJoin::Kind::Comma)
-            throw Exception("Second parameter of storage Join must be LEFT or INNER or RIGHT or FULL (without quotes).",
-                            ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(
+                "Second parameter of storage Join must be LEFT or INNER or RIGHT or FULL (without quotes).", ErrorCodes::BAD_ARGUMENTS);
 
         Names key_names;
         key_names.reserve(engine_args.size() - 2);
@@ -332,7 +346,8 @@ void registerStorageJoin(StorageFactory & factory)
         {
             auto opt_key = tryGetIdentifierName(engine_args[i]);
             if (!opt_key)
-                throw Exception("Parameter №" + toString(i + 1) + " of storage Join don't look like column name.", ErrorCodes::BAD_ARGUMENTS);
+                throw Exception(
+                    "Parameter №" + toString(i + 1) + " of storage Join don't look like column name.", ErrorCodes::BAD_ARGUMENTS);
 
             key_names.push_back(*opt_key);
         }
@@ -353,7 +368,12 @@ void registerStorageJoin(StorageFactory & factory)
             persistent);
     };
 
-    factory.registerStorage("Join", creator_fn, StorageFactory::StorageFeatures{ .supports_settings = true, });
+    factory.registerStorage(
+        "Join",
+        creator_fn,
+        StorageFactory::StorageFeatures{
+            .supports_settings = true,
+        });
 }
 
 template <typename T>
@@ -423,7 +443,10 @@ protected:
             return {};
 
         Chunk chunk;
-        if (!joinDispatch(join->kind, join->strictness, join->data->maps.front(),
+        if (!joinDispatch(
+                join->kind,
+                join->strictness,
+                join->data->maps.front(),
                 [&](auto kind, auto strictness, auto & map) { chunk = createChunk<kind, strictness>(map); }))
             throw Exception("Logical error: unknown JOIN strictness", ErrorCodes::LOGICAL_ERROR);
         return chunk;
@@ -452,16 +475,17 @@ private:
 
         switch (join->data->type)
         {
-#define M(TYPE)                                           \
-    case HashJoin::Type::TYPE:                                \
+#define M(TYPE) \
+    case HashJoin::Type::TYPE: \
         rows_added = fillColumns<KIND, STRICTNESS>(*maps.TYPE, mut_columns); \
         break;
             APPLY_FOR_JOIN_VARIANTS_LIMITED(M)
 #undef M
 
             default:
-                throw Exception("Unsupported JOIN keys in StorageJoin. Type: " + toString(static_cast<UInt32>(join->data->type)),
-                                ErrorCodes::UNSUPPORTED_JOIN_KEYS);
+                throw Exception(
+                    "Unsupported JOIN keys in StorageJoin. Type: " + toString(static_cast<UInt32>(join->data->type)),
+                    ErrorCodes::UNSUPPORTED_JOIN_KEYS);
         }
 
         if (!rows_added)
@@ -548,8 +572,12 @@ private:
     }
 
     template <typename Map>
-    static void fillOne(MutableColumns & columns, const ColumnNumbers & column_indices, typename Map::const_iterator & it,
-                        const std::optional<size_t> & key_pos, size_t & rows_added)
+    static void fillOne(
+        MutableColumns & columns,
+        const ColumnNumbers & column_indices,
+        typename Map::const_iterator & it,
+        const std::optional<size_t> & key_pos,
+        size_t & rows_added)
     {
         for (size_t j = 0; j < columns.size(); ++j)
             if (j == key_pos)
@@ -560,8 +588,12 @@ private:
     }
 
     template <typename Map>
-    static void fillAll(MutableColumns & columns, const ColumnNumbers & column_indices, typename Map::const_iterator & it,
-                        const std::optional<size_t> & key_pos, size_t & rows_added)
+    static void fillAll(
+        MutableColumns & columns,
+        const ColumnNumbers & column_indices,
+        typename Map::const_iterator & it,
+        const std::optional<size_t> & key_pos,
+        size_t & rows_added)
     {
         for (auto ref_it = it->getMapped().begin(); ref_it.ok(); ++ref_it)
         {
