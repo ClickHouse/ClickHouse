@@ -1,4 +1,4 @@
-#include <Disks/AzureBlobStorage/AzureBlobStorageAuth.h>
+#include <Disks/ObjectStorages/AzureBlobStorage/AzureBlobStorageAuth.h>
 
 #if USE_AZURE_BLOB_STORAGE
 
@@ -66,27 +66,27 @@ AzureBlobStorageEndpoint processAzureBlobStorageEndpoint(const Poco::Util::Abstr
 
 
 template <class T>
-std::shared_ptr<T> getClientWithConnectionString(const String & connection_str, const String & container_name) = delete;
+std::unique_ptr<T> getClientWithConnectionString(const String & connection_str, const String & container_name) = delete;
 
 
 template<>
-std::shared_ptr<BlobServiceClient> getClientWithConnectionString(
+std::unique_ptr<BlobServiceClient> getClientWithConnectionString(
     const String & connection_str, const String & /*container_name*/)
 {
-    return std::make_shared<BlobServiceClient>(BlobServiceClient::CreateFromConnectionString(connection_str));
+    return std::make_unique<BlobServiceClient>(BlobServiceClient::CreateFromConnectionString(connection_str));
 }
 
 
 template<>
-std::shared_ptr<BlobContainerClient> getClientWithConnectionString(
+std::unique_ptr<BlobContainerClient> getClientWithConnectionString(
     const String & connection_str, const String & container_name)
 {
-    return std::make_shared<BlobContainerClient>(BlobContainerClient::CreateFromConnectionString(connection_str, container_name));
+    return std::make_unique<BlobContainerClient>(BlobContainerClient::CreateFromConnectionString(connection_str, container_name));
 }
 
 
 template <class T>
-std::shared_ptr<T> getAzureBlobStorageClientWithAuth(
+std::unique_ptr<T> getAzureBlobStorageClientWithAuth(
     const String & url, const String & container_name, const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
 {
     if (config.has(config_prefix + ".connection_string"))
@@ -101,15 +101,15 @@ std::shared_ptr<T> getAzureBlobStorageClientWithAuth(
             config.getString(config_prefix + ".account_name"),
             config.getString(config_prefix + ".account_key")
         );
-        return std::make_shared<T>(url, storage_shared_key_credential);
+        return std::make_unique<T>(url, storage_shared_key_credential);
     }
 
     auto managed_identity_credential = std::make_shared<Azure::Identity::ManagedIdentityCredential>();
-    return std::make_shared<T>(url, managed_identity_credential);
+    return std::make_unique<T>(url, managed_identity_credential);
 }
 
 
-std::shared_ptr<BlobContainerClient> getAzureBlobContainerClient(
+std::unique_ptr<BlobContainerClient> getAzureBlobContainerClient(
     const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
 {
     auto endpoint = processAzureBlobStorageEndpoint(config, config_prefix);
@@ -136,8 +136,18 @@ std::shared_ptr<BlobContainerClient> getAzureBlobContainerClient(
         }
     }
 
-    return std::make_shared<BlobContainerClient>(
+    return std::make_unique<BlobContainerClient>(
         blob_service_client->CreateBlobContainer(container_name).Value);
+}
+
+std::unique_ptr<AzureObjectStorageSettings> getAzureBlobStorageSettings(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, ContextPtr /*context*/)
+{
+    return std::make_unique<AzureObjectStorageSettings>(
+        config.getUInt64(config_prefix + ".max_single_part_upload_size", 100 * 1024 * 1024),
+        config.getUInt64(config_prefix + ".min_bytes_for_seek", 1024 * 1024),
+        config.getInt(config_prefix + ".max_single_read_retries", 3),
+        config.getInt(config_prefix + ".max_single_download_retries", 3)
+    );
 }
 
 }
