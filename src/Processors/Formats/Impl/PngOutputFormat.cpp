@@ -12,31 +12,26 @@ namespace ErrorCodes
     extern const int BAD_TYPE_OF_FIELD;
 }
 
-PngOutputFormat::PngOutputFormat(WriteBuffer & out_, const Block & header_) : IOutputFormat(header_, out_)
+PngOutputFormat::PngOutputFormat(WriteBuffer & out_, const Block & header_, const FormatSettings & settings_) : IOutputFormat(header_, out_)
 {
+    draw_lines = settings_.png.output_format_png_draw_lines;
+    file_name = settings_.png.output_format_png_file_name;
+    result_width = width = settings_.png.output_format_png_width;
+    result_height = height = settings_.png.output_format_png_height;
     data.resize(3 * width * height, 255);
 }
 
-Float64 getDoubleValueOfField(const Field & f)
-{
+Float64 getDoubleValueOfField(const Field & f) {
     switch (f.getType())
     {
-        case Field::Types::UInt64:
-            return static_cast<Float64>(f.get<UInt64>());
-        case Field::Types::Int64:
-            return static_cast<Float64>(f.get<Int64>());
-        case Field::Types::UInt128:
-            return static_cast<Float64>(f.get<UInt128>());
-        case Field::Types::Int128:
-            return static_cast<Float64>(f.get<Int128>());
-        case Field::Types::UInt256:
-            return static_cast<Float64>(f.get<UInt256>());
-        case Field::Types::Int256:
-            return static_cast<Float64>(f.get<Int256>());
-        case Field::Types::Float64:
-            return static_cast<Float64>(f.get<Float64>());
-        default:
-            break;
+        case Field::Types::UInt64:  return static_cast<Float64>(f.get<UInt64>());
+        case Field::Types::Int64:   return static_cast<Float64>(f.get<Int64>());
+        case Field::Types::UInt128:  return static_cast<Float64>(f.get<UInt128>());
+        case Field::Types::Int128:   return static_cast<Float64>(f.get<Int128>());
+        case Field::Types::UInt256:  return static_cast<Float64>(f.get<UInt256>());
+        case Field::Types::Int256:   return static_cast<Float64>(f.get<Int256>());
+        case Field::Types::Float64: return static_cast<Float64>(f.get<Float64>());
+        default: break;
     }
     throw Exception(ErrorCodes::BAD_TYPE_OF_FIELD, "Incorrect Field type for conversion to Float64");
 }
@@ -143,12 +138,9 @@ void PngOutputFormat::drawColumn(size_t x, size_t y, size_t len, size_t middle, 
 
     size_t top_len = std::min(height * 1 / 100, upper_bound - lower_bound);
 
-    if (y >= middle)
-    {
+    if (y >= middle) {
         lower_bound = upper_bound - top_len;
-    }
-    else
-    {
+    } else {
         upper_bound = lower_bound + top_len;
     }
 
@@ -161,9 +153,9 @@ void PngOutputFormat::drawColumn(size_t x, size_t y, size_t len, size_t middle, 
     }
 }
 
-void PngOutputFormat::resampleData(size_t w = 1920, size_t h = 1080)
+void PngOutputFormat::resampleData(size_t w, size_t h)
 {
-    std::vector<uint8_t> resampleData(w * h * 3, 255);
+    std::vector<uint8_t> resampled_data(w * h * 3, 255);
     Float64 x_ratio = static_cast<Float64>(width - 1) / static_cast<Float64>(w - 1);
     Float64 y_ratio = static_cast<Float64>(height - 1) / static_cast<Float64>(h - 1);
     for (size_t i = 0; i < h; ++i)
@@ -180,7 +172,8 @@ void PngOutputFormat::resampleData(size_t w = 1920, size_t h = 1080)
 
             uint8_t r = static_cast<uint8_t>(
                 data[y_l * width * 3 + 3 * x_l] * (1 - x_weight) * (1 - y_weight)
-                + data[y_l * width * 3 + 3 * x_h] * x_weight * (1 - y_weight) + data[y_h * width * 3 + 3 * x_l] * (1 - x_weight) * y_weight
+                + data[y_l * width * 3 + 3 * x_h] * x_weight * (1 - y_weight) 
+                + data[y_h * width * 3 + 3 * x_l] * (1 - x_weight) * y_weight
                 + data[y_h * width * 3 + 3 * x_h] * x_weight * y_weight);
             uint8_t g = static_cast<uint8_t>(
                 data[y_l * width * 3 + 3 * x_l + 1] * (1 - x_weight) * (1 - y_weight)
@@ -192,12 +185,12 @@ void PngOutputFormat::resampleData(size_t w = 1920, size_t h = 1080)
                 + data[y_l * width * 3 + 3 * x_h + 2] * x_weight * (1 - y_weight)
                 + data[y_h * width * 3 + 3 * x_l + 2] * (1 - x_weight) * y_weight
                 + data[y_h * width * 3 + 3 * x_h + 2] * x_weight * y_weight);
-            resampleData[i * w * 3 + j * 3] = r;
-            resampleData[i * w * 3 + j * 3 + 1] = g;
-            resampleData[i * w * 3 + j * 3 + 2] = b;
+            resampled_data[i * w * 3 + j * 3] = r;
+            resampled_data[i * w * 3 + j * 3 + 1] = g;
+            resampled_data[i * w * 3 + j * 3 + 2] = b;
         }
     }
-    data = resampleData;
+    data = resampled_data;
     width = w;
     height = h;
 }
@@ -248,12 +241,9 @@ void PngOutputFormat::drawOneDimension()
     middle = static_cast<size_t>((height - 1) * (-min_value) / (max_value - min_value));
     if (values_size <= width)
     {
-        if (values_size > width / 10)
-        {
+        if (values_size > width / 10) {
             width = values_size;
-        }
-        else
-        {
+        } else {
             width = (width / values_size) * values_size;
         }
         data.resize(height * width * 3, 255);
@@ -270,7 +260,7 @@ void PngOutputFormat::drawOneDimension()
                 ++w;
             }
         }
-        resampleData();
+        resampleData(result_width, result_height);
     }
     else
     {
@@ -316,25 +306,6 @@ void PngOutputFormat::drawOneDimension()
                 }
             }
         }
-        if (c != 0)
-        {
-            size_t counter = 0;
-            for (size_t h = 0; h < height; ++h)
-            {
-                counter += counters[h];
-                uint8_t r = 180 - static_cast<uint8_t>(180 * counter / c);
-                uint8_t g = 180 - static_cast<uint8_t>(180 * counter / c);
-                uint8_t b = 255;
-
-                drawPoint(w, h, Colour{r, g, b});
-            }
-            size_t h = height - 1;
-            while (h > 0 && counters[h] == 0)
-            {
-                drawPoint(w, h, Colour{255, 255, 255});
-                --h;
-            }
-        }
     }
     for (size_t i = 0; i < width; ++i)
     {
@@ -365,11 +336,9 @@ void PngOutputFormat::drawTwoDimension()
     }
 
     std::vector<std::pair<size_t, size_t>> coordinates;
-    bool draw_lines = (values_size < 20);
-    if (draw_lines)
-    {
+    if (draw_lines) {
         coordinates.reserve(values_size);
-    }
+    } 
 
     size_t x_start = static_cast<size_t>((width - 1) * (-x_min) / (x_max - x_min));
     size_t y_start = static_cast<size_t>((height - 1) * (-y_min) / (y_max - y_min));
@@ -385,8 +354,7 @@ void PngOutputFormat::drawTwoDimension()
             size_t x = static_cast<size_t>(static_cast<Float64>(width - 1) * (x_value - x_min) / x_diff);
             size_t y = static_cast<size_t>(static_cast<Float64>(height - 1) * (y_value - y_min) / y_diff);
             drawPoint(x, y);
-            if (draw_lines)
-            {
+            if (draw_lines) {
                 coordinates.push_back({x, y});
             }
         }
@@ -400,11 +368,9 @@ void PngOutputFormat::drawTwoDimension()
     {
         drawPoint(x_start, y, Colour{255, 0, 0});
     }
-    if (draw_lines)
-    {
+    if (draw_lines) {
         std::sort(coordinates.begin(), coordinates.end());
-        for (size_t i = 0; i + 1 < coordinates.size(); ++i)
-        {
+        for (size_t i = 0; i + 1 < coordinates.size(); ++i) {
             connectPoints(coordinates[i].first, coordinates[i].second, coordinates[i + 1].first, coordinates[i + 1].second);
         }
     }
@@ -452,6 +418,6 @@ void registerOutputFormatPng(FormatFactory & factory)
         [](WriteBuffer & buf,
            const Block & sample,
            const RowOutputFormatParams &,
-           const FormatSettings &) { return std::make_shared<PngOutputFormat>(buf, sample); });
+           const FormatSettings & settings) { return std::make_shared<PngOutputFormat>(buf, sample, settings); });
 }
 }

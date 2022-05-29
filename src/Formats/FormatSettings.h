@@ -268,6 +268,14 @@ struct FormatSettings
         String table_name;
         bool map_column_names = true;
     } mysql_dump;
+
+    struct 
+    {
+        std::string output_format_png_file_name = "PngOutputFormat.png";
+        UInt64 output_format_png_width = 1920;
+        UInt64 output_format_png_height = 1080;
+        bool output_format_png_draw_lines = false;
+    } png;
 };
 
 }

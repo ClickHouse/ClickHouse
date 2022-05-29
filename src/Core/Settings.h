@@ -734,7 +734,11 @@ static constexpr UInt64 operator""_Gb(unsigned long long value)
     \
     M(String, input_format_mysql_dump_table_name, "", "Name of the table in MySQL dump from which to read data", 0) \
     M(Bool, input_format_mysql_dump_map_column_names, true, "Match columns from table in MySQL dump and columns from ClickHouse table by names", 0) \
-
+    \
+    M(String, output_format_png_file_name, "PngOutputFormat.png", "File name for output png file in PngOutputFormat", 0) \
+    M(UInt64, output_format_png_width, 1920, "Width of output png file in PngOutputFormat", 0) \
+    M(UInt64, output_format_png_height, 1080, "Height of output png file in PngOutputFormat", 0) \
+    M(Bool, output_format_png_draw_lines, false, "Enable drawing lines in PngOutputFormat for two dimension tables", 0) \
 // End of FORMAT_FACTORY_SETTINGS
 // Please add settings non-related to formats into the COMMON_SETTINGS above.
 

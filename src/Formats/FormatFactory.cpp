@@ -152,6 +152,10 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.column_names_for_schema_inference = settings.column_names_for_schema_inference;
     format_settings.mysql_dump.table_name = settings.input_format_mysql_dump_table_name;
     format_settings.mysql_dump.map_column_names = settings.input_format_mysql_dump_map_column_names;
+    format_settings.png.output_format_png_file_name = settings.output_format_png_file_name;
+    format_settings.png.output_format_png_width = settings.output_format_png_width;
+    format_settings.png.output_format_png_height = settings.output_format_png_height;
+    format_settings.png.output_format_png_draw_lines = settings.output_format_png_draw_lines;
 
     /// Validate avro_schema_registry_url with RemoteHostFilter when non-empty and in Server context
     if (format_settings.schema.is_server)

@@ -1,6 +1,7 @@
 #pragma once
 #include <Core/Block.h>
 #include <Processors/Formats/IOutputFormat.h>
+#include <Formats/FormatSettings.h>
 
 namespace DB
 {
@@ -14,7 +15,7 @@ public:
         uint8_t b = 255;
     };
 
-    PngOutputFormat(WriteBuffer & out_, const Block & header_);
+    PngOutputFormat(WriteBuffer & out_, const Block & header_, const FormatSettings & settings_);
     String getName() const override { return "PngOutputFormat"; }
 
 private:
@@ -30,11 +31,10 @@ private:
     void consume(Chunk) override;
     void finalizeImpl() override;
 
-
-    size_t width = 1920;
-    size_t height = 1080;
+    bool draw_lines;
+    size_t width, height, result_width, result_height;
     size_t values_size = 0;
-    std::string file_name = "pngOutputClickHouse.png";
+    std::string file_name;
     std::vector<uint8_t> data;
     std::vector<Chunk> chunks;
 };
