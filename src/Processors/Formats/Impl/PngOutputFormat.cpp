@@ -62,6 +62,8 @@ void PngOutputFormat::drawPoint(size_t x, size_t y, const Colour & c = Colour())
     data[(height - 1 - y) * width * 3 + x * 3 + 2] = c.b;
 }
 
+/// Connect points with Xiaolin Wu's line algorithm
+/// https://en.wikipedia.org/wiki/Xiaolin_Wu%27s_line_algorithm
 void PngOutputFormat::connectPoints(int x1, int y1, int x2, int y2)
 {
     bool steep = std::abs(y2 - y1) > std::abs(x2 - x1);
@@ -113,11 +115,13 @@ void PngOutputFormat::connectPoints(int x1, int y1, int x2, int y2)
     }
 }
 
-void PngOutputFormat::drawColumn(size_t x, size_t y, size_t len, size_t middle, const Colour & c = Colour())
+/// Draw column between y and zero_height (coordinates of height) and 
+/// between x and x + column_width (coordinates of width)   
+void PngOutputFormat::drawColumn(size_t x, size_t y, size_t column_width, size_t zero_height, const Colour & c = Colour())
 {
-    size_t lower_bound = middle;
-    size_t upper_bound = middle;
-    if (y > middle)
+    size_t lower_bound = zero_height;
+    size_t upper_bound = zero_height;
+    if (y > zero_height)
     {
         upper_bound = y;
     }
@@ -127,7 +131,7 @@ void PngOutputFormat::drawColumn(size_t x, size_t y, size_t len, size_t middle, 
     }
     for (size_t i = lower_bound; i <= upper_bound; ++i)
     {
-        for (size_t j = 0; j < len; ++j)
+        for (size_t j = 0; j < column_width; ++j)
         {
             uint8_t r = c.r / 2;
             uint8_t g = c.g / 2;
@@ -138,7 +142,7 @@ void PngOutputFormat::drawColumn(size_t x, size_t y, size_t len, size_t middle, 
 
     size_t top_len = std::min(height * 1 / 100, upper_bound - lower_bound);
 
-    if (y >= middle) {
+    if (y >= zero_height) {
         lower_bound = upper_bound - top_len;
     } else {
         upper_bound = lower_bound + top_len;
@@ -146,13 +150,16 @@ void PngOutputFormat::drawColumn(size_t x, size_t y, size_t len, size_t middle, 
 
     for (size_t i = lower_bound; i <= upper_bound; ++i)
     {
-        for (size_t j = 0; j < len; ++j)
+        for (size_t j = 0; j < column_width; ++j)
         {
             drawPoint(x + j, i, c);
         }
     }
 }
 
+/// Resize current pixel data of image to image with sizes w * h
+/// with bilinear interpolation - change one pixel to 
+/// distanceweighted average of the four nearest pixel 
 void PngOutputFormat::resampleData(size_t w, size_t h)
 {
     std::vector<uint8_t> resampled_data(w * h * 3, 255);
@@ -222,6 +229,14 @@ void PngOutputFormat::writePngToFile()
     }
 }
 
+/// Draw bar chart for one dimension input table
+/// 1. If values_size of input table is less than result_width of image, 
+/// when reduce current width, draw columns and resample data of image to size
+/// result_width * result_height
+/// 2. If values_size of input table is bigger that result_width of image, 
+/// when we split values of table into consecutive equal parts and correlate
+/// each part to column with 1-pixel width. Colour's brightness of column's pixel depends on proportion 
+/// of values that are less than value matching to height of pixel.
 void PngOutputFormat::drawOneDimension()
 {
     if (values_size == 0)
@@ -237,8 +252,8 @@ void PngOutputFormat::drawOneDimension()
     {
         max_value = 1;
     }
-    size_t middle = 0;
-    middle = static_cast<size_t>((height - 1) * (-min_value) / (max_value - min_value));
+    size_t zero_height = 0;
+    zero_height = static_cast<size_t>((height - 1) * (-min_value) / (max_value - min_value));
     if (values_size <= width)
     {
         if (values_size > width / 10) {
@@ -248,15 +263,15 @@ void PngOutputFormat::drawOneDimension()
         }
         data.resize(height * width * 3, 255);
         size_t w = 0;
-        size_t len = width / values_size;
-        size_t diff = 8 * len / 10;
+        size_t column_width = width / values_size;
+        size_t space_width = 8 * column_width / 10;
         for (const auto & chunk : chunks)
         {
             for (size_t i = 0; i < chunk.getColumns()[0]->size(); ++i)
             {
                 Float64 value = chunk.getColumns()[0]->getFloat64(i);
                 size_t column_height = static_cast<size_t>((height - 1) * (value - min_value) / (max_value - min_value));
-                drawColumn(w * len, column_height, len - diff, middle);
+                drawColumn(w * column_width, column_height, column_width - space_width, zero_height);
                 ++w;
             }
         }
@@ -307,12 +322,15 @@ void PngOutputFormat::drawOneDimension()
             }
         }
     }
+    /// Draw y - axis
     for (size_t i = 0; i < width; ++i)
     {
-        drawPoint(i, middle, Colour{255, 0, 0});
+        drawPoint(i, zero_height, Colour{255, 0, 0});
     }
 }
 
+/// Draw two-dimensional space for two dimension input table.
+/// Also connect points if draw_lines flag is setted.
 void PngOutputFormat::drawTwoDimension()
 {
     if (values_size == 0)
@@ -359,6 +377,7 @@ void PngOutputFormat::drawTwoDimension()
             }
         }
     }
+    /// Draw y and x - axes
     for (size_t x = 0; x < width; ++x)
     {
         drawPoint(x, y_start, Colour{255, 0, 0});
@@ -381,6 +400,9 @@ void PngOutputFormat::consume(Chunk chunk)
     chunks.emplace_back(std::move(chunk));
 }
 
+/// PngOutputFormat supports onli one dimension and two dimension
+/// numeric table, so we check it in finalizeImpl before
+/// drawing graph
 void PngOutputFormat::finalizeImpl()
 {
     for (const auto & chunk : chunks)
