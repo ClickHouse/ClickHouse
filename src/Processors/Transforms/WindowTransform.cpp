@@ -25,6 +25,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int NOT_IMPLEMENTED;
     extern const int ILLEGAL_COLUMN;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
 // Interface for true window functions. It's not much of an interface, they just
@@ -2129,8 +2130,15 @@ struct WindowFunctionNonNegativeDerivative final : public RecurrentWindowFunctio
                 ARGUMENT_INTERVAL,
                 argument_types[ARGUMENT_INTERVAL]->getName());
         }
+        if (interval_datatype->getKind() == IntervalKind::Month || interval_datatype->getKind() == IntervalKind::Quarter || interval_datatype->getKind() == IntervalKind::Year) {
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Only INTERVAL less than month is accepted, '{}' given",
+                argument_types[ARGUMENT_INTERVAL]->getName());
+        }
         interval_length = interval_datatype->getKind().toAvgSeconds();
     }
+
 
     DataTypePtr getReturnType() const override { return argument_types[0]; }
 
