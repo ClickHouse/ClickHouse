@@ -722,10 +722,7 @@ bool CachedReadBufferFromFile::nextImpl()
 bool CachedReadBufferFromFile::nextImplStep()
 {
     if (file_offset_of_buffer_end == read_until_position)
-    {
-        assert(range_finished);
         return false;
-    }
 
     last_caller_id = FileSegment::getCallerId();
 
