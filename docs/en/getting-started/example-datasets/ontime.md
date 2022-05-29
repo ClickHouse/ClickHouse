@@ -129,7 +129,7 @@ CREATE TABLE `ontime`
     `Div5LongestGTime`                Int16,
     `Div5WheelsOff`                   Int16,
     `Div5TailNum`                     LowCardinality(String)
-) ENGINE = ReplicatedMergeTree
+) ENGINE = MergeTree
   ORDER BY (Year, Quarter, Month, DayofMonth, FlightDate, IATA_CODE_Reporting_Airline);
 ```
 
