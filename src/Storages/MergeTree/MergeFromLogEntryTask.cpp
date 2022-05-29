@@ -184,7 +184,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
 
     if (storage_settings_ptr->allow_remote_fs_zero_copy_replication)
     {
-        if (auto disk = reserved_space->getDisk(); disk->getType() == DB::DiskType::S3)
+        if (auto disk = reserved_space->getDisk(); disk->supportZeroCopyReplication())
         {
             String dummy;
             if (!storage.findReplicaHavingCoveringPart(entry.new_part_name, true, dummy).empty())
@@ -322,6 +322,7 @@ bool MergeFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWrite
     ProfileEvents::increment(ProfileEvents::ReplicatedPartMerges);
 
     write_part_log({});
+    storage.incrementMergedPartsProfileEvent(part->getType());
 
     return true;
 }

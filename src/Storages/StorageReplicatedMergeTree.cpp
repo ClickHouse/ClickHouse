@@ -1149,6 +1149,7 @@ void StorageReplicatedMergeTree::setTableStructure(
                 new_metadata.table_ttl = TTLTableDescription{};
             }
         }
+
     }
 
     /// Changes in columns may affect following metadata fields
@@ -1196,6 +1197,7 @@ void StorageReplicatedMergeTree::setTableStructure(
 
     auto table_id = getStorageID();
     DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(getContext(), table_id, new_metadata);
+    setInMemoryMetadata(new_metadata);
 }
 
 
@@ -4712,9 +4714,9 @@ void StorageReplicatedMergeTree::alter(
 
     auto table_id = getStorageID();
 
-    if (commands.isSettingsAlter())
+    if (commands.isSettingsAlter() || commands.isCommentAlter())
     {
-        /// We don't replicate storage_settings_ptr ALTER. It's local operation.
+        /// We don't replicate storage_settings_ptr or table comment ALTER. Those are local operations.
         /// Also we don't upgrade alter lock to table structure lock.
         StorageInMemoryMetadata future_metadata = getInMemoryMetadata();
         commands.apply(future_metadata, query_context);
@@ -4724,6 +4726,7 @@ void StorageReplicatedMergeTree::alter(
         changeSettings(future_metadata.settings_changes, table_lock_holder);
 
         DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(query_context, table_id, future_metadata);
+        setInMemoryMetadata(future_metadata);
         return;
     }
 
@@ -4796,13 +4799,26 @@ void StorageReplicatedMergeTree::alter(
         String new_columns_str = future_metadata.columns.toString();
         ops.emplace_back(zkutil::makeSetRequest(fs::path(zookeeper_path) / "columns", new_columns_str, -1));
 
-        if (ast_to_str(current_metadata->settings_changes) != ast_to_str(future_metadata.settings_changes))
+        // Local-only operations.
+        const bool settings_changed = ast_to_str(current_metadata->settings_changes) != ast_to_str(future_metadata.settings_changes);
+        const bool comment_changed = current_metadata->comment != future_metadata.comment;
+
+        if (settings_changed || comment_changed)
         {
-            /// Just change settings
             StorageInMemoryMetadata metadata_copy = *current_metadata;
-            metadata_copy.settings_changes = future_metadata.settings_changes;
-            changeSettings(metadata_copy.settings_changes, table_lock_holder);
+
+            if (comment_changed)
+                metadata_copy.comment = future_metadata.comment;
+
+            if (settings_changed)
+            {
+                /// Just change settings
+                metadata_copy.settings_changes = future_metadata.settings_changes;
+                changeSettings(metadata_copy.settings_changes, table_lock_holder);
+            }
+
             DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(query_context, table_id, metadata_copy);
+            setInMemoryMetadata(metadata_copy);
         }
 
         /// We can be sure, that in case of successful commit in zookeeper our
@@ -4860,7 +4876,9 @@ void StorageReplicatedMergeTree::alter(
             String metadata_zk_path = fs::path(txn->getDatabaseZooKeeperPath()) / "metadata" / escapeForFileName(table_id.table_name);
             auto ast = DatabaseCatalog::instance().getDatabase(table_id.database_name)->getCreateTableQuery(table_id.table_name, query_context);
             applyMetadataChangesToCreateQuery(ast, future_metadata);
+            setInMemoryMetadata(future_metadata);
             ops.emplace_back(zkutil::makeSetRequest(metadata_zk_path, getObjectDefinitionFromCreateQuery(ast), -1));
+
         }
 
         Coordination::Responses results;
@@ -7758,7 +7776,8 @@ String StorageReplicatedMergeTree::getSharedDataReplica(
 }
 
 
-Strings StorageReplicatedMergeTree::getZeroCopyPartPath(const MergeTreeSettings & settings, DiskType disk_type, const String & table_uuid,
+Strings StorageReplicatedMergeTree::getZeroCopyPartPath(
+    const MergeTreeSettings & settings, DiskType disk_type, const String & table_uuid,
     const String & part_name, const String & zookeeper_path_old)
 {
     Strings res;
