@@ -237,7 +237,10 @@ void DiskObjectStorage::moveFile(const String & from_path, const String & to_pat
         metadata_helper->createFileOperationObject("rename", revision, object_metadata);
     }
 
-    metadata_disk->moveFile(from_path, to_path);
+    {
+        std::unique_lock lock(metadata_mutex);
+        metadata_disk->moveFile(from_path, to_path);
+    }
 }
 
 void DiskObjectStorage::moveFile(const String & from_path, const String & to_path)
@@ -449,6 +452,8 @@ void DiskObjectStorage::removeMetadata(const String & path, std::vector<String> 
             LOG_WARNING(log,
                 "Metadata file {} can't be read by reason: {}. Removing it forcibly.",
                 backQuote(path), e.nested() ? e.nested()->message() : e.message());
+
+            std::unique_lock lock(metadata_mutex);
             metadata_disk->removeFile(path);
         }
         else
