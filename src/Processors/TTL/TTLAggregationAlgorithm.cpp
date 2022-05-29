@@ -15,9 +15,7 @@ TTLAggregationAlgorithm::TTLAggregationAlgorithm(
 {
     current_key_value.resize(description.group_by_keys.size());
 
-    ColumnNumbers keys;
-    for (const auto & key : description.group_by_keys)
-        keys.push_back(header.getPositionByName(key));
+    const auto & keys = description.group_by_keys;
 
     key_columns.resize(description.group_by_keys.size());
     AggregateDescriptions aggregates = description.aggregate_descriptions;

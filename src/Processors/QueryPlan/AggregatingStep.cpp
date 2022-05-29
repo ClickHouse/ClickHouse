@@ -225,7 +225,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                 for (size_t i = 0; i < output_header.columns(); ++i)
                 {
                     auto & col = output_header.getByPosition(i);
-                    if (missign_column_index < missing_columns.size() && missing_columns[missign_column_index] == i)
+                    if (missign_column_index < missing_columns.size() && missing_columns[missign_column_index] == col.name)
                     {
                         ++missign_column_index;
                         auto column = ColumnConst::create(col.column->cloneResized(1), 0);

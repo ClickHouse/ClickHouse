@@ -260,6 +260,15 @@ auto constructWithReserveIfPossible(size_t size_hint)
     else
         return std::make_unique<Method>();
 }
+
+DB::ColumnNumbers calculateKeysPositions(const DB::Aggregator::Params & params)
+{
+    const auto & header = params.src_header ? params.src_header : params.intermediate_header;
+    DB::ColumnNumbers keys_positions(params.keys_size);
+    for (size_t i = 0; i < params.keys_size; ++i)
+        keys_positions[i] = header.getPositionByName(params.keys[i]);
+    return keys_positions;
+}
 }
 
 namespace DB
@@ -360,11 +369,7 @@ Block Aggregator::getHeader(bool final) const
 }
 
 Block Aggregator::Params::getHeader(
-    const Block & src_header,
-    const Block & intermediate_header,
-    const ColumnNumbers & keys,
-    const AggregateDescriptions & aggregates,
-    bool final)
+    const Block & src_header, const Block & intermediate_header, const Names & keys, const AggregateDescriptions & aggregates, bool final)
 {
     Block res;
 
@@ -386,7 +391,7 @@ Block Aggregator::Params::getHeader(
     else
     {
         for (const auto & key : keys)
-            res.insert(src_header.safeGetByPosition(key).cloneEmpty());
+            res.insert(src_header.getByName(key).cloneEmpty());
 
         for (const auto & aggregate : aggregates)
         {
@@ -411,9 +416,6 @@ Block Aggregator::Params::getHeader(
 void Aggregator::Params::explain(WriteBuffer & out, size_t indent) const
 {
     Strings res;
-    const auto & header = src_header ? src_header
-                                     : intermediate_header;
-
     String prefix(indent, ' ');
 
     {
@@ -421,16 +423,13 @@ void Aggregator::Params::explain(WriteBuffer & out, size_t indent) const
         out << prefix << "Keys: ";
 
         bool first = true;
-        for (auto key : keys)
+        for (const auto & key : keys)
         {
             if (!first)
                 out << ", ";
             first = false;
 
-            if (key >= header.columns())
-                out << "unknown position " << key;
-            else
-                out << header.getByPosition(key).name;
+            out << key;
         }
 
         out << '\n';
@@ -447,18 +446,10 @@ void Aggregator::Params::explain(WriteBuffer & out, size_t indent) const
 
 void Aggregator::Params::explain(JSONBuilder::JSONMap & map) const
 {
-    const auto & header = src_header ? src_header
-                                     : intermediate_header;
-
     auto keys_array = std::make_unique<JSONBuilder::JSONArray>();
 
-    for (auto key : keys)
-    {
-        if (key >= header.columns())
-            keys_array->add("");
-        else
-            keys_array->add(header.getByPosition(key).name);
-    }
+    for (const auto & key : keys)
+        keys_array->add(key);
 
     map.add("Keys", std::move(keys_array));
 
@@ -503,7 +494,7 @@ public:
 
 #endif
 
-Aggregator::Aggregator(const Params & params_) : params(params_)
+Aggregator::Aggregator(const Params & params_) : params(params_), keys_positions(calculateKeysPositions(params))
 {
     /// Use query-level memory tracker
     if (auto * memory_tracker_child = CurrentThread::getMemoryTracker())
@@ -649,9 +640,9 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod()
     bool has_nullable_key = false;
     bool has_low_cardinality = false;
 
-    for (const auto & pos : params.keys)
+    for (const auto & key : params.keys)
     {
-        DataTypePtr type = (params.src_header ? params.src_header : params.intermediate_header).safeGetByPosition(pos).type;
+        DataTypePtr type = (params.src_header ? params.src_header : params.intermediate_header).getByName(key).type;
 
         if (type->lowCardinality())
         {
@@ -1320,7 +1311,7 @@ bool Aggregator::executeOnBlock(Columns columns,
     /// Remember the columns we will work with
     for (size_t i = 0; i < params.keys_size; ++i)
     {
-        materialized_columns.push_back(recursiveRemoveSparse(columns.at(params.keys[i]))->convertToFullColumnIfConst());
+        materialized_columns.push_back(recursiveRemoveSparse(columns.at(keys_positions[i]))->convertToFullColumnIfConst());
         key_columns[i] = materialized_columns.back().get();
 
         if (!result.isLowCardinality())

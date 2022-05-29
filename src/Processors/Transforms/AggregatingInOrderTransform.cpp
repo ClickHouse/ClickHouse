@@ -85,7 +85,8 @@ void AggregatingInOrderTransform::consume(Chunk chunk)
     Columns key_columns(params->params.keys_size);
     for (size_t i = 0; i < params->params.keys_size; ++i)
     {
-        materialized_columns.push_back(chunk.getColumns().at(params->params.keys[i])->convertToFullColumnIfConst());
+        const auto pos = inputs.front().getHeader().getPositionByName(params->params.keys[i]);
+        materialized_columns.push_back(chunk.getColumns().at(pos)->convertToFullColumnIfConst());
         key_columns[i] = materialized_columns.back();
         if (group_by_key)
             key_columns_raw[i] = materialized_columns.back().get();

@@ -21,7 +21,7 @@ protected:
 
 private:
     AggregatingTransformParamsPtr params;
-    const ColumnNumbers keys;
+    ColumnNumbers keys;
     const ColumnsMask aggregates_mask;
 
     Chunks consumed_chunks;

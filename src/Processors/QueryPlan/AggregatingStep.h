@@ -14,13 +14,10 @@ struct GroupingSetsParams
 {
     GroupingSetsParams() = default;
 
-    GroupingSetsParams(ColumnNumbers used_keys_, ColumnNumbers missing_keys_)
-        : used_keys(std::move(used_keys_))
-        , missing_keys(std::move(missing_keys_))
-    {}
+    GroupingSetsParams(Names used_keys_, Names missing_keys_) : used_keys(std::move(used_keys_)), missing_keys(std::move(missing_keys_)) { }
 
-    ColumnNumbers used_keys;
-    ColumnNumbers missing_keys;
+    Names used_keys;
+    Names missing_keys;
 };
 
 using GroupingSetsParamsList = std::vector<GroupingSetsParams>;

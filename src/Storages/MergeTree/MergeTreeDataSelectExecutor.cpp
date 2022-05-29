@@ -273,9 +273,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
         {
             const auto & header_before_aggregation = pipe.getHeader();
 
-            ColumnNumbers keys;
-            for (const auto & key : query_info.projection->aggregation_keys)
-                keys.push_back(header_before_aggregation.getPositionByName(key.name));
+            const auto & keys = query_info.projection->aggregation_keys.getNames();
 
             AggregateDescriptions aggregates = query_info.projection->aggregate_descriptions;
 

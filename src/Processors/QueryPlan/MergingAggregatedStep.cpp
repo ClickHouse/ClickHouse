@@ -36,8 +36,8 @@ MergingAggregatedStep::MergingAggregatedStep(
     , memory_efficient_merge_threads(memory_efficient_merge_threads_)
 {
     /// Aggregation keys are distinct
-    for (auto key : params->params.keys)
-        output_stream->distinct_columns.insert(params->params.intermediate_header.getByPosition(key).name);
+    for (const auto & key : params->params.keys)
+        output_stream->distinct_columns.insert(key);
 }
 
 void MergingAggregatedStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
@@ -78,8 +78,8 @@ void MergingAggregatedStep::updateOutputStream()
     output_stream = createOutputStream(input_streams.front(), params->getHeader(), getDataStreamTraits());
 
     /// Aggregation keys are distinct
-    for (auto key : params->params.keys)
-        output_stream->distinct_columns.insert(params->params.intermediate_header.getByPosition(key).name);
+    for (const auto & key : params->params.keys)
+        output_stream->distinct_columns.insert(key);
 }
 
 

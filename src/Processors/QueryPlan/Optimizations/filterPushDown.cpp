@@ -83,16 +83,6 @@ static size_t tryAddNewFilterStep(
     return 3;
 }
 
-static Names getAggregatingKeys(const Aggregator::Params & params)
-{
-    Names keys;
-    keys.reserve(params.keys.size());
-    for (auto pos : params.keys)
-        keys.push_back(params.src_header.getByPosition(pos).name);
-
-    return keys;
-}
-
 size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes)
 {
     if (parent_node->children.size() != 1)
@@ -113,7 +103,7 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
     if (auto * aggregating = typeid_cast<AggregatingStep *>(child.get()))
     {
         const auto & params = aggregating->getParams();
-        Names keys = getAggregatingKeys(params);
+        const auto & keys = params.keys;
 
         if (auto updated_steps = tryAddNewFilterStep(parent_node, nodes, keys))
             return updated_steps;

@@ -898,7 +898,7 @@ public:
         Block intermediate_header;
 
         /// What to count.
-        const ColumnNumbers keys;
+        const Names keys;
         const AggregateDescriptions aggregates;
         const size_t keys_size;
         const size_t aggregates_size;
@@ -953,7 +953,7 @@ public:
 
         Params(
             const Block & src_header_,
-            const ColumnNumbers & keys_,
+            const Names & keys_,
             const AggregateDescriptions & aggregates_,
             bool overflow_row_,
             size_t max_rows_to_group_by_,
@@ -994,7 +994,7 @@ public:
         /// Only parameters that matter during merge.
         Params(
             const Block & intermediate_header_,
-            const ColumnNumbers & keys_,
+            const Names & keys_,
             const AggregateDescriptions & aggregates_,
             bool overflow_row_,
             size_t max_threads_)
@@ -1006,7 +1006,7 @@ public:
         static Block getHeader(
             const Block & src_header,
             const Block & intermediate_header,
-            const ColumnNumbers & keys,
+            const Names & keys,
             const AggregateDescriptions & aggregates,
             bool final);
 
@@ -1103,6 +1103,7 @@ private:
     friend class AggregatingInOrderTransform;
 
     Params params;
+    const ColumnNumbers keys_positions;
 
     AggregatedDataVariants::Type method_chosen;
     Sizes key_sizes;
