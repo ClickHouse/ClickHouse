@@ -7,15 +7,7 @@ description: Dataset containing the on-time performance of airline flights
 
 This dataset contains data from Bureau of Transportation Statistics.
 
-## Import from Raw Data {#import-from-raw-data}
-
-Downloading data:
-
-``` bash
-wget --no-check-certificate --continue https://transtats.bts.gov/PREZIP/On_Time_Reporting_Carrier_On_Time_Performance_1987_present_{1987..2022}_{1..12}.zip
-```
-
-Creating a table:
+## Creating a table
 
 ``` sql
 CREATE TABLE `ontime`
@@ -133,6 +125,14 @@ CREATE TABLE `ontime`
   ORDER BY (Year, Quarter, Month, DayofMonth, FlightDate, IATA_CODE_Reporting_Airline);
 ```
 
+## Import from Raw Data {#import-from-raw-data}
+
+Downloading data:
+
+``` bash
+wget --no-check-certificate --continue https://transtats.bts.gov/PREZIP/On_Time_Reporting_Carrier_On_Time_Performance_1987_present_{1987..2022}_{1..12}.zip
+```
+
 Loading data with multiple threads:
 
 ``` bash
@@ -140,6 +140,16 @@ ls -1 *.zip | xargs -I{} -P $(nproc) bash -c "echo {}; unzip -cq {} '*.csv' | se
 ```
 
 (if you will have memory shortage or other issues on your server, remove the `-P $(nproc)` part)
+
+## Import from a saved copy
+
+Alternatively, you can import data from a saved copy by the following query:
+
+```
+INSERT INTO ontime SELECT * FROM s3('https://clickhouse-public-datasets.s3.amazonaws.com/ontime/csv_by_year/*.csv.gz', CSVWithNames) SETTINGS max_insert_threads = 40;
+```
+
+The snapshot was created on 2022-05-29.
 
 ## Queries {#queries}
 
