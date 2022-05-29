@@ -8,7 +8,8 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Disks/IDisk.h>
-
+#include <Parsers/ExpressionElementParsers.h>
+#include <Parsers/parseQuery.h>
 
 namespace DB
 {
@@ -56,6 +57,8 @@ public:
             const std::string & marks_file_extension_,
             const CompressionCodecPtr & compression_codec_,
             size_t max_compress_block_size_,
+            const CompressionCodecPtr & marks_compression_codec_,
+            size_t marks_compress_block_size_,
             const WriteSettings & query_write_settings);
 
         String escaped_column_name;
@@ -68,9 +71,12 @@ public:
         CompressedWriteBuffer compressed_buf;
         HashingWriteBuffer compressed;
 
-        /// marks -> marks_file
+        /// marks -> marks_file -> marks_compressed_buf -> marks_compressed
         std::unique_ptr<WriteBufferFromFileBase> marks_file;
-        HashingWriteBuffer marks;
+        HashingWriteBuffer marks_hashing;
+        CompressedWriteBuffer marks_compressed_buf;
+        HashingWriteBuffer marks_compressed;
+        bool is_compress_marks;
 
         bool is_prefinalized = false;
 
@@ -139,7 +145,11 @@ protected:
     std::vector<size_t> skip_index_accumulated_marks;
 
     std::unique_ptr<WriteBufferFromFileBase> index_file_stream;
-    std::unique_ptr<HashingWriteBuffer> index_stream;
+    std::unique_ptr<HashingWriteBuffer> index_hashing_stream;
+    std::unique_ptr<CompressedWriteBuffer> index_compressed_buf;
+    std::unique_ptr<HashingWriteBuffer> index_compressed_stream;
+    bool is_compress_primary_key;
+
     DataTypes index_types;
     /// Index columns from the last block
     /// It's written to index file in the `writeSuffixAndFinalizePart` method

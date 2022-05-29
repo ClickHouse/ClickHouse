@@ -20,9 +20,12 @@ std::optional<std::string> MergeTreeIndexGranularityInfo::getMarksExtensionFromF
         for (auto it = data_part_storage->iterate(); it->isValid(); it->next())
         {
             const auto & ext = fs::path(it->name()).extension();
-            if (ext == getNonAdaptiveMrkExtension()
-                || ext == getAdaptiveMrkExtension(MergeTreeDataPartType::Wide)
-                || ext == getAdaptiveMrkExtension(MergeTreeDataPartType::Compact))
+            if (ext == getNonAdaptiveMrkExtension(false)
+                || ext == getNonAdaptiveMrkExtension(true)
+                || ext == getAdaptiveMrkExtension(MergeTreeDataPartType::Wide, false)
+                || ext == getAdaptiveMrkExtension(MergeTreeDataPartType::Wide, true)
+                || ext == getAdaptiveMrkExtension(MergeTreeDataPartType::Compact, false)
+                || ext == getAdaptiveMrkExtension(MergeTreeDataPartType::Compact, true))
                 return ext;
         }
     }
@@ -34,6 +37,7 @@ MergeTreeIndexGranularityInfo::MergeTreeIndexGranularityInfo(const MergeTreeData
 {
     const auto storage_settings = storage.getSettings();
     fixed_index_granularity = storage_settings->index_granularity;
+    is_compress_marks = storage_settings->compress_marks;
 
     /// Granularity is fixed
     if (!storage.canUseAdaptiveGranularity())
@@ -49,21 +53,21 @@ MergeTreeIndexGranularityInfo::MergeTreeIndexGranularityInfo(const MergeTreeData
 void MergeTreeIndexGranularityInfo::changeGranularityIfRequired(const DataPartStoragePtr & data_part_storage)
 {
     auto mrk_ext = getMarksExtensionFromFilesystem(data_part_storage);
-    if (mrk_ext && *mrk_ext == getNonAdaptiveMrkExtension())
+    if (mrk_ext && *mrk_ext == getNonAdaptiveMrkExtension(is_compress_marks))
         setNonAdaptive();
 }
 
 void MergeTreeIndexGranularityInfo::setAdaptive(size_t index_granularity_bytes_)
 {
     is_adaptive = true;
-    marks_file_extension = getAdaptiveMrkExtension(type);
+    marks_file_extension = getAdaptiveMrkExtension(type, is_compress_marks);
     index_granularity_bytes = index_granularity_bytes_;
 }
 
 void MergeTreeIndexGranularityInfo::setNonAdaptive()
 {
     is_adaptive = false;
-    marks_file_extension = getNonAdaptiveMrkExtension();
+    marks_file_extension = getNonAdaptiveMrkExtension(is_compress_marks);
     index_granularity_bytes = 0;
 }
 
@@ -85,12 +89,12 @@ size_t getAdaptiveMrkSizeCompact(size_t columns_num)
     return sizeof(UInt64) * (columns_num * 2 + 1);
 }
 
-std::string getAdaptiveMrkExtension(MergeTreeDataPartType part_type)
+std::string getAdaptiveMrkExtension(MergeTreeDataPartType part_type, bool is_compress_marks)
 {
     if (part_type == MergeTreeDataPartType::Wide)
-        return ".mrk2";
+        return is_compress_marks ? ".cmrk2" : ".mrk2";
     else if (part_type == MergeTreeDataPartType::Compact)
-        return ".mrk3";
+        return is_compress_marks ? ".cmrk3" : ".mrk3";
     else if (part_type == MergeTreeDataPartType::InMemory)
         return "";
     else

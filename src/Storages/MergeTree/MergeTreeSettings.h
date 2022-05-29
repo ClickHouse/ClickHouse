@@ -152,7 +152,15 @@ struct Settings;
     M(UInt64, replicated_max_parallel_sends_for_table, 0, "Obsolete setting, does nothing.", 0) \
     M(UInt64, replicated_max_parallel_fetches, 0, "Obsolete setting, does nothing.", 0) \
     M(UInt64, replicated_max_parallel_fetches_for_table, 0, "Obsolete setting, does nothing.", 0) \
-    M(Bool, write_final_mark, true, "Obsolete setting, does nothing.", 0)
+    M(Bool, write_final_mark, true, "Obsolete setting, does nothing.", 0) \
+    \
+    /** compress marks and primary */ \
+    M(Bool, compress_marks, false, "Marks support compression, reduce mark file size and speed up network transmission.", 0) \
+    M(Bool, compress_primary_key, false, "Primary key support compression, reduce primary key file size and speed up network transmission.", 0) \
+    M(String, marks_compression_codec, "ZSTD(3)", "Compression encoding used by marks, marks are small enough and cached, so the default compression is ZSTD(3).", 0) \
+    M(String, primary_key_compression_codec, "ZSTD(3)", "Compression encoding used by primary, primary key are small enough and cached, so the default compression is ZSTD(3).", 0) \
+    M(UInt64, marks_compress_block_size, 65536, "Mark compress block size, the actual size of the block to compress.", 0) \
+    M(UInt64, primary_key_compress_block_size, 65536, "Primary compress block size, the actual size of the block to compress.", 0) \
     /// Settings that should not change after the creation of a table.
     /// NOLINTNEXTLINE
 #define APPLY_FOR_IMMUTABLE_MERGE_TREE_SETTINGS(M) \

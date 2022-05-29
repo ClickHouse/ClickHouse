@@ -2601,11 +2601,14 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::createPart(const String & name,
 
 static MergeTreeDataPartType getPartTypeFromMarkExtension(const String & mrk_ext)
 {
-    if (mrk_ext == getNonAdaptiveMrkExtension())
+    if (mrk_ext == getNonAdaptiveMrkExtension(true)
+        || mrk_ext == getNonAdaptiveMrkExtension(false))
         return MergeTreeDataPartType::Wide;
-    if (mrk_ext == getAdaptiveMrkExtension(MergeTreeDataPartType::Wide))
+    if (mrk_ext == getAdaptiveMrkExtension(MergeTreeDataPartType::Wide, true)
+        || mrk_ext == getAdaptiveMrkExtension(MergeTreeDataPartType::Wide, false))
         return MergeTreeDataPartType::Wide;
-    if (mrk_ext == getAdaptiveMrkExtension(MergeTreeDataPartType::Compact))
+    if (mrk_ext == getAdaptiveMrkExtension(MergeTreeDataPartType::Compact, true)
+        || mrk_ext == getAdaptiveMrkExtension(MergeTreeDataPartType::Compact, false))
         return MergeTreeDataPartType::Compact;
 
     throw Exception("Can't determine part type, because of unknown mark extension " + mrk_ext, ErrorCodes::UNKNOWN_PART_TYPE);

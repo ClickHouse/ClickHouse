@@ -5,6 +5,7 @@
 #include <Common/ErrorCodes.h>
 #include <IO/HashingReadBuffer.h>
 #include <IO/ReadBufferFromString.h>
+#include <Compression/CompressedReadBuffer.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 
 namespace ProfileEvents
@@ -38,7 +39,7 @@ String PartMetadataManagerWithCache::getFilePathFromKey(const String & key) cons
     return key.substr(part->data_part_storage->getDiskName().size() + 1);
 }
 
-std::unique_ptr<SeekableReadBuffer> PartMetadataManagerWithCache::read(const String & file_name) const
+std::unique_ptr<ReadBuffer> PartMetadataManagerWithCache::read(const String & file_name) const
 {
     String file_path = fs::path(part->data_part_storage->getRelativePath()) / file_name;
     String key = getKeyFromFilePath(file_path);
@@ -47,8 +48,16 @@ std::unique_ptr<SeekableReadBuffer> PartMetadataManagerWithCache::read(const Str
     if (!status.ok())
     {
         ProfileEvents::increment(ProfileEvents::MergeTreeMetadataCacheMiss);
-        auto in = part->data_part_storage->readFile(file_name, {}, std::nullopt, std::nullopt);
-        readStringUntilEOF(value, *in);
+        if (!isCompressFromFileName(file_name))
+        {
+            auto in = part->data_part_storage->readFile(file_name, {}, std::nullopt, std::nullopt);
+            readStringUntilEOF(value, *in);
+        }
+        else
+        {
+            auto in = CompressedReadBuffer(*part->data_part_storage->readFile(file_name, {}, std::nullopt, std::nullopt));
+            readStringUntilEOF(value, in);
+        }
         cache->put(key, value);
     }
     else

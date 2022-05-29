@@ -2,6 +2,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <IO/ReadBufferFromFile.h>
+#include <Compression/CompressedReadBufferFromFile.h>
 
 #include <utility>
 
@@ -54,38 +55,68 @@ MarkCache::MappedPtr MergeTreeMarksLoader::loadMarksImpl()
     size_t mark_size = index_granularity_info.getMarkSizeInBytes(columns_in_mark);
     size_t expected_file_size = mark_size * marks_count;
 
-    if (expected_file_size != file_size)
-        throw Exception(
-            ErrorCodes::CORRUPTED_DATA,
-            "Bad size of marks file '{}': {}, must be: {}",
-            std::string(fs::path(data_part_storage->getFullPath()) / mrk_path),
-            std::to_string(file_size), std::to_string(expected_file_size));
-
     auto res = std::make_shared<MarksInCompressedFile>(marks_count * columns_in_mark);
 
-    if (!index_granularity_info.is_adaptive)
+    if (!index_granularity_info.is_compress_marks)
     {
-        /// Read directly to marks.
-        auto buffer = data_part_storage->readFile(mrk_path, ReadSettings().adjustBufferSize(file_size), file_size, std::nullopt);
-        buffer->readStrict(reinterpret_cast<char *>(res->data()), file_size);
+        if (expected_file_size != file_size)
+            throw Exception(
+                ErrorCodes::CORRUPTED_DATA,
+                "Bad size of marks file '{}': {}, must be: {}",
+                std::string(fs::path(data_part_storage->getFullPath()) / mrk_path),
+                std::to_string(file_size), std::to_string(expected_file_size));
 
-        if (!buffer->eof())
-            throw Exception("Cannot read all marks from file " + mrk_path + ", eof: " + std::to_string(buffer->eof())
-            + ", buffer size: " + std::to_string(buffer->buffer().size()) + ", file size: " + std::to_string(file_size), ErrorCodes::CANNOT_READ_ALL_DATA);
+        if (!index_granularity_info.is_adaptive)
+        {
+            /// Read directly to marks.
+            auto buffer = data_part_storage->readFile(mrk_path, ReadSettings().adjustBufferSize(file_size), file_size, std::nullopt);
+            buffer->readStrict(reinterpret_cast<char *>(res->data()), file_size);
+
+            if (!buffer->eof())
+                throw Exception("Cannot read all marks from file " + mrk_path + ", eof: " + std::to_string(buffer->eof())
+                                + ", buffer size: " + std::to_string(buffer->buffer().size()) + ", file size: " + std::to_string(file_size), ErrorCodes::CANNOT_READ_ALL_DATA);
+        }
+        else
+        {
+            auto buffer = data_part_storage->readFile(mrk_path, ReadSettings().adjustBufferSize(file_size), file_size, std::nullopt);
+            size_t i = 0;
+            while (!buffer->eof())
+            {
+                res->read(*buffer, i * columns_in_mark, columns_in_mark);
+                buffer->seek(sizeof(size_t), SEEK_CUR);
+                ++i;
+            }
+
+            if (i * mark_size != file_size)
+                throw Exception("Cannot read all marks from file " + mrk_path, ErrorCodes::CANNOT_READ_ALL_DATA);
+        }
     }
     else
     {
-        auto buffer = data_part_storage->readFile(mrk_path, ReadSettings().adjustBufferSize(file_size), file_size, std::nullopt);
-        size_t i = 0;
-        while (!buffer->eof())
+        if (!index_granularity_info.is_adaptive)
         {
-            res->read(*buffer, i * columns_in_mark, columns_in_mark);
-            buffer->seek(sizeof(size_t), SEEK_CUR);
-            ++i;
-        }
+            CompressedReadBufferFromFile buffer(data_part_storage->readFile(mrk_path, ReadSettings().adjustBufferSize(file_size), file_size, std::nullopt));
+            buffer.readStrict(reinterpret_cast<char *>(res->data()), expected_file_size);
 
-        if (i * mark_size != file_size)
-            throw Exception("Cannot read all marks from file " + mrk_path, ErrorCodes::CANNOT_READ_ALL_DATA);
+            if (!buffer.eof())
+                throw Exception("Cannot read all marks from file " + mrk_path + ", eof: " + std::to_string(buffer.eof())
+                                + ", buffer size: " + std::to_string(buffer.buffer().size()) + ", file size: " + std::to_string(file_size), ErrorCodes::CANNOT_READ_ALL_DATA);
+        }
+        else
+        {
+            CompressedReadBufferFromFile buffer(data_part_storage->readFile(mrk_path, ReadSettings().adjustBufferSize(file_size), file_size, std::nullopt));
+            size_t i = 0;
+            size_t granularity;
+            while (!buffer.eof())
+            {
+                res->read(buffer, i * columns_in_mark, columns_in_mark);
+                readIntBinary(granularity, buffer);
+                ++i;
+            }
+
+            if (i != marks_count)
+                throw Exception("Cannot read all marks from file " + mrk_path, ErrorCodes::CANNOT_READ_ALL_DATA);
+        }
     }
     res->protect();
     return res;
