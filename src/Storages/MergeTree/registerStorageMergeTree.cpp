@@ -348,9 +348,10 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         {
             /// Try use default values if arguments are not specified.
             /// Note: {uuid} macro works for ON CLUSTER queries when database engine is Atomic.
-            zookeeper_path = args.getContext()->getConfigRef().getString("default_replica_path", "/clickhouse/tables/{uuid}/{shard}");
+            const auto & config = args.getContext()->getConfigRef();
+            zookeeper_path = StorageReplicatedMergeTree::getDefaultZooKeeperPath(config);
             /// TODO maybe use hostname if {replica} is not defined?
-            replica_name = args.getContext()->getConfigRef().getString("default_replica_name", "{replica}");
+            replica_name = StorageReplicatedMergeTree::getDefaultReplicaName(config);
 
             /// Modify query, so default values will be written to metadata
             assert(arg_num == 0);

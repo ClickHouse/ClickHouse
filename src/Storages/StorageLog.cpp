@@ -25,6 +25,7 @@
 #include <QueryPipeline/Pipe.h>
 #include <Processors/Sinks/SinkToStorage.h>
 
+#include <Backups/BackupEntriesCollector.h>
 #include <Backups/BackupEntryFromAppendOnlyFile.h>
 #include <Backups/BackupEntryFromSmallFile.h>
 #include <Backups/IBackup.h>
@@ -921,12 +922,20 @@ std::optional<UInt64> StorageLog::totalBytes(const Settings &) const
     return total_bytes;
 }
 
-BackupEntries StorageLog::backupData(ContextPtr context, const ASTs & partitions, const StorageBackupSettings &, const std::shared_ptr<IBackupCoordination> &)
+void StorageLog::backup(const ASTPtr & create_query, const String & data_path_in_backup, const std::optional<ASTs> & partitions, std::shared_ptr<BackupEntriesCollector> backup_entries_collector)
 {
-    if (!partitions.empty())
+    if (partitions)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Table engine {} doesn't support partitions", getName());
 
-    auto lock_timeout = getLockTimeout(context);
+    backupMetadata(create_query, backup_entries_collector);
+
+    if (!backup_entries_collector->getBackupSettings().structure_only)
+        backupData(data_path_in_backup, backup_entries_collector);
+}
+
+void StorageLog::backupData(const String & data_path_in_backup, std::shared_ptr<BackupEntriesCollector> backup_entries_collector)
+{
+    auto lock_timeout = getLockTimeout(backup_entries_collector->getContext());
     loadMarks(lock_timeout);
 
     ReadLock lock{rwlock, lock_timeout};
@@ -934,23 +943,22 @@ BackupEntries StorageLog::backupData(ContextPtr context, const ASTs & partitions
         throw Exception("Lock timeout exceeded", ErrorCodes::TIMEOUT_EXCEEDED);
 
     if (!num_data_files || !file_checker.getFileSize(data_files[INDEX_WITH_REAL_ROW_COUNT].path))
-        return {};
+        return;
 
     auto temp_dir_owner = std::make_shared<TemporaryFileOnDisk>(disk, "tmp/backup_");
-    auto temp_dir = temp_dir_owner->getPath();
+    fs::path temp_dir = temp_dir_owner->getPath();
     disk->createDirectories(temp_dir);
-
-    BackupEntries backup_entries;
+    fs::path out_path = data_path_in_backup;
 
     /// *.bin
     for (const auto & data_file : data_files)
     {
         /// We make a copy of the data file because it can be changed later in write() or in truncate().
         String data_file_name = fileName(data_file.path);
-        String hardlink_file_path = temp_dir + "/" + data_file_name;
+        String hardlink_file_path = temp_dir / data_file_name;
         disk->createHardLink(data_file.path, hardlink_file_path);
-        backup_entries.emplace_back(
-            data_file_name,
+        backup_entries_collector->addBackupEntry(
+            out_path / data_file_name,
             std::make_unique<BackupEntryFromAppendOnlyFile>(
                 disk, hardlink_file_path, file_checker.getFileSize(data_file.path), std::nullopt, temp_dir_owner));
     }
@@ -960,30 +968,31 @@ BackupEntries StorageLog::backupData(ContextPtr context, const ASTs & partitions
     {
         /// We make a copy of the data file because it can be changed later in write() or in truncate().
         String marks_file_name = fileName(marks_file_path);
-        String hardlink_file_path = temp_dir + "/" + marks_file_name;
+        String hardlink_file_path = temp_dir / marks_file_name;
         disk->createHardLink(marks_file_path, hardlink_file_path);
-        backup_entries.emplace_back(
-            marks_file_name,
+        backup_entries_collector->addBackupEntry(
+            out_path / marks_file_name,
             std::make_unique<BackupEntryFromAppendOnlyFile>(
                 disk, hardlink_file_path, file_checker.getFileSize(marks_file_path), std::nullopt, temp_dir_owner));
     }
 
     /// sizes.json
     String files_info_path = file_checker.getPath();
-    backup_entries.emplace_back(fileName(files_info_path), std::make_unique<BackupEntryFromSmallFile>(disk, files_info_path));
+    backup_entries_collector->addBackupEntry(
+        out_path / fileName(files_info_path), std::make_unique<BackupEntryFromSmallFile>(disk, files_info_path));
 
     /// columns.txt
-    backup_entries.emplace_back(
-        "columns.txt", std::make_unique<BackupEntryFromMemory>(getInMemoryMetadata().getColumns().getAllPhysical().toString()));
+    backup_entries_collector->addBackupEntry(
+        out_path / "columns.txt",
+        std::make_unique<BackupEntryFromMemory>(getInMemoryMetadata().getColumns().getAllPhysical().toString()));
 
     /// count.txt
     if (use_marks_file)
     {
         size_t num_rows = data_files[INDEX_WITH_REAL_ROW_COUNT].marks.empty() ? 0 : data_files[INDEX_WITH_REAL_ROW_COUNT].marks.back().rows;
-        backup_entries.emplace_back("count.txt", std::make_unique<BackupEntryFromMemory>(toString(num_rows)));
+        backup_entries_collector->addBackupEntry(
+            out_path / "count.txt", std::make_unique<BackupEntryFromMemory>(toString(num_rows)));
     }
-
-    return backup_entries;
 }
 
 class LogRestoreTask : public IRestoreTask

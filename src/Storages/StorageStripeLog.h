@@ -62,8 +62,7 @@ public:
     std::optional<UInt64> totalRows(const Settings & settings) const override;
     std::optional<UInt64> totalBytes(const Settings & settings) const override;
 
-    bool hasDataToBackup() const override { return true; }
-    BackupEntries backupData(ContextPtr context, const ASTs & partitions, const StorageBackupSettings & backup_settings, const std::shared_ptr<IBackupCoordination> & backup_coordination) override;
+    void backup(const ASTPtr & create_query, const String & data_path_in_backup, const std::optional<ASTs> & partitions, std::shared_ptr<BackupEntriesCollector> backup_entries_collector) override;
     RestoreTaskPtr restoreData(ContextMutablePtr context, const ASTs & partitions, const BackupPtr & backup, const String & data_path_in_backup, const StorageRestoreSettings & restore_settings, const std::shared_ptr<IRestoreCoordination> & restore_coordination) override;
 
 private:
@@ -86,6 +85,9 @@ private:
 
     /// Recalculates the number of rows stored in this table.
     void updateTotalRows(const WriteLock &);
+
+    /// Makes backup entries to backup this table's data.
+    void backupData(const String & data_path_in_backup, std::shared_ptr<BackupEntriesCollector> backup_entries_collector);
 
     const DiskPtr disk;
     String table_path;

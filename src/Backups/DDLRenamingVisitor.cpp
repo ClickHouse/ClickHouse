@@ -348,6 +348,7 @@ DatabaseAndTableName DDLRenamingSettings::getNewTableName(const DatabaseAndTable
     return {getNewDatabaseName(old_table_name.first), old_table_name.second};
 }
 
+
 const String & DDLRenamingSettings::getNewDatabaseName(const String & old_database_name) const
 {
     auto it = old_to_new_database_names.find(old_database_name);
@@ -357,9 +358,9 @@ const String & DDLRenamingSettings::getNewDatabaseName(const String & old_databa
 }
 
 
-bool DDLRenamingVisitor::needChildVisit(ASTPtr &, const ASTPtr &) { return true; }
+bool DDLRenamingVisitor::needChildVisit(const ASTPtr &, const ASTPtr &) { return true; }
 
-void DDLRenamingVisitor::visit(ASTPtr & ast, const Data & data)
+void DDLRenamingVisitor::visit(ASTPtr ast, const Data & data)
 {
     if (auto * create = ast->as<ASTCreateQuery>())
         visitCreateQuery(*create, data);

@@ -18,14 +18,6 @@ class AccessRightsElements;
 class Context;
 using ContextPtr = std::shared_ptr<const Context>;
 
-/// Prepares backup entries.
-BackupEntries makeBackupEntries(
-    const ContextPtr & context,
-    const ASTBackupQuery::Elements & elements,
-    const BackupSettings & backup_settings,
-    std::shared_ptr<IBackupCoordination> backup_coordination,
-    std::chrono::seconds timeout_for_preparing = std::chrono::seconds::zero());
-
 /// Write backup entries to an opened backup.
 void writeBackupEntries(BackupMutablePtr backup, BackupEntries && backup_entries, ThreadPool & thread_pool);
 

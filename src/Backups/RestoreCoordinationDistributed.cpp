@@ -19,6 +19,25 @@ namespace ErrorCodes
 }
 
 
+namespace
+{
+    /// A pair of host ID and storage ID.
+    struct BackupCoordinationHostIDAndStorageID
+    {
+        String host_id;
+        StorageID storage_id;
+        static String serialize(const String & host_id_, const StorageID & storage_id_);
+    };
+
+    String BackupCoordinationHostIDAndStorageID::serialize(const String & host_id_, const StorageID & storage_id_)
+    {
+        return host_id_ + "|" + escapeForFileName(storage_id_.database_name) + "|"
+            + escapeForFileName(storage_id_.table_name) + "|" + toString(storage_id_.uuid);
+    }
+}
+
+using DatabaseAndTableName = std::pair<String, String>;
+
 class RestoreCoordinationDistributed::ReplicatedDatabasesMetadataSync
 {
 public:

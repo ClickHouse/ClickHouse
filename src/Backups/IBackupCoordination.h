@@ -6,8 +6,6 @@
 
 namespace DB
 {
-using DatabaseAndTableName = std::pair<String, String>;
-struct StorageID;
 
 /// Keeps information about files contained in a backup.
 class IBackupCoordination
@@ -25,35 +23,28 @@ public:
     /// Multiple replicas of the replicated table call this function and then the added part names can be returned by call of the function
     /// getReplicatedPartNames().
     /// Checksums are used only to control that parts under the same names on different replicas are the same.
-    virtual void addReplicatedPartNames(
-        const String & host_id,
-        const StorageID & table_id,
-        const std::vector<PartNameAndChecksum> & part_names_and_checksums,
-        const String & table_zk_path)
-        = 0;
-
-    virtual bool hasReplicatedPartNames(const String & host_id, const StorageID & table_id) const = 0;
-
-    /// Adds a data path in backup for a replicated table.
-    /// Multiple replicas of the replicated table call this function and then all the added paths can be returned by call of the function
-    /// getReplicatedTableDataPaths().
-    virtual void addReplicatedTableDataPath(const String & host_id, const StorageID & table_id, const String & table_data_path) = 0;
-
-    /// Sets that a specified host finished preparations for copying the backup's files, successfully or not.
-    /// `error_message` should be set to true if it was not successful.
-    virtual void finishPreparing(const String & host_id, const String & error_message = {}) = 0;
-
-    /// Waits for a specified time for specified hosts to finish preparation for copying the backup's files.
-    virtual void
-    waitForAllHostsPrepared(const Strings & host_ids, std::chrono::seconds timeout = std::chrono::seconds(-1) /* no timeout */) const = 0;
+    virtual void addReplicatedPartNames(const String & table_zk_path, const String & table_name_for_logs, const String & replica_name,
+                                        const std::vector<PartNameAndChecksum> & part_names_and_checksums) = 0;
 
     /// Returns the names of the parts which a specified replica of a replicated table should put to the backup.
     /// This is the same list as it was added by call of the function addReplicatedPartNames() but without duplications and without
     /// parts covered by another parts.
-    virtual Strings getReplicatedPartNames(const String & host_id, const StorageID & table_id) const = 0;
+    virtual Strings getReplicatedPartNames(const String & table_zk_path, const String & replica_name) const = 0;
 
-    /// Returns all the data paths in backup added for a replicated table (see also addReplicatedTableDataPath()).
-    virtual Strings getReplicatedTableDataPaths(const String & host_id, const StorageID & table_id) const = 0;
+    /// Adds a data path in backup for a replicated table.
+    /// Multiple replicas of the replicated table call this function and then all the added paths can be returned by call of the function
+    /// getReplicatedDataPaths().
+    virtual void addReplicatedDataPath(const String & table_zk_path, const String & data_path) = 0;
+
+    /// Returns all the data paths in backup added for a replicated table (see also addReplicatedDataPath()).
+    virtual Strings getReplicatedDataPaths(const String & table_zk_path) const = 0;
+
+    /// Sets that a specified host finished preparations for copying the backup's files, successfully or not.
+    /// `error_message` should be set to true if it was not successful.
+    virtual void finishCollectingBackupEntries(const String & host_id, const String & error_message = {}) = 0;
+
+    /// Waits for a specified time for specified hosts to finish preparation for copying the backup's files.
+    virtual void waitForAllHostsCollectedBackupEntries(const Strings & host_ids, std::chrono::seconds timeout = std::chrono::seconds(-1) /* no timeout */) const = 0;
 
     struct FileInfo
     {

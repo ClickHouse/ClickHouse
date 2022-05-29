@@ -89,7 +89,7 @@ namespace
         }
     }
 
-    bool parsePartitions(IParser::Pos & pos, Expected & expected, ASTs & partitions)
+    bool parsePartitions(IParser::Pos & pos, Expected & expected, std::optional<ASTs> & partitions)
     {
         if (!ParserKeyword{"PARTITION"}.ignore(pos, expected) && !ParserKeyword{"PARTITIONS"}.ignore(pos, expected))
             return false;
@@ -157,7 +157,7 @@ namespace
                 }
             }
 
-            ASTs partitions;
+            std::optional<ASTs> partitions;
             if (type == ElementType::TABLE)
                 parsePartitions(pos, expected, partitions);
 

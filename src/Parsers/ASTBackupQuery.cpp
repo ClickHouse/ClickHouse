@@ -73,8 +73,6 @@ namespace
 
     void formatPartitions(const ASTs & partitions, const IAST::FormatSettings & format)
     {
-        if (partitions.empty())
-            return;
         format.ostr << (format.hilite ? IAST::hilite_keyword : "") << " " << ((partitions.size() == 1) ? "PARTITION" : "PARTITIONS") << " "
                     << (format.hilite ? IAST::hilite_none : "");
         bool need_comma = false;
@@ -117,7 +115,8 @@ namespace
             formatName(element.new_name, element.type, element.is_temp_db, format);
         }
 
-        formatPartitions(element.partitions, format);
+        if (element.partitions)
+            formatPartitions(*element.partitions, format);
 
         bool show_except_tables = ((element.type == ASTBackupQuery::DATABASE) || !element.is_temp_db);
         formatExceptList(element.except_list, show_except_tables, format);

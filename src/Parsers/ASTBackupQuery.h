@@ -62,7 +62,7 @@ public:
         DatabaseAndTableName name;
         DatabaseAndTableName new_name;
         bool is_temp_db = false;
-        ASTs partitions;
+        std::optional<ASTs> partitions;
         std::set<String> except_list;
 
         void setDatabase(const String & new_database);

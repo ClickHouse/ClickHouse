@@ -13,6 +13,7 @@
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Storages/AlterCommands.h>
+#include <Backups/BackupEntriesCollector.h>
 
 
 namespace DB
@@ -22,6 +23,7 @@ namespace ErrorCodes
     extern const int TABLE_IS_DROPPED;
     extern const int NOT_IMPLEMENTED;
     extern const int DEADLOCK_AVOIDED;
+    extern const int CANNOT_BACKUP_TABLE;
 }
 
 bool IStorage::isVirtualColumn(const String & column_name, const StorageMetadataPtr & metadata_snapshot) const
@@ -31,10 +33,10 @@ bool IStorage::isVirtualColumn(const String & column_name, const StorageMetadata
 }
 
 RWLockImpl::LockHolder IStorage::tryLockTimed(
-    const RWLock & rwlock, RWLockImpl::Type type, const String & query_id, const std::chrono::milliseconds & acquire_timeout, bool throw_if_timeout) const
+    const RWLock & rwlock, RWLockImpl::Type type, const String & query_id, const std::chrono::milliseconds & acquire_timeout) const
 {
     auto lock_holder = rwlock->getLock(type, query_id, acquire_timeout);
-    if (!lock_holder && throw_if_timeout)
+    if (!lock_holder)
     {
         const String type_str = type == RWLockImpl::Type::Read ? "READ" : "WRITE";
         throw Exception(
@@ -62,7 +64,7 @@ TableLockHolder IStorage::lockForShare(const String & query_id, const std::chron
 
 TableLockHolder IStorage::tryLockForShare(const String & query_id, const std::chrono::milliseconds & acquire_timeout)
 {
-    return tryLockTimed(drop_lock, RWLockImpl::Read, query_id, acquire_timeout, /* throw_if_timeout= */ false);
+    return tryLockTimed(drop_lock, RWLockImpl::Read, query_id, acquire_timeout);
 }
 
 IStorage::AlterLockHolder IStorage::lockForAlter(const std::chrono::milliseconds & acquire_timeout)
@@ -251,9 +253,25 @@ bool IStorage::isStaticStorage() const
     return false;
 }
 
-BackupEntries IStorage::backupData(ContextPtr, const ASTs &, const StorageBackupSettings &, const std::shared_ptr<IBackupCoordination> &)
+void IStorage::adjustCreateQueryForBackup(ASTPtr & create_query) const
 {
-    throw Exception("Table engine " + getName() + " doesn't support backups", ErrorCodes::NOT_IMPLEMENTED);
+    auto & create = create_query->as<ASTCreateQuery &>();
+    create.uuid = UUIDHelpers::Nil;
+    create.to_inner_uuid = UUIDHelpers::Nil;
+}
+
+void IStorage::backup(const ASTPtr & /* adjusted_create_query */, const String & /* data_path_in_backup */, const std::optional<ASTs> & /* partitions */,
+                      std::shared_ptr<BackupEntriesCollector> /* backup_entries_collector */)
+{
+    throw Exception(
+        ErrorCodes::CANNOT_BACKUP_TABLE,
+        "Table engine {} doesn't support backups, cannot backup table {}",
+        getName(), getStorageID().getNameForLogs());
+}
+
+void IStorage::backupMetadata(const ASTPtr & adjusted_create_query, std::shared_ptr<BackupEntriesCollector> backup_entries_collector) const
+{
+    backup_entries_collector->addBackupEntryForCreateQuery(adjusted_create_query);
 }
 
 RestoreTaskPtr IStorage::restoreData(ContextMutablePtr, const ASTs &, const BackupPtr &, const String &, const StorageRestoreSettings &, const std::shared_ptr<IRestoreCoordination> &)

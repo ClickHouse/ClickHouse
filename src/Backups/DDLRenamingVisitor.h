@@ -54,8 +54,8 @@ public:
 
     using Visitor = InDepthNodeVisitor<DDLRenamingVisitor, false>;
 
-    static bool needChildVisit(ASTPtr &, const ASTPtr &);
-    static void visit(ASTPtr & ast, const Data & data);
+    static bool needChildVisit(const ASTPtr &, const ASTPtr &);
+    static void visit(ASTPtr ast, const Data & data);
 };
 
 }

@@ -579,7 +579,7 @@ namespace
                 res.push_back(std::make_unique<RestoreTableTask>(
                     context,
                     info.create_query,
-                    info.partitions,
+                    info.partitions.value_or(ASTs{}),
                     backup,
                     info.name_in_backup,
                     restore_settings_ptr,
@@ -625,7 +625,7 @@ namespace
         }
 
         /// Prepares to restore a single table and probably its database's definition.
-        void prepareToRestoreTable(const DatabaseAndTableName & table_name_, const ASTs & partitions_)
+        void prepareToRestoreTable(const DatabaseAndTableName & table_name_, const std::optional<ASTs> & partitions_)
         {
             /// Check that we are not trying to restore the same table again.
             DatabaseAndTableName new_table_name = renaming_settings.getNewTableName(table_name_);
@@ -770,7 +770,7 @@ namespace
         {
             ASTPtr create_query;
             DatabaseAndTableName name_in_backup;
-            ASTs partitions;
+            std::optional<ASTs> partitions;
         };
 
         /// Information which is used to make an instance of RestoreDatabaseTask.

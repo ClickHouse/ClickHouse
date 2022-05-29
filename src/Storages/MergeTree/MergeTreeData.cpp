@@ -1,5 +1,6 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 
+#include <Backups/BackupEntriesCollector.h>
 #include <Backups/BackupEntryFromImmutableFile.h>
 #include <Backups/BackupEntryFromSmallFile.h>
 #include <Backups/IBackup.h>
@@ -4059,15 +4060,28 @@ Pipe MergeTreeData::alterPartition(
 }
 
 
-BackupEntries MergeTreeData::backupData(ContextPtr local_context, const ASTs & partitions, const StorageBackupSettings &, const std::shared_ptr<IBackupCoordination> &)
+void MergeTreeData::backup(const ASTPtr & create_query, const String & data_path_in_backup, const std::optional<ASTs> & partitions, std::shared_ptr<BackupEntriesCollector> backup_entries_collector)
+{
+    backupMetadata(create_query, backup_entries_collector);
+    
+    if (!backup_entries_collector->getBackupSettings().structure_only)
+    {
+        auto backup_entries = backupData(data_path_in_backup, partitions, backup_entries_collector->getContext());
+        backup_entries_collector->addBackupEntries(std::move(backup_entries));
+    }
+}
+
+BackupEntries MergeTreeData::backupData(const String & data_path_in_backup, const std::optional<ASTs> & partitions, const ContextPtr & local_context)
 {
     DataPartsVector data_parts;
-    if (partitions.empty())
-        data_parts = getVisibleDataPartsVector(local_context);
+    if (partitions)
+        data_parts = getVisibleDataPartsVectorInPartitions(local_context, getPartitionIDsFromQuery(*partitions, local_context));
     else
-        data_parts = getVisibleDataPartsVectorInPartitions(local_context, getPartitionIDsFromQuery(partitions, local_context));
+        data_parts = getVisibleDataPartsVector(local_context);
 
     BackupEntries backup_entries;
+    String out_path = data_path_in_backup.empty() ? "" : (data_path_in_backup + "/");
+
     std::map<DiskPtr, std::shared_ptr<TemporaryFileOnDisk>> temp_dirs;
 
     for (const auto & part : data_parts)
@@ -4091,17 +4105,18 @@ BackupEntries MergeTreeData::backupData(ContextPtr local_context, const ASTs & p
             disk->createHardLink(part_dir / filepath, hardlink_filepath);
             UInt128 file_hash{checksum.file_hash.first, checksum.file_hash.second};
             backup_entries.emplace_back(
-                relative_filepath,
+                out_path + relative_filepath,
                 std::make_unique<BackupEntryFromImmutableFile>(disk, hardlink_filepath, checksum.file_size, file_hash, temp_dir_owner));
         }
 
         for (const auto & filepath : part->getFileNamesWithoutChecksums())
         {
             String relative_filepath = fs::path(part->relative_path) / filepath;
-            backup_entries.emplace_back(relative_filepath, std::make_unique<BackupEntryFromSmallFile>(disk, part_dir / filepath));
+            backup_entries.emplace_back(
+                out_path + relative_filepath, std::make_unique<BackupEntryFromSmallFile>(disk, part_dir / filepath));
         }
     }
-
+    
     return backup_entries;
 }
 

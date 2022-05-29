@@ -30,6 +30,7 @@ class SettingsChanges;
 using DictionariesWithID = std::vector<std::pair<String, UUID>>;
 struct ParsedTablesMetadata;
 struct QualifiedTableName;
+class BackupEntriesCollector;
 
 namespace ErrorCodes
 {
@@ -331,9 +332,13 @@ public:
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Database engine {} does not run a replication thread!", getEngineName());
     }
 
-    /// Returns true if the backup of the database is hollow, which means it doesn't contain
-    /// any tables which can be stored to a backup.
-    virtual bool hasTablesToBackup() const { return false; }
+    /// Makes backup entries to backup subset of tables in this database.
+    /// `create_database_query` can be null which means the backup won't contain this database's metadata.
+    virtual void backup(const ASTPtr & create_database_query,
+                        const std::unordered_set<String> & table_names, bool all_tables,
+                        const std::unordered_set<String> & except_table_names,
+                        const std::unordered_map<String, ASTs> & partitions,
+                        std::shared_ptr<BackupEntriesCollector> backup_entries_collector);
 
     virtual ~IDatabase() = default;
 
@@ -344,6 +349,9 @@ protected:
             throw Exception("There is no SHOW CREATE TABLE query for Database" + getEngineName(), ErrorCodes::CANNOT_GET_CREATE_TABLE_QUERY);
         return nullptr;
     }
+
+    void backupMetadata(const ASTPtr & create_database_query, std::shared_ptr<BackupEntriesCollector> backup_entries_collector);
+    void checkNoTablesToBackup(const std::unordered_set<String> & table_names) const;
 
     mutable std::mutex mutex;
     String database_name;

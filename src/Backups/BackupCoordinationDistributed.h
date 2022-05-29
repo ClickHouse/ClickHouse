@@ -18,20 +18,18 @@ public:
     ~BackupCoordinationDistributed() override;
 
     void addReplicatedPartNames(
-        const String & host_id,
-        const StorageID & table_id,
-        const std::vector<PartNameAndChecksum> & part_names_and_checksums,
-        const String & table_zk_path) override;
+        const String & table_zk_path,
+        const String & table_name_for_logs,
+        const String & replica_name,
+        const std::vector<PartNameAndChecksum> & part_names_and_checksums) override;
 
-    bool hasReplicatedPartNames(const String & host_id, const StorageID & table_id) const override;
+    Strings getReplicatedPartNames(const String & table_zk_path, const String & replica_name) const override;
 
-    void addReplicatedTableDataPath(const String & host_id, const StorageID & table_id, const String & table_data_path) override;
+    void addReplicatedDataPath(const String & table_zk_path, const String & data_path) override;
+    Strings getReplicatedDataPaths(const String & table_zk_path) const override;
 
-    void finishPreparing(const String & host_id, const String & error_message) override;
-    void waitForAllHostsPrepared(const Strings & host_ids, std::chrono::seconds timeout) const override;
-
-    Strings getReplicatedPartNames(const String & host_id, const StorageID & table_id) const override;
-    Strings getReplicatedTableDataPaths(const String & host_id, const StorageID & table_id) const override;
+    void finishCollectingBackupEntries(const String & host_id, const String & error_message) override;
+    void waitForAllHostsCollectedBackupEntries(const Strings & host_ids, std::chrono::seconds timeout) const override;
 
     void addFileInfo(const FileInfo & file_info, bool & is_data_file_required) override;
     void updateFileInfo(const FileInfo & file_info) override;
@@ -54,7 +52,7 @@ private:
 
     const String zookeeper_path;
     const zkutil::GetZooKeeper get_zookeeper;
-    BackupCoordinationDistributedBarrier preparing_barrier;
+    BackupCoordinationDistributedBarrier collecting_backup_entries_barrier;
     mutable std::optional<BackupCoordinationReplicatedPartNames> replicated_part_names;
 };
 

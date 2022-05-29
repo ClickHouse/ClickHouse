@@ -5,7 +5,6 @@
 #include <Backups/DDLRenamingVisitor.h>
 #include <Backups/IBackup.h>
 #include <Backups/IBackupCoordination.h>
-#include <Backups/replaceTableUUIDWithMacroInReplicatedTableDef.h>
 #include <Common/escapeForFileName.h>
 #include <Access/Common/AccessRightsElement.h>
 #include <Databases/IDatabase.h>
@@ -28,6 +27,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+#if 0
 namespace
 {
     /// Helper to calculate paths inside a backup.
@@ -93,8 +93,7 @@ namespace
                 calculateShardNumAndReplicaNumInBackup();
                 renaming_settings.setFromBackupQuery(elements);
                 collectDatabasesAndTables(elements, timeout);
-                collectTablesData();
-                releaseTables();
+                runPostCollectingBackupEntriesTasks();
             }
             catch (...)
             {
@@ -152,6 +151,8 @@ namespace
         /// Collects information about databases and tables which will be in the backup.
         void collectDatabasesAndTables(const ASTBackupQuery::Elements & elements, std::chrono::seconds timeout)
         {
+            
+
             /// Tables can be dropped or renamed while we're collecting them.
             /// That's why we will sometimes have to do that in multiple passes.
             bool use_timeout = timeout.count() >= 0;
@@ -477,6 +478,7 @@ BackupEntries makeBackupEntries(
     builder.prepare(elements, timeout_for_preparing);
     return std::move(builder).makeBackupEntries();
 }
+#endif
 
 
 void writeBackupEntries(BackupMutablePtr backup, BackupEntries && backup_entries, ThreadPool & thread_pool)

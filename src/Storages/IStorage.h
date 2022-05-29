@@ -227,11 +227,12 @@ public:
 
     NameDependencies getDependentViewsByColumn(ContextPtr context) const;
 
-    /// Returns true if the backup is hollow, which means it doesn't contain any data.
-    virtual bool hasDataToBackup() const { return false; }
-
     /// Prepares entries to backup data of the storage.
-    virtual BackupEntries backupData(ContextPtr context, const ASTs & partitions, const StorageBackupSettings & backup_settings, const std::shared_ptr<IBackupCoordination> & backup_coordination);
+    virtual void backup(const ASTPtr & adjusted_create_query, const String & data_path_in_backup, const std::optional<ASTs> & partitions,
+                        std::shared_ptr<BackupEntriesCollector> backup_entries_collector);
+
+    /// Changes slightly this storage's create query before it's written to a backup.
+    virtual void adjustCreateQueryForBackup(ASTPtr & create_query) const;
 
     /// Extract data from the backup and put it to the storage.
     virtual RestoreTaskPtr restoreData(ContextMutablePtr context, const ASTs & partitions, const BackupPtr & backup, const String & data_path_in_backup, const StorageRestoreSettings & restore_settings, const std::shared_ptr<IRestoreCoordination> & restore_coordination);
@@ -252,8 +253,9 @@ private:
 
 protected:
     RWLockImpl::LockHolder tryLockTimed(
-        const RWLock & rwlock, RWLockImpl::Type type, const String & query_id, const std::chrono::milliseconds & acquire_timeout,
-        bool throw_if_timeout = true) const;
+        const RWLock & rwlock, RWLockImpl::Type type, const String & query_id, const std::chrono::milliseconds & acquire_timeout) const;
+
+    void backupMetadata(const ASTPtr & adjusted_create_query, std::shared_ptr<BackupEntriesCollector> backup_entries_collector) const;
 
 public:
     /// Lock table for share. This lock must be acuqired if you want to be sure,
