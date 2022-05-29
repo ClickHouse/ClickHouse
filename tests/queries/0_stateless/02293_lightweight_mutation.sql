@@ -11,8 +11,6 @@ alter table t_light MATERIALIZE INDEX i_c;
 alter table t_light UPDATE b=b+1 where a=9;
 
 alter table t_light delete in partition 2 where a < 10;
-set enable_lightweight_mutation = 0;
-alter table t_light update b=-2 where a < 5;
 
 SELECT mutation_type, command, is_done FROM system.mutations WHERE database = currentDatabase() AND table = 't_light';
 
