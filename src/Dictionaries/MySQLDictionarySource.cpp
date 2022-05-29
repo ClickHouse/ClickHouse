@@ -16,6 +16,13 @@
 #include <Storages/ExternalDataSourceConfiguration.h>
 #include <Storages/MySQL/MySQLHelpers.h>
 #include <Storages/MySQL/MySQLSettings.h>
+#include <Columns/ColumnString.h>
+#include <DataTypes/DataTypeString.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/WriteHelpers.h>
+#include <Common/LocalDateTime.h>
+#include <Common/logger_useful.h>
+#include "readInvalidateQuery.h"
 
 
 namespace DB
@@ -118,15 +125,6 @@ void registerDictionarySourceMysql(DictionarySourceFactory & factory)
 
 
 #if USE_MYSQL
-#    include <Columns/ColumnString.h>
-#    include <DataTypes/DataTypeString.h>
-#    include <IO/WriteBufferFromString.h>
-#    include <IO/WriteHelpers.h>
-#    include <Common/LocalDateTime.h>
-#    include <Common/logger_useful.h>
-#    include "readInvalidateQuery.h"
-#    include <mysqlxx/Exception.h>
-#    include <Core/Settings.h>
 
 namespace DB
 {

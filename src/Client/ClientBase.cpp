@@ -285,11 +285,11 @@ void ClientBase::setupSignalHandler()
     sigemptyset(&new_act.sa_mask);
 #else
     if (sigemptyset(&new_act.sa_mask))
-        throw Exception(ErrorCodes::CANNOT_SET_SIGNAL_HANDLER, "Cannot set signal handler.");
+        throwFromErrno("Cannot set signal handler.", ErrorCodes::CANNOT_SET_SIGNAL_HANDLER);
 #endif
 
     if (sigaction(SIGINT, &new_act, nullptr))
-        throw Exception(ErrorCodes::CANNOT_SET_SIGNAL_HANDLER, "Cannot set signal handler.");
+        throwFromErrno("Cannot set signal handler.", ErrorCodes::CANNOT_SET_SIGNAL_HANDLER);
 }
 
 
@@ -492,7 +492,8 @@ try
         String pager = config().getString("pager", "");
         if (!pager.empty())
         {
-            signal(SIGPIPE, SIG_IGN);
+            if (SIG_ERR == signal(SIGPIPE, SIG_IGN))
+                throwFromErrno("Cannot set signal handler.", ErrorCodes::CANNOT_SET_SIGNAL_HANDLER);
 
             ShellCommand::Config config(pager);
             config.pipe_stdin_only = true;
