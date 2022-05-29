@@ -298,15 +298,44 @@ int compressFiles(char* filenames[], int count, int output_fd, int level, const 
     return 0;
 }
 
-int copy_decompressor(int output_fd)
+int copy_decompressor(const char *self, int output_fd)
 {
-    int input_fd = open("decompressor", O_RDONLY);
+    int input_fd = open(self, O_RDONLY);
     if (input_fd == -1)
     {
         perror(nullptr);
         return 1;
     }
-    
+
+    if (-1 == lseek(input_fd, -15, SEEK_END))
+    {
+        close(input_fd);
+        perror(nullptr);
+        return 1;
+    }
+
+    char size_str[16] = {0};
+    for (size_t s_sz = sizeof(size_str) - 1; s_sz;)
+    {
+        ssize_t sz = read(input_fd, size_str + sizeof(size_str) - (s_sz + 1), s_sz);
+        if (sz <= 0)
+        {
+            close(input_fd);
+            perror(nullptr);
+            return 1;
+        }
+        s_sz -= sz;
+    }
+
+    int decompressor_size = std::stoi(size_str);
+
+    if (-1 == lseek(input_fd, -(decompressor_size + 15), SEEK_END))
+    {
+        close(input_fd);
+        perror(nullptr);
+        return 1;
+    }
+
     char buf[1ul<<19];
     ssize_t n = 0;
     do
@@ -367,7 +396,7 @@ int main(int argc, char* argv[])
     }
     ++start_of_files;
 
-    if (copy_decompressor(output_fd))
+    if (copy_decompressor(argv[0], output_fd))
         return 1;
 
     struct stat info_out;
