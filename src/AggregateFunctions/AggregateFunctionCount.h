@@ -53,6 +53,15 @@ public:
         ++data(place).count;
     }
 
+    void addManyDefaults(
+        AggregateDataPtr __restrict place,
+        const IColumn ** /*columns*/,
+        size_t length,
+        Arena * /*arena*/) const override
+    {
+        data(place).count += length;
+    }
+
     void addBatchSinglePlace(
         size_t row_begin,
         size_t row_end,
