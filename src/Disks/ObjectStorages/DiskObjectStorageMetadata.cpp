@@ -10,7 +10,6 @@ namespace ErrorCodes
 {
     extern const int UNKNOWN_FORMAT;
     extern const int PATH_ACCESS_DENIED;
-    extern const int MEMORY_LIMIT_EXCEEDED;
 }
 
 DiskObjectStorageMetadata DiskObjectStorageMetadata::readMetadata(const String & remote_fs_root_path_, DiskPtr metadata_disk_, const String & metadata_file_path_)
