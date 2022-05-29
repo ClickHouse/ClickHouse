@@ -225,59 +225,6 @@ MergeTreeWhereOptimizer::ConditionDescriptionVariant MergeTreeWhereOptimizer::pa
     return std::monostate{};
 }
 
-/*double MergeTreeWhereOptimizer::scoreSelectivity(const std::optional<MergeTreeWhereOptimizer::NumericConditionDescription> & condition_description) const
-{
-    if (!condition_description)
-        return 1;
-
-    switch  (condition_description->type) {
-    case NumericConditionDescription::Type::EQUAL:
-        if (stats->getDistributionStatistics()->has(condition_description->identifier)) {
-            return stats->getDistributionStatistics()->estimateProbability(
-                condition_description->identifier,
-                condition_description->constant,
-                condition_description->constant).value_or(1);
-        } else if (stats->getStringSearchStatistics()->has(condition_description->identifier)) {
-            return stats->getStringSearchStatistics()->estimateStringProbability(
-                condition_description->identifier,
-                condition_description->constant.get<String>()).value_or(1);
-        } else {
-            return 1;
-        }
-    case NumericConditionDescription::Type::NOT_EQUAL:
-        if (stats->getDistributionStatistics()->has(condition_description->identifier)) {
-            return 1 - stats->getDistributionStatistics()->estimateProbability(
-                condition_description->identifier,
-                condition_description->constant,
-                condition_description->constant).value_or(0);
-        } else if (stats->getStringSearchStatistics()->has(condition_description->identifier)) {
-            return 1 - stats->getStringSearchStatistics()->estimateStringProbability(
-                condition_description->identifier,
-                condition_description->constant.get<String>()).value_or(0);
-        } else {
-            return 1;
-        }
-    case NumericConditionDescription::Type::LESS_OR_EQUAL:
-        if (stats->getDistributionStatistics()->has(condition_description->identifier)) {
-            return stats->getDistributionStatistics()->estimateProbability(
-                condition_description->identifier,
-                {},
-                condition_description->constant).value_or(1);
-        } else {
-            return 1;
-        }
-    case NumericConditionDescription::Type::GREATER_OR_EQUAL:
-        if (stats->getDistributionStatistics()->has(condition_description->identifier)) {
-            return stats->getDistributionStatistics()->estimateProbability(
-                condition_description->identifier,
-                condition_description->constant,
-                {}).value_or(1); 
-        } else {
-            return 1;
-        }
-    }
-}*/
-
 static const ASTFunction * getAsTuple(const ASTPtr & node)
 {
     if (const auto * func = node->as<ASTFunction>(); func && func->name == "tuple")
@@ -453,15 +400,6 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const ASTPtr & node,
             cond.good = isConditionGood(node);
         }
 
-        //LOG_DEBUG(
-        //    &Poco::Logger::get("COND"),
-        //    "{} -> v={} g={} clmsz={} sz={}",
-        //    cond.node->dumpTree(),
-        //    cond.viable,
-        //    cond.good,
-        //    cond.columns_size,
-        //    cond.identifiers.size());
-
         res.emplace_back(std::move(cond));
     }
 }
@@ -628,7 +566,7 @@ std::vector<MergeTreeWhereOptimizer::ColumnWithRank> MergeTreeWhereOptimizer::ge
             }
 
             rank_to_column.emplace_back(
-                -(1 - min_selectivity) * RANK_CORRECTION / getIdentifiersColumnSize({column}),
+                -(1 - min_selectivity) * RANK_CORRECTION / (getIdentifiersColumnSize({column})),
                 min_selectivity,
                 column);
         } else {

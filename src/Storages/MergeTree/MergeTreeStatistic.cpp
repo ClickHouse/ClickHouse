@@ -155,7 +155,6 @@ void MergeTreeStatistics::serializeBinary(const String & name, WriteBuffer & ost
     column_distributions->serializeBinary(name, ostr);
     size_serialization->serializeBinary(static_cast<size_t>(StatisticType::STRING_SEARCH), ostr);
     string_search->serializeBinary(name, ostr);
-    LOG_DEBUG(&Poco::Logger::get("MergeTreeStatistics"), "SERIALIZED FINISHED");
 }
 
 void MergeTreeStatistics::deserializeBinary(ReadBuffer & istr)
@@ -171,18 +170,15 @@ void MergeTreeStatistics::deserializeBinary(ReadBuffer & istr)
         size_serialization->deserializeBinary(field, istr);
         switch (field.get<size_t>()) {
         case static_cast<size_t>(StatisticType::NUMERIC_COLUMN_DISRIBUTION):
-            LOG_DEBUG(&Poco::Logger::get("MergeTreeStatistics"), "DESERIALIZED NUMBERS");
             column_distributions->deserializeBinary(istr);
             break;
         case static_cast<size_t>(StatisticType::STRING_SEARCH):
-            LOG_DEBUG(&Poco::Logger::get("MergeTreeStatistics"), "DESERIALIZED STRING");
             string_search->deserializeBinary(istr);
             break;
         default:
             throw Exception("Unknown statistic type", ErrorCodes::LOGICAL_ERROR);
         }
     }
-    LOG_DEBUG(&Poco::Logger::get("MergeTreeStatistics"), "DESERIALIZED FINISHED");
 }
 
 void MergeTreeStatistics::setDistributionStatistics(IDistributionStatisticsPtr && stat)
@@ -237,10 +233,10 @@ void MergeTreeDistributionStatistics::serializeBinary(const String & name, Write
     const auto & str_type = DataTypePtr(std::make_shared<DataTypeString>());
     auto str_serialization = str_type->getDefaultSerialization();
 
-    size_serialization->serializeBinary(
-        std::count_if(
-            std::begin(column_to_stats), std::end(column_to_stats),
-            [&name](const auto & elem) { return name == elem.second->name(); }), ostr);
+    const size_t count = std::count_if(
+        std::begin(column_to_stats), std::end(column_to_stats),
+        [&name](const auto & elem) { return name == elem.second->name(); });
+    size_serialization->serializeBinary(count, ostr);
     for (const auto & [column, statistic] : column_to_stats)
     {
         if (statistic->name() == name)
@@ -261,7 +257,6 @@ void MergeTreeDistributionStatistics::deserializeBinary(ReadBuffer & istr)
     Field field;
     size_serialization->deserializeBinary(field, istr);
     const auto stats_count = field.get<size_t>();
-    LOG_DEBUG(&Poco::Logger::get("MergeTreeDistributionStatistics"), "deserializeBinary {}", stats_count);
 
     for (size_t index = 0; index < stats_count; ++index)
     {
@@ -340,10 +335,10 @@ void MergeTreeStringSearchStatistics::serializeBinary(const String & name, Write
     const auto & str_type = DataTypePtr(std::make_shared<DataTypeString>());
     auto str_serialization = str_type->getDefaultSerialization();
 
-    size_serialization->serializeBinary(
-        std::count_if(
-            std::begin(column_to_stats), std::end(column_to_stats),
-            [&name](const auto & elem) { return name == elem.second->name(); }), ostr);
+    const size_t count = std::count_if(
+        std::begin(column_to_stats), std::end(column_to_stats),
+        [&name](const auto & elem) { return name == elem.second->name(); });
+    size_serialization->serializeBinary(count, ostr);
     for (const auto & [column, statistic] : column_to_stats)
     {
         if (statistic->name() == name)
@@ -364,7 +359,6 @@ void MergeTreeStringSearchStatistics::deserializeBinary(ReadBuffer & istr)
     Field field;
     size_serialization->deserializeBinary(field, istr);
     const auto stats_count = field.get<size_t>();
-    LOG_DEBUG(&Poco::Logger::get("MergeTreeStringSearchStatistics"), "deserializeBinary {}", stats_count);
 
     for (size_t index = 0; index < stats_count; ++index)
     {
@@ -625,6 +619,8 @@ std::vector<StatisticDescription> MergeTreeStatisticFactory::getSplittedStatisti
             result.back().definition_ast = statistic.definition_ast->clone();
             result.back().name = statistic.name;
             result.back().type = "granule_string_hash";
+        } else {
+            throw Exception("Unsupported statistic '" + statistic.type + "' for column '" + column.name + "'", ErrorCodes::INCORRECT_QUERY);
         }
         return result;
     }
