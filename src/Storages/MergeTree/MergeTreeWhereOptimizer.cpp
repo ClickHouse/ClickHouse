@@ -38,6 +38,8 @@ static constexpr auto threshold = 2;
 static constexpr double EPS = 1e-9;
 static constexpr double RANK_CORRECTION = 1e9;
 static constexpr double MAX_RANK = RANK_CORRECTION;
+static constexpr double STRING_COMPUTE_PENALTY = 10;
+static constexpr double MAX_SELECTIVITY = 1 - EPS;
 
 namespace
 {
@@ -475,7 +477,7 @@ std::vector<MergeTreeWhereOptimizer::ColumnWithRank> MergeTreeWhereOptimizer::ge
     {
         if (stats->getDistributionStatistics()->has(column))
         {
-            double min_selectivity = 1;
+            double min_selectivity = MAX_SELECTIVITY;
             Field left_limit;
             Field right_limit;
             // Conditions are connected using AND
@@ -535,7 +537,7 @@ std::vector<MergeTreeWhereOptimizer::ColumnWithRank> MergeTreeWhereOptimizer::ge
                 min_selectivity,
                 column);
         } else if (stats->getStringSearchStatistics()->has(column)) {
-            double min_selectivity = 1;
+            double min_selectivity = MAX_SELECTIVITY;
             // Conditions are connected using AND
             for (const auto & condition : conditions)
             {
@@ -566,12 +568,12 @@ std::vector<MergeTreeWhereOptimizer::ColumnWithRank> MergeTreeWhereOptimizer::ge
             }
 
             rank_to_column.emplace_back(
-                -(1 - min_selectivity) * RANK_CORRECTION / (getIdentifiersColumnSize({column})),
+                -(1 - min_selectivity) * RANK_CORRECTION / (getIdentifiersColumnSize({column}) * STRING_COMPUTE_PENALTY),
                 min_selectivity,
                 column);
         } else {
             rank_to_column.emplace_back(
-                -(1 - 1) * RANK_CORRECTION / getIdentifiersColumnSize({column}),
+                -(1 - MAX_SELECTIVITY) * RANK_CORRECTION / getIdentifiersColumnSize({column}),
                 1,
                 column);
         }
