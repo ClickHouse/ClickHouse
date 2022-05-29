@@ -30,9 +30,9 @@ namespace
     struct ReplicatedPartNames
     {
         std::vector<PartNameAndChecksum> part_names_and_checksums;
-        String table_zk_path;
+        String table_name_for_logs;
 
-        static String serialize(const std::vector<PartNameAndChecksum> & part_names_and_checksums_, const String & table_zk_path_)
+        static String serialize(const std::vector<PartNameAndChecksum> & part_names_and_checksums_, const String & table_name_for_logs_)
         {
             WriteBufferFromOwnString out;
             writeBinary(part_names_and_checksums_.size(), out);
@@ -41,7 +41,7 @@ namespace
                 writeBinary(part_name_and_checksum.part_name, out);
                 writeBinary(part_name_and_checksum.checksum, out);
             }
-            writeBinary(table_zk_path_, out);
+            writeBinary(table_name_for_logs_, out);
             return out.str();
         }
 
@@ -57,7 +57,7 @@ namespace
                 readBinary(res.part_names_and_checksums[i].part_name, in);
                 readBinary(res.part_names_and_checksums[i].checksum, in);
             }
-            readBinary(res.table_zk_path, in);
+            readBinary(res.table_name_for_logs, in);
             return res;
         }
     };
@@ -130,7 +130,7 @@ namespace
 BackupCoordinationDistributed::BackupCoordinationDistributed(const String & zookeeper_path_, zkutil::GetZooKeeper get_zookeeper_)
     : zookeeper_path(zookeeper_path_)
     , get_zookeeper(get_zookeeper_)
-    , preparing_barrier(zookeeper_path_ + "/preparing", get_zookeeper_, "BackupCoordination", "preparing")
+    , collecting_backup_entries_barrier(zookeeper_path_ + "/collect_bents", get_zookeeper_, "BackupCoordination", "collecting backup entries")
 {
     createRootNodes();
 }
@@ -142,8 +142,8 @@ void BackupCoordinationDistributed::createRootNodes()
     auto zookeeper = get_zookeeper();
     zookeeper->createAncestors(zookeeper_path);
     zookeeper->createIfNotExists(zookeeper_path, "");
-    zookeeper->createIfNotExists(zookeeper_path + "/repl_parts", "");
-    zookeeper->createIfNotExists(zookeeper_path + "/repl_tables_data_paths", "");
+    zookeeper->createIfNotExists(zookeeper_path + "/repl_part_names", "");
+    zookeeper->createIfNotExists(zookeeper_path + "/repl_data_paths", "");
     zookeeper->createIfNotExists(zookeeper_path + "/file_names", "");
     zookeeper->createIfNotExists(zookeeper_path + "/file_infos", "");
     zookeeper->createIfNotExists(zookeeper_path + "/archive_suffixes", "");
@@ -155,40 +155,57 @@ void BackupCoordinationDistributed::removeAllNodes()
     zookeeper->removeRecursive(zookeeper_path);
 }
 
+
 void BackupCoordinationDistributed::addReplicatedPartNames(
-    const String & host_id,
-    const StorageID & table_id,
-    const std::vector<PartNameAndChecksum> & part_names_and_checksums,
-    const String & table_zk_path)
+    const String & table_zk_path,
+    const String & table_name_for_logs,
+    const String & replica_name,
+    const std::vector<PartNameAndChecksum> & part_names_and_checksums)
 {
     auto zookeeper = get_zookeeper();
-    String path = zookeeper_path + "/repl_parts/" + BackupCoordinationHostIDAndStorageID::serialize(host_id, table_id);
-    zookeeper->create(path, ReplicatedPartNames::serialize(part_names_and_checksums, table_zk_path), zkutil::CreateMode::Persistent);
+    String path = zookeeper_path + "/repl_part_names/" + escapeForFileName(table_zk_path);
+    zookeeper->createIfNotExists(path, "");
+    path += "/" + escapeForFileName(replica_name);
+    zookeeper->create(path, ReplicatedPartNames::serialize(part_names_and_checksums, table_name_for_logs), zkutil::CreateMode::Persistent);
 }
 
-bool BackupCoordinationDistributed::hasReplicatedPartNames(const String & host_id, const StorageID & table_id) const
+Strings BackupCoordinationDistributed::getReplicatedPartNames(const String & table_zk_path, const String & replica_name) const
+{
+    return replicated_part_names->getPartNames(table_zk_path, replica_name);
+}
+
+
+void BackupCoordinationDistributed::addReplicatedDataPath(
+    const String & table_zk_path, const String & data_path)
 {
     auto zookeeper = get_zookeeper();
-    String path = zookeeper_path + "/repl_parts/" + BackupCoordinationHostIDAndStorageID::serialize(host_id, table_id);
-    return zookeeper->exists(path);
+    String path = zookeeper_path + "/repl_data_paths/" + escapeForFileName(table_zk_path);
+    zookeeper->createIfNotExists(path, "");
+    path += "/";
+    zookeeper->create(path, data_path, zkutil::CreateMode::PersistentSequential);
 }
 
-void BackupCoordinationDistributed::addReplicatedTableDataPath(
-    const String & host_id, const StorageID & table_id, const String & table_data_path)
+Strings BackupCoordinationDistributed::getReplicatedDataPaths(const String & table_zk_path) const
 {
     auto zookeeper = get_zookeeper();
-    String path = zookeeper_path + "/repl_tables_data_paths/" + BackupCoordinationHostIDAndStorageID::serialize(host_id, table_id);
-    zookeeper->createIfNotExists(path, table_data_path);
+    String path = zookeeper_path + "/repl_data_paths/" + escapeForFileName(table_zk_path);
+    Strings children = zookeeper->getChildren(path);
+    Strings data_paths;
+    data_paths.reserve(children.size());
+    for (const String & child : children)
+        data_paths.push_back(zookeeper->get(path + "/" + child));
+    return data_paths;
 }
 
-void BackupCoordinationDistributed::finishPreparing(const String & host_id, const String & error_message)
+
+void BackupCoordinationDistributed::finishCollectingBackupEntries(const String & host_id, const String & error_message)
 {
-    preparing_barrier.finish(host_id, error_message);
+    collecting_backup_entries_barrier.finish(host_id, error_message);
 }
 
-void BackupCoordinationDistributed::waitForAllHostsPrepared(const Strings & host_ids, std::chrono::seconds timeout) const
+void BackupCoordinationDistributed::waitForAllHostsCollectedBackupEntries(const Strings & host_ids, std::chrono::seconds timeout) const
 {
-    preparing_barrier.waitForAllHostsToFinish(host_ids, timeout);
+    collecting_backup_entries_barrier.waitForAllHostsToFinish(host_ids, timeout);
     prepareReplicatedPartNames();
 }
 
@@ -197,40 +214,22 @@ void BackupCoordinationDistributed::prepareReplicatedPartNames() const
     auto zookeeper = get_zookeeper();
     replicated_part_names.emplace();
 
-    String path = zookeeper_path + "/repl_parts";
-    for (const String & serialized_host_and_table_id : zookeeper->getChildren(path))
+    String path = zookeeper_path + "/repl_part_names";
+    for (const String & escaped_table_zk_path : zookeeper->getChildren(path))
     {
-        auto host_and_table_id = BackupCoordinationHostIDAndStorageID::deserialize(serialized_host_and_table_id);
-        const auto & host_id = host_and_table_id.host_id;
-        const auto & table_id = host_and_table_id.storage_id;
-        String path2 = path + "/" + serialized_host_and_table_id;
-        auto part_names = ReplicatedPartNames::deserialize(zookeeper->get(path2));
-        replicated_part_names->addPartNames(host_id, table_id, part_names.part_names_and_checksums, part_names.table_zk_path);
-    }
-
-    path = zookeeper_path + "/repl_tables_data_paths";
-    for (const String & serialized_host_and_table_id : zookeeper->getChildren(path))
-    {
-        auto host_and_table_id = BackupCoordinationHostIDAndStorageID::deserialize(serialized_host_and_table_id);
-        const auto & host_id = host_and_table_id.host_id;
-        const auto & table_id = host_and_table_id.storage_id;
-        String path2 = path + "/" + serialized_host_and_table_id;
-        String data_path = unescapeForFileName(zookeeper->get(path2));
-        replicated_part_names->addDataPath(host_id, table_id, data_path);
+        String table_zk_path = unescapeForFileName(escaped_table_zk_path);
+        String path2 = path + "/" + escaped_table_zk_path;
+        for (const String & escaped_replica_name : zookeeper->getChildren(path2))
+        {
+            String replica_name = unescapeForFileName(escaped_replica_name);
+            auto part_names = ReplicatedPartNames::deserialize(zookeeper->get(path2 + "/" + escaped_replica_name));
+            replicated_part_names->addPartNames(table_zk_path, part_names.table_name_for_logs, replica_name, part_names.part_names_and_checksums);
+        }
     }
 
     replicated_part_names->preparePartNames();
 }
 
-Strings BackupCoordinationDistributed::getReplicatedTableDataPaths(const String & host_id, const StorageID & table_id) const
-{
-    return replicated_part_names->getDataPaths(host_id, table_id);
-}
-
-Strings BackupCoordinationDistributed::getReplicatedPartNames(const String & host_id, const StorageID & table_id) const
-{
-    return replicated_part_names->getPartNames(host_id, table_id);
-}
 
 void BackupCoordinationDistributed::addFileInfo(const FileInfo & file_info, bool & is_data_file_required)
 {

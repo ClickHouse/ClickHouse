@@ -71,6 +71,7 @@
 #include <Interpreters/SelectQueryOptions.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 
+#include <Backups/BackupEntriesCollector.h>
 #include <Backups/IBackupCoordination.h>
 #include <Backups/IBackupEntry.h>
 #include <Backups/IRestoreCoordination.h>
@@ -474,6 +475,18 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     syncPinnedPartUUIDs();
 
     createTableSharedID();
+}
+
+
+String StorageReplicatedMergeTree::getDefaultZooKeeperPath(const Poco::Util::AbstractConfiguration & config)
+{
+    return config.getString("default_replica_path", "/clickhouse/tables/{uuid}/{shard}");
+}
+
+
+String StorageReplicatedMergeTree::getDefaultReplicaName(const Poco::Util::AbstractConfiguration & config)
+{
+    return config.getString("default_replica_name", "{replica}");
 }
 
 
@@ -8226,12 +8239,24 @@ void StorageReplicatedMergeTree::createAndStoreFreezeMetadata(DiskPtr disk, Data
 }
 
 
-BackupEntries StorageReplicatedMergeTree::backupData(ContextPtr local_context, const ASTs & partitions, const StorageBackupSettings & backup_settings, const std::shared_ptr<IBackupCoordination> & backup_coordination)
+void StorageReplicatedMergeTree::backup(const ASTPtr & create_query, const String & data_path_in_backup, const std::optional<ASTs> & partitions, std::shared_ptr<BackupEntriesCollector> backup_entries_collector)
 {
-    auto backup_entries = MergeTreeData::backupData(local_context, partitions, backup_settings, backup_coordination);
+    backupMetadata(create_query, backup_entries_collector);
 
-    std::unordered_map<String, SipHash> parts;
-    for (const auto & [relative_path, backup_entry] : backup_entries)
+    if (backup_entries_collector->getBackupSettings().structure_only)
+        return;
+
+    /// We generate backup entries in the same way as ordinary MergeTree does.
+    /// But we don't add all of them to the BackupEntriesCollector right away,
+    /// first we need to coordinate them with other replicas (because other replicas could have better parts).
+    auto backup_entries = backupData("", partitions, backup_entries_collector->getContext());
+
+    auto coordination = backup_entries_collector->getBackupCoordination();
+    String full_zk_path = getZooKeeperName() + getZooKeeperPath();
+    coordination->addReplicatedDataPath(full_zk_path, data_path_in_backup);
+
+    std::unordered_map<String, SipHash> part_names_with_hashes_calculating;
+    for (auto & [relative_path, backup_entry] : backup_entries)
     {
         size_t slash_pos = relative_path.find('/');
         if (slash_pos != String::npos)
@@ -8239,7 +8264,7 @@ BackupEntries StorageReplicatedMergeTree::backupData(ContextPtr local_context, c
             String part_name = relative_path.substr(0, slash_pos);
             if (MergeTreePartInfo::tryParsePartName(part_name, MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING))
             {
-                auto & hash = parts[part_name];
+                auto & hash = part_names_with_hashes_calculating[part_name];
                 if (relative_path.ends_with(".bin"))
                 {
                     auto checksum = backup_entry->getChecksum();
@@ -8247,25 +8272,90 @@ BackupEntries StorageReplicatedMergeTree::backupData(ContextPtr local_context, c
                     hash.update(backup_entry->getSize());
                     hash.update(*checksum);
                 }
+                continue;
             }
         }
+        /// Not a part name, so we can add it to the BackupEntriesCollector immediately.
+        backup_entries_collector->addBackupEntry(data_path_in_backup + "/" + relative_path, backup_entry);
+        backup_entry = nullptr; /// We set `backup_entry` to null to erase those entries later (see std::erase_if below)
     }
 
-    std::vector<IBackupCoordination::PartNameAndChecksum> part_names_and_checksums;
-    part_names_and_checksums.reserve(parts.size());
-    for (auto & [part_name, hash] : parts)
+    std::erase_if(backup_entries, [](const std::pair<String, BackupEntryPtr> & backup_entry) { return !backup_entry.second; });
+
+    std::vector<IBackupCoordination::PartNameAndChecksum> part_names_with_hashes;
+    part_names_with_hashes.reserve(part_names_with_hashes_calculating.size());
+    for (auto & [part_name, hash] : part_names_with_hashes_calculating)
     {
         UInt128 checksum;
         hash.get128(checksum);
-        auto & part_name_and_checksum = part_names_and_checksums.emplace_back();
-        part_name_and_checksum.part_name = part_name;
-        part_name_and_checksum.checksum = checksum;
+        auto & part_name_with_hash = part_names_with_hashes.emplace_back();
+        part_name_with_hash.part_name = part_name;
+        part_name_with_hash.checksum = checksum;
     }
 
-    String full_zk_path = getZooKeeperName() + getZooKeeperPath();
-    backup_coordination->addReplicatedPartNames(backup_settings.host_id, getStorageID(), part_names_and_checksums, full_zk_path);
+    /// Send our list of part names to the coordination (with other replicas).
+    coordination->addReplicatedPartNames(full_zk_path, getStorageID().getFullTableName(), getReplicaName(), part_names_with_hashes);
 
-    return backup_entries;
+    /// This task will be executed after all replicas have collected their parts and the coordination is ready to
+    /// give us the final list of parts to add to the BackupEntriesCollector.
+    auto post_collecting_task = [full_zk_path,
+                                 replica_name = getReplicaName(),
+                                 coordination,
+                                 backup_entries = std::move(backup_entries),
+                                 backup_entries_collector]()
+    {
+        Strings data_paths = coordination->getReplicatedDataPaths(full_zk_path);
+        Strings part_names = coordination->getReplicatedPartNames(full_zk_path, replica_name);
+        std::unordered_set<std::string_view> part_names_set{part_names.begin(), part_names.end()};
+        for (const auto & [relative_path, backup_entry] : backup_entries)
+        {
+            size_t slash_pos = relative_path.find('/');
+            String part_name = relative_path.substr(0, slash_pos);
+            if (!part_names_set.contains(part_name))
+                continue;
+            for (const auto & data_path : data_paths)
+                backup_entries_collector->addBackupEntry(data_path + "/" + relative_path, backup_entry);
+        }
+    };
+    backup_entries_collector->addPostCollectingTask(post_collecting_task);
+}
+
+void StorageReplicatedMergeTree::adjustCreateQueryForBackup(ASTPtr & create_query) const
+{
+    MergeTreeData::adjustCreateQueryForBackup(create_query);
+
+    /// Before storing the metadata in a backup we have to find a zookeeper path in its definition and turn the table's UUID in there
+    /// back into "{uuid}", and also we probably can remove the zookeeper path and replica name if they're default.
+    /// So we're kind of reverting what we had done to the table's definition in registerStorageMergeTree.cpp before we created this table.
+    auto & create = create_query->as<ASTCreateQuery &>();
+    if (create.storage && create.storage->engine && (create.uuid != UUIDHelpers::Nil))
+    {
+        auto & engine = *(create.storage->engine);
+        if (auto * engine_args_ast = typeid_cast<ASTExpressionList *>(engine.arguments.get()))
+        {
+            auto & engine_args = engine_args_ast->children;
+            if (engine_args.size() >= 2)
+            {
+                auto * zookeeper_path_ast = typeid_cast<ASTLiteral *>(engine_args[0].get());
+                auto * replica_name_ast = typeid_cast<ASTLiteral *>(engine_args[1].get());
+                if (zookeeper_path_ast && (zookeeper_path_ast->value.getType() == Field::Types::String) &&
+                    replica_name_ast && (replica_name_ast->value.getType() == Field::Types::String))
+                {
+                    String & zookeeper_path_arg = zookeeper_path_ast->value.get<String>();
+                    String & replica_name_arg = replica_name_ast->value.get<String>();
+                    String table_uuid_str = toString(create.uuid);
+                    if (size_t uuid_pos = zookeeper_path_arg.find(table_uuid_str); uuid_pos != String::npos)
+                        zookeeper_path_arg.replace(uuid_pos, table_uuid_str.size(), "{uuid}");
+                    const auto & config = getContext()->getConfigRef();
+                    if ((zookeeper_path_arg == getDefaultZooKeeperPath(config)) && (replica_name_arg == getDefaultReplicaName(config))
+                        && ((engine_args.size() == 2) || !engine_args[2]->as<ASTLiteral>()))
+                    {
+                        engine_args.erase(engine_args.begin(), engine_args.begin() + 2);
+                    }
+                }
+            }
+        }
+    }
 }
 
 bool StorageReplicatedMergeTree::startRestoringPartition(

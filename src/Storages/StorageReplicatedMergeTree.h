@@ -111,6 +111,9 @@ public:
     void flush() override;
     ~StorageReplicatedMergeTree() override;
 
+    static String getDefaultZooKeeperPath(const Poco::Util::AbstractConfiguration & config);
+    static String getDefaultReplicaName(const Poco::Util::AbstractConfiguration & config);
+
     std::string getName() const override { return "Replicated" + merging_params.getModeName() + "MergeTree"; }
 
     bool supportsParallelInsert() const override { return true; }
@@ -219,7 +222,21 @@ public:
     /// Checks ability to use granularity
     bool canUseAdaptiveGranularity() const override;
 
+    /// Returns the default path to the table in ZooKeeper.
+    /// It's used if not set in engine's arguments while creating a replicated table.
+    static String getDefaultReplicaPath(const ContextPtr & context_);
+
+    /// Returns the default replica name in ZooKeeper.
+    /// It's used if not set in engine's arguments while creating a replicated table.
+    static String getDefaultReplicaName(const ContextPtr & context_);
+
     int getMetadataVersion() const { return metadata_version; }
+
+    /// Prepares entries to backup data of the storage.
+    void backup(const ASTPtr & create_query, const String & data_path_in_backup, const std::optional<ASTs> & partitions, std::shared_ptr<BackupEntriesCollector> backup_entries_collector) override;
+
+    /// Changes slightly this storage's create query before it's written to a backup.
+    void adjustCreateQueryForBackup(ASTPtr & create_query) const override;
 
     /** Remove a specific replica from zookeeper.
      */
@@ -776,9 +793,6 @@ private:
     MutationCommands getFirstAlterMutationCommandsForPart(const DataPartPtr & part) const override;
 
     void startBackgroundMovesIfNeeded() override;
-
-    /// Prepares entries to backup data of the storage.
-    BackupEntries backupData(ContextPtr context, const ASTs & partitions, const StorageBackupSettings & backup_settings, const std::shared_ptr<IBackupCoordination> & backup_coordination) override;
 
     /// Starts restoring a partition, if the function returns false the partition will be skipped.
     /// We need to skip partitions in case other replicas are already restoring them.

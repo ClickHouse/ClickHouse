@@ -714,11 +714,8 @@ public:
         ContextPtr context,
         TableLockHolder & table_lock_holder);
 
-    /// Storage has data to backup.
-    bool hasDataToBackup() const override { return true; }
-
     /// Prepares entries to backup data of the storage.
-    BackupEntries backupData(ContextPtr context, const ASTs & partitions, const StorageBackupSettings & backup_settings, const std::shared_ptr<IBackupCoordination> & backup_coordination) override;
+    void backup(const ASTPtr & create_query, const String & data_path_in_backup, const std::optional<ASTs> & partitions, std::shared_ptr<BackupEntriesCollector> backup_entries_collector) override;
 
     /// Extract data from the backup and put it to the storage.
     RestoreTaskPtr restoreData(ContextMutablePtr context, const ASTs & partitions, const BackupPtr & backup, const String & data_path_in_backup, const StorageRestoreSettings & restore_settings, const std::shared_ptr<IRestoreCoordination> & restore_coordination) override;
@@ -1229,6 +1226,9 @@ protected:
     virtual MutationCommands getFirstAlterMutationCommandsForPart(const DataPartPtr & part) const = 0;
     /// Moves part to specified space, used in ALTER ... MOVE ... queries
     bool movePartsToSpace(const DataPartsVector & parts, SpacePtr space);
+
+    /// Makes backup entries to backup this table's data.
+    BackupEntries backupData(const String & data_path_in_backup, const std::optional<ASTs> & partitions, const ContextPtr & local_context);
 
     /// Starts restoring a partition, if the function returns false the partition will be skipped.
     /// Overriden by the replicated storage to skip partitions in case other replicas are already restoring them.

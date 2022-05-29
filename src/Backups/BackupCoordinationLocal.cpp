@@ -16,47 +16,46 @@ BackupCoordinationLocal::BackupCoordinationLocal() : log(&Poco::Logger::get("Bac
 
 BackupCoordinationLocal::~BackupCoordinationLocal() = default;
 
-void BackupCoordinationLocal::addReplicatedPartNames(const String & /* host_id */, const StorageID & table_id, const std::vector<PartNameAndChecksum> & part_names_and_checksums, const String & table_zk_path)
+void BackupCoordinationLocal::addReplicatedPartNames(const String & table_zk_path, const String & table_name_for_logs, const String & replica_name, const std::vector<PartNameAndChecksum> & part_names_and_checksums)
 {
     std::lock_guard lock{mutex};
-    replicated_part_names.addPartNames("", table_id, part_names_and_checksums, table_zk_path);
+    replicated_part_names.addPartNames(table_zk_path, table_name_for_logs, replica_name, part_names_and_checksums);
 }
 
-bool BackupCoordinationLocal::hasReplicatedPartNames(const String & /* host_id */, const StorageID & table_id) const
+Strings BackupCoordinationLocal::getReplicatedPartNames(const String & table_zk_path, const String & replica_name) const
 {
     std::lock_guard lock{mutex};
-    return replicated_part_names.has("", table_id);
+    return replicated_part_names.getPartNames(table_zk_path, replica_name);
 }
 
-void BackupCoordinationLocal::addReplicatedTableDataPath(const String & /* host_id */, const StorageID & table_id, const String & table_data_path)
+
+void BackupCoordinationLocal::addReplicatedDataPath(const String & table_zk_path, const String & data_path)
 {
     std::lock_guard lock{mutex};
-    replicated_part_names.addDataPath("", table_id, table_data_path);
+    replicated_data_paths[table_zk_path].push_back(data_path);
 }
 
-void BackupCoordinationLocal::finishPreparing(const String & /* host_id */, const String & error_message)
+Strings BackupCoordinationLocal::getReplicatedDataPaths(const String & table_zk_path) const
 {
-    LOG_TRACE(log, "Finished preparing{}", (error_message.empty() ? "" : (" with error " + error_message)));
+    std::lock_guard lock{mutex};
+    auto it = replicated_data_paths.find(table_zk_path);
+    if (it == replicated_data_paths.end())
+        return {};
+    return it->second;
+}
+
+
+void BackupCoordinationLocal::finishCollectingBackupEntries(const String & /* host_id */, const String & error_message)
+{
+    LOG_TRACE(log, "Finished collecting backup entries{}", (error_message.empty() ? "" : (" with error " + error_message)));
     if (!error_message.empty())
         return;
 
     replicated_part_names.preparePartNames();
 }
 
-void BackupCoordinationLocal::waitForAllHostsPrepared(const Strings & /* host_ids */, std::chrono::seconds /* timeout */) const
+void BackupCoordinationLocal::waitForAllHostsCollectedBackupEntries(const Strings & /* host_ids */, std::chrono::seconds /* timeout */) const
 {
-}
-
-Strings BackupCoordinationLocal::getReplicatedPartNames(const String & /* host_id */, const StorageID & table_id) const
-{
-    std::lock_guard lock{mutex};
-    return replicated_part_names.getPartNames("", table_id);
-}
-
-Strings BackupCoordinationLocal::getReplicatedTableDataPaths(const String & /* host_id */, const StorageID & table_id) const
-{
-    std::lock_guard lock{mutex};
-    return replicated_part_names.getDataPaths("", table_id);
 }
 
 

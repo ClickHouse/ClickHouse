@@ -23,6 +23,7 @@
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedReadBufferFromFile.h>
 #include <Compression/CompressedWriteBuffer.h>
+#include <Backups/BackupEntriesCollector.h>
 #include <Backups/IBackup.h>
 #include <Backups/IBackupEntriesBatch.h>
 #include <Backups/IRestoreTask.h>
@@ -379,12 +380,26 @@ void StorageMemory::truncate(
 }
 
 
+void StorageMemory::backup(const ASTPtr & create_query, const String & data_path_in_backup, const std::optional<ASTs> & partitions, std::shared_ptr<BackupEntriesCollector> backup_entries_collector)
+{
+    if (partitions)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Table engine {} doesn't support partitions", getName());
+
+    backupMetadata(create_query, backup_entries_collector);
+
+    if (!backup_entries_collector->getBackupSettings().structure_only)
+        backupData(data_path_in_backup, backup_entries_collector);
+}
+
 class MemoryBackupEntriesBatch : public IBackupEntriesBatch, boost::noncopyable
 {
 public:
     MemoryBackupEntriesBatch(
-        const StorageMetadataPtr & metadata_snapshot_, const std::shared_ptr<const Blocks> blocks_, UInt64 max_compress_block_size_)
-        : IBackupEntriesBatch({"data.bin", "index.mrk", "sizes.json"})
+        const StorageMetadataPtr & metadata_snapshot_,
+        const std::shared_ptr<const Blocks> blocks_,
+        const String & data_path_in_backup,
+        UInt64 max_compress_block_size_)
+        : IBackupEntriesBatch({data_path_in_backup + "/data.bin", data_path_in_backup + "/index.mrk", data_path_in_backup + "/sizes.json"})
         , metadata_snapshot(metadata_snapshot_)
         , blocks(blocks_)
         , max_compress_block_size(max_compress_block_size_)
@@ -470,14 +485,11 @@ private:
     std::array<UInt64, kSize> file_sizes;
 };
 
-
-BackupEntries StorageMemory::backupData(ContextPtr context, const ASTs & partitions, const StorageBackupSettings &, const std::shared_ptr<IBackupCoordination> &)
+void StorageMemory::backupData(const String & data_path_in_backup, std::shared_ptr<BackupEntriesCollector> backup_entries_collector)
 {
-    if (!partitions.empty())
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Table engine {} doesn't support partitions", getName());
-
-    return std::make_shared<MemoryBackupEntriesBatch>(getInMemoryMetadataPtr(), data.get(), context->getSettingsRef().max_compress_block_size)
-        ->getBackupEntries();
+    auto max_compress_block_size = backup_entries_collector->getContext()->getSettingsRef().max_compress_block_size;
+    backup_entries_collector->addBackupEntries(
+        std::make_shared<MemoryBackupEntriesBatch>(getInMemoryMetadataPtr(), data.get(), data_path_in_backup, max_compress_block_size)->getBackupEntries());
 }
 
 

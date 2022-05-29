@@ -409,11 +409,13 @@ Strings StorageMaterializedView::getDataPaths() const
     return {};
 }
 
-BackupEntries StorageMaterializedView::backupData(ContextPtr context_, const ASTs & partitions_, const StorageBackupSettings & backup_settings, const std::shared_ptr<IBackupCoordination> & backup_coordination)
+void StorageMaterializedView::backup(const ASTPtr & create_query, const String & data_path_in_backup, const std::optional<ASTs> & partitions, std::shared_ptr<BackupEntriesCollector> backup_entries_collector)
 {
-    if (!hasInnerTable())
-        return {};
-    return getTargetTable()->backupData(context_, partitions_, backup_settings, backup_coordination);
+    /// If the target table is not inner then we backup only metadata.
+    if (hasInnerTable())
+        getTargetTable()->backup(create_query, data_path_in_backup, partitions, backup_entries_collector);
+    else
+        backupMetadata(create_query, backup_entries_collector);
 }
 
 RestoreTaskPtr StorageMaterializedView::restoreData(ContextMutablePtr context_, const ASTs & partitions_, const BackupPtr & backup_, const String & data_path_in_backup_, const StorageRestoreSettings & restore_settings_, const std::shared_ptr<IRestoreCoordination> & restore_coordination_)

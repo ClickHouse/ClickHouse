@@ -4,6 +4,7 @@
 #include <Backups/BackupSettings.h>
 #include <Backups/BackupUtils.h>
 #include <Backups/IBackupEntry.h>
+#include <Backups/BackupEntriesCollector.h>
 #include <Backups/BackupCoordinationDistributed.h>
 #include <Backups/BackupCoordinationLocal.h>
 #include <Backups/IRestoreTask.h>
@@ -159,9 +160,10 @@ UUID BackupsWorker::startMakingBackup(const ASTPtr & query, const ContextPtr & c
 
                 backup_query->setDatabase(cloned_context->getCurrentDatabase());
 
-                auto timeout_for_preparing = std::chrono::seconds{cloned_context->getConfigRef().getInt("backups.backup_prepare_timeout", -1)};
-                auto backup_entries
-                    = makeBackupEntries(cloned_context, backup_query->elements, backup_settings, backup_coordination, timeout_for_preparing);
+                auto timeout_for_collect_backup_entries = std::chrono::seconds{cloned_context->getConfigRef().getInt("backups.backup_prepare_timeout", -1)};
+                auto backup_entries_collector = BackupEntriesCollector::create(
+                    backup_query->elements, backup_settings, backup_coordination, cloned_context, timeout_for_collect_backup_entries);
+                auto backup_entries = backup_entries_collector->collectBackupEntries();
                 writeBackupEntries(backup, std::move(backup_entries), backups_thread_pool);
             }
             setStatus(backup_uuid, BackupStatus::BACKUP_COMPLETE);
