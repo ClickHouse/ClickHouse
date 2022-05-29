@@ -2198,7 +2198,8 @@ struct WindowFunctionNonNegativeDerivative final : public RecurrentWindowFunctio
                 ARGUMENT_INTERVAL,
                 argument_types[ARGUMENT_INTERVAL]->getName());
         }
-        if (interval_datatype->getKind() == IntervalKind::Month || interval_datatype->getKind() == IntervalKind::Quarter || interval_datatype->getKind() == IntervalKind::Year) {
+        if (interval_datatype->getKind() == IntervalKind::Month || interval_datatype->getKind() == IntervalKind::Quarter || interval_datatype->getKind() == IntervalKind::Year)
+        {
             throw Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "Only INTERVAL less than month is accepted, '{}' given",
