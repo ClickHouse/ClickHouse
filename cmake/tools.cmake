@@ -19,11 +19,16 @@ set (CLANG_MINIMUM_VERSION 12)
 set (XCODE_MINIMUM_VERSION 12.0)
 set (APPLE_CLANG_MINIMUM_VERSION 12.0.0)
 set (GCC_MINIMUM_VERSION 11)
+set (GCC_BROKEN_VERSION 12.1.0)
 
 if (COMPILER_GCC)
     if (CMAKE_CXX_COMPILER_VERSION VERSION_LESS ${GCC_MINIMUM_VERSION})
         message (FATAL_ERROR "Compilation with GCC version ${CMAKE_CXX_COMPILER_VERSION} is unsupported, the minimum required version is ${GCC_MINIMUM_VERSION}.")
     endif ()
+
+    if (CMAKE_CXX_COMPILER_VERSION VERSION_EQUAL ${GCC_BROKEN_VERSION} AND (NOT CMAKE_BUILD_TYPE OR CMAKE_BUILD_TYPE STREQUAL "None"))
+        message (FATAL_ERROR "Compilation with GCC version ${CMAKE_CXX_COMPILER_VERSION} in release mode is broken because of GCC fails to compile our codebase for a very obscure reasons, try build in debug mode or more fresh/old GCC")
+    endif()
 
     message (WARNING "Compilation with GCC is unsupported. Please use Clang instead.")
 

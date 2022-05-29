@@ -698,7 +698,6 @@ namespace S3
 {
     ClientFactory::ClientFactory()
     {
-        aws_options = Aws::SDKOptions{};
         Aws::InitAPI(aws_options);
         Aws::Utils::Logging::InitializeAWSLogging(std::make_shared<AWSLogger>(false));
         Aws::Http::SetHttpClientFactory(std::make_shared<PocoHTTPClientFactory>());

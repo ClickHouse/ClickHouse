@@ -31,7 +31,7 @@ CI_CONFIG = {
         },
         "binary_gcc": {
             "compiler": "gcc-12",
-            "build_type": "",
+            "build_type": "debug",
             "sanitizer": "",
             "package_type": "binary",
             "bundled": "bundled",
