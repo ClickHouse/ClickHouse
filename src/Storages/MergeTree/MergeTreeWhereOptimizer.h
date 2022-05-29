@@ -55,7 +55,7 @@ private:
 
     // Description of simple expression (ident <=> lit).
     // Used by new planner.
-    struct NumericConditionDescription
+    struct ConditionDescription
     {
         enum class Type {
             LESS_OR_EQUAL,
@@ -69,20 +69,7 @@ private:
         Field constant;
     };
 
-    /*struct StringConditionDescription
-    {
-        enum class Type {
-            EQUAL,
-            NOT_EQUAL,
-        };
-
-        String identifier;
-        Type type;
-        Field constant;
-    };*/
-
-    using ConditionDescriptionVariant = std::variant<
-        std::monostate, NumericConditionDescription/*, StringConditionDescription*/>;
+    using ConditionDescriptionOptional = std::optional<ConditionDescription>;
 
     // Conditions 
     struct Condition
@@ -92,8 +79,7 @@ private:
         
         NameSet identifiers;
 
-        // TODO: support OR
-        ConditionDescriptionVariant description;
+        ConditionDescriptionOptional description;
 
         /// Can condition be moved to prewhere?
         bool viable = false;
@@ -121,7 +107,7 @@ private:
     bool tryAnalyzeTupleCompare(Conditions & res, const ASTFunction * func, bool is_final) const;
     void analyzeImpl(Conditions & res, const ASTPtr & node, bool is_final) const;
 
-    ConditionDescriptionVariant parseCondition(const ASTPtr & condition) const;
+    ConditionDescriptionOptional parseCondition(const ASTPtr & condition) const;
 
     /// Transform conjunctions chain in WHERE expression to Conditions list.
     Conditions analyze(const ASTPtr & expression, bool is_final) const;
@@ -172,7 +158,7 @@ private:
     };
 
     std::vector<ColumnWithRank> getSimpleColumns(const std::unordered_map<std::string, Conditions> & column_to_simple_conditions) const;
-    double scoreSelectivity(const std::optional<NumericConditionDescription> & condition_description) const;
+    double scoreSelectivity(const std::optional<ConditionDescription> & condition_description) const;
 
     std::optional<double> analyzeComplexSelectivity(const ASTPtr & node) const;
 
@@ -192,9 +178,9 @@ private:
         Condition condition;
     };
 
-    const std::unordered_map<NumericConditionDescription::Type, NumericConditionDescription::Type>& getCompareFuncsSwaps() const;
-    const std::unordered_map<NumericConditionDescription::Type, std::string>& getCompareTypeToString() const;
-    const std::unordered_map<std::string, NumericConditionDescription::Type>& getStringToCompareFuncs() const;
+    const std::unordered_map<ConditionDescription::Type, ConditionDescription::Type>& getCompareFuncsSwaps() const;
+    const std::unordered_map<ConditionDescription::Type, std::string>& getCompareTypeToString() const;
+    const std::unordered_map<std::string, ConditionDescription::Type>& getStringToCompareFuncs() const;
 
     using StringSet = std::unordered_set<std::string>;
 
