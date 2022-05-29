@@ -4263,3 +4263,29 @@ Possible values:
 - 1 — Enabled.
 
 Default value: 1.
+
+## memory_overcommit_ratio_denominator
+
+It represents soft memory limit in case when hard limit is reached on user level.
+This value is used to compute overcommit ratio for the query.
+Zero means skip the query.
+Read more about [memory overcommit](memory-overcommit.md).
+
+Default value: `1GiB`.
+
+## memory_usage_overcommit_max_wait_microseconds
+
+Maximum time thread will wait for memory to be freed in the case of memory overcommit on a user level.
+If the timeout is reached and memory is not freed, an exception is thrown.
+Read more about [memory overcommit](memory-overcommit.md).
+
+Default value: `200`.
+
+## memory_overcommit_ratio_denominator_for_user
+
+It represents soft memory limit in case when hard limit is reached on global level.
+This value is used to compute overcommit ratio for the query.
+Zero means skip the query.
+Read more about [memory overcommit](memory-overcommit.md).
+
+Default value: `1GiB`.

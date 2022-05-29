@@ -81,6 +81,8 @@
         {
             height: 100%;
             margin: 0;
+            /* This enables position: sticky on controls */
+            overflow: auto;
         }
 
         html
@@ -89,7 +91,24 @@
             font-family: Liberation Sans, DejaVu Sans, sans-serif, Noto Color Emoji, Apple Color Emoji, Segoe UI Emoji;
             background: var(--background-color);
             color: var(--text-color);
+        }
+
+        body
+        {
+            /* This element will show scroll-bar on overflow, and the scroll-bar will be outside of the padding. */
             padding: 0.5rem;
+        }
+
+        #controls
+        {
+            /* Make enough space for even huge queries. */
+            height: 20%;
+            /* When a page will be scrolled horizontally due to large table size, keep controls in place. */
+            position: sticky;
+            left: 0;
+            /* This allows query textarea to occupy the remaining height while other elements have fixed height. */
+            display: flex;
+            flex-direction: column;
         }
 
         /* Otherwise Webkit based browsers will display ugly border on focus. */
@@ -129,8 +148,7 @@
 
         #query_div
         {
-            /* Make enough space for medium/large queries but allowing query textarea to grow. */
-            min-height: 20%;
+            height: 100%;
         }
 
         #query
@@ -380,19 +398,21 @@
 </head>
 
 <body>
-    <div id="inputs">
-        <input class="monospace shadow" id="url" type="text" value="http://localhost:8123/" placeholder="url" /><input class="monospace shadow" id="user" type="text" value="default" placeholder="user" /><input class="monospace shadow" id="password" type="password" placeholder="password" />
-    </div>
-    <div id="query_div">
-        <textarea autofocus spellcheck="false" class="monospace shadow" id="query"></textarea>
-    </div>
-    <div id="run_div">
-        <button class="shadow" id="run">Run</button>
-        <span class="hint">&nbsp;(Ctrl/Cmd+Enter)</span>
-        <span id="hourglass">⧗</span>
-        <span id="check-mark">✔</span>
-        <span id="stats"></span>
-        <span id="toggle-dark">🌑</span><span id="toggle-light">🌞</span>
+    <div id="controls">
+        <div id="inputs">
+            <input class="monospace shadow" id="url" type="text" value="http://localhost:8123/" placeholder="url" /><input class="monospace shadow" id="user" type="text" value="default" placeholder="user" /><input class="monospace shadow" id="password" type="password" placeholder="password" />
+        </div>
+        <div id="query_div">
+            <textarea autofocus spellcheck="false" class="monospace shadow" id="query"></textarea>
+        </div>
+        <div id="run_div">
+            <button class="shadow" id="run">Run</button>
+            <span class="hint">&nbsp;(Ctrl/Cmd+Enter)</span>
+            <span id="hourglass">⧗</span>
+            <span id="check-mark">✔</span>
+            <span id="stats"></span>
+            <span id="toggle-dark">🌑</span><span id="toggle-light">🌞</span>
+        </div>
     </div>
     <div id="data_div">
         <table class="monospace-table shadow" id="data-table"></table>
