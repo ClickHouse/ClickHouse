@@ -7,7 +7,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int SYNTAX_ERROR;
-    extern const int NOT_IMPLEMENTED;
 }
 
 Float64 IntervalKind::toAvgSeconds() const
