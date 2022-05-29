@@ -10,13 +10,13 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
-Int32 IntervalKind::toAvgSeconds() const
+Float64 IntervalKind::toAvgSeconds() const
 {
     switch (kind)
     {
-        case IntervalKind::Nanosecond: return 0;    /// fractional parts of seconds have 0 seconds
-        case IntervalKind::Microsecond: return 0;
-        case IntervalKind::Millisecond: return 0;
+        case IntervalKind::Nanosecond: return 0.000000001;
+        case IntervalKind::Microsecond: return 0.000001;
+        case IntervalKind::Millisecond: return 0.001;
         case IntervalKind::Second: return 1;
         case IntervalKind::Minute: return 60;
         case IntervalKind::Hour: return 3600;
@@ -27,19 +27,6 @@ Int32 IntervalKind::toAvgSeconds() const
         case IntervalKind::Year: return 31556952;   /// The average length of a Gregorian year is equal to 365.2425 days
     }
     __builtin_unreachable();
-}
-
-UInt64 IntervalKind::toAvgNanoseconds() const
-{
-    switch (kind)
-    {
-        case IntervalKind::Nanosecond: return 1;
-        case IntervalKind::Microsecond: return 1000;
-        case IntervalKind::Millisecond: return 1000000;
-        case IntervalKind::Second: return 1 * 1000000000;
-        default:
-            throw Exception("Only sub-second interval can be converted to nanoseconds", ErrorCodes::NOT_IMPLEMENTED);
-    }
 }
 
 IntervalKind IntervalKind::fromAvgSeconds(Int64 num_seconds)
