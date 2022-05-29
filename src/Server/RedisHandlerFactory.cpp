@@ -19,12 +19,8 @@ RedisHandlerFactory::RedisHandlerFactory(IServer & server_) : server(server_), l
     {
         String db_name = server.config().getString(Poco::format("redis.db._%d.database", i), "");
         String table_name = server.config().getString(Poco::format("redis.db._%d.table", i), "");
-        if (!db_name.empty())
-        {
-            auto db_ptr = DatabaseCatalog::instance().getDatabase(db_name, server.context());
-            db_ptr->getTable(table_name, server.context());
+        if (!db_name.empty() && !table_name.empty())
             set = true;
-        }
     }
     if (!set)
         throw Exception("At least one database must be configured for redis", ErrorCodes::UNKNOWN_DATABASE);

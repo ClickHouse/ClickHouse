@@ -15,7 +15,6 @@
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <filesystem>
-#include <DataTypes/DataTypeFactory.h>
 
 namespace fs = std::filesystem;
 

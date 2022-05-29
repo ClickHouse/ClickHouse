@@ -10,7 +10,6 @@
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
     extern const int BAD_REQUEST_PARAMETER;
@@ -262,6 +261,42 @@ namespace RedisProtocol
         BeginRequest & req;
     };
 
+    class HMGetRequest : public Request
+    {
+    public:
+        explicit HMGetRequest(BeginRequest & req_) : req(req_) { }
+
+        void deserialize(ReadBuffer & in) final
+        {
+            key.clear();
+            columns.clear();
+
+            Reader reader(&in);
+
+            auto array_size = req.getArraySize();
+            if (array_size < 2)
+            {
+                throw Exception(Poco::format("Invalid array size. Array size was %?d.", array_size), ErrorCodes::BAD_REQUEST_PARAMETER);
+            }
+            columns.resize(array_size - 1);
+
+            key = reader.readBulkString();
+            for (Int64 i = 0; i < array_size - 1; ++i)
+            {
+                columns[i] = reader.readBulkString();
+            }
+        }
+
+        const String & getKey() const { return key; }
+
+        const std::vector<String> & getColumns() const { return columns; }
+
+    private:
+        String key;
+        std::vector<String> columns;
+        BeginRequest & req;
+    };
+
     class Response
     {
     public:
@@ -285,19 +320,37 @@ namespace RedisProtocol
         const String & value;
     };
 
+    class NilResponse : public Response
+    {
+    public:
+        void serialize(WriteBuffer & out) final
+        {
+            Writer writer(&out);
+            writer.writeNumber(-1);
+        }
+    };
+
     class BulkStringResponse : public Response
     {
     public:
-        explicit BulkStringResponse(const String & value_) : value(value_) { }
+        explicit BulkStringResponse(const std::optional<String> & value_) : value(value_) { }
 
         void serialize(WriteBuffer & out) final
         {
             Writer writer(&out);
-            writer.writeBulkString(value);
+            if (value.has_value())
+            {
+                writer.writeBulkString(value.value());
+            }
+            else
+            {
+                NilResponse resp;
+                resp.serialize(out);
+            }
         }
 
     private:
-        const String & value;
+        const std::optional<String> & value;
     };
 
     class ArrayResponse : public Response
@@ -311,14 +364,8 @@ namespace RedisProtocol
             writer.writeArray(values.size());
             for (const auto & value : values)
             {
-                if (value.has_value())
-                {
-                    writer.writeBulkString(value.value());
-                }
-                else
-                {
-                    writer.writeNumber(-1);
-                }
+                BulkStringResponse bulk_string(value);
+                bulk_string.serialize(out);
             }
         }
 
@@ -339,16 +386,6 @@ namespace RedisProtocol
 
     private:
         const String & error;
-    };
-
-    class NilResponse : public Response
-    {
-    public:
-        void serialize(WriteBuffer & out) final
-        {
-            Writer writer(&out);
-            writer.writeNumber(-1);
-        }
     };
 
     class AuthenticationManager

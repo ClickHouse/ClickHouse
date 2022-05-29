@@ -1,12 +1,14 @@
 #include <IO/ReadBufferFromPocoSocket.h>
 #include <IO/WriteBufferFromPocoSocket.h>
 
-#include "Core/iostream_debug_helpers.h"
+#include <Core/iostream_debug_helpers.h>
+#include <Storages/IKVStorage.h>
 #include "RedisHandler.h"
 #include "RedisProtocol.hpp"
-#include "Storages/IKVStorage.h"
 
 #include <Columns/ColumnString.h>
+
+#include <boost/algorithm/string/split.hpp>
 
 #include <Server/TCPServer.h>
 #include <base/scope_guard.h>
@@ -27,7 +29,6 @@
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
     extern const int SUPPORT_IS_DISABLED;
@@ -71,28 +72,11 @@ void RedisHandler::run()
                 get_req.deserialize(*in);
                 LOG_DEBUG(log, "GET request for {} key", get_req.getKeys()[0]);
 
-                if (!authenticated)
-                {
-                    RedisProtocol::ErrorResponse resp(RedisProtocol::Message::NOAUTH);
-                    resp.serialize(*out);
+                if (!validateGetRequest())
                     continue;
-                }
-
-                if (!table_ptr)
-                {
-                    RedisProtocol::ErrorResponse resp(Poco::format("No table selected for %d", db));
-                    resp.serialize(*out);
-                    continue;
-                }
 
                 auto result = getByKeys(get_req.getKeys());
-                if (result.empty() || !result[0].has_value())
-                {
-                    RedisProtocol::NilResponse resp;
-                    resp.serialize(*out);
-                    continue;
-                }
-                RedisProtocol::BulkStringResponse resp(result[0].value());
+                RedisProtocol::BulkStringResponse resp(result[0]);
                 resp.serialize(*out);
             }
             else if (req.getMethod() == "mget")
@@ -101,21 +85,50 @@ void RedisHandler::run()
                 get_req.deserialize(*in);
                 LOG_DEBUG(log, "MGET request for {} keys", std::to_string(get_req.getKeys().size()));
 
-                if (!authenticated)
-                {
-                    RedisProtocol::ErrorResponse resp(RedisProtocol::Message::NOAUTH);
-                    resp.serialize(*out);
+                if (!validateGetRequest())
                     continue;
-                }
-
-                if (!table_ptr)
-                {
-                    RedisProtocol::ErrorResponse resp(Poco::format("No table selected for %d", db));
-                    resp.serialize(*out);
-                    continue;
-                }
 
                 auto result = getByKeys(get_req.getKeys());
+                RedisProtocol::ArrayResponse resp(result);
+                resp.serialize(*out);
+            }
+            else if (req.getMethod() == "hget")
+            {
+                RedisProtocol::HMGetRequest get_req(req);
+                get_req.deserialize(*in);
+                LOG_DEBUG(log, "HGET request for {} key {} column", get_req.getKey(), get_req.getColumns()[0]);
+
+                if (!validateGetRequest())
+                    continue;
+
+                if (!validateColumns(get_req.getColumns()))
+                {
+                    RedisProtocol::ErrorResponse resp(Poco::format("No such column: %s", column));
+                    resp.serialize(*out);
+                    continue;
+                }
+
+                auto result = getValuesByKeyAndColumns(get_req.getKey(), get_req.getColumns());
+                RedisProtocol::ArrayResponse resp(result);
+                resp.serialize(*out);
+            }
+            else if (req.getMethod() == "hmget")
+            {
+                RedisProtocol::HMGetRequest get_req(req);
+                get_req.deserialize(*in);
+                LOG_DEBUG(log, "HMGET request for {} key {} columns", get_req.getKey(), get_req.getColumns().size());
+
+                if (!validateGetRequest())
+                    continue;
+
+                if (!validateColumns(get_req.getColumns()))
+                {
+                    RedisProtocol::ErrorResponse resp(Poco::format("No such column: %s", column));
+                    resp.serialize(*out);
+                    continue;
+                }
+
+                auto result = getValuesByKeyAndColumns(get_req.getKey(), get_req.getColumns());
                 RedisProtocol::ArrayResponse resp(result);
                 resp.serialize(*out);
             }
@@ -155,6 +168,7 @@ void RedisHandler::run()
                 String db_name = server.config().getString(Poco::format("redis.db._%d.database", select_req.getDb()), "");
                 String table_name = server.config().getString(Poco::format("redis.db._%d.table", select_req.getDb()), "");
                 String column_name = server.config().getString(Poco::format("redis.db._%d.column", select_req.getDb()), "");
+                String col_separator = server.config().getString(Poco::format("redis.db._%d.column_separator", select_req.getDb()), "");
                 if (db_name.empty() || table_name.empty() || column_name.empty())
                 {
                     RedisProtocol::ErrorResponse resp(Poco::format("Database, table or column is not set for %d", select_req.getDb()));
@@ -186,6 +200,10 @@ void RedisHandler::run()
                     }
                     db = select_req.getDb();
                     column = column_name;
+                    if (col_separator.empty())
+                        column_separator = ',';
+                    else
+                        column_separator = col_separator[0];
                 }
 
                 RedisProtocol::SimpleStringResponse resp(RedisProtocol::Message::OK);
@@ -222,16 +240,17 @@ void RedisHandler::run()
 std::vector<std::optional<String>> RedisHandler::getByKeys(const std::vector<String> & keys)
 {
     std::vector<std::optional<String>> result;
+    result.resize(keys.size());
 
     auto keys_column = ColumnVector<String>::create();
     keys_column->getData().reserve(keys.size());
     keys_column->getData().insert(keys.begin(), keys.end());
 
-    ColumnWithTypeAndName keys_named_column(std::move(keys_column), std::make_shared<DataTypeString>(), "keys");
+    ColumnWithTypeAndName keys_named_column(keys_column->getPtr(), std::make_shared<DataTypeString>(), "keys");
     Block sample_block = table->getInMemoryMetadataPtr()->getSampleBlock();
     PaddedPODArray<UInt8> null_map(table->getColumnSizes().size());
 
-    auto chunk = table->getByKeys(keys_named_column, sample_block, &null_map);
+    auto chunk = table->getByKeys({keys_named_column}, sample_block, &null_map, server.context());
 
     for (const auto & chunk_column : chunk.getColumns())
     {
@@ -248,6 +267,72 @@ std::vector<std::optional<String>> RedisHandler::getByKeys(const std::vector<Str
         }
     }
     return result;
+}
+
+std::vector<std::optional<String>> getValuesByKeyAndColumns(const String & key, const std::vector<String> & columns)
+{
+    std::vector<std::optional<String>> result;
+    result.resize(columns.size());
+}
+
+Chunk RedisHandler::getChunkByKeys(const std::vector<String> & keys)
+{
+    auto keys_column = ColumnVector<String>::create();
+    keys_column->getData().reserve(keys.size());
+    keys_column->getData().insert(keys.begin(), keys.end());
+
+    ColumnWithTypeAndName keys_named_column(keys_column->getPtr(), std::make_shared<DataTypeString>(), "keys");
+    Block sample_block = table->getInMemoryMetadataPtr()->getSampleBlock();
+    PaddedPODArray<UInt8> null_map(table->getColumnSizes().size());
+
+    return table->getByKeys({keys_named_column}, sample_block, &null_map, server.context());
+}
+
+bool RedisHandler::validateColumns(const std::vector<String> & columns)
+{
+    bool columns_valid = true;
+    for (auto & column : columns)
+    {
+        bool found = false;
+        for (auto & storage_column : table_ptr.getColumns())
+        {
+            if (column == storage_column)
+            {
+                found = true;
+                break;
+            }
+        }
+        if (!found)
+        {
+            columns_valid = false;
+            break;
+        }
+    }
+    return columns_valid;
+}
+
+std::vector<String> RedisHandler::getColumnsFromKey(const String & key) const
+{
+    std::vector<String> result;
+    boost::split(result, key, [sep = column_separator](char c) { return c == sep; });
+    return result;
+}
+
+bool RedisHandler::validateGetRequest()
+{
+    if (!authenticated)
+    {
+        RedisProtocol::ErrorResponse resp(RedisProtocol::Message::NOAUTH);
+        resp.serialize(*out);
+        return false;
+    }
+    if (!table_ptr)
+    {
+        RedisProtocol::ErrorResponse resp(Poco::format("No table selected for %d", db));
+        resp.serialize(*out);
+        return false;
+    }
+    return true;
 }
 
 void RedisHandler::makeSecureConnection()

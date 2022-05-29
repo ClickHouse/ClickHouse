@@ -42,10 +42,21 @@ private:
 
     std::vector<std::optional<String>> getByKeys(const std::vector<String> & keys);
 
+    std::vector<std::optional<String>> getValuesByKeyAndColumns(const String & key, const std::vector<String> & columns);
+
+    Chunk getChunkByKeys(const std::vector<String> & keys);
+
+    std::vector<String> getColumnsFromKey(const String & key) const;
+
+    bool validateColumns(const std::vector<String> & columns);
+
+    bool validateGetRequest();
+
     Int64 db = 0;
     StoragePtr table_ptr;
     IKeyValueStorage * table = nullptr;
     String column;
+    char column_separator;
 
     RedisProtocol::AuthenticationManager authentication_manager;
     bool authenticated = false;
