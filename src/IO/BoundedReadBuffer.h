@@ -25,7 +25,7 @@ public:
     size_t getFileOffsetOfBufferEnd() const override { return file_offset_of_buffer_end; }
 
     /// file_offset_of_buffer_end can differ from impl's file_offset_of_buffer_end
-    /// becuase of resizing of the tail. => Need to also override getPosition() as
+    /// because of resizing of the tail. => Need to also override getPosition() as
     /// it uses file_offset_of_buffer_end.
     off_t getPosition() override;
 
