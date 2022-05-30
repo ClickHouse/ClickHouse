@@ -127,7 +127,7 @@ public:
         //     }
         //     std::cerr << '\n';
         // }
-
+	//
         hash_join = std::make_shared<HashJoin>(table_join, right_sample_block);
 
         if (args_size == 3)
