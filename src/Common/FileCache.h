@@ -7,6 +7,7 @@
 #include <mutex>
 #include <unordered_map>
 #include <unordered_set>
+#include <boost/functional/hash.hpp>
 #include <boost/noncopyable.hpp>
 #include <map>
 
@@ -165,6 +166,7 @@ private:
             Key key;
             size_t offset;
             size_t size;
+            size_t hits = 0;
 
             FileKeyAndOffset(const Key & key_, size_t offset_, size_t size_) : key(key_), offset(offset_), size(size_) {}
         };
@@ -193,6 +195,8 @@ private:
         Iterator begin() { return queue.begin(); }
 
         Iterator end() { return queue.end(); }
+
+        void removeAll(std::lock_guard<std::mutex> & cache_lock);
 
     private:
         std::list<FileKeyAndOffset> queue;
@@ -223,8 +227,26 @@ private:
     using FileSegmentsByOffset = std::map<size_t, FileSegmentCell>;
     using CachedFiles = std::unordered_map<Key, FileSegmentsByOffset>;
 
+    using AccessKeyAndOffset = std::pair<Key, size_t>;
+
+    struct KeyAndOffsetHash
+    {
+        std::size_t operator()(const AccessKeyAndOffset & key) const
+        {
+            return std::hash<UInt128>()(key.first) ^ std::hash<UInt64>()(key.second);
+        }
+    };
+
+    using AccessRecord = std::unordered_map<AccessKeyAndOffset, LRUQueue::Iterator, KeyAndOffsetHash>;
+
     CachedFiles files;
     LRUQueue queue;
+
+    LRUQueue stash_queue;
+    AccessRecord records;
+    size_t max_stash_element_size;
+    size_t enable_cache_hits_threshold;
+
     Poco::Logger * log;
 
     FileSegments getImpl(
@@ -279,7 +301,7 @@ private:
 
     size_t getFileSegmentsNumUnlocked(std::lock_guard<std::mutex> & cache_lock) const;
 
-    void assertCacheCellsCorrectness(const FileSegmentsByOffset & cells_by_offset, std::lock_guard<std::mutex> & cache_lock);
+    static void assertCacheCellsCorrectness(const FileSegmentsByOffset & cells_by_offset, std::lock_guard<std::mutex> & cache_lock);
 
 public:
     String dumpStructure(const Key & key_) override;

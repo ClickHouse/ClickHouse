@@ -88,7 +88,7 @@ void ParallelParsingInputFormat::parserThreadFunction(ThreadGroupStatusPtr threa
         // We don't know how many blocks will be. So we have to read them all
         // until an empty block occurred.
         Chunk chunk;
-        while (!parsing_finished && (chunk = parser.getChunk()) != Chunk())
+        while (!parsing_finished && (chunk = parser.getChunk()))
         {
             /// Variable chunk is moved, but it is not really used in the next iteration.
             /// NOLINTNEXTLINE(bugprone-use-after-move, hicpp-invalid-access-moved)
