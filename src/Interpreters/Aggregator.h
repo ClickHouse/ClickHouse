@@ -1405,6 +1405,18 @@ private:
         MutableColumns & final_key_columns) const;
 
     static bool hasSparseArguments(AggregateFunctionInstruction * aggregate_instructions);
+
+    static void addBatch(
+        size_t row_begin, size_t row_end,
+        AggregateFunctionInstruction * inst,
+        AggregateDataPtr * places,
+        Arena * aggregates_pool);
+
+    static void addBatchSinglePlace(
+        size_t row_begin, size_t row_end,
+        AggregateFunctionInstruction * inst,
+        AggregateDataPtr place,
+        Arena * aggregates_pool);
 };
 
 
