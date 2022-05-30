@@ -26,6 +26,7 @@ private:
     Chunks consumed_chunks;
     Chunk rollup_chunk;
     size_t last_removed_key = 0;
+    size_t set_counter = 0;
 
     Chunk merge(Chunks && chunks, bool final);
 };

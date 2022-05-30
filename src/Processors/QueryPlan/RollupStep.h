@@ -22,6 +22,7 @@ private:
     void updateOutputStream() override;
 
     AggregatingTransformParamsPtr params;
+    size_t keys_size;
 };
 
 }

@@ -81,9 +81,7 @@ size_t getFilterMask(const ColumnRawPtrs & lhs, const ColumnRawPtrs & rhs, size_
     {
         /// Leave only rows that are less then row from rhs.
         filter[i] = compare_results[i] < 0;
-
-        if (filter[i])
-            ++result_size_hint;
+        result_size_hint += filter[i];
     }
 
     return result_size_hint;

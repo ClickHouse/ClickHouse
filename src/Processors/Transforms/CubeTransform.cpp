@@ -1,5 +1,6 @@
 #include <Processors/Transforms/CubeTransform.h>
 #include <Processors/Transforms/TotalsHavingTransform.h>
+#include <Processors/QueryPlan/AggregatingStep.h>
 
 namespace DB
 {
@@ -9,7 +10,7 @@ namespace ErrorCodes
 }
 
 CubeTransform::CubeTransform(Block header, AggregatingTransformParamsPtr params_)
-    : IAccumulatingTransform(std::move(header), params_->getHeader())
+    : IAccumulatingTransform(std::move(header), appendGroupingSetColumn(params_->getHeader()))
     , params(std::move(params_))
     , aggregates_mask(getAggregatesMask(params->getHeader(), params->params.aggregates))
 {
@@ -78,6 +79,8 @@ Chunk CubeTransform::generate()
     }
 
     finalizeChunk(gen_chunk, aggregates_mask);
+    if (!gen_chunk.empty())
+        gen_chunk.addColumn(0, ColumnUInt64::create(gen_chunk.getNumRows(), grouping_set++));
     return gen_chunk;
 }
 
