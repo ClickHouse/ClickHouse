@@ -4397,23 +4397,6 @@ void StorageReplicatedMergeTree::read(
     }
 }
 
-// Pipe StorageReplicatedMergeTree::read(
-//     const Names & column_names,
-//     const StorageSnapshotPtr & storage_snapshot,
-//     SelectQueryInfo & query_info,
-//     ContextPtr local_context,
-//     QueryProcessingStage::Enum processed_stage,
-//     const size_t max_block_size,
-//     const unsigned num_streams)
-// {
-//     QueryPlan plan;
-//     read(plan, column_names, storage_snapshot, query_info, local_context, processed_stage, max_block_size, num_streams);
-//     return plan.convertToPipe(
-//         QueryPlanOptimizationSettings::fromContext(local_context),
-//         BuildQueryPipelineSettings::fromContext(local_context));
-// }
-
-
 template <class Func>
 void StorageReplicatedMergeTree::foreachActiveParts(Func && func, bool select_sequential_consistency) const
 {
