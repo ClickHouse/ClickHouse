@@ -50,6 +50,7 @@ ISource::Status ISource::prepare()
 
 void ISource::progress(size_t read_rows, size_t read_bytes)
 {
+    //std::cerr << "========= Progress " << read_rows << " from " << getName() << std::endl << StackTrace().toString() << std::endl;
     read_progress_was_set = true;
     read_progress.read_rows += read_rows;
     read_progress.read_bytes += read_bytes;

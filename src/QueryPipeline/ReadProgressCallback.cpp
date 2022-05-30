@@ -32,14 +32,13 @@ void ReadProgressCallback::setProcessListElement(QueryStatus * elem)
     ///
     /// NOTE: This can be done only if progress callback already set, since
     /// otherwise total_rows_approx will lost.
-    if (total_rows_approx != 0 && progress_callback)
+    size_t rows_approx = 0;
+    if (progress_callback && (rows_approx = total_rows_approx.exchange(0)) != 0)
     {
-        Progress total_rows_progress = {0, 0, total_rows_approx};
+        Progress total_rows_progress = {0, 0, rows_approx};
 
         progress_callback(total_rows_progress);
         process_list_elem->updateProgressIn(total_rows_progress);
-
-        total_rows_approx = 0;
     }
 }
 
@@ -48,22 +47,21 @@ bool ReadProgressCallback::onProgress(uint64_t read_rows, uint64_t read_bytes)
     if (!limits.speed_limits.checkTimeLimit(total_stopwatch, limits.timeout_overflow_mode))
         return false;
 
-    if (total_rows_approx != 0)
+    size_t rows_approx = 0;
+    if ((rows_approx = total_rows_approx.exchange(0)) != 0)
     {
-        Progress total_rows_progress = {0, 0, total_rows_approx};
+        Progress total_rows_progress = {0, 0, rows_approx};
 
         if (progress_callback)
             progress_callback(total_rows_progress);
 
         if (process_list_elem)
             process_list_elem->updateProgressIn(total_rows_progress);
-
-        total_rows_approx = 0;
     }
 
     Progress value {read_rows, read_bytes};
 
-    if (progress_callback)
+    if (progress_callback && (read_rows || read_bytes))
         progress_callback(value);
 
     if (process_list_elem)
@@ -108,11 +106,14 @@ bool ReadProgressCallback::onProgress(uint64_t read_rows, uint64_t read_bytes)
         constexpr UInt64 profile_events_update_period_microseconds = 10 * 1000; // 10 milliseconds
         UInt64 total_elapsed_microseconds = total_stopwatch.elapsedMicroseconds();
 
-        if (last_profile_events_update_time + profile_events_update_period_microseconds < total_elapsed_microseconds)
+        std::lock_guard lock(last_profile_events_update_time_mutex);
         {
-            /// TODO: Should be done in PipelineExecutor.
-            CurrentThread::updatePerformanceCounters();
-            last_profile_events_update_time = total_elapsed_microseconds;
+            if (last_profile_events_update_time + profile_events_update_period_microseconds < total_elapsed_microseconds)
+            {
+                /// TODO: Should be done in PipelineExecutor.
+                CurrentThread::updatePerformanceCounters();
+                last_profile_events_update_time = total_elapsed_microseconds;
+            }
         }
 
         /// TODO: Should be done in PipelineExecutor.

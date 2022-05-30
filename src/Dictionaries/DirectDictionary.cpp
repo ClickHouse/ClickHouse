@@ -274,7 +274,7 @@ public:
     Chunk generate() override
     {
         Chunk chunk;
-        while (!executor.pull(chunk))
+        while (executor.pull(chunk))
         {
             if (chunk)
                 return chunk;

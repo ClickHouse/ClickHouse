@@ -2,6 +2,7 @@
 #include <Common/Stopwatch.h>
 #include <QueryPipeline/StreamLocalLimits.h>
 #include <IO/Progress.h>
+#include <mutex>
 
 namespace DB
 {
@@ -33,11 +34,12 @@ private:
     QueryStatus * process_list_elem = nullptr;
 
     /// The approximate total number of rows to read. For progress bar.
-    size_t total_rows_approx = 0;
+    std::atomic_size_t total_rows_approx = 0;
 
     Stopwatch total_stopwatch {CLOCK_MONOTONIC_COARSE};    /// Time with waiting time.
     /// According to total_stopwatch in microseconds.
     UInt64 last_profile_events_update_time = 0;
+    std::mutex last_profile_events_update_time_mutex;
 
     bool update_profile_events = true;
 };
