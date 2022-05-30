@@ -314,9 +314,6 @@ CI_CONFIG = {
         "Testflows check (actions)": {
             "required_build": "package_release",
         },
-        "Unit tests (release-gcc, actions)": {
-            "required_build": "binary_gcc",
-        },
         "Unit tests (release-clang, actions)": {
             "required_build": "binary_release",
         },
