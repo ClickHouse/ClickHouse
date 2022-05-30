@@ -30,6 +30,7 @@ private:
     Columns current_zero_columns;
 
     UInt64 mask = 0;
+    UInt64 grouping_set = 0;
 
     Chunk merge(Chunks && chunks, bool final);
 };
