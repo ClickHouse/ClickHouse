@@ -1,4 +1,4 @@
-FROM ubuntu:20.04
+FROM ubuntu:22.04
 MAINTAINER lgbo-ustc <lgbo.ustc@gmail.com>
 
 RUN apt-get update 
