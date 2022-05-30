@@ -21,13 +21,14 @@ namespace DB
 class CachedReadBufferFromFile : public ReadBufferFromFileBase
 {
 public:
-    using RemoteFSFileReaderCreator = std::function<FileSegment::RemoteFileReaderPtr()>;
+    using ImplementationBufferPtr = std::shared_ptr<ReadBufferFromFileBase>;
+    using ImplementationBufferCreator = std::function<ImplementationBufferPtr()>;
 
     CachedReadBufferFromFile(
         const String & source_file_path_,
         const IFileCache::Key & cache_key_,
         FileCachePtr cache_,
-        RemoteFSFileReaderCreator remote_file_reader_creator_,
+        ImplementationBufferCreator implementation_buffer_creator_,
         const ReadSettings & settings_,
         const String & query_id_,
         size_t file_size_,
@@ -49,6 +50,8 @@ public:
 
     void setReadUntilPosition(size_t position) override;
 
+    void setReadUntilEnd() override;
+
     String getFileName() const override { return source_file_path; }
 
     enum class ReadType
@@ -61,11 +64,11 @@ public:
 private:
     void initialize(size_t offset, size_t size);
 
-    SeekableReadBufferPtr getImplementationBuffer(FileSegmentPtr & file_segment);
+    ImplementationBufferPtr getImplementationBuffer(FileSegmentPtr & file_segment);
 
-    SeekableReadBufferPtr getReadBufferForFileSegment(FileSegmentPtr & file_segment);
+    ImplementationBufferPtr getReadBufferForFileSegment(FileSegmentPtr & file_segment);
 
-    SeekableReadBufferPtr getCacheReadBuffer(size_t offset) const;
+    ImplementationBufferPtr getCacheReadBuffer(size_t offset) const;
 
     std::optional<size_t> getLastNonDownloadedOffset() const;
 
@@ -77,7 +80,7 @@ private:
 
     void assertCorrectness() const;
 
-    SeekableReadBufferPtr getRemoteFSReadBuffer(FileSegmentPtr & file_segment, ReadType read_type_);
+    std::shared_ptr<ReadBufferFromFileBase> getRemoteFSReadBuffer(FileSegmentPtr & file_segment, ReadType read_type_);
 
     size_t getTotalSizeToRead();
     bool completeFileSegmentAndGetNext();
@@ -94,7 +97,7 @@ private:
     size_t file_offset_of_buffer_end = 0;
     size_t bytes_to_predownload = 0;
 
-    RemoteFSFileReaderCreator remote_file_reader_creator;
+    ImplementationBufferCreator implementation_buffer_creator;
 
     /// Remote read buffer, which can only be owned by current buffer.
     FileSegment::RemoteFileReaderPtr remote_file_reader;
@@ -102,7 +105,7 @@ private:
     std::optional<FileSegmentsHolder> file_segments_holder;
     FileSegments::iterator current_file_segment_it;
 
-    SeekableReadBufferPtr implementation_buffer;
+    ImplementationBufferPtr implementation_buffer;
     bool initialized = false;
 
     ReadType read_type = ReadType::REMOTE_FS_READ_BYPASS_CACHE;
@@ -133,8 +136,6 @@ private:
 
     bool allow_seeks;
     [[maybe_unused]]bool use_external_buffer;
-    bool range_finished = false;
-
     CurrentMetrics::Increment metric_increment{CurrentMetrics::FilesystemCacheReadBuffers};
     ProfileEvents::Counters current_file_segment_counters;
 };

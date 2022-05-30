@@ -26,6 +26,11 @@ SeekableReadBuffer::Range BoundedReadBuffer::getRemainingReadRange() const
     return Range{file_offset_of_buffer_end, right_bound_included};
 }
 
+off_t BoundedReadBuffer::getPosition()
+{
+    return file_offset_of_buffer_end - (working_buffer.end() - pos);
+}
+
 bool BoundedReadBuffer::nextImpl()
 {
     if (read_until_position && file_offset_of_buffer_end == *read_until_position)
@@ -50,7 +55,7 @@ bool BoundedReadBuffer::nextImpl()
         }
     }
 
-    file_offset_of_buffer_end += working_buffer.size();
+    file_offset_of_buffer_end += available();
     return result;
 }
 

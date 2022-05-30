@@ -52,6 +52,8 @@ public:
 
     Range getRemainingReadRange() const override { return Range{ .left = file_offset_of_buffer_end, .right = std::nullopt }; }
 
+    size_t getFileOffsetOfBufferEnd() const override { return file_offset_of_buffer_end; }
+
     /// If 'offset' is small enough to stay in buffer after seek, then true seek in file does not happen.
     off_t seek(off_t off, int whence) override;
 

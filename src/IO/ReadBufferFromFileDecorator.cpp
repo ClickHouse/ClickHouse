@@ -22,9 +22,6 @@ std::string ReadBufferFromFileDecorator::getFileName() const
     if (!file_name.empty())
         return file_name;
 
-    if (ReadBufferFromFileBase * buffer = dynamic_cast<ReadBufferFromFileBase *>(impl.get()))
-        return buffer->getFileName();
-
     return getFileNameFromReadBuffer(*impl);
 }
 

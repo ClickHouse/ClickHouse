@@ -65,6 +65,7 @@ FileSegment::FileSegment(
             /// For write-through cache we do not require file segment to have a specific
             /// downloader, so some checks are removed.
             write_through_cache_download = true;
+            downloader_id = getCallerId();
             break;
         }
         case (State::SKIP_CACHE):

@@ -42,8 +42,13 @@ public:
     bool removeFile(const String & path) override;
     bool removeFileIfExists(const String & path) override;
 
+    // bool removeSharedFile(const String & path, bool keep_s3) override;
+    // bool removeSharedFileIfExists(const String & path, bool keep_s3) override;
+    // void removeSharedFiles(const RemoveBatchRequest & files, bool keep_all_batch_data, const NameSet & file_names_remove_metadata_only) override;
+
     void removeDirectory(const String & path) override;
     void removeRecursive(const String & path) override;
+    // void removeSharedRecursive(const String & path, bool keep_all_batch_data, const NameSet & file_names_remove_metadata_only) override;
 
     ReservationPtr reserve(UInt64 bytes) override;
 
