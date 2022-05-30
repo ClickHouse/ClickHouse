@@ -147,6 +147,18 @@ Features:
 
 [Zeppelin-Interpreter-for-ClickHouse](https://github.com/SiderZhang/Zeppelin-Interpreter-for-ClickHouse) is a [Zeppelin](https://zeppelin.apache.org) interpreter for ClickHouse. Compared with JDBC interpreter, it can provide better timeout control for long running queries.
 
+### ClickVisual {#clickvisual}
+
+[ClickVisual](https://clickvisual.gocn.vip/) ClickVisual is a lightweight open source log query, analysis and alarm visualization platform.
+
+Features:
+
+- Supports one-click creation of analysis log libraries
+- Supports log collection configuration management
+- Supports user-defined index configuration
+- Supports alarm configuration
+- Support permission granularity to library and table permission configuration
+
 ## Commercial {#commercial}
 
 ### DataGrip {#datagrip}
