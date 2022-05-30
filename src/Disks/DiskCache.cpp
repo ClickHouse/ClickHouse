@@ -34,6 +34,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int FILE_DOESNT_EXIST;
     extern const int CANNOT_USE_CACHE;
+    extern const int INCORRECT_DISK_INDEX;
 }
 
 class CachedWriteBuffer final : public WriteBufferFromFileDecorator
@@ -152,6 +153,34 @@ private:
     std::unique_ptr<FileSegmentRangeWriter> cache_writer;
 };
 
+class DiskCacheReservation : public IReservation
+{
+public:
+    DiskCacheReservation(std::shared_ptr<DiskCache> disk_, std::unique_ptr<IReservation> reservation_)
+        : disk(std::move(disk_)), reservation(std::move(reservation_))
+    {
+    }
+
+    UInt64 getSize() const override { return reservation->getSize(); }
+    UInt64 getUnreservedSpace() const override { return reservation->getUnreservedSpace(); }
+
+    DiskPtr getDisk(size_t i) const override
+    {
+        if (i != 0)
+            throw Exception(
+                "Can't use i != 0 with single disk reservation",
+                ErrorCodes::INCORRECT_DISK_INDEX);
+        return disk;
+    }
+
+    Disks getDisks() const override { return {disk}; }
+
+    void update(UInt64 new_size) override { reservation->update(new_size); }
+
+private:
+    std::shared_ptr<DiskCache> disk;
+    std::unique_ptr<IReservation> reservation;
+};
 
 DiskCache::DiskCache(
     const String & disk_name_,
@@ -344,13 +373,10 @@ void DiskCache::removeRecursive(const String & path)
 
 ReservationPtr DiskCache::reserve(UInt64 bytes)
 {
-    auto ptr = DiskDecorator::reserve(bytes);
-    if (ptr)
-    {
-        auto disk_ptr = std::static_pointer_cast<DiskCache>(shared_from_this());
-        return std::make_unique<ReservationDelegate>(std::move(ptr), disk_ptr);
-    }
-    return ptr;
+    auto reservation = delegate->reserve(bytes);
+    if (!reservation)
+        return {};
+    return std::make_unique<DiskCacheReservation>(std::static_pointer_cast<DiskCache>(shared_from_this()), std::move(reservation));
 }
 
 void registerDiskCache(DiskFactory & factory)

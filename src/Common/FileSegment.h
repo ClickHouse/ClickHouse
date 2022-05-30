@@ -16,6 +16,7 @@ namespace DB
 {
 
 class IFileCache;
+class ReadBufferFromFileBase;
 
 class FileSegment;
 using FileSegmentPtr = std::shared_ptr<FileSegment>;
@@ -31,7 +32,7 @@ friend class FileSegmentRangeWriter;
 
 public:
     using Key = IFileCache::Key;
-    using RemoteFileReaderPtr = std::shared_ptr<SeekableReadBuffer>;
+    using RemoteFileReaderPtr = std::shared_ptr<ReadBufferFromFileBase>;
     using LocalCacheWriterPtr = std::unique_ptr<WriteBufferFromFile>;
 
     enum class State
