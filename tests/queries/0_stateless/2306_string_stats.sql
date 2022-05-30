@@ -9,7 +9,7 @@ CREATE TABLE str_prewhere
     b String CODEC(NONE),
     c String CODEC(NONE),
     d String CODEC(NONE),
-    STATISTIC st (b, c, d, a)
+    STATISTIC st (b, c, d) TYPE granule_string_hash
 )
 ENGINE=MergeTree() ORDER BY a
 SETTINGS experimantal_stats_update_period = 100000, index_granularity = 10;

@@ -613,12 +613,13 @@ std::vector<StatisticDescription> MergeTreeStatisticFactory::getSplittedStatisti
             result.back().name = statistic.name;
             result.back().type = "granule_tdigest";
         } else if (column.type->getTypeId() == TypeIndex::String && !column.type->isNullable()) {
-            result.emplace_back();
+            /*result.emplace_back();
             result.back().column_names = {column.name};
             result.back().data_types = {column.type};
             result.back().definition_ast = statistic.definition_ast->clone();
             result.back().name = statistic.name;
-            result.back().type = "granule_string_hash";
+            result.back().type = "granule_string_hash";*/
+            throw Exception("Unsupported statistic '" + statistic.type + "' for column '" + column.name + "'", ErrorCodes::INCORRECT_QUERY);
         } else {
             throw Exception("Unsupported statistic '" + statistic.type + "' for column '" + column.name + "'", ErrorCodes::INCORRECT_QUERY);
         }
