@@ -1496,7 +1496,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
         LOG_TRACE(log, "Found (RIGHT) boundary mark: {}", searched_right);
 
         if (result_range.begin < result_range.end && may_be_true_in_range(result_range))
-            res.emplace_back(std::move(result_range));
+            res.emplace_back(result_range);
 
         LOG_TRACE(log, "Found {} range in {} steps", res.empty() ? "empty" : "continuous", steps);
     }
