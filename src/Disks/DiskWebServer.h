@@ -1,9 +1,12 @@
 #pragma once
 
-#include <Disks/IDiskRemote.h>
 #include <IO/WriteBufferFromFile.h>
 #include <Core/UUID.h>
 #include <set>
+
+#include <Interpreters/Context_fwd.h>
+#include <Disks/IDisk.h>
+#include <IO/ReadBufferFromFile.h>
 
 
 namespace DB
