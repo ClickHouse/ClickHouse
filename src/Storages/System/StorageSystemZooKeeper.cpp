@@ -21,6 +21,7 @@
 #include <boost/algorithm/string.hpp>
 #include <algorithm>
 #include <deque>
+#include <limits.h>
 
 
 namespace DB
@@ -31,9 +32,10 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-/// ZkNodeCache is a trie tree to cache all the zookeeper writes. The purpose of this struct is to avoid creating/setting nodes
-/// repeatedly. For example, If we create path /a/b/c/d/e and path /a/b/d/f in the same transaction. We don't want to create
-/// their common path "/a/b" twice. This data structure will cache this changes and generates the eventual requests within one pass.
+/** ZkNodeCache is a trie tree to cache all the zookeeper writes. The purpose of this struct is to avoid creating/setting nodes
+  * repeatedly. For example, If we create path /a/b/c/d/e and path /a/b/d/f in the same transaction. We don't want to create
+  * their common path "/a/b" twice. This data structure will cache this changes and generates the eventual requests within one pass.
+  */
 struct ZkNodeCache
 {
     using ZkNodeCachePtr = std::shared_ptr<ZkNodeCache>;
@@ -44,7 +46,7 @@ struct ZkNodeCache
     bool exists;
     bool changed;
 
-    ZkNodeCache() : path("/"), exists(true), changed(false) { }
+    ZkNodeCache() : exists(true), changed(false) { }
     ZkNodeCache(String path_, bool exists_) : path(path_), exists(exists_), changed(false) { }
 
     void insert(const std::vector<String> & nodes, zkutil::ZooKeeperPtr zookeeper, const String & value_to_set, size_t index)
@@ -64,7 +66,7 @@ struct ZkNodeCache
         ++index;
         if (!children.contains(child_name))
         {
-            String sub_path = "/" + boost::algorithm::join(std::vector<String>(nodes.begin(), nodes.begin() + index), "/");
+            String sub_path = path + "/" + child_name;
             bool child_exist = false;
             if (exists)
             {
@@ -78,9 +80,10 @@ struct ZkNodeCache
 
     void generateRequests(Coordination::Requests & requests)
     {
-        // If the node doesn't exists, we should generate create request.
-        // If the node exists, we should generate set request.
-        // This dfs will prove ancestor nodes are processed first.
+        /** If the node doesn't exists, we should generate create request.
+          * If the node exists, we should generate set request.
+          * This dfs will prove ancestor nodes are processed first.
+          */
         if (!exists)
         {
             auto request = zkutil::makeCreateRequest(path, value, zkutil::CreateMode::Persistent);
@@ -89,7 +92,6 @@ struct ZkNodeCache
         else if (changed)
         {
             auto request = zkutil::makeSetRequest(path, value, -1);
-            requests.push_back(request);
             requests.push_back(request);
         }
         for (auto [_, child] : children)
@@ -117,20 +119,23 @@ public:
             String value = block.getByPosition(1).column->getDataAt(i).toString();
             String path = block.getByPosition(2).column->getDataAt(i).toString();
 
-            // We don't expect a "name" contains a path.
+            /// We don't expect a "name" contains a path.
             if (name.find('/') != std::string::npos)
             {
                 throw Exception("Column `name` should not contain '/'", ErrorCodes::BAD_ARGUMENTS);
             }
 
+            if (name.empty())
+            {
+                throw Exception("Column `name` should not be empty", ErrorCodes::BAD_ARGUMENTS);
+            }
+
+            if (path.size() + name.size() > PATH_MAX) {
+                throw Exception("Sum of `name` length and `path` length should not exceed PATH_MAX", ErrorCodes::BAD_ARGUMENTS);
+            }
+
             std::vector<String> path_vec;
             boost::split(path_vec, path, boost::is_any_of("/"));
-            // Remove all the empty node. for path '/a//b///c/d/' we get <a b c d>
-            for (int j = int(path_vec.size()) - 1; j >= 0; j--)
-            {
-                if (path_vec[j].empty()) 
-                    path_vec.erase(path_vec.begin() + j);
-            }
             path_vec.push_back(name);
             cache.insert(path_vec, zookeeper, value, 0);
         }
