@@ -26,6 +26,8 @@ public:
 
     BlockIO execute() override;
 
+    void addLimitsAndQuotas(QueryPipeline & pipeline) const final;
+
     Block getSampleBlock() { return result_header; }
 
     void ignoreWithTotals() override;

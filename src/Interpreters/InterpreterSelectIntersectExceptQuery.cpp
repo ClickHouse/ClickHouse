@@ -146,6 +146,16 @@ BlockIO InterpreterSelectIntersectExceptQuery::execute()
     return res;
 }
 
+void InterpreterSelectIntersectExceptQuery::addLimitsAndQuotas(QueryPipeline & pipeline) const
+{
+    if (!nested_interpreters.empty())
+    {
+        /// Take quotas from the first interpreter.
+        /// This may be not a good solution.
+        nested_interpreters.front()->addLimitsAndQuotas(pipeline);
+    }
+}
+
 bool InterpreterSelectIntersectExceptQuery::hasRemoteStorage() const
 {
     for (const auto & interpreter : nested_interpreters)

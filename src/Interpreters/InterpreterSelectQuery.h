@@ -85,6 +85,8 @@ public:
     /// Execute a query. Get the stream of blocks to read.
     BlockIO execute() override;
 
+    void addLimitsAndQuotas(QueryPipeline & pipeline) const final;
+
     /// Builds QueryPlan for current query.
     virtual void buildQueryPlan(QueryPlan & query_plan) override;
 
