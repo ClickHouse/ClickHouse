@@ -54,7 +54,7 @@ struct WriteBufferFromS3::PutObjectTask
 };
 
 WriteBufferFromS3::WriteBufferFromS3(
-    std::shared_ptr<Aws::S3::S3Client> client_ptr_,
+    std::shared_ptr<const Aws::S3::S3Client> client_ptr_,
     const String & bucket_,
     const String & key_,
     const S3Settings::ReadWriteSettings & s3_settings_,
@@ -65,10 +65,10 @@ WriteBufferFromS3::WriteBufferFromS3(
     : BufferWithOwnMemory<WriteBuffer>(buffer_size_, nullptr, 0)
     , bucket(bucket_)
     , key(key_)
-    , object_metadata(std::move(object_metadata_))
     , client_ptr(std::move(client_ptr_))
     , upload_part_size(s3_settings_.min_upload_part_size)
     , s3_settings(s3_settings_)
+    , object_metadata(std::move(object_metadata_))
     , schedule(std::move(schedule_))
     , cache(cache_)
 {

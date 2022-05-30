@@ -691,7 +691,7 @@ HiveFilePtr StorageHive::getHiveFileIfNeeded(
     return hive_file;
 }
 
-bool StorageHive::isColumnOriented() const
+bool StorageHive::supportsSubsetOfColumns() const
 {
     return format_name == "Parquet" || format_name == "ORC";
 }
@@ -845,7 +845,7 @@ std::optional<UInt64>
 StorageHive::totalRowsImpl(const Settings & settings, const SelectQueryInfo & query_info, ContextPtr context_, PruneLevel prune_level) const
 {
     /// Row-based format like Text doesn't support totalRowsByPartitionPredicate
-    if (!isColumnOriented())
+    if (!supportsSubsetOfColumns())
         return {};
 
     auto hive_metastore_client = HiveMetastoreClientFactory::instance().getOrCreate(hive_metastore_url);

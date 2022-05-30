@@ -2,6 +2,7 @@
 
 #include <IO/AsynchronousReader.h>
 #include <Common/ThreadPool.h>
+#include <Disks/IO/ReadBufferFromRemoteFSGather.h>
 
 namespace DB
 {

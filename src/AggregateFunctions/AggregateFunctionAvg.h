@@ -224,8 +224,16 @@ public:
         ++this->data(place).denominator;
     }
 
-    void
-    addBatchSinglePlace(
+    void addManyDefaults(
+        AggregateDataPtr __restrict place,
+        const IColumn ** /*columns*/,
+        size_t length,
+        Arena * /*arena*/) const override
+    {
+        this->data(place).denominator += length;
+    }
+
+    void addBatchSinglePlace(
         size_t row_begin,
         size_t row_end,
         AggregateDataPtr place,

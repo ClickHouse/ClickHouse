@@ -15,7 +15,7 @@ Columns:
 -   `query_start_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — Query start time.
 -   `query_finish_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — Query finish time.
 -   `query_duration_ms` ([UInt64](../../sql-reference/data-types/int-uint.md)) — Duration of query execution (in milliseconds).
--   `exception_code` ([Enum8](../../sql-reference/data-types/enum.md)) — Exception code from [ZooKeeper](../../operations/tips.md#zookeeper).
+-   `exception_code` ([Enum8](../../sql-reference/data-types/enum.md)) — Exception code from [ClickHouse Keeper](../../operations/tips.md#zookeeper).
 
 **Example**
 
