@@ -2167,6 +2167,12 @@ struct WindowFunctionNonNegativeDerivative final : public RecurrentWindowFunctio
                                             const DataTypes & argument_types_, const Array & parameters_)
         : RecurrentWindowFunction(name_, argument_types_, parameters_)
     {
+        if (!parameters.empty())
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "Function {} cannot be parameterized", name_);
+        }
+
         if (argument_types.size() != 2 && argument_types.size() != 3)
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
@@ -2189,23 +2195,28 @@ struct WindowFunctionNonNegativeDerivative final : public RecurrentWindowFunctio
                             argument_types[ARGUMENT_TIMESTAMP]->getName());
         }
 
-        const DataTypeInterval * interval_datatype = checkAndGetDataType<DataTypeInterval>(argument_types[ARGUMENT_INTERVAL].get());
-        if (!interval_datatype)
+        if (argument_types.size() == 3)
         {
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Argument {} must be an INTERVAL, '{}' given",
-                ARGUMENT_INTERVAL,
-                argument_types[ARGUMENT_INTERVAL]->getName());
+            interval_specified = true;
+            const DataTypeInterval * interval_datatype = checkAndGetDataType<DataTypeInterval>(argument_types[ARGUMENT_INTERVAL].get());
+            if (!interval_datatype)
+            {
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Argument {} must be an INTERVAL, '{}' given",
+                    ARGUMENT_INTERVAL,
+                    argument_types[ARGUMENT_INTERVAL]->getName());
+            }
+            if (interval_datatype->getKind() == IntervalKind::Month || interval_datatype->getKind() == IntervalKind::Quarter
+                || interval_datatype->getKind() == IntervalKind::Year)
+            {
+                throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Only INTERVAL less than month is accepted, '{}' given",
+                    argument_types[ARGUMENT_INTERVAL]->getName());
+            }
+            interval_length = interval_datatype->getKind().toAvgSeconds();
         }
-        if (interval_datatype->getKind() == IntervalKind::Month || interval_datatype->getKind() == IntervalKind::Quarter || interval_datatype->getKind() == IntervalKind::Year)
-        {
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Only INTERVAL less than month is accepted, '{}' given",
-                argument_types[ARGUMENT_INTERVAL]->getName());
-        }
-        interval_length = interval_datatype->getKind().toAvgSeconds();
     }
 
 
@@ -2219,8 +2230,8 @@ struct WindowFunctionNonNegativeDerivative final : public RecurrentWindowFunctio
         const auto & current_block = transform->blockAt(transform->current_row);
         const auto & workspace = transform->workspaces[function_index];
 
-        auto interval_duration = interval_length *
-            (*current_block.input_columns[workspace.argument_column_indices[ARGUMENT_INTERVAL]]).getFloat64(0);
+        auto interval_duration = interval_specified ? interval_length *
+            (*current_block.input_columns[workspace.argument_column_indices[ARGUMENT_INTERVAL]]).getFloat64(0) : 1;
 
         Float64 last_metric = getLastValueFromInputColumn<Float64>(transform, function_index, ARGUMENT_METRIC);
         Float64 last_timestamp = getLastValueFromInputColumn<Float64>(transform, function_index, ARGUMENT_TIMESTAMP);
@@ -2236,6 +2247,7 @@ struct WindowFunctionNonNegativeDerivative final : public RecurrentWindowFunctio
     }
 private:
     Float64 interval_length = 1;
+    bool interval_specified = false;
 };
 
 
