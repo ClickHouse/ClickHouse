@@ -217,7 +217,7 @@ void TransactionLog::runUpdatingThread()
         try
         {
             /// Do not wait if we have some transactions to finalize
-            if (!unknown_state_list_loaded.empty())
+            if (unknown_state_list_loaded.empty())
                 log_updated_event->wait();
 
             if (stop_flag.load())

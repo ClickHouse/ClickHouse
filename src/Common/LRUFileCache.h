@@ -185,7 +185,7 @@ private:
 
     size_t getFileSegmentsNumUnlocked(std::lock_guard<std::mutex> & cache_lock) const;
 
-    static void assertCacheCellsCorrectness(const FileSegmentsByOffset & cells_by_offset, std::lock_guard<std::mutex> & cache_lock);
+    void assertCacheCellsCorrectness(const FileSegmentsByOffset & cells_by_offset, std::lock_guard<std::mutex> & cache_lock);
 
 public:
     String dumpStructure(const Key & key_) override;
