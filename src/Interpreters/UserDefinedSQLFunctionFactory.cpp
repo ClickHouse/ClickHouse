@@ -2,12 +2,16 @@
 
 #include <Common/quoteString.h>
 
+#include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
-#include <AggregateFunctions/AggregateFunctionFactory.h>
-#include <Interpreters/UserDefinedSQLObjectsLoader.h>
-#include <Interpreters/UserDefinedExecutableFunctionFactory.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/UserDefinedExecutableFunctionFactory.h>
+#include <Interpreters/UserDefinedSQLObjectsLoader.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
+#include <Processors/Sources/InterpretedLangSource.h>
+#include <Processors/Sources/SourceFromSingleChunk.h>
 
 
 namespace DB
@@ -18,6 +22,7 @@ namespace ErrorCodes
     extern const int FUNCTION_ALREADY_EXISTS;
     extern const int UNKNOWN_FUNCTION;
     extern const int CANNOT_DROP_FUNCTION;
+    extern const int UNSUPPORTED_METHOD;
 }
 
 UserDefinedSQLFunctionFactory & UserDefinedSQLFunctionFactory::instance()
@@ -170,7 +175,7 @@ public:
     explicit UserDefinedInterpFunction(
         std::shared_ptr<ASTCreateInterpFunctionQuery> query_,
         ContextPtr context_)
-        : query(query_)  // !! not optimal?
+        : query(query_)  // !! not optimal? extract strings from query, pass them to constructor
         , context(context_)
     {
     }
@@ -189,121 +194,75 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes &) const override
     {
         // !! make configurable
-        //    Is it possible to detect type dynamically? (execute func with empty input?)
+        //    Is it possible to detect type dynamically? (execute func with empty/sample input?)
         return std::make_shared<DataTypeUInt32>();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & /*arguments*/, const DataTypePtr & result_type, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         /// Do not start user defined script during query analysis. Because user script startup could be heavy.
         if (input_rows_count == 0)
             return result_type->createColumn();
-        return result_type->createColumnConstWithDefaultValue(input_rows_count);
-        // !! keep interpreter running after executing the function?
-//
-//        auto coordinator = executable_function->getCoordinator();
-//        const auto & coordinator_configuration = coordinator->getConfiguration();
-//        const auto & configuration = executable_function->getConfiguration();
-//
-//        String command = configuration.command;
-//
-//        if (coordinator_configuration.execute_direct)
-//        {
-//            auto user_scripts_path = context->getUserScriptsPath();
-//            auto script_path = user_scripts_path + '/' + command;
-//
-//            if (!fileOrSymlinkPathStartsWith(script_path, user_scripts_path))
-//                throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
-//                                "Executable file {} must be inside user scripts folder {}",
-//                                command,
-//                                user_scripts_path);
-//
-//            if (!FS::exists(script_path))
-//                throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
-//                                "Executable file {} does not exist inside user scripts folder {}",
-//                                command,
-//                                user_scripts_path);
-//
-//            if (!FS::canExecute(script_path))
-//                throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
-//                                "Executable file {} is not executable inside user scripts folder {}",
-//                                command,
-//                                user_scripts_path);
-//
-//            command = std::move(script_path);
-//        }
-//
-//        size_t argument_size = arguments.size();
-//        auto arguments_copy = arguments;
-//
-//        for (size_t i = 0; i < argument_size; ++i)
-//        {
-//            auto & column_with_type = arguments_copy[i];
-//            column_with_type.column = column_with_type.column->convertToFullColumnIfConst();
-//
-//            const auto & argument = configuration.arguments[i];
-//            column_with_type.name = argument.name;
-//
-//            const auto & argument_type = argument.type;
-//
-//            if (areTypesEqual(arguments_copy[i].type, argument_type))
-//                continue;
-//
-//            ColumnWithTypeAndName column_to_cast = {column_with_type.column, column_with_type.type, column_with_type.name};
-//            column_with_type.column = castColumnAccurate(column_to_cast, argument_type);
-//            column_with_type.type = argument_type;
-//
-//            column_with_type = std::move(column_to_cast);
-//        }
-//
-//        ColumnWithTypeAndName result(result_type, configuration.result_name);
-//        Block result_block({result});
-//
-//        Block arguments_block(arguments_copy);
-//        auto source = std::make_shared<SourceFromSingleChunk>(std::move(arguments_block));
-//        auto shell_input_pipe = Pipe(std::move(source));
-//
-//        ShellCommandSourceConfiguration shell_command_source_configuration;
-//
-//        if (coordinator_configuration.is_executable_pool)
-//        {
-//            shell_command_source_configuration.read_fixed_number_of_rows = true;
-//            shell_command_source_configuration.number_of_rows_to_read = input_rows_count;
-//        }
-//
-//        Pipes shell_input_pipes;
-//        shell_input_pipes.emplace_back(std::move(shell_input_pipe));
-//
-//        Pipe pipe = coordinator->createPipe(
-//            command,
-//            configuration.command_arguments,
-//            std::move(shell_input_pipes),
-//            result_block,
-//            context,
-//            shell_command_source_configuration);
-//
-//        QueryPipeline pipeline(std::move(pipe));
-//        PullingPipelineExecutor executor(pipeline);
-//
-//        auto result_column = result_type->createColumn();
-//        result_column->reserve(input_rows_count);
-//
-//        Block block;
-//        while (executor.pull(block))
-//        {
-//            const auto & result_column_to_add = *block.safeGetByPosition(0).column;
-//            result_column->insertRangeFrom(result_column_to_add, 0, result_column_to_add.size());
-//        }
-//
-//        size_t result_column_size = result_column->size();
-//        if (result_column_size != input_rows_count)
-//            throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
-//                            "Function {}: wrong result, expected {} row(s), actual {}",
-//                            quoteString(getName()),
-//                            input_rows_count,
-//                            result_column_size);
-//
-//        return result_column;
+
+        auto interpreter = query->getInterpreterName();
+
+        // !! keep interpreter running after executing the function? (reuse processes)
+        InterpretedLangSourceCoordinator coordinator({ interpreter });
+
+        size_t argument_size = arguments.size();
+        auto arguments_copy = arguments;
+
+        for (size_t i = 0; i < argument_size; ++i)
+        {
+            auto & column_with_type = arguments_copy[i];
+            column_with_type.column = column_with_type.column->convertToFullColumnIfConst();
+
+            String arg_name;
+            tryGetIdentifierNameInto(query->function_args->children[i], arg_name);  // bad
+            column_with_type.name = arg_name;
+        }
+
+        ColumnWithTypeAndName result(result_type, "result");
+        Block result_block({result});
+
+        Block arguments_block(arguments_copy);
+
+        auto source = std::make_shared<SourceFromSingleChunk>(std::move(arguments_block));
+        auto input_pipe = Pipe(std::move(source));
+
+        Pipes input_pipes;
+        input_pipes.emplace_back(std::move(input_pipe));
+
+        const String& function_body = query->function_body->as<ASTLiteral>()->value.safeGet<String>();
+
+        Pipe pipe = coordinator.createPipe(
+            function_body,
+            std::move(input_pipes),
+            result_block,
+            context);
+
+        QueryPipeline pipeline(std::move(pipe));
+        PullingPipelineExecutor executor(pipeline);
+
+        auto result_column = result_type->createColumn();
+        result_column->reserve(input_rows_count);
+
+        Block block;
+        while (executor.pull(block))
+        {
+            const auto & result_column_to_add = *block.safeGetByPosition(0).column;
+            result_column->insertRangeFrom(result_column_to_add, 0, result_column_to_add.size());
+        }
+
+        size_t result_column_size = result_column->size();
+        if (result_column_size != input_rows_count)
+            throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+                            "Function {}: wrong result, expected {} row(s), actual {}",
+                            quoteString(getName()),
+                            input_rows_count,
+                            result_column_size);
+
+        return result_column;
     }
 
 private:
