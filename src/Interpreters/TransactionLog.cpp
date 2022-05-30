@@ -597,4 +597,14 @@ TransactionLog::TransactionsList TransactionLog::getTransactionsList() const
     return running_list;
 }
 
+
+void TransactionLog::sync() const
+{
+    Strings entries_list = zookeeper->getChildren(zookeeper_path_log);
+    chassert(!entries_list.empty());
+    std::sort(entries_list.begin(), entries_list.end());
+    CSN newest_csn = deserializeCSN(entries_list.back());
+    waitForCSNLoaded(newest_csn);
+}
+
 }
