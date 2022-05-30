@@ -707,6 +707,13 @@ namespace
 
 void HashJoin::initRightBlockStructure(Block & saved_block_sample)
 {
+    if (isCrossOrComma(kind))
+    {
+        /// cross join doesn't have keys, just add all columns
+        saved_block_sample = sample_block_with_columns_to_add.cloneEmpty();
+        return;
+    }
+
     bool multiple_disjuncts = !table_join->oneDisjunct();
     /// We could remove key columns for LEFT | INNER HashJoin but we should keep them for JoinSwitcher (if any).
     bool save_key_columns = !table_join->forceHashJoin() || isRightOrFull(kind) || multiple_disjuncts;
@@ -724,9 +731,7 @@ void HashJoin::initRightBlockStructure(Block & saved_block_sample)
     for (auto & column : sample_block_with_columns_to_add)
     {
         if (!saved_block_sample.findByName(column.name))
-        {
             saved_block_sample.insert(column);
-        }
     }
 }
 
