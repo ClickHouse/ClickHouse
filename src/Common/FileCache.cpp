@@ -638,10 +638,6 @@ void LRUFileCache::remove(const Key & key)
 
     if (fs::exists(key_path))
         fs::remove(key_path);
-
-#ifndef NDEBUG
-    assertCacheCorrectness(cache_lock);
-#endif
 }
 
 void LRUFileCache::remove()
@@ -1053,8 +1049,7 @@ void LRUFileCache::assertCacheCellsCorrectness(
         if (file_segment->reserved_size != 0)
         {
             assert(cell.queue_iterator);
-            /// FIXME: this is too slow, need to make it O(1)
-            /// assert(queue.contains(file_segment->key(), file_segment->offset(), cache_lock));
+            assert(queue.contains(file_segment->key(), file_segment->offset(), cache_lock));
         }
     }
 }
