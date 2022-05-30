@@ -126,7 +126,7 @@ SeekableReadBufferPtr CachedReadBufferFromRemoteFS::getCacheReadBuffer(size_t of
     local_read_settings.local_fs_method = LocalFSReadMethod::pread;
 
     auto buf = createReadBufferFromFileBase(path, local_read_settings);
-    auto from_fd = dynamic_cast<ReadBufferFromFileDescriptor*>(buf.get());
+    auto * from_fd = dynamic_cast<ReadBufferFromFileDescriptor*>(buf.get());
     if (from_fd && from_fd->size() == 0)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to read from an empty cache file: {}", path);
 
@@ -212,38 +212,6 @@ SeekableReadBufferPtr CachedReadBufferFromRemoteFS::getReadBufferForFileSegment(
                 read_type = ReadType::REMOTE_FS_READ_BYPASS_CACHE;
                 return getRemoteFSReadBuffer(file_segment, read_type);
             }
-            case FileSegment::State::EMPTY:
-            {
-                auto downloader_id = file_segment->getOrSetDownloader();
-                if (downloader_id == file_segment->getCallerId())
-                {
-                    if (file_offset_of_buffer_end == file_segment->getDownloadOffset())
-                    {
-                        read_type = ReadType::REMOTE_FS_READ_AND_PUT_IN_CACHE;
-                        return getRemoteFSReadBuffer(file_segment, read_type);
-                    }
-                    else
-                    {
-                        ///                      segment{k}
-                        /// cache:           [______|___________
-                        ///                         ^
-                        ///                         download_offset
-                        /// requested_range:            [__________]
-                        ///                             ^
-                        ///                             file_offset_of_buffer_end
-                        assert(file_offset_of_buffer_end > file_segment->getDownloadOffset());
-                        bytes_to_predownload = file_offset_of_buffer_end - file_segment->getDownloadOffset();
-
-                        read_type = ReadType::REMOTE_FS_READ_AND_PUT_IN_CACHE;
-                        return getRemoteFSReadBuffer(file_segment, read_type);
-                    }
-                }
-                else
-                {
-                    download_state = file_segment->state();
-                    continue;
-                }
-            }
             case FileSegment::State::DOWNLOADING:
             {
                 size_t download_offset = file_segment->getDownloadOffset();
@@ -280,8 +248,23 @@ SeekableReadBufferPtr CachedReadBufferFromRemoteFS::getReadBufferForFileSegment(
                 read_type = ReadType::CACHED;
                 return getCacheReadBuffer(range.left);
             }
+            case FileSegment::State::EMPTY:
             case FileSegment::State::PARTIALLY_DOWNLOADED:
             {
+                if (file_segment->getDownloadOffset() > file_offset_of_buffer_end)
+                {
+                    ///                      segment{k} state: PARTIALLY_DOWNLOADED
+                    /// cache:           [______|___________
+                    ///                         ^
+                    ///                         download_offset (in progress)
+                    /// requested_range:    [__________]
+                    ///                     ^
+                    ///                     file_offset_of_buffer_end
+
+                    read_type = ReadType::CACHED;
+                    return getCacheReadBuffer(range.left);
+                }
+
                 auto downloader_id = file_segment->getOrSetDownloader();
                 if (downloader_id == file_segment->getCallerId())
                 {
@@ -477,7 +460,10 @@ bool CachedReadBufferFromRemoteFS::completeFileSegmentAndGetNext()
 
     /// Do not hold pointer to file segment if it is not needed anymore
     /// so can become releasable and can be evicted from cache.
-    file_segments_holder->file_segments.erase(file_segment_it);
+    /// If the status of filesegment state is SKIP_CACHE, it will not be deleted.
+    /// It will be deleted from the cache when the holder is destructed.
+    if ((*file_segment_it)->state() != FileSegment::State::SKIP_CACHE)
+        file_segments_holder->file_segments.erase(file_segment_it);
 
     if (current_file_segment_it == file_segments_holder->file_segments.end())
         return false;

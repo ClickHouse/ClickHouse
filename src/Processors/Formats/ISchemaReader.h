@@ -26,6 +26,9 @@ public:
     virtual bool needContext() const { return false; }
     virtual void setContext(ContextPtr &) {}
 
+    virtual void setMaxRowsToRead(size_t) {}
+    virtual size_t getNumRowsRead() const { return 0; }
+
     virtual ~ISchemaReader() = default;
 
 protected:
@@ -61,10 +64,14 @@ protected:
 
     void setColumnNames(const std::vector<String> & names) { column_names = names; }
 
+    void setMaxRowsToRead(size_t max_rows) override { max_rows_to_read = max_rows; }
+    size_t getNumRowsRead() const override { return rows_read; }
+
 private:
 
     DataTypePtr getDefaultType(size_t column) const;
     size_t max_rows_to_read;
+    size_t rows_read = 0;
     DataTypePtr default_type;
     DataTypes default_types;
     CommonDataTypeChecker common_type_checker;
@@ -79,7 +86,7 @@ private:
 class IRowWithNamesSchemaReader : public ISchemaReader
 {
 public:
-    IRowWithNamesSchemaReader(ReadBuffer & in_, size_t max_rows_to_read_, DataTypePtr default_type_ = nullptr);
+    IRowWithNamesSchemaReader(ReadBuffer & in_, DataTypePtr default_type_ = nullptr);
     NamesAndTypesList readSchema() override;
     bool hasStrictOrderOfColumns() const override { return false; }
 
@@ -92,8 +99,12 @@ protected:
     /// Set eof = true if can't read more data.
     virtual NamesAndTypesList readRowAndGetNamesAndDataTypes(bool & eof) = 0;
 
+    void setMaxRowsToRead(size_t max_rows) override { max_rows_to_read = max_rows; }
+    size_t getNumRowsRead() const override { return rows_read; }
+
 private:
     size_t max_rows_to_read;
+    size_t rows_read = 0;
     DataTypePtr default_type;
     CommonDataTypeChecker common_type_checker;
 };
@@ -108,5 +119,16 @@ public:
 
     virtual ~IExternalSchemaReader() = default;
 };
+
+void chooseResultColumnType(
+    DataTypePtr & type,
+    const DataTypePtr & new_type,
+    CommonDataTypeChecker common_type_checker,
+    const DataTypePtr & default_type,
+    const String & column_name,
+    size_t row);
+
+void checkResultColumnTypeAndAppend(
+    NamesAndTypesList & result, DataTypePtr & type, const String & name, const DataTypePtr & default_type, size_t rows_read);
 
 }

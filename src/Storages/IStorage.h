@@ -71,7 +71,7 @@ using DatabaseAndTableName = std::pair<String, String>;
 class IBackup;
 using BackupPtr = std::shared_ptr<const IBackup>;
 class IBackupEntry;
-using BackupEntries = std::vector<std::pair<String, std::unique_ptr<IBackupEntry>>>;
+using BackupEntries = std::vector<std::pair<String, std::shared_ptr<const IBackupEntry>>>;
 class IRestoreTask;
 using RestoreTaskPtr = std::unique_ptr<IRestoreTask>;
 struct StorageRestoreSettings;
@@ -585,7 +585,7 @@ public:
     /// Returns true if all disks of storage are read-only.
     virtual bool isStaticStorage() const;
 
-    virtual bool isColumnOriented() const { return false; }
+    virtual bool supportsSubsetOfColumns() const { return false; }
 
     /// If it is possible to quickly determine exact number of rows in the table at this moment of time, then return it.
     /// Used for:

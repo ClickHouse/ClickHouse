@@ -61,7 +61,8 @@ const std::pair<DB::LogsLevel, Poco::Message::Priority> & convertLogLevel(Aws::U
 class AWSLogger final : public Aws::Utils::Logging::LogSystemInterface
 {
 public:
-    AWSLogger()
+    explicit AWSLogger(bool enable_s3_requests_logging_)
+        :enable_s3_requests_logging(enable_s3_requests_logging_)
     {
         for (auto [tag, name] : S3_LOGGER_TAG_NAMES)
             tag_loggers[tag] = &Poco::Logger::get(name);
@@ -71,7 +72,13 @@ public:
 
     ~AWSLogger() final = default;
 
-    Aws::Utils::Logging::LogLevel GetLogLevel() const final { return Aws::Utils::Logging::LogLevel::Trace; }
+    Aws::Utils::Logging::LogLevel GetLogLevel() const final
+    {
+        if (enable_s3_requests_logging)
+            return Aws::Utils::Logging::LogLevel::Trace;
+        else
+            return Aws::Utils::Logging::LogLevel::Info;
+    }
 
     void Log(Aws::Utils::Logging::LogLevel log_level, const char * tag, const char * format_str, ...) final // NOLINT
     {
@@ -100,6 +107,7 @@ public:
 
 private:
     Poco::Logger * default_logger;
+    bool enable_s3_requests_logging;
     std::unordered_map<String, Poco::Logger *> tag_loggers;
 };
 
@@ -127,7 +135,7 @@ public:
     AWSEC2MetadataClient& operator =(const AWSEC2MetadataClient && rhs) = delete;
     AWSEC2MetadataClient(const AWSEC2MetadataClient && rhs) = delete;
 
-    virtual ~AWSEC2MetadataClient() override = default;
+    ~AWSEC2MetadataClient() override = default;
 
     using Aws::Internal::AWSHttpResourceClient::GetResource;
 
@@ -264,10 +272,10 @@ public:
     {
     }
 
-    virtual ~AWSEC2InstanceProfileConfigLoader() override = default;
+    ~AWSEC2InstanceProfileConfigLoader() override = default;
 
 protected:
-    virtual bool LoadInternal() override
+    bool LoadInternal() override
     {
         auto credentials_str = use_secure_pull ? client->getDefaultCredentialsSecurely() : client->getDefaultCredentials();
 
@@ -535,7 +543,7 @@ public:
             /// AWS API tries credentials providers one by one. Some of providers (like ProfileConfigFileAWSCredentialsProvider) can be
             /// quite verbose even if nobody configured them. So we use our provider first and only after it use default providers.
             {
-                DB::S3::PocoHTTPClientConfiguration aws_client_configuration = DB::S3::ClientFactory::instance().createClientConfiguration(configuration.region, configuration.remote_host_filter, configuration.s3_max_redirects);
+                DB::S3::PocoHTTPClientConfiguration aws_client_configuration = DB::S3::ClientFactory::instance().createClientConfiguration(configuration.region, configuration.remote_host_filter, configuration.s3_max_redirects, configuration.enable_s3_requests_logging);
                 AddProvider(std::make_shared<AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider>(aws_client_configuration));
             }
 
@@ -572,7 +580,7 @@ public:
             }
             else if (Aws::Utils::StringUtils::ToLower(ec2_metadata_disabled.c_str()) != "true")
             {
-                DB::S3::PocoHTTPClientConfiguration aws_client_configuration = DB::S3::ClientFactory::instance().createClientConfiguration(configuration.region, configuration.remote_host_filter, configuration.s3_max_redirects);
+                DB::S3::PocoHTTPClientConfiguration aws_client_configuration = DB::S3::ClientFactory::instance().createClientConfiguration(configuration.region, configuration.remote_host_filter, configuration.s3_max_redirects, configuration.enable_s3_requests_logging);
 
                 /// See MakeDefaultHttpResourceClientConfiguration().
                 /// This is part of EC2 metadata client, but unfortunately it can't be accessed from outside
@@ -692,7 +700,7 @@ namespace S3
     {
         aws_options = Aws::SDKOptions{};
         Aws::InitAPI(aws_options);
-        Aws::Utils::Logging::InitializeAWSLogging(std::make_shared<AWSLogger>());
+        Aws::Utils::Logging::InitializeAWSLogging(std::make_shared<AWSLogger>(false));
         Aws::Http::SetHttpClientFactory(std::make_shared<PocoHTTPClientFactory>());
     }
 
@@ -708,7 +716,7 @@ namespace S3
         return ret;
     }
 
-    std::shared_ptr<Aws::S3::S3Client> ClientFactory::create( // NOLINT
+    std::unique_ptr<Aws::S3::S3Client> ClientFactory::create( // NOLINT
         const PocoHTTPClientConfiguration & cfg_,
         bool is_virtual_hosted_style,
         const String & access_key_id,
@@ -746,7 +754,7 @@ namespace S3
             use_environment_credentials,
             use_insecure_imds_request);
 
-        return std::make_shared<Aws::S3::S3Client>(
+        return std::make_unique<Aws::S3::S3Client>(
             std::move(auth_signer),
             std::move(client_configuration), // Client configuration.
             is_virtual_hosted_style || client_configuration.endpointOverride.empty() // Use virtual addressing only if endpoint is not specified.
@@ -756,9 +764,10 @@ namespace S3
     PocoHTTPClientConfiguration ClientFactory::createClientConfiguration( // NOLINT
         const String & force_region,
         const RemoteHostFilter & remote_host_filter,
-        unsigned int s3_max_redirects)
+        unsigned int s3_max_redirects,
+        bool enable_s3_requestrs_logging)
     {
-        return PocoHTTPClientConfiguration(force_region, remote_host_filter, s3_max_redirects);
+        return PocoHTTPClientConfiguration(force_region, remote_host_filter, s3_max_redirects, enable_s3_requestrs_logging);
     }
 
     URI::URI(const Poco::URI & uri_)
@@ -856,7 +865,7 @@ namespace S3
                             quoteString(bucket), !uri.empty() ? " (" + uri.toString() + ")" : "");
     }
 
-    size_t getObjectSize(std::shared_ptr<Aws::S3::S3Client> client_ptr, const String & bucket, const String & key, const String & version_id, bool throw_on_error)
+    size_t getObjectSize(std::shared_ptr<const Aws::S3::S3Client> client_ptr, const String & bucket, const String & key, const String & version_id, bool throw_on_error)
     {
         Aws::S3::Model::HeadObjectRequest req;
         req.SetBucket(bucket);

@@ -110,7 +110,7 @@ public:
 
     bool isBroken() const override { return broken; }
 
-    void startup() override;
+    void startup(ContextPtr) override;
 
     void shutdown() override;
 
@@ -121,7 +121,7 @@ public:
     bool canWrite() const noexcept;
 
 private:
-    bool tryReserve(UInt64 bytes);
+    std::optional<UInt64> tryReserve(UInt64 bytes);
 
     /// Setup disk for healthy check. Returns true if it's read-write, false if read-only.
     /// Throw exception if it's not possible to setup necessary files and directories.
