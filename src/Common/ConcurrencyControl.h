@@ -35,8 +35,10 @@ class ConcurrencyControl : boost::noncopyable
 public:
     struct Allocation;
     using AllocationPtr = std::shared_ptr<Allocation>;
-    using Slots = UInt64;
+    using SlotCount = UInt64;
     using Waiters = std::list<Allocation *>;
+
+    static constexpr SlotCount Unlimited = std::numeric_limits<SlotCount>::max();
 
     // Scoped guard for acquired slot, see Allocation::tryAcquire()
     struct Slot : boost::noncopyable
@@ -64,17 +66,7 @@ public:
     {
         ~Allocation()
         {
-            if (released == limit) // also equal to `allocated`: everything is already released
-                return;
-
-            std::unique_lock lock{parent.mutex};
-            parent.cur_concurrency -= allocated - released;
-
-            // Cancel waiting
-            if (allocated < limit && waiter != parent.waiters.end())
-                parent.waiters.erase(waiter);
-
-            parent.schedule(lock);
+            parent.free(this); // We have to lock parent's mutex to avoid race with grant()
         }
 
         // Take one already granted slot if available
@@ -89,35 +81,27 @@ public:
 
     private:
         friend struct Slot; // for release()
-        friend class ConcurrencyControl; // for grant() and ctor
+        friend class ConcurrencyControl; // for grant(), free() and ctor
 
-        Allocation(ConcurrencyControl & concurrency_control, Slots min, Slots max)
-            : parent(concurrency_control)
-            , limit(std::max(max, min))
+        Allocation(ConcurrencyControl & parent_, SlotCount limit_, SlotCount granted_)
+            : parent(parent_)
+            , limit(limit_)
+            , allocated(granted_)
+            , granted(granted_)
+        {}
+
+        auto free()
         {
-            std::unique_lock lock{parent.mutex};
-
-            // Acquire as much slots as we can, but not lower than `min`
-            granted = allocated = std::max(min, std::min(limit, parent.available(lock)));
-            parent.cur_concurrency += allocated;
-
-            // Start waiting if more slots are required
-            if (allocated < limit)
-                waiter = parent.waiters.insert(parent.cur_waiter, this);
-            else
-                waiter = parent.waiters.end();
+            std::unique_lock lock{mutex};
+            return std::pair{allocated - released,
+                allocated < limit ?
+                    std::optional<Waiters::iterator>(waiter) :
+                    std::optional<Waiters::iterator>()};
         }
 
-        // Release one slot and grant it to other allocation if required
-        void release()
+        void wait(Waiters::iterator waiter_)
         {
-            std::unique_lock lock{parent.mutex};
-            parent.cur_concurrency--;
-            parent.schedule(lock);
-
-            std::unique_lock lock2{mutex};
-            released++;
-            assert(released <= allocated);
+            waiter = waiter_;
         }
 
         // Grant single slot to allocation, returns true iff more slot(s) are required
@@ -127,18 +111,26 @@ public:
             granted++;
             allocated++;
             return allocated < limit;
-            // WARNING: `waiter` iterator is invalidated after returning false
+        }
+
+        // Release one slot and grant it to other allocation if required
+        void release()
+        {
+            parent.release(1);
+            std::unique_lock lock{mutex};
+            released++;
+            assert(released <= allocated);
         }
 
         ConcurrencyControl & parent;
-        Waiters::iterator waiter; // iterator to itself in Waiters list
-
-        const Slots limit;
+        const SlotCount limit;
 
         std::mutex mutex; // the following values must be accessed under this mutex
-        Slots allocated = 0; // allocated total (including already released)
-        Slots granted = 0; // allocated, but not yet acquired
-        Slots released = 0;
+        SlotCount allocated = 0; // allocated total (including already released)
+        SlotCount granted = 0; // allocated, but not yet acquired
+        SlotCount released = 0;
+
+        Waiters::iterator waiter; // iterator to itself in Waiters list; valid iff allocated < limit
     };
 
 public:
@@ -156,15 +148,26 @@ public:
     // Allocate at least `min` and at most `max` slots.
     // If not all `max` slots were successfully allocated, a subscription for later allocation is created
     // Use Allocation::tryAcquire() to acquire allocated slot, before running a thread.
-    [[nodiscard]] AllocationPtr allocate(Slots min, Slots max)
-    {
-        return AllocationPtr(new Allocation(*this, min, max));
-    }
-
-    void setMaxConcurrency(Slots value)
+    [[nodiscard]] AllocationPtr allocate(SlotCount min, SlotCount max)
     {
         std::unique_lock lock{mutex};
-        max_concurrency = std::max<Slots>(1, value); // never allow max_concurrency to be zero
+
+        // Acquire as much slots as we can, but not lower than `min`
+        SlotCount limit = std::max(min, max);
+        SlotCount granted = std::max(min, std::min(limit, available(lock)));
+        cur_concurrency += granted;
+
+        // Create allocation and start waiting if more slots are required
+        auto allocation = new Allocation(*this, limit, granted);
+        if (granted < limit)
+            allocation->wait(waiters.insert(cur_waiter, allocation));
+        return AllocationPtr(allocation);
+    }
+
+    void setMaxConcurrency(SlotCount value)
+    {
+        std::unique_lock lock{mutex};
+        max_concurrency = std::max<SlotCount>(1, value); // never allow max_concurrency to be zero
         schedule(lock);
     }
 
@@ -175,12 +178,28 @@ public:
     }
 
 private:
-    Slots available(std::unique_lock<std::mutex> &)
+    friend struct Allocation; // for free() and release()
+
+    void free(Allocation * allocation)
     {
-        if (cur_concurrency < max_concurrency)
-            return max_concurrency - cur_concurrency;
-        else
-            return 0;
+        std::unique_lock lock{mutex};
+        auto [amount, waiter] = allocation->free();
+        cur_concurrency -= amount;
+        if (waiter)
+        {
+            if (cur_waiter == *waiter)
+                cur_waiter = waiters.erase(*waiter);
+            else
+                waiters.erase(*waiter);
+        }
+        schedule(lock);
+    }
+
+    void release(SlotCount amount)
+    {
+        std::unique_lock lock{mutex};
+        cur_concurrency -= amount;
+        schedule(lock);
     }
 
     // Round-robin scheduling of available slots among waiting allocations
@@ -195,13 +214,21 @@ private:
             if (allocation->grant())
                 ++cur_waiter;
             else
-                waiters.erase(cur_waiter++); // last required slot has just been granted -- stop waiting
+                cur_waiter = waiters.erase(cur_waiter); // last required slot has just been granted -- stop waiting
         }
+    }
+
+    SlotCount available(std::unique_lock<std::mutex> &)
+    {
+        if (cur_concurrency < max_concurrency)
+            return max_concurrency - cur_concurrency;
+        else
+            return 0;
     }
 
     std::mutex mutex;
     Waiters waiters;
     Waiters::iterator cur_waiter; // round-robin pointer
-    Slots max_concurrency = Slots(-1);
-    Slots cur_concurrency = 0;
+    SlotCount max_concurrency = Unlimited;
+    SlotCount cur_concurrency = 0;
 };
