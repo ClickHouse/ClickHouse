@@ -19,6 +19,7 @@ public:
     enum class Expression : uint8_t
     {
         WITH,
+        SELECT_ALIASES,
         SELECT,
         TABLES,
         PREWHERE,
@@ -42,6 +43,8 @@ public:
         {
             case Expression::WITH:
                 return "WITH";
+            case Expression::SELECT_ALIASES:
+                return "SELECT_ALIASES";
             case Expression::SELECT:
                 return "SELECT";
             case Expression::TABLES:
@@ -96,6 +99,7 @@ public:
     ASTPtr & refHaving()    { return getExpression(Expression::HAVING); }
 
     const ASTPtr with()           const { return getExpression(Expression::WITH); }
+    const ASTPtr selectAliases()  const { return getExpression(Expression::SELECT_ALIASES); }
     const ASTPtr select()         const { return getExpression(Expression::SELECT); }
     const ASTPtr tables()         const { return getExpression(Expression::TABLES); }
     const ASTPtr prewhere()       const { return getExpression(Expression::PREWHERE); }

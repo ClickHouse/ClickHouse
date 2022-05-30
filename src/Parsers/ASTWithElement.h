@@ -12,6 +12,7 @@ class ASTWithElement : public IAST
 public:
     String name;
     ASTPtr subquery;
+    ASTPtr column_names;
 
     /** Get the text that identifies this element. */
     String getID(char) const override { return "WithElement"; }

@@ -53,6 +53,7 @@
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/TransactionLog.h>
 #include <Interpreters/SelectIntersectExceptQueryVisitor.h>
+#include <Interpreters/ApplyWithColumnNamesVisitor.h>
 #include <Common/ProfileEvents.h>
 
 #include <Common/SensitiveDataMasker.h>
@@ -551,6 +552,8 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         /// parameters), to keep query as-is in query_log and server log.
         query_for_logging = prepareQueryForLogging(query, context);
         logQuery(query_for_logging, context, internal, stage);
+
+        ApplyWithColumnNamesVisitor().visit(ast);
 
         /// Propagate WITH statement to children ASTSelect.
         if (settings.enable_global_with_statement)

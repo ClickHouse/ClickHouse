@@ -1538,15 +1538,27 @@ ActionsDAGPtr SelectQueryExpressionAnalyzer::appendProjectResult(ExpressionActio
 
     ExpressionActionsChain::Step & step = chain.lastStep(aggregated_columns);
 
+    ASTs result_column_names;
     NamesWithAliases result_columns;
 
     ASTs asts = select_query->select()->children;
-    for (const auto & ast : asts)
+
+    if (auto select_aliases = select_query->selectAliases())
     {
-        String result_name = ast->getAliasOrColumnName();
+        result_column_names = select_aliases->children;
+        if (asts.size() != result_column_names.size())
+            throw Exception("The number of columns in WITH is not equal to the number of columns in child SELECT",
+                ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
+    }
+
+    for (size_t i = 0; i != asts.size(); ++i)
+    {
+        String result_name = !result_column_names.empty() ? result_column_names[i]->as<ASTIdentifier>()->name()
+            : asts[i]->getAliasOrColumnName();
+
         if (required_result_columns.empty() || required_result_columns.contains(result_name))
         {
-            std::string source_name = ast->getColumnName();
+            std::string source_name = asts[i]->getColumnName();
 
             /*
              * For temporary columns created by ExpressionAnalyzer for literals,
@@ -1567,7 +1579,7 @@ ActionsDAGPtr SelectQueryExpressionAnalyzer::appendProjectResult(ExpressionActio
              * names and identifiers for columns. This code is a workaround for
              * a particular subclass of problems, and not a proper solution.
              */
-            if (const auto * as_literal = ast->as<ASTLiteral>())
+            if (const auto * as_literal = asts[i]->as<ASTLiteral>())
             {
                 source_name = as_literal->unique_column_name;
                 assert(!source_name.empty());
