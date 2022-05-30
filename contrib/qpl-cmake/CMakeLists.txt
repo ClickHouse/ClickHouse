@@ -28,17 +28,7 @@ include("${QPL_PROJECT_DIR}/cmake/CompileOptions.cmake")
 include(CheckLanguage)
 check_language(ASM_NASM)
 if(NOT CMAKE_ASM_NASM_COMPILER)
-  set (NASM_SOURCE_DIR "${ClickHouse_SOURCE_DIR}/contrib/nasm")
-  set (NASM_BINARY_DIR "${ClickHouse_SOURCE_DIR}/build/contrib/nasm")
-  message(WARNING "Trying to build NASM from ${NASM_SOURCE_DIR} because NASM could not be found on local machine")
-
-  execute_process(COMMAND
-      bash -c "./autogen.sh && ./configure --prefix=${NASM_BINARY_DIR} && make install"
-      WORKING_DIRECTORY ${NASM_SOURCE_DIR}
-      RESULT_VARIABLE variable_RESULT)
-  message(STATUS "NASM build result:${variable_RESULT}")
-
-  set(CMAKE_ASM_NASM_COMPILER ${NASM_BINARY_DIR}/bin/nasm)
+  message(FATAL_ERROR "Please install NASM from 'https://github.com/netwide-assembler/nasm' because NASM compiler could not be found on local machine!")
 endif()
 
 # [SUBDIR]isal

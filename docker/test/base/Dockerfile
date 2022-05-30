@@ -55,6 +55,7 @@ RUN apt-get update \
         pkg-config \
         tzdata \
         pv \
+        nasm \
         --yes --no-install-recommends
 
 # Sanitizer options for services (clickhouse-server)
