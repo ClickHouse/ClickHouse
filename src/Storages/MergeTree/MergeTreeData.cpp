@@ -361,6 +361,7 @@ MergeTreeData::MergeTreeData(
             background_moves_assignee.trigger();
     };
 
+    reloadStatistics();
     if (context_->getSettingsRef().allow_experimental_stats_for_prewhere_optimization) {
         stats_merger_task = getContext()->getSchedulePool().createTask(
             "MergeTreeStatisticsMerger",
@@ -1017,7 +1018,6 @@ void MergeTreeData::updateStatisticsByPartition()
     StatisticSizeByName statistic_sizes_in_memory;
     for (const auto & [partition, stat] : partition_to_stats_new)
     {
-        // LOG_DEBUG(log, "Update stats by partitions : partition={} empty={}", partition, stat->empty());
         if (!stat->empty()) {
             auto distribution_statistics = stat->getDistributionStatistics();
             for (const auto& statistic_name : distribution_statistics->getStatisticsNames()) {
@@ -1033,7 +1033,7 @@ void MergeTreeData::updateStatisticsByPartition()
     {
         auto lock = lockParts();
         for (const auto& [name, size] : statistic_sizes_in_memory) {
-            statistics_sizes[name].data_ram += size.data_ram;
+            statistics_sizes[name].data_ram = size.data_ram;
         }
     }
 }

@@ -793,8 +793,10 @@ MergeTreeStatisticsPtr IMergeTreeDataPart::loadStats() const {
         metadata_snapshot->getStatistics(), metadata_snapshot->getColumns());
     std::vector<String> file_names;
     volume->getDisk()->listFiles(getFullRelativePath(), file_names);
-    for (const String & file_name : file_names) {
-        if (file_name.ends_with(PART_STATS_FILE_EXT)) {
+    for (const String & file_name : file_names)
+    {
+        if (file_name.ends_with(PART_STATS_FILE_EXT))
+        {
             const String stats_file_path = String(fs::path(getFullRelativePath()) / file_name);
 
             if (volume->getDisk()->exists(stats_file_path))
