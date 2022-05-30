@@ -1859,6 +1859,8 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
             && !query.final()
             && join_allow_read_in_order;
 
+        optimize_distinct_in_order = settings.optimize_distinct_in_order && storage && query.distinct;
+
         /// If there is aggregation, we execute expressions in SELECT and ORDER BY on the initiating server, otherwise on the source servers.
         query_analyzer.appendSelect(chain, only_types || (need_aggregate ? !second_stage : !first_stage));
 
