@@ -28,7 +28,7 @@ struct QueryPlanResourceHolder
     std::vector<std::shared_ptr<const Context>> interpreter_context;
     std::vector<StoragePtr> storage_holders;
     std::vector<TableLockHolder> table_locks;
-    std::shared_ptr<QueryIdHolder> query_id_holder;
+    std::vector<std::shared_ptr<QueryIdHolder>> query_id_holders;
 };
 
 }
