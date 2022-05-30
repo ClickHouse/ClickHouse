@@ -27,6 +27,8 @@ namespace ErrorCodes
     extern const int FILE_ALREADY_EXISTS;
     extern const int FILE_DOESNT_EXIST;
     extern const int BAD_FILE_TYPE;
+    extern const int ATTEMPT_TO_READ_AFTER_EOF;
+    extern const int CANNOT_READ_ALL_DATA;
 }
 
 static String revisionToString(UInt64 revision)
