@@ -22,8 +22,8 @@ public:
     void rethrow() const override { throw *this; }
 
 private:
-    const char * name() const throw() override { return "DB::NetException"; }
-    const char * className() const throw() override { return "DB::NetException"; }
+    const char * name() const noexcept override { return "DB::NetException"; }
+    const char * className() const noexcept override { return "DB::NetException"; }
 };
 
 }
