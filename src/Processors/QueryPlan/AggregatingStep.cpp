@@ -66,7 +66,7 @@ AggregatingStep::AggregatingStep(
     : ITransformingStep(input_stream_, appendGroupingColumn(params_.getHeader(final_), grouping_sets_params_), getTraits(), false)
     , params(std::move(params_))
     , grouping_sets_params(std::move(grouping_sets_params_))
-    , final(std::move(final_))
+    , final(final_)
     , max_block_size(max_block_size_)
     , aggregation_in_order_max_block_bytes(aggregation_in_order_max_block_bytes_)
     , merge_threads(merge_threads_)

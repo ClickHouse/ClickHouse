@@ -205,7 +205,7 @@ namespace
             else
                 return false;
 
-            res_all_limits.emplace_back(std::move(limits));
+            res_all_limits.emplace_back(limits);
             return true;
         };
 
