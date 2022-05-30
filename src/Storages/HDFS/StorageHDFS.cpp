@@ -418,7 +418,7 @@ public:
 
     void onException() override
     {
-        write_buf->finalize();
+        onFinish();
     }
 
     void onFinish() override
@@ -432,6 +432,7 @@ public:
         }
         catch (...)
         {
+            /// Stop ParallelFormattingOutputFormat correctly.
             writer.reset();
             throw;
         }

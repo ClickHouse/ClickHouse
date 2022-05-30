@@ -603,7 +603,7 @@ public:
 
     void onException() override
     {
-        write_buf->finalize();
+        onFinish();
     }
 
     void onFinish() override
