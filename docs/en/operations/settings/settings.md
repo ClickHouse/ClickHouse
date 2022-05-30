@@ -523,13 +523,13 @@ Result:
 
 ## input_format_tsv_skip_first_lines {#settings-input_format_tsv_skip_first_lines}
 
-The number of lines to skip in the beginning of data in TSV input format.
+The number of lines to skip at the beginning of data in TSV input format.
 
 Default value: `0`.
 
 ## input_format_csv_skip_first_lines {#settings-input_format_csv_skip_first_lines}
 
-The number of lines to skip in the beginning of data in CSV input format.
+The number of lines to skip at the beginning of data in CSV input format.
 
 Default value: `0`.
 
