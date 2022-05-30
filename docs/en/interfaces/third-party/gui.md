@@ -149,7 +149,7 @@ Features:
 
 ### ClickCat {#clickcat}
 
-[ClickCat](http://8.135.49.240:8080/dashboard) is a firendly user interface that lets you search, explore and visualize your ClickHouse Data.
+[ClickCat](https://github.com/open-botech/ClickCat) is a firendly user interface that lets you search, explore and visualize your ClickHouse Data.
 
 Features:
 
