@@ -31,9 +31,9 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-// ZkNodeCache is a trie tree to cache all the zookeeper writes. The purpose of this struct is to avoid creating/setting nodes
-// repeatedly. For example, If we create path /a/b/c/d/e and path /a/b/d/f in the same transaction. We don't want to create
-// their common path "/a/b" twice. This data structure will cache this changes and generates the eventual requests within one pass.
+/// ZkNodeCache is a trie tree to cache all the zookeeper writes. The purpose of this struct is to avoid creating/setting nodes
+/// repeatedly. For example, If we create path /a/b/c/d/e and path /a/b/d/f in the same transaction. We don't want to create
+/// their common path "/a/b" twice. This data structure will cache this changes and generates the eventual requests within one pass.
 struct ZkNodeCache
 {
     using ZkNodeCachePtr = std::shared_ptr<ZkNodeCache>;
@@ -49,24 +49,29 @@ struct ZkNodeCache
 
     void insert(const std::vector<String> & nodes, zkutil::ZooKeeperPtr zookeeper, const String & value_to_set, size_t index)
     {
-        if (index >= nodes.size())
+        /// If this node has an empty name, just skip it.
+        /// Possibly a "/a//b///c//d/" will cause empty node.
+        while(index < nodes.size() && nodes[index].empty())
+            ++index;
+
+        if (index == nodes.size())
         {
             value = value_to_set;
             changed = true;
             return;
         }
         const String & child_name = nodes[index];
-        index++;
+        ++index;
         if (!children.contains(child_name))
         {
             String sub_path = "/" + boost::algorithm::join(std::vector<String>(nodes.begin(), nodes.begin() + index), "/");
-            bool ch_exist = false;
+            bool child_exist = false;
             if (exists)
             {
-                // If this node doesn't exists, neither will its child.
-                ch_exist = zookeeper->exists(sub_path);
+                /// If this node doesn't exists, neither will its child.
+                child_exist = zookeeper->exists(sub_path);
             }
-            children[child_name] = std::make_shared<ZkNodeCache>(sub_path, ch_exist);
+            children[child_name] = std::make_shared<ZkNodeCache>(sub_path, child_exist);
         }
         children[child_name]->insert(nodes, zookeeper, value_to_set, index);
     }
@@ -78,19 +83,13 @@ struct ZkNodeCache
         // This dfs will prove ancestor nodes are processed first.
         if (!exists)
         {
-            auto request = std::make_shared<Coordination::CreateRequest>();
-            request->path = path;
-            request->data = value;
-            request->is_ephemeral = false;
-            request->is_sequential = false;
+            auto request = zkutil::makeCreateRequest(path, value, zkutil::CreateMode::Persistent);
             requests.push_back(request);
         }
         else if (changed)
         {
-            auto request = std::make_shared<Coordination::SetRequest>();
-            request->path = path;
-            request->data = value;
-            request->version = -1;
+            auto request = zkutil::makeSetRequest(path, value, -1);
+            requests.push_back(request);
             requests.push_back(request);
         }
         for (auto [_, child] : children)
@@ -129,7 +128,7 @@ public:
             // Remove all the empty node. for path '/a//b///c/d/' we get <a b c d>
             for (int j = int(path_vec.size()) - 1; j >= 0; j--)
             {
-                if (path_vec[j].empty())
+                if (path_vec[j].empty()) 
                     path_vec.erase(path_vec.begin() + j);
             }
             path_vec.push_back(name);
