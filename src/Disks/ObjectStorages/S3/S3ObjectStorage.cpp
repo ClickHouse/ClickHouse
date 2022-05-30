@@ -17,6 +17,7 @@
 #include <aws/s3/model/CopyObjectRequest.h>
 #include <aws/s3/model/ListObjectsV2Request.h>
 #include <aws/s3/model/HeadObjectRequest.h>
+#include <aws/s3/model/DeleteObjectRequest.h>
 #include <aws/s3/model/DeleteObjectsRequest.h>
 #include <aws/s3/model/CreateMultipartUploadRequest.h>
 #include <aws/s3/model/CompleteMultipartUploadRequest.h>
@@ -213,18 +214,32 @@ void S3ObjectStorage::listPrefix(const std::string & path, BlobsPathToSize & chi
 void S3ObjectStorage::removeObject(const std::string & path)
 {
     auto client_ptr = client.get();
-    Aws::S3::Model::ObjectIdentifier obj;
-    obj.SetKey(path);
+    auto settings_ptr = s3_settings.get();
 
-    Aws::S3::Model::Delete delkeys;
-    delkeys.SetObjects({obj});
+    // If chunk size is 0, only use single delete request
+    // This allows us to work with GCS, which doesn't support DeleteObjects
+    if (settings_ptr->objects_chunk_size_to_delete == 0)
+    {
+        Aws::S3::Model::DeleteObjectRequest request;
+        request.SetBucket(bucket);
+        request.SetKey(path);
+        auto outcome = client_ptr->DeleteObject(request);
 
-    Aws::S3::Model::DeleteObjectsRequest request;
-    request.SetBucket(bucket);
-    request.SetDelete(delkeys);
-    auto outcome = client_ptr->DeleteObjects(request);
+        throwIfError(outcome);
+    }
+    else
+    {
+        Aws::S3::Model::ObjectIdentifier obj;
+        obj.SetKey(path);
+        Aws::S3::Model::Delete delkeys;
+        delkeys.SetObjects({obj});
+        Aws::S3::Model::DeleteObjectsRequest request;
+        request.SetBucket(bucket);
+        request.SetDelete(delkeys);
+        auto outcome = client_ptr->DeleteObjects(request);
 
-    throwIfError(outcome);
+        throwIfError(outcome);
+    }
 }
 
 void S3ObjectStorage::removeObjects(const std::vector<std::string> & paths)
@@ -236,6 +251,16 @@ void S3ObjectStorage::removeObjects(const std::vector<std::string> & paths)
     auto settings_ptr = s3_settings.get();
 
     size_t chunk_size_limit = settings_ptr->objects_chunk_size_to_delete;
+
+    if (chunk_size_limit == 0)
+    {
+        for (const auto & path : paths)
+        {
+            removeObject(path);
+        }
+        return;
+    }
+
     size_t current_position = 0;
 
     while (current_position < paths.size())
