@@ -56,7 +56,7 @@ struct ZkNodeCache
             return;
         }
         const String & child_name = nodes[index];
-        index++;
+        ++index;
         if (!children.contains(child_name))
         {
             String sub_path = "/" + boost::algorithm::join(std::vector<String>(nodes.begin(), nodes.begin() + index), "/");
