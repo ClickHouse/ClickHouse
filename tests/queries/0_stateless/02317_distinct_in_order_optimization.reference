@@ -1,0 +1,83 @@
+disable optimize_distinct_in_order
+pipeline does _not_ contain the optimization
+(Expression)
+ExpressionTransform
+  (Distinct)
+  DistinctTransform
+    (Distinct)
+    DistinctTransform
+      (Expression)
+      ExpressionTransform
+        (ReadFromPreparedSource)
+        NullSource 0 → 1
+enable optimize_distinct_in_order
+distinct with primary key prefix -> pipeline contains the optimization
+(Expression)
+ExpressionTransform
+  (Distinct)
+  DistinctTransform
+    (Distinct)
+    DistinctPrimaryKeyTransform
+      (Expression)
+      ExpressionTransform
+        (ReadFromPreparedSource)
+        NullSource 0 → 1
+distinct with non-primary key prefix -> pipeline does _not_ contain the optimization
+(Expression)
+ExpressionTransform
+  (Distinct)
+  DistinctTransform
+    (Distinct)
+    DistinctTransform
+      (Expression)
+      ExpressionTransform
+        (ReadFromPreparedSource)
+        NullSource 0 → 1
+the same values in every chunk, distinct in order should skip entire chunks with the same key as previous one
+single-threaded distinct
+0
+multi-threaded distinct
+0
+skip part of chunk since it contians values from previous one
+single-threaded distinct
+0
+1
+2
+3
+4
+5
+6
+7
+8
+9
+multi-threaded distinct
+0
+1
+2
+3
+4
+5
+6
+7
+8
+9
+table with not only primary key columns
+distinct with key-prefix only
+0
+distinct with full key, 2 columns
+0	0
+0	1
+0	2
+0	3
+0	4
+0	5
+0	6
+0	7
+0	8
+0	9
+distinct with key prefix and non-sorted column
+0	0
+0	1
+0	2
+0	3
+0	4

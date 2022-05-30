@@ -39,4 +39,14 @@ private:
     SortDescription required_sort_description;
     const ASTSelectQuery & query;
 };
+
+class ReadInOrderOptimizerForDistinct
+{
+public:
+    explicit ReadInOrderOptimizerForDistinct(const Names & source_columns_);
+    InputOrderInfoPtr getInputOrder(const StorageMetadataPtr & metadata_snapshot) const;
+
+private:
+    NameSet source_columns;
+};
 }
