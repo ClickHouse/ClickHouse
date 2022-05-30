@@ -182,6 +182,13 @@ private:
     std::unique_ptr<IReservation> reservation;
 };
 
+static bool isFilePersistent(const String & path)
+{
+    return path.ends_with("idx") // index files.
+            || path.ends_with("mrk") || path.ends_with("mrk2") || path.ends_with("mrk3") /// mark files.
+            || path.ends_with("txt") || path.ends_with("dat");
+}
+
 DiskCache::DiskCache(
     const String & disk_name_,
     const String & path_,
@@ -195,11 +202,12 @@ DiskCache::DiskCache(
 {
 }
 
-static bool isFilePersistent(const String & path)
+static String getLocalFilesystemBasedFileId(const String & path)
 {
-    return path.ends_with("idx") // index files.
-            || path.ends_with("mrk") || path.ends_with("mrk2") || path.ends_with("mrk3") /// mark files.
-            || path.ends_with("txt") || path.ends_with("dat");
+    // auto stat_vfs = getStatVFS(path);
+    // auto file_id = fmt::format("{}:{}", stat_vfs.f_fsid, getINodeNumberFromPath(path));
+    auto file_id = toString(getINodeNumberFromPath(path));
+    return file_id;
 }
 
 std::unique_ptr<ReadBufferFromFileBase> DiskCache::readFile(
@@ -239,7 +247,7 @@ std::unique_ptr<ReadBufferFromFileBase> DiskCache::readFile(
         };
 
         auto full_path = fs::path(getPath()) / path;
-        auto file_id = toString(getINodeNumberFromPath(full_path));
+        auto file_id = getLocalFilesystemBasedFileId(full_path);
         auto key = cache->hash(file_id);
 
         String query_id =
@@ -284,9 +292,10 @@ std::unique_ptr<WriteBufferFromFileBase> DiskCache::writeFile(
         else
         {
             String full_path = fs::path(getPath()) / path;
-            auto file_id = toString(getINodeNumberFromPath(full_path));
+            auto file_id = getLocalFilesystemBasedFileId(full_path);
             key = cache->hash(file_id);
         }
+
         return std::make_unique<CachedWriteBuffer>(
             std::move(impl),
             cache,
@@ -302,6 +311,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskCache::writeFile(
 
 void DiskCache::removeCacheIfExists(const String & path)
 {
+    /// TODO: normal check for existance
     try
     {
         if (isRemote())
@@ -316,15 +326,13 @@ void DiskCache::removeCacheIfExists(const String & path)
         else
         {
             String full_path = fs::path(getPath()) / path;
-            auto file_id = toString(getINodeNumberFromPath(full_path));
+            auto file_id = getLocalFilesystemBasedFileId(full_path);
             auto key = cache->hash(file_id);
             cache->removeIfExists(key);
         }
     }
-    catch ([[maybe_unused]] const Exception & e)
+    catch (const Exception & e)
     {
-#ifdef NDEBUG
-        /// Protect against concurrent file delition.
         if (e.code() == ErrorCodes::FILE_DOESNT_EXIST)
         {
             LOG_WARNING(
@@ -334,7 +342,6 @@ void DiskCache::removeCacheIfExists(const String & path)
                 path);
             return;
         }
-#endif
         throw;
     }
 }
@@ -350,13 +357,15 @@ void DiskCache::removeCacheIfExistsRecursive(const String & path)
 bool DiskCache::removeFile(const String & path)
 {
     removeCacheIfExists(path);
-    return DiskDecorator::removeFile(path);
+    bool removed = DiskDecorator::removeFile(path);
+    return removed;
 }
 
 bool DiskCache::removeFileIfExists(const String & path)
 {
     removeCacheIfExists(path);
-    return DiskDecorator::removeFileIfExists(path);
+    bool removed = DiskDecorator::removeFileIfExists(path);
+    return removed;
 }
 
 void DiskCache::removeDirectory(const String & path)
@@ -371,12 +380,50 @@ void DiskCache::removeRecursive(const String & path)
     DiskDecorator::removeRecursive(path);
 }
 
+bool DiskCache::removeSharedFile(const String & path, bool keep_in_fs)
+{
+    removeCacheIfExists(path);
+    bool removed = DiskDecorator::removeSharedFile(path, keep_in_fs);
+    return removed;
+}
+
+bool DiskCache::removeSharedFileIfExists(const String & path, bool keep_in_fs)
+{
+    removeCacheIfExists(path);
+    bool removed = DiskDecorator::removeSharedFileIfExists(path, keep_in_fs);
+    return removed;
+}
+
+void DiskCache::removeSharedFiles(
+    const RemoveBatchRequest & requests, bool keep_all_batch_data, const NameSet & file_names_remove_metadata_only)
+{
+    for (const auto & req : requests)
+        removeCacheIfExists(req.path);
+    DiskDecorator::removeSharedFiles(requests, keep_all_batch_data, file_names_remove_metadata_only);
+}
+
+void DiskCache::removeSharedRecursive(
+    const String & path, bool keep_all_batch_data, const NameSet & file_names_remove_metadata_only)
+{
+    removeCacheIfExists(path);
+    DiskDecorator::removeSharedRecursive(path, keep_all_batch_data, file_names_remove_metadata_only);
+}
+
+void DiskCache::clearDirectory(const String & path)
+{
+    removeCacheIfExistsRecursive(path);
+    DiskDecorator::clearDirectory(path);
+}
+
 ReservationPtr DiskCache::reserve(UInt64 bytes)
 {
     auto reservation = delegate->reserve(bytes);
+
     if (!reservation)
         return {};
-    return std::make_unique<DiskCacheReservation>(std::static_pointer_cast<DiskCache>(shared_from_this()), std::move(reservation));
+
+    return std::make_unique<DiskCacheReservation>(
+        std::static_pointer_cast<DiskCache>(shared_from_this()), std::move(reservation));
 }
 
 void registerDiskCache(DiskFactory & factory)
