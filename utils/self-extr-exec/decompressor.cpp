@@ -1,6 +1,6 @@
-#include <cstddef>
-#include <cstdio>
-#include <cstring>
+//#include <cstddef>
+//#include <cstdio>
+//#include <cstring>
 #include <zstd.h>
 #include <sys/mman.h>
 #include <sys/statfs.h>
@@ -8,6 +8,8 @@
 #include <sys/wait.h>
 #include <unistd.h>
 #include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
 
 #include "types.h"
 
@@ -18,7 +20,7 @@ int doDecompress(char * input, char * output, off_t & in_offset, off_t & out_off
     size_t decompressed_size = ZSTD_decompressDCtx(dctx, output + out_offset, output_size, input + in_offset, input_size);
     if (ZSTD_isError(decompressed_size))
     {
-        printf("%s\n", ZSTD_getErrorName(decompressed_size));
+        fprintf(stderr, "Error (ZSTD): %zu %s\n", decompressed_size, ZSTD_getErrorName(decompressed_size));
         return 1;
     }
     return 0;
@@ -37,7 +39,7 @@ int decompress(char * input, char * output, off_t start, off_t end, size_t max_n
     ZSTD_DCtx * dctx = ZSTD_createDCtx();
     if (dctx == nullptr)
     {
-        printf("Failed to create context for compression");
+        fprintf(stderr, "Error (ZSTD): failed to create decompression context\n");
         return 1;
     }
     pid_t pid;
@@ -49,14 +51,16 @@ int decompress(char * input, char * output, off_t start, off_t end, size_t max_n
         size = ZSTD_findFrameCompressedSize(input + in_pointer, max_block_size);
         if (ZSTD_isError(size))
         {
-            printf("%s\n", ZSTD_getErrorName(size));
+            fprintf(stderr, "Error (ZSTD): %zu %s\n", size, ZSTD_getErrorName(size));
+            error_happened = true;
             break;
         }
 
         decompressed_size = ZSTD_getFrameContentSize(input + in_pointer, max_block_size);
         if (ZSTD_isError(decompressed_size))
         {
-            printf("%s\n", ZSTD_getErrorName(decompressed_size));
+            fprintf(stderr, "Error (ZSTD): %zu %s\n", decompressed_size, ZSTD_getErrorName(decompressed_size));
+            error_happened = true;
             break;
         }
 
@@ -64,13 +68,13 @@ int decompress(char * input, char * output, off_t start, off_t end, size_t max_n
         if (-1 == pid)
         {
             perror(nullptr);
-            /// Decompress data in main process. Exit if error happens
+            /// If fork failed just decompress data in main process.
             if (0 != doDecompress(input, output, in_pointer, out_pointer, size, max_block_size, dctx))
                 break;
         }
         else if (pid == 0)
         {
-            /// Decompress data. Exit if error happens
+            /// Decompress data in child process.
             if (0 != doDecompress(input, output, in_pointer, out_pointer, size, max_block_size, dctx))
                 exit(1);
             exit(0);
@@ -106,9 +110,7 @@ int decompress(char * input, char * output, off_t start, off_t end, size_t max_n
         waitpid(0, &status, 0);
 
         if (WEXITSTATUS(status) != 0)
-        {
             error_happened = true;
-        }
 
         --number_of_forks;
     }
@@ -168,7 +170,7 @@ int decompressFiles(int input_fd, char * path, char * name, bool & have_compress
     }
     if (fs_info.f_blocks * info_in.st_blksize < decompressed_full_size)
     {
-        printf("Not enough space for decompression. Have %lu, need %zu.",
+        fprintf(stderr, "Not enough space for decompression. Have %lu, need %zu.",
                 fs_info.f_blocks * info_in.st_blksize, decompressed_full_size);
         return 1;
     }
@@ -323,7 +325,7 @@ int main(int argc, char* argv[])
     /// Decompress all files
     if (0 != decompressFiles(input_fd, path, name, have_compressed_analoge))
     {
-        printf("Error happened");
+        printf("Error happened during decompression.\n");
         if (0 != close(input_fd))
             perror(nullptr);
         return 1;
@@ -340,7 +342,7 @@ int main(int argc, char* argv[])
 
     if (!have_compressed_analoge)
     {
-        printf("Can't apply arguments to this binary");
+        printf("No target executable - decompression only was performed.\n");
         /// remove file
         execlp("rm", "rm", argv[0], NULL);
         perror(nullptr);

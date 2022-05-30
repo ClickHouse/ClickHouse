@@ -1,11 +1,12 @@
-#include <cstring>
-#include <iostream>
+
 #include <zstd.h>
 #include <sys/mman.h>
 #include <fcntl.h>
-#include <sys/stat.h>
 #include <unistd.h>
 #include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
+#include <errno.h>
 
 #include "types.h"
 
@@ -17,7 +18,7 @@ int doCompress(char * input, char * output, off_t & in_offset, off_t & out_offse
     size_t compressed_size = ZSTD_compress2(cctx, output + out_offset, output_size, input + in_offset, input_size);
     if (ZSTD_isError(compressed_size))
     {
-        std::cerr << "Cannot compress block with ZSTD: " + std::string(ZSTD_getErrorName(compressed_size)) << std::endl;
+        fprintf(stderr, "Error (ZSTD): %zu %s\n", compressed_size, ZSTD_getErrorName(compressed_size));
         return 1;
     }
     in_offset += input_size;
@@ -42,7 +43,7 @@ int compress(int in_fd, int out_fd, int level, off_t & pointer, const struct sta
     ZSTD_CCtx * cctx = ZSTD_createCCtx();
     if (cctx == nullptr)
     {
-        std::cerr << "Failed to create context for compression" << std::endl;
+        fprintf(stderr, "Error (ZSTD): failed to create compression context\n");
         return 1;
     }
 
@@ -52,13 +53,13 @@ int compress(int in_fd, int out_fd, int level, off_t & pointer, const struct sta
     check_result = ZSTD_CCtx_setParameter(cctx, ZSTD_c_compressionLevel, level);
     if (ZSTD_isError(check_result))
     {
-        std::cerr << "Failed to set compression level: " + std::string(ZSTD_getErrorName(check_result)) << std::endl;
+        fprintf(stderr, "Error (ZSTD): %zu %s\n", check_result, ZSTD_getErrorName(check_result));
         return 1;
     }
     check_result = ZSTD_CCtx_setParameter(cctx, ZSTD_c_checksumFlag, 1);
     if (ZSTD_isError(check_result))
     {
-        std::cerr << "Failed to set checksums: " + std::string(ZSTD_getErrorName(check_result)) << std::endl;
+        fprintf(stderr, "Error (ZSTD): %zu %s\n", check_result, ZSTD_getErrorName(check_result));
         return 1;
     }
 
@@ -87,10 +88,6 @@ int compress(int in_fd, int out_fd, int level, off_t & pointer, const struct sta
         return 1;
     }
 
-    /// TODO: Maybe make better information instead of offsets
-    std::cout << "Current offset in infile is|\t Output offset" << std::endl;
-    std::cout << in_offset << "\t\t\t\t" << pointer << std::endl;
-
     /// Compress data
     while (in_offset < info_in.st_size)
     {
@@ -118,7 +115,7 @@ int compress(int in_fd, int out_fd, int level, off_t & pointer, const struct sta
             return 1;
         }
         pointer += current_block_size;
-        std::cout << in_offset << "\t\t\t" << pointer << std::endl;
+        printf("...block compression rate: %.2f%%\n", static_cast<float>(current_block_size) / size * 100);
         current_block_size = 0;
     }
 
@@ -185,7 +182,7 @@ int compressFiles(char* filenames[], int count, int output_fd, int level, const 
     char * names[count];
     for (int i = 0; i < count; ++i)
     {
-        std::cout << "Start compression for " << filenames[i] << std::endl;
+        printf("Compressing: %s\n", filenames[i]);
 
         int input_fd = open(filenames[i], O_RDONLY);
         if (input_fd == -1)
@@ -217,11 +214,11 @@ int compressFiles(char* filenames[], int count, int output_fd, int level, const 
 
         if (info_in.st_size == 0)
         {
-            std::cout << "Empty input file will be skipped." << std::endl;
+            printf("...empty file, skipped.\n");
             continue;
         }
 
-        std::cout << "Input file current size is " << info_in.st_size << std::endl;
+        printf("Size: %ld\n", info_in.st_size);
 
         /// Save umask
         files_data[i].umask = info_in.st_mode;
@@ -291,7 +288,7 @@ int copy_decompressor(const char *self, int output_fd)
         s_sz -= sz;
     }
 
-    int decompressor_size = std::stoi(size_str);
+    int decompressor_size = atoi(size_str);
 
     if (-1 == lseek(input_fd, -(decompressor_size + 15), SEEK_END))
     {
@@ -334,11 +331,20 @@ int copy_decompressor(const char *self, int output_fd)
     return 0;
 }
 
+inline void usage(FILE * out, const char * name)
+{
+    fprintf(out,
+        "%s [--level=<level>] <output_file> <input_file> [... <input_file>]\n"
+        "\t--level - compression level, max is %d, negative - prefere speed over compression\n"
+        "\t          default is 5\n",
+        name, ZSTD_maxCLevel());
+}
+
 int main(int argc, char* argv[])
 {
-    if (argc < 3)
+    if (argc == 1)
     {
-        std::cout << "Not enough arguments.\ncompressor [OPTIONAL --level of compression] [file name for compressed file] [files that should be compressed]" << std::endl;
+        usage(stdout, argv[0]);
         return 0;
     }
 
@@ -348,8 +354,21 @@ int main(int argc, char* argv[])
     int level = 5;
     if (0 == memcmp(argv[1], "--level=", 8))
     {
-        level = strtol(argv[1] + 8, nullptr, 10);
+        level = atoi(argv[1] + 8);
         ++start_of_files;
+    }
+
+    if (argc < start_of_files + 1)
+    {
+        usage(stderr, argv[0]);
+        return 1;
+    }
+
+    struct stat info_out;
+    if (stat(argv[start_of_files], &info_out) != -1 || errno != ENOENT)
+    {
+        fprintf(stderr, "Error: output file [%s] already exists.\n", argv[start_of_files]);
+        return 1;
     }
 
     int output_fd = open(argv[start_of_files], O_RDWR | O_CREAT, 0775);
@@ -363,33 +382,25 @@ int main(int argc, char* argv[])
     if (copy_decompressor(argv[0], output_fd))
         return 1;
 
-    struct stat info_out;
     if (0 != fstat(output_fd, &info_out))
     {
         perror(nullptr);
         return 1;
     }
 
-    std::cout << "Compression with level " << level << std::endl;
+    printf("Compression with level %d\n", level);
     if (0 != compressFiles(&argv[start_of_files], argc - start_of_files, output_fd, level, info_out))
     {
-        std::cout << "Compression was not successful." << std::endl;
-
-        /// Cancel changes. Reset the file to its original state
-        if (0 != ftruncate(output_fd, info_out.st_size))
-        {
-            perror(nullptr);
-        }
-    }
-    else
-    {
-        std::cout << "Successfully compressed" << std::endl;
-    }
-
-    if (0 != close(output_fd))
-    {
-        perror(nullptr);
+        printf("Compression failed.\n");
+        close(output_fd);
+        unlink(argv[start_of_files - 1]);
         return 1;
     }
+
+    printf("Successfully compressed.\n");
+
+    if (0 != close(output_fd))
+        perror(nullptr);
+
     return 0;
 }
