@@ -213,7 +213,7 @@ HDFSFSPtr HDFSFSPool::unsafeGetFS()
     return pool[current_index++];
 }
 
-bool HDFSFSPool::tryCallFS(HDFSFSPtr & fs, std::function<bool(HDFSFSPtr &)> callback)
+bool HDFSFSPool::executeWithRetries(HDFSFSPtr & fs, std::function<bool(HDFSFSPtr &)> callback)
 {
     int retry = 0;
     while (retry++ < 3)
@@ -311,10 +311,10 @@ HDFSFSPoolPtr HDFSBuilderFSFactory::getFSPool(HDFSBuilderWrapperPtr builder) con
     return pool;
 }
 
-bool HDFSBuilderFSFactory::tryCallFS(HDFSBuilderWrapperPtr builder, HDFSFSPtr & fs, std::function<bool(HDFSFSPtr &)> callback) const
+bool HDFSBuilderFSFactory::executeWithRetries(HDFSBuilderWrapperPtr builder, HDFSFSPtr & fs, std::function<bool(HDFSFSPtr &)> callback) const
 {
     auto pool = getFSPool(std::move(builder));
-    return pool->tryCallFS(fs, callback);
+    return pool->executeWithRetries(fs, callback);
 }
 
 

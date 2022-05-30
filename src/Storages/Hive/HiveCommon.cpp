@@ -149,7 +149,7 @@ HiveMetastoreClient::HiveTableMetadata::getFilesByLocation(const HDFSBuilderWrap
 
     HDFSFileInfo ls;
     HDFSFSPtr fs = HDFSBuilderFSFactory::instance().getFS(builder);
-    HDFSBuilderFSFactory::instance().tryCallFS(
+    HDFSBuilderFSFactory::instance().executeWithRetries(
         builder,
         fs,
         [&](HDFSFSPtr & fs_) -> bool

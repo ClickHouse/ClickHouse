@@ -69,7 +69,7 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<S
         if (allow_reuse_hdfs_objects)
         {
             fs = HDFSBuilderFSFactory::instance().getFS(builder);
-            HDFSBuilderFSFactory::instance().tryCallFS(
+            HDFSBuilderFSFactory::instance().executeWithRetries(
                     builder,
                     fs,
                     [&](HDFSFSPtr & fs_) -> bool

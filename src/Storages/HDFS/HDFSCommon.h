@@ -111,7 +111,7 @@ public:
 
     HDFSFSPtr getFS();
 
-    bool tryCallFS(HDFSFSPtr & fs, std::function<bool(HDFSFSPtr &)> callback);
+    bool executeWithRetries(HDFSFSPtr & fs, std::function<bool(HDFSFSPtr &)> callback);
 
 private:
     HDFSFSPtr unsafeGetFS();
@@ -140,7 +140,7 @@ public:
 
     HDFSFSPtr getFS(HDFSBuilderWrapperPtr builder) const;
 
-    bool tryCallFS(HDFSBuilderWrapperPtr builder, HDFSFSPtr & fs, std::function<bool(HDFSFSPtr &)> callback) const;
+    bool executeWithRetries(HDFSBuilderWrapperPtr builder, HDFSFSPtr & fs, std::function<bool(HDFSFSPtr &)> callback) const;
 
 private:
     HDFSFSPoolPtr getFSPool(HDFSBuilderWrapperPtr builder) const;
