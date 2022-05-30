@@ -203,7 +203,7 @@ int compressFiles(char* filenames[], int count, int output_fd, int level, const 
             ++names[i];
         else
             names[i] = filenames[i];
-        files_data[i].name_length = strlen(names[i]);
+        files_data[i].name_length = strlen(names[i]) + 1;
         sum_file_size += files_data[i].name_length;
 
         /// read data about input file

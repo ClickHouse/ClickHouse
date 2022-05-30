@@ -122,7 +122,7 @@ int decompress(char * input, char * output, off_t start, off_t end, size_t max_n
 
 
 /// Read data about files and decomrpess them.
-int decompressFiles(int input_fd, char* argv[], bool & have_compressed_analoge)
+int decompressFiles(int input_fd, char * path, char * name, bool & have_compressed_analoge)
 {
     /// Read data about output file.
     /// Compressed data will replace data in file
@@ -180,34 +180,35 @@ int decompressFiles(int input_fd, char* argv[], bool & have_compressed_analoge)
         /// Read information about file
         file_info = *reinterpret_cast<FileData*>(input + files_pointer);
         files_pointer += sizeof(FileData);
-        char file_name[file_info.name_length + 1];
-        /// Filename should be ended with \0
-        memset(file_name, '\0', file_info.name_length + 1);
-        memcpy(file_name, input + files_pointer, file_info.name_length);
-        files_pointer += file_info.name_length;
 
-        /// Open file for decompressed data
-        int output_fd;
-        /// Check that name differs from executable filename
-        if (0 == memcmp(file_name, strrchr(argv[0], '/') + 1, file_info.name_length))
+        size_t file_name_len =
+            (strcmp(input + files_pointer, name) ? file_info.name_length : file_info.name_length + 13);
+
+        size_t file_path_len = path ? strlen(path) + 1 + file_name_len : file_name_len;
+
+        char file_name[file_path_len];
+        memset(file_name, '\0', file_path_len);
+        if (path)
         {
-            /// Add .decompressed
-            char new_file_name[file_info.name_length + 13];
-            memcpy(new_file_name, file_name, file_info.name_length);
-            memcpy(new_file_name + file_info.name_length, ".decompressed", 13);
-            output_fd = open(new_file_name, O_RDWR | O_CREAT, 0775);
+            strcat(file_name, path);
+            strcat(file_name, "/");
+        }
+        strcat(file_name, input + files_pointer);
+        files_pointer += file_info.name_length;
+        if (file_name_len != file_info.name_length)
+        {
+            strcat(file_name, ".decompressed");
             have_compressed_analoge = true;
         }
-        else
-        {
-            output_fd = open(file_name, O_RDWR | O_CREAT, file_info.umask);
-        }
+
+        int output_fd = open(file_name, O_RDWR | O_CREAT, file_info.umask);
+
         if (output_fd == -1)
         {
             perror(nullptr);
             if (0 != munmap(input, info_in.st_size))
                 perror(nullptr);
-            return 0;
+            return 1;
         }
 
         /// Prepare output file
@@ -295,17 +296,32 @@ void fillCommand(char command[], int argc, char * argv[], size_t length)
 
 int main(int argc, char* argv[])
 {
+    char file_path[strlen(argv[0]) + 1];
+    memset(file_path, 0, sizeof(file_path));
+    strcpy(file_path, argv[0]);
+
+    char * path = nullptr;
+    char * name = strrchr(file_path, '/');
+    if (name)
+    {
+        path = file_path;
+        *name = 0;
+        ++name;
+    }
+    else
+        name = file_path;
+
     int input_fd = open(argv[0], O_RDONLY);
     if (input_fd == -1)
     {
         perror(nullptr);
-        return 0;
+        return 1;
     }
 
     bool have_compressed_analoge = false;
 
     /// Decompress all files
-    if (0 != decompressFiles(input_fd, argv, have_compressed_analoge))
+    if (0 != decompressFiles(input_fd, path, name, have_compressed_analoge))
     {
         printf("Error happened");
         if (0 != close(input_fd))
@@ -326,15 +342,14 @@ int main(int argc, char* argv[])
     {
         printf("Can't apply arguments to this binary");
         /// remove file
-        char * name = strrchr(argv[0], '/') + 1;
-        execlp("rm", "rm", name, NULL);
+        execlp("rm", "rm", argv[0], NULL);
         perror(nullptr);
         return 1;
     }
     else
     {
         /// move decompressed file instead of this binary and apply command
-        char bash[] = "/usr/bin/bash";
+        char bash[] = "sh";
         char executable[] = "-c";
 
         /// length of forwarded args
@@ -348,8 +363,7 @@ int main(int argc, char* argv[])
 
         /// replace file and call executable
         char * newargv[] = { bash, executable, command, nullptr };
-        char * newenviron[] = { nullptr };
-        execve("/usr/bin/bash", newargv, newenviron);
+        execvp(bash, newargv);
 
         /// This part of code will be reached only if error happened
         perror(nullptr);
