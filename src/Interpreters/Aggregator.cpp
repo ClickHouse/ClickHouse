@@ -1073,7 +1073,7 @@ void NO_INLINE Aggregator::executeImplBatch(
         if (!no_more_keys && state.hasOnlyOneValueSinceLastReset())
         {
             auto add_into_aggregate_states_function_single_place = compiled_aggregate_functions_holder->compiled_aggregate_functions.add_into_aggregate_states_function_single_place;
-            add_into_aggregate_states_function_single_place(row_begin, row_end, columns_data.data(), places[0]);
+            add_into_aggregate_states_function_single_place(row_begin, row_end, columns_data.data(), places[row_begin]);
         }
         else
         {
@@ -1098,7 +1098,7 @@ void NO_INLINE Aggregator::executeImplBatch(
         {
             if (state.hasOnlyOneValueSinceLastReset())
             {
-                addBatchSinglePlace(row_begin, row_end, inst, places[0] + inst->state_offset, aggregates_pool);
+                addBatchSinglePlace(row_begin, row_end, inst, places[row_begin] + inst->state_offset, aggregates_pool);
                 continue;
             }
         }

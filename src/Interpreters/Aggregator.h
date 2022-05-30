@@ -1410,13 +1410,13 @@ private:
         size_t row_begin, size_t row_end,
         AggregateFunctionInstruction * inst,
         AggregateDataPtr * places,
-        Arena * aggregates_pool);
+        Arena * arena);
 
     static void addBatchSinglePlace(
         size_t row_begin, size_t row_end,
         AggregateFunctionInstruction * inst,
         AggregateDataPtr place,
-        Arena * aggregates_pool);
+        Arena * arena);
 };
 
 
