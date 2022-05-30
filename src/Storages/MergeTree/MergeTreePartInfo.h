@@ -77,7 +77,7 @@ struct MergeTreePartInfo
       lightweight_mutation(std::exchange(rhs.lightweight_mutation, 0))
     {
     }
- 
+
     MergeTreePartInfo & operator= (const MergeTreePartInfo & rhs)
     {
         partition_id = std::move(rhs.partition_id);

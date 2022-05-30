@@ -21,7 +21,6 @@ t_light	4	4_9_9_0_8	1
 7
 t_light	0	0_1_1_1_8	2
 t_light	1	1_2_2_1_8	1
-t_light	2	2_3_3_1_10	0
 t_light	3	3_4_4_1_8	2
 t_light	4	4_5_9_1_8	2
 -----Test lightweight mutation for table with MATERIALIZED column, scalar subquery mutations-----
