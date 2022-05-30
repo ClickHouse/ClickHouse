@@ -459,11 +459,26 @@ void optimizeMonotonousFunctionsInOrderBy(ASTSelectQuery * select_query, Context
     std::unordered_set<String> group_by_hashes;
     if (auto group_by = select_query->groupBy())
     {
-        for (auto & elem : group_by->children)
+        if (select_query->group_by_with_grouping_sets)
         {
-            auto hash = elem->getTreeHash();
-            String key = toString(hash.first) + '_' + toString(hash.second);
-            group_by_hashes.insert(key);
+            for (auto & set : group_by->children)
+            {
+                for (auto & elem : set->children)
+                {
+                    auto hash = elem->getTreeHash();
+                    String key = toString(hash.first) + '_' + toString(hash.second);
+                    group_by_hashes.insert(key);
+                }
+            }
+        }
+        else
+        {
+            for (auto & elem : group_by->children)
+            {
+                auto hash = elem->getTreeHash();
+                String key = toString(hash.first) + '_' + toString(hash.second);
+                group_by_hashes.insert(key);
+            }
         }
     }
 

@@ -476,9 +476,9 @@ private:
 };
 
 
-bool StorageHDFS::isColumnOriented() const
+bool StorageHDFS::supportsSubsetOfColumns() const
 {
-    return format_name != "Distributed" && FormatFactory::instance().checkIfFormatIsColumnOriented(format_name);
+    return format_name != "Distributed" && FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(format_name);
 }
 
 Pipe StorageHDFS::read(
@@ -527,7 +527,7 @@ Pipe StorageHDFS::read(
 
     ColumnsDescription columns_description;
     Block block_for_format;
-    if (isColumnOriented())
+    if (supportsSubsetOfColumns())
     {
         auto fetch_columns = column_names;
         const auto & virtuals = getVirtuals();
