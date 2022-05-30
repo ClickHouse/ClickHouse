@@ -8,6 +8,7 @@
 #include <base/types.h>
 #include <base/DayNum.h>
 #include <Storages/MergeTree/MergeTreeDataFormatVersion.h>
+#include <mutex>
 
 
 namespace DB
@@ -23,6 +24,7 @@ struct MergeTreePartInfo
     UInt32 level = 0;
     Int64 mutation = 0;   /// If the part has been mutated or contains mutated parts, is equal to mutation version number.
     Int64 lightweight_mutation = 0; /// If the part has been lightweight mutated, is equal to or higher than lightweight mutation version number.
+    mutable std::mutex mutex;
 
     bool use_leagcy_max_level = false;  /// For compatibility. TODO remove it
 
@@ -54,10 +56,44 @@ struct MergeTreePartInfo
         return *this < rhs || rhs < *this;
     }
 
+    /// Copy constructor
+    MergeTreePartInfo(const MergeTreePartInfo & rhs)
+    {
+        partition_id = std::move(rhs.partition_id);
+        min_block = rhs.min_block;
+        max_block = rhs.max_block;
+        level = rhs.level;
+        mutation = rhs.mutation;
+        lightweight_mutation = rhs.lightweight_mutation;
+    }
+
+    /// Move constructor
+    MergeTreePartInfo(MergeTreePartInfo && rhs) noexcept
+    : partition_id(std::move(rhs.partition_id)),
+      min_block(std::exchange(rhs.min_block, 0)),
+      max_block(std::exchange(rhs.max_block, 0)),
+      level(std::exchange(rhs.level, 0)),
+      mutation(std::exchange(rhs.mutation, 0)),
+      lightweight_mutation(std::exchange(rhs.lightweight_mutation, 0))
+    {
+    }
+ 
+    MergeTreePartInfo & operator= (const MergeTreePartInfo & rhs)
+    {
+        partition_id = std::move(rhs.partition_id);
+        min_block = rhs.min_block;
+        max_block = rhs.max_block;
+        level = rhs.level;
+        mutation = rhs.mutation;
+        lightweight_mutation = rhs.lightweight_mutation;
+        return *this;
+    }
+
     /// Get block number that can be used to determine which mutations we still need to apply to this part
     /// (all mutations with version greater than this block number).
     Int64 getDataVersion() const
     {
+        std::lock_guard<std::mutex> lock(mutex);
         Int64 current_mutation = lightweight_mutation > mutation ? lightweight_mutation : mutation;
         return current_mutation ? current_mutation : min_block;
     }
@@ -90,12 +126,14 @@ struct MergeTreePartInfo
     /// Return part mutation version, if part wasn't mutated return zero
     Int64 getMutationVersion() const
     {
+        std::lock_guard<std::mutex> lock(mutex);
         Int64 current_mutation = lightweight_mutation > mutation ? lightweight_mutation : mutation;
         return current_mutation;
     }
 
     void setLightWeightMutationVersion(Int64 value)
     {
+        std::lock_guard<std::mutex> lock(mutex);
         lightweight_mutation = value;
     }
 
