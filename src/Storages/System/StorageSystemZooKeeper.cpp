@@ -121,7 +121,7 @@ public:
             // We don't expect a "name" contains a path.
             if (name.find('/') != std::string::npos)
             {
-                throw Exception("column name should not contains \'/\'", ErrorCodes::BAD_ARGUMENTS);
+                throw Exception("Column `name` should not contain '/'", ErrorCodes::BAD_ARGUMENTS);
             }
 
             std::vector<String> path_vec;
