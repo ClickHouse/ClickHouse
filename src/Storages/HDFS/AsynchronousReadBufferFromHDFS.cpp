@@ -48,11 +48,6 @@ AsynchronousReadBufferFromHDFS::AsynchronousReadBufferFromHDFS(
     ProfileEvents::increment(ProfileEvents::RemoteFSBuffers);
     if (use_prefetch)
         prefetch();
-
-    sum_interval = 0;
-    sum_duration = 0;
-    sum_wait = 0;
-    next_times = 0;
 }
 
 bool AsynchronousReadBufferFromHDFS::hasPendingDataToRead()
@@ -221,8 +216,10 @@ off_t AsynchronousReadBufferFromHDFS::seek(off_t offset, int whence)
     /// First reset the buffer so the next read will fetch new data to the buffer.
     resetWorkingBuffer();
 
+    ++seek_times;
     impl->seek(new_pos, SEEK_SET);
     file_offset_of_buffer_end = new_pos;
+
     return new_pos;
 }
 
@@ -240,10 +237,11 @@ AsynchronousReadBufferFromHDFS::~AsynchronousReadBufferFromHDFS()
 {
     LOG_TEST(
         log,
-        "object:{} path:{} next_times:{} interval:{}|{} duration:{}|{} wait:{}|{}",
+        "object:{} path:{} next_times:{} seek_times:{} interval:{}|{} duration:{}|{} wait:{}|{}",
         reinterpret_cast<std::uintptr_t>(this),
         getFileName(),
         next_times,
+        seek_times,
         sum_interval,
         double(sum_interval)/next_times,
         sum_duration,
