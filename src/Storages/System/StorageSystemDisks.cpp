@@ -2,7 +2,6 @@
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <QueryPipeline/Pipe.h>
 #include <Interpreters/Context.h>
-#include <Disks/IDiskRemote.h>
 
 namespace DB
 {
