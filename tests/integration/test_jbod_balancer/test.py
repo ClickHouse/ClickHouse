@@ -161,11 +161,13 @@ def test_replicated_balanced_merge_fetch(start_cluster):
         p = Pool(20)
 
         def task(i):
-            print("Processing insert {}/{}".format(i, 200))
+            print("Processing insert {}/{}".format(i, 80))
             # around 1k per block
             node1.query(
                 "insert into tbl select randConstant() % 2, randomPrintableASCII(16) from numbers(50)"
             )
+
+            # Fill jbod disks with garbage data
             node1.query(
                 "insert into tmp1 select randConstant() % 2, randomPrintableASCII(16) from numbers(50)"
             )
@@ -179,7 +181,7 @@ def test_replicated_balanced_merge_fetch(start_cluster):
                 "insert into tmp2 select randConstant() % 2, randomPrintableASCII(16) from numbers(50)"
             )
 
-        p.map(task, range(200))
+        p.map(task, range(80))
 
         node2.query("SYSTEM SYNC REPLICA tbl", timeout=10)
 
