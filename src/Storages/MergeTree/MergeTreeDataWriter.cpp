@@ -451,6 +451,7 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPart(
                 temp_part.streams.emplace_back(std::move(stream));
         }
     }
+
     auto finalizer = out->finalizePartAsync(
         new_data_part,
         data_settings->fsync_after_insert,
@@ -458,8 +459,6 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPart(
 
     temp_part.part = new_data_part;
     temp_part.streams.emplace_back(TemporaryPart::Stream{.stream = std::move(out), .finalizer = std::move(finalizer)});
-
-    /// out.finish(new_data_part, std::move(written_files), sync_on_insert);
 
     ProfileEvents::increment(ProfileEvents::MergeTreeDataWriterRows, block.rows());
     ProfileEvents::increment(ProfileEvents::MergeTreeDataWriterUncompressedBytes, block.bytes());
