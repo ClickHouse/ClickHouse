@@ -81,7 +81,7 @@ void IInterpreterUnionOrSelectQuery::addLimitsAndQuotas(QueryPipeline & pipeline
     pipeline.setQuota(quota);
 }
 
-void IInterpreterUnionOrSelectQuery::addLimitsAndQuotas(QueryPipeline & pipeline)
+void IInterpreterUnionOrSelectQuery::addLimitsAndQuotas(QueryPipeline & pipeline) const
 {
     addLimitsAndQuotas(pipeline, *context, options, hasRemoteStorage());
 }

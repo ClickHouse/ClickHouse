@@ -648,6 +648,14 @@ void InterpreterSelectQuery::buildQueryPlan(QueryPlan & query_plan)
         query_plan.addStorageHolder(storage);
 }
 
+void InterpreterSelectQuery::addLimitsAndQuotas(QueryPipeline & pipeline) const
+{
+    if (interpreter_subquery)
+        interpreter_subquery->addLimitsAndQuotas(pipeline);
+    else
+        IInterpreterUnionOrSelectQuery::addLimitsAndQuotas(pipeline, *context, options, hasRemoteStorage());
+}
+
 BlockIO InterpreterSelectQuery::execute()
 {
     BlockIO res;

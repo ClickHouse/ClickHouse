@@ -29,6 +29,8 @@ public:
 
     BlockIO execute() override;
 
+    void addLimitsAndQuotas(QueryPipeline & pipeline) const final;
+
     bool ignoreLimits() const override { return options.ignore_limits; }
     bool ignoreQuota() const override { return options.ignore_quota; }
 
