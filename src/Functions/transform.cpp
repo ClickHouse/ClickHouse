@@ -207,22 +207,6 @@ public:
         ExtraBlockPtr extra_block_unused;
         hash_join->joinBlock(left_block, extra_block_unused);
 
-        // std::cerr << "left block columns: ";
-
-        // for (auto &column_ : left_block.getColumns()) {
-        //     for (size_t i = 0; i < column_->size(); ++i) {
-        //         std::cerr << column_->get64(i) << ' ';
-        //     }
-        //     std::cerr << '\n';
-        // }
-
-        // std::cerr << '\n';
-        // std::cerr << "my_name ";
-        // for (auto &my_name : left_block.getNames()) {
-        //     std::cerr << my_name << ' ';
-        // }
-        // std::cerr << '\n';
-
         /// value_column should contain result of transformation
         const ColumnWithTypeAndName & value_column = left_block.getByName("to_");
         
