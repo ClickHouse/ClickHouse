@@ -911,14 +911,14 @@ public:
     AddedColumns(
         const Block & block_with_columns_to_add,
         const Block & block,
-        const Block & saved_block_sample_,
+        const Block & saved_block_sample,
         const HashJoin & join,
         std::vector<JoinOnKeyColumns> && join_on_keys_,
         bool is_asof_join,
         bool is_join_get_)
         : join_on_keys(join_on_keys_)
         , rows_to_add(block.rows())
-        , saved_block_sample(saved_block_sample_)
+        , sample_block(block_with_columns_to_add)
         , is_join_get(is_join_get_)
     {
         size_t num_columns_to_add = block_with_columns_to_add.columns();
@@ -959,24 +959,27 @@ public:
     }
 
     template <bool has_defaults>
-    void appendFromBlock(const Block & block, size_t row_num)
+    void appendFromBlock(Block block, size_t row_num)
     {
-        assertBlocksHaveEqualStructure(saved_block_sample, block, "appendFromBlock");
-
         if constexpr (has_defaults)
             applyLazyDefaults();
+
+        for (size_t j = 0, size = right_indexes.size(); j < size; ++j)
+        {
+            ColumnWithTypeAndName & column_from_block = block.getByPosition(right_indexes[j]);
+            if (type_name[j].type->lowCardinality() != column_from_block.type->lowCardinality())
+            {
+                JoinCommon::changeLowCardinalityInplace(column_from_block);
+            }
+        }
+        assertBlocksHaveEqualStructure(sample_block, block, "appendFromBlock");
 
         if (is_join_get)
         {
             /// If it's joinGetOrNull, we need to wrap not-nullable columns in StorageJoin.
             for (size_t j = 0, size = right_indexes.size(); j < size; ++j)
             {
-                auto column_from_block = block.getByPosition(right_indexes[j]);
-                if (type_name[j].type->lowCardinality() != column_from_block.type->lowCardinality())
-                {
-                    JoinCommon::changeLowCardinalityInplace(column_from_block);
-                }
-
+                const auto & column_from_block = block.getByPosition(right_indexes[j]);
                 if (auto * nullable_col = typeid_cast<ColumnNullable *>(columns[j].get());
                     nullable_col && !column_from_block.column->isNullable())
                     nullable_col->insertFromNotNullable(*column_from_block.column, row_num);
@@ -988,11 +991,7 @@ public:
         {
             for (size_t j = 0, size = right_indexes.size(); j < size; ++j)
             {
-                auto column_from_block = block.getByPosition(right_indexes[j]);
-                if (type_name[j].type->lowCardinality() != column_from_block.type->lowCardinality())
-                {
-                    JoinCommon::changeLowCardinalityInplace(column_from_block);
-                }
+                const auto & column_from_block = block.getByPosition(right_indexes[j]);
                 columns[j]->insertFrom(*column_from_block.column, row_num);
             }
         }
@@ -1028,7 +1027,7 @@ private:
     size_t lazy_defaults_count = 0;
     /// for ASOF
     const IColumn * left_asof_key = nullptr;
-    Block saved_block_sample;
+    Block sample_block;
 
     bool is_join_get;
 
