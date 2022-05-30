@@ -38,7 +38,7 @@ static constexpr auto threshold = 2;
 static constexpr double EPS = 1e-9;
 static constexpr double RANK_CORRECTION = 1e9;
 static constexpr double MAX_RANK = RANK_CORRECTION;
-static constexpr double STRING_COMPUTE_PENALTY = 10;
+static constexpr double STRING_COMPUTE_PENALTY = 100;
 static constexpr double MAX_SELECTIVITY = 1 - EPS;
 
 namespace
