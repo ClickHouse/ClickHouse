@@ -1151,7 +1151,7 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
     if (remove_duplicates)
         renameDuplicatedColumns(select_query);
 
-    /// Perform it before analyzing JOINs, because it may change number of columns with names unique and break some login inside JOINs
+    /// Perform it before analyzing JOINs, because it may change number of columns with names unique and break some logic inside JOINs
     if (settings.optimize_normalize_count_variants)
         TreeOptimizer::optimizeCountConstantAndSumOne(query);
 
