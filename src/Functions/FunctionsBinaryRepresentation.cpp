@@ -91,7 +91,7 @@ struct HexImpl
         out_vec.resize(size * hex_length);
 
         size_t pos = 0;
-        char * out = reinterpret_cast<char *>(&out_vec[0]);
+        char * out = reinterpret_cast<char *>(out_vec.data());
         for (size_t i = 0; i < size; ++i)
         {
             const UInt8 * in_pos = reinterpret_cast<const UInt8 *>(&in_vec[i]);
