@@ -122,10 +122,10 @@ DiskObjectStorage::Metadata DiskObjectStorage::readUpdateAndStoreMetadata(const 
 }
 
 
-DiskObjectStorage::Metadata DiskObjectStorage::readUpdateStoreMetadataAndRemove(const String & path, bool sync, DiskObjectStorage::MetadataUpdater updater)
+void DiskObjectStorage::readUpdateStoreMetadataAndRemove(const String & path, bool sync, DiskObjectStorage::MetadataUpdater updater)
 {
     std::unique_lock lock(metadata_mutex);
-    return Metadata::readUpdateStoreMetadataAndRemove(remote_fs_root_path, metadata_disk, path, sync, updater);
+    Metadata::readUpdateStoreMetadataAndRemove(remote_fs_root_path, metadata_disk, path, sync, updater);
 }
 
 DiskObjectStorage::Metadata DiskObjectStorage::readOrCreateUpdateAndStoreMetadata(const String & path, WriteMode mode, bool sync, DiskObjectStorage::MetadataUpdater updater)
@@ -174,8 +174,13 @@ void DiskObjectStorage::getRemotePathsRecursive(const String & local_path, std::
         }
         catch (const Exception & e)
         {
-            if (e.code() == ErrorCodes::FILE_DOESNT_EXIST)
+            /// Unfortunately in rare cases it can happen when files disappear
+            /// or can be empty in case of operation interruption (like cancelled metadata fetch)
+            if (e.code() == ErrorCodes::FILE_DOESNT_EXIST ||
+                e.code() == ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF ||
+                e.code() == ErrorCodes::CANNOT_READ_ALL_DATA)
                 return;
+
             throw;
         }
     }
@@ -185,6 +190,15 @@ void DiskObjectStorage::getRemotePathsRecursive(const String & local_path, std::
         try
         {
             it = iterateDirectory(local_path);
+        }
+        catch (const Exception & e)
+        {
+            /// Unfortunately in rare cases it can happen when files disappear
+            /// or can be empty in case of operation interruption (like cancelled metadata fetch)
+            if (e.code() == ErrorCodes::FILE_DOESNT_EXIST ||
+                e.code() == ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF ||
+                e.code() == ErrorCodes::CANNOT_READ_ALL_DATA)
+                return;
         }
         catch (const fs::filesystem_error & e)
         {

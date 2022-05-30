@@ -10,6 +10,10 @@ namespace ErrorCodes
 {
     extern const int UNKNOWN_FORMAT;
     extern const int PATH_ACCESS_DENIED;
+    extern const int FILE_DOESNT_EXIST;
+    extern const int ATTEMPT_TO_READ_AFTER_EOF;
+    extern const int CANNOT_READ_ALL_DATA;
+    extern const int CANNOT_OPEN_FILE;
 }
 
 DiskObjectStorageMetadata DiskObjectStorageMetadata::readMetadata(const String & remote_fs_root_path_, DiskPtr metadata_disk_, const String & metadata_file_path_)
@@ -44,16 +48,38 @@ DiskObjectStorageMetadata DiskObjectStorageMetadata::createUpdateAndStoreMetadat
     return result;
 }
 
-DiskObjectStorageMetadata DiskObjectStorageMetadata::readUpdateStoreMetadataAndRemove(const String & remote_fs_root_path_, DiskPtr metadata_disk_, const String & metadata_file_path_, bool sync, DiskObjectStorageMetadataUpdater updater)
+void DiskObjectStorageMetadata::readUpdateStoreMetadataAndRemove(const String & remote_fs_root_path_, DiskPtr metadata_disk_, const String & metadata_file_path_, bool sync, DiskObjectStorageMetadataUpdater updater)
 {
-    DiskObjectStorageMetadata result(remote_fs_root_path_, metadata_disk_, metadata_file_path_);
-    result.load();
-    if (updater(result))
-        result.save(sync);
-    metadata_disk_->removeFile(metadata_file_path_);
+    /// Very often we are deleting metadata from some unfinished operation (like fetch of metadata)
+    /// in this case metadata file can be incomplete/empty and so on. It's ok to remove it in this case
+    /// because we cannot do anything better.
+    try
+    {
+        DiskObjectStorageMetadata metadata(remote_fs_root_path_, metadata_disk_, metadata_file_path_);
+        metadata.load();
+        if (updater(metadata))
+            metadata.save(sync);
 
-    return result;
+        metadata_disk_->removeFile(metadata_file_path_);
+    }
+    catch (Exception & ex)
+    {
+        /// If we have some broken half-empty file just remove it
+        if (ex.code() == ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF
+            || ex.code() == ErrorCodes::CANNOT_READ_ALL_DATA
+            || ex.code() == ErrorCodes::CANNOT_OPEN_FILE)
+        {
+            LOG_INFO(&Poco::Logger::get("ObjectStorageMetadata"), "Failed to read metadata file {} before removal because it's incomplete or empty. "
+                     "It's Ok and can happen after operation interruption (like metadata fetch), so removing as is", metadata_file_path_);
+            metadata_disk_->removeFile(metadata_file_path_);
+        }
 
+        /// If file already removed, than nothing to do
+        if (ex.code() == ErrorCodes::FILE_DOESNT_EXIST)
+            return;
+
+        throw;
+    }
 }
 
 DiskObjectStorageMetadata DiskObjectStorageMetadata::createAndStoreMetadataIfNotExists(const String & remote_fs_root_path_, DiskPtr metadata_disk_, const String & metadata_file_path_, bool sync, bool overwrite)
