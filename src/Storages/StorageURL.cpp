@@ -445,14 +445,23 @@ void StorageURLSink::consume(Chunk chunk)
 
 void StorageURLSink::onException()
 {
-    write_buf->finalize();
+    onFinish();
 }
 
 void StorageURLSink::onFinish()
 {
-    writer->finalize();
-    writer->flush();
-    write_buf->finalize();
+    try
+    {
+        writer->finalize();
+        writer->flush();
+        write_buf->finalize();
+    }
+    catch (...)
+    {
+        /// Stop ParallelFormattingOutputFormat correctly.
+        writer.reset();
+        throw;
+    }
 }
 
 class PartitionedStorageURLSink : public PartitionedSink
