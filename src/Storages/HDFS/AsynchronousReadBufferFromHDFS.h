@@ -65,10 +65,11 @@ private:
 
     /// Metrics to profile prefetch
     Stopwatch interval_watch;
-    Int64 sum_interval;
-    Int64 sum_duration;
-    Int64 sum_wait;
-    Int64 next_times;
+    Int64 sum_interval{0};
+    Int64 sum_duration{0};
+    Int64 sum_wait{0};
+    Int64 next_times{0};
+    Int64 seek_times{0};
 };
 
 }
