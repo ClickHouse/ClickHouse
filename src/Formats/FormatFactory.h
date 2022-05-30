@@ -210,6 +210,9 @@ public:
     bool isInputFormat(const String & name) const;
     bool isOutputFormat(const String & name) const;
 
+    /// Check that format with specified name exists and throw an exception otherwise.
+    void checkFormatName(const String & name) const;
+
 private:
     FormatsDictionary dict;
     FileExtensionFormats file_extension_formats;
