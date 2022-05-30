@@ -584,6 +584,13 @@ bool FormatFactory::checkIfFormatHasAnySchemaReader(const String & name) const
     return checkIfFormatHasSchemaReader(name) || checkIfFormatHasExternalSchemaReader(name);
 }
 
+void FormatFactory::checkFormatName(const String & name) const
+{
+    auto it = dict.find(name);
+    if (it == dict.end())
+        throw Exception("Unknown format " + name, ErrorCodes::UNKNOWN_FORMAT);
+}
+
 FormatFactory & FormatFactory::instance()
 {
     static FormatFactory ret;
