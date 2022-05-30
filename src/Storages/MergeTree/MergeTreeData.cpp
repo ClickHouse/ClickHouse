@@ -361,8 +361,8 @@ MergeTreeData::MergeTreeData(
             background_moves_assignee.trigger();
     };
 
-    reloadStatistics();
     if (context_->getSettingsRef().allow_experimental_stats_for_prewhere_optimization) {
+        updateStatisticsByPartition();
         stats_merger_task = getContext()->getSchedulePool().createTask(
             "MergeTreeStatisticsMerger",
             [this, period = settings->experimantal_stats_update_period] {
