@@ -10,6 +10,25 @@
             [jepsen.control.util :as cu]
             [jepsen.os.ubuntu :as ubuntu]))
 
+
+(ns jepsen.control.scp)
+
+(defn scp!
+  "Runs an SCP command by shelling out. Takes a conn-spec (used for port, key,
+  etc), a seq of sources, and a single destination, all as strings."
+  [conn-spec sources dest]
+  (apply util/sh "scp" "-rpC"
+         "-P" (str (:port conn-spec))
+         (concat (when-let [k (:private-key-path conn-spec)]
+                   ["-i" k])
+                 (if-not (:strict-host-key-checking conn-spec)
+                   ["-o StrictHostKeyChecking=no"])
+                 sources
+                 [dest]))
+  nil)
+
+(ns jepsen.clickhouse-keeper.db)
+
 (defn get-clickhouse-url
   [url]
   (non-precise-cached-wget! url))
