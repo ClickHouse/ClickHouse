@@ -124,6 +124,7 @@ void StorageView::read(
 
     auto options = SelectQueryOptions(QueryProcessingStage::Complete, 0, false, query_info.settings_limit_offset_done);
     InterpreterSelectWithUnionQuery interpreter(current_inner_query, context, options, column_names);
+    interpreter.addStorageLimits(*query_info.storage_limits);
     interpreter.buildQueryPlan(query_plan);
 
     /// It's expected that the columns read from storage are not constant.

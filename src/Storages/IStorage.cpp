@@ -141,7 +141,7 @@ void IStorage::readFromPipe(
     }
     else
     {
-        auto read_step = std::make_unique<ReadFromStorageStep>(std::move(pipe), storage_name);
+        auto read_step = std::make_unique<ReadFromStorageStep>(std::move(pipe), storage_name, query_info.storage_limits);
         query_plan.addStep(std::move(read_step));
     }
 }

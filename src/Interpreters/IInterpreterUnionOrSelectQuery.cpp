@@ -54,13 +54,12 @@ static StreamLocalLimits getLimitsForStorage(const Settings & settings, const Se
     return limits;
 }
 
-void IInterpreterUnionOrSelectQuery::addLimitsAndQuotas(QueryPipeline & pipeline, const Context & context, const SelectQueryOptions & options, bool has_remote)
+StorageLimits IInterpreterUnionOrSelectQuery::getStorageLimits(const Context & context, const SelectQueryOptions & options)
 {
     const auto & settings = context.getSettingsRef();
 
     StreamLocalLimits limits;
     SizeLimits leaf_limits;
-    std::shared_ptr<const EnabledQuota> quota;
 
     /// Set the limits and quota for reading data, the speed and time of the query.
     if (!options.ignore_limits)
@@ -69,21 +68,28 @@ void IInterpreterUnionOrSelectQuery::addLimitsAndQuotas(QueryPipeline & pipeline
         leaf_limits = SizeLimits(settings.max_rows_to_read_leaf, settings.max_bytes_to_read_leaf, settings.read_overflow_mode_leaf);
     }
 
+    return {limits, leaf_limits};
+}
+
+void IInterpreterUnionOrSelectQuery::addLimitsAndQuotas(QueryPipeline & pipeline, const Context & context, const SelectQueryOptions & options)
+{
+    std::shared_ptr<const EnabledQuota> quota;
+
     if (!options.ignore_quota && (options.to_stage == QueryProcessingStage::Complete))
         quota = context.getQuota();
 
-    if (!has_remote)
-    {
-        pipeline.setLeafLimits(leaf_limits);
-    }
-
-    pipeline.setLimits(limits);
     pipeline.setQuota(quota);
 }
 
 void IInterpreterUnionOrSelectQuery::addLimitsAndQuotas(QueryPipeline & pipeline) const
 {
-    addLimitsAndQuotas(pipeline, *context, options, hasRemoteStorage());
+    addLimitsAndQuotas(pipeline, *context, options);
+}
+
+void IInterpreterUnionOrSelectQuery::addStorageLimits(const StorageLimitsList & limits)
+{
+    for (const auto & val : limits)
+        storage_limits.push_back(val);
 }
 
 }

@@ -345,6 +345,7 @@ void StorageBuffer::read(
         auto interpreter = InterpreterSelectQuery(
                 query_info.query, local_context, std::move(pipe_from_buffers),
                 SelectQueryOptions(processed_stage).ignoreProjections());
+        interpreter.addStorageLimits(*query_info.storage_limits);
         interpreter.buildQueryPlan(buffers_plan);
     }
     else
@@ -383,6 +384,9 @@ void StorageBuffer::read(
                         query_info.prewhere_info->remove_prewhere_column);
             });
         }
+
+        for (const auto & processor : pipe_from_buffers.getProcessors())
+            processor->setStorageLimits(query_info.storage_limits);
 
         auto read_from_buffers = std::make_unique<ReadFromPreparedSource>(std::move(pipe_from_buffers));
         read_from_buffers->setStepDescription("Read from buffers of Buffer table");

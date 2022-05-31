@@ -264,6 +264,11 @@ void InterpreterSelectWithUnionQuery::buildQueryPlan(QueryPlan & query_plan)
     size_t num_plans = nested_interpreters.size();
     const Settings & settings = context->getSettingsRef();
 
+    auto local_limits = getStorageLimits(*context, options);
+    storage_limits.emplace_back(local_limits);
+    for (auto & interpreter : nested_interpreters)
+        interpreter->addStorageLimits(storage_limits);
+
     /// Skip union for single interpreter.
     if (num_plans == 1)
     {

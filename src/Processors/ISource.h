@@ -9,7 +9,8 @@ namespace DB
 class ISource : public IProcessor
 {
 private:
-    ReadProgress read_progress;
+    ReadProgressCounters read_progress;
+    std::shared_ptr<const StorageLimitsList> storage_limits;
     bool read_progress_was_set = false;
     bool auto_progress;
 
@@ -27,12 +28,15 @@ protected:
 
 public:
     explicit ISource(Block header, bool enable_auto_progress = true);
+    ~ISource() override;
 
     Status prepare() override;
     void work() override;
 
     OutputPort & getPort() { return output; }
     const OutputPort & getPort() const { return output; }
+
+    void setStorageLimits(const std::shared_ptr<const StorageLimitsList> & storage_limits_) final;
 
     /// Default implementation for all the sources.
     std::optional<ReadProgress> getReadProgress() final;

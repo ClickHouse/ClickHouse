@@ -98,6 +98,11 @@ InterpreterSelectIntersectExceptQuery::buildCurrentChildInterpreter(const ASTPtr
 
 void InterpreterSelectIntersectExceptQuery::buildQueryPlan(QueryPlan & query_plan)
 {
+    auto local_limits = getStorageLimits(*context, options);
+    storage_limits.emplace_back(local_limits);
+    for (auto & interpreter : nested_interpreters)
+        interpreter->addStorageLimits(storage_limits);
+
     size_t num_plans = nested_interpreters.size();
     std::vector<std::unique_ptr<QueryPlan>> plans(num_plans);
     DataStreams data_streams(num_plans);

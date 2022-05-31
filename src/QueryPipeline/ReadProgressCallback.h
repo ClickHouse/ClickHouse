@@ -10,11 +10,12 @@ namespace DB
 class QueryStatus;
 class EnabledQuota;
 
+struct StorageLimits;
+using StorageLimitsList = std::list<StorageLimits>;
+
 class ReadProgressCallback
 {
 public:
-    void setLimits(const StreamLocalLimits & limits_) { limits = limits_; }
-    void setLeafLimits(const SizeLimits & leaf_limits_) {leaf_limits = leaf_limits_; }
     void setQuota(const std::shared_ptr<const EnabledQuota> & quota_) { quota = quota_; }
     void setProcessListElement(QueryStatus * elem);
     void setProgressCallback(const ProgressCallback & callback) { progress_callback = callback; }
@@ -24,11 +25,9 @@ public:
     /// For merges in mutations it may need special logic, it's done inside ProgressCallback.
     void disableProfileEventUpdate() { update_profile_events = false; }
 
-    bool onProgress(uint64_t read_rows, uint64_t read_bytes);
+    bool onProgress(uint64_t read_rows, uint64_t read_bytes, const StorageLimitsList & storage_limits);
 
 private:
-    StreamLocalLimits limits;
-    SizeLimits leaf_limits;
     std::shared_ptr<const EnabledQuota> quota;
     ProgressCallback progress_callback;
     QueryStatus * process_list_elem = nullptr;

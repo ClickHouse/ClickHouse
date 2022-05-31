@@ -52,10 +52,10 @@ static void executeJob(ExecutingGraph::Node * node, ReadProgressCallback * read_
         {
             if (auto read_progress = node->processor->getReadProgress())
             {
-                if (read_progress->total_rows_approx)
-                    read_progress_callback->addTotalRowsApprox(read_progress->total_rows_approx);
+                if (read_progress->counters.total_rows_approx)
+                    read_progress_callback->addTotalRowsApprox(read_progress->counters.total_rows_approx);
 
-                if (!read_progress_callback->onProgress(read_progress->read_rows, read_progress->read_bytes))
+                if (!read_progress_callback->onProgress(read_progress->counters.read_rows, read_progress->counters.read_bytes, read_progress->limits))
                     node->processor->cancel();
             }
         }

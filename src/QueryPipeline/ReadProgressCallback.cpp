@@ -42,10 +42,13 @@ void ReadProgressCallback::setProcessListElement(QueryStatus * elem)
     }
 }
 
-bool ReadProgressCallback::onProgress(uint64_t read_rows, uint64_t read_bytes)
+bool ReadProgressCallback::onProgress(uint64_t read_rows, uint64_t read_bytes, const StorageLimitsList & storage_limits)
 {
-    if (!limits.speed_limits.checkTimeLimit(total_stopwatch, limits.timeout_overflow_mode))
-        return false;
+    for (const auto & limits : storage_limits)
+    {
+        if (!limits.local_limits.speed_limits.checkTimeLimit(total_stopwatch, limits.local_limits.timeout_overflow_mode))
+            return false;
+    }
 
     size_t rows_approx = 0;
     if ((rows_approx = total_rows_approx.exchange(0)) != 0)
@@ -73,32 +76,37 @@ bool ReadProgressCallback::onProgress(uint64_t read_rows, uint64_t read_bytes)
 
         ProgressValues progress = process_list_elem->getProgressIn();
 
-        /// If the mode is "throw" and estimate of total rows is known, then throw early if an estimate is too high.
-        /// If the mode is "break", then allow to read before limit even if estimate is very high.
-
-        size_t rows_to_check_limit = progress.read_rows;
-        if (limits.size_limits.overflow_mode == OverflowMode::THROW && progress.total_rows_to_read > progress.read_rows)
-            rows_to_check_limit = progress.total_rows_to_read;
-
-        /// Check the restrictions on the
-        ///  * amount of data to read
-        ///  * speed of the query
-        ///  * quota on the amount of data to read
-        /// NOTE: Maybe it makes sense to have them checked directly in ProcessList?
-
-        if (limits.mode == LimitsMode::LIMITS_TOTAL)
+        for (const auto & limits : storage_limits)
         {
-            if (!limits.size_limits.check(rows_to_check_limit, progress.read_bytes, "rows or bytes to read",
-                                          ErrorCodes::TOO_MANY_ROWS, ErrorCodes::TOO_MANY_BYTES))
+            /// If the mode is "throw" and estimate of total rows is known, then throw early if an estimate is too high.
+            /// If the mode is "break", then allow to read before limit even if estimate is very high.
+
+            size_t rows_to_check_limit = progress.read_rows;
+            if (limits.local_limits.size_limits.overflow_mode == OverflowMode::THROW && progress.total_rows_to_read > progress.read_rows)
+                rows_to_check_limit = progress.total_rows_to_read;
+
+            /// Check the restrictions on the
+            ///  * amount of data to read
+            ///  * speed of the query
+            ///  * quota on the amount of data to read
+            /// NOTE: Maybe it makes sense to have them checked directly in ProcessList?
+
+            if (limits.local_limits.mode == LimitsMode::LIMITS_TOTAL)
+            {
+                if (!limits.local_limits.size_limits.check(
+                        rows_to_check_limit, progress.read_bytes, "rows or bytes to read",
+                        ErrorCodes::TOO_MANY_ROWS, ErrorCodes::TOO_MANY_BYTES))
+                {
+                    return false;
+                }
+            }
+
+            if (!limits.leaf_limits.check(
+                    rows_to_check_limit, progress.read_bytes, "rows or bytes to read on leaf node",
+                    ErrorCodes::TOO_MANY_ROWS, ErrorCodes::TOO_MANY_BYTES))
             {
                 return false;
             }
-        }
-
-        if (!leaf_limits.check(rows_to_check_limit, progress.read_bytes, "rows or bytes to read on leaf node",
-                                          ErrorCodes::TOO_MANY_ROWS, ErrorCodes::TOO_MANY_BYTES))
-        {
-            return false;
         }
 
         size_t total_rows = progress.total_rows_to_read;
@@ -117,10 +125,13 @@ bool ReadProgressCallback::onProgress(uint64_t read_rows, uint64_t read_bytes)
         }
 
         /// TODO: Should be done in PipelineExecutor.
-        limits.speed_limits.throttle(progress.read_rows, progress.read_bytes, total_rows, total_elapsed_microseconds);
+        for (const auto & limits : storage_limits)
+        {
+            limits.local_limits.speed_limits.throttle(progress.read_rows, progress.read_bytes, total_rows, total_elapsed_microseconds);
 
-        if (quota && limits.mode == LimitsMode::LIMITS_TOTAL)
-            quota->used({QuotaType::READ_ROWS, value.read_rows}, {QuotaType::READ_BYTES, value.read_bytes});
+            if (quota && limits.local_limits.mode == LimitsMode::LIMITS_TOTAL)
+                quota->used({QuotaType::READ_ROWS, value.read_rows}, {QuotaType::READ_BYTES, value.read_bytes});
+        }
     }
 
     if (update_profile_events)
