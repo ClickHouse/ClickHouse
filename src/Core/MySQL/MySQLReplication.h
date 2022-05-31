@@ -340,8 +340,7 @@ namespace MySQLReplication
             : EventBase(std::move(header_)), binlog_version(0), create_timestamp(0), event_header_length(0)
         {
         }
-        
-  
+
     protected:
         UInt16 binlog_version;
         String server_version;
@@ -520,7 +519,6 @@ namespace MySQLReplication
 
         void parseImpl(ReadBuffer & payload) override;
         void parseRow(ReadBuffer & payload, Bitmap & bitmap);
-
     private:
         std::shared_ptr<TableMapEvent> table_map;
     };
@@ -530,10 +528,8 @@ namespace MySQLReplication
     public:
         WriteRowsEvent(std::shared_ptr<TableMapEvent> table_map_, EventHeader && header_, const RowsEventHeader & rows_header)
             : RowsEvent(table_map_, std::move(header_), rows_header) {}
-
         WriteRowsEvent(std::shared_ptr<TableMapEvent> table_map_, EventHeader & header_, const RowsEventHeader & rows_header)
             : RowsEvent(table_map_, std::move(header_), rows_header) {}
-        
         MySQLEventType type() const override { return MYSQL_WRITE_ROWS_EVENT; }
     };
 
@@ -542,10 +538,8 @@ namespace MySQLReplication
     public:
         DeleteRowsEvent(std::shared_ptr<TableMapEvent> table_map_, EventHeader && header_, const RowsEventHeader & rows_header)
             : RowsEvent(table_map_, std::move(header_), rows_header) {}
-        
         DeleteRowsEvent(std::shared_ptr<TableMapEvent> table_map_, EventHeader & header_, const RowsEventHeader & rows_header)
             : RowsEvent(table_map_, std::move(header_), rows_header) {}
-
         MySQLEventType type() const override { return MYSQL_DELETE_ROWS_EVENT; }
     };
 
@@ -556,7 +550,6 @@ namespace MySQLReplication
             : RowsEvent(table_map_, std::move(header_), rows_header) {}
         UpdateRowsEvent(std::shared_ptr<TableMapEvent> table_map_, EventHeader & header_, const RowsEventHeader & rows_header)
             : RowsEvent(table_map_, std::move(header_), rows_header) {}
-        
         MySQLEventType type() const override { return MYSQL_UPDATE_ROWS_EVENT; }
     };
 
