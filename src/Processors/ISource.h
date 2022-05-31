@@ -10,7 +10,6 @@ class ISource : public IProcessor
 {
 private:
     ReadProgressCounters read_progress;
-    std::shared_ptr<const StorageLimitsList> storage_limits;
     bool read_progress_was_set = false;
     bool auto_progress;
 
@@ -20,6 +19,8 @@ protected:
     bool finished = false;
     bool got_exception = false;
     Port::Data current_chunk;
+
+    std::shared_ptr<const StorageLimitsList> storage_limits;
 
     virtual Chunk generate();
     virtual std::optional<Chunk> tryGenerate();
@@ -36,7 +37,7 @@ public:
     OutputPort & getPort() { return output; }
     const OutputPort & getPort() const { return output; }
 
-    void setStorageLimits(const std::shared_ptr<const StorageLimitsList> & storage_limits_) final;
+    void setStorageLimits(const std::shared_ptr<const StorageLimitsList> & storage_limits_) override;
 
     /// Default implementation for all the sources.
     std::optional<ReadProgress> getReadProgress() final;

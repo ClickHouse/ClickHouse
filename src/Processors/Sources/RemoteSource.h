@@ -33,6 +33,8 @@ public:
 
     int schedule() override { return fd; }
 
+    void setStorageLimits(const std::shared_ptr<const StorageLimitsList> & storage_limits_) override;
+
 protected:
     std::optional<Chunk> tryGenerate() override;
     void onCancel() override;
