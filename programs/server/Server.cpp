@@ -29,6 +29,7 @@
 #include <Common/ClickHouseRevision.h>
 #include <Common/DNSResolver.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/ConcurrencyControl.h>
 #include <Common/Macros.h>
 #include <Common/ShellCommand.h>
 #include <Common/StringUtils/StringUtils.h>
@@ -1129,7 +1130,8 @@ int Server::main(const std::vector<std::string> & /*args*/)
                     constexpr size_t thread_factor = 3;
                     total_max_threads = std::thread::hardware_concurrency() * thread_factor;
                 }
-                global_context->getProcessList().setTotalMaxThreads(total_max_threads);
+                if (total_max_threads)
+                    ConcurrencyControl::instance().setMaxConcurrency(total_max_threads);
             }
 
             if (config->has("max_concurrent_queries"))
