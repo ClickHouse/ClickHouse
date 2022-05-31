@@ -580,7 +580,7 @@ ColumnPtr ColumnVector<T>::replicateSSE2(const IColumn::Offsets & offsets) const
         }
 
         /// data :   11 22 33 44 55
-        /// offsets:  0  1  2  3  3
+        /// offsets: 0  1  2  3  3
         /// res:     22 33 44
         if (copy_begin)
         {
