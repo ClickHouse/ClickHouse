@@ -52,6 +52,7 @@ RUN apt-get update \
         software-properties-common \
         tzdata \
         nasm \
+        libc6-dev \
         --yes --no-install-recommends \
     && apt-get clean
 
