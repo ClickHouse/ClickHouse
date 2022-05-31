@@ -809,6 +809,13 @@ public:
     /// Quick return for count() is not allowed when true.
     bool getHasLightWeightParts() const { return has_lightweight_parts; }
 
+    void setHasLighWightParts(const bool value)
+    {
+        std::lock_guard lock(lightweight_parts_mutex);
+        if (!has_lightweight_parts)
+            has_lightweight_parts = value;
+    }
+
     /// Get constant pointer to storage settings.
     /// Copy this pointer into your scope and you will
     /// get consistent settings.
@@ -944,7 +951,11 @@ public:
     SimpleIncrement insert_increment;
 
     bool has_non_adaptive_index_granularity_parts = false;
+
     bool has_lightweight_parts = false;
+
+    /// Mutex for has_lightweight_parts
+    mutable std::mutex lightweight_parts_mutex;
 
     /// Parts that currently moving from disk/volume to another.
     /// This set have to be used with `currently_processing_in_background_mutex`.

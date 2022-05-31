@@ -638,23 +638,30 @@ void getMaskForLightWeight(ColumnPtr mask_column, bool * result_mask, size_t siz
     }
     else if (const auto * nullable_column = typeid_cast<const ColumnNullable *>(&(*mask_column)))
     {
-        column = typeid_cast<const ColumnUInt8 *>(&(nullable_column->getNestedColumn()));
-        const auto *const bitmap = &column->getData();
-        const UInt8 *begin = bitmap->data();
-        const NullMap & null_map = nullable_column->getNullMapData();
-
-        if (bitmap->size() != size)
-        {
-            LOG_DEBUG(log, "Cannot get mask, because the size of mask_column {} does not equal to the size of result_mask {}",
-                      bitmap->size(), size);
+        /// result_mask is alreay initialized to 0
+        if (nullable_column->onlyNull())
             return;
+        else
+        {
+            column = typeid_cast<const ColumnUInt8 *>(&(nullable_column->getNestedColumn()));
+            const auto *const bitmap = &column->getData();
+            const UInt8 *begin = bitmap->data();
+            const NullMap & null_map = nullable_column->getNullMapData();
+
+            if (bitmap->size() != size)
+            {
+                LOG_DEBUG(log, "Cannot get mask, because the size of mask_column {} does not equal to the size of result_mask {}",
+                          bitmap->size(), size);
+                return;
+            }
+
+            for (size_t pos = 0; pos < size; pos++)
+            {
+                if (begin[pos] && !null_map[pos])
+                    result_mask[pos] = true;
+            }
         }
 
-        for (size_t pos = 0; pos < size; pos++)
-        {
-            if (begin[pos] && !null_map[pos])
-                result_mask[pos] = true;
-        }
     }
     else
         throw Exception("Illegal type " + column->getName() + " of column for filter. Must be UInt8 or Nullable(UInt8) or Const variants of them.",

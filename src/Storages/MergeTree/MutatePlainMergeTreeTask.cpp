@@ -106,7 +106,7 @@ bool MutatePlainMergeTreeTask::executeStep()
                     source_part->renameTempLightWeightMaskAndReplace(future_part->part_info.lightweight_mutation);
 
                     if (!source_part->is_empty_bitmap)
-                        storage.has_lightweight_parts = true;
+                        storage.setHasLighWightParts(true);
                 }
                 else
                 {
