@@ -21,7 +21,7 @@
 #include <boost/algorithm/string.hpp>
 #include <algorithm>
 #include <deque>
-#include <limits.h>
+#include <climits>
 
 
 namespace DB
@@ -53,7 +53,7 @@ struct ZkNodeCache
     {
         /// If this node has an empty name, just skip it.
         /// Possibly a "/a//b///c//d/" will cause empty node.
-        while(index < nodes.size() && nodes[index].empty())
+        while (index < nodes.size() && nodes[index].empty())
             ++index;
 
         if (index == nodes.size())
@@ -130,7 +130,8 @@ public:
                 throw Exception("Column `name` should not be empty", ErrorCodes::BAD_ARGUMENTS);
             }
 
-            if (path.size() + name.size() > PATH_MAX) {
+            if (path.size() + name.size() > PATH_MAX)
+            {
                 throw Exception("Sum of `name` length and `path` length should not exceed PATH_MAX", ErrorCodes::BAD_ARGUMENTS);
             }
 
@@ -151,6 +152,8 @@ public:
 
 SinkToStoragePtr StorageSystemZooKeeper::write(const ASTPtr &, const StorageMetadataPtr &, ContextPtr context)
 {
+    if (!context->getSettingsRef().allow_writes_to_zookeeper)
+        throw Exception("Prohibit writing to system.zookeeper unless `set allow_writes_to_zookeeper = 'true'`", ErrorCodes::BAD_ARGUMENTS);
     Block write_header;
     write_header.insert(ColumnWithTypeAndName(std::make_shared<DataTypeString>(), "name"));
     write_header.insert(ColumnWithTypeAndName(std::make_shared<DataTypeString>(), "value"));
