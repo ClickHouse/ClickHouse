@@ -16,15 +16,12 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/IJoin.h>
-#include <Interpreters/ProcessList.h>
 #include <Common/typeid_cast.h>
 #include <Common/CurrentThread.h>
 #include <Processors/DelayedPortsProcessor.h>
 #include <Processors/RowsBeforeLimitCounter.h>
 #include <Processors/Sources/RemoteSource.h>
 #include <Processors/QueryPlan/QueryPlan.h>
-#include <Core/Settings.h>
-#include <Core/SettingsQuirks.h>
 
 namespace DB
 {
@@ -497,30 +494,6 @@ void QueryPipelineBuilder::setProcessListElement(QueryStatus * elem)
         if (auto * source = dynamic_cast<ISourceWithProgress *>(processor.get()))
             source->setProcessListElement(elem);
     }
-}
-
-size_t QueryPipelineBuilder::getNumThreads() const
-{
-    auto num_threads = pipe.maxParallelStreams();
-
-    if (max_threads) //-V1051
-        num_threads = std::min(num_threads, max_threads);
-
-    if (process_list_element)
-    {
-        auto total_max_threads = process_list_element->getContext()->getProcessList().getTotalMaxThreads();
-        if (total_max_threads)
-        {
-            size_t current_total_num_threads = process_list_element->getContext()->getProcessList().getTotalNumThreads();
-            size_t total_available_threads = 0;
-            if (total_max_threads > current_total_num_threads)
-                total_available_threads = total_max_threads - current_total_num_threads;
-            num_threads = std::min(num_threads, total_available_threads);
-        }
-    }
-
-    num_threads = std::max<size_t>(1, num_threads);
-    return num_threads;
 }
 
 PipelineExecutorPtr QueryPipelineBuilder::execute()

@@ -314,10 +314,6 @@ protected:
     Container processes;
     size_t max_size = 0;        /// 0 means no limit. Otherwise, when limit exceeded, an exception is thrown.
 
-    /// The total maximum number of threads for all queries.
-    /// Sometimes, real total number of threads may exceed total_max_threads parameter.
-    size_t total_max_threads = 0; /// 0 means no limit. Otherwise, concurrency of a query is determined based on this parameter.
-
     /// Stores per-user info: queries, statistics and limits
     UserToQueries user_to_queries;
 
@@ -358,17 +354,6 @@ public:
 
     /// Get current state of process list.
     Info getInfo(bool get_thread_list = false, bool get_profile_events = false, bool get_settings = false) const;
-
-    /// Get total number of threads for all queries in process list.
-    size_t getTotalNumThreads() const;
-
-    size_t getTotalMaxThreads() const { return total_max_threads; }
-
-    void setTotalMaxThreads(size_t total_max_threads_)
-    {
-        std::lock_guard lock(mutex);
-        total_max_threads = total_max_threads_;
-    }
 
     /// Get current state of process list per user.
     UserInfo getUserInfo(bool get_profile_events = false) const;

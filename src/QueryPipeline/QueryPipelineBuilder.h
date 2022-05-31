@@ -7,7 +7,6 @@
 #include <Storages/TableLockHolder.h>
 #include <Interpreters/Context_fwd.h>
 
-
 namespace DB
 {
 
@@ -133,7 +132,15 @@ public:
     void setProcessListElement(QueryStatus * elem);
 
     /// Recommend number of threads for pipeline execution.
-    size_t getNumThreads() const;
+    size_t getNumThreads() const
+    {
+        auto num_threads = pipe.maxParallelStreams();
+
+        if (max_threads) //-V1051
+            num_threads = std::min(num_threads, max_threads);
+
+        return std::max<size_t>(1, num_threads);
+    }
 
     /// Set upper limit for the recommend number of threads
     void setMaxThreads(size_t max_threads_) { max_threads = max_threads_; }

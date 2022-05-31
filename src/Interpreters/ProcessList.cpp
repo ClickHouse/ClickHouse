@@ -16,6 +16,7 @@
 #include <Common/logger_useful.h>
 #include <chrono>
 
+
 namespace CurrentMetrics
 {
     extern const Metric Query;
@@ -500,19 +501,6 @@ ProcessList::Info ProcessList::getInfo(bool get_thread_list, bool get_profile_ev
     return per_query_infos;
 }
 
-size_t ProcessList::getTotalNumThreads() const
-{
-    size_t total_num_threads = 0;
-    std::lock_guard lock(mutex);
-
-    for (const auto & process : processes)
-    {
-        auto qsi = process.getInfo(true);
-        total_num_threads += qsi.thread_ids.size();
-    }
-
-    return total_num_threads;
-}
 
 ProcessListForUser::ProcessListForUser(ProcessList * global_process_list)
     : user_overcommit_tracker(global_process_list, this)
