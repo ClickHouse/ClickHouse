@@ -3,6 +3,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromFileBase.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -11,7 +12,10 @@ namespace ErrorCodes
 {
     extern const int UNKNOWN_FORMAT;
     extern const int PATH_ACCESS_DENIED;
-    extern const int MEMORY_LIMIT_EXCEEDED;
+    extern const int FILE_DOESNT_EXIST;
+    extern const int ATTEMPT_TO_READ_AFTER_EOF;
+    extern const int CANNOT_READ_ALL_DATA;
+    extern const int CANNOT_OPEN_FILE;
 }
 
 DiskObjectStorageMetadata DiskObjectStorageMetadata::readMetadata(const String & remote_fs_root_path_, DiskPtr metadata_disk_, const String & metadata_file_path_)
@@ -46,16 +50,38 @@ DiskObjectStorageMetadata DiskObjectStorageMetadata::createUpdateAndStoreMetadat
     return result;
 }
 
-DiskObjectStorageMetadata DiskObjectStorageMetadata::readUpdateStoreMetadataAndRemove(const String & remote_fs_root_path_, DiskPtr metadata_disk_, const String & metadata_file_path_, bool sync, DiskObjectStorageMetadataUpdater updater)
+void DiskObjectStorageMetadata::readUpdateStoreMetadataAndRemove(const String & remote_fs_root_path_, DiskPtr metadata_disk_, const String & metadata_file_path_, bool sync, DiskObjectStorageMetadataUpdater updater)
 {
-    DiskObjectStorageMetadata result(remote_fs_root_path_, metadata_disk_, metadata_file_path_);
-    result.load();
-    if (updater(result))
-        result.save(sync);
-    metadata_disk_->removeFile(metadata_file_path_);
+    /// Very often we are deleting metadata from some unfinished operation (like fetch of metadata)
+    /// in this case metadata file can be incomplete/empty and so on. It's ok to remove it in this case
+    /// because we cannot do anything better.
+    try
+    {
+        DiskObjectStorageMetadata metadata(remote_fs_root_path_, metadata_disk_, metadata_file_path_);
+        metadata.load();
+        if (updater(metadata))
+            metadata.save(sync);
 
-    return result;
+        metadata_disk_->removeFile(metadata_file_path_);
+    }
+    catch (Exception & ex)
+    {
+        /// If we have some broken half-empty file just remove it
+        if (ex.code() == ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF
+            || ex.code() == ErrorCodes::CANNOT_READ_ALL_DATA
+            || ex.code() == ErrorCodes::CANNOT_OPEN_FILE)
+        {
+            LOG_INFO(&Poco::Logger::get("ObjectStorageMetadata"), "Failed to read metadata file {} before removal because it's incomplete or empty. "
+                     "It's Ok and can happen after operation interruption (like metadata fetch), so removing as is", metadata_file_path_);
+            metadata_disk_->removeFile(metadata_file_path_);
+        }
 
+        /// If file already removed, than nothing to do
+        if (ex.code() == ErrorCodes::FILE_DOESNT_EXIST)
+            return;
+
+        throw;
+    }
 }
 
 DiskObjectStorageMetadata DiskObjectStorageMetadata::createAndStoreMetadataIfNotExists(const String & remote_fs_root_path_, DiskPtr metadata_disk_, const String & metadata_file_path_, bool sync, bool overwrite)
@@ -75,70 +101,55 @@ DiskObjectStorageMetadata DiskObjectStorageMetadata::createAndStoreMetadataIfNot
 
 void DiskObjectStorageMetadata::load()
 {
-    try
+    const ReadSettings read_settings;
+    auto buf = metadata_disk->readFile(metadata_file_path, read_settings, 1024);  /* reasonable buffer size for small file */
+
+    UInt32 version;
+    readIntText(version, *buf);
+
+    if (version < VERSION_ABSOLUTE_PATHS || version > VERSION_READ_ONLY_FLAG)
+        throw Exception(
+            ErrorCodes::UNKNOWN_FORMAT,
+            "Unknown metadata file version. Path: {}. Version: {}. Maximum expected version: {}",
+            metadata_disk->getPath() + metadata_file_path, toString(version), toString(VERSION_READ_ONLY_FLAG));
+
+    assertChar('\n', *buf);
+
+    UInt32 remote_fs_objects_count;
+    readIntText(remote_fs_objects_count, *buf);
+    assertChar('\t', *buf);
+    readIntText(total_size, *buf);
+    assertChar('\n', *buf);
+    remote_fs_objects.resize(remote_fs_objects_count);
+
+    for (size_t i = 0; i < remote_fs_objects_count; ++i)
     {
-        const ReadSettings read_settings;
-        auto buf = metadata_disk->readFile(metadata_file_path, read_settings, 1024);  /* reasonable buffer size for small file */
-
-        UInt32 version;
-        readIntText(version, *buf);
-
-        if (version < VERSION_ABSOLUTE_PATHS || version > VERSION_READ_ONLY_FLAG)
-            throw Exception(
-                ErrorCodes::UNKNOWN_FORMAT,
-                "Unknown metadata file version. Path: {}. Version: {}. Maximum expected version: {}",
-                metadata_disk->getPath() + metadata_file_path, toString(version), toString(VERSION_READ_ONLY_FLAG));
-
-        assertChar('\n', *buf);
-
-        UInt32 remote_fs_objects_count;
-        readIntText(remote_fs_objects_count, *buf);
+        String remote_fs_object_path;
+        size_t remote_fs_object_size;
+        readIntText(remote_fs_object_size, *buf);
         assertChar('\t', *buf);
-        readIntText(total_size, *buf);
-        assertChar('\n', *buf);
-        remote_fs_objects.resize(remote_fs_objects_count);
-
-        for (size_t i = 0; i < remote_fs_objects_count; ++i)
+        readEscapedString(remote_fs_object_path, *buf);
+        if (version == VERSION_ABSOLUTE_PATHS)
         {
-            String remote_fs_object_path;
-            size_t remote_fs_object_size;
-            readIntText(remote_fs_object_size, *buf);
-            assertChar('\t', *buf);
-            readEscapedString(remote_fs_object_path, *buf);
-            if (version == VERSION_ABSOLUTE_PATHS)
-            {
-                if (!remote_fs_object_path.starts_with(remote_fs_root_path))
-                    throw Exception(ErrorCodes::UNKNOWN_FORMAT,
-                        "Path in metadata does not correspond to root path. Path: {}, root path: {}, disk path: {}",
-                        remote_fs_object_path, remote_fs_root_path, metadata_disk->getPath());
+            if (!remote_fs_object_path.starts_with(remote_fs_root_path))
+                throw Exception(ErrorCodes::UNKNOWN_FORMAT,
+                    "Path in metadata does not correspond to root path. Path: {}, root path: {}, disk path: {}",
+                    remote_fs_object_path, remote_fs_root_path, metadata_disk->getPath());
 
-                remote_fs_object_path = remote_fs_object_path.substr(remote_fs_root_path.size());
-            }
-            assertChar('\n', *buf);
-            remote_fs_objects[i].relative_path = remote_fs_object_path;
-            remote_fs_objects[i].bytes_size = remote_fs_object_size;
+            remote_fs_object_path = remote_fs_object_path.substr(remote_fs_root_path.size());
         }
-
-        readIntText(ref_count, *buf);
         assertChar('\n', *buf);
-
-        if (version >= VERSION_READ_ONLY_FLAG)
-        {
-            readBoolText(read_only, *buf);
-            assertChar('\n', *buf);
-        }
+        remote_fs_objects[i].relative_path = remote_fs_object_path;
+        remote_fs_objects[i].bytes_size = remote_fs_object_size;
     }
-    catch (Exception & e)
+
+    readIntText(ref_count, *buf);
+    assertChar('\n', *buf);
+
+    if (version >= VERSION_READ_ONLY_FLAG)
     {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-
-        if (e.code() == ErrorCodes::UNKNOWN_FORMAT)
-            throw;
-
-        if (e.code() == ErrorCodes::MEMORY_LIMIT_EXCEEDED)
-            throw;
-
-        throw Exception("Failed to read metadata file: " + metadata_file_path, ErrorCodes::UNKNOWN_FORMAT);
+        readBoolText(read_only, *buf);
+        assertChar('\n', *buf);
     }
 }
 
