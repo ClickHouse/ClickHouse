@@ -1,6 +1,7 @@
 #include <Processors/Sources/RemoteSource.h>
 #include <QueryPipeline/RemoteQueryExecutor.h>
 #include <QueryPipeline/RemoteQueryExecutorReadContext.h>
+#include <QueryPipeline/StreamLocalLimits.h>
 #include <Processors/Transforms/AggregatingTransform.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 
@@ -20,6 +21,16 @@ RemoteSource::RemoteSource(RemoteQueryExecutorPtr executor, bool add_aggregation
 }
 
 RemoteSource::~RemoteSource() = default;
+
+void RemoteSource::setStorageLimits(const std::shared_ptr<const StorageLimitsList> & storage_limits_)
+{
+    /// Remove leaf limits for remote source.
+    StorageLimitsList list;
+    for (const auto & value : *storage_limits_)
+        list.emplace_back(StorageLimits{value.local_limits, {}});
+
+    storage_limits = std::make_shared<const StorageLimitsList>(std::move(list));
+}
 
 ISource::Status RemoteSource::prepare()
 {
