@@ -911,7 +911,7 @@ namespace MySQLReplication
 
         MySQLBinlogEventReadBuffer event_payload(payload, checksum_signature_length);
 
-        EventHeader event_header;
+        EventHeader  event_header;
         event_header.parse(event_payload);
 
         switch (event_header.type)
@@ -980,7 +980,7 @@ namespace MySQLReplication
                 RowsEventHeader rows_header(event_header.type);
                 rows_header.parse(event_payload);
                 if (doReplicate(rows_header.table_id))
-                    event = std::make_shared<WriteRowsEvent>(table_maps.at(rows_header.table_id), std::move(event_header), rows_header);
+                    event = std::make_shared<WriteRowsEvent>(table_maps.at(rows_header.table_id), event_header, rows_header);
                 else
                     event = std::make_shared<DryRunEvent>(event_header);
 
@@ -994,7 +994,7 @@ namespace MySQLReplication
                 RowsEventHeader rows_header(event_header.type);
                 rows_header.parse(event_payload);
                 if (doReplicate(rows_header.table_id))
-                    event = std::make_shared<DeleteRowsEvent>(table_maps.at(rows_header.table_id), std::move(event_header), rows_header);
+                    event = std::make_shared<DeleteRowsEvent>(table_maps.at(rows_header.table_id), event_header, rows_header);
                 else
                     event = std::make_shared<DryRunEvent>(event_header);
 
