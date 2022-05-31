@@ -3,6 +3,8 @@
 #include <filesystem>
 
 #include <Common/filesystemHelpers.h>
+#include <Common/FieldVisitorToString.h>
+#include <DataTypes/FieldToDataType.h>
 
 #include <Processors/Sources/ShellCommandSource.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
@@ -11,6 +13,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <Interpreters/convertFieldToType.h>
 #include <Interpreters/ExternalUserDefinedExecutableFunctionsLoader.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/castColumn.h>
@@ -22,6 +25,8 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int UNSUPPORTED_METHOD;
+    extern const int BAD_ARGUMENTS;
+    extern const int TYPE_MISMATCH;
 }
 
 class UserDefinedFunction final : public IFunction
@@ -30,10 +35,59 @@ public:
 
     explicit UserDefinedFunction(
         ExternalUserDefinedExecutableFunctionsLoader::UserDefinedExecutableFunctionPtr executable_function_,
-        ContextPtr context_)
+        ContextPtr context_,
+        Array parameters_)
         : executable_function(std::move(executable_function_))
         , context(context_)
     {
+        const auto & configuration = executable_function->getConfiguration();
+        size_t command_parameters_size = configuration.parameters.size();
+        if (command_parameters_size != parameters_.size()) {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Executable user defined function {} number of parameters does not match. Expected {}. Actual {}",
+                configuration.name,
+                command_parameters_size,
+                parameters_.size());
+        }
+
+        command_with_parameters = configuration.command;
+        command_arguments_with_parameters = configuration.command_arguments;
+
+        for (size_t i = 0; i < command_parameters_size; ++i)
+        {
+            const auto & command_parameter = configuration.parameters[i];
+            const auto & parameter_value = parameters_[i];
+            auto converted_parameter = convertFieldToTypeOrThrow(parameter_value, *command_parameter.type);
+            auto parameter_placeholder = "{" + command_parameter.name + "}";
+            size_t parameter_placeholder_size = parameter_placeholder.size();
+
+            auto parameter_value_string = applyVisitor(FieldVisitorToString(), converted_parameter);
+            bool find_placedholder = false;
+
+            for (auto & command_argument : command_arguments_with_parameters) {
+                auto parameter_placeholder_position = command_argument.find(parameter_placeholder);
+                if (parameter_placeholder_position == std::string::npos)
+                    continue;
+
+                command_argument.replace(parameter_placeholder_position, parameter_placeholder_size, parameter_value_string);
+                find_placedholder = true;
+            }
+
+            auto parameter_placeholder_position = command_with_parameters.find(parameter_placeholder);
+
+            if (parameter_placeholder_position != std::string::npos) {
+                command_with_parameters.replace(parameter_placeholder_position, parameter_placeholder_size, parameter_value_string);
+                find_placedholder = true;
+            }
+
+            if (!find_placedholder)
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Executable user defined function {} no placeholder for parameter {}",
+                    configuration.name,
+                    command_parameter.name);
+            }
+        }
     }
 
     String getName() const override { return executable_function->getConfiguration().name; }
@@ -63,7 +117,7 @@ public:
         const auto & coordinator_configuration = coordinator->getConfiguration();
         const auto & configuration = executable_function->getConfiguration();
 
-        String command = configuration.command;
+        String command = command_with_parameters;
 
         if (coordinator_configuration.execute_direct)
         {
@@ -134,7 +188,7 @@ public:
 
         Pipe pipe = coordinator->createPipe(
             command,
-            configuration.command_arguments,
+            command_arguments_with_parameters,
             std::move(shell_input_pipes),
             result_block,
             context,
@@ -165,9 +219,10 @@ public:
     }
 
 private:
-
     ExternalUserDefinedExecutableFunctionsLoader::UserDefinedExecutableFunctionPtr executable_function;
     ContextPtr context;
+    String command_with_parameters;
+    std::vector<std::string> command_arguments_with_parameters;
 };
 
 UserDefinedExecutableFunctionFactory & UserDefinedExecutableFunctionFactory::instance()
@@ -176,15 +231,15 @@ UserDefinedExecutableFunctionFactory & UserDefinedExecutableFunctionFactory::ins
     return result;
 }
 
-FunctionOverloadResolverPtr UserDefinedExecutableFunctionFactory::get(const String & function_name, ContextPtr context)
+FunctionOverloadResolverPtr UserDefinedExecutableFunctionFactory::get(const String & function_name, ContextPtr context, Array parameters)
 {
     const auto & loader = context->getExternalUserDefinedExecutableFunctionsLoader();
     auto executable_function = std::static_pointer_cast<const UserDefinedExecutableFunction>(loader.load(function_name));
-    auto function = std::make_shared<UserDefinedFunction>(std::move(executable_function), std::move(context));
+    auto function = std::make_shared<UserDefinedFunction>(std::move(executable_function), std::move(context), std::move(parameters));
     return std::make_unique<FunctionToOverloadResolverAdaptor>(std::move(function));
 }
 
-FunctionOverloadResolverPtr UserDefinedExecutableFunctionFactory::tryGet(const String & function_name, ContextPtr context)
+FunctionOverloadResolverPtr UserDefinedExecutableFunctionFactory::tryGet(const String & function_name, ContextPtr context, Array parameters)
 {
     const auto & loader = context->getExternalUserDefinedExecutableFunctionsLoader();
     auto load_result = loader.getLoadResult(function_name);
@@ -192,7 +247,7 @@ FunctionOverloadResolverPtr UserDefinedExecutableFunctionFactory::tryGet(const S
     if (load_result.object)
     {
         auto executable_function = std::static_pointer_cast<const UserDefinedExecutableFunction>(load_result.object);
-        auto function = std::make_shared<UserDefinedFunction>(std::move(executable_function), std::move(context));
+        auto function = std::make_shared<UserDefinedFunction>(std::move(executable_function), std::move(context), std::move(parameters));
         return std::make_unique<FunctionToOverloadResolverAdaptor>(std::move(function));
     }
 
