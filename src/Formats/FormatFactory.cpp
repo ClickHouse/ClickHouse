@@ -492,10 +492,9 @@ String FormatFactory::getFormatFromFileName(String file_name, bool throw_if_not_
 String FormatFactory::getFormatFromFileDescriptor(int fd)
 {
 #ifdef OS_LINUX
-    char buf[32] = {'\0'};
-    snprintf(buf, sizeof(buf), "/proc/self/fd/%d", fd);
+    std::string proc_path = fmt::format("/proc/self/fd/{}", fd);
     char file_path[PATH_MAX] = {'\0'};
-    if (readlink(buf, file_path, sizeof(file_path) - 1) != -1)
+    if (readlink(proc_path.c_str(), file_path, sizeof(file_path) - 1) != -1)
         return getFormatFromFileName(file_path, false);
     return "";
 #elif defined(__APPLE__)
@@ -583,6 +582,13 @@ bool FormatFactory::checkIfFormatHasExternalSchemaReader(const String & name) co
 bool FormatFactory::checkIfFormatHasAnySchemaReader(const String & name) const
 {
     return checkIfFormatHasSchemaReader(name) || checkIfFormatHasExternalSchemaReader(name);
+}
+
+void FormatFactory::checkFormatName(const String & name) const
+{
+    auto it = dict.find(name);
+    if (it == dict.end())
+        throw Exception("Unknown format " + name, ErrorCodes::UNKNOWN_FORMAT);
 }
 
 FormatFactory & FormatFactory::instance()
