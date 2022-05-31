@@ -130,43 +130,44 @@ public:
 
         hash_join = std::make_shared<HashJoin>(table_join, right_sample_block);
 
-        if (args_size == 3)
-        {
-            if ((type_x->isValueRepresentedByNumber() != type_arr_to_nested->isValueRepresentedByNumber())
-                || (isString(type_x) != isString(type_arr_to_nested)))
-                throw Exception{"Function " + getName()
-                    + " has signature: transform(T, Array(T), Array(U), U) -> U; or transform(T, Array(T), Array(T)) -> T; where T and U are types.",
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+        // if (args_size == 3)
+        // {
+        if ((type_x->isValueRepresentedByNumber() != type_arr_to_nested->isValueRepresentedByNumber())
+            || (isString(type_x) != isString(type_arr_to_nested)))
+            throw Exception{"Function " + getName()
+                + " has signature: transform(T, Array(T), Array(U), U) -> U; or transform(T, Array(T), Array(T)) -> T; where T and U are types.",
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
-            return getLeastSupertype(DataTypes{type_x, type_arr_to_nested});
-        }
-        else
-        {
-            const DataTypePtr & type_default = arguments[3];
+        //     return getLeastSupertype(DataTypes{type_x, type_arr_to_nested});
+        // }
+        // else
+        // {
+        //     const DataTypePtr & type_default = arguments[3];
 
-            if (!type_default->isValueRepresentedByNumber() && !isString(type_default))
-                throw Exception{"Unsupported type " + type_default->getName()
-                    + " of fourth argument (default value) of function " + getName()
-                    + ", must be numeric type or Date/DateTime or String", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+        //     if (!type_default->isValueRepresentedByNumber() && !isString(type_default))
+        //         throw Exception{"Unsupported type " + type_default->getName()
+        //             + " of fourth argument (default value) of function " + getName()
+        //             + ", must be numeric type or Date/DateTime or String", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
-            bool default_is_string = WhichDataType(type_default).isString();
-            bool nested_is_string = WhichDataType(type_arr_to_nested).isString();
+        //     bool default_is_string = WhichDataType(type_default).isString();
+        //     bool nested_is_string = WhichDataType(type_arr_to_nested).isString();
 
-            if ((type_default->isValueRepresentedByNumber() != type_arr_to_nested->isValueRepresentedByNumber())
-                || (default_is_string != nested_is_string))
-                throw Exception{"Function " + getName()
-                    + " have signature: transform(T, Array(T), Array(U), U) -> U; or transform(T, Array(T), Array(T)) -> T; where T and U are types.",
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+        //     if ((type_default->isValueRepresentedByNumber() != type_arr_to_nested->isValueRepresentedByNumber())
+        //         || (default_is_string != nested_is_string))
+        //         throw Exception{"Function " + getName()
+        //             + " have signature: transform(T, Array(T), Array(U), U) -> U; or transform(T, Array(T), Array(T)) -> T; where T and U are types.",
+        //             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
-            if (type_arr_to_nested->isValueRepresentedByNumber() && type_default->isValueRepresentedByNumber())
-            {
-                /// We take the smallest common type for the elements of the array of values `to` and for `default`.
-                return getLeastSupertype(DataTypes{type_arr_to_nested, type_default});
-            }
+        //     if (type_arr_to_nested->isValueRepresentedByNumber() && type_default->isValueRepresentedByNumber())
+        //     {
+        //         /// We take the smallest common type for the elements of the array of values `to` and for `default`.
+        //         return getLeastSupertype(DataTypes{type_arr_to_nested, type_default});
+        //     }
 
-            /// TODO More checks.
-            return type_arr_to_nested;
-        }
+        //     /// TODO More checks.
+        //     return type_arr_to_nested;
+        // }
+        return type_arr_to_nested;
     }
 
     mutable std::shared_ptr<TableJoin> table_join;
@@ -174,6 +175,8 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
+        // std::cerr << "to_type: " << arguments[2].type->getName() << '\n';
+        // std::cerr << "result_type: " << result_type->getName() << '\n';
         UNUSED(input_rows_count);
         const ColumnConst * array_from = checkAndGetColumnConst<ColumnArray>(arguments[1].column.get());
         const ColumnConst * array_to = checkAndGetColumnConst<ColumnArray>(arguments[2].column.get());
@@ -181,7 +184,9 @@ public:
         if (!array_from || !array_to)
             throw Exception{"Second and third arguments of function " + getName() + " must be constant arrays.", ErrorCodes::ILLEGAL_COLUMN};
 
+        // std::cerr << "initialization start\n";
         initialize(array_from->getValue<Array>(), array_to->getValue<Array>(), arguments);
+        // std::cerr << "initialization end\n";
 
         // ColumnPtr in_ptr = arguments.front().column;
         //const auto * in = arguments.front().column.get();
@@ -199,16 +204,25 @@ public:
         Block left_block;
         left_block.insert(ColumnWithTypeAndName(arguments.front().column, arguments.front().type, "x"));
 
+        // std::cerr << "joinBlock start\n";
         ExtraBlockPtr extra_block_unused;
         hash_join->joinBlock(left_block, extra_block_unused);
+        // std::cerr << "joinBlock end\n";
 
         /// value_column should contain result of transformation
+        // std::cerr << "value_column 1\n";
         const ColumnWithTypeAndName & value_column = left_block.getByName("to_");
-        
+        // std::cerr << "value_column 2\n";
         // std::cerr << "cerr: " << value_column.column->dumpStructure() << '\n';
+        // for (size_t i = 0; i < value_column.column->size(); ++i) {
+        //     std::cerr << value_column.column->get64(i) << ' ';
+        // }
+        // std::cerr << '\n';
         //UNUSED(value_column);
         auto column_result = result_type->createColumn();
+        // std::cerr << "value_column 3\n";
         UNUSED(column_result);
+        // std::cerr << "value_column 4\n";
         // auto * out = column_result.get();
         // if (!executeNum<UInt8>(in, out, default_column)
         //     && !executeNum<UInt16>(in, out, default_column)
@@ -1161,7 +1175,6 @@ private:
             //     std::cerr << from_nested_column->get64(i) << ' ';
             // }
             // std::cerr << '\n';
-
 
             const IDataType * to_type = arguments[2].type.get();
             const auto * to_array_type = typeid_cast<const DataTypeArray *>(to_type);
