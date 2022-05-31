@@ -4,11 +4,12 @@
 
 namespace DB
 {
+
 AsynchronousReaderPtr IObjectStorage::getThreadPoolReader()
 {
     constexpr size_t pool_size = 50;
     constexpr size_t queue_size = 1000000;
-    static AsynchronousReaderPtr reader = std::make_shared<ThreadPoolRemoteFSReader>(pool_size, queue_size);
+    static AsynchronousReaderPtr reader = std::make_shared<ThreadPoolRemoteFSReader<ReadBufferFromRemoteFSGather>>(pool_size, queue_size);
     return reader;
 }
 
