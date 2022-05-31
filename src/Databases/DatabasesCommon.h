@@ -33,10 +33,9 @@ public:
 
     DatabaseTablesIteratorPtr getTablesIterator(ContextPtr context, const FilterByNameFunction & filter_by_table_name) const override;
 
-    void backup(const ASTPtr & create_database_query,
-                const std::unordered_set<String> & table_names, bool all_tables, const std::unordered_set<String> & except_table_names,
-                const std::unordered_map<String, ASTs> & partitions,
-                std::shared_ptr<BackupEntriesCollector> backup_entries_collector) override;
+    DatabaseTablesIteratorPtr getTablesIteratorForBackup(const BackupEntriesCollector & backup_entries_collector) const override;
+    void backupCreateTableQuery(BackupEntriesCollector & backup_entries_collector, const StoragePtr & storage, const ASTPtr & create_table_query) override;
+    void createTableRestoredFromBackup(const RestorerFromBackup & restorer, const ASTPtr & create_table_query) override;
 
     void shutdown() override;
    
@@ -51,14 +50,6 @@ protected:
     void attachTableUnlocked(const String & table_name, const StoragePtr & table, std::unique_lock<std::mutex> & lock);
     StoragePtr detachTableUnlocked(const String & table_name, std::unique_lock<std::mutex> & lock);
     StoragePtr getTableUnlocked(const String & table_name, std::unique_lock<std::mutex> & lock) const;
-    
-    void backupTables(const std::unordered_set<String> & table_names, bool all_tables,
-                      const std::unordered_set<String> & except_table_names,
-                      const std::unordered_map<String, ASTs> & partition_ids,
-                      std::shared_ptr<BackupEntriesCollector> backup_entries_collector);
-
-    virtual void backupTable(const StoragePtr & storage, const ASTPtr & create_table_query, const String & data_path_in_backup,
-                             const std::optional<ASTs> & partitions, std::shared_ptr<BackupEntriesCollector> backup_entries_collector);
 };
 
 }

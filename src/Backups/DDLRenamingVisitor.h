@@ -40,7 +40,7 @@ private:
 
 
 /// Changes names in AST according to the renaming settings.
-void renameInCreateQuery(ASTPtr & ast, const ContextPtr & global_context, const DDLRenamingSettings & renaming_settings);
+void renameInCreateQuery(ASTPtr & ast, const DDLRenamingSettings & renaming_settings, const ContextPtr & context);
 
 /// Visits ASTCreateQuery and changes names of tables and databases according to passed DDLRenamingConfig.
 class DDLRenamingVisitor

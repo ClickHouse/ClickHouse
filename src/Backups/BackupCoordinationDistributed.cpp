@@ -130,7 +130,7 @@ namespace
 BackupCoordinationDistributed::BackupCoordinationDistributed(const String & zookeeper_path_, zkutil::GetZooKeeper get_zookeeper_)
     : zookeeper_path(zookeeper_path_)
     , get_zookeeper(get_zookeeper_)
-    , collecting_backup_entries_barrier(zookeeper_path_ + "/collect_bents", get_zookeeper_, "BackupCoordination", "collecting backup entries")
+    , stage_sync(zookeeper_path_ + "/stage", get_zookeeper_, &Poco::Logger::get("BackupCoordination"))
 {
     createRootNodes();
 }
@@ -156,12 +156,29 @@ void BackupCoordinationDistributed::removeAllNodes()
 }
 
 
+void BackupCoordinationDistributed::syncStage(const String & current_host, int new_stage, const Strings & wait_hosts, std::chrono::seconds timeout)
+{
+    stage_sync.syncStage(current_host, new_stage, wait_hosts, timeout);
+}
+
+void BackupCoordinationDistributed::syncStageError(const String & current_host, const String & error_message)
+{
+    stage_sync.syncStageError(current_host, error_message);
+}
+
+
 void BackupCoordinationDistributed::addReplicatedPartNames(
     const String & table_zk_path,
     const String & table_name_for_logs,
     const String & replica_name,
     const std::vector<PartNameAndChecksum> & part_names_and_checksums)
 {
+    {
+        std::lock_guard lock{mutex};
+        if (replicated_part_names)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "addPartNames() must not be called after getPartNames()");
+    }
+
     auto zookeeper = get_zookeeper();
     String path = zookeeper_path + "/repl_part_names/" + escapeForFileName(table_zk_path);
     zookeeper->createIfNotExists(path, "");
@@ -171,6 +188,8 @@ void BackupCoordinationDistributed::addReplicatedPartNames(
 
 Strings BackupCoordinationDistributed::getReplicatedPartNames(const String & table_zk_path, const String & replica_name) const
 {
+    std::lock_guard lock{mutex};
+    prepareReplicatedPartNames();
     return replicated_part_names->getPartNames(table_zk_path, replica_name);
 }
 
@@ -198,22 +217,13 @@ Strings BackupCoordinationDistributed::getReplicatedDataPaths(const String & tab
 }
 
 
-void BackupCoordinationDistributed::finishCollectingBackupEntries(const String & host_id, const String & error_message)
-{
-    collecting_backup_entries_barrier.finish(host_id, error_message);
-}
-
-void BackupCoordinationDistributed::waitForAllHostsCollectedBackupEntries(const Strings & host_ids, std::chrono::seconds timeout) const
-{
-    collecting_backup_entries_barrier.waitForAllHostsToFinish(host_ids, timeout);
-    prepareReplicatedPartNames();
-}
-
 void BackupCoordinationDistributed::prepareReplicatedPartNames() const
 {
-    auto zookeeper = get_zookeeper();
-    replicated_part_names.emplace();
+    if (replicated_part_names)
+        return;
 
+    replicated_part_names.emplace();
+    auto zookeeper = get_zookeeper();
     String path = zookeeper_path + "/repl_part_names";
     for (const String & escaped_table_zk_path : zookeeper->getChildren(path))
     {
@@ -226,8 +236,6 @@ void BackupCoordinationDistributed::prepareReplicatedPartNames() const
             replicated_part_names->addPartNames(table_zk_path, part_names.table_name_for_logs, replica_name, part_names.part_names_and_checksums);
         }
     }
-
-    replicated_part_names->preparePartNames();
 }
 
 

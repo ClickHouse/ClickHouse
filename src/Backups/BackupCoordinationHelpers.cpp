@@ -162,6 +162,9 @@ void BackupCoordinationReplicatedPartNames::addPartNames(
     const String & replica_name,
     const std::vector<PartNameAndChecksum> & part_names_and_checksums)
 {
+    if (part_names_prepared)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "addPartNames() must not be called after getPartNames()");
+
     auto & table_info = table_infos[table_zk_path];
     if (!table_info.covered_parts_finder)
         table_info.covered_parts_finder = std::make_unique<CoveredPartsFinder>(table_name_for_logs);
@@ -206,8 +209,7 @@ void BackupCoordinationReplicatedPartNames::addPartNames(
 
 Strings BackupCoordinationReplicatedPartNames::getPartNames(const String & table_zk_path, const String & replica_name) const
 {
-    if (!part_names_prepared)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "preparePartNamesByLocations() was not called before getPartNames()");
+    preparePartNames();
     auto it = table_infos.find(table_zk_path);
     if (it == table_infos.end())
         return {};
@@ -218,13 +220,13 @@ Strings BackupCoordinationReplicatedPartNames::getPartNames(const String & table
     return it2->second;
 }
 
-void BackupCoordinationReplicatedPartNames::preparePartNames()
+void BackupCoordinationReplicatedPartNames::preparePartNames() const
 {
     if (part_names_prepared)
         return;
 
     size_t counter = 0;
-    for (auto & table_info : table_infos | boost::adaptors::map_values)
+    for (const auto & table_info : table_infos | boost::adaptors::map_values)
     {
         for (const auto & [part_name, part_replicas] : table_info.parts_replicas)
         {
@@ -240,69 +242,77 @@ void BackupCoordinationReplicatedPartNames::preparePartNames()
 }
 
 
-BackupCoordinationDistributedBarrier::BackupCoordinationDistributedBarrier(
-    const String & zookeeper_path_, zkutil::GetZooKeeper get_zookeeper_, const String & logger_name_, const String & operation_name_)
+/// Helps to wait until all hosts come to a specified stage.
+BackupCoordinationStageSync::BackupCoordinationStageSync(const String & zookeeper_path_, zkutil::GetZooKeeper get_zookeeper_, Poco::Logger * log_)
     : zookeeper_path(zookeeper_path_)
     , get_zookeeper(get_zookeeper_)
-    , log(&Poco::Logger::get(logger_name_))
-    , operation_name(operation_name_)
+    , log(log_)
 {
     createRootNodes();
 }
 
-void BackupCoordinationDistributedBarrier::createRootNodes()
+void BackupCoordinationStageSync::createRootNodes()
 {
     auto zookeeper = get_zookeeper();
     zookeeper->createAncestors(zookeeper_path);
     zookeeper->createIfNotExists(zookeeper_path, "");
 }
 
-void BackupCoordinationDistributedBarrier::finish(const String & host_id, const String & error_message)
+void BackupCoordinationStageSync::syncStage(const String & current_host, int new_stage, const Strings & wait_hosts, std::chrono::seconds timeout)
 {
-    if (error_message.empty())
-        LOG_TRACE(log, "Host {} has finished {}", host_id, operation_name);
-    else
-        LOG_ERROR(log, "Host {} has failed {} with message: {}", host_id, operation_name, error_message);
-
+   /// Put new stage to ZooKeeper.
     auto zookeeper = get_zookeeper();
-    if (error_message.empty())
-        zookeeper->create(zookeeper_path + "/" + host_id + ":ready", "", zkutil::CreateMode::Persistent);
-    else
-        zookeeper->create(zookeeper_path + "/" + host_id + ":error", error_message, zkutil::CreateMode::Persistent);
-}
+    zookeeper->createIfNotExists(zookeeper_path + "/" + current_host + "|" + std::to_string(new_stage), "");
 
-void BackupCoordinationDistributedBarrier::waitForAllHostsToFinish(const Strings & host_ids, const std::chrono::seconds timeout) const
-{
-    auto zookeeper = get_zookeeper();
+    if (wait_hosts.empty() || ((wait_hosts.size() == 1) && (wait_hosts.front() == current_host)))
+        return;
 
-    bool all_hosts_ready = false;
-    String not_ready_host_id;
-    String error_host_id;
-    String error_message;
+    /// Wait for other hosts.
 
-    /// Returns true of everything's ready, or false if we need to wait more.
-    auto process_nodes = [&](const Strings & nodes)
+    /// Current stages of all hosts.
+    std::optional<String> host_with_error;
+    std::optional<String> error_message;
+
+    std::map<String, std::optional<int>> unready_hosts;
+    for (const String & host : wait_hosts)
+        unready_hosts.emplace(host, std::optional<int>{});
+
+    /// Process ZooKeeper's nodes and set `all_hosts_ready` or `unready_host` or `error_message`.
+    auto process_zk_nodes = [&](const Strings & zk_nodes)
     {
-        std::unordered_set<std::string_view> set{nodes.begin(), nodes.end()};
-        for (const String & host_id : host_ids)
+        for (const String & zk_node : zk_nodes)
         {
-            if (set.contains(host_id + ":error"))
+            if (zk_node == "error")
             {
-                error_host_id = host_id;
-                error_message = zookeeper->get(zookeeper_path + "/" + host_id + ":error");
+                String str = zookeeper->get(zookeeper_path + "/" + zk_node);
+                size_t separator_pos = str.find('|');
+                if (separator_pos == String::npos)
+                    throw Exception(ErrorCodes::FAILED_TO_SYNC_BACKUP_OR_RESTORE, "Unexpected value of zk node {}: {}", zookeeper_path + "/" + zk_node, str);
+                host_with_error = str.substr(0, separator_pos);
+                error_message = str.substr(separator_pos + 1);
                 return;
             }
-            if (!set.contains(host_id + ":ready"))
+            else if (!zk_node.starts_with("remove_watch-"))
             {
-                LOG_TRACE(log, "Waiting for host {} {}", host_id, operation_name);
-                not_ready_host_id = host_id;
-                return;
+                size_t separator_pos = zk_node.find('|');
+                if (separator_pos == String::npos)
+                    throw Exception(ErrorCodes::FAILED_TO_SYNC_BACKUP_OR_RESTORE, "Unexpected zk node {}", zookeeper_path + "/" + zk_node);
+                String host = zk_node.substr(0, separator_pos);
+                int found_stage = parseFromString<int>(zk_node.substr(separator_pos + 1));
+                auto it = unready_hosts.find(host);
+                if (it != unready_hosts.end())
+                {
+                    auto & stage = it->second;
+                    if (!stage || (stage < found_stage))
+                        stage = found_stage;
+                    if (stage >= new_stage)
+                        unready_hosts.erase(it);
+                }
             }
         }
-
-        all_hosts_ready = true;
     };
 
+    /// Wait until all hosts are ready or an error happens or time is out.
     std::atomic<bool> watch_set = false;
     std::condition_variable watch_triggered_event;
 
@@ -315,33 +325,25 @@ void BackupCoordinationDistributedBarrier::waitForAllHostsToFinish(const Strings
     auto watch_triggered = [&] { return !watch_set; };
 
     bool use_timeout = (timeout.count() >= 0);
-    std::chrono::steady_clock::duration time_left = timeout;
+    std::chrono::steady_clock::time_point start_time = std::chrono::steady_clock::now();
+    std::chrono::steady_clock::duration elapsed;
     std::mutex dummy_mutex;
 
-    while (true)
+    while (!unready_hosts.empty() && !error_message)
     {
-        if (use_timeout && (time_left.count() <= 0))
-        {
-            Strings children = zookeeper->getChildren(zookeeper_path);
-            process_nodes(children);
-            break;
-        }
-
         watch_set = true;
-        Strings children = zookeeper->getChildrenWatch(zookeeper_path, nullptr, watch_callback);
-        process_nodes(children);
+        Strings nodes = zookeeper->getChildrenWatch(zookeeper_path, nullptr, watch_callback);
+        process_zk_nodes(nodes);
 
-        if (!error_message.empty() || all_hosts_ready)
-            break;
-
+        if (!unready_hosts.empty() && !error_message)
         {
+            LOG_TRACE(log, "Waiting for host {}", unready_hosts.begin()->first);
             std::unique_lock dummy_lock{dummy_mutex};
             if (use_timeout)
             {
-                std::chrono::steady_clock::time_point start_time = std::chrono::steady_clock::now();
-                if (!watch_triggered_event.wait_for(dummy_lock, time_left, watch_triggered))
+                elapsed = std::chrono::steady_clock::now() - start_time;
+                if ((elapsed > timeout) || !watch_triggered_event.wait_for(dummy_lock, timeout - elapsed, watch_triggered))
                     break;
-                time_left -= (std::chrono::steady_clock::now() - start_time);
             }
             else
                 watch_triggered_event.wait(dummy_lock, watch_triggered);
@@ -353,32 +355,26 @@ void BackupCoordinationDistributedBarrier::waitForAllHostsToFinish(const Strings
         /// Remove watch by triggering it.
         zookeeper->create(zookeeper_path + "/remove_watch-", "", zkutil::CreateMode::EphemeralSequential);
         std::unique_lock dummy_lock{dummy_mutex};
-        watch_triggered_event.wait_for(dummy_lock, timeout, watch_triggered);
+        watch_triggered_event.wait(dummy_lock, watch_triggered);
     }
 
-    if (!error_message.empty())
+    if (error_message)
+        throw Exception(ErrorCodes::FAILED_TO_SYNC_BACKUP_OR_RESTORE, "Error occurred on host {}: {}", *host_with_error, *error_message);
+
+    if (!unready_hosts.empty())
     {
         throw Exception(
             ErrorCodes::FAILED_TO_SYNC_BACKUP_OR_RESTORE,
-            "Host {} failed {} with message: {}",
-            error_host_id,
-            operation_name,
-            error_message);
+            "Waited for host {} too long ({})",
+            unready_hosts.begin()->first,
+            to_string(elapsed));
     }
+}
 
-    if (all_hosts_ready)
-    {
-        LOG_TRACE(log, "All hosts have finished {}", operation_name);
-        return;
-    }
-
-
-    throw Exception(
-        ErrorCodes::FAILED_TO_SYNC_BACKUP_OR_RESTORE,
-        "Host {} has failed {}: Time ({}) is out",
-        not_ready_host_id,
-        operation_name,
-        to_string(timeout));
+void BackupCoordinationStageSync::syncStageError(const String & current_host, const String & error_message)
+{
+    auto zookeeper = get_zookeeper();
+    zookeeper->createIfNotExists(zookeeper_path + "/error", current_host + "|" + error_message);
 }
 
 }

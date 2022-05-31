@@ -72,6 +72,8 @@ public:
 
     void shutdown() override;
 
+    void createTableRestoredFromBackup(const RestorerFromBackup & restorer, const ASTPtr & create_table_query) override;
+
     friend struct DatabaseReplicatedTask;
     friend class DatabaseReplicatedDDLWorker;
 private:

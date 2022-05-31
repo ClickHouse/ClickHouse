@@ -232,11 +232,14 @@ public:
 
     int getMetadataVersion() const { return metadata_version; }
 
-    /// Prepares entries to backup data of the storage.
-    void backup(const ASTPtr & create_query, const String & data_path_in_backup, const std::optional<ASTs> & partitions, std::shared_ptr<BackupEntriesCollector> backup_entries_collector) override;
-
     /// Changes slightly this storage's create query before it's written to a backup.
     void adjustCreateQueryForBackup(ASTPtr & create_query) const override;
+
+    /// Makes backup entries to backup the data of the storage.
+    void backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override;
+
+    /// Extract data from the backup and put it to the storage.
+    void restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override;
 
     /** Remove a specific replica from zookeeper.
      */
@@ -793,10 +796,6 @@ private:
     MutationCommands getFirstAlterMutationCommandsForPart(const DataPartPtr & part) const override;
 
     void startBackgroundMovesIfNeeded() override;
-
-    /// Starts restoring a partition, if the function returns false the partition will be skipped.
-    /// We need to skip partitions in case other replicas are already restoring them.
-    bool startRestoringPartition(const String & partition_id, const StorageRestoreSettings & restore_settings, const std::shared_ptr<IRestoreCoordination> & restore_coordination) const override;
 
     /// Attaches restored parts to the storage.
     void attachRestoredParts(MutableDataPartsVector && parts) override;

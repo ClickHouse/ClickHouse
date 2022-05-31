@@ -36,6 +36,7 @@ namespace ErrorCodes
     extern const int WRONG_BASE_BACKUP;
     extern const int BACKUP_ENTRY_ALREADY_EXISTS;
     extern const int BACKUP_ENTRY_NOT_FOUND;
+    extern const int BACKUP_IS_EMPTY;
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
 }
@@ -151,7 +152,7 @@ BackupImpl::BackupImpl(
     , uuid(backup_uuid_)
     , version(CURRENT_BACKUP_VERSION)
     , base_backup_info(base_backup_info_)
-    , log(&Poco::Logger::get("Backup"))
+    , log(&Poco::Logger::get("BackupImpl"))
 {
     open(context_);
 }
@@ -217,13 +218,6 @@ void BackupImpl::open(const ContextPtr & context)
 void BackupImpl::close()
 {
     std::lock_guard lock{mutex};
-
-    if (!is_internal_backup && writing_finalized)
-    {
-        LOG_TRACE(log, "Finalizing backup {}", backup_name);
-        writeBackupMetadata();
-        LOG_INFO(log, "Finalized backup {}", backup_name);
-    }
 
     archive_readers.clear();
     for (auto & archive_writer : archive_writers)
@@ -495,6 +489,9 @@ void BackupImpl::writeFile(const String & file_name, BackupEntryPtr entry)
     if (open_mode != OpenMode::WRITE)
         throw Exception("Backup is not opened for writing", ErrorCodes::LOGICAL_ERROR);
 
+    if (writing_finalized)
+        throw Exception("Backup is already finalized", ErrorCodes::LOGICAL_ERROR);
+
     if (coordination->getFileInfo(file_name))
         throw Exception(
             ErrorCodes::BACKUP_ENTRY_ALREADY_EXISTS, "Backup {}: Entry {} already exists", backup_name, quoteString(file_name));
@@ -657,6 +654,19 @@ void BackupImpl::finalizeWriting()
     std::lock_guard lock{mutex};
     if (open_mode != OpenMode::WRITE)
         throw Exception("Backup is not opened for writing", ErrorCodes::LOGICAL_ERROR);
+
+    if (writing_finalized)
+        throw Exception("Backup is already finalized", ErrorCodes::LOGICAL_ERROR);
+
+    if (coordination->getAllFileInfos().empty())
+        throw Exception("Backup must not be empty", ErrorCodes::BACKUP_IS_EMPTY);
+
+    if (!is_internal_backup)
+    {
+        LOG_TRACE(log, "Finalizing backup {}", backup_name);
+        writeBackupMetadata();
+        LOG_TRACE(log, "Finalized backup {}", backup_name);
+    }
 
     writing_finalized = true;
 }

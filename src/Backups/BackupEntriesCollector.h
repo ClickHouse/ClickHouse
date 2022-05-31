@@ -3,6 +3,8 @@
 #include <Backups/BackupSettings.h>
 #include <Backups/DDLRenamingVisitor.h>
 #include <Parsers/ASTBackupQuery.h>
+#include <Storages/IStorage_fwd.h>
+#include <Storages/TableLockHolder.h>
 
 
 namespace DB
@@ -14,28 +16,30 @@ using BackupEntries = std::vector<std::pair<String, BackupEntryPtr>>;
 class IBackupCoordination;
 class IDatabase;
 using DatabasePtr = std::shared_ptr<IDatabase>;
+struct StorageID;
 
 /// Collects backup entries for all databases and tables which should be put to a backup.
-class BackupEntriesCollector : public std::enable_shared_from_this<BackupEntriesCollector>
+class BackupEntriesCollector : private boost::noncopyable
 {
 public:
-    static std::shared_ptr<BackupEntriesCollector> create(
-        const ASTBackupQuery::Elements & backup_query_elements_,
-        const BackupSettings & backup_settings_,
-        std::shared_ptr<IBackupCoordination> backup_coordination_,
-        const ContextPtr & context_,
-        std::chrono::seconds timeout_ = std::chrono::seconds(-1) /* no timeout */);
+    BackupEntriesCollector(const ASTBackupQuery::Elements & backup_query_elements_,
+                           const BackupSettings & backup_settings_,
+                           std::shared_ptr<IBackupCoordination> backup_coordination_,
+                           const ContextPtr & context_,
+                           std::chrono::seconds timeout_ = std::chrono::seconds(-1) /* no timeout */);
+    ~BackupEntriesCollector();
 
     /// Collects backup entries and returns the result.
     /// This function first generates a list of databases and then call IDatabase::backup() for each database from this list.
     /// At this moment IDatabase::backup() calls IStorage::backup() and they both call addBackupEntry() to build a list of backup entries.
-    BackupEntries collectBackupEntries();
+    BackupEntries getBackupEntries();
 
     const BackupSettings & getBackupSettings() const { return backup_settings; }
     std::shared_ptr<IBackupCoordination> getBackupCoordination() const { return backup_coordination; }
     ContextPtr getContext() const { return context; }
 
-    /// Adds a backup entry, this function must be called from implementations of IDatabase::backup() and IStorage::backup().
+    /// Adds a backup entry which will be later returned by getBackupEntries().
+    /// These function can be called by implementations of IStorage::backup() in inherited storage classes.
     void addBackupEntry(const String & file_name, BackupEntryPtr backup_entry);
     void addBackupEntries(const BackupEntries & backup_entries_);
     void addBackupEntries(BackupEntries && backup_entries_);
@@ -43,33 +47,58 @@ public:
     /// Adds a backup entry to backup a specified table or database's metadata.
     void addBackupEntryForCreateQuery(const ASTPtr & create_query);
 
-    /// Generates a path in the backup to store table's data.
-    String getDataPathInBackup(const ASTPtr & create_query) const;
-
-    /// Adds a function which must be called after all IDatabase::backup() and IStorage::backup() have finished their work on all hosts.
-    /// This function is used in complex cases:
+    /// Adds a function which must be called after all IStorage::backup() have finished their work on all hosts.
+    /// This function is designed to help making a consistent in some complex cases like
     /// 1) we need to join (in a backup) the data of replicated tables gathered on different hosts.
     void addPostCollectingTask(std::function<void()> task);
 
-    ~BackupEntriesCollector();
+    /// Writing a backup includes a few stages:
+    enum class Stage
+    {
+        /// Initial stage.
+        kPreparing,
+
+        /// Finding all tables and databases which we're going to put to the backup.
+        kFindingTables,
+
+        /// Making temporary hard links and prepare backup entries.
+        kExtractingDataFromTables,
+
+        /// Running special tasks for replicated databases or tables which can also prepare some backup entries.
+        kRunningPostTasks,
+
+        /// Writing backup entries to the backup and removing temporary hard links.
+        kWritingBackup,
+
+        /// An error happens during any of the stages above, the backup won't be written.
+        kError,
+    };
+    static std::string_view toString(Stage stage);
+
+    /// Throws an exception that a specified table engine doesn't support partitions.
+    [[noreturn]] static void throwPartitionsNotSupported(const StorageID & storage_id, const String & table_engine);
 
 private:
-    BackupEntriesCollector(const ASTBackupQuery::Elements & backup_query_elements_,
-                           const BackupSettings & backup_settings_,
-                           std::shared_ptr<IBackupCoordination> backup_coordination_,
-                           const ContextPtr & context_,
-                           std::chrono::seconds timeout_);
-
+    void setStage(Stage new_stage, const String & error_message = {});
     void calculateRootPathInBackup();
-    void prepareDatabaseInfos();
-    void backupDatabases();
+    void collectDatabasesAndTablesInfo();
+    void collectTableInfo(const DatabaseAndTableName & table_name, const std::optional<ASTs> & partitions, bool throw_if_not_found);
+    void collectDatabaseInfo(const String & database_name, const std::set<String> & except_table_names, bool throw_if_not_found);
+    void collectAllDatabasesInfo(const std::set<String> & except_database_names);
+    void checkConsistency();
+    void makeBackupEntriesForDatabasesDefs();
+    void makeBackupEntriesForTablesDefs();
+    void makeBackupEntriesForTablesData();
     void runPostCollectingTasks();
 
     const ASTBackupQuery::Elements backup_query_elements;
     const BackupSettings backup_settings;
-    const std::shared_ptr<IBackupCoordination> backup_coordination;
-    const ContextPtr context;
-    const std::chrono::seconds timeout;
+    std::shared_ptr<IBackupCoordination> backup_coordination;
+    ContextPtr context;
+    std::chrono::seconds timeout;
+    Poco::Logger * log;
+
+    Stage current_stage = Stage::kPreparing;
     String root_path_in_backup;
     DDLRenamingSettings renaming_settings;
 
@@ -77,19 +106,26 @@ private:
     {
         DatabasePtr database;
         ASTPtr create_database_query;
-        std::unordered_set<String> table_names;
-        bool all_tables = false;
-        std::unordered_set<String> except_table_names;
-        std::unordered_map<String, ASTs> partitions;
+    };
+
+    struct TableInfo
+    {
+        DatabasePtr database;
+        StoragePtr storage;
+        TableLockHolder table_lock;
+        ASTPtr create_table_query;
+        String data_path_in_backup;
+        std::optional<ASTs> partitions;
     };
 
     std::unordered_map<String, DatabaseInfo> database_infos;
+    std::map<DatabaseAndTableName, TableInfo> table_infos;
+    std::optional<std::set<String>> previous_database_names;
+    std::optional<std::set<DatabaseAndTableName>> previous_table_names;
+    bool consistent = false;
+    
     BackupEntries backup_entries;
     std::queue<std::function<void()>> post_collecting_tasks;
-    mutable std::mutex mutex;
-
-    std::atomic<bool> collecting_backup_entries = false;
-    std::atomic<bool> allow_adding_entries_or_tasks = false;
 };
 
 }

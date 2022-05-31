@@ -13,6 +13,12 @@ class IBackupCoordination
 public:
     virtual ~IBackupCoordination() = default;
 
+    /// Sets the current stage and waits for other hosts to come to this stage too.
+    virtual void syncStage(const String & current_host, int stage, const Strings & wait_hosts, std::chrono::seconds timeout) = 0;
+
+    /// Sets that the current host encountered an error, so other hosts should know that and stop waiting in syncStage().
+    virtual void syncStageError(const String & current_host, const String & error_message) = 0;
+
     struct PartNameAndChecksum
     {
         String part_name;
@@ -38,13 +44,6 @@ public:
 
     /// Returns all the data paths in backup added for a replicated table (see also addReplicatedDataPath()).
     virtual Strings getReplicatedDataPaths(const String & table_zk_path) const = 0;
-
-    /// Sets that a specified host finished preparations for copying the backup's files, successfully or not.
-    /// `error_message` should be set to true if it was not successful.
-    virtual void finishCollectingBackupEntries(const String & host_id, const String & error_message = {}) = 0;
-
-    /// Waits for a specified time for specified hosts to finish preparation for copying the backup's files.
-    virtual void waitForAllHostsCollectedBackupEntries(const Strings & host_ids, std::chrono::seconds timeout = std::chrono::seconds(-1) /* no timeout */) const = 0;
 
     struct FileInfo
     {

@@ -62,11 +62,6 @@ TableLockHolder IStorage::lockForShare(const String & query_id, const std::chron
     return result;
 }
 
-TableLockHolder IStorage::tryLockForShare(const String & query_id, const std::chrono::milliseconds & acquire_timeout)
-{
-    return tryLockTimed(drop_lock, RWLockImpl::Read, query_id, acquire_timeout);
-}
-
 IStorage::AlterLockHolder IStorage::lockForAlter(const std::chrono::milliseconds & acquire_timeout)
 {
     AlterLockHolder lock{alter_lock, std::defer_lock};
@@ -255,28 +250,23 @@ bool IStorage::isStaticStorage() const
 
 void IStorage::adjustCreateQueryForBackup(ASTPtr & create_query) const
 {
+    /// We don't want to see any UUIDs in backup.
     auto & create = create_query->as<ASTCreateQuery &>();
     create.uuid = UUIDHelpers::Nil;
     create.to_inner_uuid = UUIDHelpers::Nil;
 }
 
-void IStorage::backup(const ASTPtr & /* adjusted_create_query */, const String & /* data_path_in_backup */, const std::optional<ASTs> & /* partitions */,
-                      std::shared_ptr<BackupEntriesCollector> /* backup_entries_collector */)
+void IStorage::backupCreateQuery(BackupEntriesCollector & backup_entries_collector, const ASTPtr & create_query)
 {
-    throw Exception(
-        ErrorCodes::CANNOT_BACKUP_TABLE,
-        "Table engine {} doesn't support backups, cannot backup table {}",
-        getName(), getStorageID().getNameForLogs());
+    backup_entries_collector.addBackupEntryForCreateQuery(create_query);
 }
 
-void IStorage::backupMetadata(const ASTPtr & adjusted_create_query, std::shared_ptr<BackupEntriesCollector> backup_entries_collector) const
+void IStorage::backupData(BackupEntriesCollector &, const String &, const std::optional<ASTs> &)
 {
-    backup_entries_collector->addBackupEntryForCreateQuery(adjusted_create_query);
 }
 
-RestoreTaskPtr IStorage::restoreData(ContextMutablePtr, const ASTs &, const BackupPtr &, const String &, const StorageRestoreSettings &, const std::shared_ptr<IRestoreCoordination> &)
+void IStorage::restoreDataFromBackup(RestorerFromBackup &, const String &, const std::optional<ASTs> &)
 {
-    throw Exception("Table engine " + getName() + " doesn't support backups", ErrorCodes::NOT_IMPLEMENTED);
 }
 
 std::string PrewhereInfo::dump() const

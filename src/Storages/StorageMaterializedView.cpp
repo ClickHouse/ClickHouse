@@ -25,8 +25,7 @@
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/Sinks/SinkToStorage.h>
 
-#include <Backups/IBackupEntry.h>
-#include <Backups/IRestoreTask.h>
+#include <Backups/BackupEntriesCollector.h>
 
 namespace DB
 {
@@ -409,20 +408,17 @@ Strings StorageMaterializedView::getDataPaths() const
     return {};
 }
 
-void StorageMaterializedView::backup(const ASTPtr & create_query, const String & data_path_in_backup, const std::optional<ASTs> & partitions, std::shared_ptr<BackupEntriesCollector> backup_entries_collector)
+void StorageMaterializedView::backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & partitions)
 {
-    /// If the target table is not inner then we backup only metadata.
+    /// We backup the target table's data only if it's inner.
     if (hasInnerTable())
-        getTargetTable()->backup(create_query, data_path_in_backup, partitions, backup_entries_collector);
-    else
-        backupMetadata(create_query, backup_entries_collector);
+        getTargetTable()->backupData(backup_entries_collector, data_path_in_backup, partitions);
 }
 
-RestoreTaskPtr StorageMaterializedView::restoreData(ContextMutablePtr context_, const ASTs & partitions_, const BackupPtr & backup_, const String & data_path_in_backup_, const StorageRestoreSettings & restore_settings_, const std::shared_ptr<IRestoreCoordination> & restore_coordination_)
+void StorageMaterializedView::restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & partitions)
 {
-    if (!hasInnerTable())
-        return {};
-    return getTargetTable()->restoreData(context_, partitions_, backup_, data_path_in_backup_, restore_settings_, restore_coordination_);
+    if (hasInnerTable())
+        return getTargetTable()->restoreDataFromBackup(restorer, data_path_in_backup, partitions);
 }
 
 std::optional<UInt64> StorageMaterializedView::totalRows(const Settings & settings) const

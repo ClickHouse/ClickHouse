@@ -13,59 +13,27 @@ namespace ErrorCodes
 }
 
 
-RestoreCoordinationLocal::RestoreCoordinationLocal()
-    : log(&Poco::Logger::get("RestoreCoordination"))
-{}
-
+RestoreCoordinationLocal::RestoreCoordinationLocal() = default;
 RestoreCoordinationLocal::~RestoreCoordinationLocal() = default;
 
-bool RestoreCoordinationLocal::startCreatingTableInReplicatedDB(
-    const String & /* host_id */,
-    const String & /* database_name */,
-    const String & /* database_zk_path */,
-    const String & /* table_name */)
-{
-    return true;
-}
-
-void RestoreCoordinationLocal::finishCreatingTableInReplicatedDB(
-    const String & /* host_id */,
-    const String & database_name,
-    const String & /* database_zk_path */,
-    const String & table_name,
-    const String & error_message)
-{
-    if (error_message.empty())
-        LOG_TRACE(log, "Created table {}.{}", backQuoteIfNeed(database_name), backQuoteIfNeed(table_name));
-    else
-        LOG_TRACE(log, "Failed to created table {}.{}: {}", backQuoteIfNeed(database_name), backQuoteIfNeed(table_name), error_message);
-}
-
-/// Wait for another host to create a table in a replicated database.
-void RestoreCoordinationLocal::waitForTableCreatedInReplicatedDB(
-    const String & /* database_name */,
-    const String & /* database_zk_path */,
-    const String & /* table_name */,
-    std::chrono::seconds /* timeout */)
+void RestoreCoordinationLocal::syncStage(const String &, int, const Strings &, std::chrono::seconds)
 {
 }
 
-void RestoreCoordinationLocal::finishRestoringMetadata(const String & /* host_id */, const String & error_message)
-{
-    LOG_TRACE(log, "Finished restoring metadata{}", (error_message.empty() ? "" : (" with error " + error_message)));
-}
-
-void RestoreCoordinationLocal::waitForAllHostsRestoredMetadata(const Strings & /* host_ids */, std::chrono::seconds /* timeout */) const
+void RestoreCoordinationLocal::syncStageError(const String &, const String &)
 {
 }
 
-bool RestoreCoordinationLocal::startInsertingDataToPartitionInReplicatedTable(
-    const String & /* host_id */, const StorageID & table_id, const String & table_zk_path, const String & partition_name)
+bool RestoreCoordinationLocal::acquireCreatingTableInReplicatedDatabase(const String & database_zk_path, const String & table_name)
 {
     std::lock_guard lock{mutex};
-    auto key = std::pair{table_zk_path, partition_name};
-    auto it = replicated_tables_partitions.try_emplace(std::move(key), table_id).first;
-    return it->second == table_id;
+    return acquired_tables_in_replicated_databases.emplace(std::pair<String, String>{database_zk_path, table_name}).second;
+}
+
+bool RestoreCoordinationLocal::acquireInsertingDataIntoReplicatedTable(const String & table_zk_path)
+{
+    std::lock_guard lock{mutex};
+    return acquired_data_in_replicated_tables.emplace(table_zk_path).second;
 }
 
 }
