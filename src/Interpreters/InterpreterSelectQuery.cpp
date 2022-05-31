@@ -81,8 +81,6 @@
 #include <Common/FieldVisitorToString.h>
 #include <Common/typeid_cast.h>
 #include <Common/checkStackSize.h>
-#include <Common/logger_useful.h>
-#include <Poco/Logger.h>
 #include <Core/ColumnNumbers.h>
 #include <Interpreters/Aggregator.h>
 #include <base/map.h>
@@ -455,9 +453,8 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             {
                 /// Extract column compressed sizes.
                 std::unordered_map<std::string, UInt64> column_compressed_sizes;
-                for (const auto & [name, sizes] : column_sizes) {
+                for (const auto & [name, sizes] : column_sizes)
                     column_compressed_sizes[name] = sizes.data_compressed;
-                }
 
                 SelectQueryInfo current_info;
                 current_info.query = query_ptr;

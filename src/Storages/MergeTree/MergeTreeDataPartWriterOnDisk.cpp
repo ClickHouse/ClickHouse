@@ -1,13 +1,10 @@
-#include <Storages/MergeTree/MergeTreeDataPartWriterOnDisk.h>
-#include <Poco/Logger.h>
-#include "Common/Exception.h"
-#include "Disks/IDisk.h"
-#include "Storages/MergeTree/MergeTreeStatistic.h"
 #include <Common/MemoryTrackerBlockerInThread.h>
+#include <IO/WriteBufferFromFileDecorator.h>
+#include <Storages/MergeTree/MergeTreeDataPartWriterOnDisk.h>
+#include <Storages/MergeTree/MergeTreeStatistic.h>
 #include <memory>
 #include <unordered_set>
 #include <utility>
-#include "IO/WriteBufferFromFileDecorator.h"
 
 namespace DB
 {

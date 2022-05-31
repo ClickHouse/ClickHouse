@@ -142,7 +142,6 @@ public:
      *  The DROP STATISTIC query stores the name for deletion.
      *  The MATERIALIZE STATISTIC query stores the name of the statistic to materialize.
      *  The CLEAR STATISTIC query stores the name of the statistic to clear.
-     *  --The MODIFY STATISTIC query stores the name of the statistic to modify.--
      */
     ASTPtr statistic;
 

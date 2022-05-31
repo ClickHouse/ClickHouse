@@ -35,7 +35,6 @@
 #include <Common/interpolate.h>
 #include <Common/typeid_cast.h>
 #include <Common/escapeForFileName.h>
-#include "Storages/MutationCommands.h"
 #include <Parsers/queryToString.h>
 
 #include <cmath>

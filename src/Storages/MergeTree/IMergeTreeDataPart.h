@@ -348,9 +348,6 @@ public:
     UInt64 getIndexSizeInAllocatedBytes() const;
     UInt64 getMarksCount() const;
 
-    //TODO: UInt64 getStatsSizeInBytes() const;
-    //TODO: UInt64 getStatsAllocatedBytes() const;
-
     UInt64 getBytesOnDisk() const { return bytes_on_disk; }
     void setBytesOnDisk(UInt64 bytes_on_disk_) { bytes_on_disk = bytes_on_disk_; }
 
@@ -453,10 +450,10 @@ public:
     /// Required for distinguish different copies of the same part on remote FS.
     String getUniqueId() const;
 
-    /// Loads stats
-    /// Stats sketches are too large to store them in RAM for each part, 
-    /// so we store aggregated stats per each partition.
-    MergeTreeStatisticsPtr loadStats() const;
+    /// Loads statistics
+    /// Statistics sketches are too large to store them in RAM for each part, 
+    /// so we store aggregated statistics per each partition.
+    MergeTreeStatisticsPtr loadStatistics() const;
 
     /// Ensures that creation_tid was correctly set after part creation.
     void assertHasVersionMetadata(MergeTreeTransaction * txn) const;
@@ -582,7 +579,6 @@ private:
 
     /// Load rows count for this part from disk (for the newer storage format version).
     /// For the older format version calculates rows count from the size of a column with a fixed size.
-    /// TODO: move to stats in the future???
     void loadRowsCount();
 
     static void appendFilesOfRowsCount(Strings & files);

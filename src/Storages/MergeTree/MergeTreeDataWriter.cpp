@@ -14,9 +14,7 @@
 #include <DataTypes/ObjectUtils.h>
 #include <IO/WriteHelpers.h>
 #include <Common/typeid_cast.h>
-#include "Core/NamesAndTypes.h"
-#include "Storages/MergeTree/MergeTreeIndices.h"
-#include "Storages/StatisticsDescription.h"
+#include <Storages/StatisticsDescription.h>
 #include <Processors/TTL/ITTLAlgorithm.h>
 
 #include <Parsers/queryToString.h>

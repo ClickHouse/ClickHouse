@@ -14,7 +14,7 @@ class ASTStatisticDeclaration : public IAST
 public:
     String name;
     IAST * columns;
-    ASTFunction * type; // TODO: optional or 'AUTO'
+    ASTFunction * type;
 
     /** Get the text that identifies this element. */
     String getID(char) const override { return "Stat"; }

@@ -21,9 +21,6 @@
 #include <Common/escapeForFileName.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/FieldVisitorsAccurateComparison.h>
-#include "Compression/CompressedReadBufferFromFile.h"
-#include "IO/AsynchronousReadBufferFromFile.h"
-#include "Storages/IStorage.h"
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <base/JSON.h>
 #include <Common/logger_useful.h>
@@ -33,7 +30,6 @@
 #include <Parsers/ExpressionElementParsers.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
-#include <Poco/Logger.h>
 #include <Interpreters/MergeTreeTransaction.h>
 #include <Interpreters/TransactionLog.h>
 
@@ -786,7 +782,7 @@ void IMergeTreeDataPart::loadIndex()
     }
 }
 
-MergeTreeStatisticsPtr IMergeTreeDataPart::loadStats() const {
+MergeTreeStatisticsPtr IMergeTreeDataPart::loadStatistics() const {
     const auto metadata_snapshot = storage.getInMemoryMetadataPtr();
 
     auto total_stats = MergeTreeStatisticFactory::instance().get(

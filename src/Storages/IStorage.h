@@ -1,9 +1,5 @@
 #pragma once
 
-#include <Common/ActionLock.h>
-#include <Common/Exception.h>
-#include <Common/RWLock.h>
-#include <Common/TypePromotion.h>
 #include <Core/Names.h>
 #include <Core/QueryProcessingStage.h>
 #include <Databases/IDatabase.h>
