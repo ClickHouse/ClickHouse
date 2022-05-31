@@ -46,7 +46,7 @@ protected:
     /// It is more efficient for compression codec NONE but not suitable if you want to decompress into specific location.
     void decompress(BufferBase::Buffer & to, size_t size_decompressed, size_t size_compressed_without_checksum, UInt8 req_type=0);
     /// Flush all asynchronous decompress request
-    void decompressFlush(void);
+    void decompressFlush();
 public:
     /// 'compressed_in' could be initialized lazily, but before first call of 'readCompressedData'.
     explicit CompressedReadBufferBase(ReadBuffer * in = nullptr, bool allow_different_codecs_ = false);

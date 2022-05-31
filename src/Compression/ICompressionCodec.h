@@ -139,7 +139,7 @@ protected:
     }
 
     /// Flush asynchronous request for decompression
-    virtual void doDecompressDataFlush(void)
+    virtual void doDecompressDataFlush()
     {
     }
     /// Construct and set codec description from codec name and arguments. Must be called in codec constructor.
