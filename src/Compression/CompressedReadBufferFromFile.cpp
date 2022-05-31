@@ -92,7 +92,7 @@ size_t CompressedReadBufferFromFile::readBig(char * to, size_t n)
 {
     size_t bytes_read = 0;
     UInt8 req_type = 0;
-    bool readTail = false;
+    bool read_tail = false;
 
     /// If there are unread bytes in the buffer, then we copy needed to `to`.
     if (pos < working_buffer.end())
@@ -162,14 +162,14 @@ size_t CompressedReadBufferFromFile::readBig(char * to, size_t n)
             working_buffer = Buffer(memory.data(), &memory[size_decompressed]);
 
             decompress(working_buffer, size_decompressed, size_compressed_without_checksum, 1);
-            readTail = true;
+            read_tail = true;
             break;
         }
     }
 
     decompressFlush();
 
-    if (readTail)
+    if (read_tail)
     {
         /// Manually take nextimpl_working_buffer_offset into account, because we don't use
         /// nextImpl in this method.

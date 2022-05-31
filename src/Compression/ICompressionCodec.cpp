@@ -148,7 +148,7 @@ UInt32 ICompressionCodec::decompress(const char * source, UInt32 source_size, ch
     return decompressed_size;
 }
 
-void ICompressionCodec::decompressFlush(void)
+void ICompressionCodec::decompressFlush()
 {
     doDecompressDataFlush();
 }

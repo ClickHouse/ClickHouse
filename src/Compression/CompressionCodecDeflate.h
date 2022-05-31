@@ -319,8 +319,8 @@ protected:
     void doDecompressData(const char * source, uint32_t source_size, char * dest, uint32_t uncompressed_size) const override;
     void doDecompressDataReq(const char * source, uint32_t source_size, char * dest, uint32_t uncompressed_size) override;
     void doDecompressDataSW(const char * source, uint32_t source_size, char * dest, uint32_t uncompressed_size) const override;
-    void doDecompressDataSWNative(const char * source, uint32_t source_size, char * dest, uint32_t uncompressed_size) const;
-    void doDecompressDataFlush(void) override;
+    static void doDecompressDataSWNative(const char * source, uint32_t source_size, char * dest, uint32_t uncompressed_size);
+    void doDecompressDataFlush() override;
 
 private:
     uint32_t getMaxCompressedDataSize(uint32_t uncompressed_size) const override;
