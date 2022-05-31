@@ -336,7 +336,15 @@ public:
     bool hasGlobalSubqueries() { return has_global_subqueries; }
     bool hasTableJoin() const { return syntax->ast_join; }
 
-    bool useGroupingSetKey() const { return aggregation_keys_list.size() > 1; }
+    /// When there is only one group in GROUPING SETS
+    /// it is a special case that is equal to GROUP BY, i.e.:
+    ///
+    ///     GROUPING SETS ((a, b)) -> GROUP BY a, b
+    ///
+    /// But it is rewritten by GroupingSetsRewriterVisitor to GROUP BY,
+    /// so instead of aggregation_keys_list.size() > 1,
+    /// !aggregation_keys_list.empty() can be used.
+    bool useGroupingSetKey() const { return !aggregation_keys_list.empty(); }
 
     const NamesAndTypesList & aggregationKeys() const { return aggregation_keys; }
     bool hasConstAggregationKeys() const { return has_const_aggregation_keys; }
