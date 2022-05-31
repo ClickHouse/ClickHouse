@@ -521,6 +521,18 @@ Result:
 └─────┴────────┘
 ```
 
+## input_format_tsv_skip_first_lines {#settings-input_format_tsv_skip_first_lines}
+
+The number of lines to skip at the beginning of data in TSV input format.
+
+Default value: `0`.
+
+## input_format_csv_skip_first_lines {#settings-input_format_csv_skip_first_lines}
+
+The number of lines to skip at the beginning of data in CSV input format.
+
+Default value: `0`.
+
 ## input_format_null_as_default {#settings-input-format-null-as-default}
 
 Enables or disables the initialization of [NULL](../../sql-reference/syntax.md#null-literal) fields with [default values](../../sql-reference/statements/create/table.md#create-default-values), if data type of these fields is not [nullable](../../sql-reference/data-types/nullable.md#data_type-nullable).

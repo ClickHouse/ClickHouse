@@ -60,7 +60,7 @@ public:
     Metadata readMetadata(const String & path) const;
     Metadata readMetadataUnlocked(const String & path, std::shared_lock<std::shared_mutex> &) const;
     Metadata readUpdateAndStoreMetadata(const String & path, bool sync, MetadataUpdater updater);
-    Metadata readUpdateStoreMetadataAndRemove(const String & path, bool sync, MetadataUpdater updater);
+    void readUpdateStoreMetadataAndRemove(const String & path, bool sync, MetadataUpdater updater);
 
     Metadata readOrCreateUpdateAndStoreMetadata(const String & path, WriteMode mode, bool sync, MetadataUpdater updater);
 
