@@ -44,7 +44,7 @@ SELECT name FROM system.parts WHERE active AND database = currentDatabase() AND 
 SELECT name FROM system.zookeeper WHERE path = '/clickhouse/tables/'||currentDatabase()||'/test_00814/part_header/s1/replicas/1r1/parts';
 SELECT '*** replica 2 ***';
 SELECT name FROM system.parts WHERE active AND database = currentDatabase() AND table = 'part_header_r2';
-SELECT name FROM system.zookeeper WHERE path = '/clickhouse/tables/'||currentDatabase()||'/test_00814/part_header/s1/replicas/1r1/parts';
+SELECT name FROM system.zookeeper WHERE path = '/clickhouse/tables/'||currentDatabase()||'/test_00814/part_header/s1/replicas/2r1/parts';
 
 SELECT '*** Test ALTER ***';
 ALTER TABLE part_header_r1 MODIFY COLUMN y String;
