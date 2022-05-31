@@ -1,4 +1,13 @@
--- Tags: replica
+#!/usr/bin/env bash
+# Tags: replica
+
+set -e
+
+CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=../shell_config.sh
+. "$CURDIR"/../shell_config.sh
+
+$CLICKHOUSE_CLIENT -nm -q "
 
 DROP TABLE IF EXISTS part_header_r1;
 DROP TABLE IF EXISTS part_header_r2;
@@ -36,7 +45,18 @@ SELECT _part, x FROM part_header_r1 ORDER BY x;
 SELECT '*** replica 2 ***';
 SELECT _part, x FROM part_header_r2 ORDER BY x;
 
-SELECT sleep(3) FORMAT Null;
+"
+
+elapsed=1
+until [ $elapsed -eq 5 ];
+do
+    sleep $(( elapsed++ ))
+    count1=$($CLICKHOUSE_CLIENT --query="SELECT count(name) FROM system.zookeeper WHERE path = '/clickhouse/tables/'||currentDatabase()||'/test_00814/part_header/s1/replicas/1r1/parts'")
+    count2=$($CLICKHOUSE_CLIENT --query="SELECT count(name) FROM system.zookeeper WHERE path = '/clickhouse/tables/'||currentDatabase()||'/test_00814/part_header/s1/replicas/2r1/parts'")
+    [[ $count1 == 1 && $count2 == 1 ]] && break
+done
+
+$CLICKHOUSE_CLIENT -nm -q "
 
 SELECT '*** Test part removal ***';
 SELECT '*** replica 1 ***';
@@ -63,3 +83,5 @@ SELECT x, length(y) FROM part_header_r2 ORDER BY x;
 
 DROP TABLE part_header_r1;
 DROP TABLE part_header_r2;
+
+"
