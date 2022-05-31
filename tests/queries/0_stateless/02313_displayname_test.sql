@@ -1,0 +1,2 @@
+select displayname();
+select displayName();
