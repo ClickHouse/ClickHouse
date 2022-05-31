@@ -203,6 +203,9 @@ public:
 
     DatabaseAndTable tryGetByUUID(const UUID & uuid) const;
 
+    /// Returns the list of databases which should be put to backup by the command BACKUP ALL DATABASES.
+    Databases getDatabasesForBackup() const;
+
     String getPathForDroppedMetadata(const StorageID & table_id) const;
     void enqueueDroppedTableCleanup(StorageID table_id, StoragePtr table, String dropped_metadata_path, bool ignore_delay = false);
 

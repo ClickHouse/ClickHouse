@@ -5,7 +5,7 @@
 
 namespace DB
 {
-struct StorageID;
+using DatabaseAndTableName = std::pair<String, String>;
 
 /// Keeps information about files contained in a backup.
 class IRestoreCoordination
@@ -13,43 +13,18 @@ class IRestoreCoordination
 public:
     virtual ~IRestoreCoordination() = default;
 
+    /// Sets the current stage and waits for other hosts to come to this stage too.
+    virtual void syncStage(const String & current_host, int stage, const Strings & wait_hosts, std::chrono::seconds timeout) = 0;
+
+    /// Sets that the current host encountered an error, so other hosts should know that and stop waiting in syncStage().
+    virtual void syncStageError(const String & current_host, const String & error_message) = 0;
+
     /// Starts creating a table in a replicated database. Returns false if there is another host which is already creating this table.
-    virtual bool startCreatingTableInReplicatedDB(
-        const String & host_id, const String & database_name, const String & database_zk_path, const String & table_name)
-        = 0;
-
-    /// Sets that either we have been created a table in a replicated database or failed doing that.
-    /// In the latter case `error_message` should be set.
-    /// Calling this function unblocks other hosts waiting for this table to be created (see waitForCreatingTableInReplicatedDB()).
-    virtual void finishCreatingTableInReplicatedDB(
-        const String & host_id,
-        const String & database_name,
-        const String & database_zk_path,
-        const String & table_name,
-        const String & error_message = {})
-        = 0;
-
-    /// Wait for another host to create a table in a replicated database.
-    virtual void waitForTableCreatedInReplicatedDB(
-        const String & database_name,
-        const String & database_zk_path,
-        const String & table_name,
-        std::chrono::seconds timeout = std::chrono::seconds(-1) /* no timeout */)
-        = 0;
-
-    /// Sets that a specified host has finished restoring metadata, successfully or with an error.
-    /// In the latter case `error_message` should be set.
-    virtual void finishRestoringMetadata(const String & host_id, const String & error_message = {}) = 0;
-
-    /// Waits for a specified list of hosts to finish restoring their metadata.
-    virtual void waitForAllHostsRestoredMetadata(
-        const Strings & host_ids, std::chrono::seconds timeout = std::chrono::seconds(-1) /* no timeout */) const = 0;
+    virtual bool acquireCreatingTableInReplicatedDatabase(const String & database_zk_path, const String & table_name) = 0;
 
     /// Sets that this replica is going to restore a partition in a replicated table.
     /// The function returns false if this partition is being already restored by another replica.
-    virtual bool startInsertingDataToPartitionInReplicatedTable(
-        const String & host_id, const StorageID & table_id, const String & table_zk_path, const String & partition_name)
-        = 0;
+    virtual bool acquireInsertingDataIntoReplicatedTable(const String & table_zk_path) = 0;
 
     /// Removes remotely stored information.
     virtual void drop() {}

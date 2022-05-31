@@ -7,11 +7,10 @@
 #include <Backups/BackupEntriesCollector.h>
 #include <Backups/BackupCoordinationDistributed.h>
 #include <Backups/BackupCoordinationLocal.h>
-#include <Backups/IRestoreTask.h>
 #include <Backups/RestoreCoordinationDistributed.h>
 #include <Backups/RestoreCoordinationLocal.h>
 #include <Backups/RestoreSettings.h>
-#include <Backups/RestoreUtils.h>
+#include <Backups/RestorerFromBackup.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
@@ -134,7 +133,7 @@ UUID BackupsWorker::startMakingBackup(const ASTPtr & query, const ContextPtr & c
     }
 
     auto job = [this,
-                backup,
+                backup = std::move(backup),
                 backup_uuid,
                 backup_query,
                 backup_settings,
@@ -148,9 +147,7 @@ UUID BackupsWorker::startMakingBackup(const ASTPtr & query, const ContextPtr & c
             {
                 PullingPipelineExecutor executor(on_cluster_io->pipeline);
                 Block block;
-                while (executor.pull(block))
-                    ;
-                backup->finalizeWriting();
+                while (executor.pull(block));
             }
             else
             {
@@ -160,12 +157,19 @@ UUID BackupsWorker::startMakingBackup(const ASTPtr & query, const ContextPtr & c
 
                 backup_query->setDatabase(cloned_context->getCurrentDatabase());
 
-                auto timeout_for_collect_backup_entries = std::chrono::seconds{cloned_context->getConfigRef().getInt("backups.backup_prepare_timeout", -1)};
-                auto backup_entries_collector = BackupEntriesCollector::create(
-                    backup_query->elements, backup_settings, backup_coordination, cloned_context, timeout_for_collect_backup_entries);
-                auto backup_entries = backup_entries_collector->collectBackupEntries();
+                BackupEntries backup_entries;
+                {
+                    auto timeout = std::chrono::seconds{cloned_context->getConfigRef().getInt("backups.backup_prepare_timeout", -1)};
+                    BackupEntriesCollector backup_entries_collector{backup_query->elements, backup_settings, backup_coordination, cloned_context, timeout};
+                    backup_entries = backup_entries_collector.getBackupEntries();
+                }
+
                 writeBackupEntries(backup, std::move(backup_entries), backups_thread_pool);
             }
+
+            if (!backup_settings.internal)
+                backup->finalizeWriting();
+
             setStatus(backup_uuid, BackupStatus::BACKUP_COMPLETE);
         }
         catch (...)
@@ -289,12 +293,17 @@ UUID BackupsWorker::startRestoring(const ASTPtr & query, ContextMutablePtr conte
                 backup_open_params.password = restore_settings.password;
                 BackupPtr backup = BackupFactory::instance().createBackup(backup_open_params);
 
-                auto timeout_for_restoring_metadata
-                    = std::chrono::seconds{cloned_context->getConfigRef().getInt("backups.restore_metadata_timeout", -1)};
-                auto restore_tasks = makeRestoreTasks(
-                    cloned_context, backup, restore_query->elements, restore_settings, restore_coordination, timeout_for_restoring_metadata);
-                restoreMetadata(restore_tasks, restore_settings, restore_coordination, timeout_for_restoring_metadata);
-                restoreData(restore_tasks, restores_thread_pool);
+                std::vector<DataRestoreTask> data_restore_tasks;
+                {
+                    auto timeout = std::chrono::seconds{cloned_context->getConfigRef().getInt("backups.restore_metadata_timeout", -1)};
+                    RestorerFromBackup restorer{restore_query->elements, restore_settings, restore_coordination,
+                                                backup, cloned_context, timeout};
+                    restorer.restoreMetadata();
+                    data_restore_tasks = restorer.getDataRestoreTasks();
+                }
+
+                restoreTablesData(std::move(data_restore_tasks), restores_thread_pool);
+                backup.reset();
             }
 
             setStatus(restore_uuid, BackupStatus::RESTORED);

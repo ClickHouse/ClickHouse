@@ -4,8 +4,7 @@
 #include <Backups/BackupEntryFromImmutableFile.h>
 #include <Backups/BackupEntryFromSmallFile.h>
 #include <Backups/IBackup.h>
-#include <Backups/IRestoreTask.h>
-#include <Backups/RestoreSettings.h>
+#include <Backups/RestorerFromBackup.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDate.h>
@@ -4060,18 +4059,19 @@ Pipe MergeTreeData::alterPartition(
 }
 
 
-void MergeTreeData::backup(const ASTPtr & create_query, const String & data_path_in_backup, const std::optional<ASTs> & partitions, std::shared_ptr<BackupEntriesCollector> backup_entries_collector)
+void MergeTreeData::backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & partitions)
 {
-    backupMetadata(create_query, backup_entries_collector);
-    
-    if (!backup_entries_collector->getBackupSettings().structure_only)
+    BackupEntries backup_entries = backupParts(backup_entries_collector.getContext(), partitions);
+    fs::path data_path_in_backup_fs = data_path_in_backup;
+    for (auto & pair: backup_entries)
     {
-        auto backup_entries = backupData(data_path_in_backup, partitions, backup_entries_collector->getContext());
-        backup_entries_collector->addBackupEntries(std::move(backup_entries));
+        auto & file_name = pair.first;
+        file_name = data_path_in_backup_fs / file_name;
     }
+    backup_entries_collector.addBackupEntries(std::move(backup_entries));
 }
 
-BackupEntries MergeTreeData::backupData(const String & data_path_in_backup, const std::optional<ASTs> & partitions, const ContextPtr & local_context)
+BackupEntries MergeTreeData::backupParts(const ContextPtr & local_context, const std::optional<ASTs> & partitions) const
 {
     DataPartsVector data_parts;
     if (partitions)
@@ -4080,8 +4080,6 @@ BackupEntries MergeTreeData::backupData(const String & data_path_in_backup, cons
         data_parts = getVisibleDataPartsVector(local_context);
 
     BackupEntries backup_entries;
-    String out_path = data_path_in_backup.empty() ? "" : (data_path_in_backup + "/");
-
     std::map<DiskPtr, std::shared_ptr<TemporaryFileOnDisk>> temp_dirs;
 
     for (const auto & part : data_parts)
@@ -4105,7 +4103,7 @@ BackupEntries MergeTreeData::backupData(const String & data_path_in_backup, cons
             disk->createHardLink(part_dir / filepath, hardlink_filepath);
             UInt128 file_hash{checksum.file_hash.first, checksum.file_hash.second};
             backup_entries.emplace_back(
-                out_path + relative_filepath,
+                relative_filepath,
                 std::make_unique<BackupEntryFromImmutableFile>(disk, hardlink_filepath, checksum.file_size, file_hash, temp_dir_owner));
         }
 
@@ -4113,222 +4111,149 @@ BackupEntries MergeTreeData::backupData(const String & data_path_in_backup, cons
         {
             String relative_filepath = fs::path(part->relative_path) / filepath;
             backup_entries.emplace_back(
-                out_path + relative_filepath, std::make_unique<BackupEntryFromSmallFile>(disk, part_dir / filepath));
+                relative_filepath, std::make_unique<BackupEntryFromSmallFile>(disk, part_dir / filepath));
         }
     }
     
     return backup_entries;
 }
 
+void MergeTreeData::restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & partitions)
+{
+    auto backup = restorer.getBackup();
+    if (!restorer.isNonEmptyTableAllowed() && getTotalActiveSizeInBytes() && !backup->listFiles(data_path_in_backup + '/').empty())
+        restorer.throwTableIsNotEmpty(getStorageID());
 
-class MergeTreeDataRestoreTask : public IRestoreTask
+    restorePartsFromBackup(restorer, data_path_in_backup, partitions);
+}
+
+class MergeTreeData::RestoredPartsHolder
 {
 public:
-    MergeTreeDataRestoreTask(
-        const std::shared_ptr<MergeTreeData> & storage_,
-        const std::unordered_set<String> & partition_ids_,
-        const BackupPtr & backup_,
-        const String & data_path_in_backup_,
-        const StorageRestoreSettings & restore_settings_,
-        const std::shared_ptr<IRestoreCoordination> & restore_coordination_)
-        : storage(storage_)
-        , partition_ids(partition_ids_)
-        , backup(backup_)
-        , data_path_in_backup(data_path_in_backup_)
-        , restore_settings(restore_settings_)
-        , restore_coordination(restore_coordination_)
+    RestoredPartsHolder(const std::shared_ptr<MergeTreeData> & storage_, const BackupPtr & backup_, size_t num_parts_)
+        : storage(storage_), backup(backup_), num_parts(num_parts_)
     {
     }
 
-    RestoreTasks run() override
+    BackupPtr getBackup() const { return backup; }
+
+    void setNumParts(size_t num_parts_)
     {
-        RestoreTasks restore_tasks;
-        Strings part_names = backup->listFiles(data_path_in_backup);
-        auto attach_task_ptr = std::make_shared<std::unique_ptr<AttachPartsTask>>(std::make_unique<AttachPartsTask>(storage));
-        std::unordered_map<String, bool> partitions_restored_by_us;
+        std::lock_guard lock{mutex};
+        num_parts = num_parts_;
+        attachIfAllPartsRestored();
+    }
 
-        for (const String & part_name : part_names)
-        {
-            const auto part_info = MergeTreePartInfo::tryParsePartName(part_name, storage->format_version);
-            if (!part_info)
-                continue;
-
-            if (!partition_ids.empty() && !partition_ids.contains(part_info->partition_id))
-                continue;
-
-            auto it = partitions_restored_by_us.find(part_info->partition_id);
-            if (it == partitions_restored_by_us.end())
-            {
-                it = partitions_restored_by_us.emplace(
-                                                  part_info->partition_id,
-                                                  storage->startRestoringPartition(part_info->partition_id, restore_settings, restore_coordination)).first;
-            }
-            if (!it->second)
-                continue; /// Other replica is already restoring this partition.
-
-            (*attach_task_ptr)->increaseNumParts(1);
-            restore_tasks.push_back(
-                std::make_unique<RestorePartTask>(storage, part_name, *part_info, backup, data_path_in_backup, attach_task_ptr));
-        }
-        return restore_tasks;
+    void addPart(MutableDataPartPtr part, std::shared_ptr<TemporaryFileOnDisk> temp_part_dir_owner)
+    {
+        std::lock_guard lock{mutex};
+        parts.emplace_back(part);
+        temp_part_dir_owners.emplace_back(temp_part_dir_owner);
+        attachIfAllPartsRestored();
     }
 
 private:
-    using MutableDataPartPtr = std::shared_ptr<IMergeTreeDataPart>;
-    using MutableDataPartsVector = std::vector<MutableDataPartPtr>;
-    class AttachPartsTask;
+    void attachIfAllPartsRestored()
+    {
+        if (!num_parts || (parts.size() < num_parts))
+            return;
+
+        /// Sort parts by min_block (because we need to preserve the order of parts).
+        std::sort(
+            parts.begin(),
+            parts.end(),
+            [](const MutableDataPartPtr & lhs, const MutableDataPartPtr & rhs) { return lhs->info.min_block < rhs->info.min_block; });
+
+        storage->attachRestoredParts(std::move(parts));
+        parts.clear();
+        temp_part_dir_owners.clear();
+        num_parts = 0;
+    }
 
     std::shared_ptr<MergeTreeData> storage;
-    std::unordered_set<String> partition_ids;
     BackupPtr backup;
-    String data_path_in_backup;
-    StorageRestoreSettings restore_settings;
-    std::shared_ptr<IRestoreCoordination> restore_coordination;
-
-    class RestorePartTask : public IRestoreTask
-    {
-    public:
-        RestorePartTask(
-            const std::shared_ptr<MergeTreeData> & storage_,
-            const String & part_name_,
-            const MergeTreePartInfo & part_info_,
-            const BackupPtr & backup_,
-            const String & data_path_in_backup_,
-            const std::shared_ptr<std::unique_ptr<AttachPartsTask>> & attach_task_ptr_)
-            : storage(storage_)
-            , backup(backup_)
-            , data_path_in_backup(data_path_in_backup_)
-            , part_name(part_name_)
-            , part_info(part_info_)
-            , attach_task_ptr(attach_task_ptr_)
-        {
-        }
-
-        RestoreTasks run() override
-        {
-            UInt64 total_size_of_part = 0;
-            Strings filenames = backup->listFiles(data_path_in_backup + part_name + "/", "");
-            for (const String & filename : filenames)
-                total_size_of_part += backup->getFileSize(data_path_in_backup + part_name + "/" + filename);
-
-            std::shared_ptr<IReservation> reservation = storage->getStoragePolicy()->reserveAndCheck(total_size_of_part);
-            auto disk = reservation->getDisk();
-            String relative_data_path = storage->getRelativeDataPath();
-
-            auto temp_part_dir_owner = std::make_shared<TemporaryFileOnDisk>(disk, relative_data_path + "restoring_" + part_name + "_");
-            String temp_part_dir = temp_part_dir_owner->getPath();
-            disk->createDirectories(temp_part_dir);
-
-            assert(temp_part_dir.starts_with(relative_data_path));
-            String relative_temp_part_dir = temp_part_dir.substr(relative_data_path.size());
-
-            for (const String & filename : filenames)
-            {
-                auto backup_entry = backup->readFile(fs::path(data_path_in_backup) / part_name / filename);
-                auto read_buffer = backup_entry->getReadBuffer();
-                auto write_buffer = disk->writeFile(fs::path(temp_part_dir) / filename);
-                copyData(*read_buffer, *write_buffer);
-                reservation->update(reservation->getSize() - backup_entry->getSize());
-            }
-
-            auto single_disk_volume = std::make_shared<SingleDiskVolume>(disk->getName(), disk, 0);
-            auto part = storage->createPart(part_name, part_info, single_disk_volume, relative_temp_part_dir);
-            /// TODO Transactions: Decide what to do with version metadata (if any). Let's just remove it for now.
-            disk->removeFileIfExists(fs::path(temp_part_dir) / IMergeTreeDataPart::TXN_VERSION_METADATA_FILE_NAME);
-            part->version.setCreationTID(Tx::PrehistoricTID, nullptr);
-            part->loadColumnsChecksumsIndexes(false, true);
-
-            auto & attach_task = *attach_task_ptr;
-            assert(attach_task);
-            attach_task->addPart(part, temp_part_dir_owner);
-            if (!attach_task->containsAllParts())
-                return {};
-
-            RestoreTasks restore_tasks;
-            restore_tasks.emplace_back(std::move(attach_task));
-            return restore_tasks;
-        }
-
-    private:
-        std::shared_ptr<MergeTreeData> storage;
-        BackupPtr backup;
-        String data_path_in_backup;
-        String part_name;
-        MergeTreePartInfo part_info;
-        std::shared_ptr<std::unique_ptr<AttachPartsTask>> attach_task_ptr;
-    };
-
-    class AttachPartsTask : public IRestoreTask
-    {
-    public:
-        AttachPartsTask(const std::shared_ptr<MergeTreeData> & storage_) : storage(storage_) {}
-
-        void increaseNumParts(size_t add_num_parts) { std::lock_guard lock{mutex}; num_parts += add_num_parts; }
-
-        void addPart(MutableDataPartPtr part, std::shared_ptr<TemporaryFileOnDisk> temp_part_dir_owner)
-        {
-            std::lock_guard lock{mutex};
-            parts.emplace_back(part);
-            temp_part_dir_owners.emplace_back(temp_part_dir_owner);
-        }
-
-        bool containsAllParts() const
-        {
-            std::lock_guard lock{mutex};
-            return parts.size() == num_parts;
-        }
-
-        RestoreTasks run() override
-        {
-            assert(containsAllParts());
-            std::lock_guard lock{mutex};
-
-            /// Sort parts by min_block (because we need to preserve the order of parts).
-            std::sort(
-                parts.begin(),
-                parts.end(),
-                [](const MutableDataPartPtr & lhs, const MutableDataPartPtr & rhs) { return lhs->info.min_block < rhs->info.min_block; });
-
-            storage->attachRestoredParts(std::move(parts));
-            parts.clear();
-            temp_part_dir_owners.clear();
-            return {};
-        }
-
-    private:
-        std::shared_ptr<MergeTreeData> storage;
-        size_t num_parts = 0;
-        MutableDataPartsVector parts;
-        std::vector<std::shared_ptr<TemporaryFileOnDisk>> temp_part_dir_owners;
-        mutable std::mutex mutex;
-    };
+    size_t num_parts = 0;
+    MutableDataPartsVector parts;
+    std::vector<std::shared_ptr<TemporaryFileOnDisk>> temp_part_dir_owners;
+    mutable std::mutex mutex;
 };
 
-
-RestoreTaskPtr MergeTreeData::restoreData(
-    ContextMutablePtr local_context,
-    const ASTs & partitions,
-    const BackupPtr & backup,
-    const String & data_path_in_backup,
-    const StorageRestoreSettings & restore_settings,
-    const std::shared_ptr<IRestoreCoordination> & restore_coordination)
+void MergeTreeData::restorePartsFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & partitions)
 {
-    return std::make_unique<MergeTreeDataRestoreTask>(
-        std::static_pointer_cast<MergeTreeData>(shared_from_this()),
-        getPartitionIDsFromQuery(partitions, local_context),
-        backup,
-        data_path_in_backup,
-        restore_settings,
-        restore_coordination);
+    std::optional<std::unordered_set<String>> partition_ids;
+    if (partitions)
+        partition_ids = getPartitionIDsFromQuery(*partitions, restorer.getContext());
+
+    auto backup = restorer.getBackup();
+    Strings part_names = backup->listFiles(data_path_in_backup + '/');
+    auto restored_parts_holder
+        = std::make_shared<RestoredPartsHolder>(std::static_pointer_cast<MergeTreeData>(shared_from_this()), backup, part_names.size());
+
+    fs::path data_path_in_backup_fs = data_path_in_backup;
+    size_t num_parts = 0;
+
+    for (const String & part_name : part_names)
+    {
+        const auto part_info = MergeTreePartInfo::tryParsePartName(part_name, format_version);
+        if (!part_info)
+            continue;
+
+        if (partition_ids && !partition_ids->contains(part_info->partition_id))
+            continue;
+
+        restorer.addDataRestoreTask(
+            shared_from_this(),
+            [storage = std::static_pointer_cast<MergeTreeData>(shared_from_this()),
+             backup,
+             part_path_in_backup = data_path_in_backup_fs / part_name,
+             part_info=*part_info,
+             restored_parts_holder]
+            { storage->restorePartFromBackup(restored_parts_holder, part_info, part_path_in_backup); });
+
+        ++num_parts;
+    }
+
+    restored_parts_holder->setNumParts(num_parts);
 }
 
-
-bool MergeTreeData::startRestoringPartition(
-    const String & /* partition_id */,
-    const StorageRestoreSettings & /* restore_settings */,
-    const std::shared_ptr<IRestoreCoordination> & /* restore_coordination */) const
+void MergeTreeData::restorePartFromBackup(std::shared_ptr<RestoredPartsHolder> restored_parts_holder, const MergeTreePartInfo & part_info, const String & part_path_in_backup)
 {
-    return true;
+    auto backup = restored_parts_holder->getBackup();
+
+    UInt64 total_size_of_part = 0;
+    Strings filenames = backup->listFiles(part_path_in_backup + '/', "");
+    fs::path part_path_in_backup_fs = part_path_in_backup;
+    for (const String & filename : filenames)
+        total_size_of_part += backup->getFileSize(part_path_in_backup_fs / filename);
+
+    std::shared_ptr<IReservation> reservation = getStoragePolicy()->reserveAndCheck(total_size_of_part);
+    auto disk = reservation->getDisk();
+
+    String part_name = part_info.getPartName();
+    auto temp_part_dir_owner = std::make_shared<TemporaryFileOnDisk>(disk, relative_data_path + "restoring_" + part_name + "_");
+    String temp_part_dir = temp_part_dir_owner->getPath();
+    disk->createDirectories(temp_part_dir);
+
+    assert(temp_part_dir.starts_with(relative_data_path));
+    String relative_temp_part_dir = temp_part_dir.substr(relative_data_path.size());
+
+    for (const String & filename : filenames)
+    {
+        auto backup_entry = backup->readFile(part_path_in_backup_fs / filename);
+        auto read_buffer = backup_entry->getReadBuffer();
+        auto write_buffer = disk->writeFile(fs::path(temp_part_dir) / filename);
+        copyData(*read_buffer, *write_buffer);
+        reservation->update(reservation->getSize() - backup_entry->getSize());
+    }
+
+    auto single_disk_volume = std::make_shared<SingleDiskVolume>(disk->getName(), disk, 0);
+    auto part = createPart(part_name, part_info, single_disk_volume, relative_temp_part_dir);
+    /// TODO Transactions: Decide what to do with version metadata (if any). Let's just remove it for now.
+    disk->removeFileIfExists(fs::path(temp_part_dir) / IMergeTreeDataPart::TXN_VERSION_METADATA_FILE_NAME);
+    part->version.setCreationTID(Tx::PrehistoricTID, nullptr);
+    part->loadColumnsChecksumsIndexes(false, true);
+
+    restored_parts_holder->addPart(part, temp_part_dir_owner);
 }
 
 

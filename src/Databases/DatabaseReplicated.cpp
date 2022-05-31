@@ -24,7 +24,10 @@
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/formatAST.h>
+#include <Backups/IRestoreCoordination.h>
+#include <Backups/RestorerFromBackup.h>
 #include <Common/Macros.h>
+#include <base/chrono_io.h>
 
 namespace DB
 {
@@ -41,6 +44,7 @@ namespace ErrorCodes
     extern const int INCORRECT_QUERY;
     extern const int ALL_CONNECTION_TRIES_FAILED;
     extern const int NO_ACTIVE_REPLICAS;
+    extern const int CANNOT_RESTORE_TABLE;
 }
 
 static constexpr const char * DROPPED_MARK = "DROPPED";
@@ -915,6 +919,41 @@ String DatabaseReplicated::readMetadataFile(const String & table_name) const
     ReadBufferFromFile in(getObjectMetadataPath(table_name), 4096);
     readStringUntilEOF(statement, in);
     return statement;
+}
+
+
+void DatabaseReplicated::createTableRestoredFromBackup(const RestorerFromBackup & restorer, const ASTPtr & create_table_query)
+{
+    /// Because of the replication multiple nodes can try to restore the same tables again and failed with "Table already exists"
+    /// because of some table could be restored already on other node and then replicated to this node.
+    /// To solve this problem we use the restore coordination: the first node calls
+    /// IRestoreCoordination::acquireCreatingTableInReplicatedDatabase() and then for other nodes this function returns false which means
+    /// this table is already being created by some other node.
+    String table_name = create_table_query->as<const ASTCreateQuery &>().getTable();
+    if (restorer.getRestoreCoordination()->acquireCreatingTableInReplicatedDatabase(getZooKeeperPath(), table_name))
+    {
+        restorer.executeCreateQuery(create_table_query);
+    }
+
+    /// Wait until the table is actually created no matter if it's created by the current or another node and replicated to the
+    /// current node afterwards. We have to wait because `RestorerFromBackup` is going to restore data of the table then.
+    /// TODO: The following code doesn't look very reliable, probably we need to rewrite it somehow.
+    auto timeout = restorer.getTimeout();
+    bool use_timeout = (timeout.count() >= 0);
+    auto start_time = std::chrono::steady_clock::now();
+    while (!isTableExist(table_name, restorer.getContext()))
+    {
+        waitForReplicaToProcessAllEntries(50);
+        
+        if (use_timeout)
+        {
+            auto elapsed = std::chrono::steady_clock::now() - start_time;
+            if (elapsed > timeout)
+                throw Exception(ErrorCodes::CANNOT_RESTORE_TABLE,
+                                "Couldn't restore table {}.{} on other node or sync it (elapsed {})",
+                                backQuoteIfNeed(getDatabaseName()), backQuoteIfNeed(table_name), to_string(elapsed));
+        }
+    }
 }
 
 }

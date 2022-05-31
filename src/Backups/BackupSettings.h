@@ -8,15 +8,8 @@ namespace DB
 {
 class ASTBackupQuery;
 
-struct StorageBackupSettings
-{
-    /// Internal, should not be specified by user.
-    /// The current host's ID in the format 'escaped_host_name:port'.
-    String host_id;
-};
-
 /// Settings specified in the "SETTINGS" clause of a BACKUP query.
-struct BackupSettings : public StorageBackupSettings
+struct BackupSettings
 {
     /// Base backup, if it's set an incremental backup will be built. That means only differences made after the base backup will be put
     /// into a new backup.
@@ -47,6 +40,10 @@ struct BackupSettings : public StorageBackupSettings
     /// Internal, should not be specified by user.
     /// Whether this backup is a part of a distributed backup created by BACKUP ON CLUSTER.
     bool internal = false;
+
+    /// Internal, should not be specified by user.
+    /// The current host's ID in the format 'escaped_host_name:port'.
+    String host_id;
 
     /// Internal, should not be specified by user.
     /// Cluster's hosts' IDs in the format 'escaped_host_name:port' for all shards and replicas in a cluster specified in BACKUP ON CLUSTER.

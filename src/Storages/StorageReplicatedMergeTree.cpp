@@ -72,11 +72,11 @@
 #include <Interpreters/InterpreterSelectQuery.h>
 
 #include <Backups/BackupEntriesCollector.h>
+#include <Backups/IBackup.h>
 #include <Backups/IBackupCoordination.h>
 #include <Backups/IBackupEntry.h>
 #include <Backups/IRestoreCoordination.h>
-#include <Backups/BackupSettings.h>
-#include <Backups/RestoreSettings.h>
+#include <Backups/RestorerFromBackup.h>
 
 #include <Poco/DirectoryIterator.h>
 
@@ -8239,87 +8239,6 @@ void StorageReplicatedMergeTree::createAndStoreFreezeMetadata(DiskPtr disk, Data
 }
 
 
-void StorageReplicatedMergeTree::backup(const ASTPtr & create_query, const String & data_path_in_backup, const std::optional<ASTs> & partitions, std::shared_ptr<BackupEntriesCollector> backup_entries_collector)
-{
-    backupMetadata(create_query, backup_entries_collector);
-
-    if (backup_entries_collector->getBackupSettings().structure_only)
-        return;
-
-    /// We generate backup entries in the same way as ordinary MergeTree does.
-    /// But we don't add all of them to the BackupEntriesCollector right away,
-    /// first we need to coordinate them with other replicas (because other replicas could have better parts).
-    auto backup_entries = backupData("", partitions, backup_entries_collector->getContext());
-
-    auto coordination = backup_entries_collector->getBackupCoordination();
-    String full_zk_path = getZooKeeperName() + getZooKeeperPath();
-    coordination->addReplicatedDataPath(full_zk_path, data_path_in_backup);
-
-    std::unordered_map<String, SipHash> part_names_with_hashes_calculating;
-    for (auto & [relative_path, backup_entry] : backup_entries)
-    {
-        size_t slash_pos = relative_path.find('/');
-        if (slash_pos != String::npos)
-        {
-            String part_name = relative_path.substr(0, slash_pos);
-            if (MergeTreePartInfo::tryParsePartName(part_name, MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING))
-            {
-                auto & hash = part_names_with_hashes_calculating[part_name];
-                if (relative_path.ends_with(".bin"))
-                {
-                    auto checksum = backup_entry->getChecksum();
-                    hash.update(relative_path);
-                    hash.update(backup_entry->getSize());
-                    hash.update(*checksum);
-                }
-                continue;
-            }
-        }
-        /// Not a part name, so we can add it to the BackupEntriesCollector immediately.
-        backup_entries_collector->addBackupEntry(data_path_in_backup + "/" + relative_path, backup_entry);
-        backup_entry = nullptr; /// We set `backup_entry` to null to erase those entries later (see std::erase_if below)
-    }
-
-    std::erase_if(backup_entries, [](const std::pair<String, BackupEntryPtr> & backup_entry) { return !backup_entry.second; });
-
-    std::vector<IBackupCoordination::PartNameAndChecksum> part_names_with_hashes;
-    part_names_with_hashes.reserve(part_names_with_hashes_calculating.size());
-    for (auto & [part_name, hash] : part_names_with_hashes_calculating)
-    {
-        UInt128 checksum;
-        hash.get128(checksum);
-        auto & part_name_with_hash = part_names_with_hashes.emplace_back();
-        part_name_with_hash.part_name = part_name;
-        part_name_with_hash.checksum = checksum;
-    }
-
-    /// Send our list of part names to the coordination (with other replicas).
-    coordination->addReplicatedPartNames(full_zk_path, getStorageID().getFullTableName(), getReplicaName(), part_names_with_hashes);
-
-    /// This task will be executed after all replicas have collected their parts and the coordination is ready to
-    /// give us the final list of parts to add to the BackupEntriesCollector.
-    auto post_collecting_task = [full_zk_path,
-                                 replica_name = getReplicaName(),
-                                 coordination,
-                                 backup_entries = std::move(backup_entries),
-                                 backup_entries_collector]()
-    {
-        Strings data_paths = coordination->getReplicatedDataPaths(full_zk_path);
-        Strings part_names = coordination->getReplicatedPartNames(full_zk_path, replica_name);
-        std::unordered_set<std::string_view> part_names_set{part_names.begin(), part_names.end()};
-        for (const auto & [relative_path, backup_entry] : backup_entries)
-        {
-            size_t slash_pos = relative_path.find('/');
-            String part_name = relative_path.substr(0, slash_pos);
-            if (!part_names_set.contains(part_name))
-                continue;
-            for (const auto & data_path : data_paths)
-                backup_entries_collector->addBackupEntry(data_path + "/" + relative_path, backup_entry);
-        }
-    };
-    backup_entries_collector->addPostCollectingTask(post_collecting_task);
-}
-
 void StorageReplicatedMergeTree::adjustCreateQueryForBackup(ASTPtr & create_query) const
 {
     MergeTreeData::adjustCreateQueryForBackup(create_query);
@@ -8358,14 +8277,114 @@ void StorageReplicatedMergeTree::adjustCreateQueryForBackup(ASTPtr & create_quer
     }
 }
 
-bool StorageReplicatedMergeTree::startRestoringPartition(
-    const String & partition_id,
-    const StorageRestoreSettings & restore_settings,
-    const std::shared_ptr<IRestoreCoordination> & restore_coordination) const
+void StorageReplicatedMergeTree::backupData(
+    BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & partitions)
+{
+    /// First we generate backup entries in the same way as an ordinary MergeTree does.
+    /// But then we don't add them to the BackupEntriesCollector right away,
+    /// because we need to coordinate them with other replicas (other replicas can have better parts).
+    auto backup_entries = backupParts(backup_entries_collector.getContext(), partitions);
+
+    auto coordination = backup_entries_collector.getBackupCoordination();
+    String full_zk_path = getZooKeeperName() + getZooKeeperPath();
+    coordination->addReplicatedDataPath(full_zk_path, data_path_in_backup);
+
+    std::unordered_map<String, SipHash> part_names_with_hashes_calculating;
+    for (auto & [relative_path, backup_entry] : backup_entries)
+    {
+        size_t slash_pos = relative_path.find('/');
+        if (slash_pos != String::npos)
+        {
+            String part_name = relative_path.substr(0, slash_pos);
+            if (MergeTreePartInfo::tryParsePartName(part_name, MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING))
+            {
+                auto & hash = part_names_with_hashes_calculating[part_name];
+                if (relative_path.ends_with(".bin"))
+                {
+                    auto checksum = backup_entry->getChecksum();
+                    hash.update(relative_path);
+                    hash.update(backup_entry->getSize());
+                    hash.update(*checksum);
+                }
+                continue;
+            }
+        }
+        /// Not a part name, probably error.
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "{} doesn't follow the format <part_name>/<path>", quoteString(relative_path));
+    }
+
+    std::vector<IBackupCoordination::PartNameAndChecksum> part_names_with_hashes;
+    part_names_with_hashes.reserve(part_names_with_hashes_calculating.size());
+    for (auto & [part_name, hash] : part_names_with_hashes_calculating)
+    {
+        UInt128 checksum;
+        hash.get128(checksum);
+        auto & part_name_with_hash = part_names_with_hashes.emplace_back();
+        part_name_with_hash.part_name = part_name;
+        part_name_with_hash.checksum = checksum;
+    }
+
+    /// Send our list of part names to the coordination (to compare with other replicas).
+    coordination->addReplicatedPartNames(full_zk_path, getStorageID().getFullTableName(), getReplicaName(), part_names_with_hashes);
+
+    /// This task will be executed after all replicas have collected their parts and the coordination is ready to
+    /// give us the final list of parts to add to the BackupEntriesCollector.
+    auto post_collecting_task = [full_zk_path,
+                                 replica_name = getReplicaName(),
+                                 coordination,
+                                 backup_entries = std::move(backup_entries),
+                                 &backup_entries_collector]()
+    {
+        Strings data_paths = coordination->getReplicatedDataPaths(full_zk_path);
+        std::vector<fs::path> data_paths_fs;
+        data_paths_fs.reserve(data_paths.size());
+        for (const auto & data_path : data_paths)
+            data_paths_fs.push_back(data_path);
+
+        Strings part_names = coordination->getReplicatedPartNames(full_zk_path, replica_name);
+        std::unordered_set<std::string_view> part_names_set{part_names.begin(), part_names.end()};
+
+        for (const auto & [relative_path, backup_entry] : backup_entries)
+        {
+            size_t slash_pos = relative_path.find('/');
+            String part_name = relative_path.substr(0, slash_pos);
+            if (!part_names_set.contains(part_name))
+                continue;
+            for (const auto & data_path : data_paths_fs)
+                backup_entries_collector.addBackupEntry(data_path / relative_path, backup_entry);
+        }
+    };
+    backup_entries_collector.addPostCollectingTask(post_collecting_task);
+}
+
+void StorageReplicatedMergeTree::restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & partitions)
 {
     String full_zk_path = getZooKeeperName() + getZooKeeperPath();
-    return restore_coordination->startInsertingDataToPartitionInReplicatedTable(
-        restore_settings.host_id, getStorageID(), full_zk_path, partition_id);
+    if (!restorer.getRestoreCoordination()->acquireInsertingDataIntoReplicatedTable(full_zk_path))
+    {
+        /// Other replica is already restoring the data of this table.
+        /// We'll get them later due to replication, it's not necessary to read it from the backup.
+        return;
+    }
+
+    if (!restorer.isNonEmptyTableAllowed())
+    {
+        bool empty = !getTotalActiveSizeInBytes();
+        if (empty)
+        {
+            /// New parts could be in the replication queue but not fetched yet.
+            /// In that case we consider the table as not empty.
+            StorageReplicatedMergeTree::Status status;
+            getStatus(status, /* with_zk_fields = */ false);
+            if (status.queue.inserts_in_queue)
+                empty = false;
+        }
+        auto backup = restorer.getBackup();
+        if (!empty && !backup->listFiles(data_path_in_backup + '/').empty())
+            restorer.throwTableIsNotEmpty(getStorageID());
+    }
+
+    restorePartsFromBackup(restorer, data_path_in_backup, partitions);
 }
 
 void StorageReplicatedMergeTree::attachRestoredParts(MutableDataPartsVector && parts)

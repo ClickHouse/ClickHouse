@@ -66,16 +66,8 @@ struct SelectQueryInfo;
 using NameDependencies = std::unordered_map<String, std::vector<String>>;
 using DatabaseAndTableName = std::pair<String, String>;
 
-class IBackup;
-using BackupPtr = std::shared_ptr<const IBackup>;
-class IBackupEntry;
-using BackupEntries = std::vector<std::pair<String, std::shared_ptr<const IBackupEntry>>>;
-class IRestoreTask;
-using RestoreTaskPtr = std::unique_ptr<IRestoreTask>;
-struct StorageBackupSettings;
-struct StorageRestoreSettings;
-class IBackupCoordination;
-class IRestoreCoordination;
+class BackupEntriesCollector;
+class RestorerFromBackup;
 
 struct ColumnSize
 {
@@ -227,19 +219,21 @@ public:
 
     NameDependencies getDependentViewsByColumn(ContextPtr context) const;
 
-    /// Prepares entries to backup data of the storage.
-    virtual void backup(const ASTPtr & adjusted_create_query, const String & data_path_in_backup, const std::optional<ASTs> & partitions,
-                        std::shared_ptr<BackupEntriesCollector> backup_entries_collector);
+    /// Returns whether the column is virtual - by default all columns are real.
+    /// Initially reserved virtual column name may be shadowed by real column.
+    bool isVirtualColumn(const String & column_name, const StorageMetadataPtr & metadata_snapshot) const;
 
     /// Changes slightly this storage's create query before it's written to a backup.
     virtual void adjustCreateQueryForBackup(ASTPtr & create_query) const;
 
-    /// Extract data from the backup and put it to the storage.
-    virtual RestoreTaskPtr restoreData(ContextMutablePtr context, const ASTs & partitions, const BackupPtr & backup, const String & data_path_in_backup, const StorageRestoreSettings & restore_settings, const std::shared_ptr<IRestoreCoordination> & restore_coordination);
+    /// Makes backup entries to backup the create query of this storage.
+    virtual void backupCreateQuery(BackupEntriesCollector & backup_entries_collector, const ASTPtr & create_query);
 
-    /// Returns whether the column is virtual - by default all columns are real.
-    /// Initially reserved virtual column name may be shadowed by real column.
-    bool isVirtualColumn(const String & column_name, const StorageMetadataPtr & metadata_snapshot) const;
+    /// Makes backup entries to backup the data of this storage.
+    virtual void backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & partitions);
+
+    /// Extracts data from the backup and put it to the storage.
+    virtual void restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & partitions);
 
 private:
 
@@ -255,15 +249,12 @@ protected:
     RWLockImpl::LockHolder tryLockTimed(
         const RWLock & rwlock, RWLockImpl::Type type, const String & query_id, const std::chrono::milliseconds & acquire_timeout) const;
 
-    void backupMetadata(const ASTPtr & adjusted_create_query, std::shared_ptr<BackupEntriesCollector> backup_entries_collector) const;
-
 public:
     /// Lock table for share. This lock must be acuqired if you want to be sure,
     /// that table will be not dropped while you holding this lock. It's used in
     /// variety of cases starting from SELECT queries to background merges in
     /// MergeTree.
     TableLockHolder lockForShare(const String & query_id, const std::chrono::milliseconds & acquire_timeout);
-    TableLockHolder tryLockForShare(const String & query_id, const std::chrono::milliseconds & acquire_timeout);
 
     /// Lock table for alter. This lock must be acuqired in ALTER queries to be
     /// sure, that we execute only one simultaneous alter. Doesn't affect share lock.

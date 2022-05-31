@@ -52,6 +52,9 @@ struct JobAndPool;
 class MergeTreeTransaction;
 struct ZeroCopyLock;
 
+class IBackupEntry;
+using BackupEntries = std::vector<std::pair<String, std::shared_ptr<const IBackupEntry>>>;
+
 /// Auxiliary struct holding information about the future merged or mutated part.
 struct EmergingPartInfo
 {
@@ -714,11 +717,11 @@ public:
         ContextPtr context,
         TableLockHolder & table_lock_holder);
 
-    /// Prepares entries to backup data of the storage.
-    void backup(const ASTPtr & create_query, const String & data_path_in_backup, const std::optional<ASTs> & partitions, std::shared_ptr<BackupEntriesCollector> backup_entries_collector) override;
+    /// Makes backup entries to backup the data of the storage.
+    void backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override;
 
     /// Extract data from the backup and put it to the storage.
-    RestoreTaskPtr restoreData(ContextMutablePtr context, const ASTs & partitions, const BackupPtr & backup, const String & data_path_in_backup, const StorageRestoreSettings & restore_settings, const std::shared_ptr<IRestoreCoordination> & restore_coordination) override;
+    void restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override;
 
     /// Moves partition to specified Disk
     void movePartitionToDisk(const ASTPtr & partition, const String & name, bool moving_part, ContextPtr context);
@@ -999,7 +1002,6 @@ protected:
     friend class MergeTask;
     friend class IPartMetadataManager;
     friend class IMergedBlockOutputStream; // for access to log
-    friend class MergeTreeDataRestoreTask;
 
     bool require_part_metadata;
 
@@ -1227,12 +1229,14 @@ protected:
     /// Moves part to specified space, used in ALTER ... MOVE ... queries
     bool movePartsToSpace(const DataPartsVector & parts, SpacePtr space);
 
-    /// Makes backup entries to backup this table's data.
-    BackupEntries backupData(const String & data_path_in_backup, const std::optional<ASTs> & partitions, const ContextPtr & local_context);
+    /// Makes backup entries to backup the parts of this table.
+    BackupEntries backupParts(const ContextPtr & local_context, const std::optional<ASTs> & partitions) const;
 
-    /// Starts restoring a partition, if the function returns false the partition will be skipped.
-    /// Overriden by the replicated storage to skip partitions in case other replicas are already restoring them.
-    virtual bool startRestoringPartition(const String & partition_id, const StorageRestoreSettings & restore_settings, const std::shared_ptr<IRestoreCoordination> & restore_coordination) const;
+    class RestoredPartsHolder;
+
+    /// Restores the parts of this table from backup.
+    void restorePartsFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & partitions);
+    void restorePartFromBackup(std::shared_ptr<RestoredPartsHolder> restored_parts_holder, const MergeTreePartInfo & part_info, const String & part_path_in_backup);
 
     /// Attaches restored parts to the storage.
     virtual void attachRestoredParts(MutableDataPartsVector && parts) = 0;

@@ -10,11 +10,16 @@ namespace DB
 using SizeAndChecksum = IBackupCoordination::SizeAndChecksum;
 using FileInfo = IBackupCoordination::FileInfo;
 
-BackupCoordinationLocal::BackupCoordinationLocal() : log(&Poco::Logger::get("BackupCoordination"))
+BackupCoordinationLocal::BackupCoordinationLocal() = default;
+BackupCoordinationLocal::~BackupCoordinationLocal() = default;
+
+void BackupCoordinationLocal::syncStage(const String &, int, const Strings &, std::chrono::seconds)
 {
 }
 
-BackupCoordinationLocal::~BackupCoordinationLocal() = default;
+void BackupCoordinationLocal::syncStageError(const String &, const String &)
+{
+}
 
 void BackupCoordinationLocal::addReplicatedPartNames(const String & table_zk_path, const String & table_name_for_logs, const String & replica_name, const std::vector<PartNameAndChecksum> & part_names_and_checksums)
 {
@@ -42,20 +47,6 @@ Strings BackupCoordinationLocal::getReplicatedDataPaths(const String & table_zk_
     if (it == replicated_data_paths.end())
         return {};
     return it->second;
-}
-
-
-void BackupCoordinationLocal::finishCollectingBackupEntries(const String & /* host_id */, const String & error_message)
-{
-    LOG_TRACE(log, "Finished collecting backup entries{}", (error_message.empty() ? "" : (" with error " + error_message)));
-    if (!error_message.empty())
-        return;
-
-    replicated_part_names.preparePartNames();
-}
-
-void BackupCoordinationLocal::waitForAllHostsCollectedBackupEntries(const Strings & /* host_ids */, std::chrono::seconds /* timeout */) const
-{
 }
 
 

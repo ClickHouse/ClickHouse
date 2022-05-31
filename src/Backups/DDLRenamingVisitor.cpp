@@ -372,11 +372,11 @@ void DDLRenamingVisitor::visit(ASTPtr ast, const Data & data)
         visitDictionary(*dictionary, data);
 }
 
-void renameInCreateQuery(ASTPtr & ast, const ContextPtr & global_context, const DDLRenamingSettings & renaming_settings)
+void renameInCreateQuery(ASTPtr & ast, const DDLRenamingSettings & renaming_settings, const ContextPtr & context)
 {
     try
     {
-        DDLRenamingVisitor::Data data{renaming_settings, global_context};
+        DDLRenamingVisitor::Data data{renaming_settings, context};
         DDLRenamingVisitor::Visitor{data}.visit(ast);
     }
     catch (...)

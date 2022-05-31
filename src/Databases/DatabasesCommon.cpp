@@ -11,6 +11,7 @@
 #include <Common/escapeForFileName.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Backups/BackupEntriesCollector.h>
+#include <Backups/RestorerFromBackup.h>
 
 
 namespace DB
@@ -301,74 +302,24 @@ StoragePtr DatabaseWithOwnTablesBase::getTableUnlocked(const String & table_name
                     backQuote(database_name), backQuote(table_name));
 }
 
-void DatabaseWithOwnTablesBase::backup(const ASTPtr & create_database_query,
-                                       const std::unordered_set<String> & table_names, bool all_tables,
-                                       const std::unordered_set<String> & except_table_names,
-                                       const std::unordered_map<String, ASTs> & partitions,
-                                       std::shared_ptr<BackupEntriesCollector> backup_entries_collector)
+DatabaseTablesIteratorPtr DatabaseWithOwnTablesBase::getTablesIteratorForBackup(const BackupEntriesCollector & backup_entries_collector) const
 {
-    backupMetadata(create_database_query, backup_entries_collector);
-    backupTables(table_names, all_tables, except_table_names, partitions, backup_entries_collector);
+    /// Backup all the tables in this database.
+    /// TODO: Skip internal tables.
+    return getTablesIterator(backup_entries_collector.getContext(), {});
 }
 
-void DatabaseWithOwnTablesBase::backupTables(
-    const std::unordered_set<String> & table_names,
-    bool all_tables,
-    const std::unordered_set<String> & except_table_names,
-    const std::unordered_map<String, ASTs> & partitions,
-    std::shared_ptr<BackupEntriesCollector> backup_entries_collector)
-{                               
-    auto local_context = backup_entries_collector->getContext();
-
-    auto backup_table = [&](const String & table_name, const StoragePtr & storage, bool throw_if_no_table)
-    {
-        if (except_table_names.contains(table_name))
-            return;
-        
-        TableLockHolder table_lock;
-        if (throw_if_no_table)
-        {
-            table_lock = storage->lockForShare(local_context->getInitialQueryId(), local_context->getSettingsRef().lock_acquire_timeout);
-        }
-        else
-        {
-            table_lock = storage->tryLockForShare(local_context->getInitialQueryId(), local_context->getSettingsRef().lock_acquire_timeout);
-            if (!table_lock)
-                return; /// Table has just been dropped.
-        }
-
-        ASTPtr create_table_query = getCreateTableQuery(table_name, local_context);
-        storage->adjustCreateQueryForBackup(create_table_query);
-
-        String data_path_in_backup = backup_entries_collector->getDataPathInBackup(create_table_query);
-
-        std::optional<ASTs> only_partitions;
-        auto it_partitions = partitions.find(table_name);
-        if (it_partitions != partitions.end())
-            only_partitions = it_partitions->second;
-
-        backupTable(storage, create_table_query, data_path_in_backup, only_partitions, backup_entries_collector);
-    };
-
-    if (all_tables)
-    {
-        for (auto it = getTablesIterator(local_context, {}); it->isValid(); it->next())
-            backup_table(it->name(), it->table(), /* throw_if_no_table= */ false);
-    }
-    else
-    {
-        for (const String & table_name : table_names)
-            backup_table(table_name, getTable(table_name, local_context), /* throw_if_no_table= */ true);
-    }
+void DatabaseWithOwnTablesBase::backupCreateTableQuery(
+    BackupEntriesCollector & backup_entries_collector, const StoragePtr & storage, const ASTPtr & create_table_query)
+{
+    /// Let IStorage do that.
+    storage->backupCreateQuery(backup_entries_collector, create_table_query);
 }
 
-void DatabaseWithOwnTablesBase::backupTable(const StoragePtr & storage,
-                                            const ASTPtr & create_table_query,
-                                            const String & data_path_in_backup,
-                                            const std::optional<ASTs> & partitions,
-                                            std::shared_ptr<BackupEntriesCollector> backup_entries_collector)
+void DatabaseWithOwnTablesBase::createTableRestoredFromBackup(const RestorerFromBackup & restorer, const ASTPtr & create_table_query)
 {
-    storage->backup(create_table_query, data_path_in_backup, partitions, backup_entries_collector);
+    /// Creates a table by executing a "CREATE TABLE" query.
+    restorer.executeCreateQuery(create_table_query);
 }
 
 }
