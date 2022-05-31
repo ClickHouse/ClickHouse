@@ -90,7 +90,6 @@
 #include <Server/ProtocolServerAdapter.h>
 #include <Server/HTTP/HTTPServer.h>
 #include <Interpreters/AsynchronousInsertQueue.h>
-#include <Compression/CompressionCodecEncrypted.h>
 #include <filesystem>
 
 #include "config_core.h"
