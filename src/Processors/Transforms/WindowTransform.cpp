@@ -2187,10 +2187,10 @@ struct WindowFunctionNonNegativeDerivative final : public RecurrentWindowFunctio
                             argument_types[ARGUMENT_METRIC]->getName());
         }
 
-        if (!isNumber(argument_types[ARGUMENT_TIMESTAMP]) && !isDateTime(argument_types[ARGUMENT_TIMESTAMP]) && !isDateTime64(argument_types[ARGUMENT_TIMESTAMP]))
+        if (!isDateTime(argument_types[ARGUMENT_TIMESTAMP]) && !isDateTime64(argument_types[ARGUMENT_TIMESTAMP]))
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                            "Argument {} must be DateTime, DateTime64 or a number, '{}' given",
+                            "Argument {} must be DateTime or DateTime64, '{}' given",
                             ARGUMENT_TIMESTAMP,
                             argument_types[ARGUMENT_TIMESTAMP]->getName());
         }
