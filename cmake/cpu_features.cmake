@@ -65,7 +65,7 @@ else ()
     endif ()
 
     set (TEST_FLAG "-msse4.2")
-    set (    "${TEST_FLAG} -O0")
+    set (CMAKE_REQUIRED_FLAGS "${TEST_FLAG} -O0")
     check_cxx_source_compiles("
         #include <nmmintrin.h>
         int main() {
