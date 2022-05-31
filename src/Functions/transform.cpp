@@ -127,7 +127,7 @@ public:
         //     }
         //     std::cerr << '\n';
         // }
-	//
+
         hash_join = std::make_shared<HashJoin>(table_join, right_sample_block);
 
         if (args_size == 3)
@@ -185,22 +185,17 @@ public:
 
         // ColumnPtr in_ptr = arguments.front().column;
         //const auto * in = arguments.front().column.get();
-
         // std::cerr << "\n\n\n\n\n\n\ncerr: in_ptr:";
         // for (size_t i = 0; i < in_ptr->size(); ++i) {
         //     std::cerr << in_ptr->get64(i) << ' ';
         // }
         // std::cerr << "\n\n\n\n\n\n\n\n";
-        
-        
         // if (isColumnConst(*in))
         //     return executeConst(arguments, result_type, input_rows_count);
-        /*
-        const IColumn * default_column = nullptr;
-        if (arguments.size() == 4)
-            default_column = arguments[3].column.get();
-        */
-
+        // const IColumn * default_column = nullptr;
+        // if (arguments.size() == 4)
+        //     default_column = arguments[3].column.get();
+        
         Block left_block;
         left_block.insert(ColumnWithTypeAndName(arguments.front().column, arguments.front().type, "x"));
 
@@ -212,32 +207,26 @@ public:
         
         // std::cerr << "cerr: " << value_column.column->dumpStructure() << '\n';
         //UNUSED(value_column);
-
-        
         auto column_result = result_type->createColumn();
         UNUSED(column_result);
-        /*
-        auto * out = column_result.get();
-
-        if (!executeNum<UInt8>(in, out, default_column)
-            && !executeNum<UInt16>(in, out, default_column)
-            && !executeNum<UInt32>(in, out, default_column)
-            && !executeNum<UInt64>(in, out, default_column)
-            && !executeNum<Int8>(in, out, default_column)
-            && !executeNum<Int16>(in, out, default_column)
-            && !executeNum<Int32>(in, out, default_column)
-            && !executeNum<Int64>(in, out, default_column)
-            && !executeNum<Float32>(in, out, default_column)
-            && !executeNum<Float64>(in, out, default_column)
-            && !executeDecimal<Decimal32>(in, out, default_column)
-            && !executeDecimal<Decimal64>(in, out, default_column)
-            && !executeString(in, out, default_column))
-        {
-            throw Exception{"Illegal column " + in->getName() + " of first argument of function " + getName(), ErrorCodes::ILLEGAL_COLUMN};
-        }
-        */
+        // auto * out = column_result.get();
+        // if (!executeNum<UInt8>(in, out, default_column)
+        //     && !executeNum<UInt16>(in, out, default_column)
+        //     && !executeNum<UInt32>(in, out, default_column)
+        //     && !executeNum<UInt64>(in, out, default_column)
+        //     && !executeNum<Int8>(in, out, default_column)
+        //     && !executeNum<Int16>(in, out, default_column)
+        //     && !executeNum<Int32>(in, out, default_column)
+        //     && !executeNum<Int64>(in, out, default_column)
+        //     && !executeNum<Float32>(in, out, default_column)
+        //     && !executeNum<Float64>(in, out, default_column)
+        //     && !executeDecimal<Decimal32>(in, out, default_column)
+        //     && !executeDecimal<Decimal64>(in, out, default_column)
+        //     && !executeString(in, out, default_column))
+        // {
+        //     throw Exception{"Illegal column " + in->getName() + " of first argument of function " + getName(), ErrorCodes::ILLEGAL_COLUMN};
+        // }
         //UNUSED(column_result);
-        
         return value_column.column;
         //return column_result;
     }
@@ -246,8 +235,7 @@ private:
     // executeConst not needed because of new implementation
     // static ColumnPtr executeConst(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count)
     // {
-    //     /// Materialize the input column and compute the function as usual.
-
+        /// Materialize the input column and compute the function as usual.
     //     ColumnsWithTypeAndName args = arguments;
     //     args[0].column = args[0].column->cloneResized(input_rows_count)->convertToFullColumnIfConst();
 
@@ -1180,9 +1168,8 @@ private:
             const auto & to_nested_type = to_array_type->getNestedType();
 
             MutableColumnPtr to_nested_column = to_nested_type->createColumn();
-            for (size_t i = 0; i < from.size(); ++i) {
+            for (size_t i = 0; i < from.size(); ++i)
                 to_nested_column->insert(to[i]);
-            }
             // std::cerr << "cerr: initialize to: ";
             // for (size_t i = 0; i < to_nested_column->size(); ++i) {
             //     std::cerr << to_nested_column->get64(i) << ' ';
