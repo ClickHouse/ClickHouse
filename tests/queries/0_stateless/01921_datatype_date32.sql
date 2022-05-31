@@ -23,7 +23,7 @@ select toMinute(x1) from t1; -- { serverError 43 }
 select '-------toSecond---------';
 select toSecond(x1) from t1; -- { serverError 43 }
 select '-------toStartOfDay---------';
-select toStartOfDay(x1, 'Europe/Moscow') from t1;
+select toStartOfDay(x1, 'Asia/Istanbul') from t1;
 select '-------toMonday---------';
 select toMonday(x1) from t1;
 select '-------toISOWeek---------';
@@ -57,21 +57,21 @@ select toStartOfHour(x1) from t1; -- { serverError 43 }
 select '-------toStartOfISOYear---------';
 select toStartOfISOYear(x1) from t1;
 select '-------toRelativeYearNum---------';
-select toRelativeYearNum(x1, 'Europe/Moscow') from t1;
+select toRelativeYearNum(x1, 'Asia/Istanbul') from t1;
 select '-------toRelativeQuarterNum---------';
-select toRelativeQuarterNum(x1, 'Europe/Moscow') from t1;
+select toRelativeQuarterNum(x1, 'Asia/Istanbul') from t1;
 select '-------toRelativeMonthNum---------';
-select toRelativeMonthNum(x1, 'Europe/Moscow') from t1;
+select toRelativeMonthNum(x1, 'Asia/Istanbul') from t1;
 select '-------toRelativeWeekNum---------';
-select toRelativeWeekNum(x1, 'Europe/Moscow') from t1;
+select toRelativeWeekNum(x1, 'Asia/Istanbul') from t1;
 select '-------toRelativeDayNum---------';
-select toRelativeDayNum(x1, 'Europe/Moscow') from t1;
+select toRelativeDayNum(x1, 'Asia/Istanbul') from t1;
 select '-------toRelativeHourNum---------';
-select toRelativeHourNum(x1, 'Europe/Moscow') from t1;
+select toRelativeHourNum(x1, 'Asia/Istanbul') from t1;
 select '-------toRelativeMinuteNum---------';
-select toRelativeMinuteNum(x1, 'Europe/Moscow') from t1;
+select toRelativeMinuteNum(x1, 'Asia/Istanbul') from t1;
 select '-------toRelativeSecondNum---------';
-select toRelativeSecondNum(x1, 'Europe/Moscow') from t1;
+select toRelativeSecondNum(x1, 'Asia/Istanbul') from t1;
 select '-------toTime---------';
 select toTime(x1) from t1; -- { serverError 43 }
 select '-------toYYYYMM---------';

@@ -12,7 +12,9 @@
 #include <Processors/Merges/FinishAggregatingInOrderTransform.h>
 #include <Interpreters/Aggregator.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
+#include <Columns/ColumnFixedString.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeFixedString.h>
 
 namespace DB
 {
@@ -31,6 +33,17 @@ static ITransformingStep::Traits getTraits()
             .preserves_number_of_rows = false,
         }
     };
+}
+
+Block appendGroupingSetColumn(Block header)
+{
+    Block res;
+    res.insert({std::make_shared<DataTypeUInt64>(), "__grouping_set"});
+
+    for (auto & col : header)
+        res.insert(std::move(col));
+
+    return res;
 }
 
 static Block appendGroupingColumn(Block block, const GroupingSetsParamsList & params)
@@ -205,7 +218,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
 
             for (size_t set_counter = 0; set_counter < grouping_sets_size; ++set_counter)
             {
-                auto & header = ports[set_counter]->getHeader();
+                const auto & header = ports[set_counter]->getHeader();
 
                 /// Here we create a DAG which fills missing keys and adds `__grouping_set` column
                 auto dag = std::make_shared<ActionsDAG>(header.getColumnsWithTypeAndName());

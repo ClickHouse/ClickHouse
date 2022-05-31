@@ -263,9 +263,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     , replica_path(fs::path(zookeeper_path) / "replicas" / replica_name_)
     , reader(*this)
     , writer(*this)
-    , merger_mutator(*this,
-        getContext()->getSettingsRef().background_merges_mutations_concurrency_ratio *
-        getContext()->getSettingsRef().background_pool_size)
+    , merger_mutator(*this, getContext()->getMergeMutateExecutor()->getMaxTasksCount())
     , merge_strategy_picker(*this)
     , queue(*this, merge_strategy_picker)
     , fetcher(*this)
@@ -7760,7 +7758,8 @@ String StorageReplicatedMergeTree::getSharedDataReplica(
 }
 
 
-Strings StorageReplicatedMergeTree::getZeroCopyPartPath(const MergeTreeSettings & settings, DiskType disk_type, const String & table_uuid,
+Strings StorageReplicatedMergeTree::getZeroCopyPartPath(
+    const MergeTreeSettings & settings, DiskType disk_type, const String & table_uuid,
     const String & part_name, const String & zookeeper_path_old)
 {
     Strings res;
@@ -8297,18 +8296,14 @@ class ReplicatedMergeTreeRestoreTask : public IRestoreTask
 {
 public:
     ReplicatedMergeTreeRestoreTask(
-        const ContextPtr & query_context_,
         const std::shared_ptr<StorageReplicatedMergeTree> & storage_,
         const std::unordered_set<String> & partition_ids_,
         const BackupPtr & backup_,
-        const String & data_path_in_backup_,
         const StorageRestoreSettings & restore_settings_,
         const std::shared_ptr<IRestoreCoordination> & restore_coordination_)
-        : query_context(query_context_)
-        , storage(storage_)
+        : storage(storage_)
         , partition_ids(partition_ids_)
         , backup(backup_)
-        , data_path_in_backup(data_path_in_backup_)
         , restore_settings(restore_settings_)
         , restore_coordination(restore_coordination_)
     {
@@ -8319,6 +8314,8 @@ public:
         RestoreTasks restore_part_tasks;
 
         String full_zk_path = storage->getZooKeeperName() + storage->getZooKeeperPath();
+        String data_path_in_backup = restore_coordination->getReplicatedTableDataPath(full_zk_path);
+
         auto storage_id = storage->getStorageID();
         DatabaseAndTableName table_name = {storage_id.database_name, storage_id.table_name};
         std::unordered_map<String, bool> partitions_restored_by_us;
@@ -8326,7 +8323,7 @@ public:
         Strings part_names = backup->listFiles(data_path_in_backup);
 
         auto metadata_snapshot = storage->getInMemoryMetadataPtr();
-        auto sink = std::make_shared<ReplicatedMergeTreeSink>(*storage, metadata_snapshot, 0, 0, 0, false, false, query_context, /*is_attach*/true);
+        auto sink = std::make_shared<ReplicatedMergeTreeSink>(*storage, metadata_snapshot, 0, 0, 0, false, false, storage->getContext(), /*is_attach*/true);
 
         for (const String & part_name : part_names)
         {
@@ -8356,11 +8353,9 @@ public:
     }
 
 private:
-    ContextPtr query_context;
     std::shared_ptr<StorageReplicatedMergeTree> storage;
     std::unordered_set<String> partition_ids;
     BackupPtr backup;
-    String data_path_in_backup;
     StorageRestoreSettings restore_settings;
     std::shared_ptr<IRestoreCoordination> restore_coordination;
 
@@ -8462,16 +8457,14 @@ RestoreTaskPtr StorageReplicatedMergeTree::restoreData(
     ContextMutablePtr local_context,
     const ASTs & partitions,
     const BackupPtr & backup,
-    const String & data_path_in_backup,
+    const String & /* data_path_in_backup */,
     const StorageRestoreSettings & restore_settings,
     const std::shared_ptr<IRestoreCoordination> & restore_coordination)
 {
     return std::make_unique<ReplicatedMergeTreeRestoreTask>(
-        local_context,
         std::static_pointer_cast<StorageReplicatedMergeTree>(shared_from_this()),
         getPartitionIDsFromQuery(partitions, local_context),
         backup,
-        data_path_in_backup,
         restore_settings,
         restore_coordination);
 }

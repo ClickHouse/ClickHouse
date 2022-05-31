@@ -90,9 +90,9 @@ static bool tryConvertFields(FillColumnDescription & descr, const DataTypePtr & 
         if (which.isDate() || which.isDate32())
         {
             Int64 avg_seconds = get<Int64>(descr.fill_step) * descr.step_kind->toAvgSeconds();
-            if (avg_seconds < 86400)
+            if (std::abs(avg_seconds) < 86400)
                 throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
-                                "Value of step is to low ({} seconds). Must be >= 1 day", avg_seconds);
+                                "Value of step is to low ({} seconds). Must be >= 1 day", std::abs(avg_seconds));
         }
 
         if (which.isDate())
