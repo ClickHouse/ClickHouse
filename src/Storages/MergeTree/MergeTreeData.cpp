@@ -360,24 +360,6 @@ MergeTreeData::MergeTreeData(
         else
             background_moves_assignee.trigger();
     };
-
-    if (context_->getSettingsRef().allow_experimental_stats_for_prewhere_optimization) {
-        updateStatisticsByPartition();
-        stats_merger_task = getContext()->getSchedulePool().createTask(
-            "MergeTreeStatisticsMerger",
-            [this, period = settings->experimantal_stats_update_period] {
-            try
-            {
-                updateStatisticsByPartition();
-            }
-            catch (...)
-            {
-                LOG_ERROR(log, "Exception during statistics update: {}", getCurrentExceptionMessage(true));
-            }
-            stats_merger_task->scheduleAfter(period);
-        });
-        stats_merger_task->activateAndSchedule();
-    }
 }
 
 StoragePolicyPtr MergeTreeData::getStoragePolicy() const
@@ -940,7 +922,7 @@ MergeTreeStatisticsPtr MergeTreeData::getStatisticsByPartitionPredicateImpl(
     auto metadata_snapshot = getInMemoryMetadataPtr();
     if (parts.empty()) {
         return MergeTreeStatisticFactory::instance().get(
-            metadata_snapshot->getStatistics(), metadata_snapshot->getColumns());
+               metadata_snapshot->getStatistics(), metadata_snapshot->getColumns());
     }
 
     ASTPtr expression_ast;
@@ -991,7 +973,11 @@ MergeTreeStatisticsPtr MergeTreeData::getStatisticsByPartitionPredicateImpl(
 
 void MergeTreeData::reloadStatistics()
 {
-    updateStatisticsByPartition();
+    if (getContext()->getSettingsRef().allow_experimental_stats_for_prewhere_optimization &&
+        getInMemoryMetadataPtr()->hasStatistics())
+    {
+        updateStatisticsByPartition();
+    }
 }
 
 void MergeTreeData::updateStatisticsByPartition()
@@ -1000,7 +986,6 @@ void MergeTreeData::updateStatisticsByPartition()
     std::unordered_map<String, MergeTreeStatisticsPtr> partition_to_stats_new;
 
     auto parts = getDataPartsVectorForInternalUsage();
-    auto metadata_snapshot = getInMemoryMetadataPtr();
 
     for (const auto & part : parts)
     {
@@ -1019,9 +1004,13 @@ void MergeTreeData::updateStatisticsByPartition()
     for (const auto & [partition, stat] : partition_to_stats_new)
     {
         if (!stat->empty()) {
-            auto distribution_statistics = stat->getDistributionStatistics();
+            const auto distribution_statistics = stat->getDistributionStatistics();
             for (const auto& statistic_name : distribution_statistics->getStatisticsNames()) {
                 statistic_sizes_in_memory[statistic_name].data_ram += distribution_statistics->getSizeInMemoryByName(statistic_name);
+            }
+            const auto string_hash_statistics = stat->getStringSearchStatistics();
+            for (const auto& statistic_name : string_hash_statistics->getStatisticsNames()) {
+                statistic_sizes_in_memory[statistic_name].data_ram += string_hash_statistics->getSizeInMemoryByName(statistic_name);
             }
         }
     }
@@ -1607,6 +1596,22 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
 
     resetObjectColumnsFromActiveParts(part_lock);
     calculateColumnAndSecondaryIndexSizesImpl();
+    if (getContext()->getSettingsRef().allow_experimental_stats_for_prewhere_optimization) {
+        stats_merger_task = getContext()->getSchedulePool().createTask(
+            "MergeTreeStatisticsMerger",
+            [this, period = settings->experimantal_stats_update_period] {
+            try
+            {
+                reloadStatistics();
+            }
+            catch (...)
+            {
+                LOG_ERROR(log, "Exception during statistics update: {}", getCurrentExceptionMessage(true));
+            }
+            stats_merger_task->scheduleAfter(period);
+        });
+        stats_merger_task->activateAndSchedule();
+    }
 
     LOG_DEBUG(log, "Loaded data parts ({} items)", data_parts_indexes.size());
 }

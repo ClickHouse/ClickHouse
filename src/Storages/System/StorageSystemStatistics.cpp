@@ -173,7 +173,7 @@ Pipe StorageSystemStatistics::read(
 
     NameSet names_set(column_names.begin(), column_names.end());
 
-    Block sample_block = storage_snapshot->getSampleBlockForColumns(column_names);
+    Block sample_block = storage_snapshot->metadata->getSampleBlock();
     Block header;
 
     std::vector<UInt8> columns_mask(sample_block.columns(), 0);
