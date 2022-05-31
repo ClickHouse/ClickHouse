@@ -1,6 +1,9 @@
 -- Tags: zookeeper
 
+insert into system.zookeeper (name, path, value) values ('a', '/b', 'y'); -- { serverError 36 }
+
 set allow_unrestricted_reads_from_keeper = 'true';
+set allow_writes_to_zookeeper = 'true';
 
 drop table if exists test_zkinsert;
 
