@@ -21,7 +21,7 @@
 #if USE_SENTRY && !defined(KEEPER_STANDALONE_BUILD)
 
 #    include <sentry.h>
-#    include <stdio.h>
+#    include <cstdio>
 #    include <filesystem>
 
 namespace fs = std::filesystem;

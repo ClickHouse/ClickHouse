@@ -1,6 +1,8 @@
 #pragma once
 
+#include <Core/ColumnNumbers.h>
 #include <Columns/FilterDescription.h>
+#include <Interpreters/ActionsVisitor.h>
 #include <Interpreters/AggregateDescription.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/SubqueryForSet.h>
@@ -61,10 +63,13 @@ struct ExpressionAnalyzerData
     NamesAndTypesList aggregated_columns;
     /// Columns after window functions.
     NamesAndTypesList columns_after_window;
+    /// Keys of ORDER BY
+    NameSet order_by_keys;
 
     bool has_aggregation = false;
     NamesAndTypesList aggregation_keys;
     NamesAndTypesLists aggregation_keys_list;
+    ColumnNumbersList aggregation_keys_indexes_list;
     bool has_const_aggregation_keys = false;
     AggregateDescriptions aggregate_descriptions;
 
@@ -75,6 +80,8 @@ struct ExpressionAnalyzerData
 
     /// All new temporary tables obtained by performing the GLOBAL IN/JOIN subqueries.
     TemporaryTablesMapping external_tables;
+
+    GroupByKind group_by_kind = GroupByKind::NONE;
 };
 
 
@@ -198,6 +205,11 @@ protected:
 
     NamesAndTypesList getColumnsAfterArrayJoin(ActionsDAGPtr & actions, const NamesAndTypesList & src_columns);
     NamesAndTypesList analyzeJoin(ActionsDAGPtr & actions, const NamesAndTypesList & src_columns);
+
+    AggregationKeysInfo getAggregationKeysInfo() const noexcept
+    {
+      return { aggregation_keys, aggregation_keys_indexes_list, group_by_kind };
+    }
 };
 
 class SelectQueryExpressionAnalyzer;

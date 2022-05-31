@@ -8,6 +8,22 @@ namespace ErrorCodes
     extern const int UNSUPPORTED_METHOD;
 }
 
+namespace detail
+{
+    ColumnPtr convertElementsAndOffsetsIntoArray(ElementsAndOffsets && elements_and_offsets)
+    {
+        auto elements_column = ColumnVector<UInt64>::create();
+        elements_column->getData() = std::move(elements_and_offsets.elements);
+
+        auto offsets_column = ColumnVector<IColumn::Offset>::create();
+        offsets_column->getData() = std::move(elements_and_offsets.offsets);
+
+        auto column_array = ColumnArray::create(std::move(elements_column), std::move(offsets_column));
+
+        return column_array;
+    }
+}
+
 namespace
 {
     /** In case of cache or direct dictionary we does not have structure with child to parent representation.
@@ -81,6 +97,26 @@ namespace
         }
 
         return child_to_parent_key;
+    }
+}
+
+ColumnPtr getKeysDescendantsArray(
+    const PaddedPODArray<UInt64> & requested_keys,
+    const DictionaryHierarchicalParentToChildIndex & parent_to_child_index,
+    size_t level,
+    size_t & valid_keys)
+{
+    if (level == 0)
+    {
+        detail::GetAllDescendantsStrategy strategy { .level = level };
+        auto elements_and_offsets = detail::getDescendants(requested_keys, parent_to_child_index, strategy, valid_keys);
+        return detail::convertElementsAndOffsetsIntoArray(std::move(elements_and_offsets));
+    }
+    else
+    {
+        detail::GetDescendantsAtSpecificLevelStrategy strategy { .level = level };
+        auto elements_and_offsets = detail::getDescendants(requested_keys, parent_to_child_index, strategy, valid_keys);
+        return detail::convertElementsAndOffsetsIntoArray(std::move(elements_and_offsets));
     }
 }
 
