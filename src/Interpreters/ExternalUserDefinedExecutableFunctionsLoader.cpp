@@ -17,6 +17,7 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int FUNCTION_ALREADY_EXISTS;
+    extern const int UNSUPPORTED_METHOD;
 }
 
 ExternalUserDefinedExecutableFunctionsLoader::ExternalUserDefinedExecutableFunctionsLoader(ContextPtr global_context_)
@@ -111,6 +112,7 @@ ExternalLoader::LoadablePtr ExternalUserDefinedExecutableFunctionsLoader::create
         lifetime = ExternalLoadableLifetime(config, key_in_config + ".lifetime");
 
     std::vector<UserDefinedExecutableFunctionArgument> arguments;
+    std::vector<UserDefinedExecutableFunctionParameter> parameters;
 
     Poco::Util::AbstractConfiguration::Keys config_elems;
     config.keys(key_in_config, config_elems);
@@ -137,12 +139,33 @@ ExternalLoader::LoadablePtr ExternalUserDefinedExecutableFunctionsLoader::create
         arguments.emplace_back(std::move(argument));
     }
 
+    for (const auto & config_elem : config_elems)
+    {
+        if (!startsWith(config_elem, "parameter"))
+            continue;
+
+        UserDefinedExecutableFunctionParameter parameter;
+
+        const auto parameter_prefix = key_in_config + '.' + config_elem + '.';
+
+        parameter.type = DataTypeFactory::instance().get(config.getString(parameter_prefix + "type"));
+        parameter.name = config.getString(parameter_prefix + "name");
+
+        parameters.emplace_back(std::move(parameter));
+    }
+
+    if (is_executable_pool && !parameters.empty()) {
+        throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+            "Executable user defined functions with `executable_pool` type does not support parameters");
+    }
+
     UserDefinedExecutableFunctionConfiguration function_configuration
     {
         .name = name,
         .command = std::move(command_value),
         .command_arguments = std::move(command_arguments),
         .arguments = std::move(arguments),
+        .parameters = std::move(parameters),
         .result_type = std::move(result_type),
         .result_name = std::move(result_name),
     };
