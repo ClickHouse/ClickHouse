@@ -4,8 +4,8 @@ select toTypeName(makeDate(1991, cast(8 as Nullable(UInt64)), 24));
 select toTypeName(makeDate(1991, 8, cast(24 as Nullable(UInt64))));
 select toTypeName(makeDate(1991, cast(8 as Nullable(UInt64)), cast(24 as Nullable(UInt64))));
 
-select makeDate(1970, 01, 01);
-select makeDate(2020, 08, 24);
+select makeDate(1970, 1, 1);
+select makeDate(2020, 8, 24);
 select makeDate(1980, 10, 17);
 select makeDate(-1980, 10, 17);
 select makeDate(1980, -10, 17);

@@ -1699,8 +1699,12 @@ bool ParserNumber::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             return true;
         }
 
-        expected.add(pos, "number");
-        return false;
+        /// possible hex float (0x1.f7ced916872b0p-4) - so give further float parser a try
+        if (buf[1] != 'x')
+        {
+            expected.add(pos, "number");
+            return false;
+        }
     }
 
     char * pos_double = buf;
