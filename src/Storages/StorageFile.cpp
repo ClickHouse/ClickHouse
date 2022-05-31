@@ -316,9 +316,9 @@ ColumnsDescription StorageFile::getTableStructureFromFile(
     return readSchemaFromFormat(format, format_settings, read_buffer_iterator, paths.size() > 1, context);
 }
 
-bool StorageFile::isColumnOriented() const
+bool StorageFile::supportsSubsetOfColumns() const
 {
-    return format_name != "Distributed" && FormatFactory::instance().checkIfFormatIsColumnOriented(format_name);
+    return format_name != "Distributed" && FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(format_name);
 }
 
 StorageFile::StorageFile(int table_fd_, CommonArguments args)
@@ -382,6 +382,8 @@ StorageFile::StorageFile(CommonArguments args)
     , compression_method(args.compression_method)
     , base_path(args.getContext()->getPath())
 {
+    if (format_name != "Distributed")
+        FormatFactory::instance().checkFormatName(format_name);
 }
 
 void StorageFile::setStorageMetadata(CommonArguments args)
@@ -465,7 +467,7 @@ public:
         const ColumnsDescription & columns_description,
         const FilesInfoPtr & files_info)
     {
-        if (storage->isColumnOriented())
+        if (storage->supportsSubsetOfColumns())
             return storage_snapshot->getSampleBlockForColumns(columns_description.getNamesOfPhysical());
         else
             return getHeader(storage_snapshot->metadata, files_info->need_path_column, files_info->need_file_column);
@@ -530,7 +532,7 @@ public:
 
                 auto get_block_for_format = [&]() -> Block
                 {
-                    if (storage->isColumnOriented())
+                    if (storage->supportsSubsetOfColumns())
                         return storage_snapshot->getSampleBlockForColumns(columns_description.getNamesOfPhysical());
                     return storage_snapshot->metadata->getSampleBlock();
                 };
@@ -690,9 +692,8 @@ Pipe StorageFile::read(
     {
         const auto get_columns_for_format = [&]() -> ColumnsDescription
         {
-            if (isColumnOriented())
-                return ColumnsDescription{
-                    storage_snapshot->getSampleBlockForColumns(column_names).getNamesAndTypesList()};
+            if (supportsSubsetOfColumns())
+                return storage_snapshot->getDescriptionForColumns(column_names);
             else
                 return storage_snapshot->metadata->getColumns();
         };

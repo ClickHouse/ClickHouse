@@ -13,6 +13,7 @@ on:  # yamllint disable-line rule:truthy
     branches:
       - master
     paths-ignore:
+      - 'docker/docs/**'
       - 'docs/**'
       - 'website/**'
 ##########################################################################################
@@ -276,8 +277,8 @@ jobs:
           fetch-depth: 0  # for performance artifact
       - name: Build
         run: |
-          git -C "$GITHUB_WORKSPACE" submodule sync --recursive
-          git -C "$GITHUB_WORKSPACE" submodule update --depth=1 --recursive --init --jobs=10
+          git -C "$GITHUB_WORKSPACE" submodule sync
+          git -C "$GITHUB_WORKSPACE" submodule update --depth=1 --init --jobs=10
           sudo rm -fr "$TEMP_PATH"
           mkdir -p "$TEMP_PATH"
           cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
@@ -321,8 +322,8 @@ jobs:
         uses: actions/checkout@v2
       - name: Build
         run: |
-          git -C "$GITHUB_WORKSPACE" submodule sync --recursive
-          git -C "$GITHUB_WORKSPACE" submodule update --depth=1 --recursive --init --jobs=10
+          git -C "$GITHUB_WORKSPACE" submodule sync
+          git -C "$GITHUB_WORKSPACE" submodule update --depth=1 --init --jobs=10
           sudo rm -fr "$TEMP_PATH"
           mkdir -p "$TEMP_PATH"
           cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
@@ -366,8 +367,8 @@ jobs:
   #       uses: actions/checkout@v2
   #     - name: Build
   #       run: |
-  #         git -C "$GITHUB_WORKSPACE" submodule sync --recursive
-  #         git -C "$GITHUB_WORKSPACE" submodule update --depth=1 --recursive --init --jobs=10
+  #         git -C "$GITHUB_WORKSPACE" submodule sync
+  #         git -C "$GITHUB_WORKSPACE" submodule update --depth=1 --init --jobs=10
   #         sudo rm -fr "$TEMP_PATH"
   #         mkdir -p "$TEMP_PATH"
   #         cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
@@ -413,8 +414,8 @@ jobs:
           fetch-depth: 0  # for performance artifact
       - name: Build
         run: |
-          git -C "$GITHUB_WORKSPACE" submodule sync --recursive
-          git -C "$GITHUB_WORKSPACE" submodule update --depth=1 --recursive --init --jobs=10
+          git -C "$GITHUB_WORKSPACE" submodule sync
+          git -C "$GITHUB_WORKSPACE" submodule update --depth=1 --init --jobs=10
           sudo rm -fr "$TEMP_PATH"
           mkdir -p "$TEMP_PATH"
           cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
@@ -458,8 +459,8 @@ jobs:
         uses: actions/checkout@v2
       - name: Build
         run: |
-          git -C "$GITHUB_WORKSPACE" submodule sync --recursive
-          git -C "$GITHUB_WORKSPACE" submodule update --depth=1 --recursive --init --jobs=10
+          git -C "$GITHUB_WORKSPACE" submodule sync
+          git -C "$GITHUB_WORKSPACE" submodule update --depth=1 --init --jobs=10
           sudo rm -fr "$TEMP_PATH"
           mkdir -p "$TEMP_PATH"
           cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
@@ -503,8 +504,8 @@ jobs:
         uses: actions/checkout@v2
       - name: Build
         run: |
-          git -C "$GITHUB_WORKSPACE" submodule sync --recursive
-          git -C "$GITHUB_WORKSPACE" submodule update --depth=1 --recursive --init --jobs=10
+          git -C "$GITHUB_WORKSPACE" submodule sync
+          git -C "$GITHUB_WORKSPACE" submodule update --depth=1 --init --jobs=10
           sudo rm -fr "$TEMP_PATH"
           mkdir -p "$TEMP_PATH"
           cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
@@ -548,8 +549,8 @@ jobs:
         uses: actions/checkout@v2
       - name: Build
         run: |
-          git -C "$GITHUB_WORKSPACE" submodule sync --recursive
-          git -C "$GITHUB_WORKSPACE" submodule update --depth=1 --recursive --init --jobs=10
+          git -C "$GITHUB_WORKSPACE" submodule sync
+          git -C "$GITHUB_WORKSPACE" submodule update --depth=1 --init --jobs=10
           sudo rm -fr "$TEMP_PATH"
           mkdir -p "$TEMP_PATH"
           cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
@@ -593,8 +594,8 @@ jobs:
         uses: actions/checkout@v2
       - name: Build
         run: |
-          git -C "$GITHUB_WORKSPACE" submodule sync --recursive
-          git -C "$GITHUB_WORKSPACE" submodule update --depth=1 --recursive --init --jobs=10
+          git -C "$GITHUB_WORKSPACE" submodule sync
+          git -C "$GITHUB_WORKSPACE" submodule update --depth=1 --init --jobs=10
           sudo rm -fr "$TEMP_PATH"
           mkdir -p "$TEMP_PATH"
           cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
@@ -638,8 +639,8 @@ jobs:
         uses: actions/checkout@v2
       - name: Build
         run: |
-          git -C "$GITHUB_WORKSPACE" submodule sync --recursive
-          git -C "$GITHUB_WORKSPACE" submodule update --depth=1 --recursive --init --jobs=10
+          git -C "$GITHUB_WORKSPACE" submodule sync
+          git -C "$GITHUB_WORKSPACE" submodule update --depth=1 --init --jobs=10
           sudo rm -fr "$TEMP_PATH"
           mkdir -p "$TEMP_PATH"
           cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
@@ -686,8 +687,8 @@ jobs:
         uses: actions/checkout@v2
       - name: Build
         run: |
-          git -C "$GITHUB_WORKSPACE" submodule sync --recursive
-          git -C "$GITHUB_WORKSPACE" submodule update --depth=1 --recursive --init --jobs=10
+          git -C "$GITHUB_WORKSPACE" submodule sync
+          git -C "$GITHUB_WORKSPACE" submodule update --depth=1 --init --jobs=10
           sudo rm -fr "$TEMP_PATH"
           mkdir -p "$TEMP_PATH"
           cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
@@ -731,8 +732,8 @@ jobs:
         uses: actions/checkout@v2
       - name: Build
         run: |
-          git -C "$GITHUB_WORKSPACE" submodule sync --recursive
-          git -C "$GITHUB_WORKSPACE" submodule update --depth=1 --recursive --init --jobs=10
+          git -C "$GITHUB_WORKSPACE" submodule sync
+          git -C "$GITHUB_WORKSPACE" submodule update --depth=1 --init --jobs=10
           sudo rm -fr "$TEMP_PATH"
           mkdir -p "$TEMP_PATH"
           cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
@@ -776,8 +777,8 @@ jobs:
         uses: actions/checkout@v2
       - name: Build
         run: |
-          git -C "$GITHUB_WORKSPACE" submodule sync --recursive
-          git -C "$GITHUB_WORKSPACE" submodule update --depth=1 --recursive --init --jobs=10
+          git -C "$GITHUB_WORKSPACE" submodule sync
+          git -C "$GITHUB_WORKSPACE" submodule update --depth=1 --init --jobs=10
           sudo rm -fr "$TEMP_PATH"
           mkdir -p "$TEMP_PATH"
           cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
@@ -821,8 +822,8 @@ jobs:
         uses: actions/checkout@v2
       - name: Build
         run: |
-          git -C "$GITHUB_WORKSPACE" submodule sync --recursive
-          git -C "$GITHUB_WORKSPACE" submodule update --depth=1 --recursive --init --jobs=10
+          git -C "$GITHUB_WORKSPACE" submodule sync
+          git -C "$GITHUB_WORKSPACE" submodule update --depth=1 --init --jobs=10
           sudo rm -fr "$TEMP_PATH"
           mkdir -p "$TEMP_PATH"
           cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
@@ -866,8 +867,8 @@ jobs:
         uses: actions/checkout@v2
       - name: Build
         run: |
-          git -C "$GITHUB_WORKSPACE" submodule sync --recursive
-          git -C "$GITHUB_WORKSPACE" submodule update --depth=1 --recursive --init --jobs=10
+          git -C "$GITHUB_WORKSPACE" submodule sync
+          git -C "$GITHUB_WORKSPACE" submodule update --depth=1 --init --jobs=10
           sudo rm -fr "$TEMP_PATH"
           mkdir -p "$TEMP_PATH"
           cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
@@ -911,8 +912,8 @@ jobs:
         uses: actions/checkout@v2
       - name: Build
         run: |
-          git -C "$GITHUB_WORKSPACE" submodule sync --recursive
-          git -C "$GITHUB_WORKSPACE" submodule update --depth=1 --recursive --init --jobs=10
+          git -C "$GITHUB_WORKSPACE" submodule sync
+          git -C "$GITHUB_WORKSPACE" submodule update --depth=1 --init --jobs=10
           sudo rm -fr "$TEMP_PATH"
           mkdir -p "$TEMP_PATH"
           cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
@@ -956,8 +957,8 @@ jobs:
         uses: actions/checkout@v2
       - name: Build
         run: |
-          git -C "$GITHUB_WORKSPACE" submodule sync --recursive
-          git -C "$GITHUB_WORKSPACE" submodule update --depth=1 --recursive --init --jobs=10
+          git -C "$GITHUB_WORKSPACE" submodule sync
+          git -C "$GITHUB_WORKSPACE" submodule update --depth=1 --init --jobs=10
           sudo rm -fr "$TEMP_PATH"
           mkdir -p "$TEMP_PATH"
           cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
@@ -1024,15 +1025,11 @@ jobs:
     steps:
       - name: Set envs
         run: |
-          DEPENDENCIES=$(cat << 'EOF' | jq '. | length'
-          ${{ toJSON(needs) }}
-          EOF
-          )
-          echo "DEPENDENCIES=$DEPENDENCIES" >> "$GITHUB_ENV"
           cat >> "$GITHUB_ENV" << 'EOF'
           CHECK_NAME=ClickHouse build check (actions)
           REPORTS_PATH=${{runner.temp}}/reports_dir
           TEMP_PATH=${{runner.temp}}/report_check
+          NEEDS_DATA_PATH=${{runner.temp}}/needs.json
           EOF
       - name: Download json reports
         uses: actions/download-artifact@v2
@@ -1047,8 +1044,11 @@ jobs:
         run: |
           sudo rm -fr "$TEMP_PATH"
           mkdir -p "$TEMP_PATH"
+          cat > "$NEEDS_DATA_PATH" << 'EOF'
+          ${{ toJSON(needs) }}
+          EOF
           cd "$GITHUB_WORKSPACE/tests/ci"
-          python3 build_report_check.py "$CHECK_NAME" "$DEPENDENCIES"
+          python3 build_report_check.py "$CHECK_NAME"
       - name: Cleanup
         if: always()
         run: |
@@ -1072,15 +1072,11 @@ jobs:
     steps:
       - name: Set envs
         run: |
-          DEPENDENCIES=$(cat << 'EOF' | jq '. | length'
-          ${{ toJSON(needs) }}
-          EOF
-          )
-          echo "DEPENDENCIES=$DEPENDENCIES" >> "$GITHUB_ENV"
           cat >> "$GITHUB_ENV" << 'EOF'
           TEMP_PATH=${{runner.temp}}/report_check
           REPORTS_PATH=${{runner.temp}}/reports_dir
           CHECK_NAME=ClickHouse special build check (actions)
+          NEEDS_DATA_PATH=${{runner.temp}}/needs.json
           EOF
       - name: Download json reports
         uses: actions/download-artifact@v2
@@ -1095,8 +1091,11 @@ jobs:
         run: |
           sudo rm -fr "$TEMP_PATH"
           mkdir -p "$TEMP_PATH"
+          cat > "$NEEDS_DATA_PATH" << 'EOF'
+          ${{ toJSON(needs) }}
+          EOF
           cd "$GITHUB_WORKSPACE/tests/ci"
-          python3 build_report_check.py "$CHECK_NAME" "$DEPENDENCIES"
+          python3 build_report_check.py "$CHECK_NAME"
       - name: Cleanup
         if: always()
         run: |
@@ -3271,6 +3270,13 @@ jobs:
           # shellcheck disable=SC2046
           docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH"
+#############################################################################################
+###################################### JEPSEN TESTS #########################################
+#############################################################################################
+  Jepsen:
+    needs: [BuilderBinRelease]
+    uses: ./.github/workflows/jepsen.yml
+
   FinishCheck:
     needs:
       - StyleCheck
@@ -3335,6 +3341,7 @@ jobs:
       - SplitBuildSmokeTest
       - CompatibilityCheck
       - IntegrationTestsFlakyCheck
+      - Jepsen
     runs-on: [self-hosted, style-checker]
     steps:
       - name: Clear repository
