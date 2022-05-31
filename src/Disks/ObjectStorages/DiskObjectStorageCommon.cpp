@@ -1,4 +1,4 @@
-#include <Disks/RemoteDisksCommon.h>
+#include <Disks/ObjectStorages/DiskObjectStorageCommon.h>
 #include <Common/getRandomASCIIString.h>
 #include <Common/FileCacheFactory.h>
 #include <Common/FileCache.h>
@@ -8,7 +8,8 @@ namespace DB
 {
 
 namespace ErrorCodes
-{extern const int BAD_ARGUMENTS;
+{
+    extern const int BAD_ARGUMENTS;
 }
 
 std::shared_ptr<DiskCacheWrapper> wrapWithCache(

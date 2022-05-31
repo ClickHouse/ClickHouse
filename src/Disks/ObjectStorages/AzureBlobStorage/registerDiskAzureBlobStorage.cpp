@@ -6,10 +6,11 @@
 
 #include <Disks/DiskRestartProxy.h>
 #include <Disks/DiskCacheWrapper.h>
-#include <Disks/RemoteDisksCommon.h>
-#include <Disks/AzureBlobStorage/DiskAzureBlobStorage.h>
-#include <Disks/AzureBlobStorage/AzureBlobStorageAuth.h>
+#include <Disks/ObjectStorages/DiskObjectStorageCommon.h>
+#include <Disks/ObjectStorages/DiskObjectStorage.h>
 
+#include <Disks/ObjectStorages/AzureBlobStorage/AzureBlobStorageAuth.h>
+#include <Disks/ObjectStorages/AzureBlobStorage/AzureObjectStorage.h>
 
 namespace DB
 {
@@ -19,17 +20,18 @@ namespace ErrorCodes
     extern const int PATH_ACCESS_DENIED;
 }
 
+namespace
+{
+
 constexpr char test_file[] = "test.txt";
 constexpr char test_str[] = "test";
 constexpr size_t test_str_size = 4;
-
 
 void checkWriteAccess(IDisk & disk)
 {
     auto file = disk.writeFile(test_file, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite);
     file->write(test_str, test_str_size);
 }
-
 
 void checkReadAccess(IDisk & disk)
 {
@@ -39,7 +41,6 @@ void checkReadAccess(IDisk & disk)
     if (buf != test_str)
         throw Exception("No read access to disk", ErrorCodes::PATH_ACCESS_DENIED);
 }
-
 
 void checkReadWithOffset(IDisk & disk)
 {
@@ -53,24 +54,12 @@ void checkReadWithOffset(IDisk & disk)
         throw Exception("Failed to read file with offset", ErrorCodes::PATH_ACCESS_DENIED);
 }
 
-
 void checkRemoveAccess(IDisk & disk)
 {
     disk.removeFile(test_file);
 }
 
-
-std::unique_ptr<DiskAzureBlobStorageSettings> getSettings(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, ContextPtr /*context*/)
-{
-    return std::make_unique<DiskAzureBlobStorageSettings>(
-        config.getUInt64(config_prefix + ".max_single_part_upload_size", 100 * 1024 * 1024),
-        config.getUInt64(config_prefix + ".min_bytes_for_seek", 1024 * 1024),
-        config.getInt(config_prefix + ".max_single_read_retries", 3),
-        config.getInt(config_prefix + ".max_single_download_retries", 3),
-        config.getInt(config_prefix + ".thread_pool_size", 16)
-    );
 }
-
 
 void registerDiskAzureBlobStorage(DiskFactory & factory)
 {
@@ -83,12 +72,25 @@ void registerDiskAzureBlobStorage(DiskFactory & factory)
     {
         auto [metadata_path, metadata_disk] = prepareForLocalMetadata(name, config, config_prefix, context);
 
-        std::shared_ptr<IDisk> azure_blob_storage_disk = std::make_shared<DiskAzureBlobStorage>(
+        /// FIXME Cache currently unsupported :(
+        ObjectStoragePtr azure_object_storage = std::make_unique<AzureObjectStorage>(
+            nullptr,
             name,
-            metadata_disk,
             getAzureBlobContainerClient(config, config_prefix),
-            getSettings(config, config_prefix, context),
-            getSettings
+            getAzureBlobStorageSettings(config, config_prefix, context));
+
+        uint64_t copy_thread_pool_size = config.getUInt(config_prefix + ".thread_pool_size", 16);
+        bool send_metadata = config.getBool(config_prefix + ".send_metadata", false);
+
+        std::shared_ptr<IDisk> azure_blob_storage_disk = std::make_shared<DiskObjectStorage>(
+            name,
+            /* no namespaces */"",
+            "DiskAzureBlobStorage",
+            metadata_disk,
+            std::move(azure_object_storage),
+            DiskType::AzureBlobStorage,
+            send_metadata,
+            copy_thread_pool_size
         );
 
         if (!config.getBool(config_prefix + ".skip_access_check", false))
@@ -99,9 +101,17 @@ void registerDiskAzureBlobStorage(DiskFactory & factory)
             checkRemoveAccess(*azure_blob_storage_disk);
         }
 
-        azure_blob_storage_disk->startup();
+#ifdef NDEBUG
+        bool use_cache = true;
+#else
+        /// Current cache implementation lead to allocations in destructor of
+        /// read buffer.
+        bool use_cache = false;
+#endif
 
-        if (config.getBool(config_prefix + ".cache_enabled", true))
+        azure_blob_storage_disk->startup(context);
+
+        if (config.getBool(config_prefix + ".cache_enabled", use_cache))
         {
             String cache_path = config.getString(config_prefix + ".cache_path", context->getPath() + "disks/" + name + "/cache/");
             azure_blob_storage_disk = wrapWithCache(azure_blob_storage_disk, "azure-blob-storage-cache", cache_path, metadata_path);

@@ -535,46 +535,6 @@ MutateTaskPtr MergeTreeDataMergerMutator::mutatePartToTemporaryPart(
 }
 
 
-MergeAlgorithm MergeTreeDataMergerMutator::chooseMergeAlgorithm(
-    const MergeTreeData::DataPartsVector & parts,
-    size_t sum_rows_upper_bound,
-    const NamesAndTypesList & gathering_columns,
-    bool deduplicate,
-    bool need_remove_expired_values,
-    const MergeTreeData::MergingParams & merging_params) const
-{
-    const auto data_settings = data.getSettings();
-
-    if (deduplicate)
-        return MergeAlgorithm::Horizontal;
-    if (data_settings->enable_vertical_merge_algorithm == 0)
-        return MergeAlgorithm::Horizontal;
-    if (need_remove_expired_values)
-        return MergeAlgorithm::Horizontal;
-
-    for (const auto & part : parts)
-        if (!part->supportsVerticalMerge())
-            return MergeAlgorithm::Horizontal;
-
-    bool is_supported_storage =
-        merging_params.mode == MergeTreeData::MergingParams::Ordinary ||
-        merging_params.mode == MergeTreeData::MergingParams::Collapsing ||
-        merging_params.mode == MergeTreeData::MergingParams::Replacing ||
-        merging_params.mode == MergeTreeData::MergingParams::VersionedCollapsing;
-
-    bool enough_ordinary_cols = gathering_columns.size() >= data_settings->vertical_merge_algorithm_min_columns_to_activate;
-
-    bool enough_total_rows = sum_rows_upper_bound >= data_settings->vertical_merge_algorithm_min_rows_to_activate;
-
-    bool no_parts_overflow = parts.size() <= RowSourcePart::MAX_PARTS;
-
-    auto merge_alg = (is_supported_storage && enough_total_rows && enough_ordinary_cols && no_parts_overflow) ?
-                        MergeAlgorithm::Vertical : MergeAlgorithm::Horizontal;
-
-    return merge_alg;
-}
-
-
 MergeTreeData::DataPartPtr MergeTreeDataMergerMutator::renameMergedTemporaryPart(
     MergeTreeData::MutableDataPartPtr & new_data_part,
     const MergeTreeData::DataPartsVector & parts,
