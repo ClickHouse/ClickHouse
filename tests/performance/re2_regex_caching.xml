@@ -5,15 +5,15 @@
         <substitution>
            <name>numbers</name>
            <values>
-               <value>numbers_mt(2000000)</value>
+               <value>numbers_mt(1500000)</value>
            </values>
         </substitution>
         <substitution>
             <name>needle_like</name>
             <values>
-                simple patterns, all unique
+                <!-- simple patterns, all unique -->
                 <value>'%' || toString(number) || '_'</value> 
-                simple patterns, low distinctness (10 patterns)
+                <!-- simple patterns, low distinctness (10 patterns) -->
                 <value>'%' || toString(number % 10) || '_'</value> 
             </values>
         </substitution>
@@ -40,23 +40,27 @@
     <query>
         select toString(number) as haystack, like(haystack, '%x_')
         from(select * from {numbers})
+        format Null
     </query>
 
     <query>
         select toString(number) as haystack, match(haystack, '.*x.')
         from(select * from {numbers})
+        format Null
     </query>
 
     <!-- non-const needle -->
 
     <query>
         select toString(number) as haystack, {needle_like} as needle, like(haystack, needle)
-        from (select * from {numbers});
+        from (select * from {numbers})
+        format Null
     </query>
 
     <query>
         select toString(number) as haystack, {needle_match} as needle, match(haystack, needle)
-        from (select * from {numbers});
+        from (select * from {numbers})
+        format Null
     </query>
 
 </test>
