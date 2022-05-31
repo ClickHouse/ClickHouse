@@ -83,12 +83,6 @@ size_t MergeTreeRangeReader::DelayedStream::position() const
     return num_rows_before_current_mark + current_offset + num_delayed_rows;
 }
 
-size_t MergeTreeRangeReader::DelayedStream::positionBeforeRead() const
-{
-    size_t num_rows_before_current_mark = index_granularity->getMarkStartingRow(current_mark);
-    return num_rows_before_current_mark + current_offset;
-}
-
 size_t MergeTreeRangeReader::DelayedStream::readRows(Columns & columns, size_t num_rows)
 {
     if (num_rows)
@@ -815,9 +809,6 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::startReadingChain(size_t 
         leading_end_part_offset = stream.lastPartOffset();
     }
 
-    bool need_collect_deleted_mask = merge_tree_reader->needCollectDeletedMask();
-    auto mask_column = ColumnUInt8::create();
-
     /// Stream is lazy. result.num_added_rows is the number of rows added to block which is not equal to
     /// result.num_rows_read until call to stream.finalize(). Also result.num_added_rows may be less than
     /// result.num_rows_read if the last granule in range also the last in part (so we have to adjust last granule).
@@ -827,27 +818,7 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::startReadingChain(size_t 
         {
             if (stream.isFinished())
             {
-                if (need_collect_deleted_mask)
-                {
-                    size_t from_pos = stream.stream.positionBeforeRead();
-                    size_t read_rows = stream.finalize(result.columns);
-                    result.addRows(read_rows);
-
-                    /// Get deleted mask , from_pos + read_rows
-                    if (read_rows > 0)
-                    {
-                        String bitmap = merge_tree_reader->deleted_rows_bitmap.substr(from_pos, read_rows);
-                        for (char bit : bitmap)
-                        {
-                            if (bit == '0')
-                                mask_column->insert(1);
-                            else
-                                mask_column->insert(0);
-                        }
-                    }
-                }
-                else
-                    result.addRows(stream.finalize(result.columns));
+                result.addRows(stream.finalize(result.columns));
                 stream = Stream(ranges.front().begin, ranges.front().end, current_task_last_mark, merge_tree_reader);
                 result.addRange(ranges.front());
                 ranges.pop_front();
@@ -869,29 +840,7 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::startReadingChain(size_t 
         }
     }
 
-    if (need_collect_deleted_mask)
-    {
-        size_t from_pos = stream.stream.positionBeforeRead();
-        size_t read_rows = stream.finalize(result.columns);
-        result.addRows(read_rows);
-
-        /// Get deleted mask , from_pos + read_rows
-        if (read_rows > 0)
-        {
-            String bitmap = merge_tree_reader->deleted_rows_bitmap.substr(from_pos, read_rows);
-            for (char bit : bitmap)
-            {
-                if (bit == '0')
-                    mask_column->insert(1);
-                else
-                    mask_column->insert(0);
-            }
-        }
-
-        result.deleted_mask_filter_holder = std::move(mask_column);
-    }
-    else
-        result.addRows(stream.finalize(result.columns));
+    result.addRows(stream.finalize(result.columns));
 
     /// Last granule may be incomplete.
     result.adjustLastGranule();
@@ -901,6 +850,10 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::startReadingChain(size_t 
         if (column_name == "_part_offset")
             fillPartOffsetColumn(result, leading_begin_part_offset, leading_end_part_offset);
     }
+
+    /// Do similar as part_offset for deleted mask.
+    if (merge_tree_reader->needCollectDeletedMask())
+        fillDeletedRowMaskColumn(result, leading_begin_part_offset, leading_end_part_offset);
 
     return result;
 }
@@ -930,6 +883,44 @@ void MergeTreeRangeReader::fillPartOffsetColumn(ReadResult & result, UInt64 lead
     }
 
     result.columns.emplace_back(std::move(column));
+}
+
+/// Fill deleted_row_mask column, referenced from fillPartOffsetColumn().
+void MergeTreeRangeReader::fillDeletedRowMaskColumn(ReadResult & result, UInt64 leading_begin_part_offset, UInt64 leading_end_part_offset)
+{
+    size_t num_rows = result.numReadRows();
+
+    auto mask_column = ColumnUInt8::create(num_rows);
+    ColumnUInt8::Container & vec = mask_column->getData();
+
+    UInt8 * pos = vec.data();
+    UInt8 * end = &vec[num_rows];
+
+    while (pos < end && leading_begin_part_offset < leading_end_part_offset)
+    {
+        if (merge_tree_reader->deleted_rows_bitmap[leading_begin_part_offset++] == '0')
+            *pos++ = 1;
+        else
+            *pos++ = 0;
+    }
+
+    const auto start_ranges = result.startedRanges();
+
+    for (const auto & start_range : start_ranges)
+    {
+        UInt64 start_part_offset = index_granularity->getMarkStartingRow(start_range.range.begin);
+        UInt64 end_part_offset = index_granularity->getMarkStartingRow(start_range.range.end);
+
+        while (pos < end && start_part_offset < end_part_offset)
+        {
+            if (merge_tree_reader->deleted_rows_bitmap[start_part_offset++] == '0')
+                *pos++ = 1;
+            else
+                *pos++ = 0;
+        }
+    }
+
+    result.deleted_mask_filter_holder = std::move(mask_column);
 }
 
 Columns MergeTreeRangeReader::continueReadingChain(ReadResult & result, size_t & num_rows)

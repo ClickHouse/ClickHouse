@@ -75,10 +75,6 @@ public:
         /// Skip extra rows to current_offset and perform actual reading
         size_t finalize(Columns & columns);
 
-        /// Current position from the begging of file in rows, not including the num_delayed_rows
-        /// Used for light weight deleted mask.
-        size_t positionBeforeRead() const;
-
         bool isFinished() const { return is_finished; }
 
     private:
@@ -248,6 +244,7 @@ private:
     Columns continueReadingChain(ReadResult & result, size_t & num_rows);
     void executePrewhereActionsAndFilterColumns(ReadResult & result);
     void fillPartOffsetColumn(ReadResult & result, UInt64 leading_begin_part_offset, UInt64 leading_end_part_offset);
+    void fillDeletedRowMaskColumn(ReadResult & result, UInt64 leading_begin_part_offset, UInt64 leading_end_part_offset);
     void executeDeletedRowMaskFilterColumns(ReadResult & result);
 
     IMergeTreeReader * merge_tree_reader = nullptr;
