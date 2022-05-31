@@ -68,6 +68,14 @@
 
 namespace fs = std::filesystem;
 
+namespace DB
+{
+    namespace ErrorCodes
+    {
+        extern const int CANNOT_SET_SIGNAL_HANDLER;
+    }
+}
+
 DB::PipeFDs signal_pipe;
 
 
@@ -76,7 +84,8 @@ DB::PipeFDs signal_pipe;
   */
 static void call_default_signal_handler(int sig)
 {
-    signal(sig, SIG_DFL);
+    if (SIG_ERR == signal(sig, SIG_DFL))
+        DB::throwFromErrno("Cannot set signal handler.", DB::ErrorCodes::CANNOT_SET_SIGNAL_HANDLER);
     raise(sig);
 }
 
@@ -451,7 +460,7 @@ static std::string createDirectory(const std::string & file)
         return "";
     fs::create_directories(path);
     return path;
-};
+}
 
 
 static bool tryCreateDirectories(Poco::Logger * logger, const std::string & path)
@@ -498,9 +507,8 @@ BaseDaemon::~BaseDaemon()
     signal_listener_thread.join();
     /// Reset signals to SIG_DFL to avoid trying to write to the signal_pipe that will be closed after.
     for (int sig : handled_signals)
-    {
-        signal(sig, SIG_DFL);
-    }
+        if (SIG_ERR == signal(sig, SIG_DFL))
+            DB::throwFromErrno("Cannot set signal handler.", DB::ErrorCodes::CANNOT_SET_SIGNAL_HANDLER);
     signal_pipe.close();
 }
 
@@ -794,7 +802,7 @@ static void addSignalHandler(const std::vector<int> & signals, signal_function h
 
     if (out_handled_signals)
         std::copy(signals.begin(), signals.end(), std::back_inserter(*out_handled_signals));
-};
+}
 
 
 static void blockSignals(const std::vector<int> & signals)
@@ -816,7 +824,7 @@ static void blockSignals(const std::vector<int> & signals)
 
     if (pthread_sigmask(SIG_BLOCK, &sig_set, nullptr))
         throw Poco::Exception("Cannot block signal.");
-};
+}
 
 
 void BaseDaemon::initializeTerminationAndSignalProcessing()

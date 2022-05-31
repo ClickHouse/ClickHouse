@@ -112,7 +112,9 @@ String CSVFormatReader::readCSVFieldIntoString()
 
 void CSVFormatReader::skipField()
 {
-    readCSVFieldIntoString<true>();
+    skipWhitespacesAndTabs(*in);
+    NullOutput out;
+    readCSVStringInto(out, *in, format_settings.csv);
 }
 
 void CSVFormatReader::skipRowEndDelimiter()
@@ -257,6 +259,12 @@ bool CSVFormatReader::readField(
     }
 }
 
+void CSVFormatReader::skipPrefixBeforeHeader()
+{
+    for (size_t i = 0; i != format_settings.csv.skip_first_lines; ++i)
+        readRow();
+}
+
 
 CSVSchemaReader::CSVSchemaReader(ReadBuffer & in_, bool with_names_, bool with_types_, const FormatSettings & format_setting_)
     : FormatWithNamesAndTypesSchemaReader(
@@ -374,6 +382,7 @@ void registerFileSegmentationEngineCSV(FormatFactory & factory)
     };
 
     registerWithNamesAndTypes("CSV", register_func);
+    markFormatWithNamesAndTypesSupportsSamplingColumns("CSV", factory);
 }
 
 void registerCSVSchemaReader(FormatFactory & factory)
