@@ -1670,7 +1670,7 @@ bool ParserNumber::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     memcpy(buf, pos->begin, pos->size());
     buf[pos->size()] = 0;
 
-    if (buf[0] == '0')
+    if (buf[0] == '0' && buf[1] != '.')
     {
         /// Try to parse number as binary literal representation. Example: 0b0001.
         if (pos->size() > 2 && buf[1] == 'b')

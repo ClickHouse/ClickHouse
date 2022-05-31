@@ -11,3 +11,5 @@ SELECT 09; -- { clientError 62 } --
 
 SELECT 0b01010101;
 SELECT 0xfecb;
+SELECT 0.1;
+SELECT 1.1;
