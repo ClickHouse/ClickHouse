@@ -182,6 +182,9 @@ void StorageMergeTree::shutdown()
     background_operations_assignee.finish();
     background_moves_assignee.finish();
 
+    if (deduplication_log)
+        deduplication_log->shutdown();
+
     try
     {
         /// We clear all old parts after stopping all background operations.
@@ -699,8 +702,9 @@ void StorageMergeTree::loadDeduplicationLog()
     if (settings->non_replicated_deduplication_window != 0 && format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
         throw Exception("Deduplication for non-replicated MergeTree in old syntax is not supported", ErrorCodes::BAD_ARGUMENTS);
 
-    std::string path = getDataPaths()[0] + "/deduplication_logs";
-    deduplication_log = std::make_unique<MergeTreeDeduplicationLog>(path, settings->non_replicated_deduplication_window, format_version);
+    auto disk = getDisks()[0];
+    std::string path = fs::path(relative_data_path) / "deduplication_logs";
+    deduplication_log = std::make_unique<MergeTreeDeduplicationLog>(path, settings->non_replicated_deduplication_window, format_version, disk);
     deduplication_log->load();
 }
 

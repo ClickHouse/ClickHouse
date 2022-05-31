@@ -238,8 +238,7 @@ private:
     Int64 slide_num_units;
     String window_id_name;
     String window_id_alias;
-    String inner_window_column_name;
-    String inner_window_id_column_name;
+    String window_column_name;
     String timestamp_column_name;
 
     StorageID select_table_id = StorageID::createEmpty();
