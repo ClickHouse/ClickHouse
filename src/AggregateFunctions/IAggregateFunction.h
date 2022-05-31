@@ -123,6 +123,10 @@ public:
      */
     virtual void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const = 0;
 
+    /// Adds several default values of arguments into aggregation data on which place points to.
+    /// Default values must be a the 0-th positions in columns.
+    virtual void addManyDefaults(AggregateDataPtr __restrict place, const IColumn ** columns, size_t length, Arena * arena) const = 0;
+
     /// Merges state (on which place points to) with other state of current aggregation function.
     virtual void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const = 0;
 
@@ -377,6 +381,16 @@ public:
 
     AddFunc getAddressOfAddFunction() const override { return &addFree; }
 
+    void addManyDefaults(
+        AggregateDataPtr __restrict place,
+        const IColumn ** columns,
+        size_t length,
+        Arena * arena) const override
+    {
+        for (size_t i = 0; i < length; ++i)
+            static_cast<const Derived *>(this)->add(place, columns, 0, arena);
+    }
+
     void addBatch( /// NOLINT
         size_t row_begin,
         size_t row_end,
@@ -413,13 +427,9 @@ public:
     {
         const auto & column_sparse = assert_cast<const ColumnSparse &>(*columns[0]);
         const auto * values = &column_sparse.getValuesColumn();
-        auto offset_it = column_sparse.begin();
+        auto offset_it = column_sparse.getIterator(row_begin);
 
-        /// FIXME: make it more optimal
-        for (size_t i = 0; i < row_begin; ++i, ++offset_it)
-            ;
-
-        for (size_t i = 0; i < row_end; ++i, ++offset_it)
+        for (size_t i = row_begin; i < row_end; ++i, ++offset_it)
             static_cast<const Derived *>(this)->add(places[offset_it.getCurrentRow()] + place_offset,
                                                     &values, offset_it.getValueIndex(), arena);
     }
@@ -468,17 +478,16 @@ public:
         const IColumn ** columns,
         Arena * arena) const override
     {
-        /// TODO: add values and defaults separately if order of adding isn't important.
         const auto & column_sparse = assert_cast<const ColumnSparse &>(*columns[0]);
         const auto * values = &column_sparse.getValuesColumn();
-        auto offset_it = column_sparse.begin();
+        const auto & offsets = column_sparse.getOffsetsData();
 
-        /// FIXME: make it more optimal
-        for (size_t i = 0; i < row_begin; ++i, ++offset_it)
-            ;
+        auto from = std::lower_bound(offsets.begin(), offsets.end(), row_begin) - offsets.begin() + 1;
+        auto to = std::lower_bound(offsets.begin(), offsets.end(), row_end) - offsets.begin() + 1;
 
-        for (size_t i = 0; i < row_end; ++i, ++offset_it)
-            static_cast<const Derived *>(this)->add(place, &values, offset_it.getValueIndex(), arena);
+        size_t num_defaults = (row_end - row_begin) - (to - from);
+        static_cast<const Derived *>(this)->addBatchSinglePlace(from, to, place, &values, arena, -1);
+        static_cast<const Derived *>(this)->addManyDefaults(place, &values, num_defaults, arena);
     }
 
     void addBatchSinglePlaceNotNull( /// NOLINT
