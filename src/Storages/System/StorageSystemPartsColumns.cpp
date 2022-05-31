@@ -46,6 +46,7 @@ StorageSystemPartsColumns::StorageSystemPartsColumns(const StorageID & table_id_
         {"data_version",                               std::make_shared<DataTypeUInt64>()},
         {"primary_key_bytes_in_memory",                std::make_shared<DataTypeUInt64>()},
         {"primary_key_bytes_in_memory_allocated",      std::make_shared<DataTypeUInt64>()},
+        {"compression_codec",                          std::make_shared<DataTypeString>()},
 
         {"database",                                   std::make_shared<DataTypeString>()},
         {"table",                                      std::make_shared<DataTypeString>()},
@@ -182,6 +183,8 @@ void StorageSystemPartsColumns::processNextStorage(
                 columns[res_index++]->insert(index_size_in_bytes);
             if (columns_mask[src_index++])
                 columns[res_index++]->insert(index_size_in_allocated_bytes);
+            if (columns_mask[src_index++])
+                columns[res_index++]->insert(queryToString(part->default_codec->getCodecDesc()));
 
             if (columns_mask[src_index++])
                 columns[res_index++]->insert(info.database);
