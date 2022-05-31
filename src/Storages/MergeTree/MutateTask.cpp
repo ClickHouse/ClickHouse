@@ -1,34 +1,33 @@
 #include <Storages/MergeTree/MutateTask.h>
 
-#include <Common/logger_useful.h>
 #include <boost/algorithm/string/replace.hpp>
-#include <Common/logger_useful.h>
 #include <Common/escapeForFileName.h>
-#include "Core/Names.h"
-#include "Core/NamesAndTypes.h"
-#include "Storages/ColumnsDescription.h"
-#include "Storages/StatisticsDescription.h"
+#include <Common/logger_useful.h>
+#include <Core/Names.h>
+#include <Core/NamesAndTypes.h>
+#include <Interpreters/MergeTreeTransaction.h>
 #include <Interpreters/SquashingTransform.h>
 #include <Parsers/queryToString.h>
+#include <Poco/Logger.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
-#include <Interpreters/MergeTreeTransaction.h>
-#include <Processors/Transforms/TTLTransform.h>
-#include <Processors/Transforms/TTLCalcTransform.h>
-#include <Processors/Transforms/DistinctSortedTransform.h>
-#include <Processors/Transforms/ColumnGathererTransform.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Processors/Transforms/ColumnGathererTransform.h>
+#include <Processors/Transforms/ColumnGathererTransform.h>
+#include <Processors/Transforms/DistinctSortedTransform.h>
 #include <Processors/Transforms/DistinctSortedTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/MaterializingTransform.h>
 #include <Processors/Transforms/TTLCalcTransform.h>
+#include <Processors/Transforms/TTLCalcTransform.h>
 #include <Processors/Transforms/TTLTransform.h>
+#include <Processors/Transforms/TTLTransform.h>
+#include <Storages/ColumnsDescription.h>
 #include <Storages/MergeTree/MergeTreeDataMergerMutator.h>
 #include <Storages/MergeTree/MergeTreeDataWriter.h>
 #include <Storages/MergeTree/MergeTreeStatistic.h>
 #include <Storages/MergeTree/StorageFromMergeTreeDataPart.h>
 #include <Storages/MutationCommands.h>
-#include <Poco/Logger.h>
+#include <Storages/StatisticsDescription.h>
 
 
 namespace CurrentMetrics

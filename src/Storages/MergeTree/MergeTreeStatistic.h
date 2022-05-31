@@ -1,16 +1,16 @@
 #pragma once
 
-#include <memory>
-#include <unordered_map>
 #include <base/types.h>
+#include <Common/HashTable/HashTable.h>
 #include <Core/Names.h>
 #include <IO/ReadBuffer.h>
 #include <IO/WriteBuffer.h>
+#include <memory>
 #include <Parsers/IAST_fwd.h>
-#include <Common/HashTable/HashTable.h>
-#include "Storages/ColumnsDescription.h"
-#include <Storages/StatisticsDescription.h>
+#include <Storages/ColumnsDescription.h>
 #include <Storages/Statistics.h>
+#include <Storages/StatisticsDescription.h>
+#include <unordered_map>
 
 constexpr auto PART_STATS_FILE_NAME = "part_stat";
 constexpr auto PART_STATS_FILE_EXT = "bin_stats";

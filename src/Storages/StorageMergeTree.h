@@ -4,20 +4,20 @@
 #include <Storages/AlterCommands.h>
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/MergeTreeData.h>
-#include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
-#include <Storages/MergeTree/MergeTreeDataWriter.h>
-#include <Storages/MergeTree/MergeTreeDataMergerMutator.h>
-#include <Storages/MergeTree/MergeTreePartsMover.h>
-#include <Storages/MergeTree/MergeTreeMutationEntry.h>
-#include <Storages/MergeTree/MergeTreeMutationStatus.h>
-#include <Storages/MergeTree/MergeTreeDeduplicationLog.h>
 #include <Storages/MergeTree/FutureMergedMutatedPart.h>
 #include <Storages/MergeTree/MergePlainMergeTreeTask.h>
+#include <Storages/MergeTree/MergeTreeDataMergerMutator.h>
+#include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
+#include <Storages/MergeTree/MergeTreeDataWriter.h>
+#include <Storages/MergeTree/MergeTreeDeduplicationLog.h>
+#include <Storages/MergeTree/MergeTreeMutationEntry.h>
+#include <Storages/MergeTree/MergeTreeMutationStatus.h>
+#include <Storages/MergeTree/MergeTreePartsMover.h>
+#include <Storages/MergeTree/MergeTreeStatistic.h>
 #include <Storages/MergeTree/MutatePlainMergeTreeTask.h>
 
 #include <Disks/StoragePolicy.h>
 #include <Common/SimpleIncrement.h>
-#include "Storages/MergeTree/MergeTreeStatistic.h"
 
 
 namespace DB
