@@ -12,5 +12,14 @@
             <endpoint>/test_dict</endpoint>
             <format>TabSeparated</format>
         </urldict>
+        <urldict1>
+            <url>http://nginx:80/</url>
+            <endpoint>/test_dict</endpoint>
+        </urldict1>
+        <urldict2>
+            <url>http://nginx:80/</url>
+            <endpoint>/test_dict</endpoint>
+            <format>CSV</format>
+        </urldict2>
     </named_collections>
 </clickhouse>

@@ -32,3 +32,15 @@ def test_storage_dict(cluster):
     )
     result = node1.query(f"select * from dict")
     assert result.strip() == "foo\tbar"
+
+    node1.query(
+        f"create dictionary dict1 (k String, v String) primary key k source(http(name urldict1 format TabSeparated)) layout(complex_key_hashed()) lifetime(min 0 max 100)"
+    )
+    result = node1.query(f"select * from dict1")
+    assert result.strip() == "foo\tbar"
+
+    node1.query(
+        f"create dictionary dict2 (k String, v String) primary key k source(http(name urldict2 format TabSeparated)) layout(complex_key_hashed()) lifetime(min 0 max 100)"
+    )
+    result = node1.query(f"select * from dict2")
+    assert result.strip() == "foo\tbar"
