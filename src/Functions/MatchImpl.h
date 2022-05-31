@@ -18,8 +18,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
-    extern const int LOGICAL_ERROR;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
 namespace impl
@@ -112,16 +110,14 @@ struct MatchImpl
         const ColumnString::Chars & haystack_data,
         const ColumnString::Offsets & haystack_offsets,
         const String & needle,
-        const ColumnPtr & start_pos_,
+        [[maybe_unused]] const ColumnPtr & start_pos_,
         PaddedPODArray<UInt8> & res)
     {
         const size_t haystack_size = haystack_offsets.size();
 
-        if (haystack_size != res.size())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Function '{}' unexpectedly received a different number of haystacks and results", name);
+        assert(haystack_size == res.size());
 
-        if (start_pos_ != nullptr)
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Function '{}' doesn't support start_pos argument", name);
+        assert(start_pos_ == nullptr);
 
         if (haystack_offsets.empty())
             return;
@@ -274,8 +270,7 @@ struct MatchImpl
     {
         const size_t haystack_size = haystack.size() / N;
 
-        if (haystack_size != res.size())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Function '{}' unexpectedly received a different number of haystacks and results", name);
+        assert(haystack_size == res.size());
 
         if (haystack.empty())
             return;
@@ -433,16 +428,15 @@ struct MatchImpl
         const ColumnString::Offsets & haystack_offsets,
         const ColumnString::Chars & needle_data,
         const ColumnString::Offsets & needle_offset,
-        const ColumnPtr & start_pos_,
+        [[maybe_unused]] const ColumnPtr & start_pos_,
         PaddedPODArray<UInt8> & res)
     {
         const size_t haystack_size = haystack_offsets.size();
 
-        if (haystack_size != needle_offset.size() || haystack_size != res.size())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Function '{}' unexpectedly received a different number of haystacks, needles and results", name);
+        assert(haystack_size == needle_offset.size());
+        assert(haystack_size == res.size());
 
-        if (start_pos_ != nullptr)
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Function '{}' doesn't support start_pos argument", name);
+        assert(start_pos_ == nullptr);
 
         if (haystack_offsets.empty())
             return;
@@ -547,16 +541,15 @@ struct MatchImpl
         size_t N,
         const ColumnString::Chars & needle_data,
         const ColumnString::Offsets & needle_offset,
-        const ColumnPtr & start_pos_,
+        [[maybe_unused]] const ColumnPtr & start_pos_,
         PaddedPODArray<UInt8> & res)
     {
         const size_t haystack_size = haystack.size()/N;
 
-        if (haystack_size != needle_offset.size() || haystack_size != res.size())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Function '{}' unexpectedly received a different number of haystacks, needles and results", name);
+        assert(haystack_size == needle_offset.size());
+        assert(haystack_size == res.size());
 
-        if (start_pos_ != nullptr)
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Function '{}' doesn't support start_pos argument", name);
+        assert(start_pos_ == nullptr);
 
         if (haystack.empty())
             return;
