@@ -320,7 +320,7 @@ public:
         const StorageLimitsList & limits;
     };
 
-    /// Set limits fro current storage.
+    /// Set limits for current storage.
     /// Different limits may be applied to different storages, we need to keep it per processor.
     /// This method is need to be override only for sources.
     virtual void setStorageLimits(const std::shared_ptr<const StorageLimitsList> & /*storage_limits*/) {}

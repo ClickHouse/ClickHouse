@@ -35,9 +35,9 @@ bool SizeLimits::check(UInt64 rows, UInt64 bytes, const char * what, int too_man
 
 bool SizeLimits::softCheck(UInt64 rows, UInt64 bytes) const
 {
-    if (max_rows && rows > max_rows)
+    if (max_rows && rows >= max_rows)
         return false;
-    if (max_bytes && bytes > max_bytes)
+    if (max_bytes && bytes >= max_bytes)
         return false;
     return true;
 }

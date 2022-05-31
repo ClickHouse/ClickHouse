@@ -21,7 +21,7 @@ ISource::ISource(Block header, bool enable_auto_progress)
 
 ISource::Status ISource::prepare()
 {
-    if (finished || isCancelled())
+    if (finished)
     {
         output.finish();
         return Status::Finished;
@@ -39,6 +39,12 @@ ISource::Status ISource::prepare()
 
     output.pushData(std::move(current_chunk));
     has_input = false;
+
+    if (isCancelled())
+    {
+        output.finish();
+        return Status::Finished;
+    }
 
     if (got_exception)
     {
