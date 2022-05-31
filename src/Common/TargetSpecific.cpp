@@ -17,7 +17,7 @@ UInt32 getSupportedArchs()
     if (Cpu::CpuFlagsCache::have_AVX512F)
         result |= static_cast<UInt32>(TargetArch::AVX512F);
     if (Cpu::CpuFlagsCache::have_AVX512BW)
-        result |= static_cast<UInt32>(TargetArch::AVX512BW);        
+        result |= static_cast<UInt32>(TargetArch::AVX512BW);
     return result;
 }
 
