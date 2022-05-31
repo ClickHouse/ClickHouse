@@ -27,6 +27,7 @@
 #include <base/logger_useful.h>
 #include <algorithm>
 #include <string>
+#include <type_traits>
 #include <vector>
 
 
@@ -328,6 +329,21 @@ NamesAndTypesList TableJoin::correctedColumnsAddedByJoin() const
 
 void TableJoin::addJoinedColumnsAndCorrectTypes(NamesAndTypesList & left_columns, bool correct_nullability)
 {
+    addJoinedColumnsAndCorrectTypesImpl(left_columns, correct_nullability);
+}
+
+void TableJoin::addJoinedColumnsAndCorrectTypes(ColumnsWithTypeAndName & left_columns, bool correct_nullability)
+{
+    addJoinedColumnsAndCorrectTypesImpl(left_columns, correct_nullability);
+}
+
+template <typename TColumns>
+void TableJoin::addJoinedColumnsAndCorrectTypesImpl(TColumns & left_columns, bool correct_nullability)
+{
+    static_assert(std::is_same_v<typename TColumns::value_type, ColumnWithTypeAndName> ||
+                  std::is_same_v<typename TColumns::value_type, NameAndTypePair>);
+
+    constexpr bool has_column = std::is_same_v<typename TColumns::value_type, ColumnWithTypeAndName>;
     for (auto & col : left_columns)
     {
         if (hasUsing())
@@ -342,15 +358,26 @@ void TableJoin::addJoinedColumnsAndCorrectTypes(NamesAndTypesList & left_columns
             inferJoinKeyCommonType(left_columns, columns_from_joined_table, !isSpecialStorage());
 
             if (auto it = left_type_map.find(col.name); it != left_type_map.end())
+            {
                 col.type = it->second;
+                if constexpr (has_column)
+                    col.column = nullptr;
+            }
         }
 
         if (correct_nullability && leftBecomeNullable(col.type))
+        {
             col.type = JoinCommon::convertTypeToNullable(col.type);
+            if constexpr (has_column)
+                col.column = nullptr;
+        }
     }
 
     for (const auto & col : correctedColumnsAddedByJoin())
-        left_columns.emplace_back(col.name, col.type);
+        if constexpr (has_column)
+            left_columns.emplace_back(nullptr, col.type, col.name);
+        else
+            left_columns.emplace_back(col.name, col.type);
 }
 
 bool TableJoin::sameStrictnessAndKind(ASTTableJoin::Strictness strictness_, ASTTableJoin::Kind kind_) const
