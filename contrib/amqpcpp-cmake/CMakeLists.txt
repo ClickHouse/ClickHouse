@@ -5,6 +5,11 @@ if (NOT ENABLE_AMQPCPP)
     return()
 endif()
 
+if (NOT TARGET ch_contrib::uv)
+    message(STATUS "Not using AMQP-CPP because libuv is disabled")
+    return()
+endif()
+
 set (LIBRARY_DIR "${ClickHouse_SOURCE_DIR}/contrib/AMQP-CPP")
 
 set (SRCS
