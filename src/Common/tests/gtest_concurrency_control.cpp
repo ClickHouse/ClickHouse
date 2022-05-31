@@ -89,7 +89,7 @@ TEST(ConcurrencyControl, ReleaseUnacquiredSlots)
         std::vector<ConcurrencyControl::AllocationPtr> allocations;
         for (int i = 0; i < 10; i++)
             allocations.emplace_back(t.cc.allocate(1, 2));
-        // Do not acquire - just destory allocations with granted slots
+        // Do not acquire - just destroy allocations with granted slots
     }
     // Check that slots were actually released
     auto allocation = t.cc.allocate(0, 20);
@@ -122,7 +122,7 @@ TEST(ConcurrencyControl, DestroyAllocationBeforeSlots)
         while (auto slot = allocation->tryAcquire())
             acquired.emplace_back(std::move(slot));
         ASSERT_TRUE(acquired.size() == 10);
-        allocation.reset(); // slots are stil acquired (they should actually hold allocation)
+        allocation.reset(); // slots are still acquired (they should actually hold allocation)
     }
 }
 
