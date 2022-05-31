@@ -188,7 +188,8 @@ void executeQuery(
             std::move(scalars),
             std::move(external_tables),
             log,
-            shards);
+            shards,
+            query_info.storage_limits);
 
         read_from_remote->setStepDescription("Read from remote replica");
         plan->addStep(std::move(read_from_remote));

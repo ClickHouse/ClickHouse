@@ -376,7 +376,8 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
     pipe.resize(1);
     auto step = std::make_unique<ReadFromStorageStep>(
         std::move(pipe),
-        fmt::format("MergeTree(with {} projection {})", query_info.projection->desc->type, query_info.projection->desc->name));
+        fmt::format("MergeTree(with {} projection {})", query_info.projection->desc->type, query_info.projection->desc->name),
+        query_info.storage_limits);
     plan->addStep(std::move(step));
     return plan;
 }

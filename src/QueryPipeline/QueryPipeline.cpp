@@ -588,8 +588,6 @@ std::unique_ptr<ReadProgressCallback> QueryPipeline::getReadProgressCallback() c
 
     callback->setProgressCallback(progress_callback);
     callback->setQuota(quota);
-    callback->setLimits(local_limits);
-    callback->setLeafLimits(leaf_limits);
     callback->setProcessListElement(process_list_element);
 
     if (!update_profile_events)

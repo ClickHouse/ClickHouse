@@ -52,15 +52,21 @@ public:
 
     /// Add limits and quotas to query pipeline based on internal context and options.
     virtual void addLimitsAndQuotas(QueryPipeline & pipeline) const;
-    static void addLimitsAndQuotas(QueryPipeline & pipeline, const Context & context, const SelectQueryOptions & options, bool has_remote);
+    static void addLimitsAndQuotas(QueryPipeline & pipeline, const Context & context, const SelectQueryOptions & options);
+
+    static StorageLimits getStorageLimits(const Context & context, const SelectQueryOptions & options);
 
     virtual bool hasRemoteStorage() const = 0;
+
+    void addStorageLimits(const StorageLimitsList & limits);
 
 protected:
     ASTPtr query_ptr;
     ContextMutablePtr context;
     Block result_header;
     SelectQueryOptions options;
+    StorageLimitsList storage_limits;
+
     size_t max_streams = 1;
     bool settings_limit_offset_needed = false;
     bool settings_limit_offset_done = false;

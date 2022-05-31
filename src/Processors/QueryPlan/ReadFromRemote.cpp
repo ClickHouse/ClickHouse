@@ -73,7 +73,8 @@ ReadFromRemote::ReadFromRemote(
     Scalars scalars_,
     Tables external_tables_,
     Poco::Logger * log_,
-    UInt32 shard_count_)
+    UInt32 shard_count_,
+    std::shared_ptr<const StorageLimitsList> storage_limits_)
     : ISourceStep(DataStream{.header = std::move(header_)})
     , shards(std::move(shards_))
     , stage(stage_)
@@ -83,6 +84,7 @@ ReadFromRemote::ReadFromRemote(
     , throttler(std::move(throttler_))
     , scalars(std::move(scalars_))
     , external_tables(std::move(external_tables_))
+    , storage_limits(std::move(storage_limits_))
     , log(log_)
     , shard_count(shard_count_)
 {
@@ -266,6 +268,10 @@ void ReadFromRemote::initializePipeline(QueryPipelineBuilder & pipeline, const B
     }
 
     auto pipe = Pipe::unitePipes(std::move(pipes));
+
+    for (const auto & processor : pipe.getProcessors())
+        processor->setStorageLimits(storage_limits);
+
     pipeline.init(std::move(pipe));
 }
 

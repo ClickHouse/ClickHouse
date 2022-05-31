@@ -1,4 +1,5 @@
 #include <Processors/ISource.h>
+#include <QueryPipeline/StreamLocalLimits.h>
 
 
 namespace DB
@@ -8,6 +9,8 @@ namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
 }
+
+ISource::~ISource() = default;
 
 ISource::ISource(Block header, bool enable_auto_progress)
     : IProcessor({}, {std::move(header)})
@@ -48,6 +51,11 @@ ISource::Status ISource::prepare()
     return Status::PortFull;
 }
 
+void ISource::setStorageLimits(const std::shared_ptr<const StorageLimitsList> & storage_limits_)
+{
+    storage_limits = storage_limits_;
+}
+
 void ISource::progress(size_t read_rows, size_t read_bytes)
 {
     //std::cerr << "========= Progress " << read_rows << " from " << getName() << std::endl << StackTrace().toString() << std::endl;
@@ -58,9 +66,14 @@ void ISource::progress(size_t read_rows, size_t read_bytes)
 
 std::optional<ISource::ReadProgress> ISource::getReadProgress()
 {
-    ReadProgress res_progress;
+    ReadProgressCounters res_progress;
     std::swap(read_progress, res_progress);
-    return res_progress;
+
+    if (storage_limits)
+        return ReadProgress{res_progress, *storage_limits};
+
+    static StorageLimitsList empty_limits;
+    return ReadProgress{res_progress, empty_limits};
 }
 
 void ISource::work()

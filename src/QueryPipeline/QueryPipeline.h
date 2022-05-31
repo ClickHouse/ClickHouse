@@ -102,8 +102,6 @@ public:
     void setLimitsAndQuota(const StreamLocalLimits & limits, std::shared_ptr<const EnabledQuota> quota_);
     bool tryGetResultRowsAndBytes(UInt64 & result_rows, UInt64 & result_bytes) const;
 
-    void setLimits(const StreamLocalLimits & limits) { local_limits = limits; }
-    void setLeafLimits(const SizeLimits & limits) { leaf_limits = limits; }
     void setQuota(std::shared_ptr<const EnabledQuota> quota_);
 
     void addStorageHolder(StoragePtr storage);
@@ -133,8 +131,6 @@ private:
     QueryPlanResourceHolder resources;
 
     ProgressCallback progress_callback;
-    StreamLocalLimits local_limits;
-    SizeLimits leaf_limits;
     std::shared_ptr<const EnabledQuota> quota;
     bool update_profile_events = true;
 

@@ -653,7 +653,7 @@ void InterpreterSelectQuery::addLimitsAndQuotas(QueryPipeline & pipeline) const
     if (interpreter_subquery)
         interpreter_subquery->addLimitsAndQuotas(pipeline);
     else
-        IInterpreterUnionOrSelectQuery::addLimitsAndQuotas(pipeline, *context, options, hasRemoteStorage());
+        IInterpreterUnionOrSelectQuery::addLimitsAndQuotas(pipeline, *context, options);
 }
 
 BlockIO InterpreterSelectQuery::execute()
@@ -2025,6 +2025,9 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
     if (!max_block_size)
         throw Exception("Setting 'max_block_size' cannot be zero", ErrorCodes::PARAMETER_OUT_OF_BOUND);
 
+    auto local_limits = getStorageLimits(*context, options);
+    storage_limits.emplace_back(local_limits);
+
     /// Initialize the initial data streams to which the query transforms are superimposed. Table or subquery or prepared input?
     if (query_plan.isInitialized())
     {
@@ -2040,6 +2043,8 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
         interpreter_subquery = std::make_unique<InterpreterSelectWithUnionQuery>(
             subquery, getSubqueryContext(context),
             options.copy().subquery().noModify(), required_columns);
+
+        interpreter_subquery->addStorageLimits(storage_limits);
 
         if (query_analyzer->hasAggregation())
             interpreter_subquery->ignoreWithTotals();
@@ -2115,6 +2120,8 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
             else
                 query_info.input_order_info = query_info.order_optimizer->getInputOrder(metadata_snapshot, context, limit);
         }
+
+        query_info.storage_limits = std::make_shared<StorageLimitsList>(storage_limits);
 
         query_info.settings_limit_offset_done = options.settings_limit_offset_done;
         storage->read(query_plan, required_columns, storage_snapshot, query_info, context, processing_stage, max_block_size, max_streams);
