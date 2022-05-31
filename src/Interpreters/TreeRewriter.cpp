@@ -13,6 +13,7 @@
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Interpreters/MarkTableIdentifiersVisitor.h>
 #include <Interpreters/QueryNormalizer.h>
+#include <Interpreters/GroupingSetsRewriterVisitor.h>
 #include <Interpreters/ExecuteScalarSubqueriesVisitor.h>
 #include <Interpreters/CollectJoinOnKeysVisitor.h>
 #include <Interpreters/RequiredSourceColumnsVisitor.h>
@@ -64,6 +65,12 @@ namespace
 {
 
 using LogAST = DebugASTLog<false>; /// set to true to enable logs
+
+void optimizeGroupingSets(ASTPtr & query)
+{
+    GroupingSetsRewriterVisitor::Data data;
+    GroupingSetsRewriterVisitor(data).visit(query);
+}
 
 /// Select implementation of a function based on settings.
 /// Important that it is done as query rewrite. It means rewritten query
@@ -422,7 +429,7 @@ void renameDuplicatedColumns(const ASTSelectQuery * select_query)
 /// This is the case when we have DISTINCT or arrayJoin: we require more columns in SELECT even if we need less columns in result.
 /// Also we have to remove duplicates in case of GLOBAL subqueries. Their results are placed into tables so duplicates are impossible.
 /// Also remove all INTERPOLATE columns which are not in SELECT anymore.
-void removeUnneededColumnsFromSelectClause(ASTSelectQuery * select_query, const Names & required_result_columns, bool remove_dups)
+void removeUnneededColumnsFromSelectClause(ASTSelectQuery * select_query, const Names & required_result_columns, bool remove_dups, bool reorder_columns_as_required_header)
 {
     ASTs & elements = select_query->select()->children;
 
@@ -453,6 +460,29 @@ void removeUnneededColumnsFromSelectClause(ASTSelectQuery * select_query, const 
 
     NameSet remove_columns;
 
+    /// Resort columns according to required_result_columns.
+    if (reorder_columns_as_required_header && !required_result_columns.empty())
+    {
+        std::unordered_map<String, size_t> name_pos;
+        {
+            size_t pos = 0;
+            for (const auto & name : required_result_columns)
+                name_pos[name] = pos++;
+        }
+        std::sort(elements.begin(), elements.end(), [&](const auto & lhs, const auto & rhs)
+        {
+            String lhs_name = lhs->getAliasOrColumnName();
+            String rhs_name = rhs->getAliasOrColumnName();
+            size_t lhs_pos = name_pos.size();
+            size_t rhs_pos = name_pos.size();
+            if (auto it = name_pos.find(lhs_name); it != name_pos.end())
+                lhs_pos = it->second;
+            if (auto it = name_pos.find(rhs_name); it != name_pos.end())
+                rhs_pos = it->second;
+            return lhs_pos < rhs_pos;
+        });
+    }
+
     for (const auto & elem : elements)
     {
         String name = elem->getAliasOrColumnName();
@@ -465,6 +495,8 @@ void removeUnneededColumnsFromSelectClause(ASTSelectQuery * select_query, const 
         }
         else if (select_query->distinct || hasArrayJoin(elem))
         {
+            /// ARRAY JOIN cannot be optimized out since it may change number of rows,
+            /// so as DISTINCT.
             new_elements.push_back(elem);
         }
         else
@@ -1135,6 +1167,7 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
 
     size_t subquery_depth = select_options.subquery_depth;
     bool remove_duplicates = select_options.remove_duplicates;
+    bool reorder_columns_as_required_header = select_options.reorder_columns_as_required_header;
 
     const auto & settings = getContext()->getSettingsRef();
 
@@ -1186,7 +1219,7 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
     /// Leave all selected columns in case of DISTINCT; columns that contain arrayJoin function inside.
     /// Must be after 'normalizeTree' (after expanding aliases, for aliases not get lost)
     ///  and before 'executeScalarSubqueries', 'analyzeAggregation', etc. to avoid excessive calculations.
-    removeUnneededColumnsFromSelectClause(select_query, required_result_columns, remove_duplicates);
+    removeUnneededColumnsFromSelectClause(select_query, required_result_columns, remove_duplicates, reorder_columns_as_required_header);
 
     /// Executing scalar subqueries - replacing them with constant values.
     executeScalarSubqueries(query, getContext(), subquery_depth, result.scalars, result.local_scalars, select_options.only_analyze);
@@ -1373,6 +1406,8 @@ void TreeRewriter::normalize(
     /// Common subexpression elimination. Rewrite rules.
     QueryNormalizer::Data normalizer_data(aliases, source_columns_set, ignore_alias, settings, allow_self_aliases);
     QueryNormalizer(normalizer_data).visit(query);
+
+    optimizeGroupingSets(query);
 }
 
 }

@@ -638,10 +638,6 @@ void LRUFileCache::remove(const Key & key)
 
     if (fs::exists(key_path))
         fs::remove(key_path);
-
-#ifndef NDEBUG
-    assertCacheCorrectness(cache_lock);
-#endif
 }
 
 void LRUFileCache::remove()
