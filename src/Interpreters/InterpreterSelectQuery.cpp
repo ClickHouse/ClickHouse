@@ -1581,7 +1581,7 @@ static void executeMergeAggregatedImpl(
 
     auto keys = aggregation_keys.getNames();
     if (has_grouping_sets)
-        keys.push_back("__grouping_set");
+        keys.insert(keys.begin(), "__grouping_set");
 
     /** There are two modes of distributed aggregation.
       *
@@ -2357,7 +2357,13 @@ void InterpreterSelectQuery::executeRollupOrCube(QueryPlan & query_plan, Modific
 
     const auto & keys = query_analyzer->aggregationKeys().getNames();
 
-    auto params = getAggregatorParams(query_ptr, *query_analyzer, *context, header_before_transform, keys, query_analyzer->aggregates(), false, settings, 0, 0);
+    // Arguments will not be present in Rollup / Cube input header and they don't actually needed 'cause these steps will work with AggregateFunctionState-s anyway.
+    auto aggregates = query_analyzer->aggregates();
+    for (auto & aggregate : aggregates)
+        aggregate.argument_names.clear();
+
+    auto params
+        = getAggregatorParams(query_ptr, *query_analyzer, *context, header_before_transform, keys, aggregates, false, settings, 0, 0);
     auto transform_params = std::make_shared<AggregatingTransformParams>(std::move(params), true);
 
     QueryPlanStepPtr step;
