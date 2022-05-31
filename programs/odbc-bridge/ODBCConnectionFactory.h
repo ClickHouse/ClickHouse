@@ -37,11 +37,20 @@ public:
     {
     }
 
+    explicit ConnectionHolder(const String & connection_string_)
+        : pool(nullptr)
+        , connection()
+        , connection_string(connection_string_)
+    {
+        updateConnection();
+    }
+
     ConnectionHolder(const ConnectionHolder & other) = delete;
 
     ~ConnectionHolder()
     {
-        pool->returnObject(std::move(connection));
+        if (pool != nullptr)
+            pool->returnObject(std::move(connection));
     }
 
     nanodbc::connection & get() const
