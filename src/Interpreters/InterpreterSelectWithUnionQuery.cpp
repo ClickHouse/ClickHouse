@@ -46,6 +46,10 @@ InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
     if (!num_children)
         throw Exception("Logical error: no children in ASTSelectWithUnionQuery", ErrorCodes::LOGICAL_ERROR);
 
+    /// This is required for UNION to match headers correctly.
+    if (num_children > 1)
+        options.reorderColumns();
+
     /// Note that we pass 'required_result_column_names' to first SELECT.
     /// And for the rest, we pass names at the corresponding positions of 'required_result_column_names' in the result of first SELECT,
     ///  because names could be different.
