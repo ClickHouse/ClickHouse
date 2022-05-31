@@ -546,8 +546,9 @@ static void sanityChecks(Server & server)
 #if defined(OS_LINUX)
     try
     {
-        if (readString("/sys/devices/system/clocksource/clocksource0/current_clocksource").find("tsc") == std::string::npos)
-            server.context()->addWarningMessage("Linux is not using a fast TSC clock source. Performance can be degraded. Check /sys/devices/system/clocksource/clocksource0/current_clocksource");
+        const char * filename = "/sys/devices/system/clocksource/clocksource0/current_clocksource";
+        if (readString(filename).find("tsc") == std::string::npos)
+            server.context()->addWarningMessage("Linux is not using a fast TSC clock source. Performance can be degraded. Check " + String(filename));
     }
     catch (...)
     {
@@ -555,8 +556,9 @@ static void sanityChecks(Server & server)
 
     try
     {
-        if (readNumber("/proc/sys/vm/overcommit_memory") == 2)
-            server.context()->addWarningMessage("Linux memory overcommit is disabled. Check /proc/sys/vm/overcommit_memory");
+        const char * filename = "/proc/sys/vm/overcommit_memory";
+        if (readNumber(filename) == 2)
+            server.context()->addWarningMessage("Linux memory overcommit is disabled. Check " + String(filename));
     }
     catch (...)
     {
@@ -564,8 +566,9 @@ static void sanityChecks(Server & server)
 
     try
     {
-        if (readString("/sys/kernel/mm/transparent_hugepage/enabled").find("[always]") != std::string::npos)
-            server.context()->addWarningMessage("Linux transparent hugepages are set to \"always\". Check /sys/kernel/mm/transparent_hugepage/enabled");
+        const char * filename = "/sys/kernel/mm/transparent_hugepage/enabled";
+        if (readString(filename).find("[always]") != std::string::npos)
+            server.context()->addWarningMessage("Linux transparent hugepages are set to \"always\". Check " + String(filename));
     }
     catch (...)
     {
@@ -573,8 +576,9 @@ static void sanityChecks(Server & server)
 
     try
     {
-        if (readNumber("/proc/sys/kernel/pid_max") < 30000)
-            server.context()->addWarningMessage("Linux max PID is too low. Check /proc/sys/kernel/pid_max");
+        const char * filename = "/proc/sys/kernel/pid_max";
+        if (readNumber(filename) < 30000)
+            server.context()->addWarningMessage("Linux max PID is too low. Check " + String(filename));
     }
     catch (...)
     {
@@ -582,8 +586,9 @@ static void sanityChecks(Server & server)
 
     try
     {
-        if (readNumber("/proc/sys/kernel/threads-max") < 30000)
-            server.context()->addWarningMessage("Linux threads max count is too low. Check /proc/sys/kernel/threads-max");
+        const char * filename = "/proc/sys/kernel/threads-max";
+        if (readNumber(filename) < 30000)
+            server.context()->addWarningMessage("Linux threads max count is too low. Check " + String(filename));
     }
     catch (...)
     {
