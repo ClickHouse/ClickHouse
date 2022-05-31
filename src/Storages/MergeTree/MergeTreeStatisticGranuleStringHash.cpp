@@ -293,7 +293,7 @@ void validatorGranuleStringHashStatistic(
     const StatisticDescription &, const ColumnDescription & column)
 {
     if (column.type->getTypeId() != TypeIndex::String)
-        throw Exception(ErrorCodes::INCORRECT_QUERY, "Statistic GranuleStringHash can be used only for numeric columns.");
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "Statistic GranuleStringHash can be used only for string columns.");
     if (column.type->isNullable())
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Statistic GranuleStringHash can be used only for not nullable columns.");
 }

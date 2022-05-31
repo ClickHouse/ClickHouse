@@ -1,12 +1,11 @@
-#include <Storages/MergeTree/MergeTreeStatistic.h>
-#include <base/types.h>
-#include <Core/Field.h>
 #include <algorithm>
 #include <base/defines.h>
-#include "Common/logger_useful.h"
+#include <base/types.h>
 #include <Common/Exception.h>
+#include <Common/logger_useful.h>
 #include <Common/thread_local_rng.h>
-#include "Storages/Statistics.h"
+#include <Core/Field.h>
+#include <Core/Names.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <fmt/core.h>
@@ -14,10 +13,13 @@
 #include <numeric>
 #include <Parsers/ASTExpressionList.h>
 #include <Poco/Logger.h>
+#include <Storages/MergeTree/MergeTreeStatistic.h>
 #include <Storages/MergeTree/MergeTreeStatisticGranuleStringHash.h>
 #include <Storages/MergeTree/MergeTreeStatisticGranuleTDigest.h>
 #include <Storages/MergeTree/MergeTreeStatisticTDigest.h>
+#include <Storages/Statistics.h>
 #include <string>
+#include <unordered_map>
 
 namespace DB
 {
@@ -481,8 +483,12 @@ void MergeTreeStatisticFactory::validate(
     const std::vector<StatisticDescription> & statistics,
     const ColumnsDescription & columns) const
 {
+    std::unordered_map<String, String> used_columns;
     for (const auto & stat_description : statistics) {
         for (const auto & column : stat_description.column_names) {
+            if (!used_columns.emplace(column, stat_description.name).second) {
+                throw Exception("Column `" + column + "` was already used by statistic `" + used_columns.at(column) + "`.", ErrorCodes::INCORRECT_QUERY);
+            }
             for (const auto & stat : getSplittedStatistics(stat_description, columns.get(column))) {
                 auto it = validators.find(stat.type);
                 if (it == validators.end())
