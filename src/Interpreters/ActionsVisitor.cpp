@@ -839,6 +839,9 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
 
     if (node.name == "grouping")
     {
+        if (data.only_consts)
+            return; // Can not perform constant folding, because this function can be executed only after GROUP BY
+
         size_t arguments_size = node.arguments->children.size();
         if (arguments_size == 0)
             throw Exception(ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION, "Function GROUPING expects at least one argument");
