@@ -1,0 +1,13 @@
+SELECT 00;
+SELECT 01;
+SELECT 02;
+SELECT 03;
+SELECT 04;
+SELECT 05;
+SELECT 06;
+SELECT 07;
+SELECT 08; -- { clientError 62 } -- 
+SELECT 09; -- { clientError 62 } --
+
+SELECT 0b01010101;
+SELECT 0xfecb;

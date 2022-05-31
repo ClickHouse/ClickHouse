@@ -1670,13 +1670,10 @@ bool ParserNumber::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     memcpy(buf, pos->begin, pos->size());
     buf[pos->size()] = 0;
 
-    char * pos_double = buf;
-    errno = 0;    /// Functions strto* don't clear errno.
-    Float64 float_value = std::strtod(buf, &pos_double);
-    if (pos_double != buf + pos->size() || errno == ERANGE)
+    if (buf[0] == '0')
     {
         /// Try to parse number as binary literal representation. Example: 0b0001.
-        if (pos->size() > 2 && buf[0] == '0' && buf[1] == 'b')
+        if (pos->size() > 2 && buf[1] == 'b')
         {
             char * buf_skip_prefix = buf + 2;
 
@@ -1691,6 +1688,26 @@ bool ParserNumber::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             }
         }
 
+        /// Try to parse number as octal or hexadecimal literal. Examples are 0765 and 0xfac6
+        if (parseNumber(buf, pos->size(), negative, 0, res))
+        {
+            auto literal = std::make_shared<ASTLiteral>(res);
+            literal->begin = literal_begin;
+            literal->end = ++pos;
+            node = literal;
+
+            return true;
+        }
+
+        expected.add(pos, "number");
+        return false;
+    }
+
+    char * pos_double = buf;
+    errno = 0;    /// Functions strto* don't clear errno.
+    Float64 float_value = std::strtod(buf, &pos_double);
+    if (pos_double != buf + pos->size() || errno == ERANGE)
+    {
         expected.add(pos, "number");
         return false;
     }
