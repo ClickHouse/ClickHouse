@@ -400,7 +400,7 @@ static void checkKeyExpression(const ExpressionActions & expr, const Block & sam
 
         if (!allow_nullable_key && hasNullable(element.type))
             throw Exception(
-                ErrorCodes::ILLEGAL_COLUMN, "{} key contains nullable columns, but `setting allow_nullable_key` is disabled", key_name);
+                ErrorCodes::ILLEGAL_COLUMN, "{} key contains nullable columns, but merge tree setting `allow_nullable_key` is disabled", key_name);
     }
 }
 
@@ -6175,6 +6175,10 @@ try
     PartLogElement part_log_elem;
 
     part_log_elem.event_type = type;
+
+    if (part_log_elem.event_type == PartLogElement::MERGE_PARTS)
+        if (merge_entry)
+            part_log_elem.merge_reason = PartLogElement::getMergeReasonType((*merge_entry)->merge_type);
 
     part_log_elem.error = static_cast<UInt16>(execution_status.code);
     part_log_elem.exception = execution_status.message;
