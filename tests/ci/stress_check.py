@@ -29,9 +29,6 @@ from tee_popen import TeePopen
 def get_run_command(
     build_path, result_folder, repo_tests_path, server_log_folder, image
 ):
-    download_previous_release = os.path.join(
-        repo_tests_path, "ci/download_previous_release.py"
-    )
     cmd = (
         "docker run --cap-add=SYS_PTRACE "
         "-e S3_URL='https://clickhouse-datasets.s3.amazonaws.com' "
@@ -39,7 +36,6 @@ def get_run_command(
         f"--volume={result_folder}:/test_output "
         f"--volume={repo_tests_path}:/usr/share/clickhouse-test "
         f"--volume={server_log_folder}:/var/log/clickhouse-server {image} "
-        f"--mount type=bind,source={download_previous_release},target=/usr/local/bin/download_previous_release "
     )
 
     return cmd

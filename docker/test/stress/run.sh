@@ -43,6 +43,7 @@ function configure()
 
     # we mount tests folder from repo to /usr/share
     ln -s /usr/share/clickhouse-test/clickhouse-test /usr/bin/clickhouse-test
+    ln -s /usr/share/clickhouse-test/ci/download_previous_release.py /usr/bin/download_previous_release
 
     # avoid too slow startup
     sudo cat /etc/clickhouse-server/config.d/keeper_port.xml | sed "s|<snapshot_distance>100000</snapshot_distance>|<snapshot_distance>10000</snapshot_distance>|" > /etc/clickhouse-server/config.d/keeper_port.xml.tmp
