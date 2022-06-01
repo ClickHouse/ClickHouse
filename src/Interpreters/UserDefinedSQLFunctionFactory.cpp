@@ -236,6 +236,7 @@ public:
         const String& function_body = query->function_body->as<ASTLiteral>()->value.safeGet<String>();
 
         Pipe pipe = coordinator.createPipe(
+            getName(),
             function_body,
             std::move(input_pipes),
             result_block,

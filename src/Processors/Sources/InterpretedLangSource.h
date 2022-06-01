@@ -30,7 +30,11 @@ public:
         return configuration;
     }
 
-    Pipe createPipe(const String& function_body, std::vector<Pipe> && input_pipes, Block sample_block, ContextPtr context);
+    Pipe createPipe(const String& function_name,
+                    const String& function_body,
+                    std::vector<Pipe> && input_pipes,
+                    Block sample_block,
+                    ContextPtr context);
 
 private:
     Configuration configuration;
