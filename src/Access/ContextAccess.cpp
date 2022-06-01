@@ -149,6 +149,21 @@ ContextAccess::ContextAccess(const AccessControl & access_control_, const Params
 }
 
 
+ContextAccess::~ContextAccess()
+{
+    enabled_settings.reset();
+    enabled_quota.reset();
+    enabled_row_policies.reset();
+    access_with_implicit.reset();
+    access.reset();
+    roles_info.reset();
+    subscription_for_roles_changes.reset();
+    enabled_roles.reset();
+    subscription_for_user_change.reset();
+    user.reset();
+}
+
+
 void ContextAccess::initialize()
 {
      std::lock_guard lock{mutex};
@@ -359,7 +374,7 @@ std::shared_ptr<const AccessRights> ContextAccess::getAccessRightsWithImplicit()
 
 
 template <bool throw_if_denied, bool grant_option, typename... Args>
-bool ContextAccess::checkAccessImplHelper(const AccessFlags & flags, const Args &... args) const
+bool ContextAccess::checkAccessImplHelper(AccessFlags flags, const Args &... args) const
 {
     auto access_granted = [&]
     {
@@ -378,6 +393,9 @@ bool ContextAccess::checkAccessImplHelper(const AccessFlags & flags, const Args 
             throw Exception(getUserName() + ": " + error_msg, error_code);
         return false;
     };
+
+    if (flags & AccessType::CLUSTER && !access_control->doesOnClusterQueriesRequireClusterGrant())
+        flags &= ~AccessType::CLUSTER;
 
     if (!flags || is_full_access)
         return access_granted();

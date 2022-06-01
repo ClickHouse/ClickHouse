@@ -660,7 +660,7 @@ MergeTreeIndexConditionPtr MergeTreeIndexFullText::createIndexCondition(
         const SelectQueryInfo & query, ContextPtr context) const
 {
     return std::make_shared<MergeTreeConditionFullText>(query, context, index.sample_block, params, token_extractor.get());
-};
+}
 
 bool MergeTreeIndexFullText::mayBenefitFromIndexForIn(const ASTPtr & node) const
 {

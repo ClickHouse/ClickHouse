@@ -13,11 +13,6 @@ cmake .. \
     -DCMAKE_C_COMPILER=$(which clang-13) \
     -DCMAKE_CXX_COMPILER=$(which clang++-13) \
     -DCMAKE_BUILD_TYPE=Debug \
-    -DENABLE_CLICKHOUSE_ALL=OFF \
-    -DENABLE_CLICKHOUSE_SERVER=ON \
-    -DENABLE_CLICKHOUSE_CLIENT=ON \
-    -DENABLE_LIBRARIES=OFF \
-    -DUSE_UNWIND=ON \
     -DENABLE_UTILS=OFF \
     -DENABLE_TESTS=OFF
 ```
@@ -418,12 +413,6 @@ Note that ClickHouse uses forks of these libraries, see https://github.com/Click
 <td><code class="syntax">OFF</code></td>
 <td>Enable -Werror compiler option</td>
 <td>Using system libs can cause a lot of warnings in includes (on macro expansion).</td>
-</tr>
-<tr>
-<td><a name="weverything"></a><a href="https://github.com/clickhouse/clickhouse/blob/master/cmake/warnings.cmake#L15" rel="external nofollow noreferrer" target="_blank"><code class="syntax">WEVERYTHING</code></a></td>
-<td><code class="syntax">ON</code></td>
-<td>Enable -Weverything option with some exceptions.</td>
-<td>Add some warnings that are not available even with -Wall -Wextra -Wpedantic. Intended for exploration of new compiler warnings that may be found useful. Applies to clang only</td>
 </tr>
 <tr>
 <td><a name="with-coverage"></a><a href="https://github.com/clickhouse/clickhouse/blob/master/CMakeLists.txt#L344" rel="external nofollow noreferrer" target="_blank"><code class="syntax">WITH_COVERAGE</code></a></td>

@@ -57,7 +57,16 @@ void registerFunctionH3PointDistKm(FunctionFactory &);
 void registerFunctionH3PointDistRads(FunctionFactory &);
 void registerFunctionH3GetRes0Indexes(FunctionFactory &);
 void registerFunctionH3GetPentagonIndexes(FunctionFactory &);
-
+void registerFunctionH3Line(FunctionFactory &);
+void registerFunctionH3Distance(FunctionFactory &);
+void registerFunctionH3HexRing(FunctionFactory &);
+void registerFunctionH3GetUnidirectionalEdge(FunctionFactory &);
+void registerFunctionH3UnidirectionalEdgeIsValid(FunctionFactory &);
+void registerFunctionH3GetOriginIndexFromUnidirectionalEdge(FunctionFactory &);
+void registerFunctionH3GetDestinationIndexFromUnidirectionalEdge(FunctionFactory &);
+void registerFunctionH3GetIndexesFromUnidirectionalEdge(FunctionFactory &);
+void registerFunctionH3GetUnidirectionalEdgesFromHexagon(FunctionFactory &);
+void registerFunctionH3GetUnidirectionalEdgeBoundary(FunctionFactory &);
 #endif
 
 #if USE_S2_GEOMETRY
@@ -128,6 +137,16 @@ void registerFunctionsGeo(FunctionFactory & factory)
     registerFunctionH3PointDistRads(factory);
     registerFunctionH3GetRes0Indexes(factory);
     registerFunctionH3GetPentagonIndexes(factory);
+    registerFunctionH3Line(factory);
+    registerFunctionH3Distance(factory);
+    registerFunctionH3HexRing(factory);
+    registerFunctionH3GetUnidirectionalEdge(factory);
+    registerFunctionH3UnidirectionalEdgeIsValid(factory);
+    registerFunctionH3GetOriginIndexFromUnidirectionalEdge(factory);
+    registerFunctionH3GetDestinationIndexFromUnidirectionalEdge(factory);
+    registerFunctionH3GetIndexesFromUnidirectionalEdge(factory);
+    registerFunctionH3GetUnidirectionalEdgesFromHexagon(factory);
+    registerFunctionH3GetUnidirectionalEdgeBoundary(factory);
 #endif
 
 #if USE_S2_GEOMETRY
