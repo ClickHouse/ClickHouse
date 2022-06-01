@@ -15,9 +15,4 @@ set(SRCS
 
 add_library (_replxx ${SRCS})
 target_include_directories(_replxx SYSTEM PUBLIC "${LIBRARY_DIR}/include")
-
-if (COMPILER_CLANG)
-    target_compile_options(_replxx PRIVATE -Wno-documentation)
-endif ()
-
 add_library(ch_contrib::replxx ALIAS _replxx)
