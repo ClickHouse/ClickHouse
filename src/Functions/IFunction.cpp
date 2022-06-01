@@ -450,6 +450,16 @@ DataTypePtr IFunctionOverloadResolver::getReturnTypeWithoutLowCardinality(const 
 {
     checkNumberOfArguments(arguments.size());
 
+    if (!arguments.empty() && useDefaultImplementationForNothing())
+    {
+        for (const auto & arg : arguments)
+        {
+            LOG_DEBUG(&Poco::Logger::get("IFunction"), "Argument: {}", arg.type->getName());
+            if (isNothing(arg.type))
+                return std::make_shared<DataTypeNothing>();
+        }
+    }
+
     if (!arguments.empty() && useDefaultImplementationForNulls())
     {
         NullPresence null_presence = getNullPresense(arguments);
@@ -463,15 +473,6 @@ DataTypePtr IFunctionOverloadResolver::getReturnTypeWithoutLowCardinality(const 
             Block nested_columns = createBlockWithNestedColumns(arguments);
             auto return_type = getReturnTypeImpl(ColumnsWithTypeAndName(nested_columns.begin(), nested_columns.end()));
             return makeNullable(return_type);
-        }
-    }
-
-    if (!arguments.empty() && useDefaultImplementationForNothing())
-    {
-        for (const auto & arg : arguments)
-        {
-            if (isNothing(arg.type))
-                return std::make_shared<DataTypeNothing>();
         }
     }
 
