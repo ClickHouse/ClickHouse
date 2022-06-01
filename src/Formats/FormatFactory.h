@@ -62,7 +62,7 @@ public:
 
     /** Fast reading data from buffer and save result to memory.
       * Reads at least min_chunk_bytes and some more until the end of the chunk, depends on the format.
-      * Used in ParallelParsingBlockInputStream.
+      * Used in ParallelParsingInputFormat.
       */
     using FileSegmentationEngine = std::function<std::pair<bool, size_t>(
         ReadBuffer & buf,
@@ -108,7 +108,7 @@ private:
         SchemaReaderCreator schema_reader_creator;
         ExternalSchemaReaderCreator external_schema_reader_creator;
         bool supports_parallel_formatting{false};
-        bool is_column_oriented{false};
+        bool supports_subset_of_columns{false};
         NonTrivialPrefixAndSuffixChecker non_trivial_prefix_and_suffix_checker;
         AppendSupportChecker append_support_checker;
     };
@@ -194,13 +194,13 @@ public:
     void registerExternalSchemaReader(const String & name, ExternalSchemaReaderCreator external_schema_reader_creator);
 
     void markOutputFormatSupportsParallelFormatting(const String & name);
-    void markFormatAsColumnOriented(const String & name);
+    void markFormatSupportsSubsetOfColumns(const String & name);
 
-    bool checkIfFormatIsColumnOriented(const String & name);
+    bool checkIfFormatSupportsSubsetOfColumns(const String & name) const;
 
-    bool checkIfFormatHasSchemaReader(const String & name);
-    bool checkIfFormatHasExternalSchemaReader(const String & name);
-    bool checkIfFormatHasAnySchemaReader(const String & name);
+    bool checkIfFormatHasSchemaReader(const String & name) const;
+    bool checkIfFormatHasExternalSchemaReader(const String & name) const;
+    bool checkIfFormatHasAnySchemaReader(const String & name) const;
 
     const FormatsDictionary & getAllFormats() const
     {
@@ -209,6 +209,9 @@ public:
 
     bool isInputFormat(const String & name) const;
     bool isOutputFormat(const String & name) const;
+
+    /// Check that format with specified name exists and throw an exception otherwise.
+    void checkFormatName(const String & name) const;
 
 private:
     FormatsDictionary dict;

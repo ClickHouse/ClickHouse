@@ -57,7 +57,7 @@ public:
     /// Is is useful because column oriented formats could effectively skip unknown columns
     /// So we can create a header of only required columns in read method and ask
     /// format to read only them. Note: this hack cannot be done with ordinary formats like TSV.
-    bool isColumnOriented() const override;
+    bool supportsSubsetOfColumns() const override;
 
     static ColumnsDescription getTableStructureFromData(
         const String & format,
@@ -132,8 +132,6 @@ private:
     Block block_for_format;
     std::vector<NameAndTypePair> requested_virtual_columns;
     UInt64 max_block_size;
-    bool need_path_column;
-    bool need_file_column;
     std::shared_ptr<IteratorWrapper> file_iterator;
     ColumnsDescription columns_description;
 

@@ -1745,3 +1745,13 @@ Possible values:
 -   Positive integer.
 
 Default value: `10000`.
+
+## global_memory_usage_overcommit_max_wait_microseconds {#global_memory_usage_overcommit_max_wait_microseconds}
+
+Sets maximum waiting time for global overcommit tracker.
+
+Possible values:
+
+-   Positive integer.
+
+Default value: `200`.
