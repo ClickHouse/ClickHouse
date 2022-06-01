@@ -1,4 +1,4 @@
-CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=none
+#!/usr/bin/env bash
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
