@@ -77,7 +77,7 @@ MergeTreeWhereOptimizer::MergeTreeWhereOptimizer(
     , block_with_constants{KeyCondition::getBlockWithConstants(query_info.query->clone(), query_info.syntax_analyzer_result, context)}
     , log{log_}
     , column_sizes{std::move(column_sizes_)}
-    , stats(storage_->getStatisticsByPartitionPredicate(query_info, context))
+    , stats(settings.allow_experimental_stats_for_prewhere_optimization ? storage_->getStatisticsByPartitionPredicate(query_info, context) : nullptr)
     , use_new_scoring(settings.allow_experimental_stats_for_prewhere_optimization && stats != nullptr && !stats->empty())
 {
     const auto & primary_key = metadata_snapshot->getPrimaryKey();
