@@ -36,7 +36,7 @@ IFileCache::Key IFileCache::hash(const String & path)
     return Key(sipHash128(path.data(), path.size()));
 }
 
-String IFileCache::getPathInLocalCache(const Key & key, size_t offset, bool is_persistent)
+String IFileCache::getPathInLocalCache(const Key & key, size_t offset, bool is_persistent) const
 {
     auto key_str = key.toString();
     return fs::path(cache_base_path)
@@ -45,7 +45,7 @@ String IFileCache::getPathInLocalCache(const Key & key, size_t offset, bool is_p
         / (std::to_string(offset) + (is_persistent ? "_persistent" : ""));
 }
 
-String IFileCache::getPathInLocalCache(const Key & key)
+String IFileCache::getPathInLocalCache(const Key & key) const
 {
     auto key_str = key.toString();
     return fs::path(cache_base_path) / key_str.substr(0, 3) / key_str;

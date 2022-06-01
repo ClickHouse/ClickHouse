@@ -334,14 +334,7 @@ void DiskCache::removeCacheIfExists(const String & path)
     catch (const Exception & e)
     {
         if (e.code() == ErrorCodes::FILE_DOESNT_EXIST)
-        {
-            LOG_WARNING(
-                log,
-                "Cache file for path {} does not exist. "
-                "Possibly because of a concurrent attempt to delete it",
-                path);
             return;
-        }
         throw;
     }
 }
@@ -405,7 +398,7 @@ void DiskCache::removeSharedFiles(
 void DiskCache::removeSharedRecursive(
     const String & path, bool keep_all_batch_data, const NameSet & file_names_remove_metadata_only)
 {
-    removeCacheIfExists(path);
+    removeCacheIfExistsRecursive(path);
     DiskDecorator::removeSharedRecursive(path, keep_all_batch_data, file_names_remove_metadata_only);
 }
 

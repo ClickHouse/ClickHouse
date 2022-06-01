@@ -57,9 +57,9 @@ public:
 
     static Key hash(const String & path);
 
-    String getPathInLocalCache(const Key & key, size_t offset, bool is_persistent);
+    String getPathInLocalCache(const Key & key, size_t offset, bool is_persistent) const;
 
-    String getPathInLocalCache(const Key & key);
+    String getPathInLocalCache(const Key & key) const;
 
     const String & getBasePath() const { return cache_base_path; }
 
