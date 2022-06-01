@@ -282,6 +282,9 @@ std_cerr_cout_excludes=(
     src/Client/ClientBase.cpp
     src/Client/QueryFuzzer.cpp
     src/Client/Suggest.cpp
+    src/Bridge/IBridge.cpp
+    src/Daemon/BaseDaemon.cpp
+    src/Loggers/Loggers.cpp
 )
 sources_with_std_cerr_cout=( $(
     find $ROOT_PATH/src -name '*.h' -or -name '*.cpp' | \
@@ -337,3 +340,6 @@ fi
 
 # Forbid files that differ only by character case
 find $ROOT_PATH | sort -f | uniq -i -c | awk '{ if ($1 > 1) print }'
+
+# Forbid recursive submodules
+find $ROOT_PATH/contrib -name '.gitmodules' -size +0 | xargs cat | grep -P '.' && echo "Recursive submodules are forbidden."

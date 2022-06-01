@@ -1,7 +1,7 @@
 #include "StorageMaterializedPostgreSQL.h"
 
 #if USE_LIBPQXX
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 
 #include <Common/Macros.h>
 #include <Common/parseAddress.h>
@@ -147,7 +147,7 @@ StoragePtr StorageMaterializedPostgreSQL::createTemporary() const
     }
 
     auto new_context = Context::createCopy(context);
-    return StorageMaterializedPostgreSQL::create(tmp_table_id, new_context, "temporary", table_id.table_name);
+    return std::make_shared<StorageMaterializedPostgreSQL>(tmp_table_id, new_context, "temporary", table_id.table_name);
 }
 
 
@@ -569,7 +569,7 @@ void registerStorageMaterializedPostgreSQL(StorageFactory & factory)
         if (has_settings)
             postgresql_replication_settings->loadFromQuery(*args.storage_def);
 
-        return StorageMaterializedPostgreSQL::create(
+        return std::make_shared<StorageMaterializedPostgreSQL>(
                 args.table_id, args.attach, configuration.database, configuration.table, connection_info,
                 metadata, args.getContext(),
                 std::move(postgresql_replication_settings));

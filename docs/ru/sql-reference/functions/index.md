@@ -62,11 +62,10 @@ str -> str != Referer
 Функции можно создавать из лямбда выражений с помощью [CREATE FUNCTION](../statements/create/function.md). Для удаления таких функций используется выражение [DROP FUNCTION](../statements/drop.md#drop-function).
 
 ## Исполняемые пользовательские функции {#executable-user-defined-functions}
-ClickHouse может вызывать внешнюю программу или скрипт для обработки данных. Такие функции описываются в [конфигурационном файле](../../operations/configuration-files.md). Путь к нему должен быть указан в настройке `user_defined_executable_functions_config` в основной конфигурации. В пути можно использовать символ подстановки `*`, тогда будут загружены все файлы, соответствующие шаблону. Пример:
-``` xml
-<user_defined_executable_functions_config>*_function.xml</user_defined_executable_functions_config>
-```
-Файлы с описанием функций ищутся относительно каталога, заданного в настройке `user_files_path`.
+
+ClickHouse может вызывать любую внешнюю исполняемую программу или скрипт для обработки данных.
+
+Конфигурация исполняемых пользовательских функций может находиться в одном или нескольких xml-файлах. Путь к конфигурации указывается в параметре [user_defined_executable_functions_config](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-user_defined_executable_functions_config).
 
 Конфигурация функции содержит следующие настройки:
 
@@ -83,7 +82,7 @@ ClickHouse может вызывать внешнюю программу или 
 -   `command_write_timeout` - время ожидания записи данных в команду stdin в миллисекундах. Значение по умолчанию 10000. Необязательная настройка.
 -   `pool_size` - размер пула команд. Необязательная настройка. Значение по умолчанию `16`.
 -   `send_chunk_header` - управляет отправкой количества строк перед отправкой блока данных для обработки. Необязательная настройка. Значение по умолчанию `false`.
--   `execute_direct` - Если `execute_direct` = `1`, то будет произведен поиск `command` в папке user_scripts. Дополнительные аргументы скрипта можно указать с помощью разделителя пробелов. Пример: `script_name arg1 arg2`. Если `execute_direct` = `0`, `command` передается как аргумент для `bin/sh -c`. Значение по умолчанию `1`. Необязательный параметр.
+-   `execute_direct` - Если `execute_direct` = `1`, то будет произведен поиск `command` в папке user_scripts, указанной в [user_scripts_path](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-user_scripts_path). Дополнительные аргументы скрипта можно указать с помощью разделителя пробелов. Пример: `script_name arg1 arg2`. Если `execute_direct` = `0`, `command` передается как аргумент для `bin/sh -c`. Значение по умолчанию `1`. Необязательный параметр.
 -   `lifetime` - интервал перезагрузки функций в секундах. Если задан `0`, то функция не перезагружается.
 
 Команда должна читать аргументы из `STDIN` и выводить результат в `STDOUT`. Обработка должна выполняться в цикле. То есть после обработки группы аргументов команда должна ожидать следующую группу.

@@ -13,7 +13,7 @@
 #include <Poco/SplitterChannel.h>
 #include <Poco/Util/HelpFormatter.h>
 #include <boost/algorithm/string.hpp>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <Common/ThreadPool.h>
 #include <Common/Exception.h>
 #include <Common/ZooKeeper/ZooKeeper.h>

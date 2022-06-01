@@ -15,6 +15,7 @@
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/IJoin.h>
 #include <Common/typeid_cast.h>
 #include <Common/CurrentThread.h>
 #include <Processors/DelayedPortsProcessor.h>
@@ -37,7 +38,7 @@ void QueryPipelineBuilder::addQueryPlan(std::unique_ptr<QueryPlan> plan)
 void QueryPipelineBuilder::checkInitialized()
 {
     if (!initialized())
-        throw Exception("QueryPipeline wasn't initialized.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("QueryPipeline is uninitialized", ErrorCodes::LOGICAL_ERROR);
 }
 
 void QueryPipelineBuilder::checkInitializedAndNotCompleted()
@@ -45,35 +46,44 @@ void QueryPipelineBuilder::checkInitializedAndNotCompleted()
     checkInitialized();
 
     if (pipe.isCompleted())
-        throw Exception("QueryPipeline was already completed.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("QueryPipeline is already completed", ErrorCodes::LOGICAL_ERROR);
 }
 
 static void checkSource(const ProcessorPtr & source, bool can_have_totals)
 {
     if (!source->getInputs().empty())
-        throw Exception("Source for query pipeline shouldn't have any input, but " + source->getName() + " has " +
-                        toString(source->getInputs().size()) + " inputs.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Source for query pipeline shouldn't have any input, but {} has {} inputs",
+            source->getName(),
+            source->getInputs().size());
 
     if (source->getOutputs().empty())
-        throw Exception("Source for query pipeline should have single output, but it doesn't have any",
-                ErrorCodes::LOGICAL_ERROR);
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR, "Source for query pipeline should have single output, but {} doesn't have any", source->getName());
 
     if (!can_have_totals && source->getOutputs().size() != 1)
-        throw Exception("Source for query pipeline should have single output, but " + source->getName() + " has " +
-                        toString(source->getOutputs().size()) + " outputs.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Source for query pipeline should have single output, but {} has {} outputs",
+            source->getName(),
+            source->getOutputs().size());
 
     if (source->getOutputs().size() > 2)
-        throw Exception("Source for query pipeline should have 1 or 2 outputs, but " + source->getName() + " has " +
-                        toString(source->getOutputs().size()) + " outputs.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Source for query pipeline should have 1 or 2 output, but {} has {} outputs",
+            source->getName(),
+            source->getOutputs().size());
 }
 
 void QueryPipelineBuilder::init(Pipe pipe_)
 {
     if (initialized())
-        throw Exception("Pipeline has already been initialized.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("Pipeline has already been initialized", ErrorCodes::LOGICAL_ERROR);
 
     if (pipe_.empty())
-        throw Exception("Can't initialize pipeline with empty pipe.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("Can't initialize pipeline with empty pipe", ErrorCodes::LOGICAL_ERROR);
 
     pipe = std::move(pipe_);
 }
@@ -81,10 +91,10 @@ void QueryPipelineBuilder::init(Pipe pipe_)
 void QueryPipelineBuilder::init(QueryPipeline pipeline)
 {
     if (initialized())
-        throw Exception("Pipeline has already been initialized.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("Pipeline has already been initialized", ErrorCodes::LOGICAL_ERROR);
 
     if (pipeline.pushing())
-        throw Exception("Can't initialize pushing pipeline.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("Can't initialize pushing pipeline", ErrorCodes::LOGICAL_ERROR);
 
     pipe.holder = std::move(pipeline.resources);
     pipe.processors = std::move(pipeline.processors);
@@ -191,11 +201,10 @@ void QueryPipelineBuilder::addTotalsHavingTransform(ProcessorPtr transform)
     checkInitializedAndNotCompleted();
 
     if (!typeid_cast<const TotalsHavingTransform *>(transform.get()))
-        throw Exception("TotalsHavingTransform expected for QueryPipeline::addTotalsHavingTransform.",
-                ErrorCodes::LOGICAL_ERROR);
+        throw Exception("TotalsHavingTransform is expected for QueryPipeline::addTotalsHavingTransform", ErrorCodes::LOGICAL_ERROR);
 
     if (pipe.getTotalsPort())
-        throw Exception("Totals having transform was already added to pipeline.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("Totals having transform was already added to pipeline", ErrorCodes::LOGICAL_ERROR);
 
     resize(1);
 
@@ -208,7 +217,7 @@ void QueryPipelineBuilder::addDefaultTotals()
     checkInitializedAndNotCompleted();
 
     if (pipe.getTotalsPort())
-        throw Exception("Totals having transform was already added to pipeline.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("Totals having transform was already added to pipeline", ErrorCodes::LOGICAL_ERROR);
 
     const auto & current_header = getHeader();
     Columns columns;
@@ -298,6 +307,8 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelines(
     std::unique_ptr<QueryPipelineBuilder> right,
     JoinPtr join,
     size_t max_block_size,
+    size_t max_streams,
+    bool keep_left_read_in_order,
     Processors * collected_processors)
 {
     left->checkInitializedAndNotCompleted();
@@ -337,14 +348,41 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelines(
     /// (totals) ─────────┘                        ╙─────┘
 
     size_t num_streams = left->getNumStreams();
-    right->resize(1);
 
-    auto adding_joined = std::make_shared<FillingRightJoinSideTransform>(right->getHeader(), join);
-    InputPort * totals_port = nullptr;
-    if (right->hasTotals())
-        totals_port = adding_joined->addTotalsPort();
+    if (join->supportParallelJoin() && !right->hasTotals())
+    {
+        if (!keep_left_read_in_order)
+        {
+            left->resize(max_streams);
+            num_streams = max_streams;
+        }
 
-    right->addTransform(std::move(adding_joined), totals_port, nullptr);
+        right->resize(max_streams);
+        auto concurrent_right_filling_transform = [&](OutputPortRawPtrs outports)
+        {
+            Processors processors;
+            for (auto & outport : outports)
+            {
+                auto adding_joined = std::make_shared<FillingRightJoinSideTransform>(right->getHeader(), join);
+                connect(*outport, adding_joined->getInputs().front());
+                processors.emplace_back(adding_joined);
+            }
+            return processors;
+        };
+        right->transform(concurrent_right_filling_transform);
+        right->resize(1);
+    }
+    else
+    {
+        right->resize(1);
+
+        auto adding_joined = std::make_shared<FillingRightJoinSideTransform>(right->getHeader(), join);
+        InputPort * totals_port = nullptr;
+        if (right->hasTotals())
+            totals_port = adding_joined->addTotalsPort();
+
+        right->addTransform(std::move(adding_joined), totals_port, nullptr);
+    }
 
     size_t num_streams_including_totals = num_streams + (left->hasTotals() ? 1 : 0);
     right->resize(num_streams_including_totals);
@@ -461,7 +499,7 @@ void QueryPipelineBuilder::setProcessListElement(QueryStatus * elem)
 PipelineExecutorPtr QueryPipelineBuilder::execute()
 {
     if (!isCompleted())
-        throw Exception("Cannot execute pipeline because it is not completed.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("Cannot execute pipeline because it is not completed", ErrorCodes::LOGICAL_ERROR);
 
     return std::make_shared<PipelineExecutor>(pipe.processors, process_list_element);
 }

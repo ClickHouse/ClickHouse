@@ -13,6 +13,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTSubquery.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/typeid_cast.h>
@@ -37,7 +38,19 @@ std::pair<Field, std::shared_ptr<const IDataType>> evaluateConstantExpression(co
         return std::make_pair(literal->value, applyVisitor(FieldToDataType(), literal->value));
 
     NamesAndTypesList source_columns = {{ "_dummy", std::make_shared<DataTypeUInt8>() }};
+
     auto ast = node->clone();
+
+    if (ast->as<ASTSubquery>() != nullptr)
+    {
+        /** For subqueries getColumnName if there are no alias will return __subquery_ + 'hash'.
+          * If there is alias getColumnName for subquery will return alias.
+          * In result block name of subquery after QueryAliasesVisitor pass will be _subquery1.
+          * We specify alias for subquery, because we need to get column from result block.
+          */
+        ast->setAlias("constant_expression");
+    }
+
     ReplaceQueryParameterVisitor param_visitor(context->getQueryParameters());
     param_visitor.visit(ast);
 
@@ -46,6 +59,12 @@ std::pair<Field, std::shared_ptr<const IDataType>> evaluateConstantExpression(co
 
     String name = ast->getColumnName();
     auto syntax_result = TreeRewriter(context).analyze(ast, source_columns);
+
+    /// AST potentially could be transformed to literal during TreeRewriter analyze.
+    /// For example if we have SQL user defined function that return literal AS subquery.
+    if (ASTLiteral * literal = ast->as<ASTLiteral>())
+        return std::make_pair(literal->value, applyVisitor(FieldToDataType(), literal->value));
+
     ExpressionActionsPtr expr_for_constant_folding = ExpressionAnalyzer(ast, syntax_result, context).getConstActions();
 
     /// There must be at least one column in the block so that it knows the number of rows.

@@ -96,10 +96,14 @@ SELECT fuzzBits(materialize('abacaba'), 0.1)
 FROM numbers(3)
 ```
 
-\`\`\` text
-┌─fuzzBits(materialize(‘abacaba’), 0.1)─┐
-│ abaaaja │
-│ a\*cjab+ │
-│ aeca2A │
+Result:
+
+``` text
+┌─fuzzBits(materialize('abacaba'), 0.1)─┐
+│ abaaaja                               │
+│ a*cjab+                               │
+│ aeca2A                                │
 └───────────────────────────────────────┘
+```
+
 

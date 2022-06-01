@@ -7,7 +7,7 @@
 #include <Common/assert_cast.h>
 #include <Common/parseRemoteDescription.h>
 #include <Core/Settings.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeArray.h>
@@ -451,7 +451,7 @@ void registerStoragePostgreSQL(StorageFactory & factory)
             args.getContext()->getSettingsRef().postgresql_connection_pool_size,
             args.getContext()->getSettingsRef().postgresql_connection_pool_wait_timeout);
 
-        return StoragePostgreSQL::create(
+        return std::make_shared<StoragePostgreSQL>(
             args.table_id,
             std::move(pool),
             configuration.table,

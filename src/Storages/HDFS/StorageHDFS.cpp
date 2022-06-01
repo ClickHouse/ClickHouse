@@ -146,6 +146,7 @@ StorageHDFS::StorageHDFS(
     , distributed_processing(distributed_processing_)
     , partition_by(partition_by_)
 {
+    FormatFactory::instance().checkFormatName(format_name);
     context_->getRemoteHostFilter().checkURL(Poco::URI(uri_));
     checkHDFSURL(uri_);
 
@@ -182,41 +183,22 @@ ColumnsDescription StorageHDFS::getTableStructureFromData(
 {
     const auto [path_from_uri, uri_without_path] = getPathFromUriAndUriWithoutPath(uri);
     auto paths = getPathsList(path_from_uri, uri, ctx);
+    if (paths.empty() && !FormatFactory::instance().checkIfFormatHasExternalSchemaReader(format))
+        throw Exception(
+            ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE,
+            "Cannot extract table structure from {} format file, because there are no files in HDFS with provided path. You must "
+            "specify table structure manually",
+            format);
 
-    std::string exception_messages;
-    bool read_buffer_creator_was_used = false;
-    for (const auto & path : paths)
+    ReadBufferIterator read_buffer_iterator = [&, uri_without_path = uri_without_path, it = paths.begin()]() mutable -> std::unique_ptr<ReadBuffer>
     {
-        auto read_buffer_creator = [&, uri_without_path = uri_without_path]()
-        {
-            read_buffer_creator_was_used = true;
-
-            if (paths.empty())
-                throw Exception(
-                    ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE,
-                    "Cannot extract table structure from {} format file, because there are no files in HDFS with provided path. You must "
-                    "specify table structure manually",
-                    format);
-
-            auto compression = chooseCompressionMethod(path, compression_method);
-            return wrapReadBufferWithCompressionMethod(
-                std::make_unique<ReadBufferFromHDFS>(uri_without_path, path, ctx->getGlobalContext()->getConfigRef()), compression);
-        };
-
-        try
-        {
-            return readSchemaFromFormat(format, std::nullopt, read_buffer_creator, ctx);
-        }
-        catch (...)
-        {
-            if (paths.size() == 1 || !read_buffer_creator_was_used)
-                throw;
-
-           exception_messages += getCurrentExceptionMessage(false) + "\n";
-        }
-    }
-
-    throw Exception(ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE, "All attempts to extract table structure from hdfs files failed. Errors:\n{}", exception_messages);
+        if (it == paths.end())
+            return nullptr;
+        auto compression = chooseCompressionMethod(*it, compression_method);
+        return wrapReadBufferWithCompressionMethod(
+            std::make_unique<ReadBufferFromHDFS>(uri_without_path, *it++, ctx->getGlobalContext()->getConfigRef()), compression);
+    };
+    return readSchemaFromFormat(format, std::nullopt, read_buffer_iterator, paths.size() > 1, ctx);
 }
 
 class HDFSSource::DisclosedGlobIterator::Impl
@@ -434,6 +416,11 @@ public:
         writer->write(getHeader().cloneWithColumns(chunk.detachColumns()));
     }
 
+    void onException() override
+    {
+        write_buf->finalize();
+    }
+
     void onFinish() override
     {
         try
@@ -490,9 +477,9 @@ private:
 };
 
 
-bool StorageHDFS::isColumnOriented() const
+bool StorageHDFS::supportsSubsetOfColumns() const
 {
-    return format_name != "Distributed" && FormatFactory::instance().checkIfFormatIsColumnOriented(format_name);
+    return format_name != "Distributed" && FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(format_name);
 }
 
 Pipe StorageHDFS::read(
@@ -541,7 +528,7 @@ Pipe StorageHDFS::read(
 
     ColumnsDescription columns_description;
     Block block_for_format;
-    if (isColumnOriented())
+    if (supportsSubsetOfColumns())
     {
         auto fetch_columns = column_names;
         const auto & virtuals = getVirtuals();
@@ -553,8 +540,7 @@ Pipe StorageHDFS::read(
         if (fetch_columns.empty())
             fetch_columns.push_back(ExpressionActions::getSmallestColumn(storage_snapshot->metadata->getColumns().getAllPhysical()));
 
-        columns_description = ColumnsDescription{
-            storage_snapshot->getSampleBlockForColumns(fetch_columns).getNamesAndTypesList()};
+        columns_description = storage_snapshot->getDescriptionForColumns(fetch_columns);
         block_for_format = storage_snapshot->getSampleBlockForColumns(columns_description.getNamesOfPhysical());
     }
     else
@@ -694,7 +680,7 @@ void registerStorageHDFS(StorageFactory & factory)
         if (args.storage_def->partition_by)
             partition_by = args.storage_def->partition_by->clone();
 
-        return StorageHDFS::create(
+        return std::make_shared<StorageHDFS>(
             url, args.table_id, format_name, args.columns, args.constraints, args.comment, args.getContext(), compression_method, false, partition_by);
     },
     {

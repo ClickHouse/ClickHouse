@@ -16,6 +16,12 @@ import traceback
 import urllib.parse
 import shlex
 import urllib3
+from cassandra.policies import RoundRobinPolicy
+import cassandra.cluster
+import psycopg2
+import pymongo
+import meilisearch
+import pymysql
 import requests
 
 try:
@@ -356,6 +362,7 @@ class ClickHouseCluster:
         self.with_kerberized_hdfs = False
         self.with_mongo = False
         self.with_mongo_secure = False
+        self.with_meili = False
         self.with_net_trics = False
         self.with_redis = False
         self.with_cassandra = False
@@ -417,6 +424,12 @@ class ClickHouseCluster:
         self.mongo_port = get_free_port()
         self.mongo_no_cred_host = "mongo2"
         self.mongo_no_cred_port = get_free_port()
+
+        # available when with_meili == True
+        self.meili_host = "meili1"
+        self.meili_port = get_free_port()
+        self.meili_secure_host = "meili_secure"
+        self.meili_secure_port = get_free_port()
 
         # available when with_cassandra == True
         self.cassandra_host = "cassandra1"
@@ -694,10 +707,19 @@ class ClickHouseCluster:
         )
 
         binary_path = self.server_bin_path
-        if binary_path.endswith("-server"):
-            binary_path = binary_path[: -len("-server")]
+        binary_dir = os.path.dirname(self.server_bin_path)
+
+        # always prefer clickhouse-keeper standalone binary
+        if os.path.exists(os.path.join(binary_dir, "clickhouse-keeper")):
+            binary_path = os.path.join(binary_dir, "clickhouse-keeper")
+            keeper_cmd_prefix = "clickhouse-keeper"
+        else:
+            if binary_path.endswith("-server"):
+                binary_path = binary_path[: -len("-server")]
+            keeper_cmd_prefix = "clickhouse keeper"
 
         env_variables["keeper_binary"] = binary_path
+        env_variables["keeper_cmd_prefix"] = keeper_cmd_prefix
         env_variables["image"] = "clickhouse/integration-test:" + self.docker_base_tag
         env_variables["user"] = str(os.getuid())
         env_variables["keeper_fs"] = "bind"
@@ -1039,6 +1061,30 @@ class ClickHouseCluster:
         ]
         return self.base_mongo_cmd
 
+    def setup_meili_cmd(self, instance, env_variables, docker_compose_yml_dir):
+        self.with_meili = True
+        env_variables["MEILI_HOST"] = self.meili_host
+        env_variables["MEILI_EXTERNAL_PORT"] = str(self.meili_port)
+        env_variables["MEILI_INTERNAL_PORT"] = "7700"
+
+        env_variables["MEILI_SECURE_HOST"] = self.meili_secure_host
+        env_variables["MEILI_SECURE_EXTERNAL_PORT"] = str(self.meili_secure_port)
+        env_variables["MEILI_SECURE_INTERNAL_PORT"] = "7700"
+
+        self.base_cmd.extend(
+            ["--file", p.join(docker_compose_yml_dir, "docker_compose_meili.yml")]
+        )
+        self.base_meili_cmd = [
+            "docker-compose",
+            "--env-file",
+            instance.env_file,
+            "--project-name",
+            self.project_name,
+            "--file",
+            p.join(docker_compose_yml_dir, "docker_compose_meili.yml"),
+        ]
+        return self.base_meili_cmd
+
     def setup_minio_cmd(self, instance, env_variables, docker_compose_yml_dir):
         self.with_minio = True
         cert_d = p.join(self.minio_dir, "certs")
@@ -1169,6 +1215,7 @@ class ClickHouseCluster:
         with_kerberized_hdfs=False,
         with_mongo=False,
         with_mongo_secure=False,
+        with_meili=False,
         with_nginx=False,
         with_redis=False,
         with_minio=False,
@@ -1252,6 +1299,7 @@ class ClickHouseCluster:
             with_nginx=with_nginx,
             with_kerberized_hdfs=with_kerberized_hdfs,
             with_mongo=with_mongo or with_mongo_secure,
+            with_meili=with_meili,
             with_redis=with_redis,
             with_minio=with_minio,
             with_azurite=with_azurite,
@@ -1416,6 +1464,11 @@ class ClickHouseCluster:
                         instance, env_variables, docker_compose_yml_dir
                     )
                 )
+
+        if with_meili and not self.with_meili:
+            cmds.append(
+                self.setup_meili_cmd(instance, env_variables, docker_compose_yml_dir)
+            )
 
         if self.with_net_trics:
             for cmd in cmds:
@@ -1962,6 +2015,30 @@ class ClickHouseCluster:
                 logging.debug("Can't connect to Mongo " + str(ex))
                 time.sleep(1)
 
+    def wait_meili_to_start(self, timeout=30):
+        connection_str = "http://{host}:{port}".format(
+            host="localhost", port=self.meili_port
+        )
+        client = meilisearch.Client(connection_str)
+
+        connection_str_secure = "http://{host}:{port}".format(
+            host="localhost", port=self.meili_secure_port
+        )
+        client_secure = meilisearch.Client(connection_str_secure, "password")
+
+        start = time.time()
+        while time.time() - start < timeout:
+            try:
+                client.get_all_stats()
+                client_secure.get_all_stats()
+                logging.debug(
+                    f"Connected to MeiliSearch dbs: {client.get_all_stats()}\n{client_secure.get_all_stats()}"
+                )
+                return
+            except Exception as ex:
+                logging.debug("Can't connect to MeiliSearch " + str(ex))
+                time.sleep(1)
+
     def wait_minio_to_start(self, timeout=180, secure=False):
         self.minio_ip = self.get_instance_ip(self.minio_host)
         self.minio_redirect_ip = self.get_instance_ip(self.minio_redirect_host)
@@ -2308,6 +2385,12 @@ class ClickHouseCluster:
                 self.up_called = True
                 self.wait_mongo_to_start(30, secure=self.with_mongo_secure)
 
+            if self.with_meili and self.base_meili_cmd:
+                logging.debug("Setup MeiliSearch")
+                run_and_check(self.base_meili_cmd + common_opts)
+                self.up_called = True
+                self.wait_meili_to_start()
+
             if self.with_redis and self.base_redis_cmd:
                 logging.debug("Setup Redis")
                 subprocess_check_call(self.base_redis_cmd + common_opts)
@@ -2633,6 +2716,7 @@ class ClickHouseInstance:
         with_nginx,
         with_kerberized_hdfs,
         with_mongo,
+        with_meili,
         with_redis,
         with_minio,
         with_azurite,
@@ -2713,6 +2797,7 @@ class ClickHouseInstance:
         self.with_nginx = with_nginx
         self.with_kerberized_hdfs = with_kerberized_hdfs
         self.with_mongo = with_mongo
+        self.with_meili = with_meili
         self.with_redis = with_redis
         self.with_minio = with_minio
         self.with_azurite = with_azurite
@@ -3756,10 +3841,10 @@ class ClickHouseInstance:
         if self.external_dirs:
             for external_dir in self.external_dirs:
                 external_dir_abs_path = p.abspath(
-                    p.join(self.path, external_dir.lstrip("/"))
+                    p.join(self.cluster.instances_dir, external_dir.lstrip("/"))
                 )
                 logging.info(f"external_dir_abs_path={external_dir_abs_path}")
-                os.mkdir(external_dir_abs_path)
+                os.makedirs(external_dir_abs_path, exist_ok=True)
                 external_dirs_volumes += (
                     "- " + external_dir_abs_path + ":" + external_dir + "\n"
                 )

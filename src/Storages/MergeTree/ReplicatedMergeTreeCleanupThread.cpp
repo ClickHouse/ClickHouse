@@ -471,6 +471,7 @@ void ReplicatedMergeTreeCleanupThread::clearOldMutations()
     for (const String & replica : replicas)
     {
         String pointer;
+        // No Need to check return value to delete mutations.
         zookeeper->tryGet(storage.zookeeper_path + "/replicas/" + replica + "/mutation_pointer", pointer);
         if (pointer.empty())
             return; /// One replica hasn't done anything yet so we can't delete any mutations.

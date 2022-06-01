@@ -7,8 +7,10 @@
 #include <IO/ReadHelpers.h>
 #include <Parsers/DumpASTNode.h>
 #include <Common/typeid_cast.h>
+#include <Common/StringUtils/StringUtils.h>
 
 #include <Parsers/ASTAsterisk.h>
+#include <Parsers/ASTCollation.h>
 #include <Parsers/ASTColumnsTransformers.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
@@ -801,6 +803,20 @@ namespace
         node = makeASTFunction("exists", subquery);
         return true;
     }
+
+    bool parseGrouping(IParser::Pos & pos, ASTPtr & node, Expected & expected)
+    {
+        ASTPtr expr_list;
+        if (!ParserExpressionList(false, false).parse(pos, expr_list, expected))
+            return false;
+
+        auto res = std::make_shared<ASTFunction>();
+        res->name = "grouping";
+        res->arguments = expr_list;
+        res->children.push_back(res->arguments);
+        node = std::move(res);
+        return true;
+    }
 }
 
 
@@ -886,6 +902,8 @@ bool ParserFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     else if (function_name_lowercase == "datediff" || function_name_lowercase == "date_diff"
         || function_name_lowercase == "timestampdiff" || function_name_lowercase == "timestamp_diff")
         parsed_special_function = parseDateDiff(pos, node, expected);
+    else if (function_name_lowercase == "grouping")
+        parsed_special_function = parseGrouping(pos, node, expected);
 
     if (parsed_special_function.has_value())
         return parsed_special_function.value() && ParserToken(TokenType::ClosingRoundBracket).ignore(pos);
@@ -1447,6 +1465,31 @@ bool ParserCodec::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     return true;
 }
 
+bool ParserCollation::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    ASTPtr collation;
+
+    if (!ParserIdentifier(true).parse(pos, collation, expected))
+        return false;
+
+    // check the collation name is valid
+    const String name = getIdentifierName(collation);
+
+    bool valid_collation = name == "binary" ||
+                           endsWith(name, "_bin") ||
+                           endsWith(name, "_ci") ||
+                           endsWith(name, "_cs") ||
+                           endsWith(name, "_ks");
+
+    if (!valid_collation)
+        return false;
+
+    auto collation_node = std::make_shared<ASTCollation>();
+    collation_node->collation = collation;
+    node = collation_node;
+    return true;
+}
+
 
 template <TokenType ...tokens>
 static bool isOneOf(TokenType token)
@@ -1934,16 +1977,18 @@ bool ParserColumnsMatcher::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
         return false;
     ++pos;
 
-    auto res = std::make_shared<ASTColumnsMatcher>();
+    ASTPtr res;
     if (column_list)
     {
-        res->column_list = column_list;
-        res->children.push_back(res->column_list);
+        auto list_matcher = std::make_shared<ASTColumnsListMatcher>();
+        list_matcher->column_list = column_list;
+        res = list_matcher;
     }
     else
     {
-        res->setPattern(regex_node->as<ASTLiteral &>().value.get<String>());
-        res->children.push_back(regex_node);
+        auto regexp_matcher = std::make_shared<ASTColumnsRegexpMatcher>();
+        regexp_matcher->setPattern(regex_node->as<ASTLiteral &>().value.get<String>());
+        res = regexp_matcher;
     }
 
     ParserColumnsTransformers transformers_p(allowed_transformers);

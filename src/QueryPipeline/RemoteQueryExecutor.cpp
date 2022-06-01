@@ -356,7 +356,7 @@ std::variant<Block, int> RemoteQueryExecutor::restartQueryWithoutDuplicatedUUIDs
         else
             return read(*read_context);
     }
-    throw Exception("Found duplicate uuids while processing query.", ErrorCodes::DUPLICATED_PART_UUIDS);
+    throw Exception("Found duplicate uuids while processing query", ErrorCodes::DUPLICATED_PART_UUIDS);
 }
 
 std::optional<Block> RemoteQueryExecutor::processPacket(Packet packet)
@@ -432,8 +432,10 @@ std::optional<Block> RemoteQueryExecutor::processPacket(Packet packet)
 
         default:
             got_unknown_packet_from_replica = true;
-            throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_SERVER, "Unknown packet {} from one of the following replicas: {}",
-                toString(packet.type),
+            throw Exception(
+                ErrorCodes::UNKNOWN_PACKET_FROM_SERVER,
+                "Unknown packet {} from one of the following replicas: {}",
+                packet.type,
                 connections->dumpAddresses());
     }
 

@@ -21,10 +21,17 @@
 #if USE_SSL
 #     include <openssl/crypto.h>
 #     include <openssl/rand.h>
+#     include <openssl/err.h>
 #endif
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int OPENSSL_ERROR;
+}
+
 namespace
 {
     bool parseRenameTo(IParserBase::Pos & pos, Expected & expected, String & new_name)
@@ -39,7 +46,7 @@ namespace
     }
 
 
-    bool parseAuthenticationData(IParserBase::Pos & pos, Expected & expected, bool id_mode, AuthenticationData & auth_data)
+    bool parseAuthenticationData(IParserBase::Pos & pos, Expected & expected, AuthenticationData & auth_data)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
@@ -113,7 +120,7 @@ namespace
                     return false;
                 value = ast->as<const ASTLiteral &>().value.safeGet<String>();
 
-                if (id_mode && expect_hash)
+                if (expect_hash && type == AuthenticationType::SHA256_PASSWORD)
                 {
                     if (ParserKeyword{"SALT"}.ignore(pos, expected) && ParserStringLiteral{}.parse(pos, ast, expected))
                     {
@@ -166,7 +173,13 @@ namespace
                     ///generate and add salt here
                     ///random generator FIPS complaint
                     uint8_t key[32];
-                    RAND_bytes(key, sizeof(key));
+                    if (RAND_bytes(key, sizeof(key)) != 1)
+                    {
+                        char buf[512] = {0};
+                        ERR_error_string_n(ERR_get_error(), buf, sizeof(buf));
+                        throw Exception(ErrorCodes::OPENSSL_ERROR, "Cannot generate salt for password. OpenSSL {}", buf);
+                    }
+
                     String salt;
                     salt.resize(sizeof(key) * 2);
                     char * buf_pos = salt.data();
@@ -434,7 +447,7 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         if (!auth_data)
         {
             AuthenticationData new_auth_data;
-            if (parseAuthenticationData(pos, expected, attach_mode, new_auth_data))
+            if (parseAuthenticationData(pos, expected, new_auth_data))
             {
                 auth_data = std::move(new_auth_data);
                 continue;

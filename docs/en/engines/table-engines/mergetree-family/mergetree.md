@@ -306,8 +306,8 @@ CREATE TABLE table_name
 Indices from the example can be used by ClickHouse to reduce the amount of data to read from disk in the following queries:
 
 ``` sql
-SELECT count() FROM table WHERE s &lt; 'z'
-SELECT count() FROM table WHERE u64 * i32 == 10 AND u64 * length(s) &gt;= 1234
+SELECT count() FROM table WHERE s < 'z'
+SELECT count() FROM table WHERE u64 * i32 == 10 AND u64 * length(s) >= 1234
 ```
 
 #### Available Types of Indices {#available-types-of-indices}
@@ -669,6 +669,7 @@ Storage policies configuration markup:
                 <volume_name_1>
                     <disk>disk_name_from_disks_configuration</disk>
                     <max_data_part_size_bytes>1073741824</max_data_part_size_bytes>
+                    <load_balancing>round_robin</load_balancing>
                 </volume_name_1>
                 <volume_name_2>
                     <!-- configuration -->
@@ -695,6 +696,8 @@ Tags:
 -   `max_data_part_size_bytes` — the maximum size of a part that can be stored on any of the volume’s disks. If the a size of a merged part estimated to be bigger than `max_data_part_size_bytes` then this part will be written to a next volume. Basically this feature allows to keep new/small parts on a hot (SSD) volume and move them to a cold (HDD) volume when they reach large size. Do not use this setting if your policy has only one volume.
 -   `move_factor` — when the amount of available space gets lower than this factor, data automatically starts to move on the next volume if any (by default, 0.1). ClickHouse sorts existing parts by size from largest to smallest (in descending order) and selects parts with the total size that is sufficient to meet the `move_factor` condition. If the total size of all parts is insufficient, all parts will be moved. 
 -   `prefer_not_to_merge` — Disables merging of data parts on this volume. When this setting is enabled, merging data on this volume is not allowed. This allows controlling how ClickHouse works with slow disks.
+-   `perform_ttl_move_on_insert` — Disables TTL move on data part INSERT. By default if we insert a data part that already expired by the TTL move rule it immediately goes to a volume/disk declared in move rule. This can significantly slowdown insert in case if destination volume/disk is slow (e.g. S3).
+-   `load_balancing` - Policy for disk balancing, `round_robin` or `least_used`.
 
 Cofiguration examples:
 
@@ -724,7 +727,7 @@ Cofiguration examples:
             <move_factor>0.2</move_factor>
         </moving_from_ssd_to_hdd>
 
-		<small_jbod_with_external_no_merges>
+        <small_jbod_with_external_no_merges>
             <volumes>
                 <main>
                     <disk>jbod1</disk>

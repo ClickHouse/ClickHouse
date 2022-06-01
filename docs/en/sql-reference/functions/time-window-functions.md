@@ -84,6 +84,7 @@ Result:
 Returns the inclusive lower bound of the corresponding tumbling window.
 
 ``` sql
+tumbleStart(bounds_tuple);
 tumbleStart(time_attr, interval [, timezone]);
 ```
 
@@ -92,6 +93,7 @@ tumbleStart(time_attr, interval [, timezone]);
 Returns the exclusive upper bound of the corresponding tumbling window.
 
 ``` sql
+tumbleEnd(bounds_tuple);
 tumbleEnd(time_attr, interval [, timezone]);
 ```
 
@@ -100,6 +102,7 @@ tumbleEnd(time_attr, interval [, timezone]);
 Returns the inclusive lower bound of the corresponding hopping window.
 
 ``` sql
+hopStart(bounds_tuple);
 hopStart(time_attr, hop_interval, window_interval [, timezone]);
 ```
 
@@ -108,5 +111,6 @@ hopStart(time_attr, hop_interval, window_interval [, timezone]);
 Returns the exclusive upper bound of the corresponding hopping window.
 
 ``` sql
+hopEnd(bounds_tuple);
 hopEnd(time_attr, hop_interval, window_interval [, timezone]);
 ```

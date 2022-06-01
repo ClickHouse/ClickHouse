@@ -699,4 +699,3 @@ md5_block_asm_data_order:
 .cfi_endproc	
 .size	md5_block_asm_data_order,.-md5_block_asm_data_order
 #endif
-.section	.note.GNU-stack,"",@progbits

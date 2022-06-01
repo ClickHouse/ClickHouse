@@ -46,6 +46,7 @@ NamesAndTypesList PartLogElement::getNamesAndTypes()
         {"table", std::make_shared<DataTypeString>()},
         {"part_name", std::make_shared<DataTypeString>()},
         {"partition_id", std::make_shared<DataTypeString>()},
+        {"part_type", std::make_shared<DataTypeString>()},
         {"disk_name", std::make_shared<DataTypeString>()},
         {"path_on_disk", std::make_shared<DataTypeString>()},
 
@@ -80,6 +81,7 @@ void PartLogElement::appendToBlock(MutableColumns & columns) const
     columns[i++]->insert(table_name);
     columns[i++]->insert(part_name);
     columns[i++]->insert(partition_id);
+    columns[i++]->insert(part_type.toString());
     columns[i++]->insert(disk_name);
     columns[i++]->insert(path_on_disk);
 
@@ -109,13 +111,13 @@ bool PartLog::addNewPart(
     return addNewParts(current_context, {part}, elapsed_ns, execution_status);
 }
 
-inline UInt64 time_in_microseconds(std::chrono::time_point<std::chrono::system_clock> timepoint)
+static inline UInt64 time_in_microseconds(std::chrono::time_point<std::chrono::system_clock> timepoint)
 {
     return std::chrono::duration_cast<std::chrono::microseconds>(timepoint.time_since_epoch()).count();
 }
 
 
-inline UInt64 time_in_seconds(std::chrono::time_point<std::chrono::system_clock> timepoint)
+static inline UInt64 time_in_seconds(std::chrono::time_point<std::chrono::system_clock> timepoint)
 {
     return std::chrono::duration_cast<std::chrono::seconds>(timepoint.time_since_epoch()).count();
 }
@@ -159,6 +161,7 @@ bool PartLog::addNewParts(
             elem.part_name = part->name;
             elem.disk_name = part->volume->getDisk()->getName();
             elem.path_on_disk = part->getFullPath();
+            elem.part_type = part->getType();
 
             elem.bytes_compressed_on_disk = part->getBytesOnDisk();
             elem.rows = part->rows_count;

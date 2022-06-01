@@ -17,7 +17,7 @@ public:
 protected:
     IBackupEntriesBatch(const Strings & entry_names_) : entry_names(entry_names_) {}
 
-    virtual std::unique_ptr<ReadBuffer> getReadBuffer(size_t index) = 0;
+    virtual std::unique_ptr<SeekableReadBuffer> getReadBuffer(size_t index) = 0;
     virtual UInt64 getSize(size_t index) = 0;
     virtual std::optional<UInt128> getChecksum(size_t) { return {}; }
 
