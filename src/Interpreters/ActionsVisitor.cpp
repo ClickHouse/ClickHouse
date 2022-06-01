@@ -960,7 +960,8 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
     if (UserDefinedExecutableFunctionFactory::instance().has(node.name, current_context))
     {
         Array parameters;
-        if (node.parameters) {
+        if (node.parameters)
+        {
             auto & node_parameters = node.parameters->children;
             size_t parameters_size = node_parameters.size();
             parameters.resize(parameters_size);

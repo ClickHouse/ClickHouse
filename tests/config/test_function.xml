@@ -23,12 +23,8 @@
         <argument>
             <type>UInt64</type>
         </argument>
-        <parameter>
-            <name>test_parameter</name>
-            <type>UInt64</type>
-        </parameter>
         <format>TabSeparated</format>
-        <command>cd /; clickhouse-local --input-format TabSeparated --output-format TabSeparated --structure 'x UInt64, y UInt64' --query "SELECT x + y + {test_parameter} FROM table"</command>
+        <command>cd /; clickhouse-local --input-format TabSeparated --output-format TabSeparated --structure 'x UInt64, y UInt64' --query "SELECT x + y + {test_parameter : UInt64} FROM table"</command>
         <execute_direct>0</execute_direct>
     </function>
 </functions>
