@@ -445,6 +445,8 @@ void StorageURLSink::consume(Chunk chunk)
 
 void StorageURLSink::onException()
 {
+    if (!writer)
+        return;
     onFinish();
 }
 
