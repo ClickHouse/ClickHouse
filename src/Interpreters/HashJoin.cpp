@@ -1740,7 +1740,7 @@ DataTypePtr HashJoin::joinGetCheckAndGetReturnType(const DataTypes & data_types,
         throw Exception("StorageJoin doesn't contain column " + column_name, ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
 
     auto elem = sample_block_with_columns_to_add.getByName(column_name);
-    if (or_null)
+    if (or_null && JoinCommon::canBecomeNullable(elem.type))
         elem.type = makeNullable(elem.type);
     return elem.type;
 }
