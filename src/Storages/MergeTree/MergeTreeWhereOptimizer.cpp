@@ -77,8 +77,8 @@ MergeTreeWhereOptimizer::MergeTreeWhereOptimizer(
     , block_with_constants{KeyCondition::getBlockWithConstants(query_info.query->clone(), query_info.syntax_analyzer_result, context)}
     , log{log_}
     , column_sizes{std::move(column_sizes_)}
-    , stats(settings.allow_experimental_stats_for_prewhere_optimization ? storage_->getStatisticsByPartitionPredicate(query_info, context) : nullptr)
-    , use_new_scoring(settings.allow_experimental_stats_for_prewhere_optimization && stats != nullptr && !stats->empty())
+    , statistics(settings.allow_experimental_stats_for_prewhere_optimization ? storage_->getStatisticsByPartitionPredicate(query_info, context) : nullptr)
+    , use_new_scoring(settings.allow_experimental_stats_for_prewhere_optimization && statistics != nullptr && !statistics->empty())
 {
     const auto & primary_key = metadata_snapshot->getPrimaryKey();
     if (!primary_key.column_names.empty())
@@ -475,7 +475,7 @@ std::vector<MergeTreeWhereOptimizer::ColumnWithRank> MergeTreeWhereOptimizer::ge
     std::vector<MergeTreeWhereOptimizer::ColumnWithRank> rank_to_column;
     for (const auto & [column, conditions] : column_to_simple_conditions)
     {
-        if (stats->getDistributionStatistics()->has(column))
+        if (statistics->getDistributionStatistics()->has(column))
         {
             double min_selectivity = MAX_SELECTIVITY;
             Field left_limit;
@@ -502,7 +502,7 @@ std::vector<MergeTreeWhereOptimizer::ColumnWithRank> MergeTreeWhereOptimizer::ge
                 case ConditionDescription::Type::NOT_EQUAL:
                     min_selectivity = std::min(
                         min_selectivity,
-                        1 - stats->getDistributionStatistics()->estimateProbability(
+                        1 - statistics->getDistributionStatistics()->estimateProbability(
                             column,
                             description.constant,
                             description.constant).value_or(0));
@@ -523,7 +523,7 @@ std::vector<MergeTreeWhereOptimizer::ColumnWithRank> MergeTreeWhereOptimizer::ge
             }
             min_selectivity = std::min(
                 min_selectivity,
-                stats->getDistributionStatistics()->estimateProbability(
+                statistics->getDistributionStatistics()->estimateProbability(
                     column,
                     left_limit,
                     right_limit).value_or(1));
@@ -535,7 +535,7 @@ std::vector<MergeTreeWhereOptimizer::ColumnWithRank> MergeTreeWhereOptimizer::ge
                 -(1 - min_selectivity) * RANK_CORRECTION / getIdentifiersColumnSize({column}),
                 min_selectivity,
                 column);
-        } else if (stats->getStringSearchStatistics()->has(column)) {
+        } else if (statistics->getStringSearchStatistics()->has(column)) {
             double min_selectivity = MAX_SELECTIVITY;
             // Conditions are connected using AND
             for (const auto & condition : conditions)
@@ -549,14 +549,14 @@ std::vector<MergeTreeWhereOptimizer::ColumnWithRank> MergeTreeWhereOptimizer::ge
                 case ConditionDescription::Type::EQUAL:
                     min_selectivity = std::min(
                         min_selectivity,
-                        stats->getStringSearchStatistics()->estimateStringProbability(
+                        statistics->getStringSearchStatistics()->estimateStringProbability(
                             description.identifier,
                             description.constant.get<String>()).value_or(1));
                     break;
                 case ConditionDescription::Type::NOT_EQUAL:
                     min_selectivity = std::min(
                         min_selectivity,
-                        1 - stats->getStringSearchStatistics()->estimateStringProbability(
+                        1 - statistics->getStringSearchStatistics()->estimateStringProbability(
                             description.identifier,
                             description.constant.get<String>()).value_or(0));
                     break;
@@ -974,22 +974,22 @@ std::optional<double> MergeTreeWhereOptimizer::analyzeComplexSelectivity(const A
         switch (description.type)
         {
         case ConditionDescription::Type::EQUAL:
-            return stats->getDistributionStatistics()->estimateProbability(
+            return statistics->getDistributionStatistics()->estimateProbability(
                     description.identifier,
                     description.constant,
                     description.constant).value_or(1);
         case ConditionDescription::Type::NOT_EQUAL:
-            return 1 - stats->getDistributionStatistics()->estimateProbability(
+            return 1 - statistics->getDistributionStatistics()->estimateProbability(
                     description.identifier,
                     description.constant,
                     description.constant).value_or(0);
         case ConditionDescription::Type::LESS_OR_EQUAL:
-            return stats->getDistributionStatistics()->estimateProbability(
+            return statistics->getDistributionStatistics()->estimateProbability(
                     description.identifier,
                     {},
                     description.constant).value_or(1);
         case ConditionDescription::Type::GREATER_OR_EQUAL:
-            return stats->getDistributionStatistics()->estimateProbability(
+            return statistics->getDistributionStatistics()->estimateProbability(
                     description.identifier,
                     description.constant,
                     {}).value_or(1);

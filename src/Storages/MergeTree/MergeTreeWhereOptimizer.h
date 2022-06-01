@@ -191,7 +191,7 @@ private:
     const Block block_with_constants;
     Poco::Logger * log;
     std::unordered_map<std::string, UInt64> column_sizes;
-    IStatisticsPtr stats;
+    IStatisticsPtr statistics;
     bool use_new_scoring;
     UInt64 total_size_of_queried_columns = 0;
     NameSet array_joined_names;
