@@ -13,6 +13,9 @@
 
 (ns jepsen.control.scp)
 
+;; We need to overwrite Jepsen's implementation of scp! because it
+;; doesn't use strict-host-key-checking
+
 (defn scp!
   "Runs an SCP command by shelling out. Takes a conn-spec (used for port, key,
   etc), a seq of sources, and a single destination, all as strings."
