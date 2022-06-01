@@ -124,12 +124,12 @@ T execute(nanodbc::ConnectionHolderPtr connection_holder, std::function<T(nanodb
 }
 
 
-class ODBCConnectionFactory final : private boost::noncopyable
+class ODBCPooledConnectionFactory final : private boost::noncopyable
 {
 public:
-    static ODBCConnectionFactory & instance()
+    static ODBCPooledConnectionFactory & instance()
     {
-        static ODBCConnectionFactory ret;
+        static ODBCPooledConnectionFactory ret;
         return ret;
     }
 
