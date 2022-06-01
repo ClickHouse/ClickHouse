@@ -187,7 +187,9 @@ CompressionCodecFactory::CompressionCodecFactory()
     registerCodecZSTD(*this);
     registerCodecLZ4HC(*this);
     registerCodecMultiple(*this);
+#if ENABLE_QPL_COMPRESSION
     registerCodecDeflate(*this);
+#endif
 #ifndef KEEPER_STANDALONE_BUILD
     registerCodecDelta(*this);
     registerCodecT64(*this);
