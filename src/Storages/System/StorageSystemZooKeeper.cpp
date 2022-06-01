@@ -152,8 +152,8 @@ public:
 
 SinkToStoragePtr StorageSystemZooKeeper::write(const ASTPtr &, const StorageMetadataPtr &, ContextPtr context)
 {
-    if (!context->getSettingsRef().allow_writes_to_zookeeper)
-        throw Exception("Prohibit writing to system.zookeeper unless `set allow_writes_to_zookeeper = 'true'`", ErrorCodes::BAD_ARGUMENTS);
+    if (!context->getConfigRef().getBool("allow_zookeeper_write", false))
+        throw Exception("Prohibit writing to system.zookeeper, unless config `allow_zookeeper_write` as true", ErrorCodes::BAD_ARGUMENTS);
     Block write_header;
     write_header.insert(ColumnWithTypeAndName(std::make_shared<DataTypeString>(), "name"));
     write_header.insert(ColumnWithTypeAndName(std::make_shared<DataTypeString>(), "value"));
