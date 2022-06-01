@@ -158,10 +158,10 @@ def test_replicated_balanced_merge_fetch(start_cluster):
             node.query("create table tmp2 as tmp1")
 
         node2.query("alter table tbl modify setting always_fetch_merged_part = 1")
-        p = Pool(20)
+        p = Pool(5)
 
         def task(i):
-            print("Processing insert {}/{}".format(i, 80))
+            print("Processing insert {}/{}".format(i, 200))
             # around 1k per block
             node1.query(
                 "insert into tbl select randConstant() % 2, randomPrintableASCII(16) from numbers(50)"
@@ -181,7 +181,7 @@ def test_replicated_balanced_merge_fetch(start_cluster):
                 "insert into tmp2 select randConstant() % 2, randomPrintableASCII(16) from numbers(50)"
             )
 
-        p.map(task, range(80))
+        p.map(task, range(200))
 
         node2.query("SYSTEM SYNC REPLICA tbl", timeout=10)
 
