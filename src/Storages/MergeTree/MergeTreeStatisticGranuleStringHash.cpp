@@ -17,7 +17,8 @@
 namespace DB
 {
 
-namespace ErrorCodes {
+namespace ErrorCodes
+{
 extern int INCORRECT_QUERY;
 }
 
@@ -38,7 +39,8 @@ CountMinSketch::CountMinSketch()
 void CountMinSketch::addString(const String& str)
 {
     const auto hash = getStringHash(str);
-    for (const auto seed : COUNT_MIN_SKETCH_SEEDS) {
+    for (const auto seed : COUNT_MIN_SKETCH_SEEDS)
+    {
         ++data[getUintHash(hash, seed) % data.size()];
     }
 }
@@ -47,7 +49,8 @@ size_t CountMinSketch::getStringCount(const String& str) const
 {
     size_t result = std::numeric_limits<size_t>::max();
     const auto hash = getStringHash(str);
-    for (const auto seed : COUNT_MIN_SKETCH_SEEDS) {
+    for (const auto seed : COUNT_MIN_SKETCH_SEEDS)
+    {
         result = std::min(result, static_cast<size_t>(data[getUintHash(hash, seed) % data.size()]));
     }
     return result;
@@ -70,21 +73,24 @@ size_t CountMinSketch::getUintHash(size_t hash, size_t seed) const
 
 void CountMinSketch::merge(const CountMinSketch& other)
 {
-    for (size_t index = 0; index < data.size(); ++index) {
+    for (size_t index = 0; index < data.size(); ++index)
+    {
         data[index] += other.data[index];
     }
 }
 
 void CountMinSketch::serialize(WriteBuffer& wb) const
 {
-    for (size_t index = 0; index < COUNT_MIN_SKETCH_ELEMENTS; ++index) {
+    for (size_t index = 0; index < COUNT_MIN_SKETCH_ELEMENTS; ++index)
+    {
         writeIntBinary(data[index], wb);
     }
 }
 
 void CountMinSketch::deserialize(ReadBuffer& rb)
 {
-    for (size_t index = 0; index < COUNT_MIN_SKETCH_ELEMENTS; ++index) {
+    for (size_t index = 0; index < COUNT_MIN_SKETCH_ELEMENTS; ++index)
+    {
         readIntBinary(data[index], rb);
     }
 }
@@ -96,7 +102,7 @@ MergeTreeGranuleStringHashStatistic::MergeTreeGranuleStringHashStatistic(
     , column_name(column_name_)
     , total_granules(0)
     , is_empty(true)
-{    
+{
 }
 
 MergeTreeGranuleStringHashStatistic::MergeTreeGranuleStringHashStatistic(
@@ -138,17 +144,13 @@ void MergeTreeGranuleStringHashStatistic::merge(const IStatisticPtr & other)
         total_granules += other_ptr->total_granules;
         sketch.merge(other_ptr->sketch);
     }
-    else
-    {
-        // Just ignore unknown sketches.
-        // We can get wrong sketch during MODIFY/DROP+ADD/... mutation.
-        //throw Exception("Unknown distribution sketch type", ErrorCodes::LOGICAL_ERROR);
-    }
+    // Just ignore unknown sketches.
+    // We can get wrong sketch during MODIFY/DROP+ADD/... mutation.
 }
 
 const String& MergeTreeGranuleStringHashStatistic::getColumnsRequiredForStatisticCalculation() const
 {
-    return column_name;    
+    return column_name;
 }
 
 void MergeTreeGranuleStringHashStatistic::serializeBinary(WriteBuffer & ostr) const
@@ -263,7 +265,8 @@ void MergeTreeGranuleStringHashStatisticCollector::update(const Block & block, s
 
 void MergeTreeGranuleStringHashStatisticCollector::granuleFinished()
 {
-    for (const auto& string : granule_string_set) {
+    for (const auto& string : granule_string_set)
+    {
         sketch.addString(string);
     }
     ++total_granules;

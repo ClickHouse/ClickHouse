@@ -57,7 +57,8 @@ private:
     // Used by new planner.
     struct ConditionDescription
     {
-        enum class Type {
+        enum class Type
+        {
             LESS_OR_EQUAL,
             GREATER_OR_EQUAL,
             EQUAL,
@@ -138,14 +139,16 @@ private:
 
     void determineArrayJoinedNames(ASTSelectQuery & select);
 
-    struct ColumnWithRank {
+    struct ColumnWithRank
+    {
         ColumnWithRank(
             double rank_,
             double selectivity_,
             std::string name_)
             : rank(rank_)
             , selectivity(selectivity_)
-            , name(name_) {
+            , name(name_)
+        {
         }
 
         bool operator<(const ColumnWithRank & other) const;
@@ -161,12 +164,14 @@ private:
 
     std::optional<double> analyzeComplexSelectivity(const ASTPtr & node) const;
 
-    struct ConditionWithRank {
+    struct ConditionWithRank
+    {
         explicit ConditionWithRank(
             Condition condition_)
             : rank(0)
             , selectivity(0)
-            , condition(condition_) {
+            , condition(condition_)
+        {
         }
 
         bool operator<(const ConditionWithRank & other) const;

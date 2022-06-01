@@ -47,7 +47,7 @@ namespace
     {
         return applyVisitor(FieldVisitorAccurateEquals(), lhs, rhs);
     }
- 
+
     bool less(const Field & lhs, const Field & rhs)
     {
         return applyVisitor(FieldVisitorAccurateLess(), lhs, rhs);
@@ -198,7 +198,6 @@ MergeTreeWhereOptimizer::ConditionDescriptionOptional MergeTreeWhereOptimizer::p
     if (!function)
         return std::nullopt;
 
-    
     if (!getStringToCompareFuncs().contains(function->name))
         return std::nullopt;
 
@@ -208,7 +207,8 @@ MergeTreeWhereOptimizer::ConditionDescriptionOptional MergeTreeWhereOptimizer::p
     auto * right_arg = function->arguments->children.back().get();
 
     /// try to ensure left_arg points to ASTIdentifier
-    if (!left_arg->as<ASTIdentifier>() && right_arg->as<ASTIdentifier>()) {
+    if (!left_arg->as<ASTIdentifier>() && right_arg->as<ASTIdentifier>())
+    {
         std::swap(left_arg, right_arg);
         compare_type = getCompareFuncsSwaps().at(compare_type);
     }
@@ -390,17 +390,14 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const ASTPtr & node,
             && isSubsetOfTableColumns(cond.identifiers)
             /// Do not move conditions involving all queried columns.
             && cond.identifiers.size() < queried_columns.size();
-        
-        if (use_new_scoring) {
+
+        if (use_new_scoring)
             cond.description = parseCondition(node);
-        } else {
+        else
             cond.description = std::nullopt;
-        }
 
         if (cond.viable && !use_new_scoring)
-        {
             cond.good = isConditionGood(node);
-        }
 
         res.emplace_back(std::move(cond));
     }
@@ -535,7 +532,9 @@ std::vector<MergeTreeWhereOptimizer::ColumnWithRank> MergeTreeWhereOptimizer::ge
                 -(1 - min_selectivity) * RANK_CORRECTION / getIdentifiersColumnSize({column}),
                 min_selectivity,
                 column);
-        } else if (statistics->getStringSearchStatistics()->has(column)) {
+        }
+        else if (statistics->getStringSearchStatistics()->has(column))
+        {
             double min_selectivity = MAX_SELECTIVITY;
             // Conditions are connected using AND
             for (const auto & condition : conditions)
@@ -569,7 +568,9 @@ std::vector<MergeTreeWhereOptimizer::ColumnWithRank> MergeTreeWhereOptimizer::ge
                 -(1 - min_selectivity) * RANK_CORRECTION / (getIdentifiersColumnSize({column}) * STRING_COMPUTE_PENALTY),
                 min_selectivity,
                 column);
-        } else {
+        }
+        else
+        {
             rank_to_column.emplace_back(
                 -(1 - MAX_SELECTIVITY) * RANK_CORRECTION / getIdentifiersColumnSize({column}),
                 1,
@@ -625,9 +626,7 @@ void MergeTreeWhereOptimizer::optimizeByRanks(ASTSelectQuery & select) const
 
         // stop if difference is small
         if (current_loss - EPS < predicted_loss)
-        {
-            break;   
-        }
+            break;
 
         prewhere_columns_size += column_size;
         where_columns_size -= column_size;
@@ -650,33 +649,35 @@ void MergeTreeWhereOptimizer::optimizeByRanks(ASTSelectQuery & select) const
                 }))
         {
             // For simple conditions selectivity is already calculated. Now multiply only complex conditions.
-            if (!it->description) {
+            if (!it->description)
                 prewhere_selectivity *= analyzeComplexSelectivity(it->node).value_or(1);
-            }
 
             prewhere_conditions.splice(prewhere_conditions.end(), where_conditions, it++);
         }
         else
         {
-            if (it->viable) {
+            if (it->viable)
                 complex_conditions.emplace_back(*it);
-            }
             ++it;
         }
     }
 
     // Now let's move complex conditions
     auto current_column_sizes = column_sizes;
-    for (const auto& column : columns_in_prewhere) {
+    for (const auto& column : columns_in_prewhere)
+    {
         current_column_sizes[column] = 0;
     }
 
-    auto recalculate_complex_condition_size_and_rank = [&current_column_sizes] (ConditionWithRank& condition) {
+    auto recalculate_complex_condition_size_and_rank = [&current_column_sizes] (ConditionWithRank& condition)
+    {
         condition.condition.columns_size = 0;
-        for (const auto& column : condition.condition.identifiers) {
+        for (const auto& column : condition.condition.identifiers)
+        {
             condition.condition.columns_size += current_column_sizes[column];
         }
-        if (condition.condition.columns_size == 0) {
+        if (condition.condition.columns_size == 0)
+        {
             // If there are no new columns then simply move condition to prewhere.
             condition.rank = -MAX_RANK;
         } else {
@@ -684,16 +685,19 @@ void MergeTreeWhereOptimizer::optimizeByRanks(ASTSelectQuery & select) const
         }
     };
 
-    for (auto& condition : complex_conditions) {
+    for (auto& condition : complex_conditions)
+    {
         condition.selectivity = analyzeComplexSelectivity(condition.condition.node).value_or(1);
         recalculate_complex_condition_size_and_rank(condition);
     }
 
-    while (!complex_conditions.empty()) {
+    while (!complex_conditions.empty())
+    {
         const double current_loss = prewhere_columns_size + prewhere_selectivity * where_columns_size;
         auto min_it = std::min_element(complex_conditions.begin(), complex_conditions.end());
         const double predicted_loss = (prewhere_columns_size + min_it->condition.columns_size) + prewhere_selectivity * min_it->selectivity * (where_columns_size - min_it->condition.columns_size);
-        if (current_loss - EPS < predicted_loss) {
+        if (current_loss - EPS < predicted_loss)
+        {
             break;
         }
 
@@ -701,14 +705,16 @@ void MergeTreeWhereOptimizer::optimizeByRanks(ASTSelectQuery & select) const
         where_columns_size -= min_it->condition.columns_size;
         prewhere_selectivity *= min_it->selectivity;
 
-        for (const auto& column : min_it->condition.identifiers) {
+        for (const auto& column : min_it->condition.identifiers)
+        {
             current_column_sizes[column] = 0;
         }
 
         prewhere_conditions.push_back(min_it->condition);
         complex_conditions.erase(min_it);
 
-        for (auto& condition : complex_conditions) {
+        for (auto& condition : complex_conditions)
+        {
             recalculate_complex_condition_size_and_rank(condition);
         }
     }
@@ -931,14 +937,19 @@ std::optional<double> MergeTreeWhereOptimizer::analyzeComplexSelectivity(const A
         bool ok = false;
         for (const auto & child : node->children)
         {
-            if (const auto selectivity = analyzeComplexSelectivity(child); selectivity) {
+            if (const auto selectivity = analyzeComplexSelectivity(child); selectivity)
+            {
                 result *= *selectivity;
                 ok = true;
             }
         }
-        if (ok) {
+
+        if (ok)
+        {
             return result;
-        } else {
+        }
+        else
+        {
             return std::nullopt;
         }
     }
@@ -948,27 +959,36 @@ std::optional<double> MergeTreeWhereOptimizer::analyzeComplexSelectivity(const A
         bool ok = false;
         for (const auto & child : node->children)
         {
-            if (const auto selectivity = analyzeComplexSelectivity(child); selectivity) {
+            if (const auto selectivity = analyzeComplexSelectivity(child); selectivity)
+            {
                 result *= (1 - *selectivity);
                 ok = true;
             }
         }
-        if (ok) {
+
+        if (ok)
+        {
             return 1 - result;
-        } else {
+        }
+        else
+        {
             return std::nullopt;
         }
     }
     else if (func && func->name == "not")
     {
         const auto result = analyzeComplexSelectivity(node->children.front());
-        if (!result) {
+        if (!result)
+        {
             return std::nullopt;
-        } else {
+        }
+        else
+        {
             return 1 - *result;
         }
     }
-    else if (const auto description_variant = parseCondition(node); description_variant) {
+    else if (const auto description_variant = parseCondition(node); description_variant)
+    {
         // todo: support string
         const auto& description = *description_variant;
         switch (description.type)

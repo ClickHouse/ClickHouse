@@ -121,9 +121,8 @@ protected:
                     if (column_mask[src_stat++])
                     {
                         Array array;
-                        for (const auto & column : statistic.column_names) {
+                        for (const auto & column : statistic.column_names)
                             array.push_back(column);
-                        }
                         res_columns[res_stat++]->insert(array);
                     }
                     // 'type' column

@@ -13,7 +13,8 @@
 namespace DB
 {
 
-namespace ErrorCodes {
+namespace ErrorCodes
+{
 extern int INCORRECT_QUERY;
 }
 
@@ -54,21 +55,15 @@ bool MergeTreeColumnDistributionStatisticTDigest::empty() const
 void MergeTreeColumnDistributionStatisticTDigest::merge(const IStatisticPtr & other)
 {
     auto other_ptr = std::dynamic_pointer_cast<MergeTreeColumnDistributionStatisticTDigest>(other);
-    // versions control???
     if (other_ptr)
     {
         is_empty &= other_ptr->is_empty;
         sketch.merge(other_ptr->sketch);
-        // Poco::Logger::get("MergeTreeColumnDistributionStatisticTDigest").information("MERGED emp=" + std::to_string(empty()));
     }
     else
     {
         throw Exception("Unknown distribution sketch type", ErrorCodes::LOGICAL_ERROR);
     }
-    //Poco::Logger::get("MergeTreeColumnDistributionStatisticTDigest").information(
-    //        "MERGE: 50% = " + std::to_string(sketch.getFloat(0.5))
-    //        + " 90% = " + std::to_string(sketch.getFloat(0.9))
-    //        + " 1% = " + std::to_string(sketch.getFloat(0.01)));
 }
 
 const String& MergeTreeColumnDistributionStatisticTDigest::getColumnsRequiredForStatisticCalculation() const
@@ -104,10 +99,6 @@ void MergeTreeColumnDistributionStatisticTDigest::deserializeBinary(ReadBuffer &
     size_serialization->deserializeBinary(unused, istr);
 
     sketch.deserialize(istr);
-    //Poco::Logger::get("MergeTreeColumnDistributionStatisticTDigest").information(
-    //    "LOAD: 50% = " + std::to_string(sketch.getFloat(0.5))
-    //    + " 90% = " + std::to_string(sketch.getFloat(0.9))
-    //    + " 1% = " + std::to_string(sketch.getFloat(0.01)));
     is_empty = false;
 }
 
@@ -138,8 +129,6 @@ double MergeTreeColumnDistributionStatisticTDigest::estimateQuantileLower(const 
 {
     if (empty())
         throw Exception("TDigest is empty", ErrorCodes::LOGICAL_ERROR);
-    // TODO: t-digest grows O(log n)
-    // TODO: try ddsketch???
 
     double threshold = extractValue(value);
     if (std::isnan(threshold)

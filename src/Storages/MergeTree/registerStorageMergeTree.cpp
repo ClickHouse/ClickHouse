@@ -576,7 +576,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         if (args.query.columns_list && args.query.columns_list->indices)
             for (auto & index : args.query.columns_list->indices->children)
                 metadata.secondary_indices.push_back(IndexDescription::getIndexFromAST(index, columns, args.getContext()));
-        
+
         if (args.query.columns_list && args.query.columns_list->stats)
             for (const auto & stat : args.query.columns_list->stats->children)
                 metadata.statistics.push_back(

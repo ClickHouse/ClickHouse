@@ -52,11 +52,11 @@ class IDistributionStatistic : public IStatistic
 public:
     StatisticType statisticType() const override { return StatisticType::NUMERIC_COLUMN_DISRIBUTION; }
 
-    /// some quantile of value smaller than value 
+    /// Some quantile of value smaller than value
     virtual double estimateQuantileLower(const Field& value) const = 0;
-    /// some quantile of value greater than value
+    /// Some quantile of value greater than value
     virtual double estimateQuantileUpper(const Field& value) const = 0;
-    /// upper bound of probability of lower <= value <= upper
+    /// Upper bound of probability of lower <= value <= upper
     virtual double estimateProbability(const Field & lower, const Field & upper) const = 0;
 };
 
@@ -77,7 +77,7 @@ public:
     virtual void serializeBinary(const String & name, WriteBuffer & ostr) const = 0;
     virtual void deserializeBinary(ReadBuffer & istr) = 0;
 
-    /// Estimates probability that lower <= item  <= right. 
+    /// Estimates probability that lower <= item  <= right.
     virtual std::optional<double> estimateProbability(const String & column, const Field & lower, const Field & upper) const = 0;
 
     virtual void add(const String & name, const IDistributionStatisticPtr & stat) = 0;

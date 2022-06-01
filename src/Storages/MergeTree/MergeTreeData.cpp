@@ -922,7 +922,8 @@ MergeTreeStatisticsPtr MergeTreeData::getStatisticsByPartitionPredicateImpl(
 
     /// TODO: get rid of copy-paste
     auto metadata_snapshot = getInMemoryMetadataPtr();
-    if (parts.empty()) {
+    if (parts.empty())
+    {
         return MergeTreeStatisticFactory::instance().get(
                metadata_snapshot->getStatistics(), metadata_snapshot->getColumns());
     }
@@ -948,10 +949,9 @@ MergeTreeStatisticsPtr MergeTreeData::getStatisticsByPartitionPredicateImpl(
             if (!partition_pruner.canBePruned(*part))
             {
                 partitions.emplace(part->info.partition_id);
-            }   
+            }
         }
     }
-
 
     std::vector<MergeTreeStatisticsPtr> stats_for_merge;
     {
@@ -1004,13 +1004,16 @@ void MergeTreeData::updateStatisticsByPartition()
     StatisticSizeByName statistic_sizes_in_memory;
     for (const auto & [partition, stat] : partition_to_stats_new)
     {
-        if (!stat->empty()) {
+        if (!stat->empty())
+        {
             const auto distribution_statistics = stat->getDistributionStatistics();
-            for (const auto& statistic_name : distribution_statistics->getStatisticsNames()) {
+            for (const auto& statistic_name : distribution_statistics->getStatisticsNames())
+            {
                 statistic_sizes_in_memory[statistic_name].data_ram += distribution_statistics->getSizeInMemoryByName(statistic_name);
             }
             const auto string_hash_statistics = stat->getStringSearchStatistics();
-            for (const auto& statistic_name : string_hash_statistics->getStatisticsNames()) {
+            for (const auto& statistic_name : string_hash_statistics->getStatisticsNames())
+            {
                 statistic_sizes_in_memory[statistic_name].data_ram += string_hash_statistics->getSizeInMemoryByName(statistic_name);
             }
         }
@@ -1022,7 +1025,8 @@ void MergeTreeData::updateStatisticsByPartition()
     }
     {
         auto lock = lockParts();
-        for (const auto& [name, size] : statistic_sizes_in_memory) {
+        for (const auto& [name, size] : statistic_sizes_in_memory)
+        {
             statistics_sizes[name].data_ram = size.data_ram;
         }
     }
@@ -1597,20 +1601,22 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
 
     resetObjectColumnsFromActiveParts(part_lock);
     calculateColumnAndSecondaryIndexSizesImpl();
-    if (getContext()->getSettingsRef().allow_experimental_stats_for_prewhere_optimization) {
+    if (getContext()->getSettingsRef().allow_experimental_stats_for_prewhere_optimization)
+    {
         stats_merger_task = getContext()->getSchedulePool().createTask(
             "MergeTreeStatisticsMerger",
-            [this, period = settings->experimantal_stats_update_period] {
-            try
+            [this, period = settings->experimantal_stats_update_period]
             {
-                reloadStatistics();
-            }
-            catch (...)
-            {
-                LOG_ERROR(log, "Exception during statistics update: {}", getCurrentExceptionMessage(true));
-            }
-            stats_merger_task->scheduleAfter(period);
-        });
+                try
+                {
+                    reloadStatistics();
+                }
+                catch (...)
+                {
+                    LOG_ERROR(log, "Exception during statistics update: {}", getCurrentExceptionMessage(true));
+                }
+                stats_merger_task->scheduleAfter(period);
+            });
         stats_merger_task->activateAndSchedule();
     }
 
@@ -3761,7 +3767,8 @@ void MergeTreeData::addPartContributionToColumnAndSecondaryIndexSizes(const Data
     }
 
     auto statistics_descriptions = getInMemoryMetadataPtr()->getStatistics();
-    for (const auto & statistic : statistics_descriptions) {
+    for (const auto & statistic : statistics_descriptions)
+    {
         auto& statistic_size = statistics_sizes[statistic.name];
         const auto part_statistic_size = part->getStatisticSize(statistic.name);
         statistic_size.add(part_statistic_size);
@@ -3810,7 +3817,8 @@ void MergeTreeData::removePartContributionToColumnAndSecondaryIndexSizes(const D
     }
 
     auto statistics_descriptions = getInMemoryMetadataPtr()->getStatistics();
-    for (const auto & statistic : statistics_descriptions) {
+    for (const auto & statistic : statistics_descriptions)
+    {
         auto& statistic_size = statistics_sizes[statistic.name];
         const auto part_statistic_size = part->getStatisticSize(statistic.name);
 

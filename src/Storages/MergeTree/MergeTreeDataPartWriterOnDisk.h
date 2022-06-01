@@ -153,7 +153,8 @@ protected:
     MergeTreeIndexAggregators skip_indices_aggregators;
     std::vector<size_t> skip_index_accumulated_marks;
 
-    struct StatisticsStream {
+    struct StatisticsStream
+    {
         std::unique_ptr<WriteBufferFromFileBase> plain_buffer = nullptr;
         std::unique_ptr<HashingWriteBuffer> hashing_buffer = nullptr;
     };

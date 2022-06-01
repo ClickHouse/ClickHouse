@@ -30,7 +30,8 @@ namespace ErrorCodes
     extern const int INCORRECT_QUERY;
 }
 
-String generateFileNameForStatistics(const String & name, const String & column) {
+String generateFileNameForStatistics(const String & name, const String & column)
+{
     return fmt::format("{}_{}_{}.{}",
         PART_STATS_FILE_NAME,
         name,
@@ -40,8 +41,10 @@ String generateFileNameForStatistics(const String & name, const String & column)
 
 bool MergeTreeDistributionStatistics::empty() const
 {
-    for (const auto& [column, stat] : column_to_stats) {
-        if (!stat->empty()) {
+    for (const auto& [column, stat] : column_to_stats)
+    {
+        if (!stat->empty())
+        {
             return false;
         }
     }
@@ -55,19 +58,16 @@ void MergeTreeDistributionStatistics::merge(const std::shared_ptr<IDistributionS
     const auto merge_tree_stats = std::dynamic_pointer_cast<MergeTreeDistributionStatistics>(other);
     if (!merge_tree_stats)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "MergeTreeStatistics can not be merged with other statistics");
-    
+
     for (const auto & [column, stat] : merge_tree_stats->column_to_stats)
     {
         if (column_to_stats.contains(column))
         {
             column_to_stats.at(column)->merge(stat);
         }
-        else
-        {
-            // Skip unknown columns.
-            // This is valid because everything is merged into empty stats created from metadata.
-            // Differences can be caused by alters.
-        }
+        // Skip unknown columns.
+        // This is valid because everything is merged into empty stats created from metadata.
+        // Differences can be caused by alters.
     }
 }
 
@@ -107,7 +107,7 @@ Names MergeTreeDistributionStatistics::getStatisticsNames() const
     {
         statistics.insert(stat->name());
     }
-    return Names(std::begin(statistics), std::end(statistics)); 
+    return Names(std::begin(statistics), std::end(statistics));
 }
 
 bool MergeTreeStatistics::empty() const
@@ -168,9 +168,11 @@ void MergeTreeStatistics::deserializeBinary(ReadBuffer & istr)
     const auto stats_count = field.get<size_t>();
     if (stats_count > static_cast<size_t>(StatisticType::LAST))
         throw Exception("Deserialization error: too many stats in file", ErrorCodes::LOGICAL_ERROR);
-    for (size_t stat_index = 0; stat_index < stats_count; ++stat_index) {
+    for (size_t stat_index = 0; stat_index < stats_count; ++stat_index)
+    {
         size_serialization->deserializeBinary(field, istr);
-        switch (field.get<size_t>()) {
+        switch (field.get<size_t>())
+        {
         case static_cast<size_t>(StatisticType::NUMERIC_COLUMN_DISRIBUTION):
             column_distributions->deserializeBinary(istr);
             break;
@@ -210,9 +212,7 @@ size_t MergeTreeDistributionStatistics::getSizeInMemory() const
 {
     size_t sum = 0;
     for (const auto & [_, statistic] : column_to_stats)
-    {
         sum += statistic->getSizeInMemory();
-    }
     return sum;
 }
 
@@ -221,9 +221,8 @@ size_t MergeTreeDistributionStatistics::getSizeInMemoryByName(const String& name
     size_t sum = 0;
     for (const auto & [_, statistic] : column_to_stats)
     {
-        if (statistic->name() == name) {
+        if (statistic->name() == name)
             sum += statistic->getSizeInMemory();
-        }
     }
     return sum;
 }
@@ -289,10 +288,10 @@ void MergeTreeDistributionStatistics::deserializeBinary(ReadBuffer & istr)
 
 bool MergeTreeStringSearchStatistics::empty() const
 {
-    for (const auto& [column, stat] : column_to_stats) {
-        if (!stat->empty()) {
+    for (const auto& [column, stat] : column_to_stats)
+    {
+        if (!stat->empty())
             return false;
-        }
     }
     return true;
 }
@@ -309,7 +308,7 @@ void MergeTreeStringSearchStatistics::merge(const std::shared_ptr<IStringSearchS
     const auto merge_tree_stats = std::dynamic_pointer_cast<MergeTreeStringSearchStatistics>(other);
     if (!merge_tree_stats)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "MergeTreeStatistics can not be merged with other statistics");
-    
+
     for (const auto & [column, stat] : merge_tree_stats->column_to_stats)
     {
         if (column_to_stats.contains(column))
@@ -326,7 +325,7 @@ Names MergeTreeStringSearchStatistics::getStatisticsNames() const
     {
         statistics.insert(stat->name());
     }
-    return Names(std::begin(statistics), std::end(statistics)); 
+    return Names(std::begin(statistics), std::end(statistics));
 }
 
 void MergeTreeStringSearchStatistics::serializeBinary(const String & name, WriteBuffer & ostr) const
@@ -434,9 +433,7 @@ size_t MergeTreeStringSearchStatistics::getSizeInMemory() const
 {
     size_t sum = 0;
     for (const auto & [_, statistic] : column_to_stats)
-    {
         sum += statistic->getSizeInMemory();
-    }
     return sum;
 }
 
@@ -445,9 +442,8 @@ size_t MergeTreeStringSearchStatistics::getSizeInMemoryByName(const String& name
     size_t sum = 0;
     for (const auto & [_, statistic] : column_to_stats)
     {
-        if (statistic->name() == name) {
+        if (statistic->name() == name)
             sum += statistic->getSizeInMemory();
-        }
     }
     return sum;
 }
@@ -484,12 +480,15 @@ void MergeTreeStatisticFactory::validate(
     const ColumnsDescription & columns) const
 {
     std::unordered_map<String, String> used_columns;
-    for (const auto & stat_description : statistics) {
-        for (const auto & column : stat_description.column_names) {
-            if (!used_columns.emplace(column, stat_description.name).second) {
+    for (const auto & stat_description : statistics)
+    {
+        for (const auto & column : stat_description.column_names)
+        {
+            if (!used_columns.emplace(column, stat_description.name).second)
                 throw Exception("Column `" + column + "` was already used by statistic `" + used_columns.at(column) + "`.", ErrorCodes::INCORRECT_QUERY);
-            }
-            for (const auto & stat : getSplittedStatistics(stat_description, columns.get(column))) {
+
+            for (const auto & stat : getSplittedStatistics(stat_description, columns.get(column)))
+            {
                 auto it = validators.find(stat.type);
                 if (it == validators.end())
                     throw Exception(
@@ -536,11 +535,15 @@ MergeTreeStatisticsPtr MergeTreeStatisticFactory::get(
 {
     auto column_distribution_stats = std::make_shared<MergeTreeDistributionStatistics>();
     auto string_search_stats = std::make_shared<MergeTreeStringSearchStatistics>();
-    for (const auto & statistics_description : statistics) {
-        for (const auto & column : statistics_description.column_names) {
-            for (const auto & statistic_description : getSplittedStatistics(statistics_description, columns.get(column))) {
+    for (const auto & statistics_description : statistics)
+    {
+        for (const auto & column : statistics_description.column_names)
+        {
+            for (const auto & statistic_description : getSplittedStatistics(statistics_description, columns.get(column)))
+            {
                 auto statistic = getStatistic(statistic_description, columns.get(column));
-                switch (statistic->statisticType()) {
+                switch (statistic->statisticType())
+                {
                     case StatisticType::NUMERIC_COLUMN_DISRIBUTION:
                         column_distribution_stats->add(column, std::dynamic_pointer_cast<IDistributionStatistic>(statistic));
                         break;
@@ -586,15 +589,20 @@ IMergeTreeStatisticCollectorPtrs MergeTreeStatisticFactory::getStatisticCollecto
     const NamesAndTypesList & columns_for_collection) const
 {
     NameSet columns_names_for_collection;
-    for (const auto & column_for_collection : columns_for_collection) {
+    for (const auto & column_for_collection : columns_for_collection)
+    {
         columns_names_for_collection.insert(column_for_collection.name);
     }
 
     IMergeTreeStatisticCollectorPtrs result;
-    for (const auto & statictic_description : statistics) {
-        for (const auto & column : statictic_description.column_names) {
-            if (columns_names_for_collection.contains(column)) {
-                for (const auto & statistic : getSplittedStatistics(statictic_description, columns.get(column))) {
+    for (const auto & statictic_description : statistics)
+    {
+        for (const auto & column : statictic_description.column_names)
+        {
+            if (columns_names_for_collection.contains(column))
+            {
+                for (const auto & statistic : getSplittedStatistics(statictic_description, columns.get(column)))
+                {
                     result.emplace_back(getStatisticCollector(statistic, columns.get(column)));
                 }
             }
@@ -606,26 +614,33 @@ IMergeTreeStatisticCollectorPtrs MergeTreeStatisticFactory::getStatisticCollecto
 std::vector<StatisticDescription> MergeTreeStatisticFactory::getSplittedStatistics(
     const StatisticDescription & statistic, const ColumnDescription & column) const
 {
-    if (statistic.type != "auto") {
+    if (statistic.type != "auto")
+    {
         return {statistic};
-    } else {
+    }
+    else
+    {
         /// let's select stats for column by ourselves
         std::vector<StatisticDescription> result;
-        if (column.type->isValueRepresentedByNumber() && !column.type->isNullable()) {
+        if (column.type->isValueRepresentedByNumber() && !column.type->isNullable())
+        {
             result.emplace_back();
             result.back().column_names = {column.name};
             result.back().data_types = {column.type};
             result.back().definition_ast = statistic.definition_ast->clone();
             result.back().name = statistic.name;
             result.back().type = "granule_tdigest";
-        } else {
+        }
+        else
+        {
             throw Exception("Unsupported statistic '" + statistic.type + "' for column '" + column.name + "'", ErrorCodes::INCORRECT_QUERY);
         }
         return result;
     }
 }
 
-MergeTreeStatisticFactory::MergeTreeStatisticFactory() {
+MergeTreeStatisticFactory::MergeTreeStatisticFactory()
+{
     registerCreators(
         "tdigest",
         creatorColumnDistributionStatisticTDigest,

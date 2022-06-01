@@ -10,7 +10,8 @@
 namespace DB
 {
 
-class CountMinSketch {
+class CountMinSketch
+{
 public:
     CountMinSketch();
 

@@ -451,7 +451,7 @@ public:
     String getUniqueId() const;
 
     /// Loads statistics
-    /// Statistics sketches are too large to store them in RAM for each part, 
+    /// Statistics sketches are too large to store them in RAM for each part,
     /// so we store aggregated statistics per each partition.
     MergeTreeStatisticsPtr loadStatistics() const;
 

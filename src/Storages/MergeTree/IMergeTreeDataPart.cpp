@@ -782,7 +782,8 @@ void IMergeTreeDataPart::loadIndex()
     }
 }
 
-MergeTreeStatisticsPtr IMergeTreeDataPart::loadStatistics() const {
+MergeTreeStatisticsPtr IMergeTreeDataPart::loadStatistics() const
+{
     const auto metadata_snapshot = storage.getInMemoryMetadataPtr();
 
     auto total_stats = MergeTreeStatisticFactory::instance().get(
@@ -1973,12 +1974,15 @@ void IMergeTreeDataPart::calculateStatisticsSizesOnDisk()
         throw Exception("Cannot calculate statistics sizes when columns or checksums are not initialized", ErrorCodes::LOGICAL_ERROR);
 
     const auto& statistics_descriptions = storage.getInMemoryMetadataPtr()->getStatistics();
-    for (const auto& statistic_description : statistics_descriptions) {
+    for (const auto& statistic_description : statistics_descriptions)
+    {
         StatisticSize statistic_size;
-        for (const auto& column_name : statistic_description.column_names) {
+        for (const auto& column_name : statistic_description.column_names)
+        {
             const auto filename = generateFileNameForStatistics(statistic_description.name, column_name);
             const auto it = checksums.files.find(filename);
-            if (it != std::end(checksums.files)) {
+            if (it != std::end(checksums.files))
+            {
                 statistic_size.data_compressed += it->second.file_size;
                 statistic_size.data_uncompressed += it->second.uncompressed_size;
             }

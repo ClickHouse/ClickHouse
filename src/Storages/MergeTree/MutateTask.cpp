@@ -480,16 +480,23 @@ static StatisticDescriptions getStatisticsToRecalculate(
 {
     StatisticDescriptions result;
     const auto& statistics = metadata_snapshot->getStatistics();
-    for (const auto& statistic : statistics) {
-        if (materialized_statistics.contains(statistic.name)) {
+    for (const auto& statistic : statistics)
+    {
+        if (materialized_statistics.contains(statistic.name))
+        {
             // It's enough to check only one file
             const auto filename = generateFileNameForStatistics(statistic.name, statistic.column_names.front());
-            if (!source_part->checksums.has(filename)) {
+            if (!source_part->checksums.has(filename))
+            {
                 result.push_back(statistic);
             }
-        } else {
-            for (const auto& column_name : statistic.column_names) {
-                if (updated_columns.contains(column_name)) {
+        }
+        else
+        {
+            for (const auto& column_name : statistic.column_names)
+            {
+                if (updated_columns.contains(column_name))
+                {
                     result.push_back(statistic);
                 }
             }
@@ -531,10 +538,13 @@ NameSet collectFilesToSkip(
     for (const auto & projection : projections_to_recalc)
         files_to_skip.insert(projection->getDirectoryName());
 
-    for (const auto& statistic : statistics_to_recalc) {
-        for (const auto& column_name : statistic.column_names) {
+    for (const auto& statistic : statistics_to_recalc)
+    {
+        for (const auto& column_name : statistic.column_names)
+        {
             const auto filename = generateFileNameForStatistics(statistic.name, column_name);
-            if (updated_header.has(column_name) && source_part->checksums.has(filename)) {
+            if (updated_header.has(column_name) && source_part->checksums.has(filename))
+            {
                 files_to_skip.insert(filename);
             }
         }
@@ -1646,6 +1656,5 @@ const MergeTreeData::HardlinkedFiles & MutateTask::getHardlinkedFiles() const
 {
     return ctx->hardlinked_files;
 }
-
 
 }

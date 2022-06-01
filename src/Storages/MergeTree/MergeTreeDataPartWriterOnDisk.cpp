@@ -380,7 +380,7 @@ void MergeTreeDataPartWriterOnDisk::fillStatisticsChecksums(MergeTreeData::DataP
     // We need such statements for easy management.
     if (stats_collectors.empty())
         return;
-        
+
     for (auto & stats_collector : stats_collectors)
     {
         if (!stats_collector->empty())
@@ -389,7 +389,8 @@ void MergeTreeDataPartWriterOnDisk::fillStatisticsChecksums(MergeTreeData::DataP
 
             auto column_distribution_stats = std::make_shared<MergeTreeDistributionStatistics>();
             auto string_search_stats = std::make_shared<MergeTreeStringSearchStatistics>();
-            switch (stats_collector->statisticType()) {
+            switch (stats_collector->statisticType())
+            {
                 case StatisticType::NUMERIC_COLUMN_DISRIBUTION:
                     column_distribution_stats->add(stats_collector->column(), stats_collector->getDistributionStatisticAndReset());
                     break;
@@ -431,7 +432,7 @@ void MergeTreeDataPartWriterOnDisk::finishStatisticsSerialization(bool sync)
 {
     if (stats_collectors.empty() || statistic_and_column_to_stream.empty())
         return;
-    
+
     for (const auto & [_, stats_file_stream] : statistic_and_column_to_stream)
     {
         stats_file_stream->plain_buffer->finalize();
@@ -455,8 +456,10 @@ Names MergeTreeDataPartWriterOnDisk::getSkipIndicesColumns() const
 Names MergeTreeDataPartWriterOnDisk::getStatsColumns() const
 {
     std::unordered_set<String> stats_column_names_set;
-    for (const auto & statistics_description : statistics_descriptions) {
-        for (const auto & column_name : statistics_description.column_names) {
+    for (const auto & statistics_description : statistics_descriptions)
+    {
+        for (const auto & column_name : statistics_description.column_names)
+        {
             stats_column_names_set.insert(column_name);
         }
     }

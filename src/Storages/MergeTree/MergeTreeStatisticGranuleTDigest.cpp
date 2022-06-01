@@ -11,11 +11,13 @@
 namespace DB
 {
 
-namespace {
+namespace
+{
 constexpr float EPS = 1e-5;
 }
 
-namespace ErrorCodes {
+namespace ErrorCodes
+{
 extern int INCORRECT_QUERY;
 }
 
@@ -60,19 +62,14 @@ bool MergeTreeGranuleDistributionStatisticTDigest::empty() const
 void MergeTreeGranuleDistributionStatisticTDigest::merge(const IStatisticPtr & other)
 {
     auto other_ptr = std::dynamic_pointer_cast<MergeTreeGranuleDistributionStatisticTDigest>(other);
-    // versions control???
     if (other_ptr)
     {
         is_empty &= other_ptr->is_empty;
         min_sketch.merge(other_ptr->min_sketch);
         max_sketch.merge(other_ptr->max_sketch);
     }
-    else
-    {
-        // Just ignore unknown sketches.
-        // We can get wrong sketch during MODIFY/DROP+ADD/... mutation.
-        //throw Exception("Unknown distribution sketch type", ErrorCodes::LOGICAL_ERROR);
-    }
+    // Just ignore unknown sketches.
+    // We can get wrong sketch during MODIFY/DROP+ADD/... mutation.
 }
 
 const String& MergeTreeGranuleDistributionStatisticTDigest::getColumnsRequiredForStatisticCalculation() const
@@ -256,12 +253,10 @@ void MergeTreeGranuleDistributionStatisticCollectorTDigest::update(const Block &
     for (size_t i = 0; i < rows_read; ++i)
     {
         const auto value = column->getFloat32((*pos) + i);
-        if (!min_current || *min_current > value - EPS) {
+        if (!min_current || *min_current > value - EPS)
             min_current = value - EPS;
-        }
-        if (!max_current || *max_current < value + EPS) {
+        if (!max_current || *max_current < value + EPS)
             max_current = value + EPS;
-        }
     }
     *pos += rows_read;
 }
