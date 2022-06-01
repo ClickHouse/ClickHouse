@@ -400,7 +400,7 @@ static void checkKeyExpression(const ExpressionActions & expr, const Block & sam
 
         if (!allow_nullable_key && hasNullable(element.type))
             throw Exception(
-                ErrorCodes::ILLEGAL_COLUMN, "{} key contains nullable columns, but `setting allow_nullable_key` is disabled", key_name);
+                ErrorCodes::ILLEGAL_COLUMN, "{} key contains nullable columns, but merge tree setting `allow_nullable_key` is disabled", key_name);
     }
 }
 
@@ -3079,7 +3079,9 @@ void MergeTreeData::forgetPartAndMoveToDetached(const MergeTreeData::DataPartPtr
         throw Exception("No such data part " + part_to_detach->getNameWithState(), ErrorCodes::NO_SUCH_DATA_PART);
 
     /// What if part_to_detach is a reference to *it_part? Make a new owner just in case.
-    DataPartPtr part = *it_part;
+    /// Important to own part pointer here (not const reference), because it will be removed from data_parts_indexes
+    /// few lines below.
+    DataPartPtr part = *it_part; // NOLINT
 
     if (part->getState() == DataPartState::Active)
     {
