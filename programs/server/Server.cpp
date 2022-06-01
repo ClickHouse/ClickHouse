@@ -546,8 +546,9 @@ static void sanityChecks(Server & server)
 #if defined(OS_LINUX)
     try
     {
-        if (readString("/sys/devices/system/clocksource/clocksource0/current_clocksource").find("tsc") == std::string::npos)
-            server.context()->addWarningMessage("Linux is not using a fast TSC clock source. Performance can be degraded.");
+        const char * filename = "/sys/devices/system/clocksource/clocksource0/current_clocksource";
+        if (readString(filename).find("tsc") == std::string::npos)
+            server.context()->addWarningMessage("Linux is not using a fast TSC clock source. Performance can be degraded. Check " + String(filename));
     }
     catch (...)
     {
@@ -555,8 +556,9 @@ static void sanityChecks(Server & server)
 
     try
     {
-        if (readNumber("/proc/sys/vm/overcommit_memory") == 2)
-            server.context()->addWarningMessage("Linux memory overcommit is disabled.");
+        const char * filename = "/proc/sys/vm/overcommit_memory";
+        if (readNumber(filename) == 2)
+            server.context()->addWarningMessage("Linux memory overcommit is disabled. Check " + String(filename));
     }
     catch (...)
     {
@@ -564,8 +566,9 @@ static void sanityChecks(Server & server)
 
     try
     {
-        if (readString("/sys/kernel/mm/transparent_hugepage/enabled").find("[always]") != std::string::npos)
-            server.context()->addWarningMessage("Linux transparent hugepages are set to \"always\".");
+        const char * filename = "/sys/kernel/mm/transparent_hugepage/enabled";
+        if (readString(filename).find("[always]") != std::string::npos)
+            server.context()->addWarningMessage("Linux transparent hugepages are set to \"always\". Check " + String(filename));
     }
     catch (...)
     {
@@ -573,8 +576,9 @@ static void sanityChecks(Server & server)
 
     try
     {
-        if (readNumber("/proc/sys/kernel/pid_max") < 30000)
-            server.context()->addWarningMessage("Linux max PID is too low.");
+        const char * filename = "/proc/sys/kernel/pid_max";
+        if (readNumber(filename) < 30000)
+            server.context()->addWarningMessage("Linux max PID is too low. Check " + String(filename));
     }
     catch (...)
     {
@@ -582,8 +586,9 @@ static void sanityChecks(Server & server)
 
     try
     {
-        if (readNumber("/proc/sys/kernel/threads-max") < 30000)
-            server.context()->addWarningMessage("Linux threads max count is too low.");
+        const char * filename = "/proc/sys/kernel/threads-max";
+        if (readNumber(filename) < 30000)
+            server.context()->addWarningMessage("Linux threads max count is too low. Check " + String(filename));
     }
     catch (...)
     {
@@ -591,7 +596,7 @@ static void sanityChecks(Server & server)
 
     std::string dev_id = getBlockDeviceId(data_path);
     if (getBlockDeviceType(dev_id) == BlockDeviceType::ROT && getBlockDeviceReadAheadBytes(dev_id) == 0)
-        server.context()->addWarningMessage("Rotational disk with disabled readahead is in use. Performance can be degraded.");
+        server.context()->addWarningMessage("Rotational disk with disabled readahead is in use. Performance can be degraded. Used for data: " + String(data_path));
 #endif
 
     try
@@ -1395,8 +1400,11 @@ int Server::main(const std::vector<std::string> & /*args*/)
     fs::create_directories(format_schema_path);
 
     /// Check sanity of MergeTreeSettings on server startup
-    global_context->getMergeTreeSettings().sanityCheck(settings);
-    global_context->getReplicatedMergeTreeSettings().sanityCheck(settings);
+    {
+        size_t background_pool_tasks = global_context->getMergeMutateExecutor()->getMaxTasksCount();
+        global_context->getMergeTreeSettings().sanityCheck(background_pool_tasks);
+        global_context->getReplicatedMergeTreeSettings().sanityCheck(background_pool_tasks);
+    }
 
     /// try set up encryption. There are some errors in config, error will be printed and server wouldn't start.
     CompressionCodecEncrypted::Configuration::instance().load(config(), "encryption_codecs");

@@ -1934,12 +1934,12 @@ KeeperStorage::ResponsesForSessions KeeperStorage::processRequest(
                     ? list_watches
                     : watches;
 
-                watches_type[zk_request->getPath()].emplace_back(session_id);
+                watches_type[zk_request->getPath()].emplace(session_id);
                 sessions_and_watchers[session_id].emplace(zk_request->getPath());
             }
             else if (response->error == Coordination::Error::ZNONODE && zk_request->getOpNum() == Coordination::OpNum::Exists)
             {
-                watches[zk_request->getPath()].emplace_back(session_id);
+                watches[zk_request->getPath()].emplace(session_id);
                 sessions_and_watchers[session_id].emplace(zk_request->getPath());
             }
         }
@@ -2009,13 +2009,7 @@ void KeeperStorage::clearDeadWatches(int64_t session_id)
             if (watch != watches.end())
             {
                 auto & watches_for_path = watch->second;
-                for (auto w_it = watches_for_path.begin(); w_it != watches_for_path.end();)
-                {
-                    if (*w_it == session_id)
-                        w_it = watches_for_path.erase(w_it);
-                    else
-                        ++w_it;
-                }
+                watches_for_path.erase(session_id);
                 if (watches_for_path.empty())
                     watches.erase(watch);
             }
@@ -2025,13 +2019,7 @@ void KeeperStorage::clearDeadWatches(int64_t session_id)
             if (list_watch != list_watches.end())
             {
                 auto & list_watches_for_path = list_watch->second;
-                for (auto w_it = list_watches_for_path.begin(); w_it != list_watches_for_path.end();)
-                {
-                    if (*w_it == session_id)
-                        w_it = list_watches_for_path.erase(w_it);
-                    else
-                        ++w_it;
-                }
+                list_watches_for_path.erase(session_id);
                 if (list_watches_for_path.empty())
                     list_watches.erase(list_watch);
             }
@@ -2053,7 +2041,7 @@ void KeeperStorage::dumpWatches(WriteBufferFromOwnString & buf) const
 
 void KeeperStorage::dumpWatchesByPath(WriteBufferFromOwnString & buf) const
 {
-    auto write_int_vec = [&buf](const std::vector<int64_t> & session_ids)
+    auto write_int_container = [&buf](const auto & session_ids)
     {
         for (int64_t session_id : session_ids)
         {
@@ -2064,13 +2052,13 @@ void KeeperStorage::dumpWatchesByPath(WriteBufferFromOwnString & buf) const
     for (const auto & [watch_path, sessions] : watches)
     {
         buf << watch_path << "\n";
-        write_int_vec(sessions);
+        write_int_container(sessions);
     }
 
     for (const auto & [watch_path, sessions] : list_watches)
     {
         buf << watch_path << "\n";
-        write_int_vec(sessions);
+        write_int_container(sessions);
     }
 }
 

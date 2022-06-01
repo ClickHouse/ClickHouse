@@ -149,6 +149,8 @@ Each element of [Nested](../sql-reference/data-types/nested-data-structures/nest
 In input data, ENUM values can be represented as names or as ids. First, we try to match the input value to the ENUM name. If we fail and the input value is a number, we try to match this number to ENUM id.
 If input data contains only ENUM ids, it's recommended to enable the setting [input_format_tsv_enum_as_number](../operations/settings/settings.md#settings-input_format_tsv_enum_as_number) to optimize ENUM parsing.
 
+While importing data, you can skip some first rows using setting [input_format_tsv_skip_first_lines](../operations/settings/settings.md#settings-input_format_tsv_skip_first_lines)
+
 For example:
 
 ``` sql
@@ -428,6 +430,8 @@ In input data, ENUM values can be represented as names or as ids. First, we try 
 If input data contains only ENUM ids, it's recommended to enable the setting [input_format_csv_enum_as_number](../operations/settings/settings.md#settings-input_format_csv_enum_as_number) to optimize ENUM parsing.
 
 The CSV format supports the output of totals and extremes the same way as `TabSeparated`.
+
+While importing data, you can skip some first rows using setting [input_format_csv_skip_first_lines](../operations/settings/settings.md#settings-input_format_csv_skip_first_lines)
 
 ## CSVWithNames {#csvwithnames}
 
