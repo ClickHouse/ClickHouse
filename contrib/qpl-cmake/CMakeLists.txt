@@ -28,7 +28,7 @@ include("${QPL_PROJECT_DIR}/cmake/CompileOptions.cmake")
 include(CheckLanguage)
 check_language(ASM_NASM)
 if(NOT CMAKE_ASM_NASM_COMPILER)
-  message(FATAL_ERROR "Please install NASM from 'https://github.com/netwide-assembler/nasm' because NASM compiler could not be found on local machine!")
+  message(FATAL_ERROR "Please install NASM from 'https://www.nasm.us/' because NASM compiler can not be found!")
 endif()
 
 # [SUBDIR]isal
