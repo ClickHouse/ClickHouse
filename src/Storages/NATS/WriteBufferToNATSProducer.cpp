@@ -15,6 +15,7 @@ namespace DB
 {
 
 static const auto BATCH = 1000;
+static const auto MAX_BUFFERED = 131072;
 
 namespace ErrorCodes
 {
@@ -54,7 +55,6 @@ WriteBufferToNATSProducer::WriteBufferToNATSProducer(
 WriteBufferToNATSProducer::~WriteBufferToNATSProducer()
 {
     writing_task->deactivate();
-    connection.disconnect();
     assert(rows == 0);
 }
 
@@ -79,7 +79,6 @@ void WriteBufferToNATSProducer::countRow()
 
         reinitializeChunks();
 
-        ++payload_counter;
         if (!payloads.push(payload))
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Could not push to payloads queue");
     }
@@ -97,12 +96,14 @@ void WriteBufferToNATSProducer::publish()
 
 void WriteBufferToNATSProducer::publishThreadFunc(void * arg)
 {
-    String payload;
     WriteBufferToNATSProducer * buffer = static_cast<WriteBufferToNATSProducer *>(arg);
+    String payload;
 
     natsStatus status;
     while (!buffer->payloads.empty())
     {
+        if (natsConnection_Buffered(buffer->connection.getConnection()) > MAX_BUFFERED)
+            break;
         bool pop_result = buffer->payloads.pop(payload);
 
         if (!pop_result)

@@ -29,7 +29,6 @@ namespace DB
 
 static const uint32_t QUEUE_SIZE = 100000;
 static const auto RESCHEDULE_MS = 500;
-static const auto BACKOFF_TRESHOLD = 8000;
 static const auto MAX_THREAD_WORK_DURATION_MS = 60000;
 
 namespace ErrorCodes
@@ -59,7 +58,6 @@ StorageNATS::StorageNATS(
     , log(&Poco::Logger::get("StorageNATS (" + table_id_.table_name + ")"))
     , semaphore(0, num_consumers)
     , queue_size(std::max(QUEUE_SIZE, static_cast<uint32_t>(getMaxBlockSize())))
-    , milliseconds_to_wait(RESCHEDULE_MS)
     , is_attach(is_attach_)
 {
     auto nats_username = getContext()->getMacros()->expand(nats_settings->nats_username);
@@ -162,6 +160,7 @@ ContextMutablePtr StorageNATS::addSettings(ContextPtr local_context) const
 void StorageNATS::loopingFunc()
 {
     connection->getHandler().startLoop();
+    looping_task->activateAndSchedule();
 }
 
 
@@ -244,22 +243,14 @@ bool StorageNATS::initBuffers()
 /* Need to deactivate this way because otherwise might get a deadlock when first deactivate streaming task in shutdown and then
  * inside streaming task try to deactivate any other task
  */
-void StorageNATS::deactivateTask(BackgroundSchedulePool::TaskHolder & task, bool wait, bool stop_loop)
+void StorageNATS::deactivateTask(BackgroundSchedulePool::TaskHolder & task, bool stop_loop)
 {
     if (stop_loop)
         stopLoop();
 
     std::unique_lock<std::mutex> lock(task_mutex, std::defer_lock);
-    if (lock.try_lock())
-    {
-        task->deactivate();
-        lock.unlock();
-    }
-    else if (wait) /// Wait only if deactivating from shutdown
-    {
-        lock.lock();
-        task->deactivate();
-    }
+    lock.lock();
+    task->deactivate();
 }
 
 
@@ -299,8 +290,6 @@ Pipe StorageNATS::read(
 
     if (!connection->isConnected())
     {
-        if (connection->getHandler().loopRunning())
-            deactivateTask(looping_task, false, true);
         if (!connection->reconnect())
             throw Exception(ErrorCodes::CANNOT_CONNECT_NATS, "No connection to {}", connection->connectionInfoForLog());
     }
@@ -385,8 +374,6 @@ void StorageNATS::startup()
 
     if (!connection->isConnected() || !initBuffers())
         connection_task->activateAndSchedule();
-
-    streaming_task->activateAndSchedule();
 }
 
 
@@ -395,12 +382,12 @@ void StorageNATS::shutdown()
     shutdown_called = true;
 
     /// In case it has not yet been able to setup connection;
-    deactivateTask(connection_task, true, false);
+    deactivateTask(connection_task, false);
 
     /// The order of deactivating tasks is important: wait for streamingToViews() func to finish and
     /// then wait for background event loop to finish.
-    deactivateTask(streaming_task, true, false);
-    deactivateTask(looping_task, true, true);
+    deactivateTask(streaming_task, false);
+    deactivateTask(looping_task, true);
 
     /// Just a paranoid try catch, it is not actually needed.
     try
@@ -411,10 +398,6 @@ void StorageNATS::shutdown()
                 buffer->unsubscribe();
         }
 
-        /// It is important to close connection here - before removing consumer buffers, because
-        /// it will finish and clean callbacks, which might use those buffers data.
-        if (connection->getHandler().loopRunning())
-            stopLoop();
         connection->disconnect();
 
         for (size_t i = 0; i < num_created_consumers; ++i)
@@ -463,7 +446,7 @@ ConsumerBufferPtr StorageNATS::popReadBuffer(std::chrono::milliseconds timeout)
 ConsumerBufferPtr StorageNATS::createReadBuffer()
 {
     return std::make_shared<ReadBufferFromNATSConsumer>(
-        connection, subjects,
+        connection, *this, subjects,
         nats_settings->nats_queue_group.changed ? nats_settings->nats_queue_group.value : getStorageID().getFullTableName(),
         log, row_delimiter, queue_size, shutdown_called);
 }
@@ -548,6 +531,7 @@ bool StorageNATS::checkDependencies(const StorageID & table_id)
 
 void StorageNATS::streamingToViewsFunc()
 {
+    bool do_reschedule = true;
     try
     {
         auto table_id = getStorageID();
@@ -573,21 +557,14 @@ void StorageNATS::streamingToViewsFunc()
                 if (streamToViews())
                 {
                     /// Reschedule with backoff.
-                    if (milliseconds_to_wait < BACKOFF_TRESHOLD)
-                        milliseconds_to_wait *= 2;
-                    stopLoopIfNoReaders();
+                    do_reschedule = false;
                     break;
-                }
-                else
-                {
-                    milliseconds_to_wait = RESCHEDULE_MS;
                 }
 
                 auto end_time = std::chrono::steady_clock::now();
                 auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
                 if (duration.count() > MAX_THREAD_WORK_DURATION_MS)
                 {
-                    stopLoopIfNoReaders();
                     LOG_TRACE(log, "Reschedule streaming. Thread work duration limit exceeded.");
                     break;
                 }
@@ -601,13 +578,8 @@ void StorageNATS::streamingToViewsFunc()
 
     mv_attached.store(false);
 
-    /// If there is no running select, stop the loop which was
-    /// activated by previous select.
-    if (connection->getHandler().loopRunning())
-        stopLoopIfNoReaders();
-
-    if (!shutdown_called)
-        streaming_task->scheduleAfter(milliseconds_to_wait);
+    if (!shutdown_called && do_reschedule)
+        streaming_task->scheduleAfter(RESCHEDULE_MS);
 }
 
 
@@ -640,6 +612,7 @@ bool StorageNATS::streamToViews()
 
     for (size_t i = 0; i < num_created_consumers; ++i)
     {
+        LOG_DEBUG(log, "Current queue size: {}", buffers[0]->queueSize());
         auto source = std::make_shared<NATSSource>(*this, storage_snapshot, nats_context, column_names, block_size);
         sources.emplace_back(source);
         pipes.emplace_back(source);
@@ -666,10 +639,6 @@ bool StorageNATS::streamToViews()
         executor.execute();
     }
 
-    /* Note: sending ack() with loop running in another thread will lead to a lot of data races inside the library, but only in case
-     * error occurs or connection is lost while ack is being sent
-     */
-    deactivateTask(looping_task, false, true);
     size_t queue_empty = 0;
 
     if (!connection->isConnected())
