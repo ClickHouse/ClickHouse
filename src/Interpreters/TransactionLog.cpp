@@ -217,7 +217,7 @@ void TransactionLog::runUpdatingThread()
         try
         {
             /// Do not wait if we have some transactions to finalize
-            if (!unknown_state_list_loaded.empty())
+            if (unknown_state_list_loaded.empty())
                 log_updated_event->wait();
 
             if (stop_flag.load())
@@ -595,6 +595,16 @@ TransactionLog::TransactionsList TransactionLog::getTransactionsList() const
 {
     std::lock_guard lock{running_list_mutex};
     return running_list;
+}
+
+
+void TransactionLog::sync() const
+{
+    Strings entries_list = zookeeper->getChildren(zookeeper_path_log);
+    chassert(!entries_list.empty());
+    std::sort(entries_list.begin(), entries_list.end());
+    CSN newest_csn = deserializeCSN(entries_list.back());
+    waitForCSNLoaded(newest_csn);
 }
 
 }

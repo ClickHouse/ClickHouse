@@ -71,7 +71,7 @@ public:
     void onFreeze(const String & path) override;
     SyncGuardPtr getDirectorySyncGuard(const String & path) const override;
     void shutdown() override;
-    void startup() override;
+    void startup(ContextPtr context) override;
     void applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr context, const String & config_prefix, const DisksMap & map) override;
     String getCacheBasePath() const override { return delegate->getCacheBasePath(); }
     std::vector<String> getRemotePaths(const String & path) const override { return delegate->getRemotePaths(path); }
@@ -82,6 +82,9 @@ public:
     std::unordered_map<String, String> getSerializedMetadata(const std::vector<String> & file_paths) const override { return delegate->getSerializedMetadata(file_paths); }
 
     UInt32 getRefCount(const String & path) const override { return delegate->getRefCount(path); }
+
+    void syncRevision(UInt64 revision) override { delegate->syncRevision(revision); }
+    UInt64 getRevision() const override { return delegate->getRevision(); }
 
 protected:
     Executor & getExecutor() override;

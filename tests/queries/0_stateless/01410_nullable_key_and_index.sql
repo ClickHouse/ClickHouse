@@ -46,7 +46,7 @@ INSERT INTO nullable_minmax_index VALUES (1, 1), (2, 2), (3, 2), (2, 1); -- [1, 
 INSERT INTO nullable_minmax_index VALUES (2, NULL), (3, NULL); -- [+Inf, +Inf]
 
 SET force_primary_key = 0;
-SELECT * FROM nullable_minmax_index ORDER BY k;
+SELECT * FROM nullable_minmax_index ORDER BY k, v;
 SET max_rows_to_read = 6;
 SELECT * FROM nullable_minmax_index WHERE v IS NULL;
 SET max_rows_to_read = 8;

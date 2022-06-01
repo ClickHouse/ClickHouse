@@ -117,7 +117,7 @@ public:
     using Container = SnapshotableHashTable<Node>;
     using Ephemerals = std::unordered_map<int64_t, std::unordered_set<std::string>>;
     using SessionAndWatcher = std::unordered_map<int64_t, std::unordered_set<std::string>>;
-    using SessionIDs = std::vector<int64_t>;
+    using SessionIDs = std::unordered_set<int64_t>;
 
     /// Just vector of SHA1 from user:password
     using AuthIDs = std::vector<AuthID>;
