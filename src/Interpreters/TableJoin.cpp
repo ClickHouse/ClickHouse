@@ -479,6 +479,13 @@ bool TableJoin::tryInitDictJoin(const Block & sample_block, ContextPtr context)
             src_names.push_back(original);
             dst_columns.push_back({col.name, col.type});
         }
+        else
+        {
+            /// Can't extract column from dictionary table
+            /// TODO: Sometimes it should be possible to recunstruct required column,
+            /// e.g. if it's an expression depending on dictionary attributes
+            return false;
+        }
     }
     dictionary_reader = std::make_shared<DictionaryReader>(dict_name, src_names, dst_columns, context);
 
