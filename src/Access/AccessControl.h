@@ -3,8 +3,8 @@
 #include <Access/MultipleAccessStorage.h>
 #include <Common/SettingsChanges.h>
 #include <Common/ZooKeeper/Common.h>
+#include <base/scope_guard.h>
 #include <boost/container/flat_set.hpp>
-#include <Access/UsersConfigAccessStorage.h>
 
 #include <memory>
 
@@ -40,6 +40,7 @@ class SettingsProfilesCache;
 class SettingsProfileElements;
 class ClientInfo;
 class ExternalAuthenticators;
+class AccessChangesNotifier;
 struct Settings;
 
 
@@ -50,6 +51,7 @@ public:
     AccessControl();
     ~AccessControl() override;
 
+    /// Initializes access storage (user directories).
     void setUpFromMainConfig(const Poco::Util::AbstractConfiguration & config_, const String & config_path_,
                              const zkutil::GetZooKeeper & get_zookeeper_function_);
 
@@ -74,9 +76,6 @@ public:
                                const String & preprocessed_dir_,
                                const zkutil::GetZooKeeper & get_zookeeper_function_ = {});
 
-    void reloadUsersConfigs();
-    void startPeriodicReloadingUsersConfigs();
-    void stopPeriodicReloadingUsersConfigs();
     /// Loads access entities from the directory on the local disk.
     /// Use that directory to keep created users/roles/etc.
     void addDiskStorage(const String & directory_, bool readonly_ = false);
@@ -106,6 +105,26 @@ public:
                                    const String & config_path,
                                    const zkutil::GetZooKeeper & get_zookeeper_function);
 
+    /// Reloads and updates entities in this storage. This function is used to implement SYSTEM RELOAD CONFIG.
+    void reload() override;
+
+    using OnChangedHandler = std::function<void(const UUID & /* id */, const AccessEntityPtr & /* new or changed entity, null if removed */)>;
+
+    /// Subscribes for all changes.
+    /// Can return nullptr if cannot subscribe (identifier not found) or if it doesn't make sense (the storage is read-only).
+    scope_guard subscribeForChanges(AccessEntityType type, const OnChangedHandler & handler) const;
+
+    template <typename EntityClassT>
+    scope_guard subscribeForChanges(OnChangedHandler handler) const { return subscribeForChanges(EntityClassT::TYPE, handler); }
+
+    /// Subscribes for changes of a specific entry.
+    /// Can return nullptr if cannot subscribe (identifier not found) or if it doesn't make sense (the storage is read-only).
+    scope_guard subscribeForChanges(const UUID & id, const OnChangedHandler & handler) const;
+    scope_guard subscribeForChanges(const std::vector<UUID> & ids, const OnChangedHandler & handler) const;
+
+    UUID authenticate(const Credentials & credentials, const Poco::Net::IPAddress & address) const;
+    void setExternalAuthenticatorsConfig(const Poco::Util::AbstractConfiguration & config);
+
     /// Sets the default profile's name.
     /// The default profile's settings are always applied before any other profile's.
     void setDefaultProfileName(const String & default_profile_name);
@@ -131,8 +150,9 @@ public:
     void setEnabledUsersWithoutRowPoliciesCanReadRows(bool enable) { users_without_row_policies_can_read_rows = enable; }
     bool isEnabledUsersWithoutRowPoliciesCanReadRows() const { return users_without_row_policies_can_read_rows; }
 
-    UUID authenticate(const Credentials & credentials, const Poco::Net::IPAddress & address) const;
-    void setExternalAuthenticatorsConfig(const Poco::Util::AbstractConfiguration & config);
+    /// Require CLUSTER grant for ON CLUSTER queries.
+    void setOnClusterQueriesRequireClusterGrant(bool enable) { on_cluster_queries_require_cluster_grant = enable; }
+    bool doesOnClusterQueriesRequireClusterGrant() const { return on_cluster_queries_require_cluster_grant; }
 
     std::shared_ptr<const ContextAccess> getContextAccess(
         const UUID & user_id,
@@ -174,9 +194,16 @@ public:
 
     const ExternalAuthenticators & getExternalAuthenticators() const;
 
+    /// Gets manager of notifications.
+    AccessChangesNotifier & getChangesNotifier();
+
 private:
     class ContextAccessCache;
     class CustomSettingsPrefixes;
+
+    std::optional<UUID> insertImpl(const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists) override;
+    bool removeImpl(const UUID & id, bool throw_if_not_exists) override;
+    bool updateImpl(const UUID & id, const UpdateFunc & update_func, bool throw_if_not_exists) override;
 
     std::unique_ptr<ContextAccessCache> context_access_cache;
     std::unique_ptr<RoleCache> role_cache;
@@ -185,9 +212,11 @@ private:
     std::unique_ptr<SettingsProfilesCache> settings_profiles_cache;
     std::unique_ptr<ExternalAuthenticators> external_authenticators;
     std::unique_ptr<CustomSettingsPrefixes> custom_settings_prefixes;
+    std::unique_ptr<AccessChangesNotifier> changes_notifier;
     std::atomic_bool allow_plaintext_password = true;
     std::atomic_bool allow_no_password = true;
     std::atomic_bool users_without_row_policies_can_read_rows = false;
+    std::atomic_bool on_cluster_queries_require_cluster_grant = false;
 };
 
 }

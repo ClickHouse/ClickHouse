@@ -1,4 +1,5 @@
-set join_algorithm='parallel_hash';
+SET join_algorithm='parallel_hash';
+
 SELECT
     EventDate,
     hits,

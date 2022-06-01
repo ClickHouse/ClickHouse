@@ -477,7 +477,7 @@ public:
                             ErrorCodes::ILLEGAL_COLUMN);
 
         if (!col->getValue<String>().empty())
-            re = Regexps::get<false, false>(col->getValue<String>());
+            re = Regexps::get<false, false, false>(col->getValue<String>());
 
     }
 
@@ -560,7 +560,7 @@ public:
                 + " of first argument of function " + getName() + ". Must be constant string.",
                 ErrorCodes::ILLEGAL_COLUMN);
 
-        re = Regexps::get<false, false>(col->getValue<String>());
+        re = Regexps::get<false, false, false>(col->getValue<String>());
         capture = re->getNumberOfSubpatterns() > 0 ? 1 : 0;
 
         matches.resize(capture + 1);

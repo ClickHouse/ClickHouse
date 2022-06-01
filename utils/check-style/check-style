@@ -340,3 +340,6 @@ fi
 
 # Forbid files that differ only by character case
 find $ROOT_PATH | sort -f | uniq -i -c | awk '{ if ($1 > 1) print }'
+
+# Forbid recursive submodules
+find $ROOT_PATH/contrib -name '.gitmodules' -size +0 | xargs cat | grep -P '.' && echo "Recursive submodules are forbidden."
