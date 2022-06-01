@@ -155,8 +155,6 @@ ContextMutablePtr DDLTaskBase::makeQueryContext(ContextPtr from_context, const Z
     query_context->makeQueryContext();
     query_context->setCurrentQueryId(""); // generate random query_id
     query_context->getClientInfo().query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
-    /// For ON CLUSTER queries we check access on initiator
-    query_context->setAccessAlreadyChecked();
     if (entry.settings)
         query_context->applySettingsChanges(*entry.settings);
     return query_context;
