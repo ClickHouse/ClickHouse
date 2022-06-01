@@ -38,21 +38,6 @@ set (SRCS
 
 add_library(_amqp-cpp ${SRCS})
 
-target_compile_options (_amqp-cpp
-    PRIVATE
-        -Wno-old-style-cast
-        -Wno-inconsistent-missing-destructor-override
-        -Wno-deprecated
-        -Wno-unused-parameter
-        -Wno-shadow
-        -Wno-tautological-type-limit-compare
-        -Wno-extra-semi
-# NOTE: disable all warnings at last because the warning:
-        #       "conversion function converting 'XXX' to itself will never be used"
-        #       doesn't have it's own diagnostic flag yet.
-        -w
-)
-
 target_include_directories (_amqp-cpp SYSTEM BEFORE PUBLIC "${LIBRARY_DIR}/include" "${LIBRARY_DIR}")
 target_link_libraries (_amqp-cpp PUBLIC OpenSSL::Crypto OpenSSL::SSL ch_contrib::uv)
 add_library (ch_contrib::amqp_cpp ALIAS _amqp-cpp)
