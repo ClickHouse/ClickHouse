@@ -72,6 +72,9 @@ void ISource::progress(size_t read_rows, size_t read_bytes)
 
 std::optional<ISource::ReadProgress> ISource::getReadProgress()
 {
+    if (finished)
+        return {};
+
     ReadProgressCounters res_progress;
     std::swap(read_progress, res_progress);
 
