@@ -14,15 +14,16 @@ namespace DB
 
 enum class StatisticType
 {
-    // Distribution for values in column
+    /// Distribution for values in column
     NUMERIC_COLUMN_DISRIBUTION = 1,
     STRING_SEARCH = 2,
     LAST,
 };
 
 
-// Basic class for column statistics
-class IStatistic {
+/// Basic class for column statistics
+class IStatistic
+{
 public:
     virtual ~IStatistic() = default;
 
@@ -36,7 +37,7 @@ public:
     virtual const String & getColumnsRequiredForStatisticCalculation() const = 0;
 
     virtual void serializeBinary(WriteBuffer & ostr) const = 0;
-    // Checks if statistic has right type
+    /// Checks if statistic has right type
     virtual bool validateTypeBinary(ReadBuffer & istr) const = 0;
     virtual void deserializeBinary(ReadBuffer & istr) = 0;
 
@@ -46,15 +47,16 @@ public:
 using IStatisticPtr = std::shared_ptr<IStatistic>;
 
 
-class IDistributionStatistic : public IStatistic {
+class IDistributionStatistic : public IStatistic
+{
 public:
     StatisticType statisticType() const override { return StatisticType::NUMERIC_COLUMN_DISRIBUTION; }
 
-    // some quantile of value smaller than value 
+    /// some quantile of value smaller than value 
     virtual double estimateQuantileLower(const Field& value) const = 0;
-    // some quantile of value greater than value
+    /// some quantile of value greater than value
     virtual double estimateQuantileUpper(const Field& value) const = 0;
-    // upper bound of probability of lower <= value <= upper
+    /// upper bound of probability of lower <= value <= upper
     virtual double estimateProbability(const Field & lower, const Field & upper) const = 0;
 };
 
@@ -62,7 +64,8 @@ using IDistributionStatisticPtr = std::shared_ptr<IDistributionStatistic>;
 using IDistributionStatisticPtrs = std::vector<IDistributionStatisticPtr>;
 
 
-class IDistributionStatistics {
+class IDistributionStatistics
+{
 public:
     virtual ~IDistributionStatistics() = default;
 
@@ -74,7 +77,7 @@ public:
     virtual void serializeBinary(const String & name, WriteBuffer & ostr) const = 0;
     virtual void deserializeBinary(ReadBuffer & istr) = 0;
 
-    // Estimates probability that lower <= item  <= right. 
+    /// Estimates probability that lower <= item  <= right. 
     virtual std::optional<double> estimateProbability(const String & column, const Field & lower, const Field & upper) const = 0;
 
     virtual void add(const String & name, const IDistributionStatisticPtr & stat) = 0;
@@ -88,20 +91,22 @@ using IDistributionStatisticsPtr = std::shared_ptr<IDistributionStatistics>;
 using IConstDistributionStatisticsPtr = std::shared_ptr<const IDistributionStatistics>;
 
 
-class IStringSearchStatistic : public IStatistic {
+class IStringSearchStatistic : public IStatistic
+{
 public:
     StatisticType statisticType() const override { return StatisticType::STRING_SEARCH; }
 
     virtual double estimateStringProbability(const String& needle) const = 0;
 
-    virtual std::optional<double> estimateSubstringsProbability(const Strings& needles) const = 0;    
+    virtual std::optional<double> estimateSubstringsProbability(const Strings& needles) const = 0;
 };
 
 using IStringSearchStatisticPtr = std::shared_ptr<IStringSearchStatistic>;
 using IStringSearchStatisticPtrs = std::vector<IStringSearchStatisticPtr>;
 
 
-class IStringSearchStatistics {
+class IStringSearchStatistics
+{
 public:
     virtual ~IStringSearchStatistics() = default;
 
@@ -127,7 +132,8 @@ using IStringSearchStatisticsPtr = std::shared_ptr<IStringSearchStatistics>;
 using IConstStringSearchStatisticsPtr = std::shared_ptr<const IStringSearchStatistics>;
 
 
-class IStatistics {
+class IStatistics
+{
 public:
     virtual ~IStatistics() = default;
 

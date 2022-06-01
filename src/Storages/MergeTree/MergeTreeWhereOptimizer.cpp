@@ -594,7 +594,7 @@ void MergeTreeWhereOptimizer::optimizeByRanks(ASTSelectQuery & select) const
     Conditions prewhere_conditions;
     std::unordered_set<std::string> columns_in_prewhere;
 
-    // First we'll move simple expressions (one column) while estimated amount of data get's lower. (only for conditions with selectivity estimates)
+    // First we'll move simple expressions (one column) while estimated amount of data gets lower. (only for conditions with selectivity estimates)
     std::vector<ColumnWithRank> rank_to_column = getSimpleColumns(column_to_simple_conditions);
 
     // Total data read = sum of prewhere columns + product of selectivities * sum of other columns.

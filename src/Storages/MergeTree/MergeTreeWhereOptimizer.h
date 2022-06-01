@@ -71,12 +71,11 @@ private:
 
     using ConditionDescriptionOptional = std::optional<ConditionDescription>;
 
-    // Conditions 
     struct Condition
     {
         ASTPtr node;
         UInt64 columns_size = 0;
-        
+
         NameSet identifiers;
 
         ConditionDescriptionOptional description;

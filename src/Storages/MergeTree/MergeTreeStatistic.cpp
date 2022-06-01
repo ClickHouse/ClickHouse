@@ -609,7 +609,7 @@ std::vector<StatisticDescription> MergeTreeStatisticFactory::getSplittedStatisti
     if (statistic.type != "auto") {
         return {statistic};
     } else {
-        /// let's select stats for column by ourselfs
+        /// let's select stats for column by ourselves
         std::vector<StatisticDescription> result;
         if (column.type->isValueRepresentedByNumber() && !column.type->isNullable()) {
             result.emplace_back();

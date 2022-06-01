@@ -975,8 +975,7 @@ MergeTreeStatisticsPtr MergeTreeData::getStatisticsByPartitionPredicateImpl(
 
 void MergeTreeData::reloadStatistics()
 {
-    if (getContext()->getSettingsRef().allow_experimental_stats_for_prewhere_optimization &&
-        getInMemoryMetadataPtr()->hasStatistics())
+    if (getInMemoryMetadataPtr()->hasStatistics())
     {
         updateStatisticsByPartition();
     }

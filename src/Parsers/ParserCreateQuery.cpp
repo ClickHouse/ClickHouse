@@ -164,10 +164,13 @@ bool ParserStatisticDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected & 
     if (!expression_p.parse(pos, columns, expected))
         return false;
 
-    if (s_type.ignore(pos, expected)) {
+    if (s_type.ignore(pos, expected))
+    {
         if (!data_type_p.parse(pos, type, expected))
             return false;
-    } else {
+    }
+    else
+    {
         type = makeASTFunction("AUTO");
     }
 

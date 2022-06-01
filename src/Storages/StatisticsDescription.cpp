@@ -39,7 +39,7 @@ StatisticDescription StatisticDescription::getStatisticFromAST(const ASTPtr & de
     stat.definition_ast = definition_ast->clone();
     stat.name = stat_definition->name;
     stat.type = Poco::toLower(stat_definition->type->name);
-    
+
     ASTPtr expr_list = extractKeyExpressionList(stat_definition->columns->clone());
     for (const auto & ast : expr_list->children)
     {
@@ -90,7 +90,8 @@ bool StatisticDescriptions::has(const String & name) const
     return false;
 }
 
-String StatisticDescriptions::toString() const {
+String StatisticDescriptions::toString() const
+{
     if (empty())
         return {};
 

@@ -12,14 +12,10 @@
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Processors/Transforms/ColumnGathererTransform.h>
-#include <Processors/Transforms/ColumnGathererTransform.h>
-#include <Processors/Transforms/DistinctSortedTransform.h>
 #include <Processors/Transforms/DistinctSortedTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/MaterializingTransform.h>
 #include <Processors/Transforms/TTLCalcTransform.h>
-#include <Processors/Transforms/TTLCalcTransform.h>
-#include <Processors/Transforms/TTLTransform.h>
 #include <Processors/Transforms/TTLTransform.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/MergeTree/MergeTreeDataMergerMutator.h>
@@ -343,15 +339,19 @@ static StatisticDescriptions getStatisticsForNewDataPart(
 static NamesAndTypesList getStatisticsColumns(const ColumnsDescription & columns, const StatisticDescriptions & statistics)
 {
     NameSet used_columns;
-    for (const auto& statistic : statistics) {
-        for (const auto& column : statistic.column_names) {
+    for (const auto& statistic : statistics)
+    {
+        for (const auto& column : statistic.column_names)
+        {
             used_columns.insert(column);
         }
     }
-    
+
     NamesAndTypesList result;
-    for (const auto& column : columns) {
-        if (used_columns.contains(column.name)) {
+    for (const auto& column : columns)
+    {
+        if (used_columns.contains(column.name))
+        {
             result.emplace_back(column.name, column.type);
         }
     }
@@ -530,7 +530,7 @@ NameSet collectFilesToSkip(
     }
     for (const auto & projection : projections_to_recalc)
         files_to_skip.insert(projection->getDirectoryName());
-    
+
     for (const auto& statistic : statistics_to_recalc) {
         for (const auto& column_name : statistic.column_names) {
             const auto filename = generateFileNameForStatistics(statistic.name, column_name);
