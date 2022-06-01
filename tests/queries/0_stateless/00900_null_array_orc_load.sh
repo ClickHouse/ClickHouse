@@ -5,7 +5,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-DATA_FILE=$CUR_DIR/data_orc/test_null_array_${CLICKHOUSE_DATABASE}.orc
+DATA_FILE=$CUR_DIR/data_orc/test_null_array.orc
 
 ${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS test_null_array_orc"
 ${CLICKHOUSE_CLIENT} --query="CREATE TABLE test_null_array_orc(col0 Array(Nullable(Int64)),col1 Array(Nullable(String))) ENGINE = Memory"
