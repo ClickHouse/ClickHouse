@@ -346,7 +346,7 @@ ZooKeeperMultiRequest::ZooKeeperMultiRequest(const Requests & generic_requests, 
     {
         if (const auto * concrete_request_create = dynamic_cast<const CreateRequest *>(generic_request.get()))
         {
-            checkOpKindOrThrow(OpKind::Transaction);
+            checkOpKindOrThrow(OpKind::Write);
             auto create = std::make_shared<ZooKeeperCreateRequest>(*concrete_request_create);
             if (create->acls.empty())
                 create->acls = default_acls;
@@ -354,17 +354,17 @@ ZooKeeperMultiRequest::ZooKeeperMultiRequest(const Requests & generic_requests, 
         }
         else if (const auto * concrete_request_remove = dynamic_cast<const RemoveRequest *>(generic_request.get()))
         {
-            checkOpKindOrThrow(OpKind::Transaction);
+            checkOpKindOrThrow(OpKind::Write);
             requests.push_back(std::make_shared<ZooKeeperRemoveRequest>(*concrete_request_remove));
         }
         else if (const auto * concrete_request_set = dynamic_cast<const SetRequest *>(generic_request.get()))
         {
-            checkOpKindOrThrow(OpKind::Transaction);
+            checkOpKindOrThrow(OpKind::Write);
             requests.push_back(std::make_shared<ZooKeeperSetRequest>(*concrete_request_set));
         }
         else if (const auto * concrete_request_check = dynamic_cast<const CheckRequest *>(generic_request.get()))
         {
-            checkOpKindOrThrow(OpKind::Transaction);
+            checkOpKindOrThrow(OpKind::Write);
             requests.push_back(std::make_shared<ZooKeeperCheckRequest>(*concrete_request_check));
         }
         else if (const auto * concrete_request_get = dynamic_cast<const GetRequest *>(generic_request.get()))
@@ -384,14 +384,7 @@ ZooKeeperMultiRequest::ZooKeeperMultiRequest(const Requests & generic_requests, 
 
 OpNum ZooKeeperMultiRequest::getOpNum() const
 {
-    if (isReadRequest())
-    {
-        return OpNum::MultiRead;
-    }
-    else
-    {
-        return OpNum::Multi;
-    }
+    return isReadRequest() ? OpNum::MultiRead : OpNum::Multi;
 }
 
 void ZooKeeperMultiRequest::writeImpl(WriteBuffer & out) const
@@ -443,10 +436,13 @@ void ZooKeeperMultiRequest::readImpl(ReadBuffer & in)
         ZooKeeperRequestPtr request = ZooKeeperRequestFactory::instance().get(op_num);
         request->readImpl(in);
         requests.push_back(request);
-        if (request->isReadRequest()) {
+        if (request->isReadRequest())
+        {
             checkOpKindOrThrow(OpKind::Read);
-        } else {
-            checkOpKindOrThrow(OpKind::Transaction);
+        }
+        else
+        {
+            checkOpKindOrThrow(OpKind::Write);
         }
 
         if (in.eof())

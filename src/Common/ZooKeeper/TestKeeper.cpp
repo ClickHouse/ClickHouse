@@ -1,3 +1,4 @@
+#include <Common/ZooKeeper/ZooKeeperConstants.h>
 #include <Common/ZooKeeper/TestKeeper.h>
 #include <Common/setThreadName.h>
 #include <Common/StringUtils/StringUtils.h>
@@ -154,33 +155,33 @@ struct TestKeeperMultiRequest final : MultiRequest, TestKeeperRequest
         {
             if (const auto * concrete_request_create = dynamic_cast<const CreateRequest *>(generic_request.get()))
             {
-                checkOpKindOrThrow(true);
+                checkOpKindOrThrow(OpKind::Write);
                 auto create = std::make_shared<TestKeeperCreateRequest>(*concrete_request_create);
                 requests.push_back(create);
             }
             else if (const auto * concrete_request_remove = dynamic_cast<const RemoveRequest *>(generic_request.get()))
             {
-                checkOpKindOrThrow(true);
+                checkOpKindOrThrow(OpKind::Write);
                 requests.push_back(std::make_shared<TestKeeperRemoveRequest>(*concrete_request_remove));
             }
             else if (const auto * concrete_request_set = dynamic_cast<const SetRequest *>(generic_request.get()))
             {
-                checkOpKindOrThrow(true);
+                checkOpKindOrThrow(OpKind::Write);
                 requests.push_back(std::make_shared<TestKeeperSetRequest>(*concrete_request_set));
             }
             else if (const auto * concrete_request_check = dynamic_cast<const CheckRequest *>(generic_request.get()))
             {
-                checkOpKindOrThrow(true);
+                checkOpKindOrThrow(OpKind::Write);
                 requests.push_back(std::make_shared<TestKeeperCheckRequest>(*concrete_request_check));
             }
             else if (const auto * concrete_request_get = dynamic_cast<const GetRequest *>(generic_request.get()))
             {
-                checkOpKindOrThrow(false);
+                checkOpKindOrThrow(OpKind::Read);
                 requests.push_back(std::make_shared<TestKeeperGetRequest>(*concrete_request_get));
             }
             else if (const auto * concrete_request_simple_list = dynamic_cast<const SimpleListRequest *>(generic_request.get()))
             {
-                checkOpKindOrThrow(false);
+                checkOpKindOrThrow(OpKind::Read);
                 requests.push_back(std::make_shared<TestKeeperSimpleListRequest>(*concrete_request_simple_list));
             }
             else
@@ -194,22 +195,22 @@ struct TestKeeperMultiRequest final : MultiRequest, TestKeeperRequest
             dynamic_cast<const TestKeeperRequest &>(*generic_request).processWatches(node_watches, list_watches);
     }
 
-    void checkOpKindOrThrow(bool is_write)
+    void checkOpKindOrThrow(OpKind kind)
     {
-        if (op_kind.has_value() && op_kind.value() != is_write)
+        if (op_kind.has_value() && op_kind.value() != kind)
         {
             throw Exception("Illegal mixing of read and write operations in multi request", Error::ZBADARGUMENTS);
         }
         else
         {
-            op_kind = is_write;
+            op_kind = kind;
         }
     }
 
     ResponsePtr createResponse() const override;
     std::pair<ResponsePtr, Undo> process(TestKeeper::Container & container, int64_t zxid) const override;
 
-    std::optional<bool> op_kind;
+    std::optional<OpKind> op_kind;
 };
 
 
@@ -403,15 +404,15 @@ std::pair<ResponsePtr, Undo> TestKeeperSimpleListRequest::process(TestKeeper::Co
     TestKeeperListRequest req;
     req.path = path;
     auto [full_response_ptr, undo] = req.process(container, zxid);
-    const auto * full_response = dynamic_cast<const ListResponse*>(full_response_ptr.get());
+    auto * full_response = dynamic_cast<ListResponse*>(full_response_ptr.get());
     if (full_response == nullptr)
     {
         throw Exception("Logical error: expected to get ListResponse from ListRequest", Error::ZSYSTEMERROR);
     }
-    SimpleListResponse response;
-    response.error = full_response->error;
-    response.names = full_response->names;
-    return {std::make_shared<SimpleListResponse>(response), undo};
+    auto response = std::make_shared<SimpleListResponse>();
+    response->error = full_response->error;
+    response->names = std::move(full_response->names);
+    return {std::move(response), undo};
 }
 
 std::pair<ResponsePtr, Undo> TestKeeperListRequest::process(TestKeeper::Container & container, int64_t) const
