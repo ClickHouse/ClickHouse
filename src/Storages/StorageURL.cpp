@@ -345,12 +345,12 @@ namespace
                                     /* use_external_buffer */ false,
                                     /* skip_url_not_found_error */ skip_url_not_found_error);
 
+                                auto parallel_read_buffer = std::make_unique<ParallelReadBuffer>(
+                                    std::move(read_buffer_factory), threadPoolCallbackRunner(IOThreadPool::get()), download_threads);
+                                parallel_read_buffer->initialize();
+
                                 return wrapReadBufferWithCompressionMethod(
-                                    std::make_unique<ParallelReadBuffer>(
-                                        std::move(read_buffer_factory),
-                                        threadPoolCallbackRunner(IOThreadPool::get()),
-                                        download_threads),
-                                    chooseCompressionMethod(request_uri.getPath(), compression_method));
+                                    std::move(parallel_read_buffer), chooseCompressionMethod(request_uri.getPath(), compression_method));
                             }
                         }
                         catch (const Poco::Exception & e)

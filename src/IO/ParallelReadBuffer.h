@@ -40,6 +40,9 @@ public:
 
     explicit ParallelReadBuffer(std::unique_ptr<ReadBufferFactory> reader_factory_, CallbackRunner schedule_, size_t max_working_readers);
 
+    // some readers can throw exception during constructor call so we can't initialize ParallelReadBuffer there
+    void initialize();
+
     ~ParallelReadBuffer() override { finishAndWait(); }
 
     off_t seek(off_t off, int whence) override;
@@ -96,6 +99,8 @@ private:
     off_t current_position{0};
 
     bool all_completed{false};
+
+    bool initialized{false};
 };
 
 }
