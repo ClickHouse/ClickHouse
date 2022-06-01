@@ -487,7 +487,7 @@ Cluster::Cluster(const Poco::Util::AbstractConfiguration & config,
             }
 
             Addresses shard_local_addresses;
-            Addresses all_local_addresses;
+            Addresses shard_all_addresses;
 
             ConnectionPoolPtrs all_replicas_pools;
             all_replicas_pools.reserve(replica_addresses.size());
@@ -505,7 +505,7 @@ Cluster::Cluster(const Poco::Util::AbstractConfiguration & config,
                 all_replicas_pools.emplace_back(replica_pool);
                 if (replica.is_local)
                     shard_local_addresses.push_back(replica);
-                all_local_addresses.push_back(replica);
+                shard_all_addresses.push_back(replica);
             }
 
             ConnectionPoolWithFailoverPtr shard_pool = std::make_shared<ConnectionPoolWithFailover>(
@@ -520,7 +520,7 @@ Cluster::Cluster(const Poco::Util::AbstractConfiguration & config,
                 current_shard_num,
                 weight,
                 std::move(shard_local_addresses),
-                std::move(all_local_addresses),
+                std::move(shard_all_addresses),
                 std::move(shard_pool),
                 std::move(all_replicas_pools),
                 internal_replication

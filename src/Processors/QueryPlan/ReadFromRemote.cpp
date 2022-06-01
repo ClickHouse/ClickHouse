@@ -247,9 +247,9 @@ ReadFromParallelRemoteReplicasStep::ReadFromParallelRemoteReplicasStep(
 {
     std::vector<String> description;
 
-    for (size_t replica_num = 0; replica_num < shard.shard_info.getAllNodeCount(); ++replica_num)
-        if (!shard.shard_info.all_addresses[replica_num].is_local)
-            description.push_back(fmt::format("Replica: {}", shard.shard_info.all_addresses[replica_num].host_name));
+    for (const auto & address : shard.shard_info.all_addresses)
+        if (!address.is_local)
+            description.push_back(fmt::format("Replica: {}", address.host_name));
 
     setStepDescription(boost::algorithm::join(description, ", "));
 }

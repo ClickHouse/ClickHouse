@@ -290,7 +290,7 @@ void executeQueryWithParallelReplicas(
 
     DataStreams input_streams;
     input_streams.reserve(plans.size());
-    for (auto & plan : plans)
+    for (const auto & plan : plans)
         input_streams.emplace_back(plan->getCurrentDataStream());
 
     auto union_step = std::make_unique<UnionStep>(std::move(input_streams));

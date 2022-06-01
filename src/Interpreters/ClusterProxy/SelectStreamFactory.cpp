@@ -65,7 +65,8 @@ void SelectStreamFactory::createForShard(
 
     auto emplace_local_stream = [&]()
     {
-        local_plans.emplace_back(createLocalPlan(query_ast, header, context, processed_stage, shard_info.shard_num, shard_count, 0, 0, /*coordinator=*/nullptr));
+        local_plans.emplace_back(createLocalPlan(
+            query_ast, header, context, processed_stage, shard_info.shard_num, shard_count, /*replica_num=*/0, /*replica_count=*/0, /*coordinator=*/nullptr));
     };
 
     auto emplace_remote_stream = [&](bool lazy = false, UInt32 local_delay = 0)
@@ -184,8 +185,7 @@ SelectStreamFactory::ShardPlans SelectStreamFactory::createForShardWithParallelR
 {
     SelectStreamFactory::ShardPlans result;
 
-    auto it = objects_by_shard.find(shard_info.shard_num);
-    if (it != objects_by_shard.end())
+    if (auto it = objects_by_shard.find(shard_info.shard_num); it != objects_by_shard.end())
         replaceMissedSubcolumnsByConstants(storage_snapshot->object_columns, it->second, query_ast);
 
     const auto & settings = context->getSettingsRef();
@@ -194,10 +194,6 @@ SelectStreamFactory::ShardPlans SelectStreamFactory::createForShardWithParallelR
     {
         auto resolved_id = context->resolveStorageID(main_table);
         auto main_table_storage = DatabaseCatalog::instance().tryGetTable(resolved_id, context);
-
-        if (!main_table_storage)
-            throw DB::Exception(ErrorCodes::ALL_REPLICAS_ARE_STALE, "");
-
         const auto * replicated_storage = dynamic_cast<const StorageReplicatedMergeTree *>(main_table_storage.get());
 
         if (!replicated_storage)
@@ -209,11 +205,7 @@ SelectStreamFactory::ShardPlans SelectStreamFactory::createForShardWithParallelR
             return false;
 
         UInt32 local_delay = replicated_storage->getAbsoluteDelay();
-
-        if (local_delay < max_allowed_delay)
-            return false;
-
-        return true;
+        return local_delay >= max_allowed_delay;
     };
 
     size_t next_replica_number = 0;
