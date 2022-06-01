@@ -37,7 +37,17 @@ void LRUFileCache::initialize()
     if (!is_initialized)
     {
         if (fs::exists(cache_base_path))
-            loadCacheInfoIntoMemory(cache_lock);
+        {
+            try
+            {
+                loadCacheInfoIntoMemory(cache_lock);
+            }
+            catch (...)
+            {
+                tryLogCurrentException(__PRETTY_FUNCTION__);
+                return;
+            }
+        }
         else
             fs::create_directories(cache_base_path);
 

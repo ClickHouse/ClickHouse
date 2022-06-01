@@ -107,6 +107,13 @@
                     </main>
                 </volumes>
             </local_cache>
+            <local_cache_2>
+                <volumes>
+                    <main>
+                        <disk>local_cache_2</disk>
+                    </main>
+                </volumes>
+            </local_cache_2>
             <local_cache_3>
                 <volumes>
                     <main>
