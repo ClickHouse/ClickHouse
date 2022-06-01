@@ -812,6 +812,8 @@ public:
 
     void onException() override
     {
+        if (!writer)
+            return;
         onFinish();
     }
 
