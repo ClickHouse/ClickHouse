@@ -61,6 +61,8 @@ public:
 
     String getName() const override { return "RemoteTotals"; }
 
+    std::optional<ReadProgress> getReadProgress() override { return {}; }
+
 protected:
     Chunk generate() override;
 
@@ -76,6 +78,8 @@ public:
     ~RemoteExtremesSource() override;
 
     String getName() const override { return "RemoteExtremes"; }
+
+    std::optional<ReadProgress> getReadProgress() override { return {}; }
 
 protected:
     Chunk generate() override;

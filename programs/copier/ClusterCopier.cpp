@@ -8,7 +8,7 @@
 #include <Common/setThreadName.h>
 #include <IO/ConnectionTimeoutsContext.h>
 #include <Interpreters/InterpreterInsertQuery.h>
-#include <Interpreters/InterpreterSelectQuery.h>
+#include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -1455,7 +1455,7 @@ TaskStatus ClusterCopier::processPartitionPieceTaskImpl(
             local_context->setSettings(task_cluster->settings_pull);
             local_context->setSetting("skip_unavailable_shards", true);
 
-            InterpreterSelectQuery select(query_select_ast, local_context, SelectQueryOptions{});
+            InterpreterSelectWithUnionQuery select(query_select_ast, local_context, SelectQueryOptions{});
             QueryPlan plan;
             select.buildQueryPlan(plan);
             auto builder = std::move(*plan.buildQueryPipeline(
@@ -1545,7 +1545,7 @@ TaskStatus ClusterCopier::processPartitionPieceTaskImpl(
             {
                 BlockIO io_insert = InterpreterFactory::get(query_insert_ast, context_insert)->execute();
 
-                InterpreterSelectQuery select(query_select_ast, context_select, SelectQueryOptions{});
+                InterpreterSelectWithUnionQuery select(query_select_ast, context_select, SelectQueryOptions{});
                 QueryPlan plan;
                 select.buildQueryPlan(plan);
                 auto builder = std::move(*plan.buildQueryPipeline(
@@ -1875,7 +1875,7 @@ std::set<String> ClusterCopier::getShardPartitions(const ConnectionTimeouts & ti
 
     auto local_context = Context::createCopy(context);
     local_context->setSettings(task_cluster->settings_pull);
-    InterpreterSelectQuery select(query_ast, local_context, SelectQueryOptions{});
+    InterpreterSelectWithUnionQuery select(query_ast, local_context, SelectQueryOptions{});
     QueryPlan plan;
     select.buildQueryPlan(plan);
     auto builder = std::move(*plan.buildQueryPipeline(

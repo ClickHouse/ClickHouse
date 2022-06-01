@@ -13,6 +13,7 @@
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/InterpreterSelectQuery.h>
 
 
 namespace DB
@@ -59,6 +60,13 @@ void readFinalFromNestedStorage(
 
     auto nested_snapshot = nested_storage->getStorageSnapshot(nested_metadata, context);
     nested_storage->read(query_plan, require_columns_name, nested_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
+
+    if (!query_plan.isInitialized())
+    {
+        InterpreterSelectQuery::addEmptySourceToQueryPlan(query_plan, nested_header, query_info, context);
+        return;
+    }
+
     query_plan.addTableLock(lock);
     query_plan.addStorageHolder(nested_storage);
 
