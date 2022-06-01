@@ -39,7 +39,7 @@ def get_run_command(
         f"--volume={result_folder}:/test_output "
         f"--volume={repo_tests_path}:/usr/share/clickhouse-test "
         f"--volume={server_log_folder}:/var/log/clickhouse-server {image} "
-        f"--volume={download_previous_release}:/usr/local/bin/download_previous_release "
+        f"--mount type=bind,source={download_previous_release},target=/usr/local/bin/download_previous_release "
     )
 
     return cmd
