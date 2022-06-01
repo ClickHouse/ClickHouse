@@ -492,7 +492,7 @@ public:
     String readLightWeightDeletedMaskFile() const;
 
     /// There is light weight bitmap file only when part has non-zero lightweight_mutation.
-    bool hasLightWeight() const { return info.lightweight_mutation > 0; }
+    bool hasLightWeight() const { return info.getLightWeightMutationVersion() > 0; }
 
     void removeOldDeletedMasks(bool startup) const;
 

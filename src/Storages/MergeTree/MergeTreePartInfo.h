@@ -137,6 +137,12 @@ struct MergeTreePartInfo
         lightweight_mutation = value;
     }
 
+    Int64 getLightWeightMutationVersion() const
+    {
+        std::lock_guard<std::mutex> lock(mutex);
+        return lightweight_mutation;
+    }
+
     /// True if parts do not intersect in any way.
     bool isDisjoint(const MergeTreePartInfo & rhs) const
     {

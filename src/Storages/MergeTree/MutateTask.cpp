@@ -638,7 +638,7 @@ void getMaskForLightWeight(ColumnPtr mask_column, bool * result_mask, size_t siz
     }
     else if (const auto * nullable_column = typeid_cast<const ColumnNullable *>(&(*mask_column)))
     {
-        /// result_mask is alreay initialized to 0
+        /// result_mask is already initialized to 0
         if (nullable_column->onlyNull())
             return;
         else
