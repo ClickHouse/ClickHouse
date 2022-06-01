@@ -1,7 +1,12 @@
 # Needed for:
 # - securely connecting to an external server, e.g. clickhouse-client --host ... --secure
 # - lots of thirdparty libraries
-option(ENABLE_SSL "Enable ssl" ${ENABLE_LIBRARIES})
+
+# Actually, so many 3rd party libraries + unit tests need SSL that we cannot disable it
+# without breaking the build ...
+option(ENABLE_SSL "Enable ssl" ON) # breaks if OFF
+# TODO: Making SSL dependent on ENABLE_LIBRARIES is desirable but needs fixing dependent libs + tests.
+# option(ENABLE_SSL "Enable ssl" ${ENABLE_LIBRARIES})
 
 if(NOT ENABLE_SSL)
   message(STATUS "Not using openssl")
