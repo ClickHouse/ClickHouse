@@ -7,6 +7,7 @@
 #include <mutex>
 #include <unordered_map>
 #include <unordered_set>
+#include <boost/functional/hash.hpp>
 #include <boost/noncopyable.hpp>
 #include <map>
 
@@ -26,6 +27,7 @@ class IFileCache : private boost::noncopyable
 {
 friend class FileSegment;
 friend struct FileSegmentsHolder;
+friend class FileSegmentRangeWriter;
 
 public:
     using Key = UInt128;
@@ -42,7 +44,7 @@ public:
 
     virtual void remove(const Key & key) = 0;
 
-    virtual void remove(bool force_remove_unreleasable) = 0;
+    virtual void remove() = 0;
 
     static bool isReadOnly();
 
@@ -143,13 +145,11 @@ public:
 
     FileSegments getSnapshot() const override;
 
-    FileSegmentsHolder setDownloading(const Key & key, size_t offset, size_t size) override;
-
     void initialize() override;
 
     void remove(const Key & key) override;
 
-    void remove(bool force_remove_unreleasable) override;
+    void remove() override;
 
     std::vector<String> tryGetCachePaths(const Key & key) override;
 
@@ -166,6 +166,7 @@ private:
             Key key;
             size_t offset;
             size_t size;
+            size_t hits = 0;
 
             FileKeyAndOffset(const Key & key_, size_t offset_, size_t size_) : key(key_), offset(offset_), size(size_) {}
         };
@@ -194,6 +195,8 @@ private:
         Iterator begin() { return queue.begin(); }
 
         Iterator end() { return queue.end(); }
+
+        void removeAll(std::lock_guard<std::mutex> & cache_lock);
 
     private:
         std::list<FileKeyAndOffset> queue;
@@ -224,8 +227,26 @@ private:
     using FileSegmentsByOffset = std::map<size_t, FileSegmentCell>;
     using CachedFiles = std::unordered_map<Key, FileSegmentsByOffset>;
 
+    using AccessKeyAndOffset = std::pair<Key, size_t>;
+
+    struct KeyAndOffsetHash
+    {
+        std::size_t operator()(const AccessKeyAndOffset & key) const
+        {
+            return std::hash<UInt128>()(key.first) ^ std::hash<UInt64>()(key.second);
+        }
+    };
+
+    using AccessRecord = std::unordered_map<AccessKeyAndOffset, LRUQueue::Iterator, KeyAndOffsetHash>;
+
     CachedFiles files;
     LRUQueue queue;
+
+    LRUQueue stash_queue;
+    AccessRecord records;
+    size_t max_stash_element_size;
+    size_t enable_cache_hits_threshold;
+
     Poco::Logger * log;
 
     FileSegments getImpl(
@@ -271,6 +292,8 @@ private:
 
     void fillHolesWithEmptyFileSegments(
         FileSegments & file_segments, const Key & key, const FileSegment::Range & range, bool fill_with_detached_file_segments, std::lock_guard<std::mutex> & cache_lock);
+
+    FileSegmentsHolder setDownloading(const Key & key, size_t offset, size_t size) override;
 
     size_t getUsedCacheSizeUnlocked(std::lock_guard<std::mutex> & cache_lock) const;
 

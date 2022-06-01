@@ -449,20 +449,23 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
 {
     if (is_recovering)
     {
+        const auto finish_recovering = [&]
+        {
+            auto new_params = raft_instance->get_current_params();
+            new_params.custom_commit_quorum_size_ = 0;
+            new_params.custom_election_quorum_size_ = 0;
+            raft_instance->update_params(new_params);
+
+            LOG_INFO(log, "Recovery is done. You can continue using cluster normally.");
+            is_recovering = false;
+        };
+
         switch (type)
         {
             case nuraft::cb_func::HeartBeat:
             {
                 if (raft_instance->isClusterHealthy())
-                {
-                    auto new_params = raft_instance->get_current_params();
-                    new_params.custom_commit_quorum_size_ = 0;
-                    new_params.custom_election_quorum_size_ = 0;
-                    raft_instance->update_params(new_params);
-
-                    LOG_INFO(log, "Recovery is done. You can continue using cluster normally.");
-                    is_recovering = false;
-                }
+                    finish_recovering();
                 break;
             }
             case nuraft::cb_func::NewConfig:
@@ -473,8 +476,19 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
                 // Because we manually set the config to commit
                 // we need to call the reconfigure also
                 uint64_t log_idx = *static_cast<uint64_t *>(param->ctx);
-                if (log_idx == state_manager->load_config()->get_log_idx())
-                    raft_instance->forceReconfigure(state_manager->load_config());
+
+                auto config = state_manager->load_config();
+                if (log_idx == config->get_log_idx())
+                {
+                    raft_instance->forceReconfigure(config);
+
+                    // Single node cluster doesn't need to wait for any other nodes
+                    // so we can finish recovering immediately after applying
+                    // new configuration
+                    if (config->get_servers().size() == 1)
+                        finish_recovering();
+                }
+
                 break;
             }
             case nuraft::cb_func::ProcessReq:

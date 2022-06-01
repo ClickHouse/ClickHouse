@@ -13,6 +13,7 @@ RUN apt-get update && env DEBIAN_FRONTEND=noninteractive apt-get install --yes \
     libxml2-utils \
     moreutils \
     pylint \
+    python3-fuzzywuzzy \
     python3-pip \
     shellcheck \
     yamllint \

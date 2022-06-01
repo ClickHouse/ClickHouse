@@ -263,9 +263,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     , replica_path(fs::path(zookeeper_path) / "replicas" / replica_name_)
     , reader(*this)
     , writer(*this)
-    , merger_mutator(*this,
-        getContext()->getSettingsRef().background_merges_mutations_concurrency_ratio *
-        getContext()->getSettingsRef().background_pool_size)
+    , merger_mutator(*this, getContext()->getMergeMutateExecutor()->getMaxTasksCount())
     , merge_strategy_picker(*this)
     , queue(*this, merge_strategy_picker)
     , fetcher(*this)
@@ -4482,7 +4480,7 @@ SinkToStoragePtr StorageReplicatedMergeTree::write(const ASTPtr & /*query*/, con
     const Settings & query_settings = local_context->getSettingsRef();
     bool deduplicate = storage_settings_ptr->replicated_deduplication_window != 0 && query_settings.insert_deduplicate;
 
-    // TODO: should we also somehow pass list of columns to deduplicate on to the ReplicatedMergeTreeBlockOutputStream ?
+    // TODO: should we also somehow pass list of columns to deduplicate on to the ReplicatedMergeTreeSink?
     return std::make_shared<ReplicatedMergeTreeSink>(
         *this, metadata_snapshot, query_settings.insert_quorum,
         query_settings.insert_quorum_timeout.totalMilliseconds(),
@@ -6098,6 +6096,8 @@ void StorageReplicatedMergeTree::clearOldPartsAndRemoveFromZK()
             RWLockImpl::NO_QUERY, getSettings()->lock_acquire_timeout_for_background_operations);
     auto zookeeper = getZooKeeper();
 
+    /// Now these parts are in Deleting state. If we fail to remove some of them we must roll them back to Outdated state.
+    /// Otherwise they will not be deleted.
     DataPartsVector parts = grabOldParts();
     if (parts.empty())
         return;
@@ -6116,13 +6116,49 @@ void StorageReplicatedMergeTree::clearOldPartsAndRemoveFromZK()
     }
     parts.clear();
 
+    auto delete_parts_from_fs_and_rollback_in_case_of_error = [this] (const DataPartsVector & parts_to_delete, const String & parts_type)
+    {
+        NameSet parts_failed_to_delete;
+        clearPartsFromFilesystem(parts_to_delete, false, &parts_failed_to_delete);
+
+        DataPartsVector finally_remove_parts;
+        if (!parts_failed_to_delete.empty())
+        {
+            DataPartsVector rollback_parts;
+            for (const auto & part : parts_to_delete)
+            {
+                if (!parts_failed_to_delete.contains(part->name))
+                    finally_remove_parts.push_back(part);
+                else
+                    rollback_parts.push_back(part);
+            }
+
+            if (!rollback_parts.empty())
+                rollbackDeletingParts(rollback_parts);
+        }
+        else  /// all parts was successfully removed
+        {
+            finally_remove_parts = parts_to_delete;
+        }
+
+        try
+        {
+            removePartsFinally(finally_remove_parts);
+            LOG_DEBUG(log, "Removed {} {} parts", finally_remove_parts.size(), parts_type);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, "Failed to remove some parts from memory, or write info about them into part log");
+        }
+    };
+
     /// Delete duplicate parts from filesystem
     if (!parts_to_delete_only_from_filesystem.empty())
     {
-        clearPartsFromFilesystem(parts_to_delete_only_from_filesystem);
-        removePartsFinally(parts_to_delete_only_from_filesystem);
-
-        LOG_DEBUG(log, "Removed {} old duplicate parts", parts_to_delete_only_from_filesystem.size());
+        /// It can happen that some error appear during part removal from FS.
+        /// In case of such exception we have to change state of failed parts from Deleting to Outdated.
+        /// Otherwise nobody will try to remove them again (see grabOldParts).
+        delete_parts_from_fs_and_rollback_in_case_of_error(parts_to_delete_only_from_filesystem, "old duplicate");
     }
 
     /// Delete normal parts from ZooKeeper
@@ -6161,13 +6197,14 @@ void StorageReplicatedMergeTree::clearOldPartsAndRemoveFromZK()
         LOG_DEBUG(log, "Will retry deletion of {} parts in the next time", parts_to_retry_deletion.size());
     }
 
+
     /// Remove parts from filesystem and finally from data_parts
     if (!parts_to_remove_from_filesystem.empty())
     {
-        clearPartsFromFilesystem(parts_to_remove_from_filesystem);
-        removePartsFinally(parts_to_remove_from_filesystem);
-
-        LOG_DEBUG(log, "Removed {} old parts", parts_to_remove_from_filesystem.size());
+        /// It can happen that some error appear during part removal from FS.
+        /// In case of such exception we have to change state of failed parts from Deleting to Outdated.
+        /// Otherwise nobody will try to remove them again (see grabOldParts).
+        delete_parts_from_fs_and_rollback_in_case_of_error(parts_to_remove_from_filesystem, "old");
     }
 }
 
@@ -7721,7 +7758,8 @@ String StorageReplicatedMergeTree::getSharedDataReplica(
 }
 
 
-Strings StorageReplicatedMergeTree::getZeroCopyPartPath(const MergeTreeSettings & settings, DiskType disk_type, const String & table_uuid,
+Strings StorageReplicatedMergeTree::getZeroCopyPartPath(
+    const MergeTreeSettings & settings, DiskType disk_type, const String & table_uuid,
     const String & part_name, const String & zookeeper_path_old)
 {
     Strings res;
@@ -8258,18 +8296,14 @@ class ReplicatedMergeTreeRestoreTask : public IRestoreTask
 {
 public:
     ReplicatedMergeTreeRestoreTask(
-        const ContextPtr & query_context_,
         const std::shared_ptr<StorageReplicatedMergeTree> & storage_,
         const std::unordered_set<String> & partition_ids_,
         const BackupPtr & backup_,
-        const String & data_path_in_backup_,
         const StorageRestoreSettings & restore_settings_,
         const std::shared_ptr<IRestoreCoordination> & restore_coordination_)
-        : query_context(query_context_)
-        , storage(storage_)
+        : storage(storage_)
         , partition_ids(partition_ids_)
         , backup(backup_)
-        , data_path_in_backup(data_path_in_backup_)
         , restore_settings(restore_settings_)
         , restore_coordination(restore_coordination_)
     {
@@ -8280,6 +8314,8 @@ public:
         RestoreTasks restore_part_tasks;
 
         String full_zk_path = storage->getZooKeeperName() + storage->getZooKeeperPath();
+        String data_path_in_backup = restore_coordination->getReplicatedTableDataPath(full_zk_path);
+
         auto storage_id = storage->getStorageID();
         DatabaseAndTableName table_name = {storage_id.database_name, storage_id.table_name};
         std::unordered_map<String, bool> partitions_restored_by_us;
@@ -8287,7 +8323,7 @@ public:
         Strings part_names = backup->listFiles(data_path_in_backup);
 
         auto metadata_snapshot = storage->getInMemoryMetadataPtr();
-        auto sink = std::make_shared<ReplicatedMergeTreeSink>(*storage, metadata_snapshot, 0, 0, 0, false, false, query_context, /*is_attach*/true);
+        auto sink = std::make_shared<ReplicatedMergeTreeSink>(*storage, metadata_snapshot, 0, 0, 0, false, false, storage->getContext(), /*is_attach*/true);
 
         for (const String & part_name : part_names)
         {
@@ -8317,11 +8353,9 @@ public:
     }
 
 private:
-    ContextPtr query_context;
     std::shared_ptr<StorageReplicatedMergeTree> storage;
     std::unordered_set<String> partition_ids;
     BackupPtr backup;
-    String data_path_in_backup;
     StorageRestoreSettings restore_settings;
     std::shared_ptr<IRestoreCoordination> restore_coordination;
 
@@ -8423,16 +8457,14 @@ RestoreTaskPtr StorageReplicatedMergeTree::restoreData(
     ContextMutablePtr local_context,
     const ASTs & partitions,
     const BackupPtr & backup,
-    const String & data_path_in_backup,
+    const String & /* data_path_in_backup */,
     const StorageRestoreSettings & restore_settings,
     const std::shared_ptr<IRestoreCoordination> & restore_coordination)
 {
     return std::make_unique<ReplicatedMergeTreeRestoreTask>(
-        local_context,
         std::static_pointer_cast<StorageReplicatedMergeTree>(shared_from_this()),
         getPartitionIDsFromQuery(partitions, local_context),
         backup,
-        data_path_in_backup,
         restore_settings,
         restore_coordination);
 }
