@@ -48,15 +48,8 @@ ParallelReadBuffer::ParallelReadBuffer(
     , max_working_readers(max_working_readers_)
     , schedule(std::move(schedule_))
     , reader_factory(std::move(reader_factory_))
-{}
-
-void ParallelReadBuffer::initialize()
 {
-    if (initialized)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "ParallelReadBuffer is initialized twice");
-
     addReaders();
-    initialized = true;
 }
 
 bool ParallelReadBuffer::addReaderToPool()
@@ -83,9 +76,6 @@ void ParallelReadBuffer::addReaders()
 
 off_t ParallelReadBuffer::seek(off_t offset, int whence)
 {
-    if (!initialized)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "ParallelReadBuffer is not initialized");
-
     if (whence != SEEK_SET)
         throw Exception("Only SEEK_SET mode is allowed.", ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
 
@@ -182,9 +172,6 @@ void ParallelReadBuffer::handleEmergencyStop()
 
 bool ParallelReadBuffer::nextImpl()
 {
-    if (!initialized)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "ParallelReadBuffer is not initialized");
-
     if (all_completed)
         return false;
 
