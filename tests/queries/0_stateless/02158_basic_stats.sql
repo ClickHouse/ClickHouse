@@ -1,7 +1,7 @@
-DROP TABLE IF EXISTS prewhere SYNC;
-
 SET optimize_move_to_prewhere = 1;
 SET allow_experimental_stats_for_prewhere_optimization = 1;
+
+DROP TABLE IF EXISTS prewhere SYNC;
 
 -- SIMPLE tdigest stat
 CREATE TABLE prewhere

@@ -1,8 +1,8 @@
-DROP TABLE IF EXISTS alters_stats SYNC;
-
 SET optimize_move_to_prewhere = 1;
 SET allow_experimental_stats_for_prewhere_optimization = 1;
 SET mutations_sync = 1;
+
+DROP TABLE IF EXISTS alters_stats SYNC;
 
 CREATE TABLE alters_stats
 (
