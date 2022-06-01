@@ -4,6 +4,7 @@
 #include <Access/User.h>
 #include <Access/SettingsProfile.h>
 #include <Access/AccessControl.h>
+#include <Access/AccessChangesNotifier.h>
 #include <Dictionaries/IDictionary.h>
 #include <Common/Config/ConfigReloader.h>
 #include <Common/StringUtils/StringUtils.h>
@@ -14,9 +15,6 @@
 #include <Poco/JSON/JSON.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Stringifier.h>
-#include <Common/logger_useful.h>
-#include <boost/range/algorithm/copy.hpp>
-#include <boost/range/adaptor/map.hpp>
 #include <cstring>
 #include <filesystem>
 #include <base/FnTraits.h>
@@ -67,11 +65,11 @@ namespace
         size_t num_password_fields = has_no_password + has_password_plaintext + has_password_sha256_hex + has_password_double_sha1_hex + has_ldap + has_kerberos + has_certificates;
 
         if (num_password_fields > 1)
-            throw Exception("More than one field of 'password', 'password_sha256_hex', 'password_double_sha1_hex', 'no_password', 'ldap', 'kerberos', 'certificates' are used to specify authentication info for user " + user_name + ". Must be only one of them.",
+            throw Exception("More than one field of 'password', 'password_sha256_hex', 'password_double_sha1_hex', 'no_password', 'ldap', 'kerberos', 'ssl_certificates' are used to specify authentication info for user " + user_name + ". Must be only one of them.",
                 ErrorCodes::BAD_ARGUMENTS);
 
         if (num_password_fields < 1)
-            throw Exception("Either 'password' or 'password_sha256_hex' or 'password_double_sha1_hex' or 'no_password' or 'ldap' or 'kerberos' or 'certificates' must be specified for user " + user_name + ".", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception("Either 'password' or 'password_sha256_hex' or 'password_double_sha1_hex' or 'no_password' or 'ldap' or 'kerberos' or 'ssl_certificates' must be specified for user " + user_name + ".", ErrorCodes::BAD_ARGUMENTS);
 
         if (has_password_plaintext)
         {
@@ -525,8 +523,8 @@ namespace
     }
 }
 
-UsersConfigAccessStorage::UsersConfigAccessStorage(const String & storage_name_, const AccessControl & access_control_)
-    : IAccessStorage(storage_name_), access_control(access_control_)
+UsersConfigAccessStorage::UsersConfigAccessStorage(const String & storage_name_, AccessControl & access_control_)
+    : IAccessStorage(storage_name_), access_control(access_control_), memory_storage(storage_name_, access_control.getChangesNotifier())
 {
 }
 
@@ -605,9 +603,9 @@ void UsersConfigAccessStorage::load(
         std::make_shared<Poco::Event>(),
         [&](Poco::AutoPtr<Poco::Util::AbstractConfiguration> new_config, bool /*initial_loading*/)
         {
-            parseFromConfig(*new_config);
-
             Settings::checkNoSettingNamesAtTopLevel(*new_config, users_config_path);
+            parseFromConfig(*new_config);
+            access_control.getChangesNotifier().sendNotifications();
         },
         /* already_loaded = */ false);
 }
@@ -662,27 +660,4 @@ std::optional<String> UsersConfigAccessStorage::readNameImpl(const UUID & id, bo
     return memory_storage.readName(id, throw_if_not_exists);
 }
 
-
-scope_guard UsersConfigAccessStorage::subscribeForChangesImpl(const UUID & id, const OnChangedHandler & handler) const
-{
-    return memory_storage.subscribeForChanges(id, handler);
-}
-
-
-scope_guard UsersConfigAccessStorage::subscribeForChangesImpl(AccessEntityType type, const OnChangedHandler & handler) const
-{
-    return memory_storage.subscribeForChanges(type, handler);
-}
-
-
-bool UsersConfigAccessStorage::hasSubscription(const UUID & id) const
-{
-    return memory_storage.hasSubscription(id);
-}
-
-
-bool UsersConfigAccessStorage::hasSubscription(AccessEntityType type) const
-{
-    return memory_storage.hasSubscription(type);
-}
 }

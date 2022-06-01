@@ -5,6 +5,11 @@ if (NOT ENABLE_CASSANDRA)
     return()
 endif()
 
+if (NOT TARGET ch_contrib::uv)
+    message(STATUS "Not using cassandra because libuv is disabled")
+    return()
+endif()
+
 if (APPLE)
     set(CMAKE_MACOSX_RPATH ON)
 endif()

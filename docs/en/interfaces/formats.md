@@ -9,6 +9,7 @@ ClickHouse can accept and return data in various formats. A format supported for
 results of a `SELECT`, and to perform `INSERT`s into a file-backed table.
 
 The supported formats are:
+
 | Format                                                                                    | Input | Output |
 |-------------------------------------------------------------------------------------------|-------|--------|
 | [TabSeparated](#tabseparated)                                                             | ✔     | ✔      |
@@ -30,8 +31,11 @@ The supported formats are:
 | [JSON](#json)                                                                             | ✗     | ✔      |
 | [JSONAsString](#jsonasstring)                                                             | ✔     | ✗      |
 | [JSONStrings](#jsonstrings)                                                               | ✗     | ✔      |
+| [JSONColumns](#jsoncolumns)                                                               | ✔     | ✔      |
+| [JSONColumnsWithMetadata](#jsoncolumnswithmetadata)                                       | ✗     | ✔      |
 | [JSONCompact](#jsoncompact)                                                               | ✗     | ✔      |
 | [JSONCompactStrings](#jsoncompactstrings)                                                 | ✗     | ✔      |
+| [JSONCompactColumns](#jsoncompactcolumns)                                                 | ✔     | ✔      |
 | [JSONEachRow](#jsoneachrow)                                                               | ✔     | ✔      |
 | [JSONEachRowWithProgress](#jsoneachrowwithprogress)                                       | ✗     | ✔      |
 | [JSONStringsEachRow](#jsonstringseachrow)                                                 | ✔     | ✔      |
@@ -145,6 +149,8 @@ Each element of [Nested](../sql-reference/data-types/nested-data-structures/nest
 In input data, ENUM values can be represented as names or as ids. First, we try to match the input value to the ENUM name. If we fail and the input value is a number, we try to match this number to ENUM id.
 If input data contains only ENUM ids, it's recommended to enable the setting [input_format_tsv_enum_as_number](../operations/settings/settings.md#settings-input_format_tsv_enum_as_number) to optimize ENUM parsing.
 
+While importing data, you can skip some first rows using setting [input_format_tsv_skip_first_lines](../operations/settings/settings.md#settings-input_format_tsv_skip_first_lines)
+
 For example:
 
 ``` sql
@@ -195,7 +201,7 @@ This format is also available under the name `TSVWithNames`.
 Differs from the `TabSeparated` format in that the column names are written to the first row, while the column types are in the second row.
 The first row with names is processed the same way as in `TabSeparatedWithNames` format.
 If setting [input_format_with_types_use_header](../operations/settings/settings.md#settings-input_format_with_types_use_header) is set to 1,
-the types from input data will be compared with the types of the corresponding columns from the table. Otherwise, the second row will be skipped. 
+the types from input data will be compared with the types of the corresponding columns from the table. Otherwise, the second row will be skipped.
 
 This format is also available under the name `TSVWithNamesAndTypes`.
 
@@ -399,6 +405,8 @@ Both data output and parsing are supported in this format. For parsing, any orde
 
 Parsing allows the presence of the additional field `tskv` without the equal sign or a value. This field is ignored.
 
+During import, columns with unknown names will be skipped if setting [input_format_skip_unknown_fields](../operations/settings/settings.md#settings-input-format-skip-unknown-fields) is set to 1.
+
 ## CSV {#csv}
 
 Comma Separated Values format ([RFC](https://tools.ietf.org/html/rfc4180)).
@@ -422,6 +430,8 @@ In input data, ENUM values can be represented as names or as ids. First, we try 
 If input data contains only ENUM ids, it's recommended to enable the setting [input_format_csv_enum_as_number](../operations/settings/settings.md#settings-input_format_csv_enum_as_number) to optimize ENUM parsing.
 
 The CSV format supports the output of totals and extremes the same way as `TabSeparated`.
+
+While importing data, you can skip some first rows using setting [input_format_csv_skip_first_lines](../operations/settings/settings.md#settings-input_format_csv_skip_first_lines)
 
 ## CSVWithNames {#csvwithnames}
 
@@ -458,15 +468,15 @@ SELECT SearchPhrase, count() AS c FROM test.hits GROUP BY SearchPhrase WITH TOTA
         "meta":
         [
                 {
-                        "name": "'hello'",
+                        "name": "num",
+                        "type": "Int32"
+                },
+                {
+                        "name": "str",
                         "type": "String"
                 },
                 {
-                        "name": "multiply(42, number)",
-                        "type": "UInt64"
-                },
-                {
-                        "name": "range(5)",
+                        "name": "arr",
                         "type": "Array(UInt8)"
                 }
         ],
@@ -474,25 +484,32 @@ SELECT SearchPhrase, count() AS c FROM test.hits GROUP BY SearchPhrase WITH TOTA
         "data":
         [
                 {
-                        "'hello'": "hello",
-                        "multiply(42, number)": "0",
-                        "range(5)": [0,1,2,3,4]
+                        "num": 42,
+                        "str": "hello",
+                        "arr": [0,1]
                 },
                 {
-                        "'hello'": "hello",
-                        "multiply(42, number)": "42",
-                        "range(5)": [0,1,2,3,4]
+                        "num": 43,
+                        "str": "hello",
+                        "arr": [0,1,2]
                 },
                 {
-                        "'hello'": "hello",
-                        "multiply(42, number)": "84",
-                        "range(5)": [0,1,2,3,4]
+                        "num": 44,
+                        "str": "hello",
+                        "arr": [0,1,2,3]
                 }
         ],
 
         "rows": 3,
 
-        "rows_before_limit_at_least": 3
+        "rows_before_limit_at_least": 3,
+
+        "statistics":
+        {
+                "elapsed": 0.001137687,
+                "rows_read": 3,
+                "bytes_read": 24
+        }
 }
 ```
 
@@ -527,15 +544,15 @@ Example:
         "meta":
         [
                 {
-                        "name": "'hello'",
+                        "name": "num",
+                        "type": "Int32"
+                },
+                {
+                        "name": "str",
                         "type": "String"
                 },
                 {
-                        "name": "multiply(42, number)",
-                        "type": "UInt64"
-                },
-                {
-                        "name": "range(5)",
+                        "name": "arr",
                         "type": "Array(UInt8)"
                 }
         ],
@@ -543,25 +560,95 @@ Example:
         "data":
         [
                 {
-                        "'hello'": "hello",
-                        "multiply(42, number)": "0",
-                        "range(5)": "[0,1,2,3,4]"
+                        "num": "42",
+                        "str": "hello",
+                        "arr": "[0,1]"
                 },
                 {
-                        "'hello'": "hello",
-                        "multiply(42, number)": "42",
-                        "range(5)": "[0,1,2,3,4]"
+                        "num": "43",
+                        "str": "hello",
+                        "arr": "[0,1,2]"
                 },
                 {
-                        "'hello'": "hello",
-                        "multiply(42, number)": "84",
-                        "range(5)": "[0,1,2,3,4]"
+                        "num": "44",
+                        "str": "hello",
+                        "arr": "[0,1,2,3]"
                 }
         ],
 
         "rows": 3,
 
-        "rows_before_limit_at_least": 3
+        "rows_before_limit_at_least": 3,
+
+        "statistics":
+        {
+                "elapsed": 0.001403233,
+                "rows_read": 3,
+                "bytes_read": 24
+        }
+}
+```
+
+## JSONColumns {#jsoncolumns}
+
+In this format, all data is represented as a single JSON Object.
+Note that JSONColumns output format buffers all data in memory to output it as a single block and it can lead to high memory consumption.
+
+Example:
+```json
+{
+	"num": [42, 43, 44],
+	"str": ["hello", "hello", "hello"],
+	"arr": [[0,1], [0,1,2], [0,1,2,3]]
+}
+```
+
+During import, columns with unknown names will be skipped if setting [input_format_skip_unknown_fields](../operations/settings/settings.md#settings-input-format-skip-unknown-fields) is set to 1.
+Columns that are not present in the block will be filled with default values (you can use  [input_format_defaults_for_omitted_fields](../operations/settings/settings.md#session_settings-input_format_defaults_for_omitted_fields) setting here)
+
+
+## JSONColumnsWithMetadata {#jsoncolumnsmonoblock}
+
+Differs from JSONColumns output format in that it also outputs some metadata and statistics (similar to JSON output format).
+This format buffers all data in memory and then outputs them as a single block, so, it can lead to high memory consumption.
+
+Example:
+```json
+{
+        "meta":
+        [
+                {
+                        "name": "num",
+                        "type": "Int32"
+                },
+                {
+                        "name": "str",
+                        "type": "String"
+                },
+               
+                {
+                        "name": "arr",
+                        "type": "Array(UInt8)"
+                }
+        ],
+
+        "data":
+        {
+                "num": [42, 43, 44],
+                "str": ["hello", "hello", "hello"],
+                "arr": [[0,1], [0,1,2], [0,1,2,3]]
+        },
+
+        "rows": 3,
+
+        "rows_before_limit_at_least": 3,
+
+        "statistics":
+        {
+                "elapsed": 0.000272376,
+                "rows_read": 3,
+                "bytes_read": 24
+        }
 }
 ```
 
@@ -617,71 +704,101 @@ Result:
 
 Differs from JSON only in that data rows are output in arrays, not in objects.
 
+Examples:
+
+1) JSONCompact:
+```json
+{
+        "meta":
+        [
+                {
+                        "name": "num",
+                        "type": "Int32"
+                },
+                {
+                        "name": "str",
+                        "type": "String"
+                },
+                {
+                        "name": "arr",
+                        "type": "Array(UInt8)"
+                }
+        ],
+
+        "data":
+        [
+                [42, "hello", [0,1]],
+                [43, "hello", [0,1,2]],
+                [44, "hello", [0,1,2,3]]
+        ],
+
+        "rows": 3,
+
+        "rows_before_limit_at_least": 3,
+
+        "statistics":
+        {
+                "elapsed": 0.001222069,
+                "rows_read": 3,
+                "bytes_read": 24
+        }
+}
+```
+
+2) JSONCompactStrings
+```json
+{
+        "meta":
+        [
+                {
+                        "name": "num",
+                        "type": "Int32"
+                },
+                {
+                        "name": "str",
+                        "type": "String"
+                },
+                {
+                        "name": "arr",
+                        "type": "Array(UInt8)"
+                }
+        ],
+
+        "data":
+        [
+                ["42", "hello", "[0,1]"],
+                ["43", "hello", "[0,1,2]"],
+                ["44", "hello", "[0,1,2,3]"]
+        ],
+
+        "rows": 3,
+
+        "rows_before_limit_at_least": 3,
+
+        "statistics":
+        {
+                "elapsed": 0.001572097,
+                "rows_read": 3,
+                "bytes_read": 24
+        }
+}
+```
+
+## JSONCompactColumns {#jsoncompactcolumns}
+
+In this format, all data is represented as a single JSON Array.
+Note that JSONCompactColumns output format buffers all data in memory to output it as a single block and it can lead to high memory consumption
+
 Example:
-
-```
-// JSONCompact
-{
-        "meta":
-        [
-                {
-                        "name": "'hello'",
-                        "type": "String"
-                },
-                {
-                        "name": "multiply(42, number)",
-                        "type": "UInt64"
-                },
-                {
-                        "name": "range(5)",
-                        "type": "Array(UInt8)"
-                }
-        ],
-
-        "data":
-        [
-                ["hello", "0", [0,1,2,3,4]],
-                ["hello", "42", [0,1,2,3,4]],
-                ["hello", "84", [0,1,2,3,4]]
-        ],
-
-        "rows": 3,
-
-        "rows_before_limit_at_least": 3
-}
+```json
+[
+	[42, 43, 44],
+	["hello", "hello", "hello"],
+	[[0,1], [0,1,2], [0,1,2,3]]
+]
 ```
 
-```
-// JSONCompactStrings
-{
-        "meta":
-        [
-                {
-                        "name": "'hello'",
-                        "type": "String"
-                },
-                {
-                        "name": "multiply(42, number)",
-                        "type": "UInt64"
-                },
-                {
-                        "name": "range(5)",
-                        "type": "Array(UInt8)"
-                }
-        ],
-
-        "data":
-        [
-                ["hello", "0", "[0,1,2,3,4]"],
-                ["hello", "42", "[0,1,2,3,4]"],
-                ["hello", "84", "[0,1,2,3,4]"]
-        ],
-
-        "rows": 3,
-
-        "rows_before_limit_at_least": 3
-}
-```
+Columns that are not present in the block will be filled with default values (you can use  [input_format_defaults_for_omitted_fields](../operations/settings/settings.md#session_settings-input_format_defaults_for_omitted_fields) setting here)
 
 ## JSONEachRow {#jsoneachrow}
 ## JSONStringsEachRow {#jsonstringseachrow}
@@ -698,15 +815,17 @@ When using these formats, ClickHouse outputs rows as separated, newline-delimite
 
 When inserting the data, you should provide a separate JSON value for each row.
 
+In JSONEachRow/JSONStringsEachRow input formats columns with unknown names will be skipped if setting [input_format_skip_unknown_fields](../operations/settings/settings.md#settings-input-format-skip-unknown-fields) is set to 1.
+
 ## JSONEachRowWithProgress {#jsoneachrowwithprogress}
 ## JSONStringsEachRowWithProgress {#jsonstringseachrowwithprogress}
 
 Differs from `JSONEachRow`/`JSONStringsEachRow` in that ClickHouse will also yield progress information as JSON values.
 
 ```json
-{"row":{"'hello'":"hello","multiply(42, number)":"0","range(5)":[0,1,2,3,4]}}
-{"row":{"'hello'":"hello","multiply(42, number)":"42","range(5)":[0,1,2,3,4]}}
-{"row":{"'hello'":"hello","multiply(42, number)":"84","range(5)":[0,1,2,3,4]}}
+{"row":{"num":42,"str":"hello","arr":[0,1]}}
+{"row":{"num":43,"str":"hello","arr":[0,1,2]}}
+{"row":{"num":44,"str":"hello","arr":[0,1,2,3]}}
 {"progress":{"read_rows":"3","read_bytes":"24","written_rows":"0","written_bytes":"0","total_rows_to_read":"3"}}
 ```
 
@@ -727,11 +846,11 @@ Differs from `JSONCompactStringsEachRow` in that in that it also prints the head
 Differs from `JSONCompactStringsEachRow` in that it also prints two header rows with column names and types, similar to [TabSeparatedWithNamesAndTypes](#tabseparatedwithnamesandtypes).
 
 ```json
-["'hello'", "multiply(42, number)", "range(5)"]
-["String", "UInt64", "Array(UInt8)"]
-["hello", "0", [0,1,2,3,4]]
-["hello", "42", [0,1,2,3,4]]
-["hello", "84", [0,1,2,3,4]]
+["num", "str", "arr"]
+["Int32", "String", "Array(UInt8)"]
+[42, "hello", [0,1]]
+[43, "hello", [0,1,2]]
+[44, "hello", [0,1,2,3]]
 ```
 
 ### Inserting Data {#inserting-data}
@@ -790,7 +909,7 @@ The query `SELECT * FROM UserActivity FORMAT JSONEachRow` returns:
 
 Unlike the [JSON](#json) format, there is no substitution of invalid UTF-8 sequences. Values are escaped in the same way as for `JSON`.
 
-:::info    
+:::info
 Any set of bytes can be output in the strings. Use the `JSONEachRow` format if you are sure that the data in the table can be formatted as JSON without losing any information.
 :::
 
@@ -1414,7 +1533,7 @@ SET format_avro_schema_registry_url = 'http://schema-registry';
 SELECT * FROM topic1_stream;
 ```
 
-:::warning    
+:::warning
 Setting `format_avro_schema_registry_url` needs to be configured in `users.xml` to maintain it’s value after a restart. Also you can use the `format_avro_schema_registry_url` setting of the `Kafka` table engine.
 :::
 
@@ -1631,7 +1750,7 @@ When working with the `Regexp` format, you can use the following settings:
     -   Escaped (similarly to [TSV](#tabseparated))
     -   Quoted (similarly to [Values](#data-format-values))
     -   Raw (extracts subpatterns as a whole, no escaping rules, similarly to [TSVRaw](#tabseparatedraw))
-	
+
 -   `format_regexp_skip_unmatched` — [UInt8](../sql-reference/data-types/int-uint.md). Defines the need to throw an exeption in case the `format_regexp` expression does not match the imported data. Can be set to `0` or `1`.
 
 **Usage**
