@@ -447,10 +447,16 @@ public:
 
     FunctionBasePtr build(const ColumnsWithTypeAndName & arguments) const override
     {
+        bool has_nothing_argument = false;
+        for (const auto & arg : arguments)
+            has_nothing_argument |= isNothing(arg.type);
+
         DataTypePtr json_return_type = Impl<DummyJSONParser>::getReturnType(Name::name, createBlockWithNestedColumns(arguments));
         NullPresence null_presence = getNullPresense(arguments);
         DataTypePtr return_type;
-        if (null_presence.has_null_constant)
+        if (has_nothing_argument)
+            return_type = std::make_shared<DataTypeNothing>();
+        else if (null_presence.has_null_constant)
             return_type = makeNullable(std::make_shared<DataTypeNothing>());
         else if (null_presence.has_nullable)
             return_type = makeNullable(json_return_type);
