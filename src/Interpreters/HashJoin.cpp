@@ -538,6 +538,7 @@ void HashJoin::dataMapInit(MapsVariant & map)
 
 bool HashJoin::overDictionary() const
 {
+    assert(data->type != Type::DICT || table_join->getDictionaryReader());
     return data->type == Type::DICT;
 }
 
@@ -917,6 +918,7 @@ public:
         bool is_join_get_)
         : join_on_keys(join_on_keys_)
         , rows_to_add(block.rows())
+        , sample_block(saved_block_sample)
         , is_join_get(is_join_get_)
     {
         size_t num_columns_to_add = block_with_columns_to_add.columns();
@@ -956,11 +958,45 @@ public:
         return ColumnWithTypeAndName(std::move(columns[i]), type_name[i].type, type_name[i].qualified_name);
     }
 
+    static void assertBlockEqualsStructureUpToLowCard(const Block & lhs_block, const Block & rhs_block)
+    {
+        if (lhs_block.columns() != rhs_block.columns())
+            throw Exception("Different number of columns in blocks", ErrorCodes::LOGICAL_ERROR);
+
+        for (size_t i = 0; i < lhs_block.columns(); ++i)
+        {
+            const auto & lhs = lhs_block.getByPosition(i);
+            const auto & rhs = rhs_block.getByPosition(i);
+            if (lhs.name != rhs.name)
+                throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Block structure mismatch: [{}] != [{}]",
+                    lhs_block.dumpStructure(), rhs_block.dumpStructure());
+
+            const auto & ltype = recursiveRemoveLowCardinality(lhs.type);
+            const auto & rtype = recursiveRemoveLowCardinality(rhs.type);
+            if (!ltype->equals(*rtype))
+                throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Block structure mismatch: [{}] != [{}]",
+                    lhs_block.dumpStructure(), rhs_block.dumpStructure());
+
+            const auto & lcol = recursiveRemoveLowCardinality(lhs.column);
+            const auto & rcol = recursiveRemoveLowCardinality(rhs.column);
+            if (lcol->getDataType() != rcol->getDataType())
+                throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Block structure mismatch: [{}] != [{}]",
+                    lhs_block.dumpStructure(), rhs_block.dumpStructure());
+        }
+    }
+
     template <bool has_defaults>
     void appendFromBlock(const Block & block, size_t row_num)
     {
         if constexpr (has_defaults)
             applyLazyDefaults();
+
+#ifndef NDEBUG
+        /// Like assertBlocksHaveEqualStructure but doesn't check low cardinality
+        assertBlockEqualsStructureUpToLowCard(sample_block, block);
+#else
+        UNUSED(assertBlockEqualsStructureUpToLowCard);
+#endif
 
         if (is_join_get)
         {
@@ -1024,6 +1060,7 @@ private:
     size_t lazy_defaults_count = 0;
     /// for ASOF
     const IColumn * left_asof_key = nullptr;
+    Block sample_block;
 
     bool is_join_get;
 
