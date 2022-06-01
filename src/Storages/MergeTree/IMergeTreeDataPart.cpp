@@ -1202,7 +1202,7 @@ void IMergeTreeDataPart::loadDeleteRowMask()
     }
 
     /// Initialize the part info's lightweight mutation version, getDataVersion() will use it.
-    info.lightweight_mutation = lightweight_mutation;
+    info.setLightWeightMutationVersion(lightweight_mutation);
 
     /// Initialize the file length for lightweight mask file, this will be used for normal mutation.
     is_empty_bitmap = true;
@@ -2117,7 +2117,7 @@ void IMergeTreeDataPart::CheckIfEmptyBitmap() const
     is_empty_bitmap = true;
     if (hasLightWeight())
     {
-        size_t size = volume->getDisk()->getFileSize(fs::path(getFullRelativePath()) / getDeletedMaskFileName(info.lightweight_mutation));
+        size_t size = volume->getDisk()->getFileSize(fs::path(getFullRelativePath()) / getDeletedMaskFileName(info.getLightWeightMutationVersion()));
         is_empty_bitmap = (size == 0);
     }
 }
@@ -2138,7 +2138,7 @@ void IMergeTreeDataPart::WriteOrCopyLightWeightMask(Int64 new_value, String new_
 
     if (new_bitmap.empty() && hasLightWeight())
     {
-        String cur_file_name = getDeletedMaskFileName(info.lightweight_mutation);
+        String cur_file_name = getDeletedMaskFileName(info.getLightWeightMutationVersion());
         disk->copy(path + cur_file_name, disk, path + new_tmp_file_name);
 
         return;
@@ -2152,10 +2152,11 @@ void IMergeTreeDataPart::WriteOrCopyLightWeightMask(Int64 new_value, String new_
 void IMergeTreeDataPart::renameTempLightWeightMaskAndReplace(Int64 new_value) const
 {
     /// Do additional checks before rename and update.
-    if (new_value < info.lightweight_mutation)
+    Int64 current_lightweight_mutation = info.getLightWeightMutationVersion();
+    if (new_value < current_lightweight_mutation)
     {
         /// This should not happen.
-        LOG_DEBUG(storage.log, "Invalid new lightweight_mutation {} is lower than current value {}. Will be ignored.", new_value, info.lightweight_mutation);
+        LOG_DEBUG(storage.log, "Invalid new lightweight_mutation {} is lower than current value {}. Will be ignored.", new_value, current_lightweight_mutation);
         return;
     }
 
@@ -2178,7 +2179,8 @@ String IMergeTreeDataPart::readLightWeightDeletedMaskFile() const
 
     if (hasLightWeight() && !is_empty_bitmap)
     {
-        auto path = fs::path(getFullRelativePath()) / getDeletedMaskFileName(info.lightweight_mutation);
+        Int64 current_lightweight_mutation = info.getLightWeightMutationVersion();
+        auto path = fs::path(getFullRelativePath()) / getDeletedMaskFileName(current_lightweight_mutation);
 
         if (volume->getDisk()->exists(path))
         {
@@ -2187,7 +2189,7 @@ String IMergeTreeDataPart::readLightWeightDeletedMaskFile() const
         }
         else
         {
-            LOG_WARNING(storage.log, "Delete mask file for lightweight mutation {} doesn't exists.", info.lightweight_mutation);
+            LOG_WARNING(storage.log, "Delete mask file for lightweight mutation {} doesn't exists.", current_lightweight_mutation);
         }
     }
 
@@ -2196,6 +2198,7 @@ String IMergeTreeDataPart::readLightWeightDeletedMaskFile() const
 
 void IMergeTreeDataPart::removeOldDeletedMasks(bool startup) const
 {
+    Int64 latest_lightweight_mutation = info.getLightWeightMutationVersion();
     String path = getFullRelativePath();
     std::vector<std::string> files;
     volume->getDisk()->listFiles(path, files);
@@ -2208,7 +2211,7 @@ void IMergeTreeDataPart::removeOldDeletedMasks(bool startup) const
             size_t start = strlen(DELETED_ROW_MARK_PREFIX_NAME);
             size_t end = file.find(DATA_FILE_EXTENSION);
             Int64 lightweight_version = stoi(file.substr(start, end));
-            if (lightweight_version < info.lightweight_mutation)
+            if (lightweight_version < latest_lightweight_mutation)
             {
                 LOG_DEBUG(storage.log, "Remove lightweight_mutation from part {}: deleted_row_mask_{}.bin entry", name, lightweight_version);
                 volume->getDisk()->removeFileIfExists(fs::path(path) / file);

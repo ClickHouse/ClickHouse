@@ -719,7 +719,10 @@ struct MutationContext
     FutureMergedMutatedPartPtr future_part;
     MergeTreeData::DataPartPtr source_part;
 
+    /// flags for lightweight mutation
     bool is_lightweight_mutation;
+    bool has_lightweight_delete;
+    bool has_lightweight_update;
 
     StorageMetadataPtr metadata_snapshot;
     MutationCommandsConstPtr commands;
@@ -1531,7 +1534,7 @@ private:
             memset(delete_mask, false, sizeof(delete_mask));
 
             /// Get delete_mask
-            if (ctx->interpreter->getLightweightDelete())
+            if (ctx->has_lightweight_delete)
             {
                 auto col_pos = cur_block.getPositionByName(MutationsInterpreter::DELETE_MASK);
                 MutationHelpers::getMaskForLightWeight(cur_block.getByPosition(col_pos).column, delete_mask, block_rows);
@@ -1689,7 +1692,7 @@ private:
             memset(update_mask, false, sizeof(update_mask));
 
             /// Get delete_mask
-            if (ctx->interpreter->getLightweightDelete())
+            if (ctx->has_lightweight_delete)
             {
                 auto col_pos = cur_block.getPositionByName(MutationsInterpreter::DELETE_MASK);
                 MutationHelpers::getMaskForLightWeight(cur_block.getByPosition(col_pos).column, delete_mask, block_rows);
@@ -1698,7 +1701,7 @@ private:
             }
 
             /// Get update_mask
-            if (ctx->interpreter->getLightweightUpdate())
+            if (ctx->has_lightweight_update)
             {
                 auto col_pos = cur_block.getPositionByName(MutationsInterpreter::UPDATE_MASK);
                 MutationHelpers::getMaskForLightWeight(cur_block.getByPosition(col_pos).column, update_mask, block_rows);
@@ -1829,6 +1832,8 @@ MutateTask::MutateTask(
     ctx->txn = txn;
 
     ctx->is_lightweight_mutation = false;
+    ctx->has_lightweight_delete = false;
+    ctx->has_lightweight_update = false;
     if (future_part_->part_info.lightweight_mutation)
         ctx->is_lightweight_mutation = true;
 }
@@ -2061,9 +2066,11 @@ bool MutateTask::lightweight_prepare()
         ctx->mutating_pipeline = ctx->interpreter->execute();
         ctx->updated_header = ctx->interpreter->getUpdatedHeader();
         ctx->mutating_pipeline.setProgressCallback(MergeProgressCallback((*ctx->mutate_entry)->ptr(), ctx->watch_prev_elapsed, *ctx->stage_progress));
+        ctx->has_lightweight_delete = ctx->interpreter->getLightweightDelete();
+        ctx->has_lightweight_update = ctx->interpreter->getLightweightUpdate();
     }
 
-    if (ctx->interpreter->getLightweightUpdate() == 0)
+    if (!ctx->has_lightweight_update)
     {
         task = std::make_unique<LightWeightMutateOnlyDeleteTask>(ctx);
         return true;
