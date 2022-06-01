@@ -15,7 +15,8 @@ namespace DB
 
 namespace ErrorCodes
 {
-extern int INCORRECT_QUERY;
+extern const int INCORRECT_QUERY;
+extern const int LOGICAL_ERROR;
 }
 
 MergeTreeColumnDistributionStatisticTDigest::MergeTreeColumnDistributionStatisticTDigest(

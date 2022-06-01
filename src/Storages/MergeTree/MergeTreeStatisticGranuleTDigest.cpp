@@ -18,7 +18,8 @@ constexpr float EPS = 1e-5;
 
 namespace ErrorCodes
 {
-extern int INCORRECT_QUERY;
+extern const int INCORRECT_QUERY;
+extern const int LOGICAL_ERROR;
 }
 
 MergeTreeGranuleDistributionStatisticTDigest::MergeTreeGranuleDistributionStatisticTDigest(

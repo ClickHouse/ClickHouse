@@ -673,9 +673,9 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
                     IndexDescription::getIndexFromAST(index->clone(), properties.columns, getContext()));
 
         if (create.columns_list->stats)
-            for (const auto & stat : create.columns_list->stats->children)
+            for (const auto & statistic : create.columns_list->stats->children)
                 properties.stats.push_back(
-                    StatisticDescription::getStatisticFromAST(stat->clone(), properties.columns, getContext()));
+                    StatisticDescription::getStatisticFromAST(statistic->clone(), properties.columns, getContext()));
 
         if (create.columns_list->projections)
             for (const auto & projection_ast : create.columns_list->projections->children)

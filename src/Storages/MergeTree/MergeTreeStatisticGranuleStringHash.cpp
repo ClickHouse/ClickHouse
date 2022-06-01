@@ -19,7 +19,8 @@ namespace DB
 
 namespace ErrorCodes
 {
-extern int INCORRECT_QUERY;
+extern const int INCORRECT_QUERY;
+extern const int LOGICAL_ERROR;
 }
 
 constexpr size_t COUNT_MIN_SKETCH_ELEMENTS = 1024;
