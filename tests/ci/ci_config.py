@@ -274,7 +274,6 @@ CI_CONFIG = {
         },
         "Stateless tests (release, s3 storage, actions)": {
             "required_build": "package_release",
-            "force_tests": True,
         },
         "Stress test (address, actions)": {
             "required_build": "package_asan",

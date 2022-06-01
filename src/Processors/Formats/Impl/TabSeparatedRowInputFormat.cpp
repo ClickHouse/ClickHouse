@@ -230,6 +230,12 @@ void TabSeparatedFormatReader::checkNullValueForNonNullable(DataTypePtr type)
     }
 }
 
+void TabSeparatedFormatReader::skipPrefixBeforeHeader()
+{
+    for (size_t i = 0; i != format_settings.csv.skip_first_lines; ++i)
+        readRow();
+}
+
 void TabSeparatedRowInputFormat::syncAfterError()
 {
     skipToUnescapedNextLineOrEOF(*in);
