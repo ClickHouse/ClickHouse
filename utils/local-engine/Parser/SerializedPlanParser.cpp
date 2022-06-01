@@ -947,11 +947,31 @@ DB::QueryPlanPtr SerializedPlanParser::parseJoin(substrait::JoinRel join, DB::Qu
         ASTPtr left_key = std::make_shared<ASTIdentifier>(left->getCurrentDataStream().header.getByPosition(left_key_idx).name);
         ASTPtr right_key = std::make_shared<ASTIdentifier>(right->getCurrentDataStream().header.getByPosition(right_key_idx).name);
         table_join->addOnKeys(left_key, right_key);
-        ColumnWithTypeAndName right_key_column = right->getCurrentDataStream().header.getByPosition(right_key_idx);
-        NameAndTypePair right_key_type(right_key_column.name, right_key_column.type);
-        table_join->addJoinedColumn(right_key_type);
+    }
+    table_join->setColumnsFromJoinedTable(right->getCurrentDataStream().header.getNamesAndTypesList());
+    for (const auto & column : table_join->columnsFromJoinedTable())
+    {
+        table_join->addJoinedColumn(column);
+    }
+    ActionsDAGPtr left_convert_actions = nullptr;
+    ActionsDAGPtr right_convert_actions = nullptr;
+    std::tie(left_convert_actions, right_convert_actions) = table_join->createConvertingActions(
+        left->getCurrentDataStream().header.getColumnsWithTypeAndName(),
+        right->getCurrentDataStream().header.getColumnsWithTypeAndName());
+
+    if (right_convert_actions)
+    {
+        auto converting_step = std::make_unique<ExpressionStep>(right->getCurrentDataStream(), right_convert_actions);
+        converting_step->setStepDescription("Convert joined columns");
+        right->addStep(std::move(converting_step));
     }
 
+    if (left_convert_actions)
+    {
+        auto converting_step = std::make_unique<ExpressionStep>(left->getCurrentDataStream(), right_convert_actions);
+        converting_step->setStepDescription("Convert joined columns");
+        left->addStep(std::move(converting_step));
+    }
     auto hash_join = std::make_shared<HashJoin>(table_join, right->getCurrentDataStream().header.cloneEmpty());
     QueryPlanStepPtr join_step
         = std::make_unique<DB::JoinStep>(left->getCurrentDataStream(), right->getCurrentDataStream(), hash_join, 8192);
@@ -971,6 +991,13 @@ DB::QueryPlanPtr SerializedPlanParser::parseJoin(substrait::JoinRel join, DB::Qu
     auto query_plan = std::make_unique<QueryPlan>();
     query_plan->unitePlans(std::move(join_step), {std::move(plans)});
     reorderJoinOutput(*query_plan, after_join_names);
+    if (join.has_post_join_filter())
+    {
+        std::string filter_name;
+        auto actions_dag = parseFunction(query_plan->getCurrentDataStream(), join.post_join_filter(), filter_name, nullptr, true);
+        auto filter_step = std::make_unique<FilterStep>(query_plan->getCurrentDataStream(), actions_dag, filter_name, true);
+        query_plan->addStep(std::move(filter_step));
+    }
     return query_plan;
 }
 void SerializedPlanParser::reorderJoinOutput(QueryPlan & plan, DB::Names cols)

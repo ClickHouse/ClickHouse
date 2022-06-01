@@ -28,6 +28,7 @@ void init()
     // disable global context initialized
     local_engine::SerializedPlanParser::global_context->setBackgroundExecutorsInitialized(true);
     local_engine::SerializedPlanParser::global_context->makeGlobalContext();
+    local_engine::SerializedPlanParser::global_context->setSetting("join_use_nulls", true);
     local_engine::SerializedPlanParser::global_context->setConfig(local_engine::SerializedPlanParser::config);
     local_engine::SerializedPlanParser::global_context->setPath("/");
     local_engine::Logger::initConsoleLogger();
