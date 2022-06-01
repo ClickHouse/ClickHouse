@@ -1,10 +1,3 @@
-option (ENABLE_REPLXX "Enable replxx support" ${ENABLE_LIBRARIES})
-
-if (NOT ENABLE_REPLXX)
-    message (STATUS "Not using replxx")
-    return()
-endif()
-
 set (LIBRARY_DIR "${ClickHouse_SOURCE_DIR}/contrib/replxx")
 
 set(SRCS
