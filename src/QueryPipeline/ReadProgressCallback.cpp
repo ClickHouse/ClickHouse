@@ -64,7 +64,7 @@ bool ReadProgressCallback::onProgress(uint64_t read_rows, uint64_t read_bytes, c
 
     Progress value {read_rows, read_bytes};
 
-    if (progress_callback && (read_rows || read_bytes))
+    if (progress_callback)
         progress_callback(value);
 
     if (process_list_elem)
