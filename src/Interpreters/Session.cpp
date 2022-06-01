@@ -493,7 +493,8 @@ ContextMutablePtr Session::makeQueryContextImpl(const ClientInfo * client_info_t
 
     /// Query context is ready.
     query_context_created = true;
-    user = query_context->getUser();
+    if (user_id)
+        user = query_context->getUser();
 
     if (!notified_session_log_about_login)
     {

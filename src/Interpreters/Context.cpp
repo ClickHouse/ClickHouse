@@ -3446,14 +3446,4 @@ WriteSettings Context::getWriteSettings() const
     return res;
 }
 
-bool Context::isAccessAlreadyChecked() const
-{
-    return access_already_checked;
-}
-
-void Context::setAccessAlreadyChecked()
-{
-    access_already_checked = true;
-}
-
 }

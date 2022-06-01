@@ -390,11 +390,6 @@ private:
                                                         /// It's shared with all children contexts.
     MergeTreeTransactionHolder merge_tree_transaction_holder;   /// It will rollback or commit transaction on Context destruction.
 
-    /// For ON CLUSTER queries we check access on initiator node before adding query to the queue
-    /// so we don't need to check it again on queue processing.
-    /// Moreover, it may be not possible to check access on queue processing because we execute query internally, without a user.
-    bool access_already_checked = false;
-
     /// Use copy constructor or createGlobal() instead
     Context();
     Context(const Context &);
@@ -991,9 +986,6 @@ public:
 
     /** Get settings for writing to filesystem. */
     WriteSettings getWriteSettings() const;
-
-    bool isAccessAlreadyChecked() const;
-    void setAccessAlreadyChecked();
 
 private:
     std::unique_lock<std::recursive_mutex> getLock() const;
