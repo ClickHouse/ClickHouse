@@ -1,4 +1,33 @@
+---
+sidebar_label: Settings
+sidebar_position: 52
+slug: /en/operations/settings/settings
+---
+
 # Settings {#settings}
+
+## allow_nondeterministic_mutations {#allow_nondeterministic_mutations}
+
+User-level setting that allows mutations on replicated tables to make use of non-deterministic functions such as `dictGet`.
+
+Given that, for example, dictionaries, can be out of sync across nodes, mutations that pull values from them are disallowed on replicated tables by default. Enabling this setting allows this behavior, making it the user's responsibility to ensure that the data used is in sync across all nodes.
+
+Default value: 0.
+
+**Example**
+
+``` xml
+<profiles>
+    <default>
+        <allow_nondeterministic_mutations>1</allow_nondeterministic_mutations>
+        
+        <!-- ... -->
+    </default>
+
+    <!-- ... -->
+
+</profiles>
+```
 
 ## distributed_product_mode {#distributed-product-mode}
 
@@ -491,6 +520,18 @@ Result:
 │ 103 │ first  │
 └─────┴────────┘
 ```
+
+## input_format_tsv_skip_first_lines {#settings-input_format_tsv_skip_first_lines}
+
+The number of lines to skip at the beginning of data in TSV input format.
+
+Default value: `0`.
+
+## input_format_csv_skip_first_lines {#settings-input_format_csv_skip_first_lines}
+
+The number of lines to skip at the beginning of data in CSV input format.
+
+Default value: `0`.
 
 ## input_format_null_as_default {#settings-input-format-null-as-default}
 
@@ -1809,12 +1850,12 @@ Usage
 
 By default, deduplication is not performed for materialized views but is done upstream, in the source table.
 If an INSERTed block is skipped due to deduplication in the source table, there will be no insertion into attached materialized views. This behaviour exists to enable the insertion of highly aggregated data into materialized views, for cases where inserted blocks are the same after materialized view aggregation but derived from different INSERTs into the source table.
-At the same time, this behaviour “breaks” `INSERT` idempotency. If an `INSERT` into the main table was successful and `INSERT` into a materialized view failed (e.g. because of communication failure with Zookeeper) a client will get an error and can retry the operation. However, the materialized view won’t receive the second insert because it will be discarded by deduplication in the main (source) table. The setting `deduplicate_blocks_in_dependent_materialized_views` allows for changing this behaviour. On retry, a materialized view will receive the repeat insert and will perform a deduplication check by itself,
+At the same time, this behaviour “breaks” `INSERT` idempotency. If an `INSERT` into the main table was successful and `INSERT` into a materialized view failed (e.g. because of communication failure with ClickHouse Keeper) a client will get an error and can retry the operation. However, the materialized view won’t receive the second insert because it will be discarded by deduplication in the main (source) table. The setting `deduplicate_blocks_in_dependent_materialized_views` allows for changing this behaviour. On retry, a materialized view will receive the repeat insert and will perform a deduplication check by itself,
 ignoring check result for the source table, and will insert rows lost because of the first failure.
 
 ## insert_deduplication_token {#insert_deduplication_token}
 
-The setting allows a user to provide own deduplication semantic in MergeTree/ReplicatedMergeTree  
+The setting allows a user to provide own deduplication semantic in MergeTree/ReplicatedMergeTree
 For example, by providing a unique value for the setting in each INSERT statement,
 user can avoid the same inserted data being deduplicated.
 
@@ -1840,7 +1881,7 @@ INSERT INTO test_table Values SETTINGS insert_deduplication_token = 'test' (1);
 -- the next insert won't be deduplicated because insert_deduplication_token is different
 INSERT INTO test_table Values SETTINGS insert_deduplication_token = 'test1' (1);
 
--- the next insert will be deduplicated because insert_deduplication_token 
+-- the next insert will be deduplicated because insert_deduplication_token
 -- is the same as one of the previous
 INSERT INTO test_table Values SETTINGS insert_deduplication_token = 'test' (2);
 
@@ -2427,21 +2468,10 @@ Possible values:
 
 Default value: 0.
 
-## background_pool_size {#background_pool_size}
-
-Sets the number of threads performing background operations in table engines (for example, merges in [MergeTree engine](../../engines/table-engines/mergetree-family/index.md) tables). This setting is applied from the `default` profile at the ClickHouse server start and can’t be changed in a user session. By adjusting this setting, you manage CPU and disk load. Smaller pool size utilizes less CPU and disk resources, but background processes advance slower which might eventually impact query performance.
-
-Before changing it, please also take a look at related [MergeTree settings](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-merge_tree), such as `number_of_free_entries_in_pool_to_lower_max_size_of_merge` and `number_of_free_entries_in_pool_to_execute_mutation`.
-
-Possible values:
-
--   Any positive integer.
-
-Default value: 16.
 
 ## merge_selecting_sleep_ms {#merge_selecting_sleep_ms}
 
-Sleep time for merge selecting when no part is selected. A lower setting triggers selecting tasks in `background_schedule_pool` frequently, which results in a large number of requests to Zookeeper in large-scale clusters.
+Sleep time for merge selecting when no part is selected. A lower setting triggers selecting tasks in `background_schedule_pool` frequently, which results in a large number of requests to ClickHouse Keeper in large-scale clusters.
 
 Possible values:
 
@@ -2589,7 +2619,7 @@ Default value: 128.
 
 ## background_fetches_pool_size {#background_fetches_pool_size}
 
-Sets the number of threads performing background fetches for [replicated](../../engines/table-engines/mergetree-family/replication.md) tables. This setting is applied at the ClickHouse server start and can’t be changed in a user session. For production usage with frequent small insertions or slow ZooKeeper cluster is recommended to use default value.
+Sets the number of threads performing background fetches for [replicated](../../engines/table-engines/mergetree-family/replication.md) tables. This setting is applied at the ClickHouse server start and can’t be changed in a user session. For production usage with frequent small insertions or slow ZooKeeper cluster it is recommended to use default value.
 
 Possible values:
 
@@ -4230,3 +4260,44 @@ Default value: 0.
 The waiting time in seconds for currently handled connections when shutdown server.
 
 Default Value: 5.
+
+## input_format_mysql_dump_table_name (#input-format-mysql-dump-table-name)
+
+The name of the table from which to read data from in MySQLDump input format.
+
+## input_format_mysql_dump_map_columns (#input-format-mysql-dump-map-columns)
+
+Enables matching columns from table in MySQL dump and columns from ClickHouse table by names in MySQLDump input format.
+
+Possible values:
+
+- 0 — Disabled.
+- 1 — Enabled.
+
+Default value: 1.
+
+## memory_overcommit_ratio_denominator
+
+It represents soft memory limit in case when hard limit is reached on user level.
+This value is used to compute overcommit ratio for the query.
+Zero means skip the query.
+Read more about [memory overcommit](memory-overcommit.md).
+
+Default value: `1GiB`.
+
+## memory_usage_overcommit_max_wait_microseconds
+
+Maximum time thread will wait for memory to be freed in the case of memory overcommit on a user level.
+If the timeout is reached and memory is not freed, an exception is thrown.
+Read more about [memory overcommit](memory-overcommit.md).
+
+Default value: `200`.
+
+## memory_overcommit_ratio_denominator_for_user
+
+It represents soft memory limit in case when hard limit is reached on global level.
+This value is used to compute overcommit ratio for the query.
+Zero means skip the query.
+Read more about [memory overcommit](memory-overcommit.md).
+
+Default value: `1GiB`.

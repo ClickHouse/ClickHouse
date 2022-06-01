@@ -8,7 +8,7 @@
 #include <Parsers/IAST.h>
 #include <Storages/MergeTree/BoolMask.h>
 
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 
 
 namespace DB

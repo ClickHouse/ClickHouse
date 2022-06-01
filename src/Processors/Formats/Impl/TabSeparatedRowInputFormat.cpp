@@ -80,7 +80,11 @@ String TabSeparatedFormatReader::readFieldIntoString()
 
 void TabSeparatedFormatReader::skipField()
 {
-    readFieldIntoString();
+    NullOutput out;
+    if (is_raw)
+        readStringInto(out, *in);
+    else
+        readEscapedStringInto(out, *in);
 }
 
 void TabSeparatedFormatReader::skipHeaderRow()
@@ -226,6 +230,12 @@ void TabSeparatedFormatReader::checkNullValueForNonNullable(DataTypePtr type)
     }
 }
 
+void TabSeparatedFormatReader::skipPrefixBeforeHeader()
+{
+    for (size_t i = 0; i != format_settings.csv.skip_first_lines; ++i)
+        readRow();
+}
+
 void TabSeparatedRowInputFormat::syncAfterError()
 {
     skipToUnescapedNextLineOrEOF(*in);
@@ -347,6 +357,8 @@ void registerFileSegmentationEngineTabSeparated(FormatFactory & factory)
 
         registerWithNamesAndTypes(is_raw ? "TSVRaw" : "TSV", register_func);
         registerWithNamesAndTypes(is_raw ? "TabSeparatedRaw" : "TabSeparated", register_func);
+        markFormatWithNamesAndTypesSupportsSamplingColumns(is_raw ? "TSVRaw" : "TSV", factory);
+        markFormatWithNamesAndTypesSupportsSamplingColumns(is_raw ? "TabSeparatedRaw" : "TabSeparated", factory);
     }
 
     // We can use the same segmentation engine for TSKV.

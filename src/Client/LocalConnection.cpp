@@ -73,14 +73,19 @@ void LocalConnection::sendQuery(
     const String & query_id,
     UInt64 stage,
     const Settings *,
-    const ClientInfo *,
-    bool)
+    const ClientInfo * client_info,
+    bool,
+    std::function<void(const Progress &)> process_progress_callback)
 {
-    query_context = session.makeQueryContext();
+    /// Suggestion comes without client_info.
+    if (client_info)
+        query_context = session.makeQueryContext(*client_info);
+    else
+        query_context = session.makeQueryContext();
     query_context->setCurrentQueryId(query_id);
     if (send_progress)
     {
-        query_context->setProgressCallback([this] (const Progress & value) { return this->updateProgress(value); });
+        query_context->setProgressCallback([this] (const Progress & value) { this->updateProgress(value); });
         query_context->setFileProgressCallback([this](const FileProgress & value) { this->updateProgress(Progress(value)); });
     }
     if (!current_database.empty())
@@ -143,6 +148,19 @@ void LocalConnection::sendQuery(
         else if (state->io.pipeline.completed())
         {
             CompletedPipelineExecutor executor(state->io.pipeline);
+            if (process_progress_callback)
+            {
+                auto callback = [this, &process_progress_callback]()
+                {
+                    if (state->is_cancelled)
+                        return true;
+
+                    process_progress_callback(state->progress.fetchAndResetPiecewiseAtomically());
+                    return false;
+                };
+
+                executor.setCancelCallback(callback, query_context->getSettingsRef().interactive_delay / 1000);
+            }
             executor.execute();
         }
 
@@ -185,6 +203,7 @@ void LocalConnection::sendData(const Block & block, const String &, bool)
 
 void LocalConnection::sendCancel()
 {
+    state->is_cancelled = true;
     if (state->executor)
         state->executor->cancel();
 }
@@ -392,9 +411,9 @@ Packet LocalConnection::receivePacket()
     packet.type = next_packet_type.value();
     switch (next_packet_type.value())
     {
-        case Protocol::Server::Totals: [[fallthrough]];
-        case Protocol::Server::Extremes: [[fallthrough]];
-        case Protocol::Server::Log: [[fallthrough]];
+        case Protocol::Server::Totals:
+        case Protocol::Server::Extremes:
+        case Protocol::Server::Log:
         case Protocol::Server::Data:
         case Protocol::Server::ProfileEvents:
         {
@@ -410,7 +429,7 @@ Packet LocalConnection::receivePacket()
         {
             if (state->profile_info)
             {
-                packet.profile_info = std::move(*state->profile_info);
+                packet.profile_info = *state->profile_info;
                 state->profile_info.reset();
             }
             next_packet_type.reset();
@@ -440,7 +459,7 @@ Packet LocalConnection::receivePacket()
         }
         case Protocol::Server::Progress:
         {
-            packet.progress = std::move(state->progress);
+            packet.progress = state->progress.fetchAndResetPiecewiseAtomically();
             state->progress.reset();
             next_packet_type.reset();
             break;

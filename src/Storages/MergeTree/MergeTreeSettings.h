@@ -183,7 +183,7 @@ struct MergeTreeSettings : public BaseSettings<MergeTreeSettingsTraits>
     }
 
     /// Check that the values are sane taking also query-level settings into account.
-    void sanityCheck(const Settings & query_settings) const;
+    void sanityCheck(size_t background_pool_tasks) const;
 };
 
 using MergeTreeSettingsPtr = std::shared_ptr<const MergeTreeSettings>;

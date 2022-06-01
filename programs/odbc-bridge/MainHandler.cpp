@@ -17,7 +17,7 @@
 #include <QueryPipeline/QueryPipeline.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Formats/IInputFormat.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <Server/HTTP/HTMLForm.h>
 #include <Common/config.h>
 

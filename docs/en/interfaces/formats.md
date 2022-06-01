@@ -10,64 +10,70 @@ results of a `SELECT`, and to perform `INSERT`s into a file-backed table.
 
 The supported formats are:
 
-| Format                                                                                  | Input | Output |
-|-----------------------------------------------------------------------------------------|-------|--------|
-| [TabSeparated](#tabseparated)                                                           | ✔     | ✔      |
-| [TabSeparatedRaw](#tabseparatedraw)                                                     | ✔     | ✔      |
-| [TabSeparatedWithNames](#tabseparatedwithnames)                                         | ✔     | ✔      |
-| [TabSeparatedWithNamesAndTypes](#tabseparatedwithnamesandtypes)                         | ✔     | ✔      |
-| [TabSeparatedRawWithNames](#tabseparatedrawwithnames)                                                     | ✔     | ✔      |
-| [TabSeparatedRawWithNamesAndTypes](#tabseparatedrawwithnamesandtypes)                                                     | ✔     | ✔      |
-| [Template](#format-template)                                                            | ✔     | ✔      |
-| [TemplateIgnoreSpaces](#templateignorespaces)                                           | ✔     | ✗      |
-| [CSV](#csv)                                                                             | ✔     | ✔      |
-| [CSVWithNames](#csvwithnames)                                                           | ✔     | ✔      |
-| [CSVWithNamesAndTypes](#csvwithnamesandtypes)                                                           | ✔     | ✔      |
-| [CustomSeparated](#format-customseparated)                                              | ✔     | ✔      |
-| [CustomSeparatedWithNames](#customseparatedwithnames)                                   | ✔     | ✔      |
-| [CustomSeparatedWithNamesAndTypes](#customseparatedwithnamesandtypes)                   | ✔     | ✔      |
-| [Values](#data-format-values)                                                           | ✔     | ✔      |
-| [Vertical](#vertical)                                                                   | ✗     | ✔      |
-| [JSON](#json)                                                                           | ✗     | ✔      |
-| [JSONAsString](#jsonasstring)                                                           | ✔     | ✗      |
+| Format                                                                                    | Input | Output |
+|-------------------------------------------------------------------------------------------|-------|--------|
+| [TabSeparated](#tabseparated)                                                             | ✔     | ✔      |
+| [TabSeparatedRaw](#tabseparatedraw)                                                       | ✔     | ✔      |
+| [TabSeparatedWithNames](#tabseparatedwithnames)                                           | ✔     | ✔      |
+| [TabSeparatedWithNamesAndTypes](#tabseparatedwithnamesandtypes)                           | ✔     | ✔      |
+| [TabSeparatedRawWithNames](#tabseparatedrawwithnames)                                     | ✔     | ✔      |
+| [TabSeparatedRawWithNamesAndTypes](#tabseparatedrawwithnamesandtypes)                     | ✔     | ✔      |
+| [Template](#format-template)                                                              | ✔     | ✔      |
+| [TemplateIgnoreSpaces](#templateignorespaces)                                             | ✔     | ✗      |
+| [CSV](#csv)                                                                               | ✔     | ✔      |
+| [CSVWithNames](#csvwithnames)                                                             | ✔     | ✔      |
+| [CSVWithNamesAndTypes](#csvwithnamesandtypes)                                             | ✔     | ✔      |
+| [CustomSeparated](#format-customseparated)                                                | ✔     | ✔      |
+| [CustomSeparatedWithNames](#customseparatedwithnames)                                     | ✔     | ✔      |
+| [CustomSeparatedWithNamesAndTypes](#customseparatedwithnamesandtypes)                     | ✔     | ✔      |
+| [Values](#data-format-values)                                                             | ✔     | ✔      |
+| [Vertical](#vertical)                                                                     | ✗     | ✔      |
+| [JSON](#json)                                                                             | ✗     | ✔      |
+| [JSONAsString](#jsonasstring)                                                             | ✔     | ✗      |
 | [JSONStrings](#jsonstrings)                                                               | ✗     | ✔      |
-| [JSONCompact](#jsoncompact)                                                             | ✗     | ✔      |
+| [JSONColumns](#jsoncolumns)                                                               | ✔     | ✔      |
+| [JSONColumnsWithMetadata](#jsoncolumnswithmetadata)                                       | ✗     | ✔      |
+| [JSONCompact](#jsoncompact)                                                               | ✗     | ✔      |
 | [JSONCompactStrings](#jsoncompactstrings)                                                 | ✗     | ✔      |
-| [JSONEachRow](#jsoneachrow)                                                             | ✔     | ✔      |
-| [JSONEachRowWithProgress](#jsoneachrowwithprogress)                                     | ✗     | ✔      |
-| [JSONStringsEachRow](#jsonstringseachrow)                                               | ✔     | ✔      |
-| [JSONStringsEachRowWithProgress](#jsonstringseachrowwithprogress)                       | ✗     | ✔      |
-| [JSONCompactEachRow](#jsoncompacteachrow)                                               | ✔     | ✔      |
-| [JSONCompactEachRowWithNames](#jsoncompacteachrowwithnames)             | ✔     | ✔      |
-| [JSONCompactEachRowWithNamesAndTypes](#jsoncompacteachrowwithnamesandtypes)             | ✔     | ✔      |
+| [JSONCompactColumns](#jsoncompactcolumns)                                                 | ✔     | ✔      |
+| [JSONEachRow](#jsoneachrow)                                                               | ✔     | ✔      |
+| [JSONEachRowWithProgress](#jsoneachrowwithprogress)                                       | ✗     | ✔      |
+| [JSONStringsEachRow](#jsonstringseachrow)                                                 | ✔     | ✔      |
+| [JSONStringsEachRowWithProgress](#jsonstringseachrowwithprogress)                         | ✗     | ✔      |
+| [JSONCompactEachRow](#jsoncompacteachrow)                                                 | ✔     | ✔      |
+| [JSONCompactEachRowWithNames](#jsoncompacteachrowwithnames)                               | ✔     | ✔      |
+| [JSONCompactEachRowWithNamesAndTypes](#jsoncompacteachrowwithnamesandtypes)               | ✔     | ✔      |
 | [JSONCompactStringsEachRow](#jsoncompactstringseachrow)                                   | ✔     | ✔      |
-| [JSONCompactStringsEachRowWithNames](#jsoncompactstringseachrowwithnames) | ✔     | ✔      |
+| [JSONCompactStringsEachRowWithNames](#jsoncompactstringseachrowwithnames)                 | ✔     | ✔      |
 | [JSONCompactStringsEachRowWithNamesAndTypes](#jsoncompactstringseachrowwithnamesandtypes) | ✔     | ✔      |
-| [TSKV](#tskv)                                                                           | ✔     | ✔      |
-| [Pretty](#pretty)                                                                       | ✗     | ✔      |
-| [PrettyCompact](#prettycompact)                                                         | ✗     | ✔      |
-| [PrettyCompactMonoBlock](#prettycompactmonoblock)                                       | ✗     | ✔      |
-| [PrettyNoEscapes](#prettynoescapes)                                                     | ✗     | ✔      |
-| [PrettySpace](#prettyspace)                                                             | ✗     | ✔      |
-| [Protobuf](#protobuf)                                                                   | ✔     | ✔      |
-| [ProtobufSingle](#protobufsingle)                                                       | ✔     | ✔      |
-| [Avro](#data-format-avro)                                                               | ✔     | ✔      |
-| [AvroConfluent](#data-format-avro-confluent)                                            | ✔     | ✗      |
-| [Parquet](#data-format-parquet)                                                         | ✔     | ✔      |
-| [Arrow](#data-format-arrow)                                                             | ✔     | ✔      |
-| [ArrowStream](#data-format-arrow-stream)                                                | ✔     | ✔      |
-| [ORC](#data-format-orc)                                                                 | ✔     | ✔      |
-| [RowBinary](#rowbinary)                                                                 | ✔     | ✔      |
-| [RowBinaryWithNames](#rowbinarywithnamesandtypes)                               | ✔     | ✔      |
-| [RowBinaryWithNamesAndTypes](#rowbinarywithnamesandtypes)                               | ✔     | ✔      |
-| [Native](#native)                                                                       | ✔     | ✔      |
-| [Null](#null)                                                                           | ✗     | ✔      |
-| [XML](#xml)                                                                             | ✗     | ✔      |
-| [CapnProto](#capnproto)                                                                 | ✔     | ✔      |
-| [LineAsString](#lineasstring)                                                           | ✔     | ✗      |
-| [Regexp](#data-format-regexp)                                                           | ✔     | ✗      |
-| [RawBLOB](#rawblob)                                                                     | ✔     | ✔      |
-| [MsgPack](#msgpack)                                                                     | ✔     | ✔      |
+| [TSKV](#tskv)                                                                             | ✔     | ✔      |
+| [Pretty](#pretty)                                                                         | ✗     | ✔      |
+| [PrettyCompact](#prettycompact)                                                           | ✗     | ✔      |
+| [PrettyCompactMonoBlock](#prettycompactmonoblock)                                         | ✗     | ✔      |
+| [PrettyNoEscapes](#prettynoescapes)                                                       | ✗     | ✔      |
+| [PrettySpace](#prettyspace)                                                               | ✗     | ✔      |
+| [Prometheus](#prometheus)                                                                 | ✗     | ✔      |
+| [Protobuf](#protobuf)                                                                     | ✔     | ✔      |
+| [ProtobufSingle](#protobufsingle)                                                         | ✔     | ✔      |
+| [Avro](#data-format-avro)                                                                 | ✔     | ✔      |
+| [AvroConfluent](#data-format-avro-confluent)                                              | ✔     | ✗      |
+| [Parquet](#data-format-parquet)                                                           | ✔     | ✔      |
+| [Arrow](#data-format-arrow)                                                               | ✔     | ✔      |
+| [ArrowStream](#data-format-arrow-stream)                                                  | ✔     | ✔      |
+| [ORC](#data-format-orc)                                                                   | ✔     | ✔      |
+| [RowBinary](#rowbinary)                                                                   | ✔     | ✔      |
+| [RowBinaryWithNames](#rowbinarywithnamesandtypes)                                         | ✔     | ✔      |
+| [RowBinaryWithNamesAndTypes](#rowbinarywithnamesandtypes)                                 | ✔     | ✔      |
+| [Native](#native)                                                                         | ✔     | ✔      |
+| [Null](#null)                                                                             | ✗     | ✔      |
+| [XML](#xml)                                                                               | ✗     | ✔      |
+| [CapnProto](#capnproto)                                                                   | ✔     | ✔      |
+| [LineAsString](#lineasstring)                                                             | ✔     | ✗      |
+| [Regexp](#data-format-regexp)                                                             | ✔     | ✗      |
+| [RawBLOB](#rawblob)                                                                       | ✔     | ✔      |
+| [MsgPack](#msgpack)                                                                       | ✔     | ✔      |
+| [MySQLDump](#mysqldump)                                                                   | ✔     | ✗      |
+
 
 You can control some format processing parameters with the ClickHouse settings. For more information read the [Settings](../operations/settings/settings.md) section.
 
@@ -143,6 +149,8 @@ Each element of [Nested](../sql-reference/data-types/nested-data-structures/nest
 In input data, ENUM values can be represented as names or as ids. First, we try to match the input value to the ENUM name. If we fail and the input value is a number, we try to match this number to ENUM id.
 If input data contains only ENUM ids, it's recommended to enable the setting [input_format_tsv_enum_as_number](../operations/settings/settings.md#settings-input_format_tsv_enum_as_number) to optimize ENUM parsing.
 
+While importing data, you can skip some first rows using setting [input_format_tsv_skip_first_lines](../operations/settings/settings.md#settings-input_format_tsv_skip_first_lines)
+
 For example:
 
 ``` sql
@@ -183,7 +191,7 @@ Differs from the `TabSeparated` format in that the column names are written in t
 During parsing, the first row is expected to contain the column names. You can use column names to determine their position and to check their correctness.
 
 If setting [input_format_with_names_use_header](../operations/settings/settings.md#settings-input_format_with_names_use_header) is set to 1,
-the columns from input data will be mapped to the columns from the table by their names, columns with unknown names will be skipped if setting [input_format_skip_unknown_fields](../operations/settings/settings.md#settings-input_format_skip_unknown_fields) is set to 1.
+the columns from input data will be mapped to the columns from the table by their names, columns with unknown names will be skipped if setting [input_format_skip_unknown_fields](../operations/settings/settings.md#settings-input-format-skip-unknown-fields) is set to 1.
 Otherwise, the first row will be skipped.
 
 This format is also available under the name `TSVWithNames`.
@@ -193,7 +201,7 @@ This format is also available under the name `TSVWithNames`.
 Differs from the `TabSeparated` format in that the column names are written to the first row, while the column types are in the second row.
 The first row with names is processed the same way as in `TabSeparatedWithNames` format.
 If setting [input_format_with_types_use_header](../operations/settings/settings.md#settings-input_format_with_types_use_header) is set to 1,
-the types from input data will be compared with the types of the corresponding columns from the table. Otherwise, the second row will be skipped. 
+the types from input data will be compared with the types of the corresponding columns from the table. Otherwise, the second row will be skipped.
 
 This format is also available under the name `TSVWithNamesAndTypes`.
 
@@ -397,6 +405,8 @@ Both data output and parsing are supported in this format. For parsing, any orde
 
 Parsing allows the presence of the additional field `tskv` without the equal sign or a value. This field is ignored.
 
+During import, columns with unknown names will be skipped if setting [input_format_skip_unknown_fields](../operations/settings/settings.md#settings-input-format-skip-unknown-fields) is set to 1.
+
 ## CSV {#csv}
 
 Comma Separated Values format ([RFC](https://tools.ietf.org/html/rfc4180)).
@@ -420,6 +430,8 @@ In input data, ENUM values can be represented as names or as ids. First, we try 
 If input data contains only ENUM ids, it's recommended to enable the setting [input_format_csv_enum_as_number](../operations/settings/settings.md#settings-input_format_csv_enum_as_number) to optimize ENUM parsing.
 
 The CSV format supports the output of totals and extremes the same way as `TabSeparated`.
+
+While importing data, you can skip some first rows using setting [input_format_csv_skip_first_lines](../operations/settings/settings.md#settings-input_format_csv_skip_first_lines)
 
 ## CSVWithNames {#csvwithnames}
 
@@ -456,15 +468,15 @@ SELECT SearchPhrase, count() AS c FROM test.hits GROUP BY SearchPhrase WITH TOTA
         "meta":
         [
                 {
-                        "name": "'hello'",
+                        "name": "num",
+                        "type": "Int32"
+                },
+                {
+                        "name": "str",
                         "type": "String"
                 },
                 {
-                        "name": "multiply(42, number)",
-                        "type": "UInt64"
-                },
-                {
-                        "name": "range(5)",
+                        "name": "arr",
                         "type": "Array(UInt8)"
                 }
         ],
@@ -472,25 +484,32 @@ SELECT SearchPhrase, count() AS c FROM test.hits GROUP BY SearchPhrase WITH TOTA
         "data":
         [
                 {
-                        "'hello'": "hello",
-                        "multiply(42, number)": "0",
-                        "range(5)": [0,1,2,3,4]
+                        "num": 42,
+                        "str": "hello",
+                        "arr": [0,1]
                 },
                 {
-                        "'hello'": "hello",
-                        "multiply(42, number)": "42",
-                        "range(5)": [0,1,2,3,4]
+                        "num": 43,
+                        "str": "hello",
+                        "arr": [0,1,2]
                 },
                 {
-                        "'hello'": "hello",
-                        "multiply(42, number)": "84",
-                        "range(5)": [0,1,2,3,4]
+                        "num": 44,
+                        "str": "hello",
+                        "arr": [0,1,2,3]
                 }
         ],
 
         "rows": 3,
 
-        "rows_before_limit_at_least": 3
+        "rows_before_limit_at_least": 3,
+
+        "statistics":
+        {
+                "elapsed": 0.001137687,
+                "rows_read": 3,
+                "bytes_read": 24
+        }
 }
 ```
 
@@ -525,15 +544,15 @@ Example:
         "meta":
         [
                 {
-                        "name": "'hello'",
+                        "name": "num",
+                        "type": "Int32"
+                },
+                {
+                        "name": "str",
                         "type": "String"
                 },
                 {
-                        "name": "multiply(42, number)",
-                        "type": "UInt64"
-                },
-                {
-                        "name": "range(5)",
+                        "name": "arr",
                         "type": "Array(UInt8)"
                 }
         ],
@@ -541,25 +560,95 @@ Example:
         "data":
         [
                 {
-                        "'hello'": "hello",
-                        "multiply(42, number)": "0",
-                        "range(5)": "[0,1,2,3,4]"
+                        "num": "42",
+                        "str": "hello",
+                        "arr": "[0,1]"
                 },
                 {
-                        "'hello'": "hello",
-                        "multiply(42, number)": "42",
-                        "range(5)": "[0,1,2,3,4]"
+                        "num": "43",
+                        "str": "hello",
+                        "arr": "[0,1,2]"
                 },
                 {
-                        "'hello'": "hello",
-                        "multiply(42, number)": "84",
-                        "range(5)": "[0,1,2,3,4]"
+                        "num": "44",
+                        "str": "hello",
+                        "arr": "[0,1,2,3]"
                 }
         ],
 
         "rows": 3,
 
-        "rows_before_limit_at_least": 3
+        "rows_before_limit_at_least": 3,
+
+        "statistics":
+        {
+                "elapsed": 0.001403233,
+                "rows_read": 3,
+                "bytes_read": 24
+        }
+}
+```
+
+## JSONColumns {#jsoncolumns}
+
+In this format, all data is represented as a single JSON Object.
+Note that JSONColumns output format buffers all data in memory to output it as a single block and it can lead to high memory consumption.
+
+Example:
+```json
+{
+	"num": [42, 43, 44],
+	"str": ["hello", "hello", "hello"],
+	"arr": [[0,1], [0,1,2], [0,1,2,3]]
+}
+```
+
+During import, columns with unknown names will be skipped if setting [input_format_skip_unknown_fields](../operations/settings/settings.md#settings-input-format-skip-unknown-fields) is set to 1.
+Columns that are not present in the block will be filled with default values (you can use  [input_format_defaults_for_omitted_fields](../operations/settings/settings.md#session_settings-input_format_defaults_for_omitted_fields) setting here)
+
+
+## JSONColumnsWithMetadata {#jsoncolumnsmonoblock}
+
+Differs from JSONColumns output format in that it also outputs some metadata and statistics (similar to JSON output format).
+This format buffers all data in memory and then outputs them as a single block, so, it can lead to high memory consumption.
+
+Example:
+```json
+{
+        "meta":
+        [
+                {
+                        "name": "num",
+                        "type": "Int32"
+                },
+                {
+                        "name": "str",
+                        "type": "String"
+                },
+               
+                {
+                        "name": "arr",
+                        "type": "Array(UInt8)"
+                }
+        ],
+
+        "data":
+        {
+                "num": [42, 43, 44],
+                "str": ["hello", "hello", "hello"],
+                "arr": [[0,1], [0,1,2], [0,1,2,3]]
+        },
+
+        "rows": 3,
+
+        "rows_before_limit_at_least": 3,
+
+        "statistics":
+        {
+                "elapsed": 0.000272376,
+                "rows_read": 3,
+                "bytes_read": 24
+        }
 }
 ```
 
@@ -615,71 +704,101 @@ Result:
 
 Differs from JSON only in that data rows are output in arrays, not in objects.
 
+Examples:
+
+1) JSONCompact:
+```json
+{
+        "meta":
+        [
+                {
+                        "name": "num",
+                        "type": "Int32"
+                },
+                {
+                        "name": "str",
+                        "type": "String"
+                },
+                {
+                        "name": "arr",
+                        "type": "Array(UInt8)"
+                }
+        ],
+
+        "data":
+        [
+                [42, "hello", [0,1]],
+                [43, "hello", [0,1,2]],
+                [44, "hello", [0,1,2,3]]
+        ],
+
+        "rows": 3,
+
+        "rows_before_limit_at_least": 3,
+
+        "statistics":
+        {
+                "elapsed": 0.001222069,
+                "rows_read": 3,
+                "bytes_read": 24
+        }
+}
+```
+
+2) JSONCompactStrings
+```json
+{
+        "meta":
+        [
+                {
+                        "name": "num",
+                        "type": "Int32"
+                },
+                {
+                        "name": "str",
+                        "type": "String"
+                },
+                {
+                        "name": "arr",
+                        "type": "Array(UInt8)"
+                }
+        ],
+
+        "data":
+        [
+                ["42", "hello", "[0,1]"],
+                ["43", "hello", "[0,1,2]"],
+                ["44", "hello", "[0,1,2,3]"]
+        ],
+
+        "rows": 3,
+
+        "rows_before_limit_at_least": 3,
+
+        "statistics":
+        {
+                "elapsed": 0.001572097,
+                "rows_read": 3,
+                "bytes_read": 24
+        }
+}
+```
+
+## JSONCompactColumns {#jsoncompactcolumns}
+
+In this format, all data is represented as a single JSON Array.
+Note that JSONCompactColumns output format buffers all data in memory to output it as a single block and it can lead to high memory consumption
+
 Example:
-
-```
-// JSONCompact
-{
-        "meta":
-        [
-                {
-                        "name": "'hello'",
-                        "type": "String"
-                },
-                {
-                        "name": "multiply(42, number)",
-                        "type": "UInt64"
-                },
-                {
-                        "name": "range(5)",
-                        "type": "Array(UInt8)"
-                }
-        ],
-
-        "data":
-        [
-                ["hello", "0", [0,1,2,3,4]],
-                ["hello", "42", [0,1,2,3,4]],
-                ["hello", "84", [0,1,2,3,4]]
-        ],
-
-        "rows": 3,
-
-        "rows_before_limit_at_least": 3
-}
+```json
+[
+	[42, 43, 44],
+	["hello", "hello", "hello"],
+	[[0,1], [0,1,2], [0,1,2,3]]
+]
 ```
 
-```
-// JSONCompactStrings
-{
-        "meta":
-        [
-                {
-                        "name": "'hello'",
-                        "type": "String"
-                },
-                {
-                        "name": "multiply(42, number)",
-                        "type": "UInt64"
-                },
-                {
-                        "name": "range(5)",
-                        "type": "Array(UInt8)"
-                }
-        ],
-
-        "data":
-        [
-                ["hello", "0", "[0,1,2,3,4]"],
-                ["hello", "42", "[0,1,2,3,4]"],
-                ["hello", "84", "[0,1,2,3,4]"]
-        ],
-
-        "rows": 3,
-
-        "rows_before_limit_at_least": 3
-}
-```
+Columns that are not present in the block will be filled with default values (you can use  [input_format_defaults_for_omitted_fields](../operations/settings/settings.md#session_settings-input_format_defaults_for_omitted_fields) setting here)
 
 ## JSONEachRow {#jsoneachrow}
 ## JSONStringsEachRow {#jsonstringseachrow}
@@ -696,15 +815,17 @@ When using these formats, ClickHouse outputs rows as separated, newline-delimite
 
 When inserting the data, you should provide a separate JSON value for each row.
 
+In JSONEachRow/JSONStringsEachRow input formats columns with unknown names will be skipped if setting [input_format_skip_unknown_fields](../operations/settings/settings.md#settings-input-format-skip-unknown-fields) is set to 1.
+
 ## JSONEachRowWithProgress {#jsoneachrowwithprogress}
 ## JSONStringsEachRowWithProgress {#jsonstringseachrowwithprogress}
 
 Differs from `JSONEachRow`/`JSONStringsEachRow` in that ClickHouse will also yield progress information as JSON values.
 
 ```json
-{"row":{"'hello'":"hello","multiply(42, number)":"0","range(5)":[0,1,2,3,4]}}
-{"row":{"'hello'":"hello","multiply(42, number)":"42","range(5)":[0,1,2,3,4]}}
-{"row":{"'hello'":"hello","multiply(42, number)":"84","range(5)":[0,1,2,3,4]}}
+{"row":{"num":42,"str":"hello","arr":[0,1]}}
+{"row":{"num":43,"str":"hello","arr":[0,1,2]}}
+{"row":{"num":44,"str":"hello","arr":[0,1,2,3]}}
 {"progress":{"read_rows":"3","read_bytes":"24","written_rows":"0","written_bytes":"0","total_rows_to_read":"3"}}
 ```
 
@@ -725,11 +846,11 @@ Differs from `JSONCompactStringsEachRow` in that in that it also prints the head
 Differs from `JSONCompactStringsEachRow` in that it also prints two header rows with column names and types, similar to [TabSeparatedWithNamesAndTypes](#tabseparatedwithnamesandtypes).
 
 ```json
-["'hello'", "multiply(42, number)", "range(5)"]
-["String", "UInt64", "Array(UInt8)"]
-["hello", "0", [0,1,2,3,4]]
-["hello", "42", [0,1,2,3,4]]
-["hello", "84", [0,1,2,3,4]]
+["num", "str", "arr"]
+["Int32", "String", "Array(UInt8)"]
+[42, "hello", [0,1]]
+[43, "hello", [0,1,2]]
+[44, "hello", [0,1,2,3]]
 ```
 
 ### Inserting Data {#inserting-data}
@@ -788,7 +909,7 @@ The query `SELECT * FROM UserActivity FORMAT JSONEachRow` returns:
 
 Unlike the [JSON](#json) format, there is no substitution of invalid UTF-8 sequences. Values are escaped in the same way as for `JSON`.
 
-:::info    
+:::info
 Any set of bytes can be output in the strings. Use the `JSONEachRow` format if you are sure that the data in the table can be formatted as JSON without losing any information.
 :::
 
@@ -1162,6 +1283,76 @@ You can select data from a ClickHouse table and save them into some file in the 
 ``` bash
 $ clickhouse-client --query = "SELECT * FROM test.hits FORMAT CapnProto SETTINGS format_schema = 'schema:Message'"
 ```
+## Prometheus {#prometheus}
+
+Expose metrics in [Prometheus text-based exposition format](https://prometheus.io/docs/instrumenting/exposition_formats/#text-based-format).
+
+The output table should have a proper structure.
+Columns `name` ([String](../sql-reference/data-types/string.md)) and `value` (number) are required.
+Rows may optionally contain `help` ([String](../sql-reference/data-types/string.md)) and `timestamp` (number).
+Column `type` ([String](../sql-reference/data-types/string.md)) is either `counter`, `gauge`, `histogram`, `summary`, `untyped` or empty.
+Each metric value may also have some `labels` ([Map(String, String)](../sql-reference/data-types/map.md)).
+Several consequent rows may refer to the one metric with different lables. The table should be sorted by metric name (e.g., with `ORDER BY name`).
+
+There's special requirements for labels for `histogram` and `summary`, see [Prometheus doc](https://prometheus.io/docs/instrumenting/exposition_formats/#histograms-and-summaries) for the details. Special rules applied to row with labels `{'count':''}` and `{'sum':''}`, they'll be convered to `<metric_name>_count` and `<metric_name>_sum` respectively.
+
+**Example:**
+
+```
+┌─name────────────────────────────────┬─type──────┬─help──────────────────────────────────────┬─labels─────────────────────────┬────value─┬─────timestamp─┐
+│ http_request_duration_seconds       │ histogram │ A histogram of the request duration.      │ {'le':'0.05'}                  │    24054 │             0 │
+│ http_request_duration_seconds       │ histogram │                                           │ {'le':'0.1'}                   │    33444 │             0 │
+│ http_request_duration_seconds       │ histogram │                                           │ {'le':'0.2'}                   │   100392 │             0 │
+│ http_request_duration_seconds       │ histogram │                                           │ {'le':'0.5'}                   │   129389 │             0 │
+│ http_request_duration_seconds       │ histogram │                                           │ {'le':'1'}                     │   133988 │             0 │
+│ http_request_duration_seconds       │ histogram │                                           │ {'le':'+Inf'}                  │   144320 │             0 │
+│ http_request_duration_seconds       │ histogram │                                           │ {'sum':''}                     │    53423 │             0 │
+│ http_requests_total                 │ counter   │ Total number of HTTP requests             │ {'method':'post','code':'200'} │     1027 │ 1395066363000 │
+│ http_requests_total                 │ counter   │                                           │ {'method':'post','code':'400'} │        3 │ 1395066363000 │
+│ metric_without_timestamp_and_labels │           │                                           │ {}                             │    12.47 │             0 │
+│ rpc_duration_seconds                │ summary   │ A summary of the RPC duration in seconds. │ {'quantile':'0.01'}            │     3102 │             0 │
+│ rpc_duration_seconds                │ summary   │                                           │ {'quantile':'0.05'}            │     3272 │             0 │
+│ rpc_duration_seconds                │ summary   │                                           │ {'quantile':'0.5'}             │     4773 │             0 │
+│ rpc_duration_seconds                │ summary   │                                           │ {'quantile':'0.9'}             │     9001 │             0 │
+│ rpc_duration_seconds                │ summary   │                                           │ {'quantile':'0.99'}            │    76656 │             0 │
+│ rpc_duration_seconds                │ summary   │                                           │ {'count':''}                   │     2693 │             0 │
+│ rpc_duration_seconds                │ summary   │                                           │ {'sum':''}                     │ 17560473 │             0 │
+│ something_weird                     │           │                                           │ {'problem':'division by zero'} │      inf │      -3982045 │
+└─────────────────────────────────────┴───────────┴───────────────────────────────────────────┴────────────────────────────────┴──────────┴───────────────┘
+```
+
+Will be formatted as:
+
+```
+# HELP http_request_duration_seconds A histogram of the request duration.
+# TYPE http_request_duration_seconds histogram
+http_request_duration_seconds_bucket{le="0.05"} 24054
+http_request_duration_seconds_bucket{le="0.1"} 33444
+http_request_duration_seconds_bucket{le="0.5"} 129389
+http_request_duration_seconds_bucket{le="1"} 133988
+http_request_duration_seconds_bucket{le="+Inf"} 144320
+http_request_duration_seconds_sum 53423
+http_request_duration_seconds_count 144320
+
+# HELP http_requests_total Total number of HTTP requests
+# TYPE http_requests_total counter
+http_requests_total{code="200",method="post"} 1027 1395066363000
+http_requests_total{code="400",method="post"} 3 1395066363000
+
+metric_without_timestamp_and_labels 12.47
+
+# HELP rpc_duration_seconds A summary of the RPC duration in seconds.
+# TYPE rpc_duration_seconds summary
+rpc_duration_seconds{quantile="0.01"} 3102
+rpc_duration_seconds{quantile="0.05"} 3272
+rpc_duration_seconds{quantile="0.5"} 4773
+rpc_duration_seconds{quantile="0.9"} 9001
+rpc_duration_seconds{quantile="0.99"} 76656
+rpc_duration_seconds_sum 17560473
+rpc_duration_seconds_count 2693
+
+something_weird{problem="division by zero"} +Inf -3982045
+```
 
 ## Protobuf {#protobuf}
 
@@ -1342,7 +1533,7 @@ SET format_avro_schema_registry_url = 'http://schema-registry';
 SELECT * FROM topic1_stream;
 ```
 
-:::warning    
+:::warning
 Setting `format_avro_schema_registry_url` needs to be configured in `users.xml` to maintain it’s value after a restart. Also you can use the `format_avro_schema_registry_url` setting of the `Kafka` table engine.
 :::
 
@@ -1559,7 +1750,7 @@ When working with the `Regexp` format, you can use the following settings:
     -   Escaped (similarly to [TSV](#tabseparated))
     -   Quoted (similarly to [Values](#data-format-values))
     -   Raw (extracts subpatterns as a whole, no escaping rules, similarly to [TSVRaw](#tabseparatedraw))
-	
+
 -   `format_regexp_skip_unmatched` — [UInt8](../sql-reference/data-types/int-uint.md). Defines the need to throw an exeption in case the `format_regexp` expression does not match the imported data. Can be set to `0` or `1`.
 
 **Usage**
@@ -1704,4 +1895,71 @@ Writing to a file ".msgpk":
 $ clickhouse-client --query="CREATE TABLE msgpack (array Array(UInt8)) ENGINE = Memory;"
 $ clickhouse-client --query="INSERT INTO msgpack VALUES ([0, 1, 2, 3, 42, 253, 254, 255]), ([255, 254, 253, 42, 3, 2, 1, 0])";
 $ clickhouse-client --query="SELECT * FROM msgpack FORMAT MsgPack" > tmp_msgpack.msgpk;
+```
+
+## MySQLDump {#msgpack}
+
+ClickHouse supports reading MySQL [dumps](https://dev.mysql.com/doc/refman/8.0/en/mysqldump.html).
+It reads all data from INSERT queries belonging to one table in dump. If there are more than one table, by default it reads data from the first one.
+You can specify the name of the table from which to read data from using [input_format_mysql_dump_table_name](../operations/settings/settings.md#settings-input-format-mysql-dump-table-name) settings.
+If setting [input_format_mysql_dump_map_columns](../operations/settings/settings.md#settings-input-format-mysql-dump-map-columns) is set to 1 and
+dump contains CREATE query for specified table or column names in INSERT query the columns from input data will be mapped to the columns from the table by their names,
+columns with unknown names will be skipped if setting [input_format_skip_unknown_fields](../operations/settings/settings.md#settings-input-format-skip-unknown-fields) is set to 1.
+This format supports schema inference: if the dump contains CREATE query for the specified table, the structure is extracted from it, otherwise schema is inferred from the data of INSERT queries.
+
+Examples:
+
+File dump.sql:
+```sql
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `test` (
+  `x` int DEFAULT NULL,
+  `y` int DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+INSERT INTO `test` VALUES (1,NULL),(2,NULL),(3,NULL),(3,NULL),(4,NULL),(5,NULL),(6,7);
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `test 3` (
+  `y` int DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+INSERT INTO `test 3` VALUES (1);
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `test2` (
+  `x` int DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+INSERT INTO `test2` VALUES (1),(2),(3);
+```
+
+Queries:
+
+```sql
+:) desc file(dump.sql, MySQLDump) settings input_format_mysql_dump_table_name='test2'
+
+DESCRIBE TABLE file(dump.sql, MySQLDump)
+SETTINGS input_format_mysql_dump_table_name = 'test2'
+
+Query id: 25e66c89-e10a-42a8-9b42-1ee8bbbde5ef
+
+┌─name─┬─type────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ x    │ Nullable(Int32) │              │                    │         │                  │                │
+└──────┴─────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+
+:) select * from file(dump.sql, MySQLDump) settings input_format_mysql_dump_table_name='test2'
+
+SELECT *
+FROM file(dump.sql, MySQLDump)
+         SETTINGS input_format_mysql_dump_table_name = 'test2'
+
+Query id: 17d59664-ebce-4053-bb79-d46a516fb590
+
+┌─x─┐
+│ 1 │
+│ 2 │
+│ 3 │
+└───┘
 ```

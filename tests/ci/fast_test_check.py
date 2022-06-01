@@ -84,7 +84,6 @@ if __name__ == "__main__":
     stopwatch = Stopwatch()
 
     temp_path = TEMP_PATH
-    caches_path = CACHES_PATH
 
     if not os.path.exists(temp_path):
         os.makedirs(temp_path)
@@ -110,7 +109,10 @@ if __name__ == "__main__":
     if not os.path.exists(output_path):
         os.makedirs(output_path)
 
-    cache_path = os.path.join(caches_path, "fasttest")
+    if not os.path.exists(CACHES_PATH):
+        os.makedirs(CACHES_PATH)
+    subprocess.check_call(f"sudo chown -R ubuntu:ubuntu {CACHES_PATH}", shell=True)
+    cache_path = os.path.join(CACHES_PATH, "fasttest")
 
     logging.info("Will try to fetch cache for our build")
     ccache_for_pr = get_ccache_if_not_exists(

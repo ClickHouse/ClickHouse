@@ -26,6 +26,7 @@ public:
     enum State
     {
         RUNNING,
+        COMMITTING,
         COMMITTED,
         ROLLED_BACK,
     };
@@ -54,6 +55,11 @@ public:
     String dumpDescription() const;
 
     Float64 elapsedSeconds() const { return elapsed.elapsedSeconds(); }
+
+    /// Waits for transaction state to become not equal to the state corresponding to current_state_csn
+    bool waitStateChange(CSN current_state_csn) const;
+
+    CSN getCSN() const { return csn; }
 
 private:
     scope_guard beforeCommit();

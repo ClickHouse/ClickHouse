@@ -146,27 +146,6 @@ private:
     friend class MutateTask;
     friend class MergeTask;
 
-    /** Split mutation commands into two parts:
-      * First part should be executed by mutations interpreter.
-      * Other is just simple drop/renames, so they can be executed without interpreter.
-      */
-    static void splitMutationCommands(
-        MergeTreeData::DataPartPtr part,
-        const MutationCommands & commands,
-        MutationCommands & for_interpreter,
-        MutationCommands & for_file_renames);
-
-    /// Get the columns list of the resulting part in the same order as storage_columns.
-    static std::pair<NamesAndTypesList, SerializationInfoByName> getColumnsForNewDataPart(
-        MergeTreeData::DataPartPtr source_part,
-        const Block & updated_header,
-        NamesAndTypesList storage_columns,
-        const SerializationInfoByName & serialization_infos,
-        const MutationCommands & commands_for_removes);
-
-    static ExecuteTTLType shouldExecuteTTL(
-        const StorageMetadataPtr & metadata_snapshot, const ColumnDependencies & dependencies);
-
 public :
     /** Is used to cancel all merges and mutations. On cancel() call all currently running actions will throw exception soon.
       * All new attempts to start a merge or mutation will throw an exception until all 'LockHolder' objects will be destroyed.
@@ -175,15 +154,6 @@ public :
     ActionBlocker ttl_merges_blocker;
 
 private:
-
-    MergeAlgorithm chooseMergeAlgorithm(
-        const MergeTreeData::DataPartsVector & parts,
-        size_t rows_upper_bound,
-        const NamesAndTypesList & gathering_columns,
-        bool deduplicate,
-        bool need_remove_expired_values,
-        const MergeTreeData::MergingParams & merging_params) const;
-
     MergeTreeData & data;
     const size_t max_tasks_count;
 

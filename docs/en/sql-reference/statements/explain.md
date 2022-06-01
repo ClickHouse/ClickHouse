@@ -10,7 +10,7 @@ Shows the execution plan of a statement.
 Syntax:
 
 ```sql
-EXPLAIN [AST | SYNTAX | PLAN | PIPELINE | TABLE OVERRIDE] [setting = value, ...]
+EXPLAIN [AST | SYNTAX | PLAN | PIPELINE | ESTIMATE | TABLE OVERRIDE] [setting = value, ...]
     [
       SELECT ... |
       tableFunction(...) [COLUMNS (...)] [ORDER BY ...] [PARTITION BY ...] [PRIMARY KEY] [SAMPLE BY ...] [TTL ...]

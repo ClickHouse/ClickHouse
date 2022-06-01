@@ -1,9 +1,12 @@
 #pragma once
 
-#include <Disks/IDiskRemote.h>
 #include <IO/WriteBufferFromFile.h>
 #include <Core/UUID.h>
 #include <set>
+
+#include <Interpreters/Context_fwd.h>
+#include <Disks/IDisk.h>
+#include <IO/ReadBufferFromFile.h>
 
 
 namespace DB
@@ -139,7 +142,7 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Disk {} is read-only", getName());
     }
 
-    void removeSharedRecursive(const String &, bool) override
+    void removeSharedRecursive(const String &, bool, const NameSet &) override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Disk {} is read-only", getName());
     }

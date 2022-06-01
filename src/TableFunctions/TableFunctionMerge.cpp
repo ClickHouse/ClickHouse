@@ -116,7 +116,7 @@ ColumnsDescription TableFunctionMerge::getActualTableStructure(ContextPtr contex
 
 StoragePtr TableFunctionMerge::executeImpl(const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/) const
 {
-    auto res = StorageMerge::create(
+    auto res = std::make_shared<StorageMerge>(
         StorageID(getDatabaseName(), table_name),
         getActualTableStructure(context),
         String{},
