@@ -26,7 +26,6 @@ namespace ErrorCodes
 {
     extern const int UNSUPPORTED_METHOD;
     extern const int BAD_ARGUMENTS;
-    extern const int TYPE_MISMATCH;
 }
 
 class UserDefinedFunction final : public IFunction
@@ -42,13 +41,12 @@ public:
     {
         const auto & configuration = executable_function->getConfiguration();
         size_t command_parameters_size = configuration.parameters.size();
-        if (command_parameters_size != parameters_.size()) {
+        if (command_parameters_size != parameters_.size())
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Executable user defined function {} number of parameters does not match. Expected {}. Actual {}",
                 configuration.name,
                 command_parameters_size,
                 parameters_.size());
-        }
 
         command_with_parameters = configuration.command;
         command_arguments_with_parameters = configuration.command_arguments;
@@ -59,26 +57,33 @@ public:
             const auto & parameter_value = parameters_[i];
             auto converted_parameter = convertFieldToTypeOrThrow(parameter_value, *command_parameter.type);
             auto parameter_placeholder = "{" + command_parameter.name + "}";
-            size_t parameter_placeholder_size = parameter_placeholder.size();
 
             auto parameter_value_string = applyVisitor(FieldVisitorToString(), converted_parameter);
             bool find_placedholder = false;
 
-            for (auto & command_argument : command_arguments_with_parameters) {
-                auto parameter_placeholder_position = command_argument.find(parameter_placeholder);
-                if (parameter_placeholder_position == std::string::npos)
-                    continue;
+            auto try_replace_parameter_placeholder_with_value = [&](std::string & command_part)
+            {
+                size_t previous_parameter_placeholder_position = 0;
 
-                command_argument.replace(parameter_placeholder_position, parameter_placeholder_size, parameter_value_string);
+                while (true)
+                {
+                    auto parameter_placeholder_position = command_part.find(parameter_placeholder, previous_parameter_placeholder_position);
+                    if (parameter_placeholder_position == std::string::npos)
+                        break;
+
+                    size_t parameter_placeholder_size = parameter_placeholder.size();
+                    command_part.replace(parameter_placeholder_position, parameter_placeholder_size, parameter_value_string);
+                    previous_parameter_placeholder_position = parameter_placeholder_position + parameter_value_string.size();
+                    find_placedholder = true;
+                }
+
                 find_placedholder = true;
-            }
+            };
 
-            auto parameter_placeholder_position = command_with_parameters.find(parameter_placeholder);
+            for (auto & command_argument : command_arguments_with_parameters)
+                try_replace_parameter_placeholder_with_value(command_argument);
 
-            if (parameter_placeholder_position != std::string::npos) {
-                command_with_parameters.replace(parameter_placeholder_position, parameter_placeholder_size, parameter_value_string);
-                find_placedholder = true;
-            }
+            try_replace_parameter_placeholder_with_value(command_with_parameters);
 
             if (!find_placedholder)
             {
