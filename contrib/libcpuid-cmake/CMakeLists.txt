@@ -6,7 +6,7 @@ elseif(ENABLE_CPUID)
 endif()
 
 if (NOT ENABLE_CPUID)
-    message("Not using cpuid")
+    message(STATUS "Not using cpuid")
     return()
 endif()
 
