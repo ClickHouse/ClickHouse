@@ -301,7 +301,7 @@
     </function>
 
     <function>
-        <type>executable</type>
+        <type>executable_pool</type>
         <name>test_function_nullable_pool_python</name>
         <return_type>String</return_type>
         <argument>
