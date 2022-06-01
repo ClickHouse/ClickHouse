@@ -228,7 +228,7 @@ Block MergeTreeDataWriter::mergeBlock(
             case MergeTreeData::MergingParams::Collapsing:
                 return std::make_shared<CollapsingSortedAlgorithm>(
                     block, 1, sort_description, merging_params.sign_column,
-                    false, block_size + 1, &Poco::Logger::get("MergeTreeBlockOutputStream"));
+                    false, block_size + 1, &Poco::Logger::get("MergeTreeDataWriter"));
             case MergeTreeData::MergingParams::Summing:
                 return std::make_shared<SummingSortedAlgorithm>(
                     block, 1, sort_description, merging_params.columns_to_sum,
@@ -451,6 +451,7 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPart(
                 temp_part.streams.emplace_back(std::move(stream));
         }
     }
+
     auto finalizer = out->finalizePartAsync(
         new_data_part,
         data_settings->fsync_after_insert,
@@ -459,8 +460,6 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPart(
 
     temp_part.part = new_data_part;
     temp_part.streams.emplace_back(TemporaryPart::Stream{.stream = std::move(out), .finalizer = std::move(finalizer)});
-
-    /// out.finish(new_data_part, std::move(written_files), sync_on_insert);
 
     ProfileEvents::increment(ProfileEvents::MergeTreeDataWriterRows, block.rows());
     ProfileEvents::increment(ProfileEvents::MergeTreeDataWriterUncompressedBytes, block.bytes());

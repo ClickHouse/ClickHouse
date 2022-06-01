@@ -1,4 +1,6 @@
-#include <signal.h>
+// NOLINTBEGIN(readability-inconsistent-declaration-parameter-name)
+
+#include <csignal>
 #include <sys/time.h>
 #if defined(OS_LINUX)
 #   include <sys/sysinfo.h>
@@ -317,3 +319,5 @@ FOR_EACH_WRAPPED_FUNCTION(MAKE_WRAPPER)
 #    undef MAKE_WRAPPER
 #endif
 }
+
+// NOLINTEND(readability-inconsistent-declaration-parameter-name)
