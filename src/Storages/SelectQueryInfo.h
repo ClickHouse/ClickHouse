@@ -48,8 +48,6 @@ using SubqueriesForSets = std::unordered_map<String, SubqueryForSet>;
 
 struct PrewhereInfo
 {
-    /// Actions which are executed in order to alias columns are used for prewhere actions.
-    ActionsDAGPtr alias_actions;
     /// Actions for row level security filter. Applied separately before prewhere_actions.
     /// This actions are separate because prewhere condition should not be executed over filtered rows.
     ActionsDAGPtr row_level_filter;
