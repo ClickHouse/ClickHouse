@@ -27,7 +27,7 @@ using MetadataOperationPtr = std::unique_ptr<IMetadataOperation>;
 struct IMetadataTransaction : private boost::noncopyable
 {
 public:
-    virtual void addOperation(MetadataOperationPtr && operation);
+    virtual void addOperation(MetadataOperationPtr && operation) = 0;
     virtual void commit() = 0;
     virtual void rollback() = 0;
 
@@ -56,13 +56,13 @@ public:
          const std::string & path,
          const ReadSettings & settings = ReadSettings{},
          std::optional<size_t> read_hint = {},
-         std::optional<size_t> file_size = {}) const;
+         std::optional<size_t> file_size = {}) const = 0;
 
     virtual std::unique_ptr<WriteBufferFromFileBase> writeFile( /// NOLINT
          const std::string & path,
          MetadataTransactionPtr transaction,
          size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
-         const WriteSettings & settings = {});
+         const WriteSettings & settings = {}) = 0;
 
     virtual void setLastModified(const std::string & path, const Poco::Timestamp & timestamp, MetadataTransactionPtr transaction) = 0;
 
