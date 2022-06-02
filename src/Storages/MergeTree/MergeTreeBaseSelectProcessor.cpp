@@ -268,7 +268,6 @@ static UInt64 estimateNumRows(const MergeTreeReadTask & current_task, UInt64 cur
 }
 
 
-
 Chunk MergeTreeBaseSelectProcessor::readFromPartImpl()
 {
     if (task->size_predictor)
