@@ -263,9 +263,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     , replica_path(fs::path(zookeeper_path) / "replicas" / replica_name_)
     , reader(*this)
     , writer(*this)
-    , merger_mutator(*this,
-        getContext()->getSettingsRef().background_merges_mutations_concurrency_ratio *
-        getContext()->getSettingsRef().background_pool_size)
+    , merger_mutator(*this, getContext()->getMergeMutateExecutor()->getMaxTasksCount())
     , merge_strategy_picker(*this)
     , queue(*this, merge_strategy_picker)
     , fetcher(*this)
@@ -7130,6 +7128,13 @@ bool StorageReplicatedMergeTree::dropPartImpl(
             return false;
         }
 
+        if (merge_pred.partParticipatesInReplaceRange(part, &out_reason))
+        {
+            if (throw_if_noop)
+                throw Exception(ErrorCodes::PART_IS_TEMPORARILY_LOCKED, out_reason);
+            return false;
+        }
+
         if (partIsLastQuorumPart(part->info))
         {
             if (throw_if_noop)
@@ -7760,7 +7765,8 @@ String StorageReplicatedMergeTree::getSharedDataReplica(
 }
 
 
-Strings StorageReplicatedMergeTree::getZeroCopyPartPath(const MergeTreeSettings & settings, DiskType disk_type, const String & table_uuid,
+Strings StorageReplicatedMergeTree::getZeroCopyPartPath(
+    const MergeTreeSettings & settings, DiskType disk_type, const String & table_uuid,
     const String & part_name, const String & zookeeper_path_old)
 {
     Strings res;
