@@ -350,11 +350,12 @@ In all `multiSearch*` functions the number of needles should be less than 2<sup>
 
 ## match(haystack, pattern) {#matchhaystack-pattern}
 
-Checks whether the string matches the `pattern` regular expression. A `re2` regular expression. The [syntax](https://github.com/google/re2/wiki/Syntax) of the `re2` regular expressions is more limited than the syntax of the Perl regular expressions.
+Checks whether the string matches the regular expression `pattern` in `re2` syntax. `Re2` has a more limited [syntax](https://github.com/google/re2/wiki/Syntax) than Perl regular expressions.
 
 Returns 0 if it does not match, or 1 if it matches.
 
-The regular expression works with the string as if it is a set of bytes. The regular expression can’t contain null bytes.
+Matching is based on UTF-8, e.g. `.` matches the two-codepoint symbol `¥`. The regular expression must not contain null bytes.
+
 For patterns to search for substrings in a string, it is better to use LIKE or ‘position’, since they work much faster.
 
 ## multiMatchAny(haystack, \[pattern<sub>1</sub>, pattern<sub>2</sub>, …, pattern<sub>n</sub>\]) {#multimatchanyhaystack-pattern1-pattern2-patternn}
@@ -497,6 +498,8 @@ The regular expression can contain the metasymbols `%` and `_`.
 `_` indicates any one byte.
 
 Use the backslash (`\`) for escaping metasymbols. See the note on escaping in the description of the ‘match’ function.
+
+Matching is based on UTF-8, e.g. `_` matches the two-codepoint symbol `¥`.
 
 For regular expressions like `%needle%`, the code is more optimal and works as fast as the `position` function.
 For other regular expressions, the code is the same as for the ‘match’ function.
