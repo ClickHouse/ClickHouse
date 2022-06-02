@@ -155,8 +155,23 @@ protected:
 
     struct StatisticsStream
     {
-        std::unique_ptr<WriteBufferFromFileBase> plain_buffer = nullptr;
-        std::unique_ptr<HashingWriteBuffer> hashing_buffer = nullptr;
+        StatisticsStream(
+            const String & filename_,
+            DiskPtr disk_,
+            const String & data_path_,
+            const CompressionCodecPtr & compression_codec_,
+            size_t max_compress_block_size_,
+            const WriteSettings & query_write_settings);
+
+        void prefinalizeAndAddToChecksums(IMergeTreeDataPart::Checksums & checksums);
+        void finalize() const;
+        void sync() const;
+
+        String filename;
+        std::unique_ptr<WriteBufferFromFileBase> plain_buffer;
+        HashingWriteBuffer hashing_buffer;
+        CompressedWriteBuffer compressed_buffer;
+        HashingWriteBuffer compressed_hashing_buffer;
     };
     std::map<std::pair<String, String>, std::unique_ptr<StatisticsStream>> statistic_and_column_to_stream;
     IMergeTreeStatisticCollectorPtrs stats_collectors;
@@ -179,7 +194,7 @@ protected:
 private:
     void initSkipIndices();
     void initPrimaryIndex();
-    void initStats();
+    void initStatistics();
 
     virtual void fillIndexGranularity(size_t index_granularity_for_block, size_t rows_in_block) = 0;
 };

@@ -1,8 +1,9 @@
 #include <Common/MemoryTrackerBlockerInThread.h>
+#include <Compression/CompressedWriteBuffer.h>
 #include <IO/WriteBufferFromFileDecorator.h>
+#include <memory>
 #include <Storages/MergeTree/MergeTreeDataPartWriterOnDisk.h>
 #include <Storages/MergeTree/MergeTreeStatistic.h>
-#include <memory>
 #include <unordered_set>
 #include <utility>
 
@@ -91,6 +92,43 @@ void MergeTreeDataPartWriterOnDisk::Stream::addToChecksums(MergeTreeData::DataPa
     }
 }
 
+MergeTreeDataPartWriterOnDisk::StatisticsStream::StatisticsStream(
+    const String & filename_,
+    DiskPtr disk_,
+    const String & data_path_,
+    const CompressionCodecPtr & compression_codec_,
+    size_t max_compress_block_size_,
+    const WriteSettings & query_write_settings)
+    : filename(filename_)
+    , plain_buffer(disk_->writeFile(data_path_, max_compress_block_size_, WriteMode::Rewrite, query_write_settings))
+    , hashing_buffer(*plain_buffer)
+    , compressed_buffer(hashing_buffer, compression_codec_, max_compress_block_size_)
+    , compressed_hashing_buffer(compressed_buffer)
+{
+}
+
+void MergeTreeDataPartWriterOnDisk::StatisticsStream::prefinalizeAndAddToChecksums(MergeTreeData::DataPart::Checksums & checksums)
+{
+    compressed_hashing_buffer.next();
+    hashing_buffer.next();
+    plain_buffer->preFinalize();
+
+    checksums.files[filename].is_compressed = true;
+    checksums.files[filename].uncompressed_size = compressed_hashing_buffer.count();
+    checksums.files[filename].uncompressed_hash = compressed_hashing_buffer.getHash();
+    checksums.files[filename].file_size = hashing_buffer.count();
+    checksums.files[filename].file_hash = hashing_buffer.getHash();
+}
+
+void MergeTreeDataPartWriterOnDisk::StatisticsStream::finalize() const
+{
+    plain_buffer->finalize();
+}
+
+void MergeTreeDataPartWriterOnDisk::StatisticsStream::sync() const
+{
+    plain_buffer->sync();
+}
 
 MergeTreeDataPartWriterOnDisk::MergeTreeDataPartWriterOnDisk(
     const MergeTreeData::DataPartPtr & data_part_,
@@ -123,7 +161,7 @@ MergeTreeDataPartWriterOnDisk::MergeTreeDataPartWriterOnDisk(
     if (settings.rewrite_primary_key)
         initPrimaryIndex();
     initSkipIndices();
-    initStats();
+    initStatistics();
 }
 
 // Implementation is split into static functions for ability
@@ -201,7 +239,7 @@ void MergeTreeDataPartWriterOnDisk::initSkipIndices()
     }
 }
 
-void MergeTreeDataPartWriterOnDisk::initStats()
+void MergeTreeDataPartWriterOnDisk::initStatistics()
 {
     stats_collectors = MergeTreeStatisticFactory::instance()
         .getStatisticCollectors(
@@ -407,21 +445,20 @@ void MergeTreeDataPartWriterOnDisk::fillStatisticsChecksums(MergeTreeData::DataP
             const auto statistic_name = stats_collector->name();
             const auto filename = generateFileNameForStatistics(statistic_name, stats_collector->column());
 
-            if (statistic_and_column_to_stream.emplace(std::pair<String, String>{statistic_name, stats_collector->column()}, std::make_unique<StatisticsStream>()).second)
+
+            if (statistic_and_column_to_stream.emplace(std::pair<String, String>{statistic_name, stats_collector->column()}, nullptr).second)
             {
                 auto& stream = statistic_and_column_to_stream.at(std::pair<String, String>{statistic_name, stats_collector->column()});
-                stream->plain_buffer = data_part->volume->getDisk()->writeFile(
+                stream = std::make_unique<StatisticsStream>(
+                    filename,
+                    data_part->volume->getDisk(),
                     part_path + filename,
-                    DBMS_DEFAULT_BUFFER_SIZE,
-                    WriteMode::Rewrite);
-                stream->hashing_buffer = std::make_unique<HashingWriteBuffer>(*stream->plain_buffer);
-                auto & stats_stream = stream->hashing_buffer;
+                    default_codec,
+                    settings.max_compress_block_size,
+                    settings.query_write_settings);
 
-                stats.serializeBinary(statistic_name, *stats_stream);
-
-                stats_stream->next();
-                checksums.files[filename].file_size = stats_stream->count();
-                checksums.files[filename].file_hash = stats_stream->getHash();
+                stats.serializeBinary(statistic_name, stream->compressed_hashing_buffer);
+                stream->prefinalizeAndAddToChecksums(checksums);
             }
             else
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "It's a bug: Statistic {}:{} already exists.", statistic_name, stats_collector->column());
@@ -436,9 +473,9 @@ void MergeTreeDataPartWriterOnDisk::finishStatisticsSerialization(bool sync)
 
     for (const auto & [_, stats_file_stream] : statistic_and_column_to_stream)
     {
-        stats_file_stream->plain_buffer->finalize();
+        stats_file_stream->finalize();
         if (sync)
-            stats_file_stream->plain_buffer->sync();
+            stats_file_stream->sync();
     }
 
     statistic_and_column_to_stream.clear();

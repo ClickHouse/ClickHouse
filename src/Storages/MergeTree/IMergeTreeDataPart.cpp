@@ -24,6 +24,7 @@
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <base/JSON.h>
 #include <Common/logger_useful.h>
+#include <Compression/CompressedReadBuffer.h>
 #include <Compression/getCompressionCodecForFile.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/queryToString.h>
@@ -786,7 +787,7 @@ MergeTreeStatisticsPtr IMergeTreeDataPart::loadStatistics() const
 {
     const auto metadata_snapshot = storage.getInMemoryMetadataPtr();
 
-    auto total_stats = MergeTreeStatisticFactory::instance().get(
+    auto total_statistics = MergeTreeStatisticFactory::instance().get(
         metadata_snapshot->getStatistics(), metadata_snapshot->getColumns());
     std::vector<String> file_names;
     volume->getDisk()->listFiles(getFullRelativePath(), file_names);
@@ -794,22 +795,23 @@ MergeTreeStatisticsPtr IMergeTreeDataPart::loadStatistics() const
     {
         if (file_name.ends_with(PART_STATS_FILE_EXT))
         {
-            const String stats_file_path = String(fs::path(getFullRelativePath()) / file_name);
+            const String statistics_file_path = String(fs::path(getFullRelativePath()) / file_name);
 
-            if (volume->getDisk()->exists(stats_file_path))
+            if (volume->getDisk()->exists(statistics_file_path))
             {
-                auto stats = MergeTreeStatisticFactory::instance().get(
+                auto statistics = MergeTreeStatisticFactory::instance().get(
                     metadata_snapshot->getStatistics(), metadata_snapshot->getColumns());
-                auto stats_file = openForReading(volume->getDisk(), stats_file_path);
-                stats->deserializeBinary(*stats_file);
-                if (!stats_file->eof())
-                    throw Exception("Stats file " + fullPath(volume->getDisk(), stats_file_path) + " is unexpectedly long", ErrorCodes::EXPECTED_END_OF_FILE);
+                auto statistics_file = openForReading(volume->getDisk(), statistics_file_path);
+                CompressedReadBuffer compressed_buffer(*statistics_file);
+                statistics->deserializeBinary(compressed_buffer);
+                if (!statistics_file->eof())
+                    throw Exception("Stats file " + fullPath(volume->getDisk(), statistics_file_path) + " is unexpectedly long", ErrorCodes::EXPECTED_END_OF_FILE);
 
-                total_stats->merge(stats);
+                total_statistics->merge(statistics);
             }
         }
     }
-    return total_stats;
+    return total_statistics;
 }
 
 void IMergeTreeDataPart::appendFilesOfIndex(Strings & files) const
