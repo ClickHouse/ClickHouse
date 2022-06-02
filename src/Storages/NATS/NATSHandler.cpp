@@ -9,6 +9,9 @@ namespace DB
 /* The object of this class is shared between concurrent consumers (who share the same connection == share the same
  * event loop and handler).
  */
+
+static const auto MAX_THREAD_WORK_DURATION_MS = 60000;
+
 NATSHandler::NATSHandler(uv_loop_t * loop_, Poco::Logger * log_) :
     loop(loop_),
     log(log_),
@@ -23,6 +26,8 @@ NATSHandler::NATSHandler(uv_loop_t * loop_, Poco::Logger * log_) :
                                  natsLibuv_Read,
                                  natsLibuv_Write,
                                  natsLibuv_Detach);
+    natsOptions_SetIOBufSize(opts, INT_MAX);
+    natsOptions_SetSendAsap(opts, true);
 }
 
 void NATSHandler::startLoop()
@@ -32,10 +37,15 @@ void NATSHandler::startLoop()
 
     LOG_DEBUG(log, "Background loop started");
     loop_running.store(true);
+    auto start_time = std::chrono::steady_clock::now();
+    auto end_time = std::chrono::steady_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
 
-    while (loop_state.load() == Loop::RUN)
+    while (loop_state.load() == Loop::RUN && duration.count() < MAX_THREAD_WORK_DURATION_MS)
     {
         uv_run(loop, UV_RUN_NOWAIT);
+        end_time = std::chrono::steady_clock::now();
+        duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
     }
 
     LOG_DEBUG(log, "Background loop ended");

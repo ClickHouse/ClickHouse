@@ -60,6 +60,8 @@ public:
     void incrementReader();
     void decrementReader();
 
+    void startStreaming() { if (!mv_attached) { streaming_task->activateAndSchedule(); } }
+
 private:
     ContextMutablePtr nats_context;
     std::unique_ptr<NATSSettings> nats_settings;
@@ -89,8 +91,6 @@ private:
     BackgroundSchedulePool::TaskHolder streaming_task;
     BackgroundSchedulePool::TaskHolder looping_task;
     BackgroundSchedulePool::TaskHolder connection_task;
-
-    uint64_t milliseconds_to_wait;
 
     /// True if consumers have subscribed to all subjects
     std::atomic<bool> consumers_ready{false};
@@ -135,7 +135,7 @@ private:
 
     ContextMutablePtr addSettings(ContextPtr context) const;
     size_t getMaxBlockSize() const;
-    void deactivateTask(BackgroundSchedulePool::TaskHolder & task, bool wait, bool stop_loop);
+    void deactivateTask(BackgroundSchedulePool::TaskHolder & task, bool stop_loop);
 
     bool streamToViews();
     bool checkDependencies(const StorageID & table_id);

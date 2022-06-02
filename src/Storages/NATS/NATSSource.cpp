@@ -62,6 +62,7 @@ NATSSource::~NATSSource()
     if (!buffer)
         return;
 
+    buffer->allowNext();
     storage.pushReadBuffer(buffer);
 }
 
