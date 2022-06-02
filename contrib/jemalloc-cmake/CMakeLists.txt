@@ -180,7 +180,6 @@ if (USE_UNWIND)
     target_link_libraries (_jemalloc PRIVATE unwind)
 endif ()
 
-target_compile_options(_jemalloc PRIVATE -Wno-redundant-decls)
 # for RTLD_NEXT
 target_compile_options(_jemalloc PRIVATE -D_GNU_SOURCE)
 
