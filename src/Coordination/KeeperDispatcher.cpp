@@ -442,12 +442,12 @@ void KeeperDispatcher::finishSession(int64_t session_id)
 
 void KeeperDispatcher::addErrorResponses(const KeeperStorage::RequestsForSessions & requests_for_sessions, Coordination::Error error)
 {
-    for (const auto & [session_id, time, request] : requests_for_sessions)
+    for (const auto & [session_id, time, request, zxid, nodes_hash] : requests_for_sessions)
     {
         KeeperStorage::ResponsesForSessions responses;
         auto response = request->makeResponse();
         response->xid = request->xid;
-        response->zxid = 0;
+        response->zxid = zxid;
         response->error = error;
         if (!responses_queue.push(DB::KeeperStorage::ResponseForSession{session_id, response}))
             throw Exception(ErrorCodes::SYSTEM_ERROR,
