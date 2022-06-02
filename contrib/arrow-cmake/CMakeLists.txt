@@ -13,20 +13,16 @@
 # make -j8
 # {BUILD_DIR}/contrib/arrow/cpp/build/release/parquet-reader some_file.parquet
 
-set (ENABLE_PARQUET_DEFAULT ${ENABLE_LIBRARIES})
-if (OS_FREEBSD)
-    set (ENABLE_PARQUET_DEFAULT OFF)
+if (NOT OS_FREEBSD)
+    option (ENABLE_PARQUET "Enable parquet" ${ENABLE_LIBRARIES})
+elseif (ENABLE_PARQUET)
+    # Freebsd: ../contrib/arrow/cpp/src/arrow/util/bit-util.h:27:10: fatal error: endian.h: No such file or directory
+    message (${RECONFIGURE_MESSAGEL_LEVEL} "Can't use parquet on FreeBSD")
 endif()
-option (ENABLE_PARQUET "Enable parquet" ${ENABLE_PARQUET_DEFAULT})
 
 if (NOT ENABLE_PARQUET)
     message(STATUS "Not using parquet")
     return()
-endif()
-
-# Freebsd: ../contrib/arrow/cpp/src/arrow/util/bit-util.h:27:10: fatal error: endian.h: No such file or directory
-if (OS_FREEBSD)
-    message (FATAL_ERROR "Using internal parquet library on FreeBSD is not supported")
 endif()
 
 set (CMAKE_CXX_STANDARD 17)
@@ -73,6 +69,8 @@ add_custom_command(OUTPUT orc_proto.pb.h orc_proto.pb.cc
 
 
 # === flatbuffers
+# TODO: only allow clang as compiler
+# TODO: disallow apple clang
 set(FLATBUFFERS_SRC_DIR "${ClickHouse_SOURCE_DIR}/contrib/flatbuffers")
 set(FLATBUFFERS_BINARY_DIR "${ClickHouse_BINARY_DIR}/contrib/flatbuffers")
 set(FLATBUFFERS_INCLUDE_DIR "${FLATBUFFERS_SRC_DIR}/include")
@@ -82,12 +80,229 @@ if (USE_STATIC_LIBRARIES)
     set(FLATBUFFERS_BUILD_FLATLIB ON CACHE BOOL "Enable the build of the flatbuffers library")
     set(FLATBUFFERS_BUILD_SHAREDLIB OFF CACHE BOOL "Disable the build of the flatbuffers shared library")
 else ()
-    set(FLATBUFFERS_BUILD_SHAREDLIB ON CACHE BOOL "Enable the build of the flatbuffers shared library")
     set(FLATBUFFERS_BUILD_FLATLIB OFF CACHE BOOL "Disable the build of the flatbuffers library")
+    set(FLATBUFFERS_BUILD_SHAREDLIB ON CACHE BOOL "Enable the build of the flatbuffers shared library")
 endif ()
-set(FLATBUFFERS_BUILD_TESTS OFF CACHE BOOL "Skip flatbuffers tests")
 
-add_subdirectory(${FLATBUFFERS_SRC_DIR} "${FLATBUFFERS_BINARY_DIR}")
+# add_subdirectory(${FLATBUFFERS_SRC_DIR} "${FLATBUFFERS_BINARY_DIR}")
+#################################################################################################################################################
+option(FLATBUFFERS_INSTALL "Enable the installation of targets." ON)
+option(FLATBUFFERS_BUILD_FLATLIB "Enable the build of the flatbuffers library" ON)
+option(FLATBUFFERS_BUILD_SHAREDLIB "Enable the build of the flatbuffers shared library" OFF)
+option(FLATBUFFERS_LIBCXX_WITH_CLANG "Force libc++ when using Clang" ON)
+
+# Auto-detect locale-narrow 'strtod_l' and  'strtoull_l' functions.
+if(NOT DEFINED FLATBUFFERS_LOCALE_INDEPENDENT)
+  include(CheckCXXSymbolExists)
+  set(FLATBUFFERS_LOCALE_INDEPENDENT 0)
+  check_cxx_symbol_exists(strtof_l stdlib.h FLATBUFFERS_HAS_STRTOF_L)
+  check_cxx_symbol_exists(strtoull_l stdlib.h FLATBUFFERS_HAS_STRTOULL_L)
+  if(FLATBUFFERS_HAS_STRTOF_L AND FLATBUFFERS_HAS_STRTOULL_L)
+    set(FLATBUFFERS_LOCALE_INDEPENDENT 1)
+  endif()
+endif()
+add_definitions(-DFLATBUFFERS_LOCALE_INDEPENDENT=$<BOOL:${FLATBUFFERS_LOCALE_INDEPENDENT}>)
+
+set(FlatBuffers_Library_SRCS
+  ../flatbuffers/include/flatbuffers/base.h
+  ../flatbuffers/include/flatbuffers/flatbuffers.h
+  ../flatbuffers/include/flatbuffers/hash.h
+  ../flatbuffers/include/flatbuffers/idl.h
+  ../flatbuffers/include/flatbuffers/util.h
+  ../flatbuffers/include/flatbuffers/reflection.h
+  ../flatbuffers/include/flatbuffers/reflection_generated.h
+  ../flatbuffers/include/flatbuffers/stl_emulation.h
+  ../flatbuffers/include/flatbuffers/flexbuffers.h
+  ../flatbuffers/include/flatbuffers/registry.h
+  ../flatbuffers/include/flatbuffers/minireflect.h
+  ../flatbuffers/src/idl_parser.cpp
+  ../flatbuffers/src/idl_gen_text.cpp
+  ../flatbuffers/src/reflection.cpp
+  ../flatbuffers/src/util.cpp
+)
+
+set(FlatBuffers_Compiler_SRCS
+  ${FlatBuffers_Library_SRCS}
+  ../flatbuffers/src/idl_gen_cpp.cpp
+  ../flatbuffers/src/idl_gen_csharp.cpp
+  ../flatbuffers/src/idl_gen_dart.cpp
+  ../flatbuffers/src/idl_gen_kotlin.cpp
+  ../flatbuffers/src/idl_gen_go.cpp
+  ../flatbuffers/src/idl_gen_java.cpp
+  ../flatbuffers/src/idl_gen_ts.cpp
+  ../flatbuffers/src/idl_gen_php.cpp
+  ../flatbuffers/src/idl_gen_python.cpp
+  ../flatbuffers/src/idl_gen_lobster.cpp
+  ../flatbuffers/src/idl_gen_lua.cpp
+  ../flatbuffers/src/idl_gen_rust.cpp
+  ../flatbuffers/src/idl_gen_fbs.cpp
+  ../flatbuffers/src/idl_gen_grpc.cpp
+  ../flatbuffers/src/idl_gen_json_schema.cpp
+  ../flatbuffers/src/idl_gen_swift.cpp
+  ../flatbuffers/src/flatc.cpp
+  ../flatbuffers/src/flatc_main.cpp
+  ../flatbuffers/include/flatbuffers/code_generators.h
+  ../flatbuffers/src/code_generators.cpp
+  ../flatbuffers/grpc/src/compiler/schema_interface.h
+  ../flatbuffers/grpc/src/compiler/cpp_generator.h
+  ../flatbuffers/grpc/src/compiler/cpp_generator.cc
+  ../flatbuffers/grpc/src/compiler/go_generator.h
+  ../flatbuffers/grpc/src/compiler/go_generator.cc
+  ../flatbuffers/grpc/src/compiler/java_generator.h
+  ../flatbuffers/grpc/src/compiler/java_generator.cc
+  ../flatbuffers/grpc/src/compiler/python_generator.h
+  ../flatbuffers/grpc/src/compiler/python_generator.cc
+  ../flatbuffers/grpc/src/compiler/swift_generator.h
+  ../flatbuffers/grpc/src/compiler/swift_generator.cc
+  ../flatbuffers/grpc/src/compiler/ts_generator.h
+  ../flatbuffers/grpc/src/compiler/ts_generator.cc
+)
+
+if(EXISTS "${CMAKE_TOOLCHAIN_FILE}")
+  # do not apply any global settings if the toolchain
+  # is being configured externally
+  message(STATUS "Using toolchain file: ${CMAKE_TOOLCHAIN_FILE}.")
+elseif(${CMAKE_CXX_COMPILER_ID} MATCHES "Clang")
+  set(CMAKE_CXX_FLAGS
+      "${CMAKE_CXX_FLAGS} -std=c++0x -Wall -pedantic -Werror -Wextra -Wno-unused-parameter")
+  set(FLATBUFFERS_PRIVATE_CXX_FLAGS "-Wold-style-cast")
+  if(NOT CMAKE_CXX_COMPILER_VERSION VERSION_LESS 3.8)
+    list(APPEND FLATBUFFERS_PRIVATE_CXX_FLAGS "-Wimplicit-fallthrough" "-Wextra-semi" "-Werror=unused-private-field") # enable warning
+  endif()
+  if(FLATBUFFERS_LIBCXX_WITH_CLANG)
+    if(NOT "${CMAKE_SYSTEM_NAME}" MATCHES "Linux")
+      set(CMAKE_CXX_FLAGS
+          "${CMAKE_CXX_FLAGS} -stdlib=libc++")
+    endif()
+    if(NOT ("${CMAKE_SYSTEM_NAME}" MATCHES "FreeBSD" OR
+            "${CMAKE_SYSTEM_NAME}" MATCHES "Linux"))
+      set(CMAKE_EXE_LINKER_FLAGS
+          "${CMAKE_EXE_LINKER_FLAGS} -lc++abi")
+    endif()
+  endif()
+
+  # Certain platforms such as ARM do not use signed chars by default
+  # which causes issues with certain bounds checks.
+  set(CMAKE_CXX_FLAGS
+    "${CMAKE_CXX_FLAGS} -fsigned-char")
+
+endif()
+
+include_directories(../flatbuffers/include)
+include_directories(../flatbuffers/grpc)
+
+if(FLATBUFFERS_BUILD_FLATLIB)
+  add_library(flatbuffers STATIC ${FlatBuffers_Library_SRCS})
+  # Attach header directory for when build via add_subdirectory().
+  target_include_directories(flatbuffers INTERFACE
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>)
+  target_compile_options(flatbuffers PRIVATE "${FLATBUFFERS_PRIVATE_CXX_FLAGS}")
+endif()
+
+if(FLATBUFFERS_BUILD_SHAREDLIB)
+  add_library(flatbuffers_shared SHARED ${FlatBuffers_Library_SRCS})
+
+  # Shared object version: "major.minor.micro"
+  # - micro updated every release when there is no API/ABI changes
+  # - minor updated when there are additions in API/ABI
+  # - major (ABI number) updated when there are changes in ABI (or removals)
+  set(FlatBuffers_Library_SONAME_MAJOR "2")
+  set(FlatBuffers_Library_SONAME_FULL "${FlatBuffers_Library_SONAME_MAJOR}.0.0")
+  set_target_properties(flatbuffers_shared PROPERTIES OUTPUT_NAME flatbuffers
+                        SOVERSION "${FlatBuffers_Library_SONAME_MAJOR}"
+                        VERSION "${FlatBuffers_Library_SONAME_FULL}")
+endif()
+
+# Global list of generated files.
+# Use the global property to be independent of PARENT_SCOPE.
+set_property(GLOBAL PROPERTY FBS_GENERATED_OUTPUTS)
+
+function(get_generated_output generated_files)
+  get_property(tmp GLOBAL PROPERTY FBS_GENERATED_OUTPUTS)
+  set(${generated_files} ${tmp} PARENT_SCOPE)
+endfunction(get_generated_output)
+
+include(../flatbuffers/CMake/Version.cmake)
+
+if(FLATBUFFERS_INSTALL)
+  include(GNUInstallDirs)
+
+  install(DIRECTORY include/flatbuffers DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+
+  set(FB_CMAKE_DIR "${CMAKE_INSTALL_LIBDIR}/cmake/flatbuffers")
+
+  configure_file(../flatbuffers/CMake/FlatbuffersConfigVersion.cmake.in FlatbuffersConfigVersion.cmake @ONLY)
+  install(
+      FILES "CMake/FlatbuffersConfig.cmake" "${CMAKE_CURRENT_BINARY_DIR}/FlatbuffersConfigVersion.cmake"
+      DESTINATION ${FB_CMAKE_DIR}
+  )
+
+  if(FLATBUFFERS_BUILD_FLATLIB)
+    if(CMAKE_VERSION VERSION_LESS 3.0)
+      install(
+        TARGETS flatbuffers EXPORT FlatbuffersTargets
+        ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+      )
+    else()
+      install(
+        TARGETS flatbuffers EXPORT FlatbuffersTargets
+        ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+      )
+    endif()
+
+    install(EXPORT FlatbuffersTargets
+      FILE FlatbuffersTargets.cmake
+      NAMESPACE flatbuffers::
+      DESTINATION ${FB_CMAKE_DIR}
+    )
+  endif()
+
+  if(FLATBUFFERS_BUILD_SHAREDLIB)
+    if(CMAKE_VERSION VERSION_LESS 3.0)
+      install(
+        TARGETS flatbuffers_shared EXPORT FlatbuffersSharedTargets
+        ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        RUNTIME DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+      )
+    else()
+      install(
+        TARGETS flatbuffers_shared EXPORT FlatbuffersSharedTargets
+        ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        RUNTIME DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+      )
+    endif()
+
+  install(
+      EXPORT FlatbuffersSharedTargets
+      FILE FlatbuffersSharedTargets.cmake
+      NAMESPACE flatbuffers::
+      DESTINATION ${FB_CMAKE_DIR}
+    )
+  endif()
+
+  if(FLATBUFFERS_BUILD_SHAREDLIB OR FLATBUFFERS_BUILD_FLATLIB)
+      configure_file(../flatbuffers/CMake/flatbuffers.pc.in flatbuffers.pc @ONLY)
+      install(
+        FILES "${CMAKE_CURRENT_BINARY_DIR}/flatbuffers.pc"
+        DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig
+      )
+  endif()
+endif()
+
+# This target is sync-barrier.
+# Other generate-dependent targets can depend on 'generated_code' only.
+get_generated_output(fbs_generated)
+if(fbs_generated)
+  # message(STATUS "Add generated_code target with files:${fbs_generated}")
+  add_custom_target(generated_code
+    DEPENDS ${fbs_generated}
+    COMMENT "All generated files were updated.")
+endif()
+#################################################################################################################################################
 
 add_library(_flatbuffers INTERFACE)
 if(USE_STATIC_LIBRARIES)
