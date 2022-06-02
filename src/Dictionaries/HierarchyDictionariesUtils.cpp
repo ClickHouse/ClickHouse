@@ -142,18 +142,25 @@ ColumnPtr getKeysHierarchyDefaultImplementation(
 
     auto is_key_valid_func = [&](auto & key) { return key_to_parent_key.find(key) != nullptr; };
 
+    UInt64 null_value = hierarchical_attribute.null_value.get<UInt64>();
     auto get_parent_key_func = [&](auto & key)
     {
+        std::optional<UInt64> result;
         auto it = key_to_parent_key.find(key);
-        std::optional<UInt64> result = (it != nullptr ? std::make_optional(it->getMapped()) : std::nullopt);
-        valid_keys += result.has_value();
+        if (it == nullptr) {
+            return result;
+        }
+
+        UInt64 parent_key = it->getMapped();
+        if (parent_key == null_value)
+            return result;
+
+        result = parent_key;
+        valid_keys += 1;
         return result;
     };
 
-    UInt64 null_value = hierarchical_attribute.null_value.get<UInt64>();
-
-    auto dictionary_hierarchy_array = getKeysHierarchyArray(requested_keys, null_value, is_key_valid_func, get_parent_key_func);
-    return dictionary_hierarchy_array;
+    return getKeysHierarchyArray(requested_keys, is_key_valid_func, get_parent_key_func);
 }
 
 ColumnUInt8::Ptr getKeysIsInHierarchyDefaultImplementation(
@@ -185,19 +192,26 @@ ColumnUInt8::Ptr getKeysIsInHierarchyDefaultImplementation(
 
     auto is_key_valid_func = [&](auto & key) { return key_to_parent_key.find(key) != nullptr; };
 
+    UInt64 null_value = hierarchical_attribute.null_value.get<UInt64>();
     auto get_parent_key_func = [&](auto & key)
     {
+        std::optional<UInt64> result;
         auto it = key_to_parent_key.find(key);
-        std::optional<UInt64> result = (it != nullptr ? std::make_optional(it->getMapped()) : std::nullopt);
-        valid_keys += result.has_value();
+        if (it == nullptr) {
+            return result;
+        }
+
+        UInt64 parent_key = it->getMapped();
+        if (parent_key == null_value)
+            return result;
+
+        result = parent_key;
+        valid_keys += 1;
         return result;
     };
 
-    UInt64 null_value = hierarchical_attribute.null_value.get<UInt64>();
     const auto & in_keys = in_key_column_typed->getData();
-
-    auto result = getKeysIsInHierarchyColumn(requested_keys, in_keys, null_value, is_key_valid_func, get_parent_key_func);
-    return result;
+    return getKeysIsInHierarchyColumn(requested_keys, in_keys, is_key_valid_func, get_parent_key_func);
 }
 
 }

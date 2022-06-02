@@ -183,6 +183,9 @@ ColumnPtr HashedArrayDictionary<dictionary_key_type>::getHierarchy(ColumnPtr key
 {
     if constexpr (dictionary_key_type == DictionaryKeyType::Simple)
     {
+        if (key_column->isNullable())
+            key_column = assert_cast<const ColumnNullable *>(key_column.get())->getNestedColumnPtr();
+
         PaddedPODArray<UInt64> keys_backup_storage;
         const auto & keys = getColumnVectorData(this, key_column, keys_backup_storage);
 
@@ -191,9 +194,12 @@ ColumnPtr HashedArrayDictionary<dictionary_key_type>::getHierarchy(ColumnPtr key
         const auto & dictionary_attribute = dict_struct.attributes[hierarchical_attribute_index];
         const auto & hierarchical_attribute = attributes[hierarchical_attribute_index];
 
-        const auto & key_attribute_container = key_attribute.container;
+        std::optional<UInt64> null_value;
 
-        const UInt64 null_value = dictionary_attribute.null_value.template get<UInt64>();
+        if (!dictionary_attribute.null_value.isNull())
+            null_value = dictionary_attribute.null_value.get<UInt64>();
+
+        const auto & key_attribute_container = key_attribute.container;
         const AttributeContainerType<UInt64> & parent_keys_container = std::get<AttributeContainerType<UInt64>>(hierarchical_attribute.container);
 
         auto is_key_valid_func = [&](auto & key) { return key_attribute_container.find(key) != key_attribute_container.end(); };
@@ -206,15 +212,25 @@ ColumnPtr HashedArrayDictionary<dictionary_key_type>::getHierarchy(ColumnPtr key
 
             auto it = key_attribute_container.find(hierarchy_key);
 
-            if (it != key_attribute_container.end())
-                result = parent_keys_container[it->getMapped()];
+            if (it == key_attribute_container.end())
+                return result;
 
-            keys_found += result.has_value();
+            size_t key_index = it->getMapped();
+
+            if (unlikely(hierarchical_attribute.is_index_null) && (*hierarchical_attribute.is_index_null)[key_index])
+                return result;
+
+            UInt64 parent_key = parent_keys_container[key_index];
+            if (null_value && *null_value == parent_key)
+                return result;
+
+            result = parent_key;
+            keys_found += 1;
 
             return result;
         };
 
-        auto dictionary_hierarchy_array = getKeysHierarchyArray(keys, null_value, is_key_valid_func, get_parent_func);
+        auto dictionary_hierarchy_array = getKeysHierarchyArray(keys, is_key_valid_func, get_parent_func);
 
         query_count.fetch_add(keys.size(), std::memory_order_relaxed);
         found_count.fetch_add(keys_found, std::memory_order_relaxed);
@@ -235,8 +251,21 @@ ColumnUInt8::Ptr HashedArrayDictionary<dictionary_key_type>::isInHierarchy(
 {
     if constexpr (dictionary_key_type == DictionaryKeyType::Simple)
     {
+        if (key_column->isNullable())
+            key_column = assert_cast<const ColumnNullable *>(key_column.get())->getNestedColumnPtr();
+
         PaddedPODArray<UInt64> keys_backup_storage;
         const auto & keys = getColumnVectorData(this, key_column, keys_backup_storage);
+
+        const PaddedPODArray<UInt8> * in_key_column_nullable_mask = nullptr;
+
+        if (in_key_column->isNullable())
+        {
+            const auto * in_key_column_typed = assert_cast<const ColumnNullable *>(in_key_column.get());
+
+            in_key_column = in_key_column_typed->getNestedColumnPtr();
+            in_key_column_nullable_mask = &in_key_column_typed->getNullMapColumn().getData();
+        }
 
         PaddedPODArray<UInt64> keys_in_backup_storage;
         const auto & keys_in = getColumnVectorData(this, in_key_column, keys_in_backup_storage);
@@ -246,9 +275,12 @@ ColumnUInt8::Ptr HashedArrayDictionary<dictionary_key_type>::isInHierarchy(
         const auto & dictionary_attribute = dict_struct.attributes[hierarchical_attribute_index];
         auto & hierarchical_attribute = attributes[hierarchical_attribute_index];
 
-        const auto & key_attribute_container = key_attribute.container;
+        std::optional<UInt64> null_value;
 
-        const UInt64 null_value = dictionary_attribute.null_value.template get<UInt64>();
+        if (!dictionary_attribute.null_value.isNull())
+            null_value = dictionary_attribute.null_value.get<UInt64>();
+
+        const auto & key_attribute_container = key_attribute.container;
         const AttributeContainerType<UInt64> & parent_keys_container = std::get<AttributeContainerType<UInt64>>(hierarchical_attribute.container);
 
         auto is_key_valid_func = [&](auto & key) { return key_attribute_container.find(key) != key_attribute_container.end(); };
@@ -261,15 +293,36 @@ ColumnUInt8::Ptr HashedArrayDictionary<dictionary_key_type>::isInHierarchy(
 
             auto it = key_attribute_container.find(hierarchy_key);
 
-            if (it != key_attribute_container.end())
-                result = parent_keys_container[it->getMapped()];
+            if (it == key_attribute_container.end())
+                return result;
 
-            keys_found += result.has_value();
+            size_t key_index = it->getMapped();
+
+            if (unlikely(hierarchical_attribute.is_index_null) && (*hierarchical_attribute.is_index_null)[key_index])
+                return result;
+
+            UInt64 parent_key = parent_keys_container[key_index];
+            if (null_value && *null_value == parent_key)
+                return result;
+
+            result = parent_key;
+            keys_found += 1;
 
             return result;
         };
 
-        auto result = getKeysIsInHierarchyColumn(keys, keys_in, null_value, is_key_valid_func, get_parent_func);
+        auto result = getKeysIsInHierarchyColumn(keys, keys_in, is_key_valid_func, get_parent_func);
+
+        if (unlikely(in_key_column_nullable_mask))
+        {
+            auto mutable_result_ptr = result->assumeMutable();
+            auto & mutable_result = assert_cast<ColumnUInt8 &>(*mutable_result_ptr);
+            auto & mutable_result_data = mutable_result.getData();
+            size_t mutable_result_data_size = mutable_result_data.size();
+
+            for (size_t i = 0; i < mutable_result_data_size; ++i)
+                mutable_result_data[i] &= !(static_cast<bool>((*in_key_column_nullable_mask)[i]));
+        }
 
         query_count.fetch_add(keys.size(), std::memory_order_relaxed);
         found_count.fetch_add(keys_found, std::memory_order_relaxed);
