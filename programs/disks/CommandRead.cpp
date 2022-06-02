@@ -44,15 +44,15 @@ public:
 
         String disk_name = config.getString("disk", "default");
 
-        String path =  pos_arguments[0];
+        String path = pos_arguments[0];
 
         DiskPtr disk = global_context->getDisk(disk_name);
 
         String full_path = fullPathWithValidate(disk, path);
 
-        String path_output = config.getString("output", "default");
+        String path_output = config.getString("output", "");
 
-        if (path_output != "default")
+        if (!path_output.empty())
         {
             String full_path_output = fullPathWithValidate(disk, path_output);
 
