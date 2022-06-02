@@ -1581,8 +1581,9 @@ void StorageWindowView::startup()
     DatabaseCatalog::instance().addDependency(select_table_id, getStorageID());
 
     // Start the working thread
-    clean_cache_task->activateAndSchedule();
     fire_task->activateAndSchedule();
+    clean_cache_task->activate();
+    clean_cache_task->scheduleAfter(clean_interval_ms);
 }
 
 void StorageWindowView::shutdown()
