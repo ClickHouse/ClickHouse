@@ -49,7 +49,7 @@ void RollupStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQ
 
 void RollupStep::updateOutputStream()
 {
-    output_stream = createOutputStream(input_streams.front(), params->getHeader(), getDataStreamTraits());
+    output_stream = createOutputStream(input_streams.front(), appendGroupingSetColumn(params->getHeader()), getDataStreamTraits());
 
     /// Aggregation keys are distinct
     for (const auto & key : params->params.keys)
