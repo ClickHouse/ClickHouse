@@ -1709,7 +1709,7 @@ private:
                 cur_block.erase(col_pos);
             }
 
-            String current_block_bitmap;
+            thread_local String current_block_bitmap;
             /// Get the corresponding deleted mask for current block from latest bitmap
             if (!old_bitmap.empty())
             {

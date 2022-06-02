@@ -2125,27 +2125,25 @@ void IMergeTreeDataPart::CheckIfEmptyBitmap() const
 void IMergeTreeDataPart::WriteOrCopyLightWeightMask(Int64 new_value, String new_bitmap) const
 {
     auto disk = volume->getDisk();
-    String path = getFullRelativePath();
-    String new_tmp_file_name = getDeletedMaskFileName(new_value, true);
+    String new_tmp_file_name = fs::path(getFullRelativePath()) / getDeletedMaskFileName(new_value, true);
 
     /// No change for current part, if first lightweight mutation, an empty file is added.
     /// If not, copy the current file to new file.
     if (new_bitmap.empty() && (!hasLightWeight() || is_empty_bitmap))
     {
-        disk->createFile(path + new_tmp_file_name);
+        disk->createFile(new_tmp_file_name);
         return;
     }
 
     if (new_bitmap.empty() && hasLightWeight())
     {
-        String cur_file_name = getDeletedMaskFileName(info.getLightWeightMutationVersion());
-        disk->copy(path + cur_file_name, disk, path + new_tmp_file_name);
-
+        String cur_file_name = fs::path(getFullRelativePath()) / getDeletedMaskFileName(info.getLightWeightMutationVersion());
+        disk->copyFile(cur_file_name, *disk, new_tmp_file_name);
         return;
     }
 
     /// write Non-Empty merged bitmap
-    auto out = disk->writeFile(path + new_tmp_file_name);
+    auto out = disk->writeFile(new_tmp_file_name);
     DB::writeText(new_bitmap, *out);
 }
 
