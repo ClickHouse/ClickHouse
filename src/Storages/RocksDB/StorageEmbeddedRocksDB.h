@@ -2,7 +2,6 @@
 
 #include <memory>
 #include <shared_mutex>
-#include <base/shared_ptr_helper.h>
 #include <Storages/IStorage.h>
 #include <rocksdb/status.h>
 
@@ -19,11 +18,17 @@ namespace DB
 
 class Context;
 
-class StorageEmbeddedRocksDB final : public shared_ptr_helper<StorageEmbeddedRocksDB>, public IStorage, WithContext
+class StorageEmbeddedRocksDB final : public IStorage, WithContext
 {
-    friend struct shared_ptr_helper<StorageEmbeddedRocksDB>;
     friend class EmbeddedRocksDBSink;
 public:
+    StorageEmbeddedRocksDB(const StorageID & table_id_,
+        const String & relative_data_path_,
+        const StorageInMemoryMetadata & metadata,
+        bool attach,
+        ContextPtr context_,
+        const String & primary_key_);
+
     std::string getName() const override { return "EmbeddedRocksDB"; }
 
     Pipe read(
@@ -52,14 +57,6 @@ public:
     std::shared_ptr<rocksdb::Statistics> getRocksDBStatistics() const;
     std::vector<rocksdb::Status> multiGet(const std::vector<rocksdb::Slice> & slices_keys, std::vector<String> & values) const;
     const String & getPrimaryKey() const { return primary_key; }
-
-protected:
-    StorageEmbeddedRocksDB(const StorageID & table_id_,
-        const String & relative_data_path_,
-        const StorageInMemoryMetadata & metadata,
-        bool attach,
-        ContextPtr context_,
-        const String & primary_key_);
 
 private:
     const String primary_key;

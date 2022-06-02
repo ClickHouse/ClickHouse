@@ -316,9 +316,9 @@ ColumnsDescription StorageFile::getTableStructureFromFile(
     return readSchemaFromFormat(format, format_settings, read_buffer_iterator, paths.size() > 1, context);
 }
 
-bool StorageFile::isColumnOriented() const
+bool StorageFile::supportsSubsetOfColumns() const
 {
-    return format_name != "Distributed" && FormatFactory::instance().checkIfFormatIsColumnOriented(format_name);
+    return format_name != "Distributed" && FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(format_name);
 }
 
 StorageFile::StorageFile(int table_fd_, CommonArguments args)
@@ -382,6 +382,8 @@ StorageFile::StorageFile(CommonArguments args)
     , compression_method(args.compression_method)
     , base_path(args.getContext()->getPath())
 {
+    if (format_name != "Distributed")
+        FormatFactory::instance().checkFormatName(format_name);
 }
 
 void StorageFile::setStorageMetadata(CommonArguments args)
@@ -433,6 +435,8 @@ public:
 
         bool need_path_column = false;
         bool need_file_column = false;
+
+        size_t total_bytes_to_read = 0;
     };
 
     using FilesInfoPtr = std::shared_ptr<FilesInfo>;
@@ -441,7 +445,7 @@ public:
     {
         auto header = metadata_snapshot->getSampleBlock();
 
-        /// Note: AddingDefaultsBlockInputStream doesn't change header.
+        /// Note: AddingDefaultsTransform doesn't change header.
 
         if (need_path_column)
             header.insert(
@@ -463,7 +467,7 @@ public:
         const ColumnsDescription & columns_description,
         const FilesInfoPtr & files_info)
     {
-        if (storage->isColumnOriented())
+        if (storage->supportsSubsetOfColumns())
             return storage_snapshot->getSampleBlockForColumns(columns_description.getNamesOfPhysical());
         else
             return getHeader(storage_snapshot->metadata, files_info->need_path_column, files_info->need_file_column);
@@ -528,7 +532,7 @@ public:
 
                 auto get_block_for_format = [&]() -> Block
                 {
-                    if (storage->isColumnOriented())
+                    if (storage->supportsSubsetOfColumns())
                         return storage_snapshot->getSampleBlockForColumns(columns_description.getNamesOfPhysical());
                     return storage_snapshot->metadata->getSampleBlock();
                 };
@@ -573,6 +577,25 @@ public:
                     chunk.addColumn(column->convertToFullColumnIfConst());
                 }
 
+                if (num_rows)
+                {
+                    auto bytes_per_row = std::ceil(static_cast<double>(chunk.bytes()) / num_rows);
+                    size_t total_rows_approx = std::ceil(static_cast<double>(files_info->total_bytes_to_read) / bytes_per_row);
+                    total_rows_approx_accumulated += total_rows_approx;
+                    ++total_rows_count_times;
+                    total_rows_approx = total_rows_approx_accumulated / total_rows_count_times;
+
+                    /// We need to add diff, because total_rows_approx is incremental value.
+                    /// It would be more correct to send total_rows_approx as is (not a diff),
+                    /// but incrementation of total_rows_to_read does not allow that.
+                    /// A new field can be introduces for that to be sent to client, but it does not worth it.
+                    if (total_rows_approx > total_rows_approx_prev)
+                    {
+                        size_t diff = total_rows_approx - total_rows_approx_prev;
+                        addTotalRowsApprox(diff);
+                        total_rows_approx_prev = total_rows_approx;
+                    }
+                }
                 return chunk;
             }
 
@@ -608,6 +631,10 @@ private:
     bool finished_generate = false;
 
     std::shared_lock<std::shared_timed_mutex> shared_lock;
+
+    UInt64 total_rows_approx_accumulated = 0;
+    size_t total_rows_count_times = 0;
+    UInt64 total_rows_approx_prev = 0;
 };
 
 
@@ -620,8 +647,10 @@ Pipe StorageFile::read(
     size_t max_block_size,
     unsigned num_streams)
 {
-    if (use_table_fd)   /// need to call ctr BlockInputStream
+    if (use_table_fd)
+    {
         paths = {""};   /// when use fd, paths are empty
+    }
     else
     {
         if (paths.size() == 1 && !fs::exists(paths[0]))
@@ -635,6 +664,7 @@ Pipe StorageFile::read(
 
     auto files_info = std::make_shared<StorageFileSource::FilesInfo>();
     files_info->files = paths;
+    files_info->total_bytes_to_read = total_bytes_to_read;
 
     for (const auto & column : column_names)
     {
@@ -654,18 +684,16 @@ Pipe StorageFile::read(
 
     /// Set total number of bytes to process. For progress bar.
     auto progress_callback = context->getFileProgressCallback();
-    if ((context->getApplicationType() == Context::ApplicationType::LOCAL
-         || context->getApplicationType() == Context::ApplicationType::CLIENT)
-         && progress_callback)
+
+    if (progress_callback)
         progress_callback(FileProgress(0, total_bytes_to_read));
 
     for (size_t i = 0; i < num_streams; ++i)
     {
         const auto get_columns_for_format = [&]() -> ColumnsDescription
         {
-            if (isColumnOriented())
-                return ColumnsDescription{
-                    storage_snapshot->getSampleBlockForColumns(column_names).getNamesAndTypesList()};
+            if (supportsSubsetOfColumns())
+                return storage_snapshot->getDescriptionForColumns(column_names);
             else
                 return storage_snapshot->metadata->getColumns();
         };
@@ -782,11 +810,25 @@ public:
         writer->write(getHeader().cloneWithColumns(chunk.detachColumns()));
     }
 
+    void onException() override
+    {
+        write_buf->finalize();
+    }
+
     void onFinish() override
     {
-        writer->finalize();
-        writer->flush();
-        write_buf->finalize();
+        try
+        {
+            writer->finalize();
+            writer->flush();
+            write_buf->finalize();
+        }
+        catch (...)
+        {
+            /// Stop ParallelFormattingOutputFormat correctly.
+            writer.reset();
+            throw;
+        }
     }
 
 private:
@@ -1091,7 +1133,7 @@ void registerStorageFile(StorageFactory & factory)
             }
 
             if (engine_args_ast.size() == 1) /// Table in database
-                return StorageFile::create(factory_args.relative_data_path, storage_args);
+                return std::make_shared<StorageFile>(factory_args.relative_data_path, storage_args);
 
             /// Will use FD if engine_args[1] is int literal or identifier with std* name
             int source_fd = -1;
@@ -1131,9 +1173,9 @@ void registerStorageFile(StorageFactory & factory)
                 storage_args.compression_method = "auto";
 
             if (0 <= source_fd) /// File descriptor
-                return StorageFile::create(source_fd, storage_args);
+                return std::make_shared<StorageFile>(source_fd, storage_args);
             else /// User's file
-                return StorageFile::create(source_path, factory_args.getContext()->getUserFilesPath(), storage_args);
+                return std::make_shared<StorageFile>(source_path, factory_args.getContext()->getUserFilesPath(), storage_args);
         },
         storage_features);
 }

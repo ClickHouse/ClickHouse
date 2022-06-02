@@ -69,7 +69,7 @@ static inline String resolveDatabase(
     return current_database != replica_clickhouse_database ? "" : replica_clickhouse_database;
 }
 
-static NamesAndTypesList getColumnsList(const ASTExpressionList * columns_definition)
+NamesAndTypesList getColumnsList(const ASTExpressionList * columns_definition)
 {
     NamesAndTypesList columns_name_and_type;
     for (const auto & declare_column_ast : columns_definition->children)

@@ -25,6 +25,7 @@
 #include <Storages/StorageS3Settings.h>
 #include <Storages/StorageSnapshot.h>
 #include <Storages/PartitionedSink.h>
+#include <Storages/VirtualColumnUtils.h>
 #include <Storages/getVirtualsForStorage.h>
 
 #include <IO/ReadBufferFromS3.h>
@@ -75,17 +76,27 @@ namespace ErrorCodes
     extern const int UNEXPECTED_EXPRESSION;
     extern const int DATABASE_ACCESS_DENIED;
     extern const int CANNOT_EXTRACT_TABLE_STRUCTURE;
+    extern const int NOT_IMPLEMENTED;
 }
 
 class IOutputFormat;
 using OutputFormatPtr = std::shared_ptr<IOutputFormat>;
 
-class StorageS3Source::DisclosedGlobIterator::Impl
+class StorageS3Source::DisclosedGlobIterator::Impl : WithContext
 {
 
 public:
-    Impl(Aws::S3::S3Client & client_, const S3::URI & globbed_uri_)
-        : client(client_), globbed_uri(globbed_uri_)
+    Impl(
+        const Aws::S3::S3Client & client_,
+        const S3::URI & globbed_uri_,
+        ASTPtr & query_,
+        const Block & virtual_header_,
+        ContextPtr context_)
+        : WithContext(context_)
+        , client(client_)
+        , globbed_uri(globbed_uri_)
+        , query(query_)
+        , virtual_header(virtual_header_)
     {
         if (globbed_uri.bucket.find_first_of("*?{") != globbed_uri.bucket.npos)
             throw Exception("Expression can not have wildcards inside bucket name", ErrorCodes::UNEXPECTED_EXPRESSION);
@@ -99,6 +110,20 @@ public:
             buffer_iter = buffer.begin();
             is_finished = true;
             return;
+        }
+
+        /// Create a virtual block with one row to construct filter
+        if (query && virtual_header)
+        {
+            /// Append "key" column as the filter result
+            virtual_header.insert({ColumnString::create(), std::make_shared<DataTypeString>(), "_key"});
+
+            auto block = virtual_header.cloneEmpty();
+            MutableColumns columns = block.mutateColumns();
+            for (auto & column : columns)
+                column->insertDefault();
+            block.setColumns(std::move(columns));
+            VirtualColumnUtils::prepareFilterBlockWithQuery(query, getContext(), block, filter_ast);
         }
 
         request.SetBucket(globbed_uri.bucket);
@@ -144,13 +169,52 @@ private:
 
         const auto & result_batch = outcome.GetResult().GetContents();
 
-        buffer.reserve(result_batch.size());
-        for (const auto & row : result_batch)
+        if (filter_ast)
         {
-            String key = row.GetKey();
-            if (re2::RE2::FullMatch(key, *matcher))
-                buffer.emplace_back(std::move(key));
+            auto block = virtual_header.cloneEmpty();
+            MutableColumnPtr path_column;
+            MutableColumnPtr file_column;
+            MutableColumnPtr key_column = block.getByName("_key").column->assumeMutable();
+
+            if (block.has("_path"))
+                path_column = block.getByName("_path").column->assumeMutable();
+
+            if (block.has("_file"))
+                file_column = block.getByName("_file").column->assumeMutable();
+
+            for (const auto & row : result_batch)
+            {
+                const String & key = row.GetKey();
+                if (re2::RE2::FullMatch(key, *matcher))
+                {
+                    String path = fs::path(globbed_uri.bucket) / key;
+                    String file = path.substr(path.find_last_of('/') + 1);
+                    if (path_column)
+                        path_column->insert(path);
+                    if (file_column)
+                        file_column->insert(file);
+                    key_column->insert(key);
+                }
+            }
+
+            VirtualColumnUtils::filterBlockWithQuery(query, block, getContext(), filter_ast);
+            const ColumnString & keys = typeid_cast<const ColumnString &>(*block.getByName("_key").column);
+            size_t rows = block.rows();
+            buffer.reserve(rows);
+            for (size_t i = 0; i < rows; ++i)
+                buffer.emplace_back(keys.getDataAt(i).toString());
         }
+        else
+        {
+            buffer.reserve(result_batch.size());
+            for (const auto & row : result_batch)
+            {
+                String key = row.GetKey();
+                if (re2::RE2::FullMatch(key, *matcher))
+                    buffer.emplace_back(std::move(key));
+            }
+        }
+
         /// Set iterator only after the whole batch is processed
         buffer_iter = buffer.begin();
 
@@ -165,48 +229,146 @@ private:
     Strings::iterator buffer_iter;
     Aws::S3::S3Client client;
     S3::URI globbed_uri;
+    ASTPtr query;
+    Block virtual_header;
+    ASTPtr filter_ast;
     Aws::S3::Model::ListObjectsV2Request request;
     Aws::S3::Model::ListObjectsV2Outcome outcome;
     std::unique_ptr<re2::RE2> matcher;
     bool is_finished{false};
 };
 
-StorageS3Source::DisclosedGlobIterator::DisclosedGlobIterator(Aws::S3::S3Client & client_, const S3::URI & globbed_uri_)
-    : pimpl(std::make_shared<StorageS3Source::DisclosedGlobIterator::Impl>(client_, globbed_uri_)) {}
+StorageS3Source::DisclosedGlobIterator::DisclosedGlobIterator(
+    const Aws::S3::S3Client & client_,
+    const S3::URI & globbed_uri_,
+    ASTPtr query,
+    const Block & virtual_header,
+    ContextPtr context)
+    : pimpl(std::make_shared<StorageS3Source::DisclosedGlobIterator::Impl>(client_, globbed_uri_, query, virtual_header, context))
+{
+}
 
 String StorageS3Source::DisclosedGlobIterator::next()
 {
     return pimpl->next();
 }
 
-class StorageS3Source::KeysIterator::Impl
+class StorageS3Source::KeysIterator::Impl : WithContext
 {
 public:
-    explicit Impl(const std::vector<String> & keys_) : keys(keys_), keys_iter(keys.begin())
+    explicit Impl(
+        const std::vector<String> & keys_, const String & bucket_, ASTPtr query_, const Block & virtual_header_, ContextPtr context_)
+        : WithContext(context_), keys(keys_), bucket(bucket_), query(query_), virtual_header(virtual_header_)
+    {
+        /// Create a virtual block with one row to construct filter
+        if (query && virtual_header)
+        {
+            /// Append "key" column as the filter result
+            virtual_header.insert({ColumnString::create(), std::make_shared<DataTypeString>(), "_key"});
+
+            auto block = virtual_header.cloneEmpty();
+            MutableColumns columns = block.mutateColumns();
+            for (auto & column : columns)
+                column->insertDefault();
+            block.setColumns(std::move(columns));
+
+            ASTPtr filter_ast;
+            VirtualColumnUtils::prepareFilterBlockWithQuery(query, getContext(), block, filter_ast);
+
+            if (filter_ast)
+            {
+                block = virtual_header.cloneEmpty();
+                MutableColumnPtr path_column;
+                MutableColumnPtr file_column;
+                MutableColumnPtr key_column = block.getByName("_key").column->assumeMutable();
+
+                if (block.has("_path"))
+                    path_column = block.getByName("_path").column->assumeMutable();
+
+                if (block.has("_file"))
+                    file_column = block.getByName("_file").column->assumeMutable();
+
+                for (const auto & key : keys)
+                {
+                    String path = fs::path(bucket) / key;
+                    String file = path.substr(path.find_last_of('/') + 1);
+                    if (path_column)
+                        path_column->insert(path);
+                    if (file_column)
+                        file_column->insert(file);
+                    key_column->insert(key);
+                }
+
+                VirtualColumnUtils::filterBlockWithQuery(query, block, getContext(), filter_ast);
+                const ColumnString & keys_col = typeid_cast<const ColumnString &>(*block.getByName("_key").column);
+                size_t rows = block.rows();
+                Strings filtered_keys;
+                filtered_keys.reserve(rows);
+                for (size_t i = 0; i < rows; ++i)
+                    filtered_keys.emplace_back(keys_col.getDataAt(i).toString());
+
+                keys = std::move(filtered_keys);
+            }
+        }
+    }
+
+    String next()
+    {
+        size_t current_index = index.fetch_add(1, std::memory_order_relaxed);
+        if (current_index >= keys.size())
+            return "";
+        return keys[current_index];
+    }
+
+private:
+    Strings keys;
+    std::atomic_size_t index = 0;
+
+    String bucket;
+    ASTPtr query;
+    Block virtual_header;
+};
+
+StorageS3Source::KeysIterator::KeysIterator(
+    const std::vector<String> & keys_, const String & bucket_, ASTPtr query, const Block & virtual_header, ContextPtr context)
+    : pimpl(std::make_shared<StorageS3Source::KeysIterator::Impl>(keys_, bucket_, query, virtual_header, context))
+{
+}
+
+String StorageS3Source::KeysIterator::next()
+{
+    return pimpl->next();
+}
+
+class StorageS3Source::ReadTasksIterator::Impl
+{
+public:
+    explicit Impl(const std::vector<String> & read_tasks_, const ReadTaskCallback & new_read_tasks_callback_)
+        : read_tasks(read_tasks_), new_read_tasks_callback(new_read_tasks_callback_)
     {
     }
 
     String next()
     {
-        std::lock_guard lock(mutex);
-        if (keys_iter == keys.end())
-            return "";
-        auto key = *keys_iter;
-        ++keys_iter;
-        return key;
+        size_t current_index = index.fetch_add(1, std::memory_order_relaxed);
+        if (current_index >= read_tasks.size())
+            return new_read_tasks_callback();
+        return read_tasks[current_index];
     }
 
 private:
-    std::mutex mutex;
-    Strings keys;
-    Strings::iterator keys_iter;
+    std::atomic_size_t index = 0;
+    std::vector<String> read_tasks;
+    ReadTaskCallback new_read_tasks_callback;
 };
 
-StorageS3Source::KeysIterator::KeysIterator(const std::vector<String> & keys_) : pimpl(std::make_shared<StorageS3Source::KeysIterator::Impl>(keys_))
+StorageS3Source::ReadTasksIterator::ReadTasksIterator(
+    const std::vector<String> & read_tasks_, const ReadTaskCallback & new_read_tasks_callback_)
+    : pimpl(std::make_shared<StorageS3Source::ReadTasksIterator::Impl>(read_tasks_, new_read_tasks_callback_))
 {
 }
 
-String StorageS3Source::KeysIterator::next()
+String StorageS3Source::ReadTasksIterator::next()
 {
     return pimpl->next();
 }
@@ -230,7 +392,7 @@ StorageS3Source::StorageS3Source(
     UInt64 max_block_size_,
     UInt64 max_single_read_retries_,
     String compression_hint_,
-    const std::shared_ptr<Aws::S3::S3Client> & client_,
+    const std::shared_ptr<const Aws::S3::S3Client> & client_,
     const String & bucket_,
     const String & version_id_,
     std::shared_ptr<IteratorWrapper> file_iterator_,
@@ -367,7 +529,7 @@ Chunk StorageS3Source::generate()
     return {};
 }
 
-static bool checkIfObjectExists(const std::shared_ptr<Aws::S3::S3Client> & client, const String & bucket, const String & key)
+static bool checkIfObjectExists(const std::shared_ptr<const Aws::S3::S3Client> & client, const String & bucket, const String & key)
 {
     bool is_finished = false;
     Aws::S3::Model::ListObjectsV2Request request;
@@ -437,6 +599,11 @@ public:
     void consume(Chunk chunk) override
     {
         writer->write(getHeader().cloneWithColumns(chunk.detachColumns()));
+    }
+
+    void onException() override
+    {
+        write_buf->finalize();
     }
 
     void onFinish() override
@@ -513,7 +680,6 @@ private:
     const Block sample_block;
     ContextPtr context;
     const CompressionMethod compression_method;
-
     const StorageS3::S3Configuration & s3_configuration;
     const String bucket;
     const String key;
@@ -574,13 +740,22 @@ StorageS3::StorageS3(
     , partition_by(partition_by_)
     , is_key_with_globs(uri_.key.find_first_of("*?{") != std::string::npos)
 {
+    FormatFactory::instance().checkFormatName(format_name);
     context_->getGlobalContext()->getRemoteHostFilter().checkURL(uri_.uri);
     StorageInMemoryMetadata storage_metadata;
 
     updateS3Configuration(context_, s3_configuration);
     if (columns_.empty())
     {
-        auto columns = getTableStructureFromDataImpl(format_name, s3_configuration, compression_method, distributed_processing_, is_key_with_globs, format_settings, context_);
+        auto columns = getTableStructureFromDataImpl(
+            format_name,
+            s3_configuration,
+            compression_method,
+            distributed_processing_,
+            is_key_with_globs,
+            format_settings,
+            context_,
+            &read_tasks_used_in_schema_inference);
         storage_metadata.setColumns(columns);
     }
     else
@@ -596,50 +771,62 @@ StorageS3::StorageS3(
 
     auto columns = storage_metadata.getSampleBlock().getNamesAndTypesList();
     virtual_columns = getVirtualsForStorage(columns, default_virtuals);
+    for (const auto & column : virtual_columns)
+        virtual_block.insert({column.type->createColumn(), column.type, column.name});
 }
 
-std::shared_ptr<StorageS3Source::IteratorWrapper> StorageS3::createFileIterator(const S3Configuration & s3_configuration, const std::vector<String> & keys, bool is_key_with_globs, bool distributed_processing, ContextPtr local_context)
+std::shared_ptr<StorageS3Source::IteratorWrapper> StorageS3::createFileIterator(
+    const S3Configuration & s3_configuration,
+    const std::vector<String> & keys,
+    bool is_key_with_globs,
+    bool distributed_processing,
+    ContextPtr local_context,
+    ASTPtr query,
+    const Block & virtual_block,
+    const std::vector<String> & read_tasks)
 {
     if (distributed_processing)
     {
         return std::make_shared<StorageS3Source::IteratorWrapper>(
-            [callback = local_context->getReadTaskCallback()]() -> String {
-                return callback();
+            [read_tasks_iterator = std::make_shared<StorageS3Source::ReadTasksIterator>(read_tasks, local_context->getReadTaskCallback())]() -> String
+        {
+                return read_tasks_iterator->next();
         });
     }
     else if (is_key_with_globs)
     {
         /// Iterate through disclosed globs and make a source for each file
-        auto glob_iterator = std::make_shared<StorageS3Source::DisclosedGlobIterator>(*s3_configuration.client, s3_configuration.uri);
-        return std::make_shared<StorageS3Source::IteratorWrapper>([glob_iterator]()
-        {
-            return glob_iterator->next();
-        });
+        auto glob_iterator = std::make_shared<StorageS3Source::DisclosedGlobIterator>(
+            *s3_configuration.client, s3_configuration.uri, query, virtual_block, local_context);
+        return std::make_shared<StorageS3Source::IteratorWrapper>([glob_iterator]() { return glob_iterator->next(); });
     }
     else
     {
-        auto keys_iterator = std::make_shared<StorageS3Source::KeysIterator>(keys);
-        return std::make_shared<StorageS3Source::IteratorWrapper>([keys_iterator]()
-        {
-            return keys_iterator->next();
-        });
+        auto keys_iterator
+            = std::make_shared<StorageS3Source::KeysIterator>(keys, s3_configuration.uri.bucket, query, virtual_block, local_context);
+        return std::make_shared<StorageS3Source::IteratorWrapper>([keys_iterator]() { return keys_iterator->next(); });
     }
 }
 
-bool StorageS3::isColumnOriented() const
+bool StorageS3::supportsSubsetOfColumns() const
 {
-    return FormatFactory::instance().checkIfFormatIsColumnOriented(format_name);
+    return FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(format_name);
 }
 
 Pipe StorageS3::read(
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
-    SelectQueryInfo & /*query_info*/,
+    SelectQueryInfo & query_info,
     ContextPtr local_context,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t max_block_size,
     unsigned num_streams)
 {
+    bool has_wildcards = s3_configuration.uri.bucket.find(PARTITION_ID_WILDCARD) != String::npos
+        || keys.back().find(PARTITION_ID_WILDCARD) != String::npos;
+    if (partition_by && has_wildcards)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Reading from a partitioned S3 storage is not implemented yet");
+
     updateS3Configuration(local_context, s3_configuration);
 
     Pipes pipes;
@@ -653,11 +840,19 @@ Pipe StorageS3::read(
             requested_virtual_columns.push_back(virtual_column);
     }
 
-    std::shared_ptr<StorageS3Source::IteratorWrapper> iterator_wrapper = createFileIterator(s3_configuration, keys, is_key_with_globs, distributed_processing, local_context);
+    std::shared_ptr<StorageS3Source::IteratorWrapper> iterator_wrapper = createFileIterator(
+        s3_configuration,
+        keys,
+        is_key_with_globs,
+        distributed_processing,
+        local_context,
+        query_info.query,
+        virtual_block,
+        read_tasks_used_in_schema_inference);
 
     ColumnsDescription columns_description;
     Block block_for_format;
-    if (isColumnOriented())
+    if (supportsSubsetOfColumns())
     {
         auto fetch_columns = column_names;
         const auto & virtuals = getVirtuals();
@@ -669,8 +864,7 @@ Pipe StorageS3::read(
         if (fetch_columns.empty())
             fetch_columns.push_back(ExpressionActions::getSmallestColumn(storage_snapshot->metadata->getColumns().getAllPhysical()));
 
-        columns_description = ColumnsDescription{
-            storage_snapshot->getSampleBlockForColumns(fetch_columns).getNamesAndTypesList()};
+        columns_description = storage_snapshot->getDescriptionForColumns(fetch_columns);
         block_for_format = storage_snapshot->getSampleBlockForColumns(columns_description.getNamesOfPhysical());
     }
     else
@@ -829,7 +1023,8 @@ void StorageS3::updateS3Configuration(ContextPtr ctx, StorageS3::S3Configuration
 
     S3::PocoHTTPClientConfiguration client_configuration = S3::ClientFactory::instance().createClientConfiguration(
         settings.auth_settings.region,
-        ctx->getRemoteHostFilter(), ctx->getGlobalContext()->getSettingsRef().s3_max_redirects);
+        ctx->getRemoteHostFilter(), ctx->getGlobalContext()->getSettingsRef().s3_max_redirects,
+        ctx->getGlobalContext()->getSettingsRef().enable_s3_requests_logging);
 
     client_configuration.endpointOverride = upd.uri.endpoint;
     client_configuration.maxConnections = upd.rw_settings.max_connections;
@@ -947,13 +1142,16 @@ ColumnsDescription StorageS3::getTableStructureFromDataImpl(
     bool distributed_processing,
     bool is_key_with_globs,
     const std::optional<FormatSettings> & format_settings,
-    ContextPtr ctx)
+    ContextPtr ctx,
+    std::vector<String> * read_keys_in_distributed_processing)
 {
-    auto file_iterator = createFileIterator(s3_configuration, {s3_configuration.uri.key}, is_key_with_globs, distributed_processing, ctx);
+    auto file_iterator
+        = createFileIterator(s3_configuration, {s3_configuration.uri.key}, is_key_with_globs, distributed_processing, ctx, nullptr, {});
 
     ReadBufferIterator read_buffer_iterator = [&, first = false]() mutable -> std::unique_ptr<ReadBuffer>
     {
         auto key = (*file_iterator)();
+
         if (key.empty())
         {
             if (first)
@@ -965,6 +1163,9 @@ ColumnsDescription StorageS3::getTableStructureFromDataImpl(
 
             return nullptr;
         }
+
+        if (distributed_processing && read_keys_in_distributed_processing)
+            read_keys_in_distributed_processing->push_back(key);
 
         first = false;
         return wrapReadBufferWithCompressionMethod(
@@ -1018,7 +1219,7 @@ void registerStorageS3Impl(const String & name, StorageFactory & factory)
         if (args.storage_def->partition_by)
             partition_by = args.storage_def->partition_by->clone();
 
-        return StorageS3::create(
+        return std::make_shared<StorageS3>(
             s3_uri,
             configuration.auth_settings.access_key_id,
             configuration.auth_settings.secret_access_key,

@@ -88,7 +88,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
     }
 
     new_part_info = MergeTreePartInfo::fromPartName(entry.new_part_name, storage.format_version);
-    commands = MutationCommands::create(storage.queue.getMutationCommands(source_part, new_part_info.mutation));
+    commands = std::make_shared<MutationCommands>(storage.queue.getMutationCommands(source_part, new_part_info.mutation));
 
     /// Once we mutate part, we must reserve space on the same disk, because mutations can possibly create hardlinks.
     /// Can throw an exception.
@@ -110,7 +110,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
 
     if (storage_settings_ptr->allow_remote_fs_zero_copy_replication)
     {
-        if (auto disk = reserved_space->getDisk(); disk->getType() == DB::DiskType::S3)
+        if (auto disk = reserved_space->getDisk(); disk->supportZeroCopyReplication())
         {
             String dummy;
             if (!storage.findReplicaHavingCoveringPart(entry.new_part_name, true, dummy).empty())

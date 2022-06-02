@@ -27,6 +27,9 @@ class InterpreterSelectWithUnionQuery;
 class Context;
 class QueryPlan;
 
+struct GroupingSetsParams;
+using GroupingSetsParamsList = std::vector<GroupingSetsParams>;
+
 struct TreeRewriterResult;
 using TreeRewriterResultPtr = std::shared_ptr<const TreeRewriterResult>;
 
@@ -49,6 +52,12 @@ public:
     InterpreterSelectQuery(
         const ASTPtr & query_ptr_,
         ContextPtr context_,
+        const SelectQueryOptions &,
+        const Names & required_result_column_names_ = Names{});
+
+    InterpreterSelectQuery(
+        const ASTPtr & query_ptr_,
+        ContextMutablePtr context_,
         const SelectQueryOptions &,
         const Names & required_result_column_names_ = Names{});
 
@@ -116,12 +125,23 @@ public:
     void setMergeTreeReadTaskCallbackAndClientInfo(MergeTreeReadTaskCallback && callback);
 
     /// It will set shard_num and shard_count to the client_info
-    void setProperClientInfo();
+    void setProperClientInfo(size_t replica_num, size_t replica_count);
 
 private:
     InterpreterSelectQuery(
         const ASTPtr & query_ptr_,
         ContextPtr context_,
+        std::optional<Pipe> input_pipe,
+        const StoragePtr & storage_,
+        const SelectQueryOptions &,
+        const Names & required_result_column_names = {},
+        const StorageMetadataPtr & metadata_snapshot_ = nullptr,
+        SubqueriesForSets subquery_for_sets_ = {},
+        PreparedSets prepared_sets_ = {});
+
+    InterpreterSelectQuery(
+        const ASTPtr & query_ptr_,
+        ContextMutablePtr context_,
         std::optional<Pipe> input_pipe,
         const StoragePtr & storage_,
         const SelectQueryOptions &,
@@ -140,12 +160,11 @@ private:
     void executeImpl(QueryPlan & query_plan, std::optional<Pipe> prepared_pipe);
 
     /// Different stages of query execution.
-
     void executeFetchColumns(QueryProcessingStage::Enum processing_stage, QueryPlan & query_plan);
     void executeWhere(QueryPlan & query_plan, const ActionsDAGPtr & expression, bool remove_filter);
     void executeAggregation(
         QueryPlan & query_plan, const ActionsDAGPtr & expression, bool overflow_row, bool final, InputOrderInfoPtr group_by_info);
-    void executeMergeAggregated(QueryPlan & query_plan, bool overflow_row, bool final);
+    void executeMergeAggregated(QueryPlan & query_plan, bool overflow_row, bool final, bool has_grouping_sets);
     void executeTotalsAndHaving(QueryPlan & query_plan, bool has_having, const ActionsDAGPtr & expression, bool remove_filter, bool overflow_row, bool final);
     void executeHaving(QueryPlan & query_plan, const ActionsDAGPtr & expression, bool remove_filter);
     static void executeExpression(QueryPlan & query_plan, const ActionsDAGPtr & expression, const std::string & description);
@@ -171,7 +190,7 @@ private:
     enum class Modificator
     {
         ROLLUP = 0,
-        CUBE = 1
+        CUBE = 1,
     };
 
     void executeRollupOrCube(QueryPlan & query_plan, Modificator modificator);

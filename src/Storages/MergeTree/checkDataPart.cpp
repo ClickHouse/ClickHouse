@@ -131,7 +131,7 @@ IMergeTreeDataPart::Checksums checkDataPart(
 
             auto projection_part_storage = data_part_storage->getProjection(file_name);
 
-            if (projection->getType() == MergeTreeDataPartType::COMPACT)
+            if (projection->getType() == MergeTreeDataPartType::Compact)
             {
                 auto file_buf = projection_part_storage->readFile(MergeTreeDataPartCompact::DATA_FILE_NAME_WITH_EXTENSION, {}, std::nullopt, std::nullopt);
                 HashingReadBuffer hashing_buf(*file_buf);
@@ -204,14 +204,14 @@ IMergeTreeDataPart::Checksums checkDataPart(
 
     bool check_uncompressed = true;
     /// First calculate checksums for columns data
-    if (part_type == MergeTreeDataPartType::COMPACT)
+    if (part_type == MergeTreeDataPartType::Compact)
     {
         checksum_file(MergeTreeDataPartCompact::DATA_FILE_NAME_WITH_EXTENSION);
         /// Uncompressed checksums in compact parts are computed in a complex way.
         /// We check only checksum of compressed file.
         check_uncompressed = false;
     }
-    else if (part_type == MergeTreeDataPartType::WIDE)
+    else if (part_type == MergeTreeDataPartType::Wide)
     {
         for (const auto & column : columns_list)
         {

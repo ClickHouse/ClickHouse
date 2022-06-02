@@ -23,7 +23,7 @@ MergeTreeDataPartWide::MergeTreeDataPartWide(
         const String & name_,
         const DataPartStoragePtr & data_part_storage_,
         const IMergeTreeDataPart * parent_part_)
-    : IMergeTreeDataPart(storage_, name_, data_part_storage_, Type::WIDE, parent_part_)
+    : IMergeTreeDataPart(storage_, name_, data_part_storage_, Type::Wide, parent_part_)
 {
 }
 
@@ -33,7 +33,7 @@ MergeTreeDataPartWide::MergeTreeDataPartWide(
         const MergeTreePartInfo & info_,
         const DataPartStoragePtr & data_part_storage_,
         const IMergeTreeDataPart * parent_part_)
-    : IMergeTreeDataPart(storage_, name_, info_, data_part_storage_, Type::WIDE, parent_part_)
+    : IMergeTreeDataPart(storage_, name_, info_, data_part_storage_, Type::Wide, parent_part_)
 {
 }
 

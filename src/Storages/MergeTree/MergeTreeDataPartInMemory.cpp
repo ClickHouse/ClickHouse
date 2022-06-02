@@ -22,7 +22,7 @@ MergeTreeDataPartInMemory::MergeTreeDataPartInMemory(
         const String & name_,
         const DataPartStoragePtr & data_part_storage_,
         const IMergeTreeDataPart * parent_part_)
-    : IMergeTreeDataPart(storage_, name_, data_part_storage_, Type::IN_MEMORY, parent_part_)
+    : IMergeTreeDataPart(storage_, name_, data_part_storage_, Type::InMemory, parent_part_)
 {
     default_codec = CompressionCodecFactory::instance().get("NONE", {});
 }
@@ -33,7 +33,7 @@ MergeTreeDataPartInMemory::MergeTreeDataPartInMemory(
         const MergeTreePartInfo & info_,
         const DataPartStoragePtr & data_part_storage_,
         const IMergeTreeDataPart * parent_part_)
-    : IMergeTreeDataPart(storage_, name_, info_, data_part_storage_, Type::IN_MEMORY, parent_part_)
+    : IMergeTreeDataPart(storage_, name_, info_, data_part_storage_, Type::InMemory, parent_part_)
 {
     default_codec = CompressionCodecFactory::instance().get("NONE", {});
 }

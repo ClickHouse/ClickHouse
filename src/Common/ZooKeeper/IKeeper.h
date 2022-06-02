@@ -34,6 +34,12 @@ struct ACL
     int32_t permissions;
     String scheme;
     String id;
+
+    bool operator<(const ACL & other) const
+    {
+        return std::tuple(permissions, scheme, id)
+            < std::tuple(other.permissions, other.scheme, other.id);
+    }
 };
 
 using ACLs = std::vector<ACL>;
@@ -395,8 +401,8 @@ public:
     Exception(const Error code_, const std::string & path); /// NOLINT
     Exception(const Exception & exc);
 
-    const char * name() const throw() override { return "Coordination::Exception"; }
-    const char * className() const throw() override { return "Coordination::Exception"; }
+    const char * name() const noexcept override { return "Coordination::Exception"; }
+    const char * className() const noexcept override { return "Coordination::Exception"; }
     Exception * clone() const override { return new Exception(*this); }
 
     const Error code;
