@@ -80,6 +80,7 @@ enum class TargetArch : UInt32
     AVX      = (1 << 1),
     AVX2     = (1 << 2),
     AVX512F  = (1 << 3),
+    AVX512BW  = (1 << 4),
 };
 
 /// Runtime detection.
