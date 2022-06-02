@@ -154,7 +154,7 @@ endif()
 add_contrib (sqlite-cmake sqlite-amalgamation)
 add_contrib (s2geometry-cmake s2geometry)
 if (ENABLE_QPL)
-add_contrib (qpl-cmake qpl)
+    add_contrib (qpl-cmake qpl)
 endif()
 # Put all targets defined here and in subdirectories under "contrib/<immediate-subdir>" folders in GUI-based IDEs.
 # Some of third-party projects may override CMAKE_FOLDER or FOLDER property of their targets, so they would not appear
