@@ -640,15 +640,9 @@ inline void StorageWindowView::fire(UInt32 watermark)
 
     BlocksPtr blocks;
     Block header;
-    try
-    {
-        std::lock_guard lock(mutex);
-        std::tie(blocks, header) = getNewBlocks(watermark);
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-    }
+
+    std::lock_guard lock(mutex);
+    std::tie(blocks, header) = getNewBlocks(watermark);
 
     if (!blocks || blocks->empty())
         return;
@@ -1038,7 +1032,14 @@ void StorageWindowView::threadFuncFireEvent()
 
         while (!fire_signal.empty())
         {
-            fire(fire_signal.front());
+            try
+            {
+                fire(fire_signal.front());
+            }
+            catch (...)
+            {
+                tryLogCurrentException(__PRETTY_FUNCTION__);
+            }
             max_fired_watermark = fire_signal.front();
             fire_signal.pop_front();
         }
