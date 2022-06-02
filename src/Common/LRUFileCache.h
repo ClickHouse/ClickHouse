@@ -187,6 +187,10 @@ private:
 
     void assertCacheCellsCorrectness(const FileSegmentsByOffset & cells_by_offset, std::lock_guard<std::mutex> & cache_lock);
 
+    void reduceSizeToDownloaded(
+        const Key & key, size_t offset,
+        std::lock_guard<std::mutex> & cache_lock, std::lock_guard<std::mutex> & /* segment_lock */) override;
+
 public:
     String dumpStructure(const Key & key_) override;
 

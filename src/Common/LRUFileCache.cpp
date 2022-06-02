@@ -450,7 +450,7 @@ FileSegmentPtr LRUFileCache::setDownloading(
             "Cache cell already exists for key `{}` and offset {}",
             key.toString(), offset);
 
-    cell = addCell(key, offset, size, FileSegment::State::DOWNLOADING, is_persistent, cache_lock);
+    cell = addCell(key, offset, size, FileSegment::State::EMPTY, is_persistent, cache_lock);
 
     if (!cell)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to add a new cell for download");
@@ -788,6 +788,39 @@ void LRUFileCache::loadCacheInfoIntoMemory(std::lock_guard<std::mutex> & cache_l
 #ifndef NDEBUG
     assertCacheCorrectness(cache_lock);
 #endif
+}
+
+void LRUFileCache::reduceSizeToDownloaded(
+    const Key & key, size_t offset,
+    std::lock_guard<std::mutex> & cache_lock, std::lock_guard<std::mutex> & /* segment_lock */)
+{
+    /**
+     * In case file was partially downloaded and it's download cannot be continued
+     * because of no space left in cache, we need to be able to cut cell's size to downloaded_size.
+     */
+
+    auto * cell = getCell(key, offset, cache_lock);
+
+    if (!cell)
+    {
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "No cell found for key: {}, offset: {}",
+            key.toString(), offset);
+    }
+
+    const auto & file_segment = cell->file_segment;
+
+    size_t downloaded_size = file_segment->downloaded_size;
+    if (downloaded_size == file_segment->range().size())
+    {
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Nothing to reduce, file segment fully downloaded, key: {}, offset: {}",
+            key.toString(), offset);
+    }
+
+    cell->file_segment = std::make_shared<FileSegment>(offset, downloaded_size, key, this, FileSegment::State::DOWNLOADED);
 }
 
 bool LRUFileCache::isLastFileSegmentHolder(

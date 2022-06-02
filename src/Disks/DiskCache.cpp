@@ -21,12 +21,6 @@
 namespace fs = std::filesystem;
 
 
-namespace ProfileEvents
-{
-    extern const Event CachedWriteBufferCacheWriteBytes;
-    extern const Event CachedWriteBufferCacheWriteMicroseconds;
-}
-
 namespace DB
 {
 
@@ -196,7 +190,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskCache::writeFile(
 
 void DiskCache::removeCacheIfExists(const String & path)
 {
-    /// TODO: normal check for existance
+    /// TODO: normal check for existence
     try
     {
         if (isRemote())

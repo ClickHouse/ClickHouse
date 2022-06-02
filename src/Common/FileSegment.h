@@ -130,7 +130,7 @@ public:
 
     size_t getDownloadedSize() const;
 
-    size_t getAvailableSize() const;
+    size_t getRemainingSizeToDownload() const;
 
     void completeBatchAndResetDownloader();
 
@@ -233,7 +233,6 @@ private:
     std::atomic<size_t> ref_count = 0; /// Used for getting snapshot state
 
     bool is_persistent;
-    bool write_through_cache_download = false;
 
     CurrentMetrics::Increment metric_increment{CurrentMetrics::CacheFileSegments};
 };
@@ -280,11 +279,9 @@ public:
 
     void finalize();
 
-    /// If exception happened on remote fs write, we consider current cache invalid.
-    void clear();
-
 private:
     FileSegments::iterator allocateFileSegment(size_t offset, bool is_persistent);
+    void completeFileSegment(const FileSegmentPtr & file_segment);
 
     IFileCache * cache;
     FileSegment::Key key;
