@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Common/FileCache_fwd.h>
-#include <string>
 
 namespace Poco { namespace Util { class AbstractConfiguration; } }
 
