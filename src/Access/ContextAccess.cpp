@@ -30,6 +30,7 @@ namespace ErrorCodes
     extern const int QUERY_IS_PROHIBITED;
     extern const int FUNCTION_NOT_ALLOWED;
     extern const int UNKNOWN_USER;
+    extern const int LOGICAL_ERROR;
 }
 
 
