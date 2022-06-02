@@ -617,72 +617,6 @@ public:
     }
 };
 
-class S3AuthSigner : public Aws::Client::AWSAuthV4Signer
-{
-public:
-    S3AuthSigner(
-        const Aws::Client::ClientConfiguration & client_configuration,
-        const Aws::Auth::AWSCredentials & credentials,
-        const DB::HeaderCollection & headers_,
-        bool use_environment_credentials,
-        bool use_insecure_imds_request)
-        : Aws::Client::AWSAuthV4Signer(
-            std::make_shared<S3CredentialsProviderChain>(
-                static_cast<const DB::S3::PocoHTTPClientConfiguration &>(client_configuration),
-                credentials,
-                use_environment_credentials,
-                use_insecure_imds_request),
-            "s3",
-            client_configuration.region,
-            Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy::Never,
-            false)
-        , headers(headers_)
-    {
-    }
-
-    bool SignRequest(Aws::Http::HttpRequest & request, const char * region, bool sign_body) const override
-    {
-        auto result = Aws::Client::AWSAuthV4Signer::SignRequest(request, region, sign_body);
-        for (const auto & header : headers)
-            request.SetHeaderValue(header.name, header.value);
-        return result;
-    }
-
-    bool SignRequest(Aws::Http::HttpRequest & request, const char * region, const char * service_name, bool sign_body) const override
-    {
-        auto result = Aws::Client::AWSAuthV4Signer::SignRequest(request, region, service_name, sign_body);
-        for (const auto & header : headers)
-            request.SetHeaderValue(header.name, header.value);
-        return result;
-    }
-
-    bool PresignRequest(
-        Aws::Http::HttpRequest & request,
-        const char * region,
-        long long expiration_time_sec) const override // NOLINT
-    {
-        auto result = Aws::Client::AWSAuthV4Signer::PresignRequest(request, region, expiration_time_sec);
-        for (const auto & header : headers)
-            request.SetHeaderValue(header.name, header.value);
-        return result;
-    }
-
-    bool PresignRequest(
-        Aws::Http::HttpRequest & request,
-        const char * region,
-        const char * service_name,
-        long long expiration_time_sec) const override // NOLINT
-    {
-        auto result = Aws::Client::AWSAuthV4Signer::PresignRequest(request, region, service_name, expiration_time_sec);
-        for (const auto & header : headers)
-            request.SetHeaderValue(header.name, header.value);
-        return result;
-    }
-
-private:
-    const DB::HeaderCollection headers;
-};
-
 }
 
 
@@ -729,8 +663,6 @@ namespace S3
         PocoHTTPClientConfiguration client_configuration = cfg_;
         client_configuration.updateSchemeAndRegion();
 
-        Aws::Auth::AWSCredentials credentials(access_key_id, secret_access_key);
-
         if (!server_side_encryption_customer_key_base64.empty())
         {
             /// See S3Client::GeneratePresignedUrlWithSSEC().
@@ -747,17 +679,20 @@ namespace S3
                 Aws::Utils::HashingUtils::Base64Encode(Aws::Utils::HashingUtils::CalculateMD5(str_buffer))});
         }
 
-        auto auth_signer = std::make_shared<S3AuthSigner>(
-            client_configuration,
-            std::move(credentials),
-            std::move(headers),
-            use_environment_credentials,
-            use_insecure_imds_request);
+        client_configuration.extra_headers = std::move(headers);
+
+        Aws::Auth::AWSCredentials credentials(access_key_id, secret_access_key);
+        auto credentials_provider = std::make_shared<S3CredentialsProviderChain>(
+                static_cast<const DB::S3::PocoHTTPClientConfiguration &>(client_configuration),
+                std::move(credentials),
+                use_environment_credentials,
+                use_insecure_imds_request);
 
         return std::make_unique<Aws::S3::S3Client>(
-            std::move(auth_signer),
+            credentials_provider,
             std::move(client_configuration), // Client configuration.
-            is_virtual_hosted_style || client_configuration.endpointOverride.empty() // Use virtual addressing only if endpoint is not specified.
+            Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy::Never,
+            is_virtual_hosted_style || client_configuration.endpointOverride.empty() /// Use virtual addressing only if endpoint is not specified.
         );
     }
 
