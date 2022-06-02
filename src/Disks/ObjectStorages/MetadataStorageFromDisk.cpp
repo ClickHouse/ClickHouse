@@ -390,7 +390,7 @@ void MetadataStorageFromDiskTransaction::commit()
         }
         catch (Exception & ex)
         {
-            ex.addMessage(fmt::format("While commiting operation #{}", i));
+            ex.addMessage(fmt::format("While committing operation #{}", i));
             failed_operation_index = i;
             state = MetadataFromDiskTransactionState::FAILED;
             throw;
@@ -437,7 +437,7 @@ void MetadataStorageFromDiskTransaction::rollback()
     }
     else
     {
-        /// Nothing to do, transaction commited or not even started to commit
+        /// Nothing to do, transaction committed or not even started to commit
     }
 
     state = MetadataFromDiskTransactionState::ROLLED_BACK;
