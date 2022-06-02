@@ -72,8 +72,6 @@ MergeTreeBaseSelectProcessor::MergeTreeBaseSelectProcessor(
     if (prewhere_info)
     {
         prewhere_actions = std::make_unique<PrewhereExprInfo>();
-        if (prewhere_info->alias_actions)
-            prewhere_actions->alias_actions = std::make_shared<ExpressionActions>(prewhere_info->alias_actions, actions_settings);
 
         if (prewhere_info->row_level_filter)
             prewhere_actions->row_level_filter = std::make_shared<ExpressionActions>(prewhere_info->row_level_filter, actions_settings);
@@ -556,9 +554,6 @@ Block MergeTreeBaseSelectProcessor::transformHeader(
 {
     if (prewhere_info)
     {
-        if (prewhere_info->alias_actions)
-            block = prewhere_info->alias_actions->updateHeader(std::move(block));
-
         if (prewhere_info->row_level_filter)
         {
             block = prewhere_info->row_level_filter->updateHeader(std::move(block));

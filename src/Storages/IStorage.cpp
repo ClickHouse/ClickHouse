@@ -261,11 +261,6 @@ std::string PrewhereInfo::dump() const
     WriteBufferFromOwnString ss;
     ss << "PrewhereDagInfo\n";
 
-    if (alias_actions)
-    {
-        ss << "alias_actions " << alias_actions->dumpDAG() << "\n";
-    }
-
     if (prewhere_actions)
     {
         ss << "prewhere_actions " << prewhere_actions->dumpDAG() << "\n";
