@@ -144,6 +144,13 @@
     M(MergeTreeDataWriterBlocks, "Number of blocks INSERTed to MergeTree tables. Each block forms a data part of level zero.") \
     M(MergeTreeDataWriterBlocksAlreadySorted, "Number of blocks INSERTed to MergeTree tables that appeared to be already sorted.") \
     \
+    M(InsertedWideParts, "Number of parts inserted in Wide format.") \
+    M(InsertedCompactParts, "Number of parts inserted in Compact format.") \
+    M(InsertedInMemoryParts, "Number of parts inserted in InMemory format.") \
+    M(MergedIntoWideParts, "Number of parts merged into Wide format.") \
+    M(MergedIntoCompactParts, "Number of parts merged into Compact format.") \
+    M(MergedIntoInMemoryParts, "Number of parts in merged into InMemory format.") \
+    \
     M(MergeTreeDataProjectionWriterRows, "Number of rows INSERTed to MergeTree tables projection.") \
     M(MergeTreeDataProjectionWriterUncompressedBytes, "Uncompressed bytes (for columns as they stored in memory) INSERTed to MergeTree tables projection.") \
     M(MergeTreeDataProjectionWriterCompressedBytes, "Bytes written to filesystem for data INSERTed to MergeTree tables projection.") \
@@ -192,6 +199,7 @@
     M(RealTimeMicroseconds, "Total (wall clock) time spent in processing (queries and other tasks) threads (not that this is a sum).") \
     M(UserTimeMicroseconds, "Total time spent in processing (queries and other tasks) threads executing CPU instructions in user space. This include time CPU pipeline was stalled due to cache misses, branch mispredictions, hyper-threading, etc.") \
     M(SystemTimeMicroseconds, "Total time spent in processing (queries and other tasks) threads executing CPU instructions in OS kernel space. This include time CPU pipeline was stalled due to cache misses, branch mispredictions, hyper-threading, etc.") \
+    M(MemoryOvercommitWaitTimeMicroseconds, "Total time spent in waiting for memory to be freed in OvercommitTracker.") \
     M(SoftPageFaults, "") \
     M(HardPageFaults, "") \
     \

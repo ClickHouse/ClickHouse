@@ -7128,6 +7128,13 @@ bool StorageReplicatedMergeTree::dropPartImpl(
             return false;
         }
 
+        if (merge_pred.partParticipatesInReplaceRange(part, &out_reason))
+        {
+            if (throw_if_noop)
+                throw Exception(ErrorCodes::PART_IS_TEMPORARILY_LOCKED, out_reason);
+            return false;
+        }
+
         if (partIsLastQuorumPart(part->info))
         {
             if (throw_if_noop)
@@ -7758,7 +7765,8 @@ String StorageReplicatedMergeTree::getSharedDataReplica(
 }
 
 
-Strings StorageReplicatedMergeTree::getZeroCopyPartPath(const MergeTreeSettings & settings, DiskType disk_type, const String & table_uuid,
+Strings StorageReplicatedMergeTree::getZeroCopyPartPath(
+    const MergeTreeSettings & settings, DiskType disk_type, const String & table_uuid,
     const String & part_name, const String & zookeeper_path_old)
 {
     Strings res;
