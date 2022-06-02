@@ -351,7 +351,7 @@ void SerializationObject<Parser>::serializeBinaryBulkWithMultipleStreams(
         state_object->nested_serialization->serializeBinaryBulkStatePrefix(settings, state_object->nested_state);
         settings.path.pop_back();
     }
-    else if (state_object->nested_type->equals(*tuple_type))
+    else if (!state_object->nested_type->equals(*tuple_type))
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "Types of internal column of Object mismatched. Expected: {}, Got: {}",
