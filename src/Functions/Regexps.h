@@ -65,11 +65,6 @@ class LocalCacheTable
 public:
     using RegexpPtr = std::shared_ptr<Regexp>;
 
-    LocalCacheTable()
-        : known_regexps(max_regexp_cache_size, {"", nullptr})
-    {
-    }
-
     template <bool like, bool no_capture, bool case_insensitive>
     void getOrSet(const String & pattern, RegexpPtr & regexp)
     {
@@ -93,16 +88,17 @@ public:
     }
 
 private:
+    constexpr static size_t max_regexp_cache_size = 100; // collision probability
+
     std::hash<std::string> hasher;
     struct StringAndRegexp
     {
         std::string pattern;
         RegexpPtr regexp;
     };
-    using CacheTable = std::vector<StringAndRegexp>;
+    using CacheTable = std::array<StringAndRegexp, max_regexp_cache_size>;
     CacheTable known_regexps;
 
-    constexpr static size_t max_regexp_cache_size = 100; // collision probability
 };
 
 }
