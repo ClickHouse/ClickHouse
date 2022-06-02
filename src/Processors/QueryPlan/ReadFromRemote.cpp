@@ -235,7 +235,8 @@ ReadFromParallelRemoteReplicasStep::ReadFromParallelRemoteReplicasStep(
     Scalars scalars_,
     Tables external_tables_,
     Poco::Logger * log_,
-    UInt32 shard_count_)
+    UInt32 shard_count_,
+    std::shared_ptr<const StorageLimitsList> storage_limits_)
     : ISourceStep(DataStream{.header = std::move(header_)})
     , coordinator(std::move(coordinator_))
     , shard(std::move(shard_))
@@ -246,6 +247,7 @@ ReadFromParallelRemoteReplicasStep::ReadFromParallelRemoteReplicasStep(
     , throttler(throttler_)
     , scalars(scalars_)
     , external_tables{external_tables_}
+    , storage_limits(std::move(storage_limits_))
     , log(log_)
     , shard_count(shard_count_)
 {
@@ -325,7 +327,6 @@ void ReadFromParallelRemoteReplicasStep::addPipeForSingeReplica(Pipes & pipes, s
         remote_query_executor->setMainTable(main_table);
 
     pipes.emplace_back(createRemoteSourcePipe(remote_query_executor, add_agg_info, add_totals, add_extremes, async_read));
-    pipes.back().addInterpreterContext(context);
     addConvertingActions(pipes.back(), output_stream->header);
 }
 
