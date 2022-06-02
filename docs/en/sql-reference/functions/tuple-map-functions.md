@@ -3,9 +3,9 @@ sidebar_position: 46
 sidebar_label: Working with maps
 ---
 
-# Functions for maps {#functions-for-working-with-tuple-maps}
+# Functions for maps
 
-## map {#function-map}
+## map
 
 Arranges `key:value` pairs into [Map(key, value)](../../sql-reference/data-types/map.md) data type.
 
@@ -66,7 +66,7 @@ Result:
 
 -   [Map(key, value)](../../sql-reference/data-types/map.md) data type
 
-## mapAdd {#function-mapadd}
+## mapAdd
 
 Collect all the keys and sum corresponding values.
 
@@ -114,7 +114,7 @@ Result:
 └──────────────────────────────┘
 ```
 
-## mapSubtract {#function-mapsubtract}
+## mapSubtract
 
 Collect all the keys and subtract corresponding values.
 
@@ -162,7 +162,7 @@ Result:
 └───────────────────────────────────┘
 ```
 
-## mapPopulateSeries {#function-mappopulateseries}
+## mapPopulateSeries
 
 Fills missing keys in the maps (key and value array pair), where keys are integers. Also, it supports specifying the max key, which is used to extend the keys array.
 
@@ -225,7 +225,7 @@ Result:
 └─────────────────────────────────────────┘
 ```
 
-## mapContains {#mapcontains}
+## mapContains
 
 Determines  whether the `map` contains the `key` parameter.
 
@@ -268,7 +268,7 @@ Result:
 └────────────────────────┘
 ```
 
-## mapKeys {#mapkeys}
+## mapKeys
 
 Returns all keys from the `map` parameter.
 
@@ -311,7 +311,7 @@ Result:
 └───────────────────────┘
 ```
 
-## mapValues {#mapvalues}
+## mapValues
 
 Returns all values from the `map` parameter.
 
@@ -354,7 +354,7 @@ Result:
 └──────────────────┘
 ```  
   
-## mapContainsKeyLike {#mapContainsKeyLike}  
+## mapContainsKeyLike  
   
 **Syntax**
 
@@ -392,7 +392,7 @@ Result:
 └─────────────────────────────┘  
 ```  
   
-## mapExtractKeyLike {#mapExtractKeyLike}  
+## mapExtractKeyLike  
   
 **Syntax**
 

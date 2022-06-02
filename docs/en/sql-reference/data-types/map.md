@@ -3,7 +3,7 @@ sidebar_position: 65
 sidebar_label: Map(key, value)
 ---
 
-# Map(key, value) {#data_type-map}
+# Map(key, value)
 
 `Map(key, value)` data type stores `key:value` pairs.
 
@@ -59,7 +59,7 @@ Result:
 └─────────────────────────┘
 ```
 
-## Convert Tuple to Map Type {#map-and-tuple}
+## Convert Tuple to Map Type
 
 You can cast `Tuple()` as `Map()` using [CAST](../../sql-reference/functions/type-conversion-functions.md#type_conversion_function-cast) function:
 
@@ -73,7 +73,7 @@ SELECT CAST(([1, 2, 3], ['Ready', 'Steady', 'Go']), 'Map(UInt8, String)') AS map
 └───────────────────────────────┘
 ```
 
-## Map.keys and Map.values Subcolumns {#map-subcolumns}
+## Map.keys and Map.values Subcolumns
 
 To optimize `Map` column processing, in some cases you can use the `keys` and `values` subcolumns instead of reading the whole column.
 
