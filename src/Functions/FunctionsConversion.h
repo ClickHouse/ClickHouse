@@ -705,7 +705,7 @@ template <>
 struct FormatImpl<DataTypeDate32>
 {
     template <typename ReturnType = void>
-    static ReturnType execute(const DataTypeDate::FieldType x, WriteBuffer & wb, const DataTypeDate32 *, const DateLUTImpl *)
+    static ReturnType execute(const DataTypeDate32::FieldType x, WriteBuffer & wb, const DataTypeDate32 *, const DateLUTImpl *)
     {
         writeDateText(ExtendedDayNum(x), wb);
         return ReturnType(true);
