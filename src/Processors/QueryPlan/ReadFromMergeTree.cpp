@@ -524,6 +524,9 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
         const auto & sorting_columns = metadata_for_reading->getSortingKey().column_names;
 
         SortDescription sort_description;
+        sort_description.compile_sort_description = settings.compile_sort_description;
+        sort_description.min_count_to_compile_sort_description = settings.min_count_to_compile_sort_description;
+
         for (size_t j = 0; j < prefix_size; ++j)
             sort_description.emplace_back(sorting_columns[j], input_order_info->direction);
 
@@ -763,6 +766,9 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
 
         Names sort_columns = metadata_for_reading->getSortingKeyColumns();
         SortDescription sort_description;
+        sort_description.compile_sort_description = settings.compile_sort_description;
+        sort_description.min_count_to_compile_sort_description = settings.min_count_to_compile_sort_description;
+
         size_t sort_columns_size = sort_columns.size();
         sort_description.reserve(sort_columns_size);
 

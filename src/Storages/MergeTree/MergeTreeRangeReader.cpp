@@ -2,6 +2,7 @@
 #include <Columns/FilterDescription.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnsCommon.h>
+#include <Common/TargetSpecific.h>
 #include <base/range.h>
 #include <Interpreters/castColumn.h>
 #include <DataTypes/DataTypeNothing.h>
@@ -9,6 +10,7 @@
 #ifdef __SSE2__
 #include <emmintrin.h>
 #endif
+
 
 namespace DB
 {
@@ -448,6 +450,33 @@ void MergeTreeRangeReader::ReadResult::collapseZeroTails(const IColumn::Filter &
 size_t MergeTreeRangeReader::ReadResult::numZerosInTail(const UInt8 * begin, const UInt8 * end)
 {
     size_t count = 0;
+
+#if defined(__AVX512F__) && defined(__AVX512BW__) /// check if avx512 instructions are compiled
+    if (isArchSupported(TargetArch::AVX512BW))
+    {
+        /// check if cpu support avx512 dynamically, haveAVX512BW contains check of haveAVX512F
+        const __m512i zero64 = _mm512_setzero_epi32();
+        while (end - begin >= 64)
+        {
+            end -= 64;
+            const auto * pos = end;
+            UInt64 val = static_cast<UInt64>(_mm512_cmp_epi8_mask(_mm512_loadu_si512(reinterpret_cast<const __m512i *>(pos)), zero64, _MM_CMPINT_EQ));
+            val = ~val;
+            if (val == 0)
+                count += 64;
+            else
+            {
+                count += __builtin_clzll(val);
+                return count;
+            }
+        }
+        while (end > begin && *(--end) == 0)
+        {
+            ++count;
+        }
+        return count;
+    }
+#endif
 
 #if defined(__SSE2__) && defined(__POPCNT__)
     const __m128i zero16 = _mm_setzero_si128();

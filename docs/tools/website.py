@@ -1,7 +1,10 @@
+import hashlib
 import json
 import logging
 import os
 import shutil
+import subprocess
+
 import bs4
 
 import util
@@ -178,6 +181,59 @@ def build_website(args):
                 f.write(content.encode("utf-8"))
 
 
+def get_css_in(args):
+    return [
+        f"'{args.website_dir}/css/bootstrap.css'",
+        f"'{args.website_dir}/css/docsearch.css'",
+        f"'{args.website_dir}/css/base.css'",
+        f"'{args.website_dir}/css/blog.css'",
+        f"'{args.website_dir}/css/docs.css'",
+        f"'{args.website_dir}/css/highlight.css'",
+        f"'{args.website_dir}/css/main.css'",
+    ]
+
+
+def get_js_in(args):
+    return [
+        f"'{args.website_dir}/js/jquery.js'",
+        f"'{args.website_dir}/js/popper.js'",
+        f"'{args.website_dir}/js/bootstrap.js'",
+        f"'{args.website_dir}/js/sentry.js'",
+        f"'{args.website_dir}/js/base.js'",
+        f"'{args.website_dir}/js/index.js'",
+        f"'{args.website_dir}/js/docsearch.js'",
+        f"'{args.website_dir}/js/docs.js'",
+        f"'{args.website_dir}/js/main.js'",
+    ]
+
+
+def minify_website(args):
+    css_in = " ".join(get_css_in(args))
+    css_out = f"{args.output_dir}/docs/css/base.css"
+    os.makedirs(f"{args.output_dir}/docs/css")
+
+    command = f"cat {css_in}"
+    output = subprocess.check_output(command, shell=True)
+    with open(css_out, "wb+") as f:
+        f.write(output)
+
+    with open(css_out, "rb") as f:
+        css_digest = hashlib.sha3_224(f.read()).hexdigest()[0:8]
+
+    js_in = " ".join(get_js_in(args))
+    js_out = f"{args.output_dir}/docs/js/base.js"
+    os.makedirs(f"{args.output_dir}/docs/js")
+
+    command = f"cat {js_in}"
+    output = subprocess.check_output(command, shell=True)
+    with open(js_out, "wb+") as f:
+        f.write(output)
+
+    with open(js_out, "rb") as f:
+        js_digest = hashlib.sha3_224(f.read()).hexdigest()[0:8]
+        logging.info(js_digest)
+
+
 def process_benchmark_results(args):
     benchmark_root = os.path.join(args.website_dir, "benchmark")
     required_keys = {
@@ -190,7 +246,7 @@ def process_benchmark_results(args):
         results_root = os.path.join(benchmark_root, benchmark_kind, "results")
         for result in sorted(os.listdir(results_root)):
             result_file = os.path.join(results_root, result)
-            logging.debug(f"Reading benchmark result from {result_file}")
+            logging.info(f"Reading benchmark result from {result_file}")
             with open(result_file, "r") as f:
                 result = json.loads(f.read())
                 for item in result:

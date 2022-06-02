@@ -104,15 +104,17 @@ bool DatabaseReplicatedDDLWorker::waitForReplicaToProcessAllEntries(UInt64 timeo
     auto max_log =  DDLTask::getLogEntryName(max_log_ptr);
     LOG_TRACE(log, "Waiting for worker thread to process all entries before {}, current task is {}", max_log, current_task);
 
-    std::unique_lock lock{mutex};
-    bool processed = wait_current_task_change.wait_for(lock, std::chrono::milliseconds(timeout_ms), [&]()
     {
-        assert(zookeeper->expired() || current_task <= max_log);
-        return zookeeper->expired() || current_task == max_log || stop_flag;
-    });
+        std::unique_lock lock{mutex};
+        bool processed = wait_current_task_change.wait_for(lock, std::chrono::milliseconds(timeout_ms), [&]()
+        {
+            assert(zookeeper->expired() || current_task <= max_log);
+            return zookeeper->expired() || current_task == max_log || stop_flag;
+        });
 
-    if (!processed)
-        return false;
+        if (!processed)
+            return false;
+    }
 
     LOG_TRACE(log, "Waiting for worker thread to process all entries before {}, current task is {}", max_log, current_task);
 

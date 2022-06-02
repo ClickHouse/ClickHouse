@@ -1154,7 +1154,8 @@ void registerStorageRabbitMQ(StorageFactory & factory)
         if (!with_named_collection && !args.storage_def->settings)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "RabbitMQ engine must have settings");
 
-        rabbitmq_settings->loadFromQuery(*args.storage_def);
+        if (args.storage_def->settings)
+            rabbitmq_settings->loadFromQuery(*args.storage_def);
 
         if (!rabbitmq_settings->rabbitmq_host_port.changed
            && !rabbitmq_settings->rabbitmq_address.changed)
@@ -1164,7 +1165,7 @@ void registerStorageRabbitMQ(StorageFactory & factory)
         if (!rabbitmq_settings->rabbitmq_format.changed)
             throw Exception("You must specify `rabbitmq_format` setting", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        return StorageRabbitMQ::create(args.table_id, args.getContext(), args.columns, std::move(rabbitmq_settings), args.attach);
+        return std::make_shared<StorageRabbitMQ>(args.table_id, args.getContext(), args.columns, std::move(rabbitmq_settings), args.attach);
     };
 
     factory.registerStorage("RabbitMQ", creator_fn, StorageFactory::StorageFeatures{ .supports_settings = true, });

@@ -21,7 +21,7 @@ MergeTreeDataPartCompact::MergeTreeDataPartCompact(
         const String & name_,
         const DataPartStoragePtr & data_part_storage_,
         const IMergeTreeDataPart * parent_part_)
-    : IMergeTreeDataPart(storage_, name_, data_part_storage_, Type::COMPACT, parent_part_)
+    : IMergeTreeDataPart(storage_, name_, data_part_storage_, Type::Compact, parent_part_)
 {
 }
 
@@ -31,7 +31,7 @@ MergeTreeDataPartCompact::MergeTreeDataPartCompact(
         const MergeTreePartInfo & info_,
         const DataPartStoragePtr & data_part_storage_,
         const IMergeTreeDataPart * parent_part_)
-    : IMergeTreeDataPart(storage_, name_, info_, data_part_storage_, Type::COMPACT, parent_part_)
+    : IMergeTreeDataPart(storage_, name_, info_, data_part_storage_, Type::Compact, parent_part_)
 {
 }
 

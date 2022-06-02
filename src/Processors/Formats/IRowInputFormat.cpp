@@ -48,13 +48,8 @@ bool isParseError(int code)
 }
 
 IRowInputFormat::IRowInputFormat(Block header, ReadBuffer & in_, Params params_)
-    : IInputFormat(std::move(header), in_), params(params_)
+    : IInputFormat(std::move(header), in_), serializations(getPort().getHeader().getSerializations()), params(params_)
 {
-    const auto & port_header = getPort().getHeader();
-    size_t num_columns = port_header.columns();
-    serializations.resize(num_columns);
-    for (size_t i = 0; i < num_columns; ++i)
-        serializations[i] = port_header.getByPosition(i).type->getDefaultSerialization();
 }
 
 
@@ -213,7 +208,6 @@ Chunk IRowInputFormat::generate()
 
     finalizeObjectColumns(columns);
     Chunk chunk(std::move(columns), num_rows);
-    //chunk.setChunkInfo(std::move(chunk_missing_values));
     return chunk;
 }
 

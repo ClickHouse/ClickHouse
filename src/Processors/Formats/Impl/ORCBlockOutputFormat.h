@@ -42,7 +42,7 @@ private:
     void consume(Chunk chunk) override;
     void finalizeImpl() override;
 
-    ORC_UNIQUE_PTR<orc::Type> getORCType(const DataTypePtr & type, const std::string & column_name);
+    ORC_UNIQUE_PTR<orc::Type> getORCType(const DataTypePtr & type);
 
     /// ConvertFunc is needed for type UInt8, because firstly UInt8 (char8_t) must be
     /// converted to unsigned char (bugprone-signed-char-misuse in clang).

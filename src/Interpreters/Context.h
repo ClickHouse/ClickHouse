@@ -83,6 +83,7 @@ class AsynchronousMetricLog;
 class OpenTelemetrySpanLog;
 class ZooKeeperLog;
 class SessionLog;
+class BackupsWorker;
 class TransactionsInfoLog;
 class ProcessorsProfileLog;
 class FilesystemCacheLog;
@@ -290,6 +291,43 @@ private:
     /// Record names of created objects of factories (for testing, etc)
     struct QueryFactoriesInfo
     {
+        QueryFactoriesInfo() = default;
+
+        QueryFactoriesInfo(const QueryFactoriesInfo & rhs)
+        {
+            std::lock_guard<std::mutex> lock(rhs.mutex);
+            aggregate_functions = rhs.aggregate_functions;
+            aggregate_function_combinators = rhs.aggregate_function_combinators;
+            database_engines = rhs.database_engines;
+            data_type_families = rhs.data_type_families;
+            dictionaries = rhs.dictionaries;
+            formats = rhs.formats;
+            functions = rhs.functions;
+            storages = rhs.storages;
+            table_functions = rhs.table_functions;
+        }
+
+        QueryFactoriesInfo(QueryFactoriesInfo && rhs) = delete;
+
+        QueryFactoriesInfo & operator=(QueryFactoriesInfo rhs)
+        {
+            swap(rhs);
+            return *this;
+        }
+
+        void swap(QueryFactoriesInfo & rhs)
+        {
+            std::swap(aggregate_functions, rhs.aggregate_functions);
+            std::swap(aggregate_function_combinators, rhs.aggregate_function_combinators);
+            std::swap(database_engines, rhs.database_engines);
+            std::swap(data_type_families, rhs.data_type_families);
+            std::swap(dictionaries, rhs.dictionaries);
+            std::swap(formats, rhs.formats);
+            std::swap(functions, rhs.functions);
+            std::swap(storages, rhs.storages);
+            std::swap(table_functions, rhs.table_functions);
+        }
+
         std::unordered_set<std::string> aggregate_functions;
         std::unordered_set<std::string> aggregate_function_combinators;
         std::unordered_set<std::string> database_engines;
@@ -299,9 +337,11 @@ private:
         std::unordered_set<std::string> functions;
         std::unordered_set<std::string> storages;
         std::unordered_set<std::string> table_functions;
+
+        mutable std::mutex mutex;
     };
 
-    /// Needs to be chandged while having const context in factories methods
+    /// Needs to be changed while having const context in factories methods
     mutable QueryFactoriesInfo query_factories_info;
 
     /// TODO: maybe replace with temporary tables?
@@ -602,6 +642,8 @@ public:
     Lemmatizers & getLemmatizers() const;
 #endif
 
+    BackupsWorker & getBackupsWorker() const;
+
     /// I/O formats.
     InputFormatPtr getInputFormat(const String & name, ReadBuffer & buf, const Block & sample, UInt64 max_block_size, const std::optional<FormatSettings> & format_settings = std::nullopt) const;
 
@@ -609,6 +651,7 @@ public:
     OutputFormatPtr getOutputFormatParallelIfPossible(const String & name, WriteBuffer & buf, const Block & sample) const;
 
     InterserverIOHandler & getInterserverIOHandler();
+    const InterserverIOHandler & getInterserverIOHandler() const;
 
     /// How other servers can access this for downloading replicated data.
     void setInterserverIOAddress(const String & host, UInt16 port);
@@ -616,7 +659,7 @@ public:
 
     /// Credentials which server will use to communicate with others
     void updateInterserverCredentials(const Poco::Util::AbstractConfiguration & config);
-    InterserverCredentialsPtr getInterserverCredentials();
+    InterserverCredentialsPtr getInterserverCredentials() const;
 
     /// Interserver requests scheme (http or https)
     void setInterserverScheme(const String & scheme);

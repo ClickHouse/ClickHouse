@@ -33,7 +33,7 @@ struct MergeTreeIndexFormat
     MergeTreeIndexVersion version;
     const char* extension;
 
-    operator bool() const { return version != 0; } /// NOLINT
+    explicit operator bool() const { return version != 0; }
 };
 
 /// Stores some info about a single block of data.

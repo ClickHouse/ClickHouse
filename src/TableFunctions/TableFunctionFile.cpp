@@ -87,9 +87,9 @@ StoragePtr TableFunctionFile::getStorage(const String & source,
         String{},
     };
     if (fd >= 0)
-        return StorageFile::create(fd, args);
+        return std::make_shared<StorageFile>(fd, args);
 
-    return StorageFile::create(source, global_context->getUserFilesPath(), args);
+    return std::make_shared<StorageFile>(source, global_context->getUserFilesPath(), args);
 }
 
 ColumnsDescription TableFunctionFile::getActualTableStructure(ContextPtr context) const

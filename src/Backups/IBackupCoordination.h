@@ -6,11 +6,52 @@
 
 namespace DB
 {
+using DatabaseAndTableName = std::pair<String, String>;
 
 /// Keeps information about files contained in a backup.
 class IBackupCoordination
 {
 public:
+    virtual ~IBackupCoordination() = default;
+
+    /// Adds a data path in backup for a replicated table.
+    /// Multiple replicas of the replicated table call this function and then all the added paths can be returned by call of the function
+    /// getReplicatedTableDataPaths().
+    virtual void addReplicatedTableDataPath(const String & table_zk_path, const String & table_data_path) = 0;
+
+    struct PartNameAndChecksum
+    {
+        String part_name;
+        UInt128 checksum;
+    };
+
+    /// Adds part names which a specified replica of a replicated table is going to put to the backup.
+    /// Multiple replicas of the replicated table call this function and then the added part names can be returned by call of the function
+    /// getReplicatedTablePartNames().
+    /// Checksums are used only to control that parts under the same names on different replicas are the same.
+    virtual void addReplicatedTablePartNames(
+        const String & host_id,
+        const DatabaseAndTableName & table_name,
+        const String & table_zk_path,
+        const std::vector<PartNameAndChecksum> & part_names_and_checksums)
+        = 0;
+
+    /// Sets that a specified host finished preparations for copying the backup's files, successfully or not.
+    /// `error_message` should be set to true if it was not successful.
+    virtual void finishPreparing(const String & host_id, const String & error_message = {}) = 0;
+
+    /// Waits for a specified time for specified hosts to finish preparation for copying the backup's files.
+    virtual void
+    waitForAllHostsPrepared(const Strings & host_ids, std::chrono::seconds timeout = std::chrono::seconds(-1) /* no timeout */) const = 0;
+
+    /// Returns all the data paths in backup added for a replicated table (see also addReplicatedTableDataPath()).
+    virtual Strings getReplicatedTableDataPaths(const String & table_zk_path) const = 0;
+
+    /// Returns the names of the parts which a specified replica of a replicated table should put to the backup.
+    /// This is the same list as it was added by call of the function addReplicatedTablePartNames() but without duplications and without
+    /// parts covered by another parts.
+    virtual Strings getReplicatedTablePartNames(const String & host_id, const DatabaseAndTableName & table_name, const String & table_zk_path) const = 0;
+
     struct FileInfo
     {
         String file_name;
@@ -31,8 +72,6 @@ public:
         /// Position in the archive.
         UInt64 pos_in_archive = static_cast<UInt64>(-1);
     };
-
-    virtual ~IBackupCoordination() = default;
 
     /// Adds file information.
     /// If specified checksum+size are new for this IBackupContentsInfo the function sets `is_data_file_required`.

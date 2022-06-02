@@ -220,7 +220,7 @@ static ReadBuffer * getStream(
     else if (seek_to_mark)
         stream.seekToMark(from_mark);
 
-    return stream.data_buffer;
+    return stream.getDataBuffer();
 }
 
 void MergeTreeReaderWide::deserializePrefix(

@@ -26,8 +26,8 @@ public:
     void setNewTableName(const DatabaseAndTableName & old_table_name, const DatabaseAndTableName & new_table_name);
     void setNewDatabaseName(const String & old_database_name, const String & new_database_name);
 
-    void setFromBackupQuery(const ASTBackupQuery & backup_query, const String & current_database);
-    void setFromBackupQuery(const ASTBackupQuery::Elements & backup_query_elements, const String & current_database);
+    void setFromBackupQuery(const ASTBackupQuery & backup_query);
+    void setFromBackupQuery(const ASTBackupQuery::Elements & backup_query_elements);
 
     /// Changes names according to the renaming.
     DatabaseAndTableName getNewTableName(const DatabaseAndTableName & old_table_name) const;

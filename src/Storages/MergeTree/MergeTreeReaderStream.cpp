@@ -17,25 +17,35 @@ namespace ErrorCodes
 MergeTreeReaderStream::MergeTreeReaderStream(
         DataPartStoragePtr data_part_storage_,
         const String & path_prefix_, const String & data_file_extension_, size_t marks_count_,
-        const MarkRanges & all_mark_ranges,
-        const MergeTreeReaderSettings & settings,
+        const MarkRanges & all_mark_ranges_,
+        const MergeTreeReaderSettings & settings_,
         MarkCache * mark_cache_,
-        UncompressedCache * uncompressed_cache, size_t file_size_,
+        UncompressedCache * uncompressed_cache_, size_t file_size_,
         const MergeTreeIndexGranularityInfo * index_granularity_info_,
-        const ReadBufferFromFileBase::ProfileCallback & profile_callback, clockid_t clock_type,
+        const ReadBufferFromFileBase::ProfileCallback & profile_callback_, clockid_t clock_type_,
         bool is_low_cardinality_dictionary_)
-    : data_part_storage(std::move(data_part_storage_))
+    : settings(settings_)
+    , profile_callback(profile_callback_)
+    , clock_type(clock_type_)
+    , all_mark_ranges(all_mark_ranges_)
+    , file_size(file_size_)
+    , uncompressed_cache(uncompressed_cache_)
+    , data_part_storage(std::move(data_part_storage_))
     , path_prefix(path_prefix_)
     , data_file_extension(data_file_extension_)
     , is_low_cardinality_dictionary(is_low_cardinality_dictionary_)
     , marks_count(marks_count_)
-    , file_size(file_size_)
     , mark_cache(mark_cache_)
     , save_marks_in_cache(settings.save_marks_in_cache)
     , index_granularity_info(index_granularity_info_)
     , marks_loader(data_part_storage, mark_cache, index_granularity_info->getMarksFilePath(path_prefix),
-        marks_count, *index_granularity_info, save_marks_in_cache)
+        marks_count, *index_granularity_info, save_marks_in_cache) {}
+
+void MergeTreeReaderStream::init()
 {
+    if (initialized)
+        return;
+    initialized = true;
     /// Compute the size of the buffer.
     size_t max_mark_range_bytes = 0;
     size_t sum_mark_range_bytes = 0;
@@ -58,7 +68,6 @@ MergeTreeReaderStream::MergeTreeReaderStream(
     /// Avoid empty buffer. May happen while reading dictionary for DataTypeLowCardinality.
     /// For example: part has single dictionary and all marks point to the same position.
     ReadSettings read_settings = settings.read_settings;
-    read_settings.must_read_until_position = true;
     if (max_mark_range_bytes != 0)
         read_settings = read_settings.adjustBufferSize(max_mark_range_bytes);
 
@@ -194,6 +203,7 @@ size_t MergeTreeReaderStream::getRightOffset(size_t right_mark_non_included)
 
 void MergeTreeReaderStream::seekToMark(size_t index)
 {
+    init();
     MarkInCompressedFile mark = marks_loader.getMark(index);
 
     try
@@ -216,6 +226,7 @@ void MergeTreeReaderStream::seekToMark(size_t index)
 
 void MergeTreeReaderStream::seekToStart()
 {
+    init();
     try
     {
         compressed_data_buffer->seek(0, 0);
@@ -238,6 +249,7 @@ void MergeTreeReaderStream::adjustRightMark(size_t right_mark)
      * read from stream, but we must update last_right_offset only if it is bigger than
      * the last one to avoid redundantly cancelling prefetches.
      */
+    init();
     auto right_offset = getRightOffset(right_mark);
     if (!right_offset)
     {
@@ -255,6 +267,18 @@ void MergeTreeReaderStream::adjustRightMark(size_t right_mark)
         last_right_offset = right_offset;
         data_buffer->setReadUntilPosition(right_offset);
     }
+}
+
+ReadBuffer * MergeTreeReaderStream::getDataBuffer()
+{
+    init();
+    return data_buffer;
+}
+
+CompressedReadBufferBase * MergeTreeReaderStream::getCompressedDataBuffer()
+{
+    init();
+    return compressed_data_buffer;
 }
 
 }

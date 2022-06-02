@@ -707,13 +707,25 @@ void StorageDistributed::read(
             storage_snapshot,
             processed_stage);
 
-    ClusterProxy::executeQuery(
-        query_plan, header, processed_stage,
-        main_table, remote_table_function_ptr,
-        select_stream_factory, log, modified_query_ast,
-        local_context, query_info,
-        sharding_key_expr, sharding_key_column_name,
-        query_info.cluster);
+
+    auto settings = local_context->getSettingsRef();
+    bool parallel_replicas = settings.max_parallel_replicas > 1 && settings.allow_experimental_parallel_reading_from_replicas && !settings.use_hedged_requests;
+
+    if (parallel_replicas)
+        ClusterProxy::executeQueryWithParallelReplicas(
+            query_plan, main_table, remote_table_function_ptr,
+            select_stream_factory, modified_query_ast,
+            local_context, query_info,
+            sharding_key_expr, sharding_key_column_name,
+            query_info.cluster);
+    else
+        ClusterProxy::executeQuery(
+            query_plan, header, processed_stage,
+            main_table, remote_table_function_ptr,
+            select_stream_factory, log, modified_query_ast,
+            local_context, query_info,
+            sharding_key_expr, sharding_key_column_name,
+            query_info.cluster);
 
     /// This is a bug, it is possible only when there is no shards to query, and this is handled earlier.
     if (!query_plan.isInitialized())
@@ -758,7 +770,7 @@ SinkToStoragePtr StorageDistributed::write(const ASTPtr &, const StorageMetadata
     else
         columns_to_send = metadata_snapshot->getSampleBlockNonMaterialized().getNames();
 
-    /// DistributedBlockOutputStream will not own cluster, but will own ConnectionPools of the cluster
+    /// DistributedSink will not own cluster, but will own ConnectionPools of the cluster
     return std::make_shared<DistributedSink>(
         local_context, *this, metadata_snapshot, cluster, insert_sync, timeout,
         StorageID{remote_database, remote_table}, columns_to_send);
@@ -1050,14 +1062,14 @@ void StorageDistributed::createDirectoryMonitors(const DiskPtr & disk)
         {
             const auto & tmp_path = dir_path / "tmp";
 
-            /// "tmp" created by DistributedBlockOutputStream
+            /// "tmp" created by DistributedSink
             if (std::filesystem::is_directory(tmp_path) && std::filesystem::is_empty(tmp_path))
                 std::filesystem::remove(tmp_path);
 
             if (std::filesystem::is_empty(dir_path))
             {
                 LOG_DEBUG(log, "Removing {} (used for async INSERT into Distributed)", dir_path.string());
-                /// Will be created by DistributedBlockOutputStream on demand.
+                /// Will be created by DistributedSink on demand.
                 std::filesystem::remove(dir_path);
             }
             else
@@ -1499,7 +1511,7 @@ void registerStorageDistributed(StorageFactory & factory)
         if (!distributed_settings.monitor_max_sleep_time_ms.changed)
             distributed_settings.monitor_max_sleep_time_ms = Poco::Timespan(context->getSettingsRef().distributed_directory_monitor_max_sleep_time_ms);
 
-        return StorageDistributed::create(
+        return std::make_shared<StorageDistributed>(
             args.table_id,
             args.columns,
             args.constraints,
@@ -1523,4 +1535,3 @@ void registerStorageDistributed(StorageFactory & factory)
 }
 
 }
-
