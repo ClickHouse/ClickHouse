@@ -64,7 +64,10 @@ std::pair<Field, std::shared_ptr<const IDataType>> evaluateConstantExpression(co
     ReplaceQueryParameterVisitor param_visitor(context->getQueryParameters());
     param_visitor.visit(ast);
 
-    if (context->getSettingsRef().normalize_function_names)
+    /// Notice: function name normalization is disabled when it's a secondary query, because queries are either
+    /// already normalized on initiator node, or not normalized and should remain unnormalized for
+    /// compatibility.
+    if (context->getClientInfo().query_kind != ClientInfo::QueryKind::SECONDARY_QUERY && context->getSettingsRef().normalize_function_names)
         FunctionNameNormalizer().visit(ast.get());
 
     String name = ast->getColumnName();
