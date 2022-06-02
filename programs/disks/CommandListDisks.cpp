@@ -35,8 +35,6 @@ public:
             throw DB::Exception("Bad Arguments", DB::ErrorCodes::BAD_ARGUMENTS);
         }
 
-        std::vector<String> disks_names;
-
         for (const auto & [disk_name, _] : global_context->getDisksMap())
             std::cout << disk_name << '\n';
     }
