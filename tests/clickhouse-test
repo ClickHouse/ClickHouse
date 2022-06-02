@@ -55,7 +55,6 @@ MESSAGES_TO_RETRY = [
     "DB::Exception: New table appeared in database being dropped or detached. Try again",
     "is already started to be removing by another replica right now",
     "DB::Exception: Cannot enqueue query",
-    "line 1: wait_for: No record of process",  # Something weird from bash internals, let's just retry
     "is executing longer than distributed_ddl_task_timeout",  # FIXME
 ]
 
@@ -243,37 +242,6 @@ def get_transactions_list(args):
         return f"Cannot get list of transactions: {e}"
 
 
-def get_processlist_after_test(args):
-    log_comment = args.testcase_basename
-    database = args.testcase_database
-    if args.replicated_database:
-        return clickhouse_execute_json(
-            args,
-            f"""
-        SELECT materialize((hostName(), tcpPort())) as host, *
-        FROM clusterAllReplicas('test_cluster_database_replicated', system.processes)
-        WHERE
-            query NOT LIKE '%system.processes%' AND
-            {'NOT is_all_data_sent AND' if args.suppport_system_processes_is_all_data_sent else ''}
-            Settings['log_comment'] = '{log_comment}' AND
-            current_database = '{database}'
-        """,
-        )
-    else:
-        return clickhouse_execute_json(
-            args,
-            f"""
-        SELECT *
-        FROM system.processes
-        WHERE
-            query NOT LIKE '%system.processes%' AND
-            {'NOT is_all_data_sent AND' if args.suppport_system_processes_is_all_data_sent else ''}
-            Settings['log_comment'] = '{log_comment}' AND
-            current_database = '{database}'
-        """,
-        )
-
-
 # collect server stacktraces using gdb
 def get_stacktraces_from_gdb(server_pid):
     try:
@@ -406,7 +374,6 @@ class FailureReason(enum.Enum):
     RESULT_DIFF = "result differs with reference: "
     TOO_LONG = "Test runs too long (> 60s). Make it faster."
     INTERNAL_QUERY_FAIL = "Internal query (CREATE/DROP DATABASE) failed:"
-    LEFT_QUERIES = "Queries left in background after the test finished:"
 
     # SKIPPED reasons
     DISABLED = "disabled"
@@ -858,21 +825,6 @@ class TestCase:
                 total_time,
                 description,
             )
-
-        left_queries_check = args.no_left_queries_check is False
-        if self.tags and "no-left-queries-check" in self.tags:
-            left_queries_check = False
-        if left_queries_check:
-            processlist = get_processlist_after_test(self.testcase_args)
-            if processlist:
-                description += f"\n{json.dumps(processlist, indent=4)}\n"
-                return TestResult(
-                    self.name,
-                    TestStatus.FAIL,
-                    FailureReason.LEFT_QUERIES,
-                    total_time,
-                    description,
-                )
 
         if os.path.exists(self.stdout_file):
             os.remove(self.stdout_file)
