@@ -166,6 +166,14 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 {}
 
 InterpreterSelectQuery::InterpreterSelectQuery(
+    const ASTPtr & query_ptr_,
+    ContextMutablePtr context_,
+    const SelectQueryOptions & options_,
+    const Names & required_result_column_names_)
+    : InterpreterSelectQuery(query_ptr_, context_, std::nullopt, nullptr, options_, required_result_column_names_)
+{}
+
+InterpreterSelectQuery::InterpreterSelectQuery(
         const ASTPtr & query_ptr_,
         ContextPtr context_,
         Pipe input_pipe_,
@@ -273,6 +281,28 @@ static bool shouldIgnoreQuotaAndLimits(const StorageID & table_id)
 InterpreterSelectQuery::InterpreterSelectQuery(
     const ASTPtr & query_ptr_,
     ContextPtr context_,
+    std::optional<Pipe> input_pipe_,
+    const StoragePtr & storage_,
+    const SelectQueryOptions & options_,
+    const Names & required_result_column_names,
+    const StorageMetadataPtr & metadata_snapshot_,
+    SubqueriesForSets subquery_for_sets_,
+    PreparedSets prepared_sets_)
+    : InterpreterSelectQuery(
+        query_ptr_,
+        Context::createCopy(context_),
+        std::move(input_pipe_),
+        storage_,
+        options_,
+        required_result_column_names,
+        metadata_snapshot_,
+        std::move(subquery_for_sets_),
+        std::move(prepared_sets_))
+{}
+
+InterpreterSelectQuery::InterpreterSelectQuery(
+    const ASTPtr & query_ptr_,
+    ContextMutablePtr context_,
     std::optional<Pipe> input_pipe_,
     const StoragePtr & storage_,
     const SelectQueryOptions & options_,
@@ -1624,15 +1654,6 @@ void InterpreterSelectQuery::addEmptySourceToQueryPlan(
     {
         auto & prewhere_info = *prewhere_info_ptr;
 
-        if (prewhere_info.alias_actions)
-        {
-            pipe.addSimpleTransform([&](const Block & header)
-            {
-                return std::make_shared<ExpressionTransform>(header,
-                    std::make_shared<ExpressionActions>(prewhere_info.alias_actions));
-            });
-        }
-
         if (prewhere_info.row_level_filter)
         {
             pipe.addSimpleTransform([&](const Block & header)
@@ -1698,12 +1719,11 @@ void InterpreterSelectQuery::setMergeTreeReadTaskCallbackAndClientInfo(MergeTree
     context->setMergeTreeReadTaskCallback(std::move(callback));
 }
 
-void InterpreterSelectQuery::setProperClientInfo()
+void InterpreterSelectQuery::setProperClientInfo(size_t replica_num, size_t replica_count)
 {
     context->getClientInfo().query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
-    assert(options.shard_count.has_value() && options.shard_num.has_value());
-    context->getClientInfo().count_participating_replicas = *options.shard_count;
-    context->getClientInfo().number_of_current_replica = *options.shard_num;
+    context->getClientInfo().count_participating_replicas = replica_count;
+    context->getClientInfo().number_of_current_replica = replica_num;
 }
 
 bool InterpreterSelectQuery::shouldMoveToPrewhere()
@@ -1871,19 +1891,6 @@ void InterpreterSelectQuery::addPrewhereAliasActions()
             /// Don't remove columns which are needed to be aliased.
             for (const auto & name : required_columns)
                 prewhere_info->prewhere_actions->tryRestoreColumn(name);
-
-            auto analyzed_result
-                = TreeRewriter(context).analyze(required_columns_from_prewhere_expr, metadata_snapshot->getColumns().getAllPhysical());
-            prewhere_info->alias_actions
-                = ExpressionAnalyzer(required_columns_from_prewhere_expr, analyzed_result, context).getActionsDAG(true, false);
-
-            /// Add (physical?) columns required by alias actions.
-            auto required_columns_from_alias = prewhere_info->alias_actions->getRequiredColumns();
-            Block prewhere_actions_result = prewhere_info->prewhere_actions->getResultColumns();
-            for (auto & column : required_columns_from_alias)
-                if (!prewhere_actions_result.has(column.name))
-                    if (required_columns.end() == std::find(required_columns.begin(), required_columns.end(), column.name))
-                        required_columns.push_back(column.name);
 
             /// Add physical columns required by prewhere actions.
             for (const auto & column : required_columns_from_prewhere)
