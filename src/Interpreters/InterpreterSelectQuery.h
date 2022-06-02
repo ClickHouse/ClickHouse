@@ -59,6 +59,12 @@ public:
         const SelectQueryOptions &,
         const Names & required_result_column_names_ = Names{});
 
+    InterpreterSelectQuery(
+        const ASTPtr & query_ptr_,
+        ContextMutablePtr context_,
+        const SelectQueryOptions &,
+        const Names & required_result_column_names_ = Names{});
+
     /// Read data not from the table specified in the query, but from the prepared pipe `input`.
     InterpreterSelectQuery(
         const ASTPtr & query_ptr_,
@@ -123,12 +129,23 @@ public:
     void setMergeTreeReadTaskCallbackAndClientInfo(MergeTreeReadTaskCallback && callback);
 
     /// It will set shard_num and shard_count to the client_info
-    void setProperClientInfo();
+    void setProperClientInfo(size_t replica_num, size_t replica_count);
 
 private:
     InterpreterSelectQuery(
         const ASTPtr & query_ptr_,
         ContextPtr context_,
+        std::optional<Pipe> input_pipe,
+        const StoragePtr & storage_,
+        const SelectQueryOptions &,
+        const Names & required_result_column_names = {},
+        const StorageMetadataPtr & metadata_snapshot_ = nullptr,
+        SubqueriesForSets subquery_for_sets_ = {},
+        PreparedSets prepared_sets_ = {});
+
+    InterpreterSelectQuery(
+        const ASTPtr & query_ptr_,
+        ContextMutablePtr context_,
         std::optional<Pipe> input_pipe,
         const StoragePtr & storage_,
         const SelectQueryOptions &,

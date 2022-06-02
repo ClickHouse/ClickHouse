@@ -86,8 +86,17 @@ class StorageS3Source::DisclosedGlobIterator::Impl : WithContext
 {
 
 public:
-    Impl(Aws::S3::S3Client & client_, const S3::URI & globbed_uri_, ASTPtr & query_, const Block & virtual_header_, ContextPtr context_)
-        : WithContext(context_), client(client_), globbed_uri(globbed_uri_), query(query_), virtual_header(virtual_header_)
+    Impl(
+        const Aws::S3::S3Client & client_,
+        const S3::URI & globbed_uri_,
+        ASTPtr & query_,
+        const Block & virtual_header_,
+        ContextPtr context_)
+        : WithContext(context_)
+        , client(client_)
+        , globbed_uri(globbed_uri_)
+        , query(query_)
+        , virtual_header(virtual_header_)
     {
         if (globbed_uri.bucket.find_first_of("*?{") != globbed_uri.bucket.npos)
             throw Exception("Expression can not have wildcards inside bucket name", ErrorCodes::UNEXPECTED_EXPRESSION);
@@ -230,7 +239,11 @@ private:
 };
 
 StorageS3Source::DisclosedGlobIterator::DisclosedGlobIterator(
-    Aws::S3::S3Client & client_, const S3::URI & globbed_uri_, ASTPtr query, const Block & virtual_header, ContextPtr context)
+    const Aws::S3::S3Client & client_,
+    const S3::URI & globbed_uri_,
+    ASTPtr query,
+    const Block & virtual_header,
+    ContextPtr context)
     : pimpl(std::make_shared<StorageS3Source::DisclosedGlobIterator::Impl>(client_, globbed_uri_, query, virtual_header, context))
 {
 }
@@ -379,7 +392,7 @@ StorageS3Source::StorageS3Source(
     UInt64 max_block_size_,
     UInt64 max_single_read_retries_,
     String compression_hint_,
-    const std::shared_ptr<Aws::S3::S3Client> & client_,
+    const std::shared_ptr<const Aws::S3::S3Client> & client_,
     const String & bucket_,
     const String & version_id_,
     std::shared_ptr<IteratorWrapper> file_iterator_,
@@ -516,7 +529,7 @@ Chunk StorageS3Source::generate()
     return {};
 }
 
-static bool checkIfObjectExists(const std::shared_ptr<Aws::S3::S3Client> & client, const String & bucket, const String & key)
+static bool checkIfObjectExists(const std::shared_ptr<const Aws::S3::S3Client> & client, const String & bucket, const String & key)
 {
     bool is_finished = false;
     Aws::S3::Model::ListObjectsV2Request request;
@@ -590,7 +603,9 @@ public:
 
     void onException() override
     {
-        write_buf->finalize();
+        if (!writer)
+            return;
+        onFinish();
     }
 
     void onFinish() override
@@ -667,7 +682,6 @@ private:
     const Block sample_block;
     ContextPtr context;
     const CompressionMethod compression_method;
-
     const StorageS3::S3Configuration & s3_configuration;
     const String bucket;
     const String key;
@@ -728,6 +742,7 @@ StorageS3::StorageS3(
     , partition_by(partition_by_)
     , is_key_with_globs(uri_.key.find_first_of("*?{") != std::string::npos)
 {
+    FormatFactory::instance().checkFormatName(format_name);
     context_->getGlobalContext()->getRemoteHostFilter().checkURL(uri_.uri);
     StorageInMemoryMetadata storage_metadata;
 
@@ -1010,7 +1025,8 @@ void StorageS3::updateS3Configuration(ContextPtr ctx, StorageS3::S3Configuration
 
     S3::PocoHTTPClientConfiguration client_configuration = S3::ClientFactory::instance().createClientConfiguration(
         settings.auth_settings.region,
-        ctx->getRemoteHostFilter(), ctx->getGlobalContext()->getSettingsRef().s3_max_redirects);
+        ctx->getRemoteHostFilter(), ctx->getGlobalContext()->getSettingsRef().s3_max_redirects,
+        ctx->getGlobalContext()->getSettingsRef().enable_s3_requests_logging);
 
     client_configuration.endpointOverride = upd.uri.endpoint;
     client_configuration.maxConnections = upd.rw_settings.max_connections;

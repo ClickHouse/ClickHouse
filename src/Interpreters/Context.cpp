@@ -30,7 +30,7 @@
 #include <Storages/CompressionCodecSelector.h>
 #include <Storages/StorageS3Settings.h>
 #include <Disks/DiskLocal.h>
-#include <Disks/IDiskRemote.h>
+#include <Disks/ObjectStorages/IObjectStorage.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Interpreters/ActionLocksManager.h>
 #include <Interpreters/ExternalLoaderXMLConfigRepository.h>
@@ -315,7 +315,7 @@ struct ContextSharedPart
         /// since it may use per-user MemoryTracker which will be destroyed here.
         try
         {
-            IDiskRemote::getThreadPoolWriter().wait();
+            IObjectStorage::getThreadPoolWriter().wait();
         }
         catch (...)
         {

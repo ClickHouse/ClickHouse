@@ -707,13 +707,25 @@ void StorageDistributed::read(
             storage_snapshot,
             processed_stage);
 
-    ClusterProxy::executeQuery(
-        query_plan, header, processed_stage,
-        main_table, remote_table_function_ptr,
-        select_stream_factory, log, modified_query_ast,
-        local_context, query_info,
-        sharding_key_expr, sharding_key_column_name,
-        query_info.cluster);
+
+    auto settings = local_context->getSettingsRef();
+    bool parallel_replicas = settings.max_parallel_replicas > 1 && settings.allow_experimental_parallel_reading_from_replicas && !settings.use_hedged_requests;
+
+    if (parallel_replicas)
+        ClusterProxy::executeQueryWithParallelReplicas(
+            query_plan, main_table, remote_table_function_ptr,
+            select_stream_factory, modified_query_ast,
+            local_context, query_info,
+            sharding_key_expr, sharding_key_column_name,
+            query_info.cluster);
+    else
+        ClusterProxy::executeQuery(
+            query_plan, header, processed_stage,
+            main_table, remote_table_function_ptr,
+            select_stream_factory, log, modified_query_ast,
+            local_context, query_info,
+            sharding_key_expr, sharding_key_column_name,
+            query_info.cluster);
 
     /// This is a bug, it is possible only when there is no shards to query, and this is handled earlier.
     if (!query_plan.isInitialized())
@@ -1523,4 +1535,3 @@ void registerStorageDistributed(StorageFactory & factory)
 }
 
 }
-

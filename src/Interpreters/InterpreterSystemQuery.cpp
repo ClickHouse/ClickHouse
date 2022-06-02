@@ -795,7 +795,7 @@ void InterpreterSystemQuery::restartDisk(String & name)
     auto disk = getContext()->getDisk(name);
 
     if (DiskRestartProxy * restart_proxy = dynamic_cast<DiskRestartProxy*>(disk.get()))
-        restart_proxy->restart();
+        restart_proxy->restart(getContext());
     else
         throw Exception("Disk " + name + " doesn't have possibility to restart", ErrorCodes::BAD_ARGUMENTS);
 }
