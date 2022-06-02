@@ -41,7 +41,15 @@ CSVRowInputFormat::CSVRowInputFormat(
     bool with_types_,
     const FormatSettings & format_settings_,
     std::unique_ptr<FormatWithNamesAndTypesReader> format_reader_)
-    : RowInputFormatWithNamesAndTypes(header_, in_, params_, with_names_, with_types_, format_settings_, std::move(format_reader_))
+    : RowInputFormatWithNamesAndTypes(
+        header_,
+        in_,
+        params_,
+        false,
+        with_names_,
+        with_types_,
+        format_settings_,
+        std::move(format_reader_))
 {
     const String bad_delimiters = " \t\"'.UL";
     if (bad_delimiters.find(format_settings.csv.delimiter) != String::npos)

@@ -166,6 +166,14 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 {}
 
 InterpreterSelectQuery::InterpreterSelectQuery(
+    const ASTPtr & query_ptr_,
+    ContextMutablePtr context_,
+    const SelectQueryOptions & options_,
+    const Names & required_result_column_names_)
+    : InterpreterSelectQuery(query_ptr_, context_, std::nullopt, nullptr, options_, required_result_column_names_)
+{}
+
+InterpreterSelectQuery::InterpreterSelectQuery(
         const ASTPtr & query_ptr_,
         ContextPtr context_,
         Pipe input_pipe_,
@@ -273,6 +281,28 @@ static bool shouldIgnoreQuotaAndLimits(const StorageID & table_id)
 InterpreterSelectQuery::InterpreterSelectQuery(
     const ASTPtr & query_ptr_,
     ContextPtr context_,
+    std::optional<Pipe> input_pipe_,
+    const StoragePtr & storage_,
+    const SelectQueryOptions & options_,
+    const Names & required_result_column_names,
+    const StorageMetadataPtr & metadata_snapshot_,
+    SubqueriesForSets subquery_for_sets_,
+    PreparedSets prepared_sets_)
+    : InterpreterSelectQuery(
+        query_ptr_,
+        Context::createCopy(context_),
+        std::move(input_pipe_),
+        storage_,
+        options_,
+        required_result_column_names,
+        metadata_snapshot_,
+        std::move(subquery_for_sets_),
+        std::move(prepared_sets_))
+{}
+
+InterpreterSelectQuery::InterpreterSelectQuery(
+    const ASTPtr & query_ptr_,
+    ContextMutablePtr context_,
     std::optional<Pipe> input_pipe_,
     const StoragePtr & storage_,
     const SelectQueryOptions & options_,

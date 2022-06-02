@@ -52,6 +52,14 @@ InterpreterSelectIntersectExceptQuery::InterpreterSelectIntersectExceptQuery(
     const ASTPtr & query_ptr_,
     ContextPtr context_,
     const SelectQueryOptions & options_)
+    :InterpreterSelectIntersectExceptQuery(query_ptr_, Context::createCopy(context_), options_)
+{
+}
+
+InterpreterSelectIntersectExceptQuery::InterpreterSelectIntersectExceptQuery(
+    const ASTPtr & query_ptr_,
+    ContextMutablePtr context_,
+    const SelectQueryOptions & options_)
     : IInterpreterUnionOrSelectQuery(query_ptr_->clone(), context_, options_)
 {
     ASTSelectIntersectExceptQuery * ast = query_ptr->as<ASTSelectIntersectExceptQuery>();
