@@ -22,7 +22,8 @@ void MergeTreeDataPartWriterOnDisk::Stream::preFinalize()
         marks->next();
 
     plain_file->preFinalize();
-    marks_file->preFinalize();
+    if (use_marks)
+        marks_file->preFinalize();
 
     is_prefinalized = true;
 }
@@ -62,13 +63,13 @@ MergeTreeDataPartWriterOnDisk::Stream::Stream(
     plain_hashing(*plain_file),
     compressed_buf(plain_hashing, compression_codec_, max_compress_block_size_),
     compressed(compressed_buf),
-    marks_file(disk_->writeFile(marks_path_ + marks_file_extension, 4096, WriteMode::Rewrite, query_write_settings)),
+    marks_file(nullptr),
     marks(nullptr),
     use_marks(use_marks_)
 {
     if (use_marks)
     {
-        marks_file = disk_->writeFile(marks_path_ + marks_file_extension, 4096, WriteMode::Rewrite);
+        marks_file = disk_->writeFile(marks_path_ + marks_file_extension, 4096, WriteMode::Rewrite, query_write_settings);
         marks = std::make_unique<HashingWriteBuffer>(*marks_file);
     }
 }
