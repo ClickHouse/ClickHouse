@@ -1297,14 +1297,14 @@ def test_nats_no_connection_at_startup_2(nats_cluster):
             SELECT * FROM test.cs;
     """
     )
-    while not check_table_is_ready(instance, "test.cs"):
-        logging.debug("Table test.cs is not yet ready")
-        time.sleep(0.5)
 
     instance.query("DETACH TABLE test.cs")
     nats_cluster.pause_container("nats1")
     instance.query("ATTACH TABLE test.cs")
     nats_cluster.unpause_container("nats1")
+    while not check_table_is_ready(instance, "test.cs"):
+        logging.debug("Table test.cs is not yet ready")
+        time.sleep(0.5)
 
     messages_num = 1000
     messages = []
@@ -1312,7 +1312,7 @@ def test_nats_no_connection_at_startup_2(nats_cluster):
         messages.append(json.dumps({"key": i, "value": i}))
     asyncio.run(nats_produce_messages(nats_cluster.nats_ip, "cs", messages))
 
-    while True:
+    for _ in range(20):
         result = instance.query("SELECT count() FROM test.view")
         time.sleep(1)
         if int(result) == messages_num:
