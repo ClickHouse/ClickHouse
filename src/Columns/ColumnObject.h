@@ -115,7 +115,7 @@ public:
         class LeastCommonType
         {
         public:
-            LeastCommonType() = default;
+            LeastCommonType();
             explicit LeastCommonType(DataTypePtr type_);
 
             const DataTypePtr & get() const { return type; }
@@ -251,6 +251,8 @@ private:
     template <typename Func>
     MutableColumnPtr applyForSubcolumns(Func && func) const;
 
+    /// For given subcolumn return subcolumn from the same Nested type.
+    /// It's used to get shared sized of Nested to insert correct default values.
     const Subcolumns::Node * getLeafOfTheSameNested(const Subcolumns::NodePtr & entry) const;
 };
 

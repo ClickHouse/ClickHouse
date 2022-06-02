@@ -342,29 +342,23 @@ void ColumnObject::Subcolumn::insertRangeFrom(const Subcolumn & src, size_t star
 
     if (data.empty())
     {
-        if (end <= src.num_of_defaults_in_prefix)
-        {
-            num_of_defaults_in_prefix += length;
-            return;
-        }
-
-        if (start < src.num_of_defaults_in_prefix)
-            num_of_defaults_in_prefix += src.num_of_defaults_in_prefix - start;
-
         addNewColumnPart(src.getLeastCommonType());
     }
-    else
+    else if (!least_common_type.get()->equals(*src.getLeastCommonType()))
     {
-        if (!least_common_type.get()->equals(*src.getLeastCommonType()))
-        {
-            auto new_least_common_type = getLeastSupertype(DataTypes{least_common_type.get(), src.getLeastCommonType()}, true);
-            if (!new_least_common_type->equals(*new_least_common_type))
-                addNewColumnPart(std::move(new_least_common_type));
-        }
-
-        if (start < src.num_of_defaults_in_prefix)
-            data.back()->insertManyDefaults(src.num_of_defaults_in_prefix - start);
+        auto new_least_common_type = getLeastSupertype(DataTypes{least_common_type.get(), src.getLeastCommonType()}, true);
+        if (!new_least_common_type->equals(*least_common_type.get()))
+            addNewColumnPart(std::move(new_least_common_type));
     }
+
+    if (end <= src.num_of_defaults_in_prefix)
+    {
+        data.back()->insertManyDefaults(length);
+        return;
+    }
+
+    if (start < src.num_of_defaults_in_prefix)
+        data.back()->insertManyDefaults(src.num_of_defaults_in_prefix - start);
 
     auto insert_from_part = [&](const auto & column, size_t from, size_t n)
     {
@@ -395,20 +389,25 @@ void ColumnObject::Subcolumn::insertRangeFrom(const Subcolumn & src, size_t star
 
     size_t pos = 0;
     size_t processed_rows = src.num_of_defaults_in_prefix;
+
+    /// Find the first part of the column that intersects the range.
     while (pos < src.data.size() && processed_rows + src.data[pos]->size() < start)
     {
         processed_rows += src.data[pos]->size();
         ++pos;
     }
 
-    if (pos < src.data.size())
+    /// Insert from the first part of column.
+    if (pos < src.data.size() && processed_rows < start)
     {
-        assert(current_size < start);
         size_t part_start = start - processed_rows;
-        insert_from_part(src.data[pos], part_start, src.data[pos]->size() - part_start);
+        size_t part_length = std::min(src.data[pos]->size() - part_start, end - start);
+        insert_from_part(src.data[pos], part_start, part_length);
+        processed_rows += src.data[pos]->size();
         ++pos;
     }
 
+    /// Insert from the parts of column in the middle of range.
     while (pos < src.data.size() && processed_rows + src.data[pos]->size() < end)
     {
         insert_from_part(src.data[pos], 0, src.data[pos]->size());
@@ -416,9 +415,9 @@ void ColumnObject::Subcolumn::insertRangeFrom(const Subcolumn & src, size_t star
         ++pos;
     }
 
-    if (pos < src.data.size())
+    /// Insert from the last part of column if needed.
+    if (pos < src.data.size() && processed_rows < end)
     {
-        assert(current_size < end);
         size_t part_end = end - processed_rows;
         insert_from_part(src.data[pos], 0, part_end);
     }
@@ -592,6 +591,13 @@ const ColumnPtr & ColumnObject::Subcolumn::getFinalizedColumnPtr() const
     return data[0];
 }
 
+ColumnObject::Subcolumn::LeastCommonType::LeastCommonType()
+    : type(std::make_shared<DataTypeNothing>())
+    , base_type(type)
+    , num_dimensions(0)
+{
+}
+
 ColumnObject::Subcolumn::LeastCommonType::LeastCommonType(DataTypePtr type_)
     : type(std::move(type_))
     , base_type(getBaseTypeOfArray(type))
@@ -624,7 +630,7 @@ void ColumnObject::checkConsistency() const
         if (num_rows != leaf->data.size())
         {
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Sizes of subcolumns are inconsistent in ColumnObject."
-                " Subcolumn '{}' has {} rows, but   expected size is {}",
+                " Subcolumn '{}' has {} rows, but expected size is {}",
                 leaf->path.getPath(), leaf->data.size(), num_rows);
         }
     }
@@ -927,6 +933,8 @@ const ColumnObject::Subcolumns::Node * ColumnObject::getLeafOfTheSameNested(cons
         if (!node_nested)
             break;
 
+        /// Find the leaf with subcolumn that contains values
+        /// for the last rows.
         /// If there are no leaves, skip current node and find
         /// the next node up to the current.
         leaf = subcolumns.findLeaf(node_nested,
@@ -955,8 +963,14 @@ bool ColumnObject::tryInsertManyDefaultsFromNested(const Subcolumns::NodePtr & e
 
     size_t old_size = entry->data.size();
     auto field_info = entry->data.getFieldInfo();
-    auto new_subcolumn = leaf->data.cut(old_size, leaf->data.size() - old_size).recreateWithDefaultValues(field_info);
-    new_subcolumn.finalize();
+
+    /// Cut the needed range from the found leaf
+    /// and replace scalar values to the correct
+    /// default values for given entry.
+    auto new_subcolumn = leaf->data
+        .cut(old_size, leaf->data.size() - old_size)
+        .recreateWithDefaultValues(field_info);
+
     entry->data.insertRangeFrom(new_subcolumn, 0, new_subcolumn.size());
     return true;
 }
