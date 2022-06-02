@@ -177,6 +177,9 @@ ColumnUInt8::Ptr FlatDictionary::hasKeys(const Columns & key_columns, const Data
 
 ColumnPtr FlatDictionary::getHierarchy(ColumnPtr key_column, const DataTypePtr &) const
 {
+    if (key_column->isNullable())
+        key_column = assert_cast<const ColumnNullable *>(key_column.get())->getNestedColumnPtr();
+
     PaddedPODArray<UInt64> keys_backup_storage;
     const auto & keys = getColumnVectorData(this, key_column, keys_backup_storage);
 
@@ -184,7 +187,11 @@ ColumnPtr FlatDictionary::getHierarchy(ColumnPtr key_column, const DataTypePtr &
     const auto & dictionary_attribute = dict_struct.attributes[hierarchical_attribute_index];
     const auto & hierarchical_attribute = attributes[hierarchical_attribute_index];
 
-    const UInt64 null_value = dictionary_attribute.null_value.get<UInt64>();
+    std::optional<UInt64> null_value;
+
+    if (!dictionary_attribute.null_value.isNull())
+        null_value = dictionary_attribute.null_value.get<UInt64>();
+
     const ContainerType<UInt64> & parent_keys = std::get<ContainerType<UInt64>>(hierarchical_attribute.container);
 
     auto is_key_valid_func = [&, this](auto & key) { return key < loaded_keys.size() && loaded_keys[key]; };
@@ -193,13 +200,26 @@ ColumnPtr FlatDictionary::getHierarchy(ColumnPtr key_column, const DataTypePtr &
 
     auto get_parent_key_func = [&, this](auto & hierarchy_key)
     {
+        std::optional<UInt64> result;
+
         bool is_key_valid = hierarchy_key < loaded_keys.size() && loaded_keys[hierarchy_key];
-        std::optional<UInt64> result = is_key_valid ? std::make_optional(parent_keys[hierarchy_key]) : std::nullopt;
-        keys_found += result.has_value();
+
+        if (!is_key_valid)
+            return result;
+
+        if (unlikely(hierarchical_attribute.is_nullable_set) && hierarchical_attribute.is_nullable_set->find(hierarchy_key))
+            return result;
+
+        UInt64 parent_key = parent_keys[hierarchy_key];
+        if (null_value && *null_value == parent_key)
+            return result;
+
+        result = parent_key;
+        keys_found += 1;
         return result;
     };
 
-    auto dictionary_hierarchy_array = getKeysHierarchyArray(keys, null_value, is_key_valid_func, get_parent_key_func);
+    auto dictionary_hierarchy_array = getKeysHierarchyArray(keys, is_key_valid_func, get_parent_key_func);
 
     query_count.fetch_add(keys.size(), std::memory_order_relaxed);
     found_count.fetch_add(keys_found, std::memory_order_relaxed);
@@ -212,8 +232,21 @@ ColumnUInt8::Ptr FlatDictionary::isInHierarchy(
     ColumnPtr in_key_column,
     const DataTypePtr &) const
 {
+    if (key_column->isNullable())
+        key_column = assert_cast<const ColumnNullable *>(key_column.get())->getNestedColumnPtr();
+
     PaddedPODArray<UInt64> keys_backup_storage;
     const auto & keys = getColumnVectorData(this, key_column, keys_backup_storage);
+
+    const PaddedPODArray<UInt8> * in_key_column_nullable_mask = nullptr;
+
+    if (in_key_column->isNullable())
+    {
+        const auto * in_key_column_typed = assert_cast<const ColumnNullable *>(in_key_column.get());
+
+        in_key_column = in_key_column_typed->getNestedColumnPtr();
+        in_key_column_nullable_mask = &in_key_column_typed->getNullMapColumn().getData();
+    }
 
     PaddedPODArray<UInt64> keys_in_backup_storage;
     const auto & keys_in = getColumnVectorData(this, in_key_column, keys_in_backup_storage);
@@ -222,7 +255,11 @@ ColumnUInt8::Ptr FlatDictionary::isInHierarchy(
     const auto & dictionary_attribute = dict_struct.attributes[hierarchical_attribute_index];
     const auto & hierarchical_attribute = attributes[hierarchical_attribute_index];
 
-    const UInt64 null_value = dictionary_attribute.null_value.get<UInt64>();
+    std::optional<UInt64> null_value;
+
+    if (!dictionary_attribute.null_value.isNull())
+        null_value = dictionary_attribute.null_value.get<UInt64>();
+
     const ContainerType<UInt64> & parent_keys = std::get<ContainerType<UInt64>>(hierarchical_attribute.container);
 
     auto is_key_valid_func = [&, this](auto & key) { return key < loaded_keys.size() && loaded_keys[key]; };
@@ -231,13 +268,37 @@ ColumnUInt8::Ptr FlatDictionary::isInHierarchy(
 
     auto get_parent_key_func = [&, this](auto & hierarchy_key)
     {
+        std::optional<UInt64> result;
+
         bool is_key_valid = hierarchy_key < loaded_keys.size() && loaded_keys[hierarchy_key];
-        std::optional<UInt64> result = is_key_valid ? std::make_optional(parent_keys[hierarchy_key]) : std::nullopt;
-        keys_found += result.has_value();
+
+        if (!is_key_valid)
+            return result;
+
+        if (unlikely(hierarchical_attribute.is_nullable_set) && hierarchical_attribute.is_nullable_set->find(hierarchy_key))
+            return result;
+
+        UInt64 parent_key = parent_keys[hierarchy_key];
+        if (null_value && *null_value == parent_key)
+            return result;
+
+        result = parent_keys[hierarchy_key];
+        keys_found += 1;
         return result;
     };
 
-    auto result = getKeysIsInHierarchyColumn(keys, keys_in, null_value, is_key_valid_func, get_parent_key_func);
+    auto result = getKeysIsInHierarchyColumn(keys, keys_in, is_key_valid_func, get_parent_key_func);
+
+    if (unlikely(in_key_column_nullable_mask))
+    {
+        auto mutable_result_ptr = result->assumeMutable();
+        auto & mutable_result = assert_cast<ColumnUInt8 &>(*mutable_result_ptr);
+        auto & mutable_result_data = mutable_result.getData();
+        size_t mutable_result_data_size = mutable_result_data.size();
+
+        for (size_t i = 0; i < mutable_result_data_size; ++i)
+            mutable_result_data[i] &= !(static_cast<bool>((*in_key_column_nullable_mask)[i]));
+    }
 
     query_count.fetch_add(keys.size(), std::memory_order_relaxed);
     found_count.fetch_add(keys_found, std::memory_order_relaxed);

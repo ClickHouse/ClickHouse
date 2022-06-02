@@ -973,7 +973,7 @@ private:
         auto dictionary = helper.getDictionary(arguments[0].column);
         const auto & hierarchical_attribute = helper.getDictionaryHierarchicalAttribute(dictionary);
 
-        return std::make_shared<DataTypeArray>(hierarchical_attribute.type);
+        return std::make_shared<DataTypeArray>(removeNullable(hierarchical_attribute.type));
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
