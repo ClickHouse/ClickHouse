@@ -382,6 +382,8 @@ StorageFile::StorageFile(CommonArguments args)
     , compression_method(args.compression_method)
     , base_path(args.getContext()->getPath())
 {
+    if (format_name != "Distributed")
+        FormatFactory::instance().checkFormatName(format_name);
 }
 
 void StorageFile::setStorageMetadata(CommonArguments args)
@@ -810,7 +812,9 @@ public:
 
     void onException() override
     {
-        write_buf->finalize();
+        if (!writer)
+            return;
+        onFinish();
     }
 
     void onFinish() override

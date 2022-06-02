@@ -1154,7 +1154,8 @@ void registerStorageRabbitMQ(StorageFactory & factory)
         if (!with_named_collection && !args.storage_def->settings)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "RabbitMQ engine must have settings");
 
-        rabbitmq_settings->loadFromQuery(*args.storage_def);
+        if (args.storage_def->settings)
+            rabbitmq_settings->loadFromQuery(*args.storage_def);
 
         if (!rabbitmq_settings->rabbitmq_host_port.changed
            && !rabbitmq_settings->rabbitmq_address.changed)

@@ -119,7 +119,11 @@ TemporaryTableHolder & TemporaryTableHolder::operator=(TemporaryTableHolder && r
 TemporaryTableHolder::~TemporaryTableHolder()
 {
     if (id != UUIDHelpers::Nil)
+    {
+        auto table = getTable();
+        table->flushAndShutdown();
         temporary_tables->dropTable(getContext(), "_tmp_" + toString(id));
+    }
 }
 
 StorageID TemporaryTableHolder::getGlobalTableID() const
