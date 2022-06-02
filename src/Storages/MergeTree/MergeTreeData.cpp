@@ -6176,6 +6176,10 @@ try
 
     part_log_elem.event_type = type;
 
+    if (part_log_elem.event_type == PartLogElement::MERGE_PARTS)
+        if (merge_entry)
+            part_log_elem.merge_reason = PartLogElement::getMergeReasonType((*merge_entry)->merge_type);
+
     part_log_elem.error = static_cast<UInt16>(execution_status.code);
     part_log_elem.exception = execution_status.message;
 
