@@ -25,7 +25,7 @@ FROM
 );
 
 
-SELECT count()
+SELECT count() >= 20, count() <= 22
 FROM
 (
     SELECT x
@@ -65,7 +65,7 @@ FROM
     )
 );
 
-SELECT count()
+SELECT count() >= 20, count() <= 22
 FROM
 (
     SELECT x
