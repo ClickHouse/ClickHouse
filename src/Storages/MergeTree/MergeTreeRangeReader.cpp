@@ -593,9 +593,6 @@ MergeTreeRangeReader::MergeTreeRangeReader(
 
     if (prewhere_info)
     {
-        if (prewhere_info->alias_actions)
-            prewhere_info->alias_actions->execute(sample_block, true);
-
         if (prewhere_info->row_level_filter)
         {
             prewhere_info->row_level_filter->execute(sample_block, true);
@@ -1057,9 +1054,6 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
                 throw Exception("Unexpected non-const virtual column: " + column_name, ErrorCodes::LOGICAL_ERROR);
             ++pos;
         }
-
-        if (prewhere_info->alias_actions)
-            prewhere_info->alias_actions->execute(block);
 
         /// Columns might be projected out. We need to store them here so that default columns can be evaluated later.
         result.block_before_prewhere = block;
