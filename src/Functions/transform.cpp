@@ -132,11 +132,11 @@ public:
 
         // if (args_size == 3)
         // {
-        if ((type_x->isValueRepresentedByNumber() != type_arr_to_nested->isValueRepresentedByNumber())
-            || (isString(type_x) != isString(type_arr_to_nested)))
-            throw Exception{"Function " + getName()
-                + " has signature: transform(T, Array(T), Array(U), U) -> U; or transform(T, Array(T), Array(T)) -> T; where T and U are types.",
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+        // if ((type_x->isValueRepresentedByNumber() != type_arr_to_nested->isValueRepresentedByNumber())
+        //     || (isString(type_x) != isString(type_arr_to_nested)))
+        //     throw Exception{"Function " + getName()
+        //         + " has signature: transform(T, Array(T), Array(U), U) -> U; or transform(T, Array(T), Array(T)) -> T; where T and U are types.",
+        //         ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
         //     return getLeastSupertype(DataTypes{type_x, type_arr_to_nested});
         // }
