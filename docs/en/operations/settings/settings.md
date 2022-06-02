@@ -4291,7 +4291,7 @@ Maximum time thread will wait for memory to be freed in the case of memory overc
 If the timeout is reached and memory is not freed, an exception is thrown.
 Read more about [memory overcommit](memory-overcommit.md).
 
-Default value: `200`.
+Default value: `5000000`.
 
 ## memory_overcommit_ratio_denominator_for_user
 
