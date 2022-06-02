@@ -10,6 +10,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int FS_METADATA_ERROR;
+    extern const int LOGICAL_ERROR;
 }
 
 
