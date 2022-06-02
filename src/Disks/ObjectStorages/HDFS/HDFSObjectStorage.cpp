@@ -39,13 +39,13 @@ bool HDFSObjectStorage::exists(const std::string & hdfs_uri) const
     return (0 == hdfsExists(hdfs_fs.get(), remote_fs_object_path.c_str()));
 }
 
-std::unique_ptr<SeekableReadBuffer> HDFSObjectStorage::readObject( /// NOLINT
+std::unique_ptr<ReadBufferFromFileBase> HDFSObjectStorage::readObject( /// NOLINT
     const std::string & path,
     const ReadSettings & read_settings,
     std::optional<size_t>,
     std::optional<size_t>) const
 {
-    return std::make_unique<ReadBufferFromHDFS>(path, path, config, read_settings.remote_fs_buffer_size);
+    return std::make_unique<ReadBufferFromHDFS>(path, path, config, read_settings);
 }
 
 std::unique_ptr<ReadBufferFromFileBase> HDFSObjectStorage::readObjects( /// NOLINT

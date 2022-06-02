@@ -51,7 +51,7 @@ public:
 
     bool exists(const std::string & uri) const override;
 
-    std::unique_ptr<SeekableReadBuffer> readObject( /// NOLINT
+    std::unique_ptr<ReadBufferFromFileBase> readObject( /// NOLINT
         const std::string & path,
         const ReadSettings & read_settings = ReadSettings{},
         std::optional<size_t> read_hint = {},
@@ -99,6 +99,8 @@ public:
     String getObjectsNamespace() const override { return ""; }
 
     std::unique_ptr<IObjectStorage> cloneObjectStorage(const std::string & new_namespace, const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, ContextPtr context) override;
+
+    String getUniqueIdForBlob(const String & path) override { return path; }
 
 private:
     const String name;

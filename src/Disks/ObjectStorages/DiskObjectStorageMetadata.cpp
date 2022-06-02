@@ -18,46 +18,50 @@ namespace ErrorCodes
     extern const int CANNOT_OPEN_FILE;
 }
 
-DiskObjectStorageMetadata DiskObjectStorageMetadata::readMetadata(const String & remote_fs_root_path_, DiskPtr metadata_disk_, const String & metadata_file_path_)
+DiskObjectStorageMetadata DiskObjectStorageMetadata::readMetadata(const String & object_storage_root_path_, DiskPtr metadata_disk_, const String & metadata_file_path_)
 {
-    DiskObjectStorageMetadata result(remote_fs_root_path_, metadata_disk_, metadata_file_path_);
+    DiskObjectStorageMetadata result(object_storage_root_path_, metadata_disk_, metadata_file_path_);
     result.load();
     return result;
 }
 
 
-DiskObjectStorageMetadata DiskObjectStorageMetadata::createAndStoreMetadata(const String & remote_fs_root_path_, DiskPtr metadata_disk_, const String & metadata_file_path_, bool sync)
+DiskObjectStorageMetadata DiskObjectStorageMetadata::createAndStoreMetadata(
+    const String & object_storage_root_path_, DiskPtr metadata_disk_, const String & metadata_file_path_, bool sync)
 {
-    DiskObjectStorageMetadata result(remote_fs_root_path_, metadata_disk_, metadata_file_path_);
+    DiskObjectStorageMetadata result(object_storage_root_path_, metadata_disk_, metadata_file_path_);
     result.save(sync);
     return result;
 }
 
-DiskObjectStorageMetadata DiskObjectStorageMetadata::readUpdateAndStoreMetadata(const String & remote_fs_root_path_, DiskPtr metadata_disk_, const String & metadata_file_path_, bool sync, DiskObjectStorageMetadataUpdater updater)
+DiskObjectStorageMetadata DiskObjectStorageMetadata::readUpdateAndStoreMetadata(
+    const String & object_storage_root_path_, DiskPtr metadata_disk_, const String & metadata_file_path_, bool sync, DiskObjectStorageMetadataUpdater updater)
 {
-    DiskObjectStorageMetadata result(remote_fs_root_path_, metadata_disk_, metadata_file_path_);
+    DiskObjectStorageMetadata result(object_storage_root_path_, metadata_disk_, metadata_file_path_);
     result.load();
     if (updater(result))
         result.save(sync);
     return result;
 }
 
-DiskObjectStorageMetadata DiskObjectStorageMetadata::createUpdateAndStoreMetadata(const String & remote_fs_root_path_, DiskPtr metadata_disk_, const String & metadata_file_path_, bool sync, DiskObjectStorageMetadataUpdater updater)
+DiskObjectStorageMetadata DiskObjectStorageMetadata::createUpdateAndStoreMetadata(
+    const String & object_storage_root_path_, DiskPtr metadata_disk_, const String & metadata_file_path_, bool sync, DiskObjectStorageMetadataUpdater updater)
 {
-    DiskObjectStorageMetadata result(remote_fs_root_path_, metadata_disk_, metadata_file_path_);
+    DiskObjectStorageMetadata result(object_storage_root_path_, metadata_disk_, metadata_file_path_);
     updater(result);
     result.save(sync);
     return result;
 }
 
-void DiskObjectStorageMetadata::readUpdateStoreMetadataAndRemove(const String & remote_fs_root_path_, DiskPtr metadata_disk_, const String & metadata_file_path_, bool sync, DiskObjectStorageMetadataUpdater updater)
+void DiskObjectStorageMetadata::readUpdateStoreMetadataAndRemove(
+    const String & object_storage_root_path_, DiskPtr metadata_disk_, const String & metadata_file_path_, bool sync, DiskObjectStorageMetadataUpdater updater)
 {
     /// Very often we are deleting metadata from some unfinished operation (like fetch of metadata)
     /// in this case metadata file can be incomplete/empty and so on. It's ok to remove it in this case
     /// because we cannot do anything better.
     try
     {
-        DiskObjectStorageMetadata metadata(remote_fs_root_path_, metadata_disk_, metadata_file_path_);
+        DiskObjectStorageMetadata metadata(object_storage_root_path_, metadata_disk_, metadata_file_path_);
         metadata.load();
         if (updater(metadata))
             metadata.save(sync);
@@ -84,15 +88,16 @@ void DiskObjectStorageMetadata::readUpdateStoreMetadataAndRemove(const String & 
     }
 }
 
-DiskObjectStorageMetadata DiskObjectStorageMetadata::createAndStoreMetadataIfNotExists(const String & remote_fs_root_path_, DiskPtr metadata_disk_, const String & metadata_file_path_, bool sync, bool overwrite)
+DiskObjectStorageMetadata DiskObjectStorageMetadata::createAndStoreMetadataIfNotExists(
+    const String & object_storage_root_path_, DiskPtr metadata_disk_, const String & metadata_file_path_, bool sync, bool overwrite)
 {
     if (overwrite || !metadata_disk_->exists(metadata_file_path_))
     {
-        return createAndStoreMetadata(remote_fs_root_path_, metadata_disk_, metadata_file_path_, sync);
+        return createAndStoreMetadata(object_storage_root_path_, metadata_disk_, metadata_file_path_, sync);
     }
     else
     {
-        auto result = readMetadata(remote_fs_root_path_, metadata_disk_, metadata_file_path_);
+        auto result = readMetadata(object_storage_root_path_, metadata_disk_, metadata_file_path_);
         if (result.read_only)
             throw Exception("File is read-only: " + metadata_file_path_, ErrorCodes::PATH_ACCESS_DENIED);
         return result;
@@ -115,14 +120,14 @@ void DiskObjectStorageMetadata::load()
 
     assertChar('\n', *buf);
 
-    UInt32 remote_fs_objects_count;
-    readIntText(remote_fs_objects_count, *buf);
+    UInt32 storage_objects_count;
+    readIntText(storage_objects_count, *buf);
     assertChar('\t', *buf);
     readIntText(total_size, *buf);
     assertChar('\n', *buf);
-    remote_fs_objects.resize(remote_fs_objects_count);
+    storage_objects.resize(storage_objects_count);
 
-    for (size_t i = 0; i < remote_fs_objects_count; ++i)
+    for (size_t i = 0; i < storage_objects_count; ++i)
     {
         String remote_fs_object_path;
         size_t remote_fs_object_size;
@@ -131,16 +136,16 @@ void DiskObjectStorageMetadata::load()
         readEscapedString(remote_fs_object_path, *buf);
         if (version == VERSION_ABSOLUTE_PATHS)
         {
-            if (!remote_fs_object_path.starts_with(remote_fs_root_path))
+            if (!remote_fs_object_path.starts_with(object_storage_root_path))
                 throw Exception(ErrorCodes::UNKNOWN_FORMAT,
                     "Path in metadata does not correspond to root path. Path: {}, root path: {}, disk path: {}",
-                    remote_fs_object_path, remote_fs_root_path, metadata_disk->getPath());
+                    remote_fs_object_path, object_storage_root_path, metadata_disk->getPath());
 
-            remote_fs_object_path = remote_fs_object_path.substr(remote_fs_root_path.size());
+            remote_fs_object_path = remote_fs_object_path.substr(object_storage_root_path.size());
         }
         assertChar('\n', *buf);
-        remote_fs_objects[i].relative_path = remote_fs_object_path;
-        remote_fs_objects[i].bytes_size = remote_fs_object_size;
+        storage_objects[i].relative_path = remote_fs_object_path;
+        storage_objects[i].bytes_size = remote_fs_object_size;
     }
 
     readIntText(ref_count, *buf);
@@ -155,10 +160,10 @@ void DiskObjectStorageMetadata::load()
 
 /// Load metadata by path or create empty if `create` flag is set.
 DiskObjectStorageMetadata::DiskObjectStorageMetadata(
-        const String & remote_fs_root_path_,
+        const String & object_storage_root_path_,
         DiskPtr metadata_disk_,
         const String & metadata_file_path_)
-    : remote_fs_root_path(remote_fs_root_path_)
+    : object_storage_root_path(object_storage_root_path_)
     , metadata_file_path(metadata_file_path_)
     , metadata_disk(metadata_disk_)
     , total_size(0), ref_count(0)
@@ -168,7 +173,7 @@ DiskObjectStorageMetadata::DiskObjectStorageMetadata(
 void DiskObjectStorageMetadata::addObject(const String & path, size_t size)
 {
     total_size += size;
-    remote_fs_objects.emplace_back(path, size);
+    storage_objects.emplace_back(path, size);
 }
 
 
@@ -177,12 +182,12 @@ void DiskObjectStorageMetadata::saveToBuffer(WriteBuffer & buf, bool sync)
     writeIntText(VERSION_RELATIVE_PATHS, buf);
     writeChar('\n', buf);
 
-    writeIntText(remote_fs_objects.size(), buf);
+    writeIntText(storage_objects.size(), buf);
     writeChar('\t', buf);
     writeIntText(total_size, buf);
     writeChar('\n', buf);
 
-    for (const auto & [remote_fs_object_path, remote_fs_object_size] : remote_fs_objects)
+    for (const auto & [remote_fs_object_path, remote_fs_object_size] : storage_objects)
     {
         writeIntText(remote_fs_object_size, buf);
         writeChar('\t', buf);

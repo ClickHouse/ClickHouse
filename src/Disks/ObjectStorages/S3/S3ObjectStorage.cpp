@@ -127,15 +127,17 @@ std::unique_ptr<ReadBufferFromFileBase> S3ObjectStorage::readObjects( /// NOLINT
     }
 }
 
-std::unique_ptr<SeekableReadBuffer> S3ObjectStorage::readObject( /// NOLINT
+std::unique_ptr<ReadBufferFromFileBase> S3ObjectStorage::readObject( /// NOLINT
     const std::string & path,
     const ReadSettings & read_settings,
     std::optional<size_t>,
     std::optional<size_t>) const
 {
     auto settings_ptr = s3_settings.get();
+    ///TODO: KSSENII
     ReadSettings disk_read_settings{read_settings};
-    return std::make_unique<ReadBufferFromS3>(client.get(), bucket, path, version_id, settings_ptr->s3_settings.max_single_read_retries, disk_read_settings);
+    return std::make_unique<ReadBufferFromS3>(
+        client.get(), bucket, path, version_id, settings_ptr->s3_settings.max_single_read_retries, disk_read_settings);
 }
 
 
@@ -469,7 +471,8 @@ void S3ObjectStorage::applyNewSettings(const Poco::Util::AbstractConfiguration &
     client.set(getClient(config, config_prefix, context));
 }
 
-std::unique_ptr<IObjectStorage> S3ObjectStorage::cloneObjectStorage(const std::string & new_namespace, const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, ContextPtr context)
+std::unique_ptr<IObjectStorage> S3ObjectStorage::cloneObjectStorage(
+    const std::string & new_namespace, const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, ContextPtr context)
 {
     return std::make_unique<S3ObjectStorage>(
         getClient(config, config_prefix, context),

@@ -70,7 +70,7 @@ public:
     virtual ObjectMetadata getObjectMetadata(const std::string & path) const = 0;
 
     /// Read single path from object storage
-    virtual std::unique_ptr<SeekableReadBuffer> readObject( /// NOLINT
+    virtual std::unique_ptr<ReadBufferFromFileBase> readObject( /// NOLINT
         const std::string & path,
         const ReadSettings & read_settings = ReadSettings{},
         std::optional<size_t> read_hint = {},
@@ -144,6 +144,8 @@ public:
     /// FIXME: confusing function required for a very specific case. Create new instance of object storage
     /// in different namespace.
     virtual std::unique_ptr<IObjectStorage> cloneObjectStorage(const std::string & new_namespace, const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, ContextPtr context) = 0;
+
+    virtual String getUniqueIdForBlob(const String & path) = 0;
 };
 
 using ObjectStoragePtr = std::unique_ptr<IObjectStorage>;

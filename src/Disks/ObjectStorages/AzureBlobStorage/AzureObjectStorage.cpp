@@ -51,7 +51,7 @@ bool AzureObjectStorage::exists(const std::string & uri) const
     return false;
 }
 
-std::unique_ptr<SeekableReadBuffer> AzureObjectStorage::readObject( /// NOLINT
+std::unique_ptr<ReadBufferFromFileBase> AzureObjectStorage::readObject( /// NOLINT
     const std::string & path,
     const ReadSettings & read_settings,
     std::optional<size_t>,
@@ -60,7 +60,7 @@ std::unique_ptr<SeekableReadBuffer> AzureObjectStorage::readObject( /// NOLINT
     auto settings_ptr = settings.get();
 
     return std::make_unique<ReadBufferFromAzureBlobStorage>(
-        client.get(), path, settings_ptr->max_single_read_retries,
+        client.get(), path, read_settings, settings_ptr->max_single_read_retries,
         settings_ptr->max_single_download_retries, read_settings.remote_fs_buffer_size);
 }
 

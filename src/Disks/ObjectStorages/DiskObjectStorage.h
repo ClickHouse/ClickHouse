@@ -28,7 +28,7 @@ friend class DiskObjectStorageMetadataHelper;
 public:
     DiskObjectStorage(
         const String & name_,
-        const String & remote_fs_root_path_,
+        const String & object_storage_root_path_,
         const String & log_name,
         DiskPtr metadata_disk_,
         ObjectStoragePtr && object_storage_,
@@ -101,7 +101,7 @@ public:
 
     void removeSharedRecursive(const String & path, bool keep_all_batch_data, const NameSet & file_names_remove_metadata_only) override;
 
-    void removeFromRemoteFS(const std::vector<String> & paths);
+    void removeFromObjectStorage(const std::vector<String> & paths);
 
     DiskPtr getMetadataDiskIfExistsOrSelf() override { return metadata_disk; }
 
@@ -171,9 +171,10 @@ public:
     void syncRevision(UInt64 revision) override;
 
     UInt64 getRevision() const override;
+
 private:
     const String name;
-    const String remote_fs_root_path;
+    const String object_storage_root_path;
     Poco::Logger * log;
     DiskPtr metadata_disk;
 
