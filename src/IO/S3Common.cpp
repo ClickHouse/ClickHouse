@@ -689,7 +689,7 @@ namespace S3
                 use_insecure_imds_request);
 
         return std::make_unique<Aws::S3::S3Client>(
-            credentials_provider,
+            std::move(credentials_provider),
             std::move(client_configuration), // Client configuration.
             Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy::Never,
             is_virtual_hosted_style || client_configuration.endpointOverride.empty() /// Use virtual addressing if endpoint is not specified.

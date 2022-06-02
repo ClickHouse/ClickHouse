@@ -54,8 +54,10 @@ TEST(IOTestAwsS3Client, AppendExtraSSECHeaders)
             for (const auto & [header_name, header_value] : request)
             {
                 if (boost::algorithm::starts_with(header_name, "x-amz-server-side-encryption-customer-"))
+                {
                     out << header_name << ": " << header_value << "\n";
-                if (header_name == "authorization")
+                }
+                else if (header_name == "authorization")
                 {
                     std::vector<String> parts;
                     boost::split(parts, header_value, [](char c){ return c == ' '; });
