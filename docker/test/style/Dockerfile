@@ -17,6 +17,7 @@ RUN apt-get update && env DEBIAN_FRONTEND=noninteractive apt-get install --yes \
     python3-pip \
     shellcheck \
     yamllint \
+    aspell \
     && pip3 install black boto3 codespell dohq-artifactory PyGithub unidiff
 
 # Architecture of the image when BuildKit/buildx is used
