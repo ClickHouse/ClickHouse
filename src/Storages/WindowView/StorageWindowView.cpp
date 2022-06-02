@@ -1185,14 +1185,14 @@ StorageWindowView::StorageWindowView(
     /// Extract information about watermark, lateness.
     eventTimeParser(query);
 
-    target_table_id = query.to_table_id;
-
     auto inner_query = initInnerQuery(query.select->list_of_selects->children.at(0)->as<ASTSelectQuery &>(), context_);
 
     if (query.inner_storage)
         inner_table_engine = query.inner_storage->clone();
     inner_table_id = StorageID(getStorageID().database_name, generateInnerTableName(getStorageID()));
     inner_fetch_query = generateInnerFetchQuery(inner_table_id);
+
+    target_table_id = inner_target_table ? StorageID(table_id_.database_name, generateTargetTableName(table_id_)) : query.to_table_id;
 
     if (is_proctime)
         next_fire_signal = getWindowUpperBound(std::time(nullptr));
@@ -1222,14 +1222,8 @@ StorageWindowView::StorageWindowView(
             InterpreterCreateQuery create_interpreter(target_create_query, create_context);
             create_interpreter.setInternal(true);
             create_interpreter.execute();
-
-            target_table_id = StorageID(target_create_query->getDatabase(), target_create_query->getTable());
         }
-        else
-            target_table_id = query.to_table_id;
     }
-
-    inner_fetch_query = generateInnerFetchQuery(inner_table_id);
 
     clean_cache_task = getContext()->getSchedulePool().createTask(getStorageID().getFullTableName(), [this] { threadFuncCleanup(); });
     fire_task = getContext()->getSchedulePool().createTask(
