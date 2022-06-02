@@ -55,7 +55,7 @@ SELECT toTypeName(data) FROM type_json_dst LIMIT 1;
 TRUNCATE TABLE type_json_src;
 TRUNCATE TABLE type_json_dst;
 
--- Insert in another order. Order is important, because a way how default are filled differs.
+-- Insert in another order. Order is important, because a way how defaults are filled differs.
 INSERT INTO type_json_src FORMAT JSONAsString  {"k1": 2, "k10": [{"a": "1", "b": "2", "c": {"k11": "haha"}}]};
 INSERT INTO type_json_src FORMAT JSONAsString {"k1": 1, "k10": [{"a": "1", "b": "2"}, {"a": "2", "b": "3"}]};
 
