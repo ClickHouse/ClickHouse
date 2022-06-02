@@ -4,6 +4,7 @@
 #include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Disks/ObjectStorages/DiskObjectStorageMetadataHelper.h>
 #include <Disks/ObjectStorages/DiskObjectStorageMetadata.h>
+#include <Disks/ObjectStorages/IMetadataStorage.h>
 #include <re2/re2.h>
 
 namespace CurrentMetrics
@@ -30,7 +31,7 @@ public:
         const String & name_,
         const String & remote_fs_root_path_,
         const String & log_name,
-        DiskPtr metadata_disk_,
+        MetadataStoragePtr && mestata_storage_,
         ObjectStoragePtr && object_storage_,
         DiskType disk_type_,
         bool send_metadata_,
@@ -47,7 +48,7 @@ public:
 
     const String & getName() const override { return name; }
 
-    const String & getPath() const override { return metadata_disk->getPath(); }
+    const String & getPath() const override { return metadata_storage->getPath(); }
 
     std::vector<String> getRemotePaths(const String & local_path) const override;
 
@@ -108,7 +109,7 @@ public:
 
     void removeFromRemoteFS(const std::vector<String> & paths);
 
-    DiskPtr getMetadataDiskIfExistsOrSelf() override { return metadata_disk; }
+    MetadataStoragePtr getMetadataStorage() override { return metadata_storage; }
 
     UInt32 getRefCount(const String & path) const override;
 
@@ -141,7 +142,7 @@ public:
 
     void removeDirectory(const String & path) override;
 
-    DiskDirectoryIteratorPtr iterateDirectory(const String & path) override;
+    DirectoryIteratorPtr iterateDirectory(const String & path) override;
 
     void setLastModified(const String & path, const Poco::Timestamp & timestamp) override;
 
@@ -180,9 +181,9 @@ private:
     const String name;
     const String remote_fs_root_path;
     Poco::Logger * log;
-    DiskPtr metadata_disk;
 
     const DiskType disk_type;
+    MetadataStoragePtr metadata_storage;
     ObjectStoragePtr object_storage;
 
     UInt64 reserved_bytes = 0;

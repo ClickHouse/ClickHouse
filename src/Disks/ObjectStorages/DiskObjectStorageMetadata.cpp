@@ -16,51 +16,53 @@ namespace ErrorCodes
     extern const int CANNOT_OPEN_FILE;
 }
 
-DiskObjectStorageMetadata DiskObjectStorageMetadata::readMetadata(const String & remote_fs_root_path_, DiskPtr metadata_disk_, const String & metadata_file_path_)
+DiskObjectStorageMetadata DiskObjectStorageMetadata::readMetadata(const String & remote_fs_root_path_, MetadataStoragePtr metadata_storage_, const String & metadata_file_path_)
 {
-    DiskObjectStorageMetadata result(remote_fs_root_path_, metadata_disk_, metadata_file_path_);
+    DiskObjectStorageMetadata result(remote_fs_root_path_, metadata_storage_, metadata_file_path_);
     result.load();
     return result;
 }
 
 
-DiskObjectStorageMetadata DiskObjectStorageMetadata::createAndStoreMetadata(const String & remote_fs_root_path_, DiskPtr metadata_disk_, const String & metadata_file_path_, bool sync)
+DiskObjectStorageMetadata DiskObjectStorageMetadata::createAndStoreMetadata(const String & remote_fs_root_path_, MetadataStoragePtr metadata_storage_, const String & metadata_file_path_, bool sync)
 {
-    DiskObjectStorageMetadata result(remote_fs_root_path_, metadata_disk_, metadata_file_path_);
+    DiskObjectStorageMetadata result(remote_fs_root_path_, metadata_storage_, metadata_file_path_);
     result.save(sync);
     return result;
 }
 
-DiskObjectStorageMetadata DiskObjectStorageMetadata::readUpdateAndStoreMetadata(const String & remote_fs_root_path_, DiskPtr metadata_disk_, const String & metadata_file_path_, bool sync, DiskObjectStorageMetadataUpdater updater)
+DiskObjectStorageMetadata DiskObjectStorageMetadata::readUpdateAndStoreMetadata(const String & remote_fs_root_path_, MetadataStoragePtr metadata_storage_, const String & metadata_file_path_, bool sync, DiskObjectStorageMetadataUpdater updater)
 {
-    DiskObjectStorageMetadata result(remote_fs_root_path_, metadata_disk_, metadata_file_path_);
+    DiskObjectStorageMetadata result(remote_fs_root_path_, metadata_storage_, metadata_file_path_);
     result.load();
     if (updater(result))
         result.save(sync);
     return result;
 }
 
-DiskObjectStorageMetadata DiskObjectStorageMetadata::createUpdateAndStoreMetadata(const String & remote_fs_root_path_, DiskPtr metadata_disk_, const String & metadata_file_path_, bool sync, DiskObjectStorageMetadataUpdater updater)
+DiskObjectStorageMetadata DiskObjectStorageMetadata::createUpdateAndStoreMetadata(const String & remote_fs_root_path_, MetadataStoragePtr metadata_storage_, const String & metadata_file_path_, bool sync, DiskObjectStorageMetadataUpdater updater)
 {
-    DiskObjectStorageMetadata result(remote_fs_root_path_, metadata_disk_, metadata_file_path_);
+    DiskObjectStorageMetadata result(remote_fs_root_path_, metadata_storage_, metadata_file_path_);
     updater(result);
     result.save(sync);
     return result;
 }
 
-void DiskObjectStorageMetadata::readUpdateStoreMetadataAndRemove(const String & remote_fs_root_path_, DiskPtr metadata_disk_, const String & metadata_file_path_, bool sync, DiskObjectStorageMetadataUpdater updater)
+void DiskObjectStorageMetadata::readUpdateStoreMetadataAndRemove(const String & remote_fs_root_path_, MetadataStoragePtr metadata_storage_, const String & metadata_file_path_, bool sync, DiskObjectStorageMetadataUpdater updater)
 {
     /// Very often we are deleting metadata from some unfinished operation (like fetch of metadata)
     /// in this case metadata file can be incomplete/empty and so on. It's ok to remove it in this case
     /// because we cannot do anything better.
     try
     {
-        DiskObjectStorageMetadata metadata(remote_fs_root_path_, metadata_disk_, metadata_file_path_);
+        DiskObjectStorageMetadata metadata(remote_fs_root_path_, metadata_storage_, metadata_file_path_);
         metadata.load();
         if (updater(metadata))
             metadata.save(sync);
 
-        metadata_disk_->removeFile(metadata_file_path_);
+        auto tx = metadata_storage_->createTransaction();
+        metadata_storage_->unlinkFile(metadata_file_path_, tx);
+        tx->commit();
     }
     catch (Exception & ex)
     {
@@ -71,7 +73,10 @@ void DiskObjectStorageMetadata::readUpdateStoreMetadataAndRemove(const String & 
         {
             LOG_INFO(&Poco::Logger::get("ObjectStorageMetadata"), "Failed to read metadata file {} before removal because it's incomplete or empty. "
                      "It's Ok and can happen after operation interruption (like metadata fetch), so removing as is", metadata_file_path_);
-            metadata_disk_->removeFile(metadata_file_path_);
+
+            auto tx = metadata_storage_->createTransaction();
+            metadata_storage_->unlinkFile(metadata_file_path_, tx);
+            tx->commit();
         }
 
         /// If file already removed, than nothing to do
@@ -82,15 +87,15 @@ void DiskObjectStorageMetadata::readUpdateStoreMetadataAndRemove(const String & 
     }
 }
 
-DiskObjectStorageMetadata DiskObjectStorageMetadata::createAndStoreMetadataIfNotExists(const String & remote_fs_root_path_, DiskPtr metadata_disk_, const String & metadata_file_path_, bool sync, bool overwrite)
+DiskObjectStorageMetadata DiskObjectStorageMetadata::createAndStoreMetadataIfNotExists(const String & remote_fs_root_path_, MetadataStoragePtr metadata_storage_, const String & metadata_file_path_, bool sync, bool overwrite)
 {
-    if (overwrite || !metadata_disk_->exists(metadata_file_path_))
+    if (overwrite || !metadata_storage_->exists(metadata_file_path_))
     {
-        return createAndStoreMetadata(remote_fs_root_path_, metadata_disk_, metadata_file_path_, sync);
+        return createAndStoreMetadata(remote_fs_root_path_, metadata_storage_, metadata_file_path_, sync);
     }
     else
     {
-        auto result = readMetadata(remote_fs_root_path_, metadata_disk_, metadata_file_path_);
+        auto result = readMetadata(remote_fs_root_path_, metadata_storage_, metadata_file_path_);
         if (result.read_only)
             throw Exception("File is read-only: " + metadata_file_path_, ErrorCodes::PATH_ACCESS_DENIED);
         return result;
@@ -99,8 +104,7 @@ DiskObjectStorageMetadata DiskObjectStorageMetadata::createAndStoreMetadataIfNot
 
 void DiskObjectStorageMetadata::load()
 {
-    const ReadSettings read_settings;
-    auto buf = metadata_disk->readFile(metadata_file_path, read_settings, 1024);  /* reasonable buffer size for small file */
+    auto buf = metadata_storage->readFile(metadata_file_path, ReadSettings{}, 1024);  /* reasonable buffer size for small file */
 
     UInt32 version;
     readIntText(version, *buf);
@@ -109,7 +113,7 @@ void DiskObjectStorageMetadata::load()
         throw Exception(
             ErrorCodes::UNKNOWN_FORMAT,
             "Unknown metadata file version. Path: {}. Version: {}. Maximum expected version: {}",
-            metadata_disk->getPath() + metadata_file_path, toString(version), toString(VERSION_READ_ONLY_FLAG));
+            metadata_storage->getPath() + metadata_file_path, toString(version), toString(VERSION_READ_ONLY_FLAG));
 
     assertChar('\n', *buf);
 
@@ -132,7 +136,7 @@ void DiskObjectStorageMetadata::load()
             if (!remote_fs_object_path.starts_with(remote_fs_root_path))
                 throw Exception(ErrorCodes::UNKNOWN_FORMAT,
                     "Path in metadata does not correspond to root path. Path: {}, root path: {}, disk path: {}",
-                    remote_fs_object_path, remote_fs_root_path, metadata_disk->getPath());
+                    remote_fs_object_path, remote_fs_root_path, metadata_storage->getPath());
 
             remote_fs_object_path = remote_fs_object_path.substr(remote_fs_root_path.size());
         }
@@ -154,11 +158,11 @@ void DiskObjectStorageMetadata::load()
 /// Load metadata by path or create empty if `create` flag is set.
 DiskObjectStorageMetadata::DiskObjectStorageMetadata(
         const String & remote_fs_root_path_,
-        DiskPtr metadata_disk_,
+        MetadataStoragePtr metadata_storage_,
         const String & metadata_file_path_)
     : remote_fs_root_path(remote_fs_root_path_)
     , metadata_file_path(metadata_file_path_)
-    , metadata_disk(metadata_disk_)
+    , metadata_storage(metadata_storage_)
     , total_size(0), ref_count(0)
 {
 }
@@ -203,8 +207,10 @@ void DiskObjectStorageMetadata::saveToBuffer(WriteBuffer & buf, bool sync)
 /// Fsync metadata file if 'sync' flag is set.
 void DiskObjectStorageMetadata::save(bool sync)
 {
-    auto buf = metadata_disk->writeFile(metadata_file_path, 1024);
+    auto tx = metadata_storage->createTransaction();
+    auto buf = metadata_storage->writeFile(metadata_file_path, tx, 1024);
     saveToBuffer(*buf, sync);
+    tx->commit();
 }
 
 std::string DiskObjectStorageMetadata::serializeToString()
