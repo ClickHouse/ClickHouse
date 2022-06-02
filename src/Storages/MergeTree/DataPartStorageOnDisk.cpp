@@ -726,7 +726,7 @@ DataPartStoragePtr DataPartStorageOnDisk::freeze(
     return std::make_shared<DataPartStorageOnDisk>(single_disk_volume, to, dir_path);
 }
 
- DataPartStoragePtr DataPartStorageOnDisk::clone(
+DataPartStoragePtr DataPartStorageOnDisk::clone(
     const std::string & to,
     const std::string & dir_path,
     Poco::Logger * log) const
