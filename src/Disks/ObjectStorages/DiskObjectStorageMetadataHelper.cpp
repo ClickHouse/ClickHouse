@@ -81,7 +81,7 @@ void DiskObjectStorageMetadataHelper::updateObjectMetadata(const String & key, c
 
 void DiskObjectStorageMetadataHelper::migrateFileToRestorableSchema(const String & path) const
 {
-    LOG_TRACE(disk->log, "Migrate file {} to restorable schema", disk->metadata_disk->getPath() + path);
+    LOG_TRACE(disk->log, "Migrate file {} to restorable schema", disk->metadata_storage->getPath() + path);
 
     auto meta = disk->readMetadata(path);
 
@@ -97,7 +97,7 @@ void DiskObjectStorageMetadataHelper::migrateToRestorableSchemaRecursive(const S
 {
     checkStackSize(); /// This is needed to prevent stack overflow in case of cyclic symlinks.
 
-    LOG_TRACE(disk->log, "Migrate directory {} to restorable schema", disk->metadata_disk->getPath() + path);
+    LOG_TRACE(disk->log, "Migrate directory {} to restorable schema", disk->metadata_storage->getPath() + path);
 
     bool dir_contains_only_files = true;
     for (auto it = disk->iterateDirectory(path); it->isValid(); it->next())
@@ -223,7 +223,9 @@ void DiskObjectStorageMetadataHelper::restore(const Poco::Util::AbstractConfigur
         restoreFiles(source_object_storage, information);
         restoreFileOperations(source_object_storage, information);
 
-        disk->metadata_disk->removeFile(RESTORE_FILE_NAME);
+        auto tx = disk->metadata_storage->createTransaction();
+        disk->metadata_storage->unlinkFile(RESTORE_FILE_NAME, tx);
+        tx->commit();
 
         saveSchemaVersion(RESTORABLE_SCHEMA_VERSION);
 
@@ -239,7 +241,7 @@ void DiskObjectStorageMetadataHelper::restore(const Poco::Util::AbstractConfigur
 
 void DiskObjectStorageMetadataHelper::readRestoreInformation(RestoreInformation & restore_information) /// NOLINT
 {
-    auto buffer = disk->metadata_disk->readFile(RESTORE_FILE_NAME, ReadSettings{}, 512);
+    auto buffer = disk->metadata_storage->readFile(RESTORE_FILE_NAME, ReadSettings{}, 512);
     buffer->next();
 
     try
@@ -438,9 +440,11 @@ void DiskObjectStorageMetadataHelper::processRestoreFiles(IObjectStorage * sourc
 void DiskObjectStorage::onFreeze(const String & path)
 {
     createDirectories(path);
-    auto revision_file_buf = metadata_disk->writeFile(path + "revision.txt", 32);
+    auto tx =  metadata_storage->createTransaction();
+    auto revision_file_buf = metadata_storage->writeFile(path + "revision.txt", tx, 32);
     writeIntText(metadata_helper->revision_counter.load(), *revision_file_buf);
     revision_file_buf->finalize();
+    tx->commit();
 }
 
 static String pathToDetached(const String & source_path)
@@ -531,6 +535,7 @@ void DiskObjectStorageMetadataHelper::restoreFileOperations(IObjectStorage * sou
     {
         Strings not_finished_prefixes{"tmp_", "delete_tmp_", "attaching_", "deleting_"};
 
+        auto tx = disk->metadata_storage->createTransaction();
         for (const auto & path : renames)
         {
             /// Skip already detached parts.
@@ -557,12 +562,13 @@ void DiskObjectStorageMetadataHelper::restoreFileOperations(IObjectStorage * sou
                 to_path /= from_path.filename();
 
             /// to_path may exist and non-empty in case for example abrupt restart, so remove it before rename
-            if (disk->metadata_disk->exists(to_path))
-                disk->metadata_disk->removeRecursive(to_path);
+            if (disk->metadata_storage->exists(to_path))
+                disk->metadata_storage->removeRecursive(to_path, tx);
 
             disk->createDirectories(directoryPath(to_path));
-            disk->metadata_disk->moveDirectory(from_path, to_path);
+            disk->metadata_storage->moveDirectory(from_path, to_path, tx);
         }
+        tx->commit();
     }
 
     LOG_INFO(disk->log, "File operations restored for disk {}", disk->name);

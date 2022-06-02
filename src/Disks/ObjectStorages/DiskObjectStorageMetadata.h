@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Disks/IDisk.h>
+#include <Disks/ObjectStorages/IMetadataStorage.h>
 #include <Core/Types.h>
 
 namespace DB
@@ -24,7 +25,7 @@ struct DiskObjectStorageMetadata
     /// Relative path to metadata file on local FS.
     const String metadata_file_path;
 
-    DiskPtr metadata_disk;
+    MetadataStoragePtr metadata_storage;
 
     /// Total size of all remote FS (S3, HDFS) objects.
     size_t total_size = 0;
@@ -40,18 +41,18 @@ struct DiskObjectStorageMetadata
 
     DiskObjectStorageMetadata(
         const String & remote_fs_root_path_,
-        DiskPtr metadata_disk_,
+        MetadataStoragePtr metadata_storage_,
         const String & metadata_file_path_);
 
     void addObject(const String & path, size_t size);
 
-    static DiskObjectStorageMetadata readMetadata(const String & remote_fs_root_path_, DiskPtr metadata_disk_, const String & metadata_file_path_);
-    static DiskObjectStorageMetadata readUpdateAndStoreMetadata(const String & remote_fs_root_path_, DiskPtr metadata_disk_, const String & metadata_file_path_, bool sync, Updater updater);
-    static void readUpdateStoreMetadataAndRemove(const String & remote_fs_root_path_, DiskPtr metadata_disk_, const String & metadata_file_path_, bool sync, Updater updater);
+    static DiskObjectStorageMetadata readMetadata(const String & remote_fs_root_path_, MetadataStoragePtr metadata_storage_, const String & metadata_file_path_);
+    static DiskObjectStorageMetadata readUpdateAndStoreMetadata(const String & remote_fs_root_path_, MetadataStoragePtr metadata_storage_, const String & metadata_file_path_, bool sync, Updater updater);
+    static void readUpdateStoreMetadataAndRemove(const String & remote_fs_root_path_, MetadataStoragePtr metadata_storage_, const String & metadata_file_path_, bool sync, Updater updater);
 
-    static DiskObjectStorageMetadata createAndStoreMetadata(const String & remote_fs_root_path_, DiskPtr metadata_disk_, const String & metadata_file_path_, bool sync);
-    static DiskObjectStorageMetadata createUpdateAndStoreMetadata(const String & remote_fs_root_path_, DiskPtr metadata_disk_, const String & metadata_file_path_, bool sync, Updater updater);
-    static DiskObjectStorageMetadata createAndStoreMetadataIfNotExists(const String & remote_fs_root_path_, DiskPtr metadata_disk_, const String & metadata_file_path_, bool sync, bool overwrite);
+    static DiskObjectStorageMetadata createAndStoreMetadata(const String & remote_fs_root_path_, MetadataStoragePtr metadata_storage_, const String & metadata_file_path_, bool sync);
+    static DiskObjectStorageMetadata createUpdateAndStoreMetadata(const String & remote_fs_root_path_, MetadataStoragePtr metadata_storage_, const String & metadata_file_path_, bool sync, Updater updater);
+    static DiskObjectStorageMetadata createAndStoreMetadataIfNotExists(const String & remote_fs_root_path_, MetadataStoragePtr metadata_storage_, const String & metadata_file_path_, bool sync, bool overwrite);
 
     /// Serialize metadata to string (very same with saveToBuffer)
     std::string serializeToString();

@@ -10,6 +10,8 @@
 #include <Common/thread_local_rng.h>
 #include <Common/typeid_cast.h>
 
+#include <Disks/ObjectStorages/IMetadataStorage.h>
+
 #include <base/sort.h>
 
 #include <Storages/AlterCommands.h>
@@ -8154,10 +8156,12 @@ public:
 
     void save(DiskPtr data_disk, const String & path) const
     {
-        auto metadata_disk = data_disk->getMetadataDiskIfExistsOrSelf();
+        auto metadata_storage = data_disk->getMetadataStorage();
 
         auto file_path = getFileName(path);
-        auto buffer = metadata_disk->writeFile(file_path, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite);
+        auto tx = metadata_storage->createTransaction();
+        auto buffer = metadata_storage->writeFile(file_path, tx, DBMS_DEFAULT_BUFFER_SIZE);
+
         writeIntText(version, *buffer);
         buffer->write("\n", 1);
         writeBoolText(is_replicated, *buffer);
@@ -8170,16 +8174,18 @@ public:
         buffer->write("\n", 1);
         writeString(table_shared_id, *buffer);
         buffer->write("\n", 1);
+
+        tx->commit();
     }
 
     bool load(DiskPtr data_disk, const String & path)
     {
-        auto metadata_disk = data_disk->getMetadataDiskIfExistsOrSelf();
+        auto metadata_storage = data_disk->getMetadataStorage();
         auto file_path = getFileName(path);
 
-        if (!metadata_disk->exists(file_path))
+        if (!metadata_storage->exists(file_path))
             return false;
-        auto buffer = metadata_disk->readFile(file_path, ReadSettings(), {});
+        auto buffer = metadata_storage->readFile(file_path, ReadSettings(), {});
         readIntText(version, *buffer);
         if (version != 1)
         {
@@ -8202,8 +8208,14 @@ public:
 
     static void clean(DiskPtr data_disk, const String & path)
     {
-        auto metadata_disk = data_disk->getMetadataDiskIfExistsOrSelf();
-        metadata_disk->removeFileIfExists(getFileName(path));
+        auto metadata_storage = data_disk->getMetadataStorage();
+        auto fname = getFileName(path);
+        if (metadata_storage->exists(fname))
+        {
+            auto tx = metadata_storage->createTransaction();
+            metadata_storage->unlinkFile(fname, tx);
+            tx->commit();
+        }
     }
 
 private:

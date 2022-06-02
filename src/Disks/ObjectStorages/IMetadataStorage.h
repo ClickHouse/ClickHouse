@@ -1,5 +1,5 @@
 #pragma once
- =
+
 #include <memory>
 #include <vector>
 #include <unordered_map>
@@ -8,6 +8,7 @@
 #include <IO/WriteSettings.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/WriteBufferFromFileBase.h>
+#include <Disks/DirectoryIterator.h>
 #include <Disks/WriteMode.h>
 
 namespace DB
@@ -17,6 +18,7 @@ struct IMetadataOperation
 {
     virtual void execute() = 0;
     virtual void undo() = 0;
+    virtual void finalize() {}
     virtual ~IMetadataOperation() = default;
 };
 
@@ -38,13 +40,17 @@ class IMetadataStorage : private boost::noncopyable
 {
 
 public:
-    MetadataTransactionPtr createTransaction() const;
+    virtual MetadataTransactionPtr createTransaction() const = 0;
 
+    virtual const std::string & getPath() const = 0;
     virtual bool exists(const std::string & path) const = 0;
     virtual bool isFile(const std::string & path) const = 0;
     virtual bool isDirectory(const std::string & path) const = 0;
     virtual Poco::Timestamp getLastModified(const std::string & path) const = 0;
+
     virtual std::vector<std::string> listDirectory(const std::string & path) const = 0;
+    virtual DirectoryIteratorPtr iterateDirectory(const String & path) = 0;
+
 
     virtual std::unique_ptr<ReadBufferFromFileBase> readFile(  /// NOLINT
          const std::string & path,
@@ -68,15 +74,19 @@ public:
 
     virtual void removeDirectory(const std::string & path, MetadataTransactionPtr transaction) = 0;
 
-    virtual void createHardlink(const std::string & path_from, const std::string & path_to, MetadataTransactionPtr transaction) = 0;
+    virtual void removeRecursive(const std::string & path, MetadataTransactionPtr transaction) = 0;
+
+    virtual void createHardLink(const std::string & path_from, const std::string & path_to, MetadataTransactionPtr transaction) = 0;
 
     virtual void moveFile(const std::string & path_from, const std::string & path_to, MetadataTransactionPtr transaction) = 0;
+
+    virtual void moveDirectory(const std::string & path_from, const std::string & path_to, MetadataTransactionPtr transaction) = 0;
 
     virtual void replaceFile(const std::string & path_from, const std::string & path_to, MetadataTransactionPtr transaction) = 0;
 
     virtual ~IMetadataStorage() = default;
-
-
 };
+
+using MetadataStoragePtr = std::shared_ptr<IMetadataStorage>;
 
 }
