@@ -20,8 +20,8 @@ String ICommand::fullPathWithValidate(const DiskPtr & disk, const String & path)
 {
     String full_path = (fs::absolute(disk->getPath()) / path).lexically_normal();
     String disk_path = fs::path(disk->getPath());
-    if (full_path.find(disk_path) == String::npos)
-        throw DB::Exception("Error path", DB::ErrorCodes::BAD_ARGUMENTS);
+    if (!full_path.starts_with(disk_path))
+        throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Path {} must be inside disk path {}", path, disk->getPath());
     return full_path;
 }
 
