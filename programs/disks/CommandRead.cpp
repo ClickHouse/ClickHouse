@@ -44,29 +44,30 @@ public:
 
         String disk_name = config.getString("disk", "default");
 
-        String path = pos_arguments[0];
+        String path =  pos_arguments[0];
 
         DiskPtr disk = global_context->getDisk(disk_name);
 
         String full_path = fullPathWithValidate(disk, path);
 
-        String path_output = config.getString("output", "");
+        String path_output = config.getString("output", "default");
 
-        std::unique_ptr<ReadBufferFromFileBase> in = disk->readFile(full_path);
-        std::unique_ptr<WriteBufferFromFileBase> out;
-
-        if (path_output.empty())
+        if (path_output != "default")
         {
-            out = std::make_unique<WriteBufferFromFileDescriptor>(STDOUT_FILENO);
+            String full_path_output = fullPathWithValidate(disk, path_output);
+
+            auto in = disk->readFile(full_path);
+            auto out = disk->writeFile(full_path_output);
+            copyData(*in, *out);
+            out->finalize();
+            return;
         }
         else
         {
-            String full_path_output = fullPathWithValidate(disk, path_output);
-            out = disk->writeFile(full_path_output);
+            auto in = disk->readFile(full_path);
+            std::unique_ptr<WriteBufferFromFileBase> out = std::make_unique<WriteBufferFromFileDescriptor>(STDOUT_FILENO);
+            copyData(*in, *out);
         }
-
-        copyData(*in, *out);
-        out->finalize();
     }
 };
 }
