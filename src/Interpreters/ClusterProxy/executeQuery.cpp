@@ -269,7 +269,7 @@ void executeQueryWithParallelReplicas(
             query_ast_for_shard = query_ast;
 
         auto shard_plans = stream_factory.createForShardWithParallelReplicas(shard_info,
-            query_ast_for_shard, main_table, table_func_ptr, throttler, context, shards);
+            query_ast_for_shard, main_table, table_func_ptr, throttler, context, shards, query_info.storage_limits);
 
         if (!shard_plans.local_plan && !shard_plans.remote_plan)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "No plans were generated for reading from shard. This is a bug");

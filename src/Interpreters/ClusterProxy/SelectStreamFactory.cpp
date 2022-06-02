@@ -181,7 +181,8 @@ SelectStreamFactory::ShardPlans SelectStreamFactory::createForShardWithParallelR
     const ASTPtr & table_function_ptr,
     const ThrottlerPtr & throttler,
     ContextPtr context,
-    UInt32 shard_count)
+    UInt32 shard_count,
+    const std::shared_ptr<const StorageLimitsList> & storage_limits)
 {
     SelectStreamFactory::ShardPlans result;
 
@@ -256,9 +257,11 @@ SelectStreamFactory::ShardPlans SelectStreamFactory::createForShardWithParallelR
             std::move(scalars),
             std::move(external_tables),
             &Poco::Logger::get("ReadFromParallelRemoteReplicasStep"),
-            shard_count);
+            shard_count,
+            storage_limits);
 
         remote_plan->addStep(std::move(read_from_remote));
+        remote_plan->addInterpreterContext(context);
         result.remote_plan = std::move(remote_plan);
     }
 
