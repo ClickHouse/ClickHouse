@@ -118,7 +118,7 @@ if __name__ == "__main__":
     if test_grep_exclude_filter:
         docker_env += f" -e CHPC_TEST_GREP_EXCLUDE={test_grep_exclude_filter}"
         logging.info(
-            f"Fill fliter our performance tests by grep -v {test_grep_exclude_filter}"
+            "Fill fliter our performance tests by grep -v %s", test_grep_exclude_filter
         )
 
     rerun_helper = RerunHelper(gh, pr_info, check_name_with_group)
