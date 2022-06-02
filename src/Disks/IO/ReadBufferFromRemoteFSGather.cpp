@@ -91,8 +91,15 @@ SeekableReadBufferPtr ReadBufferFromS3Gather::createImplementationBufferImpl(con
 SeekableReadBufferPtr ReadBufferFromAzureBlobStorageGather::createImplementationBufferImpl(const String & path, size_t /* file_size */)
 {
     current_file_path = path;
-    return std::make_unique<ReadBufferFromAzureBlobStorage>(blob_container_client, path, max_single_read_retries,
-        max_single_download_retries, settings.remote_fs_buffer_size, /* use_external_buffer */true, read_until_position);
+    return std::make_unique<ReadBufferFromAzureBlobStorage>(
+        blob_container_client,
+        path,
+        settings,
+        max_single_read_retries,
+        max_single_download_retries,
+        settings.remote_fs_buffer_size,
+        /* use_external_buffer */true,
+        read_until_position);
 }
 #endif
 
@@ -100,14 +107,19 @@ SeekableReadBufferPtr ReadBufferFromAzureBlobStorageGather::createImplementation
 SeekableReadBufferPtr ReadBufferFromWebServerGather::createImplementationBufferImpl(const String & path, size_t /* file_size */)
 {
     current_file_path = path;
-    return std::make_unique<ReadBufferFromWebServer>(fs::path(uri) / path, context, settings, /* use_external_buffer */true, read_until_position);
+    return std::make_unique<ReadBufferFromWebServer>(
+        fs::path(uri) / path,
+        context,
+        settings,
+        /* use_external_buffer */true,
+        read_until_position);
 }
 
 
 #if USE_HDFS
 SeekableReadBufferPtr ReadBufferFromHDFSGather::createImplementationBufferImpl(const String & path, size_t /* file_size */)
 {
-    return std::make_unique<ReadBufferFromHDFS>(hdfs_uri, fs::path(hdfs_directory) / path, config, settings.remote_fs_buffer_size);
+    return std::make_unique<ReadBufferFromHDFS>(hdfs_uri, fs::path(hdfs_directory) / path, config, settings);
 }
 #endif
 

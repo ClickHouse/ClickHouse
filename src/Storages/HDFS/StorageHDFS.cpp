@@ -195,8 +195,8 @@ ColumnsDescription StorageHDFS::getTableStructureFromData(
         if (it == paths.end())
             return nullptr;
         auto compression = chooseCompressionMethod(*it, compression_method);
-        return wrapReadBufferWithCompressionMethod(
-            std::make_unique<ReadBufferFromHDFS>(uri_without_path, *it++, ctx->getGlobalContext()->getConfigRef()), compression);
+        auto impl = std::make_unique<ReadBufferFromHDFS>(uri_without_path, *it++, ctx->getGlobalContext()->getConfigRef(), ctx->getReadSettings());
+        return wrapReadBufferWithCompressionMethod(std::move(impl), compression);
     };
     return readSchemaFromFormat(format, std::nullopt, read_buffer_iterator, paths.size() > 1, ctx);
 }
@@ -325,7 +325,9 @@ bool HDFSSource::initialize()
     const auto [path_from_uri, uri_without_path] = getPathFromUriAndUriWithoutPath(current_path);
 
     auto compression = chooseCompressionMethod(path_from_uri, storage->compression_method);
-    read_buf = wrapReadBufferWithCompressionMethod(std::make_unique<ReadBufferFromHDFS>(uri_without_path, path_from_uri, getContext()->getGlobalContext()->getConfigRef()), compression);
+    auto impl = std::make_unique<ReadBufferFromHDFS>(
+        uri_without_path, path_from_uri, getContext()->getGlobalContext()->getConfigRef(), getContext()->getReadSettings());
+    read_buf = wrapReadBufferWithCompressionMethod(std::move(impl), compression);
 
     auto input_format = getContext()->getInputFormat(storage->format_name, *read_buf, block_for_format, max_block_size);
 

@@ -15,11 +15,9 @@ struct DiskObjectStorageMetadata
     static constexpr UInt32 VERSION_RELATIVE_PATHS = 2;
     static constexpr UInt32 VERSION_READ_ONLY_FLAG = 3;
 
-    /// Remote FS objects paths and their sizes.
-    std::vector<BlobPathWithSize> remote_fs_objects;
+    std::vector<BlobPathWithSize> storage_objects;
 
-    /// URI
-    const String & remote_fs_root_path;
+    const String & object_storage_root_path;
 
     /// Relative path to metadata file on local FS.
     const String metadata_file_path;
@@ -39,19 +37,19 @@ struct DiskObjectStorageMetadata
     bool read_only = false;
 
     DiskObjectStorageMetadata(
-        const String & remote_fs_root_path_,
+        const String & object_storage_root_path_,
         DiskPtr metadata_disk_,
         const String & metadata_file_path_);
 
     void addObject(const String & path, size_t size);
 
-    static DiskObjectStorageMetadata readMetadata(const String & remote_fs_root_path_, DiskPtr metadata_disk_, const String & metadata_file_path_);
-    static DiskObjectStorageMetadata readUpdateAndStoreMetadata(const String & remote_fs_root_path_, DiskPtr metadata_disk_, const String & metadata_file_path_, bool sync, Updater updater);
-    static void readUpdateStoreMetadataAndRemove(const String & remote_fs_root_path_, DiskPtr metadata_disk_, const String & metadata_file_path_, bool sync, Updater updater);
+    static DiskObjectStorageMetadata readMetadata(const String & object_storage_root_path_, DiskPtr metadata_disk_, const String & metadata_file_path_);
+    static DiskObjectStorageMetadata readUpdateAndStoreMetadata(const String & object_storage_root_path_, DiskPtr metadata_disk_, const String & metadata_file_path_, bool sync, Updater updater);
+    static void readUpdateStoreMetadataAndRemove(const String & object_storage_root_path_, DiskPtr metadata_disk_, const String & metadata_file_path_, bool sync, Updater updater);
 
-    static DiskObjectStorageMetadata createAndStoreMetadata(const String & remote_fs_root_path_, DiskPtr metadata_disk_, const String & metadata_file_path_, bool sync);
-    static DiskObjectStorageMetadata createUpdateAndStoreMetadata(const String & remote_fs_root_path_, DiskPtr metadata_disk_, const String & metadata_file_path_, bool sync, Updater updater);
-    static DiskObjectStorageMetadata createAndStoreMetadataIfNotExists(const String & remote_fs_root_path_, DiskPtr metadata_disk_, const String & metadata_file_path_, bool sync, bool overwrite);
+    static DiskObjectStorageMetadata createAndStoreMetadata(const String & object_storage_root_path_, DiskPtr metadata_disk_, const String & metadata_file_path_, bool sync);
+    static DiskObjectStorageMetadata createUpdateAndStoreMetadata(const String & object_storage_root_path_, DiskPtr metadata_disk_, const String & metadata_file_path_, bool sync, Updater updater);
+    static DiskObjectStorageMetadata createAndStoreMetadataIfNotExists(const String & object_storage_root_path_, DiskPtr metadata_disk_, const String & metadata_file_path_, bool sync, bool overwrite);
 
     /// Serialize metadata to string (very same with saveToBuffer)
     std::string serializeToString();

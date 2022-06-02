@@ -355,7 +355,6 @@ public:
     /// Return current disk revision.
     virtual UInt64 getRevision() const { return 0; }
 
-
 protected:
     friend class DiskDecorator;
 
