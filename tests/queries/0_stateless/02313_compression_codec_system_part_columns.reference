@@ -1,0 +1,5 @@
+id	CODEC(LZ4)
+data	CODEC(ZSTD(1))
+ddd	CODEC(NONE)
+somenum	CODEC(ZSTD(2))
+somestr	CODEC(LZ4HC(7))

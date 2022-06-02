@@ -46,7 +46,6 @@ StorageSystemPartsColumns::StorageSystemPartsColumns(const StorageID & table_id_
         {"data_version",                               std::make_shared<DataTypeUInt64>()},
         {"primary_key_bytes_in_memory",                std::make_shared<DataTypeUInt64>()},
         {"primary_key_bytes_in_memory_allocated",      std::make_shared<DataTypeUInt64>()},
-        {"compression_codec",                          std::make_shared<DataTypeString>()},
 
         {"database",                                   std::make_shared<DataTypeString>()},
         {"table",                                      std::make_shared<DataTypeString>()},
@@ -59,6 +58,7 @@ StorageSystemPartsColumns::StorageSystemPartsColumns(const StorageID & table_id_
         {"column_position",                            std::make_shared<DataTypeUInt64>()},
         {"default_kind",                               std::make_shared<DataTypeString>()},
         {"default_expression",                         std::make_shared<DataTypeString>()},
+        {"compression_codec",                          std::make_shared<DataTypeString>()},
         {"column_bytes_on_disk",                       std::make_shared<DataTypeUInt64>()},
         {"column_data_compressed_bytes",               std::make_shared<DataTypeUInt64>()},
         {"column_data_uncompressed_bytes",             std::make_shared<DataTypeUInt64>()},
@@ -84,6 +84,7 @@ void StorageSystemPartsColumns::processNextStorage(
     {
         String default_kind;
         String default_expression;
+        String codec;
     };
 
     std::unordered_map<String, ColumnInfo> columns_info;
@@ -95,7 +96,9 @@ void StorageSystemPartsColumns::processNextStorage(
             column_info.default_kind = toString(column.default_desc.kind);
             column_info.default_expression = queryToString(column.default_desc.expression);
         }
-
+        if (column.codec) {
+            column_info.codec = queryToString(column.codec);
+        }
         columns_info[column.name] = column_info;
     }
 
@@ -183,8 +186,6 @@ void StorageSystemPartsColumns::processNextStorage(
                 columns[res_index++]->insert(index_size_in_bytes);
             if (columns_mask[src_index++])
                 columns[res_index++]->insert(index_size_in_allocated_bytes);
-            if (columns_mask[src_index++])
-                columns[res_index++]->insert(queryToString(part->default_codec->getCodecDesc()));
 
             if (columns_mask[src_index++])
                 columns[res_index++]->insert(info.database);
@@ -211,9 +212,13 @@ void StorageSystemPartsColumns::processNextStorage(
                     columns[res_index++]->insert(column_info_it->second.default_kind);
                 if (columns_mask[src_index++])
                     columns[res_index++]->insert(column_info_it->second.default_expression);
+                if (columns_mask[src_index++])
+                    columns[res_index++]->insert(column_info_it->second.codec);
             }
             else
             {
+                if (columns_mask[src_index++])
+                    columns[res_index++]->insertDefault();
                 if (columns_mask[src_index++])
                     columns[res_index++]->insertDefault();
                 if (columns_mask[src_index++])
