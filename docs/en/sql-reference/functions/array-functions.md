@@ -1244,7 +1244,7 @@ Result:
 
 ## arrayMap(func, arr1, …) {#array-map}
 
-Returns an array obtained from the original application of the `func` function to each element in the `arr` array.
+Returns an array obtained from the original arrays by application of `func(arr1[i], …, arrN[i])` for each element. Arrays `arr1` … `arrN` must have the same number of elements.
 
 Examples:
 
@@ -1274,7 +1274,7 @@ Note that the `arrayMap` is a [higher-order function](../../sql-reference/functi
 
 ## arrayFilter(func, arr1, …) {#array-filter}
 
-Returns an array containing only the elements in `arr1` for which `func` returns something other than 0.
+Returns an array containing only the elements in `arr1` for which `func(arr1[i], …, arrN[i])` returns something other than 0.
 
 Examples:
 
@@ -1307,7 +1307,7 @@ Note that the `arrayFilter` is a [higher-order function](../../sql-reference/fun
 
 ## arrayFill(func, arr1, …) {#array-fill}
 
-Scan through `arr1` from the first element to the last element and replace `arr1[i]` by `arr1[i - 1]` if `func` returns 0. The first element of `arr1` will not be replaced.
+Scan through `arr1` from the first element to the last element and replace `arr1[i]` by `arr1[i - 1]` if `func(arr1[i], …, arrN[i])` returns 0. The first element of `arr1` will not be replaced.
 
 Examples:
 
@@ -1325,7 +1325,7 @@ Note that the `arrayFill` is a [higher-order function](../../sql-reference/funct
 
 ## arrayReverseFill(func, arr1, …) {#array-reverse-fill}
 
-Scan through `arr1` from the last element to the first element and replace `arr1[i]` by `arr1[i + 1]` if `func` returns 0. The last element of `arr1` will not be replaced.
+Scan through `arr1` from the last element to the first element and replace `arr1[i]` by `arr1[i + 1]` if `func(arr1[i], …, arrN[i])` returns 0. The last element of `arr1` will not be replaced.
 
 Examples:
 
@@ -1343,7 +1343,7 @@ Note that the `arrayReverseFill` is a [higher-order function](../../sql-referenc
 
 ## arraySplit(func, arr1, …) {#array-split}
 
-Split `arr1` into multiple arrays. When `func` returns something other than 0, the array will be split on the left hand side of the element. The array will not be split before the first element.
+Split `arr1` into multiple arrays. When `func(arr1[i], …, arrN[i])` returns something other than 0, the array will be split on the left hand side of the element. The array will not be split before the first element.
 
 Examples:
 
@@ -1361,7 +1361,7 @@ Note that the `arraySplit` is a [higher-order function](../../sql-reference/func
 
 ## arrayReverseSplit(func, arr1, …) {#array-reverse-split}
 
-Split `arr1` into multiple arrays. When `func` returns something other than 0, the array will be split on the right hand side of the element. The array will not be split after the last element.
+Split `arr1` into multiple arrays. When `func(arr1[i], …, arrN[i])` returns something other than 0, the array will be split on the right hand side of the element. The array will not be split after the last element.
 
 Examples:
 
@@ -1379,37 +1379,37 @@ Note that the `arrayReverseSplit` is a [higher-order function](../../sql-referen
 
 ## arrayExists(\[func,\] arr1, …) {#arrayexistsfunc-arr1}
 
-Returns 1 if there is at least one element in `arr` for which `func` returns something other than 0. Otherwise, it returns 0.
+Returns 1 if there is at least one element in `arr` for which `func(arr1[i], …, arrN[i])` returns something other than 0. Otherwise, it returns 0.
 
 Note that the `arrayExists` is a [higher-order function](../../sql-reference/functions/index.md#higher-order-functions). You can pass a lambda function to it as the first argument.
 
 ## arrayAll(\[func,\] arr1, …) {#arrayallfunc-arr1}
 
-Returns 1 if `func` returns something other than 0 for all the elements in `arr`. Otherwise, it returns 0.
+Returns 1 if `func(arr1[i], …, arrN[i])` returns something other than 0 for all the elements in arrays. Otherwise, it returns 0.
 
 Note that the `arrayAll` is a [higher-order function](../../sql-reference/functions/index.md#higher-order-functions). You can pass a lambda function to it as the first argument.
 
 ## arrayFirst(func, arr1, …) {#array-first}
 
-Returns the first element in the `arr1` array for which `func` returns something other than 0.
+Returns the first element in the `arr1` array for which `func(arr1[i], …, arrN[i])` returns something other than 0.
 
 Note that the `arrayFirst` is a [higher-order function](../../sql-reference/functions/index.md#higher-order-functions). You must pass a lambda function to it as the first argument, and it can’t be omitted.
 
 ## arrayLast(func, arr1, …) {#array-last}
 
-Returns the last element in the `arr1` array for which `func` returns something other than 0.
+Returns the last element in the `arr1` array for which `func(arr1[i], …, arrN[i])` returns something other than 0.
 
 Note that the `arrayLast` is a [higher-order function](../../sql-reference/functions/index.md#higher-order-functions). You must pass a lambda function to it as the first argument, and it can’t be omitted.
 
 ## arrayFirstIndex(func, arr1, …) {#array-first-index}
 
-Returns the index of the first element in the `arr1` array for which `func` returns something other than 0.
+Returns the index of the first element in the `arr1` array for which `func(arr1[i], …, arrN[i])` returns something other than 0.
 
 Note that the `arrayFirstIndex` is a [higher-order function](../../sql-reference/functions/index.md#higher-order-functions). You must pass a lambda function to it as the first argument, and it can’t be omitted.
 
 ## arrayLastIndex(func, arr1, …) {#array-last-index}
 
-Returns the index of the last element in the `arr1` array for which `func` returns something other than 0.
+Returns the index of the last element in the `arr1` array for which `func(arr1[i], …, arrN[i])` returns something other than 0.
 
 Note that the `arrayLastIndex` is a [higher-order function](../../sql-reference/functions/index.md#higher-order-functions). You must pass a lambda function to it as the first argument, and it can’t be omitted.
 
@@ -1635,7 +1635,7 @@ Result:
 
 ## arrayCumSum(\[func,\] arr1, …) {#arraycumsumfunc-arr1}
 
-Returns an array of partial sums of elements in the source array (a running sum). If the `func` function is specified, then the values of the array elements are converted by this function before summing.
+Returns an array of partial sums of elements in the source array (a running sum). If the `func` function is specified, then the values of the array elements are converted by `func(arr1[i], …, arrN[i])` before summing.
 
 Example:
 
