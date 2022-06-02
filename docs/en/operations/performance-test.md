@@ -3,7 +3,7 @@ sidebar_position: 54
 sidebar_label: Testing Hardware
 ---
 
-# How to Test Your Hardware with ClickHouse {#how-to-test-your-hardware-with-clickhouse}
+# How to Test Your Hardware with ClickHouse
 
 You can run basic ClickHouse performance test on any server without installation of ClickHouse packages.
 
