@@ -538,23 +538,6 @@ void QueryPipeline::reset()
     *this = QueryPipeline();
 }
 
-// Pipe QueryPipeline::toPipe(QueryPipeline pipeline, QueryPlanResourceHolder & out_resources)
-// {
-//     if (!pipeline.pulling())
-//         throw Exception(ErrorCodes::LOGICAL_ERROR, "Pipeline must be pulling to be converted to pipe");
-
-//     out_resources = std::move(pipeline.resources);
-
-//     Pipe pipe;
-//     pipe.processors = std::move(pipeline.processors);
-//     pipe.header = pipeline.output->getHeader();
-//     pipe.output_ports = {pipeline.output};
-//     pipe.totals_port = pipeline.totals;
-//     pipe.extremes_port = pipeline.extremes;
-
-//     return pipe;
-//}
-
 static void addExpression(OutputPort *& port, ExpressionActionsPtr actions, Processors & processors)
 {
     if (port)
