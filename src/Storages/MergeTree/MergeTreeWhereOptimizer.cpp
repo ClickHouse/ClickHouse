@@ -157,7 +157,7 @@ static bool isConditionGood(const ASTPtr & condition)
     return false;
 }
 
-const std::unordered_map<MergeTreeWhereOptimizer::ConditionDescription::Type, MergeTreeWhereOptimizer::ConditionDescription::Type>& MergeTreeWhereOptimizer::getCompareFuncsSwaps() const
+const std::unordered_map<MergeTreeWhereOptimizer::ConditionDescription::Type, MergeTreeWhereOptimizer::ConditionDescription::Type>& MergeTreeWhereOptimizer::getCompareFuncsSwaps()
 {
     static const std::unordered_map<ConditionDescription::Type, ConditionDescription::Type> compare_funcs_swap = {
         {ConditionDescription::Type::EQUAL, ConditionDescription::Type::EQUAL},
@@ -168,7 +168,7 @@ const std::unordered_map<MergeTreeWhereOptimizer::ConditionDescription::Type, Me
     return compare_funcs_swap;
 }
 
-const std::unordered_map<MergeTreeWhereOptimizer::ConditionDescription::Type, std::string>& MergeTreeWhereOptimizer::getCompareTypeToString() const
+const std::unordered_map<MergeTreeWhereOptimizer::ConditionDescription::Type, std::string>& MergeTreeWhereOptimizer::getCompareTypeToString()
 {
     static const std::unordered_map<ConditionDescription::Type, std::string> compare_type_to_string = {
         {ConditionDescription::Type::EQUAL, "equals"},
@@ -179,7 +179,7 @@ const std::unordered_map<MergeTreeWhereOptimizer::ConditionDescription::Type, st
     return compare_type_to_string;
 }
 
-const std::unordered_map<std::string, MergeTreeWhereOptimizer::ConditionDescription::Type>& MergeTreeWhereOptimizer::getStringToCompareFuncs() const
+const std::unordered_map<std::string, MergeTreeWhereOptimizer::ConditionDescription::Type>& MergeTreeWhereOptimizer::getStringToCompareFuncs()
 {
     static const std::unordered_map<String, ConditionDescription::Type> compare_funcs = {
         {"equals", ConditionDescription::Type::EQUAL},
@@ -193,7 +193,7 @@ const std::unordered_map<std::string, MergeTreeWhereOptimizer::ConditionDescript
 }
 
 MergeTreeWhereOptimizer::ConditionDescriptionOptional MergeTreeWhereOptimizer::parseCondition(
-    const ASTPtr & condition) const
+    const ASTPtr & condition)
 {
     const auto * function = condition->as<ASTFunction>();
     if (!function)

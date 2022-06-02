@@ -26,8 +26,8 @@ public:
     void deserialize(ReadBuffer& rb);
 
 private:
-    size_t getStringHash(const String& str) const;
-    size_t getUintHash(size_t hash, size_t seed) const;
+    static size_t getStringHash(const String& str);
+    static size_t getUintHash(size_t hash, size_t seed);
 
     std::vector<UInt32> data;
 };

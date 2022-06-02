@@ -612,7 +612,7 @@ IMergeTreeStatisticCollectorPtrs MergeTreeStatisticFactory::getStatisticCollecto
 }
 
 std::vector<StatisticDescription> MergeTreeStatisticFactory::getSplittedStatistics(
-    const StatisticDescription & statistic, const ColumnDescription & column) const
+    const StatisticDescription & statistic, const ColumnDescription & column)
 {
     if (statistic.type != "auto")
     {

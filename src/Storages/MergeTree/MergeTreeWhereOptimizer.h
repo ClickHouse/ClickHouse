@@ -107,7 +107,7 @@ private:
     bool tryAnalyzeTupleCompare(Conditions & res, const ASTFunction * func, bool is_final) const;
     void analyzeImpl(Conditions & res, const ASTPtr & node, bool is_final) const;
 
-    ConditionDescriptionOptional parseCondition(const ASTPtr & condition) const;
+    static ConditionDescriptionOptional parseCondition(const ASTPtr & condition);
 
     /// Transform conjunctions chain in WHERE expression to Conditions list.
     Conditions analyze(const ASTPtr & expression, bool is_final) const;
@@ -182,9 +182,9 @@ private:
         Condition condition;
     };
 
-    const std::unordered_map<ConditionDescription::Type, ConditionDescription::Type>& getCompareFuncsSwaps() const;
-    const std::unordered_map<ConditionDescription::Type, std::string>& getCompareTypeToString() const;
-    const std::unordered_map<std::string, ConditionDescription::Type>& getStringToCompareFuncs() const;
+    static const std::unordered_map<ConditionDescription::Type, ConditionDescription::Type>& getCompareFuncsSwaps();
+    static const std::unordered_map<ConditionDescription::Type, std::string>& getCompareTypeToString();
+    static const std::unordered_map<std::string, ConditionDescription::Type>& getStringToCompareFuncs();
 
     using StringSet = std::unordered_set<std::string>;
 

@@ -62,12 +62,12 @@ size_t CountMinSketch::getSizeInMemory() const
     return sizeof(*this) + sizeof(data[0]) * data.size();
 }
 
-size_t CountMinSketch::getStringHash(const String& str) const
+size_t CountMinSketch::getStringHash(const String& str)
 {
     return CityHash_v1_0_2::CityHash64(str.data(), str.size());
 }
 
-size_t CountMinSketch::getUintHash(size_t hash, size_t seed) const
+size_t CountMinSketch::getUintHash(size_t hash, size_t seed)
 {
     return intHash64(hash ^ seed);
 }

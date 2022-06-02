@@ -176,8 +176,8 @@ private:
     IMergeTreeStatisticCollectorPtr getStatisticCollector(
         const StatisticDescription & statistic, const ColumnDescription & column) const;
 
-    std::vector<StatisticDescription> getSplittedStatistics(
-        const StatisticDescription & statistic, const ColumnDescription & column) const;
+    static std::vector<StatisticDescription> getSplittedStatistics(
+        const StatisticDescription & statistic, const ColumnDescription & column);
 
     void registerCreators(
         const std::string & stat_type,
