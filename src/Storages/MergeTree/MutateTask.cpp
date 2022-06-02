@@ -1384,8 +1384,6 @@ private:
             if (ctx->execute_ttl_type == ExecuteTTLType::RECALCULATE)
                 builder.addTransform(std::make_shared<TTLCalcTransform>(builder.getHeader(), *ctx->data, ctx->metadata_snapshot, ctx->new_data_part, ctx->time_of_mutation, true));
 
-
-
             ctx->out = std::make_shared<MergedColumnOnlyOutputStream>(
                 ctx->new_data_part,
                 ctx->metadata_snapshot,
