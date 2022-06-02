@@ -202,19 +202,6 @@ QueryPipelineBuilderPtr QueryPlan::buildQueryPipeline(
     return last_pipeline;
 }
 
-// Pipe QueryPlan::convertToPipe(
-//     const QueryPlanOptimizationSettings & optimization_settings,
-//     const BuildQueryPipelineSettings & build_pipeline_settings)
-// {
-//     if (!isInitialized())
-//         return {};
-
-//     if (isCompleted())
-//         throw Exception("Cannot convert completed QueryPlan to Pipe", ErrorCodes::LOGICAL_ERROR);
-
-//     return QueryPipelineBuilder::getPipe(std::move(*buildQueryPipeline(optimization_settings, build_pipeline_settings)));
-// }
-
 static void explainStep(const IQueryPlanStep & step, JSONBuilder::JSONMap & map, const QueryPlan::ExplainPlanOptions & options)
 {
     map.add("Node Type", step.getName());

@@ -500,33 +500,6 @@ QueryPipeline QueryPipelineBuilder::getPipeline(QueryPipelineBuilder builder)
     return res;
 }
 
-// void QueryPipelineBuilder::updatePipeline(QueryPipelineBuilder builder, QueryPipeline & query_pipeline)
-// {
-//     if (builder.pipe.numOutputPorts() > 0)
-//     {
-//         builder.pipe.resize(1);
-//         query_pipeline.output = builder.pipe.getOutputPort(0);
-//         query_pipeline.totals = builder.pipe.getTotalsPort();
-//         query_pipeline.extremes = builder.pipe.getExtremesPort();
-
-//     }
-//     else
-//     {
-//         query_pipeline.output = nullptr;
-//         query_pipeline.totals = nullptr;
-//         query_pipeline.extremes = nullptr;
-//     }
-
-//     query_pipeline.addResources(std::move(builder.resources));
-
-//     query_pipeline.processors.insert(
-//         query_pipeline.processors.end(),
-//         builder.pipe.processors.begin(), builder.pipe.processors.end());
-
-//     query_pipeline.setNumThreads(builder.getNumThreads());
-//     query_pipeline.setProcessListElement(builder.process_list_element);
-// }
-
 void QueryPipelineBuilder::setCollectedProcessors(Processors * processors)
 {
     pipe.collected_processors = processors;
