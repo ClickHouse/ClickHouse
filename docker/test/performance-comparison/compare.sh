@@ -66,6 +66,9 @@ function configure
 
     set -m # Spawn temporary in its own process groups
 
+    # Make sure all files are owned by current user (clickhouse process user)
+    chown -R $USER db0
+
     local setup_left_server_opts=(
         # server options
         --config-file=left/config/config.xml
