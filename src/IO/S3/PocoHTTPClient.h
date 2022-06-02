@@ -27,8 +27,16 @@ namespace DB::S3
 {
 class ClientFactory;
 
+struct ClientConfigurationPerRequest
+{
+    Aws::Http::Scheme proxy_scheme = Aws::Http::Scheme::HTTPS;
+    String proxy_host;
+    unsigned proxy_port = 0;
+};
+
 struct PocoHTTPClientConfiguration : public Aws::Client::ClientConfiguration
 {
+    std::function<ClientConfigurationPerRequest(const Aws::Http::HttpRequest &)> per_request_configuration = [] (const Aws::Http::HttpRequest &) { return ClientConfigurationPerRequest(); };
     String force_region;
     const RemoteHostFilter & remote_host_filter;
     unsigned int s3_max_redirects;
@@ -36,10 +44,15 @@ struct PocoHTTPClientConfiguration : public Aws::Client::ClientConfiguration
 
     void updateSchemeAndRegion();
 
-    std::function<void(const Aws::Client::ClientConfigurationPerRequest &)> error_report;
+    std::function<void(const ClientConfigurationPerRequest &)> error_report;
 
 private:
-    PocoHTTPClientConfiguration(const String & force_region_, const RemoteHostFilter & remote_host_filter_, unsigned int s3_max_redirects_, bool enable_s3_requests_logging_);
+    PocoHTTPClientConfiguration(
+        const String & force_region_,
+        const RemoteHostFilter & remote_host_filter_,
+        unsigned int s3_max_redirects_,
+        bool enable_s3_requests_logging_
+    );
 
     /// Constructor of Aws::Client::ClientConfiguration must be called after AWS SDK initialization.
     friend ClientFactory;
@@ -95,8 +108,8 @@ private:
         Aws::Utils::RateLimits::RateLimiterInterface * readLimiter,
         Aws::Utils::RateLimits::RateLimiterInterface * writeLimiter) const;
 
-    std::function<Aws::Client::ClientConfigurationPerRequest(const Aws::Http::HttpRequest &)> per_request_configuration;
-    std::function<void(const Aws::Client::ClientConfigurationPerRequest &)> error_report;
+    std::function<ClientConfigurationPerRequest(const Aws::Http::HttpRequest &)> per_request_configuration;
+    std::function<void(const ClientConfigurationPerRequest &)> error_report;
     ConnectionTimeouts timeouts;
     const RemoteHostFilter & remote_host_filter;
     unsigned int s3_max_redirects;
