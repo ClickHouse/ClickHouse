@@ -4,7 +4,7 @@ sidebar_position: 52
 slug: /en/operations/settings/settings
 ---
 
-# Settings {#settings}
+# Settings
 
 ## allow_nondeterministic_mutations {#allow_nondeterministic_mutations}
 
@@ -20,7 +20,7 @@ Default value: 0.
 <profiles>
     <default>
         <allow_nondeterministic_mutations>1</allow_nondeterministic_mutations>
-        
+
         <!-- ... -->
     </default>
 
