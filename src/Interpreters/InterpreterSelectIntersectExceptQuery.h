@@ -31,13 +31,9 @@ public:
 
     BlockIO execute() override;
 
-    void addLimitsAndQuotas(QueryPipeline & pipeline) const final;
-
     Block getSampleBlock() { return result_header; }
 
     void ignoreWithTotals() override;
-
-    bool hasRemoteStorage() const override;
 
 private:
     static String getName() { return "SelectIntersectExceptQuery"; }

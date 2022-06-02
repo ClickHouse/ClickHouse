@@ -55,14 +55,7 @@ public:
     /// You can find more details about this under ExecuteScalarSubqueriesMatcher::visit
     bool usesViewSource() const { return uses_view_source; }
 
-    /// Add limits and quotas to query pipeline based on internal context and options.
-    virtual void addLimitsAndQuotas(QueryPipeline & pipeline) const;
-    static void addLimitsAndQuotas(QueryPipeline & pipeline, const Context & context, const SelectQueryOptions & options);
-
-    static StorageLimits getStorageLimits(const Context & context, const SelectQueryOptions & options);
-
-    virtual bool hasRemoteStorage() const = 0;
-
+    /// Add limits from external query.
     void addStorageLimits(const StorageLimitsList & limits);
 
 protected:
@@ -76,5 +69,10 @@ protected:
     bool settings_limit_offset_needed = false;
     bool settings_limit_offset_done = false;
     bool uses_view_source = false;
+
+    /// Set quotas to query pipeline.
+    void setQuota(QueryPipeline & pipeline) const;
+
+    static StorageLimits getStorageLimits(const Context & context, const SelectQueryOptions & options);
 };
 }
