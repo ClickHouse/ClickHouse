@@ -986,24 +986,24 @@ TEST_P(CoordinationTest, SnapshotableHashMapDataSize)
 
     world.disableSnapshotMode();
     world.insert("world", n1);
-    EXPECT_EQ(world.getApproximateDataSize(), 177);
+    EXPECT_EQ(world.getApproximateDataSize(), 193);
     world.updateValue("world", [&](Node & value) { value = n2; });
-    EXPECT_EQ(world.getApproximateDataSize(), 195);
+    EXPECT_EQ(world.getApproximateDataSize(), 211);
 
     world.erase("world");
     EXPECT_EQ(world.getApproximateDataSize(), 0);
 
     world.enableSnapshotMode(100000);
     world.insert("world", n1);
-    EXPECT_EQ(world.getApproximateDataSize(), 177);
+    EXPECT_EQ(world.getApproximateDataSize(), 193);
     world.updateValue("world", [&](Node & value) { value = n2; });
-    EXPECT_EQ(world.getApproximateDataSize(), 372);
+    EXPECT_EQ(world.getApproximateDataSize(), 404);
 
     world.clearOutdatedNodes();
-    EXPECT_EQ(world.getApproximateDataSize(), 195);
+    EXPECT_EQ(world.getApproximateDataSize(), 211);
 
     world.erase("world");
-    EXPECT_EQ(world.getApproximateDataSize(), 195);
+    EXPECT_EQ(world.getApproximateDataSize(), 211);
 
     world.clear();
     EXPECT_EQ(world.getApproximateDataSize(), 0);
@@ -1024,7 +1024,7 @@ TEST_P(CoordinationTest, TestStorageSnapshotSimple)
     ChangelogDirTest test("./snapshots");
     DB::KeeperSnapshotManager manager("./snapshots", 3, params.enable_compression);
 
-    DB::KeeperStorage storage(500, "");
+    DB::KeeperStorage storage(500, "", true);
     addNode(storage, "/hello", "world", 1);
     addNode(storage, "/hello/somepath", "somedata", 3);
     storage.session_id_counter = 5;
@@ -1072,7 +1072,7 @@ TEST_P(CoordinationTest, TestStorageSnapshotMoreWrites)
     ChangelogDirTest test("./snapshots");
     DB::KeeperSnapshotManager manager("./snapshots", 3, params.enable_compression);
 
-    DB::KeeperStorage storage(500, "");
+    DB::KeeperStorage storage(500, "", true);
     storage.getSessionID(130);
 
     for (size_t i = 0; i < 50; ++i)
@@ -1113,7 +1113,7 @@ TEST_P(CoordinationTest, TestStorageSnapshotManySnapshots)
     ChangelogDirTest test("./snapshots");
     DB::KeeperSnapshotManager manager("./snapshots", 3, params.enable_compression);
 
-    DB::KeeperStorage storage(500, "");
+    DB::KeeperStorage storage(500, "", true);
     storage.getSessionID(130);
 
     for (size_t j = 1; j <= 5; ++j)
@@ -1151,7 +1151,7 @@ TEST_P(CoordinationTest, TestStorageSnapshotMode)
     auto params = GetParam();
     ChangelogDirTest test("./snapshots");
     DB::KeeperSnapshotManager manager("./snapshots", 3, params.enable_compression);
-    DB::KeeperStorage storage(500, "");
+    DB::KeeperStorage storage(500, "", true);
     for (size_t i = 0; i < 50; ++i)
     {
         addNode(storage, "/hello_" + std::to_string(i), "world_" + std::to_string(i));
@@ -1204,7 +1204,7 @@ TEST_P(CoordinationTest, TestStorageSnapshotBroken)
     auto params = GetParam();
     ChangelogDirTest test("./snapshots");
     DB::KeeperSnapshotManager manager("./snapshots", 3, params.enable_compression);
-    DB::KeeperStorage storage(500, "");
+    DB::KeeperStorage storage(500, "", true);
     for (size_t i = 0; i < 50; ++i)
     {
         addNode(storage, "/hello_" + std::to_string(i), "world_" + std::to_string(i));
@@ -1224,7 +1224,7 @@ TEST_P(CoordinationTest, TestStorageSnapshotBroken)
     EXPECT_THROW(manager.restoreFromLatestSnapshot(), DB::Exception);
 }
 
-nuraft::ptr<nuraft::buffer> getBufferFromZKRequest(int64_t session_id, const Coordination::ZooKeeperRequestPtr & request)
+nuraft::ptr<nuraft::buffer> getBufferFromZKRequest(int64_t session_id, int64_t zxid, const Coordination::ZooKeeperRequestPtr & request)
 {
     DB::WriteBufferFromNuraftBuffer buf;
     DB::writeIntBinary(session_id, buf);
@@ -1232,12 +1232,14 @@ nuraft::ptr<nuraft::buffer> getBufferFromZKRequest(int64_t session_id, const Coo
     using namespace std::chrono;
     auto time = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
     DB::writeIntBinary(time, buf);
+    DB::writeIntBinary(zxid, buf);
+    DB::writeIntBinary(DB::KeeperStorage::DigestVersion::NO_DIGEST, buf);
     return buf.getBuffer();
 }
 
-nuraft::ptr<nuraft::log_entry> getLogEntryFromZKRequest(size_t term, int64_t session_id, const Coordination::ZooKeeperRequestPtr & request)
+nuraft::ptr<nuraft::log_entry> getLogEntryFromZKRequest(size_t term, int64_t session_id, int64_t zxid, const Coordination::ZooKeeperRequestPtr & request)
 {
-    auto buffer = getBufferFromZKRequest(session_id, request);
+    auto buffer = getBufferFromZKRequest(session_id, zxid, request);
     return nuraft::cs_new<nuraft::log_entry>(term, buffer);
 }
 
@@ -1259,7 +1261,7 @@ void testLogAndStateMachine(Coordination::CoordinationSettingsPtr settings, uint
     {
         std::shared_ptr<ZooKeeperCreateRequest> request = std::make_shared<ZooKeeperCreateRequest>();
         request->path = "/hello_" + std::to_string(i);
-        auto entry = getLogEntryFromZKRequest(0, 1, request);
+        auto entry = getLogEntryFromZKRequest(0, 1, i, request);
         changelog.append(entry);
         changelog.end_of_append_batch(0, 0);
 
@@ -1410,7 +1412,7 @@ TEST_P(CoordinationTest, TestEphemeralNodeRemove)
     std::shared_ptr<ZooKeeperCreateRequest> request_c = std::make_shared<ZooKeeperCreateRequest>();
     request_c->path = "/hello";
     request_c->is_ephemeral = true;
-    auto entry_c = getLogEntryFromZKRequest(0, 1, request_c);
+    auto entry_c = getLogEntryFromZKRequest(0, 1, state_machine->getNextZxid(), request_c);
     state_machine->pre_commit(1, entry_c->get_buf());
     state_machine->commit(1, entry_c->get_buf());
     const auto & storage = state_machine->getStorage();
@@ -1419,7 +1421,7 @@ TEST_P(CoordinationTest, TestEphemeralNodeRemove)
     std::shared_ptr<ZooKeeperRemoveRequest> request_d = std::make_shared<ZooKeeperRemoveRequest>();
     request_d->path = "/hello";
     /// Delete from other session
-    auto entry_d = getLogEntryFromZKRequest(0, 2, request_d);
+    auto entry_d = getLogEntryFromZKRequest(0, 2, state_machine->getNextZxid(), request_d);
     state_machine->pre_commit(2, entry_d->get_buf());
     state_machine->commit(2, entry_d->get_buf());
 
@@ -1440,7 +1442,7 @@ TEST_P(CoordinationTest, TestRotateIntervalChanges)
         {
             std::shared_ptr<ZooKeeperCreateRequest> request = std::make_shared<ZooKeeperCreateRequest>();
             request->path = "/hello_" + std::to_string(i);
-            auto entry = getLogEntryFromZKRequest(0, 1, request);
+            auto entry = getLogEntryFromZKRequest(0, 1, i, request);
             changelog.append(entry);
             changelog.end_of_append_batch(0, 0);
         }
@@ -1455,7 +1457,7 @@ TEST_P(CoordinationTest, TestRotateIntervalChanges)
     {
         std::shared_ptr<ZooKeeperCreateRequest> request = std::make_shared<ZooKeeperCreateRequest>();
         request->path = "/hello_" + std::to_string(100 + i);
-        auto entry = getLogEntryFromZKRequest(0, 1, request);
+        auto entry = getLogEntryFromZKRequest(0, 1, i, request);
         changelog_1.append(entry);
         changelog_1.end_of_append_batch(0, 0);
     }
@@ -1470,7 +1472,7 @@ TEST_P(CoordinationTest, TestRotateIntervalChanges)
     {
         std::shared_ptr<ZooKeeperCreateRequest> request = std::make_shared<ZooKeeperCreateRequest>();
         request->path = "/hello_" + std::to_string(200 + i);
-        auto entry = getLogEntryFromZKRequest(0, 1, request);
+        auto entry = getLogEntryFromZKRequest(0, 1, i, request);
         changelog_2.append(entry);
         changelog_2.end_of_append_batch(0, 0);
     }
@@ -1490,7 +1492,7 @@ TEST_P(CoordinationTest, TestRotateIntervalChanges)
     {
         std::shared_ptr<ZooKeeperCreateRequest> request = std::make_shared<ZooKeeperCreateRequest>();
         request->path = "/hello_" + std::to_string(300 + i);
-        auto entry = getLogEntryFromZKRequest(0, 1, request);
+        auto entry = getLogEntryFromZKRequest(0, 1, i, request);
         changelog_3.append(entry);
         changelog_3.end_of_append_batch(0, 0);
     }
@@ -1537,7 +1539,7 @@ TEST_P(CoordinationTest, TestCompressedLogsMultipleRewrite)
     {
         std::shared_ptr<ZooKeeperCreateRequest> request = std::make_shared<ZooKeeperCreateRequest>();
         request->path = "/hello_" + std::to_string(i);
-        auto entry = getLogEntryFromZKRequest(0, 1, request);
+        auto entry = getLogEntryFromZKRequest(0, 1, i, request);
         changelog.append(entry);
         changelog.end_of_append_batch(0, 0);
     }
@@ -1549,7 +1551,7 @@ TEST_P(CoordinationTest, TestCompressedLogsMultipleRewrite)
     {
         std::shared_ptr<ZooKeeperCreateRequest> request = std::make_shared<ZooKeeperCreateRequest>();
         request->path = "/hello_" + std::to_string(i);
-        auto entry = getLogEntryFromZKRequest(0, 1, request);
+        auto entry = getLogEntryFromZKRequest(0, 1, i, request);
         changelog1.append(entry);
         changelog1.end_of_append_batch(0, 0);
     }
@@ -1560,7 +1562,7 @@ TEST_P(CoordinationTest, TestCompressedLogsMultipleRewrite)
     {
         std::shared_ptr<ZooKeeperCreateRequest> request = std::make_shared<ZooKeeperCreateRequest>();
         request->path = "/hello_" + std::to_string(i);
-        auto entry = getLogEntryFromZKRequest(0, 1, request);
+        auto entry = getLogEntryFromZKRequest(0, 1, i, request);
         changelog2.append(entry);
         changelog2.end_of_append_batch(0, 0);
     }
@@ -1573,7 +1575,7 @@ TEST_P(CoordinationTest, TestStorageSnapshotDifferentCompressions)
     ChangelogDirTest test("./snapshots");
     DB::KeeperSnapshotManager manager("./snapshots", 3, params.enable_compression);
 
-    DB::KeeperStorage storage(500, "");
+    DB::KeeperStorage storage(500, "", true);
     addNode(storage, "/hello", "world", 1);
     addNode(storage, "/hello/somepath", "somedata", 3);
     storage.session_id_counter = 5;
@@ -1725,7 +1727,7 @@ TEST_P(CoordinationTest, TestStorageSnapshotEqual)
     {
         DB::KeeperSnapshotManager manager("./snapshots", 3, params.enable_compression);
 
-        DB::KeeperStorage storage(500, "");
+        DB::KeeperStorage storage(500, "", true);
         for (size_t j = 0; j < 5000; ++j)
         {
             addNode(storage, "/hello_" + std::to_string(j), "world", 1);
@@ -1769,7 +1771,7 @@ TEST_P(CoordinationTest, TestLogGap)
     {
         std::shared_ptr<ZooKeeperCreateRequest> request = std::make_shared<ZooKeeperCreateRequest>();
         request->path = "/hello_" + std::to_string(i);
-        auto entry = getLogEntryFromZKRequest(0, 1, request);
+        auto entry = getLogEntryFromZKRequest(0, 1, i, request);
         changelog.append(entry);
         changelog.end_of_append_batch(0, 0);
     }
@@ -1795,7 +1797,7 @@ TEST_P(CoordinationTest, TestUncommittedStateBasicCrud)
     using namespace DB;
     using namespace Coordination;
 
-    DB::KeeperStorage storage{500, ""};
+    DB::KeeperStorage storage{500, "", true};
 
     constexpr std::string_view path = "/test";
 
@@ -1803,7 +1805,7 @@ TEST_P(CoordinationTest, TestUncommittedStateBasicCrud)
     {
         auto request = std::make_shared<ZooKeeperGetRequest>();
         request->path = path;
-        auto responses = storage.processRequest(request, 0, 0, std::nullopt, true, true);
+        auto responses = storage.processRequest(request, 0, std::nullopt, true, true);
         const auto & get_response = getSingleResponse<ZooKeeperGetResponse>(responses);
 
         if (get_response.error != Error::ZOK)
@@ -1851,19 +1853,19 @@ TEST_P(CoordinationTest, TestUncommittedStateBasicCrud)
     ASSERT_FALSE(get_committed_data());
 
     {
-        const auto responses = storage.processRequest(create_request, 0, 0, 1);
+        const auto responses = storage.processRequest(create_request, 0, 1);
         const auto & create_response = getSingleResponse<ZooKeeperCreateResponse>(responses);
         ASSERT_EQ(create_response.error, Error::ZOK);
     }
 
     {
-        const auto responses = storage.processRequest(create_request, 0, 0, 2);
+        const auto responses = storage.processRequest(create_request, 0, 2);
         const auto & create_response = getSingleResponse<ZooKeeperCreateResponse>(responses);
         ASSERT_EQ(create_response.error, Error::ZNODEEXISTS);
     }
 
     {
-        const auto responses = storage.processRequest(after_create_get, 0, 0, 3);
+        const auto responses = storage.processRequest(after_create_get, 0, 3);
         const auto & get_response = getSingleResponse<ZooKeeperGetResponse>(responses);
         ASSERT_EQ(get_response.error, Error::ZOK);
         ASSERT_EQ(get_response.data, "initial_data");
@@ -1872,13 +1874,13 @@ TEST_P(CoordinationTest, TestUncommittedStateBasicCrud)
     ASSERT_EQ(get_committed_data(), "initial_data");
 
     {
-        const auto responses = storage.processRequest(set_request, 0, 0, 4);
+        const auto responses = storage.processRequest(set_request, 0, 4);
         const auto & create_response = getSingleResponse<ZooKeeperSetResponse>(responses);
         ASSERT_EQ(create_response.error, Error::ZOK);
     }
 
     {
-        const auto responses = storage.processRequest(after_set_get, 0, 0, 5);
+        const auto responses = storage.processRequest(after_set_get, 0, 5);
         const auto & get_response = getSingleResponse<ZooKeeperGetResponse>(responses);
         ASSERT_EQ(get_response.error, Error::ZOK);
         ASSERT_EQ(get_response.data, "new_data");
@@ -1887,26 +1889,25 @@ TEST_P(CoordinationTest, TestUncommittedStateBasicCrud)
     ASSERT_EQ(get_committed_data(), "new_data");
 
     {
-        const auto responses = storage.processRequest(remove_request, 0, 0, 6);
+        const auto responses = storage.processRequest(remove_request, 0, 6);
         const auto & create_response = getSingleResponse<ZooKeeperRemoveResponse>(responses);
         ASSERT_EQ(create_response.error, Error::ZOK);
     }
 
     {
-        const auto responses = storage.processRequest(remove_request, 0, 0, 7);
+        const auto responses = storage.processRequest(remove_request, 0, 7);
         const auto & create_response = getSingleResponse<ZooKeeperRemoveResponse>(responses);
         ASSERT_EQ(create_response.error, Error::ZNONODE);
     }
 
     {
-        const auto responses = storage.processRequest(after_remove_get, 0, 0, 8);
+        const auto responses = storage.processRequest(after_remove_get, 0, 8);
         const auto & get_response = getSingleResponse<ZooKeeperGetResponse>(responses);
         ASSERT_EQ(get_response.error, Error::ZNONODE);
     }
 
     ASSERT_FALSE(get_committed_data());
 }
-
 
 INSTANTIATE_TEST_SUITE_P(CoordinationTestSuite,
     CoordinationTest,
