@@ -15,7 +15,7 @@
 if (NOT DEFINED ENV{CLION_IDE} AND NOT DEFINED ENV{XCODE_IDE})
     find_program(NINJA_PATH ninja)
     if (NINJA_PATH)
-        set(CMAKE_GENERATOR "Ninja" CACHE INTERNAL "" FORCE)
+        set(CMAKE_GENERATOR "Ninja" CACHE INTERNAL "")
     endif ()
 endif()
 
@@ -57,12 +57,12 @@ if (OS MATCHES "Linux"
     AND ($ENV{CC} MATCHES ".*clang.*" OR CMAKE_C_COMPILER MATCHES ".*clang.*"))
 
     if (ARCH MATCHES "amd64|x86_64")
-        set (CMAKE_TOOLCHAIN_FILE "cmake/linux/toolchain-x86_64.cmake" CACHE INTERNAL "" FORCE)
+        set (CMAKE_TOOLCHAIN_FILE "cmake/linux/toolchain-x86_64.cmake" CACHE INTERNAL "")
     elseif (ARCH MATCHES "^(aarch64.*|AARCH64.*|arm64.*|ARM64.*)")
-        set (CMAKE_TOOLCHAIN_FILE "cmake/linux/toolchain-aarch64.cmake" CACHE INTERNAL "" FORCE)
+        set (CMAKE_TOOLCHAIN_FILE "cmake/linux/toolchain-aarch64.cmake" CACHE INTERNAL "")
     elseif (ARCH MATCHES "^(ppc64le.*|PPC64LE.*)")
-        set (CMAKE_TOOLCHAIN_FILE "cmake/linux/toolchain-ppc64le.cmake" CACHE INTERNAL "" FORCE)
-    else ()
+        set (CMAKE_TOOLCHAIN_FILE "cmake/linux/toolchain-ppc64le.cmake" CACHE INTERNAL "")
+else ()
         message (FATAL_ERROR "Unsupported architecture: ${ARCH}")
     endif ()
 
