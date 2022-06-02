@@ -100,9 +100,7 @@ StorageMergeTree::StorageMergeTree(
         attach)
     , reader(*this)
     , writer(*this)
-    , merger_mutator(*this,
-        getContext()->getSettingsRef().background_merges_mutations_concurrency_ratio *
-        getContext()->getSettingsRef().background_pool_size)
+    , merger_mutator(*this, getContext()->getMergeMutateExecutor()->getMaxTasksCount())
 {
     loadDataParts(has_force_restore_data_flag);
 
@@ -184,6 +182,9 @@ void StorageMergeTree::shutdown()
     background_operations_assignee.finish();
     background_moves_assignee.finish();
 
+    if (deduplication_log)
+        deduplication_log->shutdown();
+
     try
     {
         /// We clear all old parts after stopping all background operations.
@@ -191,7 +192,11 @@ void StorageMergeTree::shutdown()
         /// parts which will remove themselves in their destructors. If so, we
         /// may have race condition between our remove call and background
         /// process.
-        clearOldPartsFromFilesystem(true);
+        /// Do not clear old parts in case when server is shutting down because it failed to start due to some exception.
+
+        if (Context::getGlobalContextInstance()->getApplicationType() == Context::ApplicationType::SERVER
+            && Context::getGlobalContextInstance()->isServerCompletelyStarted())
+            clearOldPartsFromFilesystem(true);
     }
     catch (...)
     {
@@ -713,8 +718,9 @@ void StorageMergeTree::loadDeduplicationLog()
     if (settings->non_replicated_deduplication_window != 0 && format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
         throw Exception("Deduplication for non-replicated MergeTree in old syntax is not supported", ErrorCodes::BAD_ARGUMENTS);
 
-    std::string path = getDataPaths()[0] + "/deduplication_logs";
-    deduplication_log = std::make_unique<MergeTreeDeduplicationLog>(path, settings->non_replicated_deduplication_window, format_version);
+    auto disk = getDisks()[0];
+    std::string path = fs::path(relative_data_path) / "deduplication_logs";
+    deduplication_log = std::make_unique<MergeTreeDeduplicationLog>(path, settings->non_replicated_deduplication_window, format_version, disk);
     deduplication_log->load();
 }
 
@@ -1162,8 +1168,12 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
     {
         auto task = std::make_shared<MergePlainMergeTreeTask>(*this, metadata_snapshot, false, Names{}, merge_entry, share_lock, common_assignee_trigger);
         task->setCurrentTransaction(std::move(transaction_for_merge), std::move(txn));
-        assignee.scheduleMergeMutateTask(task);
-        return true;
+        bool scheduled = assignee.scheduleMergeMutateTask(task);
+        /// The problem that we already booked a slot for TTL merge, but a merge list entry will be created only in a prepare method
+        /// in MergePlainMergeTreeTask. So, this slot will never be freed.
+        if (!scheduled && isTTLMergeType(merge_entry->future_part->merge_type))
+            getContext()->getMergeList().cancelMergeWithTTL();
+        return scheduled;
     }
     if (mutate_entry)
     {
