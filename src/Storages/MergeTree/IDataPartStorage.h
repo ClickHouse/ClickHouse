@@ -46,8 +46,8 @@ class ISyncGuard;
 using SyncGuardPtr = std::unique_ptr<ISyncGuard>;
 
 class IBackupEntry;
-using BackupEntryPtr = std::unique_ptr<IBackupEntry>;
-using BackupEntries = std::vector<std::pair<std::string, BackupEntryPtr>>;
+using BackupEntryPtr = std::shared_ptr<const IBackupEntry>;
+using BackupEntries = std::vector<std::pair<String, BackupEntryPtr>>;
 
 struct WriteSettings;
 

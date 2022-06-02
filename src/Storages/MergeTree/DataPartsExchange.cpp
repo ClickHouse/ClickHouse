@@ -141,8 +141,9 @@ void Service::processQuery(const HTMLForm & params, ReadBuffer & /*body*/, Write
 
         CurrentMetrics::Increment metric_increment{CurrentMetrics::ReplicatedSend};
 
+        if (const auto * part_on_disk = typeid_cast<const DataPartStorageOnDisk *>(part->data_part_storage.get()))
         {
-            auto disk = part->volume->getDisk();
+            auto disk = part_on_disk->getDisk();
             UInt64 revision = parse<UInt64>(params.get("disk_revision", "0"));
             if (revision)
                 disk->syncRevision(revision);
