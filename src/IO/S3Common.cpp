@@ -765,9 +765,9 @@ namespace S3
         const String & force_region,
         const RemoteHostFilter & remote_host_filter,
         unsigned int s3_max_redirects,
-        bool enable_s3_requestrs_logging)
+        bool enable_s3_requests_logging)
     {
-        return PocoHTTPClientConfiguration(force_region, remote_host_filter, s3_max_redirects, enable_s3_requestrs_logging);
+        return PocoHTTPClientConfiguration(force_region, remote_host_filter, s3_max_redirects, enable_s3_requests_logging);
     }
 
     URI::URI(const Poco::URI & uri_)
