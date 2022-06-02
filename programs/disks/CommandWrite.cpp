@@ -50,23 +50,19 @@ public:
 
         String full_path = fullPathWithValidate(disk, path);
 
-        String path_input = config.getString("input", "");
+        String path_input = config.getString("input", "default");
 
-        std::unique_ptr<ReadBufferFromFileBase> in;
-        std::unique_ptr<WriteBufferFromFileBase> out = disk->writeFile(full_path);
-
-        if (path_input.empty())
-        {
-            in = std::make_unique<ReadBufferFromFileDescriptor>(STDIN_FILENO);
-        }
-        else
+        std::unique_ptr<ReadBufferFromFileBase> in = std::make_unique<ReadBufferFromFileDescriptor>(STDIN_FILENO);
+        if (path_input != "default")
         {
             String full_path_input = fullPathWithValidate(disk, path_input);
             in = disk->readFile(full_path_input);
         }
 
+        auto out = disk->writeFile(full_path);
         copyData(*in, *out);
         out->finalize();
+        return;
     }
 };
 }
