@@ -361,11 +361,11 @@ CI_CONFIG = {
         },
         "Performance Comparison": {
             "required_build": "package_release",
-            "test_grep_exclude_filter": ""
+            "test_grep_exclude_filter": "",
         },
         "Performance Comparison Aarch64": {
             "required_build": "package_aarch64",
-            "test_grep_exclude_filter": "constant_column_search"
+            "test_grep_exclude_filter": "constant_column_search",
         },
     },
 }  # type: dict
