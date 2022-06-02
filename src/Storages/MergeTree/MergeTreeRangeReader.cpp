@@ -477,12 +477,48 @@ size_t numZerosInTail(const UInt8 * begin, const UInt8 * end)
 }
 ) /// DECLARE_AVX512BW_SPECIFIC_CODE
 
+DECLARE_AVX2_SPECIFIC_CODE(
+size_t numZerosInTail(const UInt8 * begin, const UInt8 * end)
+{
+    size_t count = 0;
+    const __m256i zero32 = _mm256_setzero_si256();
+    while (end - begin >= 64)
+    {
+        end -= 64;
+        const auto * pos = end;
+        UInt64 val =
+            (static_cast<UInt64>(_mm256_movemask_epi8(_mm256_cmpeq_epi8(
+                        _mm256_loadu_si256(reinterpret_cast<const __m256i *>(pos)),
+                        zero32))) & 0xffffffffu)
+            | (static_cast<UInt64>(_mm256_movemask_epi8(_mm256_cmpeq_epi8(
+                        _mm256_loadu_si256(reinterpret_cast<const __m256i *>(pos + 32)),
+                        zero32))) << 32u);
+
+        val = ~val;
+        if (val == 0)
+            count += 64;
+        else
+        {
+            count += __builtin_clzll(val);
+            return count;
+        }
+    }
+    while (end > begin && *(--end) == 0)
+    {
+        ++count;
+    }
+    return count;
+}
+) /// DECLARE_AVX2_SPECIFIC_CODE
+
 size_t MergeTreeRangeReader::ReadResult::numZerosInTail(const UInt8 * begin, const UInt8 * end)
 {
 #if USE_MULTITARGET_CODE
     /// check if cpu support avx512 dynamically, haveAVX512BW contains check of haveAVX512F
     if (isArchSupported(TargetArch::AVX512BW))
         return TargetSpecific::AVX512BW::numZerosInTail(begin, end);
+    else if (isArchSupported(TargetArch::AVX2))
+        return TargetSpecific::AVX2::numZerosInTail(begin, end);
 #endif
 
     size_t count = 0;
