@@ -1224,6 +1224,8 @@ protected:
     /// Moves part to specified space, used in ALTER ... MOVE ... queries
     bool movePartsToSpace(const DataPartsVector & parts, SpacePtr space);
 
+    static void incrementInsertedPartsProfileEvent(MergeTreeDataPartType type);
+    static void incrementMergedPartsProfileEvent(MergeTreeDataPartType type);
 
 private:
     /// RAII Wrapper for atomic work with currently moving parts

@@ -146,6 +146,7 @@ StorageHDFS::StorageHDFS(
     , distributed_processing(distributed_processing_)
     , partition_by(partition_by_)
 {
+    FormatFactory::instance().checkFormatName(format_name);
     context_->getRemoteHostFilter().checkURL(Poco::URI(uri_));
     checkHDFSURL(uri_);
 
@@ -417,7 +418,9 @@ public:
 
     void onException() override
     {
-        write_buf->finalize();
+        if (!writer)
+            return;
+        onFinish();
     }
 
     void onFinish() override
@@ -431,6 +434,7 @@ public:
         }
         catch (...)
         {
+            /// Stop ParallelFormattingOutputFormat correctly.
             writer.reset();
             throw;
         }
