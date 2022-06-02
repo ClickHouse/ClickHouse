@@ -516,7 +516,7 @@ std::vector<MergeTreeWhereOptimizer::ColumnWithRank> MergeTreeWhereOptimizer::ge
                     {
                         left_limit = description.constant;
                     }
-                    break; 
+                    break;
                 }
             }
             min_selectivity = std::min(
@@ -622,7 +622,7 @@ void MergeTreeWhereOptimizer::optimizeByRanks(ASTSelectQuery & select) const
         }
         // We think that columns are independent.
         const double predicted_loss = (prewhere_columns_size + column_size) + prewhere_selectivity * selectivity * (where_columns_size - column_size);
-        
+
         LOG_INFO(log, "optimizeByRanks: try to move column '{}' (rank={}) current_loss={} predicted_loss={}", column, rank, current_loss, predicted_loss);
 
         // stop if difference is small
@@ -681,7 +681,9 @@ void MergeTreeWhereOptimizer::optimizeByRanks(ASTSelectQuery & select) const
         {
             // If there are no new columns then simply move condition to prewhere.
             condition.rank = -MAX_RANK;
-        } else {
+        }
+        else
+        {
             condition.rank = -(1 - condition.selectivity) * RANK_CORRECTION / condition.condition.columns_size;
         }
     };

@@ -996,7 +996,7 @@ void MergeTreeData::updateStatisticsByPartition()
         {
             if (partition_to_stats_new.contains(partition_id))
                 partition_to_stats_new[partition_id]->merge(loaded_stats);
-            else 
+            else
                 partition_to_stats_new[partition_id] = loaded_stats;
         }
     }

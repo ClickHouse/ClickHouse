@@ -31,7 +31,8 @@ enum class MergeTreeStringSearchStatisticType
 
 String generateFileNameForStatistics(const String & name, const String & columns);
 
-class IMergeTreeStatisticCollector {
+class IMergeTreeStatisticCollector
+{
 public:
     virtual ~IMergeTreeStatisticCollector() = default;
 
@@ -56,7 +57,8 @@ public:
 using IMergeTreeStatisticCollectorPtr = std::shared_ptr<IMergeTreeStatisticCollector>;
 using IMergeTreeStatisticCollectorPtrs = std::vector<IMergeTreeStatisticCollectorPtr>;
 
-class MergeTreeDistributionStatistics : public IDistributionStatistics {
+class MergeTreeDistributionStatistics : public IDistributionStatistics
+{
 public:
     bool empty() const override;
 
@@ -81,7 +83,8 @@ private:
 
 using MergeTreeDistributionStatisticsPtr = std::shared_ptr<MergeTreeDistributionStatistics>;
 
-class MergeTreeStringSearchStatistics : public IStringSearchStatistics {
+class MergeTreeStringSearchStatistics : public IStringSearchStatistics
+{
 public:
     bool empty() const override;
 
@@ -108,7 +111,8 @@ private:
 using MergeTreeStringSearchStatisticsPtr = std::shared_ptr<MergeTreeStringSearchStatistics>;
 
 // Stats stored for each part
-class MergeTreeStatistics : public IStatistics {
+class MergeTreeStatistics : public IStatistics
+{
 public:
     bool empty() const override;
 
@@ -149,7 +153,7 @@ public:
     void validate(
         const std::vector<StatisticDescription> & statistics,
         const ColumnsDescription & columns) const;
-    
+
     MergeTreeStatisticsPtr get(
         const std::vector<StatisticDescription> & statistics,
         const ColumnsDescription & columns) const;
@@ -171,7 +175,7 @@ private:
 
     IMergeTreeStatisticCollectorPtr getStatisticCollector(
         const StatisticDescription & statistic, const ColumnDescription & column) const;
-    
+
     std::vector<StatisticDescription> getSplittedStatistics(
         const StatisticDescription & statistic, const ColumnDescription & column) const;
 
