@@ -130,6 +130,11 @@ public:
                 throw Exception("Column `name` should not be empty", ErrorCodes::BAD_ARGUMENTS);
             }
 
+            if (path.empty())
+            {
+                throw Exception("Column `path` should not be empty", ErrorCodes::BAD_ARGUMENTS);
+            }
+
             if (path.size() + name.size() > PATH_MAX)
             {
                 throw Exception("Sum of `name` length and `path` length should not exceed PATH_MAX", ErrorCodes::BAD_ARGUMENTS);
@@ -149,6 +154,24 @@ public:
         zookeeper->multi(requests);
     }
 };
+
+StorageSystemZooKeeper::StorageSystemZooKeeper(const StorageID & table_id_)
+        : IStorageSystemOneBlock<StorageSystemZooKeeper>(table_id_)
+{
+        StorageInMemoryMetadata storage_metadata;
+        ColumnsDescription desc;
+        auto columns = getNamesAndTypes();
+        for (const auto & col : columns)
+        {
+            ColumnDescription col_desc(col.name, col.type);
+            /// We only allow column `name`, `path`, `value` to insert.
+            if (col.name != "name" && col.name != "path" && col.name != "value")
+                col_desc.default_desc.kind = ColumnDefaultKind::Materialized;
+            desc.add(col_desc);
+        }
+        storage_metadata.setColumns(desc);
+        setInMemoryMetadata(storage_metadata);
+}
 
 SinkToStoragePtr StorageSystemZooKeeper::write(const ASTPtr &, const StorageMetadataPtr &, ContextPtr context)
 {

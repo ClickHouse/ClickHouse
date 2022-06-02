@@ -14,6 +14,8 @@ class Context;
 class StorageSystemZooKeeper final : public IStorageSystemOneBlock<StorageSystemZooKeeper>
 {
 public:
+    explicit StorageSystemZooKeeper(const StorageID & table_id_);
+
     std::string getName() const override { return "SystemZooKeeper"; }
 
     static NamesAndTypesList getNamesAndTypes();
