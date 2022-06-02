@@ -4,7 +4,6 @@
 #include <mlpack/core.hpp>
 #include <Storages/IStorage.h>
 #include <Storages/ExternalDataSourceConfiguration.h>
-#include <Storages/MLpack/LinRegSettings.h>
 #include <Storages/MLpack/IModel.h>
 
 namespace DB
@@ -34,7 +33,7 @@ public:
     std::string getName() const override { return "MLmodel"; }
 
     // maybe check on null?
-    TrainResult getModel() const { return model->GetModel(); }
+    IModelPtr getModel() const { return model; }
 
     // check on null?
     String getModelName() const { return model->GetName(); }

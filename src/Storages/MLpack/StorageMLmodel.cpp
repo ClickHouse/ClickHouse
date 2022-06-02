@@ -98,7 +98,7 @@ public:
         arma::mat regressors(buffer, n_rows, n_features);
         regressors = regressors.t();
 
-        model->Train(regressors, feature_buffers.back().data(), n_rows);
+        model->TrainArb(regressors, feature_buffers.back().data(), n_rows);
         // shady
 
         bool save_status = model->Save(this->filepath);

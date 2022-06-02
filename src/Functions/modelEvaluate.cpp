@@ -82,7 +82,11 @@ public:
         for (size_t i = 1; i < arguments.size(); ++i)
             has_nullable = has_nullable || arguments[i].type->isNullable();
 
-        auto model = models_loader.getModel(name_col->getValue<String>());
+        const std::string model_name = name_col->getValue<String>();
+        if (model_name.length() > 7 && model_name.rfind("mlpack", 0) == 0) {
+            return std::make_shared<DataTypeFloat64>();
+        }
+        auto model = models_loader.getModel(model_name);
         auto type = model->getReturnType();
 
         if (has_nullable)
@@ -103,7 +107,7 @@ public:
     }
 
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t counter_times) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const override
     {
         const auto * name_col = checkAndGetColumnConst<ColumnString>(arguments[0].column.get());
         if (!name_col)
@@ -148,11 +152,11 @@ public:
 
 
         ColumnPtr res;
-
         const std::string model_name = name_col->getValue<String>();
-        LOG_FATAL(&Poco::Logger::root(), "model name {}", model_name);
-        if (model_name == "lr") {
-            StoragePtr tableptr = DatabaseCatalog::instance().getTable(StorageID{"default", "testerg"}, CurrentThread::get().getQueryContext());
+
+        if (model_name.length() > 7 && model_name.rfind("mlpack", 0) == 0) {
+            const std::string table_name = model_name.substr(7);
+            StoragePtr tableptr = DatabaseCatalog::instance().getTable(StorageID{"default", table_name}, CurrentThread::get().getQueryContext());
             std::shared_ptr<StorageMLmodel> casted = std::dynamic_pointer_cast<StorageMLmodel>(tableptr);
             res = casted->getModel()->evaluateModel(column_ptrs);
         }
