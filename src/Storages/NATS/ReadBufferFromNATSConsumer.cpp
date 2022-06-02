@@ -19,6 +19,7 @@ namespace ErrorCodes
 
 ReadBufferFromNATSConsumer::ReadBufferFromNATSConsumer(
     std::shared_ptr<NATSConnectionManager> connection_,
+    StorageNATS & storage_,
     std::vector<String> & subjects_,
     const String & subscribe_queue_name,
     Poco::Logger * log_,
@@ -27,6 +28,7 @@ ReadBufferFromNATSConsumer::ReadBufferFromNATSConsumer(
     const std::atomic<bool> & stopped_)
     : ReadBuffer(nullptr, 0)
     , connection(connection_)
+    , storage(storage_)
     , subjects(subjects_)
     , log(log_)
     , row_delimiter(row_delimiter_)
@@ -49,6 +51,7 @@ void ReadBufferFromNATSConsumer::subscribe()
         if (status == NATS_OK)
         {
             LOG_DEBUG(log, "Subscribed to subject {}", subject);
+            natsSubscription_SetPendingLimits(ns, -1, -1);
             subscriptions.emplace_back(ns, &natsSubscription_Destroy);
         }
         else
@@ -100,6 +103,8 @@ void ReadBufferFromNATSConsumer::onMsg(natsConnection *, natsSubscription *, nat
         };
         if (!buffer->received.push(std::move(data)))
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Could not push to received queue");
+
+        buffer->storage.startStreaming();
     }
 
     natsMsg_Destroy(msg);

@@ -69,7 +69,6 @@ private:
      * true: means payloads.queue will not grow anymore
      */
     std::atomic<bool> wait_payloads = false;
-    UInt64 payload_counter = 0;
 
     Poco::Logger * log;
     const std::optional<char> delim;
