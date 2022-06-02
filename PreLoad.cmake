@@ -51,6 +51,20 @@ endif()
 execute_process(COMMAND uname -s OUTPUT_VARIABLE OS)
 execute_process(COMMAND uname -m OUTPUT_VARIABLE ARCH)
 
+# By default, prefer clang on Linux
+# But note, that you still may change the compiler with -DCMAKE_C_COMPILER/-DCMAKE_CXX_COMPILER.
+if (OS MATCHES "Linux")
+    find_program(CLANG_PATH clang)
+    if (CLANG_PATH)
+        set(CMAKE_C_COMPILER "clang" CACHE INTERNAL "")
+    endif()
+
+    find_program(CLANG_CXX_PATH clang++)
+    if (CLANG_CXX_PATH)
+        set(CMAKE_CXX_COMPILER "clang++" CACHE INTERNAL "")
+    endif()
+endif()
+
 if (OS MATCHES "Linux"
     AND NOT DEFINED CMAKE_TOOLCHAIN_FILE
     AND NOT DISABLE_HERMETIC_BUILD
