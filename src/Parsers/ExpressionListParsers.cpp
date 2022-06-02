@@ -813,7 +813,7 @@ public:
                 ASTs arguments;
                 if (!lastNOperands(arguments, 3))
                     return false;
-                
+
                 // subject = arguments[0], left = arguments[1], right = arguments[2]
                 auto f_combined_expression = std::make_shared<ASTFunction>();
                 auto args_combined_expression = std::make_shared<ASTExpressionList>();
@@ -1767,6 +1767,8 @@ bool ParserExpression2::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         {":",             Operator("if", 4, 3)},
         {"BETWEEN",       Operator("between_1", 5, 0)},
         {"NOT BETWEEN",   Operator("not_between_1", 5, 0)},
+        {"[",             Operator("arrayElement", 40, 2)},     // Layer is added in the process
+        {"::",            Operator("CAST", 50, 2)}
     });
 
     static std::vector<std::pair<const char *, Operator>> op_table_unary({
@@ -1781,6 +1783,9 @@ bool ParserExpression2::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserTupleOfLiterals tuple_literal_parser;
     ParserArrayOfLiterals array_literal_parser;
     ParserSubstitution substitution_parser;
+
+    ParserKeyword filter("FILTER");
+    ParserKeyword over("OVER");
 
     // Recursion
     ParserQualifiedAsterisk qualified_asterisk_parser;
@@ -1905,7 +1910,45 @@ bool ParserExpression2::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                             || function_name_lowercase == "timestampdiff" || function_name_lowercase == "timestamp_diff")
                             storage.push_back(std::make_unique<DateDiffLayer>());
                         else
+                        {
+                            bool has_all = false;
+                            bool has_distinct = false;
+
+                            auto pos_after_bracket = pos;
+                            auto old_expected = expected;
+
+                            ParserKeyword all("ALL");
+                            ParserKeyword distinct("DISTINCT");
+
+                            if (all.ignore(pos, expected))
+                                has_all = true;
+
+                            if (distinct.ignore(pos, expected))
+                                has_distinct = true;
+
+                            if (!has_all && all.ignore(pos, expected))
+                                has_all = true;
+
+                            if (has_all && has_distinct)
+                                return false;
+
+                            if (has_all || has_distinct)
+                            {
+                                /// case f(ALL), f(ALL, x), f(DISTINCT), f(DISTINCT, x), ALL and DISTINCT should be treat as identifier
+                                if (pos->type == TokenType::Comma || pos->type == TokenType::ClosingRoundBracket)
+                                {
+                                    pos = pos_after_bracket;
+                                    expected = old_expected;
+                                    has_all = false;
+                                    has_distinct = false;
+                                }
+                            }
+
+                            if (has_distinct)
+                                function_name += "Distinct";
+
                             storage.push_back(std::make_unique<Layer>(TokenType::ClosingRoundBracket, function_name));
+                        }
                     }
                 }
                 else
@@ -1963,6 +2006,7 @@ bool ParserExpression2::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             {
                 auto op = cur_op->second;
 
+                // AND can be both boolean function and part of the BETWEEN ... AND ... operator
                 if (op.func_name == "and" && storage.back()->hasBetween())
                 {
                     storage.back()->subBetween();
@@ -1982,29 +2026,26 @@ bool ParserExpression2::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                 }
                 storage.back()->pushOperator(op);
 
+                if (op.func_name == "arrayElement")
+                    storage.push_back(std::make_unique<Layer>(TokenType::ClosingSquareBracket));
+
                 // isNull & isNotNull is postfix unary operator
                 if (op.func_name == "isNull" || op.func_name == "isNotNull")
                     next = Action::OPERATOR;
 
                 if (op.func_name == "between_1" || op.func_name == "not_between_1")
                     storage.back()->addBetween();
-            }
-            else if (pos->type == TokenType::OpeningSquareBracket)
-            {
-                storage.back()->pushOperator(Operator("arrayElement", 40, 2));
-                storage.push_back(std::make_unique<Layer>(TokenType::ClosingSquareBracket));
-                ++pos;
-            }
-            else if (parseOperator(pos, "::", expected))
-            {
-                next = Action::OPERATOR;
 
-                ASTPtr type_ast;
-                if (!ParserDataType().parse(pos, type_ast, expected))
-                    return false; // ???
+                if (op.func_name == "CAST")
+                {
+                    next = Action::OPERATOR;
 
-                storage.back()->pushOperator(Operator("CAST", 50, 2));
-                storage.back()->pushOperand(std::make_shared<ASTLiteral>(queryToString(type_ast)));
+                    ASTPtr type_ast;
+                    if (!ParserDataType().parse(pos, type_ast, expected))
+                        return false;
+
+                    storage.back()->pushOperand(std::make_shared<ASTLiteral>(queryToString(type_ast)));
+                }
             }
             else if (parseOperator(pos, "->", expected))
             {
