@@ -57,7 +57,7 @@ You have to specify a changelog category for your change (e.g., Bug Fix), and
 write a user-readable message describing the change for [CHANGELOG.md](../whats-new/changelog/)
 
 
-## Push To Dockerhub
+## Push To DockerHub
 
 Builds docker images used for build and tests, then pushes them to DockerHub.
 
@@ -118,7 +118,7 @@ Builds ClickHouse in various configurations for use in further steps. You have t
 - **Compiler**: `gcc-9` or `clang-10` (or `clang-10-xx` for other architectures e.g. `clang-10-freebsd`).
 - **Build type**: `Debug` or `RelWithDebInfo` (cmake).
 - **Sanitizer**: `none` (without sanitizers), `address` (ASan), `memory` (MSan), `undefined` (UBSan), or `thread` (TSan).
-- **Splitted** `splitted` is a [split build](../development/build.md#split-build)
+- **Split** `splitted` is a [split build](../development/build.md#split-build)
 - **Status**: `success` or `fail`
 - **Build log**: link to the building and files copying log, useful when build failed.
 - **Build time**.

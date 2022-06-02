@@ -94,7 +94,7 @@ Use at least a 10 GB network, if possible. 1 Gb will also work, but it will be m
 
 ## Huge Pages {#huge-pages}
 
-If you are using old Linux kernel, disable transparent huge pages. It interferes with memory allocators, which leads to significant performance degradation.
+If you are using old Linux kernel, disable transparent huge pages. It interferes with memory allocator, which leads to significant performance degradation.
 On newer Linux kernels transparent huge pages are alright.
 
 ``` bash
@@ -136,7 +136,7 @@ Do not change `minSessionTimeout` setting, large values may affect ClickHouse re
 
 With the default settings, ZooKeeper is a time bomb:
 
-> The ZooKeeper server won’t delete files from old snapshots and logs when using the default configuration (see autopurge), and this is the responsibility of the operator.
+> The ZooKeeper server won’t delete files from old snapshots and logs when using the default configuration (see `autopurge`), and this is the responsibility of the operator.
 
 This bomb must be defused.
 
