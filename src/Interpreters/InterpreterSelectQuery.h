@@ -91,8 +91,6 @@ public:
     /// Execute a query. Get the stream of blocks to read.
     BlockIO execute() override;
 
-    void addLimitsAndQuotas(QueryPipeline & pipeline) const final;
-
     /// Builds QueryPlan for current query.
     virtual void buildQueryPlan(QueryPlan & query_plan) override;
 
@@ -129,8 +127,6 @@ public:
 
     /// It will set shard_num and shard_count to the client_info
     void setProperClientInfo();
-
-    bool hasRemoteStorage() const override;
 
 private:
     InterpreterSelectQuery(

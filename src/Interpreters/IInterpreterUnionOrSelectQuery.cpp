@@ -71,19 +71,14 @@ StorageLimits IInterpreterUnionOrSelectQuery::getStorageLimits(const Context & c
     return {limits, leaf_limits};
 }
 
-void IInterpreterUnionOrSelectQuery::addLimitsAndQuotas(QueryPipeline & pipeline, const Context & context, const SelectQueryOptions & options)
+void IInterpreterUnionOrSelectQuery::setQuota(QueryPipeline & pipeline) const
 {
     std::shared_ptr<const EnabledQuota> quota;
 
     if (!options.ignore_quota && (options.to_stage == QueryProcessingStage::Complete))
-        quota = context.getQuota();
+        quota = context->getQuota();
 
     pipeline.setQuota(quota);
-}
-
-void IInterpreterUnionOrSelectQuery::addLimitsAndQuotas(QueryPipeline & pipeline) const
-{
-    addLimitsAndQuotas(pipeline, *context, options);
 }
 
 void IInterpreterUnionOrSelectQuery::addStorageLimits(const StorageLimitsList & limits)

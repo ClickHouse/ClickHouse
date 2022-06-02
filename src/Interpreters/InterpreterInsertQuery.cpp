@@ -485,7 +485,6 @@ BlockIO InterpreterInsertQuery::execute()
         }
 
         res.pipeline = QueryPipelineBuilder::getPipeline(std::move(pipeline));
-        //IInterpreterUnionOrSelectQuery::addLimitsAndQuotas(res.pipeline, *getContext(), {}, false);
     }
     else
     {

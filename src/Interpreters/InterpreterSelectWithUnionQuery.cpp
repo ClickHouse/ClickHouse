@@ -356,29 +356,9 @@ BlockIO InterpreterSelectWithUnionQuery::execute()
         BuildQueryPipelineSettings::fromContext(context));
 
     res.pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
-    addLimitsAndQuotas(res.pipeline);
+    setQuota(res.pipeline);
     return res;
 }
-
-void InterpreterSelectWithUnionQuery::addLimitsAndQuotas(QueryPipeline & pipeline) const
-{
-    if (!nested_interpreters.empty())
-    {
-        /// Take quotas from the first interpreter.
-        /// This may be not a good solution.
-        nested_interpreters.front()->addLimitsAndQuotas(pipeline);
-    }
-}
-
-bool InterpreterSelectWithUnionQuery::hasRemoteStorage() const
-{
-    for (const auto & interpreter : nested_interpreters)
-        if (interpreter->hasRemoteStorage())
-            return true;
-
-    return false;
-}
-
 
 void InterpreterSelectWithUnionQuery::ignoreWithTotals()
 {

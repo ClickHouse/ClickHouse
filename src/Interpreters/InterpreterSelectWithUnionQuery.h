@@ -35,8 +35,6 @@ public:
 
     BlockIO execute() override;
 
-    void addLimitsAndQuotas(QueryPipeline & pipeline) const final;
-
     bool ignoreLimits() const override { return options.ignore_limits; }
     bool ignoreQuota() const override { return options.ignore_quota; }
 
@@ -48,8 +46,6 @@ public:
     virtual void ignoreWithTotals() override;
 
     bool supportsTransactions() const override { return true; }
-
-    bool hasRemoteStorage() const override;
 
 private:
     std::vector<std::unique_ptr<IInterpreterUnionOrSelectQuery>> nested_interpreters;

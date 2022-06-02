@@ -678,14 +678,6 @@ void InterpreterSelectQuery::buildQueryPlan(QueryPlan & query_plan)
         query_plan.addStorageHolder(storage);
 }
 
-void InterpreterSelectQuery::addLimitsAndQuotas(QueryPipeline & pipeline) const
-{
-    if (interpreter_subquery)
-        interpreter_subquery->addLimitsAndQuotas(pipeline);
-    else
-        IInterpreterUnionOrSelectQuery::addLimitsAndQuotas(pipeline, *context, options);
-}
-
 BlockIO InterpreterSelectQuery::execute()
 {
     BlockIO res;
@@ -698,7 +690,7 @@ BlockIO InterpreterSelectQuery::execute()
 
     res.pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
 
-    addLimitsAndQuotas(res.pipeline);
+    setQuota(res.pipeline);
 
     return res;
 }
@@ -1711,17 +1703,6 @@ void InterpreterSelectQuery::addEmptySourceToQueryPlan(
                 query_info.projection->aggregate_descriptions);
         }
     }
-}
-
-bool InterpreterSelectQuery::hasRemoteStorage() const
-{
-    if (storage)
-        return storage->isRemote();
-
-    if (interpreter_subquery)
-        return interpreter_subquery->hasRemoteStorage();
-
-    return false;
 }
 
 void InterpreterSelectQuery::setMergeTreeReadTaskCallbackAndClientInfo(MergeTreeReadTaskCallback && callback)
