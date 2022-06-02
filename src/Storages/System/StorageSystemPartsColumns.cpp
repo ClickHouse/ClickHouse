@@ -96,7 +96,8 @@ void StorageSystemPartsColumns::processNextStorage(
             column_info.default_kind = toString(column.default_desc.kind);
             column_info.default_expression = queryToString(column.default_desc.expression);
         }
-        if (column.codec) {
+        if (column.codec)
+        {
             column_info.codec = queryToString(column.codec);
         }
         columns_info[column.name] = column_info;
