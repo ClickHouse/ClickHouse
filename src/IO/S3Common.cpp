@@ -692,7 +692,7 @@ namespace S3
             credentials_provider,
             std::move(client_configuration), // Client configuration.
             Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy::Never,
-            is_virtual_hosted_style || client_configuration.endpointOverride.empty() /// Use virtual addressing only if endpoint is not specified.
+            is_virtual_hosted_style || client_configuration.endpointOverride.empty() /// Use virtual addressing if endpoint is not specified.
         );
     }
 
