@@ -4,7 +4,7 @@ sidebar_label: C++ Guide
 description: A list of recommendations regarding coding style, naming convention, formatting and more
 ---
 
-# How to Write C++ Code 
+# How to Write C++ Code
 
 ## General Recommendations {#general-recommendations}
 
@@ -196,7 +196,7 @@ std::cerr << static_cast<int>(c) << std::endl;
 
 The same is true for small methods in any classes or structs.
 
-For templated classes and structs, do not separate the method declarations from the implementation (because otherwise they must be defined in the same translation unit).
+For template classes and structs, do not separate the method declarations from the implementation (because otherwise they must be defined in the same translation unit).
 
 **31.** You can wrap lines at 140 characters, instead of 80.
 
@@ -285,7 +285,7 @@ Note: You can use Doxygen to generate documentation from these comments. But Dox
 /// WHAT THE FAIL???
 ```
 
-**14.** Do not use comments to make delimeters.
+**14.** Do not use comments to make delimiters.
 
 ``` cpp
 ///******************************************************

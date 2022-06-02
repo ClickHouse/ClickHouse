@@ -130,7 +130,7 @@ Here is an example of how to install the new `cmake` from the official website:
 ```
 wget https://github.com/Kitware/CMake/releases/download/v3.22.2/cmake-3.22.2-linux-x86_64.sh
 chmod +x cmake-3.22.2-linux-x86_64.sh
-./cmake-3.22.2-linux-x86_64.sh 
+./cmake-3.22.2-linux-x86_64.sh
 export PATH=/home/milovidov/work/cmake-3.22.2-linux-x86_64/bin/:${PATH}
 hash cmake
 ```
@@ -163,7 +163,7 @@ ClickHouse is available in pre-built binaries and packages. Binaries are portabl
 
 They are built for stable, prestable and testing releases as long as for every commit to master and for every pull request.
 
-To find the freshest build from `master`, go to [commits page](https://github.com/ClickHouse/ClickHouse/commits/master), click on the first green checkmark or red cross near commit, and click to the “Details” link right after “ClickHouse Build Check”.
+To find the freshest build from `master`, go to [commits page](https://github.com/ClickHouse/ClickHouse/commits/master), click on the first green check mark or red cross near commit, and click to the “Details” link right after “ClickHouse Build Check”.
 
 ## Faster builds for development: Split build configuration {#split-build}
 
