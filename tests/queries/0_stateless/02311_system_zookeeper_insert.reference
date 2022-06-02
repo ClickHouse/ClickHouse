@@ -23,4 +23,5 @@
 /default/2-insert-testz	c	
 /default/2-insert-testz/c	cd	
 /default/2-insert-testz/c/cd	dd	
+/default/2-insert-testz/c/cd	testc	
 /default/2-insert-testz/c/cd/dd	testc	y
