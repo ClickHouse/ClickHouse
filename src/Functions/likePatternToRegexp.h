@@ -44,7 +44,7 @@ inline String likePatternToRegexp(std::string_view pattern)
                 break;
             case '\\':
                 if (pos + 1 == end)
-                    throw Exception(ErrorCodes::CANNOT_PARSE_ESCAPE_SEQUENCE, "Invalid escape sequence");
+                    throw Exception(ErrorCodes::CANNOT_PARSE_ESCAPE_SEQUENCE, "Invalid escape sequence at the end of LIKE pattern");
                 /// Known escape sequences.
                 if (pos[1] == '%' || pos[1] == '_')
                 {
