@@ -105,61 +105,15 @@ DiskObjectStorage::DiskObjectStorage(
     , metadata_helper(std::make_unique<DiskObjectStorageMetadataHelper>(this, ReadSettings{}))
 {}
 
-DiskObjectStorage::Metadata DiskObjectStorage::readMetadataUnlocked(const String & path, std::shared_lock<std::shared_mutex> &) const
-{
-    return Metadata::readMetadata(remote_fs_root_path, metadata_storage, path);
-}
-
-
-DiskObjectStorage::Metadata DiskObjectStorage::readMetadata(const String & path) const
-{
-    std::shared_lock lock(metadata_mutex);
-    return readMetadataUnlocked(path, lock);
-}
-
-DiskObjectStorage::Metadata DiskObjectStorage::readUpdateAndStoreMetadata(const String & path, bool sync, DiskObjectStorage::MetadataUpdater updater)
-{
-    std::unique_lock lock(metadata_mutex);
-    return Metadata::readUpdateAndStoreMetadata(remote_fs_root_path, metadata_storage, path, sync, updater);
-}
-
-
-void DiskObjectStorage::readUpdateStoreMetadataAndRemove(const String & path, bool sync, DiskObjectStorage::MetadataUpdater updater)
-{
-    std::unique_lock lock(metadata_mutex);
-    Metadata::readUpdateStoreMetadataAndRemove(remote_fs_root_path, metadata_storage, path, sync, updater);
-}
-
-DiskObjectStorage::Metadata DiskObjectStorage::readOrCreateUpdateAndStoreMetadata(const String & path, WriteMode mode, bool sync, DiskObjectStorage::MetadataUpdater updater)
-{
-    if (mode == WriteMode::Rewrite || !metadata_storage->exists(path))
-    {
-        std::unique_lock lock(metadata_mutex);
-        return Metadata::createUpdateAndStoreMetadata(remote_fs_root_path, metadata_storage, path, sync, updater);
-    }
-    else
-    {
-        return Metadata::readUpdateAndStoreMetadata(remote_fs_root_path, metadata_storage, path, sync, updater);
-    }
-}
-
-DiskObjectStorage::Metadata DiskObjectStorage::createAndStoreMetadata(const String & path, bool sync)
-{
-    return Metadata::createAndStoreMetadata(remote_fs_root_path, metadata_storage, path, sync);
-}
-
-DiskObjectStorage::Metadata DiskObjectStorage::createUpdateAndStoreMetadata(const String & path, bool sync, DiskObjectStorage::MetadataUpdater updater)
-{
-    return Metadata::createUpdateAndStoreMetadata(remote_fs_root_path, metadata_storage, path, sync, updater);
-}
-
 std::vector<String> DiskObjectStorage::getRemotePaths(const String & local_path) const
 {
-    auto metadata = readMetadata(local_path);
+    auto metadata = metadata_storage->readMetadata(local_path);
 
     std::vector<String> remote_paths;
-    for (const auto & [remote_path, _] : metadata.remote_fs_objects)
-        remote_paths.push_back(fs::path(metadata.remote_fs_root_path) / remote_path);
+    auto blobs = metadata->getBlobs();
+    auto root_path = metadata->getBlobsCommonPrefix();
+    for (const auto & [remote_path, _] : blobs)
+        remote_paths.push_back(fs::path(root_path) / remote_path);
 
     return remote_paths;
 
@@ -228,12 +182,12 @@ bool DiskObjectStorage::isFile(const String & path) const
 
 void DiskObjectStorage::createFile(const String & path)
 {
-    createAndStoreMetadata(path, false);
+    metadata_storage->updateOrCreateMetadata(path, false, [] (IMetadata &) {});
 }
 
 size_t DiskObjectStorage::getFileSize(const String & path) const
 {
-    return readMetadata(path).total_size;
+    return metadata_storage->readMetadata(path)->getTotalSizeBytes();
 }
 
 void DiskObjectStorage::moveFile(const String & from_path, const String & to_path, bool should_send_metadata)
@@ -295,32 +249,23 @@ void DiskObjectStorage::removeFromRemoteFS(const std::vector<String> & paths)
 
 UInt32 DiskObjectStorage::getRefCount(const String & path) const
 {
-    return readMetadata(path).ref_count;
+    return metadata_storage->readMetadata(path)->getRefCount();
 }
 
 std::unordered_map<String, String> DiskObjectStorage::getSerializedMetadata(const std::vector<String> & file_paths) const
 {
-    std::unordered_map<String, String> metadatas;
-
-    std::shared_lock lock(metadata_mutex);
-
-    for (const auto & path : file_paths)
-    {
-        DiskObjectStorage::Metadata metadata = readMetadataUnlocked(path, lock);
-        metadata.ref_count = 0;
-        metadatas[path] = metadata.serializeToString();
-    }
-
-    return metadatas;
+    return metadata_storage->getSerializedMetadata(file_paths);
 }
 
 String DiskObjectStorage::getUniqueId(const String & path) const
 {
     LOG_TRACE(log, "Remote path: {}, Path: {}", remote_fs_root_path, path);
-    auto metadata = readMetadata(path);
+    auto metadata = metadata_storage->readMetadata(path);
     String id;
-    if (!metadata.remote_fs_objects.empty())
-        id = metadata.remote_fs_root_path + metadata.remote_fs_objects[0].relative_path;
+    auto blobs = metadata->getBlobs();
+    auto root_path = metadata->getBlobsCommonPrefix();
+    if (!blobs.empty())
+        id = root_path + blobs[0].relative_path;
     return id;
 }
 
@@ -339,7 +284,7 @@ bool DiskObjectStorage::checkUniqueId(const String & id) const
 
 void DiskObjectStorage::createHardLink(const String & src_path, const String & dst_path, bool should_send_metadata)
 {
-    readUpdateAndStoreMetadata(src_path, false, [](Metadata & metadata) { metadata.ref_count++; return true; });
+    metadata_storage->updateMetadata(src_path, false, [](IMetadata & metadata) { metadata.incrementRefCount(); });
 
     if (should_send_metadata && !dst_path.starts_with("shadow/"))
     {
@@ -368,7 +313,7 @@ void DiskObjectStorage::setReadOnly(const String & path)
 {
     /// We should store read only flag inside metadata file (instead of using FS flag),
     /// because we modify metadata file when create hard-links from it.
-    readUpdateAndStoreMetadata(path, false, [](Metadata & metadata) { metadata.read_only = true; return true; });
+    metadata_storage->updateMetadata(path, false, [](IMetadata & metadata) { metadata.setReadOnly(); });
 }
 
 
@@ -448,13 +393,15 @@ void DiskObjectStorage::removeMetadata(const String & path, std::vector<String> 
 
     try
     {
-        auto metadata_updater = [&paths_to_remove, this] (Metadata & metadata)
+        auto metadata_updater = [&paths_to_remove, this] (IMetadata & metadata)
         {
-            if (metadata.ref_count == 0)
+            if (metadata.getRefCount() == 0)
             {
-                for (const auto & [remote_fs_object_path, _] : metadata.remote_fs_objects)
+                auto blobs = metadata.getBlobs();
+                auto root_path = metadata.getBlobsCommonPrefix();
+                for (const auto & [remote_fs_object_path, _] : blobs)
                 {
-                    String object_path = fs::path(remote_fs_root_path) / remote_fs_object_path;
+                    String object_path = fs::path(root_path) / remote_fs_object_path;
                     paths_to_remove.push_back(object_path);
                     object_storage->removeFromCache(object_path);
                 }
@@ -463,13 +410,13 @@ void DiskObjectStorage::removeMetadata(const String & path, std::vector<String> 
             }
             else /// In other case decrement number of references, save metadata and delete hardlink.
             {
-                --metadata.ref_count;
+                metadata.decrementRefCount();
             }
 
             return true;
         };
+        metadata_storage->updateAndRemoveMetadata(path, false, metadata_updater);
 
-        readUpdateStoreMetadataAndRemove(path, false, metadata_updater);
         /// If there is no references - delete content from remote FS.
     }
     catch (const Exception & e)
@@ -600,14 +547,14 @@ std::unique_ptr<ReadBufferFromFileBase> DiskObjectStorage::readFile(
     std::optional<size_t> read_hint,
     std::optional<size_t> file_size) const
 {
-    auto metadata = readMetadata(path);
-    return object_storage->readObjects(remote_fs_root_path, metadata.remote_fs_objects, settings, read_hint, file_size);
+    auto metadata = metadata_storage->readMetadata(path);
+    return object_storage->readObjects(metadata->getBlobsCommonPrefix(), metadata->getBlobs(), settings, read_hint, file_size);
 }
 
 std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorage::writeFile(
     const String & path,
     size_t buf_size,
-    WriteMode mode,
+    WriteMode,
     const WriteSettings & settings)
 {
     auto blob_name = getRandomASCIIString();
@@ -623,10 +570,10 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorage::writeFile(
         blob_name = "r" + revisionToString(revision) + "-file-" + blob_name;
     }
 
-    auto create_metadata_callback = [this, path, blob_name, mode] (size_t count)
+    auto create_metadata_callback = [this, path, blob_name] (size_t count)
     {
-        readOrCreateUpdateAndStoreMetadata(path, mode, false,
-            [blob_name, count] (DiskObjectStorage::Metadata & metadata) { metadata.addObject(blob_name, count); return true; });
+        metadata_storage->updateOrCreateMetadata(path, false,
+            [blob_name, count] (IMetadata & metadata) { metadata.addObject(blob_name, count); return true; });
     };
 
     /// We always use mode Rewrite because we simulate append using metadata and different files

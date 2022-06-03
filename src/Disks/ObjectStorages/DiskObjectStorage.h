@@ -59,20 +59,6 @@ public:
         return object_storage->getCacheBasePath();
     }
 
-    /// Methods for working with metadata. For some operations (like hardlink
-    /// creation) metadata can be updated concurrently from multiple threads
-    /// (file actually rewritten on disk). So additional RW lock is required for
-    /// metadata read and write, but not for create new metadata.
-    Metadata readMetadata(const String & path) const;
-    Metadata readMetadataUnlocked(const String & path, std::shared_lock<std::shared_mutex> &) const;
-    Metadata readUpdateAndStoreMetadata(const String & path, bool sync, MetadataUpdater updater);
-    void readUpdateStoreMetadataAndRemove(const String & path, bool sync, MetadataUpdater updater);
-
-    Metadata readOrCreateUpdateAndStoreMetadata(const String & path, WriteMode mode, bool sync, MetadataUpdater updater);
-
-    Metadata createAndStoreMetadata(const String & path, bool sync);
-    Metadata createUpdateAndStoreMetadata(const String & path, bool sync, MetadataUpdater updater);
-
     UInt64 getTotalSpace() const override { return std::numeric_limits<UInt64>::max(); }
 
     UInt64 getAvailableSpace() const override { return std::numeric_limits<UInt64>::max(); }
