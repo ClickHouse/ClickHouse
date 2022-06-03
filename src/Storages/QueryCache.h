@@ -9,7 +9,6 @@
 
 namespace DB
 {
-using QueryCachePtr = std::shared_ptr<QueryCache>;
 
 struct CacheEntry
 {
@@ -110,7 +109,7 @@ public:
             // take the timer with the lowest timestamp from the queue if there is one
             const std::optional<TimedCacheKey> awaited_timer = nextTimer();
 
-            // wake up if either a timer with a lower timestamp than awaited_timer was pushed to the queue, the awaited_timer went off or the server was stoped
+            // wake up if either a timer with a lower timestamp than awaited_timer was pushed to the queue, the awaited_timer went off or the server was stopped
             timer_cv.wait_until(lock, awaited_timer.has_value() ? awaited_timer->time : infinite_time);
 
             // if awaited_timer went off, remove entry from cache
@@ -328,5 +327,7 @@ private:
     std::unordered_map<CacheKey, size_t, CacheKeyHasher> times_executed;
     std::mutex times_executed_mutex;
 };
+
+using QueryCachePtr = std::shared_ptr<QueryCache>;
 
 }
