@@ -57,21 +57,22 @@ def test_log_family_s3(cluster, log_engine, files_overhead, files_overhead_per_i
         )
     )
 
-    node.query("INSERT INTO s3_test SELECT number FROM numbers(5)")
-    assert node.query("SELECT * FROM s3_test") == "0\n1\n2\n3\n4\n"
-    assert_objects_count(cluster, files_overhead_per_insert + files_overhead)
+    try:
+        node.query("INSERT INTO s3_test SELECT number FROM numbers(5)")
+        assert node.query("SELECT * FROM s3_test") == "0\n1\n2\n3\n4\n"
+        assert_objects_count(cluster, files_overhead_per_insert + files_overhead)
 
-    node.query("INSERT INTO s3_test SELECT number + 5 FROM numbers(3)")
-    assert node.query("SELECT * FROM s3_test order by id") == "0\n1\n2\n3\n4\n5\n6\n7\n"
-    assert_objects_count(cluster, files_overhead_per_insert * 2 + files_overhead)
+        node.query("INSERT INTO s3_test SELECT number + 5 FROM numbers(3)")
+        assert node.query("SELECT * FROM s3_test order by id") == "0\n1\n2\n3\n4\n5\n6\n7\n"
+        assert_objects_count(cluster, files_overhead_per_insert * 2 + files_overhead)
 
-    node.query("INSERT INTO s3_test SELECT number + 8 FROM numbers(1)")
-    assert (
-        node.query("SELECT * FROM s3_test order by id") == "0\n1\n2\n3\n4\n5\n6\n7\n8\n"
-    )
-    assert_objects_count(cluster, files_overhead_per_insert * 3 + files_overhead)
+        node.query("INSERT INTO s3_test SELECT number + 8 FROM numbers(1)")
+        assert (
+            node.query("SELECT * FROM s3_test order by id") == "0\n1\n2\n3\n4\n5\n6\n7\n8\n"
+        )
+        assert_objects_count(cluster, files_overhead_per_insert * 3 + files_overhead)
 
-    node.query("TRUNCATE TABLE s3_test")
-    assert_objects_count(cluster, 0)
-
-    node.query("DROP TABLE s3_test")
+        node.query("TRUNCATE TABLE s3_test")
+        assert_objects_count(cluster, 0)
+    finally:
+        node.query("DROP TABLE s3_test")
