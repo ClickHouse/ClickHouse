@@ -22,6 +22,7 @@ std::shared_ptr<const IExternalLoadable> ExternalModelsLoader::create(
     const std::string & config_prefix, const std::string & /* repository_name */) const
 {
     String type = config.getString(config_prefix + ".type");
+    LOG_FATAL(&Poco::Logger::root(), "type  {}", type);
     ExternalLoadableLifetime lifetime(config, config_prefix + ".lifetime");
 
     /// TODO: add models factory.
@@ -30,6 +31,15 @@ std::shared_ptr<const IExternalLoadable> ExternalModelsLoader::create(
         return std::make_unique<CatBoostModel>(
                 name, config.getString(config_prefix + ".path"),
                 getContext()->getConfigRef().getString("catboost_dynamic_library_path"),
+                lifetime
+        );
+    }
+    else if (type == "mlpack")
+    {
+        return std::make_unique<MlpackModel>(
+                name,
+                config.getString(config_prefix + ".path"),
+                config.getString(config_prefix + ".method"),
                 lifetime
         );
     }

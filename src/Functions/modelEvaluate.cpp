@@ -14,7 +14,11 @@
 #include <Common/assert_cast.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/Context_fwd.h>
-
+#include <Interpreters/DatabaseCatalog.h>
+#include <Storages/IStorage_fwd.h>
+#include <Storages/IStorage.h>
+#include <Databases/IDatabase.h>
+#include <Storages/MLpack/StorageMLmodel.h>
 
 namespace DB
 {
@@ -78,7 +82,11 @@ public:
         for (size_t i = 1; i < arguments.size(); ++i)
             has_nullable = has_nullable || arguments[i].type->isNullable();
 
-        auto model = models_loader.getModel(name_col->getValue<String>());
+        const std::string model_name = name_col->getValue<String>();
+        if (model_name.length() > 7 && model_name.rfind("mlpack", 0) == 0) {
+            return std::make_shared<DataTypeFloat64>();
+        }
+        auto model = models_loader.getModel(model_name);
         auto type = model->getReturnType();
 
         if (has_nullable)
@@ -105,8 +113,6 @@ public:
         if (!name_col)
             throw Exception("First argument of function " + getName() + " must be a constant string",
                             ErrorCodes::ILLEGAL_COLUMN);
-
-        auto model = models_loader.getModel(name_col->getValue<String>());
 
         ColumnRawPtrs column_ptrs;
         Columns materialized_columns;
@@ -144,7 +150,22 @@ public:
             }
         }
 
-        auto res = model->evaluate(column_ptrs);
+
+        ColumnPtr res;
+        const std::string model_name = name_col->getValue<String>();
+
+        if (model_name.length() > 7 && model_name.rfind("mlpack", 0) == 0) {
+            const std::string table_name = model_name.substr(7);
+            StoragePtr tableptr = DatabaseCatalog::instance().getTable(StorageID{"default", table_name}, CurrentThread::get().getQueryContext());
+            std::shared_ptr<StorageMLmodel> casted = std::dynamic_pointer_cast<StorageMLmodel>(tableptr);
+            res = casted->getModel()->evaluateModel(column_ptrs);
+        }
+
+        else
+        {
+            auto model = models_loader.getModel(name_col->getValue<String>());
+            res = model->evaluate(column_ptrs);
+        }
 
         if (null_map)
         {
