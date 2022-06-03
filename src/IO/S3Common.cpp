@@ -683,7 +683,7 @@ namespace S3
 
         Aws::Auth::AWSCredentials credentials(access_key_id, secret_access_key);
         auto credentials_provider = std::make_shared<S3CredentialsProviderChain>(
-                static_cast<const DB::S3::PocoHTTPClientConfiguration &>(client_configuration),
+                client_configuration,
                 std::move(credentials),
                 use_environment_credentials,
                 use_insecure_imds_request);
