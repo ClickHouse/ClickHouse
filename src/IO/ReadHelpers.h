@@ -937,8 +937,9 @@ inline ReturnType readDateTimeTextImpl(DateTime64 & datetime64, UInt32 scale, Re
             ++buf.position();
 
         /// Fractional part (subseconds) is treated as positive by users
-        /// (as DateTime64 itself is a positive, although underlying decimal is negative),
-        /// so it needs proper handling
+        /// (as DateTime64 itself is a positive, although underlying decimal is negative)
+        /// setting fractional part to be negative when whole is 0 results in wrong value,
+        /// so we multiply result by -1.
         if (components.whole < 0 && components.fractional != 0)
         {
             const auto scale_multiplier = DecimalUtils::scaleMultiplier<DateTime64::NativeType>(scale);
