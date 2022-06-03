@@ -2350,11 +2350,11 @@ void registerWindowFunctions(AggregateFunctionFactory & factory)
         }, properties});
 
     factory.registerFunction("nonNegativeDerivative", {[](const std::string & name,
-                                               const DataTypes & argument_types, const Array & parameters, const Settings *)
-                                            {
-                                                return std::make_shared<WindowFunctionNonNegativeDerivative>(
-                                                    name, argument_types, parameters);
-                                            }, properties});
+           const DataTypes & argument_types, const Array & parameters, const Settings *)
+        {
+            return std::make_shared<WindowFunctionNonNegativeDerivative>(
+                name, argument_types, parameters);
+        }, properties});
 }
 
 }
