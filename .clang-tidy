@@ -62,6 +62,7 @@ Checks: '*,
 
     -google-build-using-namespace,
     -google-readability-braces-around-statements,
+    -google-readability-casting,
     -google-readability-function-size,
     -google-readability-namespace-comments,
     -google-readability-todo,

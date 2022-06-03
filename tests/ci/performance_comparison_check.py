@@ -112,6 +112,15 @@ if __name__ == "__main__":
     else:
         check_name_with_group = check_name
 
+    test_grep_exclude_filter = CI_CONFIG["tests_config"][check_name][
+        "test_grep_exclude_filter"
+    ]
+    if test_grep_exclude_filter:
+        docker_env += f" -e CHPC_TEST_GREP_EXCLUDE={test_grep_exclude_filter}"
+        logging.info(
+            "Fill fliter our performance tests by grep -v %s", test_grep_exclude_filter
+        )
+
     rerun_helper = RerunHelper(gh, pr_info, check_name_with_group)
     if rerun_helper.is_already_finished_by_status():
         logging.info("Check is already finished according to github status, exiting")

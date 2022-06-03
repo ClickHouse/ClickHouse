@@ -3,21 +3,21 @@ sidebar_position: 54
 sidebar_label: URLs
 ---
 
-# Functions for Working with URLs {#functions-for-working-with-urls}
+# Functions for Working with URLs
 
 All these functions do not follow the RFC. They are maximally simplified for improved performance.
 
-## Functions that Extract Parts of a URL {#functions-that-extract-parts-of-a-url}
+## Functions that Extract Parts of a URL
 
 If the relevant part isn’t present in a URL, an empty string is returned.
 
-### protocol {#protocol}
+### protocol
 
 Extracts the protocol from a URL.
 
 Examples of typical returned values: http, https, ftp, mailto, tel, magnet…
 
-### domain {#domain}
+### domain
 
 Extracts the hostname from a URL.
 
@@ -64,11 +64,11 @@ SELECT domain('svn+ssh://some.svn-hosting.com:80/repo/trunk');
 └────────────────────────────────────────────────────────┘
 ```
 
-### domainWithoutWWW {#domainwithoutwww}
+### domainWithoutWWW
 
 Returns the domain and removes no more than one ‘www.’ from the beginning of it, if present.
 
-### topLevelDomain {#topleveldomain}
+### topLevelDomain
 
 Extracts the the top-level domain from a URL.
 
@@ -107,11 +107,11 @@ SELECT topLevelDomain('svn+ssh://www.some.svn-hosting.com:80/repo/trunk');
 └────────────────────────────────────────────────────────────────────┘
 ```
 
-### firstSignificantSubdomain {#firstsignificantsubdomain}
+### firstSignificantSubdomain
 
 Returns the “first significant subdomain”. The first significant subdomain is a second-level domain if it is ‘com’, ‘net’, ‘org’, or ‘co’. Otherwise, it is a third-level domain. For example, `firstSignificantSubdomain (‘https://news.clickhouse.com/’) = ‘clickhouse’, firstSignificantSubdomain (‘https://news.clickhouse.com.tr/’) = ‘clickhouse’`. The list of “insignificant” second-level domains and other implementation details may change in the future.
 
-### cutToFirstSignificantSubdomain {#cuttofirstsignificantsubdomain}
+### cutToFirstSignificantSubdomain
 
 Returns the part of the domain that includes top-level subdomains up to the “first significant subdomain” (see the explanation above).
 
@@ -121,7 +121,7 @@ For example:
 -   `cutToFirstSignificantSubdomain('www.tr') = 'tr'`.
 -   `cutToFirstSignificantSubdomain('tr') = ''`.
 
-### cutToFirstSignificantSubdomainWithWWW {#cuttofirstsignificantsubdomainwithwww}
+### cutToFirstSignificantSubdomainWithWWW
 
 Returns the part of the domain that includes top-level subdomains up to the “first significant subdomain”, without stripping "www".
 
@@ -131,7 +131,7 @@ For example:
 -   `cutToFirstSignificantSubdomain('www.tr') = 'www.tr'`.
 -   `cutToFirstSignificantSubdomain('tr') = ''`.
 
-### cutToFirstSignificantSubdomainCustom {#cuttofirstsignificantsubdomaincustom}
+### cutToFirstSignificantSubdomainCustom
 
 Returns the part of the domain that includes top-level subdomains up to the first significant subdomain. Accepts custom [TLD list](https://en.wikipedia.org/wiki/List_of_Internet_top-level_domains) name.
 
@@ -185,7 +185,7 @@ Result:
 
 -   [firstSignificantSubdomain](#firstsignificantsubdomain).
 
-### cutToFirstSignificantSubdomainCustomWithWWW {#cuttofirstsignificantsubdomaincustomwithwww}
+### cutToFirstSignificantSubdomainCustomWithWWW
 
 Returns the part of the domain that includes top-level subdomains up to the first significant subdomain without stripping `www`. Accepts custom TLD list name.
 
@@ -239,7 +239,7 @@ Result:
 
 -   [firstSignificantSubdomain](#firstsignificantsubdomain).
 
-### firstSignificantSubdomainCustom {#firstsignificantsubdomaincustom}
+### firstSignificantSubdomainCustom
 
 Returns the first significant subdomain. Accepts customs TLD list name.
 
@@ -293,47 +293,47 @@ Result:
 
 -   [firstSignificantSubdomain](#firstsignificantsubdomain).
 
-### port(URL\[, default_port = 0\]) {#port}
+### port(URL\[, default_port = 0\])
 
 Returns the port or `default_port` if there is no port in the URL (or in case of validation error).
 
-### path {#path}
+### path
 
 Returns the path. Example: `/top/news.html` The path does not include the query string.
 
-### pathFull {#pathfull}
+### pathFull
 
 The same as above, but including query string and fragment. Example: /top/news.html?page=2#comments
 
-### queryString {#querystring}
+### queryString
 
 Returns the query string. Example: page=1&lr=213. query-string does not include the initial question mark, as well as # and everything after #.
 
-### fragment {#fragment}
+### fragment
 
 Returns the fragment identifier. fragment does not include the initial hash symbol.
 
-### queryStringAndFragment {#querystringandfragment}
+### queryStringAndFragment
 
 Returns the query string and fragment identifier. Example: page=1#29390.
 
-### extractURLParameter(URL, name) {#extracturlparameterurl-name}
+### extractURLParameter(URL, name)
 
 Returns the value of the ‘name’ parameter in the URL, if present. Otherwise, an empty string. If there are many parameters with this name, it returns the first occurrence. This function works under the assumption that the parameter name is encoded in the URL exactly the same way as in the passed argument.
 
-### extractURLParameters(URL) {#extracturlparametersurl}
+### extractURLParameters(URL)
 
 Returns an array of name=value strings corresponding to the URL parameters. The values are not decoded in any way.
 
-### extractURLParameterNames(URL) {#extracturlparameternamesurl}
+### extractURLParameterNames(URL)
 
 Returns an array of name strings corresponding to the names of URL parameters. The values are not decoded in any way.
 
-### URLHierarchy(URL) {#urlhierarchyurl}
+### URLHierarchy(URL)
 
 Returns an array containing the URL, truncated at the end by the symbols /,? in the path and query-string. Consecutive separator characters are counted as one. The cut is made in the position after all the consecutive separator characters.
 
-### URLPathHierarchy(URL) {#urlpathhierarchyurl}
+### URLPathHierarchy(URL)
 
 The same as above, but without the protocol and host in the result. The / element (root) is not included.
 
@@ -345,7 +345,7 @@ URLPathHierarchy('https://example.com/browse/CONV-6788') =
 ]
 ```
 
-### encodeURLComponent(URL) {#encodeurlcomponenturl}
+### encodeURLComponent(URL)
 
 Returns the encoded URL.
 Example:
@@ -360,7 +360,7 @@ SELECT encodeURLComponent('http://127.0.0.1:8123/?query=SELECT 1;') AS EncodedUR
 └──────────────────────────────────────────────────────────┘
 ```
 
-### decodeURLComponent(URL) {#decodeurlcomponenturl}
+### decodeURLComponent(URL)
 
 Returns the decoded URL.
 Example:
@@ -375,7 +375,7 @@ SELECT decodeURLComponent('http://127.0.0.1:8123/?query=SELECT%201%3B') AS Decod
 └────────────────────────────────────────┘
 ```
 
-### encodeURLFormComponent(URL) {#encodeurlformcomponenturl}
+### encodeURLFormComponent(URL)
 
 Returns the encoded URL. Follows rfc-1866, space(` `) is encoded as plus(`+`).
 Example:
@@ -390,7 +390,7 @@ SELECT encodeURLFormComponent('http://127.0.0.1:8123/?query=SELECT 1 2+3') AS En
 └───────────────────────────────────────────────────────────┘
 ```
 
-### decodeURLFormComponent(URL) {#decodeurlformcomponenturl}
+### decodeURLFormComponent(URL)
 
 Returns the decoded URL. Follows rfc-1866, plain plus(`+`) is decoded as space(` `).
 Example:
@@ -405,7 +405,7 @@ SELECT decodeURLFormComponent('http://127.0.0.1:8123/?query=SELECT%201+2%2B3') A
 └───────────────────────────────────────────┘
 ```
 
-### netloc {#netloc}
+### netloc
 
 Extracts network locality (`username:password@host:port`) from a URL.
 
@@ -441,27 +441,27 @@ Result:
 └───────────────────────────────────────────┘
 ```
 
-## Functions that Remove Part of a URL {#functions-that-remove-part-of-a-url}
+## Functions that Remove Part of a URL
 
 If the URL does not have anything similar, the URL remains unchanged.
 
-### cutWWW {#cutwww}
+### cutWWW
 
 Removes no more than one ‘www.’ from the beginning of the URL’s domain, if present.
 
-### cutQueryString {#cutquerystring}
+### cutQueryString
 
 Removes query string. The question mark is also removed.
 
-### cutFragment {#cutfragment}
+### cutFragment
 
 Removes the fragment identifier. The number sign is also removed.
 
-### cutQueryStringAndFragment {#cutquerystringandfragment}
+### cutQueryStringAndFragment
 
 Removes the query string and fragment identifier. The question mark and number sign are also removed.
 
-### cutURLParameter(URL, name) {#cuturlparameterurl-name}
+### cutURLParameter(URL, name)
 
 Removes the ‘name’ URL parameter, if present. This function works under the assumption that the parameter name is encoded in the URL exactly the same way as in the passed argument.
 

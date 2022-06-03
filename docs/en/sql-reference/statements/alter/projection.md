@@ -3,7 +3,7 @@ sidebar_position: 49
 sidebar_label: PROJECTION
 ---
 
-# Manipulating Projections {#manipulations-with-projections}
+# Manipulating Projections
 
 The following operations with [projections](../../../engines/table-engines/mergetree-family/mergetree.md#projections) are available:
 
