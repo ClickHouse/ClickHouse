@@ -246,12 +246,12 @@ std::unordered_map<String, IPartMetadataManager::uint128> PartMetadataManagerWit
         /// File belongs to normal part
         if (fs::path(part->data_part_storage->getFullRelativePath()) / file_name == file_path)
         {
-            auto disk_checksum = part->getActualChecksumByFile(file_path);
+            auto disk_checksum = part->getActualChecksumByFile(file_name);
             if (disk_checksum != cache_checksums[i])
                 throw Exception(
                     ErrorCodes::CORRUPTED_DATA,
-                    "Checksums doesn't match in part {}. Expected: {}. Found {}.",
-                    part->name,
+                    "Checksums doesn't match in part {} for {}. Expected: {}. Found {}.",
+                    part->name, file_path,
                     getHexUIntUppercase(disk_checksum.first) + getHexUIntUppercase(disk_checksum.second),
                     getHexUIntUppercase(cache_checksums[i].first) + getHexUIntUppercase(cache_checksums[i].second));
 
@@ -283,7 +283,7 @@ std::unordered_map<String, IPartMetadataManager::uint128> PartMetadataManagerWit
                 proj_name, part->name, file_path);
         }
 
-        auto disk_checksum = it->second->getActualChecksumByFile(file_path);
+        auto disk_checksum = it->second->getActualChecksumByFile(file_name);
         if (disk_checksum != cache_checksums[i])
             throw Exception(
                 ErrorCodes::CORRUPTED_DATA,

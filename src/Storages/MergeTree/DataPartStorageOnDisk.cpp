@@ -390,7 +390,8 @@ void DataPartStorageOnDisk::writeVersionMetadata(const VersionMetadata & version
             /// TODO IDisk interface does not allow to open file with O_EXCL flag (for DiskLocal),
             /// so we create empty file at first (expecting that createFile throws if file already exists)
             /// and then overwrite it.
-            auto buf = volume->getDisk()->writeFile(path + ".tmp", 4096);
+            volume->getDisk()->createFile(path + ".tmp");
+            auto buf = volume->getDisk()->writeFile(path + ".tmp", 256);
             version.write(*buf);
             buf->finalize();
             buf->sync();
