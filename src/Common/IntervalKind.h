@@ -37,6 +37,9 @@ struct IntervalKind
     /// For example, `IntervalKind::fromAvgSeconds(3600)` returns `IntervalKind::Hour`.
     static IntervalKind fromAvgSeconds(Int64 num_seconds);
 
+    /// Returns whether IntervalKind has a fixed number of seconds (e.g. Day) or non-fixed(e.g. Month)
+    bool isFixedLength();
+
     /// Returns an uppercased version of what `toString()` returns.
     const char * toKeyword() const;
 

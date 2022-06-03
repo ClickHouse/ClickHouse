@@ -2207,8 +2207,7 @@ struct WindowFunctionNonNegativeDerivative final : public RecurrentWindowFunctio
                     ARGUMENT_INTERVAL,
                     argument_types[ARGUMENT_INTERVAL]->getName());
             }
-            if (interval_datatype->getKind() == IntervalKind::Month || interval_datatype->getKind() == IntervalKind::Quarter
-                || interval_datatype->getKind() == IntervalKind::Year)
+            if (!interval_datatype->getKind().isFixedLength())
             {
                 throw Exception(
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
@@ -2239,9 +2238,9 @@ struct WindowFunctionNonNegativeDerivative final : public RecurrentWindowFunctio
         Float64 curr_metric = getCurrentValueFromInputColumn<Float64>(transform, function_index, ARGUMENT_METRIC);
         Float64 curr_timestamp = getCurrentValueFromInputColumn<Float64>(transform, function_index, ARGUMENT_TIMESTAMP);
 
-        Float64 time_elapsed = last_timestamp - curr_timestamp;
-        Float64 metric_diff = last_metric - curr_metric;
-        Float64 result = metric_diff / time_elapsed * interval_duration;
+        Float64 time_elapsed = curr_timestamp - last_timestamp;
+        Float64 metric_diff = curr_metric - last_metric;
+        Float64 result = time_elapsed != 0 ? metric_diff / time_elapsed * interval_duration : 0;
 
         setValueToOutputColumn(transform, function_index, result >= 0 ? result : 0);
     }

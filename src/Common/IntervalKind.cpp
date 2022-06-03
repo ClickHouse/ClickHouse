@@ -28,6 +28,25 @@ Float64 IntervalKind::toAvgSeconds() const
     __builtin_unreachable();
 }
 
+bool IntervalKind::isFixedLength()
+{
+    switch (kind)
+    {
+        case IntervalKind::Nanosecond:
+        case IntervalKind::Microsecond:
+        case IntervalKind::Millisecond:
+        case IntervalKind::Second:
+        case IntervalKind::Minute:
+        case IntervalKind::Hour:
+        case IntervalKind::Day:
+        case IntervalKind::Week: return true;
+        case IntervalKind::Month:
+        case IntervalKind::Quarter:
+        case IntervalKind::Year: return false;
+    }
+    __builtin_unreachable();
+}
+
 IntervalKind IntervalKind::fromAvgSeconds(Int64 num_seconds)
 {
     if (num_seconds)
