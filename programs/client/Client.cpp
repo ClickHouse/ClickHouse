@@ -185,6 +185,9 @@ void Client::initialize(Poco::Util::Application & self)
     // global_context->setApplicationType(Context::ApplicationType::CLIENT);
     global_context->setQueryParameters(query_parameters);
 
+    size_t query_cache_size_in_bytes = config().getUInt64("query_cache_size_in_bytes", 1ULL << 30);
+    global_context->setQueryCache(query_cache_size_in_bytes);
+
     /// settings and limits could be specified in config file, but passed settings has higher priority
     for (const auto & setting : global_context->getSettingsRef().allUnchanged())
     {
