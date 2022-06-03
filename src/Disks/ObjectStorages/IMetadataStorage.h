@@ -10,6 +10,7 @@
 #include <IO/WriteBufferFromFileBase.h>
 #include <Disks/DirectoryIterator.h>
 #include <Disks/WriteMode.h>
+#include <Disks/ObjectStorages/IMetadata.h>
 
 namespace DB
 {
@@ -38,7 +39,6 @@ using MetadataTransactionPtr = std::shared_ptr<IMetadataTransaction>;
 
 class IMetadataStorage : private boost::noncopyable
 {
-
 public:
     virtual MetadataTransactionPtr createTransaction() const = 0;
 
@@ -85,6 +85,16 @@ public:
     virtual void replaceFile(const std::string & path_from, const std::string & path_to, MetadataTransactionPtr transaction) = 0;
 
     virtual ~IMetadataStorage() = default;
+
+    virtual MetadataPtr readMetadata(const std::string & path) const = 0;
+
+    virtual MetadataPtr updateMetadata(const std::string & path, bool sync, std::function<void(IMetadata & metadata)> && updater) = 0;
+
+    virtual MetadataPtr updateOrCreateMetadata(const std::string & path, bool sync, std::function<void(IMetadata & metadata)> && updater) = 0;
+
+    virtual void updateAndRemoveMetadata(const std::string & path, bool sync, std::function<bool(IMetadata & metadata)> && updater) = 0;
+
+    virtual std::unordered_map<String, String> getSerializedMetadata(const std::vector<String> & file_paths) const = 0;
 };
 
 using MetadataStoragePtr = std::shared_ptr<IMetadataStorage>;

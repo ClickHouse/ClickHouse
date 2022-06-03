@@ -11,6 +11,8 @@ namespace ErrorCodes
 {
     extern const int FS_METADATA_ERROR;
     extern const int LOGICAL_ERROR;
+    extern const int CANNOT_OPEN_FILE;
+    extern const int FILE_DOESNT_EXIST;
 }
 
 
@@ -553,6 +555,107 @@ void MetadataStorageFromDisk::moveDirectory(const std::string & path_from, const
 void MetadataStorageFromDisk::replaceFile(const std::string & path_from, const std::string & path_to, MetadataTransactionPtr transaction)
 {
     transaction->addOperation(std::make_unique<ReplaceFileOperation>(path_from, path_to, *disk));
+}
+
+MetadataPtr MetadataStorageFromDisk::readMetadata(const std::string & path) const
+{
+    auto metadata = std::make_unique<DiskObjectStorageMetadata>(disk->getPath(), root_path_for_remote_metadata, path);
+    auto buf = readFile(path);
+    metadata->deserialize(*buf);
+    return metadata;
+}
+
+MetadataPtr MetadataStorageFromDisk::updateMetadata(const std::string & path, bool sync, std::function<void(IMetadata & metadata)> && updater)
+{
+    auto metadata = std::make_unique<DiskObjectStorageMetadata>(disk->getPath(), root_path_for_remote_metadata, path);
+    auto buf = readFile(path);
+    metadata->deserialize(*buf);
+    updater(*metadata);
+    auto tx = createTransaction();
+    auto write_buf = writeFile(path, tx);
+    metadata->serialize(*write_buf, sync);
+    if (sync)
+        write_buf->sync();
+    tx->commit();
+    return metadata;
+}
+
+MetadataPtr MetadataStorageFromDisk::updateOrCreateMetadata(const std::string & path, bool sync, std::function<void(IMetadata & metadata)> && updater)
+{
+    auto metadata = std::make_unique<DiskObjectStorageMetadata>(disk->getPath(), root_path_for_remote_metadata, path);
+
+    if (exists(path))
+    {
+        auto buf = readFile(path);
+        metadata->deserialize(*buf);
+    }
+
+    updater(*metadata);
+    auto tx = createTransaction();
+    auto write_buf = writeFile(path, tx);
+    metadata->serialize(*write_buf, sync);
+    tx->commit();
+    return metadata;
+}
+
+void MetadataStorageFromDisk::updateAndRemoveMetadata(const std::string & path, bool sync, std::function<bool(IMetadata & metadata)> && updater)
+{
+    /// Very often we are deleting metadata from some unfinished operation (like fetch of metadata)
+    /// in this case metadata file can be incomplete/empty and so on. It's ok to remove it in this case
+    /// because we cannot do anything better.
+    try
+    {
+        auto metadata = std::make_unique<DiskObjectStorageMetadata>(disk->getPath(), root_path_for_remote_metadata, path);
+        auto buf = readFile(path);
+        metadata->deserialize(*buf);
+        auto tx = createTransaction();
+        if (updater(*metadata))
+        {
+            auto write_buf = writeFile(path, tx);
+            metadata->serialize(*write_buf, sync);
+        }
+
+        unlinkFile(path, tx);
+        tx->commit();
+    }
+    catch (Exception & ex)
+    {
+        /// If we have some broken half-empty file just remove it
+        if (ex.code() == ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF
+            || ex.code() == ErrorCodes::CANNOT_READ_ALL_DATA
+            || ex.code() == ErrorCodes::CANNOT_OPEN_FILE)
+        {
+            LOG_INFO(&Poco::Logger::get("ObjectStorageMetadata"), "Failed to read metadata file {} before removal because it's incomplete or empty. "
+                     "It's Ok and can happen after operation interruption (like metadata fetch), so removing as is", path);
+
+            auto tx = createTransaction();
+            unlinkFile(path, tx);
+            tx->commit();
+        }
+
+        /// If file already removed, than nothing to do
+        if (ex.code() == ErrorCodes::FILE_DOESNT_EXIST)
+            return;
+
+        throw;
+    }
+}
+
+std::unordered_map<String, String> MetadataStorageFromDisk::getSerializedMetadata(const std::vector<String> & file_paths) const
+{
+    std::unordered_map<String, String> metadatas;
+
+    for (const auto & path : file_paths)
+    {
+        auto metadata = readMetadata(path);
+        metadata->resetRefCount();
+        WriteBufferFromOwnString buf;
+        metadata->serialize(buf, false);
+        metadatas[path] = buf.str();
+    }
+
+    return metadatas;
+
 }
 
 }
