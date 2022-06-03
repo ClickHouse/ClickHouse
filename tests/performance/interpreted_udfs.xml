@@ -1,0 +1,24 @@
+<test>
+    <!--TODO add simple query tests-->
+    <!--
+    apt install python3 python3-pip julia r-base
+    pip install numpy scipy
+    -->
+    <create_query>CREATE TABLE data_1m(a Int64, b Int64) ENGINE = MergeTree ORDER BY a</create_query>
+    <create_query>CREATE FUNCTION aplusb_py(a, b) 'return a + b' USING python</create_query>
+    <create_query>CREATE FUNCTION aplusb_jl(a, b) 'return a .+ b' USING julia</create_query>
+    <create_query>CREATE FUNCTION aplusb_r(a, b) 'return(a + b)' USING R</create_query>
+
+    <fill_query>INSERT INTO data_1m SELECT number, 1000000 - number FROM numbers(1000000)</fill_query>
+
+    <!--1st and 2nd queries are essentially the same. Remove one of them?-->
+    <query>SELECT a + b FROM data_1m</query>
+    <query>SELECT aplusb_py(a, b) FROM data_1m</query>
+    <query>SELECT aplusb_jl(a, b) FROM data_1m</query>
+    <query>SELECT aplusb_r(a, b) FROM data_1m</query>
+
+    <drop_query>DROP TABLE IF EXISTS data_1m</drop_query>
+    <drop_query>DROP FUNCTION IF EXISTS aplusb_py</drop_query>
+    <drop_query>DROP FUNCTION IF EXISTS aplusb_jl</drop_query>
+    <drop_query>DROP FUNCTION IF EXISTS aplusb_r</drop_query>
+</test>
