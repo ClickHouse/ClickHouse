@@ -7128,6 +7128,13 @@ bool StorageReplicatedMergeTree::dropPartImpl(
             return false;
         }
 
+        if (merge_pred.partParticipatesInReplaceRange(part, &out_reason))
+        {
+            if (throw_if_noop)
+                throw Exception(ErrorCodes::PART_IS_TEMPORARILY_LOCKED, out_reason);
+            return false;
+        }
+
         if (partIsLastQuorumPart(part->info))
         {
             if (throw_if_noop)
