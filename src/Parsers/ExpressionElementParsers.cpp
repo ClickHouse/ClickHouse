@@ -803,6 +803,20 @@ namespace
         node = makeASTFunction("exists", subquery);
         return true;
     }
+
+    bool parseGrouping(IParser::Pos & pos, ASTPtr & node, Expected & expected)
+    {
+        ASTPtr expr_list;
+        if (!ParserExpressionList(false, false).parse(pos, expr_list, expected))
+            return false;
+
+        auto res = std::make_shared<ASTFunction>();
+        res->name = "grouping";
+        res->arguments = expr_list;
+        res->children.push_back(res->arguments);
+        node = std::move(res);
+        return true;
+    }
 }
 
 
@@ -888,6 +902,8 @@ bool ParserFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     else if (function_name_lowercase == "datediff" || function_name_lowercase == "date_diff"
         || function_name_lowercase == "timestampdiff" || function_name_lowercase == "timestamp_diff")
         parsed_special_function = parseDateDiff(pos, node, expected);
+    else if (function_name_lowercase == "grouping")
+        parsed_special_function = parseGrouping(pos, node, expected);
 
     if (parsed_special_function.has_value())
         return parsed_special_function.value() && ParserToken(TokenType::ClosingRoundBracket).ignore(pos);

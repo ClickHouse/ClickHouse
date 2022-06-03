@@ -287,7 +287,7 @@ void DDLWorker::scheduleTasks(bool reinitialized)
     Strings queue_nodes = zookeeper->getChildren(queue_dir, &queue_node_stat, queue_updated_event);
     size_t size_before_filtering = queue_nodes.size();
     filterAndSortQueueNodes(queue_nodes);
-    /// The following message is too verbose, but it can be useful too debug mysterious test failures in CI
+    /// The following message is too verbose, but it can be useful to debug mysterious test failures in CI
     LOG_TRACE(log, "scheduleTasks: initialized={}, size_before_filtering={}, queue_size={}, "
                    "entries={}..{}, "
                    "first_failed_task_name={}, current_tasks_size={}, "

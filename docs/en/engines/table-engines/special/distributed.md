@@ -3,7 +3,7 @@ sidebar_position: 10
 sidebar_label: Distributed
 ---
 
-# Distributed Table Engine {#distributed}
+# Distributed Table Engine
 
 Tables with Distributed engine do not store any data of their own, but allow distributed query processing on multiple servers.
 Reading is automatically parallelized. During a read, the table indexes on remote servers are used, if there are any.
@@ -209,13 +209,13 @@ When querying a `Distributed` table, `SELECT` queries are sent to all shards and
 
 When the `max_parallel_replicas` option is enabled, query processing is parallelized across all replicas within a single shard. For more information, see the section [max_parallel_replicas](../../../operations/settings/settings.md#settings-max_parallel_replicas).
 
-To learn more about how distibuted `in` and `global in` queries are processed, refer to [this](../../../sql-reference/operators/in.md#select-distributed-subqueries) documentation. 
+To learn more about how distibuted `in` and `global in` queries are processed, refer to [this](../../../sql-reference/operators/in.md#select-distributed-subqueries) documentation.
 
 ## Virtual Columns {#virtual-columns}
 
 -   `_shard_num` — Contains the `shard_num` value from the table `system.clusters`. Type: [UInt32](../../../sql-reference/data-types/int-uint.md).
 
-:::note    
+:::note
 Since [remote](../../../sql-reference/table-functions/remote.md) and [cluster](../../../sql-reference/table-functions/cluster.md) table functions internally create temporary Distributed table, `_shard_num` is available there too.
 :::
 
