@@ -37,8 +37,8 @@ public:
 
 private:
     const std::string name;
-    const std::string method;
     std::string model_path;
+    const std::string method;
     ExternalLoadableLifetime lifetime;
 
     std::unique_ptr<MlpackModelImpl> model;

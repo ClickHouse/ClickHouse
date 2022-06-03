@@ -158,11 +158,11 @@ static String prepareQueryForLogging(const String & query, ContextPtr context)
 
 
 /// Log query into text log (not into system table).
-static void logQuery(const String & query, ContextPtr context, bool internal)
+static void logQuery(const String & query, ContextPtr context, bool internal, QueryProcessingStage::Enum stage)
 {
     if (internal)
     {
-        LOG_DEBUG(&Poco::Logger::get("executeQuery"), "(internal) {}", joinLines(query));
+        LOG_DEBUG(&Poco::Logger::get("executeQuery"), "(internal) {} (stage: {})", joinLines(query), QueryProcessingStage::toString(stage));
     }
     else
     {
@@ -185,13 +185,14 @@ static void logQuery(const String & query, ContextPtr context, bool internal)
         if (auto txn = context->getCurrentTransaction())
             transaction_info = fmt::format(" (TID: {}, TIDH: {})", txn->tid, txn->tid.getHash());
 
-        LOG_DEBUG(&Poco::Logger::get("executeQuery"), "(from {}{}{}){}{} {}",
+        LOG_DEBUG(&Poco::Logger::get("executeQuery"), "(from {}{}{}){}{} {} (stage: {})",
             client_info.current_address.toString(),
             (current_user != "default" ? ", user: " + current_user : ""),
             (!initial_query_id.empty() && current_query_id != initial_query_id ? ", initial_query_id: " + initial_query_id : std::string()),
             transaction_info,
             comment,
-            joinLines(query));
+            joinLines(query),
+            QueryProcessingStage::toString(stage));
 
         if (client_info.client_trace_context.trace_id != UUID())
         {
@@ -443,9 +444,10 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
         if (auto txn = context->getCurrentTransaction())
         {
-            assert(txn->getState() != MergeTreeTransaction::COMMITTED);
+            chassert(txn->getState() != MergeTreeTransaction::COMMITTING);
+            chassert(txn->getState() != MergeTreeTransaction::COMMITTED);
             if (txn->getState() == MergeTreeTransaction::ROLLED_BACK && !ast->as<ASTTransactionControl>() && !ast->as<ASTExplainQuery>())
-                throw Exception(ErrorCodes::INVALID_TRANSACTION, "Cannot execute query: transaction is rolled back");
+                throw Exception(ErrorCodes::INVALID_TRANSACTION, "Cannot execute query because current transaction failed. Expecting ROLLBACK statement.");
         }
 
         /// Interpret SETTINGS clauses as early as possible (before invoking the corresponding interpreter),
@@ -498,7 +500,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         String query = String(begin, begin + std::min(end - begin, static_cast<ptrdiff_t>(max_query_size)));
 
         auto query_for_logging = prepareQueryForLogging(query, context);
-        logQuery(query_for_logging, context, internal);
+        logQuery(query_for_logging, context, internal, stage);
 
         if (!internal)
         {
@@ -548,7 +550,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         /// since it substitute parameters and without them query does not contain
         /// parameters), to keep query as-is in query_log and server log.
         query_for_logging = prepareQueryForLogging(query, context);
-        logQuery(query_for_logging, context, internal);
+        logQuery(query_for_logging, context, internal, stage);
 
         /// Propagate WITH statement to children ASTSelect.
         if (settings.enable_global_with_statement)

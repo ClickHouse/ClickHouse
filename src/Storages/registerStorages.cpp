@@ -31,6 +31,9 @@ void registerStorageLinReg(StorageFactory & factory);
 void registerStorageLogReg(StorageFactory & factory);
 void registerStorageLinearSVM(StorageFactory & factory);
 
+// MEILISEARCH
+void registerStorageMeiliSearch(StorageFactory& factory);
+
 #if USE_AWS_S3
 void registerStorageS3(StorageFactory & factory);
 void registerStorageCOS(StorageFactory & factory);
@@ -110,6 +113,9 @@ void registerStorages()
     registerStorageLinReg(factory);
     registerStorageLogReg(factory);
     registerStorageLinearSVM(factory);
+
+    // MEILISEARCH
+    registerStorageMeiliSearch(factory);
 
     #if USE_AWS_S3
     registerStorageS3(factory);

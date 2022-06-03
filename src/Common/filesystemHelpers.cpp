@@ -1,10 +1,8 @@
 #include "filesystemHelpers.h"
 
-#include <sys/stat.h>
 #if defined(__linux__)
 #    include <cstdio>
 #    include <mntent.h>
-#    include <sys/stat.h>
 #    include <sys/sysmacros.h>
 #endif
 #include <cerrno>
@@ -13,6 +11,7 @@
 #include <filesystem>
 #include <fcntl.h>
 #include <unistd.h>
+#include <sys/stat.h>
 #include <sys/types.h>
 #include <utime.h>
 #include <IO/ReadBufferFromFile.h>

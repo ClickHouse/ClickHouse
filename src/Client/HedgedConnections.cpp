@@ -100,7 +100,11 @@ void HedgedConnections::sendExternalTablesData(std::vector<ExternalTablesData> &
     if (data.size() != size())
         throw Exception("Mismatch between replicas and data sources", ErrorCodes::MISMATCH_REPLICAS_DATA_SOURCES);
 
-    auto send_external_tables_data = [&data](ReplicaState & replica) { replica.connection->sendExternalTablesData(data[0]); };
+    auto send_external_tables_data = [&](ReplicaState & replica)
+    {
+        size_t offset = fd_to_replica_location[replica.packet_receiver->getFileDescriptor()].offset;
+        replica.connection->sendExternalTablesData(data[offset]);
+    };
 
     for (auto & offset_state : offset_states)
         for (auto & replica : offset_state.replicas)
@@ -341,7 +345,7 @@ HedgedConnections::ReplicaLocation HedgedConnections::getReadyReplicaLocation(As
         else
             throw Exception("Unknown event from epoll", ErrorCodes::LOGICAL_ERROR);
     }
-};
+}
 
 bool HedgedConnections::resumePacketReceiver(const HedgedConnections::ReplicaLocation & location)
 {
