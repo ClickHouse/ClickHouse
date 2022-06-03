@@ -142,12 +142,13 @@ public:
         fs::path p(path);
         while (!disk.exists(p))
         {
-            disk.createDirectory(p);
             paths_created.push_back(p);
             if (!p.has_parent_path())
                 break;
             p = p.parent_path();
         }
+        for (const auto & path_to_create : paths_created | std::views::reverse)
+            disk.createDirectory(path_to_create);
     }
 
     void undo() override
@@ -332,24 +333,23 @@ class WriteFileOperation final : public IMetadataOperation
 {
 private:
     std::string path;
-    std::string temp_path;
     IDisk & disk;
 public:
-    WriteFileOperation(const std::string & path_, const std::string & temp_path_, IDisk & disk_)
+    WriteFileOperation(const std::string & path_, IDisk & disk_)
         : path(path_)
-        , temp_path(temp_path_)
         , disk(disk_)
     {}
 
     void execute() override
     {
-        disk.moveFile(temp_path, path);
+        /// Cannot do move here because some code relies on hardlinks.
+        /// It's impossible to rewrite file and move to hardlink it
+        /// will became a separate file. Some don't use tmp->move method here.
     }
 
     void undo() override
     {
         disk.removeFileIfExists(path);
-        disk.removeFileIfExists(temp_path);
     }
 };
 
@@ -361,9 +361,8 @@ std::unique_ptr<WriteBufferFromFileBase> MetadataStorageFromDisk::writeFile( ///
      size_t buf_size,
      const WriteSettings & settings)
 {
-    std::string temp_path = getTempFileName();
-    transaction->addOperation(std::make_unique<WriteFileOperation>(path, temp_path, *disk));
-    return disk->writeFile(temp_path, buf_size, WriteMode::Rewrite, settings);
+    transaction->addOperation(std::make_unique<WriteFileOperation>(path, *disk));
+    return disk->writeFile(path, buf_size, WriteMode::Rewrite, settings);
 }
 
 
