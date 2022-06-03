@@ -280,6 +280,15 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
             AggregatingTransformParamsPtr transform_params;
             if (projection)
             {
+                /// This part is hacky.
+                /// We want AggregatingTransform to work with aggregate states instead of normal columns.
+                /// It is almost the same, just instead of adding new data to aggregation state we merge it with existing.
+                ///
+                /// It is needed because data in projection:
+                /// * is not merged completely (we may have states with the same key in different parts)
+                /// * is not split into buckets (so if we just use MergingAggregated, it will use single thread)
+                const bool only_merge = true;
+
                 Aggregator::Params params(
                     header_before_aggregation,
                     keys,
@@ -296,19 +305,12 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
                     settings.min_free_disk_space_for_temporary_data,
                     settings.compile_expressions,
                     settings.min_count_to_compile_aggregate_expression,
-                    header_before_aggregation); // The source header is also an intermediate header
+                    only_merge);
 
                 transform_params = std::make_shared<AggregatingTransformParams>(
                     std::move(params), aggregator_list_ptr, query_info.projection->aggregate_final);
 
-                /// This part is hacky.
-                /// We want AggregatingTransform to work with aggregate states instead of normal columns.
-                /// It is almost the same, just instead of adding new data to aggregation state we merge it with existing.
-                ///
-                /// It is needed because data in projection:
-                /// * is not merged completely (we may have states with the same key in different parts)
-                /// * is not split into buckets (so if we just use MergingAggregated, it will use single thread)
-                transform_params->only_merge = true;
+                transform_params->only_merge = only_merge;
             }
             else
             {

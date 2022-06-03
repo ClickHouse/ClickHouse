@@ -2200,7 +2200,8 @@ static Aggregator::Params getAggregatorParams(
         settings.max_entries_for_hash_table_stats,
         settings.max_size_to_preallocate_for_aggregation);
 
-    return Aggregator::Params{
+    return Aggregator::Params
+    {
         current_data_stream_header,
         keys,
         aggregates,
@@ -2218,7 +2219,7 @@ static Aggregator::Params getAggregatorParams(
         settings.min_free_disk_space_for_temporary_data,
         settings.compile_aggregate_expressions,
         settings.min_count_to_compile_aggregate_expression,
-        Block{},
+        /* only_merge */ false,
         stats_collecting_params
     };
 }

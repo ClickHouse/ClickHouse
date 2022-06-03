@@ -263,7 +263,7 @@ auto constructWithReserveIfPossible(size_t size_hint)
 
 DB::ColumnNumbers calculateKeysPositions(const DB::Aggregator::Params & params)
 {
-    const auto & header = params.src_header ? params.src_header : params.intermediate_header;
+    const auto & header = params.header;
     DB::ColumnNumbers keys_positions(params.keys_size);
     for (size_t i = 0; i < params.keys_size; ++i)
         keys_positions[i] = header.getPositionByName(params.keys[i]);
@@ -369,13 +369,13 @@ Block Aggregator::getHeader(bool final) const
 }
 
 Block Aggregator::Params::getHeader(
-    const Block & src_header, const Block & intermediate_header, const Names & keys, const AggregateDescriptions & aggregates, bool final)
+    const Block & header, bool only_merge, const Names & keys, const AggregateDescriptions & aggregates, bool final)
 {
     Block res;
 
-    if (intermediate_header)
+    if (only_merge)
     {
-        res = intermediate_header.cloneEmpty();
+        res = header.cloneEmpty();
 
         if (final)
         {
@@ -391,14 +391,14 @@ Block Aggregator::Params::getHeader(
     else
     {
         for (const auto & key : keys)
-            res.insert(src_header.getByName(key).cloneEmpty());
+            res.insert(header.getByName(key).cloneEmpty());
 
         for (const auto & aggregate : aggregates)
         {
             size_t arguments_size = aggregate.argument_names.size();
             DataTypes argument_types(arguments_size);
             for (size_t j = 0; j < arguments_size; ++j)
-                argument_types[j] = src_header.getByName(aggregate.argument_names[j]).type;
+                argument_types[j] = header.getByName(aggregate.argument_names[j]).type;
 
             DataTypePtr type;
             if (final)
@@ -642,7 +642,7 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod()
 
     for (const auto & key : params.keys)
     {
-        DataTypePtr type = (params.src_header ? params.src_header : params.intermediate_header).getByName(key).type;
+        DataTypePtr type = params.header.getByName(key).type;
 
         if (type->lowCardinality())
         {
@@ -1221,7 +1221,7 @@ void Aggregator::prepareAggregateInstructions(
 
         for (size_t j = 0; j < aggregate_columns[i].size(); ++j)
         {
-            const auto pos = params.src_header.getPositionByName(params.aggregates[i].argument_names[j]);
+            const auto pos = params.header.getPositionByName(params.aggregates[i].argument_names[j]);
             materialized_columns.push_back(columns.at(pos)->convertToFullColumnIfConst());
             aggregate_columns[i][j] = materialized_columns.back().get();
 

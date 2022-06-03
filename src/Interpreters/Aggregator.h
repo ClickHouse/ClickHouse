@@ -893,9 +893,7 @@ public:
     struct Params
     {
         /// Data structure of source blocks.
-        Block src_header;
-        /// Data structure of intermediate blocks before merge.
-        Block intermediate_header;
+        Block header;
 
         /// What to count.
         const Names keys;
@@ -932,6 +930,8 @@ public:
         bool compile_aggregate_expressions;
         size_t min_count_to_compile_aggregate_expression;
 
+        bool only_merge;
+
         struct StatsCollectingParams
         {
             StatsCollectingParams();
@@ -952,7 +952,7 @@ public:
         StatsCollectingParams stats_collecting_params;
 
         Params(
-            const Block & src_header_,
+            const Block & header_,
             const Names & keys_,
             const AggregateDescriptions & aggregates_,
             bool overflow_row_,
@@ -967,10 +967,9 @@ public:
             size_t min_free_disk_space_,
             bool compile_aggregate_expressions_,
             size_t min_count_to_compile_aggregate_expression_,
-            const Block & intermediate_header_ = {},
+            bool only_merge_ = false,
             const StatsCollectingParams & stats_collecting_params_ = {})
-            : src_header(src_header_)
-            , intermediate_header(intermediate_header_)
+            : header(header_)
             , keys(keys_)
             , aggregates(aggregates_)
             , keys_size(keys.size())
@@ -987,33 +986,27 @@ public:
             , min_free_disk_space(min_free_disk_space_)
             , compile_aggregate_expressions(compile_aggregate_expressions_)
             , min_count_to_compile_aggregate_expression(min_count_to_compile_aggregate_expression_)
+            , only_merge(only_merge_)
             , stats_collecting_params(stats_collecting_params_)
         {
         }
 
         /// Only parameters that matter during merge.
         Params(
-            const Block & intermediate_header_,
+            const Block & header_,
             const Names & keys_,
             const AggregateDescriptions & aggregates_,
             bool overflow_row_,
             size_t max_threads_)
-            : Params(Block(), keys_, aggregates_, overflow_row_, 0, OverflowMode::THROW, 0, 0, 0, false, nullptr, max_threads_, 0, false, 0, {}, {})
+            : Params(
+                header_, keys_, aggregates_, overflow_row_, 0, OverflowMode::THROW, 0, 0, 0, false, nullptr, max_threads_, 0, false, 0, true, {})
         {
-            intermediate_header = intermediate_header_;
         }
 
-        static Block getHeader(
-            const Block & src_header,
-            const Block & intermediate_header,
-            const Names & keys,
-            const AggregateDescriptions & aggregates,
-            bool final);
+        static Block
+        getHeader(const Block & header, bool only_merge, const Names & keys, const AggregateDescriptions & aggregates, bool final);
 
-        Block getHeader(bool final) const
-        {
-            return getHeader(src_header, intermediate_header, keys, aggregates, final);
-        }
+        Block getHeader(bool final) const { return getHeader(header, only_merge, keys, aggregates, final); }
 
         /// Returns keys and aggregated for EXPLAIN query
         void explain(WriteBuffer & out, size_t indent) const;

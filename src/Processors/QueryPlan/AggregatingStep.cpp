@@ -151,7 +151,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
             {
                 Aggregator::Params params_for_set
                 {
-                    transform_params->params.src_header,
+                    transform_params->params.header,
                     grouping_sets_params[i].used_keys,
                     transform_params->params.aggregates,
                     transform_params->params.overflow_row,
@@ -166,7 +166,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                     transform_params->params.min_free_disk_space,
                     transform_params->params.compile_aggregate_expressions,
                     transform_params->params.min_count_to_compile_aggregate_expression,
-                    transform_params->params.intermediate_header,
+                    /* only_merge */ false,
                     transform_params->params.stats_collecting_params
                 };
                 auto transform_params_for_set = std::make_shared<AggregatingTransformParams>(std::move(params_for_set), final);
