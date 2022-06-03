@@ -106,7 +106,7 @@ public:
 
     bool reserve(size_t size);
 
-    void write(const char * from, size_t size, size_t offset_, bool finalize = false);
+    void write(const char * from, size_t size, size_t offset_);
 
     RemoteFileReaderPtr getRemoteFileReader();
 
@@ -156,6 +156,8 @@ public:
 
     [[noreturn]] void throwIfDetached() const;
 
+    bool isDetached() const;
+
 private:
     size_t availableSize() const { return reserved_size - downloaded_size; }
 
@@ -167,7 +169,6 @@ private:
     bool isDetached(std::lock_guard<std::mutex> & /* segment_lock */) const { return is_detached; }
     void markAsDetached(std::lock_guard<std::mutex> & segment_lock);
     [[noreturn]] void throwIfDetachedUnlocked(std::lock_guard<std::mutex> & segment_lock) const;
-    void resizeToDownloadedSize(std::lock_guard<std::mutex> & segment_lock, std::lock_guard<std::mutex> & cache_lock);
 
     void assertDetachedStatus(std::lock_guard<std::mutex> & segment_lock) const;
     void assertNotDetached(std::lock_guard<std::mutex> & segment_lock) const;

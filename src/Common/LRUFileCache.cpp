@@ -114,7 +114,7 @@ FileSegments LRUFileCache::getImpl(
         /// Note: it is guaranteed that there is no concurrency with files delition,
         /// because cache files are deleted only inside IFileCache and under cache lock.
         if (fs::exists(key_path))
-            fs::remove(key_path);
+            fs::remove_all(key_path);
 
         return {};
     }
@@ -616,7 +616,7 @@ void LRUFileCache::removeIfExists(const Key & key)
     files.erase(key);
 
     if (fs::exists(key_path))
-        fs::remove(key_path);
+        fs::remove_all(key_path);
 }
 
 void LRUFileCache::removeIfReleasable(bool remove_persistent_files)
@@ -694,7 +694,7 @@ void LRUFileCache::remove(
                 files.erase(key);
 
                 if (fs::exists(key_path))
-                    fs::remove(key_path);
+                    fs::remove_all(key_path);
             }
         }
         catch (...)

@@ -61,6 +61,9 @@ void CachedWriteBufferFromFile::nextImpl()
 
 void CachedWriteBufferFromFile::cacheData(char * data, size_t size)
 {
+    if (stop_caching)
+        return;
+
     if (!cache_writer)
     {
         cache_writer = std::make_unique<FileSegmentRangeWriter>(
@@ -81,7 +84,11 @@ void CachedWriteBufferFromFile::cacheData(char * data, size_t size)
     }
 
     if (!cached)
+    {
+        /// No space left, disable caching.
+        stop_caching = true;
         return;
+    }
 
     ProfileEvents::increment(ProfileEvents::CachedWriteBufferCacheWriteBytes, size);
     ProfileEvents::increment(ProfileEvents::CachedWriteBufferCacheWriteMicroseconds, watch.elapsedMicroseconds());

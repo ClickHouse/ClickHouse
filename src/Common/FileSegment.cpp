@@ -93,6 +93,12 @@ size_t FileSegment::getRemainingSizeToDownload() const
     return range().size() - downloaded_size;
 }
 
+bool FileSegment::isDetached() const
+{
+    std::lock_guard segment_lock(mutex);
+    return is_detached;
+}
+
 size_t FileSegment::getDownloadedSize(std::lock_guard<std::mutex> & /* segment_lock */) const
 {
     if (download_state == State::DOWNLOADED)
@@ -100,13 +106,6 @@ size_t FileSegment::getDownloadedSize(std::lock_guard<std::mutex> & /* segment_l
 
     std::lock_guard download_lock(download_mutex);
     return downloaded_size;
-}
-
-void FileSegment::resizeToDownloadedSize(
-    std::lock_guard<std::mutex> & /* segment_lock */, std::lock_guard<std::mutex> & /* cache_lock */)
-{
-    LOG_TEST(log, "Resize cell {} to downloaded: {}", range().toString(), downloaded_size);
-    segment_range = Range(segment_range.left, segment_range.left + downloaded_size - 1);
 }
 
 String FileSegment::getCallerId()
@@ -215,7 +214,7 @@ void FileSegment::resetRemoteFileReader()
     remote_file_reader.reset();
 }
 
-void FileSegment::write(const char * from, size_t size, size_t offset_, bool finalize)
+void FileSegment::write(const char * from, size_t size, size_t offset_)
 {
     if (!size)
         throw Exception(ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR, "Writing zero size is not allowed");
@@ -278,17 +277,6 @@ void FileSegment::write(const char * from, size_t size, size_t offset_, bool fin
         cv.notify_all();
 
         throw;
-    }
-
-    if (finalize)
-    {
-        if (downloaded_size != range().size())
-            throw Exception(
-                ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR,
-                "Cannot finalize write, file segment is not downloaded ({} < {})", downloaded_size, range().size());
-
-        std::lock_guard segment_lock(mutex);
-        setDownloaded(segment_lock);
     }
 
     assert(getDownloadOffset() == offset_ + size);
@@ -450,7 +438,8 @@ void FileSegment::complete(State state, bool auto_resize)
     {
         if (auto_resize && downloaded_size != range().size())
         {
-            resizeToDownloadedSize(segment_lock, cache_lock);
+            LOG_TEST(log, "Resize cell {} to downloaded: {}", range().toString(), downloaded_size);
+            segment_range = Range(segment_range.left, segment_range.left + downloaded_size - 1);
         }
 
         /// Update states and finalize cache write buffer.
@@ -484,6 +473,9 @@ void FileSegment::complete(State state, bool auto_resize)
 void FileSegment::complete(std::lock_guard<std::mutex> & cache_lock)
 {
     std::lock_guard segment_lock(mutex);
+
+    if (is_detached)
+        return;
 
     assertNotDetached(segment_lock);
 
@@ -822,6 +814,12 @@ FileSegments::iterator FileSegmentRangeWriter::allocateFileSegment(size_t offset
 
 void FileSegmentRangeWriter::completeFileSegment(const FileSegmentPtr & file_segment)
 {
+    if (file_segment->isDetached())
+    {
+        /// File segment can be detached if space reservation failed.
+        return;
+    }
+
     if (file_segment->getDownloadedSize() > 0)
     {
         file_segment->getOrSetDownloader();
