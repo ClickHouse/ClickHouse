@@ -46,7 +46,11 @@ def assert_objects_count(cluster, objects_count, path="data/"):
 # files_overhead=1, files_overhead_per_insert=2
 @pytest.mark.parametrize(
     "log_engine,files_overhead,files_overhead_per_insert",
-    [("TinyLog", 1, 1), ("Log", 1, 2), ("StripeLog", 1, 2)],
+    [
+        pytest.param("TinyLog", 1, 1, id="TinyLog"),
+        pytest.param("Log", 1, 2, id="Log"),
+        pytest.param("StripeLog", 1, 2, id="StripeLog"),
+    ],
 )
 def test_log_family_s3(cluster, log_engine, files_overhead, files_overhead_per_insert):
     node = cluster.instances["node"]
