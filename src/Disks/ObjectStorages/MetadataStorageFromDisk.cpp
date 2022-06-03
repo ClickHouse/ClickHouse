@@ -485,6 +485,12 @@ Poco::Timestamp MetadataStorageFromDisk::getLastModified(const std::string & pat
     return disk->getLastModified(path);
 }
 
+uint64_t MetadataStorageFromDisk::getFileSize(const String & path) const
+{
+    auto metadata = readMetadata(path);
+    return metadata->getTotalSizeBytes();
+}
+
 std::vector<std::string> MetadataStorageFromDisk::listDirectory(const std::string & path) const
 {
     std::vector<std::string> result_files;
@@ -506,6 +512,13 @@ std::unique_ptr<ReadBufferFromFileBase> MetadataStorageFromDisk::readFile(  /// 
     return disk->readFile(path, settings, read_hint, file_size);
 }
 
+
+void MetadataStorageFromDisk::createMetadataFile(const std::string & path, MetadataTransactionPtr transaction)
+{
+    auto metadata = std::make_unique<DiskObjectStorageMetadata>(disk->getPath(), root_path_for_remote_metadata, path);
+    auto buf = writeFile(path, transaction);
+    metadata->serialize(*buf, false);
+}
 
 void MetadataStorageFromDisk::setLastModified(const std::string & path, const Poco::Timestamp & timestamp, MetadataTransactionPtr transaction)
 {
@@ -539,6 +552,10 @@ void MetadataStorageFromDisk::removeDirectory(const std::string & path, Metadata
 
 void MetadataStorageFromDisk::createHardLink(const std::string & path_from, const std::string & path_to, MetadataTransactionPtr transaction)
 {
+    auto metadata = readMetadata(path_from);
+    auto buf = writeFile(path_from, transaction);
+    metadata->incrementRefCount();
+    metadata->serialize(*buf, false);
     transaction->addOperation(std::make_unique<CreateHardlinkOperation>(path_from, path_to, *disk));
 }
 
@@ -555,6 +572,31 @@ void MetadataStorageFromDisk::moveDirectory(const std::string & path_from, const
 void MetadataStorageFromDisk::replaceFile(const std::string & path_from, const std::string & path_to, MetadataTransactionPtr transaction)
 {
     transaction->addOperation(std::make_unique<ReplaceFileOperation>(path_from, path_to, *disk));
+}
+
+
+void MetadataStorageFromDisk::setReadOnly(const std::string & path, MetadataTransactionPtr transaction)
+{
+    auto metadata = readMetadata(path);
+    metadata->setReadOnly();
+    auto buf = writeFile(path, transaction);
+    metadata->serialize(*buf, false);
+}
+
+
+void MetadataStorageFromDisk::addBlobToMetadata(const std::string & path, const std::string & blob_name, uint64_t size_in_bytes, MetadataTransactionPtr transaction)
+{
+    auto metadata = std::make_unique<DiskObjectStorageMetadata>(disk->getPath(), root_path_for_remote_metadata, path);
+    if (exists(path))
+    {
+        auto buf = readFile(path);
+        metadata->deserialize(*buf);
+    }
+
+    metadata->addObject(blob_name, size_in_bytes);
+
+    auto buf = writeFile(path, transaction);
+    metadata->serialize(*buf, false);
 }
 
 MetadataPtr MetadataStorageFromDisk::readMetadata(const std::string & path) const
@@ -655,7 +697,51 @@ std::unordered_map<String, String> MetadataStorageFromDisk::getSerializedMetadat
     }
 
     return metadatas;
+}
 
+std::vector<std::string> MetadataStorageFromDisk::getRemotePaths(const std::string & path) const
+{
+    auto metadata = readMetadata(path);
+
+    std::vector<std::string> remote_paths;
+    auto blobs = metadata->getBlobs();
+    auto root_path = metadata->getBlobsCommonPrefix();
+    remote_paths.reserve(blobs.size());
+    for (const auto & [remote_path, _] : blobs)
+        remote_paths.push_back(fs::path(root_path) / remote_path);
+
+    return remote_paths;
+}
+
+uint32_t MetadataStorageFromDisk::getHardlinkCount(const std::string & path) const
+{
+    auto metadata = readMetadata(path);
+    return metadata->getRefCount();
+}
+
+
+BlobsPathToSize MetadataStorageFromDisk::getBlobs(const std::string & path) const
+{
+    auto metadata = readMetadata(path);
+    return metadata->getBlobs();
+}
+
+
+uint32_t MetadataStorageFromDisk::unlinkAndGetHardlinkCount(const std::string & path, MetadataTransactionPtr transaction)
+{
+    auto metadata = readMetadata(path);
+    uint32_t ref_count = metadata->getRefCount();
+    if (ref_count == 0)
+    {
+        unlinkFile(path, transaction);
+    }
+    else
+    {
+        metadata->decrementRefCount();
+        auto buf = writeFile(path, transaction);
+        metadata->serialize(*buf, false);
+    }
+    return ref_count;
 }
 
 }

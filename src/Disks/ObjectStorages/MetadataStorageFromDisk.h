@@ -3,6 +3,7 @@
 #include <Disks/ObjectStorages/IMetadataStorage.h>
 
 #include <Disks/IDisk.h>
+#include <Disks/ObjectStorages/DiskObjectStorageMetadata.h>
 
 namespace DB
 {
@@ -37,9 +38,12 @@ class MetadataStorageFromDisk final : public IMetadataStorage
 {
 private:
     DiskPtr disk;
+    std::string root_path_for_remote_metadata;
+
 public:
-    explicit MetadataStorageFromDisk(DiskPtr disk_)
+    explicit MetadataStorageFromDisk(DiskPtr disk_, const std::string & root_path_from_remote_metadata_ = "")
         : disk(disk_)
+        , root_path_for_remote_metadata(root_path_from_remote_metadata_)
     {
     }
 
@@ -55,6 +59,8 @@ public:
     bool isFile(const std::string & path) const override;
 
     bool isDirectory(const std::string & path) const override;
+
+    uint64_t getFileSize(const String & path) const override;
 
     Poco::Timestamp getLastModified(const std::string & path) const override;
 
@@ -74,7 +80,13 @@ public:
          size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
          const WriteSettings & settings = {}) override;
 
+    void createMetadataFile(const std::string & path, MetadataTransactionPtr transaction) override;
+
+    void addBlobToMetadata(const std::string & path, const std::string & blob_name, uint64_t size_in_bytes, MetadataTransactionPtr transaction) override;
+
     void setLastModified(const std::string & path, const Poco::Timestamp & timestamp, MetadataTransactionPtr transaction) override;
+
+    void setReadOnly(const std::string & path, MetadataTransactionPtr transaction) override;
 
     void unlinkFile(const std::string & path, MetadataTransactionPtr transaction) override;
 
@@ -93,6 +105,26 @@ public:
     void moveDirectory(const std::string & path_from, const std::string & path_to, MetadataTransactionPtr transaction) override;
 
     void replaceFile(const std::string & path_from, const std::string & path_to, MetadataTransactionPtr transaction) override;
+
+    std::unordered_map<String, String> getSerializedMetadata(const std::vector<String> & file_paths) const override;
+
+    BlobsPathToSize getBlobs(const std::string & path) const override;
+
+    std::vector<std::string> getRemotePaths(const std::string & path) const override;
+
+    uint32_t getHardlinkCount(const std::string & path) const override;
+
+    uint32_t unlinkAndGetHardlinkCount(const std::string & path, MetadataTransactionPtr transaction) override;
+
+private:
+
+    MetadataPtr readMetadata(const std::string & path) const;
+
+    MetadataPtr updateMetadata(const std::string & path, bool sync, std::function<void(IMetadata & metadata)> && updater);
+
+    MetadataPtr updateOrCreateMetadata(const std::string & path, bool sync, std::function<void(IMetadata & metadata)> && updater);
+
+    void updateAndRemoveMetadata(const std::string & path, bool sync, std::function<bool(IMetadata & metadata)> && updater);
 
 };
 

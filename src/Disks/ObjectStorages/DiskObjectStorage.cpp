@@ -107,16 +107,7 @@ DiskObjectStorage::DiskObjectStorage(
 
 std::vector<String> DiskObjectStorage::getRemotePaths(const String & local_path) const
 {
-    auto metadata = metadata_storage->readMetadata(local_path);
-
-    std::vector<String> remote_paths;
-    auto blobs = metadata->getBlobs();
-    auto root_path = metadata->getBlobsCommonPrefix();
-    for (const auto & [remote_path, _] : blobs)
-        remote_paths.push_back(fs::path(root_path) / remote_path);
-
-    return remote_paths;
-
+    return metadata_storage->getRemoteDataPaths(local_path);
 }
 
 void DiskObjectStorage::getRemotePathsRecursive(const String & local_path, std::vector<LocalPathWithRemotePaths> & paths_map)
@@ -182,12 +173,14 @@ bool DiskObjectStorage::isFile(const String & path) const
 
 void DiskObjectStorage::createFile(const String & path)
 {
-    metadata_storage->updateOrCreateMetadata(path, false, [] (IMetadata &) {});
+    auto tx = metadata_storage->createTransaction();
+    metadata_storage->createMetadataFile(path, tx);
+    tx->commit();
 }
 
 size_t DiskObjectStorage::getFileSize(const String & path) const
 {
-    return metadata_storage->readMetadata(path)->getTotalSizeBytes();
+    return metadata_storage->getFileSize();
 }
 
 void DiskObjectStorage::moveFile(const String & from_path, const String & to_path, bool should_send_metadata)
@@ -249,7 +242,7 @@ void DiskObjectStorage::removeFromRemoteFS(const std::vector<String> & paths)
 
 UInt32 DiskObjectStorage::getRefCount(const String & path) const
 {
-    return metadata_storage->readMetadata(path)->getRefCount();
+    return metadata_storage->getHardlinkCount(path);
 }
 
 std::unordered_map<String, String> DiskObjectStorage::getSerializedMetadata(const std::vector<String> & file_paths) const
@@ -260,12 +253,10 @@ std::unordered_map<String, String> DiskObjectStorage::getSerializedMetadata(cons
 String DiskObjectStorage::getUniqueId(const String & path) const
 {
     LOG_TRACE(log, "Remote path: {}, Path: {}", remote_fs_root_path, path);
-    auto metadata = metadata_storage->readMetadata(path);
     String id;
-    auto blobs = metadata->getBlobs();
-    auto root_path = metadata->getBlobsCommonPrefix();
-    if (!blobs.empty())
-        id = root_path + blobs[0].relative_path;
+    auto blobs_paths = metadata_storage->getRemotePaths(path);
+    if (!blobs_paths.empty())
+        id = blobs_paths[0];
     return id;
 }
 
@@ -284,8 +275,6 @@ bool DiskObjectStorage::checkUniqueId(const String & id) const
 
 void DiskObjectStorage::createHardLink(const String & src_path, const String & dst_path, bool should_send_metadata)
 {
-    metadata_storage->updateMetadata(src_path, false, [](IMetadata & metadata) { metadata.incrementRefCount(); });
-
     if (should_send_metadata && !dst_path.starts_with("shadow/"))
     {
         auto revision = metadata_helper->revision_counter + 1;
@@ -313,7 +302,9 @@ void DiskObjectStorage::setReadOnly(const String & path)
 {
     /// We should store read only flag inside metadata file (instead of using FS flag),
     /// because we modify metadata file when create hard-links from it.
-    metadata_storage->updateMetadata(path, false, [](IMetadata & metadata) { metadata.setReadOnly(); });
+    auto tx = metadata_storage->createTransaction();
+    metadata_storage->setReadOnly(path, tx);
+    tx->commit();
 }
 
 
@@ -391,51 +382,18 @@ void DiskObjectStorage::removeMetadata(const String & path, std::vector<String> 
     if (!metadata_storage->isFile(path))
         throw Exception(ErrorCodes::BAD_FILE_TYPE, "Path '{}' is not a regular file", path);
 
-    try
+    auto tx = metadata_storage->createTransaction();
+    auto remote_objects = metadata_storage->getRemotePaths();
+
+    uint32_t hardlink_count = metadata_storage->unlinkAndGetHardlinkCount(path, tx);
+    if (hardlink_count == 0)
     {
-        auto metadata_updater = [&paths_to_remove, this] (IMetadata & metadata)
-        {
-            if (metadata.getRefCount() == 0)
-            {
-                auto blobs = metadata.getBlobs();
-                auto root_path = metadata.getBlobsCommonPrefix();
-                for (const auto & [remote_fs_object_path, _] : blobs)
-                {
-                    String object_path = fs::path(root_path) / remote_fs_object_path;
-                    paths_to_remove.push_back(object_path);
-                    object_storage->removeFromCache(object_path);
-                }
-
-                return false;
-            }
-            else /// In other case decrement number of references, save metadata and delete hardlink.
-            {
-                metadata.decrementRefCount();
-            }
-
-            return true;
-        };
-        metadata_storage->updateAndRemoveMetadata(path, false, metadata_updater);
-
-        /// If there is no references - delete content from remote FS.
+        paths_to_remove = remote_objects;
+        for (const auto & path : paths_to_remove)
+            object_storage->removeFromCache(path);
     }
-    catch (const Exception & e)
-    {
-        /// If it's impossible to read meta - just remove it from FS.
-        if (e.code() == ErrorCodes::UNKNOWN_FORMAT)
-        {
-            LOG_WARNING(log,
-                "Metadata file {} can't be read by reason: {}. Removing it forcibly.",
-                backQuote(path), e.nested() ? e.nested()->message() : e.message());
+    tx->commit():
 
-            std::unique_lock lock(metadata_mutex);
-            auto tx = metadata_storage->createTransaction();
-            metadata_storage->unlinkFile(path, tx);
-            tx->commit();
-        }
-        else
-            throw;
-    }
 }
 
 
@@ -547,8 +505,7 @@ std::unique_ptr<ReadBufferFromFileBase> DiskObjectStorage::readFile(
     std::optional<size_t> read_hint,
     std::optional<size_t> file_size) const
 {
-    auto metadata = metadata_storage->readMetadata(path);
-    return object_storage->readObjects(metadata->getBlobsCommonPrefix(), metadata->getBlobs(), settings, read_hint, file_size);
+    return object_storage->readObjects(remote_fs_root_path, metadata_storage->getBlobs(), settings, read_hint, file_size);
 }
 
 std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorage::writeFile(
@@ -572,8 +529,9 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorage::writeFile(
 
     auto create_metadata_callback = [this, path, blob_name] (size_t count)
     {
-        metadata_storage->updateOrCreateMetadata(path, false,
-            [blob_name, count] (IMetadata & metadata) { metadata.addObject(blob_name, count); return true; });
+        auto tx = metadata_storage->createTransaction();
+        metadata_storage->addBlobToMetadata(path, blob_name, count, tx);
+        tx->commit();
     };
 
     /// We always use mode Rewrite because we simulate append using metadata and different files

@@ -83,9 +83,7 @@ void DiskObjectStorageMetadataHelper::migrateFileToRestorableSchema(const String
 {
     LOG_TRACE(disk->log, "Migrate file {} to restorable schema", disk->metadata_storage->getPath() + path);
 
-    auto meta = disk->metadata_storage->readMetadata(path);
-
-    auto blobs = meta->getBlobs();
+    auto blobs = disk->metadata_storage->getBlobs(path);
     for (const auto & [key, _] : blobs)
     {
         ObjectAttributes metadata {
@@ -430,7 +428,9 @@ void DiskObjectStorageMetadataHelper::processRestoreFiles(IObjectStorage * sourc
             metadata.addObject(relative_key, meta.size_bytes);
         };
 
-        disk->metadata_storage->updateOrCreateMetadata(path, false, updater);
+        auto tx = disk->metadata_storage->createTransaction();
+        disk->metadata_storage->addBlobToMetadata(path, relative_key, meta.size_bytes, tx);
+        tx->commit();
 
         LOG_TRACE(disk->log, "Restored file {}", path);
     }
