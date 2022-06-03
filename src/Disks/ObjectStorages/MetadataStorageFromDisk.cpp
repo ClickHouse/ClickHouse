@@ -378,9 +378,9 @@ void MetadataStorageFromDiskTransaction::addOperation(MetadataOperationPtr && op
 
 void MetadataStorageFromDiskTransaction::commit()
 {
-    if (state != MetadataFromDiskTransactionState::COMMITTED)
+    if (state != MetadataFromDiskTransactionState::PREPARING)
         throw Exception(ErrorCodes::FS_METADATA_ERROR, "Cannot commit transaction in {} state, it should be in {} state",
-                        toString(state), toString(MetadataFromDiskTransactionState::COMMITTED));
+                        toString(state), toString(MetadataFromDiskTransactionState::PREPARING));
 
     for (size_t i = 0; i < operations.size(); ++i)
     {
