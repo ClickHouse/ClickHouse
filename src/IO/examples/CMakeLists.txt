@@ -79,3 +79,6 @@ target_link_libraries (snappy_read_buffer PRIVATE clickhouse_common_io)
 add_executable (hadoop_snappy_read_buffer hadoop_snappy_read_buffer.cpp)
 target_link_libraries (hadoop_snappy_read_buffer PRIVATE clickhouse_common_io)
 
+add_executable (perf_read_csv_string_into perf_read_csv_string_into.cpp)
+target_link_libraries (perf_read_csv_string_into PRIVATE clickhouse_common_io)
+

@@ -594,6 +594,12 @@ void readStringUntilEOFInto(Vector & s, ReadBuffer & buf);
 template <typename Vector>
 void readCSVStringInto(Vector & s, ReadBuffer & buf, const FormatSettings::CSV & settings);
 
+template <typename Vector>
+void readCSVStringIntoAVX2(Vector & s, ReadBuffer & buf, const FormatSettings::CSV & settings);
+
+template <typename Vector>
+void readCSVStringIntoAVX512(Vector & s, ReadBuffer & buf, const FormatSettings::CSV & settings);
+
 /// ReturnType is either bool or void. If bool, the function will return false instead of throwing an exception.
 template <typename Vector, typename ReturnType = void>
 ReturnType readJSONStringInto(Vector & s, ReadBuffer & buf);

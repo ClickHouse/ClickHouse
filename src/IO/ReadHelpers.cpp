@@ -15,6 +15,10 @@
     #include <emmintrin.h>
 #endif
 
+#if defined(__AVX512F__) || defined(__AVX512BW__) || defined(__AVX__) || defined(__AVX2__)
+#include <immintrin.h>
+#endif
+
 namespace DB
 {
 
@@ -680,7 +684,7 @@ void readCSVStringInto(Vector & s, ReadBuffer & buf, const FormatSettings::CSV &
 
             [&]()
             {
-#ifdef __SSE2__
+#if defined(__SSE2__)
                 auto rc = _mm_set1_epi8('\r');
                 auto nc = _mm_set1_epi8('\n');
                 auto dc = _mm_set1_epi8(delimiter);
@@ -692,6 +696,205 @@ void readCSVStringInto(Vector & s, ReadBuffer & buf, const FormatSettings::CSV &
                     if (bit_mask)
                     {
                         next_pos += __builtin_ctz(bit_mask);
+                        return;
+                    }
+                }
+#endif
+                while (next_pos < buf.buffer().end()
+                    && *next_pos != delimiter && *next_pos != '\r' && *next_pos != '\n')
+                    ++next_pos;
+            }();
+
+            appendToStringOrVector(s, buf, next_pos);
+            buf.position() = next_pos;
+
+            if (!buf.hasPendingData())
+                continue;
+
+            if constexpr (WithResize<Vector>)
+            {
+                /** CSV format can contain insignificant spaces and tabs.
+                * Usually the task of skipping them is for the calling code.
+                * But in this case, it will be difficult to do this, so remove the trailing whitespace by ourself.
+                */
+                size_t size = s.size();
+                while (size > 0 && (s[size - 1] == ' ' || s[size - 1] == '\t'))
+                    --size;
+
+                s.resize(size);
+            }
+            return;
+        }
+    }
+}
+template <typename Vector>
+void readCSVStringIntoAVX2(Vector & s, ReadBuffer & buf, const FormatSettings::CSV & settings)
+{
+    if (buf.eof())
+        throwReadAfterEOF();
+
+    const char delimiter = settings.delimiter;
+    const char maybe_quote = *buf.position();
+
+    /// Emptiness and not even in quotation marks.
+    if (maybe_quote == delimiter)
+        return;
+
+    if ((settings.allow_single_quotes && maybe_quote == '\'') || (settings.allow_double_quotes && maybe_quote == '"'))
+    {
+        ++buf.position();
+
+        /// The quoted case. We are looking for the next quotation mark.
+        while (!buf.eof())
+        {
+            char * next_pos = reinterpret_cast<char *>(memchr(buf.position(), maybe_quote, buf.buffer().end() - buf.position()));
+
+            if (nullptr == next_pos)
+                next_pos = buf.buffer().end();
+
+            appendToStringOrVector(s, buf, next_pos);
+            buf.position() = next_pos;
+
+            if (!buf.hasPendingData())
+                continue;
+
+            /// Now there is a quotation mark under the cursor. Is there any following?
+            ++buf.position();
+            if (buf.eof())
+                return;
+
+            if (*buf.position() == maybe_quote)
+            {
+                s.push_back(maybe_quote);
+                ++buf.position();
+                continue;
+            }
+
+            return;
+        }
+    }
+    else
+    {
+        /// Unquoted case. Look for delimiter or \r or \n.
+        while (!buf.eof())
+        {
+            char * next_pos = buf.position();
+
+            [&]()
+            {
+#if defined(__AVX__) && defined(__AVX2__)
+                auto rc = _mm256_set1_epi8('\r');
+                auto nc = _mm256_set1_epi8('\n');
+                auto dc = _mm256_set1_epi8(delimiter);
+                for (; next_pos + 31 < buf.buffer().end(); next_pos += 32)
+                {
+                    auto bytes = _mm256_loadu_si256(reinterpret_cast<const __m256i_u *>(next_pos));
+                    auto eq = _mm256_or_si256(
+                        _mm256_or_si256(_mm256_cmpeq_epi8(bytes, rc), _mm256_cmpeq_epi8(bytes, nc)), _mm256_cmpeq_epi8(bytes, dc));
+                    int bit_mask = _mm256_movemask_epi8 (eq);
+                    if (bit_mask)
+                    {
+                        next_pos += __builtin_ctz(bit_mask);
+                        return;
+                    }
+                }
+#endif
+                while (next_pos < buf.buffer().end()
+                    && *next_pos != delimiter && *next_pos != '\r' && *next_pos != '\n')
+                    ++next_pos;
+            }();
+
+            appendToStringOrVector(s, buf, next_pos);
+            buf.position() = next_pos;
+
+            if (!buf.hasPendingData())
+                continue;
+
+            if constexpr (WithResize<Vector>)
+            {
+                /** CSV format can contain insignificant spaces and tabs.
+                * Usually the task of skipping them is for the calling code.
+                * But in this case, it will be difficult to do this, so remove the trailing whitespace by ourself.
+                */
+                size_t size = s.size();
+                while (size > 0 && (s[size - 1] == ' ' || s[size - 1] == '\t'))
+                    --size;
+
+                s.resize(size);
+            }
+            return;
+        }
+    }
+}
+
+template <typename Vector>
+void readCSVStringIntoAVX512(Vector & s, ReadBuffer & buf, const FormatSettings::CSV & settings)
+{
+    if (buf.eof())
+        throwReadAfterEOF();
+
+    const char delimiter = settings.delimiter;
+    const char maybe_quote = *buf.position();
+
+    /// Emptiness and not even in quotation marks.
+    if (maybe_quote == delimiter)
+        return;
+
+    if ((settings.allow_single_quotes && maybe_quote == '\'') || (settings.allow_double_quotes && maybe_quote == '"'))
+    {
+        ++buf.position();
+
+        /// The quoted case. We are looking for the next quotation mark.
+        while (!buf.eof())
+        {
+            char * next_pos = reinterpret_cast<char *>(memchr(buf.position(), maybe_quote, buf.buffer().end() - buf.position()));
+
+            if (nullptr == next_pos)
+                next_pos = buf.buffer().end();
+
+            appendToStringOrVector(s, buf, next_pos);
+            buf.position() = next_pos;
+
+            if (!buf.hasPendingData())
+                continue;
+
+            /// Now there is a quotation mark under the cursor. Is there any following?
+            ++buf.position();
+            if (buf.eof())
+                return;
+
+            if (*buf.position() == maybe_quote)
+            {
+                s.push_back(maybe_quote);
+                ++buf.position();
+                continue;
+            }
+
+            return;
+        }
+    }
+    else
+    {
+        /// Unquoted case. Look for delimiter or \r or \n.
+        while (!buf.eof())
+        {
+            char * next_pos = buf.position();
+
+            [&]()
+            {
+#if defined(__AVX512F__) && defined(__AVX512BW__)
+                auto rc = _mm512_set1_epi8('\r');
+                auto nc = _mm512_set1_epi8('\n');
+                auto dc = _mm512_set1_epi8(delimiter);
+                for (; next_pos + 63 < buf.buffer().end(); next_pos += 64)
+                {
+                    __m512i bytes = _mm512_loadu_si512(reinterpret_cast<const __m512i *>(next_pos));
+                    auto bit_mask = _kor_mask64(
+                        _kor_mask64(_mm512_cmpeq_epi8_mask(bytes, rc), _mm512_cmpeq_epi8_mask(bytes, nc)),
+                        _mm512_cmpeq_epi8_mask(bytes, dc));
+                    if (bit_mask)
+                    {
+                        next_pos += __builtin_ctzll(bit_mask);
                         return;
                     }
                 }
@@ -751,6 +954,8 @@ void readCSVField(String & s, ReadBuffer & buf, const FormatSettings::CSV & sett
 
 template void readCSVStringInto<PaddedPODArray<UInt8>>(PaddedPODArray<UInt8> & s, ReadBuffer & buf, const FormatSettings::CSV & settings);
 template void readCSVStringInto<NullOutput>(NullOutput & s, ReadBuffer & buf, const FormatSettings::CSV & settings);
+template void readCSVStringIntoAVX2<NullOutput>(NullOutput & s, ReadBuffer & buf, const FormatSettings::CSV & settings);
+template void readCSVStringIntoAVX512<NullOutput>(NullOutput & s, ReadBuffer & buf, const FormatSettings::CSV & settings);
 
 
 template <typename Vector, typename ReturnType>
