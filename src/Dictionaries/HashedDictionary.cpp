@@ -363,13 +363,13 @@ DictionaryHierarchyParentToChildIndexPtr HashedDictionary<dictionary_key_type, s
 
         size_t hierarchical_attribute_index = *dict_struct.hierarchical_attribute_index;
         const auto & hierarchical_attribute = attributes[hierarchical_attribute_index];
-        const CollectionType<UInt64> & parent_keys = std::get<CollectionType<UInt64>>(hierarchical_attribute.container);
+        const CollectionType<UInt64> & child_key_to_parent_key_map = std::get<CollectionType<UInt64>>(hierarchical_attribute.container);
 
         HashMap<UInt64, PaddedPODArray<UInt64>> parent_to_child;
-        parent_to_child.reserve(parent_keys.size());
+        parent_to_child.reserve(child_key_to_parent_key_map.size());
 
-        for (const auto & [key, value] : parent_keys)
-            parent_to_child[value].emplace_back(key);
+        for (const auto & [child_key, parent_key] : child_key_to_parent_key_map)
+            parent_to_child[parent_key].emplace_back(child_key);
 
         return std::make_shared<DictionaryHierarchicalParentToChildIndex>(parent_to_child);
     }

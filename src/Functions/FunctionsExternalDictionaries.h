@@ -1083,10 +1083,9 @@ public:
         const auto & hierarchical_attribute = dictionary_helper->getDictionaryHierarchicalAttribute(dictionary);
 
         auto key_column = ColumnWithTypeAndName{arguments[1].column->convertToFullColumnIfConst(), arguments[1].type, arguments[1].name};
-        auto key_column_casted = castColumnAccurate(key_column, hierarchical_attribute.type);
+        auto key_column_casted = castColumnAccurate(key_column, removeNullable(hierarchical_attribute.type));
 
-        ColumnPtr result = dictionary->getDescendants(key_column_casted, hierarchical_attribute.type, level, hierarchical_parent_to_child_index);
-        return result;
+        return dictionary->getDescendants(key_column_casted, removeNullable(hierarchical_attribute.type), level, hierarchical_parent_to_child_index);
     }
 
     String name;
@@ -1235,7 +1234,7 @@ public:
         auto dictionary = dictionary_helper->getDictionary(arguments[0].column);
         const auto & hierarchical_attribute = dictionary_helper->getDictionaryHierarchicalAttribute(dictionary);
 
-        return std::make_shared<DataTypeArray>(hierarchical_attribute.type);
+        return std::make_shared<DataTypeArray>(removeNullable(hierarchical_attribute.type));
     }
 
     std::shared_ptr<FunctionDictHelper> dictionary_helper;
