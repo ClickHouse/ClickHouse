@@ -46,11 +46,13 @@ public:
     virtual bool exists(const std::string & path) const = 0;
     virtual bool isFile(const std::string & path) const = 0;
     virtual bool isDirectory(const std::string & path) const = 0;
+    virtual uint64_t getFileSize(const std::string & path) const = 0;
     virtual Poco::Timestamp getLastModified(const std::string & path) const = 0;
 
     virtual std::vector<std::string> listDirectory(const std::string & path) const = 0;
     virtual DirectoryIteratorPtr iterateDirectory(const String & path) = 0;
 
+    virtual void createMetadataFile(const std::string & path, MetadataTransactionPtr transaction) = 0;
 
     virtual std::unique_ptr<ReadBufferFromFileBase> readFile(  /// NOLINT
          const std::string & path,
@@ -65,6 +67,8 @@ public:
          const WriteSettings & settings = {}) = 0;
 
     virtual void setLastModified(const std::string & path, const Poco::Timestamp & timestamp, MetadataTransactionPtr transaction) = 0;
+
+    virtual void setReadOnly(const std::string & path, MetadataTransactionPtr transaction) = 0;
 
     virtual void unlinkFile(const std::string & path, MetadataTransactionPtr transaction) = 0;
 
@@ -86,15 +90,17 @@ public:
 
     virtual ~IMetadataStorage() = default;
 
-    virtual MetadataPtr readMetadata(const std::string & path) const = 0;
-
-    virtual MetadataPtr updateMetadata(const std::string & path, bool sync, std::function<void(IMetadata & metadata)> && updater) = 0;
-
-    virtual MetadataPtr updateOrCreateMetadata(const std::string & path, bool sync, std::function<void(IMetadata & metadata)> && updater) = 0;
-
-    virtual void updateAndRemoveMetadata(const std::string & path, bool sync, std::function<bool(IMetadata & metadata)> && updater) = 0;
-
     virtual std::unordered_map<String, String> getSerializedMetadata(const std::vector<String> & file_paths) const = 0;
+
+    virtual std::vector<std::string> getRemotePaths(const std::string & path) const = 0;
+
+    virtual uint32_t getHardlinkCount(const std::string & path) const = 0;
+
+    virtual BlobsPathToSize getBlobs(const std::string & path) const = 0;
+
+    virtual void addBlobToMetadata(const std::string & path, const std::string & blob_name, uint64_t size_in_bytes, MetadataTransactionPtr transaction);
+
+    virtual uint32_t unlinkAndGetHardlinkCount(const std::string & path, MetadataTransactionPtr transaction);
 };
 
 using MetadataStoragePtr = std::shared_ptr<IMetadataStorage>;
