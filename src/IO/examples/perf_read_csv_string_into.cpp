@@ -50,16 +50,29 @@ static void benchmark(int retries, int threads, const String & path, ReadFunc re
 int main()
 {
 #if defined(__AVX512F__) && defined(__AVX512BW__)
-    std::cout << "use avx512" << std::endl;
-#elif defined(__AVX__) && defined(__AVX2__)
-    std::cout << "use avx2" << std::endl;
-#elif defined(__SSE2__)
-    std::cout << "use sse2" << std::endl;
+    std::cout << "support avx512" << std::endl;
+#else
+    std::cout << "do not support avx512" << std::endl;
+#endif
+
+#if defined(__AVX__) && defined(__AVX2__)
+    std::cout << "support avx2" << std::endl;
+#else
+    std::cout << "do not support avx2" << std::endl;
+#endif
+
+#if defined(__SSE2__)
+    std::cout << "support sse2" << std::endl;
+#else
+    std::cout << "do not support sse2" << std::endl;
 #endif
 
     std::map<String, String> paths = {
+        /// echo "SELECT randomPrintableASCII(10), randomPrintableASCII(10) , randomPrintableASCII(10)  from system.numbers limit 10000000  FORMAT CSV settings format_csv_delimiter = '\x01'"  | clickhouse-client >  short.csv
         {"short.csv", "short-string"},
+        /// echo "SELECT randomPrintableASCII(100), randomPrintableASCII(100) , randomPrintableASCII(100)  from system.numbers limit 1000000  FORMAT CSV settings format_csv_delimiter = '\x01'"  | clickhouse-client >  medium.csv
         {"medium.csv", "medium-string"},
+        /// echo "SELECT randomPrintableASCII(1000), randomPrintableASCII(1000) , randomPrintableASCII(1000)  from system.numbers limit 100000  FORMAT CSV settings format_csv_delimiter = '\x01'"  | client-client >  long.csv
         {"long.csv", "long-string"},
     };
     std::map<ReadFunc, String> read_funcs
