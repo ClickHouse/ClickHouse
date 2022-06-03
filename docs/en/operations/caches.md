@@ -3,7 +3,7 @@ sidebar_position: 65
 sidebar_label: Caches
 ---
 
-# Cache Types {#cache-types}
+# Cache Types
 
 When performing queries, ClickHouse uses different caches.
 
