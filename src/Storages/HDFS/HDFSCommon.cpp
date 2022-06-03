@@ -10,6 +10,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <Common/logger_useful.h>
+#include <Access/KerberosInit.h>
 
 
 namespace DB
@@ -101,7 +102,7 @@ String HDFSBuilderWrapper::getKinitCmd()
 }
 
 void HDFSBuilderWrapper::runKinit()
-{
+{   /*
     String cmd = getKinitCmd();
     LOG_DEBUG(&Poco::Logger::get("HDFSClient"), "running kinit: {}", cmd);
 
@@ -113,6 +114,18 @@ void HDFSBuilderWrapper::runKinit()
     {
         throw Exception("kinit failure: " + cmd, ErrorCodes::BAD_ARGUMENTS);
     }
+    */
+    LOG_DEBUG(&Poco::Logger::get("HDFSClient"), "ADQM: running KerberosInit");
+    std::unique_lock<std::mutex> lck(kinit_mtx);
+    KerberosInit k_init;
+    try {
+        k_init.init(hadoop_kerberos_keytab,hadoop_kerberos_principal);
+    } catch (const DB::Exception & e) {
+        String msg =  "KerberosInit failure: " + DB::getExceptionMessage(e, false);
+        LOG_DEBUG(&Poco::Logger::get("HDFSClient"), "ADQM: {}",msg);
+        throw Exception(0, msg);
+    }
+    LOG_DEBUG(&Poco::Logger::get("HDFSClient"), "ADQM: finished KerberosInit");
 }
 
 HDFSBuilderWrapper createHDFSBuilder(const String & uri_str, const Poco::Util::AbstractConfiguration & config)
