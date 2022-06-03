@@ -18,7 +18,7 @@ enum class MetadataFromDiskTransactionState
 
 std::string toString(MetadataFromDiskTransactionState state);
 
-struct MetadataStorageFromDiskTransaction : public IMetadataTransaction
+struct MetadataStorageFromDiskTransaction final : public IMetadataTransaction
 {
 private:
     std::optional<size_t> failed_operation_index;
@@ -33,7 +33,7 @@ public:
     ~MetadataStorageFromDiskTransaction() override;
 };
 
-class MetadataStorageFromDisk : public IMetadataStorage
+class MetadataStorageFromDisk final : public IMetadataStorage
 {
 private:
     DiskPtr disk;
