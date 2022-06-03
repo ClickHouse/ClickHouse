@@ -2,7 +2,7 @@
 sidebar_position: 205
 ---
 
-# quantileTimingWeighted {#quantiletimingweighted}
+# quantileTimingWeighted
 
 With the determined precision computes the [quantile](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence according to the weight of each sequence member.
 
@@ -81,7 +81,7 @@ Result:
 └───────────────────────────────────────────────┘
 ```
 
-# quantilesTimingWeighted {#quantilestimingweighted}
+# quantilesTimingWeighted
 
 Same as `quantileTimingWeighted`, but accept multiple parameters with quantile levels and return an Array filled with many values of that quantiles.
 

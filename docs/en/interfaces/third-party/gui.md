@@ -3,7 +3,7 @@ sidebar_position: 28
 sidebar_label: Visual Interfaces
 ---
 
-# Visual Interfaces from Third-party Developers {#visual-interfaces-from-third-party-developers}
+# Visual Interfaces from Third-party Developers
 
 ## Open-Source {#open-source}
 
@@ -249,7 +249,7 @@ Features:
 - Web-based interface.
 
 TABLUM.IO can be run as a self-hosted solution (as a docker image) or in the cloud.
-License: [commercial](https://tablum.io/pricing) product with 3-month free period. 
+License: [commercial](https://tablum.io/pricing) product with 3-month free period.
 
 Try it out for free [in the cloud](https://tablum.io/try).
 Learn more about the product at [TABLUM.IO](https://tablum.io/)
