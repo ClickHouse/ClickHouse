@@ -16,7 +16,7 @@ from commit_status_helper import get_commit, post_commit_status
 from ci_config import CI_CONFIG
 from docker_pull_helper import get_image_with_version
 from env_helper import GITHUB_EVENT_PATH, GITHUB_RUN_URL
-from get_robot_token import get_best_robot_token
+from get_robot_token import get_best_robot_token, get_parameter_from_ssm
 from pr_info import PRInfo
 from rerun_helper import RerunHelper
 from s3_helper import S3Helper
@@ -133,6 +133,9 @@ if __name__ == "__main__":
     if not os.path.exists(result_path):
         os.makedirs(result_path)
 
+    docker_env += (
+        f" -e CHPC_DATABASE_URL -e CHPC_DATABASE_USER -e CHPC_DATABASE_PASSWORD"
+    )
     run_command = get_run_command(
         result_path,
         result_path,
@@ -143,8 +146,20 @@ if __name__ == "__main__":
         docker_image,
     )
     logging.info("Going to run command %s", run_command)
+
+    popen_env = os.environ.copy()
+    popen_env["CHPC_DATABASE_URL"] = (
+        get_parameter_from_ssm("clickhouse-test-stat-url"),
+    )
+    popen_env["CHPC_DATABASE_USER"] = (
+        get_parameter_from_ssm("clickhouse-test-stat-login"),
+    )
+    popen_env["CHPC_DATABASE_PASSWORD"] = (
+        get_parameter_from_ssm("clickhouse-test-stat-password"),
+    )
+
     run_log_path = os.path.join(temp_path, "runlog.log")
-    with TeePopen(run_command, run_log_path) as process:
+    with TeePopen(run_command, run_log_path, env=popen_env) as process:
         retcode = process.wait()
         if retcode == 0:
             logging.info("Run successfully")
