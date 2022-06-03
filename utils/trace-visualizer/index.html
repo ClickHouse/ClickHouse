@@ -104,7 +104,6 @@
 
         let result = [];
 
-    parsing_loop:
         for (let i = 0; i < json.data.length; i++) {
             let item = json.data[i];
             for (let j = 0; j < item.spans.length; j++) {
@@ -116,9 +115,7 @@
                     color: strColor(span.operation_name),
                     text: span.operation_name
                 });
-                if (j == 100) break;
             }
-            if (result.length == 1000) break parsing_loop;
         }
 
         chart.timeDomain([minT, maxT]);
