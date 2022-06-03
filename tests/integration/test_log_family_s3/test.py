@@ -67,12 +67,16 @@ def test_log_family_s3(cluster, log_engine, files_overhead, files_overhead_per_i
         assert_objects_count(cluster, files_overhead_per_insert + files_overhead)
 
         node.query("INSERT INTO s3_test SELECT number + 5 FROM numbers(3)")
-        assert node.query("SELECT * FROM s3_test order by id") == "0\n1\n2\n3\n4\n5\n6\n7\n"
+        assert (
+            node.query("SELECT * FROM s3_test order by id")
+            == "0\n1\n2\n3\n4\n5\n6\n7\n"
+        )
         assert_objects_count(cluster, files_overhead_per_insert * 2 + files_overhead)
 
         node.query("INSERT INTO s3_test SELECT number + 8 FROM numbers(1)")
         assert (
-            node.query("SELECT * FROM s3_test order by id") == "0\n1\n2\n3\n4\n5\n6\n7\n8\n"
+            node.query("SELECT * FROM s3_test order by id")
+            == "0\n1\n2\n3\n4\n5\n6\n7\n8\n"
         )
         assert_objects_count(cluster, files_overhead_per_insert * 3 + files_overhead)
 
