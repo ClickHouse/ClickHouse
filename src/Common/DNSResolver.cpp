@@ -12,6 +12,8 @@
 #include <atomic>
 #include <optional>
 #include <string_view>
+#include <boost/asio.hpp>
+#include <DNSResolver.hpp>
 
 namespace ProfileEvents
 {
@@ -138,16 +140,27 @@ static DNSResolver::IPAddresses resolveIPAddressImpl(const std::string & host)
     return addresses;
 }
 
-static String reverseResolveImpl(const Poco::Net::IPAddress & address)
+static std::vector<String> reverseResolveImpl(const Poco::Net::IPAddress & address)
 {
-    Poco::Net::SocketAddress sock_addr(address, 0);
+    boost::asio::io_service ioService;
+    YukiWorkshop::DNSResolver resolver(ioService);
 
-    /// Resolve by hand, because Poco::Net::DNS::hostByAddress(...) does getaddrinfo(...) after getnameinfo(...)
-    char host[1024];
-    int err = getnameinfo(sock_addr.addr(), sock_addr.length(), host, sizeof(host), nullptr, 0, NI_NAMEREQD);
-    if (err)
-        throw Exception("Cannot getnameinfo(" + address.toString() + "): " + gai_strerror(err), ErrorCodes::DNS_ERROR);
-    return host;
+    std::vector<std::string> ptrRecords;
+
+    resolver.resolve_a4ptr(boost::asio::ip::address_v4::from_string(address.toString()), [&](int err, auto& hosts, auto&, auto&, uint) {
+       if (err) {
+           throw Exception("Cannot resolve: " + address.toString() + gai_strerror(err), ErrorCodes::DNS_ERROR);
+       }
+
+       for (auto &it : hosts) {
+           ptrRecords.emplace_back(it);
+       }
+
+    });
+
+    ioService.run();
+
+    return ptrRecords;
 }
 
 struct DNSResolver::Impl
@@ -235,7 +248,7 @@ std::vector<Poco::Net::SocketAddress> DNSResolver::resolveAddressList(const std:
     return addresses;
 }
 
-String DNSResolver::reverseResolve(const Poco::Net::IPAddress & address)
+std::vector<String> DNSResolver::reverseResolve(const Poco::Net::IPAddress & address)
 {
     if (impl->disable_cache)
         return reverseResolveImpl(address);
