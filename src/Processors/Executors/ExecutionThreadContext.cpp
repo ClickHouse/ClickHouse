@@ -1,6 +1,7 @@
 #include <Processors/Executors/ExecutionThreadContext.h>
 #include <QueryPipeline/ReadProgressCallback.h>
 #include <Common/Stopwatch.h>
+#include <Interpreters/OpenTelemetrySpanLog.h>
 
 namespace DB
 {
