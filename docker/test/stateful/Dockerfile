@@ -17,7 +17,7 @@ ENV EXPORT_S3_STORAGE_POLICIES=1
 
 # Download Minio-related binaries
 RUN arch=${TARGETARCH:-amd64} \
-    && wget "https://dl.min.io/server/minio/release/linux-${arch}/archive/minio-20220103182258.0.0.x86_64.rpm" \
+    && if [ "$arch" = "amd64" ] ; then wget "https://dl.min.io/server/minio/release/linux-${arch}/archive/minio-20220103182258.0.0.x86_64.rpm"; else wget "https://dl.min.io/server/minio/release/linux-${arch}/archive/minio-20220103182258.0.0.aarch64.rpm" ; fi \
     && wget "https://dl.min.io/client/mc/release/linux-${arch}/mc" \
     && chmod +x ./mc
 ENV MINIO_ROOT_USER="clickhouse"
