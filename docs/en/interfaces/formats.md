@@ -542,7 +542,7 @@ ClickHouse supports [NULL](../sql-reference/syntax.md), which is displayed as `n
 **See Also**
 
 -   [JSONEachRow](#jsoneachrow) format
--   [output_format_json_array_of_rows](../operations/settings/settings.md#output-format-json-array-of-rows) setting
+-   [output_format_json_array_of_rows](../operations/settings/settings.md#output_format_json_array_of_rows) setting
 
 ## JSONStrings {#jsonstrings}
 
