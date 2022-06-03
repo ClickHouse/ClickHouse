@@ -227,9 +227,6 @@ ColumnPtr HashedDictionary<dictionary_key_type, sparse>::getHierarchy(ColumnPtr 
 {
     if constexpr (dictionary_key_type == DictionaryKeyType::Simple)
     {
-        if (key_column->isNullable())
-            key_column = assert_cast<const ColumnNullable *>(key_column.get())->getNestedColumnPtr();
-
         PaddedPODArray<UInt64> keys_backup_storage;
         const auto & keys = getColumnVectorData(this, key_column, keys_backup_storage);
 
@@ -243,14 +240,14 @@ ColumnPtr HashedDictionary<dictionary_key_type, sparse>::getHierarchy(ColumnPtr 
         if (!dictionary_attribute.null_value.isNull())
             null_value = dictionary_attribute.null_value.get<UInt64>();
 
-        const CollectionType<UInt64> & parent_keys_map = std::get<CollectionType<UInt64>>(hierarchical_attribute.container);
+        const CollectionType<UInt64> & child_key_to_parent_key_map = std::get<CollectionType<UInt64>>(hierarchical_attribute.container);
 
         auto is_key_valid_func = [&](auto & hierarchy_key)
         {
             if (unlikely(hierarchical_attribute.is_nullable_set) && hierarchical_attribute.is_nullable_set->find(hierarchy_key))
                 return true;
 
-            return parent_keys_map.find(hierarchy_key) != parent_keys_map.end();
+            return child_key_to_parent_key_map.find(hierarchy_key) != child_key_to_parent_key_map.end();
         };
 
         size_t keys_found = 0;
@@ -259,12 +256,9 @@ ColumnPtr HashedDictionary<dictionary_key_type, sparse>::getHierarchy(ColumnPtr 
         {
             std::optional<UInt64> result;
 
-            auto it = parent_keys_map.find(hierarchy_key);
+            auto it = child_key_to_parent_key_map.find(hierarchy_key);
 
-            if (it == parent_keys_map.end())
-                return result;
-
-            if (unlikely(hierarchical_attribute.is_nullable_set) && hierarchical_attribute.is_nullable_set->find(hierarchy_key))
+            if (it == child_key_to_parent_key_map.end())
                 return result;
 
             UInt64 parent_key = getValueFromCell(it);
@@ -301,16 +295,6 @@ ColumnUInt8::Ptr HashedDictionary<dictionary_key_type, sparse>::isInHierarchy(
         if (key_column->isNullable())
             key_column = assert_cast<const ColumnNullable *>(key_column.get())->getNestedColumnPtr();
 
-        const PaddedPODArray<UInt8> * in_key_column_nullable_mask = nullptr;
-
-        if (in_key_column->isNullable())
-        {
-            const auto * in_key_column_typed = assert_cast<const ColumnNullable *>(in_key_column.get());
-
-            in_key_column = in_key_column_typed->getNestedColumnPtr();
-            in_key_column_nullable_mask = &in_key_column_typed->getNullMapColumn().getData();
-        }
-
         PaddedPODArray<UInt64> keys_backup_storage;
         const auto & keys = getColumnVectorData(this, key_column, keys_backup_storage);
 
@@ -327,14 +311,14 @@ ColumnUInt8::Ptr HashedDictionary<dictionary_key_type, sparse>::isInHierarchy(
         if (!dictionary_attribute.null_value.isNull())
             null_value = dictionary_attribute.null_value.get<UInt64>();
 
-        const CollectionType<UInt64> & parent_keys_map = std::get<CollectionType<UInt64>>(hierarchical_attribute.container);
+        const CollectionType<UInt64> & child_key_to_parent_key_map = std::get<CollectionType<UInt64>>(hierarchical_attribute.container);
 
         auto is_key_valid_func = [&](auto & hierarchy_key)
         {
             if (unlikely(hierarchical_attribute.is_nullable_set) && hierarchical_attribute.is_nullable_set->find(hierarchy_key))
                 return true;
 
-            return parent_keys_map.find(hierarchy_key) != parent_keys_map.end();
+            return child_key_to_parent_key_map.find(hierarchy_key) != child_key_to_parent_key_map.end();
         };
 
         size_t keys_found = 0;
@@ -343,12 +327,9 @@ ColumnUInt8::Ptr HashedDictionary<dictionary_key_type, sparse>::isInHierarchy(
         {
             std::optional<UInt64> result;
 
-            auto it = parent_keys_map.find(hierarchy_key);
+            auto it = child_key_to_parent_key_map.find(hierarchy_key);
 
-            if (it == parent_keys_map.end())
-                return result;
-
-            if (unlikely(hierarchical_attribute.is_nullable_set) && hierarchical_attribute.is_nullable_set->find(hierarchy_key))
+            if (it == child_key_to_parent_key_map.end())
                 return result;
 
             UInt64 parent_key = getValueFromCell(it);
@@ -362,17 +343,6 @@ ColumnUInt8::Ptr HashedDictionary<dictionary_key_type, sparse>::isInHierarchy(
         };
 
         auto result = getKeysIsInHierarchyColumn(keys, keys_in, is_key_valid_func, get_parent_key_func);
-
-        if (unlikely(in_key_column_nullable_mask))
-        {
-            auto mutable_result_ptr = result->assumeMutable();
-            auto & mutable_result = assert_cast<ColumnUInt8 &>(*mutable_result_ptr);
-            auto & mutable_result_data = mutable_result.getData();
-            size_t mutable_result_data_size = mutable_result_data.size();
-
-            for (size_t i = 0; i < mutable_result_data_size; ++i)
-                mutable_result_data[i] &= !(static_cast<bool>((*in_key_column_nullable_mask)[i]));
-        }
 
         query_count.fetch_add(keys.size(), std::memory_order_relaxed);
         found_count.fetch_add(keys_found, std::memory_order_relaxed);

@@ -177,9 +177,6 @@ ColumnUInt8::Ptr FlatDictionary::hasKeys(const Columns & key_columns, const Data
 
 ColumnPtr FlatDictionary::getHierarchy(ColumnPtr key_column, const DataTypePtr &) const
 {
-    if (key_column->isNullable())
-        key_column = assert_cast<const ColumnNullable *>(key_column.get())->getNestedColumnPtr();
-
     PaddedPODArray<UInt64> keys_backup_storage;
     const auto & keys = getColumnVectorData(this, key_column, keys_backup_storage);
 
@@ -232,21 +229,8 @@ ColumnUInt8::Ptr FlatDictionary::isInHierarchy(
     ColumnPtr in_key_column,
     const DataTypePtr &) const
 {
-    if (key_column->isNullable())
-        key_column = assert_cast<const ColumnNullable *>(key_column.get())->getNestedColumnPtr();
-
     PaddedPODArray<UInt64> keys_backup_storage;
     const auto & keys = getColumnVectorData(this, key_column, keys_backup_storage);
-
-    const PaddedPODArray<UInt8> * in_key_column_nullable_mask = nullptr;
-
-    if (in_key_column->isNullable())
-    {
-        const auto * in_key_column_typed = assert_cast<const ColumnNullable *>(in_key_column.get());
-
-        in_key_column = in_key_column_typed->getNestedColumnPtr();
-        in_key_column_nullable_mask = &in_key_column_typed->getNullMapColumn().getData();
-    }
 
     PaddedPODArray<UInt64> keys_in_backup_storage;
     const auto & keys_in = getColumnVectorData(this, in_key_column, keys_in_backup_storage);
@@ -288,17 +272,6 @@ ColumnUInt8::Ptr FlatDictionary::isInHierarchy(
     };
 
     auto result = getKeysIsInHierarchyColumn(keys, keys_in, is_key_valid_func, get_parent_key_func);
-
-    if (unlikely(in_key_column_nullable_mask))
-    {
-        auto mutable_result_ptr = result->assumeMutable();
-        auto & mutable_result = assert_cast<ColumnUInt8 &>(*mutable_result_ptr);
-        auto & mutable_result_data = mutable_result.getData();
-        size_t mutable_result_data_size = mutable_result_data.size();
-
-        for (size_t i = 0; i < mutable_result_data_size; ++i)
-            mutable_result_data[i] &= !(static_cast<bool>((*in_key_column_nullable_mask)[i]));
-    }
 
     query_count.fetch_add(keys.size(), std::memory_order_relaxed);
     found_count.fetch_add(keys_found, std::memory_order_relaxed);
