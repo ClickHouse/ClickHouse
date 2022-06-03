@@ -23,6 +23,12 @@ SELECT 'Get hierarchy';
 SELECT dictGetHierarchy('hierachical_flat_dictionary', number) FROM system.numbers LIMIT 6;
 SELECT 'Get is in hierarchy';
 SELECT dictIsIn('hierachical_flat_dictionary', number, number) FROM system.numbers LIMIT 6;
+SELECT 'Get children';
+SELECT dictGetChildren('hierachical_flat_dictionary', number) FROM system.numbers LIMIT 6;
+SELECT 'Get all descendants';
+SELECT dictGetDescendants('hierachical_flat_dictionary', number) FROM system.numbers LIMIT 6;
+SELECT 'Get descendants at first level';
+SELECT dictGetDescendants('hierachical_flat_dictionary', number, 1) FROM system.numbers LIMIT 6;
 
 DROP DICTIONARY hierachical_flat_dictionary;
 
@@ -42,6 +48,12 @@ SELECT 'Get hierarchy';
 SELECT dictGetHierarchy('hierachical_hashed_dictionary', number) FROM system.numbers LIMIT 6;
 SELECT 'Get is in hierarchy';
 SELECT dictIsIn('hierachical_hashed_dictionary', number, number) FROM system.numbers LIMIT 6;
+SELECT 'Get children';
+SELECT dictGetChildren('hierachical_hashed_dictionary', number) FROM system.numbers LIMIT 6;
+SELECT 'Get all descendants';
+SELECT dictGetDescendants('hierachical_hashed_dictionary', number) FROM system.numbers LIMIT 6;
+SELECT 'Get descendants at first level';
+SELECT dictGetDescendants('hierachical_hashed_dictionary', number, 1) FROM system.numbers LIMIT 6;
 
 DROP DICTIONARY hierachical_hashed_dictionary;
 
@@ -61,6 +73,12 @@ SELECT 'Get hierarchy';
 SELECT dictGetHierarchy('hierachical_hashed_array_dictionary', number) FROM system.numbers LIMIT 6;
 SELECT 'Get is in hierarchy';
 SELECT dictIsIn('hierachical_hashed_array_dictionary', number, number) FROM system.numbers LIMIT 6;
+SELECT 'Get children';
+SELECT dictGetChildren('hierachical_hashed_array_dictionary', number) FROM system.numbers LIMIT 6;
+SELECT 'Get all descendants';
+SELECT dictGetDescendants('hierachical_hashed_array_dictionary', number) FROM system.numbers LIMIT 6;
+SELECT 'Get descendants at first level';
+SELECT dictGetDescendants('hierachical_hashed_array_dictionary', number, 1) FROM system.numbers LIMIT 6;
 
 DROP DICTIONARY hierachical_hashed_array_dictionary;
 
@@ -80,6 +98,7 @@ SELECT 'Get hierarchy';
 SELECT dictGetHierarchy('hierachical_cache_dictionary', number) FROM system.numbers LIMIT 6;
 SELECT 'Get is in hierarchy';
 SELECT dictIsIn('hierachical_cache_dictionary', number, number) FROM system.numbers LIMIT 6;
+
 
 DROP DICTIONARY hierachical_cache_dictionary;
 

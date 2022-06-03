@@ -298,6 +298,9 @@ DictionaryHierarchyParentToChildIndexPtr FlatDictionary::getHierarchicalIndex() 
         if (!loaded_keys[child_key])
             continue;
 
+        if (unlikely(hierarchical_attribute.is_nullable_set) && hierarchical_attribute.is_nullable_set->find(child_key))
+            continue;
+
         auto parent_key = parent_keys[child_key];
         parent_to_child[parent_key].emplace_back(child_key);
     }

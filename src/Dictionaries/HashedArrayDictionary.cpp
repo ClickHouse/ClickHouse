@@ -331,8 +331,12 @@ DictionaryHierarchicalParentToChildIndexPtr HashedArrayDictionary<dictionary_key
         HashMap<UInt64, PaddedPODArray<UInt64>> parent_to_child;
         parent_to_child.reserve(index_to_key.size());
 
-        for (size_t i = 0; i < parent_keys_container.size(); ++i)
+        size_t parent_keys_container_size = parent_keys_container.size();
+        for (size_t i = 0; i < parent_keys_container_size; ++i)
         {
+            if (unlikely(hierarchical_attribute.is_index_null) && (*hierarchical_attribute.is_index_null)[i])
+                continue;
+
             const auto * it = index_to_key.find(i);
             if (it == index_to_key.end())
                 continue;
