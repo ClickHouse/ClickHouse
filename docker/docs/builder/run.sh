@@ -8,6 +8,9 @@ if [ "$GIT_DOCS_BRANCH" ] && ! [ "$GIT_DOCS_BRANCH" == "$GIT_BRANCH" ]; then
   git fetch origin --depth=1 -- "$GIT_DOCS_BRANCH:$GIT_DOCS_BRANCH"
   git checkout "$GIT_DOCS_BRANCH"
 else
+  git diff
+  git status
+  ls
   # Update docs repo
   git pull
 fi
