@@ -17,7 +17,6 @@ $CLICKHOUSE_CLIENT --query "CREATE TABLE dst (n UInt64, type UInt8) ENGINE=Merge
 function thread_insert()
 {
     set -e
-    trap "exit 0" INT
     val=1
     while true; do
         $CLICKHOUSE_CLIENT --multiquery --query "
@@ -92,7 +91,6 @@ function thread_partition_dst_to_src()
 function thread_select()
 {
     set -e
-    trap "exit 0" INT
     while true; do
         $CLICKHOUSE_CLIENT --multiquery --query "
         BEGIN TRANSACTION;
@@ -120,8 +118,8 @@ thread_partition_src_to_dst & PID_3=$!
 thread_partition_dst_to_src & PID_4=$!
 wait $PID_3 && wait $PID_4
 
-kill -INT $PID_1
-kill -INT $PID_2
+kill -TERM $PID_1
+kill -TERM $PID_2
 wait
 
 $CLICKHOUSE_CLIENT -q "SELECT type, count(n) = countDistinct(n) FROM merge(currentDatabase(), '') GROUP BY type ORDER BY type"
