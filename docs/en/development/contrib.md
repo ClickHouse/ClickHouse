@@ -1,10 +1,10 @@
 ---
 sidebar_position: 71
 sidebar_label: Third-Party Libraries
-description: A list of third-party libraries used 
+description: A list of third-party libraries used
 ---
 
-# Third-Party Libraries Used 
+# Third-Party Libraries Used
 
 The list of third-party libraries:
 

@@ -17,6 +17,8 @@
 #include <Storages/QueryCache.h>
 #include <Processors/Chunk.h>
 #include <Parsers/IAST.h>
+#include <QueryPipeline/Pipe.h>
+
 #include <Columns/FilterDescription.h>
 
 namespace Poco

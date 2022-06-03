@@ -26,9 +26,8 @@
 #include <Processors/Transforms/FilterTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Sinks/SinkToStorage.h>
-#include <Processors/Sources/SourceWithProgress.h>
+#include <Processors/ISource.h>
 #include <Processors/QueryPlan/QueryPlan.h>
-#include <Processors/QueryPlan/SettingQuotaAndLimitsStep.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
@@ -143,11 +142,11 @@ StorageBuffer::StorageBuffer(
 
 
 /// Reads from one buffer (from one block) under its mutex.
-class BufferSource : public SourceWithProgress
+class BufferSource : public ISource
 {
 public:
     BufferSource(const Names & column_names_, StorageBuffer::Buffer & buffer_, const StorageSnapshotPtr & storage_snapshot)
-        : SourceWithProgress(storage_snapshot->getSampleBlockForColumns(column_names_))
+        : ISource(storage_snapshot->getSampleBlockForColumns(column_names_))
         , column_names_and_types(storage_snapshot->getColumnsByNames(
             GetColumnsOptions(GetColumnsOptions::All).withSubcolumns(), column_names_))
         , buffer(buffer_) {}
@@ -207,23 +206,6 @@ QueryProcessingStage::Enum StorageBuffer::getQueryProcessingStage(
     }
 
     return QueryProcessingStage::FetchColumns;
-}
-
-
-Pipe StorageBuffer::read(
-    const Names & column_names,
-    const StorageSnapshotPtr & storage_snapshot,
-    SelectQueryInfo & query_info,
-    ContextPtr local_context,
-    QueryProcessingStage::Enum processed_stage,
-    const size_t max_block_size,
-    const unsigned num_streams)
-{
-    QueryPlan plan;
-    read(plan, column_names, storage_snapshot, query_info, local_context, processed_stage, max_block_size, num_streams);
-    return plan.convertToPipe(
-        QueryPlanOptimizationSettings::fromContext(local_context),
-        BuildQueryPipelineSettings::fromContext(local_context));
 }
 
 void StorageBuffer::read(
@@ -334,21 +316,8 @@ void StorageBuffer::read(
 
         if (query_plan.isInitialized())
         {
-            StreamLocalLimits limits;
-            SizeLimits leaf_limits;
-
-            /// Add table lock for destination table.
-            auto adding_limits_and_quota = std::make_unique<SettingQuotaAndLimitsStep>(
-                    query_plan.getCurrentDataStream(),
-                    destination,
-                    std::move(destination_lock),
-                    limits,
-                    leaf_limits,
-                    nullptr,
-                    nullptr);
-
-            adding_limits_and_quota->setStepDescription("Lock destination table for Buffer");
-            query_plan.addStep(std::move(adding_limits_and_quota));
+            query_plan.addStorageHolder(destination);
+            query_plan.addTableLock(std::move(destination_lock));
         }
     }
 
@@ -376,6 +345,7 @@ void StorageBuffer::read(
         auto interpreter = InterpreterSelectQuery(
                 query_info.query, local_context, std::move(pipe_from_buffers),
                 SelectQueryOptions(processed_stage).ignoreProjections());
+        interpreter.addStorageLimits(*query_info.storage_limits);
         interpreter.buildQueryPlan(buffers_plan);
     }
     else
@@ -405,6 +375,9 @@ void StorageBuffer::read(
                         query_info.prewhere_info->remove_prewhere_column);
             });
         }
+
+        for (const auto & processor : pipe_from_buffers.getProcessors())
+            processor->setStorageLimits(query_info.storage_limits);
 
         auto read_from_buffers = std::make_unique<ReadFromPreparedSource>(std::move(pipe_from_buffers));
         read_from_buffers->setStepDescription("Read from buffers of Buffer table");

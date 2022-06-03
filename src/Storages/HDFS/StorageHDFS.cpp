@@ -15,6 +15,7 @@
 #include <Processors/Transforms/AddingDefaultsTransform.h>
 
 #include <IO/WriteHelpers.h>
+#include <IO/CompressionMethod.h>
 
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/ExpressionAnalyzer.h>
@@ -33,6 +34,7 @@
 #include <Functions/FunctionsConversion.h>
 
 #include <QueryPipeline/QueryPipeline.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <QueryPipeline/Pipe.h>
 
 #include <Poco/URI.h>
@@ -237,7 +239,7 @@ public:
     {
         auto path_and_uri = getPathFromUriAndUriWithoutPath(uris_[0]);
         HDFSBuilderWrapper builder = createHDFSBuilder(path_and_uri.second + "/", context->getGlobalContext()->getConfigRef());
-        HDFSFSPtr fs = createHDFSFS(builder.get());
+        auto fs = createHDFSFS(builder.get());
         for (const auto & uri : uris_)
         {
             path_and_uri = getPathFromUriAndUriWithoutPath(uri);
@@ -297,7 +299,7 @@ HDFSSource::HDFSSource(
     UInt64 max_block_size_,
     std::shared_ptr<IteratorWrapper> file_iterator_,
     ColumnsDescription columns_description_)
-    : SourceWithProgress(getHeader(block_for_format_, requested_virtual_columns_))
+    : ISource(getHeader(block_for_format_, requested_virtual_columns_))
     , WithContext(context_)
     , storage(std::move(storage_))
     , block_for_format(block_for_format_)
@@ -636,7 +638,7 @@ void StorageHDFS::truncate(const ASTPtr & /* query */, const StorageMetadataPtr 
     const String url = uris[0].substr(0, begin_of_path);
 
     HDFSBuilderWrapper builder = createHDFSBuilder(url + "/", local_context->getGlobalContext()->getConfigRef());
-    HDFSFSPtr fs = createHDFSFS(builder.get());
+    auto fs = createHDFSFS(builder.get());
 
     for (const auto & uri : uris)
     {
