@@ -64,4 +64,41 @@ SELECT dictIsIn('hierachical_hashed_array_dictionary', number, number) FROM syst
 
 DROP DICTIONARY hierachical_hashed_array_dictionary;
 
+DROP DICTIONARY IF EXISTS hierachical_cache_dictionary;
+CREATE DICTIONARY hierachical_cache_dictionary
+(
+    id UInt64,
+    parent_id Nullable(UInt64) HIERARCHICAL
+) PRIMARY KEY id
+SOURCE(CLICKHOUSE(TABLE 'test_hierarhical_table'))
+LAYOUT(CACHE(SIZE_IN_CELLS 10))
+LIFETIME(0);
+
+SELECT 'Cache dictionary';
+
+SELECT 'Get hierarchy';
+SELECT dictGetHierarchy('hierachical_cache_dictionary', number) FROM system.numbers LIMIT 6;
+SELECT 'Get is in hierarchy';
+SELECT dictIsIn('hierachical_cache_dictionary', number, number) FROM system.numbers LIMIT 6;
+
+DROP DICTIONARY hierachical_cache_dictionary;
+
+DROP DICTIONARY IF EXISTS hierachical_direct_dictionary;
+CREATE DICTIONARY hierachical_direct_dictionary
+(
+    id UInt64,
+    parent_id Nullable(UInt64) HIERARCHICAL
+) PRIMARY KEY id
+SOURCE(CLICKHOUSE(TABLE 'test_hierarhical_table'))
+LAYOUT(DIRECT());
+
+SELECT 'Direct dictionary';
+
+SELECT 'Get hierarchy';
+SELECT dictGetHierarchy('hierachical_direct_dictionary', number) FROM system.numbers LIMIT 6;
+SELECT 'Get is in hierarchy';
+SELECT dictIsIn('hierachical_direct_dictionary', number, number) FROM system.numbers LIMIT 6;
+
+DROP DICTIONARY hierachical_direct_dictionary;
+
 DROP TABLE test_hierarhical_table;
