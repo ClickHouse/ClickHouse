@@ -12,6 +12,7 @@ namespace DB
 {
 
 class KeyCondition;
+struct QueryIdHolder;
 
 using PartitionIdToMaxBlock = std::unordered_map<String, Int64>;
 

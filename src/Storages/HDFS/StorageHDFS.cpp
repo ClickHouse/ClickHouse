@@ -33,6 +33,7 @@
 #include <Functions/FunctionsConversion.h>
 
 #include <QueryPipeline/QueryPipeline.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <QueryPipeline/Pipe.h>
 
 #include <Poco/URI.h>
@@ -297,7 +298,7 @@ HDFSSource::HDFSSource(
     UInt64 max_block_size_,
     std::shared_ptr<IteratorWrapper> file_iterator_,
     ColumnsDescription columns_description_)
-    : SourceWithProgress(getHeader(block_for_format_, requested_virtual_columns_))
+    : ISource(getHeader(block_for_format_, requested_virtual_columns_))
     , WithContext(context_)
     , storage(std::move(storage_))
     , block_for_format(block_for_format_)
@@ -418,7 +419,9 @@ public:
 
     void onException() override
     {
-        write_buf->finalize();
+        if (!writer)
+            return;
+        onFinish();
     }
 
     void onFinish() override
@@ -432,6 +435,7 @@ public:
         }
         catch (...)
         {
+            /// Stop ParallelFormattingOutputFormat correctly.
             writer.reset();
             throw;
         }
