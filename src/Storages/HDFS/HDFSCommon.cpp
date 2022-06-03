@@ -119,7 +119,7 @@ void HDFSBuilderWrapper::runKinit()
     std::unique_lock<std::mutex> lck(kinit_mtx);
     KerberosInit k_init;
     try {
-        k_init.init(hadoop_kerberos_keytab,hadoop_kerberos_principal);
+        k_init.init(hadoop_kerberos_keytab,hadoop_kerberos_principal,hadoop_security_kerberos_ticket_cache_path);
     } catch (const DB::Exception & e) {
         String msg =  "KerberosInit failure: " + DB::getExceptionMessage(e, false);
         LOG_DEBUG(&Poco::Logger::get("HDFSClient"), "ADQM: {}",msg);

@@ -1,10 +1,9 @@
 #include <Access/KerberosInit.h>
 #include <Common/Exception.h>
-
 #include <Common/logger_useful.h>
 #include <Poco/Logger.h>
 #include <Loggers/Loggers.h>
-
+#include <filesystem>
 
 int KerberosInit::init(const String & keytab_file, const String & principal, const String & cache_name)
 {
@@ -14,16 +13,14 @@ int KerberosInit::init(const String & keytab_file, const String & principal, con
     krb5_error_code ret;
 
     // todo: use deftype
-    //const char *deftype = nullptr;
+    const char *deftype = nullptr;
     int flags = 0;
-    principal_name = new char[256];
-    std::copy(principal.begin(), principal.end(), principal_name);
-    principal_name[principal.size()] = '\0';
 
-    //memset(&k5, 0, sizeof(k5));
+    if (!std::filesystem::exists(keytab_file))
+        throw DB::Exception(0, "Error keytab file does not exist");
+
     memset(&k5d, 0, sizeof(k5d));
     k5 = &k5d;
-    //memset(k5, 0, sizeof(k5_data));
     // begin
     ret = krb5_init_context(&k5->ctx);
     if (ret)
@@ -42,27 +39,52 @@ int KerberosInit::init(const String & keytab_file, const String & principal, con
         if (ret)
             throw DB::Exception(0, "Error while getting default ccache");
         LOG_DEBUG(adqm_log,"Resolved default cache");
-        // todo: deftype
-        /*deftype = */krb5_cc_get_type(k5->ctx, defcache);
+        deftype = krb5_cc_get_type(k5->ctx, defcache);
         if (krb5_cc_get_principal(k5->ctx, defcache, &defcache_princ) != 0)
             defcache_princ = nullptr;
     }
 
     // Use the specified principal name.
-    ret = krb5_parse_name_flags(k5->ctx, principal_name, flags, &k5->me);
+    ret = krb5_parse_name_flags(k5->ctx, principal.c_str(), flags, &k5->me);
     if (ret)
-        throw DB::Exception(0, "Error when parsing principal name " + String(principal_name));
+        throw DB::Exception(0, "Error when parsing principal name " + principal);
 
+    // Cache related commands
+    if (k5->out_cc == nullptr && krb5_cc_support_switch(k5->ctx, deftype))
+    {
+        // Use an existing cache for the client principal if we can.
+        ret = krb5_cc_cache_match(k5->ctx, k5->me, &k5->out_cc);
+        if (ret && ret != KRB5_CC_NOTFOUND)
+            throw DB::Exception(0, "Error while searching for ccache for " + principal);
+        if (!ret)
+        {
+            LOG_DEBUG(adqm_log,"Using default cache: {}", krb5_cc_get_name(k5->ctx, k5->out_cc));
+            k5->switch_to_cache = 1;
+        }
+        else if (defcache_princ != nullptr)
+        {
+            // Create a new cache to avoid overwriting the initialized default cache.
+            ret = krb5_cc_new_unique(k5->ctx, deftype, nullptr, &k5->out_cc);
+            if (ret)
+                throw DB::Exception(0, "Error while generating new ccache");
+            LOG_DEBUG(adqm_log,"Using default cache: {}", krb5_cc_get_name(k5->ctx, k5->out_cc));
+            k5->switch_to_cache = 1;
+        }
+    }
 
-    // to-do: add more cache init commands
+    // Use the default cache if we haven't picked one yet.
+    if (k5->out_cc == nullptr)
+    {
+        k5->out_cc = defcache;
+        defcache = nullptr;
+        LOG_DEBUG(adqm_log,"Using default cache: {}", krb5_cc_get_name(k5->ctx, k5->out_cc));
+    }
 
     ret = krb5_unparse_name(k5->ctx, k5->me, &k5->name);
     if (ret)
         throw DB::Exception(0, "Error when unparsing name");
 
     LOG_DEBUG(adqm_log,"KerberosInit: Using principal: {}", k5->name);
-
-    principal_name = k5->name;
 
     // init:
     memset(&my_creds, 0, sizeof(my_creds));
@@ -93,19 +115,22 @@ int KerberosInit::init(const String & keytab_file, const String & principal, con
 
     LOG_DEBUG(adqm_log,"KerberosInit: Using keytab: {}", keytab_file);
 
-    // todo: num_pa_opts
-
-
-    // todo: in_cc / ccache
+    if (k5->in_cc)
+    {
+        ret = krb5_get_init_creds_opt_set_in_ccache(k5->ctx, options, k5->in_cc);
+        if (ret)
+            throw DB::Exception(0, "Error in setting input credential cache");
+    }
+    ret = krb5_get_init_creds_opt_set_out_ccache(k5->ctx, options, k5->out_cc);
+    if (ret)
+        throw DB::Exception(0, "Error in setting output credential cache");
 
     // action: init or renew
+    // todo: implement renew action
     // todo: doing only init action:
     ret = krb5_get_init_creds_keytab(k5->ctx, &my_creds, k5->me, keytab, 0, nullptr, options);
     if (ret)
         LOG_DEBUG(adqm_log,"Getting initial credentials");
-
-    // todo: implement renew action
-
 
     LOG_DEBUG(adqm_log,"Authenticated to Kerberos v5");
     LOG_DEBUG(adqm_log,"KerberosInit: end");
@@ -119,7 +144,6 @@ KerberosInit::~KerberosInit()
         //begin. cleanup:
         if (defcache)
             krb5_cc_close(k5->ctx, defcache);
-        //todo
         krb5_free_principal(k5->ctx, defcache_princ);
 
         // init. cleanup:
@@ -133,30 +157,18 @@ KerberosInit::~KerberosInit()
             krb5_get_init_creds_opt_free(k5->ctx, options);
         if (my_creds.client == k5->me)
             my_creds.client = nullptr;
-        /*
-        if (opts->pa_opts) {
-            free(opts->pa_opts);
-            opts->pa_opts = NULL;
-            opts->num_pa_opts = 0;
-        }
-        */
         krb5_free_cred_contents(k5->ctx, &my_creds);
         if (keytab)
             krb5_kt_close(k5->ctx, keytab);
 
-
-        // end:
+        // end. cleanup:
         krb5_free_unparsed_name(k5->ctx, k5->name);
         krb5_free_principal(k5->ctx, k5->me);
-        /*
-        if (k5->in_cc != NULL)
+        if (k5->in_cc != nullptr)
             krb5_cc_close(k5->ctx, k5->in_cc);
-        if (k5->out_cc != NULL)
+        if (k5->out_cc != nullptr)
             krb5_cc_close(k5->ctx, k5->out_cc);
-        */
         krb5_free_context(k5->ctx);
     }
     memset(k5, 0, sizeof(*k5));
-
-    delete[] principal_name;
 }
