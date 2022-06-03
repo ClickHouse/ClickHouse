@@ -29,7 +29,8 @@ namespace detail
 
 namespace
 {
-    struct ChildToParentHierarchicalContext {
+    struct ChildToParentHierarchicalContext
+    {
         HashMap<UInt64, UInt64> child_key_to_parent_key;
         std::optional<HashSet<UInt64>> child_key_parent_key_is_null;
     };
