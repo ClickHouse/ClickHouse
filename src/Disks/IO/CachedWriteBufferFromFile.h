@@ -39,6 +39,8 @@ private:
     const String query_id;
     bool enable_cache_log;
 
+    bool stop_caching = false;
+
     ProfileEvents::Counters current_file_segment_counters;
     std::unique_ptr<FileSegmentRangeWriter> cache_writer;
 };

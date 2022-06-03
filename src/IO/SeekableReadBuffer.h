@@ -44,6 +44,8 @@ public:
     {
         size_t left;
         std::optional<size_t> right;
+
+        String toString() const { return fmt::format("[{}:{}]", left, right ? std::to_string(*right) : "None"); }
     };
 
     /**

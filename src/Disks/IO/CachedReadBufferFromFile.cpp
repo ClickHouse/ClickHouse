@@ -108,6 +108,8 @@ void CachedReadBufferFromFile::initialize(size_t offset, size_t size)
     if (initialized)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Caching buffer already initialized");
 
+    implementation_buffer.reset();
+
     if (settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache)
     {
         file_segments_holder.emplace(cache->get(cache_key, offset, size));
@@ -446,22 +448,22 @@ CachedReadBufferFromFile::getImplementationBuffer(FileSegmentPtr & file_segment)
             else
             {
                 read_buffer_for_file_segment->seek(file_offset_of_buffer_end, SEEK_SET);
+
+                assert(static_cast<size_t>(read_buffer_for_file_segment->getPosition()) == file_offset_of_buffer_end);
+                assert(static_cast<size_t>(read_buffer_for_file_segment->getFileOffsetOfBufferEnd()) == file_offset_of_buffer_end);
             }
 
             auto download_offset = file_segment->getDownloadOffset();
             if (download_offset != static_cast<size_t>(read_buffer_for_file_segment->getPosition()))
             {
-                auto impl_range = read_buffer_for_file_segment->getRemainingReadRange();
                 throw Exception(
                     ErrorCodes::LOGICAL_ERROR,
                     "Buffer's offsets mismatch; cached buffer offset: {}, download_offset: {}, "
-                    "position: {}, implementation buffer offset: {}, "
-                    "implementation buffer reading until: {}, file segment info: {}",
+                    "position: {}, implementation buffer remaining read range: {}, file segment info: {}",
                     file_offset_of_buffer_end,
                     download_offset,
                     read_buffer_for_file_segment->getPosition(),
-                    impl_range.left,
-                    *impl_range.right,
+                    read_buffer_for_file_segment->getRemainingReadRange().toString(),
                     file_segment->getInfoForLog());
             }
 
@@ -832,11 +834,12 @@ bool CachedReadBufferFromFile::nextImplStep()
 
     LOG_TEST(
         log,
-        "Current segment: {}, downloader: {}, current count: {}, position: {}",
+        "Current segment: {}, downloader: {}, current count: {}, position: {}, read range: {}",
         current_read_range.toString(),
         file_segment->getDownloader(),
         implementation_buffer->count(),
-        implementation_buffer->getPosition());
+        implementation_buffer->getPosition(),
+        implementation_buffer->getRemainingReadRange().toString());
 
     assert(current_read_range.left <= file_offset_of_buffer_end);
     assert(current_read_range.right >= file_offset_of_buffer_end);
@@ -879,7 +882,6 @@ bool CachedReadBufferFromFile::nextImplStep()
         else
         {
             assert(file_offset_of_buffer_end == static_cast<size_t>(implementation_buffer->getFileOffsetOfBufferEnd()));
-            assert(file_segment->getDownloadOffset() == static_cast<size_t>(implementation_buffer->getPosition()));
         }
 
         assert(!implementation_buffer->hasPendingData());
@@ -894,6 +896,12 @@ bool CachedReadBufferFromFile::nextImplStep()
         current_file_segment_counters.increment(ProfileEvents::FileSegmentReadMicroseconds, elapsed);
 
         size = implementation_buffer->buffer().size();
+
+        LOG_TEST(
+            log,
+            "Read {} bytes, read type {}, position: {}, offset: {}, remaining read range: {}",
+            size, toString(read_type), implementation_buffer->getPosition(),
+            implementation_buffer->getFileOffsetOfBufferEnd(), implementation_buffer->getRemainingReadRange().toString());
 
         if (read_type == ReadType::CACHED)
         {
@@ -931,6 +939,7 @@ bool CachedReadBufferFromFile::nextImplStep()
                 assert(
                     std::next(current_file_segment_it) == file_segments_holder->file_segments.end()
                     || file_segment->getDownloadOffset() == implementation_buffer->getFileOffsetOfBufferEnd());
+
             }
             else
             {
@@ -956,7 +965,6 @@ bool CachedReadBufferFromFile::nextImplStep()
         }
 
         file_offset_of_buffer_end += size;
-
     }
 
     swap(*implementation_buffer);
@@ -1127,13 +1135,7 @@ String CachedReadBufferFromFile::getInfoForLog()
 {
     String implementation_buffer_read_range_str;
     if (implementation_buffer)
-    {
-        auto read_range = implementation_buffer->getRemainingReadRange();
-        implementation_buffer_read_range_str
-            = std::to_string(read_range.left)
-            + '-'
-            + (read_range.right ? std::to_string(*read_range.right) : "None");
-    }
+        implementation_buffer_read_range_str = implementation_buffer->getRemainingReadRange().toString();
     else
         implementation_buffer_read_range_str = "None";
 
