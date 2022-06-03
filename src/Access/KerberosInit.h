@@ -31,7 +31,6 @@ private:
     krb5_get_init_creds_opt *options = nullptr;
     krb5_creds my_creds;
     krb5_keytab keytab = nullptr;
-    char * principal_name;
     krb5_principal defcache_princ = nullptr;
 };
 
