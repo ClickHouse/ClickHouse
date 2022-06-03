@@ -91,7 +91,7 @@ public:
 
     std::vector<String> getPrimaryKey() const override { return key_names; }
 
-    Chunk getByKeys(const ColumnsWithTypeAndName & cols, const Block & output_block, PaddedPODArray<UInt8> * null_map, ContextPtr context)
+    Chunk getByKeys(const ColumnsWithTypeAndName & cols, const Block & output_sample_block, PaddedPODArray<UInt8> * null_map, ContextPtr context)
         const override;
 
 private:

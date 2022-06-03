@@ -190,9 +190,10 @@ Chunk StorageSet::getByKeys(
     if (sample_block.columns() != 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Assertion failed: {} != 1", sample_block.columns());
 
-    auto columns = sample_block.cloneEmptyColumns();
     auto result = set->execute(cols, false);
-    return Chunk({std::move(result)}, result->size());
+    auto num_rows = result->size();
+
+    return Chunk({std::move(result)}, num_rows);
 }
 
 void StorageSetOrJoinBase::restore()

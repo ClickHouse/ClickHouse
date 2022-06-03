@@ -228,14 +228,16 @@ ColumnWithTypeAndName StorageJoin::joinGet(const Block & block, const Block & bl
 
 
 Chunk StorageJoin::getByKeys(
-    const ColumnsWithTypeAndName & cols, const Block & output_block, PaddedPODArray<UInt8> * /*null_map*/, ContextPtr context) const
+    const ColumnsWithTypeAndName & cols, const Block & output_sample_block, PaddedPODArray<UInt8> * /*null_map*/, ContextPtr context) const
 {
     if (cols.size() != key_names.size())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Assertion failed: {} != {}", cols.size(), key_names.size());
 
-    auto result = joinGet(cols, output_block, context);
+    Block columns = output_sample_block.cloneEmpty();
+    auto result = joinGet(cols, columns, context);
+    auto num_rows = result.column->size();
 
-    return Chunk(output_block.getColumns(), output_block.getColumns().at(0)->size());
+    return Chunk({std::move(result.column)}, num_rows);
 }
 
 
