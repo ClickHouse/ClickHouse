@@ -39,7 +39,7 @@ MergeTreeBaseSelectProcessor::MergeTreeBaseSelectProcessor(
     bool use_uncompressed_cache_,
     const Names & virt_column_names_,
     std::optional<ParallelReadingExtension> extension_)
-    : SourceWithProgress(transformHeader(std::move(header), prewhere_info_, storage_.getPartitionValueType(), virt_column_names_))
+    : ISource(transformHeader(std::move(header), prewhere_info_, storage_.getPartitionValueType(), virt_column_names_))
     , storage(storage_)
     , storage_snapshot(storage_snapshot_)
     , prewhere_info(prewhere_info_)
@@ -294,7 +294,7 @@ Chunk MergeTreeBaseSelectProcessor::readFromPartImpl()
 
     UInt64 num_filtered_rows = read_result.numReadRows() - read_result.num_rows;
 
-    progress({ read_result.numReadRows(), read_result.numBytesRead() });
+    progress(read_result.numReadRows(), read_result.numBytesRead());
 
     if (task->size_predictor)
     {

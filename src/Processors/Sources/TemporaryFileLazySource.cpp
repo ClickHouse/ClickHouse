@@ -7,7 +7,7 @@ namespace DB
 TemporaryFileLazySource::~TemporaryFileLazySource() = default;
 
 TemporaryFileLazySource::TemporaryFileLazySource(const std::string & path_, const Block & header_)
-    : ISource(header_)
+    : ISource(header_, true)
     , path(path_)
     , done(false)
 {}
