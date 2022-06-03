@@ -85,7 +85,7 @@ Performance tests allow to measure and compare performance of some isolated part
 
 Each test run one or multiple queries (possibly with combinations of parameters) in a loop.
 
-If you want to improve performance of ClickHouse in some scenario, and if improvements can be observed on simple queries, it is highly recommended to write a performance test. It always makes sense to use `perf top` or other perf tools during your tests.
+If you want to improve performance of ClickHouse in some scenario, and if improvements can be observed on simple queries, it is highly recommended to write a performance test. It always makes sense to use `perf top` or other `perf` tools during your tests.
 
 ## Test Tools and Scripts {#test-tools-and-scripts}
 

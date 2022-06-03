@@ -70,7 +70,7 @@ Regardless of RAID use, always use replication for data security.
 Enable NCQ with a long queue. For HDD, choose the CFQ scheduler, and for SSD, choose noop. Don’t reduce the ‘readahead’ setting.
 For HDD, enable the write cache.
 
-Make sure that [fstrim](https://en.wikipedia.org/wiki/Trim_(computing)) is enabled for NVME and SSD disks in your OS (usually it's implemented using a cronjob or systemd service).
+Make sure that [`fstrim`](https://en.wikipedia.org/wiki/Trim_(computing)) is enabled for NVME and SSD disks in your OS (usually it's implemented using a cronjob or systemd service).
 
 ## File System {#file-system}
 
@@ -107,7 +107,7 @@ If you are using OpenStack, set
 ```
 cpu_mode=host-passthrough
 ```
-in nova.conf.
+in `nova.conf`.
 
 If you are using libvirt, set
 ```
@@ -241,7 +241,7 @@ JAVA_OPTS="-Xms{{ '{{' }} cluster.get('xms','128M') {{ '}}' }} \
     -XX:MaxGCPauseMillis=50"
 ```
 
-Salt init:
+Salt initialization:
 
 ``` text
 description "zookeeper-{{ '{{' }} cluster['name'] {{ '}}' }} centralized coordination service"

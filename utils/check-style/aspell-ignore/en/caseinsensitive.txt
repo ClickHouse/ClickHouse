@@ -43,7 +43,6 @@ csv
 filesystem
 json[a-z]*
 latencies
-ng
 noop
 nullable
 num

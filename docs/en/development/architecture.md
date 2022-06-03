@@ -149,7 +149,7 @@ The server implements several different interfaces:
 -   A TCP interface for the native ClickHouse client and for cross-server communication during distributed query execution.
 -   An interface for transferring data for replication.
 
-Internally, it is just a primitive multithreaded server without coroutines or fibers. Since the server is not designed to process a high rate of simple queries but to process a relatively low rate of complex queries, each of them can process a vast amount of data for analytics.
+Internally, it is just a primitive multithread server without coroutines or fibers. Since the server is not designed to process a high rate of simple queries but to process a relatively low rate of complex queries, each of them can process a vast amount of data for analytics.
 
 The server initializes the `Context` class with the necessary environment for query execution: the list of available databases, users and access rights, settings, clusters, the process list, the query log, and so on. Interpreters use this environment.
 
@@ -178,7 +178,7 @@ To execute queries and do side activities ClickHouse allocates threads from one 
 
 Server pool is a `Poco::ThreadPool` class instance defined in `Server::main()` method. It can have at most `max_connection` threads. Every thread is dedicated to a single active connection.
 
-Global thread pool is `GlobalThreadPool` singleton class. To allocate thread from it `ThreadFromGlobalPool` is used. It has an interface similar to `std::thread`, but pulls thread from the global pool and does all necessary initializations. It is configured with the following settings:
+Global thread pool is `GlobalThreadPool` singleton class. To allocate thread from it `ThreadFromGlobalPool` is used. It has an interface similar to `std::thread`, but pulls thread from the global pool and does all necessary initialization. It is configured with the following settings:
   * `max_thread_pool_size` - limit on thread count in pool.
   * `max_thread_pool_free_size` - limit on idle thread count waiting for new jobs.
   * `thread_pool_queue_size` - limit on scheduled job count.

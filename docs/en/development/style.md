@@ -491,7 +491,7 @@ if (0 != close(fd))
     throwFromErrno("Cannot close file " + file_name, ErrorCodes::CANNOT_CLOSE_FILE);
 ```
 
-You can use assert to check invariants in code.
+You can use assert to check invariant in code.
 
 **4.** Exception types.
 
@@ -552,9 +552,9 @@ Do not try to implement lock-free data structures unless it is your primary area
 
 In most cases, prefer references.
 
-**10.** const.
+**10.** `const`.
 
-Use constant references, pointers to constants, `const_iterator`, and const methods.
+Use constant references, pointers to constants, `const_iterator`, and `const` methods.
 
 Consider `const` to be default and use non-`const` only when necessary.
 
@@ -596,7 +596,7 @@ public:
     AggregateFunctionPtr get(const String & name, const DataTypes & argument_types) const;
 ```
 
-**15.** namespace.
+**15.** `namespace`.
 
 There is no need to use a separate `namespace` for application code.
 
@@ -606,7 +606,7 @@ For medium to large libraries, put everything in a `namespace`.
 
 In the library’s `.h` file, you can use `namespace detail` to hide implementation details not needed for the application code.
 
-In a `.cpp` file, you can use a `static` or anonymous namespace to hide symbols.
+In a `.cpp` file, you can use a `static` or anonymous `namespace` to hide symbols.
 
 Also, a `namespace` can be used for an `enum` to prevent the corresponding names from falling into an external `namespace` (but it’s better to use an `enum class`).
 

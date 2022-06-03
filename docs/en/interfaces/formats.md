@@ -1665,7 +1665,7 @@ To exchange data with Hadoop, you can use [HDFS table engine](../engines/table-e
 
 ### Parquet format settings {#parquet-format-settings}
 
-- [output_format_parquet_row_group_size](../operations/settings/settings.md#output_format_parquet_row_group_size) - row group size in rows while data output. Default value - `1000000`.  
+- [output_format_parquet_row_group_size](../operations/settings/settings.md#output_format_parquet_row_group_size) - row group size in rows while data output. Default value - `1000000`.
 - [output_format_parquet_string_as_string](../operations/settings/settings.md#output_format_parquet_string_as_string) - use Parquet String type instead of Binary for String columns. Default value - `false`.
 - [input_format_parquet_import_nested](../operations/settings/settings.md#input_format_parquet_import_nested) - allow inserting array of structs into [Nested](../sql-reference/data-types/nested-data-structures/nested.md) table in Parquet input format. Default value - `false`.
 - [input_format_parquet_case_insensitive_column_matching](../operations/settings/settings.md#input_format_parquet_case_insensitive_column_matching) - ignore case when matching Parquet columns with ClickHouse columns. Default value - `false`.

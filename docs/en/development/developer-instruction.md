@@ -177,7 +177,7 @@ If you require to build all the binaries (utilities and tests), you should run n
 
 Full build requires about 30GB of free disk space or 15GB to build the main binaries.
 
-When a large amount of RAM is available on build machine you should limit the number of build tasks run in parallel with `-j` param:
+When a large amount of RAM is available on build machine you should limit the number of build tasks run in parallel with `-j` parameter:
 
     ninja -j 1 clickhouse-server clickhouse-client
 
