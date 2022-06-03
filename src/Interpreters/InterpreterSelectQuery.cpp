@@ -1600,11 +1600,10 @@ static void executeMergeAggregatedImpl(
 
     Aggregator::Params params(header_before_merge, keys, aggregates, overflow_row, settings.max_threads);
 
-    auto transform_params = std::make_shared<AggregatingTransformParams>(params, final);
-
     auto merging_aggregated = std::make_unique<MergingAggregatedStep>(
         query_plan.getCurrentDataStream(),
-        std::move(transform_params),
+        params,
+        final,
         settings.distributed_aggregation_memory_efficient && is_remote_storage,
         settings.max_threads,
         settings.aggregation_memory_efficient_merge_threads);
@@ -2364,13 +2363,13 @@ void InterpreterSelectQuery::executeRollupOrCube(QueryPlan & query_plan, Modific
 
     auto params
         = getAggregatorParams(query_ptr, *query_analyzer, *context, header_before_transform, keys, aggregates, false, settings, 0, 0);
-    auto transform_params = std::make_shared<AggregatingTransformParams>(std::move(params), true);
+    const bool final = true;
 
     QueryPlanStepPtr step;
     if (modificator == Modificator::ROLLUP)
-        step = std::make_unique<RollupStep>(query_plan.getCurrentDataStream(), std::move(transform_params));
+        step = std::make_unique<RollupStep>(query_plan.getCurrentDataStream(), std::move(params), final);
     else if (modificator == Modificator::CUBE)
-        step = std::make_unique<CubeStep>(query_plan.getCurrentDataStream(), std::move(transform_params));
+        step = std::make_unique<CubeStep>(query_plan.getCurrentDataStream(), std::move(params), final);
 
     query_plan.addStep(std::move(step));
 }

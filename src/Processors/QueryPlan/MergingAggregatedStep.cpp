@@ -25,33 +25,35 @@ static ITransformingStep::Traits getTraits()
 
 MergingAggregatedStep::MergingAggregatedStep(
     const DataStream & input_stream_,
-    AggregatingTransformParamsPtr params_,
+    Aggregator::Params params_,
+    bool final_,
     bool memory_efficient_aggregation_,
     size_t max_threads_,
     size_t memory_efficient_merge_threads_)
-    : ITransformingStep(input_stream_, params_->getHeader(), getTraits())
-    , params(params_)
+    : ITransformingStep(input_stream_, params_.getHeader(final_), getTraits())
+    , params(std::move(params_))
+    , final(final_)
     , memory_efficient_aggregation(memory_efficient_aggregation_)
     , max_threads(max_threads_)
     , memory_efficient_merge_threads(memory_efficient_merge_threads_)
 {
     /// Aggregation keys are distinct
-    for (const auto & key : params->params.keys)
+    for (const auto & key : params.keys)
         output_stream->distinct_columns.insert(key);
 }
 
 void MergingAggregatedStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
+    auto transform_params = std::make_shared<AggregatingTransformParams>(std::move(params), final);
     if (!memory_efficient_aggregation)
     {
         /// We union several sources into one, paralleling the work.
         pipeline.resize(1);
 
         /// Now merge the aggregated blocks
-        pipeline.addSimpleTransform([&](const Block & header)
-        {
-            return std::make_shared<MergingAggregatedTransform>(header, params, max_threads);
-        });
+        pipeline.addSimpleTransform(
+            [&](const Block & header)
+            { return std::make_shared<MergingAggregatedTransform>(header, std::move(transform_params), max_threads); });
     }
     else
     {
@@ -59,26 +61,26 @@ void MergingAggregatedStep::transformPipeline(QueryPipelineBuilder & pipeline, c
                                  ? static_cast<size_t>(memory_efficient_merge_threads)
                                  : static_cast<size_t>(max_threads);
 
-        pipeline.addMergingAggregatedMemoryEfficientTransform(params, num_merge_threads);
+        pipeline.addMergingAggregatedMemoryEfficientTransform(std::move(transform_params), num_merge_threads);
     }
 }
 
 void MergingAggregatedStep::describeActions(FormatSettings & settings) const
 {
-    return params->params.explain(settings.out, settings.offset);
+    return params.explain(settings.out, settings.offset);
 }
 
 void MergingAggregatedStep::describeActions(JSONBuilder::JSONMap & map) const
 {
-    params->params.explain(map);
+    params.explain(map);
 }
 
 void MergingAggregatedStep::updateOutputStream()
 {
-    output_stream = createOutputStream(input_streams.front(), params->getHeader(), getDataStreamTraits());
+    output_stream = createOutputStream(input_streams.front(), params.getHeader(final), getDataStreamTraits());
 
     /// Aggregation keys are distinct
-    for (const auto & key : params->params.keys)
+    for (const auto & key : params.keys)
         output_stream->distinct_columns.insert(key);
 }
 

@@ -24,13 +24,14 @@ static ITransformingStep::Traits getTraits()
     };
 }
 
-CubeStep::CubeStep(const DataStream & input_stream_, AggregatingTransformParamsPtr params_)
-    : ITransformingStep(input_stream_, appendGroupingSetColumn(params_->getHeader()), getTraits())
-    , keys_size(params_->params.keys_size)
+CubeStep::CubeStep(const DataStream & input_stream_, Aggregator::Params params_, bool final_)
+    : ITransformingStep(input_stream_, appendGroupingSetColumn(params_.getHeader(final_)), getTraits())
+    , keys_size(params_.keys_size)
     , params(std::move(params_))
+    , final(final_)
 {
     /// Aggregation keys are distinct
-    for (const auto & key : params->params.keys)
+    for (const auto & key : params.keys)
         output_stream->distinct_columns.insert(key);
 }
 
@@ -59,21 +60,22 @@ void CubeStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQue
         if (stream_type == QueryPipelineBuilder::StreamType::Totals)
             return addGroupingSetForTotals(header, settings, (UInt64(1) << keys_size) - 1);
 
-        return std::make_shared<CubeTransform>(header, std::move(params));
+        auto transform_params = std::make_shared<AggregatingTransformParams>(std::move(params), final);
+        return std::make_shared<CubeTransform>(header, std::move(transform_params));
     });
 }
 
 const Aggregator::Params & CubeStep::getParams() const
 {
-    return params->params;
+    return params;
 }
 
 void CubeStep::updateOutputStream()
 {
-    output_stream = createOutputStream(input_streams.front(), appendGroupingSetColumn(params->getHeader()), getDataStreamTraits());
+    output_stream = createOutputStream(input_streams.front(), appendGroupingSetColumn(params.getHeader(final)), getDataStreamTraits());
 
     /// Aggregation keys are distinct
-    for (const auto & key : params->params.keys)
+    for (const auto & key : params.keys)
         output_stream->distinct_columns.insert(key);
 }
 }
