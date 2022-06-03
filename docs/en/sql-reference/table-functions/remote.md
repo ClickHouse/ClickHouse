@@ -3,7 +3,7 @@ sidebar_position: 40
 sidebar_label: remote
 ---
 
-# remote, remoteSecure {#remote-remotesecure}
+# remote, remoteSecure
 
 Allows to access remote servers without creating a [Distributed](../../engines/table-engines/special/distributed.md) table. `remoteSecure` - same as `remote` but with a secured connection.
 
