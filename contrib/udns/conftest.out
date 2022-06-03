@@ -1,0 +1,7 @@
+conftest.c:1:14: error: implicit declaration of function 'socket' is invalid in C99 [-Werror,-Wimplicit-function-declaration]
+int main() { socket(); connect(); return 0; }
+             ^
+conftest.c:1:24: error: implicit declaration of function 'connect' is invalid in C99 [-Werror,-Wimplicit-function-declaration]
+int main() { socket(); connect(); return 0; }
+                       ^
+2 errors generated.
