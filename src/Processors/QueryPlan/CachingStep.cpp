@@ -1,6 +1,7 @@
 #include <Processors/QueryPlan/CachingStep.h>
 #include <Processors/Transforms/CachingTransform.h>
 #include <Parsers/IAST.h>
+#include <src/QueryPipeline/QueryPipelineBuilder.h>
 
 namespace DB
 {
