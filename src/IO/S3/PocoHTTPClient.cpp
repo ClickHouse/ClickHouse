@@ -246,10 +246,11 @@ void PocoHTTPClient::makeRequestInternal(
                     break;
             }
 
+            /// Headers coming from SDK are lower-cased.
             for (const auto & [header_name, header_value] : request.GetHeaders())
                 poco_request.set(header_name, header_value);
             for (const auto & [header_name, header_value] : extra_headers)
-                poco_request.set(header_name, header_value);
+                poco_request.set(boost::algorithm::to_lower_copy(header_name), header_value);
 
             Poco::Net::HTTPResponse poco_response;
 
