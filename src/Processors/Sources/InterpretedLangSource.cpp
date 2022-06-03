@@ -76,7 +76,7 @@ public:
         // !! make array size configurable (split input into chunks)
         output << "rows = []\n"
                   "for line in sys.stdin:\n"
-                  "    rows.append([int(x) for x in line.split('\\t')])\n"  // !! convert input to array based on arg types
+                  "    rows.append([float(x) for x in line.split('\\t')])\n"  // !! convert input to array based on arg types
                   "input_data = np.array(rows)\n";
 
         output << "result_column = " << function_name << "(input_data[:,0]";
@@ -113,11 +113,11 @@ public:
     void generateMain() override
     {
         for (const String& arg : args) {
-            output << arg << " = Vector{Int}()\n";  /// init columns
+            output << arg << " = Vector{Float64}()\n";  /// init columns
         }
 
         output << "for line in eachline(stdin)\n"
-                  "    row = parse.(Int, split(line, '\\t'))\n";  // !! use real types
+                  "    row = parse.(Float64, split(line, '\\t'))\n";  // !! use real types
         for (size_t i = 0; i < args.size(); ++i) {
             output << "    push!(" << args[i] << ", row[" << i + 1 << "])\n";
         }
@@ -161,7 +161,7 @@ public:
                   "i <- 1\n";
 
         output << "while (length(line <- readLines(input, n=1)) > 0) {\n"
-                  "    values <- strtoi(unlist(strsplit(line, \"\\t\")))\n";  // !! use real types
+                  "    values <- as.double(unlist(strsplit(line, \"\\t\")))\n";  // !! use real types
         for (size_t arg_num = 0; arg_num < args.size(); ++arg_num) {
             /// Idk why assignment by index works (couldn't find this anywhere in docs),
             /// but it's much faster than append

@@ -33,6 +33,7 @@ UserDefinedSQLFunctionFactory & UserDefinedSQLFunctionFactory::instance()
 
 void UserDefinedSQLFunctionFactory::registerFunction(ContextPtr context, const String & function_name, ASTPtr create_function_query, bool replace, bool if_not_exists, bool persist)
 {
+    // FIXME function name is added to suggestions only after client restart
     if (FunctionFactory::instance().hasNameOrAlias(function_name))
     {
         if (if_not_exists)
@@ -186,7 +187,16 @@ public:
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
     size_t getNumberOfArguments() const override { return query->function_args->children.size(); }
 
-    bool useDefaultImplementationForConstants() const override { return false; }  // !! make configurable (new keyword in query?)
+    bool useDefaultImplementationForConstants() const override
+    {
+        // inefficient!
+        // CREATE FUNCTION rand_norm(loc, scale, seed) '
+        // import scipy.stats
+        // return scipy.stats.norm(loc=loc, scale=scale).rvs(loc.shape[0], int(seed[0]))
+        // ' USING python
+        // Possible solution is to pass number of rows as a hidden argument (this will also allow functions with 0 args)
+        return false; // !! make configurable (new keyword in query?)
+    }
     bool useDefaultImplementationForNulls() const override { return true; }  // should be ok (?)
     bool isDeterministic() const override { return false; }  // !! make configurable?
     bool isDeterministicInScopeOfQuery() const override { return false; }
@@ -195,7 +205,7 @@ public:
     {
         // !! make configurable
         //    Is it possible to detect type dynamically? (execute func with empty/sample input?)
-        return std::make_shared<DataTypeUInt32>();
+        return std::make_shared<DataTypeFloat64>();
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
