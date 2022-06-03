@@ -4,6 +4,7 @@
 #include <condition_variable>
 #include <Common/LRUCache.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
+#include <QueryPipeline/Pipe.h>
 
 
 namespace DB
@@ -290,7 +291,8 @@ public:
         return CachePutHolder(&removal_scheduler, cache_key, cache.get());
     }
 
-    CacheReadHolder tryReadFromCache(CacheKey cache_key) {
+    CacheReadHolder tryReadFromCache(CacheKey cache_key)
+    {
         return CacheReadHolder(cache.get(), cache_key);
     }
 
