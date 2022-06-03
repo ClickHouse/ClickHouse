@@ -25,7 +25,8 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <QueryPipeline/Pipe.h>
-#include <Processors/Sources/SourceWithProgress.h>
+#include <QueryPipeline/QueryPipeline.h>
+#include <Processors/ISource.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
@@ -55,7 +56,7 @@ static std::string getBaseName(const String & path)
     return path.substr(basename_start + 1);
 }
 
-class StorageHiveSource : public SourceWithProgress, WithContext
+class StorageHiveSource : public ISource, WithContext
 {
 public:
     using FileFormat = StorageHive::FileFormat;
@@ -110,7 +111,7 @@ public:
         ContextPtr context_,
         UInt64 max_block_size_,
         const Names & text_input_field_names_ = {})
-        : SourceWithProgress(getHeader(sample_block_, source_info_))
+        : ISource(getHeader(sample_block_, source_info_))
         , WithContext(context_)
         , source_info(std::move(source_info_))
         , hdfs_namenode_url(std::move(hdfs_namenode_url_))
@@ -152,12 +153,25 @@ public:
         {
             if (!reader)
             {
+                if (current_file_remained_rows)
+                {
+                    return generateChunkByPartitionKeys();
+                }
+
                 current_idx = source_info->next_uri_to_read.fetch_add(1);
                 if (current_idx >= source_info->hive_files.size())
                     return {};
 
-                const auto & current_file = source_info->hive_files[current_idx];
+                current_file = source_info->hive_files[current_idx];
                 current_path = current_file->getPath();
+
+                if (!to_read_block.columns() && current_file->getRows())
+                {
+                    /// this is the case that all columns to read are partition keys. We can construct const columns
+                    /// directly without reading from hive files.
+                    current_file_remained_rows = *(current_file->getRows());
+                    return generateChunkByPartitionKeys();
+                }
 
                 String uri_with_path = hdfs_namenode_url + current_path;
                 auto compression = chooseCompressionMethod(current_path, compression_method);
@@ -203,16 +217,15 @@ public:
                 auto input_format = FormatFactory::instance().getInputFormat(
                     format, *read_buf, to_read_block, getContext(), max_block_size, updateFormatSettings(current_file));
 
-                QueryPipelineBuilder builder;
-                builder.init(Pipe(input_format));
+                Pipe pipe(input_format);
                 if (columns_description.hasDefaults())
                 {
-                    builder.addSimpleTransform([&](const Block & header)
+                    pipe.addSimpleTransform([&](const Block & header)
                     {
                         return std::make_shared<AddingDefaultsTransform>(header, columns_description, *input_format, getContext());
                     });
                 }
-                pipeline = std::make_unique<QueryPipeline>(QueryPipelineBuilder::getPipeline(std::move(builder)));
+                pipeline = std::make_unique<QueryPipeline>(std::move(pipe));
                 reader = std::make_unique<PullingPipelineExecutor>(*pipeline);
             }
 
@@ -261,6 +274,36 @@ public:
         }
     }
 
+    Chunk generateChunkByPartitionKeys()
+    {
+        size_t max_rows = getContext()->getSettings().max_block_size;
+        size_t rows = 0;
+        if (max_rows > current_file_remained_rows)
+        {
+            rows = current_file_remained_rows;
+            current_file_remained_rows = 0;
+        }
+        else
+        {
+            rows = max_rows;
+            current_file_remained_rows -= max_rows;
+        }
+
+        Columns cols;
+        auto types = source_info->partition_name_types.getTypes();
+        auto names = source_info->partition_name_types.getNames();
+        auto fields = current_file->getPartitionValues();
+        for (size_t i = 0, sz = types.size(); i < sz; ++i)
+        {
+            if (!sample_block.has(names[i]))
+                continue;
+            auto col = types[i]->createColumnConst(rows, fields[i]);
+            auto col_idx = sample_block.getPositionByName(names[i]);
+            cols.insert(cols.begin() + col_idx, col);
+        }
+        return Chunk(std::move(cols), rows);
+    }
+
 private:
     std::unique_ptr<ReadBuffer> read_buf;
     std::unique_ptr<QueryPipeline> pipeline;
@@ -276,8 +319,10 @@ private:
     const Names & text_input_field_names;
     FormatSettings format_settings;
 
+    HiveFilePtr current_file;
     String current_path;
     size_t current_idx = 0;
+    size_t current_file_remained_rows = 0;
 
     Poco::Logger * log = &Poco::Logger::get("StorageHive");
 };
@@ -623,33 +668,9 @@ HiveFilePtr StorageHive::getHiveFileIfNeeded(
     return hive_file;
 }
 
-bool StorageHive::isColumnOriented() const
+bool StorageHive::supportsSubsetOfColumns() const
 {
     return format_name == "Parquet" || format_name == "ORC";
-}
-
-void StorageHive::getActualColumnsToRead(Block & sample_block, const Block & header_block, const NameSet & partition_columns) const
-{
-    if (!isColumnOriented())
-        sample_block = header_block;
-    UInt32 erased_columns = 0;
-    for (const auto & column : partition_columns)
-    {
-        if (sample_block.has(column))
-            erased_columns++;
-    }
-    if (erased_columns == sample_block.columns())
-    {
-        for (size_t i = 0; i < header_block.columns(); ++i)
-        {
-            const auto & col = header_block.getByPosition(i);
-            if (!partition_columns.count(col.name))
-            {
-                sample_block.insert(col);
-                break;
-            }
-        }
-    }
 }
 
 Pipe StorageHive::read(
@@ -690,8 +711,6 @@ Pipe StorageHive::read(
         if (column == "_file")
             sources_info->need_file_column = true;
     }
-
-    getActualColumnsToRead(sample_block, header_block, NameSet{partition_names.begin(), partition_names.end()});
 
     if (num_streams > sources_info->hive_files.size())
         num_streams = sources_info->hive_files.size();
@@ -803,7 +822,7 @@ std::optional<UInt64>
 StorageHive::totalRowsImpl(const Settings & settings, const SelectQueryInfo & query_info, ContextPtr context_, PruneLevel prune_level) const
 {
     /// Row-based format like Text doesn't support totalRowsByPartitionPredicate
-    if (!isColumnOriented())
+    if (!supportsSubsetOfColumns())
         return {};
 
     auto hive_metastore_client = HiveMetastoreClientFactory::instance().getOrCreate(hive_metastore_url);

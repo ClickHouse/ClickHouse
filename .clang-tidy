@@ -1,3 +1,6 @@
+# Enable all checks + disale selected checks. Feel free to remove disabled checks from below list if
+# a) the new check is not controversial (this includes many checks in readability-* and google-*) or
+# b) too noisy (checks with > 100 new warnings are considered noisy, this includes e.g. cppcoreguidelines-*).
 Checks: '*,
     -abseil-*,
 
@@ -59,6 +62,7 @@ Checks: '*,
 
     -google-build-using-namespace,
     -google-readability-braces-around-statements,
+    -google-readability-casting,
     -google-readability-function-size,
     -google-readability-namespace-comments,
     -google-readability-todo,
@@ -115,6 +119,7 @@ Checks: '*,
     -readability-else-after-return,
     -readability-function-cognitive-complexity,
     -readability-function-size,
+    -readability-identifier-length,
     -readability-implicit-bool-conversion,
     -readability-isolate-declaration,
     -readability-magic-numbers,

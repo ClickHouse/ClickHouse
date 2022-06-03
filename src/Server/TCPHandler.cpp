@@ -1359,14 +1359,6 @@ void TCPHandler::receiveQuery()
     /// so we have to apply the changes first.
     query_context->setCurrentQueryId(state.query_id);
 
-    /// Disable function name normalization when it's a secondary query, because queries are either
-    /// already normalized on initiator node, or not normalized and should remain unnormalized for
-    /// compatibility.
-    if (query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
-    {
-        query_context->setSetting("normalize_function_names", false);
-    }
-
     /// For testing hedged requests
     if (unlikely(sleep_after_receiving_query.totalMilliseconds()))
     {
@@ -1480,7 +1472,7 @@ bool TCPHandler::receiveUnexpectedData(bool throw_exception)
         maybe_compressed_in = in;
 
     auto skip_block_in = std::make_shared<NativeReader>(*maybe_compressed_in, client_tcp_protocol_version);
-    bool read_ok = skip_block_in->read();
+    bool read_ok = !!skip_block_in->read();
 
     if (!read_ok)
         state.read_all_data = true;

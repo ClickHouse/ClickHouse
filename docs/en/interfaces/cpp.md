@@ -3,7 +3,7 @@ sidebar_position: 24
 sidebar_label: C++ Client Library
 ---
 
-# C++ Client Library {#c-client-library}
+# C++ Client Library
 
 See README at [clickhouse-cpp](https://github.com/ClickHouse/clickhouse-cpp) repository.
 
