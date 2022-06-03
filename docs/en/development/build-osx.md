@@ -91,7 +91,7 @@ cmake --build build
 
 ## Caveats {#caveats}
 
-If you intend to run `clickhouse-server`, make sure to increase the system’s maxfiles variable.
+If you intend to run `clickhouse-server`, make sure to increase the system’s `maxfiles` variable.
 
 :::note
 You’ll need to use sudo.

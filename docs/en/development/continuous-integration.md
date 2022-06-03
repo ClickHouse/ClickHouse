@@ -31,7 +31,7 @@ If you are not sure what to do, ask a maintainer for help.
 ## Merge With Master
 
 Verifies that the PR can be merged to master. If not, it will fail with the
-message 'Cannot fetch mergecommit'. To fix this check, resolve the conflict as
+message `Cannot fetch mergecommit`. To fix this check, resolve the conflict as
 described in the [GitHub
 documentation](https://docs.github.com/en/github/collaborating-with-issues-and-pull-requests/resolving-a-merge-conflict-on-github),
 or merge the `master` branch to your pull request branch using git.
