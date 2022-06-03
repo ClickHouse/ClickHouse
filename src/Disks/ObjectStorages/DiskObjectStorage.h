@@ -31,7 +31,7 @@ public:
         const String & name_,
         const String & remote_fs_root_path_,
         const String & log_name,
-        MetadataStoragePtr && mestata_storage_,
+        MetadataStoragePtr && metadata_storage_,
         ObjectStoragePtr && object_storage_,
         DiskType disk_type_,
         bool send_metadata_,

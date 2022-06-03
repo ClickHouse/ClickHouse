@@ -123,7 +123,7 @@ public:
     }
 };
 
-class CreateDirectoryRecursiveOperation : public IMetadataOperation
+class CreateDirectoryRecursiveOperation final : public IMetadataOperation
 {
 private:
     std::string path;
@@ -157,7 +157,7 @@ public:
     }
 };
 
-class RemoveDirectoryOperation : public IMetadataOperation
+class RemoveDirectoryOperation final : public IMetadataOperation
 {
 private:
     std::string path;
@@ -179,7 +179,7 @@ public:
     }
 };
 
-class RemoveRecursiveOperation : public IMetadataOperation
+class RemoveRecursiveOperation final : public IMetadataOperation
 {
     std::string path;
     IDisk & disk;
@@ -219,7 +219,7 @@ public:
 };
 
 
-class CreateHardlinkOperation : public IMetadataOperation
+class CreateHardlinkOperation final : public IMetadataOperation
 {
 private:
     std::string path_from;
@@ -243,7 +243,7 @@ public:
     }
 };
 
-class MoveFileOperation : public IMetadataOperation
+class MoveFileOperation final : public IMetadataOperation
 {
 private:
     std::string path_from;
@@ -267,7 +267,7 @@ public:
     }
 };
 
-class MoveDirectoryOperation : public IMetadataOperation
+class MoveDirectoryOperation final : public IMetadataOperation
 {
 private:
     std::string path_from;
@@ -292,7 +292,7 @@ public:
 };
 
 
-class ReplaceFileOperation : public IMetadataOperation
+class ReplaceFileOperation final : public IMetadataOperation
 {
 private:
     std::string path_from;
@@ -328,7 +328,7 @@ public:
     }
 };
 
-class WriteFileOperation: public IMetadataOperation
+class WriteFileOperation final : public IMetadataOperation
 {
 private:
     std::string path;
