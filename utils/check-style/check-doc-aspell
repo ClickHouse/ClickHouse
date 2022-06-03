@@ -11,8 +11,9 @@ CHECK_LANG=${1:-en}
 ASPELL_IGNORE_PATH="${ROOT_PATH}/utils/check-style/aspell-ignore/${CHECK_LANG}"
 
 STATUS=0
-for fname in ${ROOT_PATH}/docs/${CHECK_LANG}/**/*.md; do
-    errors=$(aspell list --mode=markdown --lang=${CHECK_LANG} < "$fname" \
+for fname in ${ROOT_PATH}/docs/${CHECK_LANG}/**/*formats.md; do
+    #                       vvv ---- remove anchors   ---- vvv
+    errors=$(cat "$fname" | sed -E 's/(^#.*) \{#[a-z-]+\}$/\1/' | aspell list --encoding=utf-8 --mode=markdown --lang=${CHECK_LANG} \
         | grep -Ewv -f "${ASPELL_IGNORE_PATH}/todo.txt" \
         | grep -Ewvi -f "${ASPELL_IGNORE_PATH}/caseinsensitive.txt" \
         | grep -Ewv -f "${ASPELL_IGNORE_PATH}/casesensitive.txt" \
