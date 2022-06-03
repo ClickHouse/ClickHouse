@@ -35,11 +35,11 @@ select uniqExact(_part), count() from tMM where d >= '2020-09-01 00:00:00' and d
 3	15000
 Selected 3/6 parts by partition key, 3 parts by primary key, 3/3 marks by primary key, 3 marks to read from 3 ranges
 
-select uniqExact(_part), count() from tMM where d >= '2020-01-16 00:00:00' and d < toDateTime('2021-08-17 00:00:00', 'Europe/Moscow');
+select uniqExact(_part), count() from tMM where d >= '2020-01-16 00:00:00' and d < toDateTime('2021-08-17 00:00:00', 'Asia/Istanbul');
 6	30000
 Selected 6/6 parts by partition key, 6 parts by primary key, 6/6 marks by primary key, 6 marks to read from 6 ranges
 
-select uniqExact(_part), count() from tMM where d >= '2020-09-16 00:00:00' and d < toDateTime('2020-10-01 00:00:00', 'Europe/Moscow');
+select uniqExact(_part), count() from tMM where d >= '2020-09-16 00:00:00' and d < toDateTime('2020-10-01 00:00:00', 'Asia/Istanbul');
 0	0
 Selected 0/6 parts by partition key, 0 parts by primary key, 0/0 marks by primary key, 0 marks to read from 0 ranges
 

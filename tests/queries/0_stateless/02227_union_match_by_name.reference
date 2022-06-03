@@ -1,0 +1,40 @@
+-- { echo }
+EXPLAIN header = 1, optimize = 0 SELECT avgWeighted(x, y) FROM (SELECT NULL, 255 AS x, 1 AS y UNION ALL SELECT y, NULL AS x, 1 AS y);
+Expression (Projection)
+Header: avgWeighted(x, y) Nullable(Float64)
+  Expression (Before ORDER BY)
+  Header: avgWeighted(x, y) Nullable(Float64)
+    Aggregating
+    Header: avgWeighted(x, y) Nullable(Float64)
+      Expression (Before GROUP BY)
+      Header: x Nullable(UInt8)
+              y UInt8
+        Union
+        Header: x Nullable(UInt8)
+                y UInt8
+          Expression (Conversion before UNION)
+          Header: x Nullable(UInt8)
+                  y UInt8
+            Expression (Projection)
+            Header: x UInt8
+                    y UInt8
+              Expression (Before ORDER BY)
+              Header: 255 UInt8
+                      1 UInt8
+                      dummy UInt8
+                ReadFromStorage (SystemOne)
+                Header: dummy UInt8
+          Expression (Conversion before UNION)
+          Header: x Nullable(UInt8)
+                  y UInt8
+            Expression (Projection)
+            Header: x Nullable(Nothing)
+                    y UInt8
+              Expression (Before ORDER BY)
+              Header: NULL Nullable(Nothing)
+                      1 UInt8
+                      dummy UInt8
+                ReadFromStorage (SystemOne)
+                Header: dummy UInt8
+SELECT avgWeighted(x, y) FROM (SELECT NULL, 255 AS x, 1 AS y UNION ALL SELECT y, NULL AS x, 1 AS y);
+255

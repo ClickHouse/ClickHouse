@@ -80,6 +80,7 @@ enum class TargetArch : UInt32
     AVX      = (1 << 1),
     AVX2     = (1 << 2),
     AVX512F  = (1 << 3),
+    AVX512BW  = (1 << 4),
 };
 
 /// Runtime detection.
@@ -233,8 +234,8 @@ DECLARE_AVX512F_SPECIFIC_CODE(
   * class TestClass
   * {
   * public:
-  *     MULTITARGET_FUNCTION_WRAPPER_AVX2_SSE42(testFunctionImpl,
-  *     MULTITARGET_FH(int), /\*testFunction*\/ MULTITARGET_FB((int value)
+  *     MULTITARGET_FUNCTION_AVX2_SSE42(
+  *     MULTITARGET_FUNCTION_HEADER(int), testFunctionImpl, MULTITARGET_FUNCTION_BODY((int value)
   *     {
   *          return value;
   *     })
@@ -259,15 +260,15 @@ DECLARE_AVX512F_SPECIFIC_CODE(
   */
 
 /// Function header
-#define MULTITARGET_FH(...) __VA_ARGS__
+#define MULTITARGET_FUNCTION_HEADER(...) __VA_ARGS__
 
 /// Function body
-#define MULTITARGET_FB(...) __VA_ARGS__
+#define MULTITARGET_FUNCTION_BODY(...) __VA_ARGS__
 
 #if ENABLE_MULTITARGET_CODE && defined(__GNUC__) && defined(__x86_64__)
 
 /// NOLINTNEXTLINE
-#define MULTITARGET_FUNCTION_WRAPPER_AVX2_SSE42(name, FUNCTION_HEADER, FUNCTION_BODY) \
+#define MULTITARGET_FUNCTION_AVX2_SSE42(FUNCTION_HEADER, name, FUNCTION_BODY) \
     FUNCTION_HEADER \
     \
     AVX2_FUNCTION_SPECIFIC_ATTRIBUTE \
@@ -288,7 +289,7 @@ DECLARE_AVX512F_SPECIFIC_CODE(
 #else
 
 /// NOLINTNEXTLINE
-#define MULTITARGET_FUNCTION_WRAPPER_AVX2_SSE42(name, FUNCTION_HEADER, FUNCTION_BODY) \
+#define MULTITARGET_FUNCTION_AVX2_SSE42(FUNCTION_HEADER, name, FUNCTION_BODY) \
     FUNCTION_HEADER \
     \
     name \

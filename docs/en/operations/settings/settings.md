@@ -4,7 +4,7 @@ sidebar_position: 52
 slug: /en/operations/settings/settings
 ---
 
-# Settings {#settings}
+# Settings
 
 ## allow_nondeterministic_mutations {#allow_nondeterministic_mutations}
 
@@ -20,7 +20,7 @@ Default value: 0.
 <profiles>
     <default>
         <allow_nondeterministic_mutations>1</allow_nondeterministic_mutations>
-        
+
         <!-- ... -->
     </default>
 
@@ -520,6 +520,18 @@ Result:
 │ 103 │ first  │
 └─────┴────────┘
 ```
+
+## input_format_tsv_skip_first_lines {#settings-input_format_tsv_skip_first_lines}
+
+The number of lines to skip at the beginning of data in TSV input format.
+
+Default value: `0`.
+
+## input_format_csv_skip_first_lines {#settings-input_format_csv_skip_first_lines}
+
+The number of lines to skip at the beginning of data in CSV input format.
+
+Default value: `0`.
 
 ## input_format_null_as_default {#settings-input-format-null-as-default}
 
@@ -1838,7 +1850,7 @@ Usage
 
 By default, deduplication is not performed for materialized views but is done upstream, in the source table.
 If an INSERTed block is skipped due to deduplication in the source table, there will be no insertion into attached materialized views. This behaviour exists to enable the insertion of highly aggregated data into materialized views, for cases where inserted blocks are the same after materialized view aggregation but derived from different INSERTs into the source table.
-At the same time, this behaviour “breaks” `INSERT` idempotency. If an `INSERT` into the main table was successful and `INSERT` into a materialized view failed (e.g. because of communication failure with Zookeeper) a client will get an error and can retry the operation. However, the materialized view won’t receive the second insert because it will be discarded by deduplication in the main (source) table. The setting `deduplicate_blocks_in_dependent_materialized_views` allows for changing this behaviour. On retry, a materialized view will receive the repeat insert and will perform a deduplication check by itself,
+At the same time, this behaviour “breaks” `INSERT` idempotency. If an `INSERT` into the main table was successful and `INSERT` into a materialized view failed (e.g. because of communication failure with ClickHouse Keeper) a client will get an error and can retry the operation. However, the materialized view won’t receive the second insert because it will be discarded by deduplication in the main (source) table. The setting `deduplicate_blocks_in_dependent_materialized_views` allows for changing this behaviour. On retry, a materialized view will receive the repeat insert and will perform a deduplication check by itself,
 ignoring check result for the source table, and will insert rows lost because of the first failure.
 
 ## insert_deduplication_token {#insert_deduplication_token}
@@ -2459,7 +2471,7 @@ Default value: 0.
 
 ## merge_selecting_sleep_ms {#merge_selecting_sleep_ms}
 
-Sleep time for merge selecting when no part is selected. A lower setting triggers selecting tasks in `background_schedule_pool` frequently, which results in a large number of requests to Zookeeper in large-scale clusters.
+Sleep time for merge selecting when no part is selected. A lower setting triggers selecting tasks in `background_schedule_pool` frequently, which results in a large number of requests to ClickHouse Keeper in large-scale clusters.
 
 Possible values:
 
@@ -2607,7 +2619,7 @@ Default value: 128.
 
 ## background_fetches_pool_size {#background_fetches_pool_size}
 
-Sets the number of threads performing background fetches for [replicated](../../engines/table-engines/mergetree-family/replication.md) tables. This setting is applied at the ClickHouse server start and can’t be changed in a user session. For production usage with frequent small insertions or slow ZooKeeper cluster is recommended to use default value.
+Sets the number of threads performing background fetches for [replicated](../../engines/table-engines/mergetree-family/replication.md) tables. This setting is applied at the ClickHouse server start and can’t be changed in a user session. For production usage with frequent small insertions or slow ZooKeeper cluster it is recommended to use default value.
 
 Possible values:
 
@@ -4279,7 +4291,7 @@ Maximum time thread will wait for memory to be freed in the case of memory overc
 If the timeout is reached and memory is not freed, an exception is thrown.
 Read more about [memory overcommit](memory-overcommit.md).
 
-Default value: `200`.
+Default value: `5000000`.
 
 ## memory_overcommit_ratio_denominator_for_user
 

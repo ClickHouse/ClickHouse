@@ -68,6 +68,15 @@
 
 namespace fs = std::filesystem;
 
+namespace DB
+{
+    namespace ErrorCodes
+    {
+        extern const int CANNOT_SET_SIGNAL_HANDLER;
+        extern const int CANNOT_SEND_SIGNAL;
+    }
+}
+
 DB::PipeFDs signal_pipe;
 
 
@@ -76,8 +85,11 @@ DB::PipeFDs signal_pipe;
   */
 static void call_default_signal_handler(int sig)
 {
-    signal(sig, SIG_DFL);
-    raise(sig);
+    if (SIG_ERR == signal(sig, SIG_DFL))
+        DB::throwFromErrno("Cannot set signal handler.", DB::ErrorCodes::CANNOT_SET_SIGNAL_HANDLER);
+
+    if (0 != raise(sig))
+        DB::throwFromErrno("Cannot send signal.", DB::ErrorCodes::CANNOT_SEND_SIGNAL);
 }
 
 static const size_t signal_pipe_buf_size =
@@ -498,9 +510,8 @@ BaseDaemon::~BaseDaemon()
     signal_listener_thread.join();
     /// Reset signals to SIG_DFL to avoid trying to write to the signal_pipe that will be closed after.
     for (int sig : handled_signals)
-    {
-        signal(sig, SIG_DFL);
-    }
+        if (SIG_ERR == signal(sig, SIG_DFL))
+            DB::throwFromErrno("Cannot set signal handler.", DB::ErrorCodes::CANNOT_SET_SIGNAL_HANDLER);
     signal_pipe.close();
 }
 

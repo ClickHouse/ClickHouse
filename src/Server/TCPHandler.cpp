@@ -1359,14 +1359,6 @@ void TCPHandler::receiveQuery()
     /// so we have to apply the changes first.
     query_context->setCurrentQueryId(state.query_id);
 
-    /// Disable function name normalization when it's a secondary query, because queries are either
-    /// already normalized on initiator node, or not normalized and should remain unnormalized for
-    /// compatibility.
-    if (query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
-    {
-        query_context->setSetting("normalize_function_names", false);
-    }
-
     /// For testing hedged requests
     if (unlikely(sleep_after_receiving_query.totalMilliseconds()))
     {
