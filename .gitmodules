@@ -274,9 +274,9 @@
 [submodule "contrib/base-x"]
 	path = contrib/base-x
 	url = https://github.com/ClickHouse/base-x.git
-[submodule "contrib/cpp-dns"]
-	path = contrib/cpp-dns
-	url = git@github.com:YukiWorkshop/cpp-dns.git
 [submodule "contrib/udns"]
 	path = contrib/udns
 	url = https://github.com/arthurpassos/udns.git
+[submodule "contrib/cpp-dns"]
+	path = contrib/cpp-dns
+	url = git@github.com:YukiWorkshop/cpp-dns.git
