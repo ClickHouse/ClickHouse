@@ -1736,11 +1736,10 @@ String IMergeTreeDataPart::getZeroLevelPartBlockID(std::string_view token) const
     return info.partition_id + "_" + toString(hash_value.words[0]) + "_" + toString(hash_value.words[1]);
 }
 
-IMergeTreeDataPart::uint128 IMergeTreeDataPart::getActualChecksumByFile(const String & file_path) const
+IMergeTreeDataPart::uint128 IMergeTreeDataPart::getActualChecksumByFile(const String & file_name) const
 {
     assert(use_metadata_cache);
 
-    String file_name = std::filesystem::path(file_path).filename();
     const auto filenames_without_checksums = getFileNamesWithoutChecksums();
     auto it = checksums.files.find(file_name);
     if (!filenames_without_checksums.contains(file_name) && it != checksums.files.end())
@@ -1748,11 +1747,11 @@ IMergeTreeDataPart::uint128 IMergeTreeDataPart::getActualChecksumByFile(const St
         return it->second.file_hash;
     }
 
-    if (!data_part_storage->exists(file_path))
+    if (!data_part_storage->exists(file_name))
     {
         return {};
     }
-    std::unique_ptr<ReadBufferFromFileBase> in_file = data_part_storage->readFile(file_path, {}, std::nullopt, std::nullopt);
+    std::unique_ptr<ReadBufferFromFileBase> in_file = data_part_storage->readFile(file_name, {}, std::nullopt, std::nullopt);
     HashingReadBuffer in_hash(*in_file);
 
     String value;

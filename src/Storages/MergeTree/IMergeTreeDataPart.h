@@ -465,7 +465,7 @@ public:
     UInt32 getNumberOfRefereneces() const;
 
     /// Get checksums of metadata file in part directory
-    IMergeTreeDataPart::uint128 getActualChecksumByFile(const String & file_path) const;
+    IMergeTreeDataPart::uint128 getActualChecksumByFile(const String & file_name) const;
 
     /// Check metadata in cache is consistent with actual metadata on disk(if use_metadata_cache is true)
     std::unordered_map<String, uint128> checkMetadata() const;
