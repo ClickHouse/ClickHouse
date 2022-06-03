@@ -1159,8 +1159,8 @@ StorageWindowView::StorageWindowView(
         throw Exception(ErrorCodes::INCORRECT_QUERY, "SELECT query is not specified for {}", getName());
 
     /// If the target table is not set, use inner target table
-    inner_target_table = query.to_table_id.empty();
-    if (inner_target_table && !query.storage)
+    has_inner_target_table = query.to_table_id.empty();
+    if (has_inner_target_table && !query.storage)
         throw Exception(
             "You must specify where to save results of a WindowView query: either ENGINE or an existing table in a TO clause",
             ErrorCodes::INCORRECT_QUERY);
@@ -1173,14 +1173,14 @@ StorageWindowView::StorageWindowView(
     /// Extract information about watermark, lateness.
     eventTimeParser(query);
 
-    target_table_id = query.to_table_id;
-
     auto inner_query = initInnerQuery(query.select->list_of_selects->children.at(0)->as<ASTSelectQuery &>(), context_);
 
     if (query.inner_storage)
         inner_table_engine = query.inner_storage->clone();
     inner_table_id = StorageID(getStorageID().database_name, generateInnerTableName(getStorageID()));
     inner_fetch_query = generateInnerFetchQuery(inner_table_id);
+
+    target_table_id = has_inner_target_table ? StorageID(table_id_.database_name, generateTargetTableName(table_id_)) : query.to_table_id;
 
     if (is_proctime)
         next_fire_signal = getWindowUpperBound(std::time(nullptr));
@@ -1193,7 +1193,7 @@ StorageWindowView::StorageWindowView(
         InterpreterCreateQuery create_interpreter(inner_create_query, create_context);
         create_interpreter.setInternal(true);
         create_interpreter.execute();
-        if (inner_target_table)
+        if (has_inner_target_table)
         {
             /// create inner target table
             auto create_context = Context::createCopy(context_);
@@ -1210,14 +1210,8 @@ StorageWindowView::StorageWindowView(
             InterpreterCreateQuery create_interpreter(target_create_query, create_context);
             create_interpreter.setInternal(true);
             create_interpreter.execute();
-
-            target_table_id = StorageID(target_create_query->getDatabase(), target_create_query->getTable());
         }
-        else
-            target_table_id = query.to_table_id;
     }
-
-    inner_fetch_query = generateInnerFetchQuery(inner_table_id);
 
     clean_cache_task = getContext()->getSchedulePool().createTask(getStorageID().getFullTableName(), [this] { threadFuncCleanup(); });
     fire_task = getContext()->getSchedulePool().createTask(
@@ -1615,7 +1609,7 @@ void StorageWindowView::dropInnerTableIfAny(bool no_delay, ContextPtr local_cont
         InterpreterDropQuery::executeDropQuery(
             ASTDropQuery::Kind::Drop, getContext(), local_context, inner_table_id, no_delay);
 
-        if (inner_target_table)
+        if (has_inner_target_table)
             InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind::Drop, getContext(), local_context, target_table_id, no_delay);
     }
     catch (...)
