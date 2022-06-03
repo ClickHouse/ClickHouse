@@ -3380,7 +3380,7 @@ Possible values:
 
 Default value: 1.
 
-## input_format_with_types_use_header {#settings-input-format-with-types-use-header}
+## input_format_with_types_use_header {#input_format_with_types_use_header}
 
 Controls whether format parser should check if data types from the input data match data types from the target table.
 
@@ -3415,7 +3415,7 @@ Possible values:
 
 Default value: 1.
 
-## input_format_null_as_default {#settings-input-format-null-as-default}
+## input_format_null_as_default {#input_format_null_as_default}
 
 Enables or disables the initialization of [NULL](../../sql-reference/syntax.md#null-literal) fields with [default values](../../sql-reference/statements/create/table.md#create-default-values), if data type of these fields is not [nullable](../../sql-reference/data-types/nullable.md#data_type-nullable).
 If column type is not nullable and this setting is disabled, then inserting `NULL` causes an exception. If column type is nullable, then `NULL` values are inserted as is, regardless of this setting.
@@ -3616,7 +3616,7 @@ Possible values:
 
 Default value: 1.
 
-### output_format_json_quote_denormals {#settings-output_format_json_quote_denormals}
+### output_format_json_quote_denormals {#output_format_json_quote_denormals}
 
 Enables `+nan`, `-nan`, `+inf`, `-inf` outputs in [JSON](../../interfaces/formats.md#json) output format.
 
@@ -3727,7 +3727,7 @@ Serialize named tuple columns as JSON objects.
 
 Disabled by default.
 
-### output_format_json_array_of_rows {#output-format-json-array-of-rows}
+### output_format_json_array_of_rows {#output_format_json_array_of_rows}
 
 Enables the ability to output all rows as a JSON array in the [JSONEachRow](../../interfaces/formats.md#jsoneachrow) format.
 
@@ -3776,7 +3776,7 @@ Result:
 
 ## TSV format settings {#tsv-format-settings}
 
-### input_format_tsv_empty_as_default {#settings-input-format-tsv-empty-as-default}
+### input_format_tsv_empty_as_default {#input_format_tsv_empty_as_default}
 
 When enabled, replace empty input fields in TSV with default values. For complex default expressions `input_format_defaults_for_omitted_fields` must be enabled too.
 
@@ -4004,7 +4004,7 @@ When reading Array from CSV, expect that its elements were serialized in nested 
 
 Disabled by default.
 
-### input_format_csv_empty_as_default {#settings-input-format-csv-empty-as-default}
+### input_format_csv_empty_as_default {#input_format_csv_empty_as_default}
 
 When enabled, replace empty input fields in CSV with default values. For complex default expressions `input_format_defaults_for_omitted_fields` must be enabled too.
 
