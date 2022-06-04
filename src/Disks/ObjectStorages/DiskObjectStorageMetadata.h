@@ -50,8 +50,10 @@ public:
     void addObject(const std::string & path, size_t size);
 
     void deserialize(ReadBuffer & buf);
+    void deserializeFromString(const std::string & data);
 
     void serialize(WriteBuffer & buf, bool sync) const;
+    std::string serializeToString() const;
 
     std::string getBlobsCommonPrefix() const
     {

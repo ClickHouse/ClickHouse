@@ -50,21 +50,17 @@ public:
     virtual Poco::Timestamp getLastModified(const std::string & path) const = 0;
 
     virtual std::vector<std::string> listDirectory(const std::string & path) const = 0;
+
     virtual DirectoryIteratorPtr iterateDirectory(const String & path) = 0;
 
     virtual void createMetadataFile(const std::string & path, MetadataTransactionPtr transaction) = 0;
 
-    virtual std::unique_ptr<ReadBufferFromFileBase> readFile(  /// NOLINT
-         const std::string & path,
-         const ReadSettings & settings = ReadSettings{},
-         std::optional<size_t> read_hint = {},
-         std::optional<size_t> file_size = {}) const = 0;
+    virtual std::string readMetadataFileToString(const std::string & path) const = 0;
 
-    virtual std::unique_ptr<WriteBufferFromFileBase> writeFile( /// NOLINT
+    virtual void writeMetadataToFile(
          const std::string & path,
          MetadataTransactionPtr transaction,
-         size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
-         const WriteSettings & settings = {}) = 0;
+         const std::string & data) = 0;
 
     virtual void setLastModified(const std::string & path, const Poco::Timestamp & timestamp, MetadataTransactionPtr transaction) = 0;
 

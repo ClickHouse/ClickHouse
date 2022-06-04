@@ -240,18 +240,19 @@ void DiskObjectStorageMetadataHelper::restore(const Poco::Util::AbstractConfigur
 
 void DiskObjectStorageMetadataHelper::readRestoreInformation(RestoreInformation & restore_information) /// NOLINT
 {
-    auto buffer = disk->metadata_storage->readFile(RESTORE_FILE_NAME, ReadSettings{}, 512);
-    buffer->next();
+    auto metadata_str = disk->metadata_storage->readMetadataFileToString(RESTORE_FILE_NAME);
+    ReadBufferFromString buffer(metadata_str);
+    buffer.next();
 
     try
     {
         std::map<String, String> properties;
 
-        while (buffer->hasPendingData())
+        while (buffer.hasPendingData())
         {
             String property;
-            readText(property, *buffer);
-            assertChar('\n', *buffer);
+            readText(property, buffer);
+            assertChar('\n', buffer);
 
             auto pos = property.find('=');
             if (pos == std::string::npos || pos == 0 || pos == property.length())
@@ -436,9 +437,9 @@ void DiskObjectStorage::onFreeze(const String & path)
 {
     createDirectories(path);
     auto tx =  metadata_storage->createTransaction();
-    auto revision_file_buf = metadata_storage->writeFile(path + "revision.txt", tx, 32);
-    writeIntText(metadata_helper->revision_counter.load(), *revision_file_buf);
-    revision_file_buf->finalize();
+    WriteBufferFromOwnString revision_file_buf ;
+    writeIntText(metadata_helper->revision_counter.load(), revision_file_buf);
+    metadata_storage->writeMetadataToFile(path + "revision.txt", tx, revision_file_buf.str());
     tx->commit();
 }
 

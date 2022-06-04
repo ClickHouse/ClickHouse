@@ -74,17 +74,20 @@ public:
 
     DirectoryIteratorPtr iterateDirectory(const std::string & path) override;
 
-    std::unique_ptr<ReadBufferFromFileBase> readFile(  /// NOLINT
-         const std::string & path,
-         const ReadSettings & settings = ReadSettings{},
-         std::optional<size_t> read_hint = {},
-         std::optional<size_t> file_size = {}) const override;
+    std::string readMetadataFileToString(const std::string & path) const override;
 
-    std::unique_ptr<WriteBufferFromFileBase> writeFile( /// NOLINT
+    std::unordered_map<String, String> getSerializedMetadata(const std::vector<String> & file_paths) const override;
+
+    BlobsPathToSize getBlobs(const std::string & path) const override;
+
+    std::vector<std::string> getRemotePaths(const std::string & path) const override;
+
+    uint32_t getHardlinkCount(const std::string & path) const override;
+
+    void writeMetadataToFile(
          const std::string & path,
          MetadataTransactionPtr transaction,
-         size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
-         const WriteSettings & settings = {}) override;
+         const std::string & data) override;
 
     void createMetadataFile(const std::string & path, MetadataTransactionPtr transaction) override;
 
@@ -112,20 +115,9 @@ public:
 
     void replaceFile(const std::string & path_from, const std::string & path_to, MetadataTransactionPtr transaction) override;
 
-    std::unordered_map<String, String> getSerializedMetadata(const std::vector<String> & file_paths) const override;
-
-    BlobsPathToSize getBlobs(const std::string & path) const override;
-
-    std::vector<std::string> getRemotePaths(const std::string & path) const override;
-
-    uint32_t getHardlinkCount(const std::string & path) const override;
-
     uint32_t unlinkAndGetHardlinkCount(const std::string & path, MetadataTransactionPtr transaction) override;
 
 private:
-
-    void rewriteMetadataFileWithLock(const std::string & path, DiskObjectStorageMetadataPtr & metadata, MetadataTransactionPtr transaction);
-
     DiskObjectStorageMetadataPtr readMetadata(const std::string & path) const;
     DiskObjectStorageMetadataPtr readMetadataUnlocked(const std::string & path, std::shared_lock<std::shared_mutex> & lock) const;
 };

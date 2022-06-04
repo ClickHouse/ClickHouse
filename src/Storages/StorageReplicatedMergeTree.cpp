@@ -8150,21 +8150,22 @@ public:
 
         auto file_path = getFileName(path);
         auto tx = metadata_storage->createTransaction();
-        auto buffer = metadata_storage->writeFile(file_path, tx, DBMS_DEFAULT_BUFFER_SIZE);
+        WriteBufferFromOwnString buffer;
 
-        writeIntText(version, *buffer);
-        buffer->write("\n", 1);
-        writeBoolText(is_replicated, *buffer);
-        buffer->write("\n", 1);
-        writeBoolText(is_remote, *buffer);
-        buffer->write("\n", 1);
-        writeString(replica_name, *buffer);
-        buffer->write("\n", 1);
-        writeString(zookeeper_name, *buffer);
-        buffer->write("\n", 1);
-        writeString(table_shared_id, *buffer);
-        buffer->write("\n", 1);
+        writeIntText(version, buffer);
+        buffer.write("\n", 1);
+        writeBoolText(is_replicated, buffer);
+        buffer.write("\n", 1);
+        writeBoolText(is_remote, buffer);
+        buffer.write("\n", 1);
+        writeString(replica_name, buffer);
+        buffer.write("\n", 1);
+        writeString(zookeeper_name, buffer);
+        buffer.write("\n", 1);
+        writeString(table_shared_id, buffer);
+        buffer.write("\n", 1);
 
+        metadata_storage->writeMetadataToFile(file_path, tx, buffer.str());
         tx->commit();
     }
 
@@ -8175,24 +8176,25 @@ public:
 
         if (!metadata_storage->exists(file_path))
             return false;
-        auto buffer = metadata_storage->readFile(file_path, ReadSettings(), {});
-        readIntText(version, *buffer);
+        auto metadata_str = metadata_storage->readMetadataFileToString(file_path);
+        ReadBufferFromString buffer(metadata_str);
+        readIntText(version, buffer);
         if (version != 1)
         {
             LOG_ERROR(&Poco::Logger::get("FreezeMetaData"), "Unknown freezed metadata version: {}", version);
             return false;
         }
-        DB::assertChar('\n', *buffer);
-        readBoolText(is_replicated, *buffer);
-        DB::assertChar('\n', *buffer);
-        readBoolText(is_remote, *buffer);
-        DB::assertChar('\n', *buffer);
-        readString(replica_name, *buffer);
-        DB::assertChar('\n', *buffer);
-        readString(zookeeper_name, *buffer);
-        DB::assertChar('\n', *buffer);
-        readString(table_shared_id, *buffer);
-        DB::assertChar('\n', *buffer);
+        DB::assertChar('\n', buffer);
+        readBoolText(is_replicated, buffer);
+        DB::assertChar('\n', buffer);
+        readBoolText(is_remote, buffer);
+        DB::assertChar('\n', buffer);
+        readString(replica_name, buffer);
+        DB::assertChar('\n', buffer);
+        readString(zookeeper_name, buffer);
+        DB::assertChar('\n', buffer);
+        readString(table_shared_id, buffer);
+        DB::assertChar('\n', buffer);
         return true;
     }
 
