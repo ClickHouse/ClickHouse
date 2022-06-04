@@ -45,6 +45,7 @@ template <> struct FunctionInName<false, false, false, true> { static constexpr 
 template <> struct FunctionInName<false, true, false, true> { static constexpr auto name = "globalNullInIgnoreSet"; };
 template <> struct FunctionInName<true, false, false, true> { static constexpr auto name = "notNullInIgnoreSet"; };
 template <> struct FunctionInName<true, true, false, true> { static constexpr auto name = "globalNotNullInIgnoreSet"; };
+template <> struct FunctionInName<false, false, true, false> { static constexpr auto name = "inBloomFilter"; };
 
 template <bool negative, bool global, bool null_is_skipped, bool ignore_set>
 class FunctionIn : public IFunction

@@ -29,9 +29,9 @@ public:
     /// (that is useful only for checking that some value is in the set and may not store the original values),
     /// store all set elements in explicit form.
     /// This is needed for subsequent use for index.
-    ISet(const SizeLimits & limits_, bool fill_set_elements_, bool transform_null_in_) = 0;
+    virtual ~ISet() {}
 
-    bool empty() const { return data.empty(); }
+    virtual bool empty() const = 0;
 
     /** Set can be created either from AST or from a stream of data (subquery result).
       */
@@ -57,16 +57,15 @@ using IConstSetPtr = std::shared_ptr<const ISet>;
 using ISets = std::vector<ISetPtr>;
 
 
-class BloomFilterSet
+class BloomFilterSet : public ISet
 {
 public:
-    BloomFilterSet(const SizeLimits & limits_, bool fill_set_elements_, bool transform_null_in_);
-        : log(&Poco::Logger::get("Set")),
-          limits(limits_), fill_set_elements(fill_set_elements_), transform_null_in(transform_null_in_)
+    BloomFilterSet(const SizeLimits & limits_, bool fill_set_elements_, bool transform_null_in_)
+        : limits(limits_), fill_set_elements(fill_set_elements_), transform_null_in(transform_null_in_)
     {
     }
 
-    bool empty() const { return data.empty(); }
+    virtual bool empty() const override { return data.isEmpty(); }
 
     /** Set can be created either from AST or from a stream of data (subquery result).
       */
@@ -77,19 +76,19 @@ public:
     void setHeader(const Block & header) override;
 
     /// Returns false, if some limit was exceeded and no need to insert more data.
-    bool insertFromBlock(const Block & block) override;
+    virtual bool insertFromBlock(const Block & block) override;
     /// Call after all blocks were inserted. To get the information that set is already created.
-    void finishInsert() { is_created = true; }
+    virtual void finishInsert() override { is_created = true; }
 
     bool isCreated() const { return is_created; }
 
     /** For columns of 'block', check belonging of corresponding rows to the set.
       * Return UInt8 column with the result.
       */
-    ColumnPtr execute(const Block & block, bool negative) const override;
+    virtual ColumnPtr execute(const Block & block, bool negative) const override;
 
-    size_t getTotalRowCount() const { return data.getTotalRowCount(); }
-    size_t getTotalByteCount() const { return data.getTotalByteCount(); }
+    size_t getTotalRowCount() const { return data.numAdded(); }
+    size_t getTotalByteCount() const { return data.getFilter().size() * sizeof(uint64_t); }
 
     const DataTypes & getDataTypes() const { return data_types; }
     const DataTypes & getElementsTypes() const { return set_elements_types; }
@@ -105,7 +104,7 @@ private:
     size_t keys_size = 0;
     Sizes key_sizes;
 
-    BloomFilter data(BloomFilterParameters{1024 * 10, 4, 42});
+    BloomFilter data{1024 * 10, 4, 42};
 
     /** How IN works with Nullable types.
       *
@@ -129,8 +128,6 @@ private:
 
     /// Types for set_elements.
     DataTypes set_elements_types;
-
-    Poco::Logger * log;
 
     /// Limitations on the maximum size of the set
     SizeLimits limits;
@@ -162,36 +159,28 @@ private:
       */
     mutable std::shared_mutex rwlock;
 
-    template <typename Method>
     void insertFromBlockImpl(
-            Method & method,
             const ColumnRawPtrs & key_columns,
             size_t rows,
-            SetVariants & variants,
             ConstNullMapPtr null_map,
             ColumnUInt8::Container * out_filter);
 
-    template <typename Method, bool has_null_map, bool build_filter>
+    template <bool has_null_map, bool build_filter>
     void insertFromBlockImplCase(
-            Method & method,
             const ColumnRawPtrs & key_columns,
             size_t rows,
-            SetVariants & variants,
             ConstNullMapPtr null_map,
             ColumnUInt8::Container * out_filter);
 
-    template <typename Method>
     void executeImpl(
-            Method & method,
             const ColumnRawPtrs & key_columns,
             ColumnUInt8::Container & vec_res,
             bool negative,
             size_t rows,
             ConstNullMapPtr null_map) const;
 
-    template <typename Method, bool has_null_map>
+    template <bool has_null_map>
     void executeImplCase(
-            Method & method,
             const ColumnRawPtrs & key_columns,
             ColumnUInt8::Container & vec_res,
             bool negative,

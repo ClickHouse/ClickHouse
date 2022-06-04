@@ -124,7 +124,7 @@ bool BloomFilterSet::insertFromBlock(const Block & block)
     if (fill_set_elements)
         filter = ColumnUInt8::create(block.rows());
 
-    insertFromBlockImpl(key_columns, rows, data, null_map, filter ? &filter->getData() : nullptr);
+    insertFromBlockImpl(key_columns, rows, null_map, filter ? &filter->getData() : nullptr);
 
     if (fill_set_elements)
     {
@@ -227,10 +227,10 @@ void NO_INLINE BloomFilterSet::executeImplCase(
         }
         else
         {
-            auto key = unalignedLoad<FieldType>(vec + row * sizeof(uint64_t));
+            auto key = unalignedLoad<uint64_t>(vec + i * sizeof(uint64_t));
 
-            auto find_result = data.find(&key, sizeof(uint64_t));
-            vec_res[i] = negative ^ find_result.isFound();
+            auto found_result = data.find(reinterpret_cast<const char*>(&key), sizeof(uint64_t));
+            vec_res[i] = negative ^ found_result;
         }
     }
 }
@@ -250,23 +250,22 @@ void BloomFilterSet::executeOrdinary(
 void NO_INLINE BloomFilterSet::insertFromBlockImpl(
     const ColumnRawPtrs & key_columns,
     size_t rows,
-    SetVariants & variants,
     ConstNullMapPtr null_map,
     ColumnUInt8::Container * out_filter)
 {
     if (null_map)
     {
         if (out_filter)
-            insertFromBlockImplCase<Method, true, true>(method, key_columns, rows, variants, null_map, out_filter);
+            insertFromBlockImplCase<true, true>(key_columns, rows, null_map, out_filter);
         else
-            insertFromBlockImplCase<Method, true, false>(method, key_columns, rows, variants, null_map, out_filter);
+            insertFromBlockImplCase<true, false>(key_columns, rows, null_map, out_filter);
     }
     else
     {
         if (out_filter)
-            insertFromBlockImplCase<Method, false, true>(method, key_columns, rows, variants, null_map, out_filter);
+            insertFromBlockImplCase<false, true>(key_columns, rows, null_map, out_filter);
         else
-            insertFromBlockImplCase<Method, false, false>(method, key_columns, rows, variants, null_map, out_filter);
+            insertFromBlockImplCase<false, false>(key_columns, rows, null_map, out_filter);
     }
 }
 
@@ -275,7 +274,6 @@ template <bool has_null_map, bool build_filter>
 void NO_INLINE BloomFilterSet::insertFromBlockImplCase(
     const ColumnRawPtrs & key_columns,
     size_t rows,
-    SetVariants & variants,
     [[maybe_unused]] ConstNullMapPtr null_map,
     [[maybe_unused]] ColumnUInt8::Container * out_filter)
 {
@@ -296,9 +294,9 @@ void NO_INLINE BloomFilterSet::insertFromBlockImplCase(
             }
         }
 
-        auto key = unalignedLoad<FieldType>(vec + row * sizeof(uint64_t));
+        auto key = unalignedLoad<uint64_t>(vec + i * sizeof(uint64_t));
 
-        [[maybe_unused]] auto emplace_result = data.add(&key, sizeof(uint64_t));
+        data.add(reinterpret_cast<const char*>(&key), sizeof(uint64_t));
 
         if constexpr (build_filter)
             (*out_filter)[i] = true;
