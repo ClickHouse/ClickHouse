@@ -891,11 +891,11 @@ static SortDescription getSortDescription(const ASTSelectQuery & query, const Bl
             collator = std::make_shared<Collator>(order_by_elem.collation->as<ASTLiteral &>().value.get<String>());
         if (order_by_elem.with_fill)
         {
-            auto column = result_block.findByName(name);
+            const auto *column = result_block.findByName(name);
             if (!column)
                 column = source_block.findByName(name);
             if (!column)
-                for (auto &[alias, ast] : aliases)
+                for (const auto &[alias, ast] : aliases)
                     if (name == ast->getColumnName())
                         if ((column = result_block.findByName(alias)))
                             break;
