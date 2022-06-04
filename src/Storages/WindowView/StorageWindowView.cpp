@@ -641,15 +641,9 @@ inline void StorageWindowView::fire(UInt32 watermark)
 
     BlocksPtr blocks;
     Block header;
-    try
-    {
-        std::lock_guard lock(mutex);
-        std::tie(blocks, header) = getNewBlocks(watermark);
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-    }
+
+    std::lock_guard lock(mutex);
+    std::tie(blocks, header) = getNewBlocks(watermark);
 
     if (!blocks || blocks->empty())
         return;
@@ -1039,7 +1033,14 @@ void StorageWindowView::threadFuncFireEvent()
 
         while (!fire_signal.empty())
         {
-            fire(fire_signal.front());
+            try
+            {
+                fire(fire_signal.front());
+            }
+            catch (...)
+            {
+                tryLogCurrentException(__PRETTY_FUNCTION__);
+            }
             max_fired_watermark = fire_signal.front();
             fire_signal.pop_front();
         }
@@ -1563,8 +1564,9 @@ void StorageWindowView::startup()
     DatabaseCatalog::instance().addDependency(select_table_id, getStorageID());
 
     // Start the working thread
-    clean_cache_task->activateAndSchedule();
     fire_task->activateAndSchedule();
+    clean_cache_task->activate();
+    clean_cache_task->scheduleAfter(clean_interval_ms);
 }
 
 void StorageWindowView::shutdown()
