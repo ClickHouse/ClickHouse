@@ -1957,6 +1957,7 @@ void MergeTreeData::dropAllData()
 
     data_parts_indexes.clear();
     column_sizes.clear();
+    write_ahead_log->shutdown();
 
     /// Tables in atomic databases have UUID and stored in persistent locations.
     /// No need to drop caches (that are keyed by filesystem path) because collision is not possible.

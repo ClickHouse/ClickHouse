@@ -189,6 +189,9 @@ void DiskObjectStorage::moveFile(const String & from_path, const String & to_pat
     if (exists(to_path))
         throw Exception("File already exists: " + to_path, ErrorCodes::FILE_ALREADY_EXISTS);
 
+    if (!exists(from_path))
+        throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File {} doesn't exist, cannot move", to_path);
+
     if (should_send_metadata)
     {
         auto revision = metadata_helper->revision_counter + 1;
@@ -215,10 +218,13 @@ void DiskObjectStorage::replaceFile(const String & from_path, const String & to_
 {
     if (exists(to_path))
     {
-        const String tmp_path = to_path + ".old";
-        moveFile(to_path, tmp_path);
-        moveFile(from_path, to_path);
-        removeFile(tmp_path);
+        auto blobs = metadata_storage->getRemotePaths(to_path);
+
+        auto tx = metadata_storage->createTransaction();
+        metadata_storage->replaceFile(from_path, to_path, tx);
+        tx->commit();
+
+        removeFromRemoteFS(blobs);
     }
     else
         moveFile(from_path, to_path);
