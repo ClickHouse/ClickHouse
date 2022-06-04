@@ -305,11 +305,12 @@ if __name__ == "__main__":
         command=args.command
     )
 
-    try:
-        print("Trying to kill container", CONTAINER_NAME, "if it's already running")
-        subprocess.check_call(f'docker kill $(docker ps -a -q --filter name={CONTAINER_NAME} --format="{{{{.ID}}}}")', shell=True)
+    containers = subprocess.check_output(f"docker ps -a -q --filter name={CONTAINER_NAME} --format={{{{.ID}}}}", shell=True, universal_newlines=True).splitlines()
+    if containers:
+        print(f"Trying to kill container name={CONTAINER_NAME} ids={containers}")
+        subprocess.check_call(f"docker kill {' '.join(containers)}", shell=True)
         print("Container killed")
-    except:
+    else:
         print("Nothing to kill")
 
     print(("Running pytest container as: '" + cmd + "'."))
