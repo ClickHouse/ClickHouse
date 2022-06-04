@@ -1,6 +1,7 @@
-import string
 import random
+import string
 import threading
+import xml.etree.ElementTree
 
 
 # By default the exceptions that was throwed in threads will be ignored
@@ -35,11 +36,14 @@ def generate_values(date_str, count, sign=1):
     return ",".join(["('{}',{},'{}')".format(x, y, z) for x, y, z in data])
 
 
-def replace_config(config_path, old, new):
-    config = open(config_path, "r")
-    config_lines = config.readlines()
-    config.close()
-    config_lines = [line.replace(old, new) for line in config_lines]
-    config = open(config_path, "w")
-    config.writelines(config_lines)
-    config.close()
+def replace_xml_by_xpath(input_path, output_path, replace_text={}, remove_node=[]):
+    tree = xml.etree.ElementTree.parse(input_path)
+    for xpath, value in replace_test.items():
+        for node in tree.findall(xpath):
+            node.text = value
+    if remove_node:
+        parent_map = {c: p for p in tree.iter() for c in p}
+        for xpath in remove_node:
+            for node in tree.findall(xpath):
+                parent_map[node].remove(node)
+    tree.write(output_path)

@@ -1,3 +1,4 @@
+import argparse
 import http.client
 import http.server
 import random
@@ -6,7 +7,11 @@ import sys
 import urllib.parse
 
 
-UPSTREAM_HOST = "minio1:9001"
+parser = argparse.ArgumentParser()
+parser.add_argument('port', type=int, help='port to listen')
+parser.add_argument('upstream', type=str, help='upstream to redirect requests to')
+args = parser.parse_args()
+
 random.seed("Unstable proxy/1.0")
 
 
@@ -53,7 +58,7 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
         data = self.rfile.read(int(content_length)) if content_length else None
         r = request(
             self.command,
-            f"http://{UPSTREAM_HOST}{self.path}",
+            f"http://{args.upstream}{self.path}",
             headers=self.headers,
             data=data,
         )
@@ -71,5 +76,5 @@ class ThreadedHTTPServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
     """Handle requests in a separate thread."""
 
 
-httpd = ThreadedHTTPServer(("0.0.0.0", int(sys.argv[1])), RequestHandler)
+httpd = ThreadedHTTPServer(("0.0.0.0", args.port, RequestHandler)
 httpd.serve_forever()

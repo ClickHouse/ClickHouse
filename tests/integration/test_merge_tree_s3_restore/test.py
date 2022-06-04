@@ -6,6 +6,7 @@ import time
 
 import pytest
 from helpers.cluster import ClickHouseCluster, get_instances_dir
+import helpers.utility
 
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
@@ -19,16 +20,6 @@ COMMON_CONFIGS = [
     "configs/config.d/bg_processing_pool_conf.xml",
     "configs/config.d/clusters.xml",
 ]
-
-
-def replace_config(old, new):
-    config = open(NOT_RESTORABLE_CONFIG_PATH, "r")
-    config_lines = config.readlines()
-    config.close()
-    config_lines = [line.replace(old, new) for line in config_lines]
-    config = open(NOT_RESTORABLE_CONFIG_PATH, "w")
-    config.writelines(config_lines)
-    config.close()
 
 
 @pytest.fixture(scope="module")
@@ -523,8 +514,11 @@ def test_migrate_to_restorable_schema(cluster):
         "INSERT INTO s3.test VALUES {}".format(generate_values("2020-01-05", 4096, -1))
     )
 
-    replace_config(
-        "<send_metadata>false</send_metadata>", "<send_metadata>true</send_metadata>"
+    helpers.utility.replace_xml_by_xpath(
+        NOT_RESTORABLE_CONFIG_PATH, NOT_RESTORABLE_CONFIG_PATH,
+        replace_text={
+            "/clickhouse/storage_configuration/disks/s3/send_metadata": "true",
+        }
     )
     node.restart_clickhouse()
 

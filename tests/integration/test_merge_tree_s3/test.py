@@ -1,10 +1,12 @@
 import logging
 import time
 import os
+import tempfile
 
 import pytest
 from helpers.cluster import ClickHouseCluster, get_instances_dir
-from helpers.utility import generate_values, replace_config, SafeThread
+from helpers.utility import generate_values, SafeThread
+import helpers.utility
 
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
@@ -17,21 +19,44 @@ CONFIG_PATH = os.path.join(
 @pytest.fixture(scope="module")
 def cluster():
     try:
-        cluster = ClickHouseCluster(__file__)
-        cluster.add_instance(
-            "node",
-            main_configs=[
+        with tempfile.TemporaryDirectory() as d:
+            main_configs = [
                 "configs/config.d/storage_conf.xml",
                 "configs/config.d/bg_processing_pool_conf.xml",
-            ],
-            with_minio=True,
-        )
-        logging.info("Starting cluster...")
-        cluster.start()
-        logging.info("Cluster started")
-        run_s3_mocks(cluster)
+            ]
+            with_minio = True
 
-        yield cluster
+            if os.environ.get("CLICKHOUSE_AWS_ENDPOINT_URL_OVERRIDE"):
+                new_config_name = os.path.join(d, "storage_conf.xml")
+                helpers.utility.replace_xml_by_xpath(
+                    os.path.join(SCRIPT_DIR, main_configs[0]),
+                    new_config_name,
+                    replace_text={
+                        "/clickhouse/storage_configuration/disks/s3/endpoint": os.environ["CLICKHOUSE_AWS_ENDPOINT_URL_OVERRIDE"],
+                        "/clickhouse/storage_configuration/disks/s3/access_key_id": os.environ["CLICKHOUSE_AWS_ACCESS_KEY_ID"],
+                        "/clickhouse/storage_configuration/disks/s3/secret_access_key": os.environ["CLICKHOUSE_AWS_SECRET_ACCESS_KEY"],
+                        "/clickhouse/storage_configuration/disks/s3_with_cache/endpoint": os.environ["CLICKHOUSE_AWS_ENDPOINT_URL_OVERRIDE"],
+                        "/clickhouse/storage_configuration/disks/s3_with_cache/access_key_id": os.environ["CLICKHOUSE_AWS_ACCESS_KEY_ID"],
+                        "/clickhouse/storage_configuration/disks/s3_with_cache/secret_access_key": os.environ["CLICKHOUSE_AWS_SECRET_ACCESS_KEY"],
+                        "/clickhouse/storage_configuration/disks/unstable_s3/access_key_id": os.environ["CLICKHOUSE_AWS_ACCESS_KEY_ID"],
+                        "/clickhouse/storage_configuration/disks/unstable_s3/secret_access_key": os.environ["CLICKHOUSE_AWS_SECRET_ACCESS_KEY"],
+                    }
+                )
+                main_configs[0] = new_config_name
+                with_minio = False
+
+            cluster = ClickHouseCluster(__file__)
+            cluster.add_instance(
+                "node",
+                main_configs=main_configs,
+                with_minio=with_minio,
+            )
+            logging.info("Starting cluster...")
+            cluster.start()
+            logging.info("Cluster started")
+            run_s3_mocks(cluster)
+
+            yield cluster
     finally:
         cluster.shutdown()
 
@@ -67,8 +92,8 @@ def create_table(node, table_name, **additional_settings):
 
 def run_s3_mocks(cluster):
     logging.info("Starting s3 mocks")
-    mocks = (("unstable_proxy.py", "resolver", "8081"),)
-    for mock_filename, container, port in mocks:
+    mocks = (("unstable_proxy.py", "resolver", "8081", "minio1:9001"),)
+    for mock_filename, container, *params in mocks:
         container_id = cluster.get_container_id(container)
         current_dir = os.path.dirname(__file__)
         cluster.copy_file_to_container(
@@ -77,11 +102,11 @@ def run_s3_mocks(cluster):
             mock_filename,
         )
         cluster.exec_in_container(
-            container_id, ["python", mock_filename, port], detach=True
+            container_id, ["python", mock_filename, *params], detach=True
         )
 
     # Wait for S3 mocks to start
-    for mock_filename, container, port in mocks:
+    for mock_filename, container, port, *extra_params in mocks:
         num_attempts = 100
         for attempt in range(num_attempts):
             ping_response = cluster.exec_in_container(
@@ -577,10 +602,12 @@ def test_s3_disk_apply_new_settings(cluster, node_name):
     s3_requests_to_write_partition = get_s3_requests() - s3_requests_before
 
     # Force multi-part upload mode.
-    replace_config(
-        CONFIG_PATH,
-        "<s3_max_single_part_upload_size>33554432</s3_max_single_part_upload_size>",
-        "<s3_max_single_part_upload_size>0</s3_max_single_part_upload_size>",
+    helpers.utility.replace_xml_by_xpath(
+        CONFIG_PATH, CONFIG_PATH,
+        replace_text={
+            "/clickhouse/storage_configuration/disks/s3/s3_max_single_part_upload_size": "0",
+            "/clickhouse/storage_configuration/disks/s3_with_cache/s3_max_single_part_upload_size": "0",
+        }
     )
 
     node.query("SYSTEM RELOAD CONFIG")

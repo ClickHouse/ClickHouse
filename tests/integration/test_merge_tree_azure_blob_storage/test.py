@@ -3,8 +3,10 @@ import time
 import os
 
 import pytest
+
 from helpers.cluster import ClickHouseCluster, get_instances_dir
-from helpers.utility import generate_values, replace_config, SafeThread
+from helpers.utility import generate_values, SafeThread
+import helpers.utility
 
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
@@ -504,10 +506,11 @@ def test_apply_new_settings(cluster):
     )
 
     # Force multi-part upload mode.
-    replace_config(
-        CONFIG_PATH,
-        "<max_single_part_upload_size>33554432</max_single_part_upload_size>",
-        "<max_single_part_upload_size>4096</max_single_part_upload_size>",
+    helpers.utility.replace_xml_by_xpath(
+        CONFIG_PATH, CONFIG_PATH,
+        replace_text={
+            "/clickhouse/storage_configuration/disks/blob_storage_disk/max_single_part_upload_size": "4096",
+        }
     )
 
     node.query("SYSTEM RELOAD CONFIG")
@@ -523,9 +526,11 @@ def test_restart_during_load(cluster):
     node = cluster.instances[NODE_NAME]
     create_table(node, TABLE_NAME)
 
-    # Force multi-part upload mode.
-    replace_config(
-        CONFIG_PATH, "<container_already_exists>false</container_already_exists>", ""
+    helpers.utility.replace_xml_by_xpath(
+        CONFIG_PATH, CONFIG_PATH,
+        remove_node=[
+            "/clickhouse/storage_configuration/disks/blob_storage_disk/container_already_exists",
+        ]
     )
 
     azure_query(

@@ -8,10 +8,12 @@ import threading
 import time
 
 import helpers.client
+import helpers.utility
 import pytest
 from helpers.cluster import ClickHouseCluster, ClickHouseInstance, get_instances_dir
 from helpers.network import PartitionManager
 from helpers.test_tools import exec_query_with_retry
+
 
 MINIO_INTERNAL_PORT = 9001
 
@@ -726,16 +728,6 @@ def run_s3_mocks(started_cluster):
     logging.info("S3 mocks started")
 
 
-def replace_config(old, new):
-    config = open(CONFIG_PATH, "r")
-    config_lines = config.readlines()
-    config.close()
-    config_lines = [line.replace(old, new) for line in config_lines]
-    config = open(CONFIG_PATH, "w")
-    config.writelines(config_lines)
-    config.close()
-
-
 def test_custom_auth_headers(started_cluster):
     table_format = "column1 UInt32, column2 UInt32, column3 UInt32"
     filename = "test.csv"
@@ -759,16 +751,20 @@ def test_custom_auth_headers(started_cluster):
     )
     assert run_query(instance, "SELECT * FROM test") == "1\t2\t3\n"
 
-    replace_config(
-        "<header>Authorization: Bearer TOKEN",
-        "<header>Authorization: Bearer INVALID_TOKEN",
+    helpers.utility.replace_xml_by_xpath(
+        CONFIG_PATH, CONFIG_PATH,
+        replace_text={
+            "/clickhouse/s3/s3_mock/header": "Authorization: Bearer INVALID_TOKEN",
+        }
     )
     instance.query("SYSTEM RELOAD CONFIG")
     ret, err = instance.query_and_get_answer_with_error("SELECT * FROM test")
     assert ret == "" and err != ""
-    replace_config(
-        "<header>Authorization: Bearer INVALID_TOKEN",
-        "<header>Authorization: Bearer TOKEN",
+    helpers.utility.replace_xml_by_xpath(
+        CONFIG_PATH, CONFIG_PATH,
+        replace_text={
+            "/clickhouse/s3/s3_mock/header": "Authorization: Bearer TOKEN",
+        }
     )
     instance.query("SYSTEM RELOAD CONFIG")
     assert run_query(instance, "SELECT * FROM test") == "1\t2\t3\n"
