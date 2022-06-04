@@ -42,9 +42,6 @@ public:
 
     bool supportParallelWrite() const override { return true; }
 
-    using Metadata = DiskObjectStorageMetadata;
-    using MetadataUpdater = std::function<bool(Metadata & metadata)>;
-
     const String & getName() const override { return name; }
 
     const String & getPath() const override { return metadata_storage->getPath(); }
@@ -181,7 +178,7 @@ private:
 
     std::optional<UInt64> tryReserve(UInt64 bytes);
 
-    bool send_metadata;
+    const bool send_metadata;
 
     std::unique_ptr<DiskObjectStorageMetadataHelper> metadata_helper;
 };
