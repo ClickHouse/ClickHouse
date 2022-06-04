@@ -1,4 +1,5 @@
 #include <Processors/Executors/ExecutionThreadContext.h>
+#include <QueryPipeline/ReadProgressCallback.h>
 #include <Common/Stopwatch.h>
 
 namespace DB
@@ -38,16 +39,31 @@ static bool checkCanAddAdditionalInfoToException(const DB::Exception & exception
            && exception.code() != ErrorCodes::QUERY_WAS_CANCELLED;
 }
 
-static void executeJob(IProcessor * processor)
+static void executeJob(ExecutingGraph::Node * node, ReadProgressCallback * read_progress_callback)
 {
     try
     {
-        processor->work();
+        node->processor->work();
+
+        /// Update read progress only for source nodes.
+        bool is_source = node->back_edges.empty();
+
+        if (is_source && read_progress_callback)
+        {
+            if (auto read_progress = node->processor->getReadProgress())
+            {
+                if (read_progress->counters.total_rows_approx)
+                    read_progress_callback->addTotalRowsApprox(read_progress->counters.total_rows_approx);
+
+                if (!read_progress_callback->onProgress(read_progress->counters.read_rows, read_progress->counters.read_bytes, read_progress->limits))
+                    node->processor->cancel();
+            }
+        }
     }
     catch (Exception & exception)
     {
         if (checkCanAddAdditionalInfoToException(exception))
-            exception.addMessage("While executing " + processor->getName());
+            exception.addMessage("While executing " + node->processor->getName());
         throw;
     }
 }
@@ -65,8 +81,7 @@ bool ExecutionThreadContext::executeTask()
 
     try
     {
-        executeJob(node->processor);
-
+        executeJob(node, read_progress_callback);
         ++node->num_executed_jobs;
     }
     catch (...)

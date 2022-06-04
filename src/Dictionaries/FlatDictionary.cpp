@@ -379,11 +379,11 @@ void FlatDictionary::updateData()
     }
     else
     {
-        Pipe pipe(source_ptr->loadUpdatedAll());
+        auto pipeline(source_ptr->loadUpdatedAll());
         mergeBlockWithPipe<DictionaryKeyType::Simple>(
             dict_struct.getKeysSize(),
             *update_field_loaded_block,
-            std::move(pipe));
+            std::move(pipeline));
     }
 
     if (update_field_loaded_block)
@@ -643,7 +643,7 @@ void registerDictionaryFlat(DictionaryFactory & factory)
 
         const auto dict_id = StorageID::fromDictionaryConfig(config, config_prefix);
 
-        return std::make_unique<FlatDictionary>(dict_id, dict_struct, std::move(source_ptr), std::move(configuration));
+        return std::make_unique<FlatDictionary>(dict_id, dict_struct, std::move(source_ptr), configuration);
     };
 
     factory.registerLayout("flat", create_layout, false);
