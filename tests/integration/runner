@@ -298,10 +298,10 @@ if __name__ == "__main__":
 
     check_args_and_update_paths(args)
 
-    parallel_args = ""
+    parallel_args = []
     if args.parallel:
-        parallel_args += "--dist=loadfile"
-        parallel_args += " -n {}".format(args.parallel)
+        parallel_args.append("--dist=loadfile")
+        parallel_args.append(f"-n {args.parallel}")
 
     net = ""
     if args.network:
@@ -373,7 +373,7 @@ if __name__ == "__main__":
         "DOCKER_CLIENT_TIMEOUT": "300",
         "COMPOSE_HTTP_TIMEOUT": "600",
         "XTABLES_LOCKFILE": "/run/host/xtables.lock",
-        "PYTEST_OPTS": f"{parallel_args} {' '.join((shlex.quote(x) for x in args.pytest_args + args.tests_list))} -vvv",
+        "PYTEST_OPTS": " ".join((shlex.quote(x) for x in parallel_args + args.pytest_args + args.tests_list + ["-vvv"])),
     }
 
     # If enabled we kill and remove containers before pytest session run.
