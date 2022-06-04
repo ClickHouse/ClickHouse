@@ -1149,7 +1149,6 @@ void StorageReplicatedMergeTree::setTableStructure(
                 new_metadata.table_ttl = TTLTableDescription{};
             }
         }
-
     }
 
     /// Changes in columns may affect following metadata fields
@@ -1197,7 +1196,6 @@ void StorageReplicatedMergeTree::setTableStructure(
 
     auto table_id = getStorageID();
     DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(getContext(), table_id, new_metadata);
-    setInMemoryMetadata(new_metadata);
 }
 
 
@@ -4399,23 +4397,6 @@ void StorageReplicatedMergeTree::read(
     }
 }
 
-Pipe StorageReplicatedMergeTree::read(
-    const Names & column_names,
-    const StorageSnapshotPtr & storage_snapshot,
-    SelectQueryInfo & query_info,
-    ContextPtr local_context,
-    QueryProcessingStage::Enum processed_stage,
-    const size_t max_block_size,
-    const unsigned num_streams)
-{
-    QueryPlan plan;
-    read(plan, column_names, storage_snapshot, query_info, local_context, processed_stage, max_block_size, num_streams);
-    return plan.convertToPipe(
-        QueryPlanOptimizationSettings::fromContext(local_context),
-        BuildQueryPipelineSettings::fromContext(local_context));
-}
-
-
 template <class Func>
 void StorageReplicatedMergeTree::foreachActiveParts(Func && func, bool select_sequential_consistency) const
 {
@@ -4714,9 +4695,9 @@ void StorageReplicatedMergeTree::alter(
 
     auto table_id = getStorageID();
 
-    if (commands.isSettingsAlter() || commands.isCommentAlter())
+    if (commands.isSettingsAlter())
     {
-        /// We don't replicate storage_settings_ptr or table comment ALTER. Those are local operations.
+        /// We don't replicate storage_settings_ptr ALTER. It's local operation.
         /// Also we don't upgrade alter lock to table structure lock.
         StorageInMemoryMetadata future_metadata = getInMemoryMetadata();
         commands.apply(future_metadata, query_context);
@@ -4726,7 +4707,6 @@ void StorageReplicatedMergeTree::alter(
         changeSettings(future_metadata.settings_changes, table_lock_holder);
 
         DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(query_context, table_id, future_metadata);
-        setInMemoryMetadata(future_metadata);
         return;
     }
 
@@ -4799,26 +4779,13 @@ void StorageReplicatedMergeTree::alter(
         String new_columns_str = future_metadata.columns.toString();
         ops.emplace_back(zkutil::makeSetRequest(fs::path(zookeeper_path) / "columns", new_columns_str, -1));
 
-        // Local-only operations.
-        const bool settings_changed = ast_to_str(current_metadata->settings_changes) != ast_to_str(future_metadata.settings_changes);
-        const bool comment_changed = current_metadata->comment != future_metadata.comment;
-
-        if (settings_changed || comment_changed)
+        if (ast_to_str(current_metadata->settings_changes) != ast_to_str(future_metadata.settings_changes))
         {
+            /// Just change settings
             StorageInMemoryMetadata metadata_copy = *current_metadata;
-
-            if (comment_changed)
-                metadata_copy.comment = future_metadata.comment;
-
-            if (settings_changed)
-            {
-                /// Just change settings
-                metadata_copy.settings_changes = future_metadata.settings_changes;
-                changeSettings(metadata_copy.settings_changes, table_lock_holder);
-            }
-
+            metadata_copy.settings_changes = future_metadata.settings_changes;
+            changeSettings(metadata_copy.settings_changes, table_lock_holder);
             DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(query_context, table_id, metadata_copy);
-            setInMemoryMetadata(metadata_copy);
         }
 
         /// We can be sure, that in case of successful commit in zookeeper our
@@ -4876,9 +4843,7 @@ void StorageReplicatedMergeTree::alter(
             String metadata_zk_path = fs::path(txn->getDatabaseZooKeeperPath()) / "metadata" / escapeForFileName(table_id.table_name);
             auto ast = DatabaseCatalog::instance().getDatabase(table_id.database_name)->getCreateTableQuery(table_id.table_name, query_context);
             applyMetadataChangesToCreateQuery(ast, future_metadata);
-            setInMemoryMetadata(future_metadata);
             ops.emplace_back(zkutil::makeSetRequest(metadata_zk_path, getObjectDefinitionFromCreateQuery(ast), -1));
-
         }
 
         Coordination::Responses results;
@@ -7140,6 +7105,13 @@ bool StorageReplicatedMergeTree::dropPartImpl(
         /// finished the merge.
         String out_reason;
         if (!merge_pred.canMergeSinglePart(part, &out_reason))
+        {
+            if (throw_if_noop)
+                throw Exception(ErrorCodes::PART_IS_TEMPORARILY_LOCKED, out_reason);
+            return false;
+        }
+
+        if (merge_pred.partParticipatesInReplaceRange(part, &out_reason))
         {
             if (throw_if_noop)
                 throw Exception(ErrorCodes::PART_IS_TEMPORARILY_LOCKED, out_reason);

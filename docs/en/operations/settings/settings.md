@@ -4,7 +4,7 @@ sidebar_position: 52
 slug: /en/operations/settings/settings
 ---
 
-# Settings {#settings}
+# Settings
 
 ## allow_nondeterministic_mutations {#allow_nondeterministic_mutations}
 
@@ -20,7 +20,7 @@ Default value: 0.
 <profiles>
     <default>
         <allow_nondeterministic_mutations>1</allow_nondeterministic_mutations>
-        
+
         <!-- ... -->
     </default>
 
@@ -520,6 +520,18 @@ Result:
 │ 103 │ first  │
 └─────┴────────┘
 ```
+
+## input_format_tsv_skip_first_lines {#settings-input_format_tsv_skip_first_lines}
+
+The number of lines to skip at the beginning of data in TSV input format.
+
+Default value: `0`.
+
+## input_format_csv_skip_first_lines {#settings-input_format_csv_skip_first_lines}
+
+The number of lines to skip at the beginning of data in CSV input format.
+
+Default value: `0`.
 
 ## input_format_null_as_default {#settings-input-format-null-as-default}
 
@@ -4279,7 +4291,7 @@ Maximum time thread will wait for memory to be freed in the case of memory overc
 If the timeout is reached and memory is not freed, an exception is thrown.
 Read more about [memory overcommit](memory-overcommit.md).
 
-Default value: `200`.
+Default value: `5000000`.
 
 ## memory_overcommit_ratio_denominator_for_user
 
