@@ -423,11 +423,6 @@ void DiskObjectStorageMetadataHelper::processRestoreFiles(IObjectStorage * sourc
         if (source_object_storage->getObjectsNamespace() != disk->object_storage->getObjectsNamespace() || disk->remote_fs_root_path != source_path)
             source_object_storage->copyObjectToAnotherObjectStorage(key, disk->remote_fs_root_path + relative_key, *disk->object_storage);
 
-        auto updater = [relative_key, meta] (IMetadata & metadata)
-        {
-            metadata.addObject(relative_key, meta.size_bytes);
-        };
-
         auto tx = disk->metadata_storage->createTransaction();
         disk->metadata_storage->addBlobToMetadata(path, relative_key, meta.size_bytes, tx);
         tx->commit();

@@ -3,7 +3,6 @@
 #include <Disks/IDisk.h>
 #include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Disks/ObjectStorages/DiskObjectStorageMetadataHelper.h>
-#include <Disks/ObjectStorages/DiskObjectStorageMetadata.h>
 #include <Disks/ObjectStorages/IMetadataStorage.h>
 #include <re2/re2.h>
 
@@ -176,7 +175,6 @@ private:
     UInt64 reservation_count = 0;
     std::mutex reservation_mutex;
 
-    mutable std::shared_mutex metadata_mutex;
     void removeMetadata(const String & path, std::vector<String> & paths_to_remove);
 
     void removeMetadataRecursive(const String & path, std::unordered_map<String, std::vector<String>> & paths_to_remove);

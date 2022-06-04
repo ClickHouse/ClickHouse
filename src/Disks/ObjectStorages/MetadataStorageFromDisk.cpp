@@ -383,18 +383,21 @@ void MetadataStorageFromDiskTransaction::commit()
         throw Exception(ErrorCodes::FS_METADATA_ERROR, "Cannot commit transaction in {} state, it should be in {} state",
                         toString(state), toString(MetadataFromDiskTransactionState::PREPARING));
 
-    for (size_t i = 0; i < operations.size(); ++i)
     {
-        try
+        std::unique_lock lock(commit_mutex);
+        for (size_t i = 0; i < operations.size(); ++i)
         {
-            operations[i]->execute();
-        }
-        catch (Exception & ex)
-        {
-            ex.addMessage(fmt::format("While committing operation #{}", i));
-            failed_operation_index = i;
-            state = MetadataFromDiskTransactionState::FAILED;
-            throw;
+            try
+            {
+                operations[i]->execute();
+            }
+            catch (Exception & ex)
+            {
+                ex.addMessage(fmt::format("While committing operation #{}", i));
+                failed_operation_index = i;
+                state = MetadataFromDiskTransactionState::FAILED;
+                throw;
+            }
         }
     }
 
@@ -426,6 +429,7 @@ void MetadataStorageFromDiskTransaction::rollback()
         {
             try
             {
+                std::unique_lock lock(commit_mutex);
                 operations[i]->undo();
             }
             catch (Exception & ex)
@@ -516,6 +520,9 @@ std::unique_ptr<ReadBufferFromFileBase> MetadataStorageFromDisk::readFile(  /// 
 void MetadataStorageFromDisk::createMetadataFile(const std::string & path, MetadataTransactionPtr transaction)
 {
     auto metadata = std::make_unique<DiskObjectStorageMetadata>(disk->getPath(), root_path_for_remote_metadata, path);
+
+    std::unique_lock lock(metadata_mutex);
+
     auto buf = writeFile(path, transaction);
     metadata->serialize(*buf, false);
 }
@@ -553,9 +560,14 @@ void MetadataStorageFromDisk::removeDirectory(const std::string & path, Metadata
 void MetadataStorageFromDisk::createHardLink(const std::string & path_from, const std::string & path_to, MetadataTransactionPtr transaction)
 {
     auto metadata = readMetadata(path_from);
-    auto buf = writeFile(path_from, transaction);
-    metadata->incrementRefCount();
-    metadata->serialize(*buf, false);
+
+    {
+        std::unique_lock lock(metadata_mutex);
+        auto buf = writeFile(path_from, transaction);
+        metadata->incrementRefCount();
+        metadata->serialize(*buf, false);
+    }
+
     transaction->addOperation(std::make_unique<CreateHardlinkOperation>(path_from, path_to, *disk));
 }
 
@@ -578,19 +590,26 @@ void MetadataStorageFromDisk::replaceFile(const std::string & path_from, const s
 void MetadataStorageFromDisk::setReadOnly(const std::string & path, MetadataTransactionPtr transaction)
 {
     auto metadata = readMetadata(path);
-    metadata->setReadOnly();
-    auto buf = writeFile(path, transaction);
-    metadata->serialize(*buf, false);
+    {
+        std::unique_lock lock(metadata_mutex);
+        metadata->setReadOnly();
+        auto buf = writeFile(path, transaction);
+        metadata->serialize(*buf, false);
+    }
 }
 
 
 void MetadataStorageFromDisk::addBlobToMetadata(const std::string & path, const std::string & blob_name, uint64_t size_in_bytes, MetadataTransactionPtr transaction)
 {
-    auto metadata = std::make_unique<DiskObjectStorageMetadata>(disk->getPath(), root_path_for_remote_metadata, path);
+    DiskObjectStorageMetadataPtr metadata;
+    std::unique_lock lock(metadata_mutex);
     if (exists(path))
     {
-        auto buf = readFile(path);
-        metadata->deserialize(*buf);
+        metadata = readMetadataUnlocked(path, lock);
+    }
+    else
+    {
+        metadata = std::make_unique<DiskObjectStorageMetadata>(disk->getPath(), root_path_for_remote_metadata, path);
     }
 
     metadata->addObject(blob_name, size_in_bytes);
@@ -599,7 +618,8 @@ void MetadataStorageFromDisk::addBlobToMetadata(const std::string & path, const 
     metadata->serialize(*buf, false);
 }
 
-MetadataPtr MetadataStorageFromDisk::readMetadata(const std::string & path) const
+
+DiskObjectStorageMetadataPtr MetadataStorageFromDisk::readMetadataUnlocked(const std::string & path, std::unique_lock<std::shared_mutex> &) const
 {
     auto metadata = std::make_unique<DiskObjectStorageMetadata>(disk->getPath(), root_path_for_remote_metadata, path);
     auto buf = readFile(path);
@@ -607,89 +627,28 @@ MetadataPtr MetadataStorageFromDisk::readMetadata(const std::string & path) cons
     return metadata;
 }
 
-MetadataPtr MetadataStorageFromDisk::updateMetadata(const std::string & path, bool sync, std::function<void(IMetadata & metadata)> && updater)
+DiskObjectStorageMetadataPtr MetadataStorageFromDisk::readMetadataUnlocked(const std::string & path, std::shared_lock<std::shared_mutex> &) const
 {
     auto metadata = std::make_unique<DiskObjectStorageMetadata>(disk->getPath(), root_path_for_remote_metadata, path);
     auto buf = readFile(path);
     metadata->deserialize(*buf);
-    updater(*metadata);
-    auto tx = createTransaction();
-    auto write_buf = writeFile(path, tx);
-    metadata->serialize(*write_buf, sync);
-    if (sync)
-        write_buf->sync();
-    tx->commit();
     return metadata;
 }
 
-MetadataPtr MetadataStorageFromDisk::updateOrCreateMetadata(const std::string & path, bool sync, std::function<void(IMetadata & metadata)> && updater)
+DiskObjectStorageMetadataPtr MetadataStorageFromDisk::readMetadata(const std::string & path) const
 {
-    auto metadata = std::make_unique<DiskObjectStorageMetadata>(disk->getPath(), root_path_for_remote_metadata, path);
-
-    if (exists(path))
-    {
-        auto buf = readFile(path);
-        metadata->deserialize(*buf);
-    }
-
-    updater(*metadata);
-    auto tx = createTransaction();
-    auto write_buf = writeFile(path, tx);
-    metadata->serialize(*write_buf, sync);
-    tx->commit();
-    return metadata;
-}
-
-void MetadataStorageFromDisk::updateAndRemoveMetadata(const std::string & path, bool sync, std::function<bool(IMetadata & metadata)> && updater)
-{
-    /// Very often we are deleting metadata from some unfinished operation (like fetch of metadata)
-    /// in this case metadata file can be incomplete/empty and so on. It's ok to remove it in this case
-    /// because we cannot do anything better.
-    try
-    {
-        auto metadata = std::make_unique<DiskObjectStorageMetadata>(disk->getPath(), root_path_for_remote_metadata, path);
-        auto buf = readFile(path);
-        metadata->deserialize(*buf);
-        auto tx = createTransaction();
-        if (updater(*metadata))
-        {
-            auto write_buf = writeFile(path, tx);
-            metadata->serialize(*write_buf, sync);
-        }
-
-        unlinkFile(path, tx);
-        tx->commit();
-    }
-    catch (Exception & ex)
-    {
-        /// If we have some broken half-empty file just remove it
-        if (ex.code() == ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF
-            || ex.code() == ErrorCodes::CANNOT_READ_ALL_DATA
-            || ex.code() == ErrorCodes::CANNOT_OPEN_FILE)
-        {
-            LOG_INFO(&Poco::Logger::get("ObjectStorageMetadata"), "Failed to read metadata file {} before removal because it's incomplete or empty. "
-                     "It's Ok and can happen after operation interruption (like metadata fetch), so removing as is", path);
-
-            auto tx = createTransaction();
-            unlinkFile(path, tx);
-            tx->commit();
-        }
-
-        /// If file already removed, than nothing to do
-        if (ex.code() == ErrorCodes::FILE_DOESNT_EXIST)
-            return;
-
-        throw;
-    }
+    std::shared_lock lock(metadata_mutex);
+    return readMetadataUnlocked(path, lock);
 }
 
 std::unordered_map<String, String> MetadataStorageFromDisk::getSerializedMetadata(const std::vector<String> & file_paths) const
 {
+    std::shared_lock lock(metadata_mutex);
     std::unordered_map<String, String> metadatas;
 
     for (const auto & path : file_paths)
     {
-        auto metadata = readMetadata(path);
+        auto metadata = readMetadataUnlocked(path, lock);
         metadata->resetRefCount();
         WriteBufferFromOwnString buf;
         metadata->serialize(buf, false);
@@ -733,11 +692,14 @@ uint32_t MetadataStorageFromDisk::unlinkAndGetHardlinkCount(const std::string & 
     uint32_t ref_count = metadata->getRefCount();
     if (ref_count == 0)
     {
+        std::unique_lock lock(metadata_mutex);
         unlinkFile(path, transaction);
     }
     else
     {
         metadata->decrementRefCount();
+
+        std::unique_lock lock(metadata_mutex);
         auto buf = writeFile(path, transaction);
         metadata->serialize(*buf, false);
     }
