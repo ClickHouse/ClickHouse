@@ -1600,7 +1600,7 @@ struct StatefulWindowFunction : public WindowFunction
         new (place) State();
     }
 
-    virtual void destroy(AggregateDataPtr __restrict place) const noexcept override
+    void destroy(AggregateDataPtr __restrict place) const noexcept override
     {
         auto * const state = static_cast<State *>(static_cast<void *>(place));
         state->~State();
@@ -1773,7 +1773,7 @@ struct WindowFunctionExponentialTimeDecayedMax final : public WindowFunction
     void windowInsertResultInto(const WindowTransform * transform,
         size_t function_index) override
     {
-        Float64 result = -std::numeric_limits<Float64>::infinity();
+        Float64 result = std::numeric_limits<Float64>::lowest();
         Float64 curr_t = WindowFunctionHelpers::getValue<Float64>(transform, function_index, ARGUMENT_TIME, transform->current_row);
 
         for (RowNumber i = transform->frame_start; i < transform->frame_end; transform->advanceRowNumber(i))
