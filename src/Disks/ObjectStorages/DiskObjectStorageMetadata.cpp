@@ -1,5 +1,7 @@
 #include <Disks/ObjectStorages/DiskObjectStorageMetadata.h>
 
+#include <IO/ReadBufferFromString.h>
+#include <IO/WriteBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 
@@ -9,11 +11,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int UNKNOWN_FORMAT;
-    extern const int PATH_ACCESS_DENIED;
-    extern const int FILE_DOESNT_EXIST;
-    extern const int ATTEMPT_TO_READ_AFTER_EOF;
-    extern const int CANNOT_READ_ALL_DATA;
-    extern const int CANNOT_OPEN_FILE;
 }
 
 void DiskObjectStorageMetadata::deserialize(ReadBuffer & buf)
@@ -67,6 +64,12 @@ void DiskObjectStorageMetadata::deserialize(ReadBuffer & buf)
     }
 }
 
+void DiskObjectStorageMetadata::deserializeFromString(const std::string & data)
+{
+    ReadBufferFromString buf(data);
+    deserialize(buf);
+}
+
 void DiskObjectStorageMetadata::serialize(WriteBuffer & buf, bool sync) const
 {
     writeIntText(VERSION_RELATIVE_PATHS, buf);
@@ -94,6 +97,13 @@ void DiskObjectStorageMetadata::serialize(WriteBuffer & buf, bool sync) const
     buf.finalize();
     if (sync)
         buf.sync();
+}
+
+std::string DiskObjectStorageMetadata::serializeToString() const
+{
+    WriteBufferFromOwnString result;
+    serialize(result, false);
+    return result.str();
 }
 
 /// Load metadata by path or create empty if `create` flag is set.
