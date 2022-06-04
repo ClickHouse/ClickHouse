@@ -877,7 +877,7 @@ static FillColumnDescription getWithFillDescription(DataTypePtr type, const ASTO
     return descr;
 }
 
-static SortDescription getSortDescription(const ASTSelectQuery & query, const Block & result_block, const Aliases & aliases, ContextPtr context)
+static SortDescription getSortDescription(const ASTSelectQuery & query, const Block & source_block, const Block & result_block, const Aliases & aliases, ContextPtr context)
 {
     SortDescription order_descr;
     order_descr.reserve(query.orderBy()->children.size());
@@ -892,6 +892,8 @@ static SortDescription getSortDescription(const ASTSelectQuery & query, const Bl
         if (order_by_elem.with_fill)
         {
             auto column = result_block.findByName(name);
+            if (!column)
+                column = source_block.findByName(name);
             if (!column)
                 for (auto &[alias, ast] : aliases)
                     if (name == ast->getColumnName())
@@ -1504,7 +1506,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
             bool has_withfill = false;
             if (query.orderBy())
             {
-                SortDescription order_descr = getSortDescription(query, result_header, syntax_analyzer_result->aliases, context);
+                SortDescription order_descr = getSortDescription(query, source_header, result_header, syntax_analyzer_result->aliases, context);
                 for (auto & desc : order_descr)
                     if (desc.with_fill)
                     {
@@ -2117,7 +2119,7 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
                         // TODO Do we need a projection variant for this field?
                         query,
                         analysis_result.order_by_elements_actions,
-                        getSortDescription(query, result_header, syntax_analyzer_result->aliases, context),
+                        getSortDescription(query, source_header, result_header, syntax_analyzer_result->aliases, context),
                         query_info.syntax_analyzer_result);
                 }
                 else
@@ -2125,7 +2127,7 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
                     query_info.order_optimizer = std::make_shared<ReadInOrderOptimizer>(
                         query,
                         analysis_result.order_by_elements_actions,
-                        getSortDescription(query, result_header, syntax_analyzer_result->aliases, context),
+                        getSortDescription(query, source_header, result_header, syntax_analyzer_result->aliases, context),
                         query_info.syntax_analyzer_result);
                 }
             }
@@ -2554,7 +2556,7 @@ void InterpreterSelectQuery::executeOrderOptimized(QueryPlan & query_plan, Input
 void InterpreterSelectQuery::executeOrder(QueryPlan & query_plan, InputOrderInfoPtr input_sorting_info)
 {
     auto & query = getSelectQuery();
-    SortDescription output_order_descr = getSortDescription(query, result_header, syntax_analyzer_result->aliases, context);
+    SortDescription output_order_descr = getSortDescription(query, source_header, result_header, syntax_analyzer_result->aliases, context);
     UInt64 limit = getLimitForSorting(query, context);
 
     if (input_sorting_info)
@@ -2592,7 +2594,7 @@ void InterpreterSelectQuery::executeOrder(QueryPlan & query_plan, InputOrderInfo
 void InterpreterSelectQuery::executeMergeSorted(QueryPlan & query_plan, const std::string & description)
 {
     auto & query = getSelectQuery();
-    SortDescription order_descr = getSortDescription(query, result_header, syntax_analyzer_result->aliases, context);
+    SortDescription order_descr = getSortDescription(query, source_header, result_header, syntax_analyzer_result->aliases, context);
     UInt64 limit = getLimitForSorting(query, context);
 
     executeMergeSorted(query_plan, order_descr, limit, description);
@@ -2695,7 +2697,7 @@ void InterpreterSelectQuery::executeWithFill(QueryPlan & query_plan)
     auto & query = getSelectQuery();
     if (query.orderBy())
     {
-        SortDescription order_descr = getSortDescription(query, result_header, syntax_analyzer_result->aliases, context);
+        SortDescription order_descr = getSortDescription(query, source_header, result_header, syntax_analyzer_result->aliases, context);
         SortDescription fill_descr;
         for (auto & desc : order_descr)
         {
@@ -2746,7 +2748,7 @@ void InterpreterSelectQuery::executeLimit(QueryPlan & query_plan)
         {
             if (!query.orderBy())
                 throw Exception("LIMIT WITH TIES without ORDER BY", ErrorCodes::LOGICAL_ERROR);
-            order_descr = getSortDescription(query, result_header, syntax_analyzer_result->aliases, context);
+            order_descr = getSortDescription(query, source_header, result_header, syntax_analyzer_result->aliases, context);
         }
 
         auto limit = std::make_unique<LimitStep>(
