@@ -307,9 +307,9 @@ if __name__ == "__main__":
 
     containers = subprocess.check_output(f"docker ps -a -q --filter name={CONTAINER_NAME} --format={{{{.ID}}}}", shell=True, universal_newlines=True).splitlines()
     if containers:
-        print(f"Trying to kill container name={CONTAINER_NAME} ids={containers}")
+        print(f"Trying to kill containers name={CONTAINER_NAME} ids={containers}")
         subprocess.check_call(f"docker kill {' '.join(containers)}", shell=True)
-        print("Container killed")
+        print(f"Containers {containers} killed")
 
     print(("Running pytest container as: '" + cmd + "'."))
     subprocess.check_call(cmd, shell=True)
