@@ -34,8 +34,8 @@ public:
     bool validateTypeBinary(ReadBuffer & istr) const override;
     void deserializeBinary(ReadBuffer & istr) override;
 
-    double estimateQuantileLower(const Field& value) const override;
-    double estimateQuantileUpper(const Field& value) const override;
+    double estimateQuantileLower(double value) const override;
+    double estimateQuantileUpper(double value) const override;
     double estimateProbability(const Field& lower, const Field& upper) const override;
 
     size_t getSizeInMemory() const override;

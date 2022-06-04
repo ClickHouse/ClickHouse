@@ -136,11 +136,11 @@ double extractValue(const Field& value)
 }
 }
 
-double MergeTreeGranuleDistributionStatisticTDigest::estimateQuantileLower(const Field& value) const
+double MergeTreeGranuleDistributionStatisticTDigest::estimateQuantileLower(double threshold) const
 {
     if (empty())
         throw Exception("BlockTDigest is empty", ErrorCodes::LOGICAL_ERROR);
-    double threshold = extractValue(value);
+
     if (std::isnan(threshold)
         || std::isinf(threshold)
         || threshold < std::numeric_limits<Float32>::lowest()
@@ -152,12 +152,11 @@ double MergeTreeGranuleDistributionStatisticTDigest::estimateQuantileLower(const
         return min_sketch.cdf(threshold);
 }
 
-double MergeTreeGranuleDistributionStatisticTDigest::estimateQuantileUpper(const Field& value) const
+double MergeTreeGranuleDistributionStatisticTDigest::estimateQuantileUpper(double threshold) const
 {
     if (empty())
         throw Exception("BlockTDigest is empty", ErrorCodes::LOGICAL_ERROR);
 
-    double threshold = extractValue(value);
     if (std::isnan(threshold)
         || std::isinf(threshold)
         || threshold < std::numeric_limits<Float32>::lowest()
@@ -180,11 +179,11 @@ double MergeTreeGranuleDistributionStatisticTDigest::estimateProbability(const F
     // Poco::Logger::get("MergeTreeGranuleDistributionStatisticTDigest").information("lo = " + (lower.isNull() ? "null" : (std::to_string(estimateQuantileLower(lower)) + " " + std::to_string(estimateQuantileUpper(lower)))));
     // Poco::Logger::get("MergeTreeGranuleDistributionStatisticTDigest").information("up = " + (upper.isNull() ? "null" : (std::to_string(estimateQuantileLower(upper)) + " " + std::to_string(estimateQuantileUpper(upper)))));
     if (!lower.isNull() && !upper.isNull())
-        return std::max(std::min(estimateQuantileLower(upper) - estimateQuantileUpper(lower), 1.0), 0.0);
+        return std::max(std::min(estimateQuantileLower(extractValue(upper)) - estimateQuantileUpper(extractValue(lower)), 1.0), 0.0);
     else if (!lower.isNull())
-        return std::max(std::min(1.0 - estimateQuantileUpper(lower), 1.0), 0.0);
+        return std::max(std::min(1.0 - estimateQuantileUpper(extractValue(lower)), 1.0), 0.0);
     else if (!upper.isNull())
-        return std::max(std::min(estimateQuantileLower(upper), 1.0), 0.0);
+        return std::max(std::min(estimateQuantileLower(extractValue(upper)), 1.0), 0.0);
     else
         return 1.0 - 0.0;
 }

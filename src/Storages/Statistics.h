@@ -53,9 +53,9 @@ public:
     StatisticType statisticType() const override { return StatisticType::NUMERIC_COLUMN_DISRIBUTION; }
 
     /// Some quantile of value smaller than value
-    virtual double estimateQuantileLower(const Field& value) const = 0;
+    virtual double estimateQuantileLower(double value) const = 0;
     /// Some quantile of value greater than value
-    virtual double estimateQuantileUpper(const Field& value) const = 0;
+    virtual double estimateQuantileUpper(double value) const = 0;
     /// Upper bound of probability of lower <= value <= upper
     virtual double estimateProbability(const Field & lower, const Field & upper) const = 0;
 };

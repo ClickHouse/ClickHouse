@@ -13,6 +13,11 @@
 namespace DB
 {
 
+namespace
+{
+constexpr float EPS = 1e-5;
+}
+
 namespace ErrorCodes
 {
 extern const int INCORRECT_QUERY;
@@ -126,12 +131,11 @@ double extractValue(const Field& value)
 }
 }
 
-double MergeTreeColumnDistributionStatisticTDigest::estimateQuantileLower(const Field& value) const
+double MergeTreeColumnDistributionStatisticTDigest::estimateQuantileLower(double threshold) const
 {
     if (empty())
         throw Exception("TDigest is empty", ErrorCodes::LOGICAL_ERROR);
 
-    double threshold = extractValue(value);
     if (std::isnan(threshold)
         || std::isinf(threshold)
         || threshold < std::numeric_limits<Float32>::lowest()
@@ -141,12 +145,11 @@ double MergeTreeColumnDistributionStatisticTDigest::estimateQuantileLower(const 
         return sketch.cdf(threshold);
 }
 
-double MergeTreeColumnDistributionStatisticTDigest::estimateQuantileUpper(const Field& value) const
+double MergeTreeColumnDistributionStatisticTDigest::estimateQuantileUpper(double threshold) const
 {
     if (empty())
         throw Exception("TDigest is empty", ErrorCodes::LOGICAL_ERROR);
 
-    double threshold = extractValue(value);
     if (std::isnan(threshold)
         || std::isinf(threshold)
         || threshold < std::numeric_limits<Float32>::lowest()
@@ -166,11 +169,16 @@ double MergeTreeColumnDistributionStatisticTDigest::estimateProbability(const Fi
     // Poco::Logger::get("MergeTreeColumnDistributionStatisticTDigest").information("upper = " + (upper.isNull() ? "null" : std::to_string(estimateQuantileUpper(upper))));
     // Poco::Logger::get("MergeTreeColumnDistributionStatisticTDigest").information("lower = " + (lower.isNull() ? "null" : std::to_string(estimateQuantileUpper(lower))));
     if (!lower.isNull() && !upper.isNull())
-        return std::max(std::min(estimateQuantileLower(upper) - estimateQuantileUpper(lower), 1.0), 0.0);
+    {
+        if (lower == upper)
+            return std::max(std::min(estimateQuantileLower(extractValue(upper) + EPS) - estimateQuantileUpper(extractValue(lower) - EPS), 1.0), 0.0);
+        else
+            return std::max(std::min(estimateQuantileLower(extractValue(upper)) - estimateQuantileUpper(extractValue(lower)), 1.0), 0.0);
+    }
     else if (!lower.isNull())
-        return std::max(std::min(1.0 - estimateQuantileUpper(lower), 1.0), 0.0);
+        return std::max(std::min(1.0 - estimateQuantileUpper(extractValue(lower)), 1.0), 0.0);
     else if (!upper.isNull())
-        return std::max(std::min(estimateQuantileLower(upper), 1.0), 0.0);
+        return std::max(std::min(estimateQuantileLower(extractValue(upper)), 1.0), 0.0);
     else
         return 1.0 - 0.0;
 }

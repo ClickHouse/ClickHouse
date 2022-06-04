@@ -609,6 +609,8 @@ void MergeTreeWhereOptimizer::optimizeByRanks(ASTSelectQuery & select) const
     {
         LOG_INFO(log, "optimizeByRanks: column={} rank={} selectivity={} size={}", column, rank, selectivity, getIdentifiersColumnSize({column}));
     }
+
+    //todo: chose best prefix
     for (const auto & [rank, selectivity, column] : rank_to_column)
     {
         const size_t column_size = getIdentifiersColumnSize({column});
