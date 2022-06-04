@@ -1238,7 +1238,7 @@ void StorageReplicatedMergeTree::checkParts(bool skip_sanity_checks)
       */
     DataParts unexpected_parts;
 
-    /// Intersection of local parts anfd expected parts
+    /// Intersection of local parts and expected parts
     ActiveDataPartSet local_expected_parts_set(format_version);
 
     /// Collect unexpected parts
