@@ -58,9 +58,8 @@ protected:
     }
 
     template <class AgrumentNames>
-    void convertRequiredArguments(const ColumnsWithTypeAndName & arguments, const AgrumentNames & argument_names, Columns & converted_arguments) const
+    void convertRequiredArguments(const ColumnsWithTypeAndName & arguments, const AgrumentNames & argument_names, Columns & converted_arguments, const DataTypePtr converted_argument_type) const
     {
-        const DataTypePtr converted_argument_type = std::make_shared<DataTypeFloat32>();
         converted_arguments.clear();
         converted_arguments.reserve(arguments.size());
         for (size_t i = 0; i < argument_names.size(); ++i)

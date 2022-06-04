@@ -21,7 +21,6 @@ namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ARGUMENT_OUT_OF_BOUND;
 }
@@ -63,7 +62,7 @@ public:
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         Columns converted_arguments;
-        convertRequiredArguments(arguments, argument_names, converted_arguments);
+        convertRequiredArguments(arguments, argument_names, converted_arguments, std::make_shared<DataTypeFloat32>());
 
         auto res_column = Traits::ReturnColumnType::create(input_rows_count);
         auto & result_data = res_column->getData();
@@ -142,7 +141,7 @@ protected:
 
     void convertRequiredArguments(const ColumnsWithTypeAndName & arguments, Columns & converted_arguments) const
     {
-        FunctionWithNumericParamsBase::convertRequiredArguments(arguments, argument_names, converted_arguments);
+        FunctionWithNumericParamsBase::convertRequiredArguments(arguments, argument_names, converted_arguments, std::make_shared<DataTypeFloat32>());
     }
 };
 
@@ -257,7 +256,7 @@ public:
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         /// Optional precision argument
-        Int64 precision = DEFAULT_PRECISION;
+        UInt8 precision = DEFAULT_PRECISION;
         if (arguments.size() >= argument_names.size() + 2)
             precision = extractPrecision(arguments[argument_names.size() + 1]);
 
@@ -334,11 +333,10 @@ public:
 private:
     UInt8 extractPrecision(const ColumnWithTypeAndName & precision_argument) const
     {
-        Int64 precision = DEFAULT_PRECISION;
         if (!isNumber(precision_argument.type) || !precision_argument.column || (precision_argument.column->size() != 1 && !typeid_cast<const ColumnConst*>(precision_argument.column.get())))
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "Argument 'precision' for function {} must be constant number", getName());
-        precision = precision_argument.column->getInt(0);
+        Int64 precision = precision_argument.column->getInt(0);
         if (precision < 0 || precision > 9)
             throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
                 "Argument 'precision' for function {} must be in range [0, 9]", getName());
