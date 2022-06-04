@@ -7,7 +7,7 @@
 
 set -e -x -a -u
 
-rpm2cpio ./minio-20220103182258.0.0.x86_64.rpm | cpio -i --make-directories
+rpm2cpio ./minio-20220103182258.0.0.*.rpm | cpio -i --make-directories
 find / -name minio
 cp ./usr/local/bin/minio ./
 
