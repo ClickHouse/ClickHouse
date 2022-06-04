@@ -13,8 +13,6 @@ namespace ErrorCodes
 {
     extern const int FS_METADATA_ERROR;
     extern const int LOGICAL_ERROR;
-    extern const int CANNOT_OPEN_FILE;
-    extern const int FILE_DOESNT_EXIST;
 }
 
 
@@ -79,28 +77,26 @@ class UnlinkFileOperation final : public IMetadataOperation
 {
     std::string path;
     IDisk & disk;
-    std::string temp_filepath;
+    std::string prev_data;
 public:
     UnlinkFileOperation(const std::string & path_, IDisk & disk_)
         : path(path_)
         , disk(disk_)
-        , temp_filepath(getTempFileName())
     {
     }
 
     void execute() override
     {
-        disk.moveFile(path, temp_filepath);
+        auto buf = disk.readFile(path);
+        readStringUntilEOF(prev_data, *buf);
+        disk.removeFile(path);
     }
 
     void undo() override
     {
-        disk.moveFile(temp_filepath, path);
-    }
-
-    void finalize() override
-    {
-        disk.removeFileIfExists(temp_filepath);
+        auto buf = disk.writeFile(path);
+        writeString(prev_data, *buf);
+        buf->finalize();
     }
 };
 
@@ -175,7 +171,17 @@ public:
 
     void execute() override
     {
-        disk.removeDirectory(path);
+        try
+        {
+            disk.removeDirectory(path);
+        }
+        catch (...)
+        {
+            std::vector<std::string> files;
+            disk.listFiles(path, files);
+            LOG_DEBUG(&Poco::Logger::get("DEBUG"), "GOT FIlES {}", fmt::join(files, ", "));
+            throw;
+        }
     }
 
     void undo() override
@@ -573,6 +579,7 @@ void MetadataStorageFromDisk::createHardLink(const std::string & path_from, cons
     auto metadata = readMetadata(path_from);
 
     metadata->incrementRefCount();
+
     writeMetadataToFile(path_from, transaction, metadata->serializeToString());
 
     transaction->addOperation(std::make_unique<CreateHardlinkOperation>(path_from, path_to, *disk));
@@ -681,15 +688,12 @@ uint32_t MetadataStorageFromDisk::unlinkAndGetHardlinkCount(const std::string & 
 {
     auto metadata = readMetadata(path);
     uint32_t ref_count = metadata->getRefCount();
-    if (ref_count == 0)
-    {
-        unlinkFile(path, transaction);
-    }
-    else
+    if (ref_count != 0)
     {
         metadata->decrementRefCount();
         writeMetadataToFile(path, transaction, metadata->serializeToString());
     }
+    unlinkFile(path, transaction);
     return ref_count;
 }
 

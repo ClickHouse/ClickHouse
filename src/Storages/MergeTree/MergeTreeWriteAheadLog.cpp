@@ -46,9 +46,14 @@ MergeTreeWriteAheadLog::MergeTreeWriteAheadLog(
 
 MergeTreeWriteAheadLog::~MergeTreeWriteAheadLog()
 {
-    std::unique_lock lock(write_mutex);
-    if (sync_scheduled)
-        sync_cv.wait(lock, [this] { return !sync_scheduled; });
+    try
+    {
+        shutdown();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
 }
 
 void MergeTreeWriteAheadLog::init()
@@ -250,6 +255,21 @@ void MergeTreeWriteAheadLog::sync(std::unique_lock<std::mutex> & lock)
 
     if (storage.getSettings()->in_memory_parts_insert_sync)
         sync_cv.wait(lock, [this] { return !sync_scheduled; });
+}
+
+void MergeTreeWriteAheadLog::shutdown()
+{
+     std::unique_lock lock(write_mutex);
+     if (shutted_down)
+         return;
+
+    if (sync_scheduled)
+        sync_cv.wait(lock, [this] { return !sync_scheduled; });
+
+    shutted_down = true;
+    sync_task->deactivate();
+    out->finalize();
+    out.reset();
 }
 
 std::optional<MergeTreeWriteAheadLog::MinMaxBlockNumber>
