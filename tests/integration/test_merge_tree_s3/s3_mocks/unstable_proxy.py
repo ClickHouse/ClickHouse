@@ -8,8 +8,8 @@ import urllib.parse
 
 
 parser = argparse.ArgumentParser()
-parser.add_argument('port', type=int, help='port to listen')
-parser.add_argument('upstream', type=str, help='upstream to redirect requests to')
+parser.add_argument("port", type=int, help="port to listen")
+parser.add_argument("upstream", type=str, help="upstream to redirect requests to")
 args = parser.parse_args()
 
 random.seed("Unstable proxy/1.0")
@@ -76,5 +76,5 @@ class ThreadedHTTPServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
     """Handle requests in a separate thread."""
 
 
-httpd = ThreadedHTTPServer(("0.0.0.0", args.port, RequestHandler)
+httpd = ThreadedHTTPServer(("0.0.0.0", args.port), RequestHandler)
 httpd.serve_forever()

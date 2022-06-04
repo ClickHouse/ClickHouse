@@ -38,7 +38,7 @@ def generate_values(date_str, count, sign=1):
 
 def replace_xml_by_xpath(input_path, output_path, replace_text={}, remove_node=[]):
     tree = xml.etree.ElementTree.parse(input_path)
-    for xpath, value in replace_test.items():
+    for xpath, value in replace_text.items():
         for node in tree.findall(xpath):
             node.text = value
     if remove_node:
