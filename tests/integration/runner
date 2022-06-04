@@ -310,8 +310,6 @@ if __name__ == "__main__":
         print(f"Trying to kill container name={CONTAINER_NAME} ids={containers}")
         subprocess.check_call(f"docker kill {' '.join(containers)}", shell=True)
         print("Container killed")
-    else:
-        print("Nothing to kill")
 
     print(("Running pytest container as: '" + cmd + "'."))
     subprocess.check_call(cmd, shell=True)
