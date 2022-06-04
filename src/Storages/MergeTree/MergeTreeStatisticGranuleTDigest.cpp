@@ -143,12 +143,13 @@ double MergeTreeGranuleDistributionStatisticTDigest::estimateQuantileLower(const
     double threshold = extractValue(value);
     if (std::isnan(threshold)
         || std::isinf(threshold)
-        || threshold < std::numeric_limits<Float32>::min()
+        || threshold < std::numeric_limits<Float32>::lowest()
         || threshold > std::numeric_limits<Float32>::max())
+    {
         return 0.0;
+    }
     else
-        // -EPS to make it a bit lower than upper bound
-        return min_sketch.cdf(threshold).first - EPS;
+        return min_sketch.cdf(threshold);
 }
 
 double MergeTreeGranuleDistributionStatisticTDigest::estimateQuantileUpper(const Field& value) const
@@ -159,12 +160,13 @@ double MergeTreeGranuleDistributionStatisticTDigest::estimateQuantileUpper(const
     double threshold = extractValue(value);
     if (std::isnan(threshold)
         || std::isinf(threshold)
-        || threshold < std::numeric_limits<Float32>::min()
+        || threshold < std::numeric_limits<Float32>::lowest()
         || threshold > std::numeric_limits<Float32>::max())
+    {
         return 1.0;
+    }
     else
-        // +EPS to make it a bit upper than lower bound
-        return max_sketch.cdf(threshold).second + EPS;
+        return max_sketch.cdf(threshold);
 }
 
 double MergeTreeGranuleDistributionStatisticTDigest::estimateProbability(const Field& lower, const Field& upper) const
@@ -172,15 +174,17 @@ double MergeTreeGranuleDistributionStatisticTDigest::estimateProbability(const F
     // lower <= value <= upper
     // null = infty
     // Poco::Logger::get("MergeTreeGranuleDistributionStatisticTDigest").information(column_name);
-    // Poco::Logger::get("MergeTreeGranuleDistributionStatisticTDigest").information("est " + toString(lower) + " " + toString(upper) + "emp=" + toString(empty()));
-    // Poco::Logger::get("MergeTreeGranuleDistributionStatisticTDigest").information("upper = " + (upper.isNull() ? "null" : std::to_string(estimateQuantileUpper(upper))));
-    // Poco::Logger::get("MergeTreeGranuleDistributionStatisticTDigest").information("lower = " + (lower.isNull() ? "null" : std::to_string(estimateQuantileUpper(lower))));
+    // Poco::Logger::get("MergeTreeGranuleDistributionStatisticTDigest").information(std::to_string(min_sketch.get(0.5)) + " " + std::to_string(min_sketch.get(1.0)));
+    // Poco::Logger::get("MergeTreeGranuleDistributionStatisticTDigest").information(std::to_string(max_sketch.get(0.5)) + " " + std::to_string(max_sketch.get(1.0)));
+    // Poco::Logger::get("MergeTreeGranuleDistributionStatisticTDigest").information("est " + toString(lower) + " " + toString(upper) + " emp=" + toString(empty()));
+    // Poco::Logger::get("MergeTreeGranuleDistributionStatisticTDigest").information("lo = " + (lower.isNull() ? "null" : (std::to_string(estimateQuantileLower(lower)) + " " + std::to_string(estimateQuantileUpper(lower)))));
+    // Poco::Logger::get("MergeTreeGranuleDistributionStatisticTDigest").information("up = " + (upper.isNull() ? "null" : (std::to_string(estimateQuantileLower(upper)) + " " + std::to_string(estimateQuantileUpper(upper)))));
     if (!lower.isNull() && !upper.isNull())
-        return std::max(std::min(estimateQuantileUpper(upper) - estimateQuantileLower(lower), 1.0), 0.0);
+        return std::max(std::min(estimateQuantileLower(upper) - estimateQuantileUpper(lower), 1.0), 0.0);
     else if (!lower.isNull())
-        return std::max(std::min(1.0 - estimateQuantileLower(lower), 1.0), 0.0);
+        return std::max(std::min(1.0 - estimateQuantileUpper(lower), 1.0), 0.0);
     else if (!upper.isNull())
-        return std::max(std::min(estimateQuantileUpper(upper) - 0.0, 1.0), 0.0);
+        return std::max(std::min(estimateQuantileLower(upper), 1.0), 0.0);
     else
         return 1.0 - 0.0;
 }
@@ -254,10 +258,10 @@ void MergeTreeGranuleDistributionStatisticCollectorTDigest::update(const Block &
     for (size_t i = 0; i < rows_read; ++i)
     {
         const auto value = column->getFloat32((*pos) + i);
-        if (!min_current || *min_current > value - EPS)
-            min_current = value - EPS;
-        if (!max_current || *max_current < value + EPS)
-            max_current = value + EPS;
+        if (!min_current || *min_current > value + EPS)
+            min_current = value;
+        if (!max_current || *max_current < value - EPS)
+            max_current = value;
     }
     *pos += rows_read;
 }

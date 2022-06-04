@@ -8,7 +8,7 @@ CREATE TABLE prewhere
 (
     a Int,
     b Int64,
-    c Int,
+    c UInt64,
     d FLOAT,
     heavy String,
     heavy2 String,
@@ -18,7 +18,7 @@ ENGINE=MergeTree() ORDER BY a
 SETTINGS experimantal_stats_update_period = 100000;
 
 SELECT 'empty';
-EXPLAIN SYNTAX SELECT a, b, c, d, heavy, heavy2 FROM prewhere WHERE a == 10 AND b == 100 AND c == 0 AND d == 100;
+EXPLAIN SYNTAX SELECT a, b, c, d, heavy, heavy2 FROM prewhere WHERE a == 10 AND b == 100 AND c = 0 AND d == 100;
 
 INSERT INTO prewhere SELECT
     number AS a,
@@ -33,7 +33,7 @@ LIMIT 1000000;
 SYSTEM RELOAD STATISTICS prewhere;
 
 SELECT 'tdigest test';
-EXPLAIN SYNTAX SELECT a, b, c, d, heavy, heavy2 FROM prewhere WHERE a == 10 AND b == 100 AND c == 0 AND d == 100;
+EXPLAIN SYNTAX SELECT a, b, c, d, heavy, heavy2 FROM prewhere WHERE a == 10 AND b == 100 AND c < 10 AND d == 100;
 EXPLAIN SYNTAX SELECT a, b, c, d, heavy, heavy2 FROM prewhere WHERE a > 0 AND c > 0 AND d < 100 AND b < 100;
 EXPLAIN SYNTAX SELECT a, b, c, d, heavy, heavy2 FROM prewhere WHERE a > 0 AND c > 0 AND d > 100 AND b > 100;
 EXPLAIN SYNTAX SELECT a, b, c, d, heavy, heavy2 FROM prewhere WHERE a > 0 AND c > 0 AND d > 100 AND b < 100;
@@ -59,7 +59,7 @@ ENGINE=MergeTree() ORDER BY a
 SETTINGS experimantal_stats_update_period = 100000;
 
 SELECT 'empty 2';
-EXPLAIN SYNTAX SELECT a, b, c, d, heavy, heavy2 FROM prewhere WHERE a == 10 AND b == 100 AND c == 0 AND d == 100;
+EXPLAIN SYNTAX SELECT a, b, c, d, heavy, heavy2 FROM prewhere WHERE a == 10 AND b == 100 AND c < 10 AND d == 100;
 
 INSERT INTO prewhere SELECT
     number AS a,
@@ -76,17 +76,17 @@ SYSTEM RELOAD STATISTICS prewhere;
 SELECT 'auto test';
 
 -- test simple selectivity
-EXPLAIN SYNTAX SELECT a, b, c, d, heavy, heavy2 FROM prewhere WHERE a == 10 AND b == 100 AND c == 0 AND d == 100;
-EXPLAIN SYNTAX SELECT a, b, c, d, heavy, heavy2 FROM prewhere WHERE a > 0 AND c > 0 AND d < 100 AND b < 100;
-EXPLAIN SYNTAX SELECT a, b, c, d, heavy, heavy2 FROM prewhere WHERE a > 0 AND c > 0 AND d > 100 AND b > 100;
-EXPLAIN SYNTAX SELECT a, b, c, d, heavy, heavy2 FROM prewhere WHERE a > 0 AND c > 0 AND d > 100 AND b < 100;
-EXPLAIN SYNTAX SELECT a, b, c, d, heavy, heavy2 FROM prewhere WHERE a > 0 AND c > 0 AND d < 100 AND b > 100;
-EXPLAIN SYNTAX SELECT b, d FROM prewhere WHERE c > 0 AND d < 10000 AND b > 10000;
-EXPLAIN SYNTAX SELECT b, d FROM prewhere WHERE c > 0 AND d > 10000 AND b < 10000;
+EXPLAIN SYNTAX SELECT a, b, c, d, heavy, heavy2 FROM prewhere WHERE a == 10 AND b == 1000 AND c == 5 AND d == 1000;
+EXPLAIN SYNTAX SELECT a, b, c, d, heavy, heavy2 FROM prewhere WHERE a > 0 AND d < 10000 AND b < 10000;
+EXPLAIN SYNTAX SELECT a, b, c, d, heavy, heavy2 FROM prewhere WHERE a > 0 AND d > 10000 AND b > 10000;
+EXPLAIN SYNTAX SELECT a, b, c, d, heavy, heavy2 FROM prewhere WHERE a > 0 AND d > 10000 AND b < 10000;
+EXPLAIN SYNTAX SELECT a, b, c, d, heavy, heavy2 FROM prewhere WHERE a > 0 AND d < 10000 AND b > 10000;
+EXPLAIN SYNTAX SELECT b, d FROM prewhere WHERE d < 10000 AND b > 10000;
+EXPLAIN SYNTAX SELECT b, d FROM prewhere WHERE d > 10000 AND b < 10000;
 
 -- test 10000 < ? < 20000
-EXPLAIN SYNTAX SELECT b, d FROM prewhere WHERE c > 0 AND d < 10000 AND b > 10000 AND b < 20000;
-EXPLAIN SYNTAX SELECT b, d FROM prewhere WHERE c > 0 AND d > 10000 AND b < 10000 AND d < 20000;;
+EXPLAIN SYNTAX SELECT b, d FROM prewhere WHERE d < 10000 AND b > 10000 AND b < 20000;
+EXPLAIN SYNTAX SELECT b, d FROM prewhere WHERE d > 10000 AND b < 10000 AND d < 20000;;
 
 -- test tuple
 EXPLAIN SYNTAX SELECT b, d FROM prewhere WHERE c > 0 AND d < 10000 AND (b, d) > (10000, 10000);

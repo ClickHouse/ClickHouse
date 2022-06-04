@@ -460,43 +460,41 @@ public:
     }
 
     /** Finds approximate quantile of value.
-        Return lower and upper bounds.
       */
-    std::pair<Float32, Float32> cdf(T value)
+    Float32 cdf(T value)
     {
-        if (centroids.empty() || std::isnan(value) || std::isinf(value))
-            return {0, 1};
+        if (centroids.empty() || std::isnan(value) || std::isinf(value)) {
+            return 0;
+        }
 
         compress();
 
         if (centroids.size() == 1)
         {
             if (value < centroids.front().mean)
-                return {0, 0.5};
+                return 0;
+            else if (value == centroids.front().mean)
+                return 0.5;
             else
-                return {0.5, 1};
+                return 1;
         }
 
-        Float64 prev_x = 0;
         Count sum = 0;
-        Count prev_count = centroids.front().count;
 
         for (const auto & c : centroids)
         {
             Float64 current_x = sum + c.count * 0.5;
 
-            Float64 left = prev_x + 0.5 * (prev_count == 1);
-            Float64 right = current_x - 0.5 * (c.count == 1);
-
             if (value <= c.mean)
-                return {left / count, right / count};
+            {
+                // Add interpolation???
+                return current_x / count;
+            }
 
             sum += c.count;
-            prev_count = c.count;
-            prev_x = current_x;
         }
 
-        return {(prev_count - 0.5 * centroids.back().count) / count, 1};
+        return 1;
     }
 
     T get(Float64 level)
