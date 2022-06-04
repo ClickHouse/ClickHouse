@@ -253,7 +253,7 @@ class PRInfo:
             return True
 
         for f in self.changed_files:
-            if "contrib" in f:
+            if "contrib/" in f:
                 return True
         return False
 
