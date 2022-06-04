@@ -1,5 +1,6 @@
 #include <sys/types.h>
 #include <sys/wait.h>
+#include <grp.h>
 #include <fcntl.h>
 #include <dlfcn.h>
 #include <unistd.h>
@@ -26,6 +27,9 @@ namespace
         CANNOT_EXEC                 = 0x55555558,
         CANNOT_DUP_READ_DESCRIPTOR  = 0x55555559,
         CANNOT_DUP_WRITE_DESCRIPTOR = 0x55555560,
+        CANNOT_SETUID               = 0x55555561,
+        CANNOT_SETGID               = 0x55555562,
+        CANNOT_SETGROUPS            = 0x55555563,
     };
 }
 
@@ -41,6 +45,7 @@ namespace ErrorCodes
 {
     extern const int CANNOT_DLSYM;
     extern const int CANNOT_FORK;
+    extern const int CANNOT_PIPE;
     extern const int CANNOT_WAITPID;
     extern const int CHILD_WAS_NOT_EXITED_NORMALLY;
     extern const int CANNOT_CREATE_CHILD_PROCESS;
@@ -157,6 +162,11 @@ void ShellCommand::logCommand(const char * filename, char * const argv[])
     LOG_TRACE(ShellCommand::getLogger(), "Will start shell command '{}' with arguments {}", filename, args.str());
 }
 
+int execInFork(void* arg) {
+    (*static_cast<std::function<void()>*>(arg))();
+    return 0;
+}
+
 std::unique_ptr<ShellCommand> ShellCommand::executeImpl(
     const char * filename,
     char * const argv[],
@@ -193,13 +203,8 @@ std::unique_ptr<ShellCommand> ShellCommand::executeImpl(
     for (size_t i = 0; i < config.write_fds.size(); ++i)
         write_pipe_fds.emplace_back(std::make_unique<PipeFDs>());
 
-    pid_t pid = reinterpret_cast<pid_t(*)()>(real_vfork)();
-
-    if (pid == -1)
-        throwFromErrno("Cannot vfork", ErrorCodes::CANNOT_FORK);
-
-    if (0 == pid)
-    {
+    PipeFDs mappings_ready;
+    auto child_func = std::function<void()>([&](){
         /// We are in the freshly created process.
 
         /// Why `_exit` and not `exit`? Because `exit` calls `atexit` and destructors of thread local storage.
@@ -243,11 +248,66 @@ std::unique_ptr<ShellCommand> ShellCommand::executeImpl(
         sigprocmask(0, nullptr, &mask);
         sigprocmask(SIG_UNBLOCK, &mask, nullptr);
 
+        close(mappings_ready.fds_rw[1]);
+        char c;
+        read(mappings_ready.fds_rw[0], &c, sizeof(c));
+
+        if (setuid(1000) < 0) {
+            _exit(static_cast<int>(ReturnCodes::CANNOT_SETUID));
+        }
+        if (setgid(1000) < 0) {
+            _exit(static_cast<int>(ReturnCodes::CANNOT_SETGID));
+        }
+        if (setgroups(0, nullptr) < 0) {
+            _exit(static_cast<int>(ReturnCodes::CANNOT_SETGROUPS));
+        }
         execv(filename, argv);
         /// If the process is running, then `execv` does not return here.
 
         _exit(static_cast<int>(ReturnCodes::CANNOT_EXEC));
+    });
+
+    PipeFDs pipe_sync;
+
+    const size_t stack_sz = 16 * 1024;
+    auto stack = std::make_unique<unsigned char[]>(stack_sz);
+    // !! add config option to run isolated and non-isolated processes
+    // pid_t pid = reinterpret_cast<pid_t(*)()>(real_vfork)();
+    pid_t pid = clone(execInFork, stack.get() + stack_sz, CLONE_VM | CLONE_NEWUSER | SIGCHLD, &child_func);
+    if (pid == -1)
+        throwFromErrno("Cannot clone", ErrorCodes::CANNOT_FORK);  // TODO add new err code
+
+    // for some reason, writing to uid_map / gid_map from child process doesn't work.
+    // (seems like some capability is missing, see Capabilities section in man user_namespaces)
+    const int min_subuid = 1000000;  // !! read from /etc/subuid
+    std::stringstream uidmap;
+    // map less uids? setuid/setgid fails if only id 1000 is mapped
+    uidmap << "0 " << min_subuid << " 65536\n";  // NOTE requires root. Regular users must use newuidmap. Create SUID helper?
+    String uidmap_str = uidmap.str();
+    {
+        // TODO move to separate function
+        std::stringstream path;
+        path << "/proc/" << pid << "/uid_map";
+        WriteBufferFromFile out(path.str(), uidmap_str.size());
+        writeString(uidmap_str, out);
+        out.next();
+        out.close();
     }
+    {
+        std::stringstream path;
+        path << "/proc/" << pid << "/gid_map";
+        WriteBufferFromFile out(path.str(), uidmap_str.size());
+        writeString(uidmap_str, out);
+        out.next();
+        out.close();
+    }
+    char c = '\0';
+    write(mappings_ready.fds_rw[1], &c, sizeof(c));
+
+    // Wait for EOF. child FDs are closed on exec/_exit (works similar to vfork, TODO check safety)
+    close(pipe_sync.fds_rw[1]);
+    pipe_sync.fds_rw[1] = -1;
+    read(pipe_sync.fds_rw[0], &c, sizeof(c));
 
     std::unique_ptr<ShellCommand> res(new ShellCommand(
         pid,
@@ -368,6 +428,12 @@ void ShellCommand::wait()
                 throw Exception("Cannot dup2 read descriptor of child process", ErrorCodes::CANNOT_CREATE_CHILD_PROCESS);
             case static_cast<int>(ReturnCodes::CANNOT_DUP_WRITE_DESCRIPTOR):
                 throw Exception("Cannot dup2 write descriptor of child process", ErrorCodes::CANNOT_CREATE_CHILD_PROCESS);
+            case static_cast<int>(ReturnCodes::CANNOT_SETUID):
+                throw Exception("Cannot setuid of child process", ErrorCodes::CANNOT_CREATE_CHILD_PROCESS);
+            case static_cast<int>(ReturnCodes::CANNOT_SETGID):
+                throw Exception("Cannot setgid of child process", ErrorCodes::CANNOT_CREATE_CHILD_PROCESS);
+            case static_cast<int>(ReturnCodes::CANNOT_SETGROUPS):
+                throw Exception("Cannot reset groups of child process", ErrorCodes::CANNOT_CREATE_CHILD_PROCESS);
             default:
                 throw Exception("Child process was exited with return code " + toString(retcode), ErrorCodes::CHILD_WAS_NOT_EXITED_NORMALLY);
         }

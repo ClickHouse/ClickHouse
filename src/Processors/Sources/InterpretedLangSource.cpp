@@ -88,7 +88,7 @@ public:
         output << "assert result_column.ndim == 1\n"
                   "for value in result_column:\n"
                   "    sys.stdout.write(str(value)+'\\n')\n"
-                  "os.unlink(sys.argv[0])\n";
+                  "os.unlink(sys.argv[0])\n";  // FIXME doesn't work in userns
     }
 };
 
@@ -244,6 +244,7 @@ Pipe InterpretedLangSourceCoordinator::createPipe(const String& function_name,
     if (context->getSettingsRef().fsync_metadata)
         out.sync();
     out.close();
+    chmod(script.path().c_str(), 0644);  // FIXME temp files created by root are not readable by other users
 
     // !! remove script from outside / use memfd?
     return cmd_coordinator.createPipe(
