@@ -10,7 +10,7 @@
 #include <IO/WriteBufferFromFileBase.h>
 #include <Disks/DirectoryIterator.h>
 #include <Disks/WriteMode.h>
-#include <Disks/ObjectStorages/IMetadata.h>
+#include <Disks/ObjectStorages/IObjectStorage.h>
 
 namespace DB
 {
@@ -98,9 +98,9 @@ public:
 
     virtual BlobsPathToSize getBlobs(const std::string & path) const = 0;
 
-    virtual void addBlobToMetadata(const std::string & path, const std::string & blob_name, uint64_t size_in_bytes, MetadataTransactionPtr transaction);
+    virtual void addBlobToMetadata(const std::string & path, const std::string & blob_name, uint64_t size_in_bytes, MetadataTransactionPtr transaction) = 0;
 
-    virtual uint32_t unlinkAndGetHardlinkCount(const std::string & path, MetadataTransactionPtr transaction);
+    virtual uint32_t unlinkAndGetHardlinkCount(const std::string & path, MetadataTransactionPtr transaction) = 0;
 };
 
 using MetadataStoragePtr = std::shared_ptr<IMetadataStorage>;

@@ -29,6 +29,7 @@ namespace ErrorCodes
     extern const int BAD_FILE_TYPE;
     extern const int ATTEMPT_TO_READ_AFTER_EOF;
     extern const int CANNOT_READ_ALL_DATA;
+    extern const int CANNOT_OPEN_FILE;
 }
 
 static String revisionToString(UInt64 revision)
@@ -107,7 +108,7 @@ DiskObjectStorage::DiskObjectStorage(
 
 std::vector<String> DiskObjectStorage::getRemotePaths(const String & local_path) const
 {
-    return metadata_storage->getRemoteDataPaths(local_path);
+    return metadata_storage->getRemotePaths(local_path);
 }
 
 void DiskObjectStorage::getRemotePathsRecursive(const String & local_path, std::vector<LocalPathWithRemotePaths> & paths_map)
@@ -180,7 +181,7 @@ void DiskObjectStorage::createFile(const String & path)
 
 size_t DiskObjectStorage::getFileSize(const String & path) const
 {
-    return metadata_storage->getFileSize();
+    return metadata_storage->getFileSize(path);
 }
 
 void DiskObjectStorage::moveFile(const String & from_path, const String & to_path, bool should_send_metadata)
@@ -200,12 +201,9 @@ void DiskObjectStorage::moveFile(const String & from_path, const String & to_pat
         metadata_helper->createFileOperationObject("rename", revision, object_metadata);
     }
 
-    {
-        std::unique_lock lock(metadata_mutex);
-        auto tx = metadata_storage->createTransaction();
-        metadata_storage->moveFile(from_path, to_path, tx);
-        tx->commit();
-    }
+    auto tx = metadata_storage->createTransaction();
+    metadata_storage->moveFile(from_path, to_path, tx);
+    tx->commit();
 }
 
 void DiskObjectStorage::moveFile(const String & from_path, const String & to_path)
@@ -382,18 +380,39 @@ void DiskObjectStorage::removeMetadata(const String & path, std::vector<String> 
     if (!metadata_storage->isFile(path))
         throw Exception(ErrorCodes::BAD_FILE_TYPE, "Path '{}' is not a regular file", path);
 
-    auto tx = metadata_storage->createTransaction();
-    auto remote_objects = metadata_storage->getRemotePaths();
+    auto remote_objects = metadata_storage->getRemotePaths(path);
 
-    uint32_t hardlink_count = metadata_storage->unlinkAndGetHardlinkCount(path, tx);
-    if (hardlink_count == 0)
+    try
     {
-        paths_to_remove = remote_objects;
-        for (const auto & path : paths_to_remove)
-            object_storage->removeFromCache(path);
-    }
-    tx->commit():
 
+        auto tx = metadata_storage->createTransaction();
+        uint32_t hardlink_count = metadata_storage->unlinkAndGetHardlinkCount(path, tx);
+        if (hardlink_count == 0)
+        {
+            paths_to_remove = remote_objects;
+            for (const auto & path_to_remove : paths_to_remove)
+                object_storage->removeFromCache(path_to_remove);
+        }
+        tx->commit();
+    }
+    catch (const Exception & e)
+    {
+        /// If it's impossible to read meta - just remove it from FS.
+        if (e.code() == ErrorCodes::UNKNOWN_FORMAT
+            || e.code() == ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF
+            || e.code() == ErrorCodes::CANNOT_READ_ALL_DATA
+            || e.code() == ErrorCodes::CANNOT_OPEN_FILE)
+        {
+            LOG_INFO(log, "Failed to read metadata file {} before removal because it's incomplete or empty. "
+                     "It's Ok and can happen after operation interruption (like metadata fetch), so removing as is", path);
+
+            auto tx = metadata_storage->createTransaction();
+            metadata_storage->unlinkFile(path, tx);
+            tx->commit();
+        }
+        else
+            throw;
+    }
 }
 
 
@@ -505,7 +524,7 @@ std::unique_ptr<ReadBufferFromFileBase> DiskObjectStorage::readFile(
     std::optional<size_t> read_hint,
     std::optional<size_t> file_size) const
 {
-    return object_storage->readObjects(remote_fs_root_path, metadata_storage->getBlobs(), settings, read_hint, file_size);
+    return object_storage->readObjects(remote_fs_root_path, metadata_storage->getBlobs(path), settings, read_hint, file_size);
 }
 
 std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorage::writeFile(

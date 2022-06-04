@@ -24,9 +24,14 @@ struct MetadataStorageFromDiskTransaction final : public IMetadataTransaction
 private:
     std::optional<size_t> failed_operation_index;
 
+    std::shared_mutex & commit_mutex;
     std::vector<MetadataOperationPtr> operations;
     MetadataFromDiskTransactionState state{MetadataFromDiskTransactionState::PREPARING};
 public:
+    explicit MetadataStorageFromDiskTransaction(std::shared_mutex & commit_mutex_)
+        : commit_mutex(commit_mutex_)
+    {}
+
     void addOperation(MetadataOperationPtr && operation) override;
     void commit() override;
     void rollback() override;
@@ -39,6 +44,7 @@ class MetadataStorageFromDisk final : public IMetadataStorage
 private:
     DiskPtr disk;
     std::string root_path_for_remote_metadata;
+    mutable std::shared_mutex metadata_mutex;
 
 public:
     explicit MetadataStorageFromDisk(DiskPtr disk_, const std::string & root_path_from_remote_metadata_ = "")
@@ -49,7 +55,7 @@ public:
 
     MetadataTransactionPtr createTransaction() const override
     {
-        return std::make_shared<MetadataStorageFromDiskTransaction>();
+        return std::make_shared<MetadataStorageFromDiskTransaction>(metadata_mutex);
     }
 
     const std::string & getPath() const override;
@@ -118,14 +124,9 @@ public:
 
 private:
 
-    MetadataPtr readMetadata(const std::string & path) const;
-
-    MetadataPtr updateMetadata(const std::string & path, bool sync, std::function<void(IMetadata & metadata)> && updater);
-
-    MetadataPtr updateOrCreateMetadata(const std::string & path, bool sync, std::function<void(IMetadata & metadata)> && updater);
-
-    void updateAndRemoveMetadata(const std::string & path, bool sync, std::function<bool(IMetadata & metadata)> && updater);
-
+    DiskObjectStorageMetadataPtr readMetadata(const std::string & path) const;
+    DiskObjectStorageMetadataPtr readMetadataUnlocked(const std::string & path, std::shared_lock<std::shared_mutex> & lock) const;
+    DiskObjectStorageMetadataPtr readMetadataUnlocked(const std::string & path, std::unique_lock<std::shared_mutex> & lock) const;
 };
 
 

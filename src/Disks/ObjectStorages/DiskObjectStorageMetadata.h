@@ -2,7 +2,6 @@
 
 #include <Disks/IDisk.h>
 #include <Disks/ObjectStorages/IMetadataStorage.h>
-#include <Disks/ObjectStorages/IMetadata.h>
 #include <Core/Types.h>
 
 namespace DB
@@ -10,7 +9,7 @@ namespace DB
 
 
 /// Metadata for DiskObjectStorage, stored on local disk
-struct DiskObjectStorageMetadata : public IMetadata
+struct DiskObjectStorageMetadata
 {
 private:
     /// Metadata file version.
@@ -48,59 +47,59 @@ public:
         const std::string & remote_fs_root_path_,
         const std::string & metadata_file_path_);
 
-    void addObject(const std::string & path, size_t size) override;
+    void addObject(const std::string & path, size_t size);
 
-    void deserialize(ReadBuffer & buf) override;
+    void deserialize(ReadBuffer & buf);
 
-    void serialize(WriteBuffer & buf, bool sync) const override;
+    void serialize(WriteBuffer & buf, bool sync) const;
 
-    std::string getBlobsCommonPrefix() const override
+    std::string getBlobsCommonPrefix() const
     {
         return remote_fs_root_path;
     }
 
-    std::vector<BlobPathWithSize> getBlobs() const override
+    std::vector<BlobPathWithSize> getBlobs() const
     {
         return remote_fs_objects;
     }
 
-    bool isReadOnly() const override
+    bool isReadOnly() const
     {
         return read_only;
     }
 
-    uint32_t getRefCount() const override
+    uint32_t getRefCount() const
     {
         return ref_count;
     }
 
-    uint64_t getTotalSizeBytes() const override
+    uint64_t getTotalSizeBytes() const
     {
         return total_size;
     }
 
-    void incrementRefCount() override
+    void incrementRefCount()
     {
         ++ref_count;
     }
 
-    void decrementRefCount() override
+    void decrementRefCount()
     {
         --ref_count;
     }
 
-    void resetRefCount() override
+    void resetRefCount()
     {
         ref_count = 0;
     }
 
-    void setReadOnly() override
+    void setReadOnly()
     {
         read_only = true;
     }
 
 };
 
-using DiskObjectStorageMetadataUpdater = std::function<bool(DiskObjectStorageMetadata & metadata)>;
+using DiskObjectStorageMetadataPtr = std::unique_ptr<DiskObjectStorageMetadata>;
 
 }
