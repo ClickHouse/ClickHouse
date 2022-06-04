@@ -124,9 +124,10 @@ public:
 
 private:
 
+    void rewriteMetadataFileWithLock(const std::string & path, DiskObjectStorageMetadataPtr & metadata, MetadataTransactionPtr transaction);
+
     DiskObjectStorageMetadataPtr readMetadata(const std::string & path) const;
     DiskObjectStorageMetadataPtr readMetadataUnlocked(const std::string & path, std::shared_lock<std::shared_mutex> & lock) const;
-    DiskObjectStorageMetadataPtr readMetadataUnlocked(const std::string & path, std::unique_lock<std::shared_mutex> & lock) const;
 };
 
 
