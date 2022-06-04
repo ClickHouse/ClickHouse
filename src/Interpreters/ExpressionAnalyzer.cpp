@@ -28,6 +28,7 @@
 #include <Interpreters/MergeJoin.h>
 #include <Interpreters/Set.h>
 #include <Interpreters/TableJoin.h>
+#include <Interpreters/WindowFunctionsUtils.h>
 
 #include <Processors/QueryPlan/ExpressionStep.h>
 
@@ -659,6 +660,28 @@ void ExpressionAnalyzer::getRootActionsForHaving(
 }
 
 
+void ExpressionAnalyzer::getRootActionsForWindowFunctions(const ASTPtr & ast, bool no_makeset_for_subqueries, ActionsDAGPtr & actions)
+{
+    LogAST log;
+    ActionsVisitor::Data visitor_data(
+        getContext(),
+        settings.size_limits_for_set,
+        subquery_depth,
+        sourceColumns(),
+        std::move(actions),
+        prepared_sets,
+        subqueries_for_sets,
+        no_makeset_for_subqueries,
+        false /* no_makeset */,
+        false /*only_consts */,
+        !isRemoteStorage() /* create_source_for_in */,
+        getAggregationKeysInfo(),
+        true);
+    ActionsVisitor(visitor_data, log.stream()).visit(ast);
+    actions = visitor_data.getActions();
+}
+
+
 void ExpressionAnalyzer::makeAggregateDescriptions(ActionsDAGPtr & actions, AggregateDescriptions & descriptions)
 {
     for (const ASTFunction * node : aggregates())
@@ -853,52 +876,11 @@ void ExpressionAnalyzer::makeWindowDescriptions(ActionsDAGPtr actions)
     {
         assert(function_node->is_window_function);
 
-        WindowFunctionDescription window_function;
-        window_function.function_node = function_node;
-        window_function.column_name
-            = window_function.function_node->getColumnName();
-        window_function.function_parameters
-            = window_function.function_node->parameters
-                ? getAggregateFunctionParametersArray(
-                    window_function.function_node->parameters, "", getContext())
-                : Array();
-
-        // Requiring a constant reference to a shared pointer to non-const AST
-        // doesn't really look sane, but the visitor does indeed require it.
-        // Hence we clone the node (not very sane either, I know).
-        getRootActionsNoMakeSet(window_function.function_node->clone(), actions);
-
-        const ASTs & arguments
-            = window_function.function_node->arguments->children;
-        window_function.argument_types.resize(arguments.size());
-        window_function.argument_names.resize(arguments.size());
-        for (size_t i = 0; i < arguments.size(); ++i)
-        {
-            const std::string & name = arguments[i]->getColumnName();
-            const auto * node = actions->tryFindInIndex(name);
-
-            if (!node)
-            {
-                throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER,
-                    "Unknown identifier '{}' in window function '{}'",
-                    name, window_function.function_node->formatForErrorMessage());
-            }
-
-            window_function.argument_types[i] = node->result_type;
-            window_function.argument_names[i] = name;
-        }
-
-        AggregateFunctionProperties properties;
-        window_function.aggregate_function
-            = AggregateFunctionFactory::instance().get(
-                window_function.function_node->name,
-                window_function.argument_types,
-                window_function.function_parameters, properties);
-
-
         // Find the window corresponding to this function. It may be either
         // referenced by name and previously defined in WINDOW clause, or it
         // may be defined inline.
+
+        WindowDescription * window_description;
         if (!function_node->window_name.empty())
         {
             auto it = window_descriptions.find(function_node->window_name);
@@ -910,7 +892,8 @@ void ExpressionAnalyzer::makeWindowDescriptions(ActionsDAGPtr actions)
                     function_node->formatForErrorMessage());
             }
 
-            it->second.window_functions.push_back(window_function);
+            window_description = &it->second;
+            // it->second.window_functions.push_back(window_function);
         }
         else
         {
@@ -930,7 +913,60 @@ void ExpressionAnalyzer::makeWindowDescriptions(ActionsDAGPtr actions)
                     == desc.full_sort_description);
             }
 
-            it->second.window_functions.push_back(window_function);
+            window_description = &it->second;
+            // it->second.window_functions.push_back(window_function);
+        }
+
+        WindowFunctionList functions;
+        WindowFunctionsUtils::collectWindowFunctionsFromExpression(function_node, functions);
+
+        if (functions.size() != 1 || functions.front() != function_node)
+            window_description->expressions_with_window_functions.push_back(function_node);
+
+        for (const auto * function : functions)
+        {
+            WindowFunctionDescription window_function;
+            window_function.function_node = function;
+            window_function.column_name
+                = window_function.function_node->getColumnName();
+            window_function.function_parameters
+                = window_function.function_node->parameters
+                    ? getAggregateFunctionParametersArray(
+                        window_function.function_node->parameters, "", getContext())
+                    : Array();
+
+            // Requiring a constant reference to a shared pointer to non-const AST
+            // doesn't really look sane, but the visitor does indeed require it.
+            // Hence we clone the node (not very sane either, I know).
+            getRootActionsNoMakeSet(window_function.function_node->clone(), actions);
+
+            const ASTs & arguments
+                = window_function.function_node->arguments->children;
+            window_function.argument_types.resize(arguments.size());
+            window_function.argument_names.resize(arguments.size());
+            for (size_t i = 0; i < arguments.size(); ++i)
+            {
+                const std::string & name = arguments[i]->getColumnName();
+                const auto * node = actions->tryFindInIndex(name);
+
+                if (!node)
+                {
+                    throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER,
+                        "Unknown identifier '{}' in window function '{}'",
+                        name, window_function.function_node->formatForErrorMessage());
+                }
+
+                window_function.argument_types[i] = node->result_type;
+                window_function.argument_names[i] = name;
+            }
+
+            AggregateFunctionProperties properties;
+            window_function.aggregate_function
+                = AggregateFunctionFactory::instance().get(
+                    window_function.function_node->name,
+                    window_function.argument_types,
+                    window_function.function_parameters, properties);
+            window_description->window_functions.push_back(window_function);
         }
     }
 
@@ -1384,6 +1420,18 @@ void SelectQueryExpressionAnalyzer::appendWindowFunctionsArguments(
         for (const auto & c : w.full_sort_description)
         {
             step.addRequiredOutput(c.column_name);
+        }
+    }
+}
+
+void SelectQueryExpressionAnalyzer::appendExpressionsAfterWindowFunctions(ExpressionActionsChain & chain, bool /* only_types */)
+{
+    ExpressionActionsChain::Step & step = chain.lastStep(columns_after_window);
+    for (const auto & [_, w] : window_descriptions)
+    {
+        for (const auto & expression : w.expressions_with_window_functions)
+        {
+            getRootActionsForWindowFunctions(expression->clone(), true, step.actions());
         }
     }
 }
@@ -1890,6 +1938,12 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
 
             before_window = chain.getLastActions();
             finalize_chain(chain);
+
+            query_analyzer.appendExpressionsAfterWindowFunctions(chain, only_types || !first_stage);
+            for (const auto & x : chain.getLastActions()->getNamesAndTypesList())
+            {
+                query_analyzer.columns_after_window.push_back(x);
+            }
 
             auto & step = chain.lastStep(query_analyzer.columns_after_window);
 

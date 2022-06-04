@@ -1,5 +1,6 @@
 #pragma once
 
+#include <optional>
 #include <Core/NamesAndTypes.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/InDepthNodeVisitor.h>
@@ -134,6 +135,7 @@ public:
         size_t visit_depth;
         ScopeStack actions_stack;
         AggregationKeysInfo aggregation_keys_info;
+        bool build_expression_with_window_functions;
 
         /*
          * Remember the last unique column suffix to avoid quadratic behavior
@@ -141,6 +143,8 @@ public:
          * prefixes is good enough.
          */
         int next_unique_suffix;
+
+        std::optional<bool> window_function_called;
 
         Data(
             ContextPtr context_,
@@ -154,7 +158,8 @@ public:
             bool no_makeset_,
             bool only_consts_,
             bool create_source_for_in_,
-            AggregationKeysInfo aggregation_keys_info_);
+            AggregationKeysInfo aggregation_keys_info_,
+            bool build_expression_with_window_functions_ = false);
 
         /// Does result of the calculation already exists in the block.
         bool hasColumn(const String & column_name) const;
