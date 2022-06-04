@@ -890,7 +890,9 @@ bool KeyCondition::tryPrepareSetIndex(
         if (set_it == prepared_sets.end())
             return false;
 
-        prepared_set = set_it->second;
+        prepared_set = dynamic_pointer_cast<Set>(set_it->second);
+        if (!prepared_set)
+            throw Exception("Unknown set type", ErrorCodes::NOT_IMPLEMENTED);
     }
     else
     {
@@ -906,8 +908,12 @@ bool KeyCondition::tryPrepareSetIndex(
                 if (candidate_entry.first.ast_hash != set_ast_hash)
                     return false;
 
+                SetPtr candidate = dynamic_pointer_cast<Set>(candidate_entry.second);
+                if (!candidate)
+                    throw Exception("Unknown set type of candidate", ErrorCodes::NOT_IMPLEMENTED);
+
                 for (size_t i = 0; i < indexes_mapping.size(); ++i)
-                    if (!candidate_entry.second->areTypesEqual(indexes_mapping[i].tuple_index, data_types[i]))
+                    if (!candidate->areTypesEqual(indexes_mapping[i].tuple_index, data_types[i]))
                         return false;
 
                 return true;
@@ -915,7 +921,9 @@ bool KeyCondition::tryPrepareSetIndex(
         if (set_it == prepared_sets.end())
             return false;
 
-        prepared_set = set_it->second;
+        prepared_set = dynamic_pointer_cast<Set>(set_it->second);
+        if (!prepared_set)
+            throw Exception("Unknown set type", ErrorCodes::NOT_IMPLEMENTED);
     }
 
     /// The index can be prepared if the elements of the set were saved in advance.

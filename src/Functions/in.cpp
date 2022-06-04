@@ -26,7 +26,7 @@ namespace
   * notIn(x, set) - and NOT IN.
   */
 
-template <bool negative, bool global, bool null_is_skipped, bool ignore_set>
+template <bool negative, bool global, bool null_is_skipped, bool ignore_set, bool bloom_filter=false>
 struct FunctionInName;
 
 template <> struct FunctionInName<false, false, true, false> { static constexpr auto name = "in"; };
@@ -45,15 +45,16 @@ template <> struct FunctionInName<false, false, false, true> { static constexpr 
 template <> struct FunctionInName<false, true, false, true> { static constexpr auto name = "globalNullInIgnoreSet"; };
 template <> struct FunctionInName<true, false, false, true> { static constexpr auto name = "notNullInIgnoreSet"; };
 template <> struct FunctionInName<true, true, false, true> { static constexpr auto name = "globalNotNullInIgnoreSet"; };
-template <> struct FunctionInName<false, false, true, false> { static constexpr auto name = "inBloomFilter"; };
+template <> struct FunctionInName<false, false, true, false, true> { static constexpr auto name = "inBloomFilter"; };
+template <> struct FunctionInName<false, false, true, true, true> { static constexpr auto name = "inBloomFilterIgnoreSet"; };
 
-template <bool negative, bool global, bool null_is_skipped, bool ignore_set>
+template <bool negative, bool global, bool null_is_skipped, bool ignore_set, bool bloom_filter>
 class FunctionIn : public IFunction
 {
 public:
     /// ignore_set flag means that we don't use set from the second argument, just return zero column.
     /// It is needed to perform type analysis without creation of set.
-    static constexpr auto name = FunctionInName<negative, global, null_is_skipped, ignore_set>::name;
+    static constexpr auto name = FunctionInName<negative, global, null_is_skipped, ignore_set, bloom_filter>::name;
 
     static FunctionPtr create(ContextPtr)
     {
@@ -163,14 +164,15 @@ public:
 template<bool ignore_set>
 void registerFunctionsInImpl(FunctionFactory & factory)
 {
-    factory.registerFunction<FunctionIn<false, false, true, ignore_set>>();
-    factory.registerFunction<FunctionIn<false, true, true, ignore_set>>();
-    factory.registerFunction<FunctionIn<true, false, true, ignore_set>>();
-    factory.registerFunction<FunctionIn<true, true, true, ignore_set>>();
-    factory.registerFunction<FunctionIn<false, false, false, ignore_set>>();
-    factory.registerFunction<FunctionIn<false, true, false, ignore_set>>();
-    factory.registerFunction<FunctionIn<true, false, false, ignore_set>>();
-    factory.registerFunction<FunctionIn<true, true, false, ignore_set>>();
+    factory.registerFunction<FunctionIn<false, false, true, ignore_set, false>>();
+    factory.registerFunction<FunctionIn<false, true, true, ignore_set, false>>();
+    factory.registerFunction<FunctionIn<true, false, true, ignore_set, false>>();
+    factory.registerFunction<FunctionIn<true, true, true, ignore_set, false>>();
+    factory.registerFunction<FunctionIn<false, false, false, ignore_set, false>>();
+    factory.registerFunction<FunctionIn<false, true, false, ignore_set, false>>();
+    factory.registerFunction<FunctionIn<true, false, false, ignore_set, false>>();
+    factory.registerFunction<FunctionIn<true, true, false, ignore_set, false>>();
+    factory.registerFunction<FunctionIn<false, false, true, ignore_set, true>>();
 }
 
 }

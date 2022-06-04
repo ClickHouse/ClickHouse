@@ -489,7 +489,7 @@ void ExpressionAnalyzer::tryMakeSetForIndexFromSubquery(const ASTPtr & subquery_
     auto io = interpreter_subquery->execute();
     PullingAsyncPipelineExecutor executor(io.pipeline);
 
-    SetPtr set = std::make_shared<Set>(settings.size_limits_for_set, true, getContext()->getSettingsRef().transform_null_in);
+    ISetPtr set = std::make_shared<Set>(settings.size_limits_for_set, true, getContext()->getSettingsRef().transform_null_in);
     set->setHeader(executor.getHeader().getColumnsWithTypeAndName());
 
     Block block;
@@ -508,7 +508,7 @@ void ExpressionAnalyzer::tryMakeSetForIndexFromSubquery(const ASTPtr & subquery_
     prepared_sets[set_key] = std::move(set);
 }
 
-SetPtr ExpressionAnalyzer::isPlainStorageSetInSubquery(const ASTPtr & subquery_or_table_name)
+ISetPtr ExpressionAnalyzer::isPlainStorageSetInSubquery(const ASTPtr & subquery_or_table_name)
 {
     const auto * table = subquery_or_table_name->as<ASTTableIdentifier>();
     if (!table)

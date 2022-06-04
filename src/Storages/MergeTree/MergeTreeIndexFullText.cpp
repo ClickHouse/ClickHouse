@@ -613,7 +613,10 @@ bool MergeTreeConditionFullText::tryPrepareSetBloomFilter(
     if (set_it == prepared_sets.end())
         return false;
 
-    const SetPtr & prepared_set = set_it->second;
+    const SetPtr & prepared_set = std::dynamic_pointer_cast<Set>(set_it->second);
+    if (!prepared_set)
+        throw Exception("Unknown set type", ErrorCodes::NOT_IMPLEMENTED);
+
     if (!prepared_set->hasExplicitSetElements())
         return false;
 

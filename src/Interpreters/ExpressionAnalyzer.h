@@ -148,7 +148,7 @@ public:
       * Because while making set we will read data from StorageSet which is not allowed.
       * Returns valid SetPtr from StorageSet if the latter is used after IN or nullptr otherwise.
       */
-    SetPtr isPlainStorageSetInSubquery(const ASTPtr & subquery_or_table_name);
+    ISetPtr isPlainStorageSetInSubquery(const ASTPtr & subquery_or_table_name);
 
 protected:
     ExpressionAnalyzer(

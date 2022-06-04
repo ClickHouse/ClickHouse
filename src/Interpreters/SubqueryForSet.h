@@ -9,8 +9,8 @@ namespace DB
 
 class QueryPlan;
 
-class Set;
-using SetPtr = std::shared_ptr<Set>;
+class ISet;
+using ISetPtr = std::shared_ptr<ISet>;
 
 /// Information on what to do when executing a subquery in the [GLOBAL] IN/JOIN section.
 struct SubqueryForSet
@@ -24,7 +24,7 @@ struct SubqueryForSet
     std::unique_ptr<QueryPlan> source;
 
     /// If set, build it from result.
-    SetPtr set;
+    ISetPtr set;
 
     /// If set, put the result into the table.
     /// This is a temporary table for transferring to remote servers for distributed query processing.

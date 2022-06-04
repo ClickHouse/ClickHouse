@@ -693,14 +693,22 @@ SetPtr MergeTreeIndexConditionBloomFilter::getPreparedSet(const ASTPtr & node)
         const auto & column_and_type = header.getByName(node->getColumnName());
         const auto & prepared_set_it = query_info.sets.find(getPreparedSetKey(node, column_and_type.type));
 
-        if (prepared_set_it != query_info.sets.end() && prepared_set_it->second->hasExplicitSetElements())
-            return prepared_set_it->second;
+        SetPtr prepared_set = std::dynamic_pointer_cast<Set>(prepared_set_it->second);
+        if (!prepared_set)
+            throw Exception("Unknown set type", ErrorCodes::NOT_IMPLEMENTED);
+
+        if (prepared_set_it != query_info.sets.end() && prepared_set->hasExplicitSetElements())
+            return prepared_set;
     }
     else
     {
-        for (const auto & prepared_set_it : query_info.sets)
-            if (prepared_set_it.first.ast_hash == node->getTreeHash() && prepared_set_it.second->hasExplicitSetElements())
-                return prepared_set_it.second;
+        for (const auto & prepared_set_it : query_info.sets) {
+            SetPtr prepared_set = std::dynamic_pointer_cast<Set>(prepared_set_it.second);
+            if (!prepared_set)
+                throw Exception("Unknown set type", ErrorCodes::NOT_IMPLEMENTED);
+            if (prepared_set_it.first.ast_hash == node->getTreeHash() && prepared_set->hasExplicitSetElements())
+                return prepared_set;
+        }
     }
 
     return DB::SetPtr();

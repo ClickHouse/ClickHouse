@@ -33,23 +33,27 @@ public:
 
     virtual bool empty() const = 0;
 
-    /** Set can be created either from AST or from a stream of data (subquery result).
-      */
-
     /** Create a Set from stream.
       * Call setHeader, then call insertFromBlock for each block.
       */
-    virtual void setHeader(const Block & header) = 0;
+    virtual void setHeader(const ColumnsWithTypeAndName & header) = 0;
 
     /// Returns false, if some limit was exceeded and no need to insert more data.
-    virtual bool insertFromBlock(const Block & block) = 0;
+    virtual bool insertFromBlock(const ColumnsWithTypeAndName & columns) = 0;
     /// Call after all blocks were inserted. To get the information that set is already created.
     virtual void finishInsert() = 0;
+
+    virtual bool isCreated() const = 0;
+
+    virtual size_t getTotalRowCount() const = 0;
+    virtual size_t getTotalByteCount() const = 0;
+
+    virtual const DataTypes & getDataTypes() const = 0;
 
     /** For columns of 'block', check belonging of corresponding rows to the set.
       * Return UInt8 column with the result.
       */
-    virtual ColumnPtr execute(const Block & block, bool negative) const = 0;
+    virtual ColumnPtr execute(const ColumnsWithTypeAndName & columns, bool negative) const = 0;
 };
 
 using ISetPtr = std::shared_ptr<ISet>;
@@ -70,27 +74,24 @@ public:
     /** Set can be created either from AST or from a stream of data (subquery result).
       */
 
-    /** Create a Set from stream.
-      * Call setHeader, then call insertFromBlock for each block.
-      */
-    void setHeader(const Block & header) override;
+    virtual void setHeader(const ColumnsWithTypeAndName & header) override;
 
     /// Returns false, if some limit was exceeded and no need to insert more data.
-    virtual bool insertFromBlock(const Block & block) override;
+    virtual bool insertFromBlock(const ColumnsWithTypeAndName & columns) override;
     /// Call after all blocks were inserted. To get the information that set is already created.
     virtual void finishInsert() override { is_created = true; }
 
-    bool isCreated() const { return is_created; }
+    virtual bool isCreated() const override { return is_created; }
 
     /** For columns of 'block', check belonging of corresponding rows to the set.
       * Return UInt8 column with the result.
       */
-    virtual ColumnPtr execute(const Block & block, bool negative) const override;
+    virtual ColumnPtr execute(const ColumnsWithTypeAndName & columns, bool negative) const override;
 
-    size_t getTotalRowCount() const { return data.numAdded(); }
-    size_t getTotalByteCount() const { return data.getFilter().size() * sizeof(uint64_t); }
+    virtual size_t getTotalRowCount() const override { return data.numAdded(); }
+    virtual size_t getTotalByteCount() const override { return data.getFilter().size() * sizeof(uint64_t); }
 
-    const DataTypes & getDataTypes() const { return data_types; }
+    virtual const DataTypes & getDataTypes() const override { return data_types; }
     const DataTypes & getElementsTypes() const { return set_elements_types; }
 
     bool hasExplicitSetElements() const { return fill_set_elements; }
@@ -190,7 +191,7 @@ private:
 
 /** Data structure for implementation of IN expression.
   */
-class Set
+class Set : public ISet
 {
 public:
     /// 'fill_set_elements': in addition to hash table
@@ -209,25 +210,25 @@ public:
     /** Create a Set from stream.
       * Call setHeader, then call insertFromBlock for each block.
       */
-    void setHeader(const ColumnsWithTypeAndName & header);
+    virtual void setHeader(const ColumnsWithTypeAndName & header) override;
 
     /// Returns false, if some limit was exceeded and no need to insert more data.
-    bool insertFromBlock(const ColumnsWithTypeAndName & columns);
+    virtual bool insertFromBlock(const ColumnsWithTypeAndName & columns) override;
     /// Call after all blocks were inserted. To get the information that set is already created.
-    void finishInsert() { is_created = true; }
+    virtual void finishInsert() override { is_created = true; }
 
-    bool isCreated() const { return is_created; }
+    virtual bool isCreated() const override { return is_created; }
 
     /** For columns of 'block', check belonging of corresponding rows to the set.
       * Return UInt8 column with the result.
       */
-    ColumnPtr execute(const ColumnsWithTypeAndName & columns, bool negative) const;
+    virtual ColumnPtr execute(const ColumnsWithTypeAndName & columns, bool negative) const override;
 
-    bool empty() const;
-    size_t getTotalRowCount() const;
-    size_t getTotalByteCount() const;
+    virtual bool empty() const override;
+    virtual size_t getTotalRowCount() const override;
+    virtual size_t getTotalByteCount() const override;
 
-    const DataTypes & getDataTypes() const { return data_types; }
+    virtual const DataTypes & getDataTypes() const override { return data_types; }
     const DataTypes & getElementsTypes() const { return set_elements_types; }
 
     bool hasExplicitSetElements() const { return fill_set_elements; }

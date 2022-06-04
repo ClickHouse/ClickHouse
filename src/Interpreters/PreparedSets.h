@@ -63,9 +63,9 @@ struct PreparedSetKey
     };
 };
 
-class Set;
-using SetPtr = std::shared_ptr<Set>;
+class ISet;
+using ISetPtr = std::shared_ptr<ISet>;
 
-using PreparedSets = std::unordered_map<PreparedSetKey, SetPtr, PreparedSetKey::Hash>;
+using PreparedSets = std::unordered_map<PreparedSetKey, ISetPtr, PreparedSetKey::Hash>;
 
 }

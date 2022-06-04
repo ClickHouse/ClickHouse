@@ -364,7 +364,7 @@ Block createBlockForSet(
 }
 
 
-SetPtr makeExplicitSet(
+ISetPtr makeExplicitSet(
     const ASTFunction * node, const ActionsDAG & actions, bool create_ordered_set,
     ContextPtr context, const SizeLimits & size_limits, PreparedSets & prepared_sets)
 {
@@ -817,7 +817,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
         return;
     }
 
-    SetPtr prepared_set;
+    ISetPtr prepared_set;
     if (checkFunctionIsInOrGlobalInOperator(node))
     {
         /// Let's find the type of the first argument (then getActionsImpl will be called again and will not affect anything).
@@ -1145,7 +1145,7 @@ void ActionsMatcher::visit(const ASTLiteral & literal, const ASTPtr & /* ast */,
     data.addColumn(std::move(column));
 }
 
-SetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool no_subqueries)
+ISetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool no_subqueries)
 {
     /** You need to convert the right argument to a set.
       * This can be a table name, a value, a value enumeration, or a subquery.
@@ -1195,7 +1195,7 @@ SetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool no_su
             return subquery_for_set.set;
         }
 
-        SetPtr set = std::make_shared<Set>(data.set_size_limit, false, data.getContext()->getSettingsRef().transform_null_in);
+        ISetPtr set = std::make_shared<Set>(data.set_size_limit, false, data.getContext()->getSettingsRef().transform_null_in);
 
         /** The following happens for GLOBAL INs or INs:
           * - in the addExternalStorage function, the IN (SELECT ...) subquery is replaced with IN _data1,

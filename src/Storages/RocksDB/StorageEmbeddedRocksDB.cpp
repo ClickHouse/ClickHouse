@@ -124,7 +124,9 @@ static bool traverseASTFilter(
             auto set_it = sets.find(set_key);
             if (set_it == sets.end())
                 return false;
-            SetPtr prepared_set = set_it->second;
+            SetPtr prepared_set = dynamic_pointer_cast<Set>(set_it->second);
+            if (!prepared_set)
+                throw Exception("Unknown set type", ErrorCodes::NOT_IMPLEMENTED);
 
             if (!prepared_set->hasExplicitSetElements())
                 return false;

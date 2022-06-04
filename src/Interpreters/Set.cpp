@@ -41,14 +41,14 @@ namespace ErrorCodes
 }
 
 
-void BloomFilterSet::setHeader(const Block & header)
+void BloomFilterSet::setHeader(const ColumnsWithTypeAndName & header)
 {
     std::unique_lock lock(rwlock);
 
     if (!empty())
         return;
 
-    keys_size = header.columns();
+    keys_size = header.size();
     ColumnRawPtrs key_columns;
     key_columns.reserve(keys_size);
     data_types.reserve(keys_size);
@@ -60,10 +60,10 @@ void BloomFilterSet::setHeader(const Block & header)
     /// Remember the columns we will work with
     for (size_t i = 0; i < keys_size; ++i)
     {
-        materialized_columns.emplace_back(header.safeGetByPosition(i).column->convertToFullColumnIfConst());
+        materialized_columns.emplace_back(header.at(i).column->convertToFullColumnIfConst());
         key_columns.emplace_back(materialized_columns.back().get());
-        data_types.emplace_back(header.safeGetByPosition(i).type);
-        set_elements_types.emplace_back(header.safeGetByPosition(i).type);
+        data_types.emplace_back(header.at(i).type);
+        set_elements_types.emplace_back(header.at(i).type);
 
         /// Convert low cardinality column to full.
         if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(data_types.back().get()))
@@ -78,7 +78,16 @@ void BloomFilterSet::setHeader(const Block & header)
     ConstNullMapPtr null_map{};
     ColumnPtr null_map_holder;
     if (!transform_null_in)
+    {
+        /// We convert nullable columns to non nullable we also need to update nullable types
+        for (size_t i = 0; i < set_elements_types.size(); ++i)
+        {
+            data_types[i] = removeNullable(data_types[i]);
+            set_elements_types[i] = removeNullable(set_elements_types[i]);
+        }
+
         extractNestedColumnsAndNullMap(key_columns, null_map);
+    }
 
     if (fill_set_elements)
     {
@@ -91,7 +100,7 @@ void BloomFilterSet::setHeader(const Block & header)
 }
 
 
-bool BloomFilterSet::insertFromBlock(const Block & block)
+bool BloomFilterSet::insertFromBlock(const ColumnsWithTypeAndName & columns)
 {
     std::unique_lock lock(rwlock);
 
@@ -107,11 +116,11 @@ bool BloomFilterSet::insertFromBlock(const Block & block)
     /// Remember the columns we will work with
     for (size_t i = 0; i < keys_size; ++i)
     {
-        materialized_columns.emplace_back(block.safeGetByPosition(i).column->convertToFullColumnIfConst()->convertToFullColumnIfLowCardinality());
+        materialized_columns.emplace_back(columns.at(i).column->convertToFullColumnIfConst());
         key_columns.emplace_back(materialized_columns.back().get());
     }
 
-    size_t rows = block.rows();
+    size_t rows = columns.at(0).column->size();
 
     /// We will insert to the Set only keys, where all components are not NULL.
     ConstNullMapPtr null_map{};
@@ -122,7 +131,7 @@ bool BloomFilterSet::insertFromBlock(const Block & block)
     /// Filter to extract distinct values from the block.
     ColumnUInt8::MutablePtr filter;
     if (fill_set_elements)
-        filter = ColumnUInt8::create(block.rows());
+        filter = ColumnUInt8::create(rows);
 
     insertFromBlockImpl(key_columns, rows, null_map, filter ? &filter->getData() : nullptr);
 
@@ -130,11 +139,13 @@ bool BloomFilterSet::insertFromBlock(const Block & block)
     {
         for (size_t i = 0; i < keys_size; ++i)
         {
-            auto filtered_column = block.getByPosition(i).column->filter(filter->getData(), rows);
+            auto filtered_column = key_columns[i]->filter(filter->getData(), rows);
             if (set_elements[i]->empty())
                 set_elements[i] = filtered_column;
             else
                 set_elements[i]->insertRangeFrom(*filtered_column, 0, filtered_column->size());
+            if (transform_null_in && null_map_holder)
+                set_elements[i]->insert(Null{});
         }
     }
 
@@ -142,16 +153,16 @@ bool BloomFilterSet::insertFromBlock(const Block & block)
 }
 
 
-ColumnPtr BloomFilterSet::execute(const Block & block, bool negative) const
+ColumnPtr BloomFilterSet::execute(const ColumnsWithTypeAndName & columns, bool negative) const
 {
-    size_t num_key_columns = block.columns();
+    size_t num_key_columns = columns.size();
 
     if (0 == num_key_columns)
         throw Exception("Logical error: no columns passed to Set::execute method.", ErrorCodes::LOGICAL_ERROR);
 
     auto res = ColumnUInt8::create();
     ColumnUInt8::Container & vec_res = res->getData();
-    vec_res.resize(block.safeGetByPosition(0).column->size());
+    vec_res.resize(columns.at(0).column->size());
 
     if (vec_res.empty())
         return res;
@@ -179,8 +190,22 @@ ColumnPtr BloomFilterSet::execute(const Block & block, bool negative) const
 
     for (size_t i = 0; i < num_key_columns; ++i)
     {
-        checkTypesEqual(i, block.safeGetByPosition(i).type);
-        materialized_columns.emplace_back(block.safeGetByPosition(i).column->convertToFullColumnIfConst());
+        ColumnPtr result;
+
+        const auto & column_before_cast = columns.at(i);
+        ColumnWithTypeAndName column_to_cast
+            = {column_before_cast.column->convertToFullColumnIfConst(), column_before_cast.type, column_before_cast.name};
+
+        if (!transform_null_in && data_types[i]->canBeInsideNullable())
+        {
+            result = castColumnAccurateOrNull(column_to_cast, data_types[i]);
+        }
+        else
+        {
+            result = castColumnAccurate(column_to_cast, data_types[i]);
+        }
+
+        materialized_columns.emplace_back() = result;
         key_columns.emplace_back() = materialized_columns.back().get();
     }
 

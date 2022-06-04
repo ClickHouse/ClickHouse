@@ -7,8 +7,8 @@
 namespace DB
 {
 
-class Set;
-using ConstSetPtr = std::shared_ptr<const Set>;
+class ISet;
+using ConstISetPtr = std::shared_ptr<const ISet>;
 
 
 /** A column containing multiple values in the `IN` section.
@@ -20,7 +20,7 @@ class ColumnSet final : public COWHelper<IColumnDummy, ColumnSet>
 private:
     friend class COWHelper<IColumnDummy, ColumnSet>;
 
-    ColumnSet(size_t s_, const ConstSetPtr & data_) : data(data_) { s = s_; }
+    ColumnSet(size_t s_, const ConstISetPtr & data_) : data(data_) { s = s_; }
     ColumnSet(const ColumnSet &) = default;
 
 public:
@@ -28,13 +28,13 @@ public:
     TypeIndex getDataType() const override { return TypeIndex::Set; }
     MutableColumnPtr cloneDummy(size_t s_) const override { return ColumnSet::create(s_, data); }
 
-    ConstSetPtr getData() const { return data; }
+    ConstISetPtr getData() const { return data; }
 
     // Used only for debugging, making it DUMPABLE
     Field operator[](size_t) const override { return {}; }
 
 private:
-    ConstSetPtr data;
+    ConstISetPtr data;
 };
 
 }
