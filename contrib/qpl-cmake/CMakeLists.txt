@@ -346,6 +346,7 @@ target_compile_options(_qpl
 target_compile_definitions(_qpl
         PUBLIC -DQPL_LIB
         PUBLIC -DQPL_BADARG_CHECK
+        PUBLIC -DENABLE_QPL_COMPRESSION
         PUBLIC $<$<C_COMPILER_ID:MSVC>:_ENABLE_EXTENDED_ALIGNED_STORAGE>)
 
 target_link_libraries(_qpl

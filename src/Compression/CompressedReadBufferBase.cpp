@@ -318,7 +318,7 @@ void CompressedReadBufferBase::decompress(BufferBase::Buffer & to, size_t size_d
         codec->decompress(compressed_buffer, size_compressed_without_checksum, to.begin(), req_type);
 }
 
-void CompressedReadBufferBase::decompressFlush()
+void CompressedReadBufferBase::decompressFlush() const
 {
     if (codec)
     {

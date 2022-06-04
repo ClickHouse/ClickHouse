@@ -242,10 +242,8 @@ add_object_library(clickhouse_core Core)
 add_object_library(clickhouse_core_mysql Core/MySQL)
 add_object_library(clickhouse_compression Compression)
 if (NOT ENABLE_QPL_COMPRESSION)
-add_definitions(-DENABLE_QPL_COMPRESSION=0)
 remove_item_object_library(clickhouse_compression Compression/CompressionCodecDeflate.cpp)
 else ()
-add_definitions(-DENABLE_QPL_COMPRESSION=1)
 set_source_files_properties(
     Compression/CompressionCodecDeflate.cpp
     PROPERTIES COMPILE_FLAGS "-mwaitpkg")
