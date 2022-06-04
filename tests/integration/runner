@@ -6,6 +6,7 @@ import getpass
 import glob
 import argparse
 import logging
+import shlex
 import signal
 import subprocess
 import sys
@@ -16,6 +17,7 @@ import random
 def random_str(length=6):
     alphabet = string.ascii_lowercase + string.digits
     return "".join(random.SystemRandom().choice(alphabet) for _ in range(length))
+
 
 
 CUR_FILE_DIR = os.path.dirname(os.path.realpath(__file__))
@@ -283,6 +285,13 @@ if __name__ == "__main__":
         help="Bind volume to this dir to use for dockerd files",
     )
 
+    parser.add_argument(
+        "-e", "--env",
+        action="append",
+        default=[],
+        dest="env",
+        help="Pass environment variable")
+
     parser.add_argument("pytest_args", nargs="*", help="args for pytest command")
 
     args = parser.parse_args()
@@ -348,10 +357,6 @@ if __name__ == "__main__":
             print("Volume creationg failed, probably it already exists, exception", ex)
         dockerd_internal_volume = f"--volume={VOLUME_NAME}_volume:/var/lib/docker"
 
-    # If enabled we kill and remove containers before pytest session run.
-    env_cleanup = ""
-    if args.cleanup_containers:
-        env_cleanup = "-e PYTEST_CLEANUP_CONTAINERS=1"
     # enable tty mode & interactive for docker if we have real tty
     tty = ""
     if sys.stdout.isatty() and sys.stdin.isatty():
@@ -364,15 +369,30 @@ if __name__ == "__main__":
     if args.keyword_expression:
         args.pytest_args += ["-k", args.keyword_expression]
 
+    env = {
+        "DOCKER_CLIENT_TIMEOUT": "300",
+        "COMPOSE_HTTP_TIMEOUT": "600",
+        "XTABLES_LOCKFILE": "/run/host/xtables.lock",
+        "PYTEST_OPTS": f"{parallel_args} {' '.join((shlex.quote(x) for x in args.pytest_args + args.tests_list))} -vvv",
+    }
+
+    # If enabled we kill and remove containers before pytest session run.
+    if args.cleanup_containers:
+        env["PYTEST_CLEANUP_CONTAINERS"] = "1"
+
+    for var in args.env:
+        env[var] = os.environ[var]
+
+    env_escaped = " ".join((f"-e {k}={shlex.quote(v)}" for k, v in env.items()))
+
     cmd = "docker run {net} {tty} --rm --name {name} --privileged \
         --volume={odbc_bridge_bin}:/clickhouse-odbc-bridge --volume={bin}:/clickhouse \
         --volume={library_bridge_bin}:/clickhouse-library-bridge \
         --volume={base_cfg}:/clickhouse-config --volume={cases_dir}:/ClickHouse/tests/integration \
         --volume={src_dir}/Server/grpc_protos:/ClickHouse/src/Server/grpc_protos \
         --volume=/run:/run/host:ro \
-        {dockerd_internal_volume} -e DOCKER_CLIENT_TIMEOUT=300 -e COMPOSE_HTTP_TIMEOUT=600 \
-        -e XTABLES_LOCKFILE=/run/host/xtables.lock \
-        {env_tags} {env_cleanup} -e PYTEST_OPTS='{parallel} {opts} {tests_list} -vvv' {img} {command}".format(
+        {dockerd_internal_volume} \
+        {env_tags} {env_escaped} {img} {command}".format(
         net=net,
         tty=tty,
         bin=args.binary,
@@ -386,6 +406,7 @@ if __name__ == "__main__":
         parallel=parallel_args,
         opts=" ".join(args.pytest_args).replace("'", "\\'"),
         tests_list=" ".join(args.tests_list),
+        env_escaped=env_escaped,
         dockerd_internal_volume=dockerd_internal_volume,
         img=DIND_INTEGRATION_TESTS_IMAGE_NAME + ":" + args.docker_image_version,
         name=CONTAINER_NAME,
