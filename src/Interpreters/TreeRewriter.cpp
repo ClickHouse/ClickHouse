@@ -429,7 +429,7 @@ void renameDuplicatedColumns(const ASTSelectQuery * select_query)
 /// This is the case when we have DISTINCT or arrayJoin: we require more columns in SELECT even if we need less columns in result.
 /// Also we have to remove duplicates in case of GLOBAL subqueries. Their results are placed into tables so duplicates are impossible.
 /// Also remove all INTERPOLATE columns which are not in SELECT anymore.
-void removeUnneededColumnsFromSelectClause(ASTSelectQuery * select_query, const Names & required_result_columns, bool remove_dups, bool reorder_columns_as_required_header)
+void removeUnneededColumnsFromSelectClause(ASTSelectQuery * select_query, const Names & required_result_columns, bool remove_dups)
 {
     ASTs & elements = select_query->select()->children;
 
@@ -459,29 +459,6 @@ void removeUnneededColumnsFromSelectClause(ASTSelectQuery * select_query, const 
     new_elements.reserve(elements.size());
 
     NameSet remove_columns;
-
-    /// Resort columns according to required_result_columns.
-    if (reorder_columns_as_required_header && !required_result_columns.empty())
-    {
-        std::unordered_map<String, size_t> name_pos;
-        {
-            size_t pos = 0;
-            for (const auto & name : required_result_columns)
-                name_pos[name] = pos++;
-        }
-        ::sort(elements.begin(), elements.end(), [&](const auto & lhs, const auto & rhs)
-        {
-            String lhs_name = lhs->getAliasOrColumnName();
-            String rhs_name = rhs->getAliasOrColumnName();
-            size_t lhs_pos = name_pos.size();
-            size_t rhs_pos = name_pos.size();
-            if (auto it = name_pos.find(lhs_name); it != name_pos.end())
-                lhs_pos = it->second;
-            if (auto it = name_pos.find(rhs_name); it != name_pos.end())
-                rhs_pos = it->second;
-            return lhs_pos < rhs_pos;
-        });
-    }
 
     for (const auto & elem : elements)
     {
@@ -1193,7 +1170,6 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
 
     size_t subquery_depth = select_options.subquery_depth;
     bool remove_duplicates = select_options.remove_duplicates;
-    bool reorder_columns_as_required_header = select_options.reorder_columns_as_required_header;
 
     const auto & settings = getContext()->getSettingsRef();
 
@@ -1245,7 +1221,7 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
     /// Leave all selected columns in case of DISTINCT; columns that contain arrayJoin function inside.
     /// Must be after 'normalizeTree' (after expanding aliases, for aliases not get lost)
     ///  and before 'executeScalarSubqueries', 'analyzeAggregation', etc. to avoid excessive calculations.
-    removeUnneededColumnsFromSelectClause(select_query, required_result_columns, remove_duplicates, reorder_columns_as_required_header);
+    removeUnneededColumnsFromSelectClause(select_query, required_result_columns, remove_duplicates);
 
     /// Executing scalar subqueries - replacing them with constant values.
     executeScalarSubqueries(query, getContext(), subquery_depth, result.scalars, result.local_scalars, select_options.only_analyze);
