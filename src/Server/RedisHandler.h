@@ -40,11 +40,11 @@ public:
 private:
     void makeSecureConnection();
 
-    std::vector<std::optional<String>> getByKeys(const std::vector<String> & keys);
+    std::vector<std::optional<String>> getValuesByKeysAndDefaultColumn(const std::vector<String> & keys);
 
     std::vector<std::optional<String>> getValuesByKeyAndColumns(const String & key, const std::vector<String> & columns);
 
-    Chunk getChunkByKeys(const std::vector<String> & keys);
+    Chunk getChunkByKeys(const std::vector<String> & keys, PaddedPODArray<UInt8> *null_map);
 
     std::vector<String> getColumnsFromKey(const String & key) const;
 

@@ -340,7 +340,7 @@ namespace RedisProtocol
             Writer writer(&out);
             if (value.has_value())
             {
-                writer.writeBulkString(value.value());
+                writer.writeBulkString(*value);
             }
             else
             {

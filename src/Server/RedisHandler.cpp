@@ -1,6 +1,7 @@
 #include <IO/ReadBufferFromPocoSocket.h>
 #include <IO/WriteBufferFromPocoSocket.h>
 
+#include <Core/Field.h>
 #include <Core/iostream_debug_helpers.h>
 #include <Storages/IKVStorage.h>
 #include "RedisHandler.h"
@@ -75,7 +76,7 @@ void RedisHandler::run()
                 if (!validateGetRequest())
                     continue;
 
-                auto result = getByKeys(get_req.getKeys());
+                auto result = getValuesByKeysAndDefaultColumn(get_req.getKeys());
                 RedisProtocol::BulkStringResponse resp(result[0]);
                 resp.serialize(*out);
             }
@@ -88,7 +89,7 @@ void RedisHandler::run()
                 if (!validateGetRequest())
                     continue;
 
-                auto result = getByKeys(get_req.getKeys());
+                auto result = getValuesByKeysAndDefaultColumn(get_req.getKeys());
                 RedisProtocol::ArrayResponse resp(result);
                 resp.serialize(*out);
             }
@@ -109,7 +110,7 @@ void RedisHandler::run()
                 }
 
                 auto result = getValuesByKeyAndColumns(get_req.getKey(), get_req.getColumns());
-                RedisProtocol::ArrayResponse resp(result);
+                RedisProtocol::BulkStringResponse resp(result[0]);
                 resp.serialize(*out);
             }
             else if (req.getMethod() == "hmget")
@@ -212,6 +213,11 @@ void RedisHandler::run()
             else if (req.getMethod() == "reset")
             {
                 LOG_DEBUG(log, "RESET request");
+
+                db = 0;
+                table_ptr.reset();
+                table = nullptr;
+
                 RedisProtocol::SimpleStringResponse resp("RESET");
                 resp.serialize(*out);
             }
@@ -237,20 +243,13 @@ void RedisHandler::run()
     }
 }
 
-std::vector<std::optional<String>> RedisHandler::getByKeys(const std::vector<String> & keys)
+std::vector<std::optional<String>> RedisHandler::getValuesByKeysAndDefaultColumn(const std::vector<String> & keys)
 {
     std::vector<std::optional<String>> result;
     result.resize(keys.size());
 
-    auto keys_column = ColumnVector<String>::create();
-    keys_column->getData().reserve(keys.size());
-    keys_column->getData().insert(keys.begin(), keys.end());
-
-    ColumnWithTypeAndName keys_named_column(keys_column->getPtr(), std::make_shared<DataTypeString>(), "keys");
-    Block sample_block = table->getInMemoryMetadataPtr()->getSampleBlock();
-    PaddedPODArray<UInt8> null_map(table->getColumnSizes().size());
-
-    auto chunk = table->getByKeys({keys_named_column}, sample_block, &null_map, server.context());
+    PaddedPODArray<UInt8> null_map; // TODO: Logic with nullable (currenly thinks that defaults are normal values)
+    Chunk chunk = getChunkByKeys(keys, &null_map);
 
     for (const auto & chunk_column : chunk.getColumns())
     {
@@ -258,34 +257,65 @@ std::vector<std::optional<String>> RedisHandler::getByKeys(const std::vector<Str
         {
             result.resize(chunk_column->size());
             for (size_t i = 0; i < chunk_column->size(); ++i)
-            {
                 if (StringRef data = chunk_column->getDataAt(i); !data.empty())
-                {
                     result[i] = data.toString();
-                }
-            }
         }
     }
     return result;
 }
 
-std::vector<std::optional<String>> getValuesByKeyAndColumns(const String & key, const std::vector<String> & columns)
+std::vector<std::optional<String>> RedisHandler::getValuesByKeyAndColumns(const String & key, const std::vector<String> & columns)
 {
     std::vector<std::optional<String>> result;
     result.resize(columns.size());
+
+    Block sample_block = table->getInMemoryMetadataPtr()->getSampleBlock();
+
+    PaddedPODArray<UInt8> null_map; // TODO: Logic with nullable (currenly thinks that defaults are normal values)
+    std::vector<String> keys = {key};
+    Chunk chunk = getChunkByKeys(keys, &null_map);
+
+    for (size_t i = 0; i < columns.size(); ++i)
+    {
+        auto idx = sample_block.getPositionByName(columns[i]);
+        result[i] = chunk.getColumns()[idx]->getDataAt(0).toString();
+    }
+
+    return result;
 }
 
-Chunk RedisHandler::getChunkByKeys(const std::vector<String> & keys)
+Chunk RedisHandler::getChunkByKeys(const std::vector<String> & keys, PaddedPODArray<UInt8> * null_map)
 {
-    auto keys_column = ColumnVector<String>::create();
-    keys_column->getData().reserve(keys.size());
-    keys_column->getData().insert(keys.begin(), keys.end());
+    auto primary_key = table->getPrimaryKey();
+    auto row_size = getColumnsFromKey(keys[0]).size();
+    if (primary_key.size() != row_size)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid number of columns in key: {} != {}", primary_key.size(), row_size);
 
-    ColumnWithTypeAndName keys_named_column(keys_column->getPtr(), std::make_shared<DataTypeString>(), "keys");
-    Block sample_block = table->getInMemoryMetadataPtr()->getSampleBlock();
-    PaddedPODArray<UInt8> null_map(table->getColumnSizes().size());
+    auto sample_block = table->getInMemoryMetadataPtr()->getSampleBlock();
+    auto keys_columns = sample_block.cloneEmpty();
+    for (const auto & col_name : keys_columns.getNames())
+        if (std::find(primary_key.begin(), primary_key.end(), col_name) == primary_key.end())
+            keys_columns.erase(col_name);
 
-    return table->getByKeys({keys_named_column}, sample_block, &null_map, server.context());
+    auto keys_columns_mutable = keys_columns.mutateColumns();
+    for (auto & col : keys_columns_mutable)
+        col->reserve(keys.size());
+
+    for (const auto & key : keys)
+    {
+        auto row = getColumnsFromKey(key);
+        if (row.size() != row_size)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Each key must have the same number of columns!");
+        for (size_t i = 0; i < row.size(); ++i)
+            keys_columns_mutable[i]->insert(std::move(row[i]));
+    }
+
+    if (null_map != nullptr)
+        null_map->resize(table->getColumnSizes().size());
+
+    auto chunk = table->getByKeys(keys_columns.getColumnsWithTypeAndName(), sample_block, null_map, server.context());
+
+    return chunk;
 }
 
 bool RedisHandler::validateColumns(const std::vector<String> & columns)
@@ -294,7 +324,7 @@ bool RedisHandler::validateColumns(const std::vector<String> & columns)
     for (auto & column : columns)
     {
         bool found = false;
-        for (auto & storage_column : table_ptr.getColumns())
+        for (auto & storage_column : table_ptr->getInMemoryMetadataPtr())
         {
             if (column == storage_column)
             {
