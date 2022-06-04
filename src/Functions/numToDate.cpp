@@ -59,9 +59,13 @@ public:
         for (size_t i = 0; i < input_rows_count; i++)
         {
             const auto num = num_data[i];
-            const auto year = num % 10000;
-            const auto month = (num / 10000) % 100;
-            const auto day = (num / 1000000) % 100;
+
+            auto base = num;
+            while (base > 100000000) { base /= 10; }
+
+            const auto day = base % 100;
+            const auto month = (base / 100) % 100;
+            const auto year = base / 10000;
 
             Int32 day_num = 0;
 
@@ -192,7 +196,7 @@ public:
             const Int32 hour = (base / 100000) % 100;
             const Int32 day = (base / 1000000) % 100;
             const Int32 month = (base / 100000000) % 100;
-            const Int32 year = (base / 10000000000) % 10000;
+            const Int32 year = base / 10000000000;
 
             auto date_time = dateTime(year, month, day, hour, minute, second, date_lut);
 
@@ -295,7 +299,7 @@ public:
             const Int32 hour = (base / 100000) % 100;
             const Int32 day = (base / 1000000) % 100;
             const Int32 month = (base / 100000000) % 100;
-            const Int32 year = (base / 10000000000) % 10000;
+            const Int32 year = base / 10000000000;
 
             auto date_time = dateTime(year, month, day, hour, minute, second, date_lut);
 
