@@ -533,6 +533,31 @@ bool ParserTernaryOperatorExpression::parseImpl(Pos & pos, ASTPtr & node, Expect
         node = function;
     }
 
+    ParserKeyword filter("FILTER");
+    ParserKeyword over("OVER");
+
+    if (filter.ignore(pos, expected))
+    {
+        // We are slightly breaking the parser interface by parsing the window
+        // definition into an existing ASTFunction. Normally it would take a
+        // reference to ASTPtr and assign it the new node. We only have a pointer
+        // of a different type, hence this workaround with a temporary pointer.
+
+        ParserFilterClause filter_parser;
+        if (!filter_parser.parse(pos, node, expected))
+            return false;
+    }
+
+    if (over.ignore(pos, expected))
+    {
+        auto function_node = typeid_cast<std::shared_ptr<ASTFunction>>(node);
+        function_node->is_window_function = true;
+
+        ParserWindowReference window_reference;
+        if (!window_reference.parse(pos, node, expected))
+            return false;
+    }
+
     return true;
 }
 

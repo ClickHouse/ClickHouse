@@ -481,7 +481,8 @@ ActionsMatcher::Data::Data(
     bool no_makeset_,
     bool only_consts_,
     bool create_source_for_in_,
-    AggregationKeysInfo aggregation_keys_info_)
+    AggregationKeysInfo aggregation_keys_info_,
+    bool build_expression_with_window_functions_)
     : WithContext(context_)
     , set_size_limit(set_size_limit_)
     , subquery_depth(subquery_depth_)
@@ -495,6 +496,7 @@ ActionsMatcher::Data::Data(
     , visit_depth(0)
     , actions_stack(std::move(actions_dag), context_)
     , aggregation_keys_info(aggregation_keys_info_)
+    , build_expression_with_window_functions(build_expression_with_window_functions_)
     , next_unique_suffix(actions_stack.getLastActions().getIndex().size() + 1)
 {
 }
@@ -921,14 +923,30 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
         return;
     }
 
-    if (node.is_window_function)
+    bool is_aggregate_function = AggregateFunctionFactory::instance().isAggregateFunctionName(node.name);
+
+    if (data.window_function_called.has_value())
+    {
+        bool subtree_contains_window_call = false;
+        for (const auto & arg : node.arguments->children)
+        {
+            data.window_function_called = false;
+            visit(arg, data);
+            subtree_contains_window_call = subtree_contains_window_call || data.window_function_called.value();
+        }
+        data.window_function_called = subtree_contains_window_call
+            || (!subtree_contains_window_call && is_aggregate_function);
+        if (subtree_contains_window_call && !data.build_expression_with_window_functions)
+            return;
+    }
+    else if (node.is_window_function)
     {
         // Also add columns from PARTITION BY and ORDER BY of window functions.
         if (node.window_definition)
         {
             visit(node.window_definition, data);
         }
-
+        data.window_function_called.emplace();
         // Also manually add columns for arguments of the window function itself.
         // ActionVisitor is written in such a way that this method must itself
         // descend into all needed function children. Window functions can't have
@@ -941,16 +959,18 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
         {
             visit(arg, data);
         }
+        data.window_function_called.reset();
 
         // Don't need to do anything more for window functions here -- the
         // resulting column is added in ExpressionAnalyzer, similar to the
         // aggregate functions.
-        return;
+        if (!data.build_expression_with_window_functions)
+            return;
     }
 
     // An aggregate function can also be calculated as a window function, but we
     // checked for it above, so no need to do anything more.
-    if (AggregateFunctionFactory::instance().isAggregateFunctionName(node.name))
+    if (is_aggregate_function)
         return;
 
     FunctionOverloadResolverPtr function_builder = UserDefinedExecutableFunctionFactory::instance().tryGet(node.name, data.getContext());
