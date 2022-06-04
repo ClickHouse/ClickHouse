@@ -16,7 +16,7 @@ CURRENT_WORK_DIR = os.getcwd()
 CONTAINER_NAME = "clickhouse_integration_tests"
 
 CONFIG_DIR_IN_REPO = "programs/server"
-INTERGATION_DIR_IN_REPO = "tests/integration"
+INTEGRATION_DIR_IN_REPO = "tests/integration"
 SRC_DIR_IN_REPO = "src"
 
 DIND_INTEGRATION_TESTS_IMAGE_NAME = "clickhouse/integration-tests-runner"
@@ -55,7 +55,7 @@ def check_args_and_update_paths(args):
         if not os.path.isabs(args.cases_dir):
             args.cases_dir = os.path.abspath(os.path.join(CURRENT_WORK_DIR, args.cases_dir))
     else:
-        args.cases_dir = os.path.abspath(os.path.join(CLICKHOUSE_ROOT, INTERGATION_DIR_IN_REPO))
+        args.cases_dir = os.path.abspath(os.path.join(CLICKHOUSE_ROOT, INTEGRATION_DIR_IN_REPO))
         logging.info("Cases dir is not set. Will use %s" % (args.cases_dir))
 
     if args.src_dir:
