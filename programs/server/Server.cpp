@@ -5,7 +5,7 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/wait.h>
-#include <errno.h>
+#include <cerrno>
 #include <pwd.h>
 #include <unistd.h>
 #include <Poco/Version.h>
@@ -84,6 +84,7 @@
 #include <Common/getHashOfLoadedBinary.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/Elf.h>
+#include <Compression/CompressionCodecEncrypted.h>
 #include <Server/MySQLHandlerFactory.h>
 #include <Server/PostgreSQLHandlerFactory.h>
 #include <Server/CertificateReloader.h>
@@ -91,7 +92,6 @@
 #include <Server/ProtocolServerAdapter.h>
 #include <Server/HTTP/HTTPServer.h>
 #include <Interpreters/AsynchronousInsertQueue.h>
-#include <Compression/CompressionCodecEncrypted.h>
 #include <filesystem>
 
 #include "config_core.h"
@@ -104,7 +104,6 @@
 #endif
 
 #if USE_SSL
-#    include <Compression/CompressionCodecEncrypted.h>
 #    include <Poco/Net/Context.h>
 #    include <Poco/Net/SecureServerSocket.h>
 #endif
@@ -403,8 +402,10 @@ void Server::createServer(
 
     /// If we already have an active server for this listen_host/port_name, don't create it again
     for (const auto & server : servers)
+    {
         if (!server.isStopping() && server.getListenHost() == listen_host && server.getPortName() == port_name)
             return;
+    }
 
     auto port = config.getInt(port_name);
     try
@@ -545,8 +546,9 @@ static void sanityChecks(Server & server)
 #if defined(OS_LINUX)
     try
     {
-        if (readString("/sys/devices/system/clocksource/clocksource0/current_clocksource").find("tsc") == std::string::npos)
-            server.context()->addWarningMessage("Linux is not using a fast TSC clock source. Performance can be degraded.");
+        const char * filename = "/sys/devices/system/clocksource/clocksource0/current_clocksource";
+        if (readString(filename).find("tsc") == std::string::npos)
+            server.context()->addWarningMessage("Linux is not using a fast TSC clock source. Performance can be degraded. Check " + String(filename));
     }
     catch (...)
     {
@@ -554,8 +556,9 @@ static void sanityChecks(Server & server)
 
     try
     {
-        if (readNumber("/proc/sys/vm/overcommit_memory") == 2)
-            server.context()->addWarningMessage("Linux memory overcommit is disabled.");
+        const char * filename = "/proc/sys/vm/overcommit_memory";
+        if (readNumber(filename) == 2)
+            server.context()->addWarningMessage("Linux memory overcommit is disabled. Check " + String(filename));
     }
     catch (...)
     {
@@ -563,8 +566,9 @@ static void sanityChecks(Server & server)
 
     try
     {
-        if (readString("/sys/kernel/mm/transparent_hugepage/enabled").find("[always]") != std::string::npos)
-            server.context()->addWarningMessage("Linux transparent hugepages are set to \"always\".");
+        const char * filename = "/sys/kernel/mm/transparent_hugepage/enabled";
+        if (readString(filename).find("[always]") != std::string::npos)
+            server.context()->addWarningMessage("Linux transparent hugepages are set to \"always\". Check " + String(filename));
     }
     catch (...)
     {
@@ -572,8 +576,9 @@ static void sanityChecks(Server & server)
 
     try
     {
-        if (readNumber("/proc/sys/kernel/pid_max") < 30000)
-            server.context()->addWarningMessage("Linux max PID is too low.");
+        const char * filename = "/proc/sys/kernel/pid_max";
+        if (readNumber(filename) < 30000)
+            server.context()->addWarningMessage("Linux max PID is too low. Check " + String(filename));
     }
     catch (...)
     {
@@ -581,8 +586,9 @@ static void sanityChecks(Server & server)
 
     try
     {
-        if (readNumber("/proc/sys/kernel/threads-max") < 30000)
-            server.context()->addWarningMessage("Linux threads max count is too low.");
+        const char * filename = "/proc/sys/kernel/threads-max";
+        if (readNumber(filename) < 30000)
+            server.context()->addWarningMessage("Linux threads max count is too low. Check " + String(filename));
     }
     catch (...)
     {
@@ -590,7 +596,7 @@ static void sanityChecks(Server & server)
 
     std::string dev_id = getBlockDeviceId(data_path);
     if (getBlockDeviceType(dev_id) == BlockDeviceType::ROT && getBlockDeviceReadAheadBytes(dev_id) == 0)
-        server.context()->addWarningMessage("Rotational disk with disabled readahead is in use. Performance can be degraded.");
+        server.context()->addWarningMessage("Rotational disk with disabled readahead is in use. Performance can be degraded. Used for data: " + String(data_path));
 #endif
 
     try
@@ -1094,8 +1100,6 @@ int Server::main(const std::vector<std::string> & /*args*/)
             total_memory_tracker.setMetric(CurrentMetrics::MemoryTracking);
 
             auto * global_overcommit_tracker = global_context->getGlobalOvercommitTracker();
-            UInt64 max_overcommit_wait_time = config->getUInt64("global_memory_usage_overcommit_max_wait_microseconds", 200);
-            global_overcommit_tracker->setMaxWaitTime(max_overcommit_wait_time);
             total_memory_tracker.setOvercommitTracker(global_overcommit_tracker);
 
             // FIXME logging-related things need synchronization -- see the 'Logger * log' saved
@@ -1313,7 +1317,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
     global_context->setConfigReloadCallback([&]()
     {
         main_config_reloader->reload();
-        access_control.reloadUsersConfigs();
+        access_control.reload();
     });
 
     /// Limit on total number of concurrently executed queries.
@@ -1350,8 +1354,8 @@ int Server::main(const std::vector<std::string> & /*args*/)
             settings.async_insert_max_data_size,
             AsynchronousInsertQueue::Timeout{.busy = settings.async_insert_busy_timeout_ms, .stale = settings.async_insert_stale_timeout_ms}));
 
-    /// Size of cache for marks (index of MergeTree family of tables). It is mandatory.
-    size_t mark_cache_size = config().getUInt64("mark_cache_size");
+    /// Size of cache for marks (index of MergeTree family of tables).
+    size_t mark_cache_size = config().getUInt64("mark_cache_size", 5368709120);
     if (!mark_cache_size)
         LOG_ERROR(log, "Too low mark cache size will lead to severe performance degradation.");
     if (mark_cache_size > max_cache_size)
@@ -1367,8 +1371,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
     if (index_uncompressed_cache_size)
         global_context->setIndexUncompressedCache(index_uncompressed_cache_size);
 
-    /// Size of cache for index marks (index of MergeTree skip indices). It is necessary.
-    /// Specify default value for index_mark_cache_size explicitly!
+    /// Size of cache for index marks (index of MergeTree skip indices).
     size_t index_mark_cache_size = config().getUInt64("index_mark_cache_size", 0);
     if (index_mark_cache_size)
         global_context->setIndexMarkCache(index_mark_cache_size);
@@ -1395,8 +1398,11 @@ int Server::main(const std::vector<std::string> & /*args*/)
     fs::create_directories(format_schema_path);
 
     /// Check sanity of MergeTreeSettings on server startup
-    global_context->getMergeTreeSettings().sanityCheck(settings);
-    global_context->getReplicatedMergeTreeSettings().sanityCheck(settings);
+    {
+        size_t background_pool_tasks = global_context->getMergeMutateExecutor()->getMaxTasksCount();
+        global_context->getMergeTreeSettings().sanityCheck(background_pool_tasks);
+        global_context->getReplicatedMergeTreeSettings().sanityCheck(background_pool_tasks);
+    }
 
     /// try set up encryption. There are some errors in config, error will be printed and server wouldn't start.
     CompressionCodecEncrypted::Configuration::instance().load(config(), "encryption_codecs");
@@ -1405,6 +1411,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
         /// Stop reloading of the main config. This must be done before `global_context->shutdown()` because
         /// otherwise the reloading may pass a changed config to some destroyed parts of ContextSharedPart.
         main_config_reloader.reset();
+        access_control.stopPeriodicReloading();
 
         async_metrics.stop();
 
@@ -1628,7 +1635,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
         buildLoggers(config(), logger());
 
         main_config_reloader->start();
-        access_control.startPeriodicReloadingUsersConfigs();
+        access_control.startPeriodicReloading();
         if (dns_cache_updater)
             dns_cache_updater->start();
 
@@ -2026,11 +2033,28 @@ void Server::updateServers(
     std::vector<ProtocolServerAdapter> & servers)
 {
     Poco::Logger * log = &logger();
-    /// Gracefully shutdown servers when their port is removed from config
+
     const auto listen_hosts = getListenHosts(config);
     const auto listen_try = getListenTry(config);
 
+    /// Remove servers once all their connections are closed
+    auto check_server = [&log](const char prefix[], auto & server)
+    {
+        if (!server.isStopping())
+            return false;
+        size_t current_connections = server.currentConnections();
+        LOG_DEBUG(log, "Server {}{}: {} ({} connections)",
+            server.getDescription(),
+            prefix,
+            !current_connections ? "finished" : "waiting",
+            current_connections);
+        return !current_connections;
+    };
+
+    std::erase_if(servers, std::bind_front(check_server, " (from one of previous reload)"));
+
     for (auto & server : servers)
+    {
         if (!server.isStopping())
         {
             bool has_host = std::find(listen_hosts.begin(), listen_hosts.end(), server.getListenHost()) != listen_hosts.end();
@@ -2041,25 +2065,11 @@ void Server::updateServers(
                 LOG_INFO(log, "Stopped listening for {}", server.getDescription());
             }
         }
-
-    createServers(config, listen_hosts, listen_try, server_pool, async_metrics, servers, /* start_servers: */ true);
-
-    /// Remove servers once all their connections are closed
-    while (std::any_of(servers.begin(), servers.end(), [](const auto & server) { return server.isStopping(); }))
-    {
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
-        std::erase_if(servers, [&log](auto & server)
-        {
-            if (!server.isStopping())
-                return false;
-            auto is_finished = server.currentConnections() == 0;
-            if (is_finished)
-                LOG_DEBUG(log, "Server finished: {}", server.getDescription());
-            else
-                LOG_TRACE(log, "Waiting server to finish: {}", server.getDescription());
-            return is_finished;
-        });
     }
+
+    createServers(config, listen_hosts, listen_try, server_pool, async_metrics, servers, /* start_servers= */ true);
+
+    std::erase_if(servers, std::bind_front(check_server, ""));
 }
 
 }

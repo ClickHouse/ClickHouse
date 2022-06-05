@@ -17,6 +17,7 @@
 #include <Interpreters/RewriteCountVariantsVisitor.h>
 #include <Interpreters/MonotonicityCheckVisitor.h>
 #include <Interpreters/ConvertStringsToEnumVisitor.h>
+#include <Interpreters/ConvertFunctionOrLikeVisitor.h>
 #include <Interpreters/RewriteFunctionToSubcolumnVisitor.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
@@ -458,11 +459,26 @@ void optimizeMonotonousFunctionsInOrderBy(ASTSelectQuery * select_query, Context
     std::unordered_set<String> group_by_hashes;
     if (auto group_by = select_query->groupBy())
     {
-        for (auto & elem : group_by->children)
+        if (select_query->group_by_with_grouping_sets)
         {
-            auto hash = elem->getTreeHash();
-            String key = toString(hash.first) + '_' + toString(hash.second);
-            group_by_hashes.insert(key);
+            for (auto & set : group_by->children)
+            {
+                for (auto & elem : set->children)
+                {
+                    auto hash = elem->getTreeHash();
+                    String key = toString(hash.first) + '_' + toString(hash.second);
+                    group_by_hashes.insert(key);
+                }
+            }
+        }
+        else
+        {
+            for (auto & elem : group_by->children)
+            {
+                auto hash = elem->getTreeHash();
+                String key = toString(hash.first) + '_' + toString(hash.second);
+                group_by_hashes.insert(key);
+            }
         }
     }
 
@@ -658,6 +674,12 @@ void optimizeSumIfFunctions(ASTPtr & query)
     RewriteSumIfFunctionVisitor(data).visit(query);
 }
 
+void optimizeMultiIfToIf(ASTPtr & query)
+{
+    OptimizeMultiIfToIfVisitor::Data data;
+    OptimizeMultiIfToIfVisitor(data).visit(query);
+}
+
 void optimizeInjectiveFunctionsInsideUniq(ASTPtr & query, ContextPtr context)
 {
     RemoveInjectiveFunctionsVisitor::Data data(context);
@@ -735,6 +757,12 @@ void optimizeFuseQuantileFunctions(ASTPtr & query)
     }
 }
 
+void optimizeOrLikeChain(ASTPtr & query)
+{
+    ConvertFunctionOrLikeVisitor::Data data = {};
+    ConvertFunctionOrLikeVisitor(data).visit(query);
+}
+
 }
 
 void TreeOptimizer::optimizeIf(ASTPtr & query, Aliases & aliases, bool if_chain_to_multiif)
@@ -798,6 +826,9 @@ void TreeOptimizer::apply(ASTPtr & query, TreeRewriterResult & result,
     if (settings.optimize_rewrite_sum_if_to_count_if)
         optimizeSumIfFunctions(query);
 
+    if (settings.optimize_multiif_to_if)
+        optimizeMultiIfToIf(query);
+
     /// Remove injective functions inside uniq
     if (settings.optimize_injective_functions_inside_uniq)
         optimizeInjectiveFunctionsInsideUniq(query, context);
@@ -847,6 +878,14 @@ void TreeOptimizer::apply(ASTPtr & query, TreeRewriterResult & result,
 
     if (settings.optimize_syntax_fuse_functions)
         optimizeFuseQuantileFunctions(query);
+
+    if (settings.optimize_or_like_chain
+        && settings.allow_hyperscan
+        && settings.max_hyperscan_regexp_length == 0
+        && settings.max_hyperscan_regexp_total_length == 0)
+    {
+        optimizeOrLikeChain(query);
+    }
 }
 
 }

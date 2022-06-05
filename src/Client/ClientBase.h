@@ -256,6 +256,7 @@ protected:
     } profile_events;
 
     QueryProcessingStage::Enum query_processing_stage;
+    ClientInfo::QueryKind query_kind;
 
     bool fake_drop = false;
 
