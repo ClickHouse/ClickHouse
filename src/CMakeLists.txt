@@ -406,6 +406,7 @@ dbms_target_link_libraries (
     PUBLIC
         boost::system
         clickhouse_common_io
+        Poco::Redis
         Poco::MongoDB
 )
 

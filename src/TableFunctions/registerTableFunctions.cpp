@@ -20,6 +20,7 @@ void registerTableFunctions()
     registerTableFunctionInput(factory);
     registerTableFunctionGenerate(factory);
     registerTableFunctionMongoDB(factory);
+    registerTableFunctionRedis(factory);
 
 #if USE_AWS_S3
     registerTableFunctionS3(factory);

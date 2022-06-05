@@ -16,7 +16,7 @@
 
 #include "DictionaryStructure.h"
 
-
+#include <Common/logger_useful.h>
 namespace DB
 {
     namespace ErrorCodes
@@ -34,12 +34,14 @@ namespace DB
         const RedisArray & keys_,
         const RedisStorageType & storage_type_,
         const DB::Block & sample_block,
-        size_t max_block_size_)
+        size_t max_block_size_,
+        const std::vector<bool> & selected_columns_)
         : SourceWithProgress(sample_block)
         , connection(std::move(connection_))
         , keys(keys_)
         , storage_type(storage_type_)
         , max_block_size{max_block_size_}
+        , selected_columns{selected_columns_}
     {
         description.init(sample_block);
     }
@@ -184,9 +186,14 @@ namespace DB
                     /// null string means 'no value for requested key'
                     if (!value.isNull())
                     {
-                        insert_value_by_idx(0, primary_key);
-                        insert_value_by_idx(1, secondary_key);
-                        insert_value_by_idx(2, value);
+                        auto all_columns = {primary_key, secondary_key, value};
+                        int column_ind = 0;
+                        int ind = 0;
+                        for (auto & column : all_columns) {
+                            if (selected_columns[ind++]) {
+                                insert_value_by_idx(column_ind++, column);
+                            }
+                        }
                         ++num_rows;
                     }
                 }
@@ -213,8 +220,16 @@ namespace DB
                 /// Null string means 'no value for requested key'
                 if (!value.isNull())
                 {
-                    insert_value_by_idx(0, key);
-                    insert_value_by_idx(1, value);
+                    if (size == 2) {
+                        insert_value_by_idx(0, key);
+                        insert_value_by_idx(1, value);
+                    } else if (size == 1) {
+                        if (selected_columns[1]) {
+                            insert_value_by_idx(0, key);
+                        } else if (selected_columns[2]) {
+                            insert_value_by_idx(0, value);
+                        }
+                    }
                 }
             }
             cursor += need_values;

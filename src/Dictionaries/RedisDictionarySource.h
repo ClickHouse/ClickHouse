@@ -1,8 +1,7 @@
 #pragma once
 
 #include <Core/Block.h>
-#include <base/BorrowedObjectPool.h>
-
+#include "RedisSource.h"
 #include "DictionaryStructure.h"
 #include "IDictionarySource.h"
 
@@ -28,22 +27,11 @@ namespace DB
         extern const int NOT_IMPLEMENTED;
     }
 
-    enum class RedisStorageType
-    {
-            SIMPLE,
-            HASH_MAP,
-            UNKNOWN
-    };
-
     class RedisDictionarySource final : public IDictionarySource
     {
     public:
         using RedisArray = Poco::Redis::Array;
         using RedisCommand = Poco::Redis::Command;
-
-        using ClientPtr = std::unique_ptr<Poco::Redis::Client>;
-        using Pool = BorrowedObjectPool<ClientPtr>;
-        using PoolPtr = std::shared_ptr<Pool>;
 
         struct Configuration
         {
@@ -54,24 +42,6 @@ namespace DB
             const RedisStorageType storage_type;
             const size_t pool_size;
         };
-
-        struct Connection
-        {
-            Connection(PoolPtr pool_, ClientPtr client_)
-                : pool(std::move(pool_)), client(std::move(client_))
-            {
-            }
-
-            ~Connection()
-            {
-                pool->returnObject(std::move(client));
-            }
-
-            PoolPtr pool;
-            ClientPtr client;
-        };
-
-        using ConnectionPtr = std::unique_ptr<Connection>;
 
         RedisDictionarySource(
             const DictionaryStructure & dict_struct_,

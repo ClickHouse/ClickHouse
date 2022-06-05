@@ -4,7 +4,6 @@
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Storages/StorageS3Settings.h>
 
-
 namespace DB
 {
 
@@ -49,6 +48,18 @@ struct StorageMongoDBConfiguration : ExternalDataSourceConfiguration
     String options;
 };
 
+struct StorageRedisConfiguration : ExternalDataSourceConfiguration
+{
+    enum class RedisStorageType
+    {
+            SIMPLE,
+            HASH_MAP,
+            UNKNOWN
+    };
+    RedisStorageType storage_type;
+    UInt32 db_index;
+    String options;
+};
 
 using StorageSpecificArgs = std::vector<std::pair<String, ASTPtr>>;
 
