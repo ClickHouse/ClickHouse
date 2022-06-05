@@ -111,6 +111,12 @@ target_compile_options(isal_asm PUBLIC "-I${QPL_SRC_DIR}/isal/include/"
                        PUBLIC "-DAS_FEATURE_LEVEL=10"
                        PUBLIC "-DQPL_LIB")
 
+if (SANITIZE STREQUAL "undefined")
+    get_target_property(target_options isal_asm COMPILE_OPTIONS)
+    list(REMOVE_ITEM target_options "no-sanitize=undefined")
+    set_property(TARGET isal_asm PROPERTY COMPILE_OPTIONS ${target_options})
+endif()
+
 target_compile_definitions(isal PUBLIC
                            QPL_LIB
                            NDEBUG)

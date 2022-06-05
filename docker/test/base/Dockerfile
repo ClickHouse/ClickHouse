@@ -56,7 +56,6 @@ RUN apt-get update \
         tzdata \
         pv \
         nasm \
-        libc6-dev \
         --yes --no-install-recommends
 
 # Sanitizer options for services (clickhouse-server)
