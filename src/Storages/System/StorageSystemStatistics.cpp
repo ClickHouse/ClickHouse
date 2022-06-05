@@ -1,15 +1,17 @@
 #include <Storages/System/StorageSystemStatistics.h>
+
 #include <Access/ContextAccess.h>
 #include <Columns/ColumnString.h>
-#include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <Databases/IDatabase.h>
-#include <Storages/VirtualColumnUtils.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeString.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Parsers/queryToString.h>
-#include <Processors/Sources/SourceWithProgress.h>
-#include "DataTypes/DataTypeArray.h"
+#include <Processors/ISource.h>
+#include <Storages/VirtualColumnUtils.h>
+#include <QueryPipeline/Pipe.h>
 
 
 namespace DB
@@ -32,7 +34,7 @@ StorageSystemStatistics::StorageSystemStatistics(const StorageID & table_id_)
     setInMemoryMetadata(storage_metadata);
 }
 
-class StatisticsSource : public SourceWithProgress
+class StatisticsSource : public ISource
 {
 public:
     StatisticsSource(
@@ -41,7 +43,7 @@ public:
         UInt64 max_block_size_,
         ColumnPtr databases_,
         ContextPtr context_)
-        : SourceWithProgress(header)
+        : ISource(header)
         , column_mask(std::move(columns_mask_))
         , max_block_size(max_block_size_)
         , databases(std::move(databases_))

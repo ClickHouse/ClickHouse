@@ -627,7 +627,8 @@ void MergeTreeWhereOptimizer::optimizeByRanks(ASTSelectQuery & select) const
 
         LOG_INFO(log, "optimizeByRanks: try to move column '{}' (rank={}) predicted_loss={}. {}", column, rank, predicted_loss, predicted_loss < min_loss ? "New min prefix." : "");
 
-        if (predicted_loss < min_loss) {
+        if (predicted_loss < min_loss)
+        {
             min_loss = predicted_loss;
             min_loss_last_column = column;
         }
