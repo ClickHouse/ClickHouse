@@ -320,25 +320,14 @@ Chunk RedisHandler::getChunkByKeys(const std::vector<String> & keys, PaddedPODAr
 
 bool RedisHandler::validateColumns(const std::vector<String> & columns)
 {
-    bool columns_valid = true;
-    for (auto & column : columns)
-    {
-        bool found = false;
-        for (auto & storage_column : table_ptr->getInMemoryMetadataPtr())
-        {
-            if (column == storage_column)
-            {
-                found = true;
-                break;
-            }
-        }
-        if (!found)
-        {
-            columns_valid = false;
-            break;
-        }
-    }
-    return columns_valid;
+    Block sample_block = table->getInMemoryMetadataPtr()->getSampleBlock();
+    auto col_names = sample_block.getNames();
+
+    for (auto & col_name : columns)
+        if (std::find(col_names.begin(), col_names.end(), col_name) == col_names.end())
+            return false;
+
+    return true;
 }
 
 std::vector<String> RedisHandler::getColumnsFromKey(const String & key) const
