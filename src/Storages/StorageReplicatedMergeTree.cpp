@@ -7606,7 +7606,7 @@ bool StorageReplicatedMergeTree::removeEmptyZookeeperNode(zkutil::ZooKeeperPtr z
     const String& part_name)
 {
     Strings children;
-    LOG_TRACE(logger, "try remove Empty zookeepr lock {}, part_name {}", zookeeper_node, part_name);
+    LOG_TRACE(logger, "try remove empty zookeepr lock {}, part_name {}", zookeeper_node, part_name);
 
     zookeeper_ptr->tryGetChildren(zookeeper_node, children);
     if (children.empty())
