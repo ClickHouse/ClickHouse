@@ -30,6 +30,11 @@ namespace
     }
 }
 
+static bool isQueryInitialized()
+{
+    return (!CurrentThread::isInitialized() || !CurrentThread::get().getQueryContext() || CurrentThread::getQueryId().size == 0) ? false : true;
+}
+
 IFileCache::IFileCache(
     const String & cache_base_path_,
     const FileCacheSettings & cache_settings_)
@@ -112,7 +117,6 @@ void LRUFileCache::useCell(
     {
         /// Move to the end of the queue. The iterator remains valid.
         queue.moveToEnd(*cell.queue_iterator, cache_lock);
-        updateQueryContext(cell.file_segment->key(), cell.file_segment->offset(), 0, cache_lock);
     }
 }
 
@@ -481,44 +485,166 @@ FileSegmentsHolder LRUFileCache::setDownloading(const Key & key, size_t offset, 
     return FileSegmentsHolder(std::move(file_segments));
 }
 
+LRUFileCache::QueryContextPtr LRUFileCache::getCurrentQueryContext() const
+{
+    if (!isQueryInitialized())
+        return nullptr;
+
+    auto query_iter = query_map.find(CurrentThread::getQueryId().toString());
+    return (query_iter == query_map.end()) ? nullptr : query_iter->second;
+}
+
 bool LRUFileCache::tryReserve(const Key & key, size_t offset, size_t size, std::lock_guard<std::mutex> & cache_lock)
 {
-    auto res = tryReserveForQuery(key, offset, size, cache_lock);
+    auto query_context = getCurrentQueryContext();
 
-    if (res == ReserveResult::FINISHED)
+    if (query_context != nullptr)
     {
-        /// When the maximum cache size of the query is reached, the cache will be
-        /// evicted from the history cache accessed by the current query.
-        updateQueryContext(key, offset, size, cache_lock);
-        return true;
-    }
-    else
-    {
-        if (res == ReserveResult::NO_ENOUGH_SPACE)
+        auto res = tryReserveForQuery(key, offset, size, query_context, cache_lock);
+
+        if (res == ReserveResult::FINISHED)
         {
-            /// The query currently does not have enough space to reserve.
-            /// It returns false and reads data directly from the remote fs.
-            return false;
-        }
-        else if (res == ReserveResult::NO_NEED)
-        {
-            /// When the maximum cache capacity of the request is not reached, the cache
-            /// block is evicted from the main LRU queue.
-            if (tryReserveForMainList(key, offset, size, cache_lock))
-            {
-                updateQueryContext(key, offset, size, cache_lock);
-                return true;
-            }
-            else
-                return false;
+            /// When the maximum cache size of the query is reached, the cache will be
+            /// evicted from the history cache accessed by the current query.
+            return true;
         }
         else
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cache became inconsistent. There must be a bug");
+        {
+            if (res == ReserveResult::NO_ENOUGH_SPACE)
+            {
+                /// The query currently does not have enough space to reserve.
+                /// It returns false and reads data directly from the remote fs.
+                return false;
+            }
+            else if (res == ReserveResult::NO_NEED)
+            {
+                /// When the maximum cache capacity of the request is not reached, the cache
+                /// block is evicted from the main LRU queue.
+                return tryReserveForMainList(key, offset, size, query_context, cache_lock);
+            }
+            else
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown reservation result");
+        }
+    }
+    else
+        return tryReserveForMainList(key, offset, size, query_context, cache_lock);
+}
+
+LRUFileCache::ReserveResult LRUFileCache::tryReserveForQuery(const Key & key, size_t offset, size_t size, QueryContextPtr query_context, std::lock_guard<std::mutex> & cache_lock)
+{
+    /// The maximum cache capacity of the request is not reached, thus the
+    //// cache block is evicted from the main LRU queue by tryReserveForMainList().
+    if (query_context->getCacheSize() + size < query_context->getMaxCacheSize())
+    {
+        return ReserveResult::NO_NEED;
+    }
+    /// The maximum cache size of the query is reached, the cache will be
+    /// evicted from the history cache accessed by the current query.
+    else
+    {
+        size_t removed_size = 0;
+        size_t queue_size = queue.getElementsNum(cache_lock);
+
+        auto * cell_for_reserve = getCell(key, offset, cache_lock);
+
+        std::vector<FileSegmentCell *> trash;
+        std::vector<FileSegmentCell *> to_evict;
+
+        auto is_overflow = [&]
+        {
+            return (max_size != 0 && queue.getTotalWeight(cache_lock) + size - removed_size > max_size)
+            || (max_element_size != 0 && queue_size > max_element_size)
+            || (query_context->getMaxCacheSize() != 0 && query_context->getCacheSize() + size - removed_size > query_context->getMaxCacheSize());
+        };
+
+        /// Select the cache from the LRU queue held by query for expulsion.
+        for (auto iter = query_context->queue().begin(); iter != query_context->queue().end(); iter++)
+        {
+            if (!is_overflow())
+                break;
+
+            auto cell = getCell(iter->key, iter->offset, cache_lock);
+
+            if (!cell)
+            {
+                throw Exception(
+                    ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR,
+                    "Cache became inconsistent. Key: {}, offset: {}",
+                    keyToStr(key), offset);
+            }
+            else
+            {
+                size_t cell_size = cell->size();
+                assert(iter->size == cell_size);
+
+                if (cell->releasable())
+                {
+                    auto & file_segment = cell->file_segment;
+                    std::lock_guard segment_lock(file_segment->mutex);
+
+                    switch (file_segment->download_state)
+                    {
+                        case FileSegment::State::DOWNLOADED:
+                        {
+                            to_evict.push_back(cell);
+                            break;
+                        }
+                        default:
+                        {
+                            trash.push_back(cell);
+                            break;
+                        }
+                    }
+                    removed_size += cell_size;
+                    --queue_size;
+                }
+            }
+        }
+
+        assert(trash.empty());
+        for (auto & cell : trash)
+        {
+            auto file_segment = cell->file_segment;
+            if (file_segment)
+            {
+                std::lock_guard segment_lock(file_segment->mutex);
+                remove(file_segment->key(), file_segment->offset(), cache_lock, segment_lock);
+                query_context->remove(file_segment->key(), file_segment->offset(), cache_lock);
+            }
+        }
+
+        if (is_overflow())
+        {
+            return ReserveResult::NO_ENOUGH_SPACE;
+        }
+
+        if (cell_for_reserve)
+        {
+            auto queue_iterator = cell_for_reserve->queue_iterator;
+            if (queue_iterator)
+                queue.incrementSize(*queue_iterator, size, cache_lock);
+            else
+                cell_for_reserve->queue_iterator = queue.add(key, offset, size, cache_lock);
+        }
+
+        for (auto & cell : to_evict)
+        {
+            auto file_segment = cell->file_segment;
+            if (file_segment)
+            {
+                std::lock_guard<std::mutex> segment_lock(file_segment->mutex);
+                remove(file_segment->key(), file_segment->offset(), cache_lock, segment_lock);
+                query_context->remove(file_segment->key(), file_segment->offset(), cache_lock);
+            }
+        }
+
+        query_context->reserve(key, offset, size, cache_lock);
+        return ReserveResult::FINISHED;
     }
 }
 
 bool LRUFileCache::tryReserveForMainList(
-    const Key & key, size_t offset, size_t size, std::lock_guard<std::mutex> & cache_lock)
+    const Key & key, size_t offset, size_t size, QueryContextPtr query_context, std::lock_guard<std::mutex> & cache_lock)
 {
     auto removed_size = 0;
     size_t queue_size = queue.getElementsNum(cache_lock);
@@ -632,164 +758,9 @@ bool LRUFileCache::tryReserveForMainList(
     if (queue.getTotalWeight(cache_lock) > (1ull << 63))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cache became inconsistent. There must be a bug");
 
+    if (query_context)
+        query_context->reserve(key, offset, size, cache_lock);
     return true;
-}
-
-LRUFileCache::ReserveResult LRUFileCache::tryReserveForQuery(const Key & key, size_t offset, size_t size, std::lock_guard<std::mutex> & cache_lock)
-{
-    if (!CurrentThread::isInitialized() || !CurrentThread::get().getQueryContext() || CurrentThread::getQueryId().size == 0)
-        return ReserveResult::NO_NEED;
-
-    auto query_id = CurrentThread::getQueryId().toString();
-    auto query_iter = query_map.find(query_id);
-
-    if (query_iter == query_map.end())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cache became inconsistent. There must be a bug");
-
-    auto query_context = query_iter->second;
-
-    /// The maximum cache capacity of the request is not reached, thus the
-    //// cache block is evicted from the main LRU queue by tryReserveForMainList().
-    if (query_context->cache_size + size < query_context->max_cache_size)
-    {
-        return ReserveResult::NO_NEED;
-    }
-    /// The maximum cache size of the query is reached, the cache will be
-    /// evicted from the history cache accessed by the current query.
-    else
-    {
-        size_t removed_size = 0;
-        size_t queue_size = queue.getElementsNum(cache_lock);
-
-        auto * cell_for_reserve = getCell(key, offset, cache_lock);
-
-        std::vector<FileSegmentCell *> trash;
-        std::vector<FileSegmentCell *> to_evict;
-        std::vector<LRUQueue::Iterator> ghost;
-
-        auto is_overflow = [&]
-        {
-            return (max_size != 0 && queue.getTotalWeight(cache_lock) + size - removed_size > max_size)
-            || (max_element_size != 0 && queue_size > max_element_size)
-            || (query_context->max_cache_size != 0 && query_context->cache_size + size - removed_size > query_context->max_cache_size);
-        };
-
-        /// Select the cache from the LRU queue held by query for expulsion.
-        for (auto iter = query_context->queue.begin(); iter != query_context->queue.end(); iter++)
-        {
-            if (!is_overflow())
-                break;
-
-            auto cell = getCell(iter->key, iter->offset, cache_lock);
-
-            if (!cell)
-            {
-                /// The cache corresponding to this record may be swapped out by
-                /// other queries, so it has become invalid.
-                removed_size += iter->size;
-                ghost.push_back(iter);
-            }
-            else
-            {
-                size_t cell_size = cell->size();
-                assert(iter->size == cell_size);
-
-                if (cell->releasable())
-                {
-                    auto & file_segment = cell->file_segment;
-                    std::lock_guard segment_lock(file_segment->mutex);
-
-                    switch (file_segment->download_state)
-                    {
-                        case FileSegment::State::DOWNLOADED:
-                        {
-                            to_evict.push_back(cell);
-                            break;
-                        }
-                        default:
-                        {
-                            trash.push_back(cell);
-                            break;
-                        }
-                    }
-                    removed_size += cell_size;
-                    --queue_size;
-                }
-            }
-        }
-
-        for (auto & iter : ghost)
-        {
-            query_context->remove(iter->key, iter->offset, cache_lock);
-        }
-
-        assert(trash.empty());
-        for (auto & cell : trash)
-        {
-            auto file_segment = cell->file_segment;
-            if (file_segment)
-            {
-                std::lock_guard segment_lock(file_segment->mutex);
-                remove(file_segment->key(), file_segment->offset(), cache_lock, segment_lock);
-                query_context->remove(file_segment->key(), file_segment->offset(), cache_lock);
-            }
-        }
-
-        if (is_overflow())
-        {
-            return ReserveResult::NO_ENOUGH_SPACE;
-        }
-
-        if (cell_for_reserve)
-        {
-            auto queue_iterator = cell_for_reserve->queue_iterator;
-            if (queue_iterator)
-                queue.incrementSize(*queue_iterator, size, cache_lock);
-            else
-                cell_for_reserve->queue_iterator = queue.add(key, offset, size, cache_lock);
-        }
-
-        for (auto & cell : to_evict)
-        {
-            auto file_segment = cell->file_segment;
-            if (file_segment)
-            {
-                std::lock_guard<std::mutex> segment_lock(file_segment->mutex);
-                remove(file_segment->key(), file_segment->offset(), cache_lock, segment_lock);
-                query_context->remove(file_segment->key(), file_segment->offset(), cache_lock);
-            }
-        }
-        return ReserveResult::FINISHED;
-    }
-}
-
-void LRUFileCache::updateQueryContext(const Key & key, size_t offset, size_t size, std::lock_guard<std::mutex> & cache_lock)
-{
-    if (!CurrentThread::isInitialized() || !CurrentThread::get().getQueryContext() || CurrentThread::getQueryId().size == 0)
-        return;
-
-    auto query_id = CurrentThread::getQueryId().toString();
-    auto query_iter = query_map.find(query_id);
-
-    if (query_iter == query_map.end())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cache became inconsistent. There must be a bug");
-
-    auto query_context = query_iter->second;
-    auto record_iter = query_context->records.find({key, offset});
-
-    if (size)
-    {
-        if (record_iter == query_context->records.end())
-        {
-            auto queue_iter = query_context->queue.add(key, offset, 0, cache_lock);
-            record_iter = query_context->records.insert({{key, offset}, queue_iter}).first;
-        }
-        record_iter->second->size += size;
-        query_context->cache_size += size;
-    }
-    /// Triggers the LRU to move the cache to the end of the queue.
-    else if (record_iter != query_context->records.end())
-        query_context->queue.moveToEnd(record_iter->second, cache_lock);
 }
 
 void LRUFileCache::remove(const Key & key)
@@ -1263,8 +1234,10 @@ void LRUFileCache::assertCacheCorrectness(std::lock_guard<std::mutex> & cache_lo
 
 void LRUFileCache::createOrSetQueryContext(const ReadSettings & settings)
 {
-    if (!CurrentThread::isInitialized() || !CurrentThread::get().getQueryContext() || CurrentThread::getQueryId().size == 0)
+    if (!isQueryInitialized())
         return;
+
+    std::lock_guard cache_lock(mutex);
 
     auto query_id = CurrentThread::getQueryId().toString();
     auto query_iter = query_map.find(query_id);
@@ -1273,13 +1246,15 @@ void LRUFileCache::createOrSetQueryContext(const ReadSettings & settings)
         query_iter = query_map.insert({query_id, std::make_shared<QueryContext>(settings.max_query_cache_size)}).first;
 
     auto query_context = query_iter->second;
-    query_context->ref_count++;
+    query_context->incrementRefCount();
 }
 
 void LRUFileCache::tryReleaseQueryContext()
 {
-    if (!CurrentThread::isInitialized() || !CurrentThread::get().getQueryContext() || CurrentThread::getQueryId().size == 0)
+    if (!isQueryInitialized())
         return;
+
+    std::lock_guard cache_lock(mutex);
 
     auto query_id = CurrentThread::getQueryId().toString();
     auto query_iter = query_map.find(query_id);
@@ -1288,10 +1263,10 @@ void LRUFileCache::tryReleaseQueryContext()
         return;
 
     auto query_context = query_iter->second;
-    query_context->ref_count--;
+    query_context->decrementRefCount();
 
     /// The query has been completed, removing the relevant context.
-    if (!query_context->ref_count)
+    if (!query_context->getRefCount())
         query_map.erase(query_iter);
 }
 

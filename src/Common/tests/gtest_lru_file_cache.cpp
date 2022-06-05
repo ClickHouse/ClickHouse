@@ -10,6 +10,7 @@
 #include <Common/hex.h>
 #include <Interpreters/Context.h>
 #include <IO/ReadHelpers.h>
+#include <IO/ReadSettings.h>
 #include <IO/WriteHelpers.h>
 #include <filesystem>
 #include <thread>
@@ -104,10 +105,12 @@ TEST(LRUFileCache, get)
     DB::CurrentThread::QueryScope query_scope_holder(query_context);
 
     DB::FileCacheSettings settings;
+    DB::ReadSettings read_settings;
     settings.max_size = 30;
     settings.max_elements = 5;
     auto cache = DB::LRUFileCache(cache_base_path, settings);
     cache.initialize();
+    cache.createOrSetQueryContext(read_settings);
     auto key = cache.hash("key1");
 
     {
@@ -513,4 +516,6 @@ TEST(LRUFileCache, get)
         assertRange(49, segments1[1], DB::FileSegment::Range(10, 19), DB::FileSegment::State::EMPTY);
         assertRange(50, segments1[2], DB::FileSegment::Range(20, 24), DB::FileSegment::State::EMPTY);
     }
+
+    cache.tryReleaseQueryContext();
 }
