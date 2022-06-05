@@ -228,7 +228,7 @@ if __name__ == "__main__":
         action='store_true',
         default=False,
         dest="no_dns_opts",
-        help="Don't use `--dns-opt` for ClickHouse nodes. It allows internal Docker DNS to work properly")
+        help="Don't use `--dns-opt` for ClickHouse nodes. It allows Docker internal DNS to work properly")
 
     parser.add_argument(
         "--network",
