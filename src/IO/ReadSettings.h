@@ -81,6 +81,7 @@ struct ReadSettings
     size_t filesystem_cache_max_wait_sec = 1;
     bool read_from_filesystem_cache_if_exists_otherwise_bypass_cache = false;
     bool enable_filesystem_cache_log = false;
+    size_t max_query_cache_size = 1073741824;
 
     size_t remote_read_min_bytes_for_seek = DBMS_DEFAULT_BUFFER_SIZE;
 

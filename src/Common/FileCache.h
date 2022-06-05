@@ -12,6 +12,7 @@
 #include <map>
 
 #include "FileCache_fwd.h"
+#include <IO/ReadSettings.h>
 #include <Common/logger_useful.h>
 #include <Common/FileSegment.h>
 #include <Core/Types.h>
@@ -96,6 +97,10 @@ public:
 
     virtual size_t getFileSegmentsNum() const = 0;
 
+    virtual void createOrSetQueryContext(const ReadSettings & settings) = 0;
+
+    virtual void tryReleaseQueryContext() = 0;
+
 protected:
     String cache_base_path;
     size_t max_size;
@@ -156,6 +161,10 @@ public:
     size_t getUsedCacheSize() const override;
 
     size_t getFileSegmentsNum() const override;
+
+    void createOrSetQueryContext(const ReadSettings & settings) override;
+
+    void tryReleaseQueryContext() override;
 
 private:
     class LRUQueue
@@ -247,6 +256,38 @@ private:
     size_t max_stash_element_size;
     size_t enable_cache_hits_threshold;
 
+    struct QueryContext
+    {
+        LRUQueue queue;
+        AccessRecord records;
+
+        size_t cache_size = 0;
+        size_t max_cache_size;
+        size_t ref_count = 0;
+
+        QueryContext(size_t max_cache_size_) : max_cache_size(max_cache_size_) { }
+
+        void remove(const Key & key, size_t offset, std::lock_guard<std::mutex> & cache_lock)
+        {
+            auto record = records.find({key, offset});
+            cache_size -= record->second->size;
+            queue.remove(record->second, cache_lock); 
+            records.erase({key, offset});
+        }
+    };
+
+    using QueryContextPtr = std::shared_ptr<QueryContext>;
+    using QueryContextMap = std::unordered_map<String, QueryContextPtr>;
+
+    enum class ReserveResult
+    {
+        FINISHED,
+        NO_ENOUGH_SPACE,
+        NO_NEED,
+    };
+
+    QueryContextMap query_map;
+
     Poco::Logger * log;
 
     FileSegments getImpl(
@@ -265,6 +306,17 @@ private:
     bool tryReserve(
         const Key & key, size_t offset, size_t size,
         std::lock_guard<std::mutex> & cache_lock) override;
+
+    bool tryReserveForMainList(
+        const Key & key, size_t offset, size_t size,
+        std::lock_guard<std::mutex> & cache_lock);
+
+    /// Limit the maximum cache size for current query.
+    LRUFileCache::ReserveResult tryReserveForQuery(
+        const Key & key, size_t offset, size_t size,
+        std::lock_guard<std::mutex> & cache_lock);
+
+    void updateQueryContext(const Key & key, size_t offset, size_t size, std::lock_guard<std::mutex> & cache_lock);
 
     void remove(
         Key key, size_t offset,
