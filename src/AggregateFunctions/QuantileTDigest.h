@@ -463,7 +463,8 @@ public:
       */
     Float32 cdf(T value)
     {
-        if (centroids.empty() || std::isnan(value) || std::isinf(value)) {
+        if (centroids.empty() || std::isnan(value) || std::isinf(value))
+        {
             return 0;
         }
 

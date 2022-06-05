@@ -9,6 +9,7 @@
 #include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/misc.h>
 #include <Interpreters/StorageID.h>
+#include <limits>
 #include <memory>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
@@ -364,12 +365,10 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const ASTPtr & node,
     }
     else if (!use_new_scoring && tryAnalyzeTupleEquals(res, func, is_final))
     {
-        // TODO: check tuple only from numbers
         /// analyzed
     }
     else if (use_new_scoring && tryAnalyzeTupleCompare(res, func, is_final))
     {
-        // TODO: check tuple only from numbers
         /// analyzed
     }
     else
@@ -604,17 +603,18 @@ void MergeTreeWhereOptimizer::optimizeByRanks(ASTSelectQuery & select) const
     size_t prewhere_columns_size = 0;
     size_t where_columns_size = total_size_of_queried_columns;
     double prewhere_selectivity = 1;
-    //LOG_INFO(log, "START totalsz = {} rtc ={}", where_columns_size, rank_to_column.size());
+
+    double min_loss = std::numeric_limits<double>::max();
+    String min_loss_last_column;
+
     for (const auto & [rank, selectivity, column] : rank_to_column)
     {
         LOG_INFO(log, "optimizeByRanks: column={} rank={} selectivity={} size={}", column, rank, selectivity, getIdentifiersColumnSize({column}));
     }
 
-    //todo: chose best prefix
     for (const auto & [rank, selectivity, column] : rank_to_column)
     {
         const size_t column_size = getIdentifiersColumnSize({column});
-        const double current_loss = prewhere_columns_size + prewhere_selectivity * where_columns_size;
         if (where_columns_size < column_size)
         {
             throw Exception(
@@ -625,17 +625,38 @@ void MergeTreeWhereOptimizer::optimizeByRanks(ASTSelectQuery & select) const
         // We think that columns are independent.
         const double predicted_loss = (prewhere_columns_size + column_size) + prewhere_selectivity * selectivity * (where_columns_size - column_size);
 
-        LOG_INFO(log, "optimizeByRanks: try to move column '{}' (rank={}) current_loss={} predicted_loss={}", column, rank, current_loss, predicted_loss);
+        LOG_INFO(log, "optimizeByRanks: try to move column '{}' (rank={}) predicted_loss={}. {}", column, rank, predicted_loss, predicted_loss < min_loss ? "New min prefix." : "");
 
-        // stop if difference is small
-        if (current_loss - EPS < predicted_loss)
-            break;
+        if (predicted_loss < min_loss) {
+            min_loss = predicted_loss;
+            min_loss_last_column = column;
+        }
 
         prewhere_columns_size += column_size;
         where_columns_size -= column_size;
         prewhere_selectivity *= selectivity;
+    }
 
-        columns_in_prewhere.insert(column);
+    prewhere_columns_size = 0;
+    where_columns_size = total_size_of_queried_columns;
+    prewhere_selectivity = 1;
+    if (!min_loss_last_column.empty())
+    {
+        for (const auto & [_, selectivity, column] : rank_to_column)
+        {
+            const size_t column_size = getIdentifiersColumnSize({column});
+
+            prewhere_columns_size += column_size;
+            where_columns_size -= column_size;
+            prewhere_selectivity *= selectivity;
+
+            columns_in_prewhere.insert(column);
+
+            if (column == min_loss_last_column)
+            {
+                break;
+            }
+        }
     }
 
     std::list<ConditionWithRank> complex_conditions;
@@ -692,7 +713,7 @@ void MergeTreeWhereOptimizer::optimizeByRanks(ASTSelectQuery & select) const
 
     for (auto& condition : complex_conditions)
     {
-        condition.selectivity = analyzeComplexSelectivity(condition.condition.node).value_or(1);
+        condition.selectivity = analyzeComplexSelectivity(condition.condition.node).value_or(MAX_SELECTIVITY);
         recalculate_complex_condition_size_and_rank(condition);
     }
 
@@ -994,7 +1015,6 @@ std::optional<double> MergeTreeWhereOptimizer::analyzeComplexSelectivity(const A
     }
     else if (const auto description_variant = parseCondition(node); description_variant)
     {
-        // todo: support string
         const auto& description = *description_variant;
         switch (description.type)
         {
