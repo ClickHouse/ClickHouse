@@ -1813,9 +1813,14 @@ void NO_INLINE Aggregator::convertToBlockImplFinal(
             bool destroy_place_after_insert = !is_state;
 
             if (params.aggregates[destroy_index].totals) {
+                std::cerr << "\nENTERED " << destroy_index << " " << places.size() << "\n";
+                for (size_t i = 0; i != places.size(); ++i) {
+                    std::cerr << places[i] << " ";
+                }
+                std::cerr << "\n\n\n";
                 PaddedPODArray<AggregateDataPtr> tmp_places;
                 for (size_t i = 1; i < places.size(); ++i) {
-                    aggregate_functions[destroy_index]->merge(places[0], places[i], arena);
+                    aggregate_functions[destroy_index]->merge(places[0] + offset, places[i] + offset, arena);
                 }
                 for (size_t i = 0; i < places.size(); ++i) {
                     tmp_places.emplace_back(places[0]);
