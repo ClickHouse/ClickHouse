@@ -36,6 +36,9 @@ elseif (ARCH_PPC64LE)
     set (COMPILER_FLAGS "${COMPILER_FLAGS} -maltivec -mcpu=power8 -D__SSE2__=1 -DNO_WARN_X86_INTRINSICS")
 
 elseif (ARCH_AMD64)
+    # Seems like in some cases __SSE2__ disappears when we enable avx
+    set (COMPILER_FLAGS "${COMPILER_FLAGS} -D__SSE2__=1")
+
     set (TEST_FLAG "-mssse3")
     set (CMAKE_REQUIRED_FLAGS "${TEST_FLAG} -O0")
     check_cxx_source_compiles("
