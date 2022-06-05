@@ -37,16 +37,21 @@ def generate_values(date_str, count, sign=1):
 
 
 def replace_xml_by_xpath(input_path, output_path, replace_text={}, remove_node=[]):
+    def no_warn(xpath):
+        if xpath.startswith("//"):
+            return f".{xpath}"
+        else:
+            return xpath
     tree = xml.etree.ElementTree.parse(input_path)
     for xpath, value in replace_text.items():
-        nodes = tree.findall(xpath)
+        nodes = tree.findall(no_warn(xpath))
         assert nodes, f"{repr(xpath)} could not be found in {input_path}"
         for node in nodes:
             node.text = value
     if remove_node:
         parent_map = {c: p for p in tree.iter() for c in p}
         for xpath in remove_node:
-            nodes = tree.findall(xpath)
+            nodes = tree.findall(no_warn(xpath))
             assert nodes, f"{repr(xpath)} could not be found in {input_path}"
             for node in nodes:
                 parent_map[node].remove(node)
