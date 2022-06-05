@@ -59,7 +59,7 @@ def cluster():
             cluster.add_instance(
                 "node",
                 main_configs=main_configs,
-                with_minio=True,
+                with_minio=True
             )
             logging.info("Starting cluster...")
             cluster.start()
@@ -71,13 +71,14 @@ def cluster():
                     os.environ["CLICKHOUSE_AWS_HOST_NAME"],
                     access_key=os.environ["CLICKHOUSE_AWS_ACCESS_KEY_ID"],
                     secret_key=os.environ["CLICKHOUSE_AWS_SECRET_ACCESS_KEY"],
-                    region=os.environ["CLICKHOUSE_AWS_REGION"]
+                    region=os.environ["CLICKHOUSE_AWS_REGION"],
+                    secure=False
                 )
                 cluster.minio_bucket = os.environ["CLICKHOUSE_AWS_BUCKET"]
                 cluster.exec_in_container(
                     cluster.get_container_id("resolver"),
                     ["curl", "-s", f"http://localhost:8081/?key={urllib.parse.quote(os.environ['CLICKHOUSE_AWS_SECRET_ACCESS_KEY'])}"],
-                    nothrow=True,
+                    nothrow=True
                 )
 
             yield cluster
