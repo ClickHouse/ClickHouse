@@ -18,6 +18,7 @@ CONFIG_PATH = os.path.join(
     "./{}/node/configs/config.d/storage_conf.xml".format(get_instances_dir()),
 )
 MINIO_ENDPOINT = "minio1:9001"
+UNSTABLE_PROXY_ENDPOINT = "resolver:8081"
 
 
 @pytest.fixture(scope="module")
@@ -45,7 +46,7 @@ def cluster():
                         "//storage_configuration/disks/s3_with_cache/access_key_id": os.environ["CLICKHOUSE_AWS_ACCESS_KEY_ID"],
                         "//storage_configuration/disks/s3_with_cache/secret_access_key": os.environ["CLICKHOUSE_AWS_SECRET_ACCESS_KEY"],
                         "//storage_configuration/disks/s3_with_cache/region": os.environ["CLICKHOUSE_AWS_REGION"],
-                        "//storage_configuration/disks/unstable_s3/endpoint": "http://resolver:8081/" + os.environ["CLICKHOUSE_AWS_BUCKET"] + "/data/",
+                        "//storage_configuration/disks/unstable_s3/endpoint": f"http://{UNSTABLE_PROXY_ENDPOINT}/" + os.environ["CLICKHOUSE_AWS_BUCKET"] + "/data/",
                         "//storage_configuration/disks/unstable_s3/access_key_id": os.environ["CLICKHOUSE_AWS_ACCESS_KEY_ID"],
                         "//storage_configuration/disks/unstable_s3/secret_access_key": os.environ["CLICKHOUSE_AWS_SECRET_ACCESS_KEY"],
                         "//storage_configuration/disks/unstable_s3/region": os.environ["CLICKHOUSE_AWS_REGION"],
@@ -116,7 +117,7 @@ def create_table(node, table_name, **additional_settings):
 
 def run_s3_mocks(cluster):
     logging.info("Starting s3 mocks")
-    mocks = (("unstable_proxy.py", "resolver", "8081", MINIO_ENDPOINT),)
+    mocks = (("unstable_proxy.py", *UNSTABLE_PROXY_ENDPOINT.split(":", maxsplit=1), MINIO_ENDPOINT),)
     for mock_filename, container, *params in mocks:
         container_id = cluster.get_container_id(container)
         current_dir = os.path.dirname(__file__)
