@@ -258,7 +258,7 @@ private:
 
     struct QueryContext
     {
-        LRUQueue queue;
+        LRUQueue lru_queue;
         AccessRecord records;
 
         size_t cache_size = 0;
@@ -271,9 +271,33 @@ private:
         {
             auto record = records.find({key, offset});
             cache_size -= record->second->size;
-            queue.remove(record->second, cache_lock);
+            lru_queue.remove(record->second, cache_lock);
             records.erase({key, offset});
         }
+
+        void reserve(const Key & key, size_t offset, size_t size, std::lock_guard<std::mutex> & cache_lock)
+        {
+            auto record = records.find({key, offset});
+            if (record == records.end())
+            {
+                auto queue_iter = lru_queue.add(key, offset, 0, cache_lock);
+                record = records.insert({{key, offset}, queue_iter}).first;
+            }
+            record->second->size += size;
+            cache_size += size;
+        }
+
+        size_t getRefCount() const { return ref_count; }
+
+        void incrementRefCount() { ref_count++; }
+
+        void decrementRefCount() { ref_count--; }
+
+        size_t getMaxCacheSize() { return max_cache_size; }
+
+        size_t getCacheSize() { return cache_size; }
+
+        LRUQueue & queue() { return lru_queue; }
     };
 
     using QueryContextPtr = std::shared_ptr<QueryContext>;
@@ -303,20 +327,22 @@ private:
 
     void useCell(const FileSegmentCell & cell, FileSegments & result, std::lock_guard<std::mutex> & cache_lock);
 
+    QueryContextPtr getCurrentQueryContext() const;
+
     bool tryReserve(
         const Key & key, size_t offset, size_t size,
         std::lock_guard<std::mutex> & cache_lock) override;
 
     bool tryReserveForMainList(
         const Key & key, size_t offset, size_t size,
+        QueryContextPtr query_context,
         std::lock_guard<std::mutex> & cache_lock);
 
     /// Limit the maximum cache size for current query.
     LRUFileCache::ReserveResult tryReserveForQuery(
         const Key & key, size_t offset, size_t size,
+        QueryContextPtr query_context,
         std::lock_guard<std::mutex> & cache_lock);
-
-    void updateQueryContext(const Key & key, size_t offset, size_t size, std::lock_guard<std::mutex> & cache_lock);
 
     void remove(
         Key key, size_t offset,
