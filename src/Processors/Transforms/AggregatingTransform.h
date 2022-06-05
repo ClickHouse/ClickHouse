@@ -73,16 +73,33 @@ struct ManyAggregatedData
 
     ~ManyAggregatedData()
     {
-        // Aggregation states destruction may be very time-consuming.
-        // In the case of a query with LIMIT, most states won't be destroyed during conversion to blocks.
-        // Without the following code, they would be destroyed in the destructor of AggregatedDataVariants in the current thread (i.e. sequentially).
-        const auto pool = std::make_unique<ThreadPool>(variants.size());
-
-        for (auto && variant : variants)
+        try
         {
-            // It doesn't make sense to spawn a thread if the variant is not going to actually destroy anything.
-            if (variant->aggregator)
-                pool->trySchedule([variant = std::move(variant)]() {});
+            // Aggregation states destruction may be very time-consuming.
+            // In the case of a query with LIMIT, most states won't be destroyed during conversion to blocks.
+            // Without the following code, they would be destroyed in the destructor of AggregatedDataVariants in the current thread (i.e. sequentially).
+            const auto pool = std::make_unique<ThreadPool>(variants.size());
+
+            for (auto && variant : variants)
+            {
+                // It doesn't make sense to spawn a thread if the variant is not going to actually destroy anything.
+                if (variant->aggregator)
+                {
+                    // variant is moved here and will be destroyed in the destructor of the lambda function.
+                    pool->trySchedule(
+                        [variant = std::move(variant), thread_group = CurrentThread::getGroup()]()
+                        {
+                            if (thread_group)
+                                CurrentThread::attachToIfDetached(thread_group);
+                        });
+                }
+            }
+
+            pool->wait();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
         }
     }
 };
