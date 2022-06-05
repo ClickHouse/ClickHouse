@@ -14,7 +14,7 @@
 #include <Common/filesystemHelpers.h>
 #include <Disks/IO/ThreadPoolRemoteFSReader.h>
 #include <Common/FileCache.h>
-#include <Disks/ObjectStorages/DiskObjectStorageMetadataHelper.h>
+#include <Disks/ObjectStorages/DiskObjectStorageRemoteMetadataRestoreHelper.h>
 #include <Poco/Util/AbstractConfiguration.h>
 
 namespace DB
@@ -103,7 +103,7 @@ DiskObjectStorage::DiskObjectStorage(
     , metadata_storage(std::move(metadata_storage_))
     , object_storage(std::move(object_storage_))
     , send_metadata(send_metadata_)
-    , metadata_helper(std::make_unique<DiskObjectStorageMetadataHelper>(this, ReadSettings{}))
+    , metadata_helper(std::make_unique<DiskObjectStorageRemoteMetadataRestoreHelper>(this, ReadSettings{}))
 {}
 
 std::vector<String> DiskObjectStorage::getRemotePaths(const String & local_path) const
@@ -586,7 +586,7 @@ void DiskObjectStorage::restoreMetadataIfNeeded(const Poco::Util::AbstractConfig
     {
         metadata_helper->restore(config, config_prefix, context);
 
-        if (metadata_helper->readSchemaVersion(object_storage.get(), remote_fs_root_path) < DiskObjectStorageMetadataHelper::RESTORABLE_SCHEMA_VERSION)
+        if (metadata_helper->readSchemaVersion(object_storage.get(), remote_fs_root_path) < DiskObjectStorageRemoteMetadataRestoreHelper::RESTORABLE_SCHEMA_VERSION)
             metadata_helper->migrateToRestorableSchema();
 
         metadata_helper->findLastRevision();

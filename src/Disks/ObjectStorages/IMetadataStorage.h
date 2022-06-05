@@ -37,6 +37,11 @@ public:
 
 using MetadataTransactionPtr = std::shared_ptr<IMetadataTransaction>;
 
+/// Metadata storage for remote disks like DiskObjectStorage.
+/// Support some subset of Disk operations, allow to read/write only
+/// small amounts of data (strings).
+/// Tries to provide some "transactions" interface, which allow
+/// to execute operations simultaneously.
 class IMetadataStorage : private boost::noncopyable
 {
 public:
@@ -48,15 +53,18 @@ public:
     virtual bool isDirectory(const std::string & path) const = 0;
     virtual uint64_t getFileSize(const std::string & path) const = 0;
     virtual Poco::Timestamp getLastModified(const std::string & path) const = 0;
-
     virtual std::vector<std::string> listDirectory(const std::string & path) const = 0;
+    virtual DirectoryIteratorPtr iterateDirectory(const std::string & path) = 0;
 
-    virtual DirectoryIteratorPtr iterateDirectory(const String & path) = 0;
+    virtual uint32_t getHardlinkCount(const std::string & path) const = 0;
 
+    /// Create empty file in metadata storage
     virtual void createEmptyMetadataFile(const std::string & path, MetadataTransactionPtr transaction) = 0;
 
+    /// Read metadata file to string from path
     virtual std::string readMetadataFileToString(const std::string & path) const = 0;
 
+    /// Read metadata string to file
     virtual void writeMetadataToFile(
          const std::string & path,
          MetadataTransactionPtr transaction,
@@ -86,18 +94,24 @@ public:
 
     virtual ~IMetadataStorage() = default;
 
-    virtual std::unordered_map<String, String> getSerializedMetadata(const std::vector<String> & file_paths) const = 0;
+    /// ==== More specefic methods. Previous were almost general purpose. ====
 
+    /// Read multiple metadata files into strings and return mapping from file_path -> metadata
+    virtual std::unordered_map<std::string, std::string> getSerializedMetadata(const std::vector<String> & file_paths) const = 0;
+
+    /// Return list of paths corresponding to metadata stored in local path
     virtual std::vector<std::string> getRemotePaths(const std::string & path) const = 0;
 
-    virtual uint32_t getHardlinkCount(const std::string & path) const = 0;
-
+    /// Return [(remote_path, size_in_bytes), ...] for metadata path
     virtual BlobsPathToSize getBlobs(const std::string & path) const = 0;
 
+    /// Create metadata file on paths with content (blob_name, size_in_bytes)
     virtual void createMetadataFile(const std::string & path, const std::string & blob_name, uint64_t size_in_bytes, MetadataTransactionPtr transaction) = 0;
 
+    /// Add to new blob to metadata file (way to implement appends)
     virtual void addBlobToMetadata(const std::string & path, const std::string & blob_name, uint64_t size_in_bytes, MetadataTransactionPtr transaction) = 0;
 
+    /// Unlink file and return amount of hardlinks left
     virtual uint32_t unlinkAndGetHardlinkCount(const std::string & path, MetadataTransactionPtr transaction) = 0;
 };
 
