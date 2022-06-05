@@ -4,6 +4,7 @@
 #include <IO/ReadHelpers.h>
 #include <boost/math/distributions/students_t.hpp>
 #include <boost/math/distributions/normal.hpp>
+#include <boost/math/distributions/fisher_f.hpp>
 #include <cfloat>
 
 
@@ -473,6 +474,98 @@ struct ZTestMoments
         Float64 ci_high = (mean_x - mean_y) + z * se;
 
         return {ci_low, ci_high};
+    }
+};
+
+template <typename T>
+struct AnalysisOfVarianceMoments {
+    size_t n_groups = 0;
+    std::vector<T> xs1{};
+    std::vector<T> xs2{};
+    T x1{};
+    std::vector<T> ns{};
+    T n{};
+
+    void validateSize(size_t num) {
+        if (n_groups != num) {
+            n_groups = num;
+            xs1.resize(n_groups);
+            xs2.resize(n_groups);
+            ns.resize(n_groups);
+        }
+    }
+
+    void add(T value, size_t group, size_t num)
+    {
+        validateSize(num);
+        xs1[group] += value;
+        xs2[group] += value * value;
+        x1 += value;
+        ++ns[group];
+        ++n;
+    }
+
+    void merge(const AnalysisOfVarianceMoments & rhs, size_t num)
+    {
+        validateSize(num);
+        for (size_t i = 0; i < n_groups; i++) {
+            xs1[i] += rhs.xs1[i];
+            xs2[i] += rhs.xs2[i];
+            ns[i] += rhs.ns[i];
+        }
+        n += rhs.n;
+        x1 += rhs.x1;
+    }
+
+    void write(WriteBuffer & buf) const
+    {
+        writePODBinary(*this, buf);
+    }
+
+    void read(ReadBuffer & buf)
+    {
+        readPODBinary(*this, buf);
+    }
+
+    Float64 getMean() const
+    {
+        return x1 / n;
+    }
+
+    Float64 getMeanGroup(size_t group) const
+    {
+        return xs1[group] / ns[group];
+    }
+
+    Float64 getBetweenGroupsVariation() const
+    {
+        Float64 res = 0;
+        auto mean = getMean();
+        for (size_t i = 0; i < n_groups; i++) {
+            auto group_mean = getMeanGroup(i);
+            res += ns[i] * (group_mean - mean) * (group_mean - mean);
+        }
+        return res;
+    }
+
+    Float64 getWithinGroupsVariation() const
+    {
+        Float64 res = 0;
+        for (size_t i = 0; i < n_groups; i++) {
+            auto group_mean = getMeanGroup(i);
+            res += xs2[i] + ns[i] * group_mean * group_mean - 2 * group_mean * xs1[i];
+        }
+        return res;
+    }
+
+    Float64 getFStatistic() const
+    {
+        return (getBetweenGroupsVariation() / (n_groups - 1)) / (getWithinGroupsVariation() / (n - n_groups));
+    }
+
+    Float64 getPValue() const
+    {
+        return 1.0f - boost::math::cdf(boost::math::fisher_f(n_groups - 1, n - n_groups), getFStatistic());
     }
 };
 
