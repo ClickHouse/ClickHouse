@@ -86,7 +86,7 @@ void registerDiskS3(DiskFactory & factory)
 
         auto [metadata_path, metadata_disk] = prepareForLocalMetadata(name, config, config_prefix, context);
 
-        auto metadata_storage = std::make_shared<MetadataStorageFromDisk>(metadata_disk);
+        auto metadata_storage = std::make_shared<MetadataStorageFromDisk>(metadata_disk, uri.key);
 
         FileCachePtr cache = getCachePtrForDisk(name, config, config_prefix, context);
 
