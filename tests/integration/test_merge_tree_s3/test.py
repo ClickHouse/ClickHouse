@@ -5,7 +5,6 @@ import time
 import urllib.parse
 
 import minio
-
 import pytest
 
 from helpers.cluster import ClickHouseCluster, get_instances_dir
@@ -25,6 +24,7 @@ MINIO_ENDPOINT = "minio1:9001"
 def cluster():
     try:
         with tempfile.TemporaryDirectory() as d:
+            cluster = ClickHouseCluster(__file__)
             main_configs = [
                 "configs/config.d/storage_conf.xml",
                 "configs/config.d/bg_processing_pool_conf.xml",
@@ -55,7 +55,6 @@ def cluster():
                 global MINIO_ENDPOINT
                 MINIO_ENDPOINT = os.environ["CLICKHOUSE_AWS_HOST_NAME"]
 
-            cluster = ClickHouseCluster(__file__)
             cluster.add_instance(
                 "node",
                 main_configs=main_configs,
