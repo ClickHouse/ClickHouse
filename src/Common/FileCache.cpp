@@ -487,7 +487,7 @@ bool LRUFileCache::tryReserve(const Key & key, size_t offset, size_t size, std::
 
     if (res == ReserveResult::FINISHED)
     {
-        /// When the maximum cache size of the query is reached, the cache will be 
+        /// When the maximum cache size of the query is reached, the cache will be
         /// evicted from the history cache accessed by the current query.
         updateQueryContext(key, offset, size, cache_lock);
         return true;
@@ -496,13 +496,13 @@ bool LRUFileCache::tryReserve(const Key & key, size_t offset, size_t size, std::
     {
         if (res == ReserveResult::NO_ENOUGH_SPACE)
         {
-            /// The query currently does not have enough space to reserve. 
+            /// The query currently does not have enough space to reserve.
             /// It returns false and reads data directly from the remote fs.
             return false;
         }
         else if (res == ReserveResult::NO_NEED)
         {
-            /// When the maximum cache capacity of the request is not reached, the cache 
+            /// When the maximum cache capacity of the request is not reached, the cache
             /// block is evicted from the main LRU queue.
             if (tryReserveForMainList(key, offset, size, cache_lock))
             {
@@ -654,7 +654,7 @@ LRUFileCache::ReserveResult LRUFileCache::tryReserveForQuery(const Key & key, si
     {
         return ReserveResult::NO_NEED;
     }
-    /// The maximum cache size of the query is reached, the cache will be 
+    /// The maximum cache size of the query is reached, the cache will be
     /// evicted from the history cache accessed by the current query.
     else
     {
@@ -684,7 +684,7 @@ LRUFileCache::ReserveResult LRUFileCache::tryReserveForQuery(const Key & key, si
 
             if (!cell)
             {
-                /// The cache corresponding to this record may be swapped out by 
+                /// The cache corresponding to this record may be swapped out by
                 /// other queries, so it has become invalid.
                 removed_size += iter->size;
                 ghost.push_back(iter);
@@ -774,9 +774,9 @@ void LRUFileCache::updateQueryContext(const Key & key, size_t offset, size_t siz
     if (query_iter == query_map.end())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cache became inconsistent. There must be a bug");
 
-    auto query_context = query_iter->second; 
+    auto query_context = query_iter->second;
     auto record_iter = query_context->records.find({key, offset});
-    
+
     if (size)
     {
         if (record_iter == query_context->records.end())
@@ -1272,7 +1272,7 @@ void LRUFileCache::createOrSetQueryContext(const ReadSettings & settings)
     if (query_iter == query_map.end())
         query_iter = query_map.insert({query_id, std::make_shared<QueryContext>(settings.max_query_cache_size)}).first;
 
-    auto query_context = query_iter->second; 
+    auto query_context = query_iter->second;
     query_context->ref_count++;
 }
 
@@ -1287,7 +1287,7 @@ void LRUFileCache::tryReleaseQueryContext()
     if (query_iter == query_map.end())
         return;
 
-    auto query_context = query_iter->second; 
+    auto query_context = query_iter->second;
     query_context->ref_count--;
 
     /// The query has been completed, removing the relevant context.
