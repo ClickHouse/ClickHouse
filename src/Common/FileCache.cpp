@@ -549,7 +549,7 @@ LRUFileCache::ReserveResult LRUFileCache::tryReserveForQuery(const Key & key, si
     }
     /// When skip_download_if_exceeds_query_cache is true, there is no need
     /// to evict old data, skip the cache and read directly from remote fs.
-    else if (query_context->isSkipDownload())
+    else if (query_context->isSkipDownloadIfExceed())
     {
         return ReserveResult::NO_ENOUGH_SPACE;
     }
