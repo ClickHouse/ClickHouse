@@ -1,6 +1,8 @@
 #pragma once
 
+#include <Core/ColumnNumbers.h>
 #include <Columns/FilterDescription.h>
+#include <Interpreters/ActionsVisitor.h>
 #include <Interpreters/AggregateDescription.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/SubqueryForSet.h>
@@ -61,10 +63,13 @@ struct ExpressionAnalyzerData
     NamesAndTypesList aggregated_columns;
     /// Columns after window functions.
     NamesAndTypesList columns_after_window;
+    /// Keys of ORDER BY
+    NameSet order_by_keys;
 
     bool has_aggregation = false;
     NamesAndTypesList aggregation_keys;
     NamesAndTypesLists aggregation_keys_list;
+    ColumnNumbersList aggregation_keys_indexes_list;
     bool has_const_aggregation_keys = false;
     AggregateDescriptions aggregate_descriptions;
 
@@ -75,6 +80,8 @@ struct ExpressionAnalyzerData
 
     /// All new temporary tables obtained by performing the GLOBAL IN/JOIN subqueries.
     TemporaryTablesMapping external_tables;
+
+    GroupByKind group_by_kind = GroupByKind::NONE;
 };
 
 
@@ -198,6 +205,11 @@ protected:
 
     NamesAndTypesList getColumnsAfterArrayJoin(ActionsDAGPtr & actions, const NamesAndTypesList & src_columns);
     NamesAndTypesList analyzeJoin(ActionsDAGPtr & actions, const NamesAndTypesList & src_columns);
+
+    AggregationKeysInfo getAggregationKeysInfo() const noexcept
+    {
+      return { aggregation_keys, aggregation_keys_indexes_list, group_by_kind };
+    }
 };
 
 class SelectQueryExpressionAnalyzer;
@@ -324,7 +336,15 @@ public:
     bool hasGlobalSubqueries() { return has_global_subqueries; }
     bool hasTableJoin() const { return syntax->ast_join; }
 
-    bool useGroupingSetKey() const { return aggregation_keys_list.size() > 1; }
+    /// When there is only one group in GROUPING SETS
+    /// it is a special case that is equal to GROUP BY, i.e.:
+    ///
+    ///     GROUPING SETS ((a, b)) -> GROUP BY a, b
+    ///
+    /// But it is rewritten by GroupingSetsRewriterVisitor to GROUP BY,
+    /// so instead of aggregation_keys_list.size() > 1,
+    /// !aggregation_keys_list.empty() can be used.
+    bool useGroupingSetKey() const { return !aggregation_keys_list.empty(); }
 
     const NamesAndTypesList & aggregationKeys() const { return aggregation_keys; }
     bool hasConstAggregationKeys() const { return has_const_aggregation_keys; }

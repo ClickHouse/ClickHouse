@@ -10,6 +10,8 @@
 #include <Disks/DiskType.h>
 #include <IO/ReadSettings.h>
 #include <IO/WriteSettings.h>
+#include <Disks/ObjectStorages/IObjectStorage.h>
+#include <Disks/WriteMode.h>
 
 #include <memory>
 #include <mutex>
@@ -48,14 +50,6 @@ class ReadBufferFromFileBase;
 class WriteBufferFromFileBase;
 class MMappedFileCache;
 
-/**
- * Mode of opening a file for write.
- */
-enum class WriteMode
-{
-    Rewrite,
-    Append
-};
 
 /**
  * Provide interface for reservation.
@@ -289,14 +283,14 @@ public:
 
     virtual bool isReadOnly() const { return false; }
 
-    /// Check if disk is broken. Broken disks will have 0 space and not be used.
+    /// Check if disk is broken. Broken disks will have 0 space and cannot be used.
     virtual bool isBroken() const { return false; }
 
     /// Invoked when Global Context is shutdown.
     virtual void shutdown() {}
 
     /// Performs action on disk startup.
-    virtual void startup() {}
+    virtual void startup(ContextPtr) {}
 
     /// Return some uniq string for file, overrode for IDiskRemote
     /// Required for distinguish different copies of the same part on remote disk
@@ -342,6 +336,14 @@ public:
     /// manages hardlinks by itself. So you can always remove hardlink and all
     /// other alive harlinks will not be removed.
     virtual UInt32 getRefCount(const String &) const { return 0; }
+
+    /// Revision is an incremental counter of disk operation.
+    /// Revision currently exisis only in DiskS3.
+    /// It is used to save current state during backup and restore that state from backup.
+    /// This method sets current disk revision if it lower than required.
+    virtual void syncRevision(UInt64) {}
+    /// Return current disk revision.
+    virtual UInt64 getRevision() const { return 0; }
 
 
 protected:
@@ -391,6 +393,10 @@ class IReservation : boost::noncopyable
 public:
     /// Get reservation size.
     virtual UInt64 getSize() const = 0;
+
+    /// Space available for reservation
+    /// (with this reservation already take into account).
+    virtual UInt64 getUnreservedSpace() const = 0;
 
     /// Get i-th disk where reservation take place.
     virtual DiskPtr getDisk(size_t i = 0) const = 0; /// NOLINT

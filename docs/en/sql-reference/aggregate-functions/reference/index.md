@@ -4,7 +4,7 @@ sidebar_position: 36
 toc_hidden: true
 ---
 
-# List of Aggregate Functions {#aggregate-functions-reference}
+# List of Aggregate Functions
 
 Standard aggregate functions:
 

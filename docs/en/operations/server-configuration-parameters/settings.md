@@ -3,7 +3,7 @@ sidebar_position: 57
 sidebar_label: Server Settings
 ---
 
-# Server Settings {#server-settings}
+# Server Settings
 
 ## builtin_dictionaries_reload_interval {#builtin-dictionaries-reload-interval}
 
@@ -1745,13 +1745,3 @@ Possible values:
 -   Positive integer.
 
 Default value: `10000`.
-
-## global_memory_usage_overcommit_max_wait_microseconds {#global_memory_usage_overcommit_max_wait_microseconds}
-
-Sets maximum waiting time for global overcommit tracker.
-
-Possible values:
-
--   Positive integer.
-
-Default value: `200`.
