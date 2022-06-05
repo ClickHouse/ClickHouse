@@ -556,6 +556,7 @@ LRUFileCache::ReserveResult LRUFileCache::tryReserveForQuery(const Key & key, si
 
         auto * cell_for_reserve = getCell(key, offset, cache_lock);
 
+        std::vector<LRUFileCache::LRUQueue::Iterator> ghost;
         std::vector<FileSegmentCell *> trash;
         std::vector<FileSegmentCell *> to_evict;
 
@@ -576,10 +577,10 @@ LRUFileCache::ReserveResult LRUFileCache::tryReserveForQuery(const Key & key, si
 
             if (!cell)
             {
-                throw Exception(
-                    ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR,
-                    "Cache became inconsistent. Key: {}, offset: {}",
-                    keyToStr(key), offset);
+                /// The cache corresponding to this record may be swapped out by
+                /// other queries, so it has become invalid.
+                ghost.push_back(iter);
+                removed_size += iter->size;
             }
             else
             {
@@ -622,6 +623,9 @@ LRUFileCache::ReserveResult LRUFileCache::tryReserveForQuery(const Key & key, si
                 remove(file_segment->key(), file_segment->offset(), cache_lock, segment_lock);
             }
         }
+
+        for (auto & iter : ghost)
+            query_context->remove(iter->key, iter->offset, cache_lock);
 
         if (is_overflow())
         {
@@ -735,15 +739,6 @@ bool LRUFileCache::tryReserveForMainList(
         auto file_segment = cell->file_segment;
         if (file_segment)
         {
-            /// Update query_context if needed.
-            {
-                auto query_id = file_segment->getQueryId();
-                if (!query_id.empty())
-                {
-                    if (auto context = getQueryContext(query_id, cache_lock))
-                        context->remove(file_segment->key(), file_segment->offset(), cache_lock);
-                }
-            }
             std::lock_guard segment_lock(file_segment->mutex);
             remove(file_segment->key(), file_segment->offset(), cache_lock, segment_lock);
         }
@@ -770,16 +765,6 @@ bool LRUFileCache::tryReserveForMainList(
         auto file_segment = cell->file_segment;
         if (file_segment)
         {
-            /// Update query context if needed.
-            {
-                auto query_id = file_segment->getQueryId();
-                if (!query_id.empty())
-                {
-                    if (auto context = getQueryContext(query_id, cache_lock))
-                        context->remove(file_segment->key(), file_segment->offset(), cache_lock);
-                }
-            }
-
             std::lock_guard<std::mutex> segment_lock(file_segment->mutex);
             remove(file_segment->key(), file_segment->offset(), cache_lock, segment_lock);
         }
