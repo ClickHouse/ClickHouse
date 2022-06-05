@@ -321,7 +321,7 @@ private:
 
         LRUQueue & queue() { return lru_queue; }
 
-        bool isSkipDownload() { return skip_download_if_exceeds_query_cache; }
+        bool isSkipDownloadIfExceed() { return skip_download_if_exceeds_query_cache; }
     };
 
     using QueryContextPtr = std::shared_ptr<QueryContext>;
