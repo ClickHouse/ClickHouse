@@ -127,6 +127,7 @@
                 <database>database</database>
                 <table>table</table>
                 <column>column</column>
+                <column_separator>,</column_separator>
             </_0>
         </db>
     </redis>

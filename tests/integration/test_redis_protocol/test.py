@@ -36,19 +36,37 @@ def ssl_server_address():
 
 
 def test_python_client(server_address):
+    node.query(
+        "CREATE TABLE test (key String, x UInt64, y String) ENGINE = EmbeddedRocksDB PRIMARY KEY(key)"
+    )
+
     redis = Redis(host=server_address, port=server_port, password="123")
 
     value = redis.select(2)
     assert value
 
-    value = redis.get("key")
-    assert value == b"Hello world"
+    value = redis.get("key1")
+    assert value is None
 
-    with pytest.raises(match=r".*Not implemented.*"):
-        redis.set("key", "value")
+    node.query(
+        "INSERT INTO test VALUES (\"key1\", 10, \"value\");"
+    )
+
+    value = redis.get("key1")
+    assert value == "value"
+
+    value = redis.hget("key1", "x")
+    assert value == "10"
+
+    values = redis.hmget("key1", "x", "y")
+    assert values == ["10", "value"]
 
 
 def test_python_client_ssl(ssl_server_address):
+    node.query(
+        "CREATE TABLE test (key String, x UInt64, y String) ENGINE = EmbeddedRocksDB PRIMARY KEY(key)"
+    )
+
     redis = Redis(
         host=ssl_server_address,
         port=ssl_server_port,
@@ -57,8 +75,21 @@ def test_python_client_ssl(ssl_server_address):
         password="123",
     )
 
-    value = redis.get("key")
-    assert value == b"Hello world"
+    value = redis.select(2)
+    assert value
 
-    with pytest.raises(match=r".*Not implemented.*"):
-        redis.set("key", "value")
+    value = redis.get("key1")
+    assert value is None
+
+    node.query(
+        "INSERT INTO test VALUES (\"key1\", 10, \"value\");"
+    )
+
+    value = redis.get("key1")
+    assert value == "value"
+
+    value = redis.hget("key1", "x")
+    assert value == "10"
+
+    values = redis.hmget("key1", "x", "y")
+    assert values == ["10", "value"]
