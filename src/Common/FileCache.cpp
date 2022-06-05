@@ -547,6 +547,12 @@ LRUFileCache::ReserveResult LRUFileCache::tryReserveForQuery(const Key & key, si
     {
         return ReserveResult::NO_NEED;
     }
+    /// When skip_download_if_exceeds_query_cache is true, there is no need
+    /// to evict old data, skip the cache and read directly from remote fs.
+    else if (query_context->isSkipDownload())
+    {
+        return ReserveResult::NO_ENOUGH_SPACE;
+    }
     /// The maximum cache size of the query is reached, the cache will be
     /// evicted from the history cache accessed by the current query.
     else
@@ -617,7 +623,7 @@ LRUFileCache::ReserveResult LRUFileCache::tryReserveForQuery(const Key & key, si
             auto file_segment = cell->file_segment;
             if (file_segment)
             {
-                query_context->remove(file_segment->key(), file_segment->offset(), cache_lock);
+                query_context->remove(file_segment->key(), file_segment->offset(), cell->size(), cache_lock);
 
                 std::lock_guard segment_lock(file_segment->mutex);
                 remove(file_segment->key(), file_segment->offset(), cache_lock, segment_lock);
@@ -625,7 +631,7 @@ LRUFileCache::ReserveResult LRUFileCache::tryReserveForQuery(const Key & key, si
         }
 
         for (auto & iter : ghost)
-            query_context->remove(iter->key, iter->offset, cache_lock);
+            query_context->remove(iter->key, iter->offset, iter->size, cache_lock);
 
         if (is_overflow())
         {
@@ -646,7 +652,7 @@ LRUFileCache::ReserveResult LRUFileCache::tryReserveForQuery(const Key & key, si
             auto file_segment = cell->file_segment;
             if (file_segment)
             {
-                query_context->remove(file_segment->key(), file_segment->offset(), cache_lock);
+                query_context->remove(file_segment->key(), file_segment->offset(), cell->size(), cache_lock);
 
                 std::lock_guard<std::mutex> segment_lock(file_segment->mutex);
                 remove(file_segment->key(), file_segment->offset(), cache_lock, segment_lock);
@@ -1259,7 +1265,7 @@ void LRUFileCache::createOrSetQueryContext(const ReadSettings & settings)
     auto query_iter = query_map.find(query_id);
 
     if (query_iter == query_map.end())
-        query_iter = query_map.insert({query_id, std::make_shared<QueryContext>(settings.max_query_cache_size)}).first;
+        query_iter = query_map.insert({query_id, std::make_shared<QueryContext>(settings.max_query_cache_size, settings.skip_download_if_exceeds_query_cache)}).first;
 
     auto query_context = query_iter->second;
     query_context->incrementRefCount();

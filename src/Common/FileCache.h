@@ -265,39 +265,48 @@ private:
         size_t max_cache_size;
         size_t ref_count = 0;
 
-        QueryContext(size_t max_cache_size_) : max_cache_size(max_cache_size_) { }
+        bool skip_download_if_exceeds_query_cache;
 
-        void remove(const Key & key, size_t offset, std::lock_guard<std::mutex> & cache_lock)
+        QueryContext(size_t max_cache_size_, bool skip_download_if_exceeds_query_cache_)
+            : max_cache_size(max_cache_size_), skip_download_if_exceeds_query_cache(skip_download_if_exceeds_query_cache_) { }
+
+        void remove(const Key & key, size_t offset, size_t size, std::lock_guard<std::mutex> & cache_lock)
         {
-            auto record = records.find({key, offset});
-
-            if (record != records.end())
+            if (!skip_download_if_exceeds_query_cache)
             {
-                cache_size -= record->second->size;
-                lru_queue.remove(record->second, cache_lock);
-                records.erase({key, offset});
+                auto record = records.find({key, offset});
+                if (record != records.end())
+                {
+                    lru_queue.remove(record->second, cache_lock);
+                    records.erase({key, offset});
+                }
             }
+            cache_size -= size;
         }
 
         void reserve(const Key & key, size_t offset, size_t size, std::lock_guard<std::mutex> & cache_lock)
         {
-            auto record = records.find({key, offset});
-
-            if (record == records.end())
+            if (!skip_download_if_exceeds_query_cache)
             {
-                auto queue_iter = lru_queue.add(key, offset, 0, cache_lock);
-                record = records.insert({{key, offset}, queue_iter}).first;
+                auto record = records.find({key, offset});
+                if (record == records.end())
+                {
+                    auto queue_iter = lru_queue.add(key, offset, 0, cache_lock);
+                    record = records.insert({{key, offset}, queue_iter}).first;
+                }
+                record->second->size += size;
             }
-            record->second->size += size;
             cache_size += size;
         }
 
         void use(const Key & key, size_t offset, std::lock_guard<std::mutex> & cache_lock)
         {
-            auto record = records.find({key, offset});
-
-            if (record != records.end())
-                lru_queue.moveToEnd(record->second, cache_lock);
+            if (!skip_download_if_exceeds_query_cache)
+            {
+                auto record = records.find({key, offset});
+                if (record != records.end())
+                    lru_queue.moveToEnd(record->second, cache_lock);
+            }
         }
 
         size_t getRefCount() const { return ref_count; }
@@ -311,6 +320,8 @@ private:
         size_t getCacheSize() { return cache_size; }
 
         LRUQueue & queue() { return lru_queue; }
+
+        bool isSkipDownload() { return skip_download_if_exceeds_query_cache; }
     };
 
     using QueryContextPtr = std::shared_ptr<QueryContext>;
