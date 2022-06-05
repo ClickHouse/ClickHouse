@@ -270,14 +270,19 @@ private:
         void remove(const Key & key, size_t offset, std::lock_guard<std::mutex> & cache_lock)
         {
             auto record = records.find({key, offset});
-            cache_size -= record->second->size;
-            lru_queue.remove(record->second, cache_lock);
-            records.erase({key, offset});
+
+            if (record != records.end())
+            {
+                cache_size -= record->second->size;
+                lru_queue.remove(record->second, cache_lock);
+                records.erase({key, offset});
+            }
         }
 
         void reserve(const Key & key, size_t offset, size_t size, std::lock_guard<std::mutex> & cache_lock)
         {
             auto record = records.find({key, offset});
+
             if (record == records.end())
             {
                 auto queue_iter = lru_queue.add(key, offset, 0, cache_lock);
@@ -285,6 +290,14 @@ private:
             }
             record->second->size += size;
             cache_size += size;
+        }
+
+        void use(const Key & key, size_t offset, std::lock_guard<std::mutex> & cache_lock)
+        {
+            auto record = records.find({key, offset});
+
+            if (record != records.end())
+                lru_queue.moveToEnd(record->second, cache_lock);
         }
 
         size_t getRefCount() const { return ref_count; }
@@ -327,7 +340,9 @@ private:
 
     void useCell(const FileSegmentCell & cell, FileSegments & result, std::lock_guard<std::mutex> & cache_lock);
 
-    QueryContextPtr getCurrentQueryContext() const;
+    QueryContextPtr getCurrentQueryContext(std::lock_guard<std::mutex> & cache_lock) const;
+
+    QueryContextPtr getQueryContext(const String & query_id, std::lock_guard<std::mutex> & cache_lock) const;
 
     bool tryReserve(
         const Key & key, size_t offset, size_t size,
