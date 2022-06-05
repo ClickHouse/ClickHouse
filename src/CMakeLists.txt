@@ -380,6 +380,10 @@ if (TARGET ch_contrib::rdkafka)
     dbms_target_link_libraries(PRIVATE ch_contrib::rdkafka ch_contrib::cppkafka)
 endif()
 
+if (TARGET ch_contrib::cassandra)
+    dbms_target_link_libraries(PRIVATE ch_contrib::cassandra)
+endif()
+
 if (TARGET ch_contrib::sasl2)
     dbms_target_link_libraries(PRIVATE ch_contrib::sasl2)
 endif()

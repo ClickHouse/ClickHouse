@@ -29,6 +29,10 @@ void registerTableFunctionHDFS(TableFunctionFactory & factory);
 void registerTableFunctionHDFSCluster(TableFunctionFactory & factory);
 #endif
 
+#if USE_CASSANDRA
+void registerTableFunctionCassandra(TableFunctionFactory & factory);
+#endif
+
 #if USE_HIVE
 void registerTableFunctionHive(TableFunctionFactory & factory);
 #endif

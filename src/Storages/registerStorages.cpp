@@ -27,6 +27,11 @@ void registerStorageLiveView(StorageFactory & factory);
 void registerStorageGenerateRandom(StorageFactory & factory);
 void registerStorageExecutable(StorageFactory & factory);
 void registerStorageWindowView(StorageFactory & factory);
+void registerStorageZooKeeper(StorageFactory & factory);
+
+#if USE_CASSANDRA
+void registerStorageCassandra(StorageFactory & factory);
+#endif
 
 #if USE_AWS_S3
 void registerStorageS3(StorageFactory & factory);
@@ -104,10 +109,15 @@ void registerStorages()
     registerStorageGenerateRandom(factory);
     registerStorageExecutable(factory);
     registerStorageWindowView(factory);
+    registerStorageZooKeeper(factory);
 
     #if USE_AWS_S3
     registerStorageS3(factory);
     registerStorageCOS(factory);
+    #endif
+
+    #if USE_CASSANDRA
+    registerStorageCassandra(factory);
     #endif
 
     #if USE_HDFS

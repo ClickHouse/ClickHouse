@@ -1,0 +1,12 @@
+<clickhouse>
+    <named_collections>
+        <cassandra1>
+            <user>root</user>
+            <password>clickhouse</password>
+            <host>cassandra1</host>
+            <port>9042</port>
+            <database>test</database>
+            <collection>simple_table</collection>
+        </cassandra1>
+    </named_collections>
+</clickhouse>

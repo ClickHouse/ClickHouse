@@ -176,10 +176,12 @@ enum class AccessType
     M(FILE, "", GLOBAL, SOURCES) \
     M(URL, "", GLOBAL, SOURCES) \
     M(REMOTE, "", GLOBAL, SOURCES) \
+    M(CASSANDRA, "", GLOBAL, SOURCES) \
     M(MONGO, "", GLOBAL, SOURCES) \
     M(MYSQL, "", GLOBAL, SOURCES) \
     M(POSTGRES, "", GLOBAL, SOURCES) \
     M(SQLITE, "", GLOBAL, SOURCES) \
+    M(ZOOKEEPER, "", GLOBAL, SOURCES) \
     M(ODBC, "", GLOBAL, SOURCES) \
     M(JDBC, "", GLOBAL, SOURCES) \
     M(HDFS, "", GLOBAL, SOURCES) \

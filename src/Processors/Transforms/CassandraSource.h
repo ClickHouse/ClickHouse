@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Dictionaries/CassandraHelpers.h>
+#include "CassandraHelpers.h"
 
 #if USE_CASSANDRA
 #include <Core/Block.h>

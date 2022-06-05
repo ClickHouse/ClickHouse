@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Dictionaries/CassandraHelpers.h>
+#include <Common/config.h>
 
 #if USE_CASSANDRA
 
@@ -10,6 +10,8 @@
 #include <Core/Block.h>
 #include <Poco/Logger.h>
 #include <mutex>
+#include <Processors/Transforms/CassandraSource.h>
+
 
 namespace DB
 {

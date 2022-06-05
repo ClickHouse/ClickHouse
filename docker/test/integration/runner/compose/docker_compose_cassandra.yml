@@ -2,4 +2,11 @@ version: '2.3'
 services:
     cassandra1:
         image: cassandra:4.0
+        # comand: echo "authenticator: PasswordAuthenticator" > /etc/cassandra/cassandra.yaml
         restart: always
+        environment:
+            - CASSANDRA_AUTHORIZER = PasswordAuthorizer
+            - CASSANDRA_AUTHENTICATOR = PasswordAuthenticator
+            - CASSANDRA_PASSWORD_SEEDER=yes
+            - CASSANDRA_PASSWORD=clickhouse
+            - CASSANDRA_USER=root

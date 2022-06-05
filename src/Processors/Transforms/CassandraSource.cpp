@@ -1,4 +1,5 @@
 #include <Common/config.h>
+#include "Processors/Transforms/CassandraHelpers.h"
 
 #if USE_CASSANDRA
 

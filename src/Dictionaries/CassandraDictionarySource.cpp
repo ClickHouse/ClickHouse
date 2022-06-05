@@ -44,7 +44,7 @@ void registerDictionarySourceCassandra(DictionarySourceFactory & factory)
 #include <Common/logger_useful.h>
 #include <Common/SipHash.h>
 #include <IO/WriteHelpers.h>
-#include <Dictionaries/CassandraSource.h>
+#include <Processors/Transforms/CassandraSource.h>
 
 namespace DB
 {

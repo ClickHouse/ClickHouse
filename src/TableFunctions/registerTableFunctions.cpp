@@ -44,6 +44,10 @@ void registerTableFunctions()
     registerTableFunctionMySQL(factory);
 #endif
 
+#if USE_CASSANDRA
+    registerTableFunctionCassandra(factory);
+#endif
+
 #if USE_LIBPQXX
     registerTableFunctionPostgreSQL(factory);
 #endif

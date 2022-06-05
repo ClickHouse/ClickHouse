@@ -2,6 +2,7 @@
 
 #include <Interpreters/Context.h>
 #include <Poco/Util/AbstractConfiguration.h>
+#include "base/types.h"
 #include <Storages/StorageS3Settings.h>
 
 
@@ -37,6 +38,17 @@ struct StoragePostgreSQLConfiguration : ExternalDataSourceConfiguration
     String on_conflict;
 };
 
+struct StorageCassandraConfiguration : ExternalDataSourceConfiguration
+{
+    String consistency;
+    String options;
+};
+
+struct StorageZooKeeperConfiguration : ExternalDataSourceConfiguration
+{
+    String options;
+};
+
 
 struct StorageMySQLConfiguration : ExternalDataSourceConfiguration
 {
@@ -48,6 +60,7 @@ struct StorageMongoDBConfiguration : ExternalDataSourceConfiguration
 {
     String options;
 };
+
 
 
 using StorageSpecificArgs = std::vector<std::pair<String, ASTPtr>>;
