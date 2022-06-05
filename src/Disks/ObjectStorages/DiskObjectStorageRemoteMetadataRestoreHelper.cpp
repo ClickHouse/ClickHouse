@@ -1,4 +1,4 @@
-#include <Disks/ObjectStorages/DiskObjectStorageMetadataHelper.h>
+#include <Disks/ObjectStorages/DiskObjectStorageRemoteMetadataRestoreHelper.h>
 #include <Disks/ObjectStorages/DiskObjectStorage.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
@@ -21,7 +21,7 @@ static String revisionToString(UInt64 revision)
     return std::bitset<64>(revision).to_string();
 }
 
-void DiskObjectStorageMetadataHelper::createFileOperationObject(const String & operation_name, UInt64 revision, const ObjectAttributes & metadata) const
+void DiskObjectStorageRemoteMetadataRestoreHelper::createFileOperationObject(const String & operation_name, UInt64 revision, const ObjectAttributes & metadata) const
 {
     const String path = disk->remote_fs_root_path + "operations/r" + revisionToString(revision) + operation_log_suffix + "-" + operation_name;
     auto buf = disk->object_storage->writeObject(path, WriteMode::Rewrite, metadata);
@@ -29,7 +29,7 @@ void DiskObjectStorageMetadataHelper::createFileOperationObject(const String & o
     buf->finalize();
 }
 
-void DiskObjectStorageMetadataHelper::findLastRevision()
+void DiskObjectStorageRemoteMetadataRestoreHelper::findLastRevision()
 {
     /// Construct revision number from high to low bits.
     String revision;
@@ -51,7 +51,7 @@ void DiskObjectStorageMetadataHelper::findLastRevision()
     LOG_INFO(disk->log, "Found last revision number {} for disk {}", revision_counter, disk->name);
 }
 
-int DiskObjectStorageMetadataHelper::readSchemaVersion(IObjectStorage * object_storage, const String & source_path)
+int DiskObjectStorageRemoteMetadataRestoreHelper::readSchemaVersion(IObjectStorage * object_storage, const String & source_path)
 {
     const std::string path = source_path + SCHEMA_VERSION_OBJECT;
     int version = 0;
@@ -64,7 +64,7 @@ int DiskObjectStorageMetadataHelper::readSchemaVersion(IObjectStorage * object_s
     return version;
 }
 
-void DiskObjectStorageMetadataHelper::saveSchemaVersion(const int & version) const
+void DiskObjectStorageRemoteMetadataRestoreHelper::saveSchemaVersion(const int & version) const
 {
     auto path = disk->remote_fs_root_path + SCHEMA_VERSION_OBJECT;
 
@@ -74,12 +74,12 @@ void DiskObjectStorageMetadataHelper::saveSchemaVersion(const int & version) con
 
 }
 
-void DiskObjectStorageMetadataHelper::updateObjectMetadata(const String & key, const ObjectAttributes & metadata) const
+void DiskObjectStorageRemoteMetadataRestoreHelper::updateObjectMetadata(const String & key, const ObjectAttributes & metadata) const
 {
     disk->object_storage->copyObject(key, key, metadata);
 }
 
-void DiskObjectStorageMetadataHelper::migrateFileToRestorableSchema(const String & path) const
+void DiskObjectStorageRemoteMetadataRestoreHelper::migrateFileToRestorableSchema(const String & path) const
 {
     LOG_TRACE(disk->log, "Migrate file {} to restorable schema", disk->metadata_storage->getPath() + path);
 
@@ -92,7 +92,7 @@ void DiskObjectStorageMetadataHelper::migrateFileToRestorableSchema(const String
         updateObjectMetadata(disk->remote_fs_root_path + key, metadata);
     }
 }
-void DiskObjectStorageMetadataHelper::migrateToRestorableSchemaRecursive(const String & path, Futures & results)
+void DiskObjectStorageRemoteMetadataRestoreHelper::migrateToRestorableSchemaRecursive(const String & path, Futures & results)
 {
     checkStackSize(); /// This is needed to prevent stack overflow in case of cyclic symlinks.
 
@@ -138,7 +138,7 @@ void DiskObjectStorageMetadataHelper::migrateToRestorableSchemaRecursive(const S
 
 }
 
-void DiskObjectStorageMetadataHelper::migrateToRestorableSchema()
+void DiskObjectStorageRemoteMetadataRestoreHelper::migrateToRestorableSchema()
 {
     try
     {
@@ -165,7 +165,7 @@ void DiskObjectStorageMetadataHelper::migrateToRestorableSchema()
     }
 }
 
-void DiskObjectStorageMetadataHelper::restore(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, ContextPtr context)
+void DiskObjectStorageRemoteMetadataRestoreHelper::restore(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, ContextPtr context)
 {
     LOG_INFO(disk->log, "Restore operation for disk {} called", disk->name);
 
@@ -238,11 +238,10 @@ void DiskObjectStorageMetadataHelper::restore(const Poco::Util::AbstractConfigur
     }
 }
 
-void DiskObjectStorageMetadataHelper::readRestoreInformation(RestoreInformation & restore_information) /// NOLINT
+void DiskObjectStorageRemoteMetadataRestoreHelper::readRestoreInformation(RestoreInformation & restore_information) /// NOLINT
 {
     auto metadata_str = disk->metadata_storage->readMetadataFileToString(RESTORE_FILE_NAME);
     ReadBufferFromString buffer(metadata_str);
-    buffer.next();
 
     try
     {
@@ -312,7 +311,7 @@ static std::tuple<UInt64, String> extractRevisionAndOperationFromKey(const Strin
     return {(revision_str.empty() ? 0 : static_cast<UInt64>(std::bitset<64>(revision_str).to_ullong())), operation};
 }
 
-void DiskObjectStorageMetadataHelper::moveRecursiveOrRemove(const String & from_path, const String & to_path, bool send_metadata)
+void DiskObjectStorageRemoteMetadataRestoreHelper::moveRecursiveOrRemove(const String & from_path, const String & to_path, bool send_metadata)
 {
     if (disk->exists(to_path))
     {
@@ -341,7 +340,7 @@ void DiskObjectStorageMetadataHelper::moveRecursiveOrRemove(const String & from_
     }
 }
 
-void DiskObjectStorageMetadataHelper::restoreFiles(IObjectStorage * source_object_storage, const RestoreInformation & restore_information)
+void DiskObjectStorageRemoteMetadataRestoreHelper::restoreFiles(IObjectStorage * source_object_storage, const RestoreInformation & restore_information)
 {
     LOG_INFO(disk->log, "Starting restore files for disk {}", disk->name);
 
@@ -393,7 +392,7 @@ void DiskObjectStorageMetadataHelper::restoreFiles(IObjectStorage * source_objec
 
 }
 
-void DiskObjectStorageMetadataHelper::processRestoreFiles(IObjectStorage * source_object_storage, const String & source_path, const std::vector<String> & keys) const
+void DiskObjectStorageRemoteMetadataRestoreHelper::processRestoreFiles(IObjectStorage * source_object_storage, const String & source_path, const std::vector<String> & keys) const
 {
     for (const auto & key : keys)
     {
@@ -450,7 +449,7 @@ static String pathToDetached(const String & source_path)
     return fs::path(source_path).parent_path() / "detached/";
 }
 
-void DiskObjectStorageMetadataHelper::restoreFileOperations(IObjectStorage * source_object_storage, const RestoreInformation & restore_information)
+void DiskObjectStorageRemoteMetadataRestoreHelper::restoreFileOperations(IObjectStorage * source_object_storage, const RestoreInformation & restore_information)
 {
     /// Enable recording file operations if we restore to different bucket / path.
     bool send_metadata = source_object_storage->getObjectsNamespace() != disk->object_storage->getObjectsNamespace() || disk->remote_fs_root_path != restore_information.source_path;

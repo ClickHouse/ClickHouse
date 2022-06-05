@@ -2,7 +2,7 @@
 
 #include <Disks/IDisk.h>
 #include <Disks/ObjectStorages/IObjectStorage.h>
-#include <Disks/ObjectStorages/DiskObjectStorageMetadataHelper.h>
+#include <Disks/ObjectStorages/DiskObjectStorageRemoteMetadataRestoreHelper.h>
 #include <Disks/ObjectStorages/IMetadataStorage.h>
 #include <re2/re2.h>
 
@@ -23,7 +23,7 @@ class DiskObjectStorage : public IDisk
 {
 
 friend class DiskObjectStorageReservation;
-friend class DiskObjectStorageMetadataHelper;
+friend class DiskObjectStorageRemoteMetadataRestoreHelper;
 
 public:
     DiskObjectStorage(
@@ -180,7 +180,7 @@ private:
 
     const bool send_metadata;
 
-    std::unique_ptr<DiskObjectStorageMetadataHelper> metadata_helper;
+    std::unique_ptr<DiskObjectStorageRemoteMetadataRestoreHelper> metadata_helper;
 };
 
 class DiskObjectStorageReservation final : public IReservation
