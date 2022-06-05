@@ -260,6 +260,9 @@ public:
         DiskPtr disk, zkutil::ZooKeeperPtr zookeeper_, const MergeTreeSettings & settings, Poco::Logger * logger,
         const String & zookeeper_path_old);
 
+    static bool removeEmptyZookeeperNode(zkutil::ZooKeeperPtr zookeepr_ptr, Poco::Logger * logger, const String & zookeeper_node,
+        const String & part_name);
+
     /// Fetch part only if some replica has it on shared storage like S3
     bool tryToFetchIfShared(const IMergeTreeDataPart & part, const DiskPtr & disk, const String & path) override;
 

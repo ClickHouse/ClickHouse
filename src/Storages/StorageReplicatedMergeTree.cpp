@@ -7580,73 +7580,63 @@ std::pair<bool, NameSet> StorageReplicatedMergeTree::unlockSharedDataByID(
         }
 
         /// Check, maybe we were the last replica and can remove part forever
-        Strings children;
-        zookeeper_ptr->tryGetChildren(zookeeper_part_uniq_node, children);
-
-        if (!children.empty())
-        {
-            LOG_TRACE(logger, "Found {} ({}) zookeper locks for {}", zookeeper_part_uniq_node, children.size(), fmt::join(children, ", "));
-            part_has_no_more_locks = false;
+        LOG_TRACE(logger, "try to remove part uniq node: {} if it is empty.", zookeeper_part_uniq_node);
+        if(!removeEmptyZookeeperNode(zookeeper_ptr, logger, zookeeper_part_uniq_node, part_name))
             continue;
-        }
-
-        auto error_code = zookeeper_ptr->tryRemove(zookeeper_part_uniq_node);
-
-        if (error_code == Coordination::Error::ZOK)
-        {
-            LOG_TRACE(logger, "Removed last parent zookeeper lock {} for part {} with id {}", zookeeper_part_uniq_node, part_name, part_id);
-        }
-        else if (error_code == Coordination::Error::ZNOTEMPTY)
-        {
-            LOG_TRACE(logger, "Cannot remove last parent zookeeper lock {} for part {} with id {}, another replica locked part concurrently", zookeeper_part_uniq_node, part_name, part_id);
-        }
-        else if (error_code == Coordination::Error::ZNONODE)
-        {
-            LOG_TRACE(logger, "Node with parent zookeeper lock {} for part {} with id {} doesn't exist", zookeeper_part_uniq_node, part_name, part_id);
-        }
-        else
-        {
-            throw zkutil::KeeperException(error_code, zookeeper_part_uniq_node);
-        }
-
 
         /// Even when we have lock with same part name, but with different uniq, we can remove files on S3
-        children.clear();
         String zookeeper_part_node = fs::path(zookeeper_part_uniq_node).parent_path();
-        zookeeper_ptr->tryGetChildren(zookeeper_part_node, children);
+        LOG_TRACE(logger, "try to remove part node: {} if it is empty.", zookeeper_part_node);
+        if(!removeEmptyZookeeperNode(zookeeper_ptr, logger, zookeeper_part_node, part_name))
+            continue;
 
-        if (children.empty())
-        {
-            /// Cleanup after last uniq removing
-            error_code = zookeeper_ptr->tryRemove(zookeeper_part_node);
-
-            if (error_code == Coordination::Error::ZOK)
-            {
-                LOG_TRACE(logger, "Removed last parent zookeeper lock {} for part {} (part is finally unlocked)", zookeeper_part_uniq_node, part_name);
-            }
-            else if (error_code == Coordination::Error::ZNOTEMPTY)
-            {
-                LOG_TRACE(logger, "Cannot remove last parent zookeeper lock {} for part {}, another replica locked part concurrently", zookeeper_part_uniq_node, part_name);
-            }
-            else if (error_code == Coordination::Error::ZNONODE)
-            {
-                LOG_TRACE(logger, "Node with parent zookeeper lock {} for part {} doesn't exist (part was unlocked before)", zookeeper_part_uniq_node, part_name);
-            }
-            else
-            {
-                throw zkutil::KeeperException(error_code, zookeeper_part_uniq_node);
-            }
-        }
-        else
-        {
-            LOG_TRACE(logger, "Can't remove parent zookeeper lock {} for part {}, because children {} ({}) were concurrently created",
-                      zookeeper_part_node, part_name, children.size(), fmt::join(children, ", "));
-        }
+        /// Check, if table shard node is empty so we can remove empty node.
+        String zookeeper_table_shard_node = fs::path(zookeeper_part_uniq_node).parent_path();
+        LOG_TRACE(logger, "try to remove part node: {} if it is empty.", zookeeper_table_shard_node);
+        if(!removeEmptyZookeeperNode(zookeeper_ptr, logger, zookeeper_table_shard_node, part_name))
+            continue;
     }
 
     return std::make_pair(part_has_no_more_locks, files_not_to_remove);
 }
 
+bool StorageReplicatedMergeTree::removeEmptyZookeeperNode(zkutil::ZooKeeperPtr zookeepr_ptr, Poco::Logger * logger, const String & zookeeper_node,
+    const String& part_name)
+{
+    Strings children;
+    LOG_TRACE(logger, "try remove Empty zookeepr lock {}, part_name {}", zookeeper_node, part_name);
+
+    zookeeper_ptr->tryGetChildren(zookeeper_node, children);
+    if (children.empty())
+    {
+        /// try remove empty node.
+        auto error_code = zookeeper_ptr->tryRemove(zookeeper_node);
+
+        if (error_code == Coordination::Error::ZOK)
+        {
+            LOG_TRACE(logger, "Removed zookeeper lock {} for part {}", zookeeper_node, part_name);
+            return true;
+        }
+        else if (error_code == Coordination::Error::ZNOTEMPTY)
+        {
+            LOG_TRACE(logger, "Cannot remove zookeeper lock {} for part {}, another replica locked part concurrently", zookeeper_node, part_name);
+        }
+        else if (error_code == Coordination::Error::ZNONODE)
+        {
+            LOG_TRACE(logger, "Node with lock {} for part {} doesn't exist (part was unlocked before)", zookeeper_node, part_name);
+        }
+        else
+        {
+            throw zkutil::KeeperException(error_code, zookeeper_node);
+        }
+    }
+    else
+    {
+        LOG_TRACE(logger, "Can't remove zookeeper lock {} for part {}, because children {} ({}) were concurrently created",
+                    zookeeper_node, part_name, children.size(), fmt::join(children, ", "));
+    }
+    return false;
+}
 
 bool StorageReplicatedMergeTree::tryToFetchIfShared(
     const IMergeTreeDataPart & part,
