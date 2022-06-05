@@ -114,6 +114,5 @@ private:
     GuardedPoolAllocatorState state;
     std::mutex pool_reservation_mutex;
     std::mutex trap_mutex;
-    static constexpr size_t total_size = 4096U * 1024U;
 };
 }
