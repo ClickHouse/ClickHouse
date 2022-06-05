@@ -600,15 +600,12 @@ void MetadataStorageFromDisk::replaceFile(const std::string & path_from, const s
     transaction->addOperation(std::make_unique<ReplaceFileOperation>(path_from, path_to, *disk));
 }
 
-
 void MetadataStorageFromDisk::setReadOnly(const std::string & path, MetadataTransactionPtr transaction)
 {
     auto metadata = readMetadata(path);
     metadata->setReadOnly();
     writeMetadataToFile(path, transaction, metadata->serializeToString());
 }
-
-
 
 void MetadataStorageFromDisk::createMetadataFile(const std::string & path, const std::string & blob_name, uint64_t size_in_bytes, MetadataTransactionPtr transaction)
 {
