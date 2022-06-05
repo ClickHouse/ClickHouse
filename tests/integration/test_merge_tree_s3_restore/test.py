@@ -517,7 +517,7 @@ def test_migrate_to_restorable_schema(cluster):
     helpers.utility.replace_xml_by_xpath(
         NOT_RESTORABLE_CONFIG_PATH, NOT_RESTORABLE_CONFIG_PATH,
         replace_text={
-            "/clickhouse/storage_configuration/disks/s3/send_metadata": "true",
+            "//storage_configuration/disks/s3/send_metadata": "true",
         }
     )
     node.restart_clickhouse()

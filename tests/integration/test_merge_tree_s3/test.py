@@ -1,9 +1,12 @@
 import logging
-import time
 import os
 import tempfile
+import time
+
+import minio
 
 import pytest
+
 from helpers.cluster import ClickHouseCluster, get_instances_dir
 from helpers.utility import generate_values, SafeThread
 import helpers.utility
@@ -24,37 +27,44 @@ def cluster():
                 "configs/config.d/storage_conf.xml",
                 "configs/config.d/bg_processing_pool_conf.xml",
             ]
-            with_minio = True
 
             if os.environ.get("CLICKHOUSE_AWS_ENDPOINT_URL_OVERRIDE"):
+                assert os.environ["CLICKHOUSE_AWS_HOST_NAME"] + "/" + os.environ["CLICKHOUSE_AWS_BUCKET"] in os.environ["CLICKHOUSE_AWS_ENDPOINT_URL_OVERRIDE"]
                 new_config_name = os.path.join(d, "storage_conf.xml")
                 helpers.utility.replace_xml_by_xpath(
                     os.path.join(SCRIPT_DIR, main_configs[0]),
                     new_config_name,
                     replace_text={
-                        "/clickhouse/storage_configuration/disks/s3/endpoint": os.environ["CLICKHOUSE_AWS_ENDPOINT_URL_OVERRIDE"],
-                        "/clickhouse/storage_configuration/disks/s3/access_key_id": os.environ["CLICKHOUSE_AWS_ACCESS_KEY_ID"],
-                        "/clickhouse/storage_configuration/disks/s3/secret_access_key": os.environ["CLICKHOUSE_AWS_SECRET_ACCESS_KEY"],
-                        "/clickhouse/storage_configuration/disks/s3_with_cache/endpoint": os.environ["CLICKHOUSE_AWS_ENDPOINT_URL_OVERRIDE"],
-                        "/clickhouse/storage_configuration/disks/s3_with_cache/access_key_id": os.environ["CLICKHOUSE_AWS_ACCESS_KEY_ID"],
-                        "/clickhouse/storage_configuration/disks/s3_with_cache/secret_access_key": os.environ["CLICKHOUSE_AWS_SECRET_ACCESS_KEY"],
-                        "/clickhouse/storage_configuration/disks/unstable_s3/access_key_id": os.environ["CLICKHOUSE_AWS_ACCESS_KEY_ID"],
-                        "/clickhouse/storage_configuration/disks/unstable_s3/secret_access_key": os.environ["CLICKHOUSE_AWS_SECRET_ACCESS_KEY"],
+                        "//storage_configuration/disks/s3/endpoint": os.environ["CLICKHOUSE_AWS_ENDPOINT_URL_OVERRIDE"],
+                        "//storage_configuration/disks/s3/access_key_id": os.environ["CLICKHOUSE_AWS_ACCESS_KEY_ID"],
+                        "//storage_configuration/disks/s3/secret_access_key": os.environ["CLICKHOUSE_AWS_SECRET_ACCESS_KEY"],
+                        "//storage_configuration/disks/s3_with_cache/endpoint": os.environ["CLICKHOUSE_AWS_ENDPOINT_URL_OVERRIDE"],
+                        "//storage_configuration/disks/s3_with_cache/access_key_id": os.environ["CLICKHOUSE_AWS_ACCESS_KEY_ID"],
+                        "//storage_configuration/disks/s3_with_cache/secret_access_key": os.environ["CLICKHOUSE_AWS_SECRET_ACCESS_KEY"],
+                        "//storage_configuration/disks/unstable_s3/access_key_id": os.environ["CLICKHOUSE_AWS_ACCESS_KEY_ID"],
+                        "//storage_configuration/disks/unstable_s3/secret_access_key": os.environ["CLICKHOUSE_AWS_SECRET_ACCESS_KEY"],
                     }
                 )
                 main_configs[0] = new_config_name
-                with_minio = False
 
             cluster = ClickHouseCluster(__file__)
             cluster.add_instance(
                 "node",
                 main_configs=main_configs,
-                with_minio=with_minio,
+                with_minio=True,
             )
             logging.info("Starting cluster...")
             cluster.start()
             logging.info("Cluster started")
             run_s3_mocks(cluster)
+
+            if os.environ.get("CLICKHOUSE_AWS_ENDPOINT_URL_OVERRIDE"):
+                cluster.minio_client = minio.Minio(
+                    os.environ["CLICKHOUSE_AWS_HOST_NAME"],
+                    access_key=os.environ["CLICKHOUSE_AWS_ACCESS_KEY_ID"],
+                    secret_key=os.environ["CLICKHOUSE_AWS_SECRET_ACCESS_KEY"]
+                )
+                cluster.minio_bucket = os.environ["CLICKHOUSE_AWS_BUCKET"]
 
             yield cluster
     finally:
@@ -605,8 +615,8 @@ def test_s3_disk_apply_new_settings(cluster, node_name):
     helpers.utility.replace_xml_by_xpath(
         CONFIG_PATH, CONFIG_PATH,
         replace_text={
-            "/clickhouse/storage_configuration/disks/s3/s3_max_single_part_upload_size": "0",
-            "/clickhouse/storage_configuration/disks/s3_with_cache/s3_max_single_part_upload_size": "0",
+            "//storage_configuration/disks/s3/s3_max_single_part_upload_size": "0",
+            "//storage_configuration/disks/s3_with_cache/s3_max_single_part_upload_size": "0",
         }
     )
 

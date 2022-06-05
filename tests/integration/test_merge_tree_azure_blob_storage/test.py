@@ -509,7 +509,7 @@ def test_apply_new_settings(cluster):
     helpers.utility.replace_xml_by_xpath(
         CONFIG_PATH, CONFIG_PATH,
         replace_text={
-            "/clickhouse/storage_configuration/disks/blob_storage_disk/max_single_part_upload_size": "4096",
+            "//storage_configuration/disks/blob_storage_disk/max_single_part_upload_size": "4096",
         }
     )
 
@@ -529,7 +529,7 @@ def test_restart_during_load(cluster):
     helpers.utility.replace_xml_by_xpath(
         CONFIG_PATH, CONFIG_PATH,
         remove_node=[
-            "/clickhouse/storage_configuration/disks/blob_storage_disk/container_already_exists",
+            "//storage_configuration/disks/blob_storage_disk/container_already_exists",
         ]
     )
 

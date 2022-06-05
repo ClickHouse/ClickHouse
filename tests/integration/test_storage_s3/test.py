@@ -754,7 +754,7 @@ def test_custom_auth_headers(started_cluster):
     helpers.utility.replace_xml_by_xpath(
         CONFIG_PATH, CONFIG_PATH,
         replace_text={
-            "/clickhouse/s3/s3_mock/header": "Authorization: Bearer INVALID_TOKEN",
+            "//s3/s3_mock/header": "Authorization: Bearer INVALID_TOKEN",
         }
     )
     instance.query("SYSTEM RELOAD CONFIG")
@@ -763,7 +763,7 @@ def test_custom_auth_headers(started_cluster):
     helpers.utility.replace_xml_by_xpath(
         CONFIG_PATH, CONFIG_PATH,
         replace_text={
-            "/clickhouse/s3/s3_mock/header": "Authorization: Bearer TOKEN",
+            "//s3/s3_mock/header": "Authorization: Bearer TOKEN",
         }
     )
     instance.query("SYSTEM RELOAD CONFIG")
