@@ -3419,6 +3419,7 @@ ReadSettings Context::getReadSettings() const
     res.enable_filesystem_cache_log = settings.enable_filesystem_cache_log;
 
     res.max_query_cache_size = settings.max_query_cache_size;
+    res.skip_download_if_exceeds_query_cache = settings.skip_download_if_exceeds_query_cache;
 
     res.remote_read_min_bytes_for_seek = settings.remote_read_min_bytes_for_seek;
 
