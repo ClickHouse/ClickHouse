@@ -248,19 +248,22 @@ std::vector<std::optional<String>> RedisHandler::getValuesByKeysAndDefaultColumn
     std::vector<std::optional<String>> result;
     result.resize(keys.size());
 
+    Block sample_block = table->getInMemoryMetadataPtr()->getSampleBlock();
+
     PaddedPODArray<UInt8> null_map; // TODO: Logic with nullable (currenly thinks that defaults are normal values)
     Chunk chunk = getChunkByKeys(keys, &null_map);
 
-    for (const auto & chunk_column : chunk.getColumns())
-    {
-        if (chunk_column->getName() == column)
-        {
-            result.resize(chunk_column->size());
-            for (size_t i = 0; i < chunk_column->size(); ++i)
-                if (StringRef data = chunk_column->getDataAt(i); !data.empty())
-                    result[i] = data.toString();
-        }
-    }
+    auto default_column_idx = sample_block.getPositionByName(column);
+    auto default_column = chunk.getColumns()[default_column_idx];
+    auto num_rows = default_column->size();
+
+    if (num_rows != keys.size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Some keys seem lost");
+
+    for (size_t i = 0; i < num_rows; ++i)
+        if (StringRef data = default_column->getDataAt(i); !data.empty())
+            result[i] = default_column->getDataAt(i).toString();
+
     return result;
 }
 
