@@ -260,6 +260,7 @@ public:
         DiskPtr disk, zkutil::ZooKeeperPtr zookeeper_, const MergeTreeSettings & settings, Poco::Logger * logger,
         const String & zookeeper_path_old);
 
+    ///  remove table shard node if it is empty when unlock shared data.
     static bool removeEmptyZookeeperNode(zkutil::ZooKeeperPtr zookeepr_ptr, Poco::Logger * logger, const String & zookeeper_node,
         const String & part_name);
 
