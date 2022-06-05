@@ -7601,6 +7601,7 @@ std::pair<bool, NameSet> StorageReplicatedMergeTree::unlockSharedDataByID(
     return std::make_pair(part_has_no_more_locks, files_not_to_remove);
 }
 
+///  remove table shard node if it is empty when unlock shared data.
 bool StorageReplicatedMergeTree::removeEmptyZookeeperNode(zkutil::ZooKeeperPtr zookeepr_ptr, Poco::Logger * logger, const String & zookeeper_node,
     const String& part_name)
 {
