@@ -56,7 +56,6 @@
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/QueryPlan/ReadNothingStep.h>
 #include <Processors/QueryPlan/RollupStep.h>
-#include <Processors/QueryPlan/SettingQuotaAndLimitsStep.h>
 #include <Processors/QueryPlan/TotalsHavingStep.h>
 #include <Processors/QueryPlan/WindowStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
@@ -65,6 +64,7 @@
 #include <Processors/Transforms/AggregatingTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/FilterTransform.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/MergeTreeWhereOptimizer.h>
@@ -160,6 +160,14 @@ String InterpreterSelectQuery::generateFilterActions(ActionsDAGPtr & actions, co
 InterpreterSelectQuery::InterpreterSelectQuery(
     const ASTPtr & query_ptr_,
     ContextPtr context_,
+    const SelectQueryOptions & options_,
+    const Names & required_result_column_names_)
+    : InterpreterSelectQuery(query_ptr_, context_, std::nullopt, nullptr, options_, required_result_column_names_)
+{}
+
+InterpreterSelectQuery::InterpreterSelectQuery(
+    const ASTPtr & query_ptr_,
+    ContextMutablePtr context_,
     const SelectQueryOptions & options_,
     const Names & required_result_column_names_)
     : InterpreterSelectQuery(query_ptr_, context_, std::nullopt, nullptr, options_, required_result_column_names_)
@@ -273,6 +281,28 @@ static bool shouldIgnoreQuotaAndLimits(const StorageID & table_id)
 InterpreterSelectQuery::InterpreterSelectQuery(
     const ASTPtr & query_ptr_,
     ContextPtr context_,
+    std::optional<Pipe> input_pipe_,
+    const StoragePtr & storage_,
+    const SelectQueryOptions & options_,
+    const Names & required_result_column_names,
+    const StorageMetadataPtr & metadata_snapshot_,
+    SubqueriesForSets subquery_for_sets_,
+    PreparedSets prepared_sets_)
+    : InterpreterSelectQuery(
+        query_ptr_,
+        Context::createCopy(context_),
+        std::move(input_pipe_),
+        storage_,
+        options_,
+        required_result_column_names,
+        metadata_snapshot_,
+        std::move(subquery_for_sets_),
+        std::move(prepared_sets_))
+{}
+
+InterpreterSelectQuery::InterpreterSelectQuery(
+    const ASTPtr & query_ptr_,
+    ContextMutablePtr context_,
     std::optional<Pipe> input_pipe_,
     const StoragePtr & storage_,
     const SelectQueryOptions & options_,
@@ -641,6 +671,13 @@ void InterpreterSelectQuery::buildQueryPlan(QueryPlan & query_plan)
         auto converting = std::make_unique<ExpressionStep>(query_plan.getCurrentDataStream(), convert_actions_dag);
         query_plan.addStep(std::move(converting));
     }
+
+    /// Extend lifetime of context, table lock, storage.
+    query_plan.addInterpreterContext(context);
+    if (table_lock)
+        query_plan.addTableLock(std::move(table_lock));
+    if (storage)
+        query_plan.addStorageHolder(storage);
 }
 
 BlockIO InterpreterSelectQuery::execute()
@@ -650,8 +687,13 @@ BlockIO InterpreterSelectQuery::execute()
 
     buildQueryPlan(query_plan);
 
-    res.pipeline = QueryPipelineBuilder::getPipeline(std::move(*query_plan.buildQueryPipeline(
-        QueryPlanOptimizationSettings::fromContext(context), BuildQueryPipelineSettings::fromContext(context))));
+    auto builder = query_plan.buildQueryPipeline(
+        QueryPlanOptimizationSettings::fromContext(context), BuildQueryPipelineSettings::fromContext(context));
+
+    res.pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
+
+    setQuota(res.pipeline);
+
     return res;
 }
 
@@ -1154,8 +1196,9 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
     {
         if (prepared_pipe)
         {
-            auto prepared_source_step = std::make_unique<ReadFromPreparedSource>(std::move(*prepared_pipe), context);
+            auto prepared_source_step = std::make_unique<ReadFromPreparedSource>(std::move(*prepared_pipe));
             query_plan.addStep(std::move(prepared_source_step));
+            query_plan.addInterpreterContext(context);
         }
 
         if (from_stage == QueryProcessingStage::WithMergeableState &&
@@ -1539,36 +1582,6 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
         executeSubqueriesInSetsAndJoins(query_plan, subqueries_for_sets);
 }
 
-static StreamLocalLimits getLimitsForStorage(const Settings & settings, const SelectQueryOptions & options)
-{
-    StreamLocalLimits limits;
-    limits.mode = LimitsMode::LIMITS_TOTAL;
-    limits.size_limits = SizeLimits(settings.max_rows_to_read, settings.max_bytes_to_read, settings.read_overflow_mode);
-    limits.speed_limits.max_execution_time = settings.max_execution_time;
-    limits.timeout_overflow_mode = settings.timeout_overflow_mode;
-
-    /** Quota and minimal speed restrictions are checked on the initiating server of the request, and not on remote servers,
-      *  because the initiating server has a summary of the execution of the request on all servers.
-      *
-      * But limits on data size to read and maximum execution time are reasonable to check both on initiator and
-      *  additionally on each remote server, because these limits are checked per block of data processed,
-      *  and remote servers may process way more blocks of data than are received by initiator.
-      *
-      * The limits to throttle maximum execution speed is also checked on all servers.
-      */
-    if (options.to_stage == QueryProcessingStage::Complete)
-    {
-        limits.speed_limits.min_execution_rps = settings.min_execution_speed;
-        limits.speed_limits.min_execution_bps = settings.min_execution_speed_bytes;
-    }
-
-    limits.speed_limits.max_execution_rps = settings.max_execution_speed;
-    limits.speed_limits.max_execution_bps = settings.max_execution_speed_bytes;
-    limits.speed_limits.timeout_before_checking_execution_speed = settings.timeout_before_checking_execution_speed;
-
-    return limits;
-}
-
 static void executeMergeAggregatedImpl(
     QueryPlan & query_plan,
     bool overflow_row,
@@ -1625,15 +1638,6 @@ void InterpreterSelectQuery::addEmptySourceToQueryPlan(
     if (prewhere_info_ptr)
     {
         auto & prewhere_info = *prewhere_info_ptr;
-
-        if (prewhere_info.alias_actions)
-        {
-            pipe.addSimpleTransform([&](const Block & header)
-            {
-                return std::make_shared<ExpressionTransform>(header,
-                    std::make_shared<ExpressionActions>(prewhere_info.alias_actions));
-            });
-        }
 
         if (prewhere_info.row_level_filter)
         {
@@ -1700,12 +1704,11 @@ void InterpreterSelectQuery::setMergeTreeReadTaskCallbackAndClientInfo(MergeTree
     context->setMergeTreeReadTaskCallback(std::move(callback));
 }
 
-void InterpreterSelectQuery::setProperClientInfo()
+void InterpreterSelectQuery::setProperClientInfo(size_t replica_num, size_t replica_count)
 {
     context->getClientInfo().query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
-    assert(options.shard_count.has_value() && options.shard_num.has_value());
-    context->getClientInfo().count_participating_replicas = *options.shard_count;
-    context->getClientInfo().number_of_current_replica = *options.shard_num;
+    context->getClientInfo().count_participating_replicas = replica_count;
+    context->getClientInfo().number_of_current_replica = replica_num;
 }
 
 bool InterpreterSelectQuery::shouldMoveToPrewhere()
@@ -1875,19 +1878,6 @@ void InterpreterSelectQuery::addPrewhereAliasActions()
             for (const auto & name : required_columns)
                 prewhere_info->prewhere_actions->tryRestoreColumn(name);
 
-            auto analyzed_result
-                = TreeRewriter(context).analyze(required_columns_from_prewhere_expr, metadata_snapshot->getColumns().getAllPhysical());
-            prewhere_info->alias_actions
-                = ExpressionAnalyzer(required_columns_from_prewhere_expr, analyzed_result, context).getActionsDAG(true, false);
-
-            /// Add (physical?) columns required by alias actions.
-            auto required_columns_from_alias = prewhere_info->alias_actions->getRequiredColumns();
-            Block prewhere_actions_result = prewhere_info->prewhere_actions->getResultColumns();
-            for (auto & column : required_columns_from_alias)
-                if (!prewhere_actions_result.has(column.name))
-                    if (required_columns.end() == std::find(required_columns.begin(), required_columns.end(), column.name))
-                        required_columns.push_back(column.name);
-
             /// Add physical columns required by prewhere actions.
             for (const auto & column : required_columns_from_prewhere)
                 if (!required_aliases_from_prewhere.contains(column))
@@ -1961,7 +1951,7 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
                 {std::move(column), std::make_shared<DataTypeAggregateFunction>(func, argument_types, desc.parameters), desc.column_name}};
 
             auto source = std::make_shared<SourceFromSingleChunk>(block_with_count);
-            auto prepared_count = std::make_unique<ReadFromPreparedSource>(Pipe(std::move(source)), context);
+            auto prepared_count = std::make_unique<ReadFromPreparedSource>(Pipe(std::move(source)));
             prepared_count->setStepDescription("Optimized trivial count");
             query_plan.addStep(std::move(prepared_count));
             from_stage = QueryProcessingStage::WithMergeableState;
@@ -2025,6 +2015,9 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
     if (!max_block_size)
         throw Exception("Setting 'max_block_size' cannot be zero", ErrorCodes::PARAMETER_OUT_OF_BOUND);
 
+    auto local_limits = getStorageLimits(*context, options);
+    storage_limits.emplace_back(local_limits);
+
     /// Initialize the initial data streams to which the query transforms are superimposed. Table or subquery or prepared input?
     if (query_plan.isInitialized())
     {
@@ -2040,6 +2033,8 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
         interpreter_subquery = std::make_unique<InterpreterSelectWithUnionQuery>(
             subquery, getSubqueryContext(context),
             options.copy().subquery().noModify(), required_columns);
+
+        interpreter_subquery->addStorageLimits(storage_limits);
 
         if (query_analyzer->hasAggregation())
             interpreter_subquery->ignoreWithTotals();
@@ -2062,12 +2057,15 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
         if (prewhere_info)
             query_info.prewhere_info = prewhere_info;
 
+        bool optimize_read_in_order = analysis_result.optimize_read_in_order;
+        bool optimize_aggregation_in_order = analysis_result.optimize_aggregation_in_order && !query_analyzer->useGroupingSetKey();
+
         /// Create optimizer with prepared actions.
         /// Maybe we will need to calc input_order_info later, e.g. while reading from StorageMerge.
-        if ((analysis_result.optimize_read_in_order || analysis_result.optimize_aggregation_in_order)
+        if ((optimize_read_in_order || optimize_aggregation_in_order)
             && (!query_info.projection || query_info.projection->complete))
         {
-            if (analysis_result.optimize_read_in_order)
+            if (optimize_read_in_order)
             {
                 if (query_info.projection)
                 {
@@ -2116,19 +2114,7 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
                 query_info.input_order_info = query_info.order_optimizer->getInputOrder(metadata_snapshot, context, limit);
         }
 
-        StreamLocalLimits limits;
-        SizeLimits leaf_limits;
-        std::shared_ptr<const EnabledQuota> quota;
-
-        /// Set the limits and quota for reading data, the speed and time of the query.
-        if (!options.ignore_limits)
-        {
-            limits = getLimitsForStorage(settings, options);
-            leaf_limits = SizeLimits(settings.max_rows_to_read_leaf, settings.max_bytes_to_read_leaf, settings.read_overflow_mode_leaf);
-        }
-
-        if (!options.ignore_quota && (options.to_stage == QueryProcessingStage::Complete))
-            quota = context->getQuota();
+        query_info.storage_limits = std::make_shared<StorageLimitsList>(storage_limits);
 
         query_info.settings_limit_offset_done = options.settings_limit_offset_done;
         storage->read(query_plan, required_columns, storage_snapshot, query_info, context, processing_stage, max_block_size, max_streams);
@@ -2151,12 +2137,6 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
             auto header = storage_snapshot->getSampleBlockForColumns(required_columns);
             addEmptySourceToQueryPlan(query_plan, header, query_info, context);
         }
-
-        /// Extend lifetime of context, table lock, storage. Set limits and quota.
-        auto adding_limits_and_quota = std::make_unique<SettingQuotaAndLimitsStep>(
-            query_plan.getCurrentDataStream(), storage, std::move(table_lock), limits, leaf_limits, std::move(quota), context);
-        adding_limits_and_quota->setStepDescription("Set limits and quota after reading from storage");
-        query_plan.addStep(std::move(adding_limits_and_quota));
     }
     else
         throw Exception("Logical error in InterpreterSelectQuery: nowhere to read", ErrorCodes::LOGICAL_ERROR);
@@ -2293,7 +2273,7 @@ void InterpreterSelectQuery::executeAggregation(QueryPlan & query_plan, const Ac
 
     SortDescription group_by_sort_description;
 
-    if (group_by_info && settings.optimize_aggregation_in_order)
+    if (group_by_info && settings.optimize_aggregation_in_order && !query_analyzer->useGroupingSetKey())
         group_by_sort_description = getSortDescriptionFromGroupBy(getSelectQuery());
     else
         group_by_info = nullptr;

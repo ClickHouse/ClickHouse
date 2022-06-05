@@ -41,7 +41,6 @@
 #include <Processors/Transforms/SquashingChunksTransform.h>
 #include <Processors/Transforms/MaterializingTransform.h>
 #include <Processors/QueryPlan/QueryPlan.h>
-#include <Processors/QueryPlan/SettingQuotaAndLimitsStep.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
@@ -60,6 +59,7 @@
 #include <Storages/WindowView/WindowViewSource.h>
 
 #include <QueryPipeline/printPipeline.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 
 namespace DB
 {
@@ -579,7 +579,8 @@ std::pair<BlocksPtr, Block> StorageWindowView::getNewBlocks(UInt32 watermark)
     });
 
     Pipes pipes;
-    auto pipe = QueryPipelineBuilder::getPipe(std::move(builder));
+    QueryPlanResourceHolder resources;
+    auto pipe = QueryPipelineBuilder::getPipe(std::move(builder), resources);
     pipes.emplace_back(std::move(pipe));
 
     auto creator = [&](const StorageID & blocks_id_global)
@@ -640,15 +641,9 @@ inline void StorageWindowView::fire(UInt32 watermark)
 
     BlocksPtr blocks;
     Block header;
-    try
-    {
-        std::lock_guard lock(mutex);
-        std::tie(blocks, header) = getNewBlocks(watermark);
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-    }
+
+    std::lock_guard lock(mutex);
+    std::tie(blocks, header) = getNewBlocks(watermark);
 
     if (!blocks || blocks->empty())
         return;
@@ -1038,27 +1033,34 @@ void StorageWindowView::threadFuncFireEvent()
 
         while (!fire_signal.empty())
         {
-            fire(fire_signal.front());
+            try
+            {
+                fire(fire_signal.front());
+            }
+            catch (...)
+            {
+                tryLogCurrentException(__PRETTY_FUNCTION__);
+            }
             max_fired_watermark = fire_signal.front();
             fire_signal.pop_front();
         }
     }
 }
 
-Pipe StorageWindowView::read(
-    const Names & column_names,
-    const StorageSnapshotPtr & storage_snapshot,
-    SelectQueryInfo & query_info,
-    ContextPtr local_context,
-    QueryProcessingStage::Enum processed_stage,
-    const size_t max_block_size,
-    const unsigned num_streams)
-{
-    QueryPlan plan;
-    read(plan, column_names, storage_snapshot, query_info, local_context, processed_stage, max_block_size, num_streams);
-    return plan.convertToPipe(
-        QueryPlanOptimizationSettings::fromContext(local_context), BuildQueryPipelineSettings::fromContext(local_context));
-}
+// Pipe StorageWindowView::read(
+//     const Names & column_names,
+//     const StorageSnapshotPtr & storage_snapshot,
+//     SelectQueryInfo & query_info,
+//     ContextPtr local_context,
+//     QueryProcessingStage::Enum processed_stage,
+//     const size_t max_block_size,
+//     const unsigned num_streams)
+// {
+//     QueryPlan plan;
+//     read(plan, column_names, storage_snapshot, query_info, local_context, processed_stage, max_block_size, num_streams);
+//     return plan.convertToPipe(
+//         QueryPlanOptimizationSettings::fromContext(local_context), BuildQueryPipelineSettings::fromContext(local_context));
+// }
 
 void StorageWindowView::read(
     QueryPlan & query_plan,
@@ -1097,21 +1099,8 @@ void StorageWindowView::read(
             query_plan.addStep(std::move(converting_step));
         }
 
-        StreamLocalLimits limits;
-        SizeLimits leaf_limits;
-
-        /// Add table lock for target table.
-        auto adding_limits_and_quota = std::make_unique<SettingQuotaAndLimitsStep>(
-                query_plan.getCurrentDataStream(),
-                storage,
-                std::move(lock),
-                limits,
-                leaf_limits,
-                nullptr,
-                nullptr);
-
-        adding_limits_and_quota->setStepDescription("Lock target table for WindowView");
-        query_plan.addStep(std::move(adding_limits_and_quota));
+        query_plan.addStorageHolder(storage);
+        query_plan.addTableLock(std::move(lock));
     }
 }
 
@@ -1171,8 +1160,8 @@ StorageWindowView::StorageWindowView(
         throw Exception(ErrorCodes::INCORRECT_QUERY, "SELECT query is not specified for {}", getName());
 
     /// If the target table is not set, use inner target table
-    inner_target_table = query.to_table_id.empty();
-    if (inner_target_table && !query.storage)
+    has_inner_target_table = query.to_table_id.empty();
+    if (has_inner_target_table && !query.storage)
         throw Exception(
             "You must specify where to save results of a WindowView query: either ENGINE or an existing table in a TO clause",
             ErrorCodes::INCORRECT_QUERY);
@@ -1185,14 +1174,14 @@ StorageWindowView::StorageWindowView(
     /// Extract information about watermark, lateness.
     eventTimeParser(query);
 
-    target_table_id = query.to_table_id;
-
     auto inner_query = initInnerQuery(query.select->list_of_selects->children.at(0)->as<ASTSelectQuery &>(), context_);
 
     if (query.inner_storage)
         inner_table_engine = query.inner_storage->clone();
     inner_table_id = StorageID(getStorageID().database_name, generateInnerTableName(getStorageID()));
     inner_fetch_query = generateInnerFetchQuery(inner_table_id);
+
+    target_table_id = has_inner_target_table ? StorageID(table_id_.database_name, generateTargetTableName(table_id_)) : query.to_table_id;
 
     if (is_proctime)
         next_fire_signal = getWindowUpperBound(std::time(nullptr));
@@ -1205,7 +1194,7 @@ StorageWindowView::StorageWindowView(
         InterpreterCreateQuery create_interpreter(inner_create_query, create_context);
         create_interpreter.setInternal(true);
         create_interpreter.execute();
-        if (inner_target_table)
+        if (has_inner_target_table)
         {
             /// create inner target table
             auto create_context = Context::createCopy(context_);
@@ -1222,14 +1211,8 @@ StorageWindowView::StorageWindowView(
             InterpreterCreateQuery create_interpreter(target_create_query, create_context);
             create_interpreter.setInternal(true);
             create_interpreter.execute();
-
-            target_table_id = StorageID(target_create_query->getDatabase(), target_create_query->getTable());
         }
-        else
-            target_table_id = query.to_table_id;
     }
-
-    inner_fetch_query = generateInnerFetchQuery(inner_table_id);
 
     clean_cache_task = getContext()->getSchedulePool().createTask(getStorageID().getFullTableName(), [this] { threadFuncCleanup(); });
     fire_task = getContext()->getSchedulePool().createTask(
@@ -1581,8 +1564,9 @@ void StorageWindowView::startup()
     DatabaseCatalog::instance().addDependency(select_table_id, getStorageID());
 
     // Start the working thread
-    clean_cache_task->activateAndSchedule();
     fire_task->activateAndSchedule();
+    clean_cache_task->activate();
+    clean_cache_task->scheduleAfter(clean_interval_ms);
 }
 
 void StorageWindowView::shutdown()
@@ -1627,7 +1611,7 @@ void StorageWindowView::dropInnerTableIfAny(bool no_delay, ContextPtr local_cont
         InterpreterDropQuery::executeDropQuery(
             ASTDropQuery::Kind::Drop, getContext(), local_context, inner_table_id, no_delay);
 
-        if (inner_target_table)
+        if (has_inner_target_table)
             InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind::Drop, getContext(), local_context, target_table_id, no_delay);
     }
     catch (...)

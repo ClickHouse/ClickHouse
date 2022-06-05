@@ -3,7 +3,7 @@ sidebar_position: 59
 sidebar_label: Restrictions on Query Complexity
 ---
 
-# Restrictions on Query Complexity {#restrictions-on-query-complexity}
+# Restrictions on Query Complexity
 
 Restrictions on query complexity are part of the settings.
 They are used to provide safer execution from the user interface.

@@ -3,7 +3,7 @@ sidebar_position: 21
 sidebar_label: Input and Output Formats
 ---
 
-# Formats for Input and Output Data {#formats}
+# Formats for Input and Output Data
 
 ClickHouse can accept and return data in various formats. A format supported for input can be used to parse the data provided to `INSERT`s, to perform `SELECT`s from a file-backed table such as File, URL or HDFS, or to read an external dictionary. A format supported for output can be used to arrange the
 results of a `SELECT`, and to perform `INSERT`s into a file-backed table.
@@ -148,6 +148,8 @@ Each element of [Nested](../sql-reference/data-types/nested-data-structures/nest
 
 In input data, ENUM values can be represented as names or as ids. First, we try to match the input value to the ENUM name. If we fail and the input value is a number, we try to match this number to ENUM id.
 If input data contains only ENUM ids, it's recommended to enable the setting [input_format_tsv_enum_as_number](../operations/settings/settings.md#settings-input_format_tsv_enum_as_number) to optimize ENUM parsing.
+
+While importing data, you can skip some first rows using setting [input_format_tsv_skip_first_lines](../operations/settings/settings.md#settings-input_format_tsv_skip_first_lines)
 
 For example:
 
@@ -429,6 +431,8 @@ If input data contains only ENUM ids, it's recommended to enable the setting [in
 
 The CSV format supports the output of totals and extremes the same way as `TabSeparated`.
 
+While importing data, you can skip some first rows using setting [input_format_csv_skip_first_lines](../operations/settings/settings.md#settings-input_format_csv_skip_first_lines)
+
 ## CSVWithNames {#csvwithnames}
 
 Also prints the header row with column names, similar to [TabSeparatedWithNames](#tabseparatedwithnames).
@@ -621,7 +625,7 @@ Example:
                         "name": "str",
                         "type": "String"
                 },
-               
+
                 {
                         "name": "arr",
                         "type": "Array(UInt8)"
