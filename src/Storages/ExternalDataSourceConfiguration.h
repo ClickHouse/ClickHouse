@@ -49,6 +49,11 @@ struct StorageMongoDBConfiguration : ExternalDataSourceConfiguration
     String options;
 };
 
+struct StorageZooKeeperConfiguration : ExternalDataSourceConfiguration
+ {
+     String options;
+ };
+
 
 using StorageSpecificArgs = std::vector<std::pair<String, ASTPtr>>;
 

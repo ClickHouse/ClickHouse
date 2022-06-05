@@ -182,6 +182,7 @@ enum class AccessType
     M(SQLITE, "", GLOBAL, SOURCES) \
     M(ODBC, "", GLOBAL, SOURCES) \
     M(JDBC, "", GLOBAL, SOURCES) \
+    M(ZOOKEEPER, "", GLOBAL, SOURCES) \
     M(HDFS, "", GLOBAL, SOURCES) \
     M(S3, "", GLOBAL, SOURCES) \
     M(HIVE, "", GLOBAL, SOURCES) \
