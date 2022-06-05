@@ -3,7 +3,7 @@ sidebar_position: 19
 sidebar_label: HTTP Interface
 ---
 
-# HTTP Interface {#http-interface}
+# HTTP Interface
 
 The HTTP interface lets you use ClickHouse on any platform from any programming language in a form of REST API. The HTTP interface is more limited than the native interface, but it has better language support.
 
@@ -178,7 +178,7 @@ You can also choose to use [HTTP compression](https://en.wikipedia.org/wiki/HTTP
 To send a compressed `POST` request, append the request header `Content-Encoding: compression_method`.
 In order for ClickHouse to compress the response, enable compression with [enable_http_compression](../operations/settings/settings.md#settings-enable_http_compression) setting and append `Accept-Encoding: compression_method` header to the request. You can configure the data compression level in the [http_zlib_compression_level](../operations/settings/settings.md#settings-http_zlib_compression_level) setting for all compression methods.
 
-:::info    
+:::info
 Some HTTP clients might decompress data from the server by default (with `gzip` and `deflate`) and you might get decompressed data even if you use the compression settings correctly.
 :::
 

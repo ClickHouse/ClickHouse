@@ -1,4 +1,4 @@
-# replicas {#system_tables-replicas}
+# replicas
 
 Contains information and status for replicated tables residing on the local server.
 This table can be used for monitoring. The table contains a row for every Replicated\* table.
@@ -39,16 +39,16 @@ inserts_oldest_time:         2021-10-12 14:48:48
 merges_oldest_time:          1970-01-01 03:00:00
 part_mutations_oldest_time:  1970-01-01 03:00:00
 oldest_part_to_get:          1_17_17_0
-oldest_part_to_merge_to:     
-oldest_part_to_mutate_to:    
+oldest_part_to_merge_to:
+oldest_part_to_mutate_to:
 log_max_index:               206
 log_pointer:                 207
 last_queue_update:           2021-10-12 14:50:08
 absolute_delay:              99
 total_replicas:              5
 active_replicas:             5
-last_queue_update_exception: 
-zookeeper_exception:         
+last_queue_update_exception:
+zookeeper_exception:
 replica_is_active:           {'r1':1,'r2':1}
 ```
 
@@ -88,7 +88,7 @@ The next 4 columns have a non-zero value only where there is an active session w
 -   `total_replicas` (`UInt8`) - The total number of known replicas of this table.
 -   `active_replicas` (`UInt8`) - The number of replicas of this table that have a session in ClickHouse Keeper (i.e., the number of functioning replicas).
 -   `last_queue_update_exception` (`String`) - When the queue contains broken entries. Especially important when ClickHouse breaks backward compatibility between versions and log entries written by newer versions aren't parseable by old versions.
--   `zookeeper_exception` (`String`) - The last exception message, got if the error happened when fetching the info from ClickHouse Keeper. 
+-   `zookeeper_exception` (`String`) - The last exception message, got if the error happened when fetching the info from ClickHouse Keeper.
 -   `replica_is_active` ([Map(String, UInt8)](../../sql-reference/data-types/map.md)) — Map between replica name and is replica active.
 
 If you request all the columns, the table may work a bit slowly, since several reads from ClickHouse Keeper are made for each row.

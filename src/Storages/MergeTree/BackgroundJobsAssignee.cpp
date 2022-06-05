@@ -50,10 +50,11 @@ void BackgroundJobsAssignee::postpone()
 }
 
 
-void BackgroundJobsAssignee::scheduleMergeMutateTask(ExecutableTaskPtr merge_task)
+bool BackgroundJobsAssignee::scheduleMergeMutateTask(ExecutableTaskPtr merge_task)
 {
     bool res = getContext()->getMergeMutateExecutor()->trySchedule(merge_task);
     res ? trigger() : postpone();
+    return res;
 }
 
 
