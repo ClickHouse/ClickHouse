@@ -25,7 +25,7 @@ public:
 
     void init(const clickhouse_gwp_asan::Options & options);
 
-    /// Stop GuardedPoolAllocator to prevent futher allocations.
+    /// Stop GuardedPoolAllocator to prevent further allocations.
     /// Intended to be used in signal handler on crash to prevent any possible
     /// metadata corruption when trying to diagnose error.
     void stop();
