@@ -4,6 +4,7 @@
             <s3>
                 <type>s3</type>
                 <endpoint>http://minio1:9001/root/data/</endpoint>
+                <region></region>
                 <access_key_id>minio</access_key_id>
                 <secret_access_key>minio123</secret_access_key>
                 <s3_max_single_part_upload_size>33554432</s3_max_single_part_upload_size>
@@ -11,6 +12,7 @@
             <unstable_s3>
                 <type>s3</type>
                 <endpoint>http://resolver:8081/root/data/</endpoint>
+                <region></region>
                 <access_key_id>minio</access_key_id>
                 <secret_access_key>minio123</secret_access_key>
                 <s3_max_single_read_retries>10</s3_max_single_read_retries>
@@ -22,6 +24,7 @@
             <s3_with_cache>
                 <type>s3</type>
                 <endpoint>http://minio1:9001/root/data/</endpoint>
+                <region></region>
                 <access_key_id>minio</access_key_id>
                 <secret_access_key>minio123</secret_access_key>
                 <s3_max_single_part_upload_size>33554432</s3_max_single_part_upload_size>

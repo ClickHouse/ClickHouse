@@ -17,6 +17,7 @@ CONFIG_PATH = os.path.join(
     SCRIPT_DIR,
     "./{}/node/configs/config.d/storage_conf.xml".format(get_instances_dir()),
 )
+MINIO_ENDPOINT = "minio1:9001"
 
 
 @pytest.fixture(scope="module")
@@ -38,14 +39,19 @@ def cluster():
                         "//storage_configuration/disks/s3/endpoint": os.environ["CLICKHOUSE_AWS_ENDPOINT_URL_OVERRIDE"],
                         "//storage_configuration/disks/s3/access_key_id": os.environ["CLICKHOUSE_AWS_ACCESS_KEY_ID"],
                         "//storage_configuration/disks/s3/secret_access_key": os.environ["CLICKHOUSE_AWS_SECRET_ACCESS_KEY"],
+                        "//storage_configuration/disks/s3/region": os.environ["CLICKHOUSE_AWS_REGION"],
                         "//storage_configuration/disks/s3_with_cache/endpoint": os.environ["CLICKHOUSE_AWS_ENDPOINT_URL_OVERRIDE"],
                         "//storage_configuration/disks/s3_with_cache/access_key_id": os.environ["CLICKHOUSE_AWS_ACCESS_KEY_ID"],
                         "//storage_configuration/disks/s3_with_cache/secret_access_key": os.environ["CLICKHOUSE_AWS_SECRET_ACCESS_KEY"],
+                        "//storage_configuration/disks/s3_with_cache/region": os.environ["CLICKHOUSE_AWS_REGION"],
                         "//storage_configuration/disks/unstable_s3/access_key_id": os.environ["CLICKHOUSE_AWS_ACCESS_KEY_ID"],
                         "//storage_configuration/disks/unstable_s3/secret_access_key": os.environ["CLICKHOUSE_AWS_SECRET_ACCESS_KEY"],
+                        "//storage_configuration/disks/unstable_s3/region": os.environ["CLICKHOUSE_AWS_REGION"],
                     }
                 )
                 main_configs[0] = new_config_name
+                global MINIO_ENDPOINT
+                MINIO_ENDPOINT = os.environ["CLICKHOUSE_AWS_HOST_NAME"]
 
             cluster = ClickHouseCluster(__file__)
             cluster.add_instance(
@@ -62,7 +68,8 @@ def cluster():
                 cluster.minio_client = minio.Minio(
                     os.environ["CLICKHOUSE_AWS_HOST_NAME"],
                     access_key=os.environ["CLICKHOUSE_AWS_ACCESS_KEY_ID"],
-                    secret_key=os.environ["CLICKHOUSE_AWS_SECRET_ACCESS_KEY"]
+                    secret_key=os.environ["CLICKHOUSE_AWS_SECRET_ACCESS_KEY"],
+                    region=os.environ["CLICKHOUSE_AWS_REGION"]
                 )
                 cluster.minio_bucket = os.environ["CLICKHOUSE_AWS_BUCKET"]
 
@@ -102,7 +109,7 @@ def create_table(node, table_name, **additional_settings):
 
 def run_s3_mocks(cluster):
     logging.info("Starting s3 mocks")
-    mocks = (("unstable_proxy.py", "resolver", "8081", "minio1:9001"),)
+    mocks = (("unstable_proxy.py", "resolver", "8081", MINIO_ENDPOINT),)
     for mock_filename, container, *params in mocks:
         container_id = cluster.get_container_id(container)
         current_dir = os.path.dirname(__file__)
