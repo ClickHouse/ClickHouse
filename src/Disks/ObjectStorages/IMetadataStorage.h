@@ -53,7 +53,7 @@ public:
 
     virtual DirectoryIteratorPtr iterateDirectory(const String & path) = 0;
 
-    virtual void createMetadataFile(const std::string & path, MetadataTransactionPtr transaction) = 0;
+    virtual void createEmptyMetadataFile(const std::string & path, MetadataTransactionPtr transaction) = 0;
 
     virtual std::string readMetadataFileToString(const std::string & path) const = 0;
 
@@ -93,6 +93,8 @@ public:
     virtual uint32_t getHardlinkCount(const std::string & path) const = 0;
 
     virtual BlobsPathToSize getBlobs(const std::string & path) const = 0;
+
+    virtual void createMetadataFile(const std::string & path, const std::string & blob_name, uint64_t size_in_bytes, MetadataTransactionPtr transaction) = 0;
 
     virtual void addBlobToMetadata(const std::string & path, const std::string & blob_name, uint64_t size_in_bytes, MetadataTransactionPtr transaction) = 0;
 

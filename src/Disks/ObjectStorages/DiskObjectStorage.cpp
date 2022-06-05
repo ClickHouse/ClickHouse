@@ -175,7 +175,7 @@ bool DiskObjectStorage::isFile(const String & path) const
 void DiskObjectStorage::createFile(const String & path)
 {
     auto tx = metadata_storage->createTransaction();
-    metadata_storage->createMetadataFile(path, tx);
+    metadata_storage->createEmptyMetadataFile(path, tx);
     tx->commit();
 }
 
@@ -537,7 +537,7 @@ std::unique_ptr<ReadBufferFromFileBase> DiskObjectStorage::readFile(
 std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorage::writeFile(
     const String & path,
     size_t buf_size,
-    WriteMode,
+    WriteMode mode,
     const WriteSettings & settings)
 {
     auto blob_name = getRandomASCIIString();
@@ -553,10 +553,13 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorage::writeFile(
         blob_name = "r" + revisionToString(revision) + "-file-" + blob_name;
     }
 
-    auto create_metadata_callback = [this, path, blob_name] (size_t count)
+    auto create_metadata_callback = [this, mode, path, blob_name] (size_t count)
     {
         auto tx = metadata_storage->createTransaction();
-        metadata_storage->addBlobToMetadata(path, blob_name, count, tx);
+        if (mode == WriteMode::Rewrite)
+            metadata_storage->createMetadataFile(path, blob_name, count, tx);
+        else
+            metadata_storage->addBlobToMetadata(path, blob_name, count, tx);
         tx->commit();
     };
 

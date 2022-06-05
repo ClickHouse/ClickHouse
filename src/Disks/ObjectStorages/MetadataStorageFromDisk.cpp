@@ -538,7 +538,7 @@ std::string MetadataStorageFromDisk::readMetadataFileToString(const std::string 
     return result;
 }
 
-void MetadataStorageFromDisk::createMetadataFile(const std::string & path, MetadataTransactionPtr transaction)
+void MetadataStorageFromDisk::createEmptyMetadataFile(const std::string & path, MetadataTransactionPtr transaction)
 {
     auto metadata = std::make_unique<DiskObjectStorageMetadata>(disk->getPath(), root_path_for_remote_metadata, path);
     writeMetadataToFile(path, transaction, metadata->serializeToString());
@@ -608,6 +608,14 @@ void MetadataStorageFromDisk::setReadOnly(const std::string & path, MetadataTran
     writeMetadataToFile(path, transaction, metadata->serializeToString());
 }
 
+
+
+void MetadataStorageFromDisk::createMetadataFile(const std::string & path, const std::string & blob_name, uint64_t size_in_bytes, MetadataTransactionPtr transaction)
+{
+    DiskObjectStorageMetadataPtr metadata = std::make_unique<DiskObjectStorageMetadata>(disk->getPath(), root_path_for_remote_metadata, path);
+    metadata->addObject(blob_name, size_in_bytes);
+    writeMetadataToFile(path, transaction, metadata->serializeToString());
+}
 
 void MetadataStorageFromDisk::addBlobToMetadata(const std::string & path, const std::string & blob_name, uint64_t size_in_bytes, MetadataTransactionPtr transaction)
 {

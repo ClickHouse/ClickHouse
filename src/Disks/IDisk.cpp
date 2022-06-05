@@ -100,6 +100,6 @@ SyncGuardPtr IDisk::getDirectorySyncGuard(const String & /* path */) const
     return nullptr;
 }
 
-MetadataStoragePtr IDisk::getMetadataStorage() { return std::make_shared<MetadataStorageFromDisk>(std::static_pointer_cast<IDisk>(shared_from_this())); }
+MetadataStoragePtr IDisk::getMetadataStorage() { return std::make_shared<MetadataStorageFromDisk>(std::static_pointer_cast<IDisk>(shared_from_this()), ""); }
 
 }

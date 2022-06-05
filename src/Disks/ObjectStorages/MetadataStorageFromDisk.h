@@ -47,7 +47,7 @@ private:
     mutable std::shared_mutex metadata_mutex;
 
 public:
-    explicit MetadataStorageFromDisk(DiskPtr disk_, const std::string & root_path_from_remote_metadata_ = "")
+    MetadataStorageFromDisk(DiskPtr disk_, const std::string & root_path_from_remote_metadata_)
         : disk(disk_)
         , root_path_for_remote_metadata(root_path_from_remote_metadata_)
     {
@@ -89,7 +89,9 @@ public:
          MetadataTransactionPtr transaction,
          const std::string & data) override;
 
-    void createMetadataFile(const std::string & path, MetadataTransactionPtr transaction) override;
+    void createEmptyMetadataFile(const std::string & path, MetadataTransactionPtr transaction) override;
+
+    void createMetadataFile(const std::string & path, const std::string & blob_name, uint64_t size_in_bytes, MetadataTransactionPtr transaction) override;
 
     void addBlobToMetadata(const std::string & path, const std::string & blob_name, uint64_t size_in_bytes, MetadataTransactionPtr transaction) override;
 
