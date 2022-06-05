@@ -224,6 +224,13 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
+        "--no-dns-opts",
+        action='store_true',
+        default=False,
+        dest="no_dns_opts",
+        help="Don't use `--dns-opt` for ClickHouse nodes. It allows internal Docker DNS to work properly")
+
+    parser.add_argument(
         "--network",
         help="Set network driver for runnner container (defaults to `host`)",
     )
@@ -379,6 +386,9 @@ if __name__ == "__main__":
     # If enabled we kill and remove containers before pytest session run.
     if args.cleanup_containers:
         env["PYTEST_CLEANUP_CONTAINERS"] = "1"
+
+    if args.no_dns_opts:
+        env["SKIP_DNS_OPTS"] = "1"
 
     for var in args.env:
         env[var] = os.environ[var]
