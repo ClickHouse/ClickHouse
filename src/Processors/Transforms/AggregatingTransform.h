@@ -1,9 +1,10 @@
 #pragma once
-#include <Processors/IAccumulatingTransform.h>
-#include <Interpreters/Aggregator.h>
-#include <IO/ReadBufferFromFile.h>
 #include <Compression/CompressedReadBuffer.h>
+#include <IO/ReadBufferFromFile.h>
+#include <Interpreters/Aggregator.h>
+#include <Processors/IAccumulatingTransform.h>
 #include <Common/Stopwatch.h>
+#include <Common/setThreadName.h>
 
 namespace DB
 {
@@ -91,6 +92,8 @@ struct ManyAggregatedData
                         {
                             if (thread_group)
                                 CurrentThread::attachToIfDetached(thread_group);
+
+                            setThreadName("AggregDestruct");
                         });
                 }
             }
