@@ -271,7 +271,7 @@ private:
         {
             auto record = records.find({key, offset});
             cache_size -= record->second->size;
-            queue.remove(record->second, cache_lock); 
+            queue.remove(record->second, cache_lock);
             records.erase({key, offset});
         }
     };
