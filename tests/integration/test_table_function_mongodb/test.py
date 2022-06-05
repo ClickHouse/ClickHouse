@@ -45,12 +45,12 @@ def test_simple_select(started_cluster):
     db = mongo_connection["test"]
     db.add_user("root", "clickhouse")
     simple_mongo_table = db["simple_table"]
-    data = []
-    for i in range(0, 100):
-        data.append({"key": i, "data": hex(i * i)})
-    simple_mongo_table.insert_many(data)
 
     node = started_cluster.instances["node"]
+    for i in range(0, 100):
+        node.query(
+            "INSERT INTO FUNCTION mongodb('mongo1:27017', 'test', 'simple_table', 'root', 'clickhouse', structure='key UInt64, data String') (key, data) VALUES ({}, '{}')".format(i, hex(i * i))
+        )
     assert node.query("SELECT COUNT() FROM mongodb('mongo1:27017', 'test', 'simple_table', 'root', 'clickhouse', structure='key UInt64, data String')") == "100\n"
     assert (
         node.query("SELECT sum(key) FROM mongodb('mongo1:27017', 'test', 'simple_table', 'root', 'clickhouse', structure='key UInt64, data String')")
