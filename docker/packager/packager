@@ -331,7 +331,7 @@ if __name__ == "__main__":
             "clang-14-freebsd",
             "gcc-11",
         ),
-        default="clang-14",
+        default="clang-13",
         help="a compiler to use",
     )
     parser.add_argument(
