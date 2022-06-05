@@ -497,7 +497,7 @@ bool LRUFileCache::tryReserve(const Key & key, size_t offset, size_t size, std::
         if (res == ReserveResult::NO_ENOUGH_SPACE)
         {
             /// The query currently does not have enough space to reserve. 
-            /// It returns false and reads data directly from the remote end.
+            /// It returns false and reads data directly from the remote fs.
             return false;
         }
         else if (res == ReserveResult::NO_NEED)
