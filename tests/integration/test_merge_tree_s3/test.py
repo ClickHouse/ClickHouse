@@ -2,6 +2,7 @@ import logging
 import os
 import tempfile
 import time
+import urllib.parse
 
 import minio
 
@@ -44,6 +45,7 @@ def cluster():
                         "//storage_configuration/disks/s3_with_cache/access_key_id": os.environ["CLICKHOUSE_AWS_ACCESS_KEY_ID"],
                         "//storage_configuration/disks/s3_with_cache/secret_access_key": os.environ["CLICKHOUSE_AWS_SECRET_ACCESS_KEY"],
                         "//storage_configuration/disks/s3_with_cache/region": os.environ["CLICKHOUSE_AWS_REGION"],
+                        "//storage_configuration/disks/unstable_s3/endpoint": "http://resolver:8081/" + os.environ["CLICKHOUSE_AWS_BUCKET"] + "/data/",
                         "//storage_configuration/disks/unstable_s3/access_key_id": os.environ["CLICKHOUSE_AWS_ACCESS_KEY_ID"],
                         "//storage_configuration/disks/unstable_s3/secret_access_key": os.environ["CLICKHOUSE_AWS_SECRET_ACCESS_KEY"],
                         "//storage_configuration/disks/unstable_s3/region": os.environ["CLICKHOUSE_AWS_REGION"],
@@ -72,6 +74,11 @@ def cluster():
                     region=os.environ["CLICKHOUSE_AWS_REGION"]
                 )
                 cluster.minio_bucket = os.environ["CLICKHOUSE_AWS_BUCKET"]
+                cluster.exec_in_container(
+                    cluster.get_container_id("resolver"),
+                    ["curl", "-s", f"http://localhost:8081/?key={urllib.parse.quote(os.environ['CLICKHOUSE_AWS_SECRET_ACCESS_KEY'])}"],
+                    nothrow=True,
+                )
 
             yield cluster
     finally:
