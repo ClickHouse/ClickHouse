@@ -122,10 +122,12 @@ if (ENABLE_FUZZING)
     set (ENABLE_PROTOBUF 1)
 endif()
 
-option (ENABLE_QPL "Enable Intel® Query Processing Library" ON)
-if (ENABLE_QPL)
-    set (ENABLE_QPL_COMPRESSION 1)
-    set (ENABLE_QPL_ANALYTIC 1)
+if (OS_LINUX AND ARCH_AMD64 AND NOT BUILD_STANDALONE_KEEPER)
+    option (ENABLE_QPL "Enable Intel® Query Processing Library" ON)
+    if (ENABLE_QPL)
+        set (ENABLE_QPL_COMPRESSION 1)
+        set (ENABLE_QPL_ANALYTIC 1)
+    endif()
 endif()
 
 # Global libraries
