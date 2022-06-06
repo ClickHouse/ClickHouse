@@ -155,7 +155,7 @@ UUID BackupsWorker::startMakingBackup(const ASTPtr & query, const ContextPtr & c
                 if (in_separate_thread)
                     query_scope.emplace(cloned_context);
 
-                backup_query->setDatabase(cloned_context->getCurrentDatabase());
+                backup_query->setCurrentDatabase(cloned_context->getCurrentDatabase());
 
                 BackupEntries backup_entries;
                 {
@@ -283,7 +283,7 @@ UUID BackupsWorker::startRestoring(const ASTPtr & query, ContextMutablePtr conte
                 if (in_separate_thread)
                     query_scope.emplace(cloned_context);
 
-                restore_query->setDatabase(cloned_context->getCurrentDatabase());
+                restore_query->setCurrentDatabase(cloned_context->getCurrentDatabase());
 
                 BackupFactory::CreateParams backup_open_params;
                 backup_open_params.open_mode = IBackup::OpenMode::READ;

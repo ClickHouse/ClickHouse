@@ -27,45 +27,57 @@ namespace
     {
         if (create.table)
         {
-            DatabaseAndTableName table_name;
-            table_name.second = create.getTable();
+            /// CREATE TABLE or CREATE DICTIONARY or CREATE VIEW or CREATE TEMPORARY TABLE
+            QualifiedTableName table_name;
+            table_name.table = create.getTable();
             if (create.temporary)
-                table_name.first = DatabaseCatalog::TEMPORARY_DATABASE;
+                table_name.database = DatabaseCatalog::TEMPORARY_DATABASE;
             else if (create.database)
-                table_name.first = create.getDatabase();
+                table_name.database = create.getDatabase();
             else
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Database name specified in the CREATE TABLE query must not be empty");
 
-            table_name = data.renaming_settings.getNewTableName(table_name);
+            auto new_table_name = data.renaming_settings.getNewTableName(table_name);
 
-            if (table_name.first == DatabaseCatalog::TEMPORARY_DATABASE)
+            if (new_table_name != table_name)
             {
-                create.temporary = true;
-                create.setDatabase("");
+                create.setTable(new_table_name.table);
+                if (new_table_name.database == DatabaseCatalog::TEMPORARY_DATABASE)
+                {
+                    create.temporary = true;
+                    create.setDatabase("");
+                }
+                else
+                {
+                    create.temporary = false;
+                    create.setDatabase(new_table_name.database);
+                }
             }
-            else
-            {
-                create.temporary = false;
-                create.setDatabase(table_name.first);
-            }
-            create.setTable(table_name.second);
         }
         else if (create.database)
         {
+            /// CREATE DATABASE
             String database_name = create.getDatabase();
-            database_name = data.renaming_settings.getNewDatabaseName(database_name);
-            create.setDatabase(database_name);
+            String new_database_name = data.renaming_settings.getNewDatabaseName(database_name);
+            create.setDatabase(new_database_name);
         }
         else
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Database name specified in the CREATE DATABASE query must not be empty");
 
-        if (!create.as_table.empty() && !create.as_database.empty())
-            std::tie(create.as_database, create.as_table) = data.renaming_settings.getNewTableName({create.as_database, create.as_table});
-
-        if (!create.to_table_id.table_name.empty() && !create.to_table_id.database_name.empty())
+        QualifiedTableName as_table{create.as_database, create.as_table};
+        if (!as_table.table.empty() && !as_table.database.empty())
         {
-            auto to_table = data.renaming_settings.getNewTableName({create.to_table_id.database_name, create.to_table_id.table_name});
-            create.to_table_id = StorageID{to_table.first, to_table.second};
+            auto as_table_new = data.renaming_settings.getNewTableName(as_table);
+            create.as_database = as_table_new.database;
+            create.as_table = as_table_new.table;
+        }
+
+        QualifiedTableName to_table{create.to_table_id.database_name, create.to_table_id.table_name};
+        if (!to_table.table.empty() && !to_table.database.empty())
+        {
+            auto to_table_new = data.renaming_settings.getNewTableName(to_table);
+            if (to_table_new != to_table)
+                create.to_table_id = StorageID{to_table_new.database, to_table_new.table};
         }
     }
 
@@ -83,17 +95,15 @@ namespace
         if (!table_id)
             return;
 
-        const String & db_name = table_id->getDatabaseName();
-        const String & table_name = table_id->shortName();
-        if (db_name.empty() || table_name.empty())
+        QualifiedTableName table_name{table_id->getDatabaseName(), table_id->shortName()};
+        if (table_name.table.empty() || table_name.database.empty())
             return;
 
-        String new_db_name, new_table_name;
-        std::tie(new_db_name, new_table_name) = data.renaming_settings.getNewTableName({db_name, table_name});
-        if ((new_db_name == db_name) && (new_table_name == table_name))
+        auto new_table_name = data.renaming_settings.getNewTableName(table_name);
+        if (new_table_name == table_name)
             return;
 
-        expr.database_and_table_name = std::make_shared<ASTIdentifier>(Strings{new_db_name, new_table_name});
+        expr.database_and_table_name = std::make_shared<ASTIdentifier>(new_table_name.getParts());
         expr.children.push_back(expr.database_and_table_name);
     }
 
@@ -142,44 +152,38 @@ namespace
 
         size_t table_name_index = static_cast<size_t>(-1);
 
-        QualifiedTableName qualified_name;
+        QualifiedTableName table_name;
 
         if (function.name == "Distributed")
-            qualified_name.table = name;
+            table_name.table = name;
         else
-            qualified_name = QualifiedTableName::parseFromString(name);
+            table_name = QualifiedTableName::parseFromString(name);
 
-        if (qualified_name.database.empty())
+        if (table_name.database.empty())
         {
-            std::swap(qualified_name.database, qualified_name.table);
+            std::swap(table_name.database, table_name.table);
             table_name_index = 2;
             if (args.size() <= table_name_index)
                 return;
-            qualified_name.table = evaluateConstantExpressionForDatabaseName(args[table_name_index], data.context)->as<ASTLiteral &>().value.safeGet<String>();
+            table_name.table = evaluateConstantExpressionForDatabaseName(args[table_name_index], data.context)->as<ASTLiteral &>().value.safeGet<String>();
         }
 
-        const String & db_name = qualified_name.database;
-        const String & table_name = qualified_name.table;
-
-        if (db_name.empty() || table_name.empty())
+        if (table_name.table.empty() || table_name.database.empty())
             return;
 
-        String new_db_name, new_table_name;
-        std::tie(new_db_name, new_table_name) = data.renaming_settings.getNewTableName({db_name, table_name});
-        if ((new_db_name == db_name) && (new_table_name == table_name))
+        auto new_table_name = data.renaming_settings.getNewTableName(table_name);
+        if (new_table_name == table_name)
             return;
 
         if (table_name_index != static_cast<size_t>(-1))
         {
-            if (new_db_name != db_name)
-                args[db_name_index] = std::make_shared<ASTLiteral>(new_db_name);
-            if (new_table_name != table_name)
-                args[table_name_index] = std::make_shared<ASTLiteral>(new_table_name);
+            args[db_name_index] = std::make_shared<ASTLiteral>(new_table_name.database);
+            args[table_name_index] = std::make_shared<ASTLiteral>(new_table_name.table);
         }
         else
         {
-            args[db_name_index] = std::make_shared<ASTLiteral>(new_db_name);
-            args.insert(args.begin() + db_name_index + 1, std::make_shared<ASTLiteral>(new_table_name));
+            args[db_name_index] = std::make_shared<ASTLiteral>(new_table_name.database);
+            args.insert(args.begin() + db_name_index + 1, std::make_shared<ASTLiteral>(new_table_name.table));
         }
     }
 
@@ -204,9 +208,9 @@ namespace
             return;
 
         auto & elements = dictionary.source->elements->as<ASTExpressionList &>().children;
-        String db_name, table_name;
         size_t db_name_index = static_cast<size_t>(-1);
         size_t table_name_index = static_cast<size_t>(-1);
+        QualifiedTableName table_name;
 
         for (size_t i = 0; i != elements.size(); ++i)
         {
@@ -215,43 +219,42 @@ namespace
             {
                 if (db_name_index != static_cast<size_t>(-1))
                     return;
-                db_name = pair.second->as<ASTLiteral &>().value.safeGet<String>();
+                table_name.database = pair.second->as<ASTLiteral &>().value.safeGet<String>();
                 db_name_index = i;
             }
             else if (pair.first == "table")
             {
                 if (table_name_index != static_cast<size_t>(-1))
                     return;
-                table_name = pair.second->as<ASTLiteral &>().value.safeGet<String>();
+                table_name.table = pair.second->as<ASTLiteral &>().value.safeGet<String>();
                 table_name_index = i;
             }
         }
 
-        if (db_name.empty() || table_name.empty())
+        if (table_name.table.empty() || table_name.database.empty())
             return;
 
-        String new_db_name, new_table_name;
-        std::tie(new_db_name, new_table_name) = data.renaming_settings.getNewTableName({db_name, table_name});
-        if ((new_db_name == db_name) && (new_table_name == table_name))
+        auto new_table_name = data.renaming_settings.getNewTableName(table_name);
+        if (new_table_name == table_name)
             return;
 
-        if (new_db_name != db_name)
+        if (new_table_name.database != table_name.database)
         {
             auto & pair = elements[db_name_index]->as<ASTPair &>();
-            pair.replace(pair.second, std::make_shared<ASTLiteral>(new_db_name));
+            pair.replace(pair.second, std::make_shared<ASTLiteral>(new_table_name.database));
         }
-        if (new_table_name != table_name)
+        if (new_table_name.table != table_name.table)
         {
             auto & pair = elements[table_name_index]->as<ASTPair &>();
-            pair.replace(pair.second, std::make_shared<ASTLiteral>(new_table_name));
+            pair.replace(pair.second, std::make_shared<ASTLiteral>(new_table_name.table));
         }
     }
 }
 
 
-void DDLRenamingSettings::setNewTableName(const DatabaseAndTableName & old_table_name, const DatabaseAndTableName & new_table_name)
+void DDLRenamingSettings::setNewTableName(const QualifiedTableName & old_table_name, const QualifiedTableName & new_table_name)
 {
-    if (old_table_name.first.empty() || old_table_name.second.empty() || new_table_name.first.empty() || new_table_name.second.empty())
+    if (old_table_name.table.empty() || old_table_name.database.empty() || new_table_name.table.empty() || new_table_name.database.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty names are not allowed for DDLRenamingSettings::setNewTableName");
 
     auto it = old_to_new_table_names.find(old_table_name);
@@ -259,10 +262,12 @@ void DDLRenamingSettings::setNewTableName(const DatabaseAndTableName & old_table
     {
         if (it->second == new_table_name)
             return;
-        throw Exception(ErrorCodes::WRONG_DDL_RENAMING_SETTINGS, "Wrong renaming: it's specified that table {}.{} should be renamed to {}.{} and to {}.{} at the same time",
-                        backQuoteIfNeed(old_table_name.first), backQuoteIfNeed(old_table_name.second),
-                        backQuoteIfNeed(it->second.first), backQuoteIfNeed(it->second.second),
-                        backQuoteIfNeed(new_table_name.first), backQuoteIfNeed(new_table_name.second));
+        throw Exception(
+            ErrorCodes::WRONG_DDL_RENAMING_SETTINGS,
+            "Wrong renaming: it's specified that table {} should be renamed to {} and to {} at the same time",
+            old_table_name.getFullName(),
+            it->second.getFullName(),
+            new_table_name.getFullName());
     }
     old_to_new_table_names[old_table_name] = new_table_name;
 }
@@ -301,36 +306,29 @@ void DDLRenamingSettings::setFromBackupQuery(const ASTBackupQuery::Elements & ba
         {
             case ElementType::TABLE:
             {
-                const String & table_name = element.name.second;
-                String database_name = element.name.first;
-                if (element.is_temp_db)
+                const String & table_name = element.table_name;
+                const String & new_table_name = element.new_table_name;
+                String database_name = element.database_name;
+                String new_database_name = element.new_database_name;
+                if (element.is_temporary_database)
+                {
                     database_name = DatabaseCatalog::TEMPORARY_DATABASE;
+                    new_database_name = DatabaseCatalog::TEMPORARY_DATABASE;
+                }
                 assert(!table_name.empty());
                 assert(!database_name.empty());
-
-                const String & new_table_name = element.new_name.second;
-                String new_database_name = element.new_name.first;
-                if (element.is_temp_db)
-                    new_database_name = DatabaseCatalog::TEMPORARY_DATABASE;
                 assert(!new_table_name.empty());
                 assert(!new_database_name.empty());
-
                 setNewTableName({database_name, table_name}, {new_database_name, new_table_name});
                 break;
             }
 
             case ASTBackupQuery::DATABASE:
             {
-                String database_name = element.name.first;
-                if (element.is_temp_db)
-                    database_name = DatabaseCatalog::TEMPORARY_DATABASE;
+                const String & database_name = element.database_name;
+                const String & new_database_name = element.new_database_name;
                 assert(!database_name.empty());
-
-                String new_database_name = element.new_name.first;
-                if (element.is_temp_db)
-                    new_database_name = DatabaseCatalog::TEMPORARY_DATABASE;
                 assert(!new_database_name.empty());
-
                 setNewDatabaseName(database_name, new_database_name);
                 break;
             }
@@ -340,12 +338,12 @@ void DDLRenamingSettings::setFromBackupQuery(const ASTBackupQuery::Elements & ba
     }
 }
 
-DatabaseAndTableName DDLRenamingSettings::getNewTableName(const DatabaseAndTableName & old_table_name) const
+QualifiedTableName DDLRenamingSettings::getNewTableName(const QualifiedTableName & old_table_name) const
 {
     auto it = old_to_new_table_names.find(old_table_name);
     if (it != old_to_new_table_names.end())
         return it->second;
-    return {getNewDatabaseName(old_table_name.first), old_table_name.second};
+    return {getNewDatabaseName(old_table_name.database), old_table_name.table};
 }
 
 
