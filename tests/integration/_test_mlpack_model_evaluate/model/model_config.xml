@@ -1,0 +1,9 @@
+<models>
+    <model>
+        <type>mlpack</type>
+        <name>lr</name>
+        <method>linear</method>
+        <path>/etc/clickhouse-server/model/model.xml</path>
+        <lifetime>0</lifetime>
+    </model>
+</models>

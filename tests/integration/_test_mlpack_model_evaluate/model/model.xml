@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE boost_serialization>
+<boost_serialization signature="serialization::archive" version="17">
+<linreg class_id="0" tracking_level="0" version="0">
+	<parameters class_id="1" tracking_level="0" version="0">
+		<n_rows>4</n_rows>
+		<n_cols>1</n_cols>
+		<n_elem>4</n_elem>
+		<vec_state>1</vec_state>
+		<item>2.50000000000000111e-01</item>
+		<item>2.50000000000000056e-01</item>
+		<item>2.50000000000000056e-01</item>
+		<item>2.50000000000000056e-01</item>
+	</parameters>
+	<lambda>0.00000000000000000e+00</lambda>
+	<intercept>1</intercept>
+</linreg>
+</boost_serialization>
