@@ -3,7 +3,7 @@ sidebar_position: 66
 sidebar_label: ClickHouse Keeper
 ---
 
-# ClickHouse Keeper {#clickHouse-keeper}
+# ClickHouse Keeper
 
 ClickHouse Keeper provides the coordination system for data [replication](../engines/table-engines/mergetree-family/replication.md) and [distributed DDL](../sql-reference/distributed-ddl.md) queries execution. ClickHouse Keeper is compatible with ZooKeeper.
 

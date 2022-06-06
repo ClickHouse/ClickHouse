@@ -34,7 +34,10 @@ RUN apt-get update -y \
             sqlite3 \
             rustc \
             cargo \
-            awscli
+            awscli \
+            openjdk-11-jre-headless \
+            rpm2cpio \
+            cpio
 
 RUN pip3 install numpy scipy pandas Jinja2
 
@@ -55,10 +58,14 @@ ARG TARGETARCH
 
 # Download Minio-related binaries
 RUN arch=${TARGETARCH:-amd64} \
-    && wget "https://dl.min.io/server/minio/release/linux-${arch}/minio" \
-    && chmod +x ./minio \
+    && if [ "$arch" = "amd64" ] ; then wget "https://dl.min.io/server/minio/release/linux-${arch}/archive/minio-20220103182258.0.0.x86_64.rpm"; else wget "https://dl.min.io/server/minio/release/linux-${arch}/archive/minio-20220103182258.0.0.aarch64.rpm" ; fi \
     && wget "https://dl.min.io/client/mc/release/linux-${arch}/mc" \
     && chmod +x ./mc
+
+
+RUN wget 'https://dlcdn.apache.org/hadoop/common/hadoop-3.3.1/hadoop-3.3.1.tar.gz' \
+    && tar -xvf hadoop-3.3.1.tar.gz \
+    && rm -rf hadoop-3.3.1.tar.gz
 
 ENV MINIO_ROOT_USER="clickhouse"
 ENV MINIO_ROOT_PASSWORD="clickhouse"
@@ -66,4 +73,5 @@ ENV EXPORT_S3_STORAGE_POLICIES=1
 
 COPY run.sh /
 COPY setup_minio.sh /
+COPY setup_hdfs_minicluster.sh /
 CMD ["/bin/bash", "/run.sh"]
