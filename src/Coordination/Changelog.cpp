@@ -462,7 +462,6 @@ void Changelog::removeExistingLogs(ChangelogIter begin, ChangelogIter end)
 {
     const auto timestamp_folder = changelogs_detached_dir / getCurrentTimestampFolder();
 
-    /// All subsequent logs shouldn't exist. But they may exist if we crashed after writeAt started. Remove them.
     for (auto itr = begin; itr != end;)
     {
         if (!std::filesystem::exists(timestamp_folder))
@@ -487,6 +486,7 @@ void Changelog::removeAllLogsAfter(uint64_t remove_after_log_start_index)
 
     size_t start_to_remove_from_log_id = start_to_remove_from_itr->first;
 
+    /// All subsequent logs shouldn't exist. But they may exist if we crashed after writeAt started. Remove them.
     LOG_WARNING(log, "Removing changelogs that go after broken changelog entry");
     removeExistingLogs(start_to_remove_from_itr, existing_changelogs.end());
 
