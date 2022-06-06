@@ -39,8 +39,7 @@ public:
 
     void setReadUntilPosition(size_t position) override;
 
-    using ReadResult = IAsynchronousReader::Result;
-    ReadResult readInto(char * data, size_t size, size_t offset, size_t ignore = 0);
+    IAsynchronousReader::Result readInto(char * data, size_t size, size_t offset, size_t ignore) override;
 
     size_t getFileSize() const;
 

@@ -33,23 +33,19 @@ namespace CurrentMetrics
 
 namespace DB
 {
-template <class Reader>
-typename RemoteFSFileDescriptor<Reader>::ReadResult RemoteFSFileDescriptor<Reader>::readInto(char * data, size_t size, size_t offset, size_t ignore)
+IAsynchronousReader::Result RemoteFSFileDescriptor::readInto(char * data, size_t size, size_t offset, size_t ignore)
 {
-    auto result = reader->readInto(data, size, offset, ignore);
-    return result;
+    return reader->readInto(data, size, offset, ignore);
 }
 
 
-template <class Reader>
-ThreadPoolRemoteFSReader<Reader>::ThreadPoolRemoteFSReader(size_t pool_size, size_t queue_size_)
+ThreadPoolRemoteFSReader::ThreadPoolRemoteFSReader(size_t pool_size, size_t queue_size_)
     : pool(pool_size, pool_size, queue_size_)
 {
 }
 
 
-template <class Reader>
-std::future<IAsynchronousReader::Result> ThreadPoolRemoteFSReader<Reader>::submit(Request request)
+std::future<IAsynchronousReader::Result> ThreadPoolRemoteFSReader::submit(Request request)
 {
     ThreadGroupStatusPtr running_group = CurrentThread::isInitialized() && CurrentThread::get().getThreadGroup()
             ? CurrentThread::get().getThreadGroup()
@@ -74,7 +70,7 @@ std::future<IAsynchronousReader::Result> ThreadPoolRemoteFSReader<Reader>::submi
         setThreadName("VFSRead");
 
         CurrentMetrics::Increment metric_increment{CurrentMetrics::Read};
-        auto * remote_fs_fd = assert_cast<RemoteFSFileDescriptor<Reader> *>(request.descriptor.get());
+        auto * remote_fs_fd = assert_cast<RemoteFSFileDescriptor *>(request.descriptor.get());
 
         Stopwatch watch(CLOCK_MONOTONIC);
 
@@ -107,14 +103,5 @@ std::future<IAsynchronousReader::Result> ThreadPoolRemoteFSReader<Reader>::submi
 
     return future;
 }
-
-template class ThreadPoolRemoteFSReader<ReadBufferFromRemoteFSGather>;
-template class RemoteFSFileDescriptor<ReadBufferFromRemoteFSGather>;
-
-#if USE_HDFS
-template class ThreadPoolRemoteFSReader<ReadBufferFromHDFS>;
-template class RemoteFSFileDescriptor<ReadBufferFromHDFS>;
-#endif
-
 
 }
