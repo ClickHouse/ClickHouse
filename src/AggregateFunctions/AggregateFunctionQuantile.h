@@ -7,6 +7,7 @@
 #include <AggregateFunctions/QuantileReservoirSamplerDeterministic.h>
 #include <AggregateFunctions/QuantileExact.h>
 #include <AggregateFunctions/QuantileExactWeighted.h>
+#include <AggregateFunctions/QuantileApproximateWeighted.h>
 #include <AggregateFunctions/QuantileTiming.h>
 #include <AggregateFunctions/QuantileTDigest.h>
 #include <AggregateFunctions/QuantileBFloat16Histogram.h>
@@ -224,6 +225,9 @@ struct NameQuantilesExactInclusive { static constexpr auto name = "quantilesExac
 
 struct NameQuantileExactWeighted { static constexpr auto name = "quantileExactWeighted"; };
 struct NameQuantilesExactWeighted { static constexpr auto name = "quantilesExactWeighted"; };
+
+struct NameQuantileApproximateWeighted { static constexpr auto name = "quantileApproximateWeighted"; };
+struct NameQuantilesApproximateWeighted { static constexpr auto name = "quantilesApproximateWeighted"; };
 
 struct NameQuantileTiming { static constexpr auto name = "quantileTiming"; };
 struct NameQuantileTimingWeighted { static constexpr auto name = "quantileTimingWeighted"; };
