@@ -458,10 +458,10 @@ void StorageWindowView::alter(
 
     auto inner_query = initInnerQuery(new_select_query->as<ASTSelectQuery &>(), local_context);
 
-    dropInnerTableIfAny(true, local_context);
+    InterpreterDropQuery::executeDropQuery(
+    ASTDropQuery::Kind::Drop, getContext(), local_context, inner_table_id, true);
 
     /// create inner table
-    std::exchange(has_inner_table, true);
     auto create_context = Context::createCopy(local_context);
     auto inner_create_query = getInnerTableCreateQuery(inner_query, inner_table_id);
     InterpreterCreateQuery create_interpreter(inner_create_query, create_context);
