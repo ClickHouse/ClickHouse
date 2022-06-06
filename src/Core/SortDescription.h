@@ -28,7 +28,9 @@ struct FillColumnDescription
     /// All missed values in range [FROM, TO) will be filled
     /// Range [FROM, TO) respects sorting direction
     Field fill_from;        /// Fill value >= FILL_FROM
+    DataTypePtr fill_from_type;
     Field fill_to;          /// Fill value + STEP < FILL_TO
+    DataTypePtr fill_to_type;
     Field fill_step;        /// Default = +1 or -1 according to direction
     std::optional<IntervalKind> step_kind;
 

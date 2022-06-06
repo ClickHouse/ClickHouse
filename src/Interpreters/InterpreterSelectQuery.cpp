@@ -1,6 +1,5 @@
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeInterval.h>
-#include <DataTypes/DataTypeDate.h>
 
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -803,18 +802,14 @@ Block InterpreterSelectQuery::getSampleBlockImpl()
     return analysis_result.final_projection->getResultColumns();
 }
 
-static Field getWithFillFieldValue(DataTypePtr col_type, const ASTPtr & node, ContextPtr context)
+static std::pair<Field, DataTypePtr> getWithFillFieldValue(const ASTPtr & node, ContextPtr context)
 {
-    auto [field, type] = evaluateConstantExpression(node, context);
+    auto field_type = evaluateConstantExpression(node, context);
 
-    WhichDataType which(col_type);
-    if ((which.isDateOrDate32() || which.isDateTime() || which.isDateTime64()) && !col_type->equals(*type))
-        throw Exception("Illegal type " + type->getName() + " of WITH FILL expression, must be same as column " + col_type->getName(), ErrorCodes::INVALID_WITH_FILL_EXPRESSION);
+    if (!isColumnedAsNumber(field_type.second))
+        throw Exception("Illegal type " + field_type.second->getName() + " of WITH FILL expression, must be numeric type", ErrorCodes::INVALID_WITH_FILL_EXPRESSION);
 
-    if (!isColumnedAsNumber(type))
-        throw Exception("Illegal type " + type->getName() + " of WITH FILL expression, must be numeric type", ErrorCodes::INVALID_WITH_FILL_EXPRESSION);
-
-    return field;
+    return field_type;
 }
 
 static std::pair<Field, std::optional<IntervalKind>> getWithFillStep(const ASTPtr & node, ContextPtr context)
@@ -830,14 +825,14 @@ static std::pair<Field, std::optional<IntervalKind>> getWithFillStep(const ASTPt
     throw Exception("Illegal type " + type->getName() + " of WITH FILL expression, must be numeric type", ErrorCodes::INVALID_WITH_FILL_EXPRESSION);
 }
 
-static FillColumnDescription getWithFillDescription(DataTypePtr type, const ASTOrderByElement & order_by_elem, ContextPtr context)
+static FillColumnDescription getWithFillDescription(const ASTOrderByElement & order_by_elem, ContextPtr context)
 {
     FillColumnDescription descr;
 
     if (order_by_elem.fill_from)
-        descr.fill_from = getWithFillFieldValue(type, order_by_elem.fill_from, context);
+        std::tie(descr.fill_from, descr.fill_from_type) = getWithFillFieldValue(order_by_elem.fill_from, context);
     if (order_by_elem.fill_to)
-        descr.fill_to = getWithFillFieldValue(type, order_by_elem.fill_to, context);
+        std::tie(descr.fill_to, descr.fill_to_type) = getWithFillFieldValue(order_by_elem.fill_to, context);
 
     if (order_by_elem.fill_step)
         std::tie(descr.fill_step, descr.step_kind) = getWithFillStep(order_by_elem.fill_step, context);
@@ -877,7 +872,7 @@ static FillColumnDescription getWithFillDescription(DataTypePtr type, const ASTO
     return descr;
 }
 
-static SortDescription getSortDescription(const ASTSelectQuery & query, const Block & source_block, const Block & result_block, const Aliases & aliases, ContextPtr context)
+static SortDescription getSortDescription(const ASTSelectQuery & query, ContextPtr context)
 {
     SortDescription order_descr;
     order_descr.reserve(query.orderBy()->children.size());
@@ -891,16 +886,7 @@ static SortDescription getSortDescription(const ASTSelectQuery & query, const Bl
             collator = std::make_shared<Collator>(order_by_elem.collation->as<ASTLiteral &>().value.get<String>());
         if (order_by_elem.with_fill)
         {
-            const auto *column = result_block.findByName(name);
-            if (!column)
-                column = source_block.findByName(name);
-            if (!column)
-                for (const auto &[alias, ast] : aliases)
-                    if (name == ast->getColumnName())
-                        if ((column = result_block.findByName(alias)))
-                            break;
-
-            FillColumnDescription fill_desc = getWithFillDescription(column->type, order_by_elem, context);
+            FillColumnDescription fill_desc = getWithFillDescription(order_by_elem, context);
             order_descr.emplace_back(name, order_by_elem.direction, order_by_elem.nulls_direction, collator, true, fill_desc);
         }
         else
@@ -1506,7 +1492,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
             bool has_withfill = false;
             if (query.orderBy())
             {
-                SortDescription order_descr = getSortDescription(query, source_header, result_header, syntax_analyzer_result->aliases, context);
+                SortDescription order_descr = getSortDescription(query, context);
                 for (auto & desc : order_descr)
                     if (desc.with_fill)
                     {
@@ -2119,7 +2105,7 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
                         // TODO Do we need a projection variant for this field?
                         query,
                         analysis_result.order_by_elements_actions,
-                        getSortDescription(query, source_header, result_header, syntax_analyzer_result->aliases, context),
+                        getSortDescription(query, context),
                         query_info.syntax_analyzer_result);
                 }
                 else
@@ -2127,7 +2113,7 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
                     query_info.order_optimizer = std::make_shared<ReadInOrderOptimizer>(
                         query,
                         analysis_result.order_by_elements_actions,
-                        getSortDescription(query, source_header, result_header, syntax_analyzer_result->aliases, context),
+                        getSortDescription(query, context),
                         query_info.syntax_analyzer_result);
                 }
             }
@@ -2556,7 +2542,7 @@ void InterpreterSelectQuery::executeOrderOptimized(QueryPlan & query_plan, Input
 void InterpreterSelectQuery::executeOrder(QueryPlan & query_plan, InputOrderInfoPtr input_sorting_info)
 {
     auto & query = getSelectQuery();
-    SortDescription output_order_descr = getSortDescription(query, source_header, result_header, syntax_analyzer_result->aliases, context);
+    SortDescription output_order_descr = getSortDescription(query, context);
     UInt64 limit = getLimitForSorting(query, context);
 
     if (input_sorting_info)
@@ -2594,7 +2580,7 @@ void InterpreterSelectQuery::executeOrder(QueryPlan & query_plan, InputOrderInfo
 void InterpreterSelectQuery::executeMergeSorted(QueryPlan & query_plan, const std::string & description)
 {
     auto & query = getSelectQuery();
-    SortDescription order_descr = getSortDescription(query, source_header, result_header, syntax_analyzer_result->aliases, context);
+    SortDescription order_descr = getSortDescription(query, context);
     UInt64 limit = getLimitForSorting(query, context);
 
     executeMergeSorted(query_plan, order_descr, limit, description);
@@ -2697,7 +2683,7 @@ void InterpreterSelectQuery::executeWithFill(QueryPlan & query_plan)
     auto & query = getSelectQuery();
     if (query.orderBy())
     {
-        SortDescription order_descr = getSortDescription(query, source_header, result_header, syntax_analyzer_result->aliases, context);
+        SortDescription order_descr = getSortDescription(query, context);
         SortDescription fill_descr;
         for (auto & desc : order_descr)
         {
@@ -2748,7 +2734,7 @@ void InterpreterSelectQuery::executeLimit(QueryPlan & query_plan)
         {
             if (!query.orderBy())
                 throw Exception("LIMIT WITH TIES without ORDER BY", ErrorCodes::LOGICAL_ERROR);
-            order_descr = getSortDescription(query, source_header, result_header, syntax_analyzer_result->aliases, context);
+            order_descr = getSortDescription(query, context);
         }
 
         auto limit = std::make_unique<LimitStep>(

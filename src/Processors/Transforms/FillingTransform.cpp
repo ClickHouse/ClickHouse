@@ -54,6 +54,15 @@ static bool tryConvertFields(FillColumnDescription & descr, const DataTypePtr & 
     WhichDataType which(type);
     DataTypePtr to_type;
 
+    WhichDataType which_from(descr.fill_from_type);
+    bool is_from_date = which_from.isDateOrDate32() || which_from.isDateTime() || which_from.isDateTime64();
+    WhichDataType which_to(descr.fill_to_type);
+    bool is_to_date = which_to.isDateOrDate32() || which_to.isDateTime() || which_to.isDateTime64();
+
+    if ((is_from_date || is_to_date) &&
+        (!descr.fill_from_type->equals(*descr.fill_to_type) || !descr.fill_from_type->equals(*type)))
+            return false;
+
     /// TODO Wrong results for big integers.
     if (isInteger(type) || which.isDate() || which.isDate32() || which.isDateTime())
     {
