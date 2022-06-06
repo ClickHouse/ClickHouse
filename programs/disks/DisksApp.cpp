@@ -43,11 +43,11 @@ String DisksApp::getDefaultConfigFileName()
 
 void DisksApp::loadConfiguration()
 {
-    config_path = config().getString("config-file", getDefaultConfigFileName());
+    String config_path = config().getString("config-file", getDefaultConfigFileName());
     DB::ConfigProcessor config_processor(config_path, false, false);
     config_processor.setConfigPath(fs::path(config_path).parent_path());
     auto loaded_config = config_processor.loadConfig();
-    config().add(loaded_config.configuration.duplicate(), PRIO_DEFAULT, false);
+    config().add(loaded_config.configuration.duplicate(), false, false);
 }
 
 void DisksApp::addOptions(std::optional<ProgramOptionsDescription>  & options_description,
@@ -133,9 +133,8 @@ int DisksApp::main(const std::vector<String> & /*args*/)
     Poco::Logger::root().setLevel("trace");
     Poco::Logger::root().setChannel(new Poco::FileChannel(config().getString("logger.clickhouse-disks", "/var/log/clickhouse-server/clickhouse-disks.log")));
 
-    loadConfiguration();
-
-    String path = config().getString("path", DBMS_DEFAULT_PATH);
+    if (config().has("config-file"))
+        loadConfiguration();
 
     registerDisks();
     registerFormats();
@@ -145,9 +144,8 @@ int DisksApp::main(const std::vector<String> & /*args*/)
 
     global_context->makeGlobalContext();
     global_context->setApplicationType(Context::ApplicationType::DISKS);
-    global_context->setPath(path);
 
-    command_descriptions[command_name]->execute(command_flags, global_context, config(), options);
+    command_descriptions[command_name]->execute(command_flags, global_context, config());
 
     return Application::EXIT_OK;
 }

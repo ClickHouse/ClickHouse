@@ -9,10 +9,7 @@
 #include "CommandRemove.cpp"
 #include "CommandWrite.cpp"
 
-#include <Common/Config/ConfigProcessor.h>
 #include <Loggers/Loggers.h>
-#include <Client/ClientBase.h>
-#include <Client/LocalConnection.h>
 
 #include <Common/ProgressIndication.h>
 #include <Common/StatusFile.h>
@@ -55,8 +52,6 @@ private:
         std::vector<String> & arguments);
 
 protected:
-    String config_path;
-
     ContextMutablePtr global_context;
     SharedContextHolder shared_context;
 
