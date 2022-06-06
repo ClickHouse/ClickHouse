@@ -2183,6 +2183,29 @@ bool ReplicatedMergeTreeMergePredicate::canMergeSinglePart(
 }
 
 
+bool ReplicatedMergeTreeMergePredicate::partParticipatesInReplaceRange(const MergeTreeData::DataPartPtr & part, String * out_reason) const
+{
+    std::lock_guard<std::mutex> lock(queue.state_mutex);
+    for (const auto & entry : queue.queue)
+    {
+        if (entry->type != ReplicatedMergeTreeLogEntry::REPLACE_RANGE)
+            continue;
+
+        for (const auto & part_name : entry->replace_range_entry->new_part_names)
+        {
+            if (part->info.isDisjoint(MergeTreePartInfo::fromPartName(part_name, queue.format_version)))
+                continue;
+
+            if (out_reason)
+                *out_reason = fmt::format("Part {} participates in REPLACE_RANGE {} ({})", part_name, entry->new_part_name, entry->znode_name);
+
+            return true;
+        }
+    }
+    return false;
+}
+
+
 std::optional<std::pair<Int64, int>> ReplicatedMergeTreeMergePredicate::getDesiredMutationVersion(const MergeTreeData::DataPartPtr & part) const
 {
     /// Assigning mutations is easier than assigning merges because mutations appear in the same order as
