@@ -596,7 +596,7 @@ void StorageStripeLog::restoreDataFromBackup(RestorerFromBackup & restorer, cons
         RestorerFromBackup::throwPartitionsNotSupported(getStorageID(), getName());
 
     auto backup = restorer.getBackup();
-    if (!restorer.isNonEmptyTableAllowed() && total_bytes && !backup->listFiles(data_path_in_backup + '/').empty())
+    if (!restorer.isNonEmptyTableAllowed() && total_bytes && backup->hasFiles(data_path_in_backup))
         RestorerFromBackup::throwTableIsNotEmpty(getStorageID());
 
     auto lock_timeout = getLockTimeout(restorer.getContext());

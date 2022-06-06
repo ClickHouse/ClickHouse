@@ -5,6 +5,7 @@
 #include <Parsers/ASTBackupQuery.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/TableLockHolder.h>
+#include <filesystem>
 
 
 namespace DB
@@ -99,7 +100,7 @@ private:
     Poco::Logger * log;
 
     Stage current_stage = Stage::kPreparing;
-    String root_path_in_backup;
+    std::filesystem::path root_path_in_backup;
     DDLRenamingSettings renaming_settings;
 
     struct DatabaseInfo
@@ -114,7 +115,7 @@ private:
         StoragePtr storage;
         TableLockHolder table_lock;
         ASTPtr create_table_query;
-        String data_path_in_backup;
+        std::filesystem::path data_path_in_backup;
         std::optional<ASTs> partitions;
     };
 

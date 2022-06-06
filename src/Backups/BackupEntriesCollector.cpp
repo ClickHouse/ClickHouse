@@ -10,6 +10,9 @@
 #include <base/insertAtEnd.h>
 #include <Common/escapeForFileName.h>
 #include <boost/range/algorithm/copy.hpp>
+#include <filesystem>
+
+namespace fs = std::filesystem;
 
 
 namespace DB
@@ -130,18 +133,14 @@ std::string_view BackupEntriesCollector::toString(Stage stage)
 /// it's either empty or has the format "shards/<shard_num>/replicas/<replica_num>/".
 void BackupEntriesCollector::calculateRootPathInBackup()
 {
-    if (backup_settings.host_id.empty())
-    {
-        root_path_in_backup = "";
-    }
-    else
+    root_path_in_backup = "/";
+    if (!backup_settings.host_id.empty())
     {
         auto [shard_num, replica_num]
             = BackupSettings::Util::findShardNumAndReplicaNum(backup_settings.cluster_host_ids, backup_settings.host_id);
-        root_path_in_backup = fmt::format("shards/{}/replicas/{}/", shard_num, replica_num);
+        root_path_in_backup = root_path_in_backup / fs::path{"shards"} / std::to_string(shard_num) / "replicas" / std::to_string(replica_num);
     }
-
-    LOG_TRACE(log, "Will use path in backup: {}", quoteString(root_path_in_backup));
+    LOG_TRACE(log, "Will use path in backup: {}", doubleQuoteString(String{root_path_in_backup}));
 }
 
 /// Finds databases and tables which we will put to the backup.
@@ -254,8 +253,8 @@ void BackupEntriesCollector::collectTableInfo(
 
     storage->adjustCreateQueryForBackup(create_table_query);
     auto new_table_name = renaming_settings.getNewTableName(table_name);
-    String data_path_in_backup
-        = root_path_in_backup + "data/" + escapeForFileName(new_table_name.first) + "/" + escapeForFileName(new_table_name.second);
+    fs::path data_path_in_backup
+        = root_path_in_backup / "data" / escapeForFileName(new_table_name.first) / escapeForFileName(new_table_name.second);
 
     /// Check that information is consistent.
     const auto & create = create_table_query->as<const ASTCreateQuery &>();
@@ -421,7 +420,7 @@ void BackupEntriesCollector::makeBackupEntriesForDatabasesDefs()
         renameInCreateQuery(new_create_query, renaming_settings, context);
 
         String new_database_name = renaming_settings.getNewDatabaseName(database_name);
-        String metadata_path_in_backup = root_path_in_backup + "metadata/" + escapeForFileName(new_database_name) + ".sql";
+        auto metadata_path_in_backup = root_path_in_backup / "metadata" / (escapeForFileName(new_database_name) + ".sql");
 
         backup_entries.emplace_back(metadata_path_in_backup, std::make_shared<BackupEntryFromMemory>(serializeAST(*new_create_query)));
     }
@@ -483,8 +482,8 @@ void BackupEntriesCollector::addBackupEntryForCreateQuery(const ASTPtr & create_
     const auto & create = new_create_query->as<const ASTCreateQuery &>();
     String new_table_name = create.getTable();
     String new_database_name = create.getDatabase();
-    String metadata_path_in_backup
-        = root_path_in_backup + "metadata/" + escapeForFileName(new_database_name) + "/" + escapeForFileName(new_table_name) + ".sql";
+    auto metadata_path_in_backup
+        = root_path_in_backup / "metadata" / escapeForFileName(new_database_name) / (escapeForFileName(new_table_name) + ".sql");
 
     addBackupEntry(metadata_path_in_backup, std::make_shared<BackupEntryFromMemory>(serializeAST(*create_query)));
 }

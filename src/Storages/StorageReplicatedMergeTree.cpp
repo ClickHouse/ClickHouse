@@ -8283,7 +8283,7 @@ void StorageReplicatedMergeTree::backupData(
     /// First we generate backup entries in the same way as an ordinary MergeTree does.
     /// But then we don't add them to the BackupEntriesCollector right away,
     /// because we need to coordinate them with other replicas (other replicas can have better parts).
-    auto backup_entries = backupParts(backup_entries_collector.getContext(), partitions);
+    auto backup_entries = backupParts(backup_entries_collector.getContext(), "", partitions);
 
     auto coordination = backup_entries_collector.getBackupCoordination();
     String full_zk_path = getZooKeeperName() + getZooKeeperPath();
@@ -8380,7 +8380,7 @@ void StorageReplicatedMergeTree::restoreDataFromBackup(RestorerFromBackup & rest
                 empty = false;
         }
         auto backup = restorer.getBackup();
-        if (!empty && !backup->listFiles(data_path_in_backup + '/').empty())
+        if (!empty && backup->hasFiles(data_path_in_backup))
             restorer.throwTableIsNotEmpty(getStorageID());
     }
 

@@ -497,7 +497,7 @@ void StorageMemory::restoreDataFromBackup(RestorerFromBackup & restorer, const S
         RestorerFromBackup::throwPartitionsNotSupported(getStorageID(), getName());
 
     auto backup = restorer.getBackup();
-    if (!restorer.isNonEmptyTableAllowed() && total_size_bytes && !backup->listFiles(data_path_in_backup + '/').empty())
+    if (!restorer.isNonEmptyTableAllowed() && total_size_bytes && backup->hasFiles(data_path_in_backup))
         RestorerFromBackup::throwTableIsNotEmpty(getStorageID());
 
     restorer.addDataRestoreTask(

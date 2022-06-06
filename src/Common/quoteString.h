@@ -24,7 +24,4 @@ String backQuote(const StringRef & x);
 /// Quote the identifier with backquotes, if required.
 String backQuoteIfNeed(const StringRef & x);
 
-/// Quotes each string and joins quoted strings using a specified separator between them.
-String joinQuotedStrings(const std::vector<String> & strings, std::string_view separator = ", ");
-
 }

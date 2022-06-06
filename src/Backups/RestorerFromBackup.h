@@ -6,6 +6,7 @@
 #include <Storages/TableLockHolder.h>
 #include <Storages/IStorage_fwd.h>
 #include <Interpreters/Context_fwd.h>
+#include <filesystem>
 
 
 namespace DB
@@ -88,7 +89,7 @@ private:
     Poco::Logger * log;
 
     Stage current_stage = Stage::kPreparing;
-    Strings root_paths_in_backup;
+    std::vector<std::filesystem::path> root_paths_in_backup;
     DDLRenamingSettings renaming_settings;
 
     void setStage(Stage new_stage, const String & error_message = {});
@@ -111,7 +112,7 @@ private:
     {
         ASTPtr create_table_query;
         std::optional<ASTs> partitions;
-        String data_path_in_backup;
+        std::filesystem::path data_path_in_backup;
     };
 
     std::map<DatabaseAndTableName, TableInfo> table_infos;

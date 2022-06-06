@@ -32,7 +32,8 @@ public:
     void updateFileInfo(const FileInfo & file_info) override;
 
     std::vector<FileInfo> getAllFileInfos() const override;
-    Strings listFiles(const String & prefix, const String & terminator) const override;
+    Strings listFiles(const String & diretory, bool recursive) const override;
+    bool hasFiles(const String & directory) const override;
     std::optional<FileInfo> getFileInfo(const String & file_name) const override;
     std::optional<FileInfo> getFileInfo(const SizeAndChecksum & size_and_checksum) const override;
     std::optional<SizeAndChecksum> getFileSizeAndChecksum(const String & file_name) const override;

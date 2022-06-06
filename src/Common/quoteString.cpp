@@ -44,16 +44,4 @@ String backQuoteIfNeed(const StringRef & x)
     return res;
 }
 
-String joinQuotedStrings(const std::vector<String> & strings, std::string_view separator)
-{
-    String res;
-    for (const auto & str : strings)
-    {
-        if (!res.empty())
-            res += separator;
-        res += quoteString(str);
-    }
-    return res;
-}
-
 }

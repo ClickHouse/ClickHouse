@@ -80,7 +80,8 @@ public:
     virtual void updateFileInfo(const FileInfo & file_info) = 0;
 
     virtual std::vector<FileInfo> getAllFileInfos() const = 0;
-    virtual Strings listFiles(const String & prefix, const String & terminator) const = 0;
+    virtual Strings listFiles(const String & directory, bool recursive) const = 0;
+    virtual bool hasFiles(const String & directory) const = 0;
 
     using SizeAndChecksum = std::pair<UInt64, UInt128>;
 
