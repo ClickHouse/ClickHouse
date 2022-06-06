@@ -646,10 +646,6 @@ void LRUFileCache::remove(const Key & key)
         if (fs::exists(key_path))
             fs::remove(key_path);
     }
-    else
-    {
-        LOG_DEBUG(&Poco::Logger::get("DEBUG"), "SOME CELLS WERE SKIPPED");
-    }
 }
 
 void LRUFileCache::remove()
