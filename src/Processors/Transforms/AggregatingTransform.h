@@ -86,6 +86,9 @@ struct ManyAggregatedData
 
             for (auto && variant : variants)
             {
+                if (variant->size() < 100'000) // some seemingly reasonable constant
+                    continue;
+
                 // It doesn't make sense to spawn a thread if the variant is not going to actually destroy anything.
                 if (variant->aggregator)
                 {
