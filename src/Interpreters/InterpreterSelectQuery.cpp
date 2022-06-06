@@ -664,6 +664,11 @@ void InterpreterSelectQuery::executePutInCache(QueryPlan & query_plan, CacheKey 
         return;
     }
 
+    // this hack is temporary
+    // it is needed because apparently source_header does not describe the actual header
+    // TODO: find a way to get the actual header in buildQueryPlan
+    query_cache_key.header = query_plan.getCurrentDataStream().header;
+
     auto caching_step = std::make_unique<CachingStep>(query_plan.getCurrentDataStream(),
                                                       context->getQueryCache(), query_cache_key);
     caching_step->setStepDescription("Put query result in cache");

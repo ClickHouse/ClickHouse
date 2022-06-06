@@ -50,6 +50,9 @@ struct CacheKeyHasher
     {
         SipHash hash;
         hash.update(key.ast->getTreeHash());
+        LOG_DEBUG(&Poco::Logger::get("CacheKeyHasher"), "key.header.getNamesAndTypesList = {}",
+                  key.header.getNamesAndTypesList().toString()
+                  );
         hash.update(key.header.getNamesAndTypesList().toString());
         for (const auto & setting : key.settings)
         {
@@ -59,7 +62,11 @@ struct CacheKeyHasher
         {
             hash.update(*key.username);
         }
-        return hash.get64();
+        auto res = hash.get64();
+        LOG_DEBUG(&Poco::Logger::get("CacheKeyHasher"), "hash = {}",
+                  key.header.getNamesAndTypesList().toString()
+        );
+        return res;
     }
 };
 
@@ -195,6 +202,7 @@ public:
         {
             removal_scheduler->scheduleRemoval(std::chrono::milliseconds{cache_key.settings.query_cache_entry_put_timeout}, cache_key);
             data->is_writing = false;
+            LOG_DEBUG(&Poco::Logger::get("CachePutHolder"), "put in cache: a key with header = {}", cache_key.header.getNamesAndTypesList().toString());
         }
     }
 
@@ -234,8 +242,10 @@ public:
         std::shared_ptr<CacheEntry> data = cache->get(cacheKey);
         if (data == nullptr || data->is_writing.load())
         {
+            LOG_DEBUG(&Poco::Logger::get("CacheReadHolder"), "could not find the existing cache entry with the given cache key");
             return;
         }
+        LOG_DEBUG(&Poco::Logger::get("CacheReadHolder"), "found the existing cache entry with the given cache key");
 
         pipe = Pipe(std::make_shared<SourceFromSingleChunk>(cacheKey.header, toSingleChunk(data->chunks)));
     }
