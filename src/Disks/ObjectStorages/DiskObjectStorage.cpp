@@ -386,11 +386,10 @@ void DiskObjectStorage::removeMetadata(const String & path, std::vector<String> 
     if (!metadata_storage->isFile(path))
         throw Exception(ErrorCodes::BAD_FILE_TYPE, "Path '{}' is not a regular file", path);
 
-    auto remote_objects = metadata_storage->getRemotePaths(path);
 
     try
     {
-
+        auto remote_objects = metadata_storage->getRemotePaths(path);
         auto tx = metadata_storage->createTransaction();
         uint32_t hardlink_count = metadata_storage->unlinkAndGetHardlinkCount(path, tx);
         tx->commit();
@@ -499,7 +498,7 @@ void DiskObjectStorage::removeSharedRecursive(const String & path, bool keep_all
     }
 }
 
-std::optional<UInt64>  DiskObjectStorage::tryReserve(UInt64 bytes)
+std::optional<UInt64> DiskObjectStorage::tryReserve(UInt64 bytes)
 {
     std::lock_guard lock(reservation_mutex);
 
