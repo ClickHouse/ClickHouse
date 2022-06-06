@@ -62,7 +62,7 @@ HTTPDictionarySource::HTTPDictionarySource(const HTTPDictionarySource & other)
     credentials.setPassword(other.credentials.getPassword());
 }
 
-Pipe HTTPDictionarySource::createWrappedBuffer(std::unique_ptr<ReadWriteBufferFromHTTP> http_buffer_ptr)
+QueryPipeline HTTPDictionarySource::createWrappedBuffer(std::unique_ptr<ReadWriteBufferFromHTTP> http_buffer_ptr)
 {
     Poco::URI uri(configuration.url);
     String http_request_compression_method_str = http_buffer_ptr->getCompressionMethod();
@@ -70,7 +70,7 @@ Pipe HTTPDictionarySource::createWrappedBuffer(std::unique_ptr<ReadWriteBufferFr
         = wrapReadBufferWithCompressionMethod(std::move(http_buffer_ptr), chooseCompressionMethod(uri.getPath(), http_request_compression_method_str));
     auto source = context->getInputFormat(configuration.format, *in_ptr_wrapped, sample_block, max_block_size);
     source->addBuffer(std::move(in_ptr_wrapped));
-    return Pipe(std::move(source));
+    return QueryPipeline(std::move(source));
 }
 
 void HTTPDictionarySource::getUpdateFieldAndDate(Poco::URI & uri)
@@ -90,7 +90,7 @@ void HTTPDictionarySource::getUpdateFieldAndDate(Poco::URI & uri)
     }
 }
 
-Pipe HTTPDictionarySource::loadAll()
+QueryPipeline HTTPDictionarySource::loadAll()
 {
     LOG_TRACE(log, "loadAll {}", toString());
     Poco::URI uri(configuration.url);
@@ -110,7 +110,7 @@ Pipe HTTPDictionarySource::loadAll()
     return createWrappedBuffer(std::move(in_ptr));
 }
 
-Pipe HTTPDictionarySource::loadUpdatedAll()
+QueryPipeline HTTPDictionarySource::loadUpdatedAll()
 {
     Poco::URI uri(configuration.url);
     getUpdateFieldAndDate(uri);
@@ -131,7 +131,7 @@ Pipe HTTPDictionarySource::loadUpdatedAll()
     return createWrappedBuffer(std::move(in_ptr));
 }
 
-Pipe HTTPDictionarySource::loadIds(const std::vector<UInt64> & ids)
+QueryPipeline HTTPDictionarySource::loadIds(const std::vector<UInt64> & ids)
 {
     LOG_TRACE(log, "loadIds {} size = {}", toString(), ids.size());
 
@@ -161,7 +161,7 @@ Pipe HTTPDictionarySource::loadIds(const std::vector<UInt64> & ids)
     return createWrappedBuffer(std::move(in_ptr));
 }
 
-Pipe HTTPDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
+QueryPipeline HTTPDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
 {
     LOG_TRACE(log, "loadKeys {} size = {}", toString(), requested_rows.size());
 
