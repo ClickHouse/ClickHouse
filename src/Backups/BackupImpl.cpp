@@ -66,6 +66,14 @@ namespace
     {
         return hexChecksum(size_and_checksum.second) + std::to_string(size_and_checksum.first);
     }
+
+    /// We store entries' file names in the backup without leading slashes.
+    String removeLeadingSlash(const String & path)
+    {
+        if (path.starts_with('/'))
+            return path.substr(1);
+        return path;
+    }
 }
 
 
@@ -243,10 +251,12 @@ void BackupImpl::writeBackupMetadata()
     config->setString("timestamp", toString(LocalDateTime{timestamp}));
     config->setString("uuid", toString(*uuid));
 
+    auto all_file_infos = coordination->getAllFileInfos();
+
     if (base_backup_info)
     {
         bool base_backup_in_use = false;
-        for (const auto & info : coordination->getAllFileInfos())
+        for (const auto & info : all_file_infos)
         {
             if (info.base_size)
                 base_backup_in_use = true;
@@ -260,7 +270,7 @@ void BackupImpl::writeBackupMetadata()
     }
 
     size_t index = 0;
-    for (const auto & info : coordination->getAllFileInfos())
+    for (const auto & info : all_file_infos)
     {
         String prefix = index ? "contents.file[" + std::to_string(index) + "]." : "contents.file.";
         config->setUInt(prefix + "size", info.size);
@@ -370,18 +380,25 @@ void BackupImpl::readBackupMetadata()
     }
 }
 
-Strings BackupImpl::listFiles(const String & prefix, const String & terminator) const
+Strings BackupImpl::listFiles(const String & directory, bool recursive) const
 {
     std::lock_guard lock{mutex};
-    if (!prefix.ends_with('/') && !prefix.empty())
-        throw Exception("prefix should end with '/'", ErrorCodes::BAD_ARGUMENTS);
-    return coordination->listFiles(prefix, terminator);
+    auto adjusted_dir = removeLeadingSlash(directory);
+    return coordination->listFiles(adjusted_dir, recursive);
+}
+
+bool BackupImpl::hasFiles(const String & directory) const
+{
+    std::lock_guard lock{mutex};
+    auto adjusted_dir = removeLeadingSlash(directory);
+    return coordination->hasFiles(adjusted_dir);
 }
 
 bool BackupImpl::fileExists(const String & file_name) const
 {
     std::lock_guard lock{mutex};
-    return coordination->getFileInfo(file_name).has_value();
+    auto adjusted_path = removeLeadingSlash(file_name);
+    return coordination->getFileInfo(adjusted_path).has_value();
 }
 
 bool BackupImpl::fileExists(const SizeAndChecksum & size_and_checksum) const
@@ -393,7 +410,8 @@ bool BackupImpl::fileExists(const SizeAndChecksum & size_and_checksum) const
 UInt64 BackupImpl::getFileSize(const String & file_name) const
 {
     std::lock_guard lock{mutex};
-    auto info = coordination->getFileInfo(file_name);
+    auto adjusted_path = removeLeadingSlash(file_name);
+    auto info = coordination->getFileInfo(adjusted_path);
     if (!info)
         throw Exception(
             ErrorCodes::BACKUP_ENTRY_NOT_FOUND, "Backup {}: Entry {} not found in the backup", backup_name, quoteString(file_name));
@@ -403,7 +421,8 @@ UInt64 BackupImpl::getFileSize(const String & file_name) const
 UInt128 BackupImpl::getFileChecksum(const String & file_name) const
 {
     std::lock_guard lock{mutex};
-    auto info = coordination->getFileInfo(file_name);
+    auto adjusted_path = removeLeadingSlash(file_name);
+    auto info = coordination->getFileInfo(adjusted_path);
     if (!info)
         throw Exception(
             ErrorCodes::BACKUP_ENTRY_NOT_FOUND, "Backup {}: Entry {} not found in the backup", backup_name, quoteString(file_name));
@@ -413,7 +432,8 @@ UInt128 BackupImpl::getFileChecksum(const String & file_name) const
 SizeAndChecksum BackupImpl::getFileSizeAndChecksum(const String & file_name) const
 {
     std::lock_guard lock{mutex};
-    auto info = coordination->getFileInfo(file_name);
+    auto adjusted_path = removeLeadingSlash(file_name);
+    auto info = coordination->getFileInfo(adjusted_path);
     if (!info)
         throw Exception(
             ErrorCodes::BACKUP_ENTRY_NOT_FOUND, "Backup {}: Entry {} not found in the backup", backup_name, quoteString(file_name));
@@ -492,12 +512,13 @@ void BackupImpl::writeFile(const String & file_name, BackupEntryPtr entry)
     if (writing_finalized)
         throw Exception("Backup is already finalized", ErrorCodes::LOGICAL_ERROR);
 
-    if (coordination->getFileInfo(file_name))
+    auto adjusted_path = removeLeadingSlash(file_name);
+    if (coordination->getFileInfo(adjusted_path))
         throw Exception(
             ErrorCodes::BACKUP_ENTRY_ALREADY_EXISTS, "Backup {}: Entry {} already exists", backup_name, quoteString(file_name));
 
     FileInfo info;
-    info.file_name = file_name;
+    info.file_name = adjusted_path;
     size_t size = entry->getSize();
     info.size = size;
 
@@ -518,13 +539,13 @@ void BackupImpl::writeFile(const String & file_name, BackupEntryPtr entry)
     }
 
     /// Check if a entry with such name exists in the base backup.
-    bool base_exists = (base_backup && base_backup->fileExists(file_name));
+    bool base_exists = (base_backup && base_backup->fileExists(adjusted_path));
     UInt64 base_size = 0;
     UInt128 base_checksum{0, 0};
     if (base_exists)
     {
-        base_size = base_backup->getFileSize(file_name);
-        base_checksum = base_backup->getFileChecksum(file_name);
+        base_size = base_backup->getFileSize(adjusted_path);
+        base_checksum = base_backup->getFileChecksum(adjusted_path);
     }
 
     std::unique_ptr<SeekableReadBuffer> read_buffer; /// We'll set that later.
@@ -658,7 +679,7 @@ void BackupImpl::finalizeWriting()
     if (writing_finalized)
         throw Exception("Backup is already finalized", ErrorCodes::LOGICAL_ERROR);
 
-    if (coordination->getAllFileInfos().empty())
+    if (!coordination->hasFiles(""))
         throw Exception("Backup must not be empty", ErrorCodes::BACKUP_IS_EMPTY);
 
     if (!is_internal_backup)

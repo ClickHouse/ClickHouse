@@ -996,7 +996,7 @@ void StorageLog::restoreDataFromBackup(RestorerFromBackup & restorer, const Stri
         return;
 
     auto backup = restorer.getBackup();
-    if (!restorer.isNonEmptyTableAllowed() && total_bytes && !backup->listFiles(data_path_in_backup + '/').empty())
+    if (!restorer.isNonEmptyTableAllowed() && total_bytes && backup->hasFiles(data_path_in_backup))
         RestorerFromBackup::throwTableIsNotEmpty(getStorageID());
 
     auto lock_timeout = getLockTimeout(restorer.getContext());

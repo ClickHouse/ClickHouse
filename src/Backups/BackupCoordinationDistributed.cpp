@@ -301,12 +301,19 @@ std::vector<FileInfo> BackupCoordinationDistributed::getAllFileInfos() const
     return file_infos;
 }
 
-Strings BackupCoordinationDistributed::listFiles(const String & prefix, const String & terminator) const
+Strings BackupCoordinationDistributed::listFiles(const String & directory, bool recursive) const
 {
     auto zookeeper = get_zookeeper();
     Strings escaped_names = zookeeper->getChildren(zookeeper_path + "/file_names");
 
+    String prefix = directory;
+    if (!prefix.empty() && !prefix.ends_with('/'))
+        prefix += '/';
+    String terminator = recursive ? "" : "/";
+
     Strings elements;
+    std::unordered_set<std::string_view> unique_elements;
+
     for (const String & escaped_name : escaped_names)
     {
         String name = unescapeForFileName(escaped_name);
@@ -317,13 +324,33 @@ Strings BackupCoordinationDistributed::listFiles(const String & prefix, const St
         if (!terminator.empty())
             end_pos = name.find(terminator, start_pos);
         std::string_view new_element = std::string_view{name}.substr(start_pos, end_pos - start_pos);
-        if (!elements.empty() && (elements.back() == new_element))
+        if (unique_elements.contains(new_element))
             continue;
         elements.push_back(String{new_element});
+        unique_elements.emplace(new_element);
     }
 
     ::sort(elements.begin(), elements.end());
     return elements;
+}
+
+bool BackupCoordinationDistributed::hasFiles(const String & directory) const
+{
+    auto zookeeper = get_zookeeper();
+    Strings escaped_names = zookeeper->getChildren(zookeeper_path + "/file_names");
+
+    String prefix = directory;
+    if (!prefix.empty() && !prefix.ends_with('/'))
+        prefix += '/';
+
+    for (const String & escaped_name : escaped_names)
+    {
+        String name = unescapeForFileName(escaped_name);
+        if (name.starts_with(prefix))
+            return true;
+    }
+
+    return false;
 }
 
 std::optional<FileInfo> BackupCoordinationDistributed::getFileInfo(const String & file_name) const

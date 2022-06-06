@@ -89,9 +89,14 @@ std::vector<FileInfo> BackupCoordinationLocal::getAllFileInfos() const
     return res;
 }
 
-Strings BackupCoordinationLocal::listFiles(const String & prefix, const String & terminator) const
+Strings BackupCoordinationLocal::listFiles(const String & directory, bool recursive) const
 {
     std::lock_guard lock{mutex};
+    String prefix = directory;
+    if (!prefix.empty() && !prefix.ends_with('/'))
+        prefix += '/';
+    String terminator = recursive ? "" : "/";
+    
     Strings elements;
     for (auto it = file_names.lower_bound(prefix); it != file_names.end(); ++it)
     {
@@ -107,7 +112,23 @@ Strings BackupCoordinationLocal::listFiles(const String & prefix, const String &
             continue;
         elements.push_back(String{new_element});
     }
+    
     return elements;
+}
+
+bool BackupCoordinationLocal::hasFiles(const String & directory) const
+{
+    std::lock_guard lock{mutex};
+    String prefix = directory;
+    if (!prefix.empty() && !prefix.ends_with('/'))
+        prefix += '/';
+
+    auto it = file_names.lower_bound(prefix);
+    if (it == file_names.end())
+        return false;
+
+    const String & name = it->first;
+    return name.starts_with(prefix);
 }
 
 std::optional<FileInfo> BackupCoordinationLocal::getFileInfo(const String & file_name) const

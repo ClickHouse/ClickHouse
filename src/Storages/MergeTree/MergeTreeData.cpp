@@ -4061,17 +4061,10 @@ Pipe MergeTreeData::alterPartition(
 
 void MergeTreeData::backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & partitions)
 {
-    BackupEntries backup_entries = backupParts(backup_entries_collector.getContext(), partitions);
-    fs::path data_path_in_backup_fs = data_path_in_backup;
-    for (auto & pair: backup_entries)
-    {
-        auto & file_name = pair.first;
-        file_name = data_path_in_backup_fs / file_name;
-    }
-    backup_entries_collector.addBackupEntries(std::move(backup_entries));
+    backup_entries_collector.addBackupEntries(backupParts(backup_entries_collector.getContext(), data_path_in_backup, partitions));
 }
 
-BackupEntries MergeTreeData::backupParts(const ContextPtr & local_context, const std::optional<ASTs> & partitions) const
+BackupEntries MergeTreeData::backupParts(const ContextPtr & local_context, const String & data_path_in_backup, const std::optional<ASTs> & partitions) const
 {
     DataPartsVector data_parts;
     if (partitions)
@@ -4081,6 +4074,7 @@ BackupEntries MergeTreeData::backupParts(const ContextPtr & local_context, const
 
     BackupEntries backup_entries;
     std::map<DiskPtr, std::shared_ptr<TemporaryFileOnDisk>> temp_dirs;
+    fs::path data_path_in_backup_fs = data_path_in_backup;
 
     for (const auto & part : data_parts)
     {
@@ -4098,7 +4092,7 @@ BackupEntries MergeTreeData::backupParts(const ContextPtr & local_context, const
 
         for (const auto & [filepath, checksum] : part->checksums.files)
         {
-            String relative_filepath = fs::path(part->relative_path) / filepath;
+            String relative_filepath = data_path_in_backup_fs / part->relative_path / filepath;
             String hardlink_filepath = temp_part_dir / filepath;
             disk->createHardLink(part_dir / filepath, hardlink_filepath);
             UInt128 file_hash{checksum.file_hash.first, checksum.file_hash.second};
@@ -4109,7 +4103,7 @@ BackupEntries MergeTreeData::backupParts(const ContextPtr & local_context, const
 
         for (const auto & filepath : part->getFileNamesWithoutChecksums())
         {
-            String relative_filepath = fs::path(part->relative_path) / filepath;
+            auto relative_filepath = data_path_in_backup_fs / part->relative_path / filepath;
             backup_entries.emplace_back(
                 relative_filepath, std::make_unique<BackupEntryFromSmallFile>(disk, part_dir / filepath));
         }
@@ -4121,7 +4115,7 @@ BackupEntries MergeTreeData::backupParts(const ContextPtr & local_context, const
 void MergeTreeData::restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & partitions)
 {
     auto backup = restorer.getBackup();
-    if (!restorer.isNonEmptyTableAllowed() && getTotalActiveSizeInBytes() && !backup->listFiles(data_path_in_backup + '/').empty())
+    if (!restorer.isNonEmptyTableAllowed() && getTotalActiveSizeInBytes() && backup->hasFiles(data_path_in_backup))
         restorer.throwTableIsNotEmpty(getStorageID());
 
     restorePartsFromBackup(restorer, data_path_in_backup, partitions);
@@ -4185,7 +4179,7 @@ void MergeTreeData::restorePartsFromBackup(RestorerFromBackup & restorer, const 
         partition_ids = getPartitionIDsFromQuery(*partitions, restorer.getContext());
 
     auto backup = restorer.getBackup();
-    Strings part_names = backup->listFiles(data_path_in_backup + '/');
+    Strings part_names = backup->listFiles(data_path_in_backup);
     auto restored_parts_holder
         = std::make_shared<RestoredPartsHolder>(std::static_pointer_cast<MergeTreeData>(shared_from_this()), backup, part_names.size());
 
@@ -4221,7 +4215,7 @@ void MergeTreeData::restorePartFromBackup(std::shared_ptr<RestoredPartsHolder> r
     auto backup = restored_parts_holder->getBackup();
 
     UInt64 total_size_of_part = 0;
-    Strings filenames = backup->listFiles(part_path_in_backup + '/', "");
+    Strings filenames = backup->listFiles(part_path_in_backup, /* recursive= */ true);
     fs::path part_path_in_backup_fs = part_path_in_backup;
     for (const String & filename : filenames)
         total_size_of_part += backup->getFileSize(part_path_in_backup_fs / filename);

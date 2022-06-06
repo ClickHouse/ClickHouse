@@ -15,6 +15,10 @@
 #include <Common/escapeForFileName.h>
 #include <Common/quoteString.h>
 #include <base/insertAtEnd.h>
+#include <boost/algorithm/string/join.hpp>
+#include <filesystem>
+
+namespace fs = std::filesystem;
 
 
 namespace DB
@@ -162,11 +166,11 @@ void RestorerFromBackup::findRootPathsInBackup()
     root_paths_in_backup.clear();
 
     /// Start with "" as the root path and then we will add shard- and replica-related part to it.
-    String root_path = "";
+    fs::path root_path = "/";
     root_paths_in_backup.push_back(root_path);
 
     /// Add shard-related part to the root path.
-    Strings shards_in_backup = backup->listFiles(root_path + "shards/");
+    Strings shards_in_backup = backup->listFiles(root_path / "shards");
     if (shards_in_backup.empty())
     {
         if (restore_settings.shard_num_in_backup > 1)
@@ -183,12 +187,12 @@ void RestorerFromBackup::findRootPathsInBackup()
             shard_name = std::to_string(shard_num);
         if (std::find(shards_in_backup.begin(), shards_in_backup.end(), shard_name) == shards_in_backup.end())
             throw Exception(ErrorCodes::BACKUP_ENTRY_NOT_FOUND, "No shard #{} in backup", shard_name);
-        root_path += "shards/" + shard_name + "/";
+        root_path = root_path / "shards" / shard_name;
         root_paths_in_backup.push_back(root_path);
     }
 
     /// Add replica-related part to the root path.
-    Strings replicas_in_backup = backup->listFiles(root_path + "replicas/");
+    Strings replicas_in_backup = backup->listFiles(root_path / "replicas");
     if (replicas_in_backup.empty())
     {
         if (restore_settings.replica_num_in_backup > 1)
@@ -209,17 +213,23 @@ void RestorerFromBackup::findRootPathsInBackup()
             if (std::find(replicas_in_backup.begin(), replicas_in_backup.end(), replica_name) == replicas_in_backup.end())
                 replica_name = replicas_in_backup.front();
         }
-        root_path += "replicas/" + replica_name + "/";
+        root_path = root_path / "replicas" / replica_name;
         root_paths_in_backup.push_back(root_path);
     }
 
     /// Revert the list of root paths, because we need it in the following order:
-    /// "shards/<shard_num>/replicas/<replica_num>/" (first we search tables here)
-    /// "shards/<shard_num>/" (then here)
-    /// "" (and finally here)
+    /// "/shards/<shard_num>/replicas/<replica_num>/" (first we search tables here)
+    /// "/shards/<shard_num>/" (then here)
+    /// "/" (and finally here)
     std::reverse(root_paths_in_backup.begin(), root_paths_in_backup.end());
 
-    LOG_TRACE(log, "Will use paths in backup: {}", joinQuotedStrings(root_paths_in_backup));
+    LOG_TRACE(
+        log,
+        "Will use paths in backup: {}",
+        boost::algorithm::join(
+            root_paths_in_backup
+                | boost::adaptors::transformed([](const fs::path & path) -> String { return doubleQuoteString(String{path}); }),
+            ", "));
 }
 
 void RestorerFromBackup::collectDatabaseAndTableInfos()
@@ -253,16 +263,16 @@ void RestorerFromBackup::collectDatabaseAndTableInfos()
 
 void RestorerFromBackup::collectTableInfo(const DatabaseAndTableName & table_name_in_backup, const std::optional<ASTs> & partitions)
 {
-    std::optional<String> metadata_path;
-    std::optional<String> root_path_in_use;
-    for (const String & root_path : root_paths_in_backup)
+    std::optional<fs::path> metadata_path;
+    std::optional<fs::path> root_path_in_use;
+    for (const auto & root_path_in_backup : root_paths_in_backup)
     {
-        String try_metadata_path = root_path + "metadata/" + escapeForFileName(table_name_in_backup.first) + "/"
-            + escapeForFileName(table_name_in_backup.second) + ".sql";
+        fs::path try_metadata_path = root_path_in_backup / "metadata" / escapeForFileName(table_name_in_backup.first)
+            / (escapeForFileName(table_name_in_backup.second) + ".sql");
         if (backup->fileExists(try_metadata_path))
         {
             metadata_path = try_metadata_path;
-            root_path_in_use = root_path;
+            root_path_in_use = root_path_in_backup;
             break;
         }
     }
@@ -277,8 +287,8 @@ void RestorerFromBackup::collectTableInfo(const DatabaseAndTableName & table_nam
     }
 
     DatabaseAndTableName table_name = renaming_settings.getNewTableName(table_name_in_backup);
-    String data_path_in_backup = *root_path_in_use + "data/" + escapeForFileName(table_name_in_backup.first) + "/"
-        + escapeForFileName(table_name_in_backup.second);
+    fs::path data_path_in_backup
+        = *root_path_in_use / "data" / escapeForFileName(table_name_in_backup.first) / escapeForFileName(table_name_in_backup.second);
 
     auto read_buffer = backup->readFile(*metadata_path)->getReadBuffer();
     String create_query_str;
@@ -317,15 +327,15 @@ void RestorerFromBackup::collectTableInfo(const DatabaseAndTableName & table_nam
 
 void RestorerFromBackup::collectDatabaseInfo(const String & database_name_in_backup, const std::set<String> & except_table_names)
 {
-    std::optional<String> metadata_path;
+    std::optional<fs::path> metadata_path;
     std::unordered_set<String> table_names_in_backup;
-    for (const String & root_path_in_backup : root_paths_in_backup)
+    for (const auto & root_path_in_backup : root_paths_in_backup)
     {
-        String try_metadata_path = root_path_in_backup + "metadata/" + escapeForFileName(database_name_in_backup) + ".sql";
+        fs::path try_metadata_path = root_path_in_backup / "metadata" / (escapeForFileName(database_name_in_backup) + ".sql");
         if (!metadata_path && backup->fileExists(try_metadata_path))
             metadata_path = try_metadata_path;
 
-        Strings file_names = backup->listFiles(root_path_in_backup + "metadata/" + escapeForFileName(database_name_in_backup) + "/");
+        Strings file_names = backup->listFiles(root_path_in_backup / "metadata" / escapeForFileName(database_name_in_backup));
         for (const String & file_name : file_names)
         {
             constexpr const std::string_view sql_ext = ".sql";
@@ -385,9 +395,9 @@ void RestorerFromBackup::collectDatabaseInfo(const String & database_name_in_bac
 void RestorerFromBackup::collectAllDatabasesInfo(const std::set<String> & except_database_names)
 {
     std::unordered_set<String> database_names_in_backup;
-    for (const String & root_path_in_backup : root_paths_in_backup)
+    for (const auto & root_path_in_backup : root_paths_in_backup)
     {
-        Strings file_names = backup->listFiles(root_path_in_backup + "metadata/");
+        Strings file_names = backup->listFiles(root_path_in_backup / "metadata");
         for (String & file_name : file_names)
         {
             constexpr const std::string_view sql_ext = ".sql";

@@ -36,14 +36,13 @@ public:
     /// Returns UUID of the backup.
     virtual UUID getUUID() const = 0;
 
-    /// Returns names of entries stored in the backup.
-    /// If `prefix` isn't empty the function will return only the names starting with
-    /// the prefix (but without the prefix itself).
-    /// If the `terminator` isn't empty the function will returns only parts of the names
-    /// before the terminator. For example, list("", "") returns names of all the entries
-    /// in the backup; and list("data/", "/") return kind of a list of folders and
-    /// files stored in the "data/" directory inside the backup.
-    virtual Strings listFiles(const String & prefix = "", const String & terminator = "/") const = 0; /// NOLINT
+    /// Returns names of entries stored in a specified directory in the backup.
+    /// If `directory` is empty or '/' the functions returns entries in the backup's root.
+    virtual Strings listFiles(const String & directory, bool recursive = false) const = 0;
+
+    /// Checks if a specified directory contains any files.
+    /// The function returns the same as `!listFiles(directory).empty()`.
+    virtual bool hasFiles(const String & directory) const = 0;
 
     using SizeAndChecksum = std::pair<UInt64, UInt128>;
 
