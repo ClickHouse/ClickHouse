@@ -440,20 +440,6 @@ void Changelog::initWriter(const ChangelogFileDescription & description)
     current_writer = std::make_unique<ChangelogWriter>(description.path, WriteMode::Append, description.from_log_index);
 }
 
-void Changelog::removeLog(const std::filesystem::path & path, const std::filesystem::path & detached_folder)
-{
-
-    if (!std::filesystem::exists(detached_folder))
-    {
-        LOG_INFO(log, "Creating {} directory for broken logs", detached_folder.generic_string());
-        std::filesystem::create_directories(detached_folder);
-    }
-
-    const auto new_path = detached_folder / path.filename();
-    LOG_INFO(log, "Moving {} to {}", path.generic_string(), new_path.generic_string());
-    std::filesystem::rename(path, new_path);
-}
-
 namespace
 {
 
@@ -472,6 +458,27 @@ std::string getCurrentTimestampFolder()
 
 }
 
+void Changelog::removeExistingLogs(ChangelogIter begin, ChangelogIter end)
+{
+    const auto timestamp_folder = changelogs_detached_dir / getCurrentTimestampFolder();
+
+    /// All subsequent logs shouldn't exist. But they may exist if we crashed after writeAt started. Remove them.
+    for (auto itr = begin; itr != end;)
+    {
+        if (!std::filesystem::exists(timestamp_folder))
+        {
+            LOG_WARNING(log, "Moving broken logs to {}", timestamp_folder.generic_string());
+            std::filesystem::create_directories(timestamp_folder);
+        }
+
+        LOG_WARNING(log, "Removing changelog {}", itr->second.path);
+        const std::filesystem::path path = itr->second.path;
+        const auto new_path = timestamp_folder / path.filename();
+        std::filesystem::rename(path, new_path);
+        itr = existing_changelogs.erase(itr);
+    }
+}
+
 void Changelog::removeAllLogsAfter(uint64_t remove_after_log_start_index)
 {
     auto start_to_remove_from_itr = existing_changelogs.upper_bound(remove_after_log_start_index);
@@ -480,14 +487,8 @@ void Changelog::removeAllLogsAfter(uint64_t remove_after_log_start_index)
 
     size_t start_to_remove_from_log_id = start_to_remove_from_itr->first;
 
-    const auto timestamp_folder = changelogs_detached_dir / getCurrentTimestampFolder();
-    /// All subsequent logs shouldn't exist. But they may exist if we crashed after writeAt started. Remove them.
-    for (auto itr = start_to_remove_from_itr; itr != existing_changelogs.end();)
-    {
-        LOG_WARNING(log, "Removing changelog {}, because it goes after broken changelog entry", itr->second.path);
-        removeLog(itr->second.path, timestamp_folder);
-        itr = existing_changelogs.erase(itr);
-    }
+    LOG_WARNING(log, "Removing changelogs that go after broken changelog entry");
+    removeExistingLogs(start_to_remove_from_itr, existing_changelogs.end());
 
     std::erase_if(logs, [start_to_remove_from_log_id] (const auto & item) { return item.first >= start_to_remove_from_log_id; });
 }
@@ -495,13 +496,7 @@ void Changelog::removeAllLogsAfter(uint64_t remove_after_log_start_index)
 void Changelog::removeAllLogs()
 {
     LOG_WARNING(log, "Removing all changelogs");
-    const auto timestamp_folder = changelogs_detached_dir / getCurrentTimestampFolder();
-    for (auto itr = existing_changelogs.begin(); itr != existing_changelogs.end();)
-    {
-        LOG_WARNING(log, "Removing changelog {}, because it's goes after broken changelog entry", itr->second.path);
-        removeLog(itr->second.path, timestamp_folder);
-        itr = existing_changelogs.erase(itr);
-    }
+    removeExistingLogs(existing_changelogs.begin(), existing_changelogs.end());
     logs.clear();
 }
 
