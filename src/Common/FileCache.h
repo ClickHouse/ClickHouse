@@ -97,9 +97,9 @@ public:
 
     virtual size_t getFileSegmentsNum() const = 0;
 
-    virtual void createOrSetQueryContext(const ReadSettings & settings) = 0;
+    virtual void createOrSetQueryContext(const String & query_id, const ReadSettings & settings) = 0;
 
-    virtual void tryReleaseQueryContext() = 0;
+    virtual void tryReleaseQueryContext(const String & query_id) = 0;
 
 protected:
     String cache_base_path;
@@ -162,9 +162,9 @@ public:
 
     size_t getFileSegmentsNum() const override;
 
-    void createOrSetQueryContext(const ReadSettings & settings) override;
+    void createOrSetQueryContext(const String & query_id, const ReadSettings & settings) override;
 
-    void tryReleaseQueryContext() override;
+    void tryReleaseQueryContext(const String & query_id) override;
 
 private:
     class LRUQueue

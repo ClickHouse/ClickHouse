@@ -56,7 +56,8 @@ CachedReadBufferFromRemoteFS::CachedReadBufferFromRemoteFS(
     , enable_logging(!query_id.empty() && settings_.enable_filesystem_cache_log)
     , current_buffer_id(getRandomASCIIString(8))
 {
-    cache->createOrSetQueryContext(settings);
+    if (!query_id.empty())
+        cache->createOrSetQueryContext(query_id, settings);
 }
 
 void CachedReadBufferFromRemoteFS::appendFilesystemCacheLog(
@@ -486,7 +487,9 @@ CachedReadBufferFromRemoteFS::~CachedReadBufferFromRemoteFS()
     {
         appendFilesystemCacheLog((*current_file_segment_it)->range(), read_type);
     }
-    cache->tryReleaseQueryContext();
+
+    if (!query_id.empty())
+        cache->tryReleaseQueryContext(query_id);
 }
 
 void CachedReadBufferFromRemoteFS::predownload(FileSegmentPtr & file_segment)
