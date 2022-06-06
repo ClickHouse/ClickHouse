@@ -76,6 +76,9 @@ struct ManyAggregatedData
     {
         try
         {
+            if (variants.size() <= 1)
+                return;
+
             // Aggregation states destruction may be very time-consuming.
             // In the case of a query with LIMIT, most states won't be destroyed during conversion to blocks.
             // Without the following code, they would be destroyed in the destructor of AggregatedDataVariants in the current thread (i.e. sequentially).
