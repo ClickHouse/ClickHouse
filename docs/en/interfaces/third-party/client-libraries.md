@@ -3,9 +3,9 @@ sidebar_position: 26
 sidebar_label: Client Libraries
 ---
 
-# Client Libraries from Third-party Developers {#client-libraries-from-third-party-developers}
+# Client Libraries from Third-party Developers
 
-:::warning    
+:::warning
 ClickHouse Inc does **not** maintain the libraries listed below and hasn’t done any extensive testing to ensure their quality.
 :::
 

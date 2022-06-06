@@ -3,11 +3,11 @@ sidebar_position: 59
 sidebar_label: IPv4
 ---
 
-## IPv4 {#ipv4}
+## IPv4
 
 `IPv4` is a domain based on `UInt32` type and serves as a typed replacement for storing IPv4 values. It provides compact storage with the human-friendly input-output format and column type information on inspection.
 
-### Basic Usage {#basic-usage}
+### Basic Usage
 
 ``` sql
 CREATE TABLE hits (url String, from IPv4) ENGINE = MergeTree() ORDER BY url;

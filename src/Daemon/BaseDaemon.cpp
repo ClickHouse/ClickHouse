@@ -73,6 +73,7 @@ namespace DB
     namespace ErrorCodes
     {
         extern const int CANNOT_SET_SIGNAL_HANDLER;
+        extern const int CANNOT_SEND_SIGNAL;
     }
 }
 
@@ -86,7 +87,9 @@ static void call_default_signal_handler(int sig)
 {
     if (SIG_ERR == signal(sig, SIG_DFL))
         DB::throwFromErrno("Cannot set signal handler.", DB::ErrorCodes::CANNOT_SET_SIGNAL_HANDLER);
-    raise(sig);
+
+    if (0 != raise(sig))
+        DB::throwFromErrno("Cannot send signal.", DB::ErrorCodes::CANNOT_SEND_SIGNAL);
 }
 
 static const size_t signal_pipe_buf_size =

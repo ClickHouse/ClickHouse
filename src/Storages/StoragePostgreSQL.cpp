@@ -36,6 +36,8 @@
 
 #include <Processors/Sinks/SinkToStorage.h>
 
+#include <QueryPipeline/Pipe.h>
+
 #include <Storages/StorageFactory.h>
 #include <Storages/transformQueryForExternalDatabase.h>
 
