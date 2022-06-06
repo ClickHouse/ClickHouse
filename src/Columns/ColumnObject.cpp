@@ -22,7 +22,6 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
     extern const int DUPLICATE_COLUMN;
     extern const int NUMBER_OF_DIMENSIONS_MISMATHED;
-    extern const int NOT_IMPLEMENTED;
     extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
     extern const int ARGUMENT_OUT_OF_BOUND;
 }
@@ -362,7 +361,7 @@ void ColumnObject::Subcolumn::insertRangeFrom(const Subcolumn & src, size_t star
 
     auto insert_from_part = [&](const auto & column, size_t from, size_t n)
     {
-        assert(from + n <= column.size());
+        assert(from + n <= column->size());
         auto column_type = getDataTypeByColumn(*column);
 
         if (column_type->equals(*least_common_type.get()))
