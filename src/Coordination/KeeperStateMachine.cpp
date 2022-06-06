@@ -59,7 +59,7 @@ KeeperStateMachine::KeeperStateMachine(
     , snapshot_manager(
         snapshots_path_, coordination_settings->snapshots_to_keep,
         coordination_settings->compress_snapshots_with_zstd_format, superdigest_,
-        coordination_settings->dead_session_check_period_ms.totalMicroseconds())
+        coordination_settings->dead_session_check_period_ms.totalMilliseconds())
     , responses_queue(responses_queue_)
     , snapshots_queue(snapshots_queue_)
     , last_committed_idx(0)
