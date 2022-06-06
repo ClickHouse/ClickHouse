@@ -616,6 +616,7 @@ void LRUFileCache::remove(const Key & key)
     for (auto & [offset, cell] : offsets)
         to_remove.push_back(&cell);
 
+    bool some_cells_were_skipped = false;
     for (auto & cell : to_remove)
     {
         /// In ordinary case we remove data from cache when it's not used by anyone.
@@ -623,7 +624,10 @@ void LRUFileCache::remove(const Key & key)
         /// it became possible to start removing something from cache when it is used
         /// by other "zero-copy" tables. That is why it's not an error.
         if (!cell->releasable())
+        {
+            some_cells_were_skipped = true;
             continue;
+        }
 
         auto file_segment = cell->file_segment;
         if (file_segment)
@@ -635,12 +639,16 @@ void LRUFileCache::remove(const Key & key)
 
     auto key_path = getPathInLocalCache(key);
 
-    if (fs::is_empty(key_path))
+    if (!some_cells_were_skipped)
     {
         files.erase(key);
 
         if (fs::exists(key_path))
             fs::remove(key_path);
+    }
+    else
+    {
+        LOG_DEBUG(&Poco::Logger::get("DEBUG"), "SOME CELLS WERE SKIPPED");
     }
 }
 
