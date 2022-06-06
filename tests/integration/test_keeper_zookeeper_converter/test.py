@@ -275,7 +275,9 @@ def test_simple_crud_requests(started_cluster, create_snapshots):
 
     # After receiving close request zookeeper updates pzxid of ephemeral parent.
     # Keeper doesn't receive such request (snapshot created before it) so it doesn't do it.
-    compare_states(genuine_connection, fake_connection, exclude_paths=["/test_ephemeral"])
+    compare_states(
+        genuine_connection, fake_connection, exclude_paths=["/test_ephemeral"]
+    )
     eph1, stat1 = fake_connection.get("/test_ephemeral")
     eph2, stat2 = genuine_connection.get("/test_ephemeral")
 
@@ -361,7 +363,9 @@ def test_multi_and_failed_requests(started_cluster, create_snapshots):
 
     # After receiving close request zookeeper updates pzxid of ephemeral parent.
     # Keeper doesn't receive such request (snapshot created before it) so it doesn't do it.
-    compare_states(genuine_connection, fake_connection, exclude_paths=["/test_multitransactions"])
+    compare_states(
+        genuine_connection, fake_connection, exclude_paths=["/test_multitransactions"]
+    )
     eph1, stat1 = fake_connection.get("/test_multitransactions")
     eph2, stat2 = genuine_connection.get("/test_multitransactions")
 
