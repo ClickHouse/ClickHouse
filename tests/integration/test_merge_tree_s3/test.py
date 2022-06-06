@@ -72,7 +72,7 @@ def cluster():
                     ["curl", "-s", f"http://{UNSTABLE_PROXY_ENDPOINT}/?key={urllib.parse.quote(storage_configurator.secret_key)}"],
                     nothrow=True,
                 )
-                cluster.instances["node"].restart_clickhouse() # ClickHouse depends on the disk mock.
+                cluster.instances["node"].restart_clickhouse(kill=True) # ClickHouse depends on the disk mock.
 
             yield cluster
     finally:
