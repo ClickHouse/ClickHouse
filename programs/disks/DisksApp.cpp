@@ -41,15 +41,6 @@ String DisksApp::getDefaultConfigFileName()
     return "/etc/clickhouse-server/config.xml";
 }
 
-void DisksApp::loadConfiguration()
-{
-    String config_path = config().getString("config-file", getDefaultConfigFileName());
-    DB::ConfigProcessor config_processor(config_path, false, false);
-    config_processor.setConfigPath(fs::path(config_path).parent_path());
-    auto loaded_config = config_processor.loadConfig();
-    config().add(loaded_config.configuration.duplicate(), false, false);
-}
-
 void DisksApp::addOptions(std::optional<ProgramOptionsDescription>  & options_description,
                           boost::program_options::positional_options_description & positional_options_description
 )
@@ -132,9 +123,6 @@ int DisksApp::main(const std::vector<String> & /*args*/)
 {
     Poco::Logger::root().setLevel("trace");
     Poco::Logger::root().setChannel(new Poco::FileChannel(config().getString("logger.clickhouse-disks", "/var/log/clickhouse-server/clickhouse-disks.log")));
-
-    if (config().has("config-file"))
-        loadConfiguration();
 
     registerDisks();
     registerFormats();

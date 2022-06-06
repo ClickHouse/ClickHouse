@@ -29,7 +29,7 @@ public:
     virtual ~ICommand() = default;
     void execute(
         const std::vector<String> & command_arguments,
-        const DB::ContextMutablePtr & global_context,
+        DB::ContextMutablePtr & global_context,
         Poco::Util::LayeredConfiguration & config);
 
 protected:

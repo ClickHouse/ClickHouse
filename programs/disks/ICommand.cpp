@@ -27,7 +27,7 @@ String ICommand::fullPathWithValidate(const DiskPtr & disk, const String & path)
 
 void ICommand::execute(
     const std::vector<String> & command_arguments,
-    const DB::ContextMutablePtr & global_context,
+    DB::ContextMutablePtr & global_context,
     Poco::Util::LayeredConfiguration & config)
 {
     po::variables_map options;
@@ -54,15 +54,11 @@ void ICommand::execute(
     }
     processOptions(config, options);
 
-    if (options.count("config-file"))
-    {
-        config.setString("config-file", options["config-file"].as<String>());
-        String config_path = config.getString("config-file", "/etc/clickhouse-server/config.xml");
-        DB::ConfigProcessor config_processor(config_path, false, false);
-        config_processor.setConfigPath(fs::path(config_path).parent_path());
-        auto loaded_config = config_processor.loadConfig();
-        config.add(loaded_config.configuration.duplicate(), false, false);
-    }
+    String config_path = config.getString("config-file", "/etc/clickhouse-server/config.xml");
+    DB::ConfigProcessor config_processor(config_path, false, false);
+    config_processor.setConfigPath(fs::path(config_path).parent_path());
+    auto loaded_config = config_processor.loadConfig();
+    config.add(loaded_config.configuration.duplicate(), false, false);
 
     String path = config.getString("path", DBMS_DEFAULT_PATH);
     global_context->setPath(path);
