@@ -251,7 +251,7 @@ public:
 
         arma::mat regressors = prepareTestDataset(columns);
 
-        arma::rowvec answers(column_size);
+        arma::Row<size_t> answers(column_size);
         model.Classify(regressors, answers);
 
         for (size_t i = 0; i < column_size; i++)
@@ -326,7 +326,7 @@ public:
 
         arma::mat regressors = prepareTestDataset(columns);
 
-        arma::rowvec answers(column_size);
+        arma::Row<size_t> answers(column_size);
         model.Classify(regressors, answers);
 
         for (size_t i = 0; i < column_size; i++)
