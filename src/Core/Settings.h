@@ -601,7 +601,7 @@ static constexpr UInt64 operator""_GiB(unsigned long long value)
     M(Bool, query_cache_active_usage, true, "Put query result in cache after execution", 0) \
     M(Bool, query_cache_passive_usage, true, "If query result is in cache, use it", 0) \
     M(Bool, share_query_cache, true, "Enable sharing query cache with other users", 0) \
-    M(UInt64, min_query_runs_before_caching, 5, "Minimum number of query runs before the result is put in cache", 0) \
+    M(UInt64, min_query_runs_before_caching, 100500, "Minimum number of query runs before the result is put in cache", 0) \
     M(UInt64, query_cache_entry_put_timeout, 150, "Number of milliseconds that query result will be stored in cache for", 0) \
     M(UInt64, max_query_cache_entry_size, 250 * (1ULL << 20), "Maximum size of query result to be put in cache", 0) \
     // End of COMMON_SETTINGS
