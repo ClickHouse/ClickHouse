@@ -159,7 +159,22 @@ InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
     {
         Blocks headers(num_children);
         for (size_t query_num = 0; query_num < num_children; ++query_num)
+        {
             headers[query_num] = nested_interpreters[query_num]->getSampleBlock();
+            const auto & current_required_result_column_names = required_result_column_names_for_other_selects[query_num];
+            if (!current_required_result_column_names.empty())
+            {
+                const auto & header_columns = headers[query_num].getNames();
+                if (current_required_result_column_names != header_columns)
+                {
+                    throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "Different order of columns in UNION subquery: {} and {}",
+                        fmt::join(current_required_result_column_names, ", "),
+                        fmt::join(header_columns, ", "));
+                }
+
+            }
+        }
 
         result_header = getCommonHeaderForUnion(headers);
     }
