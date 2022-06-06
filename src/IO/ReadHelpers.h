@@ -595,6 +595,12 @@ template <typename Vector>
 void readCSVStringInto(Vector & s, ReadBuffer & buf, const FormatSettings::CSV & settings);
 
 template <typename Vector>
+void readCSVStringIntoSSE2(Vector & s, ReadBuffer & buf, const FormatSettings::CSV & settings);
+
+template <typename Vector>
+void readCSVStringIntoSSE2Opt(Vector & s, ReadBuffer & buf, const FormatSettings::CSV & settings);
+
+template <typename Vector>
 void readCSVStringIntoAVX2(Vector & s, ReadBuffer & buf, const FormatSettings::CSV & settings);
 
 template <typename Vector>

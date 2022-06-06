@@ -10,7 +10,7 @@ static inline void skipDelimiters(ReadBuffer & in)
         ++in.position();
 }
 
-void readCSVFile(ReadBuffer & buf, const FormatSettings::CSV & settings, ReadFunc read_func)
+static inline void readCSVFile(ReadBuffer & buf, const FormatSettings::CSV & settings, ReadFunc read_func)
 {
     while (!buf.eof())
     {
@@ -76,9 +76,12 @@ int main()
         {"long.csv", "long-string"},
     };
     std::map<ReadFunc, String> read_funcs
-        = {{readCSVStringInto<NullOutput>, "sse2"},
-           {readCSVStringIntoAVX2<NullOutput>, "avx2"},
-           {readCSVStringIntoAVX512<NullOutput>, "avx512"}};
+        = {{readCSVStringInto<NullOutput>, "none"},
+           {readCSVStringIntoSSE2<NullOutput>, "sse2"},
+           {readCSVStringIntoSSE2Opt<NullOutput>, "sse2-opt"},
+        //    {readCSVStringIntoAVX2<NullOutput>, "avx2"},
+        //    {readCSVStringIntoAVX512<NullOutput>, "avx512"}
+           };
 
     for (const auto & [path, path_tag] : paths)
         for (const auto & [read_func, func_tag] : read_funcs)
