@@ -37,6 +37,19 @@
 
 #include <base/logger_useful.h>
 using namespace DB;
+namespace DB
+{
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+    extern const int UNKNOWN_TYPE;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int BAD_ARGUMENTS;
+    extern const int NO_SUCH_DATA_PART;
+    extern const int UNKNOWN_FUNCTION;
+}
+}
+
 
 namespace local_engine
 {
@@ -91,9 +104,6 @@ QueryPlanPtr SerializedPlanParser::parseMergeTreeTable(const substrait::ReadRel 
     auto header = parseNameStruct(rel.base_schema());
     auto names_and_types_list = header.getNamesAndTypesList();
     auto storage_factory = StorageMergeTreeFactory::instance();
-    //    auto metadata = storageFactory.getMetadata(StorageID(merge_tree_table.database, merge_tree_table.table), [names_and_types_list, this]()->StorageInMemoryMetadataPtr {
-    //        return buildMetaData(names_and_types_list, this->context);
-    //    });
     auto metadata = buildMetaData(names_and_types_list, this->context);
     auto t_metadata = watch.elapsedMicroseconds();
     query_context.metadata = metadata;
@@ -130,14 +140,13 @@ QueryPlanPtr SerializedPlanParser::parseMergeTreeTable(const substrait::ReadRel 
         { return part->info.min_block >= min_block && part->info.max_block < max_block; });
     if (selected_parts.empty())
     {
-        LOG_ERROR(&Poco::Logger::get("SerializedPlanParser"), "part {} not found.", min_block);
-        throw std::exception();
+        throw Exception(ErrorCodes::NO_SUCH_DATA_PART, "part {} to {} not found.", min_block, max_block);
     }
     auto query = query_context.custom_storage_merge_tree->reader.readFromParts(
         selected_parts, names_and_types_list.getNames(), query_context.storage_snapshot, *query_info, this->context, 4096 * 2, 1);
     auto t_pipe = watch.elapsedMicroseconds() - t_storage;
     watch.stop();
-    LOG_DEBUG(
+    LOG_TRACE(
         &Poco::Logger::get("SerializedPlanParser"),
         "get metadata {} ms; get storage {} ms; get pipe {} ms",
         t_metadata / 1000.0,
@@ -197,7 +206,7 @@ DataTypePtr SerializedPlanParser::parseType(const substrait::Type & type)
     }
     else
     {
-        throw std::runtime_error("doesn't support type " + type.DebugString());
+        throw Exception(ErrorCodes::UNKNOWN_TYPE, "doesn't support type {}", type.DebugString());
     }
 }
 QueryPlanPtr SerializedPlanParser::parse(std::unique_ptr<substrait::Plan> plan)
@@ -216,7 +225,10 @@ QueryPlanPtr SerializedPlanParser::parse(std::unique_ptr<substrait::Plan> plan)
     if (plan->relations_size() == 1)
     {
         auto root_rel = plan->relations().at(0);
-        assert(root_rel.has_root() && "must have root rel!");
+        if (!root_rel.has_root())
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "must have root rel!");
+        }
 
         auto query_plan = parseOp(root_rel.root().input());
         ActionsDAGPtr actions_dag = std::make_shared<ActionsDAG>(blockToNameAndTypeList(query_plan->getCurrentDataStream().header));
@@ -233,7 +245,7 @@ QueryPlanPtr SerializedPlanParser::parse(std::unique_ptr<substrait::Plan> plan)
     }
     else
     {
-        throw std::runtime_error("too many relations found");
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "too many relations found");
     }
 }
 
@@ -289,11 +301,8 @@ QueryPlanPtr SerializedPlanParser::parseOp(const substrait::Rel & rel)
                 }
                 else
                 {
-                    LOG_ERROR(
-                        &Poco::Logger::get("SerializedPlanParser"),
-                        "unsupported projection type {}.",
-                        magic_enum::enum_name(expr.rex_type_case()));
-                    throw std::runtime_error("unsupported projection type");
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS, "unsupported projection type {}.", magic_enum::enum_name(expr.rex_type_case()));
                 }
             }
             actions_dag->project(required_columns);
@@ -332,7 +341,7 @@ QueryPlanPtr SerializedPlanParser::parseOp(const substrait::Rel & rel)
             const auto & join = rel.join();
             if (!join.has_left() || !join.has_right())
             {
-                throw std::runtime_error("left table or right table is missing.");
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "left table or right table is missing.");
             }
             auto left_plan = parseOp(join.left());
             auto right_plan = parseOp(join.right());
@@ -341,7 +350,7 @@ QueryPlanPtr SerializedPlanParser::parseOp(const substrait::Rel & rel)
             break;
         }
         default:
-            throw std::runtime_error("doesn't support relation type");
+            throw Exception(ErrorCodes::UNKNOWN_TYPE, "doesn't support relation type");
     }
     LOG_TRACE(
         &Poco::Logger::get("SerializedPlanParser"),
@@ -367,8 +376,7 @@ QueryPlanStepPtr SerializedPlanParser::parseAggregate(QueryPlan & plan, const su
     {
         if (measure.measure().args_size() != 1)
         {
-            LOG_ERROR(&Poco::Logger::get("SerializedPlanParser"), "only support one argument aggregate function");
-            throw std::runtime_error("only support one argument aggregate function");
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "only support one argument aggregate function");
         }
         auto arg = measure.measure().args(0);
 
@@ -391,8 +399,7 @@ QueryPlanStepPtr SerializedPlanParser::parseAggregate(QueryPlan & plan, const su
         }
         else
         {
-            LOG_ERROR(&Poco::Logger::get("SerializedPlanParser"), "unsupported aggregate argument type.");
-            throw std::runtime_error("unsupported aggregate argument type.");
+            throw Exception(ErrorCodes::UNKNOWN_TYPE, "unsupported aggregate argument type {}.", arg.DebugString());
         }
     }
     auto expression_before_aggregate = std::make_unique<ExpressionStep>(input, expression);
@@ -406,8 +413,7 @@ QueryPlanStepPtr SerializedPlanParser::parseAggregate(QueryPlan & plan, const su
     }
     if (phase_set.size() > 1)
     {
-        LOG_ERROR(&Poco::Logger::get("SerializedPlanParser"), "two many aggregate phase!");
-        throw std::runtime_error("too many aggregate phase!");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "too many aggregate phase!");
     }
     bool final = true;
     if (phase_set.contains(substrait::AggregationPhase::AGGREGATION_PHASE_INITIAL_TO_INTERMEDIATE)
@@ -428,16 +434,14 @@ QueryPlanStepPtr SerializedPlanParser::parseAggregate(QueryPlan & plan, const su
             }
             else
             {
-                LOG_ERROR(&Poco::Logger::get("SerializedPlanParser"), "unsupported group expression");
-                throw std::runtime_error("unsupported group expression");
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "unsupported group expression: {}", group.DebugString());
             }
         }
     }
     // only support one grouping or no grouping
     else if (rel.groupings_size() != 0)
     {
-        LOG_ERROR(&Poco::Logger::get("SerializedPlanParser"), "too many groupings");
-        throw std::runtime_error("too many groupings");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "too many groupings");
     }
 
     auto aggregates = AggregateDescriptions();
@@ -458,9 +462,8 @@ QueryPlanStepPtr SerializedPlanParser::parseAggregate(QueryPlan & plan, const su
             agg.column_name = function_name + "(" + measure_names.at(i) + ")";
         }
         agg.arguments = ColumnNumbers{plan.getCurrentDataStream().header.getPositionByName(measure_names.at(i))};
-        //        agg.argument_names = Names{measure_names.at(i)};
         auto arg_type = plan.getCurrentDataStream().header.getByName(measure_names.at(i)).type;
-        if (auto function_type = checkAndGetDataType<DataTypeAggregateFunction>(arg_type.get()))
+        if (const auto * function_type = checkAndGetDataType<DataTypeAggregateFunction>(arg_type.get()))
         {
             agg.function = getAggregateFunction(function_name, {function_type->getReturnType()});
         }
@@ -524,8 +527,7 @@ std::string SerializedPlanParser::getFunctionName(std::string function_signature
     auto function_name = function_signature.substr(0, function_name_idx);
     if (!SCALAR_FUNCTIONS.contains(function_name))
     {
-        LOG_ERROR(&Poco::Logger::get("SerializedPlanParser"), "doesn't support function {}", function_name);
-        throw std::runtime_error("unsupported function");
+        throw Exception(ErrorCodes::UNKNOWN_FUNCTION, "unsupported function {}", function_name);
     }
     std::string ch_function_name;
     if (function_name == "cast")
@@ -540,8 +542,7 @@ std::string SerializedPlanParser::getFunctionName(std::string function_signature
         }
         else
         {
-            LOG_ERROR(&Poco::Logger::get("SerializedPlanParser"), "doesn't support function {}", function_signature);
-            throw std::runtime_error("doesn't support function " + function_signature);
+            throw Exception(ErrorCodes::UNKNOWN_FUNCTION, "unsupported function {}", function_signature);
         }
     }
     else
@@ -556,8 +557,7 @@ const ActionsDAG::Node * SerializedPlanParser::parseFunctionWithDAG(
 {
     if (!rel.has_scalar_function())
     {
-        LOG_ERROR(&Poco::Logger::get("SerializedPlanParser"), "the root of expression should be a scalar function");
-        throw std::runtime_error("the root of expression should be a scalar function");
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "the root of expression should be a scalar function");
     }
     const auto & scalar_function = rel.scalar_function();
 
@@ -666,7 +666,9 @@ const ActionsDAG::Node * SerializedPlanParser::parseArgument(ActionsDAGPtr actio
                 case substrait::Expression_Literal::kList: {
                     SizeLimits limit;
                     if (literal.has_empty_list())
-                        throw std::runtime_error("empty list not support!");
+                    {
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "empty list not support!");
+                    }
                     MutableColumnPtr values;
                     DataTypePtr type;
                     auto first_value = literal.list().values(0);
@@ -753,8 +755,10 @@ const ActionsDAG::Node * SerializedPlanParser::parseArgument(ActionsDAGPtr actio
                     }
                     else
                     {
-                        LOG_ERROR(&Poco::Logger::get("SerializedPlanParser"), "unsupported literal list type");
-                        throw std::runtime_error("unsupported literal list type.");
+                        throw Exception(
+                            ErrorCodes::UNKNOWN_TYPE,
+                            "unsupported literal list type. {}",
+                            magic_enum::enum_name(first_value.literal_type_case()));
                     }
                     auto set = std::make_shared<Set>(limit, true, false);
                     Block values_block;
@@ -768,19 +772,15 @@ const ActionsDAG::Node * SerializedPlanParser::parseArgument(ActionsDAGPtr actio
                     return &action_dag->addColumn(ColumnWithTypeAndName(std::move(arg), std::make_shared<DataTypeSet>(), name));
                 }
                 default: {
-                    LOG_ERROR(
-                        &Poco::Logger::get("SerializedPlanParser"),
-                        "unsupported constant type {}",
-                        magic_enum::enum_name(literal.literal_type_case()));
-                    throw std::runtime_error("unsupported constant type");
+                    throw Exception(
+                        ErrorCodes::UNKNOWN_TYPE, "unsupported constant type {}", magic_enum::enum_name(literal.literal_type_case()));
                 }
             }
         }
         case substrait::Expression::RexTypeCase::kSelection: {
             if (!rel.selection().has_direct_reference() || !rel.selection().direct_reference().has_struct_field())
             {
-                LOG_ERROR(&Poco::Logger::get("SerializedPlanParser"), "Can only have direct struct references in selections");
-                throw std::runtime_error("Can only have direct struct references in selections");
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Can only have direct struct references in selections");
             }
             const auto * field = action_dag->getInputs()[rel.selection().direct_reference().struct_field().field()];
             return action_dag->tryFindInIndex(field->result_name);
@@ -788,8 +788,7 @@ const ActionsDAG::Node * SerializedPlanParser::parseArgument(ActionsDAGPtr actio
         case substrait::Expression::RexTypeCase::kCast: {
             if (!rel.cast().has_type() || !rel.cast().has_input())
             {
-                LOG_ERROR(&Poco::Logger::get("SerializedPlanParser"), "There is no type and input in cast node.");
-                throw std::runtime_error("There is no type and input in cast node.");
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Doesn't have type or input in cast node.");
             }
             std::string ch_function_name;
             if (rel.cast().type().has_fp64())
@@ -826,8 +825,7 @@ const ActionsDAG::Node * SerializedPlanParser::parseArgument(ActionsDAGPtr actio
             }
             else
             {
-                LOG_ERROR(&Poco::Logger::get("SerializedPlanParser"), "doesn't support cast type {}", rel.cast().type().DebugString());
-                throw std::runtime_error("doesn't support cast type " + rel.cast().type().DebugString());
+                throw Exception(ErrorCodes::UNKNOWN_TYPE, "doesn't support cast type {}", rel.cast().type().DebugString());
             }
             DB::ActionsDAG::NodeRawConstPtrs args;
             auto cast_input = rel.cast().input();
@@ -847,8 +845,7 @@ const ActionsDAG::Node * SerializedPlanParser::parseArgument(ActionsDAGPtr actio
             }
             else
             {
-                LOG_ERROR(&Poco::Logger::get("SerializedPlanParser"), "unsupported cast input {}", rel.cast().input().DebugString());
-                throw std::runtime_error("unsupported cast input " + rel.cast().input().DebugString());
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "unsupported cast input {}", rel.cast().input().DebugString());
             }
             auto function_builder = DB::FunctionFactory::instance().get(ch_function_name, this->context);
             std::string args_name;
@@ -895,12 +892,8 @@ const ActionsDAG::Node * SerializedPlanParser::parseArgument(ActionsDAGPtr actio
             return parseFunctionWithDAG(rel, result, action_dag, false);
         }
         default: {
-            LOG_ERROR(
-                &Poco::Logger::get("SerializedPlanParser"),
-                "unsupported arg type {} : {}",
-                magic_enum::enum_name(rel.rex_type_case()),
-                rel.DebugString());
-            throw std::runtime_error("unsupported arg type");
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS, "unsupported arg type {} : {}", magic_enum::enum_name(rel.rex_type_case()), rel.DebugString());
         }
     }
 }
@@ -949,8 +942,7 @@ DB::QueryPlanPtr SerializedPlanParser::parseJoin(substrait::JoinRel join, DB::Qu
     }
     else
     {
-        LOG_ERROR(&Poco::Logger::get("SerializedPlanParser"), "unsupported join type {}.", magic_enum::enum_name(join.type()));
-        throw std::runtime_error("unsupported join type");
+        throw Exception(ErrorCodes::UNKNOWN_TYPE, "unsupported join type {}.", magic_enum::enum_name(join.type()));
     }
     table_join->addDisjunct();
 
