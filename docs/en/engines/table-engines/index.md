@@ -4,7 +4,7 @@ toc_priority: 26
 toc_title: Introduction
 ---
 
-# Table Engines {#table_engines}
+# Table Engines
 
 The table engine (type of table) determines:
 

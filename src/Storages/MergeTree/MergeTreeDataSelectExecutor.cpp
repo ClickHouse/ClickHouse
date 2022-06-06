@@ -24,6 +24,7 @@
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/UnionStep.h>
+#include <Processors/QueryPlan/QueryIdHolder.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 
 #include <Core/UUID.h>
@@ -170,6 +171,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
     Pipes pipes;
     Pipe projection_pipe;
     Pipe ordinary_pipe;
+    QueryPlanResourceHolder resources;
 
     auto projection_plan = std::make_unique<QueryPlan>();
     if (query_info.projection->desc->is_minmax_count_projection)
@@ -216,8 +218,9 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
             projection_plan->addStep(std::move(expression_before_aggregation));
         }
 
-        projection_pipe = projection_plan->convertToPipe(
+        auto builder = projection_plan->buildQueryPipeline(
             QueryPlanOptimizationSettings::fromContext(context), BuildQueryPipelineSettings::fromContext(context));
+        projection_pipe = QueryPipelineBuilder::getPipe(std::move(*builder), resources);
     }
 
     if (query_info.projection->merge_tree_normal_select_result_ptr)
@@ -246,8 +249,9 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
             ordinary_query_plan.addStep(std::move(where_step));
         }
 
-        ordinary_pipe = ordinary_query_plan.convertToPipe(
+        auto builder = ordinary_query_plan.buildQueryPipeline(
             QueryPlanOptimizationSettings::fromContext(context), BuildQueryPipelineSettings::fromContext(context));
+        ordinary_pipe = QueryPipelineBuilder::getPipe(std::move(*builder), resources);
     }
 
     if (query_info.projection->desc->type == ProjectionDescription::Type::Aggregate)
@@ -372,7 +376,8 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
     pipe.resize(1);
     auto step = std::make_unique<ReadFromStorageStep>(
         std::move(pipe),
-        fmt::format("MergeTree(with {} projection {})", query_info.projection->desc->type, query_info.projection->desc->name));
+        fmt::format("MergeTree(with {} projection {})", query_info.projection->desc->type, query_info.projection->desc->name),
+        query_info.storage_limits);
     plan->addStep(std::move(step));
     return plan;
 }
@@ -840,7 +845,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 
         Strings forced_indices;
         {
-            Tokens tokens(&indices[0], &indices[indices.size()], settings.max_query_size);
+            Tokens tokens(indices.data(), &indices[indices.size()], settings.max_query_size);
             IParser::Pos pos(tokens, settings.max_parser_depth);
             Expected expected;
             if (!parseIdentifiersOrStringLiterals(pos, expected, forced_indices))
@@ -1496,7 +1501,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
         LOG_TRACE(log, "Found (RIGHT) boundary mark: {}", searched_right);
 
         if (result_range.begin < result_range.end && may_be_true_in_range(result_range))
-            res.emplace_back(std::move(result_range));
+            res.emplace_back(result_range);
 
         LOG_TRACE(log, "Found {} range in {} steps", res.empty() ? "empty" : "continuous", steps);
     }

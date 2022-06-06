@@ -3,7 +3,7 @@ sidebar_position: 54
 sidebar_label: Tuple(T1, T2, ...)
 ---
 
-# Tuple(t1, T2, …) {#tuplet1-t2}
+# Tuple(t1, T2, …)
 
 A tuple of elements, each having an individual [type](../../sql-reference/data-types/index.md#data_types).
 
@@ -11,7 +11,7 @@ Tuples are used for temporary column grouping. Columns can be grouped when an IN
 
 Tuples can be the result of a query. In this case, for text formats other than JSON, values are comma-separated in brackets. In JSON formats, tuples are output as arrays (in square brackets).
 
-## Creating a Tuple {#creating-a-tuple}
+## Creating a Tuple
 
 You can use a function to create a tuple:
 
@@ -31,7 +31,7 @@ SELECT tuple(1,'a') AS x, toTypeName(x)
 └─────────┴───────────────────────────┘
 ```
 
-## Working with Data Types {#working-with-data-types}
+## Working with Data Types
 
 When creating a tuple on the fly, ClickHouse automatically detects the type of each argument as the minimum of the types which can store the argument value. If the argument is [NULL](../../sql-reference/syntax.md#null-literal), the type of the tuple element is [Nullable](../../sql-reference/data-types/nullable.md).
 
@@ -47,7 +47,7 @@ SELECT tuple(1, NULL) AS x, toTypeName(x)
 └──────────┴─────────────────────────────────┘
 ```
 
-## Addressing Tuple Elements {#addressing-tuple-elements}
+## Addressing Tuple Elements
 
 It is possible to read elements of named tuples using indexes and names:
 
