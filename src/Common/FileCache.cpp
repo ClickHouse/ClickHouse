@@ -64,9 +64,7 @@ String IFileCache::getPathInLocalCache(const Key & key)
 
 bool IFileCache::isReadOnly()
 {
-    return !CurrentThread::isInitialized()
-        || !CurrentThread::get().getQueryContext()
-        || CurrentThread::getQueryId().size == 0;
+    return (!isQueryInitialized());
 }
 
 void IFileCache::assertInitialized() const
@@ -507,6 +505,7 @@ bool LRUFileCache::tryReserve(const Key & key, size_t offset, size_t size, std::
 {
     auto query_context = getCurrentQueryContext(cache_lock);
 
+    /// If the context can be found, subsequent cache replacements are made through the Query context.
     if (query_context != nullptr)
     {
         auto res = tryReserveForQuery(key, offset, size, query_context, cache_lock);
@@ -1254,16 +1253,11 @@ void LRUFileCache::assertCacheCorrectness(std::lock_guard<std::mutex> & cache_lo
     queue.assertCorrectness(this, cache_lock);
 }
 
-void LRUFileCache::createOrSetQueryContext(const ReadSettings & settings)
+void LRUFileCache::createOrSetQueryContext(const String & query_id, const ReadSettings & settings)
 {
-    if (!isQueryInitialized())
-        return;
-
     std::lock_guard cache_lock(mutex);
 
-    auto query_id = CurrentThread::getQueryId().toString();
     auto query_iter = query_map.find(query_id);
-
     if (query_iter == query_map.end())
         query_iter = query_map.insert({query_id, std::make_shared<QueryContext>(settings.max_query_cache_size, settings.skip_download_if_exceeds_query_cache)}).first;
 
@@ -1271,18 +1265,13 @@ void LRUFileCache::createOrSetQueryContext(const ReadSettings & settings)
     query_context->incrementRefCount();
 }
 
-void LRUFileCache::tryReleaseQueryContext()
+void LRUFileCache::tryReleaseQueryContext(const String & query_id)
 {
-    if (!isQueryInitialized())
-        return;
-
     std::lock_guard cache_lock(mutex);
 
-    auto query_id = CurrentThread::getQueryId().toString();
     auto query_iter = query_map.find(query_id);
-
     if (query_iter == query_map.end())
-        return;
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Release a query context that does not exist.");
 
     auto query_context = query_iter->second;
     query_context->decrementRefCount();
