@@ -22,12 +22,12 @@ public:
     }
 
     void processOptions(
-        Poco::Util::AbstractConfiguration &,
+        Poco::Util::LayeredConfiguration &,
         po::variables_map &) const override{}
 
     void executeImpl(
         const DB::ContextMutablePtr & global_context,
-        const Poco::Util::AbstractConfiguration & config) const override
+        const Poco::Util::LayeredConfiguration & config) const override
     {
         if (pos_arguments.size() != 1)
         {

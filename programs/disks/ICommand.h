@@ -1,12 +1,18 @@
 #pragma once
 
 #include <Disks/IDisk.h>
+
 #include <Poco/Util/Application.h>
+
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/copyData.h>
+
 #include <boost/program_options.hpp>
+
 #include <Common/TerminalSize.h>
+#include <Common/Config/ConfigProcessor.h>
+
 #include <memory>
 
 namespace DB
@@ -24,17 +30,16 @@ public:
     void execute(
         const std::vector<String> & command_arguments,
         const DB::ContextMutablePtr & global_context,
-        Poco::Util::AbstractConfiguration & config,
-        po::variables_map & options);
+        Poco::Util::LayeredConfiguration & config);
 
 protected:
     virtual void processOptions(
-        Poco::Util::AbstractConfiguration & config,
+        Poco::Util::LayeredConfiguration & config,
         po::variables_map & options) const = 0;
 
     virtual void executeImpl(
         const DB::ContextMutablePtr & global_context,
-        const Poco::Util::AbstractConfiguration & config) const = 0;
+        const Poco::Util::LayeredConfiguration & config) const = 0;
 
     void printHelpMessage() const;
 

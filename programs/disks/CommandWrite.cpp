@@ -25,7 +25,7 @@ public:
     }
 
     void processOptions(
-        Poco::Util::AbstractConfiguration & config,
+        Poco::Util::LayeredConfiguration & config,
         po::variables_map & options) const override
     {
         if (options.count("input"))
@@ -34,7 +34,7 @@ public:
 
     void executeImpl(
         const DB::ContextMutablePtr & global_context,
-        const Poco::Util::AbstractConfiguration & config) const override
+        const Poco::Util::LayeredConfiguration & config) const override
     {
         if (pos_arguments.size() != 1)
         {
