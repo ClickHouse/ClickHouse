@@ -30,6 +30,8 @@
 #include <thread>
 #include <exception>
 
+#include <stdio.h>
+
 
 namespace Poco::Net { class IPAddress; }
 namespace zkutil { class ZooKeeper; }
