@@ -130,7 +130,7 @@ struct NumComparisonImpl
             return;
         }
 
-	if (isArchSupported(TargetArch::SSE42))
+        if (isArchSupported(TargetArch::SSE42))
         {
             vectorVectorImplSSE42(a, b, c);
             return;
