@@ -31,6 +31,7 @@
 
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageInMemoryMetadata.h>
+#include <Storages/WindowView/StorageWindowView.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 
 #include <Interpreters/Context.h>
@@ -461,8 +462,12 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
     {
         const auto & col_decl = ast->as<ASTColumnDeclaration &>();
 
-        DataTypePtr column_type = nullptr;
+        if (col_decl.collation && !context_->getSettingsRef().compatibility_ignore_collation_in_create_table)
+        {
+            throw Exception("Cannot support collation, please set compatibility_ignore_collation_in_create_table=true", ErrorCodes::NOT_IMPLEMENTED);
+        }
 
+        DataTypePtr column_type = nullptr;
         if (col_decl.type)
         {
             column_type = DataTypeFactory::instance().get(col_decl.type);
@@ -573,7 +578,12 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
             if (col_decl.type)
                 column.type = name_type_it->type;
             else
+            {
                 column.type = defaults_sample_block.getByName(column.name).type;
+                /// set nullability for case of column declaration w/o type but with default expression
+                if ((col_decl.null_modifier && *col_decl.null_modifier) || make_columns_nullable)
+                    column.type = makeNullable(column.type);
+            }
 
             column.default_desc.kind = columnDefaultKindFromString(col_decl.default_specifier);
             column.default_desc.expression = default_expr;
@@ -1446,12 +1456,18 @@ BlockIO InterpreterCreateQuery::fillTableIfNeeded(const ASTCreateQuery & create)
 {
     /// If the query is a CREATE SELECT, insert the data into the table.
     if (create.select && !create.attach
-        && !create.is_ordinary_view && !create.is_live_view && !create.is_window_view
-        && (!create.is_materialized_view || create.is_populate))
+        && !create.is_ordinary_view && !create.is_live_view
+        && (!(create.is_materialized_view || create.is_window_view) || create.is_populate))
     {
         auto insert = std::make_shared<ASTInsertQuery>();
         insert->table_id = {create.getDatabase(), create.getTable(), create.uuid};
-        insert->select = create.select->clone();
+        if (create.is_window_view)
+        {
+            auto table = DatabaseCatalog::instance().getTable(insert->table_id, getContext());
+            insert->select = typeid_cast<StorageWindowView *>(table.get())->getSourceTableSelectQuery();
+        }
+        else
+            insert->select = create.select->clone();
 
         return InterpreterInsertQuery(insert, getContext(),
             getContext()->getSettingsRef().insert_allow_materialized_columns).execute();

@@ -38,9 +38,9 @@ SELECT sum(number) FROM numbers3;
 SHOW CREATE TABLE numbers3;
 DROP TABLE numbers3;
 
-CREATE TABLE test_table (EventDate Date, CounterID UInt32,  UserID UInt64,  EventTime DateTime('Europe/Moscow'), UTCEventTime DateTime('UTC')) PARTITION BY EventDate PRIMARY KEY CounterID;
+CREATE TABLE test_table (EventDate Date, CounterID UInt32,  UserID UInt64,  EventTime DateTime('America/Los_Angeles'), UTCEventTime DateTime('UTC')) PARTITION BY EventDate PRIMARY KEY CounterID;
 SET default_table_engine = 'Memory';
-CREATE MATERIALIZED VIEW test_view (Rows UInt64,  MaxHitTime DateTime('Europe/Moscow')) AS SELECT count() AS Rows, max(UTCEventTime) AS MaxHitTime FROM test_table;
+CREATE MATERIALIZED VIEW test_view (Rows UInt64,  MaxHitTime DateTime('America/Los_Angeles')) AS SELECT count() AS Rows, max(UTCEventTime) AS MaxHitTime FROM test_table;
 CREATE MATERIALIZED VIEW test_view_filtered (EventDate Date, CounterID UInt32) POPULATE AS SELECT CounterID, EventDate FROM test_table WHERE EventDate < '2013-01-01';
 SHOW CREATE TABLE test_view_filtered;
 INSERT INTO test_table (EventDate, UTCEventTime) VALUES ('2014-01-02', '2014-01-02 03:04:06');

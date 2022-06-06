@@ -73,10 +73,13 @@ DataTypePtr unflattenTuple(
     const PathsInData & paths,
     const DataTypes & tuple_types);
 
+std::pair<ColumnPtr, DataTypePtr> unflattenObjectToTuple(const ColumnObject & column);
+
 std::pair<ColumnPtr, DataTypePtr> unflattenTuple(
     const PathsInData & paths,
     const DataTypes & tuple_types,
     const Columns & tuple_columns);
+
 
 /// For all columns which exist in @expected_columns and
 /// don't exist in @available_columns adds to WITH clause

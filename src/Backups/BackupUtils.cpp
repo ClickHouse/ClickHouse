@@ -366,7 +366,7 @@ namespace
         {
             if (info.zk_path.empty())
             {
-                for (auto & [relative_path, backup_entry] : info.data)
+                for (const auto & [relative_path, backup_entry] : info.data)
                     res.emplace_back(info.data_path + relative_path, backup_entry);
                 return;
             }
@@ -374,7 +374,7 @@ namespace
             Strings data_paths = backup_coordination->getReplicatedTableDataPaths(info.zk_path);
             Strings part_names = backup_coordination->getReplicatedTablePartNames(backup_settings.host_id, info.table_name, info.zk_path);
             std::unordered_set<std::string_view> part_names_set{part_names.begin(), part_names.end()};
-            for (auto & [relative_path, backup_entry] : info.data)
+            for (const auto & [relative_path, backup_entry] : info.data)
             {
                 size_t slash_pos = relative_path.find('/');
                 if (slash_pos != String::npos)
