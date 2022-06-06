@@ -65,10 +65,10 @@ bool AsynchronousReadBufferFromHDFS::hasPendingDataToRead()
     return true;
 }
 
-std::future<IAsynchronousReader::Result> AsynchronousReadBufferFromHDFS::readInto(char * data, size_t size)
+std::future<IAsynchronousReader::Result> AsynchronousReadBufferFromHDFS::asyncReadInto(char * data, size_t size)
 {
     IAsynchronousReader::Request request;
-    request.descriptor = std::make_shared<RemoteFSFileDescriptor<ReadBufferFromHDFS>>(impl);
+    request.descriptor = std::make_shared<RemoteFSFileDescriptor>(impl);
     request.buf = data;
     request.size = size;
     request.offset = file_offset_of_buffer_end;
@@ -85,7 +85,7 @@ void AsynchronousReadBufferFromHDFS::prefetch()
     if (!hasPendingDataToRead())
         return;
 
-    prefetch_future = readInto(prefetch_buffer.data(), prefetch_buffer.size());
+    prefetch_future = asyncReadInto(prefetch_buffer.data(), prefetch_buffer.size());
     ProfileEvents::increment(ProfileEvents::RemoteFSPrefetches);
 }
 
@@ -140,7 +140,7 @@ bool AsynchronousReadBufferFromHDFS::nextImpl()
     {
         ProfileEvents::increment(ProfileEvents::RemoteFSUnprefetchedReads);
 
-        auto result = readInto(memory.data(), memory.size()).get();
+        auto result = asyncReadInto(memory.data(), memory.size()).get();
         size = result.size;
         auto offset = result.offset;
 

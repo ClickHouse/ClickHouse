@@ -25,8 +25,6 @@ class ReadBufferFromHDFS : public SeekableReadBuffer, public WithFileName, publi
 struct ReadBufferFromHDFSImpl;
 
 public:
-    using ReadResult = IAsynchronousReader::Result;
-
     ReadBufferFromHDFS(const String & hdfs_uri_, const String & hdfs_file_path_,
                        const Poco::Util::AbstractConfiguration & config_,
                        size_t buf_size_ = DBMS_DEFAULT_BUFFER_SIZE,
@@ -44,7 +42,7 @@ public:
 
     size_t getFileOffsetOfBufferEnd() const override;
 
-    ReadResult readInto(char * data, size_t size, size_t offset, size_t ignore = 0);
+    IAsynchronousReader::Result readInto(char * data, size_t size, size_t offset, size_t ignore) override;
 
     String getFileName() const override;
 
