@@ -62,6 +62,7 @@ Checks: '*,
 
     -google-build-using-namespace,
     -google-readability-braces-around-statements,
+    -google-readability-casting,
     -google-readability-function-size,
     -google-readability-namespace-comments,
     -google-readability-todo,
@@ -174,8 +175,6 @@ CheckOptions:
   - key: readability-identifier-naming.UsingCase
     value: CamelCase
   - key: modernize-loop-convert.UseCxx20ReverseRanges
-    value: false
-  - key: performance-move-const-arg.CheckTriviallyCopyableMove
     value: false
     # Workaround clang-tidy bug: https://github.com/llvm/llvm-project/issues/46097
   - key: readability-identifier-naming.TypeTemplateParameterIgnoredRegexp

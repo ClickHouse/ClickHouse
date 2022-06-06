@@ -142,14 +142,14 @@ public:
     void startup() override;
     void shutdown() override;
 
-    Pipe read(
-        const Names & column_names,
-        const StorageSnapshotPtr & storage_snapshot,
-        SelectQueryInfo & query_info,
-        ContextPtr context,
-        QueryProcessingStage::Enum processed_stage,
-        size_t max_block_size,
-        unsigned num_streams) override;
+    // Pipe read(
+    //     const Names & column_names,
+    //     const StorageSnapshotPtr & storage_snapshot,
+    //     SelectQueryInfo & query_info,
+    //     ContextPtr context,
+    //     QueryProcessingStage::Enum processed_stage,
+    //     size_t max_block_size,
+    //     unsigned num_streams) override;
 
     void read(
         QueryPlan & query_plan,
@@ -201,7 +201,7 @@ private:
     std::atomic<bool> shutdown_called{false};
     std::atomic<bool> modifying_query{false};
     bool has_inner_table{true};
-    bool inner_target_table{false};
+    bool has_inner_target_table{false};
     mutable Block input_header;
     mutable Block output_header;
     UInt64 fire_signal_timeout_s;

@@ -3,7 +3,7 @@ sidebar_position: 50
 sidebar_label: Configuration Files
 ---
 
-# Configuration Files {#configuration_files}
+# Configuration Files
 
 ClickHouse supports multi-file configuration management. The main server configuration file is `/etc/clickhouse-server/config.xml` or `/etc/clickhouse-server/config.yaml`. Other files must be in the `/etc/clickhouse-server/config.d` directory. Note, that any configuration file can be written either in XML or YAML, but mixing formats in one file is not supported. For example, you can have main configs as `config.xml` and `users.xml` and write additional files in `config.d` and `users.d` directories in `.yaml`.
 
