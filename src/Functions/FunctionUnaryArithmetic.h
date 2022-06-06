@@ -42,7 +42,7 @@ struct UnaryOperationImpl
     using ArrayA = typename ColVecA::Container;
     using ArrayC = typename ColVecC::Container;
 
-    MULTITARGET_FUNCTION_AVX2_SSE42(
+    MULTITARGET_FUNCTION_AVX512BW_AVX512F_AVX2_SSE42(
     MULTITARGET_FUNCTION_HEADER(static void NO_INLINE), vectorImpl, MULTITARGET_FUNCTION_BODY((const ArrayA & a, ArrayC & c) /// NOLINT
     {
         size_t size = a.size();
@@ -53,12 +53,25 @@ struct UnaryOperationImpl
     static void NO_INLINE vector(const ArrayA & a, ArrayC & c)
     {
 #if USE_MULTITARGET_CODE
+        if (isArchSupported(TargetArch::AVX512BW))
+        {
+            vectorImplAVX512BW(a, c);
+            return;
+        }
+
+        if (isArchSupported(TargetArch::AVX512F))
+        {
+            vectorImplAVX512F(a, c);
+            return;
+        }
+
         if (isArchSupported(TargetArch::AVX2))
         {
             vectorImplAVX2(a, c);
             return;
         }
-        else if (isArchSupported(TargetArch::SSE42))
+
+        if (isArchSupported(TargetArch::SSE42))
         {
             vectorImplSSE42(a, c);
             return;
@@ -78,7 +91,7 @@ struct UnaryOperationImpl
 template <typename Op>
 struct FixedStringUnaryOperationImpl
 {
-    MULTITARGET_FUNCTION_AVX2_SSE42(
+    MULTITARGET_FUNCTION_AVX512BW_AVX512F_AVX2_SSE42(
     MULTITARGET_FUNCTION_HEADER(static void NO_INLINE), vectorImpl, MULTITARGET_FUNCTION_BODY((const ColumnFixedString::Chars & a, /// NOLINT
         ColumnFixedString::Chars & c)
     {
@@ -90,12 +103,25 @@ struct FixedStringUnaryOperationImpl
     static void NO_INLINE vector(const ColumnFixedString::Chars & a, ColumnFixedString::Chars & c)
     {
 #if USE_MULTITARGET_CODE
+        if (isArchSupported(TargetArch::AVX512BW))
+        {
+            vectorImplAVX512BW(a, c);
+            return;
+        }
+
+        if (isArchSupported(TargetArch::AVX512F))
+        {
+            vectorImplAVX512F(a, c);
+            return;
+        }
+
         if (isArchSupported(TargetArch::AVX2))
         {
             vectorImplAVX2(a, c);
             return;
         }
-        else if (isArchSupported(TargetArch::SSE42))
+
+        if (isArchSupported(TargetArch::SSE42))
         {
             vectorImplSSE42(a, c);
             return;
