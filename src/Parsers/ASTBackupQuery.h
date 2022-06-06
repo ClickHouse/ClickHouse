@@ -14,7 +14,6 @@ using DatabaseAndTableName = std::pair<String, String>;
   *          DICTIONARY [db.]dictionary_name [AS [db.]dictionary_name_in_backup] |
   *          DATABASE database_name [AS database_name_in_backup] [EXCEPT TABLES ...] |
   *          TEMPORARY TABLE table_name [AS table_name_in_backup] |
-  *          ALL TEMPORARY TABLES [EXCEPT ...] |
   *          ALL DATABASES [EXCEPT ...] } [,...]
   *        [ON CLUSTER 'cluster_name']
   *        TO { File('path/') |
@@ -25,7 +24,6 @@ using DatabaseAndTableName = std::pair<String, String>;
   *          DICTIONARY [db.]dictionary_name_in_backup [AS [db.]dictionary_name] |
   *          DATABASE database_name_in_backup [AS database_name] [EXCEPT TABLES ...] |
   *          TEMPORARY TABLE table_name_in_backup [AS table_name] |
-  *          ALL TEMPORARY TABLES [EXCEPT ...] |
   *          ALL DATABASES [EXCEPT ...] } [,...]
   *         [ON CLUSTER 'cluster_name']
   *         FROM {File(...) | Disk(...)}
@@ -59,18 +57,20 @@ public:
     struct Element
     {
         ElementType type;
-        DatabaseAndTableName name;
-        DatabaseAndTableName new_name;
-        bool is_temp_db = false;
+        String table_name;
+        String database_name;
+        bool is_temporary_database = false;
+        String new_table_name; /// usually the same as `table_name`, can be different in case of using AS <new_name>
+        String new_database_name; /// usually the same as `database_name`, can be different in case of using AS <new_name>
         std::optional<ASTs> partitions;
         std::set<String> except_list;
 
-        void setDatabase(const String & new_database);
+        void setCurrentDatabase(const String & current_database);
     };
 
     using Elements = std::vector<Element>;
-    static void setDatabase(Elements & elements, const String & new_database);
-    void setDatabase(const String & new_database) { setDatabase(elements, new_database); }
+    static void setCurrentDatabase(Elements & elements, const String & current_database);
+    void setCurrentDatabase(const String & current_database) { setCurrentDatabase(elements, current_database); }
 
     Elements elements;
 

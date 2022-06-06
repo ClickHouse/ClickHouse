@@ -163,13 +163,16 @@ void BackupEntriesCollector::collectDatabasesAndTablesInfo()
             {
                 case ASTBackupQuery::ElementType::TABLE:
                 {
-                    collectTableInfo(element.name, element.partitions, true);
+                    QualifiedTableName table_name{element.database_name, element.table_name};
+                    if (element.is_temporary_database)
+                        table_name.database = DatabaseCatalog::TEMPORARY_DATABASE;
+                    collectTableInfo(table_name, element.partitions, true);
                     break;
                 }
 
                 case ASTBackupQuery::ElementType::DATABASE:
                 {
-                    collectDatabaseInfo(element.name.first, element.except_list, true);
+                    collectDatabaseInfo(element.database_name, element.except_list, true);
                     break;
                 }
 
@@ -204,7 +207,7 @@ void BackupEntriesCollector::collectDatabasesAndTablesInfo()
 }
 
 void BackupEntriesCollector::collectTableInfo(
-    const DatabaseAndTableName & table_name, const std::optional<ASTs> & partitions, bool throw_if_not_found)
+    const QualifiedTableName & table_name, const std::optional<ASTs> & partitions, bool throw_if_not_found)
 {
     /// Gather information about the table.
     DatabasePtr database;
@@ -215,14 +218,14 @@ void BackupEntriesCollector::collectTableInfo(
     if (throw_if_not_found)
     {
         std::tie(database, storage)
-            = DatabaseCatalog::instance().getDatabaseAndTable(StorageID{table_name.first, table_name.second}, context);
+            = DatabaseCatalog::instance().getDatabaseAndTable(StorageID{table_name.database, table_name.table}, context);
         table_lock = storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef().lock_acquire_timeout);
-        create_table_query = database->getCreateTableQuery(table_name.second, context);
+        create_table_query = database->getCreateTableQuery(table_name.table, context);
     }
     else
     {
         std::tie(database, storage)
-            = DatabaseCatalog::instance().tryGetDatabaseAndTable(StorageID{table_name.first, table_name.second}, context);
+            = DatabaseCatalog::instance().tryGetDatabaseAndTable(StorageID{table_name.database, table_name.table}, context);
         if (!storage)
         {
             consistent &= !table_infos.contains(table_name);
@@ -243,7 +246,7 @@ void BackupEntriesCollector::collectTableInfo(
             throw;
         }
 
-        create_table_query = database->tryGetCreateTableQuery(table_name.second, context);
+        create_table_query = database->tryGetCreateTableQuery(table_name.table, context);
         if (!create_table_query)
         {
             consistent &= !table_infos.contains(table_name);
@@ -254,11 +257,18 @@ void BackupEntriesCollector::collectTableInfo(
     storage->adjustCreateQueryForBackup(create_table_query);
     auto new_table_name = renaming_settings.getNewTableName(table_name);
     fs::path data_path_in_backup
-        = root_path_in_backup / "data" / escapeForFileName(new_table_name.first) / escapeForFileName(new_table_name.second);
+        = root_path_in_backup / "data" / escapeForFileName(new_table_name.database) / escapeForFileName(new_table_name.table);
 
     /// Check that information is consistent.
     const auto & create = create_table_query->as<const ASTCreateQuery &>();
-    if ((create.getDatabase() != table_name.first) || (create.getTable() != table_name.second))
+    if (create.getTable() != table_name.table)
+    {
+        /// Table was renamed recently.
+        consistent = false;
+        return;
+    }
+
+    if ((create.getDatabase() != table_name.database) || (create.temporary && (table_name.database == DatabaseCatalog::TEMPORARY_DATABASE)))
     {
         /// Table was renamed recently.
         consistent = false;
@@ -354,7 +364,7 @@ void BackupEntriesCollector::collectDatabaseInfo(const String & database_name, c
         if (except_table_names.contains(it->name()))
             continue;
 
-        collectTableInfo(DatabaseAndTableName{database_name, it->name()}, {}, false);
+        collectTableInfo(QualifiedTableName{database_name, it->name()}, {}, false);
         if (!consistent)
             return;
     }
@@ -381,7 +391,7 @@ void BackupEntriesCollector::checkConsistency()
     /// Databases found while we were scanning tables and while we were scanning databases - must be the same.
     for (const auto & [table_name, table_info] : table_infos)
     {
-        auto it = database_infos.find(table_name.first);
+        auto it = database_infos.find(table_name.database);
         if (it != database_infos.end())
         {
             const auto & database_info = it->second;
@@ -396,7 +406,7 @@ void BackupEntriesCollector::checkConsistency()
     /// We need to scan tables at least twice to be sure that we haven't missed any table which could be renamed
     /// while we were scanning.
     std::set<String> database_names;
-    std::set<DatabaseAndTableName> table_names;
+    std::set<QualifiedTableName> table_names;
     boost::range::copy(database_infos | boost::adaptors::map_keys, std::inserter(database_names, database_names.end()));
     boost::range::copy(table_infos | boost::adaptors::map_keys, std::inserter(table_names, table_names.end()));
 
@@ -431,7 +441,7 @@ void BackupEntriesCollector::makeBackupEntriesForTablesDefs()
 {
     for (const auto & [table_name, table_info] : table_infos)
     {
-        LOG_TRACE(log, "Adding definition of table {}.{}", backQuoteIfNeed(table_name.first), backQuoteIfNeed(table_name.second));
+        LOG_TRACE(log, "Adding definition of table {}", table_name.getFullName());
         const auto & database = table_info.database;
         const auto & storage = table_info.storage;
         database->backupCreateTableQuery(*this, storage, table_info.create_table_query);
@@ -445,7 +455,7 @@ void BackupEntriesCollector::makeBackupEntriesForTablesData()
 
     for (const auto & [table_name, table_info] : table_infos)
     {
-        LOG_TRACE(log, "Adding data of table {}.{}", backQuoteIfNeed(table_name.first), backQuoteIfNeed(table_name.second));
+        LOG_TRACE(log, "Adding data of table {}", table_name.getFullName());
         const auto & storage = table_info.storage;
         const auto & data_path_in_backup = table_info.data_path_in_backup;
         const auto & partitions = table_info.partitions;

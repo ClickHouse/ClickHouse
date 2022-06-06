@@ -147,22 +147,20 @@ AccessRightsElements getRequiredAccessToBackup(const ASTBackupQuery::Elements & 
         {
             case ASTBackupQuery::TABLE:
             {
-                if (element.is_temp_db)
+                if (element.is_temporary_database)
                     break;
                 AccessFlags flags = AccessType::SHOW_TABLES;
                 if (!backup_settings.structure_only)
                     flags |= AccessType::SELECT;
-                required_access.emplace_back(flags, element.name.first, element.name.second);
+                required_access.emplace_back(flags, element.database_name, element.table_name);
                 break;
             }
             case ASTBackupQuery::DATABASE:
             {
-                if (element.is_temp_db)
-                    break;
                 AccessFlags flags = AccessType::SHOW_TABLES | AccessType::SHOW_DATABASES;
                 if (!backup_settings.structure_only)
                     flags |= AccessType::SELECT;
-                required_access.emplace_back(flags, element.name.first);
+                required_access.emplace_back(flags, element.database_name);
                 /// TODO: It's better to process `element.except_list` somehow.
                 break;
             }
@@ -191,7 +189,7 @@ AccessRightsElements getRequiredAccessToRestore(const ASTBackupQuery::Elements &
         {
             case ASTBackupQuery::TABLE:
             {
-                if (element.is_temp_db)
+                if (element.is_temporary_database)
                 {
                     if (restore_settings.create_table != RestoreTableCreationMode::kMustExist)
                         required_access.emplace_back(AccessType::CREATE_TEMPORARY_TABLE);
@@ -202,17 +200,11 @@ AccessRightsElements getRequiredAccessToRestore(const ASTBackupQuery::Elements &
                     flags |= AccessType::CREATE_TABLE;
                 if (!restore_settings.structure_only)
                     flags |= AccessType::INSERT;
-                required_access.emplace_back(flags, element.new_name.first, element.new_name.second);
+                required_access.emplace_back(flags, element.new_database_name, element.new_table_name);
                 break;
             }
             case ASTBackupQuery::DATABASE:
             {
-                if (element.is_temp_db)
-                {
-                    if (restore_settings.create_table != RestoreTableCreationMode::kMustExist)
-                        required_access.emplace_back(AccessType::CREATE_TEMPORARY_TABLE);
-                    break;
-                }
                 AccessFlags flags = AccessType::SHOW_TABLES | AccessType::SHOW_DATABASES;
                 if (restore_settings.create_table != RestoreTableCreationMode::kMustExist)
                     flags |= AccessType::CREATE_TABLE;
@@ -220,7 +212,7 @@ AccessRightsElements getRequiredAccessToRestore(const ASTBackupQuery::Elements &
                     flags |= AccessType::CREATE_DATABASE;
                 if (!restore_settings.structure_only)
                     flags |= AccessType::INSERT;
-                required_access.emplace_back(flags, element.new_name.first);
+                required_access.emplace_back(flags, element.new_database_name);
                 break;
             }
             case ASTBackupQuery::ALL_DATABASES:

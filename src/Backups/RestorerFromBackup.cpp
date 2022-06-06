@@ -242,12 +242,15 @@ void RestorerFromBackup::collectDatabaseAndTableInfos()
         {
             case ASTBackupQuery::ElementType::TABLE:
             {
-                collectTableInfo(element.name, element.partitions);
+                QualifiedTableName table_name{element.database_name, element.table_name};
+                if (element.is_temporary_database)
+                    table_name.database = DatabaseCatalog::TEMPORARY_DATABASE;
+                collectTableInfo(table_name, element.partitions);
                 break;
             }
             case ASTBackupQuery::ElementType::DATABASE:
             {
-                collectDatabaseInfo(element.name.first, element.except_list);
+                collectDatabaseInfo(element.database_name, element.except_list);
                 break;
             }
             case ASTBackupQuery::ElementType::ALL_DATABASES:
@@ -261,14 +264,14 @@ void RestorerFromBackup::collectDatabaseAndTableInfos()
     LOG_INFO(log, "Will restore {} databases and {} tables", database_infos.size(), table_infos.size());
 }
 
-void RestorerFromBackup::collectTableInfo(const DatabaseAndTableName & table_name_in_backup, const std::optional<ASTs> & partitions)
+void RestorerFromBackup::collectTableInfo(const QualifiedTableName & table_name_in_backup, const std::optional<ASTs> & partitions)
 {
     std::optional<fs::path> metadata_path;
     std::optional<fs::path> root_path_in_use;
     for (const auto & root_path_in_backup : root_paths_in_backup)
     {
-        fs::path try_metadata_path = root_path_in_backup / "metadata" / escapeForFileName(table_name_in_backup.first)
-            / (escapeForFileName(table_name_in_backup.second) + ".sql");
+        fs::path try_metadata_path = root_path_in_backup / "metadata" / escapeForFileName(table_name_in_backup.database)
+            / (escapeForFileName(table_name_in_backup.table) + ".sql");
         if (backup->fileExists(try_metadata_path))
         {
             metadata_path = try_metadata_path;
@@ -278,17 +281,11 @@ void RestorerFromBackup::collectTableInfo(const DatabaseAndTableName & table_nam
     }
 
     if (!metadata_path)
-    {
-        throw Exception(
-            ErrorCodes::BACKUP_ENTRY_NOT_FOUND,
-            "Table {}.{} not found in backup",
-            backQuoteIfNeed(table_name_in_backup.first),
-            backQuoteIfNeed(table_name_in_backup.second));
-    }
+        throw Exception(ErrorCodes::BACKUP_ENTRY_NOT_FOUND, "Table {} not found in backup", table_name_in_backup.getFullName());
 
-    DatabaseAndTableName table_name = renaming_settings.getNewTableName(table_name_in_backup);
+    auto table_name = renaming_settings.getNewTableName(table_name_in_backup);
     fs::path data_path_in_backup
-        = *root_path_in_use / "data" / escapeForFileName(table_name_in_backup.first) / escapeForFileName(table_name_in_backup.second);
+        = *root_path_in_use / "data" / escapeForFileName(table_name_in_backup.database) / escapeForFileName(table_name_in_backup.table);
 
     auto read_buffer = backup->readFile(*metadata_path)->getReadBuffer();
     String create_query_str;
@@ -305,9 +302,8 @@ void RestorerFromBackup::collectTableInfo(const DatabaseAndTableName & table_nam
         {
             throw Exception(
                 ErrorCodes::CANNOT_RESTORE_TABLE,
-                "Extracted two different create queries for the same table {}.{}: {} and {}",
-                backQuoteIfNeed(table_name.first),
-                backQuoteIfNeed(table_name.second),
+                "Extracted two different create queries for the same table {}: {} and {}",
+                table_name.getFullName(),
                 serializeAST(*table_info.create_table_query),
                 serializeAST(*create_table_query));
         }
@@ -388,7 +384,7 @@ void RestorerFromBackup::collectDatabaseInfo(const String & database_name_in_bac
         if (except_table_names.contains(table_name_in_backup))
             continue;
 
-        collectTableInfo(DatabaseAndTableName{database_name_in_backup, table_name_in_backup}, {});
+        collectTableInfo(QualifiedTableName{database_name_in_backup, table_name_in_backup}, {});
     }
 }
 
@@ -459,10 +455,10 @@ void RestorerFromBackup::createTables()
 {
     for (const auto & [table_name, table_info] : table_infos)
     {
-        DatabasePtr database = DatabaseCatalog::instance().getDatabase(table_name.first);
+        DatabasePtr database = DatabaseCatalog::instance().getDatabase(table_name.database);
         if (restore_settings.create_table != RestoreTableCreationMode::kMustExist)
         {
-            LOG_TRACE(log, "Creating table {}.{}", backQuoteIfNeed(table_name.first), backQuoteIfNeed(table_name.second));
+            LOG_TRACE(log, "Creating table {}", table_name.getFullName());
 
             /// Execute CREATE TABLE query (we call IDatabase::createTableRestoredFromBackup() to allow the database to do some
             /// database-specific things).
@@ -475,12 +471,12 @@ void RestorerFromBackup::createTables()
             database->createTableRestoredFromBackup(*this, create_table_query);
         }
 
-        auto storage = database->getTable(table_name.second, context);
+        auto storage = database->getTable(table_name.table, context);
         table_locks[storage] = storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef().lock_acquire_timeout);
         
         if (!restore_settings.allow_different_table_def)
         {
-            ASTPtr create_table_query = database->getCreateTableQuery(table_name.second, context);
+            ASTPtr create_table_query = database->getCreateTableQuery(table_name.table, context);
             storage->adjustCreateQueryForBackup(create_table_query);
             ASTPtr expected_create_query = table_info.create_table_query;
             storage->adjustCreateQueryForBackup(expected_create_query);
@@ -488,10 +484,9 @@ void RestorerFromBackup::createTables()
             {
                 throw Exception(
                     ErrorCodes::CANNOT_RESTORE_TABLE,
-                    "The table {}.{} has a different definition: {} "
+                    "The table {} has a different definition: {} "
                     "comparing to its definition in the backup: {}",
-                    backQuoteIfNeed(table_name.first),
-                    backQuoteIfNeed(table_name.second),
+                    table_name.getFullName(),
                     serializeAST(*create_table_query),
                     serializeAST(*expected_create_query));
             }
