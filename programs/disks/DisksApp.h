@@ -32,8 +32,6 @@ public:
     int main(const std::vector<String> & args) override;
 
 protected:
-    void loadConfiguration();
-
     static String getDefaultConfigFileName();
 
     void addOptions(
