@@ -100,6 +100,7 @@ private:
     void collectAllDatabasesInfo(const std::set<String> & except_database_names);
     void createDatabases();
     void createTables();
+    std::vector<QualifiedTableName> findTablesWithoutDependencies() const;
 
     struct DatabaseInfo
     {
@@ -113,6 +114,8 @@ private:
         ASTPtr create_table_query;
         std::optional<ASTs> partitions;
         std::filesystem::path data_path_in_backup;
+        std::unordered_set<QualifiedTableName> dependencies;
+        bool created = false;
     };
 
     std::unordered_map<QualifiedTableName, TableInfo> table_infos;

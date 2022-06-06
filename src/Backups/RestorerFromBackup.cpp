@@ -11,6 +11,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Databases/IDatabase.h>
+#include <Databases/DDLDependencyVisitor.h>
 #include <Storages/IStorage.h>
 #include <Common/escapeForFileName.h>
 #include <Common/quoteString.h>
@@ -312,6 +313,7 @@ void RestorerFromBackup::collectTableInfo(const QualifiedTableName & table_name_
     TableInfo & res_table_info = table_infos[table_name];
     res_table_info.create_table_query = create_table_query;
     res_table_info.data_path_in_backup = data_path_in_backup;
+    res_table_info.dependencies = getDependenciesSetFromCreateQuery(context->getGlobalContext(), table_name, create_table_query);
 
     if (partitions)
     {
@@ -453,52 +455,118 @@ void RestorerFromBackup::createDatabases()
 
 void RestorerFromBackup::createTables()
 {
-    for (const auto & [table_name, table_info] : table_infos)
+    while (true)
     {
-        DatabasePtr database = DatabaseCatalog::instance().getDatabase(table_name.database);
-        if (restore_settings.create_table != RestoreTableCreationMode::kMustExist)
-        {
-            LOG_TRACE(log, "Creating table {}", table_name.getFullName());
+        /// We need to create tables considering their dependencies.
+        auto tables_to_create = findTablesWithoutDependencies();
+        if (tables_to_create.empty())
+            break; /// We've already created all the tables.
 
-            /// Execute CREATE TABLE query (we call IDatabase::createTableRestoredFromBackup() to allow the database to do some
-            /// database-specific things).
-            auto create_table_query = table_info.create_table_query;
-            if (restore_settings.create_table == RestoreTableCreationMode::kCreateIfNotExists)
+        for (const auto & table_name : tables_to_create)
+        {
+            auto & table_info = table_infos.at(table_name);
+            DatabasePtr database = DatabaseCatalog::instance().getDatabase(table_name.database);
+            if (restore_settings.create_table != RestoreTableCreationMode::kMustExist)
             {
-                create_table_query = create_table_query->clone();
-                create_table_query->as<ASTCreateQuery &>().if_not_exists = true;
-            }
-            database->createTableRestoredFromBackup(*this, create_table_query);
-        }
+                LOG_TRACE(log, "Creating table {}", table_name.getFullName());
 
-        auto storage = database->getTable(table_name.table, context);
-        table_locks[storage] = storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef().lock_acquire_timeout);
-        
-        if (!restore_settings.allow_different_table_def)
-        {
-            ASTPtr create_table_query = database->getCreateTableQuery(table_name.table, context);
-            storage->adjustCreateQueryForBackup(create_table_query);
-            ASTPtr expected_create_query = table_info.create_table_query;
-            storage->adjustCreateQueryForBackup(expected_create_query);
-            if (serializeAST(*create_table_query) != serializeAST(*expected_create_query))
+                /// Execute CREATE TABLE query (we call IDatabase::createTableRestoredFromBackup() to allow the database to do some
+                /// database-specific things).
+                auto create_table_query = table_info.create_table_query;
+                if (restore_settings.create_table == RestoreTableCreationMode::kCreateIfNotExists)
+                {
+                    create_table_query = create_table_query->clone();
+                    create_table_query->as<ASTCreateQuery &>().if_not_exists = true;
+                }
+                database->createTableRestoredFromBackup(*this, create_table_query);
+            }
+
+            table_info.created = true;
+            auto storage = database->getTable(table_name.table, context);
+            table_locks[storage] = storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef().lock_acquire_timeout);
+
+            if (!restore_settings.allow_different_table_def)
             {
-                throw Exception(
-                    ErrorCodes::CANNOT_RESTORE_TABLE,
-                    "The table {} has a different definition: {} "
-                    "comparing to its definition in the backup: {}",
-                    table_name.getFullName(),
-                    serializeAST(*create_table_query),
-                    serializeAST(*expected_create_query));
+                ASTPtr create_table_query = database->getCreateTableQuery(table_name.table, context);
+                storage->adjustCreateQueryForBackup(create_table_query);
+                ASTPtr expected_create_query = table_info.create_table_query;
+                storage->adjustCreateQueryForBackup(expected_create_query);
+                if (serializeAST(*create_table_query) != serializeAST(*expected_create_query))
+                {
+                    throw Exception(
+                        ErrorCodes::CANNOT_RESTORE_TABLE,
+                        "The table {} has a different definition: {} "
+                        "comparing to its definition in the backup: {}",
+                        table_name.getFullName(),
+                        serializeAST(*create_table_query),
+                        serializeAST(*expected_create_query));
+                }
             }
-        }
 
-        if (!restore_settings.structure_only)
-        {
-            const auto & data_path_in_backup = table_info.data_path_in_backup;
-            const auto & partitions = table_info.partitions;
-            storage->restoreDataFromBackup(*this, data_path_in_backup, partitions);
+            if (!restore_settings.structure_only)
+            {
+                const auto & data_path_in_backup = table_info.data_path_in_backup;
+                const auto & partitions = table_info.partitions;
+                storage->restoreDataFromBackup(*this, data_path_in_backup, partitions);
+            }
         }
     }
+}
+
+/// Returns the list of tables without dependencies or those which dependencies have been created before.
+std::vector<QualifiedTableName> RestorerFromBackup::findTablesWithoutDependencies() const
+{
+    std::vector<QualifiedTableName> tables_without_dependencies;
+    bool all_tables_created = true;
+
+    for (const auto & [table_name, table_info] : table_infos)
+    {
+        if (table_info.created)
+            continue;
+
+        /// Found a table which is not created yet.
+        all_tables_created = false;
+
+        /// Check if all dependencies have been created before.
+        bool all_dependencies_met = true;
+        for (const auto & dependency : table_info.dependencies)
+        {
+            auto it = table_infos.find(dependency);
+            if ((it != table_infos.end()) && !it->second.created)
+            {
+                all_dependencies_met = false;
+                break;
+            }
+        }
+
+        if (all_dependencies_met)
+            tables_without_dependencies.push_back(table_name);
+    }
+
+    if (!tables_without_dependencies.empty())
+        return tables_without_dependencies;
+
+    if (all_tables_created)
+        return {};
+
+    /// Cyclic dependency? We'll try to create those tables anyway but probably it's going to fail.
+    std::vector<QualifiedTableName> tables_with_cyclic_dependencies;
+    for (const auto & [table_name, table_info] : table_infos)
+    {
+        if (!table_info.created)
+            tables_with_cyclic_dependencies.push_back(table_name);
+    }
+
+    /// Only show a warning here, proper exception will be thrown later on creating those tables.
+    LOG_WARNING(
+        log,
+        "Some tables have cyclic dependency from each other: {}",
+        boost::algorithm::join(
+            tables_with_cyclic_dependencies
+                | boost::adaptors::transformed([](const QualifiedTableName & table_name) -> String { return table_name.getFullName(); }),
+            ", "));
+
+    return tables_with_cyclic_dependencies;
 }
 
 void RestorerFromBackup::addDataRestoreTask(StoragePtr storage, DataRestoreTask && new_task)
