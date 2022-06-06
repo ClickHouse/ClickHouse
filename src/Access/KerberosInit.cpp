@@ -126,11 +126,35 @@ int KerberosInit::init(const String & keytab_file, const String & principal, con
         throw DB::Exception(0, "Error in setting output credential cache");
 
     // action: init or renew
-    // todo: implement renew action
-    // todo: doing only init action:
-    ret = krb5_get_init_creds_keytab(k5->ctx, &my_creds, k5->me, keytab, 0, nullptr, options);
+    LOG_DEBUG(adqm_log,"Trying to renew credentials");
+    ret = krb5_get_renewed_creds(k5->ctx, &my_creds, k5->me, k5->out_cc, nullptr);
     if (ret)
-        LOG_DEBUG(adqm_log,"Getting initial credentials");
+    {
+        LOG_DEBUG(adqm_log,"Renew failed, making init credentials");
+        ret = krb5_get_init_creds_keytab(k5->ctx, &my_creds, k5->me, keytab, 0, nullptr, options);
+        if (ret)
+            throw DB::Exception(0, "Error in init");
+        else
+            LOG_DEBUG(adqm_log,"Getting initial credentials");
+    }
+    else
+    {
+        LOG_DEBUG(adqm_log,"Successfull reviewal");
+        ret = krb5_cc_initialize(k5->ctx, k5->out_cc, k5->me);
+        if (ret)
+            throw DB::Exception(0, "Error when initializing cache");
+        LOG_DEBUG(adqm_log,"Initialized cache");
+        ret = krb5_cc_store_cred(k5->ctx, k5->out_cc, &my_creds);
+        if (ret)
+            LOG_DEBUG(adqm_log,"Error while storing credentials");
+        LOG_DEBUG(adqm_log,"Stored credentials");
+    }
+
+    if (k5->switch_to_cache) {
+        ret = krb5_cc_switch(k5->ctx, k5->out_cc);
+        if (ret)
+            throw DB::Exception(0, "Error while switching to new ccache");
+    }
 
     LOG_DEBUG(adqm_log,"Authenticated to Kerberos v5");
     LOG_DEBUG(adqm_log,"KerberosInit: end");
