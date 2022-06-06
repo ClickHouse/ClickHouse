@@ -1,7 +1,12 @@
+import os
 import random
+import re
 import string
+import tempfile
 import threading
 import xml.etree.ElementTree
+
+import minio
 
 
 # By default the exceptions that was throwed in threads will be ignored
@@ -56,3 +61,38 @@ def replace_xml_by_xpath(input_path, output_path, replace_text={}, remove_node=[
             for node in nodes:
                 parent_map[node].remove(node)
     tree.write(output_path)
+
+
+class StorageConfigurator:
+    def __init__(self):
+        self.shall_override_storage = False
+
+        if os.environ.get("CLICKHOUSE_AWS_ENDPOINT_URL_OVERRIDE") and os.environ.get("CLICKHOUSE_AWS_ACCESS_KEY_ID") and os.environ.get("CLICKHOUSE_AWS_SECRET_ACCESS_KEY"):
+            self.url = os.environ["CLICKHOUSE_AWS_ENDPOINT_URL_OVERRIDE"]
+            self.key_id = os.environ["CLICKHOUSE_AWS_ACCESS_KEY_ID"]
+            self.secret_key = os.environ["CLICKHOUSE_AWS_SECRET_ACCESS_KEY"]
+
+            parts = re.findall("^((https?)://(s3\\.(.*?)\\.amazonaws\\.com))(/(.*?)(/.*/))$", self.url)
+            if parts:
+                [[self.base_url, self.scheme, self.host_name, self.region, self.path, self.bucket, self.key]] = parts
+                self.shall_override_storage = True
+
+            parts = re.findall("^((https?)://(storage\\.googleapis\\.com))(/(.*?)(/.*/))$", self.url)
+            if parts:
+                [[self.base_url, self.scheme, self.host_name, self.bucket, self.path, self.key]] = parts
+                self.region = "us-east-1"
+                self.shall_override_storage = True
+
+        if self.shall_override_storage:
+            self.minio_client = minio.Minio(self.host_name, access_key=self.key_id, secret_key=self.secret_key, region=self.region, secure=False)
+            self.temporary_directory = tempfile.TemporaryDirectory()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.temporary_directory.cleanup()
+
+    def new_file_name(self, base_name):
+        assert "/" not in base_name
+        return os.path.join(self.temporary_directory.name, base_name)

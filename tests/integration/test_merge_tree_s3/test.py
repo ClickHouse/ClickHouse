@@ -1,10 +1,8 @@
 import logging
 import os
-import tempfile
 import time
 import urllib.parse
 
-import minio
 import pytest
 
 from helpers.cluster import ClickHouseCluster, get_instances_dir
@@ -23,63 +21,58 @@ UNSTABLE_PROXY_ENDPOINT = "resolver:8081"
 
 @pytest.fixture(scope="module")
 def cluster():
+    global MINIO_ENDPOINT
     try:
-        with tempfile.TemporaryDirectory() as d:
+        with helpers.utility.StorageConfigurator() as storage_configurator:
             cluster = ClickHouseCluster(__file__)
             main_configs = [
                 "configs/config.d/storage_conf.xml",
                 "configs/config.d/bg_processing_pool_conf.xml",
             ]
 
-            if os.environ.get("CLICKHOUSE_AWS_ENDPOINT_URL_OVERRIDE"):
-                assert os.environ["CLICKHOUSE_AWS_HOST_NAME"] + "/" + os.environ["CLICKHOUSE_AWS_BUCKET"] in os.environ["CLICKHOUSE_AWS_ENDPOINT_URL_OVERRIDE"]
-                new_config_name = os.path.join(d, "storage_conf.xml")
+            if storage_configurator.shall_override_storage:
+                new_config_name = storage_configurator.new_file_name("storage_conf.xml")
                 helpers.utility.replace_xml_by_xpath(
                     os.path.join(SCRIPT_DIR, main_configs[0]),
                     new_config_name,
                     replace_text={
-                        "//storage_configuration/disks/s3/endpoint": os.environ["CLICKHOUSE_AWS_ENDPOINT_URL_OVERRIDE"],
-                        "//storage_configuration/disks/s3/access_key_id": os.environ["CLICKHOUSE_AWS_ACCESS_KEY_ID"],
-                        "//storage_configuration/disks/s3/secret_access_key": os.environ["CLICKHOUSE_AWS_SECRET_ACCESS_KEY"],
-                        "//storage_configuration/disks/s3/region": os.environ["CLICKHOUSE_AWS_REGION"],
-                        "//storage_configuration/disks/s3_with_cache/endpoint": os.environ["CLICKHOUSE_AWS_ENDPOINT_URL_OVERRIDE"],
-                        "//storage_configuration/disks/s3_with_cache/access_key_id": os.environ["CLICKHOUSE_AWS_ACCESS_KEY_ID"],
-                        "//storage_configuration/disks/s3_with_cache/secret_access_key": os.environ["CLICKHOUSE_AWS_SECRET_ACCESS_KEY"],
-                        "//storage_configuration/disks/s3_with_cache/region": os.environ["CLICKHOUSE_AWS_REGION"],
-                        "//storage_configuration/disks/unstable_s3/endpoint": f"http://{UNSTABLE_PROXY_ENDPOINT}/" + os.environ["CLICKHOUSE_AWS_BUCKET"] + "/data/",
-                        "//storage_configuration/disks/unstable_s3/access_key_id": os.environ["CLICKHOUSE_AWS_ACCESS_KEY_ID"],
-                        "//storage_configuration/disks/unstable_s3/secret_access_key": os.environ["CLICKHOUSE_AWS_SECRET_ACCESS_KEY"],
-                        "//storage_configuration/disks/unstable_s3/region": os.environ["CLICKHOUSE_AWS_REGION"],
+                        "//storage_configuration/disks/s3/endpoint": storage_configurator.url,
+                        "//storage_configuration/disks/s3/access_key_id": storage_configurator.key_id,
+                        "//storage_configuration/disks/s3/secret_access_key": storage_configurator.secret_key,
+                        "//storage_configuration/disks/s3/region": storage_configurator.region,
+                        "//storage_configuration/disks/s3_with_cache/endpoint": storage_configurator.url,
+                        "//storage_configuration/disks/s3_with_cache/access_key_id": storage_configurator.key_id,
+                        "//storage_configuration/disks/s3_with_cache/secret_access_key": storage_configurator.secret_key,
+                        "//storage_configuration/disks/s3_with_cache/region": storage_configurator.region,
+                        "//storage_configuration/disks/unstable_s3/endpoint": f"http://{UNSTABLE_PROXY_ENDPOINT}{storage_configurator.path}",
+                        "//storage_configuration/disks/unstable_s3/access_key_id": storage_configurator.key_id,
+                        "//storage_configuration/disks/unstable_s3/secret_access_key": storage_configurator.secret_key,
+                        "//storage_configuration/disks/unstable_s3/region": storage_configurator.region,
                     }
                 )
                 main_configs[0] = new_config_name
-                global MINIO_ENDPOINT
-                MINIO_ENDPOINT = os.environ["CLICKHOUSE_AWS_HOST_NAME"]
+                MINIO_ENDPOINT = storage_configurator.host_name
 
             cluster.add_instance(
                 "node",
                 main_configs=main_configs,
-                with_minio=True
+                with_minio=True,
+                stay_alive=True,
             )
             logging.info("Starting cluster...")
             cluster.start()
             logging.info("Cluster started")
             run_s3_mocks(cluster)
 
-            if os.environ.get("CLICKHOUSE_AWS_ENDPOINT_URL_OVERRIDE"):
-                cluster.minio_client = minio.Minio(
-                    os.environ["CLICKHOUSE_AWS_HOST_NAME"],
-                    access_key=os.environ["CLICKHOUSE_AWS_ACCESS_KEY_ID"],
-                    secret_key=os.environ["CLICKHOUSE_AWS_SECRET_ACCESS_KEY"],
-                    region=os.environ["CLICKHOUSE_AWS_REGION"],
-                    secure=False
-                )
-                cluster.minio_bucket = os.environ["CLICKHOUSE_AWS_BUCKET"]
+            if storage_configurator.shall_override_storage:
+                cluster.minio_client = storage_configurator.minio_client
+                cluster.minio_bucket = storage_configurator.bucket
                 cluster.exec_in_container(
                     cluster.get_container_id("resolver"),
-                    ["curl", "-s", f"http://localhost:8081/?key={urllib.parse.quote(os.environ['CLICKHOUSE_AWS_SECRET_ACCESS_KEY'])}"],
-                    nothrow=True
+                    ["curl", "-s", f"http://{UNSTABLE_PROXY_ENDPOINT}/?key={urllib.parse.quote(storage_configurator.secret_key)}"],
+                    nothrow=True,
                 )
+                cluster.instances["node"].restart_clickhouse() # ClickHouse depends on the disk mock.
 
             yield cluster
     finally:
