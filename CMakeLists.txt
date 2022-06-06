@@ -36,7 +36,7 @@ set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 
 # Check that submodules are present
 if (NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/sysroot/README.md")
-    message (FATAL_ERROR "Submodules are not initialized. Run\n\tgit submodule update --init --recursive")
+    message (FATAL_ERROR "Submodules are not initialized. Run\n\tgit submodule update --init")
 endif ()
 
 # Take care to add prlimit in command line before ccache, or else ccache thinks that

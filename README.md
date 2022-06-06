@@ -13,3 +13,7 @@ ClickHouse® is an open-source column-oriented database management system that a
 * [Code Browser (Woboq)](https://clickhouse.com/codebrowser/ClickHouse/index.html) with syntax highlight and navigation.
 * [Code Browser (github.dev)](https://github.dev/ClickHouse/ClickHouse) with syntax highlight, powered by github.dev.
 * [Contacts](https://clickhouse.com/company/#contact) can help to get your questions answered if there are any.
+
+## Upcoming Events
+
+* [ClickHouse Meetup Amsterdam (in-person and online)](https://www.meetup.com/clickhouse-netherlands-user-group/events/286017044/) on June 8th, 2022

@@ -81,7 +81,7 @@ $ ./src/unit_tests_dbms --gtest_filter=LocalAddress*
 
 ## Performance Tests {#performance-tests}
 
-Performance tests allow to measure and compare performance of some isolated part of ClickHouse on synthetic queries. Tests are located at `tests/performance`. Each test is represented by `.xml` file with description of test case. Tests are run with `docker/tests/performance-comparison` tool . See the readme file for invocation.
+Performance tests allow to measure and compare performance of some isolated part of ClickHouse on synthetic queries. Tests are located at `tests/performance`. Each test is represented by `.xml` file with description of test case. Tests are run with `docker/test/performance-comparison` tool . See the readme file for invocation.
 
 Each test run one or multiple queries (possibly with combinations of parameters) in a loop.
 

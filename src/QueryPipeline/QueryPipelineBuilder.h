@@ -42,7 +42,8 @@ public:
 
     /// All pipes must have same header.
     void init(Pipe pipe);
-    void init(QueryPipeline pipeline);
+    /// This is a constructor which adds some steps to pipeline.
+    void init(QueryPipeline & pipeline);
     /// Clear and release all resources.
     void reset();
 
@@ -58,6 +59,8 @@ public:
     void addTransform(ProcessorPtr transform);
     void addTransform(ProcessorPtr transform, InputPort * totals, InputPort * extremes);
 
+    /// Note: this two methods do not care about resources inside the chain.
+    /// You should attach them yourself.
     void addChains(std::vector<Chain> chains);
     void addChain(Chain chain);
 
@@ -120,15 +123,6 @@ public:
 
     const Block & getHeader() const { return pipe.getHeader(); }
 
-    void addTableLock(TableLockHolder lock) { pipe.addTableLock(std::move(lock)); }
-    void addInterpreterContext(ContextPtr context) { pipe.addInterpreterContext(std::move(context)); }
-    void addStorageHolder(StoragePtr storage) { pipe.addStorageHolder(std::move(storage)); }
-    void addQueryPlan(std::unique_ptr<QueryPlan> plan);
-    void setLimits(const StreamLocalLimits & limits) { pipe.setLimits(limits); }
-    void setLeafLimits(const SizeLimits & limits) { pipe.setLeafLimits(limits); }
-    void setQuota(const std::shared_ptr<const EnabledQuota> & quota) { pipe.setQuota(quota); }
-
-    void setProgressCallback(const ProgressCallback & callback);
     void setProcessListElement(QueryStatus * elem);
 
     /// Recommend number of threads for pipeline execution.
@@ -152,12 +146,17 @@ public:
             max_threads = max_threads_;
     }
 
+    void addResources(QueryPlanResourceHolder resources_) { resources = std::move(resources_); }
+    void setQueryIdHolder(std::shared_ptr<QueryIdHolder> query_id_holder) { resources.query_id_holders.emplace_back(std::move(query_id_holder)); }
+
     /// Convert query pipeline to pipe.
-    static Pipe getPipe(QueryPipelineBuilder pipeline) { return std::move(pipeline.pipe); }
+    static Pipe getPipe(QueryPipelineBuilder pipeline, QueryPlanResourceHolder & resources);
     static QueryPipeline getPipeline(QueryPipelineBuilder builder);
 
 private:
 
+    /// Destruction order: processors, header, locks, temporary storages, local contexts
+    QueryPlanResourceHolder resources;
     Pipe pipe;
 
     /// Limit on the number of threads. Zero means no limit.
