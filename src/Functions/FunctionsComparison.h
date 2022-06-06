@@ -118,7 +118,7 @@ struct NumComparisonImpl
             return;
         }
 
-	if (isArchSupported(TargetArch::AVX512F))
+        if (isArchSupported(TargetArch::AVX512F))
         {
             vectorVectorImplAVX512F(a, b, c);
             return;

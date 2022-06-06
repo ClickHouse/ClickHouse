@@ -108,16 +108,16 @@ struct AggregateFunctionSumData
     {
 #if USE_MULTITARGET_CODE
         if (isArchSupported(TargetArch::AVX512BW))
-	{
-	   addManyImplAVX512BW(ptr, start, end);
-           return;
-	}
+        {
+            addManyImplAVX512BW(ptr, start, end);
+            return;
+        }
 
         if (isArchSupported(TargetArch::AVX512F))
-	{
-	   addManyImplAVX512F(ptr, start, end);
-           return;
-	}
+        {
+            addManyImplAVX512F(ptr, start, end);
+            return;
+        }
 
         if (isArchSupported(TargetArch::AVX2))
         {
