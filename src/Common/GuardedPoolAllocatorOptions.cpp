@@ -28,7 +28,7 @@ public:
     explicit OptionParser() = default;
     void registerOption(const char * name, const char * desc, OptionType type, void * var);
     bool parseString(const char * string);
-    void printOptionDescriptions();
+    static void printOptionDescriptions();
 
 private:
     /// Calculate at compile-time how many options are available.
@@ -237,7 +237,7 @@ bool initOptions(const char * options_str)
     }
 
     if (opts->help)
-        parser.printOptionDescriptions();
+        OptionParser::printOptionDescriptions();
 
     if (!opts->enabled)
         return true;

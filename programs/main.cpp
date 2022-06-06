@@ -349,7 +349,7 @@ struct GuardedPoolAllocator
     {
         if (!clickhouse_gwp_asan::initOptions())
         {
-            writeError("Error while parsing GWP-ASan options\n");
+            writeError("Error while parsing GWP-ASan options. Pass help=true in env to view options help.\n");
             _Exit(1);
         }
         allocator.init(clickhouse_gwp_asan::getOptions());
