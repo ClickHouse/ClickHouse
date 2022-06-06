@@ -447,36 +447,81 @@ void MergeTreeRangeReader::ReadResult::collapseZeroTails(const IColumn::Filter &
     new_filter_vec.resize(new_filter_data - new_filter_vec.data());
 }
 
-size_t MergeTreeRangeReader::ReadResult::numZerosInTail(const UInt8 * begin, const UInt8 * end)
+DECLARE_AVX512BW_SPECIFIC_CODE(
+size_t numZerosInTail(const UInt8 * begin, const UInt8 * end)
 {
     size_t count = 0;
-
-#if defined(__AVX512F__) && defined(__AVX512BW__) /// check if avx512 instructions are compiled
-    if (isArchSupported(TargetArch::AVX512BW))
+    const __m512i zero64 = _mm512_setzero_epi32();
+    while (end - begin >= 64)
     {
-        /// check if cpu support avx512 dynamically, haveAVX512BW contains check of haveAVX512F
-        const __m512i zero64 = _mm512_setzero_epi32();
-        while (end - begin >= 64)
+        end -= 64;
+        const auto * pos = end;
+        UInt64 val = static_cast<UInt64>(_mm512_cmp_epi8_mask(
+                        _mm512_loadu_si512(reinterpret_cast<const __m512i *>(pos)),
+                        zero64,
+                        _MM_CMPINT_EQ));
+        val = ~val;
+        if (val == 0)
+            count += 64;
+        else
         {
-            end -= 64;
-            const auto * pos = end;
-            UInt64 val = static_cast<UInt64>(_mm512_cmp_epi8_mask(_mm512_loadu_si512(reinterpret_cast<const __m512i *>(pos)), zero64, _MM_CMPINT_EQ));
-            val = ~val;
-            if (val == 0)
-                count += 64;
-            else
-            {
-                count += __builtin_clzll(val);
-                return count;
-            }
+            count += __builtin_clzll(val);
+            return count;
         }
-        while (end > begin && *(--end) == 0)
-        {
-            ++count;
-        }
-        return count;
     }
+    while (end > begin && *(--end) == 0)
+    {
+        ++count;
+    }
+    return count;
+}
+) /// DECLARE_AVX512BW_SPECIFIC_CODE
+
+DECLARE_AVX2_SPECIFIC_CODE(
+size_t numZerosInTail(const UInt8 * begin, const UInt8 * end)
+{
+    size_t count = 0;
+    const __m256i zero32 = _mm256_setzero_si256();
+    while (end - begin >= 64)
+    {
+        end -= 64;
+        const auto * pos = end;
+        UInt64 val =
+            (static_cast<UInt64>(_mm256_movemask_epi8(_mm256_cmpeq_epi8(
+                        _mm256_loadu_si256(reinterpret_cast<const __m256i *>(pos)),
+                        zero32))) & 0xffffffffu)
+            | (static_cast<UInt64>(_mm256_movemask_epi8(_mm256_cmpeq_epi8(
+                        _mm256_loadu_si256(reinterpret_cast<const __m256i *>(pos + 32)),
+                        zero32))) << 32u);
+
+        val = ~val;
+        if (val == 0)
+            count += 64;
+        else
+        {
+            count += __builtin_clzll(val);
+            return count;
+        }
+    }
+    while (end > begin && *(--end) == 0)
+    {
+        ++count;
+    }
+    return count;
+}
+) /// DECLARE_AVX2_SPECIFIC_CODE
+
+size_t MergeTreeRangeReader::ReadResult::numZerosInTail(const UInt8 * begin, const UInt8 * end)
+{
+#if USE_MULTITARGET_CODE
+    /// check if cpu support avx512 dynamically, haveAVX512BW contains check of haveAVX512F
+    if (isArchSupported(TargetArch::AVX512BW))
+        return TargetSpecific::AVX512BW::numZerosInTail(begin, end);
+    else if (isArchSupported(TargetArch::AVX2))
+        return TargetSpecific::AVX2::numZerosInTail(begin, end);
 #endif
+
+    size_t count = 0;
 
 #if defined(__SSE2__) && defined(__POPCNT__)
     const __m128i zero16 = _mm_setzero_si128();
@@ -593,9 +638,6 @@ MergeTreeRangeReader::MergeTreeRangeReader(
 
     if (prewhere_info)
     {
-        if (prewhere_info->alias_actions)
-            prewhere_info->alias_actions->execute(sample_block, true);
-
         if (prewhere_info->row_level_filter)
         {
             prewhere_info->row_level_filter->execute(sample_block, true);
@@ -1057,9 +1099,6 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
                 throw Exception("Unexpected non-const virtual column: " + column_name, ErrorCodes::LOGICAL_ERROR);
             ++pos;
         }
-
-        if (prewhere_info->alias_actions)
-            prewhere_info->alias_actions->execute(block);
 
         /// Columns might be projected out. We need to store them here so that default columns can be evaluated later.
         result.block_before_prewhere = block;

@@ -8,9 +8,13 @@
 #include <Common/CurrentThread.h>
 #include "Core/Protocol.h"
 #include "IO/ReadHelpers.h"
+#include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
+#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <QueryPipeline/Pipe.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Processors/Transforms/LimitsCheckingTransform.h>
+#include <Processors/QueryPlan/QueryPlan.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/IStorage.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Interpreters/castColumn.h>
@@ -569,18 +573,21 @@ void RemoteQueryExecutor::sendExternalTables()
                     QueryProcessingStage::Enum read_from_table_stage = cur->getQueryProcessingStage(
                         context, QueryProcessingStage::Complete, storage_snapshot, query_info);
 
-                    Pipe pipe = cur->read(
+                    QueryPlan plan;
+                    cur->read(
+                        plan,
                         metadata_snapshot->getColumns().getNamesOfPhysical(),
                         storage_snapshot, query_info, context,
                         read_from_table_stage, DEFAULT_BLOCK_SIZE, 1);
 
-                    if (pipe.empty())
-                        return std::make_unique<Pipe>(
-                            std::make_shared<SourceFromSingleChunk>(metadata_snapshot->getSampleBlock(), Chunk()));
+                    auto builder = plan.buildQueryPipeline(
+                        QueryPlanOptimizationSettings::fromContext(context),
+                        BuildQueryPipelineSettings::fromContext(context));
 
-                    pipe.addTransform(std::make_shared<LimitsCheckingTransform>(pipe.getHeader(), limits));
+                    builder->resize(1);
+                    builder->addTransform(std::make_shared<LimitsCheckingTransform>(builder->getHeader(), limits));
 
-                    return std::make_unique<Pipe>(std::move(pipe));
+                    return builder;
                 };
 
                 data->pipe = data->creating_pipe_callback();
