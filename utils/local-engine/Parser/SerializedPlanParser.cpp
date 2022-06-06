@@ -217,7 +217,19 @@ QueryPlanPtr SerializedPlanParser::parse(std::unique_ptr<substrait::Plan> plan)
     {
         auto root_rel = plan->relations().at(0);
         assert(root_rel.has_root() && "must have root rel!");
-        return parseOp(root_rel.root().input());
+
+        auto query_plan = parseOp(root_rel.root().input());
+        ActionsDAGPtr actions_dag = std::make_shared<ActionsDAG>(blockToNameAndTypeList(query_plan->getCurrentDataStream().header));
+        NamesWithAliases aliases;
+        auto cols = query_plan->getCurrentDataStream().header.getNamesAndTypesList();
+        for (int i = 0; i < root_rel.root().names_size(); i++)
+        {
+            aliases.emplace_back(NameWithAlias(cols.getNames()[i], root_rel.root().names(i)));
+        }
+        actions_dag->project(aliases);
+        auto expression_step = std::make_unique<ExpressionStep>(query_plan->getCurrentDataStream(), actions_dag);
+        query_plan->addStep(std::move(expression_step));
+        return query_plan;
     }
     else
     {
@@ -277,7 +289,10 @@ QueryPlanPtr SerializedPlanParser::parseOp(const substrait::Rel & rel)
                 }
                 else
                 {
-                    LOG_ERROR(&Poco::Logger::get("SerializedPlanParser"), "unsupported projection type {}.", magic_enum::enum_name(expr.rex_type_case()));
+                    LOG_ERROR(
+                        &Poco::Logger::get("SerializedPlanParser"),
+                        "unsupported projection type {}.",
+                        magic_enum::enum_name(expr.rex_type_case()));
                     throw std::runtime_error("unsupported projection type");
                 }
             }
@@ -328,7 +343,11 @@ QueryPlanPtr SerializedPlanParser::parseOp(const substrait::Rel & rel)
         default:
             throw std::runtime_error("doesn't support relation type");
     }
-    LOG_TRACE(&Poco::Logger::get("SerializedPlanParser"), "{} output:\n{}", magic_enum::enum_name(rel.rel_type_case()), query_plan->getCurrentDataStream().header.dumpStructure());
+    LOG_TRACE(
+        &Poco::Logger::get("SerializedPlanParser"),
+        "{} output:\n{}",
+        magic_enum::enum_name(rel.rel_type_case()),
+        query_plan->getCurrentDataStream().header.dumpStructure());
     return query_plan;
 }
 
@@ -439,7 +458,7 @@ QueryPlanStepPtr SerializedPlanParser::parseAggregate(QueryPlan & plan, const su
             agg.column_name = function_name + "(" + measure_names.at(i) + ")";
         }
         agg.arguments = ColumnNumbers{plan.getCurrentDataStream().header.getPositionByName(measure_names.at(i))};
-        agg.argument_names = Names{measure_names.at(i)};
+        //        agg.argument_names = Names{measure_names.at(i)};
         auto arg_type = plan.getCurrentDataStream().header.getByName(measure_names.at(i)).type;
         if (auto function_type = checkAndGetDataType<DataTypeAggregateFunction>(arg_type.get()))
         {
@@ -748,9 +767,11 @@ const ActionsDAG::Node * SerializedPlanParser::parseArgument(ActionsDAGPtr actio
                     auto arg = ColumnSet::create(set->getTotalRowCount(), set);
                     return &action_dag->addColumn(ColumnWithTypeAndName(std::move(arg), std::make_shared<DataTypeSet>(), name));
                 }
-                default:
-                {
-                    LOG_ERROR(&Poco::Logger::get("SerializedPlanParser"), "unsupported constant type {}", magic_enum::enum_name(literal.literal_type_case()));
+                default: {
+                    LOG_ERROR(
+                        &Poco::Logger::get("SerializedPlanParser"),
+                        "unsupported constant type {}",
+                        magic_enum::enum_name(literal.literal_type_case()));
                     throw std::runtime_error("unsupported constant type");
                 }
             }
@@ -826,10 +847,7 @@ const ActionsDAG::Node * SerializedPlanParser::parseArgument(ActionsDAGPtr actio
             }
             else
             {
-                LOG_ERROR(
-                    &Poco::Logger::get("SerializedPlanParser"),
-                    "unsupported cast input {}",
-                    rel.cast().input().DebugString());
+                LOG_ERROR(&Poco::Logger::get("SerializedPlanParser"), "unsupported cast input {}", rel.cast().input().DebugString());
                 throw std::runtime_error("unsupported cast input " + rel.cast().input().DebugString());
             }
             auto function_builder = DB::FunctionFactory::instance().get(ch_function_name, this->context);
@@ -872,16 +890,17 @@ const ActionsDAG::Node * SerializedPlanParser::parseArgument(ActionsDAGPtr actio
             const auto * function_node = &action_dag->addFunction(function_multi_if, args, result_name);
             return function_node;
         }
-        case substrait::Expression::RexTypeCase::kScalarFunction:
-        {
+        case substrait::Expression::RexTypeCase::kScalarFunction: {
             std::string result;
             return parseFunctionWithDAG(rel, result, action_dag, false);
         }
-        default:
-        {
-            LOG_ERROR(&Poco::Logger::get("SerializedPlanParser"), "unsupported arg type {} : {}", magic_enum::enum_name(rel.rex_type_case()), rel.DebugString());
+        default: {
+            LOG_ERROR(
+                &Poco::Logger::get("SerializedPlanParser"),
+                "unsupported arg type {} : {}",
+                magic_enum::enum_name(rel.rex_type_case()),
+                rel.DebugString());
             throw std::runtime_error("unsupported arg type");
-
         }
     }
 }
@@ -956,8 +975,7 @@ DB::QueryPlanPtr SerializedPlanParser::parseJoin(substrait::JoinRel join, DB::Qu
     ActionsDAGPtr left_convert_actions = nullptr;
     ActionsDAGPtr right_convert_actions = nullptr;
     std::tie(left_convert_actions, right_convert_actions) = table_join->createConvertingActions(
-        left->getCurrentDataStream().header.getColumnsWithTypeAndName(),
-        right->getCurrentDataStream().header.getColumnsWithTypeAndName());
+        left->getCurrentDataStream().header.getColumnsWithTypeAndName(), right->getCurrentDataStream().header.getColumnsWithTypeAndName());
 
     if (right_convert_actions)
     {

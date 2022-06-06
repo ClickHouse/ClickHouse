@@ -233,7 +233,14 @@ DB::Block ColumnsBuffer::releaseColumns()
 {
     DB::Columns res(std::make_move_iterator(accumulated_columns.begin()), std::make_move_iterator(accumulated_columns.end()));
     accumulated_columns.clear();
-    return header.cloneWithColumns(res);
+    if (res.empty())
+    {
+        return header.cloneEmpty();
+    }
+    else
+    {
+        return header.cloneWithColumns(res);
+    }
 }
 
 DB::Block ColumnsBuffer::getHeader()
