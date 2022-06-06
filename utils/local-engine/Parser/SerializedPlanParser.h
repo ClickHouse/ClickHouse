@@ -16,6 +16,7 @@
 #include <Storages/CustomStorageMergeTree.h>
 #include <Storages/SourceFromJavaIter.h>
 #include <Parser/CHColumnToSparkRow.h>
+#include <google/protobuf/port_def.inc>
 
 namespace local_engine
 {
@@ -34,6 +35,7 @@ static const std::map<std::string, std::string> SCALAR_FUNCTIONS = {
     {"xor", "xor"},
 
     {"TO_DATE", "toDate"},
+    {"extract", ""},
     {"cast", ""},
     {"alias", "alias"},
 
@@ -48,6 +50,7 @@ static const std::map<std::string, std::string> SCALAR_FUNCTIONS = {
     {"starts_with", "startsWith"},
     {"ends_with", "endsWith"},
     {"contains", "countSubstrings"},
+    {"substring", "substring"},
 
     {"in", "in"},
 
@@ -102,7 +105,7 @@ private:
     DB::QueryPlanPtr parseOp(const substrait::Rel &rel);
     DB::QueryPlanPtr parseJoin(substrait::JoinRel join, DB::QueryPlanPtr left, DB::QueryPlanPtr right);
     void reorderJoinOutput(DB::QueryPlan & plan, DB::Names cols);
-    std::string getFunctionName(std::string function_sig, const substrait::Type& output_type);
+    std::string getFunctionName(std::string function_sig, const substrait::Type& output_type, const ::PROTOBUF_NAMESPACE_ID::RepeatedPtrField< ::substrait::Expression >& args);
     DB::ActionsDAGPtr parseFunction(const DataStream & input, const substrait::Expression &rel, std::string & result_name, DB::ActionsDAGPtr actions_dag = nullptr, bool keep_result = false);
     const ActionsDAG::Node * parseFunctionWithDAG(const substrait::Expression &rel, std::string & result_name, DB::ActionsDAGPtr actions_dag = nullptr, bool keep_result = false);
     DB::QueryPlanStepPtr parseAggregate(DB::QueryPlan & plan, const substrait::AggregateRel &rel);

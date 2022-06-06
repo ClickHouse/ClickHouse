@@ -520,7 +520,7 @@ void join(ActionsDAG::NodeRawConstPtrs v, char c, std::string & s)
     }
 }
 
-std::string SerializedPlanParser::getFunctionName(std::string function_signature, const substrait::Type & output_type)
+std::string SerializedPlanParser::getFunctionName(std::string function_signature, const substrait::Type & output_type, const ::PROTOBUF_NAMESPACE_ID::RepeatedPtrField< ::substrait::Expression >& args)
 {
     auto function_name_idx = function_signature.find(':');
     //    assert(function_name_idx != function_signature.npos && ("invalid function signature: " + function_signature).c_str());
@@ -545,6 +545,44 @@ std::string SerializedPlanParser::getFunctionName(std::string function_signature
             throw Exception(ErrorCodes::UNKNOWN_FUNCTION, "unsupported function {}", function_signature);
         }
     }
+    else if (function_name == "extract")
+    {
+        if (args.size() != 2)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "extract function requires two args.");
+        }
+        // Get the first arg: field
+        const auto & extractField = args.at(0);
+
+        if (extractField.has_literal())
+        {
+            const auto & fieldValue = extractField.literal().string();
+            if (fieldValue == "YEAR")
+            {
+                ch_function_name = "toYear";
+            }
+            else if (fieldValue == "MONTH")
+            {
+                ch_function_name = "toMonth";
+            }
+            else if (fieldValue == "DAYOFWEEK")
+            {
+                ch_function_name = "toDayOfWeek";
+            }
+            else if (fieldValue == "DAYOFYEAR")
+            {
+                ch_function_name = "toDayOfYear";
+            }
+            else
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "the first arg of extract function is wrong.");
+            }
+        }
+        else
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "the first arg of extract function is wrong.");
+        }
+    }
     else
     {
         ch_function_name = SCALAR_FUNCTIONS.at(function_name);
@@ -562,7 +600,7 @@ const ActionsDAG::Node * SerializedPlanParser::parseFunctionWithDAG(
     const auto & scalar_function = rel.scalar_function();
 
     auto function_signature = this->function_mapping.at(std::to_string(rel.scalar_function().function_reference()));
-    auto function_name = getFunctionName(function_signature, rel.scalar_function().output_type());
+    auto function_name = getFunctionName(function_signature, scalar_function.output_type(), scalar_function.args());
     ActionsDAG::NodeRawConstPtrs args;
     for (const auto & arg : scalar_function.args())
     {
@@ -586,6 +624,11 @@ const ActionsDAG::Node * SerializedPlanParser::parseFunctionWithDAG(
     }
     else
     {
+        if (function_signature.find("extract:", 0) != function_signature.npos)
+        {
+            // delete the first arg
+            args.erase(args.begin());
+        }
         auto function_builder = FunctionFactory::instance().get(function_name, this->context);
         std::string args_name;
         join(args, ',', args_name);
@@ -601,7 +644,6 @@ const ActionsDAG::Node * SerializedPlanParser::parseFunctionWithDAG(
 ActionsDAGPtr SerializedPlanParser::parseFunction(
     const DataStream & input, const substrait::Expression & rel, std::string & result_name, ActionsDAGPtr actions_dag, bool keep_result)
 {
-    const auto & scalar_function = rel.scalar_function();
     if (!actions_dag)
     {
         actions_dag = std::make_shared<ActionsDAG>(blockToNameAndTypeList(input.header));

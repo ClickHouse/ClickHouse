@@ -437,6 +437,10 @@ jstring Java_io_glutenproject_vectorized_CHNativeBlock_nativeColumnType(JNIEnv *
     {
         type = "Short";
     }
+    else if (which.isUInt16())
+    {
+        type = "Integer";
+    }
     else if (which.isString())
     {
         type = "String";
