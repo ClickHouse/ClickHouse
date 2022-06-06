@@ -618,11 +618,12 @@ void LRUFileCache::remove(const Key & key)
 
     for (auto & cell : to_remove)
     {
+        /// In ordinary case we remove data from cache when it's not used by anyone.
+        /// But if we have multiple replicated zero-copy tables on the same server
+        /// it became possible to start removing something from cache when it is used
+        /// by other "zero-copy" tables. That is why it's not an error.
         if (!cell->releasable())
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Cannot remove file from cache because someone reads from it. File segment info: {}",
-                cell->file_segment->getInfoForLog());
+            continue;
 
         auto file_segment = cell->file_segment;
         if (file_segment)
@@ -634,10 +635,13 @@ void LRUFileCache::remove(const Key & key)
 
     auto key_path = getPathInLocalCache(key);
 
-    files.erase(key);
+    if (fs::is_empty(key_path))
+    {
+        files.erase(key);
 
-    if (fs::exists(key_path))
-        fs::remove(key_path);
+        if (fs::exists(key_path))
+            fs::remove(key_path);
+    }
 }
 
 void LRUFileCache::remove()
