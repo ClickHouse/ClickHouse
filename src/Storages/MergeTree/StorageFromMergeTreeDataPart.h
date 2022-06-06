@@ -3,6 +3,7 @@
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
+#include <DataTypes/ObjectUtils.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
@@ -36,6 +37,20 @@ public:
 
     String getName() const override { return "FromMergeTreeDataPart"; }
 
+    StorageSnapshotPtr getStorageSnapshot(
+        const StorageMetadataPtr & metadata_snapshot, ContextPtr /*query_context*/) const override
+    {
+        const auto & storage_columns = metadata_snapshot->getColumns();
+        if (!hasObjectColumns(storage_columns))
+            return std::make_shared<StorageSnapshot>(*this, metadata_snapshot);
+
+        auto object_columns = getObjectColumns(
+            parts.begin(), parts.end(),
+            storage_columns, [](const auto & part) -> const auto & { return part->getColumns(); });
+
+        return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, object_columns);
+    }
+
     void read(
         QueryPlan & query_plan,
         const Names & column_names,
@@ -62,6 +77,8 @@ public:
     bool supportsPrewhere() const override { return true; }
 
     bool supportsIndexForIn() const override { return true; }
+
+    bool supportsDynamicSubcolumns() const override { return true; }
 
     bool mayBenefitFromIndexForIn(
         const ASTPtr & left_in_operand, ContextPtr query_context, const StorageMetadataPtr & metadata_snapshot) const override
