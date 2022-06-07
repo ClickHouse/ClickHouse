@@ -265,3 +265,9 @@
 [submodule "contrib/minizip-ng"]
 	path = contrib/minizip-ng
 	url = https://github.com/zlib-ng/minizip-ng
+[submodule "contrib/wyhash"]
+	path = contrib/wyhash
+	url = https://github.com/wangyi-fudan/wyhash.git
+[submodule "contrib/hashidsxx"]
+	path = contrib/hashidsxx
+	url = https://github.com/schoentoon/hashidsxx.git

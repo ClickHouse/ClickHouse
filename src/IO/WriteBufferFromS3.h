@@ -47,8 +47,8 @@ class WriteBufferFromFile;
 class WriteBufferFromS3 final : public BufferWithOwnMemory<WriteBuffer>
 {
 public:
-    explicit WriteBufferFromS3(
-        std::shared_ptr<Aws::S3::S3Client> client_ptr_,
+    WriteBufferFromS3(
+        std::shared_ptr<const Aws::S3::S3Client> client_ptr_,
         const String & bucket_,
         const String & key_,
         const S3Settings::ReadWriteSettings & s3_settings_,
@@ -90,10 +90,11 @@ private:
 
     String bucket;
     String key;
-    std::optional<std::map<String, String>> object_metadata;
-    std::shared_ptr<Aws::S3::S3Client> client_ptr;
+    std::shared_ptr<const Aws::S3::S3Client> client_ptr;
     size_t upload_part_size = 0;
     S3Settings::ReadWriteSettings s3_settings;
+    std::optional<std::map<String, String>> object_metadata;
+
     /// Buffer to accumulate data.
     std::shared_ptr<Aws::StringStream> temporary_buffer;
     size_t last_part_size = 0;

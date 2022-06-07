@@ -13,8 +13,7 @@ add_library(mysql_parser ${mysql_parser_headers} ${mysql_parser_sources})
 target_compile_options(mysql_parser PRIVATE -Wno-everything)
 
 target_link_libraries(mysql_parser PUBLIC antlr4-runtime)
-target_link_libraries(clickhouse_parsers PUBLIC clickhouse_common_io clickhouse_common_access mysql_parser)
-
+target_link_libraries(clickhouse_parsers PUBLIC clickhouse_common_io clickhouse_common_access string_utils mysql_parser)
 
 if (USE_DEBUG_HELPERS)
     # CMake generator expression will do insane quoting when it encounters special character like quotes, spaces, etc.

@@ -82,6 +82,10 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, ContextPtr context, 
     }
 
     query->cluster = context->getMacros()->expand(query->cluster);
+
+    /// TODO: support per-cluster grant
+    context->checkAccess(AccessType::CLUSTER);
+
     ClusterPtr cluster = params.cluster ? params.cluster : context->getCluster(query->cluster);
     DDLWorker & ddl_worker = context->getDDLWorker();
 
@@ -190,7 +194,7 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, ContextPtr context, 
 }
 
 
-class DDLQueryStatusSource final : public SourceWithProgress
+class DDLQueryStatusSource final : public ISource
 {
 public:
     DDLQueryStatusSource(
@@ -271,11 +275,11 @@ static Block getSampleBlock(ContextPtr context_, bool hosts_to_wait)
 
 DDLQueryStatusSource::DDLQueryStatusSource(
     const String & zk_node_path, const DDLLogEntry & entry, ContextPtr context_, const std::optional<Strings> & hosts_to_wait)
-    : SourceWithProgress(getSampleBlock(context_, hosts_to_wait.has_value()), true)
+    : ISource(getSampleBlock(context_, hosts_to_wait.has_value()))
     , node_path(zk_node_path)
     , context(context_)
     , watch(CLOCK_MONOTONIC_COARSE)
-    , log(&Poco::Logger::get("DDLQueryStatusInputStream"))
+    , log(&Poco::Logger::get("DDLQueryStatusSource"))
 {
     auto output_mode = context->getSettingsRef().distributed_ddl_output_mode;
     throw_on_timeout = output_mode == DistributedDDLOutputMode::THROW || output_mode == DistributedDDLOutputMode::NONE;
@@ -448,7 +452,7 @@ IProcessor::Status DDLQueryStatusSource::prepare()
         return Status::Finished;
     }
     else
-        return SourceWithProgress::prepare();
+        return ISource::prepare();
 }
 
 Strings DDLQueryStatusSource::getChildrenAllowNoNode(const std::shared_ptr<zkutil::ZooKeeper> & zookeeper, const String & node_path)

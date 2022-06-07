@@ -19,6 +19,7 @@ ln -s /usr/share/clickhouse-test/clickhouse-test /usr/bin/clickhouse-test
 /usr/share/clickhouse-test/config/install.sh
 
 ./setup_minio.sh
+./setup_hdfs_minicluster.sh
 
 # For flaky check we also enable thread fuzzer
 if [ "$NUM_TRIES" -gt "1" ]; then
@@ -92,8 +93,6 @@ function run_tests()
 
     if [[ -n "$USE_DATABASE_REPLICATED" ]] && [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]; then
         ADDITIONAL_OPTIONS+=('--replicated-database')
-        # Cannot be used with replicated database, due to distributed_ddl_output_mode=none
-        ADDITIONAL_OPTIONS+=('--no-left-queries-check')
         ADDITIONAL_OPTIONS+=('--jobs')
         ADDITIONAL_OPTIONS+=('2')
     else

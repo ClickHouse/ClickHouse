@@ -93,37 +93,58 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
 {
     try
     {
-        if (connected)
-            disconnect();
-
         LOG_TRACE(log_wrapper.get(), "Connecting. Database: {}. User: {}{}{}",
             default_database.empty() ? "(not specified)" : default_database,
             user,
             static_cast<bool>(secure) ? ". Secure" : "",
             static_cast<bool>(compression) ? "" : ". Uncompressed");
 
-        if (static_cast<bool>(secure))
-        {
-#if USE_SSL
-            socket = std::make_unique<Poco::Net::SecureStreamSocket>();
-
-            /// we resolve the ip when we open SecureStreamSocket, so to make Server Name Indication (SNI)
-            /// work we need to pass host name separately. It will be send into TLS Hello packet to let
-            /// the server know which host we want to talk with (single IP can process requests for multiple hosts using SNI).
-            static_cast<Poco::Net::SecureStreamSocket*>(socket.get())->setPeerHostName(host);
-#else
-            throw Exception{"tcp_secure protocol is disabled because poco library was built without NetSSL support.", ErrorCodes::SUPPORT_IS_DISABLED};
-#endif
-        }
-        else
-        {
-            socket = std::make_unique<Poco::Net::StreamSocket>();
-        }
-
-        current_resolved_address = DNSResolver::instance().resolveAddress(host, port);
-
+        auto addresses = DNSResolver::instance().resolveAddressList(host, port);
         const auto & connection_timeout = static_cast<bool>(secure) ? timeouts.secure_connection_timeout : timeouts.connection_timeout;
-        socket->connect(*current_resolved_address, connection_timeout);
+
+        for (auto it = addresses.begin(); it != addresses.end();)
+        {
+            if (connected)
+                disconnect();
+
+            if (static_cast<bool>(secure))
+            {
+#if USE_SSL
+                socket = std::make_unique<Poco::Net::SecureStreamSocket>();
+
+                /// we resolve the ip when we open SecureStreamSocket, so to make Server Name Indication (SNI)
+                /// work we need to pass host name separately. It will be send into TLS Hello packet to let
+                /// the server know which host we want to talk with (single IP can process requests for multiple hosts using SNI).
+                static_cast<Poco::Net::SecureStreamSocket*>(socket.get())->setPeerHostName(host);
+#else
+                throw Exception{"tcp_secure protocol is disabled because poco library was built without NetSSL support.", ErrorCodes::SUPPORT_IS_DISABLED};
+#endif
+            }
+            else
+            {
+                socket = std::make_unique<Poco::Net::StreamSocket>();
+            }
+
+            try
+            {
+                socket->connect(*it, connection_timeout);
+                current_resolved_address = *it;
+                break;
+            }
+            catch (Poco::Net::NetException &)
+            {
+                if (++it == addresses.end())
+                    throw;
+                continue;
+            }
+            catch (Poco::TimeoutException &)
+            {
+                if (++it == addresses.end())
+                    throw;
+                continue;
+            }
+        }
+
         socket->setReceiveTimeout(timeouts.receive_timeout);
         socket->setSendTimeout(timeouts.send_timeout);
         socket->setNoDelay(true);
@@ -376,8 +397,6 @@ void Connection::sendClusterNameAndSalt()
 
 bool Connection::ping()
 {
-    // LOG_TRACE(log_wrapper.get(), "Ping");
-
     try
     {
         TimeoutSetter timeout_setter(*socket, sync_request_timeout, true);
@@ -451,7 +470,8 @@ void Connection::sendQuery(
     UInt64 stage,
     const Settings * settings,
     const ClientInfo * client_info,
-    bool with_pending_data)
+    bool with_pending_data,
+    std::function<void(const Progress &)>)
 {
     if (!connected)
         connect(timeouts);
@@ -746,8 +766,7 @@ void Connection::sendExternalTablesData(ExternalTablesData & data)
         if (!elem->pipe)
             elem->pipe = elem->creating_pipe_callback();
 
-        QueryPipelineBuilder pipeline;
-        pipeline.init(std::move(*elem->pipe));
+        QueryPipelineBuilder pipeline = std::move(*elem->pipe);
         elem->pipe.reset();
         pipeline.resize(1);
         auto sink = std::make_shared<ExternalTableDataSink>(pipeline.getHeader(), *this, *elem, std::move(on_cancel));
@@ -819,7 +838,6 @@ std::optional<UInt64> Connection::checkPacket(size_t timeout_microseconds)
 
     if (hasReadPendingData() || poll(timeout_microseconds))
     {
-        // LOG_TRACE(log_wrapper.get(), "Receiving packet type");
         UInt64 packet_type;
         readVarUInt(packet_type, *in);
 

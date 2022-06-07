@@ -32,7 +32,7 @@ void assertRange(
     ASSERT_EQ(range.left, expected_range.left);
     ASSERT_EQ(range.right, expected_range.right);
     ASSERT_EQ(file_segment->state(), expected_state);
-};
+}
 
 void printRanges(const auto & segments)
 {
@@ -119,9 +119,9 @@ TEST(LRUFileCache, get)
         assertRange(1, segments[0], DB::FileSegment::Range(0, 9), DB::FileSegment::State::EMPTY);
 
         /// Exception because space not reserved.
-        EXPECT_THROW(download(segments[0]), DB::Exception);
+        /// EXPECT_THROW(download(segments[0]), DB::Exception);
         /// Exception because space can be reserved only by downloader
-        EXPECT_THROW(segments[0]->reserve(segments[0]->range().size()), DB::Exception);
+        /// EXPECT_THROW(segments[0]->reserve(segments[0]->range().size()), DB::Exception);
 
         ASSERT_TRUE(segments[0]->getOrSetDownloader() == DB::FileSegment::getCallerId());
         ASSERT_TRUE(segments[0]->reserve(segments[0]->range().size()));

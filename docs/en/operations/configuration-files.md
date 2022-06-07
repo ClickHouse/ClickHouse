@@ -3,7 +3,7 @@ sidebar_position: 50
 sidebar_label: Configuration Files
 ---
 
-# Configuration Files {#configuration_files}
+# Configuration Files
 
 ClickHouse supports multi-file configuration management. The main server configuration file is `/etc/clickhouse-server/config.xml` or `/etc/clickhouse-server/config.yaml`. Other files must be in the `/etc/clickhouse-server/config.d` directory. Note, that any configuration file can be written either in XML or YAML, but mixing formats in one file is not supported. For example, you can have main configs as `config.xml` and `users.xml` and write additional files in `config.d` and `users.d` directories in `.yaml`.
 
@@ -34,7 +34,7 @@ You can also declare attributes as coming from environment variables by using `f
 
 The config can also define “substitutions”. If an element has the `incl` attribute, the corresponding substitution from the file will be used as the value. By default, the path to the file with substitutions is `/etc/metrika.xml`. This can be changed in the [include_from](../operations/server-configuration-parameters/settings.md#server_configuration_parameters-include_from) element in the server config. The substitution values are specified in `/clickhouse/substitution_name` elements in this file. If a substitution specified in `incl` does not exist, it is recorded in the log. To prevent ClickHouse from logging missing substitutions, specify the `optional="true"` attribute (for example, settings for [macros](../operations/server-configuration-parameters/settings.md#macros)).
 
-If you want to replace an entire element with a substitution use `include` as element name.
+If you want to replace an entire element with a substitution use `include` as the element name.
 
 XML substitution example:
 

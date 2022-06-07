@@ -18,6 +18,7 @@
 #include <Common/ColumnsHashing.h>
 #include <Common/assert_cast.h>
 #include <Common/filesystemHelpers.h>
+#include <Core/ColumnNumbers.h>
 
 #include <QueryPipeline/SizeLimits.h>
 
@@ -991,9 +992,13 @@ public:
         }
 
         /// Only parameters that matter during merge.
-        Params(const Block & intermediate_header_,
-            const ColumnNumbers & keys_, const AggregateDescriptions & aggregates_, bool overflow_row_, size_t max_threads_)
-            : Params(Block(), keys_, aggregates_, overflow_row_, 0, OverflowMode::THROW, 0, 0, 0, false, nullptr, max_threads_, 0, false, 0)
+        Params(
+            const Block & intermediate_header_,
+            const ColumnNumbers & keys_,
+            const AggregateDescriptions & aggregates_,
+            bool overflow_row_,
+            size_t max_threads_)
+            : Params(Block(), keys_, aggregates_, overflow_row_, 0, OverflowMode::THROW, 0, 0, 0, false, nullptr, max_threads_, 0, false, 0, {}, {})
         {
             intermediate_header = intermediate_header_;
         }
