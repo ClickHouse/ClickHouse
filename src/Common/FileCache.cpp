@@ -100,6 +100,9 @@ void IFileCache::removeQueryContext(const String & query_id)
 
 IFileCache::QueryContextPtr IFileCache::getOrSetQueryContext(const String & query_id, const ReadSettings & settings, std::lock_guard<std::mutex> & cache_lock)
 {
+    if (query_id.empty())
+        return nullptr;
+
     auto context = getQueryContext(query_id, cache_lock);
     if (!context)
     {
@@ -112,20 +115,22 @@ IFileCache::QueryContextPtr IFileCache::getOrSetQueryContext(const String & quer
 IFileCache::QueryContextHolder IFileCache::getQueryContextHolder(const String & query_id, const ReadSettings & settings)
 {
     std::lock_guard cache_lock(mutex);
-    auto context = getOrSetQueryContext(query_id, settings, cache_lock);
-    return QueryContextHolder(query_id, this, std::move(context));
+
+    /// if enable_filesystem_use_query_cache_limit is true, we create context query for current query.
+    auto context = settings.enable_filesystem_use_query_cache_limit ? getOrSetQueryContext(query_id, settings, cache_lock) : nullptr;
+    return QueryContextHolder(query_id, this, context);
 }
 
-IFileCache::QueryContextHolder::QueryContextHolder(const String & query_id_, IFileCache * cache_, IFileCache::QueryContextPtr context_) : query_id(query_id_), cache(cache_), context(context_)
+IFileCache::QueryContextHolder::QueryContextHolder(const String & query_id_, IFileCache * cache_, IFileCache::QueryContextPtr context_)
+    : query_id(query_id_), cache(cache_), context(context_)
 {
-    context->incrementRefCount();
 }
 
 IFileCache::QueryContextHolder::~QueryContextHolder()
 {
-    context->decrementRefCount();
-
-    if (!context->getRefCount())
+    /// If only the query_map and the current holder hold the context_query,
+    /// the query has been completed and the query_context is released.
+    if (context && context.use_count() == 2)
         cache->removeQueryContext(query_id);
 }
 
@@ -547,7 +552,7 @@ bool LRUFileCache::tryReserve(const Key & key, size_t offset, size_t size, std::
     auto query_context = getCurrentQueryContext(cache_lock);
 
     /// If the context can be found, subsequent cache replacements are made through the Query context.
-    if (query_context != nullptr && query_context->enableCacheLimit())
+    if (query_context && query_context->enableQueryCacheLimit())
     {
         auto res = tryReserveForQuery(key, offset, size, query_context, cache_lock);
         switch (res)
@@ -574,7 +579,9 @@ bool LRUFileCache::tryReserve(const Key & key, size_t offset, size_t size, std::
         __builtin_unreachable();
     }
     else
+    {
         return tryReserveForMainList(key, offset, size, query_context, cache_lock);
+    }
 }
 
 LRUFileCache::ReserveResult LRUFileCache::tryReserveForQuery(const Key & key, size_t offset, size_t size, QueryContextPtr query_context, std::lock_guard<std::mutex> & cache_lock)
@@ -1069,7 +1076,6 @@ FileSegments LRUFileCache::getSnapshot() const
         for (const auto & [offset, cell] : cells_by_offset)
             file_segments.push_back(FileSegment::getSnapshot(cell.file_segment, cache_lock));
     }
-
     return file_segments;
 }
 

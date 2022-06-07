@@ -173,7 +173,6 @@ protected:
 
         size_t cache_size = 0;
         size_t max_cache_size;
-        size_t ref_count = 0;
 
         bool enable_filesystem_use_query_cache_limit;
         bool skip_download_if_exceeds_query_cache;
@@ -222,12 +221,6 @@ protected:
             }
         }
 
-        size_t getRefCount() const { return ref_count; }
-
-        void incrementRefCount() { ref_count++; }
-
-        void decrementRefCount() { ref_count--; }
-
         size_t getMaxCacheSize() { return max_cache_size; }
 
         size_t getCacheSize() { return cache_size; }
@@ -236,7 +229,14 @@ protected:
 
         bool isSkipDownloadIfExceed() { return skip_download_if_exceeds_query_cache; }
 
-        bool enableCacheLimit() { return enable_filesystem_use_query_cache_limit; }
+        bool enableQueryCacheLimit() { return enable_filesystem_use_query_cache_limit; }
+
+        void update(const ReadSettings & settings)
+        {
+            cache_size = settings.max_query_cache_size;
+            enable_filesystem_use_query_cache_limit = settings.enable_filesystem_cache;
+            skip_download_if_exceeds_query_cache = settings.skip_download_if_exceeds_query_cache;
+        }
     };
 
     using QueryContextPtr = std::shared_ptr<QueryContext>;
@@ -245,8 +245,11 @@ protected:
     QueryContextMap query_map;
 
     QueryContextPtr getCurrentQueryContext(std::lock_guard<std::mutex> & cache_lock);
+
     QueryContextPtr getQueryContext(const String & query_id, std::lock_guard<std::mutex> & cache_lock);
+
     void removeQueryContext(const String & query_id);
+
     QueryContextPtr getOrSetQueryContext(const String & query_id, const ReadSettings & settings, std::lock_guard<std::mutex> &);
 
     virtual bool tryReserve(
@@ -277,7 +280,7 @@ public:
     /// for different queries through the context cache layer.
     struct QueryContextHolder : private boost::noncopyable
     {
-        QueryContextHolder(const String & query_id_, IFileCache * cache_, QueryContextPtr context_);
+        explicit QueryContextHolder(const String & query_id_, IFileCache * cache_, QueryContextPtr context_);
 
         ~QueryContextHolder();
 
