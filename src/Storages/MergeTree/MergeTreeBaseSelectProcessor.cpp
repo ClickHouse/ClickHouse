@@ -74,14 +74,36 @@ MergeTreeBaseSelectProcessor::MergeTreeBaseSelectProcessor(
         prewhere_actions = std::make_unique<PrewhereExprInfo>();
 
         if (prewhere_info->row_level_filter)
-            prewhere_actions->row_level_filter = std::make_shared<ExpressionActions>(prewhere_info->row_level_filter, actions_settings);
+        {
+            PrewhereExprStep row_level_filter_step
+            {
+                .actions = std::make_shared<ExpressionActions>(prewhere_info->row_level_filter, actions_settings),
+                .column_name = prewhere_info->row_level_column_name,
+                .remove_column = true,
+                .need_filter = true //prewhere_info->need_filter // ????
+            };
 
-        prewhere_actions->prewhere_actions = std::make_shared<ExpressionActions>(prewhere_info->prewhere_actions, actions_settings);
+            prewhere_actions->steps.emplace_back(std::move(row_level_filter_step));
 
-        prewhere_actions->row_level_column_name = prewhere_info->row_level_column_name;
-        prewhere_actions->prewhere_column_name = prewhere_info->prewhere_column_name;
-        prewhere_actions->remove_prewhere_column = prewhere_info->remove_prewhere_column;
-        prewhere_actions->need_filter = prewhere_info->need_filter;
+//            prewhere_actions->row_level_filter = std::make_shared<ExpressionActions>(prewhere_info->row_level_filter, actions_settings);
+        }
+//       prewhere_actions->row_level_column_name = prewhere_info->row_level_column_name;
+
+//        prewhere_actions->prewhere_actions = std::make_shared<ExpressionActions>(prewhere_info->prewhere_actions, actions_settings);
+//        prewhere_actions->prewhere_column_name = prewhere_info->prewhere_column_name;
+//        prewhere_actions->remove_prewhere_column = prewhere_info->remove_prewhere_column;
+//        prewhere_actions->need_filter = prewhere_info->need_filter;
+
+        PrewhereExprStep prewhere_step
+        {
+            .actions = std::make_shared<ExpressionActions>(prewhere_info->prewhere_actions, actions_settings),
+            .column_name = prewhere_info->prewhere_column_name,
+            .remove_column = prewhere_info->remove_prewhere_column,
+            .need_filter = prewhere_info->need_filter
+        };
+
+        prewhere_actions->steps.emplace_back(std::move(prewhere_step));
+
     }
 }
 
@@ -204,6 +226,38 @@ Chunk MergeTreeBaseSelectProcessor::generate()
 
 void MergeTreeBaseSelectProcessor::initializeRangeReaders(MergeTreeReadTask & current_task)
 {
+    MergeTreeRangeReader* prev_reader = nullptr;
+    bool last_reader = false;
+
+    if (prewhere_info)
+    {
+        assert(prewhere_actions->steps.size() == pre_reader_for_step.size());
+
+        for (size_t i = 0; i < prewhere_actions->steps.size(); ++i)
+        {
+            last_reader = reader->getColumns().empty() && (i + 1 == prewhere_actions->steps.size());
+            current_task.pre_range_reader.push_back(
+                MergeTreeRangeReader(pre_reader_for_step[i].get(), prev_reader, &prewhere_actions->steps[i], last_reader, non_const_virtual_column_names));
+
+
+            prev_reader = &current_task.pre_range_reader.back();
+        }
+
+    }
+
+    if (!last_reader)
+    {
+        current_task.range_reader = MergeTreeRangeReader(reader.get(), prev_reader, nullptr, true, non_const_virtual_column_names);
+    }
+    else
+    {
+        // HACK!!
+        // If all columns are read by pre_range_readers than move last pre_range_reader into range_reader
+        current_task.range_reader = std::move(current_task.pre_range_reader.back());
+        current_task.pre_range_reader.pop_back();
+    }
+
+/*
     if (prewhere_info)
     {
         if (reader->getColumns().empty())
@@ -226,6 +280,7 @@ void MergeTreeBaseSelectProcessor::initializeRangeReaders(MergeTreeReadTask & cu
     {
         current_task.range_reader = MergeTreeRangeReader(reader.get(), nullptr, nullptr, true, non_const_virtual_column_names);
     }
+//*/
 }
 
 static UInt64 estimateNumRows(const MergeTreeReadTask & current_task, UInt64 current_preferred_block_size_bytes,
@@ -606,9 +661,12 @@ std::unique_ptr<MergeTreeBlockSizePredictor> MergeTreeBaseSelectProcessor::getSi
     const Block & sample_block)
 {
     const auto & required_column_names = task_columns.columns.getNames();
-    const auto & required_pre_column_names = task_columns.pre_columns.getNames();
     NameSet complete_column_names(required_column_names.begin(), required_column_names.end());
-    complete_column_names.insert(required_pre_column_names.begin(), required_pre_column_names.end());
+    for (const auto & pre_columns_per_step : task_columns.pre_columns)
+    {
+        const auto & required_pre_column_names = pre_columns_per_step.getNames();
+        complete_column_names.insert(required_pre_column_names.begin(), required_pre_column_names.end());
+    }
 
     return std::make_unique<MergeTreeBlockSizePredictor>(
         data_part, Names(complete_column_names.begin(), complete_column_names.end()), sample_block);

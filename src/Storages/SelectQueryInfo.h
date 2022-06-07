@@ -47,6 +47,42 @@ using MergeTreeDataSelectAnalysisResultPtr = std::shared_ptr<MergeTreeDataSelect
 struct SubqueryForSet;
 using SubqueriesForSets = std::unordered_map<String, SubqueryForSet>;
 
+/*
+struct PrewhereStep
+{
+    ActionsDAGPtr prewhere_actions;
+    String prewhere_column_name;
+    bool remove_prewhere_column = false;
+    bool need_filter = false;
+
+    explicit PrewhereStep(ActionsDAGPtr prewhere_actions_, String prewhere_column_name_)
+            : prewhere_actions(std::move(prewhere_actions_)), prewhere_column_name(std::move(prewhere_column_name_)) {}
+
+    std::string dump() const;
+};
+
+struct PrewhereInfo
+{
+//    /// Actions for row level security filter. Applied separately before prewhere_actions.
+//    /// This actions are separate because prewhere condition should not be executed over filtered rows.
+//    ActionsDAGPtr row_level_filter;
+//    /// Actions which are executed on block in order to get filter column for prewhere step.
+//    ActionsDAGPtr prewhere_actions;
+//    String row_level_column_name;
+//    String prewhere_column_name;
+//    bool remove_prewhere_column = false;
+//    bool need_filter = false;
+
+    std::vector<PrewhereStep> steps;
+
+    PrewhereInfo() = default;
+//    explicit PrewhereInfo(ActionsDAGPtr prewhere_actions_, String prewhere_column_name_)
+//            : prewhere_actions(std::move(prewhere_actions_)), prewhere_column_name(std::move(prewhere_column_name_)) {}
+
+    std::string dump() const;
+};
+/*/
+
 struct PrewhereInfo
 {
     /// Actions for row level security filter. Applied separately before prewhere_actions.
@@ -65,6 +101,7 @@ struct PrewhereInfo
 
     std::string dump() const;
 };
+//*/
 
 /// Helper struct to store all the information about the filter expression.
 struct FilterInfo

@@ -43,7 +43,7 @@ static void filterColumns(Columns & columns, const IColumn::Filter & filter)
         }
     }
 }
-
+/*
 static void filterColumns(Columns & columns, const ColumnPtr & filter)
 {
     ConstantFilterDescription const_descr(*filter);
@@ -62,7 +62,7 @@ static void filterColumns(Columns & columns, const ColumnPtr & filter)
     FilterDescription descr(*filter);
     filterColumns(columns, *descr.data);
 }
-
+*/
 
 size_t MergeTreeRangeReader::ReadResult::getLastMark(const MergeTreeRangeReader::ReadResult::RangesInfo & ranges)
 {
@@ -647,7 +647,7 @@ size_t MergeTreeRangeReader::ReadResult::countBytesInResultFilter(const IColumn:
 MergeTreeRangeReader::MergeTreeRangeReader(
     IMergeTreeReader * merge_tree_reader_,
     MergeTreeRangeReader * prev_reader_,
-    const PrewhereExprInfo * prewhere_info_,
+    const PrewhereExprStep * prewhere_info_,
     bool last_reader_in_chain_,
     const Names & non_const_virtual_column_names_)
     : merge_tree_reader(merge_tree_reader_)
@@ -675,7 +675,17 @@ MergeTreeRangeReader::MergeTreeRangeReader(
 
     if (prewhere_info)
     {
-        if (prewhere_info->row_level_filter)
+//        for (const auto & step : prewhere_info->steps)
+        const auto & step = *prewhere_info;
+        {
+            if (step.actions)
+               step.actions->execute(sample_block, true);
+
+            if (step.remove_column)
+                sample_block.erase(step.column_name);
+        }
+
+/*        if (prewhere_info->row_level_filter)
         {
             prewhere_info->row_level_filter->execute(sample_block, true);
             sample_block.erase(prewhere_info->row_level_column_name);
@@ -686,6 +696,7 @@ MergeTreeRangeReader::MergeTreeRangeReader(
 
         if (prewhere_info->remove_prewhere_column)
             sample_block.erase(prewhere_info->prewhere_column_name);
+*/
     }
 }
 
@@ -1107,13 +1118,15 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
     const auto & header = merge_tree_reader->getColumns();
     size_t num_columns = header.size();
 
-    if (result.columns.size() != (num_columns + non_const_virtual_column_names.size()))
+    // TODO: properly check that we have columns from previous steps and newly read required columns
+    if (result.columns.size() < num_columns + non_const_virtual_column_names.size())
         throw Exception("Invalid number of columns passed to MergeTreeRangeReader. "
                         "Expected " + toString(num_columns) + ", "
                         "got " + toString(result.columns.size()), ErrorCodes::LOGICAL_ERROR);
 
+    ColumnPtr current_filter;
     ColumnPtr filter;
-    ColumnPtr row_level_filter;
+//    ColumnPtr row_level_filter;
     size_t prewhere_column_pos;
 
     {
@@ -1130,8 +1143,12 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
             }
         }
 
-        for (auto name_and_type = header.begin(); pos < num_columns; ++pos, ++name_and_type)
-            block.insert({result.columns[pos], name_and_type->type, name_and_type->name});
+//        for (auto name_and_type = header.begin(); pos < num_columns; ++pos, ++name_and_type)
+//            block.insert({result.columns[pos], name_and_type->type, name_and_type->name});
+        for (const auto & name_and_type :  header) {
+            block.insert({result.columns[pos], name_and_type.type, name_and_type.name});
+            ++pos;
+        }
 
         for (const auto & column_name : non_const_virtual_column_names)
         {
@@ -1145,7 +1162,7 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
         /// Columns might be projected out. We need to store them here so that default columns can be evaluated later.
         result.block_before_prewhere = block;
 
-        if (prewhere_info->row_level_filter)
+/*        if (prewhere_info->row_level_filter)
         {
             prewhere_info->row_level_filter->execute(block);
             auto row_level_filter_pos = block.getPositionByName(prewhere_info->row_level_column_name);
@@ -1159,44 +1176,50 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
             else
                 block.setColumns(columns);
         }
+*/
+        prewhere_info->actions->execute(block);
 
-        prewhere_info->prewhere_actions->execute(block);
-
-        prewhere_column_pos = block.getPositionByName(prewhere_info->prewhere_column_name);
+        prewhere_column_pos = block.getPositionByName(prewhere_info->column_name);
 
         result.columns.clear();
         result.columns.reserve(block.columns());
         for (auto & col : block)
             result.columns.emplace_back(std::move(col.column));
 
-        filter.swap(result.columns[prewhere_column_pos]);
+        current_filter.swap(result.columns[prewhere_column_pos]);
+        filter = current_filter;
+
+
     }
 
     if (result.getFilter())
     {
-        /// TODO: implement for prewhere chain.
-        /// In order to do it we need combine filter and result.filter, where filter filters only '1' in result.filter.
-        throw Exception("MergeTreeRangeReader chain with several prewhere actions in not implemented.",
-                        ErrorCodes::LOGICAL_ERROR);
+        ColumnPtr prev_filter = result.getFilterHolder();
+        filter = combineFilters(prev_filter, std::move(filter));
+
+//        /// TODO: implement for prewhere chain.
+//        /// In order to do it we need combine filter and result.filter, where filter filters only '1' in result.filter.
+//        throw Exception("MergeTreeRangeReader chain with several prewhere actions in not implemented.",
+//                        ErrorCodes::LOGICAL_ERROR);
     }
 
-    if (filter && row_level_filter)
-    {
-        row_level_filter = combineFilters(std::move(row_level_filter), filter);
-        result.setFilter(row_level_filter);
-    }
-    else
+//    if (filter && row_level_filter)
+//    {
+//        row_level_filter = combineFilters(std::move(row_level_filter), filter);
+//        result.setFilter(row_level_filter);
+//    }
+//    else
         result.setFilter(filter);
 
     /// If there is a WHERE, we filter in there, and only optimize IO and shrink columns here
     if (!last_reader_in_chain)
-        result.optimize(merge_tree_reader->canReadIncompleteGranules(), prewhere_info->row_level_filter == nullptr);
+        result.optimize(merge_tree_reader->canReadIncompleteGranules(), true); // TODO: prewhere_info->row_level_filter == nullptr);
 
     /// If we read nothing or filter gets optimized to nothing
     if (result.totalRowsPerGranule() == 0)
         result.setFilterConstFalse();
     /// If we need to filter in PREWHERE
-    else if (prewhere_info->need_filter || result.need_filter || prewhere_info->row_level_filter)
+    else if (prewhere_info->need_filter || result.need_filter)// || prewhere_info->row_level_filter)
     {
         /// If there is a filter and without optimized
         if (result.getFilter() && last_reader_in_chain)
@@ -1216,10 +1239,22 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
             /// filter might be shrunk while columns not
             const auto * result_filter = result.getFilterOriginal();
 
-            if (row_level_filter)
-                filterColumns(result.columns, filter);
-            else
-                filterColumns(result.columns, result_filter->getData());
+//            if (row_level_filter)
+//                filterColumns(result.columns, filter);
+//            else
+           //     filterColumns(result.columns, result_filter->getData());
+
+
+            {
+                FilterDescription current_filter_descr(*current_filter);
+                // TODO: need to filter by current filter column that has num_rows size, not the original size
+
+                // TODO: properly handle const true and const false cases
+                if (current_filter_descr.countBytesInFilter() == 0)
+                    result.columns.clear();
+                else if (current_filter_descr.data)
+                    filterColumns(result.columns, *current_filter_descr.data);
+            }
 
             result.need_filter = true;
 
@@ -1242,22 +1277,22 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
         /// Check if the PREWHERE column is needed
         if (!result.columns.empty())
         {
-            if (prewhere_info->remove_prewhere_column)
+            if (prewhere_info->remove_column)
                 result.columns.erase(result.columns.begin() + prewhere_column_pos);
             else
                 result.columns[prewhere_column_pos] =
-                        getSampleBlock().getByName(prewhere_info->prewhere_column_name).type->
+                        getSampleBlock().getByName(prewhere_info->column_name).type->
                                 createColumnConst(result.num_rows, 1u)->convertToFullColumnIfConst();
         }
     }
     /// Filter in WHERE instead
     else
     {
-        if (prewhere_info->remove_prewhere_column)
+        if (prewhere_info->remove_column)
             result.columns.erase(result.columns.begin() + prewhere_column_pos);
         else
         {
-            auto type = getSampleBlock().getByName(prewhere_info->prewhere_column_name).type;
+            auto type = getSampleBlock().getByName(prewhere_info->column_name).type;
             ColumnWithTypeAndName col(result.getFilterHolder()->convertToFullColumnIfConst(), std::make_shared<DataTypeUInt8>(), "");
             result.columns[prewhere_column_pos] = castColumn(col, type);
             result.clearFilter(); // Acting as a flag to not filter in PREWHERE

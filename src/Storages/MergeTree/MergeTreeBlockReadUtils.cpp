@@ -131,12 +131,12 @@ NameSet injectRequiredColumns(
 
 MergeTreeReadTask::MergeTreeReadTask(
     const MergeTreeData::DataPartPtr & data_part_, const MarkRanges & mark_ranges_, size_t part_index_in_query_,
-    const Names & ordered_names_, const NameSet & column_name_set_, const NamesAndTypesList & columns_,
-    const NamesAndTypesList & pre_columns_, bool remove_prewhere_column_, bool should_reorder_,
+    const Names & ordered_names_, const NameSet & column_name_set_, const MergeTreeReadTaskColumns & task_columns_,
+    bool remove_prewhere_column_,
     MergeTreeBlockSizePredictorPtr && size_predictor_)
     : data_part{data_part_}, mark_ranges{mark_ranges_}, part_index_in_query{part_index_in_query_},
-    ordered_names{ordered_names_}, column_name_set{column_name_set_}, columns{columns_}, pre_columns{pre_columns_},
-    remove_prewhere_column{remove_prewhere_column_}, should_reorder{should_reorder_}, size_predictor{std::move(size_predictor_)}
+    ordered_names{ordered_names_}, column_name_set{column_name_set_}, task_columns{task_columns_},
+    remove_prewhere_column{remove_prewhere_column_}, size_predictor{std::move(size_predictor_)}
 {
 }
 
@@ -279,19 +279,40 @@ MergeTreeReadTaskColumns getReadTaskColumns(
     bool should_reorder = !injectRequiredColumns(
         storage, storage_snapshot, data_part, with_subcolumns, column_names).empty();
 
+    MergeTreeReadTaskColumns result;
+    auto options = GetColumnsOptions(GetColumnsOptions::All).withExtendedObjects();
+    if (with_subcolumns)
+        options.withSubcolumns();
+
+//    NameSet all_pre_columns;
+
     if (prewhere_info)
     {
-        pre_column_names = prewhere_info->prewhere_actions->getRequiredColumnsNames();
+        NameSet pre_name_set;
 
+// TODO: for each prewhere step
+
+        /// 1. Columns for row level filter
         if (prewhere_info->row_level_filter)
         {
-            NameSet names(pre_column_names.begin(), pre_column_names.end());
+            pre_column_names =  prewhere_info->row_level_filter->getRequiredColumnsNames();
 
-            for (auto & name : prewhere_info->row_level_filter->getRequiredColumnsNames())
-            {
-                if (!names.contains(name))
-                    pre_column_names.push_back(name);
-            }
+////// HACK!!!
+            result.pre_columns.push_back(storage_snapshot->getColumnsByNames(options, pre_column_names));
+//////////////
+
+            pre_name_set.insert(pre_column_names.begin(), pre_column_names.end());
+
+//            all_pre_columns.insert(pre_column_names.begin(), pre_column_names.end());
+        }
+
+        /// 2. Columns for prewhere
+        pre_column_names.clear();
+        for (const auto & name : prewhere_info->prewhere_actions->getRequiredColumnsNames())
+        {
+            if (pre_name_set.contains(name))
+                continue;
+            pre_column_names.push_back(name);
         }
 
         if (pre_column_names.empty())
@@ -303,7 +324,6 @@ MergeTreeReadTaskColumns getReadTaskColumns(
         if (!injected_pre_columns.empty())
             should_reorder = true;
 
-        const NameSet pre_name_set(pre_column_names.begin(), pre_column_names.end());
 
         Names post_column_names;
         for (const auto & name : column_names)
@@ -313,14 +333,14 @@ MergeTreeReadTaskColumns getReadTaskColumns(
         column_names = post_column_names;
     }
 
-    MergeTreeReadTaskColumns result;
-    NamesAndTypesList all_columns;
+//    NamesAndTypesList all_columns;
 
-    auto options = GetColumnsOptions(GetColumnsOptions::All).withExtendedObjects();
-    if (with_subcolumns)
-        options.withSubcolumns();
 
-    result.pre_columns = storage_snapshot->getColumnsByNames(options, pre_column_names);
+////// HACK!!!
+    result.pre_columns.push_back(storage_snapshot->getColumnsByNames(options, pre_column_names));
+//////////////
+
+    /// 3. Rest of the requested columns 
     result.columns = storage_snapshot->getColumnsByNames(options, column_names);
     result.should_reorder = should_reorder;
     return result;
