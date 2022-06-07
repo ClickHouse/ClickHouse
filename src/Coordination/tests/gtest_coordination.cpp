@@ -139,8 +139,7 @@ struct SimpliestRaftServer
                 std::cout << " done" << std::endl;
                 break;
             }
-            std::cout << ".";
-            fflush(stdout);
+            std::cout << "." << std::flush;
             std::this_thread::sleep_for(std::chrono::milliseconds(100));
         }
     }
