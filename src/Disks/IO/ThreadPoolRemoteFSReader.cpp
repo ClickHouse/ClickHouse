@@ -8,16 +8,9 @@
 #include <Common/setThreadName.h>
 #include <Common/CurrentThread.h>
 #include <Common/config.h>
-
 #include <IO/SeekableReadBuffer.h>
-#include <Disks/IO/ReadBufferFromRemoteFSGather.h>
-
-#if USE_HDFS
-#include <Storages/HDFS/ReadBufferFromHDFS.h>
-#endif
 
 #include <future>
-#include <iostream>
 
 
 namespace ProfileEvents

@@ -6,6 +6,7 @@
 
 #if USE_ARROW || USE_ORC || USE_PARQUET
 #include <Common/assert_cast.h>
+#include <Common/logger_useful.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/copyData.h>
@@ -83,11 +84,13 @@ arrow::Result<int64_t> RandomAccessFileFromSeekableReadBuffer::Tell() const
 
 arrow::Result<int64_t> RandomAccessFileFromSeekableReadBuffer::Read(int64_t nbytes, void * out)
 {
+    LOG_TEST(log, "object:{} size:{} read {} bytes", reinterpret_cast<std::uintptr_t>(this), GetSize().ValueOrDie(), nbytes);
     return in.readBig(reinterpret_cast<char *>(out), nbytes);
 }
 
 arrow::Result<std::shared_ptr<arrow::Buffer>> RandomAccessFileFromSeekableReadBuffer::Read(int64_t nbytes)
 {
+    LOG_TEST(log, "object:{} size:{} read {} bytes", reinterpret_cast<std::uintptr_t>(this), GetSize().ValueOrDie(), nbytes);
     ARROW_ASSIGN_OR_RAISE(auto buffer, arrow::AllocateResizableBuffer(nbytes))
     ARROW_ASSIGN_OR_RAISE(int64_t bytes_read, Read(nbytes, buffer->mutable_data()))
 
@@ -99,6 +102,7 @@ arrow::Result<std::shared_ptr<arrow::Buffer>> RandomAccessFileFromSeekableReadBu
 
 arrow::Status RandomAccessFileFromSeekableReadBuffer::Seek(int64_t position)
 {
+    LOG_TEST(log, "object:{} size:{} seek to {}", reinterpret_cast<std::uintptr_t>(this), GetSize().ValueOrDie(), position);
     seekable_in.seek(position, SEEK_SET);
     return arrow::Status::OK();
 }

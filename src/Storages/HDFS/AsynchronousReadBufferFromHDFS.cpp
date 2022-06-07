@@ -79,6 +79,8 @@ std::future<IAsynchronousReader::Result> AsynchronousReadBufferFromHDFS::asyncRe
 
 void AsynchronousReadBufferFromHDFS::prefetch()
 {
+    interval_watch.restart();
+
     if (prefetch_future.valid())
         return;
 
@@ -162,7 +164,6 @@ bool AsynchronousReadBufferFromHDFS::nextImpl()
 
     sum_duration += next_watch.elapsedMicroseconds();
     sum_wait += wait;
-    interval_watch.restart();
     return size;
 }
 

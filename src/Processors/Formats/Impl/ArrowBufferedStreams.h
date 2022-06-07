@@ -3,8 +3,10 @@
 
 #if USE_ARROW || USE_ORC || USE_PARQUET
 
-#include <arrow/io/interfaces.h>
 #include <optional>
+
+#include <arrow/io/interfaces.h>
+#include <Poco/Logger.h>
 
 #define ORC_MAGIC_BYTES "ORC"
 #define PARQUET_MAGIC_BYTES "PAR1"
@@ -68,6 +70,7 @@ private:
     SeekableReadBuffer & seekable_in;
     std::optional<off_t> file_size;
     bool is_open = false;
+    Poco::Logger * log = &Poco::Logger::get("RandomAccessFileFromSeekableReadBuffer");
 
     ARROW_DISALLOW_COPY_AND_ASSIGN(RandomAccessFileFromSeekableReadBuffer);
 };
