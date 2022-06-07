@@ -42,7 +42,7 @@ def test_old_dirs_cleanup(start_cluster):
         [
             "bash",
             "-c",
-            'mv /var/lib/clickhouse/data/default/test_table/20200101_0_0_0 /var/lib/clickhouse/data/default/test_table/tmp_fetch_20200101_0_0_0',
+            'mv /var/lib/clickhouse/data/default/test_table/20200101_0_0_0 /var/lib/clickhouse/data/default/test_table/delete_tmp_20200101_0_0_0',
         ],
         privileged=True,
     )
@@ -63,4 +63,4 @@ def test_old_dirs_cleanup(start_cluster):
     assert node1.query("SELECT count() FROM test_table") == "0\n"
 
     assert_logs_contain_with_retry(node1, "Removing temporary directory")
-    assert_logs_contain_with_retry(node1, "tmp_fetch_20200101_0_0_0")
+    assert_logs_contain_with_retry(node1, "delete_tmp_20200101_0_0_0")
