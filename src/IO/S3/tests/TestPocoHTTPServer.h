@@ -2,7 +2,6 @@
 
 #include <cstddef>
 #include <memory>
-#include <random>
 #include <string>
 
 #include <Poco/Net/HTTPRequestHandler.h>
@@ -33,31 +32,17 @@ template <typename RequestHandler>
 class TestPocoHTTPServer
 {
     std::unique_ptr<Poco::Net::ServerSocket> server_socket;
-    std::unique_ptr<Poco::Net::HTTPServer> server;
     Poco::SharedPtr<HTTPRequestHandlerFactory<RequestHandler>> handler_factory;
     Poco::AutoPtr<Poco::Net::HTTPServerParams> server_params;
+    std::unique_ptr<Poco::Net::HTTPServer> server;
 
 public:
     TestPocoHTTPServer():
+        server_socket(std::make_unique<Poco::Net::ServerSocket>(0)),
         handler_factory(new HTTPRequestHandlerFactory<RequestHandler>()),
-        server_params(new Poco::Net::HTTPServerParams())
+        server_params(new Poco::Net::HTTPServerParams()),
+        server(std::make_unique<Poco::Net::HTTPServer>(handler_factory, *server_socket, server_params))
     {
-        std::random_device device;
-        std::mt19937 generator(device());
-        std::uniform_int_distribution<> distribution(10000, 60000);
-        for (int attempt = 100; attempt >= 0; --attempt)
-        {
-            try
-            {
-                server_socket = std::make_unique<Poco::Net::ServerSocket>(distribution(generator));
-            }
-            catch (Poco::Net::NetException &)
-            {
-                if (!attempt)
-                    throw;
-            }
-        }
-        server = std::make_unique<Poco::Net::HTTPServer>(handler_factory, *server_socket, server_params);
         server->start();
     }
 
