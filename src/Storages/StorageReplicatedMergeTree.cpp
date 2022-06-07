@@ -4212,10 +4212,6 @@ void StorageReplicatedMergeTree::startup()
 
     try
     {
-        /// Temporary directories contain incomplete results of merges (after forced restart)
-        ///  and don't allow to reinitialize them, so delete each of them immediately
-        clearOldTemporaryDirectories(0);
-
         InterserverIOEndpointPtr data_parts_exchange_ptr = std::make_shared<DataPartsExchange::Service>(*this);
         [[maybe_unused]] auto prev_ptr = std::atomic_exchange(&data_parts_exchange_endpoint, data_parts_exchange_ptr);
         assert(prev_ptr == nullptr);
