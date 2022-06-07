@@ -290,8 +290,8 @@ void ASTCreateUserQuery::formatImpl(const FormatSettings & format, FormatState &
 
     formatOnCluster(format);
 
-    if (!new_name.empty())
-        formatRenameTo(new_name, format);
+    if (new_name)
+        formatRenameTo(*new_name, format);
 
     if (auth_data)
         formatAuthenticationData(*auth_data, show_password, format);
