@@ -1577,8 +1577,6 @@ static void executeMergeAggregatedImpl(
     const NamesAndTypesList & aggregation_keys,
     const AggregateDescriptions & aggregates)
 {
-    const auto & header_before_merge = query_plan.getCurrentDataStream().header;
-
     auto keys = aggregation_keys.getNames();
     if (has_grouping_sets)
         keys.insert(keys.begin(), "__grouping_set");
@@ -1598,7 +1596,7 @@ static void executeMergeAggregatedImpl(
       *  but it can work more slowly.
       */
 
-    Aggregator::Params params(header_before_merge, keys, aggregates, overflow_row, settings.max_threads);
+    Aggregator::Params params(keys, aggregates, overflow_row, settings.max_threads);
 
     auto merging_aggregated = std::make_unique<MergingAggregatedStep>(
         query_plan.getCurrentDataStream(),
@@ -2186,7 +2184,6 @@ static Aggregator::Params getAggregatorParams(
     const ASTPtr & query_ptr,
     const SelectQueryExpressionAnalyzer & query_analyzer,
     const Context & context,
-    const Block & current_data_stream_header,
     const Names & keys,
     const AggregateDescriptions & aggregates,
     bool overflow_row,
@@ -2202,7 +2199,6 @@ static Aggregator::Params getAggregatorParams(
 
     return Aggregator::Params
     {
-        current_data_stream_header,
         keys,
         aggregates,
         overflow_row,
@@ -2257,16 +2253,22 @@ void InterpreterSelectQuery::executeAggregation(QueryPlan & query_plan, const Ac
     if (options.is_projection_query)
         return;
 
-    const auto & header_before_aggregation = query_plan.getCurrentDataStream().header;
-
     AggregateDescriptions aggregates = query_analyzer->aggregates();
 
     const Settings & settings = context->getSettingsRef();
 
     const auto & keys = query_analyzer->aggregationKeys().getNames();
 
-    auto aggregator_params = getAggregatorParams(query_ptr, *query_analyzer, *context, header_before_aggregation, keys, aggregates, overflow_row, settings,
-                 settings.group_by_two_level_threshold, settings.group_by_two_level_threshold_bytes);
+    auto aggregator_params = getAggregatorParams(
+        query_ptr,
+        *query_analyzer,
+        *context,
+        keys,
+        aggregates,
+        overflow_row,
+        settings,
+        settings.group_by_two_level_threshold,
+        settings.group_by_two_level_threshold_bytes);
 
     auto grouping_sets_params = getAggregatorGroupingSetsParams(*query_analyzer, keys);
 
@@ -2351,8 +2353,6 @@ void InterpreterSelectQuery::executeTotalsAndHaving(
 
 void InterpreterSelectQuery::executeRollupOrCube(QueryPlan & query_plan, Modificator modificator)
 {
-    const auto & header_before_transform = query_plan.getCurrentDataStream().header;
-
     const Settings & settings = context->getSettingsRef();
 
     const auto & keys = query_analyzer->aggregationKeys().getNames();
@@ -2362,8 +2362,7 @@ void InterpreterSelectQuery::executeRollupOrCube(QueryPlan & query_plan, Modific
     for (auto & aggregate : aggregates)
         aggregate.argument_names.clear();
 
-    auto params
-        = getAggregatorParams(query_ptr, *query_analyzer, *context, header_before_transform, keys, aggregates, false, settings, 0, 0);
+    auto params = getAggregatorParams(query_ptr, *query_analyzer, *context, keys, aggregates, false, settings, 0, 0);
     const bool final = true;
 
     QueryPlanStepPtr step;

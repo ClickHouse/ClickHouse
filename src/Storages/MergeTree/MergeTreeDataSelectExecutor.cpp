@@ -271,8 +271,6 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
         // TODO apply in_order_optimization here
         auto build_aggregate_pipe = [&](Pipe & pipe, bool projection)
         {
-            const auto & header_before_aggregation = pipe.getHeader();
-
             const auto & keys = query_info.projection->aggregation_keys.getNames();
 
             AggregateDescriptions aggregates = query_info.projection->aggregate_descriptions;
@@ -290,7 +288,6 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
                 const bool only_merge = true;
 
                 Aggregator::Params params(
-                    header_before_aggregation,
                     keys,
                     aggregates,
                     query_info.projection->aggregate_overflow_row,
@@ -308,14 +305,13 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
                     only_merge);
 
                 transform_params = std::make_shared<AggregatingTransformParams>(
-                    std::move(params), aggregator_list_ptr, query_info.projection->aggregate_final);
+                    pipe.getHeader(), std::move(params), aggregator_list_ptr, query_info.projection->aggregate_final);
 
                 transform_params->only_merge = only_merge;
             }
             else
             {
                 Aggregator::Params params(
-                    header_before_aggregation,
                     keys,
                     aggregates,
                     query_info.projection->aggregate_overflow_row,
@@ -332,7 +328,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
                     settings.min_count_to_compile_aggregate_expression);
 
                 transform_params = std::make_shared<AggregatingTransformParams>(
-                    std::move(params), aggregator_list_ptr, query_info.projection->aggregate_final);
+                    pipe.getHeader(), std::move(params), aggregator_list_ptr, query_info.projection->aggregate_final);
             }
 
             pipe.resize(pipe.numOutputPorts(), true, true);

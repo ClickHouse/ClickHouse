@@ -23,7 +23,7 @@ static ITransformingStep::Traits getTraits()
 }
 
 RollupStep::RollupStep(const DataStream & input_stream_, Aggregator::Params params_, bool final_)
-    : ITransformingStep(input_stream_, appendGroupingSetColumn(params_.getHeader(final_)), getTraits())
+    : ITransformingStep(input_stream_, appendGroupingSetColumn(params_.getHeader(input_stream_.header, final_)), getTraits())
     , params(std::move(params_))
     , keys_size(params.keys_size)
     , final(final_)
@@ -44,14 +44,15 @@ void RollupStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQ
         if (stream_type == QueryPipelineBuilder::StreamType::Totals)
             return addGroupingSetForTotals(header, settings, keys_size);
 
-        auto transform_params = std::make_shared<AggregatingTransformParams>(std::move(params), true);
+        auto transform_params = std::make_shared<AggregatingTransformParams>(header, std::move(params), true);
         return std::make_shared<RollupTransform>(header, std::move(transform_params));
     });
 }
 
 void RollupStep::updateOutputStream()
 {
-    output_stream = createOutputStream(input_streams.front(), appendGroupingSetColumn(params.getHeader(final)), getDataStreamTraits());
+    output_stream = createOutputStream(
+        input_streams.front(), appendGroupingSetColumn(params.getHeader(input_streams.front().header, final)), getDataStreamTraits());
 
     /// Aggregation keys are distinct
     for (const auto & key : params.keys)

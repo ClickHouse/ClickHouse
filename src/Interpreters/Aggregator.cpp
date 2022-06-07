@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <future>
 #include <numeric>
+#include <Poco/Logger.h>
 #include <Poco/Util/Application.h>
 
 #include <base/sort.h>
@@ -261,9 +262,8 @@ auto constructWithReserveIfPossible(size_t size_hint)
         return std::make_unique<Method>();
 }
 
-DB::ColumnNumbers calculateKeysPositions(const DB::Aggregator::Params & params)
+DB::ColumnNumbers calculateKeysPositions(const DB::Block & header, const DB::Aggregator::Params & params)
 {
-    const auto & header = params.header;
     DB::ColumnNumbers keys_positions(params.keys_size);
     for (size_t i = 0; i < params.keys_size; ++i)
         keys_positions[i] = header.getPositionByName(params.keys[i]);
@@ -365,7 +365,7 @@ Aggregator::Params::StatsCollectingParams::StatsCollectingParams(
 
 Block Aggregator::getHeader(bool final) const
 {
-    return params.getHeader(final);
+    return params.getHeader(header, final);
 }
 
 Block Aggregator::Params::getHeader(
@@ -494,7 +494,8 @@ public:
 
 #endif
 
-Aggregator::Aggregator(const Params & params_) : params(params_), keys_positions(calculateKeysPositions(params))
+Aggregator::Aggregator(const Block & header_, const Params & params_)
+    : header(header_), params(params_), keys_positions(calculateKeysPositions(header, params))
 {
     /// Use query-level memory tracker
     if (auto * memory_tracker_child = CurrentThread::getMemoryTracker())
@@ -642,7 +643,7 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod()
 
     for (const auto & key : params.keys)
     {
-        DataTypePtr type = params.header.getByName(key).type;
+        DataTypePtr type = header.getByName(key).type;
 
         if (type->lowCardinality())
         {
@@ -1221,7 +1222,7 @@ void Aggregator::prepareAggregateInstructions(
 
         for (size_t j = 0; j < aggregate_columns[i].size(); ++j)
         {
-            const auto pos = params.header.getPositionByName(params.aggregates[i].argument_names[j]);
+            const auto pos = header.getPositionByName(params.aggregates[i].argument_names[j]);
             materialized_columns.push_back(columns.at(pos)->convertToFullColumnIfConst());
             aggregate_columns[i][j] = materialized_columns.back().get();
 
@@ -1883,11 +1884,11 @@ Block Aggregator::prepareBlockAndFill(
     MutableColumns final_aggregate_columns(params.aggregates_size);
     AggregateColumnsData aggregate_columns_data(params.aggregates_size);
 
-    Block header = getHeader(final);
+    Block res_header = getHeader(final);
 
     for (size_t i = 0; i < params.keys_size; ++i)
     {
-        key_columns[i] = header.safeGetByPosition(i).type->createColumn();
+        key_columns[i] = res_header.safeGetByPosition(i).type->createColumn();
         key_columns[i]->reserve(rows);
     }
 
@@ -1896,7 +1897,7 @@ Block Aggregator::prepareBlockAndFill(
         if (!final)
         {
             const auto & aggregate_column_name = params.aggregates[i].column_name;
-            aggregate_columns[i] = header.getByName(aggregate_column_name).type->createColumn();
+            aggregate_columns[i] = res_header.getByName(aggregate_column_name).type->createColumn();
 
             /// The ColumnAggregateFunction column captures the shared ownership of the arena with the aggregate function states.
             ColumnAggregateFunction & column_aggregate_func = assert_cast<ColumnAggregateFunction &>(*aggregate_columns[i]);
@@ -1932,7 +1933,7 @@ Block Aggregator::prepareBlockAndFill(
 
     filler(key_columns, aggregate_columns_data, final_aggregate_columns, final);
 
-    Block res = header.cloneEmpty();
+    Block res = res_header.cloneEmpty();
 
     for (size_t i = 0; i < params.keys_size; ++i)
         res.getByPosition(i).column = std::move(key_columns[i]);
@@ -1947,7 +1948,7 @@ Block Aggregator::prepareBlockAndFill(
     }
 
     /// Change the size of the columns-constants in the block.
-    size_t columns = header.columns();
+    size_t columns = res_header.columns();
     for (size_t i = 0; i < columns; ++i)
         if (isColumnConst(*res.getByPosition(i).column))
             res.getByPosition(i).column = res.getByPosition(i).column->cut(0, rows);

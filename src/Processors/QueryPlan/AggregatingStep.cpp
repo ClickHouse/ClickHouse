@@ -76,7 +76,8 @@ AggregatingStep::AggregatingStep(
     bool storage_has_evenly_distributed_read_,
     InputOrderInfoPtr group_by_info_,
     SortDescription group_by_sort_description_)
-    : ITransformingStep(input_stream_, appendGroupingColumn(params_.getHeader(final_), grouping_sets_params_), getTraits(), false)
+    : ITransformingStep(
+        input_stream_, appendGroupingColumn(params_.getHeader(input_stream_.header, final_), grouping_sets_params_), getTraits(), false)
     , params(std::move(params_))
     , grouping_sets_params(std::move(grouping_sets_params_))
     , final(std::move(final_))
@@ -119,7 +120,8 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
       * 1. Parallel aggregation is done, and the results should be merged in parallel.
       * 2. An aggregation is done with store of temporary data on the disk, and they need to be merged in a memory efficient way.
       */
-    auto transform_params = std::make_shared<AggregatingTransformParams>(std::move(params), final);
+    const auto src_header = pipeline.getHeader();
+    auto transform_params = std::make_shared<AggregatingTransformParams>(src_header, std::move(params), final);
 
     if (!grouping_sets_params.empty())
     {
@@ -151,7 +153,6 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
             {
                 Aggregator::Params params_for_set
                 {
-                    transform_params->params.header,
                     grouping_sets_params[i].used_keys,
                     transform_params->params.aggregates,
                     transform_params->params.overflow_row,
@@ -167,9 +168,8 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                     transform_params->params.compile_aggregate_expressions,
                     transform_params->params.min_count_to_compile_aggregate_expression,
                     /* only_merge */ false,
-                    transform_params->params.stats_collecting_params
-                };
-                auto transform_params_for_set = std::make_shared<AggregatingTransformParams>(std::move(params_for_set), final);
+                    transform_params->params.stats_collecting_params};
+                auto transform_params_for_set = std::make_shared<AggregatingTransformParams>(src_header, std::move(params_for_set), final);
 
                 if (streams > 1)
                 {
@@ -390,7 +390,9 @@ void AggregatingStep::describePipeline(FormatSettings & settings) const
 void AggregatingStep::updateOutputStream()
 {
     output_stream = createOutputStream(
-        input_streams.front(), appendGroupingColumn(params.getHeader(final), grouping_sets_params), getDataStreamTraits());
+        input_streams.front(),
+        appendGroupingColumn(params.getHeader(input_streams.front().header, final), grouping_sets_params),
+        getDataStreamTraits());
 }
 
 }

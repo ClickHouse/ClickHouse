@@ -30,7 +30,7 @@ MergingAggregatedStep::MergingAggregatedStep(
     bool memory_efficient_aggregation_,
     size_t max_threads_,
     size_t memory_efficient_merge_threads_)
-    : ITransformingStep(input_stream_, params_.getHeader(final_), getTraits())
+    : ITransformingStep(input_stream_, params_.getHeader(input_stream_.header, final_), getTraits())
     , params(std::move(params_))
     , final(final_)
     , memory_efficient_aggregation(memory_efficient_aggregation_)
@@ -44,7 +44,7 @@ MergingAggregatedStep::MergingAggregatedStep(
 
 void MergingAggregatedStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
-    auto transform_params = std::make_shared<AggregatingTransformParams>(std::move(params), final);
+    auto transform_params = std::make_shared<AggregatingTransformParams>(pipeline.getHeader(), std::move(params), final);
     if (!memory_efficient_aggregation)
     {
         /// We union several sources into one, paralleling the work.
@@ -77,7 +77,7 @@ void MergingAggregatedStep::describeActions(JSONBuilder::JSONMap & map) const
 
 void MergingAggregatedStep::updateOutputStream()
 {
-    output_stream = createOutputStream(input_streams.front(), params.getHeader(final), getDataStreamTraits());
+    output_stream = createOutputStream(input_streams.front(), params.getHeader(input_streams.front().header, final), getDataStreamTraits());
 
     /// Aggregation keys are distinct
     for (const auto & key : params.keys)
