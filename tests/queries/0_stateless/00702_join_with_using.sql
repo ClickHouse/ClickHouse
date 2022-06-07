@@ -1,3 +1,5 @@
+-- Tags: ignore-order
+
 DROP TABLE IF EXISTS using1;
 DROP TABLE IF EXISTS using2;
 

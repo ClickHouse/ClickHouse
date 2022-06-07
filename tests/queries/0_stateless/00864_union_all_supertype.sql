@@ -1,3 +1,5 @@
+-- Tags: ignore-order
+
 SET joined_subquery_requires_alias = 0;
 
 select toTypeName(key), toTypeName(value) from (

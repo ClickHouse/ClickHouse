@@ -1,3 +1,5 @@
+-- Tags: ignore-order
+
 drop table if exists test1_00863;
 drop table if exists test2_00863;
 drop table if exists test3_00863;
