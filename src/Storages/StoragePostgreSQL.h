@@ -91,8 +91,6 @@ public:
     }
 
 private:
-    friend class PostgreSQLBlockOutputStream;
-
     String remote_table_name;
     String remote_table_schema;
     String on_conflict;

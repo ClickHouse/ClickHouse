@@ -13,7 +13,7 @@
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTLiteral.h>
 
-#include <Processors/Sources/SourceWithProgress.h>
+#include <Processors/ISource.h>
 
 #include <boost/algorithm/string/replace.hpp>
 
@@ -111,6 +111,13 @@ void PartitionedSink::consume(Chunk chunk)
     }
 }
 
+void PartitionedSink::onException()
+{
+    for (auto & [_, sink] : partition_id_to_sink)
+    {
+        sink->onException();
+    }
+}
 
 void PartitionedSink::onFinish()
 {

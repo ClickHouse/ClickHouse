@@ -3,13 +3,18 @@
 #include <Common/logger_useful.h>
 #include <Common/escapeForFileName.h>
 
+#include <IO/ConnectionTimeoutsContext.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <IO/SeekAvoidingReadBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 
-#include <Disks/IDiskRemote.h>
+#include <Disks/IDisk.h>
+#include <Disks/ObjectStorages/IObjectStorage.h>
+#include <IO/ReadBufferFromFile.h>
+
 #include <Disks/IO/AsynchronousReadIndirectBufferFromRemoteFS.h>
+
 #include <Disks/IO/ReadIndirectBufferFromRemoteFS.h>
 #include <Disks/IO/WriteIndirectBufferFromRemoteFS.h>
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
@@ -172,7 +177,7 @@ std::unique_ptr<ReadBufferFromFileBase> DiskWebServer::readFile(const String & p
 
     if (read_settings.remote_fs_method == RemoteFSReadMethod::threadpool)
     {
-        auto reader = IDiskRemote::getThreadPoolReader();
+        auto reader = IObjectStorage::getThreadPoolReader();
         return std::make_unique<AsynchronousReadIndirectBufferFromRemoteFS>(reader, read_settings, std::move(web_impl), min_bytes_for_seek);
     }
     else

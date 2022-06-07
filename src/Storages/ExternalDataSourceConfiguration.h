@@ -62,6 +62,61 @@ std::optional<ExternalDataSourceInfo> getExternalDataSourceConfiguration(
     ContextPtr context, HasConfigKeyFunc has_config_key, const BaseSettings<T> & settings = {});
 
 
+/// Highest priority is 0, the bigger the number in map, the less the priority.
+using ExternalDataSourcesConfigurationByPriority = std::map<size_t, std::vector<ExternalDataSourceConfiguration>>;
+
+struct ExternalDataSourcesByPriority
+{
+    String database;
+    String table;
+    String schema;
+    ExternalDataSourcesConfigurationByPriority replicas_configurations;
+};
+
+ExternalDataSourcesByPriority
+getExternalDataSourceConfigurationByPriority(const Poco::Util::AbstractConfiguration & dict_config, const String & dict_config_prefix, ContextPtr context, HasConfigKeyFunc has_config_key);
+
+
+struct URLBasedDataSourceConfiguration
+{
+    String url;
+    String endpoint;
+    String format = "auto";
+    String compression_method = "auto";
+    String structure = "auto";
+
+    String user;
+    String password;
+
+    std::vector<std::pair<String, Field>> headers;
+    String http_method;
+
+    void set(const URLBasedDataSourceConfiguration & conf);
+};
+
+struct StorageS3Configuration : URLBasedDataSourceConfiguration
+{
+    S3Settings::AuthSettings auth_settings;
+    S3Settings::ReadWriteSettings rw_settings;
+};
+
+
+struct StorageS3ClusterConfiguration : StorageS3Configuration
+{
+    String cluster_name;
+};
+
+struct URLBasedDataSourceConfig
+{
+    URLBasedDataSourceConfiguration configuration;
+    StorageSpecificArgs specific_args;
+};
+
+std::optional<URLBasedDataSourceConfig> getURLBasedDataSourceConfiguration(const ASTs & args, ContextPtr context);
+
+std::optional<URLBasedDataSourceConfig> getURLBasedDataSourceConfiguration(
+    const Poco::Util::AbstractConfiguration & dict_config, const String & dict_config_prefix, ContextPtr context);
+
 template<typename T>
 bool getExternalDataSourceConfiguration(const ASTs & args, BaseSettings<T> & settings, ContextPtr context);
 

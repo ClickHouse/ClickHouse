@@ -5,10 +5,12 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/InterpreterSelectQuery.h>
 #include <DataTypes/DataTypeString.h>
 #include <Parsers/ASTLiteral.h>
 #include <Common/parseAddress.h>
 #include <QueryPipeline/Pipe.h>
+#include <Processors/QueryPlan/QueryPlan.h>
 #include <Common/parseRemoteDescription.h>
 #include <Storages/StorageMySQL.h>
 #include <Storages/MySQL/MySQLSettings.h>
@@ -18,6 +20,7 @@
 #include <Storages/NamedCollections.h>
 #include <Core/PostgreSQL/PoolWithFailover.h>
 #include <Common/logger_useful.h>
+#include <Processors/QueryPlan/UnionStep.h>
 
 
 namespace DB
@@ -175,7 +178,8 @@ StorageExternalDistributed::StorageExternalDistributed(
 }
 
 
-Pipe StorageExternalDistributed::read(
+void StorageExternalDistributed::read(
+    QueryPlan & query_plan,
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
     SelectQueryInfo & query_info,
@@ -184,10 +188,12 @@ Pipe StorageExternalDistributed::read(
     size_t max_block_size,
     unsigned num_streams)
 {
-    Pipes pipes;
+    std::vector<std::unique_ptr<QueryPlan>> plans;
     for (const auto & shard : shards)
     {
-        pipes.emplace_back(shard->read(
+        plans.emplace_back(std::make_unique<QueryPlan>());
+        shard->read(
+            *plans.back(),
             column_names,
             storage_snapshot,
             query_info,
@@ -195,10 +201,28 @@ Pipe StorageExternalDistributed::read(
             processed_stage,
             max_block_size,
             num_streams
-        ));
+        );
     }
 
-    return Pipe::unitePipes(std::move(pipes));
+    if (plans.empty())
+    {
+        auto header = storage_snapshot->getSampleBlockForColumns(column_names);
+        InterpreterSelectQuery::addEmptySourceToQueryPlan(query_plan, header, query_info, context);
+    }
+
+    if (plans.size() == 1)
+    {
+        query_plan = std::move(*plans.front());
+        return;
+    }
+
+    DataStreams input_streams;
+    input_streams.reserve(plans.size());
+    for (auto & plan : plans)
+        input_streams.emplace_back(plan->getCurrentDataStream());
+
+    auto union_step = std::make_unique<UnionStep>(std::move(input_streams));
+    query_plan.unitePlans(std::move(union_step), std::move(plans));
 }
 
 

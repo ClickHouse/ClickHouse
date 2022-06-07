@@ -21,7 +21,7 @@
 namespace ProfileEvents
 {
     extern const Event WriteBufferFromS3Bytes;
-    extern const Event RemoteFSCacheDownloadBytes;
+    extern const Event CachedReadBufferCacheWriteBytes;
 }
 
 namespace DB
@@ -30,7 +30,6 @@ namespace DB
 // In case server does not return an error on exceeding that number, we print a warning
 // because custom S3 implementation may allow relaxed requirements on that.
 const int S3_WARN_MAX_PARTS = 10000;
-
 
 namespace ErrorCodes
 {
@@ -55,7 +54,7 @@ struct WriteBufferFromS3::PutObjectTask
 };
 
 WriteBufferFromS3::WriteBufferFromS3(
-    std::shared_ptr<Aws::S3::S3Client> client_ptr_,
+    std::shared_ptr<const Aws::S3::S3Client> client_ptr_,
     const String & bucket_,
     const String & key_,
     const S3Settings::ReadWriteSettings & s3_settings_,
@@ -66,10 +65,10 @@ WriteBufferFromS3::WriteBufferFromS3(
     : BufferWithOwnMemory<WriteBuffer>(buffer_size_, nullptr, 0)
     , bucket(bucket_)
     , key(key_)
-    , object_metadata(std::move(object_metadata_))
     , client_ptr(std::move(client_ptr_))
     , upload_part_size(s3_settings_.min_upload_part_size)
     , s3_settings(s3_settings_)
+    , object_metadata(std::move(object_metadata_))
     , schedule(std::move(schedule_))
     , cache(cache_)
 {
@@ -152,6 +151,13 @@ void WriteBufferFromS3::allocateBuffer()
 
 WriteBufferFromS3::~WriteBufferFromS3()
 {
+#ifndef NDEBUG
+    if (!finalized)
+    {
+        LOG_ERROR(log, "WriteBufferFromS3 is not finalized in destructor. It's a bug");
+        std::terminate();
+    }
+#else
     try
     {
         finalize();
@@ -160,6 +166,7 @@ WriteBufferFromS3::~WriteBufferFromS3()
     {
         tryLogCurrentException(__PRETTY_FUNCTION__);
     }
+#endif
 }
 
 bool WriteBufferFromS3::cacheEnabled() const
@@ -481,7 +488,7 @@ void WriteBufferFromS3::finalizeCacheIfNeeded(std::optional<FileSegmentsHolder> 
             size_t size = (*file_segment_it)->finalizeWrite();
             file_segment_it = file_segments.erase(file_segment_it);
 
-            ProfileEvents::increment(ProfileEvents::RemoteFSCacheDownloadBytes, size);
+            ProfileEvents::increment(ProfileEvents::CachedReadBufferCacheWriteBytes, size);
         }
         catch (...)
         {

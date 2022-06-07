@@ -312,7 +312,7 @@ static std::vector<ProjectionDescriptionRawPtr> getProjectionsForNewDataPart(
 /// Return set of indices which should be recalculated during mutation also
 /// wraps input stream into additional expression stream
 static std::set<MergeTreeIndexPtr> getIndicesToRecalculate(
-    QueryPipeline & pipeline,
+    QueryPipelineBuilder & builder,
     const NameSet & updated_columns,
     const StorageMetadataPtr & metadata_snapshot,
     ContextPtr context,
@@ -364,9 +364,9 @@ static std::set<MergeTreeIndexPtr> getIndicesToRecalculate(
         }
     }
 
-    if (!indices_to_recalc.empty() && pipeline.initialized())
+    if (!indices_to_recalc.empty() && builder.initialized())
     {
-        auto indices_recalc_syntax = TreeRewriter(context).analyze(indices_recalc_expr_list, pipeline.getHeader().getNamesAndTypesList());
+        auto indices_recalc_syntax = TreeRewriter(context).analyze(indices_recalc_expr_list, builder.getHeader().getNamesAndTypesList());
         auto indices_recalc_expr = ExpressionAnalyzer(
                 indices_recalc_expr_list,
                 indices_recalc_syntax, context).getActions(false);
@@ -376,11 +376,8 @@ static std::set<MergeTreeIndexPtr> getIndicesToRecalculate(
         /// MutationsInterpreter which knows about skip indices and stream 'in' already has
         /// all required columns.
         /// TODO move this logic to single place.
-        QueryPipelineBuilder builder;
-        builder.init(std::move(pipeline));
         builder.addTransform(std::make_shared<ExpressionTransform>(builder.getHeader(), indices_recalc_expr));
         builder.addTransform(std::make_shared<MaterializingTransform>(builder.getHeader()));
-        pipeline = QueryPipelineBuilder::getPipeline(std::move(builder));
     }
     return indices_to_recalc;
 }
@@ -624,7 +621,9 @@ struct MutationContext
     FutureMergedMutatedPartPtr future_part;
     MergeTreeData::DataPartPtr source_part;
 
+    StoragePtr storage_from_source_part;
     StorageMetadataPtr metadata_snapshot;
+
     MutationCommandsConstPtr commands;
     time_t time_of_mutation;
     ContextPtr context;
@@ -634,8 +633,10 @@ struct MutationContext
 
     std::unique_ptr<CurrentMetrics::Increment> num_mutations;
 
+    QueryPipelineBuilder mutating_pipeline_builder;
     QueryPipeline mutating_pipeline; // in
     std::unique_ptr<PullingPipelineExecutor> mutating_executor;
+    ProgressCallback progress_callback;
     Block updated_header;
 
     std::unique_ptr<MutationsInterpreter> interpreter;
@@ -917,7 +918,7 @@ void PartMergerWriter::prepare()
         // build in-memory projection because we don't support merging into a new in-memory part.
         // Otherwise we split the materialization into multiple stages similar to the process of
         // INSERT SELECT query.
-        if (ctx->new_data_part->getType() == MergeTreeDataPartType::IN_MEMORY)
+        if (ctx->new_data_part->getType() == MergeTreeDataPartType::InMemory)
             projection_squashes.emplace_back(0, 0);
         else
             projection_squashes.emplace_back(settings.min_insert_block_size_rows, settings.min_insert_block_size_bytes);
@@ -1076,11 +1077,10 @@ private:
         auto skip_part_indices = MutationHelpers::getIndicesForNewDataPart(ctx->metadata_snapshot->getSecondaryIndices(), ctx->for_file_renames);
         ctx->projections_to_build = MutationHelpers::getProjectionsForNewDataPart(ctx->metadata_snapshot->getProjections(), ctx->for_file_renames);
 
-        if (!ctx->mutating_pipeline.initialized())
+        if (!ctx->mutating_pipeline_builder.initialized())
             throw Exception("Cannot mutate part columns with uninitialized mutations stream. It's a bug", ErrorCodes::LOGICAL_ERROR);
 
-        QueryPipelineBuilder builder;
-        builder.init(std::move(ctx->mutating_pipeline));
+        QueryPipelineBuilder builder(std::move(ctx->mutating_pipeline_builder));
 
         if (ctx->metadata_snapshot->hasPrimaryKey() || ctx->metadata_snapshot->hasSecondaryIndices())
         {
@@ -1107,6 +1107,9 @@ private:
             ctx->txn);
 
         ctx->mutating_pipeline = QueryPipelineBuilder::getPipeline(std::move(builder));
+        ctx->mutating_pipeline.setProgressCallback(ctx->progress_callback);
+        /// Is calculated inside MergeProgressCallback.
+        ctx->mutating_pipeline.disableProfileEventUpdate();
         ctx->mutating_executor = std::make_unique<PullingPipelineExecutor>(ctx->mutating_pipeline);
 
         part_merger_writer_task = std::make_unique<PartMergerWriter>(ctx);
@@ -1258,10 +1261,9 @@ private:
 
         ctx->compression_codec = ctx->source_part->default_codec;
 
-        if (ctx->mutating_pipeline.initialized())
+        if (ctx->mutating_pipeline_builder.initialized())
         {
-            QueryPipelineBuilder builder;
-            builder.init(std::move(ctx->mutating_pipeline));
+            QueryPipelineBuilder builder(std::move(ctx->mutating_pipeline_builder));
 
             if (ctx->execute_ttl_type == ExecuteTTLType::NORMAL)
                 builder.addTransform(std::make_shared<TTLTransform>(builder.getHeader(), *ctx->data, ctx->metadata_snapshot, ctx->new_data_part, ctx->time_of_mutation, true));
@@ -1281,6 +1283,9 @@ private:
             );
 
             ctx->mutating_pipeline = QueryPipelineBuilder::getPipeline(std::move(builder));
+            ctx->mutating_pipeline.setProgressCallback(ctx->progress_callback);
+            /// Is calculated inside MergeProgressCallback.
+            ctx->mutating_pipeline.disableProfileEventUpdate();
             ctx->mutating_executor = std::make_unique<PullingPipelineExecutor>(ctx->mutating_pipeline);
 
             ctx->projections_to_build = std::vector<ProjectionDescriptionRawPtr>{ctx->projections_to_recalc.begin(), ctx->projections_to_recalc.end()};
@@ -1367,6 +1372,11 @@ MutateTask::MutateTask(
     ctx->space_reservation = space_reservation_;
     ctx->storage_columns = metadata_snapshot_->getColumns().getAllPhysical();
     ctx->txn = txn;
+    ctx->source_part = ctx->future_part->parts[0];
+    ctx->storage_from_source_part = std::make_shared<StorageFromMergeTreeDataPart>(ctx->source_part);
+
+    auto storage_snapshot = ctx->storage_from_source_part->getStorageSnapshot(ctx->metadata_snapshot, context_);
+    extendObjectColumns(ctx->storage_columns, storage_snapshot->object_columns, /*with_subcolumns=*/ false);
 }
 
 
@@ -1405,8 +1415,6 @@ bool MutateTask::prepare()
             "This is a bug.", toString(ctx->future_part->parts.size()));
 
     ctx->num_mutations = std::make_unique<CurrentMetrics::Increment>(CurrentMetrics::PartMutation);
-    ctx->source_part = ctx->future_part->parts[0];
-    auto storage_from_source_part = std::make_shared<StorageFromMergeTreeDataPart>(ctx->source_part);
 
     auto context_for_reading = Context::createCopy(ctx->context);
     context_for_reading->setSetting("max_streams_to_max_threads_ratio", 1);
@@ -1417,13 +1425,13 @@ bool MutateTask::prepare()
 
     for (const auto & command : *ctx->commands)
     {
-        if (command.partition == nullptr || ctx->future_part->parts[0]->info.partition_id == ctx->data->getPartitionIDFromQuery(
+        if (command.partition == nullptr || ctx->source_part->info.partition_id == ctx->data->getPartitionIDFromQuery(
                 command.partition, context_for_reading))
             ctx->commands_for_part.emplace_back(command);
     }
 
     if (ctx->source_part->isStoredOnDisk() && !isStorageTouchedByMutations(
-        storage_from_source_part, ctx->metadata_snapshot, ctx->commands_for_part, Context::createCopy(context_for_reading)))
+        ctx->storage_from_source_part, ctx->metadata_snapshot, ctx->commands_for_part, Context::createCopy(context_for_reading)))
     {
         LOG_TRACE(ctx->log, "Part {} doesn't change up to mutation version {}", ctx->source_part->name, ctx->future_part->part_info.mutation);
         promise.set_value(ctx->data->cloneAndLoadDataPartOnSameDisk(ctx->source_part, "tmp_clone_", ctx->future_part->part_info, ctx->metadata_snapshot, ctx->txn, &ctx->hardlinked_files, false));
@@ -1441,13 +1449,13 @@ bool MutateTask::prepare()
     if (!ctx->for_interpreter.empty())
     {
         ctx->interpreter = std::make_unique<MutationsInterpreter>(
-            storage_from_source_part, ctx->metadata_snapshot, ctx->for_interpreter, context_for_reading, true);
+            ctx->storage_from_source_part, ctx->metadata_snapshot, ctx->for_interpreter, context_for_reading, true);
         ctx->materialized_indices = ctx->interpreter->grabMaterializedIndices();
         ctx->materialized_projections = ctx->interpreter->grabMaterializedProjections();
         ctx->mutation_kind = ctx->interpreter->getMutationKind();
-        ctx->mutating_pipeline = ctx->interpreter->execute();
+        ctx->mutating_pipeline_builder = ctx->interpreter->execute();
         ctx->updated_header = ctx->interpreter->getUpdatedHeader();
-        ctx->mutating_pipeline.setProgressCallback(MergeProgressCallback((*ctx->mutate_entry)->ptr(), ctx->watch_prev_elapsed, *ctx->stage_progress));
+        ctx->progress_callback = MergeProgressCallback((*ctx->mutate_entry)->ptr(), ctx->watch_prev_elapsed, *ctx->stage_progress);
     }
 
     ctx->single_disk_volume = std::make_shared<SingleDiskVolume>("volume_" + ctx->future_part->name, ctx->space_reservation->getDisk(), 0);
@@ -1482,7 +1490,7 @@ bool MutateTask::prepare()
     ctx->need_sync = needSyncPart(ctx->source_part->rows_count, ctx->source_part->getBytesOnDisk(), *data_settings);
     ctx->execute_ttl_type = ExecuteTTLType::NONE;
 
-    if (ctx->mutating_pipeline.initialized())
+    if (ctx->mutating_pipeline_builder.initialized())
         ctx->execute_ttl_type = MutationHelpers::shouldExecuteTTL(ctx->metadata_snapshot, ctx->interpreter->getColumnDependencies());
 
     /// All columns from part are changed and may be some more that were missing before in part
@@ -1499,7 +1507,7 @@ bool MutateTask::prepare()
             ctx->updated_columns.emplace(name_type.name);
 
         ctx->indices_to_recalc = MutationHelpers::getIndicesToRecalculate(
-            ctx->mutating_pipeline, ctx->updated_columns, ctx->metadata_snapshot, ctx->context, ctx->materialized_indices, ctx->source_part);
+            ctx->mutating_pipeline_builder, ctx->updated_columns, ctx->metadata_snapshot, ctx->context, ctx->materialized_indices, ctx->source_part);
         ctx->projections_to_recalc = MutationHelpers::getProjectionsToRecalculate(
             ctx->updated_columns, ctx->metadata_snapshot, ctx->materialized_projections, ctx->source_part);
 

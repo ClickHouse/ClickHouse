@@ -1,6 +1,8 @@
 #include <Processors/Merges/Algorithms/MergingSortedAlgorithm.h>
 #include <Processors/Transforms/ColumnGathererTransform.h>
 #include <IO/WriteBuffer.h>
+#include <IO/WriteHelpers.h>
+#include <IO/WriteBufferFromString.h>
 
 namespace DB
 {
@@ -22,11 +24,21 @@ MergingSortedAlgorithm::MergingSortedAlgorithm(
     , merged_data(header.cloneEmptyColumns(), use_average_block_sizes, max_block_size)
     , description(std::move(description_))
     , limit(limit_)
-    , has_collation(std::any_of(description.begin(), description.end(), [](const auto & descr) { return descr.collator != nullptr; }))
     , out_row_sources_buf(out_row_sources_buf_)
     , current_inputs(num_inputs)
     , cursors(num_inputs)
 {
+    DataTypes sort_description_types;
+    sort_description_types.reserve(description.size());
+
+    /// Replace column names in description to positions.
+    for (auto & column_description : description)
+    {
+        has_collation |= column_description.collator != nullptr;
+        sort_description_types.emplace_back(header.getByName(column_description.column_name).type);
+    }
+
+    compileSortDescriptionIfNeeded(description, sort_description_types, true /*increase_compile_attemps*/);
 }
 
 void MergingSortedAlgorithm::addInput()
@@ -62,6 +74,8 @@ void MergingSortedAlgorithm::initialize(Inputs inputs)
 
     if (has_collation)
         queue_with_collation = SortingHeap<SortCursorWithCollation>(cursors);
+    else if (description.size() == 1)
+        queue_simple = SortingHeap<SimpleSortCursor>(cursors);
     else
         queue_without_collation = SortingHeap<SortCursor>(cursors);
 }
@@ -74,6 +88,8 @@ void MergingSortedAlgorithm::consume(Input & input, size_t source_num)
 
     if (has_collation)
         queue_with_collation.push(cursors[source_num]);
+    else if (description.size() == 1)
+        queue_simple.push(cursors[source_num]);
     else
         queue_without_collation.push(cursors[source_num]);
 }
@@ -82,6 +98,8 @@ IMergingAlgorithm::Status MergingSortedAlgorithm::merge()
 {
     if (has_collation)
         return mergeImpl(queue_with_collation);
+    else if (description.size() == 1)
+        return mergeImpl(queue_simple);
     else
         return mergeImpl(queue_without_collation);
 }

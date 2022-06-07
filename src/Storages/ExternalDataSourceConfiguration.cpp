@@ -248,6 +248,177 @@ std::optional<ExternalDataSourceInfo> getExternalDataSourceConfiguration(
     return std::nullopt;
 }
 
+std::optional<URLBasedDataSourceConfig> getURLBasedDataSourceConfiguration(
+    const Poco::Util::AbstractConfiguration & dict_config, const String & dict_config_prefix, ContextPtr context)
+{
+    URLBasedDataSourceConfiguration configuration;
+    auto collection_name = dict_config.getString(dict_config_prefix + ".name", "");
+    if (!collection_name.empty())
+    {
+        const auto & config = context->getConfigRef();
+        const auto & collection_prefix = fmt::format("named_collections.{}", collection_name);
+
+        if (!config.has(collection_prefix))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "There is no collection named `{}` in config", collection_name);
+
+        configuration.url =
+            dict_config.getString(dict_config_prefix + ".url", config.getString(collection_prefix + ".url", ""));
+        configuration.endpoint =
+            dict_config.getString(dict_config_prefix + ".endpoint", config.getString(collection_prefix + ".endpoint", ""));
+        configuration.format =
+            dict_config.getString(dict_config_prefix + ".format", config.getString(collection_prefix + ".format", ""));
+        configuration.compression_method =
+            dict_config.getString(dict_config_prefix + ".compression", config.getString(collection_prefix + ".compression_method", ""));
+        configuration.structure =
+            dict_config.getString(dict_config_prefix + ".structure", config.getString(collection_prefix + ".structure", ""));
+        configuration.user =
+            dict_config.getString(dict_config_prefix + ".credentials.user", config.getString(collection_prefix + ".credentials.user", ""));
+        configuration.password =
+            dict_config.getString(dict_config_prefix + ".credentials.password", config.getString(collection_prefix + ".credentials.password", ""));
+
+        String headers_prefix;
+        const Poco::Util::AbstractConfiguration *headers_config = nullptr;
+        if (dict_config.has(dict_config_prefix + ".headers"))
+        {
+            headers_prefix = dict_config_prefix + ".headers";
+            headers_config = &dict_config;
+        }
+        else
+        {
+            headers_prefix = collection_prefix + ".headers";
+            headers_config = &config;
+        }
+
+        if (headers_config)
+        {
+            Poco::Util::AbstractConfiguration::Keys header_keys;
+            headers_config->keys(headers_prefix, header_keys);
+            headers_prefix += ".";
+            for (const auto & header : header_keys)
+            {
+                const auto header_prefix = headers_prefix + header;
+                configuration.headers.emplace_back(
+                    std::make_pair(headers_config->getString(header_prefix + ".name"), headers_config->getString(header_prefix + ".value")));
+            }
+        }
+
+        return URLBasedDataSourceConfig{ .configuration = configuration };
+    }
+
+    return std::nullopt;
+}
+void URLBasedDataSourceConfiguration::set(const URLBasedDataSourceConfiguration & conf)
+{
+    url = conf.url;
+    format = conf.format;
+    compression_method = conf.compression_method;
+    structure = conf.structure;
+    http_method = conf.http_method;
+    headers = conf.headers;
+}
+
+
+std::optional<URLBasedDataSourceConfig> getURLBasedDataSourceConfiguration(const ASTs & args, ContextPtr context)
+{
+    if (args.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "External data source must have arguments");
+
+    URLBasedDataSourceConfiguration configuration;
+    StorageSpecificArgs non_common_args;
+
+    if (const auto * collection = typeid_cast<const ASTIdentifier *>(args[0].get()))
+    {
+        const auto & config = context->getConfigRef();
+        auto config_prefix = fmt::format("named_collections.{}", collection->name());
+
+        if (!config.has(config_prefix))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "There is no collection named `{}` in config", collection->name());
+
+        Poco::Util::AbstractConfiguration::Keys keys;
+        config.keys(config_prefix, keys);
+        for (const auto & key : keys)
+        {
+            if (key == "url")
+            {
+                configuration.url = config.getString(config_prefix + ".url", "");
+            }
+            else if (key == "method")
+            {
+                configuration.http_method = config.getString(config_prefix + ".method", "");
+            }
+            else if (key == "format")
+            {
+                configuration.format = config.getString(config_prefix + ".format", "");
+            }
+            else if (key == "structure")
+            {
+                configuration.structure = config.getString(config_prefix + ".structure", "");
+            }
+            else if (key == "compression_method")
+            {
+                configuration.compression_method = config.getString(config_prefix + ".compression_method", "");
+            }
+            else if (key == "headers")
+            {
+                Poco::Util::AbstractConfiguration::Keys header_keys;
+                config.keys(config_prefix + ".headers", header_keys);
+                for (const auto & header : header_keys)
+                {
+                    const auto header_prefix = config_prefix + ".headers." + header;
+                    configuration.headers.emplace_back(std::make_pair(config.getString(header_prefix + ".name"), config.getString(header_prefix + ".value")));
+                }
+            }
+            else
+            {
+                auto value = config.getString(config_prefix + '.' + key);
+                non_common_args.emplace_back(std::make_pair(key, std::make_shared<ASTLiteral>(value)));
+            }
+        }
+
+        /// Check key-value arguments.
+        for (size_t i = 1; i < args.size(); ++i)
+        {
+            if (const auto * ast_function = typeid_cast<const ASTFunction *>(args[i].get()))
+            {
+                const auto * args_expr = assert_cast<const ASTExpressionList *>(ast_function->arguments.get());
+                auto function_args = args_expr->children;
+                if (function_args.size() != 2)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected key-value defined argument");
+
+                auto arg_name = function_args[0]->as<ASTIdentifier>()->name();
+                auto arg_value_ast = evaluateConstantExpressionOrIdentifierAsLiteral(function_args[1], context);
+                auto arg_value = arg_value_ast->as<ASTLiteral>()->value;
+
+                if (arg_name == "url")
+                    configuration.url = arg_value.safeGet<String>();
+                else if (arg_name == "method")
+                    configuration.http_method = arg_value.safeGet<String>();
+                else if (arg_name == "format")
+                    configuration.format = arg_value.safeGet<String>();
+                else if (arg_name == "compression_method")
+                    configuration.compression_method = arg_value.safeGet<String>();
+                else if (arg_name == "structure")
+                    configuration.structure = arg_value.safeGet<String>();
+                else
+                    non_common_args.emplace_back(std::make_pair(arg_name, arg_value_ast));
+            }
+            else
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected key-value defined argument");
+            }
+        }
+
+        if (configuration.url.empty() || configuration.format.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "Storage requires {}", configuration.url.empty() ? "url" : "format");
+
+        URLBasedDataSourceConfig source_config{ .configuration = configuration, .specific_args = non_common_args };
+        return source_config;
+    }
+    return std::nullopt;
+}
+
+
 template<typename T>
 bool getExternalDataSourceConfiguration(const ASTs & args, BaseSettings<T> & settings, ContextPtr context)
 {

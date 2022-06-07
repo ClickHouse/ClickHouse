@@ -39,7 +39,7 @@ MergeTreeBaseSelectProcessor::MergeTreeBaseSelectProcessor(
     bool use_uncompressed_cache_,
     const Names & virt_column_names_,
     std::optional<ParallelReadingExtension> extension_)
-    : SourceWithProgress(transformHeader(std::move(header), prewhere_info_, storage_.getPartitionValueType(), virt_column_names_))
+    : ISource(transformHeader(std::move(header), prewhere_info_, storage_.getPartitionValueType(), virt_column_names_))
     , storage(storage_)
     , storage_snapshot(storage_snapshot_)
     , prewhere_info(prewhere_info_)
@@ -72,8 +72,6 @@ MergeTreeBaseSelectProcessor::MergeTreeBaseSelectProcessor(
     if (prewhere_info)
     {
         prewhere_actions = std::make_unique<PrewhereExprInfo>();
-        if (prewhere_info->alias_actions)
-            prewhere_actions->alias_actions = std::make_shared<ExpressionActions>(prewhere_info->alias_actions, actions_settings);
 
         if (prewhere_info->row_level_filter)
             prewhere_actions->row_level_filter = std::make_shared<ExpressionActions>(prewhere_info->row_level_filter, actions_settings);
@@ -296,7 +294,7 @@ Chunk MergeTreeBaseSelectProcessor::readFromPartImpl()
 
     UInt64 num_filtered_rows = read_result.numReadRows() - read_result.num_rows;
 
-    progress({ read_result.numReadRows(), read_result.numBytesRead() });
+    progress(read_result.numReadRows(), read_result.numBytesRead());
 
     if (task->size_predictor)
     {
@@ -556,9 +554,6 @@ Block MergeTreeBaseSelectProcessor::transformHeader(
 {
     if (prewhere_info)
     {
-        if (prewhere_info->alias_actions)
-            block = prewhere_info->alias_actions->updateHeader(std::move(block));
-
         if (prewhere_info->row_level_filter)
         {
             block = prewhere_info->row_level_filter->updateHeader(std::move(block));
@@ -644,7 +639,7 @@ MergeTreeBaseSelectProcessor::Status MergeTreeBaseSelectProcessor::performReques
         .partition_id = std::move(partition_id),
         .part_name = std::move(part_name),
         .projection_name = std::move(projection_name),
-        .block_range = std::move(block_range),
+        .block_range = block_range,
         .mark_ranges = std::move(requested_ranges)
     };
 
@@ -692,7 +687,7 @@ size_t MergeTreeBaseSelectProcessor::estimateMaxBatchSizeForHugeRanges()
 
     size_t sum_average_marks_size = 0;
     /// getColumnSize is not fully implemented for compact parts
-    if (task->data_part->getType() == IMergeTreeDataPart::Type::COMPACT)
+    if (task->data_part->getType() == IMergeTreeDataPart::Type::Compact)
     {
         sum_average_marks_size = average_granule_size_bytes;
     }
