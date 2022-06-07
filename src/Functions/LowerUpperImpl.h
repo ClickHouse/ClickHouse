@@ -30,21 +30,23 @@ private:
         const auto flip_case_mask = 'A' ^ 'a';
 
 #if defined(__AVX512F__) && defined(__AVX512BW__) /// check if avx512 instructions are compiled
-        if (isArchSupported(TargetArch::AVX512BW))  
+        if (isArchSupported(TargetArch::AVX512BW))
         {
             /// check if cpu support avx512 dynamically, haveAVX512BW contains check of haveAVX512F
             const auto byte_avx512 = sizeof(__m512i);
             const auto src_end_avx = src_end - (src_end - src) % byte_avx512;
-            if (src < src_end_avx) {
+            if (src < src_end_avx)
+            {
                 const auto v_not_case_lower_bound = _mm512_set1_epi8(not_case_lower_bound - 1);
                 const auto v_not_case_upper_bound = _mm512_set1_epi8(not_case_upper_bound + 1);
                 const auto v_flip_case_mask = _mm512_set1_epi8(flip_case_mask);
 
-                for (; src < src_end_avx; src += byte_avx512, dst += byte_avx512) {
+                for (; src < src_end_avx; src += byte_avx512, dst += byte_avx512)
+                {
                     const auto chars = _mm512_loadu_si512(reinterpret_cast<const __m512i *>(src));
 
                     const auto is_not_case
-                            = _mm512_and_si512(_mm512_movm_epi8(_mm512_cmpgt_epi8_mask(chars, v_not_case_lower_bound)), 
+                            = _mm512_and_si512(_mm512_movm_epi8(_mm512_cmpgt_epi8_mask(chars, v_not_case_lower_bound)),
                             _mm512_movm_epi8(_mm512_cmplt_epi8_mask(chars, v_not_case_upper_bound)));
 
                     const auto xor_mask = _mm512_and_si512(v_flip_case_mask, is_not_case);
