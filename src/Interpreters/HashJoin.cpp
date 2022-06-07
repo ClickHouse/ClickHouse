@@ -762,6 +762,8 @@ void HashJoin::setTotals(const Block & block)
     }
 }
 
+/// If prepared merge blocks is smaller than max_merged_block_size. just empalce back to prepare_merged_blocks.
+/// Otherwise, merge to one block.
 bool HashJoin::tryMergeBlocks(Block & source_block, bool check_limits)
 {
     if (data->exceed_memory)
@@ -809,6 +811,7 @@ bool HashJoin::addJoinedBlock(const Block & source_block, bool check_limits)
     Block block = materializeBlock(source_block);
     size_t rows = block.rows();
 
+    ///Parallel Hash does not need to merge blocks.
     if (!table_join->isParallelHash() && !finish_filling_right_side && tryMergeBlocks(block, check_limits))
         return true;
 
@@ -1048,25 +1051,20 @@ public:
         if (nums == 0)
             return;
 
-        if constexpr (just_one_right_block)
+        for (size_t j = 0, size = right_indexes.size(); j < size; ++j)
         {
-            for (size_t j = 0, size = right_indexes.size(); j < size; ++j)
+            std::vector<const IColumn *> prepared_columns;
+            if constexpr (just_one_right_block)
             {
-                std::vector<const IColumn *> prepared_columns;
                 auto column_from_block = match_result.blocks[0]->getByPosition(right_indexes[j]);
                 if (type_name[j].type->lowCardinality() != column_from_block.type->lowCardinality())
                 {
                     JoinCommon::changeLowCardinalityInplace(column_from_block);
                 }
                 prepared_columns.emplace_back(column_from_block.column.get());
-                columns[j]->insertIndicesFrom(prepared_columns, match_result.row_nums);
             }
-        }
-        else
-        {
-            for (size_t j = 0, size = right_indexes.size(); j < size; ++j)
+            else
             {
-                std::vector<const IColumn *> prepared_columns;
                 prepared_columns.resize(nums);
                 int i = 0;
                 for (const auto & cur_block : match_result.blocks)
@@ -1079,8 +1077,9 @@ public:
                     prepared_columns[i] = column_from_block.column.get();
                     ++i;
                 }
-                columns[j]->insertIndicesFrom(prepared_columns, match_result.row_nums);
             }
+            /// insert all match row_nums in one time.
+            columns[j]->insertIndicesFrom(prepared_columns, match_result.row_nums);
         }
     }
 
@@ -1369,9 +1368,7 @@ NO_INLINE IColumn::Filter joinRightColumns(
 {
     constexpr JoinFeatures<KIND, STRICTNESS> jf;
 
-    constexpr auto fast_inner_join = (KIND == ASTTableJoin::Kind::Inner) &&
-        !jf.add_missing &&
-        jf.is_all_join;
+    constexpr auto fast_inner_join = (KIND == ASTTableJoin::Kind::Inner) && !jf.add_missing && jf.is_all_join;
 
     size_t rows = added_columns.rows_to_add;
 
