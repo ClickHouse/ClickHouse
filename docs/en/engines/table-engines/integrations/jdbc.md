@@ -3,7 +3,7 @@ sidebar_position: 3
 sidebar_label: JDBC
 ---
 
-# JDBC {#table-engine-jdbc}
+# JDBC
 
 Allows ClickHouse to connect to external databases via [JDBC](https://en.wikipedia.org/wiki/Java_Database_Connectivity).
 

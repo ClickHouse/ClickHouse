@@ -7,6 +7,7 @@
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Interpreters/Context.h>
 #include <base/EnumReflection.h>
+#include <QueryPipeline/Pipe.h>
 
 
 namespace DB
