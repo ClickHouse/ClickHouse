@@ -307,7 +307,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
                     context->getTemporaryVolume(),
                     settings.max_threads,
                     settings.min_free_disk_space_for_temporary_data,
-                    settings.compile_expressions,
+                    settings.compile_aggregate_expressions,
                     settings.min_count_to_compile_aggregate_expression,
                     header_before_aggregation); // The source header is also an intermediate header
 
