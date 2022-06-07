@@ -4,7 +4,7 @@ sidebar_position: 52
 slug: /en/operations/settings/settings
 ---
 
-# Settings {#settings}
+# Settings
 
 ## allow_nondeterministic_mutations {#allow_nondeterministic_mutations}
 
@@ -20,7 +20,7 @@ Default value: 0.
 <profiles>
     <default>
         <allow_nondeterministic_mutations>1</allow_nondeterministic_mutations>
-        
+
         <!-- ... -->
     </default>
 
@@ -241,7 +241,7 @@ Possible values:
 
 Default value: `1000`.
 
-##  glob_expansion_max_elements  {#glob_expansion_max_elements }
+##  glob_expansion_max_elements  {#glob_expansion_max_elements}
 
 Sets the maximum number of addresses generated from patterns for external storages and table functions (like [url](../../sql-reference/table-functions/url.md)) except the `remote` function.
 
