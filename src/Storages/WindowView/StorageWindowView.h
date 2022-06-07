@@ -205,7 +205,8 @@ private:
     mutable Block input_header;
     mutable Block output_header;
     UInt64 fire_signal_timeout_s;
-    UInt64 clean_interval_ms;
+    UInt64 clean_interval_usec;
+    UInt64 last_clean_timestamp_usec = 0;
     const DateLUTImpl * time_zone = nullptr;
     UInt32 max_timestamp = 0;
     UInt32 max_watermark = 0; // next watermark to fire
