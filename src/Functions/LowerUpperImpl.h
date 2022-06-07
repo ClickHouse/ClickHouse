@@ -39,17 +39,16 @@ private:
             {
                 const auto v_not_case_lower_bound = _mm512_set1_epi8(not_case_lower_bound - 1);
                 const auto v_not_case_upper_bound = _mm512_set1_epi8(not_case_upper_bound + 1);
-                const auto v_flip_case_mask = _mm512_set1_epi8(flip_case_mask);
 
                 for (; src < src_end_avx; src += byte_avx512, dst += byte_avx512)
                 {
                     const auto chars = _mm512_loadu_si512(reinterpret_cast<const __m512i *>(src));
 
                     const auto is_not_case
-                            = _mm512_and_si512(_mm512_movm_epi8(_mm512_cmpgt_epi8_mask(chars, v_not_case_lower_bound)),
-                            _mm512_movm_epi8(_mm512_cmplt_epi8_mask(chars, v_not_case_upper_bound)));
+                            = _mm512_mask_cmplt_epi8_mask(_mm512_cmpgt_epi8_mask(chars, v_not_case_lower_bound),
+                            chars, v_not_case_upper_bound);
 
-                    const auto xor_mask = _mm512_and_si512(v_flip_case_mask, is_not_case);
+                    const auto xor_mask = _mm512_maskz_set1_epi8(is_not_case, flip_case_mask);
 
                     const auto cased_chars = _mm512_xor_si512(chars, xor_mask);
 
