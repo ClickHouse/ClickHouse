@@ -52,7 +52,7 @@ static const std::unordered_map<String, ConfigKeyInfo> dictionary_keys = {
     {"invalidate_query", ConfigKeyInfo{ .type = Field::Types::String }},
     {"query", ConfigKeyInfo{ .type = Field::Types::String }},
     {"where", ConfigKeyInfo{ .type = Field::Types::String }},
-    {"priority", ConfigKeyInfo{ .type = Field::Types::UInt64 }}
+    {"priority", ConfigKeyInfo{ .type = Field::Types::UInt64 }},
     {"dont_check_update_time", ConfigKeyInfo{ .type = Field::Types::String }},
     {"name", ConfigKeyInfo{ .type = Field::Types::String }},
     {"socket", ConfigKeyInfo{ .type = Field::Types::String }},
@@ -67,7 +67,7 @@ static const std::unordered_map<String, ConfigKeyInfo> dictionary_keys = {
     {"connect_timeout", ConfigKeyInfo{ .type = Field::Types::String }},
     {"rw_timeout", ConfigKeyInfo{ .type = Field::Types::String }},
     {"mysql_connect_timeout", ConfigKeyInfo{ .type = Field::Types::String }},
-    {"mysql_rw_timeout", ConfigKeyInfo{ .type = Field::Types::String }},
+    {"mysql_rw_timeout", ConfigKeyInfo{ .type = Field::Types::String }}
 };
 
 void registerDictionarySourceMysql(DictionarySourceFactory & factory)
@@ -89,47 +89,74 @@ void registerDictionarySourceMysql(DictionarySourceFactory & factory)
         auto settings_config_prefix = config_prefix + ".mysql";
         std::shared_ptr<mysqlxx::PoolWithFailover> pool;
         MySQLSettings mysql_settings;
-        auto has_config_key = [&](const String & key)
+        String database, schema, username, host, password, table, query, where, invalidate_query, update_field;
+        UInt64 update_lag;
+        bool dont_check_update_time;
+
+        if (isNamedCollection(config, settings_config_prefix))
         {
-            return dictionary_allowed_keys.contains(key) || key.starts_with("replica") || mysql_settings.has(key);
-        };
-        StorageMySQLConfiguration configuration;
-        auto named_collection = created_from_ddl
-                              ? getExternalDataSourceConfiguration(config, settings_config_prefix, global_context, has_config_key, mysql_settings)
-                              : std::nullopt;
-        if (named_collection)
-        {
-            mysql_settings.applyChanges(named_collection->settings_changes);
-            configuration.set(named_collection->configuration);
-            configuration.addresses = {std::make_pair(configuration.host, configuration.port)};
+            auto collection_name = getCollectionName(config, settings_config_prefix);
+            auto configuration = getConfigurationFromNamedCollection(
+                collection_name, global_context->getConfigRef(), dictionary_keys);
+
+            validateConfigKeys(config, settings_config_prefix, dictionary_keys, "replica");
+
+            auto overriding_configuration = parseConfigKeys(config, settings_config_prefix, dictionary_keys, false);
+            overrideConfiguration(configuration, overriding_configuration, dictionary_keys);
+
+            /// TODO:
+            /// mysql_settings.applyChanges(named_collection->settings_changes);
+            ///
+            /// configuration.addresses = {std::make_pair(configuration.host, configuration.port)};
             const auto & settings = global_context->getSettingsRef();
             if (!mysql_settings.isChanged("connect_timeout"))
                 mysql_settings.connect_timeout = settings.external_storage_connect_timeout_sec;
             if (!mysql_settings.isChanged("read_write_timeout"))
                 mysql_settings.read_write_timeout = settings.external_storage_rw_timeout_sec;
-            pool = std::make_shared<mysqlxx::PoolWithFailover>(createMySQLPoolWithFailover(configuration, mysql_settings));
+
+            database = configuration["database"].safeGet<String>();
+            if (database.empty())
+                database = configuration["db"].safeGet<String>();
+
+            schema = configuration["schema"].safeGet<String>();
+            table = configuration["table"].safeGet<String>();
+            query = configuration["query"].safeGet<String>();
+            where = configuration["where"].safeGet<String>();
+            invalidate_query = configuration["invalidate_query"].safeGet<String>();
+            update_field = configuration["update_field"].safeGet<String>();
+            update_lag = configuration["update_lag"].safeGet<UInt64>();
+            dont_check_update_time = configuration["dont_check_update_time"].safeGet<UInt64>();
+
+            StorageMySQL::Configuration mysql_configuration = StorageMySQL::parseConfigurationFromNamedCollection(configuration, global_context);
+            pool = std::make_shared<mysqlxx::PoolWithFailover>(createMySQLPoolWithFailover(mysql_configuration, mysql_settings));
         }
         else
         {
-            configuration.database = config.getString(settings_config_prefix + ".db", "");
-            configuration.table = config.getString(settings_config_prefix + ".table", "");
+            database = config.getString(settings_config_prefix + ".db", "");
+            table = config.getString(settings_config_prefix + ".table", "");
+            where = config.getString(settings_config_prefix + ".where", "");
+            invalidate_query = config.getString(settings_config_prefix + ".invalidate_query", "");
+            update_field = config.getString(settings_config_prefix + ".update_field", "");
+            update_lag = config.getUInt64(settings_config_prefix + ".update_lag", 1);
+            dont_check_update_time = config.getBool(settings_config_prefix + ".dont_check_update_time", false);
+            query = config.getString(settings_config_prefix + ".query", "");
+
             pool = std::make_shared<mysqlxx::PoolWithFailover>(mysqlxx::PoolFactory::instance().get(config, settings_config_prefix));
         }
 
-        auto query = config.getString(settings_config_prefix + ".query", "");
-        if (query.empty() && configuration.table.empty())
+        if (query.empty() && table.empty())
             throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "MySQL dictionary source configuration must contain table or query field");
 
         MySQLDictionarySource::Configuration dictionary_configuration
         {
-            .db = configuration.database,
-            .table = configuration.table,
+            .db = database,
+            .table = table,
             .query = query,
-            .where = config.getString(settings_config_prefix + ".where", ""),
-            .invalidate_query = config.getString(settings_config_prefix + ".invalidate_query", ""),
-            .update_field = config.getString(settings_config_prefix + ".update_field", ""),
-            .update_lag = config.getUInt64(settings_config_prefix + ".update_lag", 1),
-            .dont_check_update_time = config.getBool(settings_config_prefix + ".dont_check_update_time", false)
+            .where = where,
+            .invalidate_query = invalidate_query,
+            .update_field = update_field,
+            .update_lag = update_lag,
+            .dont_check_update_time = dont_check_update_time
         };
 
         return std::make_unique<MySQLDictionarySource>(dict_struct, dictionary_configuration, std::move(pool), sample_block, mysql_input_stream_settings);

@@ -25,6 +25,7 @@
 #    include <Databases/MySQL/DatabaseMySQL.h>
 #    include <Databases/MySQL/MaterializedMySQLSettings.h>
 #    include <Storages/MySQL/MySQLHelpers.h>
+#    include <Storages/StorageMySQL.h>
 #    include <Storages/MySQL/MySQLSettings.h>
 #    include <Databases/MySQL/DatabaseMaterializedMySQL.h>
 #    include <mysqlxx/Pool.h>
@@ -155,18 +156,19 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
         if (!engine->arguments)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Engine `{}` must have arguments", engine_name);
 
-        StorageMySQL::LConfiguration configuration;
+        StorageMySQL::Configuration configuration;
         ASTs & arguments = engine->arguments->children;
         MySQLSettings mysql_settings;
+        const auto & config = context->getConfigRef();
 
-        if (isNamedCollection(engine_args, config))
+        if (isNamedCollection(arguments, config))
         {
             const auto & config_keys = StorageMySQL::getConfigKeys();
-            auto collection_name = getCollectionName(engine_args);
+            auto collection_name = getCollectionName(arguments);
 
             auto configuration_from_config = getConfigurationFromNamedCollection(collection_name, config, config_keys);
-            overrideConfigurationFromNamedCollectionWithAST(engine_args, configuration_from_config, config_keys, context_);
-            configuration = StorageMySQL::parseConfigurationFromNamedCollection(configuration_from_config, context_);
+            overrideConfigurationFromNamedCollectionWithAST(arguments, configuration_from_config, config_keys, context);
+            configuration = StorageMySQL::parseConfigurationFromNamedCollection(configuration_from_config, context);
         }
         else
         {

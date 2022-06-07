@@ -109,7 +109,7 @@ Pipe StorageS3Cluster::read(
     auto cluster = context->getCluster(cluster_name)->getClusterWithReplicasAsShards(context->getSettingsRef());
 
     auto iterator = std::make_shared<StorageS3Source::DisclosedGlobIterator>(
-        *configuration.client, s3_configuration.uri, query_info.query, virtual_block, context);
+        *s3_configuration.client, *s3_configuration.uri, query_info.query, virtual_block, context);
     auto callback = std::make_shared<StorageS3Source::IteratorWrapper>([iterator]() mutable -> String { return iterator->next(); });
 
     /// Calculate the header. This is significant, because some columns could be thrown away in some cases like query with count(*)

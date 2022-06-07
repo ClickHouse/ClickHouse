@@ -283,7 +283,7 @@ StorageMySQL::Configuration StorageMySQL::parseConfigurationFromNamedCollection(
     return configuration;
 }
 
-StorageMySQL::Configuration StorageMySQL::getConfiguration(ASTs engine_args, ContextPtr context_, MySQLBaseSettings & storage_settings)
+StorageMySQL::Configuration StorageMySQL::getConfiguration(ASTs engine_args, ContextPtr context_, MySQLBaseSettings &)
 {
     StorageMySQL::Configuration configuration;
     const auto & config = context_->getConfigRef();
