@@ -24,7 +24,7 @@ void MergeTreeDataPartTTLInfo::update(const MergeTreeDataPartTTLInfo & other_inf
 
     max = std::max(other_info.max, max);
     if (ttl_finished.has_value())
-        ttl_finished = ttl_finished.value() & other_info.finished();
+        ttl_finished = ttl_finished.value() && other_info.finished();
     else
         ttl_finished = other_info.finished();
 }
