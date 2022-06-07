@@ -44,6 +44,8 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/ProfileEvents.h>
 
+#include <Access/KerberosInit.h>
+
 
 namespace CurrentMetrics
 {
@@ -514,6 +516,25 @@ void StorageKafka::updateConfiguration(cppkafka::Configuration & conf)
     auto config_prefix = getConfigPrefix();
     if (config.has(config_prefix))
         loadFromConfig(conf, config, config_prefix);
+
+    if (conf.has_property("sasl.kerberos.keytab") && conf.has_property("sasl.kerberos.principal"))
+    {
+        LOG_DEBUG(log, "ADQM: preparing KerberosInit");
+        String keytab = conf.get("sasl.kerberos.keytab");
+        String principal = conf.get("sasl.kerberos.principal");
+        LOG_DEBUG(log, "ADQM: keytab: {}, principal: {}", keytab, principal);
+        LOG_DEBUG(log, "ADQM: running KerberosInit");
+        KerberosInit k_init;
+        try
+        {
+            k_init.init(keytab,principal);
+        } catch (const DB::Exception & e) {
+            LOG_ERROR(log, "ADQM: KerberosInit failure: {}", DB::getExceptionMessage(e, false));
+        }
+        LOG_DEBUG(log, "ADQM: finished KerberosInit");
+        conf.set("sasl.kerberos.kinit.cmd","");
+        conf.set("sasl.kerberos.min.time.before.relogin","0");
+    }
 
     // Update consumer topic-specific configuration
     for (const auto & topic : topics)
