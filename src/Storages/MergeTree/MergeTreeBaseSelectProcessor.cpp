@@ -104,6 +104,11 @@ MergeTreeBaseSelectProcessor::MergeTreeBaseSelectProcessor(
 
         prewhere_actions->steps.emplace_back(std::move(prewhere_step));
 
+
+//        std::cerr
+//            << "PREWHERE ========================\n"
+//            << prewhere_actions->dump()
+//            << "========================\n\n";
     }
 }
 

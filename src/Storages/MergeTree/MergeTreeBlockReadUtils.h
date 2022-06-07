@@ -38,6 +38,17 @@ struct MergeTreeReadTaskColumns
     std::vector<NamesAndTypesList> pre_columns;
     /// resulting block may require reordering in accordance with `ordered_names`
     bool should_reorder = false;
+
+    std::string dump() const
+    {
+        std::ostringstream s;
+        for (size_t i = 0; i < pre_columns.size(); ++i)
+        {
+            s << "STEP " << i << ": " << pre_columns[i].toString() << "\n";
+        }
+        s << "COLUMNS: " << columns.toString() << "\n";
+        return s.str();
+    }
 };
 
 /// A batch of work for MergeTreeThreadSelectProcessor
