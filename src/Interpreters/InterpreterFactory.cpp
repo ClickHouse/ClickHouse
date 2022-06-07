@@ -4,6 +4,7 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTCreateFunctionQuery.h>
 #include <Parsers/ASTCreateIndexQuery.h>
+#include <Parsers/ASTDeleteQuery.h>
 #include <Parsers/ASTDropFunctionQuery.h>
 #include <Parsers/ASTDropIndexQuery.h>
 #include <Parsers/ASTDropQuery.h>
@@ -46,6 +47,7 @@
 #include <Interpreters/InterpreterCreateFunctionQuery.h>
 #include <Interpreters/InterpreterCreateIndexQuery.h>
 #include <Interpreters/InterpreterCreateQuery.h>
+#include <Interpreters/InterpreterDeleteQuery.h>
 #include <Interpreters/InterpreterDescribeQuery.h>
 #include <Interpreters/InterpreterDescribeCacheQuery.h>
 #include <Interpreters/InterpreterDropFunctionQuery.h>
@@ -313,6 +315,10 @@ std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, ContextMut
     else if (query->as<ASTBackupQuery>())
     {
         return std::make_unique<InterpreterBackupQuery>(query, context);
+    }
+    else if (query->as<ASTDeleteQuery>())
+    {
+        return std::make_unique<InterpreterDeleteQuery>(query, context);
     }
     else
     {
