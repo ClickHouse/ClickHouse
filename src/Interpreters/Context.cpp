@@ -3420,6 +3420,7 @@ ReadSettings Context::getReadSettings() const
 
     res.max_query_cache_size = settings.max_query_cache_size;
     res.skip_download_if_exceeds_query_cache = settings.skip_download_if_exceeds_query_cache;
+    res.enable_filesystem_use_query_cache_limit = settings.enable_filesystem_use_query_cache_limit;
 
     res.remote_read_min_bytes_for_seek = settings.remote_read_min_bytes_for_seek;
 
