@@ -281,7 +281,6 @@ public:
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const override
     {
-        // auto columnToDirection = parseStringToVector(data(place).query);
         auto columnToDirection = parseStringToVector(query);
         IColumn * columns[num_arguments];
 
