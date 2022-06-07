@@ -3,7 +3,7 @@ sidebar_position: 51
 sidebar_label: Pseudo-Random Numbers
 ---
 
-# Functions for Generating Pseudo-Random Numbers {#functions-for-generating-pseudo-random-numbers}
+# Functions for Generating Pseudo-Random Numbers
 
 All the functions accept zero arguments or one argument. If an argument is passed, it can be any type, and its value is not used for anything. The only purpose of this argument is to prevent common subexpression elimination, so that two different instances of the same function return different columns with different random numbers.
 
@@ -11,19 +11,19 @@ All the functions accept zero arguments or one argument. If an argument is passe
 Non-cryptographic generators of pseudo-random numbers are used.
 :::
 
-## rand, rand32 {#rand}
+## rand, rand32
 
 Returns a pseudo-random UInt32 number, evenly distributed among all UInt32-type numbers.
 
 Uses a linear congruential generator.
 
-## rand64 {#rand64}
+## rand64
 
 Returns a pseudo-random UInt64 number, evenly distributed among all UInt64-type numbers.
 
 Uses a linear congruential generator.
 
-## randConstant {#randconstant}
+## randConstant
 
 Produces a constant column with a random value.
 
@@ -62,17 +62,17 @@ Result:
 └────────────┴────────────┴──────────────┴────────────────┴─────────────────┴──────────────────────┘
 ```
 
-# Random Functions for Working with Strings {#random-functions-for-working-with-strings}
+# Random Functions for Working with Strings
 
-## randomString {#random-string}
+## randomString
 
-## randomFixedString {#random-fixed-string}
+## randomFixedString
 
-## randomPrintableASCII {#random-printable-ascii}
+## randomPrintableASCII
 
-## randomStringUTF8 {#random-string-utf8}
+## randomStringUTF8
 
-## fuzzBits {#fuzzbits}
+## fuzzBits
 
 **Syntax**
 

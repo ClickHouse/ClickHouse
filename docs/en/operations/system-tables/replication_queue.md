@@ -1,4 +1,4 @@
-# replication_queue {#system_tables-replication_queue}
+# replication_queue
 
 Contains information about tasks from replication queues stored in Clickhouse Keeper, or ZooKeeper, for tables in the `ReplicatedMergeTree` family.
 

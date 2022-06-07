@@ -2,7 +2,7 @@
 sidebar_position: 143
 ---
 
-# maxMap {#agg_functions-maxmap}
+# maxMap
 
 Syntax: `maxMap(key, value)` or `maxMap(Tuple(key, value))`
 

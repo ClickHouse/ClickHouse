@@ -12,15 +12,15 @@ ProxyListConfiguration::ProxyListConfiguration(std::vector<Poco::URI> proxies_) 
 }
 
 
-Aws::Client::ClientConfigurationPerRequest ProxyListConfiguration::getConfiguration(const Aws::Http::HttpRequest &)
+ClientConfigurationPerRequest ProxyListConfiguration::getConfiguration(const Aws::Http::HttpRequest &)
 {
     /// Avoid atomic increment if number of proxies is 1.
     size_t index = proxies.size() > 1 ? (access_counter++) % proxies.size() : 0;
 
-    Aws::Client::ClientConfigurationPerRequest cfg;
-    cfg.proxyScheme = Aws::Http::SchemeMapper::FromString(proxies[index].getScheme().c_str());
-    cfg.proxyHost = proxies[index].getHost();
-    cfg.proxyPort = proxies[index].getPort();
+    ClientConfigurationPerRequest cfg;
+    cfg.proxy_scheme = Aws::Http::SchemeMapper::FromString(proxies[index].getScheme().c_str());
+    cfg.proxy_host = proxies[index].getHost();
+    cfg.proxy_port = proxies[index].getPort();
 
     LOG_DEBUG(&Poco::Logger::get("AWSClient"), "Use proxy: {}", proxies[index].toString());
 
