@@ -9,7 +9,6 @@ cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance("node1", with_zookeeper=True, stay_alive=True)
 
 
-
 @pytest.fixture(scope="module")
 def start_cluster():
     try:
@@ -32,6 +31,7 @@ def start_cluster():
     finally:
         cluster.shutdown()
 
+
 def test_old_dirs_cleanup(start_cluster):
     node1.query("INSERT INTO test_table VALUES (toDate('2020-01-01'), 1, 10)")
     assert node1.query("SELECT count() FROM test_table") == "1\n"
@@ -42,7 +42,7 @@ def test_old_dirs_cleanup(start_cluster):
         [
             "bash",
             "-c",
-            'mv /var/lib/clickhouse/data/default/test_table/20200101_0_0_0 /var/lib/clickhouse/data/default/test_table/delete_tmp_20200101_0_0_0',
+            "mv /var/lib/clickhouse/data/default/test_table/20200101_0_0_0 /var/lib/clickhouse/data/default/test_table/delete_tmp_20200101_0_0_0",
         ],
         privileged=True,
     )
@@ -50,11 +50,7 @@ def test_old_dirs_cleanup(start_cluster):
     node1.start_clickhouse()
 
     result = node1.exec_in_container(
-        [
-            "bash",
-            "-c",
-            'ls /var/lib/clickhouse/data/default/test_table/'
-        ],
+        ["bash", "-c", "ls /var/lib/clickhouse/data/default/test_table/"],
         privileged=True,
     )
 
