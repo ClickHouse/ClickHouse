@@ -9,6 +9,7 @@
 #include <IO/WriteHelpers.h>
 #include <Parser/SerializedPlanParser.h>
 #include <boost/algorithm/string/case_conv.hpp>
+#include <Common/DebugUtils.h>
 
 
 namespace local_engine

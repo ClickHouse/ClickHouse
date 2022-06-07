@@ -12,6 +12,7 @@ namespace debug
 void headBlock(const DB::Block & block, size_t count)
 {
     std::cerr << "============Block============" << std::endl;
+    std::cerr << block.dumpStructure() << std::endl;
     // print header
     for (const auto& name : block.getNames())
     {

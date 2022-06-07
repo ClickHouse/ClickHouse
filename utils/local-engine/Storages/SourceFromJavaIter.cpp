@@ -1,5 +1,6 @@
 #include "SourceFromJavaIter.h"
 #include<Processors/Transforms/AggregatingTransform.h>
+#include<Common/DebugUtils.h>
 
 namespace local_engine
 {

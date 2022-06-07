@@ -34,6 +34,7 @@
 #include <Storages/StorageMergeTreeFactory.h>
 #include <Poco/Util/MapConfiguration.h>
 #include <Common/MergeTreeTool.h>
+#include <Common/DebugUtils.h>
 
 #include <base/logger_useful.h>
 using namespace DB;
@@ -520,8 +521,12 @@ void join(ActionsDAG::NodeRawConstPtrs v, char c, std::string & s)
     }
 }
 
-std::string SerializedPlanParser::getFunctionName(std::string function_signature, const substrait::Type & output_type, const ::PROTOBUF_NAMESPACE_ID::RepeatedPtrField< ::substrait::Expression >& args)
+std::string SerializedPlanParser::getFunctionName(
+    std::string function_signature,
+    const substrait::Expression_ScalarFunction & function)
 {
+    const auto& output_type = function.output_type();
+    auto args = function.args();
     auto function_name_idx = function_signature.find(':');
     //    assert(function_name_idx != function_signature.npos && ("invalid function signature: " + function_signature).c_str());
     auto function_name = function_signature.substr(0, function_name_idx);
@@ -590,6 +595,114 @@ std::string SerializedPlanParser::getFunctionName(std::string function_signature
     return ch_function_name;
 }
 
+std::string typeName(const substrait::Type & type)
+{
+    if (type.has_string())
+    {
+        return "String";
+    }
+    else if (type.has_i8())
+    {
+        return "I8";
+    }
+    else if (type.has_i16())
+    {
+        return "I16";
+    }
+    else if (type.has_i32())
+    {
+        return "I32";
+    }
+    else if (type.has_i64())
+    {
+        return "I64";
+    }
+    else if (type.has_fp32())
+    {
+        return "FP32";
+    }
+    else if (type.has_fp64())
+    {
+        return "FP64";
+    }
+    else if (type.has_bool_())
+    {
+        return "Boolean";
+    }
+    else if (type.has_date())
+    {
+        return "Date";
+    }
+
+    throw Exception(ErrorCodes::UNKNOWN_TYPE, "unknown type {}", magic_enum::enum_name(type.kind_case()));
+}
+
+bool isTypeSame(const substrait::Type & type, DataTypePtr data_type)
+{
+    static std::map<std::string, std::string> type_mapping
+        = {{"I8", "Int8"},
+           {"I16", "Int16"},
+           {"I32", "Int32"},
+           {"I64", "Int64"},
+           {"FP32", "Float32"},
+           {"FP64", "Float64"},
+           {"Date", "Date"},
+           {"String", "String"},
+           {"Boolean", "UInt8"}};
+    std::string type_name = typeName(type);
+    if (!type_mapping.contains(type_name))
+    {
+        throw Exception(ErrorCodes::UNKNOWN_TYPE, "unknown type {}", type_name);
+    }
+    return type_mapping.at(type_name) == data_type->getName();
+}
+
+std::string getCastFunction(const substrait::Type & type)
+{
+    std::string ch_function_name;
+    if (type.has_fp64())
+    {
+        ch_function_name = "toFloat64";
+    }
+    else if (type.has_fp32())
+    {
+        ch_function_name = "toFloat32";
+    }
+    else if (type.has_string())
+    {
+        ch_function_name = "toString";
+    }
+    else if (type.has_i64())
+    {
+        ch_function_name = "toInt64";
+    }
+    else if (type.has_i32())
+    {
+        ch_function_name = "toInt32";
+    }
+    else if (type.has_i16())
+    {
+        ch_function_name = "toInt16";
+    }
+    else if (type.has_i8())
+    {
+        ch_function_name = "toInt8";
+    }
+    else if (type.has_date())
+    {
+        ch_function_name = "toDate";
+    }
+    else if (type.has_bool_())
+    {
+        ch_function_name = "toUInt8";
+    }
+    else
+    {
+        throw Exception(ErrorCodes::UNKNOWN_TYPE, "doesn't support cast type {}", type.DebugString());
+    }
+    return ch_function_name;
+}
+
 const ActionsDAG::Node * SerializedPlanParser::parseFunctionWithDAG(
     const substrait::Expression & rel, string & result_name, DB::ActionsDAGPtr actions_dag, bool keep_result)
 {
@@ -600,7 +713,7 @@ const ActionsDAG::Node * SerializedPlanParser::parseFunctionWithDAG(
     const auto & scalar_function = rel.scalar_function();
 
     auto function_signature = this->function_mapping.at(std::to_string(rel.scalar_function().function_reference()));
-    auto function_name = getFunctionName(function_signature, scalar_function.output_type(), scalar_function.args());
+    auto function_name = getFunctionName(function_signature, scalar_function);
     ActionsDAG::NodeRawConstPtrs args;
     for (const auto & arg : scalar_function.args())
     {
@@ -634,9 +747,20 @@ const ActionsDAG::Node * SerializedPlanParser::parseFunctionWithDAG(
         join(args, ',', args_name);
         result_name = function_name + "(" + args_name + ")";
         const auto * function_node = &actions_dag->addFunction(function_builder, args, result_name);
-        if (keep_result)
-            actions_dag->addOrReplaceInIndex(*function_node);
         result_node = function_node;
+        if (!isTypeSame(rel.scalar_function().output_type(), function_node->result_type))
+        {
+            auto cast_function = getCastFunction(rel.scalar_function().output_type());
+            DB::ActionsDAG::NodeRawConstPtrs cast_args({function_node});
+            auto cast = FunctionFactory::instance().get(cast_function, this->context);
+            std::string cast_args_name;
+            join(cast_args, ',', cast_args_name);
+            result_name = cast_function + "(" + cast_args_name + ")";
+            const auto * cast_node = &actions_dag->addFunction(cast, cast_args, result_name);
+            result_node = cast_node;
+        }
+        if (keep_result)
+            actions_dag->addOrReplaceInIndex(*result_node);
     }
     return result_node;
 }
@@ -832,43 +956,7 @@ const ActionsDAG::Node * SerializedPlanParser::parseArgument(ActionsDAGPtr actio
             {
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Doesn't have type or input in cast node.");
             }
-            std::string ch_function_name;
-            if (rel.cast().type().has_fp64())
-            {
-                ch_function_name = "toFloat64";
-            }
-            else if (rel.cast().type().has_fp32())
-            {
-                ch_function_name = "toFloat32";
-            }
-            else if (rel.cast().type().has_string())
-            {
-                ch_function_name = "toString";
-            }
-            else if (rel.cast().type().has_i64())
-            {
-                ch_function_name = "toInt64";
-            }
-            else if (rel.cast().type().has_i32())
-            {
-                ch_function_name = "toInt32";
-            }
-            else if (rel.cast().type().has_i16())
-            {
-                ch_function_name = "toInt16";
-            }
-            else if (rel.cast().type().has_i8())
-            {
-                ch_function_name = "toInt8";
-            }
-            else if (rel.cast().type().has_date())
-            {
-                ch_function_name = "toDate";
-            }
-            else
-            {
-                throw Exception(ErrorCodes::UNKNOWN_TYPE, "doesn't support cast type {}", rel.cast().type().DebugString());
-            }
+            std::string ch_function_name = getCastFunction(rel.cast().type());
             DB::ActionsDAG::NodeRawConstPtrs args;
             auto cast_input = rel.cast().input();
             if (cast_input.has_selection())
