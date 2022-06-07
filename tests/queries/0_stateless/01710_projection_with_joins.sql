@@ -1,4 +1,5 @@
--- Tags: no-s3-storage
+-- Tags: no-s3-storage, ignore-order
+
 drop table if exists t;
 
 create table t (s UInt16, l UInt16, projection p (select s, l order by l)) engine MergeTree order by s;

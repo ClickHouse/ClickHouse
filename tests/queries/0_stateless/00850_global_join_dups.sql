@@ -1,4 +1,4 @@
--- Tags: global
+-- Tags: global, ignore-order
 
 DROP TABLE IF EXISTS t_local;
 DROP TABLE IF EXISTS t1_00850;

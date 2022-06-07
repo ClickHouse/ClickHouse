@@ -1,3 +1,5 @@
+-- Tags: ignore-order
+
 SELECT
     1 AS DomainID,
     Domain

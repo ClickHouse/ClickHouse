@@ -1,3 +1,5 @@
+-- Tags: ignore-order
+
 SET joined_subquery_requires_alias = 0;
 
 SELECT ax, c FROM (SELECT [1,2] ax, 0 c) ARRAY JOIN ax JOIN (SELECT 0 c) USING (c);
