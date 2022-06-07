@@ -37,11 +37,20 @@ public:
     {
     }
 
+    explicit ConnectionHolder(const String & connection_string_)
+        : pool(nullptr)
+        , connection()
+        , connection_string(connection_string_)
+    {
+        updateConnection();
+    }
+
     ConnectionHolder(const ConnectionHolder & other) = delete;
 
     ~ConnectionHolder()
     {
-        pool->returnObject(std::move(connection));
+        if (pool != nullptr)
+            pool->returnObject(std::move(connection));
     }
 
     nanodbc::connection & get() const
@@ -115,12 +124,12 @@ T execute(nanodbc::ConnectionHolderPtr connection_holder, std::function<T(nanodb
 }
 
 
-class ODBCConnectionFactory final : private boost::noncopyable
+class ODBCPooledConnectionFactory final : private boost::noncopyable
 {
 public:
-    static ODBCConnectionFactory & instance()
+    static ODBCPooledConnectionFactory & instance()
     {
-        static ODBCConnectionFactory ret;
+        static ODBCPooledConnectionFactory ret;
         return ret;
     }
 

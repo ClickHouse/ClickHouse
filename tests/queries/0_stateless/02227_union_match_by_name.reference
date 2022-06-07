@@ -22,10 +22,8 @@ Header: avgWeighted(x, y) Nullable(Float64)
               Header: 255 UInt8
                       1 UInt8
                       dummy UInt8
-                SettingQuotaAndLimits (Set limits and quota after reading from storage)
+                ReadFromStorage (SystemOne)
                 Header: dummy UInt8
-                  ReadFromStorage (SystemOne)
-                  Header: dummy UInt8
           Expression (Conversion before UNION)
           Header: x Nullable(UInt8)
                   y UInt8
@@ -36,9 +34,7 @@ Header: avgWeighted(x, y) Nullable(Float64)
               Header: NULL Nullable(Nothing)
                       1 UInt8
                       dummy UInt8
-                SettingQuotaAndLimits (Set limits and quota after reading from storage)
+                ReadFromStorage (SystemOne)
                 Header: dummy UInt8
-                  ReadFromStorage (SystemOne)
-                  Header: dummy UInt8
 SELECT avgWeighted(x, y) FROM (SELECT NULL, 255 AS x, 1 AS y UNION ALL SELECT y, NULL AS x, 1 AS y);
 255

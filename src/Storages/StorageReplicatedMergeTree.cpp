@@ -2503,7 +2503,7 @@ void StorageReplicatedMergeTree::cloneReplica(const String & source_replica, Coo
             source_queue.emplace_back();
             auto & info = source_queue.back();
             info.data = std::move(res.data);
-            info.stat = std::move(res.stat);
+            info.stat = res.stat;
             try
             {
                 info.parsed_entry = LogEntry::parse(info.data, info.stat);
@@ -4396,23 +4396,6 @@ void StorageReplicatedMergeTree::read(
         query_plan = std::move(*plan);
     }
 }
-
-Pipe StorageReplicatedMergeTree::read(
-    const Names & column_names,
-    const StorageSnapshotPtr & storage_snapshot,
-    SelectQueryInfo & query_info,
-    ContextPtr local_context,
-    QueryProcessingStage::Enum processed_stage,
-    const size_t max_block_size,
-    const unsigned num_streams)
-{
-    QueryPlan plan;
-    read(plan, column_names, storage_snapshot, query_info, local_context, processed_stage, max_block_size, num_streams);
-    return plan.convertToPipe(
-        QueryPlanOptimizationSettings::fromContext(local_context),
-        BuildQueryPipelineSettings::fromContext(local_context));
-}
-
 
 template <class Func>
 void StorageReplicatedMergeTree::foreachActiveParts(Func && func, bool select_sequential_consistency) const
@@ -7122,6 +7105,13 @@ bool StorageReplicatedMergeTree::dropPartImpl(
         /// finished the merge.
         String out_reason;
         if (!merge_pred.canMergeSinglePart(part, &out_reason))
+        {
+            if (throw_if_noop)
+                throw Exception(ErrorCodes::PART_IS_TEMPORARILY_LOCKED, out_reason);
+            return false;
+        }
+
+        if (merge_pred.partParticipatesInReplaceRange(part, &out_reason))
         {
             if (throw_if_noop)
                 throw Exception(ErrorCodes::PART_IS_TEMPORARILY_LOCKED, out_reason);
