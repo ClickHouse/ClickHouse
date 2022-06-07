@@ -18,7 +18,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
+    extern const int BAD_ARGUMENTS;
     extern const int TABLE_IS_READ_ONLY;
 }
 
@@ -64,7 +64,7 @@ BlockIO InterpreterDeleteQuery::execute()
     /// TODO: Mark this delete as lightweight.
     MutationCommands mutation_commands;
     MutationCommand mut_command;
- 
+
     mut_command.type = MutationCommand::Type::DELETE;
     mut_command.predicate = delete_query.predicate;
 
