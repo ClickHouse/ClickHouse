@@ -45,6 +45,8 @@ struct PrewhereExprInfo
 /////    PrewhereExprStep deleted_row_filter;
 /////    PrewhereExprStep row_level_filter;
 /////    PrewhereExprStep prewhere;
+
+    std::string dump() const;
 };
 
 /*/

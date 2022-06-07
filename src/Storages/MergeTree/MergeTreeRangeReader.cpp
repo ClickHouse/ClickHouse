@@ -1,3 +1,4 @@
+#include <sstream>
 #include <Storages/MergeTree/IMergeTreeReader.h>
 #include <Columns/FilterDescription.h>
 #include <Columns/ColumnConst.h>
@@ -1298,6 +1299,22 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
             result.clearFilter(); // Acting as a flag to not filter in PREWHERE
         }
     }
+}
+
+std::string PrewhereExprInfo::dump() const
+{
+    std::ostringstream s;
+
+    for (size_t i = 0; i < steps.size(); ++i)
+    {
+        s << "STEP " << i << ":\n"
+            << "  ACTIONS: " << steps[i].actions->dumpActions() << "\n"
+            << "  COLUMN: " << steps[i].column_name << "\n"
+            << "  REMOVE_COLUMN: " << steps[i].remove_column << "\n"
+            << "  NEED_FILTER: " << steps[i].need_filter << "\n";
+    }
+
+    return s.str();
 }
 
 }
