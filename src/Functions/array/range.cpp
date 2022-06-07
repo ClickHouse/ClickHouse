@@ -96,6 +96,9 @@ private:
             IColumn::Offset offset{};
             for (size_t row_idx = 0, rows = in->size(); row_idx < rows; ++row_idx)
             {
+                #if defined(__clang__)
+                #pragma clang loop unroll_count(2)
+                #endif
                 for (size_t elem_idx = 0, elems = in_data[row_idx]; elem_idx < elems; ++elem_idx)
                     out_data[offset + elem_idx] = elem_idx;
 
