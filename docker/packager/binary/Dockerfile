@@ -54,8 +54,12 @@ RUN apt-get update \
     && apt-get clean
 
 # Rust toolchain and libraries
-RUN curl https://sh.rustup.rs -sSf | bash -s -- -y && chmod gou+x -R /root/.cargo/
-ENV PATH="/root/.cargo/bin:${PATH}"
+ENV RUSTUP_HOME=/rust/rustup
+ENV CARGO_HOME=/rust/cargo
+RUN curl https://sh.rustup.rs -sSf | bash -s -- -y
+RUN chmod 777 -R /rust
+ENV PATH="/rust/cargo/env:${PATH}"
+ENV PATH="/rust/cargo/bin:${PATH}"
 RUN rustup target add aarch64-unknown-linux-gnu && \
         rustup target add x86_64-apple-darwin && \
         rustup target add x86_64-unknown-freebsd && \
