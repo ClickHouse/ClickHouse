@@ -33,10 +33,10 @@
 
 class NoRetryStrategy : public Aws::Client::StandardRetryStrategy
 {
-    bool ShouldRetry(const Aws::Client::AWSError<Aws::Client::CoreErrors> &, long) const override { return false; }
+    bool ShouldRetry(const Aws::Client::AWSError<Aws::Client::CoreErrors> &, long /* NOLINT */) const override { return false; }
 
 public:
-    ~NoRetryStrategy() override {}
+    ~NoRetryStrategy() override = default;
 };
 
 
@@ -47,7 +47,7 @@ TEST(IOTestAwsS3Client, AppendExtraSSECHeaders)
     class MyRequestHandler : public Poco::Net::HTTPRequestHandler
     {
     public:
-        virtual void handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response) override
+        void handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response) override
         {
             response.setStatus(Poco::Net::HTTPResponse::HTTP_OK);
             std::ostream & out = response.send();
@@ -80,7 +80,7 @@ TEST(IOTestAwsS3Client, AppendExtraSSECHeaders)
     String access_key_id = "ACCESS_KEY_ID";
     String secret_access_key = "SECRET_ACCESS_KEY";
     String region = "us-east-1";
-    String version_id = "";
+    String version_id;
     UInt64 max_single_read_retries = 1;
     bool enable_s3_requests_logging = false;
     DB::S3::PocoHTTPClientConfiguration client_configuration = DB::S3::ClientFactory::instance().createClientConfiguration(
