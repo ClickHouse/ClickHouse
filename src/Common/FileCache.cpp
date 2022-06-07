@@ -1295,7 +1295,7 @@ void LRUFileCache::assertQueueCorrectness(std::lock_guard<std::mutex> & cache_lo
 
     assert(total_size == queue.getTotalWeight(cache_lock));
     assert(queue.getTotalWeight(cache_lock) <= max_size);
-    assert(queue.size() <= max_element_size);
+    assert(queue.getElementsNum() <= max_element_size);
 }
 
 }
