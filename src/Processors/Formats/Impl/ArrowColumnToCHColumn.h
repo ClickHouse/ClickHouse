@@ -37,8 +37,6 @@ public:
         bool ignore_case = false);
 
 private:
-    /// Update missing columns that exists in header but not in arrow::Schema
-    void updateMissingColumns();
 
     const Block & header;
     std::shared_ptr<arrow::Schema> schema;
@@ -47,10 +45,8 @@ private:
     /// If false, throw exception if some columns in header not exists in arrow table.
     bool allow_missing_columns;
     bool case_insensitive_matching;
-    // bool null_as_default;
+    bool null_as_default;
     bool defaults_for_omitted_fields;
-
-    std::vector<size_t> missing_columns;
 
     /// Map {column name : dictionary column}.
     /// To avoid converting dictionary from Arrow Dictionary

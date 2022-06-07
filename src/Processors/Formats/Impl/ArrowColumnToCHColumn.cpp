@@ -30,6 +30,7 @@
 #include <Columns/ColumnNothing.h>
 #include <Interpreters/castColumn.h>
 #include <Common/quoteString.h>
+#include <Functions/FunctionHelpers.h>
 #include <algorithm>
 #include <arrow/builder.h>
 #include <arrow/array.h>
@@ -569,7 +570,7 @@ ArrowColumnToCHColumn::ArrowColumnToCHColumn(const Block & header_, std::shared_
     : header(header_)
     , schema(std::move(schema_))
     , format_name(format_name_)
-    // , null_as_default(settings_.null_as_default)
+    , null_as_default(settings_.null_as_default)
     , defaults_for_omitted_fields(settings_.defaults_for_omitted_fields)
 {
     if (format_name == "ORC")
@@ -594,8 +595,6 @@ ArrowColumnToCHColumn::ArrowColumnToCHColumn(const Block & header_, std::shared_
     {
         throw Exception(ErrorCodes::UNKNOWN_FORMAT, "Unsupported format {}", format_name);
     }
-
-    updateMissingColumns();
 }
 
 void ArrowColumnToCHColumn::arrowTableToCHChunk(
@@ -663,6 +662,9 @@ void ArrowColumnToCHColumn::arrowColumnsToCHChunk(
                 if (!allow_missing_columns)
                     throw Exception{ErrorCodes::THERE_IS_NO_COLUMN, "Column '{}' is not presented in input data.", header_column.name};
 
+                if (defaults_for_omitted_fields)
+                    block_missing_values.setBits(column_i, num_rows);
+
                 ColumnWithTypeAndName column;
                 column.name = header_column.name;
                 column.type = header_column.type;
@@ -671,7 +673,6 @@ void ArrowColumnToCHColumn::arrowColumnsToCHChunk(
                 continue;
             }
         }
-
 
         ColumnWithTypeAndName column;
         if (read_from_nested)
@@ -688,6 +689,32 @@ void ArrowColumnToCHColumn::arrowColumnsToCHChunk(
 
         try
         {
+            if (null_as_default && (column.type->isNullable() || column.type->isLowCardinalityNullable())
+                && !header_column.type->isNullable() && !header_column.type->isLowCardinalityNullable())
+            {
+                const bool has_lowcardinality = column.type->isLowCardinalityNullable();
+                if (has_lowcardinality)
+                {
+                    const auto * type_lowcardinality = checkAndGetDataType<DataTypeLowCardinality>(column.type.get());
+                    column.type = type_lowcardinality->getDictionaryType();
+                    column.column = column.column->convertToFullColumnIfLowCardinality();
+                }
+
+                DataTypePtr type_without_nullable;
+                ColumnPtr column_without_nullable;
+                type_without_nullable = removeNullable(column.type);
+                const auto * column_nullable = checkAndGetColumn<ColumnNullable>(column.column.get());
+                column_without_nullable = column_nullable->getNestedColumnPtr();
+
+                const auto & null_map = column_nullable->getNullMapData();
+                for (size_t row_i = 0; row_i < column.column->size(); ++row_i)
+                    if (null_map[row_i])
+                        block_missing_values.setBit(column_i, row_i);
+
+                column.type = type_without_nullable;
+                column.column = column_without_nullable;
+            }
+
             column.column = castColumn(column, header_column.type);
         }
         catch (Exception & e)
@@ -705,39 +732,6 @@ void ArrowColumnToCHColumn::arrowColumnsToCHChunk(
     }
 
     res.setColumns(columns_list, num_rows);
-
-    /// If defaults_for_omitted_fields is true, calculate the default values from default expression for omitted fields.
-    /// Otherwise fill the missing columns with zero values of its type.
-    if (defaults_for_omitted_fields && !missing_columns.empty())
-        for (const auto & column_i : missing_columns)
-            block_missing_values.setBits(column_i, res.getNumRows());
-
-}
-
-void ArrowColumnToCHColumn::updateMissingColumns()
-{
-    auto block_from_arrow = arrowSchemaToCHHeader(*schema, format_name, false, &header, case_insensitive_matching);
-    auto flatten_block_from_arrow = Nested::flatten(block_from_arrow);
-
-    for (size_t i = 0, columns = header.columns(); i < columns; ++i)
-    {
-        const auto & header_column = header.getByPosition(i);
-        bool read_from_nested = false;
-        String nested_table_name = Nested::extractTableName(header_column.name);
-        if (!block_from_arrow.has(header_column.name, case_insensitive_matching))
-        {
-            if (import_nested && block_from_arrow.has(nested_table_name, case_insensitive_matching))
-                read_from_nested = flatten_block_from_arrow.has(header_column.name, case_insensitive_matching);
-
-            if (!read_from_nested)
-            {
-                if (!allow_missing_columns)
-                    throw Exception{ErrorCodes::THERE_IS_NO_COLUMN, "Column '{}' is not presented in input data.", header_column.name};
-
-                missing_columns.push_back(i);
-            }
-        }
-    }
 }
 
 }
