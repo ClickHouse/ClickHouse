@@ -221,6 +221,16 @@ def get_bytes(s):
     return s.encode()
 
 
+def assert_ephemeral_disappear(connection, path):
+    for _ in range(200):
+        if not connection.exists(path):
+            break
+
+        time.sleep(0.1)
+    else:
+        raise Exception("ZK refuse to remove ephemeral nodes")
+
+
 @pytest.mark.parametrize(("create_snapshots"), [True, False])
 def test_simple_crud_requests(started_cluster, create_snapshots):
     restart_and_clear_zookeeper()
@@ -265,13 +275,7 @@ def test_simple_crud_requests(started_cluster, create_snapshots):
 
     fake_connection = get_fake_zk(timeout=5)
     for conn in [genuine_connection, fake_connection]:
-        for i in range(200):
-            if not conn.exists("/test_ephemeral/0"):
-                break
-
-            time.sleep(0.1)
-        else:
-            raise Exception("ZK refuse to remove ephemeral nodes")
+        assert_ephemeral_disappear(conn, "/test_ephemeral/0")
 
     # After receiving close request zookeeper updates pzxid of ephemeral parent.
     # Keeper doesn't receive such request (snapshot created before it) so it doesn't do it.
@@ -353,13 +357,7 @@ def test_multi_and_failed_requests(started_cluster, create_snapshots):
     fake_connection = get_fake_zk(timeout=5)
 
     for conn in [genuine_connection, fake_connection]:
-        for i in range(200):
-            if not conn.exists("/test_multitransactions/fred0"):
-                break
-
-            time.sleep(0.1)
-        else:
-            raise Exception("ZK refuse to remove ephemeral nodes")
+        assert_ephemeral_disappear(conn, "/test_multitransactions/fred0")
 
     # After receiving close request zookeeper updates pzxid of ephemeral parent.
     # Keeper doesn't receive such request (snapshot created before it) so it doesn't do it.
