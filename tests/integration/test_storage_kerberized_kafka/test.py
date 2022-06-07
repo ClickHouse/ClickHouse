@@ -122,6 +122,7 @@ def test_kafka_json_as_string(kafka_cluster):
 {"t": 124, "e": {"x": "test"} }
 {"F1":"V1","F2":{"F21":"V21","F22":{},"F23":"V23","F24":"2019-12-24T16:28:04"},"F3":"V3"}
 """
+    logging.debug("ADQM: logs: %s", instance.grep_in_log("ADQM"))
     assert TSV(result) == TSV(expected)
     assert instance.contains_in_log(
         "Parsing of message (topic: kafka_json_as_string, partition: 0, offset: 1) return no rows"
@@ -182,7 +183,8 @@ def test_kafka_json_as_string_no_kdc(kafka_cluster):
     assert TSV(result) == TSV(expected)
     assert instance.contains_in_log("StorageKafka (kafka_no_kdc): Nothing to commit")
     assert instance.contains_in_log("Ticket expired")
-    assert instance.contains_in_log("Kerberos ticket refresh failed")
+    #~ assert instance.contains_in_log("Kerberos ticket refresh failed")
+    assert instance.contains_in_log("KerberosInit failure:")
 
 
 if __name__ == "__main__":

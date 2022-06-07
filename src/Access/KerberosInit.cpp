@@ -9,6 +9,7 @@ int KerberosInit::init(const String & keytab_file, const String & principal, con
 {
     auto adqm_log = &Poco::Logger::get("ADQM");
     LOG_DEBUG(adqm_log,"KerberosInit: begin");
+    //LOG_DEBUG(adqm_log,"KerberosInit: do nothing"); return 0;
 
     krb5_error_code ret;
 
