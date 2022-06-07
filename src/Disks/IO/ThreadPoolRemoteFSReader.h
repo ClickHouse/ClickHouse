@@ -1,8 +1,8 @@
 #pragma once
 
 #include <IO/AsynchronousReader.h>
+#include <IO/ReadBuffer.h>
 #include <Common/ThreadPool.h>
-#include <Disks/IO/ReadBufferFromRemoteFSGather.h>
 
 namespace DB
 {

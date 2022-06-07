@@ -25,8 +25,6 @@ class HiveSettings;
 class StorageHive final : public IStorage, WithContext
 {
 public:
-    static AsynchronousReaderPtr getThreadPoolReader();
-
     friend class StorageHiveSource;
 
     StorageHive(

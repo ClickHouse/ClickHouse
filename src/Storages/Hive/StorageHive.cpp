@@ -912,14 +912,6 @@ StorageHive::totalRowsImpl(const Settings & settings, const SelectQueryInfo & qu
     return total_rows;
 }
 
-AsynchronousReaderPtr StorageHive::getThreadPoolReader()
-{
-    constexpr size_t pool_size = 50;
-    constexpr size_t queue_size = 1000000;
-    static AsynchronousReaderPtr reader = std::make_shared<ThreadPoolRemoteFSReader>(pool_size, queue_size);
-    return reader;
-}
-
 void registerStorageHive(StorageFactory & factory)
 {
     factory.registerStorage(
