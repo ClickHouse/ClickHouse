@@ -3,8 +3,6 @@
 #include <Core/SortDescription.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 
-namespace JSONBuilder { class JSONMap; }
-
 namespace DB
 {
 
