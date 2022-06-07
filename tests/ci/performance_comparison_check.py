@@ -148,14 +148,12 @@ if __name__ == "__main__":
     logging.info("Going to run command %s", run_command)
 
     popen_env = os.environ.copy()
-    popen_env["CHPC_DATABASE_URL"] = (
-        get_parameter_from_ssm("clickhouse-test-stat-url"),
+    popen_env["CHPC_DATABASE_URL"] = get_parameter_from_ssm("clickhouse-test-stat-url")
+    popen_env["CHPC_DATABASE_USER"] = get_parameter_from_ssm(
+        "clickhouse-test-stat-login"
     )
-    popen_env["CHPC_DATABASE_USER"] = (
-        get_parameter_from_ssm("clickhouse-test-stat-login"),
-    )
-    popen_env["CHPC_DATABASE_PASSWORD"] = (
-        get_parameter_from_ssm("clickhouse-test-stat-password"),
+    popen_env["CHPC_DATABASE_PASSWORD"] = get_parameter_from_ssm(
+        "clickhouse-test-stat-password"
     )
 
     run_log_path = os.path.join(temp_path, "runlog.log")
