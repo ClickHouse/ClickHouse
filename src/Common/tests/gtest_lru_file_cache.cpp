@@ -111,7 +111,6 @@ TEST(LRUFileCache, get)
     settings.max_elements = 5;
     auto cache = DB::LRUFileCache(cache_base_path, settings);
     cache.initialize();
-    cache.createOrSetQueryContext(query_id, read_settings);
     auto key = cache.hash("key1");
 
     {
@@ -518,5 +517,4 @@ TEST(LRUFileCache, get)
         assertRange(50, segments1[2], DB::FileSegment::Range(20, 24), DB::FileSegment::State::EMPTY);
     }
 
-    cache.tryReleaseQueryContext(query_id);
 }
