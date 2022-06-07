@@ -561,7 +561,7 @@ create table query_metric_stats_denorm engine File(TSVWithNamesAndTypes,
 " 2> >(tee -a analyze/errors.log 1>&2)
 
 # Fetch historical query variability thresholds from the CI database
-if [ -v CHPC_DATABASE_URL ]
+if [ -v CLICKHOUSE_PERFORMANCE_COMPARISON_DATABASE_URL ]
 then
     set +x # Don't show password in the log
     client=(clickhouse-client
@@ -569,10 +569,10 @@ then
         # so I have to extract host and port with clickhouse-local. I tried to use
         # Poco URI parser to support this in the client, but it's broken and can't
         # parse host:port.
-        $(clickhouse-local --query "with '${CHPC_DATABASE_URL}' as url select '--host ' || domain(url) || ' --port ' || toString(port(url)) format TSV")
+        $(clickhouse-local --query "with '${CLICKHOUSE_PERFORMANCE_COMPARISON_DATABASE_URL}' as url select '--host ' || domain(url) || ' --port ' || toString(port(url)) format TSV")
         --secure
-        --user "${CHPC_DATABASE_USER}"
-        --password "${CHPC_DATABASE_PASSWORD}"
+        --user "${CLICKHOUSE_PERFORMANCE_COMPARISON_DATABASE_USER}"
+        --password "${CLICKHOUSE_PERFORMANCE_COMPARISON_DATABASE_USER_PASSWORD}"
         --config "right/config/client_config.xml"
         --database perftest
         --date_time_input_format=best_effort)
@@ -1244,7 +1244,7 @@ create table ci_checks engine File(TSVWithNamesAndTypes, 'ci-checks.tsv')
 ;
     "
 
-    if ! [ -v CHPC_DATABASE_URL ]
+    if ! [ -v CLICKHOUSE_PERFORMANCE_COMPARISON_DATABASE_URL ]
     then
         echo Database for test results is not specified, will not upload them.
         return 0
@@ -1256,10 +1256,10 @@ create table ci_checks engine File(TSVWithNamesAndTypes, 'ci-checks.tsv')
         # so I have to extract host and port with clickhouse-local. I tried to use
         # Poco URI parser to support this in the client, but it's broken and can't
         # parse host:port.
-        $(clickhouse-local --query "with '${CHPC_DATABASE_URL}' as url select '--host ' || domain(url) || ' --port ' || toString(port(url)) format TSV")
+        $(clickhouse-local --query "with '${CLICKHOUSE_PERFORMANCE_COMPARISON_DATABASE_URL}' as url select '--host ' || domain(url) || ' --port ' || toString(port(url)) format TSV")
         --secure
-        --user "${CHPC_DATABASE_USER}"
-        --password "${CHPC_DATABASE_PASSWORD}"
+        --user "${CLICKHOUSE_PERFORMANCE_COMPARISON_DATABASE_USER}"
+        --password "${CLICKHOUSE_PERFORMANCE_COMPARISON_DATABASE_USER_PASSWORD}"
         --config "right/config/client_config.xml"
         --database perftest
         --date_time_input_format=best_effort)
