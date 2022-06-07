@@ -70,6 +70,7 @@ namespace ErrorCodes
     extern const int THERE_IS_NO_COLUMN;
     extern const int UNKNOWN_EXCEPTION;
     extern const int INCORRECT_NUMBER_OF_COLUMNS;
+    extern const int UNKNOWN_FORMAT;
 }
 
 /// Inserts numeric data right into internal column data to reduce an overhead
@@ -564,21 +565,41 @@ Block ArrowColumnToCHColumn::arrowSchemaToCHHeader(
     return Block(std::move(sample_columns));
 }
 
-ArrowColumnToCHColumn::ArrowColumnToCHColumn(
-    const Block & header_,
-    const std::string & format_name_,
-    bool import_nested_,
-    bool allow_missing_columns_,
-    bool case_insensitive_matching_)
+ArrowColumnToCHColumn::ArrowColumnToCHColumn(const Block & header_, std::shared_ptr<arrow::Schema> schema_, const std::string & format_name_, const FormatSettings & settings_)
     : header(header_)
+    , schema(std::move(schema_))
     , format_name(format_name_)
-    , import_nested(import_nested_)
-    , allow_missing_columns(allow_missing_columns_)
-    , case_insensitive_matching(case_insensitive_matching_)
+    // , null_as_default(settings_.null_as_default)
+    , defaults_for_omitted_fields(settings_.defaults_for_omitted_fields)
 {
+    if (format_name == "ORC")
+    {
+        import_nested = settings_.orc.import_nested;
+        allow_missing_columns = settings_.orc.allow_missing_columns;
+        case_insensitive_matching = settings_.orc.case_insensitive_column_matching;
+    }
+    else if (format_name == "Parquet")
+    {
+        import_nested = settings_.parquet.import_nested;
+        allow_missing_columns = settings_.parquet.allow_missing_columns;
+        case_insensitive_matching = settings_.parquet.case_insensitive_column_matching;
+    }
+    else if (format_name == "Arrow")
+    {
+        import_nested = settings_.arrow.import_nested;
+        allow_missing_columns = settings_.arrow.allow_missing_columns;
+        case_insensitive_matching = settings_.arrow.case_insensitive_column_matching;
+    }
+    else
+    {
+        throw Exception(ErrorCodes::UNKNOWN_FORMAT, "Unsupported format {}", format_name);
+    }
+
+    updateMissingColumns();
 }
 
-void ArrowColumnToCHColumn::arrowTableToCHChunk(Chunk & res, std::shared_ptr<arrow::Table> & table)
+void ArrowColumnToCHColumn::arrowTableToCHChunk(
+    Chunk & res, std::shared_ptr<arrow::Table> & table, BlockMissingValues & block_missing_values)
 {
     NameToColumnPtr name_to_column_ptr;
     for (auto column_name : table->ColumnNames())
@@ -592,10 +613,11 @@ void ArrowColumnToCHColumn::arrowTableToCHChunk(Chunk & res, std::shared_ptr<arr
         name_to_column_ptr[std::move(column_name)] = arrow_column;
     }
 
-    arrowColumnsToCHChunk(res, name_to_column_ptr);
+    arrowColumnsToCHChunk(res, name_to_column_ptr, block_missing_values);
 }
 
-void ArrowColumnToCHColumn::arrowColumnsToCHChunk(Chunk & res, NameToColumnPtr & name_to_column_ptr)
+void ArrowColumnToCHColumn::arrowColumnsToCHChunk(
+    Chunk & res, NameToColumnPtr & name_to_column_ptr, BlockMissingValues & block_missing_values)
 {
     if (unlikely(name_to_column_ptr.empty()))
         throw Exception(ErrorCodes::INCORRECT_NUMBER_OF_COLUMNS, "Columns is empty");
@@ -683,12 +705,18 @@ void ArrowColumnToCHColumn::arrowColumnsToCHChunk(Chunk & res, NameToColumnPtr &
     }
 
     res.setColumns(columns_list, num_rows);
+
+    /// If defaults_for_omitted_fields is true, calculate the default values from default expression for omitted fields.
+    /// Otherwise fill the missing columns with zero values of its type.
+    if (defaults_for_omitted_fields && !missing_columns.empty())
+        for (const auto & column_i : missing_columns)
+            block_missing_values.setBits(column_i, res.getNumRows());
+
 }
 
-std::vector<size_t> ArrowColumnToCHColumn::getMissingColumns(const arrow::Schema & schema) const
+void ArrowColumnToCHColumn::updateMissingColumns()
 {
-    std::vector<size_t> missing_columns;
-    auto block_from_arrow = arrowSchemaToCHHeader(schema, format_name, false, &header, case_insensitive_matching);
+    auto block_from_arrow = arrowSchemaToCHHeader(*schema, format_name, false, &header, case_insensitive_matching);
     auto flatten_block_from_arrow = Nested::flatten(block_from_arrow);
 
     for (size_t i = 0, columns = header.columns(); i < columns; ++i)
@@ -710,7 +738,6 @@ std::vector<size_t> ArrowColumnToCHColumn::getMissingColumns(const arrow::Schema
             }
         }
     }
-    return missing_columns;
 }
 
 }
