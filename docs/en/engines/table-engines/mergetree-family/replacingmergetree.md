@@ -3,7 +3,7 @@ sidebar_position: 40
 sidebar_label:  ReplacingMergeTree
 ---
 
-# ReplacingMergeTree {#replacingmergetree}
+# ReplacingMergeTree
 
 The engine differs from [MergeTree](../../../engines/table-engines/mergetree-family/mergetree.md#table_engines-mergetree) in that it removes duplicate entries with the same [sorting key](../../../engines/table-engines/mergetree-family/mergetree.md) value (`ORDER BY` table section, not `PRIMARY KEY`).
 

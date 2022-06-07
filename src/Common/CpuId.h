@@ -221,7 +221,7 @@ bool haveAVX512F() noexcept
            && (our_xgetbv(0) & 6u) == 6u              // XMM state and YMM state are enabled by OS
            && ((our_xgetbv(0) >> 5) & 7u) == 7u       // ZMM state is enabled by OS
            && CpuInfo(0x0).registers.eax >= 0x7          // leaf 7 is present
-           && ((CpuInfo(0x7).registers.ebx >> 16) & 1u); // AVX512F bit
+           && ((CpuInfo(0x7, 0).registers.ebx >> 16) & 1u); // AVX512F bit
 #else
     return false;
 #endif
