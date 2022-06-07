@@ -18,6 +18,37 @@ using PrewhereInfoPtr = std::shared_ptr<PrewhereInfo>;
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
+//*
+struct PrewhereExprStep 
+{
+    ExpressionActionsPtr actions;
+    String column_name;
+    bool remove_column = false;
+    bool need_filter = false;
+};
+
+/// The same as PrewhereInfo, but with ExpressionActions instead of ActionsDAG
+struct PrewhereExprInfo
+{
+//    /// Actions for row level security filter. Applied separately before prewhere_actions.
+//    /// This actions are separate because prewhere condition should not be executed over filtered rows.
+//    ExpressionActionsPtr row_level_filter;
+//    /// Actions which are executed on block in order to get filter column for prewhere step.
+//    ExpressionActionsPtr prewhere_actions;
+//    String row_level_column_name;
+//    String prewhere_column_name;
+//    bool remove_prewhere_column = false;
+//    bool need_filter = false;
+
+    std::vector<PrewhereExprStep> steps;
+
+/////    PrewhereExprStep deleted_row_filter;
+/////    PrewhereExprStep row_level_filter;
+/////    PrewhereExprStep prewhere;
+};
+
+/*/
+
 /// The same as PrewhereInfo, but with ExpressionActions instead of ActionsDAG
 struct PrewhereExprInfo
 {
@@ -31,6 +62,7 @@ struct PrewhereExprInfo
     bool remove_prewhere_column = false;
     bool need_filter = false;
 };
+//*/
 
 /// MergeTreeReader iterator which allows sequential reading for arbitrary number of rows between pairs of marks in the same part.
 /// Stores reading state, which can be inside granule. Can skip rows in current granule and start reading from next mark.
@@ -41,7 +73,7 @@ public:
     MergeTreeRangeReader(
         IMergeTreeReader * merge_tree_reader_,
         MergeTreeRangeReader * prev_reader_,
-        const PrewhereExprInfo * prewhere_info_,
+        const PrewhereExprStep * prewhere_info_,
         bool last_reader_in_chain_,
         const Names & non_const_virtual_column_names);
 
@@ -251,7 +283,7 @@ private:
     IMergeTreeReader * merge_tree_reader = nullptr;
     const MergeTreeIndexGranularity * index_granularity = nullptr;
     MergeTreeRangeReader * prev_reader = nullptr; /// If not nullptr, read from prev_reader firstly.
-    const PrewhereExprInfo * prewhere_info;
+    const PrewhereExprStep * prewhere_info;
 
     Stream stream;
 
