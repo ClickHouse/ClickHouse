@@ -32,7 +32,7 @@ namespace
 
 static bool isQueryInitialized()
 {
-    return (!CurrentThread::isInitialized() || !CurrentThread::get().getQueryContext() || CurrentThread::getQueryId().size == 0) ? false : true;
+    return CurrentThread::isInitialized() && CurrentThread::get().getQueryContext() && CurrentThread::getQueryId().size != 0;
 }
 
 IFileCache::IFileCache(
@@ -486,13 +486,12 @@ FileSegmentsHolder LRUFileCache::setDownloading(const Key & key, size_t offset, 
     return FileSegmentsHolder(std::move(file_segments));
 }
 
-LRUFileCache::QueryContextPtr LRUFileCache::getCurrentQueryContext(std::lock_guard<std::mutex> &) const
+LRUFileCache::QueryContextPtr LRUFileCache::getCurrentQueryContext(std::lock_guard<std::mutex> & cache_lock) const
 {
     if (!isQueryInitialized())
         return nullptr;
 
-    auto query_iter = query_map.find(CurrentThread::getQueryId().toString());
-    return (query_iter == query_map.end()) ? nullptr : query_iter->second;
+    return getQueryContext(CurrentThread::getQueryId().toString(), cache_lock);
 }
 
 LRUFileCache::QueryContextPtr LRUFileCache::getQueryContext(const String & query_id, std::lock_guard<std::mutex> &) const
@@ -506,33 +505,32 @@ bool LRUFileCache::tryReserve(const Key & key, size_t offset, size_t size, std::
     auto query_context = getCurrentQueryContext(cache_lock);
 
     /// If the context can be found, subsequent cache replacements are made through the Query context.
-    if (query_context != nullptr)
+    if (query_context != nullptr && query_context->enableCacheLimit())
     {
         auto res = tryReserveForQuery(key, offset, size, query_context, cache_lock);
 
-        if (res == ReserveResult::FINISHED)
+        switch (res)
         {
-            /// When the maximum cache size of the query is reached, the cache will be
-            /// evicted from the history cache accessed by the current query.
-            return true;
-        }
-        else
-        {
-            if (res == ReserveResult::NO_ENOUGH_SPACE)
+            case ReserveResult::FINISHED :
+            {
+                /// When the maximum cache size of the query is reached, the cache will be
+                /// evicted from the history cache accessed by the current query.
+                return true;
+            }
+            case ReserveResult::NO_ENOUGH_SPACE :
             {
                 /// The query currently does not have enough space to reserve.
                 /// It returns false and reads data directly from the remote fs.
                 return false;
             }
-            else if (res == ReserveResult::NO_NEED)
+            case ReserveResult::NO_NEED :
             {
                 /// When the maximum cache capacity of the request is not reached, the cache
                 /// block is evicted from the main LRU queue.
                 return tryReserveForMainList(key, offset, size, query_context, cache_lock);
             }
-            else
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown reservation result");
         }
+        __builtin_unreachable();
     }
     else
         return tryReserveForMainList(key, offset, size, query_context, cache_lock);
@@ -1259,7 +1257,7 @@ void LRUFileCache::createOrSetQueryContext(const String & query_id, const ReadSe
 
     auto query_iter = query_map.find(query_id);
     if (query_iter == query_map.end())
-        query_iter = query_map.insert({query_id, std::make_shared<QueryContext>(settings.max_query_cache_size, settings.skip_download_if_exceeds_query_cache)}).first;
+        query_iter = query_map.insert({query_id, std::make_shared<QueryContext>(settings.max_query_cache_size, settings.enable_filesystem_use_query_cache_limit, settings.skip_download_if_exceeds_query_cache)}).first;
 
     auto query_context = query_iter->second;
     query_context->incrementRefCount();

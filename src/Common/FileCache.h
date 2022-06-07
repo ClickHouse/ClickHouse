@@ -265,10 +265,13 @@ private:
         size_t max_cache_size;
         size_t ref_count = 0;
 
+        bool enable_filesystem_use_query_cache_limit;
         bool skip_download_if_exceeds_query_cache;
 
-        QueryContext(size_t max_cache_size_, bool skip_download_if_exceeds_query_cache_)
-            : max_cache_size(max_cache_size_), skip_download_if_exceeds_query_cache(skip_download_if_exceeds_query_cache_) { }
+        QueryContext(size_t max_cache_size_, bool enable_filesystem_use_query_cache_limit_, bool skip_download_if_exceeds_query_cache_)
+            : max_cache_size(max_cache_size_)
+            , enable_filesystem_use_query_cache_limit(enable_filesystem_use_query_cache_limit_)
+            , skip_download_if_exceeds_query_cache(skip_download_if_exceeds_query_cache_) {}
 
         void remove(const Key & key, size_t offset, size_t size, std::lock_guard<std::mutex> & cache_lock)
         {
@@ -322,6 +325,8 @@ private:
         LRUQueue & queue() { return lru_queue; }
 
         bool isSkipDownloadIfExceed() { return skip_download_if_exceeds_query_cache; }
+
+        bool enableCacheLimit() { return enable_filesystem_use_query_cache_limit; }
     };
 
     using QueryContextPtr = std::shared_ptr<QueryContext>;
