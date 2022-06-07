@@ -45,7 +45,7 @@ int decompress(char * input, char * output, off_t start, off_t end, size_t max_n
     pid_t pid;
     bool error_happened = false;
 
-    /// Compress data
+    /// Decompress data
     while (in_pointer < end  && !error_happened)
     {
         size = ZSTD_findFrameCompressedSize(input + in_pointer, max_block_size);
