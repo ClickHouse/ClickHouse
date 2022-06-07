@@ -20,7 +20,7 @@ using Scalars = std::map<String, Block>;
 struct StorageInMemoryMetadata;
 using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 struct StorageSnapshot;
-using StorageSnapshotPtr = std::shared_ptr<const StorageSnapshot>;
+using StorageSnapshotPtr = std::shared_ptr<StorageSnapshot>;
 
 struct TreeRewriterResult
 {

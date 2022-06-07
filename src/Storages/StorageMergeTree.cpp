@@ -231,6 +231,12 @@ void StorageMergeTree::read(
     if (auto plan = reader.read(
         column_names, storage_snapshot, query_info, local_context, max_block_size, num_streams, processed_stage, nullptr, enable_parallel_reading))
         query_plan = std::move(*plan);
+
+    /// Now, copy of parts that is required for the query, stored in the processors,
+    /// while snapshot_data.parts includes all parts, even one that had been filtered out with partition pruning,
+    /// reset them to avoid holding them.
+    auto & snapshot_data = assert_cast<MergeTreeData::SnapshotData &>(*storage_snapshot->data);
+    snapshot_data.parts = {};
 }
 
 std::optional<UInt64> StorageMergeTree::totalRows(const Settings &) const
