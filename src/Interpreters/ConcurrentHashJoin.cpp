@@ -192,7 +192,8 @@ Blocks ConcurrentHashJoin::dispatchBlock(const Strings & key_columns_names, cons
     for (const auto & key_name : key_columns_names)
     {
         const auto & key_col = from_block.getByName(key_name).column;
-        key_col->updateWeakHash32(hash);
+        const auto & key_col_no_lc = recursiveRemoveLowCardinality(key_col);
+        key_col_no_lc->updateWeakHash32(hash);
     }
     auto selector = hashToSelector(hash, num_shards);
 
