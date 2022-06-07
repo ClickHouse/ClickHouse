@@ -273,6 +273,8 @@ protected:
     void assertInitialized() const;
 
 public:
+    /// Save a query context information, and adopt different cache policies
+    /// for different queries through the context cache layer.
     struct QueryContextHolder : private boost::noncopyable
     {
         QueryContextHolder(const String & query_id_, IFileCache * cache_, QueryContextPtr context_);
