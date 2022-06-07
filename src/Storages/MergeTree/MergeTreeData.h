@@ -624,7 +624,7 @@ public:
 
     /// Delete all directories which names begin with "tmp"
     /// Must be called with locked lockForShare() because it's using relative_data_path.
-    size_t clearOldTemporaryDirectories(size_t custom_directories_lifetime_seconds);
+    size_t clearOldTemporaryDirectories(size_t custom_directories_lifetime_seconds, const NameSet & valid_prefixes = {"tmp_", });
 
     size_t clearEmptyParts();
 
