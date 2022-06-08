@@ -458,12 +458,21 @@ public:
             {
                 default_cols.emplace_back(result);
             }
+
+            ++current_arguments_index;
         }
         else
         {
             for (size_t i = 0; i < attribute_names.size(); ++i)
                 default_cols.emplace_back(nullptr);
         }
+
+        if (current_arguments_index < arguments.size())
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                    "Number of arguments for function {} doesn't match: passed {} should be {}",
+                    getName(),
+                    arguments.size(),
+                    current_arguments_index);
 
         auto key_col_with_type = arguments[2];
 
