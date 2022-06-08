@@ -135,6 +135,9 @@ function clone_submodules
             contrib/replxx
             contrib/wyhash
             contrib/hashidsxx
+            contrib/liburing
+            contrib/udns
+            contrib/cpp-dns
         )
 
         git submodule sync
