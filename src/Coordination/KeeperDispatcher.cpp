@@ -244,6 +244,40 @@ bool KeeperDispatcher::putRequest(const Coordination::ZooKeeperRequestPtr & requ
     request_info.time = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
     request_info.session_id = session_id;
 
+    if (request->isReadRequest())
+    {
+        auto leader_info_result = server->getLeaderInfo();
+
+        auto & leader_info_ctx = leader_info_result->get();
+
+        /// If we get some errors, than send them to clients
+        if (!leader_info_result->get_accepted() || leader_info_result->get_result_code() == nuraft::cmd_result_code::TIMEOUT)
+        {
+            addErrorResponses({ request_info }, Coordination::Error::ZOPERATIONTIMEOUT);
+            return false;
+        }
+        else if (leader_info_result->get_result_code() != nuraft::cmd_result_code::OK)
+        {
+            addErrorResponses({ request_info }, Coordination::Error::ZCONNECTIONLOSS);
+            return false;
+        }
+
+        KeeperServer::LeaderInfo leader_info;
+        leader_info.term = leader_info_ctx->get_ulong();
+        leader_info.last_committed_index = leader_info_ctx->get_ulong();
+        LOG_INFO(log, "Leader is {}, idx {}", leader_info.term, leader_info.last_committed_index);
+
+        auto current_status = server->getCurrentState();
+        LOG_INFO(log, "Current is {}, idx {}", current_status.term, current_status.last_committed_index);
+
+        if (current_status.term < leader_info.term || current_status.last_committed_index < leader_info.last_committed_index)
+        {
+            std::lock_guard lock(leader_waiter_mutex);
+            leader_waiters[leader_info].push_back(std::move(request_info));
+            return true;
+        }
+    }
+
     std::lock_guard lock(push_request_mutex);
 
     if (shutdown_called)
@@ -273,7 +307,7 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
     responses_thread = ThreadFromGlobalPool([this] { responseThread(); });
     snapshot_thread = ThreadFromGlobalPool([this] { snapshotThread(); });
 
-    server = std::make_unique<KeeperServer>(configuration_and_settings, config, responses_queue, snapshots_queue);
+    server = std::make_unique<KeeperServer>(configuration_and_settings, config, responses_queue, snapshots_queue, [this](KeeperStorage::RequestForSession & request_for_session, uint64_t log_idx) { onRequestCommit(request_for_session, log_idx); });
 
     try
     {
@@ -590,6 +624,66 @@ void KeeperDispatcher::updateConfigurationThread()
     }
 }
 
+<<<<<<< HEAD
+=======
+void KeeperDispatcher::onRequestCommit(KeeperStorage::RequestForSession & request_for_session, uint64_t log_idx)
+{
+    const auto committed_zxid = request_for_session.zxid;
+
+    const auto process_requests = [this](auto & request_queue)
+    {
+        for (auto & request_info : request_queue)
+        {
+            std::lock_guard lock(push_request_mutex);
+
+            if (shutdown_called)
+                return;
+
+            /// Put close requests without timeouts
+            if (request_info.request->getOpNum() == Coordination::OpNum::Close)
+            {
+                if (!requests_queue->push(std::move(request_info)))
+                    throw Exception("Cannot push request to queue", ErrorCodes::SYSTEM_ERROR);
+            }
+            else if (!requests_queue->tryPush(std::move(request_info), configuration_and_settings->coordination_settings->operation_timeout_ms.totalMilliseconds()))
+            {
+                throw Exception("Cannot push request to queue within operation timeout", ErrorCodes::TIMEOUT_EXCEEDED);
+            }
+        }
+
+        request_queue.clear();
+    };
+    {
+        std::lock_guard lock(session_waiter_mutex);
+
+        for (auto it = session_waiters.begin(); it != session_waiters.end();)
+        {
+            auto & [session_id, session_waiter] = *it;
+
+            if (session_waiter.wait_for_zxid <= committed_zxid)
+            {
+                process_requests(session_waiter.request_queue);
+                it = session_waiters.erase(it);
+            }
+            else
+                ++it;
+        }
+    }
+
+    {
+        std::lock_guard lock(leader_waiter_mutex);
+        auto current_status = server->getCurrentState();
+        LOG_INFO(log, "Got term {}, idx {}", current_status.term, log_idx);
+        auto request_queue_it = leader_waiters.find(KeeperServer::LeaderInfo{.term = current_status.term, .last_committed_index = log_idx});
+        if (request_queue_it != leader_waiters.end())
+        {
+            process_requests(request_queue_it->second);
+            leader_waiters.erase(request_queue_it);
+        }
+    }
+}
+
+>>>>>>> Initial version for linearizable reads
 bool KeeperDispatcher::isServerActive() const
 {
     return checkInit() && hasLeader() && !server->isRecovering();

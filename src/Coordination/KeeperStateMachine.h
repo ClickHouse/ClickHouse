@@ -19,13 +19,16 @@ using SnapshotsQueue = ConcurrentBoundedQueue<CreateSnapshotTask>;
 class KeeperStateMachine : public nuraft::state_machine
 {
 public:
+    using CommitCallback = std::function<void(KeeperStorage::RequestForSession &, uint64_t)>;
+
     KeeperStateMachine(
         ResponsesQueue & responses_queue_,
         SnapshotsQueue & snapshots_queue_,
         const std::string & snapshots_path_,
         const CoordinationSettingsPtr & coordination_settings_,
         const std::string & superdigest_ = "",
-        bool digest_enabled_ = true);
+        bool digest_enabled_ = true,
+        CommitCallback commit_callback_ = [](KeeperStorage::RequestForSession &, uint64_t){});
 
     /// Read state from the latest snapshot
     void init();
@@ -141,6 +144,8 @@ private:
     const std::string superdigest;
 
     const bool digest_enabled;
+
+    const CommitCallback commit_callback;
 };
 
 }

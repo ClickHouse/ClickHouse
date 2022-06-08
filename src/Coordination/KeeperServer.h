@@ -65,7 +65,8 @@ public:
         const KeeperConfigurationAndSettingsPtr & settings_,
         const Poco::Util::AbstractConfiguration & config_,
         ResponsesQueue & responses_queue_,
-        SnapshotsQueue & snapshots_queue_);
+        SnapshotsQueue & snapshots_queue_,
+        KeeperStateMachine::CommitCallback commit_callback);
 
     /// Load state machine from the latest snapshot and load log storage. Start NuRaft with required settings.
     void startup(const Poco::Util::AbstractConfiguration & config, bool enable_ipv6 = true);
@@ -111,6 +112,17 @@ public:
 
     int getServerID() const { return server_id; }
 
+    struct LeaderInfo
+    {
+        uint64_t term;
+        uint64_t last_committed_index;
+
+        bool operator==(const LeaderInfo &) const = default;
+    };
+
+    RaftAppendResult getLeaderInfo();
+    LeaderInfo getCurrentState();
+
     /// Get configuration diff between current configuration in RAFT and in XML file
     ConfigUpdateActions getConfigurationDiff(const Poco::Util::AbstractConfiguration & config);
 
@@ -123,5 +135,20 @@ public:
     /// Return true if update was successfully received.
     bool waitConfigurationUpdate(const ConfigUpdateAction & task);
 };
+
+}
+namespace std {
+
+  template <>
+  struct hash<DB::KeeperServer::LeaderInfo>
+  {
+    size_t operator()(const DB::KeeperServer::LeaderInfo & info) const
+    {
+        SipHash hash_state;
+        hash_state.update(info.term);
+        hash_state.update(info.last_committed_index);
+        return hash_state.get64();
+    }
+  };
 
 }
