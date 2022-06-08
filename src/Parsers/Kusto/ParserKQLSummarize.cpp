@@ -1,3 +1,7 @@
+#include <memory>
+#include <queue>
+#include <sstream>
+#include <vector>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInterpolateElement.h>
@@ -10,71 +14,148 @@
 #include <Parsers/IParserBase.h>
 #include <Parsers/Kusto/ParserKQLQuery.h>
 #include <Parsers/Kusto/ParserKQLSummarize.h>
+#include <Parsers/ParserSampleRatio.h>
 #include <Parsers/ParserSelectQuery.h>
 #include <Parsers/ParserSetQuery.h>
 #include <Parsers/ParserTablesInSelectQuery.h>
 #include <Parsers/ParserWithElement.h>
-
 namespace DB
 {
+std::pair<String, String> removeLastWord(String input)
+{
+    std::istringstream ss(input);
+    std::string token;
+    std::vector<String> temp;
+
+    while (std::getline(ss, token, ' '))
+    {
+        temp.push_back(token);
+    }
+
+    String firstPart;
+    for (std::size_t i = 0; i < temp.size() - 1; i++)
+    {
+        firstPart += temp[i];
+    }
+
+    return std::make_pair(firstPart, temp[temp.size() - 1]);
+}
+
 
 bool ParserKQLSummarize ::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    ASTPtr select_expression_list;
-    ASTPtr group_expression_list;
+    if (op_pos.empty())
+        return true;
+    if (op_pos.size() != 1) // now only support one summarize
+        return false;
 
-    String expr_aggregation;
-    String expr_groupby;
-    String expr_columns;
-    bool groupby = false;
+    //summarize avg(age) by FirstName  ==> select FirstName,avg(Age) from Customers3 group by FirstName
+
+    //summarize has syntax :
+
+    //T | summarize [SummarizeParameters] [[Column =] Aggregation [, ...]] [by [Column =] GroupExpression [, ...]]
+
+    //right now , we only support:
+
+    //T | summarize Aggregation [, ...] [by GroupExpression  [, ...]]
+    //Aggregation -> the Aggregation function on column
+    //GroupExpression - > columns
 
     auto begin = pos;
-    auto pos_groupby = pos;
+
+    pos = op_pos.back();
+    String exprAggregation;
+    String exprGroupby;
+    String exprColumns;
+
+    bool groupby = false;
+    bool bin_function = false;
+    String bin_column;
+    String last_string;
+    String column_name;
+    int character_passed = 0;
 
     while (!pos->isEnd() && pos->type != TokenType::PipeMark && pos->type != TokenType::Semicolon)
     {
         if (String(pos->begin, pos->end) == "by")
-        {
             groupby = true;
-            auto end = pos;
-            --end;
-            expr_aggregation = begin <= end ? String(begin->begin, end->end) : "";
-            pos_groupby = pos;
-            ++pos_groupby;
+        else
+        {
+            if (groupby)
+            {
+                if (String(pos->begin, pos->end) == "bin")
+                {
+                    exprGroupby = exprGroupby + "round" + " ";
+                    bin_function = true;
+                }
+                else
+                    exprGroupby = exprGroupby + String(pos->begin, pos->end) + " ";
+                    
+                if (bin_function && last_string == "(")
+                {
+                    bin_column = String(pos->begin, pos->end);
+                    bin_function = false;
+                }
+
+                last_string = String(pos->begin, pos->end);
+            }
+
+            else
+            {
+                if (String(pos->begin, pos->end) == "=")
+                {
+                    std::pair<String, String> temp = removeLastWord(exprAggregation);
+                    exprAggregation = temp.first;
+                    column_name = temp.second;
+                }
+                else
+                {
+                    if (!column_name.empty())
+                    {
+                        exprAggregation = exprAggregation + String(pos->begin, pos->end);
+                        character_passed++;
+                        if (String(pos->begin, pos->end) == ")") // was 4
+                        {
+                            exprAggregation = exprAggregation + " AS " + column_name;
+                            column_name = "";
+                        }
+                    }
+                    else
+                    {
+                        exprAggregation = exprAggregation + String(pos->begin, pos->end) + " ";
+                    }
+                }
+            }
         }
         ++pos;
     }
-    --pos;
-    if (groupby)
-        expr_groupby = String(pos_groupby->begin, pos->end);
+
+    if(!bin_column.empty())
+        exprGroupby = exprGroupby + " AS " + bin_column;
+
+    if (exprGroupby.empty())
+        exprColumns = exprAggregation;
     else
-        expr_aggregation = begin <= pos ? String(begin->begin, pos->end) : "";
-
-    auto expr_aggregation_str = expr_aggregation.empty() ? "" : expr_aggregation +",";
-    expr_columns = groupby ? expr_aggregation_str + expr_groupby : expr_aggregation_str;
-
-    String converted_columns =  getExprFromToken(expr_columns, pos.max_depth);
-
-    Tokens token_converted_columns(converted_columns.c_str(), converted_columns.c_str() + converted_columns.size());
-    IParser::Pos pos_converted_columns(token_converted_columns, pos.max_depth);
-
-    if (!ParserNotEmptyExpressionList(true).parse(pos_converted_columns, select_expression_list, expected))
+    {
+        if (exprAggregation.empty())
+            exprColumns = exprGroupby;
+        else
+            exprColumns = exprGroupby + "," + exprAggregation;
+    }
+    Tokens tokenColumns(exprColumns.c_str(), exprColumns.c_str() + exprColumns.size());
+    IParser::Pos posColumns(tokenColumns, pos.max_depth);
+    if (!ParserNotEmptyExpressionList(true).parse(posColumns, node, expected))
         return false;
-
-    node->as<ASTSelectQuery>()->setExpression(ASTSelectQuery::Expression::SELECT, std::move(select_expression_list));
 
     if (groupby)
     {
-        String converted_groupby =  getExprFromToken(expr_groupby, pos.max_depth);
-
-        Tokens token_converted_groupby(converted_groupby.c_str(), converted_groupby.c_str() + converted_groupby.size());
-        IParser::Pos postoken_converted_groupby(token_converted_groupby, pos.max_depth);
-
-        if (!ParserNotEmptyExpressionList(false).parse(postoken_converted_groupby, group_expression_list, expected))
+        Tokens tokenGroupby(exprGroupby.c_str(), exprGroupby.c_str() + exprGroupby.size());
+        IParser::Pos postokenGroupby(tokenGroupby, pos.max_depth);
+        if (!ParserNotEmptyExpressionList(false).parse(postokenGroupby, group_expression_list, expected))
             return false;
-        node->as<ASTSelectQuery>()->setExpression(ASTSelectQuery::Expression::GROUP_BY, std::move(group_expression_list));
     }
 
+    pos = begin;
     return true;
 }
 

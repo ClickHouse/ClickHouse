@@ -2,26 +2,55 @@
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/Kusto/ParserKQLQuery.h>
 #include <Parsers/Kusto/ParserKQLLimit.h>
-#include <Parsers/ParserTablesInSelectQuery.h>
 #include <cstdlib>
-#include <format>
 
 namespace DB
 {
 
 bool ParserKQLLimit :: parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    ASTPtr limit_length;
+    if (op_pos.empty())
+        return true;
 
-    auto expr = getExprFromToken(pos);
+    auto begin = pos;
+    Int64 minLimit = -1;
+    auto final_pos = pos;
+    for (auto it = op_pos.begin(); it != op_pos.end(); ++it)
+    {
+        pos = *it;
+        auto isNumber = [&]
+        {
+            for (auto ch = pos->begin ; ch < pos->end; ++ch)
+            {
+                if (!isdigit(*ch))
+                    return false;
+            }
+            return true;
+        };
 
-    Tokens tokens(expr.c_str(), expr.c_str() + expr.size());
-    IParser::Pos new_pos(tokens, pos.max_depth);
+        if (!isNumber())
+            return false;
 
-    if (!ParserExpressionWithOptionalAlias(false).parse(new_pos, limit_length, expected))
+        auto limitLength = std::strtol(pos->begin,nullptr, 10);
+        if (-1 == minLimit)
+        {
+            minLimit = limitLength;
+            final_pos = pos;
+        }
+        else
+        {
+            if (minLimit > limitLength)
+            {
+                minLimit = limitLength;
+                final_pos = pos;
+            }
+        }
+    }
+
+    if (!ParserExpressionWithOptionalAlias(false).parse(final_pos, node, expected))
         return false;
 
-    node->as<ASTSelectQuery>()->setExpression(ASTSelectQuery::Expression::LIMIT_LENGTH, std::move(limit_length));
+    pos = begin;
 
     return true;
 }

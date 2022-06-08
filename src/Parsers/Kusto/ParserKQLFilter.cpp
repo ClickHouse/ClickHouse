@@ -10,15 +10,28 @@ namespace DB
 
 bool ParserKQLFilter :: parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    String expr = getExprFromToken(pos);
-    ASTPtr where_expression;
+    if (op_pos.empty())
+        return true;
+    Pos begin = pos;
+    String expr;
 
-    Tokens token_filter(expr.c_str(), expr.c_str()+expr.size());
-    IParser::Pos pos_filter(token_filter, pos.max_depth);
-    if (!ParserExpressionWithOptionalAlias(false).parse(pos_filter, where_expression, expected))
+    KQLOperators convetor;
+
+    for (auto it = op_pos.begin(); it != op_pos.end(); ++it)
+    {
+        pos = *it;
+        if (expr.empty())
+            expr = "(" + convetor.getExprFromToken(pos) +")";
+        else
+            expr = expr + " and (" + convetor.getExprFromToken(pos) +")";
+    }
+
+    Tokens tokenFilter(expr.c_str(), expr.c_str()+expr.size());
+    IParser::Pos pos_filter(tokenFilter, pos.max_depth);
+    if (!ParserExpressionWithOptionalAlias(false).parse(pos_filter, node, expected))
         return false;
 
-    node->as<ASTSelectQuery>()->setExpression(ASTSelectQuery::Expression::WHERE, std::move(where_expression));
+    pos = begin;
 
     return true;
 }

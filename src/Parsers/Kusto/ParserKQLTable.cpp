@@ -3,14 +3,23 @@
 #include <Parsers/ParserTablesInSelectQuery.h>
 #include <Parsers/Kusto/ParserKQLQuery.h>
 #include <Parsers/Kusto/ParserKQLTable.h>
-#include <unordered_set>
+
 namespace DB
 {
+
+bool ParserKQLTable :: parsePrepare(Pos & pos)
+{
+   if (!op_pos.empty())
+    return false;
+
+   op_pos.push_back(pos);
+   return true;
+}
 
 bool ParserKQLTable :: parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     std::unordered_set<String> sql_keywords
-    ({
+    ( {
         "SELECT",
         "INSERT",
         "CREATE",
@@ -33,9 +42,14 @@ bool ParserKQLTable :: parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         "TRUNCATE",
         "USE",
         "EXPLAIN"
-    });
+    } ); 
 
-    ASTPtr tables;
+    if (op_pos.empty())
+        return false;
+
+    auto begin = pos;
+    pos = op_pos.back();
+
     String table_name(pos->begin,pos->end);
     String table_name_upcase(table_name);
 
@@ -44,10 +58,9 @@ bool ParserKQLTable :: parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     if (sql_keywords.find(table_name_upcase) != sql_keywords.end())
         return false;
 
-    if (!ParserTablesInSelectQuery().parse(pos, tables, expected))
+    if (!ParserTablesInSelectQuery().parse(pos, node, expected))
         return false;
-
-    node->as<ASTSelectQuery>()->setExpression(ASTSelectQuery::Expression::TABLES, std::move(tables));
+    pos = begin;
 
     return true;
 }
