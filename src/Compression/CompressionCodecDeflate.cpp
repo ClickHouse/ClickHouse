@@ -18,9 +18,6 @@ namespace ErrorCodes
 qpl_job * DeflateJobHWPool::jobPool[jobPoolSize];
 std::atomic_bool DeflateJobHWPool::jobLock[jobPoolSize];
 
-qpl_job * DeflateJobSWPool::jobSWPool[jobSWPoolSize];
-std::atomic_bool DeflateJobSWPool::jobSWLock[jobSWPoolSize];
-
 DeflateJobHWPool & DeflateJobHWPool::instance()
 {
     static DeflateJobHWPool ret;
@@ -29,35 +26,27 @@ DeflateJobHWPool & DeflateJobHWPool::instance()
 
 DeflateJobHWPool::DeflateJobHWPool()
 {
+    log = &Poco::Logger::get("DeflateJobHWPool");
     if (initJobPool() < 0)
-        throw Exception("DeflateJobHWPool initializing fail!", ErrorCodes::CANNOT_COMPRESS);
+    {
+        jobPoolAvailable = false;
+        LOG_WARNING(log, "DeflateJobHWPool initializing fail! Please check if IAA hardware support.");
+    }
+    else
+    {
+        jobPoolAvailable = true;
+    }
 }
 DeflateJobHWPool::~DeflateJobHWPool()
 {
     destroyJobPool();
 }
 
-DeflateJobSWPool & DeflateJobSWPool::instance()
-{
-    static DeflateJobSWPool ret;
-    return ret;
-}
-
-DeflateJobSWPool::DeflateJobSWPool()
-{
-    if (initJobPool() < 0)
-        throw Exception("DeflateJobSWPool initializing fail!", ErrorCodes::CANNOT_COMPRESS);
-}
-DeflateJobSWPool::~DeflateJobSWPool()
-{
-    destroyJobPool();
-}
-
-
 CompressionCodecDeflate::CompressionCodecDeflate()
 {
     log = &Poco::Logger::get("CompressionCodecDeflate");
     setCodecDescription("DEFLATE");
+    jobSWPtr = initSoftwareJobCodecPtr();
 }
 
 CompressionCodecDeflate::~CompressionCodecDeflate()
@@ -65,7 +54,6 @@ CompressionCodecDeflate::~CompressionCodecDeflate()
     if (!jobDecompAsyncMap.empty())
     {
         LOG_ERROR(log, "Exception -> find un-released job when CompressionCodecDeflate destroy");
-        //doDecompressDataFlush();
         for (auto it : jobDecompAsyncMap)
         {
             DeflateJobHWPool::instance().releaseJob(it.first);
@@ -103,25 +91,35 @@ uint32_t CompressionCodecDeflate::getMaxCompressedDataSize(uint32_t uncompressed
     return DEFLATE_COMPRESSBOUND(uncompressed_size);
 }
 
-uint32_t CompressionCodecDeflate::doCompressDataSWNative(const char * source, uint32_t source_size, char * dest) const
+qpl_job * CompressionCodecDeflate::initSoftwareJobCodecPtr()
 {
+    qpl_job * job_ptr;
     qpl_status status;
     uint32_t size = 0;
+    std::unique_ptr<uint8_t[]> job_buffer;
 
     // Job initialization
-    status = qpl_get_job_size(DeflateJobSWPool::SW_PATH, &size);
+    status = qpl_get_job_size(qpl_path_software, &size);
     if (status != QPL_STS_OK)
     {
-        throw Exception("doCompressDataSWNative cannot compress: qpl_get_job_size fail", ErrorCodes::CANNOT_COMPRESS);
+        throw Exception("initSoftwareJobCodecPtr: qpl_get_job_size fail:"+ std::to_string(status), ErrorCodes::CANNOT_COMPRESS);
     }
-    qpl_job * job_ptr = reinterpret_cast<qpl_job *>(new uint8_t[size]);
 
-    status = qpl_init_job(DeflateJobSWPool::SW_PATH, job_ptr);
+    job_buffer = std::make_unique<uint8_t[]>(size);
+    job_ptr = reinterpret_cast<qpl_job *>(job_buffer.get());
+
+    status = qpl_init_job(qpl_path_software, job_ptr);
     if (status != QPL_STS_OK)
     {
-        throw Exception("doCompressDataSWNative cannot compress: qpl_init_job fail", ErrorCodes::CANNOT_COMPRESS);
+        throw Exception("initSoftwareJobCodecPtr: qpl_init_job fail:"+ std::to_string(status), ErrorCodes::CANNOT_COMPRESS);
     }
+    return job_ptr;
+}
 
+uint32_t CompressionCodecDeflate::doCompressDataSW(const char * source, uint32_t source_size, char * dest)const
+{
+    qpl_status status;
+    qpl_job * job_ptr = jobSWPtr;
     // Performing a compression operation
     job_ptr->op = qpl_op_compress;
     job_ptr->next_in_ptr = reinterpret_cast<uint8_t *>(const_cast<char *>(source));
@@ -135,49 +133,10 @@ uint32_t CompressionCodecDeflate::doCompressDataSWNative(const char * source, ui
     status = qpl_execute_job(job_ptr);
     if (status != QPL_STS_OK)
     {
-        throw Exception("doCompressDataSWNative cannot compress: qpl_execute_job fail", ErrorCodes::CANNOT_COMPRESS);
+        throw Exception("doCompressDataSW cannot compress: qpl_execute_job fail:" + std::to_string(status), ErrorCodes::CANNOT_COMPRESS);
     }
 
-    const uint32_t compressed_size = job_ptr->total_out;
-    // Freeing resources
-    status = qpl_fini_job(job_ptr);
-    if (status != QPL_STS_OK)
-    {
-        throw Exception("doCompressDataSWNative cannot compress: qpl_fini_job fail", ErrorCodes::CANNOT_COMPRESS);
-    }
-
-    delete[] job_ptr;
-    return compressed_size;
-}
-
-uint32_t CompressionCodecDeflate::doCompressDataSW(const char * source, uint32_t source_size, char * dest) const
-{
-    uint32_t job_id = 0;
-    qpl_job * job_ptr = DeflateJobSWPool::instance().acquireJob(&job_id);
-    if (job_ptr == nullptr)
-    {
-        LOG_WARNING(log, "doCompressDataSW acquireJob fail! switch to SW native compress...");
-        return doCompressDataSWNative(source, source_size, dest);
-    }
-    qpl_status status;
-    uint32_t compressed_size = 0;
-
-    job_ptr->op = qpl_op_compress;
-    job_ptr->next_in_ptr = reinterpret_cast<uint8_t *>(const_cast<char *>(source));
-    job_ptr->next_out_ptr = reinterpret_cast<uint8_t *>(dest);
-    job_ptr->available_in = source_size;
-    job_ptr->available_out = getMaxCompressedDataSize(source_size);
-    job_ptr->level = qpl_high_level;
-    job_ptr->flags = QPL_FLAG_FIRST | QPL_FLAG_DYNAMIC_HUFFMAN | QPL_FLAG_LAST | QPL_FLAG_OMIT_VERIFY;
-    // Compression
-    status = qpl_execute_job(job_ptr);
-    if (QPL_STS_OK != status)
-    {
-        throw Exception("doCompressDataSW Cannot compress", ErrorCodes::CANNOT_COMPRESS);
-    }
-    compressed_size = job_ptr->total_out;
-    DeflateJobSWPool::instance().releaseJob(job_id);
-    return compressed_size;
+    return job_ptr->total_out;
 }
 
 uint32_t CompressionCodecDeflate::doCompressData(const char * source, uint32_t source_size, char * dest) const
@@ -251,12 +210,15 @@ uint32_t CompressionCodecDeflate::doCompressDataFlush(uint32_t req_id)
 {
     uint32_t compressed_size = 0;
     qpl_job * job_ptr = DeflateJobHWPool::instance().getJobPtr(req_id);
-    while (QPL_STS_BEING_PROCESSED == qpl_check_job(job_ptr))
+    if(nullptr != job_ptr)
     {
-        _tpause(1, __rdtsc() + 1000);
+        while (QPL_STS_BEING_PROCESSED == qpl_check_job(job_ptr))
+        {
+            _tpause(1, __rdtsc() + 1000);
+        }
+        compressed_size = job_ptr->total_out;
+        DeflateJobHWPool::instance().releaseJob(req_id);
     }
-    compressed_size = job_ptr->total_out;
-    DeflateJobHWPool::instance().releaseJob(req_id);
     return compressed_size;
 }
 
@@ -294,25 +256,10 @@ void CompressionCodecDeflate::doDecompressData(const char * source, uint32_t sou
     DeflateJobHWPool::instance().releaseJob(job_id);
 }
 
-void CompressionCodecDeflate::doDecompressDataSWNative(
-    const char * source, uint32_t source_size, char * dest, uint32_t uncompressed_size)
+void CompressionCodecDeflate::doDecompressDataSW(const char * source, uint32_t source_size, char * dest, uint32_t uncompressed_size)const
 {
     qpl_status status;
-    uint32_t size = 0;
-
-    // Job initialization
-    status = qpl_get_job_size(DeflateJobSWPool::SW_PATH, &size);
-    if (status != QPL_STS_OK)
-    {
-        throw Exception("doDecompressDataSWNative cannot decompress: qpl_get_job_size fail", ErrorCodes::CANNOT_DECOMPRESS);
-    }
-    qpl_job * job_ptr = reinterpret_cast<qpl_job *>(new uint8_t[size]);
-
-    status = qpl_init_job(DeflateJobSWPool::SW_PATH, job_ptr);
-    if (status != QPL_STS_OK)
-    {
-        throw Exception("doDecompressDataSWNative cannot decompress: qpl_init_job fail", ErrorCodes::CANNOT_DECOMPRESS);
-    }
+    qpl_job * job_ptr = jobSWPtr;
 
     // Performing a decompression operation
     job_ptr->op = qpl_op_decompress;
@@ -326,44 +273,8 @@ void CompressionCodecDeflate::doDecompressDataSWNative(
     status = qpl_execute_job(job_ptr);
     if (status != QPL_STS_OK)
     {
-        throw Exception("doDecompressDataSWNative cannot decompress: qpl_execute_job fail", ErrorCodes::CANNOT_DECOMPRESS);
+        throw Exception("doDecompressDataSW cannot decompress: qpl_execute_job fail:"+ std::to_string(status), ErrorCodes::CANNOT_DECOMPRESS);
     }
-    // Freeing resources
-    status = qpl_fini_job(job_ptr);
-    if (status != QPL_STS_OK)
-    {
-        throw Exception("doDecompressDataSWNative cannot decompress: qpl_fini_job fail", ErrorCodes::CANNOT_DECOMPRESS);
-    }
-    delete[] job_ptr;
-}
-
-void CompressionCodecDeflate::doDecompressDataSW(const char * source, uint32_t source_size, char * dest, uint32_t uncompressed_size) const
-{
-    uint32_t job_id = 0;
-    qpl_job * job_ptr = DeflateJobSWPool::instance().acquireJob(&job_id);
-    if (job_ptr == nullptr)
-    {
-        LOG_WARNING(log, "doDecompressDataSW acquireJob fail! switch to SW native decompress...");
-        return doDecompressDataSWNative(source, source_size, dest, uncompressed_size);
-    }
-    qpl_status status;
-
-    // Performing a decompression operation
-    job_ptr->op = qpl_op_decompress;
-    job_ptr->next_in_ptr = reinterpret_cast<uint8_t *>(const_cast<char *>(source));
-    job_ptr->next_out_ptr = reinterpret_cast<uint8_t *>(dest);
-    job_ptr->available_in = source_size;
-    job_ptr->available_out = uncompressed_size;
-    job_ptr->flags = QPL_FLAG_FIRST | QPL_FLAG_LAST;
-
-    // Decompression
-    status = qpl_execute_job(job_ptr);
-
-    if (QPL_STS_OK != status)
-    {
-        throw Exception("doDecompressDataSW cannot decompress", ErrorCodes::CANNOT_DECOMPRESS);
-    }
-    DeflateJobSWPool::instance().releaseJob(job_id);
 }
 
 void CompressionCodecDeflate::doDecompressDataReq(const char * source, uint32_t source_size, char * dest, uint32_t uncompressed_size)
