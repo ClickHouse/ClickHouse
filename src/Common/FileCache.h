@@ -205,7 +205,7 @@ protected:
 
         void reserve(const Key & key, size_t offset, size_t size, std::lock_guard<std::mutex> & cache_lock)
         {
-            if (cache_size > size)
+            if (cache_size + size > max_cache_size)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Reserved cache size exceeds the remaining cache size");
 
             if (!skip_download_if_exceeds_query_cache)
