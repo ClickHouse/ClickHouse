@@ -26,10 +26,15 @@ public:
     static constexpr qpl_path_t PATH = qpl_path_hardware;
     static qpl_job * jobPool[jobPoolSize];
     static std::atomic_bool jobLock[jobPoolSize];
+    bool jobPoolEnabled;
 
+    bool ALWAYS_INLINE jobPoolReady()
+    {
+        return jobPoolEnabled;
+    }
     qpl_job * ALWAYS_INLINE acquireJob(uint32_t * job_id)
     {
-        if(jobPoolAvailable)
+        if (jobPoolEnabled)
         {
             uint32_t retry = 0;
             auto index = random(jobPoolSize);
@@ -52,7 +57,7 @@ public:
     }
     qpl_job * ALWAYS_INLINE releaseJob(uint32_t job_id)
     {
-        if(jobPoolAvailable)
+        if (jobPoolEnabled)
         {
             uint32_t index = jobPoolSize - job_id;
             ReleaseJobObjectGuard _(index);
@@ -65,7 +70,7 @@ public:
     }
     qpl_job * ALWAYS_INLINE getJobPtr(uint32_t job_id)
     {
-        if(jobPoolAvailable)
+        if (jobPoolEnabled)
         {
             uint32_t index = jobPoolSize - job_id;
             return jobPool[index];
@@ -77,8 +82,6 @@ public:
     }
 
 private:
-    bool jobPoolAvailable;
-    Poco::Logger * log;
     size_t ALWAYS_INLINE random(uint32_t pool_size)
     {
         size_t tsc = 0;
@@ -177,13 +180,45 @@ private:
             jobLock[index].store(false);
         }
     };
+    Poco::Logger * log;
+};
+class SoftwareCodecDeflate
+{
+public:
+    SoftwareCodecDeflate();
+    ~SoftwareCodecDeflate();
+    uint32_t doCompressData(const char * source, uint32_t source_size, char * dest, uint32_t dest_size);
+    void doDecompressData(const char * source, uint32_t source_size, char * dest, uint32_t uncompressed_size);
+
+private:
+    qpl_job * jobSWPtr; //Software Job Codec Ptr
+    std::unique_ptr<uint8_t[]> jobSWbuffer;
+    qpl_job * getJobCodecPtr();
 };
 
+class HardwareCodecDeflate
+{
+public:
+    bool hwEnabled;
+    HardwareCodecDeflate();
+    ~HardwareCodecDeflate();
+    uint32_t doCompressData(const char * source, uint32_t source_size, char * dest, uint32_t dest_size) const;
+    uint32_t doCompressDataReq(const char * source, uint32_t source_size, char * dest, uint32_t dest_size);
+    uint32_t doCompressDataFlush(uint32_t req_id);
+    uint32_t doDecompressData(const char * source, uint32_t source_size, char * dest, uint32_t uncompressed_size) const;
+    uint32_t doDecompressDataReq(const char * source, uint32_t source_size, char * dest, uint32_t uncompressed_size);
+    void doDecompressDataFlush();
+
+private:
+    std::map<uint32_t, qpl_job *> jobDecompAsyncMap;
+    std::vector<uint32_t> jobCompAsyncList;
+    Poco::Logger * log;
+};
 class CompressionCodecDeflate : public ICompressionCodec
 {
 public:
     CompressionCodecDeflate();
-    ~CompressionCodecDeflate() override;
+    //~CompressionCodecDeflate() ;
     uint8_t getMethodByte() const override;
     void updateHash(SipHash & hash) const override;
     bool isAsyncSupported() const override;
@@ -197,10 +232,9 @@ protected:
     {
         return true;
     }
-    qpl_job * initSoftwareJobCodecPtr();
     uint32_t doCompressData(const char * source, uint32_t source_size, char * dest) const override;
     uint32_t doCompressDataSW(const char * source, uint32_t source_size, char * dest) const;
-    UInt32 doCompressDataReq(const char * source, UInt32 source_size, char * dest, uint32_t & req_id) override;
+    uint32_t doCompressDataReq(const char * source, uint32_t source_size, char * dest, uint32_t & req_id) override;
     uint32_t doCompressDataFlush(uint32_t req_id) override;
 
     void doDecompressData(const char * source, uint32_t source_size, char * dest, uint32_t uncompressed_size) const override;
@@ -210,10 +244,8 @@ protected:
 
 private:
     uint32_t getMaxCompressedDataSize(uint32_t uncompressed_size) const override;
-    std::map<uint32_t, qpl_job *> jobDecompAsyncMap;
-    std::vector<uint32_t> jobCompAsyncList;
-    Poco::Logger * log;
-    qpl_job * jobSWPtr;  //Software Job Codec Ptr
+    std::unique_ptr<HardwareCodecDeflate> hwCodec;
+    std::unique_ptr<SoftwareCodecDeflate> swCodec;
 };
 
 }
