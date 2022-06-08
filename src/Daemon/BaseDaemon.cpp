@@ -302,7 +302,7 @@ private:
 
             if (auto thread_group = thread_ptr->getThreadGroup())
             {
-                query = thread_group->query;
+                query = thread_group->one_line_query;
             }
 
             if (auto logs_queue = thread_ptr->getInternalTextLogsQueue())
