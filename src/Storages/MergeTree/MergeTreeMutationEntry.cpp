@@ -46,8 +46,9 @@ UInt64 MergeTreeMutationEntry::parseFileName(const String & file_name_)
 }
 
 MergeTreeMutationEntry::MergeTreeMutationEntry(MutationCommands commands_, DiskPtr disk_, const String & path_prefix_, UInt64 tmp_number,
-                                               const TransactionID & tid_, const WriteSettings & settings)
-    : create_time(time(nullptr))
+                                               const TransactionID & tid_, const WriteSettings & settings, MutationType type_)
+    : type(type_)
+    , create_time(time(nullptr))
     , commands(std::move(commands_))
     , disk(std::move(disk_))
     , path_prefix(path_prefix_)
@@ -58,7 +59,8 @@ MergeTreeMutationEntry::MergeTreeMutationEntry(MutationCommands commands_, DiskP
     try
     {
         auto out = disk->writeFile(std::filesystem::path(path_prefix) / file_name, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite, settings);
-        *out << "format version: 1\n"
+        *out << "format version: 2\n"
+            << "type: " << type << "\n"
             << "create time: " << LocalDateTime(create_time) << "\n";
         *out << "commands: ";
         commands.writeText(*out);
@@ -121,7 +123,21 @@ MergeTreeMutationEntry::MergeTreeMutationEntry(DiskPtr disk_, const String & pat
     block_number = parseFileName(file_name);
     auto buf = disk->readFile(path_prefix + file_name);
 
-    *buf >> "format version: 1\n";
+    int format_version;
+    *buf >> "format version: " >> format_version >> "\n";
+
+    assert(format_version <= 2);
+
+    type = MutationType::Ordinary;
+    if (format_version == 2)
+    {
+        String type_str;
+        *buf >> "type: " >> type_str >> "\n";
+
+        auto type_value = magic_enum::enum_cast<MutationType>(type_str);
+        if (type_value.has_value())
+            type = type_value.value();
+    }
 
     LocalDateTime create_time_dt;
     *buf >> "create time: " >> create_time_dt >> "\n";
