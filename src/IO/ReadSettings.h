@@ -84,7 +84,6 @@ struct ReadSettings
 
     size_t max_query_cache_size = (128UL * 1024 * 1024 * 1024);
     bool skip_download_if_exceeds_query_cache = true;
-    bool enable_filesystem_use_query_cache_limit = false;
 
     size_t remote_read_min_bytes_for_seek = DBMS_DEFAULT_BUFFER_SIZE;
 

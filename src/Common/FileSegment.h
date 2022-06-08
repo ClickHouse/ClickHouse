@@ -125,8 +125,6 @@ public:
 
     String getDownloader() const;
 
-    String getQueryId() const;
-
     void resetDownloader();
 
     bool isDownloader() const;
