@@ -123,7 +123,7 @@ void StorageMergeTree::startup()
 
     /// Temporary directories contain incomplete results of merges (after forced restart)
     ///  and don't allow to reinitialize them, so delete each of them immediately
-    clearOldTemporaryDirectories(0);
+    clearOldTemporaryDirectories(0, {"tmp_", "delete_tmp_"});
 
     /// NOTE background task will also do the above cleanups periodically.
     time_after_previous_cleanup_parts.restart();

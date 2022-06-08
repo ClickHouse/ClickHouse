@@ -1503,7 +1503,7 @@ static bool isOldPartDirectory(const DiskPtr & disk, const String & directory_pa
 }
 
 
-size_t MergeTreeData::clearOldTemporaryDirectories(size_t custom_directories_lifetime_seconds)
+size_t MergeTreeData::clearOldTemporaryDirectories(size_t custom_directories_lifetime_seconds, const NameSet & valid_prefixes)
 {
     /// If the method is already called from another thread, then we don't need to do anything.
     std::unique_lock lock(clear_old_temporary_directories_mutex, std::defer_lock);
@@ -1525,10 +1525,19 @@ size_t MergeTreeData::clearOldTemporaryDirectories(size_t custom_directories_lif
         for (auto it = disk->iterateDirectory(relative_data_path); it->isValid(); it->next())
         {
             const std::string & basename = it->name();
-            if (!startsWith(basename, "tmp_"))
+            bool start_with_valid_prefix = false;
+            for (const auto & prefix : valid_prefixes)
             {
-                continue;
+                if (startsWith(basename, prefix))
+                {
+                    start_with_valid_prefix = true;
+                    break;
+                }
             }
+
+            if (!start_with_valid_prefix)
+                continue;
+
             const std::string & full_path = fullPath(disk, it->path());
 
             try
