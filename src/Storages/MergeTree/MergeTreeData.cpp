@@ -5825,7 +5825,8 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::cloneAndLoadDataPart(
         }
     }
 
-    auto target_disk = is_on_same_disk ? src_part->volume->getDisk() : getStoragePolicy()->getRandomDisk();
+    const auto settings = getSettings();
+    auto target_disk = is_on_same_disk ? src_part->volume->getDisk() : (settings->attach_part_to_different_disk_use_random_strategy ? getStoragePolicy()->getRandomDisk() : getStoragePolicy()->getAnyDisk());
     auto source_disk = src_part->volume->getDisk() ;
 
     String dst_part_name = src_part->getNewName(dst_part_info);

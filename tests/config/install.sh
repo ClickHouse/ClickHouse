@@ -44,7 +44,6 @@ ln -sf $SRC_PATH/config.d/logger.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/named_collection.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/ssl_certs.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/filesystem_cache_log.xml $DEST_SERVER_PATH/config.d/
-ln -sf $SRC_PATH/config.d/local_disks.xml $DEST_SERVER_PATH/config.d/
 
 ln -sf $SRC_PATH/users.d/log_queries.xml $DEST_SERVER_PATH/users.d/
 ln -sf $SRC_PATH/users.d/readonly.xml $DEST_SERVER_PATH/users.d/

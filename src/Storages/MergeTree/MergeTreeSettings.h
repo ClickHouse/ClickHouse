@@ -141,6 +141,7 @@ struct Settings;
     M(UInt64, part_moves_between_shards_enable, 0, "Experimental/Incomplete feature to move parts between shards. Does not take into account sharding expressions.", 0) \
     M(UInt64, part_moves_between_shards_delay_seconds, 30, "Time to wait before/after moving parts between shards.", 0) \
     M(Bool, use_metadata_cache, false, "Experimental feature to speed up parts loading process by using MergeTree metadata cache", 0) \
+    M(Bool, attach_part_to_different_disk_use_random_strategy, false, "Allow attach part between different disks and storage to use random strategy to select disk in target storage storage, default select first non-broken disk", 0) \
     \
     /** Obsolete settings. Kept for backward compatibility only. */ \
     M(UInt64, min_relative_delay_to_yield_leadership, 120, "Obsolete setting, does nothing.", 0) \
