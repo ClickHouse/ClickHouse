@@ -62,20 +62,26 @@ private:
     int length;
 };
 
-class SelectTablesCT : public IConversionTree
+class SelectTableCT : public IConversionTree
 {
 public:
-    struct TableAndDB
-    {
-        String table = "";
-        String database = "";
-    };
-    SelectTablesCT(MySQLPtr source) : IConversionTree(source) { }
+    SelectTableCT(MySQLPtr source) : IConversionTree(source) { }
+    virtual bool setup(String & error) override;
+    virtual void convert(CHPtr & ch_tree) const override;
+private:
+    String table;
+    String database;
+};
+
+class SelectFromCT : public IConversionTree
+{
+public:
+    SelectFromCT(MySQLPtr source) : IConversionTree(source) { }
     virtual bool setup(String & error) override;
     virtual void convert(CHPtr & ch_tree) const override;
 
 private:
-    std::vector<TableAndDB> tables;
+    std::vector<ConvPtr> items;
 };
 
 class SelectGroupByCT : public IConversionTree

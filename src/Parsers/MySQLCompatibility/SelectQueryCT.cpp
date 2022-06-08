@@ -209,57 +209,88 @@ void SelectLimitOffsetCT::convert(CHPtr & ch_tree) const
     ch_tree = limit_offset;
 }
 
-bool SelectTablesCT::setup(String & error)
+bool SelectTableCT::setup(String & error)
 {
-    auto table_list = getSourceNode();
-    if (table_list == nullptr)
+    const MySQLPtr & table_node = getSourceNode();
+    auto table_path = TreePath({"singleTable", "tableRef", "qualifiedIdentifier"});
+    MySQLPtr table_id;
+    if ((table_id = table_path.find(table_node)) == nullptr)
+    {
+        error = "incorrect table";
+        return false;
+    }
+    if (!tryExtractTableName(table_id, table, database))
+    {
+        error = "invalid table name";
+        return false;
+    }
+    return true;
+}
+
+void SelectTableCT::convert(CHPtr & ch_tree) const
+{
+    auto table_expr = std::make_shared<DB::ASTTableExpression>();
+    CHPtr table_identifier = nullptr;
+    if (database == "")
+        table_identifier = std::make_shared<DB::ASTTableIdentifier>(table);
+    else
+        table_identifier = std::make_shared<DB::ASTTableIdentifier>(database, table);
+
+    table_expr->database_and_table_name = std::move(table_identifier);
+    table_expr->children.push_back(table_expr->database_and_table_name);
+
+    ch_tree = table_expr;
+}
+
+bool SelectFromCT::setup(String & error)
+{
+    auto item_list_node = getSourceNode();
+    if (item_list_node == nullptr)
         return false;
 
-    tables = {};
-    auto table_path = TreePath({"tableReference", "tableFactor", "singleTable", "tableRef", "qualifiedIdentifier"});
+    items = {};
 
-    for (const auto & child : table_list->children)
+    auto expr_path = TreePath({"tableReference", "tableFactor"});
+    auto table_path = TreePath({"singleTable"});
+
+
+    for (const auto & child : item_list_node->children)
     {
-        MySQLPtr table_and_db_node;
-        if ((table_and_db_node = table_path.find(child)) != nullptr)
+        MySQLPtr expr_node;
+        if ((expr_node = expr_path.find(child)) != nullptr)
         {
-            tables.push_back({"", ""});
-            if (!tryExtractTableName(table_and_db_node, tables.back().table, tables.back().database))
+            MySQLPtr result_node = nullptr;
+            if ((result_node = table_path.descend(expr_node)) != nullptr)
             {
-                error = "invalid table name";
-                return false;
+                ConvPtr table_ct = std::make_shared<SelectTableCT>(result_node);
+                if (!table_ct->setup(error))
+                    return false;
+
+                items.push_back(std::move(table_ct));
             }
-            LOG_DEBUG(getLogger(), "got tables {} {}", tables.back().table, tables.back().database);
         }
     }
 
     return true;
 }
 
-void SelectTablesCT::convert(CHPtr & ch_tree) const
+void SelectFromCT::convert(CHPtr & ch_tree) const
 {
-    auto table_list = std::make_shared<DB::ASTTablesInSelectQuery>();
-    for (const auto & t : tables)
+    auto item_list = std::make_shared<DB::ASTTablesInSelectQuery>();
+    for (const auto & t : items)
     {
+        assert(t != nullptr);
+        CHPtr table_expr;
+        t->convert(table_expr);
+        
         auto table_elem = std::make_shared<DB::ASTTablesInSelectQueryElement>();
-        auto table_expr = std::make_shared<DB::ASTTableExpression>();
-
-        CHPtr table_identifier = nullptr;
-        if (t.database == "")
-            table_identifier = std::make_shared<DB::ASTTableIdentifier>(t.table);
-        else
-            table_identifier = std::make_shared<DB::ASTTableIdentifier>(t.database, t.table);
-
-        table_expr->database_and_table_name = std::move(table_identifier);
-        table_expr->children.push_back(table_expr->database_and_table_name);
-
         table_elem->table_expression = std::move(table_expr);
         table_elem->children.push_back(table_elem->table_expression);
 
-        table_list->children.push_back(std::move(table_elem));
+        item_list->children.push_back(std::move(table_elem));
     }
 
-    ch_tree = table_list;
+    ch_tree = item_list;
 }
 
 bool SelectGroupByCT::setup(String & error)
@@ -332,7 +363,7 @@ bool SelectQueryCT::setup(String & error)
 
         if (table_list != nullptr)
         {
-            tables_ct = std::make_shared<SelectTablesCT>(table_list);
+            tables_ct = std::make_shared<SelectFromCT>(table_list);
             if (!tables_ct->setup(error))
             {
                 tables_ct = nullptr;
