@@ -147,6 +147,9 @@ SELECT user_id, var_pop(metric) FROM t_mysql GROUP BY user_id;
 SELECT user_id, var_samp(metric) FROM t_mysql GROUP BY user_id;
 SELECT user_id, variance(metric) FROM t_mysql GROUP BY user_id;
 
+-- TODO: add all mysql aggregate functions
+-- see https://dev.mysql.com/doc/refman/8.0/en/aggregate-functions.html
+
 SELECT "MOO: HAVING";
 SELECT "MOO: metric_sum > 2";
 SELECT user_id, sum(metric) metric_sum FROM t_mysql GROUP BY user_id HAVING metric_sum > 2;
@@ -155,7 +158,14 @@ SELECT user_id, sum(metric) metric_sum FROM t_mysql WHERE metric > 0 GROUP BY us
 SELECT "MOO: metric_sum > 3 WHERE metric > 0 ";
 SELECT user_id, sum(metric) metric_sum FROM t_mysql WHERE metric > 0 GROUP BY user_id HAVING metric_sum > 3;
 
--- TODO: add all mysql aggregate functions
--- see https://dev.mysql.com/doc/refman/8.0/en/aggregate-functions.html
+SELECT "MOO: SELECT ... FROM (SELECT ...);";
+SELECT "MOO: one";
+SELECT one FROM (SELECT 1 AS one);
+SELECT "MOO: layered one";
+SELECT one_3 as one_4 FROM (SELECT one_2 as one_3 FROM (SELECT one_1 as one_2 FROM (SELECT 1 as one_1)));
+SELECT "MOO: LIMIT 3 GROUPBY";
+SELECT f, sum(s) FROM (SELECT user_id f, metric s FROM t_mysql LIMIT 3) GROUP BY f;
+SELECT "MOO: layered table";
+SELECT val2 * 2 FROM (SELECT val1 * val1 as val2 FROM (SELECT user_id - 100 as val1 FROM (SELECT * FROM t_mysql)));
 
 SET sql_dialect='clickhouse'; -- paranoid
