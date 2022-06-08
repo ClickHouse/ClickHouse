@@ -1,6 +1,6 @@
 1
-1; SELECT 0;;;; SELECT 0
-1; SELECT \'str\';;;; SELECT \'str\' 0
+1; SELECT // # 0;;;; SELECT 0
+1; SELECT /* \'str\';;;; SELECT \'str\' 0
 2
 MOO: numbers and arithmetics
 1

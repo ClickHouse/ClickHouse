@@ -4,8 +4,8 @@ SET sql_dialect='mysql';
 -- so let's check that it works correctly
 
 /* comment; SELECT 0 */ SELECT 1; --comment SELECT 0; # // should not be executed
-SELECT '1; SELECT 0;;;; SELECT 0'; // comment lol
-SELECT "1; SELECT 'str';;;; SELECT 'str' 0"; // comment lol
+SELECT '1; SELECT // # 0;;;; SELECT 0'; // comment lol
+SELECT "1; SELECT /* 'str';;;; SELECT 'str' 0"; // comment lol
 SELECT /* comment */2;
 
 -- okey, comments and multiqueries are OK, lets check simple SELECTs
