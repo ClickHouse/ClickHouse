@@ -1003,6 +1003,12 @@ Columns MergeTreeRangeReader::continueReadingChain(ReadResult & result, size_t &
     Columns columns;
     num_rows = 0;
 
+///////////////
+// HACK!!: no columns need to be read at this step? (only more filtering)
+    if (merge_tree_reader->getColumns().empty())
+        return columns;
+///////////////
+
     if (result.rowsPerGranule().empty())
     {
         /// If zero rows were read on prev step, than there is no more rows to read.
