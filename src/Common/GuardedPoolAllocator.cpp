@@ -205,7 +205,7 @@ void * GuardedPoolAllocator::allocate(size_t size, size_t alignment)
 
     /// If a slot is multiple pages in size, and the allocation takes up a single
     /// page, we can improve overflow detection by leaving the unused pages as
-    /// unmapped. Thus we do set PROT_READ | PROT_WRITE on entire slot. Instead
+    /// unmapped. Thus we do not set PROT_READ | PROT_WRITE on entire slot. Instead
     /// we set those only to pages, which will be used
     const size_t page_size = state.page_size;
     allocateInGuardedPool(reinterpret_cast<void *>(getPageAddr(user_ptr, page_size)), roundUpTo(size, page_size));
