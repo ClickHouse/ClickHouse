@@ -11,10 +11,15 @@ namespace DB
 {
 class IBackupEntry;
 
+enum class MutationType { Ordinary, Lightweight };
+
 /// A mutation entry for non-replicated MergeTree storage engines.
 /// Stores information about mutation in file mutation_*.txt.
 struct MergeTreeMutationEntry
 {
+    /// Type of mutation, used for lightweight delete.
+    MutationType type;
+
     time_t create_time = 0;
     MutationCommands commands;
 
@@ -38,7 +43,7 @@ struct MergeTreeMutationEntry
 
     /// Create a new entry and write it to a temporary file.
     MergeTreeMutationEntry(MutationCommands commands_, DiskPtr disk, const String & path_prefix_, UInt64 tmp_number,
-                           const TransactionID & tid_, const WriteSettings & settings);
+                           const TransactionID & tid_, const WriteSettings & settings, MutationType type_);
     MergeTreeMutationEntry(const MergeTreeMutationEntry &) = delete;
     MergeTreeMutationEntry(MergeTreeMutationEntry &&) = default;
 

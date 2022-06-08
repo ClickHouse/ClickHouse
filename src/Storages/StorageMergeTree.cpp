@@ -429,7 +429,7 @@ CurrentlyMergingPartsTagger::~CurrentlyMergingPartsTagger()
     storage.currently_processing_in_background_condition.notify_all();
 }
 
-Int64 StorageMergeTree::startMutation(const MutationCommands & commands, ContextPtr query_context)
+Int64 StorageMergeTree::startMutation(const MutationCommands & commands, ContextPtr query_context, MutationType type)
 {
     /// Choose any disk, because when we load mutations we search them at each disk
     /// where storage can be placed. See loadMutations().
@@ -447,7 +447,7 @@ Int64 StorageMergeTree::startMutation(const MutationCommands & commands, Context
     {
         std::lock_guard lock(currently_processing_in_background_mutex);
 
-        MergeTreeMutationEntry entry(commands, disk, relative_data_path, insert_increment.get(), current_tid, getContext()->getWriteSettings());
+        MergeTreeMutationEntry entry(commands, disk, relative_data_path, insert_increment.get(), current_tid, getContext()->getWriteSettings(), type);
         version = increment.get();
         entry.commit(version);
         String mutation_id = entry.file_name;
@@ -555,10 +555,15 @@ void StorageMergeTree::setMutationCSN(const String & mutation_id, CSN csn)
 
 void StorageMergeTree::mutate(const MutationCommands & commands, ContextPtr query_context)
 {
+    mutate(commands, query_context, MutationType::Ordinary);
+}
+
+void StorageMergeTree::mutate(const MutationCommands & commands, ContextPtr query_context, MutationType type)
+{
     /// Validate partition IDs (if any) before starting mutation
     getPartitionIdsAffectedByCommands(commands, query_context);
 
-    Int64 version = startMutation(commands, query_context);
+    Int64 version = startMutation(commands, query_context, type);
 
     if (query_context->getSettingsRef().mutations_sync > 0 || query_context->getCurrentTransaction())
         waitForMutation(version);
@@ -652,6 +657,7 @@ std::vector<MergeTreeMutationStatus> StorageMergeTree::getMutationsStatus() cons
             formatAST(*command.ast, buf, false, true);
             result.push_back(MergeTreeMutationStatus
             {
+                entry.type,
                 entry.file_name,
                 buf.str(),
                 entry.create_time,

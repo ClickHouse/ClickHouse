@@ -80,7 +80,7 @@ BlockIO InterpreterDeleteQuery::execute()
     {
         table->checkMutationIsPossible(mutation_commands, getContext()->getSettingsRef());
         MutationsInterpreter(table, metadata_snapshot, mutation_commands, getContext(), false).validate();
-        table->mutate(mutation_commands, getContext());
+        storage_merge_tree->mutate(mutation_commands, getContext(), MutationType::Lightweight);
     }
 
     return {};
