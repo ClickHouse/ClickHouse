@@ -13,35 +13,16 @@ enum class MetadataFromDiskTransactionState
     PREPARING,
     FAILED,
     COMMITTED,
-    ROLLED_BACK,
     PARTIALLY_ROLLED_BACK,
 };
 
 std::string toString(MetadataFromDiskTransactionState state);
 
-struct MetadataStorageFromDiskTransaction final : public IMetadataTransaction
-{
-private:
-    std::optional<size_t> failed_operation_index;
-
-    std::shared_mutex & commit_mutex;
-    std::vector<MetadataOperationPtr> operations;
-    MetadataFromDiskTransactionState state{MetadataFromDiskTransactionState::PREPARING};
-public:
-    explicit MetadataStorageFromDiskTransaction(std::shared_mutex & commit_mutex_)
-        : commit_mutex(commit_mutex_)
-    {}
-
-    void addOperation(MetadataOperationPtr && operation) override;
-    void commit() override;
-    void rollback() override;
-
-    ~MetadataStorageFromDiskTransaction() override;
-};
-
 class MetadataStorageFromDisk final : public IMetadataStorage
 {
 private:
+    friend struct MetadataStorageFromDiskTransaction;
+
     DiskPtr disk;
     std::string root_path_for_remote_metadata;
     mutable std::shared_mutex metadata_mutex;
@@ -53,10 +34,7 @@ public:
     {
     }
 
-    MetadataTransactionPtr createTransaction() const override
-    {
-        return std::make_shared<MetadataStorageFromDiskTransaction>(metadata_mutex);
-    }
+    MetadataTransactionPtr createTransaction() const override;
 
     const std::string & getPath() const override;
 
@@ -84,44 +62,68 @@ public:
 
     uint32_t getHardlinkCount(const std::string & path) const override;
 
-    void writeMetadataToFile(
-         const std::string & path,
-         MetadataTransactionPtr transaction,
-         const std::string & data) override;
-
-    void createEmptyMetadataFile(const std::string & path, MetadataTransactionPtr transaction) override;
-
-    void createMetadataFile(const std::string & path, const std::string & blob_name, uint64_t size_in_bytes, MetadataTransactionPtr transaction) override;
-
-    void addBlobToMetadata(const std::string & path, const std::string & blob_name, uint64_t size_in_bytes, MetadataTransactionPtr transaction) override;
-
-    void setLastModified(const std::string & path, const Poco::Timestamp & timestamp, MetadataTransactionPtr transaction) override;
-
-    void setReadOnly(const std::string & path, MetadataTransactionPtr transaction) override;
-
-    void unlinkFile(const std::string & path, MetadataTransactionPtr transaction) override;
-
-    void createDirectory(const std::string & path, MetadataTransactionPtr transaction) override;
-
-    void createDicrectoryRecursive(const std::string & path, MetadataTransactionPtr transaction) override;
-
-    void removeDirectory(const std::string & path, MetadataTransactionPtr transaction) override;
-
-    void removeRecursive(const std::string & path, MetadataTransactionPtr transaction) override;
-
-    void createHardLink(const std::string & path_from, const std::string & path_to, MetadataTransactionPtr transaction) override;
-
-    void moveFile(const std::string & path_from, const std::string & path_to, MetadataTransactionPtr transaction) override;
-
-    void moveDirectory(const std::string & path_from, const std::string & path_to, MetadataTransactionPtr transaction) override;
-
-    void replaceFile(const std::string & path_from, const std::string & path_to, MetadataTransactionPtr transaction) override;
-
-    uint32_t unlinkAndGetHardlinkCount(const std::string & path, MetadataTransactionPtr transaction) override;
 
 private:
     DiskObjectStorageMetadataPtr readMetadata(const std::string & path) const;
     DiskObjectStorageMetadataPtr readMetadataUnlocked(const std::string & path, std::shared_lock<std::shared_mutex> & lock) const;
+};
+
+struct MetadataStorageFromDiskTransaction final : public IMetadataTransaction
+{
+private:
+    const MetadataStorageFromDisk & metadata_storage;
+
+    std::vector<MetadataOperationPtr> operations;
+    MetadataFromDiskTransactionState state{MetadataFromDiskTransactionState::PREPARING};
+
+    void addOperation(MetadataOperationPtr && operation);
+    void rollback(size_t until_pos);
+
+public:
+    explicit MetadataStorageFromDiskTransaction(const MetadataStorageFromDisk & metadata_storage_)
+        : metadata_storage(metadata_storage_)
+    {}
+
+    const IMetadataStorage & getStorageForNonTransactionalReads() const override
+    {
+        return metadata_storage;
+    }
+
+    void commit() override;
+
+    void writeMetadataToFile(const std::string & path, const std::string & data) override;
+
+    void createEmptyMetadataFile(const std::string & path) override;
+
+    void createMetadataFile(const std::string & path, const std::string & blob_name, uint64_t size_in_bytes) override;
+
+    void addBlobToMetadata(const std::string & path, const std::string & blob_name, uint64_t size_in_bytes) override;
+
+    void setLastModified(const std::string & path, const Poco::Timestamp & timestamp) override;
+
+    void setReadOnly(const std::string & path) override;
+
+    void unlinkFile(const std::string & path) override;
+
+    void createDirectory(const std::string & path) override;
+
+    void createDicrectoryRecursive(const std::string & path) override;
+
+    void removeDirectory(const std::string & path) override;
+
+    void removeRecursive(const std::string & path) override;
+
+    void createHardLink(const std::string & path_from, const std::string & path_to) override;
+
+    void moveFile(const std::string & path_from, const std::string & path_to) override;
+
+    void moveDirectory(const std::string & path_from, const std::string & path_to) override;
+
+    void replaceFile(const std::string & path_from, const std::string & path_to) override;
+
+    void unlinkMetadata(const std::string & path) override;
+
+    ~MetadataStorageFromDiskTransaction() override = default;
 };
 
 

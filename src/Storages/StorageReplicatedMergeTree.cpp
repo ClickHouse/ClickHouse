@@ -8165,7 +8165,7 @@ public:
         writeString(table_shared_id, buffer);
         buffer.write("\n", 1);
 
-        metadata_storage->writeMetadataToFile(file_path, tx, buffer.str());
+        tx->writeMetadataToFile(file_path, buffer.str());
         tx->commit();
     }
 
@@ -8205,7 +8205,7 @@ public:
         if (metadata_storage->exists(fname))
         {
             auto tx = metadata_storage->createTransaction();
-            metadata_storage->unlinkFile(fname, tx);
+            tx->unlinkFile(fname);
             tx->commit();
         }
     }
