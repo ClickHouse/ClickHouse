@@ -69,8 +69,6 @@ public:
 private:
     void loadFromConfig(const Poco::Util::AbstractConfiguration & config, const String & prefix, bool isUser = false);
 
-    String getKinitCmd();
-
     void runKinit();
 
     // hdfs builder relies on an external config data storage

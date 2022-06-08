@@ -13,7 +13,6 @@ int KerberosInit::init(const String & keytab_file, const String & principal, con
 
     krb5_error_code ret;
 
-    // todo: use deftype
     const char *deftype = nullptr;
     int flags = 0;
 

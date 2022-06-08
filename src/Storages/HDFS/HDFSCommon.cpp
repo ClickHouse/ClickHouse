@@ -77,44 +77,8 @@ void HDFSBuilderWrapper::loadFromConfig(const Poco::Util::AbstractConfiguration 
     }
 }
 
-String HDFSBuilderWrapper::getKinitCmd()
-{
-
-    if (hadoop_kerberos_keytab.empty() || hadoop_kerberos_principal.empty())
-    {
-        throw Exception("Not enough parameters to run kinit",
-            ErrorCodes::NO_ELEMENTS_IN_CONFIG);
-    }
-
-    WriteBufferFromOwnString ss;
-
-    String cache_name =  hadoop_security_kerberos_ticket_cache_path.empty() ?
-        String() :
-        (String(" -c \"") + hadoop_security_kerberos_ticket_cache_path + "\"");
-
-    // command to run looks like
-    // kinit -R -t /keytab_dir/clickhouse.keytab -k somebody@TEST.CLICKHOUSE.TECH || ..
-    ss << hadoop_kerberos_kinit_command << cache_name <<
-        " -R -t \"" << hadoop_kerberos_keytab << "\" -k " << hadoop_kerberos_principal <<
-        "|| " << hadoop_kerberos_kinit_command << cache_name << " -t \"" <<
-        hadoop_kerberos_keytab << "\" -k " << hadoop_kerberos_principal;
-    return ss.str();
-}
-
 void HDFSBuilderWrapper::runKinit()
-{   /*
-    String cmd = getKinitCmd();
-    LOG_DEBUG(&Poco::Logger::get("HDFSClient"), "running kinit: {}", cmd);
-
-    std::unique_lock<std::mutex> lck(kinit_mtx);
-
-    auto command = ShellCommand::execute(cmd);
-    auto status = command->tryWait();
-    if (status)
-    {
-        throw Exception("kinit failure: " + cmd, ErrorCodes::BAD_ARGUMENTS);
-    }
-    */
+{
     LOG_DEBUG(&Poco::Logger::get("HDFSClient"), "ADQM: running KerberosInit");
     std::unique_lock<std::mutex> lck(kinit_mtx);
     KerberosInit k_init;
