@@ -767,6 +767,7 @@ def test_concurrent_transactions(started_cluster):
 
 def test_abrupt_connection_loss_while_heavy_replication(started_cluster):
     pytest.skip("Temporary disabled (FIXME)")
+
     def transaction(thread_id):
         if thread_id % 2:
             conn = get_postgres_conn(
@@ -843,6 +844,7 @@ def test_restart_server_while_replication_startup_not_finished(started_cluster):
 
 def test_abrupt_server_restart_while_heavy_replication(started_cluster):
     pytest.skip("Temporary disabled (FIXME)")
+
     def transaction(thread_id):
         if thread_id % 2:
             conn = get_postgres_conn(
