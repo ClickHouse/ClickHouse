@@ -240,7 +240,7 @@ void DiskObjectStorageRemoteMetadataRestoreHelper::restore(const Poco::Util::Abs
 
 void DiskObjectStorageRemoteMetadataRestoreHelper::readRestoreInformation(RestoreInformation & restore_information) /// NOLINT
 {
-    auto metadata_str = disk->metadata_storage->readMetadataFileToString(RESTORE_FILE_NAME);
+    auto metadata_str = disk->metadata_storage->readFileToString(RESTORE_FILE_NAME);
     ReadBufferFromString buffer(metadata_str);
 
     try
@@ -438,7 +438,7 @@ void DiskObjectStorage::onFreeze(const String & path)
     auto tx =  metadata_storage->createTransaction();
     WriteBufferFromOwnString revision_file_buf ;
     writeIntText(metadata_helper->revision_counter.load(), revision_file_buf);
-    tx->writeMetadataToFile(path + "revision.txt", revision_file_buf.str());
+    tx->writeStringToFile(path + "revision.txt", revision_file_buf.str());
     tx->commit();
 }
 

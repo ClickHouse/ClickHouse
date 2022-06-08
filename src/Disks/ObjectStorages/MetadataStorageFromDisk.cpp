@@ -364,7 +364,7 @@ public:
 
 }
 
-void MetadataStorageFromDiskTransaction::writeMetadataToFile( /// NOLINT
+void MetadataStorageFromDiskTransaction::writeStringToFile( /// NOLINT
      const std::string & path,
      const std::string & data)
 {
@@ -491,7 +491,7 @@ DirectoryIteratorPtr MetadataStorageFromDisk::iterateDirectory(const std::string
 }
 
 
-std::string MetadataStorageFromDisk::readMetadataFileToString(const std::string & path) const
+std::string MetadataStorageFromDisk::readFileToString(const std::string & path) const
 {
     auto buf = disk->readFile(path);
     std::string result;
@@ -502,7 +502,7 @@ std::string MetadataStorageFromDisk::readMetadataFileToString(const std::string 
 void MetadataStorageFromDiskTransaction::createEmptyMetadataFile(const std::string & path)
 {
     auto metadata = std::make_unique<DiskObjectStorageMetadata>(metadata_storage.disk->getPath(), metadata_storage.root_path_for_remote_metadata, path);
-    writeMetadataToFile(path, metadata->serializeToString());
+    writeStringToFile(path, metadata->serializeToString());
 }
 
 void MetadataStorageFromDiskTransaction::setLastModified(const std::string & path, const Poco::Timestamp & timestamp)
@@ -541,7 +541,7 @@ void MetadataStorageFromDiskTransaction::createHardLink(const std::string & path
 
     metadata->incrementRefCount();
 
-    writeMetadataToFile(path_from, metadata->serializeToString());
+    writeStringToFile(path_from, metadata->serializeToString());
 
     addOperation(std::make_unique<CreateHardlinkOperation>(path_from, path_to, *metadata_storage.disk));
 }
@@ -565,14 +565,14 @@ void MetadataStorageFromDiskTransaction::setReadOnly(const std::string & path)
 {
     auto metadata = metadata_storage.readMetadata(path);
     metadata->setReadOnly();
-    writeMetadataToFile(path, metadata->serializeToString());
+    writeStringToFile(path, metadata->serializeToString());
 }
 
 void MetadataStorageFromDiskTransaction::createMetadataFile(const std::string & path, const std::string & blob_name, uint64_t size_in_bytes)
 {
     DiskObjectStorageMetadataPtr metadata = std::make_unique<DiskObjectStorageMetadata>(metadata_storage.disk->getPath(), metadata_storage.root_path_for_remote_metadata, path);
     metadata->addObject(blob_name, size_in_bytes);
-    writeMetadataToFile(path, metadata->serializeToString());
+    writeStringToFile(path, metadata->serializeToString());
 }
 
 void MetadataStorageFromDiskTransaction::addBlobToMetadata(const std::string & path, const std::string & blob_name, uint64_t size_in_bytes)
@@ -588,13 +588,13 @@ void MetadataStorageFromDiskTransaction::addBlobToMetadata(const std::string & p
     }
 
     metadata->addObject(blob_name, size_in_bytes);
-    writeMetadataToFile(path, metadata->serializeToString());
+    writeStringToFile(path, metadata->serializeToString());
 }
 
 DiskObjectStorageMetadataPtr MetadataStorageFromDisk::readMetadataUnlocked(const std::string & path, std::shared_lock<std::shared_mutex> &) const
 {
     auto metadata = std::make_unique<DiskObjectStorageMetadata>(disk->getPath(), root_path_for_remote_metadata, path);
-    auto str = readMetadataFileToString(path);
+    auto str = readFileToString(path);
     metadata->deserializeFromString(str);
     return metadata;
 }
@@ -660,7 +660,7 @@ void MetadataStorageFromDiskTransaction::unlinkMetadata(const std::string & path
     if (ref_count != 0)
     {
         metadata->decrementRefCount();
-        writeMetadataToFile(path, metadata->serializeToString());
+        writeStringToFile(path, metadata->serializeToString());
     }
     unlinkFile(path);
 }

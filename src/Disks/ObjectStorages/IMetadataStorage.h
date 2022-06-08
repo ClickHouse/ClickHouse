@@ -27,6 +27,12 @@ using MetadataOperationPtr = std::unique_ptr<IMetadataOperation>;
 
 class IMetadataStorage;
 
+/// Tries to provide some "transactions" interface, which allow
+/// to execute (commit) operations simultaneously. We don't provide
+/// any snapshot isolation here, so no read operations in transactions
+/// interface. This transaction is more like "batch operation" than real "transaction".
+///
+/// But for better usability we can get MetadataStorage interface and use some read methods.
 struct IMetadataTransaction : private boost::noncopyable
 {
 public:
@@ -34,11 +40,10 @@ public:
 
     virtual const IMetadataStorage & getStorageForNonTransactionalReads() const = 0;
 
-    /// Create empty file in metadata storage
-    virtual void createEmptyMetadataFile(const std::string & path) = 0;
+    /// General purpose methods
 
     /// Write metadata string to file
-    virtual void writeMetadataToFile(const std::string & path, const std::string & data) = 0;
+    virtual void writeStringToFile(const std::string & path, const std::string & data) = 0;
 
     virtual void setLastModified(const std::string & path, const Poco::Timestamp & timestamp) = 0;
 
@@ -62,14 +67,23 @@ public:
 
     virtual void replaceFile(const std::string & path_from, const std::string & path_to) = 0;
 
+    /// Metadata related methods
+
+    /// Create empty file in metadata storage
+    virtual void createEmptyMetadataFile(const std::string & path) = 0;
+
     /// Create metadata file on paths with content (blob_name, size_in_bytes)
     virtual void createMetadataFile(const std::string & path, const std::string & blob_name, uint64_t size_in_bytes) = 0;
 
     /// Add to new blob to metadata file (way to implement appends)
     virtual void addBlobToMetadata(const std::string & path, const std::string & blob_name, uint64_t size_in_bytes) = 0;
 
-    /// Unlink file and return amount of hardlinks left
-    virtual void unlinkMetadata(const std::string & path) = 0;
+    /// Unlink metadata file and do something special if required
+    /// By default just remove file (unlink file).
+    virtual void unlinkMetadata(const std::string & path)
+    {
+        unlinkFile(path);
+    }
 
     virtual ~IMetadataTransaction() = default;
 };
@@ -79,13 +93,12 @@ using MetadataTransactionPtr = std::shared_ptr<IMetadataTransaction>;
 /// Metadata storage for remote disks like DiskObjectStorage.
 /// Support some subset of Disk operations, allow to read/write only
 /// small amounts of data (strings).
-/// Tries to provide some "transactions" interface, which allow
-/// to execute operations simultaneously.
 class IMetadataStorage : private boost::noncopyable
 {
 public:
     virtual MetadataTransactionPtr createTransaction() const = 0;
 
+    /// General purpose functions (similar to Disk)
     virtual const std::string & getPath() const = 0;
 
     virtual bool exists(const std::string & path) const = 0;
@@ -105,8 +118,7 @@ public:
     virtual uint32_t getHardlinkCount(const std::string & path) const = 0;
 
     /// Read metadata file to string from path
-    virtual std::string readMetadataFileToString(const std::string & path) const = 0;
-
+    virtual std::string readFileToString(const std::string & path) const = 0;
 
     virtual ~IMetadataStorage() = default;
 
