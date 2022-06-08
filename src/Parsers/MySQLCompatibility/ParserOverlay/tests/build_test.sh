@@ -1,7 +1,9 @@
 #!/bin/bash
 
-rm -rf gtest_second.cpp
+test_filename="gtest_mysql_parser_stress.cpp"
 
-cat head.txt >> gtest_second.cpp
-python3 gen_tests.py >> gtest_second.cpp
-cat end.txt >> gtest_second.cpp
+rm -rf $test_filename
+
+cat head.h >> $test_filename
+python3 gen_tests.py >> $test_filename
+cat test.cpp >> $test_filename

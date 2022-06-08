@@ -71,8 +71,6 @@ ALTER TABLE app_recipeyeast ADD CONSTRAINT recipe_id_refs_id_49e05ee7bf3c77f8 FO
 UPDATE inventory_instance_attributes SET supported = ? , frequency = NULL , insert_count = ? , latest_save_time = ? , latest_string_value = NULL , latest_double_value = NULL , latest_long_value = ? WHERE instance_attribute_id = ?$$
 SHOW INDEX FROM migration_status_servers_migration_status_data_collection FROM mem$$
 SELECT MAX( end_time ) FROM dc_ng_double_age0$$
-[<80000]CREATE TABLE app_grain ( id INTEGER AUTO_INCREMENT NOT NULL PRIMARY KEY , name VARCHAR( 1 ) NOT NULL , extract_min SMALLINT NULL , extract_max SMALLINT NULL , volume_potential_min SMALLINT NULL , volume_potential_max SMALLINT NULL , lovibond_min SMALLINT NULL , lovibond_max SMALLINT NULL , description VARCHAR( 1 ) NOT NULL , nodegroup VARCHAR( 1 ) NOT NULL ) ;$$
-[>=80000]CREATE TABLE app_grain ( id INTEGER AUTO_INCREMENT NOT NULL PRIMARY KEY , name VARCHAR( 1 ) NOT NULL , extract_min SMALLINT NULL , extract_max SMALLINT NULL , volume_potential_min SMALLINT NULL , volume_potential_max SMALLINT NULL , lovibond_min SMALLINT NULL , lovibond_max SMALLINT NULL , `description` VARCHAR( 1 ) NOT NULL , nodegroup VARCHAR( 1 ) NOT NULL ) ;$$
 TRUNCATE auth_message ;$$
 SHOW FULL COLUMNS FROM migration_status_servers_migration_status_data_collection FROM mem LIKE 'blah'$$
 SHOW INDEX FROM rule_alarms FROM mem$$
@@ -1149,12 +1147,6 @@ SELECT UCASE('Hej')$$
 SELECT @s, HEX(@s), HEX(WEIGHT_STRING(@s));$$
 SELECT HEX(WEIGHT_STRING('ab' AS BINARY(4)))$$
 SELECT HEX(WEIGHT_STRING('ab' AS CHAR(4)))$$
-[<80000]SELECT HEX(WEIGHT_STRING(0x007fff LEVEL 1))$$
-[<80000]SELECT HEX(WEIGHT_STRING(0x007fff LEVEL 1 DESC))$$
-[<80000]SELECT HEX(WEIGHT_STRING(0x007fff LEVEL 1 REVERSE))$$
-[<80000]SELECT HEX(WEIGHT_STRING(0x007fff LEVEL 1 DESC REVERSE))$$
-[<80000]SELECT HEX(WEIGHT_STRING('ab' AS CHAR(4) LEVEL 1-3))$$
-[<80000]SELECT HEX(WEIGHT_STRING('ab' AS CHAR(4) LEVEL 1, 2, 3, 4))$$
 SELECT 'Monty!' REGEXP '.*'$$
 SELECT 'new*\n*line' REGEXP 'new\\*.\\*line'$$
 SELECT 'a' REGEXP 'A', 'a' REGEXP BINARY 'A'$$
@@ -2118,7 +2110,6 @@ KEY `idx5656` (`col374`,`col1029`(107),`col306`,`col349`,`col239`(209),`col416`,
 ) ENGINE=MyISAM DEFAULT CHARSET=latin1 MIN_ROWS=178017 MAX_ROWS=1000251 PACK_KEYS=0 DELAY_KEY_WRITE=1 ROW_FORMAT=COMPACT$$
 
 alter database db default collate = 'utf8'$$
-[<80000]alter database db upgrade data directory name$$
 alter logfile group grp add undofile 'blah' initial_size 12345 wait engine = InnoDB$$
 alter function func1 comment 'blah' language sql contains sql reads sql data no sql modifies sql data sql security invoker contains sql$$
 alter procedure proc1 comment 'blah' language sql contains sql reads sql data no sql modifies sql data sql security invoker contains sql$$
@@ -2129,9 +2120,6 @@ alter table table1 change column column1 column2 bit (5) column_format dynamic s
 
 alter tablespace space1 add datafile '/path/to/data' initial_size = 123 wait engine innodb$$
 alter tablespace space2 drop datafile '/path/to/data' engine innodb$$
-[<80000]alter tablespace space1 change datafile '/path/to/data' initial_size = 123$$
-[<80000]alter tablespace test not accessible$$
-[<80000]alter tablespace test read_write$$
 
 alter definer = current_user () event event1 on schedule every a.b * 5 >> 1 week starts (select 1) + interval (15.2, 2) on completion preserve enable comment 'blah' do select @a := 1$$
 alter algorithm = merge definer = 'abc'@`def` sql security invoker view view1 (a, b) as select (select a from b) as subselect with cascaded check option$$
@@ -2139,7 +2127,6 @@ alter algorithm = merge definer = 'abc'@`def` sql security invoker view view1 (a
 create temporary table if not exists app_userprofile ( id INTEGER AUTO_INCREMENT NOT NULL PRIMARY KEY , user_id INTEGER NOT NULL UNIQUE , pref_brew_type VARCHAR( 1 ) NOT NULL , pref_make_starter bool NOT NULL , pref_secondary_ferm bool NOT NULL , pref_dispensing_style VARCHAR( 1 ) NOT NULL , timezone VARCHAR( 1 ) NOT NULL ) $$
 create table actor_copy (like sakial.actor)$$
 create fulltext index index1 on sakila.actor(id(123)ASC,actor_id desc) with parser gulp key_block_size = 15$$
-[<80011]create database if not exists sakila char set = default$$
 create database if not exists sakila char set = binary$$
 CREATE EVENT myevent ON SCHEDULE EVERY 6 HOUR COMMENT 'A sample comment.' DO UPDATE myschema.mytable SET mycol = mycol + 1$$
 CREATE ALGORITHM = UNDEFINED DEFINER = `root`@`localhost` SQL SECURITY DEFINER VIEW `film_list` AS
@@ -2234,7 +2221,6 @@ execute s1 using @'blah', @blah$$
 deallocate prepare s1$$
 
 drop user current_user(), 'mike'@localhost$$
-[<80011]grant insert (a, b, c), references (d, e, f) on function *.* to mike@'localhost', friends@`anyhost` require CIPHER '12345' ISSUER 'me' with max_queries_per_hour 10000 grant option$$
 grant insert (a, b, c), references (d, e, f) on function *.* to mike@'localhost', friends@`anyhost`$$
 rename user mike to ekim, ekim to mike, me to myself$$
 revoke all privileges, grant option from mike$$
@@ -2257,18 +2243,14 @@ show collation like 'blah'$$
 show full columns from customer in sakila where customer_id in (1, 2, 3)$$
 
 binlog 'blah'$$
-[<80000]flush local des_key_file, hosts, binary logs$$
 flush local hosts, binary logs$$
 cache index actor partition (all) index (idx_actor_last_name, primary, primary) in sakila$$
 cache index actor index (idx_actor_last_name, primary, primary), category key (primary) in default$$
 kill query 1$$
 load index into cache inventory$$
-[<80000]reset master, query cache, slave$$
 reset master, slave$$
 
 describe sakila.inventory store_id$$
-[<80000]explain extended replace staff (staff_id, address_id, active) (select staff_id, address_id, active from staff where staff_id < 5) union (select staff_id, address_id, active from staff where staff_id > 10)$$
-[>=80000]explain replace staff (staff_id, address_id, active) (select staff_id, address_id, active from staff where staff_id < 5) union (select staff_id, address_id, active from staff where staff_id > 10)$$
 help 'me'$$
 use less$$
 
@@ -2806,7 +2788,6 @@ BEGIN
 
 END$$
 xa recover /*!50704 convert xid */$$
-[<50708]select /*!50704 max_statement_time = 1*/ *, x.a, b, xxx.c from x xxx$$
 CREATE DEFINER=`forex`@`%` PROCEDURE `set_next_minute`()
 BEGIN
     SET @next_minute = (
@@ -2858,28 +2839,4 @@ BEGIN
 RETURN (SELECT ROUND(AVG(Percentage)) as consolidatedAvg FROM AvgTemp);
 END$$
 select NOT NOT TRUE, NOT NOT NOT FALSE;$$
-[<80000]create user mike identified by password 'a'$$
 create user mike identified by 'a'$$
-[>=80011]select employee, monthname(date), sale, sum(sale) over (partition by month(date)) as sum from sales$$
-[>=80014]alter table table1 alter column `???` set default (22 + 1 -2 / 3)$$
-[>=80014]alter table table1 convert to character set default collate utf8$$
-[>=80014]create tablespace space1 initial_size 123, autoextend_size = 456 max_size 789 extent_size=1005678G, nodegroup = 1000200030004000 storage engine innodb wait wait, no_wait, file_block_size 100 encryption 'got it'$$
-[>=80014]alter tablespace space1 initial_size 123, autoextend_size = 456 max_size =1005678G, storage engine innodb wait wait, no_wait, encryption 'got it'$$
-[>=80013]CREATE TABLE def_expr (
-  id        INT        NOT NULL AUTO_INCREMENT,
-  uuid_def  BINARY(16) DEFAULT (uuid_to_bin(uuid())),
-  geo_def   POINT      DEFAULT (Point(0,0)),
-  json_def  JSON       DEFAULT (JSON_ARRAY()),
-  json_def2 JSON       DEFAULT ('[]') /* this works too */,
-
-  PRIMARY KEY (`id`),
-  UNIQUE INDEX `id_UNIQUE` (`id` ASC) VISIBLE
-)$$
-[>=80013]CREATE TABLE func_index (
-  id        INT        NOT NULL AUTO_INCREMENT,
-  ipaddr4   INT UNSIGNED /* 4 bytes */,
-
-  PRIMARY KEY (id),
-  UNIQUE INDEX id_UNIQUE (id ASC) VISIBLE,
-  INDEX func_idx ((INET_NTOA(ipaddr4)))
-);

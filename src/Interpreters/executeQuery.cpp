@@ -436,6 +436,8 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             /// TODO: parser should fail early when max_query_size limit is reached.
             ast = parseQuery(parser, begin, end, "", max_query_size, settings.max_parser_depth);
 
+            LOG_DEBUG(&Poco::Logger::get("executeQuery"), "AST\n {}", ast->dumpTree());
+
             if (auto txn = context->getCurrentTransaction())
             {
                 chassert(txn->getState() != MergeTreeTransaction::COMMITTING);

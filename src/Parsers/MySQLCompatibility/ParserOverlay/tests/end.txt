@@ -1,9 +1,0 @@
-TEST(MySQLParserOverlayStress, Select1)
-{
-	for (const auto & query : queries)
-	{
-		ASTPtr res = std::make_shared<AST>();
-		std::string error = "";
-		AST::FromQuery(query, res, error);
-	}
-}
