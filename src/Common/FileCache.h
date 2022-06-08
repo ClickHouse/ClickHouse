@@ -20,6 +20,12 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 class IFileCache;
 using FileCachePtr = std::shared_ptr<IFileCache>;
 
@@ -182,6 +188,9 @@ protected:
 
         void remove(const Key & key, size_t offset, size_t size, std::lock_guard<std::mutex> & cache_lock)
         {
+            if (cache_size < size)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Deleted cache size exceeds existing cache size");
+
             if (!skip_download_if_exceeds_query_cache)
             {
                 auto record = records.find({key, offset});
@@ -196,6 +205,9 @@ protected:
 
         void reserve(const Key & key, size_t offset, size_t size, std::lock_guard<std::mutex> & cache_lock)
         {
+            if (cache_size > size)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Reserved cache size exceeds the remaining cache size");
+
             if (!skip_download_if_exceeds_query_cache)
             {
                 auto record = records.find({key, offset});
@@ -226,12 +238,6 @@ protected:
         LRUQueue & queue() { return lru_queue; }
 
         bool isSkipDownloadIfExceed() { return skip_download_if_exceeds_query_cache; }
-
-        void update(const ReadSettings & settings)
-        {
-            cache_size = settings.max_query_cache_size;
-            skip_download_if_exceeds_query_cache = settings.skip_download_if_exceeds_query_cache;
-        }
     };
 
     using QueryContextPtr = std::shared_ptr<QueryContext>;
@@ -279,13 +285,13 @@ public:
     {
         explicit QueryContextHolder(const String & query_id_, IFileCache * cache_, QueryContextPtr context_);
 
+        QueryContextHolder() = default;
+
         ~QueryContextHolder();
 
-        String query_id;
-
-        IFileCache * cache;
-
-        QueryContextPtr context;
+        String query_id {};
+        IFileCache * cache = nullptr;
+        QueryContextPtr context = nullptr;
     };
 
     QueryContextHolder getQueryContextHolder(const String & query_id, const ReadSettings & settings);
@@ -352,9 +358,9 @@ private:
 
     enum class ReserveResult
     {
-        FINISHED,
-        NO_ENOUGH_SPACE,
-        NO_NEED,
+        FITS_IN_QUERY_LIMIT_AND_RESERVATION_COMPLETED,
+        EXCEEDS_QUERY_LIMIT,
+        FITS_IN_QUERY_LIMIT_NEED_RESERVE_FROM_MAIN_LIST,
     };
 
     Poco::Logger * log;

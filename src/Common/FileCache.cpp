@@ -117,9 +117,15 @@ IFileCache::QueryContextHolder IFileCache::getQueryContextHolder(const String & 
 {
     std::lock_guard cache_lock(mutex);
 
-    /// if enable_filesystem_query_cache_limit is true, we create context query for current query.
-    auto context = enable_filesystem_query_cache_limit ? getOrSetQueryContext(query_id, settings, cache_lock) : nullptr;
-    return QueryContextHolder(query_id, this, context);
+    /// if enable_filesystem_query_cache_limit is true, and max_query_cache_size large than zero,
+    /// we create context query for current query.
+    if (enable_filesystem_query_cache_limit && !settings.max_query_cache_size)
+    {
+        auto context = getOrSetQueryContext(query_id, settings, cache_lock);
+        return QueryContextHolder(query_id, this, context);
+    }
+    else
+        return QueryContextHolder();
 }
 
 IFileCache::QueryContextHolder::QueryContextHolder(const String & query_id_, IFileCache * cache_, IFileCache::QueryContextPtr context_)
@@ -555,19 +561,19 @@ bool LRUFileCache::tryReserve(const Key & key, size_t offset, size_t size, std::
         auto res = tryReserveForQuery(key, offset, size, query_context, cache_lock);
         switch (res)
         {
-            case ReserveResult::FINISHED :
+            case ReserveResult::FITS_IN_QUERY_LIMIT_AND_RESERVATION_COMPLETED :
             {
                 /// When the maximum cache size of the query is reached, the cache will be
                 /// evicted from the history cache accessed by the current query.
                 return true;
             }
-            case ReserveResult::NO_ENOUGH_SPACE :
+            case ReserveResult::EXCEEDS_QUERY_LIMIT :
             {
                 /// The query currently does not have enough space to reserve.
                 /// It returns false and reads data directly from the remote fs.
                 return false;
             }
-            case ReserveResult::NO_NEED :
+            case ReserveResult::FITS_IN_QUERY_LIMIT_NEED_RESERVE_FROM_MAIN_LIST :
             {
                 /// When the maximum cache capacity of the request is not reached, the cache
                 /// block is evicted from the main LRU queue.
@@ -588,13 +594,13 @@ LRUFileCache::ReserveResult LRUFileCache::tryReserveForQuery(const Key & key, si
     //// cache block is evicted from the main LRU queue by tryReserveForMainList().
     if (query_context->getCacheSize() + size < query_context->getMaxCacheSize())
     {
-        return ReserveResult::NO_NEED;
+        return ReserveResult::FITS_IN_QUERY_LIMIT_NEED_RESERVE_FROM_MAIN_LIST;
     }
     /// When skip_download_if_exceeds_query_cache is true, there is no need
     /// to evict old data, skip the cache and read directly from remote fs.
     else if (query_context->isSkipDownloadIfExceed())
     {
-        return ReserveResult::NO_ENOUGH_SPACE;
+        return ReserveResult::EXCEEDS_QUERY_LIMIT;
     }
     /// The maximum cache size of the query is reached, the cache will be
     /// evicted from the history cache accessed by the current query.
@@ -613,7 +619,7 @@ LRUFileCache::ReserveResult LRUFileCache::tryReserveForQuery(const Key & key, si
         {
             return (max_size != 0 && queue.getTotalWeight(cache_lock) + size - removed_size > max_size)
             || (max_element_size != 0 && queue_size > max_element_size)
-            || (query_context->getMaxCacheSize() != 0 && query_context->getCacheSize() + size - removed_size > query_context->getMaxCacheSize());
+            || (query_context->getCacheSize() + size - removed_size > query_context->getMaxCacheSize());
         };
 
         /// Select the cache from the LRU queue held by query for expulsion.
@@ -678,7 +684,7 @@ LRUFileCache::ReserveResult LRUFileCache::tryReserveForQuery(const Key & key, si
 
         if (is_overflow())
         {
-            return ReserveResult::NO_ENOUGH_SPACE;
+            return ReserveResult::EXCEEDS_QUERY_LIMIT;
         }
 
         if (cell_for_reserve)
@@ -703,7 +709,7 @@ LRUFileCache::ReserveResult LRUFileCache::tryReserveForQuery(const Key & key, si
         }
 
         query_context->reserve(key, offset, size, cache_lock);
-        return ReserveResult::FINISHED;
+        return ReserveResult::FITS_IN_QUERY_LIMIT_NEED_RESERVE_FROM_MAIN_LIST;
     }
 }
 
