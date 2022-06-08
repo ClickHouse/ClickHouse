@@ -389,13 +389,14 @@ void DiskObjectStorage::removeMetadata(const String & path, std::vector<String> 
 
     try
     {
+        uint32_t hardlink_count = metadata_storage->getHardlinkCount(path);
         auto remote_objects = metadata_storage->getRemotePaths(path);
+
         auto tx = metadata_storage->createTransaction();
         tx->unlinkMetadata(path);
         tx->commit();
-        uint32_t hardlink_count = metadata_storage->getHardlinkCount(path);
 
-        if (hardlink_count == 0)
+        if (hardlink_count <= 1)
         {
             paths_to_remove = remote_objects;
             for (const auto & path_to_remove : paths_to_remove)
