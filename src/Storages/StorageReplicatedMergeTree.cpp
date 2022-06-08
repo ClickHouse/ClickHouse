@@ -462,7 +462,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
         }
         /// Temporary directories contain uninitialized results of Merges or Fetches (after forced restart),
         /// don't allow to reinitialize them, delete each of them immediately.
-        clearOldTemporaryDirectories(0);
+        clearOldTemporaryDirectories(0, {"tmp_", "delete_tmp_"});
         clearOldWriteAheadLogs();
     }
 
@@ -2503,7 +2503,7 @@ void StorageReplicatedMergeTree::cloneReplica(const String & source_replica, Coo
             source_queue.emplace_back();
             auto & info = source_queue.back();
             info.data = std::move(res.data);
-            info.stat = res.stat;
+            info.stat = std::move(res.stat);
             try
             {
                 info.parsed_entry = LogEntry::parse(info.data, info.stat);
