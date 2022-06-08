@@ -122,12 +122,51 @@ def test_kafka_json_as_string(kafka_cluster):
 {"t": 124, "e": {"x": "test"} }
 {"F1":"V1","F2":{"F21":"V21","F22":{},"F23":"V23","F24":"2019-12-24T16:28:04"},"F3":"V3"}
 """
-    logging.debug("ADQM: logs: %s", instance.grep_in_log("ADQM"))
     assert TSV(result) == TSV(expected)
     assert instance.contains_in_log(
         "Parsing of message (topic: kafka_json_as_string, partition: 0, offset: 1) return no rows"
     )
 
+def test_kafka_json_as_string_request_new_ticket_after_expiration(kafka_cluster):
+    # Ticket should be expired after the wait time
+    # On run of SELECT query new ticket should be requested and SELECT query should run fine.
+
+    kafka_produce(
+        kafka_cluster,
+        "kafka_json_as_string",
+        [
+            '{"t": 123, "e": {"x": "woof"} }',
+            "",
+            '{"t": 124, "e": {"x": "test"} }',
+            '{"F1":"V1","F2":{"F21":"V21","F22":{},"F23":"V23","F24":"2019-12-24T16:28:04"},"F3":"V3"}',
+        ],
+    )
+
+    instance.query(
+        """
+        CREATE TABLE test.kafka (field String)
+            ENGINE = Kafka
+            SETTINGS kafka_broker_list = 'kerberized_kafka1:19092',
+                     kafka_topic_list = 'kafka_json_as_string',
+                     kafka_commit_on_select = 1,
+                     kafka_group_name = 'kafka_json_as_string',
+                     kafka_format = 'JSONAsString',
+                     kafka_flush_interval_ms=1000;
+        """
+    )
+
+    time.sleep(45) # wait for ticket expiration
+
+    result = instance.query("SELECT * FROM test.kafka;")
+    expected = """\
+{"t": 123, "e": {"x": "woof"} }
+{"t": 124, "e": {"x": "test"} }
+{"F1":"V1","F2":{"F21":"V21","F22":{},"F23":"V23","F24":"2019-12-24T16:28:04"},"F3":"V3"}
+"""
+    assert TSV(result) == TSV(expected)
+    assert instance.contains_in_log(
+        "Parsing of message (topic: kafka_json_as_string, partition: 0, offset: 1) return no rows"
+    )
 
 def test_kafka_json_as_string_no_kdc(kafka_cluster):
     # When the test is run alone (not preceded by any other kerberized kafka test),
