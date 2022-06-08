@@ -46,8 +46,6 @@ AsynchronousReadBufferFromHDFS::AsynchronousReadBufferFromHDFS(
     , log(&Poco::Logger::get("AsynchronousReadBufferFromHDFS"))
 {
     ProfileEvents::increment(ProfileEvents::RemoteFSBuffers);
-    if (use_prefetch)
-        prefetch();
 }
 
 bool AsynchronousReadBufferFromHDFS::hasPendingDataToRead()
@@ -238,9 +236,8 @@ AsynchronousReadBufferFromHDFS::~AsynchronousReadBufferFromHDFS()
 {
     LOG_TEST(
         log,
-        "object:{} path:{} next_times:{} seek_times:{} interval:{}|{} duration:{}|{} wait:{}|{}",
+        "object:{} next_times:{} seek_times:{} interval:{}|{} duration:{}|{} wait:{}|{}",
         reinterpret_cast<std::uintptr_t>(this),
-        getFileName(),
         next_times,
         seek_times,
         sum_interval,
