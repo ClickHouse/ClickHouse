@@ -175,7 +175,7 @@ bool DiskObjectStorage::isFile(const String & path) const
 void DiskObjectStorage::createFile(const String & path)
 {
     auto tx = metadata_storage->createTransaction();
-    metadata_storage->createEmptyMetadataFile(path, tx);
+    tx->createEmptyMetadataFile(path);
     tx->commit();
 }
 
@@ -205,7 +205,7 @@ void DiskObjectStorage::moveFile(const String & from_path, const String & to_pat
     }
 
     auto tx = metadata_storage->createTransaction();
-    metadata_storage->moveFile(from_path, to_path, tx);
+    tx->moveFile(from_path, to_path);
     tx->commit();
 }
 
@@ -221,7 +221,7 @@ void DiskObjectStorage::replaceFile(const String & from_path, const String & to_
         auto blobs = metadata_storage->getRemotePaths(to_path);
 
         auto tx = metadata_storage->createTransaction();
-        metadata_storage->replaceFile(from_path, to_path, tx);
+        tx->replaceFile(from_path, to_path);
         tx->commit();
 
         removeFromRemoteFS(blobs);
@@ -292,7 +292,7 @@ void DiskObjectStorage::createHardLink(const String & src_path, const String & d
 
     /// Create FS hardlink to metadata file.
     auto tx = metadata_storage->createTransaction();
-    metadata_storage->createHardLink(src_path, dst_path, tx);
+    tx->createHardLink(src_path, dst_path);
     tx->commit();
 }
 
@@ -307,7 +307,7 @@ void DiskObjectStorage::setReadOnly(const String & path)
     /// We should store read only flag inside metadata file (instead of using FS flag),
     /// because we modify metadata file when create hard-links from it.
     auto tx = metadata_storage->createTransaction();
-    metadata_storage->setReadOnly(path, tx);
+    tx->setReadOnly(path);
     tx->commit();
 }
 
@@ -321,7 +321,7 @@ bool DiskObjectStorage::isDirectory(const String & path) const
 void DiskObjectStorage::createDirectory(const String & path)
 {
     auto tx = metadata_storage->createTransaction();
-    metadata_storage->createDirectory(path, tx);
+    tx->createDirectory(path);
     tx->commit();
 }
 
@@ -329,7 +329,7 @@ void DiskObjectStorage::createDirectory(const String & path)
 void DiskObjectStorage::createDirectories(const String & path)
 {
     auto tx = metadata_storage->createTransaction();
-    metadata_storage->createDicrectoryRecursive(path, tx);
+    tx->createDicrectoryRecursive(path);
     tx->commit();
 }
 
@@ -345,7 +345,7 @@ void DiskObjectStorage::clearDirectory(const String & path)
 void DiskObjectStorage::removeDirectory(const String & path)
 {
     auto tx = metadata_storage->createTransaction();
-    metadata_storage->removeDirectory(path, tx);
+    tx->removeDirectory(path);
     tx->commit();
 }
 
@@ -366,7 +366,7 @@ void DiskObjectStorage::listFiles(const String & path, std::vector<String> & fil
 void DiskObjectStorage::setLastModified(const String & path, const Poco::Timestamp & timestamp)
 {
     auto tx = metadata_storage->createTransaction();
-    metadata_storage->setLastModified(path, timestamp, tx);
+    tx->setLastModified(path, timestamp);
     tx->commit();
 }
 
@@ -391,8 +391,9 @@ void DiskObjectStorage::removeMetadata(const String & path, std::vector<String> 
     {
         auto remote_objects = metadata_storage->getRemotePaths(path);
         auto tx = metadata_storage->createTransaction();
-        uint32_t hardlink_count = metadata_storage->unlinkAndGetHardlinkCount(path, tx);
+        tx->unlinkMetadata(path);
         tx->commit();
+        uint32_t hardlink_count = metadata_storage->getHardlinkCount(path);
 
         if (hardlink_count == 0)
         {
@@ -413,7 +414,7 @@ void DiskObjectStorage::removeMetadata(const String & path, std::vector<String> 
                      "It's Ok and can happen after operation interruption (like metadata fetch), so removing as is", path);
 
             auto tx = metadata_storage->createTransaction();
-            metadata_storage->unlinkFile(path, tx);
+            tx->unlinkFile(path);
             tx->commit();
         }
         else
@@ -436,7 +437,7 @@ void DiskObjectStorage::removeMetadataRecursive(const String & path, std::unorde
             removeMetadataRecursive(it->path(), paths_to_remove);
 
         auto tx = metadata_storage->createTransaction();
-        metadata_storage->removeDirectory(path, tx);
+        tx->removeDirectory(path);
         tx->commit();
     }
 }
@@ -556,9 +557,10 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorage::writeFile(
     {
         auto tx = metadata_storage->createTransaction();
         if (mode == WriteMode::Rewrite)
-            metadata_storage->createMetadataFile(path, blob_name, count, tx);
+            tx->createMetadataFile(path, blob_name, count);
         else
-            metadata_storage->addBlobToMetadata(path, blob_name, count, tx);
+            tx->addBlobToMetadata(path, blob_name, count);
+
         tx->commit();
     };
 

@@ -223,7 +223,7 @@ void DiskObjectStorageRemoteMetadataRestoreHelper::restore(const Poco::Util::Abs
         restoreFileOperations(source_object_storage, information);
 
         auto tx = disk->metadata_storage->createTransaction();
-        disk->metadata_storage->unlinkFile(RESTORE_FILE_NAME, tx);
+        tx->unlinkFile(RESTORE_FILE_NAME);
         tx->commit();
 
         saveSchemaVersion(RESTORABLE_SCHEMA_VERSION);
@@ -424,7 +424,7 @@ void DiskObjectStorageRemoteMetadataRestoreHelper::processRestoreFiles(IObjectSt
             source_object_storage->copyObjectToAnotherObjectStorage(key, disk->remote_fs_root_path + relative_key, *disk->object_storage);
 
         auto tx = disk->metadata_storage->createTransaction();
-        disk->metadata_storage->addBlobToMetadata(path, relative_key, meta.size_bytes, tx);
+        tx->addBlobToMetadata(path, relative_key, meta.size_bytes);
         tx->commit();
 
         LOG_TRACE(disk->log, "Restored file {}", path);
@@ -438,7 +438,7 @@ void DiskObjectStorage::onFreeze(const String & path)
     auto tx =  metadata_storage->createTransaction();
     WriteBufferFromOwnString revision_file_buf ;
     writeIntText(metadata_helper->revision_counter.load(), revision_file_buf);
-    metadata_storage->writeMetadataToFile(path + "revision.txt", tx, revision_file_buf.str());
+    tx->writeMetadataToFile(path + "revision.txt", revision_file_buf.str());
     tx->commit();
 }
 
@@ -558,10 +558,10 @@ void DiskObjectStorageRemoteMetadataRestoreHelper::restoreFileOperations(IObject
 
             /// to_path may exist and non-empty in case for example abrupt restart, so remove it before rename
             if (disk->metadata_storage->exists(to_path))
-                disk->metadata_storage->removeRecursive(to_path, tx);
+                tx->removeRecursive(to_path);
 
             disk->createDirectories(directoryPath(to_path));
-            disk->metadata_storage->moveDirectory(from_path, to_path, tx);
+            tx->moveDirectory(from_path, to_path);
         }
         tx->commit();
     }
