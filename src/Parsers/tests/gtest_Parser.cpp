@@ -324,19 +324,19 @@ INSTANTIATE_TEST_SUITE_P(ParserKQLQuery, ParserTest,
         },
         {
             "Customers | project FirstName,LastName,Occupation | take 1 | take 3",
-            "SELECT *\nFROM\n(\n    SELECT\n        FirstName,\n        LastName,\n        Occupation\n    FROM Customers\n    LIMIT 1\n)\nLIMIT 3"
+            "SELECT\n    FirstName,\n    LastName,\n    Occupation\nFROM Customers\nLIMIT 1"
         },
         {
             "Customers | project FirstName,LastName,Occupation | take 3 | take 1",
-            "SELECT *\nFROM\n(\n    SELECT\n        FirstName,\n        LastName,\n        Occupation\n    FROM Customers\n    LIMIT 3\n)\nLIMIT 1"
+            "SELECT\n    FirstName,\n    LastName,\n    Occupation\nFROM Customers\nLIMIT 1"
         },
         {
             "Customers | project FirstName,LastName,Occupation | take 3 | project FirstName,LastName",
-            "SELECT\n    FirstName,\n    LastName\nFROM\n(\n    SELECT\n        FirstName,\n        LastName,\n        Occupation\n    FROM Customers\n    LIMIT 3\n)"
+            "SELECT\n    FirstName,\n    LastName\nFROM Customers\nLIMIT 3"
         },
         {
             "Customers | project FirstName,LastName,Occupation | take 3 | project FirstName,LastName,Education",
-            "SELECT\n    FirstName,\n    LastName,\n    Education\nFROM\n(\n    SELECT\n        FirstName,\n        LastName,\n        Occupation\n    FROM Customers\n    LIMIT 3\n)"
+            "throws Syntax error"
         },
         {
             "Customers | sort by FirstName desc",
@@ -344,7 +344,7 @@ INSTANTIATE_TEST_SUITE_P(ParserKQLQuery, ParserTest,
         },
         {
             "Customers | take 3 | order by FirstName desc",
-            "SELECT *\nFROM\n(\n    SELECT *\n    FROM Customers\n    LIMIT 3\n)\nORDER BY FirstName DESC"
+            "SELECT *\nFROM Customers\nORDER BY FirstName DESC\nLIMIT 3"
         },
         {
             "Customers | sort by FirstName asc",
@@ -368,7 +368,7 @@ INSTANTIATE_TEST_SUITE_P(ParserKQLQuery, ParserTest,
         },
         {
             "Customers | sort by FirstName | order by Age ",
-            "SELECT *\nFROM Customers\nORDER BY\n    Age DESC,\n    FirstName DESC"
+            "SELECT *\nFROM Customers\nORDER BY Age DESC"
         },
         {
             "Customers | sort by FirstName nulls first",
@@ -416,27 +416,27 @@ INSTANTIATE_TEST_SUITE_P(ParserKQLQuery, ParserTest,
         },
         {
             "Customers | where Age > 30 | where Education == 'Bachelors'",
-            "SELECT *\nFROM Customers\nWHERE (Education = 'Bachelors') AND (Age > 30)"
+            "throws Syntax error"
         },
         {
             "Customers |summarize count() by Occupation",
-            "SELECT\n    count(),\n    Occupation\nFROM Customers\nGROUP BY Occupation"
+            "SELECT\n    Occupation,\n    count()\nFROM Customers\nGROUP BY Occupation"
         },
         {
             "Customers|summarize sum(Age) by Occupation",
-            "SELECT\n    sum(Age),\n    Occupation\nFROM Customers\nGROUP BY Occupation"
+            "SELECT\n    Occupation,\n    sum(Age)\nFROM Customers\nGROUP BY Occupation"
         },
         {
             "Customers|summarize  avg(Age) by Occupation",
-            "SELECT\n    avg(Age),\n    Occupation\nFROM Customers\nGROUP BY Occupation"
+            "SELECT\n    Occupation,\n    avg(Age)\nFROM Customers\nGROUP BY Occupation"
         },
         {
             "Customers|summarize  min(Age) by Occupation",
-            "SELECT\n    min(Age),\n    Occupation\nFROM Customers\nGROUP BY Occupation"
+            "SELECT\n    Occupation,\n    min(Age)\nFROM Customers\nGROUP BY Occupation"
         },
         {
             "Customers |summarize  max(Age) by Occupation",
-            "SELECT\n    max(Age),\n    Occupation\nFROM Customers\nGROUP BY Occupation"
+            "SELECT\n    Occupation,\n    max(Age)\nFROM Customers\nGROUP BY Occupation"
         },
         {
             "Customers | where FirstName contains 'pet'",
@@ -475,12 +475,8 @@ INSTANTIATE_TEST_SUITE_P(ParserKQLQuery, ParserTest,
             "SELECT *\nFROM Customers\nWHERE match(FirstName, 'P.*r')"
         },
         {
-            "Customers | where FirstName startswith 'pet'",
-            "SELECT *\nFROM Customers\nWHERE FirstName ILIKE 'pet%'"
-        },
-        {
-            "Customers | where FirstName !startswith 'pet'",
-            "SELECT *\nFROM Customers\nWHERE NOT (FirstName ILIKE 'pet%')"
+            "Customers|summarize count() by bin(Age, 10) ",
+            "SELECT\n    round(Age, 10) AS Age,\n    count()\nFROM Customers\nGROUP BY Age"
         }
 })));
 

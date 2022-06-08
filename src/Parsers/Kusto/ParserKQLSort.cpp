@@ -10,50 +10,61 @@ namespace DB
 
 bool ParserKQLSort :: parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
+    if (op_pos.empty())
+        return true;
+
+    auto begin = pos;
     bool has_dir = false;
     std::vector <bool> has_directions;
     ParserOrderByExpressionList order_list;
     ASTPtr order_expression_list;
 
-    auto expr = getExprFromToken(pos);
+    ParserKeyword by("by");
 
-    Tokens tokens(expr.c_str(), expr.c_str() + expr.size());
-    IParser::Pos new_pos(tokens, pos.max_depth);
+    pos = op_pos.back();  // sort only affected by last one
 
-    auto pos_backup = new_pos;
-    if (!order_list.parse(pos_backup, order_expression_list, expected))
+    if (!by.ignore(pos, expected))
         return false;
 
-    while (!new_pos->isEnd() && new_pos->type != TokenType::PipeMark && new_pos->type != TokenType::Semicolon)
+    if (!order_list.parse(pos,order_expression_list,expected))
+        return false;
+    if (!pos->isEnd() && pos->type != TokenType::PipeMark && pos->type != TokenType::Semicolon)
+        return false;
+
+    pos = op_pos.back();
+    while (!pos->isEnd() && pos->type != TokenType::PipeMark)
     {
         String tmp(new_pos->begin, new_pos->end);
         if (tmp == "desc" || tmp == "asc")
             has_dir = true;
 
-        if (new_pos->type == TokenType::Comma)
+        if (pos->type == TokenType::Comma)
         {
             has_directions.push_back(has_dir);
             has_dir = false;
         }
-        ++new_pos;
+
+        ++pos;
     }
     has_directions.push_back(has_dir);
 
-    for (uint64_t i = 0; i < order_expression_list->children.size(); ++i)
+    for (unsigned long i = 0; i < order_expression_list->children.size(); ++i)
     {
         if (!has_directions[i])
         {
-            auto *order_expr =  order_expression_list->children[i]->as<ASTOrderByElement>();
+            auto order_expr =  order_expression_list->children[i]->as<ASTOrderByElement>();
             order_expr->direction = -1; // default desc
             if (!order_expr->nulls_direction_was_explicitly_specified)
                 order_expr->nulls_direction = -1;
             else
                 order_expr->nulls_direction = order_expr->nulls_direction == 1 ? -1 : 1;
+
         }
     }
 
-    node->as<ASTSelectQuery>()->setExpression(ASTSelectQuery::Expression::ORDER_BY, std::move(order_expression_list));
+    node = order_expression_list;
 
+    pos =begin;
     return true;
 }
 
