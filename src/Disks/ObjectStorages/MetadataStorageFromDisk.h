@@ -52,7 +52,7 @@ public:
 
     DirectoryIteratorPtr iterateDirectory(const std::string & path) override;
 
-    std::string readMetadataFileToString(const std::string & path) const override;
+    std::string readFileToString(const std::string & path) const override;
 
     std::unordered_map<String, String> getSerializedMetadata(const std::vector<String> & file_paths) const override;
 
@@ -91,7 +91,7 @@ public:
 
     void commit() override;
 
-    void writeMetadataToFile(const std::string & path, const std::string & data) override;
+    void writeStringToFile(const std::string & path, const std::string & data) override;
 
     void createEmptyMetadataFile(const std::string & path) override;
 

@@ -8165,7 +8165,7 @@ public:
         writeString(table_shared_id, buffer);
         buffer.write("\n", 1);
 
-        tx->writeMetadataToFile(file_path, buffer.str());
+        tx->writeStringToFile(file_path, buffer.str());
         tx->commit();
     }
 
@@ -8176,7 +8176,7 @@ public:
 
         if (!metadata_storage->exists(file_path))
             return false;
-        auto metadata_str = metadata_storage->readMetadataFileToString(file_path);
+        auto metadata_str = metadata_storage->readFileToString(file_path);
         ReadBufferFromString buffer(metadata_str);
         readIntText(version, buffer);
         if (version != 1)
