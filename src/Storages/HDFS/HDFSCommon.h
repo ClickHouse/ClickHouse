@@ -9,7 +9,6 @@
 
 #include <hdfs/hdfs.h>
 #include <base/types.h>
-#include <mutex>
 
 #include <Interpreters/Context.h>
 #include <Poco/Util/AbstractConfiguration.h>
@@ -80,10 +79,8 @@ private:
     hdfsBuilder * hdfs_builder;
     String hadoop_kerberos_keytab;
     String hadoop_kerberos_principal;
-    String hadoop_kerberos_kinit_command = "kinit";
     String hadoop_security_kerberos_ticket_cache_path;
 
-    static std::mutex kinit_mtx;
     std::vector<std::pair<String, String>> config_stor;
     bool need_kinit{false};
 };

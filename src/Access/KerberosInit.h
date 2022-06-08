@@ -4,10 +4,16 @@
 
 #include <base/types.h>
 
-//#include <k5-int.h>
-//#include "k5-platform.h"
 #include <krb5.h>
-//#include <extern.h>
+#include <mutex>
+
+namespace DB
+{
+namespace ErrorCodes
+{
+    extern const int KERBEROS_ERROR;
+}
+}
 
 struct k5_data
 {
@@ -24,13 +30,14 @@ public:
     int init(const String & keytab_file, const String & principal, const String & cache_name = "");
     ~KerberosInit();
 private:
-    struct k5_data * k5 = nullptr;
-    //struct k5_data k5;
-    struct k5_data k5d;
+    //struct k5_data * k5 = nullptr;
+    struct k5_data k5;
+    //struct k5_data k5d;
     krb5_ccache defcache = nullptr;
     krb5_get_init_creds_opt *options = nullptr;
     krb5_creds my_creds;
     krb5_keytab keytab = nullptr;
     krb5_principal defcache_princ = nullptr;
+    static std::mutex kinit_mtx;
 };
 

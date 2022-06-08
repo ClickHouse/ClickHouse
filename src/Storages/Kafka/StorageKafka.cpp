@@ -528,8 +528,8 @@ void StorageKafka::updateConfiguration(cppkafka::Configuration & conf)
         try
         {
             k_init.init(keytab,principal);
-        } catch (const DB::Exception & e) {
-            LOG_ERROR(log, "ADQM: KerberosInit failure: {}", DB::getExceptionMessage(e, false));
+        } catch (const Exception & e) {
+            LOG_ERROR(log, "ADQM: KerberosInit failure: {}", getExceptionMessage(e, false));
         }
         LOG_DEBUG(log, "ADQM: finished KerberosInit");
         conf.set("sasl.kerberos.kinit.cmd","");
