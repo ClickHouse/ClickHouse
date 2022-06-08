@@ -19,7 +19,6 @@ DB_PATH2=$CUR_DIR/${CURR_DATABASE}_db2
 function cleanup()
 {
     ${CLICKHOUSE_CLIENT} --query="DROP DATABASE IF EXISTS ${CURR_DATABASE}"
-    rm -r "${DB_PATH}" "${DB_PATH2}"
 }
 trap cleanup EXIT
 

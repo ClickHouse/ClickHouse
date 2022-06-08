@@ -1,8 +1,8 @@
 ---
-toc_priority: 250
+sidebar_position: 250
 ---
 
-# categoricalInformationValue {#categoricalinformationvalue}
+# categoricalInformationValue
 
 Calculates the value of `(P(tag = 1) - P(tag = 0))(log(P(tag = 1)) - log(P(tag = 0)))` for each category.
 

@@ -1,10 +1,9 @@
 ---
-toc_folder_title: Log Family
-toc_priority: 29
-toc_title: Introduction
+sidebar_position: 20
+sidebar_label:  Log Family
 ---
 
-# Log Engine Family {#log-engine-family}
+# Log Engine Family
 
 These engines were developed for scenarios when you need to quickly write many small tables (up to about 1 million rows) and read them later as a whole.
 

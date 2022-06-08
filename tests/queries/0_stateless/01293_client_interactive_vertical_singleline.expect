@@ -23,6 +23,12 @@ expect "Row 1:"
 expect "1: 1"
 expect ":) "
 
+
+send -- "SELECT 1\\G;\r"
+expect "Row 1:"
+expect "1: 1"
+expect ":) "
+
 send -- "SELECT 1\\\r"
 expect ":-] "
 send -- ", 2\r"
@@ -32,6 +38,15 @@ expect ":) "
 send -- "SELECT 1\\\r"
 expect ":-] "
 send -- ", 2\\G\r"
+expect "Row 1:"
+expect "1: 1"
+expect "2: 2"
+expect ":) "
+
+
+send -- "SELECT 1\\\r"
+expect ":-] "
+send -- ", 2\\G;\r"
 expect "Row 1:"
 expect "1: 1"
 expect "2: 2"

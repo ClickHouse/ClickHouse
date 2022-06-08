@@ -4,7 +4,7 @@
 #include <Storages/FileLog/FileLogSource.h>
 #include <Storages/FileLog/ReadBufferFromFileLog.h>
 #include <Common/Stopwatch.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -12,25 +12,24 @@ static constexpr auto MAX_FAILED_POLL_ATTEMPTS = 10;
 
 FileLogSource::FileLogSource(
     StorageFileLog & storage_,
-    const StorageMetadataPtr & metadata_snapshot_,
+    const StorageSnapshotPtr & storage_snapshot_,
     const ContextPtr & context_,
     const Names & columns,
     size_t max_block_size_,
     size_t poll_time_out_,
     size_t stream_number_,
     size_t max_streams_number_)
-    : SourceWithProgress(metadata_snapshot_->getSampleBlockForColumns(columns, storage_.getVirtuals(), storage_.getStorageID()))
+    : ISource(storage_snapshot_->getSampleBlockForColumns(columns))
     , storage(storage_)
-    , metadata_snapshot(metadata_snapshot_)
+    , storage_snapshot(storage_snapshot_)
     , context(context_)
     , column_names(columns)
     , max_block_size(max_block_size_)
     , poll_time_out(poll_time_out_)
     , stream_number(stream_number_)
     , max_streams_number(max_streams_number_)
-    , non_virtual_header(metadata_snapshot_->getSampleBlockNonMaterialized())
-    , virtual_header(
-          metadata_snapshot->getSampleBlockForColumns(storage.getVirtualColumnNames(), storage.getVirtuals(), storage.getStorageID()))
+    , non_virtual_header(storage_snapshot->metadata->getSampleBlockNonMaterialized())
+    , virtual_header(storage_snapshot->getSampleBlockForColumns(storage.getVirtualColumnNames()))
 {
     buffer = std::make_unique<ReadBufferFromFileLog>(storage, max_block_size, poll_time_out, context, stream_number_, max_streams_number_);
 

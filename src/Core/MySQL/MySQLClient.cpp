@@ -24,12 +24,12 @@ namespace ErrorCodes
 }
 
 MySQLClient::MySQLClient(const String & host_, UInt16 port_, const String & user_, const String & password_)
-    : host(host_), port(port_), user(user_), password(std::move(password_)),
+    : host(host_), port(port_), user(user_), password(password_),
       client_capabilities(CLIENT_PROTOCOL_41 | CLIENT_PLUGIN_AUTH | CLIENT_SECURE_CONNECTION)
 {
 }
 
-MySQLClient::MySQLClient(MySQLClient && other)
+MySQLClient::MySQLClient(MySQLClient && other) noexcept
     : host(std::move(other.host)), port(other.port), user(std::move(other.user)), password(std::move(other.password))
     , client_capabilities(other.client_capabilities)
 {
@@ -56,7 +56,7 @@ void MySQLClient::connect()
 
     in = std::make_shared<ReadBufferFromPocoSocket>(*socket);
     out = std::make_shared<WriteBufferFromPocoSocket>(*socket);
-    packet_endpoint = MySQLProtocol::PacketEndpoint::create(*in, *out, sequence_id);
+    packet_endpoint = std::make_shared<MySQLProtocol::PacketEndpoint>(*in, *out, sequence_id);
 
     handshake();
 }
@@ -142,7 +142,7 @@ void MySQLClient::setBinlogChecksum(const String & binlog_checksum)
     replication.setChecksumSignatureLength(Poco::toUpper(binlog_checksum) == "NONE" ? 0 : 4);
 }
 
-void MySQLClient::startBinlogDumpGTID(UInt32 slave_id, String replicate_db, String gtid_str, const String & binlog_checksum)
+void MySQLClient::startBinlogDumpGTID(UInt32 slave_id, String replicate_db, std::unordered_set<String> replicate_tables, String gtid_str, const String & binlog_checksum)
 {
     /// Maybe CRC32 or NONE. mysqlbinlog.cc use NONE, see its below comments:
     /// Make a notice to the server that this client is checksum-aware.
@@ -165,6 +165,7 @@ void MySQLClient::startBinlogDumpGTID(UInt32 slave_id, String replicate_db, Stri
 
     /// Set Filter rule to replication.
     replication.setReplicateDatabase(replicate_db);
+    replication.setReplicateTables(replicate_tables);
 
     BinlogDumpGTID binlog_dump(slave_id, gtid_sets.toPayload());
     packet_endpoint->sendPacket<BinlogDumpGTID>(binlog_dump, true);

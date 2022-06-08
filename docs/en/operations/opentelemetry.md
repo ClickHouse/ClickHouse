@@ -1,14 +1,15 @@
 ---
-toc_priority: 62
-toc_title: OpenTelemetry Support
+sidebar_position: 62
+sidebar_label: OpenTelemetry Support
 ---
 
 # [experimental] OpenTelemetry Support
 
 [OpenTelemetry](https://opentelemetry.io/) is an open standard for collecting traces and metrics from the distributed application. ClickHouse has some support for OpenTelemetry.
 
-!!! warning "Warning"
-    This is an experimental feature that will change in backwards-incompatible ways in future releases.
+:::warning    
+This is an experimental feature that will change in backwards-incompatible ways in future releases.
+:::
 
 ## Supplying Trace Context to ClickHouse
 

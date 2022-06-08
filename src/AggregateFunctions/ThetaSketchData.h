@@ -6,6 +6,7 @@
 
 #include <boost/noncopyable.hpp>
 #include <memory>
+#include <base/StringRef.h>
 #include <theta_sketch.hpp>
 #include <theta_union.hpp>
 

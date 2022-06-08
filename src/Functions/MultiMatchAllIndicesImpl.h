@@ -3,6 +3,7 @@
 #include <base/types.h>
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeArray.h>
 #include "Regexps.h"
 
 #include "config_functions.h"
@@ -10,8 +11,6 @@
 
 #if USE_HYPERSCAN
 #    include <hs.h>
-#else
-#    include "MatchImpl.h"
 #endif
 
 

@@ -1,8 +1,8 @@
 ---
-toc_priority: 114
+sidebar_position: 114
 ---
 
-# groupArrayMovingAvg {#agg_function-grouparraymovingavg}
+# groupArrayMovingAvg
 
 Calculates the moving average of input values.
 

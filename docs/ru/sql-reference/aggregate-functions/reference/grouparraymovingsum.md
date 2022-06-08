@@ -1,5 +1,5 @@
 ---
-toc_priority: 113
+sidebar_position: 113
 ---
 
 # groupArrayMovingSum {#agg_function-grouparraymovingsum}

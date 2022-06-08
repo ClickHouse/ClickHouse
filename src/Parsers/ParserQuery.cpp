@@ -13,6 +13,7 @@
 #include <Parsers/ParserSystemQuery.h>
 #include <Parsers/ParserUseQuery.h>
 #include <Parsers/ParserExternalDDLQuery.h>
+#include <Parsers/ParserTransactionControl.h>
 
 #include <Parsers/Access/ParserCreateQuotaQuery.h>
 #include <Parsers/Access/ParserCreateRoleQuery.h>
@@ -30,8 +31,8 @@ namespace DB
 
 bool ParserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    ParserQueryWithOutput query_with_output_p(end);
-    ParserInsertQuery insert_p(end);
+    ParserQueryWithOutput query_with_output_p(end, allow_settings_after_format_in_insert);
+    ParserInsertQuery insert_p(end, allow_settings_after_format_in_insert);
     ParserUseQuery use_p;
     ParserSetQuery set_p;
     ParserSystemQuery system_p;
@@ -46,6 +47,7 @@ bool ParserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserGrantQuery grant_p;
     ParserSetRoleQuery set_role_p;
     ParserExternalDDLQuery external_ddl_p;
+    ParserTransactionControl transaction_control_p;
     ParserBackupQuery backup_p;
 
     bool res = query_with_output_p.parse(pos, node, expected)
@@ -64,6 +66,7 @@ bool ParserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         || drop_access_entity_p.parse(pos, node, expected)
         || grant_p.parse(pos, node, expected)
         || external_ddl_p.parse(pos, node, expected)
+        || transaction_control_p.parse(pos, node, expected)
         || backup_p.parse(pos, node, expected);
 
     return res;

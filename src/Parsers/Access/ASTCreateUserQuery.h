@@ -42,7 +42,7 @@ public:
     bool or_replace = false;
 
     std::shared_ptr<ASTUserNamesWithHost> names;
-    String new_name;
+    std::optional<String> new_name;
 
     std::optional<AuthenticationData> auth_data;
     bool show_password = true; /// formatImpl() will show the password or hash.
@@ -60,6 +60,6 @@ public:
     String getID(char) const override;
     ASTPtr clone() const override;
     void formatImpl(const FormatSettings & format, FormatState &, FormatStateStacked) const override;
-    ASTPtr getRewrittenASTWithoutOnCluster(const std::string &) const override { return removeOnCluster<ASTCreateUserQuery>(clone()); }
+    ASTPtr getRewrittenASTWithoutOnCluster(const WithoutOnClusterASTRewriteParams &) const override { return removeOnCluster<ASTCreateUserQuery>(clone()); }
 };
 }

@@ -1,6 +1,7 @@
 ---
-toc_priority: 62
-toc_title: Continuous Integration Checks
+sidebar_position: 62
+sidebar_label: Continuous Integration Checks
+description: When you submit a pull request, some automated checks are ran for your code by the ClickHouse continuous integration (CI) system
 ---
 
 # Continuous Integration Checks
@@ -53,7 +54,7 @@ the documentation is wrong. Go to the check report and look for `ERROR` and `WAR
 Check that the description of your pull request conforms to the template
 [PULL_REQUEST_TEMPLATE.md](https://github.com/ClickHouse/ClickHouse/blob/master/.github/PULL_REQUEST_TEMPLATE.md).
 You have to specify a changelog category for your change (e.g., Bug Fix), and
-write a user-readable message describing the change for [CHANGELOG.md](../whats-new/changelog/index.md)
+write a user-readable message describing the change for [CHANGELOG.md](../whats-new/changelog/)
 
 
 ## Push To Dockerhub
@@ -150,7 +151,7 @@ checks page](../development/build.md#you-dont-have-to-build-clickhouse), or buil
 
 
 ## Functional Stateful Tests
-Runs [stateful functional tests](tests.md#functional-tests). Treat them in the same way as the functional stateless tests. The difference is that they require `hits` and `visits` tables from the [Yandex.Metrica dataset](../getting-started/example-datasets/metrica.md) to run.
+Runs [stateful functional tests](tests.md#functional-tests). Treat them in the same way as the functional stateless tests. The difference is that they require `hits` and `visits` tables from the [clickstream dataset](../getting-started/example-datasets/metrica.md) to run.
 
 
 ## Integration Tests
@@ -190,15 +191,3 @@ Runs randomly generated queries to catch program errors. If it fails, ask a main
 
 ## Performance Tests
 Measure changes in query performance. This is the longest check that takes just below 6 hours to run. The performance test report is described in detail [here](https://github.com/ClickHouse/ClickHouse/tree/master/docker/test/performance-comparison#how-to-read-the-report).
-
-
-
-# QA
-
-> What is a `Task (private network)` item on status pages?
-
-It's a link to the Yandex's internal job system. Yandex employees can see the check's start time and its more verbose status.
-
-> Where the tests are run
-
-Somewhere on Yandex internal infrastructure.

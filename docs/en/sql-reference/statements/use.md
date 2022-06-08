@@ -1,9 +1,9 @@
 ---
-toc_priority: 53
-toc_title: USE
+sidebar_position: 53
+sidebar_label: USE
 ---
 
-# USE Statement {#use}
+# USE Statement
 
 ``` sql
 USE db

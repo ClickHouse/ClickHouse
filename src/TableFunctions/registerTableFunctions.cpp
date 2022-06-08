@@ -20,6 +20,8 @@ void registerTableFunctions()
     registerTableFunctionInput(factory);
     registerTableFunctionGenerate(factory);
 
+    registerTableFunctionMeiliSearch(factory);
+
 #if USE_AWS_S3
     registerTableFunctionS3(factory);
     registerTableFunctionS3Cluster(factory);
@@ -29,6 +31,10 @@ void registerTableFunctions()
 #if USE_HDFS
     registerTableFunctionHDFS(factory);
     registerTableFunctionHDFSCluster(factory);
+#endif
+
+#if USE_HIVE
+    registerTableFunctionHive(factory);
 #endif
 
     registerTableFunctionODBC(factory);

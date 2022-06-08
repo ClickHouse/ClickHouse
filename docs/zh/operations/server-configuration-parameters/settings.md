@@ -1,6 +1,6 @@
 ---
-toc_priority: 57
-toc_title: "\u670D\u52A1\u5668\u8BBE\u7F6E"
+sidebar_position: 57
+sidebar_label: "\u670D\u52A1\u5668\u8BBE\u7F6E"
 ---
 
 # 服务器配置 {#server-settings}
@@ -668,7 +668,7 @@ SSL客户端/服务器配置。
 **示例**
 
 ``` xml
-<timezone>Europe/Moscow</timezone>
+<timezone>Asia/Istanbul</timezone>
 ```
 
 ## tcp_port {#server_configuration_parameters-tcp_port}
@@ -846,7 +846,7 @@ ZooKeeper中数据部分头的存储方法。
 
 如果 `use_minimalistic_part_header_in_zookeeper = 1`，然后 [复制](../../engines/table-engines/mergetree-family/replication.md) 表存储的数据部分的头紧凑使用一个单一的 `znode`. 如果表包含许多列，则此存储方法显着减少了Zookeeper中存储的数据量。
 
-!!! attention "注意"
+    :::info "注意"
     申请后 `use_minimalistic_part_header_in_zookeeper = 1`，您不能将ClickHouse服务器降级到不支持此设置的版本。 在集群中的服务器上升级ClickHouse时要小心。 不要一次升级所有服务器。 在测试环境中或在集群的几台服务器上测试ClickHouse的新版本更安全。
 
       Data part headers already stored with this setting can't be restored to their previous (non-compact) representation.

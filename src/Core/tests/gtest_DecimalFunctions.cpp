@@ -117,6 +117,31 @@ TEST_P(DecimalUtilsSplitAndCombineTest, getFractionalPartDecimal128)
     testGetFractional<Decimal128>(GetParam());
 }
 
+class DecimalUtilsSplitAndCombineForDateTime64Test : public ::testing::TestWithParam<DecimalUtilsSplitAndCombineTestParam>
+{};
+
+
+// Unfortunately typed parametrized tests () are not supported in this version of gtest, so I have to emulate by hand.
+TEST_P(DecimalUtilsSplitAndCombineForDateTime64Test, splitDateTime64)
+{
+    testSplit<DateTime64>(GetParam());
+}
+
+TEST_P(DecimalUtilsSplitAndCombineForDateTime64Test, combineDateTime64)
+{
+    testDecimalFromComponents<DateTime64>(GetParam());
+}
+
+TEST_P(DecimalUtilsSplitAndCombineForDateTime64Test, getWholePartDateTime64)
+{
+    testGetWhole<DateTime64>(GetParam());
+}
+
+TEST_P(DecimalUtilsSplitAndCombineForDateTime64Test, getFractionalPartDateTime64)
+{
+    testGetFractional<DateTime64>(GetParam());
+}
+
 }
 
 // Intentionally small values that fit into 32-bit in order to cover Decimal32, Decimal64 and Decimal128 with single set of data.
@@ -151,7 +176,7 @@ INSTANTIATE_TEST_SUITE_P(Basic,
             }
         },
         {
-            "When scale is not 0 and whole part is 0.",
+            "For positive Decimal value, with scale not 0, and whole part is 0.",
             123,
             3,
             {
@@ -160,12 +185,64 @@ INSTANTIATE_TEST_SUITE_P(Basic,
             }
         },
         {
+            "For negative Decimal value, with scale not 0, and whole part is 0.",
+            -123,
+            3,
+            {
+                0,
+                -123
+            }
+        },
+
+        {
             "For negative Decimal value whole part is negative, fractional is non-negative.",
             -1234567'89,
             2,
             {
                 -1234567,
                 89
+            }
+        }
+    })
+);
+
+INSTANTIATE_TEST_SUITE_P(Basic,
+    DecimalUtilsSplitAndCombineForDateTime64Test,
+    ::testing::ValuesIn(std::initializer_list<DecimalUtilsSplitAndCombineTestParam>{
+        {
+            "Negative timestamp 1965-12-12 12:12:12.123 UTC",
+            DateTime64(-127943267877),
+            3,
+            {
+                -127943267,
+                877
+            }
+        },
+        {
+            "Positive timestamp 1975-12-12 12:12:12.123 UTC",
+            DateTime64(187618332123),
+            3,
+            {
+                187618332,
+                123
+            }
+        },
+        {
+            "Negative timestamp 1969-12-31 23:59:59.123 UTC",
+            DateTime64(-877),
+            3,
+            {
+                0,
+                -877
+            }
+        },
+        {
+            "Positive timestamp 1970-01-01 00:00:00.123 UTC",
+            DateTime64(123),
+            3,
+            {
+                0,
+                123
             }
         }
     })

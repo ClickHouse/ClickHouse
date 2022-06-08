@@ -1,18 +1,18 @@
 ---
-toc_priority: 64
-toc_title: Machine Learning
+sidebar_position: 64
+sidebar_label: Machine Learning
 ---
 
-# Machine Learning Functions {#machine-learning-functions}
+# Machine Learning Functions
 
-## evalMLMethod {#machine_learning_methods-evalmlmethod}
+## evalMLMethod
 
 Prediction using fitted regression models uses `evalMLMethod` function. See link in `linearRegression`.
 
-## stochasticLinearRegression {#stochastic-linear-regression}
+## stochasticLinearRegression
 
 The [stochasticLinearRegression](../../sql-reference/aggregate-functions/reference/stochasticlinearregression.md#agg_functions-stochasticlinearregression) aggregate function implements stochastic gradient descent method using linear model and MSE loss function. Uses `evalMLMethod` to predict on new data.
 
-## stochasticLogisticRegression {#stochastic-logistic-regression}
+## stochasticLogisticRegression
 
 The [stochasticLogisticRegression](../../sql-reference/aggregate-functions/reference/stochasticlogisticregression.md#agg_functions-stochasticlogisticregression) aggregate function implements stochastic gradient descent method for binary classification problem. Uses `evalMLMethod` to predict on new data.

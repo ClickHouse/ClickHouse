@@ -1,5 +1,5 @@
 #include <IO/WriteHelpers.h>
-#include <inttypes.h>
+#include <cinttypes>
 #include <Common/hex.h>
 
 
@@ -7,7 +7,7 @@ namespace DB
 {
 
 template <typename IteratorSrc, typename IteratorDst>
-void formatHex(IteratorSrc src, IteratorDst dst, const size_t num_bytes)
+void formatHex(IteratorSrc src, IteratorDst dst, size_t num_bytes)
 {
     size_t src_pos = 0;
     size_t dst_pos = 0;
@@ -52,7 +52,7 @@ void writeException(const Exception & e, WriteBuffer & buf, bool with_stack_trac
 {
     writeBinary(e.code(), buf);
     writeBinary(String(e.name()), buf);
-    writeBinary(e.displayText(), buf);
+    writeBinary(e.displayText() + getExtraExceptionInfo(e), buf);
 
     if (with_stack_trace)
         writeBinary(e.getStackTraceString(), buf);

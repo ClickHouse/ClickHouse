@@ -30,7 +30,7 @@ static const UInt64 max_block_size = 8192;
 
 static const std::unordered_set<std::string_view> dictionary_allowed_keys = {
     "host", "port", "user", "password", "db", "database", "table", "schema",
-    "update_field", "update_tag", "invalidate_query", "query", "where", "name", "priority"};
+    "update_field", "update_lag", "invalidate_query", "query", "where", "name", "priority"};
 
 namespace
 {
@@ -78,37 +78,37 @@ PostgreSQLDictionarySource::PostgreSQLDictionarySource(const PostgreSQLDictionar
 }
 
 
-Pipe PostgreSQLDictionarySource::loadAll()
+QueryPipeline PostgreSQLDictionarySource::loadAll()
 {
     LOG_TRACE(log, fmt::runtime(load_all_query));
     return loadBase(load_all_query);
 }
 
 
-Pipe PostgreSQLDictionarySource::loadUpdatedAll()
+QueryPipeline PostgreSQLDictionarySource::loadUpdatedAll()
 {
     auto load_update_query = getUpdateFieldAndDate();
     LOG_TRACE(log, fmt::runtime(load_update_query));
     return loadBase(load_update_query);
 }
 
-Pipe PostgreSQLDictionarySource::loadIds(const std::vector<UInt64> & ids)
+QueryPipeline PostgreSQLDictionarySource::loadIds(const std::vector<UInt64> & ids)
 {
     const auto query = query_builder.composeLoadIdsQuery(ids);
     return loadBase(query);
 }
 
 
-Pipe PostgreSQLDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
+QueryPipeline PostgreSQLDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
 {
     const auto query = query_builder.composeLoadKeysQuery(key_columns, requested_rows, ExternalQueryBuilder::AND_OR_CHAIN);
     return loadBase(query);
 }
 
 
-Pipe PostgreSQLDictionarySource::loadBase(const String & query)
+QueryPipeline PostgreSQLDictionarySource::loadBase(const String & query)
 {
-    return Pipe(std::make_shared<PostgreSQLSource<>>(pool->get(), query, sample_block, max_block_size));
+    return QueryPipeline(std::make_shared<PostgreSQLSource<>>(pool->get(), query, sample_block, max_block_size));
 }
 
 

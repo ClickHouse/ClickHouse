@@ -91,7 +91,7 @@ protected:
     /// Executes query only on leader replica in case of replicated table.
     /// Queries like TRUNCATE/ALTER .../OPTIMIZE have to be executed only on one node of shard.
     /// Most of these queries can be executed on non-leader replica, but actually they still send
-    /// query via RemoteBlockOutputStream to leader, so to avoid such "2-phase" query execution we
+    /// query via RemoteQueryExecutor to leader, so to avoid such "2-phase" query execution we
     /// execute query directly on leader.
     bool tryExecuteQueryOnLeaderReplica(
         DDLTaskBase & task,
@@ -130,6 +130,9 @@ protected:
     std::optional<String> last_skipped_entry_name;
     std::optional<String> first_failed_task_name;
     std::list<DDLTaskPtr> current_tasks;
+
+    /// This flag is needed for debug assertions only
+    bool queue_fully_loaded_after_initialization_debug_helper = false;
 
     Coordination::Stat queue_node_stat;
     std::shared_ptr<Poco::Event> queue_updated_event = std::make_shared<Poco::Event>();

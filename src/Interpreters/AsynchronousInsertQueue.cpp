@@ -9,7 +9,6 @@
 #include <Processors/Executors/StreamingFormatExecutor.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
-#include <QueryPipeline/QueryPipeline.h>
 #include <IO/ConcatReadBuffer.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadBufferFromString.h>
@@ -20,8 +19,11 @@
 #include <Common/SipHash.h>
 #include <Common/FieldVisitorHash.h>
 #include <Access/Common/AccessFlags.h>
+#include <Access/EnabledQuota.h>
 #include <Formats/FormatFactory.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
+#include <QueryPipeline/Pipe.h>
+#include <QueryPipeline/QueryPipeline.h>
 
 
 namespace CurrentMetrics
@@ -32,6 +34,7 @@ namespace CurrentMetrics
 namespace ProfileEvents
 {
     extern const Event AsyncInsertQuery;
+    extern const Event AsyncInsertBytes;
 }
 
 namespace DB
@@ -165,9 +168,9 @@ void AsynchronousInsertQueue::scheduleDataProcessingJob(const InsertQuery & key,
 {
     /// Wrap 'unique_ptr' with 'shared_ptr' to make this
     /// lambda copyable and allow to save it to the thread pool.
-    pool.scheduleOrThrowOnError([=, data = std::make_shared<InsertDataPtr>(std::move(data))]
+    pool.scheduleOrThrowOnError([key, global_context, data = std::make_shared<InsertDataPtr>(std::move(data))]() mutable
     {
-        processData(std::move(key), std::move(*data), std::move(global_context));
+        processData(key, std::move(*data), std::move(global_context));
     });
 }
 
@@ -184,7 +187,10 @@ void AsynchronousInsertQueue::push(ASTPtr query, ContextPtr query_context)
     if (!FormatFactory::instance().isInputFormat(insert_query.format))
         throw Exception(ErrorCodes::UNKNOWN_FORMAT, "Unknown input format {}", insert_query.format);
 
-    query_context->checkAccess(AccessType::INSERT, insert_query.table_id, sample_block.getNames());
+    /// For table functions we check access while executing
+    /// InterpreterInsertQuery::getTable() -> ITableFunction::execute().
+    if (insert_query.table_id)
+        query_context->checkAccess(AccessType::INSERT, insert_query.table_id, sample_block.getNames());
 
     String bytes;
     {
@@ -192,6 +198,9 @@ void AsynchronousInsertQueue::push(ASTPtr query, ContextPtr query_context)
         WriteBufferFromString write_buf(bytes);
         copyData(*read_buf, write_buf);
     }
+
+    if (auto quota = query_context->getQuota())
+        quota->used(QuotaType::WRITTEN_BYTES, bytes.size());
 
     auto entry = std::make_shared<InsertData::Entry>(std::move(bytes), query_context->getCurrentQueryId());
     InsertQuery key{query, settings};
@@ -219,7 +228,9 @@ void AsynchronousInsertQueue::pushImpl(InsertData::EntryPtr entry, QueueIterator
     if (!data)
         data = std::make_unique<InsertData>();
 
-    data->size += entry->bytes.size();
+    size_t entry_data_size = entry->bytes.size();
+
+    data->size += entry_data_size;
     data->last_update = std::chrono::steady_clock::now();
     data->entries.emplace_back(entry);
 
@@ -236,6 +247,7 @@ void AsynchronousInsertQueue::pushImpl(InsertData::EntryPtr entry, QueueIterator
 
     CurrentMetrics::add(CurrentMetrics::PendingAsyncInsert);
     ProfileEvents::increment(ProfileEvents::AsyncInsertQuery);
+    ProfileEvents::increment(ProfileEvents::AsyncInsertBytes, entry_data_size);
 }
 
 void AsynchronousInsertQueue::waitForProcessingQuery(const String & query_id, const Milliseconds & timeout)
@@ -411,7 +423,7 @@ try
     };
 
     std::shared_ptr<ISimpleTransform> adding_defaults_transform;
-    if (insert_context->getSettingsRef().input_format_defaults_for_omitted_fields)
+    if (insert_context->getSettingsRef().input_format_defaults_for_omitted_fields && insert_query.table_id)
     {
         StoragePtr storage = DatabaseCatalog::instance().getTable(insert_query.table_id, insert_context);
         auto metadata_snapshot = storage->getInMemoryMetadataPtr();

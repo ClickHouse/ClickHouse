@@ -203,4 +203,3 @@ abi_test_clobber_xmm7:
 	ret
 .size	abi_test_clobber_xmm7,.-.L_abi_test_clobber_xmm7_begin
 #endif
-.section	.note.GNU-stack,"",@progbits

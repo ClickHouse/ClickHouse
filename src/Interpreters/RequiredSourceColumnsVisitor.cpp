@@ -7,6 +7,7 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
+#include <Parsers/ASTInterpolateElement.h>
 
 namespace DB
 {
@@ -46,7 +47,7 @@ bool RequiredSourceColumnsMatcher::needChildVisit(const ASTPtr & node, const AST
         return false;
 
     /// Processed. Do not need children.
-    if (node->as<ASTTableExpression>() || node->as<ASTArrayJoin>() || node->as<ASTSelectQuery>())
+    if (node->as<ASTTableExpression>() || node->as<ASTArrayJoin>() || node->as<ASTSelectQuery>() || node->as<ASTInterpolateElement>())
         return false;
 
     if (const auto * f = node->as<ASTFunction>())
@@ -114,13 +115,40 @@ void RequiredSourceColumnsMatcher::visit(const ASTPtr & ast, Data & data)
 
 void RequiredSourceColumnsMatcher::visit(const ASTSelectQuery & select, const ASTPtr &, Data & data)
 {
+    NameSet select_columns;
     /// special case for top-level SELECT items: they are publics
     for (auto & node : select.select()->children)
     {
+        select_columns.insert(node->getAliasOrColumnName());
+
         if (const auto * identifier = node->as<ASTIdentifier>())
             data.addColumnIdentifier(*identifier);
         else
             data.addColumnAliasIfAny(*node);
+    }
+
+    if (auto interpolate_list = select.interpolate())
+    {
+        auto find_columns = [&data, &select_columns](IAST * function)
+        {
+            auto f_impl = [&data, &select_columns](IAST * fn, auto fi)
+            {
+                if (auto * ident = fn->as<ASTIdentifier>())
+                {
+                    if (!select_columns.contains(ident->getColumnName()))
+                        data.addColumnIdentifier(*ident);
+                    return;
+                }
+                if (fn->as<ASTFunction>() || fn->as<ASTExpressionList>())
+                    for (const auto & ch : fn->children)
+                        fi(ch.get(), fi);
+                return;
+            };
+            f_impl(function, f_impl);
+        };
+
+        for (const auto & interpolate : interpolate_list->children)
+            find_columns(interpolate->as<ASTInterpolateElement>()->expr.get());
     }
 
     if (const auto & with = select.with())
@@ -153,7 +181,7 @@ void RequiredSourceColumnsMatcher::visit(const ASTIdentifier & node, const ASTPt
     if (node.name().empty())
         throw Exception("Expected not empty name", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-    if (!data.private_aliases.count(node.name()))
+    if (!data.private_aliases.contains(node.name()))
         data.addColumnIdentifier(node);
 }
 

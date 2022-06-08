@@ -42,7 +42,7 @@ struct ReplicatedMergeTreeLogEntryData;
 class ReplicatedMergeTreeMergeStrategyPicker: public boost::noncopyable
 {
 public:
-    ReplicatedMergeTreeMergeStrategyPicker(StorageReplicatedMergeTree & storage_);
+    explicit ReplicatedMergeTreeMergeStrategyPicker(StorageReplicatedMergeTree & storage_);
 
     /// triggers refreshing the cached state (list of replicas etc.)
     /// used when we get new merge event from the zookeeper queue ( see queueUpdatingTask() etc )

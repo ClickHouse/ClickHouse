@@ -165,7 +165,7 @@ std::variant<int, ConnectionEstablisher::TryResult> ConnectionEstablisherAsync::
     fiber = std::move(fiber).resume();
 
     if (exception)
-        std::rethrow_exception(std::move(exception));
+        std::rethrow_exception(exception);
 
     if (connection_establisher.isFinished())
     {
@@ -197,7 +197,10 @@ bool ConnectionEstablisherAsync::checkReceiveTimeout()
         destroyFiber();
         /// In not async case this exception would be thrown and caught in ConnectionEstablisher::run,
         /// but in async case we process timeout outside and cannot throw exception. So, we just save fail message.
-        fail_message = "Timeout exceeded while reading from socket (" + result.entry->getDescription() + ")";
+        fail_message = fmt::format(
+            "Timeout exceeded while reading from socket ({}, receive timeout {} ms)",
+            result.entry->getDescription(),
+            result.entry->getSocket()->getReceiveTimeout().totalMilliseconds());
         epoll.remove(socket_fd);
         resetResult();
         return false;

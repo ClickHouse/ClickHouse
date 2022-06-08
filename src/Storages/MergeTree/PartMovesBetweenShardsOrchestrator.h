@@ -1,7 +1,7 @@
 #pragma once
 
 #include <vector>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <base/types.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Core/UUID.h>
@@ -63,7 +63,7 @@ public:
         };
 
         EntryState(): value(TODO) {}
-        EntryState(Value value_): value(value_) {}
+        EntryState(Value value_): value(value_) {} /// NOLINT
 
         Value value;
 
@@ -173,7 +173,6 @@ private:
     void removePins(const Entry & entry, zkutil::ZooKeeperPtr zk);
     void syncStateFromZK();
 
-private:
     StorageReplicatedMergeTree & storage;
 
     String zookeeper_path;

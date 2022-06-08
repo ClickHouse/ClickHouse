@@ -38,6 +38,11 @@ int main()
             return 1;
         }
     }
+    if (uncompress(256) != output)
+    {
+        std::cout << "test hadoop snappy read buffer failed, buf_size:" << 256 << std::endl;
+        return 1;
+    }
     std::cout << "test hadoop snappy read buffer success" << std::endl;
     return 0;
 }

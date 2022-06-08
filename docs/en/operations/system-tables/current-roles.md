@@ -1,4 +1,4 @@
-# system.current_roles {#system_tables-current_roles}
+# current_roles
 
 Contains active roles of a current user. `SET ROLE` changes the contents of this table.
 

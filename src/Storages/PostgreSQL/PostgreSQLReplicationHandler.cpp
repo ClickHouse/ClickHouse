@@ -6,6 +6,8 @@
 #include <Parsers/ASTTableOverrides.h>
 #include <Processors/Transforms/PostgreSQLSource.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
+#include <QueryPipeline/QueryPipeline.h>
+#include <QueryPipeline/Pipe.h>
 #include <Databases/PostgreSQL/fetchPostgreSQLTableStructure.h>
 #include <Storages/PostgreSQL/StorageMaterializedPostgreSQL.h>
 #include <Interpreters/getTableOverride.h>
@@ -64,8 +66,8 @@ PostgreSQLReplicationHandler::PostgreSQLReplicationHandler(
     bool is_attach_,
     const MaterializedPostgreSQLSettings & replication_settings,
     bool is_materialized_postgresql_database_)
-    : log(&Poco::Logger::get("PostgreSQLReplicationHandler"))
-    , context(context_)
+    : WithContext(context_->getGlobalContext())
+    , log(&Poco::Logger::get("PostgreSQLReplicationHandler"))
     , is_attach(is_attach_)
     , postgres_database(postgres_database_)
     , postgres_schema(replication_settings.materialized_postgresql_schema)
@@ -94,9 +96,9 @@ PostgreSQLReplicationHandler::PostgreSQLReplicationHandler(
     }
     publication_name = fmt::format("{}_ch_publication", replication_identifier);
 
-    startup_task = context->getSchedulePool().createTask("PostgreSQLReplicaStartup", [this]{ checkConnectionAndStart(); });
-    consumer_task = context->getSchedulePool().createTask("PostgreSQLReplicaStartup", [this]{ consumerFunc(); });
-    cleanup_task = context->getSchedulePool().createTask("PostgreSQLReplicaStartup", [this]{ cleanupFunc(); });
+    startup_task = getContext()->getSchedulePool().createTask("PostgreSQLReplicaStartup", [this]{ checkConnectionAndStart(); });
+    consumer_task = getContext()->getSchedulePool().createTask("PostgreSQLReplicaStartup", [this]{ consumerFunc(); });
+    cleanup_task = getContext()->getSchedulePool().createTask("PostgreSQLReplicaStartup", [this]{ cleanupFunc(); });
 }
 
 
@@ -296,7 +298,7 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
     /// (Apart from the case, when shutdownFinal is called).
     /// Handler uses it only for loadFromSnapshot and shutdown methods.
     consumer = std::make_shared<MaterializedPostgreSQLConsumer>(
-            context,
+            getContext(),
             std::move(tmp_connection),
             replication_slot,
             publication_name,
@@ -921,9 +923,9 @@ void PostgreSQLReplicationHandler::reloadFromSnapshot(const std::vector<std::pai
 
             for (const auto & [relation_id, table_name] : relation_data)
             {
-                auto storage = DatabaseCatalog::instance().getTable(StorageID(current_database_name, table_name), context);
+                auto storage = DatabaseCatalog::instance().getTable(StorageID(current_database_name, table_name), getContext());
                 auto * materialized_storage = storage->as <StorageMaterializedPostgreSQL>();
-                auto materialized_table_lock = materialized_storage->lockForShare(String(), context->getSettingsRef().lock_acquire_timeout);
+                auto materialized_table_lock = materialized_storage->lockForShare(String(), getContext()->getSettingsRef().lock_acquire_timeout);
 
                 /// If for some reason this temporary table already exists - also drop it.
                 auto temp_materialized_storage = materialized_storage->createTemporary();
