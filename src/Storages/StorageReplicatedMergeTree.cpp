@@ -34,6 +34,7 @@
 #include <Storages/MergeTree/MergeTreeReaderCompact.h>
 #include <Storages/MergeTree/LeaderElection.h>
 #include <Storages/MergeTree/ZeroCopyLock.h>
+#include <Storages/Freeze.h>
 
 
 #include <Databases/DatabaseOnDisk.h>
@@ -8125,94 +8126,6 @@ void StorageReplicatedMergeTree::createZeroCopyLockNode(
 }
 
 
-namespace
-{
-
-/// Special metadata used during freeze table. Required for zero-copy
-/// replication.
-struct FreezeMetaData
-{
-public:
-    void fill(const StorageReplicatedMergeTree & storage)
-    {
-        is_replicated = storage.supportsReplication();
-        is_remote = storage.isRemote();
-        replica_name = storage.getReplicaName();
-        zookeeper_name = storage.getZooKeeperName();
-        table_shared_id = storage.getTableSharedID();
-    }
-
-    void save(DiskPtr data_disk, const String & path) const
-    {
-        auto metadata_disk = data_disk->getMetadataDiskIfExistsOrSelf();
-
-        auto file_path = getFileName(path);
-        auto buffer = metadata_disk->writeFile(file_path, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite);
-        writeIntText(version, *buffer);
-        buffer->write("\n", 1);
-        writeBoolText(is_replicated, *buffer);
-        buffer->write("\n", 1);
-        writeBoolText(is_remote, *buffer);
-        buffer->write("\n", 1);
-        writeString(replica_name, *buffer);
-        buffer->write("\n", 1);
-        writeString(zookeeper_name, *buffer);
-        buffer->write("\n", 1);
-        writeString(table_shared_id, *buffer);
-        buffer->write("\n", 1);
-    }
-
-    bool load(DiskPtr data_disk, const String & path)
-    {
-        auto metadata_disk = data_disk->getMetadataDiskIfExistsOrSelf();
-        auto file_path = getFileName(path);
-
-        if (!metadata_disk->exists(file_path))
-            return false;
-        auto buffer = metadata_disk->readFile(file_path, ReadSettings(), {});
-        readIntText(version, *buffer);
-        if (version != 1)
-        {
-            LOG_ERROR(&Poco::Logger::get("FreezeMetaData"), "Unknown freezed metadata version: {}", version);
-            return false;
-        }
-        DB::assertChar('\n', *buffer);
-        readBoolText(is_replicated, *buffer);
-        DB::assertChar('\n', *buffer);
-        readBoolText(is_remote, *buffer);
-        DB::assertChar('\n', *buffer);
-        readString(replica_name, *buffer);
-        DB::assertChar('\n', *buffer);
-        readString(zookeeper_name, *buffer);
-        DB::assertChar('\n', *buffer);
-        readString(table_shared_id, *buffer);
-        DB::assertChar('\n', *buffer);
-        return true;
-    }
-
-    static void clean(DiskPtr data_disk, const String & path)
-    {
-        auto metadata_disk = data_disk->getMetadataDiskIfExistsOrSelf();
-        metadata_disk->removeFileIfExists(getFileName(path));
-    }
-
-private:
-    static String getFileName(const String & path)
-    {
-        return fs::path(path) / "frozen_metadata.txt";
-    }
-
-public:
-    int version = 1;
-    bool is_replicated;
-    bool is_remote;
-    String replica_name;
-    String zookeeper_name;
-    String table_shared_id;
-};
-
-}
-
 bool StorageReplicatedMergeTree::removeDetachedPart(DiskPtr disk, const String & path, const String & part_name, bool is_freezed)
 {
     if (disk->supportZeroCopyReplication())
@@ -8223,14 +8136,14 @@ bool StorageReplicatedMergeTree::removeDetachedPart(DiskPtr disk, const String &
             if (meta.load(disk, path))
             {
                 FreezeMetaData::clean(disk, path);
-                return removeSharedDetachedPart(disk, path, part_name, meta.table_shared_id, meta.zookeeper_name, meta.replica_name, "");
+                return removeSharedDetachedPart(disk, path, part_name, meta.table_shared_id, meta.zookeeper_name, meta.replica_name, "", getContext());
             }
         }
         else
         {
             String table_id = getTableSharedID();
 
-            return removeSharedDetachedPart(disk, path, part_name, table_id, zookeeper_name, replica_name, zookeeper_path);
+            return removeSharedDetachedPart(disk, path, part_name, table_id, zookeeper_name, replica_name, zookeeper_path, getContext());
         }
     }
 
@@ -8241,11 +8154,11 @@ bool StorageReplicatedMergeTree::removeDetachedPart(DiskPtr disk, const String &
 
 
 bool StorageReplicatedMergeTree::removeSharedDetachedPart(DiskPtr disk, const String & path, const String & part_name, const String & table_uuid,
-    const String &, const String & detached_replica_name, const String & detached_zookeeper_path)
+    const String &, const String & detached_replica_name, const String & detached_zookeeper_path, ContextPtr local_context)
 {
     bool keep_shared = false;
 
-    zkutil::ZooKeeperPtr zookeeper = getZooKeeper();
+    zkutil::ZooKeeperPtr zookeeper = local_context->getZooKeeper();
     NameSet files_not_to_remove;
 
     fs::path checksums = fs::path(path) / IMergeTreeDataPart::FILE_FOR_REFERENCES_CHECK;
@@ -8256,7 +8169,7 @@ bool StorageReplicatedMergeTree::removeSharedDetachedPart(DiskPtr disk, const St
             String id = disk->getUniqueId(checksums);
             bool can_remove = false;
             std::tie(can_remove, files_not_to_remove) = StorageReplicatedMergeTree::unlockSharedDataByID(id, table_uuid, part_name,
-                detached_replica_name, disk, zookeeper, getContext()->getReplicatedMergeTreeSettings(), log,
+                detached_replica_name, disk, zookeeper, local_context->getReplicatedMergeTreeSettings(), &Poco::Logger::get("StorageReplicatedMergeTree"),
                 detached_zookeeper_path);
 
             keep_shared = !can_remove;
