@@ -203,7 +203,6 @@ bool KQLOperators::convert(std::vector<String> &tokens,IParser::Pos &pos)
 
             case KQLOperatorValue::not_equal:
                 break;
-
             case KQLOperatorValue::equal_cs:
                 new_expr = "==";
                 break;
@@ -211,7 +210,6 @@ bool KQLOperators::convert(std::vector<String> &tokens,IParser::Pos &pos)
             case KQLOperatorValue::not_equal_cs:
                 new_expr = "!=";
                 break;
-
             case KQLOperatorValue::has:
                 new_expr = genHaystackOpExpr(tokens, pos, op, "hasTokenCaseInsensitive", WildcardsPos::none);
                 break;
@@ -261,7 +259,6 @@ bool KQLOperators::convert(std::vector<String> &tokens,IParser::Pos &pos)
             case KQLOperatorValue::in_cs:
                 new_expr = "in";
                 break;
-
             case KQLOperatorValue::not_in_cs:
                 new_expr = "not in";
                 break;
