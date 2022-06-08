@@ -1824,7 +1824,20 @@ void NO_INLINE Aggregator::convertToBlockImplFinal(
             bool is_state = aggregate_functions[destroy_index]->isState();
             bool destroy_place_after_insert = !is_state;
 
-            aggregate_functions[destroy_index]->insertResultIntoBatch(0, places.size(), places.data(), offset, *final_aggregate_column, arena, destroy_place_after_insert);
+            if (params.aggregates[destroy_index].totals) {
+                PaddedPODArray<AggregateDataPtr> total_data;
+                /// merge original data
+                for (size_t i = 1; i < places.size(); ++i) {
+                    aggregate_functions[destroy_index]->merge(places[0] + offset, places[i] + offset, arena);
+                }
+                /// emplace total aggregate data
+                for (size_t i = 0; i < places.size(); ++i) {
+                    total_data.emplace_back(places[0]);
+                }
+                aggregate_functions[destroy_index]->insertResultIntoBatch(0, total_data.size(), total_data.data(), offset, *final_aggregate_column, arena, destroy_place_after_insert);
+            } else {
+                aggregate_functions[destroy_index]->insertResultIntoBatch(0, places.size(), places.data(), offset, *final_aggregate_column, arena, destroy_place_after_insert);
+            }
         }
     }
     catch (...)

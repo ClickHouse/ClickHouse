@@ -17,6 +17,7 @@ struct AggregateDescription
     ColumnNumbers arguments;
     Names argument_names;    /// used if no `arguments` are specified.
     String column_name;      /// What name to use for a column with aggregate function values
+    bool totals = false;     /// Use total data for group by case
 
     void explain(WriteBuffer & out, size_t indent) const; /// Get description for EXPLAIN query.
     void explain(JSONBuilder::JSONMap & map) const;

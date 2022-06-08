@@ -68,6 +68,10 @@ void ASTFunction::appendColumnNameImpl(WriteBuffer & ostr) const
         }
     }
 
+    if (totals) {
+        writeCString(" TOTALS", ostr);
+    }
+
     writeChar(')', ostr);
 
     if (is_window_function)
