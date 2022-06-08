@@ -816,7 +816,7 @@ Columns that are not present in the block will be filled with default values (yo
 
 ## JSONEachRow {#jsoneachrow}
 
-In this format, CliskHouse outputs each row as a separated, newline-delimited JSON Object.
+In this format, ClickHouse outputs each row as a separated, newline-delimited JSON Object.
 
 Example:
 

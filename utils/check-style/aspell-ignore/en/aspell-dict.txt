@@ -1,4 +1,4 @@
-personal_ws-1.1 en 479 
+personal_ws-1.1 en 484
 AArch
 ACLs
 AMQP
@@ -178,6 +178,7 @@ benchmarking
 blake
 blockSize
 boolean
+bools
 boringssl
 brotli
 buildable
@@ -191,6 +192,8 @@ ccache
 cctz
 cfg
 changelog
+charset
+charsets
 checkouting
 checksummed
 checksumming
@@ -210,6 +213,7 @@ coroutines
 cpp
 cppkafka
 cpu
+crlf
 croaring
 cronjob
 csv
@@ -459,6 +463,7 @@ unixodbc
 url
 userspace
 utils
+uuid
 variadic
 varint
 vectorized
