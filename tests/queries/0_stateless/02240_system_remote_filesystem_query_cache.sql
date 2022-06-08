@@ -8,7 +8,7 @@ SET skip_download_if_exceeds_query_cache=1;
 SET max_query_cache_size=128;
 
 DROP TABLE IF EXISTS test;
-CREATE TABLE test (key UInt32, value String) Engine=MergeTree() ORDER BY key SETTINGS storage_policy='s3_cache_4', min_bytes_for_wide_part = 10485760;
+CREATE TABLE test (key UInt32, value String) Engine=MergeTree() ORDER BY key SETTINGS storage_policy='s3_cache', min_bytes_for_wide_part = 10485760;
 INSERT INTO test SELECT number, toString(number) FROM numbers(100);
 
 SELECT  * FROM test FORMAT Null;
