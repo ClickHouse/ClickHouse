@@ -1,0 +1,176 @@
+MOO: SHOW & DESCRIBE
+user_id	UInt32					
+message	String					
+timestamp	DateTime					
+metric	Float32					
+user_id	UInt32					
+message	String					
+timestamp	DateTime					
+metric	Float32					
+user_id	UInt32					
+message	String					
+timestamp	DateTime					
+metric	Float32					
+MOO: USE DATABASE
+MOO: ---
+101
+101
+102
+102
+MOO: ---
+101
+101
+102
+102
+MOO: ---
+101
+101
+102
+102
+MOO: SELECT columns
+MOO: user_id
+101
+101
+102
+102
+MOO: message
+first row
+4-th row
+second row
+third row
+MOO: timestamp
+2019-06-15 23:00:00
+2022-06-15 23:00:00
+2020-06-15 23:00:00
+2021-06-15 23:00:00
+MOO: metric
+-1
+3.14159
+-1.41421
+2.718
+MOO: user_id, metric
+101	-1
+101	3.14159
+102	-1.41421
+102	2.718
+MOO: *
+101	first row	2019-06-15 23:00:00	-1
+101	4-th row	2022-06-15 23:00:00	3.14159
+102	second row	2020-06-15 23:00:00	-1.41421
+102	third row	2021-06-15 23:00:00	2.718
+MOO: *, user_id, user_id
+101	first row	2019-06-15 23:00:00	-1	101	101
+101	4-th row	2022-06-15 23:00:00	3.14159	101	101
+102	second row	2020-06-15 23:00:00	-1.41421	102	102
+102	third row	2021-06-15 23:00:00	2.718	102	102
+MOO: SELECT columns + expressions
+MOO: user_id * user_id
+10201
+10201
+10404
+10404
+MOO: user_id + metric
+100
+104.1415901184082
+100.58579003810883
+104.71799993515015
+MOO: 1
+1
+1
+1
+1
+MOO: \'1 one\' alias
+1
+1
+1
+1
+MOO: `1 AS one` alias
+1
+1
+1
+1
+MOO: 1 one, user_id * user_id AS squared_user, one + squared_user
+1	10201	10202
+1	10201	10202
+1	10404	10405
+1	10404	10405
+MOO: WHERE
+MOO: user_id = 101
+101
+101
+MOO: user_id = 102
+102
+102
+MOO: *, user_id > 0
+101	first row	2019-06-15 23:00:00	-1
+101	4-th row	2022-06-15 23:00:00	3.14159
+102	second row	2020-06-15 23:00:00	-1.41421
+102	third row	2021-06-15 23:00:00	2.718
+MOO: *, user_id < 0
+MOO: user_id * user_id > 10201
+102
+102
+MOO: squared_user <= 10201
+10201
+10201
+MOO: user_id = 101 AND metric > 0
+101	3.14159
+MOO: user_id = 101 AND (metric > 0 OR user_id = 102)
+101	3.14159
+MOO: user_id = 101 AND metric > 0 OR user_id = 102
+101	3.14159
+102	-1.41421
+102	2.718
+MOO: (user_id = 101 AND metric > 0) OR user_id = 102
+101	3.14159
+102	-1.41421
+102	2.718
+MOO: user_id = 101 XOR metric > 0
+101	-1
+102	2.718
+MOO: ORDER BY
+MOO: user_id ASC (implicit)
+101	-1
+101	3.14159
+102	-1.41421
+102	2.718
+MOO: user_id ASC (explicit)
+101	-1
+101	3.14159
+102	-1.41421
+102	2.718
+MOO: user_id DESC
+102	2.718
+102	-1.41421
+101	3.14159
+101	-1
+MOO: user_id ASC (implicit), metric ASC (implicit)
+101	-1
+101	3.14159
+102	-1.41421
+102	2.718
+MOO: user_id ASC (explicit), metric ASC (explicit)
+101	-1
+101	3.14159
+102	-1.41421
+102	2.718
+MOO: user_id ASC (implicit), metric DESC
+101	3.14159
+101	-1
+102	2.718
+102	-1.41421
+MOO: user_id DESC, metric ASC (implicit)
+102	-1.41421
+102	2.718
+101	-1
+101	3.14159
+MOO: user_id DESC, metric ASC (explicit)
+102	-1.41421
+102	2.718
+101	-1
+101	3.14159
+MOO: user_id DESC, metric DESC
+102	2.718
+102	-1.41421
+101	3.14159
+101	-1
