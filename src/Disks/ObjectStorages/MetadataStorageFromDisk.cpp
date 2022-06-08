@@ -13,7 +13,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int FS_METADATA_ERROR;
-    extern const int LOGICAL_ERROR;
 }
 
 
@@ -622,7 +621,7 @@ std::unordered_map<String, String> MetadataStorageFromDisk::getSerializedMetadat
     return metadatas;
 }
 
-MetadataTransactionPtr MetadataStorageFromDisk::createTransaction() const 
+MetadataTransactionPtr MetadataStorageFromDisk::createTransaction() const
 {
     return std::make_shared<MetadataStorageFromDiskTransaction>(*this);
 }
