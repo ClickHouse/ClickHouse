@@ -5,9 +5,9 @@ namespace DB
 {
 
 ITransformingStep::ITransformingStep(DataStream input_stream, Block output_header, Traits traits, bool collect_processors_)
-    : transform_traits(traits.transform_traits)
+    : transform_traits(std::move(traits.transform_traits))
     , collect_processors(collect_processors_)
-    , data_stream_traits(traits.data_stream_traits)
+    , data_stream_traits(std::move(traits.data_stream_traits))
 {
     input_streams.emplace_back(std::move(input_stream));
     output_stream = createOutputStream(input_streams.front(), std::move(output_header), data_stream_traits);
