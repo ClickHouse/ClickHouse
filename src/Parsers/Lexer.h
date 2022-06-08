@@ -51,6 +51,7 @@ namespace DB
     M(Greater) \
     M(LessOrEquals) \
     M(GreaterOrEquals) \
+    M(PipeMark) \
     M(Concatenation)          /** String concatenation operator: || */ \
     \
     M(At)                     /** @. Used for specifying user names and also for MySQL-style variables. */ \
