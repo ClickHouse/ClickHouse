@@ -1,6 +1,7 @@
 #include <Backups/BackupEntriesCollector.h>
 #include <Backups/BackupEntryFromMemory.h>
 #include <Backups/IBackupCoordination.h>
+#include <Backups/BackupUtils.h>
 #include <Databases/IDatabase.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -56,7 +57,7 @@ BackupEntries BackupEntriesCollector::getBackupEntries()
         calculateRootPathInBackup();
 
         /// Do renaming in the create queries according to the renaming config.
-        renaming_settings.setFromBackupQuery(backup_query_elements);
+        renaming_map = makeRenamingMapFromBackupQuery(backup_query_elements);
 
         /// Find databases and tables which we're going to put to the backup.
         setStage(Stage::kFindingTables);
@@ -255,7 +256,7 @@ void BackupEntriesCollector::collectTableInfo(
     }
 
     storage->adjustCreateQueryForBackup(create_table_query);
-    auto new_table_name = renaming_settings.getNewTableName(table_name);
+    auto new_table_name = renaming_map.getNewTableName(table_name);
     fs::path data_path_in_backup
         = root_path_in_backup / "data" / escapeForFileName(new_table_name.database) / escapeForFileName(new_table_name.table);
 
@@ -427,9 +428,10 @@ void BackupEntriesCollector::makeBackupEntriesForDatabasesDefs()
         LOG_TRACE(log, "Adding definition of database {}", backQuoteIfNeed(database_name));
 
         ASTPtr new_create_query = database_info.create_database_query;
-        renameInCreateQuery(new_create_query, renaming_settings, context);
+        database_info.database->adjustCreateDatabaseQueryForBackup(new_create_query);
+        renameDatabaseAndTableNameInCreateQuery(context->getGlobalContext(), renaming_map, new_create_query);
 
-        String new_database_name = renaming_settings.getNewDatabaseName(database_name);
+        String new_database_name = renaming_map.getNewDatabaseName(database_name);
         auto metadata_path_in_backup = root_path_in_backup / "metadata" / (escapeForFileName(new_database_name) + ".sql");
 
         backup_entries.emplace_back(metadata_path_in_backup, std::make_shared<BackupEntryFromMemory>(serializeAST(*new_create_query)));
@@ -487,7 +489,7 @@ void BackupEntriesCollector::addBackupEntries(BackupEntries && backup_entries_)
 void BackupEntriesCollector::addBackupEntryForCreateQuery(const ASTPtr & create_query)
 {
     ASTPtr new_create_query = create_query;
-    renameInCreateQuery(new_create_query, renaming_settings, context);
+    renameDatabaseAndTableNameInCreateQuery(context->getGlobalContext(), renaming_map, new_create_query);
 
     const auto & create = new_create_query->as<const ASTCreateQuery &>();
     String new_table_name = create.getTable();

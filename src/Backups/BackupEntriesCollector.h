@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Backups/BackupSettings.h>
-#include <Backups/DDLRenamingVisitor.h>
+#include <Databases/DDLRenamingVisitor.h>
 #include <Core/QualifiedTableName.h>
 #include <Parsers/ASTBackupQuery.h>
 #include <Storages/IStorage_fwd.h>
@@ -102,7 +102,7 @@ private:
 
     Stage current_stage = Stage::kPreparing;
     std::filesystem::path root_path_in_backup;
-    DDLRenamingSettings renaming_settings;
+    DDLRenamingMap renaming_map;
 
     struct DatabaseInfo
     {

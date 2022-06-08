@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Backups/RestoreSettings.h>
-#include <Backups/DDLRenamingVisitor.h>
+#include <Databases/DDLRenamingVisitor.h>
 #include <Parsers/ASTBackupQuery.h>
 #include <Storages/TableLockHolder.h>
 #include <Storages/IStorage_fwd.h>
@@ -90,7 +90,7 @@ private:
 
     Stage current_stage = Stage::kPreparing;
     std::vector<std::filesystem::path> root_paths_in_backup;
-    DDLRenamingSettings renaming_settings;
+    DDLRenamingMap renaming_map;
 
     void setStage(Stage new_stage, const String & error_message = {});
     void findRootPathsInBackup();
