@@ -13,6 +13,7 @@
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTWithAlias.h>
+#include <Parsers/ASTSubquery.h>
 
 namespace MySQLCompatibility
 {
@@ -242,6 +243,31 @@ void SelectTableCT::convert(CHPtr & ch_tree) const
     ch_tree = table_expr;
 }
 
+bool SelectSubqueryCT::setup(String & error)
+{
+    const MySQLPtr & subquery_node = getSourceNode();
+    subquery_ct = std::make_shared<SelectQueryExprCT>(subquery_node);
+    if (!subquery_ct->setup(error))
+        return false;
+
+    return true;
+}
+
+void SelectSubqueryCT::convert(CHPtr & ch_tree) const
+{
+    CHPtr select_query = nullptr;
+    subquery_ct->convert(select_query);
+    
+    auto subquery = std::make_shared<DB::ASTSubquery>();
+    subquery->children.push_back(std::move(select_query));
+
+    auto table_expr = std::make_shared<DB::ASTTableExpression>();
+    table_expr->subquery = std::move(subquery);
+    table_expr->children.push_back(table_expr->subquery);
+
+    ch_tree = table_expr;
+}
+
 bool SelectFromCT::setup(String & error)
 {
     auto item_list_node = getSourceNode();
@@ -252,7 +278,7 @@ bool SelectFromCT::setup(String & error)
 
     auto expr_path = TreePath({"tableReference", "tableFactor"});
     auto table_path = TreePath({"singleTable"});
-
+    auto subquery_path = TreePath({"derivedTable", "subquery", "queryExpression"});
 
     for (const auto & child : item_list_node->children)
     {
@@ -267,6 +293,13 @@ bool SelectFromCT::setup(String & error)
                     return false;
 
                 items.push_back(std::move(table_ct));
+            } else if ((result_node = subquery_path.find(expr_node)) != nullptr)
+            {
+                ConvPtr subquery_ct = std::make_shared<SelectSubqueryCT>(result_node);
+                if (!subquery_ct->setup(error))
+                    return false;
+
+                items.push_back(std::move(subquery_ct));
             }
         }
     }
@@ -334,11 +367,11 @@ void SelectGroupByCT::convert(CHPtr & ch_tree) const
     ch_tree = expr_list;
 }
 
-bool SelectQueryCT::setup(String & error)
+bool SelectQueryExprCT::setup(String & error)
 {
     auto column_path = TreePath::columnPath();
 
-    MySQLPtr query_expr = TreePath({"queryExpression"}).find(getSourceNode());
+    MySQLPtr query_expr = getSourceNode();
 
     MySQLPtr query_expr_spec = TreePath({"queryExpressionBody", "querySpecification"}).find(query_expr);
 
@@ -464,7 +497,7 @@ bool SelectQueryCT::setup(String & error)
     return true;
 }
 
-void SelectQueryCT::convert(CHPtr & ch_tree) const
+void SelectQueryExprCT::convert(CHPtr & ch_tree) const
 {
     auto select_union = std::make_shared<DB::ASTSelectWithUnionQuery>();
     auto select_list = std::make_shared<DB::ASTExpressionList>();
@@ -540,4 +573,27 @@ void SelectQueryCT::convert(CHPtr & ch_tree) const
 
     ch_tree = select_union;
 }
+
+bool SelectQueryCT::setup(String & error)
+{
+    const MySQLPtr & statement_node = getSourceNode();
+    MySQLPtr expr_node = TreePath({"queryExpression"}).find(statement_node);
+    if (expr_node == nullptr)
+    {
+        error = "invalid SELECT query";
+        return false;
+    }
+
+    expr_ct = std::make_shared<SelectQueryExprCT>(expr_node);
+    if (!expr_ct->setup(error))
+        return false;
+    return true;
+}
+
+void SelectQueryCT::convert(CHPtr & ch_tree) const
+{
+    assert(expr_ct);
+    expr_ct->convert(ch_tree);
+}
+
 }

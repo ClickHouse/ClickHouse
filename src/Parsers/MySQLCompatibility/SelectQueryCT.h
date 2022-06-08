@@ -73,6 +73,16 @@ private:
     String database;
 };
 
+class SelectSubqueryCT : public IConversionTree
+{
+public:
+    SelectSubqueryCT(MySQLPtr source) : IConversionTree(source) { }
+    virtual bool setup(String & error) override;
+    virtual void convert(CHPtr & ch_tree) const override;
+private:
+    ConvPtr subquery_ct;
+};
+
 class SelectFromCT : public IConversionTree
 {
 public:
@@ -95,10 +105,10 @@ private:
     std::vector<ConvPtr> args;
 };
 
-class SelectQueryCT : public IConversionTree
+class SelectQueryExprCT : public IConversionTree
 {
 public:
-    SelectQueryCT(MySQLPtr source) : IConversionTree(source) { }
+    SelectQueryExprCT(MySQLPtr source) : IConversionTree(source) { }
     virtual bool setup(String & error) override;
     virtual void convert(CHPtr & ch_tree) const override;
 
@@ -111,6 +121,16 @@ private:
     ConvPtr where_ct = nullptr;
     ConvPtr group_by_ct = nullptr;
     ConvPtr having_ct = nullptr;
+};
+
+class SelectQueryCT : public IConversionTree
+{
+public:
+    SelectQueryCT(MySQLPtr source) : IConversionTree(source) { }
+    virtual bool setup(String & error) override;
+    virtual void convert(CHPtr & ch_tree) const override;
+private:
+    ConvPtr expr_ct;
 };
 
 }
