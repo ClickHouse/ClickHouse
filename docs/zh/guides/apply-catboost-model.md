@@ -1,6 +1,6 @@
 ---
-toc_priority: 41
-toc_title: "\u5E94\u7528CatBoost\u6A21\u578B"
+sidebar_position: 41
+sidebar_label: "\u5E94\u7528CatBoost\u6A21\u578B"
 ---
 
 # 在ClickHouse中应用Catboost模型 {#applying-catboost-model-in-clickhouse}

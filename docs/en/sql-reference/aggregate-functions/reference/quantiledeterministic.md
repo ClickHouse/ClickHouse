@@ -1,8 +1,8 @@
 ---
-toc_priority: 206
+sidebar_position: 206
 ---
 
-# quantileDeterministic {#quantiledeterministic}
+# quantileDeterministic
 
 Computes an approximate [quantile](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence.
 

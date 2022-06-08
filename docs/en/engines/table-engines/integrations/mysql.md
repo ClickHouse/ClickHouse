@@ -1,9 +1,9 @@
 ---
-toc_priority: 4
-toc_title: MySQL
+sidebar_position: 4
+sidebar_label: MySQL
 ---
 
-# MySQL {#mysql}
+# MySQL
 
 The MySQL engine allows you to perform `SELECT` and `INSERT` queries on data that is stored on a remote MySQL server.
 
@@ -148,3 +148,5 @@ Default value: `16`.
 
 -   [The mysql table function](../../../sql-reference/table-functions/mysql.md)
 -   [Using MySQL as a source of external dictionary](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-sources.md#dicts-external_dicts_dict_sources-mysql)
+
+[Original article](https://clickhouse.com/docs/en/engines/table-engines/integrations/mysql/) <!--hide-->

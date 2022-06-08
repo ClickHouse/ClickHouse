@@ -1,16 +1,22 @@
-#include <Processors/QueryPlan/QueryPlan.h>
-#include <Processors/QueryPlan/IQueryPlanStep.h>
-#include <QueryPipeline/QueryPipelineBuilder.h>
-#include <IO/WriteBuffer.h>
-#include <IO/Operators.h>
+#include <stack>
+
+#include <Common/JSONBuilder.h>
+
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/ArrayJoinAction.h>
-#include <stack>
+
+#include <IO/Operators.h>
+#include <IO/WriteBuffer.h>
+
+#include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
+#include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
-#include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
+#include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
-#include <Common/JSONBuilder.h>
+
+#include <QueryPipeline/QueryPipelineBuilder.h>
+
 
 namespace DB
 {
@@ -22,8 +28,8 @@ namespace ErrorCodes
 
 QueryPlan::QueryPlan() = default;
 QueryPlan::~QueryPlan() = default;
-QueryPlan::QueryPlan(QueryPlan &&) = default;
-QueryPlan & QueryPlan::operator=(QueryPlan &&) = default;
+QueryPlan::QueryPlan(QueryPlan &&) noexcept = default;
+QueryPlan & QueryPlan::operator=(QueryPlan &&) noexcept = default;
 
 void QueryPlan::checkInitialized() const
 {
@@ -58,22 +64,25 @@ void QueryPlan::unitePlans(QueryPlanStepPtr step, std::vector<std::unique_ptr<Qu
     const auto & inputs = step->getInputStreams();
     size_t num_inputs = step->getInputStreams().size();
     if (num_inputs != plans.size())
-    {
-        throw Exception("Cannot unite QueryPlans using " + step->getName() +
-                        " because step has different number of inputs. "
-                        "Has " + std::to_string(plans.size()) + " plans "
-                        "and " + std::to_string(num_inputs) + " inputs", ErrorCodes::LOGICAL_ERROR);
-    }
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Cannot unite QueryPlans using {} because step has different number of inputs. Has {} plans and {} inputs",
+            step->getName(),
+            plans.size(),
+            num_inputs);
 
     for (size_t i = 0; i < num_inputs; ++i)
     {
         const auto & step_header = inputs[i].header;
         const auto & plan_header = plans[i]->getCurrentDataStream().header;
         if (!blocksHaveEqualStructure(step_header, plan_header))
-            throw Exception("Cannot unite QueryPlans using " + step->getName() + " because "
-                            "it has incompatible header with plan " + root->step->getName() + " "
-                            "plan header: " + plan_header.dumpStructure() +
-                            "step header: " + step_header.dumpStructure(), ErrorCodes::LOGICAL_ERROR);
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Cannot unite QueryPlans using {} because it has incompatible header with plan {} plan header: {} step header: {}",
+                step->getName(),
+                root->step->getName(),
+                plan_header.dumpStructure(),
+                step_header.dumpStructure());
     }
 
     for (auto & plan : plans)
@@ -88,8 +97,7 @@ void QueryPlan::unitePlans(QueryPlanStepPtr step, std::vector<std::unique_ptr<Qu
     for (auto & plan : plans)
     {
         max_threads = std::max(max_threads, plan->max_threads);
-        interpreter_context.insert(interpreter_context.end(),
-                                   plan->interpreter_context.begin(), plan->interpreter_context.end());
+        resources = std::move(plan->resources);
     }
 }
 
@@ -102,8 +110,10 @@ void QueryPlan::addStep(QueryPlanStepPtr step)
     if (num_input_streams == 0)
     {
         if (isInitialized())
-            throw Exception("Cannot add step " + step->getName() + " to QueryPlan because "
-                            "step has no inputs, but QueryPlan is already initialized", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Cannot add step {} to QueryPlan because step has no inputs, but QueryPlan is already initialized",
+                step->getName());
 
         nodes.emplace_back(Node{.step = std::move(step)});
         root = &nodes.back();
@@ -113,25 +123,33 @@ void QueryPlan::addStep(QueryPlanStepPtr step)
     if (num_input_streams == 1)
     {
         if (!isInitialized())
-            throw Exception("Cannot add step " + step->getName() + " to QueryPlan because "
-                            "step has input, but QueryPlan is not initialized", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Cannot add step {} to QueryPlan because step has input, but QueryPlan is not initialized",
+                step->getName());
 
         const auto & root_header = root->step->getOutputStream().header;
         const auto & step_header = step->getInputStreams().front().header;
         if (!blocksHaveEqualStructure(root_header, step_header))
-            throw Exception("Cannot add step " + step->getName() + " to QueryPlan because "
-                            "it has incompatible header with root step " + root->step->getName() + " "
-                            "root header: " + root_header.dumpStructure() +
-                            "step header: " + step_header.dumpStructure(), ErrorCodes::LOGICAL_ERROR);
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Cannot add step {} to QueryPlan because it has incompatible header with root step {} root header: {} step header: {}",
+                step->getName(),
+                root->step->getName(),
+                root_header.dumpStructure(),
+                step_header.dumpStructure());
 
         nodes.emplace_back(Node{.step = std::move(step), .children = {root}});
         root = &nodes.back();
         return;
     }
 
-    throw Exception("Cannot add step " + step->getName() + " to QueryPlan because it has " +
-                    std::to_string(num_input_streams) + " inputs but " + std::to_string(isInitialized() ? 1 : 0) +
-                    " input expected", ErrorCodes::LOGICAL_ERROR);
+    throw Exception(
+        ErrorCodes::LOGICAL_ERROR,
+        "Cannot add step {} to QueryPlan because it has {} inputs but {} input expected",
+        step->getName(),
+        num_input_streams,
+        isInitialized() ? 1 : 0);
 }
 
 QueryPipelineBuilderPtr QueryPlan::buildQueryPipeline(
@@ -177,33 +195,12 @@ QueryPipelineBuilderPtr QueryPlan::buildQueryPipeline(
             stack.push(Frame{.node = frame.node->children[next_child]});
     }
 
-    for (auto & context : interpreter_context)
-        last_pipeline->addInterpreterContext(std::move(context));
-
-    last_pipeline->setProgressCallback(build_pipeline_settings.progress_callback);
+    /// last_pipeline->setProgressCallback(build_pipeline_settings.progress_callback);
     last_pipeline->setProcessListElement(build_pipeline_settings.process_list_element);
+    last_pipeline->addResources(std::move(resources));
 
     return last_pipeline;
 }
-
-Pipe QueryPlan::convertToPipe(
-    const QueryPlanOptimizationSettings & optimization_settings,
-    const BuildQueryPipelineSettings & build_pipeline_settings)
-{
-    if (!isInitialized())
-        return {};
-
-    if (isCompleted())
-        throw Exception("Cannot convert completed QueryPlan to Pipe", ErrorCodes::LOGICAL_ERROR);
-
-    return QueryPipelineBuilder::getPipe(std::move(*buildQueryPipeline(optimization_settings, build_pipeline_settings)));
-}
-
-void QueryPlan::addInterpreterContext(ContextPtr context)
-{
-    interpreter_context.emplace_back(std::move(context));
-}
-
 
 static void explainStep(const IQueryPlanStep & step, JSONBuilder::JSONMap & map, const QueryPlan::ExplainPlanOptions & options)
 {
@@ -388,6 +385,7 @@ void QueryPlan::explainPlan(WriteBuffer & buffer, const ExplainPlanOptions & opt
 static void explainPipelineStep(IQueryPlanStep & step, IQueryPlanStep::FormatSettings & settings)
 {
     settings.out << String(settings.offset, settings.indent_char) << "(" << step.getName() << ")\n";
+
     size_t current_offset = settings.offset;
     step.describePipeline(settings);
     if (current_offset == settings.offset)

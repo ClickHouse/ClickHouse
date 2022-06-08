@@ -45,7 +45,6 @@ void MultipleAccessStorage::setStorages(const std::vector<StoragePtr> & storages
     std::unique_lock lock{mutex};
     nested_storages = std::make_shared<const Storages>(storages);
     ids_cache.reset();
-    updateSubscriptionsToNestedStorages(lock);
 }
 
 void MultipleAccessStorage::addStorage(const StoragePtr & new_storage)
@@ -56,7 +55,6 @@ void MultipleAccessStorage::addStorage(const StoragePtr & new_storage)
     auto new_storages = std::make_shared<Storages>(*nested_storages);
     new_storages->push_back(new_storage);
     nested_storages = new_storages;
-    updateSubscriptionsToNestedStorages(lock);
 }
 
 void MultipleAccessStorage::removeStorage(const StoragePtr & storage_to_remove)
@@ -70,7 +68,6 @@ void MultipleAccessStorage::removeStorage(const StoragePtr & storage_to_remove)
     new_storages->erase(new_storages->begin() + index);
     nested_storages = new_storages;
     ids_cache.reset();
-    updateSubscriptionsToNestedStorages(lock);
 }
 
 std::vector<StoragePtr> MultipleAccessStorage::getStorages()
@@ -225,6 +222,28 @@ bool MultipleAccessStorage::isReadOnly(const UUID & id) const
 }
 
 
+void MultipleAccessStorage::reload()
+{
+    auto storages = getStoragesInternal();
+    for (const auto & storage : *storages)
+        storage->reload();
+}
+
+void MultipleAccessStorage::startPeriodicReloading()
+{
+    auto storages = getStoragesInternal();
+    for (const auto & storage : *storages)
+        storage->startPeriodicReloading();
+}
+
+void MultipleAccessStorage::stopPeriodicReloading()
+{
+    auto storages = getStoragesInternal();
+    for (const auto & storage : *storages)
+        storage->stopPeriodicReloading();
+}
+
+
 std::optional<UUID> MultipleAccessStorage::insertImpl(const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists)
 {
     std::shared_ptr<IAccessStorage> storage_for_insertion;
@@ -310,153 +329,20 @@ bool MultipleAccessStorage::updateImpl(const UUID & id, const UpdateFunc & updat
 }
 
 
-scope_guard MultipleAccessStorage::subscribeForChangesImpl(const UUID & id, const OnChangedHandler & handler) const
-{
-    auto storage = findStorage(id);
-    if (!storage)
-        return {};
-    return storage->subscribeForChanges(id, handler);
-}
-
-
-bool MultipleAccessStorage::hasSubscription(const UUID & id) const
-{
-    auto storages = getStoragesInternal();
-    for (const auto & storage : *storages)
-    {
-        if (storage->hasSubscription(id))
-            return true;
-    }
-    return false;
-}
-
-
-scope_guard MultipleAccessStorage::subscribeForChangesImpl(AccessEntityType type, const OnChangedHandler & handler) const
-{
-    std::unique_lock lock{mutex};
-    auto & handlers = handlers_by_type[static_cast<size_t>(type)];
-    handlers.push_back(handler);
-    auto handler_it = std::prev(handlers.end());
-    if (handlers.size() == 1)
-        updateSubscriptionsToNestedStorages(lock);
-
-    return [this, type, handler_it]
-    {
-        std::unique_lock lock2{mutex};
-        auto & handlers2 = handlers_by_type[static_cast<size_t>(type)];
-        handlers2.erase(handler_it);
-        if (handlers2.empty())
-            updateSubscriptionsToNestedStorages(lock2);
-    };
-}
-
-
-bool MultipleAccessStorage::hasSubscription(AccessEntityType type) const
-{
-    std::lock_guard lock{mutex};
-    const auto & handlers = handlers_by_type[static_cast<size_t>(type)];
-    return !handlers.empty();
-}
-
-
-/// Updates subscriptions to nested storages.
-/// We need the subscriptions to the nested storages if someone has subscribed to us.
-/// If any of the nested storages is changed we call our subscribers.
-void MultipleAccessStorage::updateSubscriptionsToNestedStorages(std::unique_lock<std::mutex> & lock) const
-{
-    /// lock is already locked.
-
-    std::vector<std::pair<StoragePtr, scope_guard>> added_subscriptions[static_cast<size_t>(AccessEntityType::MAX)];
-    std::vector<scope_guard> removed_subscriptions;
-
-    for (auto type : collections::range(AccessEntityType::MAX))
-    {
-        auto & handlers = handlers_by_type[static_cast<size_t>(type)];
-        auto & subscriptions = subscriptions_to_nested_storages[static_cast<size_t>(type)];
-        if (handlers.empty())
-        {
-            /// None has subscribed to us, we need no subscriptions to the nested storages.
-            for (auto & subscription : subscriptions | boost::adaptors::map_values)
-                removed_subscriptions.push_back(std::move(subscription));
-            subscriptions.clear();
-        }
-        else
-        {
-            /// Someone has subscribed to us, now we need to have a subscription to each nested storage.
-            for (auto it = subscriptions.begin(); it != subscriptions.end();)
-            {
-                const auto & storage = it->first;
-                auto & subscription = it->second;
-                if (boost::range::find(*nested_storages, storage) == nested_storages->end())
-                {
-                    removed_subscriptions.push_back(std::move(subscription));
-                    it = subscriptions.erase(it);
-                }
-                else
-                    ++it;
-            }
-
-            for (const auto & storage : *nested_storages)
-            {
-                if (!subscriptions.count(storage))
-                    added_subscriptions[static_cast<size_t>(type)].push_back({storage, nullptr});
-            }
-        }
-    }
-
-    /// Unlock the mutex temporarily because it's much better to subscribe to the nested storages
-    /// with the mutex unlocked.
-    lock.unlock();
-    removed_subscriptions.clear();
-
-    for (auto type : collections::range(AccessEntityType::MAX))
-    {
-        if (!added_subscriptions[static_cast<size_t>(type)].empty())
-        {
-            auto on_changed = [this, type](const UUID & id, const AccessEntityPtr & entity)
-            {
-                Notifications notifications;
-                SCOPE_EXIT({ notify(notifications); });
-                std::lock_guard lock2{mutex};
-                for (const auto & handler : handlers_by_type[static_cast<size_t>(type)])
-                    notifications.push_back({handler, id, entity});
-            };
-            for (auto & [storage, subscription] : added_subscriptions[static_cast<size_t>(type)])
-                subscription = storage->subscribeForChanges(type, on_changed);
-        }
-    }
-
-    /// Lock the mutex again to store added subscriptions to the nested storages.
-    lock.lock();
-
-    for (auto type : collections::range(AccessEntityType::MAX))
-    {
-        if (!added_subscriptions[static_cast<size_t>(type)].empty())
-        {
-            auto & subscriptions = subscriptions_to_nested_storages[static_cast<size_t>(type)];
-            for (auto & [storage, subscription] : added_subscriptions[static_cast<size_t>(type)])
-            {
-                if (!subscriptions.count(storage) && (boost::range::find(*nested_storages, storage) != nested_storages->end())
-                    && !handlers_by_type[static_cast<size_t>(type)].empty())
-                {
-                    subscriptions.emplace(std::move(storage), std::move(subscription));
-                }
-            }
-        }
-    }
-
-    lock.unlock();
-}
-
-
-std::optional<UUID> MultipleAccessStorage::authenticateImpl(const Credentials & credentials, const Poco::Net::IPAddress & address, const ExternalAuthenticators & external_authenticators, bool throw_if_user_not_exists) const
+std::optional<UUID>
+MultipleAccessStorage::authenticateImpl(const Credentials & credentials, const Poco::Net::IPAddress & address,
+                                        const ExternalAuthenticators & external_authenticators,
+                                        bool throw_if_user_not_exists,
+                                        bool allow_no_password, bool allow_plaintext_password) const
 {
     auto storages = getStoragesInternal();
     for (size_t i = 0; i != storages->size(); ++i)
     {
         const auto & storage = (*storages)[i];
         bool is_last_storage = (i == storages->size() - 1);
-        auto id = storage->authenticate(credentials, address, external_authenticators, throw_if_user_not_exists && is_last_storage);
+        auto id = storage->authenticate(credentials, address, external_authenticators,
+                                        (throw_if_user_not_exists && is_last_storage),
+                                        allow_no_password, allow_plaintext_password);
         if (id)
         {
             std::lock_guard lock{mutex};

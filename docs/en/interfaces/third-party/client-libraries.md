@@ -1,12 +1,13 @@
 ---
-toc_priority: 26
-toc_title: Client Libraries
+sidebar_position: 26
+sidebar_label: Client Libraries
 ---
 
-# Client Libraries from Third-party Developers {#client-libraries-from-third-party-developers}
+# Client Libraries from Third-party Developers
 
-!!! warning "Disclaimer"
-    ClickHouse Inc does **not** maintain the libraries listed below and hasn’t done any extensive testing to ensure their quality.
+:::warning
+ClickHouse Inc does **not** maintain the libraries listed below and hasn’t done any extensive testing to ensure their quality.
+:::
 
 -   Python
     -   [infi.clickhouse_orm](https://github.com/Infinidat/infi.clickhouse_orm)

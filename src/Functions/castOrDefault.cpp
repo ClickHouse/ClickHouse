@@ -52,6 +52,7 @@ public:
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
     bool useDefaultImplementationForNulls() const override { return false; }
+    bool useDefaultImplementationForNothing() const override { return false; }
     bool useDefaultImplementationForConstants() const override { return false; }
     bool useDefaultImplementationForLowCardinalityColumns() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
@@ -99,7 +100,7 @@ public:
     {
         const ColumnWithTypeAndName & column_to_cast = arguments[0];
         auto non_const_column_to_cast = column_to_cast.column->convertToFullColumnIfConst();
-        ColumnWithTypeAndName column_to_cast_non_const { std::move(non_const_column_to_cast), column_to_cast.type, column_to_cast.name };
+        ColumnWithTypeAndName column_to_cast_non_const { non_const_column_to_cast, column_to_cast.type, column_to_cast.name };
 
         auto cast_result = castColumnAccurateOrNull(column_to_cast_non_const, return_type);
 
@@ -194,6 +195,7 @@ private:
     bool isVariadic() const override { return true; }
 
     bool useDefaultImplementationForNulls() const override { return impl.useDefaultImplementationForNulls(); }
+    bool useDefaultImplementationForNothing() const override { return impl.useDefaultImplementationForNothing(); }
     bool useDefaultImplementationForLowCardinalityColumns() const override { return impl.useDefaultImplementationForLowCardinalityColumns();}
     bool useDefaultImplementationForConstants() const override { return impl.useDefaultImplementationForConstants();}
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & arguments) const override
@@ -231,7 +233,7 @@ private:
             {
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "Function {} decimal scale should have native UInt type. Actual {}",
-                    scale_argument.type->getName());
+                    getName(), scale_argument.type->getName());
             }
 
             scale = arguments[additional_argument_index].column->getUInt(0);

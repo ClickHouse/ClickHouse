@@ -1,4 +1,4 @@
-# MergeTree tables settings {#merge-tree-settings}
+# MergeTree tables settings
 
 The values of `merge_tree` settings (for all MergeTree tables) can be viewed in the table `system.merge_tree_settings`, they can be overridden in `config.xml` in the `merge_tree` section, or set in the `SETTINGS` section of each table.
 
@@ -27,7 +27,7 @@ An example of changing the settings for a specific table with the `ALTER TABLE .
 ``` sql
 ALTER TABLE foo
     MODIFY SETTING max_suspicious_broken_parts = 100;
-    
+
 -- reset to default (use value from system.merge_tree_settings)
 ALTER TABLE foo
     RESET SETTING max_suspicious_broken_parts;
@@ -114,7 +114,7 @@ A large number of parts in a table reduces performance of ClickHouse queries and
 
 ## replicated_deduplication_window {#replicated-deduplication-window}
 
-The number of most recently inserted blocks for which Zookeeper stores hash sums to check for duplicates.
+The number of most recently inserted blocks for which ClickHouse Keeper stores hash sums to check for duplicates.
 
 Possible values:
 
@@ -123,7 +123,7 @@ Possible values:
 
 Default value: 100.
 
-The `Insert` command creates one or more blocks (parts). When inserting into Replicated tables, ClickHouse for [insert deduplication](../../engines/table-engines/mergetree-family/replication/) writes the hash sums of the created parts into Zookeeper. Hash sums are stored only for the most recent `replicated_deduplication_window` blocks. The oldest hash sums are removed from Zookeeper.
+The `Insert` command creates one or more blocks (parts). For [insert deduplication](../../engines/table-engines/mergetree-family/replication/), when writing into replicated tables, ClickHouse writes the hash sums of the created parts into ClickHouse Keeper. Hash sums are stored only for the most recent `replicated_deduplication_window` blocks. The oldest hash sums are removed from ClickHouse Keeper.
 A large number of `replicated_deduplication_window` slows down `Inserts` because it needs to compare more entries.
 The hash sum is calculated from the composition of the field names and types and the data of the inserted part (stream of bytes).
 
@@ -142,7 +142,7 @@ A deduplication mechanism is used, similar to replicated tables (see [replicated
 
 ## replicated_deduplication_window_seconds {#replicated-deduplication-window-seconds}
 
-The number of seconds after which the hash sums of the inserted blocks are removed from Zookeeper.
+The number of seconds after which the hash sums of the inserted blocks are removed from ClickHouse Keeper.
 
 Possible values:
 
@@ -150,7 +150,7 @@ Possible values:
 
 Default value: 604800 (1 week).
 
-Similar to [replicated_deduplication_window](#replicated-deduplication-window), `replicated_deduplication_window_seconds` specifies how long to store hash sums of blocks for insert deduplication. Hash sums older than `replicated_deduplication_window_seconds` are removed from Zookeeper, even if they are less than ` replicated_deduplication_window`.
+Similar to [replicated_deduplication_window](#replicated-deduplication-window), `replicated_deduplication_window_seconds` specifies how long to store hash sums of blocks for insert deduplication. Hash sums older than `replicated_deduplication_window_seconds` are removed from ClickHouse Keeper, even if they are less than ` replicated_deduplication_window`.
 
 ## replicated_fetches_http_connection_timeout {#replicated_fetches_http_connection_timeout}
 
@@ -256,7 +256,7 @@ Possible values:
 
 Default value: 161061273600 (150 GB).
 
-The merge scheduler periodically analyzes the sizes and number of parts in partitions, and if there is enough free resources in the pool, it starts background merges. Merges occur until the total size of the source parts is less than `max_bytes_to_merge_at_max_space_in_pool`.
+The merge scheduler periodically analyzes the sizes and number of parts in partitions, and if there is enough free resources in the pool, it starts background merges. Merges occur until the total size of the source parts is larger than `max_bytes_to_merge_at_max_space_in_pool`.
 
 Merges initiated by [OPTIMIZE FINAL](../../sql-reference/statements/optimize.md) ignore `max_bytes_to_merge_at_max_space_in_pool` and merge parts only taking into account available resources (free disk's space) until one part remains in the partition.
 
@@ -346,7 +346,7 @@ Default value: `0`.
 
 **Usage**
 
-The value of the `min_bytes_to_rebalance_partition_over_jbod` setting should be less than the value of the [max_bytes_to_merge_at_max_space_in_pool](../../operations/settings/merge-tree-settings.md#max-bytes-to-merge-at-max-space-in-pool) setting. Otherwise, ClickHouse throws an exception.
+The value of the `min_bytes_to_rebalance_partition_over_jbod` setting should not be less than the value of the [max_bytes_to_merge_at_max_space_in_pool](../../operations/settings/merge-tree-settings.md#max-bytes-to-merge-at-max-space-in-pool) / 1024. Otherwise, ClickHouse throws an exception.
 
 ## detach_not_byte_identical_parts {#detach_not_byte_identical_parts}
 
@@ -381,3 +381,36 @@ Possible values:
 
 Default value: `1` second.
 
+## max_concurrent_queries {#max-concurrent-queries}
+
+Max number of concurrently executed queries related to the MergeTree table. Queries will still be limited by other `max_concurrent_queries` settings.
+
+Possible values:
+
+-   Positive integer.
+-   0 — No limit.
+
+Default value: `0` (no limit).
+
+**Example**
+
+``` xml
+<max_concurrent_queries>50</max_concurrent_queries>
+```
+
+## min_marks_to_honor_max_concurrent_queries {#min-marks-to-honor-max-concurrent-queries}
+
+The minimal number of marks read by the query for applying the [max_concurrent_queries](#max-concurrent-queries) setting. Note that queries will still be limited by other `max_concurrent_queries` settings.
+
+Possible values:
+
+-   Positive integer.
+-   0 — Disabled (`max_concurrent_queries` limit applied to no queries).
+
+Default value: `0` (limit never applied).
+
+**Example**
+
+``` xml
+<min_marks_to_honor_max_concurrent_queries>10</min_marks_to_honor_max_concurrent_queries>
+```

@@ -2,10 +2,15 @@
 
 import os
 import unittest
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
 
+from env_helper import GITHUB_RUN_URL
 from pr_info import PRInfo
 import docker_images_check as di
+
+with patch("git_helper.Git"):
+    from version_helper import get_version_from_string
+    import docker_server as ds
 
 # di.logging.basicConfig(level=di.logging.INFO)
 
@@ -117,9 +122,12 @@ class TestDockerImageCheck(unittest.TestCase):
         mock_popen.assert_called_once()
         mock_machine.assert_not_called()
         self.assertIn(
-            "docker buildx build --builder default --build-arg FROM_TAG=version "
-            "--build-arg BUILDKIT_INLINE_CACHE=1 --tag name:version --cache-from "
-            "type=registry,ref=name:version --push --progress plain path",
+            f"docker buildx build --builder default --label build-url={GITHUB_RUN_URL} "
+            "--build-arg FROM_TAG=version "
+            f"--build-arg CACHE_INVALIDATOR={GITHUB_RUN_URL} "
+            "--tag name:version --cache-from type=registry,ref=name:version "
+            "--cache-from type=registry,ref=name:latest "
+            "--cache-to type=inline,mode=max --push --progress plain path",
             mock_popen.call_args.args,
         )
         self.assertTrue(result)
@@ -133,9 +141,12 @@ class TestDockerImageCheck(unittest.TestCase):
         mock_popen.assert_called_once()
         mock_machine.assert_not_called()
         self.assertIn(
-            "docker buildx build --builder default --build-arg FROM_TAG=version2 "
-            "--build-arg BUILDKIT_INLINE_CACHE=1 --tag name:version2 --cache-from "
-            "type=registry,ref=name:version2 --progress plain path",
+            f"docker buildx build --builder default --label build-url={GITHUB_RUN_URL} "
+            "--build-arg FROM_TAG=version2 "
+            f"--build-arg CACHE_INVALIDATOR={GITHUB_RUN_URL} "
+            "--tag name:version2 --cache-from type=registry,ref=name:version2 "
+            "--cache-from type=registry,ref=name:latest "
+            "--cache-to type=inline,mode=max --progress plain path",
             mock_popen.call_args.args,
         )
         self.assertTrue(result)
@@ -149,9 +160,11 @@ class TestDockerImageCheck(unittest.TestCase):
         mock_popen.assert_called_once()
         mock_machine.assert_not_called()
         self.assertIn(
-            "docker buildx build --builder default "
-            "--build-arg BUILDKIT_INLINE_CACHE=1 --tag name:version2 --cache-from "
-            "type=registry,ref=name:version2 --progress plain path",
+            f"docker buildx build --builder default --label build-url={GITHUB_RUN_URL} "
+            f"--build-arg CACHE_INVALIDATOR={GITHUB_RUN_URL} "
+            "--tag name:version2 --cache-from type=registry,ref=name:version2 "
+            "--cache-from type=registry,ref=name:latest "
+            "--cache-to type=inline,mode=max --progress plain path",
             mock_popen.call_args.args,
         )
         self.assertFalse(result)
@@ -216,6 +229,58 @@ class TestDockerImageCheck(unittest.TestCase):
             [],  # repo1 is built
         ]
         self.assertEqual(results, expected)
+
+
+class TestDockerServer(unittest.TestCase):
+    def test_gen_tags(self):
+        version = get_version_from_string("22.2.2.2")
+        cases = (
+            ("latest", ["latest", "22", "22.2", "22.2.2", "22.2.2.2"]),
+            ("major", ["22", "22.2", "22.2.2", "22.2.2.2"]),
+            ("minor", ["22.2", "22.2.2", "22.2.2.2"]),
+            ("patch", ["22.2.2", "22.2.2.2"]),
+            ("head", ["head"]),
+        )
+        for case in cases:
+            release_type = case[0]
+            self.assertEqual(case[1], ds.gen_tags(version, release_type))
+
+        with self.assertRaises(ValueError):
+            ds.gen_tags(version, "auto")
+
+    @patch("docker_server.get_tagged_versions")
+    def test_auto_release_type(self, mock_tagged_versions: MagicMock):
+        mock_tagged_versions.return_value = [
+            get_version_from_string("1.1.1.1"),
+            get_version_from_string("1.2.1.1"),
+            get_version_from_string("2.1.1.1"),
+            get_version_from_string("2.2.1.1"),
+            get_version_from_string("2.2.2.1"),
+        ]
+
+        cases_less = (
+            (get_version_from_string("1.0.1.1"), "minor"),
+            (get_version_from_string("1.1.2.1"), "minor"),
+            (get_version_from_string("1.3.1.1"), "major"),
+            (get_version_from_string("2.1.2.1"), "minor"),
+            (get_version_from_string("2.2.1.3"), "patch"),
+            (get_version_from_string("2.2.3.1"), "latest"),
+            (get_version_from_string("2.3.1.1"), "latest"),
+        )
+        for case in cases_less:
+            release = ds.auto_release_type(case[0], "auto")
+            self.assertEqual(case[1], release)
+
+        cases_equal = (
+            (get_version_from_string("1.1.1.1"), "minor"),
+            (get_version_from_string("1.2.1.1"), "major"),
+            (get_version_from_string("2.1.1.1"), "minor"),
+            (get_version_from_string("2.2.1.1"), "patch"),
+            (get_version_from_string("2.2.2.1"), "latest"),
+        )
+        for case in cases_equal:
+            release = ds.auto_release_type(case[0], "auto")
+            self.assertEqual(case[1], release)
 
 
 if __name__ == "__main__":

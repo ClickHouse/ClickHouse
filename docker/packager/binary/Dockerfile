@@ -6,7 +6,7 @@ FROM ubuntu:20.04
 ARG apt_archive="http://archive.ubuntu.com"
 RUN sed -i "s|http://archive.ubuntu.com|$apt_archive|g" /etc/apt/sources.list
 
-ENV DEBIAN_FRONTEND=noninteractive LLVM_VERSION=13
+ENV DEBIAN_FRONTEND=noninteractive LLVM_VERSION=14
 
 RUN apt-get update \
     && apt-get install \
@@ -95,6 +95,17 @@ RUN add-apt-repository ppa:ubuntu-toolchain-r/test --yes \
     && apt-get install gcc-11 g++-11 --yes \
     && apt-get clean
 
+# Architecture of the image when BuildKit/buildx is used
+ARG TARGETARCH
+ARG NFPM_VERSION=2.15.1
+
+RUN arch=${TARGETARCH:-amd64} \
+  && curl -Lo /tmp/nfpm.deb "https://github.com/goreleaser/nfpm/releases/download/v${NFPM_VERSION}/nfpm_${arch}.deb" \
+  && dpkg -i /tmp/nfpm.deb \
+  && rm /tmp/nfpm.deb
+
+RUN mkdir /workdir && chmod 777 /workdir
+WORKDIR /workdir
 
 COPY build.sh /
-CMD ["bash", "-c", "/build.sh 2>&1 | ts"]
+CMD ["bash", "-c", "/build.sh 2>&1"]

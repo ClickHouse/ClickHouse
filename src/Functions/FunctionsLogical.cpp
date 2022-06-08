@@ -95,7 +95,7 @@ void convertAnyColumnToBool(const IColumn * column, UInt8Container & res)
 
 
 template <class Op, typename Func>
-static bool extractConstColumns(ColumnRawPtrs & in, UInt8 & res, Func && func)
+bool extractConstColumns(ColumnRawPtrs & in, UInt8 & res, Func && func)
 {
     bool has_res = false;
 
@@ -345,7 +345,7 @@ struct OperationApplier<Op, OperationApplierImpl, 0>
 
 
 template <class Op>
-static ColumnPtr executeForTernaryLogicImpl(ColumnRawPtrs arguments, const DataTypePtr & result_type, size_t input_rows_count)
+ColumnPtr executeForTernaryLogicImpl(ColumnRawPtrs arguments, const DataTypePtr & result_type, size_t input_rows_count)
 {
     /// Combine all constant columns into a single constant value.
     UInt8 const_3v_value = 0;
@@ -420,7 +420,7 @@ struct TypedExecutorInvoker<Op>
 
 /// Types of all of the arguments are guaranteed to be non-nullable here
 template <class Op>
-static ColumnPtr basicExecuteImpl(ColumnRawPtrs arguments, size_t input_rows_count)
+ColumnPtr basicExecuteImpl(ColumnRawPtrs arguments, size_t input_rows_count)
 {
     /// Combine all constant columns into a single constant value.
     UInt8 const_val = 0;
@@ -565,7 +565,7 @@ ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeShortCircuit(ColumnsWithTy
     /// The result is !mask_n.
 
     bool inverted = Name::name != NameAnd::name;
-    UInt8 null_value = UInt8(Name::name == NameAnd::name);
+    UInt8 null_value = static_cast<UInt8>(Name::name == NameAnd::name);
     IColumn::Filter mask(arguments[0].column->size(), 1);
 
     /// If result is nullable, we need to create null bytemap of the resulting column.
@@ -611,7 +611,7 @@ template <typename Impl, typename Name>
 ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeImpl(
     const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count) const
 {
-    ColumnsWithTypeAndName arguments = std::move(args);
+    ColumnsWithTypeAndName arguments = args;
 
     /// Special implementation for short-circuit arguments.
     if (checkShortCircuitArguments(arguments) != -1)

@@ -10,8 +10,6 @@
 namespace DB
 {
 
-class IOutputFormat;
-
 class QueryPipelineProcessorsCollector;
 
 struct AggregatingTransformParams;
@@ -44,7 +42,8 @@ public:
 
     /// All pipes must have same header.
     void init(Pipe pipe);
-    void init(QueryPipeline pipeline);
+    /// This is a constructor which adds some steps to pipeline.
+    void init(QueryPipeline & pipeline);
     /// Clear and release all resources.
     void reset();
 
@@ -60,6 +59,8 @@ public:
     void addTransform(ProcessorPtr transform);
     void addTransform(ProcessorPtr transform, InputPort * totals, InputPort * extremes);
 
+    /// Note: this two methods do not care about resources inside the chain.
+    /// You should attach them yourself.
     void addChains(std::vector<Chain> chains);
     void addChain(Chain chain);
 
@@ -71,10 +72,6 @@ public:
     void addTotalsHavingTransform(ProcessorPtr transform);
     /// Add transform which calculates extremes. This transform adds extremes port and doesn't change inputs number.
     void addExtremesTransform();
-    /// Resize pipeline to single output and add IOutputFormat. Pipeline will be completed after this transformation.
-    void setOutputFormat(ProcessorPtr output);
-    /// Get current OutputFormat.
-    IOutputFormat * getOutputFormat() const { return output_format; }
     /// Sink is a processor with single input port and no output ports. Creates sink for each output port.
     /// Pipeline will be completed after this transformation.
     void setSinks(const Pipe::ProcessorGetterWithStreamKind & getter);
@@ -107,6 +104,8 @@ public:
         std::unique_ptr<QueryPipelineBuilder> right,
         JoinPtr join,
         size_t max_block_size,
+        size_t max_streams,
+        bool keep_left_read_in_order,
         Processors * collected_processors = nullptr);
 
     /// Add other pipeline and execute it before current one.
@@ -124,15 +123,6 @@ public:
 
     const Block & getHeader() const { return pipe.getHeader(); }
 
-    void addTableLock(TableLockHolder lock) { pipe.addTableLock(std::move(lock)); }
-    void addInterpreterContext(ContextPtr context) { pipe.addInterpreterContext(std::move(context)); }
-    void addStorageHolder(StoragePtr storage) { pipe.addStorageHolder(std::move(storage)); }
-    void addQueryPlan(std::unique_ptr<QueryPlan> plan);
-    void setLimits(const StreamLocalLimits & limits) { pipe.setLimits(limits); }
-    void setLeafLimits(const SizeLimits & limits) { pipe.setLeafLimits(limits); }
-    void setQuota(const std::shared_ptr<const EnabledQuota> & quota) { pipe.setQuota(quota); }
-
-    void setProgressCallback(const ProgressCallback & callback);
     void setProcessListElement(QueryStatus * elem);
 
     /// Recommend number of threads for pipeline execution.
@@ -156,14 +146,18 @@ public:
             max_threads = max_threads_;
     }
 
+    void addResources(QueryPlanResourceHolder resources_) { resources = std::move(resources_); }
+    void setQueryIdHolder(std::shared_ptr<QueryIdHolder> query_id_holder) { resources.query_id_holders.emplace_back(std::move(query_id_holder)); }
+
     /// Convert query pipeline to pipe.
-    static Pipe getPipe(QueryPipelineBuilder pipeline) { return std::move(pipeline.pipe); }
+    static Pipe getPipe(QueryPipelineBuilder pipeline, QueryPlanResourceHolder & resources);
     static QueryPipeline getPipeline(QueryPipelineBuilder builder);
 
 private:
 
+    /// Destruction order: processors, header, locks, temporary storages, local contexts
+    QueryPlanResourceHolder resources;
     Pipe pipe;
-    IOutputFormat * output_format = nullptr;
 
     /// Limit on the number of threads. Zero means no limit.
     /// Sometimes, more streams are created then the number of threads for more optimal execution.
@@ -173,8 +167,6 @@ private:
 
     void checkInitialized();
     void checkInitializedAndNotCompleted();
-
-    void initRowsBeforeLimit();
 
     void setCollectedProcessors(Processors * processors);
 

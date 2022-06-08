@@ -1,11 +1,11 @@
 ---
-toc_priority: 44
-toc_title: TTL
+sidebar_position: 44
+sidebar_label: TTL
 ---
 
-# Manipulations with Table TTL {#manipulations-with-table-ttl}
+# Manipulations with Table TTL
 
-## MODIFY TTL {#modify-ttl}
+## MODIFY TTL
 
 You can change [table TTL](../../../engines/table-engines/mergetree-family/mergetree.md#mergetree-table-ttl) with a request of the following form:
 
@@ -13,7 +13,7 @@ You can change [table TTL](../../../engines/table-engines/mergetree-family/merge
 ALTER TABLE table_name MODIFY TTL ttl_expression;
 ```
 
-## REMOVE TTL {#remove-ttl}
+## REMOVE TTL
 
 TTL-property can be removed from table with the following query:
 

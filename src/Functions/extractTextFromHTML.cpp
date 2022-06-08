@@ -53,7 +53,7 @@
   *
   * Usage example:
   *
-  * SELECT extractTextFromHTML(html) FROM url('https://yandex.ru/', RawBLOB, 'html String')
+  * SELECT extractTextFromHTML(html) FROM url('https://github.com/ClickHouse/ClickHouse', RawBLOB, 'html String')
   *
   * - ClickHouse has embedded web browser.
   */

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-
+# Tags: no-backward-compatibility-check
 # Test fix for issue #5066
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)

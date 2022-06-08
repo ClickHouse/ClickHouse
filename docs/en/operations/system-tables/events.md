@@ -1,4 +1,4 @@
-# system.events {#system_tables-events}
+# events
 
 Contains information about the number of events that have occurred in the system. For example, in the table, you can find how many `SELECT` queries were processed since the ClickHouse server started.
 

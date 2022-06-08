@@ -1,23 +1,24 @@
 ---
-toc_priority: 42
-toc_title: For Replacing in Strings
+sidebar_position: 42
+sidebar_label: For Replacing in Strings
 ---
 
-# Functions for Searching and Replacing in Strings {#functions-for-searching-and-replacing-in-strings}
+# Functions for Searching and Replacing in Strings
 
-!!! note "Note"
-    Functions for [searching](../../sql-reference/functions/string-search-functions.md) and [other manipulations with strings](../../sql-reference/functions/string-functions.md) are described separately.
+:::note    
+Functions for [searching](../../sql-reference/functions/string-search-functions.md) and [other manipulations with strings](../../sql-reference/functions/string-functions.md) are described separately.
+:::
 
-## replaceOne(haystack, pattern, replacement) {#replaceonehaystack-pattern-replacement}
+## replaceOne(haystack, pattern, replacement)
 
 Replaces the first occurrence, if it exists, of the ‘pattern’ substring in ‘haystack’ with the ‘replacement’ substring.
 Hereafter, ‘pattern’ and ‘replacement’ must be constants.
 
-## replaceAll(haystack, pattern, replacement), replace(haystack, pattern, replacement) {#replaceallhaystack-pattern-replacement-replacehaystack-pattern-replacement}
+## replaceAll(haystack, pattern, replacement), replace(haystack, pattern, replacement)
 
 Replaces all occurrences of the ‘pattern’ substring in ‘haystack’ with the ‘replacement’ substring.
 
-## replaceRegexpOne(haystack, pattern, replacement) {#replaceregexponehaystack-pattern-replacement}
+## replaceRegexpOne(haystack, pattern, replacement)
 
 Replacement using the ‘pattern’ regular expression. A re2 regular expression.
 Replaces only the first occurrence, if it exists.
@@ -58,7 +59,7 @@ SELECT replaceRegexpOne('Hello, World!', '.*', '\\0\\0\\0\\0\\0\\0\\0\\0\\0\\0')
 └────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## replaceRegexpAll(haystack, pattern, replacement) {#replaceregexpallhaystack-pattern-replacement}
+## replaceRegexpAll(haystack, pattern, replacement)
 
 This does the same thing, but replaces all the occurrences. Example:
 
@@ -85,7 +86,7 @@ SELECT replaceRegexpAll('Hello, World!', '^', 'here: ') AS res
 └─────────────────────┘
 ```
 
-## regexpQuoteMeta(s) {#regexpquotemetas}
+## regexpQuoteMeta(s)
 
 The function adds a backslash before some predefined characters in the string.
 Predefined characters: `\0`, `\\`, `|`, `(`, `)`, `^`, `$`, `.`, `[`, `]`, `?`, `*`, `+`, `{`, `:`, `-`.

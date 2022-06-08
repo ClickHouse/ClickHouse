@@ -7,7 +7,7 @@
 #include <IO/WriteBufferFromHTTP.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/copyData.h>
-#include <IO/createReadBufferFromFileBase.h>
+#include <Disks/IO/createReadBufferFromFileBase.h>
 
 #include <boost/program_options.hpp>
 #include <re2/re2.h>
@@ -71,7 +71,7 @@ void processFile(const fs::path & file_path, const fs::path & dst_path, bool tes
         dst_buf->next();
         dst_buf->finalize();
     }
-};
+}
 
 
 void processTableFiles(const fs::path & data_path, fs::path dst_path, bool test_mode, bool link)
@@ -200,6 +200,6 @@ try
 }
 catch (...)
 {
-    std::cerr << DB::getCurrentExceptionMessage(false);
+    std::cerr << DB::getCurrentExceptionMessage(false) << '\n';
     return 1;
 }

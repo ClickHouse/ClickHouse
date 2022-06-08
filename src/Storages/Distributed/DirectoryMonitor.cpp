@@ -1,6 +1,6 @@
 #include <QueryPipeline/RemoteInserter.h>
 #include <Formats/NativeReader.h>
-#include <Processors/Sources/SourceWithProgress.h>
+#include <Processors/ISource.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/SipHash.h>
@@ -219,7 +219,7 @@ namespace
         return distributed_header;
     }
 
-    /// remote_error argument is used to decide whether some errors should be
+    /// 'remote_error' argument is used to decide whether some errors should be
     /// ignored or not, in particular:
     ///
     /// - ATTEMPT_TO_READ_AFTER_EOF should not be ignored
@@ -299,7 +299,7 @@ namespace
         }
 
         /// This is old format, that does not have header for the block in the file header,
-        /// applying ConvertingBlockInputStream in this case is not a big overhead.
+        /// applying ConvertingTransform in this case is not a big overhead.
         ///
         /// Anyway we can get header only from the first block, which contain all rows anyway.
         if (!distributed_header.block_header)
@@ -340,7 +340,7 @@ namespace
 
     uint64_t doubleToUInt64(double d)
     {
-        if (d >= double(std::numeric_limits<uint64_t>::max()))
+        if (d >= static_cast<double>(std::numeric_limits<uint64_t>::max()))
             return std::numeric_limits<uint64_t>::max();
         return static_cast<uint64_t>(d);
     }
@@ -399,7 +399,7 @@ void StorageDistributedDirectoryMonitor::flushAllData()
     {
         processFiles(files);
 
-        /// Update counters
+        /// Update counters.
         getFiles();
     }
 }
@@ -475,7 +475,7 @@ void StorageDistributedDirectoryMonitor::run()
             break;
     }
 
-    /// Update counters
+    /// Update counters.
     getFiles();
 
     if (!quit && do_sleep)
@@ -491,8 +491,8 @@ ConnectionPoolPtr StorageDistributedDirectoryMonitor::createPool(const std::stri
         const auto & shards_info = cluster->getShardsInfo();
         const auto & shards_addresses = cluster->getShardsAddresses();
 
-        /// check new format shard{shard_index}_replica{replica_index}
-        /// (shard_index and replica_index starts from 1)
+        /// Check new format shard{shard_index}_replica{replica_index}
+        /// (shard_index and replica_index starts from 1).
         if (address.shard_index != 0)
         {
             if (!address.replica_index)
@@ -511,7 +511,7 @@ ConnectionPoolPtr StorageDistributedDirectoryMonitor::createPool(const std::stri
             return shard_info.per_replica_pools[address.replica_index - 1];
         }
 
-        /// existing connections pool have a higher priority
+        /// Existing connections pool have a higher priority.
         for (size_t shard_index = 0; shard_index < shards_info.size(); ++shard_index)
         {
             const Cluster::Addresses & replicas_addresses = shards_addresses[shard_index];
@@ -905,7 +905,7 @@ private:
     }
 };
 
-class DirectoryMonitorSource : public SourceWithProgress
+class DirectoryMonitorSource : public ISource
 {
 public:
 
@@ -940,7 +940,7 @@ public:
     }
 
     explicit DirectoryMonitorSource(Data data_)
-        : SourceWithProgress(data_.first_block.cloneEmpty())
+        : ISource(data_.first_block.cloneEmpty())
         , data(std::move(data_))
     {
     }
@@ -1021,7 +1021,7 @@ void StorageDistributedDirectoryMonitor::processFilesWithBatching(const std::map
         UInt64 file_idx = file.first;
         const String & file_path = file.second;
 
-        if (file_indices_to_skip.count(file_idx))
+        if (file_indices_to_skip.contains(file_idx))
             continue;
 
         size_t total_rows = 0;
@@ -1152,7 +1152,7 @@ void StorageDistributedDirectoryMonitor::markAsSend(const std::string & file_pat
 
 bool StorageDistributedDirectoryMonitor::maybeMarkAsBroken(const std::string & file_path, const Exception & e)
 {
-    /// mark file as broken if necessary
+    /// Mark file as broken if necessary.
     if (isFileBrokenErrorCode(e.code(), e.isRemoteException()))
     {
         markAsBroken(file_path);

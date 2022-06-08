@@ -1,7 +1,7 @@
 ---
 title: 我能把 ClickHouse 当做Key-value 键值存储来使用吗？
 toc_hidden: true
-toc_priority: 101
+sidebar_position: 101
 ---
 # 我能把 ClickHouse 当做Key-value 键值存储来使用吗？ {#can-i-use-clickhouse-as-a-key-value-storage}.
 

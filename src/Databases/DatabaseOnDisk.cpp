@@ -6,6 +6,7 @@
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterCreateQuery.h>
+#include <Interpreters/ApplyWithSubqueryVisitor.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ParserCreateQuery.h>
@@ -15,7 +16,7 @@
 #include <Storages/StorageFactory.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/escapeForFileName.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <Databases/DatabaseOrdinary.h>
 #include <Databases/DatabaseAtomic.h>
 #include <Common/assert_cast.h>
@@ -54,6 +55,9 @@ std::pair<String, StoragePtr> createTableFromAST(
 {
     ast_create_query.attach = true;
     ast_create_query.setDatabase(database_name);
+
+    if (ast_create_query.select && ast_create_query.isView())
+        ApplyWithSubqueryVisitor().visit(*ast_create_query.select);
 
     if (ast_create_query.as_table_function)
     {
@@ -411,11 +415,13 @@ void DatabaseOnDisk::renameTable(
     }
     catch (const Exception &)
     {
+        setDetachedTableNotInUseForce(prev_uuid);
         attachTable(local_context, table_name, table, table_data_relative_path);
         throw;
     }
     catch (const Poco::Exception & e)
     {
+        setDetachedTableNotInUseForce(prev_uuid);
         attachTable(local_context, table_name, table, table_data_relative_path);
         /// Better diagnostics.
         throw Exception{Exception::CreateFromPocoTag{}, e};

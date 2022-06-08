@@ -1,15 +1,16 @@
 ---
-toc_priority: 67
-toc_title: Build on Linux for AARCH64 (ARM64)
+sidebar_position: 67
+sidebar_label: Build on Linux for AARCH64 (ARM64)
 ---
 
-# How to Build ClickHouse on Linux for AARCH64 (ARM64) Architecture {#how-to-build-clickhouse-on-linux-for-aarch64-arm64-architecture}
+# How to Build ClickHouse on Linux for AARCH64 (ARM64) Architecture 
 
-This is for the case when you have Linux machine and want to use it to build `clickhouse` binary that will run on another Linux machine with AARCH64 CPU architecture. This is intended for continuous integration checks that run on Linux servers.
+This is for the case when you have Linux machine and want to use it to build `clickhouse` binary that will run on another Linux machine with AARCH64 CPU architecture. 
+This is intended for continuous integration checks that run on Linux servers.
 
 The cross-build for AARCH64 is based on the [Build instructions](../development/build.md), follow them first.
 
-## Install Clang-13
+## Install Clang-14 or newer
 
 Follow the instructions from https://apt.llvm.org/ for your Ubuntu or Debian setup or do
 ```
@@ -30,7 +31,7 @@ tar xJf gcc-arm-8.3-2019.03-x86_64-aarch64-linux-gnu.tar.xz -C build-aarch64/cma
 ``` bash
 cd ClickHouse
 mkdir build-arm64
-CC=clang-13 CXX=clang++-13 cmake . -Bbuild-arm64 -DCMAKE_TOOLCHAIN_FILE=cmake/linux/toolchain-aarch64.cmake
+CC=clang-14 CXX=clang++-14 cmake . -Bbuild-arm64 -DCMAKE_TOOLCHAIN_FILE=cmake/linux/toolchain-aarch64.cmake
 ninja -C build-arm64
 ```
 

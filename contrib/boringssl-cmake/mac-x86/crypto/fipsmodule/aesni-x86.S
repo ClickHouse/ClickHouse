@@ -6,14 +6,14 @@
 #include <boringssl_prefix_symbols_asm.h>
 #endif
 .text
-#ifdef BORINGSSL_DISPATCH_TEST
+#ifndef NDEBUG
 #endif
 .globl	_aes_hw_encrypt
 .private_extern	_aes_hw_encrypt
 .align	4
 _aes_hw_encrypt:
 L_aes_hw_encrypt_begin:
-#ifdef BORINGSSL_DISPATCH_TEST
+#ifndef NDEBUG
 	pushl	%ebx
 	pushl	%edx
 	call	L000pic
@@ -818,7 +818,7 @@ L_aes_hw_ctr32_encrypt_blocks_begin:
 	pushl	%ebx
 	pushl	%esi
 	pushl	%edi
-#ifdef BORINGSSL_DISPATCH_TEST
+#ifndef NDEBUG
 	pushl	%ebx
 	pushl	%edx
 	call	L038pic
@@ -2403,7 +2403,7 @@ L097bad_keybits:
 .align	4
 _aes_hw_set_encrypt_key:
 L_aes_hw_set_encrypt_key_begin:
-#ifdef BORINGSSL_DISPATCH_TEST
+#ifndef NDEBUG
 	pushl	%ebx
 	pushl	%edx
 	call	L116pic

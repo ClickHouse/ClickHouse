@@ -1,9 +1,9 @@
 ---
-toc_priority: 62
-toc_title: Constraints on Settings
+sidebar_position: 62
+sidebar_label: Constraints on Settings
 ---
 
-# Constraints on Settings {#constraints-on-settings}
+# Constraints on Settings
 
 The constraints on settings can be defined in the `profiles` section of the `user.xml` configuration file and prohibit users from changing some of the settings with the `SET` query.
 The constraints are defined as the following:

@@ -1,8 +1,8 @@
 ---
-toc_priority: 126
+sidebar_position: 126
 ---
 
-# groupBitOr {#groupbitor}
+# groupBitOr
 
 Applies bitwise `OR` for series of numbers.
 

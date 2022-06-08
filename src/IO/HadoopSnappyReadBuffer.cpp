@@ -5,12 +5,11 @@
 #include <sys/types.h>
 #include <memory>
 #include <string>
-#include <string.h>
+#include <cstring>
 
 #include <snappy-c.h>
 
 #include "HadoopSnappyReadBuffer.h"
-
 
 namespace DB
 {
@@ -27,16 +26,16 @@ inline bool HadoopSnappyDecoder::checkBufferLength(int max) const
 
 inline bool HadoopSnappyDecoder::checkAvailIn(size_t avail_in, int min)
 {
-    return avail_in >= size_t(min);
+    return avail_in >= static_cast<size_t>(min);
 }
 
 inline void HadoopSnappyDecoder::copyToBuffer(size_t * avail_in, const char ** next_in)
 {
-    assert(*avail_in <= sizeof(buffer));
+    assert(*avail_in + buffer_length <= sizeof(buffer));
 
-    memcpy(buffer, *next_in, *avail_in);
+    memcpy(buffer + buffer_length, *next_in, *avail_in);
 
-    buffer_length = *avail_in;
+    buffer_length += *avail_in;
     *next_in += *avail_in;
     *avail_in = 0;
 }
@@ -78,14 +77,21 @@ inline HadoopSnappyDecoder::Status HadoopSnappyDecoder::readLength(size_t * avai
 inline HadoopSnappyDecoder::Status HadoopSnappyDecoder::readBlockLength(size_t * avail_in, const char ** next_in)
 {
     if (block_length < 0)
+    {
         return readLength(avail_in, next_in, &block_length);
+    }
     return Status::OK;
 }
 
 inline HadoopSnappyDecoder::Status HadoopSnappyDecoder::readCompressedLength(size_t * avail_in, const char ** next_in)
 {
     if (compressed_length < 0)
-        return readLength(avail_in, next_in, &compressed_length);
+    {
+        auto status = readLength(avail_in, next_in, &compressed_length);
+        if (unlikely(compressed_length > 0 && static_cast<size_t>(compressed_length) > sizeof(buffer)))
+            throw Exception(ErrorCodes::SNAPPY_UNCOMPRESS_FAILED, "Too large snappy compressed block. buffer size: {}, compressed block size: {}", sizeof(buffer), compressed_length);
+        return status;
+    }
     return Status::OK;
 }
 
@@ -111,7 +117,6 @@ HadoopSnappyDecoder::readCompressedData(size_t * avail_in, const char ** next_in
     {
         compressed = const_cast<char *>(*next_in);
     }
-
     size_t uncompressed_length = *avail_out;
     auto status = snappy_uncompress(compressed, compressed_length, *next_out, &uncompressed_length);
     if (status != SNAPPY_OK)
@@ -154,13 +159,14 @@ HadoopSnappyDecoder::Status HadoopSnappyDecoder::readBlock(size_t * avail_in, co
             return status;
     }
     if (total_uncompressed_length != block_length)
+    {
         return Status::INVALID_INPUT;
+    }
     return Status::OK;
 }
 
 HadoopSnappyReadBuffer::HadoopSnappyReadBuffer(std::unique_ptr<ReadBuffer> in_, size_t buf_size, char * existing_memory, size_t alignment)
-    : BufferWithOwnMemory<ReadBuffer>(buf_size, existing_memory, alignment)
-    , in(std::move(in_))
+    : CompressedReadBufferWrapper(std::move(in_), buf_size, existing_memory, alignment)
     , decoder(std::make_unique<HadoopSnappyDecoder>())
     , in_available(0)
     , in_data(nullptr)

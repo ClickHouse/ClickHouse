@@ -40,7 +40,15 @@ TabSeparatedRowInputFormat::TabSeparatedRowInputFormat(
     bool with_types_,
     bool is_raw_,
     const FormatSettings & format_settings_)
-    : RowInputFormatWithNamesAndTypes(header_, in_, params_, with_names_, with_types_, format_settings_, std::make_unique<TabSeparatedFormatReader>(in_, format_settings_, is_raw_))
+    : RowInputFormatWithNamesAndTypes(
+        header_,
+        in_,
+        params_,
+        false,
+        with_names_,
+        with_types_,
+        format_settings_,
+        std::make_unique<TabSeparatedFormatReader>(in_, format_settings_, is_raw_))
 {
 }
 
@@ -80,7 +88,11 @@ String TabSeparatedFormatReader::readFieldIntoString()
 
 void TabSeparatedFormatReader::skipField()
 {
-    readFieldIntoString();
+    NullOutput out;
+    if (is_raw)
+        readStringInto(out, *in);
+    else
+        readEscapedStringInto(out, *in);
 }
 
 void TabSeparatedFormatReader::skipHeaderRow()
@@ -226,6 +238,12 @@ void TabSeparatedFormatReader::checkNullValueForNonNullable(DataTypePtr type)
     }
 }
 
+void TabSeparatedFormatReader::skipPrefixBeforeHeader()
+{
+    for (size_t i = 0; i != format_settings.csv.skip_first_lines; ++i)
+        readRow();
+}
+
 void TabSeparatedRowInputFormat::syncAfterError()
 {
     skipToUnescapedNextLineOrEOF(*in);
@@ -235,7 +253,7 @@ TabSeparatedSchemaReader::TabSeparatedSchemaReader(
     ReadBuffer & in_, bool with_names_, bool with_types_, bool is_raw_, const FormatSettings & format_settings_)
     : FormatWithNamesAndTypesSchemaReader(
         in_,
-        format_settings_.max_rows_to_read_for_schema_inference,
+        format_settings_,
         with_names_,
         with_types_,
         &reader,
@@ -280,7 +298,7 @@ void registerTSVSchemaReader(FormatFactory & factory)
     {
         auto register_func = [&](const String & format_name, bool with_names, bool with_types)
         {
-            factory.registerSchemaReader(format_name, [with_names, with_types, is_raw](ReadBuffer & buf, const FormatSettings & settings, ContextPtr)
+            factory.registerSchemaReader(format_name, [with_names, with_types, is_raw](ReadBuffer & buf, const FormatSettings & settings)
             {
                 return std::make_shared<TabSeparatedSchemaReader>(buf, with_names, with_types, is_raw, settings);
             });
@@ -338,7 +356,7 @@ void registerFileSegmentationEngineTabSeparated(FormatFactory & factory)
     {
         auto register_func = [&](const String & format_name, bool with_names, bool with_types)
         {
-            size_t min_rows = 1 + int(with_names) + int(with_types);
+            size_t min_rows = 1 + static_cast<int>(with_names) + static_cast<int>(with_types);
             factory.registerFileSegmentationEngine(format_name, [is_raw, min_rows](ReadBuffer & in, DB::Memory<> & memory, size_t min_chunk_size)
             {
                 return fileSegmentationEngineTabSeparatedImpl(in, memory, min_chunk_size, is_raw, min_rows);
@@ -347,6 +365,8 @@ void registerFileSegmentationEngineTabSeparated(FormatFactory & factory)
 
         registerWithNamesAndTypes(is_raw ? "TSVRaw" : "TSV", register_func);
         registerWithNamesAndTypes(is_raw ? "TabSeparatedRaw" : "TabSeparated", register_func);
+        markFormatWithNamesAndTypesSupportsSamplingColumns(is_raw ? "TSVRaw" : "TSV", factory);
+        markFormatWithNamesAndTypesSupportsSamplingColumns(is_raw ? "TabSeparatedRaw" : "TabSeparated", factory);
     }
 
     // We can use the same segmentation engine for TSKV.

@@ -1,44 +1,25 @@
-# rebuild in #33610
+# rebuild in #36968
 # docker build -t clickhouse/docs-builder .
-FROM ubuntu:20.04
+# nodejs 17 prefers ipv6 and is broken in our environment
+FROM node:16-alpine
 
-# ARG for quick switch to a given ubuntu mirror
-ARG apt_archive="http://archive.ubuntu.com"
-RUN sed -i "s|http://archive.ubuntu.com|$apt_archive|g" /etc/apt/sources.list
+RUN apk add --no-cache git openssh bash
 
-ENV LANG=C.UTF-8
+# At this point we want to really update /opt/clickhouse-docs
+# despite the cached images
+ARG CACHE_INVALIDATOR=0
 
-RUN apt-get update \
-    && DEBIAN_FRONTEND=noninteractive apt-get install --yes --no-install-recommends \
-            wget \
-            bash \
-            python \
-            curl \
-            python3-requests \
-            sudo \
-            git \
-            openssl \
-            python3-pip \
-            software-properties-common \
-            language-pack-zh* \
-            chinese* \
-            fonts-arphic-ukai \
-            fonts-arphic-uming \
-            fonts-ipafont-mincho \
-            fonts-ipafont-gothic \
-            fonts-unfonts-core \
-            xvfb \
-            nodejs \
-            npm \
-            openjdk-11-jdk \
-            ssh-client \
-    && pip --no-cache-dir install scipy \
-    && apt-get autoremove --yes \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/*
+RUN git clone https://github.com/ClickHouse/clickhouse-docs.git \
+    --depth=1 --branch=main /opt/clickhouse-docs
 
-RUN wget 'https://github.com/wkhtmltopdf/packaging/releases/download/0.12.6-1/wkhtmltox_0.12.6-1.focal_amd64.deb'
+WORKDIR /opt/clickhouse-docs
 
-RUN npm i -g purify-css
+RUN yarn config set registry https://registry.npmjs.org \
+    && yarn install \
+    && yarn cache clean
 
-RUN pip3 install --ignore-installed --upgrade setuptools pip virtualenv
+COPY run.sh /run.sh
+
+ENTRYPOINT ["/run.sh"]
+
+CMD ["yarn", "build"]

@@ -38,6 +38,13 @@ namespace
         request_for_session.request = Coordination::ZooKeeperRequestFactory::instance().get(opnum);
         request_for_session.request->xid = xid;
         request_for_session.request->readImpl(buffer);
+
+        if (!buffer.eof())
+            readIntBinary(request_for_session.time, buffer);
+        else /// backward compatibility
+            request_for_session.time = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+
+
         return request_for_session;
     }
 }
@@ -52,7 +59,7 @@ KeeperStateMachine::KeeperStateMachine(
     , snapshot_manager(
         snapshots_path_, coordination_settings->snapshots_to_keep,
         coordination_settings->compress_snapshots_with_zstd_format, superdigest_,
-        coordination_settings->dead_session_check_period_ms.totalMicroseconds())
+        coordination_settings->dead_session_check_period_ms.totalMilliseconds())
     , responses_queue(responses_queue_)
     , snapshots_queue(snapshots_queue_)
     , last_committed_idx(0)
@@ -133,7 +140,7 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine::commit(const uint64_t log_idx, n
     else
     {
         std::lock_guard lock(storage_and_responses_lock);
-        KeeperStorage::ResponsesForSessions responses_for_sessions = storage->processRequest(request_for_session.request, request_for_session.session_id, log_idx);
+        KeeperStorage::ResponsesForSessions responses_for_sessions = storage->processRequest(request_for_session.request, request_for_session.session_id, request_for_session.time, log_idx);
         for (auto & response_for_session : responses_for_sessions)
             if (!responses_queue.push(response_for_session))
                 throw Exception(ErrorCodes::SYSTEM_ERROR, "Could not push response with session id {} into responses queue", response_for_session.session_id);
@@ -168,7 +175,7 @@ bool KeeperStateMachine::apply_snapshot(nuraft::snapshot & s)
 }
 
 
-void KeeperStateMachine::commit_config(const uint64_t /*log_idx*/, nuraft::ptr<nuraft::cluster_config> & new_conf)
+void KeeperStateMachine::commit_config(const uint64_t /* log_idx */, nuraft::ptr<nuraft::cluster_config> & new_conf)
 {
     std::lock_guard lock(cluster_config_lock);
     auto tmp = new_conf->serialize();
@@ -252,22 +259,9 @@ void KeeperStateMachine::save_logical_snp_obj(
 {
     LOG_DEBUG(log, "Saving snapshot {} obj_id {}", s.get_last_log_idx(), obj_id);
 
-    nuraft::ptr<nuraft::buffer> cloned_buffer;
-    nuraft::ptr<nuraft::snapshot> cloned_meta;
-    if (obj_id == 0) /// Fake snapshot required by NuRaft at startup
-    {
-        std::lock_guard lock(storage_and_responses_lock);
-        KeeperStorageSnapshot snapshot(storage.get(), s.get_last_log_idx(), getClusterConfig());
-        cloned_buffer = snapshot_manager.serializeSnapshotToBuffer(snapshot);
-    }
-    else
-    {
-        /// copy snapshot into memory
-    }
-
     /// copy snapshot meta into memory
     nuraft::ptr<nuraft::buffer> snp_buf = s.serialize();
-    cloned_meta = nuraft::snapshot::deserialize(*snp_buf);
+    nuraft::ptr<nuraft::snapshot> cloned_meta = nuraft::snapshot::deserialize(*snp_buf);
 
     try
     {
@@ -325,31 +319,22 @@ int KeeperStateMachine::read_logical_snp_obj(
 {
 
     LOG_DEBUG(log, "Reading snapshot {} obj_id {}", s.get_last_log_idx(), obj_id);
-    if (obj_id == 0) /// Fake snapshot required by NuRaft at startup
+
+    std::lock_guard lock(snapshots_lock);
+    /// Our snapshot is not equal to required. Maybe we still creating it in the background.
+    /// Let's wait and NuRaft will retry this call.
+    if (s.get_last_log_idx() != latest_snapshot_meta->get_last_log_idx())
     {
-        data_out = nuraft::buffer::alloc(sizeof(int32_t));
-        nuraft::buffer_serializer bs(data_out);
-        bs.put_i32(0);
-        is_last_obj = false;
+        LOG_WARNING(log, "Required to apply snapshot with last log index {}, but our last log index is {}. Will ignore this one and retry",
+                        s.get_last_log_idx(), latest_snapshot_meta->get_last_log_idx());
+        return -1;
     }
-    else
+    if (bufferFromFile(log, latest_snapshot_path, data_out))
     {
-        std::lock_guard lock(snapshots_lock);
-        /// Our snapshot is not equal to required. Maybe we still creating it in the background.
-        /// Let's wait and NuRaft will retry this call.
-        if (s.get_last_log_idx() != latest_snapshot_meta->get_last_log_idx())
-        {
-            LOG_WARNING(log, "Required to apply snapshot with last log index {}, but our last log index is {}. Will ignore this one and retry",
-                            s.get_last_log_idx(), latest_snapshot_meta->get_last_log_idx());
-            return -1;
-        }
-        if (bufferFromFile(log, latest_snapshot_path, data_out))
-        {
-            LOG_WARNING(log, "Error reading snapshot {} from {}", s.get_last_log_idx(), latest_snapshot_path);
-            return -1;
-        }
-        is_last_obj = true;
+        LOG_WARNING(log, "Error reading snapshot {} from {}", s.get_last_log_idx(), latest_snapshot_path);
+        return -1;
     }
+    is_last_obj = true;
 
     return 1;
 }
@@ -358,7 +343,7 @@ void KeeperStateMachine::processReadRequest(const KeeperStorage::RequestForSessi
 {
     /// Pure local request, just process it with storage
     std::lock_guard lock(storage_and_responses_lock);
-    auto responses = storage->processRequest(request_for_session.request, request_for_session.session_id, std::nullopt);
+    auto responses = storage->processRequest(request_for_session.request, request_for_session.session_id, request_for_session.time, std::nullopt);
     for (const auto & response : responses)
         if (!responses_queue.push(response))
             throw Exception(ErrorCodes::SYSTEM_ERROR, "Could not push response with session id {} into responses queue", response.session_id);

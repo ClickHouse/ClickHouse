@@ -22,7 +22,7 @@ python3 -m pip install -r requirements.txt
 ## Usage
 
 ```
-./clickhouse-diagnostics
+./clickhouse-diagnostics --host localhost --port 8123 --user default --password xxx
 ```
 
 Example output:
