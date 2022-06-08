@@ -13,6 +13,7 @@ int main(int argc, char ** argv)
 
     if (argc < 3)
     {
+        std::cout << "kerberos_init obtains and caches an initial ticket-granting ticket for principal." << "\n\n";
         std::cout << "Usage:" << "\n" << "    kerberos_init keytab principal [cache]" << "\n";
         return 0;
     }
@@ -31,6 +32,7 @@ int main(int argc, char ** argv)
         k_init.init(argv[1], argv[2], cache_name);
     } catch (const Exception & e) {
          std::cout << "KerberosInit failure: " << getExceptionMessage(e, false) << "\n";
+        return -1;
     }
     std::cout << "Done" << "\n";
     return 0;

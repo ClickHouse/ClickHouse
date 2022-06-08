@@ -52,12 +52,6 @@ void HDFSBuilderWrapper::loadFromConfig(const Poco::Util::AbstractConfiguration 
             hdfsBuilderSetPrincipal(hdfs_builder, hadoop_kerberos_principal.c_str());
             continue;
         }
-        else if (key == "hadoop_kerberos_kinit_command")
-        {
-            need_kinit = true;
-            hadoop_kerberos_kinit_command = config.getString(key_path);
-            continue;
-        }
         else if (key == "hadoop_security_kerberos_ticket_cache_path")
         {
             if (isUser)
@@ -80,13 +74,12 @@ void HDFSBuilderWrapper::loadFromConfig(const Poco::Util::AbstractConfiguration 
 void HDFSBuilderWrapper::runKinit()
 {
     LOG_DEBUG(&Poco::Logger::get("HDFSClient"), "ADQM: running KerberosInit");
-    std::unique_lock<std::mutex> lck(kinit_mtx);
     KerberosInit k_init;
     try
     {
         k_init.init(hadoop_kerberos_keytab,hadoop_kerberos_principal,hadoop_security_kerberos_ticket_cache_path);
     } catch (const DB::Exception & e) {
-        throw Exception("KerberosInit failure: "+ DB::getExceptionMessage(e, false), ErrorCodes::BAD_ARGUMENTS);
+        throw Exception("KerberosInit failure: "+ getExceptionMessage(e, false), ErrorCodes::KERBEROS_ERROR);
     }
     LOG_DEBUG(&Poco::Logger::get("HDFSClient"), "ADQM: finished KerberosInit");
 }
@@ -167,8 +160,6 @@ HDFSBuilderWrapper createHDFSBuilder(const String & uri_str, const Poco::Util::A
 
     return builder;
 }
-
-std::mutex HDFSBuilderWrapper::kinit_mtx;
 
 HDFSFSPtr createHDFSFS(hdfsBuilder * builder)
 {
