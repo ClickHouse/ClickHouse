@@ -261,17 +261,18 @@ void MergeTreeWriteAheadLog::shutdown()
 {
     {
         std::unique_lock lock(write_mutex);
-        if (shutted_down)
+        if (shutdown_called)
              return;
 
         if (sync_scheduled)
             sync_cv.wait(lock, [this] { return !sync_scheduled; });
 
-        shutted_down = true;
+        shutdown_called = true;
         out->finalize();
         out.reset();
     }
 
+    /// Do it without lock, otherwise inversion between pool lock and write_mutex is possible
     sync_task->deactivate();
 }
 

@@ -64,7 +64,7 @@ public:
     /// Read metadata file to string from path
     virtual std::string readMetadataFileToString(const std::string & path) const = 0;
 
-    /// Read metadata string to file
+    /// Write metadata string to file
     virtual void writeMetadataToFile(
          const std::string & path,
          MetadataTransactionPtr transaction,

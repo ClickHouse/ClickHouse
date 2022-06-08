@@ -90,7 +90,7 @@ private:
 
     size_t bytes_at_last_sync = 0;
     bool sync_scheduled = false;
-    bool shutted_down = false;
+    bool shutdown_called = false;
 
     mutable std::mutex write_mutex;
 

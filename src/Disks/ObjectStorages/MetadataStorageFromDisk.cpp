@@ -5,6 +5,7 @@
 #include <Poco/TemporaryFile.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <Common/getRandomASCIIString.h>
 
 namespace DB
 {
@@ -37,15 +38,9 @@ std::string toString(MetadataFromDiskTransactionState state)
 namespace
 {
 
-std::string getTempFileName()
+std::string getTempFileName(const std::string & dir)
 {
-    std::string temp_filepath;
-    std::string dummy_prefix = "a/";
-    temp_filepath = Poco::TemporaryFile::tempName(dummy_prefix);
-    dummy_prefix += "tmp";
-    assert(temp_filepath.starts_with(dummy_prefix));
-    temp_filepath.replace(0, dummy_prefix.length(), "tmp");
-    return temp_filepath;
+    return fs::path(dir) / getRandomASCIIString();
 }
 
 class SetLastModifiedOperation final : public IMetadataOperation
@@ -171,17 +166,7 @@ public:
 
     void execute() override
     {
-        try
-        {
-            disk.removeDirectory(path);
-        }
-        catch (...)
-        {
-            std::vector<std::string> files;
-            disk.listFiles(path, files);
-            LOG_DEBUG(&Poco::Logger::get("DEBUG"), "GOT FIlES {}", fmt::join(files, ", "));
-            throw;
-        }
+        disk.removeDirectory(path);
     }
 
     void undo() override
@@ -199,7 +184,7 @@ public:
     RemoveRecursiveOperation(const std::string & path_, IDisk & disk_)
         : path(path_)
         , disk(disk_)
-        , temp_path(getTempFileName())
+        , temp_path(getTempFileName(fs::path(path).parent_path()))
     {
     }
 
@@ -215,7 +200,7 @@ public:
     {
         if (disk.isFile(temp_path))
             disk.moveFile(temp_path, path);
-        if (disk.isDirectory(temp_path))
+        else if (disk.isDirectory(temp_path))
             disk.moveDirectory(temp_path, path);
     }
 
@@ -315,7 +300,7 @@ public:
         : path_from(path_from_)
         , path_to(path_to_)
         , disk(disk_)
-        , temp_path_to(getTempFileName())
+        , temp_path_to(getTempFileName(fs::path(path_to).parent_path()))
     {
     }
 
