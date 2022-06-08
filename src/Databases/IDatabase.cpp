@@ -22,6 +22,13 @@ StoragePtr IDatabase::getTable(const String & name, ContextPtr context) const
     throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table {}.{} doesn't exist", backQuoteIfNeed(database_name), backQuoteIfNeed(name));
 }
 
+void IDatabase::adjustCreateDatabaseQueryForBackup(ASTPtr & create_database_query) const
+{
+    /// We don't want to see any UUIDs in backup.
+    auto & create = create_database_query->as<ASTCreateQuery &>();
+    create.uuid = UUIDHelpers::Nil;
+}
+
 DatabaseTablesIteratorPtr IDatabase::getTablesIteratorForBackup(const BackupEntriesCollector &) const
 {
     /// IDatabase doesn't own any tables.

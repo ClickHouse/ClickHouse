@@ -3,6 +3,7 @@
 #include <Backups/BackupSettings.h>
 #include <Backups/IBackup.h>
 #include <Backups/IBackupEntry.h>
+#include <Backups/BackupUtils.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/formatAST.h>
@@ -63,7 +64,7 @@ void RestorerFromBackup::restoreMetadata()
         findRootPathsInBackup();
 
         /// Do renaming in the create queries according to the renaming config.
-        renaming_settings.setFromBackupQuery(restore_query_elements);
+        renaming_map = makeRenamingMapFromBackupQuery(restore_query_elements);
 
         /// Find all the databases and tables which we will read from the backup.
         setStage(Stage::kFindingTablesInBackup);
@@ -284,7 +285,7 @@ void RestorerFromBackup::collectTableInfo(const QualifiedTableName & table_name_
     if (!metadata_path)
         throw Exception(ErrorCodes::BACKUP_ENTRY_NOT_FOUND, "Table {} not found in backup", table_name_in_backup.getFullName());
 
-    auto table_name = renaming_settings.getNewTableName(table_name_in_backup);
+    auto table_name = renaming_map.getNewTableName(table_name_in_backup);
     fs::path data_path_in_backup
         = *root_path_in_use / "data" / escapeForFileName(table_name_in_backup.database) / escapeForFileName(table_name_in_backup.table);
 
@@ -294,7 +295,7 @@ void RestorerFromBackup::collectTableInfo(const QualifiedTableName & table_name_
     read_buffer.reset();
     ParserCreateQuery create_parser;
     ASTPtr create_table_query = parseQuery(create_parser, create_query_str, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
-    renameInCreateQuery(create_table_query, renaming_settings, context);
+    renameDatabaseAndTableNameInCreateQuery(context->getGlobalContext(), renaming_map, create_table_query);
 
     if (auto it = table_infos.find(table_name); it != table_infos.end())
     {
@@ -347,7 +348,7 @@ void RestorerFromBackup::collectDatabaseInfo(const String & database_name_in_bac
     if (!metadata_path && table_names_in_backup.empty())
         throw Exception(ErrorCodes::BACKUP_ENTRY_NOT_FOUND, "Database {} not found in backup", backQuoteIfNeed(database_name_in_backup));
 
-    String database_name = renaming_settings.getNewDatabaseName(database_name_in_backup);
+    String database_name = renaming_map.getNewDatabaseName(database_name_in_backup);
 
     ASTPtr create_database_query;
     if (metadata_path)
@@ -358,7 +359,7 @@ void RestorerFromBackup::collectDatabaseInfo(const String & database_name_in_bac
         read_buffer.reset();
         ParserCreateQuery create_parser;
         create_database_query = parseQuery(create_parser, create_query_str, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
-        renameInCreateQuery(create_database_query, renaming_settings, context);
+        renameDatabaseAndTableNameInCreateQuery(context->getGlobalContext(), renaming_map, create_database_query);
     }
     else
     {
@@ -420,8 +421,6 @@ void RestorerFromBackup::createDatabases()
     {
         if (restore_settings.create_database != RestoreDatabaseCreationMode::kMustExist)
         {
-            LOG_TRACE(log, "Creating database {}", backQuoteIfNeed(database_name));
-
             /// Execute CREATE DATABASE query.
             auto create_database_query = database_info.create_database_query;
             if (restore_settings.create_table == RestoreTableCreationMode::kCreateIfNotExists)
@@ -429,6 +428,7 @@ void RestorerFromBackup::createDatabases()
                 create_database_query = create_database_query->clone();
                 create_database_query->as<ASTCreateQuery &>().if_not_exists = true;
             }
+            LOG_TRACE(log, "Creating database {}: {}", backQuoteIfNeed(database_name), serializeAST(*create_database_query));
             executeCreateQuery(create_database_query);
         }
 
@@ -437,16 +437,18 @@ void RestorerFromBackup::createDatabases()
         if (!restore_settings.allow_different_database_def)
         {
             /// Check that the database's definition is the same as expected.
-            ASTPtr create_table_query = database->getCreateDatabaseQuery();
+            ASTPtr create_database_query = database->getCreateDatabaseQuery();
             ASTPtr expected_create_query = database_info.create_database_query;
-            if (serializeAST(*create_table_query) != serializeAST(*expected_create_query))
+            database->adjustCreateDatabaseQueryForBackup(create_database_query);
+            database->adjustCreateDatabaseQueryForBackup(expected_create_query);
+            if (serializeAST(*create_database_query) != serializeAST(*expected_create_query))
             {
                 throw Exception(
                     ErrorCodes::CANNOT_RESTORE_DATABASE,
                     "The database {} has a different definition: {} "
                     "comparing to its definition in the backup: {}",
                     backQuoteIfNeed(database_name),
-                    serializeAST(*create_table_query),
+                    serializeAST(*create_database_query),
                     serializeAST(*expected_create_query));
             }
         }
@@ -468,8 +470,6 @@ void RestorerFromBackup::createTables()
             DatabasePtr database = DatabaseCatalog::instance().getDatabase(table_name.database);
             if (restore_settings.create_table != RestoreTableCreationMode::kMustExist)
             {
-                LOG_TRACE(log, "Creating table {}", table_name.getFullName());
-
                 /// Execute CREATE TABLE query (we call IDatabase::createTableRestoredFromBackup() to allow the database to do some
                 /// database-specific things).
                 auto create_table_query = table_info.create_table_query;
@@ -478,6 +478,7 @@ void RestorerFromBackup::createTables()
                     create_table_query = create_table_query->clone();
                     create_table_query->as<ASTCreateQuery &>().if_not_exists = true;
                 }
+                LOG_TRACE(log, "Creating table {}: {}", table_name.getFullName(), serializeAST(*create_table_query));
                 database->createTableRestoredFromBackup(*this, create_table_query);
             }
 
@@ -488,8 +489,8 @@ void RestorerFromBackup::createTables()
             if (!restore_settings.allow_different_table_def)
             {
                 ASTPtr create_table_query = database->getCreateTableQuery(table_name.table, context);
-                storage->adjustCreateQueryForBackup(create_table_query);
                 ASTPtr expected_create_query = table_info.create_table_query;
+                storage->adjustCreateQueryForBackup(create_table_query);
                 storage->adjustCreateQueryForBackup(expected_create_query);
                 if (serializeAST(*create_table_query) != serializeAST(*expected_create_query))
                 {

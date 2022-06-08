@@ -299,25 +299,19 @@ def test_async():
 def test_dependencies():
     create_and_fill_table()
     instance.query("CREATE VIEW test.view AS SELECT x, y AS w FROM test.table")
-    instance.query("CREATE DICTIONARY test.dict1(x UInt32, w String) PRIMARY KEY x SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() DATABASE 'test' TABLE 'view')) LAYOUT(FLAT()) LIFETIME(0)")
-    instance.query("CREATE DICTIONARY test.dict2(x UInt32, w String) PRIMARY KEY w SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() DATABASE 'test' TABLE 'dict1')) LAYOUT(FLAT()) LIFETIME(0)")
+    instance.query("CREATE DICTIONARY test.dict1(x UInt32, w String) PRIMARY KEY x SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() DB 'test' TABLE 'view')) LAYOUT(FLAT()) LIFETIME(0)")
+    instance.query("CREATE DICTIONARY test.dict2(x UInt32, w String) PRIMARY KEY w SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() DB 'test' TABLE 'dict1')) LAYOUT(FLAT()) LIFETIME(0)")
     instance.query("CREATE TABLE test.table2(k String, v Int32 DEFAULT dictGet('test.dict2', 'x', k) - 1) ENGINE=MergeTree ORDER BY tuple()")
     instance.query("INSERT INTO test.table2 (k) VALUES ('7'), ('96'), ('124')")
     assert instance.query("SELECT * FROM test.table2 ORDER BY k") == TSV([['124', -1], ['7', 6], ['96', 95]])
 
     backup_name = new_backup_name()
-    instance.query(f"BACKUP DATABASE test TO {backup_name}")
+    instance.query(f"BACKUP DATABASE test AS test2 TO {backup_name}")
     
     instance.query("DROP DATABASE test")
 
-    #instance.query(f"RESTORE DATABASE test AS test2 FROM {backup_name}")
+    instance.query(f"RESTORE DATABASE test2 AS test3 FROM {backup_name}")
 
-    #assert instance.query("SELECT * FROM test2.table2 ORDER BY k") == TSV([['124', -1], ['7', 6], ['96', 95]])
-    #instance.query("INSERT INTO test2.table2 (k) VALUES  ('63'), ('152'), ('71')")
-    #assert instance.query("SELECT * FROM test2.table2 ORDER BY k") == TSV([['124', -1], ['152', -1], ['63', 62], ['7', 6], ['71', 70], ['96', 95]])
-
-    instance.query(f"RESTORE DATABASE test FROM {backup_name}")
-
-    assert instance.query("SELECT * FROM test.table2 ORDER BY k") == TSV([['124', -1], ['7', 6], ['96', 95]])
-    instance.query("INSERT INTO test.table2 (k) VALUES  ('63'), ('152'), ('71')")
-    assert instance.query("SELECT * FROM test.table2 ORDER BY k") == TSV([['124', -1], ['152', -1], ['63', 62], ['7', 6], ['71', 70], ['96', 95]])
+    assert instance.query("SELECT * FROM test3.table2 ORDER BY k") == TSV([['124', -1], ['7', 6], ['96', 95]])
+    instance.query("INSERT INTO test3.table2 (k) VALUES  ('63'), ('152'), ('71')")
+    assert instance.query("SELECT * FROM test3.table2 ORDER BY k") == TSV([['124', -1], ['152', -1], ['63', 62], ['7', 6], ['71', 70], ['96', 95]])

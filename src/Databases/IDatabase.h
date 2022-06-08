@@ -333,6 +333,9 @@ public:
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Database engine {} does not run a replication thread!", getEngineName());
     }
 
+    /// Changes slightly this database's create query before it's written to a backup.
+    virtual void adjustCreateDatabaseQueryForBackup(ASTPtr & create_database_query) const;
+
     /// Returns an iterator that passes through all the tables when an user wants to backup the whole database.
     virtual DatabaseTablesIteratorPtr getTablesIteratorForBackup(const BackupEntriesCollector & restorer) const;
 

@@ -293,7 +293,7 @@ UUID BackupsWorker::startRestoring(const ASTPtr & query, ContextMutablePtr conte
                 backup_open_params.password = restore_settings.password;
                 BackupPtr backup = BackupFactory::instance().createBackup(backup_open_params);
 
-                std::vector<DataRestoreTask> data_restore_tasks;
+                DataRestoreTasks data_restore_tasks;
                 {
                     auto timeout = std::chrono::seconds{cloned_context->getConfigRef().getInt("backups.restore_metadata_timeout", -1)};
                     RestorerFromBackup restorer{restore_query->elements, restore_settings, restore_coordination,
