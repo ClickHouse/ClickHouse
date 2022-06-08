@@ -94,11 +94,15 @@ SELECT user_id, metric FROM t_mysql WHERE user_id = 101 XOR metric > 0;
 
 SELECT "MOO: ORDER BY";
 SELECT "MOO: user_id ASC (implicit)";
-SELECT user_id, metric FROM t_mysql ORDER BY user_id; --implicit ASC
+SELECT user_id FROM t_mysql ORDER BY user_id; --implicit ASC
 SELECT "MOO: user_id ASC (explicit)";
-SELECT user_id, metric FROM t_mysql ORDER BY user_id ASC;
+SELECT user_id FROM t_mysql ORDER BY user_id ASC;
+SELECT "MOO: user_id * user_id ASC (explicit)";
+SELECT user_id FROM t_mysql ORDER BY user_id  * user_id ASC;
+SELECT "MOO: -user_id ASC (explicit)";
+SELECT user_id FROM t_mysql ORDER BY -user_id ASC;
 SELECT "MOO: user_id DESC";
-SELECT user_id, metric FROM t_mysql ORDER BY user_id DESC;
+SELECT user_id FROM t_mysql ORDER BY user_id DESC;
 SELECT "MOO: user_id ASC (implicit), metric ASC (implicit)";
 SELECT user_id, metric FROM t_mysql ORDER BY user_id, metric;
 SELECT "MOO: user_id ASC (explicit), metric ASC (explicit)";
@@ -112,5 +116,46 @@ SELECT user_id, metric FROM t_mysql ORDER BY user_id DESC, metric ASC;
 SELECT "MOO: user_id DESC, metric DESC";
 SELECT user_id, metric FROM t_mysql ORDER BY user_id DESC, metric DESC;
 
+SELECT "MOO: LIMIT";
+SELECT "MOO: LIMIT LENGHT=2";
+SELECT user_id, metric FROM t_mysql ORDER BY user_id DESC, metric DESC LIMIT 2;
+SELECT "MOO: LIMIT LENGTH=2, OFFSET=1";
+SELECT user_id, metric FROM t_mysql ORDER BY user_id DESC, metric DESC LIMIT 1, 2;
+SELECT "MOO: LIMIT LENGTH=2, OFFSET=1 ALTERNATIVE SYNTAX";
+SELECT user_id, metric FROM t_mysql ORDER BY user_id DESC, metric DESC LIMIT 2 OFFSET 1;
+
+SELECT "MOO: GROUP BY";
+SELECT "MOO: user_id";
+SELECT user_id FROM t_mysql GROUP BY user_id;
+SELECT "MOO: user_id, count(user_id)";
+SELECT user_id, count(user_id) FROM t_mysql GROUP BY user_id; -- FIXME: support of count(*)
+SELECT "MOO: user_id, sum(metric)";
+SELECT user_id, sum(metric) FROM t_mysql GROUP BY user_id;
+
+SELECT user_id, min(metric) FROM t_mysql GROUP BY user_id;
+SELECT user_id, max(metric) FROM t_mysql GROUP BY user_id;
+
+-- TODO: avg support
+-- SELECT user_id, avg(metric) FROM t_mysql GROUP BY user_id;
+
+SELECT user_id, std(metric) FROM t_mysql GROUP BY user_id;
+SELECT user_id, stddev(metric) FROM t_mysql GROUP BY user_id;
+SELECT user_id, stddev_pop(metric) FROM t_mysql GROUP BY user_id;
+SELECT user_id, stddev_samp(metric) FROM t_mysql GROUP BY user_id;
+SELECT user_id, stddev_samp(metric) FROM t_mysql GROUP BY user_id;
+SELECT user_id, var_pop(metric) FROM t_mysql GROUP BY user_id;
+SELECT user_id, var_samp(metric) FROM t_mysql GROUP BY user_id;
+SELECT user_id, variance(metric) FROM t_mysql GROUP BY user_id;
+
+SELECT "MOO: HAVING";
+SELECT "MOO: metric_sum > 2";
+SELECT user_id, sum(metric) metric_sum FROM t_mysql GROUP BY user_id HAVING metric_sum > 2;
+SELECT "MOO: WHERE metric > 0";
+SELECT user_id, sum(metric) metric_sum FROM t_mysql WHERE metric > 0 GROUP BY user_id;
+SELECT "MOO: metric_sum > 3 WHERE metric > 0 ";
+SELECT user_id, sum(metric) metric_sum FROM t_mysql WHERE metric > 0 GROUP BY user_id HAVING metric_sum > 3;
+
+-- TODO: add all mysql aggregate functions
+-- see https://dev.mysql.com/doc/refman/8.0/en/aggregate-functions.html
 
 SET sql_dialect='clickhouse'; -- paranoid
