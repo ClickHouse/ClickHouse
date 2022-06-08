@@ -5,30 +5,91 @@ description: Dataset consists of two tables containing anonymized web analytics 
 
 # Anonymized Web Analytics Data
 
-Dataset consists of two tables containing anonymized web analytics data with hits (`hits_v1`) and visits (`visits_v1`).
+This dataset consists of two tables containing anonymized web analytics data with hits (`hits_v1`) and visits (`visits_v1`).
 
-The dataset consists of two tables, either of them can be downloaded as a compressed `tsv.xz` file or as prepared partitions. In addition to that, an extended version of the `hits` table containing 100 million rows is available as TSV at https://datasets.clickhouse.com/hits/tsv/hits_100m_obfuscated_v1.tsv.xz and as prepared partitions at https://datasets.clickhouse.com/hits/partitions/hits_100m_obfuscated_v1.tar.xz.
+The tables can be downloaded as compressed `tsv.xz` files or as prepared partitions. In addition to that, an extended version of the `hits` table containing 100 million rows is available as TSV at https://datasets.clickhouse.com/hits/tsv/hits_100m_obfuscated_v1.tsv.xz and as prepared partitions at https://datasets.clickhouse.com/hits/partitions/hits_100m_obfuscated_v1.tar.xz.
 
 ## Obtaining Tables from Prepared Partitions {#obtaining-tables-from-prepared-partitions}
 
-Download and import hits table:
+### Preparation
+
+Before starting, you should know two pieces of information:
+1. Where are partition files stored on disk
+2. What operating system user owns the files
+
+By default ClickHouse is run by a non-privileged user named `clickhouse`, and the data directory is owned by the same user.  To see where your data directory is located check the `config.xml` and configuration files in the `config.d` directory. The default is `/var/lib/clickhouse/`. Once you know the directory, `ls -l <directory name>` will confirm the user that owns the files.
+
+Sample from `/etc/clickhouse-server/config.xml`
+```bash
+    <!-- Path to data directory, with trailing slash. -->
+    <path>/var/lib/clickhouse/</path>
+```
+
+:::tip
+Check the [configuration file docs](../../operations/configuration-files.md) for all the
+details on configuration files and how to override the defaults.
+:::
+
+
+The following commands assume the defaults of directory `/var/lib/clickhouse` and user:group `clickhouse:clickhouse`, please adjust as necessary.
+
+### Download the hits table:
 
 ``` bash
 curl -O https://datasets.clickhouse.com/hits/partitions/hits_v1.tar
-tar xvf hits_v1.tar -C /var/lib/clickhouse # path to ClickHouse data directory
-# check permissions on unpacked data, fix if required
+```
+
+### Import the hits table:
+
+Extract the archive
+
+```bash
+sudo tar xvf hits_v1.tar -C /var/lib/clickhouse # path to ClickHouse data directory
+```
+
+Fix permissions if necessary
+
+```bash
+sudo chown -R clickhouse:clickhouse /var/lib/clickhouse
+```
+
+Restart ClickHouse server, and query the new table
+
+```bash
 sudo service clickhouse-server restart
 clickhouse-client --query "SELECT COUNT(*) FROM datasets.hits_v1"
+```
+
+```response
+8873898
 ```
 
 Download and import visits:
 
 ``` bash
 curl -O https://datasets.clickhouse.com/visits/partitions/visits_v1.tar
-tar xvf visits_v1.tar -C /var/lib/clickhouse # path to ClickHouse data directory
-# check permissions on unpacked data, fix if required
+```
+
+Extract the archive
+
+```bash
+sudo tar xvf visits_v1.tar -C /var/lib/clickhouse # path to ClickHouse data directory
+```
+
+Fix permissions if necessary
+```bash
+sudo chown -R clickhouse:clickhouse /var/lib/clickhouse
+```
+
+Restart ClickHouse server, and query the new table
+
+```bash
 sudo service clickhouse-server restart
 clickhouse-client --query "SELECT COUNT(*) FROM datasets.visits_v1"
+```
+
+```response
+1676861
 ```
 
 ## Obtaining Tables from Compressed TSV File {#obtaining-tables-from-compressed-tsv-file}
@@ -40,12 +101,25 @@ curl https://datasets.clickhouse.com/hits/tsv/hits_v1.tsv.xz | unxz --threads=`n
 # Validate the checksum
 md5sum hits_v1.tsv
 # Checksum should be equal to: f3631b6295bf06989c1437491f7592cb
-# now create table
+```
+
+Create the database and table
+
+```bash
 clickhouse-client --query "CREATE DATABASE IF NOT EXISTS datasets"
-# for hits_v1
+```
+
+For hits_v1
+
+```bash
 clickhouse-client --query "CREATE TABLE datasets.hits_v1 ( WatchID UInt64,  JavaEnable UInt8,  Title String,  GoodEvent Int16,  EventTime DateTime,  EventDate Date,  CounterID UInt32,  ClientIP UInt32,  ClientIP6 FixedString(16),  RegionID UInt32,  UserID UInt64,  CounterClass Int8,  OS UInt8,  UserAgent UInt8,  URL String,  Referer String,  URLDomain String,  RefererDomain String,  Refresh UInt8,  IsRobot UInt8,  RefererCategories Array(UInt16),  URLCategories Array(UInt16), URLRegions Array(UInt32),  RefererRegions Array(UInt32),  ResolutionWidth UInt16,  ResolutionHeight UInt16,  ResolutionDepth UInt8,  FlashMajor UInt8, FlashMinor UInt8,  FlashMinor2 String,  NetMajor UInt8,  NetMinor UInt8, UserAgentMajor UInt16,  UserAgentMinor FixedString(2),  CookieEnable UInt8, JavascriptEnable UInt8,  IsMobile UInt8,  MobilePhone UInt8,  MobilePhoneModel String,  Params String,  IPNetworkID UInt32,  TraficSourceID Int8, SearchEngineID UInt16,  SearchPhrase String,  AdvEngineID UInt8,  IsArtifical UInt8,  WindowClientWidth UInt16,  WindowClientHeight UInt16,  ClientTimeZone Int16,  ClientEventTime DateTime,  SilverlightVersion1 UInt8, SilverlightVersion2 UInt8,  SilverlightVersion3 UInt32,  SilverlightVersion4 UInt16,  PageCharset String,  CodeVersion UInt32,  IsLink UInt8,  IsDownload UInt8,  IsNotBounce UInt8,  FUniqID UInt64,  HID UInt32,  IsOldCounter UInt8, IsEvent UInt8,  IsParameter UInt8,  DontCountHits UInt8,  WithHash UInt8, HitColor FixedString(1),  UTCEventTime DateTime,  Age UInt8,  Sex UInt8,  Income UInt8,  Interests UInt16,  Robotness UInt8,  GeneralInterests Array(UInt16), RemoteIP UInt32,  RemoteIP6 FixedString(16),  WindowName Int32,  OpenerName Int32,  HistoryLength Int16,  BrowserLanguage FixedString(2),  BrowserCountry FixedString(2),  SocialNetwork String,  SocialAction String,  HTTPError UInt16, SendTiming Int32,  DNSTiming Int32,  ConnectTiming Int32,  ResponseStartTiming Int32,  ResponseEndTiming Int32,  FetchTiming Int32,  RedirectTiming Int32, DOMInteractiveTiming Int32,  DOMContentLoadedTiming Int32,  DOMCompleteTiming Int32,  LoadEventStartTiming Int32,  LoadEventEndTiming Int32, NSToDOMContentLoadedTiming Int32,  FirstPaintTiming Int32,  RedirectCount Int8, SocialSourceNetworkID UInt8,  SocialSourcePage String,  ParamPrice Int64, ParamOrderID String,  ParamCurrency FixedString(3),  ParamCurrencyID UInt16, GoalsReached Array(UInt32),  OpenstatServiceName String,  OpenstatCampaignID String,  OpenstatAdID String,  OpenstatSourceID String,  UTMSource String, UTMMedium String,  UTMCampaign String,  UTMContent String,  UTMTerm String, FromTag String,  HasGCLID UInt8,  RefererHash UInt64,  URLHash UInt64,  CLID UInt32,  YCLID UInt64,  ShareService String,  ShareURL String,  ShareTitle String,  ParsedParams Nested(Key1 String,  Key2 String, Key3 String, Key4 String, Key5 String,  ValueDouble Float64),  IslandID FixedString(16),  RequestNum UInt32,  RequestTry UInt8) ENGINE = MergeTree() PARTITION BY toYYYYMM(EventDate) ORDER BY (CounterID, EventDate, intHash32(UserID)) SAMPLE BY intHash32(UserID) SETTINGS index_granularity = 8192"
-# for hits_100m_obfuscated
+```
+
+Or for hits_100m_obfuscated
+
+```bash
 clickhouse-client --query="CREATE TABLE default.hits_100m_obfuscated (WatchID UInt64, JavaEnable UInt8, Title String, GoodEvent Int16, EventTime DateTime, EventDate Date, CounterID UInt32, ClientIP UInt32, RegionID UInt32, UserID UInt64, CounterClass Int8, OS UInt8, UserAgent UInt8, URL String, Referer String, Refresh UInt8, RefererCategoryID UInt16, RefererRegionID UInt32, URLCategoryID UInt16, URLRegionID UInt32, ResolutionWidth UInt16, ResolutionHeight UInt16, ResolutionDepth UInt8, FlashMajor UInt8, FlashMinor UInt8, FlashMinor2 String, NetMajor UInt8, NetMinor UInt8, UserAgentMajor UInt16, UserAgentMinor FixedString(2), CookieEnable UInt8, JavascriptEnable UInt8, IsMobile UInt8, MobilePhone UInt8, MobilePhoneModel String, Params String, IPNetworkID UInt32, TraficSourceID Int8, SearchEngineID UInt16, SearchPhrase String, AdvEngineID UInt8, IsArtifical UInt8, WindowClientWidth UInt16, WindowClientHeight UInt16, ClientTimeZone Int16, ClientEventTime DateTime, SilverlightVersion1 UInt8, SilverlightVersion2 UInt8, SilverlightVersion3 UInt32, SilverlightVersion4 UInt16, PageCharset String, CodeVersion UInt32, IsLink UInt8, IsDownload UInt8, IsNotBounce UInt8, FUniqID UInt64, OriginalURL String, HID UInt32, IsOldCounter UInt8, IsEvent UInt8, IsParameter UInt8, DontCountHits UInt8, WithHash UInt8, HitColor FixedString(1), LocalEventTime DateTime, Age UInt8, Sex UInt8, Income UInt8, Interests UInt16, Robotness UInt8, RemoteIP UInt32, WindowName Int32, OpenerName Int32, HistoryLength Int16, BrowserLanguage FixedString(2), BrowserCountry FixedString(2), SocialNetwork String, SocialAction String, HTTPError UInt16, SendTiming UInt32, DNSTiming UInt32, ConnectTiming UInt32, ResponseStartTiming UInt32, ResponseEndTiming UInt32, FetchTiming UInt32, SocialSourceNetworkID UInt8, SocialSourcePage String, ParamPrice Int64, ParamOrderID String, ParamCurrency FixedString(3), ParamCurrencyID UInt16, OpenstatServiceName String, OpenstatCampaignID String, OpenstatAdID String, OpenstatSourceID String, UTMSource String, UTMMedium String, UTMCampaign String, UTMContent String, UTMTerm String, FromTag String, HasGCLID UInt8, RefererHash UInt64, URLHash UInt64, CLID UInt32) ENGINE = MergeTree() PARTITION BY toYYYYMM(EventDate) ORDER  BY (CounterID, EventDate, intHash32(UserID)) SAMPLE BY intHash32(UserID) SETTINGS index_granularity = 8192"
+```
 
 # import data
 cat hits_v1.tsv | clickhouse-client --query "INSERT INTO datasets.hits_v1 FORMAT TSV" --max_insert_block_size=100000
@@ -73,6 +147,6 @@ clickhouse-client --query "SELECT COUNT(*) FROM datasets.visits_v1"
 
 ## Example Queries {#example-queries}
 
-[The ClickHouse tutorial](../../tutorial.md) is based on this web analytics dataset, and the recommended way to get started with this dataset is to go through the tutorial.
+[A Practical Introduction to Sparse Primary Indexes in ClickHouse](../../guides/improving-query-performance/sparse-primary-indexes/sparse-primary-indexes-intro.md) uses the hits dataset to discuss the differences in ClickHouse indexing compared to traditional relational databases, how ClickHouse builds and uses a sparse primary index, and indexing best practices.
 
 Additional examples of queries to these tables can be found among [stateful tests](https://github.com/ClickHouse/ClickHouse/tree/master/tests/queries/1_stateful) of ClickHouse (they are named `test.hits` and `test.visits` there).
