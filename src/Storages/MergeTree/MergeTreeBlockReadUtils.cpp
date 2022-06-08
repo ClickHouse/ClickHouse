@@ -295,34 +295,36 @@ MergeTreeReadTaskColumns getReadTaskColumns(
         /// 1. Columns for row level filter
         if (prewhere_info->row_level_filter)
         {
-            pre_column_names =  prewhere_info->row_level_filter->getRequiredColumnsNames();
+            Names row_filter_column_names =  prewhere_info->row_level_filter->getRequiredColumnsNames();
 
 ////// HACK!!!
-            result.pre_columns.push_back(storage_snapshot->getColumnsByNames(options, pre_column_names));
+            result.pre_columns.push_back(storage_snapshot->getColumnsByNames(options, row_filter_column_names));
 //////////////
 
-            pre_name_set.insert(pre_column_names.begin(), pre_column_names.end());
+            pre_name_set.insert(row_filter_column_names.begin(), row_filter_column_names.end());
 
 //            all_pre_columns.insert(pre_column_names.begin(), pre_column_names.end());
         }
 
         /// 2. Columns for prewhere
-        pre_column_names.clear();
-        for (const auto & name : prewhere_info->prewhere_actions->getRequiredColumnsNames())
+        Names all_pre_column_names = prewhere_info->prewhere_actions->getRequiredColumnsNames();
+
+//        if (pre_column_names.empty())
+//            pre_column_names.push_back(column_names[0]);
+
+        const auto injected_pre_columns = injectRequiredColumns(
+            storage, storage_snapshot, data_part, with_subcolumns, all_pre_column_names);
+
+        if (!injected_pre_columns.empty())
+            should_reorder = true;
+
+        for (const auto & name : all_pre_column_names)
         {
             if (pre_name_set.contains(name))
                 continue;
             pre_column_names.push_back(name);
+            pre_name_set.insert(name);
         }
-
-        if (pre_column_names.empty())
-            pre_column_names.push_back(column_names[0]);
-
-        const auto injected_pre_columns = injectRequiredColumns(
-            storage, storage_snapshot, data_part, with_subcolumns, pre_column_names);
-
-        if (!injected_pre_columns.empty())
-            should_reorder = true;
 
 
         Names post_column_names;
