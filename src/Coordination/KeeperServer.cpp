@@ -102,7 +102,8 @@ KeeperServer::KeeperServer(
     const KeeperConfigurationAndSettingsPtr & configuration_and_settings_,
     const Poco::Util::AbstractConfiguration & config,
     ResponsesQueue & responses_queue_,
-    SnapshotsQueue & snapshots_queue_)
+    SnapshotsQueue & snapshots_queue_,
+    KeeperStateMachine::CommitCallback commit_callback)
     : server_id(configuration_and_settings_->server_id)
     , coordination_settings(configuration_and_settings_->coordination_settings)
     , state_machine(nuraft::cs_new<KeeperStateMachine>(
@@ -111,7 +112,8 @@ KeeperServer::KeeperServer(
           configuration_and_settings_->snapshot_storage_path,
           coordination_settings,
           checkAndGetSuperdigest(configuration_and_settings_->super_digest),
-          config.getBool("keeper_server.digest_enabled", true)))
+          config.getBool("keeper_server.digest_enabled", true),
+          std::move(commit_callback)))
     , state_manager(nuraft::cs_new<KeeperStateManager>(
           server_id, "keeper_server", configuration_and_settings_->log_storage_path, config, coordination_settings))
     , log(&Poco::Logger::get("KeeperServer"))
@@ -159,6 +161,19 @@ struct KeeperServer::KeeperRaftServer : public nuraft::raft_server
     void forceReconfigure(const nuraft::ptr<nuraft::cluster_config> & new_config)
     {
         reconfigure(new_config);
+    }
+
+    RaftAppendResult getLeaderInfo()
+    {
+        nuraft::ptr<nuraft::req_msg> req = nuraft::cs_new<nuraft::req_msg>
+                           ( 0ull, nuraft::msg_type::leader_status_request, 0, 0,
+                             0ull, 0ull, 0ull ) ;
+        auto result = send_msg_to_leader(req);
+
+        if (!result->has_result())
+            result->get();
+
+        return result;
     }
 
     using nuraft::raft_server::raft_server;
@@ -635,6 +650,16 @@ void KeeperServer::waitInit()
 std::vector<int64_t> KeeperServer::getDeadSessions()
 {
     return state_machine->getDeadSessions();
+}
+
+RaftAppendResult KeeperServer::getLeaderInfo()
+{
+    return raft_instance->getLeaderInfo();
+}
+
+KeeperServer::LeaderInfo KeeperServer::getCurrentState()
+{
+    return { .term = raft_instance->get_term(), .last_committed_index = state_machine->last_commit_index() };
 }
 
 ConfigUpdateActions KeeperServer::getConfigurationDiff(const Poco::Util::AbstractConfiguration & config)

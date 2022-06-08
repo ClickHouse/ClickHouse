@@ -29,7 +29,8 @@ KeeperStateMachine::KeeperStateMachine(
     const std::string & snapshots_path_,
     const CoordinationSettingsPtr & coordination_settings_,
     const std::string & superdigest_,
-    const bool digest_enabled_)
+    const bool digest_enabled_,
+    CommitCallback commit_callback_)
     : coordination_settings(coordination_settings_)
     , snapshot_manager(
           snapshots_path_,
@@ -44,6 +45,7 @@ KeeperStateMachine::KeeperStateMachine(
     , log(&Poco::Logger::get("KeeperStateMachine"))
     , superdigest(superdigest_)
     , digest_enabled(digest_enabled_)
+    , commit_callback(std::move(commit_callback_))
 {
 }
 
@@ -240,6 +242,7 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine::commit(const uint64_t log_idx, n
         }
     }
 
+    commit_callback(request_for_session, log_idx);
     last_committed_idx = log_idx;
     return nullptr;
 }

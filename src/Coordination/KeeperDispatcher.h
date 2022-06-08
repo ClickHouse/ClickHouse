@@ -77,6 +77,9 @@ private:
     /// Counter for new session_id requests.
     std::atomic<int64_t> internal_session_id_counter{0};
 
+    std::unordered_map<KeeperServer::LeaderInfo, std::vector<KeeperStorage::RequestForSession>> leader_waiters;
+    std::mutex leader_waiter_mutex;
+
     /// Thread put requests to raft
     void requestThread();
     /// Thread put responses for subscribed sessions
@@ -115,6 +118,8 @@ public:
     {
         return server && server->checkInit();
     }
+
+    void onRequestCommit(KeeperStorage::RequestForSession & request_for_session, uint64_t log_idx);
 
     /// Is server accepting requests, i.e. connected to the cluster
     /// and achieved quorum
