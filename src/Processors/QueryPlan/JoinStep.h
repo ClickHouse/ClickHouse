@@ -28,6 +28,8 @@ public:
 
     const JoinPtr & getJoin() const { return join; }
 
+    void updateLeftStream(const DataStream & left_stream_);
+
 private:
     JoinPtr join;
     size_t max_block_size;

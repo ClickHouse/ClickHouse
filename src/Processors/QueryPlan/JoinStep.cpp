@@ -40,6 +40,14 @@ void JoinStep::describePipeline(FormatSettings & settings) const
     IQueryPlanStep::describePipeline(processors, settings);
 }
 
+void JoinStep::updateLeftStream(const DataStream & left_stream_)
+{
+    input_streams = {left_stream_, input_streams.at(1)};
+    output_stream = DataStream{
+        .header = JoiningTransform::transformHeader(left_stream_.header, join),
+    };
+}
+
 static ITransformingStep::Traits getStorageJoinTraits()
 {
     return ITransformingStep::Traits
