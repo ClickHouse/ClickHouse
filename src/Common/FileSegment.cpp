@@ -162,18 +162,6 @@ String FileSegment::getDownloader() const
     return downloader_id;
 }
 
-String FileSegment::getQueryId() const
-{
-    std::lock_guard segment_lock(mutex);
-
-    auto npos = downloader_id.find(":");
-
-    if (npos == std::string::npos)
-        return {};
-    else
-        return downloader_id.substr(0, npos);
-}
-
 bool FileSegment::isDownloader() const
 {
     std::lock_guard segment_lock(mutex);

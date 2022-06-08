@@ -42,6 +42,7 @@ IFileCache::IFileCache(
     , max_size(cache_settings_.max_size)
     , max_element_size(cache_settings_.max_elements)
     , max_file_segment_size(cache_settings_.max_file_segment_size)
+    , enable_filesystem_query_cache_limit(cache_settings_.enable_filesystem_query_cache_limit)
 {
 }
 
@@ -93,7 +94,7 @@ void IFileCache::removeQueryContext(const String & query_id)
     auto query_iter = query_map.find(query_id);
 
     if (query_iter == query_map.end())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Release a query context that does not exist.");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to release query context that does not exist");
 
     query_map.erase(query_iter);
 }
@@ -106,7 +107,7 @@ IFileCache::QueryContextPtr IFileCache::getOrSetQueryContext(const String & quer
     auto context = getQueryContext(query_id, cache_lock);
     if (!context)
     {
-        auto query_iter = query_map.insert({query_id, std::make_shared<QueryContext>(settings.max_query_cache_size, settings.enable_filesystem_use_query_cache_limit, settings.skip_download_if_exceeds_query_cache)}).first;
+        auto query_iter = query_map.insert({query_id, std::make_shared<QueryContext>(settings.max_query_cache_size, settings.skip_download_if_exceeds_query_cache)}).first;
         context = query_iter->second;
     }
     return context;
@@ -116,8 +117,8 @@ IFileCache::QueryContextHolder IFileCache::getQueryContextHolder(const String & 
 {
     std::lock_guard cache_lock(mutex);
 
-    /// if enable_filesystem_use_query_cache_limit is true, we create context query for current query.
-    auto context = settings.enable_filesystem_use_query_cache_limit ? getOrSetQueryContext(query_id, settings, cache_lock) : nullptr;
+    /// if enable_filesystem_query_cache_limit is true, we create context query for current query.
+    auto context = enable_filesystem_query_cache_limit ? getOrSetQueryContext(query_id, settings, cache_lock) : nullptr;
     return QueryContextHolder(query_id, this, context);
 }
 
@@ -176,9 +177,6 @@ void LRUFileCache::useCell(
     {
         /// Move to the end of the queue. The iterator remains valid.
         queue.moveToEnd(*cell.queue_iterator, cache_lock);
-
-        if (auto query_context = getQueryContext(cell.file_segment->getQueryId(), cache_lock))
-            query_context->use(cell.file_segment->key(), cell.file_segment->offset(), cache_lock);
     }
 }
 
@@ -549,10 +547,10 @@ FileSegmentsHolder LRUFileCache::setDownloading(const Key & key, size_t offset, 
 
 bool LRUFileCache::tryReserve(const Key & key, size_t offset, size_t size, std::lock_guard<std::mutex> & cache_lock)
 {
-    auto query_context = getCurrentQueryContext(cache_lock);
+    auto query_context = enable_filesystem_query_cache_limit ? getCurrentQueryContext(cache_lock) : nullptr;
 
     /// If the context can be found, subsequent cache replacements are made through the Query context.
-    if (query_context && query_context->enableQueryCacheLimit())
+    if (query_context)
     {
         auto res = tryReserveForQuery(key, offset, size, query_context, cache_lock);
         switch (res)

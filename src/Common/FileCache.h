@@ -174,12 +174,10 @@ protected:
         size_t cache_size = 0;
         size_t max_cache_size;
 
-        bool enable_filesystem_use_query_cache_limit;
         bool skip_download_if_exceeds_query_cache;
 
-        QueryContext(size_t max_cache_size_, bool enable_filesystem_use_query_cache_limit_, bool skip_download_if_exceeds_query_cache_)
+        QueryContext(size_t max_cache_size_, bool skip_download_if_exceeds_query_cache_)
             : max_cache_size(max_cache_size_)
-            , enable_filesystem_use_query_cache_limit(enable_filesystem_use_query_cache_limit_)
             , skip_download_if_exceeds_query_cache(skip_download_if_exceeds_query_cache_) {}
 
         void remove(const Key & key, size_t offset, size_t size, std::lock_guard<std::mutex> & cache_lock)
@@ -229,12 +227,9 @@ protected:
 
         bool isSkipDownloadIfExceed() { return skip_download_if_exceeds_query_cache; }
 
-        bool enableQueryCacheLimit() { return enable_filesystem_use_query_cache_limit; }
-
         void update(const ReadSettings & settings)
         {
             cache_size = settings.max_query_cache_size;
-            enable_filesystem_use_query_cache_limit = settings.enable_filesystem_cache;
             skip_download_if_exceeds_query_cache = settings.skip_download_if_exceeds_query_cache;
         }
     };
@@ -243,6 +238,8 @@ protected:
     using QueryContextMap = std::unordered_map<String, QueryContextPtr>;
 
     QueryContextMap query_map;
+
+    bool enable_filesystem_query_cache_limit;
 
     QueryContextPtr getCurrentQueryContext(std::lock_guard<std::mutex> & cache_lock);
 
