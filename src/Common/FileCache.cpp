@@ -119,7 +119,7 @@ IFileCache::QueryContextHolder IFileCache::getQueryContextHolder(const String & 
 
     /// if enable_filesystem_query_cache_limit is true, and max_query_cache_size large than zero,
     /// we create context query for current query.
-    if (enable_filesystem_query_cache_limit && !settings.max_query_cache_size)
+    if (enable_filesystem_query_cache_limit && settings.max_query_cache_size)
     {
         auto context = getOrSetQueryContext(query_id, settings, cache_lock);
         return QueryContextHolder(query_id, this, context);
