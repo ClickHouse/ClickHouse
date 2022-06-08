@@ -458,10 +458,10 @@ void StorageWindowView::alter(
 
     auto inner_query = initInnerQuery(new_select_query->as<ASTSelectQuery &>(), local_context);
 
-    dropInnerTableIfAny(true, local_context);
+    InterpreterDropQuery::executeDropQuery(
+    ASTDropQuery::Kind::Drop, getContext(), local_context, inner_table_id, true);
 
     /// create inner table
-    std::exchange(has_inner_table, true);
     auto create_context = Context::createCopy(local_context);
     auto inner_create_query = getInnerTableCreateQuery(inner_query, inner_table_id);
     InterpreterCreateQuery create_interpreter(inner_create_query, create_context);
@@ -641,15 +641,9 @@ inline void StorageWindowView::fire(UInt32 watermark)
 
     BlocksPtr blocks;
     Block header;
-    try
-    {
-        std::lock_guard lock(mutex);
-        std::tie(blocks, header) = getNewBlocks(watermark);
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-    }
+
+    std::lock_guard lock(mutex);
+    std::tie(blocks, header) = getNewBlocks(watermark);
 
     if (!blocks || blocks->empty())
         return;
@@ -921,7 +915,7 @@ void StorageWindowView::addFireSignal(std::set<UInt32> & signals)
     std::lock_guard lock(fire_signal_mutex);
     for (const auto & signal : signals)
         fire_signal.push_back(signal);
-    fire_signal_condition.notify_all();
+    fire_task->schedule();
 }
 
 void StorageWindowView::updateMaxTimestamp(UInt32 timestamp)
@@ -933,6 +927,12 @@ void StorageWindowView::updateMaxTimestamp(UInt32 timestamp)
 
 void StorageWindowView::updateMaxWatermark(UInt32 watermark)
 {
+    if (is_proctime)
+    {
+        max_watermark = watermark;
+        return;
+    }
+
     std::lock_guard lock(fire_signal_mutex);
 
     bool updated;
@@ -958,10 +958,10 @@ void StorageWindowView::updateMaxWatermark(UInt32 watermark)
     }
 
     if (updated)
-        fire_signal_condition.notify_all();
+        fire_task->schedule();
 }
 
-inline void StorageWindowView::cleanup()
+void StorageWindowView::cleanup()
 {
     std::lock_guard fire_signal_lock(fire_signal_mutex);
     std::lock_guard mutex_lock(mutex);
@@ -979,18 +979,21 @@ inline void StorageWindowView::cleanup()
 
 void StorageWindowView::threadFuncCleanup()
 {
-    try
-    {
-        if (!shutdown_called)
-            cleanup();
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-    }
+    if (shutdown_called)
+        return;
 
-    if (!shutdown_called)
-        clean_cache_task->scheduleAfter(clean_interval_ms);
+    if ((Poco::Timestamp().epochMicroseconds() - last_clean_timestamp_usec) > clean_interval_usec)
+    {
+        try
+        {
+            cleanup();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
+        last_clean_timestamp_usec = Poco::Timestamp().epochMicroseconds();
+    }
 }
 
 void StorageWindowView::threadFuncFireProc()
@@ -1005,7 +1008,8 @@ void StorageWindowView::threadFuncFireProc()
     {
         try
         {
-            fire(next_fire_signal);
+            if (max_watermark >= timestamp_now)
+                fire(next_fire_signal);
         }
         catch (...)
         {
@@ -1019,31 +1023,35 @@ void StorageWindowView::threadFuncFireProc()
         next_fire_signal += slide_interval;
     }
 
+    if (max_watermark >= timestamp_now)
+        clean_cache_task->schedule();
+
     UInt64 timestamp_ms = static_cast<UInt64>(Poco::Timestamp().epochMicroseconds()) / 1000;
     if (!shutdown_called)
-        fire_task->scheduleAfter(std::max(
-            UInt64(0),
-            static_cast<UInt64>(next_fire_signal) * 1000 - timestamp_ms));
+        fire_task->scheduleAfter(std::max(UInt64(0), static_cast<UInt64>(next_fire_signal) * 1000 - timestamp_ms));
 }
 
 void StorageWindowView::threadFuncFireEvent()
 {
     std::unique_lock lock(fire_signal_mutex);
-    while (!shutdown_called)
+
+    LOG_TRACE(log, "Fire events: {}", fire_signal.size());
+
+    while (!shutdown_called && !fire_signal.empty())
     {
-        bool signaled = std::cv_status::no_timeout == fire_signal_condition.wait_for(lock, std::chrono::seconds(fire_signal_timeout_s));
-        if (!signaled)
-            continue;
-
-        LOG_TRACE(log, "Fire events: {}", fire_signal.size());
-
-        while (!fire_signal.empty())
+        try
         {
             fire(fire_signal.front());
-            max_fired_watermark = fire_signal.front();
-            fire_signal.pop_front();
         }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
+        max_fired_watermark = fire_signal.front();
+        fire_signal.pop_front();
     }
+
+    clean_cache_task->schedule();
 }
 
 // Pipe StorageWindowView::read(
@@ -1146,7 +1154,7 @@ StorageWindowView::StorageWindowView(
     , WithContext(context_->getGlobalContext())
     , log(&Poco::Logger::get(fmt::format("StorageWindowView({}.{})", table_id_.database_name, table_id_.table_name)))
     , fire_signal_timeout_s(context_->getSettingsRef().wait_for_window_view_fire_signal_timeout.totalSeconds())
-    , clean_interval_ms(context_->getSettingsRef().window_view_clean_interval.totalMilliseconds())
+    , clean_interval_usec(context_->getSettingsRef().window_view_clean_interval.totalMicroseconds())
 {
     if (!query.select)
         throw Exception(ErrorCodes::INCORRECT_QUERY, "SELECT query is not specified for {}", getName());
@@ -1511,23 +1519,23 @@ void StorageWindowView::writeIntoWindowView(
 
         if (block_max_timestamp)
             window_view.updateMaxTimestamp(block_max_timestamp);
-
-        UInt32 lateness_upper_bound = 0;
-        if (window_view.allowed_lateness && t_max_fired_watermark)
-            lateness_upper_bound = t_max_fired_watermark;
-
-        /// On each chunk check window end for each row in a window column, calculating max.
-        /// Update max watermark (latest seen window end) if needed.
-        /// If lateness is allowed, add lateness signals.
-        builder.addSimpleTransform([&](const Block & current_header)
-        {
-            return std::make_shared<WatermarkTransform>(
-                current_header,
-                window_view,
-                window_view.window_id_name,
-                lateness_upper_bound);
-        });
     }
+
+    UInt32 lateness_upper_bound = 0;
+    if (!window_view.is_proctime && window_view.allowed_lateness && t_max_fired_watermark)
+        lateness_upper_bound = t_max_fired_watermark;
+
+    /// On each chunk check window end for each row in a window column, calculating max.
+    /// Update max watermark (latest seen window end) if needed.
+    /// If lateness is allowed, add lateness signals.
+    builder.addSimpleTransform([&](const Block & current_header)
+    {
+        return std::make_shared<WatermarkTransform>(
+            current_header,
+            window_view,
+            window_view.window_id_name,
+            lateness_upper_bound);
+    });
 
     auto inner_table = window_view.getInnerTable();
     auto lock = inner_table->lockForShare(
@@ -1562,9 +1570,12 @@ void StorageWindowView::startup()
 {
     DatabaseCatalog::instance().addDependency(select_table_id, getStorageID());
 
-    // Start the working thread
-    clean_cache_task->activateAndSchedule();
-    fire_task->activateAndSchedule();
+    fire_task->activate();
+    clean_cache_task->activate();
+
+    /// Start the working thread
+    if (is_proctime)
+        fire_task->schedule();
 }
 
 void StorageWindowView::shutdown()
@@ -1572,7 +1583,6 @@ void StorageWindowView::shutdown()
     shutdown_called = true;
 
     fire_condition.notify_all();
-    fire_signal_condition.notify_all();
 
     clean_cache_task->deactivate();
     fire_task->deactivate();

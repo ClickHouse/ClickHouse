@@ -5,9 +5,9 @@
 #include <string>
 #include <unordered_map>
 
-#include <Common/NamePrompter.h>
-#include <Interpreters/Context_fwd.h>
+#include <Core/Field.h>
 #include <Functions/IFunction.h>
+#include <Interpreters/Context_fwd.h>
 
 
 namespace DB
@@ -20,9 +20,9 @@ public:
 
     static UserDefinedExecutableFunctionFactory & instance();
 
-    static FunctionOverloadResolverPtr get(const String & function_name, ContextPtr context);
+    static FunctionOverloadResolverPtr get(const String & function_name, ContextPtr context, Array parameters = {});
 
-    static FunctionOverloadResolverPtr tryGet(const String & function_name, ContextPtr context);
+    static FunctionOverloadResolverPtr tryGet(const String & function_name, ContextPtr context, Array parameters = {});
 
     static bool has(const String & function_name, ContextPtr context);
 
