@@ -355,8 +355,6 @@ target_link_libraries(clickhouse_common_io
             ch_contrib::zlib
             pcg_random
             Poco::Foundation
-            ch_contrib::udns
-            ch_contrib::cpp-dns
 )
 
 if (TARGET ch_contrib::cpuid)
@@ -442,11 +440,12 @@ if (TARGET ch_contrib::avrocpp)
 endif ()
 
 if (TARGET ch_contrib::udns)
-    dbms_target_link_libraries(PRIVATE ch_contrib::udns)
+    target_link_libraries (clickhouse_common_io PRIVATE ch_contrib::udns)
 endif ()
 
+
 if (TARGET ch_contrib::cpp-dns)
-    dbms_target_link_libraries(PRIVATE ch_contrib::cpp-dns)
+    target_link_libraries (clickhouse_common_io PRIVATE ch_contrib::cpp-dns)
 endif ()
 
 if (TARGET OpenSSL::Crypto)
