@@ -426,8 +426,7 @@ static bool isFederatedServerSetupSetCommand(const String & query)
 /// Replace "[query(such as SHOW VARIABLES...)]" into "".
 static String selectEmptyReplacementQuery(const String & query)
 {
-    std::ignore = query;
-    return "select ''";
+    return query;
 }
 
 /// Replace "SHOW TABLE STATUS LIKE 'xx'" into "SELECT ... FROM system.tables WHERE name LIKE 'xx'".
@@ -467,8 +466,6 @@ static String showTableStatusReplacementQuery(const String & query)
 static String selectLimitReplacementQuery(const String & query)
 {
     const String prefix = "SET SQL_SELECT_LIMIT";
-    if (query.starts_with(prefix))
-        return "SET limit" + std::string(query.data() + prefix.length());
     return query;
 }
 
