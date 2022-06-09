@@ -10,13 +10,13 @@ instance = cluster.add_instance(
 )
 
 
-def create_and_fill_table(engine="MergeTree"):
+def create_and_fill_table(engine="MergeTree", n=100):
     if engine == "MergeTree":
         engine = "MergeTree ORDER BY y PARTITION BY x%10"
     instance.query("CREATE DATABASE test")
     instance.query(f"CREATE TABLE test.table(x UInt32, y String) ENGINE={engine}")
     instance.query(
-        "INSERT INTO test.table SELECT number, toString(number) FROM numbers(100)"
+        f"INSERT INTO test.table SELECT number, toString(number) FROM numbers({n})"
     )
 
 
@@ -35,6 +35,8 @@ def cleanup_after_test():
         yield
     finally:
         instance.query("DROP DATABASE IF EXISTS test")
+        instance.query("DROP DATABASE IF EXISTS test2")
+        instance.query("DROP DATABASE IF EXISTS test3")
 
 
 backup_id_counter = 0
@@ -299,19 +301,81 @@ def test_async():
 def test_dependencies():
     create_and_fill_table()
     instance.query("CREATE VIEW test.view AS SELECT x, y AS w FROM test.table")
-    instance.query("CREATE DICTIONARY test.dict1(x UInt32, w String) PRIMARY KEY x SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() DB 'test' TABLE 'view')) LAYOUT(FLAT()) LIFETIME(0)")
-    instance.query("CREATE DICTIONARY test.dict2(x UInt32, w String) PRIMARY KEY w SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() DB 'test' TABLE 'dict1')) LAYOUT(FLAT()) LIFETIME(0)")
-    instance.query("CREATE TABLE test.table2(k String, v Int32 DEFAULT dictGet('test.dict2', 'x', k) - 1) ENGINE=MergeTree ORDER BY tuple()")
+    instance.query(
+        "CREATE DICTIONARY test.dict1(x UInt32, w String) PRIMARY KEY x SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() DB 'test' TABLE 'view')) LAYOUT(FLAT()) LIFETIME(0)"
+    )
+    instance.query(
+        "CREATE DICTIONARY test.dict2(x UInt32, w String) PRIMARY KEY w SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() DB 'test' TABLE 'dict1')) LAYOUT(FLAT()) LIFETIME(0)"
+    )
+    instance.query(
+        "CREATE TABLE test.table2(k String, v Int32 DEFAULT dictGet('test.dict2', 'x', k) - 1) ENGINE=MergeTree ORDER BY tuple()"
+    )
     instance.query("INSERT INTO test.table2 (k) VALUES ('7'), ('96'), ('124')")
-    assert instance.query("SELECT * FROM test.table2 ORDER BY k") == TSV([['124', -1], ['7', 6], ['96', 95]])
+    assert instance.query("SELECT * FROM test.table2 ORDER BY k") == TSV(
+        [["124", -1], ["7", 6], ["96", 95]]
+    )
 
     backup_name = new_backup_name()
     instance.query(f"BACKUP DATABASE test AS test2 TO {backup_name}")
-    
+
     instance.query("DROP DATABASE test")
 
     instance.query(f"RESTORE DATABASE test2 AS test3 FROM {backup_name}")
 
-    assert instance.query("SELECT * FROM test3.table2 ORDER BY k") == TSV([['124', -1], ['7', 6], ['96', 95]])
+    assert instance.query("SELECT * FROM test3.table2 ORDER BY k") == TSV(
+        [["124", -1], ["7", 6], ["96", 95]]
+    )
     instance.query("INSERT INTO test3.table2 (k) VALUES  ('63'), ('152'), ('71')")
-    assert instance.query("SELECT * FROM test3.table2 ORDER BY k") == TSV([['124', -1], ['152', -1], ['63', 62], ['7', 6], ['71', 70], ['96', 95]])
+    assert instance.query("SELECT * FROM test3.table2 ORDER BY k") == TSV(
+        [["124", -1], ["152", -1], ["63", 62], ["7", 6], ["71", 70], ["96", 95]]
+    )
+
+
+def test_materialized_view():
+    create_and_fill_table(n=5)
+    instance.query(
+        "CREATE MATERIALIZED VIEW test.view ENGINE=MergeTree ORDER BY tuple() POPULATE AS SELECT y, x FROM test.table"
+    )
+    instance.query("INSERT INTO test.table VALUES (990, 'a')")
+
+    backup_name = new_backup_name()
+    instance.query(f"BACKUP DATABASE test TO {backup_name}")
+    
+    assert sorted(os.listdir(os.path.join(get_path_to_backup(backup_name), 'metadata/test'))) == ['table.sql', 'view.sql']
+    assert sorted(os.listdir(os.path.join(get_path_to_backup(backup_name), 'data/test'))) == ['table', 'view']
+    view_create_query = open(os.path.join(get_path_to_backup(backup_name), 'metadata/test/view.sql')).read()
+    assert view_create_query.startswith('CREATE MATERIALIZED VIEW test.view')
+    assert 'POPULATE' not in view_create_query
+
+    instance.query("DROP DATABASE test")
+
+    instance.query(f"RESTORE DATABASE test FROM {backup_name}")
+
+    instance.query("INSERT INTO test.table VALUES (991, 'b')")
+
+    assert instance.query("SELECT * FROM test.view ORDER BY x") == TSV([['0', 0], ['1', 1], ['2', 2], ['3', 3], ['4', 4], ['a', 990], ['b', 991]])
+
+
+def test_materialized_view_with_target_table():
+    create_and_fill_table(n=5)
+    instance.query(
+        "CREATE TABLE test.target(x Int64, y String) ENGINE=MergeTree ORDER BY tuple()"
+    )
+    instance.query(
+        "CREATE MATERIALIZED VIEW test.view TO test.target AS SELECT y, x FROM test.table"
+    )
+    instance.query("INSERT INTO test.table VALUES (990, 'a')")
+
+    backup_name = new_backup_name()
+    instance.query(f"BACKUP DATABASE test TO {backup_name}")
+    
+    assert sorted(os.listdir(os.path.join(get_path_to_backup(backup_name), 'metadata/test'))) == ['table.sql', 'target.sql', 'view.sql']
+    assert sorted(os.listdir(os.path.join(get_path_to_backup(backup_name), 'data/test'))) == ['table', 'target']
+
+    instance.query("DROP DATABASE test")
+
+    instance.query(f"RESTORE DATABASE test FROM {backup_name}")
+
+    instance.query("INSERT INTO test.table VALUES (991, 'b')")
+
+    assert instance.query("SELECT * FROM test.view ORDER BY x") == TSV([['a', 990], ['b', 991]])
