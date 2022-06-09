@@ -1,6 +1,5 @@
 #include <memory>
 #include <queue>
-//#include <sstream>
 #include <vector>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
@@ -111,17 +110,6 @@ bool ParserKQLSummarize ::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
     if (op_pos.size() != 1) // now only support one summarize
         return false;
 
-    //summarize avg(age) by FirstName  ==> select FirstName,avg(Age) from Customers3 group by FirstName
-
-    //summarize has syntax :
-
-    //T | summarize [SummarizeParameters] [[Column =] Aggregation [, ...]] [by [Column =] GroupExpression [, ...]]
-
-    //right now , we only support:
-
-    //T | summarize Aggregation [, ...] [by GroupExpression  [, ...]]
-    //Aggregation -> the Aggregation function on column
-    //GroupExpression - > columns
 
     auto begin = pos;
 
