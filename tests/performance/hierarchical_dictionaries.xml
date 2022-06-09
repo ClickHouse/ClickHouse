@@ -40,7 +40,7 @@
 
     <fill_query>
         INSERT INTO hierarchical_dictionary_source_table
-        SELECT number, rand64() % 250000
+        SELECT number, sipHash64(number) % 250000
         FROM system.numbers
         LIMIT 500000;
     </fill_query>
