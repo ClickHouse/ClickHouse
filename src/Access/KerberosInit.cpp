@@ -14,7 +14,7 @@ int KerberosInit::init(const String & keytab_file, const String & principal, con
     // Using mutex to prevent cache file corruptions
     std::unique_lock<std::mutex> lck(kinit_mtx);
 
-    auto log = &Poco::Logger::get("ADQM");
+    auto log = &Poco::Logger::get("KerberosInit");
     LOG_DEBUG(log,"Trying to authenticate to Kerberos v5");
 
     krb5_error_code ret;
@@ -39,10 +39,10 @@ int KerberosInit::init(const String & keytab_file, const String & principal, con
     }
     else
     {
-        // Resolve the default ccache and get its type and default principal (if it is initialized).
+        // Resolve the default cache and get its type and default principal (if it is initialized).
         ret = krb5_cc_default(k5.ctx, &defcache);
         if (ret)
-            throw Exception("Error while getting default ccache", ErrorCodes::KERBEROS_ERROR);
+            throw Exception("Error while getting default cache", ErrorCodes::KERBEROS_ERROR);
         LOG_DEBUG(log,"Resolved default cache");
         deftype = krb5_cc_get_type(k5.ctx, defcache);
         if (krb5_cc_get_principal(k5.ctx, defcache, &defcache_princ) != 0)
@@ -116,7 +116,7 @@ int KerberosInit::init(const String & keytab_file, const String & principal, con
     ret = krb5_get_renewed_creds(k5.ctx, &my_creds, k5.me, k5.out_cc, nullptr);
     if (ret)
     {
-        LOG_DEBUG(log,"Renew failed, trying to get initial credentials");
+        LOG_DEBUG(log,"Renew failed ({}). Trying to get initial credentials", ret);
         ret = krb5_get_init_creds_keytab(k5.ctx, &my_creds, k5.me, keytab, 0, nullptr, options);
         if (ret)
             throw Exception("Error in getting initial credentials", ErrorCodes::KERBEROS_ERROR);
@@ -139,7 +139,7 @@ int KerberosInit::init(const String & keytab_file, const String & principal, con
     if (k5.switch_to_cache) {
         ret = krb5_cc_switch(k5.ctx, k5.out_cc);
         if (ret)
-            throw Exception("Error while switching to new ccache", ErrorCodes::KERBEROS_ERROR);
+            throw Exception("Error while switching to new cache", ErrorCodes::KERBEROS_ERROR);
     }
 
     LOG_DEBUG(log,"Authenticated to Kerberos v5");
