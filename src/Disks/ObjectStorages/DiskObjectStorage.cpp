@@ -396,7 +396,7 @@ void DiskObjectStorage::removeMetadata(const String & path, std::vector<String> 
         tx->unlinkMetadata(path);
         tx->commit();
 
-        if (hardlink_count <= 1)
+        if (hardlink_count == 0)
         {
             paths_to_remove = remote_objects;
             for (const auto & path_to_remove : paths_to_remove)
