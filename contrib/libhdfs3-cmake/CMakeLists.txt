@@ -99,20 +99,26 @@ set(SRCS
     "${HDFS3_SOURCE_DIR}/common/Hash.cpp"
     "${HDFS3_SOURCE_DIR}/common/SWCrc32c.cpp"
     "${HDFS3_SOURCE_DIR}/common/Thread.cpp"
+    "${HDFS3_SOURCE_DIR}/common/IntelAsmCrc32c.cpp"
+    # ""
     ${PROTO_SOURCES}
 )
 
 # old kernels (< 3.17) doesn't have SYS_getrandom. Always use POSIX implementation to have better compatibility
 set_source_files_properties("${HDFS3_SOURCE_DIR}/rpc/RpcClient.cpp" PROPERTIES COMPILE_FLAGS "-DBOOST_UUID_RANDOM_PROVIDER_FORCE_POSIX=1")
 
+find_program(YASM_EXE NAMES yasm)
+add_custom_command(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/crc_iscsi_v_pcl.o COMMAND ${YASM_EXE}
+                -f x64 -f elf64 -X gnu -g dwarf2 -D LINUX -o ${CMAKE_CURRENT_BINARY_DIR}/crc_iscsi_v_pcl.o ${HDFS3_SOURCE_DIR}/common/crc_iscsi_v_pcl.asm)
+LIST(APPEND SRCS ${CMAKE_CURRENT_BINARY_DIR}/crc_iscsi_v_pcl.o)
+
 # target
 add_library(_hdfs3 ${SRCS})
-
 add_dependencies(_hdfs3 protoc)
 
-target_include_directories(_hdfs3 PRIVATE ${HDFS3_SOURCE_DIR})
-target_include_directories(_hdfs3 PRIVATE ${HDFS3_COMMON_DIR})
-target_include_directories(_hdfs3 PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
+target_include_directories(_hdfs3 PUBLIC ${HDFS3_SOURCE_DIR})
+target_include_directories(_hdfs3 PUBLIC ${HDFS3_COMMON_DIR})
+target_include_directories(_hdfs3 PUBLIC ${CMAKE_CURRENT_BINARY_DIR})
 
 target_include_directories(_hdfs3 SYSTEM BEFORE INTERFACE "${ClickHouse_SOURCE_DIR}/contrib/libhdfs3/include")
 
@@ -129,3 +135,7 @@ if (TARGET OpenSSL::SSL)
 endif()
 
 add_library(ch_contrib::hdfs ALIAS _hdfs3)
+
+# target 
+add_executable(perf_checksum ${HDFS3_SOURCE_DIR}/common/perf_checksum.cpp)
+target_link_libraries(perf_checksum PRIVATE ch_contrib::hdfs)

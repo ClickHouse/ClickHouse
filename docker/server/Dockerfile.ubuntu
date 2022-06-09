@@ -17,6 +17,7 @@ RUN sed -i "s|http://archive.ubuntu.com|${apt_archive}|g" /etc/apt/sources.list 
         locales \
         wget \
         tzdata \
+        yasm \
     && apt-get clean
 
 ARG REPO_CHANNEL="stable"
