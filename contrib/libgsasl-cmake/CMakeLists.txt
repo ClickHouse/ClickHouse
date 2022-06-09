@@ -1,7 +1,7 @@
 option(ENABLE_GSASL_LIBRARY "Enable gsasl library" ${ENABLE_LIBRARIES})
 
 if (NOT ENABLE_GSASL_LIBRARY)
-    message(STATUS "Not using gsasl library")
+    message(STATUS "Not using gsasl")
     return()
 endif()
 

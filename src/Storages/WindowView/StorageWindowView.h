@@ -142,14 +142,14 @@ public:
     void startup() override;
     void shutdown() override;
 
-    Pipe read(
-        const Names & column_names,
-        const StorageSnapshotPtr & storage_snapshot,
-        SelectQueryInfo & query_info,
-        ContextPtr context,
-        QueryProcessingStage::Enum processed_stage,
-        size_t max_block_size,
-        unsigned num_streams) override;
+    // Pipe read(
+    //     const Names & column_names,
+    //     const StorageSnapshotPtr & storage_snapshot,
+    //     SelectQueryInfo & query_info,
+    //     ContextPtr context,
+    //     QueryProcessingStage::Enum processed_stage,
+    //     size_t max_block_size,
+    //     unsigned num_streams) override;
 
     void read(
         QueryPlan & query_plan,
@@ -201,11 +201,12 @@ private:
     std::atomic<bool> shutdown_called{false};
     std::atomic<bool> modifying_query{false};
     bool has_inner_table{true};
-    bool inner_target_table{false};
+    bool has_inner_target_table{false};
     mutable Block input_header;
     mutable Block output_header;
     UInt64 fire_signal_timeout_s;
-    UInt64 clean_interval_ms;
+    UInt64 clean_interval_usec;
+    UInt64 last_clean_timestamp_usec = 0;
     const DateLUTImpl * time_zone = nullptr;
     UInt32 max_timestamp = 0;
     UInt32 max_watermark = 0; // next watermark to fire
@@ -238,8 +239,7 @@ private:
     Int64 slide_num_units;
     String window_id_name;
     String window_id_alias;
-    String inner_window_column_name;
-    String inner_window_id_column_name;
+    String window_column_name;
     String timestamp_column_name;
 
     StorageID select_table_id = StorageID::createEmpty();

@@ -801,4 +801,4 @@
 * Fix hang up with command `DROP TABLE system.query_log sync`. [#33293](https://github.com/ClickHouse/ClickHouse/pull/33293) ([zhanghuajie](https://github.com/zhanghuajieHIT)).
 
 
-## [Changelog for 2021](https://github.com/ClickHouse/ClickHouse/blob/master/docs/en/whats-new/changelog/2021.md)
+## [Changelog for 2021](https://clickhouse.com/docs/en/whats-new/changelog/2021)
