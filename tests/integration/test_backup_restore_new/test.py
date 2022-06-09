@@ -53,6 +53,15 @@ def get_path_to_backup(backup_name):
     return os.path.join(instance.cluster.instances_dir, "backups", name)
 
 
+session_id_counter = 0
+
+
+def new_session_id():
+    global session_id_counter
+    session_id_counter += 1
+    return "Session #" + str(session_id_counter)
+
+
 @pytest.mark.parametrize(
     "engine", ["MergeTree", "Log", "TinyLog", "StripeLog", "Memory"]
 )
@@ -340,12 +349,18 @@ def test_materialized_view():
 
     backup_name = new_backup_name()
     instance.query(f"BACKUP DATABASE test TO {backup_name}")
-    
-    assert sorted(os.listdir(os.path.join(get_path_to_backup(backup_name), 'metadata/test'))) == ['table.sql', 'view.sql']
-    assert sorted(os.listdir(os.path.join(get_path_to_backup(backup_name), 'data/test'))) == ['table', 'view']
-    view_create_query = open(os.path.join(get_path_to_backup(backup_name), 'metadata/test/view.sql')).read()
-    assert view_create_query.startswith('CREATE MATERIALIZED VIEW test.view')
-    assert 'POPULATE' not in view_create_query
+
+    assert sorted(
+        os.listdir(os.path.join(get_path_to_backup(backup_name), "metadata/test"))
+    ) == ["table.sql", "view.sql"]
+    assert sorted(
+        os.listdir(os.path.join(get_path_to_backup(backup_name), "data/test"))
+    ) == ["table", "view"]
+    view_create_query = open(
+        os.path.join(get_path_to_backup(backup_name), "metadata/test/view.sql")
+    ).read()
+    assert view_create_query.startswith("CREATE MATERIALIZED VIEW test.view")
+    assert "POPULATE" not in view_create_query
 
     instance.query("DROP DATABASE test")
 
@@ -353,7 +368,9 @@ def test_materialized_view():
 
     instance.query("INSERT INTO test.table VALUES (991, 'b')")
 
-    assert instance.query("SELECT * FROM test.view ORDER BY x") == TSV([['0', 0], ['1', 1], ['2', 2], ['3', 3], ['4', 4], ['a', 990], ['b', 991]])
+    assert instance.query("SELECT * FROM test.view ORDER BY x") == TSV(
+        [["0", 0], ["1", 1], ["2", 2], ["3", 3], ["4", 4], ["a", 990], ["b", 991]]
+    )
 
 
 def test_materialized_view_with_target_table():
@@ -368,9 +385,13 @@ def test_materialized_view_with_target_table():
 
     backup_name = new_backup_name()
     instance.query(f"BACKUP DATABASE test TO {backup_name}")
-    
-    assert sorted(os.listdir(os.path.join(get_path_to_backup(backup_name), 'metadata/test'))) == ['table.sql', 'target.sql', 'view.sql']
-    assert sorted(os.listdir(os.path.join(get_path_to_backup(backup_name), 'data/test'))) == ['table', 'target']
+
+    assert sorted(
+        os.listdir(os.path.join(get_path_to_backup(backup_name), "metadata/test"))
+    ) == ["table.sql", "target.sql", "view.sql"]
+    assert sorted(
+        os.listdir(os.path.join(get_path_to_backup(backup_name), "data/test"))
+    ) == ["table", "target"]
 
     instance.query("DROP DATABASE test")
 
@@ -378,4 +399,90 @@ def test_materialized_view_with_target_table():
 
     instance.query("INSERT INTO test.table VALUES (991, 'b')")
 
-    assert instance.query("SELECT * FROM test.view ORDER BY x") == TSV([['a', 990], ['b', 991]])
+    assert instance.query("SELECT * FROM test.view ORDER BY x") == TSV(
+        [["a", 990], ["b", 991]]
+    )
+
+
+def test_temporary_table():
+    session_id = new_session_id()
+    instance.http_query(
+        "CREATE TEMPORARY TABLE temp_tbl(s String)", params={"session_id": session_id}
+    )
+    instance.http_query(
+        "INSERT INTO temp_tbl VALUES ('q')", params={"session_id": session_id}
+    )
+    instance.http_query(
+        "INSERT INTO temp_tbl VALUES ('w'), ('e')", params={"session_id": session_id}
+    )
+
+    backup_name = new_backup_name()
+    instance.http_query(
+        f"BACKUP TEMPORARY TABLE temp_tbl TO {backup_name}",
+        params={"session_id": session_id},
+    )
+
+    session_id = new_session_id()
+    instance.http_query(
+        f"RESTORE TEMPORARY TABLE temp_tbl FROM {backup_name}",
+        params={"session_id": session_id},
+    )
+
+    assert instance.http_query(
+        "SELECT * FROM temp_tbl ORDER BY s", params={"session_id": session_id}
+    ) == TSV([["e"], ["q"], ["w"]])
+
+
+# We allow BACKUP DATABASE _temporary_and_external_tables only if the backup doesn't contain any table.
+def test_temporary_tables_database():
+    session_id = new_session_id()
+    instance.http_query(
+        "CREATE TEMPORARY TABLE temp_tbl(s String)", params={"session_id": session_id}
+    )
+
+    backup_name = new_backup_name()
+    instance.query(f"BACKUP DATABASE _temporary_and_external_tables TO {backup_name}")
+
+    assert os.listdir(os.path.join(get_path_to_backup(backup_name), "metadata/")) == [
+        "_temporary_and_external_tables.sql"  # database metadata only
+    ]
+
+
+def test_system_table():
+    backup_name = new_backup_name()
+    instance.query(f"BACKUP TABLE system.numbers TO {backup_name}")
+
+    assert os.listdir(
+        os.path.join(get_path_to_backup(backup_name), "metadata/system")
+    ) == ["numbers.sql"]
+
+    assert not os.path.isdir(os.path.join(get_path_to_backup(backup_name), "data"))
+
+    create_query = open(
+        os.path.join(get_path_to_backup(backup_name), "metadata/system/numbers.sql")
+    ).read()
+
+    assert (
+        create_query
+        == "CREATE TABLE system.numbers (`number` UInt64) ENGINE = SystemNumbers"
+    )
+
+    instance.query(f"RESTORE TABLE system.numbers FROM {backup_name}")
+
+
+def test_system_database():
+    backup_name = new_backup_name()
+    instance.query(f"BACKUP DATABASE system TO {backup_name}")
+
+    assert "numbers.sql" in os.listdir(
+        os.path.join(get_path_to_backup(backup_name), "metadata/system")
+    )
+
+    create_query = open(
+        os.path.join(get_path_to_backup(backup_name), "metadata/system/numbers.sql")
+    ).read()
+
+    assert (
+        create_query
+        == "CREATE TABLE system.numbers (`number` UInt64) ENGINE = SystemNumbers"
+    )

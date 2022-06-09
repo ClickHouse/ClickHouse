@@ -84,7 +84,7 @@ private:
     void setStage(Stage new_stage, const String & error_message = {});
     void calculateRootPathInBackup();
     void collectDatabasesAndTablesInfo();
-    void collectTableInfo(const QualifiedTableName & table_name, const std::optional<ASTs> & partitions, bool throw_if_not_found);
+    void collectTableInfo(const QualifiedTableName & table_name, bool is_temporary_table, const std::optional<ASTs> & partitions, bool throw_if_not_found);
     void collectDatabaseInfo(const String & database_name, const std::set<String> & except_table_names, bool throw_if_not_found);
     void collectAllDatabasesInfo(const std::set<String> & except_database_names);
     void checkConsistency();
@@ -120,10 +120,18 @@ private:
         std::optional<ASTs> partitions;
     };
 
+    struct TableKey
+    {
+        QualifiedTableName name;
+        bool is_temporary = false;
+        bool operator ==(const TableKey & right) const;
+        bool operator <(const TableKey & right) const;
+    };
+
     std::unordered_map<String, DatabaseInfo> database_infos;
-    std::unordered_map<QualifiedTableName, TableInfo> table_infos;
+    std::map<TableKey, TableInfo> table_infos;
     std::optional<std::set<String>> previous_database_names;
-    std::optional<std::set<QualifiedTableName>> previous_table_names;
+    std::optional<std::set<TableKey>> previous_table_names;
     bool consistent = false;
     
     BackupEntries backup_entries;

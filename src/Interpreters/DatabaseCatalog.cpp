@@ -205,6 +205,12 @@ void DatabaseCatalog::shutdownImpl()
     view_dependencies.clear();
 }
 
+bool DatabaseCatalog::isPredefinedDatabaseName(const std::string_view & database_name)
+{
+    return database_name == TEMPORARY_DATABASE || database_name == SYSTEM_DATABASE || database_name == INFORMATION_SCHEMA
+        || database_name == INFORMATION_SCHEMA_UPPERCASE;
+}
+
 DatabaseAndTable DatabaseCatalog::tryGetByUUID(const UUID & uuid) const
 {
     assert(uuid != UUIDHelpers::Nil && getFirstLevelIdx(uuid) < uuid_map.size());

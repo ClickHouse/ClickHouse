@@ -250,10 +250,14 @@ bool IStorage::isStaticStorage() const
 
 void IStorage::adjustCreateQueryForBackup(ASTPtr & create_query) const
 {
-    /// We don't want to see any UUIDs in backup.
+    /// We don't want to see any UUIDs in backup (after RESTORE the table will have another UUID anyway).
     auto & create = create_query->as<ASTCreateQuery &>();
     create.uuid = UUIDHelpers::Nil;
     create.to_inner_uuid = UUIDHelpers::Nil;
+
+    /// Remove the comment "SYSTEM TABLE is built on the fly" from the definition of system tables (it would look excessive for backups).
+    if (isSystemStorage())
+        create.reset(create.comment);
 }
 
 void IStorage::backupCreateQuery(BackupEntriesCollector & backup_entries_collector, const ASTPtr & create_query)

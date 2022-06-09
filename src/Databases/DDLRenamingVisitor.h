@@ -25,13 +25,16 @@ class DDLRenamingMap
 public:
     void setNewTableName(const QualifiedTableName & old_table_name, const QualifiedTableName & new_table_name);
     void setNewDatabaseName(const String & old_database_name, const String & new_database_name);
+    void setNewTemporaryTableName(const String & old_table_name, const String & new_table_name);
 
     QualifiedTableName getNewTableName(const QualifiedTableName & old_table_name) const;
     const String & getNewDatabaseName(const String & old_database_name) const;
+    const String & getNewTemporaryTableName(const String & old_table_name) const;
 
 private:
     std::unordered_map<QualifiedTableName, QualifiedTableName> old_to_new_table_names;
     std::unordered_map<String, String> old_to_new_database_names;
+    std::unordered_map<String, String> old_to_new_temporary_table_names;
 };
 
 /// Visits ASTCreateQuery and changes names of databases or tables.

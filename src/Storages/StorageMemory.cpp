@@ -501,7 +501,6 @@ void StorageMemory::restoreDataFromBackup(RestorerFromBackup & restorer, const S
         RestorerFromBackup::throwTableIsNotEmpty(getStorageID());
 
     restorer.addDataRestoreTask(
-        shared_from_this(),
         [storage = std::static_pointer_cast<StorageMemory>(shared_from_this()), backup, data_path_in_backup]
         { storage->restoreDataImpl(backup, data_path_in_backup); });
 }

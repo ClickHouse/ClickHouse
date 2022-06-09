@@ -4196,7 +4196,6 @@ void MergeTreeData::restorePartsFromBackup(RestorerFromBackup & restorer, const 
             continue;
 
         restorer.addDataRestoreTask(
-            shared_from_this(),
             [storage = std::static_pointer_cast<MergeTreeData>(shared_from_this()),
              backup,
              part_path_in_backup = data_path_in_backup_fs / part_name,

@@ -28,6 +28,31 @@ namespace ErrorCodes
 }
 
 
+bool BackupEntriesCollector::TableKey::operator ==(const TableKey & right) const
+{
+    return (name == right.name) && (is_temporary == right.is_temporary);
+}
+
+bool BackupEntriesCollector::TableKey::operator <(const TableKey & right) const
+{
+    return (name < right.name) || ((name == right.name) && (is_temporary < right.is_temporary));
+}
+
+std::string_view BackupEntriesCollector::toString(Stage stage)
+{
+    switch (stage)
+    {
+        case Stage::kPreparing: return "Preparing";
+        case Stage::kFindingTables: return "Finding tables";
+        case Stage::kExtractingDataFromTables: return "Extracting data from tables";
+        case Stage::kRunningPostTasks: return "Running post tasks";
+        case Stage::kWritingBackup: return "Writing backup";
+        case Stage::kError: return "Error";
+    }
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown backup stage: {}", static_cast<int>(stage));
+}
+
+
 BackupEntriesCollector::BackupEntriesCollector(
     const ASTBackupQuery::Elements & backup_query_elements_,
     const BackupSettings & backup_settings_,
@@ -116,20 +141,6 @@ void BackupEntriesCollector::setStage(Stage new_stage, const String & error_mess
     }
 }
 
-std::string_view BackupEntriesCollector::toString(Stage stage)
-{
-    switch (stage)
-    {
-        case Stage::kPreparing: return "Preparing";
-        case Stage::kFindingTables: return "Finding tables";
-        case Stage::kExtractingDataFromTables: return "Extracting data from tables";
-        case Stage::kRunningPostTasks: return "Running post tasks";
-        case Stage::kWritingBackup: return "Writing backup";
-        case Stage::kError: return "Error";
-    }
-    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown backup stage: {}", static_cast<int>(stage));
-}
-
 /// Calculates the root path for collecting backup entries,
 /// it's either empty or has the format "shards/<shard_num>/replicas/<replica_num>/".
 void BackupEntriesCollector::calculateRootPathInBackup()
@@ -164,10 +175,11 @@ void BackupEntriesCollector::collectDatabasesAndTablesInfo()
             {
                 case ASTBackupQuery::ElementType::TABLE:
                 {
-                    QualifiedTableName table_name{element.database_name, element.table_name};
-                    if (element.is_temporary_database)
-                        table_name.database = DatabaseCatalog::TEMPORARY_DATABASE;
-                    collectTableInfo(table_name, element.partitions, true);
+                    collectTableInfo(
+                        QualifiedTableName{element.database_name, element.table_name},
+                        element.is_temporary_table,
+                        element.partitions,
+                        true);
                     break;
                 }
 
@@ -190,9 +202,9 @@ void BackupEntriesCollector::collectDatabasesAndTablesInfo()
         checkConsistency();
 
         /// Two passes is absolute minimum (see `previous_table_names` & `previous_database_names`).
+        auto elapsed = std::chrono::steady_clock::now() - start_time;
         if (!consistent && (pass >= 2) && use_timeout)
         {
-            auto elapsed = std::chrono::steady_clock::now() - start_time;
             if (elapsed > timeout)
                 throw Exception(
                     ErrorCodes::CANNOT_COLLECT_OBJECTS_FOR_BACKUP,
@@ -201,6 +213,8 @@ void BackupEntriesCollector::collectDatabasesAndTablesInfo()
                     to_string(elapsed));
         }
 
+        if (pass >= 2)
+            LOG_WARNING(log, "Couldn't collect tables and databases to make a backup (pass #{}, elapsed {})", pass, to_string(elapsed));
         ++pass;
     } while (!consistent);
 
@@ -208,7 +222,7 @@ void BackupEntriesCollector::collectDatabasesAndTablesInfo()
 }
 
 void BackupEntriesCollector::collectTableInfo(
-    const QualifiedTableName & table_name, const std::optional<ASTs> & partitions, bool throw_if_not_found)
+    const QualifiedTableName & table_name, bool is_temporary_table, const std::optional<ASTs> & partitions, bool throw_if_not_found)
 {
     /// Gather information about the table.
     DatabasePtr database;
@@ -216,67 +230,73 @@ void BackupEntriesCollector::collectTableInfo(
     TableLockHolder table_lock;
     ASTPtr create_table_query;
 
+    TableKey table_key{table_name, is_temporary_table};
+
     if (throw_if_not_found)
     {
-        std::tie(database, storage)
-            = DatabaseCatalog::instance().getDatabaseAndTable(StorageID{table_name.database, table_name.table}, context);
+        auto resolved_id = is_temporary_table
+            ? context->resolveStorageID(StorageID{"", table_name.table}, Context::ResolveExternal)
+            : context->resolveStorageID(StorageID{table_name.database, table_name.table}, Context::ResolveGlobal);
+        std::tie(database, storage) = DatabaseCatalog::instance().getDatabaseAndTable(resolved_id, context);
         table_lock = storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef().lock_acquire_timeout);
-        create_table_query = database->getCreateTableQuery(table_name.table, context);
+        create_table_query = database->getCreateTableQuery(resolved_id.table_name, context);
     }
     else
     {
-        std::tie(database, storage)
-            = DatabaseCatalog::instance().tryGetDatabaseAndTable(StorageID{table_name.database, table_name.table}, context);
-        if (!storage)
+        auto resolved_id = is_temporary_table
+            ? context->tryResolveStorageID(StorageID{"", table_name.table}, Context::ResolveExternal)
+            : context->tryResolveStorageID(StorageID{table_name.database, table_name.table}, Context::ResolveGlobal);
+        if (!resolved_id.empty())
+            std::tie(database, storage) = DatabaseCatalog::instance().tryGetDatabaseAndTable(resolved_id, context);
+ 
+        if (storage)
         {
-            consistent &= !table_infos.contains(table_name);
-            return;
-        }
-
-        try
-        {
-            table_lock = storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef().lock_acquire_timeout);
-        }
-        catch (Exception & e)
-        {
-            if (e.code() == ErrorCodes::TABLE_IS_DROPPED)
+            try
             {
-                consistent &= !table_infos.contains(table_name);
-                return;
+                table_lock = storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef().lock_acquire_timeout);
             }
-            throw;
+            catch (Exception & e)
+            {
+                if (e.code() != ErrorCodes::TABLE_IS_DROPPED)
+                    throw;
+            }
         }
 
-        create_table_query = database->tryGetCreateTableQuery(table_name.table, context);
+        if (table_lock)
+            create_table_query = database->tryGetCreateTableQuery(resolved_id.table_name, context);
+        
         if (!create_table_query)
         {
-            consistent &= !table_infos.contains(table_name);
+            consistent &= !table_infos.contains(table_key);
             return;
         }
     }
 
     storage->adjustCreateQueryForBackup(create_table_query);
-    auto new_table_name = renaming_map.getNewTableName(table_name);
-    fs::path data_path_in_backup
-        = root_path_in_backup / "data" / escapeForFileName(new_table_name.database) / escapeForFileName(new_table_name.table);
+
+    fs::path data_path_in_backup;
+    if (is_temporary_table)
+    {
+        auto table_name_in_backup = renaming_map.getNewTemporaryTableName(table_name.table);
+        data_path_in_backup = root_path_in_backup / "temporary_tables" / "data" / escapeForFileName(table_name_in_backup);
+    }
+    else
+    {
+        auto table_name_in_backup = renaming_map.getNewTableName(table_name);
+        data_path_in_backup
+            = root_path_in_backup / "data" / escapeForFileName(table_name_in_backup.database) / escapeForFileName(table_name_in_backup.table);
+    }
 
     /// Check that information is consistent.
     const auto & create = create_table_query->as<const ASTCreateQuery &>();
-    if (create.getTable() != table_name.table)
+    if ((create.getTable() != table_name.table) || (is_temporary_table != create.temporary) || (create.getDatabase() != table_name.database))
     {
         /// Table was renamed recently.
         consistent = false;
         return;
     }
 
-    if ((create.getDatabase() != table_name.database) || (create.temporary && (table_name.database == DatabaseCatalog::TEMPORARY_DATABASE)))
-    {
-        /// Table was renamed recently.
-        consistent = false;
-        return;
-    }
-
-    if (auto it = table_infos.find(table_name); it != table_infos.end())
+    if (auto it = table_infos.find(table_key); it != table_infos.end())
     {
         const auto & table_info = it->second;
         if ((table_info.database != database) || (table_info.storage != storage))
@@ -288,7 +308,7 @@ void BackupEntriesCollector::collectTableInfo(
     }
 
     /// Add information to `table_infos`.
-    auto & res_table_info = table_infos[table_name];
+    auto & res_table_info = table_infos[table_key];
     res_table_info.database = database;
     res_table_info.storage = storage;
     res_table_info.table_lock = table_lock;
@@ -360,12 +380,14 @@ void BackupEntriesCollector::collectDatabaseInfo(const String & database_name, c
     res_database_info.database = database;
     res_database_info.create_database_query = create_database_query;
 
+    /// Add information about tables too.
     for (auto it = database->getTablesIteratorForBackup(*this); it->isValid(); it->next())
     {
         if (except_table_names.contains(it->name()))
             continue;
 
-        collectTableInfo(QualifiedTableName{database_name, it->name()}, {}, false);
+        collectTableInfo(
+            QualifiedTableName{database_name, it->name()}, /* is_temporary_table= */ false, {}, /* throw_if_not_found= */ false);
         if (!consistent)
             return;
     }
@@ -390,9 +412,9 @@ void BackupEntriesCollector::checkConsistency()
         return; /// Already inconsistent, no more checks necessary
 
     /// Databases found while we were scanning tables and while we were scanning databases - must be the same.
-    for (const auto & [table_name, table_info] : table_infos)
+    for (const auto & [key, table_info] : table_infos)
     {
-        auto it = database_infos.find(table_name.database);
+        auto it = database_infos.find(key.name.database);
         if (it != database_infos.end())
         {
             const auto & database_info = it->second;
@@ -407,7 +429,7 @@ void BackupEntriesCollector::checkConsistency()
     /// We need to scan tables at least twice to be sure that we haven't missed any table which could be renamed
     /// while we were scanning.
     std::set<String> database_names;
-    std::set<QualifiedTableName> table_names;
+    std::set<TableKey> table_names;
     boost::range::copy(database_infos | boost::adaptors::map_keys, std::inserter(database_names, database_names.end()));
     boost::range::copy(table_infos | boost::adaptors::map_keys, std::inserter(table_names, table_names.end()));
 
@@ -441,9 +463,9 @@ void BackupEntriesCollector::makeBackupEntriesForDatabasesDefs()
 /// Calls IDatabase::backupTable() for all the tables found to make backup entries for tables.
 void BackupEntriesCollector::makeBackupEntriesForTablesDefs()
 {
-    for (const auto & [table_name, table_info] : table_infos)
+    for (const auto & [key, table_info] : table_infos)
     {
-        LOG_TRACE(log, "Adding definition of table {}", table_name.getFullName());
+        LOG_TRACE(log, "Adding definition of {}table {}", (key.is_temporary ? "temporary " : ""), key.name.getFullName());
         const auto & database = table_info.database;
         const auto & storage = table_info.storage;
         database->backupCreateTableQuery(*this, storage, table_info.create_table_query);
@@ -455,9 +477,9 @@ void BackupEntriesCollector::makeBackupEntriesForTablesData()
     if (backup_settings.structure_only)
         return;
 
-    for (const auto & [table_name, table_info] : table_infos)
+    for (const auto & [key, table_info] : table_infos)
     {
-        LOG_TRACE(log, "Adding data of table {}", table_name.getFullName());
+        LOG_TRACE(log, "Adding data of {}table {}", (key.is_temporary ? "temporary " : ""), key.name.getFullName());
         const auto & storage = table_info.storage;
         const auto & data_path_in_backup = table_info.data_path_in_backup;
         const auto & partitions = table_info.partitions;
@@ -490,12 +512,18 @@ void BackupEntriesCollector::addBackupEntryForCreateQuery(const ASTPtr & create_
 {
     ASTPtr new_create_query = create_query;
     renameDatabaseAndTableNameInCreateQuery(context->getGlobalContext(), renaming_map, new_create_query);
-
     const auto & create = new_create_query->as<const ASTCreateQuery &>();
-    String new_table_name = create.getTable();
-    String new_database_name = create.getDatabase();
-    auto metadata_path_in_backup
-        = root_path_in_backup / "metadata" / escapeForFileName(new_database_name) / (escapeForFileName(new_table_name) + ".sql");
+
+    fs::path metadata_path_in_backup;
+    if (create.temporary)
+    {
+        metadata_path_in_backup = root_path_in_backup / "temporary_tables" / "metadata" / (escapeForFileName(create.getTable()) + ".sql");
+    }
+    else
+    {
+        metadata_path_in_backup
+            = root_path_in_backup / "metadata" / escapeForFileName(create.getDatabase()) / (escapeForFileName(create.getTable()) + ".sql");
+    }
 
     addBackupEntry(metadata_path_in_backup, std::make_shared<BackupEntryFromMemory>(serializeAST(*create_query)));
 }
