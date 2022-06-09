@@ -64,12 +64,9 @@ using ISets = std::vector<ISetPtr>;
 class BloomFilterSet : public ISet
 {
 public:
-    BloomFilterSet(const SizeLimits & limits_, bool fill_set_elements_, bool transform_null_in_)
-        : limits(limits_), fill_set_elements(fill_set_elements_), transform_null_in(transform_null_in_)
-    {
-    }
+    BloomFilterSet(const SizeLimits & limits_, bool fill_set_elements_, bool transform_null_in_);
 
-    virtual bool empty() const override { return false; }
+    virtual bool empty() const override { return !is_inited; }
 
     /** Set can be created either from AST or from a stream of data (subquery result).
       */
@@ -105,7 +102,7 @@ private:
     size_t keys_size = 0;
     Sizes key_sizes;
 
-    BloomFilter data{1024 * 10, 4, 42};
+    BloomFilter data;
 
     /** How IN works with Nullable types.
       *
@@ -141,6 +138,7 @@ private:
 
     /// Check if set contains all the data.
     bool is_created = false;
+    bool is_inited = false;
 
     /// If in the left part columns contains the same types as the elements of the set.
     void executeOrdinary(

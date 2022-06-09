@@ -28,6 +28,7 @@
 #include <base/sort.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 
+#include <fstream>
 
 namespace DB
 {
@@ -40,6 +41,13 @@ namespace ErrorCodes
     extern const int NUMBER_OF_COLUMNS_DOESNT_MATCH;
 }
 
+BloomFilterSet::BloomFilterSet(const SizeLimits & limits_, bool fill_set_elements_, bool transform_null_in_)
+    : data{10 * 1024 * 1024, 5, 42}
+    , limits(limits_)
+    , fill_set_elements(fill_set_elements_)
+    , transform_null_in(transform_null_in_)
+{
+}
 
 void BloomFilterSet::setHeader(const ColumnsWithTypeAndName & header)
 {
@@ -97,6 +105,8 @@ void BloomFilterSet::setHeader(const ColumnsWithTypeAndName & header)
         for (const auto & type : set_elements_types)
             set_elements.emplace_back(type->createColumn());
     }
+
+    is_inited = true;
 }
 
 
