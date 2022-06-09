@@ -2,11 +2,13 @@
 
 #include <Common/config.h>
 
+
 #if USE_AWS_S3
 
 #include <Common/RemoteHostFilter.h>
 #include <IO/ConnectionTimeouts.h>
 #include <IO/HTTPCommon.h>
+#include <IO/S3/Client.h>
 #include <IO/S3/SessionAwareIOStream.h>
 #include <Storages/StorageS3Settings.h>
 
@@ -29,13 +31,6 @@ class Context;
 namespace DB::S3
 {
 class ClientFactory;
-
-struct ClientConfigurationPerRequest
-{
-    Aws::Http::Scheme proxy_scheme = Aws::Http::Scheme::HTTPS;
-    String proxy_host;
-    unsigned proxy_port = 0;
-};
 
 struct PocoHTTPClientConfiguration : public Aws::Client::ClientConfiguration
 {
@@ -97,7 +92,7 @@ private:
 class PocoHTTPClient : public Aws::Http::HttpClient
 {
 public:
-    explicit PocoHTTPClient(const PocoHTTPClientConfiguration & client_configuration);
+    explicit PocoHTTPClient(const ClientConfiguration & client_configuration);
     ~PocoHTTPClient() override = default;
 
     std::shared_ptr<Aws::Http::HttpResponse> MakeRequest(

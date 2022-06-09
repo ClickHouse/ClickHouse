@@ -5,7 +5,7 @@
 #if USE_AWS_S3
 
 #include <aws/core/client/DefaultRetryStrategy.h>
-#include <IO/S3Common.h>
+#include <IO/S3/Client.h>
 #include <Disks/ObjectStorages/S3/S3ObjectStorage.h>
 #include <Disks/DiskCacheWrapper.h>
 #include <Storages/StorageS3Settings.h>
@@ -22,7 +22,7 @@ namespace DB
 
 std::unique_ptr<S3ObjectStorageSettings> getSettings(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, ContextPtr context);
 
-std::unique_ptr<Aws::S3::S3Client> getClient(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, ContextPtr context);
+std::unique_ptr<S3::Client> getClient(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, ContextPtr context);
 
 }
 

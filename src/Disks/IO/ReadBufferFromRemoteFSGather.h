@@ -10,12 +10,11 @@
 #include <azure/storage/blobs.hpp>
 #endif
 
-namespace Aws { namespace S3 { class S3Client; } }
-
 namespace Poco { class Logger; }
 
 namespace DB
 {
+namespace S3 { class Client; }
 
 /**
  * Remote disk might need to split one clickhouse file into multiple files in remote fs.
@@ -106,7 +105,7 @@ class ReadBufferFromS3Gather final : public ReadBufferFromRemoteFSGather
 {
 public:
     ReadBufferFromS3Gather(
-        std::shared_ptr<const Aws::S3::S3Client> client_ptr_,
+        std::shared_ptr<const S3::Client> client_ptr_,
         const String & bucket_,
         const String & version_id_,
         const PathsWithSize & blobs_to_read_,
@@ -123,7 +122,7 @@ public:
     SeekableReadBufferPtr createImplementationBufferImpl(const String & path, size_t file_size) override;
 
 private:
-    std::shared_ptr<const Aws::S3::S3Client> client_ptr;
+    std::shared_ptr<const S3::Client> client_ptr;
     String bucket;
     String version_id;
     UInt64 max_single_read_retries;

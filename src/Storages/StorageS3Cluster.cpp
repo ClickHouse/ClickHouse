@@ -15,6 +15,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromS3.h>
 #include <IO/WriteHelpers.h>
+#include <IO/S3/Client.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/getHeaderForProcessingStage.h>
 #include <Interpreters/SelectQueryOptions.h>
@@ -34,8 +35,6 @@
 #include <Common/logger_useful.h>
 
 #include <aws/core/auth/AWSCredentials.h>
-#include <aws/s3/S3Client.h>
-#include <aws/s3/model/ListObjectsV2Request.h>
 
 #include <ios>
 #include <memory>

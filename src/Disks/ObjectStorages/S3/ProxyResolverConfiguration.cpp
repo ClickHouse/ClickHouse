@@ -34,7 +34,7 @@ ClientConfigurationPerRequest ProxyResolverConfiguration::getConfiguration(const
 
     if (cache_ttl.count() && cache_valid && now <= cache_timestamp + cache_ttl && now >= cache_timestamp)
     {
-        LOG_DEBUG(&Poco::Logger::get("AWSClient"), "Use cached proxy: {}://{}:{}", Aws::Http::SchemeMapper::ToString(cached_config.proxy_scheme), cached_config.proxy_host, cached_config.proxy_port);
+        LOG_DEBUG(&Poco::Logger::get("AWSClient"), "Use cached proxy: {}://{}:{}", cached_config.proxy_scheme, cached_config.proxy_host, cached_config.proxy_port);
         return cached_config;
     }
 
@@ -88,7 +88,7 @@ ClientConfigurationPerRequest ProxyResolverConfiguration::getConfiguration(const
 
         LOG_DEBUG(&Poco::Logger::get("AWSClient"), "Use proxy: {}://{}:{}", proxy_scheme, proxy_host, proxy_port);
 
-        cached_config.proxy_scheme = Aws::Http::SchemeMapper::FromString(proxy_scheme.c_str());
+        cached_config.proxy_scheme = proxy_scheme;
         cached_config.proxy_host = proxy_host;
         cached_config.proxy_port = proxy_port;
         cache_timestamp = std::chrono::system_clock::now();

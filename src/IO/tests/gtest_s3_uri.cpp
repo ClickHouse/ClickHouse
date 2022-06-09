@@ -1,9 +1,11 @@
 #include <gtest/gtest.h>
 #include <Common/config.h>
 
+
 #if USE_AWS_S3
 
-#include <IO/S3Common.h>
+#include <IO/S3/Client.h>
+
 
 namespace
 {
@@ -20,55 +22,55 @@ struct TestCase
 };
 
 const TestCase TestCases[] = {
-    {S3::URI(Poco::URI("https://bucketname.s3.us-east-2.amazonaws.com/data")),
+    {S3::URI("https://bucketname.s3.us-east-2.amazonaws.com/data"),
      "https://s3.us-east-2.amazonaws.com",
      "bucketname",
      "data",
      "",
      true},
-    {S3::URI(Poco::URI("https://bucketname.s3.us-east-2.amazonaws.com/data?firstKey=someKey&secondKey=anotherKey")),
+    {S3::URI("https://bucketname.s3.us-east-2.amazonaws.com/data?firstKey=someKey&secondKey=anotherKey"),
      "https://s3.us-east-2.amazonaws.com",
      "bucketname",
      "data",
      "",
      true},
-    {S3::URI(Poco::URI("https://bucketname.s3.us-east-2.amazonaws.com/data?versionId=testVersionId&anotherKey=someOtherKey")),
+    {S3::URI("https://bucketname.s3.us-east-2.amazonaws.com/data?versionId=testVersionId&anotherKey=someOtherKey"),
      "https://s3.us-east-2.amazonaws.com",
      "bucketname",
      "data",
      "testVersionId",
      true},
-    {S3::URI(Poco::URI("https://bucketname.s3.us-east-2.amazonaws.com/data?firstKey=someKey&versionId=testVersionId&anotherKey=someOtherKey")),
+    {S3::URI("https://bucketname.s3.us-east-2.amazonaws.com/data?firstKey=someKey&versionId=testVersionId&anotherKey=someOtherKey"),
      "https://s3.us-east-2.amazonaws.com",
      "bucketname",
      "data",
      "testVersionId",
      true},
-    {S3::URI(Poco::URI("https://bucketname.s3.us-east-2.amazonaws.com/data?anotherKey=someOtherKey&versionId=testVersionId")),
+    {S3::URI("https://bucketname.s3.us-east-2.amazonaws.com/data?anotherKey=someOtherKey&versionId=testVersionId"),
      "https://s3.us-east-2.amazonaws.com",
      "bucketname",
      "data",
      "testVersionId",
      true},
-    {S3::URI(Poco::URI("https://bucketname.s3.us-east-2.amazonaws.com/data?versionId=testVersionId")),
+    {S3::URI("https://bucketname.s3.us-east-2.amazonaws.com/data?versionId=testVersionId"),
      "https://s3.us-east-2.amazonaws.com",
      "bucketname",
      "data",
      "testVersionId",
      true},
-    {S3::URI(Poco::URI("https://bucketname.s3.us-east-2.amazonaws.com/data?versionId=")),
+    {S3::URI("https://bucketname.s3.us-east-2.amazonaws.com/data?versionId="),
      "https://s3.us-east-2.amazonaws.com",
      "bucketname",
      "data",
      "",
      true},
-    {S3::URI(Poco::URI("https://bucketname.s3.us-east-2.amazonaws.com/data?versionId&")),
+    {S3::URI("https://bucketname.s3.us-east-2.amazonaws.com/data?versionId&"),
      "https://s3.us-east-2.amazonaws.com",
      "bucketname",
      "data",
      "",
      true},
-    {S3::URI(Poco::URI("https://bucketname.s3.us-east-2.amazonaws.com/data?versionId")),
+    {S3::URI("https://bucketname.s3.us-east-2.amazonaws.com/data?versionId"),
      "https://s3.us-east-2.amazonaws.com",
      "bucketname",
      "data",
@@ -83,81 +85,91 @@ class S3UriTest : public testing::TestWithParam<std::string>
 TEST(S3UriTest, validPatterns)
 {
     {
-        S3::URI uri(Poco::URI("https://jokserfn.s3.amazonaws.com/"));
+        S3::URI uri("https://jokserfn.s3.amazonaws.com/");
         ASSERT_EQ("https://s3.amazonaws.com", uri.endpoint);
         ASSERT_EQ("jokserfn", uri.bucket);
+        ASSERT_EQ("", uri.region);
         ASSERT_EQ("", uri.key);
         ASSERT_EQ("", uri.version_id);
         ASSERT_EQ(true, uri.is_virtual_hosted_style);
     }
     {
-        S3::URI uri(Poco::URI("https://s3.amazonaws.com/jokserfn/"));
+        S3::URI uri("https://s3.amazonaws.com/jokserfn/");
         ASSERT_EQ("https://s3.amazonaws.com", uri.endpoint);
         ASSERT_EQ("jokserfn", uri.bucket);
+        ASSERT_EQ("", uri.region);
         ASSERT_EQ("", uri.key);
         ASSERT_EQ("", uri.version_id);
         ASSERT_EQ(false, uri.is_virtual_hosted_style);
     }
     {
-        S3::URI uri(Poco::URI("https://amazonaws.com/bucket/"));
+        S3::URI uri("https://amazonaws.com/bucket/");
         ASSERT_EQ("https://amazonaws.com", uri.endpoint);
         ASSERT_EQ("bucket", uri.bucket);
+        ASSERT_EQ("", uri.region);
         ASSERT_EQ("", uri.key);
         ASSERT_EQ("", uri.version_id);
         ASSERT_EQ(false, uri.is_virtual_hosted_style);
     }
     {
-        S3::URI uri(Poco::URI("https://jokserfn.s3.amazonaws.com/data"));
+        S3::URI uri("https://jokserfn.s3.amazonaws.com/data");
         ASSERT_EQ("https://s3.amazonaws.com", uri.endpoint);
         ASSERT_EQ("jokserfn", uri.bucket);
+        ASSERT_EQ("", uri.region);
         ASSERT_EQ("data", uri.key);
         ASSERT_EQ("", uri.version_id);
         ASSERT_EQ(true, uri.is_virtual_hosted_style);
     }
     {
-        S3::URI uri(Poco::URI("https://storage.amazonaws.com/jokserfn/data"));
+        S3::URI uri("https://storage.amazonaws.com/jokserfn/data");
         ASSERT_EQ("https://storage.amazonaws.com", uri.endpoint);
         ASSERT_EQ("jokserfn", uri.bucket);
+        ASSERT_EQ("", uri.region);
         ASSERT_EQ("data", uri.key);
         ASSERT_EQ("", uri.version_id);
         ASSERT_EQ(false, uri.is_virtual_hosted_style);
     }
     {
-        S3::URI uri(Poco::URI("https://bucketname.cos.ap-beijing.myqcloud.com/data"));
+        S3::URI uri("https://bucketname.cos.ap-beijing.myqcloud.com/data");
         ASSERT_EQ("https://cos.ap-beijing.myqcloud.com", uri.endpoint);
         ASSERT_EQ("bucketname", uri.bucket);
+        ASSERT_EQ("ap-beijing", uri.region);
         ASSERT_EQ("data", uri.key);
         ASSERT_EQ("", uri.version_id);
         ASSERT_EQ(true, uri.is_virtual_hosted_style);
     }
     {
-        S3::URI uri(Poco::URI("https://bucketname.s3.us-east-2.amazonaws.com/data"));
+        S3::URI uri("https://bucketname.s3.us-east-2.amazonaws.com/data");
         ASSERT_EQ("https://s3.us-east-2.amazonaws.com", uri.endpoint);
         ASSERT_EQ("bucketname", uri.bucket);
+        ASSERT_EQ("us-east-2", uri.region);
         ASSERT_EQ("data", uri.key);
         ASSERT_EQ("", uri.version_id);
         ASSERT_EQ(true, uri.is_virtual_hosted_style);
     }
     {
-        S3::URI uri(Poco::URI("https://s3.us-east-2.amazonaws.com/bucketname/data"));
+        S3::URI uri("https://s3.us-east-2.amazonaws.com/bucketname/data");
         ASSERT_EQ("https://s3.us-east-2.amazonaws.com", uri.endpoint);
         ASSERT_EQ("bucketname", uri.bucket);
+        ASSERT_EQ("us-east-2", uri.region);
         ASSERT_EQ("data", uri.key);
         ASSERT_EQ("", uri.version_id);
         ASSERT_EQ(false, uri.is_virtual_hosted_style);
     }
     {
-        S3::URI uri(Poco::URI("https://bucketname.s3-us-east-2.amazonaws.com/data"));
+        S3::URI uri("https://bucketname.s3-us-east-2.amazonaws.com/data");
         ASSERT_EQ("https://s3-us-east-2.amazonaws.com", uri.endpoint);
         ASSERT_EQ("bucketname", uri.bucket);
+        ASSERT_EQ("us-east-2", uri.region);
         ASSERT_EQ("data", uri.key);
         ASSERT_EQ("", uri.version_id);
         ASSERT_EQ(true, uri.is_virtual_hosted_style);
     }
     {
-        S3::URI uri(Poco::URI("https://s3-us-east-2.amazonaws.com/bucketname/data"));
+        S3::URI uri("https://s3-us-east-2.amazonaws.com/bucketname/data");
         ASSERT_EQ("https://s3-us-east-2.amazonaws.com", uri.endpoint);
         ASSERT_EQ("bucketname", uri.bucket);
+        ASSERT_EQ("us-east-2", uri.region);
         ASSERT_EQ("data", uri.key);
         ASSERT_EQ("", uri.version_id);
         ASSERT_EQ(false, uri.is_virtual_hosted_style);
@@ -166,7 +178,7 @@ TEST(S3UriTest, validPatterns)
 
 TEST_P(S3UriTest, invalidPatterns)
 {
-    ASSERT_ANY_THROW(S3::URI(Poco::URI(GetParam())));
+    ASSERT_ANY_THROW(S3::URI _(GetParam()));
 }
 
 TEST(S3UriTest, versionIdChecks)

@@ -5,15 +5,11 @@
 #include <Common/logger_useful.h>
 #include <Common/IFileCache.h>
 
+#include <IO/S3/Client.h>
 #include <IO/WriteBufferFromS3.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
 
-#include <aws/s3/S3Client.h>
-#include <aws/s3/model/CreateMultipartUploadRequest.h>
-#include <aws/s3/model/CompleteMultipartUploadRequest.h>
-#include <aws/s3/model/PutObjectRequest.h>
-#include <aws/s3/model/UploadPartRequest.h>
 
 #include <utility>
 
@@ -54,7 +50,7 @@ struct WriteBufferFromS3::PutObjectTask
 };
 
 WriteBufferFromS3::WriteBufferFromS3(
-    std::shared_ptr<const Aws::S3::S3Client> client_ptr_,
+    std::shared_ptr<const S3::Client> client_ptr_,
     const String & bucket_,
     const String & key_,
     const S3Settings::ReadWriteSettings & s3_settings_,
@@ -214,7 +210,7 @@ void WriteBufferFromS3::createMultipartUpload()
     if (object_metadata.has_value())
         req.SetMetadata(object_metadata.value());
 
-    auto outcome = client_ptr->CreateMultipartUpload(req);
+    auto outcome = client_ptr->createMultipartUpload(req);
 
     if (outcome.IsSuccess())
     {
@@ -330,7 +326,7 @@ void WriteBufferFromS3::fillUploadRequest(Aws::S3::Model::UploadPartRequest & re
 
 void WriteBufferFromS3::processUploadRequest(UploadPartTask & task)
 {
-    auto outcome = client_ptr->UploadPart(task.req);
+    auto outcome = client_ptr->uploadPart(task.req);
 
     if (outcome.IsSuccess())
     {
@@ -364,7 +360,7 @@ void WriteBufferFromS3::completeMultipartUpload()
 
     req.SetMultipartUpload(multipart_upload);
 
-    auto outcome = client_ptr->CompleteMultipartUpload(req);
+    auto outcome = client_ptr->completeMultipartUpload(req);
 
     if (outcome.IsSuccess())
         LOG_TRACE(log, "Multipart upload has completed. Bucket: {}, Key: {}, Upload_id: {}, Parts: {}", bucket, key, multipart_upload_id, part_tags.size());
@@ -460,7 +456,7 @@ void WriteBufferFromS3::fillPutRequest(Aws::S3::Model::PutObjectRequest & req)
 
 void WriteBufferFromS3::processPutRequest(PutObjectTask & task)
 {
-    auto outcome = client_ptr->PutObject(task.req);
+    auto outcome = client_ptr->putObject(task.req);
     bool with_pool = static_cast<bool>(schedule);
 
     if (outcome.IsSuccess())

@@ -9,7 +9,7 @@
 
 #include "Client/Connection.h"
 #include <Interpreters/Cluster.h>
-#include <IO/S3Common.h>
+#include <IO/S3/Client.h>
 #include <Storages/StorageS3.h>
 
 namespace DB

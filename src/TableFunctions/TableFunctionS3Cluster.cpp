@@ -6,7 +6,7 @@
 
 #include <DataTypes/DataTypeString.h>
 #include <QueryPipeline/RemoteQueryExecutor.h>
-#include <IO/S3Common.h>
+#include <IO/S3/Client.h>
 #include <Storages/StorageS3.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/Context.h>

@@ -19,13 +19,14 @@
 #include <aws/core/client/CoreErrors.h>
 #include <aws/core/client/RetryStrategy.h>
 #include <aws/core/http/URI.h>
-#include <aws/s3/S3Client.h>
 
 #include <Common/RemoteHostFilter.h>
+#include <IO/Operators.h>
 #include <IO/ReadBufferFromS3.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadSettings.h>
-#include <IO/S3Common.h>
+#include <IO/S3/ClientFactory.h>
+#include <IO/WriteBufferFromString.h>
 #include <Storages/StorageS3Settings.h>
 
 #include "TestPocoHTTPServer.h"
@@ -50,12 +51,13 @@ TEST(IOTestAwsS3Client, AppendExtraSSECHeaders)
         void handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response) override
         {
             response.setStatus(Poco::Net::HTTPResponse::HTTP_OK);
-            std::ostream & out = response.send();
+            DB::WriteBufferFromOwnString tmp;
             for (const auto & [header_name, header_value] : request)
             {
-                if (boost::algorithm::starts_with(header_name, "x-amz-server-side-encryption-customer-"))
+                if (boost::algorithm::starts_with(header_name, "x-amz-server-side-encryption-customer-")
+                    || boost::algorithm::starts_with(header_name, "x-amz-copy-source-server-side-encryption-customer-"))
                 {
-                    out << header_name << ": " << header_value << "\n";
+                    tmp << header_name << ": " << header_value << "\n";
                 }
                 else if (header_name == "authorization")
                 {
@@ -64,9 +66,18 @@ TEST(IOTestAwsS3Client, AppendExtraSSECHeaders)
                     for (const auto & part : parts)
                     {
                         if (boost::algorithm::starts_with(part, "SignedHeaders="))
-                            out << header_name << ": ... " << part << " ...\n";
+                            tmp << header_name << ": ... " << part << " ...\n";
                     }
                 }
+            }
+            std::ostream & out = response.send();
+            if (Poco::URI(request.getURI()).getPath() == "/IOTestAwsS3ClientAppendExtraHeaders/TheKey")
+            {
+                out << "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<CopyObjectResult><ETag>" << tmp.str() << "</ETag><LastModified>timestamp</LastModified><ChecksumCRC32>string</ChecksumCRC32><ChecksumCRC32C>string</ChecksumCRC32C><ChecksumSHA1>string</ChecksumSHA1><ChecksumSHA256>string</ChecksumSHA256></CopyObjectResult>";
+            }
+            else
+            {
+                out << tmp.str();
             }
             out.flush();
         }
@@ -75,39 +86,18 @@ TEST(IOTestAwsS3Client, AppendExtraSSECHeaders)
     TestPocoHTTPServer<MyRequestHandler> http;
 
     DB::RemoteHostFilter remote_host_filter;
-    unsigned int s3_max_redirects = 100;
-    DB::S3::URI uri(Poco::URI(http.getUrl() + "/IOTestAwsS3ClientAppendExtraHeaders/test.txt"));
-    String access_key_id = "ACCESS_KEY_ID";
-    String secret_access_key = "SECRET_ACCESS_KEY";
-    String region = "us-east-1";
-    String version_id;
+    DB::S3::URI uri(http.getUrl() + "/IOTestAwsS3ClientAppendExtraHeaders/test.txt");
+    DB::S3::URI result_uri(http.getUrl() + "/IOTestAwsS3ClientAppendExtraHeaders/last");
     UInt64 max_single_read_retries = 1;
-    bool enable_s3_requests_logging = false;
-    DB::S3::PocoHTTPClientConfiguration client_configuration = DB::S3::ClientFactory::instance().createClientConfiguration(
-        region,
-        remote_host_filter,
-        s3_max_redirects,
-        enable_s3_requests_logging
-    );
+    String version_id;
 
-    client_configuration.endpointOverride = uri.endpoint;
-    client_configuration.retryStrategy = std::make_shared<NoRetryStrategy>();
+    auto client_configuration = DB::S3::ClientFactory::instance().createClientConfiguration(remote_host_filter);
+    client_configuration.setRetryStrategy(std::make_shared<NoRetryStrategy>());
+    client_configuration.setCredentials("ACCESS_KEY_ID", "SECRET_ACCESS_KEY");
+    client_configuration.setRegionOverride("us-east-1");
+    client_configuration.setServerSideEncryptionCustomerKeyBase64("Kv/gDqdWVGIT4iDqg+btQvV3lc1idlm4WI+MMOyHOAw=");
 
-    String server_side_encryption_customer_key_base64 = "Kv/gDqdWVGIT4iDqg+btQvV3lc1idlm4WI+MMOyHOAw=";
-    DB::HeaderCollection headers;
-    bool use_environment_credentials = false;
-    bool use_insecure_imds_request = false;
-
-    std::shared_ptr<Aws::S3::S3Client> client = DB::S3::ClientFactory::instance().create(
-        client_configuration,
-        uri.is_virtual_hosted_style,
-        access_key_id,
-        secret_access_key,
-        server_side_encryption_customer_key_base64,
-        headers,
-        use_environment_credentials,
-        use_insecure_imds_request
-    );
+    std::shared_ptr<DB::S3::Client> client = DB::S3::ClientFactory::instance().create(client_configuration, uri);
 
     ASSERT_TRUE(client);
 
@@ -123,7 +113,16 @@ TEST(IOTestAwsS3Client, AppendExtraSSECHeaders)
 
     String content;
     DB::readStringUntilEOF(content, read_buffer);
-    EXPECT_EQ(content, "authorization: ... SignedHeaders=amz-sdk-invocation-id;amz-sdk-request;content-type;host;x-amz-api-version;x-amz-content-sha256;x-amz-date, ...\nx-amz-server-side-encryption-customer-algorithm: AES256\nx-amz-server-side-encryption-customer-key: Kv/gDqdWVGIT4iDqg+btQvV3lc1idlm4WI+MMOyHOAw=\nx-amz-server-side-encryption-customer-key-md5: fMNuOw6OLU5GG2vc6RTA+g==\n");
+    EXPECT_EQ(content, "authorization: ... SignedHeaders=amz-sdk-invocation-id;amz-sdk-request;content-type;host;x-amz-api-version;x-amz-content-sha256;x-amz-date;x-amz-server-side-encryption-customer-algorithm;x-amz-server-side-encryption-customer-key;x-amz-server-side-encryption-customer-key-md5, ...\nx-amz-server-side-encryption-customer-algorithm: AES256\nx-amz-server-side-encryption-customer-key: Kv/gDqdWVGIT4iDqg+btQvV3lc1idlm4WI+MMOyHOAw=\nx-amz-server-side-encryption-customer-key-md5: fMNuOw6OLU5GG2vc6RTA+g==\n");
+
+    Aws::S3::Model::CopyObjectRequest request;
+    request.SetBucket("IOTestAwsS3ClientAppendExtraHeaders");
+    request.SetCopySource("TheCopySource");
+    request.SetKey("TheKey");
+    auto result = client->copyObject(request); /// For `CopyObject` `S3::Client` shall send two keys.
+
+    EXPECT_TRUE(result.IsSuccess());
+    EXPECT_EQ(result.GetResult().GetCopyObjectResultDetails().GetETag(), "authorization: ... SignedHeaders=amz-sdk-invocation-id;amz-sdk-request;content-length;content-type;host;x-amz-api-version;x-amz-content-sha256;x-amz-copy-source;x-amz-copy-source-server-side-encryption-customer-algorithm;x-amz-copy-source-server-side-encryption-customer-key;x-amz-copy-source-server-side-encryption-customer-key-md5;x-amz-date;x-amz-server-side-encryption-customer-algorithm;x-amz-server-side-encryption-customer-key;x-amz-server-side-encryption-customer-key-md5, ...\nx-amz-copy-source-server-side-encryption-customer-algorithm: AES256\nx-amz-copy-source-server-side-encryption-customer-key: Kv/gDqdWVGIT4iDqg+btQvV3lc1idlm4WI+MMOyHOAw=\nx-amz-copy-source-server-side-encryption-customer-key-md5: fMNuOw6OLU5GG2vc6RTA+g==\nx-amz-server-side-encryption-customer-algorithm: AES256\nx-amz-server-side-encryption-customer-key: Kv/gDqdWVGIT4iDqg+btQvV3lc1idlm4WI+MMOyHOAw=\nx-amz-server-side-encryption-customer-key-md5: fMNuOw6OLU5GG2vc6RTA+g==\n");
 }
 
 #endif

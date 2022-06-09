@@ -9,7 +9,7 @@
 
 #include <Functions/FunctionsConversion.h>
 
-#include <IO/S3Common.h>
+#include <IO/S3/ClientFactory.h>
 
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
@@ -30,6 +30,7 @@
 
 #include <IO/ReadBufferFromS3.h>
 #include <IO/WriteBufferFromS3.h>
+#include <IO/S3/Client.h>
 
 #include <Formats/FormatFactory.h>
 #include <Formats/ReadSchemaUtils.h>
@@ -45,10 +46,6 @@
 #include <DataTypes/DataTypeString.h>
 
 #include <aws/core/auth/AWSCredentials.h>
-#include <aws/s3/S3Client.h>
-#include <aws/s3/model/ListObjectsV2Request.h>
-#include <aws/s3/model/CopyObjectRequest.h>
-#include <aws/s3/model/DeleteObjectsRequest.h>
 
 #include <Common/parseGlobs.h>
 #include <Common/quoteString.h>
@@ -87,7 +84,7 @@ class StorageS3Source::DisclosedGlobIterator::Impl : WithContext
 
 public:
     Impl(
-        const Aws::S3::S3Client & client_,
+        const S3::Client & client_,
         const S3::URI & globbed_uri_,
         ASTPtr & query_,
         const Block & virtual_header_,
@@ -161,7 +158,7 @@ private:
     {
         buffer.clear();
 
-        outcome = client.ListObjectsV2(request);
+        outcome = client.listObjectsV2(request);
         if (!outcome.IsSuccess())
             throw Exception(ErrorCodes::S3_ERROR, "Could not list objects in bucket {} with prefix {}, S3 exception: {}, message: {}",
                             quoteString(request.GetBucket()), quoteString(request.GetPrefix()),
@@ -227,7 +224,7 @@ private:
     std::mutex mutex;
     Strings buffer;
     Strings::iterator buffer_iter;
-    Aws::S3::S3Client client;
+    const S3::Client & client;
     S3::URI globbed_uri;
     ASTPtr query;
     Block virtual_header;
@@ -239,7 +236,7 @@ private:
 };
 
 StorageS3Source::DisclosedGlobIterator::DisclosedGlobIterator(
-    const Aws::S3::S3Client & client_,
+    const S3::Client & client_,
     const S3::URI & globbed_uri_,
     ASTPtr query,
     const Block & virtual_header,
@@ -392,7 +389,7 @@ StorageS3Source::StorageS3Source(
     UInt64 max_block_size_,
     UInt64 max_single_read_retries_,
     String compression_hint_,
-    const std::shared_ptr<const Aws::S3::S3Client> & client_,
+    const std::shared_ptr<const S3::Client> & client_,
     const String & bucket_,
     const String & version_id_,
     std::shared_ptr<IteratorWrapper> file_iterator_,
@@ -456,7 +453,7 @@ bool StorageS3Source::initialize()
 
 std::unique_ptr<ReadBuffer> StorageS3Source::createS3ReadBuffer(const String & key)
 {
-    const size_t object_size = DB::S3::getObjectSize(client, bucket, key, version_id, false);
+    const size_t object_size = client->getObjectSize(bucket, key, version_id, false);
 
     auto download_buffer_size = getContext()->getSettings().max_download_buffer_size;
     const bool use_parallel_download = download_buffer_size > 0 && download_thread_num > 1;
@@ -530,7 +527,7 @@ Chunk StorageS3Source::generate()
     return {};
 }
 
-static bool checkIfObjectExists(const std::shared_ptr<const Aws::S3::S3Client> & client, const String & bucket, const String & key)
+static bool checkIfObjectExists(const std::shared_ptr<const S3::Client> & client, const String & bucket, const String & key)
 {
     bool is_finished = false;
     Aws::S3::Model::ListObjectsV2Request request;
@@ -540,7 +537,7 @@ static bool checkIfObjectExists(const std::shared_ptr<const Aws::S3::S3Client> &
     request.SetPrefix(key);
     while (!is_finished)
     {
-        outcome = client->ListObjectsV2(request);
+        outcome = client->listObjectsV2(request);
         if (!outcome.IsSuccess())
             throw Exception(
                 ErrorCodes::S3_ERROR,
@@ -991,7 +988,7 @@ void StorageS3::truncate(const ASTPtr & /* query */, const StorageMetadataPtr &,
     request.SetBucket(s3_configuration.uri.bucket);
     request.SetDelete(delkeys);
 
-    auto response = s3_configuration.client->DeleteObjects(request);
+    auto response = s3_configuration.client->deleteObjects(request);
     if (!response.IsSuccess())
     {
         const auto & err = response.GetError();
@@ -1024,23 +1021,18 @@ void StorageS3::updateS3Configuration(ContextPtr ctx, StorageS3::S3Configuration
         headers = settings.auth_settings.headers;
     }
 
-    S3::PocoHTTPClientConfiguration client_configuration = S3::ClientFactory::instance().createClientConfiguration(
-        settings.auth_settings.region,
-        ctx->getRemoteHostFilter(), ctx->getGlobalContext()->getSettingsRef().s3_max_redirects,
-        ctx->getGlobalContext()->getSettingsRef().enable_s3_requests_logging);
+    S3::ClientConfiguration client_configuration = S3::ClientFactory::instance().createClientConfiguration(ctx->getRemoteHostFilter());
+    client_configuration.setRegionOverride(settings.auth_settings.region);
+    client_configuration.setMaxRedirects(ctx->getGlobalContext()->getSettingsRef().s3_max_redirects);
+    client_configuration.setEnableRequestsLogging(ctx->getGlobalContext()->getSettingsRef().enable_s3_requests_logging);
+    client_configuration.setServerSideEncryptionCustomerKeyBase64(settings.auth_settings.server_side_encryption_customer_key_base64);
+    client_configuration.setMaxConnections(upd.rw_settings.max_connections);
+    client_configuration.setCredentials(credentials.GetAWSAccessKeyId(), credentials.GetAWSSecretKey());
+    client_configuration.setExtraHeaders(std::move(headers));
+    client_configuration.setUseEnvironmentCredentials(settings.auth_settings.use_environment_credentials.value_or(ctx->getConfigRef().getBool("s3.use_environment_credentials", false)));
+    client_configuration.setUseInsecureImdsRequest(settings.auth_settings.use_insecure_imds_request.value_or(ctx->getConfigRef().getBool("s3.use_insecure_imds_request", false)));
 
-    client_configuration.endpointOverride = upd.uri.endpoint;
-    client_configuration.maxConnections = upd.rw_settings.max_connections;
-
-    upd.client = S3::ClientFactory::instance().create(
-        client_configuration,
-        upd.uri.is_virtual_hosted_style,
-        credentials.GetAWSAccessKeyId(),
-        credentials.GetAWSSecretKey(),
-        settings.auth_settings.server_side_encryption_customer_key_base64,
-        std::move(headers),
-        settings.auth_settings.use_environment_credentials.value_or(ctx->getConfigRef().getBool("s3.use_environment_credentials", false)),
-        settings.auth_settings.use_insecure_imds_request.value_or(ctx->getConfigRef().getBool("s3.use_insecure_imds_request", false)));
+    upd.client = S3::ClientFactory::instance().create(client_configuration, upd.uri);
 
     upd.auth_settings = std::move(settings.auth_settings);
 }

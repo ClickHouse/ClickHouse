@@ -26,7 +26,7 @@
 #include <Disks/ObjectStorages/S3/diskSettings.h>
 #include <Disks/ObjectStorages/MetadataStorageFromDisk.h>
 
-#include <IO/S3Common.h>
+#include <IO/S3/Client.h>
 
 #include <Storages/StorageS3Settings.h>
 

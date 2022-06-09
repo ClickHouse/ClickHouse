@@ -14,21 +14,22 @@
 #include <Processors/ISource.h>
 #include <Poco/URI.h>
 #include <Common/logger_useful.h>
-#include <IO/S3Common.h>
+#include <IO/S3/Client.h>
 #include <IO/CompressionMethod.h>
 #include <Interpreters/Context.h>
 #include <Storages/ExternalDataSourceConfiguration.h>
 
-namespace Aws::S3
-{
-    class S3Client;
-}
-
 namespace DB
 {
+namespace S3
+{
+    class Client;
+}
 
 class PullingPipelineExecutor;
 class StorageS3SequentialSource;
+
+
 class StorageS3Source : public ISource, WithContext
 {
 public:
@@ -36,7 +37,7 @@ public:
     {
     public:
         DisclosedGlobIterator(
-            const Aws::S3::S3Client & client_,
+            const S3::Client & client_,
             const S3::URI & globbed_uri_,
             ASTPtr query,
             const Block & virtual_header,
@@ -90,7 +91,7 @@ public:
         UInt64 max_block_size_,
         UInt64 max_single_read_retries_,
         String compression_hint_,
-        const std::shared_ptr<const Aws::S3::S3Client> & client_,
+        const std::shared_ptr<const S3::Client> & client_,
         const String & bucket,
         const String & version_id,
         std::shared_ptr<IteratorWrapper> file_iterator_,
@@ -112,7 +113,7 @@ private:
     UInt64 max_block_size;
     UInt64 max_single_read_retries;
     String compression_hint;
-    std::shared_ptr<const Aws::S3::S3Client> client;
+    std::shared_ptr<const S3::Client> client;
     Block sample_block;
     std::optional<FormatSettings> format_settings;
 
@@ -199,7 +200,7 @@ public:
         const S3::URI uri;
         const String access_key_id;
         const String secret_access_key;
-        std::shared_ptr<const Aws::S3::S3Client> client;
+        std::shared_ptr<const S3::Client> client;
         S3Settings::AuthSettings auth_settings;
         S3Settings::ReadWriteSettings rw_settings;
     };

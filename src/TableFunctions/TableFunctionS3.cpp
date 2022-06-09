@@ -2,7 +2,7 @@
 
 #if USE_AWS_S3
 
-#include <IO/S3Common.h>
+#include <IO/S3/Client.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/Context.h>
 #include <TableFunctions/TableFunctionFactory.h>

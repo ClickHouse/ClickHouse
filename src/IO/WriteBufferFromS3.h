@@ -20,10 +20,6 @@
 
 #include <aws/core/utils/memory/stl/AWSStringStream.h>
 
-namespace Aws::S3
-{
-class S3Client;
-}
 
 namespace Aws::S3::Model
 {
@@ -33,6 +29,12 @@ namespace Aws::S3::Model
 
 namespace DB
 {
+
+namespace S3
+{
+class Client;
+}
+
 
 using ScheduleFunc = std::function<void(std::function<void()>)>;
 class WriteBufferFromFile;
@@ -48,7 +50,7 @@ class WriteBufferFromS3 final : public BufferWithOwnMemory<WriteBuffer>
 {
 public:
     WriteBufferFromS3(
-        std::shared_ptr<const Aws::S3::S3Client> client_ptr_,
+        std::shared_ptr<const S3::Client> client_ptr_,
         const String & bucket_,
         const String & key_,
         const S3Settings::ReadWriteSettings & s3_settings_,
@@ -90,7 +92,7 @@ private:
 
     String bucket;
     String key;
-    std::shared_ptr<const Aws::S3::S3Client> client_ptr;
+    std::shared_ptr<const S3::Client> client_ptr;
     size_t upload_part_size = 0;
     S3Settings::ReadWriteSettings s3_settings;
     std::optional<std::map<String, String>> object_metadata;

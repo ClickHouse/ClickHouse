@@ -4,12 +4,11 @@
 
 #if USE_AWS_S3
 
+#include <memory>
+
 #include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Disks/ObjectStorages/S3/S3Capabilities.h>
-#include <memory>
-#include <aws/s3/S3Client.h>
-#include <aws/s3/model/HeadObjectResult.h>
-#include <aws/s3/model/ListObjectsV2Result.h>
+#include <IO/S3/Client.h>
 #include <Storages/StorageS3Settings.h>
 
 
@@ -44,7 +43,7 @@ class S3ObjectStorage : public IObjectStorage
 public:
     S3ObjectStorage(
         FileCachePtr && cache_,
-        std::unique_ptr<Aws::S3::S3Client> && client_,
+        std::unique_ptr<S3::Client> && client_,
         std::unique_ptr<S3ObjectStorageSettings> && s3_settings_,
         String version_id_,
         const S3Capabilities & s3_capabilities_,
@@ -124,12 +123,12 @@ public:
 private:
     void setNewSettings(std::unique_ptr<S3ObjectStorageSettings> && s3_settings_);
 
-    void setNewClient(std::unique_ptr<Aws::S3::S3Client> && client_);
+    void setNewClient(std::unique_ptr<S3::Client> && client_);
 
     void copyObjectImpl(
         const String & src_bucket,
         const String & src_key,
-        const String & dst_bucket,
+        const S3ObjectStorage * dst_storage,
         const String & dst_key,
         std::optional<Aws::S3::Model::HeadObjectResult> head = std::nullopt,
         std::optional<ObjectAttributes> metadata = std::nullopt) const;
@@ -137,7 +136,7 @@ private:
     void copyObjectMultipartImpl(
         const String & src_bucket,
         const String & src_key,
-        const String & dst_bucket,
+        const S3ObjectStorage * dst_storage,
         const String & dst_key,
         std::optional<Aws::S3::Model::HeadObjectResult> head = std::nullopt,
         std::optional<ObjectAttributes> metadata = std::nullopt) const;
@@ -149,7 +148,7 @@ private:
 
     std::string bucket;
 
-    MultiVersion<Aws::S3::S3Client> client;
+    MultiVersion<S3::Client> client;
     MultiVersion<S3ObjectStorageSettings> s3_settings;
     const S3Capabilities s3_capabilities;
 

@@ -11,18 +11,9 @@
 #include <IO/WriteBufferFromS3.h>
 #include <IO/ReadBufferFromS3.h>
 #include <IO/SeekAvoidingReadBuffer.h>
+#include <IO/S3/Client.h>
 #include <Interpreters/threadPoolCallbackRunner.h>
 #include <Disks/ObjectStorages/S3/diskSettings.h>
-
-#include <aws/s3/model/CopyObjectRequest.h>
-#include <aws/s3/model/ListObjectsV2Request.h>
-#include <aws/s3/model/HeadObjectRequest.h>
-#include <aws/s3/model/DeleteObjectRequest.h>
-#include <aws/s3/model/DeleteObjectsRequest.h>
-#include <aws/s3/model/CreateMultipartUploadRequest.h>
-#include <aws/s3/model/CompleteMultipartUploadRequest.h>
-#include <aws/s3/model/UploadPartCopyRequest.h>
-#include <aws/s3/model/AbortMultipartUploadRequest.h>
 
 #include <Common/IFileCache.h>
 #include <Common/FileCacheFactory.h>
@@ -91,7 +82,7 @@ Aws::S3::Model::HeadObjectOutcome S3ObjectStorage::requestObjectHeadData(const s
     request.SetBucket(bucket_from);
     request.SetKey(key);
 
-    return client_ptr->HeadObject(request);
+    return client_ptr->headObject(request);
 }
 
 bool S3ObjectStorage::exists(const std::string & path) const
@@ -208,7 +199,7 @@ void S3ObjectStorage::listPrefix(const std::string & path, RelativePathsWithSize
     Aws::S3::Model::ListObjectsV2Outcome outcome;
     do
     {
-        outcome = client_ptr->ListObjectsV2(request);
+        outcome = client_ptr->listObjectsV2(request);
         throwIfError(outcome);
 
         auto result = outcome.GetResult();
@@ -235,7 +226,7 @@ void S3ObjectStorage::removeObjectImpl(const std::string & path, bool if_exists)
         Aws::S3::Model::DeleteObjectRequest request;
         request.SetBucket(bucket);
         request.SetKey(path);
-        auto outcome = client_ptr->DeleteObject(request);
+        auto outcome = client_ptr->deleteObject(request);
 
         throwIfUnexpectedError(outcome, if_exists);
     }
@@ -250,7 +241,7 @@ void S3ObjectStorage::removeObjectImpl(const std::string & path, bool if_exists)
         Aws::S3::Model::DeleteObjectsRequest request;
         request.SetBucket(bucket);
         request.SetDelete(delkeys);
-        auto outcome = client_ptr->DeleteObjects(request);
+        auto outcome = client_ptr->deleteObjects(request);
 
         throwIfUnexpectedError(outcome, if_exists);
     }
@@ -294,7 +285,7 @@ void S3ObjectStorage::removeObjectsImpl(const PathsWithSize & paths, bool if_exi
             Aws::S3::Model::DeleteObjectsRequest request;
             request.SetBucket(bucket);
             request.SetDelete(delkeys);
-            auto outcome = client_ptr->DeleteObjects(request);
+            auto outcome = client_ptr->deleteObjects(request);
 
             throwIfUnexpectedError(outcome, if_exists);
         }
@@ -339,20 +330,21 @@ ObjectMetadata S3ObjectStorage::getObjectMetadata(const std::string & path) cons
 void S3ObjectStorage::copyObjectToAnotherObjectStorage(const std::string & object_from, const std::string & object_to, IObjectStorage & object_storage_to, std::optional<ObjectAttributes> object_to_attributes) // NOLINT
 {
     /// Shortcut for S3
-    if (auto * dest_s3 = dynamic_cast<S3ObjectStorage * >(&object_storage_to); dest_s3 != nullptr)
-        copyObjectImpl(bucket, object_from, dest_s3->bucket, object_to, {}, object_to_attributes);
+    if (const auto * dest_s3 = dynamic_cast<S3ObjectStorage * >(&object_storage_to); dest_s3 != nullptr)
+        copyObjectImpl(bucket, object_from, dest_s3, object_to, {}, object_to_attributes);
     else
         IObjectStorage::copyObjectToAnotherObjectStorage(object_from, object_to, object_storage_to, object_to_attributes);
 }
 
-void S3ObjectStorage::copyObjectImpl(const String & src_bucket, const String & src_key, const String & dst_bucket, const String & dst_key,
+void S3ObjectStorage::copyObjectImpl(const String & src_bucket, const String & src_key, const S3ObjectStorage * dst_storage, const String & dst_key,
     std::optional<Aws::S3::Model::HeadObjectResult> head,
     std::optional<ObjectAttributes> metadata) const
 {
     auto client_ptr = client.get();
+    auto dst_client_ptr = dst_storage->client.get();
     Aws::S3::Model::CopyObjectRequest request;
     request.SetCopySource(src_bucket + "/" + src_key);
-    request.SetBucket(dst_bucket);
+    request.SetBucket(dst_storage->bucket);
     request.SetKey(dst_key);
     if (metadata)
     {
@@ -360,18 +352,18 @@ void S3ObjectStorage::copyObjectImpl(const String & src_bucket, const String & s
         request.SetMetadataDirective(Aws::S3::Model::MetadataDirective::REPLACE);
     }
 
-    auto outcome = client_ptr->CopyObject(request);
+    auto outcome = dst_client_ptr->copyObject(request, client_ptr);
 
     if (!outcome.IsSuccess() && outcome.GetError().GetExceptionName() == "EntityTooLarge")
     { // Can't come here with MinIO, MinIO allows single part upload for large objects.
-        copyObjectMultipartImpl(src_bucket, src_key, dst_bucket, dst_key, head, metadata);
+        copyObjectMultipartImpl(src_bucket, src_key, dst_storage, dst_key, head, metadata);
         return;
     }
 
     throwIfError(outcome);
 }
 
-void S3ObjectStorage::copyObjectMultipartImpl(const String & src_bucket, const String & src_key, const String & dst_bucket, const String & dst_key,
+void S3ObjectStorage::copyObjectMultipartImpl(const String & src_bucket, const String & src_key, const S3ObjectStorage * dst_storage, const String & dst_key,
     std::optional<Aws::S3::Model::HeadObjectResult> head,
     std::optional<ObjectAttributes> metadata) const
 {
@@ -380,18 +372,19 @@ void S3ObjectStorage::copyObjectMultipartImpl(const String & src_bucket, const S
 
     auto settings_ptr = s3_settings.get();
     auto client_ptr = client.get();
+    auto dst_client_ptr = dst_storage->client.get();
     size_t size = head->GetContentLength();
 
     String multipart_upload_id;
 
     {
         Aws::S3::Model::CreateMultipartUploadRequest request;
-        request.SetBucket(dst_bucket);
+        request.SetBucket(dst_storage->bucket);
         request.SetKey(dst_key);
         if (metadata)
             request.SetMetadata(*metadata);
 
-        auto outcome = client_ptr->CreateMultipartUpload(request);
+        auto outcome = dst_client_ptr->createMultipartUpload(request);
 
         throwIfError(outcome);
 
@@ -405,20 +398,20 @@ void S3ObjectStorage::copyObjectMultipartImpl(const String & src_bucket, const S
     {
         Aws::S3::Model::UploadPartCopyRequest part_request;
         part_request.SetCopySource(src_bucket + "/" + src_key);
-        part_request.SetBucket(dst_bucket);
+        part_request.SetBucket(dst_storage->bucket);
         part_request.SetKey(dst_key);
         part_request.SetUploadId(multipart_upload_id);
         part_request.SetPartNumber(part_number);
         part_request.SetCopySourceRange(fmt::format("bytes={}-{}", position, std::min(size, position + upload_part_size) - 1));
 
-        auto outcome = client_ptr->UploadPartCopy(part_request);
+        auto outcome = dst_client_ptr->uploadPartCopy(part_request, client_ptr);
         if (!outcome.IsSuccess())
         {
             Aws::S3::Model::AbortMultipartUploadRequest abort_request;
-            abort_request.SetBucket(dst_bucket);
+            abort_request.SetBucket(dst_storage->bucket);
             abort_request.SetKey(dst_key);
             abort_request.SetUploadId(multipart_upload_id);
-            client_ptr->AbortMultipartUpload(abort_request);
+            dst_client_ptr->abortMultipartUpload(abort_request);
             // In error case we throw exception later with first error from UploadPartCopy
         }
         throwIfError(outcome);
@@ -429,7 +422,7 @@ void S3ObjectStorage::copyObjectMultipartImpl(const String & src_bucket, const S
 
     {
         Aws::S3::Model::CompleteMultipartUploadRequest req;
-        req.SetBucket(dst_bucket);
+        req.SetBucket(dst_storage->bucket);
         req.SetKey(dst_key);
         req.SetUploadId(multipart_upload_id);
 
@@ -442,7 +435,7 @@ void S3ObjectStorage::copyObjectMultipartImpl(const String & src_bucket, const S
 
         req.SetMultipartUpload(multipart_upload);
 
-        auto outcome = client_ptr->CompleteMultipartUpload(req);
+        auto outcome = dst_client_ptr->completeMultipartUpload(req);
 
         throwIfError(outcome);
     }
@@ -452,9 +445,9 @@ void S3ObjectStorage::copyObject(const std::string & object_from, const std::str
 {
     auto head = requestObjectHeadData(bucket, object_from).GetResult();
     if (head.GetContentLength() >= static_cast<int64_t>(5UL * 1024 * 1024 * 1024))
-        copyObjectMultipartImpl(bucket, object_from, bucket, object_to, head, object_to_attributes);
+        copyObjectMultipartImpl(bucket, object_from, this, object_to, head, object_to_attributes);
     else
-        copyObjectImpl(bucket, object_from, bucket, object_to, head, object_to_attributes);
+        copyObjectImpl(bucket, object_from, this, object_to, head, object_to_attributes);
 }
 
 void S3ObjectStorage::setNewSettings(std::unique_ptr<S3ObjectStorageSettings> && s3_settings_)
@@ -462,7 +455,7 @@ void S3ObjectStorage::setNewSettings(std::unique_ptr<S3ObjectStorageSettings> &&
     s3_settings.set(std::move(s3_settings_));
 }
 
-void S3ObjectStorage::setNewClient(std::unique_ptr<Aws::S3::S3Client> && client_)
+void S3ObjectStorage::setNewClient(std::unique_ptr<S3::Client> && client_)
 {
     client.set(std::move(client_));
 }
@@ -474,7 +467,7 @@ void S3ObjectStorage::shutdown()
     /// If S3 request is failed and the method below is executed S3 client immediately returns the last failed S3 request outcome.
     /// If S3 is healthy nothing wrong will be happened and S3 requests will be processed in a regular way without errors.
     /// This should significantly speed up shutdown process if S3 is unhealthy.
-    const_cast<Aws::S3::S3Client &>(*client_ptr).DisableRequestProcessing();
+    const_cast<S3::Client &>(*client_ptr).disableRequestProcessing();
 }
 
 void S3ObjectStorage::startup()
@@ -482,7 +475,7 @@ void S3ObjectStorage::startup()
     auto client_ptr = client.get();
 
     /// Need to be enabled if it was disabled during shutdown() call.
-    const_cast<Aws::S3::S3Client &>(*client_ptr).EnableRequestProcessing();
+    const_cast<S3::Client &>(*client_ptr).enableRequestProcessing();
 }
 
 void S3ObjectStorage::applyNewSettings(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, ContextPtr context)

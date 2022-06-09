@@ -11,7 +11,7 @@
 
 #include <aws/core/client/DefaultRetryStrategy.h>
 #include <base/getFQDNOrHostName.h>
-#include <IO/S3Common.h>
+#include <IO/S3/ClientFactory.h>
 #include <Disks/DiskCacheWrapper.h>
 #include <Storages/StorageS3Settings.h>
 #include <Disks/ObjectStorages/S3/ProxyConfiguration.h>
@@ -109,43 +109,39 @@ std::shared_ptr<S3::ProxyConfiguration> getProxyConfiguration(const String & pre
 }
 
 
-std::unique_ptr<Aws::S3::S3Client> getClient(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, ContextPtr context)
+std::unique_ptr<S3::Client> getClient(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, ContextPtr context)
 {
-    S3::PocoHTTPClientConfiguration client_configuration = S3::ClientFactory::instance().createClientConfiguration(
-        config.getString(config_prefix + ".region", ""),
-        context->getRemoteHostFilter(), context->getGlobalContext()->getSettingsRef().s3_max_redirects,
-        context->getGlobalContext()->getSettingsRef().enable_s3_requests_logging);
+    S3::ClientConfiguration client_configuration = S3::ClientFactory::instance().createClientConfiguration(context->getRemoteHostFilter());
+    client_configuration.setRegionOverride(config.getString(config_prefix + ".region", ""));
+    client_configuration.setMaxRedirects(context->getGlobalContext()->getSettingsRef().s3_max_redirects);
+    client_configuration.setEnableRequestsLogging(context->getGlobalContext()->getSettingsRef().enable_s3_requests_logging);
+    client_configuration.setServerSideEncryptionCustomerKeyBase64(config.getString(config_prefix + ".server_side_encryption_customer_key_base64", ""));
 
     S3::URI uri(Poco::URI(config.getString(config_prefix + ".endpoint")));
     if (uri.key.back() != '/')
         throw Exception("S3 path must ends with '/', but '" + uri.key + "' doesn't.", ErrorCodes::BAD_ARGUMENTS);
 
-    client_configuration.connectTimeoutMs = config.getUInt(config_prefix + ".connect_timeout_ms", 10000);
-    client_configuration.requestTimeoutMs = config.getUInt(config_prefix + ".request_timeout_ms", 5000);
-    client_configuration.maxConnections = config.getUInt(config_prefix + ".max_connections", 100);
-    client_configuration.endpointOverride = uri.endpoint;
+    client_configuration.setConnectTimeoutMs(config.getUInt(config_prefix + ".connect_timeout_ms", 10000));
+    client_configuration.setRequestTimeoutMs(config.getUInt(config_prefix + ".request_timeout_ms", 5000));
+    client_configuration.setMaxConnections(config.getUInt(config_prefix + ".max_connections", 100));
 
     auto proxy_config = getProxyConfiguration(config_prefix, config);
     if (proxy_config)
     {
-        client_configuration.per_request_configuration
-            = [proxy_config](const auto & request) { return proxy_config->getConfiguration(request); };
-        client_configuration.error_report
-            = [proxy_config](const auto & request_config) { proxy_config->errorReport(request_config); };
+        client_configuration.setPerRequestConfiguration([proxy_config](const auto & request) { return proxy_config->getConfiguration(request); });
+        client_configuration.setErrorReport([proxy_config](const auto & request_config) { proxy_config->errorReport(request_config); });
     }
 
-    client_configuration.retryStrategy
-        = std::make_shared<Aws::Client::DefaultRetryStrategy>(config.getUInt(config_prefix + ".retry_attempts", 10));
+    client_configuration.setRetryStrategy(std::make_shared<Aws::Client::DefaultRetryStrategy>(config.getUInt(config_prefix + ".retry_attempts", 10)));
 
-    return S3::ClientFactory::instance().create(
-        client_configuration,
-        uri.is_virtual_hosted_style,
+    client_configuration.setCredentials(
         config.getString(config_prefix + ".access_key_id", ""),
-        config.getString(config_prefix + ".secret_access_key", ""),
-        config.getString(config_prefix + ".server_side_encryption_customer_key_base64", ""),
-        {},
-        config.getBool(config_prefix + ".use_environment_credentials", config.getBool("s3.use_environment_credentials", false)),
-        config.getBool(config_prefix + ".use_insecure_imds_request", config.getBool("s3.use_insecure_imds_request", false)));
+        config.getString(config_prefix + ".secret_access_key", "")
+    );
+    client_configuration.setUseEnvironmentCredentials(config.getBool(config_prefix + ".use_environment_credentials", config.getBool("s3.use_environment_credentials", false)));
+    client_configuration.setUseInsecureImdsRequest(config.getBool(config_prefix + ".use_insecure_imds_request", config.getBool("s3.use_insecure_imds_request", false)));
+
+    return S3::ClientFactory::instance().create(client_configuration, uri);
 }
 
 }

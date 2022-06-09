@@ -21,8 +21,6 @@
 #include <Poco/Net/HTTPResponse.h>
 #include <re2/re2.h>
 
-#include <boost/algorithm/string.hpp>
-
 
 namespace ProfileEvents
 {
@@ -53,61 +51,19 @@ namespace DB::ErrorCodes
 namespace DB::S3
 {
 
-PocoHTTPClientConfiguration::PocoHTTPClientConfiguration(
-        const String & force_region_,
-        const RemoteHostFilter & remote_host_filter_,
-        unsigned int s3_max_redirects_,
-        bool enable_s3_requests_logging_)
-    : force_region(force_region_)
-    , remote_host_filter(remote_host_filter_)
-    , s3_max_redirects(s3_max_redirects_)
-    , enable_s3_requests_logging(enable_s3_requests_logging_)
-{
-}
 
-void PocoHTTPClientConfiguration::updateSchemeAndRegion()
-{
-    if (!endpointOverride.empty())
-    {
-        static const RE2 region_pattern(R"(^s3[.\-]([a-z0-9\-]+)\.amazonaws\.)");
-        Poco::URI uri(endpointOverride);
-        if (uri.getScheme() == "http")
-            scheme = Aws::Http::Scheme::HTTP;
-
-        if (force_region.empty())
-        {
-            String matched_region;
-            if (re2::RE2::PartialMatch(uri.getHost(), region_pattern, &matched_region))
-            {
-                boost::algorithm::to_lower(matched_region);
-                region = matched_region;
-            }
-            else
-            {
-                /// In global mode AWS C++ SDK send `us-east-1` but accept switching to another one if being suggested.
-                region = Aws::Region::AWS_GLOBAL;
-            }
-        }
-        else
-        {
-            region = force_region;
-        }
-    }
-}
-
-
-PocoHTTPClient::PocoHTTPClient(const PocoHTTPClientConfiguration & client_configuration)
-    : per_request_configuration(client_configuration.per_request_configuration)
-    , error_report(client_configuration.error_report)
+PocoHTTPClient::PocoHTTPClient(const ClientConfiguration & client_configuration)
+    : per_request_configuration(client_configuration.getPerRequestConfiguration())
+    , error_report(client_configuration.getErrorReport())
     , timeouts(ConnectionTimeouts(
-          Poco::Timespan(client_configuration.connectTimeoutMs * 1000), /// connection timeout.
-          Poco::Timespan(client_configuration.requestTimeoutMs * 1000), /// send timeout.
-          Poco::Timespan(client_configuration.requestTimeoutMs * 1000) /// receive timeout.
+          Poco::Timespan(client_configuration.getConnectTimeoutMs() * 1000), /// connection timeout.
+          Poco::Timespan(client_configuration.getRequestTimeoutMs() * 1000), /// send timeout.
+          Poco::Timespan(client_configuration.getRequestTimeoutMs() * 1000) /// receive timeout.
           ))
-    , remote_host_filter(client_configuration.remote_host_filter)
-    , s3_max_redirects(client_configuration.s3_max_redirects)
-    , enable_s3_requests_logging(client_configuration.enable_s3_requests_logging)
-    , extra_headers(client_configuration.extra_headers)
+    , remote_host_filter(client_configuration.getRemoteHostFilter())
+    , s3_max_redirects(client_configuration.getMaxRedirects())
+    , enable_s3_requests_logging(client_configuration.getEnableRequestsLogging())
+    , extra_headers(client_configuration.getExtraHeaders())
 {
 }
 
@@ -187,12 +143,12 @@ void PocoHTTPClient::makeRequestInternal(
                 /// Reverse proxy can replace host header with resolved ip address instead of host name.
                 /// This can lead to request signature difference on S3 side.
                 session = makeHTTPSession(target_uri, timeouts, /* resolve_host = */ false);
-                bool use_tunnel = request_configuration.proxy_scheme == Aws::Http::Scheme::HTTP && target_uri.getScheme() == "https";
+                bool use_tunnel = request_configuration.proxy_scheme == "http" && target_uri.getScheme() == "https";
 
                 session->setProxy(
                     request_configuration.proxy_host,
                     request_configuration.proxy_port,
-                    Aws::Http::SchemeMapper::ToString(request_configuration.proxy_scheme),
+                    request_configuration.proxy_scheme,
                     use_tunnel
                 );
             }
@@ -250,7 +206,7 @@ void PocoHTTPClient::makeRequestInternal(
             for (const auto & [header_name, header_value] : request.GetHeaders())
                 poco_request.set(header_name, header_value);
             for (const auto & [header_name, header_value] : extra_headers)
-                poco_request.set(boost::algorithm::to_lower_copy(header_name), header_value);
+                poco_request.set(header_name, header_value);
 
             Poco::Net::HTTPResponse poco_response;
 
@@ -323,7 +279,7 @@ void PocoHTTPClient::makeRequestInternal(
             else if (status_code >= 300)
             {
                 ProfileEvents::increment(select_metric(S3MetricType::Errors));
-                if (status_code >= 500 && error_report)
+                if (status_code >= 500)
                     error_report(request_configuration);
             }
 

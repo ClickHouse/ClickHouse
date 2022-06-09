@@ -11,25 +11,22 @@
 #include <IO/ParallelReadBuffer.h>
 #include <IO/ReadBuffer.h>
 #include <IO/ReadSettings.h>
+#include <IO/S3/Client.h>
 #include <IO/SeekableReadBuffer.h>
 #include <IO/WithFileName.h>
-
 #include <aws/s3/model/GetObjectResult.h>
 
-namespace Aws::S3
-{
-class S3Client;
-}
 
 namespace DB
 {
+
 /**
  * Perform S3 HTTP GET request and provide response to read.
  */
 class ReadBufferFromS3 : public SeekableReadBuffer, public WithFileName, public WithFileSize
 {
 private:
-    std::shared_ptr<const Aws::S3::S3Client> client_ptr;
+    std::shared_ptr<const S3::Client> client_ptr;
     String bucket;
     String key;
     String version_id;
@@ -48,7 +45,7 @@ private:
 
 public:
     ReadBufferFromS3(
-        std::shared_ptr<const Aws::S3::S3Client> client_ptr_,
+        std::shared_ptr<const S3::Client> client_ptr_,
         const String & bucket_,
         const String & key_,
         const String & version_id_,
@@ -94,7 +91,7 @@ class ReadBufferS3Factory : public ParallelReadBuffer::ReadBufferFactory, public
 {
 public:
     explicit ReadBufferS3Factory(
-        std::shared_ptr<const Aws::S3::S3Client> client_ptr_,
+        std::shared_ptr<const S3::Client> client_ptr_,
         const String & bucket_,
         const String & key_,
         const String & version_id_,
@@ -125,7 +122,7 @@ public:
     String getFileName() const override { return bucket + "/" + key; }
 
 private:
-    std::shared_ptr<const Aws::S3::S3Client> client_ptr;
+    std::shared_ptr<const S3::Client> client_ptr;
     const String bucket;
     const String key;
     const String version_id;

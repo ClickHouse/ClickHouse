@@ -1,5 +1,4 @@
 #include <Common/config.h>
-#include "IO/S3Common.h"
 
 #if USE_AWS_S3
 
@@ -7,9 +6,7 @@
 #include <IO/ReadBufferFromS3.h>
 #include <Common/Stopwatch.h>
 
-#include <aws/s3/S3Client.h>
-#include <aws/s3/model/GetObjectRequest.h>
-#include <aws/s3/model/HeadObjectRequest.h>
+#include <IO/S3/Client.h>
 
 #include <Common/logger_useful.h>
 #include <base/sleep.h>
@@ -37,7 +34,7 @@ namespace ErrorCodes
 
 
 ReadBufferFromS3::ReadBufferFromS3(
-    std::shared_ptr<const Aws::S3::S3Client> client_ptr_,
+    std::shared_ptr<const S3::Client> client_ptr_,
     const String & bucket_,
     const String & key_,
     const String & version_id_,
@@ -227,7 +224,7 @@ size_t ReadBufferFromS3::getFileSize()
     if (file_size)
         return *file_size;
 
-    auto object_size = S3::getObjectSize(client_ptr, bucket, key, version_id, false);
+    auto object_size = client_ptr->getObjectSize(bucket, key, version_id, false);
 
     file_size = object_size;
     return *file_size;
@@ -294,7 +291,7 @@ std::unique_ptr<ReadBuffer> ReadBufferFromS3::initialize()
             offset);
     }
 
-    Aws::S3::Model::GetObjectOutcome outcome = client_ptr->GetObject(req);
+    Aws::S3::Model::GetObjectOutcome outcome = client_ptr->getObject(req);
 
     if (outcome.IsSuccess())
     {
