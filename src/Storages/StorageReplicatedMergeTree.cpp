@@ -35,7 +35,6 @@
 #include <Storages/MergeTree/LeaderElection.h>
 #include <Storages/MergeTree/ZeroCopyLock.h>
 
-
 #include <Databases/DatabaseOnDisk.h>
 
 #include <Parsers/formatAST.h>
@@ -92,6 +91,7 @@
 #include <numeric>
 #include <thread>
 #include <future>
+
 
 namespace fs = std::filesystem;
 
@@ -5770,7 +5770,6 @@ void StorageReplicatedMergeTree::fetchPartition(
     String best_replica;
 
     {
-
         /// List of replicas of source shard.
         replicas = zookeeper->getChildren(fs::path(from) / "replicas");
 

@@ -841,6 +841,21 @@ bool ZooKeeper::waitForDisappear(const std::string & path, const WaitCondition &
     return false;
 }
 
+void ZooKeeper::waitForEphemeralToDisappearIfAny(const std::string & path)
+{
+    zkutil::EventPtr eph_node_disappeared = std::make_shared<Poco::Event>();
+    String content;
+    if (!tryGet(path, content, nullptr, eph_node_disappeared))
+        return;
+
+    int32_t timeout_ms = 2 * session_timeout_ms;
+    if (!eph_node_disappeared->tryWait(timeout_ms))
+        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR,
+                            "Ephemeral node {} still exists after {}s, probably it's owned by someone else. "
+                            "Either session_timeout_ms in client's config is different from server's config or it's a bug. "
+                            "Node data: '{}'", path, timeout_ms / 1000, content);
+}
+
 ZooKeeperPtr ZooKeeper::startNewSession() const
 {
     return std::make_shared<ZooKeeper>(hosts, identity, session_timeout_ms, operation_timeout_ms, chroot, implementation, zk_log, get_priority_load_balancing);
