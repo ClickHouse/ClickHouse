@@ -19,10 +19,15 @@ using SnapshotsQueue = ConcurrentBoundedQueue<CreateSnapshotTask>;
 class KeeperStateMachine : public nuraft::state_machine
 {
 public:
+    using CommitCallback = std::function<void(KeeperStorage::RequestForSession &)>;
+
     KeeperStateMachine(
-        ResponsesQueue & responses_queue_, SnapshotsQueue & snapshots_queue_,
-        const std::string & snapshots_path_, const CoordinationSettingsPtr & coordination_settings_,
-        const std::string & superdigest_ = "");
+        ResponsesQueue & responses_queue_,
+        SnapshotsQueue & snapshots_queue_,
+        const std::string & snapshots_path_,
+        const CoordinationSettingsPtr & coordination_settings_,
+        const std::string & superdigest_ = "",
+        CommitCallback commit_callback_ = [](KeeperStorage::RequestForSession &) {});
 
     /// Read state from the latest snapshot
     void init();
@@ -136,6 +141,8 @@ private:
     std::atomic<uint64_t> last_committed_idx;
 
     Poco::Logger * log;
+
+    CommitCallback commit_callback;
 
     /// Cluster config for our quorum.
     /// It's a copy of config stored in StateManager, but here
