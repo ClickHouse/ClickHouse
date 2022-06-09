@@ -279,4 +279,4 @@
 	url = https://github.com/arthurpassos/udns.git
 [submodule "contrib/cpp-dns"]
 	path = contrib/cpp-dns
-	url = git@github.com:YukiWorkshop/cpp-dns.git
+	url = https://github.com/YukiWorkshop/cpp-dns.git
