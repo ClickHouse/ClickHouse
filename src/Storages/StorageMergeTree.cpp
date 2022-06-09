@@ -124,6 +124,7 @@ void StorageMergeTree::startup()
     /// Temporary directories contain incomplete results of merges (after forced restart)
     ///  and don't allow to reinitialize them, so delete each of them immediately
     clearOldTemporaryDirectories(0, {"tmp_", "delete_tmp_"});
+    clearOldBrokenPartsFromDetachedDirecory();
 
     /// NOTE background task will also do the above cleanups periodically.
     time_after_previous_cleanup_parts.restart();
@@ -1184,6 +1185,18 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
             }, common_assignee_trigger, getStorageID()), /* need_trigger */ false);
         scheduled = true;
     }
+
+    if (auto lock = time_after_previous_cleanup_broken_detached_parts.compareAndRestartDeferred(
+            getSettings()->merge_tree_clear_old_broken_detached_parts_interval_seconds))
+    {
+        assignee.scheduleCommonTask(std::make_shared<ExecutableLambdaAdapter>(
+            [this, share_lock] ()
+            {
+                return clearOldBrokenPartsFromDetachedDirecory();
+            }, common_assignee_trigger, getStorageID()), /* need_trigger */ false);
+        scheduled = true;
+    }
+
     if (auto lock = time_after_previous_cleanup_parts.compareAndRestartDeferred(
             getSettings()->merge_tree_clear_old_parts_interval_seconds))
     {

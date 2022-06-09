@@ -176,6 +176,11 @@ Poco::Timestamp DiskDecorator::getLastModified(const String & path)
     return delegate->getLastModified(path);
 }
 
+Poco::Timestamp DiskDecorator::getLastChanged(const String & path)
+{
+    return delegate->getLastChanged(path);
+}
+
 void DiskDecorator::setReadOnly(const String & path)
 {
     delegate->setReadOnly(path);

@@ -1846,6 +1846,51 @@ void MergeTreeData::clearPartsFromFilesystemImpl(const DataPartsVector & parts_t
     }
 }
 
+size_t MergeTreeData::clearOldBrokenPartsFromDetachedDirecory()
+{
+    DetachedPartsInfo detached_parts = getDetachedParts();
+    if (detached_parts.empty())
+        return 0;
+
+    PartsTemporaryRename renamed_parts(*this, "detached/");
+
+    for (const auto & part_info : detached_parts)
+    {
+        if (!part_info.valid_name || part_info.prefix.empty())
+            continue;
+
+        const auto & removable_detached_parts_prefixes = DetachedPartInfo::DETACHED_REASONS_REMOVABLE_BY_TIMEOUT;
+        bool can_be_removed_by_timeout = std::find(
+            removable_detached_parts_prefixes.begin(),
+            removable_detached_parts_prefixes.end(),
+            part_info.prefix) != removable_detached_parts_prefixes.end();
+
+        if (!can_be_removed_by_timeout)
+            continue;
+
+        time_t current_time = time(nullptr);
+        ssize_t threshold = current_time - getSettings()->merge_tree_clear_old_broken_detached_parts_interval_seconds;
+        time_t last_change_time = part_info.disk->getLastChanged(fs::path(relative_data_path) / "detached" / part_info.dir_name / "").epochTime();
+
+        if (last_change_time >= threshold)
+            continue;
+
+        renamed_parts.addPart(part_info.dir_name, "deleting_" + part_info.dir_name, part_info.disk);
+    }
+
+    LOG_DEBUG(log, "Will clean up {} detached parts", renamed_parts.old_and_new_names.size());
+
+    renamed_parts.tryRenameAll();
+
+    for (const auto & [old_name, new_name, disk] : renamed_parts.old_and_new_names)
+    {
+        removeDetachedPart(disk, fs::path(relative_data_path) / "detached" / new_name / "", old_name, false);
+        LOG_DEBUG(log, "Removed broken detached part {} due to a timeout for broken detached parts", old_name);
+    }
+
+    return renamed_parts.old_and_new_names.size();
+}
+
 size_t MergeTreeData::clearOldWriteAheadLogs()
 {
     DataPartsVector parts = getDataPartsVectorForInternalUsage();
@@ -1892,6 +1937,7 @@ size_t MergeTreeData::clearOldWriteAheadLogs()
         auto disk_ptr = *disk_it;
         if (disk_ptr->isBroken())
             continue;
+
         for (auto it = disk_ptr->iterateDirectory(relative_data_path); it->isValid(); it->next())
         {
             auto min_max_block_number = MergeTreeWriteAheadLog::tryParseMinMaxBlockNumber(it->name());

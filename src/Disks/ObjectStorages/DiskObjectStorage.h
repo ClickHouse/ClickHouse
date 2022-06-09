@@ -147,6 +147,8 @@ public:
 
     Poco::Timestamp getLastModified(const String & path) override;
 
+    Poco::Timestamp getLastChanged(const String & path) override;
+
     bool isRemote() const override { return true; }
 
     void shutdown() override;
