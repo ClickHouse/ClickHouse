@@ -10,7 +10,6 @@
 #include <Common/hex.h>
 #include <Interpreters/Context.h>
 #include <IO/ReadHelpers.h>
-#include <IO/ReadSettings.h>
 #include <IO/WriteHelpers.h>
 #include <filesystem>
 #include <thread>
@@ -106,7 +105,6 @@ TEST(LRUFileCache, get)
     DB::CurrentThread::QueryScope query_scope_holder(query_context);
 
     DB::FileCacheSettings settings;
-    DB::ReadSettings read_settings;
     settings.max_size = 30;
     settings.max_elements = 5;
     auto cache = DB::LRUFileCache(cache_base_path, settings);
