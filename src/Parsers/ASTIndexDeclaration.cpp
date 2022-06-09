@@ -26,7 +26,7 @@ ASTPtr ASTIndexDeclaration::clone() const
 void ASTIndexDeclaration::formatImpl(const FormatSettings & s, FormatState & state, FormatStateStacked frame) const
 {
     /// '' is from CREATE INDEX
-    if (name != "")
+    if (!name.empty())
     {
         s.ostr << backQuoteIfNeed(name);
         s.ostr << " ";
