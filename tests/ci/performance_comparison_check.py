@@ -102,6 +102,10 @@ if __name__ == "__main__":
     if "RUN_BY_HASH_TOTAL" in os.environ:
         run_by_hash_total = int(os.getenv("RUN_BY_HASH_TOTAL", "1"))
         run_by_hash_num = int(os.getenv("RUN_BY_HASH_NUM", "1"))
+        if run_by_hash_num != 1:
+            print("Skipped ", run_by_hash_num)
+            sys.exit(0)
+
         docker_env += (
             f" -e CHPC_TEST_RUN_BY_HASH_TOTAL={run_by_hash_total}"
             f" -e CHPC_TEST_RUN_BY_HASH_NUM={run_by_hash_num}"
