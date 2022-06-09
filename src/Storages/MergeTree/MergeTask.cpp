@@ -149,7 +149,6 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
         global_ctx->merging_columns,
         global_ctx->merging_column_names);
 
-
     auto local_single_disk_volume = std::make_shared<SingleDiskVolume>("volume_" + global_ctx->future_part->name, ctx->disk, 0);
     global_ctx->new_data_part = global_ctx->data->createPart(
         global_ctx->future_part->name,
@@ -293,10 +292,10 @@ MergeTask::StageRuntimeContextPtr MergeTask::ExecuteAndFinalizeHorizontalPart::g
     new_ctx->column_sizes = std::move(ctx->column_sizes);
     new_ctx->compression_codec = std::move(ctx->compression_codec);
     new_ctx->tmp_disk = std::move(ctx->tmp_disk);
-    new_ctx->it_name_and_type = std::move(ctx->it_name_and_type);
-    new_ctx->column_num_for_vertical_merge = std::move(ctx->column_num_for_vertical_merge);
-    new_ctx->read_with_direct_io = std::move(ctx->read_with_direct_io);
-    new_ctx->need_sync = std::move(ctx->need_sync);
+    new_ctx->it_name_and_type = ctx->it_name_and_type;
+    new_ctx->column_num_for_vertical_merge = ctx->column_num_for_vertical_merge;
+    new_ctx->read_with_direct_io = ctx->read_with_direct_io;
+    new_ctx->need_sync = ctx->need_sync;
 
     ctx.reset();
     return new_ctx;
@@ -306,7 +305,7 @@ MergeTask::StageRuntimeContextPtr MergeTask::VerticalMergeStage::getContextForNe
 {
     auto new_ctx = std::make_shared<MergeProjectionsRuntimeContext>();
 
-    new_ctx->need_sync = std::move(ctx->need_sync);
+    new_ctx->need_sync = ctx->need_sync;
 
     ctx.reset();
     return new_ctx;
@@ -423,10 +422,6 @@ void MergeTask::VerticalMergeStage::prepareVerticalMergeForOneColumn() const
         auto column_part_source = std::make_shared<MergeTreeSequentialSource>(
             *global_ctx->data, global_ctx->storage_snapshot, global_ctx->future_part->parts[part_num], column_names, ctx->read_with_direct_io, true);
 
-        /// Dereference unique_ptr
-        column_part_source->setProgressCallback(
-            MergeProgressCallback(global_ctx->merge_list_element_ptr, global_ctx->watch_prev_elapsed, *global_ctx->column_progress));
-
         pipes.emplace_back(std::move(column_part_source));
     }
 
@@ -437,6 +432,16 @@ void MergeTask::VerticalMergeStage::prepareVerticalMergeForOneColumn() const
     pipe.addTransform(std::move(transform));
 
     ctx->column_parts_pipeline = QueryPipeline(std::move(pipe));
+
+    /// Dereference unique_ptr
+    ctx->column_parts_pipeline.setProgressCallback(MergeProgressCallback(
+        global_ctx->merge_list_element_ptr,
+        global_ctx->watch_prev_elapsed,
+        *global_ctx->column_progress));
+
+    /// Is calculated inside MergeProgressCallback.
+    ctx->column_parts_pipeline.disableProfileEventUpdate();
+
     ctx->executor = std::make_unique<PullingPipelineExecutor>(ctx->column_parts_pipeline);
 
     ctx->column_to = std::make_unique<MergedColumnOnlyOutputStream>(
@@ -758,10 +763,6 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream()
         auto input = std::make_unique<MergeTreeSequentialSource>(
             *global_ctx->data, global_ctx->storage_snapshot, part, global_ctx->merging_column_names, ctx->read_with_direct_io, true);
 
-        /// Dereference unique_ptr and pass horizontal_stage_progress by reference
-        input->setProgressCallback(
-            MergeProgressCallback(global_ctx->merge_list_element_ptr, global_ctx->watch_prev_elapsed, *global_ctx->horizontal_stage_progress));
-
         Pipe pipe(std::move(input));
 
         if (global_ctx->metadata_snapshot->hasSortingKey())
@@ -861,6 +862,11 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream()
     }
 
     global_ctx->merged_pipeline = QueryPipeline(std::move(res_pipe));
+    /// Dereference unique_ptr and pass horizontal_stage_progress by reference
+    global_ctx->merged_pipeline.setProgressCallback(MergeProgressCallback(global_ctx->merge_list_element_ptr, global_ctx->watch_prev_elapsed, *global_ctx->horizontal_stage_progress));
+    /// Is calculated inside MergeProgressCallback.
+    global_ctx->merged_pipeline.disableProfileEventUpdate();
+
     global_ctx->merging_executor = std::make_unique<PullingPipelineExecutor>(global_ctx->merged_pipeline);
 }
 

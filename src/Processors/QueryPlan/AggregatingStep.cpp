@@ -12,7 +12,9 @@
 #include <Processors/Merges/FinishAggregatingInOrderTransform.h>
 #include <Interpreters/Aggregator.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
+#include <Columns/ColumnFixedString.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeFixedString.h>
 
 namespace DB
 {
@@ -31,6 +33,17 @@ static ITransformingStep::Traits getTraits()
             .preserves_number_of_rows = false,
         }
     };
+}
+
+Block appendGroupingSetColumn(Block header)
+{
+    Block res;
+    res.insert({std::make_shared<DataTypeUInt64>(), "__grouping_set"});
+
+    for (auto & col : header)
+        res.insert(std::move(col));
+
+    return res;
 }
 
 static Block appendGroupingColumn(Block block, const GroupingSetsParamsList & params)
@@ -66,7 +79,7 @@ AggregatingStep::AggregatingStep(
     : ITransformingStep(input_stream_, appendGroupingColumn(params_.getHeader(final_), grouping_sets_params_), getTraits(), false)
     , params(std::move(params_))
     , grouping_sets_params(std::move(grouping_sets_params_))
-    , final(std::move(final_))
+    , final(final_)
     , max_block_size(max_block_size_)
     , aggregation_in_order_max_block_bytes(aggregation_in_order_max_block_bytes_)
     , merge_threads(merge_threads_)

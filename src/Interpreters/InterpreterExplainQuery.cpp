@@ -1,6 +1,7 @@
 #include <Interpreters/InterpreterExplainQuery.h>
 
 #include <QueryPipeline/BlockIO.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeObject.h>
@@ -358,7 +359,8 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                 if (settings.graph)
                 {
                     /// Pipe holds QueryPlan, should not go out-of-scope
-                    auto pipe = QueryPipelineBuilder::getPipe(std::move(*pipeline));
+                    QueryPlanResourceHolder resources;
+                    auto pipe = QueryPipelineBuilder::getPipe(std::move(*pipeline), resources);
                     const auto & processors = pipe.getProcessors();
 
                     if (settings.compact)

@@ -27,7 +27,8 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <QueryPipeline/Pipe.h>
-#include <Processors/Sources/SourceWithProgress.h>
+#include <QueryPipeline/QueryPipeline.h>
+#include <Processors/ISource.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
@@ -58,7 +59,7 @@ static std::string getBaseName(const String & path)
     return path.substr(basename_start + 1);
 }
 
-class StorageHiveSource : public SourceWithProgress, WithContext
+class StorageHiveSource : public ISource, WithContext
 {
 public:
     using FileFormat = StorageHive::FileFormat;
@@ -113,7 +114,7 @@ public:
         ContextPtr context_,
         UInt64 max_block_size_,
         const Names & text_input_field_names_ = {})
-        : SourceWithProgress(getHeader(sample_block_, source_info_))
+        : ISource(getHeader(sample_block_, source_info_))
         , WithContext(context_)
         , source_info(std::move(source_info_))
         , hdfs_namenode_url(std::move(hdfs_namenode_url_))
@@ -219,16 +220,15 @@ public:
                 auto input_format = FormatFactory::instance().getInputFormat(
                     format, *read_buf, to_read_block, getContext(), max_block_size, updateFormatSettings(current_file));
 
-                QueryPipelineBuilder builder;
-                builder.init(Pipe(input_format));
+                Pipe pipe(input_format);
                 if (columns_description.hasDefaults())
                 {
-                    builder.addSimpleTransform([&](const Block & header)
+                    pipe.addSimpleTransform([&](const Block & header)
                     {
                         return std::make_shared<AddingDefaultsTransform>(header, columns_description, *input_format, getContext());
                     });
                 }
-                pipeline = std::make_unique<QueryPipeline>(QueryPipelineBuilder::getPipeline(std::move(builder)));
+                pipeline = std::make_unique<QueryPipeline>(std::move(pipe));
                 reader = std::make_unique<PullingPipelineExecutor>(*pipeline);
             }
 
@@ -685,7 +685,7 @@ HiveFilePtr StorageHive::getHiveFileIfNeeded(
     return hive_file;
 }
 
-bool StorageHive::isColumnOriented() const
+bool StorageHive::supportsSubsetOfColumns() const
 {
     return format_name == "Parquet" || format_name == "ORC";
 }
@@ -865,7 +865,7 @@ std::optional<UInt64>
 StorageHive::totalRowsImpl(const Settings & settings, const SelectQueryInfo & query_info, ContextPtr context_, PruneLevel prune_level) const
 {
     /// Row-based format like Text doesn't support totalRowsByPartitionPredicate
-    if (!isColumnOriented())
+    if (!supportsSubsetOfColumns())
         return {};
 
 
