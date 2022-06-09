@@ -61,6 +61,7 @@ namespace ErrorCodes
     extern const int TOO_MANY_PARTITIONS;
     extern const int DISTRIBUTED_TOO_MANY_PENDING_BYTES;
     extern const int ARGUMENT_OUT_OF_BOUND;
+    extern const int NO_SUCH_COLUMN_IN_TABLE;
 }
 
 
@@ -240,6 +241,7 @@ namespace
             || code == ErrorCodes::CANNOT_DECOMPRESS
             || code == ErrorCodes::DISTRIBUTED_BROKEN_BATCH_INFO
             || code == ErrorCodes::DISTRIBUTED_BROKEN_BATCH_FILES
+            || code == ErrorCodes::NO_SUCH_COLUMN_IN_TABLE
             || (!remote_error && code == ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF);
     }
 
