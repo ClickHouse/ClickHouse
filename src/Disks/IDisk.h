@@ -258,6 +258,10 @@ public:
     /// Get last modified time of file or directory at `path`.
     virtual Poco::Timestamp getLastModified(const String & path) = 0;
 
+    /// Get last changed time of file or directory at `path`.
+    /// Meaning is the same as stat.mt_ctime (e.g. different from getLastModified()).
+    virtual Poco::Timestamp getLastChanged(const String & path) = 0;
+
     /// Set file at `path` as read-only.
     virtual void setReadOnly(const String & path) = 0;
 
