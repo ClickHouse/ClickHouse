@@ -519,19 +519,17 @@ void StorageKafka::updateConfiguration(cppkafka::Configuration & conf)
 
     if (conf.has_property("sasl.kerberos.keytab") && conf.has_property("sasl.kerberos.principal"))
     {
-        LOG_DEBUG(log, "ADQM: preparing KerberosInit");
         String keytab = conf.get("sasl.kerberos.keytab");
         String principal = conf.get("sasl.kerberos.principal");
-        LOG_DEBUG(log, "ADQM: keytab: {}, principal: {}", keytab, principal);
-        LOG_DEBUG(log, "ADQM: running KerberosInit");
+        LOG_DEBUG(log, "Running KerberosInit");
         KerberosInit k_init;
         try
         {
             k_init.init(keytab,principal);
         } catch (const Exception & e) {
-            LOG_ERROR(log, "ADQM: KerberosInit failure: {}", getExceptionMessage(e, false));
+            LOG_ERROR(log, "KerberosInit failure: {}", getExceptionMessage(e, false));
         }
-        LOG_DEBUG(log, "ADQM: finished KerberosInit");
+        LOG_DEBUG(log, "Finished KerberosInit");
         conf.set("sasl.kerberos.kinit.cmd","");
         conf.set("sasl.kerberos.min.time.before.relogin","0");
     }

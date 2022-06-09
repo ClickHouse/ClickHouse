@@ -73,7 +73,7 @@ void HDFSBuilderWrapper::loadFromConfig(const Poco::Util::AbstractConfiguration 
 
 void HDFSBuilderWrapper::runKinit()
 {
-    LOG_DEBUG(&Poco::Logger::get("HDFSClient"), "ADQM: running KerberosInit");
+    LOG_DEBUG(&Poco::Logger::get("HDFSClient"), "Running KerberosInit");
     KerberosInit k_init;
     try
     {
@@ -81,7 +81,7 @@ void HDFSBuilderWrapper::runKinit()
     } catch (const DB::Exception & e) {
         throw Exception("KerberosInit failure: "+ getExceptionMessage(e, false), ErrorCodes::KERBEROS_ERROR);
     }
-    LOG_DEBUG(&Poco::Logger::get("HDFSClient"), "ADQM: finished KerberosInit");
+    LOG_DEBUG(&Poco::Logger::get("HDFSClient"), "Finished KerberosInit");
 }
 
 HDFSBuilderWrapper createHDFSBuilder(const String & uri_str, const Poco::Util::AbstractConfiguration & config)
