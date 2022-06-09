@@ -91,7 +91,7 @@ namespace
             if (ParserKeyword{"TEMPORARY TABLE"}.ignore(pos, expected))
             {
                 element.type = ElementType::TABLE;
-                element.is_temporary_database = true;
+                element.is_temporary_table = true;
 
                 ASTPtr ast;
                 if (!ParserIdentifier{}.parse(pos, ast, expected))

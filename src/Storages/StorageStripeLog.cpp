@@ -601,7 +601,6 @@ void StorageStripeLog::restoreDataFromBackup(RestorerFromBackup & restorer, cons
 
     auto lock_timeout = getLockTimeout(restorer.getContext());
     restorer.addDataRestoreTask(
-        shared_from_this(),
         [storage = std::static_pointer_cast<StorageStripeLog>(shared_from_this()), backup, data_path_in_backup, lock_timeout]
         { storage->restoreDataImpl(backup, data_path_in_backup, lock_timeout); });
 }

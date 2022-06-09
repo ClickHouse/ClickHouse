@@ -8,6 +8,7 @@
 #include <Parsers/parseQuery.h>
 #include <Parsers/formatAST.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTFunction.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterCreateQuery.h>
@@ -30,6 +31,44 @@ namespace ErrorCodes
     extern const int BACKUP_ENTRY_NOT_FOUND;
     extern const int CANNOT_RESTORE_TABLE;
     extern const int CANNOT_RESTORE_DATABASE;
+}
+
+
+namespace
+{
+    bool hasSystemTableEngine(const IAST & ast)
+    {
+        const ASTCreateQuery * create = ast.as<ASTCreateQuery>();
+        if (!create)
+            return false;
+        if (!create->storage || !create->storage->engine)
+            return false;
+        return create->storage->engine->name.starts_with("System");
+    }
+}
+
+bool RestorerFromBackup::TableKey::operator ==(const TableKey & right) const
+{
+    return (name == right.name) && (is_temporary == right.is_temporary);
+}
+
+bool RestorerFromBackup::TableKey::operator <(const TableKey & right) const
+{
+    return (name < right.name) || ((name == right.name) && (is_temporary < right.is_temporary));
+}
+
+std::string_view RestorerFromBackup::toString(Stage stage)
+{
+    switch (stage)
+    {
+        case Stage::kPreparing: return "Preparing";
+        case Stage::kFindingTablesInBackup: return "Finding tables in backup";
+        case Stage::kCreatingDatabases: return "Creating databases";
+        case Stage::kCreatingTables: return "Creating tables";
+        case Stage::kInsertingDataToTables: return "Inserting data to tables";
+        case Stage::kError: return "Error";
+    }
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown backup stage: {}", static_cast<int>(stage));
 }
 
 
@@ -101,20 +140,25 @@ RestorerFromBackup::DataRestoreTasks RestorerFromBackup::getDataRestoreTasks()
     if (current_stage != Stage::kInsertingDataToTables)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Metadata wasn't restored");
 
-    /// Storages and table locks must exist while we're executing data restoring tasks.
-    DataRestoreTasks res_tasks;
-    for (auto & [storage, tasks] : data_restore_tasks)
-    {
-        if (!tasks.empty())
-            LOG_TRACE(log, "Will insert data to table {}", storage->getStorageID().getFullTableName());
+    if (data_restore_tasks.empty())
+        return {};
 
-        TableLockHolder table_lock;
-        auto it_table_lock = table_locks.find(storage);
-        if (it_table_lock != table_locks.end())
-            table_lock = it_table_lock->second;
-        for (auto & task : tasks)
-            res_tasks.push_back([task, storage = storage, table_lock] { task(); });
+    LOG_TRACE(log, "Will insert data to tables");
+
+    /// Storages and table locks must exist while we're executing data restoring tasks.
+    auto storages = std::make_shared<std::vector<StoragePtr>>();
+    auto table_locks = std::make_shared<std::vector<TableLockHolder>>();
+    storages->reserve(table_infos.size());
+    table_locks->reserve(table_infos.size());
+    for (const auto & table_info : table_infos | boost::adaptors::map_values)
+    {
+        storages->push_back(table_info.storage);
+        table_locks->push_back(table_info.table_lock);
     }
+
+    DataRestoreTasks res_tasks;
+    for (const auto & task : data_restore_tasks)
+        res_tasks.push_back([task, storages, table_locks] { task(); });
 
     return res_tasks;
 }
@@ -138,21 +182,6 @@ void RestorerFromBackup::setStage(Stage new_stage, const String & error_message)
             = BackupSettings::Util::filterHostIDs(restore_settings.cluster_host_ids, restore_settings.shard_num, restore_settings.replica_num);
         restore_coordination->syncStage(restore_settings.host_id, static_cast<int>(new_stage), all_hosts, timeout);
     }
-}
-
-
-std::string_view RestorerFromBackup::toString(Stage stage)
-{
-    switch (stage)
-    {
-        case Stage::kPreparing: return "Preparing";
-        case Stage::kFindingTablesInBackup: return "Finding tables in backup";
-        case Stage::kCreatingDatabases: return "Creating databases";
-        case Stage::kCreatingTables: return "Creating tables";
-        case Stage::kInsertingDataToTables: return "Inserting data to tables";
-        case Stage::kError: return "Error";
-    }
-    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown backup stage: {}", static_cast<int>(stage));
 }
 
 void RestorerFromBackup::findRootPathsInBackup()
@@ -244,10 +273,7 @@ void RestorerFromBackup::collectDatabaseAndTableInfos()
         {
             case ASTBackupQuery::ElementType::TABLE:
             {
-                QualifiedTableName table_name{element.database_name, element.table_name};
-                if (element.is_temporary_database)
-                    table_name.database = DatabaseCatalog::TEMPORARY_DATABASE;
-                collectTableInfo(table_name, element.partitions);
+                collectTableInfo(QualifiedTableName{element.database_name, element.table_name}, element.is_temporary_table, element.partitions);
                 break;
             }
             case ASTBackupQuery::ElementType::DATABASE:
@@ -266,14 +292,26 @@ void RestorerFromBackup::collectDatabaseAndTableInfos()
     LOG_INFO(log, "Will restore {} databases and {} tables", database_infos.size(), table_infos.size());
 }
 
-void RestorerFromBackup::collectTableInfo(const QualifiedTableName & table_name_in_backup, const std::optional<ASTs> & partitions)
+void RestorerFromBackup::collectTableInfo(const QualifiedTableName & table_name_in_backup, bool is_temporary_table, const std::optional<ASTs> & partitions)
 {
+    String database_name_in_backup = is_temporary_table ? DatabaseCatalog::TEMPORARY_DATABASE : table_name_in_backup.database;
+
     std::optional<fs::path> metadata_path;
     std::optional<fs::path> root_path_in_use;
     for (const auto & root_path_in_backup : root_paths_in_backup)
     {
-        fs::path try_metadata_path = root_path_in_backup / "metadata" / escapeForFileName(table_name_in_backup.database)
-            / (escapeForFileName(table_name_in_backup.table) + ".sql");
+        fs::path try_metadata_path;
+        if (is_temporary_table)
+        {
+            try_metadata_path
+                = root_path_in_backup / "temporary_tables" / "metadata" / (escapeForFileName(table_name_in_backup.table) + ".sql");
+        }
+        else
+        {
+            try_metadata_path = root_path_in_backup / "metadata" / escapeForFileName(table_name_in_backup.database)
+                / (escapeForFileName(table_name_in_backup.table) + ".sql");
+        }
+
         if (backup->fileExists(try_metadata_path))
         {
             metadata_path = try_metadata_path;
@@ -285,9 +323,20 @@ void RestorerFromBackup::collectTableInfo(const QualifiedTableName & table_name_
     if (!metadata_path)
         throw Exception(ErrorCodes::BACKUP_ENTRY_NOT_FOUND, "Table {} not found in backup", table_name_in_backup.getFullName());
 
-    auto table_name = renaming_map.getNewTableName(table_name_in_backup);
-    fs::path data_path_in_backup
-        = *root_path_in_use / "data" / escapeForFileName(table_name_in_backup.database) / escapeForFileName(table_name_in_backup.table);
+    TableKey table_key;
+    fs::path data_path_in_backup;
+    if (is_temporary_table)
+    {
+        data_path_in_backup = *root_path_in_use / "temporary_tables" / "data" / escapeForFileName(table_name_in_backup.table);
+        table_key.name.table = renaming_map.getNewTemporaryTableName(table_name_in_backup.table);
+        table_key.is_temporary = true;
+    }
+    else
+    {
+        data_path_in_backup
+            = *root_path_in_use / "data" / escapeForFileName(table_name_in_backup.database) / escapeForFileName(table_name_in_backup.table);
+        table_key.name = renaming_map.getNewTableName(table_name_in_backup);
+    }
 
     auto read_buffer = backup->readFile(*metadata_path)->getReadBuffer();
     String create_query_str;
@@ -297,24 +346,25 @@ void RestorerFromBackup::collectTableInfo(const QualifiedTableName & table_name_
     ASTPtr create_table_query = parseQuery(create_parser, create_query_str, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
     renameDatabaseAndTableNameInCreateQuery(context->getGlobalContext(), renaming_map, create_table_query);
 
-    if (auto it = table_infos.find(table_name); it != table_infos.end())
+    if (auto it = table_infos.find(table_key); it != table_infos.end())
     {
         const TableInfo & table_info = it->second;
         if (table_info.create_table_query && (serializeAST(*table_info.create_table_query) != serializeAST(*create_table_query)))
         {
             throw Exception(
                 ErrorCodes::CANNOT_RESTORE_TABLE,
-                "Extracted two different create queries for the same table {}: {} and {}",
-                table_name.getFullName(),
+                "Extracted two different create queries for the same {}table {}: {} and {}",
+                (is_temporary_table ? "temporary " : ""),
+                table_key.name.getFullName(),
                 serializeAST(*table_info.create_table_query),
                 serializeAST(*create_table_query));
         }
     }
 
-    TableInfo & res_table_info = table_infos[table_name];
+    TableInfo & res_table_info = table_infos[table_key];
     res_table_info.create_table_query = create_table_query;
     res_table_info.data_path_in_backup = data_path_in_backup;
-    res_table_info.dependencies = getDependenciesSetFromCreateQuery(context->getGlobalContext(), table_name, create_table_query);
+    res_table_info.dependencies = getDependenciesSetFromCreateQuery(context->getGlobalContext(), table_key.name, create_table_query);
 
     if (partitions)
     {
@@ -387,7 +437,7 @@ void RestorerFromBackup::collectDatabaseInfo(const String & database_name_in_bac
         if (except_table_names.contains(table_name_in_backup))
             continue;
 
-        collectTableInfo(QualifiedTableName{database_name_in_backup, table_name_in_backup}, {});
+        collectTableInfo(QualifiedTableName{database_name_in_backup, table_name_in_backup}, /* is_temporary_table= */ false, {});
     }
 }
 
@@ -419,7 +469,11 @@ void RestorerFromBackup::createDatabases()
 {
     for (const auto & [database_name, database_info] : database_infos)
     {
-        if (restore_settings.create_database != RestoreDatabaseCreationMode::kMustExist)
+        bool need_create_database = (restore_settings.create_database != RestoreDatabaseCreationMode::kMustExist);
+        if (need_create_database && DatabaseCatalog::isPredefinedDatabaseName(database_name))
+            need_create_database = false; /// Predefined databases always exist.
+
+        if (need_create_database)
         {
             /// Execute CREATE DATABASE query.
             auto create_database_query = database_info.create_database_query;
@@ -464,11 +518,21 @@ void RestorerFromBackup::createTables()
         if (tables_to_create.empty())
             break; /// We've already created all the tables.
 
-        for (const auto & table_name : tables_to_create)
+        for (const auto & table_key : tables_to_create)
         {
-            auto & table_info = table_infos.at(table_name);
-            DatabasePtr database = DatabaseCatalog::instance().getDatabase(table_name.database);
-            if (restore_settings.create_table != RestoreTableCreationMode::kMustExist)
+            auto & table_info = table_infos.at(table_key);
+
+            DatabasePtr database;
+            if (table_key.is_temporary)
+                database = DatabaseCatalog::instance().getDatabaseForTemporaryTables();
+            else
+                database = DatabaseCatalog::instance().getDatabase(table_key.name.database);
+
+            bool need_create_table = (restore_settings.create_table != RestoreTableCreationMode::kMustExist);
+            if (need_create_table && hasSystemTableEngine(*table_info.create_table_query))
+                need_create_table = false; /// Tables with System* table engine already exist or can't be created by SQL anyway.
+
+            if (need_create_table)
             {
                 /// Execute CREATE TABLE query (we call IDatabase::createTableRestoredFromBackup() to allow the database to do some
                 /// database-specific things).
@@ -478,17 +542,29 @@ void RestorerFromBackup::createTables()
                     create_table_query = create_table_query->clone();
                     create_table_query->as<ASTCreateQuery &>().if_not_exists = true;
                 }
-                LOG_TRACE(log, "Creating table {}: {}", table_name.getFullName(), serializeAST(*create_table_query));
+                LOG_TRACE(
+                    log,
+                    "Creating {}table {}: {}",
+                    (table_key.is_temporary ? "temporary " : ""),
+                    table_key.name.getFullName(),
+                    serializeAST(*create_table_query));
+
                 database->createTableRestoredFromBackup(*this, create_table_query);
             }
 
             table_info.created = true;
-            auto storage = database->getTable(table_name.table, context);
-            table_locks[storage] = storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef().lock_acquire_timeout);
+
+            auto resolved_id = table_key.is_temporary
+                ? context->resolveStorageID(StorageID{"", table_key.name.table}, Context::ResolveExternal)
+                : context->resolveStorageID(StorageID{table_key.name.database, table_key.name.table}, Context::ResolveGlobal);
+
+            auto storage = database->getTable(resolved_id.table_name, context);
+            table_info.storage = storage;
+            table_info.table_lock = storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef().lock_acquire_timeout);
 
             if (!restore_settings.allow_different_table_def)
             {
-                ASTPtr create_table_query = database->getCreateTableQuery(table_name.table, context);
+                ASTPtr create_table_query = database->getCreateTableQuery(resolved_id.table_name, context);
                 ASTPtr expected_create_query = table_info.create_table_query;
                 storage->adjustCreateQueryForBackup(create_table_query);
                 storage->adjustCreateQueryForBackup(expected_create_query);
@@ -496,9 +572,10 @@ void RestorerFromBackup::createTables()
                 {
                     throw Exception(
                         ErrorCodes::CANNOT_RESTORE_TABLE,
-                        "The table {} has a different definition: {} "
+                        "The {}table {} has a different definition: {} "
                         "comparing to its definition in the backup: {}",
-                        table_name.getFullName(),
+                        (table_key.is_temporary ? "temporary " : ""),
+                        table_key.name.getFullName(),
                         serializeAST(*create_table_query),
                         serializeAST(*expected_create_query));
                 }
@@ -515,12 +592,12 @@ void RestorerFromBackup::createTables()
 }
 
 /// Returns the list of tables without dependencies or those which dependencies have been created before.
-std::vector<QualifiedTableName> RestorerFromBackup::findTablesWithoutDependencies() const
+std::vector<RestorerFromBackup::TableKey> RestorerFromBackup::findTablesWithoutDependencies() const
 {
-    std::vector<QualifiedTableName> tables_without_dependencies;
+    std::vector<TableKey> tables_without_dependencies;
     bool all_tables_created = true;
 
-    for (const auto & [table_name, table_info] : table_infos)
+    for (const auto & [key, table_info] : table_infos)
     {
         if (table_info.created)
             continue;
@@ -532,7 +609,7 @@ std::vector<QualifiedTableName> RestorerFromBackup::findTablesWithoutDependencie
         bool all_dependencies_met = true;
         for (const auto & dependency : table_info.dependencies)
         {
-            auto it = table_infos.find(dependency);
+            auto it = table_infos.find(TableKey{dependency, false});
             if ((it != table_infos.end()) && !it->second.created)
             {
                 all_dependencies_met = false;
@@ -541,7 +618,7 @@ std::vector<QualifiedTableName> RestorerFromBackup::findTablesWithoutDependencie
         }
 
         if (all_dependencies_met)
-            tables_without_dependencies.push_back(table_name);
+            tables_without_dependencies.push_back(key);
     }
 
     if (!tables_without_dependencies.empty())
@@ -551,11 +628,11 @@ std::vector<QualifiedTableName> RestorerFromBackup::findTablesWithoutDependencie
         return {};
 
     /// Cyclic dependency? We'll try to create those tables anyway but probably it's going to fail.
-    std::vector<QualifiedTableName> tables_with_cyclic_dependencies;
-    for (const auto & [table_name, table_info] : table_infos)
+    std::vector<TableKey> tables_with_cyclic_dependencies;
+    for (const auto & [key, table_info] : table_infos)
     {
         if (!table_info.created)
-            tables_with_cyclic_dependencies.push_back(table_name);
+            tables_with_cyclic_dependencies.push_back(key);
     }
 
     /// Only show a warning here, proper exception will be thrown later on creating those tables.
@@ -564,24 +641,24 @@ std::vector<QualifiedTableName> RestorerFromBackup::findTablesWithoutDependencie
         "Some tables have cyclic dependency from each other: {}",
         boost::algorithm::join(
             tables_with_cyclic_dependencies
-                | boost::adaptors::transformed([](const QualifiedTableName & table_name) -> String { return table_name.getFullName(); }),
+                | boost::adaptors::transformed([](const TableKey & key) -> String { return key.name.getFullName(); }),
             ", "));
 
     return tables_with_cyclic_dependencies;
 }
 
-void RestorerFromBackup::addDataRestoreTask(StoragePtr storage, DataRestoreTask && new_task)
+void RestorerFromBackup::addDataRestoreTask(DataRestoreTask && new_task)
 {
     if (current_stage == Stage::kInsertingDataToTables)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Adding data-restoring tasks is not allowed");
-    data_restore_tasks[storage].push_back(std::move(new_task));
+    data_restore_tasks.push_back(std::move(new_task));
 }
 
-void RestorerFromBackup::addDataRestoreTasks(StoragePtr storage, DataRestoreTasks && new_tasks)
+void RestorerFromBackup::addDataRestoreTasks(DataRestoreTasks && new_tasks)
 {
     if (current_stage == Stage::kInsertingDataToTables)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Adding data-restoring tasks is not allowed");
-    insertAtEnd(data_restore_tasks[storage], std::move(new_tasks));
+    insertAtEnd(data_restore_tasks, std::move(new_tasks));
 }
 
 void RestorerFromBackup::executeCreateQuery(const ASTPtr & create_query) const

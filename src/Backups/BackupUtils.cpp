@@ -22,18 +22,20 @@ DDLRenamingMap makeRenamingMapFromBackupQuery(const ASTBackupQuery::Elements & e
             {
                 const String & table_name = element.table_name;
                 const String & new_table_name = element.new_table_name;
-                String database_name = element.database_name;
-                String new_database_name = element.new_database_name;
-                if (element.is_temporary_database)
-                {
-                    database_name = DatabaseCatalog::TEMPORARY_DATABASE;
-                    new_database_name = DatabaseCatalog::TEMPORARY_DATABASE;
-                }
                 assert(!table_name.empty());
-                assert(!database_name.empty());
                 assert(!new_table_name.empty());
-                assert(!new_database_name.empty());
-                map.setNewTableName({database_name, table_name}, {new_database_name, new_table_name});
+                if (element.is_temporary_table)
+                {
+                    map.setNewTemporaryTableName(table_name, new_table_name);
+                }
+                else
+                {
+                    const String & database_name = element.database_name;
+                    const String & new_database_name = element.new_database_name;
+                    assert(!database_name.empty());
+                    assert(!new_database_name.empty());
+                    map.setNewTableName({database_name, table_name}, {new_database_name, new_table_name});
+                }
                 break;
             }
 
@@ -193,7 +195,7 @@ AccessRightsElements getRequiredAccessToBackup(const ASTBackupQuery::Elements & 
         {
             case ASTBackupQuery::TABLE:
             {
-                if (element.is_temporary_database)
+                if (element.is_temporary_table)
                     break;
                 AccessFlags flags = AccessType::SHOW_TABLES;
                 if (!backup_settings.structure_only)
@@ -235,7 +237,7 @@ AccessRightsElements getRequiredAccessToRestore(const ASTBackupQuery::Elements &
         {
             case ASTBackupQuery::TABLE:
             {
-                if (element.is_temporary_database)
+                if (element.is_temporary_table)
                 {
                     if (restore_settings.create_table != RestoreTableCreationMode::kMustExist)
                         required_access.emplace_back(AccessType::CREATE_TEMPORARY_TABLE);

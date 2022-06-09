@@ -27,17 +27,20 @@ namespace
     /// CREATE TABLE or CREATE DICTIONARY or CREATE VIEW or CREATE TEMPORARY TABLE or CREATE DATABASE query.
     void visitCreateQuery(ASTCreateQuery & create, const DDLRenamingVisitor::Data & data)
     {
-        if (create.table)
+        if (create.temporary)
         {
-            /// CREATE TABLE or CREATE DICTIONARY or CREATE VIEW or CREATE TEMPORARY TABLE
+            /// CREATE TEMPORARY TABLE
+            String table_name = create.getTable();
+            const auto & new_table_name = data.renaming_map.getNewTemporaryTableName(table_name);
+            if (new_table_name != table_name)
+                create.setTable(new_table_name);
+        }
+        else if (create.table)
+        {
+            /// CREATE TABLE or CREATE DICTIONARY or CREATE VIEW
             QualifiedTableName qualified_name;
             qualified_name.table = create.getTable();
-            if (create.database)
-                qualified_name.database = create.getDatabase();
-            else if (create.temporary)
-                qualified_name.database = DatabaseCatalog::TEMPORARY_DATABASE;
-            else
-                return;
+            qualified_name.database = create.getDatabase();
 
             if (!qualified_name.database.empty() && !qualified_name.table.empty())
             {
@@ -45,16 +48,7 @@ namespace
                 if (new_qualified_name != qualified_name)
                 {
                     create.setTable(new_qualified_name.table);
-                    if (new_qualified_name.database == DatabaseCatalog::TEMPORARY_DATABASE)
-                    {
-                        create.temporary = true;
-                        create.setDatabase("");
-                    }
-                    else
-                    {
-                        create.temporary = false;
-                        create.setDatabase(new_qualified_name.database);
-                    }
+                    create.setDatabase(new_qualified_name.database);
                 }
             }
         }
@@ -356,6 +350,30 @@ QualifiedTableName DDLRenamingMap::getNewTableName(const QualifiedTableName & ol
     if (it != old_to_new_table_names.end())
         return it->second;
     return {getNewDatabaseName(old_table_name.database), old_table_name.table};
+}
+
+void DDLRenamingMap::setNewTemporaryTableName(const String & old_table_name, const String & new_table_name)
+{
+    if (old_table_name.empty() || new_table_name.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty names are not allowed");
+
+    auto it = old_to_new_temporary_table_names.find(old_table_name);
+    if ((it != old_to_new_temporary_table_names.end()))
+    {
+        if (it->second == new_table_name)
+            return;
+        throw Exception(ErrorCodes::WRONG_DDL_RENAMING_SETTINGS, "Wrong renaming: it's specified that temporary table {} should be renamed to {} and to {} at the same time",
+                        backQuoteIfNeed(old_table_name), backQuoteIfNeed(it->second), backQuoteIfNeed(new_table_name));
+    }
+    old_to_new_temporary_table_names[old_table_name] = new_table_name;
+}
+
+const String & DDLRenamingMap::getNewTemporaryTableName(const String & old_table_name) const
+{
+    auto it = old_to_new_temporary_table_names.find(old_table_name);
+    if (it != old_to_new_temporary_table_names.end())
+        return it->second;
+    return old_table_name;
 }
 
 }

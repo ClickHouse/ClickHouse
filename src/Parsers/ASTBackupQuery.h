@@ -59,7 +59,7 @@ public:
         ElementType type;
         String table_name;
         String database_name;
-        bool is_temporary_database = false;
+        bool is_temporary_table = false;
         String new_table_name; /// usually the same as `table_name`, can be different in case of using AS <new_name>
         String new_database_name; /// usually the same as `database_name`, can be different in case of using AS <new_name>
         std::optional<ASTs> partitions;

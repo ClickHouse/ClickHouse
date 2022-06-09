@@ -47,8 +47,8 @@ public:
 
     /// Adds a data restore task which will be later returned by getDataRestoreTasks().
     /// This function can be called by implementations of IStorage::restoreFromBackup() in inherited storage classes.
-    void addDataRestoreTask(StoragePtr storage, DataRestoreTask && data_restore_task);
-    void addDataRestoreTasks(StoragePtr storage, DataRestoreTasks && data_restore_task);
+    void addDataRestoreTask(DataRestoreTask && data_restore_task);
+    void addDataRestoreTasks(DataRestoreTasks && data_restore_task);
 
     /// Reading a backup includes a few stages:
     enum class Stage
@@ -95,19 +95,16 @@ private:
     void setStage(Stage new_stage, const String & error_message = {});
     void findRootPathsInBackup();
     void collectDatabaseAndTableInfos();
-    void collectTableInfo(const QualifiedTableName & table_name_in_backup, const std::optional<ASTs> & partitions);
+    void collectTableInfo(const QualifiedTableName & table_name_in_backup, bool is_temporary, const std::optional<ASTs> & partitions);
     void collectDatabaseInfo(const String & database_name_in_backup, const std::set<String> & except_table_names);
     void collectAllDatabasesInfo(const std::set<String> & except_database_names);
     void createDatabases();
     void createTables();
-    std::vector<QualifiedTableName> findTablesWithoutDependencies() const;
 
     struct DatabaseInfo
     {
         ASTPtr create_database_query;
     };
-
-    std::unordered_map<String, DatabaseInfo> database_infos;
 
     struct TableInfo
     {
@@ -116,12 +113,23 @@ private:
         std::filesystem::path data_path_in_backup;
         std::unordered_set<QualifiedTableName> dependencies;
         bool created = false;
+        StoragePtr storage;
+        TableLockHolder table_lock;
     };
 
-    std::unordered_map<QualifiedTableName, TableInfo> table_infos;
+    struct TableKey
+    {
+        QualifiedTableName name;
+        bool is_temporary = false;
+        bool operator ==(const TableKey & right) const;
+        bool operator <(const TableKey & right) const;
+    };
 
-    std::unordered_map<StoragePtr, TableLockHolder> table_locks;
-    std::unordered_map<StoragePtr, std::vector<DataRestoreTask>> data_restore_tasks;
+    std::vector<TableKey> findTablesWithoutDependencies() const;
+
+    std::unordered_map<String, DatabaseInfo> database_infos;
+    std::map<TableKey, TableInfo> table_infos;
+    std::vector<DataRestoreTask> data_restore_tasks;
 };
 
 }

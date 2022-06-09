@@ -51,7 +51,7 @@ namespace
             case ElementType::TABLE:
             {
                 format.ostr << (format.hilite ? IAST::hilite_keyword : "");
-                if (element.is_temporary_database)
+                if (element.is_temporary_table)
                     format.ostr << "TEMPORARY TABLE ";
                 else
                     format.ostr << "TABLE ";
@@ -175,7 +175,7 @@ namespace
 
 void ASTBackupQuery::Element::setCurrentDatabase(const String & current_database)
 {
-    if ((type == ASTBackupQuery::TABLE) && !is_temporary_database)
+    if ((type == ASTBackupQuery::TABLE) && !is_temporary_table)
     {
         if (database_name.empty())
             database_name = current_database;
