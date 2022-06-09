@@ -8,7 +8,6 @@
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/CubeStep.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
-#include <Processors/QueryPlan/SettingQuotaAndLimitsStep.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/TotalsHavingStep.h>
 #include <Processors/QueryPlan/DistinctStep.h>
@@ -49,14 +48,6 @@ size_t tryReuseStorageOrderingForWindowFunctions(QueryPlan::Node * parent_node, 
     auto * possible_read_from_merge_tree_node = sorting_node->children.front();
 
     if (typeid_cast<ExpressionStep *>(possible_read_from_merge_tree_node->step.get()))
-    {
-        if (possible_read_from_merge_tree_node->children.size() != 1)
-            return 0;
-
-        possible_read_from_merge_tree_node = possible_read_from_merge_tree_node->children.front();
-    }
-
-    if (typeid_cast<SettingQuotaAndLimitsStep *>(possible_read_from_merge_tree_node->step.get()))
     {
         if (possible_read_from_merge_tree_node->children.size() != 1)
             return 0;
