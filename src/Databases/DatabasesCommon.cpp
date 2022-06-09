@@ -305,8 +305,9 @@ StoragePtr DatabaseWithOwnTablesBase::getTableUnlocked(const String & table_name
 DatabaseTablesIteratorPtr DatabaseWithOwnTablesBase::getTablesIteratorForBackup(const BackupEntriesCollector & backup_entries_collector) const
 {
     /// Backup all the tables in this database.
-    /// TODO: Skip internal tables.
-    return getTablesIterator(backup_entries_collector.getContext(), {});
+    /// Here we skip inner tables of materialized views.
+    auto skip_internal_tables = [](const String & table_name) { return !table_name.starts_with(".inner_id."); };
+    return getTablesIterator(backup_entries_collector.getContext(), skip_internal_tables);
 }
 
 void DatabaseWithOwnTablesBase::backupCreateTableQuery(
