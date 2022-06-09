@@ -156,6 +156,25 @@ ASTPtr getCreateQueryFromStorage(const StoragePtr & storage, const ASTPtr & ast_
 }
 
 
+void cleanupObjectDefinitionFromTemporaryFlags(ASTCreateQuery & query)
+{
+    query.as_database.clear();
+    query.as_table.clear();
+    query.if_not_exists = false;
+    query.is_populate = false;
+    query.replace_view = false;
+    query.replace_table = false;
+    query.create_or_replace = false;
+
+    /// For views it is necessary to save the SELECT query itself, for the rest - on the contrary
+    if (!query.isView())
+        query.select = nullptr;
+
+    query.format = nullptr;
+    query.out_file = nullptr;
+}
+
+
 DatabaseWithOwnTablesBase::DatabaseWithOwnTablesBase(const String & name_, const String & logger, ContextPtr context_)
         : IDatabase(name_), WithContext(context_->getGlobalContext()), log(&Poco::Logger::get(logger))
 {
