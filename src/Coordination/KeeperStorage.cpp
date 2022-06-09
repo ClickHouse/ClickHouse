@@ -234,9 +234,20 @@ struct KeeperStorageSyncRequestProcessor final : public KeeperStorageRequestProc
     using KeeperStorageRequestProcessor::KeeperStorageRequestProcessor;
     std::pair<Coordination::ZooKeeperResponsePtr, Undo> process(KeeperStorage & /* storage */, int64_t /* zxid */, int64_t /* session_id */, int64_t /* time */) const override
     {
+        std::string_view path = dynamic_cast<Coordination::ZooKeeperSyncRequest &>(*zk_request).path;
         auto response = zk_request->makeResponse();
         dynamic_cast<Coordination::ZooKeeperSyncResponse &>(*response).path
             = dynamic_cast<Coordination::ZooKeeperSyncRequest &>(*zk_request).path;
+
+        const auto * delimiter = find_first_symbols_or_null<KeeperStorage::sync_path_delimiter>(path.data(), path.data() + path.size());
+
+        if (delimiter)
+        {
+            assert(delimiter != path.data() && delimiter != path.data() + path.size());
+            path = std::string_view{delimiter + 1, path.data() + path.size()};
+        }
+
+        dynamic_cast<Coordination::ZooKeeperSyncResponse &>(*response).path = path;
         return {response, {}};
     }
 };

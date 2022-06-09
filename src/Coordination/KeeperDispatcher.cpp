@@ -1,4 +1,6 @@
 #include <Coordination/KeeperDispatcher.h>
+#include "Common/ZooKeeper/ZooKeeperCommon.h"
+#include "Common/ZooKeeper/ZooKeeperConstants.h"
 #include <Common/setThreadName.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <future>
@@ -6,7 +8,10 @@
 #include <Poco/Path.h>
 #include <Common/hex.h>
 #include <filesystem>
+#include <mutex>
 #include <Common/checkStackSize.h>
+#include "Core/UUID.h"
+#include "base/find_symbols.h"
 
 namespace fs = std::filesystem;
 
@@ -229,7 +234,34 @@ void KeeperDispatcher::setResponse(int64_t session_id, const Coordination::ZooKe
     }
 }
 
-bool KeeperDispatcher::putRequest(const Coordination::ZooKeeperRequestPtr & request, int64_t session_id)
+namespace
+{
+
+const auto & getPathFromReadRequest(const Coordination::ZooKeeperRequestPtr & request)
+{
+    const auto op_num = request->getOpNum();
+    switch (op_num)
+    {
+        case Coordination::OpNum::Check:
+            return dynamic_cast<const Coordination::ZooKeeperCheckRequest &>(*request).path;
+        case Coordination::OpNum::Get:
+            return dynamic_cast<const Coordination::ZooKeeperGetRequest &>(*request).path;
+        case Coordination::OpNum::GetACL:
+            return dynamic_cast<const Coordination::ZooKeeperGetACLRequest &>(*request).path;
+        case Coordination::OpNum::Exists:
+            return dynamic_cast<const Coordination::ZooKeeperExistsRequest &>(*request).path;
+        case Coordination::OpNum::List:
+            return dynamic_cast<const Coordination::ZooKeeperListRequest &>(*request).path;
+        case Coordination::OpNum::SimpleList:
+            return dynamic_cast<const Coordination::ZooKeeperSimpleListRequest &>(*request).path;
+        default:
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to fetch path for request of type {}", op_num);
+    }
+}
+
+}
+
+bool KeeperDispatcher::putRequest(Coordination::ZooKeeperRequestPtr & request, int64_t session_id)
 {
     {
         /// If session was already disconnected than we will ignore requests
@@ -243,6 +275,32 @@ bool KeeperDispatcher::putRequest(const Coordination::ZooKeeperRequestPtr & requ
     using namespace std::chrono;
     request_info.time = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
     request_info.session_id = session_id;
+
+    std::unique_lock sync_lock{sync_waiters_mutex, std::defer_lock};
+    std::optional<std::pair<std::string, std::string>> cached_sync_path;
+    if (request->getOpNum() == Coordination::OpNum::Sync)
+    {
+        // keep the lock until we insert the Sync into queue
+        sync_lock.lock();
+        auto & sync_request = dynamic_cast<Coordination::ZooKeeperSyncRequest &>(*request);
+        auto uuid = toString(UUIDHelpers::generateV4());
+        cached_sync_path.emplace(uuid, sync_request.path);
+        sync_request.path = fmt::format("{}{}{}", uuid, KeeperStorage::sync_path_delimiter, sync_request.path);
+    }
+    else if (request->isReadRequest())
+    {
+        sync_lock.lock();
+        const auto & request_path = getPathFromReadRequest(request);
+        for (auto & [path, sync_waiter] : sync_waiters_for_path)
+        {
+            if (request_path.starts_with(path))
+            {
+                sync_waiter.request_queues_for_uuid[sync_waiter.last_uuid].push_back(std::move(request_info));
+                return true;
+            }
+        }
+        sync_lock.unlock();
+    }
 
     std::lock_guard lock(push_request_mutex);
 
@@ -259,6 +317,32 @@ bool KeeperDispatcher::putRequest(const Coordination::ZooKeeperRequestPtr & requ
     {
         throw Exception("Cannot push request to queue within operation timeout", ErrorCodes::TIMEOUT_EXCEEDED);
     }
+    else if (request->getOpNum() == Coordination::OpNum::Sync)
+    {
+        assert(cached_sync_path);
+        auto & [uuid, request_path] = *cached_sync_path;
+        bool found = false;
+        for (auto & [path, sync_waiter] : sync_waiters_for_path)
+        {
+            if (path == request_path)
+            {
+                sync_waiter.request_queues_for_uuid.emplace(std::pair{uuid, std::vector<KeeperStorage::RequestForSession>{}});
+                sync_waiter.last_uuid = std::move(uuid);
+                found = true;
+                break;
+            }
+        }
+
+        if (!found)
+        {
+            auto [sync_waiter_it, _] = sync_waiters_for_path.emplace(std::pair{std::move(request_path), SyncWaiter{}});
+            sync_waiter_it->second.request_queues_for_uuid.emplace(std::pair{uuid, std::vector<KeeperStorage::RequestForSession>{}});
+            sync_waiter_it->second.last_uuid = std::move(uuid);
+        }
+
+        sync_lock.unlock();
+    }
+
     return true;
 }
 
@@ -273,7 +357,12 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
     responses_thread = ThreadFromGlobalPool([this] { responseThread(); });
     snapshot_thread = ThreadFromGlobalPool([this] { snapshotThread(); });
 
-    server = std::make_unique<KeeperServer>(configuration_and_settings, config, responses_queue, snapshots_queue);
+    server = std::make_unique<KeeperServer>(
+        configuration_and_settings,
+        config,
+        responses_queue,
+        snapshots_queue,
+        [this](KeeperStorage::RequestForSession & request_for_session) { onRequestCommit(request_for_session); });
 
     try
     {
@@ -471,6 +560,57 @@ void KeeperDispatcher::forceWaitAndProcessResult(RaftAppendResult & result, Keep
 
     result = nullptr;
     requests_for_sessions.clear();
+}
+
+void KeeperDispatcher::onRequestCommit(KeeperStorage::RequestForSession & request_for_session)
+{
+    if (request_for_session.request->getOpNum() != Coordination::OpNum::Sync)
+        return;
+    
+    const auto & sync_request = dynamic_cast<const Coordination::ZooKeeperSyncRequest &>(*request_for_session.request);
+    const auto & path = sync_request.path;
+
+    const auto * delimiter = find_first_symbols_or_null<KeeperStorage::sync_path_delimiter>(path.data(), path.data() + path.size());
+
+    if (!delimiter)
+        return;
+
+    assert(delimiter != path.data() && delimiter != path.data() + path.size());
+
+    const std::string_view zk_path{delimiter + 1, path.data() + path.size()};
+    const std::string_view uuid{path.data(), delimiter};
+
+    std::unique_lock lock{sync_waiters_mutex};
+
+    auto sync_waiter_it = sync_waiters_for_path.find(zk_path);
+    if (sync_waiter_it == sync_waiters_for_path.end())
+        return;
+
+    auto & [_, sync_waiter] = *sync_waiter_it;
+    auto queue_it = sync_waiter.request_queues_for_uuid.find(uuid);
+    if (queue_it == sync_waiter.request_queues_for_uuid.end())
+        return;
+
+    auto requests = std::move(queue_it->second);
+
+    sync_waiter.request_queues_for_uuid.erase(queue_it);
+    if (sync_waiter.request_queues_for_uuid.empty())
+        sync_waiters_for_path.erase(sync_waiter_it);
+
+    lock.unlock();
+
+    std::lock_guard push_lock(push_request_mutex);
+    for (auto & request_info : requests)
+    {
+        if (shutdown_called)
+            return;
+
+        assert(request_info.request->isReadRequest());
+        if (!requests_queue->tryPush(std::move(request_info), configuration_and_settings->coordination_settings->operation_timeout_ms.totalMilliseconds()))
+        {
+            throw Exception("Cannot push request to queue within operation timeout", ErrorCodes::TIMEOUT_EXCEEDED);
+        }
+    }
 }
 
 int64_t KeeperDispatcher::getSessionID(int64_t session_timeout_ms)
