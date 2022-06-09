@@ -539,14 +539,6 @@ TableJoin::createConvertingActions(const ColumnsWithTypeAndName & left_sample_co
 template <typename LeftNamesAndTypes, typename RightNamesAndTypes>
 void TableJoin::inferJoinKeyCommonType(const LeftNamesAndTypes & left, const RightNamesAndTypes & right, bool allow_right)
 {
-    if (strictness() == ASTTableJoin::Strictness::Asof)
-    {
-        if (clauses.size() != 1)
-            throw DB::Exception("ASOF join over multiple keys is not supported", ErrorCodes::NOT_IMPLEMENTED);
-        if (right.back().type->isNullable())
-            throw DB::Exception("ASOF join over right table Nullable column is not implemented", ErrorCodes::NOT_IMPLEMENTED);
-    }
-
     if (!left_type_map.empty() || !right_type_map.empty())
         return;
 
@@ -558,6 +550,15 @@ void TableJoin::inferJoinKeyCommonType(const LeftNamesAndTypes & left, const Rig
     for (const auto & col : right)
         right_types[renamedRightColumnName(col.name)] = col.type;
 
+    if (strictness() == ASTTableJoin::Strictness::Asof)
+    {
+        if (clauses.size() != 1)
+            throw DB::Exception("ASOF join over multiple keys is not supported", ErrorCodes::NOT_IMPLEMENTED);
+
+        auto asof_key_type = right_types.find(clauses.back().key_names_right.back());
+        if (asof_key_type != right_types.end() && asof_key_type->second->isNullable())
+            throw DB::Exception("ASOF join over right table Nullable column is not implemented", ErrorCodes::NOT_IMPLEMENTED);
+    }
 
     forAllKeys(clauses, [&](const auto & left_key_name, const auto & right_key_name)
     {
