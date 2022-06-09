@@ -187,6 +187,7 @@ ColumnPtr BloomFilterSet::execute(const ColumnsWithTypeAndName & columns, bool n
 
     /// The constant columns to the left of IN are not supported directly. For this, they first materialize.
     Columns materialized_columns;
+    materialized_columns.reserve(num_key_columns);
 
     for (size_t i = 0; i < num_key_columns; ++i)
     {
@@ -257,6 +258,17 @@ void NO_INLINE BloomFilterSet::executeImplCase(
             auto found_result = data.find(reinterpret_cast<const char*>(&key), sizeof(uint64_t));
             vec_res[i] = negative ^ found_result;
         }
+    }
+}
+
+
+void BloomFilterSet::checkColumnsNumber(size_t num_key_columns) const
+{
+    if (data_types.size() != num_key_columns)
+    {
+        throw Exception(ErrorCodes::NUMBER_OF_COLUMNS_DOESNT_MATCH,
+                        "Number of columns in section IN doesn't match. {} at left, {} at right.",
+                        num_key_columns, data_types.size());
     }
 }
 

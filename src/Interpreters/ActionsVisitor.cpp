@@ -1195,7 +1195,12 @@ ISetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool no_s
             return subquery_for_set.set;
         }
 
-        ISetPtr set = std::make_shared<Set>(data.set_size_limit, false, data.getContext()->getSettingsRef().transform_null_in);
+        ISetPtr set = nullptr;
+        if (node.name == "inBloomFilter") {
+            set = std::make_shared<BloomFilterSet>(data.set_size_limit, false, data.getContext()->getSettingsRef().transform_null_in);
+        } else {
+            set = std::make_shared<Set>(data.set_size_limit, false, data.getContext()->getSettingsRef().transform_null_in);
+        }
 
         /** The following happens for GLOBAL INs or INs:
           * - in the addExternalStorage function, the IN (SELECT ...) subquery is replaced with IN _data1,

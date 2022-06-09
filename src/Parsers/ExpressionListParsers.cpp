@@ -65,7 +65,7 @@ const char * ParserComparisonExpression::operators[] =
     "NOT IN",        "notIn",
     "GLOBAL IN",     "globalIn",
     "GLOBAL NOT IN", "globalNotIn",
-    "IN BLOOM FILTER", "inBloomFilter",
+    "INBLOOMFILTER", "inBloomFilter",
     nullptr
 };
 

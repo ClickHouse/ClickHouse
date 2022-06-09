@@ -13,7 +13,7 @@ namespace ErrorCodes
 
 inline bool functionIsInOperator(const std::string & name)
 {
-    return name == "in" || name == "notIn" || name == "nullIn" || name == "notNullIn";
+    return name == "in" || name == "notIn" || name == "nullIn" || name == "notNullIn" || name == "inBloomFilter";
 }
 
 inline bool functionIsInOrGlobalInOperator(const std::string & name)

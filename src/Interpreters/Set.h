@@ -69,7 +69,7 @@ public:
     {
     }
 
-    virtual bool empty() const override { return data.isEmpty(); }
+    virtual bool empty() const override { return false; }
 
     /** Set can be created either from AST or from a stream of data (subquery result).
       */
