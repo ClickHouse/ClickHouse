@@ -1155,8 +1155,86 @@ static void BM_TestDecompress(benchmark::State& state)
 
     }
 }
+
+#include <Parser/CHColumnToSparkRow.h>
+
+static void BM_CHColumnToSparkRowNew(benchmark::State& state) {
+    std::shared_ptr<DB::StorageInMemoryMetadata> metadata = std::make_shared<DB::StorageInMemoryMetadata>();
+    ColumnsDescription columns_description;
+    auto int64_type = std::make_shared<DB::DataTypeInt64>();
+    auto int32_type = std::make_shared<DB::DataTypeInt32>();
+    auto double_type = std::make_shared<DB::DataTypeFloat64>();
+    const auto * type_string = "columns format version: 1\n"
+                               "15 columns:\n"
+                               "`l_partkey` Int64\n"
+                               "`l_suppkey` Int64\n"
+                               "`l_linenumber` Int32\n"
+                               "`l_quantity` Float64\n"
+                               "`l_extendedprice` Float64\n"
+                               "`l_discount` Float64\n"
+                               "`l_tax` Float64\n"
+                               "`l_returnflag` String\n"
+                               "`l_linestatus` String\n"
+                               "`l_shipdate` Date\n"
+                               "`l_commitdate` Date\n"
+                               "`l_receiptdate` Date\n"
+                               "`l_shipinstruct` String\n"
+                               "`l_shipmode` String\n"
+                               "`l_comment` String\n";
+    auto names_and_types_list = NamesAndTypesList::parse(type_string);
+    metadata = local_engine::buildMetaData(names_and_types_list, global_context);
+    auto param = DB::MergeTreeData::MergingParams();
+    auto settings = local_engine::buildMergeTreeSettings();
+
+    local_engine::CustomStorageMergeTree custom_merge_tree(DB::StorageID("default", "test"),
+                                                           "home/saber/Documents/data/tpch/mergetree/lineitem",
+                                                           *metadata,
+                                                           false,
+                                                           global_context,
+                                                           "",
+                                                           param,
+                                                           std::move(settings));
+    auto snapshot = std::make_shared<StorageSnapshot>(custom_merge_tree, metadata);
+    custom_merge_tree.loadDataParts(false);
+    for (auto _: state)
+    {
+        state.PauseTiming();
+        auto query_info = local_engine::buildQueryInfo(names_and_types_list);
+        auto data_parts = custom_merge_tree.getDataPartsVector();
+        int min_block = 0;
+        int max_block = 10;
+        MergeTreeData::DataPartsVector selected_parts;
+        std::copy_if(std::begin(data_parts), std::end(data_parts), std::inserter(selected_parts, std::begin(selected_parts)),
+                     [min_block, max_block](MergeTreeData::DataPartPtr part) { return part->info.min_block>=min_block && part->info.max_block <= max_block;});
+        auto query = custom_merge_tree.reader.readFromParts(selected_parts,
+                                                            names_and_types_list.getNames(),
+                                                            snapshot,
+                                                            *query_info,
+                                                            global_context,
+                                                            10000,
+                                                            1);
+        QueryPlanOptimizationSettings optimization_settings{.optimize_plan = false};
+        QueryPipelineBuilder query_pipeline;
+        query_pipeline.init(query->convertToPipe(optimization_settings, BuildQueryPipelineSettings()));
+        state.ResumeTiming();
+        auto pipeline = QueryPipelineBuilder::getPipeline(std::move(query_pipeline));
+        auto executor = PullingPipelineExecutor(pipeline);
+        Block header = executor.getHeader();
+        CHColumnToSparkRow converter;
+        int sum =0;
+        while(executor.pull(header))
+        {
+            sum+= header.rows();
+            auto spark_row = converter.convertCHColumnToSparkRow(header);
+            converter.freeMem(spark_row->getBufferAddress(), spark_row->getTotalBytes());
+        }
+        std::cerr <<"rows: " << sum << std::endl;
+    }
+}
+
 // BENCHMARK(BM_TestDecompress)->Arg(0)->Arg(1)->Arg(2)->Arg(3)->Unit(benchmark::kMillisecond)->Iterations(50)->Repetitions(6)->ComputeStatistics("80%", quantile);
 
+BENCHMARK(BM_CHColumnToSparkRowNew)->Unit(benchmark::kMillisecond)->Iterations(40);
 
 //BENCHMARK(BM_CHColumnToSparkRow)->Unit(benchmark::kMillisecond)->Iterations(40);
 // BENCHMARK(BM_MergeTreeRead)->Arg(2)->Unit(benchmark::kMillisecond)->Iterations(50)->Repetitions(6)->ComputeStatistics("80%", quantile);

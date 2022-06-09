@@ -4,6 +4,7 @@
 #include <jni.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Operator/BlockCoalesceOperator.h>
+#include <Parser/CHColumnToSparkRow.h>
 #include <Parser/SerializedPlanParser.h>
 #include <Shuffle/ShuffleReader.h>
 #include <Shuffle/ShuffleSplitter.h>
@@ -46,7 +47,7 @@ jint JNI_OnLoad(JavaVM * vm, void * reserved)
     illegal_argument_exception_class = CreateGlobalClassReference(env, "Ljava/lang/IllegalArgumentException;");
 
     spark_row_info_class = CreateGlobalClassReference(env, "Lio/glutenproject/row/SparkRowInfo;");
-    spark_row_info_constructor = env->GetMethodID(spark_row_info_class, "<init>", "([J[JJJ)V");
+    spark_row_info_constructor = env->GetMethodID(spark_row_info_class, "<init>", "([J[JJJJ)V");
 
     split_result_class = CreateGlobalClassReference(env, "Lio/glutenproject/vectorized/SplitResult;");
     split_result_constructor = GetMethodID(env, split_result_class, "<init>", "(JJJJJJ[J[J)V");
@@ -174,9 +175,10 @@ jobject Java_io_glutenproject_row_RowIterator_nativeNext(JNIEnv * env, jobject o
         env->SetLongArrayRegion(lengths_arr, 0, spark_row_info->getNumRows(), lengths_src);
         int64_t address = reinterpret_cast<int64_t>(spark_row_info->getBufferAddress());
         int64_t column_number = reinterpret_cast<int64_t>(spark_row_info->getNumCols());
+        int64_t total_size = reinterpret_cast<int64_t>(spark_row_info->getTotalBytes());
 
         jobject spark_row_info_object
-            = env->NewObject(spark_row_info_class, spark_row_info_constructor, offsets_arr, lengths_arr, address, column_number);
+            = env->NewObject(spark_row_info_class, spark_row_info_constructor, offsets_arr, lengths_arr, address, column_number, total_size);
 
         return spark_row_info_object;
     }
@@ -723,6 +725,35 @@ void Java_io_glutenproject_vectorized_CHShuffleSplitterJniWrapper_close(JNIEnv *
 {
     local_engine::SplitterHolder * splitter = reinterpret_cast<local_engine::SplitterHolder *>(splitterId);
     delete splitter;
+}
+
+// BlockNativeConverter
+jobject Java_io_glutenproject_vectorized_BlockNativeConverter_converColumarToRow(JNIEnv * env, jobject, jlong block_address)
+{
+    local_engine::CHColumnToSparkRow converter;
+    Block * block = reinterpret_cast<Block *>(block_address);
+    auto spark_row_info = converter.convertCHColumnToSparkRow(* block);
+
+    auto * offsets_arr = env->NewLongArray(spark_row_info->getNumRows());
+    const auto * offsets_src = reinterpret_cast<const jlong *>(spark_row_info->getOffsets().data());
+    env->SetLongArrayRegion(offsets_arr, 0, spark_row_info->getNumRows(), offsets_src);
+    auto * lengths_arr = env->NewLongArray(spark_row_info->getNumRows());
+    const auto * lengths_src = reinterpret_cast<const jlong *>(spark_row_info->getLengths().data());
+    env->SetLongArrayRegion(lengths_arr, 0, spark_row_info->getNumRows(), lengths_src);
+    int64_t address = reinterpret_cast<int64_t>(spark_row_info->getBufferAddress());
+    int64_t column_number = reinterpret_cast<int64_t>(spark_row_info->getNumCols());
+    int64_t total_size = reinterpret_cast<int64_t>(spark_row_info->getTotalBytes());
+
+    jobject spark_row_info_object
+        = env->NewObject(spark_row_info_class, spark_row_info_constructor, offsets_arr, lengths_arr, address, column_number, total_size);
+
+    return spark_row_info_object;
+}
+
+void Java_io_glutenproject_vectorized_BlockNativeConverter_freeMemory(JNIEnv *, jobject, jlong address, jlong size)
+{
+    local_engine::CHColumnToSparkRow converter;
+    converter.freeMem(reinterpret_cast<uint8_t *>(address), size);
 }
 #ifdef __cplusplus
 }

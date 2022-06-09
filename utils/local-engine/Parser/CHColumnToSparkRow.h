@@ -17,7 +17,7 @@ class SparkRowInfo
     friend SparkColumnToCHColumn;
 
 public:
-    SparkRowInfo(DB::Block & block);
+    explicit SparkRowInfo(DB::Block & block);
     int64_t getNullBitsetWidthInBytes() const;
     void setNullBitsetWidthInBytes(int64_t nullBitsetWidthInBytes);
     int64_t getNumCols() const;
@@ -31,14 +31,14 @@ public:
     int64_t getTotalBytes() const;
 
 private:
-    int64_t total_bytes_;
-    int64_t nullBitsetWidthInBytes_;
-    int64_t num_cols_;
-    int64_t num_rows_;
-    std::vector<int64_t> buffer_cursor_;
-    uint8_t * buffer_address_;
-    std::vector<int64_t> offsets_;
-    std::vector<int64_t> lengths_;
+    int64_t total_bytes;
+    int64_t null_bitset_width_in_bytes;
+    int64_t num_cols;
+    int64_t num_rows;
+    std::vector<int64_t> buffer_cursor;
+    uint8_t * buffer_address;
+    std::vector<int64_t> offsets;
+    std::vector<int64_t> lengths;
 };
 
 using SparkRowInfoPtr = std::unique_ptr<local_engine::SparkRowInfo>;
