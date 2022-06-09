@@ -335,7 +335,7 @@ inline void usage(FILE * out, const char * name)
 {
     fprintf(out,
         "%s [--level=<level>] <output_file> <input_file> [... <input_file>]\n"
-        "\t--level - compression level, max is %d, negative - prefere speed over compression\n"
+        "\t--level - compression level, max is %d, negative - prefer speed over compression\n"
         "\t          default is 5\n",
         name, ZSTD_maxCLevel());
 }
