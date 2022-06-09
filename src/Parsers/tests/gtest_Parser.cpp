@@ -432,8 +432,8 @@ INSTANTIATE_TEST_SUITE_P(ParserKQLQuery, ParserTest,
         },
         {
             "Customers |summarize count() by bin(Age, 10)",
-            "SELECT\n    toInt32(Age / 10) * 10 AS bin_int,\n    count(Age)\nFROM Customers\nGROUP BY bin_int"
-        }
+            "SELECT\n    toInt32(Age / 10) * 10 AS bin_int,\n    count()\nFROM Customers\nGROUP BY bin_int"
+        },
         {
             "Customers | where FirstName contains 'pet'",
             "SELECT *\nFROM Customers\nWHERE FirstName ILIKE '%pet%'"
@@ -469,9 +469,5 @@ INSTANTIATE_TEST_SUITE_P(ParserKQLQuery, ParserTest,
         {
             "Customers | where FirstName matches regex 'P.*r'",
             "SELECT *\nFROM Customers\nWHERE match(FirstName, 'P.*r')"
-        },
-        {
-            "Customers|summarize count() by bin(Age, 10) ",
-            "SELECT\n    round(Age, 10) AS Age,\n    count()\nFROM Customers\nGROUP BY Age"
         }
 })));
