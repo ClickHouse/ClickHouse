@@ -431,6 +431,10 @@ INSTANTIATE_TEST_SUITE_P(ParserKQLQuery, ParserTest,
             "SELECT\n    Occupation,\n    max(Age)\nFROM Customers\nGROUP BY Occupation"
         },
         {
+            "Customers |summarize count() by bin(Age, 10)",
+            "SELECT\n    toInt32(Age / 10) * 10 AS bin_int,\n    count(Age)\nFROM Customers\nGROUP BY bin_int"
+        }
+        {
             "Customers | where FirstName contains 'pet'",
             "SELECT *\nFROM Customers\nWHERE FirstName ILIKE '%pet%'"
         },
