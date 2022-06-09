@@ -1,7 +1,9 @@
 #include <memory>
 #include <queue>
-#include <sstream>
+//#include <sstream>
 #include <vector>
+#include <IO/ReadBufferFromString.h>
+#include <IO/ReadHelpers.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInterpolateElement.h>
@@ -19,16 +21,21 @@
 #include <Parsers/ParserSetQuery.h>
 #include <Parsers/ParserTablesInSelectQuery.h>
 #include <Parsers/ParserWithElement.h>
+
 namespace DB
 {
-std::pair<String, String> removeLastWord(String input)
+std::pair<String, String> ParserKQLSummarize::removeLastWord(String input)
 {
-    std::istringstream ss(input);
-    std::string token;
+    ReadBufferFromString in(input);
+    String token;
     std::vector<String> temp;
 
-    while (std::getline(ss, token, ' '))
+    while (!in.eof())
     {
+        readStringUntilWhitespace(token, in);
+        if (in.eof())
+            break;
+        skipWhitespaceIfAny(in);
         temp.push_back(token);
     }
 
@@ -37,10 +44,65 @@ std::pair<String, String> removeLastWord(String input)
     {
         firstPart += temp[i];
     }
+    if (temp.size() > 0)
+    {
+        return std::make_pair(firstPart, temp[temp.size() - 1]);
+    }
 
-    return std::make_pair(firstPart, temp[temp.size() - 1]);
+    return std::make_pair("", "");
 }
 
+String ParserKQLSummarize::getBinGroupbyString(String exprBin)
+{
+    String column_name;
+    bool bracket_start = false;
+    bool comma_start = false;
+    String bin_duration;
+
+    for (std::size_t i = 0; i < exprBin.size(); i++)
+    {
+        if (comma_start && exprBin[i] != ')')
+            bin_duration += exprBin[i];
+        if (exprBin[i] == ',')
+        {
+            comma_start = true;
+            bracket_start = false;
+        }
+        if (bracket_start == true)
+            column_name += exprBin[i];
+        if (exprBin[i] == '(')
+            bracket_start = true;
+    }
+
+
+    std::size_t len = bin_duration.size();
+    char bin_type = bin_duration[len - 1]; // y, d, h, m, s
+    if ((bin_type != 'y') && (bin_type != 'd') && (bin_type != 'h') && (bin_type != 'm') && (bin_type != 's'))
+    {
+        return "toInt32(" + column_name + "/" + bin_duration + ") * " + bin_duration + " AS bin_int";
+    }
+    bin_duration = bin_duration.substr(0, len - 1);
+
+    switch (bin_type)
+    {
+        case 'y':
+            return "toDateTime(toInt32((toFloat32(toDateTime(" + column_name + ")) / (12*30*86400)) / " + bin_duration + ") * ("
+                + bin_duration + " * (12*30*86400))) AS bin_year";
+        case 'd':
+            return "toDateTime(toInt32((toFloat32(toDateTime(" + column_name + ")) / 86400) / " + bin_duration + ") * (" + bin_duration
+                + " * 86400)) AS bin_day";
+        case 'h':
+            return "toDateTime(toInt32((toFloat32(toDateTime(" + column_name + ")) / 3600) / " + bin_duration + ") * (" + bin_duration
+                + " * 3600)) AS bin_hour";
+        case 'm':
+            return "toDateTime(toInt32((toFloat32(toDateTime(" + column_name + ")) / 60) / " + bin_duration + ") * (" + bin_duration
+                + " * 60)) AS bin_minute";
+        case 's':
+            return "toDateTime(" + column_name + ") AS bin_sec";
+        default:
+            return "";
+    }
+}
 
 bool ParserKQLSummarize ::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
@@ -67,7 +129,7 @@ bool ParserKQLSummarize ::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
     String exprAggregation;
     String exprGroupby;
     String exprColumns;
-
+    String exprBin;
     bool groupby = false;
     bool bin_function = false;
     String bin_column;
@@ -83,21 +145,20 @@ bool ParserKQLSummarize ::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
         {
             if (groupby)
             {
-                if (String(pos->begin, pos->end) == "bin")
+                if (String(pos->begin, pos->end) == "bin" || bin_function == true)
                 {
-                    exprGroupby = exprGroupby + "round" + " ";
                     bin_function = true;
-                }
-                else
-                    exprGroupby = exprGroupby + String(pos->begin, pos->end) + " ";
-                    
-                if (bin_function && last_string == "(")
-                {
-                    bin_column = String(pos->begin, pos->end);
-                    bin_function = false;
+                    exprBin += String(pos->begin, pos->end);
+                    if (String(pos->begin, pos->end) == ")")
+                    {
+                        exprBin = getBinGroupbyString(exprBin);
+                        exprGroupby += exprBin;
+                        bin_function = false;
+                    }
                 }
 
-                last_string = String(pos->begin, pos->end);
+                else
+                    exprGroupby = exprGroupby + String(pos->begin, pos->end) + " ";
             }
 
             else
@@ -114,13 +175,13 @@ bool ParserKQLSummarize ::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
                     {
                         exprAggregation = exprAggregation + String(pos->begin, pos->end);
                         character_passed++;
-                        if (String(pos->begin, pos->end) == ")") // was 4
+                        if (String(pos->begin, pos->end) == ")")
                         {
                             exprAggregation = exprAggregation + " AS " + column_name;
                             column_name = "";
                         }
                     }
-                    else
+                    else if (!bin_function)
                     {
                         exprAggregation = exprAggregation + String(pos->begin, pos->end) + " ";
                     }
@@ -129,9 +190,6 @@ bool ParserKQLSummarize ::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
         }
         ++pos;
     }
-
-    if(!bin_column.empty())
-        exprGroupby = exprGroupby + " AS " + bin_column;
 
     if (exprGroupby.empty())
         exprColumns = exprAggregation;
