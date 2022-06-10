@@ -111,6 +111,8 @@ public:
 
     virtual Poco::Timestamp getLastModified(const std::string & path) const = 0;
 
+    virtual Poco::Timestamp getLastChanged(const std::string & path) const = 0;
+
     virtual std::vector<std::string> listDirectory(const std::string & path) const = 0;
 
     virtual DirectoryIteratorPtr iterateDirectory(const std::string & path) = 0;

@@ -378,7 +378,7 @@ Poco::Timestamp DiskObjectStorage::getLastModified(const String & path)
 
 Poco::Timestamp DiskObjectStorage::getLastChanged(const String & path)
 {
-    return metadata_disk->getLastChanged(path);
+    return metadata_storage->getLastChanged(path);
 }
 
 void DiskObjectStorage::removeMetadata(const String & path, std::vector<String> & paths_to_remove)
