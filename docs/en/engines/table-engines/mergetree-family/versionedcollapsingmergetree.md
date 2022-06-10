@@ -3,7 +3,7 @@ sidebar_position: 80
 sidebar_label:  VersionedCollapsingMergeTree
 ---
 
-# VersionedCollapsingMergeTree {#versionedcollapsingmergetree}
+# VersionedCollapsingMergeTree
 
 This engine:
 
@@ -53,7 +53,7 @@ When creating a `VersionedCollapsingMergeTree` table, the same [clauses](../../.
 
 <summary>Deprecated Method for Creating a Table</summary>
 
-:::warning    
+:::warning
 Do not use this method in new projects. If possible, switch old projects to the method described above.
 :::
 
