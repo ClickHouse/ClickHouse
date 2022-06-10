@@ -469,5 +469,13 @@ INSTANTIATE_TEST_SUITE_P(ParserKQLQuery, ParserTest,
         {
             "Customers | where FirstName matches regex 'P.*r'",
             "SELECT *\nFROM Customers\nWHERE match(FirstName, 'P.*r')"
+        },
+        {
+            "Customers | where FirstName startswith 'pet'",
+            "SELECT *\nFROM Customers\nWHERE FirstName ILIKE 'pet%'"
+        },
+        {
+            "Customers | where FirstName !startswith 'pet'",
+            "SELECT *\nFROM Customers\nWHERE NOT (FirstName ILIKE 'pet%')"
         }
 })));
