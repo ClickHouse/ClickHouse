@@ -12,6 +12,7 @@
 #include <IO/WriteSettings.h>
 #include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Disks/WriteMode.h>
+#include <Disks/DirectoryIterator.h>
 
 #include <memory>
 #include <mutex>
@@ -39,9 +40,6 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
-class IDiskDirectoryIterator;
-using DiskDirectoryIteratorPtr = std::unique_ptr<IDiskDirectoryIterator>;
-
 class IReservation;
 using ReservationPtr = std::unique_ptr<IReservation>;
 using Reservations = std::vector<ReservationPtr>;
@@ -49,6 +47,8 @@ using Reservations = std::vector<ReservationPtr>;
 class ReadBufferFromFileBase;
 class WriteBufferFromFileBase;
 class MMappedFileCache;
+class IMetadataStorage;
+using MetadataStoragePtr = std::shared_ptr<IMetadataStorage>;
 
 
 /**
@@ -92,7 +92,10 @@ class IDisk : public Space
 {
 public:
     /// Default constructor.
-    explicit IDisk(std::unique_ptr<Executor> executor_ = std::make_unique<SyncExecutor>()) : executor(std::move(executor_)) { }
+    explicit IDisk(std::unique_ptr<Executor> executor_ = std::make_unique<SyncExecutor>())
+        : executor(std::move(executor_))
+    {
+    }
 
     /// Root path for all files stored on the disk.
     /// It's not required to be a local filesystem path.
@@ -135,7 +138,7 @@ public:
     virtual void moveDirectory(const String & from_path, const String & to_path) = 0;
 
     /// Return iterator to the contents of the specified directory.
-    virtual DiskDirectoryIteratorPtr iterateDirectory(const String & path) = 0;
+    virtual DirectoryIteratorPtr iterateDirectory(const String & path) = 0;
 
     /// Return `true` if the specified directory is empty.
     bool isDirectoryEmpty(const String & path);
@@ -317,7 +320,7 @@ public:
     /// Actually it's a part of IDiskRemote implementation but we have so
     /// complex hierarchy of disks (with decorators), so we cannot even
     /// dynamic_cast some pointer to IDisk to pointer to IDiskRemote.
-    virtual std::shared_ptr<IDisk> getMetadataDiskIfExistsOrSelf() { return std::static_pointer_cast<IDisk>(shared_from_this()); }
+    virtual MetadataStoragePtr getMetadataStorage();
 
     /// Very similar case as for getMetadataDiskIfExistsOrSelf(). If disk has "metadata"
     /// it will return mapping for each required path: path -> metadata as string.
@@ -363,27 +366,6 @@ private:
 
 using DiskPtr = std::shared_ptr<IDisk>;
 using Disks = std::vector<DiskPtr>;
-
-/**
- * Iterator of directory contents on particular disk.
- */
-class IDiskDirectoryIterator
-{
-public:
-    /// Iterate to the next file.
-    virtual void next() = 0;
-
-    /// Return `true` if the iterator points to a valid element.
-    virtual bool isValid() const = 0;
-
-    /// Path to the file that the iterator currently points to.
-    virtual String path() const = 0;
-
-    /// Name of the file that the iterator currently points to.
-    virtual String name() const = 0;
-
-    virtual ~IDiskDirectoryIterator() = default;
-};
 
 /**
  * Information about reserved size on particular disk.
