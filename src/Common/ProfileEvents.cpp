@@ -343,7 +343,20 @@
     \
     M(ScalarSubqueriesGlobalCacheHit, "Number of times a read from a scalar subquery was done using the global cache") \
     M(ScalarSubqueriesLocalCacheHit, "Number of times a read from a scalar subquery was done using the local cache") \
-    M(ScalarSubqueriesCacheMiss, "Number of times a read from a scalar subquery was not cached and had to be calculated completely")
+    M(ScalarSubqueriesCacheMiss, "Number of times a read from a scalar subquery was not cached and had to be calculated completely") \
+    M(KeeperPacketsSent, "Packets sent by keeper server") \
+    M(KeeperPacketsReceived, "Packets received by keeper server") \
+    M(KeeperRequestTotal, "Total requests number on keeper server") \
+    M(KeeperLatency, "Keeper latency") \
+    M(KeeperCommits, "Number of commit count") \
+    M(KeeperCommitsFailed, "Number of commit failed count") \
+    M(KeeperSnapshotCreations, "Number of snapshot creations count")\
+    M(KeeperSnapshotCreationsFailed, "Number of snapshot creations failed count")\
+    M(KeeperSnapshotApplys, "Number of snapshot applying")\
+    M(KeeperSnapshotApplysFailed, "Number of snapshot applying failed")\
+    M(KeeperReadSnapshot, "Number of snapshot read(serialization)")\
+    M(KeeperSaveSnapshot, "Number of snapshot save")
+
 
 namespace ProfileEvents
 {
