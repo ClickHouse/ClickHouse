@@ -1986,6 +1986,17 @@ void MergeTreeData::rename(const String & new_table_path, const StorageID & new_
             throw Exception{"Target path already exists: " + fullPath(disk, new_table_path), ErrorCodes::DIRECTORY_ALREADY_EXISTS};
     }
 
+    {
+        /// Relies on storage path, so we drop it during rename
+        /// it will be recreated automatiaclly.
+        std::lock_guard wal_lock(write_ahead_log_mutex);
+        if (write_ahead_log)
+        {
+            write_ahead_log->shutdown();
+            write_ahead_log.reset();
+        }
+    }
+
     for (const auto & disk : disks)
     {
         auto new_table_path_parent = parentPath(new_table_path);
@@ -1997,7 +2008,10 @@ void MergeTreeData::rename(const String & new_table_path, const StorageID & new_
         getContext()->dropCaches();
 
     relative_data_path = new_table_path;
+
     renameInMemory(new_table_id);
+
+
 }
 
 void MergeTreeData::dropAllData()
@@ -2012,6 +2026,12 @@ void MergeTreeData::dropAllData()
 
     data_parts_indexes.clear();
     column_sizes.clear();
+
+    {
+        std::lock_guard wal_lock(write_ahead_log_mutex);
+        if (write_ahead_log)
+            write_ahead_log->shutdown();
+    }
 
     /// Tables in atomic databases have UUID and stored in persistent locations.
     /// No need to drop caches (that are keyed by filesystem path) because collision is not possible.

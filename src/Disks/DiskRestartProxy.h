@@ -37,7 +37,7 @@ public:
     void createDirectories(const String & path) override;
     void clearDirectory(const String & path) override;
     void moveDirectory(const String & from_path, const String & to_path) override;
-    DiskDirectoryIteratorPtr iterateDirectory(const String & path) override;
+    DirectoryIteratorPtr iterateDirectory(const String & path) override;
     void createFile(const String & path) override;
     void moveFile(const String & from_path, const String & to_path) override;
     void replaceFile(const String & from_path, const String & to_path) override;

@@ -24,6 +24,7 @@
 #include <Disks/ObjectStorages/S3/ProxyResolverConfiguration.h>
 #include <Disks/ObjectStorages/S3/S3ObjectStorage.h>
 #include <Disks/ObjectStorages/S3/diskSettings.h>
+#include <Disks/ObjectStorages/MetadataStorageFromDisk.h>
 
 #include <IO/S3Common.h>
 
@@ -85,6 +86,8 @@ void registerDiskS3(DiskFactory & factory)
 
         auto [metadata_path, metadata_disk] = prepareForLocalMetadata(name, config, config_prefix, context);
 
+        auto metadata_storage = std::make_shared<MetadataStorageFromDisk>(metadata_disk, uri.key);
+
         FileCachePtr cache = getCachePtrForDisk(name, config, config_prefix, context);
 
         ObjectStoragePtr s3_storage = std::make_unique<S3ObjectStorage>(
@@ -99,7 +102,7 @@ void registerDiskS3(DiskFactory & factory)
             name,
             uri.key,
             "DiskS3",
-            metadata_disk,
+            std::move(metadata_storage),
             std::move(s3_storage),
             DiskType::S3,
             send_metadata,
