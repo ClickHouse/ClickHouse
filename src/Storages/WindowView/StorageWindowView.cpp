@@ -1165,9 +1165,6 @@ StorageWindowView::StorageWindowView(
     storage_metadata.setColumns(columns_);
     setInMemoryMetadata(storage_metadata);
 
-    if (!query.select)
-        throw Exception(ErrorCodes::INCORRECT_QUERY, "SELECT query is not specified for {}", getName());
-
     /// If the target table is not set, use inner target table
     has_inner_target_table = query.to_table_id.empty();
     if (has_inner_target_table && !query.storage)
