@@ -531,6 +531,9 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
         const auto & sorting_columns = metadata_for_reading->getSortingKey().column_names;
 
         SortDescription sort_description;
+        sort_description.compile_sort_description = settings.compile_sort_description;
+        sort_description.min_count_to_compile_sort_description = settings.min_count_to_compile_sort_description;
+
         for (size_t j = 0; j < prefix_size; ++j)
             sort_description.emplace_back(sorting_columns[j], input_order_info->direction);
 
@@ -737,6 +740,9 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
 
         Names sort_columns = metadata_for_reading->getSortingKeyColumns();
         SortDescription sort_description;
+        sort_description.compile_sort_description = settings.compile_sort_description;
+        sort_description.min_count_to_compile_sort_description = settings.min_count_to_compile_sort_description;
+
         size_t sort_columns_size = sort_columns.size();
         sort_description.reserve(sort_columns_size);
 
@@ -1048,6 +1054,9 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
             column_names_to_read);
     }
 
+    for (const auto & processor : pipe.getProcessors())
+        processor->setStorageLimits(query_info.storage_limits);
+
     if (pipe.empty())
     {
         pipeline.init(Pipe(std::make_shared<NullSource>(getOutputStream().header)));
@@ -1116,11 +1125,11 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
     for (const auto & processor : pipe.getProcessors())
         processors.emplace_back(processor);
 
-    // Attach QueryIdHolder if needed
-    if (query_id_holder)
-        pipe.addQueryIdHolder(std::move(query_id_holder));
 
     pipeline.init(std::move(pipe));
+    // Attach QueryIdHolder if needed
+    if (query_id_holder)
+        pipeline.setQueryIdHolder(std::move(query_id_holder));
 }
 
 static const char * indexTypeToString(ReadFromMergeTree::IndexType type)

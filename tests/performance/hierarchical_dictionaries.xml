@@ -1,0 +1,55 @@
+<test>
+    <substitutions>
+        <substitution>
+            <name>dictionary_layout</name>
+            <values>
+                <value>flat</value>
+                <value>hashed</value>
+                <value>hashed_array</value>
+            </values>
+        </substitution>
+
+        <substitution>
+            <name>func</name>
+            <values>
+                <value>dictGetHierarchy</value>
+                <value>dictGetDescendants</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <create_query>
+        CREATE TABLE hierarchical_dictionary_source_table
+        (
+            id UInt64,
+            parent_id UInt64
+        ) ENGINE = Memory;
+    </create_query>
+
+    <create_query>
+        CREATE DICTIONARY hierarchical_{dictionary_layout}_dictionary
+        (
+            id UInt64,
+            parent_id UInt64 HIERARCHICAL
+        )
+        PRIMARY KEY id
+        SOURCE(CLICKHOUSE(DB 'default' TABLE 'hierarchical_dictionary_source_table'))
+        LAYOUT({dictionary_layout}())
+        LIFETIME(0);
+    </create_query>
+
+    <fill_query>
+        INSERT INTO hierarchical_dictionary_source_table
+        SELECT number, rand64() % 250000
+        FROM system.numbers
+        LIMIT 500000;
+    </fill_query>
+
+    <query>
+        SELECT {func}('hierarchical_{dictionary_layout}_dictionary', id) FROM hierarchical_{dictionary_layout}_dictionary FORMAT Null;
+    </query>
+
+    <drop_query>DROP TABLE IF EXISTS hierarchical_dictionary_source_table;</drop_query>
+    <drop_query>DROP DICTIONARY IF EXISTS hierarchical_{dictionary_layout}_dictionary;</drop_query>
+
+</test>

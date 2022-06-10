@@ -6,7 +6,6 @@
 #include <Core/NamesAndTypes.h>
 #include <Core/NamesAndAliases.h>
 #include <Interpreters/Context_fwd.h>
-#include <Storages/ColumnCodec.h>
 #include <Storages/ColumnDefault.h>
 #include <Common/Exception.h>
 
@@ -100,7 +99,7 @@ public:
     explicit ColumnsDescription(NamesAndTypesList ordinary, NamesAndAliases aliases);
 
     /// `after_column` can be a Nested column name;
-    void add(ColumnDescription column, const String & after_column = String(), bool first = false);
+    void add(ColumnDescription column, const String & after_column = String(), bool first = false, bool add_subcolumns = true);
     /// `column_name` can be a Nested column name;
     void remove(const String & column_name);
 
@@ -179,6 +178,9 @@ public:
     std::optional<NameAndTypePair> tryGetPhysical(const String & column_name) const;
     std::optional<NameAndTypePair> tryGetColumnOrSubcolumn(GetColumnsOptions::Kind kind, const String & column_name) const;
     std::optional<NameAndTypePair> tryGetColumn(const GetColumnsOptions & options, const String & column_name) const;
+
+    std::optional<const ColumnDescription> tryGetColumnOrSubcolumnDescription(GetColumnsOptions::Kind kind, const String & column_name) const;
+    std::optional<const ColumnDescription> tryGetColumnDescription(const GetColumnsOptions & options, const String & column_name) const;
 
     ColumnDefaults getDefaults() const; /// TODO: remove
     bool hasDefault(const String & column_name) const;

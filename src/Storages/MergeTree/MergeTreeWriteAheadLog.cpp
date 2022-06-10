@@ -46,16 +46,21 @@ MergeTreeWriteAheadLog::MergeTreeWriteAheadLog(
 
 MergeTreeWriteAheadLog::~MergeTreeWriteAheadLog()
 {
-    std::unique_lock lock(write_mutex);
-    if (sync_scheduled)
-        sync_cv.wait(lock, [this] { return !sync_scheduled; });
+    try
+    {
+        shutdown();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
 }
 
 void MergeTreeWriteAheadLog::init()
 {
     out = disk->writeFile(path, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Append);
 
-    /// Small hack: in NativeBlockOutputStream header is used only in `getHeader` method.
+    /// Small hack: in NativeWriter header is used only in `getHeader` method.
     /// To avoid complex logic of changing it during ALTERs we leave it empty.
     block_out = std::make_unique<NativeWriter>(*out, 0, Block{});
     min_block_number = std::numeric_limits<Int64>::max();
@@ -155,7 +160,7 @@ MergeTreeData::MutableDataPartsVector MergeTreeWriteAheadLog::restore(const Stor
 
                 part = storage.createPart(
                     part_name,
-                    MergeTreeDataPartType::IN_MEMORY,
+                    MergeTreeDataPartType::InMemory,
                     MergeTreePartInfo::fromPartName(part_name, storage.format_version),
                     single_disk_volume,
                     part_name);
@@ -250,6 +255,25 @@ void MergeTreeWriteAheadLog::sync(std::unique_lock<std::mutex> & lock)
 
     if (storage.getSettings()->in_memory_parts_insert_sync)
         sync_cv.wait(lock, [this] { return !sync_scheduled; });
+}
+
+void MergeTreeWriteAheadLog::shutdown()
+{
+    {
+        std::unique_lock lock(write_mutex);
+        if (shutdown_called)
+             return;
+
+        if (sync_scheduled)
+            sync_cv.wait(lock, [this] { return !sync_scheduled; });
+
+        shutdown_called = true;
+        out->finalize();
+        out.reset();
+    }
+
+    /// Do it without lock, otherwise inversion between pool lock and write_mutex is possible
+    sync_task->deactivate();
 }
 
 std::optional<MergeTreeWriteAheadLog::MinMaxBlockNumber>

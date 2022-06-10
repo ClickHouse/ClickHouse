@@ -83,7 +83,7 @@ void DiskDecorator::moveDirectory(const String & from_path, const String & to_pa
     delegate->moveDirectory(from_path, to_path);
 }
 
-DiskDirectoryIteratorPtr DiskDecorator::iterateDirectory(const String & path)
+DirectoryIteratorPtr DiskDecorator::iterateDirectory(const String & path)
 {
     return delegate->iterateDirectory(path);
 }
@@ -211,9 +211,9 @@ void DiskDecorator::shutdown()
     delegate->shutdown();
 }
 
-void DiskDecorator::startup()
+void DiskDecorator::startup(ContextPtr context)
 {
-    delegate->startup();
+    delegate->startup(context);
 }
 
 void DiskDecorator::applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr context, const String & config_prefix, const DisksMap & map)

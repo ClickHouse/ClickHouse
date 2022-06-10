@@ -3,7 +3,7 @@ sidebar_position: 69
 sidebar_label: "Named connections"
 ---
 
-# Storing details for connecting to external sources in configuration files  {#named-collections}
+# Storing details for connecting to external sources in configuration files
 
 Details for connecting to external sources (dictionaries, tables, table functions) can be saved
 in configuration files and thus simplify the creation of objects and hide credentials

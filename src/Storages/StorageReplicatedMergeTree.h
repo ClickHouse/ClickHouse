@@ -117,15 +117,6 @@ public:
     bool supportsReplication() const override { return true; }
     bool supportsDeduplication() const override { return true; }
 
-    Pipe read(
-        const Names & column_names,
-        const StorageSnapshotPtr & storage_snapshot,
-        SelectQueryInfo & query_info,
-        ContextPtr context,
-        QueryProcessingStage::Enum processed_stage,
-        size_t max_block_size,
-        unsigned num_streams) override;
-
     void read(
         QueryPlan & query_plan,
         const Names & column_names,
@@ -723,8 +714,19 @@ private:
     /// Info about how other replicas can access this one.
     ReplicatedMergeTreeAddress getReplicatedMergeTreeAddress() const;
 
-    bool dropAllPartsInPartition(
-        zkutil::ZooKeeper & zookeeper, String & partition_id, LogEntry & entry, ContextPtr query_context, bool detach);
+    bool addOpsToDropAllPartsInPartition(
+        zkutil::ZooKeeper & zookeeper, const String & partition_id, bool detach,
+        Coordination::Requests & ops, std::vector<LogEntryPtr> & entries,
+        std::vector<EphemeralLockInZooKeeper> & delimiting_block_locks,
+        std::vector<size_t> & log_entry_ops_idx);
+    void dropAllPartsInPartitions(
+        zkutil::ZooKeeper & zookeeper, const Strings partition_ids, std::vector<LogEntryPtr> & entries, ContextPtr query_context, bool detach);
+
+    LogEntryPtr dropAllPartsInPartition(
+        zkutil::ZooKeeper & zookeeper, const String & partition_id, ContextPtr query_context, bool detach);
+
+
+    void dropAllPartitionsImpl(const zkutil::ZooKeeperPtr & zookeeper, bool detach, ContextPtr query_context);
 
     void dropPartNoWaitNoThrow(const String & part_name) override;
     void dropPart(const String & part_name, bool detach, ContextPtr query_context) override;

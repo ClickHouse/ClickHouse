@@ -37,7 +37,7 @@ public:
     void createDirectories(const String & path) override;
     void clearDirectory(const String & path) override;
     void moveDirectory(const String & from_path, const String & to_path) override;
-    DiskDirectoryIteratorPtr iterateDirectory(const String & path) override;
+    DirectoryIteratorPtr iterateDirectory(const String & path) override;
     void createFile(const String & path) override;
     void moveFile(const String & from_path, const String & to_path) override;
     void replaceFile(const String & from_path, const String & to_path) override;
@@ -68,7 +68,7 @@ public:
     std::vector<String> getRemotePaths(const String & path) const override;
     void getRemotePathsRecursive(const String & path, std::vector<LocalPathWithRemotePaths> & paths_map) override;
 
-    void restart();
+    void restart(ContextPtr context);
 
 private:
     friend class RestartAwareReadBuffer;
