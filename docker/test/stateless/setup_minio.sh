@@ -22,7 +22,8 @@ ls -lha
 mkdir -p ./minio_data
 
 if [ ! -f ./minio ]; then
-  MINIO_VERSION=${MINIO_VERSION:-2022-01-03T18-22-58Z}
+  MINIO_SERVER_VERSION=${MINIO_SERVER_VERSION:-2022-01-03T18-22-58Z}
+  MINIO_CLIENT_VERSION=${MINIO_CLIENT_VERSION:-2022-01-05T23-52-51Z}
   case $(uname -m) in
     x86_64) BIN_ARCH=amd64 ;;
     aarch64) BIN_ARCH=arm64 ;;
@@ -32,8 +33,8 @@ if [ ! -f ./minio ]; then
 
   BINARY_TYPE=$(uname -s | tr '[:upper:]' '[:lower:]')
 
-  wget "https://dl.min.io/server/minio/release/${BINARY_TYPE}-${BIN_ARCH}/archive/minio.RELEASE.${MINIO_VERSION}" -O ./minio \
-    && wget "https://dl.min.io/client/mc/release/${BINARY_TYPE}-amd64/mc" \
+  wget "https://dl.min.io/server/minio/release/${BINARY_TYPE}-${BIN_ARCH}/archive/minio.RELEASE.${MINIO_SERVER_VERSION}" -O ./minio \
+    && wget "https://dl.min.io/client/mc/release/${BINARY_TYPE}-${BIN_ARCH}/archive/mc.RELEASE.${MINIO_CLIENT_VERSION}" -O ./mc \
     && chmod +x ./mc ./minio
 fi
 
