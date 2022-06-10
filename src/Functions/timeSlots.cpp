@@ -105,61 +105,75 @@ struct TimeSlotsImpl
     /// The following three methods process DateTime64 type
     static void vectorVector(
         const PaddedPODArray<DateTime64> & starts, const PaddedPODArray<Decimal64> & durations, UInt32 time_slot_size,
-        PaddedPODArray<DateTime64> & result_values, UInt16 dt_scale, UInt16 duration_scale)
+        PaddedPODArray<DateTime64> & result_values, ColumnArray::Offsets & result_offsets, UInt16 dt_scale, UInt16 duration_scale)
     {
         size_t size = starts.size();
+
+        result_offsets.resize(size);
         result_values.reserve(size);
 
         int dt_multiplier = dt_scale < duration_scale ? DecimalUtils::scaleMultiplier<DateTime64>(std::abs(duration_scale - dt_scale)) : 1;
         int dur_multiplier = dt_scale > duration_scale ? DecimalUtils::scaleMultiplier<DateTime64>(std::abs(dt_scale - duration_scale)) : 1;
 
-
+        ColumnArray::Offset current_offset = 0;
         for (size_t i = 0; i < size; ++i)
         {
             for (DateTime64 value = (starts[i] * dt_multiplier) / time_slot_size, end = (starts[i] + durations[i] * dur_multiplier) / time_slot_size; value <= end; value += 1)
             {
                 result_values.push_back(value * time_slot_size);
+                ++current_offset;
             }
+            result_offsets[i] = current_offset;
         }
     }
 
     static void vectorConstant(
         const PaddedPODArray<DateTime64> & starts, Decimal64 duration, UInt32 time_slot_size,
-        PaddedPODArray<DateTime64> & result_values, UInt16 dt_scale, UInt16 duration_scale)
+        PaddedPODArray<DateTime64> & result_values, ColumnArray::Offsets & result_offsets, UInt16 dt_scale, UInt16 duration_scale)
     {
         size_t size = starts.size();
+
+        result_offsets.resize(size);
         result_values.reserve(size);
 
         int dt_multiplier = dt_scale < duration_scale ? DecimalUtils::scaleMultiplier<DateTime64>(std::abs(duration_scale - dt_scale)) : 1;
         int dur_multiplier = dt_scale > duration_scale ? DecimalUtils::scaleMultiplier<DateTime64>(std::abs(dt_scale - duration_scale)) : 1;
 
+        ColumnArray::Offset current_offset = 0;
         duration = duration * dur_multiplier;
         for (size_t i = 0; i < size; ++i)
         {
             for (DateTime64 value = (starts[i] * dt_multiplier) / time_slot_size, end = (starts[i] + duration) / time_slot_size; value <= end; value += 1)
             {
                 result_values.push_back(value * time_slot_size);
+                ++current_offset;
             }
+            result_offsets[i] = current_offset;
         }
     }
 
     static void constantVector(
         DateTime64 start, const PaddedPODArray<Decimal64> & durations, UInt32 time_slot_size,
-        PaddedPODArray<DateTime64> & result_values, UInt16 dt_scale, UInt16 duration_scale)
+        PaddedPODArray<DateTime64> & result_values, ColumnArray::Offsets & result_offsets, UInt16 dt_scale, UInt16 duration_scale)
     {
         size_t size = durations.size();
+
+        result_offsets.resize(size);
         result_values.reserve(size);
 
         int dt_multiplier = dt_scale < duration_scale ? DecimalUtils::scaleMultiplier<DateTime64>(std::abs(duration_scale - dt_scale)) : 1;
         int dur_multiplier = dt_scale > duration_scale ? DecimalUtils::scaleMultiplier<DateTime64>(std::abs(dt_scale - duration_scale)) : 1;
 
+        ColumnArray::Offset current_offset = 0;
         start = dt_multiplier * start;
         for (size_t i = 0; i < size; ++i)
         {
             for (DateTime64 value = start / time_slot_size, end = (start + durations[i] * dur_multiplier) / time_slot_size; value <= end; value += 1)
             {
                 result_values.push_back(value * time_slot_size);
+                ++current_offset;
             }
+            result_offsets[i] = current_offset;
         }
     }
 };
@@ -257,7 +271,7 @@ public:
                 throw Exception("Third argument for function " + getName() + " must be greater than zero", ErrorCodes::ILLEGAL_COLUMN);
         }
 
-        if (WhichDataType(arguments[0].type).isDateTime())
+        if (isDateTime(arguments[0].type))
         {
             const auto * dt_starts = checkAndGetColumn<ColumnUInt32>(arguments[0].column.get());
             const auto * dt_const_starts = checkAndGetColumnConst<ColumnUInt32>(arguments[0].column.get());
@@ -284,7 +298,7 @@ public:
                 return res;
             }
         }
-        else if (WhichDataType(arguments[0].type).isDateTime64())
+        else if (isDateTime64(arguments[0].type))
         {
             const auto * dt64_starts = checkAndGetColumn<DataTypeDateTime64::ColumnType>(arguments[0].column.get());
             const auto * dt64_const_starts = checkAndGetColumnConst<DataTypeDateTime64::ColumnType>(arguments[0].column.get());
@@ -296,23 +310,23 @@ public:
             const auto duration_scale = assert_cast<const DataTypeDecimalBase<Decimal64> *>(arguments[1].type.get())->getScale();
 
             auto res = ColumnArray::create(DataTypeDateTime64(dt64_scale).createColumn());
-            auto & res_values = typeid_cast<DataTypeDateTime64::ColumnType &>(res->getData()).getData();
+            DataTypeDateTime64::ColumnType::Container & res_values = typeid_cast<DataTypeDateTime64::ColumnType &>(res->getData()).getData();
 
             if (dt64_starts && durations)
             {
-                TimeSlotsImpl::vectorVector(dt64_starts->getData(), durations->getData(), time_slot_size, res_values, dt64_scale, duration_scale);
+                TimeSlotsImpl::vectorVector(dt64_starts->getData(), durations->getData(), time_slot_size, res_values, res->getOffsets(), dt64_scale, duration_scale);
                 return res;
             }
             else if (dt64_starts && const_durations)
             {
                 TimeSlotsImpl::vectorConstant(
-                    dt64_starts->getData(), const_durations->getValue<Decimal64>(), time_slot_size, res_values, dt64_scale, duration_scale);
+                    dt64_starts->getData(), const_durations->getValue<Decimal64>(), time_slot_size, res_values, res->getOffsets(), dt64_scale, duration_scale);
                 return res;
             }
             else if (dt64_const_starts && durations)
             {
                 TimeSlotsImpl::constantVector(
-                    dt64_const_starts->getValue<DateTime64>(), durations->getData(), time_slot_size, res_values, dt64_scale, duration_scale);
+                    dt64_const_starts->getValue<DateTime64>(), durations->getData(), time_slot_size, res_values, res->getOffsets(), dt64_scale, duration_scale);
                 return res;
             }
         }
