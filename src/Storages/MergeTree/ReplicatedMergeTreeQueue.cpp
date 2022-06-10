@@ -1263,6 +1263,8 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
 
                 auto time_to_wait_seconds = std::min<int64_t>(MAX_SECONDS_TO_WAIT, entry.num_tries * BACKOFF_SECONDS);
                 auto time_since_last_try_seconds = std::time(nullptr) - entry.last_attempt_time;
+                /// Otherwise we will constantly look for part on other replicas
+                /// and load zookeeper too much.
                 if (time_to_wait_seconds > time_since_last_try_seconds)
                 {
                     out_postpone_reason = fmt::format(
