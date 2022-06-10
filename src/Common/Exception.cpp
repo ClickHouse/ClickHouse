@@ -218,7 +218,7 @@ static void getNoSpaceLeftInfoMessage(std::filesystem::path path, String & msg)
         formatReadableQuantity(fs.f_favail),
         mount_point);
 
-#if defined(__linux__)
+#if defined(OS_LINUX)
     msg += "\nFilesystem: " + getFilesystemName(mount_point);
 #endif
 }
@@ -230,7 +230,7 @@ static void getNoSpaceLeftInfoMessage(std::filesystem::path path, String & msg)
   */
 static void getNotEnoughMemoryMessage(std::string & msg)
 {
-#if defined(__linux__)
+#if defined(OS_LINUX)
     try
     {
         static constexpr size_t buf_size = 1024;
