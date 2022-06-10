@@ -225,7 +225,7 @@ public:
                     "Illegal type " + arguments[1].type->getName() + " of second argument of function " + getName() + ". Must be UInt32 when first argument is DateTime.",
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-            if (arguments.size() == 3 && !WhichDataType(arguments[2].type).isUInt32())
+            if (arguments.size() == 3 && !WhichDataType(arguments[2].type).isNativeUInt())
                 throw Exception(
                     "Illegal type " + arguments[2].type->getName() + " of third argument of function " + getName() + ". Must be UInt32 when first argument is DateTime.",
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -269,9 +269,9 @@ public:
             UInt32 time_slot_size = 1800;
             if (arguments.size() == 3)
             {
-                const auto * time_slot_column = checkAndGetColumnConst<ColumnConst>(arguments[2].column.get());
+                const auto * time_slot_column = checkAndGetColumn<ColumnConst>(arguments[2].column.get());
                 if (!time_slot_column)
-                    throw Exception("Third argument for function " + getName() + " must be constant integer", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                    throw Exception("Third argument for function " + getName() + " must be constant UInt32", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
                 if (time_slot_size = time_slot_column->getValue<UInt32>(); time_slot_size == 0)
                     throw Exception("Third argument for function " + getName() + " must be greater than zero", ErrorCodes::ILLEGAL_COLUMN);
@@ -308,9 +308,9 @@ public:
             UInt16 time_slot_scale = 0;
             if (arguments.size() == 3)
             {
-                const auto * time_slot_column = checkAndGetColumnConst<ColumnDecimal<Decimal64>>(arguments[2].column.get());
+                const auto * time_slot_column = checkAndGetColumn<ColumnConst>(arguments[2].column.get());
                 if (!time_slot_column)
-                    throw Exception("Third argument for function " + getName() + " must be constant integer", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                    throw Exception("Third argument for function " + getName() + " must be constant Decimal64", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
                 if (time_slot_size = time_slot_column->getValue<Decimal64>(); time_slot_size == 0)
                     throw Exception("Third argument for function " + getName() + " must be greater than zero", ErrorCodes::ILLEGAL_COLUMN);
