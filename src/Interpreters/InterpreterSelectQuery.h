@@ -12,6 +12,7 @@
 #include <Storages/ReadInOrderOptimizer.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/TableLockHolder.h>
+#include <QueryPipeline/Pipe.h>
 
 #include <Columns/FilterDescription.h>
 
@@ -125,7 +126,7 @@ public:
     void setMergeTreeReadTaskCallbackAndClientInfo(MergeTreeReadTaskCallback && callback);
 
     /// It will set shard_num and shard_count to the client_info
-    void setProperClientInfo();
+    void setProperClientInfo(size_t replica_num, size_t replica_count);
 
 private:
     InterpreterSelectQuery(

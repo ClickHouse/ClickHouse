@@ -6,7 +6,7 @@
 
 #include <base/defines.h>
 
-#if defined(__linux__) && !defined(THREAD_SANITIZER) && !defined(USE_MUSL)
+#if defined(OS_LINUX) && !defined(THREAD_SANITIZER) && !defined(USE_MUSL)
     #define USE_PHDR_CACHE 1
 #endif
 
