@@ -592,7 +592,7 @@ LRUFileCache::ReserveResult LRUFileCache::tryReserveForQuery(const Key & key, si
 {
     /// The maximum cache capacity of the request is not reached, thus the
     //// cache block is evicted from the main LRU queue by tryReserveForMainList().
-    if (query_context->getCacheSize() + size < query_context->getMaxCacheSize())
+    if (query_context->getCacheSize() + size <= query_context->getMaxCacheSize())
     {
         return ReserveResult::FITS_IN_QUERY_LIMIT_NEED_RESERVE_FROM_MAIN_LIST;
     }
