@@ -124,7 +124,8 @@ void StorageMergeTree::startup()
     /// Temporary directories contain incomplete results of merges (after forced restart)
     ///  and don't allow to reinitialize them, so delete each of them immediately
     clearOldTemporaryDirectories(0, {"tmp_", "delete_tmp_"});
-    clearOldBrokenPartsFromDetachedDirecory();
+    if (getSettings()->merge_tree_enable_clear_old_broken_detached)
+        clearOldBrokenPartsFromDetachedDirecory();
 
     /// NOTE background task will also do the above cleanups periodically.
     time_after_previous_cleanup_parts.restart();
@@ -1186,17 +1187,6 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
         scheduled = true;
     }
 
-    if (auto lock = time_after_previous_cleanup_broken_detached_parts.compareAndRestartDeferred(
-            getSettings()->merge_tree_clear_old_broken_detached_parts_interval_seconds))
-    {
-        assignee.scheduleCommonTask(std::make_shared<ExecutableLambdaAdapter>(
-            [this, share_lock] ()
-            {
-                return clearOldBrokenPartsFromDetachedDirecory();
-            }, common_assignee_trigger, getStorageID()), /* need_trigger */ false);
-        scheduled = true;
-    }
-
     if (auto lock = time_after_previous_cleanup_parts.compareAndRestartDeferred(
             getSettings()->merge_tree_clear_old_parts_interval_seconds))
     {
@@ -1210,6 +1200,8 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
                 cleared_count += clearOldWriteAheadLogs();
                 cleared_count += clearOldMutations();
                 cleared_count += clearEmptyParts();
+                if (getSettings()->merge_tree_enable_clear_old_broken_detached)
+                    cleared_count += clearOldBrokenPartsFromDetachedDirecory();
                 return cleared_count;
                 /// TODO maybe take into account number of cleared objects when calculating backoff
             }, common_assignee_trigger, getStorageID()), /* need_trigger */ false);

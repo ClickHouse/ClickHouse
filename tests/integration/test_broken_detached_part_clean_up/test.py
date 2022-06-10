@@ -6,14 +6,9 @@ from helpers.corrupt_part_data_on_disk import corrupt_part_data_on_disk
 from helpers.corrupt_part_data_on_disk import break_part
 import time
 
-cluster = ClickHouseCluster(__file__, zookeeper_config_path="configs/zookeeper.xml")
+cluster = ClickHouseCluster(__file__)
 
-node1 = cluster.add_instance(
-    "node1",
-    stay_alive=True,
-    with_zookeeper=True,
-    main_configs=["configs/zookeeper.xml"],
-)
+node1 = cluster.add_instance("node1", stay_alive=True, with_zookeeper=True)
 
 path_to_data = "/var/lib/clickhouse/"
 
@@ -68,9 +63,12 @@ def remove_broken_detached_part_impl(table, node, expect_broken_prefix):
 def test_remove_broken_detached_part_merge_tree(started_cluster):
     node1.query(
         """
-        CREATE TABLE mt(id UInt32, value Int32)
+        CREATE TABLE
+            mt(id UInt32, value Int32)
         ENGINE = MergeTree() ORDER BY id
-        SETTINGS merge_tree_clear_old_broken_detached_parts_interval_seconds=5;
+        SETTINGS
+            merge_tree_enable_clear_old_broken_detached=1,
+            merge_tree_clear_old_broken_detached_parts_interval_seconds=5;
         """
     )
 
@@ -85,9 +83,14 @@ def test_remove_broken_detached_part_merge_tree(started_cluster):
 def test_remove_broken_detached_part_replicated_merge_tree(started_cluster):
     node1.query(
         f"""
-        CREATE TABLE replicated_mt(date Date, id UInt32, value Int32)
+        CREATE TABLE
+            replicated_mt(date Date, id UInt32, value Int32)
         ENGINE = ReplicatedMergeTree('/clickhouse/tables/replicated_mt', '{node1.name}') ORDER BY id
-        SETTINGS merge_tree_clear_old_broken_detached_parts_interval_seconds=5, cleanup_delay_period=1, cleanup_delay_period_random_add=0;
+        SETTINGS
+            merge_tree_enable_clear_old_broken_detached=1,
+            merge_tree_clear_old_broken_detached_parts_interval_seconds=5,
+            cleanup_delay_period=1,
+            cleanup_delay_period_random_add=0;
         """
     )
 
