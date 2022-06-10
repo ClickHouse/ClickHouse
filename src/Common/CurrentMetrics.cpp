@@ -93,6 +93,8 @@
     M(CacheFileSegments, "Number of existing cache file segments") \
     M(CacheDetachedFileSegments, "Number of existing detached cache file segments") \
     M(S3Requests, "S3 requests") \
+    M(KeeperAliveConnections, "Number of alive connections") \
+    M(KeeperOutstandingRequets, "Number of outstanding requests") \
 
 namespace CurrentMetrics
 {
