@@ -96,7 +96,7 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(
     if (flags == -1)
         flags = O_RDONLY | O_CLOEXEC;
 
-#if defined(OS_LINUX) || defined(__FreeBSD__)
+#if defined(OS_LINUX) || defined(OS_FREEBSD)
     if (settings.direct_io_threshold && estimated_size >= settings.direct_io_threshold)
     {
         /** O_DIRECT
