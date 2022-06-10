@@ -1263,6 +1263,35 @@ create table ci_checks engine File(TSVWithNamesAndTypes, 'ci-checks.tsv')
         --database perftest
         --date_time_input_format=best_effort)
 
+    "${client[@]}" --query '
+        CREATE TABLE IF NOT EXISTS query_metrics_v2 (
+            `event_date` Date,
+            `event_time` DateTime,
+            `pr_number` UInt32,
+            `old_sha` String,
+            `new_sha` String,
+            `test` LowCardinality(String),
+            `query_index` UInt32,
+            `query_display_name` String,
+            `metric_name` LowCardinality(String),
+            `old_value` Float64,
+            `new_value` Float64,
+            `diff` Float64,
+            `stat_threshold` Float64
+        ) ENGINE = ReplicatedMergeTree
+        ORDER BY event_date
+    '
+
+    "${client[@]}" --query '
+        CREATE TABLE IF NOT EXISTS run_attributes_v1 (
+            `old_sha` String,
+            `new_sha` String,
+            `metric_name` LowCardinality(String),
+            `metric_value` String
+        ) ENGINE = ReplicatedMergeTree
+        ORDER BY old_sha, new_sha
+    '
+
     "${client[@]}" --query "
             insert into query_metrics_v2
             select
@@ -1303,15 +1332,13 @@ create table ci_checks engine File(TSVWithNamesAndTypes, 'ci-checks.tsv')
             /^old-sha/ { old_sha=$2 }
             /^new-sha/ { new_sha=$2 }
             /^metric/ { print old_sha, new_sha, $2, $3 }' \
-        | cat
-
-        # | "${client[@]}" --query "INSERT INTO run_attributes_v1 FORMAT TSV"
+        | "${client[@]}" --query "INSERT INTO run_attributes_v1 FORMAT TSV"
 
     # Grepping numactl results from log is too crazy, I'll just call it again.
-#     "${client[@]}" --query "INSERT INTO run_attributes_v1 FORMAT TSV" <<EOF
-# $REF_SHA	$SHA_TO_TEST	$(numactl --show | sed -n 's/^cpubind:[[:space:]]\+/numactl-cpubind	/p')
-# $REF_SHA	$SHA_TO_TEST	$(numactl --hardware | sed -n 's/^available:[[:space:]]\+/numactl-available	/p')
-# EOF
+    "${client[@]}" --query "INSERT INTO run_attributes_v1 FORMAT TSV" <<EOF
+$REF_SHA	$SHA_TO_TEST	$(numactl --show | sed -n 's/^cpubind:[[:space:]]\+/numactl-cpubind	/p')
+$REF_SHA	$SHA_TO_TEST	$(numactl --hardware | sed -n 's/^available:[[:space:]]\+/numactl-available	/p')
+EOF
 
     # Also insert some data about the check into the CI checks table.
     "${client[@]}" --query "INSERT INTO "'"'"default"'"'".checks FORMAT TSVWithNamesAndTypes" \
