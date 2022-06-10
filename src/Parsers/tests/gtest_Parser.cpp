@@ -408,7 +408,7 @@ INSTANTIATE_TEST_SUITE_P(ParserKQLQuery, ParserTest,
         },
         {
             "Customers | where Age > 30 | where Education == 'Bachelors'",
-            "throws Syntax error"
+            "SELECT *\nFROM Customers\nWHERE (Age > 30) AND (Education = 'Bachelors')"
         },
         {
             "Customers |summarize count() by Occupation",
