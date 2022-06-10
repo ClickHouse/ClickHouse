@@ -1260,7 +1260,6 @@ create table ci_checks engine File(TSVWithNamesAndTypes, 'ci-checks.tsv')
         --user "${CLICKHOUSE_PERFORMANCE_COMPARISON_DATABASE_USER}"
         --password "${CLICKHOUSE_PERFORMANCE_COMPARISON_DATABASE_USER_PASSWORD}"
         --config "right/config/client_config.xml"
-        --database perftest
         --date_time_input_format=best_effort)
 
     "${client[@]}" --query '
