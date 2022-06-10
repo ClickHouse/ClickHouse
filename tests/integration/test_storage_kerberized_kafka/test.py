@@ -127,6 +127,7 @@ def test_kafka_json_as_string(kafka_cluster):
         "Parsing of message (topic: kafka_json_as_string, partition: 0, offset: 1) return no rows"
     )
 
+
 def test_kafka_json_as_string_request_new_ticket_after_expiration(kafka_cluster):
     # Ticket should be expired after the wait time
     # On run of SELECT query new ticket should be requested and SELECT query should run fine.
@@ -155,7 +156,7 @@ def test_kafka_json_as_string_request_new_ticket_after_expiration(kafka_cluster)
         """
     )
 
-    time.sleep(45) # wait for ticket expiration
+    time.sleep(45)  # wait for ticket expiration
 
     result = instance.query("SELECT * FROM test.kafka;")
     expected = """\
@@ -167,6 +168,7 @@ def test_kafka_json_as_string_request_new_ticket_after_expiration(kafka_cluster)
     assert instance.contains_in_log(
         "Parsing of message (topic: kafka_json_as_string, partition: 0, offset: 1) return no rows"
     )
+
 
 def test_kafka_json_as_string_no_kdc(kafka_cluster):
     # When the test is run alone (not preceded by any other kerberized kafka test),
@@ -222,7 +224,6 @@ def test_kafka_json_as_string_no_kdc(kafka_cluster):
     assert TSV(result) == TSV(expected)
     assert instance.contains_in_log("StorageKafka (kafka_no_kdc): Nothing to commit")
     assert instance.contains_in_log("Ticket expired")
-    #~ assert instance.contains_in_log("Kerberos ticket refresh failed")
     assert instance.contains_in_log("KerberosInit failure:")
 
 
