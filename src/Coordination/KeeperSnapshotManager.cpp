@@ -305,11 +305,9 @@ void KeeperStorageSnapshot::deserialize(SnapshotDeserializationResult & deserial
             if (itr.value.stat.numChildren != static_cast<int32_t>(itr.value.getChildren().size()))
             {
 #ifdef NDEBUG
+                /// TODO (alesapin) remove this, it should be always CORRUPTED_DATA.
                 LOG_ERROR(&Poco::Logger::get("KeeperSnapshotManager"), "Children counter in stat.numChildren {}"
                             " is different from actual children size {} for node {}", itr.value.stat.numChildren, itr.value.getChildren().size(), itr.key);
-
-                /// TODO (alesapin) remove this, it should be always CORRUPTED_DATA.
-                itr.value.stat.numChildren = static_cast<int32_t>(itr.value.getChildren().size());
 #else
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Children counter in stat.numChildren {}"
                             " is different from actual children size {} for node {}", itr.value.stat.numChildren, itr.value.getChildren().size(), itr.key);
