@@ -1,0 +1,5 @@
+<test>
+  <query>select distinct number from numbers_mt(1e7) settings max_threads=2 format Null</query>
+  <query>select distinct number from numbers_mt(5e7) settings max_threads=2 format Null</query>
+  <query>select distinct number from numbers_mt(1e7) group by number format Null</query>
+</test>

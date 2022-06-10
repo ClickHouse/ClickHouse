@@ -48,15 +48,22 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
 /// May split ExpressionStep and lift up only a part of it.
 size_t tryExecuteFunctionsAfterSorting(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes);
 
+/// Usually we have two DistinctStep-s in the plan.
+/// One is meant to be executed on multiple threads (so called pre-distinct) and may be helpful if it reduce the amount of data coming to e.g. SortingStep.
+/// The second one returns the final result and executed in one thread.
+/// But it may happen that there will be no other steps between these two DistinctStep-s and we will just do useless computations.
+size_t tryRemoveDuplicateDistincts(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes);
+
 inline const auto & getOptimizations()
 {
-    static const std::array<Optimization, 6> optimizations = {{
+    static const std::array<Optimization, 7> optimizations = {{
         {tryLiftUpArrayJoin, "liftUpArrayJoin", &QueryPlanOptimizationSettings::optimize_plan},
         {tryPushDownLimit, "pushDownLimit", &QueryPlanOptimizationSettings::optimize_plan},
         {trySplitFilter, "splitFilter", &QueryPlanOptimizationSettings::optimize_plan},
         {tryMergeExpressions, "mergeExpressions", &QueryPlanOptimizationSettings::optimize_plan},
         {tryPushDownFilter, "pushDownFilter", &QueryPlanOptimizationSettings::filter_push_down},
         {tryExecuteFunctionsAfterSorting, "liftUpFunctions", &QueryPlanOptimizationSettings::optimize_plan},
+        {tryRemoveDuplicateDistincts, "removeDuplicateDistincts", &QueryPlanOptimizationSettings::optimize_plan},
     }};
 
     return optimizations;
