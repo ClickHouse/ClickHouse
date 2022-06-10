@@ -149,7 +149,6 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
         global_ctx->merging_columns,
         global_ctx->merging_column_names);
 
-
     auto local_single_disk_volume = std::make_shared<SingleDiskVolume>("volume_" + global_ctx->future_part->name, ctx->disk, 0);
     global_ctx->new_data_part = global_ctx->data->createPart(
         global_ctx->future_part->name,
@@ -248,11 +247,45 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
             throw Exception("Merge algorithm must be chosen", ErrorCodes::LOGICAL_ERROR);
     }
 
+    assert(global_ctx->gathering_columns.size() == global_ctx->gathering_column_names.size());
+    assert(global_ctx->merging_columns.size() == global_ctx->merging_column_names.size());
+
     /// If merge is vertical we cannot calculate it
     ctx->blocks_are_granules_size = (global_ctx->chosen_merge_algorithm == MergeAlgorithm::Vertical);
 
     /// Merged stream will be created and available as merged_stream variable
     createMergedStream();
+
+    /// Skip fully expired columns manually, since in case of
+    /// need_remove_expired_values is not set, TTLTransform will not be used,
+    /// and columns that had been removed by TTL (via TTLColumnAlgorithm) will
+    /// be added again with default values.
+    ///
+    /// Also note, that it is better to do this here, since in other places it
+    /// will be too late (i.e. they will be written, and we will burn CPU/disk
+    /// resources for this).
+    if (!ctx->need_remove_expired_values)
+    {
+        size_t expired_columns = 0;
+
+        for (auto & [column_name, ttl] : global_ctx->new_data_part->ttl_infos.columns_ttl)
+        {
+            if (ttl.finished())
+            {
+                global_ctx->new_data_part->expired_columns.insert(column_name);
+                LOG_TRACE(ctx->log, "Adding expired column {} for part {}", column_name, global_ctx->new_data_part->name);
+                std::erase(global_ctx->gathering_column_names, column_name);
+                std::erase(global_ctx->merging_column_names, column_name);
+                ++expired_columns;
+            }
+        }
+
+        if (expired_columns)
+        {
+            global_ctx->gathering_columns = global_ctx->gathering_columns.filter(global_ctx->gathering_column_names);
+            global_ctx->merging_columns = global_ctx->merging_columns.filter(global_ctx->merging_column_names);
+        }
+    }
 
     global_ctx->to = std::make_shared<MergedBlockOutputStream>(
         global_ctx->new_data_part,
