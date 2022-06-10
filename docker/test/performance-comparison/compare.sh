@@ -574,7 +574,6 @@ then
         --user "${CLICKHOUSE_PERFORMANCE_COMPARISON_DATABASE_USER}"
         --password "${CLICKHOUSE_PERFORMANCE_COMPARISON_DATABASE_USER_PASSWORD}"
         --config "right/config/client_config.xml"
-        --database perftest
         --date_time_input_format=best_effort)
 
 
@@ -1304,13 +1303,15 @@ create table ci_checks engine File(TSVWithNamesAndTypes, 'ci-checks.tsv')
             /^old-sha/ { old_sha=$2 }
             /^new-sha/ { new_sha=$2 }
             /^metric/ { print old_sha, new_sha, $2, $3 }' \
-        | "${client[@]}" --query "INSERT INTO run_attributes_v1 FORMAT TSV"
+        | cat
+
+        # | "${client[@]}" --query "INSERT INTO run_attributes_v1 FORMAT TSV"
 
     # Grepping numactl results from log is too crazy, I'll just call it again.
-    "${client[@]}" --query "INSERT INTO run_attributes_v1 FORMAT TSV" <<EOF
-$REF_SHA	$SHA_TO_TEST	$(numactl --show | sed -n 's/^cpubind:[[:space:]]\+/numactl-cpubind	/p')
-$REF_SHA	$SHA_TO_TEST	$(numactl --hardware | sed -n 's/^available:[[:space:]]\+/numactl-available	/p')
-EOF
+#     "${client[@]}" --query "INSERT INTO run_attributes_v1 FORMAT TSV" <<EOF
+# $REF_SHA	$SHA_TO_TEST	$(numactl --show | sed -n 's/^cpubind:[[:space:]]\+/numactl-cpubind	/p')
+# $REF_SHA	$SHA_TO_TEST	$(numactl --hardware | sed -n 's/^available:[[:space:]]\+/numactl-available	/p')
+# EOF
 
     # Also insert some data about the check into the CI checks table.
     "${client[@]}" --query "INSERT INTO "'"'"default"'"'".checks FORMAT TSVWithNamesAndTypes" \
