@@ -52,14 +52,16 @@ RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 ENV NUM_TRIES=1
 ENV MAX_RUN_TIME=0
 
-# See usage of the MINIO_VERSION in setup_minio.sh
-ENV MINIO_VERSION=2022-01-03T18-22-58Z
+# Unrelated to vars in setup_minio.sh, but should be the same there
+# to have the same binaries for local running scenario
+ARG MINIO_SERVER_VERSION=2022-01-03T18-22-58Z
+ARG MINIO_CLIENT_VERSION=2022-01-05T23-52-51Z
 ARG TARGETARCH
 
 # Download Minio-related binaries
 RUN arch=${TARGETARCH:-amd64} \
-    && wget "https://dl.min.io/server/minio/release/linux-${arch}/archive/minio.RELEASE.${MINIO_VERSION}" -O ./minio \
-    && wget "https://dl.min.io/client/mc/release/linux-${arch}/mc" \
+    && wget "https://dl.min.io/server/minio/release/linux-${arch}/archive/minio.RELEASE.${MINIO_SERVER_VERSION}" -O ./minio \
+    && wget "https://dl.min.io/client/mc/release/linux-${arch}/archive/mc.RELEASE.${MINIO_CLIENT_VERSION}" -O ./mc \
     && chmod +x ./mc ./minio
 
 
