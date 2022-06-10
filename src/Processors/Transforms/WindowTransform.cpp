@@ -2202,9 +2202,14 @@ struct WindowFunctionNthValue final : public WindowFunction
     }
 };
 
+struct NonNegativeDerivativeState
+{
+    Float64 previous_metric = 0;
+    Float64 previous_timestamp = 0;
+};
 
 // nonNegativeDerivative(metric_column, timestamp_column[, INTERVAL 1 SECOND])
-struct WindowFunctionNonNegativeDerivative final : public RecurrentWindowFunction<0>
+struct WindowFunctionNonNegativeDerivative final : public StatefulWindowFunction<NonNegativeDerivativeState>
 {
     static constexpr size_t ARGUMENT_METRIC = 0;
     static constexpr size_t ARGUMENT_TIMESTAMP = 1;
@@ -2212,7 +2217,7 @@ struct WindowFunctionNonNegativeDerivative final : public RecurrentWindowFunctio
 
     WindowFunctionNonNegativeDerivative(const std::string & name_,
                                             const DataTypes & argument_types_, const Array & parameters_)
-        : RecurrentWindowFunction(name_, argument_types_, parameters_)
+        : StatefulWindowFunction(name_, argument_types_, parameters_)
     {
         if (!parameters.empty())
         {
@@ -2275,21 +2280,25 @@ struct WindowFunctionNonNegativeDerivative final : public RecurrentWindowFunctio
     {
         const auto & current_block = transform->blockAt(transform->current_row);
         const auto & workspace = transform->workspaces[function_index];
+        auto & state = getState(workspace);
 
         auto interval_duration = interval_specified ? interval_length *
             (*current_block.input_columns[workspace.argument_column_indices[ARGUMENT_INTERVAL]]).getFloat64(0) : 1;
 
-        Float64 last_metric = getLastValueFromInputColumn<Float64>(transform, function_index, ARGUMENT_METRIC);
-        Float64 last_timestamp = getLastValueFromInputColumn<Float64>(transform, function_index, ARGUMENT_TIMESTAMP);
+        Float64 last_metric = state.previous_metric;
+        Float64 last_timestamp = state.previous_timestamp;
 
-        Float64 curr_metric = getCurrentValueFromInputColumn<Float64>(transform, function_index, ARGUMENT_METRIC);
-        Float64 curr_timestamp = getCurrentValueFromInputColumn<Float64>(transform, function_index, ARGUMENT_TIMESTAMP);
+        Float64 curr_metric = WindowFunctionHelpers::getValue<Float64>(transform, function_index, ARGUMENT_METRIC, transform->current_row);
+        Float64 curr_timestamp = WindowFunctionHelpers::getValue<Float64>(transform, function_index, ARGUMENT_TIMESTAMP, transform->current_row);
 
         Float64 time_elapsed = curr_timestamp - last_timestamp;
         Float64 metric_diff = curr_metric - last_metric;
         Float64 result = (time_elapsed != 0) ? (metric_diff / time_elapsed * interval_duration) : 0;
 
-        setValueToOutputColumn(transform, function_index, result >= 0 ? result : 0);
+        state.previous_metric = curr_metric;
+        state.previous_timestamp = curr_timestamp;
+
+        WindowFunctionHelpers::setValueToOutputColumn<Float64>(transform, function_index, result >= 0 ? result : 0);
     }
 private:
     Float64 interval_length = 1;
