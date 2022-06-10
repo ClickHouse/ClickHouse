@@ -83,7 +83,7 @@ void DiskDecorator::moveDirectory(const String & from_path, const String & to_pa
     delegate->moveDirectory(from_path, to_path);
 }
 
-DiskDirectoryIteratorPtr DiskDecorator::iterateDirectory(const String & path)
+DirectoryIteratorPtr DiskDecorator::iterateDirectory(const String & path)
 {
     return delegate->iterateDirectory(path);
 }
