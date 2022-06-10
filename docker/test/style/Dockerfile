@@ -8,6 +8,7 @@ ARG apt_archive="http://archive.ubuntu.com"
 RUN sed -i "s|http://archive.ubuntu.com|$apt_archive|g" /etc/apt/sources.list
 
 RUN apt-get update && env DEBIAN_FRONTEND=noninteractive apt-get install --yes \
+    aspell \
     curl \
     git \
     libxml2-utils \

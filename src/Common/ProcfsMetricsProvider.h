@@ -4,7 +4,7 @@
 #include <boost/noncopyable.hpp>
 
 
-#if defined(__linux__)
+#if defined(OS_LINUX)
 struct taskstats;
 
 namespace DB

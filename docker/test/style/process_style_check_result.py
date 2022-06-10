@@ -18,6 +18,7 @@ def process_result(result_folder):
         ("typos", "typos_output.txt"),
         ("whitespaces", "whitespaces_output.txt"),
         ("workflows", "workflows_output.txt"),
+        ("doc typos", "doc_spell_output.txt"),
     )
 
     for name, out_file in checks:
