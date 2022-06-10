@@ -6,7 +6,6 @@ FROM clickhouse/stateless-test:$FROM_TAG
 RUN apt-get update -y \
     && env DEBIAN_FRONTEND=noninteractive \
         apt-get install --yes --no-install-recommends \
-        llvm-9 \
         python3-requests \
     && apt-get clean
 
