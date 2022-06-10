@@ -1187,7 +1187,8 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
                 block.setColumns(columns);
         }
 */
-        prewhere_info->actions->execute(block);
+        if (prewhere_info->actions)
+           prewhere_info->actions->execute(block);
 
         prewhere_column_pos = block.getPositionByName(prewhere_info->column_name);
 
@@ -1317,7 +1318,7 @@ std::string PrewhereExprInfo::dump() const
     for (size_t i = 0; i < steps.size(); ++i)
     {
         s << "STEP " << i << ":\n"
-            << "  ACTIONS: " << steps[i].actions->dumpActions() << "\n"
+            << "  ACTIONS: " << (steps[i].actions ? steps[i].actions->dumpActions() : "nullptr") << "\n"
             << "  COLUMN: " << steps[i].column_name << "\n"
             << "  REMOVE_COLUMN: " << steps[i].remove_column << "\n"
             << "  NEED_FILTER: " << steps[i].need_filter << "\n";
