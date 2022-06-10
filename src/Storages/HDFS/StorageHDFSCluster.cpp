@@ -2,6 +2,8 @@
 
 #if USE_HDFS
 
+#include <Storages/HDFS/StorageHDFSCluster.h>
+
 #include <Client/Connection.h>
 #include <Core/QueryProcessingStage.h>
 #include <DataTypes/DataTypeString.h>
@@ -10,16 +12,19 @@
 #include <Interpreters/SelectQueryOptions.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/getTableExpressions.h>
-#include <Processors/Transforms/AddingDefaultsTransform.h>
-#include <QueryPipeline/narrowBlockInputStreams.h>
+#include <QueryPipeline/narrowPipe.h>
 #include <QueryPipeline/Pipe.h>
-#include <Processors/Sources/RemoteSource.h>
 #include <QueryPipeline/RemoteQueryExecutor.h>
+
+#include <Processors/Transforms/AddingDefaultsTransform.h>
+
+#include <Processors/Sources/RemoteSource.h>
 #include <Parsers/queryToString.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
+
 #include <Storages/IStorage.h>
 #include <Storages/SelectQueryInfo.h>
-#include <Storages/HDFS/StorageHDFSCluster.h>
+#include <Storages/HDFS/HDFSCommon.h>
 
 #include <memory>
 
@@ -28,6 +33,7 @@ namespace DB
 {
 
 StorageHDFSCluster::StorageHDFSCluster(
+    ContextPtr context_,
     String cluster_name_,
     const String & uri_,
     const StorageID & table_id_,
@@ -41,8 +47,19 @@ StorageHDFSCluster::StorageHDFSCluster(
     , format_name(format_name_)
     , compression_method(compression_method_)
 {
+    context_->getRemoteHostFilter().checkURL(Poco::URI(uri_));
+    checkHDFSURL(uri_);
+
     StorageInMemoryMetadata storage_metadata;
-    storage_metadata.setColumns(columns_);
+
+    if (columns_.empty())
+    {
+        auto columns = StorageHDFS::getTableStructureFromData(format_name, uri_, compression_method, context_);
+        storage_metadata.setColumns(columns);
+    }
+    else
+        storage_metadata.setColumns(columns_);
+
     storage_metadata.setConstraints(constraints_);
     setInMemoryMetadata(storage_metadata);
 }

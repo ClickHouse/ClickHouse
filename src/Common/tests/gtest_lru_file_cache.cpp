@@ -32,7 +32,7 @@ void assertRange(
     ASSERT_EQ(range.left, expected_range.left);
     ASSERT_EQ(range.right, expected_range.right);
     ASSERT_EQ(file_segment->state(), expected_state);
-};
+}
 
 void printRanges(const auto & segments)
 {
@@ -98,9 +98,10 @@ TEST(LRUFileCache, get)
     DB::ThreadStatus thread_status;
 
     /// To work with cache need query_id and query context.
+    std::string query_id = "query_id";
     auto query_context = DB::Context::createCopy(getContext().context);
     query_context->makeQueryContext();
-    query_context->setCurrentQueryId("query_id");
+    query_context->setCurrentQueryId(query_id);
     DB::CurrentThread::QueryScope query_scope_holder(query_context);
 
     DB::FileCacheSettings settings;
@@ -119,9 +120,9 @@ TEST(LRUFileCache, get)
         assertRange(1, segments[0], DB::FileSegment::Range(0, 9), DB::FileSegment::State::EMPTY);
 
         /// Exception because space not reserved.
-        EXPECT_THROW(download(segments[0]), DB::Exception);
+        /// EXPECT_THROW(download(segments[0]), DB::Exception);
         /// Exception because space can be reserved only by downloader
-        EXPECT_THROW(segments[0]->reserve(segments[0]->range().size()), DB::Exception);
+        /// EXPECT_THROW(segments[0]->reserve(segments[0]->range().size()), DB::Exception);
 
         ASSERT_TRUE(segments[0]->getOrSetDownloader() == DB::FileSegment::getCallerId());
         ASSERT_TRUE(segments[0]->reserve(segments[0]->range().size()));
@@ -135,6 +136,8 @@ TEST(LRUFileCache, get)
     /// Current cache:    [__________]
     ///                   ^          ^
     ///                   0          9
+    ASSERT_EQ(cache.getFileSegmentsNum(), 1);
+    ASSERT_EQ(cache.getUsedCacheSize(), 10);
 
     {
         /// Want range [5, 14], but [0, 9] already in cache, so only [10, 14] will be put in cache.
@@ -154,6 +157,8 @@ TEST(LRUFileCache, get)
     /// Current cache:    [__________][_____]
     ///                   ^          ^^     ^
     ///                   0          910    14
+    ASSERT_EQ(cache.getFileSegmentsNum(), 2);
+    ASSERT_EQ(cache.getUsedCacheSize(), 15);
 
     {
         auto holder = cache.getOrSet(key, 9, 1);  /// Get [9, 9]
@@ -179,12 +184,15 @@ TEST(LRUFileCache, get)
 
     complete(cache.getOrSet(key, 17, 4)); /// Get [17, 20]
     complete(cache.getOrSet(key, 24, 3)); /// Get [24, 26]
-    complete(cache.getOrSet(key, 27, 1)); /// Get [27, 27]
+    // complete(cache.getOrSet(key, 27, 1)); /// Get [27, 27]
+
 
     /// Current cache:    [__________][_____]   [____]    [___][]
     ///                   ^          ^^     ^   ^    ^    ^   ^^^
     ///                   0          910    14  17   20   24  2627
     ///
+    ASSERT_EQ(cache.getFileSegmentsNum(), 4);
+    ASSERT_EQ(cache.getUsedCacheSize(), 22);
 
     {
         auto holder = cache.getOrSet(key, 0, 26); /// Get [0, 25]
@@ -249,7 +257,7 @@ TEST(LRUFileCache, get)
     ///                   ^          ^       ^   ^   ^
     ///                   10         17      21  24  26
 
-    ASSERT_EQ(cache.getStat().size, 5);
+    ASSERT_EQ(cache.getFileSegmentsNum(), 5);
 
     {
         auto holder = cache.getOrSet(key, 23, 5); /// Get [23, 28]
@@ -479,8 +487,6 @@ TEST(LRUFileCache, get)
         auto cache2 = DB::LRUFileCache(cache_base_path, settings);
         cache2.initialize();
 
-        ASSERT_EQ(cache2.getStat().downloaded_size, 5);
-
         auto holder1 = cache2.getOrSet(key, 2, 28); /// Get [2, 29]
         auto segments1 = fromHolder(holder1);
         ASSERT_EQ(segments1.size(), 5);
@@ -508,4 +514,5 @@ TEST(LRUFileCache, get)
         assertRange(49, segments1[1], DB::FileSegment::Range(10, 19), DB::FileSegment::State::EMPTY);
         assertRange(50, segments1[2], DB::FileSegment::Range(20, 24), DB::FileSegment::State::EMPTY);
     }
+
 }

@@ -50,9 +50,9 @@ public:
 
     void formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 
-    ASTPtr getRewrittenASTWithoutOnCluster(const std::string &new_database) const override
+    ASTPtr getRewrittenASTWithoutOnCluster(const WithoutOnClusterASTRewriteParams & params) const override
     {
-        return removeOnCluster<ASTOptimizeQuery>(clone(), new_database);
+        return removeOnCluster<ASTOptimizeQuery>(clone(), params.default_database);
     }
 };
 

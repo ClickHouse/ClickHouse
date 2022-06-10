@@ -637,7 +637,7 @@ void SummingSortedAlgorithm::SummingMergedData::addRowImpl(ColumnRawPtrs & raw_c
     for (auto & desc : def.columns_to_aggregate)
     {
         if (!desc.created)
-            throw Exception("Logical error in SummingSortedBlockInputStream, there are no description",
+            throw Exception("Logical error in SummingSortedAlgorithm, there are no description",
                             ErrorCodes::LOGICAL_ERROR);
 
         if (desc.is_agg_func_type)

@@ -25,6 +25,17 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
+void ITableFunctionFileLike::parseFirstArguments(const ASTPtr & arg, ContextPtr context)
+{
+    auto ast = evaluateConstantExpressionOrIdentifierAsLiteral(arg, context);
+    filename = ast->as<ASTLiteral &>().value.safeGet<String>();
+}
+
+String ITableFunctionFileLike::getFormatFromFirstArgument()
+{
+    return FormatFactory::instance().getFormatFromFileName(filename, true);
+}
+
 void ITableFunctionFileLike::parseArguments(const ASTPtr & ast_function, ContextPtr context)
 {
     /// Parse args
@@ -38,16 +49,16 @@ void ITableFunctionFileLike::parseArguments(const ASTPtr & ast_function, Context
     if (args.empty())
         throw Exception("Table function '" + getName() + "' requires at least 1 argument", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-    for (auto & arg : args)
-        arg = evaluateConstantExpressionOrIdentifierAsLiteral(arg, context);
+    parseFirstArguments(args[0], context);
 
-    filename = args[0]->as<ASTLiteral &>().value.safeGet<String>();
+    for (size_t i = 1; i < args.size(); ++i)
+        args[i] = evaluateConstantExpressionOrIdentifierAsLiteral(args[i], context);
 
     if (args.size() > 1)
         format = args[1]->as<ASTLiteral &>().value.safeGet<String>();
 
     if (format == "auto")
-        format = FormatFactory::instance().getFormatFromFileName(filename, true);
+        format = getFormatFromFirstArgument();
 
     if (args.size() <= 2)
         return;

@@ -19,7 +19,7 @@
 #include <Storages/FileLog/StorageFileLog.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMaterializedView.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <Common/Exception.h>
 #include <Common/Macros.h>
 #include <Common/filesystemHelpers.h>
@@ -808,7 +808,7 @@ void registerStorageFileLog(StorageFactory & factory)
         auto path = path_ast->as<ASTLiteral &>().value.safeGet<String>();
         auto format = format_ast->as<ASTLiteral &>().value.safeGet<String>();
 
-        return StorageFileLog::create(
+        return std::make_shared<StorageFileLog>(
             args.table_id,
             args.getContext(),
             args.columns,

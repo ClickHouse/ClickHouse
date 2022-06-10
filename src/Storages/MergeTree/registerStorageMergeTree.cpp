@@ -672,7 +672,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         throw Exception("Wrong number of engine arguments.", ErrorCodes::BAD_ARGUMENTS);
 
     if (replicated)
-        return StorageReplicatedMergeTree::create(
+        return std::make_shared<StorageReplicatedMergeTree>(
             zookeeper_path,
             replica_name,
             args.attach,
@@ -686,7 +686,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             args.has_force_restore_data_flag,
             renaming_restrictions);
     else
-        return StorageMergeTree::create(
+        return std::make_shared<StorageMergeTree>(
             args.table_id,
             args.relative_data_path,
             metadata,

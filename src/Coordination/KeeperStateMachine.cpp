@@ -59,7 +59,7 @@ KeeperStateMachine::KeeperStateMachine(
     , snapshot_manager(
         snapshots_path_, coordination_settings->snapshots_to_keep,
         coordination_settings->compress_snapshots_with_zstd_format, superdigest_,
-        coordination_settings->dead_session_check_period_ms.totalMicroseconds())
+        coordination_settings->dead_session_check_period_ms.totalMilliseconds())
     , responses_queue(responses_queue_)
     , snapshots_queue(snapshots_queue_)
     , last_committed_idx(0)
@@ -175,7 +175,7 @@ bool KeeperStateMachine::apply_snapshot(nuraft::snapshot & s)
 }
 
 
-void KeeperStateMachine::commit_config(const uint64_t /*log_idx*/, nuraft::ptr<nuraft::cluster_config> & new_conf)
+void KeeperStateMachine::commit_config(const uint64_t /* log_idx */, nuraft::ptr<nuraft::cluster_config> & new_conf)
 {
     std::lock_guard lock(cluster_config_lock);
     auto tmp = new_conf->serialize();

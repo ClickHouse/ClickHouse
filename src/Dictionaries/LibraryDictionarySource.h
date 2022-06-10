@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Bridge/LibraryBridgeHelper.h>
+#include <BridgeHelper/LibraryBridgeHelper.h>
 #include <Common/LocalDateTime.h>
 #include <Core/UUID.h>
 #include "DictionaryStructure.h"
@@ -46,16 +46,16 @@ public:
 
     ~LibraryDictionarySource() override;
 
-    Pipe loadAll() override;
+    QueryPipeline loadAll() override;
 
-    Pipe loadUpdatedAll() override
+    QueryPipeline loadUpdatedAll() override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method loadUpdatedAll is unsupported for LibraryDictionarySource");
     }
 
-    Pipe loadIds(const std::vector<UInt64> & ids) override;
+    QueryPipeline loadIds(const std::vector<UInt64> & ids) override;
 
-    Pipe loadKeys(const Columns & key_columns, const std::vector<std::size_t> & requested_rows) override;
+    QueryPipeline loadKeys(const Columns & key_columns, const std::vector<std::size_t> & requested_rows) override;
 
     bool isModified() const override;
 

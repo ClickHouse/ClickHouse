@@ -29,9 +29,9 @@
 
 #include <algorithm>
 #include <Processors/Executors/PullingPipelineExecutor.h>
-#include <Processors/Sources/SourceWithProgress.h>
+#include <Processors/ISource.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <Poco/Net/HTTPRequest.h>
 
 
@@ -43,7 +43,6 @@ namespace ErrorCodes
     extern const int NETWORK_ERROR;
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
-    extern const int CANNOT_EXTRACT_TABLE_STRUCTURE;
 }
 
 
@@ -75,6 +74,7 @@ IStorageURLBase::IStorageURLBase(
     , http_method(http_method_)
     , partition_by(partition_by_)
 {
+    FormatFactory::instance().checkFormatName(format_name);
     StorageInMemoryMetadata storage_metadata;
 
     if (columns_.empty())
@@ -114,7 +114,7 @@ namespace
     }
 
 
-    class StorageURLSource : public SourceWithProgress
+    class StorageURLSource : public ISource
     {
         using URIParams = std::vector<std::pair<String, String>>;
 
@@ -165,7 +165,7 @@ namespace
             const ReadWriteBufferFromHTTP::HTTPHeaderEntries & headers_ = {},
             const URIParams & params = {},
             bool glob_url = false)
-            : SourceWithProgress(sample_block), name(std::move(name_)), uri_info(uri_info_)
+            : ISource(sample_block), name(std::move(name_)), uri_info(uri_info_)
         {
             auto headers = getHeaders(headers_);
 
@@ -443,11 +443,27 @@ void StorageURLSink::consume(Chunk chunk)
     writer->write(getHeader().cloneWithColumns(chunk.detachColumns()));
 }
 
+void StorageURLSink::onException()
+{
+    if (!writer)
+        return;
+    onFinish();
+}
+
 void StorageURLSink::onFinish()
 {
-    writer->finalize();
-    writer->flush();
-    write_buf->finalize();
+    try
+    {
+        writer->finalize();
+        writer->flush();
+        write_buf->finalize();
+    }
+    catch (...)
+    {
+        /// Stop ParallelFormattingOutputFormat correctly.
+        writer.reset();
+        throw;
+    }
 }
 
 class PartitionedStorageURLSink : public PartitionedSink
@@ -551,54 +567,36 @@ ColumnsDescription IStorageURLBase::getTableStructureFromData(
         urls_to_check = {uri};
     }
 
-    String exception_messages;
-    bool read_buffer_creator_was_used = false;
 
-    std::vector<String>::const_iterator option = urls_to_check.begin();
-    do
+    ReadBufferIterator read_buffer_iterator = [&, it = urls_to_check.cbegin()]() mutable -> std::unique_ptr<ReadBuffer>
     {
-        auto read_buffer_creator = [&]()
-        {
-            read_buffer_creator_was_used = true;
-            return StorageURLSource::getFirstAvailableURLReadBuffer(
-                option,
-                urls_to_check.end(),
-                context,
-                {},
-                Poco::Net::HTTPRequest::HTTP_GET,
-                {},
-                ConnectionTimeouts::getHTTPTimeouts(context),
-                compression_method,
-                credentials,
-                headers,
-                false,
-                false,
-                context->getSettingsRef().max_download_threads);
-        };
+        if (it == urls_to_check.cend())
+            return nullptr;
 
-        try
-        {
-            return readSchemaFromFormat(format, format_settings, read_buffer_creator, context);
-        }
-        catch (...)
-        {
-            if (urls_to_check.size() == 1 || !read_buffer_creator_was_used)
-                throw;
+        auto buf = StorageURLSource::getFirstAvailableURLReadBuffer(
+            it,
+            urls_to_check.cend(),
+            context,
+            {},
+            Poco::Net::HTTPRequest::HTTP_GET,
+            {},
+            ConnectionTimeouts::getHTTPTimeouts(context),
+            compression_method,
+            credentials,
+            headers,
+            false,
+            false,
+            context->getSettingsRef().max_download_threads);\
+        ++it;
+        return buf;
+    };
 
-            exception_messages += getCurrentExceptionMessage(false) + "\n";
-        }
-
-    } while (++option < urls_to_check.end());
-
-    throw Exception(
-        ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE,
-        "All attempts to extract table structure from urls failed. Errors:\n{}",
-        exception_messages);
+    return readSchemaFromFormat(format, format_settings, read_buffer_iterator, urls_to_check.size() > 1, context);
 }
 
-bool IStorageURLBase::isColumnOriented() const
+bool IStorageURLBase::supportsSubsetOfColumns() const
 {
-    return FormatFactory::instance().checkIfFormatIsColumnOriented(format_name);
+    return FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(format_name);
 }
 
 Pipe IStorageURLBase::read(
@@ -614,10 +612,9 @@ Pipe IStorageURLBase::read(
 
     ColumnsDescription columns_description;
     Block block_for_format;
-    if (isColumnOriented())
+    if (supportsSubsetOfColumns())
     {
-        columns_description = ColumnsDescription{
-            storage_snapshot->getSampleBlockForColumns(column_names).getNamesAndTypesList()};
+        columns_description = storage_snapshot->getDescriptionForColumns(column_names);
         block_for_format = storage_snapshot->getSampleBlockForColumns(columns_description.getNamesOfPhysical());
     }
     else
@@ -702,10 +699,9 @@ Pipe StorageURLWithFailover::read(
 {
     ColumnsDescription columns_description;
     Block block_for_format;
-    if (isColumnOriented())
+    if (supportsSubsetOfColumns())
     {
-        columns_description = ColumnsDescription{
-            storage_snapshot->getSampleBlockForColumns(column_names).getNamesAndTypesList()};
+        columns_description = storage_snapshot->getDescriptionForColumns(column_names);
         block_for_format = storage_snapshot->getSampleBlockForColumns(columns_description.getNamesOfPhysical());
     }
     else
@@ -938,7 +934,7 @@ void registerStorageURL(StorageFactory & factory)
             if (args.storage_def->partition_by)
                 partition_by = args.storage_def->partition_by->clone();
 
-            return StorageURL::create(
+            return std::make_shared<StorageURL>(
                 configuration.url,
                 args.table_id,
                 configuration.format,

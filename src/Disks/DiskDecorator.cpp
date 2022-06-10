@@ -83,7 +83,7 @@ void DiskDecorator::moveDirectory(const String & from_path, const String & to_pa
     delegate->moveDirectory(from_path, to_path);
 }
 
-DiskDirectoryIteratorPtr DiskDecorator::iterateDirectory(const String & path)
+DirectoryIteratorPtr DiskDecorator::iterateDirectory(const String & path)
 {
     return delegate->iterateDirectory(path);
 }
@@ -106,6 +106,11 @@ void DiskDecorator::replaceFile(const String & from_path, const String & to_path
 void DiskDecorator::copy(const String & from_path, const std::shared_ptr<IDisk> & to_disk, const String & to_path)
 {
     delegate->copy(from_path, to_disk, to_path);
+}
+
+void DiskDecorator::copyDirectoryContent(const String & from_dir, const std::shared_ptr<IDisk> & to_disk, const String & to_dir)
+{
+    delegate->copyDirectoryContent(from_dir, to_disk, to_dir);
 }
 
 void DiskDecorator::listFiles(const String & path, std::vector<String> & file_names)
@@ -151,14 +156,14 @@ void DiskDecorator::removeSharedFile(const String & path, bool keep_s3)
     delegate->removeSharedFile(path, keep_s3);
 }
 
-void DiskDecorator::removeSharedFiles(const RemoveBatchRequest & files, bool keep_in_remote_fs)
+void DiskDecorator::removeSharedFiles(const RemoveBatchRequest & files, bool keep_all_batch_data, const NameSet & file_names_remove_metadata_only)
 {
-    delegate->removeSharedFiles(files, keep_in_remote_fs);
+    delegate->removeSharedFiles(files, keep_all_batch_data, file_names_remove_metadata_only);
 }
 
-void DiskDecorator::removeSharedRecursive(const String & path, bool keep_s3)
+void DiskDecorator::removeSharedRecursive(const String & path, bool keep_all_batch_data, const NameSet & file_names_remove_metadata_only)
 {
-    delegate->removeSharedRecursive(path, keep_s3);
+    delegate->removeSharedRecursive(path, keep_all_batch_data, file_names_remove_metadata_only);
 }
 
 void DiskDecorator::setLastModified(const String & path, const Poco::Timestamp & timestamp)
@@ -206,9 +211,9 @@ void DiskDecorator::shutdown()
     delegate->shutdown();
 }
 
-void DiskDecorator::startup()
+void DiskDecorator::startup(ContextPtr context)
 {
-    delegate->startup();
+    delegate->startup(context);
 }
 
 void DiskDecorator::applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr context, const String & config_prefix, const DisksMap & map)

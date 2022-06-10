@@ -210,7 +210,7 @@ void AuthenticationData::setPasswordHashBinary(const Digest & hash)
     throw Exception("setPasswordHashBinary(): authentication type " + toString(type) + " not supported", ErrorCodes::NOT_IMPLEMENTED);
 }
 
-void AuthenticationData::setSalt(String  salt_)
+void AuthenticationData::setSalt(String salt_)
 {
     if (type != AuthenticationType::SHA256_PASSWORD)
         throw Exception("setSalt(): authentication type " + toString(type) + " not supported", ErrorCodes::NOT_IMPLEMENTED);
