@@ -12,6 +12,7 @@
 #include <Coordination/pathUtils.h>
 #include <filesystem>
 #include <memory>
+#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -20,6 +21,7 @@ namespace ErrorCodes
 {
     extern const int UNKNOWN_FORMAT_VERSION;
     extern const int UNKNOWN_SNAPSHOT;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace
@@ -295,6 +297,26 @@ void KeeperStorageSnapshot::deserialize(SnapshotDeserializationResult & deserial
             storage.container.updateValue(parent_path, [path = itr.key] (KeeperStorage::Node & value) { value.addChild(getBaseName(path)); });
         }
     }
+
+    for (const auto & itr : storage.container)
+    {
+        if (itr.key != "/")
+        {
+            if (itr.value.stat.numChildren != static_cast<int32_t>(itr.value.getChildren().size()))
+            {
+#ifdef NDEBUG
+                LOG_ERROR(&Poco::Logger::get("KeeperSnapshotManager"), "Children counter in stat.numChildren {}"
+                            " is different from actual children size {} for node {}", itr.value.stat.numChildren, itr.value.getChildren().size(), itr.key);
+
+                itr.value.stat.numChildren = static_cast<int32_t>(itr.value.getChildren().size());
+#else
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Children counter in stat.numChildren {}"
+                            " is different from actual children size {} for node {}", itr.value.stat.numChildren, itr.value.getChildren().size(), itr.key);
+#endif
+            }
+        }
+    }
+
 
     size_t active_sessions_size;
     readBinary(active_sessions_size, in);
