@@ -1,5 +1,6 @@
 /*
  * d3-gantt.js by @serxa
+ * Based on https://github.com/ydb-platform/ydb/blob/stable-22-2/library/cpp/lwtrace/mon/static/js/d3-gantt.js
  */
  d3.gantt = function() {
     function gantt(input_data) {
