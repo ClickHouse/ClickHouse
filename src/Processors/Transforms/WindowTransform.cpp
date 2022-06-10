@@ -2197,7 +2197,6 @@ struct WindowFunctionNonNegativeDerivative final : public RecurrentWindowFunctio
 
         if (argument_types.size() == 3)
         {
-            interval_specified = true;
             const DataTypeInterval * interval_datatype = checkAndGetDataType<DataTypeInterval>(argument_types[ARGUMENT_INTERVAL].get());
             if (!interval_datatype)
             {
@@ -2211,10 +2210,11 @@ struct WindowFunctionNonNegativeDerivative final : public RecurrentWindowFunctio
             {
                 throw Exception(
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Only INTERVAL less than month is accepted, '{}' given",
+                    "The INTERVAL must be a week or shorter, '{}' given",
                     argument_types[ARGUMENT_INTERVAL]->getName());
             }
             interval_length = interval_datatype->getKind().toAvgSeconds();
+            interval_specified = true;
         }
     }
 
@@ -2240,7 +2240,7 @@ struct WindowFunctionNonNegativeDerivative final : public RecurrentWindowFunctio
 
         Float64 time_elapsed = curr_timestamp - last_timestamp;
         Float64 metric_diff = curr_metric - last_metric;
-        Float64 result = time_elapsed != 0 ? metric_diff / time_elapsed * interval_duration : 0;
+        Float64 result = (time_elapsed != 0) ? (metric_diff / time_elapsed * interval_duration) : 0;
 
         setValueToOutputColumn(transform, function_index, result >= 0 ? result : 0);
     }

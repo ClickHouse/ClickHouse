@@ -28,7 +28,7 @@ Float64 IntervalKind::toAvgSeconds() const
     __builtin_unreachable();
 }
 
-bool IntervalKind::isFixedLength()
+bool IntervalKind::isFixedLength() const
 {
     switch (kind)
     {
