@@ -11,6 +11,7 @@
 
 #include <Disks/ObjectStorages/AzureBlobStorage/AzureBlobStorageAuth.h>
 #include <Disks/ObjectStorages/AzureBlobStorage/AzureObjectStorage.h>
+#include <Disks/ObjectStorages/MetadataStorageFromDisk.h>
 
 namespace DB
 {
@@ -82,11 +83,13 @@ void registerDiskAzureBlobStorage(DiskFactory & factory)
         uint64_t copy_thread_pool_size = config.getUInt(config_prefix + ".thread_pool_size", 16);
         bool send_metadata = config.getBool(config_prefix + ".send_metadata", false);
 
+        auto metadata_storage = std::make_shared<MetadataStorageFromDisk>(metadata_disk, "");
+
         std::shared_ptr<IDisk> azure_blob_storage_disk = std::make_shared<DiskObjectStorage>(
             name,
             /* no namespaces */"",
             "DiskAzureBlobStorage",
-            metadata_disk,
+            std::move(metadata_storage),
             std::move(azure_object_storage),
             DiskType::AzureBlobStorage,
             send_metadata,

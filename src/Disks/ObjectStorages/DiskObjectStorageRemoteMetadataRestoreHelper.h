@@ -17,13 +17,13 @@ class DiskObjectStorage;
 ///
 /// FIXME: this class is very intrusive and use a lot of DiskObjectStorage internals.
 /// FIXME: it's very complex and unreliable, need to implement something better.
-class DiskObjectStorageMetadataHelper
+class DiskObjectStorageRemoteMetadataRestoreHelper
 {
 public:
     static constexpr UInt64 LATEST_REVISION = std::numeric_limits<UInt64>::max();
     static constexpr UInt64 UNKNOWN_REVISION = 0;
 
-    DiskObjectStorageMetadataHelper(DiskObjectStorage * disk_, ReadSettings read_settings_)
+    DiskObjectStorageRemoteMetadataRestoreHelper(DiskObjectStorage * disk_, ReadSettings read_settings_)
         : disk(disk_)
         , read_settings(std::move(read_settings_))
         , operation_log_suffix("-" + getFQDNOrHostName())
