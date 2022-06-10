@@ -1159,6 +1159,9 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
 
         for (const auto & column_name : non_const_virtual_column_names)
         {
+            if (block.has(column_name))
+                continue;
+
             if (column_name == "_part_offset")
                 block.insert({result.columns[pos], std::make_shared<DataTypeUInt64>(), column_name});
             else
