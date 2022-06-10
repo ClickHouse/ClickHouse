@@ -499,7 +499,7 @@ String FormatFactory::getFormatFromFileDescriptor(int fd)
     if (readlink(proc_path.c_str(), file_path, sizeof(file_path) - 1) != -1)
         return getFormatFromFileName(file_path, false);
     return "";
-#elif defined(__APPLE__)
+#elif defined(OS_DARWIN)
     char file_path[PATH_MAX] = {'\0'};
     if (fcntl(fd, F_GETPATH, file_path) != -1)
         return getFormatFromFileName(file_path, false);
