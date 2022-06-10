@@ -2674,11 +2674,11 @@ services:
             - {env_file}
         security_opt:
             - label:disable
-        {dns_opt}
-            {dns_opt_attempts}
-            {dns_opt_timeout}
-            {dns_opt_inet6}
-            {dns_opt_rotate}
+        dns_opt:
+            - attempts:2
+            - timeout:1
+            - inet6
+            - rotate
         {networks}
             {app_net}
                 {ipv4_address}
@@ -3815,14 +3815,6 @@ class ClickHouseInstance:
                 net_aliases = "aliases:"
                 net_alias1 = "- " + self.hostname
 
-        dns_opt = dns_opt_attempts = dns_opt_timeout = dns_opt_inet6 = dns_opt_rotate = ""
-        if not os.environ.get('SKIP_DNS_OPTS'):
-            dns_opt = "dns_opt:"
-            dns_opt_attempts = "- attempts:2"
-            dns_opt_timeout = "- timeout:1"
-            dns_opt_inet6 = "- inet6"
-            dns_opt_rotate = "- rotate"
-
         if not self.with_installed_binary:
             binary_volume = "- " + self.server_bin_path + ":/usr/bin/clickhouse"
             odbc_bridge_volume = (
@@ -3887,11 +3879,6 @@ class ClickHouseInstance:
                     ipv6_address=ipv6_address,
                     net_aliases=net_aliases,
                     net_alias1=net_alias1,
-                    dns_opt=dns_opt,
-                    dns_opt_attempts=dns_opt_attempts,
-                    dns_opt_timeout=dns_opt_timeout,
-                    dns_opt_inet6=dns_opt_inet6,
-                    dns_opt_rotate=dns_opt_rotate,
                 )
             )
 
