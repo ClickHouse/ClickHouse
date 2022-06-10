@@ -18,4 +18,6 @@ std::pair<String, DiskPtr> prepareForLocalMetadata(
     const String & config_prefix,
     ContextPtr context);
 
+bool isFileWithPersistentCache(const String & path);
+
 }

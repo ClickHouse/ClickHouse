@@ -1,20 +1,17 @@
 #pragma once
 
-#include <Disks/ObjectStorages/ObjectStorageProxy.h>
-#include <Common/IFileCache.h>
+#include <Common/config.h>
 
-namespace Poco
-{
-class Logger;
-}
+#include <Disks/ObjectStorages/IObjectStorage.h>
+
 
 namespace DB
 {
 
-class CachedObjectStorage : public ObjectStorageProxy
+class LocalObjectStorage : public IObjectStorage
 {
 public:
-    CachedObjectStorage(ObjectStoragePtr object_storage, FileCachePtr cache);
+    LocalObjectStorage() = default;
 
     bool exists(const std::string & path) const override;
 
@@ -40,6 +37,8 @@ public:
         size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
         const WriteSettings & write_settings = {}) override;
 
+    void listPrefix(const std::string & path, BlobsPathToSize & children) const override;
+
     void removeObject(const std::string & path) override;
 
     void removeObjects(const std::vector<std::string> & paths) override;
@@ -47,6 +46,8 @@ public:
     void removeObjectIfExists(const std::string & path) override;
 
     void removeObjectsIfExist(const std::vector<std::string> & paths) override;
+
+    ObjectMetadata getObjectMetadata(const std::string & path) const override;
 
     void copyObject( /// NOLINT
         const std::string & object_from,
@@ -59,7 +60,13 @@ public:
         IObjectStorage & object_storage_to,
         std::optional<ObjectAttributes> object_to_attributes = {}) override;
 
+    void shutdown() override;
+
     void startup() override;
+
+    void applyNewSettings(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, ContextPtr context) override;
+
+    String getObjectsNamespace() const override { return ""; }
 
     std::unique_ptr<IObjectStorage> cloneObjectStorage(
         const std::string & new_namespace,
@@ -67,13 +74,11 @@ public:
         const std::string & config_prefix,
         ContextPtr context) override;
 
-private:
-    IFileCache::Key getCacheKey(const std::string & path) const;
-    String getCachePath(const std::string & path) const;
-    ReadSettings getReadSettingsForCache(const ReadSettings & read_settings) const;
+    bool supportsAppend() const override { return true; }
 
-    FileCachePtr cache;
-    Poco::Logger * log;
+    String getUniqueIdForBlob(const String & path) override;
+
+private:
 };
 
 }

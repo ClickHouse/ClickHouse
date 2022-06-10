@@ -4,6 +4,8 @@
 #include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Disks/ObjectStorages/DiskObjectStorageMetadataHelper.h>
 #include <Disks/ObjectStorages/DiskObjectStorageMetadata.h>
+#include <Common/FileCache_fwd.h>
+
 #include <re2/re2.h>
 
 namespace CurrentMetrics
@@ -31,7 +33,7 @@ public:
         const String & object_storage_root_path_,
         const String & log_name,
         DiskPtr metadata_disk_,
-        ObjectStoragePtr && object_storage_,
+        ObjectStoragePtr object_storage_,
         DiskType disk_type_,
         bool send_metadata_,
         uint64_t thread_pool_size);
@@ -172,6 +174,14 @@ public:
 
     UInt64 getRevision() const override;
 
+    DiskObjectStoragePtr getObjectStorage(const String & name_) override;
+
+    bool isCached() const override;
+
+    void wrapWithCache(FileCachePtr cache, const String & layer_name);
+
+    const std::unordered_set<String> & getCacheLayersNames() const override { return cache_layers; }
+
 private:
     const String name;
     const String object_storage_root_path;
@@ -193,9 +203,14 @@ private:
     std::optional<UInt64> tryReserve(UInt64 bytes);
 
     bool send_metadata;
+    size_t threadpool_size;
 
     std::unique_ptr<DiskObjectStorageMetadataHelper> metadata_helper;
+
+    std::unordered_set<String> cache_layers;
 };
+
+using DiskObjectStoragePtr = std::shared_ptr<DiskObjectStorage>;
 
 class DiskObjectStorageReservation final : public IReservation
 {
@@ -219,7 +234,7 @@ public:
     ~DiskObjectStorageReservation() override;
 
 private:
-    std::shared_ptr<DiskObjectStorage> disk;
+    DiskObjectStoragePtr disk;
     UInt64 size;
     UInt64 unreserved_space;
     CurrentMetrics::Increment metric_increment;

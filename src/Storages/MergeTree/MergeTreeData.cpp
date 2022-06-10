@@ -19,6 +19,7 @@
 #include <Columns/ColumnObject.h>
 #include <DataTypes/hasNullable.h>
 #include <Disks/TemporaryFileOnDisk.h>
+#include <Disks/ObjectStorages/DiskObjectStorage.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <IO/ConcatReadBuffer.h>
@@ -1224,8 +1225,18 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
             defined_disk_names.insert(disk_ptr->getName());
             if (disk_ptr->isCached())
             {
-                auto wrapped_disk_ptr = disk_ptr->getWrappedDisk();
-                disk_names_wrapped_in_cache.insert(wrapped_disk_ptr->getName());
+                auto caches = disk_ptr->getCacheLayersNames();
+                disk_names_wrapped_in_cache.insert(caches.begin(), caches.end());
+            }
+        }
+
+        for (const auto & [name, disk_ptr] : getContext()->getDisksMap())
+        {
+            if (disk_ptr->isCached())
+            {
+                auto caches = disk_ptr->getCacheLayersNames();
+                disk_names_wrapped_in_cache.insert(caches.begin(), caches.end());
+                disk_names_wrapped_in_cache.insert(name);
             }
         }
 
@@ -1235,8 +1246,8 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
                 continue;
 
             if (!defined_disk_names.contains(disk_name)
-                && !disk_names_wrapped_in_cache.contains(disk_name)
-                && disk->exists(relative_data_path))
+                && disk->exists(relative_data_path)
+                && !disk_names_wrapped_in_cache.contains(disk_name))
             {
                 for (const auto it = disk->iterateDirectory(relative_data_path); it->isValid(); it->next())
                 {

@@ -50,6 +50,8 @@ class ReadBufferFromFileBase;
 class WriteBufferFromFileBase;
 class MMappedFileCache;
 
+class DiskObjectStorage;
+using DiskObjectStoragePtr = std::shared_ptr<DiskObjectStorage>;
 
 /**
  * Provide interface for reservation.
@@ -213,6 +215,11 @@ public:
 
     virtual bool isCached() const { return false; }
 
+    virtual const std::unordered_set<String> & getCacheLayersNames() const
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method `getCacheLayersNames()` is not implemented for disk: {}", getType());
+    }
+
     virtual DiskPtr getWrappedDisk() const
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method `getWrappedDisk()` is not implemented for disk: {}", getType());
@@ -354,6 +361,11 @@ public:
     virtual void syncRevision(UInt64) {}
     /// Return current disk revision.
     virtual UInt64 getRevision() const { return 0; }
+
+    virtual DiskObjectStoragePtr getObjectStorage(const String &)
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getObjectStorage() is not implemented for disk type: {}", getType());
+    }
 
 protected:
     friend class DiskDecorator;

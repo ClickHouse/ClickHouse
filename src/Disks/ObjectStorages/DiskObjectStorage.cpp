@@ -1,4 +1,5 @@
 #include <Disks/ObjectStorages/DiskObjectStorage.h>
+#include <Disks/ObjectStorages/DiskObjectStorageCommon.h>
 
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadBufferFromFile.h>
@@ -15,6 +16,7 @@
 #include <Disks/IO/ThreadPoolRemoteFSReader.h>
 #include <Common/IFileCache.h>
 #include <Disks/ObjectStorages/DiskObjectStorageMetadataHelper.h>
+#include <Disks/ObjectStorages/Cached/CachedObjectStorage.h>
 #include <Poco/Util/AbstractConfiguration.h>
 
 namespace DB
@@ -90,7 +92,7 @@ DiskObjectStorage::DiskObjectStorage(
     const String & object_storage_root_path_,
     const String & log_name,
     DiskPtr metadata_disk_,
-    ObjectStoragePtr && object_storage_,
+    ObjectStoragePtr object_storage_,
     DiskType disk_type_,
     bool send_metadata_,
     uint64_t thread_pool_size)
@@ -102,6 +104,7 @@ DiskObjectStorage::DiskObjectStorage(
     , disk_type(disk_type_)
     , object_storage(std::move(object_storage_))
     , send_metadata(send_metadata_)
+    , threadpool_size(thread_pool_size)
     , metadata_helper(std::make_unique<DiskObjectStorageMetadataHelper>(this, ReadSettings{}))
 {}
 
@@ -588,14 +591,47 @@ std::optional<UInt64>  DiskObjectStorage::tryReserve(UInt64 bytes)
     return {};
 }
 
+DiskObjectStoragePtr DiskObjectStorage::getObjectStorage(const String & name_)
+{
+    return std::make_shared<DiskObjectStorage>(
+        name_,
+        object_storage_root_path,
+        "DiskObjectStorage(" + name + ")",
+        metadata_disk,
+        object_storage,
+        disk_type,
+        send_metadata,
+        threadpool_size);
+}
+
+void DiskObjectStorage::wrapWithCache(FileCachePtr cache, const String & layer_name)
+{
+    object_storage = std::make_shared<CachedObjectStorage>(object_storage, cache);
+    cache_layers.insert(layer_name);
+}
+
+bool DiskObjectStorage::isCached() const
+{
+    return dynamic_cast<CachedObjectStorage *>(object_storage.get());
+}
+
+template <typename T>
+static T updateSettingsForReadWrite(const String & path, const T & settings)
+{
+    T new_settings{settings};
+    new_settings.is_file_cache_persistent = isFileWithPersistentCache(path);
+    return new_settings;
+}
+
 std::unique_ptr<ReadBufferFromFileBase> DiskObjectStorage::readFile(
     const String & path,
     const ReadSettings & settings,
     std::optional<size_t> read_hint,
     std::optional<size_t> file_size) const
 {
+    LOG_TEST(log, "Read from file: {}", path);
     auto metadata = readMetadata(path);
-    return object_storage->readObjects(object_storage_root_path, metadata.storage_objects, settings, read_hint, file_size);
+    return object_storage->readObjects(object_storage_root_path, metadata.storage_objects, updateSettingsForReadWrite(path, settings), read_hint, file_size);
 }
 
 std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorage::writeFile(
@@ -604,6 +640,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorage::writeFile(
     WriteMode mode,
     const WriteSettings & settings)
 {
+    LOG_TEST(log, "Write to file: {}", path);
     auto blob_name = getRandomASCIIString();
 
     std::optional<ObjectAttributes> object_attributes;
@@ -623,11 +660,19 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorage::writeFile(
             [blob_name, count] (DiskObjectStorage::Metadata & metadata) { metadata.addObject(blob_name, count); return true; });
     };
 
-    /// We always use mode Rewrite because we simulate append using metadata and different files
+    if (mode == WriteMode::Append && !object_storage->supportsAppend())
+    {
+        /// We always use mode Rewrite because we simulate append using metadata and different files
+        mode = WriteMode::Rewrite;
+    }
+
     return object_storage->writeObject(
-        fs::path(object_storage_root_path) / blob_name, WriteMode::Rewrite, object_attributes,
+        fs::path(object_storage_root_path) / blob_name,
+        mode,
+        object_attributes,
         std::move(create_metadata_callback),
-        buf_size, settings);
+        buf_size,
+        updateSettingsForReadWrite(path, settings));
 }
 
 void DiskObjectStorage::applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr context_, const String &, const DisksMap &)
