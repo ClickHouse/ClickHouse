@@ -285,8 +285,10 @@ void StorageMergeTree::truncate(const ASTPtr &, const StorageMetadataPtr &, Cont
         LOG_INFO(log, "Removed {} parts.", parts_to_remove.size());
     }
 
+    /// Force remove outdated parts to avoid their revival.
+    /// E.g. source parts for recently completed merges.
     clearOldMutations(true);
-    clearOldPartsFromFilesystem();
+    clearOldPartsFromFilesystem(true);
 }
 
 
