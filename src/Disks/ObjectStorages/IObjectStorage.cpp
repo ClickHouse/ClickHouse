@@ -4,6 +4,7 @@
 
 namespace DB
 {
+
 AsynchronousReaderPtr IObjectStorage::getThreadPoolReader()
 {
     constexpr size_t pool_size = 50;
