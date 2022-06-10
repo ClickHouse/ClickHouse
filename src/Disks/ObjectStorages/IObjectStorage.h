@@ -146,8 +146,10 @@ public:
     virtual std::unique_ptr<IObjectStorage> cloneObjectStorage(const std::string & new_namespace, const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, ContextPtr context) = 0;
 
     virtual String getUniqueIdForBlob(const String & path) = 0;
+
+    virtual bool supportsAppend() const { return false; }
 };
 
-using ObjectStoragePtr = std::unique_ptr<IObjectStorage>;
+using ObjectStoragePtr = std::shared_ptr<IObjectStorage>;
 
 }

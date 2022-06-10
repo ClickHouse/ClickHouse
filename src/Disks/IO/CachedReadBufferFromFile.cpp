@@ -58,7 +58,7 @@ CachedReadBufferFromFile::CachedReadBufferFromFile(
     , settings(settings_)
     , read_until_position(read_until_position_ ? *read_until_position_ : file_size_)
     , implementation_buffer_creator(implementation_buffer_creator_)
-    , is_persistent(settings_.cache_file_as_persistent)
+    , is_persistent(settings_.is_file_cache_persistent)
     , query_id(query_id_)
     , enable_logging(!query_id.empty() && settings_.enable_filesystem_cache_log)
     , current_buffer_id(getRandomASCIIString(8))

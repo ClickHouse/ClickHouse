@@ -10,7 +10,7 @@ struct WriteSettings
     bool enable_filesystem_cache_on_write_operations = false;
     bool enable_filesystem_cache_log = false;
     /// Internal settings
-    bool is_file_persistent = false;
+    bool is_file_cache_persistent = false;
 };
 
 }

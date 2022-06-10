@@ -1,4 +1,4 @@
-#include <Disks/ObjectStorages/CachedObjectStorage.h>
+#include "CachedObjectStorage.h"
 
 #include <Disks/ObjectStorages/DiskObjectStorageCommon.h>
 #include <IO/BoundedReadBuffer.h>
@@ -20,6 +20,12 @@ namespace ErrorCodes
     extern const int CANNOT_USE_CACHE;
 }
 
+CachedObjectStorage:: CachedObjectStorage(ObjectStoragePtr object_storage_, FileCachePtr cache_)
+    : object_storage(object_storage_)
+    , cache(cache_)
+    , log(&Poco::Logger::get("CachedOjectStorage"))
+{
+}
 
 IFileCache::Key CachedObjectStorage::getCacheKey(const std::string & path) const
 {
@@ -41,16 +47,13 @@ ReadSettings CachedObjectStorage::getReadSettingsForCache(const ReadSettings & r
     if (IFileCache::isReadOnly())
         result_settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache = true;
 
-    // if (modified_read_settings.filesystem_cache_do_not_evict_index_and_marks_files && isFilePersistent(path))
-    //     read_settings.cache_file_as_persistent = true;
-
     return result_settings;
 }
 
 void CachedObjectStorage::startup()
 {
     cache->initialize();
-    ObjectStorageProxy::startup();
+    object_storage->startup();
 }
 
 bool CachedObjectStorage::exists(const std::string & path) const
@@ -60,7 +63,7 @@ bool CachedObjectStorage::exists(const std::string & path) const
     if (fs::exists(cache_path) && !cache_path.empty())
         return true;
 
-    return ObjectStorageProxy::exists(path);
+    return object_storage->exists(path);
 }
 
 std::unique_ptr<ReadBufferFromFileBase> CachedObjectStorage::readObjects( /// NOLINT
@@ -71,7 +74,7 @@ std::unique_ptr<ReadBufferFromFileBase> CachedObjectStorage::readObjects( /// NO
     std::optional<size_t> file_size) const
 {
     auto modified_read_settings = getReadSettingsForCache(read_settings);
-    auto impl = ObjectStorageProxy::readObjects(common_path_prefix, blobs_to_read, read_settings, read_hint, file_size);
+    auto impl = object_storage->readObjects(common_path_prefix, blobs_to_read, read_settings, read_hint, file_size);
 
     /// If underlying read buffer does caching on its own, do not wrap it in caching buffer.
     if (impl->isIntegratedWithFilesystemCache()
@@ -87,7 +90,7 @@ std::unique_ptr<ReadBufferFromFileBase> CachedObjectStorage::readObjects( /// NO
         auto implementation_buffer_creator = [=, this]()
         {
             auto implementation_buffer =
-                ObjectStorageProxy::readObjects(common_path_prefix, blobs_to_read, modified_read_settings, read_hint, file_size);
+                object_storage->readObjects(common_path_prefix, blobs_to_read, modified_read_settings, read_hint, file_size);
             return std::make_unique<BoundedReadBuffer>(std::move(implementation_buffer));
         };
 
@@ -117,7 +120,7 @@ std::unique_ptr<ReadBufferFromFileBase> CachedObjectStorage::readObject( /// NOL
     std::optional<size_t> file_size) const
 {
     auto modified_read_settings = getReadSettingsForCache(read_settings);
-    auto impl = ObjectStorageProxy::readObject(path, read_settings, read_hint, file_size);
+    auto impl = object_storage->readObject(path, read_settings, read_hint, file_size);
 
     /// If underlying read buffer does caching on its own, do not wrap it in caching buffer.
     if (impl->isIntegratedWithFilesystemCache()
@@ -133,7 +136,7 @@ std::unique_ptr<ReadBufferFromFileBase> CachedObjectStorage::readObject( /// NOL
         auto implementation_buffer_creator = [=, this]()
         {
             auto implementation_buffer =
-                ObjectStorageProxy::readObject(path, read_settings, read_hint, file_size);
+                object_storage->readObject(path, read_settings, read_hint, file_size);
             return std::make_unique<BoundedReadBuffer>(std::move(implementation_buffer));
         };
 
@@ -160,7 +163,7 @@ std::unique_ptr<WriteBufferFromFileBase> CachedObjectStorage::writeObject( /// N
     size_t buf_size,
     const WriteSettings & write_settings)
 {
-    auto impl = ObjectStorageProxy::writeObject(path, mode, attributes, std::move(finalize_callback), buf_size, write_settings);
+    auto impl = object_storage->writeObject(path, mode, attributes, std::move(finalize_callback), buf_size, write_settings);
 
     bool cache_on_write = fs::path(path).extension() != ".tmp"
         && write_settings.enable_filesystem_cache_on_write_operations
@@ -176,7 +179,7 @@ std::unique_ptr<WriteBufferFromFileBase> CachedObjectStorage::writeObject( /// N
             cache,
             impl->getFileName(),
             key,
-            write_settings.is_file_persistent,
+            write_settings.is_file_cache_persistent,
             CurrentThread::isInitialized() && CurrentThread::get().getQueryContext() ? CurrentThread::getQueryId().toString() : "",
             write_settings);
     }
@@ -186,7 +189,7 @@ std::unique_ptr<WriteBufferFromFileBase> CachedObjectStorage::writeObject( /// N
 
 void CachedObjectStorage::removeObject(const std::string & path)
 {
-    ObjectStorageProxy::removeObject(path);
+    object_storage->removeObject(path);
 }
 
 void CachedObjectStorage::removeObjects(const std::vector<std::string> & paths)
@@ -194,13 +197,13 @@ void CachedObjectStorage::removeObjects(const std::vector<std::string> & paths)
     for (const auto & path : paths)
         cache->removeIfExists(getCacheKey(path));
 
-    ObjectStorageProxy::removeObjects(paths);
+    object_storage->removeObjects(paths);
 }
 
 void CachedObjectStorage::removeObjectIfExists(const std::string & path)
 {
     cache->removeIfExists(getCacheKey(path));
-    ObjectStorageProxy::removeObjectIfExists(path);
+    object_storage->removeObjectIfExists(path);
 }
 
 void CachedObjectStorage::removeObjectsIfExist(const std::vector<std::string> & paths)
@@ -208,7 +211,12 @@ void CachedObjectStorage::removeObjectsIfExist(const std::vector<std::string> & 
     for (const auto & path : paths)
         cache->removeIfExists(getCacheKey(path));
 
-    ObjectStorageProxy::removeObjectsIfExist(paths);
+    object_storage->removeObjectsIfExist(paths);
+}
+
+String CachedObjectStorage::getUniqueIdForBlob(const String & path)
+{
+    return object_storage->getUniqueIdForBlob(path);
 }
 
 void CachedObjectStorage::copyObjectToAnotherObjectStorage( // NOLINT
@@ -218,21 +226,47 @@ void CachedObjectStorage::copyObjectToAnotherObjectStorage( // NOLINT
     std::optional<ObjectAttributes> object_to_attributes)
 {
     /// TODO: add something here?
-    ObjectStorageProxy::copyObjectToAnotherObjectStorage(object_from, object_to, object_storage_to, object_to_attributes);
+    object_storage->copyObjectToAnotherObjectStorage(object_from, object_to, object_storage_to, object_to_attributes);
 }
 
 void CachedObjectStorage::copyObject( // NOLINT
     const std::string & object_from, const std::string & object_to, std::optional<ObjectAttributes> object_to_attributes)
 {
     /// TODO: add something here?
-    ObjectStorageProxy::copyObject(object_from, object_to, object_to_attributes);
+    object_storage->copyObject(object_from, object_to, object_to_attributes);
 }
 
 std::unique_ptr<IObjectStorage> CachedObjectStorage::cloneObjectStorage(
     const std::string & new_namespace, const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, ContextPtr context)
 {
     /// TODO: add something here?
-    return ObjectStorageProxy::cloneObjectStorage(new_namespace, config, config_prefix, context);
+    return object_storage->cloneObjectStorage(new_namespace, config, config_prefix, context);
+}
+
+void CachedObjectStorage::listPrefix(const std::string & path, BlobsPathToSize & children) const
+{
+    object_storage->listPrefix(path, children);
+}
+
+ObjectMetadata CachedObjectStorage::getObjectMetadata(const std::string & path) const
+{
+    return object_storage->getObjectMetadata(path);
+}
+
+void CachedObjectStorage::shutdown()
+{
+    object_storage->shutdown();
+}
+
+void CachedObjectStorage::applyNewSettings(
+    const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, ContextPtr context)
+{
+    object_storage->applyNewSettings(config, config_prefix, context);
+}
+
+String CachedObjectStorage::getObjectsNamespace() const
+{
+    return object_storage->getObjectsNamespace();
 }
 
 }
