@@ -84,6 +84,8 @@ String KQLOperators::getExprFromToken(IParser::Pos pos)
             else
                 --pos;
         }
+        else
+            --pos;
 
         if (KQLOperator.find(op) != KQLOperator.end())
            opValue = KQLOperator[op];
