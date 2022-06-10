@@ -70,55 +70,46 @@
         }
     }
 
-    function strColor(str) {
-        var hash = 0;
-        if (str.length === 0)
-            return hash;
-        for (let i = 0; i < str.length; i++) {
-            hash = ((hash << 5) - hash) + str.charCodeAt(i);
-            hash |= 0; // Convert to 32bit integer
-        }
-        if (hash < 0)
-            hash = -hash;
-        let rainbow = (hash % 128) / 128;
-        return d3.interpolateRainbow(rainbow);
-    };
-
     function parseClickHouseTrace(json) {
         let min_time_us = Number.MAX_VALUE;
         for (let i = 0; i < json.data.length; i++) {
-            let item = json.data[i];
-            for (let j = 0; j < item.spans.length; j++) {
-                let span = item.spans[j];
-                min_time_us = Math.min(min_time_us, span.start_time_us);
-            }
+            let span = json.data[i];
+            min_time_us = Math.min(min_time_us, +span.start_time_us);
         }
 
-        let minT = 0;
-        let maxT = 0;
+        let max_time_ms = 0;
         function convertTime(us) {
             let value = (us - min_time_us) / 1000;
-            maxT = Math.max(maxT, value);
+            max_time_ms = Math.max(max_time_ms, value);
             return value;
         }
 
-        let result = [];
-
-        for (let i = 0; i < json.data.length; i++) {
-            let item = json.data[i];
-            for (let j = 0; j < item.spans.length; j++) {
-                let span = item.spans[j];
-                result.push({
-                    t1: convertTime(span.start_time_us),
-                    t2: convertTime(span.finish_time_us),
-                    band: "thread" + item.group.thread_id,
-                    color: strColor(span.operation_name),
-                    text: span.operation_name
-                });
+        function strHash(str) {
+            var hash = 0;
+            if (str.length === 0)
+                return hash;
+            for (let i = 0; i < str.length; i++) {
+                hash = ((hash << 5) - hash) + str.charCodeAt(i);
+                hash |= 0; // Convert to 32bit integer
             }
+            if (hash < 0)
+                hash = -hash;
+            return hash;
         }
 
-        chart.timeDomain([minT, maxT]);
+        let result = [];
+        for (let i = 0; i < json.data.length; i++) {
+            let span = json.data[i];
+            result.push({
+                t1: convertTime(+span.start_time_us),
+                t2: convertTime(+span.finish_time_us),
+                band: Object.values(span.group).join(' '),
+                color: d3.interpolateRainbow((strHash(span.color) % 256) / 256),
+                text: span.operation_name
+            });
+        }
+
+        chart.timeDomain([0, max_time_ms]);
         return result;
     }
 
