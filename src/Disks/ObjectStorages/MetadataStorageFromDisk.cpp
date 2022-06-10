@@ -471,6 +471,11 @@ Poco::Timestamp MetadataStorageFromDisk::getLastModified(const std::string & pat
     return disk->getLastModified(path);
 }
 
+Poco::Timestamp MetadataStorageFromDisk::getLastChanged(const std::string & path) const
+{
+    return disk->getLastChanged(path);
+}
+
 uint64_t MetadataStorageFromDisk::getFileSize(const String & path) const
 {
     auto metadata = readMetadata(path);
