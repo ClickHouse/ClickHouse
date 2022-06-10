@@ -2053,7 +2053,6 @@ void ExpressionAnalysisResult::checkActions() const
         };
 
         check_actions(prewhere_info->prewhere_actions);
-        check_actions(prewhere_info->alias_actions);
     }
 }
 

@@ -3,9 +3,9 @@ sidebar_position: 66
 sidebar_label: Tuples
 ---
 
-# Functions for Working with Tuples {#tuple-functions}
+# Functions for Working with Tuples
 
-## tuple {#tuple}
+## tuple
 
 A function that allows grouping multiple columns.
 For columns with the types T1, T2, …, it returns a Tuple(T1, T2, …) type tuple containing these columns. There is no cost to execute the function.
@@ -19,7 +19,7 @@ The function implements the operator `(x, y, …)`.
 tuple(x, y, …)
 ```
 
-## tupleElement {#tupleelement}
+## tupleElement
 
 A function that allows getting a column from a tuple.
 ‘N’ is the column index, starting from 1. ‘N’ must be a constant. ‘N’ must be a strict postive integer no greater than the size of the tuple.
@@ -33,7 +33,7 @@ The function implements the operator `x.N`.
 tupleElement(tuple, n)
 ```
 
-## untuple {#untuple}
+## untuple
 
 Performs syntactic substitution of [tuple](../../sql-reference/data-types/tuple.md#tuplet1-t2) elements in the call location.
 
@@ -113,7 +113,7 @@ Result:
 
 -   [Tuple](../../sql-reference/data-types/tuple.md)
 
-## tupleHammingDistance {#tuplehammingdistance}
+## tupleHammingDistance
 
 Returns the [Hamming Distance](https://en.wikipedia.org/wiki/Hamming_distance) between two tuples of the same size.
 
@@ -182,7 +182,7 @@ Result:
 └─────────────────┘
 ```
 
-## tupleToNameValuePairs {#tupletonamevaluepairs}
+## tupleToNameValuePairs
 
 Turns a named tuple into an array of (name, value) pairs. For a `Tuple(a T, b T, ..., c T)` returns `Array(Tuple(String, T), ...)`
 in which the `Strings` represents the named fields of the tuple and `T` are the values associated with those names. All values in the tuple should be of the same type.
@@ -258,7 +258,7 @@ Result:
 └───────────────────────────────────────┘
 ```
 
-## tuplePlus {#tupleplus}
+## tuplePlus
 
 Calculates the sum of corresponding values of two tuples of the same size.
 
@@ -297,7 +297,7 @@ Result:
 └───────────────────────────┘
 ```
 
-## tupleMinus {#tupleminus}
+## tupleMinus
 
 Calculates the subtraction of corresponding values of two tuples of the same size.
 
@@ -336,7 +336,7 @@ Result:
 └────────────────────────────┘
 ```
 
-## tupleMultiply {#tuplemultiply}
+## tupleMultiply
 
 Calculates the multiplication of corresponding values of two tuples of the same size.
 
@@ -373,7 +373,7 @@ Result:
 └───────────────────────────────┘
 ```
 
-## tupleDivide {#tupledivide}
+## tupleDivide
 
 Calculates the division of corresponding values of two tuples of the same size. Note that division by zero will return `inf`.
 
@@ -410,7 +410,7 @@ Result:
 └─────────────────────────────┘
 ```
 
-## tupleNegate {#tuplenegate}
+## tupleNegate
 
 Calculates the negation of the tuple values.
 
@@ -446,7 +446,7 @@ Result:
 └─────────────────────┘
 ```
 
-## tupleMultiplyByNumber {#tuplemultiplybynumber}
+## tupleMultiplyByNumber
 
 Returns a tuple with all values multiplied by a number.
 
@@ -483,7 +483,7 @@ Result:
 └─────────────────────────────────────┘
 ```
 
-## tupleDivideByNumber {#tupledividebynumber}
+## tupleDivideByNumber
 
 Returns a tuple with all values divided by a number. Note that division by zero will return `inf`.
 
@@ -520,7 +520,7 @@ Result:
 └──────────────────────────────────┘
 ```
 
-## dotProduct {#dotproduct}
+## dotProduct
 
 Calculates the scalar product of two tuples of the same size.
 
@@ -559,7 +559,7 @@ Result:
 └────────────────────────────┘
 ```
 
-## L1Norm {#l1norm}
+## L1Norm
 
 Calculates the sum of absolute values of a tuple.
 
@@ -597,7 +597,7 @@ Result:
 └────────────────┘
 ```
 
-## L2Norm {#l2norm}
+## L2Norm
 
 Calculates the square root of the sum of the squares of the tuple values.
 
@@ -635,7 +635,7 @@ Result:
 └──────────────────┘
 ```
 
-## LinfNorm {#linfnorm}
+## LinfNorm
 
 Calculates the maximum of absolute values of a tuple.
 
@@ -673,7 +673,7 @@ Result:
 └───────────────────┘
 ```
 
-## LpNorm {#lpnorm}
+## LpNorm
 
 Calculates the root of `p`-th power of the sum of the absolute values of a tuple in the power of `p`.
 
@@ -712,7 +712,7 @@ Result:
 └────────────────────┘
 ```
 
-## L1Distance {#l1distance}
+## L1Distance
 
 Calculates the distance between two points (the values of the tuples are the coordinates) in `L1` space (1-norm ([taxicab geometry](https://en.wikipedia.org/wiki/Taxicab_geometry) distance)).
 
@@ -751,7 +751,7 @@ Result:
 └────────────────────────────┘
 ```
 
-## L2Distance {#l2distance}
+## L2Distance
 
 Calculates the distance between two points (the values of the tuples are the coordinates) in Euclidean space ([Euclidean distance](https://en.wikipedia.org/wiki/Euclidean_distance)).
 
@@ -790,7 +790,7 @@ Result:
 └────────────────────────────┘
 ```
 
-## LinfDistance {#linfdistance}
+## LinfDistance
 
 Calculates the distance between two points (the values of the tuples are the coordinates) in `L_{inf}` space ([maximum norm](https://en.wikipedia.org/wiki/Norm_(mathematics)#Maximum_norm_(special_case_of:_infinity_norm,_uniform_norm,_or_supremum_norm))).
 
@@ -829,7 +829,7 @@ Result:
 └──────────────────────────────┘
 ```
 
-## LpDistance {#lpdistance}
+## LpDistance
 
 Calculates the distance between two points (the values of the tuples are the coordinates) in `Lp` space ([p-norm distance](https://en.wikipedia.org/wiki/Norm_(mathematics)#p-norm)).
 
@@ -869,7 +869,7 @@ Result:
 └───────────────────────────────┘
 ```
 
-## L1Normalize {#l1normalize}
+## L1Normalize
 
 Calculates the unit vector of a given vector (the values of the tuple are the coordinates) in `L1` space ([taxicab geometry](https://en.wikipedia.org/wiki/Taxicab_geometry)).
 
@@ -907,7 +907,7 @@ Result:
 └─────────────────────────────────────────┘
 ```
 
-## L2Normalize {#l2normalize}
+## L2Normalize
 
 Calculates the unit vector of a given vector (the values of the tuple are the coordinates) in Euclidean space (using [Euclidean distance](https://en.wikipedia.org/wiki/Euclidean_distance)).
 
@@ -945,7 +945,7 @@ Result:
 └─────────────────────┘
 ```
 
-## LinfNormalize {#linfnormalize}
+## LinfNormalize
 
 Calculates the unit vector of a given vector (the values of the tuple are the coordinates) in `L_{inf}` space (using [maximum norm](https://en.wikipedia.org/wiki/Norm_(mathematics)#Maximum_norm_(special_case_of:_infinity_norm,_uniform_norm,_or_supremum_norm))).
 
@@ -983,7 +983,7 @@ Result:
 └───────────────────────┘
 ```
 
-## LpNormalize {#lpnormalize}
+## LpNormalize
 
 Calculates the unit vector of a given vector (the values of the tuple are the coordinates) in `Lp` space (using [p-norm](https://en.wikipedia.org/wiki/Norm_(mathematics)#p-norm)).
 
@@ -1022,7 +1022,7 @@ Result:
 └─────────────────────────────────────────┘
 ```
 
-## cosineDistance {#cosinedistance}
+## cosineDistance
 
 Calculates the cosine distance between two vectors (the values of the tuples are the coordinates). The less the returned value is, the more similar are the vectors.
 

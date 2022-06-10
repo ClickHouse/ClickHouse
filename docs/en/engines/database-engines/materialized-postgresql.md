@@ -3,7 +3,7 @@ sidebar_label: MaterializedPostgreSQL
 sidebar_position: 60
 ---
 
-# [experimental] MaterializedPostgreSQL {#materialize-postgresql}
+# [experimental] MaterializedPostgreSQL
 
 Creates a ClickHouse database with tables from PostgreSQL database. Firstly, database with engine `MaterializedPostgreSQL` creates a snapshot of PostgreSQL database and loads required tables. Required tables can include any subset of tables from any subset of schemas from specified database. Along with the snapshot database engine acquires LSN and once initial dump of tables is performed - it starts pulling updates from WAL. After database is created, newly added tables to PostgreSQL database are not automatically added to replication. They have to be added manually with `ATTACH TABLE db.table` query.
 
