@@ -6,6 +6,7 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsTimeWindow.h>
+#include <Interpreters/addMissingDefaults.h>
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InDepthNodeVisitor.h>
@@ -458,6 +459,9 @@ void StorageWindowView::alter(
 
     auto inner_query = initInnerQuery(new_select_query->as<ASTSelectQuery &>(), local_context);
 
+    input_header.clear();
+    output_header.clear();
+
     InterpreterDropQuery::executeDropQuery(
     ASTDropQuery::Kind::Drop, getContext(), local_context, inner_table_id, true);
 
@@ -667,6 +671,19 @@ inline void StorageWindowView::fire(UInt32 watermark)
         auto block_io = interpreter.execute();
 
         auto pipe = Pipe(std::make_shared<BlocksSource>(blocks, header));
+
+        auto adding_missing_defaults_dag = addMissingDefaults(
+            pipe.getHeader(),
+            block_io.pipeline.getHeader().getNamesAndTypesList(),
+            getTargetTable()->getInMemoryMetadataPtr()->getColumns(),
+            getContext(),
+            getContext()->getSettingsRef().insert_null_as_default);
+        auto adding_missing_defaults_actions = std::make_shared<ExpressionActions>(adding_missing_defaults_dag);
+        pipe.addSimpleTransform([&](const Block & stream_header)
+        {
+            return std::make_shared<ExpressionTransform>(stream_header, adding_missing_defaults_actions);
+        });
+
         auto convert_actions_dag = ActionsDAG::makeConvertingActions(
             pipe.getHeader().getColumnsWithTypeAndName(),
             block_io.pipeline.getHeader().getColumnsWithTypeAndName(),
@@ -1053,21 +1070,6 @@ void StorageWindowView::threadFuncFireEvent()
 
     clean_cache_task->schedule();
 }
-
-// Pipe StorageWindowView::read(
-//     const Names & column_names,
-//     const StorageSnapshotPtr & storage_snapshot,
-//     SelectQueryInfo & query_info,
-//     ContextPtr local_context,
-//     QueryProcessingStage::Enum processed_stage,
-//     const size_t max_block_size,
-//     const unsigned num_streams)
-// {
-//     QueryPlan plan;
-//     read(plan, column_names, storage_snapshot, query_info, local_context, processed_stage, max_block_size, num_streams);
-//     return plan.convertToPipe(
-//         QueryPlanOptimizationSettings::fromContext(local_context), BuildQueryPipelineSettings::fromContext(local_context));
-// }
 
 void StorageWindowView::read(
     QueryPlan & query_plan,
@@ -1633,8 +1635,8 @@ const Block & StorageWindowView::getInputHeader() const
     std::lock_guard lock(sample_block_lock);
     if (!input_header)
     {
-        input_header = InterpreterSelectQuery(select_query->clone(), getContext(), SelectQueryOptions(QueryProcessingStage::FetchColumns))
-                           .getSampleBlock();
+        auto metadata = getSourceTable()->getInMemoryMetadataPtr();
+        input_header = metadata->getSampleBlockNonMaterialized();
     }
     return input_header;
 }
