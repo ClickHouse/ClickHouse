@@ -1,6 +1,5 @@
 #include <Backups/BackupUtils.h>
 #include <Backups/IBackup.h>
-#include <Backups/BackupSettings.h>
 #include <Backups/RestoreSettings.h>
 #include <Access/Common/AccessRightsElement.h>
 #include <Databases/DDLRenamingVisitor.h>
@@ -189,8 +188,9 @@ void restoreTablesData(DataRestoreTasks && tasks, ThreadPool & thread_pool)
 
 
 /// Returns access required to execute BACKUP query.
-AccessRightsElements getRequiredAccessToBackup(const ASTBackupQuery::Elements & elements, const BackupSettings & backup_settings)
+AccessRightsElements getRequiredAccessToBackup(const ASTBackupQuery::Elements & elements)
 {
+    AccessFlags required_flags = AccessType::BACKUP | AccessType::SHOW_TABLES;
     AccessRightsElements required_access;
     for (const auto & element : elements)
     {
@@ -198,34 +198,26 @@ AccessRightsElements getRequiredAccessToBackup(const ASTBackupQuery::Elements & 
         {
             case ASTBackupQuery::TABLE:
             {
-                AccessFlags flags = AccessType::SHOW_TABLES;
-                if (!backup_settings.structure_only)
-                    flags |= AccessType::SELECT;
-                required_access.emplace_back(flags, element.database_name, element.table_name);
+                required_access.emplace_back(required_flags, element.database_name, element.table_name);
                 break;
             }
             
             case ASTBackupQuery::TEMPORARY_TABLE:
             {
+                /// It's always allowed to backup temporary tables.
                 break;
             }
             
             case ASTBackupQuery::DATABASE:
             {
-                AccessFlags flags = AccessType::SHOW_TABLES | AccessType::SHOW_DATABASES;
-                if (!backup_settings.structure_only)
-                    flags |= AccessType::SELECT;
-                required_access.emplace_back(flags, element.database_name);
+                required_access.emplace_back(required_flags, element.database_name);
                 /// TODO: It's better to process `element.except_tables` somehow.
                 break;
             }
             
             case ASTBackupQuery::ALL:
             {
-                AccessFlags flags = AccessType::SHOW_TABLES | AccessType::SHOW_DATABASES;
-                if (!backup_settings.structure_only)
-                    flags |= AccessType::SELECT;
-                required_access.emplace_back(flags);
+                required_access.emplace_back(required_flags);
                 /// TODO: It's better to process `element.except_databases` & `element.except_tables` somehow.
                 break;
             }
