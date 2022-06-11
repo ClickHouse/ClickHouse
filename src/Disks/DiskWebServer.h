@@ -100,7 +100,7 @@ public:
 
     Poco::Timestamp getLastModified(const String &) override { return Poco::Timestamp{}; }
 
-    Poco::Timestamp getLastChanged(const String &) override { return Poco::Timestamp{}; }
+    time_t getLastChanged(const String &) override { return {}; }
 
     /// Write and modification part
 

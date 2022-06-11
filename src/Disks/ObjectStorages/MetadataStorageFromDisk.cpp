@@ -471,7 +471,7 @@ Poco::Timestamp MetadataStorageFromDisk::getLastModified(const std::string & pat
     return disk->getLastModified(path);
 }
 
-Poco::Timestamp MetadataStorageFromDisk::getLastChanged(const std::string & path) const
+time_t MetadataStorageFromDisk::getLastChanged(const std::string & path) const
 {
     return disk->getLastChanged(path);
 }

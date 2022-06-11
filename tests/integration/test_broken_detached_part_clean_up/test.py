@@ -33,11 +33,13 @@ def remove_broken_detached_part_impl(table, node, expect_broken_prefix):
 
     path_to_detached = path_to_data + f"data/default/{table}/detached/"
 
-    result = node.exec_in_container(["ls", f"{path_to_detached}"])
+    result = node.exec_in_container(["ls", path_to_detached])
     assert result.strip() == ""
 
     corrupt_part_data_on_disk(node, table, "all_3_3_0")
     break_part(node, table, "all_3_3_0")
+    node.query(f"ALTER TABLE {table} DETACH PART 'all_1_1_0'")
+    result = node.exec_in_container(["touch", f"{path_to_detached}trash"])
 
     result = node.query(
         f"CHECK TABLE {table}", settings={"check_query_single_value_result": 0}
@@ -47,15 +49,19 @@ def remove_broken_detached_part_impl(table, node, expect_broken_prefix):
     node.query(f"DETACH TABLE {table}")
     node.query(f"ATTACH TABLE {table}")
 
-    result = node.exec_in_container(["ls", f"{path_to_detached}"])
+    result = node.exec_in_container(["ls", path_to_detached])
     print(result)
     assert f"{expect_broken_prefix}_all_3_3_0" in result
+    assert "all_1_1_0" in result
+    assert "trash" in result
 
     time.sleep(15)
 
-    result = node.exec_in_container(["ls", f"{path_to_detached}"])
+    result = node.exec_in_container(["ls", path_to_detached])
     print(result)
     assert f"{expect_broken_prefix}_all_3_3_0" not in result
+    assert "all_1_1_0" in result
+    assert "trash" in result
 
     node.query(f"DROP TABLE {table} SYNC")
 

@@ -376,7 +376,7 @@ Poco::Timestamp DiskObjectStorage::getLastModified(const String & path)
     return metadata_storage->getLastModified(path);
 }
 
-Poco::Timestamp DiskObjectStorage::getLastChanged(const String & path)
+time_t DiskObjectStorage::getLastChanged(const String & path)
 {
     return metadata_storage->getLastChanged(path);
 }
