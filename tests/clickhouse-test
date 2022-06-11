@@ -529,11 +529,14 @@ class TestCase:
         return " ".join([f"--{setting}" for setting in self.random_settings])
 
     def add_random_settings(self, args, client_options):
-        self.random_settings.append(f"max_memory_usage=536870912")
         if self.tags and "no-random-settings" in self.tags:
-            self.random_settings = [f"max_memory_usage=536870912",]
+            self.random_settings = []
         if args.no_random_settings:
-            self.random_settings = [f"max_memory_usage=536870912",]
+            self.random_settings = []
+        if "high-memory-usage" not in self.tags:
+            self.random_settings.append("max_memory_usage=536870912")
+        if len(self.random_settings) == 0:
+            return client_options
 
         if len(self.base_url_params) == 0:
             os.environ["CLICKHOUSE_URL_PARAMS"] = "&".join(self.random_settings)
@@ -687,6 +690,10 @@ class TestCase:
             for tag in tags:
                 tag = tag.replace("-", "_")
                 if tag.startswith("use_") and tag not in args.build_flags:
+                    return FailureReason.BUILD
+
+            if BuildFlags.THREAD in args.build_flags:
+                if "high-memory-usage" in tags:
                     return FailureReason.BUILD
 
         return None

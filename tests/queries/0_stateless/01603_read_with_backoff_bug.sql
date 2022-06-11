@@ -1,4 +1,4 @@
--- Tags: no-tsan
+-- Tags: no-tsan, high-memory-usage
 -- Tag no-tsan: Too long for TSan
 
 drop table if exists t;

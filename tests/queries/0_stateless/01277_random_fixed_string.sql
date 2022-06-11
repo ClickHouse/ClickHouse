@@ -1,3 +1,5 @@
+-- Tags: high-memory-usage
+
 SELECT randomFixedString('string'); -- { serverError 43 }
 SELECT randomFixedString(0); -- { serverError 69 }
 SELECT randomFixedString(rand() % 10); -- { serverError 44 }

@@ -1,3 +1,5 @@
+-- Tags: high-memory-usage
+
 DROP TABLE IF EXISTS mergetree_00673;
 
 CREATE TABLE mergetree_00673 (x UInt64) ENGINE = MergeTree ORDER BY x;

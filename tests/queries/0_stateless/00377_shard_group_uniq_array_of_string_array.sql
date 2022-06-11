@@ -1,4 +1,4 @@
--- Tags: shard
+-- Tags: shard, high-memory-usage
 
 DROP TABLE IF EXISTS group_uniq_arr_str;
 CREATE TABLE group_uniq_arr_str ENGINE = Memory AS

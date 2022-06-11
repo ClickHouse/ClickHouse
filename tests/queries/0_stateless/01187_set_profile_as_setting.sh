@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-random-settings
+# Tags: no-random-settings, high-memory-usage
 
 unset CLICKHOUSE_LOG_COMMENT
 
