@@ -85,8 +85,8 @@ private:
     void calculateRootPathInBackup();
     void collectDatabasesAndTablesInfo();
     void collectTableInfo(const QualifiedTableName & table_name, bool is_temporary_table, const std::optional<ASTs> & partitions, bool throw_if_not_found);
-    void collectDatabaseInfo(const String & database_name, const std::set<String> & except_table_names, bool throw_if_not_found);
-    void collectAllDatabasesInfo(const std::set<String> & except_database_names);
+    void collectDatabaseInfo(const String & database_name, const std::set<DatabaseAndTableName> & except_table_names, bool throw_if_not_found);
+    void collectAllDatabasesInfo(const std::set<String> & except_database_names, const std::set<DatabaseAndTableName> & except_table_names);
     void checkConsistency();
     void makeBackupEntriesForDatabasesDefs();
     void makeBackupEntriesForTablesDefs();
