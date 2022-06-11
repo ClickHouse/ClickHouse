@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: race
+# Tags: race, high-memory-usage
 
 unset CLICKHOUSE_LOG_COMMENT
 

@@ -1,4 +1,4 @@
--- Tags: long
+-- Tags: long, high-memory-usage
 
 SET max_threads=0;
 
