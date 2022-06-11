@@ -97,7 +97,7 @@ protected:
         {"startswith_cs" , KQLOperatorValue::startswith_cs},
         {"!startswith_cs" , KQLOperatorValue::not_startswith_cs},
     };
-    String genHaystackOpExpr(std::vector<String> &tokens,IParser::Pos &tokenPos,String KQLOp, String CHOp, WildcardsPos wildcardsPos);
+    static String genHaystackOpExpr(std::vector<String> &tokens,IParser::Pos &token_pos,String kql_op, String ch_op, WildcardsPos wildcards_pos);
 };
 
 }
