@@ -35,12 +35,12 @@ bool ParserKQLQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     auto select_query = std::make_shared<ASTSelectQuery>();
     node = select_query;
 
-    ParserKQLFilter KQLfilter_p;
-    ParserKQLLimit KQLlimit_p;
-    ParserKQLProject KQLproject_p;
-    ParserKQLSort KQLsort_p;
-    ParserKQLSummarize KQLsummarize_p;
-    ParserKQLTable KQLtable_p;
+    ParserKQLFilter kql_filter_p;
+    ParserKQLLimit kql_limit_p;
+    ParserKQLProject kql_project_p;
+    ParserKQLSort kql_sort_p;
+    ParserKQLSummarize kql_summarize_p;
+    ParserKQLTable kql_table_p;
 
     ASTPtr select_expression_list;
     ASTPtr tables;
@@ -49,16 +49,16 @@ bool ParserKQLQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ASTPtr order_expression_list;
     ASTPtr limit_length;
 
-    std::unordered_map<std::string, ParserKQLBase * > KQLParser = {
-        { "filter",&KQLfilter_p},
-        { "where",&KQLfilter_p},
-        { "limit",&KQLlimit_p},
-        { "take",&KQLlimit_p},
-        { "project",&KQLproject_p},
-        { "sort",&KQLsort_p},
-        { "order",&KQLsort_p},
-        { "summarize",&KQLsummarize_p},
-        { "table",&KQLtable_p}
+    std::unordered_map<std::string, ParserKQLBase * > kql_parser = {
+        { "filter",&kql_filter_p},
+        { "where",&kql_filter_p},
+        { "limit",&kql_limit_p},
+        { "take",&kql_limit_p},
+        { "project",&kql_project_p},
+        { "sort",&kql_sort_p},
+        { "order",&kql_sort_p},
+        { "summarize",&kql_summarize_p},
+        { "table",&kql_table_p}
     };
 
     std::vector<std::pair<String, Pos>> operation_pos;
@@ -71,44 +71,44 @@ bool ParserKQLQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         if (pos->type == TokenType::PipeMark)
         {
             ++pos;
-            String KQLoperator(pos->begin,pos->end);
-            if (pos->type != TokenType::BareWord || KQLParser.find(KQLoperator) == KQLParser.end())
+            String kql_operator(pos->begin,pos->end);
+            if (pos->type != TokenType::BareWord || kql_parser.find(kql_operator) == kql_parser.end())
                 return false;
             ++pos;
-            operation_pos.push_back(std::make_pair(KQLoperator,pos));
+            operation_pos.push_back(std::make_pair(kql_operator,pos));
         }
     }
 
     for (auto &op_pos : operation_pos)
     {
-        auto KQLoperator = op_pos.first;
+        auto kql_operator = op_pos.first;
         auto npos = op_pos.second;
         if (!npos.isValid())
             return false;
 
-        if (!KQLParser[KQLoperator]->parsePrepare(npos))
+        if (!kql_parser[kql_operator]->parsePrepare(npos))
             return false;
     }
 
-    if (!KQLtable_p.parse(pos, tables, expected))
+    if (!kql_table_p.parse(pos, tables, expected))
         return false;
 
-    if (!KQLproject_p.parse(pos, select_expression_list, expected))
+    if (!kql_project_p.parse(pos, select_expression_list, expected))
         return false;
 
-    if (!KQLlimit_p.parse(pos, limit_length, expected))
+    if (!kql_limit_p.parse(pos, limit_length, expected))
         return false;
 
-    if (!KQLfilter_p.parse(pos, where_expression, expected))
+    if (!kql_filter_p.parse(pos, where_expression, expected))
         return false;
 
-    if (!KQLsort_p.parse(pos, order_expression_list, expected))
+    if (!kql_sort_p.parse(pos, order_expression_list, expected))
          return false;
 
-    if (!KQLsummarize_p.parse(pos, select_expression_list, expected))
+    if (!kql_summarize_p.parse(pos, select_expression_list, expected))
          return false;
     else
-        group_expression_list = KQLsummarize_p.group_expression_list;
+        group_expression_list = kql_summarize_p.group_expression_list;
 
     select_query->setExpression(ASTSelectQuery::Expression::SELECT, std::move(select_expression_list));
     select_query->setExpression(ASTSelectQuery::Expression::TABLES, std::move(tables));
