@@ -396,7 +396,7 @@ void BackupEntriesCollector::collectDatabaseInfo(const String & database_name, c
 
 void BackupEntriesCollector::collectAllDatabasesInfo(const std::set<String> & except_database_names, const std::set<DatabaseAndTableName> & except_table_names)
 {
-    for (const auto & [database_name, database] : DatabaseCatalog::instance().getDatabasesForBackup())
+    for (const auto & [database_name, database] : DatabaseCatalog::instance().getDatabases())
     {
         if (except_database_names.contains(database_name))
             continue;
