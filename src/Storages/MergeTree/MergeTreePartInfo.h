@@ -162,6 +162,8 @@ struct DetachedPartInfo : public MergeTreePartInfo
         "noquorum",
         "ignored",
         "broken-on-start",
+        "deleting",
+        "clone"
     });
 
     /// NOTE: It may parse part info incorrectly.

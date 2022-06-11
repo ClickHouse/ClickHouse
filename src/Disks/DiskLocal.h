@@ -93,7 +93,7 @@ public:
 
     Poco::Timestamp getLastModified(const String & path) override;
 
-    Poco::Timestamp getLastChanged(const String & path) override;
+    time_t getLastChanged(const String & path) override;
 
     void setReadOnly(const String & path) override;
 

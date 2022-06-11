@@ -1848,6 +1848,13 @@ void MergeTreeData::clearPartsFromFilesystemImpl(const DataPartsVector & parts_t
 
 size_t MergeTreeData::clearOldBrokenPartsFromDetachedDirecory()
 {
+    /**
+     * Remove old (configured by setting) broken detached parts.
+     * Only parts with certain prefixes are removed. These prefixes
+     * are such that it is guaranteed that they will never be needed
+     * and need to be cleared.
+     */
+
     DetachedPartsInfo detached_parts = getDetachedParts();
     if (detached_parts.empty())
         return 0;
@@ -1870,7 +1877,7 @@ size_t MergeTreeData::clearOldBrokenPartsFromDetachedDirecory()
 
         time_t current_time = time(nullptr);
         ssize_t threshold = current_time - getSettings()->merge_tree_clear_old_broken_detached_parts_interval_seconds;
-        time_t last_change_time = part_info.disk->getLastChanged(fs::path(relative_data_path) / "detached" / part_info.dir_name).epochTime();
+        time_t last_change_time = part_info.disk->getLastChanged(fs::path(relative_data_path) / "detached" / part_info.dir_name);
 
         if (last_change_time >= threshold)
             continue;
@@ -1878,7 +1885,7 @@ size_t MergeTreeData::clearOldBrokenPartsFromDetachedDirecory()
         renamed_parts.addPart(part_info.dir_name, "deleting_" + part_info.dir_name, part_info.disk);
     }
 
-    LOG_DEBUG(log, "Will clean up {} detached parts", renamed_parts.old_and_new_names.size());
+    LOG_INFO(log, "Will clean up {} detached parts", renamed_parts.old_and_new_names.size());
 
     renamed_parts.tryRenameAll();
 
