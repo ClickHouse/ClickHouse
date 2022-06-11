@@ -10,9 +10,9 @@ class TableJoin;
 class GraceHashJoin final : public IJoin
 {
 public:
-    GraceHashJoin(std::shared_ptr<TableJoin> table_join, const Block & right_sample_block, bool any_take_las_row_ = false);
+    GraceHashJoin(std::shared_ptr<TableJoin> table_join, const Block & right_sample_block, bool any_take_last_row);
 
-    const TableJoin & getTableJoin() const override;
+    const TableJoin & getTableJoin() const override { return *table_join; }
 
     bool addJoinedBlock(const Block & block, bool check_limits) override;
     void checkTypesOfKeys(const Block & block) const override;
@@ -33,6 +33,7 @@ private:
     Block totals;
 
     JoinPtr first_bucket;
+    std::vector<std::string> file_buckets;
 };
 
 }
