@@ -573,6 +573,19 @@ void splitAdditionalColumns(const Names & key_names, const Block & sample_block,
     }
 }
 
+template <std::integral T>
+static bool isPowerOf2(T number) {
+    // TODO(sskvor)
+    return false;
+}
+
+Blocks scatterBlockByHash(const Strings& key_columns_names, const Block& block, size_t num_shards) {
+    if (likely(isPowerOf2(num_shards))) {
+        return scatterBlockByHashLog2(key_columns_names, block, num_shards_log2);
+    }
+    return scatterBlockByHashImpl(key_columns_names, )
+}
+
 }
 
 NotJoinedBlocks::NotJoinedBlocks(std::unique_ptr<RightColumnsFiller> filler_,

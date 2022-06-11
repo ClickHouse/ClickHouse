@@ -106,6 +106,8 @@ void splitAdditionalColumns(const Names & key_names, const Block & sample_block,
 
 void changeLowCardinalityInplace(ColumnWithTypeAndName & column);
 
+Blocks scatterBlockByHash(const Strings& key_columns_names, const Block& block, size_t num_shards);
+
 }
 
 /// Creates result from right table data in RIGHT and FULL JOIN when keys are not present in left table.
