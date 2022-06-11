@@ -21,10 +21,10 @@ bool ParserKQLStatement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
 
 bool ParserKQLWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    ParserKQLWithUnionQuery KQL_p;
+    ParserKQLWithUnionQuery kql_p;
 
     ASTPtr query;
-    bool parsed = KQL_p.parse(pos, query, expected);
+    bool parsed = kql_p.parse(pos, query, expected);
 
     if (!parsed)
         return false;
@@ -36,19 +36,19 @@ bool ParserKQLWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
 bool ParserKQLWithUnionQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     // will support union next phase
-    ASTPtr KQLQuery;
+    ASTPtr kql_query;
 
-    if (!ParserKQLQuery().parse(pos, KQLQuery, expected))
+    if (!ParserKQLQuery().parse(pos, kql_query, expected))
         return false;
 
-    if (KQLQuery->as<ASTSelectWithUnionQuery>())
+    if (kql_query->as<ASTSelectWithUnionQuery>())
     {
-        node = std::move(KQLQuery);
+        node = std::move(kql_query);
         return true;
     }
 
     auto list_node = std::make_shared<ASTExpressionList>();
-    list_node->children.push_back(KQLQuery);
+    list_node->children.push_back(kql_query);
 
     auto select_with_union_query = std::make_shared<ASTSelectWithUnionQuery>();
     node = select_with_union_query;
