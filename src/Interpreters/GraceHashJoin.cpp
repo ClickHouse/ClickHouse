@@ -4,8 +4,9 @@
 namespace DB
 {
 
-GraceHashJoin::GraceHashJoin(std::shared_ptr<TableJoin> table_join, const Block & right_sample_block, bool any_take_last_row)
-    : first_bucket{std::make_shared<HashJoin>(table_join, right_sample_block, any_take_last_row)}
+GraceHashJoin::GraceHashJoin(std::shared_ptr<TableJoin> table_join_, const Block & right_sample_block, bool any_take_last_row)
+    : table_join{std::move(table_join_)}
+    , first_bucket{std::make_shared<HashJoin>(table_join, right_sample_block, any_take_last_row)}
 {
 }
 
