@@ -28,7 +28,7 @@ public:
     void createDirectories(const String & path) override;
     void clearDirectory(const String & path) override;
     void moveDirectory(const String & from_path, const String & to_path) override;
-    DiskDirectoryIteratorPtr iterateDirectory(const String & path) override;
+    DirectoryIteratorPtr iterateDirectory(const String & path) override;
     void createFile(const String & path) override;
     void moveFile(const String & from_path, const String & to_path) override;
     void replaceFile(const String & from_path, const String & to_path) override;
@@ -71,17 +71,20 @@ public:
     void onFreeze(const String & path) override;
     SyncGuardPtr getDirectorySyncGuard(const String & path) const override;
     void shutdown() override;
-    void startup() override;
+    void startup(ContextPtr context) override;
     void applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr context, const String & config_prefix, const DisksMap & map) override;
     String getCacheBasePath() const override { return delegate->getCacheBasePath(); }
     std::vector<String> getRemotePaths(const String & path) const override { return delegate->getRemotePaths(path); }
     void getRemotePathsRecursive(const String & path, std::vector<LocalPathWithRemotePaths> & paths_map) override { return delegate->getRemotePathsRecursive(path, paths_map); }
 
-    DiskPtr getMetadataDiskIfExistsOrSelf() override { return delegate->getMetadataDiskIfExistsOrSelf(); }
+    MetadataStoragePtr getMetadataStorage() override { return delegate->getMetadataStorage(); }
 
     std::unordered_map<String, String> getSerializedMetadata(const std::vector<String> & file_paths) const override { return delegate->getSerializedMetadata(file_paths); }
 
     UInt32 getRefCount(const String & path) const override { return delegate->getRefCount(path); }
+
+    void syncRevision(UInt64 revision) override { delegate->syncRevision(revision); }
+    UInt64 getRevision() const override { return delegate->getRevision(); }
 
 protected:
     Executor & getExecutor() override;

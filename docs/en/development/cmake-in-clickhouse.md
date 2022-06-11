@@ -13,18 +13,13 @@ cmake .. \
     -DCMAKE_C_COMPILER=$(which clang-13) \
     -DCMAKE_CXX_COMPILER=$(which clang++-13) \
     -DCMAKE_BUILD_TYPE=Debug \
-    -DENABLE_CLICKHOUSE_ALL=OFF \
-    -DENABLE_CLICKHOUSE_SERVER=ON \
-    -DENABLE_CLICKHOUSE_CLIENT=ON \
-    -DENABLE_LIBRARIES=OFF \
-    -DUSE_UNWIND=ON \
     -DENABLE_UTILS=OFF \
     -DENABLE_TESTS=OFF
 ```
 
 ## CMake files types
 
-1. ClickHouse's source CMake files (located in the root directory and in /src).
+1. ClickHouse source CMake files (located in the root directory and in /src).
 2. Arch-dependent CMake files (located in /cmake/*os_name*).
 3. Libraries finders (search for contrib libraries, located in /contrib/*/CMakeLists.txt).
 4. Contrib build CMake files (used instead of libraries' own CMake files, located in /cmake/modules)
@@ -461,7 +456,7 @@ option(ENABLE_TESTS "Provide unit_test_dbms target with Google.test unit tests" 
 
 #### If the option's state could produce unwanted (or unusual) result, explicitly warn the user.
 
-Suppose you have an option that may strip debug symbols from the ClickHouse's part.
+Suppose you have an option that may strip debug symbols from the ClickHouse part.
 This can speed up the linking process, but produces a binary that cannot be debugged.
 In that case, prefer explicitly raising a warning telling the developer that he may be doing something wrong.
 Also, such options should be disabled if applies.

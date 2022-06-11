@@ -57,6 +57,10 @@
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <QueryPipeline/QueryPipeline.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
+#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
 #include <Interpreters/ReplaceQueryParameterVisitor.h>
@@ -285,11 +289,11 @@ void ClientBase::setupSignalHandler()
     sigemptyset(&new_act.sa_mask);
 #else
     if (sigemptyset(&new_act.sa_mask))
-        throw Exception(ErrorCodes::CANNOT_SET_SIGNAL_HANDLER, "Cannot set signal handler.");
+        throwFromErrno("Cannot set signal handler.", ErrorCodes::CANNOT_SET_SIGNAL_HANDLER);
 #endif
 
     if (sigaction(SIGINT, &new_act, nullptr))
-        throw Exception(ErrorCodes::CANNOT_SET_SIGNAL_HANDLER, "Cannot set signal handler.");
+        throwFromErrno("Cannot set signal handler.", ErrorCodes::CANNOT_SET_SIGNAL_HANDLER);
 }
 
 
@@ -492,7 +496,8 @@ try
         String pager = config().getString("pager", "");
         if (!pager.empty())
         {
-            signal(SIGPIPE, SIG_IGN);
+            if (SIG_ERR == signal(SIGPIPE, SIG_IGN))
+                throwFromErrno("Cannot set signal handler.", ErrorCodes::CANNOT_SET_SIGNAL_HANDLER);
 
             ShellCommand::Config config(pager);
             config.pipe_stdin_only = true;
@@ -1165,16 +1170,26 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
         try
         {
             auto metadata = storage->getInMemoryMetadataPtr();
+            QueryPlan plan;
+            storage->read(
+                    plan,
+                    sample.getNames(),
+                    storage->getStorageSnapshot(metadata, global_context),
+                    query_info,
+                    global_context,
+                    {},
+                    global_context->getSettingsRef().max_block_size,
+                    getNumberOfPhysicalCPUCores());
+
+            auto builder = plan.buildQueryPipeline(
+                QueryPlanOptimizationSettings::fromContext(global_context),
+                BuildQueryPipelineSettings::fromContext(global_context));
+
+            QueryPlanResourceHolder resources;
+            auto pipe = QueryPipelineBuilder::getPipe(std::move(*builder), resources);
+
             sendDataFromPipe(
-                storage->read(
-                        sample.getNames(),
-                        storage->getStorageSnapshot(metadata, global_context),
-                        query_info,
-                        global_context,
-                        {},
-                        global_context->getSettingsRef().max_block_size,
-                        getNumberOfPhysicalCPUCores()
-                    ),
+                std::move(pipe),
                 parsed_query,
                 have_data_in_stdin
             );

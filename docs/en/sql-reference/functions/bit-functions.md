@@ -3,21 +3,21 @@ sidebar_position: 48
 sidebar_label: Bit
 ---
 
-# Bit Functions {#bit-functions}
+# Bit Functions
 
 Bit functions work for any pair of types from `UInt8`, `UInt16`, `UInt32`, `UInt64`, `Int8`, `Int16`, `Int32`, `Int64`, `Float32`, or `Float64`. Some functions support `String` and `FixedString` types.
 
 The result type is an integer with bits equal to the maximum bits of its arguments. If at least one of the arguments is signed, the result is a signed number. If an argument is a floating-point number, it is cast to Int64.
 
-## bitAnd(a, b) {#bitanda-b}
+## bitAnd(a, b)
 
-## bitOr(a, b) {#bitora-b}
+## bitOr(a, b)
 
-## bitXor(a, b) {#bitxora-b}
+## bitXor(a, b)
 
-## bitNot(a) {#bitnota}
+## bitNot(a)
 
-## bitShiftLeft(a, b) {#bitshiftlefta-b}
+## bitShiftLeft(a, b)
 
 Shifts the binary representation of a value to the left by a specified number of bit positions.
 
@@ -66,7 +66,7 @@ Result:
 └─────┴──────────────────────────────┴───────────┴───────────────────────────────────────────────┘
 ```
 
-## bitShiftRight(a, b) {#bitshiftrighta-b}
+## bitShiftRight(a, b)
 
 Shifts the binary representation of a value to the right by a specified number of bit positions.
 
@@ -113,9 +113,9 @@ Result:
 └─────┴──────────────────────────────┴───────────┴─────────────────────────────────────────────────┘
 ```
 
-## bitRotateLeft(a, b) {#bitrotatelefta-b}
+## bitRotateLeft(a, b)
 
-## bitRotateRight(a, b) {#bitrotaterighta-b}
+## bitRotateRight(a, b)
 
 ## bitSlice(s, offset, length)
 
@@ -166,7 +166,7 @@ Result:
 └──────────────────────────────────────────┴───────────────────────────────┘
 ```
 
-## bitTest {#bittest}
+## bitTest
 
 Takes any integer and converts it into [binary form](https://en.wikipedia.org/wiki/Binary_number), returns the value of a bit at specified position. The countdown starts from 0 from the right to the left.
 
@@ -221,7 +221,7 @@ Result:
 └────────────────┘
 ```
 
-## bitTestAll {#bittestall}
+## bitTestAll
 
 Returns result of [logical conjuction](https://en.wikipedia.org/wiki/Logical_conjunction) (AND operator) of all bits at given positions. The countdown starts from 0 from the right to the left.
 
@@ -286,7 +286,7 @@ Result:
 └───────────────────────────────┘
 ```
 
-## bitTestAny {#bittestany}
+## bitTestAny
 
 Returns result of [logical disjunction](https://en.wikipedia.org/wiki/Logical_disjunction) (OR operator) of all bits at given positions. The countdown starts from 0 from the right to the left.
 
@@ -351,7 +351,7 @@ Result:
 └──────────────────────┘
 ```
 
-## bitCount {#bitcount}
+## bitCount
 
 Calculates the number of bits set to one in the binary representation of a number.
 
@@ -391,7 +391,7 @@ Result:
 └───────────────┘
 ```
 
-## bitHammingDistance {#bithammingdistance}
+## bitHammingDistance
 
 Returns the [Hamming Distance](https://en.wikipedia.org/wiki/Hamming_distance) between the bit representations of two integer values. Can be used with [SimHash](../../sql-reference/functions/hash-functions.md#ngramsimhash) functions for detection of semi-duplicate strings. The smaller is the distance, the more likely those strings are the same.
 

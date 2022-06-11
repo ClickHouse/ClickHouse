@@ -15,9 +15,9 @@ namespace DB
 class NativeInputFormat final : public IInputFormat
 {
 public:
-    NativeInputFormat(ReadBuffer & buf, const Block & header_)
+    NativeInputFormat(ReadBuffer & buf, const Block & header_, const FormatSettings & settings)
         : IInputFormat(header_, buf)
-        , reader(std::make_unique<NativeReader>(buf, header_, 0))
+        , reader(std::make_unique<NativeReader>(buf, header_, 0, settings.skip_unknown_fields))
         , header(header_) {}
 
     String getName() const override { return "Native"; }
@@ -112,10 +112,11 @@ void registerInputFormatNative(FormatFactory & factory)
         ReadBuffer & buf,
         const Block & sample,
         const RowInputFormatParams &,
-        const FormatSettings &)
+        const FormatSettings & settings)
     {
-        return std::make_shared<NativeInputFormat>(buf, sample);
+        return std::make_shared<NativeInputFormat>(buf, sample, settings);
     });
+    factory.markFormatSupportsSubsetOfColumns("Native");
 }
 
 void registerOutputFormatNative(FormatFactory & factory)
