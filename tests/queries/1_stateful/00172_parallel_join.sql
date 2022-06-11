@@ -1,3 +1,5 @@
+-- Tags: high-memory-usage
+
 SET join_algorithm='parallel_hash';
 
 SELECT

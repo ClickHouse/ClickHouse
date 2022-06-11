@@ -1,4 +1,4 @@
--- Tags: long
+-- Tags: long, high-memory-usage
 
 drop table if exists stack;
 
