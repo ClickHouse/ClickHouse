@@ -96,6 +96,7 @@ enum class AccessType
     M(DROP_DICTIONARY, "", DICTIONARY, DROP) /* allows to execute {DROP|DETACH} DICTIONARY */\
     M(DROP_FUNCTION, "", GLOBAL, DROP) /* allows to execute DROP FUNCTION */\
     M(DROP, "", GROUP, ALL) /* allows to execute {DROP|DETACH} */\
+    M(BACKUP, "", TABLE, ALL) /* allows to backup tables */\
     \
     M(TRUNCATE, "TRUNCATE TABLE", TABLE, ALL) \
     M(OPTIMIZE, "OPTIMIZE TABLE", TABLE, ALL) \

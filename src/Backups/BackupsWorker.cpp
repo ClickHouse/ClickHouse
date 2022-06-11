@@ -69,7 +69,7 @@ UUID BackupsWorker::startMakingBackup(const ASTPtr & query, const ContextPtr & c
 
     try
     {
-        auto access_to_check = getRequiredAccessToBackup(backup_query->elements, backup_settings);
+        auto access_to_check = getRequiredAccessToBackup(backup_query->elements);
         if (!on_cluster)
             context->checkAccess(access_to_check);
 
