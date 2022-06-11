@@ -83,7 +83,7 @@ public:
         delegate->moveDirectory(wrapped_from_path, wrapped_to_path);
     }
 
-    DiskDirectoryIteratorPtr iterateDirectory(const String & path) override
+    DirectoryIteratorPtr iterateDirectory(const String & path) override
     {
         auto wrapped_path = wrappedPath(path);
         return delegate->iterateDirectory(wrapped_path);

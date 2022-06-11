@@ -96,7 +96,7 @@ public:
 
     bool isDirectory(const String & path) const override;
 
-    DiskDirectoryIteratorPtr iterateDirectory(const String & /* path */) override;
+    DirectoryIteratorPtr iterateDirectory(const String & /* path */) override;
 
     Poco::Timestamp getLastModified(const String &) override { return Poco::Timestamp{}; }
 

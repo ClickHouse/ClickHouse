@@ -702,7 +702,7 @@ void Context::setUserDefinedPath(const String & path)
     shared->user_defined_path = path;
 }
 
-void Context::addWarningMessage(const String & msg)
+void Context::addWarningMessage(const String & msg) const
 {
     auto lock = getLock();
     shared->addWarningMessage(msg);
@@ -767,6 +767,7 @@ void Context::setUser(const UUID & user_id_)
         user_id_, /* current_roles = */ {}, /* use_default_roles = */ true, settings, current_database, client_info);
 
     auto user = access->getUser();
+
     current_roles = std::make_shared<std::vector<UUID>>(user->granted_roles.findGranted(user->default_roles));
 
     auto default_profile_info = access->getDefaultProfileInfo();
