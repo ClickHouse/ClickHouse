@@ -6,11 +6,24 @@
 
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
+#include <Core/callOnTypeIndex.h>
 #include <Core/SortDescription.h>
 #include <Core/Block.h>
 #include <Core/ColumnNumbers.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypesDecimal.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeFixedString.h>
+#include <DataTypes/DataTypeDate.h>
+#include <DataTypes/DataTypeDate32.h>
+#include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypeEnum.h>
+#include <DataTypes/DataTypeUUID.h>
 #include <Columns/IColumn.h>
+#include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnString.h>
+#include <Columns/ColumnFixedString.h>
 
 #include "config_core.h"
 
@@ -250,6 +263,36 @@ struct SimpleSortCursor : SortCursorHelper<SimpleSortCursor>
     }
 };
 
+template <typename ColumnType>
+struct SpecializedSingleColumnSortCursor : SortCursorHelper<SpecializedSingleColumnSortCursor<ColumnType>>
+{
+    using SortCursorHelper<SpecializedSingleColumnSortCursor>::SortCursorHelper;
+
+    bool ALWAYS_INLINE greaterAt(const SortCursorHelper<SpecializedSingleColumnSortCursor> & rhs, size_t lhs_pos, size_t rhs_pos) const
+    {
+        auto & this_impl = this->impl;
+
+        auto & lhs_columns = this_impl->sort_columns;
+        auto & rhs_columns = rhs.impl->sort_columns;
+
+        assert(lhs_columns.size() == 1);
+        assert(rhs_columns.size() == 1);
+
+        const auto & lhs_column = assert_cast<const ColumnType &>(*lhs_columns[0]);
+        const auto & rhs_column = assert_cast<const ColumnType &>(*rhs_columns[0]);
+
+        const auto & desc = this->impl->desc[0];
+
+        int res = desc.direction * lhs_column.compareAt(lhs_pos, rhs_pos, rhs_column, desc.nulls_direction);
+
+        if (res > 0)
+            return true;
+        if (res < 0)
+            return false;
+
+        return this_impl->order > rhs.impl->order;
+    }
+};
 
 /// Separate comparator for locale-sensitive string comparisons
 struct SortCursorWithCollation : SortCursorHelper<SortCursorWithCollation>
@@ -409,6 +452,124 @@ private:
         } while (!(*child_it < top));
         *curr_it = std::move(top);
     }
+};
+
+/** SortQueueVariants allow to specialize sorting queue for concrete types and sort description.
+  * To access queue callOnVariant method must be used.
+  */
+class SortQueueVariants
+{
+public:
+    SortQueueVariants() = default;
+
+    SortQueueVariants(const DataTypes & sort_description_types, const SortDescription & sort_description)
+    {
+        bool has_collation = false;
+        for (const auto & column_description : sort_description)
+        {
+            if (column_description.collator)
+            {
+                has_collation = true;
+                break;
+            }
+        }
+
+        if (has_collation)
+        {
+            queue_variants = SortingHeap<SortCursorWithCollation>();
+            return;
+        }
+        else if (sort_description.size() == 1)
+        {
+            TypeIndex column_type_index = sort_description_types[0]->getTypeId();
+
+            bool result = callOnIndexAndDataType<void>(
+                column_type_index,
+                [&](const auto & types)
+                {
+                    using Types = std::decay_t<decltype(types)>;
+                    using ColumnDataType = typename Types::LeftType;
+                    using ColumnType = typename ColumnDataType::ColumnType;
+
+                    queue_variants = SortingHeap<SpecializedSingleColumnSortCursor<ColumnType>>();
+                    return true;
+                });
+
+            if (!result)
+                queue_variants = SortingHeap<SimpleSortCursor>();
+        }
+        else
+        {
+            queue_variants = SortingHeap<SortCursor>();
+        }
+    }
+
+    SortQueueVariants(const Block & header, const SortDescription & sort_description)
+        : SortQueueVariants(extractSortDescriptionTypesFromHeader(header, sort_description), sort_description)
+    {
+    }
+
+    template <typename Func>
+    decltype(auto) callOnVariant(Func && func)
+    {
+        return std::visit(func, queue_variants);
+    }
+
+    bool variantSupportJITCompilation() const
+    {
+        return std::holds_alternative<SortingHeap<SimpleSortCursor>>(queue_variants)
+            || std::holds_alternative<SortingHeap<SortCursor>>(queue_variants)
+            || std::holds_alternative<SortingHeap<SortCursorWithCollation>>(queue_variants);
+    }
+
+private:
+    static DataTypes extractSortDescriptionTypesFromHeader(const Block & header, const SortDescription & sort_description)
+    {
+        size_t sort_description_size = sort_description.size();
+        DataTypes data_types(sort_description_size);
+
+        for (size_t i = 0; i < sort_description_size; ++i)
+        {
+            const auto & column_sort_description = sort_description[i];
+            data_types[i] = header.getByName(column_sort_description.column_name).type;
+        }
+
+        return data_types;
+    }
+
+    std::variant<
+        SortingHeap<SpecializedSingleColumnSortCursor<ColumnVector<UInt8>>>,
+        SortingHeap<SpecializedSingleColumnSortCursor<ColumnVector<UInt16>>>,
+        SortingHeap<SpecializedSingleColumnSortCursor<ColumnVector<UInt32>>>,
+        SortingHeap<SpecializedSingleColumnSortCursor<ColumnVector<UInt64>>>,
+        SortingHeap<SpecializedSingleColumnSortCursor<ColumnVector<UInt128>>>,
+        SortingHeap<SpecializedSingleColumnSortCursor<ColumnVector<UInt256>>>,
+
+        SortingHeap<SpecializedSingleColumnSortCursor<ColumnVector<Int8>>>,
+        SortingHeap<SpecializedSingleColumnSortCursor<ColumnVector<Int16>>>,
+        SortingHeap<SpecializedSingleColumnSortCursor<ColumnVector<Int32>>>,
+        SortingHeap<SpecializedSingleColumnSortCursor<ColumnVector<Int64>>>,
+        SortingHeap<SpecializedSingleColumnSortCursor<ColumnVector<Int128>>>,
+        SortingHeap<SpecializedSingleColumnSortCursor<ColumnVector<Int256>>>,
+
+        SortingHeap<SpecializedSingleColumnSortCursor<ColumnVector<Float32>>>,
+        SortingHeap<SpecializedSingleColumnSortCursor<ColumnVector<Float64>>>,
+
+        SortingHeap<SpecializedSingleColumnSortCursor<ColumnDecimal<Decimal32>>>,
+        SortingHeap<SpecializedSingleColumnSortCursor<ColumnDecimal<Decimal64>>>,
+        SortingHeap<SpecializedSingleColumnSortCursor<ColumnDecimal<Decimal128>>>,
+        SortingHeap<SpecializedSingleColumnSortCursor<ColumnDecimal<Decimal256>>>,
+        SortingHeap<SpecializedSingleColumnSortCursor<ColumnDecimal<DateTime64>>>,
+
+        SortingHeap<SpecializedSingleColumnSortCursor<ColumnVector<UUID>>>,
+
+        SortingHeap<SpecializedSingleColumnSortCursor<ColumnString>>,
+        SortingHeap<SpecializedSingleColumnSortCursor<ColumnFixedString>>,
+
+        SortingHeap<SimpleSortCursor>,
+        SortingHeap<SortCursor>,
+        SortingHeap<SortCursorWithCollation>>
+        queue_variants;
 };
 
 template <typename TLeftColumns, typename TRightColumns>
