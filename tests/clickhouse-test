@@ -529,10 +529,11 @@ class TestCase:
         return " ".join([f"--{setting}" for setting in self.random_settings])
 
     def add_random_settings(self, args, client_options):
+        self.random_settings.append(f"max_memory_usage=536870912")
         if self.tags and "no-random-settings" in self.tags:
-            return client_options
+            self.random_settings = [f"max_memory_usage=536870912",]
         if args.no_random_settings:
-            return client_options
+            self.random_settings = [f"max_memory_usage=536870912",]
 
         if len(self.base_url_params) == 0:
             os.environ["CLICKHOUSE_URL_PARAMS"] = "&".join(self.random_settings)
