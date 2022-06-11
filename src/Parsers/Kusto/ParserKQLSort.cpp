@@ -48,11 +48,11 @@ bool ParserKQLSort :: parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     }
     has_directions.push_back(has_dir);
 
-    for (unsigned long i = 0; i < order_expression_list->children.size(); ++i)
+    for (uint64_t i = 0; i < order_expression_list->children.size(); ++i)
     {
         if (!has_directions[i])
         {
-            auto order_expr =  order_expression_list->children[i]->as<ASTOrderByElement>();
+            auto *order_expr =  order_expression_list->children[i]->as<ASTOrderByElement>();
             order_expr->direction = -1; // default desc
             if (!order_expr->nulls_direction_was_explicitly_specified)
                 order_expr->nulls_direction = -1;
