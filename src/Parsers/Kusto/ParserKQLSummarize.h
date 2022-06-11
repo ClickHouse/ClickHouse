@@ -13,8 +13,8 @@ public:
 protected:
     const char * getName() const override { return "KQL summarize"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
-    std::pair<String, String> removeLastWord(String input);
-    String getBinGroupbyString(String exprBin);
+    static std::pair<String, String> removeLastWord(String input);
+    static String getBinGroupbyString(String expr_bin);
 };
 
 }

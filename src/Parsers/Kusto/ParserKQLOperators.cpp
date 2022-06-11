@@ -10,9 +10,9 @@ namespace ErrorCodes
     extern const int SYNTAX_ERROR;
 }
 
-String KQLOperators::genHaystackOpExpr(std::vector<String> &tokens,IParser::Pos &tokenPos,String KQLOp, String CHOp, WildcardsPos wildcardsPos)
+String KQLOperators::genHaystackOpExpr(std::vector<String> &tokens,IParser::Pos &token_pos,String kql_op, String ch_op, WildcardsPos wildcards_pos)
 {
-    String new_expr, leftWildcards= "", rightWildcards="";
+    String new_expr, left_wildcards, right_wildcards;
 
     ++token_pos;
     if (!s_lparen.ignore(token_pos, expected))
@@ -69,21 +69,21 @@ String KQLOperators::genHaystackOpExpr(std::vector<String> &tokens,IParser::Pos 
             break;
 
         case WildcardsPos::left:
-            leftWildcards ="%";
+            left_wildcards ="%";
             break;
 
         case WildcardsPos::right:
-            rightWildcards = "%";
+            right_wildcards = "%";
             break;
 
         case WildcardsPos::both:
-            leftWildcards ="%";
-            rightWildcards = "%";
+            left_wildcards ="%";
+            right_wildcards = "%";
             break;
     }
 
-    if (!tokens.empty() && ((++tokenPos)->type == TokenType::StringLiteral || tokenPos->type == TokenType::QuotedIdentifier))
-       new_expr = CHOp +"(" + tokens.back() +", '"+leftWildcards + String(tokenPos->begin + 1,tokenPos->end - 1 ) + rightWildcards + "')";
+    if (!tokens.empty() && ((++token_pos)->type == TokenType::StringLiteral || token_pos->type == TokenType::QuotedIdentifier))
+       new_expr = ch_op +"(" + tokens.back() +", '"+left_wildcards + String(token_pos->begin + 1,token_pos->end - 1 ) + right_wildcards + "')";
     else
         throw Exception(ErrorCodes::SYNTAX_ERROR, "Syntax error near {}", kql_op);
     tokens.pop_back();
@@ -97,7 +97,7 @@ String KQLOperators::getExprFromToken(IParser::Pos pos)
 
     while (!pos->isEnd() && pos->type != TokenType::PipeMark && pos->type != TokenType::Semicolon)
     {
-        KQLOperatorValue opValue = KQLOperatorValue::none;
+        KQLOperatorValue op_value = KQLOperatorValue::none;
 
         auto token =  String(pos->begin,pos->end);
 
@@ -137,14 +137,14 @@ String KQLOperators::getExprFromToken(IParser::Pos pos)
             --pos;
 
         if (KQLOperator.find(op) != KQLOperator.end())
-           opValue = KQLOperator[op];
+           op_value = KQLOperator[op];
 
         String new_expr;
-        if (opValue == KQLOperatorValue::none)
+        if (op_value == KQLOperatorValue::none)
             tokens.push_back(op);
         else
         {
-            switch (opValue)
+            switch (op_value)
             {
             case KQLOperatorValue::contains:
                 new_expr = genHaystackOpExpr(tokens, pos, op, "ilike", WildcardsPos::both);
@@ -241,7 +241,7 @@ String KQLOperators::getExprFromToken(IParser::Pos pos)
             case KQLOperatorValue::in_cs:
                 new_expr = "in";
                 break;
-   
+
             case KQLOperatorValue::not_in_cs:
                 new_expr = "not in";
                 break;
@@ -281,8 +281,8 @@ String KQLOperators::getExprFromToken(IParser::Pos pos)
         ++pos;
     }
 
-    for (auto it=tokens.begin(); it!=tokens.end(); ++it)
-        res = res + *it + " ";
+    for (auto & token : tokens)
+        res = res + token + " ";
 
     return res;
 }
