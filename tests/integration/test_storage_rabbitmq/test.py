@@ -27,6 +27,7 @@ instance = cluster.add_instance(
     ],
     user_configs=["configs/users.xml"],
     with_rabbitmq=True,
+    stay_alive=True,
 )
 
 
@@ -2723,6 +2724,16 @@ def test_rabbitmq_predefined_configuration(rabbitmq_cluster):
             ENGINE = RabbitMQ(rabbit1, rabbitmq_vhost = '/') """
     )
 
+    channel.basic_publish(
+        exchange="named", routing_key="", body=json.dumps({"key": 1, "value": 2})
+    )
+    while True:
+        result = instance.query(
+            "SELECT * FROM test.rabbitmq ORDER BY key", ignore_error=True
+        )
+        if result == "1\t2\n":
+            break
+    instance.restart_clickhouse()
     channel.basic_publish(
         exchange="named", routing_key="", body=json.dumps({"key": 1, "value": 2})
     )

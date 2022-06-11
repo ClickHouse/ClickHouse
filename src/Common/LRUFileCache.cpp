@@ -594,13 +594,18 @@ void LRUFileCache::removeIfExists(const Key & key)
     for (auto & [offset, cell] : offsets)
         to_remove.push_back(&cell);
 
+    bool some_cells_were_skipped = false;
     for (auto & cell : to_remove)
     {
+        /// In ordinary case we remove data from cache when it's not used by anyone.
+        /// But if we have multiple replicated zero-copy tables on the same server
+        /// it became possible to start removing something from cache when it is used
+        /// by other "zero-copy" tables. That is why it's not an error.
         if (!cell->releasable())
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Cannot remove file from cache because someone reads from it. File segment info: {}",
-                cell->file_segment->getInfoForLog());
+        {
+            some_cells_were_skipped = true;
+            continue;
+        }
 
         auto file_segment = cell->file_segment;
         if (file_segment)
@@ -613,10 +618,13 @@ void LRUFileCache::removeIfExists(const Key & key)
 
     auto key_path = getPathInLocalCache(key);
 
-    files.erase(key);
+    if (!some_cells_were_skipped)
+    {
+        files.erase(key);
 
-    if (fs::exists(key_path))
-        fs::remove_all(key_path);
+        if (fs::exists(key_path))
+            fs::remove_all(key_path);
+    }
 }
 
 void LRUFileCache::removeIfReleasable(bool remove_persistent_files)
