@@ -450,11 +450,11 @@ ASTPtr DatabaseOnDisk::getCreateTableQueryImpl(const String & table_name, Contex
         if (!has_table && e.code() == ErrorCodes::FILE_DOESNT_EXIST && throw_on_error)
             throw Exception{"Table " + backQuote(table_name) + " doesn't exist",
                             ErrorCodes::CANNOT_GET_CREATE_TABLE_QUERY};
-        else if (is_system_storage)
-            ast = getCreateQueryFromStorage(table_name, storage, throw_on_error);
-        else if (throw_on_error)
+        else if (!is_system_storage && throw_on_error)
             throw;
     }
+    if (!ast && is_system_storage)
+        ast = getCreateQueryFromStorage(table_name, storage, throw_on_error);
     return ast;
 }
 
@@ -698,6 +698,7 @@ ASTPtr DatabaseOnDisk::getCreateQueryFromStorage(const String & table_name, cons
     /// setup create table query storage info.
     auto ast_engine = std::make_shared<ASTFunction>();
     ast_engine->name = storage->getName();
+    ast_engine->no_empty_args = true;
     auto ast_storage = std::make_shared<ASTStorage>();
     ast_storage->set(ast_storage->engine, ast_engine);
 
