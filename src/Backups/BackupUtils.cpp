@@ -21,21 +21,24 @@ DDLRenamingMap makeRenamingMapFromBackupQuery(const ASTBackupQuery::Elements & e
             case ASTBackupQuery::TABLE:
             {
                 const String & table_name = element.table_name;
+                const String & database_name = element.database_name;
+                const String & new_table_name = element.new_table_name;
+                const String & new_database_name = element.new_database_name;
+                assert(!table_name.empty());
+                assert(!new_table_name.empty());
+                assert(!database_name.empty());
+                assert(!new_database_name.empty());
+                map.setNewTableName({database_name, table_name}, {new_database_name, new_table_name});
+                break;
+            }
+
+            case ASTBackupQuery::TEMPORARY_TABLE:
+            {
+                const String & table_name = element.table_name;
                 const String & new_table_name = element.new_table_name;
                 assert(!table_name.empty());
                 assert(!new_table_name.empty());
-                if (element.is_temporary_table)
-                {
-                    map.setNewTemporaryTableName(table_name, new_table_name);
-                }
-                else
-                {
-                    const String & database_name = element.database_name;
-                    const String & new_database_name = element.new_database_name;
-                    assert(!database_name.empty());
-                    assert(!new_database_name.empty());
-                    map.setNewTableName({database_name, table_name}, {new_database_name, new_table_name});
-                }
+                map.setNewTemporaryTableName(table_name, new_table_name);
                 break;
             }
 
@@ -49,7 +52,7 @@ DDLRenamingMap makeRenamingMapFromBackupQuery(const ASTBackupQuery::Elements & e
                 break;
             }
 
-            case ASTBackupQuery::ALL_DATABASES: break;
+            case ASTBackupQuery::ALL: break;
         }
     }
     return map;
@@ -195,30 +198,35 @@ AccessRightsElements getRequiredAccessToBackup(const ASTBackupQuery::Elements & 
         {
             case ASTBackupQuery::TABLE:
             {
-                if (element.is_temporary_table)
-                    break;
                 AccessFlags flags = AccessType::SHOW_TABLES;
                 if (!backup_settings.structure_only)
                     flags |= AccessType::SELECT;
                 required_access.emplace_back(flags, element.database_name, element.table_name);
                 break;
             }
+            
+            case ASTBackupQuery::TEMPORARY_TABLE:
+            {
+                break;
+            }
+            
             case ASTBackupQuery::DATABASE:
             {
                 AccessFlags flags = AccessType::SHOW_TABLES | AccessType::SHOW_DATABASES;
                 if (!backup_settings.structure_only)
                     flags |= AccessType::SELECT;
                 required_access.emplace_back(flags, element.database_name);
-                /// TODO: It's better to process `element.except_list` somehow.
+                /// TODO: It's better to process `element.except_tables` somehow.
                 break;
             }
-            case ASTBackupQuery::ALL_DATABASES:
+            
+            case ASTBackupQuery::ALL:
             {
                 AccessFlags flags = AccessType::SHOW_TABLES | AccessType::SHOW_DATABASES;
                 if (!backup_settings.structure_only)
                     flags |= AccessType::SELECT;
                 required_access.emplace_back(flags);
-                /// TODO: It's better to process `element.except_list` somehow.
+                /// TODO: It's better to process `element.except_databases` & `element.except_tables` somehow.
                 break;
             }
         }
@@ -237,12 +245,6 @@ AccessRightsElements getRequiredAccessToRestore(const ASTBackupQuery::Elements &
         {
             case ASTBackupQuery::TABLE:
             {
-                if (element.is_temporary_table)
-                {
-                    if (restore_settings.create_table != RestoreTableCreationMode::kMustExist)
-                        required_access.emplace_back(AccessType::CREATE_TEMPORARY_TABLE);
-                    break;
-                }
                 AccessFlags flags = AccessType::SHOW_TABLES;
                 if (restore_settings.create_table != RestoreTableCreationMode::kMustExist)
                     flags |= AccessType::CREATE_TABLE;
@@ -251,6 +253,14 @@ AccessRightsElements getRequiredAccessToRestore(const ASTBackupQuery::Elements &
                 required_access.emplace_back(flags, element.new_database_name, element.new_table_name);
                 break;
             }
+            
+            case ASTBackupQuery::TEMPORARY_TABLE:
+            {
+                if (restore_settings.create_table != RestoreTableCreationMode::kMustExist)
+                    required_access.emplace_back(AccessType::CREATE_TEMPORARY_TABLE);
+                break;
+            }
+            
             case ASTBackupQuery::DATABASE:
             {
                 AccessFlags flags = AccessType::SHOW_TABLES | AccessType::SHOW_DATABASES;
@@ -261,9 +271,11 @@ AccessRightsElements getRequiredAccessToRestore(const ASTBackupQuery::Elements &
                 if (!restore_settings.structure_only)
                     flags |= AccessType::INSERT;
                 required_access.emplace_back(flags, element.new_database_name);
+                /// TODO: It's better to process `element.except_tables` somehow.
                 break;
             }
-            case ASTBackupQuery::ALL_DATABASES:
+            
+            case ASTBackupQuery::ALL:
             {
                 AccessFlags flags = AccessType::SHOW_TABLES | AccessType::SHOW_DATABASES;
                 if (restore_settings.create_table != RestoreTableCreationMode::kMustExist)
@@ -273,6 +285,7 @@ AccessRightsElements getRequiredAccessToRestore(const ASTBackupQuery::Elements &
                 if (!restore_settings.structure_only)
                     flags |= AccessType::INSERT;
                 required_access.emplace_back(flags);
+                /// TODO: It's better to process `element.except_databases` & `element.except_tables` somehow.
                 break;
             }
         }

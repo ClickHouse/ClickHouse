@@ -273,17 +273,22 @@ void RestorerFromBackup::collectDatabaseAndTableInfos()
         {
             case ASTBackupQuery::ElementType::TABLE:
             {
-                collectTableInfo(QualifiedTableName{element.database_name, element.table_name}, element.is_temporary_table, element.partitions);
+                collectTableInfo({element.database_name, element.table_name}, false, element.partitions);
+                break;
+            }
+            case ASTBackupQuery::ElementType::TEMPORARY_TABLE:
+            {
+                collectTableInfo({element.database_name, element.table_name}, true, element.partitions);
                 break;
             }
             case ASTBackupQuery::ElementType::DATABASE:
             {
-                collectDatabaseInfo(element.database_name, element.except_list);
+                collectDatabaseInfo(element.database_name, element.except_tables);
                 break;
             }
-            case ASTBackupQuery::ElementType::ALL_DATABASES:
+            case ASTBackupQuery::ElementType::ALL:
             {
-                collectAllDatabasesInfo(element.except_list);
+                collectAllDatabasesInfo(element.except_databases, element.except_tables);
                 break;
             }
         }
@@ -374,7 +379,7 @@ void RestorerFromBackup::collectTableInfo(const QualifiedTableName & table_name_
     }
 }
 
-void RestorerFromBackup::collectDatabaseInfo(const String & database_name_in_backup, const std::set<String> & except_table_names)
+void RestorerFromBackup::collectDatabaseInfo(const String & database_name_in_backup, const std::set<DatabaseAndTableName> & except_table_names)
 {
     std::optional<fs::path> metadata_path;
     std::unordered_set<String> table_names_in_backup;
@@ -434,14 +439,14 @@ void RestorerFromBackup::collectDatabaseInfo(const String & database_name_in_bac
 
     for (const String & table_name_in_backup : table_names_in_backup)
     {
-        if (except_table_names.contains(table_name_in_backup))
+        if (except_table_names.contains({database_name_in_backup, table_name_in_backup}))
             continue;
 
-        collectTableInfo(QualifiedTableName{database_name_in_backup, table_name_in_backup}, /* is_temporary_table= */ false, {});
+        collectTableInfo({database_name_in_backup, table_name_in_backup}, /* is_temporary_table= */ false, {});
     }
 }
 
-void RestorerFromBackup::collectAllDatabasesInfo(const std::set<String> & except_database_names)
+void RestorerFromBackup::collectAllDatabasesInfo(const std::set<String> & except_database_names, const std::set<DatabaseAndTableName> & except_table_names)
 {
     std::unordered_set<String> database_names_in_backup;
     for (const auto & root_path_in_backup : root_paths_in_backup)
@@ -461,7 +466,7 @@ void RestorerFromBackup::collectAllDatabasesInfo(const std::set<String> & except
         if (except_database_names.contains(database_name_in_backup))
             continue;
 
-        collectDatabaseInfo(database_name_in_backup, {});
+        collectDatabaseInfo(database_name_in_backup, except_table_names);
     }
 }
 

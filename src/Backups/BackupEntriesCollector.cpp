@@ -175,23 +175,25 @@ void BackupEntriesCollector::collectDatabasesAndTablesInfo()
             {
                 case ASTBackupQuery::ElementType::TABLE:
                 {
-                    collectTableInfo(
-                        QualifiedTableName{element.database_name, element.table_name},
-                        element.is_temporary_table,
-                        element.partitions,
-                        true);
+                    collectTableInfo({element.database_name, element.table_name}, false, element.partitions, true);
+                    break;
+                }
+
+                case ASTBackupQuery::ElementType::TEMPORARY_TABLE:
+                {
+                    collectTableInfo({"", element.table_name}, true, element.partitions, true);
                     break;
                 }
 
                 case ASTBackupQuery::ElementType::DATABASE:
                 {
-                    collectDatabaseInfo(element.database_name, element.except_list, true);
+                    collectDatabaseInfo(element.database_name, element.except_tables, true);
                     break;
                 }
 
-                case ASTBackupQuery::ElementType::ALL_DATABASES:
+                case ASTBackupQuery::ElementType::ALL:
                 {
-                    collectAllDatabasesInfo(element.except_list);
+                    collectAllDatabasesInfo(element.except_databases, element.except_tables);
                     break;
                 }
             }
@@ -323,7 +325,7 @@ void BackupEntriesCollector::collectTableInfo(
     }
 }
 
-void BackupEntriesCollector::collectDatabaseInfo(const String & database_name, const std::set<String> & except_table_names, bool throw_if_not_found)
+void BackupEntriesCollector::collectDatabaseInfo(const String & database_name, const std::set<DatabaseAndTableName> & except_table_names, bool throw_if_not_found)
 {
     /// Gather information about the database.
     DatabasePtr database;
@@ -383,23 +385,22 @@ void BackupEntriesCollector::collectDatabaseInfo(const String & database_name, c
     /// Add information about tables too.
     for (auto it = database->getTablesIteratorForBackup(*this); it->isValid(); it->next())
     {
-        if (except_table_names.contains(it->name()))
+        if (except_table_names.contains({database_name, it->name()}))
             continue;
 
-        collectTableInfo(
-            QualifiedTableName{database_name, it->name()}, /* is_temporary_table= */ false, {}, /* throw_if_not_found= */ false);
+        collectTableInfo({database_name, it->name()}, /* is_temporary_table= */ false, {}, /* throw_if_not_found= */ false);
         if (!consistent)
             return;
     }
 }
 
-void BackupEntriesCollector::collectAllDatabasesInfo(const std::set<String> & except_database_names)
+void BackupEntriesCollector::collectAllDatabasesInfo(const std::set<String> & except_database_names, const std::set<DatabaseAndTableName> & except_table_names)
 {
     for (const auto & [database_name, database] : DatabaseCatalog::instance().getDatabasesForBackup())
     {
         if (except_database_names.contains(database_name))
             continue;
-        collectDatabaseInfo(database_name, {}, false);
+        collectDatabaseInfo(database_name, except_table_names, false);
         if (!consistent)
             return;
     }

@@ -28,19 +28,40 @@ namespace
         }
     }
 
-    void formatExceptList(const char * except_keyword, const std::set<String> & except_list, const IAST::FormatSettings & format)
+    void formatExceptDatabases(const std::set<String> & except_databases, const IAST::FormatSettings & format)
     {
-        if (except_list.empty())
+        if (except_databases.empty())
             return;
 
-        format.ostr << " " << (format.hilite ? IAST::hilite_keyword : "") << except_keyword << (format.hilite ? IAST::hilite_none : "") << " ";
+        format.ostr << (format.hilite ? IAST::hilite_keyword : "") << " EXCEPT "
+                    << (except_databases.size() == 1 ? "DATABASE" : "DATABASES") << " " << (format.hilite ? IAST::hilite_none : "");
 
         bool need_comma = false;
-        for (const auto & item : except_list)
+        for (const auto & database_name : except_databases)
         {
             if (std::exchange(need_comma, true))
                 format.ostr << ",";
-            format.ostr << " " << backQuoteIfNeed(item);
+            format.ostr << backQuoteIfNeed(database_name);
+        }
+    }
+
+    void formatExceptTables(const std::set<DatabaseAndTableName> & except_tables, const IAST::FormatSettings & format)
+    {
+        if (except_tables.empty())
+            return;
+
+        format.ostr << (format.hilite ? IAST::hilite_keyword : "") << " EXCEPT " << (except_tables.size() == 1 ? "TABLE" : "TABLES") << " "
+                    << (format.hilite ? IAST::hilite_none : "");
+
+        bool need_comma = false;
+        for (const auto & table_name : except_tables)
+        {
+            if (std::exchange(need_comma, true))
+                format.ostr << ", ";
+
+            if (!table_name.first.empty())
+                format.ostr << backQuoteIfNeed(table_name.first) << ".";
+            format.ostr << backQuoteIfNeed(table_name.second);
         }
     }
 
@@ -50,12 +71,7 @@ namespace
         {
             case ElementType::TABLE:
             {
-                format.ostr << (format.hilite ? IAST::hilite_keyword : "");
-                if (element.is_temporary_table)
-                    format.ostr << "TEMPORARY TABLE ";
-                else
-                    format.ostr << "TABLE ";
-                format.ostr << (format.hilite ? IAST::hilite_none : "");
+                format.ostr << (format.hilite ? IAST::hilite_keyword : "") << "TABLE " << (format.hilite ? IAST::hilite_none : "");
 
                 if (!element.database_name.empty())
                     format.ostr << backQuoteIfNeed(element.database_name) << ".";
@@ -74,12 +90,24 @@ namespace
                 break;
             }
 
+            case ElementType::TEMPORARY_TABLE:
+            {
+                format.ostr << (format.hilite ? IAST::hilite_keyword : "") << "TEMPORARY TABLE " << (format.hilite ? IAST::hilite_none : "");
+                format.ostr << backQuoteIfNeed(element.table_name);
+                
+                if (element.new_table_name != element.table_name)
+                {
+                    format.ostr << (format.hilite ? IAST::hilite_keyword : "") << " AS " << (format.hilite ? IAST::hilite_none : "");
+                    format.ostr << backQuoteIfNeed(element.new_table_name);
+                }
+                break;
+            }
+
             case ElementType::DATABASE:
             {
                 format.ostr << (format.hilite ? IAST::hilite_keyword : "");
                 format.ostr << "DATABASE ";
                 format.ostr << (format.hilite ? IAST::hilite_none : "");
-
                 format.ostr << backQuoteIfNeed(element.database_name);
 
                 if (element.new_database_name != element.database_name)
@@ -88,17 +116,15 @@ namespace
                     format.ostr << backQuoteIfNeed(element.new_database_name);
                 }
 
-                if (!element.except_list.empty())
-                    formatExceptList("EXCEPT TABLES", element.except_list, format);
+                formatExceptTables(element.except_tables, format);
                 break;
             }
 
-            case ElementType::ALL_DATABASES:
+            case ElementType::ALL:
             {
-                format.ostr << (format.hilite ? IAST::hilite_keyword : "") << "ALL DATABASES" << (format.hilite ? IAST::hilite_none : "");
-
-                if (!element.except_list.empty())
-                    formatExceptList("EXCEPT", element.except_list, format);
+                format.ostr << (format.hilite ? IAST::hilite_keyword : "") << "ALL" << (format.hilite ? IAST::hilite_none : "");
+                formatExceptDatabases(element.except_databases, format);
+                formatExceptTables(element.except_tables, format);
                 break;
             }
         }
@@ -175,12 +201,31 @@ namespace
 
 void ASTBackupQuery::Element::setCurrentDatabase(const String & current_database)
 {
-    if ((type == ASTBackupQuery::TABLE) && !is_temporary_table)
+    if (current_database.empty())
+        return;
+
+    if (type == ASTBackupQuery::TABLE)
     {
         if (database_name.empty())
             database_name = current_database;
         if (new_database_name.empty())
             new_database_name = current_database;
+    }
+    else if (type == ASTBackupQuery::ALL)
+    {
+        for (auto it = except_tables.begin(); it != except_tables.end();)
+        {
+            const auto & except_table = *it;
+            if (except_table.first.empty())
+            {
+                except_tables.emplace(DatabaseAndTableName{current_database, except_table.second});
+                it = except_tables.erase(it);
+            }
+            else
+            {
+                ++it;
+            }
+        }
     }
 }
 

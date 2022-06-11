@@ -42,11 +42,11 @@ namespace
         return true;
     }
 
-    bool parseExceptList(IParser::Pos & pos, Expected & expected, const char * except_keyword, std::set<String> & except_list)
+    bool parseExceptDatabases(IParser::Pos & pos, Expected & expected, std::set<String> & except_databases)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
-            if (!ParserKeyword{except_keyword}.ignore(pos, expected))
+            if (!ParserKeyword{"EXCEPT DATABASE"}.ignore(pos, expected) && !ParserKeyword{"EXCEPT DATABASES"}.ignore(pos, expected))
                 return false;
 
             std::set<String> result;
@@ -61,7 +61,43 @@ namespace
             if (!ParserList::parseUtil(pos, expected, parse_list_element, false))
                 return false;
 
-            except_list = std::move(result);
+            except_databases = std::move(result);
+            return true;
+        });
+    }
+
+    bool parseExceptTables(IParser::Pos & pos, Expected & expected, const std::optional<String> & database_name, std::set<DatabaseAndTableName> & except_tables)
+    {
+        return IParserBase::wrapParseImpl(pos, [&]
+        {
+            if (!ParserKeyword{"EXCEPT TABLE"}.ignore(pos, expected) && !ParserKeyword{"EXCEPT TABLES"}.ignore(pos, expected))
+                return false;
+
+            std::set<DatabaseAndTableName> result;
+            auto parse_list_element = [&]
+            {
+                DatabaseAndTableName table_name;
+                if (database_name)
+                {
+                    ASTPtr ast;
+                    if (!ParserIdentifier{}.parse(pos, ast, expected))
+                        return false;
+                    table_name.first = *database_name;
+                    table_name.second = getIdentifierName(ast);
+                }
+                else
+                {
+                    if (!parseDatabaseAndTableName(pos, expected, table_name.first, table_name.second))
+                        return false;
+                }
+
+                result.emplace(std::move(table_name));
+                return true;
+            };
+            if (!ParserList::parseUtil(pos, expected, parse_list_element, false))
+                return false;
+
+            except_tables = std::move(result);
             return true;
         });
     }
@@ -70,7 +106,8 @@ namespace
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
-            if (ParserKeyword{"TABLE"}.ignore(pos, expected))
+            if (ParserKeyword{"TABLE"}.ignore(pos, expected) || ParserKeyword{"DICTIONARY"}.ignore(pos, expected) ||
+                ParserKeyword{"VIEW"}.ignore(pos, expected))
             {
                 element.type = ElementType::TABLE;
                 if (!parseDatabaseAndTableName(pos, expected, element.database_name, element.table_name))
@@ -90,8 +127,7 @@ namespace
 
             if (ParserKeyword{"TEMPORARY TABLE"}.ignore(pos, expected))
             {
-                element.type = ElementType::TABLE;
-                element.is_temporary_table = true;
+                element.type = ElementType::TEMPORARY_TABLE;
 
                 ASTPtr ast;
                 if (!ParserIdentifier{}.parse(pos, ast, expected))
@@ -128,14 +164,15 @@ namespace
                     element.new_database_name = getIdentifierName(ast);
                 }
 
-                parseExceptList(pos, expected, "EXCEPT TABLES", element.except_list);
+                parseExceptTables(pos, expected, element.database_name, element.except_tables);
                 return true;
             }
 
-            if (ParserKeyword{"ALL DATABASES"}.ignore(pos, expected))
+            if (ParserKeyword{"ALL"}.ignore(pos, expected))
             {
-                element.type = ElementType::ALL_DATABASES;
-                parseExceptList(pos, expected, "EXCEPT", element.except_list);
+                element.type = ElementType::ALL;
+                parseExceptDatabases(pos, expected, element.except_databases);
+                parseExceptTables(pos, expected, {}, element.except_tables);
                 return true;
             }
 
