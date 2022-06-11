@@ -1,7 +1,6 @@
 #include <algorithm>
 #include <future>
 #include <numeric>
-#include <Poco/Logger.h>
 #include <Poco/Util/Application.h>
 
 #include <base/sort.h>
@@ -495,7 +494,7 @@ public:
 #endif
 
 Aggregator::Aggregator(const Block & header_, const Params & params_)
-    : header(header_), params(params_), keys_positions(calculateKeysPositions(header, params))
+    : header(header_), keys_positions(calculateKeysPositions(header, params_)), params(params_)
 {
     /// Use query-level memory tracker
     if (auto * memory_tracker_child = CurrentThread::getMemoryTracker())

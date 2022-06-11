@@ -963,7 +963,7 @@ public:
             size_t min_free_disk_space_,
             bool compile_aggregate_expressions_,
             size_t min_count_to_compile_aggregate_expression_,
-            bool only_merge_ = false,
+            bool only_merge_ = false, // true for projections
             const StatsCollectingParams & stats_collecting_params_ = {})
             : keys(keys_)
             , aggregates(aggregates_)
@@ -1087,9 +1087,9 @@ private:
 
     /// Data structure of source blocks.
     Block header;
-
-    Params params;
+    /// Positions of aggregation key columns in the header.
     const ColumnNumbers keys_positions;
+    Params params;
 
     AggregatedDataVariants::Type method_chosen;
     Sizes key_sizes;

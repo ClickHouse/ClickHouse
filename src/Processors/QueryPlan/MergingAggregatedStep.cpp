@@ -51,9 +51,8 @@ void MergingAggregatedStep::transformPipeline(QueryPipelineBuilder & pipeline, c
         pipeline.resize(1);
 
         /// Now merge the aggregated blocks
-        pipeline.addSimpleTransform(
-            [&](const Block & header)
-            { return std::make_shared<MergingAggregatedTransform>(header, std::move(transform_params), max_threads); });
+        pipeline.addSimpleTransform([&](const Block & header)
+                                    { return std::make_shared<MergingAggregatedTransform>(header, transform_params, max_threads); });
     }
     else
     {
@@ -61,7 +60,7 @@ void MergingAggregatedStep::transformPipeline(QueryPipelineBuilder & pipeline, c
                                  ? static_cast<size_t>(memory_efficient_merge_threads)
                                  : static_cast<size_t>(max_threads);
 
-        pipeline.addMergingAggregatedMemoryEfficientTransform(std::move(transform_params), num_merge_threads);
+        pipeline.addMergingAggregatedMemoryEfficientTransform(transform_params, num_merge_threads);
     }
 }
 

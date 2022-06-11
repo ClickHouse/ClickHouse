@@ -33,7 +33,6 @@ struct AggregatingTransformParams
     AggregatorListPtr aggregator_list_ptr;
     Aggregator & aggregator;
     bool final;
-    bool only_merge = false;
 
     AggregatingTransformParams(const Block & header, const Aggregator::Params & params_, bool final_)
         : params(params_)

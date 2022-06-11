@@ -306,8 +306,6 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
 
                 transform_params = std::make_shared<AggregatingTransformParams>(
                     pipe.getHeader(), std::move(params), aggregator_list_ptr, query_info.projection->aggregate_final);
-
-                transform_params->only_merge = only_merge;
             }
             else
             {
