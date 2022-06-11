@@ -200,6 +200,7 @@ private:
     const Range segment_range;
 
     State download_state;
+
     String downloader_id;
 
     RemoteFileReaderPtr remote_file_reader;
