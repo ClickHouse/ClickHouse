@@ -171,47 +171,10 @@ std::shared_ptr<NotJoinedBlocks> ConcurrentHashJoin::getNonJoinedBlocks(
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid join type. join kind: {}, strictness: {}", table_join->kind(), table_join->strictness());
 }
 
-static IColumn::Selector hashToSelector(const WeakHash32 & hash, size_t num_shards)
-{
-    const auto & data = hash.getData();
-    size_t num_rows = data.size();
-
-    IColumn::Selector selector(num_rows);
-    for (size_t i = 0; i < num_rows; ++i)
-        selector[i] = data[i] % num_shards;
-    return selector;
-}
-
 Blocks ConcurrentHashJoin::dispatchBlock(const Strings & key_columns_names, const Block & from_block)
 {
     size_t num_shards = hash_joins.size();
-    size_t num_rows = from_block.rows();
-    size_t num_cols = from_block.columns();
-
-    WeakHash32 hash(num_rows);
-    for (const auto & key_name : key_columns_names)
-    {
-        const auto & key_col = from_block.getByName(key_name).column;
-        key_col->updateWeakHash32(hash);
-    }
-    auto selector = hashToSelector(hash, num_shards);
-
-    Blocks result;
-    for (size_t i = 0; i < num_shards; ++i)
-    {
-        result.emplace_back(from_block.cloneEmpty());
-    }
-
-    for (size_t i = 0; i < num_cols; ++i)
-    {
-        auto dispatched_columns = from_block.getByPosition(i).column->scatter(num_shards, selector);
-        assert(result.size() == dispatched_columns.size());
-        for (size_t block_index = 0; block_index < num_shards; ++block_index)
-        {
-            result[block_index].getByPosition(i).column = std::move(dispatched_columns[block_index]);
-        }
-    }
-    return result;
+    return JoinCommon::scatterBlockByHash(key_columns_names, from_block, num_shards);
 }
 
 }

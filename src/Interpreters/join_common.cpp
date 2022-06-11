@@ -14,6 +14,10 @@
 
 #include <IO/WriteHelpers.h>
 
+#include <Common/WeakHash.h>
+
+#include <base/FnTraits.h>
+
 namespace DB
 {
 
@@ -573,17 +577,74 @@ void splitAdditionalColumns(const Names & key_names, const Block & sample_block,
     }
 }
 
-template <std::integral T>
-static bool isPowerOf2(T number) {
-    // TODO(sskvor)
-    return false;
+template <Fn<size_t(size_t)> Sharder>
+static IColumn::Selector hashToSelector(const WeakHash32 & hash, Sharder sharder)
+{
+    const auto & hashes = hash.getData();
+    size_t num_rows = hashes.size();
+
+    IColumn::Selector selector(num_rows);
+    for (size_t i = 0; i < num_rows; ++i)
+        selector[i] = sharder(hashes[i]);
+    return selector;
 }
 
-Blocks scatterBlockByHash(const Strings& key_columns_names, const Block& block, size_t num_shards) {
-    if (likely(isPowerOf2(num_shards))) {
-        return scatterBlockByHashLog2(key_columns_names, block, num_shards_log2);
+template <Fn<size_t(size_t)> Sharder>
+static Blocks scatterBlockByHashImpl(const Strings & key_columns_names, const Block & block, size_t num_shards, Sharder sharder) {
+    size_t num_rows = block.rows();
+    size_t num_cols = block.columns();
+
+    WeakHash32 hash(num_rows);
+    for (const auto & key_name : key_columns_names)
+    {
+        const auto & key_col = block.getByName(key_name).column;
+        key_col->updateWeakHash32(hash);
     }
-    return scatterBlockByHashImpl(key_columns_names, )
+    auto selector = hashToSelector(hash, sharder);
+
+    Blocks result;
+    result.reserve(num_shards);
+    for (size_t i = 0; i < num_shards; ++i)
+    {
+        result.emplace_back(block.cloneEmpty());
+    }
+
+    for (size_t i = 0; i < num_cols; ++i)
+    {
+        auto dispatched_columns = block.getByPosition(i).column->scatter(num_shards, selector);
+        assert(result.size() == dispatched_columns.size());
+        for (size_t block_index = 0; block_index < num_shards; ++block_index)
+        {
+            result[block_index].getByPosition(i).column = std::move(dispatched_columns[block_index]);
+        }
+    }
+    return result;
+}
+
+template <std::integral T>
+static bool isPowerOf2(T number) {
+    return number == T{1} << bitScanReverse(number);
+}
+
+static Blocks scatterBlockByHashPow2(const Strings & key_columns_names, const Block & block, size_t num_shards) {
+    UInt32 log2 = bitScanReverse(num_shards);
+    UInt32 mask = maskLowBits<size_t>(log2);
+
+    return scatterBlockByHashImpl(key_columns_names, block, num_shards, [mask](size_t hash) {
+        return hash & mask;
+    });
+}
+
+static Blocks scatterBlockByHashGeneric(const Strings & key_columns_names, const Block & block, size_t num_shards) {
+    return scatterBlockByHashImpl(key_columns_names, block, num_shards, [num_shards](size_t hash) {
+        return hash % num_shards;
+    });
+}
+
+Blocks scatterBlockByHash(const Strings & key_columns_names, const Block & block, size_t num_shards) {
+    if (likely(isPowerOf2(num_shards)))
+        return scatterBlockByHashPow2(key_columns_names, block, num_shards);
+    return scatterBlockByHashGeneric(key_columns_names, block, num_shards);
 }
 
 }
