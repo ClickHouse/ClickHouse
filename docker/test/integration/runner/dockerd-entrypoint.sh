@@ -30,8 +30,8 @@ set -e
 # cleanup for retry run if volume is not recreated
 # shellcheck disable=SC2046
 {
-    docker ps -aq | xargs -r docker kill
-    docker ps -aq | xargs -r docker rm
+  docker kill $(docker ps -aq) || true
+  docker rm $(docker ps -aq) || true
 }
 
 echo "Start tests"
