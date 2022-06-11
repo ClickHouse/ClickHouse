@@ -1072,12 +1072,6 @@ void DatabaseCatalog::updateLoadingDependencies(const StorageID & table_id, Tabl
     old_dependencies = std::move(new_dependencies);
 }
 
-Databases DatabaseCatalog::getDatabasesForBackup() const
-{
-    /// TODO: Skip internal databases.
-    return getDatabases();
-}
-
 
 DDLGuard::DDLGuard(Map & map_, std::shared_mutex & db_mutex_, std::unique_lock<std::mutex> guards_lock_, const String & elem, const String & database_name)
         : map(map_), db_mutex(db_mutex_), guards_lock(std::move(guards_lock_))
