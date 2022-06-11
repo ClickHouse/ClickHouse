@@ -1,3 +1,5 @@
+-- Tags: high-memory-usage
+
 DROP TABLE IF EXISTS hits_none;
 CREATE TABLE hits_none (Title String CODEC(NONE)) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO hits_none SELECT Title FROM test.hits;

@@ -1,4 +1,4 @@
--- Tags: no-random-settings
+-- Tags: no-random-settings, high-memory-usage
 
 SELECT sum(cityHash64(*)) FROM test.hits SETTINGS max_threads=40;
 

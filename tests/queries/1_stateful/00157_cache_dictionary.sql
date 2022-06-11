@@ -1,4 +1,4 @@
--- Tags: no-tsan, no-parallel
+-- Tags: no-tsan, no-parallel, high-memory-usage
 
 DROP TABLE IF EXISTS test.hits_1m;
 CREATE TABLE test.hits_1m as test.hits;
