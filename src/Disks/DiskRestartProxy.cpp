@@ -5,6 +5,7 @@
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int DEADLOCK_AVOIDED;
@@ -170,7 +171,7 @@ void DiskRestartProxy::moveDirectory(const String & from_path, const String & to
     DiskDecorator::moveDirectory(from_path, to_path);
 }
 
-DiskDirectoryIteratorPtr DiskRestartProxy::iterateDirectory(const String & path)
+DirectoryIteratorPtr DiskRestartProxy::iterateDirectory(const String & path)
 {
     ReadLock lock (mutex);
     return DiskDecorator::iterateDirectory(path);
@@ -329,7 +330,7 @@ void DiskRestartProxy::getRemotePathsRecursive(const String & path, std::vector<
     return DiskDecorator::getRemotePathsRecursive(path, paths_map);
 }
 
-void DiskRestartProxy::restart()
+void DiskRestartProxy::restart(ContextPtr context)
 {
     /// Speed up processing unhealthy requests.
     DiskDecorator::shutdown();
@@ -352,7 +353,7 @@ void DiskRestartProxy::restart()
 
     LOG_INFO(log, "Restart lock acquired. Restarting disk {}", DiskDecorator::getName());
 
-    DiskDecorator::startup();
+    DiskDecorator::startup(context);
 
     LOG_INFO(log, "Disk restarted {}", DiskDecorator::getName());
 }
