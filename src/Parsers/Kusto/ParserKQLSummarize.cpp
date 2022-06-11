@@ -38,41 +38,40 @@ std::pair<String, String> ParserKQLSummarize::removeLastWord(String input)
         temp.push_back(token);
     }
 
-    String firstPart;
+    String first_part;
     for (std::size_t i = 0; i < temp.size() - 1; i++)
     {
-        firstPart += temp[i];
+        first_part += temp[i];
     }
-    if (temp.size() > 0)
+    if (!temp.empty())
     {
-        return std::make_pair(firstPart, temp[temp.size() - 1]);
+        return std::make_pair(first_part, temp[temp.size() - 1]);
     }
 
     return std::make_pair("", "");
 }
 
-String ParserKQLSummarize::getBinGroupbyString(String exprBin)
+String ParserKQLSummarize::getBinGroupbyString(String expr_bin)
 {
     String column_name;
     bool bracket_start = false;
     bool comma_start = false;
     String bin_duration;
 
-    for (std::size_t i = 0; i < exprBin.size(); i++)
+    for (char ch : expr_bin)
     {
-        if (comma_start && exprBin[i] != ')')
-            bin_duration += exprBin[i];
-        if (exprBin[i] == ',')
+        if (comma_start && ch != ')')
+            bin_duration += ch;
+        if (ch == ',')
         {
             comma_start = true;
             bracket_start = false;
         }
-        if (bracket_start == true)
-            column_name += exprBin[i];
-        if (exprBin[i] == '(')
+        if (bracket_start)
+            column_name += ch;
+        if (ch == '(')
             bracket_start = true;
     }
-
 
     std::size_t len = bin_duration.size();
     char bin_type = bin_duration[len - 1]; // y, d, h, m, s
@@ -110,14 +109,13 @@ bool ParserKQLSummarize ::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
     if (op_pos.size() != 1) // now only support one summarize
         return false;
 
-
     auto begin = pos;
 
     pos = op_pos.back();
-    String exprAggregation;
-    String exprGroupby;
-    String exprColumns;
-    String exprBin;
+    String expr_aggregation;
+    String expr_groupby;
+    String expr_columns;
+    String expr_bin;
     bool groupby = false;
     bool bin_function = false;
     String bin_column;
@@ -133,45 +131,45 @@ bool ParserKQLSummarize ::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
         {
             if (groupby)
             {
-                if (String(pos->begin, pos->end) == "bin" || bin_function == true)
+                if (String(pos->begin, pos->end) == "bin" || bin_function)
                 {
                     bin_function = true;
-                    exprBin += String(pos->begin, pos->end);
+                    expr_bin += String(pos->begin, pos->end);
                     if (String(pos->begin, pos->end) == ")")
                     {
-                        exprBin = getBinGroupbyString(exprBin);
-                        exprGroupby += exprBin;
+                        expr_bin = getBinGroupbyString(expr_bin);
+                        expr_groupby += expr_bin;
                         bin_function = false;
                     }
                 }
 
                 else
-                    exprGroupby = exprGroupby + String(pos->begin, pos->end) + " ";
+                    expr_groupby = expr_groupby + String(pos->begin, pos->end) + " ";
             }
 
             else
             {
                 if (String(pos->begin, pos->end) == "=")
                 {
-                    std::pair<String, String> temp = removeLastWord(exprAggregation);
-                    exprAggregation = temp.first;
+                    std::pair<String, String> temp = removeLastWord(expr_aggregation);
+                    expr_aggregation = temp.first;
                     column_name = temp.second;
                 }
                 else
                 {
                     if (!column_name.empty())
                     {
-                        exprAggregation = exprAggregation + String(pos->begin, pos->end);
+                        expr_aggregation = expr_aggregation + String(pos->begin, pos->end);
                         character_passed++;
                         if (String(pos->begin, pos->end) == ")")
                         {
-                            exprAggregation = exprAggregation + " AS " + column_name;
+                            expr_aggregation = expr_aggregation + " AS " + column_name;
                             column_name = "";
                         }
                     }
                     else if (!bin_function)
                     {
-                        exprAggregation = exprAggregation + String(pos->begin, pos->end) + " ";
+                        expr_aggregation = expr_aggregation + String(pos->begin, pos->end) + " ";
                     }
                 }
             }
@@ -179,25 +177,25 @@ bool ParserKQLSummarize ::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
         ++pos;
     }
 
-    if (exprGroupby.empty())
-        exprColumns = exprAggregation;
+    if (expr_groupby.empty())
+        expr_columns = expr_aggregation;
     else
     {
-        if (exprAggregation.empty())
-            exprColumns = exprGroupby;
+        if (expr_aggregation.empty())
+            expr_columns = expr_groupby;
         else
-            exprColumns = exprGroupby + "," + exprAggregation;
+            expr_columns = expr_groupby + "," + expr_aggregation;
     }
-    Tokens tokenColumns(exprColumns.c_str(), exprColumns.c_str() + exprColumns.size());
-    IParser::Pos posColumns(tokenColumns, pos.max_depth);
-    if (!ParserNotEmptyExpressionList(true).parse(posColumns, node, expected))
+    Tokens token_columns(expr_columns.c_str(), expr_columns.c_str() + expr_columns.size());
+    IParser::Pos pos_columns(token_columns, pos.max_depth);
+    if (!ParserNotEmptyExpressionList(true).parse(pos_columns, node, expected))
         return false;
 
     if (groupby)
     {
-        Tokens tokenGroupby(exprGroupby.c_str(), exprGroupby.c_str() + exprGroupby.size());
-        IParser::Pos postokenGroupby(tokenGroupby, pos.max_depth);
-        if (!ParserNotEmptyExpressionList(false).parse(postokenGroupby, group_expression_list, expected))
+        Tokens token_groupby(expr_groupby.c_str(), expr_groupby.c_str() + expr_groupby.size());
+        IParser::Pos postoken_groupby(token_groupby, pos.max_depth);
+        if (!ParserNotEmptyExpressionList(false).parse(postoken_groupby, group_expression_list, expected))
             return false;
     }
 
