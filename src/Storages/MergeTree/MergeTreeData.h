@@ -624,7 +624,7 @@ public:
 
     /// Delete all directories which names begin with "tmp"
     /// Must be called with locked lockForShare() because it's using relative_data_path.
-    size_t clearOldTemporaryDirectories(size_t custom_directories_lifetime_seconds);
+    size_t clearOldTemporaryDirectories(size_t custom_directories_lifetime_seconds, const NameSet & valid_prefixes = {"tmp_", });
 
     size_t clearEmptyParts();
 
@@ -996,6 +996,7 @@ protected:
     friend class MergeTreeDataWriter;
     friend class MergeTask;
     friend class IPartMetadataManager;
+    friend class IMergedBlockOutputStream; // for access to log
 
     bool require_part_metadata;
 
@@ -1224,6 +1225,8 @@ protected:
     /// Moves part to specified space, used in ALTER ... MOVE ... queries
     bool movePartsToSpace(const DataPartsVector & parts, SpacePtr space);
 
+    static void incrementInsertedPartsProfileEvent(MergeTreeDataPartType type);
+    static void incrementMergedPartsProfileEvent(MergeTreeDataPartType type);
 
 private:
     /// RAII Wrapper for atomic work with currently moving parts

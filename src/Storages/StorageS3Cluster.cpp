@@ -23,13 +23,14 @@
 #include <Processors/Transforms/AddingDefaultsTransform.h>
 #include <QueryPipeline/narrowPipe.h>
 #include <QueryPipeline/Pipe.h>
-#include "Processors/Sources/SourceWithProgress.h"
+#include "Processors/ISource.h"
 #include <Processors/Sources/RemoteSource.h>
 #include <QueryPipeline/RemoteQueryExecutor.h>
 #include <Parsers/queryToString.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Storages/IStorage.h>
 #include <Storages/SelectQueryInfo.h>
+#include <Storages/getVirtualsForStorage.h>
 #include <Common/logger_useful.h>
 
 #include <aws/core/auth/AWSCredentials.h>
@@ -82,6 +83,15 @@ StorageS3Cluster::StorageS3Cluster(
 
     storage_metadata.setConstraints(constraints_);
     setInMemoryMetadata(storage_metadata);
+
+    auto default_virtuals = NamesAndTypesList{
+        {"_path", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
+        {"_file", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())}};
+
+    auto columns = storage_metadata.getSampleBlock().getNamesAndTypesList();
+    virtual_columns = getVirtualsForStorage(columns, default_virtuals);
+    for (const auto & column : virtual_columns)
+        virtual_block.insert({column.type->createColumn(), column.type, column.name});
 }
 
 /// The code executes on initiator
@@ -98,11 +108,9 @@ Pipe StorageS3Cluster::read(
 
     auto cluster = context->getCluster(cluster_name)->getClusterWithReplicasAsShards(context->getSettingsRef());
 
-    auto iterator = std::make_shared<StorageS3Source::DisclosedGlobIterator>(*s3_configuration.client, s3_configuration.uri);
-    auto callback = std::make_shared<StorageS3Source::IteratorWrapper>([iterator]() mutable -> String
-    {
-        return iterator->next();
-    });
+    auto iterator = std::make_shared<StorageS3Source::DisclosedGlobIterator>(
+        *s3_configuration.client, s3_configuration.uri, query_info.query, virtual_block, context);
+    auto callback = std::make_shared<StorageS3Source::IteratorWrapper>([iterator]() mutable -> String { return iterator->next(); });
 
     /// Calculate the header. This is significant, because some columns could be thrown away in some cases like query with count(*)
     Block header =
@@ -164,9 +172,7 @@ QueryProcessingStage::Enum StorageS3Cluster::getQueryProcessingStage(
 
 NamesAndTypesList StorageS3Cluster::getVirtuals() const
 {
-    return NamesAndTypesList{
-        {"_path", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
-        {"_file", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())}};
+    return virtual_columns;
 }
 
 

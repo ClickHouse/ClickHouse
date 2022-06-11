@@ -4,7 +4,7 @@
 
 #if USE_HDFS
 
-#include <Processors/Sources/SourceWithProgress.h>
+#include <Processors/ISource.h>
 #include <Storages/IStorage.h>
 #include <Poco/URI.h>
 #include <Common/logger_useful.h>
@@ -82,7 +82,7 @@ private:
 
 class PullingPipelineExecutor;
 
-class HDFSSource : public SourceWithProgress, WithContext
+class HDFSSource : public ISource, WithContext
 {
 public:
     class DisclosedGlobIterator
@@ -132,8 +132,6 @@ private:
     Block block_for_format;
     std::vector<NameAndTypePair> requested_virtual_columns;
     UInt64 max_block_size;
-    bool need_path_column;
-    bool need_file_column;
     std::shared_ptr<IteratorWrapper> file_iterator;
     ColumnsDescription columns_description;
 

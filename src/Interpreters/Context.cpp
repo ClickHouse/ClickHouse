@@ -29,7 +29,7 @@
 #include <Storages/CompressionCodecSelector.h>
 #include <Storages/StorageS3Settings.h>
 #include <Disks/DiskLocal.h>
-#include <Disks/IDiskRemote.h>
+#include <Disks/ObjectStorages/IObjectStorage.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Interpreters/ActionLocksManager.h>
 #include <Interpreters/ExternalLoaderXMLConfigRepository.h>
@@ -313,7 +313,7 @@ struct ContextSharedPart
         /// since it may use per-user MemoryTracker which will be destroyed here.
         try
         {
-            IDiskRemote::getThreadPoolWriter().wait();
+            IObjectStorage::getThreadPoolWriter().wait();
         }
         catch (...)
         {
@@ -702,7 +702,7 @@ void Context::setUserDefinedPath(const String & path)
     shared->user_defined_path = path;
 }
 
-void Context::addWarningMessage(const String & msg)
+void Context::addWarningMessage(const String & msg) const
 {
     auto lock = getLock();
     shared->addWarningMessage(msg);
@@ -767,6 +767,7 @@ void Context::setUser(const UUID & user_id_)
         user_id_, /* current_roles = */ {}, /* use_default_roles = */ true, settings, current_database, client_info);
 
     auto user = access->getUser();
+
     current_roles = std::make_shared<std::vector<UUID>>(user->granted_roles.findGranted(user->default_roles));
 
     auto default_profile_info = access->getDefaultProfileInfo();
@@ -1078,7 +1079,7 @@ void Context::addQueryFactoriesInfo(QueryLogFactories factory_type, const String
     if (isGlobalContext())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot have query factories info");
 
-    auto lock = getLock();
+    std::lock_guard lock(query_factories_info.mutex);
 
     switch (factory_type)
     {
@@ -3417,6 +3418,9 @@ ReadSettings Context::getReadSettings() const
     res.filesystem_cache_max_wait_sec = settings.filesystem_cache_max_wait_sec;
     res.read_from_filesystem_cache_if_exists_otherwise_bypass_cache = settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache;
     res.enable_filesystem_cache_log = settings.enable_filesystem_cache_log;
+
+    res.max_query_cache_size = settings.max_query_cache_size;
+    res.skip_download_if_exceeds_query_cache = settings.skip_download_if_exceeds_query_cache;
 
     res.remote_read_min_bytes_for_seek = settings.remote_read_min_bytes_for_seek;
 

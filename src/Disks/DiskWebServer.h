@@ -1,9 +1,12 @@
 #pragma once
 
-#include <Disks/IDiskRemote.h>
 #include <IO/WriteBufferFromFile.h>
 #include <Core/UUID.h>
 #include <set>
+
+#include <Interpreters/Context_fwd.h>
+#include <Disks/IDisk.h>
+#include <IO/ReadBufferFromFile.h>
 
 
 namespace DB
@@ -93,7 +96,7 @@ public:
 
     bool isDirectory(const String & path) const override;
 
-    DiskDirectoryIteratorPtr iterateDirectory(const String & /* path */) override;
+    DirectoryIteratorPtr iterateDirectory(const String & /* path */) override;
 
     Poco::Timestamp getLastModified(const String &) override { return Poco::Timestamp{}; }
 
