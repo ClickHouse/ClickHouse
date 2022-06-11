@@ -597,8 +597,6 @@ struct ImplBLAKE3
     static constexpr auto name = "BLAKE3";
     enum { length = OUT_LEN };
 
-    //static inline Hasher_shim blake3_hasher = new_hasher();
-
     static void apply(const char * begin, const size_t size, unsigned char* out_char_data)
     {
         #if defined(MEMORY_SANITIZER)
