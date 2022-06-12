@@ -297,7 +297,7 @@ int copy_decompressor(const char *self, int output_fd)
         return 1;
     }
 
-    char * buf = new char[1ul<<19];
+    char * buf = (char *)malloc(1ul<<19);
     ssize_t n = 0;
     do
     {
@@ -327,7 +327,7 @@ int copy_decompressor(const char *self, int output_fd)
     } while (true);
 
     close(input_fd);
-    delete []buf;
+    free(buf);
     return 0;
 }
 
