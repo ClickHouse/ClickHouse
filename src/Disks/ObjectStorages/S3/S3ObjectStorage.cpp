@@ -218,7 +218,7 @@ void S3ObjectStorage::removeObject(const std::string & path)
 
     // If chunk size is 0, only use single delete request
     // This allows us to work with GCS, which doesn't support DeleteObjects
-    if (settings_ptr->objects_chunk_size_to_delete == 0)
+    if (!s3_capabilities.support_batch_delete)
     {
         Aws::S3::Model::DeleteObjectRequest request;
         request.SetBucket(bucket);
@@ -229,6 +229,8 @@ void S3ObjectStorage::removeObject(const std::string & path)
     }
     else
     {
+        /// TODO: For AWS we prefer to use multiobject operation even for single object
+        /// maybe we shouldn't?
         Aws::S3::Model::ObjectIdentifier obj;
         obj.SetKey(path);
         Aws::S3::Model::Delete delkeys;
@@ -250,41 +252,39 @@ void S3ObjectStorage::removeObjects(const std::vector<std::string> & paths)
     auto client_ptr = client.get();
     auto settings_ptr = s3_settings.get();
 
-    size_t chunk_size_limit = settings_ptr->objects_chunk_size_to_delete;
-
-    if (chunk_size_limit == 0)
+    if (!s3_capabilities.support_batch_delete)
     {
         for (const auto & path : paths)
-        {
             removeObject(path);
-        }
-        return;
     }
-
-    size_t current_position = 0;
-
-    while (current_position < paths.size())
+    else
     {
-        std::vector<Aws::S3::Model::ObjectIdentifier> current_chunk;
-        String keys;
-        for (; current_position < paths.size() && current_chunk.size() < chunk_size_limit; ++current_position)
+        size_t chunk_size_limit = settings_ptr->objects_chunk_size_to_delete;
+        size_t current_position = 0;
+
+        while (current_position < paths.size())
         {
-            Aws::S3::Model::ObjectIdentifier obj;
-            obj.SetKey(paths[current_position]);
-            current_chunk.push_back(obj);
+            std::vector<Aws::S3::Model::ObjectIdentifier> current_chunk;
+            String keys;
+            for (; current_position < paths.size() && current_chunk.size() < chunk_size_limit; ++current_position)
+            {
+                Aws::S3::Model::ObjectIdentifier obj;
+                obj.SetKey(paths[current_position]);
+                current_chunk.push_back(obj);
 
-            if (!keys.empty())
-                keys += ", ";
-            keys += paths[current_position];
+                if (!keys.empty())
+                    keys += ", ";
+                keys += paths[current_position];
+            }
+
+            Aws::S3::Model::Delete delkeys;
+            delkeys.SetObjects(current_chunk);
+            Aws::S3::Model::DeleteObjectsRequest request;
+            request.SetBucket(bucket);
+            request.SetDelete(delkeys);
+            auto outcome = client_ptr->DeleteObjects(request);
+            throwIfError(outcome);
         }
-
-        Aws::S3::Model::Delete delkeys;
-        delkeys.SetObjects(current_chunk);
-        Aws::S3::Model::DeleteObjectsRequest request;
-        request.SetBucket(bucket);
-        request.SetDelete(delkeys);
-        auto outcome = client_ptr->DeleteObjects(request);
-        throwIfError(outcome);
     }
 }
 
@@ -518,7 +518,7 @@ std::unique_ptr<IObjectStorage> S3ObjectStorage::cloneObjectStorage(const std::s
     return std::make_unique<S3ObjectStorage>(
         nullptr, getClient(config, config_prefix, context),
         getSettings(config, config_prefix, context),
-        version_id, new_namespace);
+        version_id, s3_capabilities, new_namespace);
 }
 
 }
