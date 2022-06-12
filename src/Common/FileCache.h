@@ -130,7 +130,7 @@ protected:
 
         using Iterator = typename std::list<FileKeyAndOffset>::iterator;
 
-        size_t getTotalWeight(std::lock_guard<std::mutex> & /* cache_lock */) const { return cache_size; }
+        size_t getTotalCacheSize(std::lock_guard<std::mutex> & /* cache_lock */) const { return cache_size; }
 
         size_t getElementsNum(std::lock_guard<std::mutex> & /* cache_lock */) const { return queue.size(); }
 
@@ -356,13 +356,6 @@ private:
     size_t max_stash_element_size;
     size_t enable_cache_hits_threshold;
 
-    enum class ReserveResult
-    {
-        FITS_IN_QUERY_LIMIT_AND_RESERVATION_COMPLETED,
-        EXCEEDS_QUERY_LIMIT,
-        FITS_IN_QUERY_LIMIT_NEED_RESERVE_FROM_MAIN_LIST,
-    };
-
     Poco::Logger * log;
 
     FileSegments getImpl(
@@ -383,12 +376,6 @@ private:
         std::lock_guard<std::mutex> & cache_lock) override;
 
     bool tryReserveForMainList(
-        const Key & key, size_t offset, size_t size,
-        QueryContextPtr query_context,
-        std::lock_guard<std::mutex> & cache_lock);
-
-    /// Limit the maximum cache size for current query.
-    LRUFileCache::ReserveResult tryReserveForQuery(
         const Key & key, size_t offset, size_t size,
         QueryContextPtr query_context,
         std::lock_guard<std::mutex> & cache_lock);
