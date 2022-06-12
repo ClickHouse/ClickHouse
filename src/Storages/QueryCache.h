@@ -56,7 +56,9 @@ struct CacheKeyHasher
         hash.update(key.header.getNamesAndTypesList().toString());
         for (const auto & setting : key.settings)
         {
-            hash.update(setting.getValueString());
+            const String value = setting.getValueString();
+            hash.update(value.size());
+            hash.update(value);
         }
         if (key.username.has_value())
         {
@@ -64,7 +66,7 @@ struct CacheKeyHasher
         }
         auto res = hash.get64();
         LOG_DEBUG(&Poco::Logger::get("CacheKeyHasher"), "hash = {}",
-                  key.header.getNamesAndTypesList().toString()
+                  res
         );
         return res;
     }
