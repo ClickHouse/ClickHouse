@@ -534,7 +534,9 @@ class TestCase:
         if args.no_random_settings:
             self.random_settings = []
         if "high-memory-usage" not in self.tags:
-            self.random_settings.append("max_memory_usage=536870912")
+            default_limit = "1G" if args.test_runs == 1 else "800M"
+            memory_limit = args.memory_usage_threshold if args.memory_usage_threshold else "1G"
+            self.random_settings.append(f"max_memory_usage={memory_limit}")
         if len(self.random_settings) == 0:
             return client_options
 
@@ -2032,6 +2034,8 @@ if __name__ == "__main__":
         type=int,
         help="Max number of failed tests in a row (stop tests if higher)",
     )
+
+    parser.add_argument("--memory-usage-threshold", help="Default memory usage limit for a query in tests")
     args = parser.parse_args()
 
     if args.queries and not os.path.isdir(args.queries):

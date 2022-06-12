@@ -1,3 +1,5 @@
+-- Tags: high-memory-usage
+
 SELECT
     domain,
     hits,
