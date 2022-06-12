@@ -535,7 +535,7 @@ class TestCase:
             self.random_settings = []
         if "high-memory-usage" not in self.tags:
             default_limit = "1G" if args.test_runs == 1 else "800M"
-            memory_limit = args.memory_usage_threshold if args.memory_usage_threshold else "1G"
+            memory_limit = args.memory_usage_threshold if args.memory_usage_threshold else default_limit
             self.random_settings.append(f"max_memory_usage={memory_limit}")
         if len(self.random_settings) == 0:
             return client_options
