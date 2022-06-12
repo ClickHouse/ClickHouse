@@ -55,6 +55,7 @@ CachedReadBufferFromRemoteFS::CachedReadBufferFromRemoteFS(
     , query_id(query_id_)
     , enable_logging(!query_id.empty() && settings_.enable_filesystem_cache_log)
     , current_buffer_id(getRandomASCIIString(8))
+    , query_context_holder(cache_->getQueryContextHolder(query_id, settings_))
 {
 }
 

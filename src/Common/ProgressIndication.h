@@ -44,7 +44,7 @@ public:
     /// 1. onProgress in clickhouse-client;
     /// 2. ProgressCallback via setProgressCallback methrod in:
     ///    - context (used in clickhouse-local, can also be added in arbitrary place)
-    ///    - SourceWithProgress (also in streams)
+    ///    - ISource (also in streams)
     ///    - readBufferFromFileDescriptor (for file processing progress)
     bool updateProgress(const Progress & value);
 
