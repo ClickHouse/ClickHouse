@@ -2,7 +2,7 @@
 
 
 #include <string.h>
-#if !defined(__APPLE__) && !defined(__FreeBSD__)
+#if !defined(OS_DARWIN) && !defined(OS_FREEBSD)
 #include <malloc.h>
 #endif
 #include <algorithm>

@@ -210,7 +210,11 @@ bool AsynchronousReadIndirectBufferFromRemoteFS::nextImpl()
     ProfileEvents::increment(ProfileEvents::AsynchronousReadWaitMicroseconds, watch.elapsedMicroseconds());
 
     file_offset_of_buffer_end = impl->getFileOffsetOfBufferEnd();
-    assert(file_offset_of_buffer_end == impl->getImplementationBufferOffset());
+    /// In case of multiple files for the same file in clickhouse (i.e. log family)
+    /// file_offset_of_buffer_end will not match getImplementationBufferOffset()
+    /// so we use [impl->getImplementationBufferOffset(), impl->getFileSize()]
+    assert(file_offset_of_buffer_end >= impl->getImplementationBufferOffset());
+    assert(file_offset_of_buffer_end <= impl->getFileSize());
 
     prefetch_future = {};
     return size;

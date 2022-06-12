@@ -109,7 +109,7 @@ void TablesStatusResponse::read(ReadBuffer & in, UInt64 server_protocol_revision
 
         TableStatus status;
         status.read(in);
-        table_states_by_id.emplace(std::move(table_name), status);
+        table_states_by_id.emplace(std::move(table_name), std::move(status));
     }
 }
 
