@@ -188,7 +188,7 @@ QueryPipelineBuilderPtr QueryPlan::buildQueryPipeline(
         if (next_child == frame.node->children.size())
         {
             bool limit_max_threads = frame.pipelines.empty();
-            LOG_TRACE(&Poco::Logger::get("QueryPlan"), "buildQueryPipeline: # of pipelines for frame {}", frame.pipelines.size());
+            LOG_TRACE(&Poco::Logger::get("QueryPlan"), "buildQueryPipeline: # of pipelines for frame {}, structure {}", frame.pipelines.size(), (frame.pipelines.empty() ? "No pipeline" : frame.pipelines.front()->getHeader().dumpStructure()));
             LOG_TRACE(&Poco::Logger::get("QueryPlan"), "step description {}", frame.node->step->getStepDescription());
             last_pipeline = frame.node->step->updatePipeline(std::move(frame.pipelines), build_pipeline_settings);
 
@@ -205,6 +205,7 @@ QueryPipelineBuilderPtr QueryPlan::buildQueryPipeline(
     last_pipeline->setProcessListElement(build_pipeline_settings.process_list_element);
     last_pipeline->addResources(std::move(resources));
 
+    LOG_TRACE(&Poco::Logger::get("QueryPlan"), "buildQueryPipeline: end of");
     return last_pipeline;
 }
 

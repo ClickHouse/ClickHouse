@@ -305,22 +305,52 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::parallelJoinPipeline
     Processors * collected_processors)
 {
 
+    auto transform = std::make_shared<ParallelJoinTransform>(join, join_streams.size());
+
+    // size_t input_num = 0;
+    // auto transform_inputs = transform->getInputs().begin();
+
+
     for (auto & js : join_streams)
     {
-        auto transform = std::make_shared<ParallelJoinTransform>(join);
         js->checkInitializedAndNotCompleted();
         js->pipe.dropExtremes();
         js->pipe.collected_processors = collected_processors;
 
         js->resize(1);
 
-        transform->add_header(js->getHeader());
+        transform->addHeader(js->getHeader());
+
+        connect(*js->pipe.output_ports.front(), /* joining */ transform->getInputs().back() /**transform_inputs++*/);
     }
 
     // transform->mk_ports();
     //
 
-    return std::move(join_streams[1]);
+    // holder ???
+    join_streams[0]->pipe.header = transform->getHeader();
+    LOG_TRACE(&Poco::Logger::get("QueryPipelineBuilder"), "parallelJoinPipelines header {}", join_streams[0]->pipe.header.dumpStructure());
+
+    // transform->getOutputs().front() = transform->getHeader();
+
+    transform->getOutputs().emplace_back(transform->getHeader(), transform.get());
+
+
+    join_streams[0]->pipe.output_ports.front() = &transform->getOutputs().front();
+    join_streams[0]->pipe.processors.emplace_back(std::move(transform));
+
+    bool skip_left = true;
+    for (auto & js : join_streams)
+    {
+        if (!skip_left)
+        {
+            join_streams[0]->pipe.processors.insert(join_streams[0]->pipe.processors.end(), js->pipe.processors.begin(), js->pipe.processors.end());
+            join_streams[0]->pipe.holder = std::move(js->pipe.holder);
+        }
+        skip_left = false;
+    }
+
+    return std::move(join_streams[0]);
 
 }
 

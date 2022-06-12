@@ -98,6 +98,8 @@ ParallelJoinStep::ParallelJoinStep(DataStreams input_streams_, JoinPtr join_, si
 
     Block joined_header;
 
+    // const auto & an_input_stream = input_streams.front();
+
     for (const auto & an_input_stream : input_streams)
     {
         const auto & current = an_input_stream.header;

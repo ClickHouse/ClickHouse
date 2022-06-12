@@ -21,6 +21,9 @@
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 
+#include <base/logger_useful.h>
+
+
 namespace DB
 {
 
@@ -141,25 +144,43 @@ static void initRowsBeforeLimit(IOutputFormat * output_format)
     queue.push({ output_format, false });
     visited.emplace(output_format);
 
+    LOG_TRACE(&Poco::Logger::get("initRowsBeforeLimit"), "before while");
     while (!queue.empty())
     {
+        LOG_TRACE(&Poco::Logger::get("initRowsBeforeLimit"), "... 0.5  (before front)");
+        assert(&(queue.front()));
+        LOG_TRACE(&Poco::Logger::get("initRowsBeforeLimit"), "... 0.6  (before front)");
         auto * processor = queue.front().processor;
+        assert(processor);
+        LOG_TRACE(&Poco::Logger::get("initRowsBeforeLimit"), "... 0.7  (after front)");
+
+        LOG_TRACE(&Poco::Logger::get("initRowsBeforeLimit"), "... 0.8 {} (before pop)", processor->getName());
+
+
         auto visited_limit = queue.front().visited_limit;
         queue.pop();
 
+        LOG_TRACE(&Poco::Logger::get("initRowsBeforeLimit"), "... 1 {}", processor->getName());
         if (!visited_limit)
         {
+            LOG_TRACE(&Poco::Logger::get("initRowsBeforeLimit"), "1.1");
             if (auto * limit = typeid_cast<LimitTransform *>(processor))
             {
+                LOG_TRACE(&Poco::Logger::get("initRowsBeforeLimit"), "1.1.1");
                 visited_limit = true;
                 limits.emplace_back(limit);
             }
+            LOG_TRACE(&Poco::Logger::get("initRowsBeforeLimit"), "1.1.2");
 
             if (auto * source = typeid_cast<RemoteSource *>(processor))
+            {
+                LOG_TRACE(&Poco::Logger::get("initRowsBeforeLimit"), "1.1.3");
                 remote_sources.emplace_back(source);
+            }
         }
         else if (auto * sorting = typeid_cast<PartialSortingTransform *>(processor))
         {
+            LOG_TRACE(&Poco::Logger::get("initRowsBeforeLimit"), "1.2");
             if (!rows_before_limit_at_least)
                 rows_before_limit_at_least = std::make_shared<RowsBeforeLimitCounter>();
 
@@ -168,6 +189,7 @@ static void initRowsBeforeLimit(IOutputFormat * output_format)
             /// Don't go to children. Take rows_before_limit from last PartialSortingTransform.
             continue;
         }
+        LOG_TRACE(&Poco::Logger::get("initRowsBeforeLimit"), "2");
 
         /// Skip totals and extremes port for output format.
         if (auto * format = dynamic_cast<IOutputFormat *>(processor))
@@ -179,13 +201,16 @@ static void initRowsBeforeLimit(IOutputFormat * output_format)
             continue;
         }
 
+        LOG_TRACE(&Poco::Logger::get("initRowsBeforeLimit"), "3, queue size {}", queue.size());
         for (auto & child_port : processor->getInputs())
         {
             auto * child_processor = &child_port.getOutputPort().getProcessor();
             if (visited.emplace(child_processor).second)
                 queue.push({ child_processor, visited_limit });
         }
+        LOG_TRACE(&Poco::Logger::get("initRowsBeforeLimit"), "4, queue size {}", queue.size());
     }
+    LOG_TRACE(&Poco::Logger::get("initRowsBeforeLimit"), "after while");
 
     if (!rows_before_limit_at_least && (!limits.empty() || !remote_sources.empty()))
     {
@@ -451,8 +476,10 @@ void QueryPipeline::complete(std::shared_ptr<IOutputFormat> format)
     output = nullptr;
     totals = nullptr;
     extremes = nullptr;
+    LOG_TRACE(&Poco::Logger::get("QueryPipeline"), "before initRowsBeforeLimit");
 
     initRowsBeforeLimit(format.get());
+    LOG_TRACE(&Poco::Logger::get("executeQuery"), "after initRowsBeforeLimit");
     output_format = format.get();
 
     processors.emplace_back(std::move(format));

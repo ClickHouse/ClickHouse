@@ -299,6 +299,7 @@ void FillingRightJoinSideTransform::work()
 
 IProcessor::Status ParallelJoinTransform::prepare()
 {
+    LOG_DEBUG(&Poco::Logger::get("ParallelJoinTransform"), "top of prepare");
     auto & output = outputs.front();
 
     /// Check can output.
@@ -308,6 +309,7 @@ IProcessor::Status ParallelJoinTransform::prepare()
         for (; current_input != inputs.end(); ++current_input)
             current_input->close();
 
+        LOG_DEBUG(&Poco::Logger::get("ParallelJoinTransform"), "output.isFinished() - Finished");
         return Status::Finished;
     }
 
@@ -315,57 +317,121 @@ IProcessor::Status ParallelJoinTransform::prepare()
     {
         if (current_input != inputs.end())
             current_input->setNotNeeded();
+        LOG_DEBUG(&Poco::Logger::get("ParallelJoinTransform"), "!output.isNeeded() - PortFull");
 
         return Status::PortFull;
     }
 
     if (!output.canPush())
+    {
+        LOG_DEBUG(&Poco::Logger::get("ParallelJoinTransform"), "!output.canPush() - PortFull");
         return Status::PortFull;
+    }
+
 
     /// Check can input.
 
 
-    for (auto previous_input = current_input++;
-         current_input != previous_input;
-         ++current_input)
-    {
-        if (current_input == inputs.end())
-        {
-            current_input = inputs.begin();
-        }
 
+
+    for (;; )
+    {
+        assert(current_input != inputs.end());
 
 
         if (!current_input->isFinished())
         {
-            auto & input = *current_input;
+            current_input->setNeeded();
+            if (!current_input->hasData())
+            {
+                LOG_DEBUG(&Poco::Logger::get("ParallelJoinTransform"), "returning NeedData");
 
-            input.setNeeded();
-
-            if (!input.hasData())
                 return Status::NeedData;
+            }
+
+            // input.setNeeded();
+            chunk = current_input->pull(true);
+
+            if (current_input == inputs.begin())
+            {
+                block = current_input->getHeader().cloneWithColumns(chunk.detachColumns());
+            }
+            else
+            {
+                Block add_block = current_input->getHeader();
+                add_block.setColumns(chunk.detachColumns());
+                size_t i = 0;
+                for (; i < add_block.columns(); ++i)
+                {
+                    block.insert(add_block.getByPosition(i));
+                }
+                LOG_DEBUG(&Poco::Logger::get("ParallelJoinTransform"), "added {} columns", i);
+
+            }
+
+            // auto & input = *current_input;
+
+            current_input->setNeeded();
+
+            // if (!input.hasData())
+            //     return Status::NeedData;
 
             /// Move data.
-            output.push(input.pull());
+            if (++current_input == inputs.end())
+            {
+                // output.push(block);
+                Chunk output_chunk;
 
-            /// Now, we pushed to output, and it must be full.
-            return Status::PortFull;
+                output_chunk.setColumns(block.getColumns(), block.rows());
+                output.push(std::move(output_chunk));
+
+
+                current_input = inputs.begin();
+
+
+                /// Now, we pushed to output, and it must be full.
+                LOG_DEBUG(&Poco::Logger::get("ParallelJoinTransform"), "returning PortFull");
+                return Status::PortFull;
+            }
+
         }
-
+        else
+        {
+            break;
+        }
     }
 
     output.finish();
+    LOG_DEBUG(&Poco::Logger::get("ParallelJoinTransform"), "returning FInished");
     return Status::Finished;
 }
 
 void ParallelJoinTransform::work()
 {
+    LOG_DEBUG(&Poco::Logger::get("JoiningTransform"), "ParallelJoinTransform, top of work");
     // current_output_chunk = std::move(current_input_chunk);
 }
 
-void ParallelJoinTransform::add_header(Block block)
+void ParallelJoinTransform::addHeader(Block block_)
 {
-    input_headers.push_back(block);
+    input_headers.push_back(block_);
+    inputs.emplace_back(block_, this);
+    current_input = inputs.begin();
+}
+
+Block ParallelJoinTransform::getHeader()
+{
+    Block b;
+    for (const auto & ih : input_headers)
+    {
+        for (size_t i = 0; i < ih.columns(); ++i)
+        {
+            b.insert(ih.getByPosition(i));
+        }
+    }
+
+
+    return b;
 }
 
 void ParallelJoinTransform::mk_ports()

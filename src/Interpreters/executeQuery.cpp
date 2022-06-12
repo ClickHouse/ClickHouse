@@ -1035,6 +1035,7 @@ BlockIO executeQuery(
 {
     ASTPtr ast;
     BlockIO streams;
+    LOG_TRACE(&Poco::Logger::get("executeQuery"), "before executeQueryImpl");
     std::tie(ast, streams) = executeQueryImpl(query.data(), query.data() + query.size(), context, internal, stage, nullptr);
 
     if (const auto * ast_query_with_output = dynamic_cast<const ASTQueryWithOutput *>(ast.get()))
@@ -1047,6 +1048,7 @@ BlockIO executeQuery(
             streams.null_format = true;
     }
 
+    LOG_TRACE(&Poco::Logger::get("executeQuery"), "after executeQueryImpl");
     return streams;
 }
 

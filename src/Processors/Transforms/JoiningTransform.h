@@ -107,13 +107,18 @@ private:
 class ParallelJoinTransform : public IProcessor
 {
 public:
-    ParallelJoinTransform(JoinPtr join_)
-      : join(join_)
+    ParallelJoinTransform(JoinPtr join_, size_t /*num_inputs*/)
+        // : IProcessor({}, {Block()})
+        : join(join_)
     {
+        // for (size_t i = 0; i < num_inputs; ++i)
+        //     inputs.emplace_back(Block(), this);
+        // current_input = inputs.begin();
     }
 
     String getName() const override { return "ParallelJoinTransform"; }
-    void add_header(Block input_header);
+    void addHeader(Block input_header);
+    Block getHeader();
     void mk_ports();
 
     InputPort * addTotalsPort();
@@ -128,7 +133,9 @@ private:
     InputPorts::iterator current_input;
 
     JoinPtr join;
+    Chunk chunk;
     Blocks input_headers;
+    Block block;
 
 };
 

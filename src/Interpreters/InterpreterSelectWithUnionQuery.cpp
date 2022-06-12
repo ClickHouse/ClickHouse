@@ -22,6 +22,9 @@
 
 #include <algorithm>
 
+#include <base/logger_useful.h>
+
+
 namespace DB
 {
 
@@ -351,12 +354,17 @@ BlockIO InterpreterSelectWithUnionQuery::execute()
     QueryPlan query_plan;
     buildQueryPlan(query_plan);
 
+    LOG_TRACE(&Poco::Logger::get("InterpreterSelectWithUnionQuery"), "execute: before buildQueryPipeline");
+
     auto builder = query_plan.buildQueryPipeline(
         QueryPlanOptimizationSettings::fromContext(context),
         BuildQueryPipelineSettings::fromContext(context));
 
+    LOG_TRACE(&Poco::Logger::get("InterpreterSelectWithUnionQuery"), "execute: after buildQueryPipeline");
+
     res.pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
     setQuota(res.pipeline);
+
     return res;
 }
 
