@@ -245,4 +245,9 @@ void registerStorageView(StorageFactory & factory)
     });
 }
 
+bool StorageView::isParameterizedView(const ASTCreateQuery & query)
+{
+    return query.is_parameterized_view;
+}
+
 }

@@ -7,7 +7,6 @@
 #include <TableFunctions/TableFunctionView.h>
 #include "registerTableFunctions.h"
 
-
 namespace DB
 {
 namespace ErrorCodes

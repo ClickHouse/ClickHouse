@@ -70,6 +70,7 @@ public:
     bool is_live_view{false};
     bool is_window_view{false};
     bool is_populate{false};
+    bool is_parameterized_view{false};
     bool replace_view{false}; /// CREATE OR REPLACE VIEW
 
     ASTColumns * columns_list = nullptr;
@@ -116,7 +117,7 @@ public:
         return removeOnCluster<ASTCreateQuery>(clone(), new_database);
     }
 
-    bool isView() const { return is_ordinary_view || is_materialized_view || is_live_view || is_window_view; }
+    bool isView() const { return is_ordinary_view || is_materialized_view || is_live_view || is_window_view || is_parameterized_view; }
 
     virtual QueryKind getQueryKind() const override { return QueryKind::Create; }
 

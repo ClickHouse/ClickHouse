@@ -678,7 +678,6 @@ void ClientBase::processOrdinaryQuery(const String & query_to_execute, ASTPtr pa
         /// Get new query after substitutions.
         query = serializeAST(*parsed_query);
     }
-
     int retries_left = 10;
     while (retries_left)
     {
@@ -1997,7 +1996,7 @@ void ClientBase::readArguments(
         * - param arguments for prepared statements.
         * Split these groups before processing.
         */
-
+    std::cerr << "\n\n\n" << "IN ClientBase::readArguments" << "\n\n\n";
     bool in_external_group = false;
 
     std::string prev_host_arg;

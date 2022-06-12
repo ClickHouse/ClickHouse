@@ -1191,6 +1191,7 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     ParserKeyword s_as("AS");
     ParserKeyword s_view("VIEW");
     ParserKeyword s_materialized("MATERIALIZED");
+    ParserKeyword s_parameterized("PARAMETERIZED");
     ParserKeyword s_populate("POPULATE");
     ParserKeyword s_or_replace("OR REPLACE");
     ParserToken s_dot(TokenType::Dot);
@@ -1216,6 +1217,7 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     bool if_not_exists = false;
     bool is_ordinary_view = false;
     bool is_materialized_view = false;
+    bool is_parameterized_view = false;
     bool is_populate = false;
     bool replace_view = false;
 
@@ -1227,13 +1229,20 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
             return false;
     }
 
-    /// VIEW or MATERIALIZED VIEW
+    /// VIEW or MATERIALIZED VIEW or PARAMETERIZED VIEW
     if (s_or_replace.ignore(pos, expected))
     {
         replace_view = true;
     }
 
-    if (!replace_view && s_materialized.ignore(pos, expected))
+
+
+    if (!replace_view && s_parameterized.ignore(pos, expected))
+    {
+        is_parameterized_view = true;
+        is_ordinary_view = true;
+    }
+    else if (!replace_view && s_materialized.ignore(pos, expected))
     {
         is_materialized_view = true;
     }
@@ -1278,7 +1287,6 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         if (!s_rparen.ignore(pos, expected))
             return false;
     }
-
     if (is_materialized_view && !to_table)
     {
         /// Internal ENGINE for MATERIALIZED VIEW must be specified.
@@ -1305,6 +1313,7 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     query->if_not_exists = if_not_exists;
     query->is_ordinary_view = is_ordinary_view;
     query->is_materialized_view = is_materialized_view;
+    query->is_parameterized_view = is_parameterized_view;
     query->is_populate = is_populate;
     query->replace_view = replace_view;
 

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTCreateQuery.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage.h>
 
@@ -14,7 +15,8 @@ class StorageView final : public shared_ptr_helper<StorageView>, public IStorage
 {
     friend struct shared_ptr_helper<StorageView>;
 public:
-    std::string getName() const override { return "View"; }
+    bool is_parameterized_view{false};
+    std::string getName() const override { return is_parameterized_view ? "Parameterized View": "View"; }
     bool isView() const override { return true; }
 
     /// It is passed inside the query and solved at its level.
@@ -47,6 +49,7 @@ public:
 
     static void replaceWithSubquery(ASTSelectQuery & outer_query, ASTPtr view_query, ASTPtr & view_name);
     static ASTPtr restoreViewName(ASTSelectQuery & select_query, const ASTPtr & view_name);
+    static bool isParameterizedView (const ASTCreateQuery & query );
 
 protected:
     StorageView(

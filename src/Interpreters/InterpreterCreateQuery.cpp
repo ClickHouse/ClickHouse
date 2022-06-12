@@ -873,6 +873,9 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
 
         const String qualified_name = backQuoteIfNeed(as_database_name) + "." + backQuoteIfNeed(as_table_name);
 
+        if (as_create.is_parameterized_view)
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "Cannot CREATE a table AS {}, it is a Parameterized View", qualified_name);
+
         if (as_create.is_ordinary_view)
             throw Exception(ErrorCodes::INCORRECT_QUERY, "Cannot CREATE a table AS {}, it is a View", qualified_name);
 

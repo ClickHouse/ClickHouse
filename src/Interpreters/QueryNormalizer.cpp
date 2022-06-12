@@ -199,11 +199,9 @@ void QueryNormalizer::visitChildren(IAST * node, Data & data)
         if (func_node->arguments)
         {
             auto & func_children = func_node->arguments->children;
-
             for (size_t i = first_pos; i < func_children.size(); ++i)
             {
                 auto & child = func_children[i];
-
                 if (needVisitChild(child))
                     visit(child, data);
             }
@@ -220,11 +218,9 @@ void QueryNormalizer::visitChildren(IAST * node, Data & data)
         }
     }
     else if (!node->as<ASTSelectQuery>())
-    {
         for (auto & child : node->children)
             if (needVisitChild(child))
                 visit(child, data);
-    }
 }
 
 void QueryNormalizer::visit(ASTPtr & ast, Data & data)
@@ -249,7 +245,6 @@ void QueryNormalizer::visit(ASTPtr & ast, Data & data)
         if (!my_alias.empty())
             data.current_alias = my_alias;
     }
-
     if (auto * node_id = ast->as<ASTIdentifier>())
         visit(*node_id, ast, data);
     else if (auto * node_tables = ast->as<ASTTablesInSelectQueryElement>())

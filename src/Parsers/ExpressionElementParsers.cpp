@@ -223,7 +223,6 @@ bool ParserIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             return false;
         }
         ++pos;
-
         node = std::make_shared<ASTIdentifier>("", std::make_shared<ASTQueryParameter>(name, type));
         return true;
     }

@@ -8,6 +8,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTQueryParameter.h>
+#include <Parsers/ASTCreateQuery.h>
 #include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/ReplaceQueryParameterVisitor.h>
 #include <Interpreters/addTypeConversionToAST.h>
@@ -25,6 +26,9 @@ namespace ErrorCodes
 
 void ReplaceQueryParameterVisitor::visit(ASTPtr & ast)
 {
+    if (const auto * create = ast->as<ASTCreateQuery>())
+        if (create->is_parameterized_view)
+            return;
     if (ast->as<ASTQueryParameter>())
         visitQueryParameter(ast);
     else if (ast->as<ASTIdentifier>() || ast->as<ASTTableIdentifier>())

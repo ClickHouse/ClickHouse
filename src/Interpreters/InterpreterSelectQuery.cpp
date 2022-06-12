@@ -418,13 +418,10 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             query_ptr,
             TreeRewriterResult(source_header.getNamesAndTypesList(), storage, storage_snapshot),
             options, joined_tables.tablesWithColumns(), required_result_column_names, table_join);
-
         query_info.syntax_analyzer_result = syntax_analyzer_result;
         context->setDistributed(syntax_analyzer_result->is_remote_storage);
-
         if (storage && !query.final() && storage->needRewriteQueryWithFinal(syntax_analyzer_result->requiredSourceColumns()))
             query.setFinal();
-
         /// Save scalar sub queries's results in the query context
         /// Note that we are only saving scalars and not local_scalars since the latter can't be safely shared across contexts
         if (!options.only_analyze && context->hasQueryContext())

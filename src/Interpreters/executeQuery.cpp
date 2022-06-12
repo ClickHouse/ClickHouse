@@ -591,7 +591,6 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             else if (auto table = insert_query->getTable(); !table.empty())
                 insert_query->table_id = context->resolveStorageID(StorageID{insert_query->getDatabase(), table});
         }
-
         if (insert_query && insert_query->select)
         {
             /// Prepare Input storage before executing interpreter if we already got a buffer with data.
@@ -615,7 +614,6 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             /// reset Input callbacks if query is not INSERT SELECT
             context->resetInputCallbacks();
         }
-
         StreamLocalLimits limits;
         std::shared_ptr<const EnabledQuota> quota;
         std::unique_ptr<IInterpreter> interpreter;
@@ -624,7 +622,6 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         const bool async_insert = queue
             && insert_query && !insert_query->select
             && insert_query->hasInlinedData() && settings.async_insert;
-
         if (async_insert)
         {
             quota = context->getQuota();
