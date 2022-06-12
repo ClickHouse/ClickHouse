@@ -200,7 +200,7 @@ public:
     {
         if (can_insert)
         {
-            removal_scheduler->scheduleRemoval(std::chrono::milliseconds{cache_key.settings.query_cache_entry_put_timeout}, cache_key);
+            removal_scheduler->scheduleRemoval(std::chrono::milliseconds{cache_key.settings.query_cache_entry_put_timeout_ms}, cache_key);
             data->is_writing = false;
             LOG_DEBUG(&Poco::Logger::get("CachePutHolder"), "put in cache: a key with header = {}", cache_key.header.getNamesAndTypesList().toString());
         }
