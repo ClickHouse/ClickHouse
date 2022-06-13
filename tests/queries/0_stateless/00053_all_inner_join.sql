@@ -1,5 +1,3 @@
--- Tags: ignore-order
-
 SELECT a.*, b.* FROM
 (
     SELECT number AS k FROM system.numbers LIMIT 10
