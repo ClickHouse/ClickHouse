@@ -72,7 +72,7 @@ MergeTreeReaderCompact::MergeTreeReaderCompact(
                 read_only_offsets[i] = (position != std::nullopt);
             }
 
-            column_positions[i] = position;
+            column_positions[i] = std::move(position);
         }
 
         /// Do not use max_read_buffer_size, but try to lower buffer size with maximal size of granule to avoid reading much data.
