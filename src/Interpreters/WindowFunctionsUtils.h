@@ -13,7 +13,7 @@ struct WindowFunctionsUtils
     static bool collectWindowFunctionsFromExpression(const ASTFunction * node, WindowFunctionList & function_list)
     {
         bool window_function_added = false;
-        for (auto const & child : node->children)
+        for (auto const & child : node->arguments->children)
         {
             if (const auto * child_node = child->as<ASTFunction>())
                 window_function_added = window_function_added || collectWindowFunctionsFromExpression(child_node, function_list);
