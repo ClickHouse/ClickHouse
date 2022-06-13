@@ -48,14 +48,14 @@ public:
         WriteMode mode,
         const WriteSettings & settings) override;
 
-    bool removeFile(const String & path) override;
-    bool removeFileIfExists(const String & path) override;
-    bool removeSharedFileIfExists(const String & path, bool keep_s3) override;
+    void removeFile(const String & path) override;
+    void removeFileIfExists(const String & path) override;
+    void removeSharedFileIfExists(const String & path, bool keep_s3) override;
 
     void removeDirectory(const String & path) override;
     void removeRecursive(const String & path) override;
 
-    bool removeSharedFile(const String & path, bool keep_s3) override;
+    void removeSharedFile(const String & path, bool keep_s3) override;
     void removeSharedRecursive(const String & path, bool keep_all_batch_data, const NameSet & file_names_remove_metadata_only) override;
     void removeSharedFiles(const RemoveBatchRequest & files, bool keep_all_batch_data, const NameSet & file_names_remove_metadata_only) override;
 

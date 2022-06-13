@@ -228,16 +228,16 @@ std::unique_ptr<WriteBufferFromFileBase> DiskRestartProxy::writeFile(const Strin
     return std::make_unique<RestartAwareWriteBuffer>(*this, std::move(impl));
 }
 
-bool DiskRestartProxy::removeFile(const String & path)
+void DiskRestartProxy::removeFile(const String & path)
 {
     ReadLock lock (mutex);
-    return DiskDecorator::removeFile(path);
+    DiskDecorator::removeFile(path);
 }
 
-bool DiskRestartProxy::removeFileIfExists(const String & path)
+void DiskRestartProxy::removeFileIfExists(const String & path)
 {
     ReadLock lock (mutex);
-    return DiskDecorator::removeFileIfExists(path);
+    DiskDecorator::removeFileIfExists(path);
 }
 
 void DiskRestartProxy::removeDirectory(const String & path)
@@ -252,7 +252,7 @@ void DiskRestartProxy::removeRecursive(const String & path)
     DiskDecorator::removeRecursive(path);
 }
 
-bool DiskRestartProxy::removeSharedFile(const String & path, bool keep_s3)
+void DiskRestartProxy::removeSharedFile(const String & path, bool keep_s3)
 {
     ReadLock lock (mutex);
     return DiskDecorator::removeSharedFile(path, keep_s3);
