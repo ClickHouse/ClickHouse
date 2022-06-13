@@ -276,8 +276,8 @@ MergeTreeReadTaskColumns getReadTaskColumns(
     Names pre_column_names;
 
     /// inject columns required for defaults evaluation
-    bool should_reorder = !injectRequiredColumns(
-        storage, storage_snapshot, data_part, with_subcolumns, column_names).empty();
+    injectRequiredColumns(
+        storage, storage_snapshot, data_part, with_subcolumns, column_names);
 
     MergeTreeReadTaskColumns result;
     auto options = GetColumnsOptions(GetColumnsOptions::All).withExtendedObjects();
@@ -315,9 +315,6 @@ MergeTreeReadTaskColumns getReadTaskColumns(
         const auto injected_pre_columns = injectRequiredColumns(
             storage, storage_snapshot, data_part, with_subcolumns, all_pre_column_names);
 
-        if (!injected_pre_columns.empty())
-            should_reorder = true;
-
         for (const auto & name : all_pre_column_names)
         {
             if (pre_name_set.contains(name))
@@ -342,9 +339,8 @@ MergeTreeReadTaskColumns getReadTaskColumns(
     result.pre_columns.push_back(storage_snapshot->getColumnsByNames(options, pre_column_names));
 //////////////
 
-    /// 3. Rest of the requested columns 
+    /// 3. Rest of the requested columns
     result.columns = storage_snapshot->getColumnsByNames(options, column_names);
-    result.should_reorder = should_reorder;
     return result;
 }
 

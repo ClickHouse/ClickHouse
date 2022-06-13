@@ -36,8 +36,6 @@ struct MergeTreeReadTaskColumns
     NamesAndTypesList columns;
     /// column names to read during each PREWHERE step
     std::vector<NamesAndTypesList> pre_columns;
-    /// resulting block may require reordering in accordance with `ordered_names`
-    bool should_reorder = false;
 
     std::string dump() const
     {
@@ -73,8 +71,6 @@ struct MergeTreeReadTask
 //    const NamesAndTypesList & pre_columns;
     /// should PREWHERE column be returned to requesting side?
     const bool remove_prewhere_column;
-//    /// resulting block may require reordering in accordance with `ordered_names`
-//    const bool should_reorder;
     /// Used to satistfy preferred_block_size_bytes limitation
     MergeTreeBlockSizePredictorPtr size_predictor;
     /// Used to save current range processing status
