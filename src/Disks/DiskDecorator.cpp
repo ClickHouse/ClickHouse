@@ -176,7 +176,7 @@ Poco::Timestamp DiskDecorator::getLastModified(const String & path) const
     return delegate->getLastModified(path);
 }
 
-time_t DiskDecorator::getLastChanged(const String & path)
+time_t DiskDecorator::getLastChanged(const String & path) const
 {
     return delegate->getLastChanged(path);
 }

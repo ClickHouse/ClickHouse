@@ -404,7 +404,7 @@ Poco::Timestamp DiskLocal::getLastModified(const String & path) const
     return FS::getModificationTimestamp(fs::path(disk_path) / path);
 }
 
-time_t DiskLocal::getLastChanged(const String & path)
+time_t DiskLocal::getLastChanged(const String & path) const
 {
     return FS::getChangeTime(fs::path(disk_path) / path);
 }
