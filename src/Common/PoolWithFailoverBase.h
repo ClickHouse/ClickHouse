@@ -64,6 +64,9 @@ public:
         , shared_pool_states(nested_pools.size())
         , log(log_)
     {
+        if (nested_pools.empty())
+            throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Cannot create PoolWithFailover cause nested pools are empty");
+
         for (size_t i = 0;i < nested_pools.size(); ++i)
             shared_pool_states[i].config_priority = nested_pools[i]->getPriority();
     }
