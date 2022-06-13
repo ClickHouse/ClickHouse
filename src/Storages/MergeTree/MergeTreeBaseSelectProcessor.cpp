@@ -80,7 +80,7 @@ MergeTreeBaseSelectProcessor::MergeTreeBaseSelectProcessor(
                 .actions = std::make_shared<ExpressionActions>(prewhere_info->row_level_filter, actions_settings),
                 .column_name = prewhere_info->row_level_column_name,
                 .remove_column = true,
-                .need_filter = true //prewhere_info->need_filter // ????
+                .need_filter = true
             };
 
             prewhere_actions->steps.emplace_back(std::move(row_level_filter_step));
