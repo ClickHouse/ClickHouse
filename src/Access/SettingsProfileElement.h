@@ -19,6 +19,10 @@ class AccessControl;
 struct SettingsProfileElement
 {
     std::optional<UUID> parent_profile;
+    /// parent_profile_xml_name is set only when users are configured via XML
+    /// and is used for user-friendly error messages.
+    std::optional<String> parent_profile_xml_name;
+
     String setting_name;
     Field value;
     Field min_value;
