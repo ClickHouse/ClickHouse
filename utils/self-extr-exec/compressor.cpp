@@ -7,6 +7,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <errno.h>
+#include <memory>
 
 #include "types.h"
 
@@ -297,7 +298,8 @@ int copy_decompressor(const char *self, int output_fd)
         return 1;
     }
 
-    char buf[1ul<<19];
+    auto buf_memory = std::make_unique<char[]>(1ul<<19);
+    char * buf = buf_memory.get();
     ssize_t n = 0;
     do
     {
@@ -327,7 +329,6 @@ int copy_decompressor(const char *self, int output_fd)
     } while (true);
 
     close(input_fd);
-
     return 0;
 }
 
