@@ -138,6 +138,8 @@ private:
     [[maybe_unused]]bool use_external_buffer;
     CurrentMetrics::Increment metric_increment{CurrentMetrics::FilesystemCacheReadBuffers};
     ProfileEvents::Counters current_file_segment_counters;
+
+    IFileCache::QueryContextHolder query_context_holder;
 };
 
 }

@@ -5,6 +5,7 @@
 #if USE_AWS_S3
 
 #include <Disks/ObjectStorages/IObjectStorage.h>
+#include <Disks/ObjectStorages/S3/S3Capabilities.h>
 #include <memory>
 #include <aws/s3/S3Client.h>
 #include <aws/s3/model/HeadObjectResult.h>
@@ -45,10 +46,12 @@ public:
         std::unique_ptr<Aws::S3::S3Client> && client_,
         std::unique_ptr<S3ObjectStorageSettings> && s3_settings_,
         String version_id_,
+        const S3Capabilities & s3_capabilities_,
         String bucket_)
         : bucket(bucket_)
         , client(std::move(client_))
         , s3_settings(std::move(s3_settings_))
+        , s3_capabilities(s3_capabilities_)
         , version_id(std::move(version_id_))
     {}
 
@@ -134,6 +137,7 @@ private:
 
     MultiVersion<Aws::S3::S3Client> client;
     MultiVersion<S3ObjectStorageSettings> s3_settings;
+    const S3Capabilities s3_capabilities;
 
     const String version_id;
 };

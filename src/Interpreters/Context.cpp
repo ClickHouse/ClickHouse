@@ -3423,6 +3423,9 @@ ReadSettings Context::getReadSettings() const
     res.filesystem_cache_do_not_evict_index_and_marks_files = settings.filesystem_cache_do_not_evict_index_and_marks_files;
     res.enable_filesystem_cache_on_lower_level = settings.enable_filesystem_cache_on_lower_level;
 
+    res.max_query_cache_size = settings.max_query_cache_size;
+    res.skip_download_if_exceeds_query_cache = settings.skip_download_if_exceeds_query_cache;
+
     res.remote_read_min_bytes_for_seek = settings.remote_read_min_bytes_for_seek;
 
     res.local_fs_buffer_size = settings.max_read_buffer_size;

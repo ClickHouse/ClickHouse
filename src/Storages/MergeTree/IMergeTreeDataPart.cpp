@@ -1591,11 +1591,31 @@ void IMergeTreeDataPart::remove() const
       * And a race condition can happen that will lead to "File not found" error here.
       */
 
+
     /// NOTE We rename part to delete_tmp_<relative_path> instead of delete_tmp_<name> to avoid race condition
     /// when we try to remove two parts with the same name, but different relative paths,
     /// for example all_1_2_1 (in Deleting state) and tmp_merge_all_1_2_1 (in Temporary state).
     fs::path from = fs::path(storage.relative_data_path) / relative_path;
-    fs::path to = fs::path(storage.relative_data_path) / ("delete_tmp_" + relative_path);
+
+    /// Cut last "/" if it exists (it shouldn't). Otherwise fs::path behave differently.
+    fs::path relative_path_without_slash = relative_path.ends_with("/") ? relative_path.substr(0, relative_path.size() - 1) : relative_path;
+
+    /// NOTE relative_path can contain not only part name itself, but also some prefix like
+    /// "moving/all_1_1_1" or "detached/all_2_3_5". We should handle this case more properly.
+    fs::path to = fs::path(storage.relative_data_path);
+    if (relative_path_without_slash.has_parent_path())
+    {
+        auto parent_path = relative_path_without_slash.parent_path();
+        if (parent_path == "detached")
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to remove detached part {} with path {} in remove function. It shouldn't happen", name, relative_path);
+
+        to /= parent_path / ("delete_tmp_" + std::string{relative_path_without_slash.filename()});
+    }
+    else
+    {
+        to /= ("delete_tmp_" + std::string{relative_path_without_slash});
+    }
+
     // TODO directory delete_tmp_<name> is never removed if server crashes before returning from this function
 
     auto disk = volume->getDisk();
