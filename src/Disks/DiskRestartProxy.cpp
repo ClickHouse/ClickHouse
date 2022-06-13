@@ -171,7 +171,7 @@ void DiskRestartProxy::moveDirectory(const String & from_path, const String & to
     DiskDecorator::moveDirectory(from_path, to_path);
 }
 
-DiskDirectoryIteratorPtr DiskRestartProxy::iterateDirectory(const String & path)
+DirectoryIteratorPtr DiskRestartProxy::iterateDirectory(const String & path)
 {
     ReadLock lock (mutex);
     return DiskDecorator::iterateDirectory(path);

@@ -12,6 +12,7 @@
 #include <map>
 
 #include "FileCache_fwd.h"
+#include <IO/ReadSettings.h>
 #include <Common/logger_useful.h>
 #include <Common/FileSegment.h>
 #include <Core/Types.h>
@@ -19,6 +20,14 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
+class IFileCache;
+using FileCachePtr = std::shared_ptr<IFileCache>;
 
 /**
  * Local cache for remote filesystem files, represented as a set of non-overlapping non-empty file segments.
@@ -106,58 +115,6 @@ protected:
 
     mutable std::mutex mutex;
 
-    virtual bool tryReserve(
-        const Key & key, size_t offset, size_t size,
-        std::lock_guard<std::mutex> & cache_lock) = 0;
-
-    virtual void remove(
-        Key key, size_t offset,
-        std::lock_guard<std::mutex> & cache_lock,
-        std::lock_guard<std::mutex> & segment_lock) = 0;
-
-    virtual bool isLastFileSegmentHolder(
-        const Key & key, size_t offset,
-        std::lock_guard<std::mutex> & cache_lock,
-        std::lock_guard<std::mutex> & segment_lock) = 0;
-
-    /// If file segment was partially downloaded and then space reservation fails (because of no
-    /// space left), then update corresponding cache cell metadata (file segment size).
-    virtual void reduceSizeToDownloaded(
-        const Key & key, size_t offset,
-        std::lock_guard<std::mutex> & cache_lock,
-        std::lock_guard<std::mutex> & segment_lock) = 0;
-
-    void assertInitialized() const;
-};
-
-using FileCachePtr = std::shared_ptr<IFileCache>;
-
-class LRUFileCache final : public IFileCache
-{
-public:
-    LRUFileCache(
-        const String & cache_base_path_,
-        const FileCacheSettings & cache_settings_);
-
-    FileSegmentsHolder getOrSet(const Key & key, size_t offset, size_t size) override;
-
-    FileSegmentsHolder get(const Key & key, size_t offset, size_t size) override;
-
-    FileSegments getSnapshot() const override;
-
-    void initialize() override;
-
-    void remove(const Key & key) override;
-
-    void remove() override;
-
-    std::vector<String> tryGetCachePaths(const Key & key) override;
-
-    size_t getUsedCacheSize() const override;
-
-    size_t getFileSegmentsNum() const override;
-
-private:
     class LRUQueue
     {
     public:
@@ -186,8 +143,6 @@ private:
         /// Space reservation for a file segment is incremental, so we need to be able to increment size of the queue entry.
         void incrementSize(Iterator queue_it, size_t size_increment, std::lock_guard<std::mutex> & cache_lock);
 
-        void assertCorrectness(LRUFileCache * cache, std::lock_guard<std::mutex> & cache_lock);
-
         String toString(std::lock_guard<std::mutex> & cache_lock) const;
 
         bool contains(const Key & key, size_t offset, std::lock_guard<std::mutex> & cache_lock) const;
@@ -203,6 +158,171 @@ private:
         size_t cache_size = 0;
     };
 
+    using AccessKeyAndOffset = std::pair<Key, size_t>;
+
+    struct KeyAndOffsetHash
+    {
+        std::size_t operator()(const AccessKeyAndOffset & key) const
+        {
+            return std::hash<UInt128>()(key.first) ^ std::hash<UInt64>()(key.second);
+        }
+    };
+
+    using AccessRecord = std::unordered_map<AccessKeyAndOffset, LRUQueue::Iterator, KeyAndOffsetHash>;
+
+    /// Used to track and control the cache access of each query.
+    /// Through it, we can realize the processing of different queries by the cache layer.
+    struct QueryContext
+    {
+        LRUQueue lru_queue;
+        AccessRecord records;
+
+        size_t cache_size = 0;
+        size_t max_cache_size;
+
+        bool skip_download_if_exceeds_query_cache;
+
+        QueryContext(size_t max_cache_size_, bool skip_download_if_exceeds_query_cache_)
+            : max_cache_size(max_cache_size_)
+            , skip_download_if_exceeds_query_cache(skip_download_if_exceeds_query_cache_) {}
+
+        void remove(const Key & key, size_t offset, size_t size, std::lock_guard<std::mutex> & cache_lock)
+        {
+            if (cache_size < size)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Deleted cache size exceeds existing cache size");
+
+            if (!skip_download_if_exceeds_query_cache)
+            {
+                auto record = records.find({key, offset});
+                if (record != records.end())
+                {
+                    lru_queue.remove(record->second, cache_lock);
+                    records.erase({key, offset});
+                }
+            }
+            cache_size -= size;
+        }
+
+        void reserve(const Key & key, size_t offset, size_t size, std::lock_guard<std::mutex> & cache_lock)
+        {
+            if (cache_size + size > max_cache_size)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Reserved cache size exceeds the remaining cache size");
+
+            if (!skip_download_if_exceeds_query_cache)
+            {
+                auto record = records.find({key, offset});
+                if (record == records.end())
+                {
+                    auto queue_iter = lru_queue.add(key, offset, 0, cache_lock);
+                    record = records.insert({{key, offset}, queue_iter}).first;
+                }
+                record->second->size += size;
+            }
+            cache_size += size;
+        }
+
+        void use(const Key & key, size_t offset, std::lock_guard<std::mutex> & cache_lock)
+        {
+            if (!skip_download_if_exceeds_query_cache)
+            {
+                auto record = records.find({key, offset});
+                if (record != records.end())
+                    lru_queue.moveToEnd(record->second, cache_lock);
+            }
+        }
+
+        size_t getMaxCacheSize() { return max_cache_size; }
+
+        size_t getCacheSize() { return cache_size; }
+
+        LRUQueue & queue() { return lru_queue; }
+
+        bool isSkipDownloadIfExceed() { return skip_download_if_exceeds_query_cache; }
+    };
+
+    using QueryContextPtr = std::shared_ptr<QueryContext>;
+    using QueryContextMap = std::unordered_map<String, QueryContextPtr>;
+
+    QueryContextMap query_map;
+
+    bool enable_filesystem_query_cache_limit;
+
+    QueryContextPtr getCurrentQueryContext(std::lock_guard<std::mutex> & cache_lock);
+
+    QueryContextPtr getQueryContext(const String & query_id, std::lock_guard<std::mutex> & cache_lock);
+
+    void removeQueryContext(const String & query_id);
+
+    QueryContextPtr getOrSetQueryContext(const String & query_id, const ReadSettings & settings, std::lock_guard<std::mutex> &);
+
+    virtual bool tryReserve(
+        const Key & key, size_t offset, size_t size,
+        std::lock_guard<std::mutex> & cache_lock) = 0;
+
+    virtual void remove(
+        Key key, size_t offset,
+        std::lock_guard<std::mutex> & cache_lock,
+        std::lock_guard<std::mutex> & segment_lock) = 0;
+
+    virtual bool isLastFileSegmentHolder(
+        const Key & key, size_t offset,
+        std::lock_guard<std::mutex> & cache_lock,
+        std::lock_guard<std::mutex> & segment_lock) = 0;
+
+    /// If file segment was partially downloaded and then space reservation fails (because of no
+    /// space left), then update corresponding cache cell metadata (file segment size).
+    virtual void reduceSizeToDownloaded(
+        const Key & key, size_t offset,
+        std::lock_guard<std::mutex> & cache_lock,
+        std::lock_guard<std::mutex> & segment_lock) = 0;
+
+    void assertInitialized() const;
+
+public:
+    /// Save a query context information, and adopt different cache policies
+    /// for different queries through the context cache layer.
+    struct QueryContextHolder : private boost::noncopyable
+    {
+        explicit QueryContextHolder(const String & query_id_, IFileCache * cache_, QueryContextPtr context_);
+
+        QueryContextHolder() = default;
+
+        ~QueryContextHolder();
+
+        String query_id {};
+        IFileCache * cache = nullptr;
+        QueryContextPtr context = nullptr;
+    };
+
+    QueryContextHolder getQueryContextHolder(const String & query_id, const ReadSettings & settings);
+};
+
+class LRUFileCache final : public IFileCache
+{
+public:
+    LRUFileCache(
+        const String & cache_base_path_,
+        const FileCacheSettings & cache_settings_);
+
+    FileSegmentsHolder getOrSet(const Key & key, size_t offset, size_t size) override;
+
+    FileSegmentsHolder get(const Key & key, size_t offset, size_t size) override;
+
+    FileSegments getSnapshot() const override;
+
+    void initialize() override;
+
+    void remove(const Key & key) override;
+
+    void remove() override;
+
+    std::vector<String> tryGetCachePaths(const Key & key) override;
+
+    size_t getUsedCacheSize() const override;
+
+    size_t getFileSegmentsNum() const override;
+
+private:
     struct FileSegmentCell : private boost::noncopyable
     {
         FileSegmentPtr file_segment;
@@ -227,25 +347,21 @@ private:
     using FileSegmentsByOffset = std::map<size_t, FileSegmentCell>;
     using CachedFiles = std::unordered_map<Key, FileSegmentsByOffset>;
 
-    using AccessKeyAndOffset = std::pair<Key, size_t>;
-
-    struct KeyAndOffsetHash
-    {
-        std::size_t operator()(const AccessKeyAndOffset & key) const
-        {
-            return std::hash<UInt128>()(key.first) ^ std::hash<UInt64>()(key.second);
-        }
-    };
-
-    using AccessRecord = std::unordered_map<AccessKeyAndOffset, LRUQueue::Iterator, KeyAndOffsetHash>;
-
     CachedFiles files;
     LRUQueue queue;
 
     LRUQueue stash_queue;
     AccessRecord records;
+
     size_t max_stash_element_size;
     size_t enable_cache_hits_threshold;
+
+    enum class ReserveResult
+    {
+        FITS_IN_QUERY_LIMIT_AND_RESERVATION_COMPLETED,
+        EXCEEDS_QUERY_LIMIT,
+        FITS_IN_QUERY_LIMIT_NEED_RESERVE_FROM_MAIN_LIST,
+    };
 
     Poco::Logger * log;
 
@@ -265,6 +381,17 @@ private:
     bool tryReserve(
         const Key & key, size_t offset, size_t size,
         std::lock_guard<std::mutex> & cache_lock) override;
+
+    bool tryReserveForMainList(
+        const Key & key, size_t offset, size_t size,
+        QueryContextPtr query_context,
+        std::lock_guard<std::mutex> & cache_lock);
+
+    /// Limit the maximum cache size for current query.
+    LRUFileCache::ReserveResult tryReserveForQuery(
+        const Key & key, size_t offset, size_t size,
+        QueryContextPtr query_context,
+        std::lock_guard<std::mutex> & cache_lock);
 
     void remove(
         Key key, size_t offset,
@@ -309,6 +436,8 @@ public:
     void assertCacheCorrectness(const Key & key, std::lock_guard<std::mutex> & cache_lock);
 
     void assertCacheCorrectness(std::lock_guard<std::mutex> & cache_lock);
+
+    void assertQueueCorrectness(std::lock_guard<std::mutex> & cache_lock);
 };
 
 }
