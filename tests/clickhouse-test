@@ -819,39 +819,22 @@ class TestCase:
                 description,
             )
 
-        def get_diff(refence_file, stdout_file):
-            result_is_different = subprocess.call(
-                ["diff", "-q", refence_file, stdout_file], stdout=PIPE
-            )
+        result_is_different = subprocess.call(
+            ["diff", "-q", self.reference_file, self.stdout_file], stdout=PIPE
+        )
 
-            if result_is_different:
-                return Popen(
-                    [
-                        "diff",
-                        "-U",
-                        str(self.testcase_args.unified),
-                        refence_file,
-                        stdout_file,
-                    ],
-                    stdout=PIPE,
-                    universal_newlines=True,
-                ).communicate()[0]
-            return None
-
-        if "ignore-order" not in self.tags:
-            diff = get_diff(self.reference_file, self.stdout_file)
-        else:
-            sotred_refence_file = self.reference_file + ".sort"
-            sotred_stdout_file = self.stdout_file + ".sort"
-            subprocess.call(
-                ["sort", "-o", sotred_refence_file, self.reference_file], stdout=PIPE
-            )
-            subprocess.call(
-                ["sort", "-o", sotred_stdout_file, self.stdout_file], stdout=PIPE
-            )
-            diff = get_diff(sotred_refence_file, sotred_stdout_file)
-
-        if diff is not None:
+        if result_is_different:
+            diff = Popen(
+                [
+                    "diff",
+                    "-U",
+                    str(self.testcase_args.unified),
+                    self.reference_file,
+                    self.stdout_file,
+                ],
+                stdout=PIPE,
+                universal_newlines=True,
+            ).communicate()[0]
             description += f"\n{diff}\n"
             if debug_log:
                 description += "\n"
@@ -929,6 +912,9 @@ class TestCase:
         # This is for .sh tests
         os.environ["CLICKHOUSE_LOG_COMMENT"] = args.testcase_basename
 
+        if "ignore-order" in self.tags:
+            client = client + " --format=TabSeparatedSorted"
+
         params = {
             "client": client + " --database=" + database,
             "logs_level": server_logs_level,
@@ -939,12 +925,8 @@ class TestCase:
             "secure": "--secure" if args.secure else "",
         }
 
-        # >> append to stderr (but not stdout since it is not used there),
-        # because there are also output of per test database creation
-        if not args.database:
-            pattern = "{test} > {stdout} 2> {stderr}"
-        else:
-            pattern = "{test} > {stdout} 2> {stderr}"
+        pattern = "{test} > {stdout} 2> {stderr}"
+
 
         if self.ext == ".sql":
             pattern = (
