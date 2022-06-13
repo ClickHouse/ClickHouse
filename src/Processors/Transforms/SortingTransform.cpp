@@ -44,7 +44,7 @@ MergeSorter::MergeSorter(const Block & header, Chunks chunks_, SortDescription &
 
     chunks.swap(nonempty_chunks);
 
-    queue_variants.callOnVariant([&](auto & queue)
+    queue_variants.callOnBatchVariant([&](auto & queue)
     {
         using QueueType = std::decay_t<decltype(queue)>;
         queue = QueueType(cursors);
@@ -64,7 +64,7 @@ Chunk MergeSorter::read()
         return res;
     }
 
-    Chunk result = queue_variants.callOnVariant([&](auto & queue)
+    Chunk result = queue_variants.callOnBatchVariant([&](auto & queue)
     {
         return mergeImpl(queue);
     });
@@ -89,20 +89,24 @@ Chunk MergeSorter::mergeImpl(TSortingHeap & queue)
             column->reserve(size_to_reserve);
     }
 
-    /// TODO: Optimization when a single block left.
-
     /// Take rows from queue in right order and push to 'merged'.
     size_t merged_rows = 0;
     while (queue.isValid())
     {
-        auto current = queue.current();
+        auto [current_ptr, batch_size] = queue.currentWithBatch();
+        auto & current = *current_ptr;
 
         /// Append a row from queue.
         for (size_t i = 0; i < num_columns; ++i)
-            merged_columns[i]->insertFrom(*current->all_columns[i], current->getRow());
+        {
+            if (batch_size == 1)
+                merged_columns[i]->insertFrom(*current->all_columns[i], current->getRow());
+            else
+                merged_columns[i]->insertRangeFrom(*current->all_columns[i], current->getRow(), batch_size);
+        }
 
-        ++total_merged_rows;
-        ++merged_rows;
+        total_merged_rows += batch_size;
+        merged_rows += batch_size;
 
         /// We don't need more rows because of limit has reached.
         if (limit && total_merged_rows == limit)
@@ -111,10 +115,10 @@ Chunk MergeSorter::mergeImpl(TSortingHeap & queue)
             break;
         }
 
-        queue.next();
+        queue.next(batch_size);
 
         /// It's enough for current output block but we will continue.
-        if (merged_rows == max_merged_block_size)
+        if (merged_rows >= max_merged_block_size)
             break;
     }
 
