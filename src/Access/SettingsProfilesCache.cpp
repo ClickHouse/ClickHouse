@@ -170,7 +170,8 @@ void SettingsProfilesCache::substituteProfiles(
             continue;
 
         auto profile_it = all_profiles.find(profile_id);
-        if (profile_it == all_profiles.end()) {
+        if (profile_it == all_profiles.end())
+        {
             /// If the textual profile name is set, then users are configured via XML.
             /// For these users we want to throw an exception when their profile can't
             /// be found. Otherwise, these users are super admins.
