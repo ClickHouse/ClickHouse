@@ -1852,7 +1852,8 @@ size_t MergeTreeData::clearOldBrokenPartsFromDetachedDirecory()
      * Remove old (configured by setting) broken detached parts.
      * Only parts with certain prefixes are removed. These prefixes
      * are such that it is guaranteed that they will never be needed
-     * and need to be cleared.
+     * and need to be cleared. ctime is used to check when file was
+     * moved to detached/ directory (see https://unix.stackexchange.com/a/211134)
      */
 
     DetachedPartsInfo detached_parts = getDetachedParts();
