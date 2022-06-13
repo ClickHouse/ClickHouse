@@ -263,7 +263,7 @@ public:
 
     /// Get last changed time of file or directory at `path`.
     /// Meaning is the same as stat.mt_ctime (e.g. different from getLastModified()).
-    virtual time_t getLastChanged(const String & path) = 0;
+    virtual time_t getLastChanged(const String & path) const = 0;
 
     /// Set file at `path` as read-only.
     virtual void setReadOnly(const String & path) = 0;
