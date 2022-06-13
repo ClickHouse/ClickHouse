@@ -70,7 +70,7 @@ You can also clone the repository via https protocol:
 
 This, however, will not let you send your changes to the server. You can still use it temporarily and add the SSH keys later replacing the remote address of the repository with `git remote` command.
 
-You can also add original ClickHouse repo’s address to your local repository to pull updates from there:
+You can also add original ClickHouse repo address to your local repository to pull updates from there:
 
     git remote add upstream git@github.com:ClickHouse/ClickHouse.git
 
@@ -177,7 +177,7 @@ If you require to build all the binaries (utilities and tests), you should run n
 
 Full build requires about 30GB of free disk space or 15GB to build the main binaries.
 
-When a large amount of RAM is available on build machine you should limit the number of build tasks run in parallel with `-j` param:
+When a large amount of RAM is available on build machine you should limit the number of build tasks run in parallel with `-j` parameter:
 
     ninja -j 1 clickhouse-server clickhouse-client
 
@@ -269,7 +269,7 @@ Developing ClickHouse often requires loading realistic datasets. It is particula
 
 Navigate to your fork repository in GitHub’s UI. If you have been developing in a branch, you need to select that branch. There will be a “Pull request” button located on the screen. In essence, this means “create a request for accepting my changes into the main repository”.
 
-A pull request can be created even if the work is not completed yet. In this case please put the word “WIP” (work in progress) at the beginning of the title, it can be changed later. This is useful for cooperative reviewing and discussion of changes as well as for running all of the available tests. It is important that you provide a brief description of your changes, it will later be used for generating release changelogs.
+A pull request can be created even if the work is not completed yet. In this case please put the word “WIP” (work in progress) at the beginning of the title, it can be changed later. This is useful for cooperative reviewing and discussion of changes as well as for running all of the available tests. It is important that you provide a brief description of your changes, it will later be used for generating release changelog.
 
 Testing will commence as soon as ClickHouse employees label your PR with a tag “can be tested”. The results of some first checks (e.g. code style) will come in within several minutes. Build check results will arrive within half an hour. And the main set of tests will report itself within an hour.
 

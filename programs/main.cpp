@@ -2,7 +2,7 @@
 #include <csetjmp>
 #include <unistd.h>
 
-#ifdef __linux__
+#ifdef OS_LINUX
 #include <sys/mman.h>
 #endif
 
@@ -75,6 +75,9 @@ int mainEntryClickHouseStop(int argc, char ** argv);
 int mainEntryClickHouseStatus(int argc, char ** argv);
 int mainEntryClickHouseRestart(int argc, char ** argv);
 #endif
+#if ENABLE_CLICKHOUSE_DISKS
+int mainEntryClickHouseDisks(int argc, char ** argv);
+#endif
 
 int mainEntryClickHouseHashBinary(int, char **)
 {
@@ -144,6 +147,9 @@ std::pair<const char *, MainFunc> clickhouse_applications[] =
     {"su", mainEntryClickHouseSU},
 #endif
     {"hash-binary", mainEntryClickHouseHashBinary},
+#if ENABLE_CLICKHOUSE_DISKS
+    {"disks", mainEntryClickHouseDisks},
+#endif
 };
 
 int printHelp(int, char **)
@@ -333,7 +339,7 @@ struct Checker
         checkRequiredInstructions();
     }
 } checker
-#ifndef __APPLE__
+#ifndef OS_DARWIN
     __attribute__((init_priority(101)))    /// Run before other static initializers.
 #endif
 ;

@@ -425,7 +425,7 @@ public:
     void setUserScriptsPath(const String & path);
     void setUserDefinedPath(const String & path);
 
-    void addWarningMessage(const String & msg);
+    void addWarningMessage(const String & msg) const;
 
     VolumePtr setTemporaryStorage(const String & path, const String & policy_name = "");
 
@@ -922,6 +922,7 @@ public:
         CLIENT,         /// clickhouse-client
         LOCAL,          /// clickhouse-local
         KEEPER,         /// clickhouse-keeper (also daemon)
+        DISKS,          /// clickhouse-disks
     };
 
     ApplicationType getApplicationType() const;

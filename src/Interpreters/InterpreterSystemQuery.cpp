@@ -388,7 +388,7 @@ BlockIO InterpreterSystemQuery::execute()
             break;
         case Type::RELOAD_SYMBOLS:
         {
-#if defined(__ELF__) && !defined(__FreeBSD__)
+#if defined(__ELF__) && !defined(OS_FREEBSD)
             getContext()->checkAccess(AccessType::SYSTEM_RELOAD_SYMBOLS);
             SymbolIndex::reload();
             break;
