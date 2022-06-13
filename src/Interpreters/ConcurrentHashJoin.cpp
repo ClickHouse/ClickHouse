@@ -1,5 +1,6 @@
 #include <memory>
 #include <mutex>
+#include <Columns/ColumnSparse.h>
 #include <Columns/FilterDescription.h>
 #include <Columns/IColumn.h>
 #include <Core/ColumnsWithTypeAndName.h>
@@ -191,8 +192,8 @@ Blocks ConcurrentHashJoin::dispatchBlock(const Strings & key_columns_names, cons
     WeakHash32 hash(num_rows);
     for (const auto & key_name : key_columns_names)
     {
-        const auto & key_col = from_block.getByName(key_name).column;
-        const auto & key_col_no_lc = recursiveRemoveLowCardinality(key_col);
+        const auto & key_col = from_block.getByName(key_name).column->convertToFullColumnIfConst();
+        const auto & key_col_no_lc = recursiveRemoveLowCardinality(recursiveRemoveSparse(key_col));
         key_col_no_lc->updateWeakHash32(hash);
     }
     auto selector = hashToSelector(hash, num_shards);
