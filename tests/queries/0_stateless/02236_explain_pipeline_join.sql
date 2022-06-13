@@ -1,5 +1,3 @@
--- Tags: ignore-order
-
 EXPLAIN PIPELINE
 SELECT * FROM
 (
