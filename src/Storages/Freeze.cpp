@@ -1,5 +1,6 @@
 #include <Storages/Freeze.h>
 
+#include <Disks/ObjectStorages/IMetadataStorage.h>
 #include <Storages/PartitionCommands.h>
 #include <Common/escapeForFileName.h>
 #include <Common/logger_useful.h>
@@ -17,56 +18,68 @@ void FreezeMetaData::fill(const StorageReplicatedMergeTree & storage)
 
 void FreezeMetaData::save(DiskPtr data_disk, const String & path) const
 {
-    auto metadata_disk = data_disk->getMetadataDiskIfExistsOrSelf();
+    auto metadata_storage = data_disk->getMetadataStorage();
 
     auto file_path = getFileName(path);
-    auto buffer = metadata_disk->writeFile(file_path, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite);
-    writeIntText(version, *buffer);
-    buffer->write("\n", 1);
-    writeBoolText(is_replicated, *buffer);
-    buffer->write("\n", 1);
-    writeBoolText(is_remote, *buffer);
-    buffer->write("\n", 1);
-    writeString(replica_name, *buffer);
-    buffer->write("\n", 1);
-    writeString(zookeeper_name, *buffer);
-    buffer->write("\n", 1);
-    writeString(table_shared_id, *buffer);
-    buffer->write("\n", 1);
+    auto tx = metadata_storage->createTransaction();
+    WriteBufferFromOwnString buffer;
+
+    writeIntText(version, buffer);
+    buffer.write("\n", 1);
+    writeBoolText(is_replicated, buffer);
+    buffer.write("\n", 1);
+    writeBoolText(is_remote, buffer);
+    buffer.write("\n", 1);
+    writeString(replica_name, buffer);
+    buffer.write("\n", 1);
+    writeString(zookeeper_name, buffer);
+    buffer.write("\n", 1);
+    writeString(table_shared_id, buffer);
+    buffer.write("\n", 1);
+
+    tx->writeStringToFile(file_path, buffer.str());
+    tx->commit();
 }
 
 bool FreezeMetaData::load(DiskPtr data_disk, const String & path)
 {
-    auto metadata_disk = data_disk->getMetadataDiskIfExistsOrSelf();
+    auto metadata_storage = data_disk->getMetadataStorage();
     auto file_path = getFileName(path);
 
-    if (!metadata_disk->exists(file_path))
+    if (!metadata_storage->exists(file_path))
         return false;
-    auto buffer = metadata_disk->readFile(file_path, ReadSettings(), {});
-    readIntText(version, *buffer);
+    auto metadata_str = metadata_storage->readFileToString(file_path);
+    ReadBufferFromString buffer(metadata_str);
+    readIntText(version, buffer);
     if (version != 1)
     {
         LOG_ERROR(&Poco::Logger::get("FreezeMetaData"), "Unknown freezed metadata version: {}", version);
         return false;
     }
-    DB::assertChar('\n', *buffer);
-    readBoolText(is_replicated, *buffer);
-    DB::assertChar('\n', *buffer);
-    readBoolText(is_remote, *buffer);
-    DB::assertChar('\n', *buffer);
-    readString(replica_name, *buffer);
-    DB::assertChar('\n', *buffer);
-    readString(zookeeper_name, *buffer);
-    DB::assertChar('\n', *buffer);
-    readString(table_shared_id, *buffer);
-    DB::assertChar('\n', *buffer);
+    DB::assertChar('\n', buffer);
+    readBoolText(is_replicated, buffer);
+    DB::assertChar('\n', buffer);
+    readBoolText(is_remote, buffer);
+    DB::assertChar('\n', buffer);
+    readString(replica_name, buffer);
+    DB::assertChar('\n', buffer);
+    readString(zookeeper_name, buffer);
+    DB::assertChar('\n', buffer);
+    readString(table_shared_id, buffer);
+    DB::assertChar('\n', buffer);
     return true;
 }
 
 void FreezeMetaData::clean(DiskPtr data_disk, const String & path)
 {
-    auto metadata_disk = data_disk->getMetadataDiskIfExistsOrSelf();
-    metadata_disk->removeFileIfExists(getFileName(path));
+    auto metadata_storage = data_disk->getMetadataStorage();
+    auto fname = getFileName(path);
+    if (metadata_storage->exists(fname))
+    {
+        auto tx = metadata_storage->createTransaction();
+        tx->unlinkFile(fname);
+        tx->commit();
+    }
 }
 
 String FreezeMetaData::getFileName(const String & path)

@@ -10,6 +10,8 @@
 #include <Common/thread_local_rng.h>
 #include <Common/typeid_cast.h>
 
+#include <Disks/ObjectStorages/IMetadataStorage.h>
+
 #include <base/sort.h>
 
 #include <Storages/AlterCommands.h>
@@ -35,7 +37,6 @@
 #include <Storages/MergeTree/LeaderElection.h>
 #include <Storages/MergeTree/ZeroCopyLock.h>
 #include <Storages/Freeze.h>
-
 
 #include <Databases/DatabaseOnDisk.h>
 
@@ -93,6 +94,7 @@
 #include <numeric>
 #include <thread>
 #include <future>
+
 
 namespace fs = std::filesystem;
 
@@ -1239,10 +1241,17 @@ void StorageReplicatedMergeTree::checkParts(bool skip_sanity_checks)
       */
     DataParts unexpected_parts;
 
+    /// Intersection of local parts and expected parts
+    ActiveDataPartSet local_expected_parts_set(format_version);
+
     /// Collect unexpected parts
     for (const auto & part : parts)
-        if (!expected_parts.contains(part->name))
+    {
+        if (expected_parts.contains(part->name))
+            local_expected_parts_set.add(part->name);
+        else
             unexpected_parts.insert(part); /// this parts we will place to detached with ignored_ prefix
+    }
 
     /// Which parts should be taken from other replicas.
     Strings parts_to_fetch;
@@ -1259,15 +1268,32 @@ void StorageReplicatedMergeTree::checkParts(bool skip_sanity_checks)
     UInt64 unexpected_parts_nonnew_rows = 0;
     UInt64 unexpected_parts_rows = 0;
 
+    Strings covered_unexpected_parts;
+    Strings uncovered_unexpected_parts;
+    UInt64 uncovered_unexpected_parts_rows = 0;
+
     for (const auto & part : unexpected_parts)
     {
+        unexpected_parts_rows += part->rows_count;
+
+        /// This part may be covered by some expected part that is active and present locally
+        /// Probably we just did not remove this part from disk before restart (but removed from ZooKeeper)
+        String covering_local_part = local_expected_parts_set.getContainingPart(part->name);
+        if (!covering_local_part.empty())
+        {
+            covered_unexpected_parts.push_back(part->name);
+            continue;
+        }
+
+        /// Part is unexpected and we don't have covering part: it's suspicious
+        uncovered_unexpected_parts.push_back(part->name);
+        uncovered_unexpected_parts_rows += part->rows_count;
+
         if (part->info.level > 0)
         {
             ++unexpected_parts_nonnew;
             unexpected_parts_nonnew_rows += part->rows_count;
         }
-
-        unexpected_parts_rows += part->rows_count;
     }
 
     const UInt64 parts_to_fetch_blocks = std::accumulate(parts_to_fetch.cbegin(), parts_to_fetch.cend(), 0,
@@ -1294,27 +1320,33 @@ void StorageReplicatedMergeTree::checkParts(bool skip_sanity_checks)
         total_rows_on_filesystem += part->rows_count;
 
     const auto storage_settings_ptr = getSettings();
-    bool insane = unexpected_parts_rows > total_rows_on_filesystem * storage_settings_ptr->replicated_max_ratio_of_wrong_parts;
+    bool insane = uncovered_unexpected_parts_rows > total_rows_on_filesystem * storage_settings_ptr->replicated_max_ratio_of_wrong_parts;
 
     constexpr const char * sanity_report_fmt = "The local set of parts of table {} doesn't look like the set of parts in ZooKeeper: "
                                                "{} rows of {} total rows in filesystem are suspicious. "
-                                               "There are {} unexpected parts with {} rows ({} of them is not just-written with {} rows), "
-                                               "{} missing parts (with {} blocks).";
+                                               "There are {} uncovered unexpected parts with {} rows ({} of them is not just-written with {} rows), "
+                                               "{} missing parts (with {} blocks), {} covered unexpected parts (with {} rows).";
+
+    constexpr const char * sanity_report_debug_fmt = "Uncovered unexpected parts: {}. Missing parts: {}. Covered unexpected parts: {}. Expected parts: {}.";
 
     if (insane && !skip_sanity_checks)
     {
+        LOG_DEBUG(log, sanity_report_debug_fmt, fmt::join(uncovered_unexpected_parts, ", "), fmt::join(parts_to_fetch, ", "),
+                  fmt::join(covered_unexpected_parts, ", "), fmt::join(expected_parts, ", "));
         throw Exception(ErrorCodes::TOO_MANY_UNEXPECTED_DATA_PARTS, sanity_report_fmt, getStorageID().getNameForLogs(),
-                        formatReadableQuantity(unexpected_parts_rows), formatReadableQuantity(total_rows_on_filesystem),
-                        unexpected_parts.size(), unexpected_parts_rows, unexpected_parts_nonnew, unexpected_parts_nonnew_rows,
-                        parts_to_fetch.size(), parts_to_fetch_blocks);
+                        formatReadableQuantity(uncovered_unexpected_parts_rows), formatReadableQuantity(total_rows_on_filesystem),
+                        uncovered_unexpected_parts.size(), uncovered_unexpected_parts_rows, unexpected_parts_nonnew, unexpected_parts_nonnew_rows,
+                        parts_to_fetch.size(), parts_to_fetch_blocks, covered_unexpected_parts.size(), unexpected_parts_rows - uncovered_unexpected_parts_rows);
     }
 
-    if (unexpected_parts_nonnew_rows > 0)
+    if (unexpected_parts_nonnew_rows > 0 || uncovered_unexpected_parts_rows > 0)
     {
+        LOG_DEBUG(log, sanity_report_debug_fmt, fmt::join(uncovered_unexpected_parts, ", "), fmt::join(parts_to_fetch, ", "),
+                  fmt::join(covered_unexpected_parts, ", "), fmt::join(expected_parts, ", "));
         LOG_WARNING(log, fmt::runtime(sanity_report_fmt), getStorageID().getNameForLogs(),
-                    formatReadableQuantity(unexpected_parts_rows), formatReadableQuantity(total_rows_on_filesystem),
-                    unexpected_parts.size(), unexpected_parts_rows, unexpected_parts_nonnew, unexpected_parts_nonnew_rows,
-                    parts_to_fetch.size(), parts_to_fetch_blocks);
+                    formatReadableQuantity(uncovered_unexpected_parts_rows), formatReadableQuantity(total_rows_on_filesystem),
+                    uncovered_unexpected_parts.size(), uncovered_unexpected_parts_rows, unexpected_parts_nonnew, unexpected_parts_nonnew_rows,
+                    parts_to_fetch.size(), parts_to_fetch_blocks, covered_unexpected_parts.size(), unexpected_parts_rows - uncovered_unexpected_parts_rows);
     }
 
     /// Add to the queue jobs to pick up the missing parts from other replicas and remove from ZK the information that we have them.
@@ -5771,7 +5803,6 @@ void StorageReplicatedMergeTree::fetchPartition(
     String best_replica;
 
     {
-
         /// List of replicas of source shard.
         replicas = zookeeper->getChildren(fs::path(from) / "replicas");
 
@@ -8124,7 +8155,6 @@ void StorageReplicatedMergeTree::createZeroCopyLockNode(
         throw Exception(ErrorCodes::NOT_FOUND_NODE, "Cannot create {} zero copy lock {} because part was unlocked from zookeeper", mode_str, zookeeper_node);
     }
 }
-
 
 bool StorageReplicatedMergeTree::removeDetachedPart(DiskPtr disk, const String & path, const String & part_name, bool is_freezed)
 {
