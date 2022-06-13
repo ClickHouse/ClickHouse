@@ -104,7 +104,7 @@ BlockIO Unfreezer::unfreeze(const String & backup_name, ContextPtr local_context
                     command_result.command_type = "SYSTEM UNFREEZE";
                 }
                 result_info.insert(
-                                result_info.end(), 
+                                result_info.end(),
                                 std::make_move_iterator(current_result_info.begin()),
                                 std::make_move_iterator(current_result_info.end()));
             }
