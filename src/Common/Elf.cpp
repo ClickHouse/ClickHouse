@@ -1,4 +1,4 @@
-#if defined(__ELF__) && !defined(__FreeBSD__)
+#if defined(__ELF__) && !defined(OS_FREEBSD)
 
 #include <Common/Elf.h>
 #include <Common/Exception.h>

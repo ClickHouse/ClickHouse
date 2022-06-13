@@ -13,7 +13,7 @@
 #include <iomanip>
 #include <mutex>
 #include <functional>
-#include <Common/logger_useful.h>
+#include <base/defines.h>
 
 namespace DB
 {
@@ -349,7 +349,9 @@ struct KeeperStorageCreateRequestProcessor final : public KeeperStorageRequestPr
         container.updateValue(parent_path, [child_path, zxid, &prev_parent_zxid,
                                             parent_cversion, &prev_parent_cversion] (KeeperStorage::Node & parent)
         {
+            ++parent.stat.numChildren;
             parent.addChild(child_path);
+
             prev_parent_cversion = parent.stat.cversion;
             prev_parent_zxid = parent.stat.pzxid;
 
@@ -363,7 +365,7 @@ struct KeeperStorageCreateRequestProcessor final : public KeeperStorageRequestPr
 
             if (zxid > parent.stat.pzxid)
                 parent.stat.pzxid = zxid;
-            ++parent.stat.numChildren;
+            chassert(parent.stat.numChildren == static_cast<int32_t>(parent.getChildren().size()));
         });
 
         response.path_created = path_created;
@@ -385,6 +387,7 @@ struct KeeperStorageCreateRequestProcessor final : public KeeperStorageRequestPr
                 undo_parent.stat.cversion = prev_parent_cversion;
                 undo_parent.stat.pzxid = prev_parent_zxid;
                 undo_parent.removeChild(child_path);
+                chassert(undo_parent.stat.numChildren == static_cast<int32_t>(undo_parent.getChildren().size()));
             });
 
             storage.container.erase(path_created);
@@ -494,7 +497,7 @@ struct KeeperStorageRemoveRequestProcessor final : public KeeperStorageRequestPr
         {
             response.error = Coordination::Error::ZBADVERSION;
         }
-        else if (it->value.stat.numChildren)
+        else if (!it->value.getChildren().empty())
         {
             response.error = Coordination::Error::ZNOTEMPTY;
         }
@@ -519,6 +522,7 @@ struct KeeperStorageRemoveRequestProcessor final : public KeeperStorageRequestPr
                 --parent.stat.numChildren;
                 ++parent.stat.cversion;
                 parent.removeChild(child_basename);
+                chassert(parent.stat.numChildren == static_cast<int32_t>(parent.getChildren().size()));
             });
 
             response.error = Coordination::Error::ZOK;
@@ -540,6 +544,7 @@ struct KeeperStorageRemoveRequestProcessor final : public KeeperStorageRequestPr
                     ++parent.stat.numChildren;
                     --parent.stat.cversion;
                     parent.addChild(child_name);
+                    chassert(parent.stat.numChildren == static_cast<int32_t>(parent.getChildren().size()));
                 });
             };
         }
@@ -1110,6 +1115,7 @@ KeeperStorage::ResponsesForSessions KeeperStorage::processRequest(const Coordina
                     ++parent.stat.cversion;
                     auto base_name = getBaseName(ephemeral_path);
                     parent.removeChild(base_name);
+                    chassert(parent.stat.numChildren == static_cast<int32_t>(parent.getChildren().size()));
                 });
 
                 container.erase(ephemeral_path);
