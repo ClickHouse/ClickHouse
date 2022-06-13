@@ -137,10 +137,27 @@ size_t MergeTreeReaderStream::getRightOffset(size_t right_mark_non_included)
         /// Find the right border of the last mark we need to read.
         /// To do that let's find the upper bound of the offset of the last
         /// included mark.
+
+        /// In LowCardinality dictionary and in values of Sparse columns
+        /// several consecutive marks can point to the same offset.
         ///
-        /// LowCardinality dictionary related to current granule may be written
-        /// to the next granule in some corner cases. So, that's why we have to
-        /// read one extra granule to the right, while reading dictionary of LowCardinality.
+        /// Example:
+        ///  Mark 186, points to [2003111, 0]
+        ///  Mark 187, points to [2003111, 0]
+        ///  Mark 188, points to [2003111, 0] <--- for example need to read until 188
+        ///  Mark 189, points to [2003111, 0] <--- not suitable, because have same offset
+        ///  Mark 190, points to [2003111, 0]
+        ///  Mark 191, points to [2003111, 0]
+        ///  Mark 192, points to [2081424, 0] <--- what we are looking for
+        ///  Mark 193, points to [2081424, 0]
+        ///  Mark 194, points to [2081424, 0]
+
+        /// Also, in some cases, when one granule is not-atomically written (which is possible at merges)
+        /// one granule may require reading of two dictionaries which starts from different marks.
+        /// The only correct way is to take offset from at least next different granule from the right one.
+        /// So, that's why we have to read one extra granule to the right,
+        /// while reading dictionary of LowCardinality.
+
         size_t right_mark_included = is_low_cardinality_dictionary
             ? right_mark_non_included
             : right_mark_non_included - 1;
