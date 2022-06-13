@@ -718,9 +718,9 @@ void replaceMissedSubcolumnsByConstants(
             addConstantToWithClause(query, name, type);
 }
 
-void finalizeObjectColumns(MutableColumns & columns)
+void finalizeObjectColumns(const MutableColumns & columns)
 {
-    for (auto & column : columns)
+    for (const auto & column : columns)
         if (auto * column_object = typeid_cast<ColumnObject *>(column.get()))
             column_object->finalize();
 }
