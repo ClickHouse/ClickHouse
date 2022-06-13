@@ -554,54 +554,19 @@ FileSegmentsHolder LRUFileCache::setDownloading(const Key & key, size_t offset, 
 bool LRUFileCache::tryReserve(const Key & key, size_t offset, size_t size, std::lock_guard<std::mutex> & cache_lock)
 {
     auto query_context = enable_filesystem_query_cache_limit ? getCurrentQueryContext(cache_lock) : nullptr;
+    if (!query_context)
+        return tryReserveForMainList(key, offset, size, nullptr, cache_lock);
 
-    /// If the context can be found, subsequent cache replacements are made through the Query context.
-    if (query_context)
-    {
-        auto res = tryReserveForQuery(key, offset, size, query_context, cache_lock);
-        switch (res)
-        {
-            case ReserveResult::FITS_IN_QUERY_LIMIT_AND_RESERVATION_COMPLETED :
-            {
-                /// When the maximum cache size of the query is reached, the cache will be
-                /// evicted from the history cache accessed by the current query.
-                return true;
-            }
-            case ReserveResult::EXCEEDS_QUERY_LIMIT :
-            {
-                /// The query currently does not have enough space to reserve.
-                /// It returns false and reads data directly from the remote fs.
-                return false;
-            }
-            case ReserveResult::FITS_IN_QUERY_LIMIT_NEED_RESERVE_FROM_MAIN_LIST :
-            {
-                /// When the maximum cache capacity of the request is not reached, the cache
-                /// block is evicted from the main LRU queue.
-                return tryReserveForMainList(key, offset, size, query_context, cache_lock);
-            }
-        }
-        __builtin_unreachable();
-    }
-    else
-    {
-        return tryReserveForMainList(key, offset, size, query_context, cache_lock);
-    }
-}
-
-LRUFileCache::ReserveResult LRUFileCache::tryReserveForQuery(const Key & key, size_t offset, size_t size, QueryContextPtr query_context, std::lock_guard<std::mutex> & cache_lock)
-{
     /// The maximum cache capacity of the request is not reached, thus the
     //// cache block is evicted from the main LRU queue by tryReserveForMainList().
-    if (query_context->getCacheSize() + size <= query_context->getMaxCacheSize())
-    {
-        return ReserveResult::FITS_IN_QUERY_LIMIT_NEED_RESERVE_FROM_MAIN_LIST;
-    }
+    else if (query_context->getCacheSize() + size <= query_context->getMaxCacheSize())
+        return tryReserveForMainList(key, offset, size, query_context, cache_lock);
+
     /// When skip_download_if_exceeds_query_cache is true, there is no need
     /// to evict old data, skip the cache and read directly from remote fs.
     else if (query_context->isSkipDownloadIfExceed())
-    {
-        return ReserveResult::EXCEEDS_QUERY_LIMIT;
-    }
+        return false;
+
     /// The maximum cache size of the query is reached, the cache will be
     /// evicted from the history cache accessed by the current query.
     else
@@ -617,7 +582,7 @@ LRUFileCache::ReserveResult LRUFileCache::tryReserveForQuery(const Key & key, si
 
         auto is_overflow = [&]
         {
-            return (max_size != 0 && queue.getTotalWeight(cache_lock) + size - removed_size > max_size)
+            return (max_size != 0 && queue.getTotalCacheSize(cache_lock) + size - removed_size > max_size)
             || (max_element_size != 0 && queue_size > max_element_size)
             || (query_context->getCacheSize() + size - removed_size > query_context->getMaxCacheSize());
         };
@@ -666,26 +631,26 @@ LRUFileCache::ReserveResult LRUFileCache::tryReserveForQuery(const Key & key, si
             }
         }
 
+        auto remove_file_segment = [&](FileSegmentPtr file_segment, size_t file_segment_size)
+        {
+            query_context->remove(file_segment->key(), file_segment->offset(), file_segment_size, cache_lock);
+
+            std::lock_guard segment_lock(file_segment->mutex);
+            remove(file_segment->key(), file_segment->offset(), cache_lock, segment_lock);
+        };
+
         assert(trash.empty());
         for (auto & cell : trash)
         {
-            auto file_segment = cell->file_segment;
-            if (file_segment)
-            {
-                query_context->remove(file_segment->key(), file_segment->offset(), cell->size(), cache_lock);
-
-                std::lock_guard segment_lock(file_segment->mutex);
-                remove(file_segment->key(), file_segment->offset(), cache_lock, segment_lock);
-            }
+            if (auto file_segment = cell->file_segment)
+                remove_file_segment(file_segment, cell->size());
         }
 
         for (auto & iter : ghost)
             query_context->remove(iter->key, iter->offset, iter->size, cache_lock);
 
         if (is_overflow())
-        {
-            return ReserveResult::EXCEEDS_QUERY_LIMIT;
-        }
+            return false;
 
         if (cell_for_reserve)
         {
@@ -698,18 +663,12 @@ LRUFileCache::ReserveResult LRUFileCache::tryReserveForQuery(const Key & key, si
 
         for (auto & cell : to_evict)
         {
-            auto file_segment = cell->file_segment;
-            if (file_segment)
-            {
-                query_context->remove(file_segment->key(), file_segment->offset(), cell->size(), cache_lock);
-
-                std::lock_guard<std::mutex> segment_lock(file_segment->mutex);
-                remove(file_segment->key(), file_segment->offset(), cache_lock, segment_lock);
-            }
+            if (auto file_segment = cell->file_segment)
+                remove_file_segment(file_segment, cell->size());
         }
 
         query_context->reserve(key, offset, size, cache_lock);
-        return ReserveResult::FITS_IN_QUERY_LIMIT_NEED_RESERVE_FROM_MAIN_LIST;
+        return true;
     }
 }
 
@@ -732,7 +691,7 @@ bool LRUFileCache::tryReserveForMainList(
     auto is_overflow = [&]
     {
         /// max_size == 0 means unlimited cache size, max_element_size means unlimited number of cache elements.
-        return (max_size != 0 && queue.getTotalWeight(cache_lock) + size - removed_size > max_size)
+        return (max_size != 0 && queue.getTotalCacheSize(cache_lock) + size - removed_size > max_size)
             || (max_element_size != 0 && queue_size > max_element_size);
     };
 
@@ -785,18 +744,19 @@ bool LRUFileCache::tryReserveForMainList(
         }
     }
 
+    auto remove_file_segment = [&](FileSegmentPtr file_segment)
+    {
+        std::lock_guard segment_lock(file_segment->mutex);
+        remove(file_segment->key(), file_segment->offset(), cache_lock, segment_lock);
+    };
 
     /// This case is very unlikely, can happen in case of exception from
     /// file_segment->complete(), which would be a logical error.
     assert(trash.empty());
     for (auto & cell : trash)
     {
-        auto file_segment = cell->file_segment;
-        if (file_segment)
-        {
-            std::lock_guard segment_lock(file_segment->mutex);
-            remove(file_segment->key(), file_segment->offset(), cache_lock, segment_lock);
-        }
+        if (auto file_segment = cell->file_segment)
+            remove_file_segment(file_segment);
     }
 
     if (is_overflow())
@@ -817,15 +777,11 @@ bool LRUFileCache::tryReserveForMainList(
 
     for (auto & cell : to_evict)
     {
-        auto file_segment = cell->file_segment;
-        if (file_segment)
-        {
-            std::lock_guard<std::mutex> segment_lock(file_segment->mutex);
-            remove(file_segment->key(), file_segment->offset(), cache_lock, segment_lock);
-        }
+        if (auto file_segment = cell->file_segment)
+            remove_file_segment(file_segment);
     }
 
-    if (queue.getTotalWeight(cache_lock) > (1ull << 63))
+    if (queue.getTotalCacheSize(cache_lock) > (1ull << 63))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cache became inconsistent. There must be a bug");
 
     if (query_context)
@@ -1116,7 +1072,7 @@ size_t LRUFileCache::getUsedCacheSize() const
 
 size_t LRUFileCache::getUsedCacheSizeUnlocked(std::lock_guard<std::mutex> & cache_lock) const
 {
-    return queue.getTotalWeight(cache_lock);
+    return queue.getTotalCacheSize(cache_lock);
 }
 
 size_t LRUFileCache::getAvailableCacheSize() const
@@ -1305,8 +1261,8 @@ void LRUFileCache::assertQueueCorrectness(std::lock_guard<std::mutex> & cache_lo
         total_size += size;
     }
 
-    assert(total_size == queue.getTotalWeight(cache_lock));
-    assert(queue.getTotalWeight(cache_lock) <= max_size);
+    assert(total_size == queue.getTotalCacheSize(cache_lock));
+    assert(queue.getTotalCacheSize(cache_lock) <= max_size);
     assert(queue.getElementsNum(cache_lock) <= max_element_size);
 }
 
