@@ -63,6 +63,25 @@ size_t getFilterMask(const ColumnRawPtrs & raw_block_columns, const Columns & th
     return result_size_hint;
 }
 
+bool compareWithThreshold(const ColumnRawPtrs & raw_block_columns, size_t min_block_index, const Columns & threshold_columns, const SortDescription & sort_description)
+{
+    assert(raw_block_columns.size() == threshold_columns.size());
+    assert(raw_block_columns.size() == sort_description.size());
+
+    size_t raw_block_columns_size = raw_block_columns.size();
+    for (size_t i = 0; i < raw_block_columns_size; ++i)
+    {
+        int res = sort_description[i].direction * raw_block_columns[i]->compareAt(min_block_index, 0, *threshold_columns[0], sort_description[i].nulls_direction);
+
+        if (res < 0)
+            return true;
+        else if (res > 0)
+            return false;
+    }
+
+    return false;
+}
+
 }
 
 PartialSortingTransform::PartialSortingTransform(
@@ -119,20 +138,22 @@ void PartialSortingTransform::transform(Chunk & chunk)
 
     sortBlock(block, description, limit);
 
-    /// Check if we can use this block for optimization.
-    if (min_limit_for_partial_sort_optimization <= limit)
-    {
-        size_t block_rows = block.rows();
+    size_t block_rows = block.rows();
 
-        /** In case filtered more than limit rows from block take last row.
+    /// Check if we can use this block for optimization.
+    if (min_limit_for_partial_sort_optimization <= limit && block_rows > 0)
+    {
+        /** If we filtered more than limit rows from block take block last row.
           * Otherwise take last limit row.
+          *
+          * If current threshold value is empty, update current threshold value.
           * If min block value is less than current threshold value, update current threshold value.
           */
         size_t min_row_to_compare = limit <= block_rows ? (limit - 1) : (block_rows - 1);
         auto raw_block_columns = extractRawColumns(block, description_with_positions);
 
         if (sort_description_threshold_columns.empty() ||
-            less(raw_block_columns, sort_description_threshold_columns, min_row_to_compare, 0, description_with_positions))
+            compareWithThreshold(raw_block_columns, min_row_to_compare, sort_description_threshold_columns, description))
         {
             size_t raw_block_columns_size = raw_block_columns.size();
             Columns sort_description_threshold_columns_updated(raw_block_columns_size);
