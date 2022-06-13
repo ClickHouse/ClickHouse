@@ -37,16 +37,7 @@ struct MergeTreeReadTaskColumns
     /// column names to read during each PREWHERE step
     std::vector<NamesAndTypesList> pre_columns;
 
-    std::string dump() const
-    {
-        std::ostringstream s;
-        for (size_t i = 0; i < pre_columns.size(); ++i)
-        {
-            s << "STEP " << i << ": " << pre_columns[i].toString() << "\n";
-        }
-        s << "COLUMNS: " << columns.toString() << "\n";
-        return s.str();
-    }
+    std::string dump() const;
 };
 
 /// A batch of work for MergeTreeThreadSelectProcessor
@@ -62,13 +53,8 @@ struct MergeTreeReadTask
     const Names & ordered_names;
     /// used to determine whether column should be filtered during PREWHERE or WHERE
     const NameSet & column_name_set;
-
-    const MergeTreeReadTaskColumns& task_columns;
-
-//    /// column names to read during WHERE
-//    const NamesAndTypesList & columns;
-//    /// column names to read during PREWHERE
-//    const NamesAndTypesList & pre_columns;
+    /// column names to read during PREWHERE and WHERE
+    const MergeTreeReadTaskColumns & task_columns;
     /// should PREWHERE column be returned to requesting side?
     const bool remove_prewhere_column;
     /// Used to satistfy preferred_block_size_bytes limitation

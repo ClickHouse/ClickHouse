@@ -50,9 +50,6 @@ MergeTreeSelectProcessor::MergeTreeSelectProcessor(
 
 void MergeTreeSelectProcessor::initializeReaders()
 {
-pre_reader_for_step.clear(); // is it being reused???
-
-
     task_columns = getReadTaskColumns(
         storage, storage_snapshot, data_part,
         required_columns, prewhere_info, /*with_subcolumns=*/ true);
@@ -68,6 +65,8 @@ pre_reader_for_step.clear(); // is it being reused???
 
     reader = data_part->getReader(task_columns.columns, storage_snapshot->getMetadataForQuery(),
         all_mark_ranges, owned_uncompressed_cache.get(), owned_mark_cache.get(), reader_settings, {}, {});
+
+    pre_reader_for_step.clear();
 
     if (prewhere_info)
     {

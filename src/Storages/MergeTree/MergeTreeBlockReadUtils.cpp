@@ -5,6 +5,9 @@
 #include <Common/checkStackSize.h>
 #include <Common/typeid_cast.h>
 #include <Columns/ColumnConst.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/Operators.h>
+
 #include <unordered_set>
 
 
@@ -284,33 +287,21 @@ MergeTreeReadTaskColumns getReadTaskColumns(
     if (with_subcolumns)
         options.withSubcolumns();
 
-//    NameSet all_pre_columns;
-
     if (prewhere_info)
     {
         NameSet pre_name_set;
 
-// TODO: for each prewhere step
-
+        /// Add column reading steps:
         /// 1. Columns for row level filter
         if (prewhere_info->row_level_filter)
         {
             Names row_filter_column_names =  prewhere_info->row_level_filter->getRequiredColumnsNames();
-
-////// HACK!!!
             result.pre_columns.push_back(storage_snapshot->getColumnsByNames(options, row_filter_column_names));
-//////////////
-
             pre_name_set.insert(row_filter_column_names.begin(), row_filter_column_names.end());
-
-//            all_pre_columns.insert(pre_column_names.begin(), pre_column_names.end());
         }
 
         /// 2. Columns for prewhere
         Names all_pre_column_names = prewhere_info->prewhere_actions->getRequiredColumnsNames();
-
-//        if (pre_column_names.empty())
-//            pre_column_names.push_back(column_names[0]);
 
         const auto injected_pre_columns = injectRequiredColumns(
             storage, storage_snapshot, data_part, with_subcolumns, all_pre_column_names);
@@ -323,7 +314,6 @@ MergeTreeReadTaskColumns getReadTaskColumns(
             pre_name_set.insert(name);
         }
 
-
         Names post_column_names;
         for (const auto & name : column_names)
             if (!pre_name_set.contains(name))
@@ -332,16 +322,23 @@ MergeTreeReadTaskColumns getReadTaskColumns(
         column_names = post_column_names;
     }
 
-//    NamesAndTypesList all_columns;
-
-
-////// HACK!!!
     result.pre_columns.push_back(storage_snapshot->getColumnsByNames(options, pre_column_names));
-//////////////
 
     /// 3. Rest of the requested columns
     result.columns = storage_snapshot->getColumnsByNames(options, column_names);
     return result;
+}
+
+
+std::string MergeTreeReadTaskColumns::dump() const
+{
+    WriteBufferFromOwnString s;
+    for (size_t i = 0; i < pre_columns.size(); ++i)
+    {
+        s << "STEP " << i << ": " << pre_columns[i].toString() << "\n";
+    }
+    s << "COLUMNS: " << columns.toString() << "\n";
+    return s.str();
 }
 
 }

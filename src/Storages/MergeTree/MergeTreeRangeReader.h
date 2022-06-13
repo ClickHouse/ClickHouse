@@ -18,8 +18,7 @@ using PrewhereInfoPtr = std::shared_ptr<PrewhereInfo>;
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
-//*
-struct PrewhereExprStep 
+struct PrewhereExprStep
 {
     ExpressionActionsPtr actions;
     String column_name;
@@ -30,41 +29,10 @@ struct PrewhereExprStep
 /// The same as PrewhereInfo, but with ExpressionActions instead of ActionsDAG
 struct PrewhereExprInfo
 {
-//    /// Actions for row level security filter. Applied separately before prewhere_actions.
-//    /// This actions are separate because prewhere condition should not be executed over filtered rows.
-//    ExpressionActionsPtr row_level_filter;
-//    /// Actions which are executed on block in order to get filter column for prewhere step.
-//    ExpressionActionsPtr prewhere_actions;
-//    String row_level_column_name;
-//    String prewhere_column_name;
-//    bool remove_prewhere_column = false;
-//    bool need_filter = false;
-
     std::vector<PrewhereExprStep> steps;
-
-/////    PrewhereExprStep deleted_row_filter;
-/////    PrewhereExprStep row_level_filter;
-/////    PrewhereExprStep prewhere;
 
     std::string dump() const;
 };
-
-/*/
-
-/// The same as PrewhereInfo, but with ExpressionActions instead of ActionsDAG
-struct PrewhereExprInfo
-{
-    /// Actions for row level security filter. Applied separately before prewhere_actions.
-    /// This actions are separate because prewhere condition should not be executed over filtered rows.
-    ExpressionActionsPtr row_level_filter;
-    /// Actions which are executed on block in order to get filter column for prewhere step.
-    ExpressionActionsPtr prewhere_actions;
-    String row_level_column_name;
-    String prewhere_column_name;
-    bool remove_prewhere_column = false;
-    bool need_filter = false;
-};
-//*/
 
 /// MergeTreeReader iterator which allows sequential reading for arbitrary number of rows between pairs of marks in the same part.
 /// Stores reading state, which can be inside granule. Can skip rows in current granule and start reading from next mark.
@@ -278,7 +246,7 @@ public:
 
 private:
     ReadResult startReadingChain(size_t max_rows, MarkRanges & ranges);
-    Columns continueReadingChain(ReadResult & result, size_t & num_rows);
+    Columns continueReadingChain(const ReadResult & result, size_t & num_rows);
     void executePrewhereActionsAndFilterColumns(ReadResult & result);
     void fillPartOffsetColumn(ReadResult & result, UInt64 leading_begin_part_offset, UInt64 leading_end_part_offset);
 

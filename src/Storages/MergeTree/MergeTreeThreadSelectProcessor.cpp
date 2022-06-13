@@ -105,9 +105,6 @@ void MergeTreeThreadSelectProcessor::finalizeNewTask()
     auto profile_callback = [this](ReadBufferFromFileBase::ProfileInfo info_) { pool->profileFeedback(info_); };
     const auto & metadata_snapshot = storage_snapshot->metadata;
 
-//std::cerr << "==============TASK:==============\n" << task->task_columns.dump() << "\n";
-//std::cerr << "pre_reader_for_step.size() " << pre_reader_for_step.size() << "\n\n";
-
     if (!reader)
     {
         if (use_uncompressed_cache)
@@ -118,8 +115,7 @@ void MergeTreeThreadSelectProcessor::finalizeNewTask()
             owned_uncompressed_cache.get(), owned_mark_cache.get(), reader_settings,
             IMergeTreeReader::ValueSizeMap{}, profile_callback);
 
-pre_reader_for_step.clear(); // is it being reused???
-
+        pre_reader_for_step.clear();
         if (prewhere_info)
         {
             for (const auto & pre_columns_per_step : task->task_columns.pre_columns)
@@ -140,8 +136,7 @@ pre_reader_for_step.clear(); // is it being reused???
                 owned_uncompressed_cache.get(), owned_mark_cache.get(), reader_settings,
                 reader->getAvgValueSizeHints(), profile_callback);
 
-pre_reader_for_step.clear(); // is it being reused???
-
+            pre_reader_for_step.clear();
             if (prewhere_info)
             {
                 for (const auto & pre_columns_per_step : task->task_columns.pre_columns)
