@@ -9,6 +9,7 @@
 #include <base/logger_useful.h>
 #include "Disks/DiskFactory.h"
 #include "Disks/Executor.h"
+#include <Disks/S3/S3Capabilities.h>
 
 #include <aws/s3/S3Client.h>
 #include <aws/s3/model/HeadObjectResult.h>
@@ -76,6 +77,7 @@ public:
         DiskPtr metadata_disk_,
         FileCachePtr cache_,
         ContextPtr context_,
+        const S3Capabilities & s3_capabilities_,
         SettingsPtr settings_,
         GetDiskSettings settings_getter_);
 
@@ -166,6 +168,7 @@ private:
     MultiVersion<DiskS3Settings> current_settings;
     /// Gets disk settings from context.
     GetDiskSettings settings_getter;
+    const S3Capabilities s3_capabilities;
 
     std::atomic<UInt64> revision_counter = 0;
     static constexpr UInt64 LATEST_REVISION = std::numeric_limits<UInt64>::max();

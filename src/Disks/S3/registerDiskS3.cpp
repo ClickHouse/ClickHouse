@@ -187,6 +187,7 @@ void registerDiskS3(DiskFactory & factory)
         auto [metadata_path, metadata_disk] = prepareForLocalMetadata(name, config, config_prefix, context);
 
         FileCachePtr cache = getCachePtrForDisk(name, config, config_prefix, context);
+        S3Capabilities s3_capabilities = getCapabilitiesFromConfig(config, config_prefix);
 
         std::shared_ptr<IDisk> s3disk = std::make_shared<DiskS3>(
             name,
@@ -195,6 +196,7 @@ void registerDiskS3(DiskFactory & factory)
             metadata_disk,
             std::move(cache),
             context,
+            s3_capabilities,
             getSettings(config, config_prefix, context),
             getSettings);
 

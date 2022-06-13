@@ -35,6 +35,7 @@
 #include <Disks/IO/ThreadPoolRemoteFSReader.h>
 
 #include <aws/s3/model/CopyObjectRequest.h>
+#include <aws/s3/model/DeleteObjectRequest.h>
 #include <aws/s3/model/DeleteObjectsRequest.h>
 #include <aws/s3/model/GetObjectRequest.h>
 #include <aws/s3/model/ListObjectsV2Request.h>
@@ -155,12 +156,14 @@ DiskS3::DiskS3(
     DiskPtr metadata_disk_,
     FileCachePtr cache_,
     ContextPtr context_,
+    const S3Capabilities & s3_capabilities_,
     SettingsPtr settings_,
     GetDiskSettings settings_getter_)
     : IDiskRemote(name_, s3_root_path_, metadata_disk_, std::move(cache_), "DiskS3", settings_->thread_pool_size)
     , bucket(std::move(bucket_))
     , current_settings(std::move(settings_))
     , settings_getter(settings_getter_)
+    , s3_capabilities(s3_capabilities_)
     , context(context_)
 {
 }
@@ -180,15 +183,31 @@ void DiskS3::removeFromRemoteFS(RemoteFSPathKeeperPtr fs_paths_keeper)
         s3_paths_keeper->removePaths([&](S3PathKeeper::Chunk && chunk)
         {
             String keys = S3PathKeeper::getChunkKeys(chunk);
-            LOG_TRACE(log, "Remove AWS keys {}", keys);
-            Aws::S3::Model::Delete delkeys;
-            delkeys.SetObjects(chunk);
-            Aws::S3::Model::DeleteObjectsRequest request;
-            request.SetBucket(bucket);
-            request.SetDelete(delkeys);
-            auto outcome = settings->client->DeleteObjects(request);
-            // Do not throw here, continue deleting other chunks
-            logIfError(outcome, [&](){return "Can't remove AWS keys: " + keys;});
+            if (!s3_capabilities.support_batch_delete)
+            {
+                LOG_TRACE(log, "Remove AWS keys {} one by one", keys);
+                for (const auto & obj : chunk)
+                {
+                    Aws::S3::Model::DeleteObjectRequest request;
+                    request.SetBucket(bucket);
+                    request.SetKey(obj.GetKey());
+                    auto outcome = settings->client->DeleteObject(request);
+                    // Do not throw here, continue deleting other keys and chunks
+                    logIfError(outcome, [&](){return "Can't remove AWS key: " + obj.GetKey();});
+                }
+            }
+            else
+            {
+                LOG_TRACE(log, "Remove AWS keys {}", keys);
+                Aws::S3::Model::Delete delkeys;
+                delkeys.SetObjects(chunk);
+                Aws::S3::Model::DeleteObjectsRequest request;
+                request.SetBucket(bucket);
+                request.SetDelete(delkeys);
+                auto outcome = settings->client->DeleteObjects(request);
+                // Do not throw here, continue deleting other chunks
+                logIfError(outcome, [&](){return "Can't remove AWS keys: " + keys;});
+            }
         });
 }
 
