@@ -1269,7 +1269,7 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
                 {
                     out_postpone_reason = fmt::format(
                         "Not executing log entry ({}) to merge parts for part {} because `always_fetch_merged_part` enabled and "
-                        " too less time passed since last try, have to wait {}",
+                        " not enough time had been passed since last try, have to wait {} seconds",
                         entry.znode_name, entry.new_part_name, time_to_wait_seconds - time_since_last_try_seconds);
 
                     LOG_DEBUG(log, fmt::runtime(out_postpone_reason));
