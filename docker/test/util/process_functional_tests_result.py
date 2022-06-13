@@ -113,7 +113,7 @@ def process_result(result_path):
             test_results,
         ) = process_test_log(result_path)
         is_flacky_check = 1 < int(os.environ.get("NUM_TRIES", 1))
-        logging.info("Is flacky check: %s", is_flacky_check)
+        logging.info("Is flaky check: %s", is_flacky_check)
         # If no tests were run (success == 0) it indicates an error (e.g. server did not start or crashed immediately)
         # But it's Ok for "flaky checks" - they can contain just one test for check which is marked as skipped.
         if failed != 0 or unknown != 0 or (success == 0 and (not is_flacky_check)):
