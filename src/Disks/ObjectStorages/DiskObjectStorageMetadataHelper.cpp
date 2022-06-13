@@ -438,7 +438,7 @@ void DiskObjectStorageMetadataHelper::processRestoreFiles(IObjectStorage * sourc
 void DiskObjectStorage::onFreeze(const String & path)
 {
     createDirectories(path);
-    auto revision_file_buf = metadata_disk->writeFile(path + "revision.txt", 32);
+    auto revision_file_buf = writeFile(path + "revision.txt", 32, WriteMode::Rewrite, {});
     writeIntText(metadata_helper->revision_counter.load(), *revision_file_buf);
     revision_file_buf->finalize();
 }
