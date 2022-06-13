@@ -17,7 +17,7 @@ ln -s /usr/share/clickhouse-test/clickhouse-test /usr/bin/clickhouse-test
 # install test configs
 /usr/share/clickhouse-test/config/install.sh
 
-./setup_minio.sh
+./setup_minio.sh stateful
 
 function start()
 {
