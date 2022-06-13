@@ -126,8 +126,6 @@ void PartialSortingTransform::transform(Chunk & chunk)
                 block_columns, sort_description_threshold_columns,
                 description, rows_num, filter, rows_to_compare, compare_results);
 
-        std::cout << "Filter result size " << result_size_hint << std::endl;
-
         /// Everything was filtered. Skip whole chunk.
         if (result_size_hint == 0)
             return;
