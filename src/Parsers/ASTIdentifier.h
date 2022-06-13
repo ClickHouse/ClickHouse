@@ -68,7 +68,7 @@ private:
     void resetFullName();
 };
 
-class ASTTableIdentifier : public ASTIdentifier
+class ZASTTableIdentifier : public ASTIdentifier
 {
 public:
     explicit ASTTableIdentifier(const String & table_name, std::vector<ASTPtr> && name_params = {});
