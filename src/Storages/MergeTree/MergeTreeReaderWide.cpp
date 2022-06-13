@@ -70,7 +70,6 @@ size_t MergeTreeReaderWide::readRows(
         size_t num_columns = res_columns.size();
         checkNumberOfColumns(num_columns);
 
-        /// TODO: is this ok to request no columns?
         if (num_columns == 0)
             return max_rows_to_read;
 

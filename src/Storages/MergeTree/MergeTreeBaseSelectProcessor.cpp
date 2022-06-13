@@ -84,15 +84,7 @@ MergeTreeBaseSelectProcessor::MergeTreeBaseSelectProcessor(
             };
 
             prewhere_actions->steps.emplace_back(std::move(row_level_filter_step));
-
-//            prewhere_actions->row_level_filter = std::make_shared<ExpressionActions>(prewhere_info->row_level_filter, actions_settings);
         }
-//       prewhere_actions->row_level_column_name = prewhere_info->row_level_column_name;
-
-//        prewhere_actions->prewhere_actions = std::make_shared<ExpressionActions>(prewhere_info->prewhere_actions, actions_settings);
-//        prewhere_actions->prewhere_column_name = prewhere_info->prewhere_column_name;
-//        prewhere_actions->remove_prewhere_column = prewhere_info->remove_prewhere_column;
-//        prewhere_actions->need_filter = prewhere_info->need_filter;
 
         PrewhereExprStep prewhere_step
         {
@@ -103,12 +95,6 @@ MergeTreeBaseSelectProcessor::MergeTreeBaseSelectProcessor(
         };
 
         prewhere_actions->steps.emplace_back(std::move(prewhere_step));
-
-
-//        std::cerr
-//            << "PREWHERE ========================\n"
-//            << prewhere_actions->dump()
-//            << "========================\n\n";
     }
 }
 
@@ -236,14 +222,17 @@ void MergeTreeBaseSelectProcessor::initializeRangeReaders(MergeTreeReadTask & cu
 
     if (prewhere_info)
     {
-        assert(prewhere_actions->steps.size() == pre_reader_for_step.size());
+        if (prewhere_actions->steps.size() != pre_reader_for_step.size())
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                            "PREWHERE steps count mismatch, actions: {}, readers: {}",
+                            prewhere_actions->steps.size(), pre_reader_for_step.size());
+
 
         for (size_t i = 0; i < prewhere_actions->steps.size(); ++i)
         {
             last_reader = reader->getColumns().empty() && (i + 1 == prewhere_actions->steps.size());
             current_task.pre_range_reader.push_back(
                 MergeTreeRangeReader(pre_reader_for_step[i].get(), prev_reader, &prewhere_actions->steps[i], last_reader, non_const_virtual_column_names));
-
 
             prev_reader = &current_task.pre_range_reader.back();
         }
@@ -256,41 +245,14 @@ void MergeTreeBaseSelectProcessor::initializeRangeReaders(MergeTreeReadTask & cu
     }
     else
     {
-        // HACK!!
-        // If all columns are read by pre_range_readers than move last pre_range_reader into range_reader
+        /// If all columns are read by pre_range_readers than move last pre_range_reader into range_reader
         current_task.range_reader = std::move(current_task.pre_range_reader.back());
         current_task.pre_range_reader.pop_back();
     }
-
-/*
-    if (prewhere_info)
-    {
-        if (reader->getColumns().empty())
-        {
-            current_task.range_reader = MergeTreeRangeReader(pre_reader.get(), nullptr, prewhere_actions.get(), true, non_const_virtual_column_names);
-        }
-        else
-        {
-            MergeTreeRangeReader * pre_reader_ptr = nullptr;
-            if (pre_reader != nullptr)
-            {
-                current_task.pre_range_reader = MergeTreeRangeReader(pre_reader.get(), nullptr, prewhere_actions.get(), false, non_const_virtual_column_names);
-                pre_reader_ptr = &current_task.pre_range_reader;
-            }
-
-            current_task.range_reader = MergeTreeRangeReader(reader.get(), pre_reader_ptr, nullptr, true, non_const_virtual_column_names);
-        }
-    }
-    else
-    {
-        current_task.range_reader = MergeTreeRangeReader(reader.get(), nullptr, nullptr, true, non_const_virtual_column_names);
-    }
-//*/
 }
 
 static UInt64 estimateNumRows(const MergeTreeReadTask & current_task, UInt64 current_preferred_block_size_bytes,
-                UInt64 current_max_block_size_rows, UInt64 current_preferred_max_column_in_block_size_bytes, double min_filtration_ratio)
-        //, const MergeTreeRangeReader & current_reader)
+    UInt64 current_max_block_size_rows, UInt64 current_preferred_max_column_in_block_size_bytes, double min_filtration_ratio)
 {
     const MergeTreeRangeReader & current_reader = current_task.range_reader;
 
@@ -339,7 +301,7 @@ Chunk MergeTreeBaseSelectProcessor::readFromPartImpl()
     const double min_filtration_ratio = 0.00001;
 
     UInt64 recommended_rows = estimateNumRows(*task, current_preferred_block_size_bytes,
-        current_max_block_size_rows, current_preferred_max_column_in_block_size_bytes, min_filtration_ratio);//, task->range_reader);
+        current_max_block_size_rows, current_preferred_max_column_in_block_size_bytes, min_filtration_ratio);
     UInt64 rows_to_read = std::max(static_cast<UInt64>(1), std::min(current_max_block_size_rows, recommended_rows));
 
     auto read_result = task->range_reader.read(rows_to_read, task->mark_ranges);
