@@ -219,7 +219,7 @@ int compressFiles(char* filenames[], int count, int output_fd, int level, const 
             continue;
         }
 
-        printf("Size: %ld\n", info_in.st_size);
+        printf("Size: %lld\n", info_in.st_size);
 
         /// Save umask
         files_data[i].umask = info_in.st_mode;
