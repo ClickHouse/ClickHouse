@@ -667,6 +667,34 @@ Coordination::Error ZooKeeper::tryMulti(const Coordination::Requests & requests,
     return code;
 }
 
+Coordination::Error ZooKeeper::syncImpl(const std::string & path, std::string & returned_path)
+{
+    auto future_result = asyncTrySyncNoThrow(path);
+
+    if (future_result.wait_for(std::chrono::milliseconds(operation_timeout_ms)) != std::future_status::ready)
+    {
+        impl->finalize(fmt::format("Operation timeout on {} {}", toString(Coordination::OpNum::Sync), path));
+        return Coordination::Error::ZOPERATIONTIMEOUT;
+    }
+    else
+    {
+        auto response = future_result.get();
+        Coordination::Error code = response.error;
+        returned_path = std::move(response.path);
+        return code;
+    }
+}
+std::string ZooKeeper::sync(const std::string & path)
+{
+    std::string returned_path;
+    check(syncImpl(path, returned_path), path);
+    return returned_path;
+}
+
+Coordination::Error ZooKeeper::trySync(const std::string & path, std::string & returned_path)
+{
+    return syncImpl(path, returned_path);
+}
 
 void ZooKeeper::removeChildren(const std::string & path)
 {
@@ -1142,6 +1170,37 @@ Coordination::Error ZooKeeper::tryMultiNoThrow(const Coordination::Requests & re
     {
         return e.code;
     }
+}
+
+std::future<Coordination::SyncResponse> ZooKeeper::asyncTrySyncNoThrow(const std::string & path)
+{
+    auto promise = std::make_shared<std::promise<Coordination::SyncResponse>>();
+    auto future = promise->get_future();
+
+    auto callback = [promise](const Coordination::SyncResponse & response) mutable
+    {
+        promise->set_value(response);
+    };
+
+    impl->sync(path, std::move(callback));
+    return future;
+}
+
+std::future<Coordination::SyncResponse> ZooKeeper::asyncSync(const std::string & path)
+{
+    auto promise = std::make_shared<std::promise<Coordination::SyncResponse>>();
+    auto future = promise->get_future();
+
+    auto callback = [promise](const Coordination::SyncResponse & response) mutable
+    {
+        if (response.error != Coordination::Error::ZOK)
+            promise->set_exception(std::make_exception_ptr(KeeperException(response.error)));
+        else
+            promise->set_value(response);
+    };
+
+    impl->sync(path, std::move(callback));
+    return future;
 }
 
 void ZooKeeper::finalize(const String & reason)

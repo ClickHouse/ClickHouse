@@ -106,14 +106,11 @@ struct ZooKeeperSyncRequest final : ZooKeeperRequest
     size_t bytesSize() const override { return ZooKeeperRequest::bytesSize() + path.size(); }
 };
 
-struct ZooKeeperSyncResponse final : ZooKeeperResponse
+struct ZooKeeperSyncResponse final : SyncResponse, ZooKeeperResponse
 {
-    String path;
     void readImpl(ReadBuffer & in) override;
     void writeImpl(WriteBuffer & out) const override;
     OpNum getOpNum() const override { return OpNum::Sync; }
-
-    size_t bytesSize() const override { return path.size(); }
 };
 
 struct ZooKeeperHeartbeatResponse final : ZooKeeperResponse

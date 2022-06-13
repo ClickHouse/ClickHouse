@@ -133,6 +133,14 @@ struct TestKeeperCheckRequest final : CheckRequest, TestKeeperRequest
     std::pair<ResponsePtr, Undo> process(TestKeeper::Container & container, int64_t zxid) const override;
 };
 
+struct TestKeeperSyncRequest final : SyncRequest, TestKeeperRequest
+{
+    TestKeeperSyncRequest() = default;
+    explicit TestKeeperSyncRequest(const SyncRequest & base) : SyncRequest(base) {}
+    ResponsePtr createResponse() const override;
+    std::pair<ResponsePtr, Undo> process(TestKeeper::Container & container, int64_t zxid) const override;
+};
+
 struct TestKeeperMultiRequest final : MultiRequest, TestKeeperRequest
 {
     explicit TestKeeperMultiRequest(const Requests & generic_requests)
@@ -413,6 +421,14 @@ std::pair<ResponsePtr, Undo> TestKeeperCheckRequest::process(TestKeeper::Contain
     return { std::make_shared<CheckResponse>(response), {} };
 }
 
+std::pair<ResponsePtr, Undo> TestKeeperSyncRequest::process(TestKeeper::Container & /*container*/, int64_t) const
+{
+    SyncResponse response;
+    response.path = path;
+
+    return { std::make_shared<SyncResponse>(std::move(response)), {} };
+}
+
 std::pair<ResponsePtr, Undo> TestKeeperMultiRequest::process(TestKeeper::Container & container, int64_t zxid) const
 {
     MultiResponse response;
@@ -471,6 +487,7 @@ ResponsePtr TestKeeperGetRequest::createResponse() const { return std::make_shar
 ResponsePtr TestKeeperSetRequest::createResponse() const { return std::make_shared<SetResponse>(); }
 ResponsePtr TestKeeperListRequest::createResponse() const { return std::make_shared<ListResponse>(); }
 ResponsePtr TestKeeperCheckRequest::createResponse() const { return std::make_shared<CheckResponse>(); }
+ResponsePtr TestKeeperSyncRequest::createResponse() const { return std::make_shared<SyncResponse>(); }
 ResponsePtr TestKeeperMultiRequest::createResponse() const { return std::make_shared<MultiResponse>(); }
 
 
@@ -776,6 +793,19 @@ void TestKeeper::check(
     RequestInfo request_info;
     request_info.request = std::make_shared<TestKeeperCheckRequest>(std::move(request));
     request_info.callback = [callback](const Response & response) { callback(dynamic_cast<const CheckResponse &>(response)); };
+    pushRequest(std::move(request_info));
+}
+
+void TestKeeper::sync(
+        const String & path,
+        SyncCallback callback)
+{
+    TestKeeperSyncRequest request;
+    request.path = path;
+
+    RequestInfo request_info;
+    request_info.request = std::make_shared<TestKeeperSyncRequest>(std::move(request));
+    request_info.callback = [callback](const Response & response) { callback(dynamic_cast<const SyncResponse &>(response)); };
     pushRequest(std::move(request_info));
 }
 
