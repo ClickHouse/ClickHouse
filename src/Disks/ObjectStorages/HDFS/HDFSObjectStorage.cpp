@@ -11,6 +11,7 @@
 #include <Disks/IO/ReadIndirectBufferFromRemoteFS.h>
 #include <Disks/IO/WriteIndirectBufferFromRemoteFS.h>
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
+#include <Common/getRandomASCIIString.h>
 
 
 #if USE_HDFS
@@ -30,6 +31,11 @@ void HDFSObjectStorage::shutdown()
 
 void HDFSObjectStorage::startup()
 {
+}
+
+std::string HDFSObjectStorage::generateBlobNameForPath(const std::string & /* path */)
+{
+    return getRandomASCIIString();
 }
 
 bool HDFSObjectStorage::exists(const std::string & hdfs_uri) const

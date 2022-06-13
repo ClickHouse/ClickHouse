@@ -102,6 +102,10 @@ public:
 
     String getUniqueIdForBlob(const String & path) override { return path; }
 
+    std::string generateBlobNameForPath(const std::string & path) override;
+
+    bool isRemote() const override { return true; }
+
 private:
     const String name;
     /// client used to access the files in the Blob Storage cloud

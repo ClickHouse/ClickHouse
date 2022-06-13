@@ -80,6 +80,14 @@ public:
 
     String getUniqueIdForBlob(const String & path) override;
 
+    const String & getCacheBasePath() const override { return cache->getBasePath(); }
+
+    std::string generateBlobNameForPath(const std::string & path) override;
+
+    bool isRemote() const override { return object_storage->isRemote(); }
+
+    void removeCacheIfExists(const std::string & path) override;
+
 private:
     IFileCache::Key getCacheKey(const std::string & path) const;
     String getCachePath(const std::string & path) const;

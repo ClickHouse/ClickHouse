@@ -33,7 +33,7 @@ class IMetadataStorage;
 /// interface. This transaction is more like "batch operation" than real "transaction".
 ///
 /// But for better usability we can get MetadataStorage interface and use some read methods.
-struct IMetadataTransaction : private boost::noncopyable
+class IMetadataTransaction : private boost::noncopyable
 {
 public:
     virtual void commit() = 0;
@@ -95,6 +95,8 @@ using MetadataTransactionPtr = std::shared_ptr<IMetadataTransaction>;
 /// small amounts of data (strings).
 class IMetadataStorage : private boost::noncopyable
 {
+friend class MetadataStorageFromDiskTransaction;
+
 public:
     virtual MetadataTransactionPtr createTransaction() const = 0;
 
@@ -132,6 +134,11 @@ public:
 
     /// Return [(remote_path, size_in_bytes), ...] for metadata path
     virtual BlobsPathToSize getBlobs(const std::string & path) const = 0;
+
+    virtual DiskPtr getDisk() const = 0;
+
+protected:
+    mutable std::shared_mutex metadata_mutex;
 };
 
 using MetadataStoragePtr = std::shared_ptr<IMetadataStorage>;

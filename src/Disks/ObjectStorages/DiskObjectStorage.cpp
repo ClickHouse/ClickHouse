@@ -10,7 +10,6 @@
 #include <Common/quoteString.h>
 #include <Common/logger_useful.h>
 #include <Common/checkStackSize.h>
-#include <Common/getRandomASCIIString.h>
 #include <boost/algorithm/string.hpp>
 #include <Common/filesystemHelpers.h>
 #include <Disks/IO/ThreadPoolRemoteFSReader.h>
@@ -237,7 +236,7 @@ bool DiskObjectStorage::removeSharedFile(const String & path, bool delete_metada
     std::vector<String> paths_to_remove;
     removeMetadata(path, paths_to_remove);
 
-    bool remove_from_remote_fs = !delete_metadata_only && !paths_to_remove.empty();
+    bool remove_from_remote_fs = !paths_to_remove.empty() && !delete_metadata_only;
 
     if (remove_from_remote_fs)
         removeFromObjectStorage(paths_to_remove);
@@ -247,6 +246,9 @@ bool DiskObjectStorage::removeSharedFile(const String & path, bool delete_metada
 
 void DiskObjectStorage::removeFromObjectStorage(const std::vector<String> & paths)
 {
+    if (!object_storage->isRemote())
+        return;
+
     object_storage->removeObjects(paths);
 }
 
@@ -384,7 +386,7 @@ Poco::Timestamp DiskObjectStorage::getLastModified(const String & path)
 
 void DiskObjectStorage::removeMetadata(const String & path, std::vector<String> & paths_to_remove)
 {
-    LOG_TRACE(log, "Remove file by path: {}", backQuote(metadata_storage->getPath() + path));
+    LOG_TEST(log, "Remove file by path: {}", backQuote(metadata_storage->getPath() + path));
 
     if (!metadata_storage->exists(path))
         throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Metadata path '{}' doesn't exist", path);
@@ -392,19 +394,28 @@ void DiskObjectStorage::removeMetadata(const String & path, std::vector<String> 
     if (!metadata_storage->isFile(path))
         throw Exception(ErrorCodes::BAD_FILE_TYPE, "Path '{}' is not a regular file", path);
 
-
     try
     {
         uint32_t hardlink_count = metadata_storage->getHardlinkCount(path);
         auto remote_objects = metadata_storage->getRemotePaths(path);
 
+        bool is_remote = object_storage->isRemote();
+        if (!is_remote)
+            object_storage->removeCacheIfExists(path);
+
         auto tx = metadata_storage->createTransaction();
         tx->unlinkMetadata(path);
         tx->commit();
+        LOG_TEST(log, "Remove file by path: {} hardlink count: {}", backQuote(metadata_storage->getPath() + path), hardlink_count);
 
         if (hardlink_count == 0)
         {
             paths_to_remove = remote_objects;
+            if (is_remote)
+            {
+                for (const auto & path_to_remove : paths_to_remove)
+                    object_storage->removeCacheIfExists(path_to_remove);
+            }
         }
     }
     catch (const Exception & e)
@@ -483,7 +494,8 @@ bool DiskObjectStorage::removeSharedFileIfExists(const String & path, bool delet
     {
         removeMetadata(path, paths_to_remove);
 
-        remove_from_remote_fs = !delete_metadata_only && !paths_to_remove.empty();
+        remove_from_remote_fs = !paths_to_remove.empty() && !delete_metadata_only;
+
         if (remove_from_remote_fs)
             removeFromObjectStorage(paths_to_remove);
     }
@@ -501,7 +513,8 @@ void DiskObjectStorage::removeSharedRecursive(const String & path, bool keep_all
         std::vector<String> remove_from_remote;
         for (auto && [local_path, remote_paths] : paths_to_remove)
         {
-            if (!file_names_remove_metadata_only.contains(fs::path(local_path).filename()))
+            bool remove_from_remote_fs = !file_names_remove_metadata_only.contains(fs::path(local_path).filename());
+            if (remove_from_remote_fs)
             {
                 remove_from_remote.insert(remove_from_remote.end(), remote_paths.begin(), remote_paths.end());
             }
@@ -574,8 +587,12 @@ std::unique_ptr<ReadBufferFromFileBase> DiskObjectStorage::readFile(
     std::optional<size_t> read_hint,
     std::optional<size_t> file_size) const
 {
-    LOG_ERROR(log, "Read file: {}", path);
-    return object_storage->readObjects(object_storage_root_path, metadata_storage->getBlobs(path), settings, read_hint, file_size);
+    return object_storage->readObjects(
+        object_storage_root_path,
+        metadata_storage->getBlobs(path),
+        updateSettingsForReadWrite(path, settings),
+        read_hint,
+        file_size);
 }
 
 std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorage::writeFile(
@@ -584,8 +601,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorage::writeFile(
     WriteMode mode,
     const WriteSettings & settings)
 {
-    LOG_ERROR(log, "Write to file: {}", path);
-    auto blob_name = getRandomASCIIString();
+    auto blob_name = object_storage->generateBlobNameForPath(path);
 
     std::optional<ObjectAttributes> object_attributes;
     if (send_metadata)
@@ -615,7 +631,6 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorage::writeFile(
         mode = WriteMode::Rewrite;
     }
 
-    LOG_ERROR(log, "ACTUAL Write to file: {}", (fs::path(object_storage_root_path) / blob_name).string());
     return object_storage->writeObject(
         fs::path(object_storage_root_path) / blob_name,
         mode,

@@ -18,6 +18,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int CANNOT_USE_CACHE;
+    extern const int CANNOT_STAT;
 }
 
 CachedObjectStorage:: CachedObjectStorage(ObjectStoragePtr object_storage_, FileCachePtr cache_)
@@ -25,6 +26,7 @@ CachedObjectStorage:: CachedObjectStorage(ObjectStoragePtr object_storage_, File
     , cache(cache_)
     , log(&Poco::Logger::get("CachedOjectStorage"))
 {
+    cache->initialize();
 }
 
 IFileCache::Key CachedObjectStorage::getCacheKey(const std::string & path) const
@@ -37,6 +39,11 @@ String CachedObjectStorage::getCachePath(const std::string & path) const
 {
     IFileCache::Key cache_key = getCacheKey(path);
     return cache->getPathInLocalCache(cache_key);
+}
+
+std::string CachedObjectStorage::generateBlobNameForPath(const std::string & path)
+{
+    return object_storage->generateBlobNameForPath(path);
 }
 
 ReadSettings CachedObjectStorage::getReadSettingsForCache(const ReadSettings & read_settings) const
@@ -52,7 +59,6 @@ ReadSettings CachedObjectStorage::getReadSettingsForCache(const ReadSettings & r
 
 void CachedObjectStorage::startup()
 {
-    cache->initialize();
     object_storage->startup();
 }
 
@@ -141,6 +147,7 @@ std::unique_ptr<ReadBufferFromFileBase> CachedObjectStorage::readObject( /// NOL
         };
 
         IFileCache::Key key = getCacheKey(path);
+        LOG_TEST(log, "Reading from file `{}` with cache key `{}`", path, getCacheKey(path).toString());
         return std::make_unique<CachedReadBufferFromFile>(
             path,
             key,
@@ -171,9 +178,8 @@ std::unique_ptr<WriteBufferFromFileBase> CachedObjectStorage::writeObject( /// N
 
     if (cache_on_write)
     {
-        LOG_TRACE(log, "Caching file `{}` to `{}`", path, getCachePath(path));
-
         auto key = getCacheKey(path);
+        LOG_TEST(log, "Caching file `{}` to `{}` with key {}", path, getCachePath(path), key.toString());
         return std::make_unique<CachedWriteBufferFromFile>(
             std::move(impl),
             cache,
@@ -187,29 +193,46 @@ std::unique_ptr<WriteBufferFromFileBase> CachedObjectStorage::writeObject( /// N
     return impl;
 }
 
+void CachedObjectStorage::removeCacheIfExists(const std::string & path)
+{
+    IFileCache::Key key;
+    try
+    {
+        key = getCacheKey(path);
+    }
+    catch (Exception & e)
+    {
+        if (e.code() == ErrorCodes::CANNOT_STAT)
+            return;
+        throw;
+    }
+    cache->removeIfExists(key);
+}
+
 void CachedObjectStorage::removeObject(const std::string & path)
 {
+    removeCacheIfExists(path);
     object_storage->removeObject(path);
 }
 
 void CachedObjectStorage::removeObjects(const std::vector<std::string> & paths)
 {
     for (const auto & path : paths)
-        cache->removeIfExists(getCacheKey(path));
+        removeCacheIfExists(path);
 
     object_storage->removeObjects(paths);
 }
 
 void CachedObjectStorage::removeObjectIfExists(const std::string & path)
 {
-    cache->removeIfExists(getCacheKey(path));
+    removeCacheIfExists(path);
     object_storage->removeObjectIfExists(path);
 }
 
 void CachedObjectStorage::removeObjectsIfExist(const std::vector<std::string> & paths)
 {
     for (const auto & path : paths)
-        cache->removeIfExists(getCacheKey(path));
+        removeCacheIfExists(path);
 
     object_storage->removeObjectsIfExist(paths);
 }

@@ -5,6 +5,12 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
+
 AsynchronousReaderPtr IObjectStorage::getThreadPoolReader()
 {
     constexpr size_t pool_size = 50;
@@ -30,6 +36,11 @@ void IObjectStorage::copyObjectToAnotherObjectStorage(const std::string & object
     auto out = object_storage_to.writeObject(object_to, WriteMode::Rewrite);
     copyData(*in, *out);
     out->finalize();
+}
+
+const std::string & IObjectStorage::getCacheBasePath() const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "getCacheBasePath() is not implemented for object storage");
 }
 
 }

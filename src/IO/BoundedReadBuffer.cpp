@@ -40,7 +40,7 @@ bool BoundedReadBuffer::nextImpl()
     auto result = impl->next();
     swap(*impl);
 
-    if (read_until_position)
+    if (result && read_until_position)
     {
         size_t remaining_size_to_read = *read_until_position - file_offset_of_buffer_end;
         if (working_buffer.size() > remaining_size_to_read)
@@ -54,7 +54,6 @@ bool BoundedReadBuffer::nextImpl()
             working_buffer.resize(remaining_size_to_read);
         }
     }
-
     file_offset_of_buffer_end += available();
     return result;
 }

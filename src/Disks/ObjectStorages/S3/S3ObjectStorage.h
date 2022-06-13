@@ -105,11 +105,15 @@ public:
 
     void applyNewSettings(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, ContextPtr context) override;
 
-    String getObjectsNamespace() const override { return bucket; }
+    std::string getObjectsNamespace() const override { return bucket; }
 
     std::unique_ptr<IObjectStorage> cloneObjectStorage(const std::string & new_namespace, const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, ContextPtr context) override;
 
-    String getUniqueIdForBlob(const String & path) override { return path; }
+    std::string getUniqueIdForBlob(const std::string & path) override { return path; }
+
+    std::string generateBlobNameForPath(const std::string & path) override;
+
+    bool isRemote() const override { return true; }
 
 private:
     void setNewSettings(std::unique_ptr<S3ObjectStorageSettings> && s3_settings_);
