@@ -11,10 +11,9 @@ TMP_PATH=${CLICKHOUSE_TEST_UNIQUE_NAME}
 QUERIES_FILE=02226_filesystem_cache_profile_events.queries
 TEST_FILE=$CUR_DIR/filesystem_cache_queries/$QUERIES_FILE
 
-for storagePolicy in 's3_cache' 'local_cache'; do
-    echo "Using storage policy: $storagePolicy"
-    cat $TEST_FILE | sed -e "s/_storagePolicy/${storagePolicy}/"  > $TMP_PATH
-    ${CLICKHOUSE_CLIENT} --queries-file $TMP_PATH
-    rm $TMP_PATH
-    echo
-done
+#for storagePolicy in 's3_cache'; do
+echo "Using storage policy: $storagePolicy"
+cat $TEST_FILE | sed -e "s/_storagePolicy/s3_cache/"  > $TMP_PATH
+${CLICKHOUSE_CLIENT} --queries-file $TMP_PATH
+rm $TMP_PATH
+echo

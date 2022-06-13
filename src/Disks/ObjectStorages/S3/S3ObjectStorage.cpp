@@ -25,6 +25,7 @@
 
 #include <Common/IFileCache.h>
 #include <Common/FileCacheFactory.h>
+#include <Common/getRandomASCIIString.h>
 
 namespace DB
 {
@@ -71,6 +72,11 @@ void logIfError(const Aws::Utils::Outcome<Result, Error> & response, std::functi
     }
 }
 
+}
+
+std::string S3ObjectStorage::generateBlobNameForPath(const std::string & /* path */)
+{
+    return getRandomASCIIString();
 }
 
 Aws::S3::Model::HeadObjectOutcome S3ObjectStorage::requestObjectHeadData(const std::string & bucket_from, const std::string & key) const

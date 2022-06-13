@@ -4,33 +4,23 @@
 
 #include <Disks/IDisk.h>
 #include <Disks/ObjectStorages/DiskObjectStorageMetadata.h>
+#include <Disks/ObjectStorages/MetadataStorageFromDiskTransaction.h>
 
 namespace DB
 {
 
-enum class MetadataFromDiskTransactionState
-{
-    PREPARING,
-    FAILED,
-    COMMITTED,
-    PARTIALLY_ROLLED_BACK,
-};
-
-std::string toString(MetadataFromDiskTransactionState state);
-
-class MetadataStorageFromDisk final : public IMetadataStorage
+class MetadataStorageFromRemoteDisk final : public IMetadataStorage
 {
 private:
-    friend struct MetadataStorageFromDiskTransaction;
+    friend class MetadataStorageFromRemoteDiskTransaction;
 
     DiskPtr disk;
     std::string root_path_for_remote_metadata;
-    mutable std::shared_mutex metadata_mutex;
 
 public:
-    MetadataStorageFromDisk(DiskPtr disk_, const std::string & root_path_from_remote_metadata_)
+    MetadataStorageFromRemoteDisk(DiskPtr disk_, const std::string & root_path_for_remote_metadata_)
         : disk(disk_)
-        , root_path_for_remote_metadata(root_path_from_remote_metadata_)
+        , root_path_for_remote_metadata(root_path_for_remote_metadata_)
     {
     }
 
@@ -62,34 +52,26 @@ public:
 
     uint32_t getHardlinkCount(const std::string & path) const override;
 
+    std::string getMetadataPath() const { return root_path_for_remote_metadata; }
+
+    DiskPtr getDisk() const override { return disk; }
 
 private:
     DiskObjectStorageMetadataPtr readMetadata(const std::string & path) const;
+
     DiskObjectStorageMetadataPtr readMetadataUnlocked(const std::string & path, std::shared_lock<std::shared_mutex> & lock) const;
 };
 
-struct MetadataStorageFromDiskTransaction final : public IMetadataTransaction
+class MetadataStorageFromRemoteDiskTransaction final : public MetadataStorageFromDiskTransaction
 {
 private:
-    const MetadataStorageFromDisk & metadata_storage;
-
-    std::vector<MetadataOperationPtr> operations;
-    MetadataFromDiskTransactionState state{MetadataFromDiskTransactionState::PREPARING};
-
-    void addOperation(MetadataOperationPtr && operation);
-    void rollback(size_t until_pos);
+    const MetadataStorageFromRemoteDisk & metadata_storage_for_remote;
 
 public:
-    explicit MetadataStorageFromDiskTransaction(const MetadataStorageFromDisk & metadata_storage_)
-        : metadata_storage(metadata_storage_)
+    explicit MetadataStorageFromRemoteDiskTransaction(const MetadataStorageFromRemoteDisk & metadata_storage_)
+        : MetadataStorageFromDiskTransaction(metadata_storage_)
+        , metadata_storage_for_remote(metadata_storage_)
     {}
-
-    const IMetadataStorage & getStorageForNonTransactionalReads() const override
-    {
-        return metadata_storage;
-    }
-
-    void commit() override;
 
     void writeStringToFile(const std::string & path, const std::string & data) override;
 
@@ -122,8 +104,6 @@ public:
     void replaceFile(const std::string & path_from, const std::string & path_to) override;
 
     void unlinkMetadata(const std::string & path) override;
-
-    ~MetadataStorageFromDiskTransaction() override = default;
 };
 
 

@@ -6,7 +6,8 @@
 #include <Poco/Logger.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
-#include <Disks/ObjectStorages/MetadataStorageFromDisk.h>
+#include <Disks/ObjectStorages/MetadataStorageFromRemoteDisk.h>
+#include <Disks/ObjectStorages/MetadataStorageFromLocalDisk.h>
 
 namespace DB
 {
@@ -114,6 +115,12 @@ SyncGuardPtr IDisk::getDirectorySyncGuard(const String & /* path */) const
     return nullptr;
 }
 
-MetadataStoragePtr IDisk::getMetadataStorage() { return std::make_shared<MetadataStorageFromDisk>(std::static_pointer_cast<IDisk>(shared_from_this()), ""); }
+MetadataStoragePtr IDisk::getMetadataStorage()
+{
+    if (isRemote())
+        return std::make_shared<MetadataStorageFromRemoteDisk>(std::static_pointer_cast<IDisk>(shared_from_this()), "");
+    else
+        return std::make_shared<MetadataStorageFromLocalDisk>(std::static_pointer_cast<IDisk>(shared_from_this()));
+}
 
 }

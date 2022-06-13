@@ -78,6 +78,10 @@ public:
 
     String getUniqueIdForBlob(const String & path) override;
 
+    std::string generateBlobNameForPath(const std::string & path) override { return path; }
+
+    bool isRemote() const override { return false; }
+
 private:
 };
 

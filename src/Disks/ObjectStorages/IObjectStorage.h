@@ -93,6 +93,8 @@ public:
         size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
         const WriteSettings & write_settings = {}) = 0;
 
+    virtual bool isRemote() const = 0;
+
     /// Remove object. Throws exception if object doesn't exists.
     virtual void removeObject(const std::string & path) = 0;
 
@@ -124,7 +126,9 @@ public:
     virtual ~IObjectStorage() = default;
 
     /// Path to directory with objects cache
-    virtual std::string getCacheBasePath() const { return ""; }
+    virtual const std::string & getCacheBasePath() const;
+
+    virtual std::string generateBlobNameForPath(const std::string & path) = 0;
 
     static AsynchronousReaderPtr getThreadPoolReader();
 
@@ -148,6 +152,8 @@ public:
     virtual String getUniqueIdForBlob(const String & path) = 0;
 
     virtual bool supportsAppend() const { return false; }
+
+    virtual void removeCacheIfExists(const std::string & /* path */) {}
 };
 
 using ObjectStoragePtr = std::shared_ptr<IObjectStorage>;

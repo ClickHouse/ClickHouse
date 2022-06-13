@@ -2,12 +2,14 @@
 
 #if USE_AZURE_BLOB_STORAGE
 
+#include <Common/getRandomASCIIString.h>
 #include <IO/ReadBufferFromAzureBlobStorage.h>
 #include <IO/WriteBufferFromAzureBlobStorage.h>
 #include <IO/SeekAvoidingReadBuffer.h>
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
 
 #include <Disks/ObjectStorages/AzureBlobStorage/AzureBlobStorageAuth.h>
+
 
 namespace DB
 {
@@ -28,6 +30,11 @@ AzureObjectStorage::AzureObjectStorage(
     , client(std::move(client_))
     , settings(std::move(settings_))
 {
+}
+
+std::string AzureObjectStorage::generateBlobNameForPath(const std::string & /* path */)
+{
+    return getRandomASCIIString();
 }
 
 bool AzureObjectStorage::exists(const std::string & uri) const
