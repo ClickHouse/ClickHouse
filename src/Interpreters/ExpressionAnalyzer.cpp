@@ -921,7 +921,13 @@ void ExpressionAnalyzer::makeWindowDescriptions(ActionsDAGPtr actions)
         WindowFunctionsUtils::collectWindowFunctionsFromExpression(function_node, functions);
 
         if (functions.size() != 1 || functions.front() != function_node)
+        {
             window_description->expressions_with_window_functions.push_back(function_node);
+            if (function_node->window_definition)
+            {
+                getRootActionsNoMakeSet(function_node->window_definition, actions);
+            }
+        }
 
         for (const auto * function : functions)
         {

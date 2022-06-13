@@ -467,6 +467,15 @@ public:
     }
 
     bool contains(const std::string & name) const { return map.contains(name); }
+
+    std::vector<std::string_view> getAllNames() const
+    {
+        std::vector<std::string_view> result;
+        result.reserve(map.size());
+        for (auto const & e : map)
+            result.emplace_back(e.first);
+        return result;
+    }
 };
 
 ActionsMatcher::Data::Data(
@@ -504,6 +513,12 @@ ActionsMatcher::Data::Data(
 bool ActionsMatcher::Data::hasColumn(const String & column_name) const
 {
     return actions_stack.getLastActionsIndex().contains(column_name);
+}
+
+std::vector<std::string_view> ActionsMatcher::Data::getAllColumnNames() const
+{
+    const auto & index = actions_stack.getLastActionsIndex();
+    return index.getAllNames();
 }
 
 ScopeStack::ScopeStack(ActionsDAGPtr actions_dag, ContextPtr context_) : WithContext(context_)
@@ -805,8 +820,9 @@ void ActionsMatcher::visit(const ASTIdentifier & identifier, const ASTPtr &, Dat
         {
             if (column_name_type.name == column_name)
             {
-                throw Exception("Column " + backQuote(column_name) + " is not under aggregate function and not in GROUP BY",
-                                ErrorCodes::NOT_AN_AGGREGATE);
+                throw Exception(ErrorCodes::NOT_AN_AGGREGATE,
+                    "Column {} is not under aggregate function and not in GROUP BY. Have columns: {}",
+                    backQuote(column_name), toString(data.getAllColumnNames()));
             }
         }
 
@@ -936,7 +952,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
         }
         data.window_function_called = subtree_contains_window_call
             || (!subtree_contains_window_call && is_aggregate_function);
-        if (subtree_contains_window_call && !data.build_expression_with_window_functions)
+        if (data.window_function_called.value())
             return;
     }
     else if (node.is_window_function)
