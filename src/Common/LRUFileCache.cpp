@@ -458,8 +458,129 @@ FileSegmentPtr LRUFileCache::setDownloading(
     return cell->file_segment;
 }
 
-bool LRUFileCache::tryReserve(
-    const Key & key, size_t offset, size_t size, std::lock_guard<std::mutex> & cache_lock)
+bool LRUFileCache::tryReserve(const Key & key, size_t offset, size_t size, std::lock_guard<std::mutex> & cache_lock)
+{
+    auto query_context = enable_filesystem_query_cache_limit ? getCurrentQueryContext(cache_lock) : nullptr;
+    if (!query_context)
+        return tryReserveForMainList(key, offset, size, nullptr, cache_lock);
+
+    /// The maximum cache capacity of the request is not reached, thus the
+    //// cache block is evicted from the main LRU queue by tryReserveForMainList().
+    else if (query_context->getCacheSize() + size <= query_context->getMaxCacheSize())
+        return tryReserveForMainList(key, offset, size, query_context, cache_lock);
+
+    /// When skip_download_if_exceeds_query_cache is true, there is no need
+    /// to evict old data, skip the cache and read directly from remote fs.
+    else if (query_context->isSkipDownloadIfExceed())
+        return false;
+
+    /// The maximum cache size of the query is reached, the cache will be
+    /// evicted from the history cache accessed by the current query.
+    else
+    {
+        size_t removed_size = 0;
+        size_t queue_size = queue.getElementsNum(cache_lock);
+
+        auto * cell_for_reserve = getCell(key, offset, cache_lock);
+
+        std::vector<IFileCache::LRUQueue::Iterator> ghost;
+        std::vector<FileSegmentCell *> trash;
+        std::vector<FileSegmentCell *> to_evict;
+
+        auto is_overflow = [&]
+        {
+            return (max_size != 0 && queue.getTotalCacheSize(cache_lock) + size - removed_size > max_size)
+            || (max_element_size != 0 && queue_size > max_element_size)
+            || (query_context->getCacheSize() + size - removed_size > query_context->getMaxCacheSize());
+        };
+
+        /// Select the cache from the LRU queue held by query for expulsion.
+        for (auto iter = query_context->queue().begin(); iter != query_context->queue().end(); iter++)
+        {
+            if (!is_overflow())
+                break;
+
+            auto * cell = getCell(iter->key, iter->offset, cache_lock);
+
+            if (!cell)
+            {
+                /// The cache corresponding to this record may be swapped out by
+                /// other queries, so it has become invalid.
+                ghost.push_back(iter);
+                removed_size += iter->size;
+            }
+            else
+            {
+                size_t cell_size = cell->size();
+                assert(iter->size == cell_size);
+
+                if (cell->releasable())
+                {
+                    auto & file_segment = cell->file_segment;
+                    std::lock_guard segment_lock(file_segment->mutex);
+
+                    switch (file_segment->download_state)
+                    {
+                        case FileSegment::State::DOWNLOADED:
+                        {
+                            to_evict.push_back(cell);
+                            break;
+                        }
+                        default:
+                        {
+                            trash.push_back(cell);
+                            break;
+                        }
+                    }
+                    removed_size += cell_size;
+                    --queue_size;
+                }
+            }
+        }
+
+        auto remove_file_segment = [&](FileSegmentPtr file_segment, size_t file_segment_size)
+        {
+            query_context->remove(file_segment->key(), file_segment->offset(), file_segment_size, cache_lock);
+
+            std::lock_guard segment_lock(file_segment->mutex);
+            remove(file_segment->key(), file_segment->offset(), cache_lock, segment_lock);
+        };
+
+        assert(trash.empty());
+        for (auto & cell : trash)
+        {
+            if (auto file_segment = cell->file_segment)
+                remove_file_segment(file_segment, cell->size());
+        }
+
+        for (auto & iter : ghost)
+            query_context->remove(iter->key, iter->offset, iter->size, cache_lock);
+
+        if (is_overflow())
+            return false;
+
+        if (cell_for_reserve)
+        {
+            auto queue_iterator = cell_for_reserve->queue_iterator;
+            if (queue_iterator)
+                queue.incrementSize(*queue_iterator, size, cache_lock);
+            else
+                cell_for_reserve->queue_iterator = queue.add(key, offset, size, cache_lock);
+        }
+
+        for (auto & cell : to_evict)
+        {
+            if (auto file_segment = cell->file_segment)
+                remove_file_segment(file_segment, cell->size());
+        }
+
+        query_context->reserve(key, offset, size, cache_lock);
+        return true;
+    }
+}
+
+bool LRUFileCache::tryReserveForMainList(
+    const Key & key, size_t offset, size_t size, QueryContextPtr query_context, std::lock_guard<std::mutex> & cache_lock)
 {
     auto removed_size = 0;
     size_t queue_size = queue.getElementsNum(cache_lock);
@@ -477,7 +598,7 @@ bool LRUFileCache::tryReserve(
     auto is_overflow = [&]
     {
         /// max_size == 0 means unlimited cache size, max_element_size means unlimited number of cache elements.
-        return (max_size != 0 && queue.getTotalWeight(cache_lock) + size - removed_size > max_size)
+        return (max_size != 0 && queue.getTotalCacheSize(cache_lock) + size - removed_size > max_size)
             || (max_element_size != 0 && queue_size > max_element_size);
     };
 
@@ -530,18 +651,19 @@ bool LRUFileCache::tryReserve(
         }
     }
 
+    auto remove_file_segment = [&](FileSegmentPtr file_segment)
+    {
+        std::lock_guard segment_lock(file_segment->mutex);
+        remove(file_segment->key(), file_segment->offset(), cache_lock, segment_lock);
+    };
 
     /// This case is very unlikely, can happen in case of exception from
     /// file_segment->complete(), which would be a logical error.
     assert(trash.empty());
     for (auto & cell : trash)
     {
-        auto file_segment = cell->file_segment;
-        if (file_segment)
-        {
-            std::lock_guard segment_lock(file_segment->mutex);
-            remove(file_segment->key(), file_segment->offset(), cache_lock, segment_lock);
-        }
+        if (auto file_segment = cell->file_segment)
+            remove_file_segment(file_segment);
     }
 
     if (is_overflow())
@@ -562,16 +684,15 @@ bool LRUFileCache::tryReserve(
 
     for (auto & cell : to_evict)
     {
-        auto file_segment = cell->file_segment;
-        if (file_segment)
-        {
-            std::lock_guard<std::mutex> segment_lock(file_segment->mutex);
-            remove(file_segment->key(), file_segment->offset(), cache_lock, segment_lock);
-        }
+        if (auto file_segment = cell->file_segment)
+            remove_file_segment(file_segment);
     }
 
-    if (queue.getTotalWeight(cache_lock) > (1ull << 63))
+    if (queue.getTotalCacheSize(cache_lock) > (1ull << 63))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cache became inconsistent. There must be a bug");
+
+    if (query_context)
+        query_context->reserve(key, offset, size, cache_lock);
 
     return true;
 }
@@ -855,7 +976,6 @@ FileSegments LRUFileCache::getSnapshot() const
         for (const auto & [offset, cell] : cells_by_offset)
             file_segments.push_back(FileSegment::getSnapshot(cell.file_segment, cache_lock));
     }
-
     return file_segments;
 }
 
@@ -884,7 +1004,7 @@ size_t LRUFileCache::getUsedCacheSize() const
 
 size_t LRUFileCache::getUsedCacheSizeUnlocked(std::lock_guard<std::mutex> & cache_lock) const
 {
-    return queue.getTotalWeight(cache_lock);
+    return queue.getTotalCacheSize(cache_lock);
 }
 
 size_t LRUFileCache::getAvailableCacheSize() const
@@ -941,7 +1061,7 @@ LRUFileCache::FileSegmentCell::FileSegmentCell(
     }
 }
 
-LRUFileCache::LRUQueue::Iterator LRUFileCache::LRUQueue::add(
+IFileCache::LRUQueue::Iterator IFileCache::LRUQueue::add(
     const IFileCache::Key & key, size_t offset, size_t size, std::lock_guard<std::mutex> & /* cache_lock */)
 {
 #ifndef NDEBUG
@@ -959,30 +1079,30 @@ LRUFileCache::LRUQueue::Iterator LRUFileCache::LRUQueue::add(
     return queue.insert(queue.end(), FileKeyAndOffset(key, offset, size));
 }
 
-void LRUFileCache::LRUQueue::remove(Iterator queue_it, std::lock_guard<std::mutex> & /* cache_lock */)
+void IFileCache::LRUQueue::remove(Iterator queue_it, std::lock_guard<std::mutex> & /* cache_lock */)
 {
     cache_size -= queue_it->size;
     queue.erase(queue_it);
 }
 
-void LRUFileCache::LRUQueue::removeAll(std::lock_guard<std::mutex> & /* cache_lock */)
+void IFileCache::LRUQueue::removeAll(std::lock_guard<std::mutex> & /* cache_lock */)
 {
     queue.clear();
     cache_size = 0;
 }
 
-void LRUFileCache::LRUQueue::moveToEnd(Iterator queue_it, std::lock_guard<std::mutex> & /* cache_lock */)
+void IFileCache::LRUQueue::moveToEnd(Iterator queue_it, std::lock_guard<std::mutex> & /* cache_lock */)
 {
     queue.splice(queue.end(), queue, queue_it);
 }
 
-void LRUFileCache::LRUQueue::incrementSize(Iterator queue_it, size_t size_increment, std::lock_guard<std::mutex> & /* cache_lock */)
+void IFileCache::LRUQueue::incrementSize(Iterator queue_it, size_t size_increment, std::lock_guard<std::mutex> & /* cache_lock */)
 {
     cache_size += size_increment;
     queue_it->size += size_increment;
 }
 
-bool LRUFileCache::LRUQueue::contains(
+bool IFileCache::LRUQueue::contains(
     const IFileCache::Key & key, size_t offset, std::lock_guard<std::mutex> & /* cache_lock */) const
 {
     /// This method is used for assertions in debug mode.
@@ -995,31 +1115,7 @@ bool LRUFileCache::LRUQueue::contains(
     return false;
 }
 
-void LRUFileCache::LRUQueue::assertCorrectness(LRUFileCache * cache, std::lock_guard<std::mutex> & cache_lock)
-{
-    [[maybe_unused]] size_t total_size = 0;
-    for (auto it = queue.begin(); it != queue.end();)
-    {
-        auto & [key, offset, size, _] = *it++;
-
-        auto * cell = cache->getCell(key, offset, cache_lock);
-        if (!cell)
-        {
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Cache is in inconsistent state: LRU queue contains entries with no cache cell (assertCorrectness())");
-        }
-
-        assert(cell->size() == size);
-        total_size += size;
-    }
-
-    assert(total_size == cache_size);
-    assert(cache_size <= cache->max_size);
-    assert(queue.size() <= cache->max_element_size);
-}
-
-String LRUFileCache::LRUQueue::toString(std::lock_guard<std::mutex> & /* cache_lock */) const
+String IFileCache::LRUQueue::toString(std::lock_guard<std::mutex> & /* cache_lock */) const
 {
     String result;
     for (const auto & [key, offset, size, _] : queue)
@@ -1068,14 +1164,38 @@ void LRUFileCache::assertCacheCellsCorrectness(
 void LRUFileCache::assertCacheCorrectness(const Key & key, std::lock_guard<std::mutex> & cache_lock)
 {
     assertCacheCellsCorrectness(files[key], cache_lock);
-    queue.assertCorrectness(this, cache_lock);
+    assertQueueCorrectness(cache_lock);
 }
 
 void LRUFileCache::assertCacheCorrectness(std::lock_guard<std::mutex> & cache_lock)
 {
     for (const auto & [key, cells_by_offset] : files)
         assertCacheCellsCorrectness(files[key], cache_lock);
-    queue.assertCorrectness(this, cache_lock);
+    assertQueueCorrectness(cache_lock);
+}
+
+void LRUFileCache::assertQueueCorrectness(std::lock_guard<std::mutex> & cache_lock)
+{
+    [[maybe_unused]] size_t total_size = 0;
+    for (auto it = queue.begin(); it != queue.end();)
+    {
+        auto & [key, offset, size, _] = *it++;
+
+        auto * cell = getCell(key, offset, cache_lock);
+        if (!cell)
+        {
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Cache is in inconsistent state: LRU queue contains entries with no cache cell (assertCorrectness())");
+        }
+
+        assert(cell->size() == size);
+        total_size += size;
+    }
+
+    assert(total_size == queue.getTotalCacheSize(cache_lock));
+    assert(queue.getTotalCacheSize(cache_lock) <= max_size);
+    assert(queue.getElementsNum(cache_lock) <= max_element_size);
 }
 
 }

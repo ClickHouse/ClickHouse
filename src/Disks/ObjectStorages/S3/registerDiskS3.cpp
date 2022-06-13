@@ -83,11 +83,12 @@ void registerDiskS3(DiskFactory & factory)
         auto [metadata_path, metadata_disk] = prepareForLocalMetadata(name, config, config_prefix, context);
 
         auto metadata_storage = std::make_shared<MetadataStorageFromRemoteDisk>(metadata_disk, uri.key);
+        S3Capabilities s3_capabilities = getCapabilitiesFromConfig(config, config_prefix);
 
         ObjectStoragePtr s3_storage = std::make_unique<S3ObjectStorage>(
             getClient(config, config_prefix, context),
             getSettings(config, config_prefix, context),
-            uri.version_id, uri.bucket);
+            uri.version_id, s3_capabilities, uri.bucket);
 
         bool send_metadata = config.getBool(config_prefix + ".send_metadata", false);
         uint64_t copy_thread_pool_size = config.getUInt(config_prefix + ".thread_pool_size", 16);

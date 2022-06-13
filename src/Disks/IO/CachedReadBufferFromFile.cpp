@@ -64,6 +64,7 @@ CachedReadBufferFromFile::CachedReadBufferFromFile(
     , current_buffer_id(getRandomASCIIString(8))
     , allow_seeks(allow_seeks_)
     , use_external_buffer(use_external_buffer_)
+    , query_context_holder(cache_->getQueryContextHolder(query_id, settings_))
 {
 }
 
