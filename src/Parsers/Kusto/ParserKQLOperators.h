@@ -6,7 +6,8 @@
 namespace DB
 {
 
-class KQLOperators {
+class KQLOperators
+{
 public:
     String getExprFromToken(IParser::Pos pos);
 protected:
