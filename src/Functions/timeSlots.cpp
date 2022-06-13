@@ -112,8 +112,9 @@ struct TimeSlotsImpl
         result_offsets.resize(size);
         result_values.reserve(size);
 
-        UInt16 max_scale = dt_scale > duration_scale ? dt_scale : duration_scale;
-        max_scale = time_slot_scale > max_scale ? time_slot_scale : max_scale;
+        /// Modify all units to have same scale
+        UInt16 max_scale = (dt_scale > duration_scale) ? dt_scale : duration_scale;
+        max_scale = (time_slot_scale > max_scale) ? time_slot_scale : max_scale;
 
         Int64 dt_multiplier = DecimalUtils::scaleMultiplier<DateTime64>(max_scale - dt_scale);
         Int64 dur_multiplier = DecimalUtils::scaleMultiplier<DateTime64>(max_scale - duration_scale);
@@ -123,7 +124,7 @@ struct TimeSlotsImpl
         time_slot_size = time_slot_size.value * ts_multiplier;
         for (size_t i = 0; i < size; ++i)
         {
-            for (DateTime64 value = (starts[i] * dt_multiplier) / time_slot_size, end = (starts[i] + durations[i] * dur_multiplier) / time_slot_size; value <= end; value += 1)
+            for (DateTime64 value = (starts[i] * dt_multiplier) / time_slot_size, end = (starts[i] * dt_multiplier + durations[i] * dur_multiplier) / time_slot_size; value <= end; value += 1)
             {
                 result_values.push_back(value * time_slot_size);
                 ++current_offset;
@@ -141,8 +142,9 @@ struct TimeSlotsImpl
         result_offsets.resize(size);
         result_values.reserve(size);
 
-        UInt16 max_scale = dt_scale > duration_scale ? dt_scale : duration_scale;
-        max_scale = time_slot_scale > max_scale ? time_slot_scale : max_scale;
+        /// Modify all units to have same scale
+        UInt16 max_scale = (dt_scale > duration_scale) ? dt_scale : duration_scale;
+        max_scale = (time_slot_scale > max_scale) ? time_slot_scale : max_scale;
 
         Int64 dt_multiplier = DecimalUtils::scaleMultiplier<DateTime64>(max_scale - dt_scale);
         Int64 dur_multiplier = DecimalUtils::scaleMultiplier<DateTime64>(max_scale - duration_scale);
@@ -153,7 +155,7 @@ struct TimeSlotsImpl
         time_slot_size = time_slot_size.value * ts_multiplier;
         for (size_t i = 0; i < size; ++i)
         {
-            for (DateTime64 value = (starts[i] * dt_multiplier) / time_slot_size, end = (starts[i] + duration) / time_slot_size; value <= end; value += 1)
+            for (DateTime64 value = (starts[i] * dt_multiplier) / time_slot_size, end = (starts[i] * dt_multiplier + duration) / time_slot_size; value <= end; value += 1)
             {
                 result_values.push_back(value * time_slot_size);
                 ++current_offset;
@@ -171,8 +173,9 @@ struct TimeSlotsImpl
         result_offsets.resize(size);
         result_values.reserve(size);
 
-        UInt16 max_scale = dt_scale > duration_scale ? dt_scale : duration_scale;
-        max_scale = time_slot_scale > max_scale ? time_slot_scale : max_scale;
+        /// Modify all units to have same scale
+        UInt16 max_scale = (dt_scale > duration_scale) ? dt_scale : duration_scale;
+        max_scale = (time_slot_scale > max_scale) ? time_slot_scale : max_scale;
 
         Int64 dt_multiplier = DecimalUtils::scaleMultiplier<DateTime64>(max_scale - dt_scale);
         Int64 dur_multiplier = DecimalUtils::scaleMultiplier<DateTime64>(max_scale - duration_scale);
