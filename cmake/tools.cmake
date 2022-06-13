@@ -77,6 +77,7 @@ if (OS_LINUX AND NOT LINKER_NAME)
 
     if (NOT LINKER_NAME)
         if (GOLD_PATH)
+            message (WARNING "Linking with gold is not recommended. Please use lld.")
             if (COMPILER_GCC)
                 set (LINKER_NAME "gold")
             else ()

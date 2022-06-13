@@ -489,7 +489,7 @@ std::vector<std::string> MetadataStorageFromDisk::listDirectory(const std::strin
     return result_files;
 }
 
-DirectoryIteratorPtr MetadataStorageFromDisk::iterateDirectory(const std::string & path)
+DirectoryIteratorPtr MetadataStorageFromDisk::iterateDirectory(const std::string & path) const
 {
     return disk->iterateDirectory(path);
 }
