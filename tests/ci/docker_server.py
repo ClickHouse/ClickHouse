@@ -186,8 +186,12 @@ def gen_tags(version: ClickHouseVersion, release_type: str) -> List[str]:
     return tags
 
 
-def buildx_args(bucket_prefix: str, arch: str) -> List[str]:
-    args = [f"--platform=linux/{arch}", f"--label=build-url={GITHUB_RUN_URL}"]
+def buildx_args(bucket_prefix: str, arch: str, version: ClickHouseVersion) -> List[str]:
+    args = [
+        f"--platform=linux/{arch}",
+        f"--label=build-url={GITHUB_RUN_URL}",
+        f"--label=com.clickhouse.ClickHouseVersion.githash={version.githash}",
+    ]
     if bucket_prefix:
         url = p.join(bucket_prefix, BUCKETS[arch])  # to prevent a double //
         args.append(f"--build-arg=REPOSITORY='{url}'")
@@ -222,7 +226,7 @@ def build_and_push_image(
         metadata_path = p.join(TEMP_PATH, arch_tag)
         dockerfile = p.join(image.full_path, f"Dockerfile.{os}")
         cmd_args = list(init_args)
-        cmd_args.extend(buildx_args(bucket_prefix, arch))
+        cmd_args.extend(buildx_args(bucket_prefix, arch, version))
         if not push:
             cmd_args.append(f"--tag={image.repo}:{arch_tag}")
         cmd_args.extend(
