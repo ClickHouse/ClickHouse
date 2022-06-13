@@ -55,7 +55,7 @@ int decompress(char * input, char * output, off_t start, off_t end, size_t max_n
         size = ZSTD_findFrameCompressedSize(input + in_pointer, max_block_size);
         if (ZSTD_isError(size))
         {
-            fprintf(stderr, "Error (ZSTD): %lld %s\n", size, ZSTD_getErrorName(size));
+            fprintf(stderr, "Error (ZSTD): %ld %s\n", static_cast<size_t>(size), ZSTD_getErrorName(size));
             error_happened = true;
             break;
         }
@@ -63,7 +63,7 @@ int decompress(char * input, char * output, off_t start, off_t end, size_t max_n
         decompressed_size = ZSTD_getFrameContentSize(input + in_pointer, max_block_size);
         if (ZSTD_isError(decompressed_size))
         {
-            fprintf(stderr, "Error (ZSTD): %lld %s\n", decompressed_size, ZSTD_getErrorName(decompressed_size));
+            fprintf(stderr, "Error (ZSTD): %ld %s\n", static_cast<size_t>(decompressed_size), ZSTD_getErrorName(decompressed_size));
             error_happened = true;
             break;
         }
@@ -174,8 +174,8 @@ int decompressFiles(int input_fd, char * path, char * name, bool & have_compress
     }
     if (fs_info.f_blocks * info_in.st_blksize < decompressed_full_size)
     {
-        fprintf(stderr, "Not enough space for decompression. Have %llu, need %zu.",
-                fs_info.f_blocks * info_in.st_blksize, decompressed_full_size);
+        fprintf(stderr, "Not enough space for decompression. Have %lu, need %zu.",
+                static_cast<size_t>(fs_info.f_blocks * info_in.st_blksize), decompressed_full_size);
         return 1;
     }
 
