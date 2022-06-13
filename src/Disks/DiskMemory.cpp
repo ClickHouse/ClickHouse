@@ -262,7 +262,7 @@ void DiskMemory::moveDirectory(const String & /*from_path*/, const String & /*to
     throw Exception("Method moveDirectory is not implemented for memory disks", ErrorCodes::NOT_IMPLEMENTED);
 }
 
-DirectoryIteratorPtr DiskMemory::iterateDirectory(const String & path)
+DirectoryIteratorPtr DiskMemory::iterateDirectory(const String & path) const
 {
     std::lock_guard lock(mutex);
 
@@ -409,7 +409,7 @@ void DiskMemory::removeRecursive(const String & path)
     }
 }
 
-void DiskMemory::listFiles(const String & path, std::vector<String> & file_names)
+void DiskMemory::listFiles(const String & path, std::vector<String> & file_names) const
 {
     std::lock_guard lock(mutex);
 

@@ -350,13 +350,13 @@ void DiskObjectStorage::removeDirectory(const String & path)
 }
 
 
-DirectoryIteratorPtr DiskObjectStorage::iterateDirectory(const String & path)
+DirectoryIteratorPtr DiskObjectStorage::iterateDirectory(const String & path) const
 {
     return metadata_storage->iterateDirectory(path);
 }
 
 
-void DiskObjectStorage::listFiles(const String & path, std::vector<String> & file_names)
+void DiskObjectStorage::listFiles(const String & path, std::vector<String> & file_names) const
 {
     for (auto it = iterateDirectory(path); it->isValid(); it->next())
         file_names.push_back(it->name());
@@ -371,7 +371,7 @@ void DiskObjectStorage::setLastModified(const String & path, const Poco::Timesta
 }
 
 
-Poco::Timestamp DiskObjectStorage::getLastModified(const String & path)
+Poco::Timestamp DiskObjectStorage::getLastModified(const String & path) const
 {
     return metadata_storage->getLastModified(path);
 }
