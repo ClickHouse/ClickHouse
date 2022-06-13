@@ -142,6 +142,7 @@ namespace
             auto profile_name = config.getString(profile_name_config);
             SettingsProfileElement profile_element;
             profile_element.parent_profile = generateID(AccessEntityType::SETTINGS_PROFILE, profile_name);
+            profile_element.parent_profile_xml_name = profile_name;
             user->settings.push_back(std::move(profile_element));
         }
 
@@ -473,6 +474,7 @@ namespace
                 String parent_profile_name = config.getString(profile_config + "." + key);
                 SettingsProfileElement profile_element;
                 profile_element.parent_profile = generateID(AccessEntityType::SETTINGS_PROFILE, parent_profile_name);
+                profile_element.parent_profile_xml_name = parent_profile_name;
                 profile->elements.emplace_back(std::move(profile_element));
                 continue;
             }

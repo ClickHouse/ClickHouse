@@ -170,8 +170,15 @@ void SettingsProfilesCache::substituteProfiles(
             continue;
 
         auto profile_it = all_profiles.find(profile_id);
-        if (profile_it == all_profiles.end())
-            continue;
+        if (profile_it == all_profiles.end()) {
+            /// If the textual profile name is set, then users are configured via XML.
+            /// For these users we want to throw an exception when their profile can't
+            /// be found. Otherwise, these users are super admins.
+            if (element.parent_profile_xml_name)
+                throw Exception(ErrorCodes::THERE_IS_NO_PROFILE, "There is no profile '{}' in configuration file", *element.parent_profile_xml_name);
+            else
+                continue;
+        }
 
         const auto & profile = profile_it->second;
         const auto & profile_elements = profile->elements;
