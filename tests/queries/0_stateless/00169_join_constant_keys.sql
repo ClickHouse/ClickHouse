@@ -1,5 +1,3 @@
--- Tags: ignore-order
-
 SELECT
     key1,
     key2,

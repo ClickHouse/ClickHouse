@@ -1,5 +1,3 @@
--- Tags: ignore-order
-
 SELECT * FROM (
     SELECT number, number / 2 AS n, j1, j2
     FROM system.numbers
