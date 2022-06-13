@@ -112,6 +112,7 @@ void PartialSortingTransform::transform(Chunk & chunk)
         read_rows->add(chunk.getNumRows());
 
     auto block = getInputPort().getHeader().cloneWithColumns(chunk.detachColumns());
+    size_t block_rows_before_filter = block.rows();
 
     /** If we've saved columns from previously blocks we could filter all rows from current block
       * which are unnecessary for sortBlock(...) because they obviously won't be in the top LIMIT rows.
@@ -124,6 +125,8 @@ void PartialSortingTransform::transform(Chunk & chunk)
         size_t result_size_hint = getFilterMask(
                 block_columns, sort_description_threshold_columns,
                 description, rows_num, filter, rows_to_compare, compare_results);
+
+        std::cout << "Filter result size " << result_size_hint << std::endl;
 
         /// Everything was filtered. Skip whole chunk.
         if (result_size_hint == 0)
@@ -138,10 +141,10 @@ void PartialSortingTransform::transform(Chunk & chunk)
 
     sortBlock(block, description, limit);
 
-    size_t block_rows = block.rows();
+    size_t block_rows_after_filter = block.rows();
 
     /// Check if we can use this block for optimization.
-    if (min_limit_for_partial_sort_optimization <= limit && block_rows > 0)
+    if (min_limit_for_partial_sort_optimization <= limit && block_rows_after_filter > 0 && limit <= block_rows_before_filter)
     {
         /** If we filtered more than limit rows from block take block last row.
           * Otherwise take last limit row.
@@ -149,7 +152,7 @@ void PartialSortingTransform::transform(Chunk & chunk)
           * If current threshold value is empty, update current threshold value.
           * If min block value is less than current threshold value, update current threshold value.
           */
-        size_t min_row_to_compare = limit <= block_rows ? (limit - 1) : (block_rows - 1);
+        size_t min_row_to_compare = limit <= block_rows_after_filter ? (limit - 1) : (block_rows_after_filter - 1);
         auto raw_block_columns = extractRawColumns(block, description_with_positions);
 
         if (sort_description_threshold_columns.empty() ||
