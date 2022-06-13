@@ -7,7 +7,6 @@
 #include <Parsers/Kusto/ParserKQLFilter.h>
 #include <Parsers/Kusto/ParserKQLSort.h>
 #include <Parsers/Kusto/ParserKQLSummarize.h>
-#include <Parsers/Kusto/ParserKQLFilter.h>
 #include <Parsers/Kusto/ParserKQLLimit.h>
 
 namespace DB
@@ -15,8 +14,8 @@ namespace DB
 
 bool ParserKQLBase :: parsePrepare(Pos & pos)
 {
-   op_pos.push_back(pos);
-   return true;
+    op_pos.push_back(pos);
+    return true;
 }
 
 String ParserKQLBase :: getExprFromToken(Pos pos)
