@@ -29,7 +29,7 @@
         CREATE DICTIONARY hierarchical_{dictionary_layout}_dictionary
         (
             id UInt64,
-            parent_id UInt64 HIERARCHICAL BIDIRECTIONAL
+            parent_id UInt64 HIERARCHICAL
         )
         PRIMARY KEY id
         SOURCE(CLICKHOUSE(DB 'default' TABLE 'hierarchical_dictionary_source_table'))
@@ -41,7 +41,7 @@
         CREATE DICTIONARY hierarchical_flat_dictionary
         (
             id UInt64,
-            parent_id UInt64 HIERARCHICAL BIDIRECTIONAL
+            parent_id UInt64 HIERARCHICAL
         )
         PRIMARY KEY id
         SOURCE(CLICKHOUSE(DB 'default' TABLE 'hierarchical_dictionary_source_table'))
