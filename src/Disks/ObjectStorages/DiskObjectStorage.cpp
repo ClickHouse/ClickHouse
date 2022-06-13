@@ -231,17 +231,14 @@ void DiskObjectStorage::replaceFile(const String & from_path, const String & to_
         moveFile(from_path, to_path);
 }
 
-bool DiskObjectStorage::removeSharedFile(const String & path, bool delete_metadata_only)
+void DiskObjectStorage::removeSharedFile(const String & path, bool delete_metadata_only)
 {
     std::vector<String> paths_to_remove;
     removeMetadata(path, paths_to_remove);
 
     bool remove_from_remote_fs = !paths_to_remove.empty() && !delete_metadata_only;
-
     if (remove_from_remote_fs)
         removeFromObjectStorage(paths_to_remove);
-
-    return remove_from_remote_fs;
 }
 
 void DiskObjectStorage::removeFromObjectStorage(const std::vector<String> & paths)
@@ -485,22 +482,18 @@ ReservationPtr DiskObjectStorage::reserve(UInt64 bytes)
     return std::make_unique<DiskObjectStorageReservation>(std::static_pointer_cast<DiskObjectStorage>(shared_from_this()), bytes);
 }
 
-bool DiskObjectStorage::removeSharedFileIfExists(const String & path, bool delete_metadata_only)
+void DiskObjectStorage::removeSharedFileIfExists(const String & path, bool delete_metadata_only)
 {
     std::vector<String> paths_to_remove;
-    bool remove_from_remote_fs = false;
 
     if (metadata_storage->exists(path))
     {
         removeMetadata(path, paths_to_remove);
 
-        remove_from_remote_fs = !paths_to_remove.empty() && !delete_metadata_only;
-
+        bool remove_from_remote_fs = !paths_to_remove.empty() && !delete_metadata_only;
         if (remove_from_remote_fs)
             removeFromObjectStorage(paths_to_remove);
     }
-
-    return remove_from_remote_fs;
 }
 
 void DiskObjectStorage::removeSharedRecursive(const String & path, bool keep_all_batch_data, const NameSet & file_names_remove_metadata_only)

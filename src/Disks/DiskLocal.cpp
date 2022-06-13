@@ -364,20 +364,18 @@ DiskLocal::writeFile(const String & path, size_t buf_size, WriteMode mode, const
     return std::make_unique<WriteBufferFromFile>(fs::path(disk_path) / path, buf_size, flags);
 }
 
-bool DiskLocal::removeFile(const String & path)
+void DiskLocal::removeFile(const String & path)
 {
     auto fs_path = fs::path(disk_path) / path;
     if (0 != unlink(fs_path.c_str()))
         throwFromErrnoWithPath("Cannot unlink file " + fs_path.string(), fs_path, ErrorCodes::CANNOT_UNLINK);
-    return true;
 }
 
-bool DiskLocal::removeFileIfExists(const String & path)
+void DiskLocal::removeFileIfExists(const String & path)
 {
     auto fs_path = fs::path(disk_path) / path;
     if (0 != unlink(fs_path.c_str()) && errno != ENOENT)
         throwFromErrnoWithPath("Cannot unlink file " + fs_path.string(), fs_path, ErrorCodes::CANNOT_UNLINK);
-    return true;
 }
 
 void DiskLocal::removeDirectory(const String & path)

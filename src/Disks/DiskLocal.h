@@ -84,8 +84,8 @@ public:
         WriteMode mode,
         const WriteSettings & settings) override;
 
-    bool removeFile(const String & path) override;
-    bool removeFileIfExists(const String & path) override;
+    void removeFile(const String & path) override;
+    void removeFileIfExists(const String & path) override;
     void removeDirectory(const String & path) override;
     void removeRecursive(const String & path) override;
 

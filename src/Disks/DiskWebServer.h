@@ -117,12 +117,12 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Disk {} is read-only", getName());
     }
 
-    bool removeFile(const String &) override
+    void removeFile(const String &) override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Disk {} is read-only", getName());
     }
 
-    bool removeFileIfExists(const String &) override
+    void removeFileIfExists(const String &) override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Disk {} is read-only", getName());
     }
@@ -137,12 +137,12 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Disk {} is read-only", getName());
     }
 
-    bool removeSharedFile(const String &, bool) override
+    void removeSharedFile(const String &, bool) override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Disk {} is read-only", getName());
     }
 
-    bool removeSharedFileIfExists(const String &, bool) override
+    void removeSharedFileIfExists(const String &, bool) override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Disk {} is read-only", getName());
     }
