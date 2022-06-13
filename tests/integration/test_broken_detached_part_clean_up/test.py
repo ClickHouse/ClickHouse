@@ -40,12 +40,20 @@ def remove_broken_detached_part_impl(table, node, expect_broken_prefix):
     break_part(node, table, "all_3_3_0")
     node.query(f"ALTER TABLE {table} DETACH PART 'all_1_1_0'")
     result = node.exec_in_container(["touch", f"{path_to_detached}trash"])
+
     node.exec_in_container(["mkdir", f"{path_to_detached}../broken_all_fake"])
     node.exec_in_container(["touch", "-t", "1312031429.30", f"{path_to_detached}../broken_all_fake"])
     result = node.exec_in_container(["stat", f"{path_to_detached}../broken_all_fake"])
     print(result)
     assert("Modify: 2013-12-03" in result)
     node.exec_in_container(["mv", f"{path_to_detached}../broken_all_fake", f"{path_to_detached}broken_all_fake"])
+
+    node.exec_in_container(["mkdir", f"{path_to_detached}../unexpected_all_42_1337_5"])
+    node.exec_in_container(["touch", "-t", "1312031429.30", f"{path_to_detached}../unexpected_all_42_1337_5"])
+    result = node.exec_in_container(["stat", f"{path_to_detached}../unexpected_all_42_1337_5"])
+    print(result)
+    assert("Modify: 2013-12-03" in result)
+    node.exec_in_container(["mv", f"{path_to_detached}../unexpected_all_42_1337_5", f"{path_to_detached}unexpected_all_42_1337_5"])
 
     result = node.query(
         f"CHECK TABLE {table}", settings={"check_query_single_value_result": 0}
@@ -61,6 +69,7 @@ def remove_broken_detached_part_impl(table, node, expect_broken_prefix):
     assert "all_1_1_0" in result
     assert "trash" in result
     assert "broken_all_fake" in result
+    assert "unexpected_all_42_1337_5" in result
 
     time.sleep(15)
 
@@ -70,6 +79,7 @@ def remove_broken_detached_part_impl(table, node, expect_broken_prefix):
     assert "all_1_1_0" in result
     assert "trash" in result
     assert "broken_all_fake" in result
+    assert "unexpected_all_42_1337_5" in result
 
     node.query(f"DROP TABLE {table} SYNC")
 
