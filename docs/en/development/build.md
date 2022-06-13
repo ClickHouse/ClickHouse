@@ -19,7 +19,7 @@ The following tutorial is based on the Ubuntu Linux system. With appropriate cha
 ### Install Git, CMake, Python and Ninja {#install-git-cmake-python-and-ninja}
 
 ``` bash
-sudo apt-get install git cmake python3 ninja-build
+sudo apt-get install git cmake ccache python3 ninja-build
 ```
 
 Or cmake3 instead of cmake on older systems.
