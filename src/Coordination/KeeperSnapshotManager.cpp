@@ -1,17 +1,18 @@
-#include <filesystem>
-#include <memory>
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <Coordination/KeeperSnapshotManager.h>
 #include <Coordination/ReadBufferFromNuraftBuffer.h>
 #include <Coordination/WriteBufferFromNuraftBuffer.h>
-#include <Coordination/pathUtils.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteHelpers.h>
 #include <IO/copyData.h>
 #include <Common/ZooKeeper/ZooKeeperIO.h>
+#include <Coordination/pathUtils.h>
+#include <filesystem>
+#include <memory>
+#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -20,6 +21,7 @@ namespace ErrorCodes
 {
     extern const int UNKNOWN_FORMAT_VERSION;
     extern const int UNKNOWN_SNAPSHOT;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace
@@ -335,6 +337,25 @@ void KeeperStorageSnapshot::deserialize(SnapshotDeserializationResult & deserial
                 parent_path, [path = itr.key](KeeperStorage::Node & value) { value.addChild(getBaseName(path)); });
         }
     }
+
+    for (const auto & itr : storage.container)
+    {
+        if (itr.key != "/")
+        {
+            if (itr.value.stat.numChildren != static_cast<int32_t>(itr.value.getChildren().size()))
+            {
+#ifdef NDEBUG
+                /// TODO (alesapin) remove this, it should be always CORRUPTED_DATA.
+                LOG_ERROR(&Poco::Logger::get("KeeperSnapshotManager"), "Children counter in stat.numChildren {}"
+                            " is different from actual children size {} for node {}", itr.value.stat.numChildren, itr.value.getChildren().size(), itr.key);
+#else
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Children counter in stat.numChildren {}"
+                            " is different from actual children size {} for node {}", itr.value.stat.numChildren, itr.value.getChildren().size(), itr.key);
+#endif
+            }
+        }
+    }
+
 
     size_t active_sessions_size;
     readBinary(active_sessions_size, in);

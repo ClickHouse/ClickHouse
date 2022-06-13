@@ -1,23 +1,24 @@
-#include <functional>
-#include <iomanip>
 #include <iterator>
-#include <mutex>
-#include <sstream>
 #include <variant>
 #include <Coordination/KeeperStorage.h>
-#include <Coordination/pathUtils.h>
 #include <IO/Operators.h>
 #include <IO/WriteHelpers.h>
 #include <boost/algorithm/string.hpp>
 #include <Poco/Base64Encoder.h>
 #include <Poco/SHA1Engine.h>
-#include "Common/SipHash.h"
-#include "Common/ZooKeeper/ZooKeeperConstants.h"
+#include <Common/SipHash.h>
+#include <Common/ZooKeeper/ZooKeeperConstants.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Common/hex.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
+#include <Coordination/pathUtils.h>
+#include <sstream>
+#include <iomanip>
+#include <mutex>
+#include <functional>
+#include <base/defines.h>
 
 namespace DB
 {
@@ -784,6 +785,7 @@ struct KeeperStorageCreateRequestProcessor final : public KeeperStorageRequestPr
                                                if (zxid > node.stat.pzxid)
                                                    node.stat.pzxid = zxid;
                                                ++node.stat.numChildren;
+                                               chassert(node.stat.numChildren == static_cast<int32_t>(node.getChildren().size()));
                                            }});
 
         digest = storage.calculateNodesDigest(digest, new_deltas);
@@ -807,8 +809,6 @@ struct KeeperStorageCreateRequestProcessor final : public KeeperStorageRequestPr
             deltas.end(),
             [zxid](const auto & delta)
             { return delta.zxid == zxid && std::holds_alternative<KeeperStorage::CreateNodeDelta>(delta.operation); });
-
-        assert(create_delta_it != deltas.end());
 
         response.path_created = create_delta_it->path;
         response.error = Coordination::Error::ZOK;
@@ -928,11 +928,13 @@ struct KeeperStorageRemoveRequestProcessor final : public KeeperStorageRequestPr
         }
         else if (request.version != -1 && request.version != node->stat.version)
             return {{zxid, Coordination::Error::ZBADVERSION}};
-        else if (node->stat.numChildren)
+        else if (!node->getChildren().empty())
             return {{zxid, Coordination::Error::ZNOTEMPTY}};
 
         if (request.restored_from_zookeeper_log)
             update_parent_pzxid();
+
+        new_deltas.emplace_back(request.path, zxid, KeeperStorage::RemoveNodeDelta{request.version, node->stat.ephemeralOwner});
 
         new_deltas.emplace_back(
             std::string{parentPath(request.path)},
@@ -941,12 +943,12 @@ struct KeeperStorageRemoveRequestProcessor final : public KeeperStorageRequestPr
                                            {
                                                --parent.stat.numChildren;
                                                ++parent.stat.cversion;
+                                               chassert(parent.stat.numChildren == static_cast<int32_t>(parent.getChildren().size()));
                                            }});
 
         if (node->stat.ephemeralOwner != 0)
             storage.unregisterEphemeralPath(node->stat.ephemeralOwner, request.path);
 
-        new_deltas.emplace_back(request.path, zxid, KeeperStorage::RemoveNodeDelta{request.version, node->stat.ephemeralOwner});
 
         digest = storage.calculateNodesDigest(digest, new_deltas);
 
@@ -1798,6 +1800,8 @@ void KeeperStorage::preprocessRequest(
         {
             for (const auto & ephemeral_path : session_ephemerals->second)
             {
+                new_deltas.emplace_back(ephemeral_path, transaction.zxid, RemoveNodeDelta{.ephemeral_owner = session_id});
+
                 new_deltas.emplace_back
                 (
                     parentPath(ephemeral_path).toString(),
@@ -1808,11 +1812,10 @@ void KeeperStorage::preprocessRequest(
                         {
                             --parent.stat.numChildren;
                             ++parent.stat.cversion;
+                            chassert(parent.stat.numChildren == static_cast<int32_t>(parent.getChildren().size()));
                         }
                     }
                 );
-
-                new_deltas.emplace_back(ephemeral_path, transaction.zxid, RemoveNodeDelta{.ephemeral_owner = session_id});
             }
 
             ephemerals.erase(session_ephemerals);
