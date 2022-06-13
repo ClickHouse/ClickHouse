@@ -266,6 +266,59 @@ static void checkAccessRightsForSelect(
     context->checkAccess(AccessType::SELECT, table_id, syntax_analyzer_result.requiredSourceColumnsForAccessCheck());
 }
 
+static ASTPtr parseAdditionalFilterConditionForTable(
+    const char * data, size_t size,
+    const DatabaseAndTableWithAlias & target,
+    const Context & context)
+{
+    size_t pos = 0;
+    for (; pos < size; ++pos)
+        if (data[pos] == ':')
+            break;
+
+    if (pos == size)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "No table is specified for additional filter {}. Expected syntax: 'table:condition'",
+            std::string_view(data, size));
+
+    std::string_view table(data, pos);
+    if ((target.database == context.getCurrentDatabase() && target.table == table) ||
+        (target.database + '.' + target.table == table))
+    {
+        /// Try to parse expression
+        ParserExpression parser;
+        const auto & settings = context.getSettingsRef();
+        return parseQuery(parser, data + pos, data + size, "additional filter", settings.max_query_size, settings.max_parser_depth);
+    }
+
+    return nullptr;
+}
+
+static ASTPtr parseAdditionalFilterConditionForTable(
+    const std::string & setting,
+    const DatabaseAndTableWithAlias & target,
+    const Context & context)
+{
+    if (setting.empty())
+        return nullptr;
+
+    const char delimiter = ';';
+
+    const auto size = setting.size();
+    const char * data = setting.data();
+    const char * end = data + setting.size();
+    for (const char * pos = data; pos < end; ++pos)
+    {
+        if (setting[pos] == delimiter)
+        {
+            if (auto ast = parseAdditionalFilterConditionForTable(data, pos, target, context))
+                return ast;
+
+            data =
+        }
+    }
+}
+
 /// Returns true if we should ignore quotas and limits for a specified table in the system database.
 static bool shouldIgnoreQuotaAndLimits(const StorageID & table_id)
 {
