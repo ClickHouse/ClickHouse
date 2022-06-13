@@ -10,7 +10,7 @@ namespace DB
 bool ParserKQLTable :: parsePrepare(Pos & pos)
 {
     if (!op_pos.empty())
-    return false;
+        return false;
 
     op_pos.push_back(pos);
     return true;
