@@ -11,7 +11,7 @@ public:
 
 protected:
     std::vector<Pos> op_pos;
-    std::vector<String> expresions;
+    std::vector<String> expressions;
     virtual String getExprFromToken(Pos pos);
 };
 
