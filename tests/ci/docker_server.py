@@ -190,7 +190,7 @@ def buildx_args(bucket_prefix: str, arch: str, version: ClickHouseVersion) -> Li
     args = [
         f"--platform=linux/{arch}",
         f"--label=build-url={GITHUB_RUN_URL}",
-        f"--label=com.clickhouse.ClickHouseVersion.githash={version.githash}",
+        f"--label=com.clickhouse.ClickHouseVersion.githash={git.sha}",
     ]
     if bucket_prefix:
         url = p.join(bucket_prefix, BUCKETS[arch])  # to prevent a double //
