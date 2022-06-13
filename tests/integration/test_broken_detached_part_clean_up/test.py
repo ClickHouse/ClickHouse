@@ -102,7 +102,7 @@ def remove_broken_detached_part_impl(table, node, expect_broken_prefix):
     assert "all_1_1_0" in result
     assert "trash" in result
     assert "broken_all_fake" in result
-    assert "unexpected_all_42_1337_5" in result
+    assert "unexpected_all_42_1337_5" not in result
 
     node.query(f"DROP TABLE {table} SYNC")
 
