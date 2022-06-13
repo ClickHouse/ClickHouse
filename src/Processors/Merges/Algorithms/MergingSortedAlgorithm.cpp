@@ -74,7 +74,7 @@ void MergingSortedAlgorithm::initialize(Inputs inputs)
         cursors[source_num] = SortCursorImpl(header, chunk.getColumns(), description, source_num);
     }
 
-    queue_variants.callOnVariant([&](auto & queue)
+    queue_variants.callOnDefaultVariant([&](auto & queue)
     {
         using QueueType = std::decay_t<decltype(queue)>;
         queue = QueueType(cursors);
@@ -87,7 +87,7 @@ void MergingSortedAlgorithm::consume(Input & input, size_t source_num)
     current_inputs[source_num].swap(input);
     cursors[source_num].reset(current_inputs[source_num].chunk.getColumns(), header);
 
-    queue_variants.callOnVariant([&](auto & queue)
+    queue_variants.callOnDefaultVariant([&](auto & queue)
     {
         queue.push(cursors[source_num]);
     });
@@ -95,7 +95,7 @@ void MergingSortedAlgorithm::consume(Input & input, size_t source_num)
 
 IMergingAlgorithm::Status MergingSortedAlgorithm::merge()
 {
-    IMergingAlgorithm::Status result = queue_variants.callOnVariant([&](auto & queue)
+    IMergingAlgorithm::Status result = queue_variants.callOnDefaultVariant([&](auto & queue)
     {
         return mergeImpl(queue);
     });
