@@ -455,7 +455,7 @@ ColumnWithTypeAndDimensions createTypeFromNode(const Node * node)
         }
 
         /// Sort to always create the same type for the same set of subcolumns.
-        std::sort(tuple_elements.begin(), tuple_elements.end(),
+        ::sort(tuple_elements.begin(), tuple_elements.end(),
             [](const auto & lhs, const auto & rhs) { return std::get<0>(lhs) < std::get<0>(rhs); });
 
         auto tuple_names = extractVector<0>(tuple_elements);
@@ -692,7 +692,7 @@ void replaceMissedSubcolumnsByConstants(
                 res.emplace_back(full_name, types[i]);
             }
 
-            std::sort(res.begin(), res.end());
+            ::sort(res.begin(), res.end());
             return res;
         };
 
