@@ -240,6 +240,10 @@ public:
     /// The function returns true if waited and false if waiting was interrupted by condition.
     bool waitForDisappear(const std::string & path, const WaitCondition & condition = {});
 
+    /// Wait for the ephemeral node created in previous session to disappear.
+    /// Throws LOGICAL_ERROR if node still exists after 2x session_timeout.
+    void waitForEphemeralToDisappearIfAny(const std::string & path);
+
     /// Async interface (a small subset of operations is implemented).
     ///
     /// Usage:
