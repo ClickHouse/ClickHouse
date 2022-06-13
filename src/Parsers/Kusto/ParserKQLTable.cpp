@@ -9,17 +9,17 @@ namespace DB
 
 bool ParserKQLTable :: parsePrepare(Pos & pos)
 {
-   if (!op_pos.empty())
+    if (!op_pos.empty())
     return false;
 
-   op_pos.push_back(pos);
-   return true;
+    op_pos.push_back(pos);
+    return true;
 }
 
 bool ParserKQLTable :: parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     std::unordered_set<String> sql_keywords
-    ( {
+    ({
         "SELECT",
         "INSERT",
         "CREATE",
@@ -42,7 +42,7 @@ bool ParserKQLTable :: parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         "TRUNCATE",
         "USE",
         "EXPLAIN"
-    } ); 
+    });
 
     if (op_pos.empty())
         return false;

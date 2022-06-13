@@ -83,7 +83,7 @@ String KQLOperators::genHaystackOpExpr(std::vector<String> &tokens,IParser::Pos 
     }
 
     if (!tokens.empty() && ((++token_pos)->type == TokenType::StringLiteral || token_pos->type == TokenType::QuotedIdentifier))
-       new_expr = ch_op +"(" + tokens.back() +", '"+left_wildcards + String(token_pos->begin + 1,token_pos->end - 1 ) + right_wildcards + "')";
+        new_expr = ch_op +"(" + tokens.back() +", '"+left_wildcards + String(token_pos->begin + 1,token_pos->end - 1 ) + right_wildcards + "')";
     else
         throw Exception(ErrorCodes::SYNTAX_ERROR, "Syntax error near {}", kql_op);
     tokens.pop_back();
@@ -102,7 +102,7 @@ String KQLOperators::getExprFromToken(IParser::Pos pos)
         auto token =  String(pos->begin,pos->end);
 
         String op = token;
-        if ( token == "!" )
+        if ( token == "!")
         {
             ++pos;
             if (pos->isEnd() || pos->type == TokenType::PipeMark || pos->type == TokenType::Semicolon)
@@ -183,7 +183,7 @@ String KQLOperators::getExprFromToken(IParser::Pos pos)
 
             case KQLOperatorValue::not_equal:
                 break;
- 
+
             case KQLOperatorValue::equal_cs:
                 new_expr = "==";
                 break;
@@ -191,7 +191,7 @@ String KQLOperators::getExprFromToken(IParser::Pos pos)
             case KQLOperatorValue::not_equal_cs:
                 new_expr = "!=";
                 break;
- 
+
             case KQLOperatorValue::has:
                 new_expr = genHaystackOpExpr(tokens, pos, op, "hasTokenCaseInsensitive", WildcardsPos::none);
                 break;
