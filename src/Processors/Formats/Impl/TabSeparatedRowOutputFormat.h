@@ -3,6 +3,7 @@
 #include <Core/Block.h>
 #include <Formats/FormatSettings.h>
 #include <Processors/Formats/IRowOutputFormat.h>
+#include <IO/WriteBufferFromString.h>
 
 
 namespace DB
@@ -46,6 +47,23 @@ protected:
     bool with_types;
     bool is_raw;
     const FormatSettings format_settings;
+};
+
+class TabSeparatedSortedRowOutputFormat : public TabSeparatedRowOutputFormat
+{
+public:
+    TabSeparatedSortedRowOutputFormat(
+        WriteBuffer & out_,
+        const Block & header_,
+        const RowOutputFormatParams & params_,
+        const FormatSettings & format_settings_);
+
+    void writeSuffix() override;
+    void finalizeImpl() override;
+
+private:
+    WriteBufferFromOwnString tmp_buf;
+    WriteBuffer & real_out;
 };
 
 }
