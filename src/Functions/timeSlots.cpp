@@ -101,9 +101,12 @@ struct TimeSlotsImpl
             result_offsets[i] = current_offset;
         }
     }
-
-    /// The following three methods process DateTime64 type
-    static void vectorVector(
+    /*
+    The following three methods process DateTime64 type
+    NO_SANITIZE_UNDEFINED is put here because user shall be careful when working with Decimal
+    Adjusting different scales can cause overflow -- it is OK for us. Don't use scales that differ a lot :)
+    */
+    static NO_SANITIZE_UNDEFINED void vectorVector(
         const PaddedPODArray<DateTime64> & starts, const PaddedPODArray<Decimal64> & durations, Decimal64 time_slot_size,
         PaddedPODArray<DateTime64> & result_values, ColumnArray::Offsets & result_offsets, UInt16 dt_scale, UInt16 duration_scale, UInt16 time_slot_scale)
     {
@@ -133,7 +136,7 @@ struct TimeSlotsImpl
         }
     }
 
-    static void vectorConstant(
+    static NO_SANITIZE_UNDEFINED void vectorConstant(
         const PaddedPODArray<DateTime64> & starts, Decimal64 duration, Decimal64 time_slot_size,
         PaddedPODArray<DateTime64> & result_values, ColumnArray::Offsets & result_offsets, UInt16 dt_scale, UInt16 duration_scale, UInt16 time_slot_scale)
     {
@@ -164,7 +167,7 @@ struct TimeSlotsImpl
         }
     }
 
-    static void constantVector(
+    static NO_SANITIZE_UNDEFINED void constantVector(
         DateTime64 start, const PaddedPODArray<Decimal64> & durations, Decimal64 time_slot_size,
         PaddedPODArray<DateTime64> & result_values, ColumnArray::Offsets & result_offsets, UInt16 dt_scale, UInt16 duration_scale, UInt16 time_slot_scale)
     {
