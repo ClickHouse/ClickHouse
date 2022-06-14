@@ -30,15 +30,21 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
+static UInt32 toPowerOfTwo(UInt32 x)
+{
+    x = x - 1;
+    for (UInt32 i = 1; i < sizeof(UInt32) * 8; i <<= 1)
+        x = x | x >> i;
+    return x + 1;
+}
+
 ConcurrentHashJoin::ConcurrentHashJoin(ContextPtr context_, std::shared_ptr<TableJoin> table_join_, size_t slots_, const Block & right_sample_block, bool any_take_last_row_)
     : context(context_)
     , table_join(table_join_)
     , slots(slots_)
 {
-    if (slots < 1 || 255 < slots)
-    {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Number of slots should be [1, 255], got {}", slots);
-    }
+    slots = std::min<size_t>(std::max<size_t>(1, slots), 255);
+    slots = toPowerOfTwo(slots);
 
     for (size_t i = 0; i < slots; ++i)
     {
@@ -174,12 +180,13 @@ std::shared_ptr<NotJoinedBlocks> ConcurrentHashJoin::getNonJoinedBlocks(
 
 static IColumn::Selector hashToSelector(const WeakHash32 & hash, size_t num_shards)
 {
+    assert(num_shards > 0 && (num_shards & (num_shards - 1)) == 0);
     const auto & data = hash.getData();
     size_t num_rows = data.size();
 
     IColumn::Selector selector(num_rows);
     for (size_t i = 0; i < num_rows; ++i)
-        selector[i] = data[i] % num_shards;
+        selector[i] = data[i] & (num_shards - 1);
     return selector;
 }
 
