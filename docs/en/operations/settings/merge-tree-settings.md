@@ -164,6 +164,187 @@ Default value: 604800 (1 week).
 
 Similar to [replicated_deduplication_window](#replicated-deduplication-window), `replicated_deduplication_window_seconds` specifies how long to store hash sums of blocks for insert deduplication. Hash sums older than `replicated_deduplication_window_seconds` are removed from ClickHouse Keeper, even if they are less than ` replicated_deduplication_window`.
 
+## max_replicated_logs_to_keep
+
+How many records may be in log, if there is inactive replica. Inactive replica becomes lost when when this number exceed.
+
+Possible values:
+
+-   Any positive integer.
+
+Default value: 1000
+
+## min_replicated_logs_to_keep
+
+Keep about this number of last records in ZooKeeper log, even if they are obsolete. It doesn't affect work of tables: used only to diagnose ZooKeeper log before cleaning.
+
+Possible values:
+
+-   Any positive integer.
+
+Default value: 10
+
+## prefer_fetch_merged_part_time_threshold
+
+If time passed after replication log entry creation exceeds this threshold and sum size of parts is greater than `prefer_fetch_merged_part_size_threshold`, prefer fetching merged part from replica instead of doing merge locally. To speed up very long merges.
+
+Possible values:
+
+-   Any positive integer.
+
+Default value: 3600
+
+## prefer_fetch_merged_part_size_threshold
+
+If sum size of parts exceeds this threshold and time passed after replication log entry creation is greater than `prefer_fetch_merged_part_time_threshold`, prefer fetching merged part from replica instead of doing merge locally. To speed up very long merges.
+
+Possible values:
+
+-   Any positive integer.
+
+Default value: 10,737,418,240
+
+## execute_merges_on_single_replica_time_threshold
+
+When greater than zero only a single replica starts the merge immediately, others wait up to that amount of time to download the result instead of doing merges locally. If the chosen replica doesn't finish the merge during that amount of time, fallback to standard behavior happens.
+
+Possible values:
+
+-   Any positive integer.
+
+Default value: 0
+
+## remote_fs_execute_merges_on_single_replica_time_threshold
+
+When greater than zero only a single replica starts the merge immediately if merged part on shared storage and `allow_remote_fs_zero_copy_replication` is enabled.
+
+Possible values:
+
+-   Any positive integer.
+
+Default value: 1800
+
+## try_fetch_recompressed_part_timeout
+
+Recompression works slow in most cases, so we don't start merge with recompression until this timeout and trying to fetch recompressed part from replica which assigned this merge with recompression.
+
+Possible values:
+
+-   Any positive integer.
+
+Default value: 7200
+
+## always_fetch_merged_part
+
+If true, replica never merge parts and always download merged parts from other replicas.
+
+Possible values:
+
+-   true, false
+
+Default value: false
+
+## max_suspicious_broken_parts
+
+Max broken parts, if more - deny automatic deletion.
+
+Possible values:
+
+-   Any positive integer.
+
+Default value: 10
+
+## max_suspicious_broken_parts_bytes
+
+
+Max size of all broken parts, if more - deny automatic deletion.
+
+Possible values:
+
+-   Any positive integer.
+
+Default value: 1,073,741,824
+
+## max_files_to_modify_in_alter_columns
+
+Not apply ALTER if number of files for modification(deletion, addition) more than this.
+
+Possible values:
+
+-   Any positive integer.
+
+Default value: 75
+
+## max_files_to_remove_in_alter_columns
+
+Not apply ALTER, if number of files for deletion more than this.
+
+Possible values:
+
+-   Any positive integer.
+
+Default value: 50
+
+## replicated_max_ratio_of_wrong_parts
+
+If ratio of wrong parts to total number of parts is less than this - allow to start.
+
+Possible values:
+
+-   Float, 0.0 - 1.0
+
+Default value: 0.5
+
+## replicated_max_parallel_fetches_for_host 
+
+Limit parallel fetches from endpoint (actually pool size).
+
+Possible values:
+
+-   Any positive integer.
+
+Default value: 15
+
+## replicated_fetches_http_connection_timeout
+
+HTTP connection timeout for part fetch requests. Inherited from default profile `http_connection_timeout` if not set explicitly.
+
+Possible values:
+
+-   Any positive integer.
+
+Default value: Inherited from default profile `http_connection_timeout` if not set explicitly.
+
+## replicated_can_become_leader
+
+If true, Replicated tables replicas on this node will try to acquire leadership.
+
+Possible values:
+
+-   true, false
+
+Default value: true
+
+## zookeeper_session_expiration_check_period
+
+ZooKeeper session expiration check period, in seconds.
+
+Possible values:
+
+-   Any positive integer.
+
+Default value: 60
+
+## detach_old_local_parts_when_cloning_replica
+
+Do not remove old local parts when repairing lost replica.
+
+Possible values:
+
+-   true, false
+
+Default value: true
+
 ## replicated_fetches_http_connection_timeout {#replicated_fetches_http_connection_timeout}
 
 HTTP connection timeout (in seconds) for part fetch requests. Inherited from default profile [http_connection_timeout](./settings.md#http_connection_timeout) if not set explicitly.
