@@ -41,7 +41,7 @@ public:
 
         virtual void next() = 0;
 
-        virtual bool vaild() const = 0;
+        virtual bool valid() const = 0;
 
         ///  Mark a cache record as recently used, it will update the priority
         /// of the cache record according to different cache algorithms.

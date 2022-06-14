@@ -486,7 +486,7 @@ bool FileCache::tryReserve(const Key & key, size_t offset, size_t size, std::loc
         };
 
         /// Select the cache from the LRU queue held by query for expulsion.
-        for (auto iter = query_context->getPriority()->getNewIterator(cache_lock); iter->vaild(); iter->next())
+        for (auto iter = query_context->getPriority()->getNewIterator(cache_lock); iter->valid(); iter->next())
         {
             if (!is_overflow())
                 break;
@@ -596,7 +596,7 @@ bool FileCache::tryReserveForMainList(
     std::vector<FileSegmentCell *> to_evict;
     std::vector<FileSegmentCell *> trash;
 
-    for (auto it = main_priority->getNewIterator(cache_lock); it->vaild(); it->next())
+    for (auto it = main_priority->getNewIterator(cache_lock); it->valid(); it->next())
     {
         auto entry_key = it->key();
         auto entry_offset = it->offset();
@@ -752,7 +752,7 @@ void LRUFileCache::removeIfReleasable(bool remove_persistent_files)
     std::lock_guard cache_lock(mutex);
 
     std::vector<FileSegmentPtr> to_remove;
-    for (auto it = main_priority->getNewIterator(cache_lock); it->vaild(); it->next())
+    for (auto it = main_priority->getNewIterator(cache_lock); it->valid(); it->next())
     {
         auto key = it->key();
         auto offset = it->offset();
@@ -1186,7 +1186,7 @@ void FileCache::assertCacheCorrectness(std::lock_guard<std::mutex> & cache_lock)
 void FileCache::assertPriorityCorrectness(std::lock_guard<std::mutex> & cache_lock)
 {
     [[maybe_unused]] size_t total_size = 0;
-    for (auto it = main_priority->getNewIterator(cache_lock); it->vaild(); it->next())
+    for (auto it = main_priority->getNewIterator(cache_lock); it->valid(); it->next())
     {
         auto key = it->key();
         auto offset = it->offset();
