@@ -67,6 +67,7 @@ public:
         START_DISTRIBUTED_SENDS,
         START_THREAD_FUZZER,
         STOP_THREAD_FUZZER,
+        UNFREEZE,
         END
     };
 
@@ -94,6 +95,7 @@ public:
     UInt64 seconds{};
 
     String filesystem_cache_path;
+    String backup_name;
 
     String getID(char) const override { return "SYSTEM query"; }
 
