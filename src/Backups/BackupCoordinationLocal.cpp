@@ -34,6 +34,7 @@ void BackupCoordinationLocal::finishPreparing(const String & /* host_id */, cons
     if (!error_message.empty())
         return;
 
+    std::lock_guard lock{mutex};
     replicated_tables.preparePartNamesByLocations();
 }
 

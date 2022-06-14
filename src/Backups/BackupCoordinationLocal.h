@@ -2,6 +2,7 @@
 
 #include <Backups/IBackupCoordination.h>
 #include <Backups/BackupCoordinationHelpers.h>
+#include <base/defines.h>
 #include <map>
 #include <mutex>
 
@@ -46,11 +47,11 @@ public:
 
 private:
     mutable std::mutex mutex;
-    BackupCoordinationReplicatedTablesInfo replicated_tables;
-    std::map<String /* file_name */, SizeAndChecksum> file_names; /// Should be ordered alphabetically, see listFiles(). For empty files we assume checksum = 0.
-    std::map<SizeAndChecksum, FileInfo> file_infos; /// Information about files. Without empty files.
-    Strings archive_suffixes;
-    size_t current_archive_suffix = 0;
+    BackupCoordinationReplicatedTablesInfo replicated_tables TSA_GUARDED_BY(mutex);
+    std::map<String /* file_name */, SizeAndChecksum> file_names TSA_GUARDED_BY(mutex); /// Should be ordered alphabetically, see listFiles(). For empty files we assume checksum = 0.
+    std::map<SizeAndChecksum, FileInfo> file_infos TSA_GUARDED_BY(mutex); /// Information about files. Without empty files.
+    Strings archive_suffixes TSA_GUARDED_BY(mutex);
+    size_t current_archive_suffix TSA_GUARDED_BY(mutex) = 0;
 
     const Poco::Logger * log;
 };

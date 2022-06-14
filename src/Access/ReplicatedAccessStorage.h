@@ -6,6 +6,7 @@
 #include <mutex>
 #include <unordered_map>
 
+#include <base/defines.h>
 #include <base/scope_guard.h>
 
 #include <Common/ThreadPool.h>
@@ -66,10 +67,10 @@ private:
     bool refresh();
     void refreshEntities(const zkutil::ZooKeeperPtr & zookeeper);
     void refreshEntity(const zkutil::ZooKeeperPtr & zookeeper, const UUID & id);
-    void refreshEntityNoLock(const zkutil::ZooKeeperPtr & zookeeper, const UUID & id);
+    void refreshEntityNoLock(const zkutil::ZooKeeperPtr & zookeeper, const UUID & id) TSA_REQUIRES(mutex);
 
-    void setEntityNoLock(const UUID & id, const AccessEntityPtr & entity);
-    void removeEntityNoLock(const UUID & id);
+    void setEntityNoLock(const UUID & id, const AccessEntityPtr & entity) TSA_REQUIRES(mutex);
+    void removeEntityNoLock(const UUID & id) TSA_REQUIRES(mutex);
 
     struct Entry
     {
@@ -82,8 +83,8 @@ private:
     AccessEntityPtr readImpl(const UUID & id, bool throw_if_not_exists) const override;
 
     mutable std::mutex mutex;
-    std::unordered_map<UUID, Entry> entries_by_id;
-    std::unordered_map<String, Entry *> entries_by_name_and_type[static_cast<size_t>(AccessEntityType::MAX)];
+    std::unordered_map<UUID, Entry> entries_by_id TSA_GUARDED_BY(mutex);
+    std::unordered_map<String, Entry *> entries_by_name_and_type[static_cast<size_t>(AccessEntityType::MAX)] TSA_GUARDED_BY(mutex);
     AccessChangesNotifier & changes_notifier;
 };
 }

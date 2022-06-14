@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Access/IAccessStorage.h>
+#include <base/defines.h>
 #include <Common/LRUCache.h>
 #include <mutex>
 
@@ -56,8 +57,8 @@ private:
     using Storages = std::vector<StoragePtr>;
     std::shared_ptr<const Storages> getStoragesInternal() const;
 
-    std::shared_ptr<const Storages> nested_storages;
-    mutable LRUCache<UUID, Storage> ids_cache;
+    std::shared_ptr<const Storages> nested_storages TSA_GUARDED_BY(mutex);
+    mutable LRUCache<UUID, Storage> ids_cache TSA_GUARDED_BY(mutex);
     mutable std::mutex mutex;
 };
 
