@@ -66,7 +66,7 @@ Chunk MergeSorter::read()
 
     Chunk result = queue_variants.callOnBatchVariant([&](auto & queue)
     {
-        return mergeImpl(queue);
+        return mergeBatchImpl(queue);
     });
 
     return result;
@@ -74,7 +74,7 @@ Chunk MergeSorter::read()
 
 
 template <typename TSortingHeap>
-Chunk MergeSorter::mergeImpl(TSortingHeap & queue)
+Chunk MergeSorter::mergeBatchImpl(TSortingHeap & queue)
 {
     size_t num_columns = chunks[0].getNumColumns();
     MutableColumns merged_columns = chunks[0].cloneEmptyColumns();
@@ -93,10 +93,20 @@ Chunk MergeSorter::mergeImpl(TSortingHeap & queue)
     size_t merged_rows = 0;
     while (queue.isValid())
     {
-        auto [current_ptr, batch_size] = queue.currentWithBatch();
+        auto [current_ptr, batch_size] = queue.current();
         auto & current = *current_ptr;
 
-        /// Append a row from queue.
+        if (merged_rows + batch_size > max_merged_block_size)
+            batch_size -= merged_rows + batch_size - max_merged_block_size;
+
+        bool limit_reached = false;
+        if (limit && total_merged_rows + batch_size > limit)
+        {
+            batch_size -= total_merged_rows + batch_size - limit;
+            limit_reached = true;
+        }
+
+        /// Append rows from queue.
         for (size_t i = 0; i < num_columns; ++i)
         {
             if (batch_size == 1)
@@ -109,7 +119,7 @@ Chunk MergeSorter::mergeImpl(TSortingHeap & queue)
         merged_rows += batch_size;
 
         /// We don't need more rows because of limit has reached.
-        if (limit && total_merged_rows == limit)
+        if (limit_reached)
         {
             chunks.clear();
             break;
