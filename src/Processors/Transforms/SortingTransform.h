@@ -34,8 +34,8 @@ private:
     /** Two different cursors are supported - with and without Collation.
       * Templates are used (instead of virtual functions in SortCursor) for zero-overhead.
       */
-    template <typename TSortingHeap>
-    Chunk mergeBatchImpl(TSortingHeap & queue);
+    template <typename TSortingQueue>
+    Chunk mergeBatchImpl(TSortingQueue & queue);
 
 };
 

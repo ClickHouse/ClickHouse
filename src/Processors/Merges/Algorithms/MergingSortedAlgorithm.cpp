@@ -74,7 +74,7 @@ void MergingSortedAlgorithm::initialize(Inputs inputs)
         cursors[source_num] = SortCursorImpl(header, chunk.getColumns(), description, source_num);
     }
 
-    queue_variants.callOnDefaultVariant([&](auto & queue)
+    queue_variants.callOnVariant([&](auto & queue)
     {
         using QueueType = std::decay_t<decltype(queue)>;
         queue = QueueType(cursors);
@@ -87,7 +87,7 @@ void MergingSortedAlgorithm::consume(Input & input, size_t source_num)
     current_inputs[source_num].swap(input);
     cursors[source_num].reset(current_inputs[source_num].chunk.getColumns(), header);
 
-    queue_variants.callOnDefaultVariant([&](auto & queue)
+    queue_variants.callOnVariant([&](auto & queue)
     {
         queue.push(cursors[source_num]);
     });
@@ -95,7 +95,7 @@ void MergingSortedAlgorithm::consume(Input & input, size_t source_num)
 
 IMergingAlgorithm::Status MergingSortedAlgorithm::merge()
 {
-    IMergingAlgorithm::Status result = queue_variants.callOnDefaultVariant([&](auto & queue)
+    IMergingAlgorithm::Status result = queue_variants.callOnVariant([&](auto & queue)
     {
         return mergeImpl(queue);
     });
@@ -103,8 +103,8 @@ IMergingAlgorithm::Status MergingSortedAlgorithm::merge()
     return result;
 }
 
-template <typename TSortingHeap>
-IMergingAlgorithm::Status MergingSortedAlgorithm::mergeImpl(TSortingHeap & queue)
+template <typename TSortingQueue>
+IMergingAlgorithm::Status MergingSortedAlgorithm::mergeImpl(TSortingQueue & queue)
 {
     /// Take rows in required order and put them into `merged_data`, while the rows are no more than `max_block_size`
     while (queue.isValid())

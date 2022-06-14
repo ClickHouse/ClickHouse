@@ -73,8 +73,8 @@ Chunk MergeSorter::read()
 }
 
 
-template <typename TSortingHeap>
-Chunk MergeSorter::mergeBatchImpl(TSortingHeap & queue)
+template <typename TSortingQueue>
+Chunk MergeSorter::mergeBatchImpl(TSortingQueue & queue)
 {
     size_t num_columns = chunks[0].getNumColumns();
     MutableColumns merged_columns = chunks[0].cloneEmptyColumns();
