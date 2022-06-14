@@ -250,7 +250,7 @@ public:
         };
 
         mutable std::unordered_map<std::string, UncommittedNode> nodes;
-        std::deque<Delta> deltas;
+        std::list<Delta> deltas;
         KeeperStorage & storage;
     };
 
