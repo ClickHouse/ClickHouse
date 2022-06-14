@@ -1262,34 +1262,30 @@ create table ci_checks engine File(TSVWithNamesAndTypes, 'ci-checks.tsv')
         --config "right/config/client_config.xml"
         --date_time_input_format=best_effort)
 
-    "${client[@]}" --query '
-        CREATE TABLE IF NOT EXISTS query_metrics_v2 (
-            `event_date` Date,
-            `event_time` DateTime,
-            `pr_number` UInt32,
-            `old_sha` String,
-            `new_sha` String,
-            `test` LowCardinality(String),
-            `query_index` UInt32,
-            `query_display_name` String,
-            `metric_name` LowCardinality(String),
-            `old_value` Float64,
-            `new_value` Float64,
-            `diff` Float64,
-            `stat_threshold` Float64
-        ) ENGINE = ReplicatedMergeTree
-        ORDER BY event_date
-    '
+    # CREATE TABLE IF NOT EXISTS query_metrics_v2 (
+    #     `event_date` Date,
+    #     `event_time` DateTime,
+    #     `pr_number` UInt32,
+    #     `old_sha` String,
+    #     `new_sha` String,
+    #     `test` LowCardinality(String),
+    #     `query_index` UInt32,
+    #     `query_display_name` String,
+    #     `metric_name` LowCardinality(String),
+    #     `old_value` Float64,
+    #     `new_value` Float64,
+    #     `diff` Float64,
+    #     `stat_threshold` Float64
+    # ) ENGINE = ReplicatedMergeTree
+    # ORDER BY event_date
 
-    "${client[@]}" --query '
-        CREATE TABLE IF NOT EXISTS run_attributes_v1 (
-            `old_sha` String,
-            `new_sha` String,
-            `metric_name` LowCardinality(String),
-            `metric_value` String
-        ) ENGINE = ReplicatedMergeTree
-        ORDER BY old_sha, new_sha
-    '
+    # CREATE TABLE IF NOT EXISTS run_attributes_v1 (
+    #     `old_sha` String,
+    #     `new_sha` String,
+    #     `metric_name` LowCardinality(String),
+    #     `metric_value` String
+    # ) ENGINE = ReplicatedMergeTree
+    # ORDER BY (old_sha, new_sha)
 
     "${client[@]}" --query "
             insert into query_metrics_v2
