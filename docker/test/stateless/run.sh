@@ -18,7 +18,8 @@ ln -s /usr/share/clickhouse-test/clickhouse-test /usr/bin/clickhouse-test
 # install test configs
 /usr/share/clickhouse-test/config/install.sh
 
-./setup_minio.sh
+./setup_minio.sh stateless
+./setup_hdfs_minicluster.sh
 
 # For flaky check we also enable thread fuzzer
 if [ "$NUM_TRIES" -gt "1" ]; then

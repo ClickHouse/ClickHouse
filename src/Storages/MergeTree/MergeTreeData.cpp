@@ -56,6 +56,7 @@
 #include <Storages/StorageMergeTree.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/VirtualColumnUtils.h>
+#include <Storages/Freeze.h>
 #include <Common/Increment.h>
 #include <Common/SimpleIncrement.h>
 #include <Common/Stopwatch.h>
@@ -1501,7 +1502,7 @@ static bool isOldPartDirectory(const DiskPtr & disk, const String & directory_pa
 }
 
 
-size_t MergeTreeData::clearOldTemporaryDirectories(size_t custom_directories_lifetime_seconds)
+size_t MergeTreeData::clearOldTemporaryDirectories(size_t custom_directories_lifetime_seconds, const NameSet & valid_prefixes)
 {
     /// If the method is already called from another thread, then we don't need to do anything.
     std::unique_lock lock(clear_old_temporary_directories_mutex, std::defer_lock);
@@ -1523,10 +1524,19 @@ size_t MergeTreeData::clearOldTemporaryDirectories(size_t custom_directories_lif
         for (auto it = disk->iterateDirectory(relative_data_path); it->isValid(); it->next())
         {
             const std::string & basename = it->name();
-            if (!startsWith(basename, "tmp_"))
+            bool start_with_valid_prefix = false;
+            for (const auto & prefix : valid_prefixes)
             {
-                continue;
+                if (startsWith(basename, prefix))
+                {
+                    start_with_valid_prefix = true;
+                    break;
+                }
             }
+
+            if (!start_with_valid_prefix)
+                continue;
+
             const std::string & full_path = fullPath(disk, it->path());
 
             try
@@ -1931,6 +1941,17 @@ void MergeTreeData::rename(const String & new_table_path, const StorageID & new_
             throw Exception{"Target path already exists: " + fullPath(disk, new_table_path), ErrorCodes::DIRECTORY_ALREADY_EXISTS};
     }
 
+    {
+        /// Relies on storage path, so we drop it during rename
+        /// it will be recreated automatiaclly.
+        std::lock_guard wal_lock(write_ahead_log_mutex);
+        if (write_ahead_log)
+        {
+            write_ahead_log->shutdown();
+            write_ahead_log.reset();
+        }
+    }
+
     for (const auto & disk : disks)
     {
         auto new_table_path_parent = parentPath(new_table_path);
@@ -1942,7 +1963,10 @@ void MergeTreeData::rename(const String & new_table_path, const StorageID & new_
         getContext()->dropCaches();
 
     relative_data_path = new_table_path;
+
     renameInMemory(new_table_id);
+
+
 }
 
 void MergeTreeData::dropAllData()
@@ -1957,6 +1981,12 @@ void MergeTreeData::dropAllData()
 
     data_parts_indexes.clear();
     column_sizes.clear();
+
+    {
+        std::lock_guard wal_lock(write_ahead_log_mutex);
+        if (write_ahead_log)
+            write_ahead_log->shutdown();
+    }
 
     /// Tables in atomic databases have UUID and stored in persistent locations.
     /// No need to drop caches (that are keyed by filesystem path) because collision is not possible.
@@ -6083,51 +6113,15 @@ bool MergeTreeData::removeDetachedPart(DiskPtr disk, const String & path, const 
     return false;
 }
 
-PartitionCommandsResultInfo MergeTreeData::unfreezePartitionsByMatcher(MatcherFn matcher, const String & backup_name, ContextPtr)
+PartitionCommandsResultInfo MergeTreeData::unfreezePartitionsByMatcher(MatcherFn matcher, const String & backup_name, ContextPtr local_context)
 {
     auto backup_path = fs::path("shadow") / escapeForFileName(backup_name) / relative_data_path;
 
     LOG_DEBUG(log, "Unfreezing parts by path {}", backup_path.generic_string());
 
-    PartitionCommandsResultInfo result;
+    auto disks = getStoragePolicy()->getDisks();
 
-    for (const auto & disk : getStoragePolicy()->getDisks())
-    {
-        if (!disk->exists(backup_path))
-            continue;
-
-        for (auto it = disk->iterateDirectory(backup_path); it->isValid(); it->next())
-        {
-            const auto & partition_directory = it->name();
-
-            /// Partition ID is prefix of part directory name: <partition id>_<rest of part directory name>
-            auto found = partition_directory.find('_');
-            if (found == std::string::npos)
-                continue;
-            auto partition_id = partition_directory.substr(0, found);
-
-            if (!matcher(partition_id))
-                continue;
-
-            const auto & path = it->path();
-
-            bool keep_shared = removeDetachedPart(disk, path, partition_directory, true);
-
-            result.push_back(PartitionCommandResultInfo{
-                .partition_id = partition_id,
-                .part_name = partition_directory,
-                .backup_path = disk->getPath() + backup_path.generic_string(),
-                .part_backup_path = disk->getPath() + path,
-                .backup_name = backup_name,
-            });
-
-            LOG_DEBUG(log, "Unfreezed part by path {}, keep shared data: {}", disk->getPath() + path, keep_shared);
-        }
-    }
-
-    LOG_DEBUG(log, "Unfreezed {} parts", result.size());
-
-    return result;
+    return Unfreezer().unfreezePartitionsFromTableDirectory(matcher, backup_name, disks, backup_path, local_context);
 }
 
 bool MergeTreeData::canReplacePartition(const DataPartPtr & src_part) const
