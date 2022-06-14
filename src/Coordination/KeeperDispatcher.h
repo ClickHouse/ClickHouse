@@ -75,7 +75,7 @@ private:
 
     Poco::Logger * log;
 
-    struct StringHash 
+    struct StringHash
     {
         using is_transparent = void;
 
@@ -89,7 +89,7 @@ private:
     {
         using is_transparent = void;
 
-        bool operator()(std::string_view a, std::string_view b) const 
+        bool operator()(std::string_view a, std::string_view b) const
         {
             return a == b;
         }
