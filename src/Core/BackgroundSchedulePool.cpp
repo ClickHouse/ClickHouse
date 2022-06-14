@@ -265,9 +265,10 @@ void BackgroundSchedulePool::threadFunction()
     while (!shutdown)
     {
         TaskInfoPtr task;
-        std::unique_lock<std::mutex> tasks_lock(tasks_mutex);
 
         {
+            std::unique_lock<std::mutex> tasks_lock(tasks_mutex);
+
             tasks_cond_var.wait(tasks_lock, [&]()
             {
                 return shutdown || !tasks.empty();
