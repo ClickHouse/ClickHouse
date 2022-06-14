@@ -139,37 +139,100 @@ TEST(SelectorMatchingVM, CombinatorsWithAttributes)
     expectKeyValue(vm.instructions[1]);
     expectKeyValue(vm.instructions[2]);
 
-//    EXPECT_EQ(vm.handleOpeningTag("body"sv), MatchResult::NEED_ATTRIBUTES);
-//    EXPECT_EQ(vm.handleAttribute(Attribute{"key1"sv, "value1"}), MatchResult::NEED_ATTRIBUTES);
-//    EXPECT_EQ(vm.handleAttribute(Attribute{"unknown_key"sv, "value2"}), MatchResult::NEED_ATTRIBUTES);
-//    EXPECT_EQ(vm.handleAttribute(Attribute{"key2"sv, "value2"}), MatchResult::MATCH);
-//    EXPECT_EQ(vm.current_instruction_index, 1);
-//
-//    EXPECT_EQ(vm.handleOpeningTag("div"sv), MatchResult::NOT_MATCH);
-//    EXPECT_EQ(vm.handleAttribute(Attribute{"key1"sv, "value1"}), MatchResult::NEED_ATTRIBUTES);
-//    EXPECT_EQ(vm.handleAttribute(Attribute{"unknown_key"sv, "value2"}), MatchResult::NEED_ATTRIBUTES);
-//    EXPECT_EQ(vm.handleAttribute(Attribute{"key2"sv, "value2"}), MatchResult::MATCH);
-//    EXPECT_EQ(vm.current_instruction_index, 2);
-//
-//    EXPECT_EQ(vm.handleOpeningTag("span"sv), MatchResult::NOT_MATCH);
-//    EXPECT_EQ(vm.current_instruction_index, 0);
-//
-//    EXPECT_EQ(vm.handleOpeningTag("div"sv), MatchResult::NOT_MATCH);
-//    EXPECT_EQ(vm.current_instruction_index, 0);
-//
-//    EXPECT_EQ(vm.handleOpeningTag("span"sv), MatchResult::MATCH);
-//    EXPECT_EQ(vm.current_instruction_index, 0);
-//
-//    EXPECT_EQ(vm.handleOpeningTag("span"sv), MatchResult::MATCH);
-//    EXPECT_EQ(vm.current_instruction_index, 0);
-//
-//    vm.handleClosingTag("span"sv);
-//    vm.handleClosingTag("span"sv);
-//    vm.handleClosingTag("div"sv);
-//    vm.handleClosingTag("a"sv);
-//    vm.handleClosingTag("div"sv);
-//    EXPECT_EQ(vm.current_instruction_index, 1);
-//
-//    vm.handleClosingTag("body"sv);
-//    EXPECT_EQ(vm.current_instruction_index, 0);
+    EXPECT_EQ(vm.handleOpeningTag("body"sv), MatchResult::NEED_ATTRIBUTES);
+    EXPECT_EQ(vm.handleAttribute(Attribute{"key1"sv, "value1"}), MatchResult::NEED_ATTRIBUTES);
+    EXPECT_EQ(vm.handleAttribute(Attribute{"unknown_key"sv, "value2"}), MatchResult::NEED_ATTRIBUTES);
+    EXPECT_EQ(vm.handleAttribute(Attribute{"key2"sv, "value2"}), MatchResult::NOT_MATCH);
+    EXPECT_EQ(vm.current_instruction_index, 1);
+
+    EXPECT_EQ(vm.handleOpeningTag("div"sv), MatchResult::NEED_ATTRIBUTES);
+    EXPECT_EQ(vm.handleAttribute(Attribute{"key1"sv, "value1"}), MatchResult::NEED_ATTRIBUTES);
+    EXPECT_EQ(vm.handleAttribute(Attribute{"unknown_key"sv, "value2"}), MatchResult::NEED_ATTRIBUTES);
+    EXPECT_EQ(vm.handleAttribute(Attribute{"key2"sv, "value2"}), MatchResult::NOT_MATCH);
+    EXPECT_EQ(vm.current_instruction_index, 2);
+
+    EXPECT_EQ(vm.handleOpeningTag("a"sv), MatchResult::NOT_MATCH);
+    EXPECT_EQ(vm.current_instruction_index, 0);
+
+    EXPECT_EQ(vm.handleOpeningTag("div"sv), MatchResult::NOT_MATCH);
+    EXPECT_EQ(vm.current_instruction_index, 0);
+
+    EXPECT_EQ(vm.handleOpeningTag("span"sv), MatchResult::NEED_ATTRIBUTES);
+    EXPECT_EQ(vm.handleAttribute(Attribute{"key1"sv, "value1"}), MatchResult::NEED_ATTRIBUTES);
+    EXPECT_EQ(vm.handleAttribute(Attribute{"unknown_key"sv, "value2"}), MatchResult::NEED_ATTRIBUTES);
+    EXPECT_EQ(vm.handleAttribute(Attribute{"key2"sv, "value2"}), MatchResult::MATCH);
+    EXPECT_EQ(vm.current_instruction_index, 0);
+
+    EXPECT_EQ(vm.handleOpeningTag("any_tag"sv), MatchResult::MATCH);
+    EXPECT_EQ(vm.current_instruction_index, 0);
+
+    EXPECT_EQ(vm.handleClosingTag("any_tag"sv), MatchResult::MATCH);
+    EXPECT_EQ(vm.current_instruction_index, 0);
+    EXPECT_EQ(vm.handleClosingTag("span"sv), MatchResult::NOT_MATCH);
+    EXPECT_EQ(vm.current_instruction_index, 0);
+    EXPECT_EQ(vm.handleClosingTag("div"sv), MatchResult::NOT_MATCH);
+    EXPECT_EQ(vm.current_instruction_index, 0);
+    EXPECT_EQ(vm.handleClosingTag("a"sv), MatchResult::NOT_MATCH);
+    EXPECT_EQ(vm.current_instruction_index, 2);
+
+    EXPECT_EQ(vm.handleClosingTag("div"sv), MatchResult::NOT_MATCH);
+    EXPECT_EQ(vm.current_instruction_index, 1);
+
+    EXPECT_EQ(vm.handleClosingTag("body"sv), MatchResult::NOT_MATCH);
+    EXPECT_EQ(vm.current_instruction_index, 0);
+}
+
+TEST(SelectorMatchingVM, DescendantWithAttributes)
+{
+    std::string selector
+        = R"(div[key1='value1'][key2 = "value2"] div[key1=value3][key2 = value4] div[key1='value5'][key2 = "value6"] a)";
+    const char * begin = selector.data();
+    const char * end = selector.data() + selector.size();
+    auto vm = SelectorMatchingVM::parseSelector(begin, end);
+
+    ASSERT_EQ(vm.instructions.size(), 4);
+
+    EXPECT_EQ(vm.instructions[0].expected_tag, "div"sv);
+    EXPECT_TRUE(vm.instructions[0].need_jump_to_next_instruction);
+
+    EXPECT_EQ(vm.instructions[1].expected_tag, "div"sv);
+    EXPECT_TRUE(vm.instructions[1].need_jump_to_next_instruction);
+
+    EXPECT_EQ(vm.instructions[2].expected_tag, "div"sv);
+    EXPECT_TRUE(vm.instructions[2].need_jump_to_next_instruction);
+
+    EXPECT_EQ(vm.instructions[3].expected_tag, "a"sv);
+    EXPECT_FALSE(vm.instructions[3].need_jump_to_next_instruction);
+
+    EXPECT_EQ(vm.handleOpeningTag("div"sv), MatchResult::NEED_ATTRIBUTES);
+    EXPECT_EQ(vm.handleAttribute(Attribute{"key1"sv, "value1"}), MatchResult::NEED_ATTRIBUTES);
+    EXPECT_EQ(vm.handleAttribute(Attribute{"key2"sv, "value2"}), MatchResult::NOT_MATCH);
+    EXPECT_EQ(vm.current_instruction_index, 1);
+
+    EXPECT_EQ(vm.handleOpeningTag("div"sv), MatchResult::NEED_ATTRIBUTES);
+    EXPECT_EQ(vm.handleAttribute(Attribute{"key1"sv, "value3"}), MatchResult::NEED_ATTRIBUTES);
+    EXPECT_EQ(vm.handleAttribute(Attribute{"key2"sv, "value4"}), MatchResult::NOT_MATCH);
+    EXPECT_EQ(vm.current_instruction_index, 2);
+
+    EXPECT_EQ(vm.handleOpeningTag("div"sv), MatchResult::NEED_ATTRIBUTES);
+    EXPECT_EQ(vm.handleAttribute(Attribute{"key1"sv, "value5"}), MatchResult::NEED_ATTRIBUTES);
+    EXPECT_EQ(vm.handleAttribute(Attribute{"key2"sv, "value6"}), MatchResult::NOT_MATCH);
+    EXPECT_EQ(vm.current_instruction_index, 3);
+
+    EXPECT_EQ(vm.handleOpeningTag("div"sv), MatchResult::NEED_ATTRIBUTES);
+    EXPECT_EQ(vm.handleAttribute(Attribute{"key1"sv, "value1"}), MatchResult::NEED_ATTRIBUTES);
+    EXPECT_EQ(vm.handleAttribute(Attribute{"key2"sv, "value2"}), MatchResult::NOT_MATCH);
+    EXPECT_EQ(vm.current_instruction_index, 1);
+
+    EXPECT_EQ(vm.handleOpeningTag("div"sv), MatchResult::NEED_ATTRIBUTES);
+    EXPECT_EQ(vm.handleAttribute(Attribute{"key1"sv, "value5"}), MatchResult::NEED_ATTRIBUTES);
+    EXPECT_EQ(vm.handleAttribute(Attribute{"key2"sv, "value6"}), MatchResult::NOT_MATCH);
+    EXPECT_EQ(vm.current_instruction_index, 3);
+
+    EXPECT_EQ(vm.handleOpeningTag("div"sv), MatchResult::NEED_ATTRIBUTES);
+    EXPECT_EQ(vm.handleAttribute(Attribute{"key1"sv, "value3"}), MatchResult::NEED_ATTRIBUTES);
+    EXPECT_EQ(vm.handleAttribute(Attribute{"key2"sv, "value4"}), MatchResult::NOT_MATCH);
+    EXPECT_EQ(vm.current_instruction_index, 2);
+
+    EXPECT_EQ(vm.handleOpeningTag("a"sv), MatchResult::MATCH);
 }

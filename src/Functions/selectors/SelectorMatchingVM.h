@@ -4,8 +4,8 @@
 
 #include <base/find_symbols.h>
 
-#include <string>
 #include <sstream>
+#include <string>
 #include <vector>
 
 namespace DB
@@ -108,9 +108,9 @@ struct Instruction
     {
         std::ostringstream ss;
         ss << "<" << expected_tag.value << ">";
-        for (const auto & attr: attributes) {
-            ss << "[" << attr.matched << ", " << attr.matcher.key.value << "=" << attr.matcher.value_matcher->pattern()
-               << "]";
+        for (const auto & attr : attributes)
+        {
+            ss << "[" << attr.matched << ", " << attr.matcher.key.value << "=" << attr.matcher.value_matcher->pattern() << "]";
         }
         ss << "need_jmp=" << need_jump_to_next_instruction;
         return ss.str();
@@ -118,10 +118,12 @@ struct Instruction
 
     MatchResult match(CaseInsensitiveStringView tag_name) const
     {
-        std::cout << "try match <" << tag_name.value << ">" << " [" << ToString() << "]\n";
+        std::cout << "try match <" << tag_name.value << ">"
+                  << " [" << ToString() << "]\n";
         if (expected_tag.value == "*" || expected_tag == tag_name)
         {
-            if (!attributes.empty()) {
+            if (!attributes.empty())
+            {
                 std::cout << "match result: need attributes\n";
                 return MatchResult::NEED_ATTRIBUTES;
             }
@@ -153,7 +155,8 @@ struct Instruction
             }
         }
 
-        if (isAllAttributesMatched()) {
+        if (isAllAttributesMatched())
+        {
             reset();
             std::cout << "handleAttribute result: match\n";
             return MatchResult::MATCH;
@@ -172,7 +175,8 @@ struct Instruction
         return true;
     }
 
-    void reset() {
+    void reset()
+    {
         for (auto & attr : attributes)
             attr.matched = false;
     }
@@ -184,8 +188,12 @@ struct SelectorMatchingVM
     std::vector<Instruction> instructions;
     std::vector<StackItem> stack;
     size_t current_instruction_index = 0;
+
     int last_stack_jump_index = -1;
     CaseInsensitiveStringView last_tag_name;
+    std::vector<Attribute> last_tag_attributes;
+    size_t cur_attribute_ind = 0;
+
     bool matched = false;
     CaseInsensitiveStringView last_matched_tag;
     int last_matched_tag_count = 0;
@@ -194,6 +202,16 @@ struct SelectorMatchingVM
     {
         stack.clear();
         current_instruction_index = 0;
+
+        last_tag_name = {};
+        last_tag_attributes.clear();
+        cur_attribute_ind = 0;
+        last_stack_jump_index = -1;
+
+        matched = false;
+        last_matched_tag = {};
+        last_matched_tag_count = 0;
+
         for (auto & instruction : instructions)
             instruction.reset();
     }
@@ -201,93 +219,44 @@ struct SelectorMatchingVM
     MatchResult handleOpeningTag(CaseInsensitiveStringView tag_name)
     {
         std::cout << "got opening tag " << tag_name.value << '\n';
-        for (auto && entry: stack)
+        for (auto && entry : stack)
             std::cout << "<" << entry.tag_name.value << "> jump=" << entry.jump << ", next=" << entry.next << std::endl;
-        if (matched) {
+        if (matched)
+        {
             if (tag_name == last_matched_tag)
                 ++last_matched_tag_count;
             return MatchResult::MATCH;
         }
 
         last_tag_name = tag_name;
+        last_tag_attributes.clear();
+        cur_attribute_ind = 0;
+
         last_stack_jump_index = stack.size() - 1;
         stack.push_back(StackItem{.tag_name = tag_name});
 
-        auto match_result = instructions[current_instruction_index].match(tag_name);
-        switch (match_result)
-        {
-            case MatchResult::MATCH:
-                if (instructions[current_instruction_index].need_jump_to_next_instruction) {
-                    stack.back().jump = current_instruction_index + 1;
-                }
-                ++current_instruction_index;
-                if (current_instruction_index == instructions.size())
-                {
-                    current_instruction_index = 0;
-                    matched = true;
-                    last_matched_tag = tag_name;
-                    last_matched_tag_count = 1;
-                    return MatchResult::MATCH;
-                }
-                stack.back().next = current_instruction_index;
-                return MatchResult::NOT_MATCH;
-            case MatchResult::NOT_MATCH:
-                // TODO: store index of last item with jump in every stack item
-                for (; last_stack_jump_index >= 0; --last_stack_jump_index)
-                {
-                    auto ind = stack[last_stack_jump_index].jump;
-                    if (ind != -1)
-                    {
-                        std::cout << "found jump, executing, ind on stack = " << last_stack_jump_index <<  "\n";
-                        auto mr = instructions[ind].match(tag_name);
-                        switch (mr)
-                        {
-                            case MatchResult::MATCH:
-                                current_instruction_index = ind + 1;
-                                if (current_instruction_index == instructions.size())
-                                {
-                                    current_instruction_index = 0;
-                                    matched = true;
-                                    last_matched_tag = last_tag_name;
-                                    last_matched_tag_count = 1;
-                                    return MatchResult::MATCH;
-                                }
-                                stack.back().next = current_instruction_index;
-                                if (instructions[ind].need_jump_to_next_instruction) {
-                                    stack.back().jump = current_instruction_index;
-                                }
-                                return MatchResult::NOT_MATCH;
-                            case MatchResult::NOT_MATCH:
-                                continue;
-                            case MatchResult::NEED_ATTRIBUTES:
-                                current_instruction_index = ind;
-                                --last_stack_jump_index;
-                                return MatchResult::NEED_ATTRIBUTES;
-                        }
-                    }
-                }
-
-                current_instruction_index = 0;
-                return MatchResult::NOT_MATCH;
-            case MatchResult::NEED_ATTRIBUTES:
-                return MatchResult::NEED_ATTRIBUTES;
-        }
+        return dispatchInstructionResult(instructions[current_instruction_index].match(tag_name));
     }
 
     MatchResult handleClosingTag(CaseInsensitiveStringView tag_name)
     {
         std::cout << "got closing tag " << tag_name.value << '\n';
-        for (auto && entry: stack)
+        for (auto && entry : stack)
             std::cout << "<" << entry.tag_name.value << "> jump=" << entry.jump << ", next=" << entry.next << std::endl;
 
-        if (matched) {
+        if (matched)
+        {
             if (tag_name == last_matched_tag)
                 --last_matched_tag_count;
-            if (last_matched_tag_count == 0) {
+
+            if (last_matched_tag_count == 0)
+            {
                 matched = false;
                 stack.pop_back();
                 return MatchResult::NOT_MATCH;
-            } else {
+            }
+            else
+            {
                 return MatchResult::MATCH;
             }
         }
@@ -308,11 +277,23 @@ struct SelectorMatchingVM
         return MatchResult::NOT_MATCH;
     }
 
-    MatchResult handleAttribute(const Attribute & attribute) {
-        auto match_result = instructions[current_instruction_index].handleAttribute(attribute);
+    MatchResult handleAttribute(const Attribute & attribute)
+    {
+        last_tag_attributes.push_back(attribute);
+        for (auto && entry : stack)
+            std::cout << "<" << entry.tag_name.value << "> jump=" << entry.jump << ", next=" << entry.next << std::endl;
+        return dispatchInstructionResult(instructions[current_instruction_index].handleAttribute(attribute));
+    }
+
+    MatchResult dispatchInstructionResult(MatchResult match_result)
+    {
         switch (match_result)
         {
             case MatchResult::MATCH:
+                if (instructions[current_instruction_index].need_jump_to_next_instruction)
+                {
+                    stack.back().jump = current_instruction_index + 1;
+                }
                 ++current_instruction_index;
                 if (current_instruction_index == instructions.size())
                 {
@@ -325,11 +306,13 @@ struct SelectorMatchingVM
                 stack.back().next = current_instruction_index;
                 return MatchResult::NOT_MATCH;
             case MatchResult::NOT_MATCH:
+                // TODO: store index of last item with jump in every stack item
                 for (; last_stack_jump_index >= 0; --last_stack_jump_index)
                 {
                     auto ind = stack[last_stack_jump_index].jump;
                     if (ind != -1)
                     {
+                        std::cout << "found jump, executing, ind on stack = " << last_stack_jump_index << "\n";
                         auto mr = instructions[ind].match(last_tag_name);
                         switch (mr)
                         {
@@ -341,21 +324,42 @@ struct SelectorMatchingVM
                                     return MatchResult::MATCH;
                                 }
                                 stack.back().next = current_instruction_index;
+                                if (instructions[ind].need_jump_to_next_instruction)
+                                {
+                                    stack.back().jump = current_instruction_index;
+                                }
                                 return MatchResult::NOT_MATCH;
                             case MatchResult::NOT_MATCH:
+                                cur_attribute_ind = 0;
                                 continue;
                             case MatchResult::NEED_ATTRIBUTES:
                                 current_instruction_index = ind;
                                 --last_stack_jump_index;
-                                return MatchResult::NEED_ATTRIBUTES;
+                                if (cur_attribute_ind == last_tag_attributes.size())
+                                {
+                                    return MatchResult::NEED_ATTRIBUTES;
+                                }
+                                return dispatchInstructionResult(
+                                    instructions[current_instruction_index].handleAttribute(last_tag_attributes[cur_attribute_ind++]));
                         }
                     }
+                }
+                cur_attribute_ind = 0;
+                if (current_instruction_index != 0)
+                {
+                    current_instruction_index = 0;
+                    return dispatchInstructionResult(instructions[current_instruction_index].match(last_tag_name));
                 }
 
                 current_instruction_index = 0;
                 return MatchResult::NOT_MATCH;
             case MatchResult::NEED_ATTRIBUTES:
-                return MatchResult::NEED_ATTRIBUTES;
+                if (cur_attribute_ind >= last_tag_attributes.size())
+                {
+                    return MatchResult::NEED_ATTRIBUTES;
+                }
+                return dispatchInstructionResult(
+                    instructions[current_instruction_index].handleAttribute(last_tag_attributes[cur_attribute_ind++]));
         }
     }
 
