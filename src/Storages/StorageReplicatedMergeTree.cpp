@@ -8239,14 +8239,14 @@ void StorageReplicatedMergeTree::createAndStoreFreezeMetadata(DiskPtr disk, Data
 }
 
 
-void StorageReplicatedMergeTree::adjustCreateQueryForBackup(ASTPtr & create_query) const
+ASTPtr StorageReplicatedMergeTree::getCreateQueryForBackup(const ContextPtr & local_context, DatabasePtr * database) const
 {
-    MergeTreeData::adjustCreateQueryForBackup(create_query);
+    ASTPtr query = MergeTreeData::getCreateQueryForBackup(local_context, database);
 
     /// Before storing the metadata in a backup we have to find a zookeeper path in its definition and turn the table's UUID in there
     /// back into "{uuid}", and also we probably can remove the zookeeper path and replica name if they're default.
     /// So we're kind of reverting what we had done to the table's definition in registerStorageMergeTree.cpp before we created this table.
-    auto & create = create_query->as<ASTCreateQuery &>();
+    auto & create = query->as<ASTCreateQuery &>();
     if (create.storage && create.storage->engine && (create.uuid != UUIDHelpers::Nil))
     {
         auto & engine = *(create.storage->engine);
@@ -8275,6 +8275,8 @@ void StorageReplicatedMergeTree::adjustCreateQueryForBackup(ASTPtr & create_quer
             }
         }
     }
+
+    return query;
 }
 
 void StorageReplicatedMergeTree::backupData(

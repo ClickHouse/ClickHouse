@@ -241,7 +241,7 @@ void BackupEntriesCollector::collectTableInfo(
             : context->resolveStorageID(StorageID{table_name.database, table_name.table}, Context::ResolveGlobal);
         std::tie(database, storage) = DatabaseCatalog::instance().getDatabaseAndTable(resolved_id, context);
         table_lock = storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef().lock_acquire_timeout);
-        create_table_query = database->getCreateTableQuery(resolved_id.table_name, context);
+        create_table_query = storage->getCreateQueryForBackup(*this);
     }
     else
     {
@@ -256,6 +256,7 @@ void BackupEntriesCollector::collectTableInfo(
             try
             {
                 table_lock = storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef().lock_acquire_timeout);
+                create_table_query = storage->getCreateQueryForBackup(*this);
             }
             catch (Exception & e)
             {
@@ -264,17 +265,12 @@ void BackupEntriesCollector::collectTableInfo(
             }
         }
 
-        if (table_lock)
-            create_table_query = database->tryGetCreateTableQuery(resolved_id.table_name, context);
-        
         if (!create_table_query)
         {
             consistent &= !table_infos.contains(table_key);
             return;
         }
     }
-
-    storage->adjustCreateQueryForBackup(create_table_query);
 
     fs::path data_path_in_backup;
     if (is_temporary_table)
@@ -334,7 +330,7 @@ void BackupEntriesCollector::collectDatabaseInfo(const String & database_name, c
     if (throw_if_not_found)
     {
         database = DatabaseCatalog::instance().getDatabase(database_name);
-        create_database_query = database->getCreateDatabaseQuery();
+        create_database_query = database->getCreateDatabaseQueryForBackup();
     }
     else
     {
@@ -347,7 +343,7 @@ void BackupEntriesCollector::collectDatabaseInfo(const String & database_name, c
 
         try
         {
-            create_database_query = database->getCreateDatabaseQuery();
+            create_database_query = database->getCreateDatabaseQueryForBackup();
         }
         catch (...)
         {
@@ -451,7 +447,6 @@ void BackupEntriesCollector::makeBackupEntriesForDatabasesDefs()
         LOG_TRACE(log, "Adding definition of database {}", backQuoteIfNeed(database_name));
 
         ASTPtr new_create_query = database_info.create_database_query;
-        database_info.database->adjustCreateDatabaseQueryForBackup(new_create_query);
         renameDatabaseAndTableNameInCreateQuery(context->getGlobalContext(), renaming_map, new_create_query);
 
         String new_database_name = renaming_map.getNewDatabaseName(database_name);
@@ -467,9 +462,24 @@ void BackupEntriesCollector::makeBackupEntriesForTablesDefs()
     for (const auto & [key, table_info] : table_infos)
     {
         LOG_TRACE(log, "Adding definition of {}table {}", (key.is_temporary ? "temporary " : ""), key.name.getFullName());
-        const auto & database = table_info.database;
-        const auto & storage = table_info.storage;
-        database->backupCreateTableQuery(*this, storage, table_info.create_table_query);
+
+        ASTPtr new_create_query = table_info.create_table_query;
+        renameDatabaseAndTableNameInCreateQuery(context->getGlobalContext(), renaming_map, new_create_query);
+
+        fs::path metadata_path_in_backup;
+        if (key.is_temporary)
+        {
+            auto new_name = renaming_map.getNewTemporaryTableName(key.name.table);
+            metadata_path_in_backup = root_path_in_backup / "temporary_tables" / "metadata" / (escapeForFileName(new_name) + ".sql");
+        }
+        else
+        {
+            auto new_name = renaming_map.getNewTableName(key.name);
+            metadata_path_in_backup
+                = root_path_in_backup / "metadata" / escapeForFileName(new_name.database) / (escapeForFileName(new_name.table) + ".sql");
+        }
+
+        backup_entries.emplace_back(metadata_path_in_backup, std::make_shared<BackupEntryFromMemory>(serializeAST(*new_create_query)));
     }
 }
 
@@ -507,26 +517,6 @@ void BackupEntriesCollector::addBackupEntries(BackupEntries && backup_entries_)
     if (current_stage == Stage::kWritingBackup)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Adding backup entries is not allowed");
     insertAtEnd(backup_entries, std::move(backup_entries_));
-}
-
-void BackupEntriesCollector::addBackupEntryForCreateQuery(const ASTPtr & create_query)
-{
-    ASTPtr new_create_query = create_query;
-    renameDatabaseAndTableNameInCreateQuery(context->getGlobalContext(), renaming_map, new_create_query);
-    const auto & create = new_create_query->as<const ASTCreateQuery &>();
-
-    fs::path metadata_path_in_backup;
-    if (create.temporary)
-    {
-        metadata_path_in_backup = root_path_in_backup / "temporary_tables" / "metadata" / (escapeForFileName(create.getTable()) + ".sql");
-    }
-    else
-    {
-        metadata_path_in_backup
-            = root_path_in_backup / "metadata" / escapeForFileName(create.getDatabase()) / (escapeForFileName(create.getTable()) + ".sql");
-    }
-
-    addBackupEntry(metadata_path_in_backup, std::make_shared<BackupEntryFromMemory>(serializeAST(*create_query)));
 }
 
 void BackupEntriesCollector::addPostCollectingTask(std::function<void()> task)

@@ -462,10 +462,7 @@ def test_system_table():
         os.path.join(get_path_to_backup(backup_name), "metadata/system/numbers.sql")
     ).read()
 
-    assert (
-        create_query
-        == "CREATE TABLE system.numbers (`number` UInt64) ENGINE = SystemNumbers"
-    )
+    assert create_query == "CREATE TABLE system.numbers ENGINE = SystemNumbers"
 
     instance.query(f"RESTORE TABLE system.numbers FROM {backup_name}")
 
@@ -482,7 +479,4 @@ def test_system_database():
         os.path.join(get_path_to_backup(backup_name), "metadata/system/numbers.sql")
     ).read()
 
-    assert (
-        create_query
-        == "CREATE TABLE system.numbers (`number` UInt64) ENGINE = SystemNumbers"
-    )
+    assert create_query == "CREATE TABLE system.numbers ENGINE = SystemNumbers"

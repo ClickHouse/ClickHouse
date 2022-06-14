@@ -46,9 +46,6 @@ public:
     void addBackupEntries(const BackupEntries & backup_entries_);
     void addBackupEntries(BackupEntries && backup_entries_);
 
-    /// Adds a backup entry to backup a specified table or database's metadata.
-    void addBackupEntryForCreateQuery(const ASTPtr & create_query);
-
     /// Adds a function which must be called after all IStorage::backup() have finished their work on all hosts.
     /// This function is designed to help making a consistent in some complex cases like
     /// 1) we need to join (in a backup) the data of replicated tables gathered on different hosts.

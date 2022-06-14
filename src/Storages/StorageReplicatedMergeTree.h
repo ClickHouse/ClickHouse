@@ -232,8 +232,8 @@ public:
 
     int getMetadataVersion() const { return metadata_version; }
 
-    /// Changes slightly this storage's create query before it's written to a backup.
-    void adjustCreateQueryForBackup(ASTPtr & create_query) const override;
+    /// Returns a slightly changed version of the CREATE TABLE query which must be written to a backup.
+    ASTPtr getCreateQueryForBackup(const ContextPtr & context, DatabasePtr * database) const override;
 
     /// Makes backup entries to backup the data of the storage.
     void backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override;

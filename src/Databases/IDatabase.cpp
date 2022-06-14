@@ -22,11 +22,15 @@ StoragePtr IDatabase::getTable(const String & name, ContextPtr context) const
     throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table {}.{} doesn't exist", backQuoteIfNeed(database_name), backQuoteIfNeed(name));
 }
 
-void IDatabase::adjustCreateDatabaseQueryForBackup(ASTPtr & create_database_query) const
+ASTPtr IDatabase::getCreateDatabaseQueryForBackup() const
 {
-    /// We don't want to see any UUIDs in backup.
-    auto & create = create_database_query->as<ASTCreateQuery &>();
+    auto query = getCreateDatabaseQuery();
+ 
+    /// We don't want to see any UUIDs in backup (after RESTORE the table will have another UUID anyway).
+    auto & create = query->as<ASTCreateQuery &>();
     create.uuid = UUIDHelpers::Nil;
+
+    return query;
 }
 
 DatabaseTablesIteratorPtr IDatabase::getTablesIteratorForBackup(const BackupEntriesCollector &) const
@@ -35,22 +39,22 @@ DatabaseTablesIteratorPtr IDatabase::getTablesIteratorForBackup(const BackupEntr
     return std::make_unique<DatabaseTablesSnapshotIterator>(Tables{}, getDatabaseName());
 }
 
-void IDatabase::backupCreateTableQuery(BackupEntriesCollector &, const StoragePtr & storage, const ASTPtr &)
+void IDatabase::checkCreateTableQueryForBackup(const ASTPtr & create_table_query, const BackupEntriesCollector &) const
 {
-    /// Cannot backup any table because IDatabase doesn't own any tables.
+    /// Cannot restore any table because IDatabase doesn't own any tables.
     throw Exception(ErrorCodes::CANNOT_BACKUP_TABLE,
-                    "Database engine {} doesn't support storing tables to backup, cannot backup table {}",
-                    getEngineName(), storage->getStorageID().getFullTableName());
+                    "Database engine {} does not support backups, cannot backup table {}.{}",
+                    getEngineName(), backQuoteIfNeed(getDatabaseName()),
+                    backQuoteIfNeed(create_table_query->as<const ASTCreateQuery &>().getTable()));
 }
 
-void IDatabase::createTableRestoredFromBackup(const RestorerFromBackup &, const ASTPtr & create_table_query)
+void IDatabase::createTableRestoredFromBackup(const ASTPtr & create_table_query, const RestorerFromBackup &)
 {
     /// Cannot restore any table because IDatabase doesn't own any tables.
     throw Exception(ErrorCodes::CANNOT_RESTORE_TABLE,
                     "Database engine {} does not support restoring tables, cannot restore table {}.{}",
                     getEngineName(), backQuoteIfNeed(getDatabaseName()),
                     backQuoteIfNeed(create_table_query->as<const ASTCreateQuery &>().getTable()));
-
 }
 
 }
