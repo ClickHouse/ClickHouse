@@ -558,7 +558,15 @@ bool KeeperStorage::createNode(
     auto [map_key, _] = container.insert(path, created_node);
     /// Take child path from key owned by map.
     auto child_path = getBaseName(map_key->getKey());
-    container.updateValue(parent_path, [child_path](KeeperStorage::Node & parent) { parent.addChild(child_path); });
+    container.updateValue(
+            parent_path,
+            [child_path](KeeperStorage::Node & parent)
+            {
+                ++parent.stat.numChildren;
+                parent.addChild(child_path);
+                chassert(parent.stat.numChildren == static_cast<int32_t>(parent.getChildren().size()));
+            }
+    );
 
     addDigest(map_key->getMapped()->value, map_key->getKey().toView());
     return true;
@@ -581,7 +589,13 @@ bool KeeperStorage::removeNode(const std::string & path, int32_t version)
 
     container.updateValue(
         parentPath(path),
-        [child_basename = getBaseName(node_it->key)](KeeperStorage::Node & parent) { parent.removeChild(child_basename); });
+        [child_basename = getBaseName(node_it->key)](KeeperStorage::Node & parent)
+        {
+            --parent.stat.numChildren;
+            parent.removeChild(child_basename);
+            chassert(parent.stat.numChildren == static_cast<int32_t>(parent.getChildren().size()));
+        }
+    );
 
     container.erase(path);
 
@@ -784,8 +798,6 @@ struct KeeperStorageCreateRequestProcessor final : public KeeperStorageRequestPr
 
                                                if (zxid > node.stat.pzxid)
                                                    node.stat.pzxid = zxid;
-                                               ++node.stat.numChildren;
-                                               chassert(node.stat.numChildren == static_cast<int32_t>(node.getChildren().size()));
                                            }});
 
         digest = storage.calculateNodesDigest(digest, new_deltas);
@@ -941,9 +953,7 @@ struct KeeperStorageRemoveRequestProcessor final : public KeeperStorageRequestPr
             zxid,
             KeeperStorage::UpdateNodeDelta{[](KeeperStorage::Node & parent)
                                            {
-                                               --parent.stat.numChildren;
                                                ++parent.stat.cversion;
-                                               chassert(parent.stat.numChildren == static_cast<int32_t>(parent.getChildren().size()));
                                            }});
 
         if (node->stat.ephemeralOwner != 0)
@@ -1810,9 +1820,7 @@ void KeeperStorage::preprocessRequest(
                     {
                         [ephemeral_path](Node & parent)
                         {
-                            --parent.stat.numChildren;
                             ++parent.stat.cversion;
-                            chassert(parent.stat.numChildren == static_cast<int32_t>(parent.getChildren().size()));
                         }
                     }
                 );
