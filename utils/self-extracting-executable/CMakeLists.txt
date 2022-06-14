@@ -11,4 +11,5 @@ add_custom_command (TARGET compressor
     POST_BUILD
     COMMAND cat pre_compressor decompressor > compressor
     COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/post_build.sh >> compressor
+    COMMAND chmod +x compressor
 )

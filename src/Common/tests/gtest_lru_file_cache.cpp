@@ -98,9 +98,10 @@ TEST(LRUFileCache, get)
     DB::ThreadStatus thread_status;
 
     /// To work with cache need query_id and query context.
+    std::string query_id = "query_id";
     auto query_context = DB::Context::createCopy(getContext().context);
     query_context->makeQueryContext();
-    query_context->setCurrentQueryId("query_id");
+    query_context->setCurrentQueryId(query_id);
     DB::CurrentThread::QueryScope query_scope_holder(query_context);
 
     DB::FileCacheSettings settings;
@@ -513,4 +514,5 @@ TEST(LRUFileCache, get)
         assertRange(49, segments1[1], DB::FileSegment::Range(10, 19), DB::FileSegment::State::EMPTY);
         assertRange(50, segments1[2], DB::FileSegment::Range(20, 24), DB::FileSegment::State::EMPTY);
     }
+
 }
