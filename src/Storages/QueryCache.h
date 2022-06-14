@@ -50,9 +50,6 @@ struct CacheKeyHasher
     {
         SipHash hash;
         hash.update(key.ast->getTreeHash());
-        LOG_DEBUG(&Poco::Logger::get("CacheKeyHasher"), "key.header.getNamesAndTypesList = {}",
-                  key.header.getNamesAndTypesList().toString()
-                  );
         hash.update(key.header.getNamesAndTypesList().toString());
         for (const auto & setting : key.settings)
         {
@@ -65,9 +62,6 @@ struct CacheKeyHasher
             hash.update(*key.username);
         }
         auto res = hash.get64();
-        LOG_DEBUG(&Poco::Logger::get("CacheKeyHasher"), "hash = {}",
-                  res
-        );
         return res;
     }
 };
