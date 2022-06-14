@@ -1,9 +1,9 @@
 ---
-toc_priority: 31
-toc_title: Data Replication
+sidebar_position: 20
+sidebar_label: Data Replication
 ---
 
-# Data Replication {#table_engines-replication}
+# Data Replication
 
 Replication is only supported for tables in the MergeTree family:
 
@@ -31,8 +31,9 @@ ClickHouse uses [Apache ZooKeeper](https://zookeeper.apache.org) for storing rep
 
 To use replication, set parameters in the [zookeeper](../../../operations/server-configuration-parameters/settings.md#server-settings_zookeeper) server configuration section.
 
-!!! attention "Attention"
-    Don’t neglect the security setting. ClickHouse supports the `digest` [ACL scheme](https://zookeeper.apache.org/doc/current/zookeeperProgrammers.html#sc_ZooKeeperAccessControl) of the ZooKeeper security subsystem.
+:::warning
+Don’t neglect the security setting. ClickHouse supports the `digest` [ACL scheme](https://zookeeper.apache.org/doc/current/zookeeperProgrammers.html#sc_ZooKeeperAccessControl) of the ZooKeeper security subsystem.
+:::
 
 Example of setting the addresses of the ZooKeeper cluster:
 
@@ -111,7 +112,7 @@ Data blocks are deduplicated. For multiple writes of the same data block (data b
 
 During replication, only the source data to insert is transferred over the network. Further data transformation (merging) is coordinated and performed on all the replicas in the same way. This minimizes network usage, which means that replication works well when replicas reside in different datacenters. (Note that duplicating data in different datacenters is the main goal of replication.)
 
-You can have any number of replicas of the same data. Based on our experiences, a relatively reliable and convenient solution could use double replication in production, with each server using RAID-5 or RAID-6 (and RAID-10 in some cases). 
+You can have any number of replicas of the same data. Based on our experiences, a relatively reliable and convenient solution could use double replication in production, with each server using RAID-5 or RAID-6 (and RAID-10 in some cases).
 
 The system monitors data synchronicity on replicas and is able to recover after a failure. Failover is automatic (for small differences in data) or semi-automatic (when data differs too much, which may indicate a configuration error).
 

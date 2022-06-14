@@ -45,6 +45,8 @@ protected:
 
     const char * getStorageTypeName() const override { return "S3Cluster"; }
 
+    AccessType getSourceAccessType() const override { return AccessType::S3; }
+
     ColumnsDescription getActualTableStructure(ContextPtr) const override;
     void parseArguments(const ASTPtr &, ContextPtr) override;
 

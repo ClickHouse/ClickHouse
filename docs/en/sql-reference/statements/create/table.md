@@ -1,17 +1,17 @@
 ---
-toc_priority: 36
-toc_title: TABLE
+sidebar_position: 36
+sidebar_label: TABLE
 ---
 
-# CREATE TABLE {#create-table-query}
+# CREATE TABLE
 
 Creates a new table. This query can have various syntax forms depending on a use case.
 
 By default, tables are created only on the current server. Distributed DDL queries are implemented as `ON CLUSTER` clause, which is [described separately](../../../sql-reference/distributed-ddl.md).
 
-## Syntax Forms {#syntax-forms}
+## Syntax Forms
 
-### With Explicit Schema {#with-explicit-schema}
+### With Explicit Schema
 
 ``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -31,7 +31,7 @@ Expressions can also be defined for default values (see below).
 
 If necessary, primary key can be specified, with one or more key expressions.
 
-### With a Schema Similar to Other Table {#with-a-schema-similar-to-other-table}
+### With a Schema Similar to Other Table
 
 ``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name AS [db2.]name2 [ENGINE = engine]
@@ -39,7 +39,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name AS [db2.]name2 [ENGINE = engine]
 
 Creates a table with the same structure as another table. You can specify a different engine for the table. If the engine is not specified, the same engine will be used as for the `db2.name2` table.
 
-### From a Table Function {#from-a-table-function}
+### From a Table Function
 
 ``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name AS table_function()
@@ -47,7 +47,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name AS table_function()
 
 Creates a table with the same result as that of the [table function](../../../sql-reference/table-functions/index.md#table-functions) specified. The created table will also work in the same way as the corresponding table function that was specified.
 
-### From SELECT query {#from-select-query}
+### From SELECT query
 
 ``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name[(name1 [type1], name2 [type2], ...)] ENGINE = engine AS SELECT ...
@@ -76,7 +76,7 @@ Result:
 └───┴───────────────┘
 ```
 
-## NULL Or NOT NULL Modifiers {#null-modifiers}
+## NULL Or NOT NULL Modifiers
 
 `NULL` and `NOT NULL` modifiers after data type in column definition allow or do not allow it to be [Nullable](../../../sql-reference/data-types/nullable.md#data_type-nullable).
 
@@ -84,7 +84,7 @@ If the type is not `Nullable` and if `NULL` is specified, it will be treated as 
 
 See also [data_type_default_nullable](../../../operations/settings/settings.md#data_type_default_nullable) setting.
 
-## Default Values {#create-default-values}
+## Default Values
 
 The column description can specify an expression for a default value, in one of the following ways: `DEFAULT expr`, `MATERIALIZED expr`, `ALIAS expr`.
 
@@ -98,13 +98,13 @@ If the data type and default expression are defined explicitly, this expression 
 
 Default expressions may be defined as an arbitrary expression from table constants and columns. When creating and changing the table structure, it checks that expressions do not contain loops. For INSERT, it checks that expressions are resolvable – that all columns they can be calculated from have been passed.
 
-### DEFAULT {#default}
+### DEFAULT
 
 `DEFAULT expr`
 
 Normal default value. If the INSERT query does not specify the corresponding column, it will be filled in by computing the corresponding expression.
 
-### MATERIALIZED {#materialized}
+### MATERIALIZED
 
 `MATERIALIZED expr`
 
@@ -112,14 +112,14 @@ Materialized expression. Such a column can’t be specified for INSERT, because 
 For an INSERT without a list of columns, these columns are not considered.
 In addition, this column is not substituted when using an asterisk in a SELECT query. This is to preserve the invariant that the dump obtained using `SELECT *` can be inserted back into the table using INSERT without specifying the list of columns.
 
-### EPHEMERAL {#ephemeral}
+### EPHEMERAL
 
-`EPHEMERAL expr`
+`EPHEMERAL [expr]`
 
-Ephemeral column. Such a column isn't stored in the table and cannot be SELECTed, but can be referenced in the defaults of CREATE statement.
+Ephemeral column. Such a column isn't stored in the table and cannot be SELECTed, but can be referenced in the defaults of CREATE statement. If `expr` is omitted type for column is required.
 INSERT without list of columns will skip such column, so SELECT/INSERT invariant is preserved -  the dump obtained using `SELECT *` can be inserted back into the table using INSERT without specifying the list of columns.
 
-### ALIAS {#alias}
+### ALIAS
 
 `ALIAS expr`
 
@@ -133,7 +133,7 @@ If you add a new column to a table but later change its default expression, the 
 
 It is not possible to set default values for elements in nested data structures.
 
-## Primary Key {#primary-key}
+## Primary Key
 
 You can define a [primary key](../../../engines/table-engines/mergetree-family/mergetree.md#primary-keys-and-indexes-in-queries) when creating a table. Primary key can be specified in two ways:
 
@@ -159,10 +159,11 @@ ENGINE = engine
 PRIMARY KEY(expr1[, expr2,...]);
 ```
 
-!!! warning "Warning"
-    You can't combine both ways in one query.
+:::warning    
+You can't combine both ways in one query.
+:::
 
-## Constraints {#constraints}
+## Constraints
 
 Along with columns descriptions constraints could be defined:
 
@@ -180,11 +181,11 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 Adding large amount of constraints can negatively affect performance of big `INSERT` queries.
 
-## TTL Expression {#ttl-expression}
+## TTL Expression
 
 Defines storage time for values. Can be specified only for MergeTree-family tables. For the detailed description, see [TTL for columns and tables](../../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-ttl).
 
-## Column Compression Codecs {#codecs}
+## Column Compression Codecs
 
 By default, ClickHouse applies the `lz4` compression method. For `MergeTree`-engine family you can change the default compression method in the [compression](../../../operations/server-configuration-parameters/settings.md#server-settings-compression) section of a server configuration.
 
@@ -214,8 +215,9 @@ ALTER TABLE codec_example MODIFY COLUMN float_value CODEC(Default);
 
 Codecs can be combined in a pipeline, for example, `CODEC(Delta, Default)`.
 
-!!! warning "Warning"
-    You can’t decompress ClickHouse database files with external utilities like `lz4`. Instead, use the special [clickhouse-compressor](https://github.com/ClickHouse/ClickHouse/tree/master/programs/compressor) utility.
+:::warning    
+You can’t decompress ClickHouse database files with external utilities like `lz4`. Instead, use the special [clickhouse-compressor](https://github.com/ClickHouse/ClickHouse/tree/master/programs/compressor) utility.
+:::
 
 Compression is supported for the following table engines:
 
@@ -226,7 +228,7 @@ Compression is supported for the following table engines:
 
 ClickHouse supports general purpose codecs and specialized codecs.
 
-### General Purpose Codecs {#create-query-general-purpose-codecs}
+### General Purpose Codecs
 
 Codecs:
 
@@ -237,7 +239,7 @@ Codecs:
 
 High compression levels are useful for asymmetric scenarios, like compress once, decompress repeatedly. Higher levels mean better compression and higher CPU usage.
 
-### Specialized Codecs {#create-query-specialized-codecs}
+### Specialized Codecs
 
 These codecs are designed to make compression more effective by using specific features of data. Some of these codecs do not compress data themself. Instead, they prepare the data for a common purpose codec, which compresses it better than without this preparation.
 
@@ -259,7 +261,7 @@ CREATE TABLE codec_example
 ENGINE = MergeTree()
 ```
 
-### Encryption Codecs {#create-query-encryption-codecs}
+### Encryption Codecs
 
 These codecs don't actually compress data, but instead encrypt data on disk. These are only available when an encryption key is specified by [encryption](../../../operations/server-configuration-parameters/settings.md#server-settings-encryption) settings. Note that encryption only makes sense at the end of codec pipelines, because encrypted data usually can't be compressed in any meaningful way.
 
@@ -271,11 +273,13 @@ Encryption codecs:
 
 These codecs use a fixed nonce and encryption is therefore deterministic. This makes it compatible with deduplicating engines such as [ReplicatedMergeTree](../../../engines/table-engines/mergetree-family/replication.md) but has a weakness: when the same data block is encrypted twice, the resulting ciphertext will be exactly the same so an adversary who can read the disk can see this equivalence (although only the equivalence, without getting its content).
 
-!!! attention "Attention"
-    Most engines including the "*MergeTree" family create index files on disk without applying codecs. This means plaintext will appear on disk if an encrypted column is indexed.
+:::warning    
+Most engines including the "*MergeTree" family create index files on disk without applying codecs. This means plaintext will appear on disk if an encrypted column is indexed.
+:::
 
-!!! attention "Attention"
-    If you perform a SELECT query mentioning a specific value in an encrypted column (such as in its WHERE clause), the value may appear in [system.query_log](../../../operations/system-tables/query_log.md). You may want to disable the logging.
+:::warning    
+If you perform a SELECT query mentioning a specific value in an encrypted column (such as in its WHERE clause), the value may appear in [system.query_log](../../../operations/system-tables/query_log.md). You may want to disable the logging.
+:::
 
 **Example**
 
@@ -287,8 +291,9 @@ CREATE TABLE mytable
 ENGINE = MergeTree ORDER BY x;
 ```
 
-!!!note "Note"
-    If compression needs to be applied, it must be explicitly specified. Otherwise, only encryption will be applied to data.
+:::note    
+If compression needs to be applied, it must be explicitly specified. Otherwise, only encryption will be applied to data.
+:::
 
 **Example**
 
@@ -300,7 +305,7 @@ CREATE TABLE mytable
 ENGINE = MergeTree ORDER BY x;
 ```
 
-## Temporary Tables {#temporary-tables}
+## Temporary Tables
 
 ClickHouse supports temporary tables which have the following characteristics:
 
@@ -326,12 +331,13 @@ In most cases, temporary tables are not created manually, but when using externa
 
 It’s possible to use tables with [ENGINE = Memory](../../../engines/table-engines/special/memory.md) instead of temporary tables.
 
-## REPLACE TABLE {#replace-table-query}
+## REPLACE TABLE
 
 'REPLACE' query allows you to update the table atomically.
 
-!!!note "Note"
-    This query is supported only for [Atomic](../../../engines/database-engines/atomic.md) database engine.
+:::note    
+This query is supported only for [Atomic](../../../engines/database-engines/atomic.md) database engine.
+:::
 
 If you need to delete some data from a table, you can create a new table and fill it with a `SELECT` statement that does not retrieve unwanted data, then drop the old table and rename the new one:
 
@@ -401,12 +407,13 @@ SELECT * FROM base.t1;
 └───┘
 ```
 
-## COMMENT Clause {#comment-table}
+## COMMENT Clause
 
 You can add a comment to the table when you creating it.
 
-!!!note "Note"
-    The comment is supported for all table engines except [Kafka](../../../engines/table-engines/integrations/kafka.md), [RabbitMQ](../../../engines/table-engines/integrations/rabbitmq.md) and [EmbeddedRocksDB](../../../engines/table-engines/integrations/embedded-rocksdb.md).
+:::note    
+The comment is supported for all table engines except [Kafka](../../../engines/table-engines/integrations/kafka.md), [RabbitMQ](../../../engines/table-engines/integrations/rabbitmq.md) and [EmbeddedRocksDB](../../../engines/table-engines/integrations/embedded-rocksdb.md).
+:::
 
 
 **Syntax**

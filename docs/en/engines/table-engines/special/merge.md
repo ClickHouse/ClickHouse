@@ -1,9 +1,9 @@
 ---
-toc_priority: 36
-toc_title: Merge
+sidebar_position: 30
+sidebar_label: Merge
 ---
 
-# Merge Table Engine {#merge}
+# Merge Table Engine
 
 The `Merge` engine (not to be confused with `MergeTree`) does not store data itself, but allows reading from any number of other tables simultaneously.
 
@@ -12,13 +12,13 @@ Reading is automatically parallelized. Writing to a table is not supported. When
 ## Creating a Table {#creating-a-table}
 
 ``` sql
-    CREATE TABLE ... Engine=Merge(db_name, tables_regexp)
+CREATE TABLE ... Engine=Merge(db_name, tables_regexp)
 ```
 
 **Engine Parameters**
 
 - `db_name` — Possible values:
-    - database name, 
+    - database name,
     - constant expression that returns a string with a database name, for example, `currentDatabase()`,
     - `REGEXP(expression)`, where `expression` is a regular expression to match the DB names.
 
@@ -49,11 +49,11 @@ CREATE TABLE all_visitors (id UInt32) ENGINE=Merge(REGEXP('ABC_*'), 'visitors');
 Let's say you have an old table `WatchLog_old` and decided to change partitioning without moving data to a new table `WatchLog_new`, and you need to see data from both tables.
 
 ``` sql
-CREATE TABLE WatchLog_old(date Date, UserId Int64, EventType String, Cnt UInt64) 
+CREATE TABLE WatchLog_old(date Date, UserId Int64, EventType String, Cnt UInt64)
     ENGINE=MergeTree(date, (UserId, EventType), 8192);
 INSERT INTO WatchLog_old VALUES ('2018-01-01', 1, 'hit', 3);
 
-CREATE TABLE WatchLog_new(date Date, UserId Int64, EventType String, Cnt UInt64) 
+CREATE TABLE WatchLog_new(date Date, UserId Int64, EventType String, Cnt UInt64)
     ENGINE=MergeTree PARTITION BY date ORDER BY (UserId, EventType) SETTINGS index_granularity=8192;
 INSERT INTO WatchLog_new VALUES ('2018-01-02', 2, 'hit', 3);
 
@@ -81,3 +81,5 @@ SELECT * FROM WatchLog;
 
 -   [Virtual columns](../../../engines/table-engines/special/index.md#table_engines-virtual_columns)
 -   [merge](../../../sql-reference/table-functions/merge.md) table function
+
+[Original article](https://clickhouse.com/docs/en/operations/table_engines/special/merge/) <!--hide-->

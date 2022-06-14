@@ -142,3 +142,12 @@ Filter
 Filter
 2	3
 2	3
+> function calculation should be done after sorting and limit (if possible)
+> Expression should be divided into two subexpressions and only one of them should be moved after Sorting
+Expression ((Projection + Before ORDER BY [lifted up part]))
+FUNCTION sipHash64
+Sorting
+Expression (Before ORDER BY)
+FUNCTION plus
+> this query should be executed without throwing an exception
+0

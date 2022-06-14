@@ -89,9 +89,9 @@ if (BUILD_STANDALONE_KEEPER)
         ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Common/ZooKeeper/ZooKeeperLock.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Common/ZooKeeper/ZooKeeperNodeCache.cpp
 
-        ${CMAKE_CURRENT_SOURCE_DIR}/../../base/daemon/BaseDaemon.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/../../base/daemon/SentryWriter.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/../../base/daemon/GraphiteWriter.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Daemon/BaseDaemon.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Daemon/SentryWriter.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Daemon/GraphiteWriter.cpp
 
         Keeper.cpp
         TinyContext.cpp

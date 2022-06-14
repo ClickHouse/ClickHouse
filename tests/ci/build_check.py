@@ -6,13 +6,15 @@ import json
 import os
 import sys
 import time
+from shutil import rmtree
 from typing import List, Optional, Tuple
 
-from env_helper import REPO_COPY, TEMP_PATH, CACHES_PATH, IMAGES_PATH
+from env_helper import GITHUB_JOB, REPO_COPY, TEMP_PATH, CACHES_PATH, IMAGES_PATH
 from s3_helper import S3Helper
 from pr_info import PRInfo
 from version_helper import (
     ClickHouseVersion,
+    Git,
     get_version_from_repo,
     update_version_local,
 )
@@ -22,15 +24,6 @@ from docker_pull_helper import get_image_with_version
 from tee_popen import TeePopen
 
 IMAGE_NAME = "clickhouse/binary-builder"
-
-
-def get_build_config(build_check_name: str, build_name: str) -> BuildConfig:
-    if build_check_name == "ClickHouse build check (actions)":
-        build_config_name = "build_config"
-    else:
-        raise Exception(f"Unknown build check name {build_check_name}")
-
-    return CI_CONFIG[build_config_name][build_name]
 
 
 def _can_export_binaries(build_config: BuildConfig) -> bool:
@@ -54,6 +47,7 @@ def get_packager_cmd(
     build_version: str,
     image_version: str,
     ccache_path: str,
+    official: bool,
 ) -> str:
     package_type = build_config["package_type"]
     comp = build_config["compiler"]
@@ -63,25 +57,28 @@ def get_packager_cmd(
     )
 
     if build_config["build_type"]:
-        cmd += " --build-type={}".format(build_config["build_type"])
+        cmd += f" --build-type={build_config['build_type']}"
     if build_config["sanitizer"]:
-        cmd += " --sanitizer={}".format(build_config["sanitizer"])
+        cmd += f" --sanitizer={build_config['sanitizer']}"
     if build_config["splitted"] == "splitted":
         cmd += " --split-binary"
     if build_config["tidy"] == "enable":
         cmd += " --clang-tidy"
 
     cmd += " --cache=ccache"
-    cmd += " --ccache_dir={}".format(ccache_path)
+    cmd += f" --ccache_dir={ccache_path}"
 
     if "additional_pkgs" in build_config and build_config["additional_pkgs"]:
         cmd += " --additional-pkgs"
 
-    cmd += " --docker-image-version={}".format(image_version)
-    cmd += " --version={}".format(build_version)
+    cmd += f" --docker-image-version={image_version}"
+    cmd += f" --version={build_version}"
 
     if _can_export_binaries(build_config):
         cmd += " --with-binaries=tests"
+
+    if official:
+        cmd += " --official"
 
     return cmd
 
@@ -132,7 +129,7 @@ def create_json_artifact(
     success: bool,
 ):
     subprocess.check_call(
-        f"echo 'BUILD_NAME=build_urls_{build_name}' >> $GITHUB_ENV", shell=True
+        f"echo 'BUILD_URLS=build_urls_{build_name}' >> $GITHUB_ENV", shell=True
     )
 
     result = {
@@ -141,36 +138,32 @@ def create_json_artifact(
         "build_config": build_config,
         "elapsed_seconds": elapsed,
         "status": success,
+        "job_name": GITHUB_JOB,
     }
 
     json_name = "build_urls_" + build_name + ".json"
 
-    print(
-        "Dump json report",
-        result,
-        "to",
-        json_name,
-        "with env",
-        "build_urls_{build_name}",
-    )
+    print(f"Dump json report {result} to {json_name} with env build_urls_{build_name}")
 
-    with open(os.path.join(temp_path, json_name), "w") as build_links:
+    with open(os.path.join(temp_path, json_name), "w", encoding="utf-8") as build_links:
         json.dump(result, build_links)
 
 
-def get_release_or_pr(
-    pr_info: PRInfo, build_config: BuildConfig, version: ClickHouseVersion
-) -> str:
+def get_release_or_pr(pr_info: PRInfo, version: ClickHouseVersion) -> Tuple[str, str]:
+    # FIXME performance
+    # performance builds are havily relies on a fixed path for artifacts, that's why
+    # we need to preserve 0 for anything but PR number
+    # It should be fixed in performance-comparison image eventually
+    performance_pr = "0"
     if "release" in pr_info.labels or "release-lts" in pr_info.labels:
         # for release pull requests we use branch names prefixes, not pr numbers
-        return pr_info.head_ref
-    elif pr_info.number == 0 and build_config["package_type"] != "performance":
-        # for pushes to master - major version, but not for performance builds
-        # they havily relies on a fixed path for build package and nobody going
-        # to deploy them somewhere, so it's ok.
-        return f"{version.major}.{version.minor}"
+        return pr_info.head_ref, performance_pr
+    elif pr_info.number == 0:
+        # for pushes to master - major version
+        return f"{version.major}.{version.minor}", performance_pr
     # PR number for anything else
-    return str(pr_info.number)
+    pr_number = str(pr_info.number)
+    return pr_number, pr_number
 
 
 def upload_master_static_binaries(
@@ -197,10 +190,9 @@ def upload_master_static_binaries(
 def main():
     logging.basicConfig(level=logging.INFO)
 
-    build_check_name = sys.argv[1]
-    build_name = sys.argv[2]
+    build_name = sys.argv[1]
 
-    build_config = get_build_config(build_check_name, build_name)
+    build_config = CI_CONFIG["build_config"][build_name]
 
     if not os.path.exists(TEMP_PATH):
         os.makedirs(TEMP_PATH)
@@ -211,10 +203,14 @@ def main():
 
     s3_helper = S3Helper("https://s3.amazonaws.com")
 
-    version = get_version_from_repo()
-    release_or_pr = get_release_or_pr(pr_info, build_config, version)
+    version = get_version_from_repo(git=Git(True))
+    release_or_pr, performance_pr = get_release_or_pr(pr_info, version)
 
     s3_path_prefix = "/".join((release_or_pr, pr_info.sha, build_name))
+    # FIXME performance
+    s3_performance_path = "/".join(
+        (performance_pr, pr_info.sha, build_name, "performance.tgz")
+    )
 
     # If this is rerun, then we try to find already created artifacts and just
     # put them as github actions artifcat (result)
@@ -254,11 +250,16 @@ def main():
 
     logging.info("Got version from repo %s", version.string)
 
+    official_flag = pr_info.number == 0
+    if "official" in build_config:
+        official_flag = build_config["official"]
+
     version_type = "testing"
     if "release" in pr_info.labels or "release-lts" in pr_info.labels:
         version_type = "stable"
+        official_flag = True
 
-    update_version_local(REPO_COPY, version, version_type)
+    update_version_local(version, version_type)
 
     logging.info("Updated local files with version")
 
@@ -271,17 +272,16 @@ def main():
     ccache_path = os.path.join(CACHES_PATH, build_name + "_ccache")
 
     logging.info("Will try to fetch cache for our build")
-    get_ccache_if_not_exists(ccache_path, s3_helper, pr_info.number, TEMP_PATH)
+    try:
+        get_ccache_if_not_exists(ccache_path, s3_helper, pr_info.number, TEMP_PATH)
+    except Exception as e:
+        # In case there are issues with ccache, remove the path and do not fail a build
+        logging.info("Failed to get ccache, building without it. Error: %s", e)
+        rmtree(ccache_path, ignore_errors=True)
 
     if not os.path.exists(ccache_path):
         logging.info("cache was not fetched, will create empty dir")
         os.makedirs(ccache_path)
-
-    if build_config["package_type"] == "performance" and pr_info.number != 0:
-        # because perf tests store some information about git commits
-        subprocess.check_call(
-            f"cd {REPO_COPY} && git fetch origin master:master", shell=True
-        )
 
     packager_cmd = get_packager_cmd(
         build_config,
@@ -290,7 +290,9 @@ def main():
         version.string,
         image_version,
         ccache_path,
+        official_flag,
     )
+
     logging.info("Going to run packager with %s", packager_cmd)
 
     build_clickhouse_log = os.path.join(TEMP_PATH, "build_log")
@@ -319,17 +321,33 @@ def main():
     else:
         logging.info("Build log doesn't exist")
 
-    build_urls = s3_helper.upload_build_folder_to_s3(
-        build_output_path,
-        s3_path_prefix,
-        keep_dirs_in_s3_path=False,
-        upload_symlinks=False,
+    # FIXME performance
+    performance_urls = []
+    performance_path = os.path.join(build_output_path, "performance.tgz")
+    if os.path.exists(performance_path):
+        performance_urls.append(
+            s3_helper.upload_build_file_to_s3(performance_path, s3_performance_path)
+        )
+        logging.info(
+            "Uploaded performance.tgz to %s, now delete to avoid duplication",
+            performance_urls[0],
+        )
+        os.remove(performance_path)
+
+    build_urls = (
+        s3_helper.upload_build_folder_to_s3(
+            build_output_path,
+            s3_path_prefix,
+            keep_dirs_in_s3_path=False,
+            upload_symlinks=False,
+        )
+        + performance_urls
     )
     logging.info("Got build URLs %s", build_urls)
 
     print("::notice ::Build URLs: {}".format("\n".join(build_urls)))
 
-    print("::notice ::Log URL: {}".format(log_url))
+    print(f"::notice ::Log URL: {log_url}")
 
     create_json_artifact(
         TEMP_PATH, build_name, log_url, build_urls, build_config, elapsed, success

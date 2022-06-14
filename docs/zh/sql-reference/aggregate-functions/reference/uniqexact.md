@@ -1,5 +1,5 @@
 ---
-toc_priority: 191
+sidebar_position: 191
 ---
 
 # uniqExact {#agg_function-uniqexact}

@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import json
+import logging
 import os
 
 from unidiff import PatchSet  # type: ignore
@@ -11,6 +12,8 @@ from env_helper import (
     GITHUB_RUN_URL,
     GITHUB_EVENT_PATH,
 )
+
+FORCE_TESTS_LABEL = "force tests"
 
 DIFF_IN_DOCUMENTATION_EXT = [
     ".html",
@@ -98,12 +101,20 @@ class PRInfo:
         if "pull_request" in github_event:  # pull request and other similar events
             self.number = github_event["pull_request"]["number"]
             if pr_event_from_api:
-                response = get_with_retries(
-                    f"https://api.github.com/repos/{GITHUB_REPOSITORY}"
-                    f"/pulls/{self.number}",
-                    sleep=RETRY_SLEEP,
-                )
-                github_event["pull_request"] = response.json()
+                try:
+                    response = get_with_retries(
+                        f"https://api.github.com/repos/{GITHUB_REPOSITORY}"
+                        f"/pulls/{self.number}",
+                        sleep=RETRY_SLEEP,
+                    )
+                    github_event["pull_request"] = response.json()
+                except Exception as e:
+                    logging.warning(
+                        "Unable to get pull request event %s from API, "
+                        "fallback to received event. Exception: %s",
+                        self.number,
+                        e,
+                    )
 
             if "after" in github_event:
                 self.sha = github_event["after"]
@@ -175,6 +186,7 @@ class PRInfo:
                 else:
                     self.diff_url = pull_request["diff_url"]
         else:
+            print("event.json does not match pull_request or push:")
             print(json.dumps(github_event, sort_keys=True, indent=4))
             self.sha = os.getenv("GITHUB_SHA")
             self.number = 0
@@ -193,8 +205,8 @@ class PRInfo:
             self.fetch_changed_files()
 
     def fetch_changed_files(self):
-        if not self.diff_url:
-            raise Exception("Diff URL cannot be find for event")
+        if not getattr(self, "diff_url", False):
+            raise TypeError("The event does not have diff URL")
 
         response = get_with_retries(
             self.diff_url,
@@ -209,7 +221,7 @@ class PRInfo:
         else:
             diff_object = PatchSet(response.text)
             self.changed_files = {f.path for f in diff_object}
-        print("Fetched info about %d changed files", len(self.changed_files))
+        print("Fetched info about %d changed files" % len(self.changed_files))
 
     def get_dict(self):
         return {
@@ -241,13 +253,13 @@ class PRInfo:
             return True
 
         for f in self.changed_files:
-            if "contrib" in f:
+            if "contrib/" in f:
                 return True
         return False
 
     def can_skip_builds_and_use_version_from_master(self):
         # TODO: See a broken loop
-        if "force tests" in self.labels:
+        if FORCE_TESTS_LABEL in self.labels:
             return False
 
         if self.changed_files is None or not self.changed_files:
@@ -266,7 +278,7 @@ class PRInfo:
 
     def can_skip_integration_tests(self):
         # TODO: See a broken loop
-        if "force tests" in self.labels:
+        if FORCE_TESTS_LABEL in self.labels:
             return False
 
         if self.changed_files is None or not self.changed_files:
@@ -283,7 +295,7 @@ class PRInfo:
 
     def can_skip_functional_tests(self):
         # TODO: See a broken loop
-        if "force tests" in self.labels:
+        if FORCE_TESTS_LABEL in self.labels:
             return False
 
         if self.changed_files is None or not self.changed_files:

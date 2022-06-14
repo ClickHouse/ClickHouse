@@ -1,6 +1,6 @@
 ---
-toc_priority: 46
-toc_title: Работа с контейнерами map
+sidebar_position: 46
+sidebar_label: Работа с контейнерами map
 ---
 
 # Функции для работы с контейнерами map {#functions-for-working-with-tuple-maps}
@@ -17,8 +17,8 @@ map(key1, value1[, key2, value2, ...])
 
 **Аргументы**
 
--   `key` — ключ. [String](../../sql-reference/data-types/string.md) или [Integer](../../sql-reference/data-types/int-uint.md).
--   `value` — значение. [String](../../sql-reference/data-types/string.md), [Integer](../../sql-reference/data-types/int-uint.md) или [Array](../../sql-reference/data-types/array.md).
+-   `key` — ключ. [String](../../sql-reference/data-types/string.md), [Integer](../../sql-reference/data-types/int-uint.md), [LowCardinality](../../sql-reference/data-types/lowcardinality.md), [FixedString](../../sql-reference/data-types/fixedstring.md), [UUID](../../sql-reference/data-types/uuid.md), [Date](../../sql-reference/data-types/date.md), [DateTime](../../sql-reference/data-types/datetime.md), [Date32](../../sql-reference/data-types/date32.md), [Enum](../../sql-reference/data-types/enum.md).
+-   `value` — значение. Любой тип, включая [Map](../../sql-reference/data-types/map.md) и [Array](../../sql-reference/data-types/array.md).
 
 **Возвращаемое значение**
 

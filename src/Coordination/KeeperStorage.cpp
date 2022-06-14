@@ -13,7 +13,7 @@
 #include <iomanip>
 #include <mutex>
 #include <functional>
-#include <base/logger_useful.h>
+#include <base/defines.h>
 
 namespace DB
 {
@@ -24,7 +24,10 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-static String base64Encode(const String & decoded)
+namespace
+{
+
+String base64Encode(const String & decoded)
 {
     std::ostringstream ostr; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     ostr.exceptions(std::ios::failbit);
@@ -35,7 +38,7 @@ static String base64Encode(const String & decoded)
     return ostr.str();
 }
 
-static String getSHA1(const String & userdata)
+String getSHA1(const String & userdata)
 {
     Poco::SHA1Engine engine;
     engine.update(userdata);
@@ -43,14 +46,14 @@ static String getSHA1(const String & userdata)
     return String{digest_id.begin(), digest_id.end()};
 }
 
-static String generateDigest(const String & userdata)
+String generateDigest(const String & userdata)
 {
     std::vector<String> user_password;
     boost::split(user_password, userdata, [](char c) { return c == ':'; });
     return user_password[0] + ":" + base64Encode(getSHA1(userdata));
 }
 
-static bool checkACL(int32_t permission, const Coordination::ACLs & node_acls, const std::vector<KeeperStorage::AuthID> & session_auths)
+bool checkACL(int32_t permission, const Coordination::ACLs & node_acls, const std::vector<KeeperStorage::AuthID> & session_auths)
 {
     if (node_acls.empty())
         return true;
@@ -77,7 +80,7 @@ static bool checkACL(int32_t permission, const Coordination::ACLs & node_acls, c
     return false;
 }
 
-static bool fixupACL(
+bool fixupACL(
     const std::vector<Coordination::ACL> & request_acls,
     const std::vector<KeeperStorage::AuthID> & current_ids,
     std::vector<Coordination::ACL> & result_acls)
@@ -119,7 +122,7 @@ static bool fixupACL(
     return valid_found;
 }
 
-static KeeperStorage::ResponsesForSessions processWatchesImpl(const String & path, KeeperStorage::Watches & watches, KeeperStorage::Watches & list_watches, Coordination::Event event_type)
+KeeperStorage::ResponsesForSessions processWatchesImpl(const String & path, KeeperStorage::Watches & watches, KeeperStorage::Watches & list_watches, Coordination::Event event_type)
 {
     KeeperStorage::ResponsesForSessions result;
     auto it = watches.find(path);
@@ -173,6 +176,25 @@ static KeeperStorage::ResponsesForSessions processWatchesImpl(const String & pat
         }
     }
     return result;
+}
+}
+
+void KeeperStorage::Node::setData(String new_data)
+{
+    size_bytes = size_bytes - data.size() + new_data.size();
+    data = std::move(new_data);
+}
+
+void KeeperStorage::Node::addChild(StringRef child_path)
+{
+    size_bytes += sizeof child_path;
+    children.insert(child_path);
+}
+
+void KeeperStorage::Node::removeChild(StringRef child_path)
+{
+    size_bytes -= sizeof child_path;
+    children.erase(child_path);
 }
 
 KeeperStorage::KeeperStorage(int64_t tick_time_ms, const String & superdigest_)
@@ -314,8 +336,8 @@ struct KeeperStorageCreateRequestProcessor final : public KeeperStorageRequestPr
         created_node.stat.numChildren = 0;
         created_node.stat.dataLength = request.data.length();
         created_node.stat.ephemeralOwner = request.is_ephemeral ? session_id : 0;
-        created_node.data = request.data;
         created_node.is_sequental = request.is_sequential;
+        created_node.setData(std::move(request.data));
 
         auto [map_key, _] = container.insert(path_created, created_node);
         /// Take child path from key owned by map.
@@ -327,8 +349,9 @@ struct KeeperStorageCreateRequestProcessor final : public KeeperStorageRequestPr
         container.updateValue(parent_path, [child_path, zxid, &prev_parent_zxid,
                                             parent_cversion, &prev_parent_cversion] (KeeperStorage::Node & parent)
         {
-            parent.children.insert(child_path);
-            parent.size_bytes += child_path.size;
+            ++parent.stat.numChildren;
+            parent.addChild(child_path);
+
             prev_parent_cversion = parent.stat.cversion;
             prev_parent_zxid = parent.stat.pzxid;
 
@@ -342,7 +365,7 @@ struct KeeperStorageCreateRequestProcessor final : public KeeperStorageRequestPr
 
             if (zxid > parent.stat.pzxid)
                 parent.stat.pzxid = zxid;
-            ++parent.stat.numChildren;
+            chassert(parent.stat.numChildren == static_cast<int32_t>(parent.getChildren().size()));
         });
 
         response.path_created = path_created;
@@ -363,8 +386,8 @@ struct KeeperStorageCreateRequestProcessor final : public KeeperStorageRequestPr
                 --undo_parent.seq_num;
                 undo_parent.stat.cversion = prev_parent_cversion;
                 undo_parent.stat.pzxid = prev_parent_zxid;
-                undo_parent.children.erase(child_path);
-                undo_parent.size_bytes -= child_path.size;
+                undo_parent.removeChild(child_path);
+                chassert(undo_parent.stat.numChildren == static_cast<int32_t>(undo_parent.getChildren().size()));
             });
 
             storage.container.erase(path_created);
@@ -409,7 +432,7 @@ struct KeeperStorageGetRequestProcessor final : public KeeperStorageRequestProce
         else
         {
             response.stat = it->value.stat;
-            response.data = it->value.data;
+            response.data = it->value.getData();
             response.error = Coordination::Error::ZOK;
         }
 
@@ -474,7 +497,7 @@ struct KeeperStorageRemoveRequestProcessor final : public KeeperStorageRequestPr
         {
             response.error = Coordination::Error::ZBADVERSION;
         }
-        else if (it->value.stat.numChildren)
+        else if (!it->value.getChildren().empty())
         {
             response.error = Coordination::Error::ZNOTEMPTY;
         }
@@ -498,8 +521,8 @@ struct KeeperStorageRemoveRequestProcessor final : public KeeperStorageRequestPr
             {
                 --parent.stat.numChildren;
                 ++parent.stat.cversion;
-                parent.children.erase(child_basename);
-                parent.size_bytes -= child_basename.size;
+                parent.removeChild(child_basename);
+                chassert(parent.stat.numChildren == static_cast<int32_t>(parent.getChildren().size()));
             });
 
             response.error = Coordination::Error::ZOK;
@@ -520,8 +543,8 @@ struct KeeperStorageRemoveRequestProcessor final : public KeeperStorageRequestPr
                 {
                     ++parent.stat.numChildren;
                     --parent.stat.cversion;
-                    parent.children.insert(child_name);
-                    parent.size_bytes += child_name.size;
+                    parent.addChild(child_name);
+                    chassert(parent.stat.numChildren == static_cast<int32_t>(parent.getChildren().size()));
                 });
             };
         }
@@ -598,14 +621,13 @@ struct KeeperStorageSetRequestProcessor final : public KeeperStorageRequestProce
 
             auto prev_node = it->value;
 
-            auto itr = container.updateValue(request.path, [zxid, request, time] (KeeperStorage::Node & value)
+            auto itr = container.updateValue(request.path, [zxid, request, time] (KeeperStorage::Node & value) mutable
             {
                 value.stat.version++;
                 value.stat.mzxid = zxid;
                 value.stat.mtime = time;
                 value.stat.dataLength = request.data.length();
-                value.size_bytes = value.size_bytes + request.data.size() - value.data.size();
-                value.data = request.data;
+                value.setData(std::move(request.data));
             });
 
             container.updateValue(parentPath(request.path), [] (KeeperStorage::Node & parent)
@@ -675,9 +697,10 @@ struct KeeperStorageListRequestProcessor final : public KeeperStorageRequestProc
             if (path_prefix.empty())
                 throw DB::Exception("Logical error: path cannot be empty", ErrorCodes::LOGICAL_ERROR);
 
-            response.names.reserve(it->value.children.size());
+            const auto & children = it->value.getChildren();
+            response.names.reserve(children.size());
 
-            for (const auto child : it->value.children)
+            for (const auto child : children)
                 response.names.push_back(child.toString());
 
             response.stat = it->value.stat;
@@ -856,24 +879,23 @@ struct KeeperStorageMultiRequestProcessor final : public KeeperStorageRequestPro
         for (const auto & sub_request : request.requests)
         {
             auto sub_zk_request = std::dynamic_pointer_cast<Coordination::ZooKeeperRequest>(sub_request);
-            if (sub_zk_request->getOpNum() == Coordination::OpNum::Create)
+            switch (sub_zk_request->getOpNum())
             {
-                concrete_requests.push_back(std::make_shared<KeeperStorageCreateRequestProcessor>(sub_zk_request));
+                case Coordination::OpNum::Create:
+                    concrete_requests.push_back(std::make_shared<KeeperStorageCreateRequestProcessor>(sub_zk_request));
+                    break;
+                case Coordination::OpNum::Remove:
+                    concrete_requests.push_back(std::make_shared<KeeperStorageRemoveRequestProcessor>(sub_zk_request));
+                    break;
+                case Coordination::OpNum::Set:
+                    concrete_requests.push_back(std::make_shared<KeeperStorageSetRequestProcessor>(sub_zk_request));
+                    break;
+                case Coordination::OpNum::Check:
+                    concrete_requests.push_back(std::make_shared<KeeperStorageCheckRequestProcessor>(sub_zk_request));
+                    break;
+                default:
+                    throw DB::Exception(ErrorCodes::BAD_ARGUMENTS, "Illegal command as part of multi ZooKeeper request {}", sub_zk_request->getOpNum());
             }
-            else if (sub_zk_request->getOpNum() == Coordination::OpNum::Remove)
-            {
-                concrete_requests.push_back(std::make_shared<KeeperStorageRemoveRequestProcessor>(sub_zk_request));
-            }
-            else if (sub_zk_request->getOpNum() == Coordination::OpNum::Set)
-            {
-                concrete_requests.push_back(std::make_shared<KeeperStorageSetRequestProcessor>(sub_zk_request));
-            }
-            else if (sub_zk_request->getOpNum() == Coordination::OpNum::Check)
-            {
-                concrete_requests.push_back(std::make_shared<KeeperStorageCheckRequestProcessor>(sub_zk_request));
-            }
-            else
-                throw DB::Exception(ErrorCodes::BAD_ARGUMENTS, "Illegal command as part of multi ZooKeeper request {}", sub_zk_request->getOpNum());
         }
     }
 
@@ -1092,8 +1114,8 @@ KeeperStorage::ResponsesForSessions KeeperStorage::processRequest(const Coordina
                     --parent.stat.numChildren;
                     ++parent.stat.cversion;
                     auto base_name = getBaseName(ephemeral_path);
-                    parent.children.erase(base_name);
-                    parent.size_bytes -= base_name.size;
+                    parent.removeChild(base_name);
+                    chassert(parent.stat.numChildren == static_cast<int32_t>(parent.getChildren().size()));
                 });
 
                 container.erase(ephemeral_path);
@@ -1150,12 +1172,12 @@ KeeperStorage::ResponsesForSessions KeeperStorage::processRequest(const Coordina
                     ? list_watches
                     : watches;
 
-                watches_type[zk_request->getPath()].emplace_back(session_id);
+                watches_type[zk_request->getPath()].emplace(session_id);
                 sessions_and_watchers[session_id].emplace(zk_request->getPath());
             }
             else if (response->error == Coordination::Error::ZNONODE && zk_request->getOpNum() == Coordination::OpNum::Exists)
             {
-                watches[zk_request->getPath()].emplace_back(session_id);
+                watches[zk_request->getPath()].emplace(session_id);
                 sessions_and_watchers[session_id].emplace(zk_request->getPath());
             }
         }
@@ -1190,13 +1212,7 @@ void KeeperStorage::clearDeadWatches(int64_t session_id)
             if (watch != watches.end())
             {
                 auto & watches_for_path = watch->second;
-                for (auto w_it = watches_for_path.begin(); w_it != watches_for_path.end();)
-                {
-                    if (*w_it == session_id)
-                        w_it = watches_for_path.erase(w_it);
-                    else
-                        ++w_it;
-                }
+                watches_for_path.erase(session_id);
                 if (watches_for_path.empty())
                     watches.erase(watch);
             }
@@ -1206,13 +1222,7 @@ void KeeperStorage::clearDeadWatches(int64_t session_id)
             if (list_watch != list_watches.end())
             {
                 auto & list_watches_for_path = list_watch->second;
-                for (auto w_it = list_watches_for_path.begin(); w_it != list_watches_for_path.end();)
-                {
-                    if (*w_it == session_id)
-                        w_it = list_watches_for_path.erase(w_it);
-                    else
-                        ++w_it;
-                }
+                list_watches_for_path.erase(session_id);
                 if (list_watches_for_path.empty())
                     list_watches.erase(list_watch);
             }
@@ -1234,7 +1244,7 @@ void KeeperStorage::dumpWatches(WriteBufferFromOwnString & buf) const
 
 void KeeperStorage::dumpWatchesByPath(WriteBufferFromOwnString & buf) const
 {
-    auto write_int_vec = [&buf](const std::vector<int64_t> & session_ids)
+    auto write_int_container = [&buf](const auto & session_ids)
     {
         for (int64_t session_id : session_ids)
         {
@@ -1245,13 +1255,13 @@ void KeeperStorage::dumpWatchesByPath(WriteBufferFromOwnString & buf) const
     for (const auto & [watch_path, sessions] : watches)
     {
         buf << watch_path << "\n";
-        write_int_vec(sessions);
+        write_int_container(sessions);
     }
 
     for (const auto & [watch_path, sessions] : list_watches)
     {
         buf << watch_path << "\n";
-        write_int_vec(sessions);
+        write_int_container(sessions);
     }
 }
 

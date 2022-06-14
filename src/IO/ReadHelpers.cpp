@@ -9,7 +9,7 @@
 #include <IO/readFloatText.h>
 #include <IO/Operators.h>
 #include <base/find_symbols.h>
-#include <stdlib.h>
+#include <cstdlib>
 
 #ifdef __SSE2__
     #include <emmintrin.h>
@@ -26,6 +26,7 @@ namespace ErrorCodes
     extern const int CANNOT_PARSE_DATETIME;
     extern const int CANNOT_PARSE_DATE;
     extern const int INCORRECT_DATA;
+    extern const int ATTEMPT_TO_READ_AFTER_EOF;
 }
 
 template <typename IteratorSrc, typename IteratorDst>
@@ -135,6 +136,12 @@ void assertEOF(ReadBuffer & buf)
 {
     if (!buf.eof())
         throwAtAssertionFailed("eof", buf);
+}
+
+void assertNotEOF(ReadBuffer & buf)
+{
+    if (buf.eof())
+        throw Exception("Attempt to read after EOF", ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF);
 }
 
 
@@ -249,6 +256,7 @@ void readString(String & s, ReadBuffer & buf)
 
 template void readStringInto<PaddedPODArray<UInt8>>(PaddedPODArray<UInt8> & s, ReadBuffer & buf);
 template void readStringInto<String>(String & s, ReadBuffer & buf);
+template void readStringInto<NullOutput>(NullOutput & s, ReadBuffer & buf);
 
 template <typename Vector>
 void readStringUntilEOFInto(Vector & s, ReadBuffer & buf)
@@ -336,7 +344,7 @@ static void parseComplexEscapeSequence(Vector & s, ReadBuffer & buf)
             && decoded_char != '"'
             && decoded_char != '`'  /// MySQL style identifiers
             && decoded_char != '/'  /// JavaScript in HTML
-            && decoded_char != '='  /// Yandex's TSKV
+            && decoded_char != '='  /// TSKV format invented somewhere
             && !isControlASCII(decoded_char))
         {
             s.push_back('\\');
@@ -581,7 +589,10 @@ void readQuotedStringWithSQLStyle(String & s, ReadBuffer & buf)
 
 template void readQuotedStringInto<true>(PaddedPODArray<UInt8> & s, ReadBuffer & buf);
 template void readQuotedStringInto<true>(String & s, ReadBuffer & buf);
+template void readQuotedStringInto<false>(String & s, ReadBuffer & buf);
 template void readDoubleQuotedStringInto<false>(NullOutput & s, ReadBuffer & buf);
+template void readDoubleQuotedStringInto<false>(String & s, ReadBuffer & buf);
+template void readBackQuotedStringInto<false>(String & s, ReadBuffer & buf);
 
 void readDoubleQuotedString(String & s, ReadBuffer & buf)
 {
@@ -607,6 +618,12 @@ void readBackQuotedStringWithSQLStyle(String & s, ReadBuffer & buf)
     readBackQuotedStringInto<true>(s, buf);
 }
 
+template<typename T>
+concept WithResize = requires (T value)
+{
+    { value.resize(1) };
+    { value.size() } -> std::integral<>;
+};
 
 template <typename Vector>
 void readCSVStringInto(Vector & s, ReadBuffer & buf, const FormatSettings::CSV & settings)
@@ -690,16 +707,18 @@ void readCSVStringInto(Vector & s, ReadBuffer & buf, const FormatSettings::CSV &
             if (!buf.hasPendingData())
                 continue;
 
-            /** CSV format can contain insignificant spaces and tabs.
-              * Usually the task of skipping them is for the calling code.
-              * But in this case, it will be difficult to do this, so remove the trailing whitespace by ourself.
-              */
-            size_t size = s.size();
-            while (size > 0
-                && (s[size - 1] == ' ' || s[size - 1] == '\t'))
-                --size;
+            if constexpr (WithResize<Vector>)
+            {
+                /** CSV format can contain insignificant spaces and tabs.
+                * Usually the task of skipping them is for the calling code.
+                * But in this case, it will be difficult to do this, so remove the trailing whitespace by ourself.
+                */
+                size_t size = s.size();
+                while (size > 0 && (s[size - 1] == ' ' || s[size - 1] == '\t'))
+                    --size;
 
-            s.resize(size);
+                s.resize(size);
+            }
             return;
         }
     }
@@ -731,6 +750,7 @@ void readCSVField(String & s, ReadBuffer & buf, const FormatSettings::CSV & sett
 }
 
 template void readCSVStringInto<PaddedPODArray<UInt8>>(PaddedPODArray<UInt8> & s, ReadBuffer & buf, const FormatSettings::CSV & settings);
+template void readCSVStringInto<NullOutput>(NullOutput & s, ReadBuffer & buf, const FormatSettings::CSV & settings);
 
 
 template <typename Vector, typename ReturnType>
@@ -1303,8 +1323,8 @@ void skipToNextRowOrEof(PeekableReadBuffer & buf, const String & row_after_delim
 }
 
 // Use PeekableReadBuffer to copy field to string after parsing.
-template <typename ParseFunc>
-static void readParsedValueIntoString(String & s, ReadBuffer & buf, ParseFunc parse_func)
+template <typename Vector, typename ParseFunc>
+static void readParsedValueInto(Vector & s, ReadBuffer & buf, ParseFunc parse_func)
 {
     PeekableReadBuffer peekable_buf(buf);
     peekable_buf.setCheckpoint();
@@ -1316,8 +1336,8 @@ static void readParsedValueIntoString(String & s, ReadBuffer & buf, ParseFunc pa
     peekable_buf.position() = end;
 }
 
-template <char opening_bracket, char closing_bracket>
-static void readQuotedFieldInBrackets(String & s, ReadBuffer & buf)
+template <char opening_bracket, char closing_bracket, typename Vector>
+static void readQuotedFieldInBracketsInto(Vector & s, ReadBuffer & buf)
 {
     assertChar(opening_bracket, buf);
     s.push_back(opening_bracket);
@@ -1353,10 +1373,9 @@ static void readQuotedFieldInBrackets(String & s, ReadBuffer & buf)
     }
 }
 
-void readQuotedFieldIntoString(String & s, ReadBuffer & buf)
+template <typename Vector>
+void readQuotedFieldInto(Vector & s, ReadBuffer & buf)
 {
-    s.clear();
-
     if (buf.eof())
         return;
 
@@ -1366,6 +1385,7 @@ void readQuotedFieldIntoString(String & s, ReadBuffer & buf)
     /// - Tuples: (...)
     /// - Maps: {...}
     /// - NULL
+    /// - Bool: true/false
     /// - Number: integer, float, decimal.
 
     if (*buf.position() == '\'')
@@ -1375,11 +1395,11 @@ void readQuotedFieldIntoString(String & s, ReadBuffer & buf)
         s.push_back('\'');
     }
     else if (*buf.position() == '[')
-        readQuotedFieldInBrackets<'[', ']'>(s, buf);
+        readQuotedFieldInBracketsInto<'[', ']'>(s, buf);
     else if (*buf.position() == '(')
-        readQuotedFieldInBrackets<'(', ')'>(s, buf);
+        readQuotedFieldInBracketsInto<'(', ')'>(s, buf);
     else if (*buf.position() == '{')
-        readQuotedFieldInBrackets<'{', '}'>(s, buf);
+        readQuotedFieldInBracketsInto<'{', '}'>(s, buf);
     else if (checkCharCaseInsensitive('n', buf))
     {
         /// NULL or NaN
@@ -1394,6 +1414,16 @@ void readQuotedFieldIntoString(String & s, ReadBuffer & buf)
             s.append("NaN");
         }
     }
+    else if (checkCharCaseInsensitive('t', buf))
+    {
+        assertStringCaseInsensitive("rue", buf);
+        s.append("true");
+    }
+    else if (checkCharCaseInsensitive('f', buf))
+    {
+        assertStringCaseInsensitive("alse", buf);
+        s.append("false");
+    }
     else
     {
         /// It's an integer, float or decimal. They all can be parsed as float.
@@ -1402,14 +1432,23 @@ void readQuotedFieldIntoString(String & s, ReadBuffer & buf)
             Float64 tmp;
             readFloatText(tmp, in);
         };
-        readParsedValueIntoString(s, buf, parse_func);
+        readParsedValueInto(s, buf, parse_func);
     }
 }
 
-void readJSONFieldIntoString(String & s, ReadBuffer & buf)
+template void readQuotedFieldInto<NullOutput>(NullOutput & s, ReadBuffer & buf);
+
+void readQuotedField(String & s, ReadBuffer & buf)
 {
+    s.clear();
+    readQuotedFieldInto(s, buf);
+}
+
+void readJSONField(String & s, ReadBuffer & buf)
+{
+    s.clear();
     auto parse_func = [](ReadBuffer & in) { skipJSONField(in, "json_field"); };
-    readParsedValueIntoString(s, buf, parse_func);
+    readParsedValueInto(s, buf, parse_func);
 }
 
 }

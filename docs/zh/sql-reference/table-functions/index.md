@@ -1,7 +1,6 @@
 ---
-toc_folder_title: 表函数
-toc_priority: 34
-toc_title: "\u5BFC\u8A00"
+sidebar_label: 表函数
+sidebar_position: 34
 ---
 
 # 表函数 {#table-functions}

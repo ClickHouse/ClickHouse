@@ -7,7 +7,6 @@ import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from helpers.network import PartitionManager
 from helpers.test_tools import TSV
 from .cluster import ClickHouseClusterWithDDLHelpers
 
@@ -510,7 +509,7 @@ def test_replicated_without_arguments(test_cluster):
     )
     assert (
         instance.query("SHOW CREATE test_atomic.rmt FORMAT TSVRaw")
-        == "CREATE TABLE test_atomic.rmt\n(\n    `n` UInt64,\n    `s` String\n)\nENGINE = ReplicatedMergeTree('/clickhouse/tables/12345678-0000-4000-8000-000000000001/{shard}', '{replica}')\nORDER BY n\nSETTINGS index_granularity = 8192\n"
+        == "CREATE TABLE test_atomic.rmt\n(\n    `n` UInt64,\n    `s` String\n)\nENGINE = ReplicatedMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}')\nORDER BY n\nSETTINGS index_granularity = 8192\n"
     )
     test_cluster.ddl_check_query(
         instance,

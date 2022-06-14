@@ -12,9 +12,9 @@
 #include <Parsers/formatAST.h>
 #include <IO/ReadHelpers.h>
 #include <Poco/DirectoryIterator.h>
-#include <Common/renameat2.h>
+#include <Common/atomicRename.h>
 #include <Common/CurrentMetrics.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <filesystem>
 #include <Common/filesystemHelpers.h>
@@ -92,7 +92,7 @@ TemporaryTableHolder::TemporaryTableHolder(
         context_,
         [&](const StorageID & table_id)
         {
-            auto storage = StorageMemory::create(table_id, ColumnsDescription{columns}, ConstraintsDescription{constraints}, String{});
+            auto storage = std::make_shared<StorageMemory>(table_id, ColumnsDescription{columns}, ConstraintsDescription{constraints}, String{});
 
             if (create_for_global_subquery)
                 storage->delayReadForGlobalSubqueries();
@@ -119,7 +119,11 @@ TemporaryTableHolder & TemporaryTableHolder::operator=(TemporaryTableHolder && r
 TemporaryTableHolder::~TemporaryTableHolder()
 {
     if (id != UUIDHelpers::Nil)
+    {
+        auto table = getTable();
+        table->flushAndShutdown();
         temporary_tables->dropTable(getContext(), "_tmp_" + toString(id));
+    }
 }
 
 StorageID TemporaryTableHolder::getGlobalTableID() const
@@ -647,7 +651,7 @@ std::unique_lock<std::shared_mutex> DatabaseCatalog::getExclusiveDDLGuardForData
     {
         std::unique_lock lock(ddl_guards_mutex);
         db_guard_iter = ddl_guards.try_emplace(database).first;
-        assert(db_guard_iter->second.first.count(""));
+        assert(db_guard_iter->second.first.contains(""));
     }
     DatabaseGuard & db_guard = db_guard_iter->second;
     return std::unique_lock{db_guard.second};
@@ -945,7 +949,7 @@ void DatabaseCatalog::waitTableFinallyDropped(const UUID & uuid)
     std::unique_lock lock{tables_marked_dropped_mutex};
     wait_table_finally_dropped.wait(lock, [&]()
     {
-        return tables_marked_dropped_ids.count(uuid) == 0;
+        return !tables_marked_dropped_ids.contains(uuid);
     });
 }
 

@@ -1,1 +1,0 @@
-../../../en/sql-reference/statements/check-table.md

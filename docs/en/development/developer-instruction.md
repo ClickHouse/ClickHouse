@@ -1,11 +1,12 @@
 ---
-toc_priority: 61
-toc_title: For Beginners
+sidebar_position: 61
+sidebar_label: Getting Started
+description: Prerequisites and an overview of how to build ClickHouse
 ---
 
-# The Beginner ClickHouse Developer Instruction {#the-beginner-clickhouse-developer-instruction}
+# Getting Started Guide for Building ClickHouse
 
-Building of ClickHouse is supported on Linux, FreeBSD and Mac OS X.
+The building of ClickHouse is supported on Linux, FreeBSD and Mac OS X.
 
 If you use Windows, you need to create a virtual machine with Ubuntu. To start working with a virtual machine please install VirtualBox. You can download Ubuntu from the website: https://www.ubuntu.com/#download. Please create a virtual machine from the downloaded image (you should reserve at least 4GB of RAM for it). To run a command-line terminal in Ubuntu, please locate a program containing the word “terminal” in its name (gnome-terminal, konsole etc.) or just press Ctrl+Alt+T.
 
@@ -69,7 +70,7 @@ You can also clone the repository via https protocol:
 
 This, however, will not let you send your changes to the server. You can still use it temporarily and add the SSH keys later replacing the remote address of the repository with `git remote` command.
 
-You can also add original ClickHouse repo’s address to your local repository to pull updates from there:
+You can also add original ClickHouse repo address to your local repository to pull updates from there:
 
     git remote add upstream git@github.com:ClickHouse/ClickHouse.git
 
@@ -154,7 +155,7 @@ While inside the `build` directory, configure your build by running CMake. Befor
     export CC=clang CXX=clang++
     cmake ..
 
-If you installed clang using the automatic installation script above, also specify the version of clang installed in the first command, e.g. `export CC=clang-13 CXX=clang++-13`. The clang version will be in the script output.
+If you installed clang using the automatic installation script above, also specify the version of clang installed in the first command, e.g. `export CC=clang-14 CXX=clang++-14`. The clang version will be in the script output.
 
 The `CC` variable specifies the compiler for C (short for C Compiler), and `CXX` variable instructs which C++ compiler is to be used for building.
 
@@ -176,7 +177,7 @@ If you require to build all the binaries (utilities and tests), you should run n
 
 Full build requires about 30GB of free disk space or 15GB to build the main binaries.
 
-When a large amount of RAM is available on build machine you should limit the number of build tasks run in parallel with `-j` param:
+When a large amount of RAM is available on build machine you should limit the number of build tasks run in parallel with `-j` parameter:
 
     ninja -j 1 clickhouse-server clickhouse-client
 
@@ -229,25 +230,6 @@ As simple code editors, you can use Sublime Text or Visual Studio Code, or Kate 
 
 Just in case, it is worth mentioning that CLion creates `build` path on its own, it also on its own selects `debug` for build type, for configuration it uses a version of CMake that is defined in CLion and not the one installed by you, and finally, CLion will use `make` to run build tasks instead of `ninja`. This is normal behaviour, just keep that in mind to avoid confusion.
 
-## Debugging
-
-Many graphical IDEs offer with an integrated debugger but you can also use a standalone debugger.
-
-### GDB
-
-### LLDB
-
-    # tell LLDB where to find the source code
-    settings set target.source-map /path/to/build/dir /path/to/source/dir
-
-    # configure LLDB to display code before/after currently executing line
-    settings set stop-line-count-before 10
-    settings set stop-line-count-after 10
-
-    target create ./clickhouse-client
-    # <set breakpoints here>
-    process launch -- --query="SELECT * FROM TAB"
-
 ## Writing Code {#writing-code}
 
 The description of ClickHouse architecture can be found here: https://clickhouse.com/docs/en/development/architecture/
@@ -287,7 +269,7 @@ Developing ClickHouse often requires loading realistic datasets. It is particula
 
 Navigate to your fork repository in GitHub’s UI. If you have been developing in a branch, you need to select that branch. There will be a “Pull request” button located on the screen. In essence, this means “create a request for accepting my changes into the main repository”.
 
-A pull request can be created even if the work is not completed yet. In this case please put the word “WIP” (work in progress) at the beginning of the title, it can be changed later. This is useful for cooperative reviewing and discussion of changes as well as for running all of the available tests. It is important that you provide a brief description of your changes, it will later be used for generating release changelogs.
+A pull request can be created even if the work is not completed yet. In this case please put the word “WIP” (work in progress) at the beginning of the title, it can be changed later. This is useful for cooperative reviewing and discussion of changes as well as for running all of the available tests. It is important that you provide a brief description of your changes, it will later be used for generating release changelog.
 
 Testing will commence as soon as ClickHouse employees label your PR with a tag “can be tested”. The results of some first checks (e.g. code style) will come in within several minutes. Build check results will arrive within half an hour. And the main set of tests will report itself within an hour.
 

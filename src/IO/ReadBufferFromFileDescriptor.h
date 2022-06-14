@@ -39,10 +39,6 @@ public:
     {
     }
 
-    virtual ~ReadBufferFromFileDescriptor() override
-    {
-    }
-
     int getFD() const
     {
         return fd;
@@ -52,6 +48,8 @@ public:
     {
         return file_offset_of_buffer_end - (working_buffer.end() - pos);
     }
+
+    Range getRemainingReadRange() const override { return Range{ .left = file_offset_of_buffer_end, .right = std::nullopt }; }
 
     /// If 'offset' is small enough to stay in buffer after seek, then true seek in file does not happen.
     off_t seek(off_t off, int whence) override;
@@ -83,9 +81,6 @@ public:
         : ReadBufferFromFileDescriptor(fd_, buf_size, existing_memory, alignment, file_size_)
     {
         use_pread = true;
-    }
-    virtual ~ReadBufferFromFileDescriptorPRead() override
-    {
     }
 };
 

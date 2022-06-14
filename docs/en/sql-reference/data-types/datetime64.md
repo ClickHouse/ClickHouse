@@ -1,9 +1,9 @@
 ---
-toc_priority: 49
-toc_title: DateTime64
+sidebar_position: 49
+sidebar_label: DateTime64
 ---
 
-# Datetime64 {#data_type-datetime64}
+# Datetime64
 
 Allows to store an instant in time, that can be expressed as a calendar date and a time of a day, with defined sub-second precision
 
@@ -20,7 +20,7 @@ Internally, stores data as a number of ‘ticks’ since epoch start (1970-01-01
 
 Supported range of values: \[1925-01-01 00:00:00, 2283-11-11 23:59:59.99999999\] (Note: The precision of the maximum value is 8).
 
-## Examples {#examples}
+## Examples
 
 1. Creating a table with `DateTime64`-type column and inserting data into it:
 

@@ -1,4 +1,4 @@
-#include <string.h>
+#include <cstring>
 
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
@@ -158,7 +158,7 @@ NamesAndTypesList collect(const NamesAndTypesList & names_and_types)
     auto nested_types = getSubcolumnsOfNested(names_and_types);
 
     for (const auto & name_type : names_and_types)
-        if (!isArray(name_type.type) || !nested_types.count(splitName(name_type.name).first))
+        if (!isArray(name_type.type) || !nested_types.contains(splitName(name_type.name).first))
             res.push_back(name_type);
 
     for (const auto & name_type : nested_types)

@@ -214,15 +214,12 @@ void TSKVRowInputFormat::resetParser()
 }
 
 TSKVSchemaReader::TSKVSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_)
-    : IRowWithNamesSchemaReader(
-        in_,
-        format_settings_.max_rows_to_read_for_schema_inference,
-        getDefaultDataTypeForEscapingRule(FormatSettings::EscapingRule::Escaped))
+    : IRowWithNamesSchemaReader(in_, getDefaultDataTypeForEscapingRule(FormatSettings::EscapingRule::Escaped))
     , format_settings(format_settings_)
 {
 }
 
-std::unordered_map<String, DataTypePtr> TSKVSchemaReader::readRowAndGetNamesAndDataTypes()
+NamesAndTypesList TSKVSchemaReader::readRowAndGetNamesAndDataTypes(bool & eof)
 {
     if (first_row)
     {
@@ -231,7 +228,10 @@ std::unordered_map<String, DataTypePtr> TSKVSchemaReader::readRowAndGetNamesAndD
     }
 
     if (in.eof())
+    {
+        eof = true;
         return {};
+    }
 
     if (*in.position() == '\n')
     {
@@ -239,7 +239,7 @@ std::unordered_map<String, DataTypePtr> TSKVSchemaReader::readRowAndGetNamesAndD
         return {};
     }
 
-    std::unordered_map<String, DataTypePtr> names_and_types;
+    NamesAndTypesList names_and_types;
     StringRef name_ref;
     String name_buf;
     String value;
@@ -250,7 +250,7 @@ std::unordered_map<String, DataTypePtr> TSKVSchemaReader::readRowAndGetNamesAndD
         if (has_value)
         {
             readEscapedString(value, in);
-            names_and_types[std::move(name)] = determineDataTypeByEscapingRule(value, format_settings, FormatSettings::EscapingRule::Escaped);
+            names_and_types.emplace_back(std::move(name), determineDataTypeByEscapingRule(value, format_settings, FormatSettings::EscapingRule::Escaped));
         }
         else
         {
@@ -277,10 +277,12 @@ void registerInputFormatTSKV(FormatFactory & factory)
     {
         return std::make_shared<TSKVRowInputFormat>(buf, sample, std::move(params), settings);
     });
+
+    factory.markFormatSupportsSubsetOfColumns("TSKV");
 }
 void registerTSKVSchemaReader(FormatFactory & factory)
 {
-    factory.registerSchemaReader("TSKV", [](ReadBuffer & buf, const FormatSettings & settings, ContextPtr)
+    factory.registerSchemaReader("TSKV", [](ReadBuffer & buf, const FormatSettings & settings)
     {
         return std::make_shared<TSKVSchemaReader>(buf, settings);
     });

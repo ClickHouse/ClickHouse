@@ -24,6 +24,7 @@
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/UnionStep.h>
+#include <Processors/QueryPlan/QueryIdHolder.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 
 #include <Core/UUID.h>
@@ -130,9 +131,11 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
         return std::make_unique<QueryPlan>();
 
     const auto & settings = context->getSettingsRef();
+
     const auto & metadata_for_reading = storage_snapshot->getMetadataForQuery();
 
     const auto & snapshot_data = assert_cast<const MergeTreeData::SnapshotData &>(*storage_snapshot->data);
+
     const auto & parts = snapshot_data.parts;
 
     if (!query_info.projection)
@@ -168,6 +171,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
     Pipes pipes;
     Pipe projection_pipe;
     Pipe ordinary_pipe;
+    QueryPlanResourceHolder resources;
 
     auto projection_plan = std::make_unique<QueryPlan>();
     if (query_info.projection->desc->is_minmax_count_projection)
@@ -214,14 +218,15 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
             projection_plan->addStep(std::move(expression_before_aggregation));
         }
 
-        projection_pipe = projection_plan->convertToPipe(
+        auto builder = projection_plan->buildQueryPipeline(
             QueryPlanOptimizationSettings::fromContext(context), BuildQueryPipelineSettings::fromContext(context));
+        projection_pipe = QueryPipelineBuilder::getPipe(std::move(*builder), resources);
     }
 
     if (query_info.projection->merge_tree_normal_select_result_ptr)
     {
         auto storage_from_base_parts_of_projection
-            = StorageFromMergeTreeDataPart::create(data, query_info.projection->merge_tree_normal_select_result_ptr);
+            = std::make_shared<StorageFromMergeTreeDataPart>(data, query_info.projection->merge_tree_normal_select_result_ptr);
         auto interpreter = InterpreterSelectQuery(
             query_info.query,
             context,
@@ -244,8 +249,9 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
             ordinary_query_plan.addStep(std::move(where_step));
         }
 
-        ordinary_pipe = ordinary_query_plan.convertToPipe(
+        auto builder = ordinary_query_plan.buildQueryPipeline(
             QueryPlanOptimizationSettings::fromContext(context), BuildQueryPipelineSettings::fromContext(context));
+        ordinary_pipe = QueryPipelineBuilder::getPipe(std::move(*builder), resources);
     }
 
     if (query_info.projection->desc->type == ProjectionDescription::Type::Aggregate)
@@ -370,14 +376,9 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
     pipe.resize(1);
     auto step = std::make_unique<ReadFromStorageStep>(
         std::move(pipe),
-        fmt::format("MergeTree(with {} projection {})", query_info.projection->desc->type, query_info.projection->desc->name));
+        fmt::format("MergeTree(with {} projection {})", query_info.projection->desc->type, query_info.projection->desc->name),
+        query_info.storage_limits);
     plan->addStep(std::move(step));
-
-    if (query_info.projection->subqueries_for_sets && !query_info.projection->subqueries_for_sets->empty())
-    {
-        SizeLimits limits(settings.max_rows_to_transfer, settings.max_bytes_to_transfer, settings.transfer_overflow_mode);
-        addCreatingSetsStep(*plan, std::move(*query_info.projection->subqueries_for_sets), limits, context);
-    }
     return plan;
 }
 
@@ -844,7 +845,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 
         Strings forced_indices;
         {
-            Tokens tokens(&indices[0], &indices[indices.size()], settings.max_query_size);
+            Tokens tokens(indices.data(), &indices[indices.size()], settings.max_query_size);
             IParser::Pos pos(tokens, settings.max_parser_depth);
             Expected expected;
             if (!parseIdentifiersOrStringLiterals(pos, expected, forced_indices))
@@ -860,7 +861,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 
         for (const auto & index_name : forced_indices)
         {
-            if (!useful_indices_names.count(index_name))
+            if (!useful_indices_names.contains(index_name))
             {
                 throw Exception(
                     ErrorCodes::INDEX_NOT_USED,
@@ -985,7 +986,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
             }
         };
 
-        size_t num_threads = std::min(size_t(num_streams), parts.size());
+        size_t num_threads = std::min<size_t>(num_streams, parts.size());
 
         if (num_threads <= 1)
         {
@@ -1093,7 +1094,7 @@ std::shared_ptr<QueryIdHolder> MergeTreeDataSelectExecutor::checkLimits(
         std::set<String> partitions;
         for (const auto & part_with_ranges : result.parts_with_ranges)
             partitions.insert(part_with_ranges.data_part->info.partition_id);
-        if (partitions.size() > size_t(max_partitions_to_read))
+        if (partitions.size() > static_cast<size_t>(max_partitions_to_read))
             throw Exception(
                 ErrorCodes::TOO_MANY_PARTITIONS,
                 "Too many partitions to read. Current {}, max {}",
@@ -1146,6 +1147,10 @@ static void selectColumnNames(
             virt_column_names.push_back(name);
         }
         else if (name == "_partition_id")
+        {
+            virt_column_names.push_back(name);
+        }
+        else if (name == "_part_offset")
         {
             virt_column_names.push_back(name);
         }
@@ -1574,15 +1579,15 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
             if (index_mark != index_range.begin || !granule || last_index_mark != index_range.begin)
                 granule = reader.read();
 
-            MarkRange data_range(
-                    std::max(ranges[i].begin, index_mark * index_granularity),
-                    std::min(ranges[i].end, (index_mark + 1) * index_granularity));
-
             if (!condition->mayBeTrueOnGranule(granule))
             {
                 ++granules_dropped;
                 continue;
             }
+
+            MarkRange data_range(
+                    std::max(ranges[i].begin, index_mark * index_granularity),
+                    std::min(ranges[i].end, (index_mark + 1) * index_granularity));
 
             if (res.empty() || res.back().end - data_range.begin > min_marks_for_seek)
                 res.push_back(data_range);
@@ -1674,15 +1679,15 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingMergedIndex(
                 }
             }
 
-            MarkRange data_range(
-                std::max(range.begin, index_mark * index_granularity),
-                std::min(range.end, (index_mark + 1) * index_granularity));
-
             if (!condition->mayBeTrueOnGranule(granules))
             {
                 ++granules_dropped;
                 continue;
             }
+
+            MarkRange data_range(
+                std::max(range.begin, index_mark * index_granularity),
+                std::min(range.end, (index_mark + 1) * index_granularity));
 
             if (res.empty() || res.back().end - data_range.begin > min_marks_for_seek)
                 res.push_back(data_range);
