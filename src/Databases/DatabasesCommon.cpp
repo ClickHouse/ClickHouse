@@ -329,14 +329,11 @@ DatabaseTablesIteratorPtr DatabaseWithOwnTablesBase::getTablesIteratorForBackup(
     return getTablesIterator(backup_entries_collector.getContext(), skip_internal_tables);
 }
 
-void DatabaseWithOwnTablesBase::backupCreateTableQuery(
-    BackupEntriesCollector & backup_entries_collector, const StoragePtr & storage, const ASTPtr & create_table_query)
+void DatabaseWithOwnTablesBase::checkCreateTableQueryForBackup(const ASTPtr &, const BackupEntriesCollector &) const
 {
-    /// Let IStorage do that.
-    storage->backupCreateQuery(backup_entries_collector, create_table_query);
 }
 
-void DatabaseWithOwnTablesBase::createTableRestoredFromBackup(const RestorerFromBackup & restorer, const ASTPtr & create_table_query)
+void DatabaseWithOwnTablesBase::createTableRestoredFromBackup(const ASTPtr & create_table_query, const RestorerFromBackup & restorer)
 {
     /// Creates a table by executing a "CREATE TABLE" query.
     restorer.executeCreateQuery(create_table_query);

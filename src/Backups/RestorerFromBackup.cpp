@@ -496,10 +496,8 @@ void RestorerFromBackup::createDatabases()
         if (!restore_settings.allow_different_database_def)
         {
             /// Check that the database's definition is the same as expected.
-            ASTPtr create_database_query = database->getCreateDatabaseQuery();
+            ASTPtr create_database_query = database->getCreateDatabaseQueryForBackup();
             ASTPtr expected_create_query = database_info.create_database_query;
-            database->adjustCreateDatabaseQueryForBackup(create_database_query);
-            database->adjustCreateDatabaseQueryForBackup(expected_create_query);
             if (serializeAST(*create_database_query) != serializeAST(*expected_create_query))
             {
                 throw Exception(
@@ -554,7 +552,7 @@ void RestorerFromBackup::createTables()
                     table_key.name.getFullName(),
                     serializeAST(*create_table_query));
 
-                database->createTableRestoredFromBackup(*this, create_table_query);
+                database->createTableRestoredFromBackup(create_table_query, *this);
             }
 
             table_info.created = true;
@@ -569,10 +567,8 @@ void RestorerFromBackup::createTables()
 
             if (!restore_settings.allow_different_table_def)
             {
-                ASTPtr create_table_query = database->getCreateTableQuery(resolved_id.table_name, context);
+                ASTPtr create_table_query = storage->getCreateQueryForBackup(context);
                 ASTPtr expected_create_query = table_info.create_table_query;
-                storage->adjustCreateQueryForBackup(create_table_query);
-                storage->adjustCreateQueryForBackup(expected_create_query);
                 if (serializeAST(*create_table_query) != serializeAST(*expected_create_query))
                 {
                     throw Exception(

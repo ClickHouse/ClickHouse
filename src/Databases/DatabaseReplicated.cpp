@@ -922,7 +922,7 @@ String DatabaseReplicated::readMetadataFile(const String & table_name) const
 }
 
 
-void DatabaseReplicated::createTableRestoredFromBackup(const RestorerFromBackup & restorer, const ASTPtr & create_table_query)
+void DatabaseReplicated::createTableRestoredFromBackup(const ASTPtr & create_table_query, const RestorerFromBackup & restorer)
 {
     /// Because of the replication multiple nodes can try to restore the same tables again and failed with "Table already exists"
     /// because of some table could be restored already on other node and then replicated to this node.

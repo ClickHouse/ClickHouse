@@ -333,17 +333,17 @@ public:
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Database engine {} does not run a replication thread!", getEngineName());
     }
 
-    /// Changes slightly this database's create query before it's written to a backup.
-    virtual void adjustCreateDatabaseQueryForBackup(ASTPtr & create_database_query) const;
+    /// Returns a slightly changed version of the CREATE DATABASE query which must be written to a backup.
+    virtual ASTPtr getCreateDatabaseQueryForBackup() const;
 
     /// Returns an iterator that passes through all the tables when an user wants to backup the whole database.
     virtual DatabaseTablesIteratorPtr getTablesIteratorForBackup(const BackupEntriesCollector & restorer) const;
 
-    /// Makes backup entries to backup the create query of a specified table.
-    virtual void backupCreateTableQuery(BackupEntriesCollector & backup_entries_collector, const StoragePtr & storage, const ASTPtr & create_table_query);
+    /// Checks a CREATE TABLE query before it will be written to a backup. Called by IStorage::getCreateQueryForBackup().
+    virtual void checkCreateTableQueryForBackup(const ASTPtr & create_table_query, const BackupEntriesCollector & backup_entries_collector) const;
 
     /// Creates a table restored from backup.
-    virtual void createTableRestoredFromBackup(const RestorerFromBackup & restorer, const ASTPtr & create_table_query);
+    virtual void createTableRestoredFromBackup(const ASTPtr & create_table_query, const RestorerFromBackup & restorer);
 
     virtual ~IDatabase() = default;
 

@@ -8,6 +8,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSetQuery.h>
 #include <QueryPipeline/Pipe.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
@@ -248,21 +249,40 @@ bool IStorage::isStaticStorage() const
     return false;
 }
 
-void IStorage::adjustCreateQueryForBackup(ASTPtr & create_query) const
+ASTPtr IStorage::getCreateQueryForBackup(const ContextPtr & context, DatabasePtr * database) const
 {
+    auto table_id = getStorageID();
+    auto db = DatabaseCatalog::instance().tryGetDatabase(table_id.getDatabaseName());
+    if (!db)
+        throw Exception(ErrorCodes::TABLE_IS_DROPPED, "Table {}.{} is dropped", table_id.database_name, table_id.table_name);
+    ASTPtr query = db->tryGetCreateTableQuery(table_id.getTableName(), context);
+    if (!query)
+        throw Exception(ErrorCodes::TABLE_IS_DROPPED, "Table {}.{} is dropped", table_id.database_name, table_id.table_name);
+
     /// We don't want to see any UUIDs in backup (after RESTORE the table will have another UUID anyway).
-    auto & create = create_query->as<ASTCreateQuery &>();
+    auto & create = query->as<ASTCreateQuery &>();
     create.uuid = UUIDHelpers::Nil;
     create.to_inner_uuid = UUIDHelpers::Nil;
 
-    /// Remove the comment "SYSTEM TABLE is built on the fly" from the definition of system tables (it would look excessive for backups).
-    if (isSystemStorage())
+    /// If this is a definition of a system table we'll remove columns and comment because they're excessive for backups.
+    if (create.storage && create.storage->engine && create.storage->engine->name.starts_with("System"))
+    {
+        create.reset(create.columns_list);
         create.reset(create.comment);
+    }
+
+    if (database)
+        *database = db;
+
+    return query;
 }
 
-void IStorage::backupCreateQuery(BackupEntriesCollector & backup_entries_collector, const ASTPtr & create_query)
+ASTPtr IStorage::getCreateQueryForBackup(const BackupEntriesCollector & backup_entries_collector) const
 {
-    backup_entries_collector.addBackupEntryForCreateQuery(create_query);
+    DatabasePtr database;
+    auto query = getCreateQueryForBackup(backup_entries_collector.getContext(), &database);
+    database->checkCreateTableQueryForBackup(query, backup_entries_collector);
+    return query;
 }
 
 void IStorage::backupData(BackupEntriesCollector &, const String &, const std::optional<ASTs> &)

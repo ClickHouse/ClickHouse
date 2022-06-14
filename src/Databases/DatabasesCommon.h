@@ -37,8 +37,8 @@ public:
     DatabaseTablesIteratorPtr getTablesIterator(ContextPtr context, const FilterByNameFunction & filter_by_table_name) const override;
 
     DatabaseTablesIteratorPtr getTablesIteratorForBackup(const BackupEntriesCollector & backup_entries_collector) const override;
-    void backupCreateTableQuery(BackupEntriesCollector & backup_entries_collector, const StoragePtr & storage, const ASTPtr & create_table_query) override;
-    void createTableRestoredFromBackup(const RestorerFromBackup & restorer, const ASTPtr & create_table_query) override;
+    void checkCreateTableQueryForBackup(const ASTPtr & create_table_query, const BackupEntriesCollector & backup_entries_collector) const override;
+    void createTableRestoredFromBackup(const ASTPtr & create_table_query, const RestorerFromBackup & restorer) override;
 
     void shutdown() override;
    

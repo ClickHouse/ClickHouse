@@ -223,11 +223,10 @@ public:
     /// Initially reserved virtual column name may be shadowed by real column.
     bool isVirtualColumn(const String & column_name, const StorageMetadataPtr & metadata_snapshot) const;
 
-    /// Changes slightly this storage's create query before it's written to a backup.
-    virtual void adjustCreateQueryForBackup(ASTPtr & create_query) const;
-
-    /// Makes backup entries to backup the create query of this storage.
-    virtual void backupCreateQuery(BackupEntriesCollector & backup_entries_collector, const ASTPtr & create_query);
+    /// Returns a slightly changed version of the CREATE TABLE query which must be written to a backup.
+    /// The function can throw `TABLE_IS_DROPPED` if this storage is not attached to a database.
+    virtual ASTPtr getCreateQueryForBackup(const ContextPtr & context, DatabasePtr * database = nullptr) const;
+    virtual ASTPtr getCreateQueryForBackup(const BackupEntriesCollector & backup_entries_collector) const;
 
     /// Makes backup entries to backup the data of this storage.
     virtual void backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & partitions);
