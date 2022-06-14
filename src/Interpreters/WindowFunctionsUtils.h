@@ -16,7 +16,10 @@ struct WindowFunctionsUtils
         for (auto const & child : node->arguments->children)
         {
             if (const auto * child_node = child->as<ASTFunction>())
-                window_function_added = window_function_added || collectWindowFunctionsFromExpression(child_node, function_list);
+            {
+                bool added_in_subtree = collectWindowFunctionsFromExpression(child_node, function_list);
+                window_function_added = window_function_added || added_in_subtree;
+            }
         }
         if (!window_function_added && AggregateUtils::isAggregateFunction(*node))
         {
