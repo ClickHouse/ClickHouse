@@ -291,9 +291,9 @@ bool KeeperDispatcher::putRequest(Coordination::ZooKeeperRequestPtr & request, i
     {
         sync_lock.lock();
         const auto & request_path = getPathFromReadRequest(request);
-        for (auto & [path, sync_waiter] : sync_waiters_for_path)
+        for (auto & [path_with_session, sync_waiter] : sync_waiters_for_path)
         {
-            if (request_path.starts_with(path))
+            if (path_with_session.session_id == session_id && request_path.starts_with(path_with_session.path))
             {
                 sync_waiter.request_queues_for_uuid[sync_waiter.last_uuid].push_back(std::move(request_info));
                 return true;
@@ -323,24 +323,12 @@ bool KeeperDispatcher::putRequest(Coordination::ZooKeeperRequestPtr & request, i
     {
         assert(cached_sync_path);
         auto & [uuid, request_path] = *cached_sync_path;
-        bool found = false;
-        for (auto & [path, sync_waiter] : sync_waiters_for_path)
-        {
-            if (path == request_path)
-            {
-                sync_waiter.request_queues_for_uuid.emplace(std::pair{uuid, std::vector<KeeperStorage::RequestForSession>{}});
-                sync_waiter.last_uuid = std::move(uuid);
-                found = true;
-                break;
-            }
-        }
+        auto sync_waiter_it = sync_waiters_for_path.find(std::pair{std::string_view{request_path}, session_id});
+        if (sync_waiter_it == sync_waiters_for_path.end())
+            std::tie(sync_waiter_it, std::ignore) = sync_waiters_for_path.emplace(std::pair{PathWithSessionId{std::move(request_path), session_id}, SyncWaiter{}});
 
-        if (!found)
-        {
-            auto [sync_waiter_it, _] = sync_waiters_for_path.emplace(std::pair{std::move(request_path), SyncWaiter{}});
-            sync_waiter_it->second.request_queues_for_uuid.emplace(std::pair{uuid, std::vector<KeeperStorage::RequestForSession>{}});
-            sync_waiter_it->second.last_uuid = std::move(uuid);
-        }
+        sync_waiter_it->second.request_queues_for_uuid.emplace(std::pair{uuid, std::vector<KeeperStorage::RequestForSession>{}});
+        sync_waiter_it->second.last_uuid = std::move(uuid);
 
         sync_lock.unlock();
     }
@@ -584,7 +572,7 @@ void KeeperDispatcher::onRequestCommit(KeeperStorage::RequestForSession & reques
 
     std::unique_lock lock{sync_waiters_mutex};
 
-    auto sync_waiter_it = sync_waiters_for_path.find(zk_path);
+    auto sync_waiter_it = sync_waiters_for_path.find(std::pair{zk_path, request_for_session.session_id});
     if (sync_waiter_it == sync_waiters_for_path.end())
         return;
 
