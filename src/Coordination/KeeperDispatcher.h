@@ -101,16 +101,7 @@ private:
         std::string last_uuid;
     };
 
-    struct PathWithSessionId
-    {
-        std::string path;
-        int64_t session_id;
-
-        operator std::pair<std::string_view, int64_t>() const // NOLINT
-        {
-            return {path, session_id};
-        }
-    };
+    using PathWithSessionId = std::pair<std::string, int64_t>;
 
     struct PathWithSessionIdHash
     {
@@ -131,7 +122,7 @@ private:
 
         size_t operator()(const std::pair<std::string_view, int64_t> & a, const std::pair<std::string_view, int64_t> & b) const
         {
-            return a.first == a.first && a.second == b.second;
+            return a.first == b.first && a.second == b.second;
         }
     };
 

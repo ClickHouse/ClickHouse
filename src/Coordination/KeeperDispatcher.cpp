@@ -293,7 +293,7 @@ bool KeeperDispatcher::putRequest(Coordination::ZooKeeperRequestPtr & request, i
         const auto & request_path = getPathFromReadRequest(request);
         for (auto & [path_with_session, sync_waiter] : sync_waiters_for_path)
         {
-            if (path_with_session.session_id == session_id && request_path.starts_with(path_with_session.path))
+            if (path_with_session.second == session_id && request_path.starts_with(path_with_session.first))
             {
                 sync_waiter.request_queues_for_uuid[sync_waiter.last_uuid].push_back(std::move(request_info));
                 return true;
