@@ -101,7 +101,41 @@ private:
         std::string last_uuid;
     };
 
-    std::unordered_map<std::string, SyncWaiter, StringHash, StringCmp> sync_waiters_for_path;
+    struct PathWithSessionId
+    {
+        std::string path;
+        int64_t session_id;
+
+        operator std::pair<std::string_view, int64_t>() const // NOLINT
+        {
+            return {path, session_id};
+        }
+    };
+
+    struct PathWithSessionIdHash
+    {
+        using is_transparent = void;
+
+        size_t operator()(const std::pair<std::string_view, int64_t> & path_with_session) const
+        {
+            SipHash hash;
+            hash.update(path_with_session.first);
+            hash.update(path_with_session.second);
+            return hash.get64();
+        }
+    };
+
+    struct PathWithSessionIdCmp
+    {
+        using is_transparent = void;
+
+        size_t operator()(const std::pair<std::string_view, int64_t> & a, const std::pair<std::string_view, int64_t> & b) const
+        {
+            return a.first == a.first && a.second == b.second;
+        }
+    };
+
+    std::unordered_map<PathWithSessionId, SyncWaiter, PathWithSessionIdHash, PathWithSessionIdCmp> sync_waiters_for_path;
     std::mutex sync_waiters_mutex;
 
     /// Counter for new session_id requests.
