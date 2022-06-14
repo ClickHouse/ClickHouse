@@ -56,6 +56,7 @@
 #include <Storages/StorageMergeTree.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/VirtualColumnUtils.h>
+#include <Storages/Freeze.h>
 #include <Common/Increment.h>
 #include <Common/SimpleIncrement.h>
 #include <Common/Stopwatch.h>
@@ -6112,51 +6113,15 @@ bool MergeTreeData::removeDetachedPart(DiskPtr disk, const String & path, const 
     return false;
 }
 
-PartitionCommandsResultInfo MergeTreeData::unfreezePartitionsByMatcher(MatcherFn matcher, const String & backup_name, ContextPtr)
+PartitionCommandsResultInfo MergeTreeData::unfreezePartitionsByMatcher(MatcherFn matcher, const String & backup_name, ContextPtr local_context)
 {
     auto backup_path = fs::path("shadow") / escapeForFileName(backup_name) / relative_data_path;
 
     LOG_DEBUG(log, "Unfreezing parts by path {}", backup_path.generic_string());
 
-    PartitionCommandsResultInfo result;
+    auto disks = getStoragePolicy()->getDisks();
 
-    for (const auto & disk : getStoragePolicy()->getDisks())
-    {
-        if (!disk->exists(backup_path))
-            continue;
-
-        for (auto it = disk->iterateDirectory(backup_path); it->isValid(); it->next())
-        {
-            const auto & partition_directory = it->name();
-
-            /// Partition ID is prefix of part directory name: <partition id>_<rest of part directory name>
-            auto found = partition_directory.find('_');
-            if (found == std::string::npos)
-                continue;
-            auto partition_id = partition_directory.substr(0, found);
-
-            if (!matcher(partition_id))
-                continue;
-
-            const auto & path = it->path();
-
-            bool keep_shared = removeDetachedPart(disk, path, partition_directory, true);
-
-            result.push_back(PartitionCommandResultInfo{
-                .partition_id = partition_id,
-                .part_name = partition_directory,
-                .backup_path = disk->getPath() + backup_path.generic_string(),
-                .part_backup_path = disk->getPath() + path,
-                .backup_name = backup_name,
-            });
-
-            LOG_DEBUG(log, "Unfreezed part by path {}, keep shared data: {}", disk->getPath() + path, keep_shared);
-        }
-    }
-
-    LOG_DEBUG(log, "Unfreezed {} parts", result.size());
-
-    return result;
+    return Unfreezer().unfreezePartitionsFromTableDirectory(matcher, backup_name, disks, backup_path, local_context);
 }
 
 bool MergeTreeData::canReplacePartition(const DataPartPtr & src_part) const
