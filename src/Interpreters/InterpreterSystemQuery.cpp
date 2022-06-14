@@ -43,6 +43,7 @@
 #include <Disks/DiskRestartProxy.h>
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageReplicatedMergeTree.h>
+#include <Storages/Freeze.h>
 #include <Storages/StorageFactory.h>
 #include <Parsers/ASTSystemQuery.h>
 #include <Parsers/ASTDropQuery.h>
@@ -235,6 +236,8 @@ BlockIO InterpreterSystemQuery::execute()
     }
 
 
+    BlockIO result;
+
     volume_ptr = {};
     if (!query.storage_policy.empty() && !query.volume.empty())
         volume_ptr = getContext()->getStoragePolicy(query.storage_policy)->getVolumeByName(query.volume);
@@ -388,7 +391,7 @@ BlockIO InterpreterSystemQuery::execute()
             break;
         case Type::RELOAD_SYMBOLS:
         {
-#if defined(__ELF__) && !defined(__FreeBSD__)
+#if defined(__ELF__) && !defined(OS_FREEBSD)
             getContext()->checkAccess(AccessType::SYSTEM_RELOAD_SYMBOLS);
             SymbolIndex::reload();
             break;
@@ -497,11 +500,18 @@ BlockIO InterpreterSystemQuery::execute()
             getContext()->checkAccess(AccessType::SYSTEM_THREAD_FUZZER);
             ThreadFuzzer::start();
             break;
+        case Type::UNFREEZE:
+        {
+            getContext()->checkAccess(AccessType::SYSTEM_UNFREEZE);
+            /// The result contains information about deleted parts as a table. It is for compatibility with ALTER TABLE UNFREEZE query.
+            result = Unfreezer().unfreeze(query.backup_name, getContext());
+            break;
+        }
         default:
             throw Exception("Unknown type of SYSTEM query", ErrorCodes::BAD_ARGUMENTS);
     }
 
-    return BlockIO();
+    return result;
 }
 
 void InterpreterSystemQuery::restoreReplica()
@@ -971,6 +981,11 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::RESTART_DISK:
         {
             required_access.emplace_back(AccessType::SYSTEM_RESTART_DISK);
+            break;
+        }
+        case Type::UNFREEZE:
+        {
+            required_access.emplace_back(AccessType::SYSTEM_UNFREEZE);
             break;
         }
         case Type::STOP_LISTEN_QUERIES:

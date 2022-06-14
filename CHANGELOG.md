@@ -4,7 +4,7 @@
 **[ClickHouse release v22.3-lts, 2022-03-17](#223)**<br>
 **[ClickHouse release v22.2, 2022-02-17](#222)**<br>
 **[ClickHouse release v22.1, 2022-01-18](#221)**<br>
-**[Changelog for 2021](https://github.com/ClickHouse/ClickHouse/blob/master/docs/en/whats-new/changelog/2021.md)**<br>
+**[Changelog for 2021](https://clickhouse.com/docs/en/whats-new/changelog/2021/)**<br>
 
 ### <a id="225"></a> ClickHouse release 22.5, 2022-05-19
 
@@ -172,7 +172,7 @@
 
 #### Backward Incompatible Change
 
-* Do not allow SETTINGS after FORMAT for INSERT queries (there is compatibility setting `parser_settings_after_format_compact` to accept such queries, but it is turned OFF by default). [#35883](https://github.com/ClickHouse/ClickHouse/pull/35883) ([Azat Khuzhin](https://github.com/azat)).
+* Do not allow SETTINGS after FORMAT for INSERT queries (there is compatibility setting `allow_settings_after_format_in_insert` to accept such queries, but it is turned OFF by default). [#35883](https://github.com/ClickHouse/ClickHouse/pull/35883) ([Azat Khuzhin](https://github.com/azat)).
 * Function `yandexConsistentHash` (consistent hashing algorithm by Konstantin "kostik" Oblakov) is renamed to `kostikConsistentHash`. The old name is left as an alias for compatibility. Although this change is backward compatible, we may remove the alias in subsequent releases, that's why it's recommended to update the usages of this function in your apps. [#35553](https://github.com/ClickHouse/ClickHouse/pull/35553) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
 
 #### New Feature

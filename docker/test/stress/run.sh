@@ -43,6 +43,7 @@ function configure()
 
     # we mount tests folder from repo to /usr/share
     ln -s /usr/share/clickhouse-test/clickhouse-test /usr/bin/clickhouse-test
+    ln -s /usr/share/clickhouse-test/ci/download_previous_release.py /usr/bin/download_previous_release
 
     # avoid too slow startup
     sudo cat /etc/clickhouse-server/config.d/keeper_port.xml | sed "s|<snapshot_distance>100000</snapshot_distance>|<snapshot_distance>10000</snapshot_distance>|" > /etc/clickhouse-server/config.d/keeper_port.xml.tmp
@@ -173,7 +174,7 @@ install_packages package_folder
 
 configure
 
-./setup_minio.sh
+./setup_minio.sh stateful  # to have a proper environment
 
 start
 
@@ -262,7 +263,7 @@ echo -e "Backward compatibility check\n"
 
 echo "Download previous release server"
 mkdir previous_release_package_folder
-clickhouse-client --query="SELECT version()" | ./download_previous_release && echo -e 'Download script exit code\tOK' >> /test_output/test_results.tsv \
+clickhouse-client --query="SELECT version()" | download_previous_release && echo -e 'Download script exit code\tOK' >> /test_output/test_results.tsv \
     || echo -e 'Download script failed\tFAIL' >> /test_output/test_results.tsv
 
 stop
