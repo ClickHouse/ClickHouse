@@ -135,8 +135,7 @@ Checks: '*,
 
 WarningsAsErrors: '*'
 
-# HeaderFilterRegex: '^.*/(src|base)/.*(h|hpp)$'
-HeaderFilterRegex: '^.*/(src)/.*(h|hpp)$'
+HeaderFilterRegex: '^.*/(src|base|programs|utils)/.*(h|hpp)$'
 
 CheckOptions:
   - key: readability-identifier-naming.ClassCase
@@ -179,8 +178,7 @@ CheckOptions:
     value: CamelCase
   - key: modernize-loop-convert.UseCxx20ReverseRanges
     value: false
-  - key: performance-move-const-arg.CheckTriviallyCopyableMove
+  - key: performance-move-const-arg.CheckTriviallyCopyableMove # disabled because it breaks stuff (see PR #37647)
     value: false
-    # Workaround clang-tidy bug: https://github.com/llvm/llvm-project/issues/46097
-  - key: readability-identifier-naming.TypeTemplateParameterIgnoredRegexp
+  - key: readability-identifier-naming.TypeTemplateParameterIgnoredRegexp # Workaround clang-tidy bug: https://github.com/llvm/llvm-project/issues/46097
     value: expr-type
