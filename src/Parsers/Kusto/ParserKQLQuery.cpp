@@ -63,6 +63,7 @@ bool ParserKQLQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     std::vector<std::pair<String, Pos>> operation_pos;
 
     operation_pos.push_back(std::make_pair("table",pos));
+    String table_name(pos->begin,pos->end);
 
     while (!pos->isEnd())
     {
@@ -104,10 +105,15 @@ bool ParserKQLQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     if (!kql_sort_p.parse(pos, order_expression_list, expected))
          return false;
 
+    kql_summarize_p.setTableName(table_name);
     if (!kql_summarize_p.parse(pos, select_expression_list, expected))
          return false;
     else
+    {
         group_expression_list = kql_summarize_p.group_expression_list;
+        if (kql_summarize_p.tables)
+            tables = kql_summarize_p.tables;
+    }
 
     select_query->setExpression(ASTSelectQuery::Expression::SELECT, std::move(select_expression_list));
     select_query->setExpression(ASTSelectQuery::Expression::TABLES, std::move(tables));

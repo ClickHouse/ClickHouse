@@ -106,10 +106,57 @@ bool ParserKQLSummarize ::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
 {
     if (op_pos.empty())
         return true;
-    if (op_pos.size() != 1) // now only support one summarize
+    if (op_pos.size() > 2) // now only support max 2 summarize
         return false;
 
     auto begin = pos;
+    ASTPtr sub_qurery_table;
+
+// rewrite this part, make it resusable (may contains bin etc, and please inmplement summarize age= avg(Age) for sub query too):
+    if (op_pos.size() == 2)
+    {
+        bool groupby = false;
+        auto sub_pos = op_pos.front();
+        String sub_aggregation;
+        String sub_groupby;
+        String sub_columns;
+        while (!sub_pos->isEnd() && sub_pos->type != TokenType::PipeMark && sub_pos->type != TokenType::Semicolon)
+        {
+            if (String(sub_pos->begin,sub_pos->end) == "by")
+                groupby = true;
+            else 
+            {
+                if (groupby) 
+                    sub_groupby = sub_groupby + String(sub_pos->begin,sub_pos->end) +" ";
+                else
+                    sub_aggregation = sub_aggregation + String(sub_pos->begin,sub_pos->end) +" ";
+            }
+            ++sub_pos;
+        }
+
+        String sub_query;
+        if (sub_groupby.empty())
+        {
+            sub_columns =sub_aggregation;
+            sub_query = "(SELECT " + sub_columns+ " FROM "+ table_name+")";
+        }
+        else
+        {
+            if (sub_aggregation.empty())
+                sub_columns = sub_groupby;
+            else
+                sub_columns = sub_groupby + "," + sub_aggregation;
+            sub_query = "(SELECT " + sub_columns+ " FROM "+ table_name + " GROUP BY "+sub_groupby+")";
+        }
+
+        Tokens token_subquery(sub_query.c_str(), sub_query.c_str()+sub_query.size());
+        IParser::Pos pos_subquery(token_subquery, pos.max_depth);
+        
+        if (!ParserTablesInSelectQuery().parse(pos_subquery, sub_qurery_table, expected))
+            return false;
+        tables = sub_qurery_table;
+    }
+
 
     pos = op_pos.back();
     String expr_aggregation;
