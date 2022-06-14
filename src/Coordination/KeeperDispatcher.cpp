@@ -312,12 +312,14 @@ bool KeeperDispatcher::putRequest(Coordination::ZooKeeperRequestPtr & request, i
     {
         if (!requests_queue->push(std::move(request_info)))
             throw Exception("Cannot push request to queue", ErrorCodes::SYSTEM_ERROR);
+
+        return true;
     }
-    else if (!requests_queue->tryPush(std::move(request_info), configuration_and_settings->coordination_settings->operation_timeout_ms.totalMilliseconds()))
-    {
+
+    if (!requests_queue->tryPush(std::move(request_info), configuration_and_settings->coordination_settings->operation_timeout_ms.totalMilliseconds()))
         throw Exception("Cannot push request to queue within operation timeout", ErrorCodes::TIMEOUT_EXCEEDED);
-    }
-    else if (request->getOpNum() == Coordination::OpNum::Sync)
+
+    if (request->getOpNum() == Coordination::OpNum::Sync)
     {
         assert(cached_sync_path);
         auto & [uuid, request_path] = *cached_sync_path;
