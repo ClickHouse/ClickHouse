@@ -36,6 +36,7 @@ LDAPAccessStorage::LDAPAccessStorage(const String & storage_name_, AccessControl
 
 String LDAPAccessStorage::getLDAPServerName() const
 {
+    std::scoped_lock lock(mutex);
     return ldap_server_name;
 }
 

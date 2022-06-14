@@ -42,14 +42,14 @@ MultipleAccessStorage::~MultipleAccessStorage()
 
 void MultipleAccessStorage::setStorages(const std::vector<StoragePtr> & storages)
 {
-    std::unique_lock lock{mutex};
+    std::lock_guard lock{mutex};
     nested_storages = std::make_shared<const Storages>(storages);
     ids_cache.reset();
 }
 
 void MultipleAccessStorage::addStorage(const StoragePtr & new_storage)
 {
-    std::unique_lock lock{mutex};
+    std::lock_guard lock{mutex};
     if (boost::range::find(*nested_storages, new_storage) != nested_storages->end())
         return;
     auto new_storages = std::make_shared<Storages>(*nested_storages);
@@ -59,7 +59,7 @@ void MultipleAccessStorage::addStorage(const StoragePtr & new_storage)
 
 void MultipleAccessStorage::removeStorage(const StoragePtr & storage_to_remove)
 {
-    std::unique_lock lock{mutex};
+    std::lock_guard lock{mutex};
     auto it = boost::range::find(*nested_storages, storage_to_remove);
     if (it == nested_storages->end())
         return;

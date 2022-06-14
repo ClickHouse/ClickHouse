@@ -1,5 +1,6 @@
 #pragma once
 
+#include <base/defines.h>
 #include <base/types.h>
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Common/CurrentMetrics.h>
@@ -228,13 +229,13 @@ private:
 
     using Operations = std::map<XID, RequestInfo>;
 
-    Operations operations;
+    Operations operations TSA_GUARDED_BY(operations_mutex);
     std::mutex operations_mutex;
 
     using WatchCallbacks = std::vector<WatchCallback>;
     using Watches = std::map<String /* path, relative of root_path */, WatchCallbacks>;
 
-    Watches watches;
+    Watches watches TSA_GUARDED_BY(watches_mutex);
     std::mutex watches_mutex;
 
     ThreadFromGlobalPool send_thread;
