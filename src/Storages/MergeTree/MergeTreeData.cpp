@@ -1847,6 +1847,62 @@ void MergeTreeData::clearPartsFromFilesystemImpl(const DataPartsVector & parts_t
     }
 }
 
+size_t MergeTreeData::clearOldBrokenPartsFromDetachedDirecory()
+{
+    /**
+     * Remove old (configured by setting) broken detached parts.
+     * Only parts with certain prefixes are removed. These prefixes
+     * are such that it is guaranteed that they will never be needed
+     * and need to be cleared. ctime is used to check when file was
+     * moved to detached/ directory (see https://unix.stackexchange.com/a/211134)
+     */
+
+    DetachedPartsInfo detached_parts = getDetachedParts();
+    if (detached_parts.empty())
+        return 0;
+
+    PartsTemporaryRename renamed_parts(*this, "detached/");
+
+    for (const auto & part_info : detached_parts)
+    {
+        if (!part_info.valid_name || part_info.prefix.empty())
+            continue;
+
+        const auto & removable_detached_parts_prefixes = DetachedPartInfo::DETACHED_REASONS_REMOVABLE_BY_TIMEOUT;
+        bool can_be_removed_by_timeout = std::find(
+            removable_detached_parts_prefixes.begin(),
+            removable_detached_parts_prefixes.end(),
+            part_info.prefix) != removable_detached_parts_prefixes.end();
+
+        if (!can_be_removed_by_timeout)
+            continue;
+
+        time_t current_time = time(nullptr);
+        ssize_t threshold = current_time - getSettings()->merge_tree_clear_old_broken_detached_parts_ttl_timeout_seconds;
+        auto path = fs::path(relative_data_path) / "detached" / part_info.dir_name;
+        time_t last_change_time = part_info.disk->getLastChanged(path);
+        time_t last_modification_time = part_info.disk->getLastModified(path).epochTime();
+        time_t last_touch_time = std::max(last_change_time, last_modification_time);
+
+        if (last_touch_time == 0 || last_touch_time >= threshold)
+            continue;
+
+        renamed_parts.addPart(part_info.dir_name, "deleting_" + part_info.dir_name, part_info.disk);
+    }
+
+    LOG_INFO(log, "Will clean up {} detached parts", renamed_parts.old_and_new_names.size());
+
+    renamed_parts.tryRenameAll();
+
+    for (const auto & [old_name, new_name, disk] : renamed_parts.old_and_new_names)
+    {
+        removeDetachedPart(disk, fs::path(relative_data_path) / "detached" / new_name / "", old_name, false);
+        LOG_DEBUG(log, "Removed broken detached part {} due to a timeout for broken detached parts", old_name);
+    }
+
+    return renamed_parts.old_and_new_names.size();
+}
+
 size_t MergeTreeData::clearOldWriteAheadLogs()
 {
     DataPartsVector parts = getDataPartsVectorForInternalUsage();
@@ -1893,6 +1949,7 @@ size_t MergeTreeData::clearOldWriteAheadLogs()
         auto disk_ptr = *disk_it;
         if (disk_ptr->isBroken())
             continue;
+
         for (auto it = disk_ptr->iterateDirectory(relative_data_path); it->isValid(); it->next())
         {
             auto min_max_block_number = MergeTreeWriteAheadLog::tryParseMinMaxBlockNumber(it->name());
