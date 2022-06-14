@@ -2,6 +2,18 @@
 
 The values of `merge_tree` settings (for all MergeTree tables) can be viewed in the table `system.merge_tree_settings`, they can be overridden in `config.xml` in the `merge_tree` section, or set in the `SETTINGS` section of each table.
 
+These are example overrides for `max_suspicious_broken_parts`:
+
+## max_suspicious_broken_parts
+
+If the number of broken parts in a single partition exceeds the `max_suspicious_broken_parts` value, automatic deletion is denied.
+
+Possible values:
+
+-   Any positive integer.
+
+Default value: 10.
+
 Override example in `config.xml`:
 
 ``` text
