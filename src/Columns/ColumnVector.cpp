@@ -240,12 +240,13 @@ void ColumnVector<T>::getPermutation(IColumn::PermutationSortDirection direction
     if (limit >= data_size)
         limit = 0;
 
-    if (!limit)
+    if constexpr (is_arithmetic_v<T> && !is_big_int_v<T>)
     {
-        /// A case for radix sort
-        /// LSD RadixSort is stable
-        if constexpr (is_arithmetic_v<T> && !is_big_int_v<T>)
+        if (!limit)
         {
+            /// A case for radix sort
+            /// LSD RadixSort is stable
+
             bool reverse = direction == IColumn::PermutationSortDirection::Descending;
             bool ascending = direction == IColumn::PermutationSortDirection::Ascending;
             bool sort_is_stable = stability == IColumn::PermutationSortStability::Stable;

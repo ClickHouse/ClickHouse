@@ -169,12 +169,13 @@ void ColumnDecimal<T>::getPermutation(IColumn::PermutationSortDirection directio
     if (limit >= data_size)
         limit = 0;
 
-    if (!limit)
+    if constexpr (is_arithmetic_v<NativeT> && !is_big_int_v<NativeT>)
     {
-        /// A case for radix sort
-        /// LSD RadixSort is stable
-        if constexpr (is_arithmetic_v<NativeT> && !is_big_int_v<NativeT>)
+        if (!limit)
         {
+            /// A case for radix sort
+            /// LSD RadixSort is stable
+
             bool reverse = direction == IColumn::PermutationSortDirection::Descending;
             bool ascending = direction == IColumn::PermutationSortDirection::Ascending;
             bool sort_is_stable = stability == IColumn::PermutationSortStability::Stable;
