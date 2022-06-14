@@ -346,6 +346,9 @@ public:
     explicit SortingQueueImpl(Cursors & cursors)
     {
         size_t size = cursors.size();
+        if (size == 0)
+            return;
+
         queue.reserve(size);
 
         for (size_t i = 0; i < size; ++i)
@@ -388,7 +391,9 @@ public:
             updateTop();
         }
         else
+        {
             removeTop();
+        }
     }
 
     void ALWAYS_INLINE next(size_t batch_size_value) requires (strategy == SortingQueueStrategy::Batch)
@@ -426,7 +431,10 @@ public:
         next_child_idx = 0;
 
         if constexpr (strategy == SortingQueueStrategy::Batch)
-            updateBatchSize();
+        {
+            if (!queue.empty())
+                updateBatchSize();
+        }
     }
 
     void push(SortCursorImpl & cursor)
@@ -516,7 +524,10 @@ private:
             updateBatchSize();
     }
 
+    /// Update batch size of elements that client can extract from min cursor
     ALWAYS_INLINE void updateBatchSize() {
+        assert(!queue.empty());
+
         auto & begin_cursor = *queue.begin();
         size_t min_cursor_size = begin_cursor->getSize();
         size_t min_cursor_pos = begin_cursor->getPosRef();
