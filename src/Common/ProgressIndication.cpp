@@ -190,10 +190,11 @@ void ProgressIndication::writeProgress()
     if (cpu_usage > 0 || memory_usage > 0)
     {
         WriteBufferFromOwnString profiling_msg_builder;
+        profiling_msg_builder << "(";
         if (cpu_usage <= 0)
-            profiling_msg_builder << "(" << fmt::format("{}", 0) << " CPU";
+            profiling_msg_builder << 0 << " CPU";
         else
-            profiling_msg_builder << "(" << fmt::format("{:.1f}", cpu_usage) << " CPU";
+            profiling_msg_builder << fmt::format("{:.1f}", cpu_usage) << " CPU";
         if (memory_usage > 0)
             profiling_msg_builder << ", " << formatReadableSizeWithDecimalSuffix(memory_usage) << " RAM";
         if (max_host_usage < memory_usage)
