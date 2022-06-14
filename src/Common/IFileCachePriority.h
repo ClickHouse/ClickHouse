@@ -7,6 +7,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
+
 class IFileCachePriority;
 using FileCachePriorityPtr = std::shared_ptr<IFileCachePriority>;
 
@@ -39,16 +44,29 @@ public:
     public:
         virtual ~IIterator() = default;
 
-        virtual void next() = 0;
+        virtual void next() { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not support next() for IIterator."); }
 
-        virtual bool valid() const = 0;
+        virtual bool valid() const { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not support valid() for IIterator."); }
 
         ///  Mark a cache record as recently used, it will update the priority
         /// of the cache record according to different cache algorithms.
-        virtual void use(std::lock_guard<std::mutex> & cache_lock) = 0;
+        virtual void use(std::lock_guard<std::mutex> &)
+        {
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not support use() for IIterator.");
+        }
 
         /// Deletes an existing cached record.
-        virtual void remove(std::lock_guard<std::mutex> & cache_lock) = 0;
+        virtual void remove(std::lock_guard<std::mutex> &)
+        {
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not support remove() for IIterator.");
+        }
+
+        virtual Iterator getSnapshot() { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not support getSnapshot() for IIterator."); }
+
+        virtual void incrementSize(size_t, std::lock_guard<std::mutex> &)
+        {
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not support incrementSize() for IIterator.");
+        }
 
         virtual Key & key() const = 0;
 
@@ -57,10 +75,6 @@ public:
         virtual size_t size() const = 0;
 
         virtual size_t hits() const = 0;
-
-        virtual Iterator getSnapshot() = 0;
-
-        virtual void incrementSize(size_t size_increment, std::lock_guard<std::mutex> & cache_lock) = 0;
     };
 
 public:
