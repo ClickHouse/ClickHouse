@@ -939,7 +939,7 @@ struct KeeperStorageRemoveRequestProcessor final : public KeeperStorageRequestPr
         }
         else if (request.version != -1 && request.version != node->stat.version)
             return {{zxid, Coordination::Error::ZBADVERSION}};
-        else if (!node->getChildren().empty())
+        else if (node->stat.numChildren != 0)
             return {{zxid, Coordination::Error::ZNOTEMPTY}};
 
         if (request.restored_from_zookeeper_log)
@@ -958,7 +958,6 @@ struct KeeperStorageRemoveRequestProcessor final : public KeeperStorageRequestPr
 
         if (node->stat.ephemeralOwner != 0)
             storage.unregisterEphemeralPath(node->stat.ephemeralOwner, request.path);
-
 
         digest = storage.calculateNodesDigest(digest, new_deltas);
 
