@@ -27,7 +27,6 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int SET_SIZE_LIMIT_EXCEEDED;
-    extern const int BAD_ARGUMENTS;
 }
 
 static UInt32 toPowerOfTwo(UInt32 x)
@@ -101,6 +100,7 @@ bool ConcurrentHashJoin::addJoinedBlock(const Block & right_block, bool check_li
 void ConcurrentHashJoin::joinBlock(Block & block, std::shared_ptr<ExtraBlock> & /*not_processed*/)
 {
     Blocks dispatched_blocks = dispatchBlock(table_join->getOnlyClause().key_names_left, block);
+    block = {};
     for (size_t i = 0; i < dispatched_blocks.size(); ++i)
     {
         std::shared_ptr<ExtraBlock> none_extra_block;
@@ -178,7 +178,7 @@ std::shared_ptr<NotJoinedBlocks> ConcurrentHashJoin::getNonJoinedBlocks(
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid join type. join kind: {}, strictness: {}", table_join->kind(), table_join->strictness());
 }
 
-static IColumn::Selector hashToSelector(const WeakHash32 & hash, size_t num_shards)
+static ALWAYS_INLINE IColumn::Selector hashToSelector(const WeakHash32 & hash, size_t num_shards)
 {
     assert(num_shards > 0 && (num_shards & (num_shards - 1)) == 0);
     const auto & data = hash.getData();
@@ -190,11 +190,10 @@ static IColumn::Selector hashToSelector(const WeakHash32 & hash, size_t num_shar
     return selector;
 }
 
-Blocks ConcurrentHashJoin::dispatchBlock(const Strings & key_columns_names, const Block & from_block)
+IColumn::Selector ConcurrentHashJoin::selectDispatchBlock(const Strings & key_columns_names, const Block & from_block)
 {
-    size_t num_shards = hash_joins.size();
     size_t num_rows = from_block.rows();
-    size_t num_cols = from_block.columns();
+    size_t num_shards = hash_joins.size();
 
     WeakHash32 hash(num_rows);
     for (const auto & key_name : key_columns_names)
@@ -203,13 +202,19 @@ Blocks ConcurrentHashJoin::dispatchBlock(const Strings & key_columns_names, cons
         const auto & key_col_no_lc = recursiveRemoveLowCardinality(recursiveRemoveSparse(key_col));
         key_col_no_lc->updateWeakHash32(hash);
     }
-    auto selector = hashToSelector(hash, num_shards);
+    return hashToSelector(hash, num_shards);
+}
 
-    Blocks result;
+Blocks ConcurrentHashJoin::dispatchBlock(const Strings & key_columns_names, const Block & from_block)
+{
+    size_t num_shards = hash_joins.size();
+    size_t num_cols = from_block.columns();
+
+    IColumn::Selector selector = selectDispatchBlock(key_columns_names, from_block);
+
+    Blocks result(num_shards);
     for (size_t i = 0; i < num_shards; ++i)
-    {
-        result.emplace_back(from_block.cloneEmpty());
-    }
+        result[i] = from_block.cloneEmpty();
 
     for (size_t i = 0; i < num_cols; ++i)
     {
