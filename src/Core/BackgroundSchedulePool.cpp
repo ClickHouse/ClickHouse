@@ -94,7 +94,7 @@ void BackgroundSchedulePoolTaskInfo::execute()
     UInt64 milliseconds = watch.elapsedMilliseconds();
 
     /// If the task is executed longer than specified time, it will be logged.
-    static const int32_t slow_execution_threshold_ms = 200;
+    static constexpr UInt64 slow_execution_threshold_ms = 200;
 
     if (milliseconds >= slow_execution_threshold_ms)
         LOG_TRACE(&Poco::Logger::get(log_name), "Execution took {} ms.", milliseconds);
@@ -268,7 +268,8 @@ void BackgroundSchedulePool::threadFunction()
         std::unique_lock<std::mutex> tasks_lock(tasks_mutex);
 
         {
-            tasks_cond_var.wait(tasks_lock, [&](){
+            tasks_cond_var.wait(tasks_lock, [&]()
+            {
                 return shutdown || !tasks.empty();
             });
 
