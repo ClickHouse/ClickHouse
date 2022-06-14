@@ -1165,7 +1165,7 @@ void FileCache::assertCacheCellsCorrectness(
         if (file_segment->reserved_size != 0)
         {
             assert(cell.queue_iterator);
-            assert(priority.contains(file_segment->key(), file_segment->offset(), cache_lock));
+            assert(main_priority->contains(file_segment->key(), file_segment->offset(), cache_lock));
         }
     }
 }
