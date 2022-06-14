@@ -95,7 +95,7 @@ static String sortLines(const String & str)
     Strings lines;
     boost::split(lines, str, boost::is_any_of("\n"));
     /// sort alphabetically, empty lines at the end
-    std::sort(lines.begin(), lines.end(), [](const String & a, const String & b) { return a.empty() ? !b.empty() : a < b; });
+    std::sort(lines.begin(), lines.end(), [](const String & a, const String & b) { return (a.empty() || b.empty()) ? b.empty() : a < b; });
     return boost::join(lines, "\n");
 }
 
