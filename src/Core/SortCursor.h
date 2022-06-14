@@ -536,7 +536,8 @@ private:
         size_t min_cursor_size = begin_cursor->getSize();
         size_t min_cursor_pos = begin_cursor->getPosRef();
 
-        if (queue.size() == 1) {
+        if (queue.size() == 1)
+        {
             batch_size = min_cursor_size - min_cursor_pos;
             return;
         }
