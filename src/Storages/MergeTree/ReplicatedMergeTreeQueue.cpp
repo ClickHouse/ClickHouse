@@ -1098,11 +1098,11 @@ bool ReplicatedMergeTreeQueue::isNotCoveredByFuturePartsImpl(const LogEntry & en
     {
         auto future_part = MergeTreePartInfo::fromPartName(future_part_elem.first, format_version);
 
-        if (future_part.contains(result_part))
+        if (!future_part.isDisjoint(result_part))
         {
             out_reason = fmt::format(
                 "Not executing log entry {} for part {} "
-                "because it is covered by part {} that is currently executing.",
+                "because it is not disjoint with part {} that is currently executing.",
                 entry.znode_name, new_part_name, future_part_elem.first);
             LOG_TRACE(log, fmt::runtime(out_reason));
             return false;
