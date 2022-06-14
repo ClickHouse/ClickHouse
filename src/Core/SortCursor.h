@@ -552,16 +552,13 @@ private:
 };
 
 template <typename Cursor>
-using SortingHeap = SortingQueueImpl<Cursor, SortingQueueStrategy::Default>;
-
-template <typename Cursor>
-using SortingQueueDefault = SortingQueueImpl<Cursor, SortingQueueStrategy::Default>;
+using SortingQueue = SortingQueueImpl<Cursor, SortingQueueStrategy::Default>;
 
 template <typename Cursor>
 using SortingQueueBatch = SortingQueueImpl<Cursor, SortingQueueStrategy::Batch>;
 
 /** SortQueueVariants allow to specialize sorting queue for concrete types and sort description.
-  * To access default queue variant callOnDefaultVariant method must be used.
+  * To access queue variant callOnVariant method must be used.
   * To access batch queue variant callOnBatchVariant method must be used.
   */
 class SortQueueVariants
@@ -617,7 +614,7 @@ public:
     }
 
     template <typename Func>
-    decltype(auto) callOnDefaultVariant(Func && func)
+    decltype(auto) callOnVariant(Func && func)
     {
         return std::visit(func, default_queue_variants);
     }
@@ -630,16 +627,16 @@ public:
 
     bool variantSupportJITCompilation() const
     {
-        return std::holds_alternative<SortingHeap<SimpleSortCursor>>(default_queue_variants)
-            || std::holds_alternative<SortingHeap<SortCursor>>(default_queue_variants)
-            || std::holds_alternative<SortingHeap<SortCursorWithCollation>>(default_queue_variants);
+        return std::holds_alternative<SortingQueue<SimpleSortCursor>>(default_queue_variants)
+            || std::holds_alternative<SortingQueue<SortCursor>>(default_queue_variants)
+            || std::holds_alternative<SortingQueue<SortCursorWithCollation>>(default_queue_variants);
     }
 
 private:
     template <typename Cursor>
     void initializeQueues()
     {
-        default_queue_variants = SortingQueueDefault<Cursor>();
+        default_queue_variants = SortingQueue<Cursor>();
         batch_queue_variants = SortingQueueBatch<Cursor>();
     }
 
