@@ -174,7 +174,7 @@ install_packages package_folder
 
 configure
 
-./setup_minio.sh
+./setup_minio.sh stateful  # to have a proper environment
 
 start
 

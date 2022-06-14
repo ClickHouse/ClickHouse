@@ -8,6 +8,17 @@
 namespace DB
 {
 
+
+struct IMetadataOperation
+{
+    virtual void execute() = 0;
+    virtual void undo() = 0;
+    virtual void finalize() {}
+    virtual ~IMetadataOperation() = default;
+};
+
+using MetadataOperationPtr = std::unique_ptr<IMetadataOperation>;
+
 enum class MetadataFromDiskTransactionState
 {
     PREPARING,
@@ -50,7 +61,7 @@ public:
 
     std::vector<std::string> listDirectory(const std::string & path) const override;
 
-    DirectoryIteratorPtr iterateDirectory(const std::string & path) override;
+    DirectoryIteratorPtr iterateDirectory(const std::string & path) const override;
 
     std::string readFileToString(const std::string & path) const override;
 

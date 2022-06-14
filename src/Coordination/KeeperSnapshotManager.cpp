@@ -166,7 +166,7 @@ void KeeperStorageSnapshot::serialize(const KeeperStorageSnapshot & snapshot, Wr
 
     /// Better to sort before serialization, otherwise snapshots can be different on different replicas
     std::vector<std::pair<int64_t, Coordination::ACLs>> sorted_acl_map(snapshot.acl_map.begin(), snapshot.acl_map.end());
-    std::sort(sorted_acl_map.begin(), sorted_acl_map.end());
+    ::sort(sorted_acl_map.begin(), sorted_acl_map.end());
     /// Serialize ACLs map
     writeBinary(sorted_acl_map.size(), out);
     for (const auto & [acl_id, acls] : sorted_acl_map)
@@ -209,7 +209,7 @@ void KeeperStorageSnapshot::serialize(const KeeperStorageSnapshot & snapshot, Wr
     /// otherwise snapshots will be different
     std::vector<std::pair<int64_t, int64_t>> sorted_session_and_timeout(
         snapshot.session_and_timeout.begin(), snapshot.session_and_timeout.end());
-    std::sort(sorted_session_and_timeout.begin(), sorted_session_and_timeout.end());
+    ::sort(sorted_session_and_timeout.begin(), sorted_session_and_timeout.end());
 
     /// Serialize sessions
     size_t size = sorted_session_and_timeout.size();
