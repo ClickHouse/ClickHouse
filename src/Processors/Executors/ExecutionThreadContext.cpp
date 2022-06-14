@@ -1,6 +1,7 @@
 #include <Processors/Executors/ExecutionThreadContext.h>
 #include <QueryPipeline/ReadProgressCallback.h>
 #include <Common/Stopwatch.h>
+#include <Interpreters/OpenTelemetrySpanLog.h>
 
 namespace DB
 {
@@ -70,6 +71,7 @@ static void executeJob(ExecutingGraph::Node * node, ReadProgressCallback * read_
 
 bool ExecutionThreadContext::executeTask()
 {
+    OpenTelemetrySpanHolder span("ExecutionThreadContext::executeTask() " + node->processor->getName());
     std::optional<Stopwatch> execution_time_watch;
 
 #ifndef NDEBUG
@@ -90,11 +92,18 @@ bool ExecutionThreadContext::executeTask()
     }
 
     if (profile_processors)
-        node->processor->elapsed_us += execution_time_watch->elapsedMicroseconds();
-
+    {
+         UInt64 elapsed_microseconds =  execution_time_watch->elapsedMicroseconds();
+         node->processor->elapsed_us += elapsed_microseconds;
+         span.addAttribute("execution_time_ms", elapsed_microseconds);
+     }
 #ifndef NDEBUG
     execution_time_ns += execution_time_watch->elapsed();
+    span.addAttribute("execution_time_ns", execution_time_watch->elapsed());
 #endif
+
+    span.addAttribute("thread_number", thread_number);
+    span.addAttribute("processor.description", node->processor->getDescription());
 
     return node->exception == nullptr;
 }
