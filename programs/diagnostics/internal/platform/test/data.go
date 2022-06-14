@@ -2,11 +2,12 @@ package test
 
 import (
 	"fmt"
-	"github.com/ClickHouse/clickhouse-diagnostics/internal/platform/data"
-	"github.com/ClickHouse/clickhouse-diagnostics/internal/platform/utils"
-	"github.com/pkg/errors"
 	"sort"
 	"strings"
+
+	"github.com/ClickHouse/ClickHouse/programs/diagnostics/internal/platform/data"
+	"github.com/ClickHouse/ClickHouse/programs/diagnostics/internal/platform/utils"
+	"github.com/pkg/errors"
 )
 
 type fakeClickhouseClient struct {

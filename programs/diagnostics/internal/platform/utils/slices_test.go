@@ -1,9 +1,10 @@
 package utils_test
 
 import (
-	"github.com/ClickHouse/clickhouse-diagnostics/internal/platform/utils"
-	"github.com/stretchr/testify/require"
 	"testing"
+
+	"github.com/ClickHouse/ClickHouse/programs/diagnostics/internal/platform/utils"
+	"github.com/stretchr/testify/require"
 )
 
 func TestIntersection(t *testing.T) {

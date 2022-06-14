@@ -2,12 +2,13 @@ package system_test
 
 import (
 	"fmt"
-	"github.com/ClickHouse/clickhouse-diagnostics/internal/collectors/system"
-	"github.com/ClickHouse/clickhouse-diagnostics/internal/platform"
-	"github.com/ClickHouse/clickhouse-diagnostics/internal/platform/config"
-	"github.com/ClickHouse/clickhouse-diagnostics/internal/platform/data"
-	"github.com/stretchr/testify/require"
 	"testing"
+
+	"github.com/ClickHouse/ClickHouse/programs/diagnostics/internal/collectors/system"
+	"github.com/ClickHouse/ClickHouse/programs/diagnostics/internal/platform"
+	"github.com/ClickHouse/ClickHouse/programs/diagnostics/internal/platform/config"
+	"github.com/ClickHouse/ClickHouse/programs/diagnostics/internal/platform/data"
+	"github.com/stretchr/testify/require"
 )
 
 func TestCommandConfiguration(t *testing.T) {

@@ -2,13 +2,14 @@ package system
 
 import (
 	"bytes"
-	"github.com/ClickHouse/clickhouse-diagnostics/internal/collectors"
-	"github.com/ClickHouse/clickhouse-diagnostics/internal/platform"
-	"github.com/ClickHouse/clickhouse-diagnostics/internal/platform/config"
-	"github.com/ClickHouse/clickhouse-diagnostics/internal/platform/data"
+	"os/exec"
+
+	"github.com/ClickHouse/ClickHouse/programs/diagnostics/internal/collectors"
+	"github.com/ClickHouse/ClickHouse/programs/diagnostics/internal/platform"
+	"github.com/ClickHouse/ClickHouse/programs/diagnostics/internal/platform/config"
+	"github.com/ClickHouse/ClickHouse/programs/diagnostics/internal/platform/data"
 	"github.com/google/shlex"
 	"github.com/pkg/errors"
-	"os/exec"
 )
 
 // This collector runs a user specified command and collects it to a file

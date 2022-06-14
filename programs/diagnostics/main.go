@@ -1,7 +1,7 @@
 package main
 
 import (
-	"github.com/ClickHouse/clickhouse-diagnostics/cmd"
+	"github.com/ClickHouse/ClickHouse/programs/diagnostics/cmd"
 )
 
 func main() {

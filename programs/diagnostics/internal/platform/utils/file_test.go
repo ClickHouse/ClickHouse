@@ -2,11 +2,12 @@ package utils_test
 
 import (
 	"fmt"
-	"github.com/ClickHouse/clickhouse-diagnostics/internal/platform/utils"
-	"github.com/stretchr/testify/require"
 	"os"
 	"path"
 	"testing"
+
+	"github.com/ClickHouse/ClickHouse/programs/diagnostics/internal/platform/utils"
+	"github.com/stretchr/testify/require"
 )
 
 func TestFileExists(t *testing.T) {

@@ -2,11 +2,12 @@ package clickhouse
 
 import (
 	"fmt"
-	"github.com/ClickHouse/clickhouse-diagnostics/internal/collectors"
-	"github.com/ClickHouse/clickhouse-diagnostics/internal/platform"
-	"github.com/ClickHouse/clickhouse-diagnostics/internal/platform/config"
-	"github.com/ClickHouse/clickhouse-diagnostics/internal/platform/data"
-	"github.com/ClickHouse/clickhouse-diagnostics/internal/platform/utils"
+
+	"github.com/ClickHouse/ClickHouse/programs/diagnostics/internal/collectors"
+	"github.com/ClickHouse/ClickHouse/programs/diagnostics/internal/platform"
+	"github.com/ClickHouse/ClickHouse/programs/diagnostics/internal/platform/config"
+	"github.com/ClickHouse/ClickHouse/programs/diagnostics/internal/platform/data"
+	"github.com/ClickHouse/ClickHouse/programs/diagnostics/internal/platform/utils"
 	"github.com/pkg/errors"
 )
 

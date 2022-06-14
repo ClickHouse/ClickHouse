@@ -3,16 +3,17 @@ package database_test
 import (
 	"context"
 	"fmt"
-	"github.com/ClickHouse/clickhouse-diagnostics/internal/platform/data"
-	"github.com/ClickHouse/clickhouse-diagnostics/internal/platform/database"
-	"github.com/ClickHouse/clickhouse-diagnostics/internal/platform/test"
-	"github.com/stretchr/testify/require"
-	"github.com/testcontainers/testcontainers-go"
-	"github.com/testcontainers/testcontainers-go/wait"
 	"os"
 	"path"
 	"strconv"
 	"testing"
+
+	"github.com/ClickHouse/ClickHouse/programs/diagnostics/internal/platform/data"
+	"github.com/ClickHouse/ClickHouse/programs/diagnostics/internal/platform/database"
+	"github.com/ClickHouse/ClickHouse/programs/diagnostics/internal/platform/test"
+	"github.com/stretchr/testify/require"
+	"github.com/testcontainers/testcontainers-go"
+	"github.com/testcontainers/testcontainers-go/wait"
 )
 
 func TestMain(m *testing.M) {

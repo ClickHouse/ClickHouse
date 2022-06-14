@@ -2,10 +2,11 @@ package data_test
 
 import (
 	"database/sql"
-	"github.com/ClickHouse/clickhouse-diagnostics/internal/platform/data"
+	"testing"
+
+	"github.com/ClickHouse/ClickHouse/programs/diagnostics/internal/platform/data"
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/stretchr/testify/require"
-	"testing"
 )
 
 func TestString(t *testing.T) {

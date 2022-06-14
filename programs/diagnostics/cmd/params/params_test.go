@@ -1,13 +1,14 @@
 package params_test
 
 import (
-	"github.com/ClickHouse/clickhouse-diagnostics/cmd/params"
-	"github.com/ClickHouse/clickhouse-diagnostics/internal/platform/config"
-	"github.com/spf13/cobra"
-	"github.com/stretchr/testify/require"
 	"os"
 	"sort"
 	"testing"
+
+	"github.com/ClickHouse/ClickHouse/programs/diagnostics/cmd/params"
+	"github.com/ClickHouse/ClickHouse/programs/diagnostics/internal/platform/config"
+	"github.com/spf13/cobra"
+	"github.com/stretchr/testify/require"
 )
 
 var conf = map[string]config.Configuration{

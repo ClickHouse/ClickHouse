@@ -2,8 +2,9 @@ package collectors
 
 import (
 	"fmt"
-	"github.com/ClickHouse/clickhouse-diagnostics/internal/platform/config"
-	"github.com/ClickHouse/clickhouse-diagnostics/internal/platform/data"
+
+	"github.com/ClickHouse/ClickHouse/programs/diagnostics/internal/platform/config"
+	"github.com/ClickHouse/ClickHouse/programs/diagnostics/internal/platform/data"
 	"github.com/pkg/errors"
 	"github.com/rs/zerolog/log"
 )

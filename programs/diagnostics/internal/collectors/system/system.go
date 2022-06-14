@@ -1,15 +1,16 @@
 package system
 
 import (
-	"github.com/ClickHouse/clickhouse-diagnostics/internal/collectors"
-	"github.com/ClickHouse/clickhouse-diagnostics/internal/platform"
-	"github.com/ClickHouse/clickhouse-diagnostics/internal/platform/config"
-	"github.com/ClickHouse/clickhouse-diagnostics/internal/platform/data"
+	"strings"
+
+	"github.com/ClickHouse/ClickHouse/programs/diagnostics/internal/collectors"
+	"github.com/ClickHouse/ClickHouse/programs/diagnostics/internal/platform"
+	"github.com/ClickHouse/ClickHouse/programs/diagnostics/internal/platform/config"
+	"github.com/ClickHouse/ClickHouse/programs/diagnostics/internal/platform/data"
 	"github.com/elastic/gosigar"
 	"github.com/jaypipes/ghw"
 	"github.com/matishsiao/goInfo"
 	"github.com/pkg/errors"
-	"strings"
 )
 
 // This collector collects the system overview

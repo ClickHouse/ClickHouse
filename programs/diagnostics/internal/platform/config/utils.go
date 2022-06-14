@@ -2,7 +2,8 @@ package config
 
 import (
 	"fmt"
-	"github.com/ClickHouse/clickhouse-diagnostics/internal/platform/utils"
+
+	"github.com/ClickHouse/ClickHouse/programs/diagnostics/internal/platform/utils"
 )
 
 func ReadStringListValues(conf Configuration, paramName string) ([]string, error) {

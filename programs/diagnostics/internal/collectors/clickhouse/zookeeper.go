@@ -2,14 +2,15 @@ package clickhouse
 
 import (
 	"fmt"
-	"github.com/ClickHouse/clickhouse-diagnostics/internal/collectors"
-	"github.com/ClickHouse/clickhouse-diagnostics/internal/platform"
-	"github.com/ClickHouse/clickhouse-diagnostics/internal/platform/config"
-	"github.com/ClickHouse/clickhouse-diagnostics/internal/platform/data"
+	"strings"
+
+	"github.com/ClickHouse/ClickHouse/programs/diagnostics/internal/collectors"
+	"github.com/ClickHouse/ClickHouse/programs/diagnostics/internal/platform"
+	"github.com/ClickHouse/ClickHouse/programs/diagnostics/internal/platform/config"
+	"github.com/ClickHouse/ClickHouse/programs/diagnostics/internal/platform/data"
 	"github.com/bmatcuk/doublestar/v4"
 	"github.com/pkg/errors"
 	"github.com/rs/zerolog/log"
-	"strings"
 )
 
 // This collector collects the system zookeeper db

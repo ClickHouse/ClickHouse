@@ -4,16 +4,17 @@ import (
 	"bufio"
 	"encoding/xml"
 	"fmt"
-	"github.com/ClickHouse/clickhouse-diagnostics/internal/outputs/file"
-	"github.com/ClickHouse/clickhouse-diagnostics/internal/platform/config"
-	"github.com/ClickHouse/clickhouse-diagnostics/internal/platform/data"
-	"github.com/ClickHouse/clickhouse-diagnostics/internal/platform/test"
-	"github.com/stretchr/testify/require"
 	"io"
 	"os"
 	"path"
 	"strings"
 	"testing"
+
+	"github.com/ClickHouse/ClickHouse/programs/diagnostics/internal/outputs/file"
+	"github.com/ClickHouse/ClickHouse/programs/diagnostics/internal/platform/config"
+	"github.com/ClickHouse/ClickHouse/programs/diagnostics/internal/platform/data"
+	"github.com/ClickHouse/ClickHouse/programs/diagnostics/internal/platform/test"
+	"github.com/stretchr/testify/require"
 )
 
 var clusterFrame = test.NewFakeDataFrame("clusters", []string{"cluster", "shard_num", "shard_weight", "replica_num", "host_name", "host_address", "port", "is_local", "user", "default_database", "errors_count", "slowdowns_count", "estimated_recovery_time"},
