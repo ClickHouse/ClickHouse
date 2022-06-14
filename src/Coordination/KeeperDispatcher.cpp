@@ -568,7 +568,7 @@ void KeeperDispatcher::onRequestCommit(KeeperStorage::RequestForSession & reques
 {
     if (request_for_session.request->getOpNum() != Coordination::OpNum::Sync)
         return;
-    
+
     const auto & sync_request = dynamic_cast<const Coordination::ZooKeeperSyncRequest &>(*request_for_session.request);
     const auto & path = sync_request.path;
 
