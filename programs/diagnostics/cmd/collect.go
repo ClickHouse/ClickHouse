@@ -2,21 +2,22 @@ package cmd
 
 import (
 	"fmt"
-	"github.com/ClickHouse/clickhouse-diagnostics/cmd/params"
-	"github.com/ClickHouse/clickhouse-diagnostics/internal"
-	"github.com/ClickHouse/clickhouse-diagnostics/internal/collectors"
-	_ "github.com/ClickHouse/clickhouse-diagnostics/internal/collectors/clickhouse"
-	_ "github.com/ClickHouse/clickhouse-diagnostics/internal/collectors/system"
-	"github.com/ClickHouse/clickhouse-diagnostics/internal/outputs"
-	_ "github.com/ClickHouse/clickhouse-diagnostics/internal/outputs/file"
-	_ "github.com/ClickHouse/clickhouse-diagnostics/internal/outputs/terminal"
-	"github.com/ClickHouse/clickhouse-diagnostics/internal/platform/utils"
+	"os"
+	"strings"
+
+	"github.com/ClickHouse/ClickHouse/programs/diagnostics/cmd/params"
+	"github.com/ClickHouse/ClickHouse/programs/diagnostics/internal"
+	"github.com/ClickHouse/ClickHouse/programs/diagnostics/internal/collectors"
+	_ "github.com/ClickHouse/ClickHouse/programs/diagnostics/internal/collectors/clickhouse"
+	_ "github.com/ClickHouse/ClickHouse/programs/diagnostics/internal/collectors/system"
+	"github.com/ClickHouse/ClickHouse/programs/diagnostics/internal/outputs"
+	_ "github.com/ClickHouse/ClickHouse/programs/diagnostics/internal/outputs/file"
+	_ "github.com/ClickHouse/ClickHouse/programs/diagnostics/internal/outputs/terminal"
+	"github.com/ClickHouse/ClickHouse/programs/diagnostics/internal/platform/utils"
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 	"github.com/spf13/viper"
-	"os"
-	"strings"
 )
 
 var id string

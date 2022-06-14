@@ -2,14 +2,15 @@ package data_test
 
 import (
 	"fmt"
-	"github.com/ClickHouse/clickhouse-diagnostics/internal/platform/data"
-	"github.com/stretchr/testify/require"
 	"io/ioutil"
 	"os"
 	"path"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/ClickHouse/ClickHouse/programs/diagnostics/internal/platform/data"
+	"github.com/stretchr/testify/require"
 )
 
 func TestNextFileDirectoryFrame(t *testing.T) {

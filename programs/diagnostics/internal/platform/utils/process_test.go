@@ -3,14 +3,15 @@ package utils_test
 import (
 	"context"
 	"fmt"
-	"github.com/ClickHouse/clickhouse-diagnostics/internal/platform/test"
-	"github.com/ClickHouse/clickhouse-diagnostics/internal/platform/utils"
-	"github.com/stretchr/testify/require"
-	"github.com/testcontainers/testcontainers-go"
-	"github.com/testcontainers/testcontainers-go/wait"
 	"os"
 	"path"
 	"testing"
+
+	"github.com/ClickHouse/ClickHouse/programs/diagnostics/internal/platform/test"
+	"github.com/ClickHouse/ClickHouse/programs/diagnostics/internal/platform/utils"
+	"github.com/stretchr/testify/require"
+	"github.com/testcontainers/testcontainers-go"
+	"github.com/testcontainers/testcontainers-go/wait"
 )
 
 func TestMain(m *testing.M) {

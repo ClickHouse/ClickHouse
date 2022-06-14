@@ -2,8 +2,9 @@ package config
 
 import (
 	"fmt"
-	"github.com/ClickHouse/clickhouse-diagnostics/internal/platform/utils"
 	"strings"
+
+	"github.com/ClickHouse/ClickHouse/programs/diagnostics/internal/platform/utils"
 )
 
 type ConfigParam interface {

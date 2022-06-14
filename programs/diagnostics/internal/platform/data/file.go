@@ -3,14 +3,15 @@ package data
 import (
 	"bufio"
 	"encoding/xml"
-	"github.com/ClickHouse/clickhouse-diagnostics/internal/platform/utils"
-	"github.com/pkg/errors"
-	"gopkg.in/yaml.v3"
 	"io/ioutil"
 	"os"
 	"path"
 	"path/filepath"
 	"regexp"
+
+	"github.com/ClickHouse/ClickHouse/programs/diagnostics/internal/platform/utils"
+	"github.com/pkg/errors"
+	"gopkg.in/yaml.v3"
 )
 
 type File interface {

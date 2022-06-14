@@ -1,11 +1,11 @@
 package internal
 
 import (
-	c "github.com/ClickHouse/clickhouse-diagnostics/internal/collectors"
-	o "github.com/ClickHouse/clickhouse-diagnostics/internal/outputs"
-	"github.com/ClickHouse/clickhouse-diagnostics/internal/platform"
-	"github.com/ClickHouse/clickhouse-diagnostics/internal/platform/config"
-	"github.com/ClickHouse/clickhouse-diagnostics/internal/platform/data"
+	c "github.com/ClickHouse/ClickHouse/programs/diagnostics/internal/collectors"
+	o "github.com/ClickHouse/ClickHouse/programs/diagnostics/internal/outputs"
+	"github.com/ClickHouse/ClickHouse/programs/diagnostics/internal/platform"
+	"github.com/ClickHouse/ClickHouse/programs/diagnostics/internal/platform/config"
+	"github.com/ClickHouse/ClickHouse/programs/diagnostics/internal/platform/data"
 	"github.com/pkg/errors"
 	"github.com/rs/zerolog/log"
 )

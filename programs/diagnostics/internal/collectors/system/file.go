@@ -1,14 +1,15 @@
 package system
 
 import (
-	"github.com/ClickHouse/clickhouse-diagnostics/internal/collectors"
-	"github.com/ClickHouse/clickhouse-diagnostics/internal/platform"
-	"github.com/ClickHouse/clickhouse-diagnostics/internal/platform/config"
-	"github.com/ClickHouse/clickhouse-diagnostics/internal/platform/data"
+	"os"
+
+	"github.com/ClickHouse/ClickHouse/programs/diagnostics/internal/collectors"
+	"github.com/ClickHouse/ClickHouse/programs/diagnostics/internal/platform"
+	"github.com/ClickHouse/ClickHouse/programs/diagnostics/internal/platform/config"
+	"github.com/ClickHouse/ClickHouse/programs/diagnostics/internal/platform/data"
 	"github.com/pkg/errors"
 	"github.com/rs/zerolog/log"
 	"github.com/yargevad/filepathx"
-	"os"
 )
 
 // This collector collects arbitrary user files

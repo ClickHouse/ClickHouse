@@ -2,15 +2,16 @@ package clickhouse_test
 
 import (
 	"fmt"
-	"github.com/ClickHouse/clickhouse-diagnostics/internal/collectors/clickhouse"
-	"github.com/ClickHouse/clickhouse-diagnostics/internal/platform"
-	"github.com/ClickHouse/clickhouse-diagnostics/internal/platform/config"
-	"github.com/ClickHouse/clickhouse-diagnostics/internal/platform/data"
-	"github.com/ClickHouse/clickhouse-diagnostics/internal/platform/test"
-	"github.com/stretchr/testify/require"
 	"os"
 	"path"
 	"testing"
+
+	"github.com/ClickHouse/ClickHouse/programs/diagnostics/internal/collectors/clickhouse"
+	"github.com/ClickHouse/ClickHouse/programs/diagnostics/internal/platform"
+	"github.com/ClickHouse/ClickHouse/programs/diagnostics/internal/platform/config"
+	"github.com/ClickHouse/ClickHouse/programs/diagnostics/internal/platform/data"
+	"github.com/ClickHouse/ClickHouse/programs/diagnostics/internal/platform/test"
+	"github.com/stretchr/testify/require"
 )
 
 func TestLogsConfiguration(t *testing.T) {

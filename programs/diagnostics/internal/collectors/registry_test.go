@@ -1,12 +1,13 @@
 package collectors_test
 
 import (
-	"github.com/ClickHouse/clickhouse-diagnostics/internal/collectors"
-	"github.com/ClickHouse/clickhouse-diagnostics/internal/collectors/clickhouse"
-	_ "github.com/ClickHouse/clickhouse-diagnostics/internal/collectors/system"
-	"github.com/ClickHouse/clickhouse-diagnostics/internal/platform"
-	"github.com/stretchr/testify/require"
 	"testing"
+
+	"github.com/ClickHouse/ClickHouse/programs/diagnostics/internal/collectors"
+	"github.com/ClickHouse/ClickHouse/programs/diagnostics/internal/collectors/clickhouse"
+	_ "github.com/ClickHouse/ClickHouse/programs/diagnostics/internal/collectors/system"
+	"github.com/ClickHouse/ClickHouse/programs/diagnostics/internal/platform"
+	"github.com/stretchr/testify/require"
 )
 
 func TestGetCollectorNames(t *testing.T) {

@@ -1,11 +1,12 @@
 package outputs_test
 
 import (
-	"github.com/ClickHouse/clickhouse-diagnostics/internal/outputs"
-	"github.com/ClickHouse/clickhouse-diagnostics/internal/outputs/file"
-	_ "github.com/ClickHouse/clickhouse-diagnostics/internal/outputs/terminal"
-	"github.com/stretchr/testify/require"
 	"testing"
+
+	"github.com/ClickHouse/ClickHouse/programs/diagnostics/internal/outputs"
+	"github.com/ClickHouse/ClickHouse/programs/diagnostics/internal/outputs/file"
+	_ "github.com/ClickHouse/ClickHouse/programs/diagnostics/internal/outputs/terminal"
+	"github.com/stretchr/testify/require"
 )
 
 func TestGetOutputNames(t *testing.T) {

@@ -1,10 +1,11 @@
 package data_test
 
 import (
-	"github.com/ClickHouse/clickhouse-diagnostics/internal/platform/data"
+	"testing"
+
+	"github.com/ClickHouse/ClickHouse/programs/diagnostics/internal/platform/data"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
-	"testing"
 )
 
 func TestBundleError(t *testing.T) {

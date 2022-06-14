@@ -3,12 +3,13 @@ package terminal
 import (
 	"bufio"
 	"fmt"
-	"github.com/ClickHouse/clickhouse-diagnostics/internal/outputs"
-	"github.com/ClickHouse/clickhouse-diagnostics/internal/platform/config"
-	"github.com/ClickHouse/clickhouse-diagnostics/internal/platform/data"
+	"os"
+
+	"github.com/ClickHouse/ClickHouse/programs/diagnostics/internal/outputs"
+	"github.com/ClickHouse/ClickHouse/programs/diagnostics/internal/platform/config"
+	"github.com/ClickHouse/ClickHouse/programs/diagnostics/internal/platform/data"
 	"github.com/olekukonko/tablewriter"
 	"github.com/pkg/errors"
-	"os"
 )
 
 const OutputName = "report"

@@ -4,14 +4,15 @@ import (
 	"bytes"
 	_ "embed"
 	"encoding/json"
-	"github.com/ClickHouse/clickhouse-diagnostics/internal/collectors"
-	"github.com/ClickHouse/clickhouse-diagnostics/internal/platform"
-	"github.com/ClickHouse/clickhouse-diagnostics/internal/platform/config"
-	"github.com/ClickHouse/clickhouse-diagnostics/internal/platform/data"
-	"github.com/Masterminds/semver"
-	"github.com/pkg/errors"
 	"strings"
 	"text/template"
+
+	"github.com/ClickHouse/ClickHouse/programs/diagnostics/internal/collectors"
+	"github.com/ClickHouse/ClickHouse/programs/diagnostics/internal/platform"
+	"github.com/ClickHouse/ClickHouse/programs/diagnostics/internal/platform/config"
+	"github.com/ClickHouse/ClickHouse/programs/diagnostics/internal/platform/data"
+	"github.com/Masterminds/semver"
+	"github.com/pkg/errors"
 )
 
 // This collector collects the system db from database

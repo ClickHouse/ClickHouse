@@ -5,7 +5,8 @@ BUILD_DIR=dist
 
 TIMESTAMP := $(shell date +%Y%m%d-%H%M)
 COMMIT := $(shell git rev-parse --short HEAD)
-DEVLDFLAGS = -ldflags "-X github.com/ClickHouse/clickhouse-diagnostics/cmd.Version=v.dev-${TIMESTAMP} -X github.com/ClickHouse/clickhouse-diagnostics/cmd.Commit=${COMMIT}"
+MODULE := github.com/ClickHouse/ClickHouse/programs/diagnostics
+DEVLDFLAGS = -ldflags "-X ${MODULE}/cmd.Version=v.dev-${TIMESTAMP} -X ${MODULE}/cmd.Commit=${COMMIT}"
 
 # override with env variable to test other versions e.g. 21.11.10.1
 CLICKHOUSE_VERSION ?= latest

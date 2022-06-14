@@ -2,13 +2,14 @@ package cmd
 
 import (
 	"fmt"
-	"github.com/ClickHouse/clickhouse-diagnostics/cmd/params"
-	"github.com/ClickHouse/clickhouse-diagnostics/internal/collectors"
-	"github.com/ClickHouse/clickhouse-diagnostics/internal/outputs"
-	"github.com/ClickHouse/clickhouse-diagnostics/internal/platform/config"
+	"os"
+
+	"github.com/ClickHouse/ClickHouse/programs/diagnostics/cmd/params"
+	"github.com/ClickHouse/ClickHouse/programs/diagnostics/internal/collectors"
+	"github.com/ClickHouse/ClickHouse/programs/diagnostics/internal/outputs"
+	"github.com/ClickHouse/ClickHouse/programs/diagnostics/internal/platform/config"
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
-	"os"
 )
 
 var cHelp = params.StringOptionsVar{

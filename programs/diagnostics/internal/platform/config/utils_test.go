@@ -1,9 +1,10 @@
 package config_test
 
 import (
-	"github.com/ClickHouse/clickhouse-diagnostics/internal/platform/config"
-	"github.com/stretchr/testify/require"
 	"testing"
+
+	"github.com/ClickHouse/ClickHouse/programs/diagnostics/internal/platform/config"
+	"github.com/stretchr/testify/require"
 )
 
 func TestReadStringListValues(t *testing.T) {
