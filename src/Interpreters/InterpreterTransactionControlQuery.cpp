@@ -67,6 +67,7 @@ BlockIO InterpreterTransactionControlQuery::executeCommit(ContextMutablePtr sess
         if (e.code() == ErrorCodes::UNKNOWN_STATUS_OF_TRANSACTION)
         {
             /// Detach transaction from current context if connection was lost and its status is unknown
+            /// (so it will be possible to start new one)
             session_context->setCurrentTransaction(NO_TRANSACTION_PTR);
         }
         throw;
@@ -84,7 +85,7 @@ BlockIO InterpreterTransactionControlQuery::executeCommit(ContextMutablePtr sess
         if (csn_changed_state == Tx::UnknownCSN)
         {
             /// CommittingCSN -> UnknownCSN -> RolledBackCSN
-            /// It's posible if connection was lost before commit
+            /// It's possible if connection was lost before commit
             /// (maybe we should get rid of intermediate UnknownCSN in this transition)
             txn->waitStateChange(Tx::UnknownCSN);
             chassert(txn->getCSN() == Tx::RolledBackCSN);
