@@ -59,7 +59,7 @@ KeeperStateMachine::KeeperStateMachine(
     , snapshot_manager(
         snapshots_path_, coordination_settings->snapshots_to_keep,
         coordination_settings->compress_snapshots_with_zstd_format, superdigest_,
-        coordination_settings->dead_session_check_period_ms.totalMicroseconds())
+        coordination_settings->dead_session_check_period_ms.totalMilliseconds())
     , responses_queue(responses_queue_)
     , snapshots_queue(snapshots_queue_)
     , last_committed_idx(0)
@@ -175,7 +175,7 @@ bool KeeperStateMachine::apply_snapshot(nuraft::snapshot & s)
 }
 
 
-void KeeperStateMachine::commit_config(const uint64_t /*log_idx*/, nuraft::ptr<nuraft::cluster_config> & new_conf)
+void KeeperStateMachine::commit_config(const uint64_t /* log_idx */, nuraft::ptr<nuraft::cluster_config> & new_conf)
 {
     std::lock_guard lock(cluster_config_lock);
     auto tmp = new_conf->serialize();
@@ -259,22 +259,9 @@ void KeeperStateMachine::save_logical_snp_obj(
 {
     LOG_DEBUG(log, "Saving snapshot {} obj_id {}", s.get_last_log_idx(), obj_id);
 
-    nuraft::ptr<nuraft::buffer> cloned_buffer;
-    nuraft::ptr<nuraft::snapshot> cloned_meta;
-    if (obj_id == 0) /// Fake snapshot required by NuRaft at startup
-    {
-        std::lock_guard lock(storage_and_responses_lock);
-        KeeperStorageSnapshot snapshot(storage.get(), s.get_last_log_idx(), getClusterConfig());
-        cloned_buffer = snapshot_manager.serializeSnapshotToBuffer(snapshot);
-    }
-    else
-    {
-        /// copy snapshot into memory
-    }
-
     /// copy snapshot meta into memory
     nuraft::ptr<nuraft::buffer> snp_buf = s.serialize();
-    cloned_meta = nuraft::snapshot::deserialize(*snp_buf);
+    nuraft::ptr<nuraft::snapshot> cloned_meta = nuraft::snapshot::deserialize(*snp_buf);
 
     try
     {
@@ -332,31 +319,22 @@ int KeeperStateMachine::read_logical_snp_obj(
 {
 
     LOG_DEBUG(log, "Reading snapshot {} obj_id {}", s.get_last_log_idx(), obj_id);
-    if (obj_id == 0) /// Fake snapshot required by NuRaft at startup
+
+    std::lock_guard lock(snapshots_lock);
+    /// Our snapshot is not equal to required. Maybe we still creating it in the background.
+    /// Let's wait and NuRaft will retry this call.
+    if (s.get_last_log_idx() != latest_snapshot_meta->get_last_log_idx())
     {
-        data_out = nuraft::buffer::alloc(sizeof(int32_t));
-        nuraft::buffer_serializer bs(data_out);
-        bs.put_i32(0);
-        is_last_obj = false;
+        LOG_WARNING(log, "Required to apply snapshot with last log index {}, but our last log index is {}. Will ignore this one and retry",
+                        s.get_last_log_idx(), latest_snapshot_meta->get_last_log_idx());
+        return -1;
     }
-    else
+    if (bufferFromFile(log, latest_snapshot_path, data_out))
     {
-        std::lock_guard lock(snapshots_lock);
-        /// Our snapshot is not equal to required. Maybe we still creating it in the background.
-        /// Let's wait and NuRaft will retry this call.
-        if (s.get_last_log_idx() != latest_snapshot_meta->get_last_log_idx())
-        {
-            LOG_WARNING(log, "Required to apply snapshot with last log index {}, but our last log index is {}. Will ignore this one and retry",
-                            s.get_last_log_idx(), latest_snapshot_meta->get_last_log_idx());
-            return -1;
-        }
-        if (bufferFromFile(log, latest_snapshot_path, data_out))
-        {
-            LOG_WARNING(log, "Error reading snapshot {} from {}", s.get_last_log_idx(), latest_snapshot_path);
-            return -1;
-        }
-        is_last_obj = true;
+        LOG_WARNING(log, "Error reading snapshot {} from {}", s.get_last_log_idx(), latest_snapshot_path);
+        return -1;
     }
+    is_last_obj = true;
 
     return 1;
 }

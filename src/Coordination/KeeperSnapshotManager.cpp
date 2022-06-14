@@ -12,6 +12,7 @@
 #include <Coordination/pathUtils.h>
 #include <filesystem>
 #include <memory>
+#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -20,6 +21,7 @@ namespace ErrorCodes
 {
     extern const int UNKNOWN_FORMAT_VERSION;
     extern const int UNKNOWN_SNAPSHOT;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace
@@ -43,7 +45,7 @@ namespace
 
     void writeNode(const KeeperStorage::Node & node, SnapshotVersion version, WriteBuffer & out)
     {
-        writeBinary(node.data, out);
+        writeBinary(node.getData(), out);
 
         /// Serialize ACL
         writeBinary(node.acl_id, out);
@@ -71,7 +73,9 @@ namespace
 
     void readNode(KeeperStorage::Node & node, ReadBuffer & in, SnapshotVersion version, ACLMap & acl_map)
     {
-        readBinary(node.data, in);
+        String new_data;
+        readBinary(new_data, in);
+        node.setData(std::move(new_data));
 
         if (version >= SnapshotVersion::V1)
         {
@@ -147,9 +151,12 @@ void KeeperStorageSnapshot::serialize(const KeeperStorageSnapshot & snapshot, Wr
     serializeSnapshotMetadata(snapshot.snapshot_meta, out);
     writeBinary(snapshot.session_id, out);
 
-    /// Serialize ACLs MAP
-    writeBinary(snapshot.acl_map.size(), out);
-    for (const auto & [acl_id, acls] : snapshot.acl_map)
+    /// Better to sort before serialization, otherwise snapshots can be different on different replicas
+    std::vector<std::pair<int64_t, Coordination::ACLs>> sorted_acl_map(snapshot.acl_map.begin(), snapshot.acl_map.end());
+    ::sort(sorted_acl_map.begin(), sorted_acl_map.end());
+    /// Serialize ACLs map
+    writeBinary(sorted_acl_map.size(), out);
+    for (const auto & [acl_id, acls] : sorted_acl_map)
     {
         writeBinary(acl_id, out);
         writeBinary(acls.size(), out);
@@ -185,16 +192,22 @@ void KeeperStorageSnapshot::serialize(const KeeperStorageSnapshot & snapshot, Wr
         ++it;
     }
 
+    /// Session must be saved in a sorted order,
+    /// otherwise snapshots will be different
+    std::vector<std::pair<int64_t, int64_t>> sorted_session_and_timeout(snapshot.session_and_timeout.begin(), snapshot.session_and_timeout.end());
+    ::sort(sorted_session_and_timeout.begin(), sorted_session_and_timeout.end());
+
     /// Serialize sessions
-    size_t size = snapshot.session_and_timeout.size();
+    size_t size = sorted_session_and_timeout.size();
+
     writeBinary(size, out);
-    for (const auto & [session_id, timeout] : snapshot.session_and_timeout)
+    for (const auto & [session_id, timeout] : sorted_session_and_timeout)
     {
         writeBinary(session_id, out);
         writeBinary(timeout, out);
 
         KeeperStorage::AuthIDs ids;
-        if (snapshot.session_and_auth.count(session_id))
+        if (snapshot.session_and_auth.contains(session_id))
             ids = snapshot.session_and_auth.at(session_id);
 
         writeBinary(ids.size(), out);
@@ -281,9 +294,28 @@ void KeeperStorageSnapshot::deserialize(SnapshotDeserializationResult & deserial
         if (itr.key != "/")
         {
             auto parent_path = parentPath(itr.key);
-            storage.container.updateValue(parent_path, [path = itr.key] (KeeperStorage::Node & value) { value.children.insert(getBaseName(path)); });
+            storage.container.updateValue(parent_path, [path = itr.key] (KeeperStorage::Node & value) { value.addChild(getBaseName(path)); });
         }
     }
+
+    for (const auto & itr : storage.container)
+    {
+        if (itr.key != "/")
+        {
+            if (itr.value.stat.numChildren != static_cast<int32_t>(itr.value.getChildren().size()))
+            {
+#ifdef NDEBUG
+                /// TODO (alesapin) remove this, it should be always CORRUPTED_DATA.
+                LOG_ERROR(&Poco::Logger::get("KeeperSnapshotManager"), "Children counter in stat.numChildren {}"
+                            " is different from actual children size {} for node {}", itr.value.stat.numChildren, itr.value.getChildren().size(), itr.key);
+#else
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Children counter in stat.numChildren {}"
+                            " is different from actual children size {} for node {}", itr.value.stat.numChildren, itr.value.getChildren().size(), itr.key);
+#endif
+            }
+        }
+    }
+
 
     size_t active_sessions_size;
     readBinary(active_sessions_size, in);

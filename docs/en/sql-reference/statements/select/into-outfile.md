@@ -1,8 +1,8 @@
 ---
-toc_title: INTO OUTFILE
+sidebar_label: INTO OUTFILE
 ---
 
-# INTO OUTFILE Clause {#into-outfile-clause}
+# INTO OUTFILE Clause
 
 `INTO OUTFILE` clause redirects the result of a `SELECT` query to a file on the **client** side.
 
@@ -16,7 +16,7 @@ SELECT <expr_list> INTO OUTFILE file_name [COMPRESSION type]
 
 `file_name` and `type` are string literals. Supported compression types are: `'none'`, `'gzip'`, `'deflate'`, `'br'`, `'xz'`, `'zstd'`, `'lz4'`, `'bz2'`.
 
-## Implementation Details {#implementation-details}
+## Implementation Details
 
 -   This functionality is available in the [command-line client](../../../interfaces/cli.md) and [clickhouse-local](../../../operations/utilities/clickhouse-local.md). Thus a query sent via [HTTP interface](../../../interfaces/http.md) will fail.
 -   The query will fail if a file with the same file name already exists.

@@ -1,12 +1,9 @@
-# During cross-compilation in our CI we have to use llvm-tblgen and other building tools
-# tools to be build for host architecture and everything else for target architecture (e.g. AArch64)
-# Possible workaround is to use llvm-tblgen from some package...
-# But lets just enable LLVM for native builds
-if (CMAKE_CROSSCOMPILING OR SANITIZE STREQUAL "undefined")
-    set (ENABLE_EMBEDDED_COMPILER_DEFAULT OFF)
+if (APPLE OR NOT ARCH_AMD64 OR SANITIZE STREQUAL "undefined")
+   set (ENABLE_EMBEDDED_COMPILER_DEFAULT OFF)
 else()
-    set (ENABLE_EMBEDDED_COMPILER_DEFAULT ON)
+   set (ENABLE_EMBEDDED_COMPILER_DEFAULT ON)
 endif()
+
 option (ENABLE_EMBEDDED_COMPILER "Enable support for 'compile_expressions' option for query execution" ${ENABLE_EMBEDDED_COMPILER_DEFAULT})
 
 if (NOT ENABLE_EMBEDDED_COMPILER)
@@ -79,9 +76,7 @@ message (STATUS "LLVM library Directory: ${LLVM_LIBRARY_DIRS}")
 message (STATUS "LLVM C++ compiler flags: ${LLVM_CXXFLAGS}")
 
 # ld: unknown option: --color-diagnostics
-if (APPLE)
-    set (LINKER_SUPPORTS_COLOR_DIAGNOSTICS 0 CACHE INTERNAL "")
-endif ()
+set (LINKER_SUPPORTS_COLOR_DIAGNOSTICS 0 CACHE INTERNAL "")
 
 # Do not adjust RPATH in llvm, since then it will not be able to find libcxx/libcxxabi/libunwind
 set (CMAKE_INSTALL_RPATH "ON")

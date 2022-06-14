@@ -400,6 +400,9 @@ public:
     /// Checks that part is already in virtual parts
     bool isVirtualPart(const MergeTreeData::DataPartPtr & data_part) const;
 
+    /// Returns true if part_info is covered by some DROP_RANGE
+    bool hasDropRange(const MergeTreePartInfo & part_info, MergeTreePartInfo * out_drop_range_info = nullptr) const;
+
     /// Check that part produced by some entry in queue and get source parts for it.
     /// If there are several entries return largest source_parts set. This rarely possible
     /// for example after replica clone.
@@ -483,6 +486,7 @@ public:
     /// Depending on the existence of left part checks a merge predicate for two parts or for single part.
     bool operator()(const MergeTreeData::DataPartPtr & left,
                     const MergeTreeData::DataPartPtr & right,
+                    const MergeTreeTransaction * txn,
                     String * out_reason = nullptr) const;
 
     /// Can we assign a merge with these two parts?
@@ -496,6 +500,10 @@ public:
     /// For example a merge of a part and itself is needed for TTL.
     /// This predicate is checked for the first part of each range.
     bool canMergeSinglePart(const MergeTreeData::DataPartPtr & part, String * out_reason) const;
+
+    /// Returns true if part is needed for some REPLACE_RANGE entry.
+    /// We should not drop part in this case, because replication queue may stuck without that part.
+    bool partParticipatesInReplaceRange(const MergeTreeData::DataPartPtr & part, String * out_reason) const;
 
     /// Return nonempty optional of desired mutation version and alter version.
     /// If we have no alter (modify/drop) mutations in mutations queue, than we return biggest possible

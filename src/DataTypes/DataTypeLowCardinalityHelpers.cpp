@@ -36,7 +36,7 @@ DataTypePtr recursiveRemoveLowCardinality(const DataTypePtr & type)
             element = recursiveRemoveLowCardinality(element);
 
         if (tuple_type->haveExplicitNames())
-            return std::make_shared<DataTypeTuple>(elements, tuple_type->getElementNames(), tuple_type->serializeNames());
+            return std::make_shared<DataTypeTuple>(elements, tuple_type->getElementNames());
         else
             return std::make_shared<DataTypeTuple>(elements);
     }

@@ -129,6 +129,7 @@ def test_quota_from_users_xml():
                 1000,
                 "\\N",
                 "\\N",
+                "\\N",
             ]
         ]
     )
@@ -349,6 +350,7 @@ def test_tracking_quota():
                 "\\N",
                 "\\N",
                 "\\N",
+                "\\N",
             ]
         ]
     )
@@ -454,7 +456,7 @@ def test_exceed_quota():
         ]
     )
     system_quota_limits(
-        [["myQuota", 31556952, 0, 1, 1, 1, 1, 1, "\\N", 1, "\\N", "\\N"]]
+        [["myQuota", 31556952, 0, 1, 1, 1, 1, 1, "\\N", 1, "\\N", "\\N", "\\N"]]
     )
     system_quota_usage(
         [
@@ -543,6 +545,7 @@ def test_exceed_quota():
                 "\\N",
                 "\\N",
                 1000,
+                "\\N",
                 "\\N",
                 "\\N",
             ]
@@ -634,6 +637,7 @@ def test_add_remove_interval():
                 1000,
                 "\\N",
                 "\\N",
+                "\\N",
             ]
         ]
     )
@@ -695,6 +699,7 @@ def test_add_remove_interval():
                 1000,
                 "\\N",
                 "\\N",
+                "\\N",
             ],
             [
                 "myQuota",
@@ -709,6 +714,7 @@ def test_add_remove_interval():
                 "\\N",
                 20000,
                 120,
+                "\\N",
             ],
         ]
     )
@@ -840,6 +846,7 @@ def test_add_remove_interval():
                 "\\N",
                 "\\N",
                 1000,
+                "\\N",
                 "\\N",
                 "\\N",
             ]
@@ -1003,6 +1010,7 @@ def test_add_remove_interval():
                 1000,
                 "\\N",
                 "\\N",
+                "\\N",
             ]
         ]
     )
@@ -1062,6 +1070,7 @@ def test_add_remove_quota():
                 "\\N",
                 "\\N",
                 1000,
+                "\\N",
                 "\\N",
                 "\\N",
             ]
@@ -1136,6 +1145,7 @@ def test_add_remove_quota():
                 1000,
                 "\\N",
                 "\\N",
+                "\\N",
             ],
             [
                 "myQuota2",
@@ -1150,6 +1160,7 @@ def test_add_remove_quota():
                 4000,
                 400000,
                 60,
+                "\\N",
             ],
             [
                 "myQuota2",
@@ -1164,6 +1175,7 @@ def test_add_remove_quota():
                 "\\N",
                 "\\N",
                 1800,
+                "\\N",
             ],
         ]
     )
@@ -1224,6 +1236,7 @@ def test_add_remove_quota():
                 "\\N",
                 "\\N",
                 1000,
+                "\\N",
                 "\\N",
                 "\\N",
             ]
@@ -1294,6 +1307,7 @@ def test_add_remove_quota():
                 1000,
                 "\\N",
                 "\\N",
+                "\\N",
             ]
         ]
     )
@@ -1356,6 +1370,7 @@ def test_reload_users_xml_by_timer():
                 1000,
                 "\\N",
                 "\\N",
+                "\\N",
             ]
         ]
     )
@@ -1382,7 +1397,7 @@ def test_reload_users_xml_by_timer():
     assert_eq_with_retry(
         instance,
         "SELECT * FROM system.quota_limits",
-        [["myQuota", 31556952, 0, 1, 1, 1, 1, 1, "\\N", 1, "\\N", "\\N"]],
+        [["myQuota", 31556952, 0, 1, 1, 1, 1, 1, "\\N", 1, "\\N", "\\N", "\\N"]],
     )
 
 
@@ -1481,15 +1496,15 @@ def test_dcl_management():
         == "CREATE QUOTA qA FOR INTERVAL 30 minute MAX execution_time = 0.5, FOR INTERVAL 5 quarter MAX queries = 321, errors = 10 TO default\n"
     )
     assert re.match(
-        "qA\\t\\t.*\\t1800\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t.*\\t0.5\n"
-        "qA\\t\\t.*\\t39446190\\t1\\t321\\t1\\t\\\\N\\t0\\t\\\\N\\t0\\t10\\t50\\t\\\\N\\t200\\t\\\\N\\t50\\t\\\\N\\t200\\t\\\\N\\t.*\\t\\\\N\n",
+        "qA\\t\\t.*\\t1800\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t.*\\t0.5\\t0\\t\\\\N\n"
+        "qA\\t\\t.*\\t39446190\\t1\\t321\\t1\\t\\\\N\\t0\\t\\\\N\\t0\\t10\\t50\\t\\\\N\\t200\\t\\\\N\\t50\\t\\\\N\\t200\\t\\\\N\\t.*\\t\\\\N\\t0\\t\\\\N\n",
         instance.query("SHOW QUOTA"),
     )
 
     instance.query("SELECT * from test_table")
     assert re.match(
-        "qA\\t\\t.*\\t1800\\t1\\t\\\\N\\t1\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t50\\t\\\\N\\t200\\t\\\\N\\t50\\t\\\\N\\t200\\t\\\\N\\t.*\\t0.5\n"
-        "qA\\t\\t.*\\t39446190\\t2\\t321\\t2\\t\\\\N\\t0\\t\\\\N\\t0\\t10\\t100\\t\\\\N\\t400\\t\\\\N\\t100\\t\\\\N\\t400\\t\\\\N\\t.*\\t\\\\N\n",
+        "qA\\t\\t.*\\t1800\\t1\\t\\\\N\\t1\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t50\\t\\\\N\\t200\\t\\\\N\\t50\\t\\\\N\\t200\\t\\\\N\\t.*\\t0.5\\t0\\t\\\\N\n"
+        "qA\\t\\t.*\\t39446190\\t2\\t321\\t2\\t\\\\N\\t0\\t\\\\N\\t0\\t10\\t100\\t\\\\N\\t400\\t\\\\N\\t100\\t\\\\N\\t400\\t\\\\N\\t.*\\t\\\\N\\t0\\t\\\\N\n",
         instance.query("SHOW QUOTA"),
     )
 
@@ -1503,7 +1518,7 @@ def test_dcl_management():
 
     instance.query("SELECT * from test_table")
     assert re.match(
-        "qA\\t\\t.*\\t42075936\\t1\\t\\\\N\\t1\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t50\\t\\\\N\\t200\\t\\\\N\\t50\\t\\\\N\\t200\\t\\\\N\\t.*\\t\\\\N\n",
+        "qA\\t\\t.*\\t42075936\\t1\\t\\\\N\\t1\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t50\\t\\\\N\\t200\\t\\\\N\\t50\\t\\\\N\\t200\\t\\\\N\\t.*\\t\\\\N\\t0\\t\\\\N\n",
         instance.query("SHOW QUOTA"),
     )
 
@@ -1519,7 +1534,7 @@ def test_dcl_management():
 
     instance.query("SELECT * from test_table")
     assert re.match(
-        "qB\\t\\t.*\\t42075936\\t2\\t\\\\N\\t2\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t100\\t\\\\N\\t400\\t\\\\N\\t100\\t\\\\N\\t400\\t\\\\N\\t.*\\t\\\\N\n",
+        "qB\\t\\t.*\\t42075936\\t2\\t\\\\N\\t2\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t100\\t\\\\N\\t400\\t\\\\N\\t100\\t\\\\N\\t400\\t\\\\N\\t.*\\t\\\\N\\t0\\t\\\\N\n",
         instance.query("SHOW QUOTA"),
     )
 
@@ -1561,6 +1576,7 @@ def test_query_inserts():
                 "\\N",
                 "\\N",
                 1000,
+                "\\N",
                 "\\N",
                 "\\N",
             ]

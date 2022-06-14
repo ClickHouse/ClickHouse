@@ -65,7 +65,7 @@ void MergeTreeIndexhypothesisMergedCondition::addIndex(const MergeTreeIndexPtr &
             assert(!atom.negative);
 
             const auto * func = atom.ast->as<ASTFunction>();
-            if (func && relations.count(func->name))
+            if (func && relations.contains(func->name))
                 compare_hypotheses_data.push_back(atom.ast);
         }
     }

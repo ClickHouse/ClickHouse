@@ -274,9 +274,9 @@ std::string buildTaggedRegex(std::string regexp_str)
     std::vector<std::string> tags;
 
     splitInto<';'>(tags, regexp_str);
-    /* remove empthy elements */
+    /* remove empty elements */
     using namespace std::string_literals;
-    tags.erase(std::remove(tags.begin(), tags.end(), ""s), tags.end());
+    std::erase(tags, ""s);
     if (tags[0].find('=') == tags[0].npos)
     {
         if (tags.size() == 1) /* only name */

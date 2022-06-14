@@ -1,9 +1,9 @@
 ---
-toc_priority: 35
-toc_title: PostgreSQL
+sidebar_position: 40
+sidebar_label: PostgreSQL
 ---
 
-# PostgreSQL {#postgresql}
+# PostgreSQL
 
 Allows to connect to databases on a remote [PostgreSQL](https://www.postgresql.org) server. Supports read and write operations (`SELECT` and `INSERT` queries) to exchange data between ClickHouse and PostgreSQL.
 

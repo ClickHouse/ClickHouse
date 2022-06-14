@@ -26,7 +26,7 @@ namespace ErrorCodes
 {
     extern const int TYPE_MISMATCH;
     extern const int LOGICAL_ERROR;
-    extern const int DUPLICATE_COLUMN;
+    extern const int INCOMPATIBLE_COLUMNS;
 }
 
 size_t getNumberOfDimensions(const IDataType & type)
@@ -107,6 +107,9 @@ DataTypePtr getDataTypeByColumn(const IColumn & column)
     if (WhichDataType(idx).isSimple())
         return DataTypeFactory::instance().get(String(magic_enum::enum_name(idx)));
 
+    if (WhichDataType(idx).isNothing())
+        return std::make_shared<DataTypeNothing>();
+
     if (const auto * column_array = checkAndGetColumn<ColumnArray>(&column))
         return std::make_shared<DataTypeArray>(getDataTypeByColumn(column_array->getData()));
 
@@ -128,48 +131,28 @@ static auto extractVector(const std::vector<Tuple> & vec)
     return res;
 }
 
-void convertObjectsToTuples(NamesAndTypesList & columns_list, Block & block, const NamesAndTypesList & extended_storage_columns)
+void convertObjectsToTuples(Block & block, const NamesAndTypesList & extended_storage_columns)
 {
     std::unordered_map<String, DataTypePtr> storage_columns_map;
     for (const auto & [name, type] : extended_storage_columns)
         storage_columns_map[name] = type;
 
-    for (auto & name_type : columns_list)
+    for (auto & column : block)
     {
-        if (!isObject(name_type.type))
+        if (!isObject(column.type))
             continue;
 
-        auto & column = block.getByName(name_type.name);
-        if (!isObject(column.type))
-            throw Exception(ErrorCodes::TYPE_MISMATCH,
-                "Type for column '{}' mismatch in columns list and in block. In list: {}, in block: {}",
-                name_type.name, name_type.type->getName(), column.type->getName());
-
         const auto & column_object = assert_cast<const ColumnObject &>(*column.column);
-        const auto & subcolumns = column_object.getSubcolumns();
-
         if (!column_object.isFinalized())
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                 "Cannot convert to tuple column '{}' from type {}. Column should be finalized first",
-                name_type.name, name_type.type->getName());
+                column.name, column.type->getName());
 
-        PathsInData tuple_paths;
-        DataTypes tuple_types;
-        Columns tuple_columns;
+        std::tie(column.column, column.type) = unflattenObjectToTuple(column_object);
 
-        for (const auto & entry : subcolumns)
-        {
-            tuple_paths.emplace_back(entry->path);
-            tuple_types.emplace_back(entry->data.getLeastCommonType());
-            tuple_columns.emplace_back(entry->data.getFinalizedColumnPtr());
-        }
-
-        auto it = storage_columns_map.find(name_type.name);
+        auto it = storage_columns_map.find(column.name);
         if (it == storage_columns_map.end())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Column '{}' not found in storage", name_type.name);
-
-        std::tie(column.column, column.type) = unflattenTuple(tuple_paths, tuple_types, tuple_columns);
-        name_type.type = column.type;
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Column '{}' not found in storage", column.name);
 
         /// Check that constructed Tuple type and type in storage are compatible.
         getLeastCommonTypeForObject({column.type, it->second}, true);
@@ -187,6 +170,20 @@ static bool isPrefix(const PathInData::Parts & prefix, const PathInData::Parts &
     return true;
 }
 
+/// Returns true if there exists a prefix with matched names,
+/// but not matched structure (is Nested, number of dimensions).
+static bool hasDifferentStructureInPrefix(const PathInData::Parts & lhs, const PathInData::Parts & rhs)
+{
+    for (size_t i = 0; i < std::min(lhs.size(), rhs.size()); ++i)
+    {
+        if (lhs[i].key != rhs[i].key)
+            return false;
+        else if (lhs[i] != rhs[i])
+            return true;
+    }
+    return false;
+}
+
 void checkObjectHasNoAmbiguosPaths(const PathsInData & paths)
 {
     size_t size = paths.size();
@@ -196,8 +193,14 @@ void checkObjectHasNoAmbiguosPaths(const PathsInData & paths)
         {
             if (isPrefix(paths[i].getParts(), paths[j].getParts())
                 || isPrefix(paths[j].getParts(), paths[i].getParts()))
-                throw Exception(ErrorCodes::DUPLICATE_COLUMN,
+                throw Exception(ErrorCodes::INCOMPATIBLE_COLUMNS,
                     "Data in Object has ambiguous paths: '{}' and '{}'",
+                    paths[i].getPath(), paths[j].getPath());
+
+            if (hasDifferentStructureInPrefix(paths[i].getParts(), paths[j].getParts()))
+                throw Exception(ErrorCodes::INCOMPATIBLE_COLUMNS,
+                    "Data in Object has ambiguous paths: '{}' and '{}'. "
+                    "Paths have prefixes matched by names, but different in structure",
                     paths[i].getPath(), paths[j].getPath());
         }
     }
@@ -452,7 +455,7 @@ ColumnWithTypeAndDimensions createTypeFromNode(const Node * node)
         }
 
         /// Sort to always create the same type for the same set of subcolumns.
-        std::sort(tuple_elements.begin(), tuple_elements.end(),
+        ::sort(tuple_elements.begin(), tuple_elements.end(),
             [](const auto & lhs, const auto & rhs) { return std::get<0>(lhs) < std::get<0>(rhs); });
 
         auto tuple_names = extractVector<0>(tuple_elements);
@@ -569,6 +572,28 @@ DataTypePtr unflattenTuple(const PathsInData & paths, const DataTypes & tuple_ty
     return unflattenTuple(paths, tuple_types, tuple_columns).second;
 }
 
+std::pair<ColumnPtr, DataTypePtr> unflattenObjectToTuple(const ColumnObject & column)
+{
+    const auto & subcolumns = column.getSubcolumns();
+
+    PathsInData paths;
+    DataTypes types;
+    Columns columns;
+
+    paths.reserve(subcolumns.size());
+    types.reserve(subcolumns.size());
+    columns.reserve(subcolumns.size());
+
+    for (const auto & entry : subcolumns)
+    {
+        paths.emplace_back(entry->path);
+        types.emplace_back(entry->data.getLeastCommonType());
+        columns.emplace_back(entry->data.getFinalizedColumnPtr());
+    }
+
+    return unflattenTuple(paths, types, columns);
+}
+
 std::pair<ColumnPtr, DataTypePtr> unflattenTuple(
     const PathsInData & paths,
     const DataTypes & tuple_types,
@@ -667,7 +692,7 @@ void replaceMissedSubcolumnsByConstants(
                 res.emplace_back(full_name, types[i]);
             }
 
-            std::sort(res.begin(), res.end());
+            ::sort(res.begin(), res.end());
             return res;
         };
 
@@ -689,15 +714,37 @@ void replaceMissedSubcolumnsByConstants(
 
     /// Replace missed subcolumns to default literals of theirs type.
     for (const auto & [name, type] : missed_names_types)
-        if (identifiers.count(name))
+        if (identifiers.contains(name))
             addConstantToWithClause(query, name, type);
 }
 
-void finalizeObjectColumns(MutableColumns & columns)
+void finalizeObjectColumns(const MutableColumns & columns)
 {
-    for (auto & column : columns)
+    for (const auto & column : columns)
         if (auto * column_object = typeid_cast<ColumnObject *>(column.get()))
             column_object->finalize();
+}
+
+Field FieldVisitorReplaceScalars::operator()(const Array & x) const
+{
+    if (num_dimensions_to_keep == 0)
+        return replacement;
+
+    const size_t size = x.size();
+    Array res(size);
+    for (size_t i = 0; i < size; ++i)
+        res[i] = applyVisitor(FieldVisitorReplaceScalars(replacement, num_dimensions_to_keep - 1), x[i]);
+    return res;
+}
+
+size_t FieldVisitorToNumberOfDimensions::operator()(const Array & x) const
+{
+    const size_t size = x.size();
+    size_t dimensions = 0;
+    for (size_t i = 0; i < size; ++i)
+        dimensions = std::max(dimensions, applyVisitor(*this, x[i]));
+
+    return 1 + dimensions;
 }
 
 }

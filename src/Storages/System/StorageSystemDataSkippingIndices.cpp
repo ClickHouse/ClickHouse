@@ -8,7 +8,8 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Parsers/queryToString.h>
-#include <Processors/Sources/SourceWithProgress.h>
+#include <Processors/ISource.h>
+#include <QueryPipeline/Pipe.h>
 
 
 namespace DB
@@ -32,7 +33,7 @@ StorageSystemDataSkippingIndices::StorageSystemDataSkippingIndices(const Storage
     setInMemoryMetadata(storage_metadata);
 }
 
-class DataSkippingIndicesSource : public SourceWithProgress
+class DataSkippingIndicesSource : public ISource
 {
 public:
     DataSkippingIndicesSource(
@@ -41,7 +42,7 @@ public:
         UInt64 max_block_size_,
         ColumnPtr databases_,
         ContextPtr context_)
-        : SourceWithProgress(header)
+        : ISource(header)
         , column_mask(std::move(columns_mask_))
         , max_block_size(max_block_size_)
         , databases(std::move(databases_))
@@ -182,7 +183,7 @@ Pipe StorageSystemDataSkippingIndices::read(
     std::vector<UInt8> columns_mask(sample_block.columns());
     for (size_t i = 0, size = columns_mask.size(); i < size; ++i)
     {
-        if (names_set.count(sample_block.getByPosition(i).name))
+        if (names_set.contains(sample_block.getByPosition(i).name))
         {
             columns_mask[i] = 1;
             header.insert(sample_block.getByPosition(i));

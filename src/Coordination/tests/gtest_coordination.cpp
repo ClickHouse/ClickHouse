@@ -18,12 +18,13 @@
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperIO.h>
 #include <Common/Exception.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <libnuraft/nuraft.hxx>
 #include <thread>
 #include <Coordination/KeeperLogStore.h>
 #include <Coordination/Changelog.h>
 #include <filesystem>
+#include <Common/SipHash.h>
 
 #include <Coordination/SnapshotableHashTable.h>
 
@@ -138,8 +139,7 @@ struct SimpliestRaftServer
                 std::cout << " done" << std::endl;
                 break;
             }
-            std::cout << ".";
-            fflush(stdout);
+            std::cout << "." << std::flush;
             std::this_thread::sleep_for(std::chrono::milliseconds(100));
         }
     }
@@ -407,7 +407,7 @@ TEST_P(CoordinationTest, ChangelogTestCompaction)
     EXPECT_TRUE(fs::exists("./logs/changelog_6_10.bin" + params.extension));
 
     changelog.compact(6);
-    std::this_thread::sleep_for(std::chrono::microseconds(200));
+    std::this_thread::sleep_for(std::chrono::microseconds(1000));
 
     EXPECT_FALSE(fs::exists("./logs/changelog_1_5.bin" + params.extension));
     EXPECT_TRUE(fs::exists("./logs/changelog_6_10.bin" + params.extension));
@@ -698,13 +698,32 @@ TEST_P(CoordinationTest, ChangelogTestStartNewLogAfterRead)
     EXPECT_TRUE(fs::exists("./logs/changelog_36_40.bin" + params.extension));
 }
 
+namespace
+{
+void assertBrokenLogRemoved(const fs::path & log_folder, const fs::path & filename)
+{
+        EXPECT_FALSE(fs::exists(log_folder / filename));
+        // broken logs are sent to the detached/{timestamp} folder
+        // we don't know timestamp so we iterate all of them
+        for (const auto & dir_entry : fs::recursive_directory_iterator(log_folder / "detached"))
+        {
+            if (dir_entry.path().filename() == filename)
+                return;
+        }
+
+        FAIL() << "Broken log " << filename << " was not moved to the detached folder";
+}
+
+}
 
 TEST_P(CoordinationTest, ChangelogTestReadAfterBrokenTruncate)
 {
-    auto params = GetParam();
-    ChangelogDirTest test("./logs");
+    static const fs::path log_folder{"./logs"};
 
-    DB::KeeperLogStore changelog("./logs", 5, true, params.enable_compression);
+    auto params = GetParam();
+    ChangelogDirTest test(log_folder);
+
+    DB::KeeperLogStore changelog(log_folder, 5, true, params.enable_compression);
     changelog.init(1, 0);
 
     for (size_t i = 0; i < 35; ++i)
@@ -736,10 +755,10 @@ TEST_P(CoordinationTest, ChangelogTestReadAfterBrokenTruncate)
     EXPECT_TRUE(fs::exists("./logs/changelog_6_10.bin" + params.extension));
     EXPECT_TRUE(fs::exists("./logs/changelog_11_15.bin" + params.extension));
 
-    EXPECT_FALSE(fs::exists("./logs/changelog_16_20.bin" + params.extension));
-    EXPECT_FALSE(fs::exists("./logs/changelog_21_25.bin" + params.extension));
-    EXPECT_FALSE(fs::exists("./logs/changelog_26_30.bin" + params.extension));
-    EXPECT_FALSE(fs::exists("./logs/changelog_31_35.bin" + params.extension));
+    assertBrokenLogRemoved(log_folder, "changelog_16_20.bin" + params.extension);
+    assertBrokenLogRemoved(log_folder, "changelog_21_25.bin" + params.extension);
+    assertBrokenLogRemoved(log_folder, "changelog_26_30.bin" + params.extension);
+    assertBrokenLogRemoved(log_folder, "changelog_31_35.bin" + params.extension);
 
     auto entry = getLogEntry("h", 7777);
     changelog_reader.append(entry);
@@ -751,10 +770,10 @@ TEST_P(CoordinationTest, ChangelogTestReadAfterBrokenTruncate)
     EXPECT_TRUE(fs::exists("./logs/changelog_6_10.bin" + params.extension));
     EXPECT_TRUE(fs::exists("./logs/changelog_11_15.bin" + params.extension));
 
-    EXPECT_FALSE(fs::exists("./logs/changelog_16_20.bin" + params.extension));
-    EXPECT_FALSE(fs::exists("./logs/changelog_21_25.bin" + params.extension));
-    EXPECT_FALSE(fs::exists("./logs/changelog_26_30.bin" + params.extension));
-    EXPECT_FALSE(fs::exists("./logs/changelog_31_35.bin" + params.extension));
+    assertBrokenLogRemoved(log_folder, "changelog_16_20.bin" + params.extension);
+    assertBrokenLogRemoved(log_folder, "changelog_21_25.bin" + params.extension);
+    assertBrokenLogRemoved(log_folder, "changelog_26_30.bin" + params.extension);
+    assertBrokenLogRemoved(log_folder, "changelog_31_35.bin" + params.extension);
 
     DB::KeeperLogStore changelog_reader2("./logs", 5, true, params.enable_compression);
     changelog_reader2.init(1, 0);
@@ -788,13 +807,12 @@ TEST_P(CoordinationTest, ChangelogTestReadAfterBrokenTruncate2)
 
     EXPECT_EQ(changelog_reader.size(), 0);
     EXPECT_TRUE(fs::exists("./logs/changelog_1_20.bin" + params.extension));
-    EXPECT_FALSE(fs::exists("./logs/changelog_21_40.bin" + params.extension));
+    assertBrokenLogRemoved("./logs", "changelog_21_40.bin" + params.extension);
     auto entry = getLogEntry("hello_world", 7777);
     changelog_reader.append(entry);
     changelog_reader.end_of_append_batch(0, 0);
     EXPECT_EQ(changelog_reader.size(), 1);
     EXPECT_EQ(changelog_reader.last_entry()->get_term(), 7777);
-
 
     DB::KeeperLogStore changelog_reader2("./logs", 1, true, params.enable_compression);
     changelog_reader2.init(1, 0);
@@ -825,10 +843,40 @@ TEST_P(CoordinationTest, ChangelogTestLostFiles)
     DB::KeeperLogStore changelog_reader("./logs", 20, true, params.enable_compression);
     /// It should print error message, but still able to start
     changelog_reader.init(5, 0);
-    EXPECT_FALSE(fs::exists("./logs/changelog_1_20.bin" + params.extension));
-    EXPECT_FALSE(fs::exists("./logs/changelog_21_40.bin" + params.extension));
+    assertBrokenLogRemoved("./logs", "changelog_21_40.bin" + params.extension);
 }
 
+TEST_P(CoordinationTest, ChangelogTestLostFiles2)
+{
+    auto params = GetParam();
+    ChangelogDirTest test("./logs");
+
+    DB::KeeperLogStore changelog("./logs", 10, true, params.enable_compression);
+    changelog.init(1, 0);
+
+    for (size_t i = 0; i < 35; ++i)
+    {
+        auto entry = getLogEntry(std::to_string(i) + "_hello_world", (i + 44) * 10);
+        changelog.append(entry);
+    }
+    changelog.end_of_append_batch(0, 0);
+
+    EXPECT_TRUE(fs::exists("./logs/changelog_1_10.bin" + params.extension));
+    EXPECT_TRUE(fs::exists("./logs/changelog_11_20.bin" + params.extension));
+    EXPECT_TRUE(fs::exists("./logs/changelog_21_30.bin" + params.extension));
+    EXPECT_TRUE(fs::exists("./logs/changelog_31_40.bin" + params.extension));
+
+    // we have a gap in our logs, we need to remove all the logs after the gap
+    fs::remove("./logs/changelog_21_30.bin" + params.extension);
+
+    DB::KeeperLogStore changelog_reader("./logs", 10, true, params.enable_compression);
+    /// It should print error message, but still able to start
+    changelog_reader.init(5, 0);
+    EXPECT_TRUE(fs::exists("./logs/changelog_1_10.bin" + params.extension));
+    EXPECT_TRUE(fs::exists("./logs/changelog_11_20.bin" + params.extension));
+
+    assertBrokenLogRemoved("./logs", "changelog_31_40.bin" + params.extension);
+}
 struct IntNode
 {
     int value;
@@ -946,6 +994,8 @@ TEST_P(CoordinationTest, SnapshotableHashMapDataSize)
     EXPECT_EQ(hello.getApproximateDataSize(), 9);
     hello.updateValue("hello", [](IntNode & value) { value = 2; });
     EXPECT_EQ(hello.getApproximateDataSize(), 9);
+    hello.insertOrReplace("hello", 3);
+    EXPECT_EQ(hello.getApproximateDataSize(), 9);
 
     hello.erase("hello");
     EXPECT_EQ(hello.getApproximateDataSize(), 0);
@@ -958,6 +1008,8 @@ TEST_P(CoordinationTest, SnapshotableHashMapDataSize)
     EXPECT_EQ(hello.getApproximateDataSize(), 9);
     hello.updateValue("hello", [](IntNode & value) { value = 2; });
     EXPECT_EQ(hello.getApproximateDataSize(), 18);
+    hello.insertOrReplace("hello", 1);
+    EXPECT_EQ(hello.getApproximateDataSize(), 27);
 
     hello.clearOutdatedNodes();
     EXPECT_EQ(hello.getApproximateDataSize(), 9);
@@ -972,31 +1024,31 @@ TEST_P(CoordinationTest, SnapshotableHashMapDataSize)
     using Node = DB::KeeperStorage::Node;
     DB::SnapshotableHashTable<Node> world;
     Node n1;
-    n1.data = "1234";
+    n1.setData("1234");
     Node n2;
-    n2.data = "123456";
-    n2.children.insert("");
+    n2.setData("123456");
+    n2.addChild("");
 
     world.disableSnapshotMode();
     world.insert("world", n1);
-    EXPECT_EQ(world.getApproximateDataSize(), 98);
+    EXPECT_EQ(world.getApproximateDataSize(), 177);
     world.updateValue("world", [&](Node & value) { value = n2; });
-    EXPECT_EQ(world.getApproximateDataSize(), 98);
+    EXPECT_EQ(world.getApproximateDataSize(), 195);
 
     world.erase("world");
     EXPECT_EQ(world.getApproximateDataSize(), 0);
 
     world.enableSnapshotMode(100000);
     world.insert("world", n1);
-    EXPECT_EQ(world.getApproximateDataSize(), 98);
+    EXPECT_EQ(world.getApproximateDataSize(), 177);
     world.updateValue("world", [&](Node & value) { value = n2; });
-    EXPECT_EQ(world.getApproximateDataSize(), 196);
+    EXPECT_EQ(world.getApproximateDataSize(), 372);
 
     world.clearOutdatedNodes();
-    EXPECT_EQ(world.getApproximateDataSize(), 98);
+    EXPECT_EQ(world.getApproximateDataSize(), 195);
 
     world.erase("world");
-    EXPECT_EQ(world.getApproximateDataSize(), 98);
+    EXPECT_EQ(world.getApproximateDataSize(), 195);
 
     world.clear();
     EXPECT_EQ(world.getApproximateDataSize(), 0);
@@ -1006,7 +1058,7 @@ void addNode(DB::KeeperStorage & storage, const std::string & path, const std::s
 {
     using Node = DB::KeeperStorage::Node;
     Node node{};
-    node.data = data;
+    node.setData(data);
     node.stat.ephemeralOwner = ephemeral_owner;
     storage.container.insertOrReplace(path, node);
 }
@@ -1044,13 +1096,13 @@ TEST_P(CoordinationTest, TestStorageSnapshotSimple)
     auto [restored_storage, snapshot_meta, _] = manager.deserializeSnapshotFromBuffer(debuf);
 
     EXPECT_EQ(restored_storage->container.size(), 3);
-    EXPECT_EQ(restored_storage->container.getValue("/").children.size(), 1);
-    EXPECT_EQ(restored_storage->container.getValue("/hello").children.size(), 1);
-    EXPECT_EQ(restored_storage->container.getValue("/hello/somepath").children.size(), 0);
+    EXPECT_EQ(restored_storage->container.getValue("/").getChildren().size(), 1);
+    EXPECT_EQ(restored_storage->container.getValue("/hello").getChildren().size(), 1);
+    EXPECT_EQ(restored_storage->container.getValue("/hello/somepath").getChildren().size(), 0);
 
-    EXPECT_EQ(restored_storage->container.getValue("/").data, "");
-    EXPECT_EQ(restored_storage->container.getValue("/hello").data, "world");
-    EXPECT_EQ(restored_storage->container.getValue("/hello/somepath").data, "somedata");
+    EXPECT_EQ(restored_storage->container.getValue("/").getData(), "");
+    EXPECT_EQ(restored_storage->container.getValue("/hello").getData(), "world");
+    EXPECT_EQ(restored_storage->container.getValue("/hello/somepath").getData(), "somedata");
     EXPECT_EQ(restored_storage->session_id_counter, 7);
     EXPECT_EQ(restored_storage->zxid, 2);
     EXPECT_EQ(restored_storage->ephemerals.size(), 2);
@@ -1095,7 +1147,7 @@ TEST_P(CoordinationTest, TestStorageSnapshotMoreWrites)
     EXPECT_EQ(restored_storage->container.size(), 51);
     for (size_t i = 0; i < 50; ++i)
     {
-        EXPECT_EQ(restored_storage->container.getValue("/hello_" + std::to_string(i)).data, "world_" + std::to_string(i));
+        EXPECT_EQ(restored_storage->container.getValue("/hello_" + std::to_string(i)).getData(), "world_" + std::to_string(i));
     }
 }
 
@@ -1135,7 +1187,7 @@ TEST_P(CoordinationTest, TestStorageSnapshotManySnapshots)
 
     for (size_t i = 0; i < 250; ++i)
     {
-        EXPECT_EQ(restored_storage->container.getValue("/hello_" + std::to_string(i)).data, "world_" + std::to_string(i));
+        EXPECT_EQ(restored_storage->container.getValue("/hello_" + std::to_string(i)).getData(), "world_" + std::to_string(i));
     }
 }
 
@@ -1158,7 +1210,7 @@ TEST_P(CoordinationTest, TestStorageSnapshotMode)
         }
         for (size_t i = 0; i < 50; ++i)
         {
-            EXPECT_EQ(storage.container.getValue("/hello_" + std::to_string(i)).data, "wlrd_" + std::to_string(i));
+            EXPECT_EQ(storage.container.getValue("/hello_" + std::to_string(i)).getData(), "wlrd_" + std::to_string(i));
         }
         for (size_t i = 0; i < 50; ++i)
         {
@@ -1178,7 +1230,7 @@ TEST_P(CoordinationTest, TestStorageSnapshotMode)
     for (size_t i = 0; i < 50; ++i)
     {
         if (i % 2 != 0)
-            EXPECT_EQ(storage.container.getValue("/hello_" + std::to_string(i)).data, "wlrd_" + std::to_string(i));
+            EXPECT_EQ(storage.container.getValue("/hello_" + std::to_string(i)).getData(), "wlrd_" + std::to_string(i));
         else
             EXPECT_FALSE(storage.container.contains("/hello_" + std::to_string(i)));
     }
@@ -1187,7 +1239,7 @@ TEST_P(CoordinationTest, TestStorageSnapshotMode)
 
     for (size_t i = 0; i < 50; ++i)
     {
-        EXPECT_EQ(restored_storage->container.getValue("/hello_" + std::to_string(i)).data, "world_" + std::to_string(i));
+        EXPECT_EQ(restored_storage->container.getValue("/hello_" + std::to_string(i)).getData(), "world_" + std::to_string(i));
     }
 
 }
@@ -1310,7 +1362,7 @@ void testLogAndStateMachine(Coordination::CoordinationSettingsPtr settings, uint
     for (size_t i = 1; i < total_logs + 1; ++i)
     {
         auto path = "/hello_" + std::to_string(i);
-        EXPECT_EQ(source_storage.container.getValue(path).data, restored_storage.container.getValue(path).data);
+        EXPECT_EQ(source_storage.container.getValue(path).getData(), restored_storage.container.getValue(path).getData());
     }
 }
 
@@ -1465,7 +1517,7 @@ TEST_P(CoordinationTest, TestRotateIntervalChanges)
     }
 
     changelog_2.compact(105);
-    std::this_thread::sleep_for(std::chrono::microseconds(200));
+    std::this_thread::sleep_for(std::chrono::microseconds(1000));
 
     EXPECT_FALSE(fs::exists("./logs/changelog_1_100.bin" + params.extension));
     EXPECT_TRUE(fs::exists("./logs/changelog_101_110.bin" + params.extension));
@@ -1485,7 +1537,7 @@ TEST_P(CoordinationTest, TestRotateIntervalChanges)
     }
 
     changelog_3.compact(125);
-    std::this_thread::sleep_for(std::chrono::microseconds(200));
+    std::this_thread::sleep_for(std::chrono::microseconds(1000));
     EXPECT_FALSE(fs::exists("./logs/changelog_101_110.bin" + params.extension));
     EXPECT_FALSE(fs::exists("./logs/changelog_111_117.bin" + params.extension));
     EXPECT_FALSE(fs::exists("./logs/changelog_118_124.bin" + params.extension));
@@ -1585,19 +1637,164 @@ TEST_P(CoordinationTest, TestStorageSnapshotDifferentCompressions)
     auto [restored_storage, snapshot_meta, _] = new_manager.deserializeSnapshotFromBuffer(debuf);
 
     EXPECT_EQ(restored_storage->container.size(), 3);
-    EXPECT_EQ(restored_storage->container.getValue("/").children.size(), 1);
-    EXPECT_EQ(restored_storage->container.getValue("/hello").children.size(), 1);
-    EXPECT_EQ(restored_storage->container.getValue("/hello/somepath").children.size(), 0);
+    EXPECT_EQ(restored_storage->container.getValue("/").getChildren().size(), 1);
+    EXPECT_EQ(restored_storage->container.getValue("/hello").getChildren().size(), 1);
+    EXPECT_EQ(restored_storage->container.getValue("/hello/somepath").getChildren().size(), 0);
 
-    EXPECT_EQ(restored_storage->container.getValue("/").data, "");
-    EXPECT_EQ(restored_storage->container.getValue("/hello").data, "world");
-    EXPECT_EQ(restored_storage->container.getValue("/hello/somepath").data, "somedata");
+    EXPECT_EQ(restored_storage->container.getValue("/").getData(), "");
+    EXPECT_EQ(restored_storage->container.getValue("/hello").getData(), "world");
+    EXPECT_EQ(restored_storage->container.getValue("/hello/somepath").getData(), "somedata");
     EXPECT_EQ(restored_storage->session_id_counter, 7);
     EXPECT_EQ(restored_storage->zxid, 2);
     EXPECT_EQ(restored_storage->ephemerals.size(), 2);
     EXPECT_EQ(restored_storage->ephemerals[3].size(), 1);
     EXPECT_EQ(restored_storage->ephemerals[1].size(), 1);
     EXPECT_EQ(restored_storage->session_and_timeout.size(), 2);
+}
+
+TEST_P(CoordinationTest, ChangelogInsertThreeTimesSmooth)
+{
+    auto params = GetParam();
+    ChangelogDirTest test("./logs");
+    {
+        std::cerr << "================First time=====================\n";
+        DB::KeeperLogStore changelog("./logs", 100, true, params.enable_compression);
+        changelog.init(1, 0);
+        auto entry = getLogEntry("hello_world", 1000);
+        changelog.append(entry);
+        changelog.end_of_append_batch(0, 0);
+        EXPECT_EQ(changelog.next_slot(), 2);
+    }
+
+    {
+        std::cerr << "================Second time=====================\n";
+        DB::KeeperLogStore changelog("./logs", 100, true, params.enable_compression);
+        changelog.init(1, 0);
+        auto entry = getLogEntry("hello_world", 1000);
+        changelog.append(entry);
+        changelog.end_of_append_batch(0, 0);
+        EXPECT_EQ(changelog.next_slot(), 3);
+    }
+
+    {
+        std::cerr << "================Third time=====================\n";
+        DB::KeeperLogStore changelog("./logs", 100, true, params.enable_compression);
+        changelog.init(1, 0);
+        auto entry = getLogEntry("hello_world", 1000);
+        changelog.append(entry);
+        changelog.end_of_append_batch(0, 0);
+        EXPECT_EQ(changelog.next_slot(), 4);
+    }
+
+    {
+        std::cerr << "================Fourth time=====================\n";
+        DB::KeeperLogStore changelog("./logs", 100, true, params.enable_compression);
+        changelog.init(1, 0);
+        auto entry = getLogEntry("hello_world", 1000);
+        changelog.append(entry);
+        changelog.end_of_append_batch(0, 0);
+        EXPECT_EQ(changelog.next_slot(), 5);
+    }
+}
+
+
+TEST_P(CoordinationTest, ChangelogInsertMultipleTimesSmooth)
+{
+    auto params = GetParam();
+    ChangelogDirTest test("./logs");
+    for (size_t i = 0; i < 36; ++i)
+    {
+        std::cerr << "================First time=====================\n";
+        DB::KeeperLogStore changelog("./logs", 100, true, params.enable_compression);
+        changelog.init(1, 0);
+        for (size_t j = 0; j < 7; ++j)
+        {
+            auto entry = getLogEntry("hello_world", 7);
+            changelog.append(entry);
+        }
+        changelog.end_of_append_batch(0, 0);
+    }
+
+    DB::KeeperLogStore changelog("./logs", 100, true, params.enable_compression);
+    changelog.init(1, 0);
+    EXPECT_EQ(changelog.next_slot(), 36 * 7 + 1);
+}
+
+TEST_P(CoordinationTest, ChangelogInsertThreeTimesHard)
+{
+    auto params = GetParam();
+    ChangelogDirTest test("./logs");
+    std::cerr << "================First time=====================\n";
+    DB::KeeperLogStore changelog1("./logs", 100, true, params.enable_compression);
+    changelog1.init(1, 0);
+    auto entry = getLogEntry("hello_world", 1000);
+    changelog1.append(entry);
+    changelog1.end_of_append_batch(0, 0);
+    EXPECT_EQ(changelog1.next_slot(), 2);
+
+    std::cerr << "================Second time=====================\n";
+    DB::KeeperLogStore changelog2("./logs", 100, true, params.enable_compression);
+    changelog2.init(1, 0);
+    entry = getLogEntry("hello_world", 1000);
+    changelog2.append(entry);
+    changelog2.end_of_append_batch(0, 0);
+    EXPECT_EQ(changelog2.next_slot(), 3);
+
+    std::cerr << "================Third time=====================\n";
+    DB::KeeperLogStore changelog3("./logs", 100, true, params.enable_compression);
+    changelog3.init(1, 0);
+    entry = getLogEntry("hello_world", 1000);
+    changelog3.append(entry);
+    changelog3.end_of_append_batch(0, 0);
+    EXPECT_EQ(changelog3.next_slot(), 4);
+
+    std::cerr << "================Fourth time=====================\n";
+    DB::KeeperLogStore changelog4("./logs", 100, true, params.enable_compression);
+    changelog4.init(1, 0);
+    entry = getLogEntry("hello_world", 1000);
+    changelog4.append(entry);
+    changelog4.end_of_append_batch(0, 0);
+    EXPECT_EQ(changelog4.next_slot(), 5);
+}
+
+TEST_P(CoordinationTest, TestStorageSnapshotEqual)
+{
+    auto params = GetParam();
+    ChangelogDirTest test("./snapshots");
+    std::optional<UInt128> snapshot_hash;
+    for (size_t i = 0; i < 15; ++i)
+    {
+        DB::KeeperSnapshotManager manager("./snapshots", 3, params.enable_compression);
+
+        DB::KeeperStorage storage(500, "");
+        for (size_t j = 0; j < 5000; ++j)
+        {
+            addNode(storage, "/hello_" + std::to_string(j), "world", 1);
+            addNode(storage, "/hello/somepath_" + std::to_string(j), "somedata", 3);
+        }
+
+        storage.session_id_counter = 5;
+
+        storage.ephemerals[3] = {"/hello"};
+        storage.ephemerals[1] = {"/hello/somepath"};
+
+        for (size_t j = 0; j < 3333; ++j)
+            storage.getSessionID(130 * j);
+
+        DB::KeeperStorageSnapshot snapshot(&storage, storage.zxid);
+
+        auto buf = manager.serializeSnapshotToBuffer(snapshot);
+
+        auto new_hash = sipHash128(reinterpret_cast<char *>(buf->data()), buf->size());
+        if (!snapshot_hash.has_value())
+        {
+            snapshot_hash = new_hash;
+        }
+        else
+        {
+            EXPECT_EQ(*snapshot_hash, new_hash);
+        }
+    }
 }
 
 

@@ -31,6 +31,8 @@ struct SelectQueryOptions
     bool only_analyze = false;
     bool modify_inplace = false;
     bool remove_duplicates = false;
+    /// This is required for UNION to match headers correctly.
+    bool reorder_columns_as_required_header = false;
     bool ignore_quota = false;
     bool ignore_limits = false;
     /// This flag is needed to analyze query ignoring table projections.
@@ -49,6 +51,7 @@ struct SelectQueryOptions
     bool is_subquery = false; // non-subquery can also have subquery_depth > 0, e.g. insert select
     bool with_all_cols = false; /// asterisk include materialized and aliased columns
     bool settings_limit_offset_done = false;
+    bool is_explain = false; /// The value is true if it's explain statement.
 
     /// These two fields are used to evaluate shardNum() and shardCount() function when
     /// prefer_localhost_replica == 1 and local instance is selected. They are needed because local
@@ -96,6 +99,12 @@ struct SelectQueryOptions
         return *this;
     }
 
+    SelectQueryOptions & reorderColumns(bool value = true)
+    {
+        reorder_columns_as_required_header = value;
+        return *this;
+    }
+
     SelectQueryOptions & noSubquery()
     {
         subquery_depth = 0;
@@ -126,7 +135,7 @@ struct SelectQueryOptions
         return *this;
     }
 
-    SelectQueryOptions & ignoreASTOptimizationsAlias(bool value = true)
+    SelectQueryOptions & ignoreASTOptimizations(bool value = true)
     {
         ignore_ast_optimizations = value;
         return *this;
@@ -148,6 +157,12 @@ struct SelectQueryOptions
     {
         shard_num = shard_num_;
         shard_count = shard_count_;
+        return *this;
+    }
+
+    SelectQueryOptions & setExplain(bool value = true)
+    {
+        is_explain = value;
         return *this;
     }
 };

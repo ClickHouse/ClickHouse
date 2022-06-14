@@ -1,11 +1,11 @@
 ---
-toc_priority: 43
-toc_title: Files
+sidebar_position: 43
+sidebar_label: Files
 ---
 
-# Functions for Working with Files {#functions-for-working-with-files}
+# Functions for Working with Files
 
-## file {#file}
+## file
 
 Reads file as a String. The file content is not parsed, so any information is read as one string and placed into the specified column.
 

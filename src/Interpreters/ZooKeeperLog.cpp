@@ -116,6 +116,8 @@ NamesAndTypesList ZooKeeperLogElement::getNamesAndTypes()
         {"type", std::move(type_enum)},
         {"event_date", std::make_shared<DataTypeDate>()},
         {"event_time", std::make_shared<DataTypeDateTime64>(6)},
+        {"thread_id", std::make_shared<DataTypeUInt64>()},
+        {"query_id", std::make_shared<DataTypeString>()},
         {"address", DataTypeFactory::instance().get("IPv6")},
         {"port", std::make_shared<DataTypeUInt16>()},
         {"session_id", std::make_shared<DataTypeInt64>()},
@@ -164,6 +166,8 @@ void ZooKeeperLogElement::appendToBlock(MutableColumns & columns) const
     auto event_time_seconds = event_time / 1000000;
     columns[i++]->insert(DateLUT::instance().toDayNum(event_time_seconds).toUnderType());
     columns[i++]->insert(event_time);
+    columns[i++]->insert(thread_id);
+    columns[i++]->insert(query_id);
     columns[i++]->insertData(IPv6ToBinary(address.host()).data(), 16);
     columns[i++]->insert(address.port());
     columns[i++]->insert(session_id);
@@ -205,4 +209,4 @@ void ZooKeeperLogElement::appendToBlock(MutableColumns & columns) const
     columns[i++]->insert(children_array);
 }
 
-};
+}

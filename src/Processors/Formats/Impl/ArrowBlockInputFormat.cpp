@@ -3,6 +3,7 @@
 #if USE_ARROW
 
 #include <Formats/FormatFactory.h>
+#include <Formats/ReadSchemaUtils.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/WriteHelpers.h>
 #include <IO/copyData.h>
@@ -75,9 +76,8 @@ Chunk ArrowBlockInputFormat::generate()
     /// If defaults_for_omitted_fields is true, calculate the default values from default expression for omitted fields.
     /// Otherwise fill the missing columns with zero values of its type.
     if (format_settings.defaults_for_omitted_fields)
-        for (size_t row_idx = 0; row_idx < res.getNumRows(); ++row_idx)
-            for (const auto & column_idx : missing_columns)
-                block_missing_values.setBit(column_idx, row_idx);
+        for (const auto & column_idx : missing_columns)
+            block_missing_values.setBits(column_idx, res.getNumRows());
 
     return res;
 }
@@ -110,7 +110,7 @@ static std::shared_ptr<arrow::RecordBatchReader> createStreamReader(ReadBuffer &
 
 static std::shared_ptr<arrow::ipc::RecordBatchFileReader> createFileReader(ReadBuffer & in, const FormatSettings & format_settings, std::atomic<int> & is_stopped)
 {
-    auto arrow_file = asArrowFile(in, format_settings, is_stopped);
+    auto arrow_file = asArrowFile(in, format_settings, is_stopped, "Arrow", ARROW_MAGIC_BYTES);
     if (is_stopped)
         return nullptr;
 
@@ -171,8 +171,9 @@ NamesAndTypesList ArrowSchemaReader::readSchema()
         schema = createFileReader(in, format_settings, is_stopped)->schema();
     }
 
-    auto header = ArrowColumnToCHColumn::arrowSchemaToCHHeader(*schema, stream ? "ArrowStream" : "Arrow");
-    return header.getNamesAndTypesList();
+    auto header = ArrowColumnToCHColumn::arrowSchemaToCHHeader(
+        *schema, stream ? "ArrowStream" : "Arrow", format_settings.arrow.skip_columns_with_unsupported_types_in_schema_inference);
+    return getNamesAndRecursivelyNullableTypes(header);
 }
 
 void registerInputFormatArrow(FormatFactory & factory)
@@ -186,7 +187,7 @@ void registerInputFormatArrow(FormatFactory & factory)
         {
             return std::make_shared<ArrowBlockInputFormat>(buf, sample, false, format_settings);
         });
-    factory.markFormatAsColumnOriented("Arrow");
+    factory.markFormatSupportsSubsetOfColumns("Arrow");
     factory.registerInputFormat(
         "ArrowStream",
         [](ReadBuffer & buf,
@@ -202,13 +203,13 @@ void registerArrowSchemaReader(FormatFactory & factory)
 {
     factory.registerSchemaReader(
         "Arrow",
-        [](ReadBuffer & buf, const FormatSettings & settings, ContextPtr)
+        [](ReadBuffer & buf, const FormatSettings & settings)
         {
             return std::make_shared<ArrowSchemaReader>(buf, false, settings);
         });
     factory.registerSchemaReader(
         "ArrowStream",
-        [](ReadBuffer & buf, const FormatSettings & settings, ContextPtr)
+        [](ReadBuffer & buf, const FormatSettings & settings)
         {
             return std::make_shared<ArrowSchemaReader>(buf, true, settings);
         });}

@@ -1,9 +1,9 @@
 ---
-toc_priority: 36
-toc_title: CollapsingMergeTree
+sidebar_position: 70
+sidebar_label: CollapsingMergeTree
 ---
 
-# CollapsingMergeTree {#table_engine-collapsingmergetree}
+# CollapsingMergeTree
 
 The engine inherits from [MergeTree](../../../engines/table-engines/mergetree-family/mergetree.md) and adds the logic of rows collapsing to data parts merge algorithm.
 
@@ -42,8 +42,9 @@ When creating a `CollapsingMergeTree` table, the same [query clauses](../../../e
 
 <summary>Deprecated Method for Creating a Table</summary>
 
-!!! attention "Attention"
-    Do not use this method in new projects and, if possible, switch the old projects to the method described above.
+:::warning
+Do not use this method in new projects and, if possible, switch old projects to the method described above.
+:::
 
 ``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]

@@ -1,7 +1,6 @@
 ---
-toc_folder_title: "Агрегатные функции"
-toc_priority: 33
-toc_title: "Введение"
+sidebar_label: "Агрегатные функции"
+sidebar_position: 33
 ---
 
 # Агрегатные функции {#aggregate-functions}

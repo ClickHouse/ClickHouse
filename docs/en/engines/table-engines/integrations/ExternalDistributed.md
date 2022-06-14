@@ -1,9 +1,9 @@
 ---
-toc_priority: 12
-toc_title: ExternalDistributed
+sidebar_position: 12
+sidebar_label: ExternalDistributed
 ---
 
-# ExternalDistributed {#externaldistributed}
+# ExternalDistributed
 
 The `ExternalDistributed` engine allows to perform `SELECT` queries on data that is stored on a remote servers MySQL or PostgreSQL. Accepts [MySQL](../../../engines/table-engines/integrations/mysql.md) or [PostgreSQL](../../../engines/table-engines/integrations/postgresql.md) engines as an argument so sharding is possible.
 
@@ -51,3 +51,6 @@ You can specify any number of shards and any number of replicas for each shard.
 -   [MySQL table engine](../../../engines/table-engines/integrations/mysql.md)
 -   [PostgreSQL table engine](../../../engines/table-engines/integrations/postgresql.md)
 -   [Distributed table engine](../../../engines/table-engines/special/distributed.md)
+
+
+[Original article](https://clickhouse.com/docs/en/engines/table-engines/integrations/ExternalDistributed/) <!--hide-->

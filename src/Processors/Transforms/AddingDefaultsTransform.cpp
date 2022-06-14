@@ -187,7 +187,7 @@ void AddingDefaultsTransform::transform(Chunk & chunk)
     {
         const String & column_name = column_def.name;
 
-        if (column_defaults.count(column_name) == 0 || !res.has(column_name))
+        if (!column_defaults.contains(column_name) || !res.has(column_name))
             continue;
 
         size_t block_column_position = res.getPositionByName(column_name);

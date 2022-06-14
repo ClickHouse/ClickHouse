@@ -31,13 +31,15 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int BAD_GET;
 }
 
 
 void TableFunctionHDFSCluster::parseArguments(const ASTPtr & ast_function, ContextPtr context)
 {
+    auto ast_copy = ast_function->clone();
     /// Parse args
-    ASTs & args_func = ast_function->children;
+    ASTs & args_func = ast_copy->children;
 
     if (args_func.size() != 1)
         throw Exception("Table function '" + getName() + "' must have arguments.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
@@ -46,41 +48,50 @@ void TableFunctionHDFSCluster::parseArguments(const ASTPtr & ast_function, Conte
 
     const auto message = fmt::format(
         "The signature of table function {} shall be the following:\n" \
-        " - cluster, uri, format, structure",
+        " - cluster, uri\n",\
+        " - cluster, format\n",\
+        " - cluster, uri, format, structure\n",\
         " - cluster, uri, format, structure, compression_method",
         getName());
 
-    if (args.size() < 4 || args.size() > 5)
+    if (args.size() < 2 || args.size() > 5)
         throw Exception(message, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
     for (auto & arg : args)
         arg = evaluateConstantExpressionOrIdentifierAsLiteral(arg, context);
 
-    /// This arguments are always the first
+    /// This argument is always the first
     cluster_name = args[0]->as<ASTLiteral &>().value.safeGet<String>();
-    uri = args[1]->as<ASTLiteral &>().value.safeGet<String>();
-    format = args[2]->as<ASTLiteral &>().value.safeGet<String>();
-    structure = args[3]->as<ASTLiteral &>().value.safeGet<String>();
-    if (args.size() >= 5)
-        compression_method = args[4]->as<ASTLiteral &>().value.safeGet<String>();
+
+    if (!context->tryGetCluster(cluster_name))
+        throw Exception(ErrorCodes::BAD_GET, "Requested cluster '{}' not found", cluster_name);
+
+     /// Just cut the first arg (cluster_name) and try to parse other table function arguments as is
+    args.erase(args.begin());
+
+    ITableFunctionFileLike::parseArguments(ast_copy, context);
 }
 
 
 ColumnsDescription TableFunctionHDFSCluster::getActualTableStructure(ContextPtr context) const
 {
+    if (structure == "auto")
+        return StorageHDFS::getTableStructureFromData(format, filename, compression_method, context);
+
     return parseColumnsListFromString(structure, context);
 }
 
-StoragePtr TableFunctionHDFSCluster::executeImpl(
-    const ASTPtr & /*function*/, ContextPtr context,
-    const std::string & table_name, ColumnsDescription /*cached_columns*/) const
+
+StoragePtr TableFunctionHDFSCluster::getStorage(
+    const String & /*source*/, const String & /*format_*/, const ColumnsDescription &, ContextPtr context,
+    const std::string & table_name, const String & /*compression_method_*/) const
 {
     StoragePtr storage;
     if (context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
     {
         /// On worker node this uri won't contains globs
-        storage = StorageHDFS::create(
-            uri,
+        storage = std::make_shared<StorageHDFS>(
+            filename,
             StorageID(getDatabaseName(), table_name),
             format,
             getActualTableStructure(context),
@@ -93,17 +104,14 @@ StoragePtr TableFunctionHDFSCluster::executeImpl(
     }
     else
     {
-        storage = StorageHDFSCluster::create(
-            cluster_name, uri, StorageID(getDatabaseName(), table_name),
+        storage = std::make_shared<StorageHDFSCluster>(
+            context,
+            cluster_name, filename, StorageID(getDatabaseName(), table_name),
             format, getActualTableStructure(context), ConstraintsDescription{},
             compression_method);
     }
-
-    storage->startup();
-
     return storage;
 }
-
 
 void registerTableFunctionHDFSCluster(TableFunctionFactory & factory)
 {

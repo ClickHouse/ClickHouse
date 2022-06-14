@@ -2,6 +2,7 @@
 
 #include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
+#include <Interpreters/threadPoolCallbackRunner.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTLiteral.h>
@@ -28,9 +29,9 @@
 
 #include <algorithm>
 #include <Processors/Executors/PullingPipelineExecutor.h>
-#include <Processors/Sources/SourceWithProgress.h>
+#include <Processors/ISource.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <Poco/Net/HTTPRequest.h>
 
 
@@ -42,7 +43,6 @@ namespace ErrorCodes
     extern const int NETWORK_ERROR;
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
-    extern const int CANNOT_EXTRACT_TABLE_STRUCTURE;
 }
 
 
@@ -74,6 +74,7 @@ IStorageURLBase::IStorageURLBase(
     , http_method(http_method_)
     , partition_by(partition_by_)
 {
+    FormatFactory::instance().checkFormatName(format_name);
     StorageInMemoryMetadata storage_metadata;
 
     if (columns_.empty())
@@ -113,7 +114,7 @@ namespace
     }
 
 
-    class StorageURLSource : public SourceWithProgress
+    class StorageURLSource : public ISource
     {
         using URIParams = std::vector<std::pair<String, String>>;
 
@@ -164,7 +165,7 @@ namespace
             const ReadWriteBufferFromHTTP::HTTPHeaderEntries & headers_ = {},
             const URIParams & params = {},
             bool glob_url = false)
-            : SourceWithProgress(sample_block), name(std::move(name_)), uri_info(uri_info_)
+            : ISource(sample_block), name(std::move(name_)), uri_info(uri_info_)
         {
             auto headers = getHeaders(headers_);
 
@@ -223,14 +224,12 @@ namespace
                 }
 
                 Chunk chunk;
+                std::lock_guard lock(reader_mutex);
                 if (reader->pull(chunk))
                     return chunk;
 
-                {
-                    std::lock_guard lock(reader_mutex);
-                    pipeline->reset();
-                    reader.reset();
-                }
+                pipeline->reset();
+                reader.reset();
             }
         }
 
@@ -346,39 +345,11 @@ namespace
                                     /* use_external_buffer */ false,
                                     /* skip_url_not_found_error */ skip_url_not_found_error);
 
-                                ThreadGroupStatusPtr running_group = CurrentThread::isInitialized() && CurrentThread::get().getThreadGroup()
-                                    ? CurrentThread::get().getThreadGroup()
-                                    : MainThreadStatus::getInstance().getThreadGroup();
-
-                                ContextPtr query_context
-                                    = CurrentThread::isInitialized() ? CurrentThread::get().getQueryContext() : nullptr;
-
-                                auto worker_cleanup = [has_running_group = running_group == nullptr](ThreadStatus & thread_status)
-                                {
-                                    if (has_running_group)
-                                        thread_status.detachQuery(false);
-                                };
-
-                                auto worker_setup = [query_context = std::move(query_context),
-                                                     running_group = std::move(running_group)](ThreadStatus & thread_status)
-                                {
-                                    /// Save query context if any, because cache implementation needs it.
-                                    if (query_context)
-                                        thread_status.attachQueryContext(query_context);
-
-                                    /// To be able to pass ProfileEvents.
-                                    if (running_group)
-                                        thread_status.attachQuery(running_group);
-                                };
-
-
                                 return wrapReadBufferWithCompressionMethod(
                                     std::make_unique<ParallelReadBuffer>(
                                         std::move(read_buffer_factory),
-                                        &IOThreadPool::get(),
-                                        download_threads,
-                                        std::move(worker_setup),
-                                        std::move(worker_cleanup)),
+                                        threadPoolCallbackRunner(IOThreadPool::get()),
+                                        download_threads),
                                     chooseCompressionMethod(request_uri.getPath(), compression_method));
                             }
                         }
@@ -472,11 +443,27 @@ void StorageURLSink::consume(Chunk chunk)
     writer->write(getHeader().cloneWithColumns(chunk.detachColumns()));
 }
 
+void StorageURLSink::onException()
+{
+    if (!writer)
+        return;
+    onFinish();
+}
+
 void StorageURLSink::onFinish()
 {
-    writer->finalize();
-    writer->flush();
-    write_buf->finalize();
+    try
+    {
+        writer->finalize();
+        writer->flush();
+        write_buf->finalize();
+    }
+    catch (...)
+    {
+        /// Stop ParallelFormattingOutputFormat correctly.
+        writer.reset();
+        throw;
+    }
 }
 
 class PartitionedStorageURLSink : public PartitionedSink
@@ -580,54 +567,36 @@ ColumnsDescription IStorageURLBase::getTableStructureFromData(
         urls_to_check = {uri};
     }
 
-    String exception_messages;
-    bool read_buffer_creator_was_used = false;
 
-    std::vector<String>::const_iterator option = urls_to_check.begin();
-    do
+    ReadBufferIterator read_buffer_iterator = [&, it = urls_to_check.cbegin()]() mutable -> std::unique_ptr<ReadBuffer>
     {
-        auto read_buffer_creator = [&]()
-        {
-            read_buffer_creator_was_used = true;
-            return StorageURLSource::getFirstAvailableURLReadBuffer(
-                option,
-                urls_to_check.end(),
-                context,
-                {},
-                Poco::Net::HTTPRequest::HTTP_GET,
-                {},
-                ConnectionTimeouts::getHTTPTimeouts(context),
-                compression_method,
-                credentials,
-                headers,
-                false,
-                false,
-                context->getSettingsRef().max_download_threads);
-        };
+        if (it == urls_to_check.cend())
+            return nullptr;
 
-        try
-        {
-            return readSchemaFromFormat(format, format_settings, read_buffer_creator, context);
-        }
-        catch (...)
-        {
-            if (urls_to_check.size() == 1 || !read_buffer_creator_was_used)
-                throw;
+        auto buf = StorageURLSource::getFirstAvailableURLReadBuffer(
+            it,
+            urls_to_check.cend(),
+            context,
+            {},
+            Poco::Net::HTTPRequest::HTTP_GET,
+            {},
+            ConnectionTimeouts::getHTTPTimeouts(context),
+            compression_method,
+            credentials,
+            headers,
+            false,
+            false,
+            context->getSettingsRef().max_download_threads);\
+        ++it;
+        return buf;
+    };
 
-            exception_messages += getCurrentExceptionMessage(false) + "\n";
-        }
-
-    } while (++option < urls_to_check.end());
-
-    throw Exception(
-        ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE,
-        "All attempts to extract table structure from urls failed. Errors:\n{}",
-        exception_messages);
+    return readSchemaFromFormat(format, format_settings, read_buffer_iterator, urls_to_check.size() > 1, context);
 }
 
-bool IStorageURLBase::isColumnOriented() const
+bool IStorageURLBase::supportsSubsetOfColumns() const
 {
-    return FormatFactory::instance().checkIfFormatIsColumnOriented(format_name);
+    return FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(format_name);
 }
 
 Pipe IStorageURLBase::read(
@@ -643,10 +612,9 @@ Pipe IStorageURLBase::read(
 
     ColumnsDescription columns_description;
     Block block_for_format;
-    if (isColumnOriented())
+    if (supportsSubsetOfColumns())
     {
-        columns_description = ColumnsDescription{
-            storage_snapshot->getSampleBlockForColumns(column_names).getNamesAndTypesList()};
+        columns_description = storage_snapshot->getDescriptionForColumns(column_names);
         block_for_format = storage_snapshot->getSampleBlockForColumns(columns_description.getNamesOfPhysical());
     }
     else
@@ -731,10 +699,9 @@ Pipe StorageURLWithFailover::read(
 {
     ColumnsDescription columns_description;
     Block block_for_format;
-    if (isColumnOriented())
+    if (supportsSubsetOfColumns())
     {
-        columns_description = ColumnsDescription{
-            storage_snapshot->getSampleBlockForColumns(column_names).getNamesAndTypesList()};
+        columns_description = storage_snapshot->getDescriptionForColumns(column_names);
         block_for_format = storage_snapshot->getSampleBlockForColumns(columns_description.getNamesOfPhysical());
     }
     else
@@ -967,7 +934,7 @@ void registerStorageURL(StorageFactory & factory)
             if (args.storage_def->partition_by)
                 partition_by = args.storage_def->partition_by->clone();
 
-            return StorageURL::create(
+            return std::make_shared<StorageURL>(
                 configuration.url,
                 args.table_id,
                 configuration.format,

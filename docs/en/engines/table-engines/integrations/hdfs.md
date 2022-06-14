@@ -1,9 +1,9 @@
 ---
-toc_priority: 6
-toc_title: HDFS
+sidebar_position: 6
+sidebar_label: HDFS
 ---
 
-# HDFS {#table_engines-hdfs}
+# HDFS
 
 This engine provides integration with the [Apache Hadoop](https://en.wikipedia.org/wiki/Apache_Hadoop) ecosystem by allowing to manage data on [HDFS](https://hadoop.apache.org/docs/current/hadoop-project-dist/hadoop-hdfs/HdfsDesign.html) via ClickHouse. This engine is similar to the [File](../../../engines/table-engines/special/file.md#table_engines-file) and [URL](../../../engines/table-engines/special/url.md#table_engines-url) engines, but provides Hadoop-specific features.
 
@@ -51,7 +51,7 @@ SELECT * FROM hdfs_engine_table LIMIT 2
 ## Implementation Details {#implementation-details}
 
 -   Reads and writes can be parallel.
--   [Zero-copy](../../../operations/storing-data.md#zero-copy) replication is supported.  
+-   [Zero-copy](../../../operations/storing-data.md#zero-copy) replication is supported.
 -   Not supported:
     -   `ALTER` and `SELECT...SAMPLE` operations.
     -   Indexes.
@@ -98,8 +98,9 @@ Table consists of all the files in both directories (all files should satisfy fo
 CREATE TABLE table_with_asterisk (name String, value UInt32) ENGINE = HDFS('hdfs://hdfs1:9000/{some,another}_dir/*', 'TSV')
 ```
 
-!!! warning "Warning"
-    If the listing of files contains number ranges with leading zeros, use the construction with braces for each digit separately or use `?`.
+:::warning
+If the listing of files contains number ranges with leading zeros, use the construction with braces for each digit separately or use `?`.
+:::
 
 **Example**
 

@@ -1,6 +1,7 @@
 #include <cassert>
 #include <Common/Exception.h>
 
+#include <boost/noncopyable.hpp>
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/getColumnFromBlock.h>
 #include <Interpreters/inplaceBlockConversions.h>
@@ -11,8 +12,9 @@
 #include <Columns/ColumnObject.h>
 
 #include <IO/WriteHelpers.h>
-#include <Processors/Sources/SourceWithProgress.h>
+#include <Processors/ISource.h>
 #include <QueryPipeline/Pipe.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -39,7 +41,7 @@ namespace ErrorCodes
 }
 
 
-class MemorySource : public SourceWithProgress
+class MemorySource : public ISource
 {
     using InitializerFunc = std::function<void(std::shared_ptr<const Blocks> &)>;
 public:
@@ -50,7 +52,7 @@ public:
         std::shared_ptr<const Blocks> data_,
         std::shared_ptr<std::atomic<size_t>> parallel_execution_index_,
         InitializerFunc initializer_func_ = {})
-        : SourceWithProgress(storage_snapshot->getSampleBlockForColumns(column_names_))
+        : ISource(storage_snapshot->getSampleBlockForColumns(column_names_))
         , column_names_and_types(storage_snapshot->getColumnsByNames(
             GetColumnsOptions(GetColumnsOptions::All).withSubcolumns().withExtendedObjects(), column_names_))
         , data(data_)
@@ -122,10 +124,11 @@ class MemorySink : public SinkToStorage
 public:
     MemorySink(
         StorageMemory & storage_,
-        const StorageMetadataPtr & metadata_snapshot_)
+        const StorageMetadataPtr & metadata_snapshot_,
+        ContextPtr context)
         : SinkToStorage(metadata_snapshot_->getSampleBlock())
         , storage(storage_)
-        , storage_snapshot(storage_.getStorageSnapshot(metadata_snapshot_))
+        , storage_snapshot(storage_.getStorageSnapshot(metadata_snapshot_, context))
     {
     }
 
@@ -137,11 +140,10 @@ public:
         storage_snapshot->metadata->check(block, true);
         if (!storage_snapshot->object_columns.empty())
         {
-            auto columns = storage_snapshot->metadata->getColumns().getAllPhysical().filter(block.getNames());
             auto extended_storage_columns = storage_snapshot->getColumns(
                 GetColumnsOptions(GetColumnsOptions::AllPhysical).withExtendedObjects());
 
-            convertObjectsToTuples(columns, block, extended_storage_columns);
+            convertObjectsToTuples(block, extended_storage_columns);
         }
 
         if (storage.compress)
@@ -202,7 +204,7 @@ StorageMemory::StorageMemory(
     setInMemoryMetadata(storage_metadata);
 }
 
-StorageSnapshotPtr StorageMemory::getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot) const
+StorageSnapshotPtr StorageMemory::getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr /*query_context*/) const
 {
     auto snapshot_data = std::make_unique<SnapshotData>();
     snapshot_data->blocks = data.get();
@@ -272,9 +274,9 @@ Pipe StorageMemory::read(
 }
 
 
-SinkToStoragePtr StorageMemory::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr /*context*/)
+SinkToStoragePtr StorageMemory::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr context)
 {
-    return std::make_shared<MemorySink>(*this, metadata_snapshot);
+    return std::make_shared<MemorySink>(*this, metadata_snapshot, context);
 }
 
 
@@ -314,7 +316,7 @@ void StorageMemory::mutate(const MutationCommands & commands, ContextPtr context
     new_context->setSetting("max_threads", 1);
 
     auto interpreter = std::make_unique<MutationsInterpreter>(storage_ptr, metadata_snapshot, commands, new_context, true);
-    auto pipeline = interpreter->execute();
+    auto pipeline = QueryPipelineBuilder::getPipeline(interpreter->execute());
     PullingPipelineExecutor executor(pipeline);
 
     Blocks out;
@@ -377,11 +379,9 @@ void StorageMemory::truncate(
 }
 
 
-class MemoryBackupEntriesBatch : public shared_ptr_helper<MemoryBackupEntriesBatch>, public IBackupEntriesBatch
+class MemoryBackupEntriesBatch : public IBackupEntriesBatch, boost::noncopyable
 {
-private:
-    friend struct shared_ptr_helper<MemoryBackupEntriesBatch>;
-
+public:
     MemoryBackupEntriesBatch(
         const StorageMetadataPtr & metadata_snapshot_, const std::shared_ptr<const Blocks> blocks_, UInt64 max_compress_block_size_)
         : IBackupEntriesBatch({"data.bin", "index.mrk", "sizes.json"})
@@ -391,6 +391,7 @@ private:
     {
     }
 
+private:
     static constexpr const size_t kDataBinPos = 0;
     static constexpr const size_t kIndexMrkPos = 1;
     static constexpr const size_t kSizesJsonPos = 2;
@@ -448,7 +449,7 @@ private:
         });
     }
 
-    std::unique_ptr<ReadBuffer> getReadBuffer(size_t index) override
+    std::unique_ptr<SeekableReadBuffer> getReadBuffer(size_t index) override
     {
         initialize();
         return createReadBufferFromFileBase(file_paths[index], {});
@@ -475,7 +476,7 @@ BackupEntries StorageMemory::backupData(ContextPtr context, const ASTs & partiti
     if (!partitions.empty())
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Table engine {} doesn't support partitions", getName());
 
-    return MemoryBackupEntriesBatch::create(getInMemoryMetadataPtr(), data.get(), context->getSettingsRef().max_compress_block_size)
+    return std::make_shared<MemoryBackupEntriesBatch>(getInMemoryMetadataPtr(), data.get(), context->getSettingsRef().max_compress_block_size)
         ->getBackupEntries();
 }
 
@@ -484,8 +485,8 @@ class MemoryRestoreTask : public IRestoreTask
 {
 public:
     MemoryRestoreTask(
-        std::shared_ptr<StorageMemory> storage_, const BackupPtr & backup_, const String & data_path_in_backup_, ContextMutablePtr context_)
-        : storage(storage_), backup(backup_), data_path_in_backup(data_path_in_backup_), context(context_)
+        std::shared_ptr<StorageMemory> storage_, const BackupPtr & backup_, const String & data_path_in_backup_)
+        : storage(storage_), backup(backup_), data_path_in_backup(data_path_in_backup_)
     {
     }
 
@@ -549,17 +550,16 @@ private:
     std::shared_ptr<StorageMemory> storage;
     BackupPtr backup;
     String data_path_in_backup;
-    ContextMutablePtr context;
 };
 
 
-RestoreTaskPtr StorageMemory::restoreData(ContextMutablePtr context, const ASTs & partitions, const BackupPtr & backup, const String & data_path_in_backup, const StorageRestoreSettings &)
+RestoreTaskPtr StorageMemory::restoreData(ContextMutablePtr, const ASTs & partitions, const BackupPtr & backup, const String & data_path_in_backup, const StorageRestoreSettings &, const std::shared_ptr<IRestoreCoordination> &)
 {
     if (!partitions.empty())
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Table engine {} doesn't support partitions", getName());
 
     return std::make_unique<MemoryRestoreTask>(
-        typeid_cast<std::shared_ptr<StorageMemory>>(shared_from_this()), backup, data_path_in_backup, context);
+        typeid_cast<std::shared_ptr<StorageMemory>>(shared_from_this()), backup, data_path_in_backup);
 }
 
 
@@ -589,7 +589,7 @@ void registerStorageMemory(StorageFactory & factory)
         if (has_settings)
             settings.loadFromQuery(*args.storage_def);
 
-        return StorageMemory::create(args.table_id, args.columns, args.constraints, args.comment, settings.compress);
+        return std::make_shared<StorageMemory>(args.table_id, args.columns, args.constraints, args.comment, settings.compress);
     },
     {
         .supports_settings = true,

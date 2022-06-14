@@ -61,6 +61,7 @@ struct QueryStatusInfo
     Int64 peak_memory_usage;
     ClientInfo client_info;
     bool is_cancelled;
+    bool is_all_data_sent;
 
     /// Optional fields, filled by query
     std::vector<UInt64> thread_ids;
@@ -100,6 +101,10 @@ protected:
     QueryPriorities::Handle priority_handle = nullptr;
 
     std::atomic<bool> is_killed { false };
+
+    /// All data to the client already had been sent.
+    /// Including EndOfStream or Exception.
+    std::atomic<bool> is_all_data_sent { false };
 
     void setUserProcessList(ProcessListForUser * user_process_list_);
     /// Be careful using it. For example, queries field of ProcessListForUser could be modified concurrently.
@@ -164,6 +169,11 @@ public:
         return &thread_group->memory_tracker;
     }
 
+    IAST::QueryKind getQueryKind() const
+    {
+        return query_kind;
+    }
+
     bool updateProgressIn(const Progress & value)
     {
         CurrentThread::updateProgressIn(value);
@@ -188,6 +198,9 @@ public:
     CancellationCode cancelQuery(bool kill);
 
     bool isKilled() const { return is_killed; }
+
+    bool isAllDataSent() const { return is_all_data_sent; }
+    void setAllDataSent() { is_all_data_sent = true; }
 
     /// Adds a pipeline to the QueryStatus
     void addPipelineExecutor(PipelineExecutor * e);
