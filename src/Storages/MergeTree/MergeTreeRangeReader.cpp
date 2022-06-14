@@ -1025,12 +1025,6 @@ Columns MergeTreeRangeReader::continueReadingChain(const ReadResult & result, si
     stream.skip(result.numRowsToSkipInLastGranule());
     num_rows += stream.finalize(columns);
 
-    /// verify that stream and prev_reader->stream are at exactly same offset
-    if (stream.currentPartOffset() != prev_reader->stream.currentPartOffset())
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "Current step stream read position {} doesn't match previous step read read position {}",
-            stream.currentPartOffset(), prev_reader->stream.currentPartOffset());
-
     /// added_rows may be zero if all columns were read in prewhere and it's ok.
     if (num_rows && num_rows != result.totalRowsPerGranule())
         throw Exception("RangeReader read " + toString(num_rows) + " rows, but "
