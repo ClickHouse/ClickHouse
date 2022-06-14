@@ -28,6 +28,25 @@ ssize_t write_data(int fd, const void *buf, size_t count)
     return count;
 }
 
+/// blocking read
+ssize_t read_data(int fd, void *buf, size_t count)
+{
+    for (size_t n = 0; n < count;)
+    {
+        ssize_t sz = read(fd, reinterpret_cast<char*>(buf) + n, count - n);
+        if (sz < 0)
+        {
+            if (errno == EINTR)
+                continue;
+            return sz;
+        }
+        if (sz == 0)
+            return count - n;
+        n += sz;
+    }
+    return count;
+}
+
 /// Main compression part
 int doCompress(char * input, char * output, off_t & in_offset, off_t & out_offset,
                off_t input_size, off_t output_size, ZSTD_CCtx * cctx)
@@ -235,7 +254,7 @@ int compressFiles(char* filenames[], int count, int output_fd, int level, const 
             continue;
         }
 
-        printf("Size: %lld\n", info_in.st_size);
+        printf("Size: %td\n", info_in.st_size);
 
         /// Save umask
         files_data[i].umask = info_in.st_mode;
@@ -287,32 +306,28 @@ int copy_decompressor(const char *self, int output_fd)
 
     if (-1 == lseek(input_fd, -15, SEEK_END))
     {
-        close(input_fd);
         perror(nullptr);
+        close(input_fd);
         return 1;
     }
 
     char size_str[16] = {0};
-    for (size_t s_sz = sizeof(size_str) - 1; s_sz;)
+    if (ssize_t sz = read_data(input_fd, size_str, 15); sz < 15)
     {
-        ssize_t sz = read(input_fd, size_str + sizeof(size_str) - (s_sz + 1), s_sz);
-        if (sz <= 0)
-        {
-            if (errno == EINTR)
-                continue;
-            close(input_fd);
+        if (sz < 0)
             perror(nullptr);
-            return 1;
-        }
-        s_sz -= sz;
+        else
+            fprintf(stderr, "Error: unable to extract decompressor.\n");
+        close(input_fd);
+        return 1;
     }
 
     int decompressor_size = atoi(size_str);
 
     if (-1 == lseek(input_fd, -(decompressor_size + 15), SEEK_END))
     {
-        close(input_fd);
         perror(nullptr);
+        close(input_fd);
         return 1;
     }
 
@@ -330,15 +345,15 @@ int copy_decompressor(const char *self, int output_fd)
         {
             if (errno == EINTR)
                 continue;
-            close(input_fd);
             perror(nullptr);
+            close(input_fd);
             return 1;
         }
 
         if (n != write_data(output_fd, buf, n))
         {
-            close(input_fd);
             perror(nullptr);
+            close(input_fd);
             return 1;
         }
     } while (true);
