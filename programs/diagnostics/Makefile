@@ -27,7 +27,7 @@ release: ## Release is delegated to goreleaser
 ## Build:
 build: ## Build a binary for local use
 	# timestamped version
-	$(GOCMD) build ${DEVLDFLAGS} -o $(BINARY_NAME) .
+	$(GOCMD) build ${DEVLDFLAGS} -o $(BINARY_NAME) ./cmd/clickhouse-diagnostics
 
 clean: ## Remove build related file
 	rm ${BINARY_NAME}
