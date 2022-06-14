@@ -15,16 +15,6 @@
 namespace DB
 {
 
-struct IMetadataOperation
-{
-    virtual void execute() = 0;
-    virtual void undo() = 0;
-    virtual void finalize() {}
-    virtual ~IMetadataOperation() = default;
-};
-
-using MetadataOperationPtr = std::unique_ptr<IMetadataOperation>;
-
 class IMetadataStorage;
 
 /// Tries to provide some "transactions" interface, which allow
@@ -111,9 +101,11 @@ public:
 
     virtual Poco::Timestamp getLastModified(const std::string & path) const = 0;
 
+    virtual time_t getLastChanged(const std::string & path) const = 0;
+
     virtual std::vector<std::string> listDirectory(const std::string & path) const = 0;
 
-    virtual DirectoryIteratorPtr iterateDirectory(const std::string & path) = 0;
+    virtual DirectoryIteratorPtr iterateDirectory(const std::string & path) const = 0;
 
     virtual uint32_t getHardlinkCount(const std::string & path) const = 0;
 
