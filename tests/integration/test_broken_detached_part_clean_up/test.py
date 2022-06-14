@@ -115,7 +115,7 @@ def test_remove_broken_detached_part_merge_tree(started_cluster):
         ENGINE = MergeTree() ORDER BY id
         SETTINGS
             merge_tree_enable_clear_old_broken_detached=1,
-            merge_tree_clear_old_broken_detached_parts_interval_seconds=5;
+            merge_tree_clear_old_broken_detached_parts_ttl_timeout_seconds=5;
         """
     )
 
@@ -135,7 +135,7 @@ def test_remove_broken_detached_part_replicated_merge_tree(started_cluster):
         ENGINE = ReplicatedMergeTree('/clickhouse/tables/replicated_mt', '{node1.name}') ORDER BY id
         SETTINGS
             merge_tree_enable_clear_old_broken_detached=1,
-            merge_tree_clear_old_broken_detached_parts_interval_seconds=5,
+            merge_tree_clear_old_broken_detached_parts_ttl_timeout_seconds=5,
             cleanup_delay_period=1,
             cleanup_delay_period_random_add=0;
         """
