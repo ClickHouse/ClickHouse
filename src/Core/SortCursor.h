@@ -140,6 +140,7 @@ struct SortCursorImpl
 
     bool isFirst() const { return pos == 0; }
     bool isLast() const { return pos + 1 >= rows; }
+    bool isLast(size_t size) const { return pos + size >= rows; }
     bool isValid() const { return pos < rows; }
     void next() { ++pos; }
     void next(size_t size) { pos += size; }
@@ -372,7 +373,7 @@ public:
         return queue.front();
     }
 
-    std::pair<Cursor *, size_t> currentWithBatch() requires (strategy == SortingQueueStrategy::Batch)
+    std::pair<Cursor *, size_t> current() requires (strategy == SortingQueueStrategy::Batch)
     {
         return {&queue.front(), batch_size};
     }
@@ -398,18 +399,20 @@ public:
 
     void ALWAYS_INLINE next(size_t batch_size_value) requires (strategy == SortingQueueStrategy::Batch)
     {
-        assert(batch_size_value <= batch_size);
         assert(isValid());
+        assert(batch_size_value <= batch_size);
+        assert(batch_size_value > 0);
 
-        queue.front()->next(batch_size_value);
         batch_size -= batch_size_value;
-        if (batch_size > 0) {
+        if (batch_size > 0)
+        {
+            queue.front()->next(batch_size_value);
             return;
         }
 
-        if (!queue.front()->isLast())
+        if (!queue.front()->isLast(batch_size_value))
         {
-            queue.front()->next();
+            queue.front()->next(batch_size_value);
             updateTop();
         }
         else
@@ -524,8 +527,9 @@ private:
             updateBatchSize();
     }
 
-    /// Update batch size of elements that client can extract from min cursor
-    ALWAYS_INLINE void updateBatchSize() {
+    /// Update batch size of elements that client can extract from current cursor
+    ALWAYS_INLINE void updateBatchSize()
+    {
         assert(!queue.empty());
 
         auto & begin_cursor = *queue.begin();
