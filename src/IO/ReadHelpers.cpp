@@ -706,6 +706,7 @@ void readCSVStringInto(Vector & s, ReadBuffer & buf, const FormatSettings::CSV &
                 auto rc = vdupq_n_u8('\r');
                 auto nc = vdupq_n_u8('\n');
                 auto dc = vdupq_n_u8(delimiter);
+                /// Returns a 64 bit mask of nibbles (4 bits for each byte).
                 auto get_nibble_mask = [](uint8x16_t input) -> uint64_t
                 { return vget_lane_u64(vreinterpret_u64_u8(vshrn_n_u16(vreinterpretq_u16_u8(input), 4)), 0); };
                 for (; next_pos + 15 < buf.buffer().end(); next_pos += 16)
