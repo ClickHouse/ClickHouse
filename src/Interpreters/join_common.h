@@ -106,7 +106,9 @@ void splitAdditionalColumns(const Names & key_names, const Block & sample_block,
 
 void changeLowCardinalityInplace(ColumnWithTypeAndName & column);
 
-Blocks scatterBlockByHash(const Strings& key_columns_names, const Block& block, size_t num_shards);
+Blocks scatterBlockByHash(const Strings & key_columns_names, const Block & block, size_t num_shards);
+
+bool hasNonJoinedBlocks(const TableJoin & table_join);
 
 }
 

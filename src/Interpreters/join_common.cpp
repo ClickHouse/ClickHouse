@@ -622,8 +622,8 @@ static Blocks scatterBlockByHashImpl(const Strings & key_columns_names, const Bl
 }
 
 template <std::integral T>
-static bool isPowerOf2(T number) {
-    return number == T{1} << bitScanReverse(number);
+static constexpr bool isPowerOf2(T number) {
+    return number > 0 && (number & (number - 1)) == 0;
 }
 
 static Blocks scatterBlockByHashPow2(const Strings & key_columns_names, const Block & block, size_t num_shards) {
@@ -645,6 +645,12 @@ Blocks scatterBlockByHash(const Strings & key_columns_names, const Block & block
     if (likely(isPowerOf2(num_shards)))
         return scatterBlockByHashPow2(key_columns_names, block, num_shards);
     return scatterBlockByHashGeneric(key_columns_names, block, num_shards);
+}
+
+bool hasNonJoinedBlocks(const TableJoin & table_join) {
+    return table_join.strictness() != ASTTableJoin::Strictness::Asof &&
+        table_join.strictness() != ASTTableJoin::Strictness::Semi &&
+        isRightOrFull(table_join.kind());
 }
 
 }
