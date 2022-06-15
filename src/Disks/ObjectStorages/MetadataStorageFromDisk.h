@@ -59,6 +59,8 @@ public:
 
     Poco::Timestamp getLastModified(const std::string & path) const override;
 
+    time_t getLastChanged(const std::string & path) const override;
+
     std::vector<std::string> listDirectory(const std::string & path) const override;
 
     DirectoryIteratorPtr iterateDirectory(const std::string & path) const override;

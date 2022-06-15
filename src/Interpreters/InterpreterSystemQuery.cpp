@@ -43,6 +43,7 @@
 #include <Disks/DiskRestartProxy.h>
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageReplicatedMergeTree.h>
+#include <Storages/Freeze.h>
 #include <Storages/StorageFactory.h>
 #include <Parsers/ASTSystemQuery.h>
 #include <Parsers/ASTDropQuery.h>
@@ -234,6 +235,8 @@ BlockIO InterpreterSystemQuery::execute()
         table_id = getContext()->resolveStorageID(StorageID(query.getDatabase(), query.getTable()), Context::ResolveOrdinary);
     }
 
+
+    BlockIO result;
 
     volume_ptr = {};
     if (!query.storage_policy.empty() && !query.volume.empty())
@@ -493,11 +496,18 @@ BlockIO InterpreterSystemQuery::execute()
             getContext()->checkAccess(AccessType::SYSTEM_THREAD_FUZZER);
             ThreadFuzzer::start();
             break;
+        case Type::UNFREEZE:
+        {
+            getContext()->checkAccess(AccessType::SYSTEM_UNFREEZE);
+            /// The result contains information about deleted parts as a table. It is for compatibility with ALTER TABLE UNFREEZE query.
+            result = Unfreezer().unfreeze(query.backup_name, getContext());
+            break;
+        }
         default:
             throw Exception("Unknown type of SYSTEM query", ErrorCodes::BAD_ARGUMENTS);
     }
 
-    return BlockIO();
+    return result;
 }
 
 void InterpreterSystemQuery::restoreReplica()
@@ -966,6 +976,11 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::RESTART_DISK:
         {
             required_access.emplace_back(AccessType::SYSTEM_RESTART_DISK);
+            break;
+        }
+        case Type::UNFREEZE:
+        {
+            required_access.emplace_back(AccessType::SYSTEM_UNFREEZE);
             break;
         }
         case Type::STOP_LISTEN_QUERIES:
