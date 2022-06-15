@@ -142,25 +142,25 @@ static DNSResolver::IPAddresses resolveIPAddressImpl(const std::string & host)
 
 static std::vector<String> reverseResolveImpl(const Poco::Net::IPAddress & address)
 {
-    boost::asio::io_service ioService;
-    YukiWorkshop::DNSResolver resolver(ioService);
+    boost::asio::io_service io_service;
+    YukiWorkshop::DNSResolver resolver(io_service);
 
-    std::vector<std::string> ptrRecords;
+    std::vector<std::string> ptr_records;
 
     resolver.resolve_a4ptr(boost::asio::ip::address_v4::from_string(address.toString()), [&](int err, auto& hosts, auto&, auto&, uint) {
        if (err) {
-           throw Exception("Cannot resolve: " + address.toString() + gai_strerror(err), ErrorCodes::DNS_ERROR);
+           throw Exception("Cannot resolve: " + address.toString() + YukiWorkshop::DNSResolver::error_string(err), ErrorCodes::DNS_ERROR);
        }
 
        for (auto &it : hosts) {
-           ptrRecords.emplace_back(it);
+           ptr_records.emplace_back(it);
        }
 
     });
 
-    ioService.run();
+    io_service.run();
 
-    return ptrRecords;
+    return ptr_records;
 }
 
 struct DNSResolver::Impl
