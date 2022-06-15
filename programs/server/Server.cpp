@@ -744,16 +744,18 @@ int Server::main(const std::vector<std::string> & /*args*/)
         /// But there are other sections of the binary (e.g. exception handling tables)
         /// that are interpreted (not executed) but can alter the behaviour of the program as well.
 
+        /// Please keep the below log messages in-sync with the ones in daemon/BaseDaemon.cpp
+
         String calculated_binary_hash = getHashOfLoadedBinaryHex();
 
         if (stored_binary_hash.empty())
         {
-            LOG_WARNING(log, "Calculated checksum of the binary: {}."
-                " There is no information about the reference checksum.", calculated_binary_hash);
+            LOG_WARNING(log, "Integrity check of the executable skipped because the reference checksum could not be read."
+                " (calculated checksum: {})", calculated_binary_hash);
         }
         else if (calculated_binary_hash == stored_binary_hash)
         {
-            LOG_INFO(log, "Calculated checksum of the binary: {}, integrity check passed.", calculated_binary_hash);
+            LOG_INFO(log, "Integrity check of the executable successfully passed (checksum: {})", calculated_binary_hash);
         }
         else
         {
@@ -769,14 +771,14 @@ int Server::main(const std::vector<std::string> & /*args*/)
             else
             {
                 throw Exception(ErrorCodes::CORRUPTED_DATA,
-                    "Calculated checksum of the ClickHouse binary ({0}) does not correspond"
-                    " to the reference checksum stored in the binary ({1})."
-                    " It may indicate one of the following:"
-                    " - the file {2} was changed just after startup;"
-                    " - the file {2} is damaged on disk due to faulty hardware;"
-                    " - the loaded executable is damaged in memory due to faulty hardware;"
+                    "Calculated checksum of the executable ({0}) does not correspond"
+                    " to the reference checksum stored in the executable ({1})."
+                    " This may indicate one of the following:"
+                    " - the executable {2} was changed just after startup;"
+                    " - the executable {2} was corrupted on disk due to faulty hardware;"
+                    " - the loaded executable was corrupted in memory due to faulty hardware;"
                     " - the file {2} was intentionally modified;"
-                    " - logical error in code."
+                    " - a logical error in the code."
                     , calculated_binary_hash, stored_binary_hash, executable_path);
             }
         }
