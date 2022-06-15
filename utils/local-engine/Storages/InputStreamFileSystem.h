@@ -149,7 +149,6 @@ public:
         }
         if (auto * file_stream = dynamic_cast<ReadBufferFromString*>(it->second.second))
         {
-            std::cerr << "file size:" << file_stream->internalBuffer().size() <<std::endl;
             return file_stream->internalBuffer().size();
         }
         throw std::runtime_error("Unexpected call to InputStreamFileSystem::GetFileSize");

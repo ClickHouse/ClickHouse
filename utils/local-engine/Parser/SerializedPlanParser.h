@@ -81,8 +81,8 @@ public:
     DB::QueryPlanPtr parseReadRealWithJavaIter(const substrait::ReadRel& rel);
     DB::QueryPlanPtr parseMergeTreeTable(const substrait::ReadRel& rel);
     bool isReadRelFromJava(const substrait::ReadRel& rel);
-    DB::Block parseNameStruct(const substrait::NamedStruct& struct_);
-    DB::DataTypePtr parseType(const substrait::Type& type);
+    static DB::Block parseNameStruct(const substrait::NamedStruct& struct_);
+    static DB::DataTypePtr parseType(const substrait::Type& type);
 
     void addInputIter(jobject iter)
     {

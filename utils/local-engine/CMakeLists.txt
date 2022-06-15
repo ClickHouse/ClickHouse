@@ -40,7 +40,7 @@ add_library(${LOCALENGINE_SHARED_LIB} SHARED
         )
 
 
-target_compile_options(${LOCALENGINE_SHARED_LIB} PUBLIC -fPIC)
+target_compile_options(${LOCALENGINE_SHARED_LIB} PUBLIC -ffile-prefix-map=${CMAKE_SOURCE_DIR}=. -fPIC)
 
 target_link_libraries(${LOCALENGINE_SHARED_LIB} PUBLIC
         clickhouse_aggregate_functions
@@ -211,6 +211,9 @@ add_compile_options(-fPIC)
 if (ENABLE_JEMALLOC)
     target_compile_options(_jemalloc PRIVATE -fPIC)
 endif ()
+
+message(COMPILER_FLAGS ${COMPILER_FLAGS})
+message(CMAKE_CXX_FLAGS ${CMAKE_CXX_FLAGS})
 #target_compile_options(zstd PRIVATE -fPIC)
 
 #set(CPACK_PACKAGE_VERSION 0.1.0)

@@ -3,7 +3,7 @@
 #include <Shuffle/ShuffleSplitter.h>
 #include <Common/Exception.h>
 
-
+using namespace DB;
 
 namespace local_engine
 {

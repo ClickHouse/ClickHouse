@@ -5,6 +5,19 @@
 #include <Core/Types.h>
 #include <DataTypes/DataTypesDecimal.h>
 
+namespace DB
+{
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+    extern const int UNKNOWN_TYPE;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int BAD_ARGUMENTS;
+    extern const int NO_SUCH_DATA_PART;
+    extern const int UNKNOWN_FUNCTION;
+}
+}
+
 #define WRITE_VECTOR_COLUMN(TYPE, PRIME_TYPE, GETTER) \
     const auto * type_col = checkAndGetColumn<ColumnVector<TYPE>>(*col.column); \
     for (auto i = 0; i < num_rows; i++) \
@@ -127,6 +140,10 @@ void writeValue(
     {
         WRITE_VECTOR_COLUMN(Int64, int64_t, get64)
     }
+    else if (which.isUInt64())
+    {
+        WRITE_VECTOR_COLUMN(UInt64, int64_t, get64)
+    }
     else if (which.isFloat32())
     {
         WRITE_VECTOR_COLUMN(Float32, float_t, getFloat32)
@@ -163,7 +180,7 @@ void writeValue(
     }
     else
     {
-        throw std::runtime_error("doesn't support type " + String(magic_enum::enum_name(nested_col->getDataType())));
+        throw Exception(ErrorCodes::UNKNOWN_TYPE, "doesn't support type {} convert from ch to spark" ,magic_enum::enum_name(nested_col->getDataType()));
     }
 }
 
@@ -201,9 +218,9 @@ int64_t local_engine::SparkRowInfo::getNullBitsetWidthInBytes() const
     return null_bitset_width_in_bytes;
 }
 
-void local_engine::SparkRowInfo::setNullBitsetWidthInBytes(int64_t nullBitsetWidthInBytes)
+void local_engine::SparkRowInfo::setNullBitsetWidthInBytes(int64_t null_bitset_width_in_bytes_)
 {
-    nullBitsetWidthInBytes = nullBitsetWidthInBytes;
+    null_bitset_width_in_bytes = null_bitset_width_in_bytes_;
 }
 int64_t local_engine::SparkRowInfo::getNumCols() const
 {

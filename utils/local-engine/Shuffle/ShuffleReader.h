@@ -5,30 +5,28 @@
 #include <jni.h>
 
 
-using namespace DB;
-
 namespace local_engine
 {
 class ReadBufferFromJavaInputStream;
 class ShuffleReader
 {
 public:
-    explicit ShuffleReader(std::unique_ptr<ReadBuffer> in_, bool compressed);
-    Block* read();
+    explicit ShuffleReader(std::unique_ptr<DB::ReadBuffer> in_, bool compressed);
+    DB::Block* read();
     ~ShuffleReader();
     static thread_local JNIEnv * env;
     static jclass input_stream_class;
     static jmethodID input_stream_read;
-    std::unique_ptr<ReadBuffer> in;
+    std::unique_ptr<DB::ReadBuffer> in;
 
 private:
-    std::unique_ptr<CompressedReadBuffer> compressed_in;
-    std::unique_ptr<NativeReader> input_stream;
-    Block header;
+    std::unique_ptr<DB::CompressedReadBuffer> compressed_in;
+    std::unique_ptr<DB::NativeReader> input_stream;
+    DB::Block header;
 };
 
 
-class ReadBufferFromJavaInputStream : public BufferWithOwnMemory<ReadBuffer>
+class ReadBufferFromJavaInputStream : public DB::BufferWithOwnMemory<DB::ReadBuffer>
 {
 public:
     explicit ReadBufferFromJavaInputStream(jobject input_stream);

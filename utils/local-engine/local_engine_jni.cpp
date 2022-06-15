@@ -6,9 +6,11 @@
 #include <Operator/BlockCoalesceOperator.h>
 #include <Parser/CHColumnToSparkRow.h>
 #include <Parser/SerializedPlanParser.h>
+#include <Shuffle/NativeWriterInMemory.h>
 #include <Shuffle/ShuffleReader.h>
 #include <Shuffle/ShuffleSplitter.h>
 #include <Common/ExceptionUtils.h>
+#include <Builder/BroadCastJoinBuilder.h>
 #include "jni_common.h"
 
 bool inside_main = true;
@@ -92,7 +94,6 @@ void Java_io_glutenproject_vectorized_ExpressionEvaluatorJniWrapper_nativeInitNa
     {
         local_engine::ExceptionUtils::handleException(e);
     }
-
 }
 
 jlong Java_io_glutenproject_vectorized_ExpressionEvaluatorJniWrapper_nativeCreateKernelWithRowIterator(
@@ -112,7 +113,6 @@ jlong Java_io_glutenproject_vectorized_ExpressionEvaluatorJniWrapper_nativeCreat
     {
         local_engine::ExceptionUtils::handleException(e);
     }
-
 }
 
 jlong Java_io_glutenproject_vectorized_ExpressionEvaluatorJniWrapper_nativeCreateKernelWithIterator(
@@ -157,7 +157,6 @@ jboolean Java_io_glutenproject_row_RowIterator_nativeHasNext(JNIEnv * env, jobje
     {
         local_engine::ExceptionUtils::handleException(e);
     }
-
 }
 
 jobject Java_io_glutenproject_row_RowIterator_nativeNext(JNIEnv * env, jobject obj, jlong executor_address)
@@ -177,8 +176,8 @@ jobject Java_io_glutenproject_row_RowIterator_nativeNext(JNIEnv * env, jobject o
         int64_t column_number = reinterpret_cast<int64_t>(spark_row_info->getNumCols());
         int64_t total_size = reinterpret_cast<int64_t>(spark_row_info->getTotalBytes());
 
-        jobject spark_row_info_object
-            = env->NewObject(spark_row_info_class, spark_row_info_constructor, offsets_arr, lengths_arr, address, column_number, total_size);
+        jobject spark_row_info_object = env->NewObject(
+            spark_row_info_class, spark_row_info_constructor, offsets_arr, lengths_arr, address, column_number, total_size);
 
         return spark_row_info_object;
     }
@@ -186,7 +185,6 @@ jobject Java_io_glutenproject_row_RowIterator_nativeNext(JNIEnv * env, jobject o
     {
         local_engine::ExceptionUtils::handleException(e);
     }
-
 }
 
 void Java_io_glutenproject_row_RowIterator_nativeClose(JNIEnv * env, jobject obj, jlong executor_address)
@@ -207,7 +205,6 @@ jboolean Java_io_glutenproject_vectorized_BatchIterator_nativeHasNext(JNIEnv * e
     {
         local_engine::ExceptionUtils::handleException(e);
     }
-
 }
 
 jlong Java_io_glutenproject_vectorized_BatchIterator_nativeCHNext(JNIEnv * env, jobject obj, jlong executor_address)
@@ -222,7 +219,6 @@ jlong Java_io_glutenproject_vectorized_BatchIterator_nativeCHNext(JNIEnv * env, 
     {
         local_engine::ExceptionUtils::handleException(e);
     }
-
 }
 
 void Java_io_glutenproject_vectorized_BatchIterator_nativeClose(JNIEnv * env, jobject obj, jlong executor_address)
@@ -255,7 +251,6 @@ ColumnWithTypeAndName inline getColumnFromColumnVector(JNIEnv * env, jobject obj
     {
         local_engine::ExceptionUtils::handleException(e);
     }
-
 }
 
 
@@ -280,7 +275,6 @@ jboolean Java_io_glutenproject_vectorized_CHColumnVector_nativeHasNull(JNIEnv * 
     {
         local_engine::ExceptionUtils::handleException(e);
     }
-
 }
 
 jint Java_io_glutenproject_vectorized_CHColumnVector_nativeNumNulls(JNIEnv * env, jobject obj, jlong block_address, jint column_position)
@@ -302,7 +296,6 @@ jint Java_io_glutenproject_vectorized_CHColumnVector_nativeNumNulls(JNIEnv * env
     {
         local_engine::ExceptionUtils::handleException(e);
     }
-
 }
 
 
@@ -481,7 +474,6 @@ jlong Java_io_glutenproject_vectorized_CHStreamReader_createNativeShuffleReader(
     {
         local_engine::ExceptionUtils::handleException(e);
     }
-
 }
 
 jlong Java_io_glutenproject_vectorized_CHStreamReader_nativeNext(JNIEnv * env, jobject obj, jlong shuffle_reader)
@@ -498,7 +490,6 @@ jlong Java_io_glutenproject_vectorized_CHStreamReader_nativeNext(JNIEnv * env, j
     {
         local_engine::ExceptionUtils::handleException(e);
     }
-
 }
 
 
@@ -539,7 +530,6 @@ void Java_io_glutenproject_vectorized_CHCoalesceOperator_nativeMergeBlock(
     {
         local_engine::ExceptionUtils::handleException(e);
     }
-
 }
 
 jboolean Java_io_glutenproject_vectorized_CHCoalesceOperator_nativeIsFull(JNIEnv * env, jobject obj, jlong instance_address)
@@ -554,7 +544,6 @@ jboolean Java_io_glutenproject_vectorized_CHCoalesceOperator_nativeIsFull(JNIEnv
     {
         local_engine::ExceptionUtils::handleException(e);
     }
-
 }
 
 jlong Java_io_glutenproject_vectorized_CHCoalesceOperator_nativeRelease(JNIEnv * env, jobject obj, jlong instance_address)
@@ -572,13 +561,12 @@ jlong Java_io_glutenproject_vectorized_CHCoalesceOperator_nativeRelease(JNIEnv *
     {
         local_engine::ExceptionUtils::handleException(e);
     }
-
 }
 
 void Java_io_glutenproject_vectorized_CHCoalesceOperator_nativeClose(JNIEnv * env, jobject obj, jlong instance_address)
 {
-        local_engine::BlockCoalesceOperator * instance = reinterpret_cast<local_engine::BlockCoalesceOperator *>(instance_address);
-        delete instance;
+    local_engine::BlockCoalesceOperator * instance = reinterpret_cast<local_engine::BlockCoalesceOperator *>(instance_address);
+    delete instance;
 }
 
 std::string jstring2string(JNIEnv * env, jstring jStr)
@@ -732,7 +720,7 @@ jobject Java_io_glutenproject_vectorized_BlockNativeConverter_converColumarToRow
 {
     local_engine::CHColumnToSparkRow converter;
     Block * block = reinterpret_cast<Block *>(block_address);
-    auto spark_row_info = converter.convertCHColumnToSparkRow(* block);
+    auto spark_row_info = converter.convertCHColumnToSparkRow(*block);
 
     auto * offsets_arr = env->NewLongArray(spark_row_info->getNumRows());
     const auto * offsets_src = reinterpret_cast<const jlong *>(spark_row_info->getOffsets().data());
@@ -755,6 +743,59 @@ void Java_io_glutenproject_vectorized_BlockNativeConverter_freeMemory(JNIEnv *, 
     local_engine::CHColumnToSparkRow converter;
     converter.freeMem(reinterpret_cast<uint8_t *>(address), size);
 }
+
+// BlockNativeWriter
+
+jlong Java_io_glutenproject_vectorized_BlockNativeWriter_nativeCreateInstance(JNIEnv *, jobject)
+{
+    auto * writer = new local_engine::NativeWriterInMemory();
+    return reinterpret_cast<jlong>(writer);
+}
+
+void Java_io_glutenproject_vectorized_BlockNativeWriter_nativeWrite(JNIEnv *, jobject, jlong instance, jlong block_address)
+{
+    auto * writer = reinterpret_cast<local_engine::NativeWriterInMemory *>(instance);
+    auto * block = reinterpret_cast<Block *>(block_address);
+    writer->write(*block);
+}
+
+jint Java_io_glutenproject_vectorized_BlockNativeWriter_nativeResultSize(JNIEnv *, jobject, jlong instance)
+{
+    auto * writer = reinterpret_cast<local_engine::NativeWriterInMemory *>(instance);
+    return static_cast<jint>(writer->collect().size());
+}
+
+
+void Java_io_glutenproject_vectorized_BlockNativeWriter_nativeCollect(JNIEnv *env, jobject, jlong instance, jbyteArray result)
+{
+    auto * writer = reinterpret_cast<local_engine::NativeWriterInMemory *>(instance);
+    auto data = writer->collect();
+    env->SetByteArrayRegion(result, 0, data.size(), reinterpret_cast<const jbyte *>(data.data()));
+}
+
+void Java_io_glutenproject_vectorized_BlockNativeWriter_nativeClose(JNIEnv *, jobject, jlong instance)
+{
+    auto * writer = reinterpret_cast<local_engine::NativeWriterInMemory *>(instance);
+    delete writer;
+}
+
+void Java_io_glutenproject_vectorized_StorageJoinBuilder_nativeBuild(JNIEnv *env, jobject, jstring hash_table_id_, jobject in, jstring join_key_, jstring join_type_, jbyteArray named_struct)
+{
+    local_engine::ShuffleReader::env = env;
+    auto *input = env->NewGlobalRef(in);
+    auto read_buffer = std::make_unique<local_engine::ReadBufferFromJavaInputStream>(input);
+    auto hash_table_id = jstring2string(env, hash_table_id_);
+    auto join_key = jstring2string(env, join_key_);
+    auto join_type = jstring2string(env, join_type_);
+    jsize struct_size = env->GetArrayLength(named_struct);
+    jbyte * struct_address = env->GetByteArrayElements(named_struct, nullptr);
+    std::string struct_string;
+    struct_string.assign(reinterpret_cast<const char *>(struct_address), struct_size);
+    local_engine::BroadCastJoinBuilder::buildJoinIfNotExist(hash_table_id, std::move(read_buffer), join_key, join_type, struct_string);
+    env->ReleaseByteArrayElements(named_struct, struct_address, JNI_ABORT);
+    local_engine::ShuffleReader::env = nullptr;
+}
+
 #ifdef __cplusplus
 }
 #endif
