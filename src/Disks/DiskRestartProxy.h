@@ -37,13 +37,13 @@ public:
     void createDirectories(const String & path) override;
     void clearDirectory(const String & path) override;
     void moveDirectory(const String & from_path, const String & to_path) override;
-    DirectoryIteratorPtr iterateDirectory(const String & path) override;
+    DirectoryIteratorPtr iterateDirectory(const String & path) const override;
     void createFile(const String & path) override;
     void moveFile(const String & from_path, const String & to_path) override;
     void replaceFile(const String & from_path, const String & to_path) override;
     void copy(const String & from_path, const DiskPtr & to_disk, const String & to_path) override;
     void copyDirectoryContent(const String & from_dir, const std::shared_ptr<IDisk> & to_disk, const String & to_dir) override;
-    void listFiles(const String & path, std::vector<String> & file_names) override;
+    void listFiles(const String & path, std::vector<String> & file_names) const override;
     std::unique_ptr<ReadBufferFromFileBase> readFile(
         const String & path,
         const ReadSettings & settings,
@@ -56,7 +56,7 @@ public:
     void removeRecursive(const String & path) override;
     void removeSharedFile(const String & path, bool keep_s3) override;
     void setLastModified(const String & path, const Poco::Timestamp & timestamp) override;
-    Poco::Timestamp getLastModified(const String & path) override;
+    Poco::Timestamp getLastModified(const String & path) const override;
     void setReadOnly(const String & path) override;
     void createHardLink(const String & src_path, const String & dst_path) override;
     void truncateFile(const String & path, size_t size) override;

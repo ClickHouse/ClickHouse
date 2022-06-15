@@ -6,6 +6,18 @@ namespace DB
 {
 class IDisk;
 
+
+struct IMetadataOperation
+{
+    virtual void execute() = 0;
+    virtual void undo() = 0;
+    virtual void finalize() {}
+    virtual ~IMetadataOperation() = default;
+};
+
+using MetadataOperationPtr = std::unique_ptr<IMetadataOperation>;
+
+
 class SetLastModifiedOperation final : public IMetadataOperation
 {
 public:

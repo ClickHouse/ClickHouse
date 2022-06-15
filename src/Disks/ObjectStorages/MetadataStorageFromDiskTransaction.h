@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Disks/ObjectStorages/IMetadataStorage.h>
+#include <Disks/ObjectStorages/MetadataStorageFromDiskTransactionOperations.h>
 
 namespace DB
 {

@@ -17,7 +17,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
-bool IDisk::isDirectoryEmpty(const String & path)
+bool IDisk::isDirectoryEmpty(const String & path) const
 {
     return !iterateDirectory(path)->isValid();
 }

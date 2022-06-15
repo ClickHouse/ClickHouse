@@ -74,7 +74,7 @@ void DiskObjectStorageMetadata::deserializeFromString(const std::string & data)
 
 void DiskObjectStorageMetadata::serialize(WriteBuffer & buf, bool sync) const
 {
-    writeIntText(VERSION_RELATIVE_PATHS, buf);
+    writeIntText(VERSION_READ_ONLY_FLAG, buf);
     writeChar('\n', buf);
 
     writeIntText(storage_objects.size(), buf);

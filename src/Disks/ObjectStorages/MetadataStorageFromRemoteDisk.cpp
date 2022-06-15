@@ -41,6 +41,11 @@ Poco::Timestamp MetadataStorageFromRemoteDisk::getLastModified(const std::string
     return disk->getLastModified(path);
 }
 
+time_t MetadataStorageFromRemoteDisk::getLastChanged(const std::string & path) const
+{
+    return disk->getLastChanged(path);
+}
+
 uint64_t MetadataStorageFromRemoteDisk::getFileSize(const String & path) const
 {
     auto metadata = readMetadata(path);
@@ -54,7 +59,7 @@ std::vector<std::string> MetadataStorageFromRemoteDisk::listDirectory(const std:
     return result_files;
 }
 
-DirectoryIteratorPtr MetadataStorageFromRemoteDisk::iterateDirectory(const std::string & path)
+DirectoryIteratorPtr MetadataStorageFromRemoteDisk::iterateDirectory(const std::string & path) const
 {
     return disk->iterateDirectory(path);
 }
