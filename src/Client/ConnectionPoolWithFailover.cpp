@@ -20,6 +20,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int ALL_CONNECTION_TRIES_FAILED;
 }
 
 
