@@ -1,4 +1,5 @@
--- Tags: no-random-settings
+-- Tags: no-random-settings, no-tsan
+-- FIXME should work with tsan
 
 DROP TABLE IF EXISTS order_by_desc;
 
