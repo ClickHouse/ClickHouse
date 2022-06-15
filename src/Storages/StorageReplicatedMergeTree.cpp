@@ -467,6 +467,8 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
         /// don't allow to reinitialize them, delete each of them immediately.
         clearOldTemporaryDirectories(0, {"tmp_", "delete_tmp_"});
         clearOldWriteAheadLogs();
+        if (getSettings()->merge_tree_enable_clear_old_broken_detached)
+            clearOldBrokenPartsFromDetachedDirecory();
     }
 
     createNewZooKeeperNodes();
