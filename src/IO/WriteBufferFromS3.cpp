@@ -389,12 +389,6 @@ void WriteBufferFromS3::makeSinglepartUpload()
         return;
     }
 
-    if (size == 0)
-    {
-        LOG_TRACE(log, "Skipping single part upload. Buffer is empty.");
-        return;
-    }
-
     if (schedule)
     {
         put_object_task = std::make_unique<PutObjectTask>();

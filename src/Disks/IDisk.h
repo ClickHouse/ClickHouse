@@ -208,7 +208,6 @@ public:
     /// Second bool param is a flag to remove (true) or keep (false) shared data on S3
     virtual void removeSharedFileIfExists(const String & path, bool /* keep_shared_data */) { removeFileIfExists(path); }
 
-
     virtual String getCacheBasePath() const { return ""; }
 
     /// Returns a list of paths because for Log family engines there might be
