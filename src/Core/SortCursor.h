@@ -435,7 +435,9 @@ public:
 
         if constexpr (strategy == SortingQueueStrategy::Batch)
         {
-            if (!queue.empty())
+            if (queue.empty())
+                batch_size = 0;
+            else
                 updateBatchSize();
         }
     }
