@@ -120,6 +120,7 @@ namespace
 
         AccessRights res = access;
         res.modifyFlags(modifier);
+        res.modifyFlagsWithGrantOption(modifier);
 
         /// Anyone has access to the "system" and "information_schema" database.
         res.grant(AccessType::SELECT, DatabaseCatalog::SYSTEM_DATABASE);

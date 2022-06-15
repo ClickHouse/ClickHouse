@@ -32,7 +32,6 @@ public:
 
     Status prepare() override;
 
-protected:
     void transform(Chunk & chunk) override;
 
 private:

@@ -188,7 +188,7 @@ std::unique_ptr<ReadBufferFromFileBase> DiskWebServer::readFile(const String & p
 }
 
 
-DirectoryIteratorPtr DiskWebServer::iterateDirectory(const String & path)
+DirectoryIteratorPtr DiskWebServer::iterateDirectory(const String & path) const
 {
     std::vector<fs::path> dir_file_paths;
     if (files.find(path) == files.end())
