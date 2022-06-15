@@ -52,9 +52,15 @@ public:
 
         const auto & getChildren() const noexcept { return children; }
 
+        // Invalidate the calculated digest so it's recalculated again on the next
+        // getDigest call
         void invalidateDigestCache() const;
+
+        // get the calculated digest of the node
         UInt64 getDigest(std::string_view path) const;
 
+        // copy only necessary information for preprocessing and digest calculation
+        // (e.g. we don't need to copy list of children)
         void shallowCopy(const Node & other);
 
     private:
@@ -240,7 +246,7 @@ public:
             return false;
         }
 
-        std::shared_ptr<Node> getNodeFromStorage(StringRef path) const;
+        std::shared_ptr<Node> tryGetNodeFromStorage(StringRef path) const;
 
         struct UncommittedNode
         {
