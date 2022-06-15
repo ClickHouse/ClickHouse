@@ -49,6 +49,12 @@ void registerFunctionBase64Decode(FunctionFactory &);
 void registerFunctionTryBase64Decode(FunctionFactory &);
 #endif
 
+#if USE_BASE58
+void registerFunctionBase58Encode(FunctionFactory &);
+void registerFunctionBase58Decode(FunctionFactory &);
+void registerFunctionTryBase58Decode(FunctionFactory &);
+#endif
+
 #if USE_NLP
 void registerFunctionStem(FunctionFactory &);
 void registerFunctionSynonyms(FunctionFactory &);
@@ -103,6 +109,12 @@ void registerFunctionsString(FunctionFactory & factory)
     registerFunctionBase64Encode(factory);
     registerFunctionBase64Decode(factory);
     registerFunctionTryBase64Decode(factory);
+#endif
+
+#if USE_BASE58
+    registerFunctionBase58Encode(factory);
+    registerFunctionBase58Decode(factory);
+    registerFunctionTryBase58Decode(factory);
 #endif
 
 #if USE_NLP

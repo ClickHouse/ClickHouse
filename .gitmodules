@@ -268,3 +268,6 @@
 [submodule "contrib/hashidsxx"]
 	path = contrib/hashidsxx
 	url = https://github.com/schoentoon/hashidsxx.git
+[submodule "contrib/base58"]
+	path = contrib/base58
+	url = https://github.com/Kronuz/base-x.git
