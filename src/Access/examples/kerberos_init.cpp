@@ -26,10 +26,9 @@ int main(int argc, char ** argv)
     Poco::Logger::root().setChannel(app_channel);
     Poco::Logger::root().setLevel("trace");
 
-    KerberosInit k_init;
     try
     {
-        k_init.init(argv[1], argv[2], cache_name);
+        kerberosInit(argv[1], argv[2], cache_name);
     } catch (const Exception & e) {
          std::cout << "KerberosInit failure: " << getExceptionMessage(e, false) << "\n";
         return -1;

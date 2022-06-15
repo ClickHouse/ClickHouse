@@ -528,10 +528,9 @@ void StorageKafka::updateConfiguration(cppkafka::Configuration & conf)
         String keytab = conf.get("sasl.kerberos.keytab");
         String principal = conf.get("sasl.kerberos.principal");
         LOG_DEBUG(log, "Running KerberosInit");
-        KerberosInit k_init;
         try
         {
-            k_init.init(keytab,principal);
+            kerberosInit(keytab,principal);
         }
         catch (const Exception & e)
         {
