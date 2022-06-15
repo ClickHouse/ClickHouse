@@ -106,7 +106,6 @@ private:
     std::vector<String> part_tags;
 
     bool is_prefinalized = false;
-    bool is_finalized = false;
 
     /// Following fields are for background uploads in thread pool (if specified).
     /// We use std::function to avoid dependency of Interpreters

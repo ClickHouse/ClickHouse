@@ -42,6 +42,7 @@ DATA_DIR="${CLICKHOUSE_DATA_DIR:-/var/lib/clickhouse}"
 LOG_DIR="${LOG_DIR:-/var/log/clickhouse-keeper}"
 LOG_PATH="${LOG_DIR}/clickhouse-keeper.log"
 ERROR_LOG_PATH="${LOG_DIR}/clickhouse-keeper.err.log"
+COORDINATION_DIR="${DATA_DIR}/coordination"
 COORDINATION_LOG_DIR="${DATA_DIR}/coordination/log"
 COORDINATION_SNAPSHOT_DIR="${DATA_DIR}/coordination/snapshots"
 CLICKHOUSE_WATCHDOG_ENABLE=${CLICKHOUSE_WATCHDOG_ENABLE:-0}
@@ -49,6 +50,7 @@ CLICKHOUSE_WATCHDOG_ENABLE=${CLICKHOUSE_WATCHDOG_ENABLE:-0}
 for dir in "$DATA_DIR" \
   "$LOG_DIR" \
   "$TMP_DIR" \
+  "$COORDINATION_DIR" \
   "$COORDINATION_LOG_DIR" \
   "$COORDINATION_SNAPSHOT_DIR"
 do

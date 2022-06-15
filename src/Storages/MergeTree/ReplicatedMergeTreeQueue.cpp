@@ -1256,6 +1256,27 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
         {
             ignore_max_size = max_source_parts_size == data_settings->max_bytes_to_merge_at_max_space_in_pool;
 
+            if (data_settings->always_fetch_merged_part && entry.num_tries > 0)
+            {
+                static constexpr auto MAX_SECONDS_TO_WAIT = 300L;
+                static constexpr auto BACKOFF_SECONDS = 3;
+
+                auto time_to_wait_seconds = std::min<int64_t>(MAX_SECONDS_TO_WAIT, entry.num_tries * BACKOFF_SECONDS);
+                auto time_since_last_try_seconds = std::time(nullptr) - entry.last_attempt_time;
+                /// Otherwise we will constantly look for part on other replicas
+                /// and load zookeeper too much.
+                if (time_to_wait_seconds > time_since_last_try_seconds)
+                {
+                    out_postpone_reason = fmt::format(
+                        "Not executing log entry ({}) to merge parts for part {} because `always_fetch_merged_part` enabled and "
+                        " not enough time had been passed since last try, have to wait {} seconds",
+                        entry.znode_name, entry.new_part_name, time_to_wait_seconds - time_since_last_try_seconds);
+
+                    LOG_DEBUG(log, fmt::runtime(out_postpone_reason));
+                    return false;
+                }
+            }
+
             if (isTTLMergeType(entry.merge_type))
             {
                 if (merger_mutator.ttl_merges_blocker.isCancelled())
@@ -2180,6 +2201,29 @@ bool ReplicatedMergeTreeMergePredicate::canMergeSinglePart(
     }
 
     return true;
+}
+
+
+bool ReplicatedMergeTreeMergePredicate::partParticipatesInReplaceRange(const MergeTreeData::DataPartPtr & part, String * out_reason) const
+{
+    std::lock_guard<std::mutex> lock(queue.state_mutex);
+    for (const auto & entry : queue.queue)
+    {
+        if (entry->type != ReplicatedMergeTreeLogEntry::REPLACE_RANGE)
+            continue;
+
+        for (const auto & part_name : entry->replace_range_entry->new_part_names)
+        {
+            if (part->info.isDisjoint(MergeTreePartInfo::fromPartName(part_name, queue.format_version)))
+                continue;
+
+            if (out_reason)
+                *out_reason = fmt::format("Part {} participates in REPLACE_RANGE {} ({})", part_name, entry->new_part_name, entry->znode_name);
+
+            return true;
+        }
+    }
+    return false;
 }
 
 

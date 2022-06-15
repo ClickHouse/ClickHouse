@@ -1080,6 +1080,9 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
             column_names_to_read);
     }
 
+    for (const auto & processor : pipe.getProcessors())
+        processor->setStorageLimits(query_info.storage_limits);
+
     if (pipe.empty())
     {
         pipeline.init(Pipe(std::make_shared<NullSource>(getOutputStream().header)));
@@ -1148,11 +1151,11 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
     for (const auto & processor : pipe.getProcessors())
         processors.emplace_back(processor);
 
-    // Attach QueryIdHolder if needed
-    if (query_id_holder)
-        pipe.addQueryIdHolder(std::move(query_id_holder));
 
     pipeline.init(std::move(pipe));
+    // Attach QueryIdHolder if needed
+    if (query_id_holder)
+        pipeline.setQueryIdHolder(std::move(query_id_holder));
 }
 
 static const char * indexTypeToString(ReadFromMergeTree::IndexType type)
