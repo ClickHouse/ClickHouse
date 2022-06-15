@@ -39,19 +39,19 @@ public:
         disk.replaceFile(from_path, to_path);
     }
 
-    void copy(const std::string & from_path, const std::shared_ptr<IDisk> & to_disk, const std::string & to_path) override
+    void copy(const std::string & from_path, const std::string & to_path) override
     {
-        disk.copy(from_path, to_disk, to_path);
+        disk.copy(from_path, std::make_shared<IDisk>(disk), to_path);
     }
 
-    void copyDirectoryContent(const std::string & from_dir, const std::shared_ptr<IDisk> & to_disk, const std::string & to_dir) override
+    void copyDirectoryContent(const std::string & from_dir, const std::string & to_dir) override
     {
-        disk.copyDirectoryContent(from_dir, to_disk, to_dir);
+        disk.copyDirectoryContent(from_dir, std::make_shared<IDisk>(disk), to_dir);
     }
 
-    void copyFile(const std::string & from_file_path, IDisk & to_disk, const std::string & to_file_path) override
+    void copyFile(const std::string & from_file_path, const std::string & to_file_path) override
     {
-        disk.copyFile(from_file_path, to_disk, to_file_path);
+        disk.copyFile(from_file_path, disk, to_file_path);
     }
 
     std::unique_ptr<WriteBufferFromFileBase> writeFile( /// NOLINT
