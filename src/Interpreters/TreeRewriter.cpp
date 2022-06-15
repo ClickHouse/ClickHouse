@@ -469,7 +469,7 @@ void removeUnneededColumnsFromSelectClause(ASTSelectQuery * select_query, const 
             for (const auto & name : required_result_columns)
                 name_pos[name] = pos++;
         }
-        std::sort(elements.begin(), elements.end(), [&](const auto & lhs, const auto & rhs)
+        ::sort(elements.begin(), elements.end(), [&](const auto & lhs, const auto & rhs)
         {
             String lhs_name = lhs->getAliasOrColumnName();
             String rhs_name = rhs->getAliasOrColumnName();

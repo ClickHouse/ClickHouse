@@ -152,8 +152,28 @@ void DataPartStorageOnDisk::remove(
     /// when we try to remove two parts with the same name, but different relative paths,
     /// for example all_1_2_1 (in Deleting state) and tmp_merge_all_1_2_1 (in Temporary state).
     fs::path from = fs::path(root_path) / part_dir;
-    fs::path to = fs::path(root_path) / ("delete_tmp_" + part_dir);
+    // fs::path to = fs::path(root_path) / ("delete_tmp_" + part_dir);
     // TODO directory delete_tmp_<name> is never removed if server crashes before returning from this function
+
+    /// Cut last "/" if it exists (it shouldn't). Otherwise fs::path behave differently.
+    fs::path part_dir_without_slash = part_dir.ends_with("/") ? part_dir.substr(0, part_dir.size() - 1) : part_dir;
+
+    /// NOTE relative_path can contain not only part name itself, but also some prefix like
+    /// "moving/all_1_1_1" or "detached/all_2_3_5". We should handle this case more properly.
+    if (part_dir_without_slash.has_parent_path())
+    {
+        auto parent_path = part_dir_without_slash.parent_path();
+        if (parent_path == "detached")
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to remove detached part {} with path {} in remove function. It shouldn't happen", name, relative_path);
+
+        part_dir_without_slash = parent_path / ("delete_tmp_" + std::string{part_dir_without_slash.filename()});
+    }
+    else
+    {
+        part_dir_without_slash = ("delete_tmp_" + std::string{part_dir_without_slash.filename()});
+    }
+
+    fs::path to = fs::path(root_path) / part_dir_without_slash;
 
     auto disk = volume->getDisk();
     if (disk->exists(to))

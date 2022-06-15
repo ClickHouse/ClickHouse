@@ -10,7 +10,7 @@
 #include <sys/time.h>
 #include <sys/wait.h>
 #include <sys/resource.h>
-#if defined(__linux__)
+#if defined(OS_LINUX)
     #include <sys/prctl.h>
 #endif
 #include <cerrno>
@@ -858,7 +858,7 @@ void BaseDaemon::initializeTerminationAndSignalProcessing()
     signal_listener = std::make_unique<SignalListener>(*this);
     signal_listener_thread.start(*signal_listener);
 
-#if defined(__ELF__) && !defined(__FreeBSD__)
+#if defined(__ELF__) && !defined(OS_FREEBSD)
     String build_id_hex = DB::SymbolIndex::instance()->getBuildIDHex();
     if (build_id_hex.empty())
         build_id_info = "no build id";
@@ -868,7 +868,7 @@ void BaseDaemon::initializeTerminationAndSignalProcessing()
     build_id_info = "no build id";
 #endif
 
-#if defined(__linux__)
+#if defined(OS_LINUX)
     std::string executable_path = getExecutablePath();
 
     if (!executable_path.empty())
@@ -986,7 +986,7 @@ void BaseDaemon::setupWatchdog()
         if (0 == pid)
         {
             logger().information("Forked a child process to watch");
-#if defined(__linux__)
+#if defined(OS_LINUX)
             if (0 != prctl(PR_SET_PDEATHSIG, SIGKILL))
                 logger().warning("Cannot do prctl to ask termination with parent.");
 #endif
