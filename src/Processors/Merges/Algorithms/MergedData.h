@@ -38,6 +38,22 @@ public:
         sum_blocks_granularity += block_size;
     }
 
+    void insertRows(const ColumnRawPtrs & raw_columns, size_t start_index, size_t length, size_t block_size)
+    {
+        size_t num_columns = raw_columns.size();
+        for (size_t i = 0; i < num_columns; ++i)
+        {
+            if (length == 1)
+                columns[i]->insertFrom(*raw_columns[i], start_index);
+            else
+                columns[i]->insertRangeFrom(*raw_columns[i], start_index, length);
+        }
+
+        total_merged_rows += length;
+        merged_rows += length;
+        sum_blocks_granularity += (block_size * length);
+    }
+
     void insertFromChunk(Chunk && chunk, size_t limit_rows)
     {
         if (merged_rows)
@@ -107,6 +123,7 @@ public:
     UInt64 totalMergedRows() const { return total_merged_rows; }
     UInt64 totalChunks() const { return total_chunks; }
     UInt64 totalAllocatedBytes() const { return total_allocated_bytes; }
+    UInt64 maxBlockSize() const { return max_block_size; }
 
 protected:
     MutableColumns columns;

@@ -74,7 +74,7 @@ void MergingSortedAlgorithm::initialize(Inputs inputs)
         cursors[source_num] = SortCursorImpl(header, chunk.getColumns(), description, source_num);
     }
 
-    queue_variants.callOnVariant([&](auto & queue)
+    queue_variants.callOnBatchVariant([&](auto & queue)
     {
         using QueueType = std::decay_t<decltype(queue)>;
         queue = QueueType(cursors);
@@ -87,7 +87,7 @@ void MergingSortedAlgorithm::consume(Input & input, size_t source_num)
     current_inputs[source_num].swap(input);
     cursors[source_num].reset(current_inputs[source_num].chunk.getColumns(), header);
 
-    queue_variants.callOnVariant([&](auto & queue)
+    queue_variants.callOnBatchVariant([&](auto & queue)
     {
         queue.push(cursors[source_num]);
     });
@@ -95,16 +95,17 @@ void MergingSortedAlgorithm::consume(Input & input, size_t source_num)
 
 IMergingAlgorithm::Status MergingSortedAlgorithm::merge()
 {
-    IMergingAlgorithm::Status result = queue_variants.callOnVariant([&](auto & queue)
+    IMergingAlgorithm::Status result = queue_variants.callOnBatchVariant([&](auto & queue)
     {
-        return mergeImpl(queue);
+        return mergeBatchImpl(queue);
     });
 
     return result;
 }
 
+
 template <typename TSortingQueue>
-IMergingAlgorithm::Status MergingSortedAlgorithm::mergeImpl(TSortingQueue & queue)
+IMergingAlgorithm::Status MergingSortedAlgorithm::mergeBatchImpl(TSortingQueue & queue)
 {
     /// Take rows in required order and put them into `merged_data`, while the rows are no more than `max_block_size`
     while (queue.isValid())
@@ -112,43 +113,39 @@ IMergingAlgorithm::Status MergingSortedAlgorithm::mergeImpl(TSortingQueue & queu
         if (merged_data.hasEnoughRows())
             return Status(merged_data.pull());
 
-        auto current = queue.current();
+        auto [current_ptr, batch_size] = queue.current();
+        auto current = *current_ptr;
 
-        if (current.impl->isLast() && current_inputs[current.impl->order].skip_last_row)
+        bool batch_skip_last_row = false;
+        if (current.impl->isLast(batch_size) && current_inputs[current.impl->order].skip_last_row)
         {
-            /// Get the next block from the corresponding source, if there is one.
-            queue.removeTop();
-            return Status(current.impl->order);
-        }
+            batch_skip_last_row = true;
 
-        /** And what if the block is totally less or equal than the rest for the current cursor?
-            * Or is there only one data source left in the queue? Then you can take the entire block on current cursor.
-            */
-        if (current.impl->isFirst()
-            && !current_inputs[current.impl->order].skip_last_row /// Ignore optimization if last row should be skipped.
-            && (queue.size() == 1
-                || (queue.size() >= 2 && current.totallyLessOrEquals(queue.nextChild()))))
-        {
-            //std::cerr << "current block is totally less or equals\n";
-
-            /// If there are already data in the current block, we first return it.
-            /// We'll get here again the next time we call the merge function.
-            if (merged_data.mergedRows() != 0)
+            if (batch_size == 1)
             {
-                //std::cerr << "merged rows is non-zero\n";
-                // merged_data.flush();
-                return Status(merged_data.pull());
+                /// Get the next block from the corresponding source, if there is one.
+                queue.removeTop();
+                return Status(current.impl->order);
             }
-
-            /// Actually, current.impl->order stores source number (i.e. cursors[current.impl->order] == current.impl)
-            size_t source_num = current.impl->order;
-            queue.removeTop();
-            return insertFromChunk(source_num);
         }
 
-        //std::cerr << "total_merged_rows: " << total_merged_rows << ", merged_rows: " << merged_rows << "\n";
-        //std::cerr << "Inserting row\n";
-        merged_data.insertRow(current->all_columns, current->getRow(), current->rows);
+        UInt64 merged_rows = merged_data.mergedRows();
+
+        if (merged_rows + batch_size > merged_data.maxBlockSize())
+        {
+            batch_skip_last_row = false;
+            batch_size -= merged_rows + batch_size - merged_data.maxBlockSize();
+        }
+
+        bool limit_reached = false;
+        if (limit && merged_rows + batch_size > limit)
+        {
+            batch_skip_last_row = false;
+            batch_size -= merged_rows + batch_size - limit;
+            limit_reached = true;
+        }
+
+        merged_data.insertRows(current->all_columns, current->getRow(), batch_size - static_cast<size_t>(batch_skip_last_row), current->rows);
 
         if (out_row_sources_buf)
         {
@@ -157,13 +154,12 @@ IMergingAlgorithm::Status MergingSortedAlgorithm::mergeImpl(TSortingQueue & queu
             out_row_sources_buf->write(row_source.data);
         }
 
-        if (limit && merged_data.totalMergedRows() >= limit)
-            return Status(merged_data.pull(), true);
+        if (limit_reached)
+            break;
 
-        if (!current->isLast())
+        if (!current->isLast(batch_size))
         {
-            //std::cerr << "moving to next row\n";
-            queue.next();
+            queue.next(batch_size);
         }
         else
         {
