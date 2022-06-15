@@ -4,6 +4,7 @@
 #include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Disks/ObjectStorages/DiskObjectStorageRemoteMetadataRestoreHelper.h>
 #include <Disks/ObjectStorages/IMetadataStorage.h>
+#include <Disks/ObjectStorages/DiskObjectStorageTransaction.h>
 #include <re2/re2.h>
 
 namespace CurrentMetrics
@@ -24,6 +25,7 @@ class DiskObjectStorage : public IDisk
 
 friend class DiskObjectStorageReservation;
 friend class DiskObjectStorageRemoteMetadataRestoreHelper;
+friend struct DiskObjectStorageTransaction;
 
 public:
     DiskObjectStorage(
