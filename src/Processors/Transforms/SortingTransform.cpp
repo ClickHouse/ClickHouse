@@ -26,8 +26,11 @@ MergeSorter::MergeSorter(const Block & header, Chunks chunks_, SortDescription &
     : chunks(std::move(chunks_)), description(description_), max_merged_block_size(max_merged_block_size_), limit(limit_), queue_variants(header, description)
 {
     Chunks nonempty_chunks;
-    for (auto & chunk : chunks)
+    size_t chunks_size = chunks.size();
+
+    for (size_t chunk_index = 0; chunk_index < chunks_size; ++chunk_index)
     {
+        auto & chunk = chunks[chunk_index];
         if (chunk.getNumRows() == 0)
             continue;
 
@@ -36,7 +39,7 @@ MergeSorter::MergeSorter(const Block & header, Chunks chunks_, SortDescription &
         /// which can be inefficient.
         convertToFullIfSparse(chunk);
 
-        cursors.emplace_back(header, chunk.getColumns(), description);
+        cursors.emplace_back(header, chunk.getColumns(), description, chunk_index);
         has_collation |= cursors.back().has_collation;
 
         nonempty_chunks.emplace_back(std::move(chunk));
