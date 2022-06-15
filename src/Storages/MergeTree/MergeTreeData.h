@@ -449,26 +449,31 @@ public:
 
     Int64 getMaxBlockNumber() const;
 
+    struct ProjectionPartsVector
+    {
+        DataPartsVector projection_parts;
+        DataPartsVector data_parts;
+    };
 
     /// Returns a copy of the list so that the caller shouldn't worry about locks.
     DataParts getDataParts(const DataPartStates & affordable_states) const;
 
     DataPartsVector getDataPartsVectorForInternalUsage(
-        const DataPartStates & affordable_states,
-        const DataPartsLock & lock,
-        DataPartStateVector * out_states = nullptr,
-        bool require_projection_parts = false) const;
+        const DataPartStates & affordable_states, const DataPartsLock & lock, DataPartStateVector * out_states = nullptr) const;
 
     /// Returns sorted list of the parts with specified states
     ///  out_states will contain snapshot of each part state
     DataPartsVector getDataPartsVectorForInternalUsage(
-        const DataPartStates & affordable_states, DataPartStateVector * out_states = nullptr, bool require_projection_parts = false) const;
+        const DataPartStates & affordable_states, DataPartStateVector * out_states = nullptr) const;
+    /// Same as above but only returns projection parts
+    ProjectionPartsVector getProjectionPartsVectorForInternalUsage(
+        const DataPartStates & affordable_states, DataPartStateVector * out_states = nullptr) const;
 
 
     /// Returns absolutely all parts (and snapshot of their states)
-    DataPartsVector getAllDataPartsVector(
-        DataPartStateVector * out_states = nullptr,
-        bool require_projection_parts = false) const;
+    DataPartsVector getAllDataPartsVector(DataPartStateVector * out_states = nullptr) const;
+    /// Same as above but only returns projection parts
+    ProjectionPartsVector getAllProjectionPartsVector(MergeTreeData::DataPartStateVector * out_states = nullptr) const;
 
     /// Returns parts in Active state
     DataParts getDataPartsForInternalUsage() const;
@@ -621,6 +626,8 @@ public:
 
     /// Delete WAL files containing parts, that all already stored on disk.
     size_t clearOldWriteAheadLogs();
+
+    size_t clearOldBrokenPartsFromDetachedDirecory();
 
     /// Delete all directories which names begin with "tmp"
     /// Must be called with locked lockForShare() because it's using relative_data_path.
