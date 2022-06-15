@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-#
+
 import subprocess
 import logging
 import json
@@ -7,9 +7,16 @@ import os
 import sys
 import time
 from shutil import rmtree
-from typing import List, Optional, Tuple
+from typing import List, Tuple
 
-from env_helper import GITHUB_JOB, REPO_COPY, TEMP_PATH, CACHES_PATH, IMAGES_PATH
+from env_helper import (
+    CACHES_PATH,
+    GITHUB_JOB,
+    IMAGES_PATH,
+    REPO_COPY,
+    S3_BUILDS_BUCKET,
+    TEMP_PATH,
+)
 from s3_helper import S3Helper
 from pr_info import PRInfo
 from version_helper import (
@@ -24,6 +31,7 @@ from docker_pull_helper import get_image_with_version
 from tee_popen import TeePopen
 
 IMAGE_NAME = "clickhouse/binary-builder"
+BUILD_LOG_NAME = "build_log.log"
 
 
 def _can_export_binaries(build_config: BuildConfig) -> bool:
@@ -86,7 +94,7 @@ def get_packager_cmd(
 def build_clickhouse(
     packager_cmd: str, logs_path: str, build_output_path: str
 ) -> Tuple[str, bool]:
-    build_log_path = os.path.join(logs_path, "build_log.log")
+    build_log_path = os.path.join(logs_path, BUILD_LOG_NAME)
     success = False
     with TeePopen(packager_cmd, build_log_path) as process:
         retcode = process.wait()
@@ -108,15 +116,56 @@ def build_clickhouse(
     return build_log_path, success
 
 
-def get_build_results_if_exists(
-    s3_helper: S3Helper, s3_prefix: str
-) -> Optional[List[str]]:
+def check_for_success_run(
+    s3_helper: S3Helper,
+    s3_prefix: str,
+    build_name: str,
+    build_config: BuildConfig,
+):
+    logged_prefix = os.path.join(S3_BUILDS_BUCKET, s3_prefix)
+    logging.info("Checking for artifacts in %s", logged_prefix)
     try:
-        content = s3_helper.list_prefix(s3_prefix)
-        return content
+        # TODO: theoretically, it would miss performance artifact for pr==0,
+        # but luckily we rerun only really failed tasks now, so we're safe
+        build_results = s3_helper.list_prefix(s3_prefix)
     except Exception as ex:
-        logging.info("Got exception %s listing %s", ex, s3_prefix)
-        return None
+        logging.info("Got exception while listing %s: %s\nRerun", logged_prefix, ex)
+        return
+
+    if build_results is None or len(build_results) == 0:
+        logging.info("Nothing found in %s, rerun", logged_prefix)
+        return
+
+    logging.info("Some build results found:\n%s", build_results)
+    build_urls = []
+    log_url = ""
+    for url in build_results:
+        url_escaped = url.replace("+", "%2B").replace(" ", "%20")
+        if BUILD_LOG_NAME in url:
+            log_url = f"https://s3.amazonaws.com/{S3_BUILDS_BUCKET}/{url_escaped}"
+        else:
+            build_urls.append(
+                f"https://s3.amazonaws.com/{S3_BUILDS_BUCKET}/{url_escaped}"
+            )
+    if not log_url:
+        # log is uploaded the last, so if there's no log we need to rerun the build
+        return
+
+    success = len(build_urls) > 0
+    create_json_artifact(
+        TEMP_PATH,
+        build_name,
+        log_url,
+        build_urls,
+        build_config,
+        0,
+        success,
+    )
+    # Fail build job if not successeded
+    if not success:
+        sys.exit(1)
+    else:
+        sys.exit(0)
 
 
 def create_json_artifact(
@@ -213,37 +262,8 @@ def main():
     )
 
     # If this is rerun, then we try to find already created artifacts and just
-    # put them as github actions artifcat (result)
-    build_results = get_build_results_if_exists(s3_helper, s3_path_prefix)
-    if build_results is not None and len(build_results) > 0:
-        logging.info("Some build results found %s", build_results)
-        build_urls = []
-        log_url = ""
-        for url in build_results:
-            if "build_log.log" in url:
-                log_url = "https://s3.amazonaws.com/clickhouse-builds/" + url.replace(
-                    "+", "%2B"
-                ).replace(" ", "%20")
-            else:
-                build_urls.append(
-                    "https://s3.amazonaws.com/clickhouse-builds/"
-                    + url.replace("+", "%2B").replace(" ", "%20")
-                )
-        success = len(build_urls) > 0
-        create_json_artifact(
-            TEMP_PATH,
-            build_name,
-            log_url,
-            build_urls,
-            build_config,
-            0,
-            success,
-        )
-        # Fail build job if not successeded
-        if not success:
-            sys.exit(1)
-        else:
-            sys.exit(0)
+    # put them as github actions artifact (result)
+    check_for_success_run(s3_helper, s3_path_prefix, build_name, build_config)
 
     docker_image = get_image_with_version(IMAGES_PATH, IMAGE_NAME)
     image_version = docker_image.version
@@ -295,14 +315,12 @@ def main():
 
     logging.info("Going to run packager with %s", packager_cmd)
 
-    build_clickhouse_log = os.path.join(TEMP_PATH, "build_log")
-    if not os.path.exists(build_clickhouse_log):
-        os.makedirs(build_clickhouse_log)
+    logs_path = os.path.join(TEMP_PATH, "build_log")
+    if not os.path.exists(logs_path):
+        os.makedirs(logs_path)
 
     start = time.time()
-    log_path, success = build_clickhouse(
-        packager_cmd, build_clickhouse_log, build_output_path
-    )
+    log_path, success = build_clickhouse(packager_cmd, logs_path, build_output_path)
     elapsed = int(time.time() - start)
     subprocess.check_call(
         f"sudo chown -R ubuntu:ubuntu {build_output_path}", shell=True
@@ -310,16 +328,9 @@ def main():
     subprocess.check_call(f"sudo chown -R ubuntu:ubuntu {ccache_path}", shell=True)
     logging.info("Build finished with %s, log path %s", success, log_path)
 
+    # Upload the ccache first to have the least build time in case of problems
     logging.info("Will upload cache")
     upload_ccache(ccache_path, s3_helper, pr_info.number, TEMP_PATH)
-
-    if os.path.exists(log_path):
-        log_url = s3_helper.upload_build_file_to_s3(
-            log_path, s3_path_prefix + "/" + os.path.basename(log_path)
-        )
-        logging.info("Log url %s", log_url)
-    else:
-        logging.info("Build log doesn't exist")
 
     # FIXME performance
     performance_urls = []
@@ -346,6 +357,14 @@ def main():
     logging.info("Got build URLs %s", build_urls)
 
     print("::notice ::Build URLs: {}".format("\n".join(build_urls)))
+
+    if os.path.exists(log_path):
+        log_url = s3_helper.upload_build_file_to_s3(
+            log_path, s3_path_prefix + "/" + os.path.basename(log_path)
+        )
+        logging.info("Log url %s", log_url)
+    else:
+        logging.info("Build log doesn't exist")
 
     print(f"::notice ::Log URL: {log_url}")
 
