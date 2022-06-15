@@ -404,6 +404,11 @@ Poco::Timestamp DiskLocal::getLastModified(const String & path) const
     return FS::getModificationTimestamp(fs::path(disk_path) / path);
 }
 
+time_t DiskLocal::getLastChanged(const String & path) const
+{
+    return FS::getChangeTime(fs::path(disk_path) / path);
+}
+
 void DiskLocal::createHardLink(const String & src_path, const String & dst_path)
 {
     DB::createHardLink(fs::path(disk_path) / src_path, fs::path(disk_path) / dst_path);
