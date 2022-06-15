@@ -154,7 +154,8 @@ int KerberosInit::init(const String & keytab_file, const String & principal, con
         LOG_DEBUG(log,"Stored credentials");
     }
 
-    if (k5.switch_to_cache) {
+    if (k5.switch_to_cache)
+    {
         ret = krb5_cc_switch(k5.ctx, k5.out_cc);
         if (ret)
             throw Exception("Error while switching to new cache", ErrorCodes::KERBEROS_ERROR);
