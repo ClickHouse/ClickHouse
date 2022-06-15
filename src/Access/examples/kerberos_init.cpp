@@ -29,8 +29,10 @@ int main(int argc, char ** argv)
     try
     {
         kerberosInit(argv[1], argv[2], cache_name);
-    } catch (const Exception & e) {
-         std::cout << "KerberosInit failure: " << getExceptionMessage(e, false) << "\n";
+    }
+    catch (const Exception & e)
+    {
+        std::cout << "KerberosInit failure: " << getExceptionMessage(e, false) << "\n";
         return -1;
     }
     std::cout << "Done" << "\n";

@@ -9,6 +9,14 @@
 
 using namespace DB;
 
+namespace DB
+{
+namespace ErrorCodes
+{
+    extern const int KERBEROS_ERROR;
+}
+}
+
 struct k5_data
 {
     krb5_context ctx;
@@ -145,7 +153,7 @@ int KerberosInit::init(const String & keytab_file, const String & principal, con
     }
     else
     {
-        LOG_DEBUG(log,"Successfull renewal");
+        LOG_DEBUG(log,"Successful renewal");
         ret = krb5_cc_initialize(k5.ctx, k5.out_cc, k5.me);
         if (ret)
             throw Exception("Error when initializing cache", ErrorCodes::KERBEROS_ERROR);
