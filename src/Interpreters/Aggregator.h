@@ -1365,7 +1365,7 @@ private:
 
     template <typename Method, typename Table>
     void mergeStreamsImpl(
-        Block & block,
+        Block block,
         Arena * aggregates_pool,
         Method & method,
         Table & data,
@@ -1384,7 +1384,7 @@ private:
         const ColumnRawPtrs & key_columns) const;
 
     void mergeBlockWithoutKeyStreamsImpl(
-        Block & block,
+        Block block,
         AggregatedDataVariants & result) const;
     void mergeWithoutKeyStreamsImpl(
         AggregatedDataVariants & result,
