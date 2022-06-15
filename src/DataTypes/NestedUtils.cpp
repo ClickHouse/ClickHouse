@@ -17,7 +17,6 @@
 
 #include <boost/algorithm/string/case_conv.hpp>
 
-
 namespace DB
 {
 
@@ -76,8 +75,7 @@ Block flatten(const Block & block)
 
     for (const auto & elem : block)
     {
-        const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(elem.type.get());
-        if (type_arr)
+        if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(elem.type.get()))
         {
             const DataTypeTuple * type_tuple = typeid_cast<const DataTypeTuple *>(type_arr->getNestedType().get());
             if (type_tuple && type_tuple->haveExplicitNames())
@@ -109,6 +107,24 @@ Block flatten(const Block & block)
                             : std::move(column_array_of_element),
                         std::make_shared<DataTypeArray>(element_types[i]),
                         nested_name));
+                }
+            }
+            else
+                res.insert(elem);
+        }
+        else if (const DataTypeTuple * type_tuple = typeid_cast<const DataTypeTuple *>(elem.type.get()))
+        {
+            if (type_tuple->haveExplicitNames())
+            {
+                const DataTypes & element_types = type_tuple->getElements();
+                const Strings & names = type_tuple->getElementNames();
+                const ColumnTuple * column_tuple = typeid_cast<const ColumnTuple *>(elem.column.get());
+                size_t tuple_size = column_tuple->tupleSize();
+                for (size_t i = 0; i < tuple_size; ++i)
+                {
+                    const auto & element_column = column_tuple->getColumn(i);
+                    String nested_name = concatenateName(elem.name, names[i]);
+                    res.insert(ColumnWithTypeAndName(element_column.getPtr(), element_types[i], nested_name));
                 }
             }
             else
