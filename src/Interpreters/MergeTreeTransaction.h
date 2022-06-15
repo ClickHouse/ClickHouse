@@ -18,7 +18,7 @@ using DataPartsVector = std::vector<DataPartPtr>;
 
 /// This object is responsible for tracking all changes that some transaction is making in MergeTree tables.
 /// It collects all changes that queries of current transaction made in data part sets of all MergeTree tables
-/// to ether make them visible when transaction commits or undo when transaction rolls back.
+/// to either make them visible when transaction commits or undo when transaction rolls back.
 class MergeTreeTransaction : public std::enable_shared_from_this<MergeTreeTransaction>, private boost::noncopyable
 {
     friend class TransactionLog;

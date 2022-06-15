@@ -3,7 +3,7 @@ sidebar_position: 50
 sidebar_label: Configuration Files
 ---
 
-# Configuration Files {#configuration_files}
+# Configuration Files
 
 ClickHouse supports multi-file configuration management. The main server configuration file is `/etc/clickhouse-server/config.xml` or `/etc/clickhouse-server/config.yaml`. Other files must be in the `/etc/clickhouse-server/config.d` directory. Note, that any configuration file can be written either in XML or YAML, but mixing formats in one file is not supported. For example, you can have main configs as `config.xml` and `users.xml` and write additional files in `config.d` and `users.d` directories in `.yaml`.
 
@@ -57,7 +57,7 @@ Substitutions can also be performed from ZooKeeper. To do this, specify the attr
 
 The `config.xml` file can specify a separate config with user settings, profiles, and quotas. The relative path to this config is set in the `users_config` element. By default, it is `users.xml`. If `users_config` is omitted, the user settings, profiles, and quotas are specified directly in `config.xml`.
 
-Users configuration can be splitted into separate files similar to `config.xml` and `config.d/`.
+Users configuration can be split into separate files similar to `config.xml` and `config.d/`.
 Directory name is defined as `users_config` setting without `.xml` postfix concatenated with `.d`.
 Directory `users.d` is used by default, as `users_config` defaults to `users.xml`.
 

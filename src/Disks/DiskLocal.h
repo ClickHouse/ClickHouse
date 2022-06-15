@@ -58,7 +58,7 @@ public:
 
     void moveDirectory(const String & from_path, const String & to_path) override;
 
-    DiskDirectoryIteratorPtr iterateDirectory(const String & path) override;
+    DirectoryIteratorPtr iterateDirectory(const String & path) const override;
 
     void createFile(const String & path) override;
 
@@ -70,7 +70,7 @@ public:
 
     void copyDirectoryContent(const String & from_dir, const std::shared_ptr<IDisk> & to_disk, const String & to_dir) override;
 
-    void listFiles(const String & path, std::vector<String> & file_names) override;
+    void listFiles(const String & path, std::vector<String> & file_names) const override;
 
     std::unique_ptr<ReadBufferFromFileBase> readFile(
         const String & path,
@@ -91,7 +91,9 @@ public:
 
     void setLastModified(const String & path, const Poco::Timestamp & timestamp) override;
 
-    Poco::Timestamp getLastModified(const String & path) override;
+    Poco::Timestamp getLastModified(const String & path) const override;
+
+    time_t getLastChanged(const String & path) const override;
 
     void setReadOnly(const String & path) override;
 

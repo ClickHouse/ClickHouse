@@ -2,7 +2,7 @@
 sidebar_position: 127
 ---
 
-# groupBitXor {#groupbitxor}
+# groupBitXor
 
 Applies bitwise `XOR` for series of numbers.
 

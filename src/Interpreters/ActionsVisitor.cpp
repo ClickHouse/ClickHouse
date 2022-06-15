@@ -839,6 +839,9 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
 
     if (node.name == "grouping")
     {
+        if (data.only_consts)
+            return; // Can not perform constant folding, because this function can be executed only after GROUP BY
+
         size_t arguments_size = node.arguments->children.size();
         if (arguments_size == 0)
             throw Exception(ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION, "Function GROUPING expects at least one argument");
@@ -950,13 +953,34 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
     if (AggregateFunctionFactory::instance().isAggregateFunctionName(node.name))
         return;
 
-    FunctionOverloadResolverPtr function_builder = UserDefinedExecutableFunctionFactory::instance().tryGet(node.name, data.getContext());
+    FunctionOverloadResolverPtr function_builder;
+
+    auto current_context = data.getContext();
+
+    if (UserDefinedExecutableFunctionFactory::instance().has(node.name, current_context))
+    {
+        Array parameters;
+        if (node.parameters)
+        {
+            auto & node_parameters = node.parameters->children;
+            size_t parameters_size = node_parameters.size();
+            parameters.resize(parameters_size);
+
+            for (size_t i = 0; i < parameters_size; ++i)
+            {
+                ASTPtr literal = evaluateConstantExpressionAsLiteral(node_parameters[i], current_context);
+                parameters[i] = literal->as<ASTLiteral>()->value;
+            }
+        }
+
+        function_builder = UserDefinedExecutableFunctionFactory::instance().tryGet(node.name, current_context, parameters);
+    }
 
     if (!function_builder)
     {
         try
         {
-            function_builder = FunctionFactory::instance().get(node.name, data.getContext());
+            function_builder = FunctionFactory::instance().get(node.name, current_context);
         }
         catch (Exception & e)
         {

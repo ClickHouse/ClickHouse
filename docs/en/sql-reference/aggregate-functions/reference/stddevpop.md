@@ -2,7 +2,7 @@
 sidebar_position: 30
 ---
 
-# stddevPop {#stddevpop}
+# stddevPop
 
 The result is equal to the square root of [varPop](../../../sql-reference/aggregate-functions/reference/varpop.md).
 

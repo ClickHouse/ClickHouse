@@ -36,12 +36,13 @@
 #include <re2/re2.h>
 #include <filesystem>
 #include <Storages/Distributed/DirectoryMonitor.h>
-#include <Processors/Sources/SourceWithProgress.h>
+#include <Processors/ISource.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/Formats/ISchemaReader.h>
 #include <Processors/Sources/NullSource.h>
 #include <QueryPipeline/Pipe.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 
 
@@ -424,7 +425,7 @@ static std::chrono::seconds getLockTimeout(ContextPtr context)
 using StorageFilePtr = std::shared_ptr<StorageFile>;
 
 
-class StorageFileSource : public SourceWithProgress
+class StorageFileSource : public ISource
 {
 public:
     struct FilesInfo
@@ -481,7 +482,7 @@ public:
         FilesInfoPtr files_info_,
         ColumnsDescription columns_description_,
         std::unique_ptr<ReadBuffer> read_buf_)
-        : SourceWithProgress(getBlockForSource(storage_, storage_snapshot_, columns_description_, files_info_))
+        : ISource(getBlockForSource(storage_, storage_snapshot_, columns_description_, files_info_))
         , storage(std::move(storage_))
         , storage_snapshot(storage_snapshot_)
         , files_info(std::move(files_info_))
@@ -812,7 +813,9 @@ public:
 
     void onException() override
     {
-        write_buf->finalize();
+        if (!writer)
+            return;
+        onFinish();
     }
 
     void onFinish() override
