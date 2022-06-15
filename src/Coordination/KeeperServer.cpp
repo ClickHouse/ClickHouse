@@ -387,6 +387,8 @@ void KeeperServer::shutdown()
 namespace
 {
 
+// Serialize the request with all the necessary information for the leader
+// we don't know ZXID and digest yet so we don't serialize it
 nuraft::ptr<nuraft::buffer> getZooKeeperRequestMessage(const KeeperStorage::RequestForSession & request_for_session)
 {
     DB::WriteBufferFromNuraftBuffer write_buf;
@@ -396,6 +398,7 @@ nuraft::ptr<nuraft::buffer> getZooKeeperRequestMessage(const KeeperStorage::Requ
     return write_buf.getBuffer();
 }
 
+// Serialize the request for the log entry
 nuraft::ptr<nuraft::buffer> getZooKeeperLogEntry(const KeeperStorage::RequestForSession & request_for_session)
 {
     DB::WriteBufferFromNuraftBuffer write_buf;
@@ -540,6 +543,7 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
     {
         switch (type)
         {
+            // This event is called before a single log is appended to the entry on the leader node
             case nuraft::cb_func::PreAppendLog:
             {
                 // we are relying on the fact that request are being processed under a mutex

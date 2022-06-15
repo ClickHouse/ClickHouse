@@ -190,6 +190,7 @@ void KeeperStateMachine::preprocess(const KeeperStorage::RequestForSession & req
         request_for_session.zxid,
         true /* check_acl */,
         request_for_session.digest);
+
     if (digest_enabled && request_for_session.digest)
         assertDigest(*request_for_session.digest, storage->getNodesDigest(false), *request_for_session.request, false);
 }
@@ -282,6 +283,9 @@ void KeeperStateMachine::commit_config(const uint64_t /* log_idx */, nuraft::ptr
 void KeeperStateMachine::rollback(uint64_t log_idx, nuraft::buffer & data)
 {
     auto request_for_session = parseRequest(data);
+    // If we received a log from an older node, use the log_idx as the zxid
+    // log_idx will always be larger or equal to the zxid so we can safely do this
+    // (log_idx is increased for all logs, while zxid is only increased for requests)
     if (!request_for_session.zxid)
         request_for_session.zxid = log_idx;
 
