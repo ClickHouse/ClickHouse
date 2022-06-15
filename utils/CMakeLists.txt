@@ -32,7 +32,7 @@ if (NOT DEFINED ENABLE_UTILS OR ENABLE_UTILS)
     add_subdirectory (check-mysql-binlog)
     add_subdirectory (keeper-bench)
     add_subdirectory (graphite-rollup)
-    add_subdirectory (self-extr-exec)
+    add_subdirectory (self-extracting-executable)
 
     if (TARGET ch_contrib::nuraft)
         add_subdirectory (keeper-data-dumper)

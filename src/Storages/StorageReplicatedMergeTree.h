@@ -300,6 +300,9 @@ public:
     /// Check if there are new broken disks and enqueue part recovery tasks.
     void checkBrokenDisks();
 
+    static bool removeSharedDetachedPart(DiskPtr disk, const String & path, const String & part_name, const String & table_uuid,
+        const String & zookeeper_name, const String & replica_name, const String & zookeeper_path, ContextPtr local_context);
+
 private:
     std::atomic_bool are_restoring_replica {false};
 
@@ -791,9 +794,6 @@ private:
         const String & path_to_set_hardlinked_files = "", const NameSet & hardlinked_files = {});
 
     bool removeDetachedPart(DiskPtr disk, const String & path, const String & part_name, bool is_freezed) override;
-
-    bool removeSharedDetachedPart(DiskPtr disk, const String & path, const String & part_name, const String & table_uuid,
-        const String & zookeeper_name, const String & replica_name, const String & zookeeper_path);
 
     /// Create freeze metadata for table and save in zookeeper. Required only if zero-copy replication enabled.
     void createAndStoreFreezeMetadata(DiskPtr disk, DataPartPtr part, String backup_part_path) const override;
