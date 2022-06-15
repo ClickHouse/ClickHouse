@@ -1769,9 +1769,10 @@ void KeeperStorage::preprocessRequest(
 
     if (uncommitted_transactions.empty())
     {
-        if (new_last_zxid <= last_zxid)
+        // if we have no uncommitted transactions it means the last zxid is possibly loaded from snapshot
+        if (last_zxid != old_snapshot_zxid && new_last_zxid <= last_zxid)
             throw Exception(
-                ErrorCodes::LOGICAL_ERROR, "Got new ZXID {} smaller or equal to current ZXID ({}). It's a bug", new_last_zxid, last_zxid);
+                ErrorCodes::LOGICAL_ERROR, "Got new ZXID ({}) smaller or equal to current ZXID ({}). It's a bug", new_last_zxid, last_zxid);
     }
     else
     {
@@ -1781,7 +1782,7 @@ void KeeperStorage::preprocessRequest(
 
         if (new_last_zxid <= last_zxid)
             throw Exception(
-                ErrorCodes::LOGICAL_ERROR, "Got new ZXID {} smaller or equal to current ZXID ({}). It's a bug", new_last_zxid, last_zxid);
+                ErrorCodes::LOGICAL_ERROR, "Got new ZXID ({}) smaller or equal to current ZXID ({}). It's a bug", new_last_zxid, last_zxid);
     }
 
     std::vector<Delta> new_deltas;
