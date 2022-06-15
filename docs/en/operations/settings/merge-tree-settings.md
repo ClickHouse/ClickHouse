@@ -166,7 +166,7 @@ Similar to [replicated_deduplication_window](#replicated-deduplication-window), 
 
 ## max_replicated_logs_to_keep
 
-How many records may be in log, if there is inactive replica. Inactive replica becomes lost when when this number exceed.
+How many records may be in the ClickHouse Keeper log if there is inactive replica. An inactive replica becomes lost when when this number exceed.
 
 Possible values:
 
@@ -186,7 +186,7 @@ Default value: 10
 
 ## prefer_fetch_merged_part_time_threshold
 
-If time passed after replication log entry creation exceeds this threshold and sum size of parts is greater than `prefer_fetch_merged_part_size_threshold`, prefer fetching merged part from replica instead of doing merge locally. To speed up very long merges.
+If the time passed since a replication log (ClickHouse Keeper or ZooKeeper) entry creation exceeds this threshold, and the sum of the size of parts is greater than `prefer_fetch_merged_part_size_threshold`, then prefer fetching merged part from a replica instead of doing merge locally. This is to speed up very long merges.
 
 Possible values:
 
@@ -196,7 +196,7 @@ Default value: 3600
 
 ## prefer_fetch_merged_part_size_threshold
 
-If sum size of parts exceeds this threshold and time passed after replication log entry creation is greater than `prefer_fetch_merged_part_time_threshold`, prefer fetching merged part from replica instead of doing merge locally. To speed up very long merges.
+If the sum of the size of parts exceeds this threshold and the time since a replication log entry creation is greater than `prefer_fetch_merged_part_time_threshold`, then prefer fetching merged part from a replica instead of doing merge locally. This is to speed up very long merges.
 
 Possible values:
 
@@ -206,17 +206,17 @@ Default value: 10,737,418,240
 
 ## execute_merges_on_single_replica_time_threshold
 
-When greater than zero only a single replica starts the merge immediately, others wait up to that amount of time to download the result instead of doing merges locally. If the chosen replica doesn't finish the merge during that amount of time, fallback to standard behavior happens.
+When this setting has a value greater than zero, only a single replica starts the merge immediately, and other replicas wait up to that amount of time to download the result instead of doing merges locally. If the chosen replica doesn't finish the merge during that amount of time, fallback to standard behavior happens.
 
 Possible values:
 
 -   Any positive integer.
 
-Default value: 0
+Default value: 0 (seconds)
 
 ## remote_fs_execute_merges_on_single_replica_time_threshold
 
-When greater than zero only a single replica starts the merge immediately if merged part on shared storage and `allow_remote_fs_zero_copy_replication` is enabled.
+When this setting has a value greater than than zero only a single replica starts the merge immediately if merged part on shared storage and `allow_remote_fs_zero_copy_replication` is enabled.
 
 Possible values:
 
@@ -236,7 +236,7 @@ Default value: 7200
 
 ## always_fetch_merged_part
 
-If true, replica never merge parts and always download merged parts from other replicas.
+If true, this replica never merges parts and always downloads merged parts from other replicas.
 
 Possible values:
 
@@ -267,7 +267,7 @@ Default value: 1,073,741,824
 
 ## max_files_to_modify_in_alter_columns
 
-Not apply ALTER if number of files for modification(deletion, addition) more than this.
+Do not apply ALTER if number of files for modification(deletion, addition) is greater than this setting.
 
 Possible values:
 
@@ -277,7 +277,7 @@ Default value: 75
 
 ## max_files_to_remove_in_alter_columns
 
-Not apply ALTER, if number of files for deletion more than this.
+Do not apply ALTER, if the number of files for deletion is greater than this setting.
 
 Possible values:
 
@@ -287,7 +287,7 @@ Default value: 50
 
 ## replicated_max_ratio_of_wrong_parts
 
-If ratio of wrong parts to total number of parts is less than this - allow to start.
+If the ratio of wrong parts to total number of parts is less than this - allow to start.
 
 Possible values:
 
@@ -317,7 +317,7 @@ Default value: Inherited from default profile `http_connection_timeout` if not s
 
 ## replicated_can_become_leader
 
-If true, Replicated tables replicas on this node will try to acquire leadership.
+If true, replicated tables replicas on this node will try to acquire leadership.
 
 Possible values:
 
