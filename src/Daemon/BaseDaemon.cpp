@@ -352,6 +352,7 @@ private:
 
 #if defined(OS_LINUX)
         /// Write information about binary checksum. It can be difficult to calculate, so do it only after printing stack trace.
+        /// Please keep the below log messages in-sync with the ones in programs/server/Server.cpp
         String calculated_binary_hash = getHashOfLoadedBinaryHex();
         if (daemon.stored_binary_hash.empty())
         {

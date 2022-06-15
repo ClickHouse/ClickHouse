@@ -744,6 +744,8 @@ int Server::main(const std::vector<std::string> & /*args*/)
         /// But there are other sections of the binary (e.g. exception handling tables)
         /// that are interpreted (not executed) but can alter the behaviour of the program as well.
 
+        /// Please keep the below log messages in-sync with the ones in daemon/BaseDaemon.cpp
+
         String calculated_binary_hash = getHashOfLoadedBinaryHex();
 
         if (stored_binary_hash.empty())
