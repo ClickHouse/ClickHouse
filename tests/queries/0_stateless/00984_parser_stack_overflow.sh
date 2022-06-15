@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Tags: no-tsan
+# FIXME should work with tsan
 
 # Such a huge timeout mostly for debug build.
 CLICKHOUSE_CURL_TIMEOUT=60
