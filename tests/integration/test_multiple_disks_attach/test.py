@@ -26,7 +26,6 @@ node1 = cluster.add_instance(
 )
 
 
-
 @pytest.fixture(scope="module")
 def start_cluster():
     try:
@@ -41,19 +40,19 @@ def test_attach_part_from_different_disk(start_cluster):
     try:
 
         node1.query(
-                """
+            """
                 DROP TABLE IF EXISTS table_01;
                 """
-            )
+        )
 
         node1.query(
-                """
+            """
                 DROP TABLE IF EXISTS table_02;
                 """
-            )
+        )
 
         node1.query(
-                """
+            """
                 CREATE TABLE table_01 (
                     date Date,
                     n Int32
@@ -61,10 +60,10 @@ def test_attach_part_from_different_disk(start_cluster):
                 PARTITION BY date
                 ORDER BY date;
                 """
-            )
+        )
 
         node1.query(
-                """
+            """
                 CREATE TABLE table_02 (
                     date Date,
                     n Int32
@@ -73,10 +72,10 @@ def test_attach_part_from_different_disk(start_cluster):
                 ORDER BY date
                 Settings storage_policy='local1';
                 """
-            )
+        )
 
         node1.query(
-                """
+            """
                 CREATE TABLE table_03 (
                     date Date,
                     n Int32
@@ -85,7 +84,7 @@ def test_attach_part_from_different_disk(start_cluster):
                 ORDER BY date
                 Settings storage_policy='local2';
                 """
-            )
+        )
 
         node1.query(
             """
@@ -93,45 +92,60 @@ def test_attach_part_from_different_disk(start_cluster):
             """
         )
 
-        assert node1.query(
-            """
+        assert (
+            node1.query(
+                """
             SELECT COUNT() FROM table_01;
             """
-        ) == "1000\n"
+            )
+            == "1000\n"
+        )
 
         node1.query(
-                """
+            """
                 ALTER TABLE table_02 ATTACH PARTITION '2019-10-01' FROM table_01;
                 """
-            )
+        )
 
-        assert node1.query(
-            """
+        assert (
+            node1.query(
+                """
             SELECT COUNT() FROM table_02;
             """
-        ) == "1000\n"
+            )
+            == "1000\n"
+        )
 
         node1.query(
-                """
+            """
                 ALTER TABLE table_03 ATTACH PARTITION '2019-10-01' FROM table_02;
                 """
-            )
+        )
 
-        assert node1.query(
-            """
+        assert (
+            node1.query(
+                """
             SELECT COUNT() FROM table_03;
             """
-        ) == "1000\n"
+            )
+            == "1000\n"
+        )
 
     finally:
-        node1.query("""
+        node1.query(
+            """
         DROP TABLE IF EXISTS table_01;
-        """)
+        """
+        )
 
-        node1.query("""
+        node1.query(
+            """
         DROP TABLE IF EXISTS table_02;
-        """)
+        """
+        )
 
-        node1.query("""
+        node1.query(
+            """
         DROP TABLE IF EXISTS table_03;
-        """)
+        """
+        )

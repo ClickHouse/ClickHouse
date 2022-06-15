@@ -5861,7 +5861,9 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::cloneAndLoadDataPart(
         localBackup(disk, src_part_path, dst_part_path, /* make_source_readonly */ false);
         disk->removeFileIfExists(fs::path(dst_part_path) / IMergeTreeDataPart::DELETE_ON_DESTROY_MARKER_FILE_NAME);
         disk->removeFileIfExists(fs::path(dst_part_path) / IMergeTreeDataPart::TXN_VERSION_METADATA_FILE_NAME);
-    } else {
+    }
+    else
+    {
         src_part->makeCloneToOtherDisk(disk, tmp_dst_part_name, relative_data_path);
     }
 
