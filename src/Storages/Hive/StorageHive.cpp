@@ -37,6 +37,8 @@
 #include <Storages/Hive/StorageHiveMetadata.h>
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/StorageFactory.h>
+#include <DataTypes/NestedUtils.h>
+#include <DataTypes/DataTypeTuple.h>
 
 namespace DB
 {
@@ -563,8 +565,8 @@ HiveFiles StorageHive::collectHiveFilesFromPartition(
     const ContextPtr & context_,
     PruneLevel prune_level) const
 {
-    LOG_DEBUG(
-        log, "Collect hive files from partition {}, prune_level:{}", boost::join(partition.values, ","), pruneLevelToString(prune_level));
+    //LOG_DEBUG(
+    //    log, "Collect hive files from partition {}, prune_level:{}", boost::join(partition.values, ","), pruneLevelToString(prune_level));
 
     /// Skip partition "__HIVE_DEFAULT_PARTITION__"
     bool has_default_partition = false;
@@ -766,8 +768,13 @@ Pipe StorageHive::read(
     sources_info->hive_metastore_client = hive_metastore_client;
     sources_info->partition_name_types = partition_name_types;
 
-    Block sample_block;
     const auto header_block = storage_snapshot->metadata->getSampleBlock();
+    bool support_subset_columns = supportsSubsetOfColumns();
+    Block flatten_block;
+    if (support_subset_columns)
+        flatten_block = Nested::flatten(header_block);
+
+    Block sample_block;
     for (const auto & column : column_names)
     {
         if (header_block.has(column))
@@ -775,13 +782,17 @@ Pipe StorageHive::read(
             sample_block.insert(header_block.getByName(column));
             continue;
         }
-
+        else if (support_subset_columns && flatten_block.has(column))
+        {
+            sample_block.insert(flatten_block.getByName(column));
+            continue;
+        }
         if (column == "_path")
             sources_info->need_path_column = true;
         if (column == "_file")
             sources_info->need_file_column = true;
     }
-
+    LOG_TRACE(&Poco::Logger::get("StorageHive"), "sample_block={}", sample_block.dumpNames());
     if (num_streams > sources_info->hive_files.size())
         num_streams = sources_info->hive_files.size();
 
