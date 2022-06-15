@@ -26,6 +26,10 @@ public:
     /// The function returns false if this partition is being already restored by another replica.
     virtual bool acquireInsertingDataIntoReplicatedTable(const String & table_zk_path) = 0;
 
+    /// Sets that this replica is going to restore a ReplicatedAccessStorage.
+    /// The function returns false if this access storage is being already restored by another replica.
+    virtual bool acquireReplicatedAccessStorage(const String & access_storage_zk_path) = 0;
+
     /// Removes remotely stored information.
     virtual void drop() {}
 };

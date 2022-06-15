@@ -4,6 +4,7 @@
 #include <Backups/IBackup.h>
 #include <Backups/IBackupEntry.h>
 #include <Backups/BackupUtils.h>
+#include <Access/AccessBackup.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/formatAST.h>
@@ -661,6 +662,18 @@ void RestorerFromBackup::addDataRestoreTasks(DataRestoreTasks && new_tasks)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Adding data-restoring tasks is not allowed");
     insertAtEnd(data_restore_tasks, std::move(new_tasks));
 }
+
+void RestorerFromBackup::addAccessRestorePathInBackup(const String & data_path)
+{
+    bool first_access_restore_path = !access_restore_task;
+    if (first_access_restore_path)
+        access_restore_task = std::make_shared<AccessRestoreTask>(backup, restore_settings, restore_coordination);
+ 
+    access_restore_task->addDataPath(data_path);
+
+    if (first_access_restore_path)
+        addDataRestoreTask([task = access_restore_task, access_control = &context->getAccessControl()] { task->restore(*access_control); });
+} 
 
 void RestorerFromBackup::executeCreateQuery(const ASTPtr & create_query) const
 {

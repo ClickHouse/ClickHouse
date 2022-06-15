@@ -46,6 +46,9 @@ struct RowPolicy : public IAccessEntity
     static constexpr const auto TYPE = AccessEntityType::ROW_POLICY;
     AccessEntityType getType() const override { return TYPE; }
 
+    std::vector<UUID> findDependencies() const override;
+    void replaceDependencies(const std::unordered_map<UUID, UUID> & old_to_new_ids) override;
+
     /// Which roles or users should use this row policy.
     RolesOrUsersSet to_roles;
 

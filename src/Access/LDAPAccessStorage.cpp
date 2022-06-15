@@ -28,7 +28,7 @@ namespace ErrorCodes
 
 
 LDAPAccessStorage::LDAPAccessStorage(const String & storage_name_, AccessControl & access_control_, const Poco::Util::AbstractConfiguration & config, const String & prefix)
-    : IAccessStorage(storage_name_), access_control(access_control_), memory_storage(storage_name_, access_control.getChangesNotifier())
+    : IAccessStorage(storage_name_), access_control(access_control_), memory_storage(storage_name_, /* allow_backup= */ false, access_control.getChangesNotifier())
 {
     setConfiguration(config, prefix);
 }
@@ -442,10 +442,10 @@ AccessEntityPtr LDAPAccessStorage::readImpl(const UUID & id, bool throw_if_not_e
 }
 
 
-std::optional<String> LDAPAccessStorage::readNameImpl(const UUID & id, bool throw_if_not_exists) const
+std::optional<std::pair<String, AccessEntityType>> LDAPAccessStorage::readNameWithTypeImpl(const UUID & id, bool throw_if_not_exists) const
 {
     std::scoped_lock lock(mutex);
-    return memory_storage.readName(id, throw_if_not_exists);
+    return memory_storage.readNameWithType(id, throw_if_not_exists);
 }
 
 
@@ -504,4 +504,5 @@ std::optional<UUID> LDAPAccessStorage::authenticateImpl(
 
     return id;
 }
+
 }

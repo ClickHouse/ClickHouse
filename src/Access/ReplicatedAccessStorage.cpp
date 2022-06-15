@@ -2,6 +2,8 @@
 #include <Access/MemoryAccessStorage.h>
 #include <Access/ReplicatedAccessStorage.h>
 #include <Access/AccessChangesNotifier.h>
+#include <Backups/RestoreSettings.h>
+#include <Backups/IRestoreCoordination.h>
 #include <IO/ReadHelpers.h>
 #include <boost/container/flat_set.hpp>
 #include <Common/ZooKeeper/KeeperException.h>
@@ -33,10 +35,12 @@ ReplicatedAccessStorage::ReplicatedAccessStorage(
     const String & storage_name_,
     const String & zookeeper_path_,
     zkutil::GetZooKeeper get_zookeeper_,
+    bool allow_backup_,
     AccessChangesNotifier & changes_notifier_)
     : IAccessStorage(storage_name_)
     , zookeeper_path(zookeeper_path_)
     , get_zookeeper(get_zookeeper_)
+    , backup_allowed(allow_backup_)
     , watched_queue(std::make_shared<ConcurrentBoundedQueue<UUID>>(std::numeric_limits<size_t>::max()))
     , changes_notifier(changes_notifier_)
 {
@@ -99,6 +103,15 @@ static void retryOnZooKeeperUserError(size_t attempts, Func && function)
 std::optional<UUID> ReplicatedAccessStorage::insertImpl(const AccessEntityPtr & new_entity, bool replace_if_exists, bool throw_if_exists)
 {
     const UUID id = generateRandomID();
+    if (insertWithID(id, new_entity, replace_if_exists, throw_if_exists))
+        return id;
+
+    return std::nullopt;
+}
+
+
+bool ReplicatedAccessStorage::insertWithID(const UUID & id, const AccessEntityPtr & new_entity, bool replace_if_exists, bool throw_if_exists)
+{
     const AccessEntityTypeInfo type_info = AccessEntityTypeInfo::get(new_entity->getType());
     const String & name = new_entity->getName();
     LOG_DEBUG(getLogger(), "Inserting entity of type {} named {} with id {}", type_info.name, name, toString(id));
@@ -108,11 +121,11 @@ std::optional<UUID> ReplicatedAccessStorage::insertImpl(const AccessEntityPtr & 
     retryOnZooKeeperUserError(10, [&]{ ok = insertZooKeeper(zookeeper, id, new_entity, replace_if_exists, throw_if_exists); });
 
     if (!ok)
-        return std::nullopt;
+        return false;
 
     std::lock_guard lock{mutex};
     refreshEntityNoLock(zookeeper, id);
-    return id;
+    return true;
 }
 
 
@@ -598,6 +611,28 @@ AccessEntityPtr ReplicatedAccessStorage::readImpl(const UUID & id, bool throw_if
     }
     const Entry & entry = it->second;
     return entry.entity;
+}
+
+std::vector<std::pair<UUID, AccessEntityPtr>> ReplicatedAccessStorage::readAllForBackup(AccessEntityType type, const BackupSettings &) const
+{
+    if (!isBackupAllowed())
+        throwBackupNotAllowed();
+    return readAllWithIDs(type);
+}
+
+void ReplicatedAccessStorage::insertFromBackup(const std::vector<std::pair<UUID, AccessEntityPtr>> & entities_from_backup, const RestoreSettings & restore_settings, std::shared_ptr<IRestoreCoordination> restore_coordination)
+{
+    if (!isRestoreAllowed())
+        throwRestoreNotAllowed();
+
+    if (!restore_coordination->acquireReplicatedAccessStorage(zookeeper_path))
+        return;
+
+    bool replace_if_exists = (restore_settings.create_access == RestoreAccessCreationMode::kReplace);
+    bool throw_if_exists = (restore_settings.create_access == RestoreAccessCreationMode::kCreate);
+    
+    for (const auto & [id, entity] : entities_from_backup)
+        insertWithID(id, entity, replace_if_exists, throw_if_exists);
 }
 
 }

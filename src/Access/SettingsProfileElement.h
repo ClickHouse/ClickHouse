@@ -3,6 +3,7 @@
 #include <Core/Field.h>
 #include <Core/UUID.h>
 #include <optional>
+#include <unordered_map>
 #include <vector>
 
 
@@ -56,6 +57,9 @@ public:
     SettingsProfileElements(const ASTSettingsProfileElements & ast, const AccessControl & access_control);
     std::shared_ptr<ASTSettingsProfileElements> toAST() const;
     std::shared_ptr<ASTSettingsProfileElements> toASTWithNames(const AccessControl & access_control) const;
+
+    std::vector<UUID> findDependencies() const;
+    void replaceDependencies(const std::unordered_map<UUID, UUID> & old_to_new_ids);
 
     void merge(const SettingsProfileElements & other);
 

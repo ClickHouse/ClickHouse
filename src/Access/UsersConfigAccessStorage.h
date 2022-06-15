@@ -49,7 +49,7 @@ private:
     std::optional<UUID> findImpl(AccessEntityType type, const String & name) const override;
     std::vector<UUID> findAllImpl(AccessEntityType type) const override;
     AccessEntityPtr readImpl(const UUID & id, bool throw_if_not_exists) const override;
-    std::optional<String> readNameImpl(const UUID & id, bool throw_if_not_exists) const override;
+    std::optional<std::pair<String, AccessEntityType>> readNameWithTypeImpl(const UUID & id, bool throw_if_not_exists) const override;
 
     AccessControl & access_control;
     MemoryAccessStorage memory_storage;
