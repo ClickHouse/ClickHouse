@@ -3,7 +3,7 @@ sidebar_position: 57
 sidebar_label: Server Settings
 ---
 
-# Server Settings {#server-settings}
+# Server Settings
 
 ## builtin_dictionaries_reload_interval {#builtin-dictionaries-reload-interval}
 

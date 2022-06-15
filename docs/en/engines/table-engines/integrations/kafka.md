@@ -3,7 +3,7 @@ sidebar_position: 8
 sidebar_label: Kafka
 ---
 
-# Kafka {#kafka}
+# Kafka
 
 This engine works with [Apache Kafka](http://kafka.apache.org/).
 
@@ -87,7 +87,7 @@ Examples:
 
 <summary>Deprecated Method for Creating a Table</summary>
 
-:::warning    
+:::warning
 Do not use this method in new projects. If possible, switch old projects to the method described above.
 :::
 
@@ -189,6 +189,8 @@ Example:
 -   `_timestamp` — Timestamp of the message.
 -   `_timestamp_ms` — Timestamp in milliseconds of the message.
 -   `_partition` — Partition of Kafka topic.
+-   `_headers.name` — Array of message's headers keys.
+-   `_headers.value` — Array of message's headers values.
 
 **See Also**
 
