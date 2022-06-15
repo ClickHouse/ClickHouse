@@ -1,5 +1,4 @@
 #include "MetadataStorageFromDiskTransaction.h"
-#include <Disks/ObjectStorages/MetadataStorageFromDiskTransactionOperations.h>
 
 
 namespace DB

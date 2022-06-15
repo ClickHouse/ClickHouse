@@ -140,13 +140,13 @@ public:
     virtual void moveDirectory(const String & from_path, const String & to_path) = 0;
 
     /// Return iterator to the contents of the specified directory.
-    virtual DirectoryIteratorPtr iterateDirectory(const String & path) = 0;
+    virtual DirectoryIteratorPtr iterateDirectory(const String & path) const = 0;
 
     /// Iterate all disk files by path and apply a callback to each path.
     void iterateRecursively(const String & path, std::function<void(const String & path)>);
 
     /// Return `true` if the specified directoskry is empty.
-    bool isDirectoryEmpty(const String & path);
+    bool isDirectoryEmpty(const String & path) const;
 
     /// Create empty file at `path`.
     virtual void createFile(const String & path) = 0;
@@ -169,7 +169,7 @@ public:
     virtual void copyFile(const String & from_file_path, IDisk & to_disk, const String & to_file_path);
 
     /// List files at `path` and add their names to `file_names`
-    virtual void listFiles(const String & path, std::vector<String> & file_names) = 0;
+    virtual void listFiles(const String & path, std::vector<String> & file_names) const = 0;
 
     /// Open the file for read and return ReadBufferFromFileBase object.
     virtual std::unique_ptr<ReadBufferFromFileBase> readFile( /// NOLINT
@@ -276,7 +276,11 @@ public:
     virtual void setLastModified(const String & path, const Poco::Timestamp & timestamp) = 0;
 
     /// Get last modified time of file or directory at `path`.
-    virtual Poco::Timestamp getLastModified(const String & path) = 0;
+    virtual Poco::Timestamp getLastModified(const String & path) const = 0;
+
+    /// Get last changed time of file or directory at `path`.
+    /// Meaning is the same as stat.mt_ctime (e.g. different from getLastModified()).
+    virtual time_t getLastChanged(const String & path) const = 0;
 
     /// Set file at `path` as read-only.
     virtual void setReadOnly(const String & path) = 0;
