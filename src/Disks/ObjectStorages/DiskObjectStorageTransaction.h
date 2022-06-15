@@ -9,13 +9,17 @@ namespace DB
 
 struct IDiskObjectStorageOperation
 {
-    DiskObjectStorage & disk;
+    IObjectStorage & object_storage;
+    IMetadataStorage & metadata_storage;
 public:
-    explicit IDiskObjectStorageOperation(DiskObjectStorage & disk_)
-        : disk(disk_)
+    explicit IDiskObjectStorageOperation(IObjectStorage & object_storage_, IMetadataStorage & metadata_storage_)
+        : object_storage(object_storage_)
+        , metadata_storage(metadata_storage_)
     {}
-    virtual void execute() = 0;
+
+    virtual void execute(MetadataTransactionPtr transaction) = 0;
     virtual void undo() = 0;
+    virtual void finalize() = 0;
     virtual ~IDiskObjectStorageOperation() = default;
 };
 
@@ -26,6 +30,7 @@ struct DiskObjectStorageTransaction : public IDiskTransaction
 {
 private:
     DiskObjectStorage & disk;
+    DiskObjectStorageOperations operations_to_execute;
     MetadataTransactionPtr metadata_transaction;
 public:
     explicit DiskObjectStorageTransaction(DiskObjectStorage & disk_)
@@ -50,13 +55,13 @@ public:
     void replaceFile(const std::string & from_path, const std::string & to_path) override;
 
     /// Recursively copy data containing at `from_path` to `to_path` located at `to_disk`.
-    void copy(const std::string & from_path, const std::shared_ptr<IDisk> & to_disk, const std::string & to_path) override;
+    void copy(const std::string & from_path, const std::string & to_path) override;
 
     /// Recursively copy files from from_dir to to_dir. Create to_dir if not exists.
-    void copyDirectoryContent(const std::string & from_dir, const std::shared_ptr<IDisk> & to_disk, const std::string & to_dir) override;
+    void copyDirectoryContent(const std::string & from_dir, const std::string & to_dir) override;
 
     /// Copy file `from_file_path` to `to_file_path` located at `to_disk`.
-    void copyFile(const std::string & from_file_path, IDisk & to_disk, const std::string & to_file_path) override;
+    void copyFile(const std::string & from_file_path, const std::string & to_file_path) override;
 
     std::unique_ptr<WriteBufferFromFileBase> writeFile( /// NOLINT
         const std::string & path,
@@ -68,6 +73,7 @@ public:
     void removeFileIfExists(const std::string & path) override;
     void removeDirectory(const std::string & path) override;
     void removeRecursive(const std::string & path) override;
+
     void removeSharedFile(const std::string & path, bool /* keep_shared_data */) override;
     void removeSharedRecursive(const std::string & path, bool /* keep_all_shared_data */, const NameSet & /* file_names_remove_metadata_only */) override;
     void removeSharedFileIfExists(const std::string & path, bool /* keep_shared_data */) override;
@@ -76,7 +82,6 @@ public:
     void setLastModified(const std::string & path, const Poco::Timestamp & timestamp) override;
     void setReadOnly(const std::string & path) override;
     void createHardLink(const std::string & src_path, const std::string & dst_path) override;
-    void truncateFile(const std::string & path, size_t size) override;
 
 };
 

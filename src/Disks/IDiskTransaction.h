@@ -45,13 +45,13 @@ public:
     virtual void replaceFile(const std::string & from_path, const std::string & to_path) = 0;
 
     /// Recursively copy data containing at `from_path` to `to_path` located at `to_disk`.
-    virtual void copy(const std::string & from_path, const std::shared_ptr<IDisk> & to_disk, const std::string & to_path) = 0;
+    virtual void copy(const std::string & from_path, const std::string & to_path) = 0;
 
     /// Recursively copy files from from_dir to to_dir. Create to_dir if not exists.
-    virtual void copyDirectoryContent(const std::string & from_dir, const std::shared_ptr<IDisk> & to_disk, const std::string & to_dir) = 0;
+    virtual void copyDirectoryContent(const std::string & from_dir, const std::string & to_dir) = 0;
 
     /// Copy file `from_file_path` to `to_file_path` located at `to_disk`.
-    virtual void copyFile(const std::string & from_file_path, IDisk & to_disk, const std::string & to_file_path) = 0;
+    virtual void copyFile(const std::string & from_file_path, const std::string & to_file_path) = 0;
 
     /// Open the file for write and return WriteBufferFromFileBase object.
     virtual std::unique_ptr<WriteBufferFromFileBase> writeFile( /// NOLINT
@@ -102,9 +102,6 @@ public:
 
     /// Create hardlink from `src_path` to `dst_path`.
     virtual void createHardLink(const std::string & src_path, const std::string & dst_path) = 0;
-
-    /// Truncate file to specified size.
-    virtual void truncateFile(const std::string & path, size_t size) = 0;
 
 };
 
