@@ -95,9 +95,10 @@ public:
     DataPartStoragePtr clone(
         const std::string & to,
         const std::string & dir_path,
+        const DiskPtr & disk,
         Poco::Logger * log) const override;
 
-    void rename(const String & new_relative_path, Poco::Logger * log, bool remove_new_dir_if_exists, bool fsync_part_dir) override;
+    void rename(const std::string & new_root_path, const std::string & new_part_dir, Poco::Logger * log, bool remove_new_dir_if_exists, bool fsync_part_dir) override;
 
     void changeRootPath(const std::string & from_root, const std::string & to_root) override;
 

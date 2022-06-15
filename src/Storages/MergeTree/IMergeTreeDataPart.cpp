@@ -1162,9 +1162,16 @@ void IMergeTreeDataPart::loadColumns(bool require)
     bool exists = metadata_manager->exists("columns.txt");
     if (!exists)
     {
+        auto & manager_ref = *metadata_manager;
+        if ((require || part_type == Type::Compact) && !data_part_storage->exists("columns.txt"))
+            throw Exception("No columns.txt in part (data_part_storage) " + name + ", expected path " + path + " on drive " + data_part_storage->getName() +
+                            " manager " + demangle(typeid(manager_ref).name()),
+                ErrorCodes::NO_FILE_IN_DATA_PART);
+
         /// We can get list of columns only from columns.txt in compact parts.
         if (require || part_type == Type::Compact)
-            throw Exception("No columns.txt in part " + name + ", expected path " + path + " on drive " + data_part_storage->getName(),
+            throw Exception("No columns.txt in part " + name + ", expected path " + path + " on drive " + data_part_storage->getName() +
+                            " manager " + demangle(typeid(manager_ref).name()),
                 ErrorCodes::NO_FILE_IN_DATA_PART);
 
         /// If there is no file with a list of columns, write it down.
@@ -1386,9 +1393,9 @@ try
     }
 
     String from = data_part_storage->getFullRelativePath();
-    String to = fs::path(relative_path) / new_relative_path / "";
+    auto to = fs::path(relative_path) / new_relative_path;
 
-    data_part_storage->rename(new_relative_path, storage.log, remove_new_dir_if_exists, fsync_dir);
+    data_part_storage->rename(to.parent_path(), to.filename(), storage.log, remove_new_dir_if_exists, fsync_dir);
     metadata_manager->move(from, to);
 
     for (const auto & [p_name, part] : projection_parts)
@@ -1510,7 +1517,7 @@ DataPartStoragePtr IMergeTreeDataPart::makeCloneOnDisk(const DiskPtr & disk, con
         throw Exception("Can not clone data part " + name + " to empty directory.", ErrorCodes::LOGICAL_ERROR);
 
     String path_to_clone = fs::path(storage.relative_data_path) / directory_name / "";
-    return data_part_storage->clone(path_to_clone, data_part_storage->getPartDirectory(), storage.log);
+    return data_part_storage->clone(path_to_clone, data_part_storage->getPartDirectory(), disk, storage.log);
 }
 
 void IMergeTreeDataPart::checkConsistencyBase() const

@@ -163,9 +163,10 @@ public:
     virtual std::shared_ptr<IDataPartStorage> clone(
         const std::string & to,
         const std::string & dir_path,
+        const DiskPtr & disk,
         Poco::Logger * log) const = 0;
 
-    virtual void rename(const std::string & new_relative_path, Poco::Logger * log, bool remove_new_dir_if_exists, bool fsync_part_dir) = 0;
+    virtual void rename(const std::string & new_root_path, const std::string & new_part_dir, Poco::Logger * log, bool remove_new_dir_if_exists, bool fsync_part_dir) = 0;
 
     /// Change part's root. From should be a prefix path of current root path.
     /// Right now, this is needed for rename table query.

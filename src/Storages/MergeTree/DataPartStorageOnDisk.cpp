@@ -550,7 +550,7 @@ ReservationPtr DataPartStorageOnDisk::tryReserve(UInt64 bytes) const
     return volume->reserve(bytes);
 }
 
-void DataPartStorageOnDisk::rename(const String & new_relative_path, Poco::Logger * log, bool remove_new_dir_if_exists, bool fsync_part_dir)
+void DataPartStorageOnDisk::rename(const std::string & new_root_path, const std::string & new_part_dir, Poco::Logger * log, bool remove_new_dir_if_exists, bool fsync_part_dir)
 {
     if (!exists())
         throw Exception(
@@ -558,15 +558,8 @@ void DataPartStorageOnDisk::rename(const String & new_relative_path, Poco::Logge
             "Part directory {} doesn't exist. Most likely it is a logical error.",
             std::string(fs::path(volume->getDisk()->getPath()) / root_path / part_dir));
 
-    auto new_path = fs::path(root_path) / new_relative_path;
-    if (!new_path.has_filename())
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "Cannot rename from {} to {}. Destination should not contain trailing slash",
-            getFullRelativePath(),
-            new_relative_path);
-
     /// Why "" ?
-    String to = fs::path(root_path) / new_relative_path / "";
+    String to = fs::path(new_root_path) / new_part_dir / "";
 
     if (volume->getDisk()->exists(to))
     {
@@ -598,8 +591,8 @@ void DataPartStorageOnDisk::rename(const String & new_relative_path, Poco::Logge
     /// Why?
     volume->getDisk()->setLastModified(from, Poco::Timestamp::fromEpochTime(time(nullptr)));
     volume->getDisk()->moveDirectory(from, to);
-    part_dir = new_path.filename();
-    root_path = new_path.remove_filename();
+    part_dir = new_part_dir;
+    root_path = new_root_path;
     // metadata_manager->updateAll(true);
 
     SyncGuardPtr sync_guard;
@@ -730,9 +723,9 @@ DataPartStoragePtr DataPartStorageOnDisk::freeze(
 DataPartStoragePtr DataPartStorageOnDisk::clone(
     const std::string & to,
     const std::string & dir_path,
+    const DiskPtr & disk,
     Poco::Logger * log) const
 {
-    auto disk = volume->getDisk();
     String path_to_clone = fs::path(to) / dir_path / "";
 
     if (disk->exists(path_to_clone))
@@ -741,7 +734,7 @@ DataPartStoragePtr DataPartStorageOnDisk::clone(
         disk->removeRecursive(path_to_clone);
     }
     disk->createDirectories(to);
-    volume->getDisk()->copy(getFullRelativePath(), disk, path_to_clone);
+    volume->getDisk()->copy(getFullRelativePath(), disk, to);
     volume->getDisk()->removeFileIfExists(fs::path(path_to_clone) / "delete-on-destroy.txt");
 
     auto single_disk_volume = std::make_shared<SingleDiskVolume>(disk->getName(), disk, 0);
