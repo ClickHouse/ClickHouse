@@ -1413,7 +1413,6 @@ ActionLock StorageMergeTree::stopMergesAndWait()
 
 MergeTreeDataPartPtr StorageMergeTree::outdatePart(MergeTreeTransaction * txn, const String & part_name, bool force)
 {
-
     if (force)
     {
         /// Forcefully stop merges and make part outdated
@@ -1426,7 +1425,6 @@ MergeTreeDataPartPtr StorageMergeTree::outdatePart(MergeTreeTransaction * txn, c
     }
     else
     {
-
         /// Wait merges selector
         std::unique_lock lock(currently_processing_in_background_mutex);
 

@@ -1670,18 +1670,11 @@ void IMergeTreeDataPart::remove() const
             /// Remove each expected file in directory, then remove directory itself.
             IDisk::RemoveBatchRequest request;
 
-    #if !defined(__clang__)
-    #    pragma GCC diagnostic push
-    #    pragma GCC diagnostic ignored "-Wunused-variable"
-    #endif
             for (const auto & [file, _] : checksums.files)
             {
                 if (projection_directories.find(file) == projection_directories.end())
                     request.emplace_back(fs::path(to) / file);
             }
-    #if !defined(__clang__)
-    #    pragma GCC diagnostic pop
-    #endif
 
             for (const auto & file : {"checksums.txt", "columns.txt"})
                 request.emplace_back(fs::path(to) / file);
