@@ -19,7 +19,7 @@ namespace
     double calculateCPUUsage(DB::ThreadIdToTimeMap times, UInt64 elapsed)
     {
         auto accumulated = std::accumulate(times.begin(), times.end(), 0,
-        [](Int64 acc, const auto & elem)
+        [](UInt64 acc, const auto & elem)
         {
             if (elem.first == ALL_THREADS)
                 return acc;
@@ -190,6 +190,10 @@ void ProgressIndication::writeProgress()
     if (cpu_usage > 0 || memory_usage > 0)
     {
         WriteBufferFromOwnString profiling_msg_builder;
+
+        /// We don't want -0. that can appear due to rounding errors.
+        if (cpu_usage <= 0)
+            cpu_usage = 0;
 
         profiling_msg_builder << "(" << fmt::format("{:.1f}", cpu_usage) << " CPU";
 
