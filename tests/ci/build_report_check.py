@@ -93,7 +93,7 @@ def get_failed_report(
         elapsed_seconds=0,
         with_coverage=False,
     )
-    return [build_result], [[""]], [""]
+    return [build_result], [[""]], [GITHUB_RUN_URL]
 
 
 def process_report(

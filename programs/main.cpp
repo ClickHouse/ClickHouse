@@ -2,7 +2,7 @@
 #include <csetjmp>
 #include <unistd.h>
 
-#ifdef __linux__
+#ifdef OS_LINUX
 #include <sys/mman.h>
 #endif
 
@@ -339,7 +339,7 @@ struct Checker
         checkRequiredInstructions();
     }
 } checker
-#ifndef __APPLE__
+#ifndef OS_DARWIN
     __attribute__((init_priority(101)))    /// Run before other static initializers.
 #endif
 ;
