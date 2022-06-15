@@ -54,7 +54,6 @@ bool BackgroundSchedulePoolTaskInfo::scheduleAfter(size_t ms, bool overwrite)
 
 void BackgroundSchedulePoolTaskInfo::deactivate()
 {
-    std::lock_guard lock_exec(exec_mutex);
     std::lock_guard lock_schedule(schedule_mutex);
 
     if (deactivated)
