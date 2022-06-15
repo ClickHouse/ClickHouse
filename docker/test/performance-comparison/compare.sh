@@ -1287,6 +1287,8 @@ create table ci_checks engine File(TSVWithNamesAndTypes, 'ci-checks.tsv')
     # ) ENGINE = ReplicatedMergeTree
     # ORDER BY (old_sha, new_sha)
 
+    "${client[@]}" --query "show grants for ci"
+
     "${client[@]}" --query "
             insert into query_metrics_v2
             select
