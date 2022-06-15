@@ -1,4 +1,4 @@
-# rebuild in #33610
+# rebuild in #36501
 # docker build -t clickhouse/binary-builder .
 FROM ubuntu:20.04
 
