@@ -37,7 +37,7 @@ namespace ErrorCodes
 
 
 ReadBufferFromS3::ReadBufferFromS3(
-    std::shared_ptr<Aws::S3::S3Client> client_ptr_,
+    std::shared_ptr<const Aws::S3::S3Client> client_ptr_,
     const String & bucket_,
     const String & key_,
     const String & version_id_,
@@ -116,6 +116,11 @@ bool ReadBufferFromS3::nextImpl()
                     assert(working_buffer.begin() != nullptr);
                     assert(!internal_buffer.empty());
                 }
+                else
+                {
+                    /// use the buffer returned by `impl`
+                    BufferBase::set(impl->buffer().begin(), impl->buffer().size(), impl->offset());
+                }
             }
 
             /// Try to read a next portion of data.
@@ -155,7 +160,7 @@ bool ReadBufferFromS3::nextImpl()
     if (!next_result)
         return false;
 
-    BufferBase::set(impl->buffer().begin(), impl->buffer().size(), impl->offset()); /// use the buffer returned by `impl`
+    BufferBase::set(impl->buffer().begin(), impl->buffer().size(), impl->offset());
 
     ProfileEvents::increment(ProfileEvents::ReadBufferFromS3Bytes, working_buffer.size());
     offset += working_buffer.size();

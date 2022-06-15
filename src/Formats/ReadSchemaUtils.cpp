@@ -73,11 +73,15 @@ ColumnsDescription readSchemaFromFormat(
     {
         std::string exception_messages;
         SchemaReaderPtr schema_reader;
+        size_t max_rows_to_read = format_settings ? format_settings->max_rows_to_read_for_schema_inference : context->getSettingsRef().input_format_max_rows_to_read_for_schema_inference;
+        size_t iterations = 0;
         while ((buf = read_buffer_iterator()))
         {
+            ++iterations;
+
             if (buf->eof())
             {
-                auto exception_message = fmt::format("Cannot extract table structure from {} format file, file is emptyg", format_name);
+                auto exception_message = fmt::format("Cannot extract table structure from {} format file, file is empty", format_name);
 
                 if (!retry)
                     throw Exception(ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE, exception_message);
@@ -89,12 +93,29 @@ ColumnsDescription readSchemaFromFormat(
             try
             {
                 schema_reader = FormatFactory::instance().getSchemaReader(format_name, *buf, context, format_settings);
+                schema_reader->setMaxRowsToRead(max_rows_to_read);
                 names_and_types = schema_reader->readSchema();
                 break;
             }
             catch (...)
             {
                 auto exception_message = getCurrentExceptionMessage(false);
+                if (schema_reader)
+                {
+                    size_t rows_read = schema_reader->getNumRowsRead();
+                    assert(rows_read <= max_rows_to_read);
+                    max_rows_to_read -= schema_reader->getNumRowsRead();
+                    if (rows_read != 0 && max_rows_to_read == 0)
+                    {
+                        exception_message += "\nTo increase the maximum number of rows to read for structure determination, use setting input_format_max_rows_to_read_for_schema_inference";
+                        if (iterations > 1)
+                        {
+                            exception_messages += "\n" + exception_message;
+                            break;
+                        }
+                        retry = false;
+                    }
+                }
 
                 if (!retry || !isRetryableSchemaInferenceError(getCurrentExceptionCode()))
                     throw Exception(ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE, "Cannot extract table structure from {} format file. Error: {}", format_name, exception_message);

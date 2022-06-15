@@ -1,5 +1,5 @@
-#include <errno.h>
-#include <time.h>
+#include <cerrno>
+#include <ctime>
 #include <optional>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
@@ -36,7 +36,7 @@ std::string AsynchronousReadBufferFromFileDescriptor::getFileName() const
 }
 
 
-std::future<IAsynchronousReader::Result> AsynchronousReadBufferFromFileDescriptor::readInto(char * data, size_t size)
+std::future<IAsynchronousReader::Result> AsynchronousReadBufferFromFileDescriptor::asyncReadInto(char * data, size_t size)
 {
     IAsynchronousReader::Request request;
     request.descriptor = std::make_shared<IAsynchronousReader::LocalFileDescriptor>(fd);
@@ -50,10 +50,7 @@ std::future<IAsynchronousReader::Result> AsynchronousReadBufferFromFileDescripto
     /// This is a workaround of a read pass EOF bug in linux kernel with pread()
     if (file_size.has_value() && file_offset_of_buffer_end >= *file_size)
     {
-        return std::async(std::launch::deferred, []
-        {
-            return IAsynchronousReader::Result{ .size = 0, .offset = 0 };
-        });
+        return std::async(std::launch::deferred, [] { return IAsynchronousReader::Result{.size = 0, .offset = 0}; });
     }
 
     return reader->submit(request);
@@ -67,7 +64,7 @@ void AsynchronousReadBufferFromFileDescriptor::prefetch()
 
     /// Will request the same amount of data that is read in nextImpl.
     prefetch_buffer.resize(internal_buffer.size());
-    prefetch_future = readInto(prefetch_buffer.data(), prefetch_buffer.size());
+    prefetch_future = asyncReadInto(prefetch_buffer.data(), prefetch_buffer.size());
 }
 
 
@@ -106,7 +103,7 @@ bool AsynchronousReadBufferFromFileDescriptor::nextImpl()
     {
         /// No pending request. Do synchronous read.
 
-        auto [size, offset] = readInto(memory.data(), memory.size()).get();
+        auto [size, offset] = asyncReadInto(memory.data(), memory.size()).get();
         file_offset_of_buffer_end += size;
 
         if (size)

@@ -88,7 +88,8 @@ RUN python3 -m pip install \
     urllib3 \
     requests-kerberos \
     pyhdfs \
-    azure-storage-blob
+    azure-storage-blob \
+    meilisearch 
 
 COPY modprobe.sh /usr/local/bin/modprobe
 COPY dockerd-entrypoint.sh /usr/local/bin/
