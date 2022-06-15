@@ -54,7 +54,8 @@ private:
     Status insertFromChunk(size_t source_num);
 
     template <typename TSortingQueue>
-    Status mergeImpl(TSortingQueue & queue);
+    Status mergeBatchImpl(TSortingQueue & queue);
+
 };
 
 }
