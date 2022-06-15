@@ -250,17 +250,14 @@ def main():
 
     logging.info("Got version from repo %s", version.string)
 
-    # official_flag = pr_info.number == 0
-    # if "official" in build_config:
-    #     official_flag = build_config["official"]
-    #
-    # version_type = "testing"
-    # if "release" in pr_info.labels or "release-lts" in pr_info.labels:
-    #     version_type = "stable"
-    #     official_flag = True
+    official_flag = pr_info.number == 0
+    if "official" in build_config:
+        official_flag = build_config["official"]
 
     version_type = "testing"
-    official_flag = True
+    if "release" in pr_info.labels or "release-lts" in pr_info.labels:
+        version_type = "stable"
+        official_flag = True
 
     update_version_local(version, version_type)
 
