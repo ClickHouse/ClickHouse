@@ -130,6 +130,8 @@ private:
     AtomicStopwatch time_after_previous_cleanup_parts;
     /// For clearOldTemporaryDirectories.
     AtomicStopwatch time_after_previous_cleanup_temporary_directories;
+    /// For clearOldBrokenDetachedParts
+    AtomicStopwatch time_after_previous_cleanup_broken_detached_parts;
 
     /// Mutex for parts currently processing in background
     /// merging (also with TTL), mutating or moving.

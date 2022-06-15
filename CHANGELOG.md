@@ -4,7 +4,7 @@
 **[ClickHouse release v22.3-lts, 2022-03-17](#223)**<br>
 **[ClickHouse release v22.2, 2022-02-17](#222)**<br>
 **[ClickHouse release v22.1, 2022-01-18](#221)**<br>
-**[Changelog for 2021](https://github.com/ClickHouse/ClickHouse/blob/master/docs/en/whats-new/changelog/2021.md)**<br>
+**[Changelog for 2021](https://clickhouse.com/docs/en/whats-new/changelog/2021/)**<br>
 
 ### <a id="225"></a> ClickHouse release 22.5, 2022-05-19
 
