@@ -518,7 +518,7 @@ void StorageKafka::updateConfiguration(cppkafka::Configuration & conf)
         loadFromConfig(conf, config, config_prefix);
 
     if (conf.has_property("sasl.kerberos.kinit.cmd"))
-        LOG_WARNING(log, "kinit executable is not allowed.");
+        LOG_WARNING(log, "sasl.kerberos.kinit.cmd configuration parameter is ignored.");
 
     conf.set("sasl.kerberos.kinit.cmd","");
     conf.set("sasl.kerberos.min.time.before.relogin","0");
