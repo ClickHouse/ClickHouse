@@ -74,10 +74,9 @@ void HDFSBuilderWrapper::loadFromConfig(const Poco::Util::AbstractConfiguration 
 void HDFSBuilderWrapper::runKinit()
 {
     LOG_DEBUG(&Poco::Logger::get("HDFSClient"), "Running KerberosInit");
-    KerberosInit k_init;
     try
     {
-        k_init.init(hadoop_kerberos_keytab,hadoop_kerberos_principal,hadoop_security_kerberos_ticket_cache_path);
+        kerberosInit(hadoop_kerberos_keytab,hadoop_kerberos_principal,hadoop_security_kerberos_ticket_cache_path);
     }
     catch (const DB::Exception & e)
     {

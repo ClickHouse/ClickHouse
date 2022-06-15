@@ -7,13 +7,31 @@
 
 using namespace DB;
 
-std::mutex KerberosInit::kinit_mtx;
+struct k5_data
+{
+    krb5_context ctx;
+    krb5_ccache in_cc, out_cc;
+    krb5_principal me;
+    char * name;
+    krb5_boolean switch_to_cache;
+};
+
+class KerberosInit
+{
+public:
+    int init(const String & keytab_file, const String & principal, const String & cache_name = "");
+    ~KerberosInit();
+private:
+    struct k5_data k5;
+    krb5_ccache defcache = nullptr;
+    krb5_get_init_creds_opt * options = nullptr;
+    krb5_creds my_creds;
+    krb5_keytab keytab = nullptr;
+    krb5_principal defcache_princ = nullptr;
+};
 
 int KerberosInit::init(const String & keytab_file, const String & principal, const String & cache_name)
 {
-    // Using mutex to prevent cache file corruptions
-    std::unique_lock<std::mutex> lck(kinit_mtx);
-
     auto log = &Poco::Logger::get("KerberosInit");
     LOG_DEBUG(log,"Trying to authenticate to Kerberos v5");
 
@@ -148,7 +166,6 @@ int KerberosInit::init(const String & keytab_file, const String & principal, con
 
 KerberosInit::~KerberosInit()
 {
-    std::unique_lock<std::mutex> lck(kinit_mtx);
     if (k5.ctx)
     {
         if (defcache)
@@ -171,4 +188,13 @@ KerberosInit::~KerberosInit()
             krb5_cc_close(k5.ctx, k5.out_cc);
         krb5_free_context(k5.ctx);
     }
+}
+
+int kerberosInit(const String & keytab_file, const String & principal, const String & cache_name)
+{
+    // Using mutex to prevent cache file corruptions
+    static std::mutex kinit_mtx;
+    std::unique_lock<std::mutex> lck(kinit_mtx);
+    KerberosInit k_init;
+    return k_init.init(keytab_file, principal, cache_name);
 }
