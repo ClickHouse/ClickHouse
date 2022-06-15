@@ -15,6 +15,9 @@
 #include <Access/User.h>
 #include <Access/ExternalAuthenticators.h>
 #include <Access/AccessChangesNotifier.h>
+#include <Access/AccessBackup.h>
+#include <Backups/BackupEntriesCollector.h>
+#include <Backups/RestorerFromBackup.h>
 #include <Core/Settings.h>
 #include <base/find_symbols.h>
 #include <Poco/AccessExpireCache.h>
@@ -237,7 +240,8 @@ void AccessControl::addUsersConfigStorage(
 void AccessControl::addReplicatedStorage(
     const String & storage_name_,
     const String & zookeeper_path_,
-    const zkutil::GetZooKeeper & get_zookeeper_function_)
+    const zkutil::GetZooKeeper & get_zookeeper_function_,
+    bool allow_backup_)
 {
     auto storages = getStoragesPtr();
     for (const auto & storage : *storages)
@@ -245,17 +249,12 @@ void AccessControl::addReplicatedStorage(
         if (auto replicated_storage = typeid_cast<std::shared_ptr<ReplicatedAccessStorage>>(storage))
             return;
     }
-    auto new_storage = std::make_shared<ReplicatedAccessStorage>(storage_name_, zookeeper_path_, get_zookeeper_function_, *changes_notifier);
+    auto new_storage = std::make_shared<ReplicatedAccessStorage>(storage_name_, zookeeper_path_, get_zookeeper_function_, allow_backup_, *changes_notifier);
     addStorage(new_storage);
     LOG_DEBUG(getLogger(), "Added {} access storage '{}'", String(new_storage->getStorageType()), new_storage->getStorageName());
 }
 
-void AccessControl::addDiskStorage(const String & directory_, bool readonly_)
-{
-    addDiskStorage(DiskAccessStorage::STORAGE_TYPE, directory_, readonly_);
-}
-
-void AccessControl::addDiskStorage(const String & storage_name_, const String & directory_, bool readonly_)
+void AccessControl::addDiskStorage(const String & storage_name_, const String & directory_, bool readonly_, bool allow_backup_)
 {
     auto storages = getStoragesPtr();
     for (const auto & storage : *storages)
@@ -270,13 +269,13 @@ void AccessControl::addDiskStorage(const String & storage_name_, const String & 
             }
         }
     }
-    auto new_storage = std::make_shared<DiskAccessStorage>(storage_name_, directory_, readonly_, *changes_notifier);
+    auto new_storage = std::make_shared<DiskAccessStorage>(storage_name_, directory_, readonly_, allow_backup_, *changes_notifier);
     addStorage(new_storage);
     LOG_DEBUG(getLogger(), "Added {} access storage '{}', path: {}", String(new_storage->getStorageType()), new_storage->getStorageName(), new_storage->getPath());
 }
 
 
-void AccessControl::addMemoryStorage(const String & storage_name_)
+void AccessControl::addMemoryStorage(const String & storage_name_, bool allow_backup_)
 {
     auto storages = getStoragesPtr();
     for (const auto & storage : *storages)
@@ -284,7 +283,7 @@ void AccessControl::addMemoryStorage(const String & storage_name_)
         if (auto memory_storage = typeid_cast<std::shared_ptr<MemoryAccessStorage>>(storage))
             return;
     }
-    auto new_storage = std::make_shared<MemoryAccessStorage>(storage_name_, *changes_notifier);
+    auto new_storage = std::make_shared<MemoryAccessStorage>(storage_name_, allow_backup_, *changes_notifier);
     addStorage(new_storage);
     LOG_DEBUG(getLogger(), "Added {} access storage '{}'", String(new_storage->getStorageType()), new_storage->getStorageName());
 }
@@ -327,7 +326,8 @@ void AccessControl::addStoragesFromUserDirectoriesConfig(
 
         if (type == MemoryAccessStorage::STORAGE_TYPE)
         {
-            addMemoryStorage(name);
+            bool allow_backup = config.getBool(prefix + ".allow_backup", false);
+            addMemoryStorage(name, allow_backup);
         }
         else if (type == UsersConfigAccessStorage::STORAGE_TYPE)
         {
@@ -340,7 +340,8 @@ void AccessControl::addStoragesFromUserDirectoriesConfig(
         {
             String path = config.getString(prefix + ".path");
             bool readonly = config.getBool(prefix + ".readonly", false);
-            addDiskStorage(name, path, readonly);
+            bool allow_backup = config.getBool(prefix + ".allow_backup", false);
+            addDiskStorage(name, path, readonly, allow_backup);
         }
         else if (type == LDAPAccessStorage::STORAGE_TYPE)
         {
@@ -349,7 +350,8 @@ void AccessControl::addStoragesFromUserDirectoriesConfig(
         else if (type == ReplicatedAccessStorage::STORAGE_TYPE)
         {
             String zookeeper_path = config.getString(prefix + ".zookeeper_path");
-            addReplicatedStorage(name, zookeeper_path, get_zookeeper_function);
+            bool allow_backup = config.getBool(prefix + ".allow_backup", false);
+            addReplicatedStorage(name, zookeeper_path, get_zookeeper_function, allow_backup);
         }
         else
             throw Exception("Unknown storage type '" + type + "' at " + prefix + " in config", ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
@@ -388,7 +390,7 @@ void AccessControl::addStoragesFromMainConfig(
 
     String disk_storage_dir = config.getString("access_control_path", "");
     if (!disk_storage_dir.empty())
-        addDiskStorage(disk_storage_dir);
+        addDiskStorage(DiskAccessStorage::STORAGE_TYPE, disk_storage_dir, false, false);
 
     if (has_user_directories)
         addStoragesFromUserDirectoriesConfig(config, "user_directories", config_dir, dbms_dir, include_from_path, get_zookeeper_function);
@@ -461,6 +463,22 @@ UUID AccessControl::authenticate(const Credentials & credentials, const Poco::Ne
         /// only the log will show the exact reason.
         throw Exception(credentials.getUserName() + ": Authentication failed: password is incorrect or there is no user with such name", ErrorCodes::AUTHENTICATION_FAILED);
     }
+}
+
+void AccessControl::backup(BackupEntriesCollector & backup_entries_collector, AccessEntityType type, const String & data_path_in_backup) const
+{
+    backupAccessEntities(backup_entries_collector, data_path_in_backup, *this, type);
+}
+
+void AccessControl::restore(RestorerFromBackup & restorer, const String & data_path_in_backup)
+{
+    restorer.addAccessRestorePathInBackup(data_path_in_backup);
+}
+
+void AccessControl::insertFromBackup(const std::vector<std::pair<UUID, AccessEntityPtr>> & entities_from_backup, const RestoreSettings & restore_settings, std::shared_ptr<IRestoreCoordination> restore_coordination)
+{
+    MultipleAccessStorage::insertFromBackup(entities_from_backup, restore_settings, restore_coordination);
+    changes_notifier->sendNotifications();
 }
 
 void AccessControl::setExternalAuthenticatorsConfig(const Poco::Util::AbstractConfiguration & config)

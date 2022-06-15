@@ -22,4 +22,10 @@
     <access_control_improvements>
         <users_without_row_policies_can_read_rows>true</users_without_row_policies_can_read_rows>
     </access_control_improvements>
+
+    <user_directories>
+        <local_directory>
+            <allow_backup>1</allow_backup>
+        </local_directory>
+    </user_directories>
 </clickhouse>

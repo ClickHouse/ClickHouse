@@ -6,7 +6,9 @@ from helpers.test_tools import assert_eq_with_retry, TSV
 
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance(
-    "instance", main_configs=["configs/backups_disk.xml"], external_dirs=["/backups/"]
+    "instance",
+    main_configs=["configs/backups_disk.xml"],
+    external_dirs=["/backups/"],
 )
 
 
@@ -480,3 +482,26 @@ def test_system_database():
     ).read()
 
     assert create_query == "CREATE TABLE system.numbers ENGINE = SystemNumbers"
+
+
+def test_system_users():
+    instance.query("CREATE USER u1 IDENTIFIED BY 'qwe123' SETTINGS PROFILE 'default', custom_a = 1")
+    instance.query("GRANT SELECT ON test.* TO u1")
+    instance.query("CREATE ROLE r1, r2")
+    instance.query("GRANT r1 TO r2 WITH ADMIN OPTION")
+    instance.query("GRANT r2 TO u1")
+
+    backup_name = new_backup_name()
+    instance.query(f"BACKUP TABLE system.users, TABLE system.roles TO {backup_name}")
+
+    instance.query("DROP USER u1")
+    instance.query("DROP ROLE r1, r2")
+
+    instance.query(f"RESTORE TABLE system.users, TABLE system.roles FROM {backup_name}")
+
+    assert instance.query("SHOW CREATE USER u1") == "CREATE USER u1 IDENTIFIED WITH sha256_password SETTINGS PROFILE default, custom_a = 1\n"
+    assert instance.query("SHOW GRANTS FOR u1") == TSV(["GRANT SELECT ON test.* TO u1", "GRANT r2 TO u1"])
+    assert instance.query("SHOW CREATE ROLE r1") == "CREATE ROLE r1\n"
+    assert instance.query("SHOW GRANTS FOR r1") == ""
+    assert instance.query("SHOW CREATE ROLE r2") == "CREATE ROLE r2\n"
+    assert instance.query("SHOW GRANTS FOR r2") == TSV(["GRANT r1 TO r2 WITH ADMIN OPTION"])

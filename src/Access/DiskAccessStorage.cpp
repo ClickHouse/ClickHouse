@@ -1,6 +1,7 @@
 #include <Access/DiskAccessStorage.h>
 #include <Access/AccessEntityIO.h>
 #include <Access/AccessChangesNotifier.h>
+#include <Backups/RestoreSettings.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromFile.h>
@@ -165,11 +166,12 @@ namespace
 }
 
 
-DiskAccessStorage::DiskAccessStorage(const String & storage_name_, const String & directory_path_, bool readonly_, AccessChangesNotifier & changes_notifier_)
+DiskAccessStorage::DiskAccessStorage(const String & storage_name_, const String & directory_path_, bool readonly_, bool allow_backup_, AccessChangesNotifier & changes_notifier_)
     : IAccessStorage(storage_name_), changes_notifier(changes_notifier_)
 {
     directory_path = makeDirectoryPathCanonical(directory_path_);
     readonly = readonly_;
+    backup_allowed = allow_backup_;
 
     std::error_code create_dir_error_code;
     std::filesystem::create_directories(directory_path, create_dir_error_code);
@@ -457,7 +459,7 @@ AccessEntityPtr DiskAccessStorage::readImpl(const UUID & id, bool throw_if_not_e
 }
 
 
-std::optional<String> DiskAccessStorage::readNameImpl(const UUID & id, bool throw_if_not_exists) const
+std::optional<std::pair<String, AccessEntityType>> DiskAccessStorage::readNameWithTypeImpl(const UUID & id, bool throw_if_not_exists) const
 {
     std::lock_guard lock{mutex};
     auto it = entries_by_id.find(id);
@@ -468,18 +470,24 @@ std::optional<String> DiskAccessStorage::readNameImpl(const UUID & id, bool thro
         else
             return std::nullopt;
     }
-    return it->second.name;
+    return std::make_pair(it->second.name, it->second.type);
 }
 
 
 std::optional<UUID> DiskAccessStorage::insertImpl(const AccessEntityPtr & new_entity, bool replace_if_exists, bool throw_if_exists)
 {
     UUID id = generateRandomID();
-    std::lock_guard lock{mutex};
-    if (insertNoLock(id, new_entity, replace_if_exists, throw_if_exists))
+    if (insertWithID(id, new_entity, replace_if_exists, throw_if_exists))
         return id;
 
     return std::nullopt;
+}
+
+
+bool DiskAccessStorage::insertWithID(const UUID & id, const AccessEntityPtr & new_entity, bool replace_if_exists, bool throw_if_exists)
+{
+    std::lock_guard lock{mutex};
+    return insertNoLock(id, new_entity, replace_if_exists, throw_if_exists);
 }
 
 
@@ -647,6 +655,29 @@ void DiskAccessStorage::deleteAccessEntityOnDisk(const UUID & id) const
     auto file_path = getEntityFilePath(directory_path, id);
     if (!std::filesystem::remove(file_path))
         throw Exception("Couldn't delete " + file_path, ErrorCodes::FILE_DOESNT_EXIST);
+}
+
+
+std::vector<std::pair<UUID, AccessEntityPtr>> DiskAccessStorage::readAllForBackup(AccessEntityType type, const BackupSettings &) const
+{
+    if (!isBackupAllowed())
+        throwBackupNotAllowed();
+    return readAllWithIDs(type);
+}
+
+void DiskAccessStorage::insertFromBackup(
+    const std::vector<std::pair<UUID, AccessEntityPtr>> & entities_from_backup,
+    const RestoreSettings & restore_settings,
+    std::shared_ptr<IRestoreCoordination>)
+{
+    if (!isRestoreAllowed())
+        throwRestoreNotAllowed();
+
+    bool replace_if_exists = (restore_settings.create_access == RestoreAccessCreationMode::kReplace);
+    bool throw_if_exists = (restore_settings.create_access == RestoreAccessCreationMode::kCreate);
+
+    for (const auto & [id, entity] : entities_from_backup)
+        insertWithID(id, entity, replace_if_exists, throw_if_exists);
 }
 
 }

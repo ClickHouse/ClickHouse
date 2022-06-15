@@ -190,7 +190,7 @@ void restoreTablesData(DataRestoreTasks && tasks, ThreadPool & thread_pool)
 /// Returns access required to execute BACKUP query.
 AccessRightsElements getRequiredAccessToBackup(const ASTBackupQuery::Elements & elements)
 {
-    AccessFlags required_flags = AccessType::BACKUP | AccessType::SHOW_TABLES;
+    AccessFlags backup_and_show_tables_flags = AccessType::BACKUP | AccessType::SHOW_TABLES;
     AccessRightsElements required_access;
     for (const auto & element : elements)
     {
@@ -198,7 +198,21 @@ AccessRightsElements getRequiredAccessToBackup(const ASTBackupQuery::Elements & 
         {
             case ASTBackupQuery::TABLE:
             {
-                required_access.emplace_back(required_flags, element.database_name, element.table_name);
+                required_access.emplace_back(backup_and_show_tables_flags, element.database_name, element.table_name);
+
+                if (element.database_name == "system")
+                {
+                    if (element.table_name == "users")
+                        required_access.emplace_back(AccessType::SHOW_USERS);
+                    else if (element.table_name == "roles")
+                        required_access.emplace_back(AccessType::SHOW_ROLES);
+                    else if (element.table_name == "settings_profiles")
+                        required_access.emplace_back(AccessType::SHOW_SETTINGS_PROFILES);
+                    else if (element.table_name == "row_policies")
+                        required_access.emplace_back(AccessType::SHOW_ROW_POLICIES);
+                    else if (element.table_name == "quotas")
+                        required_access.emplace_back(AccessType::SHOW_QUOTAS);
+                }
                 break;
             }
             
@@ -210,15 +224,20 @@ AccessRightsElements getRequiredAccessToBackup(const ASTBackupQuery::Elements & 
             
             case ASTBackupQuery::DATABASE:
             {
-                required_access.emplace_back(required_flags, element.database_name);
                 /// TODO: It's better to process `element.except_tables` somehow.
+                required_access.emplace_back(backup_and_show_tables_flags, element.database_name);
+
+                if (element.database_name == "system")
+                    required_access.emplace_back(AccessType::SHOW_ACCESS);
+
                 break;
             }
             
             case ASTBackupQuery::ALL:
             {
-                required_access.emplace_back(required_flags);
                 /// TODO: It's better to process `element.except_databases` & `element.except_tables` somehow.
+                required_access.emplace_back(backup_and_show_tables_flags);
+                required_access.emplace_back(AccessType::SHOW_ACCESS);
                 break;
             }
         }
@@ -243,6 +262,22 @@ AccessRightsElements getRequiredAccessToRestore(const ASTBackupQuery::Elements &
                 if (!restore_settings.structure_only)
                     flags |= AccessType::INSERT;
                 required_access.emplace_back(flags, element.new_database_name, element.new_table_name);
+
+                if (element.database_name == "system")
+                {
+                    if ((element.table_name == "users") || (element.table_name == "roles"))
+                    {
+                        AccessRightsElement everything_with_grant_option{AccessType::ALL}; /// Users and roles can come with any grants.
+                        everything_with_grant_option.grant_option = true;
+                        required_access.emplace_back(everything_with_grant_option);
+                    }
+                    else if (element.table_name == "settings_profiles")
+                        required_access.emplace_back(AccessType::CREATE_SETTINGS_PROFILE);
+                    else if (element.table_name == "row_policies")
+                        required_access.emplace_back(AccessType::CREATE_ROW_POLICY);
+                    else if (element.table_name == "quotas")
+                        required_access.emplace_back(AccessType::CREATE_QUOTA);
+                }
                 break;
             }
             
@@ -262,8 +297,16 @@ AccessRightsElements getRequiredAccessToRestore(const ASTBackupQuery::Elements &
                     flags |= AccessType::CREATE_DATABASE;
                 if (!restore_settings.structure_only)
                     flags |= AccessType::INSERT;
-                required_access.emplace_back(flags, element.new_database_name);
                 /// TODO: It's better to process `element.except_tables` somehow.
+                required_access.emplace_back(flags, element.new_database_name);
+
+                if (element.database_name == "system")
+                {
+                    AccessRightsElement everything_with_grant_option{AccessType::ALL}; /// Users and roles can come with any grants.
+                    everything_with_grant_option.grant_option = true;
+                    required_access.emplace_back(everything_with_grant_option);
+                }
+
                 break;
             }
             
@@ -276,8 +319,15 @@ AccessRightsElements getRequiredAccessToRestore(const ASTBackupQuery::Elements &
                     flags |= AccessType::CREATE_DATABASE;
                 if (!restore_settings.structure_only)
                     flags |= AccessType::INSERT;
-                required_access.emplace_back(flags);
                 /// TODO: It's better to process `element.except_databases` & `element.except_tables` somehow.
+                required_access.emplace_back(flags);
+
+                {
+                    AccessRightsElement everything_with_grant_option{AccessType::ALL}; /// Users and roles can come with any grants.
+                    everything_with_grant_option.grant_option = true;
+                    required_access.emplace_back(everything_with_grant_option);
+                }
+
                 break;
             }
         }

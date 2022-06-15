@@ -19,6 +19,9 @@ struct Role : public IAccessEntity
     std::shared_ptr<IAccessEntity> clone() const override { return cloneImpl<Role>(); }
     static constexpr const auto TYPE = AccessEntityType::ROLE;
     AccessEntityType getType() const override { return TYPE; }
+    
+    std::vector<UUID> findDependencies() const override;
+    void replaceDependencies(const std::unordered_map<UUID, UUID> & old_to_new_ids) override;
 };
 
 using RolePtr = std::shared_ptr<const Role>;

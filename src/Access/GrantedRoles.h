@@ -3,6 +3,7 @@
 #include <Core/UUID.h>
 #include <boost/container/flat_set.hpp>
 #include <vector>
+#include <unordered_map>
 
 
 namespace DB
@@ -53,6 +54,9 @@ public:
 
     friend bool operator ==(const GrantedRoles & left, const GrantedRoles & right) { return (left.roles == right.roles) && (left.roles_with_admin_option == right.roles_with_admin_option); }
     friend bool operator !=(const GrantedRoles & left, const GrantedRoles & right) { return !(left == right); }
+
+    std::vector<UUID> findDependencies() const;
+    void replaceDependencies(const std::unordered_map<UUID, UUID> & old_to_new_ids);
 
 private:
     boost::container::flat_set<UUID> roles;

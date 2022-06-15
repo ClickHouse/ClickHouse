@@ -127,6 +127,36 @@ std::shared_ptr<ASTSettingsProfileElements> SettingsProfileElements::toASTWithNa
 }
 
 
+std::vector<UUID> SettingsProfileElements::findDependencies() const
+{
+    std::vector<UUID> res;
+    for (const auto & element : *this)
+    {
+        if (element.parent_profile)
+            res.push_back(*element.parent_profile);
+    }
+    return res;
+}
+
+
+void SettingsProfileElements::replaceDependencies(const std::unordered_map<UUID, UUID> & old_to_new_ids)
+{
+    for (auto & element : *this)
+    {
+        if (element.parent_profile)
+        {
+            auto id = *element.parent_profile;
+            auto it_new_id = old_to_new_ids.find(id);
+            if (it_new_id != old_to_new_ids.end())
+            {
+                auto new_id = it_new_id->second;
+                element.parent_profile = new_id;
+            }
+        }
+    }
+}
+
+
 void SettingsProfileElements::merge(const SettingsProfileElements & other)
 {
     insert(end(), other.begin(), other.end());

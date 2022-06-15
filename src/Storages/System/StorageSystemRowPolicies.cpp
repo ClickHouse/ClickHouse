@@ -2,6 +2,8 @@
 #include <Access/AccessControl.h>
 #include <Access/Common/AccessFlags.h>
 #include <Access/RowPolicy.h>
+#include <Backups/BackupEntriesCollector.h>
+#include <Backups/RestorerFromBackup.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnArray.h>
@@ -136,4 +138,25 @@ void StorageSystemRowPolicies::fillData(MutableColumns & res_columns, ContextPtr
         add_row(policy->getName(), policy->getFullName(), id, storage->getStorageName(), policy->filters, policy->isRestrictive(), policy->to_roles);
     }
 }
+
+void StorageSystemRowPolicies::backupData(
+    BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & partitions)
+{
+    if (partitions)
+        BackupEntriesCollector::throwPartitionsNotSupported(getStorageID(), getName());
+
+    const auto & access_control = backup_entries_collector.getContext()->getAccessControl();
+    access_control.backup(backup_entries_collector, AccessEntityType::ROW_POLICY, data_path_in_backup);
+}
+
+void StorageSystemRowPolicies::restoreDataFromBackup(
+    RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & partitions)
+{
+    if (partitions)
+        RestorerFromBackup::throwPartitionsNotSupported(getStorageID(), getName());
+
+    auto & access_control = restorer.getContext()->getAccessControl();
+    access_control.restore(restorer, data_path_in_backup);
+}
+
 }

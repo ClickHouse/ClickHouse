@@ -3,6 +3,7 @@
 #include <Common/Exception.h>
 #include <Common/quoteString.h>
 #include <base/range.h>
+#include <base/insertAtEnd.h>
 #include <boost/range/adaptor/map.hpp>
 #include <boost/range/adaptor/reversed.hpp>
 #include <boost/range/algorithm/copy.hpp>
@@ -189,10 +190,10 @@ AccessEntityPtr MultipleAccessStorage::readImpl(const UUID & id, bool throw_if_n
 }
 
 
-std::optional<String> MultipleAccessStorage::readNameImpl(const UUID & id, bool throw_if_not_exists) const
+std::optional<std::pair<String, AccessEntityType>> MultipleAccessStorage::readNameWithTypeImpl(const UUID & id, bool throw_if_not_exists) const
 {
     if (auto storage = findStorage(id))
-        return storage->readName(id, throw_if_not_exists);
+        return storage->readNameWithType(id, throw_if_not_exists);
 
     if (throw_if_not_exists)
         throwNotFound(id);
@@ -355,6 +356,67 @@ MultipleAccessStorage::authenticateImpl(const Credentials & credentials, const P
         throwNotFound(AccessEntityType::USER, credentials.getUserName());
     else
         return std::nullopt;
+}
+
+
+bool MultipleAccessStorage::isBackupAllowed() const
+{
+    auto storages = getStoragesInternal();
+    for (const auto & storage : *storages)
+    {
+        if (storage->isBackupAllowed())
+            return true;
+    }
+    return false;
+}
+
+
+bool MultipleAccessStorage::isRestoreAllowed() const
+{
+    auto storages = getStoragesInternal();
+    for (const auto & storage : *storages)
+    {
+        if (storage->isRestoreAllowed())
+            return true;
+    }
+    return false;
+}
+
+
+std::vector<std::pair<UUID, AccessEntityPtr>> MultipleAccessStorage::readAllForBackup(AccessEntityType type, const BackupSettings & backup_settings) const
+{
+    std::vector<std::pair<UUID, AccessEntityPtr>> res;
+    auto storages = getStoragesInternal();
+    size_t count = 0;
+    
+    for (const auto & storage : *storages)
+    {
+        if (storage->isBackupAllowed())
+        {
+            insertAtEnd(res, storage->readAllForBackup(type, backup_settings));
+            ++count;
+        }
+    }
+
+    if (!count)
+        throwBackupNotAllowed();
+
+    return res;
+}
+
+
+void MultipleAccessStorage::insertFromBackup(const std::vector<std::pair<UUID, AccessEntityPtr>> & entities_from_backup, const RestoreSettings & restore_settings, std::shared_ptr<IRestoreCoordination> restore_coordination)
+{
+    auto storages = getStoragesInternal();
+    for (const auto & storage : *storages)
+    {
+        if (storage->isRestoreAllowed())
+        {
+            storage->insertFromBackup(entities_from_backup, restore_settings, restore_coordination);
+            return;
+        }
+    }
+    throwRestoreNotAllowed();
 }
 
 }

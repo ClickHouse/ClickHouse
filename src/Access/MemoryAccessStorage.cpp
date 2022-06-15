@@ -1,5 +1,6 @@
 #include <Access/MemoryAccessStorage.h>
 #include <Access/AccessChangesNotifier.h>
+#include <Backups/RestoreSettings.h>
 #include <base/scope_guard.h>
 #include <boost/container/flat_set.hpp>
 #include <boost/range/adaptor/map.hpp>
@@ -8,8 +9,8 @@
 
 namespace DB
 {
-MemoryAccessStorage::MemoryAccessStorage(const String & storage_name_, AccessChangesNotifier & changes_notifier_)
-    : IAccessStorage(storage_name_), changes_notifier(changes_notifier_)
+MemoryAccessStorage::MemoryAccessStorage(const String & storage_name_, bool allow_backup_, AccessChangesNotifier & changes_notifier_)
+    : IAccessStorage(storage_name_), backup_allowed(allow_backup_), changes_notifier(changes_notifier_)
 {
 }
 
@@ -65,11 +66,17 @@ AccessEntityPtr MemoryAccessStorage::readImpl(const UUID & id, bool throw_if_not
 std::optional<UUID> MemoryAccessStorage::insertImpl(const AccessEntityPtr & new_entity, bool replace_if_exists, bool throw_if_exists)
 {
     UUID id = generateRandomID();
-    std::lock_guard lock{mutex};
-    if (insertNoLock(id, new_entity, replace_if_exists, throw_if_exists))
+    if (insertWithID(id, new_entity, replace_if_exists, throw_if_exists))
         return id;
 
     return std::nullopt;
+}
+
+
+bool MemoryAccessStorage::insertWithID(const UUID & id, const AccessEntityPtr & new_entity, bool replace_if_exists, bool throw_if_exists)
+{
+    std::lock_guard lock{mutex};
+    return insertNoLock(id, new_entity, replace_if_exists, throw_if_exists);
 }
 
 
@@ -262,6 +269,30 @@ void MemoryAccessStorage::setAll(const std::vector<std::pair<UUID, AccessEntityP
             insertNoLock(id, entity, /* replace_if_exists = */ false, /* throw_if_exists = */ true);
         }
     }
+}
+
+
+std::vector<std::pair<UUID, AccessEntityPtr>> MemoryAccessStorage::readAllForBackup(AccessEntityType type, const BackupSettings &) const
+{
+    if (!isBackupAllowed())
+        throwBackupNotAllowed();
+
+    return readAllWithIDs(type);
+}
+
+void MemoryAccessStorage::insertFromBackup(
+    const std::vector<std::pair<UUID, AccessEntityPtr>> & entities_from_backup,
+    const RestoreSettings & restore_settings,
+    std::shared_ptr<IRestoreCoordination>)
+{
+    if (!isRestoreAllowed())
+        throwRestoreNotAllowed();
+
+    bool replace_if_exists = (restore_settings.create_access == RestoreAccessCreationMode::kReplace);
+    bool throw_if_exists = (restore_settings.create_access == RestoreAccessCreationMode::kCreate);
+
+    for (const auto & [id, entity] : entities_from_backup)
+        insertWithID(id, entity, replace_if_exists, throw_if_exists);
 }
 
 }

@@ -26,7 +26,7 @@ class ReplicatedAccessStorage : public IAccessStorage
 public:
     static constexpr char STORAGE_TYPE[] = "replicated";
 
-    ReplicatedAccessStorage(const String & storage_name, const String & zookeeper_path, zkutil::GetZooKeeper get_zookeeper, AccessChangesNotifier & changes_notifier_);
+    ReplicatedAccessStorage(const String & storage_name, const String & zookeeper_path, zkutil::GetZooKeeper get_zookeeper, bool allow_backup, AccessChangesNotifier & changes_notifier_);
     virtual ~ReplicatedAccessStorage() override;
 
     const char * getStorageType() const override { return STORAGE_TYPE; }
@@ -36,9 +36,14 @@ public:
 
     bool exists(const UUID & id) const override;
 
+    bool isBackupAllowed() const override { return backup_allowed; }
+    std::vector<std::pair<UUID, AccessEntityPtr>> readAllForBackup(AccessEntityType type, const BackupSettings & backup_settings) const override;
+    void insertFromBackup(const std::vector<std::pair<UUID, AccessEntityPtr>> & entities_from_backup, const RestoreSettings & restore_settings, std::shared_ptr<IRestoreCoordination> restore_coordination) override;
+
 private:
     String zookeeper_path;
     zkutil::GetZooKeeper get_zookeeper;
+    bool backup_allowed = false;
 
     std::atomic<bool> initialized = false;
 
@@ -50,6 +55,7 @@ private:
     bool removeImpl(const UUID & id, bool throw_if_not_exists) override;
     bool updateImpl(const UUID & id, const UpdateFunc & update_func, bool throw_if_not_exists) override;
 
+    bool insertWithID(const UUID & id, const AccessEntityPtr & new_entity, bool replace_if_exists, bool throw_if_exists);
     bool insertZooKeeper(const zkutil::ZooKeeperPtr & zookeeper, const UUID & id, const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists);
     bool removeZooKeeper(const zkutil::ZooKeeperPtr & zookeeper, const UUID & id, bool throw_if_not_exists);
     bool updateZooKeeper(const zkutil::ZooKeeperPtr & zookeeper, const UUID & id, const UpdateFunc & update_func, bool throw_if_not_exists);

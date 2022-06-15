@@ -15,6 +15,7 @@ class IBackup;
 using BackupPtr = std::shared_ptr<const IBackup>;
 class IRestoreCoordination;
 struct StorageID;
+class AccessRestoreTask;
 
 /// Restores the definition of databases and tables and prepares tasks to restore the data of the tables.
 class RestorerFromBackup : private boost::noncopyable
@@ -49,6 +50,9 @@ public:
     /// This function can be called by implementations of IStorage::restoreFromBackup() in inherited storage classes.
     void addDataRestoreTask(DataRestoreTask && data_restore_task);
     void addDataRestoreTasks(DataRestoreTasks && data_restore_task);
+
+    /// Adds a new data path to restore access control.
+    void addAccessRestorePathInBackup(const String & data_path);
 
     /// Reading a backup includes a few stages:
     enum class Stage
@@ -130,6 +134,7 @@ private:
     std::unordered_map<String, DatabaseInfo> database_infos;
     std::map<TableKey, TableInfo> table_infos;
     std::vector<DataRestoreTask> data_restore_tasks;
+    std::shared_ptr<AccessRestoreTask> access_restore_task;
 };
 
 }

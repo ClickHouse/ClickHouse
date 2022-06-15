@@ -23,6 +23,19 @@ enum class RestoreTableCreationMode
 
 using RestoreDatabaseCreationMode = RestoreTableCreationMode;
 
+/// How the RESTORE command will handle if an user (or role or profile) which it's going to restore already exists.
+enum class RestoreAccessCreationMode
+{
+    /// RESTORE will throw an exception if some user already exists.
+    kCreate,
+    
+    /// RESTORE will skip existing users.
+    kCreateIfNotExists,
+
+    /// RESTORE will replace existing users with definitions from backup.
+    kReplace,
+};
+
 /// Settings specified in the "SETTINGS" clause of a RESTORE query.
 struct RestoreSettings
 {
@@ -78,6 +91,13 @@ struct RestoreSettings
     /// This will mix earlier data in the table with the data extracted from the backup.
     /// Setting "allow_non_empty_tables=true" thus can cause data duplication in the table, use with caution.
     bool allow_non_empty_tables = false;
+
+    /// How the RESTORE command will handle if an user (or role or profile) which it's going to restore already exists.
+    RestoreAccessCreationMode create_access = RestoreAccessCreationMode::kCreateIfNotExists;
+
+    /// Skip dependencies of access entities which can't be resolved.
+    /// For example, if an user has a profile assigned and that profile is not in the backup and doesn't exist locally.
+    bool allow_unresolved_access_dependencies = false;
 
     /// Internal, should not be specified by user.
     bool internal = false;

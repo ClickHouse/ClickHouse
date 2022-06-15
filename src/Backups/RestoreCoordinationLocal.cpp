@@ -36,4 +36,9 @@ bool RestoreCoordinationLocal::acquireInsertingDataIntoReplicatedTable(const Str
     return acquired_data_in_replicated_tables.emplace(table_zk_path).second;
 }
 
+bool RestoreCoordinationLocal::acquireReplicatedAccessStorage(const String &)
+{
+    return true;
+}
+
 }
