@@ -21,6 +21,7 @@ namespace ErrorCodes
     extern const int NETWORK_ERROR;
     extern const int EXCESSIVE_ELEMENT_IN_CONFIG;
     extern const int NO_ELEMENTS_IN_CONFIG;
+    extern const int KERBEROS_ERROR;
 }
 
 const String HDFSBuilderWrapper::CONFIG_PREFIX = "hdfs";
