@@ -28,9 +28,16 @@ public:
 
     Status prepare() override;
 
+    /// Set position which will be used in selector if input chunk has attached SelectorInfo (see SelectorInfo.h).
+    /// Columns will be filtered, keep only rows labeled with this position.
+    /// It is used in parallel final.
+    void setSelectorPosition(size_t position) { state.selector_position = position; }
+
 protected:
     virtual void onNewInput(); /// Is called when new input is added. Only if have_all_inputs = false.
     virtual void onFinish() {} /// Is called when all data is processed.
+
+    void filterChunks(); /// Filter chunks if selector position was set. For parallel final.
 
     /// Processor state.
     struct State
@@ -43,6 +50,7 @@ protected:
         size_t next_input_to_read = 0;
 
         IMergingAlgorithm::Inputs init_chunks;
+        ssize_t selector_position = -1;
     };
 
     State state;
@@ -84,6 +92,8 @@ public:
 
     void work() override
     {
+        filterChunks();
+
         if (!state.init_chunks.empty())
             algorithm.initialize(std::move(state.init_chunks));
 
