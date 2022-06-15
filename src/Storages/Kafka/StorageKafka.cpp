@@ -517,6 +517,12 @@ void StorageKafka::updateConfiguration(cppkafka::Configuration & conf)
     if (config.has(config_prefix))
         loadFromConfig(conf, config, config_prefix);
 
+    if (conf.has_property("sasl.kerberos.kinit.cmd"))
+        LOG_WARNING(log, "kinit executable is not allowed.");
+
+    conf.set("sasl.kerberos.kinit.cmd","");
+    conf.set("sasl.kerberos.min.time.before.relogin","0");
+
     if (conf.has_property("sasl.kerberos.keytab") && conf.has_property("sasl.kerberos.principal"))
     {
         String keytab = conf.get("sasl.kerberos.keytab");
@@ -526,12 +532,12 @@ void StorageKafka::updateConfiguration(cppkafka::Configuration & conf)
         try
         {
             k_init.init(keytab,principal);
-        } catch (const Exception & e) {
+        }
+        catch (const Exception & e)
+        {
             LOG_ERROR(log, "KerberosInit failure: {}", getExceptionMessage(e, false));
         }
         LOG_DEBUG(log, "Finished KerberosInit");
-        conf.set("sasl.kerberos.kinit.cmd","");
-        conf.set("sasl.kerberos.min.time.before.relogin","0");
     }
 
     // Update consumer topic-specific configuration

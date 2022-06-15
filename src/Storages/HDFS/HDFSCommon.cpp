@@ -78,7 +78,9 @@ void HDFSBuilderWrapper::runKinit()
     try
     {
         k_init.init(hadoop_kerberos_keytab,hadoop_kerberos_principal,hadoop_security_kerberos_ticket_cache_path);
-    } catch (const DB::Exception & e) {
+    }
+    catch (const DB::Exception & e)
+    {
         throw Exception("KerberosInit failure: "+ getExceptionMessage(e, false), ErrorCodes::KERBEROS_ERROR);
     }
     LOG_DEBUG(&Poco::Logger::get("HDFSClient"), "Finished KerberosInit");
