@@ -1668,7 +1668,7 @@ void IMergeTreeDataPart::remove() const
         try
         {
             /// Remove each expected file in directory, then remove directory itself.
-            IDisk::RemoveBatchRequest request;
+            RemoveBatchRequest request;
 
     #if !defined(__clang__)
     #    pragma GCC diagnostic push
@@ -1726,7 +1726,7 @@ void IMergeTreeDataPart::projectionRemove(const String & parent_to, bool keep_sh
         try
         {
             /// Remove each expected file in directory, then remove directory itself.
-            IDisk::RemoveBatchRequest request;
+            RemoveBatchRequest request;
 
     #if !defined(__clang__)
     #    pragma GCC diagnostic push
