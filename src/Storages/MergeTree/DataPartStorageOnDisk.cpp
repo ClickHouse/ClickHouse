@@ -112,7 +112,7 @@ UInt32 DataPartStorageOnDisk::getRefCount(const String & path) const
 class DataPartStorageIteratorOnDisk final : public IDataPartStorageIterator
 {
 public:
-    DataPartStorageIteratorOnDisk(DiskPtr disk_, DiskDirectoryIteratorPtr it_)
+    DataPartStorageIteratorOnDisk(DiskPtr disk_, DirectoryIteratorPtr it_)
         : disk(std::move(disk_)), it(std::move(it_))
     {
     }
@@ -124,7 +124,7 @@ public:
 
 private:
     DiskPtr disk;
-    DiskDirectoryIteratorPtr it;
+    DirectoryIteratorPtr it;
 };
 
 DataPartStorageIteratorPtr DataPartStorageOnDisk::iterate() const
@@ -164,7 +164,7 @@ void DataPartStorageOnDisk::remove(
     {
         auto parent_path = part_dir_without_slash.parent_path();
         if (parent_path == "detached")
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to remove detached part {} with path {} in remove function. It shouldn't happen", name, relative_path);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to remove detached part {} with path {} in remove function. It shouldn't happen", part_dir, root_path);
 
         part_dir_without_slash = parent_path / ("delete_tmp_" + std::string{part_dir_without_slash.filename()});
     }
@@ -588,9 +588,10 @@ void DataPartStorageOnDisk::rename(const std::string & new_root_path, const std:
             Names files;
             volume->getDisk()->listFiles(to, files);
 
-            LOG_WARNING(log,
-                "Part directory {} already exists and contains {} files. Removing it.",
-                fullPath(volume->getDisk(), to), files.size());
+            if (log)
+                LOG_WARNING(log,
+                    "Part directory {} already exists and contains {} files. Removing it.",
+                    fullPath(volume->getDisk(), to), files.size());
 
             volume->getDisk()->removeRecursive(to);
         }
