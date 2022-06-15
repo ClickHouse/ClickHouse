@@ -130,7 +130,7 @@ void ReadBufferFromRemoteFSGather::appendFilesystemCacheLog()
 }
 
 
-ReadBufferFromRemoteFSGather::ReadResult ReadBufferFromRemoteFSGather::readInto(char * data, size_t size, size_t offset, size_t ignore)
+IAsynchronousReader::Result ReadBufferFromRemoteFSGather::readInto(char * data, size_t size, size_t offset, size_t ignore)
 {
     /**
      * Set `data` to current working and internal buffers.

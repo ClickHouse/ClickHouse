@@ -3,7 +3,7 @@ sidebar_position: 41
 sidebar_label: ROW POLICY
 ---
 
-# CREATE ROW POLICY {#create-row-policy-statement}
+# CREATE ROW POLICY
 
 Creates a [row policy](../../../operations/access-rights.md#row-policy-management), i.e. a filter used to determine which rows a user can read from a table.
 
@@ -21,11 +21,11 @@ CREATE [ROW] POLICY [IF NOT EXISTS | OR REPLACE] policy_name1 [ON CLUSTER cluste
     [TO {role1 [, role2 ...] | ALL | ALL EXCEPT role1 [, role2 ...]}]
 ```
 
-## USING Clause {#create-row-policy-using}
+## USING Clause
 
 Allows to specify a condition to filter rows. An user will see a row if the condition is calculated to non-zero for the row.
 
-## TO Clause {#create-row-policy-to}
+## TO Clause
 
 In the section `TO` you can provide a list of users and roles this policy should work for. For example, `CREATE ROW POLICY ... TO accountant, john@localhost`.
 
@@ -43,7 +43,7 @@ If that's not desirable it can't be fixed by adding one more row policy, like th
 `CREATE ROW POLICY pol2 ON mydb.table1 USING 1 TO ALL EXCEPT mira, peter`
 :::
 
-## AS Clause {#create-row-policy-as}
+## AS Clause
 
 It's allowed to have more than one policy enabled on the same table for the same user at the one time. So we need a way to combine the conditions from multiple policies.
 
@@ -76,7 +76,7 @@ CREATE ROW POLICY pol2 ON mydb.table1 USING c=2 AS RESTRICTIVE TO peter, antonio
 
 enables the user `peter` to see rows only if both `b=1` AND `c=2`.
 
-## ON CLUSTER Clause {#create-row-policy-on-cluster}
+## ON CLUSTER Clause
 
 Allows creating row policies on a cluster, see [Distributed DDL](../../../sql-reference/distributed-ddl.md).
 

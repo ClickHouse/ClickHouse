@@ -84,13 +84,13 @@
 #include <Common/getHashOfLoadedBinary.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/Elf.h>
+#include <Compression/CompressionCodecEncrypted.h>
 #include <Server/MySQLHandlerFactory.h>
 #include <Server/PostgreSQLHandlerFactory.h>
 #include <Server/CertificateReloader.h>
 #include <Server/ProtocolServerAdapter.h>
 #include <Server/HTTP/HTTPServer.h>
 #include <Interpreters/AsynchronousInsertQueue.h>
-#include <Compression/CompressionCodecEncrypted.h>
 #include <filesystem>
 
 #include "config_core.h"
@@ -103,7 +103,6 @@
 #endif
 
 #if USE_SSL
-#    include <Compression/CompressionCodecEncrypted.h>
 #    include <Poco/Net/Context.h>
 #    include <Poco/Net/SecureServerSocket.h>
 #endif
@@ -546,8 +545,9 @@ static void sanityChecks(Server & server)
 #if defined(OS_LINUX)
     try
     {
-        if (readString("/sys/devices/system/clocksource/clocksource0/current_clocksource").find("tsc") == std::string::npos)
-            server.context()->addWarningMessage("Linux is not using a fast TSC clock source. Performance can be degraded.");
+        const char * filename = "/sys/devices/system/clocksource/clocksource0/current_clocksource";
+        if (readString(filename).find("tsc") == std::string::npos)
+            server.context()->addWarningMessage("Linux is not using a fast TSC clock source. Performance can be degraded. Check " + String(filename));
     }
     catch (...)
     {
@@ -555,8 +555,9 @@ static void sanityChecks(Server & server)
 
     try
     {
-        if (readNumber("/proc/sys/vm/overcommit_memory") == 2)
-            server.context()->addWarningMessage("Linux memory overcommit is disabled.");
+        const char * filename = "/proc/sys/vm/overcommit_memory";
+        if (readNumber(filename) == 2)
+            server.context()->addWarningMessage("Linux memory overcommit is disabled. Check " + String(filename));
     }
     catch (...)
     {
@@ -564,8 +565,9 @@ static void sanityChecks(Server & server)
 
     try
     {
-        if (readString("/sys/kernel/mm/transparent_hugepage/enabled").find("[always]") != std::string::npos)
-            server.context()->addWarningMessage("Linux transparent hugepages are set to \"always\".");
+        const char * filename = "/sys/kernel/mm/transparent_hugepage/enabled";
+        if (readString(filename).find("[always]") != std::string::npos)
+            server.context()->addWarningMessage("Linux transparent hugepages are set to \"always\". Check " + String(filename));
     }
     catch (...)
     {
@@ -573,8 +575,9 @@ static void sanityChecks(Server & server)
 
     try
     {
-        if (readNumber("/proc/sys/kernel/pid_max") < 30000)
-            server.context()->addWarningMessage("Linux max PID is too low.");
+        const char * filename = "/proc/sys/kernel/pid_max";
+        if (readNumber(filename) < 30000)
+            server.context()->addWarningMessage("Linux max PID is too low. Check " + String(filename));
     }
     catch (...)
     {
@@ -582,8 +585,9 @@ static void sanityChecks(Server & server)
 
     try
     {
-        if (readNumber("/proc/sys/kernel/threads-max") < 30000)
-            server.context()->addWarningMessage("Linux threads max count is too low.");
+        const char * filename = "/proc/sys/kernel/threads-max";
+        if (readNumber(filename) < 30000)
+            server.context()->addWarningMessage("Linux threads max count is too low. Check " + String(filename));
     }
     catch (...)
     {
@@ -591,7 +595,7 @@ static void sanityChecks(Server & server)
 
     std::string dev_id = getBlockDeviceId(data_path);
     if (getBlockDeviceType(dev_id) == BlockDeviceType::ROT && getBlockDeviceReadAheadBytes(dev_id) == 0)
-        server.context()->addWarningMessage("Rotational disk with disabled readahead is in use. Performance can be degraded.");
+        server.context()->addWarningMessage("Rotational disk with disabled readahead is in use. Performance can be degraded. Used for data: " + String(data_path));
 #endif
 
     try
@@ -1095,8 +1099,6 @@ int Server::main(const std::vector<std::string> & /*args*/)
             total_memory_tracker.setMetric(CurrentMetrics::MemoryTracking);
 
             auto * global_overcommit_tracker = global_context->getGlobalOvercommitTracker();
-            UInt64 max_overcommit_wait_time = config->getUInt64("global_memory_usage_overcommit_max_wait_microseconds", 200);
-            global_overcommit_tracker->setMaxWaitTime(max_overcommit_wait_time);
             total_memory_tracker.setOvercommitTracker(global_overcommit_tracker);
 
             // FIXME logging-related things need synchronization -- see the 'Logger * log' saved
