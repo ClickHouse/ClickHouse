@@ -1195,16 +1195,14 @@ unset IFS
 function upload_results
 {
     # Prepare info for the CI checks table.
-    rm ci-checks.tsv
+    rm -f ci-checks.tsv
+
     clickhouse-local --query "
-create view queries as select * from file('report/queries.tsv', TSVWithNamesAndTypes,
-    'changed_fail int, changed_show int, unstable_fail int, unstable_show int,
-        left float, right float, diff float, stat_threshold float,
-        test text, query_index int, query_display_name text');
+create view queries as select * from file('report/queries.tsv', TSVWithNamesAndTypes);
 
 create table ci_checks engine File(TSVWithNamesAndTypes, 'ci-checks.tsv')
     as select
-        $PR_TO_TEST pull_request_number,
+        $PR_TO_TEST :: UInt32 AS pull_request_number,
         '$SHA_TO_TEST' commit_sha,
         'Performance' check_name,
         '$(sed -n 's/.*<!--status: \(.*\)-->/\1/p' report.html)' check_status,
@@ -1271,7 +1269,7 @@ create table ci_checks engine File(TSVWithNamesAndTypes, 'ci-checks.tsv')
     #     `test` LowCardinality(String),
     #     `query_index` UInt32,
     #     `query_display_name` String,
-    #     `metric_name` LowCardinality(String),
+    #     `metric` LowCardinality(String),
     #     `old_value` Float64,
     #     `new_value` Float64,
     #     `diff` Float64,
@@ -1282,7 +1280,7 @@ create table ci_checks engine File(TSVWithNamesAndTypes, 'ci-checks.tsv')
     # CREATE TABLE IF NOT EXISTS run_attributes_v1 (
     #     `old_sha` String,
     #     `new_sha` String,
-    #     `metric_name` LowCardinality(String),
+    #     `metric` LowCardinality(String),
     #     `metric_value` String
     # ) ENGINE = ReplicatedMergeTree
     # ORDER BY (old_sha, new_sha)
@@ -1300,7 +1298,7 @@ create table ci_checks engine File(TSVWithNamesAndTypes, 'ci-checks.tsv')
                 test,
                 query_index,
                 query_display_name,
-                metric_name,
+                metric_name as metric,
                 old_value,
                 new_value,
                 diff,
@@ -1310,7 +1308,6 @@ create table ci_checks engine File(TSVWithNamesAndTypes, 'ci-checks.tsv')
                     test text, query_index int, query_display_name text')
             settings date_time_input_format='best_effort'
             format TSV
-            settings date_time_input_format='best_effort'
 " < report/all-query-metrics.tsv # Don't leave whitespace after INSERT: https://github.com/ClickHouse/ClickHouse/issues/16652
 
     # Upload some run attributes. I use this weird form because it is the same
@@ -1336,6 +1333,8 @@ create table ci_checks engine File(TSVWithNamesAndTypes, 'ci-checks.tsv')
 $REF_SHA	$SHA_TO_TEST	$(numactl --show | sed -n 's/^cpubind:[[:space:]]\+/numactl-cpubind	/p')
 $REF_SHA	$SHA_TO_TEST	$(numactl --hardware | sed -n 's/^available:[[:space:]]\+/numactl-available	/p')
 EOF
+
+    head ci-checks.tsv
 
     # Also insert some data about the check into the CI checks table.
     "${client[@]}" --query "INSERT INTO "'"'"default"'"'".checks FORMAT TSVWithNamesAndTypes" \
