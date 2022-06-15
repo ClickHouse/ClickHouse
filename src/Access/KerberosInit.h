@@ -4,9 +4,6 @@
 
 #include <base/types.h>
 
-#include <krb5.h>
-#include <mutex>
-
 namespace DB
 {
 namespace ErrorCodes

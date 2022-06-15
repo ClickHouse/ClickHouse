@@ -4,6 +4,8 @@
 #include <Poco/Logger.h>
 #include <Loggers/Loggers.h>
 #include <filesystem>
+#include <krb5.h>
+#include <mutex>
 
 using namespace DB;
 
