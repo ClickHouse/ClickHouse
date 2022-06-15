@@ -2088,12 +2088,9 @@ std::shared_ptr<NotJoinedBlocks> HashJoin::getNonJoinedBlocks(const Block & left
                                                               const Block & result_sample_block,
                                                               UInt64 max_block_size) const
 {
-    if (table_join->strictness() == ASTTableJoin::Strictness::Asof ||
-        table_join->strictness() == ASTTableJoin::Strictness::Semi ||
-        !isRightOrFull(table_join->kind()))
-    {
+    if (!JoinCommon::hasNonJoinedBlocks(*table_join))
         return {};
-    }
+
     bool multiple_disjuncts = !table_join->oneDisjunct();
 
     if (multiple_disjuncts)
