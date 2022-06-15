@@ -318,7 +318,7 @@ int copy_decompressor(const char *self, int output_fd)
         if (sz < 0)
             perror(nullptr);
         else
-            std::cerr << "Error unable to extract decompressor" << std::endl;
+            std::cerr << "Error: unable to extract decompressor" << std::endl;
         close(input_fd);
         return 1;
     }
