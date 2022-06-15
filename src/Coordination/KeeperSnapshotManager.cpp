@@ -268,9 +268,14 @@ void KeeperStorageSnapshot::deserialize(SnapshotDeserializationResult & deserial
                 recalculate_digest = false;
             }
         }
+
+        storage.old_snapshot_zxid = 0;
     }
     else
+    {
         storage.zxid = deserialization_result.snapshot_meta->get_last_log_idx();
+        storage.old_snapshot_zxid = storage.zxid;
+    }
 
     int64_t session_id;
     readBinary(session_id, in);
