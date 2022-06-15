@@ -704,7 +704,7 @@ inline bool memoryIsZeroSmallAllowOverflow15(const void * data, size_t size)
 
 #else
 
-#    include <cstring>
+#include <cstring>
 
 template <typename Char>
 inline int memcmpSmallAllowOverflow15(const Char * a, size_t a_size, const Char * b, size_t b_size)
