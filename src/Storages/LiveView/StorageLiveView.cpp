@@ -22,6 +22,7 @@ limitations under the License. */
 #include <Processors/Executors/PipelineExecutor.h>
 #include <Processors/Transforms/SquashingChunksTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
 #include <Common/SipHash.h>

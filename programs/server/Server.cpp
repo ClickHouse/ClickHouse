@@ -84,13 +84,13 @@
 #include <Common/getHashOfLoadedBinary.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/Elf.h>
+#include <Compression/CompressionCodecEncrypted.h>
 #include <Server/MySQLHandlerFactory.h>
 #include <Server/PostgreSQLHandlerFactory.h>
 #include <Server/CertificateReloader.h>
 #include <Server/ProtocolServerAdapter.h>
 #include <Server/HTTP/HTTPServer.h>
 #include <Interpreters/AsynchronousInsertQueue.h>
-#include <Compression/CompressionCodecEncrypted.h>
 #include <filesystem>
 
 #include "config_core.h"
@@ -103,7 +103,6 @@
 #endif
 
 #if USE_SSL
-#    include <Compression/CompressionCodecEncrypted.h>
 #    include <Poco/Net/Context.h>
 #    include <Poco/Net/SecureServerSocket.h>
 #endif
@@ -1100,8 +1099,6 @@ int Server::main(const std::vector<std::string> & /*args*/)
             total_memory_tracker.setMetric(CurrentMetrics::MemoryTracking);
 
             auto * global_overcommit_tracker = global_context->getGlobalOvercommitTracker();
-            UInt64 max_overcommit_wait_time = config->getUInt64("global_memory_usage_overcommit_max_wait_microseconds", 200);
-            global_overcommit_tracker->setMaxWaitTime(max_overcommit_wait_time);
             total_memory_tracker.setOvercommitTracker(global_overcommit_tracker);
 
             // FIXME logging-related things need synchronization -- see the 'Logger * log' saved

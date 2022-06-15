@@ -38,7 +38,9 @@ MergingSortedAlgorithm::MergingSortedAlgorithm(
         sort_description_types.emplace_back(header.getByName(column_description.column_name).type);
     }
 
-    compileSortDescriptionIfNeeded(description, sort_description_types, true /*increase_compile_attemps*/);
+    queue_variants = SortQueueVariants(sort_description_types, description);
+    if (queue_variants.variantSupportJITCompilation())
+        compileSortDescriptionIfNeeded(description, sort_description_types, true /*increase_compile_attemps*/);
 }
 
 void MergingSortedAlgorithm::addInput()
@@ -72,12 +74,11 @@ void MergingSortedAlgorithm::initialize(Inputs inputs)
         cursors[source_num] = SortCursorImpl(header, chunk.getColumns(), description, source_num);
     }
 
-    if (has_collation)
-        queue_with_collation = SortingHeap<SortCursorWithCollation>(cursors);
-    else if (description.size() == 1)
-        queue_simple = SortingHeap<SimpleSortCursor>(cursors);
-    else
-        queue_without_collation = SortingHeap<SortCursor>(cursors);
+    queue_variants.callOnVariant([&](auto & queue)
+    {
+        using QueueType = std::decay_t<decltype(queue)>;
+        queue = QueueType(cursors);
+    });
 }
 
 void MergingSortedAlgorithm::consume(Input & input, size_t source_num)
@@ -86,22 +87,20 @@ void MergingSortedAlgorithm::consume(Input & input, size_t source_num)
     current_inputs[source_num].swap(input);
     cursors[source_num].reset(current_inputs[source_num].chunk.getColumns(), header);
 
-    if (has_collation)
-        queue_with_collation.push(cursors[source_num]);
-    else if (description.size() == 1)
-        queue_simple.push(cursors[source_num]);
-    else
-        queue_without_collation.push(cursors[source_num]);
+    queue_variants.callOnVariant([&](auto & queue)
+    {
+        queue.push(cursors[source_num]);
+    });
 }
 
 IMergingAlgorithm::Status MergingSortedAlgorithm::merge()
 {
-    if (has_collation)
-        return mergeImpl(queue_with_collation);
-    else if (description.size() == 1)
-        return mergeImpl(queue_simple);
-    else
-        return mergeImpl(queue_without_collation);
+    IMergingAlgorithm::Status result = queue_variants.callOnVariant([&](auto & queue)
+    {
+        return mergeImpl(queue);
+    });
+
+    return result;
 }
 
 template <typename TSortingHeap>
