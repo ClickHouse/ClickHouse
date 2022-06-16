@@ -20,9 +20,10 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int NETWORK_ERROR;
+    #if USE_KRB5
     extern const int EXCESSIVE_ELEMENT_IN_CONFIG;
-    extern const int NO_ELEMENTS_IN_CONFIG;
     extern const int KERBEROS_ERROR;
+    #endif // USE_KRB5
 }
 
 const String HDFSBuilderWrapper::CONFIG_PREFIX = "hdfs";
@@ -43,19 +44,28 @@ void HDFSBuilderWrapper::loadFromConfig(const Poco::Util::AbstractConfiguration 
         String key_name;
         if (key == "hadoop_kerberos_keytab")
         {
+            #if USE_KRB5
             need_kinit = true;
             hadoop_kerberos_keytab = config.getString(key_path);
+            #else // USE_KRB5
+            LOG_WARNING(&Poco::Logger::get("HDFSClient"), "hadoop_kerberos_keytab parameter is ignored because ClickHouse was built without support of krb5 library.");
+            #endif // USE_KRB5
             continue;
         }
         else if (key == "hadoop_kerberos_principal")
         {
+            #if USE_KRB5
             need_kinit = true;
             hadoop_kerberos_principal = config.getString(key_path);
             hdfsBuilderSetPrincipal(hdfs_builder, hadoop_kerberos_principal.c_str());
+            #else // USE_KRB5
+            LOG_WARNING(&Poco::Logger::get("HDFSClient"), "hadoop_kerberos_principal parameter is ignored because ClickHouse was built without support of krb5 library.");
+            #endif // USE_KRB5
             continue;
         }
         else if (key == "hadoop_security_kerberos_ticket_cache_path")
         {
+            #if USE_KRB5
             if (isUser)
             {
                 throw Exception("hadoop.security.kerberos.ticket.cache.path cannot be set per user",
@@ -64,6 +74,9 @@ void HDFSBuilderWrapper::loadFromConfig(const Poco::Util::AbstractConfiguration 
 
             hadoop_security_kerberos_ticket_cache_path = config.getString(key_path);
             // standard param - pass further
+            #else // USE_KRB5
+            LOG_WARNING(&Poco::Logger::get("HDFSClient"), "hadoop.security.kerberos.ticket.cache.path parameter is ignored because ClickHouse was built without support of krb5 library.");
+            #endif // USE_KRB5
         }
 
         key_name = boost::replace_all_copy(key, "_", ".");
@@ -73,9 +86,9 @@ void HDFSBuilderWrapper::loadFromConfig(const Poco::Util::AbstractConfiguration 
     }
 }
 
+#if USE_KRB5
 void HDFSBuilderWrapper::runKinit()
 {
-    #if USE_KRB5
     LOG_DEBUG(&Poco::Logger::get("HDFSClient"), "Running KerberosInit");
     try
     {
@@ -86,8 +99,8 @@ void HDFSBuilderWrapper::runKinit()
         throw Exception("KerberosInit failure: "+ getExceptionMessage(e, false), ErrorCodes::KERBEROS_ERROR);
     }
     LOG_DEBUG(&Poco::Logger::get("HDFSClient"), "Finished KerberosInit");
-    #endif // USE_KRB5
 }
+#endif // USE_KRB5
 
 HDFSBuilderWrapper createHDFSBuilder(const String & uri_str, const Poco::Util::AbstractConfiguration & config)
 {
