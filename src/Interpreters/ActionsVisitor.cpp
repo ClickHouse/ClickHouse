@@ -1,4 +1,5 @@
 #include <memory>
+#include "Common/logger_useful.h"
 #include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
 #include <Columns/ColumnArray.h>
@@ -48,6 +49,7 @@
 #include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/UserDefinedExecutableFunctionFactory.h>
+#include <Poco/Logger.h>
 
 
 namespace DB
@@ -941,28 +943,14 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
 
     bool is_aggregate_function = AggregateFunctionFactory::instance().isAggregateFunctionName(node.name);
 
-    if (data.window_function_called.has_value())
-    {
-        bool subtree_contains_window_call = false;
-        for (const auto & arg : node.arguments->children)
-        {
-            data.window_function_called = false;
-            visit(arg, data);
-            subtree_contains_window_call = subtree_contains_window_call || data.window_function_called.value();
-        }
-        data.window_function_called = subtree_contains_window_call
-            || (!subtree_contains_window_call && is_aggregate_function);
-        if (data.window_function_called.value())
-            return;
-    }
-    else if (node.is_window_function)
+    LOG_DEBUG(&Poco::Logger::get("ActionVisitor"), "Processing function {}, with compute_after_window_functions={}", node.getColumnName(), node.compute_after_window_functions);
+    if (node.is_window_function)
     {
         // Also add columns from PARTITION BY and ORDER BY of window functions.
         if (node.window_definition)
         {
             visit(node.window_definition, data);
         }
-        data.window_function_called.emplace();
         // Also manually add columns for arguments of the window function itself.
         // ActionVisitor is written in such a way that this method must itself
         // descend into all needed function children. Window functions can't have
@@ -975,12 +963,42 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
         {
             visit(arg, data);
         }
-        data.window_function_called.reset();
 
         // Don't need to do anything more for window functions here -- the
         // resulting column is added in ExpressionAnalyzer, similar to the
         // aggregate functions.
+        if (data.window_function_called.has_value())
+            data.window_function_called = true;
+        return;
+    }
+    else if (node.compute_after_window_functions)
+    {
+        data.window_function_called.emplace();
+        bool subtree_contains_window_call = false;
+        for (const auto & arg : node.arguments->children)
+        {
+            LOG_DEBUG(&Poco::Logger::get("ActionVisitor"), "Processing arg: {}", arg->getColumnName());
+            data.window_function_called = false;
+            visit(arg, data);
+            LOG_DEBUG(&Poco::Logger::get("ActionVisitor"), "Processed arg: {}, result: {}", arg->getColumnName(), data.window_function_called.value());
+            subtree_contains_window_call = subtree_contains_window_call || data.window_function_called.value();
+        }
+        // assert(subtree_contains_window_call);
+        data.window_function_called.reset();
         if (!data.build_expression_with_window_functions)
+            return;
+    }
+    else if (data.window_function_called.has_value())
+    {
+        bool subtree_contains_window_call = false;
+        for (const auto & arg : node.arguments->children)
+        {
+            data.window_function_called = false;
+            visit(arg, data);
+            subtree_contains_window_call = subtree_contains_window_call || data.window_function_called.value();
+        }
+        data.window_function_called = subtree_contains_window_call;
+        if (subtree_contains_window_call && !data.build_expression_with_window_functions)
             return;
     }
 

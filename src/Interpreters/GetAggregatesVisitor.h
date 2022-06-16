@@ -42,7 +42,7 @@ public:
         }
         if (auto * func = node->as<ASTFunction>())
         {
-            if (isAggregateFunction(*func) || func->is_window_function)
+            if (isAggregateFunction(*func))
             {
                 return false;
             }
@@ -82,9 +82,6 @@ private:
                 throw Exception("Window function " + node.getColumnName()  + " is found " + String(data.assert_no_windows) + " in query",
                                 ErrorCodes::ILLEGAL_AGGREGATION);
 
-            if (node.window_definition)
-                visit(node.window_definition, data);
-
             String column_name = node.getColumnName();
             if (data.uniq_names.count(column_name))
                 return;
@@ -118,5 +115,7 @@ inline void assertNoAggregates(const ASTPtr & ast, const char * description)
     GetAggregatesVisitor::Data data{.assert_no_aggregates = description};
     GetAggregatesVisitor(data).visit(ast);
 }
+
+std::vector<const ASTFunction *> getExpressionsWithWindowFunctions(ASTPtr & ast);
 
 }

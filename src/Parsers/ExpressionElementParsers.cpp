@@ -1034,6 +1034,33 @@ bool ParserFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         function_node->children.push_back(function_node->parameters);
     }
 
+    ParserKeyword filter("FILTER");
+    ParserKeyword over("OVER");
+
+    if (filter.ignore(pos, expected))
+    {
+        // We are slightly breaking the parser interface by parsing the window
+        // definition into an existing ASTFunction. Normally it would take a
+        // reference to ASTPtr and assign it the new node. We only have a pointer
+        // of a different type, hence this workaround with a temporary pointer.
+        ASTPtr function_node_as_iast = function_node;
+
+        ParserFilterClause filter_parser;
+        if (!filter_parser.parse(pos, function_node_as_iast, expected))
+            return false;
+    }
+
+    if (over.ignore(pos, expected))
+    {
+        function_node->is_window_function = true;
+
+        ASTPtr function_node_as_iast = function_node;
+
+        ParserWindowReference window_reference;
+        if (!window_reference.parse(pos, function_node_as_iast, expected))
+            return false;
+    }
+
     node = function_node;
     return true;
 }
