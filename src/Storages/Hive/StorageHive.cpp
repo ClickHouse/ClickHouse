@@ -38,7 +38,6 @@
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/StorageFactory.h>
 #include <DataTypes/NestedUtils.h>
-#include <DataTypes/DataTypeTuple.h>
 
 namespace DB
 {
