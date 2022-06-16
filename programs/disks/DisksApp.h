@@ -54,7 +54,7 @@ protected:
     SharedContextHolder shared_context;
 
     String command_name;
-    std::vector<String> command_flags;
+    std::vector<String> command_arguments;
 
     std::unordered_set<String> supported_commands;
 
