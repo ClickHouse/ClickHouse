@@ -7,10 +7,12 @@
 #include <base/sort.h>
 
 #include <Common/ArenaAllocator.h>
+#include <Common/logger_useful.h>
 
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 
+#include <boost/math/distributions/normal.hpp>
 
 namespace DB
 {
@@ -123,6 +125,104 @@ struct StatisticalSample
         buf.read(reinterpret_cast<char *>(x.data()), size_x * sizeof(x[0]));
         buf.read(reinterpret_cast<char *>(y.data()), size_y * sizeof(y[0]));
     }
+};
+
+template <typename T>
+struct ShapiroWilkTestSample {
+    using SampleAllocator = MixedAlignedArenaAllocator<alignof(T), 4096>;
+    using Sample = PODArray<T, 32, SampleAllocator>;
+
+    Sample data{};
+    size_t size{0};
+
+    void add(T value, Arena * arena)
+    {
+        ++size;
+        data.push_back(value, arena);
+    }
+
+    void merge(const ShapiroWilkTestSample & rhs, Arena * arena)
+    {
+        size += rhs.size;
+        data.insert(rhs.data.begin(), rhs.data.end(), arena);
+    }
+
+    void write(WriteBuffer & buf) const
+    {
+        writeVarUInt(size , buf);
+        buf.write(reinterpret_cast<const char *>(data.data()), size * sizeof(data[0]));
+    }
+
+    void read(ReadBuffer & buf, Arena * arena)
+    {
+        readVarUInt(size, buf);
+        data.resize(size, arena);
+        buf.read(reinterpret_cast<char *>(data.data()), size * sizeof(data[0]));
+    }
+
+    double getWStatistic()
+    {
+        std::sort(data.begin(), data.end());
+        double sum_x = 0, sum_x2 = 0, sum_m2 = 0, sum_ax = 0;
+        assert(size >= 4);
+        double m_l = 0, m_bl = 0;
+
+        for (size_t i = 0; i < size; i++) {
+            double c = (i + 0.625) / (size + 0.25);
+            double m = -boost::math::quantile(boost::math::complement(boost::math::normal(), c));
+            sum_m2 += m * m;
+            if (i == size - 1) {
+                m_l = m;
+            }
+            if (i == size - 2) {
+                m_bl = m;
+            }
+        }
+
+        double a_l = 0, a_bl = 0;
+        double u = 1 / sqrt(size);
+        a_l = -2.706056 * pow(u, 5) + 4.434685 * pow(u, 4) - 2.071190 * pow(u, 3) - 0.147981 * u * u + 0.221157 * u + m_l / sqrt(sum_m2);
+        a_bl = -3.582633 * pow(u, 5) + 5.682633 * pow(u, 4) - 1.752461 * pow(u, 3) - 0.293762 * u * u + 0.042981 * u + m_bl / sqrt(sum_m2);
+        double a_1 = -a_l;
+        double a_2 = -a_bl;
+        double eps = (sum_m2 - 2 * m_l * m_l - 2 * m_bl *  m_bl) / (1 - 2 * a_l * a_l - 2 * a_bl *  a_bl);
+        for (size_t i = 0; i < size; i++) {
+            double x = data[i];
+            sum_x += x;
+            sum_x2 += x * x;
+            double c = (i + 0.625) / (size + 0.25);
+            double m = -boost::math::quantile(boost::math::complement(boost::math::normal(), c));
+            double a = m / sqrt(eps);
+            if (i == 0) {
+                a = a_1;
+            }
+            if (i == 1) {
+                a = a_2;
+            }
+            if (i == size-1) {
+                a = a_l;
+            }
+            if (i == size-2) {
+                a = a_bl;
+            }
+            LOG_DEBUG(&Poco::Logger::get("MemoryTracker"), "COEF MI {} AI {} I {}", m, a, i);
+            sum_ax += a * x;
+        }
+        double avg = sum_x / size;
+        double w_stat = sum_ax * sum_ax / (sum_x2 - 2 * avg * sum_x + size * avg * avg);
+        return w_stat;
+    }
+
+    double getPValue(double w_stat)
+    {
+        double t = log(size);
+        double w = log(1 - w_stat);
+        double mu = -1.5861 - 0.31082 * t - 0.083751 * t * t + 0.0038915 * t * t * t;
+        double sigma = exp(-0.4803 - 0.082676 * t + 0.0030302 * t * t);
+        double p_value = 1 - boost::math::cdf(boost::math::normal(), (w - mu) / sigma);
+        return p_value;
+    }
+
 };
 
 }

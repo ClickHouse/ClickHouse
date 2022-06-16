@@ -1,0 +1,56 @@
+#!/usr/bin/env python3
+import os
+import sys
+from scipy import stats
+import numpy as np
+
+CURDIR = os.path.dirname(os.path.realpath(__file__))
+sys.path.insert(0, os.path.join(CURDIR, 'helpers'))
+
+from pure_http_client import ClickHouseClient
+
+
+def scipy_shapiro(rvs):
+    return stats.shapiro(rvs)
+
+
+def test_and_check(name, rvs, w_statistic, p_value, precision=1e-2):
+    client = ClickHouseClient()
+    client.query("DROP TABLE IF EXISTS shapiro;")
+    client.query("CREATE TABLE shapiro (number Float64) ENGINE = Memory;")
+    client.query("INSERT INTO shapiro VALUES {};".format(", ".join(['({})'.format(i) for i in rvs])))
+
+    real = client.query_return_df(
+        "SELECT roundBankers({}(number).1, 16) as w_statistic, ".format(name) +
+        "roundBankers({}(number).2, 16) as p_value ".format(name) +
+        "FROM shapiro FORMAT TabSeparatedWithNames;")
+    real_w_statistic = real['w_statistic'][0]
+    real_p_value = real['p_value'][0]
+    assert(abs(real_w_statistic - np.float64(w_statistic)) < precision), "clickhouse_f_stat {}, py_f_stat {}".format(real_w_statistic, w_statistic)
+    assert(abs(real_p_value - np.float64(p_value)) < precision), "clickhouse_p_value {}, py_p_value {}".format(real_p_value, p_value)
+    client.query("DROP TABLE IF EXISTS shapiro;")
+
+
+def test_shapiro():
+    loc = 0
+    scale = 5
+    size = 500
+    rvs = np.round(stats.norm.rvs(loc=loc, scale=scale, size=size), 2)
+    w_statistic, p_value = scipy_shapiro(rvs)
+    test_and_check("shapiro", rvs, w_statistic, p_value)
+
+    loc = 1
+    scale = 10
+    size = 2000
+    rvs = np.round(stats.norm.rvs(loc=loc, scale=scale, size=size), 2)
+    w_statistic, p_value = scipy_shapiro(rvs)
+    test_and_check("shapiro", rvs, w_statistic, p_value)
+
+    size = 3000
+    rvs = np.round(stats.poisson.rvs(0.6, size=size), 2)
+    w_statistic, p_value = scipy_shapiro(rvs)
+    test_and_check("shapiro", rvs, w_statistic, p_value)
+
+if __name__ == "__main__":
+    test_shapiro()
+    print("Ok.")
