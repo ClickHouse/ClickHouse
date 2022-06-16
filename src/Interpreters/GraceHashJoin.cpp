@@ -182,25 +182,6 @@ private:
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid state transition");
     }
 
-    void fillRightBlocks(IJoin * join)
-    {
-        auto reader = right_file.makeReader();
-        while (Block block = reader.read())
-        {
-            if (!join->addJoinedBlock(block, /*check_limits=*/true))
-                throw Exception{ErrorCodes::LOGICAL_ERROR, "Failed to add joined block"};
-        }
-    }
-
-    void joinWithLeftTable(IJoin * /*join*/)
-    {
-        auto reader = right_file.makeReader();
-        while (Block block = reader.read())
-        {
-            // pass
-        }
-    }
-
     size_t bucket_index;
     FileBlockWriter left_file;
     FileBlockWriter right_file;
@@ -232,9 +213,6 @@ GraceHashJoin::GraceHashJoin(
 
 GraceHashJoin::~GraceHashJoin() = default;
 
-// Step 1. Add right table blocks. May rehash if needed
-// Step 2. Add left table blocks. No rehashing.
-// Step 3. Produce deferred joined blocks. May rehash if needed.
 bool GraceHashJoin::addJoinedBlock(const Block & block, bool /*check_limits*/)
 {
     LOG_TRACE(log, "addJoinedBlock(block: {} rows)", block.rows());
@@ -410,6 +388,9 @@ std::unique_ptr<IDelayedJoinedBlocksStream> GraceHashJoin::getDelayedBlocks()
             return std::make_unique<DelayedBlocks>(this, bucket, std::move(join));
         }
     }
+
+    // NB: this logic is a bit racy. Now can be more buckets in the @snapshot in case of rehashing in different thread reading delayed blocks.
+    // But it's ok to finish current thread: the thread that called rehash() will join the rest of the blocks.
     return nullptr;
 }
 
