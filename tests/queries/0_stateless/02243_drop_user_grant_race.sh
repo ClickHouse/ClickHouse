@@ -17,7 +17,6 @@ $CLICKHOUSE_CLIENT -nm -q "
     INSERT INTO test VALUES (1);
 "
 
-
 function create_drop_grant()
 {
     $CLICKHOUSE_CLIENT -q "CREATE USER IF NOT EXISTS test_user_02243 GRANTEES NONE" ||:
