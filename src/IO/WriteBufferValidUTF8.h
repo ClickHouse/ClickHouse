@@ -8,9 +8,9 @@ namespace DB
 {
 
 /** Writes the data to another buffer, replacing the invalid UTF-8 sequences with the specified sequence.
-    * If the valid UTF-8 is already written, it works faster.
-    * Note: before using the resulting string, destroy this object.
-    */
+  * If the valid UTF-8 is already written, it works faster.
+  * Note: before using the resulting string, destroy this object.
+  */
 class WriteBufferValidUTF8 final : public BufferWithOwnMemory<WriteBuffer>
 {
 public:
