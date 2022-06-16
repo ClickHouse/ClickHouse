@@ -52,7 +52,7 @@ Database in ClickHouse, exchanging data with the PostgreSQL server:
 
 ``` sql
 CREATE DATABASE test_database
-ENGINE = PostgreSQL('postgres1:5432', 'test_database', 'postgres', 'mysecretpassword', 1);
+ENGINE = PostgreSQL('postgres1:5432', 'test_database', 'postgres', 'mysecretpassword', 'schema_name',1);
 ```
 
 ``` sql
