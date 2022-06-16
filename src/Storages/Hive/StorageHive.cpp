@@ -769,7 +769,7 @@ Pipe StorageHive::read(
     sources_info->partition_name_types = partition_name_types;
 
     const auto header_block = storage_snapshot->metadata->getSampleBlock();
-    bool support_subset_columns = supportsSubsetOfColumns();
+    bool support_subset_columns = supportsSubcolumns();
 
     auto settings = context_->getSettingsRef();
     auto case_insensitive_matching = [&]() -> bool
