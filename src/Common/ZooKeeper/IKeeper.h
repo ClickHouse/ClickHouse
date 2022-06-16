@@ -46,17 +46,17 @@ using ACLs = std::vector<ACL>;
 
 struct Stat
 {
-    int64_t czxid;
-    int64_t mzxid;
-    int64_t ctime;
-    int64_t mtime;
-    int32_t version;
-    int32_t cversion;
-    int32_t aversion;
-    int64_t ephemeralOwner; /// NOLINT
-    int32_t dataLength; /// NOLINT
-    int32_t numChildren; /// NOLINT
-    int64_t pzxid;
+    int64_t czxid{0};
+    int64_t mzxid{0};
+    int64_t ctime{0};
+    int64_t mtime{0};
+    int32_t version{0};
+    int32_t cversion{0};
+    int32_t aversion{0};
+    int64_t ephemeralOwner{0}; /// NOLINT
+    int32_t dataLength{0}; /// NOLINT
+    int32_t numChildren{0}; /// NOLINT
+    int64_t pzxid{0};
 };
 
 enum class Error : int32_t
