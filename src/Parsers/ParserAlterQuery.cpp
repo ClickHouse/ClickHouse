@@ -95,7 +95,6 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ParserKeyword s_delete("DELETE");
     ParserKeyword s_update("UPDATE");
     ParserKeyword s_where("WHERE");
-    ParserKeyword s_create_index("CREATE INDEX");
     ParserKeyword s_to("TO");
 
     ParserKeyword s_remove("REMOVE");
@@ -114,7 +113,6 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ParserIdentifier parser_remove_property;
     ParserCompoundColumnDeclaration parser_col_decl;
     ParserIndexDeclaration parser_idx_decl;
-    ParserCreateIndexDeclaration parser_create_idx_decl;
     ParserConstraintDeclaration parser_constraint_decl;
     ParserProjectionDeclaration parser_projection_decl;
     ParserCompoundColumnDeclaration parser_modify_col_decl(false, false, true);
@@ -159,14 +157,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
             break;
         case ASTAlterQuery::AlterObjectType::TABLE:
         {
-            if (command_type == ASTAlterCommand::STD_CREATE_INDEX)
-            {
-                if (!parser_create_idx_decl.parse(pos, command->index_decl, expected))
-                    return false;
-
-                command->type = ASTAlterCommand::STD_CREATE_INDEX;
-            }
-            else if (command_type == ASTAlterCommand::STD_DROP_INDEX)
+            if (command_type == ASTAlterCommand::STD_DROP_INDEX)
             {
                 command->type = ASTAlterCommand::STD_DROP_INDEX;
             }
@@ -854,45 +845,6 @@ bool ParserAlterCommandList::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     return true;
 }
 
-bool ParserCreateIndexDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
-{
-    ParserKeyword s_type("TYPE");
-    ParserKeyword s_granularity("GRANULARITY");
-
-    ParserDataType data_type_p;
-    ParserExpression expression_p;
-    ParserUnsignedInteger granularity_p;
-
-    ASTPtr expr;
-    ASTPtr type;
-    ASTPtr granularity;
-
-    /// Skip name parser for SQL-standard CREATE INDEX
-
-    if (!expression_p.parse(pos, expr, expected))
-        return false;
-
-    if (!s_type.ignore(pos, expected))
-        return false;
-
-    if (!data_type_p.parse(pos, type, expected))
-        return false;
-
-    if (!s_granularity.ignore(pos, expected))
-        return false;
-
-    if (!granularity_p.parse(pos, granularity, expected))
-        return false;
-
-    auto index = std::make_shared<ASTIndexDeclaration>();
-    index->granularity = granularity->as<ASTLiteral &>().value.safeGet<UInt64>();
-    index->set(index->expr, expr);
-    index->set(index->type, type);
-    node = index;
-
-    return true;
-}
-
 bool ParserAlterQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     auto query = std::make_shared<ASTAlterQuery>();
@@ -901,31 +853,15 @@ bool ParserAlterQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserKeyword s_alter_table("ALTER TABLE");
     ParserKeyword s_alter_live_view("ALTER LIVE VIEW");
     ParserKeyword s_alter_database("ALTER DATABASE");
-    ParserKeyword s_create_index("CREATE INDEX");
     ParserKeyword s_drop_index("DROP INDEX");
     ParserKeyword s_on("ON");
-    ParserKeyword s_if_not_exists("IF NOT EXISTS");
     ParserKeyword s_if_exists("IF EXISTS");
 
     ParserCompoundIdentifier parser_name;
 
     ASTAlterQuery::AlterObjectType alter_object_type;
 
-    if (s_create_index.ignore(pos, expected))
-    {
-        alter_object_type = ASTAlterQuery::AlterObjectType::TABLE;
-        if (s_if_not_exists.ignore(pos, expected))
-            query->if_not_exists = true;
-
-        if (!parser_name.parse(pos, query->index_name, expected))
-            return false;
-
-        if (!s_on.ignore(pos, expected))
-            return false;
-
-        query->command_type = ASTAlterCommand::STD_CREATE_INDEX;
-    }
-    else if (s_drop_index.ignore(pos, expected))
+    if (s_drop_index.ignore(pos, expected))
     {
         alter_object_type = ASTAlterQuery::AlterObjectType::TABLE;
         if (s_if_exists.ignore(pos, expected))
