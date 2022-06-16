@@ -114,6 +114,10 @@ void JoiningTransform::work()
         has_input = not_processed != nullptr;
         has_output = !output_chunk.empty();
     }
+    else if (processDelayedBlock())
+    {
+        return;
+    }
     else
     {
         if (!non_joined_blocks)
@@ -123,6 +127,14 @@ void JoiningTransform::work()
                 process_non_joined = false;
                 return;
             }
+
+            if (process_delayed)
+            {
+                delayed_blocks = join->getDelayedBlocks();
+                if (processDelayedBlock())
+                    return;
+            }
+            assert(!process_delayed);
 
             non_joined_blocks = join->getNonJoinedBlocks(
                 inputs.front().getHeader(), outputs.front().getHeader(), max_block_size);
@@ -179,6 +191,31 @@ void JoiningTransform::transform(Chunk & chunk)
 
     auto num_rows = block.rows();
     chunk.setColumns(block.getColumns(), num_rows);
+}
+
+bool JoiningTransform::processDelayedBlock()
+{
+    Block block;
+    while (!block && delayed_blocks)
+    {
+        block = delayed_blocks->next();
+        if (!block)
+            delayed_blocks = join->getDelayedBlocks();
+    }
+
+    if (!block)
+    {
+        assert(!delayed_blocks);
+        process_delayed = false;
+        return false;
+    }
+
+    // Add block to the output
+    auto rows = block.rows();
+    output_chunk.setColumns(block.getColumns(), rows);
+    has_output = true;
+
+    return true;
 }
 
 Block JoiningTransform::readExecute(Chunk & chunk)

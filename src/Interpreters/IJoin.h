@@ -15,6 +15,7 @@ using ExtraBlockPtr = std::shared_ptr<ExtraBlock>;
 
 class TableJoin;
 class NotJoinedBlocks;
+class IDelayedJoinedBlocksStream;
 
 class IJoin
 {
@@ -50,6 +51,9 @@ public:
 
     virtual std::shared_ptr<NotJoinedBlocks>
     getNonJoinedBlocks(const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size) const = 0;
+
+    /// Peek next stream of delayed joined blocks.
+    virtual std::unique_ptr<IDelayedJoinedBlocksStream> getDelayedBlocks() { return nullptr; }
 };
 
 using JoinPtr = std::shared_ptr<IJoin>;

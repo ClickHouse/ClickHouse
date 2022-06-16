@@ -23,6 +23,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
+#include <Interpreters/GraceHashJoin.h>
 #include <Interpreters/HashJoin.h>
 #include <Interpreters/JoinSwitcher.h>
 #include <Interpreters/MergeJoin.h>
@@ -1044,6 +1045,8 @@ static std::shared_ptr<IJoin> chooseJoinAlgorithm(std::shared_ptr<TableJoin> ana
     if (analyzed_join->tryInitDictJoin(sample_block, context))
         return std::make_shared<HashJoin>(analyzed_join, sample_block);
 
+    if (analyzed_join->forceGraceHashJoin())
+        return std::make_shared<GraceHashJoin>(context, analyzed_join, sample_block);
     bool allow_merge_join = analyzed_join->allowMergeJoin();
     if (analyzed_join->forceHashJoin() || (analyzed_join->preferMergeJoin() && !allow_merge_join))
     {

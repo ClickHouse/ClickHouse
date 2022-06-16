@@ -167,4 +167,15 @@ private:
     void setRightIndex(size_t right_pos, size_t result_position);
 };
 
+/// Iterator over delayed joined blocks.
+/// Used by GraceHashJoin which must accumulate all blocks from the left table before actual processing.
+class IDelayedJoinedBlocksStream
+{
+public:
+    virtual ~IDelayedJoinedBlocksStream() = default;
+
+    /// Returns empty block on EOF.
+    virtual Block next() = 0;
+};
+
 }

@@ -6,7 +6,7 @@
 namespace DB
 {
 
-TemporaryFileOnDisk::TemporaryFileOnDisk(const DiskPtr & disk_, const String & prefix_)
+TemporaryFileOnDisk::TemporaryFileOnDisk(const DiskPtr & disk_, const String & prefix_, bool create_directories)
     : disk(disk_)
 {
     String dummy_prefix = "a/";
@@ -14,6 +14,9 @@ TemporaryFileOnDisk::TemporaryFileOnDisk(const DiskPtr & disk_, const String & p
     dummy_prefix += "tmp";
     assert(filepath.starts_with(dummy_prefix));
     filepath.replace(0, dummy_prefix.length(), prefix_);
+
+    if (create_directories)
+        disk->createDirectories(parentPath(getPath()));
 }
 
 TemporaryFileOnDisk::~TemporaryFileOnDisk()
