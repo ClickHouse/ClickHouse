@@ -56,7 +56,9 @@ String IFileCache::getPathInLocalCache(const Key & key) const
 
 static bool isQueryInitialized()
 {
-    return CurrentThread::isInitialized() && CurrentThread::get().getQueryContext() && CurrentThread::getQueryId().size != 0;
+    return CurrentThread::isInitialized()
+        && CurrentThread::get().getQueryContext()
+        && CurrentThread::getQueryId().size != 0;
 }
 
 bool IFileCache::isReadOnly()
@@ -78,7 +80,7 @@ IFileCache::QueryContextPtr IFileCache::getCurrentQueryContext(std::lock_guard<s
     return getQueryContext(CurrentThread::getQueryId().toString(), cache_lock);
 }
 
-IFileCache::QueryContextPtr IFileCache::getQueryContext(const String & query_id, std::lock_guard<std::mutex> &)
+IFileCache::QueryContextPtr IFileCache::getQueryContext(const String & query_id, std::lock_guard<std::mutex> & /* cache_lock */)
 {
     auto query_iter = query_map.find(query_id);
     return (query_iter == query_map.end()) ? nullptr : query_iter->second;
@@ -90,38 +92,42 @@ void IFileCache::removeQueryContext(const String & query_id)
     auto query_iter = query_map.find(query_id);
 
     if (query_iter == query_map.end())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to release query context that does not exist");
+    {
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Attempt to release query context that does not exist (query_id: {})",
+            query_id);
+    }
 
     query_map.erase(query_iter);
 }
 
-IFileCache::QueryContextPtr IFileCache::getOrSetQueryContext(const String & query_id, const ReadSettings & settings, std::lock_guard<std::mutex> & cache_lock)
+IFileCache::QueryContextPtr IFileCache::getOrSetQueryContext(
+    const String & query_id, const ReadSettings & settings, std::lock_guard<std::mutex> & cache_lock)
 {
     if (query_id.empty())
         return nullptr;
 
     auto context = getQueryContext(query_id, cache_lock);
-    if (!context)
-    {
-        auto query_iter = query_map.insert({query_id, std::make_shared<QueryContext>(settings.max_query_cache_size, settings.skip_download_if_exceeds_query_cache)}).first;
-        context = query_iter->second;
-    }
-    return context;
+    if (context)
+        return context;
+
+    auto query_context = std::make_shared<QueryContext>(settings.max_query_cache_size, settings.skip_download_if_exceeds_query_cache);
+    auto query_iter = query_map.emplace(query_id, query_context).first;
+    return query_iter->second;
 }
 
 IFileCache::QueryContextHolder IFileCache::getQueryContextHolder(const String & query_id, const ReadSettings & settings)
 {
     std::lock_guard cache_lock(mutex);
 
+    if (!enable_filesystem_query_cache_limit || settings.max_query_cache_size == 0)
+        return {};
+
     /// if enable_filesystem_query_cache_limit is true, and max_query_cache_size large than zero,
     /// we create context query for current query.
-    if (enable_filesystem_query_cache_limit && settings.max_query_cache_size)
-    {
-        auto context = getOrSetQueryContext(query_id, settings, cache_lock);
-        return QueryContextHolder(query_id, this, context);
-    }
-    else
-        return QueryContextHolder();
+    auto context = getOrSetQueryContext(query_id, settings, cache_lock);
+    return QueryContextHolder(query_id, this, context);
 }
 
 void IFileCache::QueryContext::remove(const Key & key, size_t offset, size_t size, std::lock_guard<std::mutex> & cache_lock)
@@ -144,7 +150,12 @@ void IFileCache::QueryContext::remove(const Key & key, size_t offset, size_t siz
 void IFileCache::QueryContext::reserve(const Key & key, size_t offset, size_t size, std::lock_guard<std::mutex> & cache_lock)
 {
     if (cache_size + size > max_cache_size)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "reserved cache size exceeds the remaining cache size");
+    {
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Reserved cache size exceeds the remaining cache size (key: {}, offset: {})",
+            key.toString(), offset);
+    }
 
     if (!skip_download_if_exceeds_query_cache)
     {
@@ -161,16 +172,21 @@ void IFileCache::QueryContext::reserve(const Key & key, size_t offset, size_t si
 
 void IFileCache::QueryContext::use(const Key & key, size_t offset, std::lock_guard<std::mutex> & cache_lock)
 {
-    if (!skip_download_if_exceeds_query_cache)
-    {
-        auto record = records.find({key, offset});
-        if (record != records.end())
-            lru_queue.moveToEnd(record->second, cache_lock);
-    }
+    if (skip_download_if_exceeds_query_cache)
+        return;
+
+    auto record = records.find({key, offset});
+    if (record != records.end())
+        lru_queue.moveToEnd(record->second, cache_lock);
 }
 
-IFileCache::QueryContextHolder::QueryContextHolder(const String & query_id_, IFileCache * cache_, IFileCache::QueryContextPtr context_)
-    : query_id(query_id_), cache(cache_), context(context_)
+IFileCache::QueryContextHolder::QueryContextHolder(
+    const String & query_id_,
+    IFileCache * cache_,
+    IFileCache::QueryContextPtr context_)
+    : query_id(query_id_)
+    , cache(cache_)
+    , context(context_)
 {
 }
 

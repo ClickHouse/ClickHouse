@@ -246,6 +246,8 @@ private:
     std::atomic<size_t> hits_count = 0; /// cache hits.
     std::atomic<size_t> ref_count = 0; /// Used for getting snapshot state
 
+    /// Currently no-op. (will be added in PR 36171)
+    /// Defined if a file comply by the eviction policy.
     bool is_persistent;
     CurrentMetrics::Increment metric_increment{CurrentMetrics::CacheFileSegments};
 };
