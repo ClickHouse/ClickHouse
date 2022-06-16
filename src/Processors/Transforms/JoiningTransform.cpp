@@ -40,6 +40,8 @@ JoiningTransform::JoiningTransform(
         inputs.emplace_back(Block(), this);
 }
 
+JoiningTransform::~JoiningTransform() = default;
+
 IProcessor::Status JoiningTransform::prepare()
 {
     auto & output = outputs.front();
@@ -114,7 +116,7 @@ void JoiningTransform::work()
         has_input = not_processed != nullptr;
         has_output = !output_chunk.empty();
     }
-    else if (processDelayedBlock())
+    else if (delayed_blocks && processDelayedBlock())
     {
         return;
     }
