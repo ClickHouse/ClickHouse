@@ -1,4 +1,5 @@
 #pragma once
+
 #include <Disks/IDiskTransaction.h>
 #include <Disks/ObjectStorages/DiskObjectStorage.h>
 #include <Disks/ObjectStorages/IMetadataStorage.h>
@@ -33,10 +34,7 @@ private:
     DiskObjectStorageOperations operations_to_execute;
     MetadataTransactionPtr metadata_transaction;
 public:
-    explicit DiskObjectStorageTransaction(DiskObjectStorage & disk_)
-        : disk(disk_)
-        , metadata_transaction(disk.getMetadataStorage()->createTransaction())
-    {}
+    explicit DiskObjectStorageTransaction(DiskObjectStorage & disk_);
 
     void commit() override;
 
@@ -53,12 +51,6 @@ public:
     /// Move the file from `from_path` to `to_path`.
     /// If a file with `to_path` path already exists, it will be replaced.
     void replaceFile(const std::string & from_path, const std::string & to_path) override;
-
-    /// Recursively copy data containing at `from_path` to `to_path` located at `to_disk`.
-    void copy(const std::string & from_path, const std::string & to_path) override;
-
-    /// Recursively copy files from from_dir to to_dir. Create to_dir if not exists.
-    void copyDirectoryContent(const std::string & from_dir, const std::string & to_dir) override;
 
     /// Copy file `from_file_path` to `to_file_path` located at `to_disk`.
     void copyFile(const std::string & from_file_path, const std::string & to_file_path) override;
