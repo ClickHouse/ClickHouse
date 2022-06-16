@@ -10,8 +10,9 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <Common/logger_useful.h>
+#if USE_KRB5
 #include <Access/KerberosInit.h>
-
+#endif // USE_KRB5
 
 namespace DB
 {
@@ -74,6 +75,7 @@ void HDFSBuilderWrapper::loadFromConfig(const Poco::Util::AbstractConfiguration 
 
 void HDFSBuilderWrapper::runKinit()
 {
+    #if USE_KRB5
     LOG_DEBUG(&Poco::Logger::get("HDFSClient"), "Running KerberosInit");
     try
     {
@@ -84,6 +86,7 @@ void HDFSBuilderWrapper::runKinit()
         throw Exception("KerberosInit failure: "+ getExceptionMessage(e, false), ErrorCodes::KERBEROS_ERROR);
     }
     LOG_DEBUG(&Poco::Logger::get("HDFSClient"), "Finished KerberosInit");
+    #endif // USE_KRB5
 }
 
 HDFSBuilderWrapper createHDFSBuilder(const String & uri_str, const Poco::Util::AbstractConfiguration & config)
