@@ -539,6 +539,9 @@ void StorageKafka::updateConfiguration(cppkafka::Configuration & conf)
         }
         LOG_DEBUG(log, "Finished KerberosInit");
     }
+    #else // USE_KRB5
+    if (conf.has_property("sasl.kerberos.keytab") || conf.has_property("sasl.kerberos.principal"))
+        LOG_WARNING(log, "Kerberos-related parameters are ignored because ClickHouse was built without support of krb5 library.");
     #endif // USE_KRB5
 
     // Update consumer topic-specific configuration
