@@ -1093,7 +1093,6 @@ bool ReplicatedMergeTreeQueue::isCoveredByFuturePartsImpl(const LogEntry & entry
     /// A more complex check is whether another part is currently created by other action that will cover this part.
     /// NOTE The above is redundant, but left for a more convenient message in the log.
     auto result_part = MergeTreePartInfo::fromPartName(new_part_name, format_version);
-    Strings future_parts_names;
 
     /// It can slow down when the size of `future_parts` is large. But it can not be large, since background pool is limited.
     for (const auto & future_part_elem : future_parts)
@@ -1105,8 +1104,17 @@ bool ReplicatedMergeTreeQueue::isCoveredByFuturePartsImpl(const LogEntry & entry
 
         if (covered_entries_to_wait)
         {
+            if (entry.znode_name < future_part_elem.second->znode_name)
+            {
+                out_reason = fmt::format(
+                    "Not executing log entry {} for part {} "
+                    "because it is not disjoint with part {} that is currently executing and another entry {} is newer.",
+                    entry.znode_name, new_part_name, future_part_elem.first, future_part_elem.second->znode_name);
+                LOG_TRACE(log, fmt::runtime(out_reason));
+                return true;
+            }
+
             covered_entries_to_wait->push_back(future_part_elem.second);
-            future_parts_names.push_back(future_part_elem.first);
             continue;
         }
 
@@ -1116,12 +1124,6 @@ bool ReplicatedMergeTreeQueue::isCoveredByFuturePartsImpl(const LogEntry & entry
             entry.znode_name, new_part_name, future_part_elem.first);
         LOG_TRACE(log, fmt::runtime(out_reason));
         return true;
-    }
-
-    if (covered_entries_to_wait && !covered_entries_to_wait->empty())
-    {
-        LOG_TRACE(log, "Log entry {} for part {} will wait for currently executing entries producing parts {}",
-                  entry.znode_name, new_part_name, fmt::join(future_parts_names, ", "));
     }
 
     return false;
@@ -1468,8 +1470,13 @@ void ReplicatedMergeTreeQueue::CurrentlyExecuting::setActualPartName(
                                                    entry.actual_new_part_name, entry.znode_name, entry.toString());
 
     for (LogEntryPtr & covered_entry : covered_entries_to_wait)
-        if (&entry != covered_entry.get())
-            covered_entry->execution_complete.wait(state_lock, [&covered_entry] { return !covered_entry->currently_executing; });
+    {
+        if (&entry == covered_entry.get())
+            continue;
+        LOG_TRACE(queue.log, "Waiting for {} producing {} to finish before executing {} producing not disjoint part {}",
+                  covered_entry->znode_name, covered_entry->new_part_name, entry.znode_name, entry.new_part_name);
+        covered_entry->execution_complete.wait(state_lock, [&covered_entry] { return !covered_entry->currently_executing; });
+    }
 }
 
 

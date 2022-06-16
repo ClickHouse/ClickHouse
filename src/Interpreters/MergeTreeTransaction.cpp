@@ -3,6 +3,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Interpreters/TransactionLog.h>
 #include <Interpreters/TransactionsInfoLog.h>
+#include <Common/noexcept_scope.h>
 
 namespace DB
 {
@@ -146,8 +147,8 @@ void MergeTreeTransaction::removeOldPart(const StoragePtr & storage, const DataP
         std::lock_guard lock{mutex};
         checkIsNotCancelled();
 
-        LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
         part_to_remove->version.lockRemovalTID(tid, context);
+        NOEXCEPT_SCOPE;
         storages.insert(storage);
         if (maybe_lock)
             table_read_locks_for_ordinary_db.emplace_back(std::move(maybe_lock));
