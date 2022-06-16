@@ -39,7 +39,7 @@ TTLAggregationAlgorithm::TTLAggregationAlgorithm(
     aggregator = std::make_unique<Aggregator>(params);
 
     if (isMaxTTLExpired())
-        new_ttl_info.finished = true;
+        new_ttl_info.ttl_finished = true;
 }
 
 void TTLAggregationAlgorithm::execute(Block & block)

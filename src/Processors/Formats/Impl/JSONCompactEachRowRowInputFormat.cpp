@@ -28,6 +28,7 @@ JSONCompactEachRowRowInputFormat::JSONCompactEachRowRowInputFormat(
         header_,
         in_,
         params_,
+        false,
         with_names_,
         with_types_,
         format_settings_,

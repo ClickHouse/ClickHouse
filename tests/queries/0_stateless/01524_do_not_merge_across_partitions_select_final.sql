@@ -11,8 +11,7 @@ INSERT INTO select_final SELECT toDate('2000-01-01'), number + 1, '' FROM number
 INSERT INTO select_final SELECT toDate('2020-01-01'), number, '' FROM numbers(2);
 INSERT INTO select_final SELECT toDate('2020-01-01'), number + 1, '' FROM numbers(2);
 
-
-SELECT * FROM select_final FINAL ORDER BY x;
+SELECT * FROM select_final FINAL ORDER BY x, t;
 
 TRUNCATE TABLE select_final;
 
