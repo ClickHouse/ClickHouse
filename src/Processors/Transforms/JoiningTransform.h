@@ -9,6 +9,7 @@ class IJoin;
 using JoinPtr = std::shared_ptr<IJoin>;
 
 class NotJoinedBlocks;
+class IDelayedJoinedBlocksStream;
 
 /// Join rows to chunk form left table.
 /// This transform usually has two input ports and one output.
@@ -55,6 +56,7 @@ public:
 
 protected:
     void transform(Chunk & chunk);
+    bool processDelayedBlock();
 
 private:
     Chunk input_chunk;
@@ -62,6 +64,7 @@ private:
     bool has_input = false;
     bool has_output = false;
     bool stop_reading = false;
+    bool process_delayed = true;
     bool process_non_joined = true;
 
     JoinPtr join;
@@ -76,9 +79,28 @@ private:
 
     FinishCounterPtr finish_counter;
     std::shared_ptr<NotJoinedBlocks> non_joined_blocks;
+    std::unique_ptr<IDelayedJoinedBlocksStream> delayed_blocks;
     size_t max_block_size;
 
     Block readExecute(Chunk & chunk);
+};
+
+/// Joins blocks from the left table that were accumulated by the Join itself.
+/// Has single input and signle output port.
+/// Input port is closed when all rows of the left table are added to the Join by JoiningTransforms.
+/// There can be more than one DelayedJoiningTransform working concurrently.
+class DelayedJoiningTransform : public IProcessor {
+public:
+    DelayedJoiningTransform(Block input_header, JoinPtr join_);
+
+    String getName() const override { return "DelayedJoiningTransform"; }
+
+    Status prepare() override;
+    void work() override;
+
+private:
+    JoinPtr join;
+    std::unique_ptr<IDelayedJoinedBlocksStream> delayed_blocks;
 };
 
 /// Fills Join with block from right table.

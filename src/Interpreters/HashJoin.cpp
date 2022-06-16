@@ -2129,6 +2129,39 @@ void HashJoin::reuseJoinedData(const HashJoin & join)
     }
 }
 
+BlocksList HashJoin::releaseJoinedBlocks() && {
+    BlocksList right_blocks = std::move(data->blocks);
+    BlocksList restored_blocks;
+
+    /// names to positions optimization
+    std::vector<size_t> positions;
+    std::vector<bool> is_nullable;
+    if (!right_blocks.empty())
+    {
+        positions.reserve(right_sample_block.columns());
+        const Block & tmp_block = *right_blocks.begin();
+        for (const auto & sample_column : right_sample_block)
+        {
+            positions.emplace_back(tmp_block.getPositionByName(sample_column.name));
+            is_nullable.emplace_back(JoinCommon::isNullable(sample_column.type));
+        }
+    }
+
+    for (Block & saved_block : right_blocks)
+    {
+        Block restored_block;
+        for (size_t i = 0; i < positions.size(); ++i)
+        {
+            auto & column = saved_block.getByPosition(positions[i]);
+            restored_block.insert(correctNullability(std::move(column), is_nullable[i]));
+        }
+        restored_blocks.emplace_back(std::move(restored_block));
+    }
+
+    return restored_blocks;
+}
+
+
 const ColumnWithTypeAndName & HashJoin::rightAsofKeyColumn() const
 {
     /// It should be nullable when right side is nullable
