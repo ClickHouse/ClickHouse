@@ -18,7 +18,6 @@
 
 namespace DB
 {
-
 using ZooKeeperResponseCallback = std::function<void(const Coordination::ZooKeeperResponsePtr & response)>;
 
 /// Highlevel wrapper for ClickHouse Keeper.
@@ -75,60 +74,6 @@ private:
 
     Poco::Logger * log;
 
-    struct StringHash
-    {
-        using is_transparent = void;
-
-        size_t operator()(std::string_view s) const
-        {
-            return std::hash<std::string_view>()(s);
-        }
-    };
-
-    struct StringCmp
-    {
-        using is_transparent = void;
-
-        bool operator()(std::string_view a, std::string_view b) const
-        {
-            return a == b;
-        }
-    };
-
-    struct SyncWaiter
-    {
-        std::unordered_map<std::string, std::vector<KeeperStorage::RequestForSession>, StringHash, StringCmp> request_queues_for_uuid;
-        std::string last_uuid;
-    };
-
-    using PathWithSessionId = std::pair<std::string, int64_t>;
-
-    struct PathWithSessionIdHash
-    {
-        using is_transparent = void;
-
-        size_t operator()(const std::pair<std::string_view, int64_t> & path_with_session) const
-        {
-            SipHash hash;
-            hash.update(path_with_session.first);
-            hash.update(path_with_session.second);
-            return hash.get64();
-        }
-    };
-
-    struct PathWithSessionIdCmp
-    {
-        using is_transparent = void;
-
-        size_t operator()(const std::pair<std::string_view, int64_t> & a, const std::pair<std::string_view, int64_t> & b) const
-        {
-            return a.first == b.first && a.second == b.second;
-        }
-    };
-
-    std::unordered_map<PathWithSessionId, SyncWaiter, PathWithSessionIdHash, PathWithSessionIdCmp> sync_waiters_for_path;
-    std::mutex sync_waiters_mutex;
-
     /// Counter for new session_id requests.
     std::atomic<int64_t> internal_session_id_counter{0};
 
@@ -153,10 +98,7 @@ private:
     /// Clears both arguments
     void forceWaitAndProcessResult(RaftAppendResult & result, KeeperStorage::RequestsForSessions & requests_for_sessions);
 
-    void onRequestCommit(KeeperStorage::RequestForSession & request_for_session);
-
 public:
-
     /// Just allocate some objects, real initialization is done by `intialize method`
     KeeperDispatcher();
 
@@ -188,7 +130,7 @@ public:
     void forceRecovery();
 
     /// Put request to ClickHouse Keeper
-    bool putRequest(Coordination::ZooKeeperRequestPtr & request, int64_t session_id);
+    bool putRequest(const Coordination::ZooKeeperRequestPtr & request, int64_t session_id);
 
     /// Get new session ID
     int64_t getSessionID(int64_t session_timeout_ms);
