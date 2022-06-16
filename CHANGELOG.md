@@ -43,6 +43,7 @@
 * This PR changes the behavior of the `ENGINE` syntax in `WINDOW VIEW`, to make it like in `MATERIALIZED VIEW`. [#37214](https://github.com/ClickHouse/ClickHouse/pull/37214) ([vxider](https://github.com/Vxider)).
 
 #### Performance Improvement
+* Added numerous optimizations for ARM NEON [#38093](https://github.com/ClickHouse/ClickHouse/pull/38093)([Daniel Kutenin](https://github.com/danlark1)), ([Alexandra Pilipyuk](https://github.com/chalice19))
 * Improve performance and memory usage for select of subset of columns for formats Native, Protobuf, CapnProto, JSONEachRow, TSKV, all formats with suffixes WithNames/WithNamesAndTypes. Previously while selecting only subset of columns from files in these formats all columns were read and stored in memory. Now only required columns are read. This PR enables setting `input_format_skip_unknown_fields` by default, because otherwise in case of select of subset of columns exception will be thrown. [#37192](https://github.com/ClickHouse/ClickHouse/pull/37192) ([Kruglov Pavel](https://github.com/Avogar)).
 * Now more filters can be pushed down for join. [#37472](https://github.com/ClickHouse/ClickHouse/pull/37472) ([Amos Bird](https://github.com/amosbird)).
 * Load marks for only necessary columns when reading wide parts. [#36879](https://github.com/ClickHouse/ClickHouse/pull/36879) ([Anton Kozlov](https://github.com/tonickkozlov)).
