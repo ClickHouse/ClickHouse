@@ -279,6 +279,7 @@ public:
         MergeTreeData & data;
         MergeTreeTransaction * txn;
         DataParts precommitted_parts;
+        DataParts locked_parts;
 
         void clear() { precommitted_parts.clear(); }
     };

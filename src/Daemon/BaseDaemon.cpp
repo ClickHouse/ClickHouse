@@ -396,6 +396,7 @@ extern "C" void __sanitizer_set_death_callback(void (*)());
 
 static void sanitizerDeathCallback()
 {
+    DENY_ALLOCATIONS_IN_SCOPE;
     /// Also need to send data via pipe. Otherwise it may lead to deadlocks or failures in printing diagnostic info.
 
     char buf[signal_pipe_buf_size];
