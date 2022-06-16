@@ -47,6 +47,8 @@ public:
         bool default_totals_ = false,
         FinishCounterPtr finish_counter_ = nullptr);
 
+    ~JoiningTransform() override;
+
     String getName() const override { return "JoiningTransform"; }
 
     static Block transformHeader(Block header, const JoinPtr & join);
