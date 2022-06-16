@@ -145,13 +145,16 @@ IMergingAlgorithm::Status MergingSortedAlgorithm::mergeBatchImpl(TSortingQueue &
             limit_reached = true;
         }
 
-        merged_data.insertRows(current->all_columns, current->getRow(), batch_size - static_cast<size_t>(batch_skip_last_row), current->rows);
+        size_t insert_rows_size = batch_size - static_cast<size_t>(batch_skip_last_row);
+        merged_data.insertRows(current->all_columns, current->getRow(), insert_rows_size, current->rows);
 
         if (out_row_sources_buf)
         {
             /// Actually, current.impl->order stores source number (i.e. cursors[current.impl->order] == current.impl)
             RowSourcePart row_source(current.impl->order);
-            out_row_sources_buf->write(row_source.data);
+
+            for (size_t i = 0; i < insert_rows_size; ++i)
+                out_row_sources_buf->write(row_source.data);
         }
 
         if (limit_reached)
@@ -165,51 +168,11 @@ IMergingAlgorithm::Status MergingSortedAlgorithm::mergeBatchImpl(TSortingQueue &
         {
             /// We will get the next block from the corresponding source, if there is one.
             queue.removeTop();
-            //std::cerr << "It was last row, fetching next block\n";
             return Status(current.impl->order);
         }
     }
 
     return Status(merged_data.pull(), true);
-}
-
-IMergingAlgorithm::Status MergingSortedAlgorithm::insertFromChunk(size_t source_num)
-{
-    if (source_num >= cursors.size())
-        throw Exception("Logical error in MergingSortedTransform", ErrorCodes::LOGICAL_ERROR);
-
-    //std::cerr << "copied columns\n";
-
-    auto num_rows = current_inputs[source_num].chunk.getNumRows();
-
-    UInt64 total_merged_rows_after_insertion = merged_data.mergedRows() + num_rows;
-    bool is_finished = limit && total_merged_rows_after_insertion >= limit;
-
-    if (limit && total_merged_rows_after_insertion > limit)
-    {
-        num_rows -= total_merged_rows_after_insertion - limit;
-        merged_data.insertFromChunk(std::move(current_inputs[source_num].chunk), num_rows);
-    }
-    else
-        merged_data.insertFromChunk(std::move(current_inputs[source_num].chunk), 0);
-
-    current_inputs[source_num].chunk = Chunk();
-
-    /// Write order of rows for other columns
-    /// this data will be used in gather stream
-    if (out_row_sources_buf)
-    {
-        RowSourcePart row_source(source_num);
-        for (size_t i = 0; i < num_rows; ++i)
-            out_row_sources_buf->write(row_source.data);
-    }
-
-    auto status = Status(merged_data.pull(), is_finished);
-
-    if (!is_finished)
-        status.required_source = source_num;
-
-    return status;
 }
 
 }

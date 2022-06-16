@@ -330,7 +330,7 @@ struct SortCursorWithCollation : SortCursorHelper<SortCursorWithCollation>
     }
 };
 
-enum SortingQueueStrategy
+enum class SortingQueueStrategy
 {
     Default,
     Batch
@@ -347,9 +347,6 @@ public:
     explicit SortingQueueImpl(Cursors & cursors)
     {
         size_t size = cursors.size();
-        if (size == 0)
-            return;
-
         queue.reserve(size);
 
         for (size_t i = 0; i < size; ++i)
@@ -363,7 +360,10 @@ public:
         std::make_heap(queue.begin(), queue.end());
 
         if constexpr (strategy == SortingQueueStrategy::Batch)
-            updateBatchSize();
+        {
+            if (!queue.empty())
+                updateBatchSize();
+        }
     }
 
     bool isValid() const { return !queue.empty(); }
@@ -530,7 +530,7 @@ private:
     }
 
     /// Update batch size of elements that client can extract from current cursor
-    ALWAYS_INLINE void updateBatchSize()
+    void updateBatchSize()
     {
         assert(!queue.empty());
 
