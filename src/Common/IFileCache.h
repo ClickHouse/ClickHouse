@@ -128,7 +128,8 @@ protected:
 
     virtual void reduceSizeToDownloaded(
         const Key & key, size_t offset,
-        std::lock_guard<std::mutex> & cache_lock, std::lock_guard<std::mutex> & /* segment_lock */) = 0;
+        std::lock_guard<std::mutex> & cache_lock,
+        std::lock_guard<std::mutex> & /* segment_lock */) = 0;
 
     void assertInitialized() const;
 
@@ -224,7 +225,6 @@ protected:
 
     bool enable_filesystem_query_cache_limit;
 
-public:
     QueryContextPtr getCurrentQueryContext(std::lock_guard<std::mutex> & cache_lock);
 
     QueryContextPtr getQueryContext(const String & query_id, std::lock_guard<std::mutex> & cache_lock);
@@ -233,19 +233,20 @@ public:
 
     QueryContextPtr getOrSetQueryContext(const String & query_id, const ReadSettings & settings, std::lock_guard<std::mutex> &);
 
+public:
     /// Save a query context information, and adopt different cache policies
     /// for different queries through the context cache layer.
     struct QueryContextHolder : private boost::noncopyable
     {
-        explicit QueryContextHolder(const String & query_id_, IFileCache * cache_, QueryContextPtr context_);
+        QueryContextHolder(const String & query_id_, IFileCache * cache_, QueryContextPtr context_);
 
         QueryContextHolder() = default;
 
         ~QueryContextHolder();
 
-        String query_id {};
+        String query_id;
         IFileCache * cache = nullptr;
-        QueryContextPtr context = nullptr;
+        QueryContextPtr context;
     };
 
     QueryContextHolder getQueryContextHolder(const String & query_id, const ReadSettings & settings);

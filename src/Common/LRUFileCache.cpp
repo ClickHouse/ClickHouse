@@ -27,7 +27,7 @@ LRUFileCache::LRUFileCache(const String & cache_base_path_, const FileCacheSetti
     , max_stash_element_size(cache_settings_.max_elements)
     , enable_cache_hits_threshold(cache_settings_.enable_cache_hits_threshold)
     , log(&Poco::Logger::get("LRUFileCache"))
-    , allow_remove_persistent_cache_by_default(cache_settings_.allow_remove_persistent_cache_by_default)
+    , allow_to_remove_persistent_segments_from_cache_by_default(cache_settings_.allow_to_remove_persistent_segments_from_cache_by_default)
 {
 }
 
@@ -111,7 +111,7 @@ FileSegments LRUFileCache::getImpl(
 
         files.erase(key);
 
-        /// Note: it is guaranteed that there is no concurrency with files delition,
+        /// Note: it is guaranteed that there is no concurrency with files deletion,
         /// because cache files are deleted only inside IFileCache and under cache lock.
         if (fs::exists(key_path))
             fs::remove_all(key_path);
@@ -746,6 +746,8 @@ void LRUFileCache::removeIfReleasable(bool remove_persistent_files)
 {
     /// Try remove all cached files by cache_base_path.
     /// Only releasable file segments are evicted.
+    /// `remove_persistent_files` defines whether non-evictable by some criteria files
+    /// (they do not comply with the cache eviction policy) should also be removed.
 
     std::lock_guard cache_lock(mutex);
 
@@ -765,7 +767,7 @@ void LRUFileCache::removeIfReleasable(bool remove_persistent_files)
             if (file_segment
                 && (!file_segment->isPersistent()
                     || remove_persistent_files
-                    || allow_remove_persistent_cache_by_default))
+                    || allow_to_remove_persistent_segments_from_cache_by_default))
             {
                 std::lock_guard segment_lock(file_segment->mutex);
                 file_segment->detach(cache_lock, segment_lock);

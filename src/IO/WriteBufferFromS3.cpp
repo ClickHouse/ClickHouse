@@ -95,7 +95,7 @@ void WriteBufferFromS3::nextImpl()
     {
         auto cache_key = cache->hash(key);
 
-        file_segments_holder.emplace(cache->setDownloading(cache_key, current_download_offset, size, false));
+        file_segments_holder.emplace(cache->setDownloading(cache_key, current_download_offset, size, /* is_persistent */false));
         current_download_offset += size;
 
         size_t remaining_size = size;
