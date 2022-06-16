@@ -33,35 +33,33 @@ namespace ErrorCodes
 bool TranslateQualifiedNamesMatcher::Data::unknownColumn(size_t table_pos, const ASTIdentifier & identifier) const
 {
     const auto & table = tables[table_pos].table;
-    auto nested1 = IdentifierSemantic::extractNestedName(identifier, table.table);
-    auto nested2 = IdentifierSemantic::extractNestedName(identifier, table.alias);
-
-    const String & short_name = identifier.shortName();
     const auto & columns = tables[table_pos].columns;
+    if (columns.empty())
+        return false;
+    auto match = IdentifierSemantic::canReferColumnToTable(identifier, table);
+    size_t to_strip = 0;
+    switch (match)
+    {
+        case IdentifierSemantic::ColumnMatch::TableName:
+        case IdentifierSemantic::ColumnMatch::AliasedTableName:
+        case IdentifierSemantic::ColumnMatch::TableAlias:
+            to_strip = 1;
+            break;
+        case IdentifierSemantic::ColumnMatch::DBAndTable:
+            to_strip = 2;
+            break;
+        default:
+            break;
+    }
+    const auto & column_name = IdentifierSemantic::getColumnNamePart(identifier, to_strip);
+    if (!column_name)
+        return true;
     for (const auto & column : columns)
     {
-        const String & known_name = column.name;
-        if (short_name == known_name)
-            return false;
-        if (nested1 && *nested1 == known_name)
-            return false;
-        if (nested2 && *nested2 == known_name)
+        if (*column_name == column.name)
             return false;
     }
-
-    const auto & hidden_columns = tables[table_pos].hidden_columns;
-    for (const auto & column : hidden_columns)
-    {
-        const String & known_name = column.name;
-        if (short_name == known_name)
-            return false;
-        if (nested1 && *nested1 == known_name)
-            return false;
-        if (nested2 && *nested2 == known_name)
-            return false;
-    }
-
-    return !columns.empty();
+    return true;
 }
 
 bool TranslateQualifiedNamesMatcher::needChildVisit(ASTPtr & node, const ASTPtr & child)
