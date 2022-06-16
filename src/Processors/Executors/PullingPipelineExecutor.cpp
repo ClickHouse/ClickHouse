@@ -73,7 +73,6 @@ bool PullingPipelineExecutor::pull(Block & block)
     }
 
     block = pulling_format->getPort(IOutputFormat::PortKind::Main).getHeader().cloneWithColumns(chunk.detachColumns());
-
     if (auto chunk_info = chunk.getChunkInfo())
     {
         if (const auto * agg_info = typeid_cast<const AggregatedChunkInfo *>(chunk_info.get()))
