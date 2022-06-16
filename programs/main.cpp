@@ -2,7 +2,7 @@
 #include <csetjmp>
 #include <unistd.h>
 
-#ifdef __linux__
+#ifdef OS_LINUX
 #include <sys/mman.h>
 #endif
 
@@ -82,7 +82,7 @@ int mainEntryClickHouseDisks(int argc, char ** argv);
 int mainEntryClickHouseHashBinary(int, char **)
 {
     /// Intentionally without newline. So you can run:
-    /// objcopy --add-section .note.ClickHouse.hash=<(./clickhouse hash-binary) clickhouse
+    /// objcopy --add-section .clickhouse.hash=<(./clickhouse hash-binary) clickhouse
     std::cout << getHashOfLoadedBinaryHex();
     return 0;
 }
@@ -339,7 +339,7 @@ struct Checker
         checkRequiredInstructions();
     }
 } checker
-#ifndef __APPLE__
+#ifndef OS_DARWIN
     __attribute__((init_priority(101)))    /// Run before other static initializers.
 #endif
 ;

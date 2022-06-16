@@ -95,7 +95,7 @@ void DiskWebServer::initialize(const String & uri_path) const
 }
 
 
-class DiskWebServerDirectoryIterator final : public IDiskDirectoryIterator
+class DiskWebServerDirectoryIterator final : public IDirectoryIterator
 {
 public:
     explicit DiskWebServerDirectoryIterator(std::vector<fs::path> && dir_file_paths_)
@@ -188,7 +188,7 @@ std::unique_ptr<ReadBufferFromFileBase> DiskWebServer::readFile(const String & p
 }
 
 
-DiskDirectoryIteratorPtr DiskWebServer::iterateDirectory(const String & path)
+DirectoryIteratorPtr DiskWebServer::iterateDirectory(const String & path) const
 {
     std::vector<fs::path> dir_file_paths;
     if (files.find(path) == files.end())

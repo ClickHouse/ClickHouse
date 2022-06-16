@@ -195,6 +195,7 @@ void ReadFromRemote::addPipe(Pipes & pipes, const ClusterProxy::SelectStreamFact
 
     remote_query_executor = std::make_shared<RemoteQueryExecutor>(
             shard.shard_info.pool, query_string, shard.header, context, throttler, scalars, external_tables, stage);
+
     remote_query_executor->setLogger(log);
     remote_query_executor->setPoolMode(PoolMode::GET_MANY);
 
@@ -238,12 +239,11 @@ ReadFromParallelRemoteReplicasStep::ReadFromParallelRemoteReplicasStep(
     Scalars scalars_,
     Tables external_tables_,
     Poco::Logger * log_,
-    UInt32 shard_count_,
     std::shared_ptr<const StorageLimitsList> storage_limits_)
     : ISourceStep(DataStream{.header = std::move(header_)})
     , coordinator(std::move(coordinator_))
     , shard(std::move(shard_))
-    , stage(stage_)
+    , stage(std::move(stage_))
     , main_table(std::move(main_table_))
     , table_func_ptr(table_func_ptr_)
     , context(context_)
@@ -252,7 +252,6 @@ ReadFromParallelRemoteReplicasStep::ReadFromParallelRemoteReplicasStep(
     , external_tables{external_tables_}
     , storage_limits(std::move(storage_limits_))
     , log(log_)
-    , shard_count(shard_count_)
 {
     std::vector<String> description;
 
@@ -322,7 +321,7 @@ void ReadFromParallelRemoteReplicasStep::addPipeForSingeReplica(Pipes & pipes, s
 
     remote_query_executor = std::make_shared<RemoteQueryExecutor>(
             pool, query_string, shard.header, context, throttler, scalars, external_tables, stage,
-            RemoteQueryExecutor::Extension{.parallel_reading_coordinator = coordinator, .replica_info = replica_info});
+            RemoteQueryExecutor::Extension{.parallel_reading_coordinator = coordinator, .replica_info = std::move(replica_info)});
 
     remote_query_executor->setLogger(log);
 
