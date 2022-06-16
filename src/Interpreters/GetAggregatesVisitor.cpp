@@ -13,6 +13,12 @@ struct WindowExpressionsCollectorChildInfo
     bool window_function_in_subtree = false;
 };
 
+// This visitor travers AST and collects the list of expressions which depend on
+// evaluation of window functions. Expression is collected only if
+// it's not a part of another expression.
+//
+// Also all collected AST nodes are maked as dependent on window function.
+// This information is used during ActionsDAG building process.
 struct WindowExpressionsCollectorMatcher
 {
     using ChildInfo = WindowExpressionsCollectorChildInfo;
