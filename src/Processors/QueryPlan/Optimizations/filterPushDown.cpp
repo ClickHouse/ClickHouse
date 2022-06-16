@@ -232,7 +232,9 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
                 allowed_keys.push_back(name);
             }
 
-            if (auto updated_steps = tryAddNewFilterStep(parent_node, nodes, allowed_keys))
+            const bool can_remove_filter
+                = std::find(source_columns.begin(), source_columns.end(), filter->getFilterColumnName()) == source_columns.end();
+            if (auto updated_steps = tryAddNewFilterStep(parent_node, nodes, allowed_keys, can_remove_filter))
                 return updated_steps;
         }
     }
