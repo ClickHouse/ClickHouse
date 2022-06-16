@@ -10,7 +10,3 @@ No sorting plan
   optimize_read_in_window_order=1
     Prefix sort description: n ASC, x ASC
     Result sort description: n ASC, x ASC
-OK
-OK
-OK
-OK
