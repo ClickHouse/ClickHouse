@@ -43,9 +43,9 @@
 
 #include <Common/CurrentMetrics.h>
 #include <Common/ProfileEvents.h>
-
+#if USE_KRB5
 #include <Access/KerberosInit.h>
-
+#endif // USE_KRB5
 
 namespace CurrentMetrics
 {
@@ -517,6 +517,7 @@ void StorageKafka::updateConfiguration(cppkafka::Configuration & conf)
     if (config.has(config_prefix))
         loadFromConfig(conf, config, config_prefix);
 
+    #if USE_KRB5
     if (conf.has_property("sasl.kerberos.kinit.cmd"))
         LOG_WARNING(log, "sasl.kerberos.kinit.cmd configuration parameter is ignored.");
 
@@ -538,6 +539,7 @@ void StorageKafka::updateConfiguration(cppkafka::Configuration & conf)
         }
         LOG_DEBUG(log, "Finished KerberosInit");
     }
+    #endif // USE_KRB5
 
     // Update consumer topic-specific configuration
     for (const auto & topic : topics)

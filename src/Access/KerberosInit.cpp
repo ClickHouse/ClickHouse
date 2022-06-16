@@ -4,6 +4,7 @@
 #include <Poco/Logger.h>
 #include <Loggers/Loggers.h>
 #include <filesystem>
+#if USE_KRB5
 #include <krb5.h>
 #include <mutex>
 
@@ -209,3 +210,4 @@ int kerberosInit(const String & keytab_file, const String & principal, const Str
     KerberosInit k_init;
     return k_init.init(keytab_file, principal, cache_name);
 }
+#endif // USE_KRB5
