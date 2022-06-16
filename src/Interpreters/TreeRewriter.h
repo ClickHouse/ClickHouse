@@ -44,6 +44,8 @@ struct TreeRewriterResult
 
     std::vector<const ASTFunction *> window_function_asts;
 
+    std::vector<const ASTFunction *> expressions_with_window_function;
+
     /// Which column is needed to be ARRAY-JOIN'ed to get the specified.
     /// For example, for `SELECT s.v ... ARRAY JOIN a AS s` will get "s.v" -> "a.v".
     NameToNameMap array_join_result_to_source;
