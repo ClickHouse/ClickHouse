@@ -1,5 +1,5 @@
 -- Tags: no-random-settings, no-tsan
--- FIXME should work with tsan
+-- FIXME It became flaky after upgrading to llvm-14 due to obscure freezes in tsan
 
 DROP TABLE IF EXISTS order_by_desc;
 
