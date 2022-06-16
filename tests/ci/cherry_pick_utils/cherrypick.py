@@ -119,17 +119,16 @@ class CherryPick:
         )
 
         # Create pull-request like a local cherry-pick
+        title = self._pr["title"].replace('"', r"\"")
         pr = self._gh.create_pull_request(
             source=self.cherrypick_branch,
             target=self.backport_branch,
-            title="Cherry pick #{number} to {target}: {title}".format(
-                number=self._pr["number"],
-                target=self.target_branch,
-                title=self._pr["title"].replace('"', '\\"'),
+            title=(
+                f'Cherry pick #{self._pr["number"]} '
+                f"to {self.target_branch}: "
+                f"{title}"
             ),
-            description="Original pull-request #{}\n\n{}".format(
-                self._pr["number"], DESCRIPTION
-            ),
+            description=f'Original pull-request #{self._pr["number"]}\n\n{DESCRIPTION}',
         )
 
         # FIXME: use `team` to leave a single eligible assignee.
@@ -166,11 +165,8 @@ class CherryPick:
             "user.name=robot-clickhouse",
         ]
 
-        pr_title = "Backport #{number} to {target}: {title}".format(
-            number=self._pr["number"],
-            target=self.target_branch,
-            title=self._pr["title"].replace('"', '\\"'),
-        )
+        title = (self._pr["title"].replace('"', r"\""),)
+        pr_title = f"Backport #{self._pr['number']} to {self.target_branch}: {title}"
 
         self._run(git_prefix + ["checkout", "-f", self.backport_branch])
         self._run(git_prefix + ["pull", "--ff-only", "origin", self.backport_branch])
@@ -204,9 +200,8 @@ class CherryPick:
             source=self.backport_branch,
             target=self.target_branch,
             title=pr_title,
-            description="Original pull-request #{}\nCherry-pick pull-request #{}\n\n{}".format(
-                self._pr["number"], cherrypick_pr["number"], DESCRIPTION
-            ),
+            description=f"Original pull-request #{self._pr['number']}\n"
+            f"Cherry-pick pull-request #{cherrypick_pr['number']}\n\n{DESCRIPTION}",
         )
 
         # FIXME: use `team` to leave a single eligible assignee.
