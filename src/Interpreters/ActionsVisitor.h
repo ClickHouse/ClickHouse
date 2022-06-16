@@ -1,6 +1,5 @@
 #pragma once
 
-#include <optional>
 #include <string_view>
 #include <Core/NamesAndTypes.h>
 #include <Interpreters/Context_fwd.h>
