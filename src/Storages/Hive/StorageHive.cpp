@@ -792,7 +792,7 @@ Pipe StorageHive::read(
         if (column == "_file")
             sources_info->need_file_column = true;
     }
-    LOG_TRACE(&Poco::Logger::get("StorageHive"), "sample_block={}", sample_block.dumpNames());
+
     if (num_streams > sources_info->hive_files.size())
         num_streams = sources_info->hive_files.size();
 
