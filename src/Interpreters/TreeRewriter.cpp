@@ -511,7 +511,7 @@ void removeUnneededColumnsFromSelectClause(ASTSelectQuery * select_query, const 
                 new_elements.push_back(elem);
 
             /// removing aggregation can change number of rows, so `count()` result in outer sub-query would be wrong
-            if (func && AggregateFunctionFactory::instance().isAggregateFunctionName(func->name) && !select_query->groupBy())
+            if (func && AggregateUtils::isAggregateFunction(*func) && !select_query->groupBy())
                 new_elements.push_back(elem);
         }
     }

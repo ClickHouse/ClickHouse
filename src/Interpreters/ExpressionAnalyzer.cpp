@@ -28,7 +28,6 @@
 #include <Interpreters/MergeJoin.h>
 #include <Interpreters/Set.h>
 #include <Interpreters/TableJoin.h>
-#include <Interpreters/WindowFunctionsUtils.h>
 
 #include <Processors/QueryPlan/ExpressionStep.h>
 
@@ -138,7 +137,7 @@ bool checkPositionalArguments(ASTPtr & argument, const ASTSelectQuery * select_q
         {
             if (const auto * function = typeid_cast<const ASTFunction *>(node.get()))
             {
-                auto is_aggregate_function = AggregateFunctionFactory::instance().isAggregateFunctionName(function->name);
+                auto is_aggregate_function = AggregateUtils::isAggregateFunction(*function);
                 if (is_aggregate_function)
                 {
                     throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
