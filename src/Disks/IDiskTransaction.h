@@ -44,12 +44,6 @@ public:
     /// If a file with `to_path` path already exists, it will be replaced.
     virtual void replaceFile(const std::string & from_path, const std::string & to_path) = 0;
 
-    /// Recursively copy data containing at `from_path` to `to_path` located at `to_disk`.
-    virtual void copy(const std::string & from_path, const std::string & to_path) = 0;
-
-    /// Recursively copy files from from_dir to to_dir. Create to_dir if not exists.
-    virtual void copyDirectoryContent(const std::string & from_dir, const std::string & to_dir) = 0;
-
     /// Copy file `from_file_path` to `to_file_path` located at `to_disk`.
     virtual void copyFile(const std::string & from_file_path, const std::string & to_file_path) = 0;
 

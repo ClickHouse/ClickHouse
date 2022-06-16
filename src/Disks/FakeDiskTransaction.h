@@ -39,16 +39,6 @@ public:
         disk.replaceFile(from_path, to_path);
     }
 
-    void copy(const std::string & from_path, const std::string & to_path) override
-    {
-        disk.copy(from_path, std::make_shared<IDisk>(disk), to_path);
-    }
-
-    void copyDirectoryContent(const std::string & from_dir, const std::string & to_dir) override
-    {
-        disk.copyDirectoryContent(from_dir, std::make_shared<IDisk>(disk), to_dir);
-    }
-
     void copyFile(const std::string & from_file_path, const std::string & to_file_path) override
     {
         disk.copyFile(from_file_path, disk, to_file_path);
@@ -116,12 +106,6 @@ public:
     void createHardLink(const std::string & src_path, const std::string & dst_path) override
     {
         disk.createHardLink(src_path, dst_path);
-    }
-
-    /// Truncate file to specified size.
-    void truncateFile(const std::string & path, size_t size) override
-    {
-        disk.truncateFile(path, size);
     }
 
 private:
