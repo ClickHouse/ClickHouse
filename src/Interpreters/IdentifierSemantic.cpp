@@ -188,6 +188,13 @@ IdentifierSemantic::ColumnMatch IdentifierSemantic::canReferColumnToTable(const 
     return canReferColumnToTable(identifier, table_with_columns.table);
 }
 
+std::optional<String> IdentifierSemantic::getColumnNamePart(const ASTIdentifier & node, size_t pos)
+{
+    if (pos >= node.name_parts.size())
+        return {};
+    return node.name_parts[pos];
+}
+
 /// Strip qualifications from left side of column name.
 /// Example: 'database.table.name' -> 'name'.
 void IdentifierSemantic::setColumnShortName(ASTIdentifier & identifier, const DatabaseAndTableWithAlias & db_and_table)
