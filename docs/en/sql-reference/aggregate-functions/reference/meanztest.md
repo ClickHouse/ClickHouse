@@ -3,7 +3,7 @@ sidebar_position: 303
 sidebar_label: meanZTest
 ---
 
-# meanZTest {#meanztest}
+# meanZTest
 
 Applies mean z-test to samples from two populations.
 

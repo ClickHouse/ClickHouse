@@ -4,6 +4,7 @@
 #include <Processors/Transforms/AggregatingTransform.h>
 #include <Processors/Sources/NullSource.h>
 #include <QueryPipeline/QueryPipeline.h>
+#include <QueryPipeline/ReadProgressCallback.h>
 #include <Common/setThreadName.h>
 
 namespace DB
@@ -68,7 +69,7 @@ const Block & PullingAsyncPipelineExecutor::getHeader() const
 
 static void threadFunction(PullingAsyncPipelineExecutor::Data & data, ThreadGroupStatusPtr thread_group, size_t num_threads)
 {
-    setThreadName("QueryPipelineEx");
+    setThreadName("QueryPullPipeEx");
 
     try
     {
@@ -98,6 +99,7 @@ bool PullingAsyncPipelineExecutor::pull(Chunk & chunk, uint64_t milliseconds)
     {
         data = std::make_unique<Data>();
         data->executor = std::make_shared<PipelineExecutor>(pipeline.processors, pipeline.process_list_element);
+        data->executor->setReadProgressCallback(pipeline.getReadProgressCallback());
         data->lazy_format = lazy_format.get();
 
         auto func = [&, thread_group = CurrentThread::getGroup()]()

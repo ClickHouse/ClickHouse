@@ -5,10 +5,13 @@
 #include "PocoHTTPClient.h"
 
 #include <utility>
+
+#include <Common/logger_useful.h>
+#include <Common/Stopwatch.h>
 #include <IO/HTTPCommon.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
-#include <Common/Stopwatch.h>
+
 #include <aws/core/http/HttpRequest.h>
 #include <aws/core/http/HttpResponse.h>
 #include <aws/core/monitoring/HttpClientMetrics.h>
@@ -16,7 +19,6 @@
 #include "Poco/StreamCopier.h"
 #include <Poco/Net/HTTPRequest.h>
 #include <Poco/Net/HTTPResponse.h>
-#include <Common/logger_useful.h>
 #include <re2/re2.h>
 
 #include <boost/algorithm/string.hpp>
@@ -95,7 +97,7 @@ void PocoHTTPClientConfiguration::updateSchemeAndRegion()
 
 
 PocoHTTPClient::PocoHTTPClient(const PocoHTTPClientConfiguration & client_configuration)
-    : per_request_configuration(client_configuration.perRequestConfiguration)
+    : per_request_configuration(client_configuration.per_request_configuration)
     , error_report(client_configuration.error_report)
     , timeouts(ConnectionTimeouts(
           Poco::Timespan(client_configuration.connectTimeoutMs * 1000), /// connection timeout.
@@ -105,6 +107,7 @@ PocoHTTPClient::PocoHTTPClient(const PocoHTTPClientConfiguration & client_config
     , remote_host_filter(client_configuration.remote_host_filter)
     , s3_max_redirects(client_configuration.s3_max_redirects)
     , enable_s3_requests_logging(client_configuration.enable_s3_requests_logging)
+    , extra_headers(client_configuration.extra_headers)
 {
 }
 
@@ -179,17 +182,17 @@ void PocoHTTPClient::makeRequestInternal(
             HTTPSessionPtr session;
             auto request_configuration = per_request_configuration(request);
 
-            if (!request_configuration.proxyHost.empty())
+            if (!request_configuration.proxy_host.empty())
             {
                 /// Reverse proxy can replace host header with resolved ip address instead of host name.
                 /// This can lead to request signature difference on S3 side.
                 session = makeHTTPSession(target_uri, timeouts, /* resolve_host = */ false);
-                bool use_tunnel = request_configuration.proxyScheme == Aws::Http::Scheme::HTTP && target_uri.getScheme() == "https";
+                bool use_tunnel = request_configuration.proxy_scheme == Aws::Http::Scheme::HTTP && target_uri.getScheme() == "https";
 
                 session->setProxy(
-                    request_configuration.proxyHost,
-                    request_configuration.proxyPort,
-                    Aws::Http::SchemeMapper::ToString(request_configuration.proxyScheme),
+                    request_configuration.proxy_host,
+                    request_configuration.proxy_port,
+                    Aws::Http::SchemeMapper::ToString(request_configuration.proxy_scheme),
                     use_tunnel
                 );
             }
@@ -206,7 +209,7 @@ void PocoHTTPClient::makeRequestInternal(
               * Effectively, `Poco::URI` chooses smaller subset of characters to encode,
               * whereas Amazon S3 and Google Cloud Storage expects another one.
               * In order to successfully execute a request, a path must be exact representation
-              * of decoded path used by `S3AuthSigner`.
+              * of decoded path used by `AWSAuthSigner`.
               * Therefore we shall encode some symbols "manually" to fit the signatures.
               */
 
@@ -243,8 +246,11 @@ void PocoHTTPClient::makeRequestInternal(
                     break;
             }
 
+            /// Headers coming from SDK are lower-cased.
             for (const auto & [header_name, header_value] : request.GetHeaders())
                 poco_request.set(header_name, header_value);
+            for (const auto & [header_name, header_value] : extra_headers)
+                poco_request.set(boost::algorithm::to_lower_copy(header_name), header_value);
 
             Poco::Net::HTTPResponse poco_response;
 

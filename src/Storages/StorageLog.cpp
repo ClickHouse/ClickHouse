@@ -21,7 +21,7 @@
 #include <Interpreters/Context.h>
 #include "StorageLogSettings.h"
 #include <Processors/Sources/NullSource.h>
-#include <Processors/Sources/SourceWithProgress.h>
+#include <Processors/ISource.h>
 #include <QueryPipeline/Pipe.h>
 #include <Processors/Sinks/SinkToStorage.h>
 
@@ -55,7 +55,7 @@ namespace ErrorCodes
 
 /// NOTE: The lock `StorageLog::rwlock` is NOT kept locked while reading,
 /// because we read ranges of data that do not change.
-class LogSource final : public SourceWithProgress
+class LogSource final : public ISource
 {
 public:
     static Block getHeader(const NamesAndTypesList & columns)
@@ -77,7 +77,7 @@ public:
         const std::vector<size_t> & file_sizes_,
         bool limited_by_file_sizes_,
         ReadSettings read_settings_)
-        : SourceWithProgress(getHeader(columns_))
+        : ISource(getHeader(columns_))
         , block_size(block_size_)
         , columns(columns_)
         , storage(storage_)

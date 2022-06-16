@@ -26,6 +26,8 @@
 #include <Processors/Transforms/MaterializingTransform.h>
 #include <Processors/Transforms/SquashingChunksTransform.h>
 #include <Processors/Transforms/getSourceFromASTInsertQuery.h>
+#include <Processors/QueryPlan/QueryPlan.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/WindowView/StorageWindowView.h>
@@ -72,7 +74,7 @@ StoragePtr InterpreterInsertQuery::getTable(ASTInsertQuery & query)
         {
             InterpreterSelectWithUnionQuery interpreter_select{
                 query.select, getContext(), SelectQueryOptions(QueryProcessingStage::Complete, 1)};
-            QueryPipelineBuilder tmp_pipeline = interpreter_select.buildQueryPipeline();
+            auto tmp_pipeline = interpreter_select.buildQueryPipeline();
             ColumnsDescription structure_hint{tmp_pipeline.getHeader().getNamesAndTypesList()};
             table_function_ptr->setStructureHint(structure_hint);
         }
@@ -301,6 +303,8 @@ BlockIO InterpreterInsertQuery::execute()
     auto & query = query_ptr->as<ASTInsertQuery &>();
 
     QueryPipelineBuilder pipeline;
+    std::optional<QueryPipeline> distributed_pipeline;
+    QueryPlanResourceHolder resources;
 
     StoragePtr table = getTable(query);
     checkStorageSupportsTransactionsIfNeeded(table, getContext());
@@ -322,20 +326,12 @@ BlockIO InterpreterInsertQuery::execute()
     if (!query.table_function)
         getContext()->checkAccess(AccessType::INSERT, query.table_id, query_sample_block.getNames());
 
-    bool is_distributed_insert_select = false;
-
     if (query.select && table->isRemote() && settings.parallel_distributed_insert_select)
-    {
         // Distributed INSERT SELECT
-        if (auto maybe_pipeline = table->distributedWrite(query, getContext()))
-        {
-            pipeline = std::move(*maybe_pipeline);
-            is_distributed_insert_select = true;
-        }
-    }
+        distributed_pipeline = table->distributedWrite(query, getContext());
 
     std::vector<Chain> out_chains;
-    if (!is_distributed_insert_select || query.watch)
+    if (!distributed_pipeline || query.watch)
     {
         size_t out_streams_size = 1;
 
@@ -435,9 +431,9 @@ BlockIO InterpreterInsertQuery::execute()
     BlockIO res;
 
     /// What type of query: INSERT or INSERT SELECT or INSERT WATCH?
-    if (is_distributed_insert_select)
+    if (distributed_pipeline)
     {
-        res.pipeline = QueryPipelineBuilder::getPipeline(std::move(pipeline));
+        res.pipeline = std::move(*distributed_pipeline);
     }
     else if (query.select || query.watch)
     {
@@ -465,6 +461,10 @@ BlockIO InterpreterInsertQuery::execute()
         {
             return a.getNumThreads() < b.getNumThreads();
         })->getNumThreads();
+
+        for (auto & chain : out_chains)
+            resources = chain.detachResources();
+
         pipeline.addChains(std::move(out_chains));
 
         pipeline.setMaxThreads(num_insert_threads);
@@ -498,6 +498,8 @@ BlockIO InterpreterInsertQuery::execute()
             res.pipeline.complete(std::move(pipe));
         }
     }
+
+    res.pipeline.addResources(std::move(resources));
 
     res.pipeline.addStorageHolder(table);
     if (inner_table)

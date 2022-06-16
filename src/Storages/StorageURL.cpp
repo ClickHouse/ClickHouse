@@ -29,7 +29,7 @@
 
 #include <algorithm>
 #include <Processors/Executors/PullingPipelineExecutor.h>
-#include <Processors/Sources/SourceWithProgress.h>
+#include <Processors/ISource.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Common/logger_useful.h>
 #include <Poco/Net/HTTPRequest.h>
@@ -74,6 +74,7 @@ IStorageURLBase::IStorageURLBase(
     , http_method(http_method_)
     , partition_by(partition_by_)
 {
+    FormatFactory::instance().checkFormatName(format_name);
     StorageInMemoryMetadata storage_metadata;
 
     if (columns_.empty())
@@ -113,7 +114,7 @@ namespace
     }
 
 
-    class StorageURLSource : public SourceWithProgress
+    class StorageURLSource : public ISource
     {
         using URIParams = std::vector<std::pair<String, String>>;
 
@@ -164,7 +165,7 @@ namespace
             const ReadWriteBufferFromHTTP::HTTPHeaderEntries & headers_ = {},
             const URIParams & params = {},
             bool glob_url = false)
-            : SourceWithProgress(sample_block), name(std::move(name_)), uri_info(uri_info_)
+            : ISource(sample_block), name(std::move(name_)), uri_info(uri_info_)
         {
             auto headers = getHeaders(headers_);
 
@@ -444,14 +445,25 @@ void StorageURLSink::consume(Chunk chunk)
 
 void StorageURLSink::onException()
 {
-    write_buf->finalize();
+    if (!writer)
+        return;
+    onFinish();
 }
 
 void StorageURLSink::onFinish()
 {
-    writer->finalize();
-    writer->flush();
-    write_buf->finalize();
+    try
+    {
+        writer->finalize();
+        writer->flush();
+        write_buf->finalize();
+    }
+    catch (...)
+    {
+        /// Stop ParallelFormattingOutputFormat correctly.
+        writer.reset();
+        throw;
+    }
 }
 
 class PartitionedStorageURLSink : public PartitionedSink
