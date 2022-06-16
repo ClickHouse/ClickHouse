@@ -31,7 +31,6 @@ namespace DB
   * ALTER LIVE VIEW [db.name]
   *     [REFRESH]
   *
-  * CREATE INDEX [IF NOT EXISTS] name ON [db].name (expression) TYPE type GRANULARITY value
   * DROP INDEX [IF EXISTS] name on [db].name
   */
 
@@ -72,16 +71,5 @@ public:
             : alter_object(alter_object_), command_type(command_type_) {}
 };
 
-
-/** Part of CREATE INDEX expr TYPE typename(arg1, arg2, ...) GRANULARITY value */
-class ParserCreateIndexDeclaration : public IParserBase
-{
-public:
-    ParserCreateIndexDeclaration() {}
-
-protected:
-    const char * getName() const override { return "index declaration in create index"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
-};
 
 }

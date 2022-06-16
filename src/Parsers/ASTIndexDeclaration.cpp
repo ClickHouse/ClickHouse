@@ -25,19 +25,19 @@ ASTPtr ASTIndexDeclaration::clone() const
 
 void ASTIndexDeclaration::formatImpl(const FormatSettings & s, FormatState & state, FormatStateStacked frame) const
 {
-    /// '' is from CREATE INDEX
-    if (!name.empty())
-    {
-        s.ostr << backQuoteIfNeed(name);
-        s.ostr << " ";
-        expr->formatImpl(s, state, frame);
-    }
-    else
+    if (from_create_index)
     {
         s.ostr << "(";
         expr->formatImpl(s, state, frame);
         s.ostr << ")";
     }
+    else
+    {
+        s.ostr << backQuoteIfNeed(name);
+        s.ostr << " ";
+        expr->formatImpl(s, state, frame);
+    }
+
     s.ostr << (s.hilite ? hilite_keyword : "") << " TYPE " << (s.hilite ? hilite_none : "");
     type->formatImpl(s, state, frame);
     s.ostr << (s.hilite ? hilite_keyword : "") << " GRANULARITY " << (s.hilite ? hilite_none : "");
