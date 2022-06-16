@@ -122,6 +122,12 @@ class ActionsMatcher
 public:
     using Visitor = ConstInDepthNodeVisitor<ActionsMatcher, true>;
 
+    enum class WindowDependancyState
+    {
+        NONE,
+        MAY_DEPEND,
+    };
+
     struct Data : public WithContext
     {
         SizeLimits set_size_limit;
@@ -145,7 +151,8 @@ public:
          */
         int next_unique_suffix;
 
-        std::optional<bool> window_function_called;
+        WindowDependancyState window_dependancy_state = WindowDependancyState::NONE;
+        bool window_function_in_subtree = false;
 
         Data(
             ContextPtr context_,
