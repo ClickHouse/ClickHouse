@@ -10,7 +10,7 @@ ClickHouse supports the standard grammar for defining windows and window functio
 | Feature | Support or workaround |
 | --------| ----------|
 | ad hoc window specification (`count(*) over (partition by id order by time desc)`) | supported |
-| expressions involving window functions, e.g. `(count(*) over ()) / 2)` | not supported, wrap in a subquery ([feature request](https://github.com/ClickHouse/ClickHouse/issues/19857)) |
+| expressions involving window functions, e.g. `(count(*) over ()) / 2)` | supported |
 | `WINDOW` clause (`select ... from table window w as (partition by id)`) | supported |
 | `ROWS` frame | supported |
 | `RANGE` frame | supported, the default |
