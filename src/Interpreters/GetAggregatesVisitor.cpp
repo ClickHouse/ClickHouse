@@ -17,7 +17,7 @@ struct WindowExpressionsCollectorChildInfo
 // evaluation of window functions. Expression is collected only if
 // it's not a part of another expression.
 //
-// Also all collected AST nodes are maked as dependent on window function.
+// Also all collected AST nodes are marked as dependent on window function.
 // This information is used during ActionsDAG building process.
 struct WindowExpressionsCollectorMatcher
 {
