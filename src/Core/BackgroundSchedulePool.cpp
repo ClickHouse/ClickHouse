@@ -52,6 +52,17 @@ bool BackgroundSchedulePoolTaskInfo::scheduleAfter(size_t ms, bool overwrite)
     return true;
 }
 
+bool BackgroundSchedulePoolTaskInfo::cancelDelayed()
+{
+    std::lock_guard lock_schedule(schedule_mutex);
+
+    if (deactivated || !delayed)
+        return false;
+
+    pool.cancelDelayedTask(shared_from_this(), lock_schedule);
+    return true;
+}
+
 void BackgroundSchedulePoolTaskInfo::deactivate()
 {
     std::lock_guard lock_exec(exec_mutex);
