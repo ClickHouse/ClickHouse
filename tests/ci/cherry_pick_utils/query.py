@@ -1,7 +1,13 @@
 # -*- coding: utf-8 -*-
 
-import requests
+import json
+import inspect
+import logging
 import time
+from urllib3.util.retry import Retry  # type: ignore
+
+import requests  # type: ignore
+from requests.adapters import HTTPAdapter  # type: ignore
 
 
 class Query:
@@ -56,6 +62,7 @@ class Query:
         self._owner = owner
         self._name = name
         self._team = team
+        self._session = None
 
         self._max_page_size = max_page_size
         self._min_page_size = min_page_size
@@ -129,7 +136,11 @@ class Query:
                 next='after: "{}"'.format(result["pageInfo"]["endCursor"]),
             )
 
-            members += dict([(node["login"], node["id"]) for node in result["nodes"]])
+            # Update members with new nodes compatible with py3.8-py3.10
+            members = {
+                **members,
+                **{node["login"]: node["id"] for node in result["nodes"]},
+            }
 
         return members
 
@@ -415,32 +426,37 @@ class Query:
         query = _SET_LABEL.format(pr_id=pull_request["id"], label_id=labels[0]["id"])
         self._run(query, is_mutation=True)
 
+    @property
+    def session(self):
+        if self._session is not None:
+            return self._session
+        retries = 5
+        self._session = requests.Session()
+        retry = Retry(
+            total=retries,
+            read=retries,
+            connect=retries,
+            backoff_factor=1,
+            status_forcelist=(403, 500, 502, 504),
+        )
+        adapter = HTTPAdapter(max_retries=retry)
+        self._session.mount("http://", adapter)
+        self._session.mount("https://", adapter)
+        return self._session
+
     def _run(self, query, is_mutation=False):
-        from requests.adapters import HTTPAdapter
-        from urllib3.util.retry import Retry
+        # Get caller and parameters from the stack to track the progress
+        frame = inspect.getouterframes(inspect.currentframe(), 2)[1]
+        caller = frame[3]
+        f_parameters = inspect.signature(getattr(self, caller)).parameters
+        parameters = ", ".join(str(frame[0].f_locals[p]) for p in f_parameters)
+        mutation = ""
+        if is_mutation:
+            mutation = ", is mutation"
+        print(f"---GraphQL request for {caller}({parameters}){mutation}---")
 
         # sleep a little, because we querying github too often
-        print("Request, is mutation", is_mutation)
-        time.sleep(0.5)
-
-        def requests_retry_session(
-            retries=5,
-            backoff_factor=0.5,
-            status_forcelist=(403, 500, 502, 504),
-            session=None,
-        ):
-            session = session or requests.Session()
-            retry = Retry(
-                total=retries,
-                read=retries,
-                connect=retries,
-                backoff_factor=backoff_factor,
-                status_forcelist=status_forcelist,
-            )
-            adapter = HTTPAdapter(max_retries=retry)
-            session.mount("http://", adapter)
-            session.mount("https://", adapter)
-            return session
+        time.sleep(0.1)
 
         headers = {"Authorization": "bearer {}".format(self._token)}
         if is_mutation:
@@ -464,34 +480,28 @@ class Query:
                 query=query
             )
 
-        while True:
-            request = requests_retry_session().post(
-                "https://api.github.com/graphql", json={"query": query}, headers=headers
-            )
-            if request.status_code == 200:
-                result = request.json()
-                if "errors" in result:
-                    raise Exception(
-                        "Errors occurred: {}\nOriginal query: {}".format(
-                            result["errors"], query
-                        )
-                    )
-
-                if not is_mutation:
-                    import inspect
-
-                    caller = inspect.getouterframes(inspect.currentframe(), 2)[1][3]
-                    if caller not in list(self.api_costs.keys()):
-                        self.api_costs[caller] = 0
-                    self.api_costs[caller] += result["data"]["rateLimit"]["cost"]
-
-                return result["data"]
-            else:
-                import json
-
+        response = self.session.post(
+            "https://api.github.com/graphql", json={"query": query}, headers=headers
+        )
+        if response.status_code == 200:
+            result = response.json()
+            if "errors" in result:
                 raise Exception(
-                    "Query failed with code {code}:\n{json}".format(
-                        code=request.status_code,
-                        json=json.dumps(request.json(), indent=4),
+                    "Errors occurred: {}\nOriginal query: {}".format(
+                        result["errors"], query
                     )
                 )
+
+            if not is_mutation:
+                if caller not in list(self.api_costs.keys()):
+                    self.api_costs[caller] = 0
+                self.api_costs[caller] += result["data"]["rateLimit"]["cost"]
+
+            return result["data"]
+        else:
+            raise Exception(
+                "Query failed with code {code}:\n{json}".format(
+                    code=response.status_code,
+                    json=json.dumps(response.json(), indent=4),
+                )
+            )

@@ -14,10 +14,6 @@ Second run checks PR from previous run to be merged or at least being mergeable.
 Third run creates PR from backport branch (with merged previous PR) to release branch.
 """
 
-try:
-    from clickhouse.utils.github.query import Query as RemoteRepo
-except:
-    from .query import Query as RemoteRepo
 
 import argparse
 from enum import Enum
@@ -25,6 +21,10 @@ import logging
 import os
 import subprocess
 import sys
+
+sys.path.append(os.path.dirname(__file__))
+
+from query import Query as RemoteRepo
 
 
 class CherryPick:
@@ -45,20 +45,21 @@ class CherryPick:
     def __init__(self, token, owner, name, team, pr_number, target_branch):
         self._gh = RemoteRepo(token, owner=owner, name=name, team=team)
         self._pr = self._gh.get_pull_request(pr_number)
+        self.target_branch = target_branch
 
         self.ssh_url = self._gh.ssh_url
 
         # TODO: check if pull-request is merged.
+        self.update_pr_branch(self._pr, self.target_branch)
 
+    def update_pr_branch(self, pr_data, target_branch):
+        """The method is here to avoid unnecessary creation of new objects"""
+        self._pr = pr_data
+        self.target_branch = target_branch
         self.merge_commit_oid = self._pr["mergeCommit"]["oid"]
 
-        self.target_branch = target_branch
-        self.backport_branch = "backport/{branch}/{pr}".format(
-            branch=target_branch, pr=pr_number
-        )
-        self.cherrypick_branch = "cherrypick/{branch}/{oid}".format(
-            branch=target_branch, oid=self.merge_commit_oid
-        )
+        self.backport_branch = f"backport/{target_branch}/{pr_data['number']}"
+        self.cherrypick_branch = f"cherrypick/{target_branch}/{self.merge_commit_oid}"
 
     def getCherryPickPullRequest(self):
         return self._gh.find_pull_request(
