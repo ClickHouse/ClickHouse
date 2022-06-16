@@ -31,6 +31,14 @@ Chunk RollupTransform::merge(Chunks && chunks, bool final)
     return Chunk(rollup_block.getColumns(), num_rows);
 }
 
+MutableColumnPtr getColumnWithDefaults(Block const & header, size_t key, size_t n)
+{
+    auto const & col = header.getByPosition(key);
+    auto result_column = col.column->cloneEmpty();
+    col.type->insertManyDefaultsInto(*result_column, n);
+    return result_column;
+}
+
 Chunk RollupTransform::generate()
 {
     if (!consumed_chunks.empty())
@@ -53,7 +61,7 @@ Chunk RollupTransform::generate()
 
         auto num_rows = gen_chunk.getNumRows();
         auto columns = gen_chunk.getColumns();
-        columns[key] = columns[key]->cloneEmpty()->cloneResized(num_rows);
+        columns[key] = getColumnWithDefaults(getInputPort().getHeader(), key, num_rows);
 
         Chunks chunks;
         chunks.emplace_back(std::move(columns), num_rows);

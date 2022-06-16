@@ -241,7 +241,9 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                         missing_columns.begin(), missing_columns.end(), [&](const auto & missing_col) { return missing_col == col.name; });
                     if (it != missing_columns.end())
                     {
-                        auto column = ColumnConst::create(col.column->cloneResized(1), 0);
+                        auto column_with_default = col.column->cloneEmpty();
+                        col.type->insertDefaultInto(*column_with_default);
+                        auto column = ColumnConst::create(std::move(column_with_default), 0);
                         const auto * node = &dag->addColumn({ColumnPtr(std::move(column)), col.type, col.name});
                         node = &dag->materializeNode(*node);
                         index.push_back(node);

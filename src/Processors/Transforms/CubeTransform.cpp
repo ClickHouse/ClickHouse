@@ -38,6 +38,8 @@ void CubeTransform::consume(Chunk chunk)
     consumed_chunks.emplace_back(std::move(chunk));
 }
 
+MutableColumnPtr getColumnWithDefaults(Block const & header, size_t key, size_t n);
+
 Chunk CubeTransform::generate()
 {
     if (!consumed_chunks.empty())
@@ -56,8 +58,9 @@ Chunk CubeTransform::generate()
         current_zero_columns.clear();
         current_zero_columns.reserve(keys.size());
 
+        auto const & input_header = getInputPort().getHeader();
         for (auto key : keys)
-            current_zero_columns.emplace_back(current_columns[key]->cloneEmpty()->cloneResized(num_rows));
+            current_zero_columns.emplace_back(getColumnWithDefaults(input_header, key, num_rows));
     }
 
     auto gen_chunk = std::move(cube_chunk);

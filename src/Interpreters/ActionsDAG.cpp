@@ -39,7 +39,7 @@ void ActionsDAG::Node::toTree(JSONBuilder::JSONMap & map) const
         map.add("Result Type", result_type->getName());
 
     if (!result_name.empty())
-        map.add("Result Type", magic_enum::enum_name(type));
+        map.add("Result Name", result_name);
 
     if (column)
         map.add("Column", column->getName());
