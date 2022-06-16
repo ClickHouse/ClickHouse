@@ -4,6 +4,7 @@
 #include <Storages/TTLDescription.h>
 
 #include <map>
+#include <optional>
 
 namespace DB
 {
@@ -17,24 +18,11 @@ struct MergeTreeDataPartTTLInfo
     /// This TTL was computed on completely expired part. It doesn't make sense
     /// to select such parts for TTL again. But make sense to recalcuate TTL
     /// again for merge with multiple parts.
-    bool finished = false;
+    std::optional<bool> ttl_finished;
+    bool finished() const { return ttl_finished.value_or(false); }
 
-    void update(time_t time)
-    {
-        if (time && (!min || time < min))
-            min = time;
-
-        max = std::max(time, max);
-    }
-
-    void update(const MergeTreeDataPartTTLInfo & other_info)
-    {
-        if (other_info.min && (!min || other_info.min < min))
-            min = other_info.min;
-
-        max = std::max(other_info.max, max);
-        finished &= other_info.finished;
-    }
+    void update(time_t time);
+    void update(const MergeTreeDataPartTTLInfo & other_info);
 };
 
 /// Order is important as it would be serialized and hashed for checksums
