@@ -19,7 +19,6 @@
 
 #### New Feature
 * A new codec [FPC](https://userweb.cs.txstate.edu/~burtscher/papers/dcc07a.pdf) algorithm for floating point data compression. [#37553](https://github.com/ClickHouse/ClickHouse/pull/37553) ([Mikhail Guzov](https://github.com/koloshmet)).
-* Add `GROUPING` function. Closes [#19426](https://github.com/ClickHouse/ClickHouse/issues/19426). [#37163](https://github.com/ClickHouse/ClickHouse/pull/37163) ([Dmitry Novik](https://github.com/novikd)).
 * Add new columnar JSON formats: `JSONColumns`, `JSONCompactColumns`, `JSONColumnsWithMetadata`. Closes [#36338](https://github.com/ClickHouse/ClickHouse/issues/36338) Closes [#34509](https://github.com/ClickHouse/ClickHouse/issues/34509). [#36975](https://github.com/ClickHouse/ClickHouse/pull/36975) ([Kruglov Pavel](https://github.com/Avogar)).
 * Added open telemetry traces visualizing tool based on d3js. [#37810](https://github.com/ClickHouse/ClickHouse/pull/37810) ([Sergei Trifonov](https://github.com/serxa)).
 * Support INSERTs into `system.zookeeper` table. Closes [#22130](https://github.com/ClickHouse/ClickHouse/issues/22130). [#37596](https://github.com/ClickHouse/ClickHouse/pull/37596) ([Han Fei](https://github.com/hanfei1991)).
@@ -39,6 +38,7 @@
 * Added `SYSTEM UNFREEZE` query that deletes the whole backup regardless if the corresponding table is deleted or not. [#36424](https://github.com/ClickHouse/ClickHouse/pull/36424) ([Vadim Volodin](https://github.com/PolyProgrammist)).
 
 #### Experimental Feature
+* Add `GROUPING` function. Closes [#19426](https://github.com/ClickHouse/ClickHouse/issues/19426). [#37163](https://github.com/ClickHouse/ClickHouse/pull/37163) ([Dmitry Novik](https://github.com/novikd)). The behavior of this function will be changed in subsequent releases.
 * Enables `POPULATE` for `WINDOW VIEW`. [#36945](https://github.com/ClickHouse/ClickHouse/pull/36945) ([vxider](https://github.com/Vxider)).
 * `ALTER TABLE ... MODIFY QUERY` support for `WINDOW VIEW`. [#37188](https://github.com/ClickHouse/ClickHouse/pull/37188) ([vxider](https://github.com/Vxider)).
 * This PR changes the behavior of the `ENGINE` syntax in `WINDOW VIEW`, to make it like in `MATERIALIZED VIEW`. [#37214](https://github.com/ClickHouse/ClickHouse/pull/37214) ([vxider](https://github.com/Vxider)).
