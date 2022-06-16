@@ -363,7 +363,7 @@ public:
     /// Makes full clone of part in specified subdirectory (relative to storage data directory, e.g. "detached") on another disk
     void makeCloneOnDisk(const DiskPtr & disk, const String & directory_name) const;
 
-    /// Makes full clone of part with specific directory name to other disk ( if directory_name is empty, ordinary name will be kept )
+    /// Makes full clone of part to a directory with specific name in other disk
     void makeCloneToOtherDisk(const DiskPtr & disk, const String & directory_name,const String & relative_data_path) const;
 
     /// Checks that .bin and .mrk files exist.
