@@ -6,7 +6,7 @@ import os
 import subprocess
 
 from env_helper import GITHUB_WORKSPACE, TEMP_PATH
-from get_robot_token import get_parameter_from_ssm
+from get_robot_token import get_best_robot_token
 from ssh import SSHKey
 from cherry_pick_utils.backport import Backport
 from cherry_pick_utils.cherrypick import CherryPick
@@ -21,7 +21,7 @@ def parse_args():
 
 def main():
     args = parse_args()
-    token = args.token or get_parameter_from_ssm("github_robot_token_1")
+    token = args.token or get_best_robot_token()
 
     bp = Backport(
         token,
