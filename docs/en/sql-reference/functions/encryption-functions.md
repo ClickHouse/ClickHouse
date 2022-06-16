@@ -203,7 +203,7 @@ Result:
 Which is binary equal to what MySQL produces on same inputs:
 
 ``` sql
-mysql> SET  block_encryption_mode='aes-256-cfb128';
+mysql> SET  block_encryption_mode='aes-256-ofb';
 Query OK, 0 rows affected (0.00 sec)
 
 mysql> SELECT aes_encrypt('Secret', '123456789101213141516171819202122', 'iviviviviviviviv123456') as ciphertext;
@@ -332,7 +332,7 @@ aes_decrypt_mysql('mode', 'ciphertext', 'key' [, iv])
 Let's decrypt data we've previously encrypted with MySQL:
 
 ``` sql
-mysql> SET  block_encryption_mode='aes-256-cfb128';
+mysql> SET  block_encryption_mode='aes-256-ofb';
 Query OK, 0 rows affected (0.00 sec)
 
 mysql> SELECT aes_encrypt('Secret', '123456789101213141516171819202122', 'iviviviviviviviv123456') as ciphertext;
