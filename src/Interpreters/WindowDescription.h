@@ -95,8 +95,6 @@ struct WindowDescription
     // The window functions that are calculated for this window.
     std::vector<WindowFunctionDescription> window_functions;
 
-    // Expressions which use calculated for this window results of window functions.
-    std::vector<const ASTFunction *> expressions_with_window_functions;
 
     std::string dump() const;
 

@@ -875,9 +875,6 @@ void ExpressionAnalyzer::makeWindowDescriptions(ActionsDAGPtr actions)
     {
         assert(function_node->is_window_function);
 
-        // Find the window corresponding to this function. It may be either
-        // referenced by name and previously defined in WINDOW clause, or it
-        // may be defined inline.
         WindowFunctionDescription window_function;
         window_function.function_node = function_node;
         window_function.column_name
@@ -920,6 +917,9 @@ void ExpressionAnalyzer::makeWindowDescriptions(ActionsDAGPtr actions)
                 window_function.argument_types,
                 window_function.function_parameters, properties);
 
+        // Find the window corresponding to this function. It may be either
+        // referenced by name and previously defined in WINDOW clause, or it
+        // may be defined inline.
         if (!function_node->window_name.empty())
         {
             auto it = window_descriptions.find(function_node->window_name);
