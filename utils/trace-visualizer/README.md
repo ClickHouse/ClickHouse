@@ -1,7 +1,7 @@
 Trace visualizer is a tool for representation of a tracing data as a Gantt diagram.
 
 # Quick start
-For now this tool is not integrate into clickhouse and require a lot of manual adjustments.
+For now this tool is not integrated into ClickHouse and requires a lot of manual adjustments.
 ```bash
 cd utils/trace-visualizer
 python3 -m http.server
