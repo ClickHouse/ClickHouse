@@ -226,3 +226,29 @@ ORDER BY number ASC;
 97	52	52
 98	53	53
 99	54	54
+SELECT sum(number) / sum(sum(number)) OVER (PARTITION BY (number % 10))
+FROM numbers(10000)
+GROUP BY number % 10;
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+SELECT 1 + sum(number) / sum(sum(number)) OVER (PARTITION BY (number % 10))
+FROM numbers(10000)
+GROUP BY number % 10;
+2
+2
+2
+2
+2
+2
+2
+2
+2
+2
