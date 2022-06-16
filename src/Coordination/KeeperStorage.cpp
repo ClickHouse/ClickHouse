@@ -13,7 +13,7 @@
 #include <iomanip>
 #include <mutex>
 #include <functional>
-#include <Common/logger_useful.h>
+#include <base/defines.h>
 
 namespace DB
 {
@@ -349,7 +349,9 @@ struct KeeperStorageCreateRequestProcessor final : public KeeperStorageRequestPr
         container.updateValue(parent_path, [child_path, zxid, &prev_parent_zxid,
                                             parent_cversion, &prev_parent_cversion] (KeeperStorage::Node & parent)
         {
+            ++parent.stat.numChildren;
             parent.addChild(child_path);
+
             prev_parent_cversion = parent.stat.cversion;
             prev_parent_zxid = parent.stat.pzxid;
 
@@ -363,7 +365,7 @@ struct KeeperStorageCreateRequestProcessor final : public KeeperStorageRequestPr
 
             if (zxid > parent.stat.pzxid)
                 parent.stat.pzxid = zxid;
-            ++parent.stat.numChildren;
+            chassert(parent.stat.numChildren == static_cast<int32_t>(parent.getChildren().size()));
         });
 
         response.path_created = path_created;
@@ -385,6 +387,7 @@ struct KeeperStorageCreateRequestProcessor final : public KeeperStorageRequestPr
                 undo_parent.stat.cversion = prev_parent_cversion;
                 undo_parent.stat.pzxid = prev_parent_zxid;
                 undo_parent.removeChild(child_path);
+                chassert(undo_parent.stat.numChildren == static_cast<int32_t>(undo_parent.getChildren().size()));
             });
 
             storage.container.erase(path_created);
@@ -494,7 +497,7 @@ struct KeeperStorageRemoveRequestProcessor final : public KeeperStorageRequestPr
         {
             response.error = Coordination::Error::ZBADVERSION;
         }
-        else if (it->value.stat.numChildren)
+        else if (!it->value.getChildren().empty())
         {
             response.error = Coordination::Error::ZNOTEMPTY;
         }
@@ -519,6 +522,7 @@ struct KeeperStorageRemoveRequestProcessor final : public KeeperStorageRequestPr
                 --parent.stat.numChildren;
                 ++parent.stat.cversion;
                 parent.removeChild(child_basename);
+                chassert(parent.stat.numChildren == static_cast<int32_t>(parent.getChildren().size()));
             });
 
             response.error = Coordination::Error::ZOK;
@@ -540,6 +544,7 @@ struct KeeperStorageRemoveRequestProcessor final : public KeeperStorageRequestPr
                     ++parent.stat.numChildren;
                     --parent.stat.cversion;
                     parent.addChild(child_name);
+                    chassert(parent.stat.numChildren == static_cast<int32_t>(parent.getChildren().size()));
                 });
             };
         }
@@ -1110,6 +1115,7 @@ KeeperStorage::ResponsesForSessions KeeperStorage::processRequest(const Coordina
                     ++parent.stat.cversion;
                     auto base_name = getBaseName(ephemeral_path);
                     parent.removeChild(base_name);
+                    chassert(parent.stat.numChildren == static_cast<int32_t>(parent.getChildren().size()));
                 });
 
                 container.erase(ephemeral_path);
@@ -1166,12 +1172,12 @@ KeeperStorage::ResponsesForSessions KeeperStorage::processRequest(const Coordina
                     ? list_watches
                     : watches;
 
-                watches_type[zk_request->getPath()].emplace_back(session_id);
+                watches_type[zk_request->getPath()].emplace(session_id);
                 sessions_and_watchers[session_id].emplace(zk_request->getPath());
             }
             else if (response->error == Coordination::Error::ZNONODE && zk_request->getOpNum() == Coordination::OpNum::Exists)
             {
-                watches[zk_request->getPath()].emplace_back(session_id);
+                watches[zk_request->getPath()].emplace(session_id);
                 sessions_and_watchers[session_id].emplace(zk_request->getPath());
             }
         }
@@ -1206,13 +1212,7 @@ void KeeperStorage::clearDeadWatches(int64_t session_id)
             if (watch != watches.end())
             {
                 auto & watches_for_path = watch->second;
-                for (auto w_it = watches_for_path.begin(); w_it != watches_for_path.end();)
-                {
-                    if (*w_it == session_id)
-                        w_it = watches_for_path.erase(w_it);
-                    else
-                        ++w_it;
-                }
+                watches_for_path.erase(session_id);
                 if (watches_for_path.empty())
                     watches.erase(watch);
             }
@@ -1222,13 +1222,7 @@ void KeeperStorage::clearDeadWatches(int64_t session_id)
             if (list_watch != list_watches.end())
             {
                 auto & list_watches_for_path = list_watch->second;
-                for (auto w_it = list_watches_for_path.begin(); w_it != list_watches_for_path.end();)
-                {
-                    if (*w_it == session_id)
-                        w_it = list_watches_for_path.erase(w_it);
-                    else
-                        ++w_it;
-                }
+                list_watches_for_path.erase(session_id);
                 if (list_watches_for_path.empty())
                     list_watches.erase(list_watch);
             }
@@ -1250,7 +1244,7 @@ void KeeperStorage::dumpWatches(WriteBufferFromOwnString & buf) const
 
 void KeeperStorage::dumpWatchesByPath(WriteBufferFromOwnString & buf) const
 {
-    auto write_int_vec = [&buf](const std::vector<int64_t> & session_ids)
+    auto write_int_container = [&buf](const auto & session_ids)
     {
         for (int64_t session_id : session_ids)
         {
@@ -1261,13 +1255,13 @@ void KeeperStorage::dumpWatchesByPath(WriteBufferFromOwnString & buf) const
     for (const auto & [watch_path, sessions] : watches)
     {
         buf << watch_path << "\n";
-        write_int_vec(sessions);
+        write_int_container(sessions);
     }
 
     for (const auto & [watch_path, sessions] : list_watches)
     {
         buf << watch_path << "\n";
-        write_int_vec(sessions);
+        write_int_container(sessions);
     }
 }
 

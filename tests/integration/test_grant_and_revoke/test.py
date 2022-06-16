@@ -342,6 +342,18 @@ def test_implicit_create_view_grant():
         "CREATE VIEW test.view_1 AS SELECT 1", user="A"
     )
 
+    # check grant option
+    instance.query("CREATE USER B")
+    expected_error = "Not enough privileges"
+    assert expected_error in instance.query_and_get_error(
+        "GRANT CREATE VIEW ON test.* TO B", user="A"
+    )
+
+    instance.query("GRANT CREATE TABLE ON test.* TO A WITH GRANT OPTION")
+    instance.query("GRANT CREATE VIEW ON test.* TO B", user="A")
+    instance.query("CREATE VIEW test.view_2 AS SELECT 1", user="B")
+    assert instance.query("SELECT * FROM test.view_2") == "1\n"
+
 
 def test_implicit_create_temporary_table_grant():
     instance.query("CREATE USER A")

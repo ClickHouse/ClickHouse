@@ -165,6 +165,11 @@ def create_test_html_report(
         num_fails = 0
         has_test_time = False
         has_test_logs = False
+
+        if with_raw_logs:
+            # Display entires with logs at the top (they correspond to failed tests)
+            test_result.sort(key=lambda result: len(result) <= 3)
+
         for result in test_result:
             test_name = result[0]
             test_status = result[1]

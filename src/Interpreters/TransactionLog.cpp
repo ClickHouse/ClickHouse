@@ -201,7 +201,7 @@ void TransactionLog::loadLogFromZooKeeper()
     /// 3. support 64-bit CSNs on top of Apache ZooKeeper (it uses Int32 for sequential numbers)
     Strings entries_list = zookeeper->getChildren(zookeeper_path_log, nullptr, log_updated_event);
     chassert(!entries_list.empty());
-    std::sort(entries_list.begin(), entries_list.end());
+    ::sort(entries_list.begin(), entries_list.end());
     loadEntries(entries_list.begin(), entries_list.end());
     chassert(!last_loaded_entry.empty());
     chassert(latest_snapshot == deserializeCSN(last_loaded_entry));
@@ -217,7 +217,7 @@ void TransactionLog::runUpdatingThread()
         try
         {
             /// Do not wait if we have some transactions to finalize
-            if (!unknown_state_list_loaded.empty())
+            if (unknown_state_list_loaded.empty())
                 log_updated_event->wait();
 
             if (stop_flag.load())
@@ -262,7 +262,7 @@ void TransactionLog::loadNewEntries()
 {
     Strings entries_list = zookeeper->getChildren(zookeeper_path_log, nullptr, log_updated_event);
     chassert(!entries_list.empty());
-    std::sort(entries_list.begin(), entries_list.end());
+    ::sort(entries_list.begin(), entries_list.end());
     auto it = std::upper_bound(entries_list.begin(), entries_list.end(), last_loaded_entry);
     loadEntries(it, entries_list.end());
     chassert(last_loaded_entry == entries_list.back());
@@ -602,7 +602,7 @@ void TransactionLog::sync() const
 {
     Strings entries_list = zookeeper->getChildren(zookeeper_path_log);
     chassert(!entries_list.empty());
-    std::sort(entries_list.begin(), entries_list.end());
+    ::sort(entries_list.begin(), entries_list.end());
     CSN newest_csn = deserializeCSN(entries_list.back());
     waitForCSNLoaded(newest_csn);
 }

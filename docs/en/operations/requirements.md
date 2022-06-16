@@ -3,9 +3,9 @@ sidebar_position: 44
 sidebar_label: Requirements
 ---
 
-# Requirements 
+# Requirements
 
-## CPU {#cpu}
+## CPU
 
 For installation from prebuilt deb packages, use a CPU with x86_64 architecture and support for SSE 4.2 instructions. To run ClickHouse with processors that do not support SSE 4.2 or have AArch64 or PowerPC64LE architecture, you should build ClickHouse from sources.
 
