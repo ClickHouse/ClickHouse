@@ -49,8 +49,8 @@ namespace
             {
                 static_assert(kind == Kind::DEFAULT_ROLES);
                 const auto & manager = context->getAccessControl();
-                if (auto user = context->getUser())
-                    role_names = manager.tryReadNames(user->granted_roles.findGranted(user->default_roles));
+                auto user = context->getUser();
+                role_names = manager.tryReadNames(user->granted_roles.findGranted(user->default_roles));
             }
 
             /// We sort the names because the result of the function should not depend on the order of UUIDs.

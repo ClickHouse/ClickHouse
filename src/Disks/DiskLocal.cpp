@@ -173,7 +173,7 @@ private:
 };
 
 
-class DiskLocalDirectoryIterator final : public IDiskDirectoryIterator
+class DiskLocalDirectoryIterator final : public IDirectoryIterator
 {
 public:
     DiskLocalDirectoryIterator() = default;
@@ -325,7 +325,7 @@ void DiskLocal::moveDirectory(const String & from_path, const String & to_path)
     fs::rename(fs::path(disk_path) / from_path, fs::path(disk_path) / to_path);
 }
 
-DiskDirectoryIteratorPtr DiskLocal::iterateDirectory(const String & path)
+DirectoryIteratorPtr DiskLocal::iterateDirectory(const String & path) const
 {
     fs::path meta_path = fs::path(disk_path) / path;
     if (!broken && fs::exists(meta_path) && fs::is_directory(meta_path))
@@ -387,7 +387,7 @@ void DiskLocal::removeRecursive(const String & path)
     fs::remove_all(fs::path(disk_path) / path);
 }
 
-void DiskLocal::listFiles(const String & path, std::vector<String> & file_names)
+void DiskLocal::listFiles(const String & path, std::vector<String> & file_names) const
 {
     file_names.clear();
     for (const auto & entry : fs::directory_iterator(fs::path(disk_path) / path))
@@ -399,9 +399,14 @@ void DiskLocal::setLastModified(const String & path, const Poco::Timestamp & tim
     FS::setModificationTime(fs::path(disk_path) / path, timestamp.epochTime());
 }
 
-Poco::Timestamp DiskLocal::getLastModified(const String & path)
+Poco::Timestamp DiskLocal::getLastModified(const String & path) const
 {
     return FS::getModificationTimestamp(fs::path(disk_path) / path);
+}
+
+time_t DiskLocal::getLastChanged(const String & path) const
+{
+    return FS::getChangeTime(fs::path(disk_path) / path);
 }
 
 void DiskLocal::createHardLink(const String & src_path, const String & dst_path)
