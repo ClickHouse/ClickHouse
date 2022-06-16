@@ -174,22 +174,24 @@ Result:
 Creating `test_function_sum_json` with named arguments and format [JSONEachRow](../../interfaces/formats.md#jsoneachrow) using XML configuration.
 File test_function.xml.
 ```xml
-<function>
-    <type>executable</type>
-    <name>test_function_sum_json</name>
-    <return_type>UInt64</return_type>
-    <return_name>result_name</return_name>
-    <argument>
-        <type>UInt64</type>
-        <name>argument_1</name>
-    </argument>
-    <argument>
-        <type>UInt64</type>
-        <name>argument_2</name>
-    </argument>
-    <format>JSONEachRow</format>
-    <command>test_function_sum_json.py</command>
-</function>
+<functions>
+    <function>
+        <type>executable</type>
+        <name>test_function_sum_json</name>
+        <return_type>UInt64</return_type>
+        <return_name>result_name</return_name>
+        <argument>
+            <type>UInt64</type>
+            <name>argument_1</name>
+        </argument>
+        <argument>
+            <type>UInt64</type>
+            <name>argument_2</name>
+        </argument>
+        <format>JSONEachRow</format>
+        <command>test_function_sum_json.py</command>
+    </function>
+</functions>
 ```
 
 Script file inside `user_scripts` folder `test_function_sum_json.py`.
@@ -222,6 +224,50 @@ Result:
 ┌─test_function_sum_json(2, 2)─┐
 │                            4 │
 └──────────────────────────────┘
+```
+
+Executable user defined functions can take constant parameters configured in `command` setting (works only for user defined functions with `executable` type).
+File test_function_parameter_python.xml.
+```xml
+<functions>
+    <function>
+        <type>executable</type>
+        <name>test_function_parameter_python</name>
+        <return_type>String</return_type>
+        <argument>
+            <type>UInt64</type>
+        </argument>
+        <format>TabSeparated</format>
+        <command>test_function_parameter_python.py {test_parameter:UInt64}</command>
+    </function>
+</functions>
+```
+
+Script file inside `user_scripts` folder `test_function_parameter_python.py`.
+
+```python
+#!/usr/bin/python3
+
+import sys
+
+if __name__ == "__main__":
+    for line in sys.stdin:
+        print("Parameter " + str(sys.argv[1]) + " value " + str(line), end="")
+        sys.stdout.flush()
+```
+
+Query:
+
+``` sql
+SELECT test_function_parameter_python(1)(2);
+```
+
+Result:
+
+``` text
+┌─test_function_parameter_python(1)(2)─┐
+│ Parameter 1 value 2                  │
+└──────────────────────────────────────┘
 ```
 
 ## Error Handling
