@@ -15,6 +15,7 @@
 * Changed format of binary serialization of columns of experimental type `Object`. New format is more convenient to implement by third-party clients. [#37482](https://github.com/ClickHouse/ClickHouse/pull/37482) ([Anton Popov](https://github.com/CurtizJ)).
 * Turn on setting `output_format_json_named_tuples_as_objects` by default. It allows to serialize named tuples as JSON objects in JSON formats. [#37756](https://github.com/ClickHouse/ClickHouse/pull/37756) ([Anton Popov](https://github.com/CurtizJ)).
 * LIKE patterns with trailing escape symbol ('\\') are now disallowed (as mandated by the SQL standard). [#37764](https://github.com/ClickHouse/ClickHouse/pull/37764) ([Robert Schulze](https://github.com/rschu1ze)).
+* If you run different ClickHouse versions on a cluster with AArch64 CPU or mix AArch64 and amd64 on a cluster, and use distributed queries with GROUP BY multiple keys of fixed-size type that fit in 256 bits but don't fit in 64 bits, and the size of the result is huge, the data will not be fully aggregated in the result of these queries during upgrade. Workaround: upgrade with downtime instead of a rolling upgrade.
 
 #### New Feature
 * A new codec [FPC](https://userweb.cs.txstate.edu/~burtscher/papers/dcc07a.pdf) algorithm for floating point data compression. [#37553](https://github.com/ClickHouse/ClickHouse/pull/37553) ([Mikhail Guzov](https://github.com/koloshmet)).
