@@ -1,4 +1,5 @@
 #include <cstring>
+#include <memory>
 
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
@@ -259,7 +260,72 @@ std::unordered_set<String> getAllTableNames(const Block & block, bool to_lower_c
     }
     return nested_table_names;
 }
-
 }
 
+NestedColumnExtractHelper::NestedColumnExtractHelper(const Block & block_, bool case_insentive_)
+    : block(block_)
+    , case_insentive(case_insentive_)
+{}
+
+std::optional<ColumnWithTypeAndName> NestedColumnExtractHelper::extractColumn(const String & column_name)
+{
+    if (block.has(column_name, case_insentive))
+        return {block.getByName(column_name, case_insentive)};
+
+    auto nested_names = Nested::splitName(column_name);
+    if (case_insentive)
+    {
+        boost::to_lower(nested_names.first);
+        boost::to_lower(nested_names.second);
+    }
+    if (!block.has(nested_names.first, case_insentive))
+        return {};
+
+    if (!nested_tables.contains(nested_names.first))
+    {
+        ColumnsWithTypeAndName columns = {block.getByName(nested_names.first, case_insentive)};
+        nested_tables[nested_names.first] = std::make_shared<Block>(Nested::flatten(columns));
+    }
+
+    return extractColumn(column_name, nested_names.first, nested_names.second);
+}
+
+std::optional<ColumnWithTypeAndName> NestedColumnExtractHelper::extractColumn(
+    const String & original_column_name, const String & column_name_prefix, const String & column_name_suffix)
+{
+    auto table_iter = nested_tables.find(column_name_prefix);
+    if (table_iter == nested_tables.end())
+    {
+        return {};
+    }
+
+    auto & nested_table = table_iter->second;
+    auto nested_names = Nested::splitName(column_name_suffix);
+    auto new_column_name_prefix = Nested::concatenateName(column_name_prefix, nested_names.first);
+    if (nested_names.second.empty())
+    {
+        if (nested_table->has(new_column_name_prefix, case_insentive))
+        {
+            ColumnWithTypeAndName column = nested_table->getByName(new_column_name_prefix, case_insentive);
+            if (case_insentive)
+                column.name = original_column_name;
+            return {column};
+        }
+        else 
+        {
+            return {};
+        }
+    }
+
+    if (!nested_table->has(new_column_name_prefix, case_insentive))
+    {
+        return {};
+    }
+
+    ColumnsWithTypeAndName columns = {nested_table->getByName(new_column_name_prefix, case_insentive)};
+    Block sub_block(columns);
+    nested_tables[new_column_name_prefix] = std::make_shared<Block>(Nested::flatten(sub_block));
+    return extractColumn(original_column_name, new_column_name_prefix, nested_names.second); 
+
+}
 }

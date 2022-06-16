@@ -35,4 +35,17 @@ namespace Nested
     std::unordered_set<String> getAllTableNames(const Block & block, bool to_lower_case = false);
 }
 
+class NestedColumnExtractHelper
+{
+public:
+    explicit NestedColumnExtractHelper(const Block & block_, bool case_insentive_);
+    std::optional<ColumnWithTypeAndName> extractColumn(const String & column_name);
+private:
+    std::optional<ColumnWithTypeAndName>
+    extractColumn(const String & original_column_name, const String & column_name_prefix, const String & column_name_suffix);
+    const Block & block;
+    bool case_insentive;
+    std::map<String, BlockPtr> nested_tables;
+};
+
 }
