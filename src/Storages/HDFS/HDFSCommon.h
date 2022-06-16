@@ -68,8 +68,6 @@ public:
 private:
     void loadFromConfig(const Poco::Util::AbstractConfiguration & config, const String & prefix, bool isUser = false);
 
-    void runKinit();
-
     // hdfs builder relies on an external config data storage
     std::pair<String, String>& keep(const String & k, const String & v)
     {
@@ -77,12 +75,15 @@ private:
     }
 
     hdfsBuilder * hdfs_builder;
+    std::vector<std::pair<String, String>> config_stor;
+
+    #if USE_KRB5
+    void runKinit();
     String hadoop_kerberos_keytab;
     String hadoop_kerberos_principal;
     String hadoop_security_kerberos_ticket_cache_path;
-
-    std::vector<std::pair<String, String>> config_stor;
     bool need_kinit{false};
+    #endif // USE_KRB5
 };
 
 using HDFSFSPtr = std::unique_ptr<std::remove_pointer_t<hdfsFS>, detail::HDFSFsDeleter>;
