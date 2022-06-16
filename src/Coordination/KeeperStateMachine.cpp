@@ -50,12 +50,11 @@ namespace
 }
 
 KeeperStateMachine::KeeperStateMachine(
-    ResponsesQueue & responses_queue_,
-    SnapshotsQueue & snapshots_queue_,
-    const std::string & snapshots_path_,
-    const CoordinationSettingsPtr & coordination_settings_,
-    const std::string & superdigest_,
-    CommitCallback commit_callback_)
+        ResponsesQueue & responses_queue_,
+        SnapshotsQueue & snapshots_queue_,
+        const std::string & snapshots_path_,
+        const CoordinationSettingsPtr & coordination_settings_,
+        const std::string & superdigest_)
     : coordination_settings(coordination_settings_)
     , snapshot_manager(
         snapshots_path_, coordination_settings->snapshots_to_keep,
@@ -65,7 +64,6 @@ KeeperStateMachine::KeeperStateMachine(
     , snapshots_queue(snapshots_queue_)
     , last_committed_idx(0)
     , log(&Poco::Logger::get("KeeperStateMachine"))
-    , commit_callback(std::move(commit_callback_))
     , superdigest(superdigest_)
 {
 }
@@ -148,7 +146,6 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine::commit(const uint64_t log_idx, n
                 throw Exception(ErrorCodes::SYSTEM_ERROR, "Could not push response with session id {} into responses queue", response_for_session.session_id);
     }
 
-    commit_callback(request_for_session);
     last_committed_idx = log_idx;
     return nullptr;
 }

@@ -29,7 +29,6 @@ struct KeeperStorageSnapshot;
 class KeeperStorage
 {
 public:
-    static constexpr char sync_path_delimiter = ':';
 
     struct Node
     {
