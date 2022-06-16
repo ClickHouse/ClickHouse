@@ -92,6 +92,7 @@ struct FormatSettings
         bool allow_missing_fields = false;
         String string_column_pattern;
         UInt64 output_rows_in_file = 1;
+        bool null_as_default = false;
     } avro;
 
     String bool_true_representation = "true";
@@ -109,6 +110,7 @@ struct FormatSettings
         String null_representation = "\\N";
         char tuple_delimiter = ',';
         bool input_format_use_best_effort_in_schema_inference = true;
+        UInt64 skip_first_lines = 0;
     } csv;
 
     struct HiveText
@@ -219,6 +221,7 @@ struct FormatSettings
         String null_representation = "\\N";
         bool input_format_enum_as_number = false;
         bool input_format_use_best_effort_in_schema_inference = true;
+        UInt64 skip_first_lines = 0;
     } tsv;
 
     struct
