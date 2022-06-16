@@ -1,5 +1,5 @@
 -- Tags: no-tsan
--- FIXME should work with tsan
+-- FIXME It became flaky after upgrading to llvm-14 due to obscure freezes in tsan
 
 drop table if exists perf_lc_num;
 
