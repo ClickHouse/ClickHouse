@@ -52,7 +52,6 @@ void registerFunctionTryBase64Decode(FunctionFactory &);
 #if USE_BASE58
 void registerFunctionBase58Encode(FunctionFactory &);
 void registerFunctionBase58Decode(FunctionFactory &);
-void registerFunctionTryBase58Decode(FunctionFactory &);
 #endif
 
 #if USE_NLP
@@ -114,7 +113,6 @@ void registerFunctionsString(FunctionFactory & factory)
 #if USE_BASE58
     registerFunctionBase58Encode(factory);
     registerFunctionBase58Decode(factory);
-    registerFunctionTryBase58Decode(factory);
 #endif
 
 #if USE_NLP

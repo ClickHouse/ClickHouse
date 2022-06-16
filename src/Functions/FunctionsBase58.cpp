@@ -14,10 +14,5 @@ void registerFunctionBase58Decode(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionBase58Conversion<Base58Decode>>();
 }
-
-void registerFunctionTryBase58Decode(FunctionFactory & factory)
-{
-    factory.registerFunction<FunctionBase58Conversion<TryBase58Decode>>();
-}
 }
 #endif
