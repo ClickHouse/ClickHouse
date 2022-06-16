@@ -7,6 +7,7 @@
 #include <filesystem>
 
 #include <base/find_symbols.h>
+#include <base/sort.h>
 #include <base/getFQDNOrHostName.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/Exception.h>
@@ -169,7 +170,7 @@ std::vector<ShuffleHost> ZooKeeper::shuffleHosts() const
         shuffle_hosts.emplace_back(shuffle_host);
     }
 
-    std::sort(
+    ::sort(
         shuffle_hosts.begin(), shuffle_hosts.end(),
         [](const ShuffleHost & lhs, const ShuffleHost & rhs)
         {

@@ -244,16 +244,18 @@ endif ()
 # Add a section with the hash of the compiled machine code for integrity checks.
 # Only for official builds, because adding a section can be time consuming (rewrite of several GB).
 # And cross compiled binaries are not supported (since you cannot execute clickhouse hash-binary)
-if (OBJCOPY_PATH AND CLICKHOUSE_OFFICIAL_BUILD AND (NOT CMAKE_TOOLCHAIN_FILE OR CMAKE_TOOLCHAIN_FILE MATCHES "linux/toolchain-x86_64.cmake$"))
+if (CLICKHOUSE_OFFICIAL_BUILD AND (NOT CMAKE_TOOLCHAIN_FILE OR CMAKE_TOOLCHAIN_FILE MATCHES "linux/toolchain-x86_64.cmake$"))
+    message(STATUS "Official build: A checksum hash will be added to the clickhouse executable")
     set (USE_BINARY_HASH 1 CACHE STRING "Calculate binary hash and store it in the separate section")
+else ()
+    message(STATUS "No official build: A checksum hash will not be added to the clickhouse executable")
 endif ()
 
-# Allows to build stripped binary in a separate directory
-if (OBJCOPY_PATH AND STRIP_PATH)
-    option(INSTALL_STRIPPED_BINARIES "Build stripped binaries with debug info in separate directory" OFF)
-    if (INSTALL_STRIPPED_BINARIES)
-        set(STRIPPED_BINARIES_OUTPUT "stripped" CACHE STRING "A separate directory for stripped information")
-    endif()
+# Optionally split binaries and debug symbols.
+option(INSTALL_STRIPPED_BINARIES "Split binaries and debug symbols" OFF)
+if (INSTALL_STRIPPED_BINARIES)
+    message(STATUS "Will split binaries and debug symbols")
+    set(STRIPPED_BINARIES_OUTPUT "stripped" CACHE STRING "A separate directory for stripped information")
 endif()
 
 cmake_host_system_information(RESULT AVAILABLE_PHYSICAL_MEMORY QUERY AVAILABLE_PHYSICAL_MEMORY) # Not available under freebsd

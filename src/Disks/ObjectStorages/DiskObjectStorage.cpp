@@ -376,6 +376,11 @@ Poco::Timestamp DiskObjectStorage::getLastModified(const String & path) const
     return metadata_storage->getLastModified(path);
 }
 
+time_t DiskObjectStorage::getLastChanged(const String & path) const
+{
+    return metadata_storage->getLastChanged(path);
+}
+
 void DiskObjectStorage::removeMetadata(const String & path, std::vector<String> & paths_to_remove)
 {
     LOG_TRACE(log, "Remove file by path: {}", backQuote(metadata_storage->getPath() + path));
