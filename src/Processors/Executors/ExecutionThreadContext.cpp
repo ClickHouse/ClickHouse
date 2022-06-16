@@ -103,7 +103,6 @@ bool ExecutionThreadContext::executeTask()
 #endif
 
     span.addAttribute("thread_number", thread_number);
-    span.addAttribute("processor.description", node->processor->getDescription());
 
     return node->exception == nullptr;
 }
