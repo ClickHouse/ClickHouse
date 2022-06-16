@@ -16,7 +16,7 @@ from local import Repository as LocalRepo
 class Backport:
     def __init__(self, token, owner, name, team):
         self._gh = RemoteRepo(
-            token, owner=owner, name=name, team=team, max_page_size=30, min_page_size=7
+            token, owner=owner, name=name, team=team, max_page_size=60, min_page_size=7
         )
         self._token = token
         self.default_branch_name = self._gh.default_branch

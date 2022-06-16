@@ -457,9 +457,6 @@ addLabelsToLabelable(input: {{
             mutation = ", is mutation"
         print(f"---GraphQL request for {caller}({parameters}){mutation}---")
 
-        # sleep a little, because we querying github too often
-        time.sleep(0.1)
-
         headers = {"Authorization": f"bearer {self._token}"}
         if is_mutation:
             query = f"""
@@ -478,22 +475,58 @@ query {{
 }}
             """
 
-        response = self.session.post(
-            "https://api.github.com/graphql", json={"query": query}, headers=headers
-        )
-        if response.status_code == 200:
-            result = response.json()
-            if "errors" in result:
-                raise Exception(
-                    f"Errors occurred: {result['errors']}\nOriginal query: {query}"
+        def request_with_retry(retry=0):
+            max_retries = 5
+            # From time to time we face some concrete errors, when it worth to
+            # retry instead of failing competely
+            # We should sleep progressively
+            progressive_sleep = 5 * sum(i + 1 for i in range(retry))
+            if progressive_sleep:
+                logging.warning(
+                    "Retry GraphQL request %s time, sleep %s seconds",
+                    retry,
+                    progressive_sleep,
                 )
+                time.sleep(progressive_sleep)
+            response = self.session.post(
+                "https://api.github.com/graphql", json={"query": query}, headers=headers
+            )
+            result = response.json()
+            if response.status_code == 200:
+                if "errors" in result:
+                    raise Exception(
+                        f"Errors occurred: {result['errors']}\nOriginal query: {query}"
+                    )
 
-            if not is_mutation:
-                if caller not in self.api_costs:
-                    self.api_costs[caller] = 0
-                self.api_costs[caller] += result["data"]["rateLimit"]["cost"]
+                if not is_mutation:
+                    if caller not in self.api_costs:
+                        self.api_costs[caller] = 0
+                    self.api_costs[caller] += result["data"]["rateLimit"]["cost"]
 
-            return result["data"]
-        else:
-            data = json.dumps(response.json(), indent=4)
+                return result["data"]
+            elif (
+                response.status_code == 403
+                and "secondary rate limit" in result["message"]
+            ):
+                if retry <= max_retries:
+                    logging.warning("Secondary rate limit reached")
+                    return request_with_retry(retry + 1)
+            elif response.status_code == 502 and "errors" in result:
+                too_many_data = any(
+                    True
+                    for err in result["errors"]
+                    if "message" in err
+                    and "This may be the result of a timeout" in err["message"]
+                )
+                if too_many_data:
+                    logging.warning(
+                        "Too many data is requested, decreasing page size %s by 10%%",
+                        self._max_page_size,
+                    )
+                    self._max_page_size = int(self._max_page_size * 0.9)
+                    return request_with_retry(retry)
+
+            data = json.dumps(result, indent=4)
             raise Exception(f"Query failed with code {response.status_code}:\n{data}")
+
+        return request_with_retry()
