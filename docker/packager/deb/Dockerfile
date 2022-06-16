@@ -79,3 +79,4 @@ RUN ln -s /usr/bin/lld-${LLVM_VERSION} /usr/bin/ld.lld \
 COPY build.sh /
 
 CMD ["/bin/bash", "/build.sh"]
+
