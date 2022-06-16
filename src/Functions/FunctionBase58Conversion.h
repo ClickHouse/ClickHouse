@@ -8,14 +8,12 @@
 #    include <DataTypes/DataTypeString.h>
 #    include <Functions/FunctionFactory.h>
 #    include <Functions/FunctionHelpers.h>
-#    include <Functions/GatherUtils/Algorithms.h>
 #    include <IO/WriteHelpers.h>
 #    include <base_x.hh>
 
 
 namespace DB
 {
-using namespace GatherUtils;
 
 namespace ErrorCodes
 {
@@ -28,14 +26,58 @@ namespace ErrorCodes
 struct Base58Encode
 {
     static constexpr auto name = "base58Encode";
-    static size_t getBufferSize(size_t string_length, size_t string_count)
-    {
-        return ((string_length - string_count) / 3 + string_count) * 4 + string_count;
-    }
 
-    void process(ColumnString source, ColumnString result, std::string alphabet)
+    static void process(const ColumnString * input, ColumnString * dst_column, std::string& alphabet, size_t input_rows_count)
     {
+        auto & dst_data = dst_column->getChars();
+        auto & dst_offsets = dst_column->getOffsets();
 
+        size_t current_allocated_size = input->getChars().size();
+
+        dst_data.resize(current_allocated_size);
+        dst_offsets.resize(input_rows_count);
+
+        const ColumnString::Offsets & src_offsets = input->getOffsets();
+
+        const auto * source = input->getChars().raw_data();
+        auto * dst = dst_data.data();
+        auto * dst_pos = dst;
+
+        size_t src_offset_prev = 0;
+        size_t processed_size = 0;
+
+        const auto& encoder = (alphabet == "bitcoin") ? Base58::bitcoin() :
+                             ((alphabet == "flickr") ? Base58::flickr() :
+                             ((alphabet == "ripple") ? Base58::ripple() : Base58::base58()));
+
+        for (size_t row = 0; row < input_rows_count; ++row)
+        {
+            size_t srclen = src_offsets[row] - src_offset_prev - 1;
+            /// Why we didn't simply operate on char* here?
+            /// We don't know the size of the result string beforehand (it's not byte-to-byte encoding),
+            /// so we may need to do many resizes (the worst case -- we'll do it for each row)
+            /// Using std::string allows to do exponential resizes and one final resize after whole operation is complete
+            std::string encoded;
+            encoder.encode(encoded, source, srclen);
+            size_t outlen = encoded.size();
+
+            if (processed_size + outlen >= current_allocated_size)
+            {
+                current_allocated_size += current_allocated_size;
+                dst_data.resize(current_allocated_size);
+            }
+
+            source += srclen + 1;
+            dst_pos += outlen;
+            *dst_pos = '\0';
+            dst_pos += 1;
+
+            dst_offsets[row] = dst_pos - dst;
+            src_offset_prev = src_offsets[row];
+            processed_size += outlen;
+        }
+
+        dst_data.resize(dst_pos - dst);
     }
 };
 
@@ -123,53 +165,15 @@ public:
             if (!alphabet_column)
                 throw Exception("Second argument for function " + getName() + " must be constant String", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-            if (alphabet = alphabet_column->getValue<DB::String>(); alphabet != "bitcoin" && alphabet != "ripple" && alphabet != "flickr" && alphabet != "gmp")
-                throw Exception("Second argument for function " + getName() + " must be 'bitcoin', 'ripple', 'flickr' or 'gmp'", ErrorCodes::ILLEGAL_COLUMN);
+            if (alphabet = alphabet_column->getValue<DB::String>();
+                alphabet != "bitcoin" && alphabet != "ripple" && alphabet != "flickr" && alphabet != "gmp")
+                throw Exception("Second argument for function " + getName() + " must be 'bitcoin', 'ripple', 'gmp' or 'flickr'", ErrorCodes::ILLEGAL_COLUMN);
 
         }
 
         auto dst_column = ColumnString::create();
-        auto & dst_data = dst_column->getChars();
-        auto & dst_offsets = dst_column->getOffsets();
 
-        size_t reserve = Func::getBufferSize(input->getChars().size(), input->size());
-        dst_data.resize(reserve);
-        dst_offsets.resize(input_rows_count);
-
-        const ColumnString::Offsets & src_offsets = input->getOffsets();
-
-        const auto * source = input->getChars().data();
-        auto * dst = dst_data.data();
-        auto * dst_pos = dst;
-
-        size_t src_offset_prev = 0;
-
-        for (size_t row = 0; row < input_rows_count; ++row)
-        {
-            size_t srclen = src_offsets[row] - src_offset_prev - 1;
-            size_t outlen = 0;
-
-            if constexpr (std::is_same_v<Func, Base58Encode>)
-            {
-                Base58::
-            }
-            else if constexpr (std::is_same_v<Func, Base58Decode>)
-            {
-            }
-            else
-            {
-            }
-
-            source += srclen + 1;
-            dst_pos += outlen;
-            *dst_pos = '\0';
-            dst_pos += 1;
-
-            dst_offsets[row] = dst_pos - dst;
-            src_offset_prev = src_offsets[row];
-        }
-
-        dst_data.resize(dst_pos - dst);
+        Func::process(column_string, dst_column, alphabet, input_rows_count);
 
         return dst_column;
     }
