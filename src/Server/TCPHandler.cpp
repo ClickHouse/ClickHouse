@@ -765,7 +765,7 @@ void TCPHandler::processTablesStatusRequest()
         else
             status.is_replicated = false; //-V1048
 
-        response.table_states_by_id.emplace(table_name, status);
+        response.table_states_by_id.emplace(table_name, std::move(status));
     }
 
 

@@ -12,6 +12,7 @@
 #include <Coordination/pathUtils.h>
 #include <filesystem>
 #include <memory>
+#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -20,6 +21,7 @@ namespace ErrorCodes
 {
     extern const int UNKNOWN_FORMAT_VERSION;
     extern const int UNKNOWN_SNAPSHOT;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace
@@ -151,7 +153,7 @@ void KeeperStorageSnapshot::serialize(const KeeperStorageSnapshot & snapshot, Wr
 
     /// Better to sort before serialization, otherwise snapshots can be different on different replicas
     std::vector<std::pair<int64_t, Coordination::ACLs>> sorted_acl_map(snapshot.acl_map.begin(), snapshot.acl_map.end());
-    std::sort(sorted_acl_map.begin(), sorted_acl_map.end());
+    ::sort(sorted_acl_map.begin(), sorted_acl_map.end());
     /// Serialize ACLs map
     writeBinary(sorted_acl_map.size(), out);
     for (const auto & [acl_id, acls] : sorted_acl_map)
@@ -193,7 +195,7 @@ void KeeperStorageSnapshot::serialize(const KeeperStorageSnapshot & snapshot, Wr
     /// Session must be saved in a sorted order,
     /// otherwise snapshots will be different
     std::vector<std::pair<int64_t, int64_t>> sorted_session_and_timeout(snapshot.session_and_timeout.begin(), snapshot.session_and_timeout.end());
-    std::sort(sorted_session_and_timeout.begin(), sorted_session_and_timeout.end());
+    ::sort(sorted_session_and_timeout.begin(), sorted_session_and_timeout.end());
 
     /// Serialize sessions
     size_t size = sorted_session_and_timeout.size();
@@ -295,6 +297,25 @@ void KeeperStorageSnapshot::deserialize(SnapshotDeserializationResult & deserial
             storage.container.updateValue(parent_path, [path = itr.key] (KeeperStorage::Node & value) { value.addChild(getBaseName(path)); });
         }
     }
+
+    for (const auto & itr : storage.container)
+    {
+        if (itr.key != "/")
+        {
+            if (itr.value.stat.numChildren != static_cast<int32_t>(itr.value.getChildren().size()))
+            {
+#ifdef NDEBUG
+                /// TODO (alesapin) remove this, it should be always CORRUPTED_DATA.
+                LOG_ERROR(&Poco::Logger::get("KeeperSnapshotManager"), "Children counter in stat.numChildren {}"
+                            " is different from actual children size {} for node {}", itr.value.stat.numChildren, itr.value.getChildren().size(), itr.key);
+#else
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Children counter in stat.numChildren {}"
+                            " is different from actual children size {} for node {}", itr.value.stat.numChildren, itr.value.getChildren().size(), itr.key);
+#endif
+            }
+        }
+    }
+
 
     size_t active_sessions_size;
     readBinary(active_sessions_size, in);
