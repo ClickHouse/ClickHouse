@@ -98,6 +98,7 @@ namespace ErrorCodes
     extern const int SAMPLING_NOT_SUPPORTED;
     extern const int ILLEGAL_FINAL;
     extern const int ILLEGAL_PREWHERE;
+    extern const int TOO_DEEP_PIPELINE;
     extern const int TOO_MANY_COLUMNS;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
@@ -450,6 +451,15 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
     auto analyze = [&] (bool try_move_to_prewhere)
     {
+        if (context->hasQueryContext())
+        {
+            size_t & current_query_analyze_count = context->getQueryContext()->kitchen_sink.analyze_counter;
+            current_query_analyze_count++;
+            if (current_query_analyze_count >= settings.max_pipeline_depth)
+                throw DB::Exception(ErrorCodes::TOO_DEEP_PIPELINE, "Query analyze overflow. Try to increase `max_pipeline_depth` or simplify the query" );
+        }
+
+
         /// Allow push down and other optimizations for VIEW: replace with subquery and rewrite it.
         ASTPtr view_table;
         if (view)
