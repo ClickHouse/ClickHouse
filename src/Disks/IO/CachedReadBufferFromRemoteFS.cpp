@@ -55,6 +55,8 @@ CachedReadBufferFromRemoteFS::CachedReadBufferFromRemoteFS(
     , query_id(query_id_)
     , enable_logging(!query_id.empty() && settings_.enable_filesystem_cache_log)
     , current_buffer_id(getRandomASCIIString(8))
+    , query_context_holder(cache_->getQueryContextHolder(query_id, settings_))
+    , is_persistent(false) /// Unused for now, see PR 36171
 {
 }
 
@@ -101,7 +103,7 @@ void CachedReadBufferFromRemoteFS::initialize(size_t offset, size_t size)
     }
     else
     {
-        file_segments_holder.emplace(cache->getOrSet(cache_key, offset, size));
+        file_segments_holder.emplace(cache->getOrSet(cache_key, offset, size, is_persistent));
     }
 
     /**
@@ -119,7 +121,7 @@ void CachedReadBufferFromRemoteFS::initialize(size_t offset, size_t size)
 
 SeekableReadBufferPtr CachedReadBufferFromRemoteFS::getCacheReadBuffer(size_t offset) const
 {
-    auto path = cache->getPathInLocalCache(cache_key, offset);
+    auto path = cache->getPathInLocalCache(cache_key, offset, is_persistent);
 
     ReadSettings local_read_settings{settings};
     /// Do not allow to use asynchronous version of LocalFSReadMethod.
