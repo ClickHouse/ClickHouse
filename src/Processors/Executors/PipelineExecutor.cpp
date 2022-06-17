@@ -239,8 +239,11 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, std::atomic_bool * yie
                 tasks.pushTasks(queue, async_queue, context);
             }
 
-            // Upscale if possible
-            spawnThreads();
+            if (!tasks.isFinished() && !checkTimeLimitSoft())
+            {
+                // Upscale if possible
+                spawnThreads();
+            }
 
 #ifndef NDEBUG
             context.processing_time_ns += processing_time_watch.elapsed();
