@@ -4,7 +4,7 @@ CREATE TABLE nested_name_tuples
 )
 ENGINE = Memory;
 
-INSERT INTO nested_name_tuples VALUS(('asd', (12, 'ddd')));
+INSERT INTO nested_name_tuples VALUES(('asd', (12, 'ddd')));
 
 SELECT t.a.y.i FROM nested_name_tuples as t;
 SELECT nested_name_tuples.a.y.i FROM nested_name_tuples as t;
