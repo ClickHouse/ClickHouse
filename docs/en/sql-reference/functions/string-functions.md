@@ -273,16 +273,16 @@ Converts ASCII Latin symbols in a string to uppercase.
 ## lowerUTF8 {#lowerutf8}
 
 Converts a string to lowercase, assuming the string contains a set of bytes that make up a UTF-8 encoded text.
-It does not detect the language. So for Turkish the result might not be exactly correct.
+It does not detect the language. E.g. for Turkish the result might not be exactly correct (i/İ vs. i/I).
 If the length of the UTF-8 byte sequence is different for upper and lower case of a code point, the result may be incorrect for this code point.
-If the string contains a set of bytes that is not UTF-8, then the behavior is undefined.
+If the string contains a sequence of bytes that are not valid UTF-8, then the behavior is undefined.
 
 ## upperUTF8 {#upperutf8}
 
 Converts a string to uppercase, assuming the string contains a set of bytes that make up a UTF-8 encoded text.
-It does not detect the language. So for Turkish the result might not be exactly correct.
+It does not detect the language. E.g. for Turkish the result might not be exactly correct (i/İ vs. i/I).
 If the length of the UTF-8 byte sequence is different for upper and lower case of a code point, the result may be incorrect for this code point.
-If the string contains a set of bytes that is not UTF-8, then the behavior is undefined.
+If the string contains a sequence of bytes that are not valid UTF-8, then the behavior is undefined.
 
 ## isValidUTF8 {#isvalidutf8}
 
