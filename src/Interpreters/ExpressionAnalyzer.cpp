@@ -1045,9 +1045,13 @@ static std::shared_ptr<IJoin> chooseJoinAlgorithm(std::shared_ptr<TableJoin> ana
     if (analyzed_join->tryInitDictJoin(sample_block, context))
         return std::make_shared<HashJoin>(analyzed_join, sample_block);
 
-    if (analyzed_join->forceGraceHashJoin())
-        return std::make_shared<GraceHashJoin>(context, analyzed_join, sample_block);
     bool allow_merge_join = analyzed_join->allowMergeJoin();
+    auto make_merge_join = [analyzed_join, sample_block] { return std::make_shared<MergeJoin>(analyzed_join, sample_block); };
+
+    if (analyzed_join->allowGraceHashJoin())
+    {
+        return std::make_shared<GraceHashJoin>(context, analyzed_join, sample_block);
+    }
     if (analyzed_join->forceHashJoin() || (analyzed_join->preferMergeJoin() && !allow_merge_join))
     {
         if (analyzed_join->allowParallelHashJoin())
@@ -1057,8 +1061,8 @@ static std::shared_ptr<IJoin> chooseJoinAlgorithm(std::shared_ptr<TableJoin> ana
         return std::make_shared<HashJoin>(analyzed_join, sample_block);
     }
     else if (analyzed_join->forceMergeJoin() || (analyzed_join->preferMergeJoin() && allow_merge_join))
-        return std::make_shared<MergeJoin>(analyzed_join, sample_block);
-    return std::make_shared<JoinSwitcher>(analyzed_join, sample_block);
+        return make_merge_join();
+    return std::make_shared<JoinSwitcher>(analyzed_join, sample_block, make_merge_join);
 }
 
 static std::unique_ptr<QueryPlan> buildJoinedPlan(
