@@ -112,16 +112,16 @@ public:
 
     int getServerID() const { return server_id; }
 
-    struct LeaderInfo
+    struct NodeInfo
     {
         uint64_t term;
         uint64_t last_committed_index;
 
-        bool operator==(const LeaderInfo &) const = default;
+        bool operator==(const NodeInfo &) const = default;
     };
 
     RaftAppendResult getLeaderInfo();
-    LeaderInfo getCurrentState();
+    NodeInfo getNodeInfo();
 
     /// Get configuration diff between current configuration in RAFT and in XML file
     ConfigUpdateActions getConfigurationDiff(const Poco::Util::AbstractConfiguration & config);
@@ -129,7 +129,6 @@ public:
     /// Apply action for configuration update. Actually call raft_instance->remove_srv or raft_instance->add_srv.
     /// Synchronously check for update results with retries.
     void applyConfigurationUpdate(const ConfigUpdateAction & task);
-
 
     /// Wait configuration update for action. Used by followers.
     /// Return true if update was successfully received.
@@ -140,9 +139,9 @@ public:
 namespace std {
 
   template <>
-  struct hash<DB::KeeperServer::LeaderInfo>
+  struct hash<DB::KeeperServer::NodeInfo>
   {
-    size_t operator()(const DB::KeeperServer::LeaderInfo & info) const
+    size_t operator()(const DB::KeeperServer::NodeInfo & info) const
     {
         SipHash hash_state;
         hash_state.update(info.term);

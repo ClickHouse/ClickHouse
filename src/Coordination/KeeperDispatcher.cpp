@@ -250,7 +250,7 @@ bool KeeperDispatcher::putRequest(const Coordination::ZooKeeperRequestPtr & requ
 
         auto & leader_info_ctx = leader_info_result->get();
 
-        /// If we get some errors, than send them to clients
+        /// If we get some errors, then send them to clients
         if (!leader_info_result->get_accepted() || leader_info_result->get_result_code() == nuraft::cmd_result_code::TIMEOUT)
         {
             addErrorResponses({ request_info }, Coordination::Error::ZOPERATIONTIMEOUT);
@@ -262,18 +262,18 @@ bool KeeperDispatcher::putRequest(const Coordination::ZooKeeperRequestPtr & requ
             return false;
         }
 
-        KeeperServer::LeaderInfo leader_info;
+        KeeperServer::NodeInfo leader_info;
         leader_info.term = leader_info_ctx->get_ulong();
         leader_info.last_committed_index = leader_info_ctx->get_ulong();
         LOG_INFO(log, "Leader is {}, idx {}", leader_info.term, leader_info.last_committed_index);
 
-        auto current_status = server->getCurrentState();
-        LOG_INFO(log, "Current is {}, idx {}", current_status.term, current_status.last_committed_index);
+        auto node_info = server->getNodeInfo();
+        LOG_INFO(log, "Current is {}, idx {}", node_info.term, node_info.last_committed_index);
 
-        if (current_status.term < leader_info.term || current_status.last_committed_index < leader_info.last_committed_index)
+        if (node_info.term < leader_info.term || node_info.last_committed_index < leader_info.last_committed_index)
         {
             std::lock_guard lock(leader_waiter_mutex);
-            leader_waiters[leader_info].push_back(std::move(request_info));
+            leader_waiters[node_info].push_back(std::move(request_info));
             return true;
         }
     }
@@ -624,12 +624,8 @@ void KeeperDispatcher::updateConfigurationThread()
     }
 }
 
-<<<<<<< HEAD
-=======
-void KeeperDispatcher::onRequestCommit(KeeperStorage::RequestForSession & request_for_session, uint64_t log_idx)
+void KeeperDispatcher::onRequestCommit(KeeperStorage::RequestForSession & /* request_for_session */, uint64_t log_idx)
 {
-    const auto committed_zxid = request_for_session.zxid;
-
     const auto process_requests = [this](auto & request_queue)
     {
         for (auto & request_info : request_queue)
@@ -653,28 +649,12 @@ void KeeperDispatcher::onRequestCommit(KeeperStorage::RequestForSession & reques
 
         request_queue.clear();
     };
-    {
-        std::lock_guard lock(session_waiter_mutex);
-
-        for (auto it = session_waiters.begin(); it != session_waiters.end();)
-        {
-            auto & [session_id, session_waiter] = *it;
-
-            if (session_waiter.wait_for_zxid <= committed_zxid)
-            {
-                process_requests(session_waiter.request_queue);
-                it = session_waiters.erase(it);
-            }
-            else
-                ++it;
-        }
-    }
 
     {
         std::lock_guard lock(leader_waiter_mutex);
-        auto current_status = server->getCurrentState();
+        auto current_status = server->getNodeInfo();
         LOG_INFO(log, "Got term {}, idx {}", current_status.term, log_idx);
-        auto request_queue_it = leader_waiters.find(KeeperServer::LeaderInfo{.term = current_status.term, .last_committed_index = log_idx});
+        auto request_queue_it = leader_waiters.find(KeeperServer::NodeInfo{.term = current_status.term, .last_committed_index = log_idx});
         if (request_queue_it != leader_waiters.end())
         {
             process_requests(request_queue_it->second);
@@ -683,7 +663,6 @@ void KeeperDispatcher::onRequestCommit(KeeperStorage::RequestForSession & reques
     }
 }
 
->>>>>>> Initial version for linearizable reads
 bool KeeperDispatcher::isServerActive() const
 {
     return checkInit() && hasLeader() && !server->isRecovering();
