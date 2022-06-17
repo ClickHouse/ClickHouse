@@ -4,6 +4,7 @@
 #include <Parsers/ASTAlterQuery.h>
 #include <Common/quoteString.h>
 
+
 namespace DB
 {
 namespace ErrorCodes
@@ -100,9 +101,7 @@ const char * ASTAlterCommand::typeToString(ASTAlterCommand::Type type)
         case REMOVE_TTL: return "REMOVE_TTL";
         case REMOVE_SAMPLE_BY: return "REMOVE_SAMPLE_BY";
         case ADD_INDEX: return "ADD_INDEX";
-        case STD_CREATE_INDEX: return "ADD_INDEX";
         case DROP_INDEX: return "DROP_INDEX";
-        case STD_DROP_INDEX: return "DROP_INDEX";
         case MATERIALIZE_INDEX: return "MATERIALIZE_INDEX";
         case ADD_CONSTRAINT: return "ADD_CONSTRAINT";
         case DROP_CONSTRAINT: return "DROP_CONSTRAINT";
@@ -229,15 +228,6 @@ void ASTAlterCommand::formatImpl(const FormatSettings & settings, FormatState & 
             index->formatImpl(settings, state, frame);
         }
     }
-    else if (type == ASTAlterCommand::STD_CREATE_INDEX)
-    {
-        auto name = index_decl->as<ASTIndexDeclaration>()->name;
-        index_decl->as<ASTIndexDeclaration>()->name = "";
-
-        index_decl->formatImpl(settings, state, frame);
-
-        index_decl->as<ASTIndexDeclaration>()->name = name;
-    }
     else if (type == ASTAlterCommand::DROP_INDEX)
     {
         settings.ostr << (settings.hilite ? hilite_keyword : "") << (clear_index ? "CLEAR " : "DROP ") << "INDEX "
@@ -247,14 +237,6 @@ void ASTAlterCommand::formatImpl(const FormatSettings & settings, FormatState & 
         {
             settings.ostr << (settings.hilite ? hilite_keyword : "") << " IN PARTITION " << (settings.hilite ? hilite_none : "");
             partition->formatImpl(settings, state, frame);
-        }
-    }
-    else if (type == ASTAlterCommand::STD_DROP_INDEX)
-    {
-        if (settings.is_translate)
-        {
-            settings.ostr << "DROP INDEX " << (if_exists ? "IF EXISTS " : "") << (settings.hilite ? hilite_none : "");
-            index->formatImpl(settings, state, frame);
         }
     }
     else if (type == ASTAlterCommand::MATERIALIZE_INDEX)
@@ -581,20 +563,7 @@ void ASTAlterQuery::formatQueryImpl(const FormatSettings & settings, FormatState
     switch (alter_object)
     {
         case AlterObjectType::TABLE:
-            if (command_type == ASTAlterCommand::Type::STD_CREATE_INDEX)
-            {
-                settings.ostr << "CREATE INDEX " << (if_not_exists ? "IF NOT EXISTS " : "");
-                index_name->formatImpl(settings, state, frame);
-                settings.ostr << " ON ";
-            }
-            else if (command_type == ASTAlterCommand::Type::STD_DROP_INDEX)
-            {
-                settings.ostr << "DROP INDEX " << (if_exists ? "IF EXISTS " : "");
-                index_name->formatImpl(settings, state, frame);
-                settings.ostr << " ON ";
-            }
-            else
-                settings.ostr << "ALTER TABLE ";
+            settings.ostr << "ALTER TABLE ";
             break;
         case AlterObjectType::DATABASE:
             settings.ostr << "ALTER DATABASE ";
@@ -627,13 +596,6 @@ void ASTAlterQuery::formatQueryImpl(const FormatSettings & settings, FormatState
     FormatStateStacked frame_nested = frame;
     frame_nested.need_parens = false;
     frame_nested.expression_list_always_start_on_new_line = true;
-
-    if ((command_type == ASTAlterCommand::Type::STD_CREATE_INDEX) || (command_type == ASTAlterCommand::Type::STD_DROP_INDEX))
-    {
-        frame_nested.expression_list_always_start_on_new_line = false;
-        settings.ostr << " ";
-    }
-
     static_cast<ASTExpressionList *>(command_list)->formatImplMultiline(settings, state, frame_nested);
 }
 

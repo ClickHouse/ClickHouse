@@ -30,8 +30,6 @@ namespace DB
   *     [MATERIALIZE INDEX [IF EXISTS] index_name [IN PARTITION partition]]
   * ALTER LIVE VIEW [db.name]
   *     [REFRESH]
-  *
-  * DROP INDEX [IF EXISTS] name on [db].name
   */
 
 class ParserAlterQuery : public IParserBase
@@ -50,10 +48,9 @@ protected:
 
 public:
     ASTAlterQuery::AlterObjectType alter_object;
-    ASTAlterCommand::Type  command_type;
 
-    ParserAlterCommandList(ASTAlterQuery::AlterObjectType alter_object_ = ASTAlterQuery::AlterObjectType::TABLE, ASTAlterCommand::Type command_type_= ASTAlterCommand::NO_TYPE)
-            : alter_object(alter_object_), command_type(command_type_) {}
+    ParserAlterCommandList(ASTAlterQuery::AlterObjectType alter_object_ = ASTAlterQuery::AlterObjectType::TABLE)
+        : alter_object(alter_object_) {}
 };
 
 
@@ -65,10 +62,9 @@ protected:
 
 public:
     ASTAlterQuery::AlterObjectType alter_object;
-    ASTAlterCommand::Type  command_type;
 
-    ParserAlterCommand(ASTAlterQuery::AlterObjectType alter_object_ = ASTAlterQuery::AlterObjectType::TABLE, ASTAlterCommand::Type command_type_= ASTAlterCommand::NO_TYPE)
-            : alter_object(alter_object_), command_type(command_type_) {}
+    ParserAlterCommand(ASTAlterQuery::AlterObjectType alter_object_ = ASTAlterQuery::AlterObjectType::TABLE)
+        : alter_object(alter_object_) {}
 };
 
 

@@ -8,10 +8,10 @@ namespace DB
 
 class Context;
 
-class InterpreterCreateIndexQuery : public IInterpreter, WithContext
+class InterpreterDropIndexQuery : public IInterpreter, WithContext
 {
 public:
-    InterpreterCreateIndexQuery(const ASTPtr & query_ptr_, ContextPtr context_)
+    InterpreterDropIndexQuery(const ASTPtr & query_ptr_, ContextPtr context_)
         : WithContext(context_)
         , query_ptr(query_ptr_) {}
 

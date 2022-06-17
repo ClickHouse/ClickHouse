@@ -7,7 +7,6 @@
 #include <Parsers/ParserPartition.h>
 #include <Parsers/ParserSelectWithUnionQuery.h>
 #include <Parsers/ParserSetQuery.h>
-#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTAlterQuery.h>
@@ -157,11 +156,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
             break;
         case ASTAlterQuery::AlterObjectType::TABLE:
         {
-            if (command_type == ASTAlterCommand::STD_DROP_INDEX)
-            {
-                command->type = ASTAlterCommand::STD_DROP_INDEX;
-            }
-            else if (s_add_column.ignore(pos, expected))
+            if (s_add_column.ignore(pos, expected))
             {
                 if (s_if_not_exists.ignore(pos, expected))
                     command->if_not_exists = true;
@@ -830,7 +825,7 @@ bool ParserAlterCommandList::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     node = command_list;
 
     ParserToken s_comma(TokenType::Comma);
-    ParserAlterCommand p_command(alter_object, command_type);
+    ParserAlterCommand p_command(alter_object);
 
     do
     {
@@ -853,29 +848,10 @@ bool ParserAlterQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserKeyword s_alter_table("ALTER TABLE");
     ParserKeyword s_alter_live_view("ALTER LIVE VIEW");
     ParserKeyword s_alter_database("ALTER DATABASE");
-    ParserKeyword s_drop_index("DROP INDEX");
-    ParserKeyword s_on("ON");
-    ParserKeyword s_if_exists("IF EXISTS");
-
-    ParserCompoundIdentifier parser_name;
 
     ASTAlterQuery::AlterObjectType alter_object_type;
 
-    if (s_drop_index.ignore(pos, expected))
-    {
-        alter_object_type = ASTAlterQuery::AlterObjectType::TABLE;
-        if (s_if_exists.ignore(pos, expected))
-            query->if_exists = true;
-
-        if (!parser_name.parse(pos, query->index_name, expected))
-            return false;
-
-        if (!s_on.ignore(pos, expected))
-            return false;
-
-        query->command_type = ASTAlterCommand::STD_DROP_INDEX;
-    }
-    else if (s_alter_table.ignore(pos, expected))
+    if (s_alter_table.ignore(pos, expected))
     {
         alter_object_type = ASTAlterQuery::AlterObjectType::TABLE;
     }
@@ -909,29 +885,10 @@ bool ParserAlterQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         query->cluster = cluster_str;
     }
 
-    ParserAlterCommandList p_command_list(alter_object_type, query->command_type);
+    ParserAlterCommandList p_command_list(alter_object_type);
     ASTPtr command_list;
     if (!p_command_list.parse(pos, command_list, expected))
         return false;
-
-    /// Set the index_name and exists flags for CREATE and DROP INDEX
-    if (query->command_type == ASTAlterCommand::STD_CREATE_INDEX)
-    {
-        ASTAlterCommand * command_ast = command_list->as<ASTExpressionList>()->children[0]->as<ASTAlterCommand>();
-
-        command_ast->if_not_exists = query->if_not_exists;
-
-        auto & ast_index_decl = command_ast->index_decl->as<ASTIndexDeclaration &>();
-        ast_index_decl.name = query->index_name->as<ASTIdentifier &>().name();
-
-    }
-    else if (query->command_type == ASTAlterCommand::STD_DROP_INDEX)
-    {
-        ASTAlterCommand * command_ast = command_list->as<ASTExpressionList>()->children[0]->as<ASTAlterCommand>();
-
-        command_ast->if_exists = query->if_exists;
-        command_ast->as<ASTAlterCommand>()->index = query->index_name;
-    }
 
     query->set(query->command_list, command_list);
     query->alter_object = alter_object_type;

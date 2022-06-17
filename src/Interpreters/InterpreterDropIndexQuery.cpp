@@ -1,12 +1,10 @@
-#include <Interpreters/InterpreterCreateIndexQuery.h>
-
 #include <Access/ContextAccess.h>
 #include <Databases/DatabaseReplicated.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
-#include <Parsers/ASTCreateIndexQuery.h>
+#include <Interpreters/InterpreterDropIndexQuery.h>
+#include <Parsers/ASTDropIndexQuery.h>
 #include <Parsers/ASTIdentifier.h>
-#include <Parsers/ASTIndexDeclaration.h>
 #include <Storages/AlterCommands.h>
 
 namespace DB
@@ -18,14 +16,14 @@ namespace ErrorCodes
 }
 
 
-BlockIO InterpreterCreateIndexQuery::execute()
+BlockIO InterpreterDropIndexQuery::execute()
 {
-    const auto & create_index = query_ptr->as<ASTCreateIndexQuery &>();
+    const auto & drop_index = query_ptr->as<ASTDropIndexQuery &>();
 
     AccessRightsElements required_access;
-    required_access.emplace_back(AccessType::ALTER_ADD_INDEX, create_index.getDatabase(), create_index.getTable());
+    required_access.emplace_back(AccessType::ALTER_DROP_INDEX, drop_index.getDatabase(), drop_index.getTable());
 
-    if (!create_index.cluster.empty())
+    if (!drop_index.cluster.empty())
     {
         DDLQueryOnClusterParams params;
         params.access_to_check = std::move(required_access);
@@ -33,8 +31,8 @@ BlockIO InterpreterCreateIndexQuery::execute()
     }
 
     getContext()->checkAccess(required_access);
-    auto table_id = getContext()->resolveStorageID(create_index, Context::ResolveOrdinary);
-    query_ptr->as<ASTCreateIndexQuery &>().setDatabase(table_id.database_name);
+    auto table_id = getContext()->resolveStorageID(drop_index, Context::ResolveOrdinary);
+    query_ptr->as<ASTDropIndexQuery &>().setDatabase(table_id.database_name);
 
     DatabasePtr database = DatabaseCatalog::instance().getDatabase(table_id.database_name);
     if (typeid_cast<DatabaseReplicated *>(database.get())
@@ -49,18 +47,14 @@ BlockIO InterpreterCreateIndexQuery::execute()
     if (table->isStaticStorage())
         throw Exception(ErrorCodes::TABLE_IS_READ_ONLY, "Table is read-only");
 
-    /// Convert ASTCreateIndexQuery to AlterCommand.
+    /// Convert ASTDropIndexQuery to AlterCommand.
     AlterCommands alter_commands;
 
     AlterCommand command;
-    command.index_decl = create_index.index_decl;
-    command.type = AlterCommand::ADD_INDEX;
-    command.index_name = create_index.index_name->as<ASTIdentifier &>().name();
-    command.if_not_exists = create_index.if_not_exists;
-
-    /// Fill name in ASTIndexDeclaration
-    auto & ast_index_decl = command.index_decl->as<ASTIndexDeclaration &>();
-    ast_index_decl.name = command.index_name;
+    command.ast = drop_index.convertToASTAlterCommand();
+    command.type = AlterCommand::DROP_INDEX;
+    command.index_name = drop_index.index_name->as<ASTIdentifier &>().name();
+    command.if_exists = drop_index.if_exists;
 
     alter_commands.emplace_back(std::move(command));
 

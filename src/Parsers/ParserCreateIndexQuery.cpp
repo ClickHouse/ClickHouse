@@ -70,7 +70,7 @@ bool ParserCreateIndexQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expect
     String cluster_str;
     bool if_not_exists = false;
 
-    if (!s_create.ignore(pos, expected))    
+    if (!s_create.ignore(pos, expected))
         return false;
 
     if (!s_index.ignore(pos, expected))
