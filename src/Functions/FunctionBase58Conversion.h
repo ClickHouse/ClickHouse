@@ -58,7 +58,8 @@ struct Base58Encode
             /// so we may need to do many resizes (the worst case -- we'll do it for each row)
             /// This way we do exponential resizes and one final resize after whole operation is complete
             std::string encoded;
-            encoder.encode(encoded, source, srclen);
+            if (srclen)
+                encoder.encode(encoded, source, srclen);
             size_t outlen = encoded.size();
 
             if (processed_size + outlen >= current_allocated_size)
@@ -66,10 +67,13 @@ struct Base58Encode
                 current_allocated_size += current_allocated_size;
                 dst_data.resize(current_allocated_size);
             }
-            std::strcpy(reinterpret_cast<char *>(dst_pos), encoded.c_str());
+            if (srclen)
+                std::strcpy(reinterpret_cast<char *>(dst_pos), encoded.c_str());
 
             source += srclen + 1;
-            dst_pos += outlen + 1;
+            dst_pos += outlen;
+            *dst_pos = '\0';
+            dst_pos += 1;
 
             dst_offsets[row] = dst_pos - dst;
             src_offset_prev = src_offsets[row];
@@ -127,7 +131,9 @@ struct Base58Decode
             std::strcpy(reinterpret_cast<char *>(dst_pos), decoded.c_str());
 
             source += srclen + 1;
-            dst_pos += outlen + 1;
+            dst_pos += outlen;
+            *dst_pos = '\0';
+            dst_pos += 1;
 
             dst_offsets[row] = dst_pos - dst;
             src_offset_prev = src_offsets[row];
@@ -176,7 +182,7 @@ public:
                 "Illegal type " + arguments[0].type->getName() + " of 1st argument of function " + getName() + ". Must be String.",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-        if (!isString(arguments[1].type))
+        if (arguments.size() == 2 && !isString(arguments[1].type))
             throw Exception(
                 "Illegal type " + arguments[1].type->getName() + " of 2nd argument of function " + getName() + ". Must be String.",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
