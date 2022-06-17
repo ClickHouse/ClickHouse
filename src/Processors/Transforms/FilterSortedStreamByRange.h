@@ -8,9 +8,9 @@
 namespace DB
 {
 
-/// Could be used when the predicate given by expression_ is true only on one continuous range of values and input is monotonous by that value.
-/// The following optimization applies: when a new chunk of data comes in we firstly execute the expression_ only on the first and the last row.
-/// If it evaluates to true on both rows then the whole chunk is immediately passed to further steps.
+/// Could be used when the predicate given by expression_ is true only on the one continuous range of input rows.
+/// The following optimization applies: when a new chunk of data comes in, we firstly execute the expression_ only on the first and the last row -
+/// if it evaluates to true on both rows then the whole chunk is immediately passed to further steps.
 /// Otherwise, we apply the expression_ to all rows.
 class FilterSortedStreamByRange : public ISimpleTransform
 {
@@ -33,7 +33,7 @@ public:
 
     void transform(Chunk & chunk) override
     {
-        int rows_before_filtration = chunk.getNumRows();
+        const UInt64 rows_before_filtration = chunk.getNumRows();
         if (rows_before_filtration < 2)
         {
             filter_transform.transform(chunk);
@@ -41,10 +41,10 @@ public:
         }
 
         // Evaluate expression on just the first and the last row.
-        // If both of them satisfies conditions, than skip calculation for all the rows in between.
+        // If both of them satisfies conditions, then skip calculation for all the rows in between.
         auto quick_check_columns = chunk.cloneEmptyColumns();
         auto src_columns = chunk.detachColumns();
-        for (auto row : {0, rows_before_filtration - 1})
+        for (auto row : {static_cast<UInt64>(0), rows_before_filtration - 1})
             for (size_t col = 0; col < quick_check_columns.size(); ++col)
                 quick_check_columns[col]->insertFrom(*src_columns[col].get(), row);
         chunk.setColumns(std::move(quick_check_columns), 2);

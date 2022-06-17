@@ -696,10 +696,10 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
 
             if (num_streams > 1 && metadata_for_reading->hasPrimaryKey())
             {
-                // Let's split parts into layers to ensure data parallelism of final.
+                // Let's split parts into layers to ensure data parallelism of FINAL.
                 auto reading_step_getter = [this, &column_names, &info](auto parts)
                 {
-                    return read(
+                    return this->read(
                         std::move(parts),
                         column_names,
                         ReadFromMergeTree::ReadType::InOrder,
