@@ -698,18 +698,13 @@ std::vector<size_t> ArrowColumnToCHColumn::getMissingColumns(const arrow::Schema
     for (size_t i = 0, columns = header.columns(); i < columns; ++i)
     {
         const auto & header_column = header.getByPosition(i);
-        bool read_from_nested = false;
         if (!block_from_arrow.has(header_column.name, case_insensitive_matching))
         {
-            if (import_nested && nested_columns_extractor.extractColumn(header_column.name))
-                read_from_nested = true;
-
-            if (!read_from_nested)
+            if (!import_nested || !nested_columns_extractor.extractColumn(header_column.name))
             {
                 if (!allow_missing_columns)
                     throw Exception{ErrorCodes::THERE_IS_NO_COLUMN, "Column '{}' is not presented in input data.", header_column.name};
-
-                missing_columns.push_back(i);
+                missing_columns.push_back(i); 
             }
         }
     }
