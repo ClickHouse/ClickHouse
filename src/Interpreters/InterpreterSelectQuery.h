@@ -191,6 +191,7 @@ private:
     void
     executeMergeSorted(QueryPlan & query_plan, const SortDescription & sort_description, UInt64 limit, const std::string & description);
     void executePutInCache(QueryPlan & query_plan, CacheKey cache_key);
+    bool executeReadFromCache(QueryPlan & query_plan, CacheKey cache_key);
 
     String generateFilterActions(ActionsDAGPtr & actions, const Names & prerequisite_columns = {}) const;
 
