@@ -51,12 +51,17 @@ namespace
             return fmt::format("tmp_{}_gracejoinbuf_{}_{}_", context->getCurrentQueryId(), suffix, index);
         }
 
+        static CompressionCodecPtr getCompressionCodec(TableJoin & join)
+        {
+            return CompressionCodecFactory::instance().get(join.temporaryFilesCodec(), std::nullopt);
+        }
+
     public:
-        explicit FileBlockWriter(ContextPtr context, DiskPtr disk_, JoinTableSide side, size_t index)
-            : disk{std::move(disk_)}
+        explicit FileBlockWriter(ContextPtr context, TableJoin & join, JoinTableSide side, size_t index)
+            : disk{join.getTemporaryVolume()->getDisk()}
             , file{disk, buildTemporaryFilePrefix(context, side, index), true}
-            , file_writer{disk->writeFile(file.getPath())}
-            , compressed_writer{*file_writer}
+            , file_writer{disk->writeFile(file.getPath(), context->getSettingsRef().grace_hash_join_buffer_size)}
+            , compressed_writer{*file_writer, getCompressionCodec(join), context->getSettingsRef().grace_hash_join_buffer_size}
         {
         }
 
@@ -119,8 +124,8 @@ class GraceHashJoin::FileBucket
 public:
     explicit FileBucket(ContextPtr context_, TableJoin & join, size_t bucket_index_, const FileBucket * parent_)
         : bucket_index{bucket_index_}
-        , left_file{context_, join.getTemporaryVolume()->getDisk(), JoinTableSide::Left, bucket_index}
-        , right_file{context_, join.getTemporaryVolume()->getDisk(), JoinTableSide::Right, bucket_index}
+        , left_file{context_, join, JoinTableSide::Left, bucket_index}
+        , right_file{context_, join, JoinTableSide::Right, bucket_index}
         , parent{parent_}
         , state{State::WRITING_BLOCKS}
     {

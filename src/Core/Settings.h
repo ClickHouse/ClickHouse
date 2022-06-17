@@ -602,6 +602,7 @@ static constexpr UInt64 operator""_GiB(unsigned long long value)
     M(Bool, compatibility_ignore_auto_increment_in_create_table, false, "Ignore AUTO_INCREMENT keyword in column declaration if true, otherwise return error. It simplifies migration from MySQL", 0) \
     M(UInt64, grace_hash_join_initial_buckets, 256, "Initial number of grace hash join buckets", 0) \
     M(UInt64, grace_hash_join_max_buckets, 65536, "Limit on the number of grace hash join buckets", 0) \
+    M(UInt64, grace_hash_join_buffer_size, DBMS_DEFAULT_BUFFER_SIZE, "Buffer size for grace hash join temporary files. It makes sense to use smaller values, especially for SSDs, to save memory", 0) \
     // End of COMMON_SETTINGS
     // Please add settings related to formats into the FORMAT_FACTORY_SETTINGS and move obsolete settings to OBSOLETE_SETTINGS.
 
