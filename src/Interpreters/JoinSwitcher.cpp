@@ -1,17 +1,17 @@
 #include <Common/typeid_cast.h>
 #include <Interpreters/JoinSwitcher.h>
 #include <Interpreters/HashJoin.h>
-#include <Interpreters/MergeJoin.h>
 #include <Interpreters/join_common.h>
 
 namespace DB
 {
 
-JoinSwitcher::JoinSwitcher(std::shared_ptr<TableJoin> table_join_, const Block & right_sample_block_)
+JoinSwitcher::JoinSwitcher(std::shared_ptr<TableJoin> table_join_, const Block & right_sample_block_, OnDiskJoinFactory factory)
     : limits(table_join_->sizeLimits())
     , switched(false)
     , table_join(table_join_)
     , right_sample_block(right_sample_block_.cloneEmpty())
+    , make_on_disk_join(std::move(factory))
 {
     join = std::make_shared<HashJoin>(table_join, right_sample_block);
 
@@ -44,7 +44,7 @@ void JoinSwitcher::switchJoin()
     BlocksList right_blocks = std::move(hash_join).releaseJoinedBlocks();
 
     /// Destroy old join & create new one.
-    join = std::make_shared<MergeJoin>(table_join, right_sample_block);
+    join = make_on_disk_join();
 
     for (const Block & saved_block : right_blocks)
     {

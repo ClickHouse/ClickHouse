@@ -413,6 +413,14 @@ bool TableJoin::allowMergeJoin() const
     return (all_join || special_left) && oneDisjunct();
 }
 
+bool TableJoin::allowGraceHashJoin() const
+{
+    bool is_asof = (strictness() == ASTTableJoin::Strictness::Asof);
+    bool is_right_or_full = isRight(kind()) || isFull(kind());
+
+    return !is_right_or_full && !is_asof && !isCrossOrComma(kind()) && oneDisjunct();
+}
+
 bool TableJoin::needStreamWithNonJoinedRows() const
 {
     if (strictness() == ASTTableJoin::Strictness::Asof ||

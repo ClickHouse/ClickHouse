@@ -189,6 +189,7 @@ public:
     const SizeLimits & sizeLimits() const { return size_limits; }
     VolumePtr getTemporaryVolume() { return tmp_volume; }
     bool allowMergeJoin() const;
+    bool allowGraceHashJoin() const;
     bool preferMergeJoin() const { return join_algorithm == JoinAlgorithm::PREFER_PARTIAL_MERGE; }
     bool forceMergeJoin() const { return join_algorithm == JoinAlgorithm::PARTIAL_MERGE; }
     bool forceGraceHashJoin() const { return join_algorithm == JoinAlgorithm::GRACE_HASH; }
