@@ -175,7 +175,7 @@ SortingTransform::SortingTransform(
     description.swap(description_without_constants);
 
     if (SortQueueVariants(sort_description_types, description).variantSupportJITCompilation())
-        compileSortDescriptionIfNeeded(description, sort_description_types, increase_sort_description_compile_attempts /*increase_compile_attemps*/);
+        compileSortDescriptionIfNeeded(description, sort_description_types, increase_sort_description_compile_attempts /*increase_compile_attempts*/);
 }
 
 SortingTransform::~SortingTransform() = default;
