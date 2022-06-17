@@ -40,7 +40,7 @@ The list of third-party libraries:
 | googletest | [BSD 3-clause](https://github.com/google/googletest/blob/e7e591764baba0a0c3c9ad0014430e7a27331d16/LICENSE) |
 | grpc | [Apache](https://github.com/ClickHouse-Extras/grpc/blob/60c986e15cae70aade721d26badabab1f822fdd6/LICENSE) |
 | h3 | [Apache](https://github.com/ClickHouse-Extras/h3/blob/c7f46cfd71fb60e2fefc90e28abe81657deff735/LICENSE) |
-| hyperscan | [Boost](https://github.com/ClickHouse-Extras/hyperscan/blob/e9f08df0213fc637aac0a5bbde9beeaeba2fe9fa/LICENSE) |
+| vectorscan | [Boost](https://github.com/ClickHouse-Extras/hyperscan/blob/73695e419c27af7fe2a099c7aa57931cc02aea5d/LICENSE) |
 | icu | [Public Domain](https://github.com/unicode-org/icu/blob/a56dde820dc35665a66f2e9ee8ba58e75049b668/icu4c/LICENSE) |
 | icudata | [Public Domain](https://github.com/ClickHouse-Extras/icudata/blob/72d9a4a7febc904e2b0a534ccb25ae40fac5f1e5/LICENSE) |
 | jemalloc | [BSD 2-clause](https://github.com/ClickHouse-Extras/jemalloc/blob/e6891d9746143bf2cf617493d880ba5a0b9a3efd/COPYING) |
