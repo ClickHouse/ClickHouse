@@ -549,6 +549,12 @@ private:
 
         auto & next_child_cursor = *(queue.begin() + child_idx);
 
+        if (unlikely(begin_cursor.totallyLessOrEquals(next_child_cursor)))
+        {
+            batch_size = min_cursor_size - min_cursor_pos;
+            return;
+        }
+
         while (min_cursor_pos + batch_size < min_cursor_size && next_child_cursor.greaterWithOffset(begin_cursor, 0, batch_size))
             ++batch_size;
     }
