@@ -27,7 +27,7 @@ public:
 using DiskObjectStorageOperation = std::unique_ptr<IDiskObjectStorageOperation>;
 using DiskObjectStorageOperations = std::vector<DiskObjectStorageOperation>;
 
-struct DiskObjectStorageTransaction : public IDiskTransaction
+struct DiskObjectStorageTransaction : public IDiskTransaction, std::enable_shared_from_this<DiskObjectStorageTransaction>
 {
 private:
     DiskObjectStorage & disk;
@@ -63,7 +63,8 @@ public:
         const std::string & path,
         size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
         WriteMode mode = WriteMode::Rewrite,
-        const WriteSettings & settings = {}) override;
+        const WriteSettings & settings = {},
+        bool autocommit = true) override;
 
     void removeFile(const std::string & path) override;
     void removeFileIfExists(const std::string & path) override;
@@ -78,7 +79,8 @@ public:
     void setLastModified(const std::string & path, const Poco::Timestamp & timestamp) override;
     void setReadOnly(const std::string & path) override;
     void createHardLink(const std::string & src_path, const std::string & dst_path) override;
-
 };
+
+using DiskObjectStorageTransactionPtr = std::shared_ptr<DiskObjectStorageTransaction>;
 
 }

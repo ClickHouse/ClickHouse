@@ -24,13 +24,9 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int INCORRECT_DISK_INDEX;
-    extern const int UNKNOWN_FORMAT;
-    extern const int FILE_ALREADY_EXISTS;
     extern const int FILE_DOESNT_EXIST;
-    extern const int BAD_FILE_TYPE;
     extern const int ATTEMPT_TO_READ_AFTER_EOF;
     extern const int CANNOT_READ_ALL_DATA;
-    extern const int CANNOT_OPEN_FILE;
 }
 
 namespace
@@ -176,14 +172,9 @@ bool DiskObjectStorage::isFile(const String & path) const
 
 void DiskObjectStorage::createFile(const String & path)
 {
-
     auto transaction = createTransaction();
     transaction->createFile(path);
     transaction->commit();
-
-    auto tx = metadata_storage->createTransaction();
-    tx->createEmptyMetadataFile(path);
-    tx->commit();
 }
 
 size_t DiskObjectStorage::getFileSize(const String & path) const
@@ -193,9 +184,6 @@ size_t DiskObjectStorage::getFileSize(const String & path) const
 
 void DiskObjectStorage::moveFile(const String & from_path, const String & to_path, bool should_send_metadata)
 {
-    auto transaction = createTransaction();
-    transaction->moveFile(from_path, to_path);
-    transaction->commit();
 
     if (should_send_metadata)
     {
@@ -208,6 +196,10 @@ void DiskObjectStorage::moveFile(const String & from_path, const String & to_pat
         };
         metadata_helper->createFileOperationObject("rename", revision, object_metadata);
     }
+
+    auto transaction = createTransaction();
+    transaction->moveFile(from_path, to_path);
+    transaction->commit();
 }
 
 void DiskObjectStorage::moveFile(const String & from_path, const String & to_path)
@@ -453,11 +445,9 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorage::writeFile(
 {
     auto transaction = createTransaction();
     auto result = transaction->writeFile(path, buf_size, mode, settings);
-    transaction->commit();
 
     return result;
 }
-
 
 void DiskObjectStorage::applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr context_, const String &, const DisksMap &)
 {
