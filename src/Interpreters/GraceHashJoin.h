@@ -75,8 +75,6 @@ private:
     /// Perform some bookkeeping after all calls to @joinBlock.
     void startReadingDelayedBlocks();
 
-    bool checkBlock(std::string_view desc, const Block & block, size_t bucket);
-
     Poco::Logger * log;
     ContextPtr context;
     std::shared_ptr<TableJoin> table_join;
