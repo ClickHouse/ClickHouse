@@ -15,6 +15,7 @@ namespace ErrorCodes
     extern const int CANNOT_OPEN_FILE;
     extern const int FILE_DOESNT_EXIST;
     extern const int BAD_FILE_TYPE;
+    extern const int FILE_ALREADY_EXISTS;
 }
 
 DiskObjectStorageTransaction::DiskObjectStorageTransaction(DiskObjectStorage & disk_)
@@ -371,6 +372,20 @@ void DiskObjectStorageTransaction::moveDirectory(const std::string & from_path, 
         }));
 }
 
+void DiskObjectStorageTransaction::moveFile(const String & from_path, const String & to_path)
+{
+     operations_to_execute.emplace_back(
+        std::make_unique<PureMetadataOperation>(*disk.object_storage, *disk.metadata_storage, [from_path, to_path, metadata_storage = disk.metadata_storage](MetadataTransactionPtr tx)
+        {
+            if (metadata_storage->exists(to_path))
+                throw Exception("File already exists: " + to_path, ErrorCodes::FILE_ALREADY_EXISTS);
+
+            if (!metadata_storage->exists(from_path))
+                throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File {} doesn't exist, cannot move", to_path);
+
+            tx->moveFile(from_path, to_path);
+        }));
+}
 
 void DiskObjectStorageTransaction::replaceFile(const std::string & from_path, const std::string & to_path)
 {
@@ -439,6 +454,16 @@ void DiskObjectStorageTransaction::removeSharedFiles(const RemoveBatchRequest & 
     }
 }
 
+namespace
+{
+
+String revisionToString(UInt64 revision)
+{
+    return std::bitset<64>(revision).to_string();
+}
+
+}
+
 std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile( /// NOLINT
     const std::string & path,
     size_t buf_size,
@@ -458,6 +483,17 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile
     auto blob_path = fs::path(disk.remote_fs_root_path) / blob_name;
 
     operations_to_execute.emplace_back(std::make_unique<WriteFileOperation>(*disk.object_storage, *disk.metadata_storage, path, blob_path));
+
+    std::optional<ObjectAttributes> object_attributes;
+    if (disk.send_metadata)
+    {
+        auto revision = disk.metadata_helper->revision_counter + 1;
+        disk.metadata_helper->revision_counter++;
+        object_attributes = {
+            {"path", path}
+        };
+        blob_name = "r" + revisionToString(revision) + "-file-" + blob_name;
+    }
 
     /// We always use mode Rewrite because we simulate append using metadata and different files
     return disk.object_storage->writeObject(
@@ -485,7 +521,6 @@ void DiskObjectStorageTransaction::setReadOnly(const std::string & path)
         }));
 }
 
-
 void DiskObjectStorageTransaction::setLastModified(const std::string & path, const Poco::Timestamp & timestamp)
 {
     operations_to_execute.emplace_back(
@@ -495,11 +530,22 @@ void DiskObjectStorageTransaction::setLastModified(const std::string & path, con
         }));
 }
 
+void DiskObjectStorageTransaction::createFile(const std::string & path)
+{
+    operations_to_execute.emplace_back(
+        std::make_unique<PureMetadataOperation>(*disk.object_storage, *disk.metadata_storage, [path](MetadataTransactionPtr tx)
+        {
+            tx->createEmptyMetadataFile(path);
+        }));
+}
+
 /// Copy file `from_file_path` to `to_file_path` located at `to_disk`.
 void DiskObjectStorageTransaction::copyFile(const std::string & from_file_path, const std::string & to_file_path)
 {
     operations_to_execute.emplace_back(std::make_unique<CopyFileOperation>(*disk.object_storage, *disk.metadata_storage, from_file_path, to_file_path, disk.remote_fs_root_path));
 }
+
+
 
 void DiskObjectStorageTransaction::commit()
 {

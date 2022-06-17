@@ -24,6 +24,11 @@ public:
         disk.createDirectories(path);
     }
 
+    void createFile(const std::string & path) override
+    {
+        disk.createFile(path);
+    }
+
     void clearDirectory(const std::string & path) override
     {
         disk.createDirectory(path);
@@ -32,6 +37,11 @@ public:
     void moveDirectory(const std::string & from_path, const std::string & to_path) override
     {
         disk.moveDirectory(from_path, to_path);
+    }
+
+    void moveFile(const String & from_path, const String & to_path) override
+    {
+        disk.moveFile(from_path, to_path);
     }
 
     void replaceFile(const std::string & from_path, const std::string & to_path) override
