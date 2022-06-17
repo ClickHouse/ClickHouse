@@ -35,10 +35,10 @@ bool TranslateQualifiedNamesMatcher::Data::matchColumnName(const String & name, 
 {
     if (name.size() < column_name.size())
         return false;
-    
+
     if (std::strncmp(name.data(), column_name.data(), column_name.size()) != 0)
         return false;
-    
+
     if (name.size() == column_name.size())
         return true;
 
@@ -67,7 +67,7 @@ bool TranslateQualifiedNamesMatcher::Data::unknownColumn(size_t table_pos, const
     const auto & columns = tables[table_pos].columns;
     if (columns.empty())
         return false;
-    
+
     // Remove database and table name from the identifier'name
     auto full_name = IdentifierSemantic::extractNestedName(identifier, table);
 
