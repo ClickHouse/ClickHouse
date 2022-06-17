@@ -244,25 +244,6 @@ void GraceHashJoin::rehashInMemoryJoin(InMemoryJoinPtr & join, const BucketsSnap
     }
 }
 
-bool GraceHashJoin::checkBlock(std::string_view desc, const Block & block, size_t bucket)
-{
-    const auto & column = block.getByPosition(0);
-    bool found = false;
-    if (isUInt64(column.type))
-    {
-        for (size_t i = 0; i < column.column->size(); ++i)
-        {
-            UInt64 value = column.column->getUInt(i);
-            if (value == 798)
-            {
-                LOG_INFO(log, "{}: Found matching value {} at bucket {}:{}, column {}", desc, value, bucket, i, column.name);
-                found = true;
-            }
-        }
-    }
-    return found;
-}
-
 bool GraceHashJoin::fitsInMemory(InMemoryJoin * join) const
 {
     return table_join->sizeLimits().softCheck(join->getTotalRowCount(), join->getTotalByteCount());
@@ -510,7 +491,6 @@ void GraceHashJoin::fillInMemoryJoin(InMemoryJoinPtr & join, FileBucket * bucket
 
     while (auto block = reader.read())
     {
-        checkBlock("fillInMemoryJoin", block, bucket->index());
         addJoinedBlockImpl(join, bucket->index(), block);
     }
 }
@@ -520,7 +500,6 @@ void GraceHashJoin::addJoinedBlockImpl(InMemoryJoinPtr & join, size_t bucket_ind
     BucketsSnapshot snapshot = buckets.get();
     Blocks blocks = scatterBlock<true>(block, snapshot->size());
 
-    checkBlock("addJoinedBlockImpl:inmemory", blocks[bucket_index], bucket_index);
     join->addJoinedBlock(blocks[bucket_index], /*check_limits=*/false);
 
     // We need to rebuild block without bucket_index part in case of overflow.
@@ -543,7 +522,6 @@ void GraceHashJoin::addJoinedBlockImpl(InMemoryJoinPtr & join, size_t bucket_ind
     assert(blocks.empty() || blocks.size() == snapshot->size());
     for (size_t i = 1; i < blocks.size(); ++i)
     {
-        checkBlock("addJoinedBlockImpl:lastwrite", blocks[i], i);
         if (i != bucket_index && blocks[i].rows())
             snapshot->at(i)->addRightBlock(blocks[i]);
     }
