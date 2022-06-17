@@ -14,12 +14,22 @@
     <script language="javascript" type="text/javascript" src="js/d3.v4.min.js"></script>
     <script language="javascript" type="text/javascript" src="js/d3-tip-0.8.0-alpha.1.js"></script>
     <script language="javascript" type="text/javascript" src="js/d3-gantt.js"></script>
-    <div class="container-fluid" id="toolbar" style="margin:20px;margin-right:50px">
-        <div class="pull-right">
-            <button type="button" class="btn btn-primary" id="toolbar-load" data-toggle="modal" data-target="#loadModal">Load</button>
+
+    <nav class="navbar navbar-default">
+        <div class="container-fluid">
+            <div class="navbar-header">
+                <a class="navbar-brand" href="#">ClickHouse trace-visualizer</a>
+            </div>
+            <div class="collapse navbar-collapse" id="bs-example-navbar-collapse-1">
+                <form class="navbar-form navbar-left">
+                    <button type="button" class="btn btn-primary" id="toolbar-load" data-toggle="modal" data-target="#loadModal">Load</button>
+                </form>
+            </div>
         </div>
-    </div>
+    </nav>
+
     <div id="placeholder" class="chart-placeholder"></div>
+
     <div class="modal fade" id="loadModal" tabindex="-1" role="dialog" aria-labelledby="loadModalLabel">
         <div class="modal-dialog" role="document">
             <div class="modal-content">
@@ -42,21 +52,36 @@
 </html>
 
 <script language="javascript">
-    var example_json = [
-        { t1: 100, t2: 200, band: "band1", color: "#888", text: "text1" },
-        { t1: 300, t2: 400, band: "band2", color: "#ff8", text: "text2" },
-        { t1: 100, t2: 400, band: "band3", color: "#888", text: "some very long text with a lot of letters in it" },
-        { t1: 300, t2: 400, band: "band1", color: "#8ff", text: "some_very_long_identifier_with_a_lot_of_letters_in_it" },
-        { t1: 500, t2: 800, band: "band2", color: "#f8f", text: "test\nif\nnew\nline\nworks\nhere?" }
-    ];
+    var example_json = [];
+    var example_colors = ["#f88", "#8f8", "#88f", "#888", "#aaa"];
+    for (let i = 0; i < 1024; i++) {
+        example_json.push({
+            t1: i + 50 - Math.random() * 60,
+            t2: i + 50 + Math.random() * 60,
+            band: "band" + (i % 128),
+            color: example_colors[i % example_colors.length],
+            text: "it is span #" + i
+        });
+    }
+    example_json.bands = new Set(example_json.map(x => x.band));
+    example_json.max_time_ms = Math.max(...example_json.map(x => x.t2));
 
-    let chart_height = window.innerHeight - $("#placeholder")[0].getBoundingClientRect().y - 80;
     var data = null;
     var chart = null;
 
     function renderChart(parsed) {
         data = parsed;
-        chart = d3.gantt().height(chart_height).selector("#placeholder");
+        if (chart != null) {
+            chart.destroy();
+        }
+        let view_height = window.innerHeight - $("#placeholder")[0].getBoundingClientRect().y - 40;
+        let data_height = parsed.bands.size * 8;
+        chart = d3.gantt()
+            .height(Math.max(view_height, data_height))
+            .view_height(view_height)
+            .selector("#placeholder")
+            .timeDomain([0, parsed.max_time_ms])
+        ;
         chart(data);
     }
 
@@ -139,18 +164,22 @@
         }
 
         let result = [];
+        let bands = new Set();
         for (let i = 0; i < json.data.length; i++) {
             let span = json.data[i];
+            let band = Object.values(span.group).join(' ');
+            bands.add(band);
             result.push({
                 t1: convertTime(+span.start_time_us),
                 t2: convertTime(+span.finish_time_us),
-                band: Object.values(span.group).join(' '),
+                band,
                 color: d3.interpolateRainbow((strHash(span.color) % 256) / 256),
                 text: span.operation_name
             });
         }
 
-        chart.timeDomain([0, max_time_ms]);
+        result.bands = bands;
+        result.max_time_ms = max_time_ms;
         return result;
     }
 
