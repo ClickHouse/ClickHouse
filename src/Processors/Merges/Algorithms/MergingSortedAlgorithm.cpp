@@ -40,7 +40,7 @@ MergingSortedAlgorithm::MergingSortedAlgorithm(
 
     queue_variants = SortQueueVariants(sort_description_types, description);
     if (queue_variants.variantSupportJITCompilation())
-        compileSortDescriptionIfNeeded(description, sort_description_types, true /*increase_compile_attemps*/);
+        compileSortDescriptionIfNeeded(description, sort_description_types, true /*increase_compile_attempts*/);
 }
 
 void MergingSortedAlgorithm::addInput()
