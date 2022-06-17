@@ -1102,6 +1102,16 @@ bool ReplicatedMergeTreeQueue::isCoveredByFuturePartsImpl(const LogEntry & entry
         if (future_part.isDisjoint(result_part))
             continue;
 
+        /// Parts are not disjoint, so new_part_name either contains or covers future_part.
+        chassert(future_part.contains(result_part) || result_part.contains(future_part));
+        /// We cannot execute `entry` (or upgrade its actual_part_name to `new_part_name`)
+        /// while any covered or covering parts are processed.
+        /// But we also cannot simply return true and postpone entry processing, because it may lead to kind of livelock.
+        /// Since queue is processed in multiple threads, it's likely that there will be at least one thread
+        /// executing faulty entry for some small part, so bigger covering part will never be processed.
+        /// That's why it's better to wait for covered entry to be executed (does not matter successfully or not)
+        /// instead of exiting and postponing covering entry.
+
         if (covered_entries_to_wait)
         {
             if (entry.znode_name < future_part_elem.second->znode_name)
@@ -1175,7 +1185,9 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
     /// some other entry which is currently executing, then we can postpone this entry.
     for (const String & new_part_name : entry.getVirtualPartNames(format_version))
     {
-        if (isCoveredByFuturePartsImpl(entry, new_part_name, out_postpone_reason, state_lock, nullptr))
+        /// Do not wait for any entries here, because we have only one thread that scheduling queue entries.
+        /// We can wait in worker threads, but not in scheduler.
+        if (isCoveredByFuturePartsImpl(entry, new_part_name, out_postpone_reason, state_lock, /* covered_entries_to_wait */ nullptr))
             return false;
     }
 

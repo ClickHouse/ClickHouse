@@ -12,7 +12,6 @@
 #include <Common/noexcept_scope.h>
 
 
-
 namespace DB
 {
 
