@@ -627,9 +627,7 @@ static constexpr bool isPowerOf2(T number) {
 }
 
 static Blocks scatterBlockByHashPow2(const Strings & key_columns_names, const Block & block, size_t num_shards) {
-    UInt32 log2 = bitScanReverse(num_shards);
-    UInt32 mask = maskLowBits<size_t>(log2);
-
+    size_t mask = num_shards - 1;
     return scatterBlockByHashImpl(key_columns_names, block, num_shards, [mask](size_t hash) {
         return hash & mask;
     });
