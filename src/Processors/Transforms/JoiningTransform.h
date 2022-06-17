@@ -87,24 +87,6 @@ private:
     Block readExecute(Chunk & chunk);
 };
 
-/// Joins blocks from the left table that were accumulated by the Join itself.
-/// Has single input and signle output port.
-/// Input port is closed when all rows of the left table are added to the Join by JoiningTransforms.
-/// There can be more than one DelayedJoiningTransform working concurrently.
-class DelayedJoiningTransform : public IProcessor {
-public:
-    DelayedJoiningTransform(Block input_header, JoinPtr join_);
-
-    String getName() const override { return "DelayedJoiningTransform"; }
-
-    Status prepare() override;
-    void work() override;
-
-private:
-    JoinPtr join;
-    std::unique_ptr<IDelayedJoinedBlocksStream> delayed_blocks;
-};
-
 /// Fills Join with block from right table.
 /// Has single input and single output port.
 /// Output port has empty header. It is closed when all data is inserted in join.
