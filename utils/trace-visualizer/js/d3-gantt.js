@@ -8,6 +8,9 @@
 
         initAxis();
 
+        // clear previous chart (if any)
+        d3.select(selector).selectAll("svg").remove();
+
         // create svg element
         svg = d3.select(selector)
           .append("svg")
