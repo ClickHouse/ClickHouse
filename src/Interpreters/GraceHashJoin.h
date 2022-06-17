@@ -28,7 +28,7 @@ public:
 
     bool addJoinedBlock(const Block & block, bool check_limits) override;
     void checkTypesOfKeys(const Block & block) const override;
-    // NB: In GraceHashJoin, joinBlock does not joins 
+    // NB: In GraceHashJoin, joinBlock does not joins
     void joinBlock(Block & block, std::shared_ptr<ExtraBlock> & not_processed) override;
 
     void setTotals(const Block & block) override { totals = block; }
