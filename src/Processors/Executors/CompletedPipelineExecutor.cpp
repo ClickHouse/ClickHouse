@@ -33,7 +33,7 @@ struct CompletedPipelineExecutor::Data
 
 static void threadFunction(CompletedPipelineExecutor::Data & data, ThreadGroupStatusPtr thread_group, size_t num_threads)
 {
-    setThreadName("QueryPipelineEx");
+    setThreadName("QueryCompPipeEx");
 
     try
     {
