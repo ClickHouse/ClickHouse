@@ -39,6 +39,6 @@ Question candidates:
 - How to kill a process (query) in ClickHouse?
 - How to implement pivot (like in pandas)?
 - How to remove the default ClickHouse user through users.d?
-- Importing MySQL dump to Clickhouse
+- Importing MySQL dump to ClickHouse
 - Window function workarounds (row\_number, lag/lead, running diff/sum/average)
 ##}
