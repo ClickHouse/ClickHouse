@@ -4,7 +4,7 @@
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/Kusto/ParserKQLQuery.h>
 #include <Parsers/Kusto/ParserKQLStatement.h>
-
+#include <Parsers/Kusto/KustoFunctions/KQLFunctionFactory.h>
 namespace DB
 {
 
@@ -57,5 +57,16 @@ bool ParserKQLWithUnionQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
 
     return true;
 }
+/*
+bool IParserKQLFunction::convert(String &out,IParser::Pos &pos)
+{
+    return wrapParseImpl(pos, IncreaseDepthTag{}, [&]
+    {
+        bool res = convertImpl(out,pos);
+        if (!res)
+            out = "";
+        return res;
+    });
+}*/
 
 }
