@@ -222,7 +222,8 @@ GraceHashJoin::GraceHashJoin(
 bool GraceHashJoin::addJoinedBlock(const Block & block, bool /*check_limits*/)
 {
     LOG_TRACE(log, "addJoinedBlock(block: {} rows)", block.rows());
-    addJoinedBlockImpl(first_bucket, 0, block);
+    Block materialized = materializeBlock(block);
+    addJoinedBlockImpl(first_bucket, 0, materialized);
     return true;
 }
 
@@ -315,6 +316,8 @@ void GraceHashJoin::joinBlock(Block & block, std::shared_ptr<ExtraBlock> & /*not
         first_bucket->joinBlock(block, not_processed);
         return;
     }
+
+    materializeBlockInplace(block);
 
     auto snapshot = buckets.get();
     auto blocks = scatterBlock<false>(block, snapshot->size());
