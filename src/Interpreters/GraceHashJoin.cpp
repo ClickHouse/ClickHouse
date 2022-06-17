@@ -45,15 +45,16 @@ namespace
 
     class FileBlockWriter
     {
-        static std::string buildTemporaryFilePrefix(ContextPtr context, std::string_view kind, size_t index)
+        static std::string buildTemporaryFilePrefix(ContextPtr context, JoinTableSide side, size_t index)
         {
-            return fmt::format("tmp_{}_gracejoinbuf_{}_{}_", context->getCurrentQueryId(), kind, index);
+            std::string_view suffix = side == JoinTableSide::Left ? "left" : "right";
+            return fmt::format("tmp_{}_gracejoinbuf_{}_{}_", context->getCurrentQueryId(), suffix, index);
         }
 
     public:
-        explicit FileBlockWriter(ContextPtr context, DiskPtr disk_, std::string_view kind, size_t index)
+        explicit FileBlockWriter(ContextPtr context, DiskPtr disk_, JoinTableSide side, size_t index)
             : disk{std::move(disk_)}
-            , file{disk, buildTemporaryFilePrefix(context, kind, index), true}
+            , file{disk, buildTemporaryFilePrefix(context, side, index), true}
             , file_writer{disk->writeFile(file.getPath())}
             , compressed_writer{*file_writer}
         {
@@ -118,8 +119,8 @@ class GraceHashJoin::FileBucket
 public:
     explicit FileBucket(ContextPtr context_, TableJoin & join, size_t bucket_index_, const FileBucket * parent_)
         : bucket_index{bucket_index_}
-        , left_file{context_, join.getTemporaryVolume()->getDisk(), "left", bucket_index}
-        , right_file{context_, join.getTemporaryVolume()->getDisk(), "right", bucket_index}
+        , left_file{context_, join.getTemporaryVolume()->getDisk(), JoinTableSide::Left, bucket_index}
+        , right_file{context_, join.getTemporaryVolume()->getDisk(), JoinTableSide::Right, bucket_index}
         , parent{parent_}
         , state{State::WRITING_BLOCKS}
     {
