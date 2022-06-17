@@ -4,11 +4,10 @@
 namespace DB
 {
 
-void formatAST(const IAST & ast, WriteBuffer & buf, bool hilite, bool one_line, bool is_translate)
+void formatAST(const IAST & ast, WriteBuffer & buf, bool hilite, bool one_line)
 {
     IAST::FormatSettings settings(buf, one_line);
     settings.hilite = hilite;
-    settings.is_translate = is_translate;
 
     ast.format(settings);
 }

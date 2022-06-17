@@ -46,8 +46,6 @@ public:
         ADD_INDEX,
         DROP_INDEX,
         MATERIALIZE_INDEX,
-        STD_CREATE_INDEX,
-        STD_DROP_INDEX,
 
         ADD_CONSTRAINT,
         DROP_CONSTRAINT,
@@ -228,12 +226,6 @@ public:
     };
 
     AlterObjectType alter_object = AlterObjectType::UNKNOWN;
-    ASTAlterCommand::Type  command_type = ASTAlterCommand::NO_TYPE;
-
-    /// Used for SQL-standard CREATE INDEX and DROP INDEX
-    ASTPtr index_name;
-    bool if_not_exists = false; /// option for CREATE INDEX
-    bool if_exists = false;     /// option for DROP INDEX
 
     ASTExpressionList * command_list = nullptr;
 

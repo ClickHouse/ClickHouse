@@ -1,40 +1,37 @@
 #include <Common/quoteString.h>
 #include <IO/Operators.h>
-#include <Parsers/ASTCreateIndexQuery.h>
-#include <Parsers/ASTIndexDeclaration.h>
+#include <Parsers/ASTDropIndexQuery.h>
 
 
 namespace DB
 {
 
 /** Get the text that identifies this element. */
-String ASTCreateIndexQuery::getID(char delim) const
+String ASTDropIndexQuery::getID(char delim) const
 {
     return "CreateIndexQuery" + (delim + getDatabase()) + delim + getTable();
 }
 
-ASTPtr ASTCreateIndexQuery::clone() const
+ASTPtr ASTDropIndexQuery::clone() const
 {
-    auto res = std::make_shared<ASTCreateIndexQuery>(*this);
+    auto res = std::make_shared<ASTDropIndexQuery>(*this);
     res->children.clear();
 
     res->index_name = index_name->clone();
     res->children.push_back(res->index_name);
 
-    res->index_decl = index_decl->clone();
-    res->children.push_back(res->index_decl);
     return res;
 }
 
-void ASTCreateIndexQuery::formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
-{
+void ASTDropIndexQuery::formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+{                
     frame.need_parens = false;
 
     std::string indent_str = settings.one_line ? "" : std::string(4u * frame.indent, ' ');
 
     settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str;
 
-    settings.ostr << "CREATE INDEX " << (if_not_exists ? "IF NOT EXISTS " : "");
+    settings.ostr << "DROP INDEX " << (if_exists ? "IF EXISTS " : "");
     index_name->formatImpl(settings, state, frame);
     settings.ostr << " ON ";
 
@@ -51,11 +48,16 @@ void ASTCreateIndexQuery::formatQueryImpl(const FormatSettings & settings, Forma
     }
 
     formatOnCluster(settings);
+}
 
-    if (!cluster.empty())
-        settings.ostr << " ";
+ASTPtr ASTDropIndexQuery::convertToASTAlterCommand() const
+{
+    auto command = std::make_shared<ASTAlterCommand>();
+    command->index = index_name->clone();
+    command->if_exists = if_exists;
+    command->type = ASTAlterCommand::DROP_INDEX;
 
-    index_decl->formatImpl(settings, state, frame);
+    return command;
 }
 
 }
