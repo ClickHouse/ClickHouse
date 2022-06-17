@@ -657,7 +657,7 @@ RaftAppendResult KeeperServer::getLeaderInfo()
     return raft_instance->getLeaderInfo();
 }
 
-KeeperServer::LeaderInfo KeeperServer::getCurrentState()
+KeeperServer::NodeInfo KeeperServer::getNodeInfo()
 {
     return { .term = raft_instance->get_term(), .last_committed_index = state_machine->last_commit_index() };
 }

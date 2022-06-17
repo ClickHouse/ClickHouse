@@ -77,7 +77,7 @@ private:
     /// Counter for new session_id requests.
     std::atomic<int64_t> internal_session_id_counter{0};
 
-    std::unordered_map<KeeperServer::LeaderInfo, std::vector<KeeperStorage::RequestForSession>> leader_waiters;
+    std::unordered_map<KeeperServer::NodeInfo, std::vector<KeeperStorage::RequestForSession>> leader_waiters;
     std::mutex leader_waiter_mutex;
 
     /// Thread put requests to raft
