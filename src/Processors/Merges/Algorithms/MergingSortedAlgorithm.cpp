@@ -143,7 +143,7 @@ IMergingAlgorithm::Status MergingSortedAlgorithm::mergeBatchImpl(TSortingQueue &
 
         size_t insert_rows_size = updated_batch_size - static_cast<size_t>(batch_skip_last_row);
 
-        if (unlikely(current.impl->isFirst() && current.impl->isLast(initial_batch_size)))
+        if (unlikely(current.impl->isFirst() && current.impl->isLast(updated_batch_size)))
         {
             /** This is special optimization if current cursor is totally less than next cursor.
               * We want to insert current cursor chunk directly in merged data.
@@ -160,11 +160,6 @@ IMergingAlgorithm::Status MergingSortedAlgorithm::mergeBatchImpl(TSortingQueue &
             merged_data.insertChunk(std::move(current_inputs[source_num].chunk), insert_rows_size);
             current_inputs[source_num].chunk = Chunk();
 
-            auto status = Status(merged_data.pull(), limit_reached);
-
-            if (!limit_reached)
-                status.required_source = source_num;
-
             if (out_row_sources_buf)
             {
                 RowSourcePart row_source(current.impl->order);
@@ -173,9 +168,12 @@ IMergingAlgorithm::Status MergingSortedAlgorithm::mergeBatchImpl(TSortingQueue &
                     out_row_sources_buf->write(row_source.data);
             }
 
-             /// We will get the next block from the corresponding source, if there is one.
+            if (limit_reached)
+                break;
+
+            /// We will get the next block from the corresponding source, if there is one.
             queue.removeTop();
-            return status;
+            return Status(current.impl->order);
         }
 
         merged_data.insertRows(current->all_columns, current->getRow(), insert_rows_size, current->rows);
