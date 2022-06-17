@@ -37,7 +37,7 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
         metadata_snapshot_,
         indices_to_recalc,
         default_codec,
-        writer_settings,
+        std::move(writer_settings),
         index_granularity);
 
     auto * writer_on_disk = dynamic_cast<MergeTreeDataPartWriterOnDisk *>(writer.get());

@@ -79,7 +79,7 @@ AggregatingStep::AggregatingStep(
     : ITransformingStep(input_stream_, appendGroupingColumn(params_.getHeader(final_), grouping_sets_params_), getTraits(), false)
     , params(std::move(params_))
     , grouping_sets_params(std::move(grouping_sets_params_))
-    , final(final_)
+    , final(std::move(final_))
     , max_block_size(max_block_size_)
     , aggregation_in_order_max_block_bytes(aggregation_in_order_max_block_bytes_)
     , merge_threads(merge_threads_)
@@ -241,7 +241,9 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                     if (missign_column_index < missing_columns.size() && missing_columns[missign_column_index] == i)
                     {
                         ++missign_column_index;
-                        auto column = ColumnConst::create(col.column->cloneResized(1), 0);
+                        auto column_with_default = col.column->cloneEmpty();
+                        col.type->insertDefaultInto(*column_with_default);
+                        auto column = ColumnConst::create(std::move(column_with_default), 0);
                         const auto * node = &dag->addColumn({ColumnPtr(std::move(column)), col.type, col.name});
                         node = &dag->materializeNode(*node);
                         index.push_back(node);
