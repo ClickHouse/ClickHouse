@@ -66,8 +66,6 @@ bool TranslateQualifiedNamesMatcher::Data::unknownColumn(size_t table_pos, const
 {
     const auto & table = tables[table_pos].table;
     const auto & columns = tables[table_pos].columns;
-    if (columns.empty())
-        return false;
 
     // Remove database and table name from the identifier'name
     auto full_name = IdentifierSemantic::extractNestedName(identifier, table);
@@ -83,7 +81,7 @@ bool TranslateQualifiedNamesMatcher::Data::unknownColumn(size_t table_pos, const
         if (matchColumnName(full_name, column.name, column.type))
             return false;
     }
-    return true;
+    return !columns.empty();
 }
 
 bool TranslateQualifiedNamesMatcher::needChildVisit(ASTPtr & node, const ASTPtr & child)
