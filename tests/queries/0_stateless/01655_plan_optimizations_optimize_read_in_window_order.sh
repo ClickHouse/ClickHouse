@@ -10,7 +10,7 @@ $CLICKHOUSE_CLIENT -q "drop table if exists ${name}"
 $CLICKHOUSE_CLIENT -q "drop table if exists ${name}_n"
 $CLICKHOUSE_CLIENT -q "drop table if exists ${name}_n_x"
 
-$CLICKHOUSE_CLIENT -q "create table ${name} engine=MergeTree order by tuple() as select toInt64((sin(number)+2)*65535)%1000 as n, number as x from numbers_mt(10000000)"
+$CLICKHOUSE_CLIENT -q "create table ${name} engine=MergeTree order by tuple() as select toInt64((sin(number)+2)*65535)%10 as n, number as x from numbers_mt(100000)"
 $CLICKHOUSE_CLIENT -q "create table ${name}_n engine=MergeTree order by n as select * from ${name} order by n"
 $CLICKHOUSE_CLIENT -q "create table ${name}_n_x engine=MergeTree order by (n, x) as select * from ${name} order by n, x"
 
