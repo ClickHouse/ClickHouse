@@ -49,9 +49,10 @@ bool TranslateQualifiedNamesMatcher::Data::matchColumnName(const String & name, 
         {
             const Strings & names = type_tuple->getElementNames();
             const DataTypes & element_types = type_tuple->getElements();
+            String sub_name = name.substr(column_name.size() + 1, name.size() - column_name.size());
             for (size_t i = 0; i < names.size(); ++i)
             {
-                if (matchColumnName(name.substr(column_name.size() + 1, name.size() - column_name.size()), names[i], element_types[i]))
+                if (matchColumnName(sub_name, names[i], element_types[i]))
                 {
                     return true;
                 }
