@@ -9,7 +9,7 @@ namespace DB
 class KQLOperators
 {
 public:
-    String getExprFromToken(IParser::Pos pos);
+    String getExprFromToken(IParser::Pos &pos) ;
 protected:
 
     enum class WildcardsPos:uint8_t

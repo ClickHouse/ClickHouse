@@ -8,7 +8,9 @@
 #include <Parsers/Kusto/ParserKQLSort.h>
 #include <Parsers/Kusto/ParserKQLSummarize.h>
 #include <Parsers/Kusto/ParserKQLLimit.h>
-
+#include <Parsers/Kusto/ParserKQLStatement.h>
+#include <Parsers/Kusto/KustoFunctions/KQLFunctionFactory.h>
+#include <Parsers/Kusto/ParserKQLOperators.h>
 namespace DB
 {
 
@@ -18,12 +20,22 @@ bool ParserKQLBase :: parsePrepare(Pos & pos)
     return true;
 }
 
-String ParserKQLBase :: getExprFromToken(Pos pos)
+String ParserKQLBase :: getExprFromToken(Pos &pos)
 {
     String res;
-    while (!pos->isEnd() && pos->type != TokenType::PipeMark)
+    std::unique_ptr<IParserKQLFunction> kql_function;
+
+    while (!pos->isEnd() && pos->type != TokenType::PipeMark && pos->type != TokenType::Semicolon)
     {
-        res = res + String(pos->begin,pos->end) +" ";
+        String token = String(pos->begin,pos->end);
+        String new_token;
+        if (pos->type == TokenType::BareWord )
+        {
+            kql_function = KQLFunctionFactory::get(token);
+            if (kql_function && kql_function->convert(new_token,pos))
+                token = new_token;
+        }
+        res = res + token +" ";
         ++pos;
     }
     return res;
@@ -106,6 +118,7 @@ bool ParserKQLQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
          return false;
 
     kql_summarize_p.setTableName(table_name);
+    kql_summarize_p.setFilterPos(kql_filter_p.op_pos);
     if (!kql_summarize_p.parse(pos, select_expression_list, expected))
          return false;
     else
@@ -113,6 +126,9 @@ bool ParserKQLQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         group_expression_list = kql_summarize_p.group_expression_list;
         if (kql_summarize_p.tables)
             tables = kql_summarize_p.tables;
+
+        if (kql_summarize_p.where_expression)
+            where_expression = kql_summarize_p.where_expression;
     }
 
     select_query->setExpression(ASTSelectQuery::Expression::SELECT, std::move(select_expression_list));
