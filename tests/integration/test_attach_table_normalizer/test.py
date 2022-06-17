@@ -32,7 +32,7 @@ def test_attach_substr(started_cluster, engine):
     node.query("ATTACH TABLE file")
 
 @pytest.mark.parametrize("engine", ['Ordinary', 'Atomic'])
-def test_attach_substr(started_cluster, engine):
+def test_attach_substr_restart(started_cluster, engine):
     # Initialize
     node.query("CREATE TABLE default.file(`s` String, `n` UInt8) ENGINE = MergeTree PARTITION BY substring(s, 1, 2) ORDER BY n ")
 
