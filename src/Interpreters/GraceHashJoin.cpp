@@ -369,8 +369,9 @@ size_t GraceHashJoin::getTotalByteCount() const
 bool GraceHashJoin::alwaysReturnsEmptySet() const
 {
     auto snapshot = buckets.get();
-    bool all_buckets_are_empty = std::all_of(snapshot->begin(), snapshot->end(), [](const auto & bucket) { return bucket->empty(); });
-    return isInnerOrRight(table_join->kind()) && first_bucket->alwaysReturnsEmptySet() && all_buckets_are_empty;
+    bool file_buckets_are_empty = std::all_of(snapshot->begin(), snapshot->end(), [](const auto & bucket) { return bucket->empty(); });
+    bool first_bucket_is_empty = first_bucket && first_bucket->alwaysReturnsEmptySet();
+    return isInnerOrRight(table_join->kind()) && first_bucket_is_empty && file_buckets_are_empty;
 }
 
 std::shared_ptr<NotJoinedBlocks> GraceHashJoin::getNonJoinedBlocks(const Block &, const Block &, UInt64) const
