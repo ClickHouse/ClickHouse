@@ -354,7 +354,7 @@ Checks whether the string matches the regular expression `pattern` in `re2` synt
 
 Returns 0 if it does not match, or 1 if it matches.
 
-Matching is based on UTF-8, e.g. `.` matches the two-codepoint symbol `¥`. The regular expression must not contain null bytes.
+Matching is based on UTF-8, e.g. `.` matches the Unicode code point `¥` which is stored in UTF-8 using two bytes. The regular expression must not contain null bytes.
 
 For patterns to search for substrings in a string, it is better to use LIKE or ‘position’, since they work much faster.
 
@@ -499,7 +499,7 @@ The regular expression can contain the metasymbols `%` and `_`.
 
 Use the backslash (`\`) for escaping metasymbols. See the note on escaping in the description of the ‘match’ function.
 
-Matching is based on UTF-8, e.g. `_` matches the two-codepoint symbol `¥`.
+Matching is based on UTF-8, e.g. `_` matches the Unicode code point `¥` which is stored in UTF-8 using two bytes.
 
 For regular expressions like `%needle%`, the code is more optimal and works as fast as the `position` function.
 For other regular expressions, the code is the same as for the ‘match’ function.
