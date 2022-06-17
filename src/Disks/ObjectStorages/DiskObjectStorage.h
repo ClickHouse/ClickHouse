@@ -38,6 +38,8 @@ public:
         bool send_metadata_,
         uint64_t thread_pool_size);
 
+    DiskTransactionPtr createTransaction() override;
+
     DiskType getType() const override { return disk_type; }
 
     bool supportZeroCopyReplication() const override { return true; }
@@ -90,8 +92,6 @@ public:
     void removeSharedFileIfExists(const String & path, bool delete_metadata_only) override;
 
     void removeSharedRecursive(const String & path, bool keep_all_batch_data, const NameSet & file_names_remove_metadata_only) override;
-
-    void removeFromRemoteFS(const std::vector<String> & paths);
 
     MetadataStoragePtr getMetadataStorage() override { return metadata_storage; }
 
@@ -175,10 +175,6 @@ private:
     UInt64 reserved_bytes = 0;
     UInt64 reservation_count = 0;
     std::mutex reservation_mutex;
-
-    void removeMetadata(const String & path, std::vector<String> & paths_to_remove);
-
-    void removeMetadataRecursive(const String & path, std::unordered_map<String, std::vector<String>> & paths_to_remove);
 
     std::optional<UInt64> tryReserve(UInt64 bytes);
 

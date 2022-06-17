@@ -40,6 +40,11 @@ public:
     /// Move directory from `from_path` to `to_path`.
     virtual void moveDirectory(const std::string & from_path, const std::string & to_path) = 0;
 
+    virtual void moveFile(const String & from_path, const String & to_path) = 0;
+
+
+    virtual void createFile(const String & path) = 0;
+
     /// Move the file from `from_path` to `to_path`.
     /// If a file with `to_path` path already exists, it will be replaced.
     virtual void replaceFile(const std::string & from_path, const std::string & to_path) = 0;

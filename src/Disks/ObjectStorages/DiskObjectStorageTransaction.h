@@ -48,9 +48,13 @@ public:
     /// Move directory from `from_path` to `to_path`.
     void moveDirectory(const std::string & from_path, const std::string & to_path) override;
 
+    void moveFile(const String & from_path, const String & to_path) override;
+
     /// Move the file from `from_path` to `to_path`.
     /// If a file with `to_path` path already exists, it will be replaced.
     void replaceFile(const std::string & from_path, const std::string & to_path) override;
+
+    void createFile(const String & path) override;
 
     /// Copy file `from_file_path` to `to_file_path` located at `to_disk`.
     void copyFile(const std::string & from_file_path, const std::string & to_file_path) override;
