@@ -19,7 +19,6 @@
 #include <Parsers/ASTColumnsMatcher.h>
 #include <Parsers/ASTColumnsTransformers.h>
 
-
 namespace DB
 {
 
@@ -55,9 +54,17 @@ bool TranslateQualifiedNamesMatcher::Data::unknownColumn(size_t table_pos, const
     const auto & column_name = IdentifierSemantic::getColumnNamePart(identifier, to_strip);
     if (!column_name)
         return true;
+
     for (const auto & column : columns)
     {
         if (*column_name == column.name)
+            return false;
+    }
+    const auto & hidden_columns = tables[table_pos].hidden_columns;
+    for (const auto & column : hidden_columns)
+    {
+        const String & known_name = column.name;
+        if (*column_name == known_name)
             return false;
     }
     return true;
