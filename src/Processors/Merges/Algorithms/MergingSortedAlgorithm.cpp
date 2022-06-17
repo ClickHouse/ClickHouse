@@ -173,7 +173,12 @@ IMergingAlgorithm::Status MergingSortedAlgorithm::mergeBatchImpl(TSortingQueue &
 
             /// We will get the next block from the corresponding source, if there is one.
             queue.removeTop();
-            return Status(current.impl->order);
+
+            auto result = Status(merged_data.pull(), limit_reached);
+            if (!limit_reached)
+                result.required_source = source_num;
+
+            return result;
         }
 
         merged_data.insertRows(current->all_columns, current->getRow(), insert_rows_size, current->rows);
