@@ -188,7 +188,6 @@ namespace DB
 
         bin
     };
-
 class KQLFunctionFactory
 {
 public:
