@@ -12,7 +12,7 @@ stage=${stage:-}
 script_dir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 echo "$script_dir"
 repo_dir=ch
-BINARY_TO_DOWNLOAD=${BINARY_TO_DOWNLOAD:="clang-13_debug_none_bundled_unsplitted_disable_False_binary"}
+BINARY_TO_DOWNLOAD=${BINARY_TO_DOWNLOAD:="clang-14_debug_none_bundled_unsplitted_disable_False_binary"}
 BINARY_URL_TO_DOWNLOAD=${BINARY_URL_TO_DOWNLOAD:="https://clickhouse-builds.s3.amazonaws.com/$PR_TO_TEST/$SHA_TO_TEST/clickhouse_build_check/$BINARY_TO_DOWNLOAD/clickhouse"}
 
 function clone
@@ -125,16 +125,7 @@ function filter_exists_and_template
 function stop_server
 {
     clickhouse-client --query "select elapsed, query from system.processes" ||:
-    killall clickhouse-server ||:
-    for _ in {1..10}
-    do
-        if ! pgrep -f clickhouse-server
-        then
-            break
-        fi
-        sleep 1
-    done
-    killall -9 clickhouse-server ||:
+    clickhouse stop
 
     # Debug.
     date
@@ -159,10 +150,12 @@ function fuzz
         NEW_TESTS_OPT="${NEW_TESTS_OPT:-}"
     fi
 
+    mkdir -p /var/run/clickhouse-server
+
     # interferes with gdb
     export CLICKHOUSE_WATCHDOG_ENABLE=0
     # NOTE: we use process substitution here to preserve keep $! as a pid of clickhouse-server
-    clickhouse-server --config-file db/config.xml -- --path db > >(tail -100000 > server.log) 2>&1 &
+    clickhouse-server --config-file db/config.xml --pid-file /var/run/clickhouse-server/clickhouse-server.pid -- --path db > >(tail -100000 > server.log) 2>&1 &
     server_pid=$!
 
     kill -0 $server_pid

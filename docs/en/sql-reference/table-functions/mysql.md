@@ -3,7 +3,7 @@ sidebar_position: 42
 sidebar_label: mysql
 ---
 
-# mysql {#mysql}
+# mysql
 
 Allows `SELECT` and `INSERT` queries to be performed on data that is stored on a remote MySQL server.
 

@@ -3,7 +3,7 @@
 #if USE_AWS_S3
 
 #include <Common/logger_useful.h>
-#include <Common/FileCache.h>
+#include <Common/IFileCache.h>
 
 #include <IO/WriteBufferFromS3.h>
 #include <IO/WriteHelpers.h>
@@ -95,7 +95,7 @@ void WriteBufferFromS3::nextImpl()
     {
         auto cache_key = cache->hash(key);
 
-        file_segments_holder.emplace(cache->setDownloading(cache_key, current_download_offset, size));
+        file_segments_holder.emplace(cache->setDownloading(cache_key, current_download_offset, size, /* is_persistent */false));
         current_download_offset += size;
 
         size_t remaining_size = size;
@@ -152,7 +152,7 @@ void WriteBufferFromS3::allocateBuffer()
 WriteBufferFromS3::~WriteBufferFromS3()
 {
 #ifndef NDEBUG
-    if (!is_finalized)
+    if (!finalized)
     {
         LOG_ERROR(log, "WriteBufferFromS3 is not finalized in destructor. It's a bug");
         std::terminate();
@@ -200,8 +200,6 @@ void WriteBufferFromS3::finalizeImpl()
 
     if (!multipart_upload_id.empty())
         completeMultipartUpload();
-
-    is_finalized = true;
 }
 
 void WriteBufferFromS3::createMultipartUpload()

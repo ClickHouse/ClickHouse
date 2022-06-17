@@ -326,7 +326,7 @@ Strings BackupCoordinationDistributed::listFiles(const String & prefix, const St
         elements.push_back(String{new_element});
     }
 
-    std::sort(elements.begin(), elements.end());
+    ::sort(elements.begin(), elements.end());
     return elements;
 }
 

@@ -54,7 +54,7 @@
 #include <Common/quoteString.h>
 #include <re2/re2.h>
 
-#include <Processors/Sources/SourceWithProgress.h>
+#include <Processors/ISource.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <QueryPipeline/Pipe.h>
 #include <filesystem>
@@ -397,7 +397,7 @@ StorageS3Source::StorageS3Source(
     const String & version_id_,
     std::shared_ptr<IteratorWrapper> file_iterator_,
     const size_t download_thread_num_)
-    : SourceWithProgress(getHeader(sample_block_, requested_virtual_columns_))
+    : ISource(getHeader(sample_block_, requested_virtual_columns_))
     , WithContext(context_)
     , name(std::move(name_))
     , bucket(bucket_)
@@ -603,7 +603,9 @@ public:
 
     void onException() override
     {
-        write_buf->finalize();
+        if (!writer)
+            return;
+        onFinish();
     }
 
     void onFinish() override
@@ -740,6 +742,7 @@ StorageS3::StorageS3(
     , partition_by(partition_by_)
     , is_key_with_globs(uri_.key.find_first_of("*?{") != std::string::npos)
 {
+    FormatFactory::instance().checkFormatName(format_name);
     context_->getGlobalContext()->getRemoteHostFilter().checkURL(uri_.uri);
     StorageInMemoryMetadata storage_metadata;
 

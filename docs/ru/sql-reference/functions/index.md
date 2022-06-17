@@ -174,22 +174,24 @@ SELECT test_function_sum(2, 2);
 Создание `test_function_sum_json` с именноваными аргументами и форматом [JSONEachRow](../../interfaces/formats.md#jsoneachrow) с использованием конфигурации XML.
 Файл test_function.xml.
 ```xml
-<function>
-    <type>executable</type>
-    <name>test_function_sum_json</name>
-    <return_type>UInt64</return_type>
-    <return_name>result_name</return_name>
-    <argument>
-        <type>UInt64</type>
-        <name>argument_1</name>
-    </argument>
-    <argument>
-        <type>UInt64</type>
-        <name>argument_2</name>
-    </argument>
-    <format>JSONEachRow</format>
-    <command>test_function_sum_json.py</command>
-</function>
+<functions>
+    <function>
+        <type>executable</type>
+        <name>test_function_sum_json</name>
+        <return_type>UInt64</return_type>
+        <return_name>result_name</return_name>
+        <argument>
+            <type>UInt64</type>
+            <name>argument_1</name>
+        </argument>
+        <argument>
+            <type>UInt64</type>
+            <name>argument_2</name>
+        </argument>
+        <format>JSONEachRow</format>
+        <command>test_function_sum_json.py</command>
+    </function>
+</functions>
 ```
 
 Файл скрипта внутри папки `user_scripts` `test_function_sum_json.py`.
@@ -222,6 +224,50 @@ SELECT test_function_sum_json(2, 2);
 ┌─test_function_sum_json(2, 2)─┐
 │                            4 │
 └──────────────────────────────┘
+```
+
+Исполняемые пользовательские функции могут принимать константные параметры, их конфигурация является частью настройки `command` (работает только для пользовательских функций с типом `executable`).
+Файл test_function_parameter_python.xml.
+```xml
+<functions>
+    <function>
+        <type>executable</type>
+        <name>test_function_parameter_python</name>
+        <return_type>String</return_type>
+        <argument>
+            <type>UInt64</type>
+        </argument>
+        <format>TabSeparated</format>
+        <command>test_function_parameter_python.py {test_parameter:UInt64}</command>
+    </function>
+</functions>
+```
+
+Файл скрипта внутри папки `user_scripts` `test_function_parameter_python.py`.
+
+```python
+#!/usr/bin/python3
+
+import sys
+
+if __name__ == "__main__":
+    for line in sys.stdin:
+        print("Parameter " + str(sys.argv[1]) + " value " + str(line), end="")
+        sys.stdout.flush()
+```
+
+Query:
+
+``` sql
+SELECT test_function_parameter_python(1)(2);
+```
+
+Result:
+
+``` text
+┌─test_function_parameter_python(1)(2)─┐
+│ Parameter 1 value 2                  │
+└──────────────────────────────────────┘
 ```
 
 ## Обработка ошибок {#obrabotka-oshibok}
