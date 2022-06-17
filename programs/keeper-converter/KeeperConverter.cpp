@@ -39,7 +39,7 @@ int mainEntryClickHouseKeeperConverter(int argc, char ** argv)
 
     try
     {
-        DB::KeeperStorage storage(500, "");
+        DB::KeeperStorage storage(500, "", true);
 
         DB::deserializeKeeperStorageFromSnapshotsDir(storage, options["zookeeper-snapshots-dir"].as<std::string>(), logger);
         DB::deserializeLogsAndApplyToStorage(storage, options["zookeeper-logs-dir"].as<std::string>(), logger);
