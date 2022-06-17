@@ -1,3 +1,4 @@
+#include <cstring>
 #include <Poco/String.h>
 
 #include <Interpreters/TranslateQualifiedNamesVisitor.h>
@@ -6,6 +7,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Core/Names.h>
+#include <DataTypes/DataTypeTuple.h>
 
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTAsterisk.h>
@@ -19,6 +21,7 @@
 #include <Parsers/ASTColumnsMatcher.h>
 #include <Parsers/ASTColumnsTransformers.h>
 
+
 namespace DB
 {
 
@@ -28,43 +31,55 @@ namespace ErrorCodes
     extern const int UNSUPPORTED_JOIN_KEYS;
     extern const int LOGICAL_ERROR;
 }
+bool TranslateQualifiedNamesMatcher::Data::matchColumnName(const String & name, const String & column_name, DataTypePtr column_type)
+{
+    if (name.size() < column_name.size())
+        return false;
+    
+    if (std::strncmp(name.data(), column_name.data(), column_name.size()) != 0)
+        return false;
+    
+    if (name.size() == column_name.size())
+        return true;
 
+    /// In case the type is named tuple, check the name recursively.
+    if (const DataTypeTuple * type_tuple = typeid_cast<const DataTypeTuple *>(column_type.get()))
+    {
+        if (type_tuple->haveExplicitNames() && name.at(column_name.size()) == '.')
+        {
+            const Strings & names = type_tuple->getElementNames();
+            const DataTypes & element_types = type_tuple->getElements();
+            for (size_t i = 0; i < names.size(); ++i)
+            {
+                if (matchColumnName(name.substr(column_name.size() + 1, name.size() - column_name.size()), names[i], element_types[i]))
+                {
+                    return true;
+                }
+            }
+        }
+    }
+
+    return false;
+}
 bool TranslateQualifiedNamesMatcher::Data::unknownColumn(size_t table_pos, const ASTIdentifier & identifier) const
 {
     const auto & table = tables[table_pos].table;
     const auto & columns = tables[table_pos].columns;
     if (columns.empty())
         return false;
-
-    auto match = IdentifierSemantic::canReferColumnToTable(identifier, table);
-    size_t to_strip = 0;
-    switch (match)
-    {
-        case IdentifierSemantic::ColumnMatch::TableName:
-        case IdentifierSemantic::ColumnMatch::AliasedTableName:
-        case IdentifierSemantic::ColumnMatch::TableAlias:
-            to_strip = 1;
-            break;
-        case IdentifierSemantic::ColumnMatch::DBAndTable:
-            to_strip = 2;
-            break;
-        default:
-            break;
-    }
-    const auto & column_name = IdentifierSemantic::getColumnNamePart(identifier, to_strip);
-    if (!column_name)
-        return true;
+    
+    // Remove database and table name from the identifier'name
+    auto full_name = IdentifierSemantic::extractNestedName(identifier, table);
 
     for (const auto & column : columns)
     {
-        if (*column_name == column.name)
+        if (matchColumnName(full_name, column.name, column.type))
             return false;
     }
     const auto & hidden_columns = tables[table_pos].hidden_columns;
     for (const auto & column : hidden_columns)
     {
-        const String & known_name = column.name;
-        if (*column_name == known_name)
+        if (matchColumnName(full_name, column.name, column.type))
             return false;
     }
     return true;
