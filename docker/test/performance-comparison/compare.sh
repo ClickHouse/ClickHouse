@@ -1203,15 +1203,15 @@ create view queries as select * from file('report/queries.tsv', TSVWithNamesAndT
 create table ci_checks engine File(TSVWithNamesAndTypes, 'ci-checks.tsv')
     as select
         $PR_TO_TEST :: UInt32 AS pull_request_number,
-        '$SHA_TO_TEST' commit_sha,
-        'Performance' check_name,
-        '$(sed -n 's/.*<!--status: \(.*\)-->/\1/p' report.html)' check_status,
+        '$SHA_TO_TEST' :: LowCardinality(String) AS commit_sha,
+        'Performance' :: LowCardinality(String) AS check_name,
+        '$(sed -n 's/.*<!--status: \(.*\)-->/\1/p' report.html)' :: LowCardinality(String) AS check_status,
         -- TODO toDateTime() can't parse output of 'date', so no time for now.
-        ($(date +%s) - $CHPC_CHECK_START_TIMESTAMP) * 1000 check_duration_ms,
+        (($(date +%s) - $CHPC_CHECK_START_TIMESTAMP) * 1000) :: UInt64 AS check_duration_ms,
         fromUnixTimestamp($CHPC_CHECK_START_TIMESTAMP) check_start_time,
-        test_name,
-        test_status,
-        test_duration_ms,
+        test_name :: LowCardinality(String) AS test_name ,
+        test_status :: LowCardinality(String) AS test_status,
+        test_duration_ms :: UInt64 AS test_duration_ms,
         report_url,
         $PR_TO_TEST = 0
             ? 'https://github.com/ClickHouse/ClickHouse/commit/$SHA_TO_TEST'
