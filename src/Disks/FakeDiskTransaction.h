@@ -58,7 +58,8 @@ public:
         const std::string & path,
         size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
         WriteMode mode = WriteMode::Rewrite,
-        const WriteSettings & settings = {}) override
+        const WriteSettings & settings = {},
+        bool /*autocommit */ = true) override
     {
         return disk.writeFile(path, buf_size, mode, settings);
     }

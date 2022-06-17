@@ -57,7 +57,8 @@ public:
         const std::string & path,
         size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
         WriteMode mode = WriteMode::Rewrite,
-        const WriteSettings & settings = {}) = 0;
+        const WriteSettings & settings = {},
+        bool autocommit = true) = 0;
 
     /// Remove file. Throws exception if file doesn't exists or it's a directory.
     virtual void removeFile(const std::string & path) = 0;

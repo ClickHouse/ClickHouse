@@ -418,7 +418,7 @@ void DiskObjectStorageTransaction::removeSharedRecursive(const std::string & pat
 
 void DiskObjectStorageTransaction::removeSharedFileIfExists(const std::string & path, bool keep_shared_data)
 {
-    operations_to_execute.emplace_back(std::make_unique<RemoveObjectOperation>(*disk.object_storage, *disk.metadata_storage, path, keep_shared_data, false));
+    operations_to_execute.emplace_back(std::make_unique<RemoveObjectOperation>(*disk.object_storage, *disk.metadata_storage, path, keep_shared_data, true));
 }
 
 void DiskObjectStorageTransaction::removeDirectory(const std::string & path)
@@ -468,16 +468,20 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile
     const std::string & path,
     size_t buf_size,
     WriteMode mode,
-    const WriteSettings & settings)
+    const WriteSettings & settings,
+    bool autocommit)
 {
     auto blob_name = getRandomASCIIString();
 
-    auto create_metadata_callback = [this, mode, path, blob_name] (size_t count)
+    auto create_metadata_callback = [tx = shared_from_this(), this, mode, path, blob_name, autocommit] (size_t count)
     {
         if (mode == WriteMode::Rewrite)
             metadata_transaction->createMetadataFile(path, blob_name, count);
         else
             metadata_transaction->addBlobToMetadata(path, blob_name, count);
+
+        if (autocommit)
+            metadata_transaction->commit();
     };
 
     auto blob_path = fs::path(disk.remote_fs_root_path) / blob_name;
@@ -497,7 +501,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile
 
     /// We always use mode Rewrite because we simulate append using metadata and different files
     return disk.object_storage->writeObject(
-        blob_path, WriteMode::Rewrite, {},
+        blob_path, WriteMode::Rewrite, object_attributes,
         std::move(create_metadata_callback),
         buf_size, settings);
 }
@@ -544,8 +548,6 @@ void DiskObjectStorageTransaction::copyFile(const std::string & from_file_path, 
 {
     operations_to_execute.emplace_back(std::make_unique<CopyFileOperation>(*disk.object_storage, *disk.metadata_storage, from_file_path, to_file_path, disk.remote_fs_root_path));
 }
-
-
 
 void DiskObjectStorageTransaction::commit()
 {

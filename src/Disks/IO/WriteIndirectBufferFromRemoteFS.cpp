@@ -32,7 +32,6 @@ WriteIndirectBufferFromRemoteFS::~WriteIndirectBufferFromRemoteFS()
     }
 }
 
-
 void WriteIndirectBufferFromRemoteFS::finalizeImpl()
 {
     WriteBufferFromFileDecorator::finalizeImpl();
