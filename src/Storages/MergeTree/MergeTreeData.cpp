@@ -3581,6 +3581,13 @@ MergeTreeData::DataPartsVector MergeTreeData::getVisibleDataPartsVectorInPartiti
     return getVisibleDataPartsVectorInPartition(local_context->getCurrentTransaction().get(), partition_id);
 }
 
+
+MergeTreeData::DataPartsVector MergeTreeData::getVisibleDataPartsVectorInPartition(
+    ContextPtr local_context, const String & partition_id, DataPartsLock & lock) const
+{
+    return getVisibleDataPartsVectorInPartition(local_context->getCurrentTransaction().get(), partition_id, &lock);
+}
+
 MergeTreeData::DataPartsVector MergeTreeData::getVisibleDataPartsVectorInPartition(
     MergeTreeTransaction * txn, const String & partition_id, DataPartsLock * acquired_lock) const
 {
@@ -4232,7 +4239,7 @@ RestoreTaskPtr MergeTreeData::restoreDataParts(const std::unordered_set<String> 
 }
 
 
-String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr local_context) const
+String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr local_context, DataPartsLock * acquired_lock) const
 {
     const auto & partition_ast = ast->as<ASTPartition &>();
 
@@ -4316,7 +4323,7 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr loc
     String partition_id = partition.getID(*this);
 
     {
-        auto data_parts_lock = lockParts();
+        auto data_parts_lock = (acquired_lock) ? DataPartsLock() : lockParts();
         DataPartPtr existing_part_in_partition = getAnyPartInPartition(partition_id, data_parts_lock);
         if (existing_part_in_partition && existing_part_in_partition->partition.value != partition.value)
         {

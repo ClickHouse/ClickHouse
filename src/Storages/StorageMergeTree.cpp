@@ -279,8 +279,9 @@ void StorageMergeTree::truncate(const ASTPtr &, const StorageMetadataPtr &, Cont
         /// This protects against "revival" of data for a removed partition after completion of merge.
         auto merge_blocker = stopMergesAndWait();
 
-        auto parts_to_remove = getVisibleDataPartsVector(local_context);
-        removePartsFromWorkingSet(local_context->getCurrentTransaction().get(), parts_to_remove, true);
+        auto data_parts_lock = lockParts();
+        auto parts_to_remove = getVisibleDataPartsVectorUnlocked(local_context, data_parts_lock);
+        removePartsFromWorkingSet(local_context->getCurrentTransaction().get(), parts_to_remove, true, data_parts_lock);
 
         LOG_INFO(log, "Removed {} parts.", parts_to_remove.size());
     }
@@ -1470,16 +1471,17 @@ void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, Cont
         /// Asks to complete merges and does not allow them to start.
         /// This protects against "revival" of data for a removed partition after completion of merge.
         auto merge_blocker = stopMergesAndWait();
+        auto data_parts_lock = lockParts();
         const auto * partition_ast = partition->as<ASTPartition>();
         if (partition_ast && partition_ast->all)
-            parts_to_remove = getVisibleDataPartsVector(local_context);
+            parts_to_remove = getVisibleDataPartsVectorUnlocked(local_context, data_parts_lock);
         else
         {
-            String partition_id = getPartitionIDFromQuery(partition, local_context);
-            parts_to_remove = getVisibleDataPartsVectorInPartition(local_context, partition_id);
+            String partition_id = getPartitionIDFromQuery(partition, local_context, &data_parts_lock);
+            parts_to_remove = getVisibleDataPartsVectorInPartition(local_context, partition_id, data_parts_lock);
         }
         /// TODO should we throw an exception if parts_to_remove is empty?
-        removePartsFromWorkingSet(local_context->getCurrentTransaction().get(), parts_to_remove, true);
+        removePartsFromWorkingSet(local_context->getCurrentTransaction().get(), parts_to_remove, true, data_parts_lock);
     }
 
     dropPartsImpl(std::move(parts_to_remove), detach);

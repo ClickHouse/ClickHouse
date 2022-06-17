@@ -499,6 +499,7 @@ public:
 
     /// Returns all parts in specified partition
     DataPartsVector getVisibleDataPartsVectorInPartition(MergeTreeTransaction * txn, const String & partition_id, DataPartsLock * acquired_lock = nullptr) const;
+    DataPartsVector getVisibleDataPartsVectorInPartition(ContextPtr local_context, const String & partition_id, DataPartsLock & lock) const;
     DataPartsVector getVisibleDataPartsVectorInPartition(ContextPtr local_context, const String & partition_id) const;
     DataPartsVector getVisibleDataPartsVectorInPartitions(ContextPtr local_context, const std::unordered_set<String> & partition_ids) const;
 
@@ -773,7 +774,7 @@ public:
     }
 
     /// For ATTACH/DETACH/DROP PARTITION.
-    String getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr context) const;
+    String getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr context, DataPartsLock * acquired_lock = nullptr) const;
     std::unordered_set<String> getPartitionIDsFromQuery(const ASTs & asts, ContextPtr context) const;
     std::set<String> getPartitionIdsAffectedByCommands(const MutationCommands & commands, ContextPtr query_context) const;
 
