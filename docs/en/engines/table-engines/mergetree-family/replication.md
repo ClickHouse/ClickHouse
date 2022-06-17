@@ -54,8 +54,8 @@ Example of setting the addresses of the ClickHouse Keeper cluster:
 </zookeeper>
 ```
 
-ClickHouse also supports to store replicas meta information in the auxiliary ZooKeeper cluster by providing ZooKeeper cluster name and path as engine arguments.
-In other word, it supports storing the metadata of different tables in different ZooKeeper clusters.
+ClickHouse also supports storing replicas meta information in an auxiliary ZooKeeper cluster. Do this by providing the ZooKeeper cluster name and path as engine arguments.
+In other words, it supports storing the metadata of different tables in different ZooKeeper clusters.
 
 Example of setting the addresses of the auxiliary ZooKeeper cluster:
 
