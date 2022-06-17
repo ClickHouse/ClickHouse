@@ -1,0 +1,43 @@
+import pytest
+
+from helpers.cluster import ClickHouseCluster
+
+cluster = ClickHouseCluster(__file__)
+node = cluster.add_instance('node', main_configs=["configs/config.xml"], with_zookeeper=True)
+
+
+@pytest.fixture(scope="module")
+def started_cluster():
+    try:
+        cluster.start()
+        yield cluster
+    finally:
+        cluster.shutdown()
+
+def replace_substring_to_substr(node):
+    node.exec_in_container(["bash", "-c", "sed -i 's/substring/substr/g' /var/lib/clickhouse/metadata/default/file.sql"], user="root")
+
+@pytest.mark.parametrize("engine", ['Ordinary', 'Atomic'])
+def test_attach_substr(started_cluster, engine):
+    # Initialize
+    node.query("CREATE TABLE default.file(`s` String, `n` UInt8) ENGINE = MergeTree PARTITION BY substring(s, 1, 2) ORDER BY n ")
+
+    # Detach table file
+    node.query("DETACH TABLE file")
+
+    # Replace subtring to substr
+    replace_substring_to_substr(node)
+
+    # Attach table file
+    node.query("ATTACH TABLE file")
+
+@pytest.mark.parametrize("engine", ['Ordinary', 'Atomic'])
+def test_attach_substr(started_cluster, engine):
+    # Initialize
+    node.query("CREATE TABLE default.file(`s` String, `n` UInt8) ENGINE = MergeTree PARTITION BY substring(s, 1, 2) ORDER BY n ")
+
+    # Replace subtring to substr
+    replace_substring_to_substr(node)
+
+    # Restart clickhouse
+    node.restart_clickhouse(kill=True)
