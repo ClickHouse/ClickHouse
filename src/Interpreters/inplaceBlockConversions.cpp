@@ -199,11 +199,11 @@ static bool arrayHasNoElementsRead(const IColumn & column)
     if (!size)
         return false;
 
-    if (const auto * nested_array = typeid_cast<const ColumnArray *>(&column_array->getData()))
+    const auto & array_data = column_array->getData();
+    if (const auto * nested_array = typeid_cast<const ColumnArray *>(&array_data))
         return arrayHasNoElementsRead(*nested_array);
 
-    size_t data_size = column_array->getData().size();
-    if (data_size)
+    if (!array_data.empty())
         return false;
 
     size_t last_offset = column_array->getOffsets()[size - 1];
@@ -238,8 +238,7 @@ void fillMissingColumns(
         auto serialization = IDataType::getSerialization(*available_column);
         auto name_in_storage = Nested::extractTableName(available_column->name);
 
-        ISerialization::SubstreamPath path;
-        serialization->enumerateStreams(path, [&](const auto & subpath)
+        serialization->enumerateStreams([&](const auto & subpath)
         {
             if (subpath.empty() || subpath.back().type != ISerialization::Substream::ArraySizes)
                 return;
@@ -247,16 +246,15 @@ void fillMissingColumns(
             auto subname = ISerialization::getSubcolumnNameForStream(subpath);
             auto & offsets_column = offset_columns[Nested::concatenateName(name_in_storage, subname)];
 
-            /// If for some reason multiple offsets columns are present for the same nested data structure,
-            /// choose the one that is not empty.
-            /// TODO: more optimal
+            /// If for some reason multiple offsets columns are present
+            /// for the same nested data structure, choose the one that is not empty.
             if (!offsets_column || offsets_column->empty())
-                offsets_column = arraySizesToOffsets(*subpath.back().data.column);
+                offsets_column = subpath.back().data.column;
 
-        }, {serialization, available_column->type, res_columns[i], nullptr});
+        }, available_column->type, res_columns[i]);
     }
 
-    /// insert default values only for columns without default expressions
+    /// Insert default values only for columns without default expressions.
     auto requested_column = requested_columns.begin();
     for (size_t i = 0; i < num_columns; ++i, ++requested_column)
     {
@@ -279,8 +277,7 @@ void fillMissingColumns(
                 auto serialization = IDataType::getSerialization(*requested_column);
                 auto name_in_storage = Nested::extractTableName(requested_column->name);
 
-                ISerialization::SubstreamPath path;
-                serialization->enumerateStreams(path, [&](const auto & subpath)
+                serialization->enumerateStreams([&](const auto & subpath)
                 {
                     if (!has_all_offsets)
                         return;
@@ -295,7 +292,7 @@ void fillMissingColumns(
                     else
                         has_all_offsets = false;
 
-                }, {serialization, type, nullptr, nullptr});
+                }, type);
             }
 
             if (array_type && has_all_offsets)

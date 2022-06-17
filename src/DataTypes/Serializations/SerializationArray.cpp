@@ -132,53 +132,53 @@ namespace
 
         offset_values.resize(i);
     }
-}
 
-ColumnPtr arraySizesToOffsets(const IColumn & column)
-{
-    const auto & column_sizes = assert_cast<const ColumnArray::ColumnOffsets &>(column);
-    MutableColumnPtr column_offsets = column_sizes.cloneEmpty();
+    ColumnPtr arraySizesToOffsets(const IColumn & column)
+    {
+        const auto & column_sizes = assert_cast<const ColumnArray::ColumnOffsets &>(column);
+        MutableColumnPtr column_offsets = column_sizes.cloneEmpty();
 
-    if (column_sizes.empty())
+        if (column_sizes.empty())
+            return column_offsets;
+
+        const auto & sizes_data = column_sizes.getData();
+        auto & offsets_data = assert_cast<ColumnArray::ColumnOffsets &>(*column_offsets).getData();
+
+        offsets_data.resize(sizes_data.size());
+
+        IColumn::Offset prev_offset = 0;
+        for (size_t i = 0, size = sizes_data.size(); i < size; ++i)
+        {
+            prev_offset += sizes_data[i];
+            offsets_data[i] = prev_offset;
+        }
+
         return column_offsets;
-
-    const auto & sizes_data = column_sizes.getData();
-    auto & offsets_data = assert_cast<ColumnArray::ColumnOffsets &>(*column_offsets).getData();
-
-    offsets_data.resize(sizes_data.size());
-
-    IColumn::Offset prev_offset = 0;
-    for (size_t i = 0, size = sizes_data.size(); i < size; ++i)
-    {
-        prev_offset += sizes_data[i];
-        offsets_data[i] = prev_offset;
     }
 
-    return column_offsets;
-}
+    ColumnPtr arrayOffsetsToSizes(const IColumn & column)
+    {
+        const auto & column_offsets = assert_cast<const ColumnArray::ColumnOffsets &>(column);
+        MutableColumnPtr column_sizes = column_offsets.cloneEmpty();
 
-ColumnPtr arrayOffsetsToSizes(const IColumn & column)
-{
-    const auto & column_offsets = assert_cast<const ColumnArray::ColumnOffsets &>(column);
-    MutableColumnPtr column_sizes = column_offsets.cloneEmpty();
+        if (column_offsets.empty())
+            return column_sizes;
 
-    if (column_offsets.empty())
+        const auto & offsets_data = column_offsets.getData();
+        auto & sizes_data = assert_cast<ColumnArray::ColumnOffsets &>(*column_sizes).getData();
+
+        sizes_data.resize(offsets_data.size());
+
+        IColumn::Offset prev_offset = 0;
+        for (size_t i = 0, size = offsets_data.size(); i < size; ++i)
+        {
+            auto current_offset = offsets_data[i];
+            sizes_data[i] = current_offset - prev_offset;
+            prev_offset =  current_offset;
+        }
+
         return column_sizes;
-
-    const auto & offsets_data = column_offsets.getData();
-    auto & sizes_data = assert_cast<ColumnArray::ColumnOffsets &>(*column_sizes).getData();
-
-    sizes_data.resize(offsets_data.size());
-
-    IColumn::Offset prev_offset = 0;
-    for (size_t i = 0, size = offsets_data.size(); i < size; ++i)
-    {
-        auto current_offset = offsets_data[i];
-        sizes_data[i] = current_offset - prev_offset;
-        prev_offset =  current_offset;
     }
-
-    return column_sizes;
 }
 
 DataTypePtr SerializationArray::SubcolumnCreator::create(const DataTypePtr & prev) const
@@ -197,41 +197,42 @@ ColumnPtr SerializationArray::SubcolumnCreator::create(const ColumnPtr & prev) c
 }
 
 void SerializationArray::enumerateStreams(
-    SubstreamPath & path,
+    EnumerateStreamsSettings & settings,
     const StreamCallback & callback,
     const SubstreamData & data) const
 {
     const auto * type_array = data.type ? &assert_cast<const DataTypeArray &>(*data.type) : nullptr;
     const auto * column_array = data.column ? &assert_cast<const ColumnArray &>(*data.column) : nullptr;
-    auto offsets_column = column_array ? column_array->getOffsetsPtr() : nullptr;
+    auto offsets = column_array ? column_array->getOffsetsPtr() : nullptr;
 
-    path.push_back(Substream::ArraySizes);
-    path.back().data =
-    {
+    auto offsets_serialization =
         std::make_shared<SerializationNamed>(
             std::make_shared<SerializationNumber<UInt64>>(),
-                "size" + std::to_string(getArrayLevel(path)), false),
-        data.type ? std::make_shared<DataTypeUInt64>() : nullptr,
-        offsets_column ? arrayOffsetsToSizes(*offsets_column) : nullptr,
-        data.serialization_info,
-    };
+                "size" + std::to_string(getArrayLevel(settings.path)), false);
 
-    callback(path);
+    auto offsets_column = offsets && !settings.position_independent_encoding
+        ? arrayOffsetsToSizes(*offsets)
+        : offsets;
 
-    path.back() = Substream::ArrayElements;
-    path.back().data = data;
-    path.back().creator = std::make_shared<SubcolumnCreator>(offsets_column);
+    settings.path.push_back(Substream::ArraySizes);
+    settings.path.back().data = SubstreamData(offsets_serialization)
+        .withType(type_array ? std::make_shared<DataTypeUInt64>() : nullptr)
+        .withColumn(std::move(offsets_column))
+        .withSerializationInfo(data.serialization_info);
 
-    SubstreamData next_data =
-    {
-        nested,
-        type_array ? type_array->getNestedType() : nullptr,
-        column_array ? column_array->getDataPtr() : nullptr,
-        data.serialization_info,
-    };
+    callback(settings.path);
 
-    nested->enumerateStreams(path, callback, next_data);
-    path.pop_back();
+    settings.path.back() = Substream::ArrayElements;
+    settings.path.back().data = data;
+    settings.path.back().creator = std::make_shared<SubcolumnCreator>(offsets);
+
+    auto next_data = SubstreamData(nested)
+        .withType(type_array ? type_array->getNestedType() : nullptr)
+        .withColumn(column_array ? column_array->getDataPtr() : nullptr)
+        .withSerializationInfo(data.serialization_info);
+
+    nested->enumerateStreams(settings, callback, next_data);
+    settings.path.pop_back();
 }
 
 void SerializationArray::serializeBinaryBulkStatePrefix(

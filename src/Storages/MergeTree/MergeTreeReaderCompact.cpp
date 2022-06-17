@@ -49,22 +49,24 @@ MergeTreeReaderCompact::MergeTreeReaderCompact(
 
         column_positions.resize(columns_num);
         read_only_offsets.resize(columns_num);
+
         auto name_and_type = columns.begin();
         for (size_t i = 0; i < columns_num; ++i, ++name_and_type)
         {
-            if (name_and_type->isSubcolumn())
+            auto column_from_part = getColumnFromPart(*name_and_type);
+            auto position = data_part->getColumnPosition(column_from_part.getNameInStorage());
+            bool is_array = isArray(column_from_part.type);
+
+            if (column_from_part.isSubcolumn())
             {
                 auto storage_column_from_part = getColumnFromPart(
-                    {name_and_type->getNameInStorage(), name_and_type->getTypeInStorage()});
+                    {column_from_part.getNameInStorage(), column_from_part.getTypeInStorage()});
 
-                if (!storage_column_from_part.type->tryGetSubcolumnType(name_and_type->getSubcolumnName()))
-                    continue;
+                auto subcolumn_name = column_from_part.getSubcolumnName();
+                if (!storage_column_from_part.type->hasSubcolumn(subcolumn_name))
+                    position.reset();
             }
-
-            auto column_from_part = getColumnFromPart(*name_and_type);
-
-            auto position = data_part->getColumnPosition(column_from_part.getNameInStorage());
-            if (!position && typeid_cast<const DataTypeArray *>(column_from_part.type.get()))
+            else if (!position && is_array)
             {
                 /// If array of Nested column is missing in part,
                 /// we have to read its offsets if they exist.
@@ -221,7 +223,8 @@ void MergeTreeReaderCompact::readData(
 
     auto buffer_getter = [&](const ISerialization::SubstreamPath & substream_path) -> ReadBuffer *
     {
-        if (only_offsets && (substream_path.size() != 1 || substream_path[0].type != ISerialization::Substream::ArraySizes))
+        bool is_offsets = !substream_path.empty() && substream_path.back().type == ISerialization::Substream::ArraySizes;
+        if (only_offsets && !is_offsets)
             return nullptr;
 
         return data_buffer;

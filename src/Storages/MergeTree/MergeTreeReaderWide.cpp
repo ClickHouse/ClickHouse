@@ -15,7 +15,6 @@ namespace DB
 
 namespace
 {
-    using OffsetColumns = std::map<std::string, ColumnPtr>;
     constexpr auto DATA_FILE_EXTENSION = ".bin";
 }
 
@@ -291,6 +290,7 @@ void MergeTreeReaderWide::readData(
             /* seek_to_start = */false, substream_path, streams, name_and_type, from_mark,
             seek_to_mark, current_task_last_mark, cache);
     };
+
     deserialize_settings.continuous_reading = continue_reading;
     auto & deserialize_state = deserialize_binary_bulk_state_map[name];
 

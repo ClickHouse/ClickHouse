@@ -163,7 +163,7 @@ BlockIO InterpreterDescribeQuery::execute()
                     res_columns[6]->insertDefault();
 
                 res_columns[7]->insert(1u);
-            }, { type->getDefaultSerialization(), type, nullptr, nullptr });
+            }, ISerialization::SubstreamData(type->getDefaultSerialization()).withType(type));
         }
     }
 
