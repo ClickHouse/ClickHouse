@@ -3,9 +3,9 @@ sidebar_position: 26
 sidebar_label: Client Libraries
 ---
 
-# Client Libraries from Third-party Developers {#client-libraries-from-third-party-developers}
+# Client Libraries from Third-party Developers
 
-:::warning    
+:::warning
 ClickHouse Inc does **not** maintain the libraries listed below and hasn’t done any extensive testing to ensure their quality.
 :::
 
@@ -47,6 +47,8 @@ ClickHouse Inc does **not** maintain the libraries listed below and hasn’t don
     -   [ClickHouse (Ruby)](https://github.com/shlima/click_house)
     -   [clickhouse-activerecord](https://github.com/PNixx/clickhouse-activerecord)
 -   Rust
+    -   [clickhouse.rs](https://github.com/loyd/clickhouse.rs)
+    -   [clickhouse-rs](https://github.com/suharev7/clickhouse-rs)
     -   [Klickhouse](https://github.com/Protryon/klickhouse)
 -   R
     -   [clickhouse-r](https://github.com/hannesmuehleisen/clickhouse-r)

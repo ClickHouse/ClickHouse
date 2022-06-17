@@ -1,8 +1,9 @@
 #pragma once
 
 #include <boost/noncopyable.hpp>
-#include <IO/WriteBufferFromFile.h>
+#include <Common/IFileCache.h>
 #include <Core/Types.h>
+#include <IO/WriteBufferFromFile.h>
 #include <IO/SeekableReadBuffer.h>
 #include <list>
 
@@ -31,7 +32,7 @@ friend struct FileSegmentsHolder;
 friend class FileSegmentRangeWriter;
 
 public:
-    using Key = UInt128;
+    using Key = IFileCache::Key;
     using RemoteFileReaderPtr = std::shared_ptr<SeekableReadBuffer>;
     using LocalCacheWriterPtr = std::unique_ptr<WriteBufferFromFile>;
 
@@ -70,8 +71,12 @@ public:
     };
 
     FileSegment(
-        size_t offset_, size_t size_, const Key & key_,
-        IFileCache * cache_, State download_state_);
+        size_t offset_,
+        size_t size_,
+        const Key & key_,
+        IFileCache * cache_,
+        State download_state_,
+        bool is_persistent_ = false);
 
     ~FileSegment();
 
@@ -99,6 +104,8 @@ public:
     const Key & key() const { return file_key; }
 
     size_t offset() const { return range().left; }
+
+    bool isPersistent() const { return is_persistent; }
 
     State wait();
 
@@ -161,6 +168,8 @@ public:
 
     [[noreturn]] void throwIfDetached() const;
 
+    String getPathInLocalCache() const;
+
 private:
     size_t availableSize() const { return reserved_size - downloaded_size; }
 
@@ -200,6 +209,7 @@ private:
     const Range segment_range;
 
     State download_state;
+
     String downloader_id;
 
     RemoteFileReaderPtr remote_file_reader;
@@ -236,6 +246,9 @@ private:
     std::atomic<size_t> hits_count = 0; /// cache hits.
     std::atomic<size_t> ref_count = 0; /// Used for getting snapshot state
 
+    /// Currently no-op. (will be added in PR 36171)
+    /// Defined if a file comply by the eviction policy.
+    bool is_persistent;
     CurrentMetrics::Increment metric_increment{CurrentMetrics::CacheFileSegments};
 };
 

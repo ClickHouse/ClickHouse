@@ -3,7 +3,7 @@
 #if USE_AWS_S3
 
 #include <Common/logger_useful.h>
-#include <Common/FileCache.h>
+#include <Common/IFileCache.h>
 
 #include <IO/WriteBufferFromS3.h>
 #include <IO/WriteHelpers.h>
@@ -54,7 +54,7 @@ struct WriteBufferFromS3::PutObjectTask
 };
 
 WriteBufferFromS3::WriteBufferFromS3(
-    std::shared_ptr<Aws::S3::S3Client> client_ptr_,
+    std::shared_ptr<const Aws::S3::S3Client> client_ptr_,
     const String & bucket_,
     const String & key_,
     const S3Settings::ReadWriteSettings & s3_settings_,
@@ -65,10 +65,10 @@ WriteBufferFromS3::WriteBufferFromS3(
     : BufferWithOwnMemory<WriteBuffer>(buffer_size_, nullptr, 0)
     , bucket(bucket_)
     , key(key_)
-    , object_metadata(std::move(object_metadata_))
     , client_ptr(std::move(client_ptr_))
     , upload_part_size(s3_settings_.min_upload_part_size)
     , s3_settings(s3_settings_)
+    , object_metadata(std::move(object_metadata_))
     , schedule(std::move(schedule_))
     , cache(cache_)
 {
@@ -95,7 +95,7 @@ void WriteBufferFromS3::nextImpl()
     {
         auto cache_key = cache->hash(key);
 
-        file_segments_holder.emplace(cache->setDownloading(cache_key, current_download_offset, size));
+        file_segments_holder.emplace(cache->setDownloading(cache_key, current_download_offset, size, /* is_persistent */false));
         current_download_offset += size;
 
         size_t remaining_size = size;
@@ -152,7 +152,7 @@ void WriteBufferFromS3::allocateBuffer()
 WriteBufferFromS3::~WriteBufferFromS3()
 {
 #ifndef NDEBUG
-    if (!is_finalized)
+    if (!finalized)
     {
         LOG_ERROR(log, "WriteBufferFromS3 is not finalized in destructor. It's a bug");
         std::terminate();
@@ -200,8 +200,6 @@ void WriteBufferFromS3::finalizeImpl()
 
     if (!multipart_upload_id.empty())
         completeMultipartUpload();
-
-    is_finalized = true;
 }
 
 void WriteBufferFromS3::createMultipartUpload()

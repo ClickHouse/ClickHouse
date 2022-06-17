@@ -521,7 +521,7 @@ bool deserializeTxn(KeeperStorage & storage, ReadBuffer & in, Poco::Logger * /*l
                 return true;
 
             storage.preprocessRequest(request, session_id, time, zxid, /* check_acl = */ false);
-            storage.processRequest(request, session_id, time, zxid, /* check_acl = */ false);
+            storage.processRequest(request, session_id, zxid, /* check_acl = */ false);
         }
     }
 

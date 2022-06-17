@@ -33,6 +33,7 @@
 #include <Parsers/queryNormalization.h>
 #include <Parsers/queryToString.h>
 #include <Parsers/formatAST.h>
+#include <Parsers/toOneLineQuery.h>
 
 #include <Formats/FormatFactory.h>
 #include <Storages/StorageInput.h>
@@ -104,38 +105,6 @@ static void checkASTSizeLimits(const IAST & ast, const Settings & settings)
 }
 
 
-static String joinLines(const String & query)
-{
-    /// Care should be taken. We don't join lines inside non-whitespace tokens (e.g. multiline string literals)
-    ///  and we don't join line after comment (because it can be single-line comment).
-    /// All other whitespaces replaced to a single whitespace.
-
-    String res;
-    const char * begin = query.data();
-    const char * end = begin + query.size();
-
-    Lexer lexer(begin, end);
-    Token token = lexer.nextToken();
-    for (; !token.isEnd(); token = lexer.nextToken())
-    {
-        if (token.type == TokenType::Whitespace)
-        {
-            res += ' ';
-        }
-        else if (token.type == TokenType::Comment)
-        {
-            res.append(token.begin, token.end);
-            if (token.end < end && *token.end == '\n')
-                res += '\n';
-        }
-        else
-            res.append(token.begin, token.end);
-    }
-
-    return res;
-}
-
-
 static String prepareQueryForLogging(const String & query, ContextPtr context)
 {
     String res = query;
@@ -162,7 +131,7 @@ static void logQuery(const String & query, ContextPtr context, bool internal, Qu
 {
     if (internal)
     {
-        LOG_DEBUG(&Poco::Logger::get("executeQuery"), "(internal) {} (stage: {})", joinLines(query), QueryProcessingStage::toString(stage));
+        LOG_DEBUG(&Poco::Logger::get("executeQuery"), "(internal) {} (stage: {})", toOneLineQuery(query), QueryProcessingStage::toString(stage));
     }
     else
     {
@@ -191,7 +160,7 @@ static void logQuery(const String & query, ContextPtr context, bool internal, Qu
             (!initial_query_id.empty() && current_query_id != initial_query_id ? ", initial_query_id: " + initial_query_id : std::string()),
             transaction_info,
             comment,
-            joinLines(query),
+            toOneLineQuery(query),
             QueryProcessingStage::toString(stage));
 
         if (client_info.client_trace_context.trace_id != UUID())
@@ -237,7 +206,7 @@ static void logException(ContextPtr context, QueryLogElement & elem)
             elem.exception,
             context->getClientInfo().current_address.toString(),
             comment,
-            joinLines(elem.query));
+            toOneLineQuery(elem.query));
     else
         LOG_ERROR(
             &Poco::Logger::get("executeQuery"),
@@ -246,7 +215,7 @@ static void logException(ContextPtr context, QueryLogElement & elem)
             elem.exception,
             context->getClientInfo().current_address.toString(),
             comment,
-            joinLines(elem.query),
+            toOneLineQuery(elem.query),
             elem.stack_trace);
 }
 
@@ -444,9 +413,10 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
         if (auto txn = context->getCurrentTransaction())
         {
-            assert(txn->getState() != MergeTreeTransaction::COMMITTED);
+            chassert(txn->getState() != MergeTreeTransaction::COMMITTING);
+            chassert(txn->getState() != MergeTreeTransaction::COMMITTED);
             if (txn->getState() == MergeTreeTransaction::ROLLED_BACK && !ast->as<ASTTransactionControl>() && !ast->as<ASTExplainQuery>())
-                throw Exception(ErrorCodes::INVALID_TRANSACTION, "Cannot execute query: transaction is rolled back");
+                throw Exception(ErrorCodes::INVALID_TRANSACTION, "Cannot execute query because current transaction failed. Expecting ROLLBACK statement.");
         }
 
         /// Interpret SETTINGS clauses as early as possible (before invoking the corresponding interpreter),

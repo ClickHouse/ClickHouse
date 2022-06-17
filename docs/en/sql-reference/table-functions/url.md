@@ -3,7 +3,7 @@ sidebar_position: 41
 sidebar_label: url
 ---
 
-# url {#url}
+# url
 
 `url` function creates a table from the `URL` with given `format` and `structure`.
 
