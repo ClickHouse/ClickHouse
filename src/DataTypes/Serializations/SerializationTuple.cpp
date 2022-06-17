@@ -283,7 +283,7 @@ void SerializationTuple::deserializeTextCSV(IColumn & column, ReadBuffer & istr,
 }
 
 void SerializationTuple::enumerateStreams(
-    SubstreamPath & path,
+    EnumerateStreamsSettings & settings,
     const StreamCallback & callback,
     const SubstreamData & data) const
 {
@@ -293,15 +293,12 @@ void SerializationTuple::enumerateStreams(
 
     for (size_t i = 0; i < elems.size(); ++i)
     {
-        SubstreamData next_data =
-        {
-            elems[i],
-            type_tuple ? type_tuple->getElement(i) : nullptr,
-            column_tuple ? column_tuple->getColumnPtr(i) : nullptr,
-            info_tuple ? info_tuple->getElementInfo(i) : nullptr,
-        };
+        auto next_data = SubstreamData(elems[i])
+            .withType(type_tuple ? type_tuple->getElement(i) : nullptr)
+            .withColumn(column_tuple ? column_tuple->getColumnPtr(i) : nullptr)
+            .withSerializationInfo(info_tuple ? info_tuple->getElementInfo(i) : nullptr);
 
-        elems[i]->enumerateStreams(path, callback, next_data);
+        elems[i]->enumerateStreams(settings, callback, next_data);
     }
 }
 
