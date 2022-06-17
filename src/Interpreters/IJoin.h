@@ -53,7 +53,7 @@ public:
     getNonJoinedBlocks(const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size) const = 0;
 
     /// Peek next stream of delayed joined blocks.
-    virtual std::unique_ptr<IDelayedJoinedBlocksStream> getDelayedBlocks() { return nullptr; }
+    virtual std::unique_ptr<IDelayedJoinedBlocksStream> getDelayedBlocks(IDelayedJoinedBlocksStream * /*prev_cursor*/) { return nullptr; }
 };
 
 using JoinPtr = std::shared_ptr<IJoin>;

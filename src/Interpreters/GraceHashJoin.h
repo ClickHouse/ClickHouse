@@ -24,8 +24,6 @@ public:
     GraceHashJoin(
         ContextPtr context_, std::shared_ptr<TableJoin> table_join_, const Block & right_sample_block_, bool any_take_last_row_ = false);
 
-    ~GraceHashJoin() override;
-
     const TableJoin & getTableJoin() const override { return *table_join; }
 
     bool addJoinedBlock(const Block & block, bool check_limits) override;
@@ -45,7 +43,7 @@ public:
 
     /// Open iterator over joined blocks.
     /// Must be called after all @joinBlock calls.
-    std::unique_ptr<IDelayedJoinedBlocksStream> getDelayedBlocks() override;
+    std::unique_ptr<IDelayedJoinedBlocksStream> getDelayedBlocks(IDelayedJoinedBlocksStream * prev_cursor) override;
 
 private:
     using InMemoryJoin = HashJoin;
@@ -62,7 +60,7 @@ private:
     /// Add right table block to the @join. Calls @rehash on overflow.
     void addJoinedBlockImpl(InMemoryJoinPtr & join, size_t bucket_index, const Block & block);
     /// Rebuild @join after rehash: scatter the blocks in join and write parts that belongs to the other shards to disk.
-    void rehashInMemoryJoin(InMemoryJoinPtr & join, size_t bucket);
+    void rehashInMemoryJoin(InMemoryJoinPtr & join, const BucketsSnapshot & snapshot, size_t bucket);
     /// Check that @join satisifes limits on rows/bytes in @table_join.
     bool fitsInMemory(InMemoryJoin * join) const;
 
@@ -76,6 +74,8 @@ private:
     BucketsSnapshot rehash(size_t desired_size);
     /// Perform some bookkeeping after all calls to @joinBlock.
     void startReadingDelayedBlocks();
+
+    bool checkBlock(std::string_view desc, const Block & block, size_t bucket);
 
     Poco::Logger * log;
     ContextPtr context;

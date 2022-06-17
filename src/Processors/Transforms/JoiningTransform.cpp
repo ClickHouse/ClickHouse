@@ -132,7 +132,7 @@ void JoiningTransform::work()
 
             if (process_delayed)
             {
-                delayed_blocks = join->getDelayedBlocks();
+                delayed_blocks = join->getDelayedBlocks(nullptr);
                 if (processDelayedBlock())
                     return;
             }
@@ -202,7 +202,7 @@ bool JoiningTransform::processDelayedBlock()
     {
         block = delayed_blocks->next();
         if (!block)
-            delayed_blocks = join->getDelayedBlocks();
+            delayed_blocks = join->getDelayedBlocks(delayed_blocks.get());
     }
 
     if (!block)
