@@ -36,6 +36,7 @@ bool TranslateQualifiedNamesMatcher::Data::unknownColumn(size_t table_pos, const
     const auto & columns = tables[table_pos].columns;
     if (columns.empty())
         return false;
+
     auto match = IdentifierSemantic::canReferColumnToTable(identifier, table);
     size_t to_strip = 0;
     switch (match)
