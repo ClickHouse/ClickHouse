@@ -40,10 +40,11 @@ struct IdentifierSemantic
     /// @returns name for column identifiers
     static std::optional<String> getColumnName(const ASTIdentifier & node);
     static std::optional<String> getColumnName(const ASTPtr & ast);
-    static std::optional<String> getColumnNamePart(const ASTIdentifier & node, size_t pos);
 
     /// @returns name for 'not a column' identifiers
     static std::optional<String> extractNestedName(const ASTIdentifier & identifier, const String & table_name);
+
+    static String extractNestedName(const ASTIdentifier & identifier, const DatabaseAndTableWithAlias & table);
 
     static ColumnMatch canReferColumnToTable(const ASTIdentifier & identifier, const DatabaseAndTableWithAlias & db_and_table);
     static ColumnMatch canReferColumnToTable(const ASTIdentifier & identifier, const TableWithColumnNamesAndTypes & table_with_columns);
