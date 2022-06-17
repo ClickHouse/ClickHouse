@@ -41,10 +41,12 @@ String KQLOperators::genHaystackOpExpr(std::vector<String> &tokens,IParser::Pos 
     return new_expr;
 }
 
-String KQLOperators::getExprFromToken(IParser::Pos pos)
+String KQLOperators::getExprFromToken(IParser::Pos &pos)
 {
     String res;
     std::vector<String> tokens;
+
+    auto begin = pos;
 
     while (!pos->isEnd() && pos->type != TokenType::PipeMark && pos->type != TokenType::Semicolon)
     {
@@ -235,6 +237,7 @@ String KQLOperators::getExprFromToken(IParser::Pos pos)
     for (auto & token : tokens)
         res = res + token + " ";
 
+    pos = begin;
     return res;
 }
 
