@@ -621,11 +621,6 @@ static Blocks scatterBlockByHashImpl(const Strings & key_columns_names, const Bl
     return result;
 }
 
-template <std::integral T>
-static constexpr bool isPowerOf2(T number) {
-    return number > 0 && (number & (number - 1)) == 0;
-}
-
 static Blocks scatterBlockByHashPow2(const Strings & key_columns_names, const Block & block, size_t num_shards) {
     size_t mask = num_shards - 1;
     return scatterBlockByHashImpl(key_columns_names, block, num_shards, [mask](size_t hash) {
