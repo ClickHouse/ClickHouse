@@ -389,7 +389,7 @@ public:
         if (!queue.front()->isLast())
         {
             queue.front()->next();
-            updateTop();
+            updateTop(true /*check_in_order*/);
         }
         else
         {
@@ -413,7 +413,7 @@ public:
         if (!queue.front()->isLast(batch_size_value))
         {
             queue.front()->next(batch_size_value);
-            updateTop();
+            updateTop(false /*check_in_order*/);
         }
         else
         {
@@ -424,7 +424,7 @@ public:
     void replaceTop(Cursor new_top)
     {
         queue.front() = new_top;
-        updateTop();
+        updateTop(true /*check_in_order*/);
     }
 
     void removeTop()
@@ -477,7 +477,7 @@ private:
     /// Why cannot simply use std::priority_queue?
     /// - because it doesn't support updating the top element and requires pop and push instead.
     /// Also look at "Boost.Heap" library.
-    void ALWAYS_INLINE updateTop()
+    void ALWAYS_INLINE updateTop(bool check_in_order)
     {
         size_t size = queue.size();
         if (size < 2)
@@ -489,7 +489,7 @@ private:
         auto child_it = begin + child_idx;
 
         /// Check if we are in order.
-        if ((*child_it).greater(*begin))
+        if (check_in_order && (*child_it).greater(*begin))
         {
             if constexpr (strategy == SortingQueueStrategy::Batch)
                 updateBatchSize();
@@ -546,8 +546,12 @@ private:
 
         batch_size = 1;
         size_t child_idx = nextChildIndex();
-
         auto & next_child_cursor = *(queue.begin() + child_idx);
+
+        if (min_cursor_pos + batch_size < min_cursor_size && next_child_cursor.greaterWithOffset(begin_cursor, 0, batch_size))
+            ++batch_size;
+        else
+            return;
 
         if (unlikely(begin_cursor.totallyLessOrEquals(next_child_cursor)))
         {
