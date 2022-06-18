@@ -1,3 +1,5 @@
+#pragma once
+
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/IJoin.h>
 

@@ -590,7 +590,8 @@ static IColumn::Selector hashToSelector(const WeakHash32 & hash, Sharder sharder
 }
 
 template <Fn<size_t(size_t)> Sharder>
-static Blocks scatterBlockByHashImpl(const Strings & key_columns_names, const Block & block, size_t num_shards, Sharder sharder) {
+static Blocks scatterBlockByHashImpl(const Strings & key_columns_names, const Block & block, size_t num_shards, Sharder sharder)
+{
     size_t num_rows = block.rows();
     size_t num_cols = block.columns();
 
@@ -621,26 +622,30 @@ static Blocks scatterBlockByHashImpl(const Strings & key_columns_names, const Bl
     return result;
 }
 
-static Blocks scatterBlockByHashPow2(const Strings & key_columns_names, const Block & block, size_t num_shards) {
+static Blocks scatterBlockByHashPow2(const Strings & key_columns_names, const Block & block, size_t num_shards)
+{
     size_t mask = num_shards - 1;
     return scatterBlockByHashImpl(key_columns_names, block, num_shards, [mask](size_t hash) {
         return hash & mask;
     });
 }
 
-static Blocks scatterBlockByHashGeneric(const Strings & key_columns_names, const Block & block, size_t num_shards) {
+static Blocks scatterBlockByHashGeneric(const Strings & key_columns_names, const Block & block, size_t num_shards)
+{
     return scatterBlockByHashImpl(key_columns_names, block, num_shards, [num_shards](size_t hash) {
         return hash % num_shards;
     });
 }
 
-Blocks scatterBlockByHash(const Strings & key_columns_names, const Block & block, size_t num_shards) {
+Blocks scatterBlockByHash(const Strings & key_columns_names, const Block & block, size_t num_shards)
+{
     if (likely(isPowerOf2(num_shards)))
         return scatterBlockByHashPow2(key_columns_names, block, num_shards);
     return scatterBlockByHashGeneric(key_columns_names, block, num_shards);
 }
 
-bool hasNonJoinedBlocks(const TableJoin & table_join) {
+bool hasNonJoinedBlocks(const TableJoin & table_join)
+{
     return table_join.strictness() != ASTTableJoin::Strictness::Asof &&
         table_join.strictness() != ASTTableJoin::Strictness::Semi &&
         isRightOrFull(table_join.kind());
