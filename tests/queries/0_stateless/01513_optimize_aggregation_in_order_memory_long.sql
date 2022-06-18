@@ -12,7 +12,7 @@ set max_memory_usage='500M';
 set max_threads=1;
 set max_block_size=500;
 
-select key, groupArray(repeat('a', 200)), count() from data_01513 group by key format Null; -- { serverError 241; }
+select key, groupArray(repeat('a', 200)), count() from data_01513 group by key format Null settings optimize_aggregation_in_order=0; -- { serverError 241; }
 select key, groupArray(repeat('a', 200)), count() from data_01513 group by key format Null settings optimize_aggregation_in_order=1;
 -- for WITH TOTALS previous groups should be kept.
 select key, groupArray(repeat('a', 200)), count() from data_01513 group by key with totals format Null settings optimize_aggregation_in_order=1; -- { serverError 241; }

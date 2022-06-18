@@ -48,9 +48,9 @@ You can see that `GROUP BY` for `y = NULL` summed up `x`, as if `NULL` is this v
 
 If you pass several keys to `GROUP BY`, the result will give you all the combinations of the selection, as if `NULL` were a specific value.
 
-## WITH ROLLUP Modifier
+## ROLLUP Modifier
 
-`WITH ROLLUP` modifier is used to calculate subtotals for the key expressions, based on their order in the `GROUP BY` list. The subtotals rows are added after the result table.
+`ROLLUP` modifier is used to calculate subtotals for the key expressions, based on their order in the `GROUP BY` list. The subtotals rows are added after the result table.
 
 The subtotals are calculated in the reverse order: at first subtotals are calculated for the last key expression in the list, then for the previous one, and so on up to the first key expression.
 
@@ -78,7 +78,7 @@ Consider the table t:
 Query:
 
 ```sql
-SELECT year, month, day, count(*) FROM t GROUP BY year, month, day WITH ROLLUP;
+SELECT year, month, day, count(*) FROM t GROUP BY ROLLUP(year, month, day);
 ```
 As `GROUP BY` section has three key expressions, the result contains four tables with subtotals "rolled up" from right to left:
 
@@ -109,10 +109,14 @@ As `GROUP BY` section has three key expressions, the result contains four tables
 │    0 │     0 │   0 │       6 │
 └──────┴───────┴─────┴─────────┘
 ```
+The same query also can be written using `WITH` keyword.
+```sql
+SELECT year, month, day, count(*) FROM t GROUP BY year, month, day WITH ROLLUP;
+```
 
-## WITH CUBE Modifier
+## CUBE Modifier
 
-`WITH CUBE` modifier is used to calculate subtotals for every combination of the key expressions in the `GROUP BY` list. The subtotals rows are added after the result table.
+`CUBE` modifier is used to calculate subtotals for every combination of the key expressions in the `GROUP BY` list. The subtotals rows are added after the result table.
 
 In the subtotals rows the values of all "grouped" key expressions are set to `0` or empty line.
 
@@ -138,7 +142,7 @@ Consider the table t:
 Query:
 
 ```sql
-SELECT year, month, day, count(*) FROM t GROUP BY year, month, day WITH CUBE;
+SELECT year, month, day, count(*) FROM t GROUP BY CUBE(year, month, day);
 ```
 
 As `GROUP BY` section has three key expressions, the result contains eight tables with subtotals for all key expression combinations:
@@ -195,6 +199,10 @@ Columns, excluded from `GROUP BY`, are filled with zeros.
 ┌─year─┬─month─┬─day─┬─count()─┐
 │    0 │     0 │   0 │       6 │
 └──────┴───────┴─────┴─────────┘
+```
+The same query also can be written using `WITH` keyword.
+```sql
+SELECT year, month, day, count(*) FROM t GROUP BY year, month, day WITH CUBE;
 ```
 
 
@@ -259,6 +267,39 @@ GROUP BY domain
 ```
 
 For every different key value encountered, `GROUP BY` calculates a set of aggregate function values.
+
+## GROUPING SETS modifier
+
+This is the most general modifier.
+This modifier allows to manually specify several aggregation key sets (grouping sets).
+Aggregation is performed separately for each grouping set, after that all results are combined.
+If a column is not presented in a grouping set, it's filled with a default value.
+
+In other words, modifiers described above can be represented via `GROUPING SETS`.
+Despite the fact that queries with `ROLLUP`, `CUBE` and `GROUPING SETS` modifiers are syntactically equal, they may have different performance.
+When `GROUPING SETS` try to execute everything in parallel, `ROLLUP` and `CUBE` are executing the final merging of the aggregates in a single thread.
+
+In the situation when source columns contain default values, it might be hard to distinguish if a row is a part of the aggregation which uses those columns as keys or not.
+To solve this problem `GROUPING` function must be used.
+
+**Example**
+
+The following two queries are equivalent.
+
+```sql
+-- Query 1
+SELECT year, month, day, count(*) FROM t GROUP BY year, month, day WITH ROLLUP;
+
+-- Query 2
+SELECT year, month, day, count(*) FROM t GROUP BY
+GROUPING SETS
+(
+    (year, month, day),
+    (year, month),
+    (year),
+    ()
+);
+```
 
 ## Implementation Details
 
