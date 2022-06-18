@@ -1,5 +1,6 @@
 #include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Disks/IO/ThreadPoolRemoteFSReader.h>
+#include <IO/WriteBufferFromFileBase.h>
 #include <IO/copyData.h>
 
 namespace DB
@@ -31,7 +32,7 @@ void IObjectStorage::removeFromCache(const std::string & path)
     if (cache)
     {
         auto key = cache->hash(path);
-        cache->remove(key);
+        cache->removeIfExists(key);
     }
 }
 
