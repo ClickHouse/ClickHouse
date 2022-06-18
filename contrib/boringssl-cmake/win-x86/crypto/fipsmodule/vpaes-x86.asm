@@ -20,7 +20,7 @@ section	.text	code align=64
 %else
 section	.text	code
 %endif
-%ifndef NDEBUG
+%ifdef BORINGSSL_DISPATCH_TEST
 extern	_BORINGSSL_function_hit
 %endif
 align	64
@@ -474,7 +474,7 @@ L$_vpaes_set_encrypt_key_begin:
 	push	ebx
 	push	esi
 	push	edi
-%ifndef NDEBUG
+%ifdef BORINGSSL_DISPATCH_TEST
 	push	ebx
 	push	edx
 	call	L$016pic
@@ -553,7 +553,7 @@ L$_vpaes_encrypt_begin:
 	push	ebx
 	push	esi
 	push	edi
-%ifndef NDEBUG
+%ifdef BORINGSSL_DISPATCH_TEST
 	push	ebx
 	push	edx
 	call	L$019pic
