@@ -699,7 +699,8 @@ void InterpreterSelectQuery::buildQueryPlan(QueryPlan & query_plan)
                                         : std::make_optional<String>(context->getUserName())
     };
 
-    if (executeReadFromCache(query_plan, query_cache_key)) {
+    if (executeReadFromCache(query_plan, query_cache_key))
+    {
         return;
     }
     executeImpl(query_plan, std::move(input_pipe));
