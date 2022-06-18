@@ -2,6 +2,7 @@
 
 #include <Backups/RestoreSettings.h>
 #include <unordered_map>
+#include <unordered_set>
 
 
 namespace DB
@@ -15,6 +16,7 @@ using BackupPtr = std::shared_ptr<const IBackup>;
 class IRestoreCoordination;
 struct IAccessEntity;
 using AccessEntityPtr = std::shared_ptr<const IAccessEntity>;
+class AccessRightsElements;
 
 
 /// Makes a backup of access entities of a specified type.
@@ -34,9 +36,13 @@ public:
 
     /// Adds a data path to loads access entities from.
     void addDataPath(const String & data_path);
+    bool hasDataPath(const String & data_path) const;
+
+    /// Checks that the current user can do restoring.
+    AccessRightsElements getRequiredAccess() const;
 
     /// Inserts all access entities loaded from all the paths added by addDataPath().
-    void restore(AccessControl & access_control);
+    void restore(AccessControl & access_control) const;
 
 private:
     BackupPtr backup;
@@ -44,6 +50,7 @@ private:
     std::shared_ptr<IRestoreCoordination> restore_coordination;
     std::unordered_map<UUID, AccessEntityPtr> entities;
     std::unordered_map<UUID, std::pair<String, AccessEntityType>> dependencies;
+    std::unordered_set<String> data_paths;
 };
 
 }

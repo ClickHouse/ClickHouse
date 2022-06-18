@@ -10,7 +10,6 @@ class IBackup;
 using BackupMutablePtr = std::shared_ptr<IBackup>;
 class IBackupEntry;
 using BackupEntries = std::vector<std::pair<String, std::shared_ptr<const IBackupEntry>>>;
-struct RestoreSettings;
 using DataRestoreTasks = std::vector<std::function<void()>>;
 class AccessRightsElements;
 class DDLRenamingMap;
@@ -26,8 +25,5 @@ void restoreTablesData(DataRestoreTasks && tasks, ThreadPool & thread_pool);
 
 /// Returns access required to execute BACKUP query.
 AccessRightsElements getRequiredAccessToBackup(const ASTBackupQuery::Elements & elements);
-
-/// Returns access required to execute RESTORE query.
-AccessRightsElements getRequiredAccessToRestore(const ASTBackupQuery::Elements & elements, const RestoreSettings & restore_settings);
 
 }

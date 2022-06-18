@@ -25,6 +25,8 @@ public:
     void revokeAdminOption(const UUID & role_);
     void revokeAdminOption(const std::vector<UUID> & roles_);
 
+    bool isEmpty() const { return roles.empty(); }
+
     bool isGranted(const UUID & role_) const;
     bool isGrantedWithAdminOption(const UUID & role_) const;
 

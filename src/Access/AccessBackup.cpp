@@ -1,6 +1,12 @@
 #include <Access/AccessBackup.h>
 #include <Access/AccessControl.h>
 #include <Access/AccessEntityIO.h>
+#include <Access/Common/AccessRightsElement.h>
+#include <Access/User.h>
+#include <Access/Role.h>
+#include <Access/SettingsProfile.h>
+#include <Access/RowPolicy.h>
+#include <Access/Quota.h>
 #include <Backups/BackupEntriesCollector.h>
 #include <Backups/BackupEntryFromMemory.h>
 #include <Backups/IBackup.h>
@@ -151,7 +157,7 @@ namespace
         for (const auto & id : entities | boost::adaptors::map_keys)
         {
             auto it = std::lower_bound(res.begin(), res.end(), id);
-            if (*it == id)
+            if ((it != res.end()) && (*it == id))
                 res.erase(it);
         }
         return res;
@@ -218,6 +224,74 @@ namespace
             entity = new_entity;
         }
     }
+
+    AccessRightsElements getRequiredAccessToRestore(const std::unordered_map<UUID, AccessEntityPtr> & entities)
+    {
+        AccessRightsElements res;
+        for (const auto & entity : entities | boost::adaptors::map_values)
+        {
+            auto entity_type = entity->getType();
+            switch (entity_type)
+            {
+                case User::TYPE:
+                {
+                    const auto & user = typeid_cast<const User &>(*entity);
+                    res.emplace_back(AccessType::CREATE_USER);
+                    auto elements = user.access.getElements();
+                    for (auto & element : elements)
+                    {
+                        if (element.is_partial_revoke)
+                            continue;
+                        element.grant_option = true;
+                        res.emplace_back(element);
+                    }
+                    if (!user.granted_roles.isEmpty())
+                        res.emplace_back(AccessType::ROLE_ADMIN);
+                    break;
+                }
+
+                case Role::TYPE:
+                {
+                    const auto & role = typeid_cast<const Role &>(*entity);
+                    res.emplace_back(AccessType::CREATE_ROLE);
+                    auto elements = role.access.getElements();
+                    for (auto & element : elements)
+                    {
+                        if (element.is_partial_revoke)
+                            continue;
+                        element.grant_option = true;
+                        res.emplace_back(element);
+                    }
+                    if (!role.granted_roles.isEmpty())
+                        res.emplace_back(AccessType::ROLE_ADMIN);
+                    break;
+                }
+
+                case SettingsProfile::TYPE:
+                {
+                    res.emplace_back(AccessType::CREATE_SETTINGS_PROFILE);
+                    break;
+                }
+
+                case RowPolicy::TYPE:
+                {
+                    const auto & policy = typeid_cast<const RowPolicy &>(*entity);
+                    res.emplace_back(AccessType::CREATE_ROW_POLICY, policy.getDatabase(), policy.getTableName());
+                    break;
+                }
+
+                case Quota::TYPE:
+                {
+                    res.emplace_back(AccessType::CREATE_QUOTA);
+                    break;
+                }
+
+                default:
+                    throw Exception("Unknown type: " + toString(entity_type), ErrorCodes::LOGICAL_ERROR);
+            }
+        }
+        return res;
+    }
 }
 
 void backupAccessEntities(
@@ -245,6 +319,9 @@ AccessRestoreTask::~AccessRestoreTask() = default;
 
 void AccessRestoreTask::addDataPath(const String & data_path)
 {
+    if (!data_paths.emplace(data_path).second)
+        return;
+
     String file_path = fs::path{data_path} / "access.txt";
     auto backup_entry = backup->readFile(file_path);
     auto ab = AccessEntitiesInBackup::fromBackupEntry(*backup_entry, file_path);
@@ -255,7 +332,17 @@ void AccessRestoreTask::addDataPath(const String & data_path)
         dependencies.erase(id);
 }
 
-void AccessRestoreTask::restore(AccessControl & access_control)
+bool AccessRestoreTask::hasDataPath(const String & data_path) const
+{
+    return data_paths.contains(data_path);
+}
+
+AccessRightsElements AccessRestoreTask::getRequiredAccess() const
+{
+    return getRequiredAccessToRestore(entities);
+}
+
+void AccessRestoreTask::restore(AccessControl & access_control) const
 {
     auto old_to_new_ids = resolveDependencies(dependencies, access_control, restore_settings.allow_unresolved_access_dependencies);
 

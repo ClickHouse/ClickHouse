@@ -39,6 +39,8 @@ def cleanup_after_test():
         instance.query("DROP DATABASE IF EXISTS test")
         instance.query("DROP DATABASE IF EXISTS test2")
         instance.query("DROP DATABASE IF EXISTS test3")
+        instance.query("DROP USER IF EXISTS u1")
+        instance.query("DROP ROLE IF EXISTS r1, r2")
 
 
 backup_id_counter = 0
@@ -311,7 +313,9 @@ def test_async():
 
 def test_empty_files_in_backup():
     instance.query("CREATE DATABASE test")
-    instance.query("CREATE TABLE test.tbl1(x Array(UInt8)) ENGINE=MergeTree ORDER BY tuple() SETTINGS min_bytes_for_wide_part = 0")
+    instance.query(
+        "CREATE TABLE test.tbl1(x Array(UInt8)) ENGINE=MergeTree ORDER BY tuple() SETTINGS min_bytes_for_wide_part = 0"
+    )
     instance.query("INSERT INTO test.tbl1 VALUES ([])")
 
     backup_name = new_backup_name()
@@ -470,7 +474,8 @@ def test_restore_all_restores_temporary_tables():
         "CREATE TEMPORARY TABLE temp_tbl(s String)", params={"session_id": session_id}
     )
     instance.http_query(
-        "INSERT INTO temp_tbl VALUES ('q'), ('w'), ('e')", params={"session_id": session_id}
+        "INSERT INTO temp_tbl VALUES ('q'), ('w'), ('e')",
+        params={"session_id": session_id},
     )
 
     backup_name = new_backup_name()
@@ -483,12 +488,52 @@ def test_restore_all_restores_temporary_tables():
     instance.http_query(
         f"RESTORE ALL FROM {backup_name}",
         params={"session_id": session_id},
-        method="POST"
+        method="POST",
     )
 
     assert instance.http_query(
         "SELECT * FROM temp_tbl ORDER BY s", params={"session_id": session_id}
-    ) == TSV([["e"], ["q"], ["w"]])    
+    ) == TSV([["e"], ["q"], ["w"]])
+
+
+def test_required_privileges():
+    create_and_fill_table(n=5)
+
+    instance.query("CREATE USER u1")
+
+    backup_name = new_backup_name()
+    expected_error = "necessary to have grant BACKUP ON test.table"
+    assert expected_error in instance.query_and_get_error(
+        f"BACKUP TABLE test.table TO {backup_name}", user="u1"
+    )
+
+    instance.query("GRANT BACKUP ON test.table TO u1")
+    instance.query(f"BACKUP TABLE test.table TO {backup_name}", user="u1")
+
+    expected_error = "necessary to have grant INSERT, CREATE TABLE ON test.table"
+    assert expected_error in instance.query_and_get_error(
+        f"RESTORE TABLE test.table FROM {backup_name}", user="u1"
+    )
+
+    expected_error = "necessary to have grant INSERT, CREATE TABLE ON test.table2"
+    assert expected_error in instance.query_and_get_error(
+        f"RESTORE TABLE test.table AS test.table2 FROM {backup_name}", user="u1"
+    )
+
+    instance.query("GRANT INSERT, CREATE ON test.table2 TO u1")
+    instance.query(
+        f"RESTORE TABLE test.table AS test.table2 FROM {backup_name}", user="u1"
+    )
+
+    instance.query("DROP TABLE test.table")
+
+    expected_error = "necessary to have grant INSERT, CREATE TABLE ON test.table"
+    assert expected_error in instance.query_and_get_error(
+        f"RESTORE ALL FROM {backup_name}", user="u1"
+    )
+
+    instance.query("GRANT INSERT, CREATE ON test.table TO u1")
+    instance.query(f"RESTORE ALL FROM {backup_name}", user="u1")
 
 
 def test_system_table():
@@ -526,7 +571,9 @@ def test_system_database():
 
 
 def test_system_users():
-    instance.query("CREATE USER u1 IDENTIFIED BY 'qwe123' SETTINGS PROFILE 'default', custom_a = 1")
+    instance.query(
+        "CREATE USER u1 IDENTIFIED BY 'qwe123' SETTINGS PROFILE 'default', custom_a = 1"
+    )
     instance.query("GRANT SELECT ON test.* TO u1")
     instance.query("CREATE ROLE r1, r2")
     instance.query("GRANT r1 TO r2 WITH ADMIN OPTION")
@@ -540,9 +587,61 @@ def test_system_users():
 
     instance.query(f"RESTORE TABLE system.users, TABLE system.roles FROM {backup_name}")
 
-    assert instance.query("SHOW CREATE USER u1") == "CREATE USER u1 IDENTIFIED WITH sha256_password SETTINGS PROFILE default, custom_a = 1\n"
-    assert instance.query("SHOW GRANTS FOR u1") == TSV(["GRANT SELECT ON test.* TO u1", "GRANT r2 TO u1"])
+    assert (
+        instance.query("SHOW CREATE USER u1")
+        == "CREATE USER u1 IDENTIFIED WITH sha256_password SETTINGS PROFILE default, custom_a = 1\n"
+    )
+    assert instance.query("SHOW GRANTS FOR u1") == TSV(
+        ["GRANT SELECT ON test.* TO u1", "GRANT r2 TO u1"]
+    )
     assert instance.query("SHOW CREATE ROLE r1") == "CREATE ROLE r1\n"
     assert instance.query("SHOW GRANTS FOR r1") == ""
     assert instance.query("SHOW CREATE ROLE r2") == "CREATE ROLE r2\n"
-    assert instance.query("SHOW GRANTS FOR r2") == TSV(["GRANT r1 TO r2 WITH ADMIN OPTION"])
+    assert instance.query("SHOW GRANTS FOR r2") == TSV(
+        ["GRANT r1 TO r2 WITH ADMIN OPTION"]
+    )
+
+
+def test_system_users_required_privileges():
+    instance.query("CREATE ROLE r1")
+    instance.query("CREATE USER u1 DEFAULT ROLE r1")
+    instance.query("GRANT SELECT ON test.* TO u1")
+
+    backup_name = new_backup_name()
+    instance.query("CREATE USER u2")
+
+    expected_error = "necessary to have grant BACKUP ON system.users"
+    assert expected_error in instance.query_and_get_error(
+        f"BACKUP TABLE system.users, TABLE system.roles TO {backup_name}", user="u2"
+    )
+
+    instance.query("GRANT BACKUP ON system.users TO u2")
+
+    expected_error = "necessary to have grant BACKUP ON system.roles"
+    assert expected_error in instance.query_and_get_error(
+        f"BACKUP TABLE system.users, TABLE system.roles TO {backup_name}", user="u2"
+    )
+
+    instance.query("GRANT BACKUP ON system.roles TO u2")
+    instance.query(
+        f"BACKUP TABLE system.users, TABLE system.roles TO {backup_name}", user="u2"
+    )
+
+    instance.query("DROP USER u1")
+    instance.query("DROP ROLE r1")
+
+    expected_error = "necessary to have grant CREATE USER ON *.*"
+    assert expected_error in instance.query_and_get_error(f"RESTORE ALL FROM {backup_name}", user="u2")
+
+    instance.query("GRANT CREATE USER ON *.* TO u2")
+    instance.query(f"RESTORE ALL FROM {backup_name}", user="u2")
+
+    assert (
+        instance.query("SHOW CREATE USER u1")
+        == "CREATE USER u1 IDENTIFIED WITH sha256_password SETTINGS PROFILE default, custom_a = 1\n"
+    )
+    assert instance.query("SHOW GRANTS FOR u1") == TSV(
+        ["GRANT SELECT ON test.* TO u1", "GRANT r2 TO u1"]
+    )
+    assert instance.query("SHOW CREATE ROLE r1") == "CREATE ROLE r1\n"
+    assert instance.query("SHOW GRANTS FOR r1") == ""

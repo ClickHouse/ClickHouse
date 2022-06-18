@@ -5,6 +5,7 @@
 #include <Backups/IBackupEntry.h>
 #include <Backups/BackupUtils.h>
 #include <Access/AccessBackup.h>
+#include <Access/AccessRights.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/formatAST.h>
@@ -39,14 +40,26 @@ namespace
 {
     constexpr const std::string_view sql_ext = ".sql";
 
-    bool hasSystemTableEngine(const IAST & ast)
+    String tryGetTableEngine(const IAST & ast)
     {
         const ASTCreateQuery * create = ast.as<ASTCreateQuery>();
         if (!create)
-            return false;
+            return {};
         if (!create->storage || !create->storage->engine)
-            return false;
-        return create->storage->engine->name.starts_with("System");
+            return {};
+        return create->storage->engine->name;
+    }
+
+    bool hasSystemTableEngine(const IAST & ast)
+    {
+        return tryGetTableEngine(ast).starts_with("System");
+    }
+
+    bool hasSystemAccessTableEngine(const IAST & ast)
+    {
+        String engine_name = tryGetTableEngine(ast);
+        return (engine_name == "SystemUsers") || (engine_name == "SystemRoles") || (engine_name == "SystemSettingsProfiles")
+            || (engine_name == "SystemRowPolicies") || (engine_name == "SystemQuotas");
     }
 }
 
@@ -96,6 +109,16 @@ RestorerFromBackup::~RestorerFromBackup() = default;
 
 void RestorerFromBackup::restoreMetadata()
 {
+    run(/* only_check_access= */ false);
+}
+
+void RestorerFromBackup::checkAccessOnly()
+{
+    run(/* only_check_access= */ true);
+}
+
+void RestorerFromBackup::run(bool only_check_access)
+{
     try
     {
         /// restoreMetadata() must not be called multiple times.
@@ -111,6 +134,11 @@ void RestorerFromBackup::restoreMetadata()
         /// Find all the databases and tables which we will read from the backup.
         setStage(Stage::kFindingTablesInBackup);
         collectDatabaseAndTableInfos();
+        
+        /// Check access rights.
+        checkAccessForCollectedInfos();
+        if (only_check_access)
+            return;
 
         /// Create databases using the create queries read from the backup.
         setStage(Stage::kCreatingDatabases);
@@ -138,12 +166,13 @@ void RestorerFromBackup::restoreMetadata()
     }
 }
 
+
 RestorerFromBackup::DataRestoreTasks RestorerFromBackup::getDataRestoreTasks()
 {
     if (current_stage != Stage::kInsertingDataToTables)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Metadata wasn't restored");
 
-    if (data_restore_tasks.empty())
+    if (data_restore_tasks.empty() && !access_restore_task)
         return {};
 
     LOG_TRACE(log, "Will insert data to tables");
@@ -163,6 +192,9 @@ RestorerFromBackup::DataRestoreTasks RestorerFromBackup::getDataRestoreTasks()
     for (const auto & task : data_restore_tasks)
         res_tasks.push_back([task, storages, table_locks] { task(); });
 
+    if (access_restore_task)
+        res_tasks.push_back([task = access_restore_task, access_control = &context->getAccessControl()] { task->restore(*access_control); });
+
     return res_tasks;
 }
 
@@ -174,6 +206,9 @@ void RestorerFromBackup::setStage(Stage new_stage, const String & error_message)
         LOG_TRACE(log, "{}", toString(new_stage));
     
     current_stage = new_stage;
+
+    if (!restore_coordination)
+        return;
     
     if (new_stage == Stage::kError)
     {
@@ -380,6 +415,13 @@ void RestorerFromBackup::collectTableInfo(const QualifiedTableName & table_name_
             res_table_info.partitions.emplace();
         insertAtEnd(*res_table_info.partitions, *partitions);
     }
+
+    if (hasSystemAccessTableEngine(*create_table_query))
+    {
+        if (!access_restore_task)
+            access_restore_task = std::make_shared<AccessRestoreTask>(backup, restore_settings, restore_coordination);
+        access_restore_task->addDataPath(data_path_in_backup);
+    }
 }
 
 void RestorerFromBackup::collectDatabaseInfo(const String & database_name_in_backup, const std::set<DatabaseAndTableName> & except_table_names, bool throw_if_no_database_metadata_in_backup)
@@ -475,6 +517,78 @@ void RestorerFromBackup::collectAllDatabasesInfo(const std::set<String> & except
 
     for (const String & temporary_table_name_in_backup : temporary_table_names_in_backup)
         collectTableInfo({"", temporary_table_name_in_backup}, /* is_temporary_table= */ true, /* partitions= */ {});
+}
+
+void RestorerFromBackup::checkAccessForCollectedInfos() const
+{
+    AccessRightsElements required_access;
+    for (const auto & database_name : database_infos | boost::adaptors::map_keys)
+    {
+        if (DatabaseCatalog::isPredefinedDatabaseName(database_name))
+            continue;
+
+        AccessFlags flags;
+
+        if (restore_settings.create_database != RestoreDatabaseCreationMode::kMustExist)
+            flags |= AccessType::CREATE_DATABASE;
+
+        if (!flags)
+            flags = AccessType::SHOW_DATABASES;
+
+        required_access.emplace_back(flags, database_name);
+    }
+
+    for (const auto & [table_name, table_info] : table_infos)
+    {
+        if (hasSystemTableEngine(*table_info.create_table_query))
+            continue;
+
+        if (table_name.is_temporary)
+        {
+            if (restore_settings.create_table != RestoreTableCreationMode::kMustExist)
+                required_access.emplace_back(AccessType::CREATE_TEMPORARY_TABLE);
+            continue;
+        }
+
+        AccessFlags flags;
+        const ASTCreateQuery & create = table_info.create_table_query->as<const ASTCreateQuery &>();
+
+        if (restore_settings.create_table != RestoreTableCreationMode::kMustExist)
+        {
+            if (create.is_dictionary)
+                flags |= AccessType::CREATE_DICTIONARY;
+            else if (create.is_ordinary_view || create.is_materialized_view || create.is_live_view)
+                flags |= AccessType::CREATE_VIEW;
+            else
+                flags |= AccessType::CREATE_TABLE;
+        }
+
+        if (!restore_settings.structure_only && !create.is_dictionary && !create.is_ordinary_view
+            && backup->hasFiles(table_info.data_path_in_backup))
+        {
+            flags |= AccessType::INSERT;
+        }
+
+        if (!flags)
+        {
+            if (create.is_dictionary)
+                flags = AccessType::SHOW_DICTIONARIES;
+            else
+                flags = AccessType::SHOW_TABLES;
+        }
+
+        required_access.emplace_back(flags, table_name.name.database, table_name.name.table);
+    }
+
+    if (access_restore_task)
+        insertAtEnd(required_access, access_restore_task->getRequiredAccess());
+
+    /// We convert to AccessRights and back to check access rights in a predictable way
+    /// (some elements could be duplicated or not sorted).
+    required_access = AccessRights{required_access}.getElements();
+
+    context->checkAccess(required_access);
+
 }
 
 void RestorerFromBackup::createDatabases()
@@ -669,17 +783,11 @@ void RestorerFromBackup::addDataRestoreTasks(DataRestoreTasks && new_tasks)
     insertAtEnd(data_restore_tasks, std::move(new_tasks));
 }
 
-void RestorerFromBackup::addAccessRestorePathInBackup(const String & data_path)
+void RestorerFromBackup::checkPathInBackupToRestoreAccess(const String & path)
 {
-    bool first_access_restore_path = !access_restore_task;
-    if (first_access_restore_path)
-        access_restore_task = std::make_shared<AccessRestoreTask>(backup, restore_settings, restore_coordination);
- 
-    access_restore_task->addDataPath(data_path);
-
-    if (first_access_restore_path)
-        addDataRestoreTask([task = access_restore_task, access_control = &context->getAccessControl()] { task->restore(*access_control); });
-} 
+    if (!access_restore_task || !access_restore_task->hasDataPath(path))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Path to restore access was not added");
+}
 
 void RestorerFromBackup::executeCreateQuery(const ASTPtr & create_query) const
 {

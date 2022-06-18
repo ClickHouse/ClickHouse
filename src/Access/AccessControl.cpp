@@ -472,7 +472,8 @@ void AccessControl::backup(BackupEntriesCollector & backup_entries_collector, Ac
 
 void AccessControl::restore(RestorerFromBackup & restorer, const String & data_path_in_backup)
 {
-    restorer.addAccessRestorePathInBackup(data_path_in_backup);
+    /// The restorer must already know about `data_path_in_backup`, but let's check.
+    restorer.checkPathInBackupToRestoreAccess(data_path_in_backup);
 }
 
 void AccessControl::insertFromBackup(const std::vector<std::pair<UUID, AccessEntityPtr>> & entities_from_backup, const RestoreSettings & restore_settings, std::shared_ptr<IRestoreCoordination> restore_coordination)

@@ -27,12 +27,16 @@ public:
         std::shared_ptr<IRestoreCoordination> restore_coordination_,
         const BackupPtr & backup_,
         const ContextMutablePtr & context_,
-        std::chrono::seconds timeout_ = std::chrono::seconds(-1) /* no timeout */);
+        std::chrono::seconds timeout_);
 
     ~RestorerFromBackup();
 
     /// Restores the definition of databases and tables and prepares tasks to restore the data of the tables.
+    /// restoreMetadata() checks access rights internally so checkAccessRightsOnly() shouldn't be called first.
     void restoreMetadata();
+
+    /// Only checks access rights without restoring anything.
+    void checkAccessOnly();
 
     using DataRestoreTask = std::function<void()>;
     using DataRestoreTasks = std::vector<DataRestoreTask>;
@@ -52,7 +56,7 @@ public:
     void addDataRestoreTasks(DataRestoreTasks && data_restore_task);
 
     /// Adds a new data path to restore access control.
-    void addAccessRestorePathInBackup(const String & data_path);
+    void checkPathInBackupToRestoreAccess(const String & path);
 
     /// Reading a backup includes a few stages:
     enum class Stage
@@ -96,12 +100,14 @@ private:
     std::vector<std::filesystem::path> root_paths_in_backup;
     DDLRenamingMap renaming_map;
 
+    void run(bool only_check_access);
     void setStage(Stage new_stage, const String & error_message = {});
     void findRootPathsInBackup();
     void collectDatabaseAndTableInfos();
     void collectTableInfo(const QualifiedTableName & table_name_in_backup, bool is_temporary, const std::optional<ASTs> & partitions);
     void collectDatabaseInfo(const String & database_name_in_backup, const std::set<DatabaseAndTableName> & except_table_names, bool throw_if_no_database_metadata_in_backup);
     void collectAllDatabasesInfo(const std::set<String> & except_database_names, const std::set<DatabaseAndTableName> & except_table_names);
+    void checkAccessForCollectedInfos() const;
     void createDatabases();
     void createTables();
 
