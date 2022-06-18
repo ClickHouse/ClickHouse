@@ -420,6 +420,10 @@ class SettingsRandomizer:
         "max_block_size": lambda: random.randint(8000, 100000),
         "max_threads": lambda: random.randint(1, 64),
         "optimize_or_like_chain": lambda: random.randint(0, 1),
+        "optimize_read_in_order": lambda: random.randint(0, 1),
+        "read_in_order_two_level_merge_threshold": lambda: random.randint(0, 100),
+        "optimize_aggregation_in_order": lambda: random.randint(0, 1),
+        "aggregation_in_order_max_block_bytes": lambda: random.randint(0, 50000000),
     }
 
     @staticmethod
