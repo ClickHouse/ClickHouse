@@ -19,7 +19,7 @@ using SnapshotsQueue = ConcurrentBoundedQueue<CreateSnapshotTask>;
 class KeeperStateMachine : public nuraft::state_machine
 {
 public:
-    using CommitCallback = std::function<void(KeeperStorage::RequestForSession &, uint64_t)>;
+    using CommitCallback = std::function<void(uint64_t, uint64_t)>;
 
     KeeperStateMachine(
         ResponsesQueue & responses_queue_,
@@ -28,7 +28,7 @@ public:
         const CoordinationSettingsPtr & coordination_settings_,
         const std::string & superdigest_ = "",
         bool digest_enabled_ = true,
-        CommitCallback commit_callback_ = [](KeeperStorage::RequestForSession &, uint64_t){});
+        CommitCallback commit_callback_ = [](uint64_t, uint64_t){});
 
     /// Read state from the latest snapshot
     void init();
@@ -39,7 +39,7 @@ public:
 
     nuraft::ptr<nuraft::buffer> pre_commit(uint64_t log_idx, nuraft::buffer & data) override;
 
-    nuraft::ptr<nuraft::buffer> commit(const uint64_t log_idx, nuraft::buffer & data) override; /// NOLINT
+    nuraft::ptr<nuraft::buffer> commit_ext(const ext_op_params& params) override; /// NOLINT
 
     /// Save new cluster config to our snapshot (copy of the config stored in StateManager)
     void commit_config(const uint64_t log_idx, nuraft::ptr<nuraft::cluster_config> & new_conf) override; /// NOLINT

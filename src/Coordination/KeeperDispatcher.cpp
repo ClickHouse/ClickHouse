@@ -265,15 +265,14 @@ bool KeeperDispatcher::putRequest(const Coordination::ZooKeeperRequestPtr & requ
         KeeperServer::NodeInfo leader_info;
         leader_info.term = leader_info_ctx->get_ulong();
         leader_info.last_committed_index = leader_info_ctx->get_ulong();
-        LOG_INFO(log, "Leader is {}, idx {}", leader_info.term, leader_info.last_committed_index);
 
         auto node_info = server->getNodeInfo();
-        LOG_INFO(log, "Current is {}, idx {}", node_info.term, node_info.last_committed_index);
 
         if (node_info.term < leader_info.term || node_info.last_committed_index < leader_info.last_committed_index)
         {
             std::lock_guard lock(leader_waiter_mutex);
             leader_waiters[node_info].push_back(std::move(request_info));
+            LOG_INFO(log, "waiting for {}, idx {}", leader_info.term, leader_info.last_committed_index);
             return true;
         }
     }
@@ -307,7 +306,7 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
     responses_thread = ThreadFromGlobalPool([this] { responseThread(); });
     snapshot_thread = ThreadFromGlobalPool([this] { snapshotThread(); });
 
-    server = std::make_unique<KeeperServer>(configuration_and_settings, config, responses_queue, snapshots_queue, [this](KeeperStorage::RequestForSession & request_for_session, uint64_t log_idx) { onRequestCommit(request_for_session, log_idx); });
+    server = std::make_unique<KeeperServer>(configuration_and_settings, config, responses_queue, snapshots_queue, [this](uint64_t log_term, uint64_t log_idx) { onRequestCommit(log_term, log_idx); });
 
     try
     {
@@ -624,7 +623,7 @@ void KeeperDispatcher::updateConfigurationThread()
     }
 }
 
-void KeeperDispatcher::onRequestCommit(KeeperStorage::RequestForSession & /* request_for_session */, uint64_t log_idx)
+void KeeperDispatcher::onRequestCommit(uint64_t log_term, uint64_t log_idx)
 {
     const auto process_requests = [this](auto & request_queue)
     {
@@ -652,9 +651,7 @@ void KeeperDispatcher::onRequestCommit(KeeperStorage::RequestForSession & /* req
 
     {
         std::lock_guard lock(leader_waiter_mutex);
-        auto current_status = server->getNodeInfo();
-        LOG_INFO(log, "Got term {}, idx {}", current_status.term, log_idx);
-        auto request_queue_it = leader_waiters.find(KeeperServer::NodeInfo{.term = current_status.term, .last_committed_index = log_idx});
+        auto request_queue_it = leader_waiters.find(KeeperServer::NodeInfo{.term = log_term, .last_committed_index = log_idx});
         if (request_queue_it != leader_waiters.end())
         {
             process_requests(request_queue_it->second);

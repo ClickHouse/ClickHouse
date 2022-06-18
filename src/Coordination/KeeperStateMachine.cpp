@@ -197,11 +197,11 @@ void KeeperStateMachine::preprocess(const KeeperStorage::RequestForSession & req
         assertDigest(*request_for_session.digest, storage->getNodesDigest(false), *request_for_session.request, false);
 }
 
-nuraft::ptr<nuraft::buffer> KeeperStateMachine::commit(const uint64_t log_idx, nuraft::buffer & data)
+nuraft::ptr<nuraft::buffer> KeeperStateMachine::commit_ext(const ext_op_params& params)
 {
-    auto request_for_session = parseRequest(data);
+    auto request_for_session = parseRequest(*params.data);
     if (!request_for_session.zxid)
-        request_for_session.zxid = log_idx;
+        request_for_session.zxid = params.log_idx;
 
     /// Special processing of session_id request
     if (request_for_session.request->getOpNum() == Coordination::OpNum::SessionID)
@@ -242,8 +242,8 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine::commit(const uint64_t log_idx, n
         }
     }
 
-    commit_callback(request_for_session, log_idx);
-    last_committed_idx = log_idx;
+    commit_callback(params.log_term, params.log_idx);
+    last_committed_idx = params.log_idx;
     return nullptr;
 }
 
