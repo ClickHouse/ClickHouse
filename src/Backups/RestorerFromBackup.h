@@ -100,7 +100,7 @@ private:
     void findRootPathsInBackup();
     void collectDatabaseAndTableInfos();
     void collectTableInfo(const QualifiedTableName & table_name_in_backup, bool is_temporary, const std::optional<ASTs> & partitions);
-    void collectDatabaseInfo(const String & database_name_in_backup, const std::set<DatabaseAndTableName> & except_table_names);
+    void collectDatabaseInfo(const String & database_name_in_backup, const std::set<DatabaseAndTableName> & except_table_names, bool throw_if_no_database_metadata_in_backup);
     void collectAllDatabasesInfo(const std::set<String> & except_database_names, const std::set<DatabaseAndTableName> & except_table_names);
     void createDatabases();
     void createTables();

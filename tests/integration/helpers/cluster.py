@@ -2984,6 +2984,7 @@ class ClickHouseInstance:
     def http_query(
         self,
         sql,
+        method=None,
         data=None,
         params=None,
         user=None,
@@ -3016,10 +3017,11 @@ class ClickHouseInstance:
             requester = requests.Session()
             requester.mount("https://", adapter)
             requester.mount("http://", adapter)
-        if data:
-            r = requester.post(url, data, auth=auth, timeout=timeout)
-        else:
-            r = requester.get(url, auth=auth, timeout=timeout)
+
+        if method is None:
+            method = "POST" if data else "GET"
+
+        r = requester.request(method, url, data=data, auth=auth, timeout=timeout)
 
         def http_code_and_message():
             code = r.status_code
