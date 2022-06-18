@@ -24,7 +24,7 @@
 #include <aws/s3/model/UploadPartCopyRequest.h>
 #include <aws/s3/model/AbortMultipartUploadRequest.h>
 
-#include <Common/FileCache.h>
+#include <Common/IFileCache.h>
 #include <Common/FileCacheFactory.h>
 
 namespace DB
