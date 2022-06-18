@@ -55,3 +55,372 @@ https://dev.mysql.com/doc/refman/8.0/en/window-function-descriptions.html
 https://dev.mysql.com/doc/refman/8.0/en/window-functions-usage.html
 
 https://dev.mysql.com/doc/refman/8.0/en/window-functions-frames.html
+
+## Syntax
+
+```text
+aggregate_function (column_name)
+  OVER ([PARTITION BY groupping_column] [ORDER BY sorting_column]
+        [ROWS or RANGE expression_to_bounds_of_frame])
+```
+
+- `PARTITION BY` - defines how to break a resultset into groups.
+- `ORDER BY` - defines how to order rows inside the group during calculation aggregate_function.
+- `ROWS or RANGE` - defines bounds of a frame, aggregate_function is calculated within a frame.
+
+```text
+      PARTITION
+┌─────────────────┐  <-- UNBOUNDED PRECEDING (BEGINNING of the PARTITION)
+│                 │
+│                 │
+│=================│  <-- N PRECEDING  <─┐
+│      N ROWS     │                     │  F
+│  Before CURRENT │                     │  R
+│~~~~~~~~~~~~~~~~~│  <-- CURRENT ROW    │  A
+│     M ROWS      │                     │  M
+│   After CURRENT │                     │  E
+│=================│  <-- M FOLLOWING  <─┘
+│                 │
+│                 │
+└─────────────────┘  <--- UNBOUNDED FOLLOWING (END of the PARTITION)
+```
+
+## Examples
+
+```sql
+CREATE TABLE wf_partition
+(
+    `part_key` UInt64,
+    `value` UInt64
+)
+ENGINE = Memory;
+
+INSERT INTO wf_partition FORMAT Values
+   (1,1,1), (1,2,2), (1,3,3), (2,0,0), (3,0,0);
+
+SELECT
+    part_key,
+    value,
+    order,
+    groupArray(value) OVER (PARTITION BY part_key) AS frame_values
+FROM wf_partition
+ORDER BY
+    part_key ASC,
+    value ASC;
+
+┌─part_key─┬─value─┬─order─┬─frame_values─┐
+│        1 │     1 │     1 │ [1,2,3]      │   <┐   
+│        1 │     2 │     2 │ [1,2,3]      │    │  1-st group
+│        1 │     3 │     3 │ [1,2,3]      │   <┘ 
+│        2 │     0 │     0 │ [0]          │   <-  2-nd group
+│        3 │     0 │     0 │ [0]          │   <-  3-d group
+└──────────┴───────┴───────┴──────────────┘
+```
+
+```sql
+CREATE TABLE wf_frame
+(
+    `part_key` UInt64,
+    `value` UInt64,
+    `order` UInt64
+)
+ENGINE = Memory;
+
+INSERT INTO wf_frame FORMAT Values
+   (1,1,1), (1,2,2), (1,3,3), (1,4,4), (1,5,5);
+
+-- frame is bounded by bounds of a partition (BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)
+SELECT
+    part_key,
+    value,
+    order,
+    groupArray(value) OVER (PARTITION BY part_key ORDER BY order ASC
+         Rows BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS frame_values
+FROM wf_frame
+ORDER BY
+    part_key ASC,
+    value ASC;
+    
+┌─part_key─┬─value─┬─order─┬─frame_values─┐
+│        1 │     1 │     1 │ [1,2,3,4,5]  │
+│        1 │     2 │     2 │ [1,2,3,4,5]  │
+│        1 │     3 │     3 │ [1,2,3,4,5]  │
+│        1 │     4 │     4 │ [1,2,3,4,5]  │
+│        1 │     5 │     5 │ [1,2,3,4,5]  │
+└──────────┴───────┴───────┴──────────────┘
+
+-- short form - no bound expression, no order by
+SELECT
+    part_key,
+    value,
+    order,
+    groupArray(value) OVER (PARTITION BY part_key) AS frame_values
+FROM wf_frame
+ORDER BY
+    part_key ASC,
+    value ASC;
+┌─part_key─┬─value─┬─order─┬─frame_values─┐
+│        1 │     1 │     1 │ [1,2,3,4,5]  │
+│        1 │     2 │     2 │ [1,2,3,4,5]  │
+│        1 │     3 │     3 │ [1,2,3,4,5]  │
+│        1 │     4 │     4 │ [1,2,3,4,5]  │
+│        1 │     5 │     5 │ [1,2,3,4,5]  │
+└──────────┴───────┴───────┴──────────────┘
+
+-- frame is bounded by the beggining of a partition and the current row
+SELECT
+    part_key,
+    value,
+    order,
+    groupArray(value) OVER (PARTITION BY part_key ORDER BY order ASC
+          Rows BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS frame_values
+FROM wf_frame
+ORDER BY
+    part_key ASC,
+    value ASC;
+
+┌─part_key─┬─value─┬─order─┬─frame_values─┐
+│        1 │     1 │     1 │ [1]          │
+│        1 │     2 │     2 │ [1,2]        │
+│        1 │     3 │     3 │ [1,2,3]      │
+│        1 │     4 │     4 │ [1,2,3,4]    │
+│        1 │     5 │     5 │ [1,2,3,4,5]  │
+└──────────┴───────┴───────┴──────────────┘
+
+-- short form (frame is bounded by the beggining of a partition and the current row)
+SELECT
+    part_key,
+    value,
+    order,
+    groupArray(value) OVER (PARTITION BY part_key ORDER BY order ASC) AS frame_values
+FROM wf_frame
+ORDER BY
+    part_key ASC,
+    value ASC;
+┌─part_key─┬─value─┬─order─┬─frame_values─┐
+│        1 │     1 │     1 │ [1]          │
+│        1 │     2 │     2 │ [1,2]        │
+│        1 │     3 │     3 │ [1,2,3]      │
+│        1 │     4 │     4 │ [1,2,3,4]    │
+│        1 │     5 │     5 │ [1,2,3,4,5]  │
+└──────────┴───────┴───────┴──────────────┘
+
+-- frame is bounded by the beggining of a partition and the current row, but order is backward
+SELECT
+    part_key,
+    value,
+    order,
+    groupArray(value) OVER (PARTITION BY part_key ORDER BY order DESC) AS frame_values
+FROM wf_frame
+ORDER BY
+    part_key ASC,
+    value ASC;
+┌─part_key─┬─value─┬─order─┬─frame_values─┐
+│        1 │     1 │     1 │ [5,4,3,2,1]  │
+│        1 │     2 │     2 │ [5,4,3,2]    │
+│        1 │     3 │     3 │ [5,4,3]      │
+│        1 │     4 │     4 │ [5,4]        │
+│        1 │     5 │     5 │ [5]          │
+└──────────┴───────┴───────┴──────────────┘
+
+-- sliding frame - 1 PRECEDING ROW AND CURRENT ROW
+SELECT
+    part_key,
+    value,
+    order,
+    groupArray(value) OVER (PARTITION BY part_key ORDER BY order ASC
+          Rows BETWEEN 1 PRECEDING AND CURRENT ROW) AS frame_values
+FROM wf_frame
+ORDER BY
+    part_key ASC,
+    value ASC;
+
+┌─part_key─┬─value─┬─order─┬─frame_values─┐
+│        1 │     1 │     1 │ [1]          │
+│        1 │     2 │     2 │ [1,2]        │
+│        1 │     3 │     3 │ [2,3]        │
+│        1 │     4 │     4 │ [3,4]        │
+│        1 │     5 │     5 │ [4,5]        │
+└──────────┴───────┴───────┴──────────────┘
+
+-- sliding frame - Rows BETWEEN 1 PRECEDING AND UNBOUNDED FOLLOWING 
+SELECT
+    part_key,
+    value,
+    order,
+    groupArray(value) OVER (PARTITION BY part_key ORDER BY order ASC
+          Rows BETWEEN 1 PRECEDING AND UNBOUNDED FOLLOWING) AS frame_values
+FROM wf_frame
+ORDER BY
+    part_key ASC,
+    value ASC;
+┌─part_key─┬─value─┬─order─┬─frame_values─┐
+│        1 │     1 │     1 │ [1,2,3,4,5]  │
+│        1 │     2 │     2 │ [1,2,3,4,5]  │
+│        1 │     3 │     3 │ [2,3,4,5]    │
+│        1 │     4 │     4 │ [3,4,5]      │
+│        1 │     5 │     5 │ [4,5]        │
+└──────────┴───────┴───────┴──────────────┘
+```
+
+## Real world examples
+
+### Maximum/total salary per department.
+
+```sql
+CREATE TABLE employees
+(
+    `department` String,
+    `employee_name` String,
+    `salary` Float
+)
+ENGINE = Memory;
+
+INSERT INTO employees FORMAT Values
+   ('Finance', 'Jonh', 200),
+   ('Finance', 'Joan', 210),
+   ('Finance', 'Jean', 505),
+   ('IT', 'Tim', 200),
+   ('IT', 'Anna', 300),
+   ('IT', 'Elen', 500);
+
+SELECT
+    department,
+    employee_name AS emp,
+    salary,
+    max_salary_per_dep,
+    total_salary_per_dep,
+    round((salary / total_salary_per_dep) * 100, 2) AS `share_per_dep(%)`
+FROM
+(
+    SELECT
+        department,
+        employee_name,
+        salary,
+        max(salary) OVER wndw AS max_salary_per_dep,
+        sum(salary) OVER wndw AS total_salary_per_dep
+    FROM employees
+    WINDOW wndw AS (PARTITION BY department
+          rows BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)
+    ORDER BY
+        department ASC,
+        employee_name ASC
+);
+
+┌─department─┬─emp──┬─salary─┬─max_salary_per_dep─┬─total_salary_per_dep─┬─share_per_dep(%)─┐
+│ Finance    │ Jean │    505 │                505 │                  915 │            55.19 │
+│ Finance    │ Joan │    210 │                505 │                  915 │            22.95 │
+│ Finance    │ Jonh │    200 │                505 │                  915 │            21.86 │
+│ IT         │ Anna │    300 │                500 │                 1000 │               30 │
+│ IT         │ Elen │    500 │                500 │                 1000 │               50 │
+│ IT         │ Tim  │    200 │                500 │                 1000 │               20 │
+└────────────┴──────┴────────┴────────────────────┴──────────────────────┴──────────────────┘
+```
+
+### Cumulative sum.
+
+```sql
+CREATE TABLE events
+(
+    `metric` String,
+    `ts` DateTime,
+    `value` Float
+)
+ENGINE = Memory
+
+INSERT INTO warehouse VALUES
+    ('sku38', '2020-01-01', 9),
+    ('sku38', '2020-02-01', 1),
+    ('sku38', '2020-03-01', -4),
+    ('sku1', '2020-01-01', 1),
+    ('sku1', '2020-02-01', 1),
+    ('sku1', '2020-03-01', 1);
+
+SELECT
+    item,
+    ts,
+    value,
+    sum(value) OVER (PARTITION BY item ORDER BY ts ASC) AS stock_balance
+FROM warehouse
+ORDER BY
+    item ASC,
+    ts ASC;
+
+┌─item──┬──────────────────ts─┬─value─┬─stock_balance─┐
+│ sku1  │ 2020-01-01 00:00:00 │     1 │             1 │
+│ sku1  │ 2020-02-01 00:00:00 │     1 │             2 │
+│ sku1  │ 2020-03-01 00:00:00 │     1 │             3 │
+│ sku38 │ 2020-01-01 00:00:00 │     9 │             9 │
+│ sku38 │ 2020-02-01 00:00:00 │     1 │            10 │
+│ sku38 │ 2020-03-01 00:00:00 │    -4 │             6 │
+└───────┴─────────────────────┴───────┴───────────────┘
+```
+
+### Moving / Sliding Average (per 3 rows)
+
+```sql
+CREATE TABLE sensors
+(
+    `metric` String,
+    `ts` DateTime,
+    `value` Float
+)
+ENGINE = Memory;
+
+insert into sensors values('cpu_temp', '2020-01-01 00:00:00', 87),
+                          ('cpu_temp', '2020-01-01 00:00:01', 77),
+                          ('cpu_temp', '2020-01-01 00:00:02', 93),
+                          ('cpu_temp', '2020-01-01 00:00:03', 87),
+                          ('cpu_temp', '2020-01-01 00:00:04', 87),
+                          ('cpu_temp', '2020-01-01 00:00:05', 87),
+                          ('cpu_temp', '2020-01-01 00:00:06', 87),
+                          ('cpu_temp', '2020-01-01 00:00:07', 87);
+SELECT
+    metric,
+    ts,
+    value,
+    avg(value) OVER
+       (PARTITION BY metric ORDER BY ts ASC Rows BETWEEN 2 PRECEDING AND CURRENT ROW)
+         AS moving_avg_temp
+FROM sensors
+ORDER BY
+    metric ASC,
+    ts ASC;
+
+┌─metric───┬──────────────────ts─┬─value─┬───moving_avg_temp─┐
+│ cpu_temp │ 2020-01-01 00:00:00 │    87 │                87 │
+│ cpu_temp │ 2020-01-01 00:00:01 │    77 │                82 │
+│ cpu_temp │ 2020-01-01 00:00:02 │    93 │ 85.66666666666667 │
+│ cpu_temp │ 2020-01-01 00:00:03 │    87 │ 85.66666666666667 │
+│ cpu_temp │ 2020-01-01 00:00:04 │    87 │                89 │
+│ cpu_temp │ 2020-01-01 00:00:05 │    87 │                87 │
+│ cpu_temp │ 2020-01-01 00:00:06 │    87 │                87 │
+│ cpu_temp │ 2020-01-01 00:00:07 │    87 │                87 │
+└──────────┴─────────────────────┴───────┴───────────────────┘
+```
+
+### Moving / Sliding Average (per 10 seconds)
+
+```sql
+SELECT
+    metric,
+    ts,
+    value,
+    avg(value) OVER (PARTITION BY metric ORDER BY ts
+      Range BETWEEN 10 PRECEDING AND CURRENT ROW) AS moving_avg_10_seconds_temp
+FROM sensors
+ORDER BY
+    metric ASC,
+    ts ASC;
+    
+┌─metric───┬──────────────────ts─┬─value─┬─moving_avg_10_seconds_temp─┐
+│ cpu_temp │ 2020-01-01 00:00:00 │    87 │                         87 │
+│ cpu_temp │ 2020-01-01 00:01:10 │    77 │                         77 │
+│ cpu_temp │ 2020-01-01 00:02:20 │    93 │                         93 │
+│ cpu_temp │ 2020-01-01 00:03:30 │    87 │                         87 │
+│ cpu_temp │ 2020-01-01 00:04:40 │    87 │                         87 │
+│ cpu_temp │ 2020-01-01 00:05:50 │    87 │                         87 │
+│ cpu_temp │ 2020-01-01 00:06:00 │    87 │                         87 │
+│ cpu_temp │ 2020-01-01 00:07:10 │    87 │                         87 │
+└──────────┴─────────────────────┴───────┴────────────────────────────┘
+```

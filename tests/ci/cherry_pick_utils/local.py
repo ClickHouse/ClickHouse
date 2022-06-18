@@ -5,10 +5,11 @@ import logging
 import os
 import re
 
+import git
+
 
 class RepositoryBase:
     def __init__(self, repo_path):
-        import git
 
         self._repo = git.Repo(repo_path, search_parent_directories=(not repo_path))
 
@@ -23,21 +24,21 @@ class RepositoryBase:
 
         self.comparator = functools.cmp_to_key(cmp)
 
-    def get_head_commit(self):
-        return self._repo.commit(self._default)
-
     def iterate(self, begin, end):
-        rev_range = "{}...{}".format(begin, end)
+        rev_range = f"{begin}...{end}"
         for commit in self._repo.iter_commits(rev_range, first_parent=True):
             yield commit
 
 
 class Repository(RepositoryBase):
     def __init__(self, repo_path, remote_name, default_branch_name):
-        super(Repository, self).__init__(repo_path)
+        super().__init__(repo_path)
         self._remote = self._repo.remotes[remote_name]
         self._remote.fetch()
         self._default = self._remote.refs[default_branch_name]
+
+    def get_head_commit(self):
+        return self._repo.commit(self._default)
 
     def get_release_branches(self):
         """
@@ -73,7 +74,7 @@ class Repository(RepositoryBase):
 
 class BareRepository(RepositoryBase):
     def __init__(self, repo_path, default_branch_name):
-        super(BareRepository, self).__init__(repo_path)
+        super().__init__(repo_path)
         self._default = self._repo.branches[default_branch_name]
 
     def get_release_branches(self):
