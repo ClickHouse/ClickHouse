@@ -8,9 +8,13 @@
 #include <Common/CurrentThread.h>
 #include "Core/Protocol.h"
 #include "IO/ReadHelpers.h"
+#include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
+#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <QueryPipeline/Pipe.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Processors/Transforms/LimitsCheckingTransform.h>
+#include <Processors/QueryPlan/QueryPlan.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/IStorage.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Interpreters/castColumn.h>
@@ -271,6 +275,7 @@ Block RemoteQueryExecutor::read()
 
     while (true)
     {
+        std::lock_guard lock(was_cancelled_mutex);
         if (was_cancelled)
             return Block();
 
@@ -356,7 +361,7 @@ std::variant<Block, int> RemoteQueryExecutor::restartQueryWithoutDuplicatedUUIDs
         else
             return read(*read_context);
     }
-    throw Exception("Found duplicate uuids while processing query.", ErrorCodes::DUPLICATED_PART_UUIDS);
+    throw Exception("Found duplicate uuids while processing query", ErrorCodes::DUPLICATED_PART_UUIDS);
 }
 
 std::optional<Block> RemoteQueryExecutor::processPacket(Packet packet)
@@ -432,8 +437,10 @@ std::optional<Block> RemoteQueryExecutor::processPacket(Packet packet)
 
         default:
             got_unknown_packet_from_replica = true;
-            throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_SERVER, "Unknown packet {} from one of the following replicas: {}",
-                toString(packet.type),
+            throw Exception(
+                ErrorCodes::UNKNOWN_PACKET_FROM_SERVER,
+                "Unknown packet {} from one of the following replicas: {}",
+                packet.type,
                 connections->dumpAddresses());
     }
 
@@ -567,18 +574,21 @@ void RemoteQueryExecutor::sendExternalTables()
                     QueryProcessingStage::Enum read_from_table_stage = cur->getQueryProcessingStage(
                         context, QueryProcessingStage::Complete, storage_snapshot, query_info);
 
-                    Pipe pipe = cur->read(
+                    QueryPlan plan;
+                    cur->read(
+                        plan,
                         metadata_snapshot->getColumns().getNamesOfPhysical(),
                         storage_snapshot, query_info, context,
                         read_from_table_stage, DEFAULT_BLOCK_SIZE, 1);
 
-                    if (pipe.empty())
-                        return std::make_unique<Pipe>(
-                            std::make_shared<SourceFromSingleChunk>(metadata_snapshot->getSampleBlock(), Chunk()));
+                    auto builder = plan.buildQueryPipeline(
+                        QueryPlanOptimizationSettings::fromContext(context),
+                        BuildQueryPipelineSettings::fromContext(context));
 
-                    pipe.addTransform(std::make_shared<LimitsCheckingTransform>(pipe.getHeader(), limits));
+                    builder->resize(1);
+                    builder->addTransform(std::make_shared<LimitsCheckingTransform>(builder->getHeader(), limits));
 
-                    return std::make_unique<Pipe>(std::move(pipe));
+                    return builder;
                 };
 
                 data->pipe = data->creating_pipe_callback();
@@ -593,7 +603,8 @@ void RemoteQueryExecutor::sendExternalTables()
 
 void RemoteQueryExecutor::tryCancel(const char * reason, std::unique_ptr<ReadContext> * read_context)
 {
-    /// Flag was_cancelled is atomic because it is checked in read().
+    /// Flag was_cancelled is atomic because it is checked in read(),
+    /// in case of packet had been read by fiber (async_socket_for_remote).
     std::lock_guard guard(was_cancelled_mutex);
 
     if (was_cancelled)

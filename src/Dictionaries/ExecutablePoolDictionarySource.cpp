@@ -4,7 +4,7 @@
 
 #include <boost/algorithm/string/split.hpp>
 
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <Common/LocalDateTime.h>
 #include <Common/filesystemHelpers.h>
 
@@ -68,17 +68,17 @@ ExecutablePoolDictionarySource::ExecutablePoolDictionarySource(const ExecutableP
 {
 }
 
-Pipe ExecutablePoolDictionarySource::loadAll()
+QueryPipeline ExecutablePoolDictionarySource::loadAll()
 {
     throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "ExecutablePoolDictionarySource does not support loadAll method");
 }
 
-Pipe ExecutablePoolDictionarySource::loadUpdatedAll()
+QueryPipeline ExecutablePoolDictionarySource::loadUpdatedAll()
 {
     throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "ExecutablePoolDictionarySource does not support loadUpdatedAll method");
 }
 
-Pipe ExecutablePoolDictionarySource::loadIds(const std::vector<UInt64> & ids)
+QueryPipeline ExecutablePoolDictionarySource::loadIds(const std::vector<UInt64> & ids)
 {
     LOG_TRACE(log, "loadIds {} size = {}", toString(), ids.size());
 
@@ -86,7 +86,7 @@ Pipe ExecutablePoolDictionarySource::loadIds(const std::vector<UInt64> & ids)
     return getStreamForBlock(block);
 }
 
-Pipe ExecutablePoolDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
+QueryPipeline ExecutablePoolDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
 {
     LOG_TRACE(log, "loadKeys {} size = {}", toString(), requested_rows.size());
 
@@ -94,7 +94,7 @@ Pipe ExecutablePoolDictionarySource::loadKeys(const Columns & key_columns, const
     return getStreamForBlock(block);
 }
 
-Pipe ExecutablePoolDictionarySource::getStreamForBlock(const Block & block)
+QueryPipeline ExecutablePoolDictionarySource::getStreamForBlock(const Block & block)
 {
     String command = configuration.command;
     const auto & coordinator_configuration = coordinator->getConfiguration();
@@ -147,7 +147,7 @@ Pipe ExecutablePoolDictionarySource::getStreamForBlock(const Block & block)
     if (configuration.implicit_key)
         pipe.addTransform(std::make_shared<TransformWithAdditionalColumns>(block, pipe.getHeader()));
 
-    return pipe;
+    return QueryPipeline(std::move(pipe));
 }
 
 bool ExecutablePoolDictionarySource::isModified() const

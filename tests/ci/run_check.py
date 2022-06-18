@@ -9,7 +9,7 @@ from github import Github
 from commit_status_helper import get_commit, post_labels, remove_labels
 from env_helper import GITHUB_RUN_URL, GITHUB_REPOSITORY, GITHUB_SERVER_URL
 from get_robot_token import get_best_robot_token
-from pr_info import PRInfo
+from pr_info import FORCE_TESTS_LABEL, PRInfo
 from workflow_approve_rerun_lambda.app import TRUSTED_CONTRIBUTORS
 
 NAME = "Run Check (actions)"
@@ -23,14 +23,16 @@ TRUSTED_ORG_IDS = {
 OK_SKIP_LABELS = {"release", "pr-backport", "pr-cherrypick"}
 CAN_BE_TESTED_LABEL = "can be tested"
 DO_NOT_TEST_LABEL = "do not test"
-FORCE_TESTS_LABEL = "force tests"
 SUBMODULE_CHANGED_LABEL = "submodule changed"
 
+# They are used in .github/PULL_REQUEST_TEMPLATE.md, keep comments there
+# updated accordingly
 LABELS = {
     "pr-backward-incompatible": ["Backward Incompatible Change"],
     "pr-bugfix": [
         "Bug Fix",
         "Bug Fix (user-visible misbehaviour in official stable or prestable release)",
+        "Bug Fix (user-visible misbehavior in official stable or prestable release)",
     ],
     "pr-build": [
         "Build/Testing/Packaging Improvement",
@@ -251,16 +253,7 @@ if __name__ == "__main__":
         )
         sys.exit(1)
     else:
-        if "pr-documentation" in pr_info.labels or "pr-doc-fix" in pr_info.labels:
-            commit.create_status(
-                context=NAME,
-                description="Skipping checks for documentation",
-                state="success",
-                target_url=url,
-            )
-            print("::notice ::Can run, but it's documentation PR, skipping")
-        else:
-            print("::notice ::Can run")
-            commit.create_status(
-                context=NAME, description=description, state="pending", target_url=url
-            )
+        print("::notice ::Can run")
+        commit.create_status(
+            context=NAME, description=description, state="pending", target_url=url
+        )

@@ -1,5 +1,7 @@
 ---
 sidebar_label: 设置
+sidebar_position: 51
+slug: /zh/operations/settings/
 ---
 
 # 设置 {#settings}

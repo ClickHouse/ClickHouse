@@ -3,11 +3,18 @@ sidebar_label: MaterializedPostgreSQL
 sidebar_position: 60
 ---
 
-# [experimental] MaterializedPostgreSQL {#materialize-postgresql}
+# [experimental] MaterializedPostgreSQL
 
 Creates a ClickHouse database with tables from PostgreSQL database. Firstly, database with engine `MaterializedPostgreSQL` creates a snapshot of PostgreSQL database and loads required tables. Required tables can include any subset of tables from any subset of schemas from specified database. Along with the snapshot database engine acquires LSN and once initial dump of tables is performed - it starts pulling updates from WAL. After database is created, newly added tables to PostgreSQL database are not automatically added to replication. They have to be added manually with `ATTACH TABLE db.table` query.
 
 Replication is implemented with PostgreSQL Logical Replication Protocol, which does not allow to replicate DDL, but allows to know whether replication breaking changes happened (column type changes, adding/removing columns). Such changes are detected and according tables stop receiving updates. Such tables can be automatically reloaded in the background in case required setting is turned on (can be used starting from 22.1). Safest way for now is to use `ATTACH`/ `DETACH` queries to reload table completely. If DDL does not break replication (for example, renaming a column) table will still receive updates (insertion is done by position).
+
+:::note
+This database engine is experimental. To use it, set `allow_experimental_database_materialized_postgresql` to 1 in your configuration files or by using the `SET` command:
+```sql
+SET allow_experimental_database_materialized_postgresql=1
+```
+:::
 
 ## Creating a Database {#creating-a-database}
 
@@ -137,7 +144,7 @@ FROM pg_class
 WHERE oid = 'postgres_table'::regclass;
 ```
 
-:::warning 
+:::warning
 Replication of [**TOAST**](https://www.postgresql.org/docs/9.5/storage-toast.html) values is not supported. The default value for the data type will be used.
 :::
 

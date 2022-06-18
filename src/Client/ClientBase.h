@@ -80,7 +80,7 @@ protected:
     MultiQueryProcessingStage analyzeMultiQueryText(
         const char *& this_query_begin, const char *& this_query_end, const char * all_queries_end,
         String & query_to_execute, ASTPtr & parsed_query, const String & all_queries_text,
-        std::optional<Exception> & current_exception);
+        std::unique_ptr<Exception> & current_exception);
 
     static void clearTerminal();
     void showClientVersion();
@@ -106,12 +106,21 @@ protected:
 
     bool processQueryText(const String & text);
 
+    virtual void readArguments(
+        int argc,
+        char ** argv,
+        Arguments & common_arguments,
+        std::vector<Arguments> & external_tables_arguments,
+        std::vector<Arguments> & hosts_and_ports_arguments) = 0;
+
+
 private:
     void receiveResult(ASTPtr parsed_query);
     bool receiveAndProcessPacket(ASTPtr parsed_query, bool cancelled_);
     void receiveLogs(ASTPtr parsed_query);
     bool receiveSampleBlock(Block & out, ColumnsDescription & columns_description, ASTPtr parsed_query);
     bool receiveEndOfQuery();
+    void cancelQuery();
 
     void onProgress(const Progress & value);
     void onData(Block & block, ASTPtr parsed_query);
@@ -130,22 +139,16 @@ private:
     void sendDataFromStdin(Block & sample, const ColumnsDescription & columns_description, ASTPtr parsed_query);
     void sendExternalTables(ASTPtr parsed_query);
 
-    void initBlockOutputStream(const Block & block, ASTPtr parsed_query);
+    void initOutputFormat(const Block & block, ASTPtr parsed_query);
     void initLogsOutputStream();
 
     String prompt() const;
 
     void resetOutput();
     void outputQueryInfo(bool echo_query_);
-    void readArguments(
-        int argc,
-        char ** argv,
-        Arguments & common_arguments,
-        std::vector<Arguments> & external_tables_arguments,
-        std::vector<Arguments> & hosts_and_ports_arguments);
     void parseAndCheckOptions(OptionsDescription & options_description, po::variables_map & options, Arguments & arguments);
 
-    void updateSuggest(const ASTCreateQuery & ast_create);
+    void updateSuggest(const ASTPtr & ast);
 
     void initQueryIdFormats();
 
@@ -253,6 +256,7 @@ protected:
     } profile_events;
 
     QueryProcessingStage::Enum query_processing_stage;
+    ClientInfo::QueryKind query_kind;
 
     bool fake_drop = false;
 

@@ -265,3 +265,9 @@
 [submodule "contrib/highwayhash"]
 	path = contrib/highwayhash
 	url = https://github.com/google/highwayhash.git
+[submodule "contrib/wyhash"]
+	path = contrib/wyhash
+	url = https://github.com/wangyi-fudan/wyhash.git
+[submodule "contrib/hashidsxx"]
+	path = contrib/hashidsxx
+	url = https://github.com/schoentoon/hashidsxx.git

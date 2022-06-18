@@ -1,7 +1,7 @@
 #include "LibraryDictionarySource.h"
 
 #include <Interpreters/Context.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <Common/filesystemHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
@@ -105,21 +105,21 @@ bool LibraryDictionarySource::supportsSelectiveLoad() const
 }
 
 
-Pipe LibraryDictionarySource::loadAll()
+QueryPipeline LibraryDictionarySource::loadAll()
 {
     LOG_TRACE(log, "loadAll {}", toString());
     return bridge_helper->loadAll();
 }
 
 
-Pipe LibraryDictionarySource::loadIds(const std::vector<UInt64> & ids)
+QueryPipeline LibraryDictionarySource::loadIds(const std::vector<UInt64> & ids)
 {
     LOG_TRACE(log, "loadIds {} size = {}", toString(), ids.size());
     return bridge_helper->loadIds(ids);
 }
 
 
-Pipe LibraryDictionarySource::loadKeys(const Columns & key_columns, const std::vector<std::size_t> & requested_rows)
+QueryPipeline LibraryDictionarySource::loadKeys(const Columns & key_columns, const std::vector<std::size_t> & requested_rows)
 {
     LOG_TRACE(log, "loadKeys {} size = {}", toString(), requested_rows.size());
     auto block = blockForKeys(dict_struct, key_columns, requested_rows);

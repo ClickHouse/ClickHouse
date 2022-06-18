@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Core/Block.h>
-#include <Processors/Sources/SourceWithProgress.h>
+#include <Processors/ISource.h>
 #include <Core/ExternalResultDescription.h>
 
 
@@ -22,7 +22,7 @@ void authenticate(Poco::MongoDB::Connection & connection, const std::string & da
 std::unique_ptr<Poco::MongoDB::Cursor> createCursor(const std::string & database, const std::string & collection, const Block & sample_block_to_select);
 
 /// Converts MongoDB Cursor to a stream of Blocks
-class MongoDBSource final : public SourceWithProgress
+class MongoDBSource final : public ISource
 {
 public:
     MongoDBSource(

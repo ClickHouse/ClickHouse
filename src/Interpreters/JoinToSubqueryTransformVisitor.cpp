@@ -12,6 +12,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTColumnsMatcher.h>
+#include <Parsers/ASTColumnsTransformers.h>
 #include <Parsers/ASTQualifiedAsterisk.h>
 #include <Parsers/ParserTablesInSelectQuery.h>
 #include <Parsers/ExpressionListParsers.h>
@@ -81,6 +82,7 @@ public:
         /// By default should_add_column_predicate returns true for any column name
         void addTableColumns(
             const String & table_name,
+            ASTs & columns,
             ShouldAddColumnPredicate should_add_column_predicate = [](const String &) { return true; })
         {
             auto it = table_columns.find(table_name);
@@ -105,7 +107,7 @@ public:
                     else
                         identifier = std::make_shared<ASTIdentifier>(std::vector<String>{it->first, column.name});
 
-                    new_select_expression_list->children.emplace_back(std::move(identifier));
+                    columns.emplace_back(std::move(identifier));
                 }
             }
         }
@@ -129,14 +131,18 @@ private:
 
         for (const auto & child : node.children)
         {
-            if (child->as<ASTAsterisk>())
+            ASTs columns;
+            if (const auto * asterisk = child->as<ASTAsterisk>())
             {
                 has_asterisks = true;
 
                 for (auto & table_name : data.tables_order)
-                    data.addTableColumns(table_name);
+                    data.addTableColumns(table_name, columns);
+
+                for (const auto & transformer : asterisk->children)
+                    IASTColumnsTransformer::transform(transformer, columns);
             }
-            else if (child->as<ASTQualifiedAsterisk>())
+            else if (const auto * qualified_asterisk = child->as<ASTQualifiedAsterisk>())
             {
                 has_asterisks = true;
 
@@ -144,17 +150,44 @@ private:
                     throw Exception("Logical error: qualified asterisk must have exactly one child", ErrorCodes::LOGICAL_ERROR);
                 auto & identifier = child->children[0]->as<ASTTableIdentifier &>();
 
-                data.addTableColumns(identifier.name());
+                data.addTableColumns(identifier.name(), columns);
+
+                // QualifiedAsterisk's transformers start to appear at child 1
+                for (auto it = qualified_asterisk->children.begin() + 1; it != qualified_asterisk->children.end(); ++it)
+                {
+                    IASTColumnsTransformer::transform(*it, columns);
+                }
             }
-            else if (auto * columns_matcher = child->as<ASTColumnsMatcher>())
+            else if (const auto * columns_list_matcher = child->as<ASTColumnsListMatcher>())
+            {
+                has_asterisks = true;
+
+                for (const auto & ident : columns_list_matcher->column_list->children)
+                    columns.emplace_back(ident->clone());
+
+                for (const auto & transformer : columns_list_matcher->children)
+                    IASTColumnsTransformer::transform(transformer, columns);
+            }
+            else if (const auto * columns_regexp_matcher = child->as<ASTColumnsRegexpMatcher>())
             {
                 has_asterisks = true;
 
                 for (auto & table_name : data.tables_order)
-                    data.addTableColumns(table_name, [&](const String & column_name) { return columns_matcher->isColumnMatching(column_name); });
+                    data.addTableColumns(
+                        table_name,
+                        columns,
+                        [&](const String & column_name) { return columns_regexp_matcher->isColumnMatching(column_name); });
+
+                for (const auto & transformer : columns_regexp_matcher->children)
+                    IASTColumnsTransformer::transform(transformer, columns);
             }
             else
                 data.new_select_expression_list->children.push_back(child);
+
+            data.new_select_expression_list->children.insert(
+                data.new_select_expression_list->children.end(),
+                std::make_move_iterator(columns.begin()),
+                std::make_move_iterator(columns.end()));
         }
 
         if (!has_asterisks)
@@ -328,6 +361,7 @@ struct CheckAliasDependencyVisitorData
             dependency = &ident;
     }
 };
+
 using CheckAliasDependencyMatcher = OneTypeMatcher<CheckAliasDependencyVisitorData>;
 using CheckAliasDependencyVisitor = InDepthNodeVisitor<CheckAliasDependencyMatcher, true>;
 
@@ -467,6 +501,7 @@ void restoreName(ASTIdentifier & ident, const String & original_name, NameSet & 
 {
     if (!ident.tryGetAlias().empty())
         return;
+
     if (original_name.empty())
         return;
 
@@ -476,7 +511,9 @@ void restoreName(ASTIdentifier & ident, const String & original_name, NameSet & 
         restored_names.emplace(original_name);
     }
     else
+    {
         ident.setShortName(original_name);
+    }
 }
 
 /// Find clashes and normalize names
@@ -494,12 +531,12 @@ std::vector<TableNeededColumns> normalizeColumnNamesExtractNeeded(
 {
     size_t last_table_pos = tables.size() - 1;
 
-    NameSet restored_names;
     std::vector<TableNeededColumns> needed_columns;
     needed_columns.reserve(tables.size());
     for (const auto & table : tables)
         needed_columns.push_back(TableNeededColumns{table.table});
 
+    NameSet restored_names;
     for (ASTIdentifier * ident : identifiers)
     {
         bool got_alias = aliases.contains(ident->name());
@@ -696,7 +733,10 @@ void JoinToSubqueryTransformMatcher::visit(ASTSelectQuery & select, ASTPtr & ast
     std::unordered_set<ASTIdentifier *> public_identifiers;
     for (auto & top_level_child : select.select()->children)
         if (auto * ident = top_level_child->as<ASTIdentifier>())
-            public_identifiers.insert(ident);
+        {
+            if (!data.try_to_keep_original_names || startsWith(ident->name(), UniqueShortNames::pattern))
+                public_identifiers.insert(ident);
+        }
 
     UniqueShortNames unique_names;
     std::vector<TableNeededColumns> needed_columns =

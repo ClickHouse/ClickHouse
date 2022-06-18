@@ -89,9 +89,25 @@ struct SortColumnDescriptionWithColumnIndex
     }
 };
 
+class CompiledSortDescriptionFunctionHolder;
+
 /// Description of the sorting rule for several columns.
-using SortDescription = std::vector<SortColumnDescription>;
 using SortDescriptionWithPositions = std::vector<SortColumnDescriptionWithColumnIndex>;
+
+class SortDescription : public std::vector<SortColumnDescription>
+{
+public:
+    /// Can be safely casted into JITSortDescriptionFunc
+    void * compiled_sort_description = nullptr;
+    std::shared_ptr<CompiledSortDescriptionFunctionHolder> compiled_sort_description_holder;
+    size_t min_count_to_compile_sort_description = 3;
+    bool compile_sort_description = false;
+};
+
+/** Compile sort description for header_types.
+  * Description is compiled only if compilation attempts to compile identical description is more than min_count_to_compile_sort_description.
+  */
+void compileSortDescriptionIfNeeded(SortDescription & description, const DataTypes & sort_description_types, bool increase_compile_attempts);
 
 /// Outputs user-readable description into `out`.
 void dumpSortDescription(const SortDescription & description, WriteBuffer & out);

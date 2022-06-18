@@ -6,6 +6,7 @@
 #include <Coordination/CoordinationSettings.h>
 #include <libnuraft/nuraft.hxx>
 #include <Poco/Util/AbstractConfiguration.h>
+#include "Coordination/KeeperStateMachine.h"
 #include <Coordination/KeeperSnapshotManager.h>
 
 namespace DB
@@ -51,7 +52,8 @@ public:
 
     void loadLogStore(uint64_t last_commited_index, uint64_t logs_to_keep);
 
-    void flushLogStore();
+    /// Flush logstore and call shutdown of background thread
+    void flushAndShutDownLogStore();
 
     /// Called on server start, in our case we don't use any separate logic for load
     nuraft::ptr<nuraft::cluster_config> load_config() override
@@ -131,6 +133,7 @@ private:
     nuraft::ptr<KeeperLogStore> log_store;
     nuraft::ptr<nuraft::srv_state> server_state;
 
+public:
     /// Parse configuration from xml config.
     KeeperConfigurationWrapper parseServersConfiguration(const Poco::Util::AbstractConfiguration & config, bool allow_without_us) const;
 };
