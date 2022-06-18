@@ -50,7 +50,7 @@ bool ParserDropIndexQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected
         query->cluster = std::move(cluster_str);
      }
 
-    if(query->index_name)
+    if (query->index_name)
         query->children.push_back(query->index_name);
 
     query->if_exists = if_exists;
