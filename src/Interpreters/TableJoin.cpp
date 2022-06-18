@@ -107,6 +107,7 @@ TableJoin::TableJoin(const Settings & settings, VolumePtr tmp_volume_)
     , partial_merge_join_left_table_buffer_bytes(settings.partial_merge_join_left_table_buffer_bytes)
     , max_files_to_merge(settings.join_on_disk_max_files_to_merge)
     , temporary_files_codec(settings.temporary_files_codec)
+    , grace_hash_join_allowed(settings.allow_grace_hash_join)
     , tmp_volume(tmp_volume_)
 {
 }
@@ -415,10 +416,11 @@ bool TableJoin::allowMergeJoin() const
 
 bool TableJoin::allowGraceHashJoin() const
 {
+    bool enabled_in_config = grace_hash_join_allowed;
     bool is_asof = (strictness() == ASTTableJoin::Strictness::Asof);
     bool is_right_or_full = isRight(kind()) || isFull(kind());
 
-    return !is_right_or_full && !is_asof && !isCrossOrComma(kind()) && oneDisjunct();
+    return enabled_in_config && !is_right_or_full && !is_asof && !isCrossOrComma(kind()) && oneDisjunct();
 }
 
 bool TableJoin::needStreamWithNonJoinedRows() const
