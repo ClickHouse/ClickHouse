@@ -449,7 +449,7 @@ def test_temporary_table():
     ) == TSV([["e"], ["q"], ["w"]])
 
 
-# We allow BACKUP DATABASE _temporary_and_external_tables only if the backup doesn't contain any table.
+# "BACKUP DATABASE _temporary_and_external_tables" is allowed but the backup must not contain any tables.
 def test_temporary_tables_database():
     session_id = new_session_id()
     instance.http_query(
@@ -462,6 +462,33 @@ def test_temporary_tables_database():
     assert os.listdir(os.path.join(get_path_to_backup(backup_name), "metadata/")) == [
         "_temporary_and_external_tables.sql"  # database metadata only
     ]
+
+
+def test_restore_all_restores_temporary_tables():
+    session_id = new_session_id()
+    instance.http_query(
+        "CREATE TEMPORARY TABLE temp_tbl(s String)", params={"session_id": session_id}
+    )
+    instance.http_query(
+        "INSERT INTO temp_tbl VALUES ('q'), ('w'), ('e')", params={"session_id": session_id}
+    )
+
+    backup_name = new_backup_name()
+    instance.http_query(
+        f"BACKUP TEMPORARY TABLE temp_tbl TO {backup_name}",
+        params={"session_id": session_id},
+    )
+
+    session_id = new_session_id()
+    instance.http_query(
+        f"RESTORE ALL FROM {backup_name}",
+        params={"session_id": session_id},
+        method="POST"
+    )
+
+    assert instance.http_query(
+        "SELECT * FROM temp_tbl ORDER BY s", params={"session_id": session_id}
+    ) == TSV([["e"], ["q"], ["w"]])    
 
 
 def test_system_table():

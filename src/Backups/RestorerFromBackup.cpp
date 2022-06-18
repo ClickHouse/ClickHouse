@@ -37,6 +37,8 @@ namespace ErrorCodes
 
 namespace
 {
+    constexpr const std::string_view sql_ext = ".sql";
+
     bool hasSystemTableEngine(const IAST & ast)
     {
         const ASTCreateQuery * create = ast.as<ASTCreateQuery>();
@@ -284,7 +286,7 @@ void RestorerFromBackup::collectDatabaseAndTableInfos()
             }
             case ASTBackupQuery::ElementType::DATABASE:
             {
-                collectDatabaseInfo(element.database_name, element.except_tables);
+                collectDatabaseInfo(element.database_name, element.except_tables, /* throw_if_no_database_metadata_in_backup= */ true);
                 break;
             }
             case ASTBackupQuery::ElementType::ALL:
@@ -380,7 +382,7 @@ void RestorerFromBackup::collectTableInfo(const QualifiedTableName & table_name_
     }
 }
 
-void RestorerFromBackup::collectDatabaseInfo(const String & database_name_in_backup, const std::set<DatabaseAndTableName> & except_table_names)
+void RestorerFromBackup::collectDatabaseInfo(const String & database_name_in_backup, const std::set<DatabaseAndTableName> & except_table_names, bool throw_if_no_database_metadata_in_backup)
 {
     std::optional<fs::path> metadata_path;
     std::unordered_set<String> table_names_in_backup;
@@ -393,7 +395,6 @@ void RestorerFromBackup::collectDatabaseInfo(const String & database_name_in_bac
         Strings file_names = backup->listFiles(root_path_in_backup / "metadata" / escapeForFileName(database_name_in_backup));
         for (const String & file_name : file_names)
         {
-            constexpr const std::string_view sql_ext = ".sql";
             if (!file_name.ends_with(sql_ext))
                 continue;
             String file_name_without_ext = file_name.substr(0, file_name.length() - sql_ext.length());
@@ -401,12 +402,9 @@ void RestorerFromBackup::collectDatabaseInfo(const String & database_name_in_bac
         }
     }
 
-    if (!metadata_path && table_names_in_backup.empty())
+    if (!metadata_path && throw_if_no_database_metadata_in_backup)
         throw Exception(ErrorCodes::BACKUP_ENTRY_NOT_FOUND, "Database {} not found in backup", backQuoteIfNeed(database_name_in_backup));
 
-    String database_name = renaming_map.getNewDatabaseName(database_name_in_backup);
-
-    ASTPtr create_database_query;
     if (metadata_path)
     {
         auto read_buffer = backup->readFile(*metadata_path)->getReadBuffer();
@@ -414,51 +412,56 @@ void RestorerFromBackup::collectDatabaseInfo(const String & database_name_in_bac
         readStringUntilEOF(create_query_str, *read_buffer);
         read_buffer.reset();
         ParserCreateQuery create_parser;
-        create_database_query = parseQuery(create_parser, create_query_str, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
+        ASTPtr create_database_query = parseQuery(create_parser, create_query_str, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
         renameDatabaseAndTableNameInCreateQuery(context->getGlobalContext(), renaming_map, create_database_query);
-    }
-    else
-    {
-        auto generated_create_query = std::make_shared<ASTCreateQuery>();
-        generated_create_query->setDatabase(database_name);
-        create_database_query = generated_create_query;
-    }
 
-    DatabaseInfo & database_info = database_infos[database_name];
-    
-    if (database_info.create_database_query && (serializeAST(*database_info.create_database_query) != serializeAST(*create_database_query)))
-    {
-        throw Exception(
-            ErrorCodes::CANNOT_RESTORE_DATABASE,
-            "Extracted two different create queries for the same database {}: {} and {}",
-            backQuoteIfNeed(database_name),
-            serializeAST(*database_info.create_database_query),
-            serializeAST(*create_database_query));
-    }
+        String database_name = renaming_map.getNewDatabaseName(database_name_in_backup);
+        DatabaseInfo & database_info = database_infos[database_name];
+        
+        if (database_info.create_database_query && (serializeAST(*database_info.create_database_query) != serializeAST(*create_database_query)))
+        {
+            throw Exception(
+                ErrorCodes::CANNOT_RESTORE_DATABASE,
+                "Extracted two different create queries for the same database {}: {} and {}",
+                backQuoteIfNeed(database_name),
+                serializeAST(*database_info.create_database_query),
+                serializeAST(*create_database_query));
+        }
 
-    database_info.create_database_query = create_database_query;
+        database_info.create_database_query = create_database_query;
+    }
 
     for (const String & table_name_in_backup : table_names_in_backup)
     {
         if (except_table_names.contains({database_name_in_backup, table_name_in_backup}))
             continue;
 
-        collectTableInfo({database_name_in_backup, table_name_in_backup}, /* is_temporary_table= */ false, {});
+        collectTableInfo({database_name_in_backup, table_name_in_backup}, /* is_temporary_table= */ false, /* partitions= */ {});
     }
 }
 
 void RestorerFromBackup::collectAllDatabasesInfo(const std::set<String> & except_database_names, const std::set<DatabaseAndTableName> & except_table_names)
 {
     std::unordered_set<String> database_names_in_backup;
+    std::unordered_set<String> temporary_table_names_in_backup;
+
     for (const auto & root_path_in_backup : root_paths_in_backup)
     {
         Strings file_names = backup->listFiles(root_path_in_backup / "metadata");
         for (String & file_name : file_names)
         {
-            constexpr const std::string_view sql_ext = ".sql";
             if (file_name.ends_with(sql_ext))
                 file_name.resize(file_name.length() - sql_ext.length());
             database_names_in_backup.emplace(unescapeForFileName(file_name));
+        }
+
+        file_names = backup->listFiles(root_path_in_backup / "temporary_tables" / "metadata");
+        for (String & file_name : file_names)
+        {
+            if (!file_name.ends_with(sql_ext))
+                continue;
+            file_name.resize(file_name.length() - sql_ext.length());
+            temporary_table_names_in_backup.emplace(unescapeForFileName(file_name));
         }
     }
 
@@ -467,8 +470,11 @@ void RestorerFromBackup::collectAllDatabasesInfo(const std::set<String> & except
         if (except_database_names.contains(database_name_in_backup))
             continue;
 
-        collectDatabaseInfo(database_name_in_backup, except_table_names);
+        collectDatabaseInfo(database_name_in_backup, except_table_names, /* throw_if_no_database_metadata_in_backup= */ false);
     }
+
+    for (const String & temporary_table_name_in_backup : temporary_table_names_in_backup)
+        collectTableInfo({"", temporary_table_name_in_backup}, /* is_temporary_table= */ true, /* partitions= */ {});
 }
 
 void RestorerFromBackup::createDatabases()
