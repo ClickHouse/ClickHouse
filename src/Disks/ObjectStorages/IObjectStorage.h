@@ -13,7 +13,7 @@
 
 #include <Disks/IO/AsynchronousReadIndirectBufferFromRemoteFS.h>
 #include <Common/ThreadPool.h>
-#include <Common/FileCache.h>
+#include <Common/IFileCache.h>
 #include <Disks/WriteMode.h>
 
 
