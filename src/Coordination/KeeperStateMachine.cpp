@@ -286,6 +286,10 @@ void KeeperStateMachine::commit_config(const uint64_t /* log_idx */, nuraft::ptr
 void KeeperStateMachine::rollback(uint64_t log_idx, nuraft::buffer & data)
 {
     auto request_for_session = parseRequest(data);
+
+    if (request_for_session.request->getOpNum() == Coordination::OpNum::SessionID)
+        return;
+
     // If we received a log from an older node, use the log_idx as the zxid
     // log_idx will always be larger or equal to the zxid so we can safely do this
     // (log_idx is increased for all logs, while zxid is only increased for requests)
