@@ -120,7 +120,7 @@ inline T maskLowBits(unsigned char bits)
 }
 
 template <std::integral T>
-constexpr bool isPowerOf2(T number) {
+constexpr bool isPowerOf2(T number)
+{
     return number > 0 && (number & (number - 1)) == 0;
 }
-

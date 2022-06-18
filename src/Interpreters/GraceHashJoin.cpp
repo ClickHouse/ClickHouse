@@ -20,6 +20,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int JOIN_BUCKETS_LIMIT_EXCEEDED;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace
@@ -273,7 +274,7 @@ GraceHashJoin::BucketsSnapshot GraceHashJoin::rehash(size_t desired_size)
 
     if (next_size > max_num_buckets)
     {
-        throw Exception(ErrorCodes::JOIN_BUCKETS_LIMIT_EXCEEDED, "");
+        throw Exception(ErrorCodes::JOIN_BUCKETS_LIMIT_EXCEEDED, "Too many grace hash join buckets, consider increasing max_rows_in_join");
     }
 
     next_snapshot->reserve(next_size);
