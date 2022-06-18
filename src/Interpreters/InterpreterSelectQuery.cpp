@@ -655,7 +655,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 void InterpreterSelectQuery::executePutInCache(QueryPlan & query_plan, CacheKey query_cache_key)
 {
     auto settings = context->getSettingsRef();
-    if (!settings.query_cache_active_usage)
+    if (!settings.query_cache_active_usage || context->getQueryCache() == nullptr)
     {
         return;
     }
@@ -675,7 +675,7 @@ void InterpreterSelectQuery::executePutInCache(QueryPlan & query_plan, CacheKey 
 bool InterpreterSelectQuery::executeReadFromCache(QueryPlan & query_plan, CacheKey query_cache_key)
 {
     auto settings = context->getSettingsRef();
-    if (!settings.query_cache_passive_usage)
+    if (!settings.query_cache_passive_usage || context->getQueryCache() == nullptr)
     {
         return false;
     }
