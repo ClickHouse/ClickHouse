@@ -56,21 +56,21 @@ struct WindowExpressionsCollectorMatcher
             if (func->is_window_function)
                 return { .window_function_in_subtree = true };
 
-            bool window_function_in_subtree = false;
+            WindowExpressionsCollectorChildInfo result;
             for (auto & arg : func->arguments->children)
             {
                 auto subtree_result = visitNode(arg, ast);
-                window_function_in_subtree = window_function_in_subtree || subtree_result.window_function_in_subtree;
+                result.update(subtree_result);
             }
 
             // We mark functions only on the top of AST
-            if ((!parent || !parent->as<ASTFunction>()) && window_function_in_subtree)
+            if ((!parent || !parent->as<ASTFunction>()) && result.window_function_in_subtree)
             {
                 expressions_with_window_functions.push_back(func);
                 func->compute_after_window_functions = true;
             }
 
-            return { .window_function_in_subtree = window_function_in_subtree };
+            return result;
         }
         return {};
     }
