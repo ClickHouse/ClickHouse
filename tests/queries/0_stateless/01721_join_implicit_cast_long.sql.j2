@@ -9,13 +9,21 @@ CREATE TABLE t2 (a Int16, b Nullable(Int64)) ENGINE = TinyLog;
 INSERT INTO t1 SELECT number as a, 100 + number as b FROM system.numbers LIMIT 1, 10;
 INSERT INTO t2 SELECT number - 5 as a, 200 + number - 5 as b FROM system.numbers LIMIT 1, 10;
 
-{% for join_type in ['hash', 'partial_merge', 'auto'] -%}
+{% for join_type in ['hash', 'partial_merge', 'auto_merge', 'auto_grace_hash'] -%}
 
 SELECT '=== {{ join_type }} ===';
+{% if join_type.startswith('auto') %}
+SET join_algorithm = 'auto';
+{% else %}
 SET join_algorithm = '{{ join_type }}';
+{% endif %}
 
-{% if join_type == 'auto' -%}
+{% if join_type == 'auto_merge' -%}
 SET max_bytes_in_join = 100;
+SET allow_grace_hash_join = false;
+{% elif join_type == 'auto_grace_hash' -%}
+SET max_rows_in_join = 10;
+SET allow_grace_hash_join = true;
 {% endif -%}
 
 SELECT '= full =';
@@ -89,7 +97,7 @@ SELECT any(toTypeName(a)) == 'UInt16' AND any(toTypeName(t2.a)) == 'Int16' FROM 
 SELECT any(toTypeName(a)) == 'UInt16' AND any(toTypeName(t2.a)) == 'Int16' FROM t1 INNER JOIN t2 ON (t1.a == t2.a);
 SELECT toTypeName(any(a)) == 'UInt16' AND toTypeName(any(t2.a)) == 'Int16' FROM t1 FULL JOIN t2 ON (t1.a == t2.a);
 
-{% if join_type == 'auto' -%}
+{% if join_type == 'auto_merge' -%}
 SET max_bytes_in_join = 0;
 {% endif -%}
 
