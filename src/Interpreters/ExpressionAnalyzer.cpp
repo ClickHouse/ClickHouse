@@ -1058,10 +1058,10 @@ static std::shared_ptr<IJoin> chooseJoinAlgorithm(std::shared_ptr<TableJoin> ana
         }
         return std::make_shared<HashJoin>(analyzed_join, sample_block);
     }
-    else if (analyzed_join->forceGraceHashJoin() || (!analyzed_join->preferMergeJoin() && allow_grace_hash_join))
-        return std::make_shared<JoinSwitcher>(analyzed_join, sample_block, make_grace_hash_join);
     else if (analyzed_join->forceMergeJoin() || (analyzed_join->preferMergeJoin() && allow_merge_join))
         return make_merge_join();
+    else if (analyzed_join->forceGraceHashJoin() || allow_grace_hash_join)
+        return std::make_shared<JoinSwitcher>(analyzed_join, sample_block, make_grace_hash_join);
     return std::make_shared<JoinSwitcher>(analyzed_join, sample_block, make_merge_join);
 }
 
