@@ -70,7 +70,7 @@ aggregate_function (column_name)
 
 ```text
       PARTITION
-┌─────────────────┐  <-- UNBOUNDED PRECEDING (BEGINING of the PARTITION)
+┌─────────────────┐  <-- UNBOUNDED PRECEDING (BEGINNING of the PARTITION)
 │                 │
 │                 │
 │=================│  <-- N PRECEDING  <─┐
