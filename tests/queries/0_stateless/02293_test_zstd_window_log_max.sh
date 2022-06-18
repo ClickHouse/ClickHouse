@@ -6,6 +6,5 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 # reuse the test data in 01946_test_zstd_decompression_with_escape_sequence_at_the_end_of_buffer.sh
-$CLICKHOUSE_LOCAL --query "SELECT count() FROM file('$CUR_DIR/data_zstd/test_01946.zstd', JSONEachRow, 'foo String') SETTINGS zstd_window_log_max=20" 2>&1  | grep -c \
-    "Code: 561. DB::Exception: Zstd stream encoding failed: error 'Frame requires too much memory for decoding'; zstd version: 1.5.0: While executing File. (ZSTD_DECODER_FAILED)"
-$CLICKHOUSE_LOCAL --query "SELECT count() FROM file('$CUR_DIR/data_zstd/test_01946.zstd', JSONEachRow, 'foo String') SETTINGS zstd_window_log_max=21"
+$CLICKHOUSE_LOCAL --query "SELECT count() FROM file('$CUR_DIR/data_zstd/test_01946.zstd', JSONEachRow, 'foo String') SETTINGS zstd_window_log_max = 20" 2>&1  | grep -c "ZSTD_DECODER_FAILED"
+$CLICKHOUSE_LOCAL --query "SELECT count() FROM file('$CUR_DIR/data_zstd/test_01946.zstd', JSONEachRow, 'foo String') SETTINGS zstd_window_log_max = 21"
