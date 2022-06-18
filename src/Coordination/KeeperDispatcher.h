@@ -119,7 +119,7 @@ public:
         return server && server->checkInit();
     }
 
-    void onRequestCommit(KeeperStorage::RequestForSession & request_for_session, uint64_t log_idx);
+    void onRequestCommit(uint64_t log_term, uint64_t log_idx);
 
     /// Is server accepting requests, i.e. connected to the cluster
     /// and achieved quorum
