@@ -20,12 +20,13 @@ def replace_substring_to_substr(node):
 @pytest.mark.parametrize("engine", ['Ordinary', 'Atomic'])
 def test_attach_substr(started_cluster, engine):
     # Initialize
+    node.query("DROP TABLE IF EXISTS default.file")
     node.query("CREATE TABLE default.file(`s` String, `n` UInt8) ENGINE = MergeTree PARTITION BY substring(s, 1, 2) ORDER BY n ")
 
     # Detach table file
     node.query("DETACH TABLE file")
 
-    # Replace subtring to substr
+    # Replace substring to substr
     replace_substring_to_substr(node)
 
     # Attach table file
@@ -34,9 +35,10 @@ def test_attach_substr(started_cluster, engine):
 @pytest.mark.parametrize("engine", ['Ordinary', 'Atomic'])
 def test_attach_substr_restart(started_cluster, engine):
     # Initialize
+    node.query("DROP TABLE IF EXISTS default.file")
     node.query("CREATE TABLE default.file(`s` String, `n` UInt8) ENGINE = MergeTree PARTITION BY substring(s, 1, 2) ORDER BY n ")
 
-    # Replace subtring to substr
+    # Replace substring to substr
     replace_substring_to_substr(node)
 
     # Restart clickhouse

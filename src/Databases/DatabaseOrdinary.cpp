@@ -129,7 +129,6 @@ void DatabaseOrdinary::loadStoredObjects(
         const auto & name = name_with_path_and_query.first;
         const auto & path = name_with_path_and_query.second.path;
         const auto & ast = name_with_path_and_query.second.ast;
-        FunctionNameNormalizer().visit(ast.get());
         const auto & create_query = ast->as<const ASTCreateQuery &>();
 
         if (!create_query.is_dictionary)
@@ -169,6 +168,7 @@ void DatabaseOrdinary::loadTablesMetadata(ContextPtr local_context, ParsedTables
             auto ast = parseQueryFromMetadata(log, getContext(), full_path.string(), /*throw_on_error*/ true, /*remove_empty*/ false);
             if (ast)
             {
+                FunctionNameNormalizer().visit(ast.get());
                 auto * create_query = ast->as<ASTCreateQuery>();
                 create_query->setDatabase(database_name);
 
