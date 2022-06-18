@@ -309,6 +309,20 @@ def test_async():
     assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
 
 
+def test_empty_files_in_backup():
+    instance.query("CREATE DATABASE test")
+    instance.query("CREATE TABLE test.tbl1(x Array(UInt8)) ENGINE=MergeTree ORDER BY tuple() SETTINGS min_bytes_for_wide_part = 0")
+    instance.query("INSERT INTO test.tbl1 VALUES ([])")
+
+    backup_name = new_backup_name()
+    instance.query(f"BACKUP TABLE test.tbl1 TO {backup_name}")
+
+    instance.query("DROP TABLE test.tbl1")
+    instance.query(f"RESTORE ALL FROM {backup_name}")
+
+    assert instance.query("SELECT * FROM test.tbl1") == "[]\n"
+
+
 def test_dependencies():
     create_and_fill_table()
     instance.query("CREATE VIEW test.view AS SELECT x, y AS w FROM test.table")

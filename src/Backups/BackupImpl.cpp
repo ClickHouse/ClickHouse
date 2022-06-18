@@ -273,10 +273,10 @@ void BackupImpl::writeBackupMetadata()
     for (const auto & info : all_file_infos)
     {
         String prefix = index ? "contents.file[" + std::to_string(index) + "]." : "contents.file.";
+        config->setString(prefix + "name", info.file_name);
         config->setUInt(prefix + "size", info.size);
         if (info.size)
         {
-            config->setString(prefix + "name", info.file_name);
             config->setString(prefix + "checksum", hexChecksum(info.checksum));
             if (info.base_size)
             {
@@ -451,17 +451,18 @@ BackupEntryPtr BackupImpl::readFile(const SizeAndChecksum & size_and_checksum) c
     if (open_mode != OpenMode::READ)
         throw Exception("Backup is not opened for reading", ErrorCodes::LOGICAL_ERROR);
 
+    if (!size_and_checksum.first)
+    {
+        /// Entry's data is empty.
+        return std::make_unique<BackupEntryFromMemory>(nullptr, 0, UInt128{0, 0});
+    }
+
     auto info_opt = coordination->getFileInfo(size_and_checksum);
     if (!info_opt)
         throw Exception(
             ErrorCodes::BACKUP_ENTRY_NOT_FOUND, "Backup {}: Entry {} not found in the backup", backup_name, formatSizeAndChecksum(size_and_checksum));
 
     const auto & info = *info_opt;
-    if (!info.size)
-    {
-        /// Entry's data is empty.
-        return std::make_unique<BackupEntryFromMemory>(nullptr, 0, UInt128{0, 0});
-    }
 
     if (!info.base_size)
     {
