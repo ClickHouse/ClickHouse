@@ -318,7 +318,59 @@ template <typename T>
 void ColumnVector<T>::updatePermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
                                     size_t limit, int nan_direction_hint, IColumn::Permutation & res, EqualRanges & equal_ranges) const
 {
-    auto sort = [](auto begin, auto end, auto pred) { ::sort(begin, end, pred); };
+    bool reverse = direction == IColumn::PermutationSortDirection::Descending;
+    bool ascending = direction == IColumn::PermutationSortDirection::Ascending;
+    bool sort_is_stable = stability == IColumn::PermutationSortStability::Stable;
+
+    auto sort = [&](auto begin, auto end, auto pred)
+    {
+        /// A case for radix sort
+        if constexpr (is_arithmetic_v<T> && !is_big_int_v<T>)
+        {
+            /// TODO: LSD RadixSort is currently not stable if direction is descending, or value is floating point
+            bool use_radix_sort = (sort_is_stable && ascending && !std::is_floating_point_v<T>) || !sort_is_stable;
+            size_t size = end - begin;
+
+            /// Thresholds on size. Lower threshold is arbitrary. Upper threshold is chosen by the type for histogram counters.
+            if (size >= 256 && size <= std::numeric_limits<UInt32>::max() && use_radix_sort)
+            {
+                PaddedPODArray<ValueWithIndex<T>> pairs(size);
+                size_t index = 0;
+
+                for (auto * it = begin; it != end; ++it)
+                {
+                    pairs[index] = {data[*it], static_cast<UInt32>(*it)};
+                    ++index;
+                }
+
+                RadixSort<RadixSortTraits<T>>::executeLSD(pairs.data(), size, reverse, begin);
+
+                /// Radix sort treats all NaNs to be greater than all numbers.
+                /// If the user needs the opposite, we must move them accordingly.
+                if (std::is_floating_point_v<T> && nan_direction_hint < 0)
+                {
+                    size_t nans_to_move = 0;
+
+                    for (size_t i = 0; i < size; ++i)
+                    {
+                        if (isNaN(data[begin[reverse ? i : size - 1 - i]]))
+                            ++nans_to_move;
+                        else
+                            break;
+                    }
+
+                    if (nans_to_move)
+                    {
+                        std::rotate(begin, begin + (reverse ? nans_to_move : size - nans_to_move), end);
+                    }
+                }
+
+                return;
+            }
+        }
+
+        ::sort(begin, end, pred);
+    };
     auto partial_sort = [](auto begin, auto mid, auto end, auto pred) { ::partial_sort(begin, mid, end, pred); };
 
     if (direction == IColumn::PermutationSortDirection::Ascending && stability == IColumn::PermutationSortStability::Unstable)

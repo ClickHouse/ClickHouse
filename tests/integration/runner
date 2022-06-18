@@ -9,11 +9,21 @@ import logging
 import signal
 import subprocess
 import sys
+import string
+import random
+
+
+def random_str(length=6):
+    alphabet = string.ascii_lowercase + string.digits
+    return "".join(
+        random.SystemRandom().choice(alphabet) for _ in range(length)
+    )
+
 
 CUR_FILE_DIR = os.path.dirname(os.path.realpath(__file__))
 DEFAULT_CLICKHOUSE_ROOT = os.path.abspath(os.path.join(CUR_FILE_DIR, "../../"))
 CURRENT_WORK_DIR = os.getcwd()
-CONTAINER_NAME = "clickhouse_integration_tests"
+CONTAINER_NAME = f"clickhouse_integration_tests_{random_str()}"
 
 CONFIG_DIR_IN_REPO = "programs/server"
 INTERGATION_DIR_IN_REPO = "tests/integration"
