@@ -1891,3 +1891,4 @@ sha512_block_data_order_neon:
 #endif
 #endif
 #endif  // !OPENSSL_NO_ASM
+.section	.note.GNU-stack,"",%progbits
