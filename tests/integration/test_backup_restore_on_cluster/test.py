@@ -51,7 +51,9 @@ def drop_after_test():
         yield
     finally:
         node1.query("DROP TABLE IF EXISTS tbl ON CLUSTER 'cluster3' NO DELAY")
+        node1.query("DROP TABLE IF EXISTS tbl2 ON CLUSTER 'cluster3' NO DELAY")
         node1.query("DROP DATABASE IF EXISTS mydb ON CLUSTER 'cluster3' NO DELAY")
+        node1.query("DROP USER IF EXISTS u1 ON CLUSTER 'cluster3'")
 
 
 backup_id_counter = 0
@@ -409,3 +411,52 @@ def test_replicated_database_async():
 
     assert node1.query("SELECT * FROM mydb.tbl ORDER BY x") == TSV([1, 22])
     assert node2.query("SELECT * FROM mydb.tbl2 ORDER BY y") == TSV(["a", "bb"])
+
+
+def test_required_privileges():
+    node1.query(
+        "CREATE TABLE tbl ON CLUSTER 'cluster' ("
+        "x UInt8"
+        ") ENGINE=ReplicatedMergeTree('/clickhouse/tables/tbl/', '{replica}')"
+        "ORDER BY x"
+    )
+
+    node1.query("INSERT INTO tbl VALUES (100)")
+
+    node1.query("CREATE USER u1 ON CLUSTER 'cluster'")
+
+    backup_name = new_backup_name()
+    expected_error = "necessary to have grant BACKUP ON default.tbl"
+    assert expected_error in node1.query_and_get_error(
+        f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name}", user="u1"
+    )
+
+    node1.query("GRANT BACKUP ON tbl TO u1 ON CLUSTER 'cluster'")
+    node1.query(f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name}", user="u1")
+
+    node1.query(f"DROP TABLE tbl ON CLUSTER 'cluster' NO DELAY")
+
+    expected_error = "necessary to have grant INSERT, CREATE TABLE ON default.tbl2"
+    assert expected_error in node1.query_and_get_error(
+        f"RESTORE TABLE tbl AS tbl2 ON CLUSTER 'cluster' FROM {backup_name}", user="u1"
+    )
+
+    node1.query("GRANT INSERT, CREATE TABLE ON tbl2 TO u1 ON CLUSTER 'cluster'")
+    node1.query(
+        f"RESTORE TABLE tbl AS tbl2 ON CLUSTER 'cluster' FROM {backup_name}", user="u1"
+    )
+
+    assert node2.query("SELECT * FROM tbl2") == "100\n"
+
+    node1.query(f"DROP TABLE tbl2 ON CLUSTER 'cluster' NO DELAY")
+    node1.query("REVOKE ALL FROM u1")
+
+    expected_error = "necessary to have grant INSERT, CREATE TABLE ON default.tbl"
+    assert expected_error in node1.query_and_get_error(
+        f"RESTORE ALL ON CLUSTER 'cluster' FROM {backup_name}", user="u1"
+    )
+
+    node1.query("GRANT INSERT, CREATE TABLE ON tbl TO u1 ON CLUSTER 'cluster'")
+    node1.query(f"RESTORE ALL ON CLUSTER 'cluster' FROM {backup_name}", user="u1")
+
+    assert node2.query("SELECT * FROM tbl") == "100\n"
