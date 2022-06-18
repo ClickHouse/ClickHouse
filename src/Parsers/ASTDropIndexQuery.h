@@ -8,12 +8,10 @@
 #include <Parsers/IParserBase.h>
 
 
-
 namespace DB
 {
 
-/** 
- * DROP INDEX [IF EXISTS] name on [db].name
+/** DROP INDEX [IF EXISTS] name on [db].name
  */
 
 class ASTDropIndexQuery : public ASTQueryWithTableAndOutput, public ASTQueryWithOnCluster
