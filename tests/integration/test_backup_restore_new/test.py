@@ -41,6 +41,9 @@ def cleanup_after_test():
         instance.query("DROP DATABASE IF EXISTS test3")
         instance.query("DROP USER IF EXISTS u1")
         instance.query("DROP ROLE IF EXISTS r1, r2")
+        instance.query("DROP SETTINGS PROFILE IF EXISTS prof1")
+        instance.query("DROP ROW POLICY IF EXISTS rowpol1 ON test.table")
+        instance.query("DROP QUOTA IF EXISTS q1")
 
 
 backup_id_counter = 0
@@ -575,17 +578,29 @@ def test_system_users():
         "CREATE USER u1 IDENTIFIED BY 'qwe123' SETTINGS PROFILE 'default', custom_a = 1"
     )
     instance.query("GRANT SELECT ON test.* TO u1")
+
     instance.query("CREATE ROLE r1, r2")
     instance.query("GRANT r1 TO r2 WITH ADMIN OPTION")
     instance.query("GRANT r2 TO u1")
 
+    instance.query("CREATE SETTINGS PROFILE prof1 SETTINGS custom_b=2 TO u1")
+    instance.query("CREATE ROW POLICY rowpol1 ON test.table USING x<50 TO u1")
+    instance.query("CREATE QUOTA q1 TO r1")
+
     backup_name = new_backup_name()
-    instance.query(f"BACKUP TABLE system.users, TABLE system.roles TO {backup_name}")
+    instance.query(
+        f"BACKUP TABLE system.users, TABLE system.roles, TABLE system.settings_profiles, TABLE system.row_policies, TABLE system.quotas TO {backup_name}"
+    )
 
     instance.query("DROP USER u1")
     instance.query("DROP ROLE r1, r2")
+    instance.query("DROP SETTINGS PROFILE prof1")
+    instance.query("DROP ROW POLICY rowpol1 ON test.table")
+    instance.query("DROP QUOTA q1")
 
-    instance.query(f"RESTORE TABLE system.users, TABLE system.roles FROM {backup_name}")
+    instance.query(
+        f"RESTORE TABLE system.users, TABLE system.roles, TABLE system.settings_profiles, TABLE system.row_policies, TABLE system.quotas FROM {backup_name}"
+    )
 
     assert (
         instance.query("SHOW CREATE USER u1")
@@ -600,6 +615,16 @@ def test_system_users():
     assert instance.query("SHOW GRANTS FOR r2") == TSV(
         ["GRANT r1 TO r2 WITH ADMIN OPTION"]
     )
+
+    assert (
+        instance.query("SHOW CREATE SETTINGS PROFILE prof1")
+        == "CREATE SETTINGS PROFILE prof1 SETTINGS custom_b = 2 TO u1\n"
+    )
+    assert (
+        instance.query("SHOW CREATE ROW POLICY rowpol1")
+        == "CREATE ROW POLICY rowpol1 ON test.table FOR SELECT USING x < 50 TO u1\n"
+    )
+    assert instance.query("SHOW CREATE QUOTA q1") == "CREATE QUOTA q1 TO r1\n"
 
 
 def test_system_users_required_privileges():
