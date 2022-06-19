@@ -595,7 +595,8 @@ static Blocks scatterBlockByHashImpl(const Strings & key_columns_names, const Bl
     size_t num_rows = block.rows();
     size_t num_cols = block.columns();
 
-    WeakHash32 hash(num_rows);
+    /// Use non-standard initial value so as not to degrade hash map performance inside shard that uses the same CRC32 algorithm.
+    WeakHash32 hash(num_rows, 0xdeadbabeu);
     for (const auto & key_name : key_columns_names)
     {
         ColumnPtr key_col = materializeColumn(block, key_name);
