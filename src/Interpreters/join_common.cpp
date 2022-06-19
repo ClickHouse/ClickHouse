@@ -598,9 +598,8 @@ static Blocks scatterBlockByHashImpl(const Strings & key_columns_names, const Bl
     WeakHash32 hash(num_rows);
     for (const auto & key_name : key_columns_names)
     {
-        const auto & key_col = block.getByName(key_name).column->convertToFullColumnIfConst();
-        const auto & key_col_no_lc = recursiveRemoveLowCardinality(recursiveRemoveSparse(key_col));
-        key_col_no_lc->updateWeakHash32(hash);
+        ColumnPtr key_col = materializeColumn(block, key_name);
+        key_col->updateWeakHash32(hash);
     }
     auto selector = hashToSelector(hash, sharder);
 
