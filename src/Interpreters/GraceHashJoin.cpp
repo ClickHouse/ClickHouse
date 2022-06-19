@@ -555,8 +555,6 @@ void GraceHashJoin::fillInMemoryJoin(InMemoryJoinPtr & join, FileBucket * bucket
     {
         addJoinedBlockImpl(join, bucket->index(), block);
     }
-
-    join->dumpCollisionsRatio();
 }
 
 void GraceHashJoin::addJoinedBlockImpl(InMemoryJoinPtr & join, size_t bucket_index, const Block & block)
