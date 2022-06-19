@@ -15,7 +15,14 @@
 #include <Common/HashTable/Hash.h>
 #include <xxhash.h>
 
+#ifdef __GNUC__
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wold-style-cast"
+#endif
 #include <highwayhash/highwayhash.h>
+#ifdef __GNUC__
+#pragma GCC diagnostic pop
+#endif
 
 #if USE_SSL
 #    include <openssl/md4.h>
@@ -1377,13 +1384,7 @@ void highwayhash(const char * s, size_t len, Result* result)
 {
     using namespace highwayhash;
     const HHKey key HH_ALIGNAS(32) = {1, 2, 3, 4};
-#ifdef __AVX2__
-    HHStateT<4> state(key);
-#elif defined(__SSE4_1__)
-    HHStateT<2> state(key);
-#else
-    HHStateT<1> state(key);
-#endif
+    HHStateT<HH_TARGET> state(key);
     HighwayHashT(&state, s, len, result);
 }
 
