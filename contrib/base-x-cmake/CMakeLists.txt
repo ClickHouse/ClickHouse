@@ -1,13 +1,13 @@
-set(LIBRARY_DIR "${ClickHouse_SOURCE_DIR}/contrib/base58")
+set(LIBRARY_DIR "${ClickHouse_SOURCE_DIR}/contrib/base-x")
 
 set (SRCS
         ${LIBRARY_DIR}/base_x.hh
         ${LIBRARY_DIR}/uinteger_t.hh
         )
 
-add_library(_base58 ${SRCS})
+add_library(_base-x ${SRCS})
 
-target_include_directories(_base58 SYSTEM BEFORE PUBLIC ${LIBRARY_DIR})
+target_include_directories(_base-x SYSTEM BEFORE PUBLIC ${LIBRARY_DIR})
 
 if (XCODE OR XCODE_VERSION)
     # https://gitlab.kitware.com/cmake/cmake/issues/17457
@@ -16,7 +16,7 @@ if (XCODE OR XCODE_VERSION)
     if (NOT EXISTS "${CMAKE_CURRENT_BINARY_DIR}/dummy.c")
         file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/dummy.c" "")
     endif ()
-    target_sources(_base58 PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/dummy.c")
+    target_sources(_base-x PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/dummy.c")
 endif ()
 
-add_library(ch_contrib::base58 ALIAS _base58)
+add_library(ch_contrib::base-x ALIAS _base-x)

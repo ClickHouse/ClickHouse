@@ -72,8 +72,8 @@ if (TARGET ch_contrib::llvm)
     target_link_libraries(clickhouse_functions PRIVATE ch_contrib::llvm)
 endif ()
 
-if (TARGET ch_contrib::base58)
-    target_link_libraries(clickhouse_functions PRIVATE ch_contrib::base58)
+if (TARGET ch_contrib::base-x)
+    target_link_libraries(clickhouse_functions PRIVATE ch_contrib::base-x)
 endif()
 
 if (TARGET ch_contrib::base64)
