@@ -294,7 +294,7 @@ void WriteBufferFromS3::writePart()
                 ++num_finished_bg_tasks;
 
                 /// Notification under mutex is important here.
-                /// Othervies, WriteBuffer could be destroyed in between
+                /// Otherwise, WriteBuffer could be destroyed in between
                 /// Releasing lock and condvar notification.
                 bg_tasks_condvar.notify_one();
             }
