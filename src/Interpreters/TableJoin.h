@@ -320,7 +320,7 @@ public:
 
     std::shared_ptr<const IKeyValueEntity> getStorageKeyValue() { return right_kv_storage; }
 
-  std::string dumpStructure() const;  // !!!
+    String dumpStructure() const;
 };
 
 }

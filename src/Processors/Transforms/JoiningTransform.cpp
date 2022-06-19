@@ -333,8 +333,6 @@ IProcessor::Status ParallelJoinTransform::prepare()
     /// Check can input.
 
 
-
-
     for (;; )
     {
         assert(current_input != inputs.end());

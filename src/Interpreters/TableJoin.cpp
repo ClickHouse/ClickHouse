@@ -24,7 +24,11 @@
 #include <Storages/StorageJoin.h>
 
 
+#include <IO/ReadBufferFromFile.h>
 #include <IO/Operators.h>
+#include <IO/WriteBufferFromString.h>
+
+
 #include <Common/logger_useful.h>
 #include <algorithm>
 #include <string>
@@ -762,7 +766,7 @@ bool TableJoin::allowParallelHashJoin() const
     return true;
 }
 
-std::string TableJoin::dumpStructure() const
+String TableJoin::dumpStructure() const
 {
     WriteBufferFromOwnString out;
     out << "# of clauses " << clauses.size() <<
