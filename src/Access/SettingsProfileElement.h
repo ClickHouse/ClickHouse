@@ -67,6 +67,8 @@ public:
     SettingsChanges toSettingsChanges() const;
     SettingsConstraints toSettingsConstraints(const AccessControl & access_control) const;
     std::vector<UUID> toProfileIDs() const;
+
+    bool isBackupAllowed() const;
 };
 
 }

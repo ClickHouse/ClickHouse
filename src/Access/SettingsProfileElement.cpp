@@ -12,6 +12,13 @@
 
 namespace DB
 {
+
+namespace
+{
+    constexpr const char ALLOW_BACKUP_SETTING_NAME[] = "allow_backup";
+}
+
+
 SettingsProfileElement::SettingsProfileElement(const ASTSettingsProfileElement & ast)
 {
     init(ast, nullptr);
@@ -41,7 +48,10 @@ void SettingsProfileElement::init(const ASTSettingsProfileElement & ast, const A
 
         /// Optionally check if a setting with that name is allowed.
         if (access_control)
-            access_control->checkSettingNameIsAllowed(setting_name);
+        {
+            if (setting_name != ALLOW_BACKUP_SETTING_NAME)
+                access_control->checkSettingNameIsAllowed(setting_name);
+        }
 
         value = ast.value;
         min_value = ast.min_value;
@@ -168,8 +178,11 @@ Settings SettingsProfileElements::toSettings() const
     Settings res;
     for (const auto & elem : *this)
     {
-        if (!elem.setting_name.empty() && !elem.value.isNull())
-            res.set(elem.setting_name, elem.value);
+        if (!elem.setting_name.empty() && (elem.setting_name != ALLOW_BACKUP_SETTING_NAME))
+        {
+            if (!elem.value.isNull())
+                res.set(elem.setting_name, elem.value);
+        }
     }
     return res;
 }
@@ -179,8 +192,11 @@ SettingsChanges SettingsProfileElements::toSettingsChanges() const
     SettingsChanges res;
     for (const auto & elem : *this)
     {
-        if (!elem.setting_name.empty() && !elem.value.isNull())
-            res.push_back({elem.setting_name, elem.value});
+        if (!elem.setting_name.empty() && (elem.setting_name != ALLOW_BACKUP_SETTING_NAME))
+        {
+            if (!elem.value.isNull())
+                res.push_back({elem.setting_name, elem.value});
+        }
     }
     return res;
 }
@@ -190,7 +206,7 @@ SettingsConstraints SettingsProfileElements::toSettingsConstraints(const AccessC
     SettingsConstraints res{access_control};
     for (const auto & elem : *this)
     {
-        if (!elem.setting_name.empty())
+        if (!elem.setting_name.empty() && (elem.setting_name != ALLOW_BACKUP_SETTING_NAME))
         {
             if (!elem.min_value.isNull())
                 res.setMinValue(elem.setting_name, elem.min_value);
@@ -219,5 +235,14 @@ std::vector<UUID> SettingsProfileElements::toProfileIDs() const
     return res;
 }
 
+bool SettingsProfileElements::isBackupAllowed() const
+{
+    for (const auto & setting : *this)
+    {
+        if (setting.setting_name == ALLOW_BACKUP_SETTING_NAME)
+            return static_cast<bool>(SettingFieldBool{setting.value});
+    }
+    return true;
+}
 
 }

@@ -22,6 +22,7 @@ struct Role : public IAccessEntity
     
     std::vector<UUID> findDependencies() const override;
     void replaceDependencies(const std::unordered_map<UUID, UUID> & old_to_new_ids) override;
+    bool isBackupAllowed() const override { return settings.isBackupAllowed(); }
 };
 
 using RolePtr = std::shared_ptr<const Role>;

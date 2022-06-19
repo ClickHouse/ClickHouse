@@ -272,14 +272,6 @@ void MemoryAccessStorage::setAll(const std::vector<std::pair<UUID, AccessEntityP
 }
 
 
-std::vector<std::pair<UUID, AccessEntityPtr>> MemoryAccessStorage::readAllForBackup(AccessEntityType type, const BackupSettings &) const
-{
-    if (!isBackupAllowed())
-        throwBackupNotAllowed();
-
-    return readAllWithIDs(type);
-}
-
 void MemoryAccessStorage::insertFromBackup(
     const std::vector<std::pair<UUID, AccessEntityPtr>> & entities_from_backup,
     const RestoreSettings & restore_settings,

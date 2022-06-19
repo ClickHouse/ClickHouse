@@ -613,13 +613,6 @@ AccessEntityPtr ReplicatedAccessStorage::readImpl(const UUID & id, bool throw_if
     return entry.entity;
 }
 
-std::vector<std::pair<UUID, AccessEntityPtr>> ReplicatedAccessStorage::readAllForBackup(AccessEntityType type, const BackupSettings &) const
-{
-    if (!isBackupAllowed())
-        throwBackupNotAllowed();
-    return readAllWithIDs(type);
-}
-
 void ReplicatedAccessStorage::insertFromBackup(const std::vector<std::pair<UUID, AccessEntityPtr>> & entities_from_backup, const RestoreSettings & restore_settings, std::shared_ptr<IRestoreCoordination> restore_coordination)
 {
     if (!isRestoreAllowed())

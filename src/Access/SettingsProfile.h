@@ -23,6 +23,7 @@ struct SettingsProfile : public IAccessEntity
 
     std::vector<UUID> findDependencies() const override;
     void replaceDependencies(const std::unordered_map<UUID, UUID> & old_to_new_ids) override;
+    bool isBackupAllowed() const override { return elements.isBackupAllowed(); }
 };
 
 using SettingsProfilePtr = std::shared_ptr<const SettingsProfile>;

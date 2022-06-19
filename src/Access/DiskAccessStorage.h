@@ -30,7 +30,6 @@ public:
     bool exists(const UUID & id) const override;
 
     bool isBackupAllowed() const override { return backup_allowed; }
-    std::vector<std::pair<UUID, AccessEntityPtr>> readAllForBackup(AccessEntityType type, const BackupSettings & backup_settings) const override;
     void insertFromBackup(const std::vector<std::pair<UUID, AccessEntityPtr>> & entities_from_backup, const RestoreSettings & restore_settings, std::shared_ptr<IRestoreCoordination> restore_coordination) override;
 
 private:

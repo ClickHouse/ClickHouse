@@ -658,13 +658,6 @@ void DiskAccessStorage::deleteAccessEntityOnDisk(const UUID & id) const
 }
 
 
-std::vector<std::pair<UUID, AccessEntityPtr>> DiskAccessStorage::readAllForBackup(AccessEntityType type, const BackupSettings &) const
-{
-    if (!isBackupAllowed())
-        throwBackupNotAllowed();
-    return readAllWithIDs(type);
-}
-
 void DiskAccessStorage::insertFromBackup(
     const std::vector<std::pair<UUID, AccessEntityPtr>> & entities_from_backup,
     const RestoreSettings & restore_settings,
