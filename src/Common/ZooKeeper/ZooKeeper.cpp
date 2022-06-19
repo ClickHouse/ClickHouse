@@ -7,6 +7,7 @@
 #include <filesystem>
 
 #include <base/find_symbols.h>
+#include <base/sort.h>
 #include <base/getFQDNOrHostName.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/Exception.h>
@@ -169,7 +170,7 @@ std::vector<ShuffleHost> ZooKeeper::shuffleHosts() const
         shuffle_hosts.emplace_back(shuffle_host);
     }
 
-    std::sort(
+    ::sort(
         shuffle_hosts.begin(), shuffle_hosts.end(),
         [](const ShuffleHost & lhs, const ShuffleHost & rhs)
         {
@@ -839,6 +840,21 @@ bool ZooKeeper::waitForDisappear(const std::string & path, const WaitCondition &
     } while (!condition || !condition());
 
     return false;
+}
+
+void ZooKeeper::waitForEphemeralToDisappearIfAny(const std::string & path)
+{
+    zkutil::EventPtr eph_node_disappeared = std::make_shared<Poco::Event>();
+    String content;
+    if (!tryGet(path, content, nullptr, eph_node_disappeared))
+        return;
+
+    int32_t timeout_ms = 2 * session_timeout_ms;
+    if (!eph_node_disappeared->tryWait(timeout_ms))
+        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR,
+                            "Ephemeral node {} still exists after {}s, probably it's owned by someone else. "
+                            "Either session_timeout_ms in client's config is different from server's config or it's a bug. "
+                            "Node data: '{}'", path, timeout_ms / 1000, content);
 }
 
 ZooKeeperPtr ZooKeeper::startNewSession() const

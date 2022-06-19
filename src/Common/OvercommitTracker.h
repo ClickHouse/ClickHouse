@@ -20,10 +20,12 @@ struct OvercommitRatio
 
     friend bool operator<(OvercommitRatio const & lhs, OvercommitRatio const & rhs) noexcept
     {
+        Int128 lhs_committed = lhs.committed, lhs_soft_limit = lhs.soft_limit;
+        Int128 rhs_committed = rhs.committed, rhs_soft_limit = rhs.soft_limit;
         // (a / b < c / d) <=> (a * d < c * b)
-        return (lhs.committed * rhs.soft_limit) < (rhs.committed * lhs.soft_limit)
-            || (lhs.soft_limit == 0 && rhs.soft_limit > 0)
-            || (lhs.committed == 0 && rhs.committed == 0 && lhs.soft_limit > rhs.soft_limit);
+        return (lhs_committed * rhs_soft_limit) < (rhs_committed * lhs_soft_limit)
+            || (lhs_soft_limit == 0 && rhs_soft_limit > 0)
+            || (lhs_committed == 0 && rhs_committed == 0 && lhs_soft_limit > rhs_soft_limit);
     }
 
     // actual query memory usage
@@ -33,6 +35,16 @@ struct OvercommitRatio
 };
 
 class MemoryTracker;
+
+enum class OvercommitResult
+{
+    NONE,
+    DISABLED,
+    MEMORY_FREED,
+    SELECTED,
+    TIMEOUTED,
+    NOT_ENOUGH_FREED,
+};
 
 enum class QueryCancellationState
 {
@@ -50,9 +62,7 @@ enum class QueryCancellationState
 // is killed to free memory.
 struct OvercommitTracker : boost::noncopyable
 {
-    void setMaxWaitTime(UInt64 wait_time);
-
-    bool needToStopQuery(MemoryTracker * tracker, Int64 amount);
+    OvercommitResult needToStopQuery(MemoryTracker * tracker, Int64 amount);
 
     void tryContinueQueryExecutionAfterFree(Int64 amount);
 
@@ -69,8 +79,6 @@ protected:
     // to picked_tracker and cancelation_state variables.
     std::mutex overcommit_m;
     std::condition_variable cv;
-
-    std::chrono::microseconds max_wait_time;
 
     // Specifies memory tracker of the chosen to stop query.
     // If soft limit is not set, all the queries which reach hard limit must stop.
@@ -151,4 +159,19 @@ protected:
 private:
     DB::ProcessList * process_list;
     Poco::Logger * logger = &Poco::Logger::get("GlobalOvercommitTracker");
+};
+
+// This class is used to disallow tracking during logging to avoid deadlocks.
+struct OvercommitTrackerBlockerInThread
+{
+    OvercommitTrackerBlockerInThread() { ++counter; }
+    ~OvercommitTrackerBlockerInThread() { --counter; }
+
+    OvercommitTrackerBlockerInThread(OvercommitTrackerBlockerInThread const &) = delete;
+    OvercommitTrackerBlockerInThread & operator=(OvercommitTrackerBlockerInThread const &) = delete;
+
+    static bool isBlocked() { return counter > 0; }
+
+private:
+    static thread_local size_t counter;
 };

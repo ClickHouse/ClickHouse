@@ -3,6 +3,7 @@ set -ex
 set -o pipefail
 trap "exit" INT TERM
 trap 'kill $(jobs -pr) ||:' EXIT
+BUILD_NAME=${BUILD_NAME:-package_release}
 
 mkdir db0 ||:
 mkdir left ||:
@@ -26,7 +27,10 @@ function download
 {
     # Historically there were various paths for the performance test package.
     # Test all of them.
-    declare -a urls_to_try=("https://s3.amazonaws.com/clickhouse-builds/$left_pr/$left_sha/performance/performance.tgz")
+    declare -a urls_to_try=(
+        "https://s3.amazonaws.com/clickhouse-builds/$left_pr/$left_sha/$BUILD_NAME/performance.tgz"
+        "https://s3.amazonaws.com/clickhouse-builds/$left_pr/$left_sha/performance/performance.tgz"
+    )
 
     for path in "${urls_to_try[@]}"
     do
@@ -41,7 +45,7 @@ function download
     # download anything, for example in some manual runs. In this case, SHAs are not set.
     if ! [ "$left_sha" = "$right_sha" ]
     then
-        wget -nv -nd -c "$left_path" -O- | tar -C left --strip-components=1 -zxv  &
+        wget -nv -nd -c "$left_path" -O- | tar -C left --no-same-owner --strip-components=1 -zxv  &
     elif [ "$right_sha" != "" ]
     then
         mkdir left ||:

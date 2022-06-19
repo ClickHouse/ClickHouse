@@ -68,6 +68,8 @@ struct StorageSnapshot
     /// Block with ordinary + materialized + aliases + virtuals + subcolumns.
     Block getSampleBlockForColumns(const Names & column_names) const;
 
+    ColumnsDescription getDescriptionForColumns(const Names & column_names) const;
+
     /// Verify that all the requested names are in the table and are set correctly:
     /// list of names is not empty and the names do not repeat.
     void check(const Names & column_names) const;

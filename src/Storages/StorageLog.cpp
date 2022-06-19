@@ -21,7 +21,7 @@
 #include <Interpreters/Context.h>
 #include "StorageLogSettings.h"
 #include <Processors/Sources/NullSource.h>
-#include <Processors/Sources/SourceWithProgress.h>
+#include <Processors/ISource.h>
 #include <QueryPipeline/Pipe.h>
 #include <Processors/Sinks/SinkToStorage.h>
 
@@ -55,7 +55,7 @@ namespace ErrorCodes
 
 /// NOTE: The lock `StorageLog::rwlock` is NOT kept locked while reading,
 /// because we read ranges of data that do not change.
-class LogSource final : public SourceWithProgress
+class LogSource final : public ISource
 {
 public:
     static Block getHeader(const NamesAndTypesList & columns)
@@ -77,7 +77,7 @@ public:
         const std::vector<size_t> & file_sizes_,
         bool limited_by_file_sizes_,
         ReadSettings read_settings_)
-        : SourceWithProgress(getHeader(columns_))
+        : ISource(getHeader(columns_))
         , block_size(block_size_)
         , columns(columns_)
         , storage(storage_)
@@ -993,14 +993,13 @@ class LogRestoreTask : public IRestoreTask
 
 public:
     LogRestoreTask(
-        std::shared_ptr<StorageLog> storage_, const BackupPtr & backup_, const String & data_path_in_backup_, ContextMutablePtr context_)
-        : storage(storage_), backup(backup_), data_path_in_backup(data_path_in_backup_), context(context_)
+        std::shared_ptr<StorageLog> storage_, const BackupPtr & backup_, const String & data_path_in_backup_, std::chrono::seconds lock_timeout_)
+        : storage(storage_), backup(backup_), data_path_in_backup(data_path_in_backup_), lock_timeout(lock_timeout_)
     {
     }
 
     RestoreTasks run() override
     {
-        auto lock_timeout = getLockTimeout(context);
         WriteLock lock{storage->rwlock, lock_timeout};
         if (!lock)
             throw Exception("Lock timeout exceeded", ErrorCodes::TIMEOUT_EXCEEDED);
@@ -1094,7 +1093,7 @@ private:
     std::shared_ptr<StorageLog> storage;
     BackupPtr backup;
     String data_path_in_backup;
-    ContextMutablePtr context;
+    std::chrono::seconds lock_timeout;
 };
 
 RestoreTaskPtr StorageLog::restoreData(ContextMutablePtr context, const ASTs & partitions, const BackupPtr & backup, const String & data_path_in_backup, const StorageRestoreSettings &, const std::shared_ptr<IRestoreCoordination> &)
@@ -1103,7 +1102,7 @@ RestoreTaskPtr StorageLog::restoreData(ContextMutablePtr context, const ASTs & p
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Table engine {} doesn't support partitions", getName());
 
     return std::make_unique<LogRestoreTask>(
-        typeid_cast<std::shared_ptr<StorageLog>>(shared_from_this()), backup, data_path_in_backup, context);
+        typeid_cast<std::shared_ptr<StorageLog>>(shared_from_this()), backup, data_path_in_backup, getLockTimeout(context));
 }
 
 

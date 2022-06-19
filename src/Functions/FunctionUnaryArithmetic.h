@@ -13,6 +13,7 @@
 #include <Functions/castTypeToEither.h>
 
 #include <Common/config.h>
+#include <Common/TargetSpecific.h>
 
 #if USE_EMBEDDED_COMPILER
 #    pragma GCC diagnostic push
@@ -41,11 +42,30 @@ struct UnaryOperationImpl
     using ArrayA = typename ColVecA::Container;
     using ArrayC = typename ColVecC::Container;
 
-    static void NO_INLINE vector(const ArrayA & a, ArrayC & c)
+    MULTITARGET_FUNCTION_AVX2_SSE42(
+    MULTITARGET_FUNCTION_HEADER(static void NO_INLINE), vectorImpl, MULTITARGET_FUNCTION_BODY((const ArrayA & a, ArrayC & c) /// NOLINT
     {
         size_t size = a.size();
         for (size_t i = 0; i < size; ++i)
             c[i] = Op::apply(a[i]);
+    }))
+
+    static void NO_INLINE vector(const ArrayA & a, ArrayC & c)
+    {
+#if USE_MULTITARGET_CODE
+        if (isArchSupported(TargetArch::AVX2))
+        {
+            vectorImplAVX2(a, c);
+            return;
+        }
+        else if (isArchSupported(TargetArch::SSE42))
+        {
+            vectorImplSSE42(a, c);
+            return;
+        }
+#endif
+
+        vectorImpl(a, c);
     }
 
     static void constant(A a, ResultType & c)
@@ -58,11 +78,31 @@ struct UnaryOperationImpl
 template <typename Op>
 struct FixedStringUnaryOperationImpl
 {
-    static void NO_INLINE vector(const ColumnFixedString::Chars & a, ColumnFixedString::Chars & c)
+    MULTITARGET_FUNCTION_AVX2_SSE42(
+    MULTITARGET_FUNCTION_HEADER(static void NO_INLINE), vectorImpl, MULTITARGET_FUNCTION_BODY((const ColumnFixedString::Chars & a, /// NOLINT
+        ColumnFixedString::Chars & c)
     {
         size_t size = a.size();
         for (size_t i = 0; i < size; ++i)
             c[i] = Op::apply(a[i]);
+    }))
+
+    static void NO_INLINE vector(const ColumnFixedString::Chars & a, ColumnFixedString::Chars & c)
+    {
+#if USE_MULTITARGET_CODE
+        if (isArchSupported(TargetArch::AVX2))
+        {
+            vectorImplAVX2(a, c);
+            return;
+        }
+        else if (isArchSupported(TargetArch::SSE42))
+        {
+            vectorImplSSE42(a, c);
+            return;
+        }
+#endif
+
+        vectorImpl(a, c);
     }
 };
 

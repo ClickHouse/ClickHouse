@@ -137,6 +137,7 @@ void MergeTreeSink::finishDelayedChunk()
         if (storage.renameTempPartAndAdd(part, context->getCurrentTransaction().get(), &storage.increment, nullptr, storage.getDeduplicationLog(), partition.block_dedup_token))
         {
             PartLog::addNewPart(storage.getContext(), part, partition.elapsed_ns);
+            storage.incrementInsertedPartsProfileEvent(part->getType());
 
             /// Initiate async merge - it will be done if it's good time for merge and if there are space in 'background_pool'.
             storage.background_operations_assignee.trigger();

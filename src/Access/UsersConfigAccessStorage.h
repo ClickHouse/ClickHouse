@@ -22,7 +22,7 @@ public:
 
     static constexpr char STORAGE_TYPE[] = "users.xml";
 
-    UsersConfigAccessStorage(const String & storage_name_, const AccessControl & access_control_);
+    UsersConfigAccessStorage(const String & storage_name_, AccessControl & access_control_);
     ~UsersConfigAccessStorage() override;
 
     const char * getStorageType() const override { return STORAGE_TYPE; }
@@ -37,13 +37,12 @@ public:
               const String & include_from_path = {},
               const String & preprocessed_dir = {},
               const zkutil::GetZooKeeper & get_zookeeper_function = {});
-    void reload();
-    void startPeriodicReloading();
-    void stopPeriodicReloading();
+
+    void reload() override;
+    void startPeriodicReloading() override;
+    void stopPeriodicReloading() override;
 
     bool exists(const UUID & id) const override;
-    bool hasSubscription(const UUID & id) const override;
-    bool hasSubscription(AccessEntityType type) const override;
 
 private:
     void parseFromConfig(const Poco::Util::AbstractConfiguration & config);
@@ -51,10 +50,8 @@ private:
     std::vector<UUID> findAllImpl(AccessEntityType type) const override;
     AccessEntityPtr readImpl(const UUID & id, bool throw_if_not_exists) const override;
     std::optional<String> readNameImpl(const UUID & id, bool throw_if_not_exists) const override;
-    scope_guard subscribeForChangesImpl(const UUID & id, const OnChangedHandler & handler) const override;
-    scope_guard subscribeForChangesImpl(AccessEntityType type, const OnChangedHandler & handler) const override;
 
-    const AccessControl & access_control;
+    AccessControl & access_control;
     MemoryAccessStorage memory_storage;
     String path;
     std::unique_ptr<ConfigReloader> config_reloader;

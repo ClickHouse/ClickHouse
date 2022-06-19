@@ -3,7 +3,6 @@
 #include <Access/IAccessEntity.h>
 #include <Core/Types.h>
 #include <Core/UUID.h>
-#include <base/scope_guard.h>
 #include <functional>
 #include <optional>
 #include <vector>
@@ -22,7 +21,7 @@ enum class AuthenticationType;
 
 /// Contains entities, i.e. instances of classes derived from IAccessEntity.
 /// The implementations of this class MUST be thread-safe.
-class IAccessStorage
+class IAccessStorage : public boost::noncopyable
 {
 public:
     explicit IAccessStorage(const String & storage_name_) : storage_name(storage_name_) {}
@@ -40,6 +39,15 @@ public:
 
     /// Returns true if this entity is readonly.
     virtual bool isReadOnly(const UUID &) const { return isReadOnly(); }
+
+    /// Reloads and updates entities in this storage. This function is used to implement SYSTEM RELOAD CONFIG.
+    virtual void reload() {}
+
+    /// Starts periodic reloading and update of entities in this storage.
+    virtual void startPeriodicReloading() {}
+
+    /// Stops periodic reloading and update of entities in this storage.
+    virtual void stopPeriodicReloading() {}
 
     /// Returns the identifiers of all the entities of a specified type contained in the storage.
     std::vector<UUID> findAll(AccessEntityType type) const;
@@ -130,23 +138,6 @@ public:
     /// Updates multiple entities in the storage. Returns the list of successfully updated.
     std::vector<UUID> tryUpdate(const std::vector<UUID> & ids, const UpdateFunc & update_func);
 
-    using OnChangedHandler = std::function<void(const UUID & /* id */, const AccessEntityPtr & /* new or changed entity, null if removed */)>;
-
-    /// Subscribes for all changes.
-    /// Can return nullptr if cannot subscribe (identifier not found) or if it doesn't make sense (the storage is read-only).
-    scope_guard subscribeForChanges(AccessEntityType type, const OnChangedHandler & handler) const;
-
-    template <typename EntityClassT>
-    scope_guard subscribeForChanges(OnChangedHandler handler) const { return subscribeForChanges(EntityClassT::TYPE, handler); }
-
-    /// Subscribes for changes of a specific entry.
-    /// Can return nullptr if cannot subscribe (identifier not found) or if it doesn't make sense (the storage is read-only).
-    scope_guard subscribeForChanges(const UUID & id, const OnChangedHandler & handler) const;
-    scope_guard subscribeForChanges(const std::vector<UUID> & ids, const OnChangedHandler & handler) const;
-
-    virtual bool hasSubscription(AccessEntityType type) const = 0;
-    virtual bool hasSubscription(const UUID & id) const = 0;
-
     /// Finds a user, check the provided credentials and returns the ID of the user if they are valid.
     /// Throws an exception if no such user or credentials are invalid.
     UUID authenticate(const Credentials & credentials, const Poco::Net::IPAddress & address, const ExternalAuthenticators & external_authenticators, bool allow_no_password, bool allow_plaintext_password) const;
@@ -160,8 +151,6 @@ protected:
     virtual std::optional<UUID> insertImpl(const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists);
     virtual bool removeImpl(const UUID & id, bool throw_if_not_exists);
     virtual bool updateImpl(const UUID & id, const UpdateFunc & update_func, bool throw_if_not_exists);
-    virtual scope_guard subscribeForChangesImpl(const UUID & id, const OnChangedHandler & handler) const = 0;
-    virtual scope_guard subscribeForChangesImpl(AccessEntityType type, const OnChangedHandler & handler) const = 0;
     virtual std::optional<UUID> authenticateImpl(const Credentials & credentials, const Poco::Net::IPAddress & address, const ExternalAuthenticators & external_authenticators, bool throw_if_user_not_exists, bool allow_no_password, bool allow_plaintext_password) const;
     virtual bool areCredentialsValid(const User & user, const Credentials & credentials, const ExternalAuthenticators & external_authenticators) const;
     virtual bool isAddressAllowed(const User & user, const Poco::Net::IPAddress & address) const;
@@ -181,9 +170,6 @@ protected:
     [[noreturn]] static void throwAddressNotAllowed(const Poco::Net::IPAddress & address);
     [[noreturn]] static void throwInvalidCredentials();
     [[noreturn]] static void throwAuthenticationTypeNotAllowed(AuthenticationType auth_type);
-    using Notification = std::tuple<OnChangedHandler, UUID, AccessEntityPtr>;
-    using Notifications = std::vector<Notification>;
-    static void notify(const Notifications & notifications);
 
 private:
     const String storage_name;

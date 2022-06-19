@@ -196,7 +196,7 @@ static auto getNameRange(const ColumnsDescription::ColumnsContainer & columns, c
     return std::make_pair(begin, end);
 }
 
-void ColumnsDescription::add(ColumnDescription column, const String & after_column, bool first)
+void ColumnsDescription::add(ColumnDescription column, const String & after_column, bool first, bool add_subcolumns)
 {
     if (has(column.name))
         throw Exception("Cannot add column " + column.name + ": column with this name already exists",
@@ -222,7 +222,8 @@ void ColumnsDescription::add(ColumnDescription column, const String & after_colu
         insert_it = range.second;
     }
 
-    addSubcolumns(column.name, column.type);
+    if (add_subcolumns)
+        addSubcolumns(column.name, column.type);
     columns.get<0>().insert(insert_it, std::move(column));
 }
 
@@ -570,6 +571,27 @@ NameAndTypePair ColumnsDescription::getColumn(const GetColumnsOptions & options,
 std::optional<NameAndTypePair> ColumnsDescription::tryGetColumnOrSubcolumn(GetColumnsOptions::Kind kind, const String & column_name) const
 {
     return tryGetColumn(GetColumnsOptions(kind).withSubcolumns(), column_name);
+}
+
+std::optional<const ColumnDescription> ColumnsDescription::tryGetColumnDescription(const GetColumnsOptions & options, const String & column_name) const
+{
+    auto it = columns.get<1>().find(column_name);
+    if (it != columns.get<1>().end() && (defaultKindToGetKind(it->default_desc.kind) & options.kind))
+        return *it;
+
+    if (options.with_subcolumns)
+    {
+        auto jt = subcolumns.get<0>().find(column_name);
+        if (jt != subcolumns.get<0>().end())
+            return ColumnDescription{jt->name, jt->type};
+    }
+
+    return {};
+}
+
+std::optional<const ColumnDescription> ColumnsDescription::tryGetColumnOrSubcolumnDescription(GetColumnsOptions::Kind kind, const String & column_name) const
+{
+    return tryGetColumnDescription(GetColumnsOptions(kind).withSubcolumns(), column_name);
 }
 
 NameAndTypePair ColumnsDescription::getColumnOrSubcolumn(GetColumnsOptions::Kind kind, const String & column_name) const

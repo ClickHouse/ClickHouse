@@ -16,11 +16,11 @@ namespace DB
 
 struct ThreadEventData
 {
-    Int64 time() const noexcept { return user_ms + system_ms; }
+    UInt64 time() const noexcept { return user_ms + system_ms; }
 
-    Int64 user_ms      = 0;
-    Int64 system_ms    = 0;
-    Int64 memory_usage = 0;
+    UInt64 user_ms      = 0;
+    UInt64 system_ms    = 0;
+    UInt64 memory_usage = 0;
 };
 
 using ThreadIdToTimeMap = std::unordered_map<UInt64, ThreadEventData>;
@@ -44,7 +44,7 @@ public:
     /// 1. onProgress in clickhouse-client;
     /// 2. ProgressCallback via setProgressCallback methrod in:
     ///    - context (used in clickhouse-local, can also be added in arbitrary place)
-    ///    - SourceWithProgress (also in streams)
+    ///    - ISource (also in streams)
     ///    - readBufferFromFileDescriptor (for file processing progress)
     bool updateProgress(const Progress & value);
 
