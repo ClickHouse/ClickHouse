@@ -14,6 +14,7 @@
 
 #include <IO/WriteHelpers.h>
 
+#include <Common/HashTable/Hash.h>
 #include <Common/WeakHash.h>
 
 #include <base/FnTraits.h>
@@ -585,7 +586,7 @@ static IColumn::Selector hashToSelector(const WeakHash32 & hash, Sharder sharder
 
     IColumn::Selector selector(num_rows);
     for (size_t i = 0; i < num_rows; ++i)
-        selector[i] = sharder(hashes[i]);
+        selector[i] = sharder(intHashCRC32(hashes[i]));
     return selector;
 }
 
