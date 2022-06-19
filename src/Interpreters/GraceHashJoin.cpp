@@ -444,15 +444,6 @@ bool GraceHashJoin::alwaysReturnsEmptySet() const
 
 std::shared_ptr<NotJoinedBlocks> GraceHashJoin::getNonJoinedBlocks(const Block &, const Block &, UInt64) const
 {
-    auto snapshot = buckets.get();
-    for (size_t i = 1; i < snapshot->size(); ++i)
-    {
-        if (!snapshot->at(i)->finished())
-        {
-            LOG_ERROR(log, "Bucket {} is not finished", i);
-        }
-    }
-
     if (!JoinCommon::hasNonJoinedBlocks(*table_join))
         return nullptr;
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unsupported join mode");
@@ -564,6 +555,8 @@ void GraceHashJoin::fillInMemoryJoin(InMemoryJoinPtr & join, FileBucket * bucket
     {
         addJoinedBlockImpl(join, bucket->index(), block);
     }
+
+    join->dumpCollisionsRatio();
 }
 
 void GraceHashJoin::addJoinedBlockImpl(InMemoryJoinPtr & join, size_t bucket_index, const Block & block)
