@@ -309,7 +309,7 @@ public:
     void addBatchSinglePlace( /// NOLINT
         size_t row_begin,
         size_t row_end,
-        AggregateDataPtr place,
+        AggregateDataPtr __restrict place,
         const IColumn ** columns,
         Arena * arena,
         ssize_t if_argument_pos = -1) const override
