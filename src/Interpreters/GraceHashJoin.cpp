@@ -44,6 +44,76 @@ namespace
         NativeReader block_reader;
     };
 
+    using FileBlockReaderPtr = std::unique_ptr<FileBlockReader>;
+
+    class BlocksAccumulator
+    {
+    public:
+        explicit BlocksAccumulator(size_t desired_block_size_) : desired_block_size(desired_block_size_) { }
+
+        void addBlock(Block block)
+        {
+            sum_size += block.rows();
+            blocks.push_back(block);
+        }
+
+        Block peek()
+        {
+            if (sum_size < desired_block_size)
+                return {};
+            return flush();
+        }
+
+        Block flush()
+        {
+            if (blocks.empty())
+                return {};
+            Block result = concatenateBlocks(blocks);
+            blocks = {};
+            sum_size = 0;
+            return result;
+        }
+
+    private:
+        const size_t desired_block_size;
+        size_t sum_size = 0;
+        Blocks blocks;
+    };
+
+    class MergingBlockReader
+    {
+    public:
+        explicit MergingBlockReader(FileBlockReaderPtr reader_, size_t desired_block_size = DEFAULT_BLOCK_SIZE)
+            : reader{std::move(reader_)}, accumulator{desired_block_size}
+        {
+        }
+
+        Block read()
+        {
+            if (eof)
+                return {};
+
+            Block res;
+            while (!(res = accumulator.peek()))
+            {
+                Block tmp = reader->read();
+                if (!tmp)
+                {
+                    eof = true;
+                    return accumulator.flush();
+                }
+                accumulator.addBlock(std::move(tmp));
+            }
+
+            return res;
+        }
+
+    private:
+        FileBlockReaderPtr reader;
+        BlocksAccumulator accumulator;
+        bool eof = false;
+    };
+
     class FileBlockWriter
     {
         static std::string buildTemporaryFilePrefix(ContextPtr context, JoinTableSide side, size_t index)
@@ -84,11 +154,11 @@ namespace
             file_writer->finalize();
         }
 
-        FileBlockReader makeReader() const
+        MergingBlockReader makeReader() const
         {
             if (!finished.load())
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Reading not finished file");
-            return FileBlockReader{file, header};
+            return MergingBlockReader{std::make_unique<FileBlockReader>(file, header)};
         }
 
         size_t numBlocks() const { return num_blocks; }
@@ -179,9 +249,9 @@ public:
 
     void finish() { transition(State::JOINING_BLOCKS, State::FINISHED); }
 
-    FileBlockReader openLeftTableReader() const { return left_file.makeReader(); }
+    MergingBlockReader openLeftTableReader() const { return left_file.makeReader(); }
 
-    FileBlockReader openRightTableReader() const { return right_file.makeReader(); }
+    MergingBlockReader openRightTableReader() const { return right_file.makeReader(); }
 
 private:
     void transition(State expected, State desired)
@@ -400,7 +470,7 @@ public:
 
     GraceHashJoin * parent;
     FileBucket * bucket;
-    FileBlockReader left_reader;
+    MergingBlockReader left_reader;
     InMemoryJoinPtr join;
 };
 
