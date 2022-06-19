@@ -589,23 +589,29 @@ private:
     {
         if constexpr (is_division)
         {
+            bool overflow = false;
             if constexpr (check_overflow)
             {
-                bool overflow = false;
                 if constexpr (!is_decimal_a)
                     overflow |= common::mulOverflow(scale, scale, scale);
-                overflow |= common::mulOverflow(a, scale, a);
-                if (overflow)
-                    throw Exception("Decimal math overflow", ErrorCodes::DECIMAL_OVERFLOW);
             }
             else
             {
                 if constexpr (!is_decimal_a)
                     scale *= scale;
-                a *= scale;
             }
-
-            return Op::template apply<NativeResultType>(a, b);
+            auto res = Op::template apply<NativeResultType>(a, b);
+            if constexpr (check_overflow)
+            {
+                overflow |= common::mulOverflow(res, scale, res);
+                if (overflow)
+                    throw Exception("Decimal math overflow", ErrorCodes::DECIMAL_OVERFLOW);
+            }
+            else 
+            {
+                res *= scale;
+            }
+            return res;
         }
     }
 };

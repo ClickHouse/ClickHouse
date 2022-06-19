@@ -82,4 +82,13 @@ SELECT toDecimal32(0, 4) AS x, multiIf(x = 0, NULL, intDivOrZero(1, x)), multiIf
 SELECT toDecimal64(0, 8) AS x, multiIf(x = 0, NULL, intDivOrZero(1, x)), multiIf(x = 0, NULL, intDivOrZero(x, 0));
 SELECT toDecimal64(0, 18) AS x, multiIf(x = 0, NULL, intDivOrZero(1, x)), multiIf(x = 0, NULL, intDivOrZero(x, 0));
 
+select 'smoke test, Decimal128 division';
+select toDecimal128(1, 19) / toDecimal128(1, 19);
+select toDecimal128(1, 20) / toDecimal128(1, 20);
+select toDecimal128(1, 38) / toDecimal128(1, 38);
+select 'smoke test, Decimal256 division';
+select toDecimal256(1, 38) / toDecimal256(1, 38);
+select toDecimal256(1, 39) / toDecimal256(1, 39);
+select toDecimal256(1, 76) / toDecimal256(1, 76);
+
 DROP TABLE IF EXISTS decimal;
