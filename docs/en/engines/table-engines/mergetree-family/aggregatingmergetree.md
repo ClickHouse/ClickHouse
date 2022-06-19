@@ -3,7 +3,7 @@ sidebar_position: 60
 sidebar_label:  AggregatingMergeTree
 ---
 
-# AggregatingMergeTree {#aggregatingmergetree}
+# AggregatingMergeTree
 
 The engine inherits from [MergeTree](../../../engines/table-engines/mergetree-family/mergetree.md#table_engines-mergetree), altering the logic for data parts merging. ClickHouse replaces all rows with the same primary key (or more accurately, with the same [sorting key](../../../engines/table-engines/mergetree-family/mergetree.md)) with a single row (within a one data part) that stores a combination of states of aggregate functions.
 

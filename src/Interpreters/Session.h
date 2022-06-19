@@ -51,6 +51,9 @@ public:
     void authenticate(const String & user_name, const String & password, const Poco::Net::SocketAddress & address);
     void authenticate(const Credentials & credentials_, const Poco::Net::SocketAddress & address_);
 
+    /// Writes a row about login failure into session log (if enabled)
+    void onAuthenticationFailure(const std::optional<String> & user_name, const Poco::Net::SocketAddress & address_, const Exception & e);
+
     /// Returns a reference to session ClientInfo.
     ClientInfo & getClientInfo();
     const ClientInfo & getClientInfo() const;
@@ -79,7 +82,6 @@ private:
     mutable bool notified_session_log_about_login = false;
     const UUID auth_id;
     const ContextPtr global_context;
-    const ClientInfo::Interface interface;
 
     /// ClientInfo that will be copied to a session context when it's created.
     std::optional<ClientInfo> prepared_client_info;

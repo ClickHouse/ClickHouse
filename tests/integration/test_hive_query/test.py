@@ -375,7 +375,7 @@ def test_cache_read_bytes(started_cluster):
     for i in range(10):
         result = node.query(
             """
-    SELECT day, count(*) FROM default.demo_parquet_1 group by day order by day settings input_format_parquet_allow_missing_columns = true
+    SELECT * FROM default.demo_parquet_1 settings input_format_parquet_allow_missing_columns = true
             """
         )
         node.query("system flush logs")
@@ -389,3 +389,14 @@ def test_cache_read_bytes(started_cluster):
         test_passed = True
         break
     assert test_passed
+
+
+def test_cache_dir_use(started_cluster):
+    node = started_cluster.instances["h0_0_0"]
+    result0 = node.exec_in_container(
+        ["bash", "-c", "ls /tmp/clickhouse_local_cache | wc -l"]
+    )
+    result1 = node.exec_in_container(
+        ["bash", "-c", "ls /tmp/clickhouse_local_cache1 | wc -l"]
+    )
+    assert result0 != "0" and result1 != "0"

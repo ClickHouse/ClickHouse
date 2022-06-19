@@ -10,6 +10,23 @@ namespace DB
 struct AggregatingTransformParams;
 using AggregatingTransformParamsPtr = std::shared_ptr<AggregatingTransformParams>;
 
+struct GroupingSetsParams
+{
+    GroupingSetsParams() = default;
+
+    GroupingSetsParams(ColumnNumbers used_keys_, ColumnNumbers missing_keys_)
+        : used_keys(std::move(used_keys_))
+        , missing_keys(std::move(missing_keys_))
+    {}
+
+    ColumnNumbers used_keys;
+    ColumnNumbers missing_keys;
+};
+
+using GroupingSetsParamsList = std::vector<GroupingSetsParams>;
+
+Block appendGroupingSetColumn(Block header);
+
 /// Aggregation. See AggregatingTransform.
 class AggregatingStep : public ITransformingStep
 {
@@ -17,6 +34,7 @@ public:
     AggregatingStep(
         const DataStream & input_stream_,
         Aggregator::Params params_,
+        GroupingSetsParamsList grouping_sets_params_,
         bool final_,
         size_t max_block_size_,
         size_t aggregation_in_order_max_block_bytes_,
@@ -39,6 +57,7 @@ public:
 
 private:
     Aggregator::Params params;
+    GroupingSetsParamsList grouping_sets_params;
     bool final;
     size_t max_block_size;
     size_t aggregation_in_order_max_block_bytes;
@@ -55,7 +74,6 @@ private:
     Processors finalizing;
 
     Processors aggregating;
-
 };
 
 }

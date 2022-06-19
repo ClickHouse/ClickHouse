@@ -1,14 +1,58 @@
 #include <Backups/BackupCoordinationLocal.h>
+#include <Common/Exception.h>
+#include <Common/logger_useful.h>
 #include <fmt/format.h>
 
 
 namespace DB
 {
+
 using SizeAndChecksum = IBackupCoordination::SizeAndChecksum;
 using FileInfo = IBackupCoordination::FileInfo;
 
-BackupCoordinationLocal::BackupCoordinationLocal() = default;
+BackupCoordinationLocal::BackupCoordinationLocal() : log(&Poco::Logger::get("BackupCoordination"))
+{
+}
+
 BackupCoordinationLocal::~BackupCoordinationLocal() = default;
+
+void BackupCoordinationLocal::addReplicatedTableDataPath(const String & table_zk_path, const String & table_data_path)
+{
+    std::lock_guard lock{mutex};
+    replicated_tables.addDataPath(table_zk_path, table_data_path);
+}
+
+void BackupCoordinationLocal::addReplicatedTablePartNames(const String & /* host_id */, const DatabaseAndTableName & table_name, const String & table_zk_path, const std::vector<PartNameAndChecksum> & part_names_and_checksums)
+{
+    std::lock_guard lock{mutex};
+    replicated_tables.addPartNames("", table_name, table_zk_path, part_names_and_checksums);
+}
+
+void BackupCoordinationLocal::finishPreparing(const String & /* host_id */, const String & error_message)
+{
+    LOG_TRACE(log, "Finished preparing{}", (error_message.empty() ? "" : (" with error " + error_message)));
+    if (!error_message.empty())
+        return;
+
+    replicated_tables.preparePartNamesByLocations();
+}
+
+void BackupCoordinationLocal::waitForAllHostsPrepared(const Strings & /* host_ids */, std::chrono::seconds /* timeout */) const
+{
+}
+
+Strings BackupCoordinationLocal::getReplicatedTableDataPaths(const String & table_zk_path) const
+{
+    std::lock_guard lock{mutex};
+    return replicated_tables.getDataPaths(table_zk_path);
+}
+
+Strings BackupCoordinationLocal::getReplicatedTablePartNames(const String & /* host_id */, const DatabaseAndTableName & table_name, const String & table_zk_path) const
+{
+    std::lock_guard lock{mutex};
+    return replicated_tables.getPartNames("", table_name, table_zk_path);
+}
+
 
 void BackupCoordinationLocal::addFileInfo(const FileInfo & file_info, bool & is_data_file_required)
 {

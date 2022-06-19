@@ -3,11 +3,11 @@ sidebar_position: 38
 sidebar_label: Parametric
 ---
 
-# Parametric Aggregate Functions {#aggregate_functions_parametric}
+# Parametric Aggregate Functions
 
 Some aggregate functions can accept not only argument columns (used for compression), but a set of parameters – constants for initialization. The syntax is two pairs of brackets instead of one. The first is for parameters, and the second is for arguments.
 
-## histogram {#histogram}
+## histogram
 
 Calculates an adaptive histogram. It does not guarantee precise results.
 
@@ -81,7 +81,7 @@ FROM
 
 In this case, you should remember that you do not know the histogram bin borders.
 
-## sequenceMatch(pattern)(timestamp, cond1, cond2, …) {#function-sequencematch}
+## sequenceMatch(pattern)(timestamp, cond1, cond2, …)
 
 Checks whether the sequence contains an event chain that matches the pattern.
 
@@ -89,7 +89,7 @@ Checks whether the sequence contains an event chain that matches the pattern.
 sequenceMatch(pattern)(timestamp, cond1, cond2, ...)
 ```
 
-:::warning    
+:::warning
 Events that occur at the same second may lay in the sequence in an undefined order affecting the result.
 :::
 
@@ -171,11 +171,11 @@ SELECT sequenceMatch('(?1)(?2)')(time, number = 1, number = 2, number = 4) FROM 
 
 -   [sequenceCount](#function-sequencecount)
 
-## sequenceCount(pattern)(time, cond1, cond2, …) {#function-sequencecount}
+## sequenceCount(pattern)(time, cond1, cond2, …)
 
 Counts the number of event chains that matched the pattern. The function searches event chains that do not overlap. It starts to search for the next chain after the current chain is matched.
 
-:::warning    
+:::warning
 Events that occur at the same second may lay in the sequence in an undefined order affecting the result.
 :::
 
@@ -230,7 +230,7 @@ SELECT sequenceCount('(?1).*(?2)')(time, number = 1, number = 2) FROM t
 
 -   [sequenceMatch](#function-sequencematch)
 
-## windowFunnel {#windowfunnel}
+## windowFunnel
 
 Searches for event chains in a sliding time window and calculates the maximum number of events that occurred from the chain.
 
@@ -325,7 +325,7 @@ Result:
 └───────┴───┘
 ```
 
-## retention {#retention}
+## retention
 
 The function takes as arguments a set of conditions from 1 to 32 arguments of type `UInt8` that indicate whether a certain condition was met for the event.
 Any condition can be specified as an argument (as in [WHERE](../../sql-reference/statements/select/where.md#select-where)).
@@ -484,7 +484,7 @@ Where:
 -   `r2`- the number of unique visitors who visited the site during a specific time period between 2020-01-01 and 2020-01-02 (`cond1` and `cond2` conditions).
 -   `r3`- the number of unique visitors who visited the site during a specific time period between 2020-01-01 and 2020-01-03 (`cond1` and `cond3` conditions).
 
-## uniqUpTo(N)(x) {#uniquptonx}
+## uniqUpTo(N)(x)
 
 Calculates the number of different argument values ​​if it is less than or equal to N. If the number of different argument values is greater than N, it returns N + 1.
 
@@ -505,11 +505,11 @@ Solution: Write in the GROUP BY query SearchPhrase HAVING uniqUpTo(4)(UserID) >=
 ```
 
 
-## sumMapFiltered(keys_to_keep)(keys, values) {#summapfilteredkeys-to-keepkeys-values}
+## sumMapFiltered(keys_to_keep)(keys, values)
 
 Same behavior as [sumMap](../../sql-reference/aggregate-functions/reference/summap.md#agg_functions-summap) except that an array of keys is passed as a parameter. This can be especially useful when working with a high cardinality of keys.
 
-## sequenceNextNode {#sequenceNextNode}
+## sequenceNextNode
 
 Returns a value of the next event that matched an event chain.
 

@@ -173,6 +173,7 @@ def test_predefined_connection_configuration(started_cluster):
     simple_mongo_table.insert_many(data)
 
     node = started_cluster.instances["node"]
+    node.query("drop table if exists simple_mongo_table")
     node.query(
         "create table simple_mongo_table(key UInt64, data String) engine = MongoDB(mongo1)"
     )

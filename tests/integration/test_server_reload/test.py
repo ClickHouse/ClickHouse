@@ -1,3 +1,10 @@
+# pylint: disable=wrong-import-order
+# pylint: disable=line-too-long
+# pylint: disable=redefined-builtin
+# pylint: disable=redefined-outer-name
+# pylint: disable=protected-access
+# pylint: disable=broad-except
+
 import contextlib
 import grpc
 import psycopg2
@@ -6,6 +13,7 @@ import pymysql.err
 import pytest
 import sys
 import time
+import logging
 from helpers.cluster import ClickHouseCluster, run_and_check
 from helpers.client import Client, QueryRuntimeException
 from kazoo.exceptions import NodeExistsError
@@ -196,7 +204,7 @@ def test_change_http_port(cluster, zk):
             zk.set("/clickhouse/ports/http", b"9090")
         with pytest.raises(ConnectionError, match="Connection refused"):
             instance.http_query("SELECT 1")
-        instance.http_query("SELECT 1", port=9090) == "1\n"
+        assert instance.http_query("SELECT 1", port=9090) == "1\n"
 
 
 def test_change_mysql_port(cluster, zk):
@@ -224,7 +232,7 @@ def test_change_postgresql_port(cluster, zk):
         pgsql_client_on_new_port = get_pgsql_client(cluster, port=9090)
         cursor = pgsql_client_on_new_port.cursor()
         cursor.execute("SELECT 1")
-        cursor.fetchall() == [(1,)]
+        assert cursor.fetchall() == [(1,)]
 
 
 def test_change_grpc_port(cluster, zk):
@@ -313,3 +321,61 @@ def test_change_listen_host(cluster, zk):
     finally:
         with sync_loaded_config(localhost_client.query):
             configure_ports_from_zk(zk)
+
+
+# This is a regression test for the case when the clickhouse-server was waiting
+# for the connection that had been issued "SYSTEM RELOAD CONFIG" indefinitely.
+#
+# Configuration reload directly from the query,
+# "directly from the query" means that reload was done from the query context
+# over periodic config reload (that is done each 2 seconds).
+def test_reload_via_client(cluster, zk):
+    exception = None
+
+    localhost_client = Client(
+        host="127.0.0.1", port=9000, command="/usr/bin/clickhouse"
+    )
+    localhost_client.command = [
+        "docker",
+        "exec",
+        "-i",
+        instance.docker_id,
+    ] + localhost_client.command
+
+    # NOTE: reload via zookeeper is too fast, but 100 iterations was enough, even for debug build.
+    for i in range(0, 100):
+        try:
+            client = get_client(cluster, port=9000)
+            zk.set("/clickhouse/listen_hosts", b"<listen_host>127.0.0.1</listen_host>")
+            query_id = f"reload_config_{i}"
+            client.query("SYSTEM RELOAD CONFIG", query_id=query_id)
+            assert int(localhost_client.query("SELECT 1")) == 1
+            localhost_client.query("SYSTEM FLUSH LOGS")
+            MainConfigLoads = int(
+                localhost_client.query(
+                    f"""
+            SELECT ProfileEvents['MainConfigLoads']
+            FROM system.query_log
+            WHERE query_id = '{query_id}' AND type = 'QueryFinish'
+            """
+                )
+            )
+            assert MainConfigLoads == 1
+            logging.info("MainConfigLoads = %s (retry %s)", MainConfigLoads, i)
+            exception = None
+            break
+        except Exception as e:
+            logging.exception("Retry %s", i)
+            exception = e
+        finally:
+            while True:
+                try:
+                    with sync_loaded_config(localhost_client.query):
+                        configure_ports_from_zk(zk)
+                    break
+                except QueryRuntimeException:
+                    logging.exception("The new socket is not binded yet")
+                    time.sleep(0.1)
+
+    if exception:
+        raise exception

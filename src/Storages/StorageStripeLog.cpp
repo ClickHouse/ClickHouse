@@ -1,6 +1,6 @@
 #include <sys/stat.h>
 #include <sys/types.h>
-#include <errno.h>
+#include <cerrno>
 
 #include <map>
 #include <optional>
@@ -30,7 +30,7 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageStripeLog.h>
 #include "StorageLogSettings.h"
-#include <Processors/Sources/SourceWithProgress.h>
+#include <Processors/ISource.h>
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <QueryPipeline/Pipe.h>
@@ -60,7 +60,7 @@ namespace ErrorCodes
 
 /// NOTE: The lock `StorageStripeLog::rwlock` is NOT kept locked while reading,
 /// because we read ranges of data that do not change.
-class StripeLogSource final : public SourceWithProgress
+class StripeLogSource final : public ISource
 {
 public:
     static Block getHeader(
@@ -94,7 +94,7 @@ public:
         IndexForNativeFormat::Blocks::const_iterator index_begin_,
         IndexForNativeFormat::Blocks::const_iterator index_end_,
         size_t file_size_)
-        : SourceWithProgress(getHeader(storage_snapshot_, column_names, index_begin_, index_end_))
+        : ISource(getHeader(storage_snapshot_, column_names, index_begin_, index_end_))
         , storage(storage_)
         , storage_snapshot(storage_snapshot_)
         , read_settings(std::move(read_settings_))
@@ -598,14 +598,14 @@ public:
         const std::shared_ptr<StorageStripeLog> storage_,
         const BackupPtr & backup_,
         const String & data_path_in_backup_,
-        ContextMutablePtr context_)
-        : storage(storage_), backup(backup_), data_path_in_backup(data_path_in_backup_), context(context_)
+        std::chrono::seconds lock_timeout_)
+        : storage(storage_), backup(backup_), data_path_in_backup(data_path_in_backup_), lock_timeout(lock_timeout_)
     {
     }
 
     RestoreTasks run() override
     {
-        WriteLock lock{storage->rwlock, getLockTimeout(context)};
+        WriteLock lock{storage->rwlock, lock_timeout};
         if (!lock)
             throw Exception("Lock timeout exceeded", ErrorCodes::TIMEOUT_EXCEEDED);
 
@@ -670,7 +670,7 @@ private:
     std::shared_ptr<StorageStripeLog> storage;
     BackupPtr backup;
     String data_path_in_backup;
-    ContextMutablePtr context;
+    std::chrono::seconds lock_timeout;
 };
 
 
@@ -680,7 +680,7 @@ RestoreTaskPtr StorageStripeLog::restoreData(ContextMutablePtr context, const AS
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Table engine {} doesn't support partitions", getName());
 
     return std::make_unique<StripeLogRestoreTask>(
-        typeid_cast<std::shared_ptr<StorageStripeLog>>(shared_from_this()), backup, data_path_in_backup, context);
+        typeid_cast<std::shared_ptr<StorageStripeLog>>(shared_from_this()), backup, data_path_in_backup, getLockTimeout(context));
 }
 
 

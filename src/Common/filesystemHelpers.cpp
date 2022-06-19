@@ -1,10 +1,8 @@
 #include "filesystemHelpers.h"
 
-#include <sys/stat.h>
-#if defined(__linux__)
+#if defined(OS_LINUX)
 #    include <cstdio>
 #    include <mntent.h>
-#    include <sys/stat.h>
 #    include <sys/sysmacros.h>
 #endif
 #include <cerrno>
@@ -13,6 +11,7 @@
 #include <filesystem>
 #include <fcntl.h>
 #include <unistd.h>
+#include <sys/stat.h>
 #include <sys/types.h>
 #include <utime.h>
 #include <IO/ReadBufferFromFile.h>
@@ -63,12 +62,12 @@ std::unique_ptr<TemporaryFile> createTemporaryFile(const std::string & path)
     return std::make_unique<TemporaryFile>(path);
 }
 
-#if !defined(__linux__)
+#if !defined(OS_LINUX)
 [[noreturn]]
 #endif
 String getBlockDeviceId([[maybe_unused]] const String & path)
 {
-#if defined(__linux__)
+#if defined(OS_LINUX)
     struct stat sb;
     if (lstat(path.c_str(), &sb))
         throwFromErrnoWithPath("Cannot lstat " + path, path, ErrorCodes::CANNOT_STAT);
@@ -80,12 +79,12 @@ String getBlockDeviceId([[maybe_unused]] const String & path)
 #endif
 }
 
-#if !defined(__linux__)
+#if !defined(OS_LINUX)
 [[noreturn]]
 #endif
 BlockDeviceType getBlockDeviceType([[maybe_unused]] const String & device_id)
 {
-#if defined(__linux__)
+#if defined(OS_LINUX)
     try
     {
         ReadBufferFromFile in("/sys/dev/block/" + device_id + "/queue/rotational");
@@ -102,12 +101,12 @@ BlockDeviceType getBlockDeviceType([[maybe_unused]] const String & device_id)
 #endif
 }
 
-#if !defined(__linux__)
+#if !defined(OS_LINUX)
 [[noreturn]]
 #endif
 UInt64 getBlockDeviceReadAheadBytes([[maybe_unused]] const String & device_id)
 {
-#if defined(__linux__)
+#if defined(OS_LINUX)
     try
     {
         ReadBufferFromFile in("/sys/dev/block/" + device_id + "/queue/read_ahead_kb");
@@ -156,12 +155,12 @@ std::filesystem::path getMountPoint(std::filesystem::path absolute_path)
 }
 
 /// Returns name of filesystem mounted to mount_point
-#if !defined(__linux__)
+#if !defined(OS_LINUX)
 [[noreturn]]
 #endif
 String getFilesystemName([[maybe_unused]] const String & mount_point)
 {
-#if defined(__linux__)
+#if defined(OS_LINUX)
     FILE * mounted_filesystems = setmntent("/etc/mtab", "r");
     if (!mounted_filesystems)
         throw DB::Exception("Cannot open /etc/mtab to get name of filesystem", ErrorCodes::SYSTEM_ERROR);
@@ -281,7 +280,15 @@ time_t getModificationTime(const std::string & path)
     struct stat st;
     if (stat(path.c_str(), &st) == 0)
         return st.st_mtime;
-    DB::throwFromErrnoWithPath("Cannot check modification time for file: " + path, path, DB::ErrorCodes::PATH_ACCESS_DENIED);
+    DB::throwFromErrnoWithPath("Cannot check modification time for file: " + path, path, DB::ErrorCodes::CANNOT_STAT);
+}
+
+time_t getChangeTime(const std::string & path)
+{
+    struct stat st;
+    if (stat(path.c_str(), &st) == 0)
+        return st.st_ctime;
+    DB::throwFromErrnoWithPath("Cannot check change time for file: " + path, path, DB::ErrorCodes::CANNOT_STAT);
 }
 
 Poco::Timestamp getModificationTimestamp(const std::string & path)

@@ -58,15 +58,6 @@ public:
 
     bool supportsTransactions() const override { return true; }
 
-    Pipe read(
-        const Names & column_names,
-        const StorageSnapshotPtr & storage_snapshot,
-        SelectQueryInfo & query_info,
-        ContextPtr context,
-        QueryProcessingStage::Enum processed_stage,
-        size_t max_block_size,
-        unsigned num_streams) override;
-
     void read(
         QueryPlan & query_plan,
         const Names & column_names,
@@ -139,6 +130,8 @@ private:
     AtomicStopwatch time_after_previous_cleanup_parts;
     /// For clearOldTemporaryDirectories.
     AtomicStopwatch time_after_previous_cleanup_temporary_directories;
+    /// For clearOldBrokenDetachedParts
+    AtomicStopwatch time_after_previous_cleanup_broken_detached_parts;
 
     /// Mutex for parts currently processing in background
     /// merging (also with TTL), mutating or moving.

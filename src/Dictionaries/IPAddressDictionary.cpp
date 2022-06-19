@@ -697,7 +697,6 @@ void IPAddressDictionary::getItemsImpl(
     const auto & first_column = key_columns.front();
     const size_t rows = first_column->size();
 
-    // special case for getBlockInputStream
     if (unlikely(key_columns.size() == 2))
     {
         getItemsByTwoKeyColumnsImpl<AttributeType>(

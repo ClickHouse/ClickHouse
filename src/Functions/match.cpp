@@ -13,7 +13,7 @@ struct NameMatch
     static constexpr auto name = "match";
 };
 
-using FunctionMatch = FunctionsStringSearch<MatchImpl<NameMatch, false>>;
+using FunctionMatch = FunctionsStringSearch<MatchImpl<NameMatch, MatchTraits::Syntax::Re2, MatchTraits::Case::Sensitive, MatchTraits::Result::DontNegate>>;
 
 }
 

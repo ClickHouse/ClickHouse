@@ -4,16 +4,18 @@
 #include <Backups/DDLCompareUtils.h>
 #include <Backups/DDLRenamingVisitor.h>
 #include <Backups/IBackup.h>
+#include <Backups/IBackupCoordination.h>
 #include <Backups/formatTableNameOrTemporaryTableName.h>
 #include <Backups/replaceTableUUIDWithMacroInReplicatedTableDef.h>
 #include <Common/escapeForFileName.h>
-#include <Access/Common/AccessFlags.h>
+#include <Access/Common/AccessRightsElement.h>
 #include <Databases/IDatabase.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/formatAST.h>
 #include <Storages/IStorage.h>
+#include <Storages/StorageReplicatedMergeTree.h>
 
 
 namespace DB
@@ -98,13 +100,57 @@ namespace
     class BackupEntriesBuilder
     {
     public:
-        BackupEntriesBuilder(const ContextPtr & context_, const BackupSettings & backup_settings_)
-            : context(context_), backup_settings(backup_settings_)
+        BackupEntriesBuilder(const ContextPtr & context_, const BackupSettings & backup_settings_, std::shared_ptr<IBackupCoordination> backup_coordination_)
+            : context(context_), backup_settings(backup_settings_), backup_coordination(backup_coordination_)
         {
         }
 
         /// Prepares internal structures for making backup entries.
-        void prepare(const ASTBackupQuery::Elements & elements)
+        void prepare(const ASTBackupQuery::Elements & elements, std::chrono::seconds timeout_for_other_nodes_to_prepare)
+        {
+            try
+            {
+                prepareImpl(elements);
+            }
+            catch (...)
+            {
+                backup_coordination->finishPreparing(backup_settings.host_id, getCurrentExceptionMessage(false));
+                throw;
+            }
+
+            /// We've finished restoring metadata, now we will wait for other replicas and shards to finish too.
+            /// We need this waiting because we're going to call some functions which requires data collected from other nodes too,
+            /// see IRestoreCoordination::checkTablesNotExistedInReplicatedDBs(), IRestoreCoordination::getReplicatedTableDataPath().
+            backup_coordination->finishPreparing(backup_settings.host_id);
+
+            backup_coordination->waitForAllHostsPrepared(
+                BackupSettings::Util::filterHostIDs(
+                    backup_settings.cluster_host_ids, backup_settings.shard_num, backup_settings.replica_num),
+                timeout_for_other_nodes_to_prepare);
+        }
+
+        /// Makes backup entries, should be called after prepare().
+        BackupEntries makeBackupEntries() const
+        {
+            BackupEntries res;
+            for (const auto & info : databases | boost::adaptors::map_values)
+                res.push_back(makeBackupEntryForMetadata(*info.create_query));
+
+            for (const auto & info : tables | boost::adaptors::map_values)
+            {
+                res.push_back(makeBackupEntryForMetadata(*info.create_query));
+                appendBackupEntriesForData(res, info);
+            }
+
+            /// A backup cannot be empty.
+            if (res.empty())
+                throw Exception("Backup must not be empty", ErrorCodes::BACKUP_IS_EMPTY);
+
+            return res;
+        }
+
+    private:
+        void prepareImpl(const ASTBackupQuery::Elements & elements)
         {
             calculateShardNumAndReplicaNumInBackup();
             renaming_settings.setFromBackupQuery(elements);
@@ -135,36 +181,6 @@ namespace
             }
         }
 
-        /// Makes backup entries, should be called after prepare().
-        BackupEntries makeBackupEntries() const
-        {
-            BackupEntries res;
-            for (const auto & info : databases | boost::adaptors::map_values)
-                res.push_back(makeBackupEntryForMetadata(*info.create_query));
-
-            for (const auto & info : tables | boost::adaptors::map_values)
-            {
-                res.push_back(makeBackupEntryForMetadata(*info.create_query));
-                if (info.has_data)
-                {
-                    auto data_backup = info.storage->backupData(context, info.partitions);
-                    if (!data_backup.empty())
-                    {
-                        String data_path = PathsInBackup::getDataPath(*info.create_query, shard_num_in_backup, replica_num_in_backup);
-                        for (auto & [path_in_backup, backup_entry] : data_backup)
-                            res.emplace_back(data_path + path_in_backup, std::move(backup_entry));
-                    }
-                }
-            }
-
-            /// A backup cannot be empty.
-            if (res.empty())
-                throw Exception("Backup must not be empty", ErrorCodes::BACKUP_IS_EMPTY);
-
-            return res;
-        }
-
-    private:
         void calculateShardNumAndReplicaNumInBackup()
         {
             size_t shard_num = 0;
@@ -187,8 +203,6 @@ namespace
 
         void prepareToBackupTable(const DatabaseAndTableName & table_name_, const DatabaseAndTable & table_, const ASTs & partitions_)
         {
-            context->checkAccess(AccessType::SHOW_TABLES, table_name_.first, table_name_.second);
-
             const auto & database = table_.first;
             const auto & storage = table_.second;
 
@@ -206,20 +220,70 @@ namespace
 
             /// Make a create query for this table.
             auto create_query = prepareCreateQueryForBackup(database->getCreateTableQuery(table_name_.second, context));
+            String data_path = PathsInBackup::getDataPath(*create_query, shard_num_in_backup, replica_num_in_backup);
 
-            bool has_data = storage->hasDataToBackup() && !backup_settings.structure_only;
-            if (has_data)
-            {
-                /// We check for SELECT privilege only if we're going to read data from the table.
-                context->checkAccess(AccessType::SELECT, table_name_.first, table_name_.second);
-            }
+            String zk_path;
+            BackupEntries data = prepareToBackupTableData(table_name_, storage, partitions_, data_path, zk_path);
 
-            CreateTableInfo info;
+            TableInfo info;
+            info.table_name = table_name_;
             info.create_query = create_query;
             info.storage = storage;
-            info.partitions = partitions_;
-            info.has_data = has_data;
+            info.data = std::move(data);
+            info.data_path = std::move(data_path);
+            info.zk_path = std::move(zk_path);
             tables[name_in_backup] = std::move(info);
+        }
+
+        BackupEntries prepareToBackupTableData(const DatabaseAndTableName & table_name_, const StoragePtr & storage_, const ASTs & partitions_, const String & data_path, String & zk_path)
+        {
+            zk_path.clear();
+
+            const StorageReplicatedMergeTree * replicated_table = typeid_cast<const StorageReplicatedMergeTree *>(storage_.get());
+            bool has_data = (storage_->hasDataToBackup() || replicated_table) && !backup_settings.structure_only;
+            if (!has_data)
+                return {};
+
+            BackupEntries data = storage_->backupData(context, partitions_);
+            if (!replicated_table)
+                return data;
+
+            zk_path = replicated_table->getZooKeeperName() + replicated_table->getZooKeeperPath();
+            backup_coordination->addReplicatedTableDataPath(zk_path, data_path);
+            std::unordered_map<String, SipHash> parts;
+            for (const auto & [relative_path, backup_entry] : data)
+            {
+                size_t slash_pos = relative_path.find('/');
+                if (slash_pos != String::npos)
+                {
+                    String part_name = relative_path.substr(0, slash_pos);
+                    if (MergeTreePartInfo::tryParsePartName(part_name, MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING))
+                    {
+                        auto & hash = parts[part_name];
+                        if (relative_path.ends_with(".bin"))
+                        {
+                            auto checksum = backup_entry->getChecksum();
+                            hash.update(relative_path);
+                            hash.update(backup_entry->getSize());
+                            hash.update(*checksum);
+                        }
+                    }
+                }
+            }
+
+            std::vector<IBackupCoordination::PartNameAndChecksum> part_names_and_checksums;
+            part_names_and_checksums.reserve(parts.size());
+            for (auto & [part_name, hash] : parts)
+            {
+                UInt128 checksum;
+                hash.get128(checksum);
+                auto & part_name_and_checksum = part_names_and_checksums.emplace_back();
+                part_name_and_checksum.part_name = part_name;
+                part_name_and_checksum.checksum = checksum;
+            }
+            backup_coordination->addReplicatedTablePartNames(backup_settings.host_id, table_name_, zk_path, part_names_and_checksums);
+
+            return data;
         }
 
         /// Prepares to restore a database and all tables in it.
@@ -231,8 +295,6 @@ namespace
 
         void prepareToBackupDatabase(const String & database_name_, const DatabasePtr & database_, const std::set<String> & except_list_)
         {
-            context->checkAccess(AccessType::SHOW_DATABASES, database_name_);
-
             /// Check that we are not trying to restore the same database again.
             String name_in_backup = renaming_settings.getNewDatabaseName(database_name_);
             if (databases.contains(name_in_backup))
@@ -244,7 +306,7 @@ namespace
                 /// Make a create query for this database.
                 auto create_query = prepareCreateQueryForBackup(database_->getCreateDatabaseQuery());
 
-                CreateDatabaseInfo info;
+                DatabaseInfo info;
                 info.create_query = create_query;
                 databases[name_in_backup] = std::move(info);
             }
@@ -298,36 +360,77 @@ namespace
             return {metadata_path, std::move(metadata_entry)};
         }
 
-        /// Information which is used to make an instance of RestoreTableFromBackupTask.
-        struct CreateTableInfo
+        struct TableInfo;
+
+        void appendBackupEntriesForData(BackupEntries & res, const TableInfo & info) const
         {
+            if (info.zk_path.empty())
+            {
+                for (const auto & [relative_path, backup_entry] : info.data)
+                    res.emplace_back(info.data_path + relative_path, backup_entry);
+                return;
+            }
+
+            Strings data_paths = backup_coordination->getReplicatedTableDataPaths(info.zk_path);
+            Strings part_names = backup_coordination->getReplicatedTablePartNames(backup_settings.host_id, info.table_name, info.zk_path);
+            std::unordered_set<std::string_view> part_names_set{part_names.begin(), part_names.end()};
+            for (const auto & [relative_path, backup_entry] : info.data)
+            {
+                size_t slash_pos = relative_path.find('/');
+                if (slash_pos != String::npos)
+                {
+                    String part_name = relative_path.substr(0, slash_pos);
+                    if (MergeTreePartInfo::tryParsePartName(part_name, MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING))
+                    {
+                        if (!part_names_set.contains(part_name))
+                            continue;
+                        for (const auto & data_path : data_paths)
+                            res.emplace_back(data_path + relative_path, backup_entry);
+                        continue;
+                    }
+                }
+                res.emplace_back(info.data_path + relative_path, backup_entry);
+            }
+        }
+
+        /// Information which is used to make an instance of RestoreTableFromBackupTask.
+        struct TableInfo
+        {
+            DatabaseAndTableName table_name;
             ASTPtr create_query;
             StoragePtr storage;
-            ASTs partitions;
-            bool has_data = false;
+            BackupEntries data;
+            String data_path;
+            String zk_path;
         };
 
         /// Information which is used to make an instance of RestoreDatabaseFromBackupTask.
-        struct CreateDatabaseInfo
+        struct DatabaseInfo
         {
             ASTPtr create_query;
         };
 
         ContextPtr context;
         BackupSettings backup_settings;
+        std::shared_ptr<IBackupCoordination> backup_coordination;
         size_t shard_num_in_backup = 0;
         size_t replica_num_in_backup = 0;
         DDLRenamingSettings renaming_settings;
-        std::unordered_map<String /* db_name_in_backup */, CreateDatabaseInfo> databases;
-        std::map<DatabaseAndTableName /* table_name_in_backup */, CreateTableInfo> tables;
+        std::unordered_map<String /* db_name_in_backup */, DatabaseInfo> databases;
+        std::map<DatabaseAndTableName /* table_name_in_backup */, TableInfo> tables;
     };
 }
 
 
-BackupEntries makeBackupEntries(const ContextPtr & context, const Elements & elements, const BackupSettings & backup_settings)
+BackupEntries makeBackupEntries(
+    const ContextPtr & context,
+    const Elements & elements,
+    const BackupSettings & backup_settings,
+    std::shared_ptr<IBackupCoordination> backup_coordination,
+    std::chrono::seconds timeout_for_other_nodes_to_prepare)
 {
-    BackupEntriesBuilder builder{context, backup_settings};
-    builder.prepare(elements);
+    BackupEntriesBuilder builder{context, backup_settings, backup_coordination};
+    builder.prepare(elements, timeout_for_other_nodes_to_prepare);
     return builder.makeBackupEntries();
 }
 
@@ -398,6 +501,50 @@ void writeBackupEntries(BackupMutablePtr backup, BackupEntries && backup_entries
     }
 
     backup->finalizeWriting();
+}
+
+
+/// Returns access required to execute BACKUP query.
+AccessRightsElements getRequiredAccessToBackup(const ASTBackupQuery::Elements & elements, const BackupSettings & backup_settings)
+{
+    AccessRightsElements required_access;
+    for (const auto & element : elements)
+    {
+        switch (element.type)
+        {
+            case ASTBackupQuery::TABLE:
+            {
+                if (element.is_temp_db)
+                    break;
+                AccessFlags flags = AccessType::SHOW_TABLES;
+                if (!backup_settings.structure_only)
+                    flags |= AccessType::SELECT;
+                required_access.emplace_back(flags, element.name.first, element.name.second);
+                break;
+            }
+            case ASTBackupQuery::DATABASE:
+            {
+                if (element.is_temp_db)
+                    break;
+                AccessFlags flags = AccessType::SHOW_TABLES | AccessType::SHOW_DATABASES;
+                if (!backup_settings.structure_only)
+                    flags |= AccessType::SELECT;
+                required_access.emplace_back(flags, element.name.first);
+                /// TODO: It's better to process `element.except_list` somehow.
+                break;
+            }
+            case ASTBackupQuery::ALL_DATABASES:
+            {
+                AccessFlags flags = AccessType::SHOW_TABLES | AccessType::SHOW_DATABASES;
+                if (!backup_settings.structure_only)
+                    flags |= AccessType::SELECT;
+                required_access.emplace_back(flags);
+                /// TODO: It's better to process `element.except_list` somehow.
+                break;
+            }
+        }
+    }
+    return required_access;
 }
 
 }

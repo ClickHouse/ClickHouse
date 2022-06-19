@@ -69,11 +69,11 @@ public:
 
     static Strings getPathsList(const String & table_path, const String & user_files_path, ContextPtr context, size_t & total_bytes_to_read);
 
-    /// Check if the format is column-oriented.
-    /// Is is useful because column oriented formats could effectively skip unknown columns
+    /// Check if the format supports reading only some subset of columns.
+    /// Is is useful because such formats could effectively skip unknown columns
     /// So we can create a header of only required columns in read method and ask
     /// format to read only them. Note: this hack cannot be done with ordinary formats like TSV.
-    bool isColumnOriented() const override;
+    bool supportsSubsetOfColumns() const override;
 
     bool supportsPartitionBy() const override { return true; }
 
