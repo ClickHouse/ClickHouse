@@ -25,7 +25,6 @@ class DiskObjectStorage : public IDisk
 
 friend class DiskObjectStorageReservation;
 friend class DiskObjectStorageRemoteMetadataRestoreHelper;
-friend struct DiskObjectStorageTransaction;
 
 public:
     DiskObjectStorage(

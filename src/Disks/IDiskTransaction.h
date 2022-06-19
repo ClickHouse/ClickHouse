@@ -21,9 +21,13 @@ struct RemoveRequest
 
 using RemoveBatchRequest = std::vector<RemoveRequest>;
 
+/// Simple interface batch execution of write disk operations.
+/// Method are almost equal to disk methods.
 struct IDiskTransaction : private boost::noncopyable
 {
 public:
+    /// Tries to commit all accumulated operations simultaneously.
+    /// If something fails rollback and throw exception.
     virtual void commit() = 0;
 
     virtual ~IDiskTransaction() = default;
@@ -41,7 +45,6 @@ public:
     virtual void moveDirectory(const std::string & from_path, const std::string & to_path) = 0;
 
     virtual void moveFile(const String & from_path, const String & to_path) = 0;
-
 
     virtual void createFile(const String & path) = 0;
 
