@@ -35,14 +35,14 @@ ReplicatedAccessStorage::ReplicatedAccessStorage(
     const String & storage_name_,
     const String & zookeeper_path_,
     zkutil::GetZooKeeper get_zookeeper_,
-    bool allow_backup_,
-    AccessChangesNotifier & changes_notifier_)
+    AccessChangesNotifier & changes_notifier_,
+    bool allow_backup_)
     : IAccessStorage(storage_name_)
     , zookeeper_path(zookeeper_path_)
     , get_zookeeper(get_zookeeper_)
-    , backup_allowed(allow_backup_)
     , watched_queue(std::make_shared<ConcurrentBoundedQueue<UUID>>(std::numeric_limits<size_t>::max()))
     , changes_notifier(changes_notifier_)
+    , backup_allowed(allow_backup_)
 {
     if (zookeeper_path.empty())
         throw Exception("ZooKeeper path must be non-empty", ErrorCodes::BAD_ARGUMENTS);

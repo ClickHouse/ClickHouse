@@ -15,7 +15,7 @@ class DiskAccessStorage : public IAccessStorage
 public:
     static constexpr char STORAGE_TYPE[] = "local directory";
 
-    DiskAccessStorage(const String & storage_name_, const String & directory_path_, bool readonly_, bool backup_allowed_, AccessChangesNotifier & changes_notifier_);
+    DiskAccessStorage(const String & storage_name_, const String & directory_path_, AccessChangesNotifier & changes_notifier_, bool readonly_, bool backup_allowed_);
     ~DiskAccessStorage() override;
 
     const char * getStorageType() const override { return STORAGE_TYPE; }
@@ -69,8 +69,6 @@ private:
     };
 
     String directory_path;
-    std::atomic<bool> readonly;
-    std::atomic<bool> backup_allowed;
     std::unordered_map<UUID, Entry> entries_by_id;
     std::unordered_map<std::string_view, Entry *> entries_by_name_and_type[static_cast<size_t>(AccessEntityType::MAX)];
     boost::container::flat_set<AccessEntityType> types_of_lists_to_write;
@@ -79,6 +77,8 @@ private:
     std::condition_variable lists_writing_thread_should_exit;    /// Signals `lists_writing_thread` to exit.
     bool lists_writing_thread_is_waiting = false;
     AccessChangesNotifier & changes_notifier;
+    std::atomic<bool> readonly;
+    std::atomic<bool> backup_allowed;
     mutable std::mutex mutex;
 };
 }

@@ -187,17 +187,12 @@ void AccessControl::setUsersConfig(const Poco::Util::AbstractConfiguration & use
             return;
         }
     }
-    addUsersConfigStorage(users_config_);
+    addUsersConfigStorage(UsersConfigAccessStorage::STORAGE_TYPE, users_config_, false);
 }
 
-void AccessControl::addUsersConfigStorage(const Poco::Util::AbstractConfiguration & users_config_)
+void AccessControl::addUsersConfigStorage(const String & storage_name_, const Poco::Util::AbstractConfiguration & users_config_, bool allow_backup_)
 {
-    addUsersConfigStorage(UsersConfigAccessStorage::STORAGE_TYPE, users_config_);
-}
-
-void AccessControl::addUsersConfigStorage(const String & storage_name_, const Poco::Util::AbstractConfiguration & users_config_)
-{
-    auto new_storage = std::make_shared<UsersConfigAccessStorage>(storage_name_, *this);
+    auto new_storage = std::make_shared<UsersConfigAccessStorage>(storage_name_, *this, allow_backup_);
     new_storage->setConfig(users_config_);
     addStorage(new_storage);
     LOG_DEBUG(getLogger(), "Added {} access storage '{}', path: {}",
@@ -205,21 +200,12 @@ void AccessControl::addUsersConfigStorage(const String & storage_name_, const Po
 }
 
 void AccessControl::addUsersConfigStorage(
-    const String & users_config_path_,
-    const String & include_from_path_,
-    const String & preprocessed_dir_,
-    const zkutil::GetZooKeeper & get_zookeeper_function_)
-{
-    addUsersConfigStorage(
-        UsersConfigAccessStorage::STORAGE_TYPE, users_config_path_, include_from_path_, preprocessed_dir_, get_zookeeper_function_);
-}
-
-void AccessControl::addUsersConfigStorage(
     const String & storage_name_,
     const String & users_config_path_,
     const String & include_from_path_,
     const String & preprocessed_dir_,
-    const zkutil::GetZooKeeper & get_zookeeper_function_)
+    const zkutil::GetZooKeeper & get_zookeeper_function_,
+    bool allow_backup_)
 {
     auto storages = getStoragesPtr();
     for (const auto & storage : *storages)
@@ -230,7 +216,7 @@ void AccessControl::addUsersConfigStorage(
                 return;
         }
     }
-    auto new_storage = std::make_shared<UsersConfigAccessStorage>(storage_name_, *this);
+    auto new_storage = std::make_shared<UsersConfigAccessStorage>(storage_name_, *this, allow_backup_);
     new_storage->load(users_config_path_, include_from_path_, preprocessed_dir_, get_zookeeper_function_);
     addStorage(new_storage);
     LOG_DEBUG(getLogger(), "Added {} access storage '{}', path: {}", String(new_storage->getStorageType()), new_storage->getStorageName(), new_storage->getPath());
@@ -249,7 +235,7 @@ void AccessControl::addReplicatedStorage(
         if (auto replicated_storage = typeid_cast<std::shared_ptr<ReplicatedAccessStorage>>(storage))
             return;
     }
-    auto new_storage = std::make_shared<ReplicatedAccessStorage>(storage_name_, zookeeper_path_, get_zookeeper_function_, allow_backup_, *changes_notifier);
+    auto new_storage = std::make_shared<ReplicatedAccessStorage>(storage_name_, zookeeper_path_, get_zookeeper_function_, *changes_notifier, allow_backup_);
     addStorage(new_storage);
     LOG_DEBUG(getLogger(), "Added {} access storage '{}'", String(new_storage->getStorageType()), new_storage->getStorageName());
 }
@@ -269,7 +255,7 @@ void AccessControl::addDiskStorage(const String & storage_name_, const String & 
             }
         }
     }
-    auto new_storage = std::make_shared<DiskAccessStorage>(storage_name_, directory_, readonly_, allow_backup_, *changes_notifier);
+    auto new_storage = std::make_shared<DiskAccessStorage>(storage_name_, directory_, *changes_notifier, readonly_, allow_backup_);
     addStorage(new_storage);
     LOG_DEBUG(getLogger(), "Added {} access storage '{}', path: {}", String(new_storage->getStorageType()), new_storage->getStorageName(), new_storage->getPath());
 }
@@ -283,7 +269,7 @@ void AccessControl::addMemoryStorage(const String & storage_name_, bool allow_ba
         if (auto memory_storage = typeid_cast<std::shared_ptr<MemoryAccessStorage>>(storage))
             return;
     }
-    auto new_storage = std::make_shared<MemoryAccessStorage>(storage_name_, allow_backup_, *changes_notifier);
+    auto new_storage = std::make_shared<MemoryAccessStorage>(storage_name_, *changes_notifier, allow_backup_);
     addStorage(new_storage);
     LOG_DEBUG(getLogger(), "Added {} access storage '{}'", String(new_storage->getStorageType()), new_storage->getStorageName());
 }
@@ -326,7 +312,7 @@ void AccessControl::addStoragesFromUserDirectoriesConfig(
 
         if (type == MemoryAccessStorage::STORAGE_TYPE)
         {
-            bool allow_backup = config.getBool(prefix + ".allow_backup", false);
+            bool allow_backup = config.getBool(prefix + ".allow_backup", true);
             addMemoryStorage(name, allow_backup);
         }
         else if (type == UsersConfigAccessStorage::STORAGE_TYPE)
@@ -334,13 +320,14 @@ void AccessControl::addStoragesFromUserDirectoriesConfig(
             String path = config.getString(prefix + ".path");
             if (std::filesystem::path{path}.is_relative() && std::filesystem::exists(config_dir + path))
                 path = config_dir + path;
-            addUsersConfigStorage(name, path, include_from_path, dbms_dir, get_zookeeper_function);
+            bool allow_backup = config.getBool(prefix + ".allow_backup", false); /// We don't backup users.xml by default.
+            addUsersConfigStorage(name, path, include_from_path, dbms_dir, get_zookeeper_function, allow_backup);
         }
         else if (type == DiskAccessStorage::STORAGE_TYPE)
         {
             String path = config.getString(prefix + ".path");
             bool readonly = config.getBool(prefix + ".readonly", false);
-            bool allow_backup = config.getBool(prefix + ".allow_backup", false);
+            bool allow_backup = config.getBool(prefix + ".allow_backup", true);
             addDiskStorage(name, path, readonly, allow_backup);
         }
         else if (type == LDAPAccessStorage::STORAGE_TYPE)
@@ -350,7 +337,7 @@ void AccessControl::addStoragesFromUserDirectoriesConfig(
         else if (type == ReplicatedAccessStorage::STORAGE_TYPE)
         {
             String zookeeper_path = config.getString(prefix + ".zookeeper_path");
-            bool allow_backup = config.getBool(prefix + ".allow_backup", false);
+            bool allow_backup = config.getBool(prefix + ".allow_backup", true);
             addReplicatedStorage(name, zookeeper_path, get_zookeeper_function, allow_backup);
         }
         else
@@ -385,12 +372,18 @@ void AccessControl::addStoragesFromMainConfig(
         if (users_config_path != config_path)
             checkForUsersNotInMainConfig(config, config_path, users_config_path, getLogger());
 
-        addUsersConfigStorage(users_config_path, include_from_path, dbms_dir, get_zookeeper_function);
+        addUsersConfigStorage(
+            UsersConfigAccessStorage::STORAGE_TYPE,
+            users_config_path,
+            include_from_path,
+            dbms_dir,
+            get_zookeeper_function,
+            /* allow_backup= */ false);
     }
 
     String disk_storage_dir = config.getString("access_control_path", "");
     if (!disk_storage_dir.empty())
-        addDiskStorage(DiskAccessStorage::STORAGE_TYPE, disk_storage_dir, false, false);
+        addDiskStorage(DiskAccessStorage::STORAGE_TYPE, disk_storage_dir, /* readonly= */ false, /* allow_backup= */ true);
 
     if (has_user_directories)
         addStoragesFromUserDirectoriesConfig(config, "user_directories", config_dir, dbms_dir, include_from_path, get_zookeeper_function);

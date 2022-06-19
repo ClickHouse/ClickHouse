@@ -17,7 +17,7 @@ class MemoryAccessStorage : public IAccessStorage
 public:
     static constexpr char STORAGE_TYPE[] = "memory";
 
-    explicit MemoryAccessStorage(const String & storage_name_, bool allow_backup_, AccessChangesNotifier & changes_notifier_);
+    explicit MemoryAccessStorage(const String & storage_name_, AccessChangesNotifier & changes_notifier_, bool allow_backup_);
 
     const char * getStorageType() const override { return STORAGE_TYPE; }
 
@@ -52,7 +52,7 @@ private:
     mutable std::mutex mutex;
     std::unordered_map<UUID, Entry> entries_by_id; /// We want to search entries both by ID and by the pair of name and type.
     std::unordered_map<String, Entry *> entries_by_name_and_type[static_cast<size_t>(AccessEntityType::MAX)];
-    bool backup_allowed = false;
     AccessChangesNotifier & changes_notifier;
+    bool backup_allowed = false;
 };
 }

@@ -26,7 +26,7 @@ class ReplicatedAccessStorage : public IAccessStorage
 public:
     static constexpr char STORAGE_TYPE[] = "replicated";
 
-    ReplicatedAccessStorage(const String & storage_name, const String & zookeeper_path, zkutil::GetZooKeeper get_zookeeper, bool allow_backup, AccessChangesNotifier & changes_notifier_);
+    ReplicatedAccessStorage(const String & storage_name, const String & zookeeper_path, zkutil::GetZooKeeper get_zookeeper, AccessChangesNotifier & changes_notifier_, bool allow_backup);
     virtual ~ReplicatedAccessStorage() override;
 
     const char * getStorageType() const override { return STORAGE_TYPE; }
@@ -42,7 +42,6 @@ public:
 private:
     String zookeeper_path;
     zkutil::GetZooKeeper get_zookeeper;
-    bool backup_allowed = false;
 
     std::atomic<bool> initialized = false;
 
@@ -90,5 +89,6 @@ private:
     std::unordered_map<UUID, Entry> entries_by_id;
     std::unordered_map<String, Entry *> entries_by_name_and_type[static_cast<size_t>(AccessEntityType::MAX)];
     AccessChangesNotifier & changes_notifier;
+    bool backup_allowed = false;
 };
 }

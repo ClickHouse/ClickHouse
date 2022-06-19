@@ -9,8 +9,8 @@
 
 namespace DB
 {
-MemoryAccessStorage::MemoryAccessStorage(const String & storage_name_, bool allow_backup_, AccessChangesNotifier & changes_notifier_)
-    : IAccessStorage(storage_name_), backup_allowed(allow_backup_), changes_notifier(changes_notifier_)
+MemoryAccessStorage::MemoryAccessStorage(const String & storage_name_, AccessChangesNotifier & changes_notifier_, bool allow_backup_)
+    : IAccessStorage(storage_name_), changes_notifier(changes_notifier_), backup_allowed(allow_backup_)
 {
 }
 
