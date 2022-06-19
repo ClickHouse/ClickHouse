@@ -5,7 +5,10 @@
 namespace DB
 {
 
-struct FakeDiskTransaction : public IDiskTransaction
+/// Fake disk transaction implementation.
+/// Just execute all operations immediately, commit is noop operation.
+/// No support for atomicity and rollback.
+struct FakeDiskTransaction final : public IDiskTransaction
 {
 public:
     explicit FakeDiskTransaction(IDisk & disk_)

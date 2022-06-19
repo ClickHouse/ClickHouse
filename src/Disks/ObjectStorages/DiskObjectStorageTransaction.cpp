@@ -18,12 +18,21 @@ namespace ErrorCodes
     extern const int FILE_ALREADY_EXISTS;
 }
 
-DiskObjectStorageTransaction::DiskObjectStorageTransaction(DiskObjectStorage & disk_)
-    : disk(disk_)
-    , metadata_transaction(disk.getMetadataStorage()->createTransaction())
+DiskObjectStorageTransaction::DiskObjectStorageTransaction(
+    IObjectStorage & object_storage_,
+    IMetadataStorage & metadata_storage_,
+    const std::string & remote_fs_root_path_,
+    DiskObjectStorageRemoteMetadataRestoreHelper * metadata_helper_)
+    : object_storage(object_storage_)
+    , metadata_storage(metadata_storage_)
+    , metadata_transaction(metadata_storage.createTransaction())
+    , remote_fs_root_path(remote_fs_root_path_)
+    , metadata_helper(metadata_helper_)
 {}
 
-struct PureMetadataOperation : public IDiskObjectStorageOperation
+/// Operation which affects only metadata. Simplest way to
+/// implement via callback.
+struct PureMetadataOperation final : public IDiskObjectStorageOperation
 {
     std::function<void(MetadataTransactionPtr tx)> on_execute;
 
@@ -49,7 +58,7 @@ struct PureMetadataOperation : public IDiskObjectStorageOperation
     }
 };
 
-struct RemoveObjectOperation : public IDiskObjectStorageOperation
+struct RemoveObjectOperation final : public IDiskObjectStorageOperation
 {
     std::string path;
     bool delete_metadata_only;
@@ -129,7 +138,7 @@ struct RemoveObjectOperation : public IDiskObjectStorageOperation
     }
 };
 
-struct RemoveRecursiveOperation : public IDiskObjectStorageOperation
+struct RemoveRecursiveOperation final : public IDiskObjectStorageOperation
 {
     std::string path;
     std::unordered_map<std::string, std::vector<std::string>> paths_to_remove;
@@ -223,7 +232,7 @@ struct RemoveRecursiveOperation : public IDiskObjectStorageOperation
 };
 
 
-struct ReplaceFileOperation : public IDiskObjectStorageOperation
+struct ReplaceFileOperation final : public IDiskObjectStorageOperation
 {
     std::string path_from;
     std::string path_to;
@@ -262,7 +271,7 @@ struct ReplaceFileOperation : public IDiskObjectStorageOperation
     }
 };
 
-struct WriteFileOperation : public IDiskObjectStorageOperation
+struct WriteFileOperation final : public IDiskObjectStorageOperation
 {
     std::string path;
     std::string blob_path;
@@ -279,6 +288,7 @@ struct WriteFileOperation : public IDiskObjectStorageOperation
 
     void execute(MetadataTransactionPtr) override
     {
+
     }
 
     void undo() override
@@ -293,7 +303,7 @@ struct WriteFileOperation : public IDiskObjectStorageOperation
 };
 
 
-struct CopyFileOperation : public IDiskObjectStorageOperation
+struct CopyFileOperation final : public IDiskObjectStorageOperation
 {
     std::string from_path;
     std::string to_path;
@@ -347,7 +357,7 @@ struct CopyFileOperation : public IDiskObjectStorageOperation
 void DiskObjectStorageTransaction::createDirectory(const std::string & path)
 {
     operations_to_execute.emplace_back(
-        std::make_unique<PureMetadataOperation>(*disk.object_storage, *disk.metadata_storage, [path](MetadataTransactionPtr tx)
+        std::make_unique<PureMetadataOperation>(object_storage, metadata_storage, [path](MetadataTransactionPtr tx)
         {
             tx->createDirectory(path);
         }));
@@ -356,7 +366,7 @@ void DiskObjectStorageTransaction::createDirectory(const std::string & path)
 void DiskObjectStorageTransaction::createDirectories(const std::string & path)
 {
     operations_to_execute.emplace_back(
-        std::make_unique<PureMetadataOperation>(*disk.object_storage, *disk.metadata_storage, [path](MetadataTransactionPtr tx)
+        std::make_unique<PureMetadataOperation>(object_storage, metadata_storage, [path](MetadataTransactionPtr tx)
         {
             tx->createDicrectoryRecursive(path);
         }));
@@ -366,7 +376,7 @@ void DiskObjectStorageTransaction::createDirectories(const std::string & path)
 void DiskObjectStorageTransaction::moveDirectory(const std::string & from_path, const std::string & to_path)
 {
     operations_to_execute.emplace_back(
-        std::make_unique<PureMetadataOperation>(*disk.object_storage, *disk.metadata_storage, [from_path, to_path](MetadataTransactionPtr tx)
+        std::make_unique<PureMetadataOperation>(object_storage, metadata_storage, [from_path, to_path](MetadataTransactionPtr tx)
         {
             tx->moveDirectory(from_path, to_path);
         }));
@@ -375,12 +385,12 @@ void DiskObjectStorageTransaction::moveDirectory(const std::string & from_path, 
 void DiskObjectStorageTransaction::moveFile(const String & from_path, const String & to_path)
 {
      operations_to_execute.emplace_back(
-        std::make_unique<PureMetadataOperation>(*disk.object_storage, *disk.metadata_storage, [from_path, to_path, metadata_storage = disk.metadata_storage](MetadataTransactionPtr tx)
+        std::make_unique<PureMetadataOperation>(object_storage, metadata_storage, [from_path, to_path, this](MetadataTransactionPtr tx)
         {
-            if (metadata_storage->exists(to_path))
+            if (metadata_storage.exists(to_path))
                 throw Exception("File already exists: " + to_path, ErrorCodes::FILE_ALREADY_EXISTS);
 
-            if (!metadata_storage->exists(from_path))
+            if (!metadata_storage.exists(from_path))
                 throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File {} doesn't exist, cannot move", to_path);
 
             tx->moveFile(from_path, to_path);
@@ -389,14 +399,14 @@ void DiskObjectStorageTransaction::moveFile(const String & from_path, const Stri
 
 void DiskObjectStorageTransaction::replaceFile(const std::string & from_path, const std::string & to_path)
 {
-    operations_to_execute.emplace_back(std::make_unique<ReplaceFileOperation>(*disk.object_storage, *disk.metadata_storage, from_path, to_path));
+    operations_to_execute.emplace_back(std::make_unique<ReplaceFileOperation>(object_storage, metadata_storage, from_path, to_path));
 }
 
 void DiskObjectStorageTransaction::clearDirectory(const std::string & path)
 {
-    for (auto it = disk.iterateDirectory(path); it->isValid(); it->next())
+    for (auto it = metadata_storage.iterateDirectory(path); it->isValid(); it->next())
     {
-        if (disk.isFile(it->path()))
+        if (metadata_storage.isFile(it->path()))
             removeFile(it->path());
     }
 }
@@ -408,23 +418,23 @@ void DiskObjectStorageTransaction::removeFile(const std::string & path)
 
 void DiskObjectStorageTransaction::removeSharedFile(const std::string & path, bool keep_shared_data)
 {
-    operations_to_execute.emplace_back(std::make_unique<RemoveObjectOperation>(*disk.object_storage, *disk.metadata_storage, path, keep_shared_data, false));
+    operations_to_execute.emplace_back(std::make_unique<RemoveObjectOperation>(object_storage, metadata_storage, path, keep_shared_data, false));
 }
 
 void DiskObjectStorageTransaction::removeSharedRecursive(const std::string & path, bool keep_all_shared_data, const NameSet & file_names_remove_metadata_only)
 {
-    operations_to_execute.emplace_back(std::make_unique<RemoveRecursiveOperation>(*disk.object_storage, *disk.metadata_storage, path, keep_all_shared_data, file_names_remove_metadata_only));
+    operations_to_execute.emplace_back(std::make_unique<RemoveRecursiveOperation>(object_storage, metadata_storage, path, keep_all_shared_data, file_names_remove_metadata_only));
 }
 
 void DiskObjectStorageTransaction::removeSharedFileIfExists(const std::string & path, bool keep_shared_data)
 {
-    operations_to_execute.emplace_back(std::make_unique<RemoveObjectOperation>(*disk.object_storage, *disk.metadata_storage, path, keep_shared_data, true));
+    operations_to_execute.emplace_back(std::make_unique<RemoveObjectOperation>(object_storage, metadata_storage, path, keep_shared_data, true));
 }
 
 void DiskObjectStorageTransaction::removeDirectory(const std::string & path)
 {
     operations_to_execute.emplace_back(
-        std::make_unique<PureMetadataOperation>(*disk.object_storage, *disk.metadata_storage, [path](MetadataTransactionPtr tx)
+        std::make_unique<PureMetadataOperation>(object_storage, metadata_storage, [path](MetadataTransactionPtr tx)
         {
             tx->removeDirectory(path);
         }));
@@ -473,6 +483,21 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile
 {
     auto blob_name = getRandomASCIIString();
 
+    std::optional<ObjectAttributes> object_attributes;
+    if (metadata_helper)
+    {
+        auto revision = metadata_helper->revision_counter + 1;
+        metadata_helper->revision_counter++;
+        object_attributes = {
+            {"path", path}
+        };
+        blob_name = "r" + revisionToString(revision) + "-file-" + blob_name;
+    }
+
+    auto blob_path = fs::path(remote_fs_root_path) / blob_name;
+
+    operations_to_execute.emplace_back(std::make_unique<WriteFileOperation>(object_storage, metadata_storage, path, blob_path));
+
     auto create_metadata_callback = [tx = shared_from_this(), this, mode, path, blob_name, autocommit] (size_t count)
     {
         if (mode == WriteMode::Rewrite)
@@ -484,23 +509,8 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile
             metadata_transaction->commit();
     };
 
-    auto blob_path = fs::path(disk.remote_fs_root_path) / blob_name;
-
-    operations_to_execute.emplace_back(std::make_unique<WriteFileOperation>(*disk.object_storage, *disk.metadata_storage, path, blob_path));
-
-    std::optional<ObjectAttributes> object_attributes;
-    if (disk.send_metadata)
-    {
-        auto revision = disk.metadata_helper->revision_counter + 1;
-        disk.metadata_helper->revision_counter++;
-        object_attributes = {
-            {"path", path}
-        };
-        blob_name = "r" + revisionToString(revision) + "-file-" + blob_name;
-    }
-
     /// We always use mode Rewrite because we simulate append using metadata and different files
-    return disk.object_storage->writeObject(
+    return object_storage.writeObject(
         blob_path, WriteMode::Rewrite, object_attributes,
         std::move(create_metadata_callback),
         buf_size, settings);
@@ -510,7 +520,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile
 void DiskObjectStorageTransaction::createHardLink(const std::string & src_path, const std::string & dst_path)
 {
     operations_to_execute.emplace_back(
-        std::make_unique<PureMetadataOperation>(*disk.object_storage, *disk.metadata_storage, [src_path, dst_path](MetadataTransactionPtr tx)
+        std::make_unique<PureMetadataOperation>(object_storage, metadata_storage, [src_path, dst_path](MetadataTransactionPtr tx)
         {
             tx->createHardLink(src_path, dst_path);
         }));
@@ -519,7 +529,7 @@ void DiskObjectStorageTransaction::createHardLink(const std::string & src_path, 
 void DiskObjectStorageTransaction::setReadOnly(const std::string & path)
 {
     operations_to_execute.emplace_back(
-        std::make_unique<PureMetadataOperation>(*disk.object_storage, *disk.metadata_storage, [path](MetadataTransactionPtr tx)
+        std::make_unique<PureMetadataOperation>(object_storage, metadata_storage, [path](MetadataTransactionPtr tx)
         {
             tx->setReadOnly(path);
         }));
@@ -528,7 +538,7 @@ void DiskObjectStorageTransaction::setReadOnly(const std::string & path)
 void DiskObjectStorageTransaction::setLastModified(const std::string & path, const Poco::Timestamp & timestamp)
 {
     operations_to_execute.emplace_back(
-        std::make_unique<PureMetadataOperation>(*disk.object_storage, *disk.metadata_storage, [path, timestamp](MetadataTransactionPtr tx)
+        std::make_unique<PureMetadataOperation>(object_storage, metadata_storage, [path, timestamp](MetadataTransactionPtr tx)
         {
             tx->setLastModified(path, timestamp);
         }));
@@ -537,7 +547,7 @@ void DiskObjectStorageTransaction::setLastModified(const std::string & path, con
 void DiskObjectStorageTransaction::createFile(const std::string & path)
 {
     operations_to_execute.emplace_back(
-        std::make_unique<PureMetadataOperation>(*disk.object_storage, *disk.metadata_storage, [path](MetadataTransactionPtr tx)
+        std::make_unique<PureMetadataOperation>(object_storage, metadata_storage, [path](MetadataTransactionPtr tx)
         {
             tx->createEmptyMetadataFile(path);
         }));
@@ -546,7 +556,7 @@ void DiskObjectStorageTransaction::createFile(const std::string & path)
 /// Copy file `from_file_path` to `to_file_path` located at `to_disk`.
 void DiskObjectStorageTransaction::copyFile(const std::string & from_file_path, const std::string & to_file_path)
 {
-    operations_to_execute.emplace_back(std::make_unique<CopyFileOperation>(*disk.object_storage, *disk.metadata_storage, from_file_path, to_file_path, disk.remote_fs_root_path));
+    operations_to_execute.emplace_back(std::make_unique<CopyFileOperation>(object_storage, metadata_storage, from_file_path, to_file_path, remote_fs_root_path));
 }
 
 void DiskObjectStorageTransaction::commit()
