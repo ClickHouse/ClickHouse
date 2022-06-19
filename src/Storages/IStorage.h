@@ -225,7 +225,7 @@ public:
 
     /// Returns a slightly changed version of the CREATE TABLE query which must be written to a backup.
     /// The function can throw `TABLE_IS_DROPPED` if this storage is not attached to a database.
-    virtual ASTPtr getCreateQueryForBackup(const ContextPtr & context, DatabasePtr * database = nullptr) const;
+    virtual ASTPtr getCreateQueryForBackup(const ContextPtr & context, DatabasePtr * database) const;
     virtual ASTPtr getCreateQueryForBackup(const BackupEntriesCollector & backup_entries_collector) const;
 
     /// Makes backup entries to backup the data of this storage.

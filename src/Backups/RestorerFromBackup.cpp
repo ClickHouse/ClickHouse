@@ -689,7 +689,7 @@ void RestorerFromBackup::createTables()
 
             if (!restore_settings.allow_different_table_def)
             {
-                ASTPtr create_table_query = storage->getCreateQueryForBackup(context);
+                ASTPtr create_table_query = storage->getCreateQueryForBackup(context, nullptr);
                 ASTPtr expected_create_query = table_info.create_table_query;
                 if (serializeAST(*create_table_query) != serializeAST(*expected_create_query))
                 {
