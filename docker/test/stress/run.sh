@@ -7,8 +7,10 @@ set -x
 
 # Thread Fuzzer allows to check more permutations of possible thread scheduling
 # and find more potential issues.
-is_tsan_build=$(clickhouse local -q "select value like '% -fsanitize=thread %' from system.build_options where name='CXX_FLAGS'")
-if [ "$is_tsan_build" -eq "0" ]; then
+#
+# But under thread fuzzer, TSan build is too slow and this produces some flaky
+# tests, so for now, as a temporary solution it had been disabled.
+if ! test -f package_folder/*tsan*.deb; then
     export THREAD_FUZZER_CPU_TIME_PERIOD_US=1000
     export THREAD_FUZZER_SLEEP_PROBABILITY=0.1
     export THREAD_FUZZER_SLEEP_TIME_US=100000
