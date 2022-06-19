@@ -97,6 +97,7 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, ContextPtr context, 
         throw Exception("No hosts defined to execute distributed DDL query", ErrorCodes::LOGICAL_ERROR);
 
     std::vector<HostID> hosts;
+    hosts.reserve(addresses.size());
     for (const auto * address : addresses)
         hosts.emplace_back(*address);
 
