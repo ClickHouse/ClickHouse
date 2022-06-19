@@ -459,7 +459,6 @@ void StorageWindowView::alter(
 
     auto inner_query = initInnerQuery(new_select_query->as<ASTSelectQuery &>(), local_context);
 
-    input_header.clear();
     output_header.clear();
 
     InterpreterDropQuery::executeDropQuery(
@@ -1230,7 +1229,6 @@ StorageWindowView::StorageWindowView(
 ASTPtr StorageWindowView::initInnerQuery(ASTSelectQuery query, ContextPtr context_)
 {
     select_query = query.clone();
-    input_header.clear();
     output_header.clear();
 
     String select_database_name = getContext()->getCurrentDatabase();
@@ -1627,15 +1625,10 @@ void StorageWindowView::dropInnerTableIfAny(bool no_delay, ContextPtr local_cont
     }
 }
 
-const Block & StorageWindowView::getInputHeader() const
+Block StorageWindowView::getInputHeader() const
 {
-    std::lock_guard lock(sample_block_lock);
-    if (!input_header)
-    {
-        auto metadata = getSourceTable()->getInMemoryMetadataPtr();
-        input_header = metadata->getSampleBlockNonMaterialized();
-    }
-    return input_header;
+    auto metadata = getSourceTable()->getInMemoryMetadataPtr();
+    return metadata->getSampleBlockNonMaterialized();
 }
 
 const Block & StorageWindowView::getOutputHeader() const
