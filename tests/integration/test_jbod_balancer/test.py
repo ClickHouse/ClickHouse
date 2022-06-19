@@ -46,33 +46,38 @@ def start_cluster():
 
 def check_balance(node, table):
 
-    partitions = node.query(
-        """
-        WITH
-            arraySort(groupArray(c)) AS array_c,
-            arrayEnumerate(array_c) AS array_i,
-            sum(c) AS sum_c,
-            count() AS n,
-            if(sum_c = 0, 0, (((2. * arraySum(arrayMap((c, i) -> (c * i), array_c, array_i))) / n) / sum_c) - (((n + 1) * 1.) / n)) AS gini
-        SELECT
-            partition
-        FROM
-        (
+    for i in range(10):
+        partitions = node.query(
+            """
+            WITH
+                arraySort(groupArray(c)) AS array_c,
+                arrayEnumerate(array_c) AS array_i,
+                sum(c) AS sum_c,
+                count() AS n,
+                if(sum_c = 0, 0, (((2. * arraySum(arrayMap((c, i) -> (c * i), array_c, array_i))) / n) / sum_c) - (((n + 1) * 1.) / n)) AS gini
             SELECT
-                partition,
-                disk_name,
-                sum(bytes_on_disk) AS c
-            FROM system.parts
-            WHERE active AND level > 0 AND disk_name like 'jbod%' AND table = '{}'
-            GROUP BY
-                partition, disk_name
-        )
-        GROUP BY partition
-        HAVING gini < 0.1
-        """.format(
-            table
-        )
-    ).splitlines()
+                partition
+            FROM
+            (
+                SELECT
+                    partition,
+                    disk_name,
+                    sum(bytes_on_disk) AS c
+                FROM system.parts
+                WHERE active AND level > 0 AND disk_name like 'jbod%' AND table = '{}'
+                GROUP BY
+                    partition, disk_name
+            )
+            GROUP BY partition
+            HAVING gini < 0.1
+            """.format(
+                table
+            )
+        ).splitlines()
+
+        if set(partitions) == set(["0", "1"]):
+            break
+        time.sleep(0.5)
 
     assert set(partitions) == set(["0", "1"])
 
@@ -183,7 +188,7 @@ def test_replicated_balanced_merge_fetch(start_cluster):
 
         p.map(task, range(200))
 
-        node2.query("SYSTEM SYNC REPLICA tbl", timeout=10)
+        node2.query("SYSTEM SYNC REPLICA tbl", timeout=30)
 
         check_balance(node1, "tbl")
         check_balance(node2, "tbl")
