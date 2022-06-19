@@ -1,5 +1,6 @@
 #pragma once
 
+#include <boost/noncopyable.hpp>
 #include <base/types.h>
 #include <memory>
 
@@ -11,7 +12,7 @@ class ReadBufferFromFileBase;
 class SeekableReadBuffer;
 
 /// Interface for reading an archive.
-class IArchiveReader : public std::enable_shared_from_this<IArchiveReader>
+class IArchiveReader : public std::enable_shared_from_this<IArchiveReader>, boost::noncopyable
 {
 public:
     virtual ~IArchiveReader() = default;

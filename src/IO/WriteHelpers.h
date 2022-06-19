@@ -805,11 +805,21 @@ inline void writeDateTimeText(DateTime64 datetime64, UInt32 scale, WriteBuffer &
     scale = scale > MaxScale ? MaxScale : scale;
 
     auto components = DecimalUtils::split(datetime64, scale);
-    /// -127914467.877 => whole = -127914467, fraction = 877 => new whole = -127914468(1965-12-12 12:12:12), new fraction = 123(.123) => 1965-12-12 12:12:12.123
-    if (components.whole < 0 && components.fractional != 0)
+    /// Case1:
+    /// -127914467.877
+    /// => whole = -127914467, fraction = 877(After DecimalUtils::split)
+    /// => new whole = -127914468(1965-12-12 12:12:12), new fraction = 1000 - 877 = 123(.123)
+    /// => 1965-12-12 12:12:12.123
+    ///
+    /// Case2:
+    /// -0.877
+    /// => whole = 0, fractional = -877(After DecimalUtils::split)
+    /// => whole = -1(1969-12-31 23:59:59), fractional = 1000 + (-877) = 123(.123)
+    using T = typename DateTime64::NativeType;
+    if (datetime64.value < 0 && components.fractional)
     {
+        components.fractional = DecimalUtils::scaleMultiplier<T>(scale) + (components.whole ? T(-1) : T(1)) * components.fractional;
         --components.whole;
-        components.fractional = DecimalUtils::scaleMultiplier<DateTime64::NativeType>(scale) - components.fractional;
     }
 
     writeDateTimeText<date_delimeter, time_delimeter, between_date_time_delimiter>(LocalDateTime(components.whole, time_zone), buf);
@@ -989,7 +999,12 @@ void writeText(Decimal<T> x, UInt32 scale, WriteBuffer & ostr, bool trailing_zer
     {
         part = DecimalUtils::getFractionalPart(x, scale);
         if (part || trailing_zeros)
+        {
+            if (part < 0)
+                part *= T(-1);
+
             writeDecimalFractional(part, scale, ostr, trailing_zeros);
+        }
     }
 }
 

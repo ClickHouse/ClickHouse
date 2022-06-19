@@ -401,7 +401,6 @@ void ThreadStatus::detachQuery(bool exit_if_already_detached, bool thread_exits)
     performance_counters.setParent(&ProfileEvents::global_counters);
     memory_tracker.reset();
 
-    /// Must reset pointer to thread_group's memory_tracker, because it will be destroyed two lines below (will reset to its parent).
     memory_tracker.setParent(thread_group->memory_tracker.getParent());
 
     query_id.clear();
@@ -412,7 +411,7 @@ void ThreadStatus::detachQuery(bool exit_if_already_detached, bool thread_exits)
 
     thread_state = thread_exits ? ThreadState::Died : ThreadState::DetachedFromQuery;
 
-#if defined(__linux__)
+#if defined(OS_LINUX)
     if (os_thread_priority)
     {
         LOG_TRACE(log, "Resetting nice");

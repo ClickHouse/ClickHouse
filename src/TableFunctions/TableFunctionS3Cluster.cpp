@@ -115,7 +115,7 @@ StoragePtr TableFunctionS3Cluster::executeImpl(
         /// On worker node this filename won't contains globs
         Poco::URI uri (configuration.url);
         S3::URI s3_uri (uri);
-        storage = StorageS3::create(
+        storage = std::make_shared<StorageS3>(
             s3_uri,
             configuration.auth_settings.access_key_id,
             configuration.auth_settings.secret_access_key,
@@ -133,7 +133,7 @@ StoragePtr TableFunctionS3Cluster::executeImpl(
     }
     else
     {
-        storage = StorageS3Cluster::create(
+        storage = std::make_shared<StorageS3Cluster>(
             configuration.url,
             configuration.auth_settings.access_key_id,
             configuration.auth_settings.secret_access_key,

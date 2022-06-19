@@ -12,6 +12,7 @@
 #include <Interpreters/ProcessorsProfileLog.h>
 #include <Interpreters/ZooKeeperLog.h>
 #include <Interpreters/TransactionsInfoLog.h>
+#include <Interpreters/FilesystemCacheLog.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/InterpreterRenameQuery.h>
 #include <Interpreters/InterpreterInsertQuery.h>
@@ -32,7 +33,7 @@
 #include <IO/WriteHelpers.h>
 
 #include <Poco/Util/AbstractConfiguration.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <base/scope_guard.h>
 
 
@@ -153,10 +154,12 @@ std::shared_ptr<TSystemLog> createSystemLog(
         String ttl = config.getString(config_prefix + ".ttl", "");
         if (!ttl.empty())
             engine += " TTL " + ttl;
-        engine += " ORDER BY (event_date, event_time)";
+
+        engine += " ORDER BY ";
+        engine += TSystemLog::getDefaultOrderBy();
     }
 
-    // Validate engine definition grammatically to prevent some configuration errors
+    /// Validate engine definition syntax to prevent some configuration errors.
     ParserStorageWithComment storage_parser;
     parseQuery(storage_parser, engine.data(), engine.data() + engine.size(),
             "Storage to create table for " + config_prefix, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
@@ -192,6 +195,7 @@ SystemLogs::SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConf
     crash_log = createSystemLog<CrashLog>(global_context, "system", "crash_log", config, "crash_log");
     text_log = createSystemLog<TextLog>(global_context, "system", "text_log", config, "text_log");
     metric_log = createSystemLog<MetricLog>(global_context, "system", "metric_log", config, "metric_log");
+    cache_log = createSystemLog<FilesystemCacheLog>(global_context, "system", "filesystem_cache_log", config, "filesystem_cache_log");
     asynchronous_metric_log = createSystemLog<AsynchronousMetricLog>(
         global_context, "system", "asynchronous_metric_log", config,
         "asynchronous_metric_log");
@@ -228,11 +232,16 @@ SystemLogs::SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConf
     if (zookeeper_log)
         logs.emplace_back(zookeeper_log.get());
     if (session_log)
+    {
         logs.emplace_back(session_log.get());
+        global_context->addWarningMessage("Table system.session_log is enabled. It's unreliable and may contain garbage. Do not use it for any kind of security monitoring.");
+    }
     if (transactions_info_log)
         logs.emplace_back(transactions_info_log.get());
     if (processors_profile_log)
         logs.emplace_back(processors_profile_log.get());
+    if (cache_log)
+        logs.emplace_back(cache_log.get());
 
     try
     {
@@ -515,10 +524,24 @@ ASTPtr SystemLog<LogElement>::getCreateTableQuery()
     create->setDatabase(table_id.database_name);
     create->setTable(table_id.table_name);
 
-    auto ordinary_columns = LogElement::getNamesAndTypes();
-    auto alias_columns = LogElement::getNamesAndAliases();
     auto new_columns_list = std::make_shared<ASTColumns>();
-    new_columns_list->set(new_columns_list->columns, InterpreterCreateQuery::formatColumns(ordinary_columns, alias_columns));
+
+    if (const char * custom_column_list = LogElement::getCustomColumnList())
+    {
+        ParserColumnDeclarationList parser;
+        const Settings & settings = getContext()->getSettingsRef();
+
+        ASTPtr columns_list_raw = parseQuery(parser, custom_column_list, "columns declaration list", settings.max_query_size, settings.max_parser_depth);
+        new_columns_list->set(new_columns_list->columns, columns_list_raw);
+    }
+    else
+    {
+        auto ordinary_columns = LogElement::getNamesAndTypes();
+        auto alias_columns = LogElement::getNamesAndAliases();
+
+        new_columns_list->set(new_columns_list->columns, InterpreterCreateQuery::formatColumns(ordinary_columns, alias_columns));
+    }
+
     create->set(create->columns_list, new_columns_list);
 
     ParserStorageWithComment storage_parser;

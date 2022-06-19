@@ -3,7 +3,7 @@
 #include <Storages/RabbitMQ/StorageRabbitMQ.h>
 #include <Formats/FormatFactory.h>
 #include <Processors/Formats/IOutputFormat.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 
 
 namespace DB

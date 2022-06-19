@@ -38,7 +38,7 @@ ORDER BY k;
  * And we use function 'anyLast' for method IAggregateFunction::merge to be called for every new value.
  *
  * We use useless HAVING (that is always true), because in absense of HAVING,
- *  TOTALS are calculated in a simple way in same pass during aggregation, not in TotalsHavingBlockInputStream,
+ *  TOTALS are calculated in a simple way in same pass during aggregation, not in TotalsHavingTransform,
  *  and bug doesn't trigger.
  *
  * We use ORDER BY for result of the test to be deterministic.

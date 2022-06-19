@@ -3,7 +3,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 
 #include <Poco/Message.h>
 
@@ -38,6 +38,7 @@ MutableColumns InternalTextLogsQueue::getSampleColumns()
 
 void InternalTextLogsQueue::pushBlock(Block && log_block)
 {
+    OvercommitTrackerBlockerInThread blocker;
     static Block sample_block = getSampleBlock();
 
     if (blocksHaveEqualStructure(sample_block, log_block))

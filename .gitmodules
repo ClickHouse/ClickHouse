@@ -265,3 +265,9 @@
 [submodule "contrib/farsh"]
 	path = contrib/farsh
 	url = https://github.com/Bulat-Ziganshin/FARSH.git
+[submodule "contrib/wyhash"]
+	path = contrib/wyhash
+	url = https://github.com/wangyi-fudan/wyhash.git
+[submodule "contrib/hashidsxx"]
+	path = contrib/hashidsxx
+	url = https://github.com/schoentoon/hashidsxx.git

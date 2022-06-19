@@ -4,7 +4,7 @@
 #include <Storages/FileLog/FileLogSource.h>
 #include <Storages/FileLog/ReadBufferFromFileLog.h>
 #include <Common/Stopwatch.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -19,7 +19,7 @@ FileLogSource::FileLogSource(
     size_t poll_time_out_,
     size_t stream_number_,
     size_t max_streams_number_)
-    : SourceWithProgress(storage_snapshot_->getSampleBlockForColumns(columns))
+    : ISource(storage_snapshot_->getSampleBlockForColumns(columns))
     , storage(storage_)
     , storage_snapshot(storage_snapshot_)
     , context(context_)

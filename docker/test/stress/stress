@@ -3,8 +3,6 @@
 from multiprocessing import cpu_count
 from subprocess import Popen, call, check_output, STDOUT
 import os
-import sys
-import shutil
 import argparse
 import logging
 import time
@@ -30,6 +28,9 @@ def get_options(i, backward_compatibility_check):
 
     if i % 5 == 1:
         client_options.append("join_use_nulls=1")
+
+    if i % 15 == 1:
+        client_options.append("join_algorithm='parallel_hash'")
 
     if i % 15 == 6:
         client_options.append("join_algorithm='partial_merge'")

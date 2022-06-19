@@ -11,7 +11,7 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageURL.h>
 #include <Storages/transformQueryForExternalDatabase.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <Common/escapeForFileName.h>
 
 
@@ -140,7 +140,7 @@ SinkToStoragePtr StorageXDBC::write(const ASTPtr & /* query */, const StorageMet
         chooseCompressionMethod(uri, compression_method));
 }
 
-bool StorageXDBC::isColumnOriented() const
+bool StorageXDBC::supportsSubsetOfColumns() const
 {
     return true;
 }

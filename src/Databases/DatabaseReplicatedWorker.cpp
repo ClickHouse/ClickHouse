@@ -85,6 +85,51 @@ String DatabaseReplicatedDDLWorker::enqueueQuery(DDLLogEntry & entry)
     return enqueueQueryImpl(zookeeper, entry, database);
 }
 
+
+bool DatabaseReplicatedDDLWorker::waitForReplicaToProcessAllEntries(UInt64 timeout_ms)
+{
+    auto zookeeper = getAndSetZooKeeper();
+    const auto our_log_ptr_path = database->replica_path + "/log_ptr";
+    const auto max_log_ptr_path = database->zookeeper_path + "/max_log_ptr";
+    UInt32 our_log_ptr = parse<UInt32>(zookeeper->get(our_log_ptr_path));
+    UInt32 max_log_ptr = parse<UInt32>(zookeeper->get(max_log_ptr_path));
+    assert(our_log_ptr <= max_log_ptr);
+
+    /// max_log_ptr is the number of the last successfully executed request on the initiator
+    /// The log could contain other entries which are not committed yet
+    /// This equality is enough to say that current replicas is up-to-date
+    if (our_log_ptr == max_log_ptr)
+        return true;
+
+    auto max_log =  DDLTask::getLogEntryName(max_log_ptr);
+    LOG_TRACE(log, "Waiting for worker thread to process all entries before {}, current task is {}", max_log, current_task);
+
+    {
+        std::unique_lock lock{mutex};
+        bool processed = wait_current_task_change.wait_for(lock, std::chrono::milliseconds(timeout_ms), [&]()
+        {
+            assert(zookeeper->expired() || current_task <= max_log);
+            return zookeeper->expired() || current_task == max_log || stop_flag;
+        });
+
+        if (!processed)
+            return false;
+    }
+
+    LOG_TRACE(log, "Waiting for worker thread to process all entries before {}, current task is {}", max_log, current_task);
+
+    /// Lets now wait for max_log_ptr to be processed
+    Coordination::Stat stat;
+    auto event_ptr = std::make_shared<Poco::Event>();
+    auto new_log = zookeeper->get(our_log_ptr_path, &stat, event_ptr);
+
+    if (new_log == toString(max_log_ptr))
+        return true;
+
+    return event_ptr->tryWait(timeout_ms);
+}
+
+
 String DatabaseReplicatedDDLWorker::enqueueQueryImpl(const ZooKeeperPtr & zookeeper, DDLLogEntry & entry,
                                DatabaseReplicated * const database, bool committed)
 {

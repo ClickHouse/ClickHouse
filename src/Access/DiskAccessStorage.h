@@ -7,14 +7,15 @@
 
 namespace DB
 {
+class AccessChangesNotifier;
+
 /// Loads and saves access entities on a local disk to a specified directory.
 class DiskAccessStorage : public IAccessStorage
 {
 public:
     static constexpr char STORAGE_TYPE[] = "local directory";
 
-    DiskAccessStorage(const String & storage_name_, const String & directory_path_, bool readonly_ = false);
-    DiskAccessStorage(const String & directory_path_, bool readonly_ = false);
+    DiskAccessStorage(const String & storage_name_, const String & directory_path_, bool readonly_, AccessChangesNotifier & changes_notifier_);
     ~DiskAccessStorage() override;
 
     const char * getStorageType() const override { return STORAGE_TYPE; }
@@ -27,8 +28,6 @@ public:
     bool isReadOnly() const override { return readonly; }
 
     bool exists(const UUID & id) const override;
-    bool hasSubscription(const UUID & id) const override;
-    bool hasSubscription(AccessEntityType type) const override;
 
 private:
     std::optional<UUID> findImpl(AccessEntityType type, const String & name) const override;
@@ -38,8 +37,6 @@ private:
     std::optional<UUID> insertImpl(const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists) override;
     bool removeImpl(const UUID & id, bool throw_if_not_exists) override;
     bool updateImpl(const UUID & id, const UpdateFunc & update_func, bool throw_if_not_exists) override;
-    scope_guard subscribeForChangesImpl(const UUID & id, const OnChangedHandler & handler) const override;
-    scope_guard subscribeForChangesImpl(AccessEntityType type, const OnChangedHandler & handler) const override;
 
     void clear();
     bool readLists();
@@ -50,9 +47,9 @@ private:
     void listsWritingThreadFunc();
     void stopListsWritingThread();
 
-    bool insertNoLock(const UUID & id, const AccessEntityPtr & new_entity, bool replace_if_exists, bool throw_if_exists, Notifications & notifications);
-    bool removeNoLock(const UUID & id, bool throw_if_not_exists, Notifications & notifications);
-    bool updateNoLock(const UUID & id, const UpdateFunc & update_func, bool throw_if_not_exists, Notifications & notifications);
+    bool insertNoLock(const UUID & id, const AccessEntityPtr & new_entity, bool replace_if_exists, bool throw_if_exists);
+    bool removeNoLock(const UUID & id, bool throw_if_not_exists);
+    bool updateNoLock(const UUID & id, const UpdateFunc & update_func, bool throw_if_not_exists);
 
     AccessEntityPtr readAccessEntityFromDisk(const UUID & id) const;
     void writeAccessEntityToDisk(const UUID & id, const IAccessEntity & entity) const;
@@ -65,10 +62,7 @@ private:
         String name;
         AccessEntityType type;
         mutable AccessEntityPtr entity; /// may be nullptr, if the entity hasn't been loaded yet.
-        mutable std::list<OnChangedHandler> handlers_by_id;
     };
-
-    void prepareNotifications(const UUID & id, const Entry & entry, bool remove, Notifications & notifications) const;
 
     String directory_path;
     std::atomic<bool> readonly;
@@ -79,7 +73,7 @@ private:
     ThreadFromGlobalPool lists_writing_thread;                   /// List files are written in a separate thread.
     std::condition_variable lists_writing_thread_should_exit;    /// Signals `lists_writing_thread` to exit.
     bool lists_writing_thread_is_waiting = false;
-    mutable std::list<OnChangedHandler> handlers_by_type[static_cast<size_t>(AccessEntityType::MAX)];
+    AccessChangesNotifier & changes_notifier;
     mutable std::mutex mutex;
 };
 }

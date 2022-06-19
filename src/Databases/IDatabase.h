@@ -169,6 +169,8 @@ public:
     /// Get the table for work. Return nullptr if there is no table.
     virtual StoragePtr tryGetTable(const String & name, ContextPtr context) const = 0;
 
+    StoragePtr getTable(const String & name, ContextPtr context) const;
+
     virtual UUID tryGetTableUUID(const String & /*table_name*/) const { return UUIDHelpers::Nil; }
 
     using FilterByNameFunction = std::function<bool(const String &)>;

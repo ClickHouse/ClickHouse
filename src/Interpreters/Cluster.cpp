@@ -286,8 +286,9 @@ Cluster::Address Cluster::Address::fromFullString(const String & full_string)
 
 /// Implementation of Clusters class
 
-Clusters::Clusters(const Poco::Util::AbstractConfiguration & config, const Settings & settings, const String & config_prefix)
+Clusters::Clusters(const Poco::Util::AbstractConfiguration & config, const Settings & settings, MultiVersion<Macros>::Version macros, const String & config_prefix)
 {
+    this->macros_ = macros;
     updateClusters(config, settings, config_prefix);
 }
 
@@ -296,7 +297,8 @@ ClusterPtr Clusters::getCluster(const std::string & cluster_name) const
 {
     std::lock_guard lock(mutex);
 
-    auto it = impl.find(cluster_name);
+    auto expanded_cluster_name = macros_->expand(cluster_name);
+    auto it = impl.find(expanded_cluster_name);
     return (it != impl.end()) ? it->second : nullptr;
 }
 
@@ -416,6 +418,8 @@ Cluster::Cluster(const Poco::Util::AbstractConfiguration & config,
             if (address.is_local)
                 info.local_addresses.push_back(address);
 
+            info.all_addresses.push_back(address);
+
             auto pool = ConnectionPoolFactory::instance().get(
                 settings.distributed_connections_pool_size,
                 address.host_name, address.port,
@@ -483,6 +487,7 @@ Cluster::Cluster(const Poco::Util::AbstractConfiguration & config,
             }
 
             Addresses shard_local_addresses;
+            Addresses shard_all_addresses;
 
             ConnectionPoolPtrs all_replicas_pools;
             all_replicas_pools.reserve(replica_addresses.size());
@@ -500,6 +505,7 @@ Cluster::Cluster(const Poco::Util::AbstractConfiguration & config,
                 all_replicas_pools.emplace_back(replica_pool);
                 if (replica.is_local)
                     shard_local_addresses.push_back(replica);
+                shard_all_addresses.push_back(replica);
             }
 
             ConnectionPoolWithFailoverPtr shard_pool = std::make_shared<ConnectionPoolWithFailover>(
@@ -514,6 +520,7 @@ Cluster::Cluster(const Poco::Util::AbstractConfiguration & config,
                 current_shard_num,
                 weight,
                 std::move(shard_local_addresses),
+                std::move(shard_all_addresses),
                 std::move(shard_pool),
                 std::move(all_replicas_pools),
                 internal_replication
@@ -569,6 +576,7 @@ Cluster::Cluster(
         addresses_with_failover.emplace_back(current);
 
         Addresses shard_local_addresses;
+        Addresses all_addresses;
         ConnectionPoolPtrs all_replicas;
         all_replicas.reserve(current.size());
 
@@ -583,6 +591,7 @@ Cluster::Cluster(
             all_replicas.emplace_back(replica_pool);
             if (replica.is_local && !treat_local_as_remote)
                 shard_local_addresses.push_back(replica);
+            all_addresses.push_back(replica);
         }
 
         ConnectionPoolWithFailoverPtr shard_pool = std::make_shared<ConnectionPoolWithFailover>(
@@ -595,6 +604,7 @@ Cluster::Cluster(
             current_shard_num,
             default_weight,
             std::move(shard_local_addresses),
+            std::move(all_addresses),
             std::move(shard_pool),
             std::move(all_replicas),
             false // has_internal_replication
@@ -678,6 +688,8 @@ Cluster::Cluster(Cluster::ReplicasAsShardsTag, const Cluster & from, const Setti
             if (address.is_local)
                 info.local_addresses.push_back(address);
 
+            info.all_addresses.push_back(address);
+
             auto pool = ConnectionPoolFactory::instance().get(
                 settings.distributed_connections_pool_size,
                 address.host_name,
@@ -721,6 +733,20 @@ Cluster::Cluster(Cluster::SubclusterTag, const Cluster & from, const std::vector
     name = from.name;
 
     initMisc();
+}
+
+std::vector<Strings> Cluster::getHostIDs() const
+{
+    std::vector<Strings> host_ids;
+    host_ids.resize(addresses_with_failover.size());
+    for (size_t i = 0; i != addresses_with_failover.size(); ++i)
+    {
+        const auto & addresses = addresses_with_failover[i];
+        host_ids[i].resize(addresses.size());
+        for (size_t j = 0; j != addresses.size(); ++j)
+            host_ids[i][j] = addresses[j].toString();
+    }
+    return host_ids;
 }
 
 const std::string & Cluster::ShardInfo::insertPathForInternalReplication(bool prefer_localhost_replica, bool use_compact_format) const

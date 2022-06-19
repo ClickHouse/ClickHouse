@@ -1,4 +1,4 @@
-#if defined(__ELF__) && !defined(__FreeBSD__)
+#if defined(__ELF__) && !defined(OS_FREEBSD)
 
 /*
  * Copyright 2012-present Facebook, Inc.
@@ -19,7 +19,7 @@
 /** This file was edited for ClickHouse.
   */
 
-#include <string.h>
+#include <cstring>
 
 #include <Common/Elf.h>
 #include <Common/Dwarf.h>

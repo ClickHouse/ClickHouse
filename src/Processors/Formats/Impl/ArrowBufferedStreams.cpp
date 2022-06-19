@@ -48,13 +48,13 @@ arrow::Status ArrowBufferedOutputStream::Write(const void * data, int64_t length
     return arrow::Status::OK();
 }
 
-RandomAccessFileFromSeekableReadBuffer::RandomAccessFileFromSeekableReadBuffer(SeekableReadBuffer & in_, off_t file_size_)
-    : in{in_}, file_size{file_size_}, is_open{true}
+RandomAccessFileFromSeekableReadBuffer::RandomAccessFileFromSeekableReadBuffer(ReadBuffer & in_, off_t file_size_)
+    : in{in_}, seekable_in{dynamic_cast<SeekableReadBuffer &>(in_)}, file_size{file_size_}, is_open{true}
 {
 }
 
-RandomAccessFileFromSeekableReadBuffer::RandomAccessFileFromSeekableReadBuffer(SeekableReadBufferWithSize & in_)
-    : in{in_}, is_open{true}
+RandomAccessFileFromSeekableReadBuffer::RandomAccessFileFromSeekableReadBuffer(ReadBuffer & in_)
+    : in{in_}, seekable_in{dynamic_cast<SeekableReadBuffer &>(in_)}, is_open{true}
 {
 }
 
@@ -62,9 +62,8 @@ arrow::Result<int64_t> RandomAccessFileFromSeekableReadBuffer::GetSize()
 {
     if (!file_size)
     {
-        auto * buf_with_size = dynamic_cast<SeekableReadBufferWithSize *>(&in);
-        if (buf_with_size)
-            file_size = buf_with_size->getTotalSize();
+        if (isBufferWithFileSize(in))
+            file_size = getFileSizeFromReadBuffer(in);
         if (!file_size)
             throw Exception(ErrorCodes::UNKNOWN_FILE_SIZE, "Cannot find out size of file");
     }
@@ -79,7 +78,7 @@ arrow::Status RandomAccessFileFromSeekableReadBuffer::Close()
 
 arrow::Result<int64_t> RandomAccessFileFromSeekableReadBuffer::Tell() const
 {
-    return in.getPosition();
+    return seekable_in.getPosition();
 }
 
 arrow::Result<int64_t> RandomAccessFileFromSeekableReadBuffer::Read(int64_t nbytes, void * out)
@@ -100,7 +99,7 @@ arrow::Result<std::shared_ptr<arrow::Buffer>> RandomAccessFileFromSeekableReadBu
 
 arrow::Status RandomAccessFileFromSeekableReadBuffer::Seek(int64_t position)
 {
-    in.seek(position, SEEK_SET);
+    seekable_in.seek(position, SEEK_SET);
     return arrow::Status::OK();
 }
 
@@ -156,10 +155,10 @@ std::shared_ptr<arrow::io::RandomAccessFile> asArrowFile(
         if (res == 0 && S_ISREG(stat.st_mode))
             return std::make_shared<RandomAccessFileFromSeekableReadBuffer>(*fd_in, stat.st_size);
     }
-    else if (auto * seekable_in = dynamic_cast<SeekableReadBufferWithSize *>(&in))
+    else if (dynamic_cast<SeekableReadBuffer *>(&in) && isBufferWithFileSize(in))
     {
         if (settings.seekable_read)
-            return std::make_shared<RandomAccessFileFromSeekableReadBuffer>(*seekable_in);
+            return std::make_shared<RandomAccessFileFromSeekableReadBuffer>(in);
     }
 
     // fallback to loading the entire file in memory

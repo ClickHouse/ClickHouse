@@ -6,7 +6,6 @@
 #include <Interpreters/CancellationCode.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/StorageID.h>
-#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/CheckResults.h>
 #include <Storages/ColumnDependency.h>
 #include <Storages/IStorage_fwd.h>
@@ -55,8 +54,7 @@ using QueryPlanPtr = std::unique_ptr<QueryPlan>;
 class SinkToStorage;
 using SinkToStoragePtr = std::shared_ptr<SinkToStorage>;
 
-class QueryPipelineBuilder;
-using QueryPipelineBuilderPtr = std::unique_ptr<QueryPipelineBuilder>;
+class QueryPipeline;
 
 class IStoragePolicy;
 using StoragePolicyPtr = std::shared_ptr<const IStoragePolicy>;
@@ -71,10 +69,11 @@ using DatabaseAndTableName = std::pair<String, String>;
 class IBackup;
 using BackupPtr = std::shared_ptr<const IBackup>;
 class IBackupEntry;
-using BackupEntries = std::vector<std::pair<String, std::unique_ptr<IBackupEntry>>>;
+using BackupEntries = std::vector<std::pair<String, std::shared_ptr<const IBackupEntry>>>;
 class IRestoreTask;
 using RestoreTaskPtr = std::unique_ptr<IRestoreTask>;
 struct StorageRestoreSettings;
+class IRestoreCoordination;
 
 struct ColumnSize
 {
@@ -233,7 +232,7 @@ public:
     virtual BackupEntries backupData(ContextPtr context, const ASTs & partitions);
 
     /// Extract data from the backup and put it to the storage.
-    virtual RestoreTaskPtr restoreData(ContextMutablePtr context, const ASTs & partitions, const BackupPtr & backup, const String & data_path_in_backup, const StorageRestoreSettings & restore_settings);
+    virtual RestoreTaskPtr restoreData(ContextMutablePtr context, const ASTs & partitions, const BackupPtr & backup, const String & data_path_in_backup, const StorageRestoreSettings & restore_settings, const std::shared_ptr<IRestoreCoordination> & restore_coordination);
 
     /// Returns whether the column is virtual - by default all columns are real.
     /// Initially reserved virtual column name may be shadowed by real column.
@@ -317,15 +316,13 @@ public:
         ContextPtr /*context*/,
         QueryProcessingStage::Enum & /*processed_stage*/,
         size_t /*max_block_size*/,
-        unsigned /*num_streams*/)
-    {
-        throw Exception("Method watch is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
-    }
+        unsigned /*num_streams*/);
 
     /// Returns true if FINAL modifier must be added to SELECT query depending on required columns.
     /// It's needed for ReplacingMergeTree wrappers such as MaterializedMySQL and MaterializedPostrgeSQL
     virtual bool needRewriteQueryWithFinal(const Names & /*column_names*/) const { return false; }
 
+private:
     /** Read a set of columns from the table.
       * Accepts a list of columns to read, as well as a description of the query,
       *  from which information can be extracted about how to retrieve data
@@ -355,6 +352,7 @@ public:
         size_t /*max_block_size*/,
         unsigned /*num_streams*/);
 
+public:
     /// Other version of read which adds reading step to query plan.
     /// Default implementation creates ReadFromStorageStep and uses usual read.
     virtual void read(
@@ -390,12 +388,9 @@ public:
       *
       * Returns query pipeline if distributed writing is possible, and nullptr otherwise.
       */
-    virtual QueryPipelineBuilderPtr distributedWrite(
+    virtual std::optional<QueryPipeline> distributedWrite(
         const ASTInsertQuery & /*query*/,
-        ContextPtr /*context*/)
-    {
-        return nullptr;
-    }
+        ContextPtr /*context*/);
 
     /** Delete the table data. Called before deleting the directory with the data.
       * The method can be called only after detaching table from Context (when no queries are performed with table).
@@ -584,7 +579,7 @@ public:
     /// Returns true if all disks of storage are read-only.
     virtual bool isStaticStorage() const;
 
-    virtual bool isColumnOriented() const { return false; }
+    virtual bool supportsSubsetOfColumns() const { return false; }
 
     /// If it is possible to quickly determine exact number of rows in the table at this moment of time, then return it.
     /// Used for:
@@ -633,6 +628,16 @@ public:
     {
         return getStorageSnapshot(metadata_snapshot, query_context);
     }
+
+    /// A helper to implement read()
+    static void readFromPipe(
+        QueryPlan & query_plan,
+        Pipe pipe,
+        const Names & column_names,
+        const StorageSnapshotPtr & storage_snapshot,
+        SelectQueryInfo & query_info,
+        ContextPtr context,
+        std::string storage_name);
 
 private:
     /// Lock required for alter queries (lockForAlter).

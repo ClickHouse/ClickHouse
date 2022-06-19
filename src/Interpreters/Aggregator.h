@@ -4,7 +4,7 @@
 #include <memory>
 #include <functional>
 
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 
 #include <base/StringRef.h>
 #include <Common/Arena.h>
@@ -18,6 +18,7 @@
 #include <Common/ColumnsHashing.h>
 #include <Common/assert_cast.h>
 #include <Common/filesystemHelpers.h>
+#include <Core/ColumnNumbers.h>
 
 #include <QueryPipeline/SizeLimits.h>
 
@@ -941,9 +942,10 @@ public:
                 size_t max_entries_for_hash_table_stats_,
                 size_t max_size_to_preallocate_for_aggregation_);
 
-            bool isCollectionAndUseEnabled() const;
+            bool isCollectionAndUseEnabled() const { return key != 0; }
+            void disable() { key = 0; }
 
-            const UInt64 key = 0;
+            UInt64 key = 0;
             const size_t max_entries_for_hash_table_stats = 0;
             const size_t max_size_to_preallocate_for_aggregation = 0;
         };
@@ -990,9 +992,13 @@ public:
         }
 
         /// Only parameters that matter during merge.
-        Params(const Block & intermediate_header_,
-            const ColumnNumbers & keys_, const AggregateDescriptions & aggregates_, bool overflow_row_, size_t max_threads_)
-            : Params(Block(), keys_, aggregates_, overflow_row_, 0, OverflowMode::THROW, 0, 0, 0, false, nullptr, max_threads_, 0, false, 0)
+        Params(
+            const Block & intermediate_header_,
+            const ColumnNumbers & keys_,
+            const AggregateDescriptions & aggregates_,
+            bool overflow_row_,
+            size_t max_threads_)
+            : Params(Block(), keys_, aggregates_, overflow_row_, 0, OverflowMode::THROW, 0, 0, 0, false, nullptr, max_threads_, 0, false, 0, {}, {})
         {
             intermediate_header = intermediate_header_;
         }
@@ -1022,12 +1028,17 @@ public:
     using AggregateFunctionsPlainPtrs = std::vector<const IAggregateFunction *>;
 
     /// Process one block. Return false if the processing should be aborted (with group_by_overflow_mode = 'break').
-    bool executeOnBlock(const Block & block, AggregatedDataVariants & result,
-        ColumnRawPtrs & key_columns, AggregateColumns & aggregate_columns,    /// Passed to not create them anew for each block
+    bool executeOnBlock(const Block & block,
+        AggregatedDataVariants & result,
+        ColumnRawPtrs & key_columns,
+        AggregateColumns & aggregate_columns, /// Passed to not create them anew for each block
         bool & no_more_keys) const;
 
-    bool executeOnBlock(Columns columns, UInt64 num_rows, AggregatedDataVariants & result,
-        ColumnRawPtrs & key_columns, AggregateColumns & aggregate_columns,    /// Passed to not create them anew for each block
+    bool executeOnBlock(Columns columns,
+        size_t row_begin, size_t row_end,
+        AggregatedDataVariants & result,
+        ColumnRawPtrs & key_columns,
+        AggregateColumns & aggregate_columns, /// Passed to not create them anew for each block
         bool & no_more_keys) const;
 
     /// Used for aggregate projection.
@@ -1160,12 +1171,33 @@ private:
     void destroyAllAggregateStates(AggregatedDataVariants & result) const;
 
 
+    /// Used for optimize_aggregation_in_order:
+    /// - No two-level aggregation
+    /// - No external aggregation
+    /// - No without_key support (it is implemented using executeOnIntervalWithoutKeyImpl())
+    void executeOnBlockSmall(
+        AggregatedDataVariants & result,
+        size_t row_begin,
+        size_t row_end,
+        ColumnRawPtrs & key_columns,
+        AggregateFunctionInstruction * aggregate_instructions) const;
+
+    void executeImpl(
+        AggregatedDataVariants & result,
+        size_t row_begin,
+        size_t row_end,
+        ColumnRawPtrs & key_columns,
+        AggregateFunctionInstruction * aggregate_instructions,
+        bool no_more_keys = false,
+        AggregateDataPtr overflow_row = nullptr) const;
+
     /// Process one data block, aggregate the data into a hash table.
     template <typename Method>
     void executeImpl(
         Method & method,
         Arena * aggregates_pool,
-        size_t rows,
+        size_t row_begin,
+        size_t row_end,
         ColumnRawPtrs & key_columns,
         AggregateFunctionInstruction * aggregate_instructions,
         bool no_more_keys,
@@ -1177,7 +1209,8 @@ private:
         Method & method,
         typename Method::State & state,
         Arena * aggregates_pool,
-        size_t rows,
+        size_t row_begin,
+        size_t row_end,
         AggregateFunctionInstruction * aggregate_instructions,
         AggregateDataPtr overflow_row) const;
 
@@ -1185,7 +1218,8 @@ private:
     template <bool use_compiled_functions>
     void executeWithoutKeyImpl(
         AggregatedDataWithoutKey & res,
-        size_t rows,
+        size_t row_begin,
+        size_t row_end,
         AggregateFunctionInstruction * aggregate_instructions,
         Arena * arena) const;
 

@@ -3,7 +3,7 @@ sidebar_position: 17
 sidebar_label: Command-Line Client
 ---
 
-# Command-line Client {#command-line-client}
+# Command-line Client
 
 ClickHouse provides a native command-line client: `clickhouse-client`. The client supports command-line options and configuration files. For more information, see [Configuring](#interfaces_cli_configuration).
 

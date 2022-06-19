@@ -1311,7 +1311,7 @@
 "toSecond"
 "toStartOfDay"
 "toStartOfFifteenMinutes"
-"toStartOfFiveMinute"
+"toStartOfFiveMinutes"
 "toStartOfHour"
 "toStartOfInterval"
 "toStartOfISOYear"

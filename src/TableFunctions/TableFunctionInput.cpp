@@ -60,7 +60,7 @@ ColumnsDescription TableFunctionInput::getActualTableStructure(ContextPtr contex
 
 StoragePtr TableFunctionInput::executeImpl(const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/) const
 {
-    auto storage = StorageInput::create(StorageID(getDatabaseName(), table_name), getActualTableStructure(context));
+    auto storage = std::make_shared<StorageInput>(StorageID(getDatabaseName(), table_name), getActualTableStructure(context));
     storage->startup();
     return storage;
 }

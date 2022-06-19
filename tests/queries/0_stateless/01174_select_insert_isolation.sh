@@ -35,8 +35,9 @@ function thread_insert_rollback()
 
 function thread_select()
 {
-    trap "exit 0" INT
-    while true; do
+    trap "STOP_THE_LOOP=1" INT
+    STOP_THE_LOOP=0
+    while [[ $STOP_THE_LOOP != 1 ]]; do
         # Result of `uniq | wc -l` must be 1 if the first and the last queries got the same result
         $CLICKHOUSE_CLIENT --multiquery --query "
         BEGIN TRANSACTION;

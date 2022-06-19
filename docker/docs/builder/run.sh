@@ -2,8 +2,10 @@
 
 set -ex
 
-if [ "$GIT_DOCS_BRANCH" ]; then
-  git fetch origin --depth=1 "$GIT_DOCS_BRANCH:$GIT_DOCS_BRANCH"
+GIT_BRANCH=$(git branch --show-current)
+
+if [ "$GIT_DOCS_BRANCH" ] && ! [ "$GIT_DOCS_BRANCH" == "$GIT_BRANCH" ]; then
+  git fetch origin --depth=1 -- "$GIT_DOCS_BRANCH:$GIT_DOCS_BRANCH"
   git checkout "$GIT_DOCS_BRANCH"
 else
   # Update docs repo

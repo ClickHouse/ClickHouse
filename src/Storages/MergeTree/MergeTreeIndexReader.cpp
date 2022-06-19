@@ -22,7 +22,7 @@ std::unique_ptr<MergeTreeReaderStream> makeIndexReader(
         std::move(settings), mark_cache, uncompressed_cache,
         part->getFileSizeOrZero(index->getFileName() + extension),
         &part->index_granularity_info,
-        ReadBufferFromFileBase::ProfileCallback{}, CLOCK_MONOTONIC_COARSE);
+        ReadBufferFromFileBase::ProfileCallback{}, CLOCK_MONOTONIC_COARSE, false);
 }
 
 }
@@ -68,7 +68,7 @@ void MergeTreeIndexReader::seek(size_t mark)
 MergeTreeIndexGranulePtr MergeTreeIndexReader::read()
 {
     auto granule = index->createIndexGranule();
-    granule->deserializeBinary(*stream->data_buffer, version);
+    granule->deserializeBinary(*stream->getDataBuffer(), version);
     return granule;
 }
 
