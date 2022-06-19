@@ -9,7 +9,11 @@ cluster = ClickHouseCluster(__file__)
 
 node1 = cluster.add_instance(
     "node1",
-    main_configs=["configs/remote_servers.xml", "configs/backups_disk.xml"],
+    main_configs=[
+        "configs/remote_servers.xml",
+        "configs/replicated_access_storage.xml",
+        "configs/backups_disk.xml",
+    ],
     user_configs=["configs/allow_experimental_database_replicated.xml"],
     external_dirs=["/backups/"],
     macros={"replica": "node1", "shard": "shard1"},
@@ -18,7 +22,11 @@ node1 = cluster.add_instance(
 
 node2 = cluster.add_instance(
     "node2",
-    main_configs=["configs/remote_servers.xml", "configs/backups_disk.xml"],
+    main_configs=[
+        "configs/remote_servers.xml",
+        "configs/replicated_access_storage.xml",
+        "configs/backups_disk.xml",
+    ],
     user_configs=["configs/allow_experimental_database_replicated.xml"],
     external_dirs=["/backups/"],
     macros={"replica": "node2", "shard": "shard1"},
@@ -28,7 +36,11 @@ node2 = cluster.add_instance(
 
 node3 = cluster.add_instance(
     "node3",
-    main_configs=["configs/remote_servers.xml", "configs/backups_disk.xml"],
+    main_configs=[
+        "configs/remote_servers.xml",
+        "configs/replicated_access_storage.xml",
+        "configs/backups_disk.xml",
+    ],
     user_configs=["configs/allow_experimental_database_replicated.xml"],
     external_dirs=["/backups/"],
     macros={"replica": "node3", "shard": "shard1"},
@@ -53,7 +65,7 @@ def drop_after_test():
         node1.query("DROP TABLE IF EXISTS tbl ON CLUSTER 'cluster3' NO DELAY")
         node1.query("DROP TABLE IF EXISTS tbl2 ON CLUSTER 'cluster3' NO DELAY")
         node1.query("DROP DATABASE IF EXISTS mydb ON CLUSTER 'cluster3' NO DELAY")
-        node1.query("DROP USER IF EXISTS u1 ON CLUSTER 'cluster3'")
+        node1.query("DROP USER IF EXISTS u1, u2 ON CLUSTER 'cluster3'")
 
 
 backup_id_counter = 0
@@ -423,7 +435,7 @@ def test_required_privileges():
 
     node1.query("INSERT INTO tbl VALUES (100)")
 
-    node1.query("CREATE USER u1 ON CLUSTER 'cluster'")
+    node1.query("CREATE USER u1")
 
     backup_name = new_backup_name()
     expected_error = "necessary to have grant BACKUP ON default.tbl"
@@ -431,7 +443,7 @@ def test_required_privileges():
         f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name}", user="u1"
     )
 
-    node1.query("GRANT BACKUP ON tbl TO u1 ON CLUSTER 'cluster'")
+    node1.query("GRANT BACKUP ON tbl TO u1")
     node1.query(f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name}", user="u1")
 
     node1.query(f"DROP TABLE tbl ON CLUSTER 'cluster' NO DELAY")
@@ -441,7 +453,7 @@ def test_required_privileges():
         f"RESTORE TABLE tbl AS tbl2 ON CLUSTER 'cluster' FROM {backup_name}", user="u1"
     )
 
-    node1.query("GRANT INSERT, CREATE TABLE ON tbl2 TO u1 ON CLUSTER 'cluster'")
+    node1.query("GRANT INSERT, CREATE TABLE ON tbl2 TO u1")
     node1.query(
         f"RESTORE TABLE tbl AS tbl2 ON CLUSTER 'cluster' FROM {backup_name}", user="u1"
     )
@@ -456,7 +468,37 @@ def test_required_privileges():
         f"RESTORE ALL ON CLUSTER 'cluster' FROM {backup_name}", user="u1"
     )
 
-    node1.query("GRANT INSERT, CREATE TABLE ON tbl TO u1 ON CLUSTER 'cluster'")
+    node1.query("GRANT INSERT, CREATE TABLE ON tbl TO u1")
     node1.query(f"RESTORE ALL ON CLUSTER 'cluster' FROM {backup_name}", user="u1")
 
     assert node2.query("SELECT * FROM tbl") == "100\n"
+
+
+def test_system_users():
+    node1.query("CREATE USER u1 SETTINGS custom_a=123")
+    node1.query("GRANT SELECT ON tbl TO u1")
+
+    backup_name = new_backup_name()
+    node1.query("CREATE USER u2 SETTINGS allow_backup=false")
+
+    expected_error = "necessary to have grant BACKUP ON system.users"
+    assert expected_error in node1.query_and_get_error(f"BACKUP TABLE system.users ON CLUSTER 'cluster' TO {backup_name}", user='u2')
+
+    node1.query("GRANT BACKUP ON system.users TO u2")
+    node1.query(f"BACKUP TABLE system.users ON CLUSTER 'cluster' TO {backup_name}", user='u2')
+
+    node1.query("DROP USER u1")
+
+    expected_error = "necessary to have grant CREATE USER ON *.*"
+    assert expected_error in node1.query_and_get_error(f"RESTORE TABLE system.users ON CLUSTER 'cluster' FROM {backup_name}", user='u2')
+
+    node1.query("GRANT CREATE USER ON *.* TO u2")
+
+    expected_error = "necessary to have grant SELECT ON default.tbl WITH GRANT OPTION"
+    assert expected_error in node1.query_and_get_error(f"RESTORE TABLE system.users ON CLUSTER 'cluster' FROM {backup_name}", user='u2')
+
+    node1.query("GRANT SELECT ON tbl TO u2 WITH GRANT OPTION")
+    node1.query(f"RESTORE TABLE system.users ON CLUSTER 'cluster' FROM {backup_name}", user='u2')
+
+    assert node1.query("SHOW CREATE USER u1") == "CREATE USER u1 SETTINGS custom_a = 123\n"
+    assert node1.query("SHOW GRANTS FOR u1") == "GRANT SELECT ON default.tbl TO u1\n"
