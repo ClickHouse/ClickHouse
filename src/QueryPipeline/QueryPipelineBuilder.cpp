@@ -18,6 +18,8 @@
 #include <Interpreters/IJoin.h>
 #include <Common/typeid_cast.h>
 #include <Common/CurrentThread.h>
+#include <Processors/BarrierProcessor.h>
+#include <Processors/ConcatProcessor.h>
 #include <Processors/DelayedPortsProcessor.h>
 #include <Processors/RowsBeforeLimitCounter.h>
 #include <Processors/Sources/RemoteSource.h>
@@ -389,20 +391,43 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelines(
     auto lit = left->pipe.output_ports.begin();
     auto rit = right->pipe.output_ports.begin();
 
+    auto barrier = std::make_shared<BarrierProcessor>();
+    if (collected_processors)
+        collected_processors->emplace_back(barrier);
+    left->pipe.processors.emplace_back(barrier);
+
     for (size_t i = 0; i < num_streams; ++i)
     {
         auto joining = std::make_shared<JoiningTransform>(left->getHeader(), join, max_block_size, false, default_totals, finish_counter);
         connect(**lit, joining->getInputs().front());
         connect(**rit, joining->getInputs().back());
-        *lit = &joining->getOutputs().front();
+        connect(*joining->getFinishedSignal(), barrier->addInputPort());
+
+        // Process delayed joined blocks when all JoiningTransform are finished.
+        auto delayed = std::make_shared<DelayedJoinedBlocksTransform>(left->getHeader(), join);
+        connect(barrier->addOutputPort(), delayed->getInputs().front());
+
+        // Concatenate JoiningTransform output with DelayedJoinedBlocksTransform output
+        Block header = joining->getOutputs().front().getHeader();
+        auto concat = std::make_shared<ConcatProcessor>(header, 2);
+        connect(joining->getOutputs().front(), concat->getInputs().front());
+        connect(delayed->getOutputs().front(), concat->getInputs().back());
+
+        *lit = &concat->getOutputs().front();
 
         ++lit;
         ++rit;
 
         if (collected_processors)
+        {
             collected_processors->emplace_back(joining);
+            collected_processors->emplace_back(delayed);
+            collected_processors->emplace_back(concat);
+        }
 
         left->pipe.processors.emplace_back(std::move(joining));
+        left->pipe.processors.emplace_back(std::move(delayed));
+        left->pipe.processors.emplace_back(std::move(concat));
     }
 
     if (left->hasTotals())
