@@ -166,7 +166,7 @@ namespace
 }
 
 
-DiskAccessStorage::DiskAccessStorage(const String & storage_name_, const String & directory_path_, bool readonly_, bool allow_backup_, AccessChangesNotifier & changes_notifier_)
+DiskAccessStorage::DiskAccessStorage(const String & storage_name_, const String & directory_path_, AccessChangesNotifier & changes_notifier_, bool readonly_, bool allow_backup_)
     : IAccessStorage(storage_name_), changes_notifier(changes_notifier_)
 {
     directory_path = makeDirectoryPathCanonical(directory_path_);

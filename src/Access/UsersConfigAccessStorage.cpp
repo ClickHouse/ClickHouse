@@ -523,10 +523,11 @@ namespace
     }
 }
 
-UsersConfigAccessStorage::UsersConfigAccessStorage(const String & storage_name_, AccessControl & access_control_)
+UsersConfigAccessStorage::UsersConfigAccessStorage(const String & storage_name_, AccessControl & access_control_, bool allow_backup_)
     : IAccessStorage(storage_name_)
     , access_control(access_control_)
-    , memory_storage(storage_name_, /* allow_backup= */ false, access_control.getChangesNotifier())
+    , memory_storage(storage_name_, access_control.getChangesNotifier(), false)
+    , backup_allowed(allow_backup_)
 {
 }
 

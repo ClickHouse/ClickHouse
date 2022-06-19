@@ -62,21 +62,16 @@ public:
     void setUsersConfig(const Poco::Util::AbstractConfiguration & users_config_);
 
     /// Adds UsersConfigAccessStorage.
-    void addUsersConfigStorage(const Poco::Util::AbstractConfiguration & users_config_);
-
     void addUsersConfigStorage(const String & storage_name_,
-                               const Poco::Util::AbstractConfiguration & users_config_);
-
-    void addUsersConfigStorage(const String & users_config_path_,
-                               const String & include_from_path_,
-                               const String & preprocessed_dir_,
-                               const zkutil::GetZooKeeper & get_zookeeper_function_ = {});
+                               const Poco::Util::AbstractConfiguration & users_config_,
+                               bool allow_backup_);
 
     void addUsersConfigStorage(const String & storage_name_,
                                const String & users_config_path_,
                                const String & include_from_path_,
                                const String & preprocessed_dir_,
-                               const zkutil::GetZooKeeper & get_zookeeper_function_ = {});
+                               const zkutil::GetZooKeeper & get_zookeeper_function_,
+                               bool allow_backup_);
 
     /// Loads access entities from the directory on the local disk.
     /// Use that directory to keep created users/roles/etc.
