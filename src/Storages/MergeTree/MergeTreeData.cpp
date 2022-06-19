@@ -4401,10 +4401,7 @@ std::set<String> MergeTreeData::getPartitionIdsAffectedByCommands(
 
 
 MergeTreeData::DataPartsVector MergeTreeData::getDataPartsVectorForInternalUsage(
-    const DataPartStates & affordable_states,
-    const DataPartsLock & /*lock*/,
-    DataPartStateVector * out_states,
-    bool require_projection_parts) const
+    const DataPartStates & affordable_states, const DataPartsLock & /*lock*/, DataPartStateVector * out_states) const
 {
     DataPartsVector res;
     DataPartsVector buf;
@@ -4412,83 +4409,86 @@ MergeTreeData::DataPartsVector MergeTreeData::getDataPartsVectorForInternalUsage
     for (auto state : affordable_states)
     {
         auto range = getDataPartsStateRange(state);
-
-        if (require_projection_parts)
-        {
-            for (const auto & part : range)
-            {
-                for (const auto & [_, projection_part] : part->getProjectionParts())
-                    res.push_back(projection_part);
-            }
-        }
-        else
-        {
-            std::swap(buf, res);
-            res.clear();
-            std::merge(range.begin(), range.end(), buf.begin(), buf.end(), std::back_inserter(res), LessDataPart()); //-V783
-        }
+        std::swap(buf, res);
+        res.clear();
+        std::merge(range.begin(), range.end(), buf.begin(), buf.end(), std::back_inserter(res), LessDataPart()); //-V783
     }
 
     if (out_states != nullptr)
     {
         out_states->resize(res.size());
-        if (require_projection_parts)
-        {
-            for (size_t i = 0; i < res.size(); ++i)
-                (*out_states)[i] = res[i]->getParentPart()->getState();
-        }
-        else
-        {
-            for (size_t i = 0; i < res.size(); ++i)
-                (*out_states)[i] = res[i]->getState();
-        }
+        for (size_t i = 0; i < res.size(); ++i)
+            (*out_states)[i] = res[i]->getState();
     }
 
     return res;
 }
 
-MergeTreeData::DataPartsVector MergeTreeData::getDataPartsVectorForInternalUsage(
-    const DataPartStates & affordable_states,
-    DataPartStateVector * out_states,
-    bool require_projection_parts) const
+MergeTreeData::DataPartsVector
+MergeTreeData::getDataPartsVectorForInternalUsage(const DataPartStates & affordable_states, DataPartStateVector * out_states) const
 {
     auto lock = lockParts();
-    return getDataPartsVectorForInternalUsage(affordable_states, lock, out_states, require_projection_parts);
+    return getDataPartsVectorForInternalUsage(affordable_states, lock, out_states);
 }
 
-MergeTreeData::DataPartsVector
-MergeTreeData::getAllDataPartsVector(MergeTreeData::DataPartStateVector * out_states, bool require_projection_parts) const
+MergeTreeData::ProjectionPartsVector
+MergeTreeData::getProjectionPartsVectorForInternalUsage(const DataPartStates & affordable_states, DataPartStateVector * out_states) const
+{
+    auto lock = lockParts();
+    ProjectionPartsVector res;
+    for (auto state : affordable_states)
+    {
+        auto range = getDataPartsStateRange(state);
+        for (const auto & part : range)
+        {
+            res.data_parts.push_back(part);
+            for (const auto & [_, projection_part] : part->getProjectionParts())
+                res.projection_parts.push_back(projection_part);
+        }
+    }
+
+    if (out_states != nullptr)
+    {
+        out_states->resize(res.projection_parts.size());
+        for (size_t i = 0; i < res.projection_parts.size(); ++i)
+            (*out_states)[i] = res.projection_parts[i]->getParentPart()->getState();
+    }
+
+    return res;
+}
+
+MergeTreeData::DataPartsVector MergeTreeData::getAllDataPartsVector(MergeTreeData::DataPartStateVector * out_states) const
 {
     DataPartsVector res;
-    if (require_projection_parts)
+    auto lock = lockParts();
+    res.assign(data_parts_by_info.begin(), data_parts_by_info.end());
+    if (out_states != nullptr)
     {
-        auto lock = lockParts();
-        for (const auto & part : data_parts_by_info)
-        {
-            for (const auto & [p_name, projection_part] : part->getProjectionParts())
-                res.push_back(projection_part);
-        }
-
-        if (out_states != nullptr)
-        {
-            out_states->resize(res.size());
-            for (size_t i = 0; i < res.size(); ++i)
-                (*out_states)[i] = res[i]->getParentPart()->getState();
-        }
-    }
-    else
-    {
-        auto lock = lockParts();
-        res.assign(data_parts_by_info.begin(), data_parts_by_info.end());
-
-        if (out_states != nullptr)
-        {
-            out_states->resize(res.size());
-            for (size_t i = 0; i < res.size(); ++i)
-                (*out_states)[i] = res[i]->getState();
-        }
+        out_states->resize(res.size());
+        for (size_t i = 0; i < res.size(); ++i)
+            (*out_states)[i] = res[i]->getState();
     }
 
+    return res;
+}
+
+MergeTreeData::ProjectionPartsVector MergeTreeData::getAllProjectionPartsVector(MergeTreeData::DataPartStateVector * out_states) const
+{
+    ProjectionPartsVector res;
+    auto lock = lockParts();
+    for (const auto & part : data_parts_by_info)
+    {
+        res.data_parts.push_back(part);
+        for (const auto & [p_name, projection_part] : part->getProjectionParts())
+            res.projection_parts.push_back(projection_part);
+    }
+
+    if (out_states != nullptr)
+    {
+        out_states->resize(res.projection_parts.size());
+        for (size_t i = 0; i < res.projection_parts.size(); ++i)
+            (*out_states)[i] = res.projection_parts[i]->getParentPart()->getState();
+    }
     return res;
 }
 
