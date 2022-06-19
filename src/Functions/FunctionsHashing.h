@@ -1383,7 +1383,7 @@ template <typename Result>
 void highwayhash(const char * s, size_t len, Result* result)
 {
     using namespace highwayhash;
-    const HHKey key HH_ALIGNAS(32) = {1, 2, 3, 4};
+    const HHKey key HH_ALIGNAS(32) = {0xF439CD9F63184D8CULL, 0xA977B7CA40BBF830ULL, 0x634A7D0F579F3A00ULL, 0x84D9500967404492ULL};
     HHStateT<HH_TARGET> state(key);
     HighwayHashT(&state, s, len, result);
 }
@@ -1423,7 +1423,7 @@ struct ImplHighwayHash128
     {
         union {
             UInt64 u64[2];
-            UInt128 u128;
+            UInt128 __attribute__((__may_alias__)) u128;
         };
         highwayhash<highwayhash::HHResult128>(s, len, &u64);  // actually, HHResult128 is UInt64[2]
         return u128;
@@ -1452,7 +1452,7 @@ struct ImplHighwayHash256
     {
         union {
             UInt64 u64[4];
-            UInt256 u256;
+            UInt256 __attribute__((__may_alias__)) u256;
         };
         highwayhash<highwayhash::HHResult256>(s, len, &u64);  // actually, HHResult256 is UInt64[4]
         return u256;
