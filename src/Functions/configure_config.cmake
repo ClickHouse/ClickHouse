@@ -1,7 +1,7 @@
 if (TARGET ch_contrib::fastops)
     set(USE_FASTOPS 1)
 endif()
-if (TARGET ch_contrib::base58)
+if (TARGET ch_contrib::base-x)
     set(USE_BASE58 1)
 endif()
 if (TARGET ch_contrib::base64)

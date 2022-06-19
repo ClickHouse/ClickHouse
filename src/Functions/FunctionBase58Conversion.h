@@ -26,19 +26,19 @@ struct Base58Encode
 {
     static constexpr auto name = "base58Encode";
 
-    static void process(const ColumnString * input, ColumnString::MutablePtr& dst_column, std::string& alphabet, size_t input_rows_count)
+    static void process(const ColumnString& input, ColumnString::MutablePtr& dst_column, std::string& alphabet, size_t input_rows_count)
     {
         auto & dst_data = dst_column->getChars();
         auto & dst_offsets = dst_column->getOffsets();
 
-        size_t current_allocated_size = input->getChars().size();
+        size_t current_allocated_size = input.getChars().size();
 
         dst_data.resize(current_allocated_size);
         dst_offsets.resize(input_rows_count);
 
-        const ColumnString::Offsets & src_offsets = input->getOffsets();
+        const ColumnString::Offsets & src_offsets = input.getOffsets();
 
-        const auto * source = input->getChars().raw_data();
+        const auto * source = input.getChars().raw_data();
         auto * dst = dst_data.data();
         auto * dst_pos = dst;
 
@@ -48,8 +48,9 @@ struct Base58Encode
         const auto& encoder = (alphabet == "bitcoin") ? Base58::bitcoin() :
                              ((alphabet == "flickr") ? Base58::flickr() :
                              ((alphabet == "ripple") ? Base58::ripple() :
-                                                       Base58::base58()));
+                                                       Base58::base58())); //GMP
 
+        std::string encoded;
         for (size_t row = 0; row < input_rows_count; ++row)
         {
             size_t srclen = src_offsets[row] - src_offset_prev - 1;
@@ -57,7 +58,7 @@ struct Base58Encode
             /// We don't know the size of the result string beforehand (it's not byte-to-byte encoding),
             /// so we may need to do many resizes (the worst case -- we'll do it for each row)
             /// This way we do exponential resizes and one final resize after whole operation is complete
-            std::string encoded;
+            encoded.clear();
             if (srclen)
                 encoder.encode(encoded, source, srclen);
             size_t outlen = encoded.size();
@@ -66,14 +67,15 @@ struct Base58Encode
             {
                 current_allocated_size += current_allocated_size;
                 dst_data.resize(current_allocated_size);
+                auto processed_offset = dst_pos - dst;
+                dst = dst_data.data();
+                dst_pos = dst;
+                dst_pos += processed_offset;
             }
-            if (srclen)
-                std::strcpy(reinterpret_cast<char *>(dst_pos), encoded.c_str());
+            std::memcpy(dst_pos, encoded.c_str(), ++outlen);
 
             source += srclen + 1;
             dst_pos += outlen;
-            *dst_pos = '\0';
-            dst_pos += 1;
 
             dst_offsets[row] = dst_pos - dst;
             src_offset_prev = src_offsets[row];
@@ -88,19 +90,19 @@ struct Base58Decode
 {
     static constexpr auto name = "base58Decode";
 
-    static void process(const ColumnString * input, ColumnString::MutablePtr& dst_column, std::string& alphabet, size_t input_rows_count)
+    static void process(const ColumnString& input, ColumnString::MutablePtr& dst_column, std::string& alphabet, size_t input_rows_count)
     {
         auto & dst_data = dst_column->getChars();
         auto & dst_offsets = dst_column->getOffsets();
 
-        size_t current_allocated_size = input->getChars().size();
+        size_t current_allocated_size = input.getChars().size();
 
         dst_data.resize(current_allocated_size);
         dst_offsets.resize(input_rows_count);
 
-        const ColumnString::Offsets & src_offsets = input->getOffsets();
+        const ColumnString::Offsets & src_offsets = input.getOffsets();
 
-        const auto * source = input->getChars().raw_data();
+        const auto * source = input.getChars().raw_data();
         auto * dst = dst_data.data();
         auto * dst_pos = dst;
 
@@ -112,6 +114,7 @@ struct Base58Decode
                              ((alphabet == "ripple") ? Base58::ripple() :
                                                        Base58::base58()));
 
+        std::string decoded;
         for (size_t row = 0; row < input_rows_count; ++row)
         {
             size_t srclen = src_offsets[row] - src_offset_prev - 1;
@@ -119,21 +122,24 @@ struct Base58Decode
             /// We don't know the size of the result string beforehand (it's not byte-to-byte encoding),
             /// so we may need to do many resizes (the worst case -- we'll do it for each row)
             /// This way we do exponential resizes and one final resize after whole operation is complete
-            std::string decoded;
-            decoder.decode(decoded, source, srclen);
+            decoded.clear();
+            if (srclen)
+                decoder.decode(decoded, source, srclen);
             size_t outlen = decoded.size();
 
             if (processed_size + outlen >= current_allocated_size)
             {
                 current_allocated_size += current_allocated_size;
                 dst_data.resize(current_allocated_size);
+                auto processed_offset = dst_pos - dst;
+                dst = dst_data.data();
+                dst_pos = dst;
+                dst_pos += processed_offset;
             }
-            std::strcpy(reinterpret_cast<char *>(dst_pos), decoded.c_str());
+            std::memcpy(dst_pos, decoded.c_str(), ++outlen);
 
             source += srclen + 1;
             dst_pos += outlen;
-            *dst_pos = '\0';
-            dst_pos += 1;
 
             dst_offsets[row] = dst_pos - dst;
             src_offset_prev = src_offsets[row];
@@ -216,7 +222,7 @@ public:
 
         auto dst_column = ColumnString::create();
 
-        Func::process(input, dst_column, alphabet, input_rows_count);
+        Func::process(*input, dst_column, alphabet, input_rows_count);
 
         return dst_column;
     }
