@@ -83,7 +83,6 @@ public:
         Scalars scalars_,
         Tables external_tables_,
         Poco::Logger * log_,
-        UInt32 shard_count_,
         std::shared_ptr<const StorageLimitsList> storage_limits_);
 
     String getName() const override { return "ReadFromRemoteParallelReplicas"; }
@@ -110,8 +109,6 @@ private:
     std::shared_ptr<const StorageLimitsList> storage_limits;
 
     Poco::Logger * log;
-
-    UInt32 shard_count{0};
 };
 
 }

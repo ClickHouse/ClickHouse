@@ -7,9 +7,46 @@
 #include <stdio.h>
 #include <string.h>
 #include <errno.h>
+#include <memory>
+#include <iostream>
 
 #include "types.h"
 
+/// blocking write
+ssize_t write_data(int fd, const void *buf, size_t count)
+{
+    for (size_t n = 0; n < count;)
+    {
+        ssize_t sz = write(fd, reinterpret_cast<const char*>(buf) + n, count - n);
+        if (sz < 0)
+        {
+            if (errno == EINTR)
+                continue;
+            return sz;
+        }
+        n += sz;
+    }
+    return count;
+}
+
+/// blocking read
+ssize_t read_data(int fd, void *buf, size_t count)
+{
+    for (size_t n = 0; n < count;)
+    {
+        ssize_t sz = read(fd, reinterpret_cast<char*>(buf) + n, count - n);
+        if (sz < 0)
+        {
+            if (errno == EINTR)
+                continue;
+            return sz;
+        }
+        if (sz == 0)
+            return count - n;
+        n += sz;
+    }
+    return count;
+}
 
 /// Main compression part
 int doCompress(char * input, char * output, off_t & in_offset, off_t & out_offset,
@@ -18,7 +55,7 @@ int doCompress(char * input, char * output, off_t & in_offset, off_t & out_offse
     size_t compressed_size = ZSTD_compress2(cctx, output + out_offset, output_size, input + in_offset, input_size);
     if (ZSTD_isError(compressed_size))
     {
-        fprintf(stderr, "Error (ZSTD): %zu %s\n", compressed_size, ZSTD_getErrorName(compressed_size));
+        std::cerr << "Error (ZSTD): " << compressed_size << " " << ZSTD_getErrorName(compressed_size) << std::endl;
         return 1;
     }
     in_offset += input_size;
@@ -43,7 +80,7 @@ int compress(int in_fd, int out_fd, int level, off_t & pointer, const struct sta
     ZSTD_CCtx * cctx = ZSTD_createCCtx();
     if (cctx == nullptr)
     {
-        fprintf(stderr, "Error (ZSTD): failed to create compression context\n");
+        std::cerr << "Error (ZSTD): failed to create compression context" << std::endl;
         return 1;
     }
 
@@ -53,13 +90,13 @@ int compress(int in_fd, int out_fd, int level, off_t & pointer, const struct sta
     check_result = ZSTD_CCtx_setParameter(cctx, ZSTD_c_compressionLevel, level);
     if (ZSTD_isError(check_result))
     {
-        fprintf(stderr, "Error (ZSTD): %zu %s\n", check_result, ZSTD_getErrorName(check_result));
+        std::cerr << "Error (ZSTD): " << check_result << " " << ZSTD_getErrorName(check_result) << std::endl;
         return 1;
     }
     check_result = ZSTD_CCtx_setParameter(cctx, ZSTD_c_checksumFlag, 1);
     if (ZSTD_isError(check_result))
     {
-        fprintf(stderr, "Error (ZSTD): %zu %s\n", check_result, ZSTD_getErrorName(check_result));
+        std::cerr << "Error (ZSTD): " << check_result << " " << ZSTD_getErrorName(check_result) << std::endl;
         return 1;
     }
 
@@ -109,7 +146,7 @@ int compress(int in_fd, int out_fd, int level, off_t & pointer, const struct sta
         }
 
         /// Save data into file and refresh pointer
-        if (current_block_size != write(out_fd, output, current_block_size))
+        if (current_block_size != write_data(out_fd, output, current_block_size))
         {
             perror(nullptr);
             return 1;
@@ -218,7 +255,7 @@ int compressFiles(char* filenames[], int count, int output_fd, int level, const 
             continue;
         }
 
-        printf("Size: %ld\n", info_in.st_size);
+        std::cout << "Size: " << info_in.st_size << std::endl;
 
         /// Save umask
         files_data[i].umask = info_in.st_mode;
@@ -270,34 +307,33 @@ int copy_decompressor(const char *self, int output_fd)
 
     if (-1 == lseek(input_fd, -15, SEEK_END))
     {
-        close(input_fd);
         perror(nullptr);
+        close(input_fd);
         return 1;
     }
 
     char size_str[16] = {0};
-    for (size_t s_sz = sizeof(size_str) - 1; s_sz;)
+    if (ssize_t sz = read_data(input_fd, size_str, 15); sz < 15)
     {
-        ssize_t sz = read(input_fd, size_str + sizeof(size_str) - (s_sz + 1), s_sz);
-        if (sz <= 0)
-        {
-            close(input_fd);
+        if (sz < 0)
             perror(nullptr);
-            return 1;
-        }
-        s_sz -= sz;
+        else
+            std::cerr << "Error: unable to extract decompressor" << std::endl;
+        close(input_fd);
+        return 1;
     }
 
     int decompressor_size = atoi(size_str);
 
     if (-1 == lseek(input_fd, -(decompressor_size + 15), SEEK_END))
     {
-        close(input_fd);
         perror(nullptr);
+        close(input_fd);
         return 1;
     }
 
-    char buf[1ul<<19];
+    auto buf_memory = std::make_unique<char[]>(1ul<<19);
+    char * buf = buf_memory.get();
     ssize_t n = 0;
     do
     {
@@ -308,26 +344,22 @@ int copy_decompressor(const char *self, int output_fd)
 
         if (n < 0)
         {
-            close(input_fd);
+            if (errno == EINTR)
+                continue;
             perror(nullptr);
+            close(input_fd);
             return 1;
         }
 
-        while (n > 0)
+        if (n != write_data(output_fd, buf, n))
         {
-            ssize_t sz = write(output_fd, buf, n);
-            if (sz < 0)
-            {
-                close(input_fd);
-                perror(nullptr);
-                return 1;
-            }
-            n -= sz;
+            perror(nullptr);
+            close(input_fd);
+            return 1;
         }
     } while (true);
 
     close(input_fd);
-
     return 0;
 }
 
@@ -367,7 +399,7 @@ int main(int argc, char* argv[])
     struct stat info_out;
     if (stat(argv[start_of_files], &info_out) != -1 || errno != ENOENT)
     {
-        fprintf(stderr, "Error: output file [%s] already exists.\n", argv[start_of_files]);
+        std::cerr << "Error: output file [" << argv[start_of_files] << "] already exists" << std::endl;
         return 1;
     }
 
@@ -388,7 +420,7 @@ int main(int argc, char* argv[])
         return 1;
     }
 
-    printf("Compression with level %d\n", level);
+    std::cout << "Compression with level: " << level << std::endl;
     if (0 != compressFiles(&argv[start_of_files], argc - start_of_files, output_fd, level, info_out))
     {
         printf("Compression failed.\n");

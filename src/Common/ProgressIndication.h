@@ -16,11 +16,11 @@ namespace DB
 
 struct ThreadEventData
 {
-    Int64 time() const noexcept { return user_ms + system_ms; }
+    UInt64 time() const noexcept { return user_ms + system_ms; }
 
-    Int64 user_ms      = 0;
-    Int64 system_ms    = 0;
-    Int64 memory_usage = 0;
+    UInt64 user_ms      = 0;
+    UInt64 system_ms    = 0;
+    UInt64 memory_usage = 0;
 };
 
 using ThreadIdToTimeMap = std::unordered_map<UInt64, ThreadEventData>;
