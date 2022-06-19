@@ -66,7 +66,7 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Parsers/formatAST.h>
 
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 
 
 namespace DB

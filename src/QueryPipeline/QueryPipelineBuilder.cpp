@@ -345,7 +345,7 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::parallelJoinPipeline
         if (!skip_left)
         {
             join_streams[0]->pipe.processors.insert(join_streams[0]->pipe.processors.end(), js->pipe.processors.begin(), js->pipe.processors.end());
-            join_streams[0]->pipe.holder = std::move(js->pipe.holder);
+            join_streams[0]->resources = std::move(js->resources);
         }
         skip_left = false;
     }
