@@ -53,12 +53,13 @@ public:
 
     static Block transformHeader(Block header, const JoinPtr & join);
 
+    OutputPort* getFinishedSignal();
+
     Status prepare() override;
     void work() override;
 
 protected:
     void transform(Chunk & chunk);
-    bool processDelayedBlock();
 
 private:
     Chunk input_chunk;
@@ -66,7 +67,6 @@ private:
     bool has_input = false;
     bool has_output = false;
     bool stop_reading = false;
-    bool process_delayed = true;
     bool process_non_joined = true;
 
     JoinPtr join;
@@ -81,7 +81,6 @@ private:
 
     FinishCounterPtr finish_counter;
     std::shared_ptr<NotJoinedBlocks> non_joined_blocks;
-    std::unique_ptr<IDelayedJoinedBlocksStream> delayed_blocks;
     size_t max_block_size;
 
     Block readExecute(Chunk & chunk);
@@ -107,6 +106,28 @@ private:
     bool stop_reading = false;
     bool for_totals = false;
     bool set_totals = false;
+};
+
+/// Reads delayed joined blocks from Join.
+/// Has single input and single output port.
+/// Input port has empty header. It is closed when all JoiningTransform have completed.
+/// The joined blocks are written to the output port.
+class DelayedJoinedBlocksTransform : public IProcessor
+{
+public:
+    DelayedJoinedBlocksTransform(Block input_header, JoinPtr join_);
+    ~DelayedJoinedBlocksTransform() override;
+
+    String getName() const override { return "DelayedJoinedBlocksTransform"; }
+
+    Status prepare() override;
+    void work() override;
+
+private:
+    JoinPtr join;
+    std::unique_ptr<IDelayedJoinedBlocksStream> delayed_blocks;
+    Chunk output_chunk;
+    bool finished = false;
 };
 
 }
