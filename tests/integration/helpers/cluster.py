@@ -2984,8 +2984,8 @@ class ClickHouseInstance:
     def http_query(
         self,
         sql,
-        method=None,
         data=None,
+        method=None,
         params=None,
         user=None,
         password=None,
