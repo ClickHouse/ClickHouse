@@ -1,17 +1,8 @@
 #include <Backups/RestoreCoordinationLocal.h>
-#include <Common/Exception.h>
-#include <Common/logger_useful.h>
-#include <Interpreters/StorageID.h>
 
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
-
 
 RestoreCoordinationLocal::RestoreCoordinationLocal() = default;
 RestoreCoordinationLocal::~RestoreCoordinationLocal() = default;

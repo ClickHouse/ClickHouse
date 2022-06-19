@@ -4108,7 +4108,7 @@ BackupEntries MergeTreeData::backupParts(const ContextPtr & local_context, const
                 relative_filepath, std::make_unique<BackupEntryFromSmallFile>(disk, part_dir / filepath));
         }
     }
-    
+
     return backup_entries;
 }
 

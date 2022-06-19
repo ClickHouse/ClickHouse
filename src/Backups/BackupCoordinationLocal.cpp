@@ -96,7 +96,7 @@ Strings BackupCoordinationLocal::listFiles(const String & directory, bool recurs
     if (!prefix.empty() && !prefix.ends_with('/'))
         prefix += '/';
     String terminator = recursive ? "" : "/";
-    
+
     Strings elements;
     for (auto it = file_names.lower_bound(prefix); it != file_names.end(); ++it)
     {
@@ -112,7 +112,7 @@ Strings BackupCoordinationLocal::listFiles(const String & directory, bool recurs
             continue;
         elements.push_back(String{new_element});
     }
-    
+
     return elements;
 }
 

@@ -25,7 +25,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int BAD_ARGUMENTS;
+    extern const int LOGICAL_ERROR;
 }
 
 
@@ -129,7 +129,7 @@ namespace
                         String name;
                         readStringInto(name, *buf);
                         buf->ignore();
-                        
+
                         if (!res.entities.contains(id))
                             res.dependencies.emplace(id, std::pair{name, type});
                     }

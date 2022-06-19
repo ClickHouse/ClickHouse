@@ -130,7 +130,7 @@ private:
     std::optional<std::set<String>> previous_database_names;
     std::optional<std::set<TableKey>> previous_table_names;
     bool consistent = false;
-    
+
     BackupEntries backup_entries;
     std::queue<std::function<void()>> post_collecting_tasks;
 };

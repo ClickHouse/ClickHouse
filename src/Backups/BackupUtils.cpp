@@ -200,20 +200,20 @@ AccessRightsElements getRequiredAccessToBackup(const ASTBackupQuery::Elements & 
                 required_access.emplace_back(AccessType::BACKUP, element.database_name, element.table_name);
                 break;
             }
-            
+
             case ASTBackupQuery::TEMPORARY_TABLE:
             {
                 /// It's always allowed to backup temporary tables.
                 break;
             }
-            
+
             case ASTBackupQuery::DATABASE:
             {
                 /// TODO: It's better to process `element.except_tables` somehow.
                 required_access.emplace_back(AccessType::BACKUP, element.database_name);
                 break;
             }
-            
+
             case ASTBackupQuery::ALL:
             {
                 /// TODO: It's better to process `element.except_databases` & `element.except_tables` somehow.

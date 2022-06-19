@@ -20,7 +20,7 @@ public:
 
     void syncStage(const String & current_host, int stage, const Strings & wait_hosts, std::chrono::seconds timeout) override;
     void syncStageError(const String & current_host, const String & error_message) override;
-       
+
     void addReplicatedPartNames(const String & table_zk_path, const String & table_name_for_logs, const String & replica_name,
                                 const std::vector<PartNameAndChecksum> & part_names_and_checksums) override;
     Strings getReplicatedPartNames(const String & table_zk_path, const String & replica_name) const override;

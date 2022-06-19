@@ -111,7 +111,7 @@ public:
     /// Reads all entities and returns them with their IDs.
     template <typename EntityClassT>
     std::vector<std::pair<UUID, std::shared_ptr<const EntityClassT>>> readAllWithIDs() const;
-   
+
     std::vector<std::pair<UUID, AccessEntityPtr>> readAllWithIDs(AccessEntityType type) const;
 
     /// Inserts an entity to the storage. Returns ID of a new entry in the storage.
@@ -251,7 +251,7 @@ std::vector<std::pair<UUID, std::shared_ptr<const EntityClassT>>> IAccessStorage
         if (auto entity = tryRead<EntityClassT>(id))
             entities.emplace_back(id, entity);
     }
-    return entities;   
+    return entities;
 }
 
 }

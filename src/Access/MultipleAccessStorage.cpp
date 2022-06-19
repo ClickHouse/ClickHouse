@@ -388,7 +388,7 @@ std::vector<std::pair<UUID, AccessEntityPtr>> MultipleAccessStorage::readAllForB
     std::vector<std::pair<UUID, AccessEntityPtr>> res;
     auto storages = getStoragesInternal();
     size_t count = 0;
-    
+
     for (const auto & storage : *storages)
     {
         if (storage->isBackupAllowed())

@@ -48,7 +48,7 @@ namespace
                     return;
                 }
             }
-            
+
             if (field.getType() == Field::Types::UInt64)
             {
                 UInt64 number = field.get<UInt64>();
@@ -122,7 +122,7 @@ namespace
                     return;
                 }
             }
-            
+
             throw Exception(ErrorCodes::CANNOT_PARSE_BACKUP_SETTINGS, "Cannot parse creation mode from {}", field);
         }
 

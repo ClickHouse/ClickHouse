@@ -23,8 +23,8 @@ namespace ErrorCodes
 {
     extern const int CANNOT_COLLECT_OBJECTS_FOR_BACKUP;
     extern const int CANNOT_BACKUP_TABLE;
-    extern const int BACKUP_IS_EMPTY;
     extern const int TABLE_IS_DROPPED;
+    extern const int LOGICAL_ERROR;
 }
 
 
@@ -49,7 +49,7 @@ std::string_view BackupEntriesCollector::toString(Stage stage)
         case Stage::kWritingBackup: return "Writing backup";
         case Stage::kError: return "Error";
     }
-    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown backup stage: {}", static_cast<int>(stage));
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown backup stage: {}", static_cast<int>(stage));
 }
 
 
@@ -126,9 +126,9 @@ void BackupEntriesCollector::setStage(Stage new_stage, const String & error_mess
         LOG_ERROR(log, "{} failed with error: {}", toString(current_stage), error_message);
     else
         LOG_TRACE(log, "{}", toString(new_stage));
-    
+
     current_stage = new_stage;
-    
+
     if (new_stage == Stage::kError)
     {
         backup_coordination->syncStageError(backup_settings.host_id, error_message);
@@ -250,7 +250,7 @@ void BackupEntriesCollector::collectTableInfo(
             : context->tryResolveStorageID(StorageID{table_name.database, table_name.table}, Context::ResolveGlobal);
         if (!resolved_id.empty())
             std::tie(database, storage) = DatabaseCatalog::instance().tryGetDatabaseAndTable(resolved_id, context);
- 
+
         if (storage)
         {
             try
