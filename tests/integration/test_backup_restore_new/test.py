@@ -453,7 +453,7 @@ def test_temporary_table():
     ) == TSV([["e"], ["q"], ["w"]])
 
 
-# "BACKUP DATABASE _temporary_and_external_tables" is allowed but the backup must not contain any tables.
+# "BACKUP DATABASE _temporary_and_external_tables" is allowed but the backup must not contain these tables.
 def test_temporary_tables_database():
     session_id = new_session_id()
     instance.http_query(
@@ -607,8 +607,10 @@ def test_system_users_required_privileges():
     instance.query("CREATE USER u1 DEFAULT ROLE r1")
     instance.query("GRANT SELECT ON test.* TO u1")
 
+    # SETTINGS allow_backup=false means the following user won't be included in backups.
+    instance.query("CREATE USER u2 SETTINGS allow_backup=false")
+
     backup_name = new_backup_name()
-    instance.query("CREATE USER u2")
 
     expected_error = "necessary to have grant BACKUP ON system.users"
     assert expected_error in instance.query_and_get_error(
@@ -630,18 +632,27 @@ def test_system_users_required_privileges():
     instance.query("DROP USER u1")
     instance.query("DROP ROLE r1")
 
-    expected_error = "necessary to have grant CREATE USER ON *.*"
-    assert expected_error in instance.query_and_get_error(f"RESTORE ALL FROM {backup_name}", user="u2")
+    expected_error = (
+        "necessary to have grant CREATE USER, CREATE ROLE, ROLE ADMIN ON *.*"
+    )
+    assert expected_error in instance.query_and_get_error(
+        f"RESTORE ALL FROM {backup_name}", user="u2"
+    )
 
-    instance.query("GRANT CREATE USER ON *.* TO u2")
+    instance.query("GRANT CREATE USER, CREATE ROLE, ROLE ADMIN ON *.* TO u2")
+
+    expected_error = "necessary to have grant SELECT ON test.* WITH GRANT OPTION"
+    assert expected_error in instance.query_and_get_error(
+        f"RESTORE ALL FROM {backup_name}", user="u2"
+    )
+
+    instance.query("GRANT SELECT ON test.* TO u2 WITH GRANT OPTION")
     instance.query(f"RESTORE ALL FROM {backup_name}", user="u2")
 
-    assert (
-        instance.query("SHOW CREATE USER u1")
-        == "CREATE USER u1 IDENTIFIED WITH sha256_password SETTINGS PROFILE default, custom_a = 1\n"
-    )
+    assert instance.query("SHOW CREATE USER u1") == "CREATE USER u1 DEFAULT ROLE r1\n"
     assert instance.query("SHOW GRANTS FOR u1") == TSV(
-        ["GRANT SELECT ON test.* TO u1", "GRANT r2 TO u1"]
+        ["GRANT SELECT ON test.* TO u1", "GRANT r1 TO u1"]
     )
+
     assert instance.query("SHOW CREATE ROLE r1") == "CREATE ROLE r1\n"
     assert instance.query("SHOW GRANTS FOR r1") == ""

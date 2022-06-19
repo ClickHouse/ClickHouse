@@ -10,6 +10,7 @@
 #include <base/FnTraits.h>
 #include <boost/algorithm/string/join.hpp>
 #include <boost/algorithm/string/replace.hpp>
+#include <boost/range/algorithm_ext/erase.hpp>
 
 
 namespace DB
@@ -524,11 +525,14 @@ bool IAccessStorage::isRestoreAllowed() const
     return isBackupAllowed() && !isReadOnly();
 }
 
-std::vector<std::pair<UUID, AccessEntityPtr>> IAccessStorage::readAllForBackup(AccessEntityType, const BackupSettings &) const
+std::vector<std::pair<UUID, AccessEntityPtr>> IAccessStorage::readAllForBackup(AccessEntityType type, const BackupSettings &) const
 {
     if (!isBackupAllowed())
         throwBackupNotAllowed();
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "readAllForBackup() is not implemented in {}", getStorageType());
+    
+    auto res = readAllWithIDs(type);
+    boost::range::remove_erase_if(res, [](const std::pair<UUID, AccessEntityPtr> & x) { return !x.second->isBackupAllowed(); });
+    return res;
 }
 
 void IAccessStorage::insertFromBackup(const std::vector<std::pair<UUID, AccessEntityPtr>> &, const RestoreSettings &, std::shared_ptr<IRestoreCoordination>)
