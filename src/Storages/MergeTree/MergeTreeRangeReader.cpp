@@ -11,6 +11,12 @@
 #include <emmintrin.h>
 #endif
 
+#if defined(__aarch64__) && defined(__ARM_NEON)
+#    include <arm_neon.h>
+#    ifdef HAS_RESERVED_IDENTIFIER
+#        pragma clang diagnostic ignored "-Wreserved-identifier"
+#    endif
+#endif
 
 namespace DB
 {
@@ -542,6 +548,34 @@ size_t MergeTreeRangeReader::ReadResult::numZerosInTail(const UInt8 * begin, con
                 | (static_cast<UInt64>(_mm_movemask_epi8(_mm_cmpeq_epi8(
                         _mm_loadu_si128(reinterpret_cast<const __m128i *>(pos + 48)),
                         zero16))) << 48u);
+        val = ~val;
+        if (val == 0)
+            count += 64;
+        else
+        {
+            count += __builtin_clzll(val);
+            return count;
+        }
+    }
+#elif defined(__aarch64__) && defined(__ARM_NEON)
+    const uint8x16_t bitmask = {0x01, 0x02, 0x4, 0x8, 0x10, 0x20, 0x40, 0x80, 0x01, 0x02, 0x4, 0x8, 0x10, 0x20, 0x40, 0x80};
+    while (end - begin >= 64)
+    {
+        end -= 64;
+        const auto * src = reinterpret_cast<const unsigned char *>(end);
+        const uint8x16_t p0 = vceqzq_u8(vld1q_u8(src));
+        const uint8x16_t p1 = vceqzq_u8(vld1q_u8(src + 16));
+        const uint8x16_t p2 = vceqzq_u8(vld1q_u8(src + 32));
+        const uint8x16_t p3 = vceqzq_u8(vld1q_u8(src + 48));
+        uint8x16_t t0 = vandq_u8(p0, bitmask);
+        uint8x16_t t1 = vandq_u8(p1, bitmask);
+        uint8x16_t t2 = vandq_u8(p2, bitmask);
+        uint8x16_t t3 = vandq_u8(p3, bitmask);
+        uint8x16_t sum0 = vpaddq_u8(t0, t1);
+        uint8x16_t sum1 = vpaddq_u8(t2, t3);
+        sum0 = vpaddq_u8(sum0, sum1);
+        sum0 = vpaddq_u8(sum0, sum0);
+        UInt64 val = vgetq_lane_u64(vreinterpretq_u64_u8(sum0), 0);
         val = ~val;
         if (val == 0)
             count += 64;

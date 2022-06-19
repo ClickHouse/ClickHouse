@@ -950,18 +950,17 @@ void ClientBase::onProfileEvents(Block & block)
                 progress_indication.addThreadIdToList(host_name, thread_id);
             auto event_name = names.getDataAt(i);
             auto value = array_values[i];
+
+            /// Ignore negative time delta or memory usage just in case.
+            if (value < 0)
+                continue;
+
             if (event_name == user_time_name)
-            {
                 thread_times[host_name][thread_id].user_ms = value;
-            }
             else if (event_name == system_time_name)
-            {
                 thread_times[host_name][thread_id].system_ms = value;
-            }
             else if (event_name == MemoryTracker::USAGE_EVENT_NAME)
-            {
                 thread_times[host_name][thread_id].memory_usage = value;
-            }
         }
         auto elapsed_time = profile_events.watch.elapsedMicroseconds();
         progress_indication.updateThreadEventData(thread_times, elapsed_time);
