@@ -37,7 +37,6 @@ namespace ErrorCodes
     extern const int BACKUP_ENTRY_ALREADY_EXISTS;
     extern const int BACKUP_ENTRY_NOT_FOUND;
     extern const int BACKUP_IS_EMPTY;
-    extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
 }
 

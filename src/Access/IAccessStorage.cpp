@@ -529,7 +529,7 @@ std::vector<std::pair<UUID, AccessEntityPtr>> IAccessStorage::readAllForBackup(A
 {
     if (!isBackupAllowed())
         throwBackupNotAllowed();
-    
+
     auto res = readAllWithIDs(type);
     boost::range::remove_erase_if(res, [](const std::pair<UUID, AccessEntityPtr> & x) { return !x.second->isBackupAllowed(); });
     return res;

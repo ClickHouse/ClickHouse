@@ -14,6 +14,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int UNEXPECTED_NODE_IN_ZOOKEEPER;
+    extern const int LOGICAL_ERROR;
 }
 
 /// zookeeper_path/file_names/file_name->checksum_and_size

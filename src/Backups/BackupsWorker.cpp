@@ -156,7 +156,7 @@ UUID BackupsWorker::startMakingBackup(const ASTPtr & query, const ContextPtr & c
                     backup_entries = backup_entries_collector.getBackupEntries();
                 }
 
-                writeBackupEntries(backup, std::move(backup_entries), backups_thread_pool);                
+                writeBackupEntries(backup, std::move(backup_entries), backups_thread_pool);
             }
 
             /// Finalize backup (write its metadata).
@@ -251,13 +251,13 @@ UUID BackupsWorker::startRestoring(const ASTPtr & query, ContextMutablePtr conte
                 if (restore_coordination && !restore_settings.internal)
                     restore_coordination->drop();
             });
-            
+
             if (on_cluster && restore_settings.coordination_zk_path.empty())
             {
                 String root_zk_path = context_in_use->getConfigRef().getString("backups.zookeeper_path", "/clickhouse/backups");
                 restore_settings.coordination_zk_path = root_zk_path + "/restore-" + toString(restore_uuid);
             }
-            
+
             if (!restore_settings.coordination_zk_path.empty())
             {
                 restore_coordination = std::make_shared<RestoreCoordinationDistributed>(
@@ -314,7 +314,7 @@ UUID BackupsWorker::startRestoring(const ASTPtr & query, ContextMutablePtr conte
             setStatus(restore_uuid, BackupStatus::FAILED_TO_RESTORE);
             if (!in_separate_thread)
                 throw;
-        }    
+        }
     };
 
     if (restore_settings.async)

@@ -623,7 +623,7 @@ void ReplicatedAccessStorage::insertFromBackup(const std::vector<std::pair<UUID,
 
     bool replace_if_exists = (restore_settings.create_access == RestoreAccessCreationMode::kReplace);
     bool throw_if_exists = (restore_settings.create_access == RestoreAccessCreationMode::kCreate);
-    
+
     for (const auto & [id, entity] : entities_from_backup)
         insertWithID(id, entity, replace_if_exists, throw_if_exists);
 }

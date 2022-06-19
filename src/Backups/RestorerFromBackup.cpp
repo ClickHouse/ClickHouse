@@ -33,6 +33,7 @@ namespace ErrorCodes
     extern const int BACKUP_ENTRY_NOT_FOUND;
     extern const int CANNOT_RESTORE_TABLE;
     extern const int CANNOT_RESTORE_DATABASE;
+    extern const int LOGICAL_ERROR;
 }
 
 
@@ -84,7 +85,7 @@ std::string_view RestorerFromBackup::toString(Stage stage)
         case Stage::kInsertingDataToTables: return "Inserting data to tables";
         case Stage::kError: return "Error";
     }
-    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown backup stage: {}", static_cast<int>(stage));
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown restore stage: {}", static_cast<int>(stage));
 }
 
 
@@ -134,7 +135,7 @@ void RestorerFromBackup::run(bool only_check_access)
         /// Find all the databases and tables which we will read from the backup.
         setStage(Stage::kFindingTablesInBackup);
         collectDatabaseAndTableInfos();
-        
+
         /// Check access rights.
         checkAccessForCollectedInfos();
         if (only_check_access)
@@ -204,12 +205,12 @@ void RestorerFromBackup::setStage(Stage new_stage, const String & error_message)
         LOG_ERROR(log, "{} failed with error: {}", toString(current_stage), error_message);
     else
         LOG_TRACE(log, "{}", toString(new_stage));
-    
+
     current_stage = new_stage;
 
     if (!restore_coordination)
         return;
-    
+
     if (new_stage == Stage::kError)
     {
         restore_coordination->syncStageError(restore_settings.host_id, error_message);
@@ -231,7 +232,7 @@ void RestorerFromBackup::findRootPathsInBackup()
         std::tie(shard_num, replica_num)
             = BackupSettings::Util::findShardNumAndReplicaNum(restore_settings.cluster_host_ids, restore_settings.host_id);
     }
-    
+
     root_paths_in_backup.clear();
 
     /// Start with "" as the root path and then we will add shard- and replica-related part to it.
@@ -459,7 +460,7 @@ void RestorerFromBackup::collectDatabaseInfo(const String & database_name_in_bac
 
         String database_name = renaming_map.getNewDatabaseName(database_name_in_backup);
         DatabaseInfo & database_info = database_infos[database_name];
-        
+
         if (database_info.create_database_query && (serializeAST(*database_info.create_database_query) != serializeAST(*create_database_query)))
         {
             throw Exception(

@@ -124,13 +124,13 @@ namespace
         auto info = getInfoIfClickHouseDictionarySource(config, data.global_context);
         if (!info || !info->is_local)
             return;
-        
+
         auto * source_list = dictionary.source->elements->as<ASTExpressionList>();
         if (!source_list)
             return;
 
         auto & source_elements = source_list->children;
-        
+
         Field * database_name_field = nullptr;
         Field * table_name_field = nullptr;
 
@@ -138,7 +138,7 @@ namespace
         {
             if (!source_element)
                 continue;
-            
+
             auto * pair = source_element->as<ASTPair>();
             if (!pair || !pair->second)
                 continue;

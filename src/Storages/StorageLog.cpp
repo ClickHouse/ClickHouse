@@ -51,7 +51,6 @@ namespace ErrorCodes
     extern const int SIZES_OF_MARKS_FILES_ARE_INCONSISTENT;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int INCORRECT_FILE_NAME;
-    extern const int NOT_IMPLEMENTED;
 }
 
 /// NOTE: The lock `StorageLog::rwlock` is NOT kept locked while reading,

@@ -32,8 +32,6 @@ namespace ErrorCodes
     extern const int TIMEOUT_EXCEEDED;
     extern const int UNFINISHED;
     extern const int QUERY_IS_PROHIBITED;
-    extern const int INVALID_SHARD_ID;
-    extern const int NO_SUCH_REPLICA;
     extern const int LOGICAL_ERROR;
 }
 

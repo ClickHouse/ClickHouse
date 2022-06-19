@@ -80,7 +80,7 @@ public:
         kError = -1,
     };
     static std::string_view toString(Stage stage);
-    
+
     /// Throws an exception that a specified table engine doesn't support partitions.
     [[noreturn]] static void throwPartitionsNotSupported(const StorageID & storage_id, const String & table_engine);
 

@@ -28,7 +28,7 @@ enum class RestoreAccessCreationMode
 {
     /// RESTORE will throw an exception if some user already exists.
     kCreate,
-    
+
     /// RESTORE will skip existing users.
     kCreateIfNotExists,
 

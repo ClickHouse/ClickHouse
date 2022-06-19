@@ -482,23 +482,35 @@ def test_system_users():
     node1.query("CREATE USER u2 SETTINGS allow_backup=false")
 
     expected_error = "necessary to have grant BACKUP ON system.users"
-    assert expected_error in node1.query_and_get_error(f"BACKUP TABLE system.users ON CLUSTER 'cluster' TO {backup_name}", user='u2')
+    assert expected_error in node1.query_and_get_error(
+        f"BACKUP TABLE system.users ON CLUSTER 'cluster' TO {backup_name}", user="u2"
+    )
 
     node1.query("GRANT BACKUP ON system.users TO u2")
-    node1.query(f"BACKUP TABLE system.users ON CLUSTER 'cluster' TO {backup_name}", user='u2')
+    node1.query(
+        f"BACKUP TABLE system.users ON CLUSTER 'cluster' TO {backup_name}", user="u2"
+    )
 
     node1.query("DROP USER u1")
 
     expected_error = "necessary to have grant CREATE USER ON *.*"
-    assert expected_error in node1.query_and_get_error(f"RESTORE TABLE system.users ON CLUSTER 'cluster' FROM {backup_name}", user='u2')
+    assert expected_error in node1.query_and_get_error(
+        f"RESTORE TABLE system.users ON CLUSTER 'cluster' FROM {backup_name}", user="u2"
+    )
 
     node1.query("GRANT CREATE USER ON *.* TO u2")
 
     expected_error = "necessary to have grant SELECT ON default.tbl WITH GRANT OPTION"
-    assert expected_error in node1.query_and_get_error(f"RESTORE TABLE system.users ON CLUSTER 'cluster' FROM {backup_name}", user='u2')
+    assert expected_error in node1.query_and_get_error(
+        f"RESTORE TABLE system.users ON CLUSTER 'cluster' FROM {backup_name}", user="u2"
+    )
 
     node1.query("GRANT SELECT ON tbl TO u2 WITH GRANT OPTION")
-    node1.query(f"RESTORE TABLE system.users ON CLUSTER 'cluster' FROM {backup_name}", user='u2')
+    node1.query(
+        f"RESTORE TABLE system.users ON CLUSTER 'cluster' FROM {backup_name}", user="u2"
+    )
 
-    assert node1.query("SHOW CREATE USER u1") == "CREATE USER u1 SETTINGS custom_a = 123\n"
+    assert (
+        node1.query("SHOW CREATE USER u1") == "CREATE USER u1 SETTINGS custom_a = 123\n"
+    )
     assert node1.query("SHOW GRANTS FOR u1") == "GRANT SELECT ON default.tbl TO u1\n"

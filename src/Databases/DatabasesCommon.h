@@ -41,7 +41,7 @@ public:
     void createTableRestoredFromBackup(const ASTPtr & create_table_query, const RestorerFromBackup & restorer) override;
 
     void shutdown() override;
-   
+
     ~DatabaseWithOwnTablesBase() override;
 
 protected:

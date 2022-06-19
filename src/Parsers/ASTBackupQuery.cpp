@@ -94,7 +94,7 @@ namespace
             {
                 format.ostr << (format.hilite ? IAST::hilite_keyword : "") << "TEMPORARY TABLE " << (format.hilite ? IAST::hilite_none : "");
                 format.ostr << backQuoteIfNeed(element.table_name);
-                
+
                 if (element.new_table_name != element.table_name)
                 {
                     format.ostr << (format.hilite ? IAST::hilite_keyword : "") << " AS " << (format.hilite ? IAST::hilite_none : "");

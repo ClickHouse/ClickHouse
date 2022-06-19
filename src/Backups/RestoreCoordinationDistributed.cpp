@@ -1,23 +1,10 @@
 #include <Backups/RestoreCoordinationDistributed.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/escapeForFileName.h>
-#include <Common/logger_useful.h>
-#include <Interpreters/StorageID.h>
-#include <IO/WriteHelpers.h>
-#include <IO/ReadHelpers.h>
-#include <IO/WriteBufferFromString.h>
-#include <IO/ReadBufferFromString.h>
-#include <base/chrono_io.h>
 
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int FAILED_TO_SYNC_BACKUP_OR_RESTORE;
-}
-
 
 RestoreCoordinationDistributed::RestoreCoordinationDistributed(const String & zookeeper_path_, zkutil::GetZooKeeper get_zookeeper_)
     : zookeeper_path(zookeeper_path_)

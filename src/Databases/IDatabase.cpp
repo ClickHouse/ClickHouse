@@ -25,7 +25,7 @@ StoragePtr IDatabase::getTable(const String & name, ContextPtr context) const
 ASTPtr IDatabase::getCreateDatabaseQueryForBackup() const
 {
     auto query = getCreateDatabaseQuery();
- 
+
     /// We don't want to see any UUIDs in backup (after RESTORE the table will have another UUID anyway).
     auto & create = query->as<ASTCreateQuery &>();
     create.uuid = UUIDHelpers::Nil;

@@ -944,7 +944,7 @@ void DatabaseReplicated::createTableRestoredFromBackup(const ASTPtr & create_tab
     while (!isTableExist(table_name, restorer.getContext()))
     {
         waitForReplicaToProcessAllEntries(50);
-        
+
         if (use_timeout)
         {
             auto elapsed = std::chrono::steady_clock::now() - start_time;
