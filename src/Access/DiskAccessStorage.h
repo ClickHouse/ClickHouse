@@ -15,7 +15,7 @@ class DiskAccessStorage : public IAccessStorage
 public:
     static constexpr char STORAGE_TYPE[] = "local directory";
 
-    DiskAccessStorage(const String & storage_name_, const String & directory_path_, AccessChangesNotifier & changes_notifier_, bool readonly_, bool backup_allowed_);
+    DiskAccessStorage(const String & storage_name_, const String & directory_path_, AccessChangesNotifier & changes_notifier_, bool readonly_, bool allow_backup_);
     ~DiskAccessStorage() override;
 
     const char * getStorageType() const override { return STORAGE_TYPE; }

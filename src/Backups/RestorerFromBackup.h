@@ -52,8 +52,8 @@ public:
 
     /// Adds a data restore task which will be later returned by getDataRestoreTasks().
     /// This function can be called by implementations of IStorage::restoreFromBackup() in inherited storage classes.
-    void addDataRestoreTask(DataRestoreTask && data_restore_task);
-    void addDataRestoreTasks(DataRestoreTasks && data_restore_task);
+    void addDataRestoreTask(DataRestoreTask && new_task);
+    void addDataRestoreTasks(DataRestoreTasks && new_tasks);
 
     /// Adds a new data path to restore access control.
     void checkPathInBackupToRestoreAccess(const String & path);
@@ -104,7 +104,7 @@ private:
     void setStage(Stage new_stage, const String & error_message = {});
     void findRootPathsInBackup();
     void collectDatabaseAndTableInfos();
-    void collectTableInfo(const QualifiedTableName & table_name_in_backup, bool is_temporary, const std::optional<ASTs> & partitions);
+    void collectTableInfo(const QualifiedTableName & table_name_in_backup, bool is_temporary_table, const std::optional<ASTs> & partitions);
     void collectDatabaseInfo(const String & database_name_in_backup, const std::set<DatabaseAndTableName> & except_table_names, bool throw_if_no_database_metadata_in_backup);
     void collectAllDatabasesInfo(const std::set<String> & except_database_names, const std::set<DatabaseAndTableName> & except_table_names);
     void checkAccessForCollectedInfos() const;

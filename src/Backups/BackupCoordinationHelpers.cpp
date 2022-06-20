@@ -30,7 +30,7 @@ namespace
 class BackupCoordinationReplicatedPartNames::CoveredPartsFinder
 {
 public:
-    CoveredPartsFinder(const String & table_name_for_logs_) : table_name_for_logs(table_name_for_logs_) {}
+    explicit CoveredPartsFinder(const String & table_name_for_logs_) : table_name_for_logs(table_name_for_logs_) {}
 
     void addPartName(const String & new_part_name, const std::shared_ptr<const String> & replica_name)
     {

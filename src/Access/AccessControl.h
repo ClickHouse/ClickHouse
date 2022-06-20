@@ -122,7 +122,7 @@ public:
 
     /// Makes a backup of access entities.
     void backup(BackupEntriesCollector & backup_entries_collector, AccessEntityType type, const String & data_path_in_backup) const;
-    void restore(RestorerFromBackup & restorer, const String & data_path_in_backup);
+    static void restore(RestorerFromBackup & restorer, const String & data_path_in_backup);
 
     void setExternalAuthenticatorsConfig(const Poco::Util::AbstractConfiguration & config);
 
