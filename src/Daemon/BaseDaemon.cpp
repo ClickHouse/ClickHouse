@@ -10,8 +10,9 @@
 #include <sys/time.h>
 #include <sys/types.h>
 #include <sys/wait.h>
-#if defined(__linux__)
-#    include <sys/prctl.h>
+#include <sys/resource.h>
+#if defined(OS_LINUX)
+    #include <sys/prctl.h>
 #endif
 #include <cerrno>
 #include <cstring>
