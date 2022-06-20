@@ -105,10 +105,10 @@ public:
     template <typename Cache>
     void processRemovalQueue(Cache * cache)
     {
+        std::unique_lock lock(mutex);
+
         while (!is_finished.load())
         {
-            std::unique_lock lock(mutex);
-
             // take the timer with the lowest timestamp from the queue if there is one
             const std::optional<TimedCacheKey> awaited_timer = nextTimer();
 
@@ -126,6 +126,7 @@ public:
 
     void stopProcessingRemovalQueue()
     {
+        std::lock_guard lock(mutex);
         is_finished.store(true);
         timer_cv.notify_one();
     }
