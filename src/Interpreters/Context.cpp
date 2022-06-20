@@ -135,6 +135,7 @@ namespace ErrorCodes
     extern const int INVALID_SETTING_VALUE;
     extern const int UNKNOWN_READ_METHOD;
     extern const int NOT_IMPLEMENTED;
+    extern const int KEEPER_EXCEPTION;
 }
 
 
@@ -2068,7 +2069,7 @@ void Context::initializeKeeperDispatcher([[maybe_unused]] bool start_async) cons
     std::lock_guard lock(shared->keeper_dispatcher_mutex);
 
     if (shared->keeper_dispatcher)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to initialize Keeper multiple times");
+        throw Exception(ErrorCodes::KEEPER_EXCEPTION, "Trying to initialize Keeper multiple times");
 
     const auto & config = getConfigRef();
     if (config.has("keeper_server"))
@@ -2097,7 +2098,7 @@ std::shared_ptr<KeeperDispatcher> & Context::getKeeperDispatcher() const
 {
     std::lock_guard lock(shared->keeper_dispatcher_mutex);
     if (!shared->keeper_dispatcher)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Keeper must be initialized before requests");
+        throw Exception(ErrorCodes::KEEPER_EXCEPTION, "Keeper must be initialized before requests");
 
     return shared->keeper_dispatcher;
 }
