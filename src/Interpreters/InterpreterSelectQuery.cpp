@@ -654,15 +654,20 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     sanitizeBlock(result_header, true);
 }
 
-void InterpreterSelectQuery::executePutInCache(QueryPlan & query_plan, CacheKey query_cache_key)
+void InterpreterSelectQuery::executePutInCache(QueryPlan & query_plan)
 {
     auto settings = context->getSettingsRef();
-    if (!settings.query_cache_active_usage || context->getQueryCache() == nullptr)
+    QueryCachePtr query_cache = context->getQueryCache();
+    if (!settings.query_cache_active_usage || query_cache == nullptr)
     {
         return;
     }
 
-    QueryCachePtr query_cache = context->getQueryCache();
+    auto query_cache_key = CacheKey{query_ptr, result_header, settings,
+                                    settings.share_query_cache
+                                    ? std::optional<String>()
+                                    : std::make_optional<String>(context->getUserName())
+                                    };
     size_t num_query_runs = query_cache->recordQueryRun(query_cache_key);
     if (query_cache->containsResult(query_cache_key) || num_query_runs < settings.min_query_runs_before_caching)
     {
@@ -674,15 +679,21 @@ void InterpreterSelectQuery::executePutInCache(QueryPlan & query_plan, CacheKey 
     query_plan.addStep(std::move(caching_step));
 }
 
-bool InterpreterSelectQuery::executeReadFromCache(QueryPlan & query_plan, CacheKey query_cache_key)
+bool InterpreterSelectQuery::executeReadFromCache(QueryPlan & query_plan)
 {
     auto settings = context->getSettingsRef();
-    if (!settings.query_cache_passive_usage || context->getQueryCache() == nullptr)
+    QueryCachePtr query_cache = context->getQueryCache();
+    if (!settings.query_cache_passive_usage || query_cache == nullptr)
     {
         return false;
     }
 
-    if (auto cache_holder = context->getQueryCache()->tryReadFromCache(query_cache_key);
+    auto query_cache_key = CacheKey{query_ptr, result_header, settings,
+                                    settings.share_query_cache
+                                    ? std::optional<String>()
+                                    : std::make_optional<String>(context->getUserName())
+                                    };
+    if (auto cache_holder = query_cache->tryReadFromCache(query_cache_key);
         cache_holder.containsResult())
     {
         auto read_from_cache_step = std::make_unique<ReadFromPreparedSource>(cache_holder.getPipe());
@@ -695,18 +706,12 @@ bool InterpreterSelectQuery::executeReadFromCache(QueryPlan & query_plan, CacheK
 
 void InterpreterSelectQuery::buildQueryPlan(QueryPlan & query_plan)
 {
-    auto query_cache_key = CacheKey{query_ptr, result_header, context->getSettingsRef(),
-                                    context->getSettingsRef().share_query_cache
-                                        ? std::optional<String>()
-                                        : std::make_optional<String>(context->getUserName())
-    };
-
-    if (executeReadFromCache(query_plan, query_cache_key))
+    if (executeReadFromCache(query_plan))
     {
         return;
     }
     executeImpl(query_plan, std::move(input_pipe));
-    executePutInCache(query_plan, std::move(query_cache_key));
+    executePutInCache(query_plan);
     /// We must guarantee that result structure is the same as in getSampleBlock()
     ///
     /// But if it's a projection query, plan header does not match result_header.

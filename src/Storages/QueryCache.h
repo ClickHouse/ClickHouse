@@ -105,7 +105,7 @@ public:
     template <typename Cache>
     void processRemovalQueue(Cache * cache)
     {
-        while (process_removal_queue.load())
+        while (!is_finished.load())
         {
             std::unique_lock lock(mutex);
 
@@ -118,7 +118,6 @@ public:
             // if awaited_timer went off, remove entry from cache
             if (awaited_timer.has_value() && awaited_timer->time <= now())
             {
-                lock.unlock();
                 queue.pop();
                 cache->remove(awaited_timer->cache_key);
             }
@@ -127,7 +126,7 @@ public:
 
     void stopProcessingRemovalQueue()
     {
-        process_removal_queue.store(false);
+        is_finished.store(true);
         timer_cv.notify_one();
     }
 
@@ -169,7 +168,7 @@ private:
     }
 
     const Timestamp infinite_time = Timestamp::max();
-    std::atomic<bool> process_removal_queue{true};
+    std::atomic<bool> is_finished{false};
     std::priority_queue<TimedCacheKey> queue;
     std::condition_variable timer_cv;
     std::mutex mutex;
