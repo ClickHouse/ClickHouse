@@ -160,6 +160,7 @@ void OpenTelemetrySpanHolder::addAttribute(const std::string& name, UInt64 value
 
     this->attribute_names.push_back(name);
     this->attribute_values.push_back(std::to_string(value));
+    assert(this->attribute_names.size() == this->attribute_values.size());
 }
 
 void OpenTelemetrySpanHolder::addAttribute(const std::string& name, const std::string& value)
@@ -169,6 +170,7 @@ void OpenTelemetrySpanHolder::addAttribute(const std::string& name, const std::s
 
     this->attribute_names.push_back(name);
     this->attribute_values.push_back(value);
+    assert(this->attribute_names.size() == this->attribute_values.size());
 }
 
 void OpenTelemetrySpanHolder::addAttribute(const Exception & e)
@@ -178,6 +180,7 @@ void OpenTelemetrySpanHolder::addAttribute(const Exception & e)
 
     this->attribute_names.push_back("clickhouse.exception");
     this->attribute_values.push_back(getExceptionMessage(e, false));
+    assert(this->attribute_names.size() == this->attribute_values.size());
 }
 
 void OpenTelemetrySpanHolder::addAttribute(std::exception_ptr e)
@@ -187,6 +190,7 @@ void OpenTelemetrySpanHolder::addAttribute(std::exception_ptr e)
 
     this->attribute_names.push_back("clickhouse.exception");
     this->attribute_values.push_back(getExceptionMessage(e, false));
+    assert(this->attribute_names.size() == this->attribute_values.size());
 }
 
 bool OpenTelemetryTraceContext::parseTraceparentHeader(const std::string & traceparent,
