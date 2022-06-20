@@ -22,6 +22,12 @@ public:
         const SelectQueryOptions &,
         const Names & required_result_column_names = {});
 
+    InterpreterSelectWithUnionQuery(
+        const ASTPtr & query_ptr_,
+        ContextMutablePtr context_,
+        const SelectQueryOptions &,
+        const Names & required_result_column_names = {});
+
     ~InterpreterSelectWithUnionQuery() override;
 
     /// Builds QueryPlan for current query.

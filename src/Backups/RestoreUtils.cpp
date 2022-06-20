@@ -84,7 +84,7 @@ namespace
                     return true;
                 });
 
-            std::sort(res.begin(), res.end());
+            ::sort(res.begin(), res.end());
             res.erase(std::unique(res.begin(), res.end()), res.end());
             return res;
         }
@@ -113,7 +113,7 @@ namespace
                     return true;
                 });
 
-            std::sort(res.begin(), res.end());
+            ::sort(res.begin(), res.end());
             res.erase(std::unique(res.begin(), res.end()), res.end());
             return res;
         }

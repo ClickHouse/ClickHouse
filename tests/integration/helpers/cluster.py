@@ -16,12 +16,6 @@ import traceback
 import urllib.parse
 import shlex
 import urllib3
-from cassandra.policies import RoundRobinPolicy
-import cassandra.cluster
-import psycopg2
-import pymongo
-import meilisearch
-import pymysql
 import requests
 
 try:
@@ -34,6 +28,7 @@ try:
     from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
     import pymongo
     import pymysql
+    import meilisearch
     from confluent_kafka.avro.cached_schema_registry_client import (
         CachedSchemaRegistryClient,
     )

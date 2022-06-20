@@ -3,7 +3,7 @@ sidebar_position: 40
 sidebar_label: UPDATE
 ---
 
-# ALTER TABLE … UPDATE Statements {#alter-table-update-statements}
+# ALTER TABLE … UPDATE Statements
 
 ``` sql
 ALTER TABLE [db.]table UPDATE column1 = expr1 [, ...] WHERE filter_expr

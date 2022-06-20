@@ -30,7 +30,7 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageStripeLog.h>
 #include "StorageLogSettings.h"
-#include <Processors/Sources/SourceWithProgress.h>
+#include <Processors/ISource.h>
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <QueryPipeline/Pipe.h>
@@ -60,7 +60,7 @@ namespace ErrorCodes
 
 /// NOTE: The lock `StorageStripeLog::rwlock` is NOT kept locked while reading,
 /// because we read ranges of data that do not change.
-class StripeLogSource final : public SourceWithProgress
+class StripeLogSource final : public ISource
 {
 public:
     static Block getHeader(
@@ -94,7 +94,7 @@ public:
         IndexForNativeFormat::Blocks::const_iterator index_begin_,
         IndexForNativeFormat::Blocks::const_iterator index_end_,
         size_t file_size_)
-        : SourceWithProgress(getHeader(storage_snapshot_, column_names, index_begin_, index_end_))
+        : ISource(getHeader(storage_snapshot_, column_names, index_begin_, index_end_))
         , storage(storage_)
         , storage_snapshot(storage_snapshot_)
         , read_settings(std::move(read_settings_))

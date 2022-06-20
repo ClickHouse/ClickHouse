@@ -50,7 +50,7 @@ echo '
 
 $CLICKHOUSE_CLIENT -q "desc file(data_02293, JSONColumns)"
 $CLICKHOUSE_CLIENT -q "select * from file(data_02293, JSONColumns)"
-$CLICKHOUSE_CLIENT -q "select * from file(data_02293, JSONColumns, 'a UInt32, t String')" 2>&1 | grep -F -q 'INCORRECT_DATA' && echo 'OK' || echo 'FAIL'
+$CLICKHOUSE_CLIENT -q "select * from file(data_02293, JSONColumns, 'a UInt32, t String') settings input_format_skip_unknown_fields=0" 2>&1 | grep -F -q 'INCORRECT_DATA' && echo 'OK' || echo 'FAIL'
 $CLICKHOUSE_CLIENT -q "select * from file(data_02293, JSONColumns, 'a UInt32, t String') settings input_format_skip_unknown_fields=1"
 
 echo '

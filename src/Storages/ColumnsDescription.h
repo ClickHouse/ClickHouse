@@ -6,7 +6,6 @@
 #include <Core/NamesAndTypes.h>
 #include <Core/NamesAndAliases.h>
 #include <Interpreters/Context_fwd.h>
-#include <Storages/ColumnCodec.h>
 #include <Storages/ColumnDefault.h>
 #include <Common/Exception.h>
 

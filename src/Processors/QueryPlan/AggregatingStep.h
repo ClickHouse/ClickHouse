@@ -25,6 +25,8 @@ struct GroupingSetsParams
 
 using GroupingSetsParamsList = std::vector<GroupingSetsParams>;
 
+Block appendGroupingSetColumn(Block header);
+
 /// Aggregation. See AggregatingTransform.
 class AggregatingStep : public ITransformingStep
 {

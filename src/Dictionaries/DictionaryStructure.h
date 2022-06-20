@@ -67,6 +67,7 @@ struct DictionaryAttribute final
     const std::string expression;
     const Field null_value;
     const bool hierarchical;
+    const bool bidirectional;
     const bool injective;
     const bool is_object_id;
     const bool is_nullable;

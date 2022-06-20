@@ -9,7 +9,7 @@ import time
 from shutil import rmtree
 from typing import List, Optional, Tuple
 
-from env_helper import REPO_COPY, TEMP_PATH, CACHES_PATH, IMAGES_PATH
+from env_helper import GITHUB_JOB, REPO_COPY, TEMP_PATH, CACHES_PATH, IMAGES_PATH
 from s3_helper import S3Helper
 from pr_info import PRInfo
 from version_helper import (
@@ -138,6 +138,7 @@ def create_json_artifact(
         "build_config": build_config,
         "elapsed_seconds": elapsed,
         "status": success,
+        "job_name": GITHUB_JOB,
     }
 
     json_name = "build_urls_" + build_name + ".json"

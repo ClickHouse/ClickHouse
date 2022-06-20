@@ -56,6 +56,7 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.avro.schema_registry_url = settings.format_avro_schema_registry_url.toString();
     format_settings.avro.string_column_pattern = settings.output_format_avro_string_column_pattern.toString();
     format_settings.avro.output_rows_in_file = settings.output_format_avro_rows_in_file;
+    format_settings.avro.null_as_default = settings.input_format_avro_null_as_default;
     format_settings.csv.allow_double_quotes = settings.format_csv_allow_double_quotes;
     format_settings.csv.allow_single_quotes = settings.format_csv_allow_single_quotes;
     format_settings.csv.crlf_end_of_line = settings.output_format_csv_crlf_end_of_line;
@@ -66,6 +67,7 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.csv.null_representation = settings.format_csv_null_representation;
     format_settings.csv.input_format_arrays_as_nested_csv = settings.input_format_csv_arrays_as_nested_csv;
     format_settings.csv.input_format_use_best_effort_in_schema_inference = settings.input_format_csv_use_best_effort_in_schema_inference;
+    format_settings.csv.skip_first_lines = settings.input_format_csv_skip_first_lines;
     format_settings.hive_text.fields_delimiter = settings.input_format_hive_text_fields_delimiter;
     format_settings.hive_text.collection_items_delimiter = settings.input_format_hive_text_collection_items_delimiter;
     format_settings.hive_text.map_keys_delimiter = settings.input_format_hive_text_map_keys_delimiter;
@@ -123,6 +125,7 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.tsv.input_format_enum_as_number = settings.input_format_tsv_enum_as_number;
     format_settings.tsv.null_representation = settings.format_tsv_null_representation;
     format_settings.tsv.input_format_use_best_effort_in_schema_inference = settings.input_format_tsv_use_best_effort_in_schema_inference;
+    format_settings.tsv.skip_first_lines = settings.input_format_tsv_skip_first_lines;
     format_settings.values.accurate_types_of_literals = settings.input_format_values_accurate_types_of_literals;
     format_settings.values.deduce_templates_of_expressions = settings.input_format_values_deduce_templates_of_expressions;
     format_settings.values.interpret_expressions = settings.input_format_values_interpret_expressions;
@@ -492,13 +495,12 @@ String FormatFactory::getFormatFromFileName(String file_name, bool throw_if_not_
 String FormatFactory::getFormatFromFileDescriptor(int fd)
 {
 #ifdef OS_LINUX
-    char buf[32] = {'\0'};
-    snprintf(buf, sizeof(buf), "/proc/self/fd/%d", fd);
+    std::string proc_path = fmt::format("/proc/self/fd/{}", fd);
     char file_path[PATH_MAX] = {'\0'};
-    if (readlink(buf, file_path, sizeof(file_path) - 1) != -1)
+    if (readlink(proc_path.c_str(), file_path, sizeof(file_path) - 1) != -1)
         return getFormatFromFileName(file_path, false);
     return "";
-#elif defined(__APPLE__)
+#elif defined(OS_DARWIN)
     char file_path[PATH_MAX] = {'\0'};
     if (fcntl(fd, F_GETPATH, file_path) != -1)
         return getFormatFromFileName(file_path, false);
@@ -541,19 +543,19 @@ void FormatFactory::markOutputFormatSupportsParallelFormatting(const String & na
 }
 
 
-void FormatFactory::markFormatAsColumnOriented(const String & name)
+void FormatFactory::markFormatSupportsSubsetOfColumns(const String & name)
 {
-    auto & target = dict[name].is_column_oriented;
+    auto & target = dict[name].supports_subset_of_columns;
     if (target)
-        throw Exception("FormatFactory: Format " + name + " is already marked as column oriented", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("FormatFactory: Format " + name + " is already marked as supporting subset of columns", ErrorCodes::LOGICAL_ERROR);
     target = true;
 }
 
 
-bool FormatFactory::checkIfFormatIsColumnOriented(const String & name)
+bool FormatFactory::checkIfFormatSupportsSubsetOfColumns(const String & name) const
 {
     const auto & target = getCreators(name);
-    return target.is_column_oriented;
+    return target.supports_subset_of_columns;
 }
 
 bool FormatFactory::isInputFormat(const String & name) const
@@ -568,21 +570,28 @@ bool FormatFactory::isOutputFormat(const String & name) const
     return it != dict.end() && it->second.output_creator;
 }
 
-bool FormatFactory::checkIfFormatHasSchemaReader(const String & name)
+bool FormatFactory::checkIfFormatHasSchemaReader(const String & name) const
 {
     const auto & target = getCreators(name);
     return bool(target.schema_reader_creator);
 }
 
-bool FormatFactory::checkIfFormatHasExternalSchemaReader(const String & name)
+bool FormatFactory::checkIfFormatHasExternalSchemaReader(const String & name) const
 {
     const auto & target = getCreators(name);
     return bool(target.external_schema_reader_creator);
 }
 
-bool FormatFactory::checkIfFormatHasAnySchemaReader(const String & name)
+bool FormatFactory::checkIfFormatHasAnySchemaReader(const String & name) const
 {
     return checkIfFormatHasSchemaReader(name) || checkIfFormatHasExternalSchemaReader(name);
+}
+
+void FormatFactory::checkFormatName(const String & name) const
+{
+    auto it = dict.find(name);
+    if (it == dict.end())
+        throw Exception("Unknown format " + name, ErrorCodes::UNKNOWN_FORMAT);
 }
 
 FormatFactory & FormatFactory::instance()

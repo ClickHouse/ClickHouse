@@ -501,6 +501,10 @@ public:
     /// This predicate is checked for the first part of each range.
     bool canMergeSinglePart(const MergeTreeData::DataPartPtr & part, String * out_reason) const;
 
+    /// Returns true if part is needed for some REPLACE_RANGE entry.
+    /// We should not drop part in this case, because replication queue may stuck without that part.
+    bool partParticipatesInReplaceRange(const MergeTreeData::DataPartPtr & part, String * out_reason) const;
+
     /// Return nonempty optional of desired mutation version and alter version.
     /// If we have no alter (modify/drop) mutations in mutations queue, than we return biggest possible
     /// mutation version (and -1 as alter version). In other case, we return biggest mutation version with

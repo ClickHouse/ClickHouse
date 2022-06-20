@@ -160,7 +160,7 @@ std::vector<AccessEntityPtr> InterpreterShowGrantsQuery::getEntities() const
 
         bool is_current_user = (id == access->getUserID());
         bool is_enabled_or_granted_role = entity->isTypeOf<Role>()
-            && ((current_user && current_user->granted_roles.isGranted(id)) || roles_info->enabled_roles.contains(id));
+            && (current_user->granted_roles.isGranted(id) || roles_info->enabled_roles.contains(id));
 
         if ((is_current_user /* Any user can see his own grants */)
             || (is_enabled_or_granted_role /* and grants from the granted roles */)

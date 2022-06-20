@@ -3,7 +3,7 @@ sidebar_position: 61
 sidebar_label: Interval
 ---
 
-# Interval {#data-type-interval}
+# Interval
 
 The family of data types representing time and date intervals. The resulting types of the [INTERVAL](../../../sql-reference/operators/index.md#operator-interval) operator.
 
@@ -39,7 +39,7 @@ SELECT toTypeName(INTERVAL 4 DAY)
 └──────────────────────────────┘
 ```
 
-## Usage Remarks {#data-type-interval-usage-remarks}
+## Usage Remarks
 
 You can use `Interval`-type values in arithmetical operations with [Date](../../../sql-reference/data-types/date.md) and [DateTime](../../../sql-reference/data-types/datetime.md)-type values. For example, you can add 4 days to the current time:
 
@@ -78,7 +78,7 @@ Received exception from server (version 19.14.1):
 Code: 43. DB::Exception: Received from localhost:9000. DB::Exception: Wrong argument types for function plus: if one argument is Interval, then another must be Date or DateTime..
 ```
 
-## See Also {#see-also}
+## See Also
 
 -   [INTERVAL](../../../sql-reference/operators/index.md#operator-interval) operator
 -   [toInterval](../../../sql-reference/functions/type-conversion-functions.md#function-tointerval) type conversion functions

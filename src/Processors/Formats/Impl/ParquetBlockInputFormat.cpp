@@ -192,7 +192,7 @@ void registerInputFormatParquet(FormatFactory & factory)
             {
                 return std::make_shared<ParquetBlockInputFormat>(buf, sample, settings);
             });
-    factory.markFormatAsColumnOriented("Parquet");
+    factory.markFormatSupportsSubsetOfColumns("Parquet");
 }
 
 void registerParquetSchemaReader(FormatFactory & factory)

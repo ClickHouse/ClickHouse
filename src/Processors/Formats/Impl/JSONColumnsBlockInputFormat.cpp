@@ -54,6 +54,7 @@ void registerInputFormatJSONColumns(FormatFactory & factory)
             return std::make_shared<JSONColumnsBlockInputFormatBase>(buf, sample, settings, std::make_unique<JSONColumnsReader>(buf));
         }
     );
+    factory.markFormatSupportsSubsetOfColumns("JSONColumns");
 }
 
 void registerJSONColumnsSchemaReader(FormatFactory & factory)

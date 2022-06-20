@@ -49,7 +49,15 @@ ParallelReadBuffer::ParallelReadBuffer(
     , schedule(std::move(schedule_))
     , reader_factory(std::move(reader_factory_))
 {
-    addReaders();
+    try
+    {
+        addReaders();
+    }
+    catch (const Exception &)
+    {
+        finishAndWait();
+        throw;
+    }
 }
 
 bool ParallelReadBuffer::addReaderToPool()

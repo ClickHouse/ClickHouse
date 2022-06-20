@@ -411,7 +411,7 @@ void ThreadStatus::detachQuery(bool exit_if_already_detached, bool thread_exits)
 
     thread_state = thread_exits ? ThreadState::Died : ThreadState::DetachedFromQuery;
 
-#if defined(__linux__)
+#if defined(OS_LINUX)
     if (os_thread_priority)
     {
         LOG_TRACE(log, "Resetting nice");

@@ -3,9 +3,9 @@ sidebar_position: 37
 sidebar_label: SHOW
 ---
 
-# SHOW Statements {#show-queries}
+# SHOW Statements
 
-## SHOW CREATE TABLE {#show-create-table}
+## SHOW CREATE TABLE
 
 ``` sql
 SHOW CREATE [TEMPORARY] [TABLE|DICTIONARY|VIEW] [db.]table|view [INTO OUTFILE filename] [FORMAT format]
@@ -15,7 +15,7 @@ Returns a single `String`-type ‘statement’ column, which contains a single v
 
 Note that if you use this statement to get `CREATE` query of system tables, you will get a *fake* query, which only declares table structure, but cannot be used to create table.
 
-## SHOW DATABASES {#show-databases}
+## SHOW DATABASES
 
 Prints a list of all databases.
 
@@ -29,7 +29,7 @@ This statement is identical to the query:
 SELECT name FROM system.databases [WHERE name LIKE | ILIKE | NOT LIKE '<pattern>'] [LIMIT <N>] [INTO OUTFILE filename] [FORMAT format]
 ```
 
-### Examples {#examples}
+### Examples
 
 Getting database names, containing the symbols sequence 'de' in their names:
 
@@ -91,11 +91,11 @@ Result:
 └────────────────────────────────┘
 ```
 
-### See Also {#see-also}
+### See Also
 
 -   [CREATE DATABASE](https://clickhouse.com/docs/en/sql-reference/statements/create/database/#query-language-create-database)
 
-## SHOW PROCESSLIST {#show-processlist}
+## SHOW PROCESSLIST
 
 ``` sql
 SHOW PROCESSLIST [INTO OUTFILE filename] [FORMAT format]
@@ -111,7 +111,7 @@ Tip (execute in the console):
 $ watch -n1 "clickhouse-client --query='SHOW PROCESSLIST'"
 ```
 
-## SHOW TABLES {#show-tables}
+## SHOW TABLES
 
 Displays a list of tables.
 
@@ -127,7 +127,7 @@ This statement is identical to the query:
 SELECT name FROM system.tables [WHERE name LIKE | ILIKE | NOT LIKE '<pattern>'] [LIMIT <N>] [INTO OUTFILE <filename>] [FORMAT <format>]
 ```
 
-### Examples {#examples}
+### Examples
 
 Getting table names, containing the symbols sequence 'user' in their names:
 
@@ -190,12 +190,12 @@ Result:
 └────────────────────────────────┘
 ```
 
-### See Also {#see-also}
+### See Also
 
 -   [Create Tables](https://clickhouse.com/docs/en/getting-started/tutorial/#create-tables)
 -   [SHOW CREATE TABLE](https://clickhouse.com/docs/en/sql-reference/statements/show/#show-create-table)
 
-## SHOW DICTIONARIES {#show-dictionaries}
+## SHOW DICTIONARIES
 
 Displays a list of [external dictionaries](../../sql-reference/dictionaries/external-dictionaries/external-dicts.md).
 
@@ -226,11 +226,11 @@ SHOW DICTIONARIES FROM db LIKE '%reg%' LIMIT 2
 └──────────────┘
 ```
 
-## SHOW GRANTS {#show-grants-statement}
+## SHOW GRANTS
 
 Shows privileges for a user.
 
-### Syntax {#show-grants-syntax}
+### Syntax
 
 ``` sql
 SHOW GRANTS [FOR user1 [, user2 ...]]
@@ -238,126 +238,126 @@ SHOW GRANTS [FOR user1 [, user2 ...]]
 
 If user is not specified, the query returns privileges for the current user.
 
-## SHOW CREATE USER {#show-create-user-statement}
+## SHOW CREATE USER
 
 Shows parameters that were used at a [user creation](../../sql-reference/statements/create/user.md).
 
 `SHOW CREATE USER` does not output user passwords.
 
-### Syntax {#show-create-user-syntax}
+### Syntax
 
 ``` sql
 SHOW CREATE USER [name1 [, name2 ...] | CURRENT_USER]
 ```
 
-## SHOW CREATE ROLE {#show-create-role-statement}
+## SHOW CREATE ROLE
 
 Shows parameters that were used at a [role creation](../../sql-reference/statements/create/role.md).
 
-### Syntax {#show-create-role-syntax}
+### Syntax
 
 ``` sql
 SHOW CREATE ROLE name1 [, name2 ...]
 ```
 
-## SHOW CREATE ROW POLICY {#show-create-row-policy-statement}
+## SHOW CREATE ROW POLICY
 
 Shows parameters that were used at a [row policy creation](../../sql-reference/statements/create/row-policy.md).
 
-### Syntax {#show-create-row-policy-syntax}
+### Syntax
 
 ``` sql
 SHOW CREATE [ROW] POLICY name ON [database1.]table1 [, [database2.]table2 ...]
 ```
 
-## SHOW CREATE QUOTA {#show-create-quota-statement}
+## SHOW CREATE QUOTA
 
 Shows parameters that were used at a [quota creation](../../sql-reference/statements/create/quota.md).
 
-### Syntax {#show-create-quota-syntax}
+### Syntax
 
 ``` sql
 SHOW CREATE QUOTA [name1 [, name2 ...] | CURRENT]
 ```
 
-## SHOW CREATE SETTINGS PROFILE {#show-create-settings-profile-statement}
+## SHOW CREATE SETTINGS PROFILE
 
 Shows parameters that were used at a [settings profile creation](../../sql-reference/statements/create/settings-profile.md).
 
-### Syntax {#show-create-settings-profile-syntax}
+### Syntax
 
 ``` sql
 SHOW CREATE [SETTINGS] PROFILE name1 [, name2 ...]
 ```
 
-## SHOW USERS {#show-users-statement}
+## SHOW USERS
 
 Returns a list of [user account](../../operations/access-rights.md#user-account-management) names. To view user accounts parameters, see the system table [system.users](../../operations/system-tables/users.md#system_tables-users).
 
-### Syntax {#show-users-syntax}
+### Syntax
 
 ``` sql
 SHOW USERS
 ```
 
-## SHOW ROLES {#show-roles-statement}
+## SHOW ROLES
 
 Returns a list of [roles](../../operations/access-rights.md#role-management). To view another parameters, see system tables [system.roles](../../operations/system-tables/roles.md#system_tables-roles) and [system.role-grants](../../operations/system-tables/role-grants.md#system_tables-role_grants).
 
-### Syntax {#show-roles-syntax}
+### Syntax
 
 ``` sql
 SHOW [CURRENT|ENABLED] ROLES
 ```
-## SHOW PROFILES {#show-profiles-statement}
+## SHOW PROFILES
 
 Returns a list of [setting profiles](../../operations/access-rights.md#settings-profiles-management). To view user accounts parameters, see the system table [settings_profiles](../../operations/system-tables/settings_profiles.md#system_tables-settings_profiles).
 
-### Syntax {#show-profiles-syntax}
+### Syntax
 
 ``` sql
 SHOW [SETTINGS] PROFILES
 ```
 
-## SHOW POLICIES {#show-policies-statement}
+## SHOW POLICIES
 
 Returns a list of [row policies](../../operations/access-rights.md#row-policy-management) for the specified table. To view user accounts parameters, see the system table [system.row_policies](../../operations/system-tables/row_policies.md#system_tables-row_policies).
 
-### Syntax {#show-policies-syntax}
+### Syntax
 
 ``` sql
 SHOW [ROW] POLICIES [ON [db.]table]
 ```
 
-## SHOW QUOTAS {#show-quotas-statement}
+## SHOW QUOTAS
 
 Returns a list of [quotas](../../operations/access-rights.md#quotas-management). To view quotas parameters, see the system table [system.quotas](../../operations/system-tables/quotas.md#system_tables-quotas).
 
-### Syntax {#show-quotas-syntax}
+### Syntax
 
 ``` sql
 SHOW QUOTAS
 ```
 
-## SHOW QUOTA {#show-quota-statement}
+## SHOW QUOTA
 
 Returns a [quota](../../operations/quotas.md) consumption for all users or for current user. To view another parameters, see system tables [system.quotas_usage](../../operations/system-tables/quotas_usage.md#system_tables-quotas_usage) and [system.quota_usage](../../operations/system-tables/quota_usage.md#system_tables-quota_usage).
 
-### Syntax {#show-quota-syntax}
+### Syntax
 
 ``` sql
 SHOW [CURRENT] QUOTA
 ```
-## SHOW ACCESS {#show-access-statement}
+## SHOW ACCESS
 
 Shows all [users](../../operations/access-rights.md#user-account-management), [roles](../../operations/access-rights.md#role-management), [profiles](../../operations/access-rights.md#settings-profiles-management), etc. and all their [grants](../../sql-reference/statements/grant.md#grant-privileges).
 
-### Syntax {#show-access-syntax}
+### Syntax
 
 ``` sql
 SHOW ACCESS
 ```
-## SHOW CLUSTER(s) {#show-cluster-statement}
+## SHOW CLUSTER(s)
 
 Returns a list of clusters. All available clusters are listed in the [system.clusters](../../operations/system-tables/clusters.md) table.
 
@@ -365,13 +365,13 @@ Returns a list of clusters. All available clusters are listed in the [system.clu
 `SHOW CLUSTER name` query displays the contents of system.clusters table for this cluster.
 :::
 
-### Syntax {#show-cluster-syntax}
+### Syntax
 
 ``` sql
 SHOW CLUSTER '<name>'
 SHOW CLUSTERS [LIKE|NOT LIKE '<pattern>'] [LIMIT <N>]
 ```
-### Examples {#show-cluster-examples}
+### Examples
 
 Query:
 
@@ -431,7 +431,7 @@ errors_count:            0
 estimated_recovery_time: 0
 ```
 
-## SHOW SETTINGS {#show-settings}
+## SHOW SETTINGS
 
 Returns a list of system settings and their values. Selects data from the [system.settings](../../operations/system-tables/settings.md) table.
 

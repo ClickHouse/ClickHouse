@@ -67,7 +67,7 @@ MeiliSearchSource::MeiliSearchSource(
     UInt64 max_block_size_,
     QueryRoute route_,
     std::unordered_map<String, String> query_params_)
-    : SourceWithProgress(sample_block.cloneEmpty())
+    : ISource(sample_block.cloneEmpty())
     , connection(config)
     , max_block_size{max_block_size_}
     , route{route_}

@@ -253,7 +253,7 @@ void TranslateQualifiedNamesMatcher::visit(ASTExpressionList & node, const ASTPt
             {
                 for (const auto & column : table.columns)
                 {
-                    if (asterisk_regexp_pattern->isColumnMatching(column.name) && (first_table || !data.join_using_columns.count(column.name)))
+                    if (asterisk_regexp_pattern->isColumnMatching(column.name) && (first_table || !data.join_using_columns.contains(column.name)))
                     {
                         addIdentifier(columns, table.table, column.name);
                     }

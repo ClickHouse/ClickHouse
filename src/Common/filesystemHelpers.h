@@ -19,7 +19,7 @@ bool enoughSpaceInDirectory(const std::string & path, size_t data_size);
 std::unique_ptr<TemporaryFile> createTemporaryFile(const std::string & path);
 
 // Determine what block device is responsible for specified path
-#if !defined(__linux__)
+#if !defined(OS_LINUX)
 [[noreturn]]
 #endif
 String getBlockDeviceId([[maybe_unused]] const String & path);
@@ -32,13 +32,13 @@ enum class BlockDeviceType
 };
 
 // Try to determine block device type
-#if !defined(__linux__)
+#if !defined(OS_LINUX)
 [[noreturn]]
 #endif
 BlockDeviceType getBlockDeviceType([[maybe_unused]] const String & device_id);
 
 // Get size of read-ahead in bytes for specified block device
-#if !defined(__linux__)
+#if !defined(OS_LINUX)
 [[noreturn]]
 #endif
 UInt64 getBlockDeviceReadAheadBytes([[maybe_unused]] const String & device_id);
@@ -47,7 +47,7 @@ UInt64 getBlockDeviceReadAheadBytes([[maybe_unused]] const String & device_id);
 std::filesystem::path getMountPoint(std::filesystem::path absolute_path);
 
 /// Returns name of filesystem mounted to mount_point
-#if !defined(__linux__)
+#if !defined(OS_LINUX)
 [[noreturn]]
 #endif
 String getFilesystemName([[maybe_unused]] const String & mount_point);
@@ -75,7 +75,10 @@ bool canRead(const std::string & path);
 bool canWrite(const std::string & path);
 bool canExecute(const std::string & path);
 
+/// st_mtime
 time_t getModificationTime(const std::string & path);
 Poco::Timestamp getModificationTimestamp(const std::string & path);
 void setModificationTime(const std::string & path, time_t time);
+/// st_ctime
+time_t getChangeTime(const std::string & path);
 }

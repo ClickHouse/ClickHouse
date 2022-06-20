@@ -397,8 +397,8 @@ bool MySQLDumpRowInputFormat::readField(IColumn & column, size_t column_idx)
 
 void MySQLDumpRowInputFormat::skipField()
 {
-    String tmp;
-    readQuotedField(tmp, *in);
+    NullOutput out;
+    readQuotedFieldInto(out, *in);
 }
 
 MySQLDumpSchemaReader::MySQLDumpSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_)

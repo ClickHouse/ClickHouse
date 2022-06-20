@@ -88,6 +88,17 @@ TableExclusiveLockHolder IStorage::lockExclusively(const String & query_id, cons
     return result;
 }
 
+Pipe IStorage::watch(
+    const Names & /*column_names*/,
+    const SelectQueryInfo & /*query_info*/,
+    ContextPtr /*context*/,
+    QueryProcessingStage::Enum & /*processed_stage*/,
+    size_t /*max_block_size*/,
+    unsigned /*num_streams*/)
+{
+    throw Exception("Method watch is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+}
+
 Pipe IStorage::read(
     const Names & /*column_names*/,
     const StorageSnapshotPtr & /*storage_snapshot*/,
@@ -111,6 +122,18 @@ void IStorage::read(
     unsigned num_streams)
 {
     auto pipe = read(column_names, storage_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
+    readFromPipe(query_plan, std::move(pipe), column_names, storage_snapshot, query_info, context, getName());
+}
+
+void IStorage::readFromPipe(
+    QueryPlan & query_plan,
+    Pipe pipe,
+    const Names & column_names,
+    const StorageSnapshotPtr & storage_snapshot,
+    SelectQueryInfo & query_info,
+    ContextPtr context,
+    std::string storage_name)
+{
     if (pipe.empty())
     {
         auto header = storage_snapshot->getSampleBlockForColumns(column_names);
@@ -118,9 +141,16 @@ void IStorage::read(
     }
     else
     {
-        auto read_step = std::make_unique<ReadFromStorageStep>(std::move(pipe), getName());
+        auto read_step = std::make_unique<ReadFromStorageStep>(std::move(pipe), storage_name, query_info.storage_limits);
         query_plan.addStep(std::move(read_step));
     }
+}
+
+std::optional<QueryPipeline> IStorage::distributedWrite(
+    const ASTInsertQuery & /*query*/,
+    ContextPtr /*context*/)
+{
+    return {};
 }
 
 Pipe IStorage::alterPartition(
@@ -230,11 +260,6 @@ std::string PrewhereInfo::dump() const
 {
     WriteBufferFromOwnString ss;
     ss << "PrewhereDagInfo\n";
-
-    if (alias_actions)
-    {
-        ss << "alias_actions " << alias_actions->dumpDAG() << "\n";
-    }
 
     if (prewhere_actions)
     {

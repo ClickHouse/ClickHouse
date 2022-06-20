@@ -3,7 +3,7 @@ sidebar_position: 54
 sidebar_label: dictionary function
 ---
 
-# dictionary {#dictionary-function}
+# dictionary
 
 Displays the [dictionary](../../sql-reference/dictionaries/external-dictionaries/external-dicts.md) data as a ClickHouse table. Works the same way as [Dictionary](../../engines/table-engines/special/dictionary.md) engine.
 

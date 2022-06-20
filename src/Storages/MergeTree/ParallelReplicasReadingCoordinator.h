@@ -17,4 +17,6 @@ private:
     std::unique_ptr<Impl> pimpl;
 };
 
+using ParallelReplicasReadingCoordinatorPtr = std::shared_ptr<ParallelReplicasReadingCoordinator>;
+
 }
