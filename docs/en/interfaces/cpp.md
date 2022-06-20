@@ -7,4 +7,6 @@ sidebar_label: C++ Client Library
 
 See README at [clickhouse-cpp](https://github.com/ClickHouse/clickhouse-cpp) repository.
 
-[Original article](https://clickhouse.com/docs/en/interfaces/cpp/) <!--hide-->
+# userver Asynchronous Framework
+
+[userver (beta)](https://github.com/userver-framework/userver) has builtin support for ClickHouse.

@@ -24,7 +24,7 @@ TEST(ReplicatedAccessStorage, ShutdownWithFailedStartup)
 
     try
     {
-        auto storage = ReplicatedAccessStorage("replicated", "/clickhouse/access", get_zk, changes_notifier);
+        auto storage = ReplicatedAccessStorage("replicated", "/clickhouse/access", get_zk, changes_notifier, false);
     }
     catch (Exception & e)
     {
