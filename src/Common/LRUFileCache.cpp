@@ -111,7 +111,7 @@ FileSegments LRUFileCache::getImpl(
 
         files.erase(key);
 
-        /// Note: it is guaranteed that there is no concurrency with files delition,
+        /// Note: it is guaranteed that there is no concurrency with files deletion,
         /// because cache files are deleted only inside IFileCache and under cache lock.
         if (fs::exists(key_path))
             fs::remove_all(key_path);
