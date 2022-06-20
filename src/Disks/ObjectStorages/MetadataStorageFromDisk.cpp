@@ -471,6 +471,11 @@ Poco::Timestamp MetadataStorageFromDisk::getLastModified(const std::string & pat
     return disk->getLastModified(path);
 }
 
+time_t MetadataStorageFromDisk::getLastChanged(const std::string & path) const
+{
+    return disk->getLastChanged(path);
+}
+
 uint64_t MetadataStorageFromDisk::getFileSize(const String & path) const
 {
     auto metadata = readMetadata(path);
@@ -484,7 +489,7 @@ std::vector<std::string> MetadataStorageFromDisk::listDirectory(const std::strin
     return result_files;
 }
 
-DirectoryIteratorPtr MetadataStorageFromDisk::iterateDirectory(const std::string & path)
+DirectoryIteratorPtr MetadataStorageFromDisk::iterateDirectory(const std::string & path) const
 {
     return disk->iterateDirectory(path);
 }

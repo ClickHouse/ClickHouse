@@ -32,6 +32,7 @@ The list of available `SYSTEM` statements:
 -   [START TTL MERGES](#query_language-start-ttl-merges)
 -   [STOP MOVES](#query_language-stop-moves)
 -   [START MOVES](#query_language-start-moves)
+-   [SYSTEM UNFREEZE](#query_language-system-unfreeze)
 -   [STOP FETCHES](#query_language-system-stop-fetches)
 -   [START FETCHES](#query_language-system-start-fetches)
 -   [STOP REPLICATED SENDS](#query_language-system-start-replicated-sends)
@@ -237,6 +238,14 @@ Returns `Ok.` even if table does not exist. Returns error when database does not
 
 ``` sql
 SYSTEM START MOVES [[db.]merge_tree_family_table_name]
+```
+
+### SYSTEM UNFREEZE {#query_language-system-unfreeze}
+
+Clears freezed backup with the specified name from all the disks. See more about unfreezing separate parts in [ALTER TABLE table_name UNFREEZE WITH NAME ](alter/partition.md#alter_unfreeze-partition)
+
+``` sql
+SYSTEM UNFREEZE WITH NAME <backup_name>
 ```
 
 ## Managing ReplicatedMergeTree Tables

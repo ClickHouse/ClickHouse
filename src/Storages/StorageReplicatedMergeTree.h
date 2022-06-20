@@ -111,6 +111,9 @@ public:
     void flush() override;
     ~StorageReplicatedMergeTree() override;
 
+    static String getDefaultZooKeeperPath(const Poco::Util::AbstractConfiguration & config);
+    static String getDefaultReplicaName(const Poco::Util::AbstractConfiguration & config);
+
     std::string getName() const override { return "Replicated" + merging_params.getModeName() + "MergeTree"; }
 
     bool supportsParallelInsert() const override { return true; }
@@ -219,7 +222,24 @@ public:
     /// Checks ability to use granularity
     bool canUseAdaptiveGranularity() const override;
 
+    /// Returns the default path to the table in ZooKeeper.
+    /// It's used if not set in engine's arguments while creating a replicated table.
+    static String getDefaultReplicaPath(const ContextPtr & context_);
+
+    /// Returns the default replica name in ZooKeeper.
+    /// It's used if not set in engine's arguments while creating a replicated table.
+    static String getDefaultReplicaName(const ContextPtr & context_);
+
     int getMetadataVersion() const { return metadata_version; }
+
+    /// Returns a slightly changed version of the CREATE TABLE query which must be written to a backup.
+    ASTPtr getCreateQueryForBackup(const ContextPtr & context, DatabasePtr * database) const override;
+
+    /// Makes backup entries to backup the data of the storage.
+    void backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override;
+
+    /// Extract data from the backup and put it to the storage.
+    void restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override;
 
     /** Remove a specific replica from zookeeper.
      */
@@ -229,9 +249,6 @@ public:
     /// Removes table from ZooKeeper after the last replica was dropped
     static bool removeTableNodesFromZooKeeper(zkutil::ZooKeeperPtr zookeeper, const String & zookeeper_path,
                                               const zkutil::EphemeralNodeHolder::Ptr & metadata_drop_lock, Poco::Logger * logger);
-
-    /// Extract data from the backup and put it to the storage.
-    RestoreTaskPtr restoreData(ContextMutablePtr local_context, const ASTs & partitions, const BackupPtr & backup, const String & data_path_in_backup, const StorageRestoreSettings & restore_settings, const std::shared_ptr<IRestoreCoordination> & restore_coordination) override;
 
     /// Schedules job to execute in background pool (merge, mutate, drop range and so on)
     bool scheduleDataProcessingJob(BackgroundJobsAssignee & assignee) override;
@@ -299,6 +316,9 @@ public:
 
     /// Check if there are new broken disks and enqueue part recovery tasks.
     void checkBrokenDisks();
+
+    static bool removeSharedDetachedPart(DiskPtr disk, const String & path, const String & part_name, const String & table_uuid,
+        const String & zookeeper_name, const String & replica_name, const String & zookeeper_path, ContextPtr local_context);
 
 private:
     std::atomic_bool are_restoring_replica {false};
@@ -777,6 +797,9 @@ private:
 
     void startBackgroundMovesIfNeeded() override;
 
+    /// Attaches restored parts to the storage.
+    void attachRestoredParts(MutableDataPartsVector && parts) override;
+
     std::unique_ptr<MergeTreeSettings> getDefaultSettings() const override;
 
     PartitionBlockNumbersHolder allocateBlockNumbersInAffectedPartitions(
@@ -791,9 +814,6 @@ private:
         const String & path_to_set_hardlinked_files = "", const NameSet & hardlinked_files = {});
 
     bool removeDetachedPart(DiskPtr disk, const String & path, const String & part_name, bool is_freezed) override;
-
-    bool removeSharedDetachedPart(DiskPtr disk, const String & path, const String & part_name, const String & table_uuid,
-        const String & zookeeper_name, const String & replica_name, const String & zookeeper_path);
 
     /// Create freeze metadata for table and save in zookeeper. Required only if zero-copy replication enabled.
     void createAndStoreFreezeMetadata(DiskPtr disk, DataPartPtr part, String backup_part_path) const override;

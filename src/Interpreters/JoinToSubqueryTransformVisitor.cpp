@@ -361,6 +361,7 @@ struct CheckAliasDependencyVisitorData
             dependency = &ident;
     }
 };
+
 using CheckAliasDependencyMatcher = OneTypeMatcher<CheckAliasDependencyVisitorData>;
 using CheckAliasDependencyVisitor = InDepthNodeVisitor<CheckAliasDependencyMatcher, true>;
 
@@ -500,6 +501,7 @@ void restoreName(ASTIdentifier & ident, const String & original_name, NameSet & 
 {
     if (!ident.tryGetAlias().empty())
         return;
+
     if (original_name.empty())
         return;
 
@@ -509,7 +511,9 @@ void restoreName(ASTIdentifier & ident, const String & original_name, NameSet & 
         restored_names.emplace(original_name);
     }
     else
+    {
         ident.setShortName(original_name);
+    }
 }
 
 /// Find clashes and normalize names
@@ -527,12 +531,12 @@ std::vector<TableNeededColumns> normalizeColumnNamesExtractNeeded(
 {
     size_t last_table_pos = tables.size() - 1;
 
-    NameSet restored_names;
     std::vector<TableNeededColumns> needed_columns;
     needed_columns.reserve(tables.size());
     for (const auto & table : tables)
         needed_columns.push_back(TableNeededColumns{table.table});
 
+    NameSet restored_names;
     for (ASTIdentifier * ident : identifiers)
     {
         bool got_alias = aliases.contains(ident->name());
@@ -729,7 +733,10 @@ void JoinToSubqueryTransformMatcher::visit(ASTSelectQuery & select, ASTPtr & ast
     std::unordered_set<ASTIdentifier *> public_identifiers;
     for (auto & top_level_child : select.select()->children)
         if (auto * ident = top_level_child->as<ASTIdentifier>())
-            public_identifiers.insert(ident);
+        {
+            if (!data.try_to_keep_original_names || startsWith(ident->name(), UniqueShortNames::pattern))
+                public_identifiers.insert(ident);
+        }
 
     UniqueShortNames unique_names;
     std::vector<TableNeededColumns> needed_columns =

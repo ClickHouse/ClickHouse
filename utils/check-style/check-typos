@@ -5,7 +5,7 @@
 ROOT_PATH=$(git rev-parse --show-toplevel)
 
 codespell \
-    --skip "*generated*,*gperf*,*.bin,*.mrk*,*.idx,checksums.txt,*.dat,*.pyc,*.kate-swp,*obfuscateQueries.cpp,${ROOT_PATH}/utils/check-style/aspell-ignore" \
+    --skip "*generated*,*gperf*,*.bin,*.mrk*,*.idx,checksums.txt,*.dat,*.pyc,*.kate-swp,*obfuscateQueries.cpp,d3-*.js,*.min.js,${ROOT_PATH}/utils/check-style/aspell-ignore" \
     --ignore-words "${ROOT_PATH}/utils/check-style/codespell-ignore-words.list" \
     --exclude-file "${ROOT_PATH}/utils/check-style/codespell-ignore-lines.list" \
     --quiet-level 2 \

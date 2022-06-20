@@ -2,6 +2,8 @@
 #include <Access/AccessControl.h>
 #include <Access/Common/AccessFlags.h>
 #include <Access/User.h>
+#include <Backups/BackupEntriesCollector.h>
+#include <Backups/RestorerFromBackup.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeUUID.h>
@@ -210,6 +212,26 @@ void StorageSystemUsers::fillData(MutableColumns & res_columns, ContextPtr conte
         add_row(user->getName(), id, storage->getStorageName(), user->auth_data, user->allowed_client_hosts,
                 user->default_roles, user->grantees, user->default_database);
     }
+}
+
+void StorageSystemUsers::backupData(
+    BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & partitions)
+{
+    if (partitions)
+        BackupEntriesCollector::throwPartitionsNotSupported(getStorageID(), getName());
+
+    const auto & access_control = backup_entries_collector.getContext()->getAccessControl();
+    access_control.backup(backup_entries_collector, AccessEntityType::USER, data_path_in_backup);
+}
+
+void StorageSystemUsers::restoreDataFromBackup(
+    RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & partitions)
+{
+    if (partitions)
+        RestorerFromBackup::throwPartitionsNotSupported(getStorageID(), getName());
+
+    auto & access_control = restorer.getContext()->getAccessControl();
+    access_control.restore(restorer, data_path_in_backup);
 }
 
 }
