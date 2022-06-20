@@ -1,7 +1,7 @@
 #pragma once
 #include "config_functions.h"
 
-#if USE_BASE58
+#if USE_BASEX
 #    include <Columns/ColumnConst.h>
 #    include <Common/MemorySanitizer.h>
 #    include <Columns/ColumnString.h>

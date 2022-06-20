@@ -1,7 +1,6 @@
 #include <Functions/FunctionBase58Conversion.h>
-#if USE_BASE58
+#if USE_BASEX
 #include <Functions/FunctionFactory.h>
-#include <DataTypes/DataTypeString.h>
 
 namespace DB
 {
