@@ -270,4 +270,4 @@
 	url = https://github.com/schoentoon/hashidsxx.git
 [submodule "contrib/base-x"]
 	path = contrib/base-x
-	url = https://github.com/Kronuz/base-x.git
+	url = https://github.com/ClickHouse/base-x.git
