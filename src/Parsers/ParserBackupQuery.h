@@ -10,8 +10,7 @@ namespace DB
   *          DICTIONARY [db.]dictionary_name [AS [db.]dictionary_name_in_backup] |
   *          DATABASE database_name [AS database_name_in_backup] [EXCEPT TABLES ...] |
   *          TEMPORARY TABLE table_name [AS table_name_in_backup] |
-  *          ALL TEMPORARY TABLES [EXCEPT ...] |
-  *          ALL DATABASES [EXCEPT ...] } [,...]
+  *          ALL [EXCEPT {TABLES|DATABASES}...] } [,...]
   *        [ON CLUSTER 'cluster_name']
   *        TO { File('path/') |
   *             Disk('disk_name', 'path/')
@@ -21,8 +20,7 @@ namespace DB
   *          DICTIONARY [db.]dictionary_name_in_backup [AS [db.]dictionary_name] |
   *          DATABASE database_name_in_backup [AS database_name] [EXCEPT TABLES ...] |
   *          TEMPORARY TABLE table_name_in_backup [AS table_name] |
-  *          ALL TEMPORARY TABLES [EXCEPT ...] |
-  *          ALL DATABASES [EXCEPT ...] } [,...]
+  *          ALL [EXCEPT {TABLES|DATABASES} ...] } [,...]
   *         [ON CLUSTER 'cluster_name']
   *         FROM {File(...) | Disk(...)}
   */

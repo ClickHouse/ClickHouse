@@ -89,6 +89,24 @@ void ASTFunction::appendColumnNameImpl(WriteBuffer & ostr) const
     }
 }
 
+void ASTFunction::finishFormatWithWindow(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+{
+    if (!is_window_function)
+        return;
+
+    settings.ostr << " OVER ";
+    if (!window_name.empty())
+    {
+        settings.ostr << backQuoteIfNeed(window_name);
+    }
+    else
+    {
+        settings.ostr << "(";
+        window_definition->formatImpl(settings, state, frame);
+        settings.ostr << ")";
+    }
+}
+
 /** Get the text that identifies this element. */
 String ASTFunction::getID(char delim) const
 {
@@ -563,7 +581,7 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
 
     if (written)
     {
-        return;
+        return finishFormatWithWindow(settings, state, frame);
     }
 
     settings.ostr << (settings.hilite ? hilite_function : "") << name;
@@ -603,22 +621,7 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
 
     settings.ostr << (settings.hilite ? hilite_none : "");
 
-    if (!is_window_function)
-    {
-        return;
-    }
-
-    settings.ostr << " OVER ";
-    if (!window_name.empty())
-    {
-        settings.ostr << backQuoteIfNeed(window_name);
-    }
-    else
-    {
-        settings.ostr << "(";
-        window_definition->formatImpl(settings, state, frame);
-        settings.ostr << ")";
-    }
+    return finishFormatWithWindow(settings, state, frame);
 }
 
 String getFunctionName(const IAST * ast)
