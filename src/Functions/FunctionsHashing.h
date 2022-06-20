@@ -2,7 +2,6 @@
 
 #include <city.h>
 #include <farmhash.h>
-#include <farsh.h>
 #include <metrohash.h>
 #include <MurmurHash2.h>
 #include <MurmurHash3.h>
@@ -1380,7 +1379,7 @@ struct ImplFarshHash32
 
     static UInt32 apply(const char * s, const size_t len)
     {
-        return farsh(s, len, 0);
+        return farsh(s, len, 0x37D85889DBC97C4AULL);
     }
     static UInt32 combineHashes(UInt32 h1, UInt32 h2)
     {
