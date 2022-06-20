@@ -49,6 +49,8 @@ public:
     /// Add limit or change it to lower value.
     void updateLimit(size_t limit_);
 
+    void convertToFinishSorting(SortDescription prefix_description);
+
 private:
 
     enum class Type
