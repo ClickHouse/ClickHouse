@@ -4,10 +4,12 @@
 #include <base/errnoToString.h>
 #include <Common/assert_cast.h>
 #include <Common/Exception.h>
+#include <Common/MemorySanitizer.h>
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Stopwatch.h>
 #include <Common/setThreadName.h>
+#include <Common/logger_useful.h>
 #include <future>
 
 namespace ProfileEvents
@@ -18,7 +20,6 @@ namespace ProfileEvents
 
     extern const Event IOUringSQEsSubmitted;
     extern const Event IOUringSQEsResubmits;
-    extern const Event IOUringShortReads;
 }
 
 namespace CurrentMetrics
@@ -41,6 +42,7 @@ namespace ErrorCodes
 }
 
 IOUringReader::IOUringReader(uint32_t entries_)
+ : log(&Poco::Logger::get("IOUringReader"))
 {
     struct io_uring_probe * probe = io_uring_get_probe();
     if (!probe)
@@ -199,15 +201,21 @@ void IOUringReader::monitorRing()
         struct io_uring_cqe * cqe;
         int ret = io_uring_wait_cqe(&ring, &cqe);
 
-        if (ret == -EAGAIN)
+        if (ret == -EAGAIN || ret == -EINTR)
             continue;
 
         if (ret < 0)
-            throwFromErrno("Failed waiting for io_uring CQEs", ErrorCodes::IO_URING_WAIT_ERROR, -ret);
+        {
+            LOG_ERROR(log, "Failed waiting for io_uring CQEs: {}", errnoToString(ErrorCodes::IO_URING_WAIT_ERROR, -ret));
+            continue;
+        }
 
         // user_data zero means a noop event sent from the destructor meant to interrupt the thread
         if (cancelled.load(std::memory_order_relaxed) || cqe->user_data == 0)
+        {
+            LOG_DEBUG(log, "Stopping IOUringMonitor thread");
             break;
+        }
 
         // it is safe to re-submit events once we take the lock here
         std::unique_lock lock{mutex};
@@ -215,7 +223,10 @@ void IOUringReader::monitorRing()
         auto request_id = cqe->user_data;
         const auto it = in_flight_requests.find(request_id);
         if (it == in_flight_requests.end())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Got a completion event for a request {} that was not submitted", request_id);
+        {
+            LOG_ERROR(log, "Got a completion event for a request {} that was not submitted", request_id);
+            continue;
+        }
 
         auto & enqueued = it->second;
 
@@ -245,9 +256,10 @@ void IOUringReader::monitorRing()
 
         if (bytes_read > 0)
         {
+            __msan_unpoison(enqueued.request.buf + enqueued.bytes_read, bytes_read);
+
             ProfileEvents::increment(ProfileEvents::ReadBufferFromFileDescriptorRead);
             ProfileEvents::increment(ProfileEvents::ReadBufferFromFileDescriptorReadBytes, bytes_read);
-            if (enqueued.bytes_read > 0) ProfileEvents::increment(ProfileEvents::IOUringShortReads);
         }
 
         if (bytes_read > 0 && total_bytes_read < enqueued.request.size)

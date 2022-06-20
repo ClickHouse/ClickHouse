@@ -347,7 +347,6 @@
     \
     M(IOUringSQEsSubmitted, "Total number of io_uring SQEs submitted") \
     M(IOUringSQEsResubmits, "Total number of io_uring SQE resubmits performed") \
-    M(IOUringShortReads, "Total number of short (partial) reads returned by io_uring") \
 
 namespace ProfileEvents
 {
