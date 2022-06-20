@@ -94,6 +94,15 @@ ProcessList::EntryPtr ProcessList::insert(const String & query_, const IAST * as
                 throw Exception("Too many simultaneous queries. Maximum: " + toString(max_size), ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES);
         }
 
+        if (!is_unlimited_query && settings.guaranteed_memory_usage > available_memory)
+        {
+            if (queue_max_wait_ms)
+                LOG_WARNING(&Poco::Logger::get("ProcessList"), "Too many simultaneous queries, will wait {} ms.", queue_max_wait_ms);
+            if (!queue_max_wait_ms || !have_space.wait_for(lock, std::chrono::milliseconds(queue_max_wait_ms), [&]{ return settings.guaranteed_memory_usage <= available_memory; }))
+                throw Exception("Too many simultaneous queries. Maximum: " + toString(max_size), ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES);
+        }
+        available_memory -= settings.guaranteed_memory_usage;
+
         if (!is_unlimited_query)
         {
             QueryAmount amount = getQueryKindAmount(query_kind);
@@ -198,8 +207,20 @@ ProcessList::EntryPtr ProcessList::insert(const String & query_, const IAST * as
 
         auto user_process_list_it = user_to_queries.find(client_info.current_user);
         if (user_process_list_it == user_to_queries.end())
+        {
             user_process_list_it = user_to_queries.emplace(client_info.current_user, this).first;
+            user_process_list_it->second.available_memory_for_user = settings.max_guaranteed_memory_usage_for_user;
+        }
         ProcessListForUser & user_process_list = user_process_list_it->second;
+
+        if (!is_unlimited_query && settings.guaranteed_memory_usage > user_process_list.available_memory_for_user)
+        {
+            if (queue_max_wait_ms)
+                LOG_WARNING(&Poco::Logger::get("ProcessList"), "Too many simultaneous queries, will wait {} ms.", queue_max_wait_ms);
+            if (!queue_max_wait_ms || !have_space.wait_for(lock, std::chrono::milliseconds(queue_max_wait_ms), [&]{ return settings.guaranteed_memory_usage <= user_process_list.available_memory_for_user; }))
+                throw Exception("Too many simultaneous queries. Maximum: " + toString(max_size), ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES);
+        }
+        user_process_list.available_memory_for_user -= settings.guaranteed_memory_usage;
 
         /// Actualize thread group info
         auto thread_group = CurrentThread::getGroup();
@@ -234,7 +255,7 @@ ProcessList::EntryPtr ProcessList::insert(const String & query_, const IAST * as
         }
 
         auto process_it = processes.emplace(processes.end(),
-            query_context, query_, client_info, priorities.insert(settings.priority), std::move(thread_group), query_kind);
+            query_context, query_, client_info, priorities.insert(settings.priority), std::move(thread_group), query_kind, settings.guaranteed_memory_usage);
 
         increaseQueryKindAmount(query_kind);
 
@@ -276,6 +297,7 @@ ProcessListEntry::~ProcessListEntry()
     IAST::QueryKind query_kind = it->query_kind;
 
     const QueryStatus * process_list_element_ptr = &*it;
+    auto guaranteed_memory_usage = process_list_element_ptr->guaranteed_memory_usage;
 
     auto user_process_list_it = parent.user_to_queries.find(user);
     if (user_process_list_it == parent.user_to_queries.end())
@@ -307,6 +329,8 @@ ProcessListEntry::~ProcessListEntry()
     }
 
     parent.decreaseQueryKindAmount(query_kind);
+    parent.available_memory += guaranteed_memory_usage;
+    user_process_list.available_memory_for_user += guaranteed_memory_usage;
 
     parent.have_space.notify_all();
 
@@ -326,7 +350,8 @@ QueryStatus::QueryStatus(
     const ClientInfo & client_info_,
     QueryPriorities::Handle && priority_handle_,
     ThreadGroupStatusPtr && thread_group_,
-    IAST::QueryKind query_kind_)
+    IAST::QueryKind query_kind_,
+    UInt64 guaranteed_memory_usage_)
     : WithContext(context_)
     , query(query_)
     , client_info(client_info_)
@@ -334,6 +359,7 @@ QueryStatus::QueryStatus(
     , priority_handle(std::move(priority_handle_))
     , query_kind(query_kind_)
     , num_queries_increment(CurrentMetrics::Query)
+    , guaranteed_memory_usage(guaranteed_memory_usage_)
 {
     auto settings = getContext()->getSettings();
     limits.max_execution_time = settings.max_execution_time;

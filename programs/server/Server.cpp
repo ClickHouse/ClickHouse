@@ -1099,6 +1099,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
             total_memory_tracker.setHardLimit(max_server_memory_usage);
             total_memory_tracker.setDescription("(total)");
             total_memory_tracker.setMetric(CurrentMetrics::MemoryTracking);
+            global_context->getProcessList().setMaxAvailableMemory(max_server_memory_usage);
 
             auto * global_overcommit_tracker = global_context->getGlobalOvercommitTracker();
             total_memory_tracker.setOvercommitTracker(global_overcommit_tracker);

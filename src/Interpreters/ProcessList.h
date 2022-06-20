@@ -132,6 +132,8 @@ protected:
     /// increments/decrements metric in constructor/destructor.
     CurrentMetrics::Increment num_queries_increment;
 
+    const UInt64 guaranteed_memory_usage;
+
 public:
 
     QueryStatus(
@@ -140,7 +142,8 @@ public:
         const ClientInfo & client_info_,
         QueryPriorities::Handle && priority_handle_,
         ThreadGroupStatusPtr && thread_group_,
-        IAST::QueryKind query_kind_
+        IAST::QueryKind query_kind_,
+        UInt64 guaranteed_memory_usage_
         );
 
     ~QueryStatus();
@@ -246,6 +249,8 @@ struct ProcessListForUser
 
     ProcessListForUserInfo getInfo(bool get_profile_events = false) const;
 
+    UInt64 available_memory_for_user;
+
     /// Clears MemoryTracker for the user.
     /// Sometimes it is important to reset the MemoryTracker, because it may accumulate skew
     ///  due to the fact that there are cases when memory can be allocated while processing the query, but released later.
@@ -313,6 +318,7 @@ protected:
     /// List of queries
     Container processes;
     size_t max_size = 0;        /// 0 means no limit. Otherwise, when limit exceeded, an exception is thrown.
+    UInt64 available_memory;
 
     /// Stores per-user info: queries, statistics and limits
     UserToQueries user_to_queries;
@@ -374,6 +380,12 @@ public:
     {
         std::lock_guard lock(mutex);
         max_select_queries_amount = max_select_queries_amount_;
+    }
+
+    void setMaxAvailableMemory(UInt64 max_available_memory)
+    {
+        std::lock_guard lock(mutex);
+        available_memory = max_available_memory;
     }
 
     /// Try call cancel() for input and output streams of query with specified id and user
