@@ -4225,8 +4225,8 @@ DataPartStoragePtr StorageReplicatedMergeTree::fetchExistsPart(const String & pa
     {
         part = get_part();
 
-        if (part->data_part_storage->getName() != replaced_disk->getName())
-            throw Exception("Part " + part->name + " fetched on wrong disk " + part->data_part_storage->getName(), ErrorCodes::LOGICAL_ERROR);
+        if (part->data_part_storage->getDiskName() != replaced_disk->getName())
+            throw Exception("Part " + part->name + " fetched on wrong disk " + part->data_part_storage->getDiskName(), ErrorCodes::LOGICAL_ERROR);
 
         auto replaced_path = fs::path(replaced_part_path);
         part->data_part_storage->rename(replaced_path.parent_path(), replaced_path.filename(), nullptr, true, false);
@@ -7407,7 +7407,7 @@ void StorageReplicatedMergeTree::checkBrokenDisks()
 
             for (auto & part : *parts)
             {
-                if (part->data_part_storage && part->data_part_storage->getName() == disk_ptr->getName())
+                if (part->data_part_storage && part->data_part_storage->getDiskName() == disk_ptr->getName())
                     broken_part_callback(part->name);
             }
             continue;

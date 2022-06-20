@@ -15,23 +15,33 @@ class DataPartStorageOnDisk final : public IDataPartStorage
 public:
     DataPartStorageOnDisk(VolumePtr volume_, std::string root_path_, std::string part_dir_);
 
+    std::string getFullPath() const override;
+    std::string getRelativePath() const override;
+    std::string getPartDirectory() const override { return part_dir; }
+    std::string getFullRootPath() const override;
+
+    DataPartStoragePtr getProjection(const std::string & name) const override;
+
+    bool exists() const override;
+    bool exists(const std::string & name) const override;
+    bool isDirectory(const std::string & name) const override;
+
+    Poco::Timestamp getLastModified() const override;
+    DataPartStorageIteratorPtr iterate() const override;
+
+    size_t getFileSize(const std::string & file_name) const override;
+    UInt32 getRefCount(const std::string & file_name) const override;
+
+    UInt64 calculateTotalSizeOnDisk() const override;
+
     std::unique_ptr<ReadBufferFromFileBase> readFile(
-        const std::string & path,
+        const std::string & name,
         const ReadSettings & settings,
         std::optional<size_t> read_hint,
         std::optional<size_t> file_size) const override;
 
-    bool exists() const override;
-    bool exists(const std::string & path) const override;
-    bool isDirectory(const std::string & path) const override;
-
-    Poco::Timestamp getLastModified() const override;
-
-    size_t getFileSize(const std::string & path) const override;
-    UInt32 getRefCount(const String & path) const override;
-
-    DataPartStorageIteratorPtr iterate() const override;
-    DataPartStorageIteratorPtr iterateDirectory(const std::string & path) const override;
+    void loadVersionMetadata(VersionMetadata & version, Poco::Logger * log) const override;
+    void checkConsistency(const MergeTreeDataPartChecksums & checksums) const override;
 
     void remove(
         bool can_remove_shared_data,
@@ -40,22 +50,26 @@ public:
         std::list<ProjectionChecksums> projections,
         Poco::Logger * log) const override;
 
-    void setRelativePath(const std::string & path) override;
-
     std::string getRelativePathForPrefix(Poco::Logger * log, const String & prefix, bool detached) const override;
 
-    std::string getPartDirectory() const override { return part_dir; }
-    std::string getFullPath() const override;
-    std::string getFullRootPath() const override;
-    std::string getFullRelativePath() const override;
+    void setRelativePath(const std::string & path) override;
 
-    UInt64 calculateTotalSizeOnDisk() const override;
-
+    std::string getDiskName() const override;
+    std::string getDiskType() const override;
     bool isStoredOnRemoteDisk() const override;
     bool supportZeroCopyReplication() const override;
     bool supportParallelWrite() const override;
     bool isBroken() const override;
-    std::string getDiskPathForLogs() const override;
+    void syncRevision(UInt64 revision) override;
+    UInt64 getRevision() const override;
+    std::unordered_map<String, String> getSerializedMetadata(const std::vector<String> & paths) const override;
+    std::string getDiskPath() const override;
+
+    DisksSet::const_iterator isStoredOnDisk(const DisksSet & disks) const override;
+
+    ReservationPtr reserve(UInt64 bytes) const override;
+    ReservationPtr tryReserve(UInt64 bytes) const override;
+    size_t getVolumeIndex(const IStoragePolicy &) const override;
 
     void writeChecksums(const MergeTreeDataPartChecksums & checksums, const WriteSettings & settings) const override;
     void writeColumns(const NamesAndTypesList & columns, const WriteSettings & settings) const override;
@@ -63,21 +77,12 @@ public:
     void appendCSNToVersionMetadata(const VersionMetadata & version, VersionMetadata::WhichCSN which_csn) const override;
     void appendRemovalTIDToVersionMetadata(const VersionMetadata & version, bool clear) const override;
     void writeDeleteOnDestroyMarker(Poco::Logger * log) const override;
-
     void removeDeleteOnDestroyMarker() const override;
     void removeVersionMetadata() const override;
-
-    void loadVersionMetadata(VersionMetadata & version, Poco::Logger * log) const override;
-
-    void checkConsistency(const MergeTreeDataPartChecksums & checksums) const override;
-
-    ReservationPtr reserve(UInt64 bytes) const override;
-    ReservationPtr tryReserve(UInt64 bytes) const override;
 
     String getUniqueId() const override;
 
     bool shallParticipateInMerges(const IStoragePolicy &) const override;
-    size_t getVolumeIndex(const IStoragePolicy &) const override;
 
     void backup(
         TemporaryFilesOnDisks & temp_dirs,
@@ -102,15 +107,6 @@ public:
 
     void changeRootPath(const std::string & from_root, const std::string & to_root) override;
 
-    std::string getName() const override;
-    std::string getDiskType() const override;
-
-    DisksSet::const_iterator isStoredOnDisk(const DisksSet & disks) const override;
-
-    DataPartStoragePtr getProjection(const std::string & name) const override;
-
-    DiskPtr getDisk() const;
-
 private:
     VolumePtr volume;
     std::string root_path;
@@ -134,27 +130,27 @@ public:
     void setRelativePath(const std::string & path) override;
 
     bool exists() const override;
-    bool exists(const std::string & path) const override;
+    bool exists(const std::string & name) const override;
 
     void createDirectories() override;
     void createProjection(const std::string & name) override;
 
     std::string getPartDirectory() const override { return part_dir; }
     std::string getFullPath() const override;
-    std::string getFullRelativePath() const override;
+    std::string getRelativePath() const override;
 
     std::unique_ptr<ReadBufferFromFileBase> readFile(
-        const std::string & path,
+        const std::string & name,
         const ReadSettings & settings,
         std::optional<size_t> read_hint,
         std::optional<size_t> file_size) const override;
 
     std::unique_ptr<WriteBufferFromFileBase> writeFile(
-        const String & path,
+        const String & name,
         size_t buf_size,
         const WriteSettings & settings) override;
 
-    void removeFile(const String & path) override;
+    void removeFile(const String & name) override;
     void removeRecursive() override;
     void removeSharedRecursive(bool keep_in_remote_fs) override;
 

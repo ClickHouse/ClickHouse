@@ -92,7 +92,7 @@ void MergeTreeDataPartCompact::calculateEachColumnSizes(ColumnSizeByName & /*eac
 
 void MergeTreeDataPartCompact::loadIndexGranularity()
 {
-    //String full_path = getFullRelativePath();
+    //String full_path = getRelativePath();
 
     if (columns.empty())
         throw Exception("No columns in part " + name, ErrorCodes::NO_FILE_IN_DATA_PART);
@@ -139,7 +139,7 @@ bool MergeTreeDataPartCompact::hasColumnFiles(const NameAndTypePair & column) co
 void MergeTreeDataPartCompact::checkConsistency(bool require_part_metadata) const
 {
     checkConsistencyBase();
-    // String path = getFullRelativePath();
+    // String path = getRelativePath();
     String mrk_file_name = DATA_FILE_NAME + index_granularity_info.marks_file_extension;
 
     if (!checksums.empty())
@@ -171,7 +171,7 @@ void MergeTreeDataPartCompact::checkConsistency(bool require_part_metadata) cons
                 throw Exception(
                     ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART,
                     "Part {} is broken: {} is empty",
-                    data_part_storage->getFullRelativePath(),
+                    data_part_storage->getRelativePath(),
                     std::string(fs::path(data_part_storage->getFullPath()) / file_path));
         }
 
@@ -184,7 +184,7 @@ void MergeTreeDataPartCompact::checkConsistency(bool require_part_metadata) cons
                 throw Exception(
                     ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART,
                     "Part {} is broken: {} is empty.",
-                    data_part_storage->getFullRelativePath(),
+                    data_part_storage->getRelativePath(),
                     std::string(fs::path(data_part_storage->getFullPath()) / mrk_file_name));
 
             UInt64 expected_file_size = index_granularity_info.getMarkSizeInBytes(columns.size()) * index_granularity.getMarksCount();
@@ -192,7 +192,7 @@ void MergeTreeDataPartCompact::checkConsistency(bool require_part_metadata) cons
                 throw Exception(
                     ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART,
                     "Part {} is broken: bad size of marks file '{}': {}, must be: {}",
-                    data_part_storage->getFullRelativePath(),
+                    data_part_storage->getRelativePath(),
                     std::string(fs::path(data_part_storage->getFullPath()) / mrk_file_name),
                     std::to_string(file_size), std::to_string(expected_file_size));
         }
