@@ -14,6 +14,7 @@ from typing import Dict, List, Optional, TextIO
 
 from fuzzywuzzy.fuzz import ratio  # type: ignore
 from github import Github
+from github.GithubException import UnknownObjectException
 from github.NamedUser import NamedUser
 from github.Issue import Issue
 from github.PullRequest import PullRequest
@@ -66,7 +67,10 @@ class Description:
             r"\1[#\2](https://github.com/ClickHouse/ClickHouse/issues/\2)",
             entry,
         )
-        user_name = self.user.name if self.user.name else self.user.login
+        try:
+            user_name = self.user.name if self.user.name else self.user.login
+        except UnknownObjectException:
+            user_name = self.user.login
         return (
             f"* {entry} [#{self.number}]({self.html_url}) "
             f"([{user_name}]({self.user.html_url}))."
@@ -306,7 +310,11 @@ def generate_description(item: PullRequest, repo: Repository) -> Optional[Descri
 
 
 def write_changelog(fd: TextIO, descriptions: Dict[str, List[Description]]):
-    fd.write(f"### ClickHouse release {TO_REF} FIXME as compared to {FROM_REF}\n\n")
+    year = date.today().year
+    fd.write(
+        f"---\nsidebar_position: 1\nsidebar_label: {year}\n---\n\n# {year} Changelog\n\n"
+        f"### ClickHouse release {TO_REF} FIXME as compared to {FROM_REF}\n\n"
+    )
 
     seen_categories = []  # type: List[str]
     for category in categories_preferred_order:
