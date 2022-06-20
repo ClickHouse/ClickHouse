@@ -5,6 +5,7 @@
 #include <Common/IFileCache.h>
 #include <Common/logger_useful.h>
 #include <Common/hex.h>
+#include <Common/logger_useful.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <filesystem>
@@ -252,7 +253,7 @@ void FileSegment::write(const char * from, size_t size, size_t offset_)
                             "Cache writer was finalized (downloaded size: {}, state: {})",
                             downloaded_size, stateToString(download_state));
 
-        auto download_path = cache->getPathInLocalCache(key(), offset(), is_persistent);
+        auto download_path = getPathInLocalCache();
         cache_writer = std::make_unique<WriteBufferFromFile>(download_path);
     }
 
@@ -280,6 +281,11 @@ void FileSegment::write(const char * from, size_t size, size_t offset_)
     }
 
     assert(getDownloadOffset() == offset_ + size);
+}
+
+String FileSegment::getPathInLocalCache() const
+{
+    return cache->getPathInLocalCache(key(), offset(), isPersistent());
 }
 
 FileSegment::State FileSegment::wait()
@@ -634,7 +640,7 @@ void FileSegment::assertCorrectnessImpl(std::lock_guard<std::mutex> & /* segment
 {
     assert(downloader_id.empty() == (download_state != FileSegment::State::DOWNLOADING));
     assert(!downloader_id.empty() == (download_state == FileSegment::State::DOWNLOADING));
-    assert(download_state != FileSegment::State::DOWNLOADED || std::filesystem::file_size(cache->getPathInLocalCache(key(), offset(), is_persistent)) > 0);
+    assert(download_state != FileSegment::State::DOWNLOADED || std::filesystem::file_size(getPathInLocalCache()) > 0);
 }
 
 void FileSegment::throwIfDetached() const

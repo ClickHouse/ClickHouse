@@ -1,13 +1,13 @@
 #pragma once
 
 #include <Common/IFileCache.h>
-#include <Common/FileSegment.h>
 #include <Common/logger_useful.h>
 #include <IO/SeekableReadBuffer.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/ReadSettings.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <Interpreters/FilesystemCacheLog.h>
+#include <Common/FileSegment.h>
 
 
 namespace CurrentMetrics
@@ -140,6 +140,8 @@ private:
     ProfileEvents::Counters current_file_segment_counters;
 
     IFileCache::QueryContextHolder query_context_holder;
+
+    bool is_persistent;
 };
 
 }

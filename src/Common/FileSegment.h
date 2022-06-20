@@ -70,8 +70,12 @@ public:
     };
 
     FileSegment(
-        size_t offset_, size_t size_, const Key & key_,
-        IFileCache * cache_, State download_state_, bool is_persistent_ = false);
+        size_t offset_,
+        size_t size_,
+        const Key & key_,
+        IFileCache * cache_,
+        State download_state_,
+        bool is_persistent_ = false);
 
     ~FileSegment();
 
@@ -158,6 +162,8 @@ public:
 
     bool isDetached() const;
 
+    String getPathInLocalCache() const;
+
 private:
     size_t availableSize() const { return reserved_size - downloaded_size; }
 
@@ -235,7 +241,6 @@ private:
     std::atomic<size_t> ref_count = 0; /// Used for getting snapshot state
 
     bool is_persistent;
-
     CurrentMetrics::Increment metric_increment{CurrentMetrics::CacheFileSegments};
 };
 

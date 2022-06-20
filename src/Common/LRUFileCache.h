@@ -19,6 +19,10 @@
 namespace DB
 {
 
+/**
+ * Local cache for remote filesystem files, represented as a set of non-overlapping non-empty file segments.
+ * Implements LRU eviction policy.
+ */
 class LRUFileCache final : public IFileCache
 {
 public:
@@ -79,7 +83,7 @@ private:
     size_t enable_cache_hits_threshold;
 
     Poco::Logger * log;
-    bool allow_remove_persistent_cache_by_default;
+    bool allow_to_remove_persistent_segments_from_cache_by_default;
 
     FileSegments getImpl(
         const Key & key, const FileSegment::Range & range,
