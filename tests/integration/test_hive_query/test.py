@@ -415,9 +415,7 @@ CREATE TABLE IF NOT EXISTS default.demo_parquet_1 (`score` Nullable(Int32), `day
 ALTER TABLE default.demo_parquet_1 ADD COLUMN id Nullable(String) FIRST
         """
     )
-    result = node.query(
-        """DESC default.demo_parquet_1 FORMAT TSV"""
-    )
+    result = node.query("""DESC default.demo_parquet_1 FORMAT TSV""")
 
     expected_result = "id\tNullable(String)\t\t\t\t\t\nscore\tNullable(Int32)\t\t\t\t\t\nday\tNullable(String)"
     assert result.strip() == expected_result
@@ -437,9 +435,7 @@ ALTER TABLE default.demo_parquet_1 DROP COLUMN id
         """
     )
 
-    result = node.query(
-        """DESC default.demo_parquet_1 FORMAT TSV"""
-    )
+    result = node.query("""DESC default.demo_parquet_1 FORMAT TSV""")
     expected_result = """score\tNullable(Int32)\t\t\t\t\t\nday\tNullable(String)"""
     assert result.strip() == expected_result
 
@@ -456,8 +452,6 @@ CREATE TABLE IF NOT EXISTS default.demo_parquet_1 (`id` Nullable(String), `score
     result = node.query(
         """ALTER TABLE default.demo_parquet_1 COMMENT COLUMN id 'Text comment'"""
     )
-    result = node.query(
-        """DESC default.demo_parquet_1 FORMAT TSV"""
-    )
+    result = node.query("""DESC default.demo_parquet_1 FORMAT TSV""")
     expected_result = """id\tNullable(String)\t\t\tText comment\t\t\nscore\tNullable(Int32)\t\t\t\t\t\nday\tNullable(String)"""
     assert result.strip() == expected_result
