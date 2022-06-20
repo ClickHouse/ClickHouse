@@ -1,12 +1,13 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionBinaryArithmetic.h>
 
-#if defined(__SSE2__)
-#    define LIBDIVIDE_SSE2
-#elif defined(__AVX512F__) || defined(__AVX512BW__) || defined(__AVX512VL__)
+#if defined(__AVX512F__) || defined(__AVX512BW__) || defined(__AVX512VL__)
 #    define LIBDIVIDE_AVX512
 #elif defined(__AVX2__)
 #    define LIBDIVIDE_AVX2
+#    pragma clang attribute push(__attribute__((target("no-avx"))), apply_to = function)
+#elif defined(__SSE2__)
+#    define LIBDIVIDE_SSE2
 #elif defined(__aarch64__) && defined(__ARM_NEON)
 #    define LIBDIVIDE_NEON
 #endif
@@ -124,6 +125,12 @@ private:
             c[i] = Op::template apply<ResultType>(*a, b[i]);
     }
 };
+
+
+#if defined(__AVX2__)
+#    pragma clang attribute pop
+#endif
+
 
 template <typename A, typename B>
 struct ModuloLegacyByConstantImpl : ModuloByConstantImpl<A, B>
