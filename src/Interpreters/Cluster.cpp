@@ -27,6 +27,8 @@ namespace ErrorCodes
     extern const int SHARD_HAS_NO_CONNECTIONS;
     extern const int NO_ELEMENTS_IN_CONFIG;
     extern const int SYNTAX_ERROR;
+    extern const int INVALID_SHARD_ID;
+    extern const int NO_SUCH_REPLICA;
 }
 
 namespace
@@ -747,6 +749,41 @@ std::vector<Strings> Cluster::getHostIDs() const
             host_ids[i][j] = addresses[j].toString();
     }
     return host_ids;
+}
+
+std::vector<const Cluster::Address *> Cluster::filterAddressesByShardOrReplica(size_t only_shard_num, size_t only_replica_num) const
+{
+    std::vector<const Address *> res;
+
+    auto enumerate_replicas = [&](size_t shard_index)
+    {
+        if (shard_index > addresses_with_failover.size())
+            throw Exception(ErrorCodes::INVALID_SHARD_ID, "Cluster {} doesn't have shard #{}", name, shard_index);
+        const auto & replicas = addresses_with_failover[shard_index - 1];
+        if (only_replica_num)
+        {
+            if (only_replica_num > replicas.size())
+                throw Exception(ErrorCodes::NO_SUCH_REPLICA, "Cluster {} doesn't have replica #{} in shard #{}", name, only_replica_num, shard_index);
+            res.emplace_back(&replicas[only_replica_num - 1]);
+        }
+        else
+        {
+            for (const auto & addr : replicas)
+                res.emplace_back(&addr);
+        }
+    };
+
+    if (only_shard_num)
+    {
+        enumerate_replicas(only_shard_num);
+    }
+    else
+    {
+        for (size_t shard_index = 1; shard_index <= addresses_with_failover.size(); ++shard_index)
+            enumerate_replicas(shard_index);
+    }
+
+    return res;
 }
 
 const std::string & Cluster::ShardInfo::insertPathForInternalReplication(bool prefer_localhost_replica, bool use_compact_format) const

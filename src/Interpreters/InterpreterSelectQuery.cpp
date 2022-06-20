@@ -232,6 +232,8 @@ static void rewriteMultipleJoins(ASTPtr & query, const TablesWithColumns & table
     CrossToInnerJoinVisitor(cross_to_inner).visit(query);
 
     JoinToSubqueryTransformVisitor::Data join_to_subs_data{tables, aliases};
+    join_to_subs_data.try_to_keep_original_names = settings.multiple_joins_try_to_keep_original_names;
+
     JoinToSubqueryTransformVisitor(join_to_subs_data).visit(query);
 }
 
