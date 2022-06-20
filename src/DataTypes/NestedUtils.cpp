@@ -311,7 +311,7 @@ std::optional<ColumnWithTypeAndName> NestedColumnExtractHelper::extractColumn(
                 column.name = original_column_name;
             return {column};
         }
-        else 
+        else
         {
             return {};
         }
@@ -325,7 +325,7 @@ std::optional<ColumnWithTypeAndName> NestedColumnExtractHelper::extractColumn(
     ColumnsWithTypeAndName columns = {nested_table->getByName(new_column_name_prefix, case_insentive)};
     Block sub_block(columns);
     nested_tables[new_column_name_prefix] = std::make_shared<Block>(Nested::flatten(sub_block));
-    return extractColumn(original_column_name, new_column_name_prefix, nested_names.second); 
+    return extractColumn(original_column_name, new_column_name_prefix, nested_names.second);
 
 }
 }
