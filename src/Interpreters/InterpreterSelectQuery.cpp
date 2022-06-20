@@ -158,17 +158,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     const SelectQueryOptions & options_,
     const Names & required_result_column_names_)
     : InterpreterSelectQuery(query_ptr_, context_, std::nullopt, nullptr, options_, required_result_column_names_)
-{
-}
-
-InterpreterSelectQuery::InterpreterSelectQuery(
-    const ASTPtr & query_ptr_,
-    ContextPtr context_,
-    const SelectQueryOptions & options_,
-    PreparedSets prepared_sets_)
-    : InterpreterSelectQuery(query_ptr_, context_, std::nullopt, nullptr, options_, {}, {}, std::move(prepared_sets_))
-{
-}
+{}
 
 InterpreterSelectQuery::InterpreterSelectQuery(
         const ASTPtr & query_ptr_,
@@ -185,6 +175,16 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     const StorageMetadataPtr & metadata_snapshot_,
     const SelectQueryOptions & options_)
     : InterpreterSelectQuery(query_ptr_, context_, std::nullopt, storage_, options_.copy().noSubquery(), {}, metadata_snapshot_)
+{}
+
+InterpreterSelectQuery::InterpreterSelectQuery(
+    const ASTPtr & query_ptr_,
+    ContextPtr context_,
+    const SelectQueryOptions & options_,
+    SubqueriesForSets subquery_for_sets_,
+    PreparedSets prepared_sets_)
+    : InterpreterSelectQuery(
+        query_ptr_, context_, std::nullopt, nullptr, options_, {}, {}, std::move(subquery_for_sets_), std::move(prepared_sets_))
 {}
 
 InterpreterSelectQuery::~InterpreterSelectQuery() = default;
@@ -273,6 +273,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     const SelectQueryOptions & options_,
     const Names & required_result_column_names,
     const StorageMetadataPtr & metadata_snapshot_,
+    SubqueriesForSets subquery_for_sets_,
     PreparedSets prepared_sets_)
     /// NOTE: the query almost always should be cloned because it will be modified during analysis.
     : IInterpreterUnionOrSelectQuery(options_.modify_inplace ? query_ptr_ : query_ptr_->clone(), context_, options_)
@@ -280,6 +281,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     , input_pipe(std::move(input_pipe_))
     , log(&Poco::Logger::get("InterpreterSelectQuery"))
     , metadata_snapshot(metadata_snapshot_)
+    , subquery_for_sets(std::move(subquery_for_sets_))
     , prepared_sets(std::move(prepared_sets_))
 {
     checkStackSize();
@@ -385,9 +387,6 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     StorageView * view = nullptr;
     if (storage)
         view = dynamic_cast<StorageView *>(storage.get());
-
-    /// Reuse already built sets for multiple passes of analysis
-    SubqueriesForSets subquery_for_sets;
 
     auto analyze = [&] (bool try_move_to_prewhere)
     {
@@ -552,7 +551,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
         /// Reuse already built sets for multiple passes of analysis
         subquery_for_sets = std::move(query_analyzer->getSubqueriesForSets());
-        prepared_sets = query_info.sets.empty() ? query_analyzer->getPreparedSets() : query_info.sets;
+        prepared_sets = std::move(query_analyzer->getPreparedSets());
 
         /// Do not try move conditions to PREWHERE for the second time.
         /// Otherwise, we won't be able to fallback from inefficient PREWHERE to WHERE later.
@@ -636,9 +635,14 @@ Block InterpreterSelectQuery::getSampleBlockImpl()
         auto & query = getSelectQuery();
         query_analyzer->makeSetsForIndex(query.where());
         query_analyzer->makeSetsForIndex(query.prewhere());
-        query_info.sets = query_analyzer->getPreparedSets();
+        query_info.sets = std::move(query_analyzer->getPreparedSets());
+        query_info.subquery_for_sets = std::move(query_analyzer->getSubqueriesForSets());
 
         from_stage = storage->getQueryProcessingStage(context, options.to_stage, storage_snapshot, query_info);
+
+        /// query_info.sets is used for further set index analysis. Use copy instead of move.
+        query_analyzer->getPreparedSets() = query_info.sets;
+        query_analyzer->getSubqueriesForSets() = std::move(query_info.subquery_for_sets);
     }
 
     /// Do I need to perform the first part of the pipeline?
@@ -1242,10 +1246,6 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
             }
 
             preliminary_sort();
-
-            // If there is no global subqueries, we can run subqueries only when receive them on server.
-            if (!query_analyzer->hasGlobalSubqueries() && !subqueries_for_sets.empty())
-                executeSubqueriesInSetsAndJoins(query_plan, subqueries_for_sets);
         }
 
         if (expressions.second_stage || from_aggregation_stage)
@@ -1428,7 +1428,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
         }
     }
 
-    if (!subqueries_for_sets.empty() && (expressions.hasHaving() || query_analyzer->hasGlobalSubqueries()))
+    if (!subqueries_for_sets.empty())
         executeSubqueriesInSetsAndJoins(query_plan, subqueries_for_sets);
 }
 
@@ -1892,7 +1892,7 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
         && limit_length <= std::numeric_limits<UInt64>::max() - limit_offset
         && limit_length + limit_offset < max_block_size)
     {
-        max_block_size = std::max(UInt64(1), limit_length + limit_offset);
+        max_block_size = std::max(UInt64{1}, limit_length + limit_offset);
         max_threads_execute_query = max_streams = 1;
     }
 
@@ -2578,11 +2578,11 @@ void InterpreterSelectQuery::executeExtremes(QueryPlan & query_plan)
 
 void InterpreterSelectQuery::executeSubqueriesInSetsAndJoins(QueryPlan & query_plan, SubqueriesForSets & subqueries_for_sets)
 {
-    const auto & input_order_info = query_info.input_order_info
-        ? query_info.input_order_info
-        : (query_info.projection ? query_info.projection->input_order_info : nullptr);
-    if (input_order_info)
-        executeMergeSorted(query_plan, input_order_info->order_key_prefix_descr, 0, "before creating sets for subqueries and joins");
+    // const auto & input_order_info = query_info.input_order_info
+    //     ? query_info.input_order_info
+    //     : (query_info.projection ? query_info.projection->input_order_info : nullptr);
+    // if (input_order_info)
+    //     executeMergeSorted(query_plan, input_order_info->order_key_prefix_descr, 0, "before creating sets for subqueries and joins");
 
     const Settings & settings = context->getSettingsRef();
 
