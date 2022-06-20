@@ -404,3 +404,47 @@ SELECT bitPositionsToArray(toInt8(-1)) AS bit_positions;
 │ [0,1,2,3,4,5,6,7] │
 └───────────────────┘
 ```
+
+## Base58Encode(plaintext[, alphabet_name])
+## Base58Decode(plaintext[, alphabet_name])
+
+Принимает на вход строку или колонку строк и кодирует/раскодирует их с помощью схемы кодирования [Base58](https://tools.ietf.org/id/draft-msporny-base58-01.html) с использованием указанного алфавита.
+
+**Синтаксис**
+
+```sql
+base58Encode(decoded[, alphabet_name])
+base58Decode(encoded[, alphabet_name])
+```
+
+**Аргументы**
+
+- `decoded` — Колонка или строка типа [String](../../sql-reference/data-types/string.md).
+- `encoded` — Колонка или строка типа [String](../../sql-reference/data-types/string.md). Если входная строка не является корректным кодом для какой-либо другой строки, возникнет исключение `1001`.
+- `alphabet_name` — Строковая константа. Указывает алфавит, для которого необходимо получить код. Может принимать одно из следующих значений: `gmp`, `bitcoin`, `ripple`, `flickr`. По умолчанию: `gmp`.
+
+**Возвращаемое значение**
+
+-   Строка, содержащая раскодированный/закодированный первый аргумент.
+
+Тип: [String](../../sql-reference/data-types/string.md).
+
+**Пример:**
+
+Запрос:
+
+``` sql
+SELECT base58Encode('encode', 'flickr');
+SELECT base58Decode('izCFiDUY', 'ripple');
+```
+
+Результат:
+```text
+┌─base58Encode('encode', 'flickr')─┐
+│ SvyTHb1D                         │
+└──────────────────────────────────┘
+┌─base58Decode('izCFiDUY', 'ripple')─┐
+│ decode                             │
+└────────────────────────────────────┘
+```
+
