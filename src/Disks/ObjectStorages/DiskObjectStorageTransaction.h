@@ -79,6 +79,7 @@ public:
     void replaceFile(const std::string & from_path, const std::string & to_path) override;
 
     void createFile(const String & path) override;
+
     void copyFile(const std::string & from_file_path, const std::string & to_file_path) override;
 
     /// writeFile is a difficult function for transactions.

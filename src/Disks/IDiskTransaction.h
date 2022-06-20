@@ -52,7 +52,10 @@ public:
     /// If a file with `to_path` path already exists, it will be replaced.
     virtual void replaceFile(const std::string & from_path, const std::string & to_path) = 0;
 
-    /// Copy file `from_file_path` to `to_file_path` located at `to_disk`.
+    /// Only copy of several files supported now. Disk interface support copy to another disk
+    /// but it's impossible to implement correctly in transactions because other disk can
+    /// use different metadata storage.
+    /// TODO: maybe remove it at all, we don't want copies
     virtual void copyFile(const std::string & from_file_path, const std::string & to_file_path) = 0;
 
     /// Open the file for write and return WriteBufferFromFileBase object.
