@@ -232,6 +232,8 @@ static void rewriteMultipleJoins(ASTPtr & query, const TablesWithColumns & table
     CrossToInnerJoinVisitor(cross_to_inner).visit(query);
 
     JoinToSubqueryTransformVisitor::Data join_to_subs_data{tables, aliases};
+    join_to_subs_data.try_to_keep_original_names = settings.multiple_joins_try_to_keep_original_names;
+
     JoinToSubqueryTransformVisitor(join_to_subs_data).visit(query);
 }
 
@@ -884,7 +886,7 @@ static FillColumnDescription getWithFillDescription(const ASTOrderByElement & or
     return descr;
 }
 
-static SortDescription getSortDescription(const ASTSelectQuery & query, ContextPtr context)
+SortDescription InterpreterSelectQuery::getSortDescription(const ASTSelectQuery & query, ContextPtr context_)
 {
     SortDescription order_descr;
     order_descr.reserve(query.orderBy()->children.size());
@@ -898,15 +900,15 @@ static SortDescription getSortDescription(const ASTSelectQuery & query, ContextP
             collator = std::make_shared<Collator>(order_by_elem.collation->as<ASTLiteral &>().value.get<String>());
         if (order_by_elem.with_fill)
         {
-            FillColumnDescription fill_desc = getWithFillDescription(order_by_elem, context);
+            FillColumnDescription fill_desc = getWithFillDescription(order_by_elem, context_);
             order_descr.emplace_back(name, order_by_elem.direction, order_by_elem.nulls_direction, collator, true, fill_desc);
         }
         else
             order_descr.emplace_back(name, order_by_elem.direction, order_by_elem.nulls_direction, collator);
     }
 
-    order_descr.compile_sort_description = context->getSettingsRef().compile_sort_description;
-    order_descr.min_count_to_compile_sort_description = context->getSettingsRef().min_count_to_compile_sort_description;
+    order_descr.compile_sort_description = context_->getSettingsRef().compile_sort_description;
+    order_descr.min_count_to_compile_sort_description = context_->getSettingsRef().min_count_to_compile_sort_description;
 
     return order_descr;
 }
@@ -1031,12 +1033,12 @@ static std::pair<UInt64, UInt64> getLimitLengthAndOffset(const ASTSelectQuery & 
 }
 
 
-static UInt64 getLimitForSorting(const ASTSelectQuery & query, ContextPtr context)
+UInt64 InterpreterSelectQuery::getLimitForSorting(const ASTSelectQuery & query, ContextPtr context_)
 {
     /// Partial sort can be done if there is LIMIT but no DISTINCT or LIMIT BY, neither ARRAY JOIN.
     if (!query.distinct && !query.limitBy() && !query.limit_with_ties && !query.arrayJoinExpressionList().first && query.limitLength())
     {
-        auto [limit_length, limit_offset] = getLimitLengthAndOffset(query, context);
+        auto [limit_length, limit_offset] = getLimitLengthAndOffset(query, context_);
         if (limit_length > std::numeric_limits<UInt64>::max() - limit_offset)
             return 0;
 
