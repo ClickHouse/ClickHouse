@@ -141,13 +141,12 @@ void Service::processQuery(const HTMLForm & params, ReadBuffer & /*body*/, Write
 
         CurrentMetrics::Increment metric_increment{CurrentMetrics::ReplicatedSend};
 
-        if (const auto * part_on_disk = typeid_cast<const DataPartStorageOnDisk *>(part->data_part_storage.get()))
+        if (part->data_part_storage->isStoredOnRemoteDisk())
         {
-            auto disk = part_on_disk->getDisk();
             UInt64 revision = parse<UInt64>(params.get("disk_revision", "0"));
             if (revision)
-                disk->syncRevision(revision);
-            revision = disk->getRevision();
+                part->data_part_storage->syncRevision(revision);
+            revision = part->data_part_storage->getRevision();
             if (revision)
                 response.addCookie({"disk_revision", toString(revision)});
         }
@@ -295,7 +294,7 @@ MergeTreeData::DataPart::Checksums Service::sendPartFromDisk(
     {
         String file_name = it.first;
 
-        //String path = fs::path(part->getFullRelativePath()) / file_name;
+        //String path = fs::path(part->getRelativePath()) / file_name;
 
         UInt64 size = part->data_part_storage->getFileSize(file_name);
 
@@ -313,7 +312,7 @@ MergeTreeData::DataPart::Checksums Service::sendPartFromDisk(
             throw Exception(
                 ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART,
                 "Unexpected size of file {}, expected {} got {}",
-                std::string(fs::path(part->data_part_storage->getFullRelativePath()) / file_name),
+                std::string(fs::path(part->data_part_storage->getRelativePath()) / file_name),
                 hashing_out.count(), size);
 
         writePODBinary(hashing_out.getHash(), out);
@@ -330,11 +329,10 @@ void Service::sendPartFromDiskRemoteMeta(const MergeTreeData::DataPartPtr & part
 {
     const auto * data_part_storage_on_disk = dynamic_cast<const DataPartStorageOnDisk *>(part->data_part_storage.get());
     if (!data_part_storage_on_disk)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Storage '{}' doesn't support zero-copy replication", part->data_part_storage->getName());
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Storage '{}' doesn't support zero-copy replication", part->data_part_storage->getDiskName());
 
-    auto disk = data_part_storage_on_disk->getDisk();
-    if (!disk->supportZeroCopyReplication())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Disk '{}' doesn't support zero-copy replication", disk->getName());
+    if (!data_part_storage_on_disk->supportZeroCopyReplication())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Disk '{}' doesn't support zero-copy replication", data_part_storage_on_disk->getDiskName());
 
     /// We'll take a list of files from the list of checksums.
     MergeTreeData::DataPart::Checksums checksums = part->checksums;
@@ -346,10 +344,10 @@ void Service::sendPartFromDiskRemoteMeta(const MergeTreeData::DataPartPtr & part
     std::vector<std::string> paths;
     paths.reserve(checksums.files.size());
     for (const auto & it : checksums.files)
-        paths.push_back(fs::path(part->data_part_storage->getFullRelativePath()) / it.first);
+        paths.push_back(fs::path(part->data_part_storage->getRelativePath()) / it.first);
 
     /// Serialized metadatadatas with zero ref counts.
-    auto metadatas = disk->getSerializedMetadata(paths);
+    auto metadatas = data_part_storage_on_disk->getSerializedMetadata(paths);
 
     String part_id = part->getUniqueId();
     writeStringBinary(part_id, out);
@@ -358,10 +356,10 @@ void Service::sendPartFromDiskRemoteMeta(const MergeTreeData::DataPartPtr & part
     for (const auto & it : checksums.files)
     {
         const String & file_name = it.first;
-        String file_path_prefix = fs::path(part->data_part_storage->getFullRelativePath()) / file_name;
+        String file_path_prefix = fs::path(part->data_part_storage->getRelativePath()) / file_name;
 
         /// Just some additional checks
-        String metadata_file_path = fs::path(disk->getPath()) / file_path_prefix;
+        String metadata_file_path = fs::path(data_part_storage_on_disk->getDiskPath()) / file_path_prefix;
         fs::path metadata(metadata_file_path);
         if (!fs::exists(metadata))
             throw Exception(ErrorCodes::CORRUPTED_DATA, "Remote metadata '{}' is not exists", file_name);
@@ -713,12 +711,12 @@ void Fetcher::downloadBaseOrProjectionPartToDisk(
 
         /// File must be inside "absolute_part_path" directory.
         /// Otherwise malicious ClickHouse replica may force us to write to arbitrary path.
-        String absolute_file_path = fs::weakly_canonical(fs::path(data_part_storage_builder->getFullRelativePath()) / file_name);
-        if (!startsWith(absolute_file_path, fs::weakly_canonical(data_part_storage_builder->getFullRelativePath()).string()))
+        String absolute_file_path = fs::weakly_canonical(fs::path(data_part_storage_builder->getRelativePath()) / file_name);
+        if (!startsWith(absolute_file_path, fs::weakly_canonical(data_part_storage_builder->getRelativePath()).string()))
             throw Exception(ErrorCodes::INSECURE_PATH,
                 "File path ({}) doesn't appear to be inside part path ({}). "
                 "This may happen if we are trying to download part from malicious replica or logical error.",
-                absolute_file_path, data_part_storage_builder->getFullRelativePath());
+                absolute_file_path, data_part_storage_builder->getRelativePath());
 
         auto file_out = data_part_storage_builder->writeFile(file_name, file_size, {});
         HashingWriteBuffer hashing_out(*file_out);

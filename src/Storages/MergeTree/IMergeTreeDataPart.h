@@ -343,7 +343,7 @@ public:
     size_t getFileSizeOrZero(const String & file_name) const;
 
     /// Returns path to part dir relatively to disk mount point
-    // String getFullRelativePath() const;
+    // String getRelativePath() const;
 
     /// Returns full path to part dir
     // String getFullPath() const;

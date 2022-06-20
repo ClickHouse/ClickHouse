@@ -61,21 +61,43 @@ private:
 public:
     virtual ~IDataPartStorage() = default;
 
+    /// Methods to get path components of a data part.
+    virtual std::string getFullPath() const = 0;      /// '/var/lib/clickhouse/data/database/table/moving/all_1_5_1'
+    virtual std::string getRelativePath() const = 0;  ///                          'database/table/moving/all_1_5_1'
+    virtual std::string getPartDirectory() const = 0; ///                                                'all_1_5_1'
+    virtual std::string getFullRootPath() const = 0;  /// '/var/lib/clickhouse/data/database/table/moving'
+    /// Can add it if needed                          ///                          'database/table/moving'
+    /// virtual std::string getRelativeRootPath() const = 0;
+
+    /// Get a storage for projection.
+    virtual std::shared_ptr<IDataPartStorage> getProjection(const std::string & name) const = 0;
+
+    /// Part directory exists.
+    virtual bool exists() const = 0;
+    /// File inside part directory exists. Specified path is relative to the part path.
+    virtual bool exists(const std::string & name) const = 0;
+    virtual bool isDirectory(const std::string & name) const = 0;
+
+    /// Modification time for part directory.
+    virtual Poco::Timestamp getLastModified() const = 0;
+    /// Interate part directory. Iteration in subdirectory is not needed yet.
+    virtual DataPartStorageIteratorPtr iterate() const = 0;
+
+    /// Get metadata for a file inside path dir.
+    virtual size_t getFileSize(const std::string & file_name) const = 0;
+    virtual UInt32 getRefCount(const std::string & file_name) const = 0;
+
+    virtual UInt64 calculateTotalSizeOnDisk() const = 0;
+
     /// Open the file for read and return ReadBufferFromFileBase object.
     virtual std::unique_ptr<ReadBufferFromFileBase> readFile(
-        const std::string & path,
+        const std::string & name,
         const ReadSettings & settings,
         std::optional<size_t> read_hint,
         std::optional<size_t> file_size) const = 0;
 
-    virtual bool exists() const = 0;
-    virtual bool exists(const std::string & path) const = 0;
-    virtual bool isDirectory(const std::string & path) const = 0;
-
-    virtual Poco::Timestamp getLastModified() const = 0;
-
-    virtual DataPartStorageIteratorPtr iterate() const = 0;
-    virtual DataPartStorageIteratorPtr iterateDirectory(const std::string & path) const = 0;
+    virtual void loadVersionMetadata(VersionMetadata & version, Poco::Logger * log) const = 0;
+    virtual void checkConsistency(const MergeTreeDataPartChecksums & checksums) const = 0;
 
     struct ProjectionChecksums
     {
@@ -83,6 +105,9 @@ public:
         const MergeTreeDataPartChecksums & checksums;
     };
 
+    /// Remove data part.
+    /// can_remove_shared_data, names_not_to_remove are specific for DiskObjectStorage.
+    /// projections, checksums are needed to avoid recursive listing
     virtual void remove(
         bool can_remove_shared_data,
         const NameSet & names_not_to_remove,
@@ -90,51 +115,47 @@ public:
         std::list<ProjectionChecksums> projections,
         Poco::Logger * log) const = 0;
 
-    virtual size_t getFileSize(const std::string & path) const = 0;
-    virtual UInt32 getRefCount(const String &) const { return 0; }
-
+    /// Get a name like 'prefix_partdir_tryN' which does not exist in a root dir.
+    /// TODO: remove it.
     virtual std::string getRelativePathForPrefix(Poco::Logger * log, const String & prefix, bool detached) const = 0;
 
-    /// Reset part directory, used for im-memory parts
+    /// Reset part directory, used for im-memory parts.
+    /// TODO: remove it.
     virtual void setRelativePath(const std::string & path) = 0;
 
-    virtual std::string getPartDirectory() const = 0;
-    // virtual std::string getRootPath() const = 0;
-    // std::string getPath() const; // getRootPath() / getPartDirectory()
-    //
-    // virtual std::string getFullRootPath() const = 0;
-    // virtual std::string getFullPath() const = 0; // getFullRootPath() / getPartDirectory()
-
-    virtual std::string getFullPath() const = 0;
-    virtual std::string getFullRootPath() const = 0;
-    virtual std::string getFullRelativePath() const = 0; // -> getPath
-
-    virtual UInt64 calculateTotalSizeOnDisk() const = 0;
-
+    /// Some methods from IDisk. Needed to avoid getting internal IDisk interface.
+    virtual std::string getDiskName() const = 0;
+    virtual std::string getDiskType() const = 0;
     virtual bool isStoredOnRemoteDisk() const { return false; }
     virtual bool supportZeroCopyReplication() const { return false; }
     virtual bool supportParallelWrite() const = 0;
     virtual bool isBroken() const = 0;
-    virtual std::string getDiskPathForLogs() const = 0;
+    virtual void syncRevision(UInt64 revision) = 0;
+    virtual UInt64 getRevision() const = 0;
+    virtual std::unordered_map<String, String> getSerializedMetadata(const std::vector<String> & paths) const = 0;
+    /// Get a path for internal disk if relevant. It is used mainly for logging.
+    virtual std::string getDiskPath() const = 0;
 
-    /// Should remove it later
+    /// Check if data part is stored on one of the specified disk in set.
+    using DisksSet = std::unordered_set<DiskPtr>;
+    virtual DisksSet::const_iterator isStoredOnDisk(const DisksSet & disks) const { return disks.end(); }
+
+    /// Reserve space on the same disk.
+    /// Probably we should try to remove it later.
+    virtual ReservationPtr reserve(UInt64 /*bytes*/) const { return nullptr; }
+    virtual ReservationPtr tryReserve(UInt64 /*bytes*/) const { return nullptr; }
+    virtual size_t getVolumeIndex(const IStoragePolicy &) const { return 0; }
+
+    /// Some methods which change data part internals possibly after creation.
+    /// Probably we should try to remove it later.
     virtual void writeChecksums(const MergeTreeDataPartChecksums & checksums, const WriteSettings & settings) const = 0;
     virtual void writeColumns(const NamesAndTypesList & columns, const WriteSettings & settings) const = 0;
     virtual void writeVersionMetadata(const VersionMetadata & version, bool fsync_part_dir) const = 0;
     virtual void appendCSNToVersionMetadata(const VersionMetadata & version, VersionMetadata::WhichCSN which_csn) const = 0;
     virtual void appendRemovalTIDToVersionMetadata(const VersionMetadata & version, bool clear) const = 0;
     virtual void writeDeleteOnDestroyMarker(Poco::Logger * log) const = 0;
-
     virtual void removeDeleteOnDestroyMarker() const = 0;
     virtual void removeVersionMetadata() const = 0;
-
-    virtual void loadVersionMetadata(VersionMetadata & version, Poco::Logger * log) const = 0;
-
-    virtual void checkConsistency(const MergeTreeDataPartChecksums & checksums) const = 0;
-
-    virtual ReservationPtr reserve(UInt64 /*bytes*/) const { return nullptr; }
-    virtual ReservationPtr tryReserve(UInt64 /*bytes*/) const { return nullptr; }
-    virtual size_t getVolumeIndex(const IStoragePolicy &) const { return 0; }
 
     /// A leak of abstraction.
     /// Return some uniq string for file.
@@ -144,7 +165,9 @@ public:
     /// A leak of abstraction
     virtual bool shallParticipateInMerges(const IStoragePolicy &) const { return true; }
 
-    /// A leak of abstraction
+    /// Create a backup of a data part.
+    /// This method adds a new entry to backup_entries.
+    /// Also creates a new tmp_dir for internal disk (if disk is mentioned the first time).
     using TemporaryFilesOnDisks = std::map<DiskPtr, std::shared_ptr<TemporaryFileOnDisk>>;
     virtual void backup(
         TemporaryFilesOnDisks & temp_dirs,
@@ -152,7 +175,8 @@ public:
         const NameSet & files_without_checksums,
         BackupEntries & backup_entries) const = 0;
 
-    /// A leak of abstraction
+    /// Creates hardlinks into 'to/dir_path' for every file in data part.
+    /// Callback is called after hardlinks are created, but before 'delete-on-destroy.txt' marker is removed.
     virtual std::shared_ptr<IDataPartStorage> freeze(
         const std::string & to,
         const std::string & dir_path,
@@ -160,30 +184,32 @@ public:
         std::function<void(const DiskPtr &)> save_metadata_callback,
         bool copy_instead_of_hardlink) const = 0;
 
+    /// Make a full copy of a data part into 'to/dir_path' (possibly to a different disk).
     virtual std::shared_ptr<IDataPartStorage> clone(
         const std::string & to,
         const std::string & dir_path,
         const DiskPtr & disk,
         Poco::Logger * log) const = 0;
 
-    virtual void rename(const std::string & new_root_path, const std::string & new_part_dir, Poco::Logger * log, bool remove_new_dir_if_exists, bool fsync_part_dir) = 0;
+    /// Rename part.
+    /// Ideally, new_root_path should be the same as current root (but it is not true).
+    /// Examples are: 'all_1_2_1' -> 'detached/all_1_2_1'
+    ///               'moving/tmp_all_1_2_1' -> 'all_1_2_1'
+    virtual void rename(
+        const std::string & new_root_path,
+        const std::string & new_part_dir,
+        Poco::Logger * log,
+        bool remove_new_dir_if_exists,
+        bool fsync_part_dir) = 0;
 
-    /// Change part's root. From should be a prefix path of current root path.
+    /// Change part's root. from_root should be a prefix path of current root path.
     /// Right now, this is needed for rename table query.
     virtual void changeRootPath(const std::string & from_root, const std::string & to_root) = 0;
-
-    /// Disk name
-    virtual std::string getName() const = 0;
-    virtual std::string getDiskType() const = 0;
-
-    using DisksSet = std::unordered_set<DiskPtr>;
-    virtual DisksSet::const_iterator isStoredOnDisk(const DisksSet & disks) const { return disks.end(); }
-
-    virtual std::shared_ptr<IDataPartStorage> getProjection(const std::string & name) const = 0;
 };
 
 using DataPartStoragePtr = std::shared_ptr<IDataPartStorage>;
 
+/// This interface is needed to write data part.
 class IDataPartStorageBuilder
 {
 public:
@@ -194,23 +220,23 @@ public:
 
     virtual std::string getPartDirectory() const = 0;
     virtual std::string getFullPath() const = 0;
-    virtual std::string getFullRelativePath() const = 0;
+    virtual std::string getRelativePath() const = 0;
 
     virtual bool exists() const = 0;
-    virtual bool exists(const std::string & path) const = 0;
+    virtual bool exists(const std::string & name) const = 0;
 
     virtual void createDirectories() = 0;
     virtual void createProjection(const std::string & name) = 0;
 
     virtual std::unique_ptr<ReadBufferFromFileBase> readFile(
-        const std::string & path,
+        const std::string & name,
         const ReadSettings & settings,
         std::optional<size_t> read_hint,
         std::optional<size_t> file_size) const = 0;
 
-    virtual std::unique_ptr<WriteBufferFromFileBase> writeFile(const String & path, size_t buf_size, const WriteSettings & settings) = 0;
+    virtual std::unique_ptr<WriteBufferFromFileBase> writeFile(const String & name, size_t buf_size, const WriteSettings & settings) = 0;
 
-    virtual void removeFile(const String & path) = 0;
+    virtual void removeFile(const String & name) = 0;
     virtual void removeRecursive() = 0;
     virtual void removeSharedRecursive(bool keep_in_remote_fs) = 0;
 

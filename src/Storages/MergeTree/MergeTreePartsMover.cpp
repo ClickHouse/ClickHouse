@@ -207,7 +207,7 @@ MergeTreeData::DataPartPtr MergeTreePartsMover::clonePart(const MergeTreeMoveEnt
     auto settings = data->getSettings();
     auto part = moving_part.part;
     auto disk = moving_part.reserved_space->getDisk();
-    LOG_DEBUG(log, "Cloning part {} from '{}' to '{}'", part->name, part->data_part_storage->getName(), disk->getName());
+    LOG_DEBUG(log, "Cloning part {} from '{}' to '{}'", part->name, part->data_part_storage->getDiskName(), disk->getName());
 
     DataPartStoragePtr cloned_part_storage;
 

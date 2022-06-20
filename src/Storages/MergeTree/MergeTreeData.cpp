@@ -2576,7 +2576,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::createPart(const String & name,
     else if (type == MergeTreeDataPartType::InMemory)
         return std::make_shared<MergeTreeDataPartInMemory>(*this, name, part_info, data_part_storage, parent_part);
     else
-        throw Exception("Unknown type of part " + data_part_storage->getFullRelativePath(), ErrorCodes::UNKNOWN_PART_TYPE);
+        throw Exception("Unknown type of part " + data_part_storage->getRelativePath(), ErrorCodes::UNKNOWN_PART_TYPE);
 }
 
 static MergeTreeDataPartType getPartTypeFromMarkExtension(const String & mrk_ext)
@@ -3837,7 +3837,7 @@ void MergeTreeData::movePartitionToDisk(const ASTPtr & partition, const String &
     auto disk = getStoragePolicy()->getDiskByName(name);
     std::erase_if(parts, [&](auto part_ptr)
         {
-            return part_ptr->data_part_storage->getName() == disk->getName();
+            return part_ptr->data_part_storage->getDiskName() == disk->getName();
         });
 
     if (parts.empty())
@@ -3887,7 +3887,7 @@ void MergeTreeData::movePartitionToVolume(const ASTPtr & partition, const String
         {
             for (const auto & disk : volume->getDisks())
             {
-                if (part_ptr->data_part_storage->getName() == disk->getName())
+                if (part_ptr->data_part_storage->getDiskName() == disk->getName())
                 {
                     return true;
                 }
@@ -4817,11 +4817,11 @@ bool MergeTreeData::isPartInTTLDestination(const TTLDescription & ttl, const IMe
     if (ttl.destination_type == DataDestinationType::VOLUME)
     {
         for (const auto & disk : policy->getVolumeByName(ttl.destination_name)->getDisks())
-            if (disk->getName() == part.data_part_storage->getName())
+            if (disk->getName() == part.data_part_storage->getDiskName())
                 return true;
     }
     else if (ttl.destination_type == DataDestinationType::DISK)
-        return policy->getDiskByName(ttl.destination_name)->getName() == part.data_part_storage->getName();
+        return policy->getDiskByName(ttl.destination_name)->getName() == part.data_part_storage->getDiskName();
     return false;
 }
 
@@ -5907,7 +5907,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::cloneAndLoadDataPartOnSameDisk(
     bool does_storage_policy_allow_same_disk = false;
     for (const DiskPtr & disk : getStoragePolicy()->getDisks())
     {
-        if (disk->getName() == src_part->data_part_storage->getName())
+        if (disk->getName() == src_part->data_part_storage->getDiskName())
         {
             does_storage_policy_allow_same_disk = true;
             break;
@@ -6013,11 +6013,11 @@ void MergeTreeData::reportBrokenPart(MergeTreeData::DataPartPtr & data_part) con
     if (data_part->data_part_storage && data_part->data_part_storage->isBroken())
     {
         auto parts = getDataPartsForInternalUsage();
-        LOG_WARNING(log, "Scanning parts to recover on broken disk {}@{}.", data_part->data_part_storage->getName(), data_part->data_part_storage->getDiskPathForLogs());
+        LOG_WARNING(log, "Scanning parts to recover on broken disk {}@{}.", data_part->data_part_storage->getDiskName(), data_part->data_part_storage->getDiskPath());
 
         for (const auto & part : parts)
         {
-            if (part->data_part_storage && part->data_part_storage->getName() == data_part->data_part_storage->getName())
+            if (part->data_part_storage && part->data_part_storage->getDiskName() == data_part->data_part_storage->getDiskName())
                 broken_part_callback(part->name);
         }
     }
@@ -6109,7 +6109,7 @@ PartitionCommandsResultInfo MergeTreeData::freezePartitionsByMatcher(
         //auto disk = part->volume->getDisk();
 
         auto data_part_storage = part->data_part_storage;
-        String src_part_path = data_part_storage->getFullRelativePath();
+        String src_part_path = data_part_storage->getRelativePath();
         String backup_part_path = fs::path(backup_path) / relative_data_path;
         if (auto part_in_memory = asInMemoryPart(part))
         {
@@ -6243,7 +6243,7 @@ try
 
     if (result_part)
     {
-        part_log_elem.disk_name = result_part->data_part_storage->getName();
+        part_log_elem.disk_name = result_part->data_part_storage->getDiskName();
         part_log_elem.path_on_disk = result_part->data_part_storage->getFullPath();
         part_log_elem.bytes_compressed_on_disk = result_part->getBytesOnDisk();
         part_log_elem.rows = result_part->rows_count;
@@ -6659,7 +6659,7 @@ ReservationPtr MergeTreeData::balancedReservation(
                     if (part->isStoredOnDisk() && part->getBytesOnDisk() >= min_bytes_to_rebalance_partition_over_jbod
                         && part_info.partition_id == part->info.partition_id)
                     {
-                        auto name = part->data_part_storage->getName();
+                        auto name = part->data_part_storage->getDiskName();
                         auto it = disk_occupation.find(name);
                         if (it != disk_occupation.end())
                         {

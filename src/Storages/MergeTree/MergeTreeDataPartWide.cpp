@@ -161,7 +161,7 @@ MergeTreeDataPartWide::~MergeTreeDataPartWide()
 void MergeTreeDataPartWide::checkConsistency(bool require_part_metadata) const
 {
     checkConsistencyBase();
-    //String path = getFullRelativePath();
+    //String path = getRelativePath();
 
     if (!checksums.empty())
     {

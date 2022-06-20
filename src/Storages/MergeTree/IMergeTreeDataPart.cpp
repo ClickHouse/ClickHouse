@@ -468,7 +468,7 @@ void IMergeTreeDataPart::removeIfNeeded()
 
     try
     {
-        auto path = data_part_storage->getFullRelativePath();
+        auto path = data_part_storage->getRelativePath();
 
         if (!data_part_storage->exists()) // path
             return;
@@ -611,7 +611,7 @@ String IMergeTreeDataPart::getColumnNameWithMinimumCompressedSize(
 //     return fs::path(storage.getFullPathOnDisk(volume->getDisk())) / (parent_part ? parent_part->relative_path : "") / relative_path / "";
 // }
 
-// String IMergeTreeDataPart::getFullRelativePath() const
+// String IMergeTreeDataPart::getRelativePath() const
 // {
 //     if (relative_path.empty())
 //         throw Exception("Part relative_path cannot be empty. It's bug.", ErrorCodes::LOGICAL_ERROR);
@@ -691,7 +691,7 @@ void IMergeTreeDataPart::loadProjections(bool require_columns_checksums, bool ch
     auto metadata_snapshot = storage.getInMemoryMetadataPtr();
     for (const auto & projection : metadata_snapshot->projections)
     {
-        String path = /*getFullRelativePath() + */ projection.name + ".proj";
+        String path = /*getRelativePath() + */ projection.name + ".proj";
         if (data_part_storage->exists(path))
         {
             auto projection_part_storage = data_part_storage->getProjection(projection.name + ".proj");
@@ -736,7 +736,7 @@ void IMergeTreeDataPart::loadIndex()
         }
 
         String index_name = "primary.idx";
-        String index_path = fs::path(data_part_storage->getFullRelativePath()) / index_name;
+        String index_path = fs::path(data_part_storage->getRelativePath()) / index_name;
         auto index_file = metadata_manager->read(index_name);
         size_t marks_count = index_granularity.getMarksCount();
 
@@ -802,7 +802,7 @@ void IMergeTreeDataPart::loadDefaultCompressionCodec()
         return;
     }
 
-    String path = fs::path(data_part_storage->getFullRelativePath()) / DEFAULT_COMPRESSION_CODEC_FILE_NAME;
+    String path = fs::path(data_part_storage->getRelativePath()) / DEFAULT_COMPRESSION_CODEC_FILE_NAME;
     bool exists = metadata_manager->exists(DEFAULT_COMPRESSION_CODEC_FILE_NAME);
     if (!exists)
     {
@@ -868,7 +868,7 @@ CompressionCodecPtr IMergeTreeDataPart::detectDefaultCompressionCodec() const
             {
                 if (path_to_data_file.empty())
                 {
-                    String candidate_path = /*fs::path(getFullRelativePath()) */ (ISerialization::getFileNameForStream(part_column, substream_path) + ".bin");
+                    String candidate_path = /*fs::path(getRelativePath()) */ (ISerialization::getFileNameForStream(part_column, substream_path) + ".bin");
 
                     /// We can have existing, but empty .bin files. Example: LowCardinality(Nullable(...)) columns and column_name.dict.null.bin file.
                     if (data_part_storage->exists(candidate_path) && data_part_storage->getFileSize(candidate_path) != 0)
@@ -907,7 +907,7 @@ void IMergeTreeDataPart::loadPartitionAndMinMaxIndex()
     }
     else
     {
-        //String path = getFullRelativePath();
+        //String path = getRelativePath();
         if (!parent_part)
             partition.load(storage, metadata_manager);
 
@@ -946,7 +946,7 @@ void IMergeTreeDataPart::appendFilesOfPartitionAndMinMaxIndex(Strings & files) c
 
 void IMergeTreeDataPart::loadChecksums(bool require)
 {
-    //const String path = fs::path(getFullRelativePath()) / "checksums.txt";
+    //const String path = fs::path(getRelativePath()) / "checksums.txt";
     bool exists = metadata_manager->exists("checksums.txt");
     if (exists)
     {
@@ -957,7 +957,7 @@ void IMergeTreeDataPart::loadChecksums(bool require)
             bytes_on_disk = checksums.getTotalSizeOnDisk();
         }
         else
-            bytes_on_disk = data_part_storage->calculateTotalSizeOnDisk(); //calculateTotalSizeOnDisk(volume->getDisk(), getFullRelativePath());
+            bytes_on_disk = data_part_storage->calculateTotalSizeOnDisk(); //calculateTotalSizeOnDisk(volume->getDisk(), getRelativePath());
     }
     else
     {
@@ -982,7 +982,7 @@ void IMergeTreeDataPart::appendFilesOfChecksums(Strings & files)
 
 void IMergeTreeDataPart::loadRowsCount()
 {
-    //String path = fs::path(getFullRelativePath()) / "count.txt";
+    //String path = fs::path(getRelativePath()) / "count.txt";
 
     auto read_rows_count = [&]()
     {
@@ -1153,7 +1153,7 @@ void IMergeTreeDataPart::appendFilesOfUUID(Strings & files)
 
 void IMergeTreeDataPart::loadColumns(bool require)
 {
-    String path = fs::path(data_part_storage->getFullRelativePath()) / "columns.txt";
+    String path = fs::path(data_part_storage->getRelativePath()) / "columns.txt";
     auto metadata_snapshot = storage.getInMemoryMetadataPtr();
     if (parent_part)
         metadata_snapshot = metadata_snapshot->projections.get(name).metadata;
@@ -1164,7 +1164,7 @@ void IMergeTreeDataPart::loadColumns(bool require)
     {
         /// We can get list of columns only from columns.txt in compact parts.
         if (require || part_type == Type::Compact)
-            throw Exception("No columns.txt in part " + name + ", expected path " + path + " on drive " + data_part_storage->getName(),
+            throw Exception("No columns.txt in part " + name + ", expected path " + path + " on drive " + data_part_storage->getDiskName(),
                 ErrorCodes::NO_FILE_IN_DATA_PART);
 
         /// If there is no file with a list of columns, write it down.
@@ -1382,10 +1382,10 @@ try
     if (parent_part)
     {
         /// For projections, move is only possible inside parent part dir.
-        relative_path = parent_part->data_part_storage->getFullRelativePath();
+        relative_path = parent_part->data_part_storage->getRelativePath();
     }
 
-    String from = data_part_storage->getFullRelativePath();
+    String from = data_part_storage->getRelativePath();
     auto to = fs::path(relative_path) / new_relative_path;
 
     data_part_storage->rename(to.parent_path(), to.filename(), storage.log, remove_new_dir_if_exists, fsync_dir);
@@ -1504,8 +1504,8 @@ DataPartStoragePtr IMergeTreeDataPart::makeCloneOnDisk(const DiskPtr & disk, con
 {
     assertOnDisk();
 
-    if (disk->getName() == data_part_storage->getName())
-        throw Exception("Can not clone data part " + name + " to same disk " + data_part_storage->getName(), ErrorCodes::LOGICAL_ERROR);
+    if (disk->getName() == data_part_storage->getDiskName())
+        throw Exception("Can not clone data part " + name + " to same disk " + data_part_storage->getDiskName(), ErrorCodes::LOGICAL_ERROR);
     if (directory_name.empty())
         throw Exception("Can not clone data part " + name + " to empty directory.", ErrorCodes::LOGICAL_ERROR);
 

@@ -14,7 +14,7 @@ IMergedBlockOutputStream::IMergedBlockOutputStream(
     : storage(data_part->storage)
     , metadata_snapshot(metadata_snapshot_)
     , data_part_storage_builder(std::move(data_part_storage_builder_))
-    //, part_path(data_part->isStoredOnDisk() ? data_part->getFullRelativePath() : "")
+    //, part_path(data_part->isStoredOnDisk() ? data_part->getRelativePath() : "")
     , reset_columns(reset_columns_)
 {
     if (reset_columns)

@@ -549,7 +549,7 @@ void finalizeMutatedPart(
     ContextPtr context)
 {
     //auto disk = new_data_part->volume->getDisk();
-    //auto part_path = fs::path(new_data_part->getFullRelativePath());
+    //auto part_path = fs::path(new_data_part->getRelativePath());
 
     if (new_data_part->uuid != UUIDHelpers::Nil)
     {
@@ -1498,7 +1498,7 @@ bool MutateTask::prepare()
     ctx->new_data_part->partition.assign(ctx->source_part->partition);
 
     // ctx->disk = ctx->new_data_part->volume->getDisk();
-    //ctx->new_part_tmp_path = ctx->new_data_part->getFullRelativePath();
+    //ctx->new_part_tmp_path = ctx->new_data_part->getRelativePath();
 
     /// Don't change granularity type while mutating subset of columns
     ctx->mrk_extension = ctx->source_part->index_granularity_info.is_adaptive ? getAdaptiveMrkExtension(ctx->new_data_part->getType())

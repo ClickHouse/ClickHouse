@@ -88,7 +88,7 @@ MergeTreeDataPartWriterOnDisk::MergeTreeDataPartWriterOnDisk(
     : IMergeTreeDataPartWriter(data_part_, std::move(data_part_storage_builder_),
         columns_list_, metadata_snapshot_, settings_, index_granularity_)
     , skip_indices(indices_to_recalc_)
-    //, part_path(data_part_->getFullRelativePath())
+    //, part_path(data_part_->getRelativePath())
     , marks_file_extension(marks_file_extension_)
     , default_codec(default_codec_)
     , compute_granularity(index_granularity.empty())
