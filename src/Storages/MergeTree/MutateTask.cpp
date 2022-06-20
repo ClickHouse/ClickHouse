@@ -786,6 +786,7 @@ public:
                 projection_merging_params,
                 NO_TRANSACTION_PTR,
                 ctx->new_data_part.get(),
+                ctx->data_part_storage_builder.get(),
                 ".tmp_proj");
 
             next_level_parts.push_back(executeHere(tmp_part_merge_task));
