@@ -160,6 +160,9 @@ public:
         /// The number of bytes read from disk.
         size_t numBytesRead() const { return num_bytes_read; }
 
+        /// Similar as filter that you need to apply to newly-read columns
+        ColumnPtr deleted_mask_filter_holder;
+
     private:
         /// Only MergeTreeRangeReader is supposed to access ReadResult internals.
         friend class MergeTreeRangeReader;
@@ -251,6 +254,8 @@ private:
     Columns continueReadingChain(const ReadResult & result, size_t & num_rows);
     void executePrewhereActionsAndFilterColumns(ReadResult & result);
     void fillPartOffsetColumn(ReadResult & result, UInt64 leading_begin_part_offset, UInt64 leading_end_part_offset);
+    void fillDeletedRowMaskColumn(ReadResult & result, UInt64 leading_begin_part_offset, UInt64 leading_end_part_offset);
+    void executeDeletedRowMaskFilterColumns(ReadResult & result);
 
     IMergeTreeReader * merge_tree_reader = nullptr;
     const MergeTreeIndexGranularity * index_granularity = nullptr;
@@ -264,6 +269,8 @@ private:
     bool last_reader_in_chain = false;
     bool is_initialized = false;
     Names non_const_virtual_column_names;
+    bool need_read_deleted_mask = false;
+    String deleted_rows_mask;
 };
 
 }

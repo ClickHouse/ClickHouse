@@ -43,7 +43,8 @@ public:
         const StorageMetadataPtr & metadata_snapshot_,
         MutationCommands commands_,
         ContextPtr context_,
-        bool can_execute_);
+        bool can_execute_,
+        bool is_lightweight_ = false);
 
     void validate();
 
@@ -80,10 +81,13 @@ public:
 
 private:
     ASTPtr prepare(bool dry_run);
+    ASTPtr prepareLightweightDelete(bool dry_run);
 
     struct Stage;
 
     ASTPtr prepareInterpreterSelectQuery(std::vector<Stage> &prepared_stages, bool dry_run);
+    ASTPtr prepareInterpreterSelectQueryLightweight(std::vector<Stage> &prepared_stages, bool dry_run);
+
     QueryPipelineBuilder addStreamsForLaterStages(const std::vector<Stage> & prepared_stages, QueryPlan & plan) const;
 
     std::optional<SortDescription> getStorageSortDescriptionIfPossible(const Block & header) const;
@@ -96,6 +100,9 @@ private:
     ContextPtr context;
     bool can_execute;
     SelectQueryOptions select_limits;
+
+    /// True for lightweight delete.
+    bool is_lightweight = false;
 
     ASTPtr mutation_ast;
 

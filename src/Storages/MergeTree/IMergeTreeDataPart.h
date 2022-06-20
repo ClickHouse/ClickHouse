@@ -327,6 +327,10 @@ public:
 
     mutable VersionMetadata version;
 
+    /// True if the part has deleted_row_mask.bin file used for lightweight delete.
+    bool has_lightweight_delete = false;
+    String deleted_rows_mask;
+
     /// For data in RAM ('index')
     UInt64 getIndexSizeInBytes() const;
     UInt64 getIndexSizeInAllocatedBytes() const;
@@ -404,6 +408,9 @@ public:
 
     static inline constexpr auto TXN_VERSION_METADATA_FILE_NAME = "txn_version.txt";
 
+    /// File name for lightweight delete rows mask bitmap file.
+    static inline constexpr auto DELETED_ROW_MARK_FILE_NAME = "deleted_row_mask.bin";
+
     /// One of part files which is used to check how many references (I'd like
     /// to say hardlinks, but it will confuse even more) we have for the part
     /// for zero copy replication. Sadly it's very complex.
@@ -456,6 +463,11 @@ public:
     /// Check metadata in cache is consistent with actual metadata on disk(if use_metadata_cache is true)
     std::unordered_map<String, uint128> checkMetadata() const;
 
+    /// Reads deleted row mask from deleted_row_mask.bin if exists and set has_lightweight_delete.
+    void loadDeletedRowMask();
+
+    /// Write lightweight deleted mask to a file.
+    void writeLightWeightDeletedMask(String bitmap) const;
 
 protected:
 
