@@ -39,10 +39,30 @@ namespace ErrorCodes
 namespace
 {
 
+bool isNotFoundError(Aws::S3::S3Errors error)
+{
+    return error == Aws::S3::S3Errors::RESOURCE_NOT_FOUND
+        || error == Aws::S3::S3Errors::NO_SUCH_KEY;
+}
+
 template <typename Result, typename Error>
 void throwIfError(const Aws::Utils::Outcome<Result, Error> & response)
 {
     if (!response.IsSuccess())
+    {
+        const auto & err = response.GetError();
+        throw Exception(ErrorCodes::S3_ERROR, "{} (Code: {})", err.GetMessage(), static_cast<size_t>(err.GetErrorType()));
+    }
+}
+
+template <typename Result, typename Error>
+void throwIfUnexpectedError(const Aws::Utils::Outcome<Result, Error> & response, bool if_exists)
+{
+    /// In this case even if absence of key may be ok for us,
+    /// the log will be polluted with error messages from aws sdk.
+    /// Looks like there is no way to supress them.
+
+    if (!response.IsSuccess() && (!if_exists || !isNotFoundError(response.GetError().GetErrorType())))
     {
         const auto & err = response.GetError();
         throw Exception(ErrorCodes::S3_ERROR, "{} (Code: {})", err.GetMessage(), static_cast<size_t>(err.GetErrorType()));
@@ -201,22 +221,9 @@ void S3ObjectStorage::listPrefix(const std::string & path, BlobsPathToSize & chi
     } while (outcome.GetResult().GetIsTruncated());
 }
 
-static bool isNotFoundError(Aws::S3::S3Errors error)
-{
-    return error == Aws::S3::S3Errors::RESOURCE_NOT_FOUND
-        || error == Aws::S3::S3Errors::NO_SUCH_KEY;
-}
-
 void S3ObjectStorage::removeObjectImpl(const std::string & path, bool if_exists)
 {
     auto client_ptr = client.get();
-    auto settings_ptr = s3_settings.get();
-
-    auto throw_if_error = [&](auto & outcome)
-    {
-        if (!outcome.IsSuccess() && (!if_exists || !isNotFoundError(outcome.GetError().GetErrorType())))
-            throwIfError(outcome);
-    };
 
     // If chunk size is 0, only use single delete request
     // This allows us to work with GCS, which doesn't support DeleteObjects
@@ -227,7 +234,7 @@ void S3ObjectStorage::removeObjectImpl(const std::string & path, bool if_exists)
         request.SetKey(path);
         auto outcome = client_ptr->DeleteObject(request);
 
-        throw_if_error(outcome);
+        throwIfUnexpectedError(outcome, if_exists);
     }
     else
     {
@@ -242,7 +249,7 @@ void S3ObjectStorage::removeObjectImpl(const std::string & path, bool if_exists)
         request.SetDelete(delkeys);
         auto outcome = client_ptr->DeleteObjects(request);
 
-        throw_if_error(outcome);
+        throwIfUnexpectedError(outcome, if_exists);
     }
 }
 
@@ -251,9 +258,6 @@ void S3ObjectStorage::removeObjectsImpl(const std::vector<std::string> & paths, 
     if (paths.empty())
         return;
 
-    auto client_ptr = client.get();
-    auto settings_ptr = s3_settings.get();
-
     if (!s3_capabilities.support_batch_delete)
     {
         for (const auto & path : paths)
@@ -261,6 +265,9 @@ void S3ObjectStorage::removeObjectsImpl(const std::vector<std::string> & paths, 
     }
     else
     {
+        auto client_ptr = client.get();
+        auto settings_ptr = s3_settings.get();
+
         size_t chunk_size_limit = settings_ptr->objects_chunk_size_to_delete;
         size_t current_position = 0;
 
@@ -286,8 +293,7 @@ void S3ObjectStorage::removeObjectsImpl(const std::vector<std::string> & paths, 
             request.SetDelete(delkeys);
             auto outcome = client_ptr->DeleteObjects(request);
 
-            if (!outcome.IsSuccess() && (!if_exists || !isNotFoundError(outcome.GetError().GetErrorType())))
-                throwIfError(outcome);
+            throwIfUnexpectedError(outcome, if_exists);
         }
     }
 }
