@@ -48,10 +48,8 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int CANNOT_OPEN_FILE;
     extern const int LOGICAL_ERROR;
-    extern const int TOO_MANY_PARTITIONS;
+    extern const int NOT_IMPLEMENTED;
     extern const int THERE_IS_NO_COLUMN;
-}
-
 }
 
 class StorageHiveSource : public ISource, WithContext

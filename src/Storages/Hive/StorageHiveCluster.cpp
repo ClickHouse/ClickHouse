@@ -11,6 +11,7 @@
 #include <Parsers/queryToString.h>
 #include <Processors/Sources/RemoteSource.h>
 #include <QueryPipeline/RemoteQueryExecutor.h>
+#include <Storages/AlterCommands.h>
 #include <Storages/Hive/HiveSettings.h>
 #include <Storages/Hive/HiveSourceTask.h>
 #include <Storages/Hive/StorageHive.h>
@@ -175,6 +176,29 @@ QueryProcessingStage::Enum StorageHiveCluster::getQueryProcessingStage(
         if (to_stage_ >= QueryProcessingStage::Enum::WithMergeableState)
             return QueryProcessingStage::Enum::WithMergeableState;
     return QueryProcessingStage::Enum::FetchColumns;
+}
+
+
+void StorageHiveCluster::checkAlterIsPossible(const AlterCommands & commands, ContextPtr /*local_context*/) const
+{
+    for (const auto & command : commands)
+    {
+        if (command.type != AlterCommand::Type::ADD_COLUMN && command.type != AlterCommand::Type::MODIFY_COLUMN
+            && command.type != AlterCommand::Type::DROP_COLUMN && command.type != AlterCommand::Type::COMMENT_COLUMN
+            && command.type != AlterCommand::Type::COMMENT_TABLE)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Alter of type '{}' is not supported by storage {}", command.type, getName());
+    }
+}
+
+void StorageHiveCluster::alter(const AlterCommands & params, ContextPtr local_context, AlterLockHolder & /*alter_lock_holder*/)
+{
+    auto table_id = getStorageID();
+    checkAlterIsPossible(params, local_context);
+    auto metadata_snapshot = getInMemoryMetadataPtr();
+    StorageInMemoryMetadata new_metadata = *metadata_snapshot;
+    params.apply(new_metadata, local_context);
+    DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata);
+    setInMemoryMetadata(new_metadata);
 }
 
 void registerStorageHiveCluster(StorageFactory & factory_)

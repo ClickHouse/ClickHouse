@@ -59,6 +59,8 @@ public:
 
     QueryProcessingStage::Enum getQueryProcessingStage(
         ContextPtr context_, QueryProcessingStage::Enum to_stage_, const StorageSnapshotPtr &, SelectQueryInfo &) const override;
+    void checkAlterIsPossible(const AlterCommands & commands, ContextPtr local_context) const override;
+    void alter(const AlterCommands & params, ContextPtr local_context, AlterLockHolder & alter_lock_holder) override;
 
 private:
     String cluster_name;
