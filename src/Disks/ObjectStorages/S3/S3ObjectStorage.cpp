@@ -60,7 +60,7 @@ void throwIfUnexpectedError(const Aws::Utils::Outcome<Result, Error> & response,
 {
     /// In this case even if absence of key may be ok for us,
     /// the log will be polluted with error messages from aws sdk.
-    /// Looks like there is no way to supress them.
+    /// Looks like there is no way to suppress them.
 
     if (!response.IsSuccess() && (!if_exists || !isNotFoundError(response.GetError().GetErrorType())))
     {
