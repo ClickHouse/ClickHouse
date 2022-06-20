@@ -18,7 +18,6 @@
 #include <Interpreters/IJoin.h>
 #include <Common/typeid_cast.h>
 #include <Common/CurrentThread.h>
-#include <Processors/BarrierProcessor.h>
 #include <Processors/ConcatProcessor.h>
 #include <Processors/DelayedPortsProcessor.h>
 #include <Processors/RowsBeforeLimitCounter.h>
