@@ -653,12 +653,12 @@ void IAccessStorage::throwInvalidCredentials()
 
 void IAccessStorage::throwBackupNotAllowed() const
 {
-    throw Exception("Backup of access entities is not allowed", ErrorCodes::ACCESS_STORAGE_DOESNT_ALLOW_BACKUP);
+    throw Exception(ErrorCodes::ACCESS_STORAGE_DOESNT_ALLOW_BACKUP, "Backup of access entities is not allowed in {}", getStorageName());
 }
 
 void IAccessStorage::throwRestoreNotAllowed() const
 {
-    throw Exception("Restore of access entities is not allowed", ErrorCodes::ACCESS_STORAGE_DOESNT_ALLOW_BACKUP);
+    throw Exception(ErrorCodes::ACCESS_STORAGE_DOESNT_ALLOW_BACKUP, "Restore of access entities is not allowed in {}", getStorageName());
 }
 
 }

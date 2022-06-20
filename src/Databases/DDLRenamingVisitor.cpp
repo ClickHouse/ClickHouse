@@ -134,7 +134,7 @@ namespace
         Field * database_name_field = nullptr;
         Field * table_name_field = nullptr;
 
-        for (auto source_element : source_elements)
+        for (const auto & source_element : source_elements)
         {
             if (!source_element)
                 continue;
@@ -195,7 +195,7 @@ namespace
             return;
         }
 
-        if (auto * identifier = dynamic_cast<const ASTIdentifier *>(arg.get()))
+        if (const auto * identifier = dynamic_cast<const ASTIdentifier *>(arg.get()))
         {
             /// ASTIdentifier or ASTTableIdentifier
             auto table_identifier = identifier->createTable();
@@ -231,7 +231,6 @@ namespace
 
         auto new_database_name = data.renaming_map.getNewDatabaseName(database_name);
         literal->value = new_database_name;
-        return;
     }
 
     void visitTableEngine(ASTStorage & storage, const DDLRenamingVisitor::Data & data)
