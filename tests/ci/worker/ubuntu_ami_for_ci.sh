@@ -3,7 +3,7 @@ set -xeuo pipefail
 
 echo "Running prepare script"
 export DEBIAN_FRONTEND=noninteractive
-export RUNNER_VERSION=2.285.1
+export RUNNER_VERSION=2.293.0
 export RUNNER_HOME=/home/ubuntu/actions-runner
 
 deb_arch() {
@@ -28,6 +28,7 @@ apt-get update
 
 apt-get install --yes --no-install-recommends \
     apt-transport-https \
+    atop \
     binfmt-support \
     build-essential \
     ca-certificates \
@@ -96,3 +97,11 @@ aws lambda invoke --region us-east-1 --function-name team-keys-lambda /tmp/core.
 jq < /tmp/core.keys -r '.body' > /home/ubuntu/.ssh/authorized_keys2
 chown ubuntu: /home/ubuntu/.ssh -R
 chmod 0700 /home/ubuntu/.ssh
+
+# Download cloudwatch agent and install config for it
+wget --directory-prefix=/tmp https://s3.amazonaws.com/amazoncloudwatch-agent/ubuntu/"$(deb_arch)"/latest/amazon-cloudwatch-agent.deb{,.sig}
+gpg --recv-key --keyserver keyserver.ubuntu.com D58167303B789C72
+gpg --verify /tmp/amazon-cloudwatch-agent.deb.sig
+dpkg -i /tmp/amazon-cloudwatch-agent.deb
+aws ssm get-parameter --region us-east-1 --name AmazonCloudWatch-github-runners --query 'Parameter.Value' --output text > /opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json
+systemctl enable amazon-cloudwatch-agent.service
