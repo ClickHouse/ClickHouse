@@ -18,11 +18,6 @@ using FileSegments = std::list<FileSegmentPtr>;
 struct FileSegmentsHolder;
 struct ReadSettings;
 
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
-
 /**
  * Local cache for remote filesystem files, represented as a set of non-overlapping non-empty file segments.
  */
@@ -131,9 +126,8 @@ protected:
 
     virtual void reduceSizeToDownloaded(
         const Key & key, size_t offset,
-        std::lock_guard<std::mutex> & cache_lock, std::lock_guard<std::mutex> & /* segment_lock */) = 0;
-
-    virtual FileSegmentPtr setDownloading(const Key & key, size_t offset, size_t size, bool is_persistent, std::lock_guard<std::mutex> & cache_lock) = 0;
+        std::lock_guard<std::mutex> & cache_lock,
+        std::lock_guard<std::mutex> & /* segment_lock */) = 0;
 
     void assertInitialized() const;
 
@@ -242,15 +236,15 @@ public:
     /// for different queries through the context cache layer.
     struct QueryContextHolder : private boost::noncopyable
     {
-        explicit QueryContextHolder(const String & query_id_, IFileCache * cache_, QueryContextPtr context_);
+        QueryContextHolder(const String & query_id_, IFileCache * cache_, QueryContextPtr context_);
 
         QueryContextHolder() = default;
 
         ~QueryContextHolder();
 
-        String query_id {};
+        String query_id;
         IFileCache * cache = nullptr;
-        QueryContextPtr context = nullptr;
+        QueryContextPtr context;
     };
 
     QueryContextHolder getQueryContextHolder(const String & query_id, const ReadSettings & settings);

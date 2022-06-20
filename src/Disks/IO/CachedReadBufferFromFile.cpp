@@ -65,6 +65,7 @@ CachedReadBufferFromFile::CachedReadBufferFromFile(
     , allow_seeks(allow_seeks_)
     , use_external_buffer(use_external_buffer_)
     , query_context_holder(cache_->getQueryContextHolder(query_id, settings_))
+    , is_persistent(false) /// Unused for now, see PR 36171
 {
 }
 

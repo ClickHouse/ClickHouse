@@ -82,8 +82,9 @@ Chunk MergeSorter::mergeImpl(TSortingHeap & queue)
     /// Reserve
     if (queue.isValid())
     {
-        /// The expected size of output block is the same as input block
-        size_t size_to_reserve = chunks[0].getNumRows();
+        /// The size of output block will not be larger than the `max_merged_block_size`.
+        /// If redundant memory space is reserved, `MemoryTracker` will count more memory usage than actual usage.
+        size_t size_to_reserve = std::min(static_cast<size_t>(chunks[0].getNumRows()), max_merged_block_size);
         for (auto & column : merged_columns)
             column->reserve(size_to_reserve);
     }
@@ -175,7 +176,7 @@ SortingTransform::SortingTransform(
     description.swap(description_without_constants);
 
     if (SortQueueVariants(sort_description_types, description).variantSupportJITCompilation())
-        compileSortDescriptionIfNeeded(description, sort_description_types, increase_sort_description_compile_attempts /*increase_compile_attemps*/);
+        compileSortDescriptionIfNeeded(description, sort_description_types, increase_sort_description_compile_attempts /*increase_compile_attempts*/);
 }
 
 SortingTransform::~SortingTransform() = default;

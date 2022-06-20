@@ -337,7 +337,7 @@ void ColumnVector<T>::updatePermutation(IColumn::PermutationSortDirection direct
                 PaddedPODArray<ValueWithIndex<T>> pairs(size);
                 size_t index = 0;
 
-                for (auto it = begin; it != end; ++it)
+                for (auto * it = begin; it != end; ++it)
                 {
                     pairs[index] = {data[*it], static_cast<UInt32>(*it)};
                     ++index;
