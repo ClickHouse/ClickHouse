@@ -883,7 +883,7 @@ class TestCase:
             "test": self.case_file,
             "stdout": self.stdout_file,
             "stderr": self.stderr_file,
-            "secure": "--secure" if args.secure else ""
+            "secure": "--secure" if args.secure else "",
         }
 
         # >> append to stderr (but not stdout since it is not used there),
@@ -1218,7 +1218,9 @@ class TestSuite:
             try:
                 return int(clickhouse_execute(args, "EXISTS TABLE test.hits"))
             except Exception as e:
-                print("Cannot check if dataset is available, assuming it's not: ", str(e))
+                print(
+                    "Cannot check if dataset is available, assuming it's not: ", str(e)
+                )
                 return False
 
         base_dir = os.path.abspath(args.queries)
