@@ -24,10 +24,10 @@ OvercommitTracker::OvercommitTracker(std::mutex & global_mutex_)
 {}
 
 #define LOG_DEBUG_SAFE(...)                       \
-    {                                             \
+    do {                                          \
         OvercommitTrackerBlockerInThread blocker; \
         LOG_DEBUG(__VA_ARGS__);                   \
-    }
+    } while (false)
 
 OvercommitResult OvercommitTracker::needToStopQuery(MemoryTracker * tracker, Int64 amount)
 {
@@ -81,7 +81,7 @@ OvercommitResult OvercommitTracker::needToStopQuery(MemoryTracker * tracker, Int
     });
     auto wait_end_time = std::chrono::system_clock::now();
     ProfileEvents::increment(ProfileEvents::MemoryOvercommitWaitTimeMicroseconds, (wait_end_time - wait_start_time) / 1us);
-    LOG_DEBUG_SAFE(getLogger(), "Memory was{} freed within timeout", (timeout ? " not" : ""))
+    LOG_DEBUG_SAFE(getLogger(), "Memory was{} freed within timeout", (timeout ? " not" : ""));
 
     required_memory -= amount;
     Int64 still_need = required_per_thread[tracker]; // If enough memory is freed it will be 0
@@ -123,7 +123,7 @@ void OvercommitTracker::onQueryStop(MemoryTracker * tracker)
     std::unique_lock<std::mutex> lk(overcommit_m);
     if (picked_tracker == tracker)
     {
-        LOG_DEBUG_SAFE(getLogger(), "Picked query stopped")
+        LOG_DEBUG_SAFE(getLogger(), "Picked query stopped");
 
         reset();
         cv.notify_all();
@@ -151,7 +151,7 @@ void UserOvercommitTracker::pickQueryToExcludeImpl()
     // At this moment query list must be read only.
     // This is guaranteed by locking global_mutex in OvercommitTracker::needToStopQuery.
     auto & queries = user_process_list->queries;
-    LOG_DEBUG_SAFE(logger, "Trying to choose query to stop from {} queries", queries.size())
+    LOG_DEBUG_SAFE(logger, "Trying to choose query to stop from {} queries", queries.size());
     for (auto const & query : queries)
     {
         if (query.second->isKilled())
@@ -162,7 +162,7 @@ void UserOvercommitTracker::pickQueryToExcludeImpl()
             continue;
 
         auto ratio = memory_tracker->getOvercommitRatio();
-        LOG_DEBUG_SAFE(logger, "Query has ratio {}/{}", ratio.committed, ratio.soft_limit)
+        LOG_DEBUG_SAFE(logger, "Query has ratio {}/{}", ratio.committed, ratio.soft_limit);
         if (ratio.soft_limit != 0 && current_ratio < ratio)
         {
             query_tracker = memory_tracker;
@@ -170,7 +170,7 @@ void UserOvercommitTracker::pickQueryToExcludeImpl()
         }
     }
     LOG_DEBUG_SAFE(logger, "Selected to stop query with overcommit ratio {}/{}",
-        current_ratio.committed, current_ratio.soft_limit)
+        current_ratio.committed, current_ratio.soft_limit);
     picked_tracker = query_tracker;
 }
 
@@ -185,7 +185,7 @@ void GlobalOvercommitTracker::pickQueryToExcludeImpl()
     OvercommitRatio current_ratio{0, 0};
     // At this moment query list must be read only.
     // This is guaranteed by locking global_mutex in OvercommitTracker::needToStopQuery.
-    LOG_DEBUG_SAFE(logger, "Trying to choose query to stop from {} queries", process_list->size())
+    LOG_DEBUG_SAFE(logger, "Trying to choose query to stop from {} queries", process_list->size());
     for (auto const & query : process_list->processes)
     {
         if (query.isKilled())
@@ -201,7 +201,7 @@ void GlobalOvercommitTracker::pickQueryToExcludeImpl()
         if (!memory_tracker)
             continue;
         auto ratio = memory_tracker->getOvercommitRatio(user_soft_limit);
-        LOG_DEBUG_SAFE(logger, "Query has ratio {}/{}", ratio.committed, ratio.soft_limit)
+        LOG_DEBUG_SAFE(logger, "Query has ratio {}/{}", ratio.committed, ratio.soft_limit);
         if (current_ratio < ratio)
         {
             query_tracker = memory_tracker;
@@ -209,7 +209,7 @@ void GlobalOvercommitTracker::pickQueryToExcludeImpl()
         }
     }
     LOG_DEBUG_SAFE(logger, "Selected to stop query with overcommit ratio {}/{}",
-        current_ratio.committed, current_ratio.soft_limit)
+        current_ratio.committed, current_ratio.soft_limit);
     picked_tracker = query_tracker;
 }
 
