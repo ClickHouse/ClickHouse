@@ -350,8 +350,6 @@ struct CopyFileOperation final : public IDiskObjectStorageOperation
     void finalize() override
     {
     }
-
-
 };
 
 void DiskObjectStorageTransaction::createDirectory(const std::string & path)
@@ -553,7 +551,6 @@ void DiskObjectStorageTransaction::createFile(const std::string & path)
         }));
 }
 
-/// Copy file `from_file_path` to `to_file_path` located at `to_disk`.
 void DiskObjectStorageTransaction::copyFile(const std::string & from_file_path, const std::string & to_file_path)
 {
     operations_to_execute.emplace_back(std::make_unique<CopyFileOperation>(object_storage, metadata_storage, from_file_path, to_file_path, remote_fs_root_path));
@@ -561,8 +558,32 @@ void DiskObjectStorageTransaction::copyFile(const std::string & from_file_path, 
 
 void DiskObjectStorageTransaction::commit()
 {
-    for (const auto & operation : operations_to_execute)
-        operation->execute(metadata_transaction);
+    for (size_t i = 0; i < operations_to_execute.size(); ++i)
+    {
+        try
+        {
+            operations_to_execute[i]->execute(metadata_transaction);
+
+        }
+        catch (Exception & ex)
+        {
+            ex.addMessage(fmt::format("While executing operation #{}", i));
+
+            for (int64_t j = i; j >= 0; --j)
+            {
+                try
+                {
+                    operations_to_execute[j]->undo();
+                }
+                catch (Exception & rollback_ex)
+                {
+                    rollback_ex.addMessage(fmt::format("While undoing operation #{}", i));
+                    throw;
+                }
+            }
+            throw;
+        }
+    }
 
     try
     {
