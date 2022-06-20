@@ -49,7 +49,7 @@ void registerFunctionBase64Decode(FunctionFactory &);
 void registerFunctionTryBase64Decode(FunctionFactory &);
 #endif
 
-#if USE_BASE58
+#if USE_BASEX
 void registerFunctionBase58Encode(FunctionFactory &);
 void registerFunctionBase58Decode(FunctionFactory &);
 #endif
@@ -110,7 +110,7 @@ void registerFunctionsString(FunctionFactory & factory)
     registerFunctionTryBase64Decode(factory);
 #endif
 
-#if USE_BASE58
+#if USE_BASEX
     registerFunctionBase58Encode(factory);
     registerFunctionBase58Decode(factory);
 #endif
