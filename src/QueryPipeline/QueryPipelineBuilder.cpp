@@ -401,7 +401,7 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelines(
         auto joining = std::make_shared<JoiningTransform>(left->getHeader(), join, max_block_size, false, default_totals, finish_counter);
         connect(**lit, joining->getInputs().front());
         connect(**rit, joining->getInputs().back());
-        connect(*joining->getFinishedSignal(), barrier->addInputPort());
+        connect(joining->getFinishedSignal(), barrier->addInputPort());
 
         // Process delayed joined blocks when all JoiningTransform are finished.
         auto delayed = std::make_shared<DelayedJoinedBlocksTransform>(left->getHeader(), join);

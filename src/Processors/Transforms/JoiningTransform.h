@@ -53,7 +53,7 @@ public:
 
     static Block transformHeader(Block header, const JoinPtr & join);
 
-    OutputPort* getFinishedSignal();
+    OutputPort & getFinishedSignal();
 
     Status prepare() override;
     void work() override;
