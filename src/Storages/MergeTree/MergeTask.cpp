@@ -121,12 +121,24 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
 
     ctx->disk = global_ctx->space_reservation->getDisk();
 
-    String local_part_path = global_ctx->data->relative_data_path;
     String local_tmp_part_basename = local_tmp_prefix + global_ctx->future_part->name + local_tmp_suffix;
-    String local_new_part_tmp_path = local_part_path + local_tmp_part_basename + "/";
 
-    if (ctx->disk->exists(local_new_part_tmp_path))
-        throw Exception("Directory " + fullPath(ctx->disk, local_new_part_tmp_path) + " already exists", ErrorCodes::DIRECTORY_ALREADY_EXISTS);
+    if (global_ctx->parent_path_storage_builder)
+    {
+        global_ctx->data_part_storage_builder = global_ctx->parent_path_storage_builder->getProjection(local_tmp_part_basename);
+    }
+    else
+    {
+        auto local_single_disk_volume = std::make_shared<SingleDiskVolume>("volume_" + global_ctx->future_part->name, ctx->disk, 0);
+
+        global_ctx->data_part_storage_builder = std::make_shared<DataPartStorageBuilderOnDisk>(
+            local_single_disk_volume,
+            global_ctx->data->relative_data_path,
+            local_tmp_part_basename);
+    }
+
+    if (global_ctx->data_part_storage_builder->exists())
+        throw Exception("Directory " + global_ctx->data_part_storage_builder->getFullPath() + " already exists", ErrorCodes::DIRECTORY_ALREADY_EXISTS);
 
     global_ctx->data->temporary_parts.add(local_tmp_part_basename);
     SCOPE_EXIT(
@@ -150,17 +162,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
         global_ctx->merging_columns,
         global_ctx->merging_column_names);
 
-    auto local_single_disk_volume = std::make_shared<SingleDiskVolume>("volume_" + global_ctx->future_part->name, ctx->disk, 0);
-
-    auto data_part_storage = std::make_shared<DataPartStorageOnDisk>(
-        local_single_disk_volume,
-        local_part_path,
-        local_tmp_part_basename);
-
-    global_ctx->data_part_storage_builder = std::make_shared<DataPartStorageBuilderOnDisk>(
-        local_single_disk_volume,
-        local_part_path,
-        local_tmp_part_basename);
+    auto data_part_storage = global_ctx->data_part_storage_builder->getStorage();
 
     global_ctx->new_data_part = global_ctx->data->createPart(
         global_ctx->future_part->name,
@@ -645,6 +647,7 @@ bool MergeTask::MergeProjectionsStage::mergeMinMaxIndexAndPrepareProjections() c
             global_ctx->deduplicate_by_columns,
             projection_merging_params,
             global_ctx->new_data_part.get(),
+            global_ctx->data_part_storage_builder.get(),
             ".proj",
             NO_TRANSACTION_PTR,
             global_ctx->data,

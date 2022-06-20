@@ -6084,13 +6084,13 @@ PartitionCommandsResultInfo MergeTreeData::freezePartitionsByMatcher(
 
         //auto disk = part->volume->getDisk();
 
-
-        String src_part_path = part->data_part_storage->getFullRelativePath();
+        auto data_part_storage = part->data_part_storage;
+        String src_part_path = data_part_storage->getFullRelativePath();
         String backup_part_path = fs::path(backup_path) / relative_data_path;
         if (auto part_in_memory = asInMemoryPart(part))
         {
             auto flushed_part_path = part_in_memory->getRelativePathForPrefix("tmp_freeze");
-            src_part_path = part_in_memory->flushToDisk(flushed_part_path, metadata_snapshot)->getFullRelativePath();
+            data_part_storage = part_in_memory->flushToDisk(flushed_part_path, metadata_snapshot);
         }
 
         auto callback = [this, &part, &backup_part_path](const DiskPtr & disk)
@@ -6101,7 +6101,7 @@ PartitionCommandsResultInfo MergeTreeData::freezePartitionsByMatcher(
             createAndStoreFreezeMetadata(disk, part, fs::path(backup_part_path) / part->data_part_storage->getPartDirectory());
         };
 
-        auto new_storage = part->data_part_storage->freeze(
+        auto new_storage = data_part_storage->freeze(
             backup_part_path,
             part->data_part_storage->getPartDirectory(),
             /*make_source_readonly*/ true,
