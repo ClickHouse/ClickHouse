@@ -13,7 +13,7 @@
 #include <boost/algorithm/string.hpp>
 #include <Common/filesystemHelpers.h>
 #include <Disks/IO/ThreadPoolRemoteFSReader.h>
-#include <Common/FileCache.h>
+#include <Common/IFileCache.h>
 #include <Disks/ObjectStorages/DiskObjectStorageRemoteMetadataRestoreHelper.h>
 #include <Poco/Util/AbstractConfiguration.h>
 
