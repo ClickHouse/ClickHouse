@@ -143,7 +143,12 @@ void IFileCache::QueryContext::remove(const Key & key, size_t offset, size_t siz
 void IFileCache::QueryContext::reserve(const Key & key, size_t offset, size_t size, std::lock_guard<std::mutex> & cache_lock)
 {
     if (cache_size + size > max_cache_size)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "reserved cache size exceeds the remaining cache size");
+    {
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Reserved cache size exceeds the remaining cache size (key: {}, offset: {})",
+            key.toString(), offset);
+    }
 
     if (!skip_download_if_exceeds_query_cache)
     {
