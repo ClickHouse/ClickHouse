@@ -37,11 +37,7 @@ JoiningTransform::JoiningTransform(
     , max_block_size(max_block_size_)
 {
     if (!join->isFilled())
-    {
         inputs.emplace_back(Block(), this); // Wait for FillingRightJoinSideTransform
-        if (!on_totals)
-            outputs.emplace_back(Block(), this); // Signal for DelayedJoinedBlocksTransform
-    }
 }
 
 JoiningTransform::~JoiningTransform() = default;
@@ -314,7 +310,7 @@ void FillingRightJoinSideTransform::work()
 
 
 DelayedJoinedBlocksTransform::DelayedJoinedBlocksTransform(Block input_header, JoinPtr join_)
-    : IProcessor({Block()}, {JoiningTransform::transformHeader(input_header, join_)}), join{std::move(join_)}
+    : IProcessor(InputPorts{}, OutputPorts{JoiningTransform::transformHeader(input_header, join_)}), join{std::move(join_)}
 {
 }
 
@@ -322,14 +318,7 @@ DelayedJoinedBlocksTransform::~DelayedJoinedBlocksTransform() = default;
 
 IProcessor::Status DelayedJoinedBlocksTransform::prepare()
 {
-    auto & input = inputs.front();
     auto & output = outputs.front();
-
-    if (!input.isFinished())
-    {
-        input.setNeeded();
-        return Status::NeedData;
-    }
 
     if (output_chunk)
     {

@@ -109,8 +109,7 @@ private:
 };
 
 /// Reads delayed joined blocks from Join.
-/// Has single input and single output port.
-/// Input port has empty header. It is closed when all JoiningTransform have completed.
+/// Has no inputs and single output port.
 /// The joined blocks are written to the output port.
 class DelayedJoinedBlocksTransform : public IProcessor
 {
