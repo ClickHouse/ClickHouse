@@ -30,6 +30,8 @@ class SettingsChanges;
 using DictionariesWithID = std::vector<std::pair<String, UUID>>;
 struct ParsedTablesMetadata;
 struct QualifiedTableName;
+class BackupEntriesCollector;
+class RestorerFromBackup;
 
 namespace ErrorCodes
 {
@@ -331,9 +333,17 @@ public:
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Database engine {} does not run a replication thread!", getEngineName());
     }
 
-    /// Returns true if the backup of the database is hollow, which means it doesn't contain
-    /// any tables which can be stored to a backup.
-    virtual bool hasTablesToBackup() const { return false; }
+    /// Returns a slightly changed version of the CREATE DATABASE query which must be written to a backup.
+    virtual ASTPtr getCreateDatabaseQueryForBackup() const;
+
+    /// Returns an iterator that passes through all the tables when an user wants to backup the whole database.
+    virtual DatabaseTablesIteratorPtr getTablesIteratorForBackup(const BackupEntriesCollector & restorer) const;
+
+    /// Checks a CREATE TABLE query before it will be written to a backup. Called by IStorage::getCreateQueryForBackup().
+    virtual void checkCreateTableQueryForBackup(const ASTPtr & create_table_query, const BackupEntriesCollector & backup_entries_collector) const;
+
+    /// Creates a table restored from backup.
+    virtual void createTableRestoredFromBackup(const ASTPtr & create_table_query, const RestorerFromBackup & restorer);
 
     virtual ~IDatabase() = default;
 

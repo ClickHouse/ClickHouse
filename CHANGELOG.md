@@ -18,6 +18,7 @@
 * If you run different ClickHouse versions on a cluster with AArch64 CPU or mix AArch64 and amd64 on a cluster, and use distributed queries with GROUP BY multiple keys of fixed-size type that fit in 256 bits but don't fit in 64 bits, and the size of the result is huge, the data will not be fully aggregated in the result of these queries during upgrade. Workaround: upgrade with downtime instead of a rolling upgrade.
 
 #### New Feature
+* Add `GROUPING` function. It allows to disambiguate the records in the queries with `ROLLUP`, `CUBE` or `GROUPING SETS`. Closes [#19426](https://github.com/ClickHouse/ClickHouse/issues/19426). [#37163](https://github.com/ClickHouse/ClickHouse/pull/37163) ([Dmitry Novik](https://github.com/novikd)).
 * A new codec [FPC](https://userweb.cs.txstate.edu/~burtscher/papers/dcc07a.pdf) algorithm for floating point data compression. [#37553](https://github.com/ClickHouse/ClickHouse/pull/37553) ([Mikhail Guzov](https://github.com/koloshmet)).
 * Add new columnar JSON formats: `JSONColumns`, `JSONCompactColumns`, `JSONColumnsWithMetadata`. Closes [#36338](https://github.com/ClickHouse/ClickHouse/issues/36338) Closes [#34509](https://github.com/ClickHouse/ClickHouse/issues/34509). [#36975](https://github.com/ClickHouse/ClickHouse/pull/36975) ([Kruglov Pavel](https://github.com/Avogar)).
 * Added open telemetry traces visualizing tool based on d3js. [#37810](https://github.com/ClickHouse/ClickHouse/pull/37810) ([Sergei Trifonov](https://github.com/serxa)).
@@ -38,7 +39,6 @@
 * Added `SYSTEM UNFREEZE` query that deletes the whole backup regardless if the corresponding table is deleted or not. [#36424](https://github.com/ClickHouse/ClickHouse/pull/36424) ([Vadim Volodin](https://github.com/PolyProgrammist)).
 
 #### Experimental Feature
-* Add `GROUPING` function. Closes [#19426](https://github.com/ClickHouse/ClickHouse/issues/19426). [#37163](https://github.com/ClickHouse/ClickHouse/pull/37163) ([Dmitry Novik](https://github.com/novikd)). The behavior of this function will be changed in subsequent releases.
 * Enables `POPULATE` for `WINDOW VIEW`. [#36945](https://github.com/ClickHouse/ClickHouse/pull/36945) ([vxider](https://github.com/Vxider)).
 * `ALTER TABLE ... MODIFY QUERY` support for `WINDOW VIEW`. [#37188](https://github.com/ClickHouse/ClickHouse/pull/37188) ([vxider](https://github.com/Vxider)).
 * This PR changes the behavior of the `ENGINE` syntax in `WINDOW VIEW`, to make it like in `MATERIALIZED VIEW`. [#37214](https://github.com/ClickHouse/ClickHouse/pull/37214) ([vxider](https://github.com/Vxider)).
