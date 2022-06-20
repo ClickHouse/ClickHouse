@@ -18,8 +18,8 @@
 * If you run different ClickHouse versions on a cluster with AArch64 CPU or mix AArch64 and amd64 on a cluster, and use distributed queries with GROUP BY multiple keys of fixed-size type that fit in 256 bits but don't fit in 64 bits, and the size of the result is huge, the data will not be fully aggregated in the result of these queries during upgrade. Workaround: upgrade with downtime instead of a rolling upgrade.
 
 #### New Feature
+* Add `GROUPING` function. It allows to disambiguate the records in the queries with `ROLLUP`, `CUBE` or `GROUPING SETS`. Closes [#19426](https://github.com/ClickHouse/ClickHouse/issues/19426). [#37163](https://github.com/ClickHouse/ClickHouse/pull/37163) ([Dmitry Novik](https://github.com/novikd)).
 * A new codec [FPC](https://userweb.cs.txstate.edu/~burtscher/papers/dcc07a.pdf) algorithm for floating point data compression. [#37553](https://github.com/ClickHouse/ClickHouse/pull/37553) ([Mikhail Guzov](https://github.com/koloshmet)).
-* Add `GROUPING` function. Closes [#19426](https://github.com/ClickHouse/ClickHouse/issues/19426). [#37163](https://github.com/ClickHouse/ClickHouse/pull/37163) ([Dmitry Novik](https://github.com/novikd)).
 * Add new columnar JSON formats: `JSONColumns`, `JSONCompactColumns`, `JSONColumnsWithMetadata`. Closes [#36338](https://github.com/ClickHouse/ClickHouse/issues/36338) Closes [#34509](https://github.com/ClickHouse/ClickHouse/issues/34509). [#36975](https://github.com/ClickHouse/ClickHouse/pull/36975) ([Kruglov Pavel](https://github.com/Avogar)).
 * Added open telemetry traces visualizing tool based on d3js. [#37810](https://github.com/ClickHouse/ClickHouse/pull/37810) ([Sergei Trifonov](https://github.com/serxa)).
 * Support INSERTs into `system.zookeeper` table. Closes [#22130](https://github.com/ClickHouse/ClickHouse/issues/22130). [#37596](https://github.com/ClickHouse/ClickHouse/pull/37596) ([Han Fei](https://github.com/hanfei1991)).
