@@ -1,0 +1,453 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Dashboard</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/uplot@1.6.21/dist/uPlot.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/uplot@1.6.21/dist/uPlot.iife.min.js"></script>
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+        html, body {
+            height: 100%;
+            margin: 0;
+        }
+        body {
+            font-family: Liberation Sans, DejaVu Sans, sans-serif, Noto Color Emoji, Apple Color Emoji, Segoe UI Emoji;
+            padding: 1rem;
+            overflow-x: hidden;
+            background: linear-gradient(to bottom, #00CCFF, #00D0D0);
+        }
+        #charts
+        {
+            height: calc(100% - 3em);
+            display: flex;
+            flex-flow: row wrap;
+            gap: 1rem;
+        }
+        .chart {
+            flex: 1 40%;
+            min-width: 20rem;
+            min-height: 16rem;
+            background: white;
+            box-shadow: 0 0 1rem rgba(0, 0, 0, 0.25);
+            overflow: hidden;
+            position: relative;
+        }
+
+        .chart div { position: absolute; }
+
+        .inputs { height: 3em; }
+
+        .inputs input {
+            box-shadow: 0 0 1rem rgba(0, 0, 0, 0.25);
+            padding: 0.25rem;
+            margin-right: 0.25rem;
+        }
+
+        input {
+            outline: none;
+            border: none;
+            font-size: 14pt;
+        }
+
+        .u-legend th { display: none; }
+
+        #toggle-dark, #toggle-light {
+            float: right;
+            font-size: 20pt;
+            padding-right: 0.5rem;
+            cursor: pointer;
+        }
+
+        #toggle-dark:hover, #toggle-light:hover {
+            transform: translate(1px, 1px);
+            filter: brightness(125%);
+        }
+
+        #run {
+            background: #FFCB80;
+            font-weight: bold;
+            cursor: pointer;
+        }
+
+        #run:hover {
+            filter: contrast(125%);
+        }
+
+        #add {
+            background: white;
+            font-weight: bold;
+            cursor: pointer;
+            padding-left: 0.5rem;
+            padding-right: 0.5rem;
+            background: #EEE;
+            float: right;
+            margin-right: 0;
+            margin-left: 1rem;
+        }
+
+        #add:hover {
+            background: white
+        }
+
+        form {
+            display: inline;
+        }
+
+        form span {
+            font-size: 14pt;
+            padding: 0.25rem;
+            background: #EEE;
+            display: inline-block;
+            box-shadow: 0 0 1rem rgba(0, 0, 0, 0.25);
+        }
+
+        input:focus {
+            box-shadow: 0 0 1rem rgba(0, 255, 0, 1);
+        }
+
+        .title {
+            position: relative;
+            left: 50%;
+            top: 0.25em;
+            transform: translate(-50%, 0);
+            font-size: 20pt;
+            font-weight: bold;
+            color: #888;
+            z-index: 10;
+        }
+
+        .chart-buttons {
+            cursor: pointer;
+            display: none;
+            position: absolute;
+            top: 0.25rem;
+            right: 0.25rem;
+            font-size: 200%;
+            color: #888;
+            z-index: 10;
+        }
+        .chart-buttons a {
+            margin-right: 0.25rem;
+        }
+        .chart-buttons a:hover {
+            color: red;
+        }
+
+        .query-editor {
+            display: none;
+            grid-template-columns: auto fit-content(10%);
+            grid-template-rows: auto fit-content(10%);
+            z-index: 11;
+            position: absolute;
+            width: 100%;
+            height: 100%;
+        }
+
+        .query-editor textarea {
+            grid-row: 1;
+            grid-column: 1 / span 2;
+            z-index: 11;
+            padding: 0.5rem;
+            outline: none;
+            border: none;
+            font-size: 12pt;
+            border-bottom: 1px solid #F88;
+        }
+
+        .query-editor input {
+            grid-row: 2;
+            padding: 0.5rem;
+        }
+
+        .edit-title {
+            background: #FEE;
+        }
+
+        .edit-confirm {
+            background: #FFCB80;
+            font-weight: bold;
+            cursor: pointer;
+        }
+        .edit-confirm:hover {
+            filter: contrast(125%);
+        }
+    </style>
+</head>
+<body>
+<div class="inputs">
+    <form>
+        <span>start: </span><input class="param" name="param_start" type="text" value="2020-01-01" />
+        <span>word2: </span><input class="param" name="param_word2" type="text" value="Coronavirus" />
+        <input id="run" type="submit" value="Ok" />
+    </form>
+    <input id="add" type="button" value="Add chart"><span id="toggle-dark">🌚</span><span id="toggle-light">🌞</span>
+</div>
+<div id="charts">
+</div>
+</body>
+<script>
+    const url = 'https://play.clickhouse.com/?user=play';
+    const theme = 'light';
+
+    const queries = [
+        { title: "ClickHouse", query:
+        `SELECT toStartOfDay(time, 'Europe/Amsterdam')::INT AS t, sum(hits)::INT AS v
+            FROM wikistat WHERE path = 'ClickHouse' AND time >= {start:Date}
+            GROUP BY t ORDER BY t
+            FORMAT JSONCompactColumns`},
+
+        { title: "Custom", query:
+        `SELECT toStartOfDay(time, 'Europe/Amsterdam')::INT AS t, sum(hits)::INT AS v
+            FROM wikistat WHERE path = {word2:String} AND time >= {start:Date}
+            GROUP BY t ORDER BY t
+            FORMAT JSONCompactColumns`},
+
+        { title: "Blockchain", query:
+        `SELECT toStartOfDay(time, 'Europe/Amsterdam')::INT AS t, sum(hits)::INT AS v
+            FROM wikistat WHERE path = 'Blockchain' AND time >= {start:Date}
+            GROUP BY t ORDER BY t
+            FORMAT JSONCompactColumns`},
+
+        { title: "Big_Data", query:
+        `SELECT toStartOfDay(time, 'Europe/Amsterdam')::INT AS t, sum(hits)::INT AS v
+            FROM wikistat WHERE path = 'Big_Data' AND time >= {start:Date}
+            GROUP BY t ORDER BY t
+            FORMAT JSONCompactColumns`},
+
+        { title: "Hadoop", query:
+        `SELECT toStartOfDay(time, 'Europe/Amsterdam')::INT AS t, sum(hits)::INT AS v
+            FROM wikistat WHERE path = 'Hadoop' AND time >= {start:Date}
+            GROUP BY t ORDER BY t
+            FORMAT JSONCompactColumns`}
+    ];
+
+    function getParams() {
+        let params = '';
+        [...document.getElementsByClassName('param')].forEach(e => { params += `&${e.name}=${e.value}` });
+        return params;
+    }
+
+    let plots = [];
+    let charts = document.getElementById('charts');
+
+    function insertChart(i) {
+        let q = queries[i];
+        let chart = document.createElement('div');
+        chart.className = 'chart';
+
+        let chart_title = document.createElement('div');
+        let title_text = document.createTextNode(q.title);
+        chart_title.appendChild(title_text);
+        chart_title.className = 'title';
+        chart.appendChild(chart_title);
+
+        let query_editor = document.createElement('div');
+        query_editor.className = 'query-editor';
+
+        let query_editor_textarea = document.createElement('textarea');
+        query_editor_textarea.spellcheck = false;
+        query_editor_textarea.value = q.query;
+        query_editor_textarea.placeholder = 'Query';
+        query_editor.appendChild(query_editor_textarea);
+
+        let query_editor_title = document.createElement('input');
+        query_editor_title.type = 'text';
+        query_editor_title.value = q.title;
+        query_editor_title.placeholder = 'Chart title';
+        query_editor_title.className = 'edit-title';
+        query_editor.appendChild(query_editor_title);
+
+        let query_editor_confirm = document.createElement('input');
+        query_editor_confirm.type = 'submit';
+        query_editor_confirm.value = 'Ok';
+        query_editor_confirm.className = 'edit-confirm';
+
+        function editConfirm() {
+            query_editor.style.display = 'none';
+            q.title = query_editor_title.value;
+            q.query = query_editor_textarea.value;
+            title_text.data = q.title;
+            draw(i, chart, getParams(), q.query);
+        }
+
+        query_editor_confirm.addEventListener('click', editConfirm);
+        query_editor.addEventListener('keydown', e => {
+            if ((event.metaKey || event.ctrlKey) && (event.keyCode == 13 || event.keyCode == 10)) {
+                editConfirm();
+            }
+        });
+
+        query_editor.addEventListener('keyup', e => {
+            if (e.key == 'Escape') {
+                query_editor.style.display = 'none';
+            }
+        });
+
+        query_editor.appendChild(query_editor_confirm);
+
+        chart.appendChild(query_editor);
+
+        let edit_buttons = document.createElement('div');
+        edit_buttons.className = 'chart-buttons';
+
+        let edit = document.createElement('a');
+        let edit_text = document.createTextNode('✎');
+        edit.appendChild(edit_text);
+        edit.addEventListener('click', e => {
+            query_editor.style.display = 'grid';
+            query_editor_textarea.focus();
+        });
+        chart.addEventListener('dblclick', e => {
+            if (e.target != insert) {
+                query_editor.style.display = 'grid';
+                query_editor_textarea.focus();
+            }
+        });
+
+        let trash = document.createElement('a');
+        let trash_text = document.createTextNode('✖️');
+        trash.appendChild(trash_text);
+        trash.addEventListener('click', e => {
+            chart.style.display = 'none';
+            queries.splice(i, 1);
+            plots.splice(i, 1);
+            resize();
+        });
+
+        edit_buttons.appendChild(edit);
+        edit_buttons.appendChild(trash);
+
+        chart.appendChild(edit_buttons);
+
+        chart.addEventListener('mouseenter', e => { edit_buttons.style.display = 'block'; });
+        chart.addEventListener('mouseleave', e => { edit_buttons.style.display = 'none'; });
+
+        charts.appendChild(chart);
+        plots.push(null);
+    };
+
+    for (let i = 0; i < queries.length; ++i) {
+        insertChart(i);
+    }
+
+    document.getElementById('add').addEventListener('click', e => {
+        queries.push({ title: '', query: '' });
+        insertChart(plots.length);
+        resize();
+    });
+
+    function legendAsTooltipPlugin({ className, style = { background: "rgba(255, 255, 255, 0.75)" } } = {}) {
+        let legendEl;
+
+        function init(u, opts) {
+            legendEl = u.root.querySelector(".u-legend");
+
+            legendEl.classList.remove("u-inline");
+            className && legendEl.classList.add(className);
+
+            uPlot.assign(legendEl.style, {
+                textAlign: "left",
+                pointerEvents: "none",
+                display: "none",
+                position: "absolute",
+                left: 0,
+                top: 0,
+                zIndex: 100,
+                boxShadow: "2px 2px 10px rgba(0,0,0,0.1)",
+                ...style
+            });
+
+            // hide series color markers
+            const idents = legendEl.querySelectorAll(".u-marker");
+
+            for (let i = 0; i < idents.length; i++)
+                idents[i].style.display = "none";
+
+            const overEl = u.over;
+
+            overEl.appendChild(legendEl);
+
+            overEl.addEventListener("mouseenter", () => {legendEl.style.display = null;});
+            overEl.addEventListener("mouseleave", () => {legendEl.style.display = "none";});
+        }
+
+        function update(u) {
+            let { left, top } = u.cursor;
+            left -= legendEl.clientWidth / 2;
+            top -= legendEl.clientHeight / 2;
+            legendEl.style.transform = "translate(" + left + "px, " + top + "px)";
+        }
+
+        return {
+            hooks: {
+                init: init,
+                setCursor: update,
+            }
+        };
+    }
+
+    async function draw(idx, chart, params, query) {
+        if (plots[idx]) {
+            plots[idx].destroy();
+            plots[idx] = null;
+        }
+
+        const response = await fetch(url + params, { method: "POST", body: query });
+        const data = await response.json();
+
+        if (!(Array.isArray(data) && data.length == 2 && Array.isArray(data[0]) && Array.isArray(data[1]) && data[0].length == data[1].length)) {
+            return;
+        }
+
+        const [line_color, fill_color, grid_color, axes_color] = theme != 'dark'
+            ? ["#F88", "#FEE", "#EED", "#2c3235"]
+            : ["#888", "#045", "#2c3235", "#c7d0d9"];
+
+        const opts = {
+            width: chart.clientWidth,
+            height: chart.clientHeight,
+            axes: [ { stroke: axes_color,
+                      grid: { width: 1 / devicePixelRatio, stroke: grid_color },
+                      ticks: { width: 1 / devicePixelRatio, stroke: grid_color } },
+                    { stroke: axes_color,
+                      grid: { width: 1 / devicePixelRatio, stroke: grid_color },
+                      ticks: { width: 1 / devicePixelRatio, stroke: grid_color } } ],
+            series: [ { label: "x" },
+                      { label: "y", stroke: line_color, fill: fill_color } ],
+            padding: [ null, null, null, (Math.floor(Math.log10(Math.max(...data[1]))) + Math.floor(Math.log10(Math.max(...data[1])) / 3)) * 6 - 10 ],
+            plugins: [ legendAsTooltipPlugin() ]
+        };
+
+        plots[idx] = new uPlot(opts, data, chart);
+    }
+
+    async function drawAll() {
+        let params = getParams();
+        const charts = document.getElementsByClassName('chart');
+        for (let i = 0; i < queries.length; ++i) {
+            draw(i, charts[i], params, queries[i].query);
+        }
+    }
+
+    function resize() {
+        plots.forEach(plot => {
+            if (plot) {
+                let chart = plot.over.closest('.chart');
+                plot.setSize({ width: chart.clientWidth, height: chart.clientHeight });
+            }
+        });
+    }
+
+    new ResizeObserver(resize).observe(document.body);
+
+    document.getElementById('run').onclick = function(event) {
+        drawAll();
+        event.preventDefault();
+    }
+
+    drawAll();
+</script>
+</html>
