@@ -3,6 +3,7 @@
 #include <Common/logger_useful.h>
 #include <Common/escapeForFileName.h>
 #include <Storages/MergeTree/DataPartStorageOnDisk.h>
+#include <Columns/ColumnsNumber.h>
 #include <Parsers/queryToString.h>
 #include <Interpreters/SquashingTransform.h>
 #include <Interpreters/MergeTreeTransaction.h>
@@ -624,6 +625,8 @@ struct MutationContext
     MergeTreeData::DataPartPtr source_part;
 
     StoragePtr storage_from_source_part;
+    bool is_lightweight_mutation{0};
+
     StorageMetadataPtr metadata_snapshot;
 
     MutationCommandsConstPtr commands;
@@ -1351,6 +1354,193 @@ private:
     std::unique_ptr<PartMergerWriter> part_merger_writer_task{nullptr};
 };
 
+class LightweightDeleteTask : public IExecutableTask
+{
+public:
+
+    explicit LightweightDeleteTask(MutationContextPtr ctx_) : ctx(ctx_) {}
+
+    void onCompleted() override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
+    StorageID getStorageID() override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
+    UInt64 getPriority() override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
+
+    bool executeStep() override
+    {
+        switch (state)
+        {
+            case State::NEED_PREPARE:
+            {
+                prepare();
+
+                state = State::NEED_EXECUTE;
+                return true;
+            }
+            case State::NEED_EXECUTE:
+            {
+                execute();
+
+                state = State::NEED_FINALIZE;
+                return true;
+            }
+            case State::NEED_FINALIZE:
+            {
+                finalize();
+
+                state = State::SUCCESS;
+                return true;
+            }
+            case State::SUCCESS:
+            {
+                return false;
+            }
+        }
+        return false;
+    }
+
+private:
+
+    void prepare()
+    {
+        if (ctx->execute_ttl_type != ExecuteTTLType::NONE)
+            ctx->files_to_skip.insert("ttl.txt");
+
+        ctx->disk->createDirectories(ctx->new_part_tmp_path);
+
+        /// We should write version metadata on part creation to distinguish it from parts that were created without transaction.
+        TransactionID tid = ctx->txn ? ctx->txn->tid : Tx::PrehistoricTID;
+        /// NOTE do not pass context for writing to system.transactions_info_log,
+        /// because part may have temporary name (with temporary block numbers). Will write it later.
+        ctx->new_data_part->version.setCreationTID(tid, nullptr);
+        ctx->new_data_part->storeVersionMetadata();
+
+        NameSet hardlinked_files;
+        /// Create hardlinks for unchanged files
+        for (auto it = ctx->disk->iterateDirectory(ctx->source_part->getFullRelativePath()); it->isValid(); it->next())
+        {
+            if (ctx->files_to_skip.contains(it->name()))
+                continue;
+
+            String destination = ctx->new_part_tmp_path;
+            String file_name = it->name();
+
+            destination += file_name;
+
+            if (!ctx->disk->isDirectory(it->path()))
+            {
+                ctx->disk->createHardLink(it->path(), destination);
+                hardlinked_files.insert(file_name);
+            }
+            else if (!endsWith(".tmp_proj", file_name)) // ignore projection tmp merge dir
+            {
+                // it's a projection part directory
+                ctx->disk->createDirectories(destination);
+                for (auto p_it = ctx->disk->iterateDirectory(it->path()); p_it->isValid(); p_it->next())
+                {
+                    String p_destination = fs::path(destination) / p_it->name();
+                    ctx->disk->createHardLink(p_it->path(), p_destination);
+                    hardlinked_files.insert(p_it->name());
+                }
+            }
+        }
+
+        /// Tracking of hardlinked files required for zero-copy replication.
+        /// We don't remove them when we delete last copy of source part because
+        /// new part can use them.
+        ctx->hardlinked_files.source_table_shared_id = ctx->source_part->storage.getTableSharedID();
+        ctx->hardlinked_files.source_part_name = ctx->source_part->name;
+        ctx->hardlinked_files.hardlinks_from_source_part = hardlinked_files;
+
+        /// Only the _delete mask column will be written.
+        (*ctx->mutate_entry)->columns_written = 1;
+
+        ctx->new_data_part->checksums = ctx->source_part->checksums;
+
+        ctx->compression_codec = ctx->source_part->default_codec;
+
+        if (ctx->mutating_pipeline_builder.initialized())
+        {
+            QueryPipelineBuilder builder(std::move(ctx->mutating_pipeline_builder));
+
+            if (ctx->execute_ttl_type == ExecuteTTLType::NORMAL)
+                builder.addTransform(std::make_shared<TTLTransform>(builder.getHeader(), *ctx->data, ctx->metadata_snapshot, ctx->new_data_part, ctx->time_of_mutation, true));
+
+            if (ctx->execute_ttl_type == ExecuteTTLType::RECALCULATE)
+                builder.addTransform(std::make_shared<TTLCalcTransform>(builder.getHeader(), *ctx->data, ctx->metadata_snapshot, ctx->new_data_part, ctx->time_of_mutation, true));
+
+            ctx->mutating_pipeline = QueryPipelineBuilder::getPipeline(std::move(builder));
+            ctx->mutating_pipeline.setProgressCallback(ctx->progress_callback);
+            /// Is calculated inside MergeProgressCallback.
+            ctx->mutating_pipeline.disableProfileEventUpdate();
+            ctx->mutating_executor = std::make_unique<PullingPipelineExecutor>(ctx->mutating_pipeline);
+        }
+    }
+
+    void execute()
+    {
+        Block block;
+        bool has_deleted_rows = false;
+
+        /// If this part has already applied lightweight mutation, load the past latest bitmap to merge with current bitmap
+        if (ctx->source_part->has_lightweight_delete)
+        {
+            new_bitmap = ctx->source_part->deleted_rows_mask;
+            has_deleted_rows = true;
+        }
+        else
+            new_bitmap.resize(ctx->source_part->rows_count, '0');
+
+        /// Mark the data corresponding to the offset in the as deleted.
+        while (MutationHelpers::checkOperationIsNotCanceled(*ctx->merges_blocker, ctx->mutate_entry) && ctx->mutating_executor->pull(block))
+        {
+            size_t block_rows = block.rows();
+
+            if (block_rows && !has_deleted_rows)
+                has_deleted_rows = true;
+
+            const auto & cols = block.getColumns();
+            const auto * offset_col = typeid_cast<const ColumnUInt64 *>(cols[0].get());
+            const UInt64 * offset = offset_col->getData().data();
+
+            /// Fill 1 for rows in offset
+            for (size_t current_row = 0; current_row < block_rows; current_row++)
+                new_bitmap[offset[current_row]] = '1';
+        }
+
+        if (has_deleted_rows)
+        {
+            ctx->new_data_part->writeLightWeightDeletedMask(new_bitmap);
+            ctx->new_data_part->has_lightweight_delete = true;
+            ctx->new_data_part->deleted_rows_mask = new_bitmap;
+        }
+    }
+
+    void finalize()
+    {
+        if (ctx->mutating_executor)
+        {
+            ctx->mutating_executor.reset();
+            ctx->mutating_pipeline.reset();
+        }
+
+         MutationHelpers::finalizeMutatedPart(ctx->source_part, ctx->new_data_part, ctx->execute_ttl_type, ctx->compression_codec, ctx->context);
+    }
+
+    enum class State
+    {
+        NEED_PREPARE,
+        NEED_EXECUTE,
+        NEED_FINALIZE,
+
+        SUCCESS
+    };
+
+    State state{State::NEED_PREPARE};
+
+    MutationContextPtr ctx;
+
+    String new_bitmap;
+};
+
 
 MutateTask::MutateTask(
     FutureMergedMutatedPartPtr future_part_,
@@ -1437,8 +1627,10 @@ bool MutateTask::prepare()
                 command.partition, context_for_reading))
             ctx->commands_for_part.emplace_back(command);
     }
-
-    if (ctx->source_part->isStoredOnDisk() && !isStorageTouchedByMutations(
+    /// Enable lightweight delete for wide part only.
+    if (isWidePart(ctx->source_part) && (ctx->future_part->mutation_type == MutationType::Lightweight))
+        ctx->is_lightweight_mutation = true;
+    if (ctx->source_part->isStoredOnDisk() && !ctx->is_lightweight_mutation && !isStorageTouchedByMutations(
         ctx->storage_from_source_part, ctx->metadata_snapshot, ctx->commands_for_part, Context::createCopy(context_for_reading)))
     {
         LOG_TRACE(ctx->log, "Part {} doesn't change up to mutation version {}", ctx->source_part->name, ctx->future_part->part_info.mutation);
@@ -1457,7 +1649,7 @@ bool MutateTask::prepare()
     if (!ctx->for_interpreter.empty())
     {
         ctx->interpreter = std::make_unique<MutationsInterpreter>(
-            ctx->storage_from_source_part, ctx->metadata_snapshot, ctx->for_interpreter, context_for_reading, true);
+            ctx->storage_from_source_part, ctx->metadata_snapshot, ctx->for_interpreter, context_for_reading, true, ctx->is_lightweight_mutation);
         ctx->materialized_indices = ctx->interpreter->grabMaterializedIndices();
         ctx->materialized_projections = ctx->interpreter->grabMaterializedProjections();
         ctx->mutation_kind = ctx->interpreter->getMutationKind();
@@ -1515,6 +1707,11 @@ bool MutateTask::prepare()
         || (ctx->mutation_kind == MutationsInterpreter::MutationKind::MUTATE_OTHER && ctx->interpreter && ctx->interpreter->isAffectingAllColumns()))
     {
         task = std::make_unique<MutateAllPartColumnsTask>(ctx);
+    }
+    else if (ctx->is_lightweight_mutation)
+    {
+        /// We will modify or create only deleted_row_mask for lightweight delete. Other columns and key values are copied as-is.
+        task = std::make_unique<LightweightDeleteTask>(ctx);
     }
     else /// TODO: check that we modify only non-key columns in this case.
     {

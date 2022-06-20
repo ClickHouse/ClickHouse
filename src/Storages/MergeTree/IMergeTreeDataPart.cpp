@@ -648,6 +648,7 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
             checkConsistency(require_columns_checksums);
 
         loadDefaultCompressionCodec();
+        loadDeletedRowMask();
     }
     catch (...)
     {
@@ -1206,6 +1207,34 @@ void IMergeTreeDataPart::loadColumns(bool require)
 
     setColumns(loaded_columns);
     setSerializationInfos(infos);
+}
+
+void IMergeTreeDataPart::loadDeletedRowMask()
+{
+    if (part_type == Type::Compact)
+        return;
+
+    auto path = fs::path(getFullRelativePath()) / DELETED_ROW_MARK_FILE_NAME;
+    if (volume->getDisk()->exists(path))
+    {
+        has_lightweight_delete = true;
+
+        auto in = openForReading(volume->getDisk(), path);
+        readString(deleted_rows_mask, *in);
+    }
+}
+
+void IMergeTreeDataPart::writeLightWeightDeletedMask(String bitmap) const
+{
+    if (bitmap.empty())
+        return;
+
+    auto disk = volume->getDisk();
+    String file_name = fs::path(getFullRelativePath()) / DELETED_ROW_MARK_FILE_NAME;
+
+    /// write Non-Empty merged bitmap
+    auto out = disk->writeFile(file_name);
+    DB::writeText(bitmap, *out);
 }
 
 void IMergeTreeDataPart::assertHasVersionMetadata(MergeTreeTransaction * txn) const
