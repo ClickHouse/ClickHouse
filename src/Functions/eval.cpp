@@ -1,5 +1,9 @@
+#include "Common/Exception.h"
 #include "Functions/FunctionHelpers.h"
+#include "Interpreters/Context.h"
 #include "Interpreters/Context_fwd.h"
+#include "Interpreters/executeQuery.h"
+#include "Processors/Executors/PullingPipelineExecutor.h"
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <Columns/ColumnString.h>
@@ -20,8 +24,8 @@ class FunctionEval final : public IFunction
 public:
     static constexpr auto name = "eval";
 
-    explicit FunctionEval(ContextMutablePtr context_) : context(context_) {
-        context_->setQueryParameter(parameter_name, value);
+    explicit FunctionEval(ContextPtr context_) : context(context_) {
+        
     }
 
     static FunctionPtr create(ContextMutablePtr context) { return std::make_shared<FunctionEval>(context); }
@@ -32,11 +36,12 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    // String getParamType(const String query) const {
-    //     auto start = query.find(':');
-    //     auto end = query.find('}');
-    //     return query.substr(start + 1, end - start - 1);
-    // }
+    String getParamType(const String query) const 
+    {
+        auto start = query.find(':');
+        auto end = query.find('}');
+        return query.substr(start + 1, end - start - 1);
+    }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, [[maybe_unused]] size_t input_rows_count) const override
     {
@@ -51,14 +56,46 @@ public:
 
         String query = query_column->getValue<String>();
 
-        auto start = query.find('{');
+        const ColumnConst * param = checkAndGetColumnConst<ColumnString>(arguments[1].column.get());
 
-        // String param_type = getParamType(query);
+        String param_type = getParamType(query);
+
+        if (param_type != param->getDataType()) 
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Expected another variable type",
+                arguments[1].type->getName(),
+                1,
+                getName());
+
+        String val = param->getValue<String>();
+
+        query.replace(query.find('{'), query.find('}'), val);
+
+        ContextMutablePtr new_context;
+        new_context = Context::createCopy(context);
+
+
+        auto io_block = executeQuery(query, new_context);
+
+        if (io_block.pipeline.pulling()) 
+        {
+            PullingPipelineExecutor executor(io_block.pipeline);
+            Block block;
+
+            while (executor.pull(block))
+            {
+                for (const auto & col : block)
+                {
+                    return col.column;
+                }
+            }
+        }
         
     }
 
 private:
-    ContextMutablePtr context;
+    ContextPtr context;
 
 };
 
