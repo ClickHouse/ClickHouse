@@ -4070,6 +4070,10 @@ BackupEntries MergeTreeData::backupParts(const ContextPtr & local_context, const
     for (const auto & part : data_parts)
         part->data_part_storage->backup(temp_dirs, part->checksums, part->getFileNamesWithoutChecksums(), backup_entries);
 
+    /// TODO: try to write better code later.
+    for (auto & entry : backup_entries)
+        entry.first = data_path_in_backup_fs / entry.first;
+
     return backup_entries;
 }
 
