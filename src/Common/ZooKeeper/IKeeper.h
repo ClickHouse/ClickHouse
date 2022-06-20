@@ -337,8 +337,6 @@ struct SyncResponse : virtual Response
     size_t bytesSize() const override { return path.size(); }
 };
 
-
-
 struct MultiRequest : virtual Request
 {
     Requests requests;
