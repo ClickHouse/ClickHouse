@@ -607,7 +607,7 @@ void ExpressionAnalyzer::makeAggregateDescriptions(ActionsDAGPtr & actions, Aggr
     }
 }
 
-void makeWindowDescriptionFromAST(const Context & context,
+void ExpressionAnalyzer::makeWindowDescriptionFromAST(const Context & context_,
     const WindowDescriptions & existing_descriptions,
     WindowDescription & desc, const IAST * ast)
 {
@@ -676,6 +676,10 @@ void makeWindowDescriptionFromAST(const Context & context,
             desc.partition_by.push_back(SortColumnDescription(
                     with_alias->getColumnName(), 1 /* direction */,
                     1 /* nulls_direction */));
+
+            auto actions_dag = std::make_shared<ActionsDAG>(columns_after_join);
+            getRootActions(column_ast, false, actions_dag);
+            desc.partition_by_actions.push_back(std::move(actions_dag));
         }
     }
 
@@ -693,6 +697,10 @@ void makeWindowDescriptionFromAST(const Context & context,
                     order_by_element.children.front()->getColumnName(),
                     order_by_element.direction,
                     order_by_element.nulls_direction));
+
+            auto actions_dag = std::make_shared<ActionsDAG>(columns_after_join);
+            getRootActions(column_ast, false, actions_dag);
+            desc.order_by_actions.push_back(std::move(actions_dag));
         }
     }
 
@@ -719,14 +727,14 @@ void makeWindowDescriptionFromAST(const Context & context,
     if (definition.frame_end_type == WindowFrame::BoundaryType::Offset)
     {
         auto [value, _] = evaluateConstantExpression(definition.frame_end_offset,
-            context.shared_from_this());
+            context_.shared_from_this());
         desc.frame.end_offset = value;
     }
 
     if (definition.frame_begin_type == WindowFrame::BoundaryType::Offset)
     {
         auto [value, _] = evaluateConstantExpression(definition.frame_begin_offset,
-            context.shared_from_this());
+            context_.shared_from_this());
         desc.frame.begin_offset = value;
     }
 }
