@@ -288,6 +288,7 @@ if __name__ == "__main__":
                 # Use system database to avoid CREATE/DROP DATABASE queries
                 "--database=system",
                 "--hung-check",
+                "--stress",
                 "00001_select_1",
             ]
         )
