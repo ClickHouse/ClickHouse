@@ -36,6 +36,7 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
+    // Take parameter type from query
     String getParamType(const String query) const 
     {
         auto start = query.find(':');
@@ -45,6 +46,7 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, [[maybe_unused]] size_t input_rows_count) const override
     {
+        // Check and get query
         const ColumnConst * query_column = checkAndGetColumnConst<ColumnString>(arguments[0].column.get());
         if (!query_column) 
             throw Exception(
@@ -56,10 +58,12 @@ public:
 
         String query = query_column->getValue<String>();
 
+        // Get parameter
         const ColumnConst * param = checkAndGetColumnConst<ColumnString>(arguments[1].column.get());
 
         String param_type = getParamType(query);
 
+        // Check excpected and parameter type
         if (param_type != param->getDataType()) 
             throw Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
@@ -70,12 +74,13 @@ public:
 
         String val = param->getValue<String>();
 
+        // Insert parameter into query
         query.replace(query.find('{'), query.find('}'), val);
 
         ContextMutablePtr new_context;
         new_context = Context::createCopy(context);
 
-
+        // Execute query and return result
         auto io_block = executeQuery(query, new_context);
 
         if (io_block.pipeline.pulling()) 
