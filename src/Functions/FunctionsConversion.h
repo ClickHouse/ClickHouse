@@ -120,6 +120,20 @@ struct AccurateOrNullConvertStrategyAdditions
 struct ConvertDefaultBehaviorTag {};
 struct ConvertReturnNullOnErrorTag {};
 
+template <class VecTo, class VecFrom>
+__attribute__((target("no-avx"))) // this loop will be around 1.5 times slower with avx
+NO_INLINE // if function would be inlined, it will lose "no-avx" attribute
+void numberToFloat32(VecTo & vec_to, VecFrom & vec_from, size_t input_rows_count)
+{
+    // Function calls (operator[]) won't be inlined into this function also
+    auto src_data = vec_from.data();
+    auto dst_data = vec_to.data();
+    for (size_t i = 0; i < input_rows_count; ++i)
+    {
+        *(dst_data + i) = static_cast<float>(*(src_data + i));
+    }
+}
+
 /** Conversion of number types to each other, enums to numbers, dates and datetimes to numbers and back: done by straight assignment.
   *  (Date is represented internally as number of days from some day; DateTime - as unix timestamp)
   */
@@ -131,7 +145,9 @@ struct ConvertImpl
 
     template <typename Additions = void *>
     static ColumnPtr NO_SANITIZE_UNDEFINED execute(
-        const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type [[maybe_unused]], size_t input_rows_count,
+        const ColumnsWithTypeAndName & arguments,
+        const DataTypePtr & result_type [[maybe_unused]],
+        size_t input_rows_count,
         Additions additions [[maybe_unused]] = Additions())
     {
         const ColumnWithTypeAndName & named_from = arguments[0];
@@ -189,6 +205,12 @@ struct ConvertImpl
             {
                 col_null_map_to = ColumnUInt8::create(input_rows_count, false);
                 vec_null_map_to = &col_null_map_to->getData();
+            }
+
+            if constexpr (IsDataTypeNumber<FromDataType> && std::is_same_v<ToFieldType, float>)
+            {
+                numberToFloat32(vec_to, vec_from, input_rows_count);
+                return col_to;
             }
 
             bool result_is_bool = isBool(result_type);
