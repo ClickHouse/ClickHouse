@@ -400,3 +400,64 @@ def test_cache_dir_use(started_cluster):
         ["bash", "-c", "ls /tmp/clickhouse_local_cache1 | wc -l"]
     )
     assert result0 != "0" and result1 != "0"
+
+
+def test_table_alter_add(started_cluster):
+    node = started_cluster.instances["h0_0_0"]
+    result = node.query("DROP TABLE IF EXISTS default.demo_parquet_1")
+    result = node.query(
+        """
+CREATE TABLE IF NOT EXISTS default.demo_parquet_1 (`score` Nullable(Int32), `day` Nullable(String)) ENGINE = Hive('thrift://hivetest:9083', 'test', 'demo') PARTITION BY(day)
+        """
+    )
+    result = node.query(
+        """
+ALTER TABLE default.demo_parquet_1 ADD COLUMN id Nullable(String) FIRST
+        """
+    )
+    result = node.query(
+        """DESC default.demo_parquet_1 FORMAT TSV"""
+    )
+
+    expected_result = "id\tNullable(String)\t\t\t\t\t\nscore\tNullable(Int32)\t\t\t\t\t\nday\tNullable(String)"
+    assert result.strip() == expected_result
+
+
+def test_table_alter_drop(started_cluster):
+    node = started_cluster.instances["h0_0_0"]
+    result = node.query("DROP TABLE IF EXISTS default.demo_parquet_1")
+    result = node.query(
+        """
+CREATE TABLE IF NOT EXISTS default.demo_parquet_1 (`id` Nullable(String), `score` Nullable(Int32), `day` Nullable(String)) ENGINE = Hive('thrift://hivetest:9083', 'test', 'demo') PARTITION BY(day)
+        """
+    )
+    result = node.query(
+        """
+ALTER TABLE default.demo_parquet_1 DROP COLUMN id
+        """
+    )
+
+    result = node.query(
+        """DESC default.demo_parquet_1 FORMAT TSV"""
+    )
+    expected_result = """score\tNullable(Int32)\t\t\t\t\t\nday\tNullable(String)"""
+    assert result.strip() == expected_result
+
+
+def test_table_alter_comment(started_cluster):
+    node = started_cluster.instances["h0_0_0"]
+    result = node.query("DROP TABLE IF EXISTS default.demo_parquet_1")
+    result = node.query(
+        """
+CREATE TABLE IF NOT EXISTS default.demo_parquet_1 (`id` Nullable(String), `score` Nullable(Int32), `day` Nullable(String)) ENGINE = Hive('thrift://hivetest:9083', 'test', 'demo') PARTITION BY(day)
+        """
+    )
+
+    result = node.query(
+        """ALTER TABLE default.demo_parquet_1 COMMENT COLUMN id 'Text comment'"""
+    )
+    result = node.query(
+        """DESC default.demo_parquet_1 FORMAT TSV"""
+    )
+    expected_result = """id\tNullable(String)\t\t\tText comment\t\t\nscore\tNullable(Int32)\t\t\t\t\t\nday\tNullable(String)"""
+    assert result.strip() == expected_result
