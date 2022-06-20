@@ -18,10 +18,13 @@
             padding: 1rem;
             overflow-x: hidden;
             background: linear-gradient(to bottom, #00CCFF, #00D0D0);
+            display: grid;
+            grid-template-columns: auto;
+            grid-template-rows: fit-content(10%) auto;
         }
         #charts
         {
-            height: calc(100% - 3em);
+            height: 100%;
             display: flex;
             flex-flow: row wrap;
             gap: 1rem;
@@ -38,7 +41,7 @@
 
         .chart div { position: absolute; }
 
-        .inputs { height: 3em; }
+        .inputs {}
 
         .inputs input {
             box-shadow: 0 0 1rem rgba(0, 0, 0, 0.25);
@@ -54,9 +57,13 @@
 
         .u-legend th { display: none; }
 
-        #toggle-dark, #toggle-light {
+        .themes {
             float: right;
             font-size: 20pt;
+            margin-bottom: 1rem;
+        }
+
+        #toggle-dark, #toggle-light {
             padding-right: 0.5rem;
             cursor: pointer;
         }
@@ -70,6 +77,7 @@
             background: #FFCB80;
             font-weight: bold;
             cursor: pointer;
+            margin-bottom: 1rem;
         }
 
         #run:hover {
@@ -77,7 +85,6 @@
         }
 
         #add {
-            background: white;
             font-weight: bold;
             cursor: pointer;
             padding-left: 0.5rem;
@@ -86,6 +93,7 @@
             float: right;
             margin-right: 0;
             margin-left: 1rem;
+            margin-bottom: 1rem;
         }
 
         #add:hover {
@@ -96,12 +104,13 @@
             display: inline;
         }
 
-        form span {
+        form .param_name {
             font-size: 14pt;
             padding: 0.25rem;
             background: #EEE;
             display: inline-block;
             box-shadow: 0 0 1rem rgba(0, 0, 0, 0.25);
+            margin-bottom: 1rem;
         }
 
         input:focus {
@@ -174,16 +183,21 @@
         .edit-confirm:hover {
             filter: contrast(125%);
         }
+
+        .nowrap {
+            white-space: pre;
+        }
     </style>
 </head>
 <body>
 <div class="inputs">
+    <input id="add" type="button" value="Add chart">
+    <span class="nowrap themes"><span id="toggle-dark">🌚</span><span id="toggle-light">🌞</span></span>
     <form>
-        <span>start: </span><input class="param" name="param_start" type="text" value="2020-01-01" />
-        <span>word2: </span><input class="param" name="param_word2" type="text" value="Coronavirus" />
+        <span class="nowrap"><span class="param_name">start: </span><input class="param" name="param_start" type="text" value="2020-01-01" /></span>
+        <span class="nowrap"><span class="param_name">word2: </span><input class="param" name="param_word2" type="text" value="Coronavirus" /></span>
         <input id="run" type="submit" value="Ok" />
     </form>
-    <input id="add" type="button" value="Add chart"><span id="toggle-dark">🌚</span><span id="toggle-light">🌞</span>
 </div>
 <div id="charts">
 </div>
@@ -301,10 +315,8 @@
             query_editor_textarea.focus();
         });
         chart.addEventListener('dblclick', e => {
-            if (e.target != insert) {
-                query_editor.style.display = 'grid';
-                query_editor_textarea.focus();
-            }
+            query_editor.style.display = 'grid';
+            query_editor_textarea.focus();
         });
 
         let trash = document.createElement('a');
