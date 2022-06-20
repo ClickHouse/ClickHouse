@@ -1,10 +1,10 @@
 (Expression)
 ExpressionTransform
   (Join)
-  Concat 2 → 1
-    DelayedJoinedBlocksTransform
-      JoiningTransform 2 → 2
-        Barrier
+  Resize 2 → 1
+    DelayedPorts 2 → 2
+      DelayedJoinedBlocksTransform 0 → 1
+        JoiningTransform 2 → 1
           (Expression)
           ExpressionTransform
             (Limit)
