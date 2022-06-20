@@ -26,12 +26,13 @@ struct Base58Encode
 {
     static constexpr auto name = "base58Encode";
 
-    static void process(const ColumnString& input, ColumnString::MutablePtr& dst_column, std::string& alphabet, size_t input_rows_count)
+    static void process(const ColumnString & input, ColumnString::MutablePtr & dst_column, const std::string & alphabet, size_t input_rows_count)
     {
         auto & dst_data = dst_column->getChars();
         auto & dst_offsets = dst_column->getOffsets();
 
-        size_t current_allocated_size = input.getChars().size();
+        /// Wikipedia states Base58 has efficiency of 73%, and we take 1.5 scale to avoid reallocation in most cases
+        size_t current_allocated_size = ceil(1.5 * input.getChars().size());
 
         dst_data.resize(current_allocated_size);
         dst_offsets.resize(input_rows_count);
@@ -90,11 +91,12 @@ struct Base58Decode
 {
     static constexpr auto name = "base58Decode";
 
-    static void process(const ColumnString& input, ColumnString::MutablePtr& dst_column, std::string& alphabet, size_t input_rows_count)
+    static void process(const ColumnString & input, ColumnString::MutablePtr & dst_column, const std::string & alphabet, size_t input_rows_count)
     {
         auto & dst_data = dst_column->getChars();
         auto & dst_offsets = dst_column->getOffsets();
 
+        /// We allocate probably even more then needed to avoid many resizes
         size_t current_allocated_size = input.getChars().size();
 
         dst_data.resize(current_allocated_size);
@@ -202,7 +204,7 @@ public:
         const ColumnString * input = checkAndGetColumn<ColumnString>(column_string.get());
         if (!input)
             throw Exception(
-                "Illegal column " + arguments[0].column->getName() + " of first argument of function " + getName(),
+                "Illegal column " + arguments[0].column->getName() + " of first argument of function " + getName() + ", must be String",
                 ErrorCodes::ILLEGAL_COLUMN);
 
         std::string alphabet = "bitcoin";
@@ -214,8 +216,8 @@ public:
             if (!alphabet_column)
                 throw Exception("Second argument for function " + getName() + " must be constant String", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-            if (alphabet = alphabet_column->getValue<DB::String>();
-                alphabet != "bitcoin" && alphabet != "ripple" && alphabet != "flickr" && alphabet != "gmp")
+            alphabet = alphabet_column->getValue<DB::String>();
+            if (alphabet != "bitcoin" && alphabet != "ripple" && alphabet != "flickr" && alphabet != "gmp")
                 throw Exception("Second argument for function " + getName() + " must be 'bitcoin', 'ripple', 'gmp' or 'flickr'", ErrorCodes::ILLEGAL_COLUMN);
 
         }
