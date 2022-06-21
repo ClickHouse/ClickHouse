@@ -114,8 +114,7 @@ bool DistinctPrimaryKeyTransform::isCurrentKey(const size_t row_pos)
 {
     for (size_t i = 0; i < sorted_columns.size(); ++i)
     {
-        const auto & sort_col_desc = sorted_columns_descr[i];
-        int res = sort_col_desc.direction * current_key[i]->compareAt(0, row_pos, *sorted_columns[i], sort_col_desc.nulls_direction);
+        int res = current_key[i]->compareAt(0, row_pos, *sorted_columns[i], sorted_columns_descr[i].nulls_direction);
         if (res != 0)
             return false;
     }
@@ -125,7 +124,7 @@ bool DistinctPrimaryKeyTransform::isCurrentKey(const size_t row_pos)
 size_t DistinctPrimaryKeyTransform::getRangeEnd(size_t range_begin, size_t range_end)
 {
     size_t low = range_begin;
-    size_t high = range_end-1;
+    size_t high = range_end - 1;
     while (low <= high)
     {
         size_t mid = low + (high - low) / 2;

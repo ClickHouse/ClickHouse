@@ -262,29 +262,4 @@ InputOrderInfoPtr ReadInOrderOptimizer::getInputOrder(
     return getInputOrderImpl(metadata_snapshot, required_sort_description, elements_actions, limit);
 }
 
-
-ReadInOrderOptimizerForDistinct::ReadInOrderOptimizerForDistinct(const Names & source_columns_)
-    : source_columns(source_columns_.begin(), source_columns_.end())
-{
-}
-
-InputOrderInfoPtr ReadInOrderOptimizerForDistinct::getInputOrder(const StorageMetadataPtr & metadata_snapshot) const
-{
-    Names sorting_key_columns = metadata_snapshot->getSortingKeyColumns();
-    if (sorting_key_columns.empty())
-        return {};
-
-    SortDescription order_key_prefix_descr;
-    for (const auto & sorting_key_column : sorting_key_columns)
-    {
-        if (source_columns.find(sorting_key_column) == source_columns.end())
-            break;
-        order_key_prefix_descr.emplace_back(sorting_key_column, 1, 1);
-    }
-    if (order_key_prefix_descr.empty())
-        return {};
-
-    // todo: InputOrderInfo contains more info then needed for distinct, probably it makes sense to replace it
-    return std::make_shared<InputOrderInfo>(SortDescription{}, std::move(order_key_prefix_descr), 1, 0);
-}
 }
