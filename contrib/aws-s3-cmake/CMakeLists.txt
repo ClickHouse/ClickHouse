@@ -89,8 +89,26 @@ file(GLOB AWS_COMMON_SOURCES
     "${AWS_COMMON_LIBRARY_DIR}/source/posix/*.c"
 )
 
-file (GLOB_RECURSE AWS_CRT_C_IO_SOURCES "${AWS_CRT_C_IO_LIBRARY_DIR}/source/*.c")
-list (FILTER AWS_CRT_C_IO_SOURCES EXCLUDE REGEX "/windows/|/darwin/|/bsd/")
+if (CMAKE_SYSTEM_NAME STREQUAL "Linux" OR CMAKE_SYSTEM_NAME STREQUAL "Android")
+    file (GLOB AWS_CRT_C_IO_SOURCES
+        "${AWS_CRT_C_IO_LIBRARY_DIR}/source/*.c"
+        "${AWS_CRT_C_IO_LIBRARY_DIR}/source/linux/*.c"
+        "${AWS_CRT_C_IO_LIBRARY_DIR}/source/posix/*.c"
+    )
+elseif (APPLE)
+    file (GLOB AWS_CRT_C_IO_SOURCES
+        "${AWS_CRT_C_IO_LIBRARY_DIR}/source/*.c"
+        "${AWS_CRT_C_IO_LIBRARY_DIR}/source/darwin/*.c"
+        "${AWS_CRT_C_IO_LIBRARY_DIR}/source/posix/*.c"
+        "${AWS_CRT_C_IO_LIBRARY_DIR}/source/bsd/*.c"
+    )
+elseif (CMAKE_SYSTEM_NAME STREQUAL "FreeBSD" OR CMAKE_SYSTEM_NAME STREQUAL "NetBSD")
+    file (GLOB AWS_CRT_C_IO_SOURCES
+        "${AWS_CRT_C_IO_LIBRARY_DIR}/source/*.c"
+        "${AWS_CRT_C_IO_LIBRARY_DIR}/source/posix/*.c"
+        "${AWS_CRT_C_IO_LIBRARY_DIR}/source/bsd/*.c"
+    )
+endif ()
 
 file (GLOB AWS_CRT_C_HTTP_SOURCES "${AWS_CRT_C_HTTP_LIBRARY_DIR}/source/*.c")
 
