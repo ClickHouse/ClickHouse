@@ -8185,25 +8185,12 @@ void StorageReplicatedMergeTree::createZeroCopyLockNode(
     }
 }
 
-bool StorageReplicatedMergeTree::removeDetachedPart(DiskPtr disk, const String & path, const String & part_name, bool is_freezed)
+bool StorageReplicatedMergeTree::removeDetachedPart(DiskPtr disk, const String & path, const String & part_name)
 {
     if (disk->supportZeroCopyReplication())
     {
-        if (is_freezed)
-        {
-            FreezeMetaData meta;
-            if (meta.load(disk, path))
-            {
-                FreezeMetaData::clean(disk, path);
-                return removeSharedDetachedPart(disk, path, part_name, meta.table_shared_id, meta.zookeeper_name, meta.replica_name, "", getContext());
-            }
-        }
-        else
-        {
-            String table_id = getTableSharedID();
-
-            return removeSharedDetachedPart(disk, path, part_name, table_id, zookeeper_name, replica_name, zookeeper_path, getContext());
-        }
+        String table_id = getTableSharedID();
+        return removeSharedDetachedPart(disk, path, part_name, table_id, zookeeper_name, replica_name, zookeeper_path, getContext());
     }
 
     disk->removeRecursive(path);
