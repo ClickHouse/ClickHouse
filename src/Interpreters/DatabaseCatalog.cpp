@@ -155,11 +155,15 @@ void DatabaseCatalog::initializeAndLoadTemporaryDatabase()
 
 void DatabaseCatalog::loadDatabases()
 {
-    auto cleanup_task_holder = getContext()->getSchedulePool().createTask("DatabaseCatalog", [this](){ this->cleanupStoreDirectoryTask(); });
-    cleanup_task = std::make_unique<BackgroundSchedulePoolTaskHolder>(std::move(cleanup_task_holder));
-    (*cleanup_task)->activate();
-    /// Do not start task immediately on server startup, it's not urgent.
-    (*cleanup_task)->scheduleAfter(unused_dir_hide_timeout_sec * 1000);
+    if (Context::getGlobalContextInstance()->getApplicationType() == Context::ApplicationType::SERVER)
+    {
+        auto cleanup_task_holder
+            = getContext()->getSchedulePool().createTask("DatabaseCatalog", [this]() { this->cleanupStoreDirectoryTask(); });
+        cleanup_task = std::make_unique<BackgroundSchedulePoolTaskHolder>(std::move(cleanup_task_holder));
+        (*cleanup_task)->activate();
+        /// Do not start task immediately on server startup, it's not urgent.
+        (*cleanup_task)->scheduleAfter(unused_dir_hide_timeout_sec * 1000);
+    }
 
     auto task_holder = getContext()->getSchedulePool().createTask("DatabaseCatalog", [this](){ this->dropTableDataTask(); });
     drop_task = std::make_unique<BackgroundSchedulePoolTaskHolder>(std::move(task_holder));
@@ -387,8 +391,6 @@ DatabasePtr DatabaseCatalog::detachDatabase(ContextPtr local_context, const Stri
     if (drop)
     {
         UUID db_uuid = db->getUUID();
-        if (db_uuid != UUIDHelpers::Nil)
-            removeUUIDMappingFinally(db_uuid);
 
         /// Delete the database.
         db->drop(local_context);
@@ -399,6 +401,9 @@ DatabasePtr DatabaseCatalog::detachDatabase(ContextPtr local_context, const Stri
         fs::remove(database_metadata_dir);
         fs::path database_metadata_file = fs::path(getContext()->getPath()) / "metadata" / (escapeForFileName(database_name) + ".sql");
         fs::remove(database_metadata_file);
+
+        if (db_uuid != UUIDHelpers::Nil)
+            removeUUIDMappingFinally(db_uuid);
     }
 
     return db;
@@ -583,8 +588,7 @@ bool DatabaseCatalog::hasUUIDMapping(const UUID & uuid)
     assert(uuid != UUIDHelpers::Nil && getFirstLevelIdx(uuid) < uuid_map.size());
     UUIDToStorageMapPart & map_part = uuid_map[getFirstLevelIdx(uuid)];
     std::lock_guard lock{map_part.mutex};
-    auto it = map_part.map.find(uuid);
-    return it != map_part.map.end();
+    return map_part.map.contains(uuid);
 }
 
 std::unique_ptr<DatabaseCatalog> DatabaseCatalog::database_catalog;
@@ -1115,7 +1119,7 @@ void DatabaseCatalog::cleanupStoreDirectoryTask()
         if (!expected_prefix_dir)
         {
             LOG_WARNING(log, "Found invalid directory {}, will try to remove it", prefix_dir.path().string());
-            maybeRemoveDirectory(prefix_dir.path());
+            affected_dirs += maybeRemoveDirectory(prefix_dir.path());
             continue;
         }
 
@@ -1133,11 +1137,12 @@ void DatabaseCatalog::cleanupStoreDirectoryTask()
             if (!expected_dir)
             {
                 LOG_WARNING(log, "Found invalid directory {}, will try to remove it", uuid_dir.path().string());
-                maybeRemoveDirectory(uuid_dir.path());
+                affected_dirs += maybeRemoveDirectory(uuid_dir.path());
                 continue;
             }
 
-            if (!hasUUIDMapping(uuid))
+            /// Order is important
+            if (!isProtectedUUIDDir(uuid) && !hasUUIDMapping(uuid))
             {
                 /// We load uuids even for detached and permanently detached tables,
                 /// so it looks safe enough to remove directory if we don't have uuid mapping for it.
@@ -1212,6 +1217,34 @@ bool DatabaseCatalog::maybeRemoveDirectory(const fs::path & unused_dir)
 
         return true;
     }
+}
+
+void DatabaseCatalog::addProtectedUUIDDir(const UUID & uuid)
+{
+    if (uuid == UUIDHelpers::Nil)
+        return;
+    std::lock_guard lock{protected_uuid_dirs_mutex};
+    bool inserted = protected_uuid_dirs.insert(uuid).second;
+    if (inserted)
+        return;
+
+    throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS, "Mapping for table with UUID={} already exists. It happened due to UUID collision, "
+                                                      "most likely because some not random UUIDs were manually specified in CREATE queries.", toString(uuid));
+}
+
+void DatabaseCatalog::removeProtectedUUIDDir(const UUID & uuid)
+{
+    if (uuid == UUIDHelpers::Nil)
+        return;
+    std::lock_guard lock{protected_uuid_dirs_mutex};
+    chassert(protected_uuid_dirs.contains(uuid));
+    protected_uuid_dirs.erase(uuid);
+}
+
+bool DatabaseCatalog::isProtectedUUIDDir(const UUID & uuid)
+{
+    std::lock_guard lock{protected_uuid_dirs_mutex};
+    return protected_uuid_dirs.contains(uuid);
 }
 
 
