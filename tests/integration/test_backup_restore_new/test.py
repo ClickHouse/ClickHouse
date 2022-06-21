@@ -681,3 +681,33 @@ def test_system_users_required_privileges():
 
     assert instance.query("SHOW CREATE ROLE r1") == "CREATE ROLE r1\n"
     assert instance.query("SHOW GRANTS FOR r1") == ""
+
+
+def test_system_users_async():
+    instance.query("CREATE USER u1 IDENTIFIED BY 'qwe123' SETTINGS custom_c = 3")
+
+    backup_name = new_backup_name()
+    [id, _, status] = instance.query(
+        f"BACKUP DATABASE default, TABLE system.users, TABLE system.roles, TABLE system.settings_profiles, TABLE system.row_policies, TABLE system.quotas TO {backup_name} ASYNC"
+    ).split("\t")
+    assert_eq_with_retry(
+        instance,
+        f"SELECT status FROM system.backups WHERE uuid='{id}'",
+        "BACKUP_COMPLETE\n",
+    )
+
+    instance.query("DROP USER u1")
+
+    [id, _, status] = instance.query(
+        f"RESTORE DATABASE default, TABLE system.users, TABLE system.roles, TABLE system.settings_profiles, TABLE system.row_policies, TABLE system.quotas FROM {backup_name} ASYNC"
+    ).split("\t")
+    assert_eq_with_retry(
+        instance,
+        f"SELECT status FROM system.backups WHERE uuid='{id}'",
+        "RESTORED\n",
+    )
+
+    assert (
+        instance.query("SHOW CREATE USER u1")
+        == "CREATE USER u1 IDENTIFIED WITH sha256_password SETTINGS custom_c = 3\n"
+    )
