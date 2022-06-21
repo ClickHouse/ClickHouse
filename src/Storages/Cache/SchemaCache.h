@@ -84,8 +84,8 @@ public:
 
         if (schema_info.ttl)
         {
-            /// Current value in cache is valid and we can resume it's TTL bu updating it's expiration time.
-            /// We will extract current value from the expiration queue, modify it and insert back to the queue..
+            /// Current value in cache is valid and we can resume it's TTL by updating it's expiration time.
+            /// We will extract current value from the expiration queue, modify it and insert back to the queue.
             time_t now = std::time(nullptr);
             auto jt = expiration_queue.find({schema_info.valid_until, key});
             auto node = expiration_queue.extract(jt);
