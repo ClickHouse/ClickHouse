@@ -115,3 +115,5 @@ RUN rm /etc/apt/sources.list.d/proposed-repositories.list && apt-get update
 
 COPY build.sh /
 CMD ["bash", "-c", "/build.sh 2>&1 | ts"]
+
+
