@@ -38,7 +38,7 @@ public:
 
     off_t getPosition() override;
 
-    std::optional<size_t> getFileSize() override;
+    size_t getFileSize() override;
 
     size_t getFileOffsetOfBufferEnd() const override;
 

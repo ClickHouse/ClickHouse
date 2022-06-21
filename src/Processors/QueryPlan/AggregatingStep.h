@@ -7,9 +7,6 @@
 namespace DB
 {
 
-struct AggregatingTransformParams;
-using AggregatingTransformParamsPtr = std::shared_ptr<AggregatingTransformParams>;
-
 struct GroupingSetsParams
 {
     GroupingSetsParams() = default;
@@ -36,6 +33,7 @@ public:
         Aggregator::Params params_,
         GroupingSetsParamsList grouping_sets_params_,
         bool final_,
+        bool only_merge_,
         size_t max_block_size_,
         size_t aggregation_in_order_max_block_bytes_,
         size_t merge_threads_,
@@ -59,6 +57,7 @@ private:
     Aggregator::Params params;
     GroupingSetsParamsList grouping_sets_params;
     bool final;
+    bool only_merge;
     size_t max_block_size;
     size_t aggregation_in_order_max_block_bytes;
     size_t merge_threads;
