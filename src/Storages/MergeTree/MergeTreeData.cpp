@@ -1002,6 +1002,7 @@ void MergeTreeData::loadDataPartsFromDisk(
     size_t suspicious_broken_parts_bytes = 0;
     std::atomic<bool> has_adaptive_parts = false;
     std::atomic<bool> has_non_adaptive_parts = false;
+    std::atomic<bool> has_lightweight_in_parts = false;
 
     std::mutex mutex;
     auto load_part = [&](const String & part_name, const DiskPtr & part_disk_ptr)
@@ -1074,6 +1075,10 @@ void MergeTreeData::loadDataPartsFromDisk(
             has_non_adaptive_parts.store(true, std::memory_order_relaxed);
         else
             has_adaptive_parts.store(true, std::memory_order_relaxed);
+
+        /// Check if there is lightweight delete in part
+        if (part->hasLightweightDelete())
+            has_lightweight_in_parts.store(true, std::memory_order_relaxed);
 
         part->modification_time = part_disk_ptr->getLastModified(fs::path(relative_data_path) / part_name).epochTime();
         /// Assume that all parts are Active, covered parts will be detected and marked as Outdated later
@@ -1148,6 +1153,9 @@ void MergeTreeData::loadDataPartsFromDisk(
             ErrorCodes::LOGICAL_ERROR);
 
     has_non_adaptive_index_granularity_parts = has_non_adaptive_parts;
+
+    if (has_lightweight_in_parts)
+        has_lightweight_delete_parts.store(true);
 
     if (suspicious_broken_parts > settings->max_suspicious_broken_parts && !skip_sanity_checks)
         throw Exception(ErrorCodes::TOO_MANY_UNEXPECTED_DATA_PARTS,
@@ -2863,6 +2871,9 @@ bool MergeTreeData::renameTempPartAndReplaceImpl(
     if (&out_transaction.data != this)
         throw Exception("MergeTreeData::Transaction for one table cannot be used with another. It is a bug.",
             ErrorCodes::LOGICAL_ERROR);
+
+    if (part.hasLightweightDelete())
+        has_lightweight_delete_parts.store(true);
 
     checkPartCanBeAddedToTable(part, lock);
 
@@ -5672,7 +5683,7 @@ std::optional<ProjectionCandidate> MergeTreeData::getQueryProcessingStageWithAgg
 
     ProjectionCandidate * selected_candidate = nullptr;
     size_t min_sum_marks = std::numeric_limits<size_t>::max();
-    if (metadata_snapshot->minmax_count_projection)
+    if (metadata_snapshot->minmax_count_projection && !has_lightweight_delete_parts.load(std::memory_order_relaxed)) /// Disable ReadFromStorage for parts with lightweight.
         add_projection_candidate(*metadata_snapshot->minmax_count_projection, true);
     std::optional<ProjectionCandidate> minmax_count_projection_candidate;
     if (!candidates.empty())

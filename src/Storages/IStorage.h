@@ -235,6 +235,9 @@ public:
     /// Returns true if the storage supports backup/restore for specific partitions.
     virtual bool supportsBackupPartition() const { return false; }
 
+    /// Return true if there are lightweight parts.
+    virtual bool hasLightweightDelete() const { return false; }
+
 private:
 
     StorageID storage_id;

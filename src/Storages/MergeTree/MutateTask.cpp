@@ -1481,7 +1481,7 @@ private:
         bool has_deleted_rows = false;
 
         /// If this part has already applied lightweight mutation, load the past latest bitmap to merge with current bitmap
-        if (ctx->source_part->has_lightweight_delete)
+        if (ctx->source_part->hasLightweightDelete())
         {
             new_bitmap = ctx->source_part->deleted_rows_mask;
             has_deleted_rows = true;

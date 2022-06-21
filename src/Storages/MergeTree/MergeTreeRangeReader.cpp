@@ -673,7 +673,7 @@ MergeTreeRangeReader::MergeTreeRangeReader(
             sample_block.insert(ColumnWithTypeAndName(ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), column_name));
     }
 
-    need_read_deleted_mask = merge_tree_reader->data_part->has_lightweight_delete;
+    need_read_deleted_mask = merge_tree_reader->data_part->hasLightweightDelete();
     deleted_rows_mask = merge_tree_reader->data_part->deleted_rows_mask;
 
     if (prewhere_info)
