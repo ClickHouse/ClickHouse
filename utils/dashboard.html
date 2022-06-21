@@ -195,8 +195,7 @@
 <div class="inputs">
     <input id="add" type="button" value="Add chart">
     <span class="nowrap themes"><span id="toggle-dark">🌚</span><span id="toggle-light">🌞</span></span>
-    <form id="params">
-    </form>
+    <form id="params"></form>
 </div>
 <div id="charts">
 </div>
@@ -212,7 +211,7 @@
             GROUP BY t ORDER BY t
             FORMAT JSONCompactColumns`},
 
-        { title: "Custom", query:
+        { title: "{word2} Stats", query:
         `SELECT toStartOfDay(time, 'Europe/Amsterdam')::INT AS t, sum(hits)::INT AS v
             FROM wikistat WHERE path = {word2:String} AND time >= {start:Date}
             GROUP BY t ORDER BY t
@@ -243,9 +242,11 @@
         word2: 'Coronavirus',
     };
 
+    const query_param_regexp = /\{(\w+):[^}]+\}/g;
+
     /// Automatically parse more parameters from queires.
     function findParamsInQuery(query) {
-        [...query.matchAll(/\{(\w+):[^}]+\}/g)].forEach(arr => { params[arr[1]] ??= '' });
+        [...query.matchAll(query_param_regexp)].forEach(arr => { params[arr[1]] ??= '' });
     }
 
     function findParamsInQueries() {
@@ -263,7 +264,7 @@
 
         let param_value = document.createElement('input');
         param_value.className = 'param';
-        param_value.name = `param_${name}`;
+        param_value.name = `${name}`;
         param_value.type = 'text';
         param_value.value = value;
 
@@ -274,7 +275,6 @@
 
     function insertParams() {
         for (let [name, value] of Object.entries(params)) {
-            console.log(name, value);
             insertParam(name, value);
         }
 
@@ -286,13 +286,19 @@
         document.getElementById('params').appendChild(run);
     }
 
+    function updateParams() {
+        [...document.getElementsByClassName('param')].forEach(e => { params[e.name] = e.value; console.log(e.name, e.value) });
+    }
+
     findParamsInQueries();
     insertParams();
 
-    function getParams() {
-        let params = '';
-        [...document.getElementsByClassName('param')].forEach(e => { params += `&${e.name}=${e.value}` });
-        return params;
+    function getParamsForURL() {
+        let url = '';
+        for (let [name, value] of Object.entries(params)) {
+            url += `&param_${name}=${value}`;
+        };
+        return url;
     }
 
     let plots = [];
@@ -304,7 +310,7 @@
         chart.className = 'chart';
 
         let chart_title = document.createElement('div');
-        let title_text = document.createTextNode(q.title);
+        let title_text = document.createTextNode(q.title.replaceAll(/\{(\w+)\}/g, (_, name) => params[name] ));
         chart_title.appendChild(title_text);
         chart_title.className = 'title';
         chart.appendChild(chart_title);
@@ -335,7 +341,7 @@
             q.title = query_editor_title.value;
             q.query = query_editor_textarea.value;
             title_text.data = q.title;
-            draw(i, chart, getParams(), q.query);
+            draw(i, chart, getParamsForURL(), q.query);
         }
 
         query_editor_confirm.addEventListener('click', editConfirm);
@@ -484,7 +490,7 @@
     }
 
     async function drawAll() {
-        let params = getParams();
+        let params = getParamsForURL();
         const charts = document.getElementsByClassName('chart');
         for (let i = 0; i < queries.length; ++i) {
             draw(i, charts[i], params, queries[i].query);
@@ -503,6 +509,7 @@
     new ResizeObserver(resize).observe(document.body);
 
     document.getElementById('run').onclick = function(event) {
+        updateParams();
         drawAll();
         event.preventDefault();
     }
