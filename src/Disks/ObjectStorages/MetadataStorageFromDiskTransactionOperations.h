@@ -6,6 +6,9 @@ namespace DB
 {
 class IDisk;
 
+/**
+ * Implementations for transactional operations with metadata used by MetadataStorageFromDisk.
+ */
 
 struct IMetadataOperation
 {
