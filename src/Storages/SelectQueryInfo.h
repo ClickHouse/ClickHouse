@@ -38,9 +38,6 @@ using TreeRewriterResultPtr = std::shared_ptr<const TreeRewriterResult>;
 class ReadInOrderOptimizer;
 using ReadInOrderOptimizerPtr = std::shared_ptr<const ReadInOrderOptimizer>;
 
-class ReadInOrderOptimizerForDistinct;
-using ReadInOrderOptimizerForDistinctPtr = std::shared_ptr<const ReadInOrderOptimizerForDistinct>;
-
 class Cluster;
 using ClusterPtr = std::shared_ptr<Cluster>;
 
@@ -164,9 +161,6 @@ struct SelectQueryInfoBase
     ReadInOrderOptimizerPtr order_optimizer;
     /// Can be modified while reading from storage
     InputOrderInfoPtr input_order_info;
-
-    ReadInOrderOptimizerForDistinctPtr distinct_optimizer;
-    InputOrderInfoPtr distinct_order_info;
 
     /// Prepared sets are used for indices by storage engine.
     /// Example: x IN (1, 2, 3)

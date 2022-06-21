@@ -117,6 +117,15 @@ ReadFromMergeTree::ReadFromMergeTree(
 
     /// Add explicit description.
     setStepDescription(data.getStorageID().getFullNameNotQuoted());
+
+    Names sorting_key_columns = storage_snapshot->getMetadataForQuery()->getSortingKeyColumns();
+
+    SortDescription sort_description;
+    for (const auto & column : sorting_key_columns)
+    {
+        sort_description.emplace_back(column, 1);
+    }
+    output_stream->sort_description = std::move(sort_description);
 }
 
 Pipe ReadFromMergeTree::readFromPool(

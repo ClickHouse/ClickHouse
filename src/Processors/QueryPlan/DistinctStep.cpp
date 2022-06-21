@@ -4,6 +4,7 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <IO/Operators.h>
 #include <Common/JSONBuilder.h>
+#include <Core/SortDescription.h>
 
 namespace DB
 {
@@ -38,6 +39,18 @@ static ITransformingStep::Traits getTraits(bool pre_distinct, bool already_disti
     };
 }
 
+static SortDescription getSortDescription(const SortDescription & input_sort_desc, const Names& columns)
+{
+    SortDescription distinct_sort_desc;
+    for (const auto & sort_column_desc : input_sort_desc)
+    {
+        if (std::find(begin(columns), end(columns), sort_column_desc.column_name) == columns.end())
+            break;
+        distinct_sort_desc.emplace_back(sort_column_desc);
+    }
+    return distinct_sort_desc;
+}
+
 
 DistinctStep::DistinctStep(
     const DataStream & input_stream_,
@@ -45,7 +58,7 @@ DistinctStep::DistinctStep(
     UInt64 limit_hint_,
     const Names & columns_,
     bool pre_distinct_,
-    const InputOrderInfoPtr & distinct_info_)
+    bool optimize_distinct_in_order_)
     : ITransformingStep(
             input_stream_,
             input_stream_.header,
@@ -53,8 +66,8 @@ DistinctStep::DistinctStep(
     , set_size_limits(set_size_limits_)
     , limit_hint(limit_hint_)
     , columns(columns_)
-    , distinct_info(distinct_info_)
     , pre_distinct(pre_distinct_)
+    , optimize_distinct_in_order(optimize_distinct_in_order_)
 {
     if (!output_stream->distinct_columns.empty() /// Columns already distinct, do nothing
         && (!pre_distinct /// Main distinct
@@ -74,29 +87,32 @@ void DistinctStep::transformPipeline(QueryPipelineBuilder & pipeline, const Buil
     if (!pre_distinct)
         pipeline.resize(1);
 
-    if (pre_distinct && distinct_info)
+    if (pre_distinct && optimize_distinct_in_order)
     {
-        pipeline.addSimpleTransform(
-            [&](const Block & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
-            {
-                if (stream_type != QueryPipelineBuilder::StreamType::Main)
-                    return nullptr;
+        if (SortDescription distinct_sort_desc = getSortDescription(input_streams.front().sort_description, columns);
+            !distinct_sort_desc.empty())
+        {
+            pipeline.addSimpleTransform(
+                [&](const Block & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
+                {
+                    if (stream_type != QueryPipelineBuilder::StreamType::Main)
+                        return nullptr;
 
-                return std::make_shared<DistinctPrimaryKeyTransform>(
-                    header, set_size_limits, limit_hint, distinct_info->order_key_prefix_descr, columns);
-            });
+                    return std::make_shared<DistinctPrimaryKeyTransform>(
+                        header, set_size_limits, limit_hint, distinct_sort_desc, columns);
+                });
+            return;
+        }
     }
-    else
-    {
-        pipeline.addSimpleTransform(
-            [&](const Block & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
-            {
-                if (stream_type != QueryPipelineBuilder::StreamType::Main)
-                    return nullptr;
 
-                return std::make_shared<DistinctTransform>(header, set_size_limits, limit_hint, columns);
-            });
-    }
+    pipeline.addSimpleTransform(
+        [&](const Block & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
+        {
+            if (stream_type != QueryPipelineBuilder::StreamType::Main)
+                return nullptr;
+
+            return std::make_shared<DistinctTransform>(header, set_size_limits, limit_hint, columns);
+        });
 }
 
 void DistinctStep::describeActions(FormatSettings & settings) const

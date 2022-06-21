@@ -1,3 +1,16 @@
+enable optimize_distinct_in_order
+distinct pipeline on empty table -> no optimization, source is ReadFromPreparedSource instead of ReadFromMergeTree
+(Expression)
+ExpressionTransform
+  (Distinct)
+  DistinctTransform
+    (Distinct)
+    DistinctTransform
+      (Expression)
+      ExpressionTransform
+        (ReadFromPreparedSource)
+        NullSource 0 → 1
+insert into table to use ReadFromMergeTree source
 disable optimize_distinct_in_order
 pipeline does _not_ contain the optimization
 (Expression)
@@ -8,10 +21,10 @@ ExpressionTransform
     DistinctTransform
       (Expression)
       ExpressionTransform
-        (ReadFromPreparedSource)
-        NullSource 0 → 1
+        (ReadFromMergeTree)
+        MergeTreeInOrder 0 → 1
 enable optimize_distinct_in_order
-distinct with primary key prefix -> pipeline contains the optimization
+distinct with all primary key columns -> optimization applied
 (Expression)
 ExpressionTransform
   (Distinct)
@@ -20,9 +33,22 @@ ExpressionTransform
     DistinctPrimaryKeyTransform
       (Expression)
       ExpressionTransform
-        (ReadFromPreparedSource)
-        NullSource 0 → 1
-distinct with non-primary key prefix -> pipeline does _not_ contain the optimization
+        (ReadFromMergeTree)
+        Concat 2 → 1
+          MergeTreeInOrder × 2 0 → 1
+distinct with primary key prefix -> optimization applied
+(Expression)
+ExpressionTransform
+  (Distinct)
+  DistinctTransform
+    (Distinct)
+    DistinctPrimaryKeyTransform
+      (Expression)
+      ExpressionTransform
+        (ReadFromMergeTree)
+        Concat 2 → 1
+          MergeTreeInOrder × 2 0 → 1
+distinct with non-primary key prefix -> no optimization
 (Expression)
 ExpressionTransform
   (Distinct)
@@ -31,8 +57,9 @@ ExpressionTransform
     DistinctTransform
       (Expression)
       ExpressionTransform
-        (ReadFromPreparedSource)
-        NullSource 0 → 1
+        (ReadFromMergeTree)
+        Concat 2 → 1
+          MergeTreeInOrder × 2 0 → 1
 the same values in every chunk, distinct in order should skip entire chunks with the same key as previous one
 single-threaded distinct
 0
@@ -64,7 +91,7 @@ multi-threaded distinct
 table with not only primary key columns
 distinct with key-prefix only
 0
-distinct with full key, 2 columns
+distinct with full key
 0	0
 0	1
 0	2
