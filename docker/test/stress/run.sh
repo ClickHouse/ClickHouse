@@ -10,7 +10,7 @@ set -x
 #
 # But under thread fuzzer, TSan build is too slow and this produces some flaky
 # tests, so for now, as a temporary solution it had been disabled.
-if ! test -f package_folder/*tsan*.deb; then
+if ! test -f package_folder/clickhouse-server*tsan*.deb; then
     export THREAD_FUZZER_CPU_TIME_PERIOD_US=1000
     export THREAD_FUZZER_SLEEP_PROBABILITY=0.1
     export THREAD_FUZZER_SLEEP_TIME_US=100000
