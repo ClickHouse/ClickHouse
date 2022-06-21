@@ -15,7 +15,6 @@ set(thriftcpp_SOURCES
         "${LIBRARY_DIR}/src/thrift/async/TConcurrentClientSyncInfo.cpp"
         "${LIBRARY_DIR}/src/thrift/concurrency/ThreadManager.cpp"
         "${LIBRARY_DIR}/src/thrift/concurrency/TimerManager.cpp"
-        "${LIBRARY_DIR}/src/thrift/concurrency/Util.cpp"
         "${LIBRARY_DIR}/src/thrift/processor/PeekProcessor.cpp"
         "${LIBRARY_DIR}/src/thrift/protocol/TBase64Utils.cpp"
         "${LIBRARY_DIR}/src/thrift/protocol/TDebugProtocol.cpp"
