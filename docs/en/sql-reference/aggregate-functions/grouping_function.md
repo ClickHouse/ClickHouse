@@ -129,7 +129,7 @@ Response
 SELECT
     number,
     GROUPING(number, number % 2) = 1 as gr
-FROM remote('127.0.0.{2,3}', numbers(10))
+FROM remote('172.21.0.{2,4}', numbers(10))
 GROUP BY
     GROUPING SETS (
     (number),
@@ -146,7 +146,7 @@ Response
 SELECT
     number,
     grouping(number, number % 2) = 3
-FROM remote('127.0.0.{2,3}', numbers(10))
+FROM remote('172.21.0.{2,4}', numbers(10))
 GROUP BY
     number,
     number % 2
@@ -162,7 +162,7 @@ SELECT
     number,
     grouping(number),
     GROUPING(number % 2)
-FROM remote('127.0.0.{2,3}', numbers(10))
+FROM remote('172.21.0.{2,4}', numbers(10))
 GROUP BY
     number,
     number % 2
@@ -177,7 +177,7 @@ Response
 SELECT
     number,
     grouping(number, number % 2) AS gr
-FROM remote('127.0.0.{2,3}', numbers(10))
+FROM remote('172.21.0.{2,4}', numbers(10))
 GROUP BY
     number,
     number % 2
@@ -194,7 +194,7 @@ Response
 SELECT
     number,
     grouping(number, number % 2) AS gr
-FROM remote('127.0.0.{2,3}', numbers(10))
+FROM remote('172.21.0.{2,4}', numbers(10))
 GROUP BY
     ROLLUP(number, number % 2)
 ORDER BY
@@ -209,7 +209,7 @@ Response
 SELECT
     number,
     grouping(number, number % 2) AS gr
-FROM remote('127.0.0.{2,3}', numbers(10))
+FROM remote('172.21.0.{2,4}', numbers(10))
 GROUP BY
     number,
     number % 2
@@ -226,7 +226,7 @@ Response
 SELECT
     number,
     grouping(number, number % 2) AS gr
-FROM remote('127.0.0.{2,3}', numbers(10))
+FROM remote('172.21.0.{2,4}', numbers(10))
 GROUP BY
     CUBE(number, number % 2)
 ORDER BY
@@ -241,7 +241,7 @@ Response
 SELECT
     number,
     grouping(number, number % 2) + 3 as gr
-FROM remote('127.0.0.{2,3}', numbers(10))
+FROM remote('172.21.0.{2,4}', numbers(10))
 GROUP BY
     CUBE(number, number % 2)
 HAVING grouping(number) != 0
@@ -257,7 +257,7 @@ Response
 SELECT
     number,
     grouping(number, number % 2) as gr
-FROM remote('127.0.0.{2,3}', numbers(10))
+FROM remote('172.21.0.{2,4}', numbers(10))
 GROUP BY
     CUBE(number, number % 2) WITH TOTALS
 ORDER BY
@@ -272,7 +272,7 @@ Response
 SELECT
     number,
     grouping(number, number % 2) as gr
-FROM remote('127.0.0.{2,3}', numbers(10))
+FROM remote('172.21.0.{2,4}', numbers(10))
 GROUP BY
     ROLLUP(number, number % 2) WITH TOTALS
 ORDER BY
