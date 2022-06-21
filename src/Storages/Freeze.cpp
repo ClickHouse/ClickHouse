@@ -9,8 +9,6 @@ namespace DB
 {
 void FreezeMetaData::fill(const StorageReplicatedMergeTree & storage)
 {
-    is_replicated = storage.supportsReplication();
-    is_remote = storage.isRemote();
     replica_name = storage.getReplicaName();
     zookeeper_name = storage.getZooKeeperName();
     table_shared_id = storage.getTableSharedID();
@@ -26,11 +24,16 @@ void FreezeMetaData::save(DiskPtr data_disk, const String & path) const
 
     writeIntText(version, buffer);
     buffer.write("\n", 1);
-    writeBoolText(is_replicated, buffer);
-    buffer.write("\n", 1);
-    writeBoolText(is_remote, buffer);
-    buffer.write("\n", 1);
-    writeString(replica_name, buffer);
+    if (version == 1) {
+        /// is_replicated and is_remote are not used
+        bool is_replicated = true;
+        writeBoolText(is_replicated, buffer);
+        buffer.write("\n", 1);
+        bool is_remote = true;
+        writeBoolText(is_remote, buffer);
+        buffer.write("\n", 1);
+    }
+    writeString(escapeForFileName(replica_name), buffer);
     buffer.write("\n", 1);
     writeString(zookeeper_name, buffer);
     buffer.write("\n", 1);
@@ -51,17 +54,23 @@ bool FreezeMetaData::load(DiskPtr data_disk, const String & path)
     auto metadata_str = metadata_storage->readFileToString(file_path);
     ReadBufferFromString buffer(metadata_str);
     readIntText(version, buffer);
-    if (version != 1)
+    if (version < 1 or version > 2)
     {
         LOG_ERROR(&Poco::Logger::get("FreezeMetaData"), "Unknown freezed metadata version: {}", version);
         return false;
     }
     DB::assertChar('\n', buffer);
-    readBoolText(is_replicated, buffer);
-    DB::assertChar('\n', buffer);
-    readBoolText(is_remote, buffer);
-    DB::assertChar('\n', buffer);
-    readString(replica_name, buffer);
+    if (version == 1) {
+        /// is_replicated and is_remote are not used
+        bool is_replicated;
+        readBoolText(is_replicated, buffer);
+        DB::assertChar('\n', buffer);
+        bool is_remote;
+        readBoolText(is_remote, buffer);
+        DB::assertChar('\n', buffer);
+    }
+    auto unescaped_replica_name = unescapeForFileName(replica_name);
+    readString(unescaped_replica_name, buffer);
     DB::assertChar('\n', buffer);
     readString(zookeeper_name, buffer);
     DB::assertChar('\n', buffer);
@@ -89,7 +98,7 @@ String FreezeMetaData::getFileName(const String & path)
 
 BlockIO Unfreezer::unfreeze(const String & backup_name, ContextPtr local_context)
 {
-    LOG_DEBUG(log, "Unfreezing backup {}", backup_name);
+    LOG_DEBUG(log, "Unfreezing backup {}", escapeForFileName(backup_name));
     auto disks_map = local_context->getDisksMap();
     Disks disks;
     for (auto & [name, disk]: disks_map)
@@ -97,33 +106,38 @@ BlockIO Unfreezer::unfreeze(const String & backup_name, ContextPtr local_context
         disks.push_back(disk);
     }
     auto backup_path = fs::path(backup_directory_prefix) / escapeForFileName(backup_name);
-    auto store_path = backup_path / "store";
+    auto store_paths = {backup_path / "store", backup_path / "data"};
 
     PartitionCommandsResultInfo result_info;
 
     for (const auto & disk: disks)
     {
-        if (!disk->exists(store_path))
-            continue;
-        for (auto prefix_it = disk->iterateDirectory(store_path); prefix_it->isValid(); prefix_it->next())
+        for (auto store_path: store_paths)
         {
-            auto prefix_directory = store_path / prefix_it->name();
-            for (auto table_it = disk->iterateDirectory(prefix_directory); table_it->isValid(); table_it->next())
+            if (!disk->exists(store_path))
+                continue;
+            for (auto prefix_it = disk->iterateDirectory(store_path); prefix_it->isValid(); prefix_it->next())
             {
-                auto table_directory = prefix_directory / table_it->name();
-                auto current_result_info = unfreezePartitionsFromTableDirectory([] (const String &) { return true; }, backup_name, {disk}, table_directory, local_context);
-                for (auto & command_result : current_result_info)
+                auto prefix_directory = store_path / prefix_it->name();
+                for (auto table_it = disk->iterateDirectory(prefix_directory); table_it->isValid(); table_it->next())
                 {
-                    command_result.command_type = "SYSTEM UNFREEZE";
+                    auto table_directory = prefix_directory / table_it->name();
+                    auto current_result_info = unfreezePartitionsFromTableDirectory(
+                        [](const String &) { return true; }, backup_name, {disk}, table_directory, local_context);
+                    for (auto & command_result : current_result_info)
+                    {
+                        command_result.command_type = "SYSTEM UNFREEZE";
+                    }
+                    result_info.insert(
+                        result_info.end(),
+                        std::make_move_iterator(current_result_info.begin()),
+                        std::make_move_iterator(current_result_info.end()));
                 }
-                result_info.insert(
-                                result_info.end(),
-                                std::make_move_iterator(current_result_info.begin()),
-                                std::make_move_iterator(current_result_info.end()));
             }
         }
         if (disk->exists(backup_path))
         {
+            /// After unfreezing we need to clear revision.txt file and empty directories
             disk->removeRecursive(backup_path);
         }
     }
@@ -143,11 +157,8 @@ bool Unfreezer::removeFreezedPart(DiskPtr disk, const String & path, const Strin
         FreezeMetaData meta;
         if (meta.load(disk, path))
         {
-            if (meta.is_replicated)
-            {
-                FreezeMetaData::clean(disk, path);
-                return StorageReplicatedMergeTree::removeSharedDetachedPart(disk, path, part_name, meta.table_shared_id, meta.zookeeper_name, meta.replica_name, "", local_context);
-            }
+            FreezeMetaData::clean(disk, path);
+            return StorageReplicatedMergeTree::removeSharedDetachedPart(disk, path, part_name, meta.table_shared_id, meta.zookeeper_name, meta.replica_name, "", local_context);
         }
     }
 
