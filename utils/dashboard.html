@@ -310,7 +310,7 @@
         chart.className = 'chart';
 
         let chart_title = document.createElement('div');
-        let title_text = document.createTextNode(q.title.replaceAll(/\{(\w+)\}/g, (_, name) => params[name] ));
+        let title_text = document.createTextNode('');
         chart_title.appendChild(title_text);
         chart_title.className = 'title';
         chart.appendChild(chart_title);
@@ -340,7 +340,7 @@
             query_editor.style.display = 'none';
             q.title = query_editor_title.value;
             q.query = query_editor_textarea.value;
-            title_text.data = q.title;
+            title_text.data = '';
             draw(i, chart, getParamsForURL(), q.query);
         }
 
@@ -454,13 +454,13 @@
         };
     }
 
-    async function draw(idx, chart, params, query) {
+    async function draw(idx, chart, url_params, query) {
         if (plots[idx]) {
             plots[idx].destroy();
             plots[idx] = null;
         }
 
-        const response = await fetch(url + params, { method: "POST", body: query });
+        const response = await fetch(url + url_params, { method: "POST", body: query });
         const data = await response.json();
 
         if (!(Array.isArray(data) && data.length == 2 && Array.isArray(data[0]) && Array.isArray(data[1]) && data[0].length == data[1].length)) {
@@ -487,6 +487,11 @@
         };
 
         plots[idx] = new uPlot(opts, data, chart);
+
+        /// Set title
+        const title = queries[idx].title.replaceAll(/\{(\w+)\}/g, (_, name) => params[name] );
+        console.log(title);
+        document.getElementsByClassName('chart')[idx].querySelector('.title').firstChild.data = title;
     }
 
     async function drawAll() {
